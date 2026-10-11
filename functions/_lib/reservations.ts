@@ -1,6 +1,7 @@
 import { type Env, one, run, audit } from './db';
 import { syncAvailabilityIfLinked, channexMappingFor } from './channexSync';
 import { channexConfigured } from './channex';
+import { phoneCore } from './bookingList';
 
 /** The reservation that already holds any of these nights on the unit, or null.
  *  Check-out day is free. Cancelled, no-show and inquiry rows do not hold dates. */
@@ -25,7 +26,8 @@ export async function upsertGuest(env: Env, g: { fullName: string; email?: strin
   const email = g.email?.trim() || null, phone = g.phone?.trim() || null;
   const found = email
     ? await one<{ id: string }>(env, 'SELECT id FROM guests WHERE lower(email) = lower(?) LIMIT 1', email)
-    : phone ? await one<{ id: string }>(env, 'SELECT id FROM guests WHERE phone = ? LIMIT 1', phone) : null;
+    // The same number is stored in different shapes (60189800069, 018-980 0069, +60 18-980 0069): match on its digits.
+    : phone && phoneCore(phone) ? await one<{ id: string }>(env, `SELECT id FROM guests WHERE regexp_replace(regexp_replace(COALESCE(phone, ''), '[^0-9]', '', 'g'), '^(60|0)', '') = ? ORDER BY created_at LIMIT 1`, phoneCore(phone)) : null;
   if (found) return found.id;
   const id = crypto.randomUUID();
   await run(env, 'INSERT INTO guests (id, full_name, email, phone, created_at) VALUES (?, ?, ?, ?, ?)', id, g.fullName.trim(), email, phone, new Date().toISOString());

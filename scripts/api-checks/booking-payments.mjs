@@ -99,6 +99,26 @@ if (created) {
   for (const x of [id, dup].filter(Boolean)) await call('PATCH', `/api/reservations/${x}`, { state: 'cancelled', reason: 'api check clean-up' });
 }
 
+/* ---------- a booking for a known phone joins that guest, however the number is written ---------- */
+{
+  const known = (await call('GET', '/api/reservations?view=upcoming&size=100')).json.data.find(x => /^\+?60\d{8,}$/.test(String(x.guestPhone ?? '').replace(/\D/g, '')));
+  if (known) {
+    const digits = String(known.guestPhone).replace(/\D/g, '');
+    const typed = `0${digits.slice(2, 4)}-${digits.slice(4)}`;
+    const src = (await call('GET', `/api/reservations/${known.id}`)).json;
+    let made = null;
+    for (const u of units.slice(0, 40)) {
+      const x = await call('POST', '/api/reservations', { unitId: u.id, channel: 'direct', guest: { fullName: 'Same Phone Check', phone: typed }, checkIn: '2027-12-02', checkOut: '2027-12-03', guestsCount: 1, grossBookingValue: 1000 });
+      if (x.status === 201) { made = x.json; break; }
+    }
+    const got = made && (await call('GET', `/api/reservations/${made.id}`)).json;
+    check(`a booking typed with ${typed} joins the guest stored as ${known.guestPhone}`, got && got.guestId === src.guestId, `${got?.guestId} vs ${src.guestId}`);
+    r = await call('GET', `/api/reservations?view=all&q=${encodeURIComponent(typed)}&size=5`);
+    check('the bookings search finds that guest by the number typed another way', r.json.data.some(x => x.guestPhone === known.guestPhone), r.text.slice(0, 200));
+    if (made) await call('PATCH', `/api/reservations/${made.id}`, { state: 'cancelled', reason: 'api check clean-up' });
+  }
+}
+
 /* ---------- duplicate keeps the price breakdown ---------- */
 {
   const direct = (await call('GET', '/api/reservations?view=upcoming&ch=direct&size=50')).json.data;

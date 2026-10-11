@@ -78,7 +78,10 @@ const FIELD: Record<string, [string, Kind?]> = {
   employment: ['Employment', 'state'], via: ['Through', 'state'], label: ['Item'], ownerApprovalRequired: ['Needs owner approval', 'bool'], released: ['Released', 'state'],
   blockFrom: ['From', 'date'], blockTo: ['Until', 'date'], copiedFrom: ['Copied from', 'name'], otaName: ['Booking site'],
   type: ['Document', 'state'], docNo: ['Document number'], voided: ['Voided', 'bool'],
+  countryCode: ['Nationality'], idType: ['ID type'], idNumber: ['ID number'], dateOfBirth: ['Date of birth'], language: ['Language'],
 };
+const ID_TYPE: Record<string, string> = { mykad: 'MyKad', passport: 'Passport', other: 'Other ID' };
+const countryLabel = (code: string) => { try { return new Intl.DisplayNames(['en'], { type: 'region' }).of(code) ?? code; } catch { return code; } };
 /** Kept in the record for the system's own use; nothing a person needs to read. */
 const HIDDEN = new Set(['documentId', 'windowId', 'channexBookingId', 'statementId', 'amountSource', 'sourceTaskId', 'reservationId', 'maintenanceIssueId', 'issueId', 'paymentId', 'otaBookingId', 'clashingReservationId', 'checked', 'created', 'fields', 'hasEmail', 'hasPhone', 'overlaps']);
 
@@ -87,6 +90,8 @@ const labelOf = (k: string) => FIELD[k]?.[0] ?? humanize(k.replace(/([a-z])([A-Z
 function show(k: string, v: unknown, names: Record<string, string>): string {
   if (v === null || v === undefined || v === '') return 'none';
   const kind = FIELD[k]?.[1] ?? (typeof v === 'number' && /(amount|total|payout|price|cost|deposit|rate)$/i.test(k) ? 'money' : 'text');
+  if (k === 'countryCode' && typeof v === 'string' && /^[A-Z]{2}$/.test(v)) return countryLabel(v);
+  if (k === 'idType' && typeof v === 'string') return ID_TYPE[v] ?? humanize(v);
   if (k === 'tags' && typeof v === 'string') return v.split(',').filter(Boolean).map(t => t === 'vip' ? 'VIP' : humanize(t)).join(', ') || 'none';
   if (typeof v === 'boolean' || kind === 'bool') return v === true || v === 1 || v === '1' ? 'Yes' : 'No';
   if (kind === 'money' && typeof v === 'number') return rm(v);

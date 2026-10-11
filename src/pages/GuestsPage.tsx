@@ -20,6 +20,7 @@ import { api, ApiFailure, errorMessage } from '../lib/api';
 import { useSession } from '../lib/session';
 import { deliveryToast } from '../lib/bookingStatus';
 import { rm, dateRange, time, date as fmtDate, nights as fmtNights, guests as fmtGuests, plural, count as fmtCount, phone, todayMyt, greetName } from '../lib/format';
+import { phoneCountries } from '../lib/phone';
 import { Select, Menu } from '../components/Select';
 import { Chip as FilterChip } from './finance/listKit';
 import type { BookingChannel, ReservationState, UnitReadiness, UserRole, Tone } from '../lib/types';
@@ -107,9 +108,8 @@ const threadName = (ch: BookingChannel) => (ch === 'direct' ? 'WhatsApp' : chann
 const failMessage = (e: unknown) => (errorMessage(e, 'Try again in a moment.'));
 
 const ID_TYPES: Record<string, string> = { mykad: 'MyKad', passport: 'Passport', other: 'Other ID' };
-/** Common guest nationalities; any other ISO code still shows by name. */
-const COUNTRY_CODES = ['MY', 'SG', 'ID', 'TH', 'PH', 'VN', 'BN', 'CN', 'HK', 'TW', 'JP', 'KR', 'IN', 'PK', 'BD', 'LK', 'AU', 'NZ', 'GB', 'IE', 'US', 'CA',
-  'DE', 'FR', 'NL', 'IT', 'ES', 'CH', 'SE', 'NO', 'DK', 'RU', 'SA', 'AE', 'QA', 'KW', 'OM', 'EG', 'TR', 'IR', 'MV', 'NG', 'ZA'];
+/** Every country (a guest can come from anywhere; registration needs the nationality). */
+const COUNTRY_CODES: string[] = phoneCountries().map(c => c.code);
 const countryName = (code: string | null | undefined) => {
   if (!code) return null;
   try { return new Intl.DisplayNames(['en'], { type: 'region' }).of(code) ?? code; } catch { return code; }
