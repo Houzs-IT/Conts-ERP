@@ -33,8 +33,8 @@ const OWNER_ALLOWED: [string, RegExp][] = [
 ];
 
 /**
- * Housekeepers and technicians work from the field app (FieldTodayPage): today's jobs, start, checklist,
- * photos, done, report damage. They are deny-by-default like owners, so a desk endpoint that only checks for
+ * Housekeepers and technicians work from the field app (FieldTodayPage, FieldRepairsPage): today's cleans, repair
+ * jobs (pick up, start, photos, claim files, done), report damage. They are deny-by-default like owners, so a desk endpoint that only checks for
  * a signed-in user (units, search, portfolio revenue, owner documents) is never theirs by accident. Each
  * handler below still checks the job is assigned to them.
  */
@@ -46,13 +46,16 @@ const FIELD_ALLOWED: [string, RegExp][] = [
   ['POST', /^\/api\/account\/[a-z0-9/-]+$/],
   ['GET', /^\/api\/notifications(\/count)?$/],
   ['PATCH', /^\/api\/notifications$/],
-  ['GET', /^\/api\/field\/tasks$/],
+  ['GET', /^\/api\/field\/(tasks|repairs|units)$/],
+  // Repair jobs on the phone: the technician's own and the unassigned ones they may pick up (the handlers check which).
+  ['GET', /^\/api\/field\/repairs\/[^/]+$/],
+  ['POST', /^\/api\/field\/repairs\/[^/]+\/(pick|note)$/],
   ['GET', /^\/api\/housekeeping\/tasks\/[^/]+(\/checklist|\/photos)?$/],
   ['POST', /^\/api\/housekeeping\/tasks\/[^/]+\/(checklist|start)$/],
   ['POST', /^\/api\/housekeeping\/guest-left$/],
   ['POST', /^\/api\/tasks\/[^/]+\/(complete|photos)$/],
   ['POST', /^\/api\/maintenance\/issues$/],
-  ['POST', /^\/api\/maintenance\/issues\/[^/]+\/photos$/],
+  ['POST', /^\/api\/maintenance\/issues\/[^/]+\/(photos|documents|start|end)$/],
   ['GET', /^\/api\/documents\/[^/]+\/download$/],
   // The history of their own cleans and repairs (functions/api/audit/index.ts limits it to those).
   ['GET', /^\/api\/audit$/],

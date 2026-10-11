@@ -32,6 +32,10 @@ await sql`delete from statement_lines where id like 'demo-line-%'`;
 await sql`delete from owner_statements where id like 'demo-stmt-%'`;
 await sql`delete from maintenance_issues where id like 'demo-mnt-%'`; // the owner seed has its own pending quote
 await sql.unsafe(readFileSync('scripts/seed-owner-demo.sql', 'utf8').replaceAll('REPLACE_WITH_HASH', hash));
+// A technician for the field app's repair screens (the base seed has none).
+await sql`insert into users (id, email, full_name, phone, password_hash, role, must_change_password, created_at, updated_at)
+  values ('11111111-1111-4111-8111-000000000006', 'hafiz@theconts.com', 'Hafiz Rahman', '+60123456706', ${hash}, 'technician', 0, '2026-09-01T00:00:00Z', '2026-09-01T00:00:00Z')
+  on conflict (id) do nothing`;
 await sql`update users set password_hash = ${hash}`;
 console.log(`demo logins ready, password: ${PW}`);
 await sql.end();

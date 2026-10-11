@@ -1,23 +1,34 @@
 import { type Env, one, run, json, fail, audit, nowIso } from '../../../../_lib/db';
 import { requireSession, isFieldRole } from '../../../../_lib/auth';
+import { isAssignee } from '../../../../_lib/maintenance';
+import { repairNotice } from '../../../../_lib/notices';
 
-/** POST /api/maintenance/issues/:id/end — records when the repair finished. The job is not
+/** POST /api/maintenance/issues/:id/end { note? } — records when the repair finished. The job is not
  *  yet resolved: completing it (with the final amount) still raises the expense. This only
- *  stamps the end so the duration can be shown. */
+ *  stamps the end so the duration can be shown, and tells the office the job is ready to close.
+ *  A technician on the phone ends only a job that is theirs, and only with at least one After photo or video. */
 export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Cleaners and technicians cannot end jobs from here.', 403);
+  const field = isFieldRole(session.role);
 
   const id = String(params.id);
+  const b = await request.json<any>().catch(() => null);
+  const note = typeof b?.note === 'string' && b.note.trim() ? b.note.trim().slice(0, 1000) : null;
   const cur = await one<any>(env, 'SELECT id, state, started_at, ended_at FROM maintenance_issues WHERE id = ?', id);
   if (!cur) return fail('NOT_FOUND', 'That job no longer exists.', 404);
+  if (field && !(await isAssignee(env, id, session.userId))) return fail('FORBIDDEN', 'That job is assigned to someone else.', 403);
   if (cur.state === 'resolved') return fail('CONFLICT', 'That job is already finished.', 409);
   if (!cur.started_at) return fail('CONFLICT', 'Start the job before ending it.', 409);
+  if (field) {
+    const after = await one<{ n: number }>(env, `SELECT COUNT(*)::int AS n FROM documents WHERE maintenance_id = ? AND kind IN ('photo','video') AND file_name LIKE 'after-%'`, id);
+    if (!Number(after?.n)) return fail('VALIDATION', 'Add at least one After photo or video of the repair first.', 422, { photos: 'Add an After photo.' });
+  }
 
   const now = nowIso();
   const endedAt = cur.ended_at ?? now;
   await run(env, `UPDATE maintenance_issues SET ended_at = ?, updated_at = ? WHERE id = ?`, endedAt, now, id);
-  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'maintenance.end', entityTable: 'maintenance_issues', entityId: id, before: { startedAt: cur.started_at }, after: { endedAt } });
+  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'maintenance.end', entityTable: 'maintenance_issues', entityId: id, before: { startedAt: cur.started_at }, after: { endedAt, note }, source: field ? 'field_app' : 'web' });
+  if (!cur.ended_at) await repairNotice(env, id, 'ended', session.userId);
   return json({ ok: true, endedAt });
 };

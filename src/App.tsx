@@ -97,7 +97,7 @@ const SystemHealthPage = lazy(() => import('./pages/SystemHealthPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 const NotDesignedPage = lazy(() => import('./pages/NotDesignedPage'));
 const PlaceholderPage = lazy(() => import('./pages/PlaceholderPage'));
-const FieldTodayPage = lazy(() => import('./pages/FieldTodayPage'));
+const FieldHome = lazy(() => import('./pages/FieldHome'));
 const OwnerPortalPage = lazy(() => import('./pages/OwnerPortalPage'));
 const AccountPage = lazy(() => import('./pages/AccountPage'));
 
@@ -187,7 +187,7 @@ function Routed() {
   const account = location.pathname === '/account';
   // Field roles: single-column 44px shell, not the desk nav.
   if (user.role === 'housekeeper' || user.role === 'technician') {
-    return <FieldShell><Suspense fallback={<Fallback />}>{account ? <AccountPage /> : <FieldTodayPage />}</Suspense></FieldShell>;
+    return <FieldShell><Suspense fallback={<Fallback />}>{account ? <AccountPage /> : <FieldHome />}</Suspense></FieldShell>;
   }
   // Owners see only their own portal, whatever the address bar says.
   if (user.role === 'owner') {

@@ -1,5 +1,6 @@
 import { type Env, all, one, run, json, fail, audit, nowIso } from '../../../../_lib/db';
 import { requireSession, isFieldRole } from '../../../../_lib/auth';
+import { isAssignee } from '../../../../_lib/maintenance';
 
 /** GET /api/maintenance/issues/:id/documents — the job's files: before and after photos and videos, the proof of
  *  work and the invoice, oldest first, each with its download address. */
@@ -26,7 +27,8 @@ const MAX_BYTES = 15 * 1024 * 1024;
 
 /** POST /api/maintenance/issues/:id/documents — multipart `file`, `kind`: claim (the technician's or contractor's bill
  *  to the company), invoice (the bill to the owner or guest), receipt (proof a payment was made), pod (proof of work).
- *  Accounts pay the contractor from these, and they back the expense on the owner statement. Stored in R2 (binding MEDIA); without that binding the request
+ *  Accounts pay the contractor from these, and they back the expense on the owner statement. A technician on the phone
+ *  adds them only to a job that is theirs and still open. Stored in R2 (binding MEDIA); without that binding the request
  *  is refused, not faked. */
 export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
@@ -34,8 +36,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   if (!env.MEDIA) return fail('NOT_CONFIGURED', 'File upload is not set up yet. Ask an administrator to enable media storage.', 501);
 
   const id = String(params.id);
-  const issue = await one<{ id: string; unit_id: string }>(env, 'SELECT id, unit_id FROM maintenance_issues WHERE id = ?', id);
+  const issue = await one<{ id: string; unit_id: string; state: string }>(env, 'SELECT id, unit_id, state FROM maintenance_issues WHERE id = ?', id);
   if (!issue) return fail('NOT_FOUND', 'That job no longer exists.', 404);
+  const field = isFieldRole(session.role);
+  if (field && !(await isAssignee(env, id, session.userId))) return fail('FORBIDDEN', 'That job is assigned to someone else.', 403);
+  if (field && issue.state === 'resolved') return fail('CONFLICT', 'That job is closed. Ask the office to reopen it.', 409);
 
   const form = await request.formData().catch(() => null);
   const file = form?.get('file');
@@ -50,6 +55,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
     INSERT INTO documents (id, kind, file_name, mime_type, byte_size, storage_key, unit_id, maintenance_id, uploaded_by, captured_at, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     docId, kind, file.name.slice(0, 120), file.type || 'application/octet-stream', file.size, key, issue.unit_id, id, session.userId, nowIso(), nowIso());
-  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'maintenance.document', entityTable: 'maintenance_issues', entityId: id, after: { documentId: docId, kind } });
+  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'maintenance.document', entityTable: 'maintenance_issues', entityId: id, after: { documentId: docId, kind }, source: field ? 'field_app' : 'web' });
   return json({ documentId: docId }, 201);
 };

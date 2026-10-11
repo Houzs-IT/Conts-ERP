@@ -1,13 +1,14 @@
 import { type Env, one, fail } from '../../../_lib/db';
 import { requireSession, isFieldRole } from '../../../_lib/auth';
 import { levelsFor } from '../../../_lib/access';
+import { isAssignee, UNASSIGNED_SQL } from '../../../_lib/maintenance';
 
 const INLINE_TYPES = /^(?:image\/(?:png|jpe?g|gif|webp|heic|heif|avif)|video\/(?:mp4|quicktime|webm)|application\/pdf)$/;
 
 interface Doc { storage_key: string; mime_type: string; file_name: string; unit_id: string | null; owner_id: string | null; task_id: string | null; maintenance_id: string | null; visible_to_owner: number | boolean; uploaded_by: string | null }
 
 /** Whether this person may open the file: the file's own record decides, not knowing its id. An owner gets only
- *  files staff marked visible to them; a housekeeper or technician only files on their own jobs; desk roles need
+ *  files staff marked visible to them; a housekeeper or technician only files on their own jobs (and a technician the photos of a repair nobody has yet); desk roles need
  *  access to the area the file belongs to (a unit's or a job's files: Properties or Operations; an owner's own
  *  papers and receipts: Owners or Finance). */
 async function mayOpen(env: Env, s: { userId: string; role: string }, d: Doc): Promise<boolean> {
@@ -23,7 +24,12 @@ async function mayOpen(env: Env, s: { userId: string; role: string }, d: Doc): P
         SELECT 1 AS x FROM tasks t LEFT JOIN cleaners c ON c.id = t.cleaner_id
         WHERE t.id = ? AND (t.assignee_id = ? OR t.completed_by = ? OR c.user_id = ?)`, d.task_id, s.userId, s.userId, s.userId));
     }
-    if (d.maintenance_id) return !!(await one(env, 'SELECT 1 AS x FROM maintenance_issues WHERE id = ? AND reported_by = ?', d.maintenance_id, s.userId));
+    if (d.maintenance_id) {
+      // The person who reported the repair, the one doing it, and (to look before picking it up) any technician while nobody has it.
+      if (await one(env, 'SELECT 1 AS x FROM maintenance_issues WHERE id = ? AND reported_by = ?', d.maintenance_id, s.userId)) return true;
+      if (await isAssignee(env, d.maintenance_id, s.userId)) return true;
+      return s.role === 'technician' && !!(await one(env, `SELECT 1 AS x FROM maintenance_issues m WHERE m.id = ? AND ${UNASSIGNED_SQL} AND m.state IN ('open','reopened')`, d.maintenance_id));
+    }
     return false;
   }
   const lv = await levelsFor(env, s.role);
