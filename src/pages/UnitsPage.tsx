@@ -135,7 +135,7 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
     // Owner and payout details belong to the owner and are edited on the owner's page; the old monthly costs list and
     // the cleaning price are saved on the Financials tab. None of them is sent from this form.
     const { baseRate, contract: _contract, revenueModel: _model, termsLabel: _terms, ownerName: _on, ic: _ic, bankName: _bn, bankAccount: _ba,
-      accountHolder: _ah, expenses: _ex, cleaningPrice: _cp, ...body } = form;
+      accountHolder: _ah, expenses: _ex, cleaningPrice: _cp, deepCleaningPrice: _dcp, ...body } = form;
     setSaving(true);
     try {
       await api.patch(`/units/${form.id}`, body);
@@ -504,7 +504,7 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
       )}
       {shown === 'financials' && d.pnl && (
         <>
-          <UnitCostsCard unitId={u.id} ownerId={u.owner.id} unitLabel={unitLabel} canEdit={canEdit} cleaningPrice={form?.cleaningPrice}
+          <UnitCostsCard unitId={u.id} ownerId={u.owner.id} unitLabel={unitLabel} canEdit={canEdit} cleaningPrice={form?.cleaningPrice} deepCleaningPrice={form?.deepCleaningPrice}
             legacyCosts={form?.expenses ?? []} onChanged={() => { reloadDetail(); reload(); }} />
           <Card>
             <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex items-baseline justify-between gap-3 flex-wrap">
