@@ -28,6 +28,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
     INSERT INTO documents (id, kind, file_name, mime_type, byte_size, storage_key, unit_id, task_id, uploaded_by, captured_at, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     docId, media.kind, file.name.slice(0, 120), file.type, file.size, key, t.unit_id, id, session.userId, nowIso(), nowIso());
-  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'task.photo', entityTable: 'tasks', entityId: id, after: { documentId: docId, kind: media.kind } });
+  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'task.photo', entityTable: 'tasks', entityId: id, after: { documentId: docId, kind: media.kind }, source: isFieldRole(session.role) ? 'field_app' : 'web' });
   return json({ documentId: docId, kind: media.kind }, 201);
 };
