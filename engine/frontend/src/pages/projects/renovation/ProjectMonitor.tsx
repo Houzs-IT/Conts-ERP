@@ -5,7 +5,7 @@
    bottom. Everything is read from GET /api/renovation/monitor, one request.
    State lives in the URL (tab, person, show) so a view can be shared. */
 
-import { useMemo, type ReactNode } from "react";
+import { createContext, useContext, useMemo, type ReactNode } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { AlertTriangle, LayoutList, X } from "lucide-react";
 import { PageHeader } from "../../../components/Layout";
@@ -43,14 +43,28 @@ function Tile({ label, hint, count, active, tone, onClick }: { label: string; hi
 
 const stop = (e: { stopPropagation: () => void }) => e.stopPropagation();
 
+/* On the phone app (MobileApp) the desktop document screens are not routes, so
+   source documents show as plain text there; the row still opens the project. */
+const DocLinks = createContext(true);
+
+function DocLink({ to, title, className, children }: { to: string; title?: string; className?: string; children: ReactNode }) {
+  const links = useContext(DocLinks);
+  if (!links) return <span title={title} className={cn(className, "text-ink")}>{children}</span>;
+  return <Link to={to} onClick={stop} title={title} className={cn("text-primary hover:underline", className)}>{children}</Link>;
+}
+
 function SoCell({ r }: { r: MonitorRow }) {
   if (!r.soDocNo) return <span className="text-ink-secondary">Not signed</span>;
-  return <Link to={`/scm/sales-orders/${encodeURIComponent(r.soDocNo)}`} onClick={stop} className="text-primary hover:underline">{r.soDocNo}</Link>;
+  return <DocLink to={`/scm/sales-orders/${encodeURIComponent(r.soDocNo)}`}>{r.soDocNo}</DocLink>;
 }
 
 function VoCell({ r }: { r: MonitorRow }) {
   if (r.openVo) {
-    return <Link to={`/scm/renovation/variation-orders/${r.openVo.id}`} onClick={stop} className="text-primary hover:underline whitespace-nowrap">{r.openVo.voNo}{r.openVo.count > 1 ? ` +${r.openVo.count - 1}` : ""} (open)</Link>;
+    return (
+      <DocLink to={`/scm/renovation/variation-orders/${r.openVo.id}`} title={r.openVo.voNo} className="whitespace-nowrap">
+        {r.openVo.count} open{r.vo && r.vo.approved ? `, ${r.vo.approved} approved` : ""}
+      </DocLink>
+    );
   }
   return <>{r.vo ? (r.vo.has ? `Yes (${r.vo.count})` : "No") : "-"}</>;
 }
@@ -66,9 +80,9 @@ function Extras({ r, d }: { r: MonitorRow; d: MonitorData }) {
       {r.worksBeforeGateText && <Pill tone="warn" title="A warning only: the gate does not stop the works">{r.worksBeforeGateText}</Pill>}
       {reasons.map((x) => <Pill key={x} tone="warn">{x}</Pill>)}
       {r.openQuotation && (
-        <Link to={`/scm/renovation/quotations/${r.openQuotation.id}`} onClick={stop} className="inline-flex">
+        <DocLink to={`/scm/renovation/quotations/${r.openQuotation.id}`} className="inline-flex no-underline hover:no-underline">
           <Pill tone="info">Quotation {r.openQuotation.quoteNo} open</Pill>
-        </Link>
+        </DocLink>
       )}
     </div>
   );
@@ -80,39 +94,39 @@ function RowsTable({ rows, d, open }: { rows: MonitorRow[]; d: MonitorData; open
       <table className="w-full text-sm">
         <thead className="bg-surface-dim text-left text-xs uppercase tracking-wide text-ink-secondary">
           <tr>
-            <th className="px-3 py-2">Building</th>
-            <th className="px-3 py-2 min-w-[13rem]">Project</th>
-            <th className="px-3 py-2">SO no.</th>
-            <th className="px-3 py-2">Sales</th>
-            <th className="px-3 py-2 text-right">Contract total</th>
-            <th className="px-3 py-2 text-right">Received</th>
-            <th className="px-3 py-2">Status</th>
-            <th className="px-3 py-2">Furniture</th>
-            <th className="px-3 py-2">Reno items</th>
-            <th className="px-3 py-2">Key holder</th>
-            <th className="px-3 py-2">VO</th>
-            <th className="px-3 py-2">Handover</th>
+            <th className="px-2 py-2">Building</th>
+            <th className="px-2 py-2 min-w-[12rem]">Project</th>
+            <th className="px-2 py-2">SO no.</th>
+            <th className="px-2 py-2">Sales</th>
+            <th className="px-2 py-2 text-right">Contract total</th>
+            <th className="px-2 py-2 text-right">Received</th>
+            <th className="px-2 py-2">Status</th>
+            <th className="px-2 py-2">Furniture</th>
+            <th className="px-2 py-2">Reno items</th>
+            <th className="px-2 py-2">Key holder</th>
+            <th className="px-2 py-2">VO</th>
+            <th className="px-2 py-2">Handover</th>
           </tr>
         </thead>
         <tbody>
           {rows.map((r) => (
             <tr key={r.id} className="border-t border-border hover:bg-surface-dim cursor-pointer align-top" onClick={() => open(r.id)}>
-              <td className="px-3 py-2 whitespace-nowrap">{r.building ?? "-"}</td>
-              <td className="px-3 py-2">
-                <Link to={`/projects/${r.id}`} onClick={stop} className="font-medium text-ink hover:underline">{r.name}</Link>
+              <td className="px-2 py-2 whitespace-nowrap">{r.building ?? "-"}</td>
+              <td className="px-2 py-2">
+                <span className="font-medium text-ink">{r.name}</span>
                 <div className="text-xs text-ink-secondary">{[r.code, r.customerName, r.designer?.name && `Design: ${r.designer.name}`].filter(Boolean).join(" · ")}</div>
                 <Extras r={r} d={d} />
               </td>
-              <td className="px-3 py-2 whitespace-nowrap"><SoCell r={r} /></td>
-              <td className="px-3 py-2">{r.sales.name ?? "-"}</td>
-              <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap">{r.moneyHidden ? "Hidden" : r.soDocNo ? money(r.contractSen) : "-"}</td>
-              <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap">{received(r)}</td>
-              <td className="px-3 py-2"><StatusCell r={r} /></td>
-              <td className="px-3 py-2">{r.soDocNo ? <Pill tone={supplyTone(r.furnitureArrival)}>{supplyLabel(r.furnitureArrival)}</Pill> : "-"}</td>
-              <td className="px-3 py-2">{r.soDocNo ? <Pill tone={supplyTone(r.renoItemArrival)}>{supplyLabel(r.renoItemArrival)}</Pill> : "-"}</td>
-              <td className="px-3 py-2 whitespace-nowrap">{r.keyHolder?.name ?? "-"}</td>
-              <td className="px-3 py-2"><VoCell r={r} /></td>
-              <td className="px-3 py-2 whitespace-nowrap">{r.handoverDate ? shortDate(r.handoverDate) : r.plannedHandoverDate ? <span className="text-ink-secondary">plan {shortDate(r.plannedHandoverDate)}</span> : "-"}</td>
+              <td className="px-2 py-2 whitespace-nowrap"><SoCell r={r} /></td>
+              <td className="px-2 py-2">{r.sales.name ?? "-"}</td>
+              <td className="px-2 py-2 text-right tabular-nums whitespace-nowrap">{r.moneyHidden ? "Hidden" : r.soDocNo ? money(r.contractSen) : "-"}</td>
+              <td className="px-2 py-2 text-right tabular-nums whitespace-nowrap">{received(r)}</td>
+              <td className="px-2 py-2"><StatusCell r={r} /></td>
+              <td className="px-2 py-2">{r.soDocNo ? <Pill tone={supplyTone(r.furnitureArrival)}>{supplyLabel(r.furnitureArrival)}</Pill> : "-"}</td>
+              <td className="px-2 py-2">{r.soDocNo ? <Pill tone={supplyTone(r.renoItemArrival)}>{supplyLabel(r.renoItemArrival)}</Pill> : "-"}</td>
+              <td className="px-2 py-2 whitespace-nowrap">{r.keyHolder?.name ?? "-"}</td>
+              <td className="px-2 py-2"><VoCell r={r} /></td>
+              <td className="px-2 py-2 whitespace-nowrap">{r.handoverDate ? shortDate(r.handoverDate) : r.plannedHandoverDate ? <span className="text-ink-secondary">plan {shortDate(r.plannedHandoverDate)}</span> : "-"}</td>
             </tr>
           ))}
         </tbody>
@@ -168,7 +182,12 @@ function Section({ title, children, actions }: { title: string; children: ReactN
   );
 }
 
-export function ProjectMonitor({ canWrite }: { canWrite: boolean }) {
+/** `embedded`: inside another screen (the phone app), without the page header;
+    `onOpenProject` replaces navigation to /projects/:id; `docLinks` false shows
+    SO / VO / quotation numbers as text. */
+export function ProjectMonitor({ canWrite, embedded = false, onOpenProject, docLinks = true }: {
+  canWrite: boolean; embedded?: boolean; onOpenProject?: (id: number) => void; docLinks?: boolean;
+}) {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const personId = Number(params.get("person")) || null;
@@ -191,19 +210,20 @@ export function ProjectMonitor({ canWrite }: { canWrite: boolean }) {
   const pick = (s: MonitorSelection) => set({ show: selectionParam(s) === params.get("show") ? null : selectionParam(s) });
 
   const rows = useMemo(() => (d?.rows ?? []).filter((r) => matchesSelection(r, sel) && matchesSearch(r, search)), [d, sel, search]);
-  const open = (id: number) => navigate(`/projects/${id}`);
+  const open = (id: number) => (onOpenProject ? onOpenProject(id) : navigate(`/projects/${id}`));
   const tabQueues = (d?.queues ?? []).filter((x) => x.role === tab);
   const flags = (d?.flags ?? []).filter((f) => f.count > 0);
   const isSel = (s: MonitorSelection) => selectionParam(s) === selectionParam(sel);
 
   return (
+    <DocLinks.Provider value={docLinks}>
     <div className="min-w-0">
-      <PageHeader
+      {!embedded && <PageHeader
         eyebrow="Operations · Projects"
         title="Project monitor"
         description="What needs doing, per team. Each count comes from its own module: the sales order, quotations and VOs, purchases and receipts, site tasks, design records."
         actions={<Button variant="secondary" icon={<LayoutList size={16} />} onClick={() => navigate("/projects?view=list")}>Project list</Button>}
-      />
+      />}
 
       <div className="flex flex-col sm:flex-row gap-2 mb-3">
         <select className={inputClass + " sm:max-w-xs"} value={personId ?? ""} aria-label="Person"
@@ -283,5 +303,6 @@ export function ProjectMonitor({ canWrite }: { canWrite: boolean }) {
         <RenovationCalendar key={personId ?? 0} canWrite={canWrite} embedded initialPersonId={person?.roles.includes("site_crew") ? person.id : null} />
       </Section>
     </div>
+    </DocLinks.Provider>
   );
 }
