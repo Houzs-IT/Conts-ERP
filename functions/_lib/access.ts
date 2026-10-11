@@ -75,6 +75,7 @@ export const ROUTE_AREAS: { method: string; path: RegExp; area: string | null; w
   { method: 'POST', path: /^\/api\/owners\/[^/]+\/notify$/, area: 'dashboard', why: 'The dashboard\'s exception action that tells an owner about a problem with their unit.' },
   { method: 'POST', path: /^\/api\/messages$/, area: 'reservations', why: 'Messaging a guest from a booking or a guest record; the Inbox itself stays under Communication.' },
   { method: 'POST', path: /^\/api\/maintenance\/issues\/[^/]+\/approve$/, area: 'finance', why: 'Recording an owner\'s approval of a repair quote is a money decision.' },
+  { method: 'GET', path: /^\/api\/audit$/, area: null, why: 'The History panel on every record: the handler applies the area of the record asked for; the whole trail stays management and finance only.' },
   { method: 'GET', path: /^\/api\/(warehouses|suppliers|drivers|vehicles|threepl-companies)$/, area: null, why: 'Supply chain reference lists that every supply chain screen picks from.' },
 ];
 

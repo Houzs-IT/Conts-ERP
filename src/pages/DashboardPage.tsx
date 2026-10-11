@@ -275,7 +275,7 @@ export default function DashboardPage() {
       case 'Assign cleaner': return works('operations');
       case 'Notify owner': return ['management', 'operations_manager', 'operations_staff'].includes(user?.role ?? '');
       case 'Review and send': return level('finance') !== 'none';
-      case 'Open pricing': return level('performance') !== 'none';
+      case 'Open pricing': return level('performance') === 'full';
       default: return true;
     }
   };

@@ -34,7 +34,7 @@
  "GET /api/analytics": "AAFAFFFU",
  "GET /api/approvals": "AAFAFFFU",
  "GET /api/approvals/[id]": "AAFAFFFU",
- "GET /api/audit": "AAFAFFFU",
+ "GET /api/audit": "AAAAFFFU",
  "GET /api/auth/reset-password": "AAAAAAAA",
  "GET /api/auth/session": "AAAAAAAU",
  "GET /api/auth/view-as": "AAAAAAAA",

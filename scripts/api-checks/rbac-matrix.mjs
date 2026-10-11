@@ -198,6 +198,12 @@ async function scenarios(ownerA, ownerB, ids) {
   r = await call(H, 'GET', '/api/field/tasks');
   check('a housekeeper still loads the field app', r.status === 200, `${r.status}`);
 
+  // A record's History panel follows the record's area, not System health (where the whole trail lives).
+  r = await call(S, 'GET', `/api/audit?entityTable=guests&entityId=${ids.guests}`);
+  check('operations staff see a guest record\'s history', r.status === 200, `${r.status} ${r.text.slice(0, 120)}`);
+  r = await call(S, 'GET', '/api/audit');
+  check('operations staff cannot read the whole audit trail', r.status === 403, `${r.status}`);
+
   // Nobody can raise their own role or level.
   r = await call(USERS.operations_manager, 'PATCH', `/api/users/${USERS.operations_manager.id}`, { role: 'management' });
   check('an operations manager cannot make themselves management', r.status === 403, `${r.status}`);
