@@ -171,7 +171,7 @@ function BillDrawer({ openDos, canWrite, onClose, onCreated }: { openDos: OpenDo
               empty={{ title: 'This delivery order has no lines.' }} />
           </div>
         )}
-        <div className="grid grid-cols-2 gap-5">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           <Field label="Notes" placeholder="Optional" value={notes} onChange={e => setNotes(e.target.value)} />
           <div className="flex flex-col gap-1.5 items-end justify-end">
             <div className="flex gap-8 text-[13px]"><span className="text-muted-ink">Subtotal</span><span className="tabular-nums w-[120px] text-right">{rm(subtotal)}</span></div>

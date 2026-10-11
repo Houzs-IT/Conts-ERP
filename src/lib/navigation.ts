@@ -164,7 +164,7 @@ export function areaOfPath(path: string): string | null {
     const child = it.children?.find(c => c.path === path);
     if (child) return areaOfChild(it, child);
   }
-  return null;
+  return SUPPLY_OFF_MENU[path]?.[2] ?? null;
 }
 
 export function navFor(role: UserRole, engine = false, access?: Record<string, AccessLevel>): NavGroup[] {
@@ -181,24 +181,25 @@ export function navFor(role: UserRole, engine = false, access?: Record<string, A
 
 /** Supply chain screens the owner took out of the sidebar (25 Sep 2026) that are still reachable by address.
  *  They keep the supply chain sidebar and a proper breadcrumb instead of flipping to Rental under "Home". */
-const SUPPLY_OFF_MENU: Record<string, [group: string, label: string]> = {
-  '/sales/customers': ['Sales order', 'Customers'],
-  '/sales/unbilled': ['Sales order', 'Unbilled deliveries'],
-  '/procurement/categories': ['Procurement', 'Categories'],
-  '/procurement/product-models': ['Procurement', 'Product models'],
-  '/procurement/payment-vouchers': ['Procurement', 'Payment vouchers'],
-  '/furniture/fabrics': ['Procurement', 'Fabric library'],
-  '/transport/drivers': ['Transportation', 'Drivers'],
-  '/transport/driver-leave': ['Transportation', 'Driver leave'],
-  '/transport/vehicles': ['Transportation', 'Vehicles'],
-  '/transport/fleet-health': ['Transportation', 'Fleet health'],
-  '/transport/coverage': ['Transportation', 'Coverage & fleet'],
-  '/transport/3pl': ['Transportation', '3PL companies'],
-  '/transport/zones': ['Transportation', 'Delivery zones'],
-  '/transport/residence-rules': ['Transportation', 'Residence rules'],
-  '/transport/rate-cards': ['Transportation', 'Carriers & rates'],
-  '/accounting': ['Accounting', 'Payables & receivables'],
-  '/accounting/credit-notes': ['Accounting', 'Credit / debit notes'],
+const SUPPLY_OFF_MENU: Record<string, [group: string, label: string, area: string]> = {
+  '/sales/customers': ['Sales order', 'Customers', 'scSales'],
+  '/sales/unbilled': ['Sales order', 'Unbilled deliveries', 'scInvoices'],
+  '/procurement/categories': ['Procurement', 'Categories', 'scProcurement'],
+  '/procurement/product-models': ['Procurement', 'Product models', 'scProcurement'],
+  '/procurement/payment-vouchers': ['Procurement', 'Payment vouchers', 'scInvoices'],
+  '/furniture/fabrics': ['Procurement', 'Fabric library', 'scProcurement'],
+  '/transport/drivers': ['Transportation', 'Drivers', 'scTransportPlan'],
+  '/transport/driver-leave': ['Transportation', 'Driver leave', 'scTransportPlan'],
+  '/transport/vehicles': ['Transportation', 'Vehicles', 'scTransportPlan'],
+  '/transport/fleet-health': ['Transportation', 'Fleet health', 'scTransportPlan'],
+  '/transport/coverage': ['Transportation', 'Coverage & fleet', 'scTransportPlan'],
+  '/transport/3pl': ['Transportation', '3PL companies', 'scTransportPlan'],
+  '/transport/zones': ['Transportation', 'Delivery zones', 'scTransportPlan'],
+  '/transport/residence-rules': ['Transportation', 'Residence rules', 'scTransportPlan'],
+  '/transport/rate-cards': ['Transportation', 'Carriers & rates', 'scTransportPlan'],
+  // The server keeps these money screens to finance roles (MONEY_ONLY in functions/api/_middleware.ts).
+  '/accounting': ['Accounting', 'Payables & receivables', 'scInvoices'],
+  '/accounting/credit-notes': ['Accounting', 'Credit / debit notes', 'scInvoices'],
 };
 
 /** Which workspace an address belongs to; addresses outside the menu (records, profile) stay where they are. */

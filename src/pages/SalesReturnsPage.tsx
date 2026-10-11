@@ -204,7 +204,7 @@ function ReturnDrawer({ openDos, canWrite, onClose, onCreated }: { openDos: Open
           </div>
         )}
 
-        <div className="grid grid-cols-2 gap-5">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           <Field label="Notes" placeholder="Optional" value={notes} onChange={e => setNotes(e.target.value)} />
           <div className="flex items-end justify-end"><div className="flex gap-8 text-[15px] font-semibold"><span>Refund value</span><span className="tabular-nums w-[120px] text-right">{rm(refund)}</span></div></div>
         </div>

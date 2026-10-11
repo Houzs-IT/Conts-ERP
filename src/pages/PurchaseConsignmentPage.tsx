@@ -192,7 +192,7 @@ function PcDrawer({ pc, isNew, suppliers, warehouses, canWrite, onClose, onSave,
           </div>
           {editable && <div><Button size="sm" variant="secondary" icon={<Plus size={15} strokeWidth={1.75} />} onClick={() => setLines(ls => [...ls, blankLine()])}>Add line</Button></div>}
         </div>
-        <div className="grid grid-cols-2 gap-5">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           <Field label="Notes" placeholder="Optional" value={h.notes} onChange={setHf('notes')} disabled={!editable} />
           <div className="flex flex-col gap-1.5 items-end justify-end">
             <div className="flex gap-8 text-[13px]"><span className="text-muted-ink">Subtotal</span><span className="tabular-nums w-[110px] text-right">{rm(subtotal)}</span></div>
