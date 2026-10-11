@@ -1,5 +1,5 @@
 import { mayWork } from '../../_lib/access';
-import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/db';
+import { type Env, all, one, run, json, fail, audit, nowIso, mytToday } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
 import { resolveUnit } from '../../_lib/ops';
 import { checkSen, checkDate, invalid, type Fields } from '../../_lib/validate';
@@ -61,7 +61,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     INSERT INTO inventory_items (id, unit_id, name, category, quantity, condition, supplied_in_house, purchase_cost, installed_on, last_checked, replace_by, notes, created_at)
     VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)`,
     id, unit.id, b.name.trim(), b.category ?? 'furniture', String(b.quantity ?? '1'), b.condition ?? 'good',
-    b.purchaseCost ?? null, b.installedOn ?? null, nowIso().slice(0, 10), b.replaceBy ?? null, String(b.notes ?? '').slice(0, 500), nowIso());
+    b.purchaseCost ?? null, b.installedOn ?? null, mytToday(), b.replaceBy ?? null, String(b.notes ?? '').slice(0, 500), nowIso());
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'inventory.create', entityTable: 'inventory_items', entityId: id, after: { unitId: unit.id, name: b.name } });
   return json({ id }, 201);
 };
@@ -84,7 +84,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env }) => {
   await run(env, `
     UPDATE inventory_items SET condition = COALESCE(?, condition), notes = COALESCE(?, notes), replace_by = COALESCE(?, replace_by),
                                quantity = COALESCE(?, quantity), last_checked = ? WHERE id = ?`,
-    b.condition ?? null, typeof b.notes === 'string' ? b.notes.slice(0, 500) : null, b.replaceBy ?? null, b.quantity ?? null, nowIso().slice(0, 10), b.id);
+    b.condition ?? null, typeof b.notes === 'string' ? b.notes.slice(0, 500) : null, b.replaceBy ?? null, b.quantity ?? null, mytToday(), b.id);
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: b.condition ? 'inventory.condition_change' : 'inventory.update', entityTable: 'inventory_items', entityId: b.id, before: { condition: cur.condition }, after: { condition: b.condition ?? cur.condition } });
   return json({ ok: true });
 };

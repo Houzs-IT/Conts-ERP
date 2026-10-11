@@ -1,6 +1,6 @@
-import { type Env, one, run, json, fail, audit, nowIso } from '../../../_lib/db';
+import { type Env, one, json, fail, audit, nowIso } from '../../../_lib/db';
 import { requireSession, isFieldRole } from '../../../_lib/auth';
-import { findClash, clashResponseBody } from '../../../_lib/reservations';
+import { findClash, clashResponseBody, withUnitLock } from '../../../_lib/reservations';
 import { syncAvailabilityIfLinked, channexMappingFor } from '../../../_lib/channexSync';
 import { channexConfigured } from '../../../_lib/channex';
 import { dayLabel } from '../../../_lib/bookingLifecycle';
@@ -57,7 +57,16 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   }
 
   const now = nowIso();
-  await run(env, 'UPDATE reservations SET check_in = ?, check_out = ?, gross_booking_value = COALESCE(?, gross_booking_value), updated_at = ? WHERE id = ?', b.checkIn, b.checkOut, gross, now, id);
+  // Checked again under the unit's lock, and written only if the booking is still as it was read above.
+  const saved = await withUnitLock(env, cur.unit_id, async tx => {
+    const again = await findClash(tx, cur.unit_id, b.checkIn, b.checkOut, id);
+    if (again) return { clash: again, moved: false };
+    const row = await one(tx, 'UPDATE reservations SET check_in = ?, check_out = ?, gross_booking_value = COALESCE(?, gross_booking_value), updated_at = ? WHERE id = ? AND state = ? AND check_in = ? AND check_out = ? RETURNING id',
+      b.checkIn, b.checkOut, gross, now, id, cur.state, cur.check_in, cur.check_out);
+    return { clash: null, moved: !!row };
+  });
+  if (saved.clash) return json(clashResponseBody(saved.clash), 409);
+  if (!saved.moved) return fail('CONFLICT', 'This booking changed while you were looking at it. Refresh and try again.', 409);
   await audit(env, {
     actorId: session.userId, actorLabel: session.fullName, action: 'reservation.dates', entityTable: 'reservations', entityId: id,
     before: { checkIn: cur.check_in, checkOut: cur.check_out, ...(gross != null ? { grossBookingValue: Number(cur.gross_booking_value) } : {}) },

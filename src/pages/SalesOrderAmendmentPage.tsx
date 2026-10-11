@@ -11,7 +11,7 @@ import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
-import { rm, date } from '../lib/format';
+import { rm, date, todayMyt } from '../lib/format';
 import { TONE, cx } from '../lib/design-tokens';
 import { StatusBadge } from '../components/StatusBadge';
 import { statusLabel } from '../lib/status';
@@ -134,7 +134,7 @@ function NewDrawer({ openSos, canWrite, onClose, onCreated }: { openSos: OpenSo[
       newQty: r.remove ? 0 : r.newQty ?? 0, newUnitPriceSen: r.remove ? r.line.unitPriceSen : r.newPriceSen ?? 0,
     }));
     api.post('/so-amendments', { salesOrderId: soId, reason, lines }).catch(notifyFailure);
-    onCreated({ id: `amd-new-${crypto.randomUUID().slice(0, 8)}`, amendmentNo: `AMD-${new Date().getFullYear()}-NEW`, salesOrderId: soId, soDocNo: so?.docNo ?? '', customerName: so?.customerName ?? '', status: 'REQUESTED', reason, appliedAt: '' });
+    onCreated({ id: `amd-new-${crypto.randomUUID().slice(0, 8)}`, amendmentNo: `AMD-${todayMyt().slice(0, 4)}-NEW`, salesOrderId: soId, soDocNo: so?.docNo ?? '', customerName: so?.customerName ?? '', status: 'REQUESTED', reason, appliedAt: '' });
   }
 
   return (

@@ -4,6 +4,7 @@ import { doorFor, doorRefusal } from '../_lib/door';
 import { accessFor, refusalFor } from '../_lib/access';
 import { flushWhenQuiet, FLUSH_DELAY_MS } from '../_lib/channexQueue';
 import { twoStepSetupDue } from '../_lib/signIn';
+import { overLimit } from '../_lib/textLimits';
 
 /**
  * Runs before every /api endpoint. Most endpoints only check that someone is signed
@@ -22,6 +23,34 @@ const OWNER_ALLOWED: [string, RegExp][] = [
   // The Owner Income Report: the handler resolves the owner from the session (ownerFor) and shows only their final statements.
   ['GET', /^\/api\/statements\/[^/]+\/report$/],
   ['POST', /^\/api\/maintenance\/issues\/[^/]+\/approve$/],
+  // A file staff marked visible to the owner (their contract); the handler checks it is theirs.
+  ['GET', /^\/api\/documents\/[^/]+\/download$/],
+];
+
+/**
+ * Housekeepers and technicians work from the field app (FieldTodayPage): today's jobs, start, checklist,
+ * photos, done, report damage. They are deny-by-default like owners, so a desk endpoint that only checks for
+ * a signed-in user (units, search, portfolio revenue, owner documents) is never theirs by accident. Each
+ * handler below still checks the job is assigned to them.
+ */
+const FIELD_ALLOWED: [string, RegExp][] = [
+  ['GET', /^\/api\/auth\/session$/],
+  ['POST', /^\/api\/auth\/logout$/],
+  ['POST', /^\/api\/auth\/change-password$/],
+  ['GET', /^\/api\/account$/],
+  ['POST', /^\/api\/account\/[a-z0-9/-]+$/],
+  ['GET', /^\/api\/notifications(\/count)?$/],
+  ['PATCH', /^\/api\/notifications$/],
+  ['GET', /^\/api\/field\/tasks$/],
+  ['GET', /^\/api\/housekeeping\/tasks\/[^/]+(\/checklist|\/photos)?$/],
+  ['POST', /^\/api\/housekeeping\/tasks\/[^/]+\/(checklist|start)$/],
+  ['POST', /^\/api\/housekeeping\/guest-left$/],
+  ['POST', /^\/api\/tasks\/[^/]+\/(complete|photos)$/],
+  ['POST', /^\/api\/maintenance\/issues$/],
+  ['POST', /^\/api\/maintenance\/issues\/[^/]+\/photos$/],
+  ['GET', /^\/api\/documents\/[^/]+\/download$/],
+  // The history of their own cleans and repairs (functions/api/audit/index.ts limits it to those).
+  ['GET', /^\/api\/audit$/],
 ];
 
 /** Supply chain endpoints only check for a signed-in user, and carry prices and costs;
@@ -84,12 +113,21 @@ const handle: PagesFunction<Env> = async ({ request, env, next, waitUntil }) => 
   if (isFieldRole(session.role) && SUPPLY_CHAIN.test(path)) {
     return fail('FORBIDDEN', 'Your account does not have access to supply chain records.', 403);
   }
-  // A level management chose on Users and roles > Permissions replaces the built-in rule for that area.
-  const access = await accessFor(env, session.role, path);
+  if (isFieldRole(session.role) && !FIELD_ALLOWED.some(([m, re]) => m === request.method && re.test(path))) {
+    return fail('FORBIDDEN', 'This is not available in the field app.', 403);
+  }
+  // The level on Users and roles > Permissions (chosen by management, or the built-in one it shows).
+  const access = await accessFor(env, session.role, path, request.method);
   const refused = refusalFor(access, request.method);
   if (refused) return fail('FORBIDDEN', refused, 403);
   if (MONEY_ONLY.test(path) && !(access.chosen ? access.level !== 'none' : canSeeFinance(session.role))) {
     return fail('FORBIDDEN', 'Only finance and management can see invoices and payments.', 403);
+  }
+
+  if (request.method !== 'GET' && (request.headers.get('content-type') ?? '').includes('application/json')) {
+    const body = await forward.clone().json().catch(() => undefined);
+    const over = overLimit(body);
+    if (over) return fail('VALIDATION', over.message, 422, { [over.field]: over.message });
   }
 
   const response = await next(forward);
@@ -116,6 +154,9 @@ export const onRequest: PagesFunction<Env> = async (ctx) => {
     return await handle(ctx);
   } catch (e) {
     console.error('Unhandled error', ctx.request.method, new URL(ctx.request.url).pathname, e);
-    return fail('INTERNAL', 'Something went wrong on our side and nothing was saved. Try again; if it keeps happening, tell IT.', 500);
+    // A write may have saved part of its work before it failed, so it does not claim "nothing was saved" (a person who
+    // believes that and presses again can make a second copy). A read saved nothing.
+    if (ctx.request.method === 'GET') return fail('INTERNAL', 'Something went wrong on our side and this could not load. Try again; if it keeps happening, tell IT.', 500);
+    return fail('INTERNAL', 'Something went wrong on our side. Refresh the page to see whether the change was saved before trying again; if it keeps happening, tell IT.', 500);
   }
 };

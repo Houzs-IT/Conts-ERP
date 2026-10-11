@@ -1,4 +1,4 @@
-import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/db';
+import { type Env, all, one, run, json, fail, nowIso, audit, mytToday } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { normalizeLines, nextStatus, toSoHeaderPayload, toSoLinePayload, type SoHeaderRow, type SoLineRow } from '../../_lib/sales-orders';
 import { strOrNull, intOrNull, genId } from '../../_lib/scm-util';
@@ -82,7 +82,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   if (b.customerName !== undefined) { const n = String(b.customerName).trim(); if (!n) return fail('VALIDATION', 'Enter a customer name.', 422, { customerName: 'Enter a customer name.' }); sets.push('customer_name = ?'); args.push(n); }
   if (b.customerPhone !== undefined) { sets.push('customer_phone = ?'); args.push(strOrNull(b.customerPhone)); }
   if (b.customerPo !== undefined) { sets.push('customer_po = ?'); args.push(strOrNull(b.customerPo)); }
-  if (b.soDate !== undefined) { sets.push('so_date = ?'); args.push(strOrNull(b.soDate) ?? now.slice(0, 10)); }
+  if (b.soDate !== undefined) { sets.push('so_date = ?'); args.push(strOrNull(b.soDate) ?? mytToday()); }
   if (b.targetDate !== undefined) { sets.push('target_date = ?'); args.push(strOrNull(b.targetDate)); }
   if (b.depositSen !== undefined) { sets.push('deposit_sen = ?'); args.push(Math.max(0, intOrNull(b.depositSen) ?? 0)); }
   if (b.notes !== undefined) { sets.push('notes = ?'); args.push(strOrNull(b.notes)); }

@@ -1,6 +1,16 @@
-import { type Env, one, run, audit } from './db';
+import { type Env, one, run, audit, transaction } from './db';
 import { syncAvailabilityIfLinked, channexMappingFor } from './channexSync';
 import { channexConfigured } from './channex';
+
+/** Runs `fn` in one transaction holding the unit's stay lock until it commits. Every path that checks a unit's nights
+ *  (findClash) and then writes a stay goes through here, so two requests for the same unit take turns: without it, ten
+ *  simultaneous bookings for the same nights saved two (11 Oct 2026). Queries inside `fn` must use its `tx`. */
+export function withUnitLock<T>(env: Env, unitId: string, fn: (tx: Env) => Promise<T>): Promise<T> {
+  return transaction(env, async tx => {
+    await one(tx, 'SELECT 1 AS x FROM (SELECT pg_advisory_xact_lock(hashtext(?::text))) l', `unit-stay:${unitId}`);
+    return fn(tx);
+  });
+}
 
 /** The reservation that already holds any of these nights on the unit, or null.
  *  Check-out day is free. Cancelled, no-show and inquiry rows do not hold dates. */

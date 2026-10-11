@@ -1,4 +1,4 @@
-import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/db';
+import { type Env, all, one, run, json, fail, nowIso, audit, mytToday } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { nextDoStatus, maybeMarkSoDelivered, toDoHeaderPayload, toDoLinePayload, type DoHeaderRow, type DoLineRow } from '../../_lib/delivery-orders';
 import { postStockMovement } from '../../_lib/stock-ops';
@@ -51,7 +51,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     for (const l of lines) {
       if (l.sales_order_line_id) await run(env, 'UPDATE sales_order_lines SET delivered_qty = GREATEST(0, delivered_qty - ?) WHERE id = ?', l.qty, l.sales_order_line_id);
       // Return the stock this DO issued out of the dispatch warehouse.
-      if (cur.warehouse_id && l.qty > 0) await postStockMovement(env, { itemCode: l.item_code, warehouseId: cur.warehouse_id, qtyDelta: l.qty, movementType: 'ISSUE', refType: 'DO-REV', refId: id, note: `${cur.do_number} cancelled`, movedAt: now.slice(0, 10), createdBy: session.userId });
+      if (cur.warehouse_id && l.qty > 0) await postStockMovement(env, { itemCode: l.item_code, warehouseId: cur.warehouse_id, qtyDelta: l.qty, movementType: 'ISSUE', refType: 'DO-REV', refId: id, note: `${cur.do_number} cancelled`, movedAt: mytToday(), createdBy: session.userId });
     }
     await run(env, 'UPDATE delivery_orders SET status = ?, cancelled_at = ?, updated_at = ? WHERE id = ?', 'CANCELLED', now, now, id);
     await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'delivery_order.cancel', entityTable: 'delivery_orders', entityId: id });

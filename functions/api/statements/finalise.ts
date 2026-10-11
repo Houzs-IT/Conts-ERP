@@ -1,4 +1,5 @@
-import { type Env, all, run, json, fail, audit, nowIso } from '../../_lib/db';
+import { type Env, all, run, json, fail, nowIso } from '../../_lib/db';
+import { auditMany } from '../../_lib/history';
 import { requireSession } from '../../_lib/auth';
 
 /** POST /api/statements/finalise { statementIds } — provisional → finalised. From then on the figures are frozen, owners can see them, and they can be sent.
@@ -16,9 +17,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const failed = b.statementIds.filter(id => !ok.some(r => r.id === id)).map(id => ({ id, reason: rows.find(r => r.id === id) ? 'Only a provisional statement can be finalised.' : 'That statement no longer exists.' }));
 
   const now = nowIso();
-  for (const r of ok) {
-    await run(env, "UPDATE owner_statements SET state = 'finalised', finalised_at = ? WHERE id = ? AND state = 'provisional'", now, r.id);
-    await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'statement.finalise', entityTable: 'owner_statements', entityId: r.id, before: { state: 'provisional' }, after: { state: 'finalised' } });
+  // Two writes for the whole selection, not two per statement: a month is about 100 owners.
+  if (ok.length) {
+    const ids = JSON.stringify(ok.map(r => r.id));
+    await run(env, "UPDATE owner_statements SET state = 'finalised', finalised_at = ? WHERE id IN (SELECT jsonb_array_elements_text(?::text::jsonb)) AND state = 'provisional'", now, ids);
+    await auditMany(env, ok.map(r => ({ actorId: session.userId, actorLabel: session.fullName, action: 'statement.finalise', entityTable: 'owner_statements', entityId: r.id, before: { state: 'provisional' }, after: { state: 'finalised' } })));
   }
   return json({ finalised: ok.length, failed });
 };

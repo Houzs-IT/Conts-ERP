@@ -6,6 +6,8 @@ import { accessFor, canManage, refusalFor } from '../../_lib/access';
 /** A unit counts as on a booking site if it had a booking from it within this many days. */
 const CHANNEL_LOOKBACK_DAYS = 180;
 
+const MAX_CALENDAR_DAYS = 92;
+
 /** GET /api/reservations/calendar?from=&to=[&property=] — units, bookings and blocks over the window, plus rates.
  *  With `property` (a building id) only that building's units come back; `buildings` always lists every
  *  building with its unit count, for the building filter. */
@@ -18,6 +20,11 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const from = url.searchParams.get('from') ?? new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);
   const to = url.searchParams.get('to') ?? from;
   const property = url.searchParams.get('property') || null;
+  // The board shows 30 nights. A window is capped so one request cannot pull every booking and rate of every unit
+  // for years (a year was 1.35 MB and 8 queries over the whole table; at Workers' limits that is the 503 Houzs hit).
+  const ymd = /^\d{4}-\d{2}-\d{2}$/;
+  if (!ymd.test(from) || !ymd.test(to) || to < from) return fail('VALIDATION', 'Pick a start and end date, the end on or after the start.', 422);
+  if ((Date.parse(to) - Date.parse(from)) / 864e5 + 1 > MAX_CALENDAR_DAYS) return fail('VALIDATION', `Show at most ${MAX_CALENDAR_DAYS} days at a time.`, 422);
 
   const [allUnits, onChannel, connected] = await Promise.all([
     all<any>(env, `

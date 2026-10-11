@@ -1,6 +1,6 @@
 import { type Env, one, all, run, audit, nowIso } from './db';
 import type { Session } from './auth';
-import { findClash, clashResponseBody } from './reservations';
+import { findClash, clashResponseBody, withUnitLock } from './reservations';
 import { channexConfigured } from './channex';
 import { channexMappingFor, syncAvailabilityIfLinked } from './channexSync';
 import { bookingNotice } from './notices';
@@ -168,13 +168,21 @@ export async function applyMove(env: Env, session: Session & { manage?: boolean 
   if ((target === 'cancelled' || target === 'no_show') && !why) {
     return refuse(422, 'VALIDATION', target === 'cancelled' ? 'Give a reason for the cancellation.' : 'Give a reason for the no-show.');
   }
-  if (target === 'confirmed' && (cur.state === 'cancelled' || cur.state === 'no_show')) {
-    const clash = await findClash(env, cur.unit_id, cur.check_in, cur.check_out, id);
-    if (clash) return { status: 409, body: clashResponseBody(clash) };
-  }
-
   const now = nowIso();
-  await run(env, 'UPDATE reservations SET state = ?, updated_at = ? WHERE id = ?', target, now, id);
+  // Written only if the booking is still in the state read above: two people (or a double click) moving the same booking
+  // at once used to both pass and both apply their side effects. A reinstated stay takes its nights back, so it is
+  // checked and written under the unit's lock (withUnitLock).
+  const reinstate = target === 'confirmed' && (cur.state === 'cancelled' || cur.state === 'no_show');
+  const write = async (tx: Env) => {
+    if (reinstate) {
+      const clash = await findClash(tx, cur.unit_id, cur.check_in, cur.check_out, id);
+      if (clash) return { status: 409, body: clashResponseBody(clash) } as Refusal;
+    }
+    const row = await one(tx, 'UPDATE reservations SET state = ?, updated_at = ? WHERE id = ? AND state = ? RETURNING id', target, now, id, cur.state);
+    return row ? null : refuse(409, 'CONFLICT', 'This booking changed while you were looking at it. Refresh and try again.');
+  };
+  const refused = reinstate ? await withUnitLock(env, cur.unit_id, write) : await write(env);
+  if (refused) return refused;
   const effects: MoveResult['effects'] = { ...noEffects };
 
   // Side effects. Each is wrapped: the status change is already saved and must not be reported as failed.

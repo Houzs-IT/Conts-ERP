@@ -1,4 +1,4 @@
-import { type Env, one, all, run } from './db';
+import { type Env, one, all, run, mytToday } from './db';
 import { enqueueAvailability, enqueueRestrictions } from './channexQueue';
 import { channexCreateRatePlan } from './channex';
 import { OTA_CHANNELS, standardRate, type SalesChannel } from './channelPrice';
@@ -36,7 +36,7 @@ export async function ensureOtaRatePlans(env: Env, unitId: string): Promise<Chan
 
   const u = await one<{ base_rate: number; weekend_rate: number | null; max_guests: number }>(env, 'SELECT base_rate, weekend_rate, max_guests FROM units WHERE id = ?', unitId);
   const uplifts = await all<{ channel: string; uplift: number }>(env, 'SELECT channel, uplift FROM channel_uplifts WHERE unit_id = ?', unitId);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = mytToday();
   for (const channel of missing) {
     const res = await channexCreateRatePlan(env, {
       propertyId: m.propertyId, roomTypeId: m.roomTypeId, maxGuests: Math.max(1, Number(u?.max_guests) || 2),

@@ -22,7 +22,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!b.threadId && !reservationId && b.taskId) {
     const t = await one<{ id: string }>(env, `
       SELECT r.id FROM tasks k JOIN reservations r ON r.unit_id = k.unit_id
-      WHERE k.id = ? AND r.state IN ('confirmed','pending','checked_in') AND r.channel NOT IN ('maintenance_block','owner_stay') AND r.check_out >= to_char(now(), 'YYYY-MM-DD')
+      WHERE k.id = ? AND r.state IN ('confirmed','pending','checked_in') AND r.channel NOT IN ('maintenance_block','owner_stay') AND r.check_out >= to_char(now() AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM-DD')
       ORDER BY r.check_in LIMIT 1`, String(b.taskId));
     reservationId = t?.id ?? null;
   }

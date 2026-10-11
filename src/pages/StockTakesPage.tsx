@@ -11,7 +11,7 @@ import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
-import { date } from '../lib/format';
+import { date, todayMyt } from '../lib/format';
 import { cx } from '../lib/design-tokens';
 import { StatusBadge } from '../components/StatusBadge';
 
@@ -73,7 +73,7 @@ export default function StockTakesPage() {
 
 function CreateDrawer({ warehouses, canWrite, onClose, onCreated }: { warehouses: Opt[]; canWrite: boolean; onClose: () => void; onCreated: (k: Take) => void }) {
   const [warehouseId, setWarehouseId] = useState(warehouses[0]?.id ?? '');
-  const [takeDate, setTakeDate] = useState(new Date().toISOString().slice(0, 10));
+  const [takeDate, setTakeDate] = useState(todayMyt());
   const [notes, setNotes] = useState('');
   const [items, setItems] = useState<{ itemCode: string; description: string }[]>([{ itemCode: '', description: '' }]);
   const setItem = (i: number, k: 'itemCode' | 'description', v: string) => setItems(is => is.map((x, j) => j === i ? { ...x, [k]: v } : x));
@@ -87,7 +87,7 @@ function CreateDrawer({ warehouses, canWrite, onClose, onCreated }: { warehouses
     if (!takeDate) return;
     const b = built();
     api.post('/stock-takes', { warehouseId, takeDate, notes, lines: b }).catch(notifyFailure);
-    onCreated({ id: `stk-new-${crypto.randomUUID().slice(0, 8)}`, takeNumber: `STK-${new Date().getFullYear()}-NEW`, warehouseName: warehouses.find(w => w.id === warehouseId)?.name ?? '', warehouseId, takeDate, status: 'OPEN', notes, lines: b.map(i => ({ itemCode: i.itemCode, description: i.description, systemQty: 0, countedQty: null, variance: null })) });
+    onCreated({ id: `stk-new-${crypto.randomUUID().slice(0, 8)}`, takeNumber: `STK-${todayMyt().slice(0, 4)}-NEW`, warehouseName: warehouses.find(w => w.id === warehouseId)?.name ?? '', warehouseId, takeDate, status: 'OPEN', notes, lines: b.map(i => ({ itemCode: i.itemCode, description: i.description, systemQty: 0, countedQty: null, variance: null })) });
   }
 
   return (
