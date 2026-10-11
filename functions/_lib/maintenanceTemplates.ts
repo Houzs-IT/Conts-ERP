@@ -146,10 +146,12 @@ export async function applyTemplate(env: Env, issueId: string, templateId: strin
     SELECT ? || '-' || row_number() OVER (ORDER BY s.sort_order, s.id), ?, 't-' || row_number() OVER (ORDER BY s.sort_order, s.id), s.label,
            row_number() OVER (ORDER BY s.sort_order, s.id), ?
     FROM maintenance_template_steps s WHERE s.template_id = ?`, issueId, issueId, now, templateId);
+  // Planned from the template; the quantity used (and charged) is recorded on the job.
   await run(env, `
-    INSERT INTO maintenance_issue_parts (id, issue_id, sku_id, planned_qty, used_qty, updated_by, updated_at)
-    SELECT ? || '-' || p.sku_id, ?, p.sku_id, p.qty, 0, ?, ? FROM maintenance_template_parts p WHERE p.template_id = ?`,
-    issueId, issueId, by, now, templateId);
+    INSERT INTO maintenance_issue_lines (id, issue_id, sku_id, description, uom, unit_price, planned_qty, qty, created_by, created_at, updated_by, updated_at)
+    SELECT ? || '-' || p.sku_id, ?, p.sku_id, s.name, s.unit_label, s.default_price, p.qty, 0, ?, ?, ?, ?
+    FROM maintenance_template_parts p JOIN maintenance_skus s ON s.id = p.sku_id WHERE p.template_id = ?`,
+    issueId, issueId, by, now, by, now, templateId);
 }
 
 /** Whether a field account may work on this repair: it is assigned to their account (or, for adding photos, they reported it). */
@@ -165,16 +167,4 @@ export async function issueChecklist(env: Env, issueId: string): Promise<IssueCh
     SELECT c.item_key, c.label, c.done_at, u.full_name AS done_by FROM maintenance_checklist_items c LEFT JOIN users u ON u.id = c.done_by
     WHERE c.issue_id = ? ORDER BY c.sort_order, c.created_at`, issueId);
   return rows.map(r => ({ key: r.item_key, label: r.label, done: !!r.done_at, doneAt: r.done_at ?? null, doneBy: r.done_by ?? null, custom: r.item_key.startsWith('c-') }));
-}
-
-export interface IssuePart { skuId: string; code: string; name: string; unitLabel: string; trackStock: boolean; stockOnHand: number | null; plannedQty: number; usedQty: number }
-
-export async function issueParts(env: Env, issueId: string): Promise<IssuePart[]> {
-  const rows = await all<any>(env, `
-    SELECT p.sku_id, p.planned_qty, p.used_qty, s.code, s.name, s.unit_label, s.track_stock, s.stock_on_hand
-    FROM maintenance_issue_parts p JOIN maintenance_skus s ON s.id = p.sku_id WHERE p.issue_id = ? ORDER BY s.name`, issueId);
-  return rows.map(r => ({
-    skuId: r.sku_id, code: r.code, name: r.name, unitLabel: r.unit_label, trackStock: !!r.track_stock,
-    stockOnHand: r.track_stock ? Number(r.stock_on_hand) : null, plannedQty: Number(r.planned_qty), usedQty: Number(r.used_qty),
-  }));
 }

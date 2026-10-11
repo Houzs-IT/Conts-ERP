@@ -26,6 +26,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
            (SELECT COUNT(*) FROM documents d WHERE d.maintenance_id = m.id AND d.kind IN ('photo','video')) AS photo_count,
            (SELECT COUNT(*) FROM documents d WHERE d.maintenance_id = m.id AND d.kind NOT IN ('photo','video')) AS document_count,
            (SELECT COALESCE(SUM(e.amount), 0) FROM expenses e WHERE e.maintenance_id = m.id) AS expensed,
+           (SELECT e.id FROM expenses e WHERE e.maintenance_id = m.id AND e.category = 'maintenance' AND e.parent_expense_id IS NULL LIMIT 1) AS expense_id,
+           (SELECT COALESCE(SUM(l.qty * l.unit_price), 0)::int FROM maintenance_issue_lines l WHERE l.issue_id = m.id) AS lines_total,
+           (SELECT COUNT(*)::int FROM maintenance_issue_lines l WHERE l.issue_id = m.id) AS line_count,
            (SELECT COUNT(*)::int FROM maintenance_checklist_items c WHERE c.issue_id = m.id) AS steps,
            (SELECT COUNT(*)::int FROM maintenance_checklist_items c WHERE c.issue_id = m.id AND c.done_at IS NOT NULL) AS steps_done,
            mt.name AS template_name
@@ -61,7 +64,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       windows: windows.get(r.id) ?? [],
       // Amounts are omitted entirely for roles without finance access.
       quotedAmount: money ? r.quoted_amount : null, finalAmount: money ? r.final_amount : null,
-      expensed: money ? Number(r.expensed) : null,
+      expensed: money ? Number(r.expensed) : null, expenseId: money ? r.expense_id ?? null : null,
+      linesTotal: money ? Number(r.lines_total) : null, lineCount: Number(r.line_count), cancelledAt: r.cancelled_at ?? null,
     })),
   });
 };
@@ -142,6 +146,15 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     chargeTo, category, urgency, source, sourceTaskId, vendor, assigneeId ? 'in_house' : vendor ? (b.assigneeKind ?? 'contractor') : null,
     assigneeId, templateId, now, now, now);
   if (templateId) await applyTemplate(env, id, templateId, session.userId);
+  // Photos taken on the clean the damage came from go on the job too (the same files, listed on both).
+  const taskPhotoIds = Array.isArray(b.taskPhotoIds) ? b.taskPhotoIds.filter((x: unknown) => typeof x === 'string').slice(0, 50) : [];
+  if (sourceTaskId && taskPhotoIds.length) {
+    await run(env, `
+      INSERT INTO documents (id, kind, file_name, mime_type, byte_size, storage_key, unit_id, maintenance_id, uploaded_by, captured_at, created_at)
+      SELECT gen_random_uuid()::text, d.kind, 'before-' || d.file_name, d.mime_type, d.byte_size, d.storage_key, d.unit_id, ?, d.uploaded_by, d.captured_at, ?
+      FROM documents d WHERE d.task_id = ? AND d.kind IN ('photo','video') AND d.id IN (SELECT jsonb_array_elements_text(?::text::jsonb))`,
+      id, now, sourceTaskId, JSON.stringify(taskPhotoIds));
+  }
 
   if (b.blocksUnit) await run(env, "UPDATE units SET readiness = 'maintenance', updated_at = ? WHERE id = ?", now, unit.id);
 

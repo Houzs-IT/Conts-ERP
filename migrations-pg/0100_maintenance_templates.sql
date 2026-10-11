@@ -7,10 +7,16 @@
 --                                   estimated_cost  sen, NULL when nobody has priced it
 --                                   archived_at     set instead of deleting a template a job already used
 --   maintenance_template_steps      the template's checklist, in order
---   maintenance_template_parts      the parts it usually needs, from the maintenance catalog, with quantities
+--   maintenance_template_parts      the maintenance items (services and parts) it usually needs, with quantities
 --   maintenance_checklist_items     one job's checklist: copied from the template when the job is opened (so a later
 --                                   edit of the template never rewrites a job in progress), ticked by the technician
---   maintenance_issue_parts         the parts planned for a job (from the template) and the parts the technician used
+--   maintenance_issue_lines         what a job used and costs: an item from the list (sku_id, its name and price copied
+--                                   at the time) or an "Other" line (sku_id NULL, typed description and price).
+--                                   planned_qty comes from the template; qty is what was used and is charged.
+--                                   The job's cost is the sum of qty x unit_price (sen).
+--   maintenance_skus.kind           service | part: the Parts catalog becomes "Maintenance items", codes the owner
+--                                   sets up in advance (e.g. MT-AC-SVC Aircon service) for staff to pick
+--   maintenance_issues.cancelled_at a job called off: closed with no cost, its unit expense taken back
 --   maintenance_issues.assignee_id  the in-house technician's ACCOUNT. vendor_name keeps the name shown; a contractor
 --                                   has a name and no account. The field app and a technician's repair history match
 --                                   on this id, never on the name.
@@ -22,8 +28,9 @@
 -- The 12 starter templates are editable data; no prices and no parts are invented (the catalog is empty today).
 --
 -- REVERSAL:
---   ALTER TABLE maintenance_issues DROP COLUMN assignee_id, DROP COLUMN template_id, DROP COLUMN done_note;
---   DROP TABLE maintenance_issue_parts; DROP TABLE maintenance_checklist_items;
+--   ALTER TABLE maintenance_issues DROP COLUMN assignee_id, DROP COLUMN template_id, DROP COLUMN done_note, DROP COLUMN cancelled_at;
+--   ALTER TABLE maintenance_skus DROP COLUMN kind;
+--   DROP TABLE maintenance_issue_lines; DROP TABLE maintenance_checklist_items;
 --   DROP TABLE maintenance_template_parts; DROP TABLE maintenance_template_steps; DROP TABLE maintenance_templates;
 set local search_path = pos;
 
@@ -63,6 +70,9 @@ CREATE TABLE maintenance_template_parts (
 ALTER TABLE maintenance_issues ADD COLUMN assignee_id TEXT REFERENCES users(id) ON DELETE SET NULL;
 ALTER TABLE maintenance_issues ADD COLUMN template_id TEXT REFERENCES maintenance_templates(id) ON DELETE SET NULL;
 ALTER TABLE maintenance_issues ADD COLUMN done_note   TEXT;
+ALTER TABLE maintenance_issues ADD COLUMN cancelled_at TEXT;
+ALTER TABLE maintenance_skus ADD COLUMN kind TEXT NOT NULL DEFAULT 'service' CHECK (kind IN ('service','part'));
+UPDATE maintenance_skus SET kind = 'part' WHERE track_stock = 1;
 CREATE INDEX maintenance_issues_assignee ON maintenance_issues(assignee_id) WHERE assignee_id IS NOT NULL;
 
 CREATE TABLE maintenance_checklist_items (
@@ -79,16 +89,24 @@ CREATE TABLE maintenance_checklist_items (
 );
 CREATE INDEX maintenance_checklist_items_issue ON maintenance_checklist_items(issue_id);
 
-CREATE TABLE maintenance_issue_parts (
+CREATE TABLE maintenance_issue_lines (
   id          TEXT PRIMARY KEY,
   issue_id    TEXT NOT NULL REFERENCES maintenance_issues(id) ON DELETE CASCADE,
-  sku_id      TEXT NOT NULL REFERENCES maintenance_skus(id) ON DELETE CASCADE,
-  planned_qty INTEGER NOT NULL DEFAULT 0 CHECK (planned_qty >= 0),
-  used_qty    INTEGER NOT NULL DEFAULT 0 CHECK (used_qty >= 0),
+  sku_id      TEXT REFERENCES maintenance_skus(id) ON DELETE RESTRICT,
+  description TEXT NOT NULL CHECK (length(btrim(description)) BETWEEN 1 AND 160),
+  uom         TEXT NOT NULL DEFAULT 'job',
+  unit_price  INTEGER NOT NULL DEFAULT 0 CHECK (unit_price >= 0),
+  planned_qty INTEGER NOT NULL DEFAULT 0 CHECK (planned_qty BETWEEN 0 AND 999),
+  qty         INTEGER NOT NULL DEFAULT 0 CHECK (qty BETWEEN 0 AND 999),
+  created_by  TEXT REFERENCES users(id) ON DELETE SET NULL,
+  created_at  TEXT NOT NULL,
   updated_by  TEXT REFERENCES users(id) ON DELETE SET NULL,
-  updated_at  TEXT NOT NULL,
-  UNIQUE (issue_id, sku_id)
+  updated_at  TEXT NOT NULL
 );
+CREATE INDEX maintenance_issue_lines_issue ON maintenance_issue_lines(issue_id);
+CREATE UNIQUE INDEX maintenance_issue_lines_item_uq ON maintenance_issue_lines(issue_id, sku_id) WHERE sku_id IS NOT NULL;
+-- One maintenance expense per job, so posting the cost again (a re-close, an edited cost) moves it, never doubles it.
+CREATE UNIQUE INDEX expenses_one_per_maintenance_job ON expenses(maintenance_id) WHERE maintenance_id IS NOT NULL AND category = 'maintenance' AND parent_expense_id IS NULL;
 
 ALTER TABLE maintenance_templates OWNER TO pos_app;
 ALTER TABLE maintenance_templates ENABLE ROW LEVEL SECURITY;
@@ -98,8 +116,8 @@ ALTER TABLE maintenance_template_parts OWNER TO pos_app;
 ALTER TABLE maintenance_template_parts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE maintenance_checklist_items OWNER TO pos_app;
 ALTER TABLE maintenance_checklist_items ENABLE ROW LEVEL SECURITY;
-ALTER TABLE maintenance_issue_parts OWNER TO pos_app;
-ALTER TABLE maintenance_issue_parts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE maintenance_issue_lines OWNER TO pos_app;
+ALTER TABLE maintenance_issue_lines ENABLE ROW LEVEL SECURITY;
 
 -- Existing jobs whose name is exactly one active technician's: link the account.
 UPDATE maintenance_issues m SET assignee_id = t.id

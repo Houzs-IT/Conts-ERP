@@ -2,6 +2,7 @@ import { type Env, one, run, json, fail, audit, nowIso } from '../../../_lib/db'
 import { requireSession, isFieldRole } from '../../../_lib/auth';
 import { CATEGORIES, URGENCIES, ASSIGNEE_KINDS, CHARGE_TO, approvalThreshold, needsApproval } from '../../../_lib/maintenance';
 import { repairNotice } from '../../../_lib/notices';
+import { postJobExpense } from '../../../_lib/maintenanceCost';
 
 /** PATCH /api/maintenance/issues/:id — any of:
  *   { assigneeUserId }                           an in-house technician, by account
@@ -23,9 +24,22 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
 
   if (b?.state === 'reopened') {
     if (cur.state !== 'resolved') return fail('CONFLICT', 'Only a finished job can be reopened.', 409);
-    await run(env, `UPDATE maintenance_issues SET state = 'reopened', final_amount = NULL, resolved_at = NULL, updated_at = ? WHERE id = ?`, now, id);
+    // The expense it posted stays until the job is closed again, which moves it to the new cost.
+    await run(env, `UPDATE maintenance_issues SET state = 'reopened', final_amount = NULL, resolved_at = NULL, cancelled_at = NULL, updated_at = ? WHERE id = ?`, now, id);
     await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'maintenance.reopen', entityTable: 'maintenance_issues', entityId: id, before: { state: cur.state }, after: { state: 'reopened' } });
     return json({ ok: true, state: 'reopened' });
+  }
+  // The final cost of a finished job, corrected later: the unit's expense for it moves with it.
+  if (cur.state === 'resolved' && b?.finalAmount !== undefined && !cur.cancelled_at) {
+    if (!session.manage && session.role !== 'operations_manager') return fail('FORBIDDEN', 'Only operations managers, finance and management can change the cost.', 403);
+    if (!Number.isInteger(b.finalAmount) || b.finalAmount < 0 || b.finalAmount > 100_000_000) return fail('VALIDATION', 'Enter the final cost in RM, 0 or more.', 422, { finalAmount: 'Enter the final cost.' });
+    if (b.chargeTo !== undefined && !CHARGE_TO.includes(b.chargeTo)) return fail('VALIDATION', 'Pick who pays.', 422, { chargeTo: 'Pick who pays.' });
+    const chargeTo = b.chargeTo ?? cur.charge_to;
+    const posted = await postJobExpense(env, cur, b.finalAmount, chargeTo, { id: session.userId, label: session.fullName });
+    if (posted === 'locked') return fail('PERIOD_LOCKED', "This month's owner statement is already final, so the cost cannot change.", 409);
+    await run(env, 'UPDATE maintenance_issues SET final_amount = ?, charge_to = ?, updated_at = ? WHERE id = ?', b.finalAmount, chargeTo, now, id);
+    await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'maintenance.cost_edit', entityTable: 'maintenance_issues', entityId: id, before: { finalAmount: cur.final_amount, chargeTo: cur.charge_to }, after: { finalAmount: b.finalAmount, chargeTo, expenseId: posted.expenseId } });
+    return json({ ok: true, state: cur.state, expenseId: posted.expenseId });
   }
   if (cur.state === 'resolved') return fail('CONFLICT', 'That job is finished. Reopen it to change it.', 409);
 

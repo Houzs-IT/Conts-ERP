@@ -29,19 +29,19 @@ export function TemplatesPanel({ money, skus }: { money: boolean; skus: Sku[] })
   const live = all.filter(t => !t.archived).length;
 
   const columns = useMemo<Column<RepairTemplate>[]>(() => [
-    { key: 'name', label: 'Template', value: t => t.name, hideable: false, width: 240, sub: t => t.instructions,
+    { key: 'name', label: 'Template', value: t => t.name, hideable: false, width: 220, sub: t => t.instructions,
       render: t => <span className="font-semibold text-ink">{t.name}</span> },
-    { key: 'category', label: 'Category', value: t => t.category, text: t => CATEGORY[t.category] ?? t.category, width: 120 },
+    { key: 'category', label: 'Category', value: t => t.category, text: t => CATEGORY[t.category] ?? t.category, width: 110 },
     { key: 'urgency', label: 'Urgency', type: 'status', value: t => t.urgency, status: t => (t.urgency === 'urgent' ? { label: 'Urgent', tone: 'critical' } : { label: 'Normal', tone: 'neutral' }), width: 110 },
-    { key: 'who', label: 'Usually done by', value: t => WHO(t), width: 200 },
-    { key: 'steps', label: 'Checklist', type: 'number', value: t => t.steps.length, text: t => plural(t.steps.length, 'step'), width: 110,
+    { key: 'who', label: 'Usually done by', value: t => WHO(t), width: 180 },
+    { key: 'steps', label: 'Checklist', type: 'number', value: t => t.steps.length, text: t => plural(t.steps.length, 'step'), width: 100,
       render: t => <span className="whitespace-nowrap">{plural(t.steps.length, 'step')}</span> },
-    { key: 'parts', label: 'Parts', value: t => t.parts.map(p => `${p.qty} x ${p.name}`).join(', ') || null, width: 200,
+    { key: 'parts', label: 'Parts', value: t => t.parts.map(p => `${p.qty} x ${p.name}`).join(', ') || null, width: 200, hidden: true,
       render: t => (t.parts.length ? <span className="block truncate">{t.parts.map(p => `${p.qty} x ${p.name}`).join(', ')}</span> : <span className="text-faint">None</span>) },
-    ...(money ? [{ key: 'cost', label: 'Estimated cost', type: 'money' as const, value: (t: RepairTemplate) => t.estimatedCost, width: 140 }] : []),
+    ...(money ? [{ key: 'cost', label: 'Estimated cost', type: 'money' as const, value: (t: RepairTemplate) => t.estimatedCost, width: 130 }] : []),
     { key: 'block', label: 'Blocks unit', value: t => (t.blocksUnit ? 'Yes' : 'No'), width: 110, hidden: true },
-    { key: 'used', label: 'Jobs opened', type: 'number', value: t => t.usedCount, width: 120 },
-    { key: 'status', label: 'Status', type: 'status', value: t => (t.archived ? 'archived' : 'live'), status: t => (t.archived ? { label: 'Archived', tone: 'warning' } : { label: 'In use', tone: 'success' }), width: 120 },
+    { key: 'used', label: 'Jobs opened', type: 'number', value: t => t.usedCount, width: 110 },
+    { key: 'status', label: 'Status', type: 'status', value: t => (t.archived ? 'archived' : 'live'), status: t => (t.archived ? { label: 'Archived', tone: 'warning' } : { label: 'In use', tone: 'success' }), width: 110 },
   ], [money]);
 
   return (

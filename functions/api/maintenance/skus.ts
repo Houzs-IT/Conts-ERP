@@ -3,11 +3,13 @@ import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/d
 import { requireSession, isFieldRole } from '../../_lib/auth';
 
 const CATEGORIES = ['plumbing', 'electrical', 'aircon', 'furniture', 'appliance', 'cleaning', 'general', 'other'];
-const UNIT_LABELS = ['job', 'unit', 'hour'];
+const UNIT_LABELS = ['job', 'unit', 'hour', 'visit', 'set', 'metre'];
+const KINDS = ['service', 'part'];
 // Who may maintain the catalog. Same set as inventory master data.
 const WRITE_ROLES = ['management', 'operations_manager', 'operations_staff'];
 
-/** GET /api/maintenance/skus?q=&active= — the repair-item catalog with its preset selling price. */
+/** GET /api/maintenance/skus?q=&active= — the maintenance items (services and parts) the owner sets up in advance, each
+ *  with its code, unit of measure and preset selling price. Staff pick from it on a job; "Other" covers the rest. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
@@ -30,7 +32,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   return json({
     generatedAt: nowIso(),
     data: rows.map(r => ({
-      id: r.id, code: r.code, name: r.name, category: r.category, unitLabel: r.unit_label,
+      id: r.id, code: r.code, name: r.name, kind: r.kind ?? 'service', category: r.category, unitLabel: r.unit_label,
       // The preset price is operational (it seeds a quote), so it is shown to the ops roles
       // that raise jobs, not only to finance.
       defaultPrice: money ? r.default_price : null,
@@ -40,7 +42,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   });
 };
 
-/** POST /api/maintenance/skus { code, name, category, unitLabel, defaultPrice, notes } */
+/** POST /api/maintenance/skus { code, name, kind, category, unitLabel, defaultPrice, notes } */
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
@@ -49,22 +51,24 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const b = await request.json<any>().catch(() => null);
   if (!b?.code?.trim()) return fail('VALIDATION', 'Give the item a short code.', 422, { code: 'Enter a code.' });
   if (!b?.name?.trim()) return fail('VALIDATION', 'Enter the item name.', 422, { name: 'Enter the item name.' });
+  if (b.kind !== undefined && !KINDS.includes(b.kind)) return fail('VALIDATION', 'Service or part.', 422, { kind: 'Service or part.' });
+  if (!/^[A-Za-z0-9][A-Za-z0-9-]{0,39}$/.test(b.code.trim())) return fail('VALIDATION', 'Use letters, numbers and dashes for the code, e.g. MT-AC-SVC.', 422, { code: 'Letters, numbers and dashes, e.g. MT-AC-SVC.' });
   if (b.category !== undefined && !CATEGORIES.includes(b.category)) return fail('VALIDATION', 'Pick a category.', 422, { category: 'Pick a category.' });
   if (b.unitLabel !== undefined && !UNIT_LABELS.includes(b.unitLabel)) return fail('VALIDATION', 'Pick what the price is per.', 422);
   if (b.defaultPrice != null && (!Number.isInteger(b.defaultPrice) || b.defaultPrice < 0)) return fail('VALIDATION', 'The price must be a whole number of sen.', 422, { defaultPrice: 'Enter a price.' });
   if (b.stockOnHand != null && (!Number.isInteger(b.stockOnHand) || b.stockOnHand < 0)) return fail('VALIDATION', 'Stock on hand must be a whole number.', 422, { stockOnHand: 'Enter a whole number.' });
 
-  const code = b.code.trim().slice(0, 40);
+  const code = b.code.trim().toUpperCase().slice(0, 40);
   const clash = await one<any>(env, 'SELECT id FROM maintenance_skus WHERE lower(code) = lower(?)', code);
   if (clash) return fail('CONFLICT', 'A catalog item already uses that code.', 409, { code: 'This code is taken.' });
 
   const track = b.trackStock ? 1 : 0;
   const id = crypto.randomUUID(), now = nowIso();
   await run(env, `
-    INSERT INTO maintenance_skus (id, code, name, category, unit_label, default_price, track_stock, stock_on_hand, active, notes, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`,
-    id, code, b.name.trim().slice(0, 120), b.category ?? 'general', b.unitLabel ?? 'job',
+    INSERT INTO maintenance_skus (id, code, name, kind, category, unit_label, default_price, track_stock, stock_on_hand, active, notes, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`,
+    id, code, b.name.trim().slice(0, 120), b.kind ?? (b.trackStock ? 'part' : 'service'), b.category ?? 'general', b.unitLabel ?? 'job',
     b.defaultPrice ?? 0, track, track ? (b.stockOnHand ?? 0) : 0, String(b.notes ?? '').slice(0, 500) || null, now, now);
-  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'maintenance_sku.create', entityTable: 'maintenance_skus', entityId: id, after: { code, name: b.name, defaultPrice: b.defaultPrice ?? 0 } });
+  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'maintenance_sku.create', entityTable: 'maintenance_skus', entityId: id, after: { code, name: b.name, kind: b.kind ?? (b.trackStock ? 'part' : 'service'), unitLabel: b.unitLabel ?? 'job', defaultPrice: b.defaultPrice ?? 0 } });
   return json({ id }, 201);
 };

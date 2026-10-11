@@ -38,9 +38,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
     moveId, sku.id, id, b.inventoryItemId ?? null, -qty, session.userId, now);
   // The part drawn counts as used on the job, so the technician's parts list matches the store.
   await run(env, `
-    INSERT INTO maintenance_issue_parts (id, issue_id, sku_id, planned_qty, used_qty, updated_by, updated_at) VALUES (?, ?, ?, 0, ?, ?, ?)
-    ON CONFLICT (issue_id, sku_id) DO UPDATE SET used_qty = maintenance_issue_parts.used_qty + EXCLUDED.used_qty, updated_by = EXCLUDED.updated_by, updated_at = EXCLUDED.updated_at`,
-    `${id}-${sku.id}`, id, sku.id, qty, session.userId, now);
+    INSERT INTO maintenance_issue_lines (id, issue_id, sku_id, description, uom, unit_price, planned_qty, qty, created_by, created_at, updated_by, updated_at)
+    SELECT ?, ?, s.id, s.name, s.unit_label, s.default_price, 0, ?, ?, ?, ?, ? FROM maintenance_skus s WHERE s.id = ?
+    ON CONFLICT (issue_id, sku_id) WHERE sku_id IS NOT NULL DO UPDATE SET qty = LEAST(999, maintenance_issue_lines.qty + EXCLUDED.qty), updated_by = EXCLUDED.updated_by, updated_at = EXCLUDED.updated_at`,
+    crypto.randomUUID(), id, qty, session.userId, now, session.userId, now, sku.id);
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'maintenance.exchange', entityTable: 'maintenance_issues', entityId: id, after: { label: sku.name, quantity: qty, stockOnHand: after.stock_on_hand, moveId } });
   return json({ ok: true, stockOnHand: after.stock_on_hand }, 201);
 };

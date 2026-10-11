@@ -3,7 +3,8 @@ import { type Env, one, run, json, fail, audit, nowIso } from '../../../_lib/db'
 import { requireSession } from '../../../_lib/auth';
 
 const CATEGORIES = ['plumbing', 'electrical', 'aircon', 'furniture', 'appliance', 'cleaning', 'general', 'other'];
-const UNIT_LABELS = ['job', 'unit', 'hour'];
+const UNIT_LABELS = ['job', 'unit', 'hour', 'visit', 'set', 'metre'];
+const KINDS = ['service', 'part'];
 const WRITE_ROLES = ['management', 'operations_manager', 'operations_staff'];
 
 /** PATCH /api/maintenance/skus/:id { name?, category?, unitLabel?, defaultPrice?, active?, notes? }
@@ -16,16 +17,18 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   const id = String(params.id);
   const b = await request.json<any>().catch(() => null);
   if (b?.category !== undefined && !CATEGORIES.includes(b.category)) return fail('VALIDATION', 'Pick a category.', 422);
+  if (b?.kind !== undefined && !KINDS.includes(b.kind)) return fail('VALIDATION', 'Service or part.', 422, { kind: 'Service or part.' });
   if (b?.unitLabel !== undefined && !UNIT_LABELS.includes(b.unitLabel)) return fail('VALIDATION', 'Pick what the price is per.', 422);
   if (b?.defaultPrice != null && (!Number.isInteger(b.defaultPrice) || b.defaultPrice < 0)) return fail('VALIDATION', 'The price must be a whole number of sen.', 422, { defaultPrice: 'Enter a price.' });
   if (b?.stockOnHand != null && (!Number.isInteger(b.stockOnHand) || b.stockOnHand < 0)) return fail('VALIDATION', 'Stock on hand must be a whole number.', 422, { stockOnHand: 'Enter a whole number.' });
 
-  const cur = await one<any>(env, 'SELECT id, active, default_price FROM maintenance_skus WHERE id = ?', id);
+  const cur = await one<any>(env, 'SELECT id, name, kind, unit_label, active, default_price FROM maintenance_skus WHERE id = ?', id);
   if (!cur) return fail('NOT_FOUND', 'That catalog item no longer exists.', 404);
 
   await run(env, `
     UPDATE maintenance_skus SET
       name          = COALESCE(?, name),
+      kind          = COALESCE(?, kind),
       category      = COALESCE(?, category),
       unit_label    = COALESCE(?, unit_label),
       default_price = COALESCE(?, default_price),
@@ -36,6 +39,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
       updated_at    = ?
     WHERE id = ?`,
     typeof b?.name === 'string' ? b.name.trim().slice(0, 120) : null,
+    b?.kind ?? null,
     b?.category ?? null,
     b?.unitLabel ?? null,
     b?.defaultPrice ?? null,
@@ -44,6 +48,6 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     typeof b?.active === 'boolean' ? (b.active ? 1 : 0) : null,
     typeof b?.notes === 'string' ? b.notes.slice(0, 500) : null,
     nowIso(), id);
-  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'maintenance_sku.update', entityTable: 'maintenance_skus', entityId: id, before: { active: !!cur.active, defaultPrice: cur.default_price }, after: { active: b?.active ?? !!cur.active, defaultPrice: b?.defaultPrice ?? cur.default_price } });
+  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'maintenance_sku.update', entityTable: 'maintenance_skus', entityId: id, before: { name: cur.name, kind: cur.kind, unitLabel: cur.unit_label, active: !!cur.active, defaultPrice: cur.default_price }, after: { name: b?.name ?? cur.name, kind: b?.kind ?? cur.kind, unitLabel: b?.unitLabel ?? cur.unit_label, active: b?.active ?? !!cur.active, defaultPrice: b?.defaultPrice ?? cur.default_price } });
   return json({ ok: true });
 };
