@@ -1,9 +1,9 @@
 import { type Env, all, one, json, fail } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
-import { stayMonths, metrics, groupBy } from '../../_lib/revenue';
+import { stayMonths, metrics, groupBy, toDate, monthEndExclusive } from '../../_lib/revenue';
 
-/** GET /api/portfolio/performance?period=2026-09 (a month) or ?period=2026-q3 (a quarter, to
- *  today if the quarter isn't over yet) — one row per listed unit. */
+/** GET /api/portfolio/performance?period=2026-09 (a month) or ?period=2026-q3 (a quarter) — one row per listed
+ *  unit. A month or quarter not yet over is counted to date (up to and including today); a finished one whole. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
@@ -22,15 +22,12 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     const startMonth = (q - 1) * 3 + 1; // 1, 4, 7 or 10
     dateFrom = `${y}-${String(startMonth).padStart(2, '0')}-01`;
     const quarterEndExclusive = new Date(Date.UTC(y, startMonth + 2, 1)).toISOString().slice(0, 10); // first day after the quarter
-    const tomorrow = new Date(Date.parse(`${today}T00:00:00Z`) + 864e5).toISOString().slice(0, 10);
-    dateToExclusive = tomorrow < quarterEndExclusive ? tomorrow : quarterEndExclusive; // "to date": stop at today unless the quarter has already ended
-    days = Math.max(1, Math.round((Date.parse(dateToExclusive) - Date.parse(dateFrom)) / 864e5));
+    ({ toExclusive: dateToExclusive, days } = toDate(dateFrom, quarterEndExclusive, today));
     period = `${y}-q${q}`;
   } else if (month) {
-    const y = Number(month[1]), m = Number(month[2]);
+    const y = Number(month[1]);
     dateFrom = `${y}-${month[2]}-01`;
-    dateToExclusive = new Date(Date.UTC(y, m, 1)).toISOString().slice(0, 10);
-    days = new Date(Date.UTC(y, m, 0)).getUTCDate();
+    ({ toExclusive: dateToExclusive, days } = toDate(dateFrom, monthEndExclusive(`${y}-${month[2]}`), today));
     period = `${y}-${month[2]}`;
   } else {
     return fail('VALIDATION', 'Unknown period.', 422);
@@ -45,7 +42,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     JOIN owners o ON o.id = u.owner_id
     WHERE u.is_listed = 1
     ORDER BY p.name, u.unit_number`);
-  // functions/_lib/revenue.ts: gross value and nights split by night into the window (a quarter to date stops today).
+  // functions/_lib/revenue.ts: gross value and nights split by night into the window (a period to date stops today).
   const byUnit = groupBy(await stayMonths(env, dateFrom, dateToExclusive, { listedOnly: true }), r => r.unit_id);
 
   const exception = (r: any) =>

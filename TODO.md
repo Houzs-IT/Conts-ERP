@@ -246,7 +246,6 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 
 ## Open from the money-and-system sweep (fix/sweep-money-system, 11 Oct 2026)
 - Owner to decide: expenses can be added and edited but never deleted (no button, no endpoint). A wrong expense today can only be edited to RM 0.00.
-- Owner to decide: Portfolio "This month" counts every night booked in the whole month, while "Quarter to date" stops at today; the caption now says so. Pick one rule for both.
 - Owner to decide: should finance admins see Users and roles? The list refuses them (functions/api/users), so their built-in access is now none; management can still raise it, and then the page shows "could not load".
 - Imported paid payouts have no paid date (the workbook has none), so Payouts shows "Date not recorded" for 531 of 536.
 - Performance "Management fees" over 12 months only counts Aug 2026: the workbook's 整体报告 breakdown exists for that month alone.

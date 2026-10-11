@@ -23,6 +23,14 @@ export const nightsInWindow = (checkIn: string, checkOut: string, from: string, 
 /** First day after a YYYY-MM month, and its number of days. */
 export const monthEndExclusive = (month: string) => new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 1)).toISOString().slice(0, 10);
 export const daysInMonth = (month: string) => new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0)).getUTCDate();
+/** A period counted to date (owner ruling, 11 Oct 2026): a month or quarter still in progress stops at the end of
+ *  today, so occupancy is nights booked so far over nights available so far; a finished period is counted whole.
+ *  Returns the exclusive end and the days in [from, end). */
+export function toDate(from: string, periodEndExclusive: string, today: string) {
+  const tomorrow = new Date(t(today) + DAY).toISOString().slice(0, 10);
+  const toExclusive = tomorrow > from && tomorrow < periodEndExclusive ? tomorrow : periodEndExclusive;
+  return { toExclusive, days: Math.max(1, nightsBetween(from, toExclusive)) };
+}
 /** The share of a stay's amount that belongs to `nights` of its `total` nights. Not rounded: callers round once. */
 export const prorate = (amount: number, nights: number, total: number) => (total > 0 ? (amount * nights) / total : 0);
 
