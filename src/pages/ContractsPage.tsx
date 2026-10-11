@@ -17,6 +17,7 @@ import { Select } from '../components/Select';
 import { TONE, cx } from '../lib/design-tokens';
 import { useUrlState, usePhone, SearchBox, Chip } from './finance/listKit';
 import { statusOf } from '../lib/status';
+import { MODEL, MODELS, type RevenueModel } from '../lib/revenueModel';
 
 type FeeModel = 'management' | 'grr';
 type ContractState = 'Active' | 'Ending soon' | 'Ended';
@@ -28,6 +29,8 @@ interface Contract {
   unitsLabel: string;
   unitCount?: number;
   model: FeeModel;
+  /** The model the statement uses, and its short terms ("Share 75/20/5, min. RM 3,100"). */
+  revenueModel?: RevenueModel; termsLabel?: string;
   managementFeePct: number;
   grrAmount: number; // integer sen, per month
   startsOn: string;
@@ -68,7 +71,8 @@ const stateOf = (c: Contract): ContractState => {
   return 'Active';
 };
 const feeLabel = (c: Contract) =>
-  c.model === 'grr' ? `GRR ${rm(c.grrAmount, { cents: false })}/mo` : `${c.managementFeePct}% fee`;
+  c.termsLabel ?? (c.model === 'grr' ? `GRR ${rm(c.grrAmount, { cents: false })}/mo` : `${c.managementFeePct}% fee`);
+const modelOf = (c: Contract): RevenueModel => c.revenueModel ?? (c.model === 'grr' ? 'grr' : 'management');
 const inDays = (d: number) => d === 0 ? 'ends today' : d > 0 ? `in ${d} ${d === 1 ? 'day' : 'days'}` : `${-d} ${d === -1 ? 'day' : 'days'} ago`;
 
 type FilterKey = 'all' | 'soon' | 'active' | 'ended';
@@ -114,7 +118,7 @@ export default function ContractsPage() {
       if (filter === 'soon' && s !== 'Ending soon') return false;
       if (filter === 'active' && s !== 'Active') return false;
       if (filter === 'ended' && s !== 'Ended') return false;
-      if (model && r.model !== model) return false;
+      if (model && modelOf(r) !== model) return false;
       return !q || r.ownerName.toLowerCase().includes(q) || r.unitsLabel.toLowerCase().includes(q);
     });
     // Until someone sorts by a column: the next to end first, open-ended after, the ones already ended last (latest first).
@@ -186,7 +190,7 @@ export default function ContractsPage() {
       ) },
     { key: 'units', label: 'Units', value: r => r.unitsLabel, width: 200 },
     { key: 'fee', label: 'Fee model', value: r => feeLabel(r), width: 140, render: r => <span className="text-copy font-medium truncate block" title={feeLabel(r)}>{feeLabel(r)}</span> },
-    { key: 'model', label: 'Model', value: r => (r.model === 'grr' ? 'Guaranteed rent' : 'Management fee'), hidden: true, width: 140, filter: { kind: 'select' } },
+    { key: 'model', label: 'Model', value: r => MODEL[modelOf(r)].label, hidden: true, width: 140, filter: { kind: 'select' } },
     { key: 'feePct', label: 'Management fee %', type: 'number', value: r => (r.model === 'management' ? r.managementFeePct : null), hidden: true, width: 120 },
     { key: 'grr', label: 'Guaranteed rent / month', type: 'money', value: r => (r.model === 'grr' ? r.grrAmount : null), hidden: true, width: 150 },
     { key: 'started', label: 'Started', type: 'date', value: r => r.startsOn, width: 110 },
@@ -247,7 +251,7 @@ export default function ContractsPage() {
         toolbar={<>
           <SearchBox className="flex-1 min-w-[200px]" label="Search contracts" placeholder="Search owner or unit" value={url.get('q')} onChange={v => url.set({ q: v || null, page: null })} />
           <Select className="flex-[1_1_160px] sm:flex-[0_1_180px]" label="Fee model" value={model} onChange={v => url.set({ model: v || null, page: null })}
-            options={[{ value: '', label: 'All fee models' }, { value: 'management', label: 'Management fee' }, { value: 'grr', label: 'Guaranteed rent' }]} />
+            options={[{ value: '', label: 'All fee models' }, ...MODELS.map(m => ({ value: m.key, label: m.label }))]} />
           {phone && (
             <Select className="flex-[1_1_160px]" label="Sort by" value={url.get('sort')} onChange={v => url.set({ sort: v || null, page: null })}
               options={[{ value: '', label: 'Sort: ending soonest' }, { value: 'owner:asc', label: 'Sort: owner A-Z' }, { value: 'started:desc', label: 'Sort: newest first' }]} />
@@ -344,6 +348,8 @@ function ContractModal({ existing, onClose, onSubmit }: { existing?: Contract; o
   const [renewsOn, setRenewsOn] = useState(existing?.renewsOn ?? '');
   const [endsOn, setEndsOn] = useState(existing?.endsOn ?? '');
   const [offerLetter, setOfferLetter] = useState<string | null>(existing?.offerLetter ?? null);
+  // Terms of the other revenue models live on the unit's Contract tab (the server refuses them here).
+  const locked = !!existing && modelOf(existing) !== 'management' && modelOf(existing) !== 'grr';
 
   const canSubmit =
     ownerName.trim() !== '' && unitsLabel.trim() !== '' && startsOn !== '' &&
@@ -379,11 +385,18 @@ function ContractModal({ existing, onClose, onSubmit }: { existing?: Contract; o
         <Field label="Owner" placeholder="e.g. Lim Chee Keong" value={ownerName} onChange={e => setOwnerName(e.target.value)} />
         <Field label="Unit" placeholder="e.g. Vista Jaya One #A-12-03" value={unitsLabel} onChange={e => setUnitsLabel(e.target.value)} help="For multiple units, name the primary one; link the rest on the owner." />
       </>)}
+      {locked ? (
+        <div className="py-[10px] px-3 rounded-control bg-page border border-solid border-line text-meta text-muted-ink [text-wrap:pretty]">
+          <span className="text-copy font-medium text-ink">{MODEL[modelOf(existing!)].label} · {feeLabel(existing!)}</span><br />
+          Change these terms on the unit's Contract tab (Units), which has every field of this model. Dates and the offer letter can be changed here.
+        </div>
+      ) : <>
       <Select showLabel size="md" label="Fee model" value={model} onChange={v => setModel(v as FeeModel)}
         options={[{ value: 'management', label: 'Management fee (% of revenue)' }, { value: 'grr', label: 'GRR — guaranteed monthly rent' }]} />
       {model === 'management'
         ? <PercentInput label="Management fee %" value={feePct} onChange={setFeePct} help="The Conts keeps this share; the owner receives the rest." />
         : <MoneyInput label="Guaranteed rent (RM / month)" placeholder="e.g. 3,500.00" valueSen={grrSen} onChangeSen={setGrrSen} help="The owner is paid this fixed amount regardless of occupancy." />}
+      </>}
       <div className="grid grid-cols-2 gap-3">
         <DateField label="Start date" value={startsOn} onChange={setStartsOn} />
         <DateField label="Ends on" value={endsOn} onChange={setEndsOn} min={startsOn || undefined} help={`Highlighted ${ENDING_WINDOW_DAYS} days before.`} />

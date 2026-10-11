@@ -2,6 +2,7 @@ import { maySee } from '../../_lib/access';
 import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { type ContractInput, normalise, invalidContract } from '../../_lib/contracts';
+import { modelOf, termsLabel } from '../../_lib/revenueModel';
 
 const READ_ROLES = ['management', 'operations_manager', 'operations_staff', 'finance_admin'];
 
@@ -27,6 +28,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     data: rows.map(r => ({
       id: r.id, ownerId: r.owner_id, ownerName: r.display_name, unitsLabel: r.units_label ?? '—', unitCount: Number(r.unit_count), model: r.model,
       managementFeePct: Number(r.management_fee_pct), grrAmount: Number(r.grr_amount),
+      // The model the statement uses (0093), and its short terms as the Units and Owners screens show them.
+      revenueModel: modelOf({ contract_id: r.id, revenue_model: r.revenue_model, model: r.model, minimum_guarantee: r.minimum_guarantee }),
+      termsLabel: termsLabel(modelOf({ contract_id: r.id, revenue_model: r.revenue_model, model: r.model, minimum_guarantee: r.minimum_guarantee }), {
+        ownerPct: 100 - Number(r.management_fee_pct ?? 0), agentPct: r.agent_fee_pct == null ? null : Number(r.agent_fee_pct), rent: Number(r.grr_amount ?? 0), guarantee: Number(r.minimum_guarantee ?? 0) }),
       startsOn: r.starts_on, renewsOn: r.renews_on, endsOn: r.ends_on, offerLetter: r.offer_letter,
     })),
   });
