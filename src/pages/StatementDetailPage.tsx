@@ -110,7 +110,7 @@ export default function StatementDetailPage() {
           <Figure label={TERMS.grossIncome} value={rm(s.totals.grossIncome)} />
           <Figure label={TERMS.expenseDeduction} value={signed(-s.totals.deductions)} />
           <Figure label={TERMS.toOperator} value={signed(-s.totals.operatorShare)} />
-          <Figure label={`${TERMS.fixedRent} & top-ups`} value={signed(contractPaid)} />
+          <Figure label={`${TERMS.fixedRent} & Top-ups`} value={signed(contractPaid)} />
           <Figure label={TERMS.adjustments} value={signed(s.totals.adjustments - contractPaid)} />
           <Figure label={TERMS.netPayout} value={rm(s.totals.netPayout)} strong />
         </div>

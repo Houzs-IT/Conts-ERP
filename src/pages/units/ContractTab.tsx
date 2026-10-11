@@ -12,6 +12,7 @@ import { cx } from '../../lib/design-tokens';
 import { MODELS, MODEL, MODEL_TONE, type RevenueModel } from '../../lib/revenueModel';
 import { DataTable, type Column } from '../../components/DataTable';
 import { StatusBadge } from '../../components/StatusBadge';
+import { TERMS, toOperator } from '../../lib/statementTerms';
 
 /** The Contract tab: pick ONE revenue model, then fill only that model's fields. Below, last month's statement for
  *  this unit worked out on the terms as they stand in the form (the statement engine, on the server), and the
@@ -74,6 +75,11 @@ function problems(d: Draft): Record<string, string> {
     if (m === 'management_guarantee' && !((d.minimumGuarantee ?? 0) > 0)) f.minimumGuarantee = 'Enter the monthly minimum.';
   } else if (!((d.monthlyRent ?? 0) > 0)) f.monthlyRent = 'Enter the monthly rent.';
   if (m === 'long_term' && !d.tenantName.trim()) f.tenantName = 'Enter the tenant.';
+  // As the server checks (revenueModel.ts), so a fee of 1010% is caught here instead of failing the preview.
+  if (m === 'long_term' && !((d.ltFeePct ?? 0) >= 0 && (d.ltFeePct ?? 0) <= 100)) f.managementPct = 'Enter 0 to 100.';
+  if (m === 'management' || m === 'management_guarantee') {
+    for (const k of ['ownerPct', 'managementPct', 'agentPct'] as const) if (!((d[k] ?? 0) >= 0 && (d[k] ?? 0) <= 100)) f[k] = 'Enter 0 to 100.';
+  }
   if (d.endsOn && d.startsOn && d.endsOn < d.startsOn) f.endsOn = 'The end date is before the start date.';
   if (m === 'management_guarantee' && d.guaranteeEndsOn && d.guaranteeStartsOn && d.guaranteeEndsOn < d.guaranteeStartsOn) f.guaranteeEndsOn = 'The guarantee ends before it starts.';
   return f;
@@ -273,26 +279,26 @@ export function StatementExample({ example: x, month, draft, busy }: { example: 
               <Row label="Company result" sen={x.company.result} strong />
             </>}
           </> : x.model === 'grr' ? <>
-            <Row label="Fixed rent to the owner" sen={x.rent} />
-            {x.adjustments !== 0 && <Row label="Owner credits & charges" sen={x.adjustments} />}
-            <Row label="Net payout to owner" sen={x.netPayout} strong />
+            <Row label={TERMS.fixedRent} sen={x.rent} />
+            {x.adjustments !== 0 && <Row label={TERMS.adjustments} sen={x.adjustments} />}
+            <Row label={TERMS.netPayout} sen={x.netPayout} strong />
             {x.company && <p className="m-0 mt-2 text-meta text-muted-ink">The company's side: the unit earned {rm(x.company.income)} and cost {rm(x.company.costs)}; after the rent the company {x.company.result >= 0 ? 'keeps' : 'loses'} {rm(Math.abs(x.company.result))}.</p>}
           </> : x.model === 'long_term' ? <>
-            <Row label="Monthly rent from the tenant" sen={x.income} />
+            <Row label={TERMS.monthlyRent} sen={x.income} />
             {x.costs.map(c => <Row key={c.label} label={c.label} sen={-c.amount} sub />)}
-            <Row label={`Management fee ${pctText(100 - (x.ownerPct ?? 100))}% of the rent`} sen={-x.operatorShare} />
-            {x.adjustments !== 0 && <Row label="Owner credits & charges" sen={x.adjustments} />}
-            <Row label="Net payout to owner" sen={x.netPayout} strong />
+            <Row label={toOperator(100 - (x.ownerPct ?? 100))} sen={-x.operatorShare} />
+            {x.adjustments !== 0 && <Row label={TERMS.adjustments} sen={x.adjustments} />}
+            <Row label={TERMS.netPayout} sen={x.netPayout} strong />
           </> : <>
-            <Row label={`Income (${x.nights} ${x.nights === 1 ? 'night' : 'nights'}, ${Math.round(x.occupancy * 100)}% occupied)`} sen={x.income} />
+            <Row label={`${TERMS.hospitalityIncome} (${x.nights} ${x.nights === 1 ? 'night' : 'nights'}, ${Math.round(x.occupancy * 100)}% occupied)`} sen={x.income} />
             {x.costs.map(c => <Row key={c.label} label={c.label} sen={-c.amount} sub />)}
-            <Row label="Net income" sen={x.net} strong />
+            <Row label={TERMS.netIncome} sen={x.net} strong />
             <Row label={`Owner ${pctText(x.ownerPct)}%`} sen={x.ownerShare} />
             <Row label={x.agentShare ? 'Management' : `Management ${pctText(100 - (x.ownerPct ?? 0))}%`} sen={x.managementShare} sub />
             {x.agentShare > 0 && <Row label="Agent" sen={x.agentShare} sub />}
-            {x.guarantee > 0 && <Row label={x.topUp > 0 ? `Below the ${rm(x.guarantee)} minimum: company tops up` : `Above the ${rm(x.guarantee)} minimum: no top-up`} sen={x.topUp} />}
-            {x.adjustments !== 0 && <Row label="Owner credits & charges" sen={x.adjustments} />}
-            <Row label="Net payout to owner" sen={x.netPayout} strong />
+            {x.guarantee > 0 && <Row label={x.topUp > 0 ? `${TERMS.topUp} (minimum ${rm(x.guarantee)})` : `Above the ${rm(x.guarantee)} minimum: no top-up`} sen={x.topUp} />}
+            {x.adjustments !== 0 && <Row label={TERMS.adjustments} sen={x.adjustments} />}
+            <Row label={TERMS.netPayout} sen={x.netPayout} strong />
           </>}
           {x.otherPayers > 0 && <p className="m-0 mt-2 text-meta text-muted-ink">{rm(x.otherPayers)} of costs paid by the company, a tenant or a guest are not on the statement.</p>}
         </div>
