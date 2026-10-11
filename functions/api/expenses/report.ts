@@ -1,4 +1,5 @@
-import { type Env, all, one, fail, audit } from '../../_lib/db';
+import { type Env, all, one, fail, audit, mytToday } from '../../_lib/db';
+import { hhmm } from '../../_lib/ops';
 import { requireSession } from '../../_lib/auth';
 import { csvCell } from '../../_lib/csv';
 import { readExpenseFilter, expenseWhere, IS_PARENT_SQL } from '../../_lib/expenses';
@@ -37,8 +38,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   ].join('; ');
 
   const total = rows.reduce((n, r) => n + Number(r.amount), 0);
-  const now = new Date(Date.now() + 8 * 3600_000).toISOString();
-  const generated = `${dayName(now.slice(0, 10))} ${now.slice(11, 16)}`;
+  const generated = `${dayName(mytToday())} ${hhmm(new Date().toISOString())}`;
   const lines = [
     [q('Conts ERP - Expenses report')],
     [q('Filters applied'), q(scope)],
