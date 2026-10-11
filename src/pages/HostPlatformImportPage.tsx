@@ -326,15 +326,20 @@ function Stats({ items, errors, notes }: { items: [string, string][]; errors: Ro
   );
 }
 
-function RowList({ title, rows }: { title: string; rows: RowError[] }) {
+/** "Row 12", or "Row 328 of <sheet>" when the row came from a named workbook sheet (it arrives as "<sheet> row 328"). */
+const rowLabel = (row: RowError['row']) => { const m = /^(.*) row (\d+)$/.exec(String(row)); return m ? `Row ${m[2]} of ${m[1]}` : `Row ${row}`; };
+
+function RowList({ title, rows: all }: { title: string; rows: RowError[] }) {
   const [open, setOpen] = useState(false);
+  // The same row can be refused once per sheet pass with the same reason; say it once.
+  const rows = all.filter((e, i) => all.findIndex(x => x.row === e.row && x.reason === e.reason) === i);
   if (!rows.length) return null;
   const shown = open ? rows : rows.slice(0, 5);
   return (
     <div className="flex flex-col gap-1 text-meta">
       <span className="font-medium">{n(rows.length)} {title}</span>
       <ul className="m-0 pl-4 flex flex-col gap-0.5 text-[var(--color-ink-2)]">
-        {shown.map((e, i) => <li key={i}>Row {e.row}: {e.reason}</li>)}
+        {shown.map((e, i) => <li key={i}>{rowLabel(e.row)}: {e.reason}</li>)}
       </ul>
       {rows.length > 5 && <Button size="sm" variant="tertiary" className="self-start" style={{ paddingLeft: 0 }} onClick={() => setOpen(o => !o)}>{open ? 'Show fewer' : `Show all ${n(rows.length)}`}</Button>}
     </div>
@@ -344,12 +349,12 @@ function RowList({ title, rows }: { title: string; rows: RowError[] }) {
 function ResultView({ r }: { r: Result }) {
   const TABLE: Record<string, string> = { properties: 'Buildings', owners: 'Owners', owner_contracts: 'Contracts', units: 'Units', unit_expenses: 'Monthly costs', guests: 'Guests', reservations: 'Bookings', tasks: 'Cleaning tasks', expenses: 'Expenses',
     cleaners: 'Cleaners', unit_utility_accounts: 'Utility accounts', guarantee_pool_months: 'Guarantee pool months', owner_adjustments: 'Owner credits and debts',
-    owner_statements: 'Statements', statement_lines: 'Statement lines', payouts: 'Payouts' };
+    owner_statements: 'Statements', statement_lines: 'Statement lines', payouts: 'Payouts', booking_payments: 'Booking payments' };
   return (
     <div className="flex flex-col gap-2 py-3 px-3 rounded-control [border:1px_solid_var(--color-line-soft)]">
       <span className="text-copy font-semibold">{n(r.created)} added · {n(r.updated)} updated · {n(r.skipped)} not imported</span>
       <div className="flex flex-wrap gap-x-4 gap-y-1 text-meta text-[var(--color-ink-2)]">
-        {Object.entries(r.tables).map(([t, v]) => <span key={t}>{TABLE[t] ?? t}: {n(v.created)} new, {n(v.updated)} updated</span>)}
+        {Object.entries(r.tables).map(([t, v]) => <span key={t}>{TABLE[t] ?? t.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase())}: {n(v.created)} new, {n(v.updated)} updated</span>)}
         {r.stats && 'matched' in r.stats && <span>Matched {n(r.stats.matched)}, workbook only {n(r.stats.workbookOnly)}, HostPlatform only {n(r.stats.hostPlatformOnly)}</span>}
         {r.stats && 'statesBefore' in r.stats && <span>States written {n(r.stats.statesBefore)} ways before, {n(r.stats.statesAfter)} after; cities {n(r.stats.citiesBefore)} before, {n(r.stats.citiesAfter)} after</span>}
         {r.stats && 'statements' in r.stats && <span>{n(r.stats.statements)} statements for {n(r.stats.unitMonths)} unit-months, {n(r.stats.payouts)} paid payouts; {n(r.stats.creditsSettled)} credits marked as already paid in them</span>}

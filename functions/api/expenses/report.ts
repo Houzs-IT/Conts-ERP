@@ -1,8 +1,15 @@
-import { type Env, all, one, fail, audit } from '../../_lib/db';
+import { type Env, all, one, fail, audit, mytToday } from '../../_lib/db';
+import { hhmm } from '../../_lib/ops';
 import { requireSession } from '../../_lib/auth';
 import { csvCell } from '../../_lib/csv';
 import { readExpenseFilter, expenseWhere, IS_PARENT_SQL } from '../../_lib/expenses';
 
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const monthName = (ym: string) => /^\d{4}-\d{2}$/.test(ym) ? `${MONTHS[Number(ym.slice(5, 7)) - 1]} ${ym.slice(0, 4)}` : ym;
+const dayName = (d: string | null) => d && /^\d{4}-\d{2}-\d{2}/.test(d) ? `${Number(d.slice(8, 10))} ${monthName(d.slice(0, 7))}` : (d ?? '');
+// A code such as management_fee reads as "Management fee"; the generated time reads like the rest of the app, not 11/10/2026.
+const label = (code: string | null) => code ? code.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase()) : '';
+const CHARGE: Record<string, string> = { owner: 'Owner', guest_deposit: 'Guest deposit', the_conts: 'The Conts', warranty: 'Warranty' };
 const q = (v: string | number | null) => csvCell(v);
 
 /** GET /api/expenses/report?month=YYYY-MM&category=&building=&unit=&owner=&q= (also the older unitId= / period=) — a CSV download. Filters applied and generation time are printed at the top. */
@@ -23,7 +30,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   // Print names, not ids, so the header reads on its own.
   const name = async (sql: string, id: string | null) => id ? ((await one<{ n: string }>(env, sql, id))?.n ?? id) : 'all';
   const scope = [
-    `Month: ${f.month ?? 'all'}`, `Category: ${f.category ?? 'all'}`,
+    `Month: ${f.month ? monthName(f.month) : 'all'}`, `Category: ${f.category ? label(f.category) : 'all'}`,
     `Building: ${await name('SELECT name AS n FROM properties WHERE id = ?', f.building)}`,
     `Unit: ${await name("SELECT p.name || ' ' || u.unit_number AS n FROM units u JOIN properties p ON p.id = u.property_id WHERE u.id = ?", f.unit)}`,
     `Owner: ${await name('SELECT display_name AS n FROM owners WHERE id = ?', f.owner)}`,
@@ -31,7 +38,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   ].join('; ');
 
   const total = rows.reduce((n, r) => n + Number(r.amount), 0);
-  const generated = new Date().toLocaleString('en-MY', { timeZone: 'Asia/Kuala_Lumpur', hour12: false });
+  const generated = `${dayName(mytToday())} ${hhmm(new Date().toISOString())}`;
   const lines = [
     [q('Conts ERP - Expenses report')],
     [q('Filters applied'), q(scope)],
@@ -39,7 +46,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     [q('Rows'), q(rows.length)],
     [''],
     ['Expense', 'Unit', 'Property', 'Category', 'Date', 'Reference', 'Description', 'Amount (RM)', 'Charge to'].map(q),
-    ...rows.map(r => [q(r.id), q(r.unit_number), q(r.property_name), q(r.category), q(r.incurred_on), q(r.reference), q(r.description), q((Number(r.amount) / 100).toFixed(2)), q(r.charge_to)]),
+    ...rows.map(r => [q(r.id), q(r.unit_number), q(r.property_name), q(label(r.category)), q(r.incurred_on), q(r.reference), q(r.description), q((Number(r.amount) / 100).toFixed(2)), q(CHARGE[r.charge_to] ?? label(r.charge_to))]),
     ['', '', '', '', '', '', q('Total'), q((total / 100).toFixed(2)), ''],
   ].map(l => l.join(','));
 

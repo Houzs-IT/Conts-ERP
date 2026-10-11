@@ -224,7 +224,7 @@ export default function AnalyticsPage() {
     <>
       <PageHeader
         title="Performance"
-        sub={`${RANGE_SUB[range]} · revenue collected on stays that start in each month`}
+        sub={`${RANGE_SUB[range]} · gross booking value, each stay split by night into the months it covers`}
       />
 
       {q.error && <StaleBanner message={`Showing the last figures we have. ${q.error}`} onRetry={q.reload} />}
@@ -387,7 +387,7 @@ function UnitTable({ units, metric, loading, range }: { units: UnitRow[]; metric
   const NUM = 'tabular-nums whitespace-nowrap';
 
   const columns = useMemo<Column<UnitRow>[]>(() => [
-    { key: 'unit', label: 'Unit', value: u => u.unitNumber, text: u => `${u.propertyName} ${u.unitNumber}`, exportValue: u => u.unitNumber,
+    { key: 'unit', label: 'Unit', value: u => u.unitNumber, text: u => `${u.propertyName} ${u.unitNumber}`, exportValue: u => `${u.propertyName} ${u.unitNumber}`,
       hideable: false, width: 180, sub: u => u.propertyName,
       render: u => <span className="font-medium truncate block" title={u.unitNumber}>{u.unitNumber}</span> },
     { key: 'building', label: 'Building', value: u => u.propertyName, hidden: true, width: 150 },
@@ -418,7 +418,7 @@ function UnitTable({ units, metric, loading, range }: { units: UnitRow[]; metric
       </>}
       above={rows.length > 0 && (
         <div className="flex items-center gap-x-5 gap-y-1 flex-wrap text-meta py-2 px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line-soft)]">
-          <span className="font-semibold text-ink">Total · {plural(rows.length, 'unit')}</span>
+          <span className="font-semibold text-ink" title="Listed units only; the revenue figure at the top also counts units no longer listed.">Total · {plural(rows.length, 'listed unit')}</span>
           <span><span className="text-muted-ink">Revenue </span><span className="font-semibold tabular-nums">{rm(revenue, { cents: false })}</span></span>
           <span title="Revenue divided by booked nights"><span className="text-muted-ink">ADR </span><span className="font-semibold tabular-nums">{nights ? rm(Math.round(revenue / nights), { cents: false }) : '—'}</span></span>
         </div>
