@@ -25,14 +25,14 @@ export function matchesBoardFilter(r: Pick<BoardRowV2, "code" | "name" | "buildi
   return q.toLowerCase().split(/\s+/).every((w) => hay.includes(w));
 }
 
-function received(r: BoardRowV2): string {
+export function received(r: BoardRowV2): string {
   if (r.moneyHidden) return "Hidden";
   if (!r.soDocNo) return "-";
   if (r.receivedSen == null) return "Not available";
   return `${money(r.receivedSen)}${r.receivedPct != null ? ` (${r.receivedPct}%)` : ""}`;
 }
 
-function StatusCell({ r }: { r: BoardRowV2 }) {
+export function StatusCell({ r }: { r: Pick<BoardRowV2, "hold" | "step"> }) {
   return (
     <span className="inline-flex flex-wrap items-center gap-1">
       {r.hold && <Pill tone="err">{r.hold.label}</Pill>}

@@ -11,6 +11,7 @@ import { renovationApi } from "./renovationApi";
 import { RenovationBoard } from "./RenovationBoard";
 import { RenovationCalendar } from "./RenovationCalendar";
 import { RenovationDetail } from "./RenovationDetail";
+import { ProjectMonitor } from "./ProjectMonitor";
 
 export function useProjectsMode(): "renovation" | "exhibition" | null {
   const q = useQuery(["renovation", "mode"], () => renovationApi.mode(), [], { staleTime: 5 * 60_000 });
@@ -28,6 +29,11 @@ export function ByProjectsMode({ renovation, exhibition }: { renovation: () => R
 export function RenovationListView() {
   const { can } = useAuth();
   return <RenovationBoard canCreate={can("projects.write")} />;
+}
+
+export function RenovationMonitorView() {
+  const { can } = useAuth();
+  return <ProjectMonitor canWrite={can("projects.write")} />;
 }
 
 export function RenovationCalendarView() {
