@@ -1,13 +1,12 @@
 import { type Env, one } from './db';
 
-export const EXPENSE_CATEGORIES = ['internet', 'electricity', 'water', 'sewerage', 'cleaning', 'housekeeping', 'maintenance', 'utilities', 'consumables', 'furniture', 'management_fee', 'channel_fee', 'building_fee', 'other'];
+export const EXPENSE_CATEGORIES = ['internet', 'electricity', 'water', 'sewerage', 'cleaning', 'housekeeping', 'maintenance', 'utilities', 'consumables', 'furniture', 'management_fee', 'channel_fee', 'other'];
 /** Who pays an expense ("Paid by" on screen). Only 'owner' reaches the owner statement; the rest stay in the unit's
  *  own profit and loss. owner = Owner (via statement), the_conts = Company, tenant = Tenant, guest_deposit = Guest. */
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 /** Words for approval summaries and reports, which are read by people: "Indah Water, 5 Oct 2026", never "sewerage, 2026-10-05". */
 export function expenseCategoryLabel(c: string | null | undefined) {
   if (!c) return 'Expense';
-  if (c === 'building_fee') return 'Building maintenance fee';
   return c === 'sewerage' ? 'Indah Water' : c.replace(/_/g, ' ').replace(/^./, x => x.toUpperCase());
 }
 export function expenseDayLabel(d: string | null | undefined) {

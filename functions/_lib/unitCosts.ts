@@ -35,11 +35,17 @@ export const KINDS: { key: string; label: string; group: CostGroup }[] = [
 ];
 const KIND = new Map(KINDS.map(k => [k.key, k]));
 
+/** The building's maintenance fee has no category of its own: it is stored as 'other' (the statement's Additional
+ *  Deduction, where every owner-paid bill outside the named utilities goes) with a description starting
+ *  "Building maintenance fee" (BillModal writes it so). */
+export const BUILDING_FEE = /^building maintenance fee\b/i;
+
 export function kindOf(e: { category: string; description: string | null; maintenance_id: string | null }): string {
   const c = e.category;
   if (c === 'cleaning' || c === 'housekeeping') return 'cleaning';
   if (c === 'maintenance' || e.maintenance_id) return 'maintenance';
-  if (c === 'water' || c === 'electricity' || c === 'internet' || c === 'sewerage' || c === 'building_fee') return c;
+  if (c === 'water' || c === 'electricity' || c === 'internet' || c === 'sewerage') return c;
+  if (c === 'other' && BUILDING_FEE.test(e.description ?? '')) return 'building_fee';
   // Indah Water entered as a utility before 'sewerage' existed (the statement reads it the same way).
   if (c === 'utilities' && /indah|sewer|iwk/i.test(e.description ?? '')) return 'sewerage';
   return 'other';

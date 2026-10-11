@@ -1,7 +1,7 @@
 import { type Env, one, run, json, fail, nowIso } from '../../_lib/db';
 import { changedFields } from '../../_lib/history';
 import { requireSession } from '../../_lib/auth';
-import { invalidUnit, typed, saveExpenses, saveContract, auditUnit, type UnitInput } from '../../_lib/properties';
+import { invalidUnit, typed, saveExpenses, saveCleaningPrice, saveContract, auditUnit, type UnitInput } from '../../_lib/properties';
 
 /** PATCH /api/units/:id — the Units screen's Save. Sends the whole unit; only what is present is changed.
  *  Owner name, ID number and bank details belong to the owner, so they change for every unit that owner has.
@@ -59,8 +59,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     propertyId, number, code ?? null, b.listingName ?? null, b.address ?? null, b.pkg ?? null, b.term ?? null, b.split ?? null,
     b.splitValue === undefined ? null : b.splitValue, b.guaranteePeriod ?? null, b.bedrooms ?? null, now, id);
   if (target) await run(env, 'UPDATE units SET property_id = ?, updated_at = ? WHERE parent_unit_id = ?', propertyId, now, id);
-  // Cleared is stored as 0, not NULL, so the price does not fall back to the unit's old monthly cleaning cost.
-  if (b.cleaningPrice !== undefined) await run(env, 'UPDATE units SET cleaning_price = ?, updated_at = ? WHERE id = ?', b.cleaningPrice ?? 0, now, id);
+  if (b.cleaningPrice !== undefined) await saveCleaningPrice(env, id, b.cleaningPrice ?? 0);
 
   // The form shows IC and bank number masked; sent back unchanged they keep the stored value.
   const ic = typed(b.ic), bankAccount = typed(b.bankAccount);
@@ -88,7 +87,7 @@ async function snapshot(env: Env, id: string): Promise<Record<string, unknown>> 
   const r = await one<Record<string, unknown>>(env, `
     SELECT p.name AS building, u.unit_number AS "unitNumber", u.unit_code AS "unitCode", u.listing_name AS "listingName", u.address,
            u.package, u.term, u.split_kind AS split, u.split_value AS "splitValue", u.guarantee_period AS "guaranteePeriod", u.bedrooms,
-           o.display_name AS owner, u.cleaning_price AS "cleaningPrice", c.management_fee_pct AS "managementFeePct", c.starts_on AS "contractStartsOn", c.renews_on AS "contractRenewsOn",
+           o.display_name AS owner, (SELECT e.amount FROM unit_expenses e WHERE e.unit_id = u.id AND e.category = 'cleaning' ORDER BY e.sort_order LIMIT 1) AS "cleaningPrice", c.management_fee_pct AS "managementFeePct", c.starts_on AS "contractStartsOn", c.renews_on AS "contractRenewsOn",
            (SELECT string_agg(e.category || ' RM ' || to_char(e.amount / 100.0, 'FM999,990.00'), ', ' ORDER BY e.sort_order) FROM unit_expenses e WHERE e.unit_id = u.id) AS "monthlyCosts"
     FROM units u LEFT JOIN properties p ON p.id = u.property_id LEFT JOIN owners o ON o.id = u.owner_id LEFT JOIN owner_contracts c ON c.id = u.contract_id
     WHERE u.id = ?`, id);

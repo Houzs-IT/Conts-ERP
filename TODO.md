@@ -265,8 +265,8 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Verified: production has migrations 0055 and 0098 (two-step sign-in database side).
 - Not verifiable from this machine (may already be done; confirm with whoever runs the Conts ERP Cloudflare account): cron worker theconts-cron deployed, Workers Paid plan, Pages secret TOTP_ENC_KEY, Hyperdrive origin on the session pooler.
 
-## Owner money screens (feat/ownermoney, migration 0101)
-- Production/staging need migration 0101 (units.cleaning_price copied from each unit's 'cleaning' monthly cost; expense kind 'building_fee'). Unit Financials: Costs this month (Cleaning, Maintenance, Paid on behalf) with Add a bill paid on behalf; Unit P&L this month; The Conts' share. Owner page: Expenses by unit, editable payout details (no longer on the unit form), statement make-up in place, Generate owner report.
+## Owner money screens (feat/ownermoney, no migration)
+- No migration: the standard cleaning price is the unit's 'cleaning' row in unit_expenses; a building maintenance fee bill is category 'other' with a description starting "Building maintenance fee" (statement: Additional Deduction). Unit Financials: Costs this month (Cleaning, Maintenance, Paid on behalf) with Add a bill paid on behalf; Unit P&L this month; The Conts' share. Owner page: Expenses by unit, editable payout details (no longer on the unit form), statement make-up in place, Generate owner report.
 - Generate owner report on the owner page builds only that owner's draft statement (POST /api/statements/generate ownerIds); it is refused only when that owner's statement is already sent, not when other owners' are. Owner to confirm that rule.
 - The old "Recurring monthly costs" rows other than cleaning (never deducted) are listed once on the unit as "never deducted"; owner to decide whether any should become bills paid on behalf.
 

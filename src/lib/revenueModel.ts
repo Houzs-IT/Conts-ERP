@@ -39,8 +39,8 @@ export const PAYER_LABEL: Record<string, string> = { owner: 'Owner', the_conts: 
 /** The categories an expense is entered under, in the owner's words. Value = expenses.category. */
 export const ENTRY_CATEGORIES: { value: string; label: string }[] = [
   { value: 'electricity', label: 'Electricity' }, { value: 'water', label: 'Water' }, { value: 'internet', label: 'Internet' },
-  { value: 'sewerage', label: 'Indah Water' }, { value: 'building_fee', label: 'Building maintenance fee' }, { value: 'cleaning', label: 'Cleaning' },
-  { value: 'maintenance', label: 'Maintenance' }, { value: 'other', label: 'Misc' },
+  { value: 'sewerage', label: 'Indah Water' }, { value: 'cleaning', label: 'Cleaning' }, { value: 'maintenance', label: 'Maintenance' },
+  { value: 'other', label: 'Misc' },
 ];
 export const CATEGORY_LABEL: Record<string, string> = {
   ...Object.fromEntries(ENTRY_CATEGORIES.map(c => [c.value, c.label])),

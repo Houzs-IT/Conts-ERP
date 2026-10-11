@@ -20,8 +20,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
            p.state, p.address_line, o.display_name AS owner_name, o.ic_number, o.bank_name, o.bank_account_number, o.bank_account_holder,
            c.management_fee_pct, c.starts_on, c.renews_on, c.minimum_guarantee, c.minimum_guarantee_annual, c.guarantee_starts_on, c.guarantee_ends_on,
            c.id AS c_id, c.revenue_model, c.model, c.grr_amount, c.agent_fee_pct, u.misc_charges,
-           -- The price cleanPrice() uses (functions/_lib/cleaning.ts): the unit's own, else its old monthly cleaning cost.
-           COALESCE(u.cleaning_price, (SELECT e.amount FROM unit_expenses e WHERE e.unit_id = u.id AND e.category = 'cleaning' AND e.amount > 0 ORDER BY e.sort_order LIMIT 1)) AS cleaning_price,
+           -- The standard cleaning price cleanPrice() uses (functions/_lib/cleaning.ts): the unit's first 'cleaning' monthly cost.
+           (SELECT e.amount FROM unit_expenses e WHERE e.unit_id = u.id AND e.category = 'cleaning' AND e.amount > 0 ORDER BY e.sort_order LIMIT 1) AS cleaning_price,
            (SELECT COUNT(*) FROM documents d WHERE d.unit_id = u.id AND d.kind = 'contract') AS contract_docs
     FROM units u JOIN properties p ON p.id = u.property_id JOIN owners o ON o.id = u.owner_id
     LEFT JOIN owner_contracts c ON c.id = u.contract_id

@@ -79,9 +79,13 @@ export function BillModal({ units, defaultUnitId, month, onClose, onSaved }: { u
         fd.append('file', receipt); fd.append('unitId', unitId); fd.append('kind', 'receipt');
         receiptDocumentId = (await api.post<{ id: string }>('/documents', fd)).id;
       }
+      // The building's maintenance fee is stored as 'other' with its name leading the description, which is how
+      // the breakdown recognises it (functions/_lib/unitCosts.ts); the statement deducts it as an Additional Deduction.
+      const fee = category === 'building_fee';
+      const text = description.trim() || `${kind} ${monthLabel(incurredOn.slice(0, 7))}`;
       const res = await api.post<unknown>('/expenses', {
-        unitId, category, amount, incurredOn, chargeTo: 'owner', reference: reference.trim() || null,
-        description: description.trim() || `${kind} ${monthLabel(incurredOn.slice(0, 7))}`, receiptDocumentId,
+        unitId, category: fee ? 'other' : category, amount, incurredOn, chargeTo: 'owner', reference: reference.trim() || null,
+        description: fee && !/^building maintenance fee\b/i.test(text) ? `Building maintenance fee: ${text}` : text, receiptDocumentId,
       });
       if (isStaged(res)) { toast(stagedToast(res)); void refreshNavCounts(); onSaved(); onClose(); return; }
       toast({ tone: 'success', title: 'Bill recorded.', body: `${kind}, paid on behalf. The owner statement deducts it before the operator's share.` });

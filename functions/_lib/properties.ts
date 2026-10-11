@@ -13,7 +13,8 @@ export interface UnitInput {
   ownerName?: string; ic?: string; bankName?: string; bankAccount?: string; accountHolder?: string;
   pkg?: string; term?: string; split?: string; splitValue?: number | null; guaranteePeriod?: string;
   bedrooms?: number;
-  /** The standard clean's price on this unit (sen); null clears it (stored as 0, see cleanPrice). */
+  /** The standard clean's price on this unit (sen): the unit's one 'cleaning' row in unit_expenses, which cleanPrice()
+   *  reads. null clears it (amount 0, so cleans charge the last price used or the default). */
   cleaningPrice?: number | null;
   expenses?: { id?: string; category: string; amount: number; note?: string }[];
   contract?: { feePct: number; startedOn: string; renewsOn: string };
@@ -65,6 +66,15 @@ export async function ownerFor(env: Env, b: UnitInput): Promise<string> {
     VALUES (?, ?, '', ?, ?, ?, ?, ?, ?, ?)`,
     id, name, ic, b.bankName ?? null, b.accountHolder ?? null, bankAccount ?? null, (bankAccount ?? '').slice(-4) || null, now, now);
   return id;
+}
+
+/** Sets the unit's standard cleaning price: updates its first 'cleaning' row in unit_expenses (the row cleanPrice() in
+ *  functions/_lib/cleaning.ts reads), or adds one after the others. Every other row is left as it is. */
+export async function saveCleaningPrice(env: Env, unitId: string, amount: number) {
+  const row = await one<{ id: string }>(env, `SELECT id FROM unit_expenses WHERE unit_id = ? AND category = 'cleaning' ORDER BY sort_order LIMIT 1`, unitId);
+  if (row) { await run(env, 'UPDATE unit_expenses SET amount = ? WHERE id = ?', amount, row.id); return; }
+  await run(env, `INSERT INTO unit_expenses (id, unit_id, category, amount, note, sort_order)
+    SELECT ?, ?, 'cleaning', ?, '', COALESCE(MAX(sort_order) + 1, 0) FROM unit_expenses WHERE unit_id = ?`, crypto.randomUUID(), unitId, amount, unitId);
 }
 
 export async function saveExpenses(env: Env, unitId: string, list: NonNullable<UnitInput['expenses']>) {

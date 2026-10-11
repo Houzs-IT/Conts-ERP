@@ -10,7 +10,7 @@ import { DEDUCTION_WORDS } from '../../_lib/unitCosts';
 const PAYER_LABEL: Record<string, string> = { the_conts: 'The Conts', tenant: 'Tenant', guest_deposit: 'Guest', warranty: 'Warranty' };
 const CATEGORY_LABEL: Record<string, string> = {
   electricity: 'Electricity', water: 'Water', internet: 'Internet', sewerage: 'Indah Water', cleaning: 'Cleaning', housekeeping: 'Cleaning',
-  maintenance: 'Maintenance', utilities: 'Utilities', other: 'Misc', consumables: 'Consumables', furniture: 'Furniture', building_fee: 'Building maintenance fee',
+  maintenance: 'Maintenance', utilities: 'Utilities', other: 'Misc', consumables: 'Consumables', furniture: 'Furniture',
 };
 
 /**
