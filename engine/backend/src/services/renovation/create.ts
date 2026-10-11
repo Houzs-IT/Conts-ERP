@@ -24,6 +24,10 @@ export interface CreateRenovationInput {
   salespersonName?: string | null;
   picId?: number | null;
   notes?: string | null;
+  /* people master (migration 0083) */
+  salesPersonId?: number | null;
+  designerPersonId?: number | null;
+  renoPicPersonId?: number | null;
 }
 
 export type CreateRefusal =
@@ -32,7 +36,8 @@ export type CreateRefusal =
   | "customer_kind_invalid"
   | "customer_required"
   | "date_invalid"
-  | "uuid_invalid";
+  | "uuid_invalid"
+  | "person_invalid";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -43,6 +48,10 @@ export function validateCreate(body: Partial<CreateRenovationInput>): CreateRefu
   if (!String(body.customerName ?? "").trim() && !body.customerId) return "customer_required";
   if (body.customerId && !UUID.test(body.customerId)) return "uuid_invalid";
   if (body.plannedHandoverDate && !/^\d{4}-\d{2}-\d{2}$/.test(body.plannedHandoverDate)) return "date_invalid";
+  for (const k of ["salesPersonId", "designerPersonId", "renoPicPersonId"] as const) {
+    const v = body[k];
+    if (v != null && !(Number.isInteger(Number(v)) && Number(v) > 0)) return "person_invalid";
+  }
   return null;
 }
 
@@ -67,6 +76,7 @@ export async function createRenovationProject(
   const internal = planTradeTasks({ works: [], existing: [], typeStageKeys: typeRow.stage_keys }).create.map((t) => ({
     stage_key: t.stageKey,
     trade_code: t.tradeCode,
+    category_code: t.categoryCode,
     label: t.label,
     seq: t.seq,
   }));
@@ -83,8 +93,12 @@ export async function createRenovationProject(
        p AS (
          INSERT INTO projects (code, name, stage, project_kind, project_type_id, customer_kind, customer_id, customer_name,
                                customer_phone, customer_email, pos_owner_id, pos_unit_id, building, unit_no, site_address,
-                               planned_handover_date, salesperson_name, pic_id, notes, created_by, company_id, reno_stage)
-         SELECT code.code, ?, 'draft', 'renovation', t.id, ?, ?::uuid, ?, ?, ?, ?, ?, ?, ?, ?, ?::date, ?, ?, ?, ?, ?, 'design'
+                               planned_handover_date, salesperson_name, pic_id, notes, created_by, company_id, reno_stage,
+                               sales_person_id, designer_person_id, reno_pic_person_id)
+         SELECT code.code, ?, 'draft', 'renovation', t.id, ?, ?::uuid, ?, ?, ?, ?, ?, ?, ?, ?, ?::date, ?, ?, ?, ?, ?, 'design',
+                (SELECT id FROM project_people WHERE id = ?::bigint AND company_id = ?),
+                (SELECT id FROM project_people WHERE id = ?::bigint AND company_id = ?),
+                (SELECT id FROM project_people WHERE id = ?::bigint AND company_id = ?)
            FROM t, code
          RETURNING id, code
        ),
@@ -115,9 +129,9 @@ export async function createRenovationProject(
          RETURNING id
        ),
        tasks AS (
-         INSERT INTO project_trade_tasks (project_id, stage_key, trade_code, fix_phase, label, seq, fulfilment_kind, company_id)
-         SELECT p.id, x.stage_key, x.trade_code, 'single', x.label, x.seq, 'internal', ?
-           FROM p, jsonb_to_recordset(?::text::jsonb) AS x(stage_key text, trade_code text, label text, seq int)
+         INSERT INTO project_trade_tasks (project_id, stage_key, trade_code, fix_phase, label, seq, fulfilment_kind, company_id, category_code)
+         SELECT p.id, x.stage_key, x.trade_code, 'single', x.label, x.seq, 'internal', ?, x.category_code
+           FROM p, jsonb_to_recordset(?::text::jsonb) AS x(stage_key text, trade_code text, category_code text, label text, seq int)
          RETURNING id
        ),
        act AS (
@@ -135,6 +149,7 @@ export async function createRenovationProject(
       input.customerPhone ?? null, input.customerEmail ?? null, input.posOwnerId ?? null, input.posUnitId ?? null,
       input.building ?? null, input.unitNo ?? null, input.siteAddress ?? null, input.plannedHandoverDate || null,
       input.salespersonName ?? null, input.picId ?? null, input.notes ?? null, actorId, companyId,
+      input.salesPersonId ?? null, companyId, input.designerPersonId ?? null, companyId, input.renoPicPersonId ?? null, companyId,
       companyId, `{${RENO_STAGES.join(",")}}`,
       companyId,
       companyId,

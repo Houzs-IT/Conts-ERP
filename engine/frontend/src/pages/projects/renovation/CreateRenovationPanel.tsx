@@ -1,5 +1,6 @@
 /* New renovation project: type, customer (owner or outside customer), building
-   and unit. No brand, event type or venue: those belong to exhibitions. */
+   and unit, and the sales person and designer from the people list. No brand,
+   event type or venue: those belong to exhibitions. */
 
 import { useState } from "react";
 import { Button } from "../../../components/Button";
@@ -7,13 +8,16 @@ import { useQuery } from "../../../hooks/useQuery";
 import { renovationApi } from "./renovationApi";
 import { errorText } from "./renovationModel";
 import { Dialog, Field, inputClass } from "./renovationUi";
+import { PersonSelect } from "./PersonSelect";
 
 export function CreateRenovationPanel({ onClose, onCreated }: { onClose: () => void; onCreated: (id: number) => void }) {
   const types = useQuery(["renovation", "types"], () => renovationApi.types());
   const [f, setF] = useState({
     name: "", projectTypeId: "", customerKind: "customer" as "owner" | "customer", customerName: "", customerPhone: "",
-    building: "", unitNo: "", siteAddress: "", plannedHandoverDate: "", salespersonName: "",
+    building: "", unitNo: "", siteAddress: "", plannedHandoverDate: "",
   });
+  const [salesPersonId, setSalesPersonId] = useState<number | null>(null);
+  const [designerPersonId, setDesignerPersonId] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF((x) => ({ ...x, [k]: e.target.value }));
@@ -30,7 +34,7 @@ export function CreateRenovationPanel({ onClose, onCreated }: { onClose: () => v
       const r = await renovationApi.create({
         name: f.name.trim(), projectTypeId: Number(typeId), customerKind: f.customerKind, customerName: f.customerName.trim(),
         customerPhone: f.customerPhone || null, building: f.building || null, unitNo: f.unitNo || null, siteAddress: f.siteAddress || null,
-        plannedHandoverDate: f.plannedHandoverDate || null, salespersonName: f.salespersonName || null,
+        plannedHandoverDate: f.plannedHandoverDate || null, salesPersonId, designerPersonId,
       });
       onCreated(r.id);
     } catch (e) {
@@ -67,9 +71,10 @@ export function CreateRenovationPanel({ onClose, onCreated }: { onClose: () => v
           <Field label="Unit"><input className={inputClass} value={f.unitNo} onChange={set("unitNo")} /></Field>
         </div>
         <Field label="Site address"><input className={inputClass} value={f.siteAddress} onChange={set("siteAddress")} /></Field>
+        <Field label="Planned handover"><input type="date" className={inputClass} value={f.plannedHandoverDate} onChange={set("plannedHandoverDate")} /></Field>
         <div className="grid grid-cols-2 gap-2">
-          <Field label="Planned handover"><input type="date" className={inputClass} value={f.plannedHandoverDate} onChange={set("plannedHandoverDate")} /></Field>
-          <Field label="Salesperson"><input className={inputClass} value={f.salespersonName} onChange={set("salespersonName")} /></Field>
+          <Field label="Sales"><PersonSelect label="Sales" role="sales" value={salesPersonId} onChange={setSalesPersonId} /></Field>
+          <Field label="Designer"><PersonSelect label="Designer" role="designer" value={designerPersonId} onChange={setDesignerPersonId} /></Field>
         </div>
         {error && <p role="alert" className="text-sm text-err">{error}</p>}
       </div>

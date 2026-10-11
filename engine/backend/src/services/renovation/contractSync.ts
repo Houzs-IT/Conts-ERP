@@ -51,21 +51,26 @@ export async function syncTradeTasks(db: Db, projectId: number, f: ProjectFacts)
   for (const t of plan.create) {
     stmts.push(db.prepare(
       `WITH t AS (
-         INSERT INTO project_trade_tasks (project_id, stage_key, trade_code, fix_phase, label, seq, fulfilment_kind, supplier_id, purchase_order_id, company_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?::uuid, ?::uuid, ?)
-         ON CONFLICT (project_id, trade_code, fix_phase) DO NOTHING
+         INSERT INTO project_trade_tasks (project_id, stage_key, trade_code, fix_phase, label, seq, fulfilment_kind, supplier_id, purchase_order_id, company_id, category_code)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?::uuid, ?::uuid, ?, ?)
+         ON CONFLICT (project_id, trade_code, fix_phase, occurrence) DO NOTHING
          RETURNING id
        )
        INSERT INTO project_trade_task_lines (task_id, so_item_id, purchase_order_item_id, company_id)
        SELECT t.id, x.so_item_id::uuid, x.po_item_id::uuid, ? FROM t, jsonb_to_recordset(?::text::jsonb) AS x(so_item_id text, po_item_id text)
        ON CONFLICT (task_id, so_item_id) DO NOTHING`,
-    ).bind(projectId, t.stageKey, t.tradeCode, t.fixPhase, t.label, t.seq, t.fulfilmentKind, t.supplierId, t.purchaseOrderId, co,
+    ).bind(projectId, t.stageKey, t.tradeCode, t.fixPhase, t.label, t.seq, t.fulfilmentKind, t.supplierId, t.purchaseOrderId, co, t.categoryCode,
       co, JSON.stringify(t.lines.map((l) => ({ so_item_id: l.soItemId, po_item_id: l.poItemId })))));
   }
   for (const t of plan.refresh) {
     stmts.push(db.prepare(
-      `UPDATE project_trade_tasks SET supplier_id = coalesce(supplier_id, ?::uuid), purchase_order_id = coalesce(?::uuid, purchase_order_id), updated_at = now() WHERE id = ?`,
-    ).bind(t.supplierId, t.purchaseOrderId, t.id));
+      /* an in-house task (switched to our own crew) never gets a PO or supplier back from the contract */
+      `UPDATE project_trade_tasks
+          SET supplier_id = CASE WHEN fulfilment_kind = 'po' THEN coalesce(supplier_id, ?::uuid) ELSE supplier_id END,
+              purchase_order_id = CASE WHEN fulfilment_kind = 'po' THEN coalesce(?::uuid, purchase_order_id) ELSE purchase_order_id END,
+              category_code = coalesce(category_code, ?), updated_at = now()
+        WHERE id = ?`,
+    ).bind(t.supplierId, t.purchaseOrderId, t.categoryCode, t.id));
     stmts.push(db.prepare(
       `INSERT INTO project_trade_task_lines (task_id, so_item_id, purchase_order_item_id, company_id)
        SELECT ?, x.so_item_id::uuid, x.po_item_id::uuid, ? FROM jsonb_to_recordset(?::text::jsonb) AS x(so_item_id text, po_item_id text)

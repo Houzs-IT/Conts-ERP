@@ -226,6 +226,11 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Open: "already on file" for a new guest matches the phone text exactly, so a typed +60 18-980 0069 does not match an imported 60189800069; compare digits (phoneDigits) if duplicates appear.
 - Open: 3 stored guest phones are the right length but outside any known range (2 x +60 2..., 1 x +49), so they show ungrouped.
 
+## Renovation project, simplified (feat/reno-simplify)
+- Done: 6-step flow (derived from SO / PO / site tasks / handover / paid, manual move + follow data, IN DEFECT / ON HOLD flag), people master, key log, design records, SO <-> project in either order, Notion task categories, in-house crew on site tasks, board columns per the owner, source/source_ref on importable rows. Migrations 0083-0086 not yet applied to staging/production.
+- Open: the old hardware gate (SO + instalment 1 + shop drawings + permit) still refuses "Start" on a hardware-stage task, in-house or not; ask the owner whether the simplified flow should drop that gate.
+- Open: the SO page "Project" card and the quotation "No project yet" choice were not seen in a browser (the local engine has no Supabase REST for the SCM routes); check them on the staging preview.
+
 ## System bugs from Houzs / Hookka (fix/audit-system, docs/audits/system-from-sister-erps.md)
 - Done: same nights cannot be booked twice at the same moment (unit lock); status and dates changes are compare-and-set; statement generation is one transaction per period; supply chain numbers retry on a clash; MYT dates everywhere (gate myt-dates); CSV formula guard (gate csv-formula); uploads that are not images, video or PDF download instead of opening; 300 / 10,000-character text limits on every write; bookings CSV import validates each row.
 - Open: the 15-minute email/WhatsApp retry does not claim its rows, so a double-fired cron could resend one message; add a 'sending' state (migration) before the cron worker is deployed.

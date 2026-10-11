@@ -132,17 +132,18 @@ async function writeRevisionHeader(db: RenoDb, revisionId: string, h: RevisionHe
   );
 }
 
-export async function projectExists(db: RenoDb, projectId: number): Promise<boolean> {
-  const rows = await db.q(`select 1 from public.projects where id = $1`, [projectId]);
+export async function projectExists(db: RenoDb, projectId: number, companyId?: number): Promise<boolean> {
+  const rows = await db.q(`select 1 from public.projects where id = $1 and ($2::bigint is null or company_id = $2)`, [projectId, companyId ?? null]);
   return rows.length > 0;
 }
 
 export async function createQuotation(
   db: RenoDb,
   actor: RenoActor,
-  body: { projectId: number; brandId?: number | null; templateId?: string | null; header?: DocHeaderInput; sections?: NormSection[]; instalments?: NormInstalment[] },
+  body: { projectId: number | null; brandId?: number | null; templateId?: string | null; header?: DocHeaderInput; sections?: NormSection[]; instalments?: NormInstalment[] },
 ): Promise<{ id: string; quoteNo: string; revisionId: string }> {
-  if (!(await projectExists(db, body.projectId))) throw refuse(404, 'project_not_found', `Project ${body.projectId} does not exist.`);
+  /* A quotation may come before its project (owner 11 Oct 2026): projectId null links later. */
+  if (body.projectId != null && !(await projectExists(db, body.projectId, actor.companyId))) throw refuse(404, 'project_not_found', `Project ${body.projectId} does not exist.`);
   let base: Partial<RevisionHeader> = {};
   let sections: NormSection[] = body.sections ?? [];
   let instalments: NormInstalment[] | null = body.instalments && body.instalments.length ? body.instalments : null;
@@ -189,7 +190,7 @@ export async function createQuotation(
 }
 
 export interface QuotationHead {
-  id: string; quoteNo: string; projectId: number; brandId: number | null; status: QuotationStatus; currentRev: number;
+  id: string; quoteNo: string; projectId: number | null; brandId: number | null; status: QuotationStatus; currentRev: number;
   acceptedRev: number | null; convertedSoDocNo: string | null; lockedAt: string | null; templateId: string | null; version: number;
   createdAt: string; projectName?: string | null;
 }
@@ -199,7 +200,7 @@ const Q_COLS = `q.id, q.quote_no, q.project_id, q.brand_id, q.status, q.current_
 
 function headOf(r: Record<string, any>): QuotationHead {
   return {
-    id: r.id, quoteNo: r.quote_no, projectId: Number(r.project_id), brandId: r.brand_id === null ? null : Number(r.brand_id), status: r.status,
+    id: r.id, quoteNo: r.quote_no, projectId: r.project_id == null ? null : Number(r.project_id), brandId: r.brand_id === null ? null : Number(r.brand_id), status: r.status,
     currentRev: Number(r.current_rev), acceptedRev: r.accepted_rev === null ? null : Number(r.accepted_rev), convertedSoDocNo: r.converted_so_doc_no,
     lockedAt: r.locked_at, templateId: r.template_id, version: Number(r.version), createdAt: r.created_at, projectName: r.project_name ?? null,
   };

@@ -1,13 +1,13 @@
-/* Projects on the phone in renovation mode: the board as cards, a project's
-   detail (the same responsive screen as desktop, vertical stage timeline), and
-   the site receipt. In exhibition mode the original MobilePMS opens instead. */
+/* Projects on the phone in renovation mode: the board as cards (step + hold
+   flag, SO, contract / received, arrivals, key holder), a project's detail (the
+   same responsive screen as desktop), and the site receipt. In exhibition mode the original MobilePMS opens instead. */
 
 import { useState, type ReactNode } from "react";
 import { ArrowLeft, PackageCheck } from "lucide-react";
 import { useQuery } from "../hooks/useQuery";
 import { useAuth } from "../auth/AuthContext";
-import { renovationApi } from "../pages/projects/renovation/renovationApi";
-import { UNIT_KEY_LABEL, supplyLabel, supplyTone } from "../pages/projects/renovation/renovationModel";
+import { simpleApi } from "../pages/projects/renovation/simpleApi";
+import { money, supplyLabel, supplyTone } from "../pages/projects/renovation/renovationModel";
 import { Pill } from "../pages/projects/renovation/renovationUi";
 import { RenovationDetail } from "../pages/projects/renovation/RenovationDetail";
 import { useProjectsMode } from "../pages/projects/renovation/RenovationRoutes";
@@ -34,7 +34,7 @@ function MobileRenovationProjects({ onBack, initialProjectId }: { onBack: () => 
   const [projectId, setProjectId] = useState<number | null>(initialProjectId ?? null);
   const [receiving, setReceiving] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
-  const board = useQuery(["renovation", "board"], () => renovationApi.board());
+  const board = useQuery(["renovation", "board-rows"], () => simpleApi.boardRows());
   const rows = board.data?.data ?? [];
   const current = rows.find((r) => r.id === projectId);
 
@@ -79,12 +79,20 @@ function MobileRenovationProjects({ onBack, initialProjectId }: { onBack: () => 
           <button key={r.id} type="button" onClick={() => setProjectId(r.id)} className="w-full text-left rounded-lg border border-border bg-surface p-3">
             <div className="font-medium text-ink truncate">{r.name}</div>
             <div className="text-xs text-ink-secondary truncate">{r.code} · {[r.building, r.unitNo].filter(Boolean).join(" ") || "-"}</div>
-            <div className="mt-1 text-sm text-ink">{r.renoConditionLabel}</div>
+            <div className="mt-1 flex flex-wrap items-center gap-1 text-sm text-ink">
+              {r.hold && <Pill tone="err">{r.hold.label}</Pill>}
+              <span>{r.step.index + 1}. {r.step.label}</span>
+            </div>
+            <div className="mt-1 text-xs text-ink-secondary">
+              {r.soDocNo ? `${r.soDocNo}${r.moneyHidden ? "" : ` · ${money(r.contractSen)}${r.receivedPct != null ? ` · ${r.receivedPct}% received` : ""}`}` : "Not signed"}
+              {r.sales.name ? ` · ${r.sales.name}` : ""}
+            </div>
             <div className="mt-2 flex flex-wrap gap-1">
-              <Pill tone={supplyTone(r.furnitureCondition)}>Furniture: {supplyLabel(r.furnitureCondition)}</Pill>
-              <Pill tone={supplyTone(r.renoItemCondition)}>Reno: {supplyLabel(r.renoItemCondition)}</Pill>
-              <Pill tone="muted">Key: {UNIT_KEY_LABEL[r.unitKey]}</Pill>
-              {r.redFlags.length > 0 && <Pill tone="err">{r.redFlags.length} flag{r.redFlags.length === 1 ? "" : "s"}</Pill>}
+              {r.soDocNo && <Pill tone={supplyTone(r.furnitureArrival)}>Furniture: {supplyLabel(r.furnitureArrival)}</Pill>}
+              {r.soDocNo && <Pill tone={supplyTone(r.renoItemArrival)}>Reno: {supplyLabel(r.renoItemArrival)}</Pill>}
+              <Pill tone="muted">Key: {r.keyHolder?.name ?? "-"}</Pill>
+              {r.vo?.has && <Pill tone="info">VO {r.vo.count}</Pill>}
+              {r.redFlagCount > 0 && <Pill tone="err">{r.redFlagCount} flag{r.redFlagCount === 1 ? "" : "s"}</Pill>}
             </div>
           </button>
         ))}
