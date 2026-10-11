@@ -133,7 +133,7 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unit
     try {
       const r = await api.put<{ split: boolean }>(`/units/${encodeURIComponent(unitId)}/contract`, { ...bodyOf(d), mode });
       toast({ tone: 'success', title: mode === 'new' ? 'New contract started.' : 'Contract saved.',
-        body: `${MODEL[d.revenueModel].label}.${r.split ? ' This unit now has its own contract; the other units keep theirs.' : ''} Draft owner statements change when regenerated; final ones keep their figures.` });
+        body: `${MODEL[d.revenueModel].label}.${r.split ? ' This unit now has its own contract; the other units keep theirs.' : ''} Provisional statements change when regenerated; final ones keep their figures.` });
       setMode('update'); reload(); onSaved();
     } catch (e) {
       if (e instanceof ApiFailure && e.fields) setFields(e.fields);

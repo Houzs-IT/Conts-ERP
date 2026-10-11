@@ -76,8 +76,8 @@ export const STATUS_VOCAB = {
     unplanned: { label: 'No clean planned', tone: 'danger' },
   },
   statement: {
-    provisional: { label: 'Draft', tone: 'neutral' },
-    finalised: { label: 'Final', tone: 'info' },
+    provisional: { label: 'Provisional', tone: 'neutral' },
+    finalised: { label: 'Finalised', tone: 'info' },
     sent: { label: 'Sent', tone: 'warning' },
     paid: { label: 'Paid', tone: 'success' },
   },
