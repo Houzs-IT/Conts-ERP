@@ -9,7 +9,7 @@ const AUDIT_ROLES = ['management', 'operations_manager', 'finance_admin'];
 const ENTITY_AREA: Record<string, string> = {
   reservations: 'reservations', guests: 'reservations',
   units: 'properties', properties: 'properties', access_credentials: 'properties',
-  tasks: 'operations', maintenance_issues: 'operations', cleaners: 'operations',
+  tasks: 'operations', maintenance_issues: 'operations', maintenance_templates: 'operations', cleaners: 'operations',
   owners: 'owners', owner_contracts: 'owners', owner_adjustments: 'owners',
   owner_statements: 'finance', payouts: 'finance', expenses: 'finance',
   users: 'users',
@@ -122,6 +122,7 @@ async function namesFor(env: Env, data: { before: unknown; after: unknown }[]): 
     UNION ALL SELECT id, full_name FROM cleaners WHERE id IN (SELECT jsonb_array_elements_text(?::text::jsonb))
     UNION ALL SELECT u.id, trim(coalesce(p.name, '') || ' ' || u.unit_number) FROM units u LEFT JOIN properties p ON p.id = u.property_id WHERE u.id IN (SELECT jsonb_array_elements_text(?::text::jsonb))
     UNION ALL SELECT id, display_name FROM owners WHERE id IN (SELECT jsonb_array_elements_text(?::text::jsonb))
-    UNION ALL SELECT id, name FROM properties WHERE id IN (SELECT jsonb_array_elements_text(?::text::jsonb))`, list, list, list, list, list).catch(() => []);
+    UNION ALL SELECT id, name FROM properties WHERE id IN (SELECT jsonb_array_elements_text(?::text::jsonb))
+    UNION ALL SELECT id, name FROM maintenance_templates WHERE id IN (SELECT jsonb_array_elements_text(?::text::jsonb))`, list, list, list, list, list, list).catch(() => []);
   return Object.fromEntries(rows.filter(r => r.name).map(r => [r.id, r.name]));
 }
