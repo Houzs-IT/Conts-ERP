@@ -480,7 +480,7 @@ function Popover({ label, active, children, width = 240 }: { label: ReactNode; a
   return (
     <div ref={ref} className="relative max-md:flex-1">
       <button type="button" onClick={() => setOpen(o => !o)} aria-expanded={open}
-        className={cx('h-9 w-full inline-flex items-center gap-2 pl-3 pr-2 rounded-control border border-solid bg-card [font:inherit] text-copy cursor-pointer whitespace-nowrap',
+        className={cx('h-9 w-full inline-flex items-center gap-2 pl-3 pr-2 rounded-control border border-solid bg-card [font-family:inherit] text-copy cursor-pointer whitespace-nowrap',
           active ? 'border-ink text-ink font-medium' : 'border-line text-ink')}>
         {label}<Icon name="ChevronDown" size="sm" color="var(--color-muted-ink)" style={{ marginLeft: 'auto' }} />
       </button>
@@ -501,7 +501,7 @@ function ChannelFilter({ value, onChange }: { value: string; onChange: (v: strin
         <div role="menu" aria-label="Channel">
           {(['', ...CHANNEL_CHOICES] as const).map(c => (
             <button key={c || 'all'} type="button" role="menuitemradio" aria-checked={value === c} onClick={() => { onChange(c); close(); }}
-              className={cx('w-full flex items-center gap-2 px-[10px] py-2 rounded-[8px] border-none [font:inherit] text-copy text-left cursor-pointer hover:bg-muted', value === c ? 'bg-muted font-semibold' : 'bg-transparent')}>
+              className={cx('w-full flex items-center gap-2 px-[10px] py-2 rounded-[8px] border-none [font-family:inherit] text-copy text-left cursor-pointer hover:bg-muted', value === c ? 'bg-muted font-semibold' : 'bg-transparent')}>
               {c ? <ChannelMark ch={c} size={18} /> : <span className="w-[18px]" />}
               {c ? CHANNEL_META[c].label : 'All channels'}
             </button>
@@ -534,7 +534,7 @@ function DateFilter({ from, to, onChange }: { from: string; to: string; onChange
           <div className="grid grid-cols-2 gap-1">
             {presets.map(p => (
               <button key={p.label} type="button" onClick={() => { onChange(p.from, p.to); close(); }}
-                className={cx('h-8 rounded-control border border-solid [font:inherit] text-meta cursor-pointer', from === p.from && to === p.to ? 'bg-black text-white border-black' : 'bg-card border-line text-ink hover:bg-muted')}>{p.label}</button>
+                className={cx('h-8 rounded-control border border-solid [font-family:inherit] text-meta cursor-pointer', from === p.from && to === p.to ? 'bg-black text-white border-black' : 'bg-card border-line text-ink hover:bg-muted')}>{p.label}</button>
             ))}
           </div>
           <div className="grid grid-cols-2 gap-2">
@@ -721,7 +721,7 @@ function CreateReservationModal({ units: UNITS, prefill, onClose, onCreate }: {
         <div role="radiogroup" aria-label="What is this" className="grid grid-cols-3 gap-1 p-1 rounded-control bg-muted">
           {([['direct', 'Direct booking'], ['ota', 'Booking site'], ['owner_stay', 'Owner stay']] as const).map(([k, l]) => (
             <button key={k} type="button" role="radio" aria-checked={kind === k} onClick={() => setKind(k)}
-              className={cx('h-9 rounded-[8px] border-none [font:inherit] text-meta cursor-pointer', kind === k ? 'bg-card font-semibold text-ink shadow-sm' : 'bg-transparent text-muted-ink')}>{l}</button>
+              className={cx('h-9 rounded-[8px] border-none [font-family:inherit] text-meta cursor-pointer', kind === k ? 'bg-card font-semibold text-ink shadow-sm' : 'bg-transparent text-muted-ink')}>{l}</button>
           ))}
         </div>
         <UnitPicker units={UNITS} value={unitId} onChange={setUnitId} />

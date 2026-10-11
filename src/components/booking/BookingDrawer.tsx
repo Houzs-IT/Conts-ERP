@@ -173,7 +173,7 @@ function MoneyPanel({ d, onRecord, onRemove }: { d: Detail; onRecord: () => void
       )}
       {L.sources.length > 1 && (
         <button type="button" onClick={() => setSources(v => !v)} aria-expanded={sources}
-          className={cx('self-start p-0 border-none bg-transparent [font:inherit] text-meta underline cursor-pointer', L.disagree ? 'font-semibold text-ink' : 'text-muted-ink')}>
+          className={cx('self-start p-0 border-none bg-transparent [font-family:inherit] text-meta underline cursor-pointer', L.disagree ? 'font-semibold text-ink' : 'text-muted-ink')}>
           {sources ? 'Hide sources' : 'View sources'}
         </button>
       )}
@@ -402,7 +402,7 @@ function RecordPaymentModal({ d, onClose, onSaved }: { d: Detail; onClose: () =>
               if ((k === 'refund') !== refund) setSen(k === 'refund' ? (d.ledger.received > 0 ? d.ledger.received : null) : (d.ledger.outstanding > 0 ? d.ledger.outstanding : null));
               setKind(k);
             }}
-              className={cx('h-9 rounded-[8px] border-none [font:inherit] text-meta cursor-pointer', kind === k ? 'bg-card font-semibold text-ink shadow-sm' : 'bg-transparent text-muted-ink')}>
+              className={cx('h-9 rounded-[8px] border-none [font-family:inherit] text-meta cursor-pointer', kind === k ? 'bg-card font-semibold text-ink shadow-sm' : 'bg-transparent text-muted-ink')}>
               {k === 'guest_payment' ? 'From the guest' : k === 'ota_payout' ? 'Site payout' : 'Refund'}
             </button>
           ))}
@@ -416,7 +416,7 @@ function RecordPaymentModal({ d, onClose, onSaved }: { d: Detail; onClose: () =>
           <div className="flex flex-col gap-1.5">
             <label htmlFor="pay-method" className="text-meta font-medium text-muted-ink">Method</label>
             <select id="pay-method" value={method} onChange={e => setMethod(e.target.value)}
-              className="h-10 rounded-control border border-solid border-line bg-card text-ink [font:inherit] text-copy px-3">
+              className="h-10 rounded-control border border-solid border-line bg-card text-ink [font-family:inherit] text-copy px-3">
               {METHODS.map(m => <option key={m} value={m}>{m}</option>)}
             </select>
           </div>
@@ -670,7 +670,7 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
         </div>
         {d && live && !block && (
           <button type="button" onClick={() => setTimesOpen(true)}
-            className="self-start -mt-3 p-0 border-none bg-transparent [font:inherit] text-meta text-ink underline cursor-pointer">Change check-in or check-out time</button>
+            className="self-start -mt-3 p-0 border-none bg-transparent [font-family:inherit] text-meta text-ink underline cursor-pointer">Change check-in or check-out time</button>
         )}
 
         {!block && d && (

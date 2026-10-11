@@ -575,7 +575,7 @@ function Registration({ g, onEdit }: { g: Guest; onEdit: () => void }) {
         {row('ID number', r.hasIdNumber ? (
           <span className="inline-flex items-center gap-2 flex-wrap">
             <span className="font-mono">{revealed ?? r.idNumberMasked}</span>
-            {g.can.reveal && !revealed && <button type="button" onClick={reveal} className="p-0 border-none bg-transparent [font:inherit] text-meta text-ink underline cursor-pointer">Show</button>}
+            {g.can.reveal && !revealed && <button type="button" onClick={reveal} className="p-0 border-none bg-transparent [font-family:inherit] text-meta text-ink underline cursor-pointer">Show</button>}
           </span>
         ) : 'Not given', !r.hasIdNumber)}
         {row('Date of birth', r.dateOfBirth ? fmtDate(r.dateOfBirth) : 'Not given', !r.dateOfBirth)}
@@ -612,7 +612,7 @@ function NotesAndTags({ g, onSaved }: { g: Guest; onSaved: () => void }) {
           const on = g.manualTags.includes(t);
           return (
             <button key={t} type="button" onClick={() => toggle(t)} disabled={busy || !g.can.edit} aria-pressed={on}
-              className={cx('h-7 inline-flex items-center gap-1 px-[10px] rounded-full [font:inherit] text-meta cursor-pointer border border-solid',
+              className={cx('h-7 inline-flex items-center gap-1 px-[10px] rounded-full [font-family:inherit] text-meta cursor-pointer border border-solid',
                 on ? (t === 'blacklist' ? 'bg-danger-bg border-danger-line text-danger font-semibold' : 'bg-warning-bg border-warning-line text-warning font-semibold')
                   : 'bg-card border-dashed border-line text-muted-ink')}>
               <Icon name={on ? 'Check' : 'Plus'} size="sm" />{t === 'vip' ? 'VIP' : 'Blacklist'}
