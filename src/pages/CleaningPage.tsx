@@ -12,6 +12,7 @@ import { BulkAssignCleaner } from '../components/BulkAssignCleaner';
 import SplitPane from '../components/SplitPane';
 import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
+import { refreshNavCounts } from '../lib/navBadges';
 import { api, ApiFailure, errorMessage } from '../lib/api';
 import { useCleaners } from '../lib/useCleaners';
 import { useUnitRoster } from '../lib/useUnitRoster';
@@ -99,7 +100,9 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
   const [assignFor, setAssignFor] = useState<{ buildingId: string; name: string } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
-  const { data, loading, error, reload } = useApi<Board>(`/housekeeping/board?date=${date}`);
+  const { data, loading, error, reload: reloadData } = useApi<Board>(`/housekeeping/board?date=${date}`);
+  // The side menu's counts (open jobs, today's work) follow what was just done here.
+  const reload = () => { reloadData(); void refreshNavCounts(); };
   const { cleaners } = useCleaners(true);
   const rows = data?.rows ?? [];
   const departures = data?.departures ?? [];

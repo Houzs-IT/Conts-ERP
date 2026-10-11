@@ -65,8 +65,9 @@ export function CatalogPanel({
   skus, loading, canWrite, onCreate, onUpdate,
 }: {
   skus: Sku[]; loading: boolean; canWrite: boolean;
-  onCreate: (input: CatalogInput) => void;
-  onUpdate: (id: string, patch: Partial<Sku>) => void;
+  /** Resolve to an error message to keep the dialog open with it, or null when saved. */
+  onCreate: (input: CatalogInput) => Promise<string | null>;
+  onUpdate: (id: string, patch: Partial<Sku>) => Promise<string | null>;
 }) {
   const [showInactive, setShowInactive] = useState(false);
   const [editing, setEditing] = useState<Sku | null>(null);
@@ -110,11 +111,11 @@ export function CatalogPanel({
           action: canWrite ? { label: 'New item', onClick: () => setCreating(true) } : undefined }}
       />
 
-      {creating && <SkuModal onClose={() => setCreating(false)} onSave={input => { onCreate(input); setCreating(false); }} />}
+      {creating && <SkuModal onClose={() => setCreating(false)} onSave={async input => { const err = await onCreate(input); if (!err) setCreating(false); return err; }} />}
       {editing && (
         <SkuModal sku={editing} onClose={() => setEditing(null)}
-          onSave={input => { onUpdate(editing.id, input); setEditing(null); }}
-          onToggleActive={() => { onUpdate(editing.id, { active: !editing.active }); setEditing(null); }} />
+          onSave={async input => { const err = await onUpdate(editing.id, input); if (!err) setEditing(null); return err; }}
+          onToggleActive={() => { void onUpdate(editing.id, { active: !editing.active }); setEditing(null); }} />
       )}
     </div>
   );
@@ -123,8 +124,10 @@ export function CatalogPanel({
 // ---- Add / edit a catalog item --------------------------------------------
 
 function SkuModal({ sku, onClose, onSave, onToggleActive }: {
-  sku?: Sku; onClose: () => void; onSave: (input: CatalogInput) => void; onToggleActive?: () => void;
+  sku?: Sku; onClose: () => void; onSave: (input: CatalogInput) => Promise<string | null>; onToggleActive?: () => void;
 }) {
+  const [busy, setBusy] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [code, setCode] = useState(sku?.code ?? '');
   const [name, setName] = useState(sku?.name ?? '');
   const [category, setCategory] = useState<SkuCategory>(sku?.category ?? 'general');
@@ -137,12 +140,14 @@ function SkuModal({ sku, onClose, onSave, onToggleActive }: {
   const stockOk = !trackStock || (stockQty != null && stockQty >= 0);
   const valid = code.trim() && name.trim() && priceSen != null && priceSen >= 0 && stockOk;
 
-  function submit() {
-    if (!valid || priceSen == null) return;
-    onSave({
+  async function submit() {
+    if (!valid || priceSen == null || busy) return;
+    setBusy(true); setSaveError(null);
+    const err = await onSave({
       code: code.trim(), name: name.trim(), category, unitLabel, defaultPrice: priceSen,
       trackStock, stockOnHand: trackStock ? stockQty ?? 0 : 0, notes: notes.trim(),
     });
+    setBusy(false); setSaveError(err);
   }
 
   return (
@@ -155,7 +160,7 @@ function SkuModal({ sku, onClose, onSave, onToggleActive }: {
         )}
         <div className="flex-1" />
         <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
-        <Button size="sm" variant="primary" onClick={submit} disabled={!valid} disabledReason={stockOk ? 'Add a code, name and price first.' : 'Enter how many are on hand.'}>
+        <Button size="sm" variant="primary" onClick={() => void submit()} loading={busy} disabled={!valid} disabledReason={stockOk ? 'Add a code, name and price first.' : 'Enter how many are on hand.'}>
           {sku ? 'Save' : 'Add item'}
         </Button>
       </>}>
@@ -192,6 +197,7 @@ function SkuModal({ sku, onClose, onSave, onToggleActive }: {
         <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} placeholder="Anything the operator should know."
           className="block w-full box-border h-auto px-3 py-[10px] text-ink bg-white border border-solid border-line rounded-control outline-none font-sans text-copy font-normal resize-y leading-[1.5]" />
       </LabeledField>
+      {saveError && <span className="text-meta text-danger" role="alert">{saveError}</span>}
     </Modal>
   );
 }
@@ -232,9 +238,11 @@ export function ExchangeModal({ jobLabel, skus, onClose, onExchange }: {
               <NumberInput value={qty} onChange={setQty} min={1} max={sku?.stockOnHand} aria-label="Quantity" className={INPUT_CX} />
             </LabeledField>
             {sku && (
-              <div className="text-meta text-muted-ink pb-2.5">
-                {sku.stockOnHand} on hand → <span className="font-medium text-ink tabular-nums">{Math.max(0, sku.stockOnHand - n)}</span> after
-              </div>
+              n > sku.stockOnHand
+                ? <div className="text-meta text-danger pb-2.5">Only {sku.stockOnHand} on hand.</div>
+                : <div className="text-meta text-muted-ink pb-2.5">
+                  {sku.stockOnHand} on hand → <span className="font-medium text-ink tabular-nums">{sku.stockOnHand - n}</span> after
+                </div>
             )}
           </div>
           <div className="px-3 py-[10px] rounded-control bg-page border border-solid border-line text-meta text-muted-ink leading-[1.55]">

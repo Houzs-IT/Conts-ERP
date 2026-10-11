@@ -11,6 +11,7 @@ import { DataTable, type Column } from '../components/DataTable';
 import SplitPane from '../components/SplitPane';
 import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
+import { refreshNavCounts } from '../lib/navBadges';
 import { api, ApiFailure, errorMessage } from '../lib/api';
 import { useSession } from '../lib/session';
 import { useUnitRoster } from '../lib/useUnitRoster';
@@ -72,7 +73,9 @@ export default function MaintenancePage() {
   const [creating, setCreating] = useState(false);
   const [threshold, setThreshold] = useState(false);
 
-  const { data, loading, error, reload } = useApi<Payload>('/maintenance/issues');
+  const { data, loading, error, reload: reloadData } = useApi<Payload>('/maintenance/issues');
+  // The side menu's counts (open jobs, today's work) follow what was just done here.
+  const reload = () => { reloadData(); void refreshNavCounts(); };
   const issues = data?.data ?? [];
   const sku = useApi<SkuPayload>(tab === 'catalog' || selected ? '/maintenance/skus' : null);
 
@@ -110,12 +113,12 @@ export default function MaintenancePage() {
     catch (e) { toast({ tone: 'critical', title: 'Not saved.', body: errorMessage(e, 'Try again.') }); }
   }
   async function createSku(input: CatalogInput) {
-    try { await api.post('/maintenance/skus', input); toast({ tone: 'success', title: 'Item added.' }); sku.reload(); }
-    catch (e) { toast({ tone: 'critical', title: 'Not saved.', body: errorMessage(e, 'Try again.') }); }
+    try { await api.post('/maintenance/skus', input); toast({ tone: 'success', title: 'Item added.' }); sku.reload(); return null; }
+    catch (e) { return errorMessage(e, 'Not saved. Try again.'); }
   }
-  function updateSku(id: string, delta: Partial<Sku>) {
-    api.patch(`/maintenance/skus/${id}`, delta).then(() => { toast({ tone: 'success', title: 'Catalog updated.' }); sku.reload(); })
-      .catch(e => toast({ tone: 'critical', title: 'Not saved.', body: errorMessage(e, 'Try again.') }));
+  async function updateSku(id: string, delta: Partial<Sku>) {
+    try { await api.patch(`/maintenance/skus/${id}`, delta); toast({ tone: 'success', title: 'Catalog updated.' }); sku.reload(); return null; }
+    catch (e) { const msg = errorMessage(e, 'Not saved. Try again.'); toast({ tone: 'critical', title: 'Not saved.', body: msg }); return msg; }
   }
 
   const list = (
@@ -144,7 +147,7 @@ export default function MaintenancePage() {
         primary={<Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setCreating(true)}>New job</Button>} />
 
       {tab === 'catalog' ? (
-        <CatalogPanel skus={sku.data?.data ?? []} loading={sku.loading} canWrite={['management', 'operations_manager', 'operations_staff'].includes(user!.role)} onCreate={c => void createSku(c)} onUpdate={updateSku} />
+        <CatalogPanel skus={sku.data?.data ?? []} loading={sku.loading} canWrite={['management', 'operations_manager', 'operations_staff'].includes(user!.role)} onCreate={createSku} onUpdate={updateSku} />
       ) : (
         <>
           <div className="flex items-center gap-2 flex-wrap">
@@ -487,12 +490,12 @@ function NewJobModal({ onClose, onDone, money, threshold }: { onClose: () => voi
   const [f, setF] = useState({ unitId: '', title: '', category: 'other', urgency: 'normal', reportSource: 'staff', detail: '', assigneeName: '', assigneeKind: 'contractor', chargeTo: 'owner' });
   const [quoteSen, setQuoteSen] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ unitId?: string; title?: string; form?: string }>({});
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF(x => ({ ...x, [k]: e.target.value }));
   async function save() {
-    if (!f.unitId) { setError('Pick the unit.'); return; }
-    if (!f.title.trim()) { setError('Say what is wrong.'); return; }
-    setBusy(true); setError(null);
+    const bad = { unitId: f.unitId ? undefined : 'Pick the unit.', title: f.title.trim() ? undefined : 'Say what is wrong.' };
+    if (bad.unitId || bad.title) { setError(bad); return; }
+    setBusy(true); setError({});
     try {
       const r = await api.post<{ id: string }>('/maintenance/issues', {
         unitId: f.unitId, title: f.title.trim(), detail: f.detail.trim() || undefined, category: f.category, urgency: f.urgency, reportSource: f.reportSource,
@@ -500,12 +503,15 @@ function NewJobModal({ onClose, onDone, money, threshold }: { onClose: () => voi
         quotedAmount: money && quoteSen != null ? quoteSen : undefined, chargeTo: f.chargeTo,
       });
       onDone(r.id);
-    } catch (e) { setError(errText(e)); setBusy(false); }
+    } catch (e) {
+      const fields = e instanceof ApiFailure ? e.fields ?? {} : {};
+      setError({ unitId: fields.unitId, title: fields.title, form: fields.unitId || fields.title ? undefined : errText(e) }); setBusy(false);
+    }
   }
   return (
     <OpsModal title="New job" sub="A repair on one unit." onClose={onClose} busy={busy} width={540} footer={footer(onClose, busy, 'Open job', () => void save())}>
-      <FormRow label="Unit"><SearchSelect label="Unit" value={f.unitId} onChange={v => setF(x => ({ ...x, unitId: v }))} options={units.map(u => ({ value: u.id, label: u.unitNumber, group: u.propertyName }))} placeholder="Search units" size="md" /></FormRow>
-      <FormRow label="What is wrong" error={error}><input className={INPUT} value={f.title} onChange={set('title')} placeholder="e.g. Aircon not cooling, guest complained" maxLength={160} /></FormRow>
+      <FormRow label="Unit" error={error.unitId}><SearchSelect label="Unit" value={f.unitId} onChange={v => { setF(x => ({ ...x, unitId: v })); setError(x => ({ ...x, unitId: undefined })); }} options={units.map(u => ({ value: u.id, label: u.unitNumber, group: u.propertyName }))} placeholder="Search units" size="md" /></FormRow>
+      <FormRow label="What is wrong" error={error.title}><input className={INPUT} value={f.title} onChange={e => { set('title')(e); setError(x => ({ ...x, title: undefined })); }} placeholder="e.g. Aircon not cooling, guest complained" maxLength={160} /></FormRow>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         <FormRow label="Category"><select className={INPUT} value={f.category} onChange={set('category')}>{Object.entries(CATEGORY).map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></FormRow>
         <FormRow label="Urgency"><select className={INPUT} value={f.urgency} onChange={set('urgency')}><option value="normal">Normal</option><option value="urgent">Urgent</option></select></FormRow>
@@ -521,6 +527,7 @@ function NewJobModal({ onClose, onDone, money, threshold }: { onClose: () => voi
           <MoneyInput className={INPUT} valueSen={quoteSen} onChangeSen={setQuoteSen} aria-label="Quote in RM" /></FormRow>}
         <FormRow label="Who pays"><select className={INPUT} value={f.chargeTo} onChange={set('chargeTo')}>{(['owner', 'the_conts', 'guest_deposit'] as ChargeTo[]).map(p => <option key={p} value={p}>{PAYER[p]}</option>)}</select></FormRow>
       </div>
+      {error.form && <span className="text-meta text-danger" role="alert">{error.form}</span>}
     </OpsModal>
   );
 }

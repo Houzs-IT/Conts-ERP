@@ -8,6 +8,7 @@ import { StaleBanner } from '../components/DataState';
 import { Skeleton } from '../components/States';
 import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
+import { refreshNavCounts } from '../lib/navBadges';
 import { api, errorMessage } from '../lib/api';
 import { cx } from '../lib/design-tokens';
 import type { BookingChannel } from '../lib/types';
@@ -44,7 +45,9 @@ export default function OperationsTodayPage() {
   const toast = useToast();
   const [pick, setPick] = useState<'today' | 'tomorrow'>('today');
   const date = pick === 'today' ? mytDay(0) : mytDay(1);
-  const { data, loading, error, reload } = useApi<Day>(`/operations/day?date=${date}`);
+  const { data, loading, error, reload: reloadData } = useApi<Day>(`/operations/day?date=${date}`);
+  // The side menu's counts (open jobs, today's work) follow what was just done here.
+  const reload = () => { reloadData(); void refreshNavCounts(); };
   const [busy, setBusy] = useState<string | null>(null);
 
   async function guestLeft(d: Departure) {

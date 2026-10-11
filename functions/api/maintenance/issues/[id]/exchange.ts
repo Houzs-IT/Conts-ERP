@@ -27,15 +27,15 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
 
   const now = nowIso();
   // Decrement only if the stock is still there — guards against two draws racing the same units.
-  await run(env, 'UPDATE maintenance_skus SET stock_on_hand = stock_on_hand - ?, updated_at = ? WHERE id = ? AND stock_on_hand >= ?', qty, now, sku.id, qty);
-  const after = await one<any>(env, 'SELECT stock_on_hand FROM maintenance_skus WHERE id = ?', sku.id);
-  if (!after || after.stock_on_hand < 0) return fail('OUT_OF_STOCK', 'That part just went out of stock. Try again.', 409);
+  // No row back means another draw took the stock first: nothing moved, so no stock move is recorded either.
+  const after = await one<{ stock_on_hand: number }>(env, 'UPDATE maintenance_skus SET stock_on_hand = stock_on_hand - ?, updated_at = ? WHERE id = ? AND stock_on_hand >= ? RETURNING stock_on_hand', qty, now, sku.id, qty);
+  if (!after) return fail('OUT_OF_STOCK', 'That part just went out of stock. Try again.', 409);
 
   const moveId = crypto.randomUUID();
   await run(env, `
     INSERT INTO maintenance_stock_moves (id, sku_id, issue_id, inventory_item_id, qty, reason, moved_by, created_at)
     VALUES (?, ?, ?, ?, ?, 'exchange', ?, ?)`,
     moveId, sku.id, id, b.inventoryItemId ?? null, -qty, session.userId, now);
-  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'maintenance.exchange', entityTable: 'maintenance_stock_moves', entityId: moveId, after: { skuId: sku.id, issueId: id, qty: -qty, stockOnHand: after.stock_on_hand } });
+  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'maintenance.exchange', entityTable: 'maintenance_issues', entityId: id, after: { label: sku.name, quantity: qty, stockOnHand: after.stock_on_hand, moveId } });
   return json({ ok: true, stockOnHand: after.stock_on_hand }, 201);
 };
