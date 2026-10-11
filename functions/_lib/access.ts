@@ -76,6 +76,13 @@ export const ROUTE_AREAS: { method: string; path: RegExp; area: string | null; w
   { method: 'POST', path: /^\/api\/integrations\/sync$/, area: 'reservations', why: 'The calendar\'s button that gets new reservations from the channels.' },
   { method: 'POST', path: /^\/api\/owners\/[^/]+\/notify$/, area: 'dashboard', why: 'The dashboard\'s exception action that tells an owner about a problem with their unit.' },
   { method: 'POST', path: /^\/api\/messages$/, area: 'reservations', why: 'Messaging a guest from a reservation or a guest record; Messages itself stays under Communication.' },
+  // Finance reads bookings but does not make or change them (owner, 11 Oct 2026); taking a guest's payment, recording
+  // a channel payout and issuing a receipt are finance's own work, so those writes follow the Finance area.
+  { method: 'POST', path: /^\/api\/reservations\/[^/]+\/payments$/, area: 'finance', why: 'Recording a guest payment on a reservation is money work.' },
+  { method: 'DELETE', path: /^\/api\/reservations\/[^/]+\/payments\/[^/]+$/, area: 'finance', why: 'Removing a wrongly recorded guest payment is money work.' },
+  { method: 'POST', path: /^\/api\/reservations\/mark-paid-out$/, area: 'finance', why: 'Recording a channel payout is money work.' },
+  { method: 'POST', path: /^\/api\/guest-documents$/, area: 'finance', why: 'Issuing a guest receipt or invoice is money work.' },
+  { method: 'POST', path: /^\/api\/guest-documents\/[^/]+\/void$/, area: 'finance', why: 'Voiding a guest receipt or invoice is money work.' },
   { method: 'POST', path: /^\/api\/maintenance\/issues\/[^/]+\/approve$/, area: 'finance', why: 'Recording an owner\'s approval of a repair quote is a money decision.' },
   { method: 'GET', path: /^\/api\/audit$/, area: null, why: 'The History panel on every record: the handler applies the area of the record asked for; the whole trail stays management and finance only.' },
   { method: 'GET', path: /^\/api\/(warehouses|suppliers|drivers|vehicles|threepl-companies)$/, area: null, why: 'Supply chain reference lists that every supply chain screen picks from.' },
