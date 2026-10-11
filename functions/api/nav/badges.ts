@@ -13,7 +13,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if (!session) return response!;
   if (isFieldRole(session.role)) return json({ today: 0, maintenance: 0, inbox: 0, statements: 0, channels: { units: 0, lastSentAt: null, failed: 0 }, alerts: [] });
 
-  const c = await one<{ today: number; overdue: number; maintenance: number; inbox: number; statements: number; payouts_failed: number; payouts_pending: number; mail_failed: number }>(env, `
+  // Every menu load and every open tab once a minute asks this: the four reads go out together, not one after another.
+  const [c, ch, approvals, approvalsOn] = await Promise.all([one<{ today: number; overdue: number; maintenance: number; inbox: number; statements: number; payouts_failed: number; payouts_pending: number; mail_failed: number }>(env, `
     SELECT
       (SELECT count(*)::int FROM tasks WHERE state != 'resolved'
          AND ${MYT_DATE('COALESCE(scheduled_for, due_at, created_at)')} <= to_char(now() AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM-DD')) AS today,
@@ -23,16 +24,16 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       (SELECT count(*)::int FROM owner_statements WHERE state = 'finalised') AS statements,
       (SELECT count(*)::int FROM payouts WHERE state = 'failed') AS payouts_failed,
       (SELECT count(*)::int FROM payouts WHERE state = 'pending') AS payouts_pending,
-      (SELECT count(*)::int FROM notification_log WHERE state = 'failed' AND queued_at >= ?) AS mail_failed`, nowIso(), new Date(Date.now() - 7 * 864e5).toISOString());
-  // The header's channel chip: units really connected to a booking site, when the last update was accepted,
-  // and how many updates Channex refused.
-  const ch = await one<{ units: number; last_sent: string | null; failed: number }>(env, `
+      (SELECT count(*)::int FROM notification_log WHERE state = 'failed' AND queued_at >= ?) AS mail_failed`, nowIso(), new Date(Date.now() - 7 * 864e5).toISOString()),
+    // The header's channel chip: units really connected to a booking site, when the last update was accepted,
+    // and how many updates Channex refused.
+    one<{ units: number; last_sent: string | null; failed: number }>(env, `
     SELECT (SELECT count(DISTINCT unit_id)::int FROM channex_channels) AS units,
            (SELECT max(called_at) FROM channex_calls WHERE status BETWEEN 200 AND 299) AS last_sent,
-           (SELECT count(*)::int FROM channex_outbox o WHERE o.status = 'failed' AND o.unit_id IN (SELECT unit_id FROM channex_channels)) AS failed`);
+           (SELECT count(*)::int FROM channex_outbox o WHERE o.status = 'failed' AND o.unit_id IN (SELECT unit_id FROM channex_channels)) AS failed`),
+    waitingCount(env, session), approvalsEnabled(env)]);
   const channels = { units: ch?.units ?? 0, lastSentAt: ch?.last_sent ?? null, failed: ch?.failed ?? 0 };
   const n = c!;
-  const [approvals, approvalsOn] = await Promise.all([waitingCount(env, session), approvalsEnabled(env)]);
   const money = session.manage;
 
   type Alert = { key: string; title: string; body: string; target: string; tone: 'critical' | 'warning' | 'info'; count: number };
