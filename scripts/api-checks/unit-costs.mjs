@@ -27,11 +27,16 @@ const BASE = process.env.API_BASE ?? 'http://localhost:8788';
 const DB_URL = process.env.DB_URL ?? '';
 const VIA_LIB = process.env.STATEMENTS === 'lib' && !!DB_URL;
 const numbered = sql => { let i = 0; return sql.replace(/\?/g, () => `$${++i}`); };
-// One connection per query: a PGlite stand-in serves one at a time.
-const db = async (text, ...values) => {
-  const c = postgres(DB_URL, { max: 1, prepare: false, onnotice: () => {}, connection: { search_path: 'pos' },
-    types: { number: { to: 20, from: [20, 1700], serialize: x => String(x), parse: x => Number(x) } } });
-  try { return await c.unsafe(text, values); } finally { await c.end({ timeout: 5 }); }
+// One connection per query, one query at a time: a PGlite stand-in serves one connection at a time.
+let queue = Promise.resolve();
+const db = (text, ...values) => {
+  const next = queue.then(async () => {
+    const c = postgres(DB_URL, { max: 1, prepare: false, onnotice: () => {}, connection: { search_path: 'pos' },
+      types: { number: { to: 20, from: [20, 1700], serialize: x => String(x), parse: x => Number(x) } } });
+    try { return await c.unsafe(text, values); } finally { await c.end({ timeout: 5 }); }
+  });
+  queue = next.catch(() => {});
+  return next;
 };
 
 /** The owner's statement draft for a month: expense lines on the unit, as { expenseId, amount }. */
