@@ -40,7 +40,7 @@ export function PayoutDetails({ owner, canEdit, onSaved }: { owner: Owner; canEd
         {field && (
           <button type="button" onClick={() => reveal(field)} disabled={busy === field}
             aria-label={shown[field] !== undefined ? `Hide ${label}` : `Show full ${label}`}
-            title={shown[field] !== undefined ? 'Hide' : 'Show the full number. This is recorded in the audit log.'}
+            title={shown[field] !== undefined ? 'Hide' : 'Show the full number. This is recorded in the history.'}
             className="inline-flex items-center gap-1 bg-transparent border-none p-0 cursor-pointer font-sans text-meta font-medium text-gold-ink">
             <Icon name={shown[field] !== undefined ? 'EyeOff' : 'Eye'} size="sm" />
             {shown[field] !== undefined ? 'Hide' : 'Show'}
@@ -60,7 +60,7 @@ export function PayoutDetails({ owner, canEdit, onSaved }: { owner: Owner; canEd
         {row('Account', acct, owner.bankAccountLast4 ? 'bank' : undefined)}
         {row('Account holder', owner.accountHolder ?? 'Not on file')}
       </div>
-      <span className="text-caption text-muted-ink">Only the last four digits are shown. Showing the full number is recorded in the audit log. These details are the owner's, for every unit they own.</span>
+      <span className="text-caption text-muted-ink">Only the last four digits are shown. Showing the full number is recorded in the history. These details are the owner's, for every unit they own.</span>
       {editing && <EditPayout owner={owner} onClose={() => setEditing(false)} onSaved={() => { setShown({}); setEditing(false); onSaved?.(); }} />}
     </Section>
   );
@@ -101,7 +101,7 @@ function EditPayout({ owner, onClose, onSaved }: { owner: Owner; onClose: () => 
       <Field label="Account holder" placeholder="Name on the account" maxLength={120} value={holder} onChange={e => setHolder(e.target.value)} error={fields.accountHolder} />
       <Field label="IC or passport" placeholder={owner.icLast4 ? `${masked(owner.icLast4)} (leave empty to keep)` : 'Accepts both formats'} maxLength={30}
         value={ic} onChange={e => setIc(e.target.value)} error={fields.ic} />
-      <p className="m-0 text-meta text-muted-ink">The change is recorded in the audit log; the numbers themselves are not.</p>
+      <p className="m-0 text-meta text-muted-ink">The change is recorded in the history; the numbers themselves are not.</p>
     </Modal>
   );
 }

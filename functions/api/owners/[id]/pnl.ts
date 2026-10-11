@@ -3,9 +3,9 @@ import { requireSession } from '../../../_lib/auth';
 import { daysIn, todayMyt } from '../../../_lib/ops';
 
 const CATEGORY_LABEL: Record<string, string> = {
-  housekeeping: 'Housekeeping', cleaning: 'Cleaning', maintenance: 'Maintenance', utilities: 'Utilities',
+  housekeeping: 'Cleaning', cleaning: 'Cleaning', maintenance: 'Maintenance', utilities: 'Utilities',
   internet: 'Internet', electricity: 'Electricity', water: 'Water', consumables: 'Consumables',
-  furniture: 'Furniture', management_fee: 'Management fee', channel_fee: 'Channel fees', other: 'Other',
+  furniture: 'Furniture', management_fee: 'To Operator', channel_fee: 'Service fee', other: 'Other',
 };
 const label = (c: string) => CATEGORY_LABEL[c] ?? c.replace(/_/g, ' ').replace(/^./, x => x.toUpperCase());
 
@@ -91,14 +91,14 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
 
     const pnl = isGrr
       ? [
-          { label: 'Gross booking value', amount: gross, type: 'gross' },
+          { label: 'Gross Income', amount: gross, type: 'gross' },
           { label: 'Guaranteed rent', amount: net, type: 'net' },
         ]
       : [
-          { label: 'Gross booking value', amount: gross, type: 'gross' },
-          { label: `Management fee · ${feePct}%`, amount: -fee, type: 'fee' },
+          { label: 'Gross Income', amount: gross, type: 'gross' },
+          { label: `${feePct}% To Operator`, amount: -fee, type: 'fee' },
           ...expensesList.map(e => ({ label: e.label, amount: e.amount, type: 'expense' })),
-          { label: 'Net payout', amount: net, type: 'net' },
+          { label: 'Net Payout to Owner', amount: net, type: 'net' },
         ];
 
     return {

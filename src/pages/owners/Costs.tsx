@@ -276,7 +276,7 @@ function CleaningPrice({ unitId, price, legacy, canEdit, onSaved }: { unitId: st
     setBusy(true);
     try {
       await api.patch(`/units/${encodeURIComponent(unitId)}`, { cleaningPrice: draft ?? null });
-      toast({ tone: 'success', title: 'Cleaning price saved.', body: draft ? `A finished standard clean now charges ${rm(draft)}.` : 'Cleared: cleans charge the last price used or the default.' });
+      toast({ tone: 'success', title: 'Cleaning price saved.', body: draft ? `A finished standard clean now charges ${rm(draft)}.` : 'Cleared: cleaning jobs charge the last price used or the default.' });
       setDraft(undefined); onSaved();
     } catch (e) { notifyFailure(e); } finally { setBusy(false); }
   }

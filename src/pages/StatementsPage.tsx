@@ -306,7 +306,7 @@ export default function StatementsPage() {
                 <Sum label="Gross Income" value={rm(totals.gross, { cents: false })} />
                 <Sum label="To Operator" value={rm(totals.fee, { cents: false })} minus />
                 <Sum label="Deductions" value={rm(totals.expenses, { cents: false })} minus />
-                <Sum label="Net Payout" value={rm(totals.net)} strong />
+                <Sum label="Net Payout to Owner" value={rm(totals.net)} strong />
               </div>
             </div>
           )}

@@ -23,6 +23,7 @@ export const onRequestDelete: PagesFunction<Env> = async ({ request, env, params
   } else {
     const off = await channexDeactivateChannel(env, row.channex_channel_id);
     const del = await channexDeleteChannel(env, row.channex_channel_id);
+    // vocab-ok: OTA_LABEL is a code name; the text shows the channel name
     if (!del.ok && del.status !== 404) return fail('CHANNEX_REFUSED', `Channex did not remove the ${OTA_LABEL[row.ota]} connection (${del.status}${off.ok ? '' : ', and it could not be switched off'}).`, 502);
   }
   await run(env, 'DELETE FROM channex_channels WHERE id = ?', row.id);

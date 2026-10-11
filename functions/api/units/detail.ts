@@ -138,8 +138,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       : [
         { label: m.terms.model === 'long_term' ? 'Gross Income (monthly rent from tenant)' : 'Gross Income (reservations)', amount: m.gross, type: 'gross' },
         ...m.deductionGroups.filter(g => g.amount).map(g => ({ label: DEDUCTION_WORDS[g.category] ?? g.label, amount: -g.amount, type: 'expense' })),
-        { label: m.terms.model === 'long_term' ? `Management fee ${fmtPct(100 - (m.ownerPct ?? 0))} of the rent` : `${fmtPct(100 - (m.ownerPct ?? 0))} To Operator`, amount: -m.operatorShare, type: 'fee' },
-        ...(m.topUp ? [{ label: 'Minimum guarantee top-up', amount: m.topUp, type: 'adjustment' }] : []),
+        { label: m.terms.model === 'long_term' ? `${fmtPct(100 - (m.ownerPct ?? 0))} To Operator (of the rent)` : `${fmtPct(100 - (m.ownerPct ?? 0))} To Operator`, amount: -m.operatorShare, type: 'fee' },
+        ...(m.topUp ? [{ label: 'Minimum Guarantee Top-up', amount: m.topUp, type: 'adjustment' }] : []),
       ];
     // The owner's credits and charges (owner_adjustments, e.g. the building's maintenance fee from the workbook) come off
     // after the split, as on every statement already sent.
@@ -154,14 +154,14 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     const othersTotal = others.reduce((n, l) => n + l.amount, 0);
     if (example.company) {
       companyPnl = [
-        { label: 'Unit income (bookings)', amount: example.company.income, type: 'gross' },
+        { label: 'Unit income (reservations)', amount: example.company.income, type: 'gross' },
         { label: 'Costs on the unit (all payers)', amount: -example.company.costs, type: 'expense' },
         { label: m.terms.model === 'master_lease' ? 'Lease rent paid to owner' : 'Guaranteed rent paid to owner', amount: -example.company.rentToOwner, type: 'fee' },
         { label: "The Conts' result", amount: example.company.result, type: 'net' },
       ];
     } else {
       companyPnl = [
-        { label: m.terms.model === 'long_term' ? 'Management fee' : `${fmtPct(100 - (m.ownerPct ?? 0))} To Operator (management and agent)`, amount: m.operatorShare, type: 'gross' },
+        { label: m.terms.model === 'long_term' ? 'Operator share' : `${fmtPct(100 - (m.ownerPct ?? 0))} To Operator (management and agent)`, amount: m.operatorShare, type: 'gross' },
         ...(m.topUp ? [{ label: 'Minimum guarantee top-up paid', amount: -m.topUp, type: 'fee' }] : []),
         ...others,
         { label: "The Conts' result", amount: m.operatorShare - m.topUp + othersTotal, type: 'net' },

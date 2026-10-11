@@ -1,11 +1,9 @@
 # Vocabulary (Property OS)
 
 **Status: decided by the owner on 11 Oct 2026 (PR #168); the rename is applied across `src/` and `functions/`
-(11 Oct 2026), and `scripts/checks/vocabulary.mjs` runs in `npm run check`, so a wrong word fails the check.** Not yet
-applied in the files the units-owners rework owns (`src/pages/units/**`, `src/pages/owners/**`,
-`src/pages/OwnerProfilePage.tsx`, `src/pages/OwnersPage.tsx`, `src/pages/UnitsPage.tsx`,
-`functions/_lib/ownerStatement.ts`, `functions/api/units/**`, `functions/api/owners/**`): the check skips them
-(`PENDING_REWORK` in the check) and `node scripts/checks/vocabulary.mjs --pending` lists what is left there.
+(11 Oct 2026), and `scripts/checks/vocabulary.mjs` runs in `npm run check`, so a wrong word fails the check.** The one
+file it leaves alone is the printed Owner Income Report (`src/pages/OwnerIncomeReportPage.tsx`), which copies the
+owner's own sample word for word.
 
 The rule: **one idea, one word, the same on every screen, in every message, PDF and email.** We change only the
 words people read. Stored values (`checked_out`, `cancelled`, `booking_com`, table and column names) stay as they are.
@@ -128,6 +126,19 @@ one place they live.
 | The document | **Owner statement**; its PDF is titled **Owner Income Report** | owner report, income report, statement (alone in mixed screens) | Decision 6. |
 | Statement status | **Draft, Final, Sent, Paid** | provisional, finalised | Decision 7. |
 | Staff record of a cost | **Expense** | cost, charge, bill | On the statement an expense paid by the owner becomes a line under Expense Deduction. |
+
+**A unit's or an owner's costs on screen (owner, 11 Oct 2026)** are read in four groups, plus Other fees only when
+it is not zero. This is how the Unit and Owner pages group the month's costs; the statement's maths, the stored
+categories and the printed Owner Income Report do not change. The condo's maintenance fee and repairs are different
+things.
+
+| Group | Use | Do not use | What is in it | Source |
+|---|---|---|---|---|
+| Cleaning | **Cleaning fees** | cleaning (alone, as the group) | Every clean charged to the unit. | Owner |
+| Repairs | **Maintenance repair** | maintenance (alone, as the group) | Repairs on the unit; on the statement under Additional Deduction, before the operator's share. | Owner |
+| Bills | **Utilities** | paid on behalf | Water, electricity, Wi-Fi, IndahWater. | Owner |
+| The condo management's monthly fee | **Maintenance fee** ("Maintenance fee (condo)" where space allows) | paid on behalf, building fee | On the statement after the operator's share, as an owner adjustment ("MAINTENANCE FEE SEPT 26"). | Owner |
+| Anything else | **Other fees** | | Shown only when not zero. | Owner |
 
 ## 4. Places, people and operations
 

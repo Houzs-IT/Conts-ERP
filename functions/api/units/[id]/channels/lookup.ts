@@ -15,12 +15,15 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   if (!/^\d{3,12}$/.test(hotelId)) return fail('VALIDATION', 'Enter the Hotel ID (numbers only).', 422, { hotelId: 'Numbers only.' });
 
   const test = await channexTestConnection(env, ota, hotelId);
+  // vocab-ok: OTA_LABEL is a code name; the text shows the channel name
   if (!test.ok) return channexRefused(`check the ${OTA_LABEL[ota]} Hotel ID`, test.status, test.body);
   if (!test.body?.data?.success) {
+    // vocab-ok: OTA_LABEL is a code name; the text shows the channel name
     return fail('HOTEL_NOT_READY', `${OTA_LABEL[ota]} did not accept Hotel ID ${hotelId}. Check the number, and that Channex is chosen as the channel manager in the ${OTA_LABEL[ota]} extranet.`, 422,
       { detail: JSON.stringify(test.body?.data?.errors ?? {}).slice(0, 300) });
   }
   const details = await channexMappingDetails(env, ota, hotelId);
+  // vocab-ok: OTA_LABEL is a code name; room is the Booking.com/Agoda word on the linking screen
   if (!details.ok) return channexRefused(`read the ${OTA_LABEL[ota]} rooms`, details.status, details.body);
   const d = details.body?.data ?? {};
   return json({

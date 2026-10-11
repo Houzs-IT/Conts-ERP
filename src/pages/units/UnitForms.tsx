@@ -66,8 +66,8 @@ export function DetailsForm({ u, owner, buildings, money, canEdit, onChange, onO
             onChange={n => onChange({ bedrooms: n ?? undefined })} />
         </Labeled>
         {money && u.baseRate !== undefined && (
-          <Labeled label="Base nightly rate (RM)" hint="AMOUNT" help="The web price before channel uplifts. Saving it re-sends prices to linked channels.">
-            <MoneyInput label="" aria-label="Base nightly rate" minSen={100} valueSen={u.baseRate}
+          <Labeled label="Nightly price (RM)" hint="AMOUNT" help="The price of one night before each channel's markup. Saving it sends new prices to the linked channels.">
+            <MoneyInput label="" aria-label="Nightly price" minSen={100} valueSen={u.baseRate}
               onChangeSen={sen => onChange({ baseRate: sen ?? 0 })} />
           </Labeled>
         )}
@@ -78,14 +78,14 @@ export function DetailsForm({ u, owner, buildings, money, canEdit, onChange, onO
         <a href={`#/owners/${encodeURIComponent(owner.id)}`} className="text-copy font-semibold text-ink! no-underline [overflow-wrap:anywhere]">{titleCase(owner.name)}</a>
         <a href={`#/owners/${encodeURIComponent(owner.id)}`} className="text-meta font-semibold text-gold-ink no-underline">Open owner</a>
       </div>
-      <p className="mt-0 mb-[22px] text-meta text-muted-ink">Payout details (bank, account and holder) belong to the owner and are edited on the owner's page, for every unit they own. To give this unit to another owner, use Link unit on that owner's page.</p>
+      <p className="mt-0 mb-[22px] text-meta text-muted-ink">Owner payout details (bank, account and holder) belong to the owner and are edited on the owner's page, for every unit they own. To give this unit to another owner, use Link unit on that owner's page.</p>
 
-      <SectionHead>Revenue model</SectionHead>
+      <SectionHead>Income model</SectionHead>
       <div className="flex flex-wrap items-center gap-3 mb-[6px]">
         <span className="text-copy">{u.revenueModel ? (u.termsLabel ?? MODEL[u.revenueModel].label) : u.pkg}</span>
         {onOpenContract && <button type="button" onClick={onOpenContract} className="p-0 bg-transparent border-none cursor-pointer [font-family:inherit] text-meta font-semibold text-gold-ink">Change on the Contract tab</button>}
       </div>
-      <p className="m-0 text-meta text-muted-ink">One revenue model per contract decides how the owner statement is worked out. Package {u.pkg.replace('Package ', '')} is kept from the owner workbook for reference.</p>
+      <p className="m-0 text-meta text-muted-ink">One income model per contract decides how the owner statement is worked out. Package {u.pkg.replace('Package ', '')} is kept from the owner workbook for reference.</p>
     </fieldset>
   );
 }

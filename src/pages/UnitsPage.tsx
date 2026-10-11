@@ -58,7 +58,7 @@ const CHARGE_LABEL: Record<string, string> = { owner: 'Owner', guest_deposit: 'G
 // Short labels so the eight tabs sit on one row; the title carries the full name.
 const TABS = [
   ['overview', 'Overview', 'Overview'], ['details', 'Details', 'Details and owner'], ['contract', 'Contract', 'Contract and documents'],
-  ['access', 'Access', 'Access and keys'], ['reservations', 'Bookings', 'Bookings'], ['operations', 'Housekeeping', 'Cleaning, maintenance and fit-out'],
+  ['access', 'Access', 'Access and keys'], ['reservations', 'Reservations', 'Reservations'], ['operations', 'Jobs', 'Cleaning, maintenance and fit-out'],
   ['financials', 'Financials', 'Financials'], ['activity', 'History', 'History of changes'],
 ] as const;
 type Tab = typeof TABS[number][0];
@@ -187,7 +187,7 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
     const nu = mkUnit(crypto.randomUUID(), buildingId, '', '', parent.state, '', {
       parentUnitId: parent.id, ownerName: parent.ownerName, ic: parent.ic, bankName: parent.bankName, bankAccount: parent.bankAccount, accountHolder: parent.accountHolder, split: 'Profit share',
     });
-    void createUnit(nu, 'Sub-unit added.', 'A room or floor under the unit — fill in its details below.');
+    void createUnit(nu, 'Sub-unit added.', 'Fill in its details below.');
   }
 
   // ?view=list shows every unit as one table instead of the tree and one record.
@@ -208,7 +208,7 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
       sub="A blank unit opens for you to fill in." body="You will set the listing name, code, owner, package and GRR on its Details tab." confirm="Add unit"
       onClose={() => setModal(null)} onConfirm={() => addUnit(modal.buildingId)} />}
     {modal?.kind === 'subunit' && <ConfirmAdd title={`Add a sub-unit under ${modal.parent.unitCode || 'this unit'}`}
-      sub="A room or floor let separately inside this unit." body="The sub-unit inherits the owner and bank details of its parent. You can give it its own code, revenue split and expenses." confirm="Add sub-unit"
+      sub="A part of this unit let on its own, such as a bedroom or a floor." body="The sub-unit inherits the owner and bank details of its parent. You can give it its own code, split and expenses." confirm="Add sub-unit"
       onClose={() => setModal(null)} onConfirm={() => addSubUnit(modal.buildingId, modal.parent)} />}
   </>;
 
@@ -381,13 +381,13 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
                   options={READINESS_OPTIONS.map(r => ({ value: r, label: statusLabel('readiness', r) }))} />
               </span>
               {form?.parentUnitId && <StatusBadge tone="warning" label="Sub-unit" />}
-              {u.revenueModel && <span title={`Revenue model: ${u.revenueModelLabel}. Change it on the Contract tab.`}><ModelChip model={u.revenueModel} label={u.termsLabel ?? u.revenueModelLabel} /></span>}
+              {u.revenueModel && <span title={`Income model: ${u.revenueModelLabel}. Change it on the Contract tab.`}><ModelChip model={u.revenueModel} label={u.termsLabel ?? u.revenueModelLabel} /></span>}
               {u.channels.length > 0 && (
                 <span className="inline-flex items-center gap-1.5" aria-label={`Sold on ${u.channels.map(c => CH[c].label).join(', ')}`}>
                   {u.channels.map(c => <span key={c} title={CH[c].label} className="flex"><ChannelMark ch={c} size={22} /></span>)}
                 </span>
               )}
-              {!u.isListed && <span title="This unit is not for sale on Airbnb, Booking.com or any other channel, so no bookings come in through them. Connect it under Channels on the Overview tab."><StatusBadge tone="neutral" label="Not listed on any channel" /></span>}
+              {!u.isListed && <span title="This unit is not for sale on Airbnb, Booking.com or any other channel, so no reservations come in through them. Connect it under Channels on the Overview tab."><StatusBadge tone="neutral" label="Not listed on any channel" /></span>}
             </div>
           </div>
           {/* Owner names run long (several co-owners, company names); they wrap instead of running off a phone. */}
@@ -400,8 +400,8 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
 
         <div className="grid grid-cols-3 sm:grid-cols-[repeat(auto-fit,minmax(96px,1fr))] gap-x-4 gap-y-5 pt-5 px-5 sm:px-6 pb-5 [border-top:1px_solid_var(--color-line-soft)]">
           {[
-            ['Occupancy', `${p.occupancy}%`], ['ADR', rm(p.adr, { cents: false })], ['RevPAR', rm(p.revpar, { cents: false })],
-            ['Rating', p.rating != null ? p.rating.toFixed(2) : '—'], ['Open issues', String(openIssues)],
+            ['Occupancy', `${p.occupancy}%`], ['Avg nightly price', rm(p.adr, { cents: false })], ['Earnings per available night', rm(p.revpar, { cents: false })],
+            ['Rating', p.rating != null ? p.rating.toFixed(2) : '—'], ['Open maintenance jobs', String(openIssues)],
           ].map(([label, value]) => (
             <div key={label} className="flex flex-col gap-2 min-w-0">
               <Eyebrow>{label}</Eyebrow>
@@ -424,8 +424,8 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
       {shown === 'overview' && (
         <div className="grid grid-cols-[repeat(auto-fit,minmax(min(300px,100%),1fr))] gap-5 [align-items:start]">
           <Card>
-            <SectionTitle title="Current and next stays"
-              right={<button type="button" onClick={() => setTab('reservations')} className="bg-transparent [border:none] p-0 cursor-pointer [font-family:inherit] text-meta font-semibold text-gold-ink whitespace-nowrap">All bookings</button>} />
+            <SectionTitle title="Current and next reservations"
+              right={<button type="button" onClick={() => setTab('reservations')} className="bg-transparent [border:none] p-0 cursor-pointer [font-family:inherit] text-meta font-semibold text-gold-ink whitespace-nowrap">All reservations</button>} />
             {d.stays.length === 0 && <div className="py-4 px-5 text-copy text-muted-ink [border-top:1px_solid_var(--color-line-soft)]">Nothing booked from today on.</div>}
             {d.stays.slice(0, 4).map(s => (
               <div key={s.id} className="flex items-center gap-3 py-[13px] px-5 [border-top:1px_solid_var(--color-line-soft)]">
@@ -458,7 +458,7 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
 
       {shown === 'details' && (form ? (
         <Card>
-          <SaveBar title="Details & owner" sub="Listing, building, owner and revenue model." dirty={dirty} saving={saving} canEdit={canEdit} onSave={onSave} />
+          <SaveBar title="Details & owner" sub="Listing name, building, owner and income model." dirty={dirty} saving={saving} canEdit={canEdit} onSave={onSave} />
           <DetailsForm u={form} owner={u.owner} buildings={buildings} money={money} canEdit={canEdit} onChange={onChange} onOpenContract={() => setTab('contract')} />
         </Card>
       ) : needsForm)}
@@ -479,13 +479,13 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
         <>
           <Card>
             <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex items-baseline justify-between gap-3 flex-wrap">
-              <span className="text-[16px] font-semibold tracking-[-0.01em]">Cleaning and tasks</span>
+              <span className="text-[16px] font-semibold tracking-[-0.01em]">Cleaning jobs</span>
               {/* units/detail.ts sends the latest 12; the full list is on the Housekeeping board. */}
               {d.tasks.length >= 12 && <span className="text-meta text-muted-ink">Latest 12</span>}
             </div>
             <DataTable<TaskRow> id="unit.tasks" urlPrefix="tasks." bare noViews pageSize={0} maxHeight="none"
-              columns={TASK_COLUMNS} rows={d.tasks} rowKey={t => t.id} noun={['task', 'tasks']} exportName={`${stem}-tasks`}
-              empty={{ title: 'No tasks for this unit.', icon: 'Sparkles' }} />
+              columns={TASK_COLUMNS} rows={d.tasks} rowKey={t => t.id} noun={['cleaning job', 'cleaning jobs']} exportName={`${stem}-tasks`}
+              empty={{ title: 'No cleaning jobs for this unit.', icon: 'Sparkles' }} />
           </Card>
           <Card>
             <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex items-baseline justify-between gap-3 flex-wrap">
@@ -493,13 +493,13 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
               {d.maintenance.length >= 12 && <span className="text-meta text-muted-ink">Latest 12</span>}
             </div>
             <DataTable<JobRow> id="unit.maintenance" urlPrefix="jobs." bare noViews pageSize={0} maxHeight="none"
-              columns={JOB_COLUMNS} rows={d.maintenance} rowKey={m => m.id} noun={['job', 'jobs']} exportName={`${stem}-maintenance`}
+              columns={JOB_COLUMNS} rows={d.maintenance} rowKey={m => m.id} noun={['maintenance job', 'maintenance jobs']} exportName={`${stem}-maintenance`}
               empty={{ title: 'No maintenance jobs reported.', icon: 'Wrench' }} />
           </Card>
           <Card>
             <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex items-center justify-between gap-3 flex-wrap">
               <span className="text-[16px] font-semibold tracking-[-0.01em]">Fit-out register</span>
-              <a href="#/properties/inventory" className="text-meta font-semibold text-gold-ink no-underline">Open inventory</a>
+              <a href="#/properties/inventory" className="text-meta font-semibold text-gold-ink no-underline">Open fit-out register</a>
             </div>
             <DataTable<ItemRow> id="unit.fitout" urlPrefix="fit." bare noViews pageSize={0} maxHeight="none"
               columns={ITEM_COLUMNS} rows={d.inventory} rowKey={i => i.id} noun={['item', 'items']} exportName={`${stem}-fit-out`}
@@ -526,7 +526,7 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
               );
             })}
             <div className="py-[13px] px-5 text-meta text-muted-ink [text-wrap:pretty]">
-              The owner statement for this unit so far, by its revenue model: Gross Income split by night into the month, less the costs the owner pays, less the operator's share. It rolls up to the owner by the unit's split. The month is not closed yet, so the figures still move.
+              The owner statement for this unit so far, by its income model: Gross Income split by night into the month, less the costs the owner pays, less the operator's share. It rolls up to the owner by the unit's split. The month is not closed yet, so the figures still move.
             </div>
           </Card>
           {d.companyPnl && (
@@ -569,7 +569,7 @@ type JobRow = UnitDetail['maintenance'][number];
 type ItemRow = UnitDetail['inventory'][number];
 
 const TASK_COLUMNS: Column<TaskRow>[] = [
-  { key: 'title', label: 'Task', value: t => t.title, hideable: false, width: 220 },
+  { key: 'title', label: 'Cleaning job', value: t => t.title, hideable: false, width: 220 },
   { key: 'kind', label: 'Type', value: t => humanize(t.kind), width: 120 },
   { key: 'assignee', label: 'Assigned to', type: 'person', value: t => t.assigneeName ?? 'Unassigned', width: 160 },
   { key: 'when', label: 'Due or done', type: 'datetime', value: t => t.completedAt ?? t.dueAt, width: 160,
@@ -588,7 +588,7 @@ const JOB_COLUMNS: Column<JobRow>[] = [
     sub: m => (m.detail ? <span title={m.detail}>{m.detail}</span> : null) },
   { key: 'detail', label: 'Detail', value: m => m.detail, hidden: true, width: 240 },
   { key: 'reported', label: 'Reported', type: 'date', value: m => m.reportedAt, width: 116 },
-  { key: 'vendor', label: 'Vendor', value: m => m.vendorName, width: 140 },
+  { key: 'vendor', label: 'Contractor', value: m => m.vendorName, width: 140 },
   { key: 'charge', label: 'Charged to', value: m => CHARGE_LABEL[m.chargeTo] ?? humanize(m.chargeTo), width: 130 },
   { key: 'state', label: 'Status', type: 'status', value: m => m.state, entity: 'task', width: 130 },
   { key: 'amount', label: 'Amount', type: 'money', value: m => m.finalAmount ?? m.quotedAmount ?? null, width: 120,
