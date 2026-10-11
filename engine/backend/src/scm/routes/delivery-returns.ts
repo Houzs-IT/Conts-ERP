@@ -29,7 +29,7 @@ import { warehouseLabel } from '../lib/warehouse-label';
 import { computeVariantKey, type VariantAttrs } from '../shared';
 import { doLineRemaining, returnableRemainingFrom, resolveCandidateDoIds, custKeyOf, remainingUnavailableResponse, type DoRemainingLine, type DoRemainingResult } from '../lib/do-line-remaining';
 import { todayMyt } from '../lib/my-time';
-import { validateItemCodes, unknownItemCodeResponse } from '../lib/validate-item-codes';
+import { validateItemCodes, unknownItemCodeResponse, unknownProductCodeRefusal } from '../lib/validate-item-codes';
 import { resolveItemGroups } from '../lib/sku-category';
 import { isServiceLine } from '../shared';
 import { findServiceLineCodes, serviceLinesNotReturnableResponse, serviceGuardUnavailableResponse } from '../lib/service-line-guard';
@@ -1304,6 +1304,12 @@ export const convertDoLinesToReturn = async (c: any) => {
         requested: qty,
       }, 409);
     }
+  }
+
+  // Conts C6: a copied line's code must still be in Products.
+  {
+    const unknownCodes = await unknownProductCodeRefusal(sb, pickedIds.map((id) => ({ code: remainingMap.get(id)!.itemCode })), activeCompanyId(c));
+    if (unknownCodes) return c.json(unknownCodes, 409);
   }
 
   /* P1 SO-SKU spec §4.6 — SERVICE lines ride the DO (D2 final) so the picker

@@ -31,7 +31,7 @@ interface Payload { data: Cn[]; generatedAt: string }
 const FALLBACK: Payload = {
   generatedAt: '',
   data: [
-    { id: 'cn1', cnNumber: 'CN-2026-0001', consigneeName: 'Mont Kiara Showroom', consigneePhone: '+60312340000', cnDate: '2026-09-14', status: 'PARTIALLY_SETTLED', totalSen: 984000, notes: 'Display consignment.', lines: [
+    { id: 'cn1', cnNumber: 'CSN-2026-0001', consigneeName: 'Mont Kiara Showroom', consigneePhone: '+60312340000', cnDate: '2026-09-14', status: 'PARTIALLY_SETTLED', totalSen: 984000, notes: 'Display consignment.', lines: [
       { id: 'cl1', itemCode: 'SF-3S-GRY', description: 'Emma 3-Seater Sofa', uom: 'UNIT', qtyConsigned: 2, qtySold: 1, qtyReturned: 0, unitPriceSen: 328000, lineTotalSen: 656000 },
       { id: 'cl2', itemCode: 'BF-KG-OAK', description: 'Nordic Bedframe, Oak', uom: 'UNIT', qtyConsigned: 2, qtySold: 0, qtyReturned: 0, unitPriceSen: 164000, lineTotalSen: 328000 },
     ] },

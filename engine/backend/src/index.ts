@@ -326,6 +326,12 @@ app.route("/api/sync/warehouse-mirror", warehouseMirror);
 // POS auth — pin-login + sales-staff are PRE-AUTH (before the /api/* gate);
 // every OTHER route in the router re-applies `auth` on itself (set-pin,
 // verify-pin, sales-stats and the three admin-*-pin doors).
+/* Conts (owner decision C7, 11 Oct 2026): no POS. Its endpoints — the pre-auth
+   pin sign-in among them — and the engine's POS catalogue / cart answer 404.
+   Switched off here, not deleted. */
+for (const path of ["/api/pos", "/api/pos/*", "/api/scm/pos-pools", "/api/scm/pos-pools/*", "/api/scm/pos-cart", "/api/scm/pos-cart/*"]) {
+  app.all(path, (c) => c.json({ error: "not_found", message: "POS is not used in this system." }, 404));
+}
 app.route("/api/pos", pos);
 
 // Google Form intake webhook — PRE-AUTH like mail-inbound: called by

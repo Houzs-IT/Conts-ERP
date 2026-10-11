@@ -122,7 +122,7 @@ async function convertAndCapture(soLines: Row[]): Promise<Row[]> {
     delivery_return_items: [],
     delivery_returns: [],
     warehouses: [],
-    mfg_products: [],
+    mfg_products: soLines.map((l) => ({ code: l.item_code, company_id: 1, status: 'ACTIVE' })), // Conts C6: codes must be in Products
     purchase_orders: [],
     purchase_order_items: [],
   }, captured);

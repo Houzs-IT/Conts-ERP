@@ -1,6 +1,6 @@
 import { lazy, Suspense } from "react";
-import { Routes, Route, Navigate, useParams } from "react-router-dom";
-import { CONTS_HOME, CONTS_EXTRAS } from "./conts/navOnly";
+import { Routes, Route, Navigate, useParams, useLocation } from "react-router-dom";
+import { CONTS_HOME, CONTS_EXTRAS, isContsHiddenPath } from "./conts/navOnly";
 import { Layout } from "./components/Layout";
 import { useAuth } from "./auth/AuthContext";
 import { canUseAssistant } from "./auth/assistantAccess";
@@ -444,6 +444,14 @@ function FairReportGuard({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+/** Conts (owner decision C7): an address of a switched-off module opens the home page instead —
+ *  typed, bookmarked, or sent by Property OS's frame (conts/embed.ts). */
+function ContsModuleGate({ children }: { children: React.ReactNode }) {
+  const { pathname } = useLocation();
+  if (isContsHiddenPath(pathname)) return <Navigate to={CONTS_HOME} replace />;
+  return <>{children}</>;
+}
+
 export default function App() {
   return (
     <GlobalSearchProvider>
@@ -464,6 +472,7 @@ export default function App() {
       <Layout>
         <RouteCrashBoundary>
         <Suspense fallback={<PageSkeleton />}>
+        <ContsModuleGate>
         <Routes>
         {/* Landing → Overview workspace home (P1). */}
         <Route path="/" element={<Navigate to={CONTS_HOME} replace />} />
@@ -949,6 +958,7 @@ export default function App() {
         ))}
         <Route path="*" element={<Forbidden kind="not-found" />} />
         </Routes>
+        </ContsModuleGate>
         </Suspense>
         </RouteCrashBoundary>
       </Layout>

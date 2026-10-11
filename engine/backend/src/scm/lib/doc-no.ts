@@ -29,6 +29,11 @@ import { todayMyt } from './my-time';
    raised to. `nextMonthlyDocNo` is the exact PRE-counter answer, kept because
    it is what the tests measure the new behaviour against and because it is the
    degradation path while the RPC is not there yet (see mintMonthlyDocNo). */
+/* Conts (owner, 11 Oct 2026): a consignment note numbers under CSN-, so it
+   never shares a series with a credit note (acc/credit-notes.ts mints
+   `<prefix>CN-`). Notes already numbered `<prefix>CN-...` keep their numbers. */
+export const CONSIGNMENT_NOTE_SERIES = 'CSN';
+
 export function maxMonthlySuffix(monthPrefix: string, existing: string[]): number {
   const head = `${monthPrefix}-`;
   let max = 0;

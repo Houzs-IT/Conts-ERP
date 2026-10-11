@@ -89,14 +89,27 @@ export function sortForAllocation(rows: AllocatableInvoice[]): AllocatableInvoic
 /**
  * Split `orderCollectedSen` across the order's invoices, earliest first.
  *
- * Each eligible invoice absorbs `min(what is left, what it still owes)`, where
- * "what it still owes" is its own total less its own receipts. Money already
- * taken ON the invoice is therefore never displaced by the order's — the two
- * add up rather than competing.
+ * CONTS RULE (owner decision C4, 11 Oct 2026 — AutoCount-style): the INVOICE
+ * RECEIPT is the record of money received. An order payment and an invoice
+ * receipt can be the same money keyed twice (the deposit taken on the order,
+ * then knocked off on the invoice), so the two ledgers are never added for one
+ * order. What the order's invoices have received on their own is taken as
+ * already covering that much of the order's collected money; only the part of
+ * the order's payments that the invoice receipts do NOT already account for is
+ * left to spread:
+ *
+ *   pool = max(0, orderCollectedSen − Σ own receipts of the eligible invoices)
+ *
+ * so across the order, money counted = max(order payments, invoice receipts),
+ * never their sum. (Houzs's rule added the two; see the header.)
+ *
+ * Each eligible invoice then absorbs `min(what is left, what it still owes)`,
+ * where "what it still owes" is its own total less its own receipts. Money
+ * already taken ON the invoice is therefore never displaced by the order's.
  *
  * Guarantees, pinned by `si-order-deposit.test.ts`:
  *   · every slice is >= 0, and <= that invoice's own outstanding;
- *   · the slices sum to `min(orderCollectedSen, sum of eligible outstanding)`;
+ *   · the slices sum to `min(pool, sum of eligible outstanding)`;
  *   · an ineligible invoice always gets 0.
  *
  * Everything is integer sen and every term is a subtraction of integers, so
@@ -108,7 +121,11 @@ export function allocateOrderDeposit(
   invoices: AllocatableInvoice[],
 ): Map<string, number> {
   const out = new Map<string, number>();
-  let remaining = Math.max(0, Math.trunc(Number.isFinite(orderCollectedSen) ? orderCollectedSen : 0));
+  const collected = Math.max(0, Math.trunc(Number.isFinite(orderCollectedSen) ? orderCollectedSen : 0));
+  const invoiceReceipts = invoices
+    .filter((inv) => absorbsOrderDeposit(inv.status))
+    .reduce((sum, inv) => sum + Math.max(0, Math.trunc(Number(inv.ownPaidSen) || 0)), 0);
+  let remaining = Math.max(0, collected - invoiceReceipts);
   for (const inv of sortForAllocation(invoices)) {
     if (!absorbsOrderDeposit(inv.status)) { out.set(inv.id, 0); continue; }
     const outstanding = Math.max(0, Math.trunc(inv.totalSen) - Math.trunc(inv.ownPaidSen));

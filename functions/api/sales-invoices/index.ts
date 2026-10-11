@@ -1,4 +1,5 @@
 import { type Env, all, one, run, json, fail, nowIso, audit, mytToday, isNumberClash } from '../../_lib/db';
+import { refuseUnknownItemCodes } from '../../_lib/products';
 import { requireSession } from '../../_lib/auth';
 import { nextSiNumber, toSiHeaderPayload, type SiHeaderRow } from '../../_lib/sales-invoices';
 import { strOrNull, intOrNull, genId } from '../../_lib/scm-util';
@@ -45,6 +46,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
   const doLines = await all<{ item_code: string; description: string; uom: string; qty: number; unit_price_sen: number; line_total_sen: number }>(env, 'SELECT item_code, description, uom, qty, unit_price_sen, line_total_sen FROM delivery_order_lines WHERE delivery_order_id = ? ORDER BY line_no', doId);
   if (!doLines.length) return fail('CONFLICT', 'That delivery order has no lines to invoice.', 409);
+  { const unknownCodes = await refuseUnknownItemCodes(env, doLines.map(l => l.item_code)); if (unknownCodes) return unknownCodes; } // every item code must be in Products
 
   const subtotal = doLines.reduce((s, l) => s + l.line_total_sen, 0);
   const tax = Math.max(0, intOrNull(b.taxSen) ?? 0);

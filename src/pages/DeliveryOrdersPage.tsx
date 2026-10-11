@@ -26,7 +26,7 @@ type Status = 'LOADED' | 'DISPATCHED' | 'IN_TRANSIT' | 'SIGNED' | 'DELIVERED' | 
 const FLOW: Status[] = ['LOADED', 'DISPATCHED', 'IN_TRANSIT', 'SIGNED', 'DELIVERED'];
 const FILTERS: (Status | 'all')[] = ['all', 'LOADED', 'DISPATCHED', 'IN_TRANSIT', 'DELIVERED', 'CANCELLED'];
 
-interface DoLine { itemCode: string; description: string; uom: string; qty: number; unitPriceSen: number; lineTotalSen: number }
+interface DoLine { itemCode: string; description: string; uom: string; qty: number; unitPriceSen: number; discountSen?: number; lineTotalSen: number }
 interface Do { id: string; doNumber: string; soDocNo: string; salesOrderId: string; customerName: string; doDate: string; expectedDeliveryAt: string; status: Status; driverName: string; vehicle: string; address1: string; city: string; state: string; postcode: string; phone: string; notes: string; lines?: DoLine[] }
 interface Payload { data: Do[]; generatedAt: string }
 interface SoLine { id: string; itemCode: string; description: string; uom: string; qty: number; deliveredQty: number; unitPriceSen: number }
@@ -231,6 +231,7 @@ const lineColumns: Column<DoLine>[] = [
   { key: 'item', label: 'Item', value: l => l.description, sub: l => <span className="[font-family:var(--font-mono,ui-monospace,monospace)]">{l.itemCode}</span>, text: l => `${l.description} ${l.itemCode}` },
   { key: 'qty', label: 'Qty', type: 'number', value: l => l.qty },
   { key: 'price', label: 'Unit price', type: 'money', value: l => l.unitPriceSen },
+  { key: 'discount', label: 'Discount', type: 'money', value: l => l.discountSen ?? 0 },
   { key: 'total', label: 'Line total', type: 'money', value: l => l.lineTotalSen },
 ];
 
