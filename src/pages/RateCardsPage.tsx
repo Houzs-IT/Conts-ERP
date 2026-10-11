@@ -8,7 +8,8 @@ import { MoneyInput, NumberInput } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
-import { api, notifyFailure } from '../lib/api';
+import { api } from '../lib/api';
+import { persist, useResetOnReload } from '../lib/persist';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { cx } from '../lib/design-tokens';
@@ -56,6 +57,7 @@ export default function RateCardsPage() {
   const [added, setAdded] = useState<RateCard[]>([]);
   const [edits, setEdits] = useState<Record<string, Partial<RateCard>>>({});
   const [removed, setRemoved] = useState<Set<string>>(new Set());
+  useResetOnReload(data, () => { setAdded([]); setEdits({}); setRemoved(new Set()); });
 
   const all = useMemo(() => [...added, ...(data?.data ?? [])].filter(c => !removed.has(c.id)).map(c => ({ ...c, ...edits[c.id] })), [added, data, edits, removed]);
   const q = search.trim().toLowerCase();
@@ -81,11 +83,11 @@ export default function RateCardsPage() {
   function save(card: RateCard, isNew: boolean) {
     const body = { name: card.name, carrierCompanyId: card.carrierCompanyId || null, carrierLabel: card.carrierLabel, basis: card.basis, aggregation: card.aggregation, minChargeSen: card.minChargeSen, capSen: card.capSen, rounding: card.rounding, isActive: card.isActive, notes: card.notes, rules: card.rules ?? [] };
     const ruleCount = (card.rules ?? []).length;
-    if (isNew) { setAdded(a => [{ ...card, id: `rc-new-${crypto.randomUUID().slice(0, 8)}`, ruleCount }, ...a]); api.post('/rate-cards', body).catch(notifyFailure); toast({ tone: 'success', title: 'Rate card added.', body: card.name }); }
-    else { setEdits(e => ({ ...e, [card.id]: { ...e[card.id], ...card, ruleCount } })); api.patch(`/rate-cards/${card.id}`, body).catch(notifyFailure); toast({ tone: 'success', title: 'Rate card updated.', body: card.name }); }
+    if (isNew) { setAdded(a => [{ ...card, id: `rc-new-${crypto.randomUUID().slice(0, 8)}`, ruleCount }, ...a]); persist(api.post('/rate-cards', body), { reload, ok: () => toast({ tone: 'success', title: 'Rate card added.', body: card.name }) }); }
+    else { setEdits(e => ({ ...e, [card.id]: { ...e[card.id], ...card, ruleCount } })); persist(api.patch(`/rate-cards/${card.id}`, body), { reload, ok: () => toast({ tone: 'success', title: 'Rate card updated.', body: card.name }) }); }
     setDrawer(null);
   }
-  function remove(c: RateCard) { setRemoved(r => new Set(r).add(c.id)); api.del(`/rate-cards/${c.id}`).catch(notifyFailure); toast({ tone: 'success', title: 'Rate card removed.', body: c.name }); setDrawer(null); }
+  function remove(c: RateCard) { setRemoved(r => new Set(r).add(c.id)); persist(api.del(`/rate-cards/${c.id}`), { reload, ok: () => toast({ tone: 'success', title: 'Rate card removed.', body: c.name }) }); setDrawer(null); }
 
   return (
     <>

@@ -8,7 +8,8 @@ import { MoneyInput, NumberInput, DateField } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
-import { api, notifyFailure } from '../lib/api';
+import { api } from '../lib/api';
+import { persist, useResetOnReload } from '../lib/persist';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { rm, date } from '../lib/format';
@@ -48,6 +49,7 @@ export default function FleetHealthPage() {
   const [added, setAdded] = useState<Rec[]>([]);
   const [edits, setEdits] = useState<Record<string, Partial<Rec>>>({});
   const [removed, setRemoved] = useState<Set<string>>(new Set());
+  useResetOnReload(data, () => { setAdded([]); setEdits({}); setRemoved(new Set()); });
 
   const all = useMemo(() => [...added, ...(data?.data ?? [])].filter(r => !removed.has(r.id)).map(r => ({ ...r, ...edits[r.id] })), [added, data, edits, removed]);
   const q = search.trim().toLowerCase();
@@ -71,11 +73,11 @@ export default function FleetHealthPage() {
     const v = vehicles.find(x => x.id === draft.vehicleId);
     const withV = { ...draft, vehicleCode: v?.code ?? draft.vehicleCode, vehiclePlate: v?.plate ?? draft.vehiclePlate };
     const body = { vehicleId: draft.vehicleId, recordType: draft.recordType, serviceDate: draft.serviceDate, odometerKm: draft.odometerKm, costSen: draft.costSen, nextDueDate: draft.nextDueDate || null, nextDueKm: draft.nextDueKm, status: draft.status, vendor: draft.vendor, notes: draft.notes };
-    if (isNew) { setAdded(a => [{ ...withV, id: `fmr-new-${crypto.randomUUID().slice(0, 8)}` }, ...a]); api.post('/fleet-health', body).catch(notifyFailure); toast({ tone: 'success', title: 'Record logged.', body: `${TYPE_LABEL[draft.recordType]} · ${withV.vehicleCode}` }); }
-    else { setEdits(e => ({ ...e, [draft.id]: { ...e[draft.id], ...withV } })); api.patch(`/fleet-health/${draft.id}`, body).catch(notifyFailure); toast({ tone: 'success', title: 'Record updated.', body: withV.vehicleCode }); }
+    if (isNew) { setAdded(a => [{ ...withV, id: `fmr-new-${crypto.randomUUID().slice(0, 8)}` }, ...a]); persist(api.post('/fleet-health', body), { reload, ok: () => toast({ tone: 'success', title: 'Record logged.', body: `${TYPE_LABEL[draft.recordType]} · ${withV.vehicleCode}` }) }); }
+    else { setEdits(e => ({ ...e, [draft.id]: { ...e[draft.id], ...withV } })); persist(api.patch(`/fleet-health/${draft.id}`, body), { reload, ok: () => toast({ tone: 'success', title: 'Record updated.', body: withV.vehicleCode }) }); }
     setDrawer(null);
   }
-  function remove(r: Rec) { setRemoved(s => new Set(s).add(r.id)); api.del(`/fleet-health/${r.id}`).catch(notifyFailure); toast({ tone: 'success', title: 'Record removed.', body: r.vehicleCode }); setDrawer(null); }
+  function remove(r: Rec) { setRemoved(s => new Set(s).add(r.id)); persist(api.del(`/fleet-health/${r.id}`), { reload, ok: () => toast({ tone: 'success', title: 'Record removed.', body: r.vehicleCode }) }); setDrawer(null); }
 
   const emptyRec = (): Rec => ({ id: '', vehicleId: vehicles[0]?.id ?? '', recordType: 'SERVICE', serviceDate: today(), odometerKm: null, costSen: 0, nextDueDate: '', nextDueKm: null, status: 'DONE', vendor: '', notes: '', vehicleCode: '', vehiclePlate: '' });
 

@@ -8,7 +8,8 @@ import { MoneyInput, DateField } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
-import { api, notifyFailure } from '../lib/api';
+import { api } from '../lib/api';
+import { persist, useRecord, useResetOnReload } from '../lib/persist';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { rm, date } from '../lib/format';
@@ -54,6 +55,10 @@ export default function PaymentVouchersPage() {
   const [drawer, setDrawer] = useState<{ mode: 'new' } | { mode: 'view'; pv: Pv } | null>(null);
   const [added, setAdded] = useState<Pv[]>([]);
   const [edits, setEdits] = useState<Record<string, Partial<Pv>>>({});
+  useResetOnReload(data, () => {
+    setAdded([]); setEdits({});
+    setDrawer(d => { const fresh = d?.mode === 'view' ? data?.data.find(x => x.id === d.pv.id) : undefined; return d?.mode === 'view' && fresh ? { mode: 'view', pv: { ...d.pv, ...fresh } } : d; });
+  });
 
   const all = useMemo(() => [...added, ...(data?.data ?? [])].map(p => ({ ...p, ...edits[p.id] })), [added, data, edits]);
   const q = search.trim().toLowerCase();
@@ -70,11 +75,10 @@ export default function PaymentVouchersPage() {
     { key: 'amount', label: 'Amount', type: 'money', value: p => p.amountSen, render: p => p.status === 'CANCELLED' ? <span className="tabular-nums text-muted-ink line-through">{rm(p.amountSen)}</span> : <span className="tabular-nums">{rm(p.amountSen)}</span> },
   ], []);
 
-  function created(pv: Pv) { setAdded(a => [pv, ...a]); toast({ tone: 'success', title: 'Payment recorded.', body: `${pv.voucherNumber} · ${rm(pv.amountSen)}` }); setDrawer(null); }
+  function created(pv: Pv, req: Promise<unknown>) { setAdded(a => [pv, ...a]); setDrawer(null); persist(req, { reload, ok: () => toast({ tone: 'success', title: 'Payment recorded.', body: rm(pv.amountSen) }) }); }
   function cancel(p: Pv) {
     setEdits(e => ({ ...e, [p.id]: { ...e[p.id], status: 'CANCELLED' } }));
-    api.patch(`/payment-vouchers/${p.id}`, { status: 'CANCELLED' }).catch(notifyFailure);
-    toast({ tone: 'success', title: 'Payment voucher cancelled.', body: p.voucherNumber });
+    persist(api.patch(`/payment-vouchers/${p.id}`, { status: 'CANCELLED' }), { reload, ok: () => toast({ tone: 'success', title: 'Payment voucher cancelled.', body: p.voucherNumber }) });
     setDrawer(null);
   }
 
@@ -115,7 +119,7 @@ function Chip({ label, active, onClick }: { label: string; active: boolean; onCl
 
 interface PayLine { invoiceId: string; invoiceNumber: string; invoiceDate: string; outstanding: number; paySen: number | null }
 
-function PayDrawer({ suppliers, invoices, canWrite, onClose, onCreated }: { suppliers: Opt[]; invoices: Pi[]; canWrite: boolean; onClose: () => void; onCreated: (p: Pv) => void }) {
+function PayDrawer({ suppliers, invoices, canWrite, onClose, onCreated }: { suppliers: Opt[]; invoices: Pi[]; canWrite: boolean; onClose: () => void; onCreated: (p: Pv, req: Promise<unknown>) => void }) {
   const [supplierId, setSupplierId] = useState('');
   const [method, setMethod] = useState<string>('TRANSFER');
   const [reference, setReference] = useState('');
@@ -139,11 +143,11 @@ function PayDrawer({ suppliers, invoices, canWrite, onClose, onCreated }: { supp
     const allocations = lines
       .map(l => ({ purchaseInvoiceId: l.invoiceId, amountSen: l.paySen ?? 0, invoiceNumber: l.invoiceNumber }))
       .filter(a => a.amountSen > 0);
-    api.post('/payment-vouchers', { supplierId, paymentDate, method, reference, notes, allocations: allocations.map(({ purchaseInvoiceId, amountSen }) => ({ purchaseInvoiceId, amountSen })) }).catch(notifyFailure);
+    const req = api.post('/payment-vouchers', { supplierId, paymentDate, method, reference, notes, allocations: allocations.map(({ purchaseInvoiceId, amountSen }) => ({ purchaseInvoiceId, amountSen })) });
     onCreated({
       id: `pv-new-${crypto.randomUUID().slice(0, 8)}`, voucherNumber: `PV-${new Date().getFullYear()}-NEW`, supplierName: supplier?.name ?? '', supplierCode: supplier?.code ?? '', supplierId,
       paymentDate, method, reference, amountSen: amount, status: 'POSTED', notes, allocations: allocations.map(a => ({ invoiceNumber: a.invoiceNumber, amountSen: a.amountSen })),
-    });
+    }, req);
   }
 
   return (
@@ -224,6 +228,7 @@ const ALLOC_COLUMNS: Column<Alloc & { i: number }>[] = [
 ];
 
 function ViewDrawer({ pv, canWrite, onClose, onCancel }: { pv: Pv; canWrite: boolean; onClose: () => void; onCancel: (p: Pv) => void }) {
+  const { record, loading: linesLoading, error: linesError } = useRecord<Pv>('payment-vouchers', pv.id);
   return (
     <Drawer open onClose={onClose} width={620}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5">
@@ -239,7 +244,7 @@ function ViewDrawer({ pv, canWrite, onClose, onCancel }: { pv: Pv; canWrite: boo
         </div>
         <div className="border border-solid border-line rounded-card overflow-hidden">
           <DataTable<Alloc & { i: number }>
-            id="scm.payment-voucher.allocations" urlPrefix="alloc." columns={ALLOC_COLUMNS} rows={(pv.allocations ?? []).map((a, i) => ({ ...a, i }))} rowKey={a => String(a.i)}
+            id="scm.payment-voucher.allocations" urlPrefix="alloc." columns={ALLOC_COLUMNS} rows={(record?.allocations ?? pv.allocations ?? []).map((a, i) => ({ ...a, i }))} rowKey={a => String(a.i)}
             bare noViews noToolbar pageSize={0} noun={['allocation', 'allocations']} exportName={`${pv.voucherNumber}-allocations`}
             empty={{ title: 'No invoices on this voucher.' }} />
         </div>

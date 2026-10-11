@@ -8,7 +8,8 @@ import { MoneyInput, NumberInput, PhoneInput, DateField } from '../components/in
 import { Drawer } from '../components/Dialog';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
-import { api, notifyFailure } from '../lib/api';
+import { api } from '../lib/api';
+import { persist, useRecord, useResetOnReload } from '../lib/persist';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { rm, date } from '../lib/format';
@@ -46,6 +47,10 @@ export default function ConsignmentNotesPage() {
   const [drawer, setDrawer] = useState<{ mode: 'new' } | { mode: 'view'; cn: Cn } | null>(null);
   const [added, setAdded] = useState<Cn[]>([]);
   const [edits, setEdits] = useState<Record<string, Partial<Cn>>>({});
+  useResetOnReload(data, () => {
+    setAdded([]); setEdits({});
+    setDrawer(d => { const fresh = d?.mode === 'view' ? data?.data.find(x => x.id === d.cn.id) : undefined; return d?.mode === 'view' && fresh ? { mode: 'view', cn: { ...d.cn, ...fresh } } : d; });
+  });
 
   const all = useMemo(() => [...added, ...(data?.data ?? [])].map(c => ({ ...c, ...edits[c.id] })), [added, data, edits]);
   const q = search.trim().toLowerCase();
@@ -59,11 +64,10 @@ export default function ConsignmentNotesPage() {
     { key: 'value', label: 'Value', type: 'money', value: c => c.totalSen, render: c => <span className="tabular-nums font-semibold">{rm(c.totalSen)}</span> },
   ], []);
 
-  function created(cn: Cn) { setAdded(a => [cn, ...a]); toast({ tone: 'success', title: 'Consignment note raised.', body: `${cn.cnNumber} · ${cn.consigneeName}` }); setDrawer(null); }
+  function created(cn: Cn, req: Promise<unknown>) { setAdded(a => [cn, ...a]); setDrawer(null); persist(req, { reload, ok: () => toast({ tone: 'success', title: 'Consignment note raised.', body: cn.consigneeName }) }); }
   function act(cn: Cn, patch: Record<string, unknown>, optimistic: Partial<Cn>, title: string) {
     setEdits(e => ({ ...e, [cn.id]: { ...e[cn.id], ...optimistic } }));
-    api.patch(`/consignment-notes/${cn.id}`, patch).catch(notifyFailure);
-    toast({ tone: 'success', title, body: cn.cnNumber });
+    persist(api.patch(`/consignment-notes/${cn.id}`, patch), { reload, ok: () => toast({ tone: 'success', title, body: cn.cnNumber }) });
     setDrawer(d => d && d.mode === 'view' ? { mode: 'view', cn: { ...d.cn, ...optimistic } } : d);
   }
 
@@ -101,7 +105,7 @@ const blankLine = (): DraftLine => ({ itemCode: '', description: '', uom: 'UNIT'
 const lineTotal = (l: DraftLine) => Math.max(0, (l.qty ?? 0) * (l.unitPriceSen ?? 0));
 const CELL_NUM = 'h-8 box-border px-2 py-0 font-sans text-[13px] text-ink bg-card border border-solid border-line rounded-control outline-none text-right tabular-nums';
 
-function CreateDrawer({ canWrite, onClose, onCreated }: { canWrite: boolean; onClose: () => void; onCreated: (c: Cn) => void }) {
+function CreateDrawer({ canWrite, onClose, onCreated }: { canWrite: boolean; onClose: () => void; onCreated: (c: Cn, req: Promise<unknown>) => void }) {
   const [consigneeName, setConsigneeName] = useState('');
   const [consigneePhone, setConsigneePhone] = useState('');
   const [cnDate, setCnDate] = useState(new Date().toISOString().slice(0, 10));
@@ -125,9 +129,9 @@ function CreateDrawer({ canWrite, onClose, onCreated }: { canWrite: boolean; onC
     setErrors(e);
     if (Object.keys(e).length) return;
     const b = built();
-    api.post('/consignment-notes', { consigneeName, consigneePhone, cnDate, notes, lines: b }).catch(notifyFailure);
+    const req = api.post('/consignment-notes', { consigneeName, consigneePhone, cnDate, notes, lines: b });
     onCreated({ id: `cn-new-${crypto.randomUUID().slice(0, 8)}`, cnNumber: `CN-${new Date().getFullYear()}-NEW`, consigneeName, consigneePhone, cnDate, status: 'OPEN', totalSen: total, notes,
-      lines: b.map(l => ({ itemCode: l.itemCode, description: l.description, uom: l.uom, qtyConsigned: l.qtyConsigned, qtySold: 0, qtyReturned: 0, unitPriceSen: l.unitPriceSen, lineTotalSen: l.qtyConsigned * l.unitPriceSen })) });
+      lines: b.map(l => ({ itemCode: l.itemCode, description: l.description, uom: l.uom, qtyConsigned: l.qtyConsigned, qtySold: 0, qtyReturned: 0, unitPriceSen: l.unitPriceSen, lineTotalSen: l.qtyConsigned * l.unitPriceSen })) }, req);
   }
 
   return (
@@ -178,8 +182,9 @@ function CreateDrawer({ canWrite, onClose, onCreated }: { canWrite: boolean; onC
 }
 
 function SettleDrawer({ cn, canWrite, onClose, onAct }: { cn: Cn; canWrite: boolean; onClose: () => void; onAct: (c: Cn, patch: Record<string, unknown>, optimistic: Partial<Cn>, title: string) => void }) {
+  const { record, loading: linesLoading, error: linesError } = useRecord<Cn>('consignment-notes', cn.id);
   const editable = canWrite && (cn.status === 'OPEN' || cn.status === 'PARTIALLY_SETTLED');
-  const lines = cn.lines ?? [];
+  const lines = record?.lines ?? cn.lines ?? [];
   const [qty, setQty] = useState<{ sold: number | null; returned: number | null }[]>(lines.map(l => ({ sold: l.qtySold, returned: l.qtyReturned })));
   const [submitted, setSubmitted] = useState(false);
   const setLine = (i: number, k: 'sold' | 'returned', v: number | null) => setQty(qs => qs.map((q, j) => j === i ? { ...q, [k]: v } : q));

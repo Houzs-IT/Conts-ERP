@@ -10,6 +10,7 @@ import { Drawer } from '../components/Dialog';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
+import { persist, useResetOnReload } from '../lib/persist';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { rm } from '../lib/format';
@@ -114,6 +115,7 @@ export default function ProductsPage() {
   const [added, setAdded] = useState<Product[]>([]);
   const [edits, setEdits] = useState<Record<string, Partial<Product>>>({});
   const [removed, setRemoved] = useState<Set<string>>(new Set());
+  useResetOnReload(data, () => { setAdded([]); setEdits({}); setRemoved(new Set()); });
   const fileRef = useRef<HTMLInputElement>(null);
 
   const all = useMemo(
@@ -151,7 +153,7 @@ export default function ProductsPage() {
 
   function patch(id: string, optimistic: Partial<Product>, apiBody?: Record<string, unknown>) {
     setEdits(e => ({ ...e, [id]: { ...e[id], ...optimistic } }));
-    api.patch(`/products/${id}`, apiBody ?? optimistic).catch(notifyFailure);
+    persist(api.patch(`/products/${id}`, apiBody ?? optimistic), { reload });
   }
 
   function submitDraft(f: Draft) {
@@ -170,16 +172,14 @@ export default function ProductsPage() {
     } else {
       const local = P({ id: `prod-new-${crypto.randomUUID().slice(0, 8)}`, code: f.code.trim(), name: f.name.trim(), category: f.category, ...shared });
       setAdded(a => [local, ...a]);
-      api.post('/products', apiBody).catch(notifyFailure);
-      toast({ tone: 'success', title: 'Product added.', body: `${f.code.trim()} ${f.name.trim()}` });
+      persist(api.post('/products', apiBody), { reload, ok: () => toast({ tone: 'success', title: 'Product added.', body: `${f.code.trim()} ${f.name.trim()}` }) });
     }
     setDrawer(null);
   }
 
   function remove(p: Product) {
     setRemoved(s => new Set(s).add(p.id));
-    api.del(`/products/${p.id}`).catch(notifyFailure);
-    toast({ tone: 'success', title: 'Product removed.', body: p.code });
+    persist(api.del(`/products/${p.id}`), { reload, ok: () => toast({ tone: 'success', title: 'Product removed.', body: p.code }) });
     setDrawer(null);
   }
 

@@ -8,7 +8,8 @@ import { NumberInput } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
-import { api, notifyFailure } from '../lib/api';
+import { api } from '../lib/api';
+import { persist, useResetOnReload } from '../lib/persist';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 
@@ -41,6 +42,7 @@ export default function DeliveryZonesPage() {
   const [added, setAdded] = useState<Zone[]>([]);
   const [edits, setEdits] = useState<Record<string, Partial<Zone>>>({});
   const [removed, setRemoved] = useState<Set<string>>(new Set());
+  useResetOnReload(data, () => { setAdded([]); setEdits({}); setRemoved(new Set()); });
   const [seeded, setSeeded] = useState(false);
 
   const knownZones = data?.knownZones?.length ? data.knownZones : KNOWN;
@@ -55,16 +57,15 @@ export default function DeliveryZonesPage() {
   ], []);
 
   function save(draft: Zone, isNew: boolean) {
-    if (isNew) { setAdded(a => [{ ...draft, id: `dz-new-${crypto.randomUUID().slice(0, 8)}` }, ...a]); api.post('/delivery-zones', draft).catch(notifyFailure); toast({ tone: 'success', title: 'Zone rule added.', body: `${draft.zone} ${pad(draft.prefixStart)}–${pad(draft.prefixEnd)}` }); }
-    else { setEdits(e => ({ ...e, [draft.id]: { ...e[draft.id], ...draft } })); api.patch(`/delivery-zones/${draft.id}`, draft).catch(notifyFailure); toast({ tone: 'success', title: 'Zone rule updated.', body: draft.zone }); }
+    if (isNew) { setAdded(a => [{ ...draft, id: `dz-new-${crypto.randomUUID().slice(0, 8)}` }, ...a]); persist(api.post('/delivery-zones', draft), { reload, ok: () => toast({ tone: 'success', title: 'Zone rule added.', body: `${draft.zone} ${pad(draft.prefixStart)}–${pad(draft.prefixEnd)}` }) }); }
+    else { setEdits(e => ({ ...e, [draft.id]: { ...e[draft.id], ...draft } })); persist(api.patch(`/delivery-zones/${draft.id}`, draft), { reload, ok: () => toast({ tone: 'success', title: 'Zone rule updated.', body: draft.zone }) }); }
     setDrawer(null);
   }
-  function remove(z: Zone) { setRemoved(r => new Set(r).add(z.id)); api.del(`/delivery-zones/${z.id}`).catch(notifyFailure); toast({ tone: 'success', title: 'Zone rule removed.', body: z.zone }); setDrawer(null); }
+  function remove(z: Zone) { setRemoved(r => new Set(r).add(z.id)); persist(api.del(`/delivery-zones/${z.id}`), { reload, ok: () => toast({ tone: 'success', title: 'Zone rule removed.', body: z.zone }) }); setDrawer(null); }
   function loadDefault() {
     setSeeded(true);
     setAdded((data?.defaultMap ?? DEFAULT_MAP).map((r, i) => ({ id: `dz-def-${i}`, zone: r.zone, prefixStart: r.prefixStart, prefixEnd: r.prefixEnd, label: '', isActive: true })));
-    api.post('/delivery-zones', { loadDefault: true }).catch(notifyFailure);
-    toast({ tone: 'success', title: 'Default map loaded.', body: `${(data?.defaultMap ?? DEFAULT_MAP).length} rules` });
+    persist(api.post('/delivery-zones', { loadDefault: true }), { reload, ok: () => toast({ tone: 'success', title: 'Default map loaded.', body: `${(data?.defaultMap ?? DEFAULT_MAP).length} rules` }) });
   }
 
   return (

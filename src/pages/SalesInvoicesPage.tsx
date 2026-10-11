@@ -8,7 +8,8 @@ import { MoneyInput, DateField } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
-import { api, notifyFailure } from '../lib/api';
+import { api } from '../lib/api';
+import { persist, useRecord, useResetOnReload } from '../lib/persist';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { rm, date } from '../lib/format';
@@ -52,6 +53,10 @@ export default function SalesInvoicesPage() {
   const [drawer, setDrawer] = useState<{ mode: 'new' } | { mode: 'view'; si: Si } | null>(null);
   const [added, setAdded] = useState<Si[]>([]);
   const [edits, setEdits] = useState<Record<string, Partial<Si>>>({});
+  useResetOnReload(data, () => {
+    setAdded([]); setEdits({});
+    setDrawer(d => { const fresh = d?.mode === 'view' ? data?.data.find(x => x.id === d.si.id) : undefined; return d?.mode === 'view' && fresh ? { mode: 'view', si: { ...d.si, ...fresh } } : d; });
+  });
 
   const all = useMemo(() => [...added, ...(data?.data ?? [])].map(p => ({ ...p, ...edits[p.id] })), [added, data, edits]);
   const q = search.trim().toLowerCase();
@@ -69,11 +74,10 @@ export default function SalesInvoicesPage() {
     { key: 'outstanding', label: 'Outstanding', type: 'money', value: p => p.status === 'CANCELLED' ? null : p.outstandingSen, render: p => p.status === 'CANCELLED' ? <span className="text-muted-ink">—</span> : <span className="tabular-nums font-semibold">{rm(p.outstandingSen)}</span> },
   ], []);
 
-  function created(si: Si) { setAdded(a => [si, ...a]); toast({ tone: 'success', title: 'Invoice raised.', body: `${si.invoiceNumber} · ${si.customerName}` }); setDrawer(null); }
+  function created(si: Si, req: Promise<unknown>) { setAdded(a => [si, ...a]); setDrawer(null); persist(req, { reload, ok: () => toast({ tone: 'success', title: 'Invoice raised.', body: si.customerName }) }); }
   function act(si: Si, patch: Record<string, unknown>, optimistic: Partial<Si>, title: string) {
     setEdits(e => ({ ...e, [si.id]: { ...e[si.id], ...optimistic } }));
-    api.patch(`/sales-invoices/${si.id}`, patch).catch(notifyFailure);
-    toast({ tone: 'success', title, body: si.invoiceNumber });
+    persist(api.patch(`/sales-invoices/${si.id}`, patch), { reload, ok: () => toast({ tone: 'success', title, body: si.invoiceNumber }) });
     setDrawer(d => d && d.mode === 'view' ? { mode: 'view', si: { ...d.si, ...optimistic } } : d);
   }
 
@@ -113,7 +117,7 @@ const lineColumns: Column<SiLine>[] = [
   { key: 'total', label: 'Line total', type: 'money', value: l => l.lineTotalSen },
 ];
 
-function BillDrawer({ openDos, canWrite, onClose, onCreated }: { openDos: OpenDo[]; canWrite: boolean; onClose: () => void; onCreated: (s: Si) => void }) {
+function BillDrawer({ openDos, canWrite, onClose, onCreated }: { openDos: OpenDo[]; canWrite: boolean; onClose: () => void; onCreated: (s: Si, req: Promise<unknown>) => void }) {
   const [doId, setDoId] = useState('');
   const [lines, setLines] = useState<DoLine[]>([]);
   const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().slice(0, 10));
@@ -136,8 +140,8 @@ function BillDrawer({ openDos, canWrite, onClose, onCreated }: { openDos: OpenDo
   const canSave = canWrite && doId !== '' && lines.length > 0 && invoiceDate !== '' && !dueError;
 
   function submit() {
-    api.post('/sales-invoices', { deliveryOrderId: doId, invoiceDate, dueDate: dueDate || null, taxSen: taxSen ?? 0, notes }).catch(notifyFailure);
-    onCreated({ id: `si-new-${crypto.randomUUID().slice(0, 8)}`, invoiceNumber: `SINV-${new Date().getFullYear()}-NEW`, doNumber: dord?.doNumber ?? '', soDocNo: '', customerName: dord?.customerName ?? '', invoiceDate, dueDate, status: 'SENT', totalSen: total, paidSen: 0, outstandingSen: total, notes, lines });
+    const req = api.post('/sales-invoices', { deliveryOrderId: doId, invoiceDate, dueDate: dueDate || null, taxSen: taxSen ?? 0, notes });
+    onCreated({ id: `si-new-${crypto.randomUUID().slice(0, 8)}`, invoiceNumber: `SINV-${new Date().getFullYear()}-NEW`, doNumber: dord?.doNumber ?? '', soDocNo: '', customerName: dord?.customerName ?? '', invoiceDate, dueDate, status: 'SENT', totalSen: total, paidSen: 0, outstandingSen: total, notes, lines }, req);
   }
 
   return (
@@ -185,8 +189,9 @@ function BillDrawer({ openDos, canWrite, onClose, onCreated }: { openDos: OpenDo
 }
 
 function ViewDrawer({ si, canWrite, onClose, onAct }: { si: Si; canWrite: boolean; onClose: () => void; onAct: (s: Si, patch: Record<string, unknown>, optimistic: Partial<Si>, title: string) => void }) {
+  const { record, loading: linesLoading, error: linesError } = useRecord<Si>('sales-invoices', si.id);
   const [recvSen, setRecvSen] = useState<number | null>(null);
-  const lineRows = useMemo(() => (si.lines ?? []).map((l, i) => ({ ...l, key: String(i) })), [si.lines]);
+  const lineRows = useMemo(() => (record?.lines ?? si.lines ?? []).map((l, i) => ({ ...l, key: String(i) })), [record, si.lines]);
   return (
     <Drawer open onClose={onClose} width={720}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5">

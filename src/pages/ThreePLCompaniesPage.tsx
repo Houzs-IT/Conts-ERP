@@ -8,7 +8,8 @@ import { PhoneInput, phoneProblem } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
-import { api, notifyFailure } from '../lib/api';
+import { api } from '../lib/api';
+import { persist, useResetOnReload } from '../lib/persist';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { cx } from '../lib/design-tokens';
@@ -41,6 +42,7 @@ export default function ThreePLCompaniesPage() {
   const [added, setAdded] = useState<ThreePl[]>([]);
   const [edits, setEdits] = useState<Record<string, Partial<ThreePl>>>({});
   const [removed, setRemoved] = useState<Set<string>>(new Set());
+  useResetOnReload(data, () => { setAdded([]); setEdits({}); setRemoved(new Set()); });
 
   const all = useMemo(() => [...added, ...(data?.data ?? [])].filter(c => !removed.has(c.id)).map(c => ({ ...c, ...edits[c.id] })), [added, data, edits, removed]);
   const q = search.trim().toLowerCase();
@@ -56,11 +58,11 @@ export default function ThreePLCompaniesPage() {
   ], []);
 
   function save(draft: ThreePl, isNew: boolean) {
-    if (isNew) { setAdded(a => [T({ ...draft, id: `tpl-new-${crypto.randomUUID().slice(0, 8)}` }), ...a]); api.post('/threepl-companies', draft).catch(notifyFailure); toast({ tone: 'success', title: '3PL company added.', body: `${draft.code} ${draft.name}` }); }
-    else { setEdits(e => ({ ...e, [draft.id]: { ...e[draft.id], ...draft } })); api.patch(`/threepl-companies/${draft.id}`, draft).catch(notifyFailure); toast({ tone: 'success', title: '3PL company updated.', body: `${draft.code} ${draft.name}` }); }
+    if (isNew) { setAdded(a => [T({ ...draft, id: `tpl-new-${crypto.randomUUID().slice(0, 8)}` }), ...a]); persist(api.post('/threepl-companies', draft), { reload, ok: () => toast({ tone: 'success', title: '3PL company added.', body: `${draft.code} ${draft.name}` }) }); }
+    else { setEdits(e => ({ ...e, [draft.id]: { ...e[draft.id], ...draft } })); persist(api.patch(`/threepl-companies/${draft.id}`, draft), { reload, ok: () => toast({ tone: 'success', title: '3PL company updated.', body: `${draft.code} ${draft.name}` }) }); }
     setDrawer(null);
   }
-  function remove(c: ThreePl) { setRemoved(r => new Set(r).add(c.id)); api.del(`/threepl-companies/${c.id}`).catch(notifyFailure); toast({ tone: 'success', title: '3PL company removed.', body: c.code }); setDrawer(null); }
+  function remove(c: ThreePl) { setRemoved(r => new Set(r).add(c.id)); persist(api.del(`/threepl-companies/${c.id}`), { reload, ok: () => toast({ tone: 'success', title: '3PL company removed.', body: c.code }) }); setDrawer(null); }
 
   return (
     <>

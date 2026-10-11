@@ -7,7 +7,8 @@ import { Field } from '../components/Field';
 import { Drawer } from '../components/Dialog';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
-import { api, notifyFailure } from '../lib/api';
+import { api } from '../lib/api';
+import { persist, useResetOnReload } from '../lib/persist';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 
@@ -39,6 +40,7 @@ export default function WarehousesPage() {
   const [added, setAdded] = useState<Warehouse[]>([]);
   const [edits, setEdits] = useState<Record<string, Partial<Warehouse>>>({});
   const [removed, setRemoved] = useState<Set<string>>(new Set());
+  useResetOnReload(data, () => { setAdded([]); setEdits({}); setRemoved(new Set()); });
 
   const rows = useMemo(
     () => [...added, ...(data?.data ?? [])].filter(w => !removed.has(w.id)).map(w => ({ ...w, ...edits[w.id] }))
@@ -63,20 +65,17 @@ export default function WarehousesPage() {
     if (d.isDefault) setEdits(e => { const next = { ...e }; rows.forEach(w => { if (w.id !== d.id) next[w.id] = { ...next[w.id], isDefault: false }; }); return next; });
     if (d.isNew) {
       setAdded(a => [{ ...body, id: `wh-new-${crypto.randomUUID().slice(0, 8)}` }, ...a]);
-      api.post('/warehouses', body).catch(notifyFailure);
-      toast({ tone: 'success', title: 'Warehouse added.', body: `${body.code} ${body.name}` });
+      persist(api.post('/warehouses', body), { reload, ok: () => toast({ tone: 'success', title: 'Warehouse added.', body: `${body.code} ${body.name}` }) });
     } else {
       setEdits(e => ({ ...e, [d.id]: { ...e[d.id], ...body } }));
-      api.patch(`/warehouses/${d.id}`, body).catch(notifyFailure);
-      toast({ tone: 'success', title: 'Warehouse updated.', body: `${body.code} ${body.name}` });
+      persist(api.patch(`/warehouses/${d.id}`, body), { reload, ok: () => toast({ tone: 'success', title: 'Warehouse updated.', body: `${body.code} ${body.name}` }) });
     }
     setDrawer(null);
   }
 
   function remove(w: Warehouse) {
     setRemoved(r => new Set(r).add(w.id));
-    api.del(`/warehouses/${w.id}`).catch(notifyFailure);
-    toast({ tone: 'success', title: 'Warehouse removed.', body: w.code });
+    persist(api.del(`/warehouses/${w.id}`), { reload, ok: () => toast({ tone: 'success', title: 'Warehouse removed.', body: w.code }) });
     setDrawer(null);
   }
 

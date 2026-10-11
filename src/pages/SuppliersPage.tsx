@@ -8,7 +8,8 @@ import { MoneyInput, NumberInput, PhoneInput, phoneProblem } from '../components
 import { Drawer } from '../components/Dialog';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
-import { api, notifyFailure } from '../lib/api';
+import { api } from '../lib/api';
+import { persist, useResetOnReload } from '../lib/persist';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { rm } from '../lib/format';
@@ -65,6 +66,7 @@ export default function SuppliersPage() {
   const [added, setAdded] = useState<Supplier[]>([]);
   const [edits, setEdits] = useState<Record<string, Partial<Supplier>>>({});
   const [removed, setRemoved] = useState<Set<string>>(new Set());
+  useResetOnReload(data, () => { setAdded([]); setEdits({}); setRemoved(new Set()); });
 
   const all = useMemo(
     () => [...added, ...(data?.data ?? [])].filter(s => !removed.has(s.id)).map(s => ({ ...s, ...edits[s.id] })),
@@ -93,20 +95,17 @@ export default function SuppliersPage() {
     if (isNew) {
       const local = S({ ...body, id: `sup-new-${crypto.randomUUID().slice(0, 8)}` });
       setAdded(a => [local, ...a]);
-      api.post('/suppliers', body).catch(notifyFailure);
-      toast({ tone: 'success', title: 'Supplier added.', body: `${body.code} ${body.name}` });
+      persist(api.post('/suppliers', body), { reload, ok: () => toast({ tone: 'success', title: 'Supplier added.', body: `${body.code} ${body.name}` }) });
     } else {
       setEdits(e => ({ ...e, [draft.id]: { ...e[draft.id], ...body } }));
-      api.patch(`/suppliers/${draft.id}`, body).catch(notifyFailure);
-      toast({ tone: 'success', title: 'Supplier updated.', body: `${body.code} ${body.name}` });
+      persist(api.patch(`/suppliers/${draft.id}`, body), { reload, ok: () => toast({ tone: 'success', title: 'Supplier updated.', body: `${body.code} ${body.name}` }) });
     }
     setDrawer(null);
   }
 
   function remove(s: Supplier) {
     setRemoved(r => new Set(r).add(s.id));
-    api.del(`/suppliers/${s.id}`).catch(notifyFailure);
-    toast({ tone: 'success', title: 'Supplier removed.', body: s.code });
+    persist(api.del(`/suppliers/${s.id}`), { reload, ok: () => toast({ tone: 'success', title: 'Supplier removed.', body: s.code }) });
     setDrawer(null);
   }
 

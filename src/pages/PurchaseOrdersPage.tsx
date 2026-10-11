@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Search, Plus, Trash2, X } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
@@ -8,7 +8,8 @@ import { MoneyInput, NumberInput, DateField } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
-import { api, notifyFailure } from '../lib/api';
+import { api } from '../lib/api';
+import { persist, useRecord, useResetOnReload } from '../lib/persist';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { rm } from '../lib/format';
@@ -67,6 +68,7 @@ export default function PurchaseOrdersPage() {
 
   const [added, setAdded] = useState<Po[]>([]);
   const [edits, setEdits] = useState<Record<string, Partial<Po>>>({});
+  useResetOnReload(data, () => { setAdded([]); setEdits({}); });
 
   const all = useMemo(
     () => [...added, ...(data?.data ?? [])].map(p => ({ ...p, ...edits[p.id] })),
@@ -98,22 +100,19 @@ export default function PurchaseOrdersPage() {
     const supplier = suppliers.find(s => s.id === po.supplierId);
     const local: Po = { ...po, id: `po-new-${crypto.randomUUID().slice(0, 8)}`, poNumber: `PO-${new Date().getFullYear()}-NEW`, supplierCode: supplier?.code ?? '', supplierName: supplier?.name ?? '', lines };
     setAdded(a => [local, ...a]);
-    api.post('/purchase-orders', body(po, lines)).catch(notifyFailure);
-    toast({ tone: 'success', title: 'Purchase order raised.', body: `${local.poNumber} · ${local.supplierName}` });
+    persist(api.post('/purchase-orders', body(po, lines)), { reload, ok: () => toast({ tone: 'success', title: 'Purchase order raised.', body: local.supplierName }) });
     setDrawer(null);
   }
   function saveEdit(po: Po, lines: Line[]) {
     const supplier = suppliers.find(s => s.id === po.supplierId);
     const patch: Partial<Po> = { ...totalsOf(lines, po.taxSen), supplierId: po.supplierId, supplierCode: supplier?.code ?? po.supplierCode, supplierName: supplier?.name ?? po.supplierName, expectedAt: po.expectedAt, warehouseId: po.warehouseId, notes: po.notes, poDate: po.poDate, lines };
     setEdits(e => ({ ...e, [po.id]: { ...e[po.id], ...patch } }));
-    api.patch(`/purchase-orders/${po.id}`, body(po, lines)).catch(notifyFailure);
-    toast({ tone: 'success', title: 'Purchase order updated.', body: po.poNumber });
+    persist(api.patch(`/purchase-orders/${po.id}`, body(po, lines)), { reload, ok: () => toast({ tone: 'success', title: 'Purchase order updated.', body: po.poNumber }) });
     setDrawer(null);
   }
   function cancelPo(p: Po) {
     setEdits(e => ({ ...e, [p.id]: { ...e[p.id], status: 'CANCELLED' } }));
-    api.patch(`/purchase-orders/${p.id}`, { status: 'CANCELLED' }).catch(notifyFailure);
-    toast({ tone: 'success', title: 'Purchase order cancelled.', body: p.poNumber });
+    persist(api.patch(`/purchase-orders/${p.id}`, { status: 'CANCELLED' }), { reload, ok: () => toast({ tone: 'success', title: 'Purchase order cancelled.', body: p.poNumber }) });
     setDrawer(null);
   }
 
@@ -180,9 +179,11 @@ function PoDrawer({ po, isNew, suppliers, warehouses, canWrite, onClose, onCreat
   po: Po; isNew: boolean; suppliers: Opt[]; warehouses: Opt[]; canWrite: boolean;
   onClose: () => void; onCreate: (p: Po, l: Line[]) => void; onSave: (p: Po, l: Line[]) => void; onCancelPo: (p: Po) => void;
 }) {
-  const editable = canWrite && (isNew || po.status === 'SUBMITTED');
+  const { record, loading: linesLoading, error: linesError } = useRecord<Po>('purchase-orders', isNew ? null : po.id);
+  const editable = canWrite && (isNew || po.status === 'SUBMITTED') && !linesLoading && !linesError;
   const [h, setH] = useState<Po>(po);
   const [lines, setLines] = useState<DraftLine[]>((po.lines ?? []).map(toDraftLine));
+  useEffect(() => { if (record?.lines) setLines(record.lines.map(toDraftLine)); }, [record]);
   const setHf = <K extends keyof Po>(k: K) => (e: { target: { value: string } }) => setH(s => ({ ...s, [k]: e.target.value as Po[K] }));
   const setLine = <K extends keyof DraftLine>(i: number, k: K, v: DraftLine[K]) => setLines(ls => ls.map((l, j) => j === i ? { ...l, [k]: v } : l));
   const [tried, setTried] = useState(false);
@@ -256,7 +257,7 @@ function PoDrawer({ po, isNew, suppliers, warehouses, canWrite, onClose, onCreat
                     <td className="p-1.5 text-center">{editable && <button onClick={() => setLines(ls => ls.filter((_, j) => j !== i))} aria-label="Remove line" className="text-muted-ink hover:text-danger bg-transparent border-none cursor-pointer p-1"><Trash2 size={15} /></button>}</td>
                   </tr>
                 ))}
-                {lines.length === 0 && <tr><td colSpan={8} className="py-6 text-center text-[12.5px] text-muted-ink">No lines yet.</td></tr>}
+                {lines.length === 0 && <tr><td colSpan={8} className="py-6 text-center text-[12.5px] text-muted-ink">{linesLoading ? 'Loading lines…' : linesError ?? 'No lines yet.'}</td></tr>}
               </tbody>
             </table>
           </div>

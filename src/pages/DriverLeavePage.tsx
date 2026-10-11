@@ -7,7 +7,8 @@ import { DateField } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
-import { api, notifyFailure } from '../lib/api';
+import { api } from '../lib/api';
+import { persist, useResetOnReload } from '../lib/persist';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { date } from '../lib/format';
@@ -46,6 +47,7 @@ export default function DriverLeavePage() {
   const [drawer, setDrawer] = useState(false);
   const [added, setAdded] = useState<Leave[]>([]);
   const [removed, setRemoved] = useState<Set<string>>(new Set());
+  useResetOnReload(data, () => { setAdded([]); setRemoved(new Set()); });
 
   const all = useMemo(() => [...added, ...(data?.data ?? [])].filter(l => !removed.has(l.id)), [added, data, removed]);
   const rows = all.filter(l => driverFilter === 'all' || l.driverId === driverFilter);
@@ -59,8 +61,8 @@ export default function DriverLeavePage() {
     { key: 'remove', label: '', noExport: true, sortable: false, filter: false, width: 56, align: 'right', phone: 'hide', render: l => canWrite ? <button onClick={e => { e.stopPropagation(); remove(l); }} aria-label="Remove leave" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted"><Trash2 size={15} strokeWidth={1.75} /></button> : null },
   ], [canWrite]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  function create(l: Leave) { setAdded(a => [l, ...a]); api.post('/driver-leave', { driverId: l.driverId, startDate: l.startDate, endDate: l.endDate, reason: l.reason }).catch(notifyFailure); toast({ tone: 'success', title: 'Leave recorded.', body: `${l.driverName} · ${date(l.startDate)}` }); setDrawer(false); }
-  function remove(l: Leave) { setRemoved(r => new Set(r).add(l.id)); api.del(`/driver-leave/${l.id}`).catch(notifyFailure); toast({ tone: 'success', title: 'Leave removed.', body: l.driverName }); }
+  function create(l: Leave) { setAdded(a => [l, ...a]); persist(api.post('/driver-leave', { driverId: l.driverId, startDate: l.startDate, endDate: l.endDate, reason: l.reason }), { reload, ok: () => toast({ tone: 'success', title: 'Leave recorded.', body: `${l.driverName} · ${date(l.startDate)}` }) }); setDrawer(false); }
+  function remove(l: Leave) { setRemoved(r => new Set(r).add(l.id)); persist(api.del(`/driver-leave/${l.id}`), { reload, ok: () => toast({ tone: 'success', title: 'Leave removed.', body: l.driverName }) }); }
 
   return (
     <>

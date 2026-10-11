@@ -8,7 +8,8 @@ import { NumberInput, DateField } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
-import { api, notifyFailure } from '../lib/api';
+import { api } from '../lib/api';
+import { persist, useRecord, useResetOnReload } from '../lib/persist';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { rm, date } from '../lib/format';
@@ -60,6 +61,10 @@ export default function PurchaseInvoicesPage() {
   const [drawer, setDrawer] = useState<{ mode: 'new' } | { mode: 'view'; pi: Pi } | null>(null);
   const [added, setAdded] = useState<Pi[]>([]);
   const [edits, setEdits] = useState<Record<string, Partial<Pi>>>({});
+  useResetOnReload(data, () => {
+    setAdded([]); setEdits({});
+    setDrawer(d => { const fresh = d?.mode === 'view' ? data?.data.find(x => x.id === d.pi.id) : undefined; return d?.mode === 'view' && fresh ? { mode: 'view', pi: { ...d.pi, ...fresh } } : d; });
+  });
 
   const all = useMemo(() => [...added, ...(data?.data ?? [])].map(p => ({ ...p, ...edits[p.id] })), [added, data, edits]);
   const q = search.trim().toLowerCase();
@@ -77,11 +82,10 @@ export default function PurchaseInvoicesPage() {
     { key: 'outstanding', label: 'Outstanding', type: 'money', value: p => p.status === 'CANCELLED' ? null : p.outstandingSen },
   ], []);
 
-  function created(pi: Pi) { setAdded(a => [pi, ...a]); toast({ tone: 'success', title: 'Purchase invoice posted.', body: `${pi.invoiceNumber} · ${pi.supplierName}` }); setDrawer(null); }
+  function created(pi: Pi, req: Promise<unknown>) { setAdded(a => [pi, ...a]); setDrawer(null); persist(req, { reload, ok: () => toast({ tone: 'success', title: 'Purchase invoice posted.', body: pi.supplierName }) }); }
   function cancel(p: Pi) {
     setEdits(e => ({ ...e, [p.id]: { ...e[p.id], status: 'CANCELLED' } }));
-    api.patch(`/purchase-invoices/${p.id}`, { status: 'CANCELLED' }).catch(notifyFailure);
-    toast({ tone: 'success', title: 'Invoice cancelled.', body: p.invoiceNumber });
+    persist(api.patch(`/purchase-invoices/${p.id}`, { status: 'CANCELLED' }), { reload, ok: () => toast({ tone: 'success', title: 'Invoice cancelled.', body: p.invoiceNumber }) });
     setDrawer(null);
   }
 
@@ -122,7 +126,7 @@ function Chip({ label, active, onClick }: { label: string; active: boolean; onCl
 
 interface BillLine { grnLineId: string; itemCode: string; description: string; uom: string; outstanding: number; unitPriceSen: number; qty: number | null }
 
-function BillDrawer({ openGrns, canWrite, onClose, onCreated }: { openGrns: OpenGrn[]; canWrite: boolean; onClose: () => void; onCreated: (p: Pi) => void }) {
+function BillDrawer({ openGrns, canWrite, onClose, onCreated }: { openGrns: OpenGrn[]; canWrite: boolean; onClose: () => void; onCreated: (p: Pi, req: Promise<unknown>) => void }) {
   const [grnId, setGrnId] = useState('');
   const [lines, setLines] = useState<BillLine[]>([]);
   const [ref, setRef] = useState('');
@@ -149,12 +153,12 @@ function BillDrawer({ openGrns, canWrite, onClose, onCreated }: { openGrns: Open
     setTried(true);
     if (!invoiceDate || willBill.some(l => (l.qty ?? 0) > l.outstanding)) return;
     const payloadLines = willBill.map(l => ({ grnLineId: l.grnLineId, itemCode: l.itemCode, description: l.description, uom: l.uom, unitPriceSen: l.unitPriceSen, qty: l.qty ?? 0 }));
-    api.post('/purchase-invoices', { grnId, supplierInvoiceRef: ref, invoiceDate, dueDate: dueDate || null, notes, lines: payloadLines }).catch(notifyFailure);
+    const req = api.post('/purchase-invoices', { grnId, supplierInvoiceRef: ref, invoiceDate, dueDate: dueDate || null, notes, lines: payloadLines });
     onCreated({
       id: `pi-new-${crypto.randomUUID().slice(0, 8)}`, invoiceNumber: `PINV-${new Date().getFullYear()}-NEW`, supplierInvoiceRef: ref, supplierName: grn?.supplierName ?? '', supplierCode: '',
       grnNumber: grn?.grnNumber ?? '', poNumber: grn?.poNumber ?? '', invoiceDate, dueDate, status: 'POSTED', totalSen: total, paidSen: 0, outstandingSen: total, notes,
       lines: payloadLines.map(l => ({ itemCode: l.itemCode, description: l.description, uom: l.uom, qty: l.qty, unitPriceSen: l.unitPriceSen, lineTotalSen: l.qty * l.unitPriceSen })),
-    });
+    }, req);
   }
 
   return (
@@ -229,6 +233,7 @@ const LINE_COLUMNS: Column<PiLine & { i: number }>[] = [
 ];
 
 function ViewDrawer({ pi, canWrite, onClose, onCancel }: { pi: Pi; canWrite: boolean; onClose: () => void; onCancel: (p: Pi) => void }) {
+  const { record, loading: linesLoading, error: linesError } = useRecord<Pi>('purchase-invoices', pi.id);
   return (
     <Drawer open onClose={onClose} width={760}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5">
@@ -244,7 +249,7 @@ function ViewDrawer({ pi, canWrite, onClose, onCancel }: { pi: Pi; canWrite: boo
         </div>
         <div className="border border-solid border-line rounded-card overflow-hidden">
           <DataTable<PiLine & { i: number }>
-            id="scm.purchase-invoice.lines" urlPrefix="lines." columns={LINE_COLUMNS} rows={(pi.lines ?? []).map((l, i) => ({ ...l, i }))} rowKey={l => String(l.i)}
+            id="scm.purchase-invoice.lines" urlPrefix="lines." columns={LINE_COLUMNS} rows={(record?.lines ?? pi.lines ?? []).map((l, i) => ({ ...l, i }))} rowKey={l => String(l.i)}
             bare noViews noToolbar pageSize={0} noun={['line', 'lines']} exportName={`${pi.invoiceNumber}-lines`}
             empty={{ title: 'No lines on this invoice.' }} />
         </div>

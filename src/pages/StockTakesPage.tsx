@@ -8,7 +8,8 @@ import { NumberInput, DateField } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
-import { api, notifyFailure } from '../lib/api';
+import { api } from '../lib/api';
+import { persist, useRecord, useResetOnReload } from '../lib/persist';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { date } from '../lib/format';
@@ -37,6 +38,10 @@ export default function StockTakesPage() {
   const [drawer, setDrawer] = useState<{ mode: 'new' } | { mode: 'view'; k: Take } | null>(null);
   const [added, setAdded] = useState<Take[]>([]);
   const [edits, setEdits] = useState<Record<string, Partial<Take>>>({});
+  useResetOnReload(data, () => {
+    setAdded([]); setEdits({});
+    setDrawer(d => { const fresh = d?.mode === 'view' ? data?.data.find(x => x.id === d.k.id) : undefined; return d?.mode === 'view' && fresh ? { mode: 'view', k: { ...d.k, ...fresh } } : d; });
+  });
 
   const rows = useMemo(() => [...added, ...(data?.data ?? [])].map(k => ({ ...k, ...edits[k.id] })), [added, data, edits]);
 
@@ -47,11 +52,10 @@ export default function StockTakesPage() {
     { key: 'status', label: 'Status', type: 'status', value: k => k.status, entity: 'stock_take' },
   ], []);
 
-  function created(k: Take) { setAdded(a => [k, ...a]); toast({ tone: 'success', title: 'Stock take started.', body: k.takeNumber }); setDrawer(null); }
+  function created(k: Take, req: Promise<unknown>) { setAdded(a => [k, ...a]); setDrawer(null); persist(req, { reload, ok: () => toast({ tone: 'success', title: 'Stock take started.', body: k.warehouseName }) }); }
   function act(k: Take, patch: Record<string, unknown>, optimistic: Partial<Take>, title: string) {
     setEdits(e => ({ ...e, [k.id]: { ...e[k.id], ...optimistic } }));
-    api.patch(`/stock-takes/${k.id}`, patch).catch(notifyFailure);
-    toast({ tone: 'success', title, body: k.takeNumber });
+    persist(api.patch(`/stock-takes/${k.id}`, patch), { reload, ok: () => toast({ tone: 'success', title, body: k.takeNumber }) });
     setDrawer(d => d && d.mode === 'view' ? { mode: 'view', k: { ...d.k, ...optimistic } } : d);
   }
 
@@ -71,7 +75,7 @@ export default function StockTakesPage() {
   );
 }
 
-function CreateDrawer({ warehouses, canWrite, onClose, onCreated }: { warehouses: Opt[]; canWrite: boolean; onClose: () => void; onCreated: (k: Take) => void }) {
+function CreateDrawer({ warehouses, canWrite, onClose, onCreated }: { warehouses: Opt[]; canWrite: boolean; onClose: () => void; onCreated: (k: Take, req: Promise<unknown>) => void }) {
   const [warehouseId, setWarehouseId] = useState(warehouses[0]?.id ?? '');
   const [takeDate, setTakeDate] = useState(new Date().toISOString().slice(0, 10));
   const [notes, setNotes] = useState('');
@@ -86,8 +90,8 @@ function CreateDrawer({ warehouses, canWrite, onClose, onCreated }: { warehouses
     setTried(true);
     if (!takeDate) return;
     const b = built();
-    api.post('/stock-takes', { warehouseId, takeDate, notes, lines: b }).catch(notifyFailure);
-    onCreated({ id: `stk-new-${crypto.randomUUID().slice(0, 8)}`, takeNumber: `STK-${new Date().getFullYear()}-NEW`, warehouseName: warehouses.find(w => w.id === warehouseId)?.name ?? '', warehouseId, takeDate, status: 'OPEN', notes, lines: b.map(i => ({ itemCode: i.itemCode, description: i.description, systemQty: 0, countedQty: null, variance: null })) });
+    const req = api.post('/stock-takes', { warehouseId, takeDate, notes, lines: b });
+    onCreated({ id: `stk-new-${crypto.randomUUID().slice(0, 8)}`, takeNumber: `STK-${new Date().getFullYear()}-NEW`, warehouseName: warehouses.find(w => w.id === warehouseId)?.name ?? '', warehouseId, takeDate, status: 'OPEN', notes, lines: b.map(i => ({ itemCode: i.itemCode, description: i.description, systemQty: 0, countedQty: null, variance: null })) }, req);
   }
 
   return (
@@ -124,8 +128,9 @@ function CreateDrawer({ warehouses, canWrite, onClose, onCreated }: { warehouses
 }
 
 function CountDrawer({ k, canWrite, onClose, onAct }: { k: Take; canWrite: boolean; onClose: () => void; onAct: (k: Take, patch: Record<string, unknown>, optimistic: Partial<Take>, title: string) => void }) {
+  const { record, loading: linesLoading, error: linesError } = useRecord<Take>('stock-takes', k.id);
   const editable = canWrite && k.status === 'OPEN';
-  const [lines, setLines] = useState<TakeLine[]>((k.lines ?? []).map(l => ({ ...l })));
+  const [lines, setLines] = useState<TakeLine[]>((record?.lines ?? k.lines ?? []).map(l => ({ ...l })));
   const setCount = (i: number, counted: number | null) => setLines(ls => ls.map((l, j) => j !== i ? l : { ...l, countedQty: counted, variance: counted === null ? null : counted - l.systemQty }));
 
   function saveCounts() { onAct(k, { lines: lines.map(l => ({ id: l.id, countedQty: l.countedQty })) }, { lines }, 'Counts saved.'); }

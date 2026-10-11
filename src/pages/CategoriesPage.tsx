@@ -8,7 +8,8 @@ import { NumberInput } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
-import { api, notifyFailure } from '../lib/api';
+import { api } from '../lib/api';
+import { persist, useResetOnReload } from '../lib/persist';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 
@@ -42,6 +43,7 @@ export default function CategoriesPage() {
   const [added, setAdded] = useState<Category[]>([]);
   const [edits, setEdits] = useState<Record<string, Partial<Category>>>({});
   const [removed, setRemoved] = useState<Set<string>>(new Set());
+  useResetOnReload(data, () => { setAdded([]); setEdits({}); setRemoved(new Set()); });
 
   const rows = useMemo(
     () => [...added, ...(data?.data ?? [])].filter(c => !removed.has(c.id)).map(c => ({ ...c, ...edits[c.id] })).sort((a, b) => a.sortOrder - b.sortOrder),
@@ -60,20 +62,17 @@ export default function CategoriesPage() {
     const body = { id: d.id.trim(), label: d.label.trim(), icon: d.icon.trim(), tbc: d.tbc, heroImageKey: d.heroImageKey.trim(), sortOrder: d.sortOrder };
     if (d.isNew) {
       setAdded(a => [{ ...body }, ...a]);
-      api.post('/categories', body).catch(notifyFailure);
-      toast({ tone: 'success', title: 'Category added.', body: body.label });
+      persist(api.post('/categories', body), { reload, ok: () => toast({ tone: 'success', title: 'Category added.', body: body.label }) });
     } else {
       setEdits(e => ({ ...e, [d.id]: { ...e[d.id], ...body } }));
-      api.patch(`/categories/${d.id}`, body).catch(notifyFailure);
-      toast({ tone: 'success', title: 'Category updated.', body: body.label });
+      persist(api.patch(`/categories/${d.id}`, body), { reload, ok: () => toast({ tone: 'success', title: 'Category updated.', body: body.label }) });
     }
     setDrawer(null);
   }
 
   function remove(c: Category) {
     setRemoved(r => new Set(r).add(c.id));
-    api.del(`/categories/${c.id}`).catch(notifyFailure);
-    toast({ tone: 'success', title: 'Category removed.', body: c.label });
+    persist(api.del(`/categories/${c.id}`), { reload, ok: () => toast({ tone: 'success', title: 'Category removed.', body: c.label }) });
     setDrawer(null);
   }
 

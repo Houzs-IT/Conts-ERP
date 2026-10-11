@@ -8,7 +8,8 @@ import { MoneyInput, PhoneInput } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
-import { api, notifyFailure } from '../lib/api';
+import { api } from '../lib/api';
+import { persist, useResetOnReload } from '../lib/persist';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { rm } from '../lib/format';
@@ -51,6 +52,7 @@ export default function CustomersPage() {
   const [added, setAdded] = useState<Customer[]>([]);
   const [edits, setEdits] = useState<Record<string, Partial<Customer>>>({});
   const [removed, setRemoved] = useState<Set<string>>(new Set());
+  useResetOnReload(data, () => { setAdded([]); setEdits({}); setRemoved(new Set()); });
 
   const all = useMemo(() => [...added, ...(data?.data ?? [])].filter(c => !removed.has(c.id)).map(c => ({ ...c, ...edits[c.id] })), [added, data, edits, removed]);
   const q = search.trim().toLowerCase();
@@ -69,11 +71,11 @@ export default function CustomersPage() {
   function save(draft: Draft, isNew: boolean) {
     const { creditLimitSen, ...rest } = draft;
     const body = { ...rest, creditLimitSen: creditLimitSen ?? 0 };
-    if (isNew) { setAdded(a => [C({ ...body, id: `cust-new-${crypto.randomUUID().slice(0, 8)}` }), ...a]); api.post('/customers', body).catch(notifyFailure); toast({ tone: 'success', title: 'Customer added.', body: `${body.code} ${body.name}` }); }
-    else { setEdits(e => ({ ...e, [rest.id]: { ...e[rest.id], ...body } })); api.patch(`/customers/${rest.id}`, body).catch(notifyFailure); toast({ tone: 'success', title: 'Customer updated.', body: `${body.code} ${body.name}` }); }
+    if (isNew) { setAdded(a => [C({ ...body, id: `cust-new-${crypto.randomUUID().slice(0, 8)}` }), ...a]); persist(api.post('/customers', body), { reload, ok: () => toast({ tone: 'success', title: 'Customer added.', body: `${body.code} ${body.name}` }) }); }
+    else { setEdits(e => ({ ...e, [rest.id]: { ...e[rest.id], ...body } })); persist(api.patch(`/customers/${rest.id}`, body), { reload, ok: () => toast({ tone: 'success', title: 'Customer updated.', body: `${body.code} ${body.name}` }) }); }
     setDrawer(null);
   }
-  function remove(c: Customer) { setRemoved(r => new Set(r).add(c.id)); api.del(`/customers/${c.id}`).catch(notifyFailure); toast({ tone: 'success', title: 'Customer removed.', body: c.code }); setDrawer(null); }
+  function remove(c: Customer) { setRemoved(r => new Set(r).add(c.id)); persist(api.del(`/customers/${c.id}`), { reload, ok: () => toast({ tone: 'success', title: 'Customer removed.', body: c.code }) }); setDrawer(null); }
 
   return (
     <>
