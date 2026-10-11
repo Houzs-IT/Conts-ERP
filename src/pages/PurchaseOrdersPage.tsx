@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Search, Plus, Trash2, X } from 'lucide-react';
+import { Search, Plus, Trash2 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { ConfirmButton } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
-import { MoneyInput, NumberInput, DateField } from '../components/inputs';
+import { MoneyInput, NumberInput, DateField, PHONE_SIZING } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
 import { Segmented } from '../components/Metric';
 import { DataTable, type Column } from '../components/DataTable';
@@ -17,6 +17,7 @@ import { rm, todayMyt } from '../lib/format';
 import { cx } from '../lib/design-tokens';
 import { statusLabel } from '../lib/status';
 import { StatusBadge } from '../components/StatusBadge';
+import { CloseButton } from '../components/CloseButton';
 
 /** Purchase Orders — ported from 2990's SCM (core priced document), drawn in Conts.
  *  Header + priced lines + status flow. Money is integer sen; the form takes RM. */
@@ -201,7 +202,7 @@ function PoDrawer({ po, isNew, suppliers, warehouses, canWrite, onClose, onCreat
           <h2 className="m-0 text-[19px] font-semibold">{isNew ? 'New purchase order' : po.poNumber}</h2>
           {!isNew && <StatusBadge entity="purchase_order" value={po.status} />}
         </div>
-        <button onClick={onClose} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted"><X size={18} /></button>
+        <CloseButton onClick={onClose} />
       </div>
 
       <div className="px-6 pb-5 overflow-y-auto grow flex flex-col gap-5">
@@ -283,5 +284,5 @@ function PoDrawer({ po, isNew, suppliers, warehouses, canWrite, onClose, onCreat
 const CELL = 'h-8 box-border px-2 py-0 font-sans text-[13px] text-ink bg-card border border-solid border-line rounded-control outline-none disabled:opacity-70 disabled:bg-transparent disabled:border-transparent';
 
 function CellInput({ value, onChange, disabled, w }: { value: string; onChange: (v: string) => void; disabled?: boolean; w: string }) {
-  return <input value={value} disabled={disabled} onChange={e => onChange(e.target.value)} style={{ width: w }} className={CELL} />;
+  return <input value={value} disabled={disabled} onChange={e => onChange(e.target.value)} style={{ width: w }} className={`${CELL} ${PHONE_SIZING}`} />;
 }

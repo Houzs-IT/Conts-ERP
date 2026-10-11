@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Plus, Trash2, X } from 'lucide-react';
+import { Plus, Trash2 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { Field } from '../components/Field';
@@ -13,6 +13,7 @@ import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { date, todayMyt } from '../lib/format';
 import { TONE, cx } from '../lib/design-tokens';
+import { CloseButton } from '../components/CloseButton';
 
 /** Driver Leave — ported from 2990's SCM, drawn in Conts. Dated leave periods per driver so
  *  the planner knows who is unavailable. Drivers-only (Conts has no helpers). */
@@ -100,7 +101,7 @@ function LeaveDrawer({ drivers, canWrite, onClose, onCreate }: { drivers: Driver
 
   return (
     <Drawer open onClose={onClose} width={560}>
-      <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5"><h2 className="m-0 text-[19px] font-semibold">New driver leave</h2><button onClick={onClose} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted"><X size={18} /></button></div>
+      <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5"><h2 className="m-0 text-[19px] font-semibold">New driver leave</h2><CloseButton onClick={onClose} /></div>
       <div className="px-6 pb-5 overflow-y-auto grow flex flex-col gap-4">
         <div className="flex flex-col gap-[7px]">
           <label className="text-[12px] font-medium text-muted-ink">Driver</label>

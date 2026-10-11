@@ -16,6 +16,7 @@ import { api, errorMessage } from '../lib/api';
 import { count, date, plural, timeWithZone, masked } from '../lib/format';
 import { INTEGRATION } from '../lib/vocabulary';
 import type { IntegrationState, Tone } from '../lib/types';
+import { CloseButton } from '../components/CloseButton';
 
 /**
  * Integrations · /system/integrations (BUTTONS §14, api.md §10).
@@ -297,9 +298,7 @@ function ManagePanel({
           <span className="text-meta text-muted-ink">{syncedLine(row)}</span>
         </div>
         <StatusBadge tone={m.tone} label={m.label} />
-        <button onClick={onClose} aria-label="Close" className="flex bg-transparent border-none p-1 cursor-pointer text-muted-ink">
-          <Icon name="X" size="base" />
-        </button>
+        <CloseButton onClick={onClose} />
       </div>
 
       <div className="py-5 px-[22px] flex flex-col gap-5 flex-1 overflow-y-auto">

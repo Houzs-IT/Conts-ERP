@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Search, Plus, Trash2, X } from 'lucide-react';
+import { Search, Plus, Trash2 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { ConfirmButton } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
-import { MoneyInput, NumberInput, DateField } from '../components/inputs';
+import { MoneyInput, NumberInput, DateField, PHONE_SIZING } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
 import { Segmented } from '../components/Metric';
 import { DataTable, type Column } from '../components/DataTable';
@@ -17,6 +17,7 @@ import { rm, todayMyt } from '../lib/format';
 import { cx } from '../lib/design-tokens';
 import { statusLabel } from '../lib/status';
 import { StatusBadge } from '../components/StatusBadge';
+import { CloseButton } from '../components/CloseButton';
 
 /** Purchase Consignment Orders — ported from 2990's SCM, drawn in Conts. A PO for consigned
  *  stock (settle only what's used; return the unsold). Receives/returns = a later slice. */
@@ -145,7 +146,7 @@ function PcDrawer({ pc, isNew, suppliers, warehouses, canWrite, onClose, onSave,
     <Drawer open onClose={onClose} width={880}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5">
         <div className="flex items-center gap-3"><h2 className="m-0 text-[19px] font-semibold">{isNew ? 'New consignment order' : pc.pcNumber}</h2>{!isNew && <StatusBadge entity="purchase_consignment" value={pc.status} />}</div>
-        <button onClick={onClose} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted"><X size={18} /></button>
+        <CloseButton onClick={onClose} />
       </div>
       <div className="px-6 pb-5 overflow-y-auto grow flex flex-col gap-5">
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3.5">
@@ -212,5 +213,5 @@ function PcDrawer({ pc, isNew, suppliers, warehouses, canWrite, onClose, onSave,
 const CELL = 'h-8 box-border px-2 py-0 font-sans text-[13px] text-ink bg-card border border-solid border-line rounded-control outline-none disabled:opacity-70 disabled:bg-transparent disabled:border-transparent';
 
 function Cell({ value, onChange, disabled, w }: { value: string; onChange: (v: string) => void; disabled?: boolean; w: string }) {
-  return <input value={value} disabled={disabled} onChange={e => onChange(e.target.value)} style={{ width: w }} className={CELL} />;
+  return <input value={value} disabled={disabled} onChange={e => onChange(e.target.value)} style={{ width: w }} className={`${CELL} ${PHONE_SIZING}`} />;
 }
