@@ -123,7 +123,7 @@ export default function UnitTree({ buildings, units, selectedId, readiness, canE
           </span>
           {!needle && buildings.length > 1 && (
             <button type="button" onClick={() => setAll(!anyOpen)}
-              className="bg-transparent [border:none] p-0 cursor-pointer [font:inherit] text-meta! font-medium text-gold-ink whitespace-nowrap">
+              className="bg-transparent [border:none] p-0 cursor-pointer [font-family:inherit] text-meta font-medium text-gold-ink whitespace-nowrap">
               {anyOpen ? 'Collapse all' : 'Expand all'}
             </button>
           )}
@@ -145,7 +145,7 @@ export default function UnitTree({ buildings, units, selectedId, readiness, canE
                 <div key={b.id}>
                   <div className={cx('flex items-center gap-2 py-[9px] pr-3 pl-[12px] [border-bottom:1px_solid_var(--color-line-soft)]', !open && holdsSelected && 'shadow-[inset_3px_0_0_var(--color-gold)]')}>
                     <button onClick={() => setToggled(c => ({ ...c, [b.id]: !open }))} aria-expanded={open} disabled={!!needle}
-                      className="flex items-center gap-2 flex-1 bg-transparent [border:none] cursor-pointer disabled:cursor-default [font:inherit] text-left min-w-0 p-0 text-ink">
+                      className="flex items-center gap-2 flex-1 bg-transparent [border:none] cursor-pointer disabled:cursor-default [font-family:inherit] text-copy text-left min-w-0 p-0 text-ink">
                       <span className="[transition:transform_160ms] text-muted-ink flex flex-none" style={{ transform: `rotate(${open ? 90 : 0}deg)` }}><Icon name="ChevronRight" size="sm" /></span>
                       <span className="min-w-0 flex-1">
                         <span className="block text-copy font-semibold whitespace-nowrap overflow-hidden text-ellipsis" title={b.name}>{b.name}</span>
@@ -168,7 +168,7 @@ export default function UnitTree({ buildings, units, selectedId, readiness, canE
                       <div key={u.id}>
                         <div className={cx('flex items-center gap-1 pr-2 [border-bottom:1px_solid_var(--color-line-soft)]', on ? 'bg-gold-tint shadow-[inset_3px_0_0_var(--color-gold)]' : 'bg-card hover:bg-page')}>
                           <button onClick={() => onSelect(u.id)} aria-current={on ? 'true' : undefined} title={[u.unitCode, u.listingName].filter(Boolean).join(' · ')}
-                            className="flex items-center gap-[10px] flex-1 min-w-0 py-[8px] pr-1 pl-[34px] [border:none] bg-transparent cursor-pointer [font:inherit] text-left text-ink">
+                            className="flex items-center gap-[10px] flex-1 min-w-0 py-[8px] pr-1 pl-[34px] [border:none] bg-transparent cursor-pointer [font-family:inherit] text-copy text-left text-ink">
                             {dot(u.id)}
                             <span className="flex-1 min-w-0">
                               <span className={cx('block text-copy whitespace-nowrap overflow-hidden text-ellipsis', on ? 'font-semibold' : 'font-medium')}>{u.unitCode || 'New unit'}</span>
@@ -185,7 +185,7 @@ export default function UnitTree({ buildings, units, selectedId, readiness, canE
                           const son = su.id === selectedId;
                           return (
                             <button key={su.id} onClick={() => onSelect(su.id)} aria-current={son ? 'true' : undefined}
-                              className={cx('flex items-center gap-[10px] w-full py-[8px] pr-4 pl-[54px] [border:none] [border-bottom:1px_solid_var(--color-line-soft)]! cursor-pointer [font:inherit] text-left text-ink', son ? 'bg-gold-tint shadow-[inset_3px_0_0_var(--color-gold)]' : 'bg-card hover:bg-page')}>
+                              className={cx('flex items-center gap-[10px] w-full py-[8px] pr-4 pl-[54px] [border:none] [border-bottom:1px_solid_var(--color-line-soft)]! cursor-pointer [font-family:inherit] text-copy text-left text-ink', son ? 'bg-gold-tint shadow-[inset_3px_0_0_var(--color-gold)]' : 'bg-card hover:bg-page')}>
                               {dot(su.id)}
                               <span className="flex-1 min-w-0">
                                 <span className={cx('flex items-center gap-1.5 text-meta whitespace-nowrap overflow-hidden text-ellipsis', son ? 'font-semibold' : 'font-medium')}>

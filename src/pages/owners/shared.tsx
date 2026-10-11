@@ -10,6 +10,7 @@ import { MoneyText } from '../../components/MoneyText';
 import { DataTable, type Column } from '../../components/DataTable';
 import { Select, SearchSelect } from '../../components/Select';
 import { cx } from '../../lib/design-tokens';
+import { Eyebrow, Figure } from '../../components/Metric';
 import type { StatementState } from '../../lib/types';
 import type { RevenueModel } from '../../lib/revenueModel';
 
@@ -104,9 +105,9 @@ export function statementsFallback(o: Owner): StatementsPayload {
 
 export function Roll({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
   return (
-    <div className="flex flex-col gap-[3px]">
-      <span className={cx('font-semibold tabular-nums', strong ? 'text-title' : 'text-heading')}>{value}</span>
-      <span className="text-caption text-muted-ink">{label}</span>
+    <div className="flex flex-col gap-2 min-w-0">
+      <Eyebrow>{label}</Eyebrow>
+      <Figure value={value} className={cx('leading-none font-medium text-ink', strong ? 'text-[24px] sm:text-[28px] tracking-[-0.025em]' : 'text-[18px] sm:text-[20px] tracking-[-0.015em]')} />
     </div>
   );
 }
@@ -114,7 +115,7 @@ export function Section({ title, action, children }: { title: string; action?: R
   return (
     <div className="flex flex-col gap-2.5">
       <div className="flex items-center justify-between">
-        <span className="text-meta font-semibold text-muted-ink">{title}</span>
+        <span className="text-[16px] font-semibold tracking-[-0.01em]">{title}</span>
         {action}
       </div>
       {children}

@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { color, channel as CH } from '../theme';
 import { cx } from '../lib/design-tokens';
 import { Card } from '../components/Card';
+import { Eyebrow, Figure, SectionTitle } from '../components/Metric';
 import PageHeader from '../components/PageHeader';
 import { EmptyState } from '../components/States';
 import { Select } from '../components/Select';
@@ -249,7 +250,7 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
         <div className="flex flex-col gap-2 min-w-0 xl:sticky xl:top-0 xl:h-[calc(100vh-100px)] xl:z-[1]">
           {/* Below the wide-desktop breakpoint the tree folds away behind a picker once a unit is open. */}
           <button onClick={() => setTreeOpen(o => !o)} aria-expanded={treeOpen}
-            className="xl:hidden flex items-center gap-3 w-full py-[11px] px-[14px] bg-card border border-solid border-line rounded-card cursor-pointer [font:inherit] text-left">
+            className="xl:hidden flex items-center gap-3 w-full py-[11px] px-[14px] bg-card border border-solid border-line rounded-card cursor-pointer [font-family:inherit] text-copy text-left">
             <Icon name="Building2" size="sm" color={color.textMuted} />
             <span className="flex-1 min-w-0">
               <span className="block text-caption text-muted-ink">{building?.name ?? 'Unit'}</span>
@@ -355,7 +356,7 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
               <div className="flex items-center gap-[10px] text-center px-4">
                 <Icon name="Image" size="base" color={color.faint} />
                 <span className="text-meta text-muted-ink">
-                  <span className="font-medium text-ink">Drop a photo of this unit</span> or <button onClick={() => fileRef.current?.click()} className="[font:inherit] text-meta! bg-transparent [border:none] p-0 cursor-pointer text-gold-ink underline">browse files</button>
+                  <span className="font-medium text-ink">Drop a photo of this unit</span> or <button onClick={() => fileRef.current?.click()} className="[font-family:inherit] text-meta bg-transparent [border:none] p-0 cursor-pointer text-gold-ink underline">browse files</button>
                 </span>
               </div>
             )}
@@ -365,7 +366,7 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
 
         <div className="pt-[18px] px-5 sm:px-6 pb-4 flex items-start justify-between gap-6 flex-wrap">
           <div className="flex flex-col gap-[9px] min-w-0">
-            <div className="text-caption font-semibold uppercase tracking-[0.06em] text-muted-ink [overflow-wrap:anywhere]">{subtitle}</div>
+            <Eyebrow className="[overflow-wrap:anywhere]">{subtitle}</Eyebrow>
             <h2 className="m-0 text-title font-semibold tracking-[-0.01em] [overflow-wrap:anywhere]">{title}</h2>
             <span className="text-copy text-muted-ink">{form?.address || `${u.addressLine}, ${u.city}`}</span>
             <div className="flex items-center gap-3 flex-wrap">
@@ -387,20 +388,20 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
           </div>
           {/* Owner names run long (several co-owners, company names); they wrap instead of running off a phone. */}
           <div className="flex flex-col gap-1 min-w-0 max-w-full sm:max-w-[45%] items-start">
-            <span className="text-meta text-muted-ink">Owner</span>
+            <Eyebrow>Owner</Eyebrow>
             <a href={`#/owners/${encodeURIComponent(u.owner.id)}`} className="text-heading font-semibold no-underline text-ink! [overflow-wrap:anywhere]">{titleCase(u.owner.name)}</a>
             {u.contract && <span className="text-meta text-muted-ink">{u.termsLabel ?? `${u.contract.managementFeePct}%`} · {u.contract.renewsOn ? `renews ${date(u.contract.renewsOn)}` : 'No renewal date'}</span>}
           </div>
         </div>
 
-        <div className="grid grid-cols-[repeat(auto-fit,minmax(96px,1fr))] gap-4 pt-4 px-5 sm:px-6 pb-4 [border-top:1px_solid_var(--color-line-soft)]">
+        <div className="grid grid-cols-3 sm:grid-cols-[repeat(auto-fit,minmax(96px,1fr))] gap-x-4 gap-y-5 pt-5 px-5 sm:px-6 pb-5 [border-top:1px_solid_var(--color-line-soft)]">
           {[
             ['Occupancy', `${p.occupancy}%`], ['ADR', rm(p.adr, { cents: false })], ['RevPAR', rm(p.revpar, { cents: false })],
             ['Rating', p.rating != null ? p.rating.toFixed(2) : '—'], ['Open issues', String(openIssues)],
           ].map(([label, value]) => (
-            <div key={label} className="flex flex-col gap-1 min-w-0">
-              <span className="text-meta font-medium text-muted-ink">{label}</span>
-              <span className="text-title font-semibold tracking-[-0.01em] tabular-nums">{value}</span>
+            <div key={label} className="flex flex-col gap-2 min-w-0">
+              <Eyebrow>{label}</Eyebrow>
+              <Figure value={value} className="text-[20px] sm:text-[24px] font-medium tracking-[-0.02em] leading-none text-ink" />
             </div>
           ))}
         </div>
@@ -419,10 +420,8 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
       {shown === 'overview' && (
         <div className="grid grid-cols-[repeat(auto-fit,minmax(min(300px,100%),1fr))] gap-5 [align-items:start]">
           <Card>
-            <div className="pt-[18px] px-5 pb-[14px] flex items-baseline justify-between gap-3">
-              <span className="text-heading font-semibold">Current and next stays</span>
-              <button type="button" onClick={() => setTab('reservations')} className="bg-transparent [border:none] p-0 cursor-pointer [font:inherit] text-meta! font-semibold text-gold-ink whitespace-nowrap">All bookings</button>
-            </div>
+            <SectionTitle title="Current and next stays"
+              right={<button type="button" onClick={() => setTab('reservations')} className="bg-transparent [border:none] p-0 cursor-pointer [font-family:inherit] text-meta font-semibold text-gold-ink whitespace-nowrap">All bookings</button>} />
             {d.stays.length === 0 && <div className="py-4 px-5 text-copy text-muted-ink [border-top:1px_solid_var(--color-line-soft)]">Nothing booked from today on.</div>}
             {d.stays.slice(0, 4).map(s => (
               <div key={s.id} className="flex items-center gap-3 py-[13px] px-5 [border-top:1px_solid_var(--color-line-soft)]">
@@ -438,7 +437,7 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
           <ChannexChannelsCard unitId={u.id} linked={!!u.channexLinked} canManage={canManageChannels} onChanged={reload} />
           {d.pnl && (
             <Card>
-              <div className="pt-[18px] px-5 pb-[14px]"><span className="text-heading font-semibold">{periodLabel} P and L</span></div>
+              <SectionTitle title={`${periodLabel} P and L`} />
               {d.pnl.map((l, i) => {
                 const net = l.type === 'net';
                 return (
@@ -476,7 +475,7 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
         <>
           <Card>
             <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex items-baseline justify-between gap-3 flex-wrap">
-              <span className="text-heading font-semibold">Cleaning and tasks</span>
+              <span className="text-[16px] font-semibold tracking-[-0.01em]">Cleaning and tasks</span>
               {/* units/detail.ts sends the latest 12; the full list is on the Housekeeping board. */}
               {d.tasks.length >= 12 && <span className="text-meta text-muted-ink">Latest 12</span>}
             </div>
@@ -486,7 +485,7 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
           </Card>
           <Card>
             <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex items-baseline justify-between gap-3 flex-wrap">
-              <span className="text-heading font-semibold">Maintenance</span>
+              <span className="text-[16px] font-semibold tracking-[-0.01em]">Maintenance</span>
               {d.maintenance.length >= 12 && <span className="text-meta text-muted-ink">Latest 12</span>}
             </div>
             <DataTable<JobRow> id="unit.maintenance" urlPrefix="jobs." bare noViews pageSize={0} maxHeight="none"
@@ -495,7 +494,7 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
           </Card>
           <Card>
             <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex items-center justify-between gap-3 flex-wrap">
-              <span className="text-heading font-semibold">Fit-out register</span>
+              <span className="text-[16px] font-semibold tracking-[-0.01em]">Fit-out register</span>
               <a href="#/properties/inventory" className="text-meta font-semibold text-gold-ink no-underline">Open inventory</a>
             </div>
             <DataTable<ItemRow> id="unit.fitout" urlPrefix="fit." bare noViews pageSize={0} maxHeight="none"
@@ -516,7 +515,7 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
           )}
           <Card>
             <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex items-baseline justify-between gap-3 flex-wrap">
-              <span className="text-heading font-semibold">Gross to net</span>
+              <span className="text-[16px] font-semibold tracking-[-0.01em]">Gross to net</span>
               <span className="text-meta text-muted-ink">{periodLabel}</span>
             </div>
             {d.pnl.map((l, i) => {
@@ -535,7 +534,7 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
           {d.companyPnl && (
             <Card>
               <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex flex-col gap-1">
-                <span className="text-heading font-semibold">Company side</span>
+                <span className="text-[16px] font-semibold tracking-[-0.01em]">Company side</span>
                 <span className="text-meta text-muted-ink">What the company keeps or pays on this unit, {periodLabel.toLowerCase()}. Costs paid by the company, a tenant or a guest show here, never on the owner statement.</span>
               </div>
               {d.companyPnl.map((l, i) => {

@@ -38,7 +38,7 @@ export function StatTile({ label, value, hint, hintTone, tone, loading, hero, on
       className={cx(
         '@container relative rounded-card p-4 sm:p-5 flex flex-col gap-3 min-w-0 overflow-hidden text-left',
         hero ? 'bg-black text-white' : cx('border border-solid', alert ? TONE[tone].bg : 'bg-card',
-          active ? 'border-black shadow-[0_0_0_1px_var(--color-black)]' : alert ? 'border-[var(--color-warning-line)]' : 'border-line'),
+          active ? 'border-black shadow-[0_0_0_1px_var(--color-black)]' : alert ? 'border-warning-line' : 'border-line'),
         onClick && 'cursor-pointer transition-[border-color,box-shadow] duration-[var(--motion-fast)] hover:border-line-strong hover:shadow-[var(--shadow-raised)]',
         className,
       )}>
@@ -78,7 +78,7 @@ export function SectionTitle({ title, count, right }: { title: string; count?: n
 
 /** Pill-style segmented switch (range, metric). */
 export function Segmented<K extends string>({ label, options, value, onChange, className }: {
-  label: string; options: { key: K; label: string }[]; value: K; onChange: (k: K) => void; className?: string;
+  label: string; options: { key: K; label: ReactNode }[]; value: K; onChange: (k: K) => void; className?: string;
 }) {
   return (
     <div role="group" aria-label={label}

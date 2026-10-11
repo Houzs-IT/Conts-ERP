@@ -254,7 +254,7 @@ export default function ContractsPage() {
           )}
           {filtered && <Button size="sm" variant="tertiary" onClick={clearFilters}>Clear filters</Button>}
         </>}
-        footer={<div className="py-[11px] px-[22px] max-md:px-4 bg-page [border-top:1px_solid_var(--color-line-soft)] text-meta text-muted-ink">Ends shows the end date, or the renewal date when no end date is recorded.</div>}
+        footer={<div className="py-[11px] px-[22px] max-md:px-4 [border-top:1px_solid_var(--color-line-soft)] text-meta text-muted-ink">Ends shows the end date, or the renewal date when no end date is recorded.</div>}
         renderCard={r => {
           const state = stateOf(r);
           return (

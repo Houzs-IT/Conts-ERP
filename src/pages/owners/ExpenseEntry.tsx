@@ -213,14 +213,14 @@ export function ExpensesCard({ title = 'Expenses recorded to units', ownerId, un
       render: r => <MoneyText sen={r.amount} mode="exact" className="text-copy font-medium" /> },
     { key: 'receipt', label: 'Receipt', width: 80, noExport: true, sortable: false, filter: false,
       render: r => r.receiptDocumentId
-        ? <button type="button" onClick={() => downloadFile(`/documents/${r.receiptDocumentId}/download`).catch(notifyFailure)} className="p-0 bg-transparent border-none cursor-pointer text-meta text-gold-ink underline [font:inherit]">Receipt</button>
+        ? <button type="button" onClick={() => downloadFile(`/documents/${r.receiptDocumentId}/download`).catch(notifyFailure)} className="p-0 bg-transparent border-none cursor-pointer text-meta text-gold-ink underline [font-family:inherit]">Receipt</button>
         : <span className="text-muted-ink">—</span> },
   ], [many]);
   return (
     <Card>
       <div className="flex items-start justify-between gap-3 flex-wrap py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)]">
         <div className="flex flex-col gap-1 min-w-0">
-          <span className="text-heading font-semibold">{title}</span>
+          <span className="text-[16px] font-semibold tracking-[-0.01em]">{title}</span>
           <span className="text-meta text-muted-ink">{monthLabel(month)} · owner pays <MoneyText sen={ownerTotal} mode="exact" className="text-ink font-medium" /> (on the statement) · others pay <MoneyText sen={otherTotal} mode="exact" className="text-ink font-medium" /></span>
         </div>
         {canEdit && (
