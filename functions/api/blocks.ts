@@ -58,7 +58,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
   if (b.issueId) {
     await run(env, `UPDATE maintenance_issues SET blocks_unit = 1, blocked_from = COALESCE(blocked_from, ?), updated_at = ? WHERE id = ? AND unit_id = ?`, b.from ?? mytToday(), now, String(b.issueId), unit.id);
-    await run(env, `UPDATE units SET readiness = 'maintenance', updated_at = ? WHERE id = ?`, now, unit.id);
+    // A block that starts on a later night leaves the unit as it is today (a guest may still be in it).
+    if (!b.from || b.from <= mytToday()) await run(env, `UPDATE units SET readiness = 'maintenance', updated_at = ? WHERE id = ?`, now, unit.id);
   }
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'unit.block', entityTable: 'units', entityId: unit.id, after: { from: b.from ?? null, to: b.to ?? null, kind, reason: note || null, issueId: b.issueId ?? null } });
   // Says whether the channels were told, so the screen does not claim it when the unit is not linked.

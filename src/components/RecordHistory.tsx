@@ -74,11 +74,15 @@ const FIELD: Record<string, [string, Kind?]> = {
   listingName: ['Listing name'], unitNumber: ['Unit number'], unitCode: ['Unit code'], building: ['Building'], owner: ['Owner'], package: ['Package'], term: ['Term'],
   split: ['Split'], splitValue: ['Split value'], guaranteePeriod: ['Guarantee period'], bedrooms: ['Bedrooms'], address: ['Address'],
   ownerBankOrId: ['Owner bank or ID details'], monthlyCosts: ['Monthly costs'], tasksRemoved: ['Unstarted tasks removed'], run: ['Payout run'], failureReason: ['Why it failed'],
+  quantity: ['Quantity'], stockOnHand: ['Left in stock'],
   employment: ['Employment', 'state'], via: ['Through', 'state'], label: ['Item'], ownerApprovalRequired: ['Needs owner approval', 'bool'], released: ['Released', 'state'],
   blockFrom: ['From', 'date'], blockTo: ['Until', 'date'], copiedFrom: ['Copied from', 'name'], otaName: ['Booking site'],
 };
 /** Kept in the record for the system's own use; nothing a person needs to read. */
-const HIDDEN = new Set(['documentId', 'windowId', 'channexBookingId', 'statementId', 'amountSource', 'sourceTaskId', 'reservationId', 'maintenanceIssueId', 'issueId', 'paymentId', 'otaBookingId', 'clashingReservationId', 'checked', 'created', 'fields', 'hasEmail', 'hasPhone', 'overlaps']);
+const HIDDEN = new Set(['moveId', 'documentId', 'windowId', 'channexBookingId', 'statementId', 'amountSource', 'sourceTaskId', 'reservationId', 'maintenanceIssueId', 'issueId', 'paymentId', 'otaBookingId', 'clashingReservationId', 'checked', 'created', 'fields', 'hasEmail', 'hasPhone', 'overlaps']);
+
+/** Who reported a repair, in the words the Maintenance screen uses. */
+const REPORTED_BY: Record<string, string> = { guest: 'Guest', cleaner: 'Cleaner', inspection: 'Inspection', staff: 'Office' };
 
 const labelOf = (k: string) => FIELD[k]?.[0] ?? humanize(k.replace(/([a-z])([A-Z])/g, '$1_$2'));
 
@@ -91,6 +95,7 @@ function show(k: string, v: unknown, names: Record<string, string>): string {
   if (kind === 'pct' && (typeof v === 'number' || typeof v === 'string') && v !== '') return `${Number(v)}%`;
   if (kind === 'name' && typeof v === 'string') return names[v] ?? 'a record no longer here';
   if (kind === 'role' && typeof v === 'string') return ROLE_LABEL[v] ?? humanize(v);
+  if (k === 'source' && typeof v === 'string' && REPORTED_BY[v]) return REPORTED_BY[v];
   if (kind === 'channel' && typeof v === 'string') return CHANNEL[v as keyof typeof CHANNEL]?.label ?? humanize(v);
   if (kind === 'state' && typeof v === 'string') return k === 'state' || k === 'status' ? stateLabel('task', v) : humanize(v);
   if (typeof v === 'string') {
