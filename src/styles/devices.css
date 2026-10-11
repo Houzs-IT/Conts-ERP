@@ -41,29 +41,12 @@
   .tc-split { grid-template-columns: minmax(0, 1fr); }
 }
 
-/* ---- Dual-screen: one pane per segment, nothing in the hinge ---- */
-@media (horizontal-viewport-segments: 2) {
-  .tc-split {
-    grid-template-columns:
-      env(viewport-segment-width 0 0)
-      calc(env(viewport-segment-left 1 0) - env(viewport-segment-right 0 0))
-      env(viewport-segment-width 1 0);
-  }
-  .tc-split > :first-child { grid-column: 1; }
-  .tc-split > :last-child  { grid-column: 3; }
-  .tc-hinge-safe { display: none; } /* anything that must not straddle the fold */
-}
-@media (vertical-viewport-segments: 2) {
-  /* Fold "laptop" posture: top half reads, bottom half acts */
-  .tc-split {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows:
-      env(viewport-segment-height 0 0)
-      calc(env(viewport-segment-top 0 1) - env(viewport-segment-bottom 0 0))
-      env(viewport-segment-height 0 1);
-  }
-  .tc-split > :first-child { grid-row: 1; }
-  .tc-split > :last-child  { grid-row: 3; }
+/* ---- Dual-screen ----
+ * The split is done by AppShell from the Viewport Segments API (navigation on one screen,
+ * page on the other, a black gutter where the hinge is). Pages need no dual-specific CSS.
+ * .tc-hinge-safe hides anything that must never straddle the fold. */
+@media (horizontal-viewport-segments: 2), (vertical-viewport-segments: 2) {
+  .tc-hinge-safe { display: none; }
 }
 
 /* ---- Touch targets everywhere a finger is the pointer ---- */
