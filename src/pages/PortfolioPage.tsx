@@ -131,7 +131,7 @@ export default function PortfolioPage() {
     <>
       <PageHeader
         title="Portfolio performance"
-        sub={`${plural(data?.units ?? rows.length, 'listed unit')} · ${plural(data?.buildings ?? buildings.length, 'building')} · ${caption}`}
+        sub={data ? `${plural(data.units ?? rows.length, 'listed unit')} · ${plural(data.buildings ?? buildings.length, 'building')} · ${caption}` : caption}
         actions={
           <div role="group" aria-label="Period" className="flex items-center gap-2 max-w-full overflow-x-auto [scrollbar-width:none]">
             {PERIODS.map((p, i) => (
@@ -142,10 +142,11 @@ export default function PortfolioPage() {
       />
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-[10px] sm:gap-[14px]">
+        {/* Until the figures arrive the tiles show a dash, not a zero that then jumps. */}
         {tiles.map(t => (
           <div key={t.label} className="bg-card border border-solid border-line rounded-card p-[14px] sm:p-[18px] flex flex-col gap-2 min-w-0">
             <div className="text-meta text-muted-ink">{t.label}</div>
-            <div className="text-title sm:text-headline leading-[1.15] font-semibold tracking-[-0.01em] [font-variant-numeric:tabular-nums] whitespace-nowrap overflow-hidden text-ellipsis">{t.value}</div>
+            <div className="text-title sm:text-headline leading-[1.15] font-semibold tracking-[-0.01em] [font-variant-numeric:tabular-nums] whitespace-nowrap overflow-hidden text-ellipsis">{data ? t.value : '—'}</div>
           </div>
         ))}
       </div>
