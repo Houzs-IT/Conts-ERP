@@ -51,6 +51,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       const st = statementOf.get(o.id);
       return {
         id: o.id, displayName: o.display_name, email: o.email, phone: o.phone,
+        legalName: o.legal_name ?? null, ...(banking ? { address: o.address ?? null, notes: o.notes ?? null } : {}),
         // Identity and bank numbers leave the server only as their last four characters; the full value needs an
         // audited reveal (GET /api/owners/:id/reveal), the same rule as access codes and the Payouts screen.
         ic: null, bankAccount: null,

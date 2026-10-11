@@ -39,6 +39,7 @@ export interface UnitLine {
 }
 export interface Owner {
   id: string; displayName: string; email: string; phone: string | null; ic: string | null;
+  legalName?: string | null; address?: string | null; notes?: string | null;
   bankName: string | null; bankAccount: string | null; accountHolder: string | null;
   /** The API sends only the last four characters; the full number needs an audited reveal. */
   icLast4?: string | null; bankAccountLast4?: string | null;

@@ -1,9 +1,12 @@
 -- A unit's layout (户型), for cleaning: the Cleaning board shows "2 bedroom · 2 bath" from it (owner, 11 Oct 2026).
 -- bedrooms, bathrooms and size_sqft already exist (0001); this adds the layout type. NULL = not set: the screens
 -- show the type the bedroom count implies until someone picks one.
+-- And the owner's postal address, edited on the owner profile's Details card with the other owner details.
 --
--- REVERSAL: ALTER TABLE pos.units DROP COLUMN layout_type;
+-- REVERSAL: ALTER TABLE pos.units DROP COLUMN layout_type; ALTER TABLE pos.owners DROP COLUMN address;
 set local search_path = pos;
 
 ALTER TABLE units ADD COLUMN IF NOT EXISTS layout_type TEXT
   CHECK (layout_type IS NULL OR layout_type IN ('studio', '1_bedroom', '2_bedroom', '3_bedroom', '4_plus_bedroom', 'duplex', 'dual_key', 'penthouse', 'other'));
+
+ALTER TABLE owners ADD COLUMN IF NOT EXISTS address TEXT;

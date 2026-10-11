@@ -16,7 +16,8 @@ import { useToast } from '../components/Toast';
 import { api, errorMessage } from '../lib/api';
 import { rm, monthLabel, todayMyt, titleCase, plural } from '../lib/format';
 import { MODEL, type RevenueModel } from '../lib/revenueModel';
-import { PayoutDetails } from './owners/PayoutDetails';
+import { PayoutDetails, OwnerDetails } from './owners/PayoutDetails';
+import { useSession } from '../lib/session';
 import { OwnerAdjustments } from './owners/Adjustments';
 import { ExpensesCard } from './owners/ExpenseEntry';
 import { ModelChip } from './units/ContractTab';
@@ -46,6 +47,7 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
   const toast = useToast();
   const rosterUnits = useUnitRoster();
   const [params, setParams] = useSearchParams();
+  const { user } = useSession();
   const thisMonth = todayMyt().slice(0, 7);
   // Opens on last month: the month whose statement is being prepared or was just sent.
   const month = /^\d{4}-\d{2}$/.test(params.get('month') ?? '') ? params.get('month')! : shiftMonth(thisMonth, -1);
@@ -73,6 +75,8 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
   }
 
   const patch = (p: Partial<Owner>) => setEdits(e => ({ ...e, ...p }));
+  // Owner details and payout details: management and finance only (functions/api/owners/[id].ts).
+  const canEditOwner = !!user && (user.role === 'management' || user.role === 'finance_admin');
   const canDelete = o.units.length === 0 && !o.contract;
   const total = o.units.reduce((n, u) => n + (u.figures?.netPayout ?? u.net), 0);
   const st = o.statement ?? null;
@@ -210,12 +214,23 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
       </div>
 
       <div className="grid grid-cols-[repeat(auto-fit,minmax(min(420px,100%),1fr))] gap-5 [align-items:start]">
-        <Card>
-          <div className="p-5 flex flex-col gap-5">
-            <PayoutDetails owner={o} />
-            <StatementHistory key={o.id} o={o} />
-          </div>
-        </Card>
+        <div className="flex flex-col gap-5 min-w-0">
+          <Card>
+            <div className="p-5 flex flex-col gap-5">
+              <OwnerDetails owner={o} canEdit={canEditOwner} onSaved={reload} />
+            </div>
+          </Card>
+          <Card>
+            <div className="p-5 flex flex-col gap-5">
+              <PayoutDetails key={o.id} owner={o} canEdit={canEditOwner} onSaved={reload} startEditing={params.get('edit') === 'payout'} />
+            </div>
+          </Card>
+          <Card>
+            <div className="p-5 flex flex-col gap-5">
+              <StatementHistory key={o.id} o={o} />
+            </div>
+          </Card>
+        </div>
         <div className="flex flex-col gap-5 min-w-0">
           <Card>
             <div className="p-5 flex flex-col gap-5">
