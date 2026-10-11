@@ -233,6 +233,16 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Open: field edits are last-write-wins (no version column); status and dates are already protected.
 - Note: booking-lifecycle.mjs signs an operations_staff cookie for the dev user, but the middleware now reads the live role from users, so its three non-management checks fail on any database where that user is management; give the check a real non-management user.
 
+## Supply chain click sweep (fix/sweep-supply-chain, 11 Oct)
+- Done: built-in supply chain screens wait for the server before saying "saved" and re-read the list (src/lib/persist.ts); document drawers load their lines from the record; tested by scripts/api-checks/supply-chain-sweep.mjs.
+- Owner to decide: Customers, Drivers, Vehicles, 3PL, zones, rate cards, categories, fabrics, payment vouchers, accounting and credit notes have no menu entry since 25 Sep; add them back or leave reachable only by address.
+- Owner to decide: item codes on orders, adjustments and stock takes are free text; should they have to exist in Products?
+- Owner to decide: credit notes may exceed what the invoice still owes (receivables go negative); cap them or allow refunds owed.
+- Owner to decide: credit notes and consignment notes both number CN-YYYY-NNNN.
+- Owner to decide: line discounts on sales and purchase orders are not carried to delivery orders, goods receipts or invoices.
+- Owner to decide: delivery schedule (DP orders, last mile) is not tied to delivery orders, and does not warn about drivers on leave.
+- Owner to decide: sales-order payments and sales-invoice receipts are recorded separately and can count the same money twice.
+
 ## Open from the money-and-system sweep (fix/sweep-money-system, 11 Oct 2026)
 - Owner to decide: expenses can be added and edited but never deleted (no button, no endpoint). A wrong expense today can only be edited to RM 0.00.
 - Owner to decide: Portfolio "This month" counts every night booked in the whole month, while "Quarter to date" stops at today; the caption now says so. Pick one rule for both.

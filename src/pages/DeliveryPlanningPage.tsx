@@ -3,7 +3,8 @@ import { useMemo, useState } from 'react';
 import PageHeader from '../components/PageHeader';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
-import { api, notifyFailure } from '../lib/api';
+import { api } from '../lib/api';
+import { persist, useResetOnReload } from '../lib/persist';
 import { useSession } from '../lib/session';
 import { DateField, NumberInput } from '../components/inputs';
 import { DRIVERS_FALLBACK, VEHICLES_FALLBACK, schedFallback, type Sched, type SchedPayload } from '../lib/schedule';
@@ -24,6 +25,7 @@ export default function DeliveryPlanningPage() {
   const { user } = useSession();
   const canWrite = !!user && ['management', 'operations_manager', 'finance_admin'].includes(user.role);
   const [edits, setEdits] = useState<Record<string, Partial<Sched>>>({});
+  useResetOnReload(data, () => { setEdits({}); });
   const [day, setDay] = useState<string>('');
   // Sequence edits are held until the field is left so the list does not re-sort under the cursor mid-typing.
   const [seqDraft, setSeqDraft] = useState<Record<string, number | null>>({});
@@ -38,7 +40,7 @@ export default function DeliveryPlanningPage() {
     const merged = { ...r, ...body, driverName, vehicleCode };
     const status = (r.status === 'DISPATCHED' || r.status === 'DELIVERED') ? r.status : (merged.plannedDate && merged.driverId ? 'SCHEDULED' as const : 'UNPLANNED' as const);
     setEdits(e => ({ ...e, [r.id]: { ...e[r.id], ...body, driverName, vehicleCode, status } }));
-    api.patch(`/delivery-schedule/${r.id}`, apiBody).catch(notifyFailure);
+    persist(api.patch(`/delivery-schedule/${r.id}`, apiBody), { reload });
   }
   function commitSeq(r: Sched) {
     if (!(r.id in seqDraft)) return;
@@ -67,7 +69,7 @@ export default function DeliveryPlanningPage() {
         toolbar={<div className="flex items-center gap-2.5 flex-wrap">
           <label className="text-[12px] font-medium text-muted-ink">Delivery day</label>
           <DateField aria-label="Delivery day" value={activeDay} onChange={setDay} className="h-9 box-border px-3 py-0 font-sans text-[13px] text-ink bg-card border border-solid border-line rounded-control outline-none" />
-          <span className="text-[12.5px] text-muted-ink">{rows.length} deliveries</span>
+          <span className="text-[12.5px] text-muted-ink">{rows.length} {rows.length === 1 ? 'delivery' : 'deliveries'}</span>
         </div>}
         empty={{ title: 'Nothing planned for this day.', body: 'Give deliveries this date in Delivery date arrangement, then assign them here.' }} />
     </>

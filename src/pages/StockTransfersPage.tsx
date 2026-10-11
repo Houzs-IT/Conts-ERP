@@ -9,6 +9,7 @@ import { Drawer } from '../components/Dialog';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure, ApiFailure } from '../lib/api';
+import { persist, useRecord, useResetOnReload } from '../lib/persist';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { date, todayMyt } from '../lib/format';
@@ -34,6 +35,10 @@ export default function StockTransfersPage() {
   const [drawer, setDrawer] = useState<{ mode: 'new' } | { mode: 'view'; t: Transfer } | null>(null);
   const [added, setAdded] = useState<Transfer[]>([]);
   const [edits, setEdits] = useState<Record<string, Partial<Transfer>>>({});
+  useResetOnReload(data, () => {
+    setAdded([]); setEdits({});
+    setDrawer(d => { const fresh = d?.mode === 'view' ? data?.data.find(x => x.id === d.t.id) : undefined; return d?.mode === 'view' && fresh ? { mode: 'view', t: { ...d.t, ...fresh } } : d; });
+  });
 
   const rows = useMemo(() => [...added, ...(data?.data ?? [])].map(t => ({ ...t, ...edits[t.id] })), [added, data, edits]);
 
@@ -45,12 +50,12 @@ export default function StockTransfersPage() {
     { key: 'status', label: 'Status', type: 'status', value: t => t.status, status: t => t.status === 'POSTED' ? { label: 'Posted', tone: 'success' } : { label: 'Cancelled', tone: 'neutral' } },
   ], []);
 
-  function created(t: Transfer) { setAdded(a => [t, ...a]); toast({ tone: 'success', title: 'Stock transferred.', body: t.transferNumber }); setDrawer(null); }
-  function cancel(t: Transfer) { setEdits(e => ({ ...e, [t.id]: { ...e[t.id], status: 'CANCELLED' } })); api.patch(`/stock-transfers/${t.id}`, { status: 'CANCELLED' }).catch(notifyFailure); toast({ tone: 'success', title: 'Transfer cancelled.', body: t.transferNumber }); setDrawer(null); }
+  function created(t: Transfer) { setAdded(a => [t, ...a]); reload(); toast({ tone: 'success', title: 'Stock transferred.', body: t.transferNumber }); setDrawer(null); }
+  function cancel(t: Transfer) { setEdits(e => ({ ...e, [t.id]: { ...e[t.id], status: 'CANCELLED' } })); persist(api.patch(`/stock-transfers/${t.id}`, { status: 'CANCELLED' }), { reload, ok: () => toast({ tone: 'success', title: 'Transfer cancelled.', body: t.transferNumber }) }); setDrawer(null); }
 
   return (
     <>
-      <PageHeader title="Stock transfers" sub={`${rows.length} transfers · between warehouses`}
+      <PageHeader title="Stock transfers" sub={data ? `${rows.length} ${rows.length === 1 ? 'transfer' : 'transfers'} · between warehouses` : '\u00a0'}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer({ mode: 'new' })}>New transfer</Button> : undefined} />
       <DataTable<Transfer>
         id="scm.stock-transfers" columns={columns} rows={data ? rows : null} rowKey={t => t.id}
@@ -151,6 +156,7 @@ const lineColumns: Column<Line & { i: number }>[] = [
 ];
 
 function ViewDrawer({ t, canWrite, onClose, onCancel }: { t: Transfer; canWrite: boolean; onClose: () => void; onCancel: (t: Transfer) => void }) {
+  const { record, loading: linesLoading, error: linesError } = useRecord<Transfer>('stock-transfers', t.id);
   return (
     <Drawer open onClose={onClose} width={620}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5"><h2 className="m-0 text-[19px] font-semibold">{t.transferNumber}</h2><button onClick={onClose} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted"><X size={18} /></button></div>
@@ -158,7 +164,7 @@ function ViewDrawer({ t, canWrite, onClose, onCancel }: { t: Transfer; canWrite:
         <div className="text-[13px]"><span className="text-muted-ink">{t.fromName}</span> → <span className="text-muted-ink">{t.toName}</span> · {t.transferDate ? date(t.transferDate) : ''}</div>
         <div className="border border-solid border-line rounded-card overflow-hidden">
           <DataTable<Line & { i: number }> id="scm.stock-transfers.lines" urlPrefix="lines." bare noViews noToolbar pageSize={0}
-            columns={lineColumns} rows={(t.lines ?? []).map((l, i) => ({ ...l, i }))} rowKey={l => String(l.i)}
+            columns={lineColumns} rows={(record?.lines ?? t.lines ?? []).map((l, i) => ({ ...l, i }))} rowKey={l => String(l.i)} loading={linesLoading} error={linesError}
             noun={['line', 'lines']} exportName={`${t.transferNumber}-lines`} empty={{ title: 'No lines.' }} />
         </div>
       </div>

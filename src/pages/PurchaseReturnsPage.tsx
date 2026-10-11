@@ -9,6 +9,7 @@ import { Drawer } from '../components/Dialog';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure, ApiFailure } from '../lib/api';
+import { persist, useRecord, useResetOnReload } from '../lib/persist';
 import { ShortStockPrompt } from '../components/ShortStockPrompt';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
@@ -55,6 +56,10 @@ export default function PurchaseReturnsPage() {
   const [drawer, setDrawer] = useState<{ mode: 'new' } | { mode: 'view'; pret: Pret } | null>(null);
   const [added, setAdded] = useState<Pret[]>([]);
   const [edits, setEdits] = useState<Record<string, Partial<Pret>>>({});
+  useResetOnReload(data, () => {
+    setAdded([]); setEdits({});
+    setDrawer(d => { const fresh = d?.mode === 'view' ? data?.data.find(x => x.id === d.pret.id) : undefined; return d?.mode === 'view' && fresh ? { mode: 'view', pret: { ...d.pret, ...fresh } } : d; });
+  });
 
   const all = useMemo(() => [...added, ...(data?.data ?? [])].map(p => ({ ...p, ...edits[p.id] })), [added, data, edits]);
   const q = search.trim().toLowerCase();
@@ -70,17 +75,16 @@ export default function PurchaseReturnsPage() {
     { key: 'refund', label: 'Refund', type: 'money', value: p => p.status === 'CANCELLED' ? null : p.refundSen },
   ], []);
 
-  function created(pret: Pret) { setAdded(a => [pret, ...a]); toast({ tone: 'success', title: 'Return raised.', body: `${pret.returnNumber} · ${pret.supplierName}` }); setDrawer(null); }
+  function created(pret: Pret) { setAdded(a => [pret, ...a]); reload(); toast({ tone: 'success', title: 'Return raised.', body: `${pret.returnNumber} · ${pret.supplierName}` }); setDrawer(null); }
   function patch(p: Pret, status: Status, label: string) {
     setEdits(e => ({ ...e, [p.id]: { ...e[p.id], status } }));
-    api.patch(`/purchase-returns/${p.id}`, { status }).catch(notifyFailure);
-    toast({ tone: 'success', title: label, body: p.returnNumber });
+    persist(api.patch(`/purchase-returns/${p.id}`, { status }), { reload, ok: () => toast({ tone: 'success', title: label, body: p.returnNumber }) });
     setDrawer(null);
   }
 
   return (
     <>
-      <PageHeader title="Purchase returns" sub={`${all.length} returns · to suppliers`}
+      <PageHeader title="Purchase returns" sub={data ? `${all.length} ${all.length === 1 ? 'return' : 'returns'} · to suppliers` : '\u00a0'}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer({ mode: 'new' })}>New return</Button> : undefined} />
 
       <DataTable<Pret>
@@ -212,7 +216,7 @@ function ReturnDrawer({ openGrns, canWrite, onClose, onCreated }: { openGrns: Op
           </div>
         )}
 
-        <div className="grid grid-cols-2 gap-5">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           <Field label="Notes" placeholder="Optional" value={notes} onChange={e => setNotes(e.target.value)} />
           <div className="flex items-end justify-end"><div className="flex gap-8 text-[15px] font-semibold"><span>Refund value</span><span className="tabular-nums w-[120px] text-right">{rm(refund)}</span></div></div>
         </div>
@@ -236,6 +240,7 @@ const LINE_COLUMNS: Column<PretLine & { i: number }>[] = [
 ];
 
 function ViewDrawer({ pret, canWrite, onClose, onComplete, onCancel }: { pret: Pret; canWrite: boolean; onClose: () => void; onComplete: (p: Pret) => void; onCancel: (p: Pret) => void }) {
+  const { record, loading: linesLoading, error: linesError } = useRecord<Pret>('purchase-returns', pret.id);
   return (
     <Drawer open onClose={onClose} width={720}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5">
@@ -252,7 +257,7 @@ function ViewDrawer({ pret, canWrite, onClose, onComplete, onCancel }: { pret: P
         {pret.reason && <div className="text-[13px]"><span className="text-muted-ink">Reason: </span>{pret.reason}</div>}
         <div className="border border-solid border-line rounded-card overflow-hidden">
           <DataTable<PretLine & { i: number }>
-            id="scm.purchase-return.lines" urlPrefix="lines." columns={LINE_COLUMNS} rows={(pret.lines ?? []).map((l, i) => ({ ...l, i }))} rowKey={l => String(l.i)}
+            id="scm.purchase-return.lines" urlPrefix="lines." columns={LINE_COLUMNS} rows={(record?.lines ?? pret.lines ?? []).map((l, i) => ({ ...l, i }))} rowKey={l => String(l.i)} loading={linesLoading} error={linesError}
             bare noViews noToolbar pageSize={0} noun={['line', 'lines']} exportName={`${pret.returnNumber}-lines`}
             empty={{ title: 'No lines on this return.' }} />
         </div>

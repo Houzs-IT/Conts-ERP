@@ -7,7 +7,8 @@ import { Field } from '../components/Field';
 import { Drawer } from '../components/Dialog';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
-import { api, notifyFailure } from '../lib/api';
+import { api } from '../lib/api';
+import { persist, useResetOnReload } from '../lib/persist';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { cx } from '../lib/design-tokens';
@@ -60,6 +61,7 @@ export default function ProductModelsPage() {
   const [added, setAdded] = useState<Model[]>([]);
   const [edits, setEdits] = useState<Record<string, Partial<Model>>>({});
   const [removed, setRemoved] = useState<Set<string>>(new Set());
+  useResetOnReload(data, () => { setAdded([]); setEdits({}); setRemoved(new Set()); });
 
   const all = useMemo(
     () => [...added, ...(data?.data ?? [])].filter(m => !removed.has(m.id)).map(m => ({ ...m, ...edits[m.id] })),
@@ -85,20 +87,17 @@ export default function ProductModelsPage() {
     const body = { modelCode: d.modelCode.trim(), name: d.name.trim(), category: d.category, branding: d.branding.trim(), description: d.description.trim(), photoUrl: d.photoUrl.trim(), active: d.active };
     if (isNew) {
       setAdded(a => [M({ ...body, id: `pmdl-new-${crypto.randomUUID().slice(0, 8)}` }), ...a]);
-      api.post('/product-models', body).catch(notifyFailure);
-      toast({ tone: 'success', title: 'Model added.', body: `${body.modelCode} ${body.name}` });
+      persist(api.post('/product-models', body), { reload, ok: () => toast({ tone: 'success', title: 'Model added.', body: `${body.modelCode} ${body.name}` }) });
     } else {
       setEdits(e => ({ ...e, [d.id]: { ...e[d.id], ...body } }));
-      api.patch(`/product-models/${d.id}`, body).catch(notifyFailure);
-      toast({ tone: 'success', title: 'Model updated.', body: `${body.modelCode} ${body.name}` });
+      persist(api.patch(`/product-models/${d.id}`, body), { reload, ok: () => toast({ tone: 'success', title: 'Model updated.', body: `${body.modelCode} ${body.name}` }) });
     }
     setDrawer(null);
   }
 
   function remove(m: Model) {
     setRemoved(r => new Set(r).add(m.id));
-    api.del(`/product-models/${m.id}`).catch(notifyFailure);
-    toast({ tone: 'success', title: 'Model removed.', body: m.modelCode });
+    persist(api.del(`/product-models/${m.id}`), { reload, ok: () => toast({ tone: 'success', title: 'Model removed.', body: m.modelCode }) });
     setDrawer(null);
   }
 
@@ -106,7 +105,7 @@ export default function ProductModelsPage() {
     <>
       <PageHeader
         title="Product models"
-        sub={`${all.length} models · groups SKUs of one design`}
+        sub={data ? `${all.length} ${all.length === 1 ? 'model' : 'models'} · groups SKUs of one design` : '\u00a0'}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer({ draft: emptyDraft(), isNew: true })}>New model</Button> : undefined}
       />
 

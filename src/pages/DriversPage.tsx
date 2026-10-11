@@ -8,7 +8,8 @@ import { PhoneInput, phoneProblem } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
-import { api, notifyFailure } from '../lib/api';
+import { api } from '../lib/api';
+import { persist, useResetOnReload } from '../lib/persist';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 
@@ -37,6 +38,7 @@ export default function DriversPage() {
   const [added, setAdded] = useState<Driver[]>([]);
   const [edits, setEdits] = useState<Record<string, Partial<Driver>>>({});
   const [removed, setRemoved] = useState<Set<string>>(new Set());
+  useResetOnReload(data, () => { setAdded([]); setEdits({}); setRemoved(new Set()); });
 
   const rows = useMemo(() => [...added, ...(data?.data ?? [])].filter(d => !removed.has(d.id)).map(d => ({ ...d, ...edits[d.id] })), [added, data, edits, removed]);
 
@@ -50,15 +52,15 @@ export default function DriversPage() {
 
   function save(d: Draft) {
     const body = { driverCode: d.driverCode.trim(), name: d.name.trim(), phone: d.phone.trim(), icNumber: d.icNumber.trim(), vehicle: d.vehicle.trim(), active: d.active };
-    if (d.isNew) { setAdded(a => [{ ...body, id: `drv-new-${crypto.randomUUID().slice(0, 8)}` }, ...a]); api.post('/drivers', body).catch(notifyFailure); toast({ tone: 'success', title: 'Driver added.', body: body.name }); }
-    else { setEdits(e => ({ ...e, [d.id]: { ...e[d.id], ...body } })); api.patch(`/drivers/${d.id}`, body).catch(notifyFailure); toast({ tone: 'success', title: 'Driver updated.', body: body.name }); }
+    if (d.isNew) { setAdded(a => [{ ...body, id: `drv-new-${crypto.randomUUID().slice(0, 8)}` }, ...a]); persist(api.post('/drivers', body), { reload, ok: () => toast({ tone: 'success', title: 'Driver added.', body: body.name }) }); }
+    else { setEdits(e => ({ ...e, [d.id]: { ...e[d.id], ...body } })); persist(api.patch(`/drivers/${d.id}`, body), { reload, ok: () => toast({ tone: 'success', title: 'Driver updated.', body: body.name }) }); }
     setDrawer(null);
   }
-  function remove(d: Driver) { setRemoved(r => new Set(r).add(d.id)); api.del(`/drivers/${d.id}`).catch(notifyFailure); toast({ tone: 'success', title: 'Driver removed.', body: d.driverCode }); setDrawer(null); }
+  function remove(d: Driver) { setRemoved(r => new Set(r).add(d.id)); persist(api.del(`/drivers/${d.id}`), { reload, ok: () => toast({ tone: 'success', title: 'Driver removed.', body: d.driverCode }) }); setDrawer(null); }
 
   return (
     <>
-      <PageHeader title="Drivers" sub={`${rows.length} drivers · ${rows.filter(d => d.active).length} active`}
+      <PageHeader title="Drivers" sub={data ? `${rows.length} ${rows.length === 1 ? 'driver' : 'drivers'} · ${rows.filter(d => d.active).length} active` : '\u00a0'}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer(emptyDraft())}>New driver</Button> : undefined} />
       <DataTable<Driver>
         id="scm.drivers" columns={columns} rows={data ? rows : null} rowKey={d => d.id}
