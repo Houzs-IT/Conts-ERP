@@ -6,7 +6,9 @@ import type { Tone } from '../lib/types';
 
 /** Small uppercase label above a figure or a section. */
 export function Eyebrow({ children, className }: { children: ReactNode; className?: string }) {
-  return <span className={cx('text-caption font-semibold uppercase tracking-[0.09em] text-muted-ink', className)}>{children}</span>;
+  // cx only joins classes, so a colour passed in would lose to the default grey on CSS order; the grey applies only when none is given.
+  const coloured = /(^|\s)text-(?!caption|meta|copy|heading|title|headline|\[)[a-z]/.test(className ?? '');
+  return <span className={cx('text-caption font-semibold uppercase tracking-[0.09em]', !coloured && 'text-muted-ink', className)}>{children}</span>;
 }
 
 /** "RM 12,450" and "86.2%" with the unit set smaller than the number, so the eye lands on the figure. */
