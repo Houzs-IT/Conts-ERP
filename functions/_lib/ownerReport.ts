@@ -100,10 +100,12 @@ export async function buildReport(q: Query, statementId: string, onlyUnit: strin
   };
 }
 
-/** JAN..DEC for one unit. NET INCOME is the payout before owner adjustments (as on the owner's own report). */
+/** JAN..DEC for one unit. NET INCOME is the payout before owner adjustments (as on the owner's own report). GROSS DEDUCTION
+ *  is the operator's share after any minimum guarantee top-up, as on the by-owner page, so every row adds up:
+ *  gross income - expense deduction - gross deduction = net income (a top-up month shows a negative deduction). */
 async function yearToDate(q: Query, unitId: string, ownerId: string, period: string, year: string): Promise<YearRow[]> {
   const stored = await q<any>(`
-    SELECT substr(s.period_start, 1, 7) AS month, su.gross_income, su.deductions, su.operator_share, su.payout_before_adjustments, su.basis, su.fixed_rent
+    SELECT substr(s.period_start, 1, 7) AS month, su.gross_income, su.deductions, su.operator_share, su.top_up, su.payout_before_adjustments, su.basis, su.fixed_rent
     FROM statement_units su JOIN owner_statements s ON s.id = su.statement_id
     WHERE su.unit_id = ? AND s.owner_id = ? AND s.period_start >= ? AND s.period_start <= ?`, unitId, ownerId, `${year}-01-01`, `${period}-01`);
   const workbook = await q<any>(`
@@ -122,13 +124,13 @@ async function yearToDate(q: Query, unitId: string, ownerId: string, period: str
     const st = storedOf.get(month);
     if (st) return st.basis === 'fixed_rent'
       ? { month, label, gross: Number(st.fixed_rent), deductions: 0, operator: 0, net: Number(st.payout_before_adjustments), source: 'statement' as const }
-      : { month, label, gross: Number(st.gross_income), deductions: Number(st.deductions), operator: Number(st.operator_share), net: Number(st.payout_before_adjustments), source: 'statement' as const };
+      : { month, label, gross: Number(st.gross_income), deductions: Number(st.deductions), operator: Number(st.operator_share) - Number(st.top_up ?? 0), net: Number(st.payout_before_adjustments), source: 'statement' as const };
     const lv = live.get(month);
     // A month the workbook paid but whose bookings were never imported (before March 2026) shows what was paid.
     if (paidOf.has(month) && (!lv || lv.nights === 0)) return { month, label, gross: null, deductions: null, operator: null, net: paidOf.get(month)!, source: 'workbook' as const };
     if (!lv || lv.terms.basis === 'none' || (lv.nights === 0 && lv.gross === 0 && lv.deductions === 0 && lv.payoutBeforeAdjustments === 0)) return { month, label, gross: null, deductions: null, operator: null, net: null, source: 'none' as const };
     return lv.terms.basis === 'fixed_rent'
       ? { month, label, gross: lv.fixedRent, deductions: 0, operator: 0, net: lv.payoutBeforeAdjustments, source: 'computed' as const }
-      : { month, label, gross: lv.gross, deductions: lv.deductions, operator: lv.operatorShare, net: lv.payoutBeforeAdjustments, source: 'computed' as const };
+      : { month, label, gross: lv.gross, deductions: lv.deductions, operator: lv.operatorShare - lv.topUp, net: lv.payoutBeforeAdjustments, source: 'computed' as const };
   });
 }
