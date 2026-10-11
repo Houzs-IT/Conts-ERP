@@ -1,6 +1,7 @@
 import { type Env, one, all, fail } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { companyDetails, printPage, esc, ringgit, longDate } from '../../_lib/letterhead';
+import { TERMS, lineTerm, lineDetail, isSourceReference } from '../../../src/lib/statementTerms';
 
 /**
  * GET /api/statements/pdf?id=…
@@ -58,31 +59,42 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   // Provisional figures must be labelled as such wherever they appear.
   const provisional = s.state === 'provisional';
 
-  const body = `
-<div class="lh-title"><h1>Owner statement</h1><span class="lh-docno">${esc(period)}</span></div>
-<div class="lh-sub">${esc(s.display_name)} &middot; issued ${esc(longDate(s.generated_at))}</div>
-${provisional ? '<div class="lh-flag">Provisional figures. This statement is not final and may change before it is issued.</div>' : ''}
-<table class="lh-table">
-  <thead><tr><th style="width:52%">Description</th><th style="width:18%">Unit</th><th style="width:14%">Date</th><th class="num" style="width:16%">Amount</th></tr></thead>
-  <tbody>
-    ${lines.length === 0 ? `
-      <tr><td>Gross booking value</td><td>—</td><td>${esc(longDate(s.period_end))}</td><td class="num">${ringgit(s.gross_booking_value)}</td></tr>
-      <tr><td>Management fee</td><td>—</td><td>${esc(longDate(s.period_end))}</td><td class="num">− ${ringgit(s.management_fee)}</td></tr>
-      <tr><td>Expenses</td><td>—</td><td>${esc(longDate(s.period_end))}</td><td class="num">− ${ringgit(s.expenses_total)}</td></tr>`
-    : lines.map((l: any) => `
+  // The owner's report words (statementTerms.ts). The unit is a heading only when the statement covers more than one.
+  const unitOf = (l: any) => (l.property_name ? `${l.property_name} ${l.unit_number}` : '');
+  const units = [...new Set(lines.map(unitOf))];
+  const multi = units.length > 1;
+  const row = (l: any) => {
+    const detail = lineDetail({ ...l, unitLabel: unitOf(l) });
+    const ref = l.reference && !isSourceReference(l.reference) ? l.reference : '';
+    const sub = [detail, ref].filter(Boolean).join(' · ');
+    return `
       <tr>
-        <td>${esc(l.description)}${l.reference ? `<div class="ref">${esc(l.reference)}</div>` : ''}</td>
-        <td>${esc(l.property_name ? l.property_name + ' ' + l.unit_number : '—')}</td>
+        <td>${esc(lineTerm(l))}${sub ? `<div class="ref">${esc(sub)}</div>` : ''}</td>
         <td>${esc(longDate(l.occurred_on))}</td>
         <td class="num">${signed(l.amount)}</td>
-      </tr>`).join('')}
-    <tr class="lh-total"><td colspan="3">Net payout</td><td class="num">${ringgit(s.net_payout)}</td></tr>
+      </tr>`;
+  };
+
+  const body = `
+<div class="lh-title"><h1>Owner statement</h1><span class="lh-docno">${esc(period)}</span></div>
+<div class="lh-sub">${esc(s.display_name)}${!multi && units[0] ? ` &middot; ${esc(units[0])}` : ''} &middot; issued ${esc(longDate(s.generated_at))}</div>
+${provisional ? '<div class="lh-flag">Provisional figures. This statement is not final and may change before it is issued.</div>' : ''}
+<table class="lh-table">
+  <thead><tr><th style="width:66%">Description</th><th style="width:18%">Date</th><th class="num" style="width:16%">Amount (RM)</th></tr></thead>
+  <tbody>
+    ${lines.length === 0 ? `
+      <tr><td>${TERMS.grossIncome}</td><td>${esc(longDate(s.period_end))}</td><td class="num">${ringgit(s.gross_booking_value)}</td></tr>
+      <tr><td>${TERMS.totalDeduction}</td><td>${esc(longDate(s.period_end))}</td><td class="num">− ${ringgit(s.expenses_total)}</td></tr>
+      <tr><td>${TERMS.toOperator}</td><td>${esc(longDate(s.period_end))}</td><td class="num">− ${ringgit(s.management_fee)}</td></tr>`
+    : multi ? units.map(u => `
+      <tr><td colspan="3"><b>${esc(u || 'Other')}</b></td></tr>${lines.filter((l: any) => unitOf(l) === u).map(row).join('')}`).join('')
+    : lines.map(row).join('')}
+    <tr class="lh-total"><td colspan="2">${TERMS.netPayout}</td><td class="num">${ringgit(s.net_payout)}</td></tr>
   </tbody>
 </table>
 <p class="lh-note">${s.state === 'paid' && s.bank_account_last4
     ? `Transferred to ${esc(s.bank_name ?? 'your account')} ····${esc(s.bank_account_last4)}.`
-    : 'Payment is made to the bank account on your management agreement.'}
-  Every deduction above carries a category, a date and a reference.</p>`;
+    : 'Payment is made to the bank account on your management agreement.'}</p>`;
 
   return printPage({
     company, body,

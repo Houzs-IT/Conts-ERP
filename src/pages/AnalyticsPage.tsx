@@ -12,6 +12,7 @@ import type { BookingChannel, Tone } from '../lib/types';
 import { useUrlState, SearchBox } from './finance/listKit';
 import { Select } from '../components/Select';
 import { EmptyState } from '../components/States';
+import { TERMS } from '../lib/statementTerms';
 
 /* -----------------------------------------------------------------------------
  * Analytics / Revenue — `/performance/analytics` and `/finance/revenue`.
@@ -294,11 +295,11 @@ export default function AnalyticsPage() {
           <div className="grid grid-cols-[repeat(auto-fit,minmax(120px,1fr))] gap-3 pt-[14px] [border-top:1px_solid_var(--color-line-soft)]">
             <Total label="Gross booking value" value={rm(d.totals.grossBookingValue, { cents: false })} />
             <Total label="Collected revenue" value={rm(d.totals.collectedRevenue, { cents: false })} />
-            <Total label="Management fees" value={rm(d.totals.managementFees, { cents: false })} />
-            <Total label="Net owner payout" value={rm(d.totals.netOwnerPayout, { cents: false })} />
+            <Total label={TERMS.toOperator} value={rm(d.totals.managementFees, { cents: false })} />
+            <Total label={TERMS.netPayout} value={rm(d.totals.netOwnerPayout, { cents: false })} />
           </div>
           <span className="text-meta text-muted-ink -mt-2 [text-wrap:pretty]">
-            Management fees and net owner payout come from owner statements generated for these months; a month with no statements adds nothing to them yet.
+            To Operator and Net Payout to Owner come from owner statements generated for these months; a month with no statements adds nothing to them yet.
           </span>
         </div>
       </Card>

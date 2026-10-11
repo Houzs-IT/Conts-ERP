@@ -18,6 +18,7 @@ import { TONE, cx } from '../lib/design-tokens';
 import type { StatementState } from '../lib/types';
 import { useUrlState, usePhone, SearchBox, Chip, shiftMonth } from './finance/listKit';
 import { statusLabel } from '../lib/status';
+import { TERMS } from '../lib/statementTerms';
 
 interface Statement {
   id: string; period?: string; ownerName: string; unitsLabel: string; state: StatementState;
@@ -191,13 +192,13 @@ export default function StatementsPage() {
       render: r => <span className="font-medium block truncate" title={r.ownerName}>{r.ownerName}</span> },
     { key: 'units', label: 'Units', value: r => r.unitsLabel, hidden: true, width: 220 },
     { key: 'period', label: 'Period', value: r => r.period ?? null, text: r => (r.period ? periodLabel(r.period) : ''), hidden: true, width: 110 },
-    { key: 'gross', label: 'Hospitality income', type: 'money', value: r => r.grossBookingValue, width: 140,
+    { key: 'gross', label: TERMS.grossIncome, type: 'money', value: r => r.grossBookingValue, width: 140,
       render: r => <span className="tabular-nums whitespace-nowrap">{rm(r.grossBookingValue, { cents: false })}</span> },
-    { key: 'fee', label: 'To operator', type: 'money', value: r => r.managementFee, width: 120,
+    { key: 'fee', label: TERMS.toOperator, type: 'money', value: r => r.managementFee, width: 120,
       render: r => <span className="tabular-nums whitespace-nowrap text-muted-ink">&minus; {rm(r.managementFee, { cents: false })}</span> },
-    { key: 'expenses', label: 'Deductions', type: 'money', value: r => r.expensesTotal, width: 120,
+    { key: 'expenses', label: TERMS.expenseDeduction, type: 'money', value: r => r.expensesTotal, width: 120,
       render: r => <span className="tabular-nums whitespace-nowrap text-muted-ink">&minus; {rm(r.expensesTotal, { cents: false })}</span> },
-    { key: 'net', label: 'Net payout', type: 'money', value: r => r.netPayout, width: 130,
+    { key: 'net', label: TERMS.netPayout, type: 'money', value: r => r.netPayout, width: 130,
       render: r => <span className={cx('tabular-nums whitespace-nowrap font-semibold', r.netPayout < 0 ? TONE.critical.text : '')}>{rm(r.netPayout)}</span> },
     { key: 'status', label: 'Status', type: 'status', value: r => r.state, width: 120,
       entity: 'statement' },

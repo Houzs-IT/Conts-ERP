@@ -3,6 +3,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useApi } from '../lib/useApi';
 import { useSession } from '../lib/session';
 import { amount, phone } from '../lib/format';
+import { TERMS, toOperator } from '../lib/statementTerms';
 
 /** `#/finance/statements/:id/report[?unit=|?view=owner]` — the Owner Income Report, laid out as the owner's own report:
  *  page 1 the unit's month (OWNER INCOME REPORT), page 2 its year to date. `view=owner` puts the owner's whole
@@ -147,27 +148,27 @@ function MonthPage({ r, u }: { r: Report; u: Unit }) {
         <colgroup><col style={{ width: '45%' }} /><col style={{ width: '8%' }} /><col style={{ width: '10%' }} /><col style={{ width: '18%' }} /><col style={{ width: '19%' }} /></colgroup>
         <thead><tr><th>DESCRIPTION</th><th>QTY</th><th>UOM</th><th>PRICE (RM)</th><th>AMOUNT (RM)</th></tr></thead>
         <tbody>
-          <tr><td><u><b>Gross Income</b></u></td><td /><td /><td /><td /></tr>
+          <tr><td><u><b>{TERMS.grossIncome}</b></u></td><td /><td /><td /><td /></tr>
           {share && u.model === 'long_term' ? (
-            <tr><td className="oir-in">Monthly Rent (long-term tenant)</td><td className="c">1</td><td className="c">months</td><td className="r">{money(u.gross)}</td><td className="r">{money(u.gross, { dash: false })}</td></tr>
+            <tr><td className="oir-in">{TERMS.monthlyRent}</td><td className="c">1</td><td className="c">months</td><td className="r">{money(u.gross)}</td><td className="r">{money(u.gross, { dash: false })}</td></tr>
           ) : share ? (
-            <tr><td className="oir-in">Hospitality Income</td><td className="c">{u.nights}</td><td className="c">%</td><td className="r">{pct(u.occupancy * 100)}</td><td className="r">{money(u.gross, { dash: false })}</td></tr>
+            <tr><td className="oir-in">{TERMS.hospitalityIncome}</td><td className="c">{u.nights}</td><td className="c">%</td><td className="r">{pct(u.occupancy * 100)}</td><td className="r">{money(u.gross, { dash: false })}</td></tr>
           ) : (
-            <tr><td className="oir-in">Fixed Monthly Rent</td><td className="c">1</td><td className="c">months</td><td className="r">{money(u.fixedRent)}</td><td className="r">{money(u.fixedRent)}</td></tr>
+            <tr><td className="oir-in">{TERMS.fixedRent}</td><td className="c">1</td><td className="c">months</td><td className="r">{money(u.fixedRent)}</td><td className="r">{money(u.fixedRent)}</td></tr>
           )}
           {share && <>
-            <tr className="oir-gap"><td><u><b>(-) Expense Deduction</b></u></td><td /><td /><td /><td /></tr>
+            <tr className="oir-gap"><td><u><b>(-) {TERMS.expenseDeduction}</b></u></td><td /><td /><td /><td /></tr>
             {u.deductions.map(d => (
               <tr key={d.key}><td className="oir-in">{d.label}</td><td className="c">{d.quantity ?? ''}</td><td className="c">{d.uom}</td><td className="r">{money(d.price)}</td><td className="r">{money(d.amount)}</td></tr>
             ))}
-            <tr><td /><td /><td /><td className="r"><b>Total Deduction</b></td><td className="r oir-box"><b>{money(u.deductionsTotal, { dash: false })}</b></td></tr>
-            <tr className="oir-gap"><td><b>Net Income Before Deduct Management Fees</b></td><td /><td /><td /><td className="r">{money(u.net, { dash: false })}</td></tr>
-            <tr><td><b>{pct(u.operatorPct ?? 0)} To Operator</b></td><td /><td /><td className="r">{pct(u.operatorPct ?? 0)}</td><td className="r">{money(-u.operatorShare, { dash: false })}</td></tr>
-            {u.topUp > 0 && <tr><td><b>Minimum Guarantee Top-up</b></td><td /><td /><td className="r">{money(u.guarantee)}</td><td className="r">{money(u.topUp)}</td></tr>}
+            <tr><td /><td /><td /><td className="r"><b>{TERMS.totalDeduction}</b></td><td className="r oir-box"><b>{money(u.deductionsTotal, { dash: false })}</b></td></tr>
+            <tr className="oir-gap"><td><b>{TERMS.netIncomeFull}</b></td><td /><td /><td /><td className="r">{money(u.net, { dash: false })}</td></tr>
+            <tr><td><b>{toOperator(u.operatorPct ?? 0)}</b></td><td /><td /><td className="r">{pct(u.operatorPct ?? 0)}</td><td className="r">{money(-u.operatorShare, { dash: false })}</td></tr>
+            {u.topUp > 0 && <tr><td><b>{TERMS.topUp}</b></td><td /><td /><td className="r">{money(u.guarantee)}</td><td className="r">{money(u.topUp)}</td></tr>}
           </>}
-          <tr><td><b>Payout Before O2 Adjustment</b></td><td /><td /><td /><td className="r oir-box"><b>{money(u.payoutBeforeAdjustments, { dash: false })}</b></td></tr>
+          <tr><td><b>{TERMS.payoutBeforeAdjustment}</b></td><td /><td /><td /><td className="r oir-box"><b>{money(u.payoutBeforeAdjustments, { dash: false })}</b></td></tr>
           {u.adjustments.map(a => <tr key={a.id} className="oir-gap"><td>{a.description}</td><td /><td /><td /><td className="r">{money(a.amount)}</td></tr>)}
-          <tr><td><b>Net Payout to Owner</b></td><td /><td /><td /><td className="r oir-box"><b>{money(u.netPayout, { dash: false })}</b></td></tr>
+          <tr><td><b>{TERMS.netPayout}</b></td><td /><td /><td /><td className="r oir-box"><b>{money(u.netPayout, { dash: false })}</b></td></tr>
           <tr className="oir-fill"><td /><td /><td /><td /><td className="oir-box" /></tr>
         </tbody>
       </table>
@@ -232,7 +233,7 @@ function OwnerMonthPage({ r }: { r: Report }) {
         <tbody>
           {r.units.map(u => (
             <tr key={u.unitId}>
-              <td><b>{u.code}</b><div className="oir-model">{MODEL_NAME[u.model ?? (u.basis === 'share' ? 'management' : 'grr')]}{u.basis === 'share' && u.operatorPct != null ? `, ${pct(u.operatorPct)} to operator` : ''}</div></td>
+              <td><b>{u.code}</b><div className="oir-model">{MODEL_NAME[u.model ?? (u.basis === 'share' ? 'management' : 'grr')]}{u.basis === 'share' && u.operatorPct != null ? `, ${toOperator(u.operatorPct)}` : ''}</div></td>
               <td className="r">{money(income(u))}</td>
               <td className="r">{money(u.basis === 'share' ? u.deductionsTotal : 0)}</td>
               <td className="r">{money(u.basis === 'share' ? u.operatorShare - u.topUp : 0)}</td>
@@ -252,7 +253,7 @@ function OwnerMonthPage({ r }: { r: Report }) {
           </tr>
         </tbody>
       </table>
-      <p className="oir-foot">Each unit's own report follows, with every income line, deduction and owner credit or charge. To operator is after any minimum guarantee top-up.</p>
+      <p className="oir-foot">Each unit's own report follows, with every income line, deduction and owner credit or charge. {TERMS.toOperator} is after any {TERMS.topUp.toLowerCase()}.</p>
       <Terms items={r.settings.monthlyTerms} />
       <Signatures />
     </article>

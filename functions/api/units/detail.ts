@@ -2,9 +2,10 @@ import { type Env, all, one, json, fail, mytToday } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { stampMyt } from '../../_lib/ops';
 import { stayMonths, metrics, monthEndExclusive, daysInMonth as daysInMonthOf } from '../../_lib/revenue';
-import { loadInputs, computeMonth, statementSettings, fmtPct, type Query } from '../../_lib/ownerStatement';
+import { loadInputs, computeMonth, statementSettings, type Query } from '../../_lib/ownerStatement';
 import { contractView, unitExample } from '../../_lib/unitContract';
 import { MODEL_LABEL } from '../../_lib/revenueModel';
+import { TERMS, toOperator } from '../../../src/lib/statementTerms';
 
 const PAYER_LABEL: Record<string, string> = { the_conts: 'Company', tenant: 'Tenant', guest_deposit: 'Guest', warranty: 'Warranty' };
 const CATEGORY_LABEL: Record<string, string> = {
@@ -126,15 +127,15 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     pnl = m.terms.basis === 'none'
       ? [{ label: 'Master lease: no owner statement', amount: 0, type: 'gross' }]
       : m.terms.basis === 'fixed_rent'
-      ? [{ label: 'Fixed monthly rent', amount: m.fixedRent, type: 'gross' }]
+      ? [{ label: TERMS.fixedRent, amount: m.fixedRent, type: 'gross' }]
       : [
-        { label: m.terms.model === 'long_term' ? 'Monthly rent from tenant' : 'Hospitality income', amount: m.gross, type: 'gross' },
+        { label: m.terms.model === 'long_term' ? TERMS.monthlyRent : TERMS.hospitalityIncome, amount: m.gross, type: 'gross' },
         ...m.deductionGroups.filter(g => g.amount).map(g => ({ label: g.label, amount: -g.amount, type: 'expense' })),
-        { label: m.terms.model === 'long_term' ? `Management fee ${fmtPct(100 - (m.ownerPct ?? 0))} of the rent` : `${fmtPct(100 - (m.ownerPct ?? 0))} to operator`, amount: -m.operatorShare, type: 'fee' },
-        ...(m.topUp ? [{ label: 'Minimum guarantee top-up', amount: m.topUp, type: 'adjustment' }] : []),
+        { label: toOperator(100 - (m.ownerPct ?? 0)), amount: -m.operatorShare, type: 'fee' },
+        ...(m.topUp ? [{ label: TERMS.topUp, amount: m.topUp, type: 'adjustment' }] : []),
       ];
-    if (m.adjustmentsTotal) pnl.push({ label: 'Owner credits & charges', amount: m.adjustmentsTotal, type: 'adjustment' });
-    pnl.push({ label: 'Net payout to owner', amount: m.netPayout, type: 'net' });
+    if (m.adjustmentsTotal) pnl.push({ label: TERMS.adjustments, amount: m.adjustmentsTotal, type: 'adjustment' });
+    pnl.push({ label: TERMS.netPayout, amount: m.netPayout, type: 'net' });
   }
   // The company's side of the unit this month: what it keeps or pays under the contract, and the costs it (or a
   // tenant or guest) paid, which never reach the owner statement.

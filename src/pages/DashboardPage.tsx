@@ -16,6 +16,7 @@ import { Select } from '../components/Select';
 import { EmptyState } from '../components/States';
 import { TONE, cx } from '../lib/design-tokens';
 import type { Tone } from '../lib/types';
+import { TERMS } from '../lib/statementTerms';
 
 /* ------------------------------------------------------------------ KPIs -- */
 /* Kept as the existing read-only KPI row — see the brief: keep KPI row + chart. */
@@ -427,8 +428,8 @@ export default function DashboardPage() {
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-[14px] [border-top:1px_solid_var(--color-line-soft)]">
               <Total label="Gross booking value" value={rm(tp.totals.grossBookingValue, { cents: false })} />
               <Total label="Collected revenue" value={rm(tp.totals.collectedRevenue, { cents: false })} />
-              <Total label="Management fees" value={rm(tp.totals.managementFees, { cents: false })} />
-              <Total label="Net owner payout" value={rm(tp.totals.netOwnerPayout, { cents: false })} />
+              <Total label={TERMS.toOperator} value={rm(tp.totals.managementFees, { cents: false })} />
+              <Total label={TERMS.netPayout} value={rm(tp.totals.netOwnerPayout, { cents: false })} />
             </div>
           </div>
         </Card>

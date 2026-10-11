@@ -29,6 +29,7 @@ import {
 } from './owners/shared';
 import { statusLabel } from '../lib/status';
 import { PhoneText } from '../components/PhoneText';
+import { TERMS, toOperator } from '../lib/statementTerms';
 
 /**
  * The OWNER PROFILE (`#/owners/:id`): one card per unit with its revenue model and the month's figures (income,
@@ -273,22 +274,22 @@ function UnitCard({ u, reportHref }: { u: UnitLine; reportHref: string | null })
       </div>
       {!f ? <div className="text-meta text-muted-ink">Figures are visible to finance and management.</div> : model === 'master_lease' ? <>
         <div className="text-meta text-muted-ink">{MODEL.master_lease.statement}</div>
-        {f.adjustments !== 0 && <Row label="Owner credits & charges" sen={f.adjustments} sign />}
+        {f.adjustments !== 0 && <Row label={TERMS.adjustments} sen={f.adjustments} sign />}
       </> : model === 'grr' ? <>
-        <Row label="Fixed rent" sen={f.fixedRent} />
-        {f.adjustments !== 0 && <Row label="Owner credits & charges" sen={f.adjustments} sign />}
+        <Row label={TERMS.fixedRent} sen={f.fixedRent} />
+        {f.adjustments !== 0 && <Row label={TERMS.adjustments} sen={f.adjustments} sign />}
         <Row label="Unit income (the company's)" sen={f.income} muted />
       </> : <>
-        <Row label={model === 'long_term' ? 'Rent from tenant' : `Income (${f.nights} ${f.nights === 1 ? 'night' : 'nights'})`} sen={f.income} />
-        <Row label="Costs the owner pays" sen={-f.costs} />
-        <Row label={model === 'long_term' ? `Management fee ${operatorPct ?? 0}%` : `Management and agent ${operatorPct != null ? `${Number(operatorPct.toFixed(2))}%` : ''}`} sen={-f.operatorShare} />
+        <Row label={model === 'long_term' ? TERMS.monthlyRent : `${TERMS.hospitalityIncome} (${f.nights} ${f.nights === 1 ? 'night' : 'nights'})`} sen={f.income} />
+        <Row label={TERMS.expenseDeduction} sen={-f.costs} />
+        <Row label={toOperator(operatorPct)} sen={-f.operatorShare} />
         {f.guarantee > 0 && (f.topUp > 0
-          ? <Row label={`Below the ${rm(f.guarantee)} minimum: top-up`} sen={f.topUp} sign />
+          ? <Row label={`${TERMS.topUp} (minimum ${rm(f.guarantee)})`} sen={f.topUp} sign />
           : <div className="text-meta text-muted-ink">Above the {rm(f.guarantee)} minimum</div>)}
-        {f.adjustments !== 0 && <Row label="Owner credits & charges" sen={f.adjustments} sign />}
+        {f.adjustments !== 0 && <Row label={TERMS.adjustments} sen={f.adjustments} sign />}
       </>}
       <div className="flex items-baseline justify-between gap-3 mt-auto pt-2 [border-top:1px_solid_var(--color-line-soft)]">
-        <span className="text-copy font-semibold">Owner net</span>
+        <span className="text-copy font-semibold">{TERMS.netPayout}</span>
         <MoneyText sen={f?.netPayout ?? u.net} mode="exact" strong className="text-copy" />
       </div>
       <div className="flex gap-3 text-meta">
