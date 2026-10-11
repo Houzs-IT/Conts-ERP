@@ -12,5 +12,5 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   const row = await one<{ id: string }>(env, 'SELECT id FROM integrations WHERE provider = ?', String(params.provider));
   if (!row) return fail('NOT_FOUND', 'That integration is not configured.', 404);
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'integration.reconnect_requested', entityTable: 'integrations', entityId: row.id });
-  return fail('CONNECT_PER_UNIT', 'Channels are connected per unit. Open the unit (Properties, then Units) and use Connect channels on its Channels card.', 409);
+  return fail('CONNECT_PER_UNIT', 'Channels are connected per unit. Open the unit from Units and use Connect channels on its Channels card.', 409);
 };

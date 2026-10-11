@@ -1083,7 +1083,7 @@ function SaveViewDialog({ initial, canShare, onClose, onSave }: {
           <p className="m-0 mt-1 text-meta text-muted-ink">Keeps the columns, their order, the sort, the filters and rows per page. Saving under an existing name replaces it.</p>
         </div>
         <div className="px-[22px] py-3 flex flex-col gap-3">
-          <Field label="Name" value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Arrivals this week" maxLength={80} autoFocus required />
+          <Field label="Name" value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Check-ins this week" maxLength={80} autoFocus required />
           {canShare && (
             <div role="radiogroup" aria-label="Who sees it" className="grid grid-cols-2 gap-1 p-1 rounded-control bg-muted">
               {([['mine', 'Only me'], ['company', 'Whole company']] as const).map(([k, l]) => (

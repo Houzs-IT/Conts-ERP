@@ -66,6 +66,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   // Partial failure returns what succeeded and names only what did not.
   return json({
     sent: sendable.length,
-    failed: notFinal.map(r => ({ id: r.id, reason: 'Cannot send. This statement is still provisional.' })),
+    failed: notFinal.map(r => ({ id: r.id, reason: 'Not sent. This statement is still a draft. Mark it final first.' })),
   });
 };

@@ -8,8 +8,8 @@ export type RevenueModel = typeof REVENUE_MODELS[number];
 export const isRevenueModel = (v: unknown): v is RevenueModel => typeof v === 'string' && (REVENUE_MODELS as readonly string[]).includes(v);
 
 export const MODEL_LABEL: Record<RevenueModel, string> = {
-  management: 'Management share',
-  management_guarantee: 'Share with minimum guarantee',
+  management: 'Income split',
+  management_guarantee: 'Split with minimum guarantee',
   grr: 'Guaranteed rent (GRR)',
   master_lease: 'Master lease',
   long_term: 'Long-term let',
@@ -62,7 +62,7 @@ const sen = (v: unknown) => Number.isInteger(v) && (v as number) >= 0;
  *  are checked; the others are ignored (and cleared on save). */
 export function invalidDraft(d: ContractDraft): Record<string, string> {
   const f: Record<string, string> = {};
-  if (!isRevenueModel(d.revenueModel)) { f.revenueModel = 'Pick one revenue model.'; return f; }
+  if (!isRevenueModel(d.revenueModel)) { f.revenueModel = 'Pick one income model.'; return f; }
   const m = d.revenueModel;
   if (!d.startsOn || !DATE.test(d.startsOn)) f.startsOn = 'Enter the start date.';
   if (d.endsOn && (!DATE.test(d.endsOn) || (d.startsOn && d.endsOn < d.startsOn))) f.endsOn = 'The end date must be on or after the start date.';

@@ -51,7 +51,7 @@ export function Logo({ variant = 'full', size = 'md', onDark = false, product = 
         // product there instead of squeezing the tagline below the 11px minimum.
         ? <span style={{ fontSize: 11, lineHeight: 1.35, color: muted, whiteSpace: 'nowrap' }}>Property OS</span>
         : <span style={{
-            fontSize: 11, letterSpacing: size === 'sm' ? '0.17em' : '0.26em', color: muted, whiteSpace: 'nowrap',
+            fontSize: 11, letterSpacing: size === 'sm' ? '0.17em' : '0.26em', color: muted, whiteSpace: 'nowrap', // vocab-ok: the company's brand tagline, not a building
           }}>PROPERTY MANAGEMENT</span>}
     </div>
   );

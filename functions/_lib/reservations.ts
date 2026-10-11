@@ -69,7 +69,7 @@ export async function holdOnChannels(env: Env, unitId: string, checkIn: string, 
     await syncAvailabilityIfLinked(env, unitId, checkIn, checkOut, release);
     return 'queued';
   } catch (e) {
-    await audit(env, { actorId: null, actorLabel: 'Channex sync', action: 'channex.availability_failed', entityTable: 'reservations', entityId: reservationId,
+    await audit(env, { actorId: null, actorLabel: 'Channel updates', action: 'channex.availability_failed', entityTable: 'reservations', entityId: reservationId,
       after: { unitId, checkIn, checkOut, release, error: e instanceof Error ? e.message.slice(0, 300) : String(e) } }).catch(() => {});
     return 'failed';
   }

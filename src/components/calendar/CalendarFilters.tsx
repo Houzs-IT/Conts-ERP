@@ -25,6 +25,7 @@ export function CalendarFilters({ channels = ALL_CHANNELS, properties, property,
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2.5">
       <Select label="Building" value={property} onChange={setProperty} className="w-full sm:w-[240px]"
         options={[
+          // vocab-ok: properties is the prop's name; the label itself says buildings
           { value: 'all', label: `All buildings (${plural(properties.reduce((n, p) => n + p.units, 0), 'unit')})` },
           ...properties.map(p => ({ value: p.id, label: `${p.name} (${p.units})` })),
         ]} />

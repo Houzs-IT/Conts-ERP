@@ -65,40 +65,44 @@ export default function OperationsTodayPage() {
   const out = data?.departures.filter(d => d.guestOut).length ?? 0;
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader title="Today" sub={data ? `${dayLabel(date)} · ${data.arrivals.length} arriving · ${data.departures.length} leaving · ${c!.done} of ${c!.total} cleans done` : dayLabel(date)}
+      <PageHeader title="Today"
+        // vocab-ok: data.arrivals and data.departures are API field names, not words on screen
+        sub={data ? `${dayLabel(date)} · ${data.arrivals.length} check-ins · ${data.departures.length} checkouts · ${c!.done} of ${c!.total} cleaning jobs done` : dayLabel(date)}
         actions={<Segmented label="Day" value={pick} onChange={setPick} options={[{ value: 'today', label: 'Today' }, { value: 'tomorrow', label: 'Tomorrow' }]} />}
         primary={<Button size="sm" variant="primary" icon={<Icon name="Sparkles" size="sm" />} onClick={() => navigate('/operations/cleaning')}>Open Cleaning</Button>} />
       {error && <StaleBanner message={`Showing the last figures we have. ${error}`} onRetry={reload} />}
 
       <StatRow cols={4}>
-        <StatTile label="Arriving" value={data ? String(data.arrivals.length) : undefined} hint={data ? `${data.arrivals.filter(a => a.state === 'checked_in' || (a.readiness === 'ready' && (!a.cleanState || a.cleanState === 'resolved'))).length} units ready` : undefined} />
-        <StatTile label="Leaving" value={data ? String(data.departures.length) : undefined} hint={data ? `${out} out so far` : undefined} />
-        <StatTile label="Cleans done" value={c ? `${c.done} / ${c.total}` : undefined} hint={c ? `${c.ready} ready to clean · ${c.cleaning} in progress${c.unassigned ? ` · ${c.unassigned} unassigned` : ''}` : undefined} hintTone={c?.unassigned ? 'critical' : undefined} onClick={() => navigate('/operations/cleaning')} />
-        <StatTile label={pick === 'today' ? 'Repairs today' : 'Repairs tomorrow'} value={data ? String(data.repairs.length) : undefined} hint={data ? `${data.urgent.length} urgent open` : undefined} hintTone={data?.urgent.length ? 'critical' : undefined} onClick={() => navigate('/operations/maintenance')} />
+        <StatTile label="Check-ins" value={data ? String(data.arrivals.length) : undefined}
+          // vocab-ok: data.arrivals is an API field name, not a word on screen
+          hint={data ? `${data.arrivals.filter(a => a.state === 'checked_in' || (a.readiness === 'ready' && (!a.cleanState || a.cleanState === 'resolved'))).length} units ready` : undefined} />
+        <StatTile label="Checkouts" value={data ? String(data.departures.length) : undefined} hint={data ? `${out} out so far` : undefined} />
+        <StatTile label="Cleaning jobs done" value={c ? `${c.done} / ${c.total}` : undefined} hint={c ? `${c.ready} ready to clean · ${c.cleaning} in progress${c.unassigned ? ` · ${c.unassigned} unassigned` : ''}` : undefined} hintTone={c?.unassigned ? 'critical' : undefined} onClick={() => navigate('/operations/cleaning')} />
+        <StatTile label={pick === 'today' ? 'Maintenance today' : 'Maintenance tomorrow'} value={data ? String(data.repairs.length) : undefined} hint={data ? `${data.urgent.length} urgent open` : undefined} hintTone={data?.urgent.length ? 'critical' : undefined} onClick={() => navigate('/operations/maintenance')} />
       </StatRow>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 items-start">
-        <Panel title="Leaving" count={data?.departures.length} loading={loading && !data} empty="Nobody checks out on this day.">
+        <Panel title="Checkouts" count={data?.departures.length} loading={loading && !data} empty="Nobody checks out on this day.">
           {data?.departures.map(d => (
             <Line key={d.reservationId} channel={d.channel} time={d.checkOutTime} unit={`${d.propertyName} ${d.unitNumber}`} guest={d.guestName}
               right={d.guestOut ? <StatusBadge tone="gold">Guest out{d.taskState === 'resolved' ? ', cleaned' : ''}</StatusBadge>
                 : d.channel === 'owner_stay' ? <StatusBadge tone="neutral">Owner stay</StatusBadge>
                 : data!.date > data!.today ? <StatusBadge tone="neutral">Leaves {d.checkOutTime}</StatusBadge>
                 : <Button size="sm" variant="secondary" loading={busy === d.reservationId} onClick={() => void guestLeft(d)}>Guest left</Button>}
-              sub={d.taskId ? undefined : 'No clean planned yet'} subTone="critical" />
+              sub={d.taskId ? undefined : 'No cleaning job planned yet'} subTone="critical" />
           ))}
         </Panel>
-        <Panel title="Arriving" count={data?.arrivals.length} loading={loading && !data} empty="Nobody checks in on this day.">
+        <Panel title="Check-ins" count={data?.arrivals.length} loading={loading && !data} empty="Nobody checks in on this day.">
           {data?.arrivals.map(a => {
             const r = unitReady[a.readiness] ?? { label: a.readiness, tone: 'neutral' as AnyTone };
             return (
               <Line key={a.reservationId} channel={a.channel} time={a.checkInTime} unit={`${a.propertyName} ${a.unitNumber}`} guest={`${a.guestName}${a.guests ? ` · ${a.guests} ${a.guests === 1 ? 'guest' : 'guests'}` : ''}`}
-                right={a.state === 'checked_in' ? <StatusBadge tone="success">Checked in</StatusBadge> : <StatusBadge tone={r.tone}>{r.label}</StatusBadge>}
-                sub={a.cleanState && a.cleanState !== 'resolved' ? `Clean ${a.cleanState === 'in_progress' ? 'in progress' : 'not finished'}` : undefined} subTone="warning" />
+                right={a.state === 'checked_in' ? <StatusBadge tone="success">Currently hosting</StatusBadge> : <StatusBadge tone={r.tone}>{r.label}</StatusBadge>}
+                sub={a.cleanState && a.cleanState !== 'resolved' ? `Cleaning ${a.cleanState === 'in_progress' ? 'in progress' : 'not finished'}` : undefined} subTone="warning" />
             );
           })}
         </Panel>
-        <Panel title="Repairs with a window" count={data?.repairs.length} loading={loading && !data} empty="No repair is booked into a unit on this day.">
+        <Panel title="Maintenance visits" count={data?.repairs.length} loading={loading && !data} empty="No maintenance visit is planned in a unit on this day.">
           {data?.repairs.map(w => (
             <div key={w.id} className="px-5 py-3 [border-top:1px_solid_var(--color-line-soft)] first:border-t-0 flex items-center gap-3 text-copy">
               <span className="w-[86px] flex-none font-semibold [font-variant-numeric:tabular-nums]">{hm(w.startsAt)}–{hm(w.endsAt)}</span>
@@ -107,7 +111,7 @@ export default function OperationsTodayPage() {
             </div>
           ))}
         </Panel>
-        <Panel title="Urgent repairs open" count={data?.urgent.length} loading={loading && !data} empty="No urgent repair is open.">
+        <Panel title="Urgent maintenance jobs" count={data?.urgent.length} loading={loading && !data} empty="No urgent maintenance job is open.">
           {data?.urgent.map(m => (
             <button key={m.id} type="button" onClick={() => navigate(`/operations/maintenance?id=${m.id}`)}
               className="w-full text-left px-5 py-3 [border-top:1px_solid_var(--color-line-soft)] first:border-t-0 flex items-center gap-3 text-copy cursor-pointer hover:bg-page">

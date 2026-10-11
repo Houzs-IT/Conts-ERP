@@ -8,7 +8,7 @@ import { requireSession, isFieldRole } from '../../../../_lib/auth';
 export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Field roles cannot draw from stock here.', 403);
+  if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Cleaners and technicians cannot draw from stock here.', 403);
 
   const id = String(params.id);
   const b = await request.json<any>().catch(() => null);

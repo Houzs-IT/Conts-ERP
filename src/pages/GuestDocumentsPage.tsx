@@ -64,12 +64,12 @@ export default function GuestDocumentsPage() {
       render: d => no(d), sub: d => (d.voidedAt ? <span title={d.voidReason ?? ''}>Void: {d.voidReason}</span> : null) },
     { key: 'type', label: 'Type', value: d => d.typeLabel, width: 110 },
     { key: 'guest', label: 'Guest', value: d => d.guestName ?? 'Guest', width: 170 },
-    { key: 'booking', label: 'Booking', value: d => d.bookingRef, width: 170, sub: d => d.unit,
+    { key: 'booking', label: 'Reservation', value: d => d.bookingRef, width: 170, sub: d => d.unit,
       render: d => (
         <span className="flex items-center gap-2 min-w-0">
           {d.channel && <ChannelMark ch={d.channel as BookingChannel} size={18} />}
           <button type="button" onClick={e => { e.stopPropagation(); navigate(`/reservations/bookings?open=${encodeURIComponent(d.reservationId)}`); }}
-            className="p-0 border-none bg-transparent [font-family:inherit] text-copy text-ink underline cursor-pointer text-left truncate">{d.bookingRef ?? 'Booking'}</button>
+            className="p-0 border-none bg-transparent [font-family:inherit] text-copy text-ink underline cursor-pointer text-left truncate">{d.bookingRef ?? 'Reservation'}</button>
         </span>
       ) },
     { key: 'unit', label: 'Unit', value: d => d.unit, hidden: true, width: 140 },
@@ -94,7 +94,7 @@ export default function GuestDocumentsPage() {
         <Chip on={tab === 'void'} onClick={() => setTab('void')} count={data?.counts.void}>Void</Chip>
       </div>
       <div className="flex flex-wrap gap-2 shrink-0">
-        <SearchBox className="flex-[2_1_240px]" label="Search documents" placeholder="Search number, guest, booking or unit" value={q} onChange={v => url.set({ q: v || null, page: null })} />
+        <SearchBox className="flex-[2_1_240px]" label="Search documents" placeholder="Search number, guest, reservation or unit" value={q} onChange={v => url.set({ q: v || null, page: null })} />
         <FilterSelect className="flex-[1_1_180px]" label="Month issued" all="All months" value={month} onChange={v => url.set({ month: v || null, page: null })}
           options={(data?.months ?? []).map(m => ({ value: m, label: monthLabel(m) }))} />
       </div>
@@ -103,7 +103,7 @@ export default function GuestDocumentsPage() {
         loading={loading} error={error} onRetry={reload} noun={['document', 'documents']} exportName="guest-documents"
         server={{ total: data?.total ?? rows.length, page: data?.page ?? page, pageSize: data?.pageSize ?? size, sizes: [25, 50, 100, 200], defaultPageSize: PAGE_SIZE, fetchAll }}
         viewParams={['tab', 'month', 'q']} filtered={tab !== 'all' || !!q || !!month} onClearFilters={() => url.set({ tab: null, month: null, q: null, page: null })}
-        empty={{ title: 'No guest documents yet', body: "Issue an invoice or an official receipt from a booking's money section. Each gets the next INV- or OR- number.", icon: 'FileText', action: { label: 'Open bookings', onClick: () => navigate('/reservations/bookings') } }}
+        empty={{ title: 'No guest documents yet', body: "Issue an invoice or an official receipt from a reservation's money section. Each gets the next INV- or OR- number.", icon: 'FileText', action: { label: 'Open reservations', onClick: () => navigate('/reservations/bookings') } }}
         footer={<div className="px-[22px] max-md:px-4 py-3 [border-top:1px_solid_var(--color-line-soft)] text-meta text-muted-ink">A voided number is never issued again. View opens the document ready to print or save as PDF.</div>}
         renderCard={d => (
           <span className="flex flex-col gap-[5px]">

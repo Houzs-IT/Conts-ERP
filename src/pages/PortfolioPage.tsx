@@ -27,7 +27,7 @@ const SAMPLE: PortfolioRow[] = [
   { unitId: 'u3', unitNumber: '#2207', propertyName: 'Tribeca', ownerName: 'Lim Chee Keong', nights: 27, occupancy: 91.0, adr: 31800, revpar: 28900, revenue: 901000, rating: 4.95, exception: null },
   { unitId: 'u1', unitNumber: '#A-12-03', propertyName: 'Vista Jaya One', ownerName: 'Aina Zulkifli', nights: 28, occupancy: 94.1, adr: 28400, revpar: 26700, revenue: 812000, rating: 4.92, exception: null },
   { unitId: 'u5', unitNumber: '#B-32-05', propertyName: 'Trion KL', ownerName: 'Nurul Huda', nights: 26, occupancy: 85.6, adr: 25200, revpar: 21600, revenue: 702000, rating: 4.86, exception: null },
-  { unitId: 'u4', unitNumber: '#15-06', propertyName: 'Scarletz KLCC', ownerName: 'Faridah Ismail', nights: 24, occupancy: 79.4, adr: 26500, revpar: 21000, revenue: 588000, rating: 4.79, exception: { label: 'Off sale', tone: 'warning' } },
+  { unitId: 'u4', unitNumber: '#15-06', propertyName: 'Scarletz KLCC', ownerName: 'Faridah Ismail', nights: 24, occupancy: 79.4, adr: 26500, revpar: 21000, revenue: 588000, rating: 4.79, exception: { label: 'Blocked', tone: 'warning' } },
   { unitId: 'u6', unitNumber: '#C-31-14', propertyName: 'Sentral Suites', ownerName: 'Tan Boon Huat', nights: 22, occupancy: 72.0, adr: 22800, revpar: 16400, revenue: 441000, rating: 4.71, exception: null },
 ];
 const SAMPLE_PAYLOAD: Payload = { rows: SAMPLE, units: SAMPLE.length, buildings: 5, days: 30, generatedAt: '' };
@@ -110,9 +110,9 @@ export default function PortfolioPage() {
     { key: 'occupancy', label: 'Occupancy', type: 'number', value: r => r.occupancy, width: 100,
       render: r => <span className={NUM}>{percent(r.occupancy)}</span> },
     ...(money ? [
-      { key: 'adr', label: 'ADR', type: 'money', value: r => r.adr, width: 100, render: r => <span className={NUM}>{rm(r.adr, { cents: false })}</span> },
-      { key: 'revpar', label: 'RevPAR', type: 'money', value: r => r.revpar, width: 100, render: r => <span className={NUM}>{rm(r.revpar, { cents: false })}</span> },
-      { key: 'revenue', label: 'Revenue', type: 'money', value: r => r.revenue, width: 120, phone: 'right',
+      { key: 'adr', label: 'Avg nightly price', type: 'money', value: r => r.adr, width: 100, render: r => <span className={NUM}>{rm(r.adr, { cents: false })}</span> },
+      { key: 'revpar', label: 'Earnings per available night', type: 'money', value: r => r.revpar, width: 100, render: r => <span className={NUM}>{rm(r.revpar, { cents: false })}</span> },
+      { key: 'revenue', label: 'Earnings', type: 'money', value: r => r.revenue, width: 120, phone: 'right',
         render: r => <span className={`${NUM} font-medium`}>{rm(r.revenue, { cents: false })}</span> },
     ] as Column<PortfolioRow>[] : []),
     ...(withRating ? [{ key: 'rating', label: 'Rating', type: 'number', value: r => r.rating, width: 80,
@@ -124,8 +124,8 @@ export default function PortfolioPage() {
   const tiles = [
     { label: narrowed ? 'Units shown' : 'Listed units', value: count(n) },
     { label: 'Occupancy', value: percent(occ) },
-    { label: 'ADR', value: money ? rm(adr, { cents: false }) : '—' },
-    { label: 'Revenue', value: money ? rm(revenue, { cents: false }) : '—' },
+    { label: 'Avg nightly price', value: money ? rm(adr, { cents: false }) : '—' },
+    { label: 'Earnings', value: money ? rm(revenue, { cents: false }) : '—' },
   ];
 
   return (
@@ -166,11 +166,11 @@ export default function PortfolioPage() {
           <Select label="Sort" value={params.get('sort') ?? ''} className="md:hidden"
             onChange={v => setParams(p => { const x = new URLSearchParams(p); if (v) x.set('sort', v); else x.delete('sort'); x.delete('page'); return x; }, { replace: true })}
             options={[
-              { value: '', label: 'Revenue, high to low' },
-              ...(money ? [{ value: 'revenue:asc', label: 'Revenue, low to high' }] : []),
+              { value: '', label: 'Earnings, high to low' },
+              ...(money ? [{ value: 'revenue:asc', label: 'Earnings, low to high' }] : []),
               { value: 'occupancy:desc', label: 'Occupancy, high to low' },
               { value: 'occupancy:asc', label: 'Occupancy, low to high' },
-              ...(money ? [{ value: 'adr:desc', label: 'ADR, high to low' }] : []),
+              ...(money ? [{ value: 'adr:desc', label: 'Avg nightly price, high to low' }] : []),
               { value: 'unit:asc', label: 'Unit, A to Z' },
             ]} />
           {narrowed && (
@@ -182,9 +182,9 @@ export default function PortfolioPage() {
             <span className="font-semibold text-ink">{narrowed ? plural(n, 'matching unit') : `All ${plural(n, 'unit')}`}</span>
             <span><span className="text-muted-ink">Occupancy </span><span className="font-semibold tabular-nums">{percent(occ)}</span></span>
             {money && <>
-              <span><span className="text-muted-ink">ADR </span><span className="font-semibold tabular-nums">{rm(adr, { cents: false })}</span></span>
-              <span><span className="text-muted-ink">RevPAR </span><span className="font-semibold tabular-nums">{rm(revpar, { cents: false })}</span></span>
-              <span><span className="text-muted-ink">Revenue </span><span className="font-semibold tabular-nums">{rm(revenue, { cents: false })}</span></span>
+              <span><span className="text-muted-ink">Avg nightly price </span><span className="font-semibold tabular-nums">{rm(adr, { cents: false })}</span></span>
+              <span><span className="text-muted-ink">Earnings per available night </span><span className="font-semibold tabular-nums">{rm(revpar, { cents: false })}</span></span>
+              <span><span className="text-muted-ink">Earnings </span><span className="font-semibold tabular-nums">{rm(revenue, { cents: false })}</span></span>
             </>}
           </div>
         )}

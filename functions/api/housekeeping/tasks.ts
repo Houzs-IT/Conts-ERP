@@ -9,7 +9,7 @@ import { cleaningNotice } from '../../_lib/notices';
 const CLEAN_KINDS = ['turnover', 'deep_clean', 'light_clean'] as const;
 type CleanKind = (typeof CLEAN_KINDS)[number];
 const KIND_TITLE: Record<CleanKind, string> = {
-  turnover: 'Turnover clean', deep_clean: 'Deep clean', light_clean: 'Light clean',
+  turnover: 'Standard clean', deep_clean: 'Deep clean', light_clean: 'Light clean',
 };
 const isHhmm = (v: unknown): v is string => typeof v === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(v);
 const isDate = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
@@ -105,7 +105,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Field roles cannot open cleaning tasks.', 403);
+  if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Cleaners and technicians cannot add cleaning jobs.', 403);
 
   const b = await request.json<any>().catch(() => null);
 

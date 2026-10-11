@@ -22,7 +22,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     data: [
       ...statements.map(s => ({
         id: s.id, type: 'statement', refId: s.id, title: `Statement — ${monthYear(String(s.period_start).slice(0, 7))}`,
-        meta: s.finalised_at ? `Finalised ${day(s.finalised_at)} · PDF` : `${s.state === 'paid' ? 'Paid' : 'Final'} · PDF`, issuedAt: String(s.finalised_at ?? s.generated_at).slice(0, 10),
+        meta: s.finalised_at ? `Final ${day(s.finalised_at)} · PDF` : `${s.state === 'paid' ? 'Paid' : 'Final'} · PDF`, issuedAt: String(s.finalised_at ?? s.generated_at).slice(0, 10),
       })),
       ...files.map(f => ({
         id: f.id, type: kindOf(f.kind), title: f.file_name, meta: `${Math.max(1, Math.round(Number(f.byte_size) / 1024))} KB`, issuedAt: String(f.created_at).slice(0, 10),

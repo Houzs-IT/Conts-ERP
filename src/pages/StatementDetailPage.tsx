@@ -64,7 +64,7 @@ export default function StatementDetailPage() {
       if (kind === 'finalise') await api.post('/statements/finalise', { statementIds: [s.id] });
       if (kind === 'send') await api.post('/statements/send', { statementIds: [s.id] });
       if (kind === 'paid' && s.payout) await api.patch('/payouts', { id: s.payout.id, state: 'paid' });
-      toast({ tone: 'success', title: kind === 'finalise' ? 'Statement finalised.' : kind === 'send' ? 'Statement sent to the owner.' : 'Marked as paid.' });
+      toast({ tone: 'success', title: kind === 'finalise' ? 'Statement marked final.' : kind === 'send' ? 'Statement sent to the owner.' : 'Marked as paid.' });
       reload();
     } catch (e) {
       toast({ tone: 'critical', title: 'That did not go through.', body: errorMessage(e, 'Try again in a moment.') });
@@ -81,7 +81,7 @@ export default function StatementDetailPage() {
     );
   }
 
-  const next = s.state === 'provisional' ? { label: 'Finalise', run: () => act('finalise') }
+  const next = s.state === 'provisional' ? { label: 'Mark final', run: () => act('finalise') }
     : s.state === 'finalised' ? { label: 'Send to owner', run: () => setConfirm('send') }
     : s.state === 'sent' && s.payout && s.payout.state !== 'paid' ? { label: 'Mark paid', run: () => setConfirm('paid') }
     : null;
@@ -108,23 +108,23 @@ export default function StatementDetailPage() {
       {error && <StaleBanner message={`Showing the last figures we have. ${error}`} onRetry={reload} />}
 
       <StatRow cols={5}>
-        <StatTile className="col-span-2 xl:col-span-1" label="Net payout to owner" value={rm(s.totals.netPayout)} hero />
-        <StatTile label="Hospitality income" value={rm(s.totals.grossIncome)} />
-        <StatTile label="Expense deduction" value={signed(-s.totals.deductions)} />
-        <StatTile label="To operator" value={signed(-s.totals.operatorShare)} />
-        <StatTile label="Owner credits & charges" value={signed(s.totals.adjustments)} />
+        <StatTile className="col-span-2 xl:col-span-1" label="Net Payout to Owner" value={rm(s.totals.netPayout)} hero />
+        <StatTile label="Hospitality Income" value={rm(s.totals.grossIncome)} />
+        <StatTile label="Expense Deduction" value={signed(-s.totals.deductions)} />
+        <StatTile label="Operator share" value={signed(-s.totals.operatorShare)} />
+        <StatTile label="Owner Adjustments" value={signed(s.totals.adjustments)} />
       </StatRow>
       <div className="flex flex-wrap gap-x-[18px] gap-y-1 px-1 -mt-1 text-meta text-muted-ink">
         <span>Generated {date(s.generatedAt)}</span>
-        {s.finalisedAt && <span>Finalised {date(s.finalisedAt)}</span>}
+        {s.finalisedAt && <span>Marked final {date(s.finalisedAt)}</span>}
         {s.sentAt && <span>Sent {date(s.sentAt)}</span>}
-        {s.payout && <span>Payout {s.payout.state}{s.payout.paidAt ? ` ${date(s.payout.paidAt)}` : ''}{s.payout.failureReason ? ` · ${s.payout.failureReason}` : ''}</span>}
+        {s.payout && <span>Owner payout {s.payout.state}{s.payout.paidAt ? ` ${date(s.payout.paidAt)}` : ''}{s.payout.failureReason ? ` · ${s.payout.failureReason}` : ''}</span>}
         {s.owner.bankLast4 && <span>{s.owner.bankName ?? 'Bank'} ending {s.owner.bankLast4}</span>}
       </div>
 
       {warnings.length > 0 && s.state === 'provisional' && (
         <div role="status" className="rounded-card border border-solid border-warning-line bg-card px-5 py-4 text-copy">
-          <div className="text-[16px] font-semibold tracking-[-0.01em] mb-2">Check before finalising</div>
+          <div className="text-[16px] font-semibold tracking-[-0.01em] mb-2">Check before marking final</div>
           <ul className="m-0 pl-[18px] flex flex-col gap-1 text-muted-ink">{warnings.map(w => <li key={w}>{w}</li>)}</ul>
         </div>
       )}
@@ -151,17 +151,17 @@ export default function StatementDetailPage() {
             <div className="px-5 py-3 text-copy">
               {u.basis === 'share' ? (
                 <>
-                  <Row label={`Hospitality income · ${u.nights} of ${u.days} nights (${(u.nights / u.days * 100).toFixed(2)}%)`} value={rm(u.grossIncome)} />
+                  <Row label={`Hospitality Income · ${u.nights} of ${u.days} nights (${(u.nights / u.days * 100).toFixed(2)}%)`} value={rm(u.grossIncome)} />
                   {Object.entries(groupDeductions(s.lines, u.unitId)).map(([k, v]) => <Row key={k} label={`${DEDUCTION_LABEL[k] ?? k}${v.n > 1 ? ` · ${v.n}` : ''}`} value={signed(-v.amount)} muted />)}
-                  <Row label="Net income" value={rm(u.netIncome)} line />
-                  <Row label={`${pct(100 - (u.ownerPct ?? 0))} to operator`} value={signed(-u.operatorShare)} muted />
+                  <Row label="Net Income" value={rm(u.netIncome)} line />
+                  <Row label={`${pct(100 - (u.ownerPct ?? 0))} To Operator`} value={signed(-u.operatorShare)} muted />
                   {u.topUp > 0 && <Row label={`Minimum guarantee top-up (guaranteed ${rm(u.guarantee)})`} value={rm(u.topUp)} muted />}
                 </>
               ) : <Row label="Fixed monthly rent" value={rm(u.fixedRent)} />}
-              <Row label="Payout before owner credits &amp; charges" value={rm(u.payoutBeforeAdjustments)} line strong />
+              <Row label="Payout before Owner Adjustments" value={rm(u.payoutBeforeAdjustments)} line strong />
               {s.lines.filter(l => l.unitId === u.unitId && l.type === 'adjustment' && !['guarantee_top_up', 'fixed_rent'].includes(l.category ?? '')).map(l =>
                 <Row key={l.id} label={l.description} value={signed(l.amount)} muted />)}
-              <Row label="Net payout to owner" value={rm(u.netPayout)} line strong />
+              <Row label="Net Payout to Owner" value={rm(u.netPayout)} line strong />
             </div>
             <LineList id={u.unitId} lines={s.lines.filter(l => l.unitId === u.unitId)} />
           </Card>

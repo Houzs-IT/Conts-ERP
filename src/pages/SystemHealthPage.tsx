@@ -165,7 +165,7 @@ export default function SystemHealthPage() {
             <Tile label="Active users" value={count(d.counts.users_active)}
               hint={`${count(d.counts.users_invited)} invited · ${count(d.counts.users_disabled)} disabled${d.counts.users_locked ? ` · ${count(d.counts.users_locked)} locked` : ''}`}
               hintTone={d.counts.users_locked ? 'warning' : undefined} onClick={() => navigate('/system/users')} />
-            <Tile label="Audit events 24h" value={count(d.counts.audit_24h)} hint={`${count(d.counts.audit_7d)} in 7d · ${count(d.counts.sensitive_24h)} sensitive today`} />
+            <Tile label="History 24h" value={count(d.counts.audit_24h)} hint={`${count(d.counts.audit_7d)} in 7d · ${count(d.counts.sensitive_24h)} sensitive today`} />
             {d.checks.map(c => (
               <Tile key={c.key} label={c.label} value={c.value} hint={c.summary}
                 tone={toneOf(CHECK_TONE[c.status])} title={c.detail} onClick={c.link ? () => navigate(c.link!.path) : undefined} />
@@ -203,7 +203,7 @@ export default function SystemHealthPage() {
             columns={PROBLEM_COLUMNS} rows={d.problems} rowKey={p => `${p.at}|${p.what}|${p.where ?? ''}`} noun={['problem', 'problems']}
             exportName="problems-7d"
             header={<div className={cx(panelTitle, 'pt-5 px-[22px] max-md:px-4 pb-1')}>Problems in the last 7 days</div>}
-            empty={{ title: 'Nothing has failed.', body: 'Failed messages, syncs and jobs from the last 7 days show here.', icon: 'CircleCheck' }} />
+            empty={{ title: 'Nothing has failed.', body: 'Messages, channel updates and jobs that failed in the last 7 days show here.', icon: 'CircleCheck' }} />
         </>
       )}
 
@@ -216,7 +216,7 @@ export default function SystemHealthPage() {
         header={
           <div className="pt-5 px-[22px] max-md:px-4 pb-3 flex flex-col gap-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className={panelTitle}>Audit feed: recent changes</div>
+              <div className={panelTitle}>History: recent changes</div>
               <div className="flex items-center gap-2 flex-wrap">
                 <button type="button" onClick={() => { setSensitiveOnly(v => !v); setLimit(100); }} title="Only accounts and passwords, settings, payouts, deletions and failures"
                   className={cx('inline-flex h-9 items-center gap-1.5 rounded-control border border-solid px-3 text-copy font-medium cursor-pointer [font-family:inherit]',

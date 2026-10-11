@@ -31,7 +31,7 @@ export const CHANNEL: Record<BookingChannel, { label: string; color: string; bor
   booking_com:       { label: 'Booking.com',  color: '#003B95', border: 'solid',  tint: '#EAF0FA', ink: '#003B95' },
   agoda:             { label: 'Agoda',        color: '#5C2D91', border: 'solid',  tint: '#F2ECF9', ink: '#4A2475' },
   direct:            { label: 'Direct',       color: '#C8A46A', border: 'solid',  tint: '#FBF7F0', ink: '#8A6A2F' },
-  maintenance_block: { label: 'Block',        color: '#C2413B', border: 'dashed', tint: '#FCECEB', ink: '#A8352F' },
+  maintenance_block: { label: 'Repair',       color: '#C2413B', border: 'dashed', tint: '#FCECEB', ink: '#A8352F' },
   owner_stay:        { label: 'Owner stay',   color: '#706D67', border: 'dotted', tint: '#FAF9F6', ink: '#5C5952' },
 };
 
@@ -47,7 +47,7 @@ export const TONE: Record<Tone, { bg: string; fg: string; line: string }> = {
 /** Role names as people read them. Never print the raw code ("operations_staff"). */
 export const ROLE_LABEL: Record<string, string> = {
   management: 'Management', operations_manager: 'Operations manager', operations_staff: 'Operations staff',
-  finance_admin: 'Finance admin', housekeeper: 'Housekeeper', technician: 'Technician', owner: 'Owner',
+  finance_admin: 'Finance admin', housekeeper: 'Cleaner', technician: 'Technician', owner: 'Owner',
 };
 
 /** Malaysian bank codes as imported (SWIFT-style) -> the name people know. Unknown codes print as given. */

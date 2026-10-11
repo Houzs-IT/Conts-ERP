@@ -61,7 +61,7 @@ const FALLBACK: Payload = {
       isRead: false, lastMessageAt: '2026-09-22T11:20', preview: 'Is there a parking bay included?',
       messages: [
         { id: 'm2a', direction: 'inbound', body: 'Hi there, is there a parking bay included with the unit?', sentAt: '2026-09-22T11:18', isAutomated: false },
-        { id: 'm2b', direction: 'outbound', body: 'Good morning Aaron. Yes, bay B2-114 is reserved for your stay. I will send the access card details on arrival.', sentAt: '2026-09-22T11:19', isAutomated: false, status: 'sent' },
+        { id: 'm2b', direction: 'outbound', body: 'Good morning Aaron. Yes, bay B2-114 is reserved for you. I will send the access card details when you check in.', sentAt: '2026-09-22T11:19', isAutomated: false, status: 'sent' },
         { id: 'm2c', direction: 'inbound', body: 'Perfect, thank you.', sentAt: '2026-09-22T11:20', isAutomated: false },
       ],
     },
@@ -70,17 +70,17 @@ const FALLBACK: Payload = {
       unitNumber: '#A-12-03', propertyName: 'Vista Jaya One', channel: 'airbnb',
       isRead: true, lastMessageAt: '2026-09-21T09:00', preview: 'Received, thank you.',
       messages: [
-        { id: 'm3a', direction: 'outbound', body: 'Hi Nadia, your check-in details and door code are ready. Let me know if you need anything before arrival.', sentAt: '2026-09-21T08:58', isAutomated: true, status: 'sent' },
+        { id: 'm3a', direction: 'outbound', body: 'Hi Nadia, your check-in details and door code are ready. Let me know if you need anything before check-in.', sentAt: '2026-09-21T08:58', isAutomated: true, status: 'sent' },
         { id: 'm3b', direction: 'inbound', body: 'Received, thank you.', sentAt: '2026-09-21T09:00', isAutomated: false },
       ],
     },
     {
       id: 't4', guestName: 'Chen Yu', subject: 'Late checkout',
       unitNumber: '#2207', propertyName: 'The Establishment', channel: 'agoda',
-      isRead: true, lastMessageAt: '2026-09-15T09:32', preview: 'Noted, 13:00 works. Enjoy your stay.',
+      isRead: true, lastMessageAt: '2026-09-15T09:32', preview: 'Noted, 13:00 works. Enjoy the rest of your trip.',
       messages: [
         { id: 'm4a', direction: 'inbound', body: 'Could we check out at 13:00 instead of 11:00?', sentAt: '2026-09-15T09:30', isAutomated: false },
-        { id: 'm4b', direction: 'outbound', body: 'Noted, 13:00 works. Enjoy your stay.', sentAt: '2026-09-15T09:32', isAutomated: false, status: 'sent' },
+        { id: 'm4b', direction: 'outbound', body: 'Noted, 13:00 works. Enjoy the rest of your trip.', sentAt: '2026-09-15T09:32', isAutomated: false, status: 'sent' },
       ],
     },
   ],
@@ -163,13 +163,13 @@ export default function InboxPage() {
   return (
     <>
       <PageHeader
-        title="Inbox"
+        title="Messages"
         sub={`${count(unreadCount)} unread · Airbnb, Booking.com, Agoda and WhatsApp messages together`}
       />
 
-      {error && <StaleBanner message={`Showing the last threads we have. ${error}`} onRetry={reload} />}
+      {error && <StaleBanner message={`Showing the last messages we have. ${error}`} onRetry={reload} />}
 
-      <div role="tablist" aria-label="Filter conversations" className="flex gap-2 flex-wrap">
+      <div role="tablist" aria-label="Filter messages" className="flex gap-2 flex-wrap">
         {(['all', 'unread'] as const).map(f => {
           const on = f === filter;
           return (
@@ -194,8 +194,8 @@ export default function InboxPage() {
             <TableSkeleton rows={4} cols={2} />
           ) : visible.length === 0 ? (
             filter === 'unread'
-              ? <EmptyState bare kind="filtered" title="No unread conversations." action={{ label: 'Show all', onClick: () => setFilter('all') }} />
-              : <EmptyState bare icon="MessageCircle" title="No conversations yet" body="Guest messages arrive here from Airbnb and Booking.com once units are connected through Channex (Integrations), and from WhatsApp for direct bookings." />
+              ? <EmptyState bare kind="filtered" title="No unread messages." action={{ label: 'Show all', onClick: () => setFilter('all') }} />
+              : <EmptyState bare icon="MessageCircle" title="No messages yet" body="Guest messages arrive here from Airbnb and Booking.com once units are connected to the channels in Integrations, and from WhatsApp for direct reservations." />
           ) : (
             visible.map(t => {
               const on = t.id === activeId;
@@ -233,7 +233,7 @@ export default function InboxPage() {
             </div>
           ) : (
             <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)] text-meta text-muted-ink">
-              No conversation selected
+              No guest selected
             </div>
           )}
 
@@ -241,9 +241,9 @@ export default function InboxPage() {
             {loading && messages.length === 0 ? (
               <TableSkeleton rows={2} cols={1} />
             ) : !open ? (
-              <span className="text-copy text-muted-ink">Select a conversation to read and reply.</span>
+              <span className="text-copy text-muted-ink">Select a guest to read and reply.</span>
             ) : messages.length === 0 ? (
-              <span className="text-copy text-muted-ink">No messages in this conversation yet.</span>
+              <span className="text-copy text-muted-ink">No messages with this guest yet.</span>
             ) : (
               messages.map(m => {
                 const out = m.direction === 'outbound';
@@ -270,7 +270,7 @@ export default function InboxPage() {
 
           {open && <form onSubmit={send} className="py-4 px-5 [border-top:1px_solid_var(--color-line)] flex gap-2.5 items-center">
             <input value={draft} onChange={e => setDraft(e.target.value)}
-              placeholder={open ? `Reply to ${open.guestName ?? 'guest'} on ${threadChannelLabel(open.channel)}` : 'Select a conversation'}
+              placeholder={open ? `Reply to ${open.guestName ?? 'guest'} on ${threadChannelLabel(open.channel)}` : 'Select a guest'}
               disabled={!open}
               aria-label="Reply"
               className="flex-1 min-w-0 h-10 py-0 px-3.5 [font-family:inherit] text-copy bg-card text-ink border border-solid border-line rounded-control outline-none" />

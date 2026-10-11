@@ -14,7 +14,7 @@ const MAX_CALENDAR_DAYS = 92;
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (isFieldRole(session.role)) return fail('FORBIDDEN', 'The calendar is not available to field roles.', 403);
+  if (isFieldRole(session.role)) return fail('FORBIDDEN', 'The calendar is not available to cleaners and technicians.', 403);
 
   const url = new URL(request.url);
   const from = url.searchParams.get('from') ?? new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);

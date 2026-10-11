@@ -1,0 +1,637 @@
+old,new,term,how,decided,files
+Confirmed,Upcoming,Reservation status,swap,2026-10-11,"src/lib/status.ts (booking.confirmed, calendar.confirmed)"
+Checked in,Currently hosting,Reservation status,swap,2026-10-11,src/lib/status.ts (booking.checked_in)
+Checked out,Past,Reservation status,swap,2026-10-11,src/lib/status.ts (booking.checked_out)
+No show,No-show,Reservation status,swap,2026-10-11,src/lib/status.ts (booking.no_show)
+Provisional,Draft,Draft / Final,swap,2026-10-11,src/lib/status.ts (statement.provisional)
+Finalised,Final,Draft / Final,swap,2026-10-11,src/lib/status.ts (statement.finalised)
+Bookings,Reservations,Reservation,swap,2026-10-11,src/lib/navigation.ts (bookings)
+PROPERTIES,UNITS,Building,swap,2026-10-11,src/lib/navigation.ts (group label)
+Inbox,Messages,Messages,swap,2026-10-11,src/lib/navigation.ts (inbox)
+Payouts,Owner payouts,Net Payout to Owner,swap,2026-10-11,src/lib/navigation.ts (payouts)
+Adjustments,Stock adjustments,Stock adjustment,swap,2026-10-11,"src/lib/navigation.ts (adjustments, supply chain)"
+Products & Maintenance,Products,Products,swap,2026-10-11,"src/lib/navigation.ts (procurement, supply chain)"
+Housekeeper,Cleaner,Cleaner,swap,2026-10-11,src/lib/vocabulary.ts (ROLE_LABEL.housekeeper); src/components/PermissionsChart.tsx
+Block,Repair,Blocked nights,swap,2026-10-11,src/lib/vocabulary.ts (CHANNEL.maintenance_block label: the reason shown on a blocked night)
+(full sync),(full update),(say what happens),reword,2026-10-11,src/components/ChannexSyncPanel.tsx:91
+{KIND_LABEL[removing.kind]} of {rm(removing.amount)}{removing.receivedOn ? ` on ${d}. Use this only for one recorded by mistake; the removal is kept in the audit log.,{KIND_LABEL[removing.kind]} of {rm(removing.amount)}{removing.receivedOn ? ` on ${d}. Use this only for one recorded by mistake; the removal is kept in the history.,(say what happens),reword,2026-10-11,src/components/booking/BookingDrawer.tsx:765
+{label} connection expired. Reconnect to resume syncing.,{label} connection expired. Reconnect to resume updating.,(say what happens),reword,2026-10-11,src/pages/IntegrationsPage.tsx:89
+{label} did not sync.,{label} did not update.,(say what happens),reword,2026-10-11,src/pages/IntegrationsPage.tsx:142
+{label} is syncing slowly. Some bookings may be delayed.,{label} is updating slowly. Some reservations may be delayed.,(say what happens) + Reservation,reword,2026-10-11,src/pages/IntegrationsPage.tsx:90
+{label} sync failed at {timeWithZone(row.lastSyncedAt)}.,{label} update failed at {timeWithZone(row.lastSyncedAt)}.,(say what happens),reword,2026-10-11,src/pages/IntegrationsPage.tsx:91
+{label} sync failed.,{label} update failed.,(say what happens),reword,2026-10-11,src/pages/IntegrationsPage.tsx:91
+{label} sync started.,{label} update started.,(say what happens),reword,2026-10-11,src/pages/IntegrationsPage.tsx:140
+{new URL(request.url).origin}/api/integrations/channex-webhook,{new URL(request.url).origin}/api/integrations/channex-live updates,(say what happens),reword,2026-10-11,functions/api/integrations/channex-webhook-setup.ts:30 functions/api/integrations/channex/status.ts:26 functions/api/system/health/index.ts:100
+{provider} sync failed at {time}. Bookings may be delayed until it is reconnected.,{provider} update failed at {time}. Reservations may be delayed until it is reconnected.,(say what happens) + Reservation,reword,2026-10-11,functions/_lib/automationCatalog.ts:319 src/pages/AutomationsPage.tsx:246
+{refused} {refused === 1 ? 'update was' :} refused by Channex. See Channex sync above.,{refused} {refused === 1 ? 'update was' :} refused by Channex. See Channex update above.,(say what happens),reword,2026-10-11,functions/api/integrations/index.ts:32
+{String(body.label ?? existing?} on {unitLabel}. The change is in the audit log; the code is not.,{String(body.label ?? existing?} on {unitLabel}. The change is in the history; the code is not.,(say what happens),reword,2026-10-11,src/pages/units/AccessTab.tsx:108
+"{unitLabel}. Codes are shown masked, and a code is never written to the audit log.","{unitLabel}. Codes are shown masked, and a code is never written to the history.",(say what happens),reword,2026-10-11,src/pages/units/AccessTab.tsx:229
+A change you made offline could not be saved. It stays marked Failed to sync until it goes through.,A change you made offline could not be saved. It stays marked Failed to update until it goes through.,(say what happens),reword,2026-10-11,functions/_lib/automationCatalog.ts:417 src/pages/AutomationsPage.tsx:278
+A unit's first sync to Channex did not go through,A unit's first update to Channex did not go through,(say what happens),reword,2026-10-11,functions/api/system/health/index.ts:18
+"Airbnb, Booking.com and Agoda do not sync from this site.","Airbnb, Booking.com and Agoda do not update from this site.",(say what happens),reword,2026-10-11,functions/api/system/health/index.ts:90
+All synced,All sent,(say what happens),reword,2026-10-11,src/pages/PricingPage.tsx:323
+"Approving carries it out now, in one step with this approval, and both are kept in the audit log.","Approving carries it out now, in one step with this approval, and both are kept in the history.",(say what happens),reword,2026-10-11,src/components/ApprovalBanner.tsx:91
+Channel sync needs attention,Channel update needs attention,(say what happens),reword,2026-10-11,functions/api/nav/badges.ts:51 src/components/TopBar.tsx:136 src/components/TopBar.tsx:137 src/components/TopBar.tsx:143
+Channel syncing is not connected yet. Bookings are entered or imported by hand for now.,Channel updating is not connected yet. Reservations are entered or imported by hand for now.,(say what happens) + Reservation,reword,2026-10-11,functions/api/integrations/[provider]/sync.ts:24
+"Channel syncing is not connected yet. Bookings from Airbnb, Booking.com and Agoda are entered or imported by hand for now.","Channel updating is not connected yet. Reservations from Airbnb, Booking.com and Agoda are entered or imported by hand for now.",(say what happens) + Reservation,reword,2026-10-11,functions/api/integrations/sync.ts:18
+Channels synced {relative(channelSync.lastSentA},Channels sent {relative(channelSync.lastSentA},(say what happens),reword,2026-10-11,src/components/TopBar.tsx:144
+Channels synced.,Channels sent.,(say what happens),reword,2026-10-11,src/pages/CalendarPage.tsx:370
+Channels were not synced.,Channels were not sent.,(say what happens),reword,2026-10-11,src/pages/CalendarPage.tsx:373
+Channex refused the webhook registration (status {res.status}).,Channex refused the live updates registration (status {res.status}).,(say what happens),reword,2026-10-11,functions/api/integrations/channex-webhook-setup.ts:43
+Channex refused the webhook update (status {upd.status}).,Channex refused the live updates update (status {upd.status}).,(say what happens),reword,2026-10-11,functions/api/integrations/channex-webhook-setup.ts:37
+Channex sync,Channex update,(say what happens),reword,2026-10-11,functions/_lib/channexBookingSync.ts:41 functions/_lib/channexBookingSync.ts:75 functions/_lib/channexBookingSync.ts:105 functions/_lib/channexBookingSync.ts:107 functions/_lib/channexBookingSync.ts:123 functions/_lib/channexBookingSync.ts:124 functions/_lib/channexBookingSync.ts:136 functions/_lib/channexMessageSync.ts:24 functions/_lib/channexMessageSync.ts:28 functions/_lib/channexMessageSync.ts:40 functions/_lib/channexMessageSync.ts:42 functions/_lib/channexMessageSync.ts:153 functions/_lib/channexMessageSync.ts:160 functions/_lib/channexMessageSync.ts:164 functions/_lib/channexQueue.ts:34 functions/_lib/channexQueue.ts:161 functions/_lib/reservations.ts:70 functions/api/rates/bulk.ts:172 functions/api/rates/index.ts:40 functions/api/rates/index.ts:49 functions/api/rates/index.ts:67 functions/api/rates/index.ts:88 functions/api/units/[id]/channex-setup.ts:59 src/components/ChannexSyncPanel.tsx:57
+"Failed messages, syncs and jobs from the last 7 days show here.","Failed messages, update and jobs from the last 7 days show here.",(say what happens),reword,2026-10-11,src/pages/SystemHealthPage.tsx:210
+Failed to sync,Failed to update,(say what happens),reword,2026-10-11,src/lib/status.ts:122
+Field roles cannot assign work.,Cleaners and technicians cannot assign work.,(say what happens),reword,2026-10-11,functions/api/housekeeping/tasks/[id]/assign.ts:12 functions/api/tasks/bulk-assign.ts:15
+Field roles cannot block dates.,Cleaners and technicians cannot block dates.,(say what happens),reword,2026-10-11,functions/api/blocks.ts:20
+Field roles cannot cancel reservations.,Cleaners and technicians cannot cancel reservations.,(say what happens),reword,2026-10-11,functions/api/reservations/[id]/cancel.ts:10
+Field roles cannot change cleaning tasks.,Cleaners and technicians cannot change cleaning tasks.,(say what happens),reword,2026-10-11,functions/api/housekeeping/tasks/[id].ts:56
+Field roles cannot change maintenance jobs.,Cleaners and technicians cannot change maintenance jobs.,(say what happens),reword,2026-10-11,functions/api/maintenance/issues/[id].ts:15
+Field roles cannot change repair windows.,Cleaners and technicians cannot change repair windows.,(say what happens),reword,2026-10-11,functions/api/maintenance/issues/[id]/windows/[wid].ts:8
+Field roles cannot change reservations.,Cleaners and technicians cannot change reservations.,(say what happens),reword,2026-10-11,functions/api/reservations/[id].ts:183 functions/api/reservations/[id]/dates.ts:20 functions/api/reservations/[id]/details.ts:12
+Field roles cannot create reservations.,Cleaners and technicians cannot create reservations.,(say what happens),reword,2026-10-11,functions/api/reservations/[id]/duplicate.ts:10 functions/api/reservations/index.ts:60
+Field roles cannot draw from stock here.,Cleaners and technicians cannot draw from stock here.,(say what happens),reword,2026-10-11,functions/api/maintenance/issues/[id]/exchange.ts:11
+Field roles cannot end jobs from here.,Cleaners and technicians cannot end jobs from here.,(say what happens),reword,2026-10-11,functions/api/maintenance/issues/[id]/end.ts:10
+Field roles cannot import reservations.,Cleaners and technicians cannot import reservations.,(say what happens),reword,2026-10-11,functions/api/reservations/import.ts:13
+Field roles cannot open cleaning tasks.,Cleaners and technicians cannot open cleaning tasks.,(say what happens),reword,2026-10-11,functions/api/housekeeping/tasks.ts:108
+Field roles cannot open maintenance files here.,Cleaners and technicians cannot open maintenance files here.,(say what happens),reword,2026-10-11,functions/api/maintenance/issues/[id]/documents.ts:9
+Field roles cannot plan cleaning.,Cleaners and technicians cannot plan cleaning.,(say what happens),reword,2026-10-11,functions/api/housekeeping/plan.ts:12
+Field roles cannot plan repair windows.,Cleaners and technicians cannot plan repair windows.,(say what happens),reword,2026-10-11,functions/api/maintenance/issues/[id]/windows.ts:13
+Field roles cannot prepare arrivals.,Cleaners and technicians cannot prepare check-ins.,(say what happens) + Check-in / Checkout,reword,2026-10-11,functions/api/reservations/[id]/prepare.ts:9
+Field roles cannot request approval.,Cleaners and technicians cannot request approval.,(say what happens),reword,2026-10-11,functions/api/maintenance/issues/[id]/request-approval.ts:9
+Field roles cannot see the crew list.,Cleaners and technicians cannot see the crew list.,(say what happens),reword,2026-10-11,functions/api/housekeeping/crew.ts:9
+Field roles cannot see the roster.,Cleaners and technicians cannot see the roster.,(say what happens),reword,2026-10-11,functions/api/housekeeping/cleaners.ts:17
+Field roles cannot see the rules.,Cleaners and technicians cannot see the rules.,(say what happens),reword,2026-10-11,functions/api/housekeeping/rules.ts:19
+Field roles cannot set amounts.,Cleaners and technicians cannot set amounts.,(say what happens),reword,2026-10-11,functions/api/maintenance/issues.ts:84
+Field roles cannot start jobs from here.,Cleaners and technicians cannot start jobs from here.,(say what happens),reword,2026-10-11,functions/api/maintenance/issues/[id]/start.ts:9
+Full sync,Full update,(say what happens),reword,2026-10-11,src/components/ChannexSyncPanel.tsx:63
+Full sync queued.,Full update queued.,(say what happens),reword,2026-10-11,src/components/ChannexSyncPanel.tsx:38
+Full sync sent.,Full update sent.,(say what happens),reword,2026-10-11,src/components/ChannexSyncPanel.tsx:37
+Guest contact details are not available to field roles.,Guest contact details are not available to cleaners and technicians.,(say what happens),reword,2026-10-11,functions/api/guests/[id].ts:18 functions/api/guests/index.ts:16
+Last synced {date(row.lastSyncedAt)} · {timeWithZone(row.lastSyncedAt)},Last sent {date(row.lastSyncedAt)} · {timeWithZone(row.lastSyncedAt)},(say what happens),reword,2026-10-11,src/pages/IntegrationsPage.tsx:101
+Last update sent {dateTime(sync.lastSyncedAt)},Last update sent {dateTime(update.lastSyncedAt)},(say what happens),reword,2026-10-11,src/pages/CalendarPage.tsx:729
+Never synced,Never sent,(say what happens),reword,2026-10-11,src/pages/IntegrationsPage.tsx:101
+No automatic sync — entered manually,No automatic update — entered manually,(say what happens),reword,2026-10-11,src/pages/IntegrationsPage.tsx:311
+"Not linked to Channex, so Airbnb, Booking.com and Agoda do not sync for this unit.","Not linked to Channex, so Airbnb, Booking.com and Agoda do not update for this unit.",(say what happens),reword,2026-10-11,src/components/ChannexChannelsCard.tsx:111
+"Only management, finance and operations managers can run a full sync.","Only management, finance and operations managers can run a full update.",(say what happens),reword,2026-10-11,functions/api/integrations/channex/full-sync.ts:12
+Only the last four digits are shown. Showing the full number is recorded in the audit log.,Only the last four digits are shown. Showing the full number is recorded in the history.,(say what happens),reword,2026-10-11,src/pages/owners/PayoutDetails.tsx:58
+Prices and availability no longer sync to it for this unit.,Prices and availability no longer update to it for this unit.,(say what happens),reword,2026-10-11,src/components/ChannexChannelsCard.tsx:61
+Prices and availability stop syncing to {OTA_LABEL[c.ota]} for this unit. Bookings already received stay in Conts. You can connect it again later.,Prices and availability stop updating to {OTA_LABEL[c.channel]} for this unit. Reservations already received stay in Conts. You can connect it again later.,(say what happens) + Channel + Reservation,reword,2026-10-11,src/components/ChannexChannelsCard.tsx:57
+"Prices and open dates now sync to Airbnb, and its existing bookings are being brought in.","Prices and open dates now update to Airbnb, and its existing reservations are being brought in.",(say what happens) + Reservation,reword,2026-10-11,src/pages/AirbnbReturnPage.tsx:26
+"Prices and open dates now sync to it, and its existing bookings are being brought in.","Prices and open dates now update to it, and its existing reservations are being brought in.",(say what happens) + Reservation,reword,2026-10-11,src/components/ChannexChannelsCard.tsx:68
+Readings are entered by hand each month. No automatic sync.,Readings are entered by hand each month. No automatic update.,(say what happens),reword,2026-10-11,src/pages/IntegrationsPage.tsx:92
+Real time · webhook,Real time · live updates,(say what happens),reword,2026-10-11,src/pages/IntegrationsPage.tsx:73
+Retry sync,Retry update,(say what happens),reword,2026-10-11,src/pages/IntegrationsPage.tsx:216 src/pages/IntegrationsPage.tsx:334
+Show the full number. This is recorded in the audit log.,Show the full number. This is recorded in the history.,(say what happens),reword,2026-10-11,src/pages/owners/PayoutDetails.tsx:38
+Showing a full ID number is recorded in the audit log.,Showing a full ID number is recorded in the history.,(say what happens),reword,2026-10-11,src/pages/GuestsPage.tsx:585
+Stays visible as Failed to sync until resolved,Stays visible as Failed to update until resolved,(say what happens),reword,2026-10-11,functions/_lib/automationCatalog.ts:416 src/pages/AutomationsPage.tsx:277
+Sync,Update,(say what happens),reword,2026-10-11,src/pages/PricingPage.tsx:286
+Sync interval,Update interval,(say what happens),reword,2026-10-11,src/pages/IntegrationsPage.tsx:310
+Sync queue,Update queue,(say what happens),reword,2026-10-11,functions/api/system/health/index.ts:108
+Synced,Sent,(say what happens),reword,2026-10-11,src/lib/status.ts:121 src/pages/CalendarPage.tsx:68
+Synced with {label} · {timeWithZone(row.lastSyncedAt)},Sent with {label} · {timeWithZone(row.lastSyncedAt)},(say what happens),reword,2026-10-11,src/pages/IntegrationsPage.tsx:88
+Synced with {label}.,Sent with {label}.,(say what happens),reword,2026-10-11,src/pages/IntegrationsPage.tsx:88
+Syncing…,Updating…,(say what happens),reword,2026-10-11,src/pages/IntegrationsPage.tsx:216 src/pages/IntegrationsPage.tsx:334
+That endpoint does not exist.,That address does not exist.,(say what happens),reword,2026-10-11,functions/api/[[path]].ts:4 functions/api/auth/view-as.ts:53
+The calendar is not available to field roles.,The calendar is not available to cleaners and technicians.,(say what happens),reword,2026-10-11,functions/api/reservations/calendar.ts:15
+The calendar's Sync now button.,The calendar's Update now button.,(say what happens),reword,2026-10-11,functions/_lib/access.ts:74
+"This starts a fresh authorisation and issues a new API key. Syncing resumes from the last successful pull, so no bookings are missed.","This starts a fresh authorisation and issues a new API key. Updating resumes from the last successful pull, so no reservations are missed.",(say what happens) + Reservation,reword,2026-10-11,src/pages/IntegrationsPage.tsx:240
+This was recorded in the audit log.,This was recorded in the history.,(say what happens),reword,2026-10-11,src/pages/units/AccessTab.tsx:88
+You cannot start a channel sync.,You cannot start a channel update.,(say what happens),reword,2026-10-11,functions/api/integrations/[provider]/sync.ts:16 functions/api/integrations/sync.ts:15
+% occupied · ADR,% occupied · Avg nightly price,Average nightly price,swap,2026-10-11,src/pages/DashboardPage.tsx:519
+ADR,Avg nightly price,Average nightly price,swap,2026-10-11,src/pages/AnalyticsPage.tsx:173 src/pages/AnalyticsPage.tsx:397 src/pages/AnalyticsPage.tsx:423 src/pages/DashboardPage.tsx:234 src/pages/PortfolioPage.tsx:111 src/pages/PortfolioPage.tsx:125 src/pages/PortfolioPage.tsx:185
+"ADR, high to low","Avg nightly price, high to low",Average nightly price,swap,2026-10-11,src/pages/PortfolioPage.tsx:173
+"Occupancy, ADR, rating, upcoming bookings","Occupancy, Avg nightly price, rating, upcoming reservations",Average nightly price + Reservation,swap,2026-10-11,functions/_lib/automationCatalog.ts:185 src/pages/AutomationsPage.tsx:201
+RevPAR,Earnings per available night,Average nightly price,swap,2026-10-11,src/pages/AnalyticsPage.tsx:174 src/pages/AnalyticsPage.tsx:398 src/pages/DashboardPage.tsx:29 src/pages/DashboardPage.tsx:235 src/pages/PortfolioPage.tsx:112 src/pages/PortfolioPage.tsx:186 src/pages/UnitsPage.tsx:398
+"Your {period} summary for {unit}: occupancy {occupancy}, ADR {adr}, rating {rating}. {upcomingCount} bookings ahead.","Your {period} summary for {unit}: occupancy {occupancy}, Avg nightly price {Avg nightly price}, rating {rating}. {upcomingCount} reservations ahead.",Average nightly price + Reservation,swap,2026-10-11,functions/_lib/automationCatalog.ts:186 src/pages/AutomationsPage.tsx:202
+{b.unitLabel ?? 'Your unit'} is off sale{b.reason ? ` for ${String(b.re}.,{b.unitLabel ?? 'Your unit'} is blocked{b.reason ? ` for ${String(b.re}.,Blocked nights,reword,2026-10-11,functions/api/owners/[id]/notify.ts:20
+"{issue.propertyName} {issue.unitNumber} comes off sale for these nights, and shows as under maintenance.","{issue.propertyName} {issue.unitNumber} comes blocked for these nights, and shows as under maintenance.",Blocked nights,reword,2026-10-11,src/pages/MaintenancePage.tsx:564
+{label} is off sale while {String(b.title).toLowerCase()} is dealt with. Tell the owner.,{label} is blocked while {String(b.title).toLowerCase()} is dealt with. Tell the owner.,Blocked nights,reword,2026-10-11,functions/api/dashboard/exceptions.ts:52
+Back on sale,Available,Blocked nights,reword,2026-10-11,src/pages/MaintenancePage.tsx:567
+Expected back on sale: {b.expectedReturn}.,Expected available: {b.expectedReturn}.,Blocked nights,reword,2026-10-11,functions/api/owners/[id]/notify.ts:22
+Off sale,Blocked,Blocked nights,reword,2026-10-11,functions/api/portfolio/performance.ts:52 src/pages/PortfolioPage.tsx:29
+Open for sale,Available,Blocked nights,swap,2026-10-11,src/components/calendar/CalendarModals.tsx:403
+Sentral Suites #C-31-14 is off sale while plumbing is repaired. The owner has not been informed.,Sentral Suites #C-31-14 is blocked while plumbing is repaired. The owner has not been informed.,Blocked nights,reword,2026-10-11,src/pages/DashboardPage.tsx:181
+Stop sell,Blocked,Blocked nights,swap,2026-10-11,src/components/calendar/CalendarModals.tsx:402
+Stop sell (cannot be booked),Blocked (cannot be booked),Blocked nights,swap,2026-10-11,src/components/calendar/CalendarModals.tsx:403
+The dates are off sale on the calendar until the repair is done.,The dates are blocked on the calendar until the repair is done.,Blocked nights,reword,2026-10-11,src/pages/MaintenancePage.tsx:470
+The dates go back on sale. The guest is not messaged and no refund is made from here: do those on the booking site or by message.,The dates go available. The guest is not messaged and no refund is made from here: do those on the channel or by message.,Blocked nights + Channel,reword,2026-10-11,src/components/booking/BookingDrawer.tsx:745
+The nights from today on go back on sale. The guest is not messaged.,The nights from today on go available. The guest is not messaged.,Blocked nights,reword,2026-10-11,src/components/booking/BookingDrawer.tsx:746
+The nights go back on sale. A unit linked to Channex has them reopened on the booking sites.,The nights go available. A unit linked to Channex has them reopened on the channels.,Blocked nights + Channel,reword,2026-10-11,src/components/booking/BookingDrawer.tsx:737
+the unit stays off sale,the unit stays blocked,Blocked nights,reword,2026-10-11,src/pages/AutomationsPage.tsx:93
+When a unit is taken off sale for repairs,When a unit is taken blocked for repairs,Blocked nights,reword,2026-10-11,src/pages/AutomationsPage.tsx:65
+Your unit is off sale,Your unit is blocked,Blocked nights,reword,2026-10-11,functions/api/owners/[id]/notify.ts:28
+Add property,Add building,Building,reword,2026-10-11,src/pages/DashboardPage.tsx:347
+"All buildings ({plural(properties.reduce((n, p})","All buildings ({plural(buildings.reduce((n, p})",Building,reword,2026-10-11,src/components/calendar/CalendarFilters.tsx:28
+"Channels are connected per unit. Open the unit (Properties, then Units) and use Connect channels on its Channels card.","Channels are connected per unit. Open the unit (Buildings, then Units) and use Connect channels on its Channels card.",Building,reword,2026-10-11,functions/api/integrations/[provider]/connect.ts:15
+Enter the Channex property id.,Enter the Channex building id.,Building,reword,2026-10-11,functions/api/units/[id]/channex-mapping.ts:27
+"extranet, choose Channex as your channel manager first. Then enter the property's","extranet, choose Channex as your channel manager first. Then enter the building's",Building,reword,2026-10-11,src/components/ChannexChannelsCard.tsx:162
+"Guest name, property, unit, dates, nights, total, contact","Guest name, building, unit, dates, nights, total, contact",Building,reword,2026-10-11,functions/_lib/automationCatalog.ts:20 src/pages/AutomationsPage.tsx:145
+No maintenance on your property,No maintenance on your building,Building,reword,2026-10-11,src/pages/OwnerPortalPage.tsx:285
+No property name.,No building name.,Building,reword,2026-10-11,functions/_lib/hostplatformImport.ts:270
+No property or unit name.,No building or unit name.,Building,reword,2026-10-11,functions/_lib/hostplatformImport.ts:361
+"No unit is connected to {label} yet. Connect one from the unit's Channels card (Properties, then Units).","No unit is connected to {label} yet. Connect one from the unit's Channels card (Buildings, then Units).",Building,reword,2026-10-11,src/pages/IntegrationsPage.tsx:84
+Properties,Buildings,Building,reword,2026-10-11,functions/_lib/access.ts:32
+PROPERTIES,BUILDINGS,Building,reword,2026-10-11,src/lib/navigation.ts:45
+Property,Building,Building,reword,2026-10-11,functions/api/expenses/report.ts:41 src/pages/InventoryPage.tsx:317
+Property health,Building health,Building,reword,2026-10-11,src/pages/OwnerPortalPage.tsx:284
+PROPERTY MANAGEMENT,BUILDING MANAGEMENT,Building,reword,2026-10-11,src/components/Logo.tsx:55
+Property records are visible to operations and finance roles.,Building records are visible to operations and finance roles.,Building,reword,2026-10-11,functions/api/properties/index.ts:13
+"Thanks for staying at {property} {unit}, {guest}. If it felt like home, a quick review helps a lot: {reviewLink}","Thanks for staying at {building} {unit}, {guest}. If it felt like home, a quick review helps a lot: {reviewLink}",Building,reword,2026-10-11,functions/_lib/automationCatalog.ts:119 src/pages/AutomationsPage.tsx:180
+That unit is not in the system. Add it under Properties first.,That unit is not in the system. Add it under Buildings first.,Building,reword,2026-10-11,functions/api/inventory/index.ts:57
+This sign-in is for property owners. Staff sign in at erp.theconts.com.,This sign-in is for building owners. Staff sign in at erp.theconts.com.,Building,reword,2026-10-11,functions/_lib/door.ts:20
+Units appear here once they are added under Properties.,Units appear here once they are added under Buildings.,Building,reword,2026-10-11,src/pages/CalendarPage.tsx:501
+Use the email The Conts registered for your property.,Use the email The Conts registered for your building.,Building,reword,2026-10-11,src/pages/LoginPage.tsx:61
+"You are all set for {property} {unit}. Door code {doorCode}, wifi {wifiName} / {wifiPass}. {accessInstruction}","You are all set for {building} {unit}. Door code {doorCode}, wifi {wifiName} / {wifiPass}. {accessInstruction}",Building,reword,2026-10-11,functions/_lib/automationCatalog.ts:70 src/pages/AutomationsPage.tsx:163
+Your account is not linked to a property yet. Contact The Conts.,Your account is not linked to a building yet. Contact The Conts.,Building,reword,2026-10-11,functions/_lib/ownerScope.ts:12
+Your property,Your building,Building,reword,2026-10-11,src/pages/OwnerPortalPage.tsx:209
+{a.ota_name ?? 'OTA'} guest{ref ? ` ${ref}` : ''},{a.ota_name ?? 'Channel'} guest{ref ? ` ${ref}` : ''},Channel,swap,2026-10-11,functions/_lib/channexBookingSync.ts:88
+{names} prices saved for {range}. Units connected to a booking site are updated there automatically.,{names} prices saved for {range}. Units connected to a channel are updated there automatically.,Channel,swap,2026-10-11,src/pages/PricingPage.tsx:250
+{ota ? site : 'Booking site'} commission,{channel ? site : 'Channel'} service fee,Channel + Service fee,swap,2026-10-11,functions/_lib/bookingMoney.ts:127
+{OTA_LABEL[c.ota]} disconnected.,{OTA_LABEL[c.channel]} disconnected.,Channel,swap,2026-10-11,src/components/ChannexChannelsCard.tsx:61
+{OTA_LABEL[ota]} connected.,{OTA_LABEL[channel]} connected.,Channel,swap,2026-10-11,src/components/ChannexChannelsCard.tsx:68
+"{OTA_LABEL[ota]} did not accept Hotel ID {hotelId}. Check the number, and that Channex is chosen as the channel manager in the {OTA_LABEL[ota]} extranet.","{OTA_LABEL[channel]} did not accept Hotel ID {hotelId}. Check the number, and that Channex is chosen as the channel manager in the {OTA_LABEL[channel]} extranet.",Channel,swap,2026-10-11,functions/api/units/[id]/channels/lookup.ts:20
+{OTA_LABEL[ota]} Hotel ID {hotelId} is already connected to another listing in Channex. Disconnect it there first.,{OTA_LABEL[channel]} Hotel ID {hotelId} is already connected to another listing in Channex. Disconnect it there first.,Channel,swap,2026-10-11,functions/api/units/[id]/channels/index.ts:51
+"{plural(failedSync, 'stay')} could not be closed on the booking sites; check Integrations.","{plural(failedSync, 'stay')} could not be closed on the channels; check Integrations.",Channel,swap,2026-10-11,src/pages/BookingsPage.tsx:246
+"{plural(queued, 'stay')} closed on the booking sites.","{plural(queued, 'stay')} closed on the channels.",Channel,swap,2026-10-11,src/pages/BookingsPage.tsx:245
+"{plural(res.syncFailed, 'unit')} could not be queued for the booking sites; see System health.","{plural(res.syncFailed, 'unit')} could not be queued for the channels; see System health.",Channel,swap,2026-10-11,src/pages/CalendarPage.tsx:822
+{site} reported a payout of {ringgit(expected)}; the guest total less the platform's share is {ringgit(computed)}. {site}'s figure is used.,{site} reported a payout of {ringgit(expected)}; the guest total less channel share is {ringgit(computed)}. {site}'s figure is used.,Channel,swap,2026-10-11,functions/_lib/bookingMoney.ts:137
+{unit.title} · {OTA_LABEL[ota]},{unit.title} · {OTA_LABEL[channel]},Channel,swap,2026-10-11,functions/api/units/[id]/channels/index.ts:46
+2 · Taken by the platform,2 · Taken by channel,Channel,swap,2026-10-11,src/components/booking/BookingDrawer.tsx:126
+A booking site payout is not money from the guest; it gets no receipt.,A channelis not money from the guest; it gets no receipt.,Channel + Host payout,swap,2026-10-11,functions/_lib/guestDocuments.ts:95
+A booking site sets its own price. Change it on the site.,A channel sets its own price. Change it on the site.,Channel,swap,2026-10-11,functions/api/reservations/[id]/dates.ts:47
+An update for the booking sites could not be queued,An update for the channels could not be queued,Channel,swap,2026-10-11,functions/api/system/health/index.ts:17
+An update to the booking sites was refused,An update to the channels was refused,Channel,swap,2026-10-11,functions/api/system/health/index.ts:16
+Booking site,Channel,Channel,swap,2026-10-11,functions/_lib/bookingMoney.ts:127 src/pages/BookingsPage.tsx:722 src/pages/BookingsPage.tsx:730
+Booking site payout,Channel,Channel + Host payout,swap,2026-10-11,functions/_lib/bookingMoney.ts:161 src/components/booking/BookingDrawer.tsx:354 src/components/booking/BookingDrawer.tsx:364
+"Channex did not remove the {OTA_LABEL[row.ota]} connection ({del.status}{off.ok ? '' : ', and it could }).","Channex did not remove the {OTA_LABEL[row.channel]} connection ({del.status}{off.ok ? '' : ', and it could }).",Channel,swap,2026-10-11,functions/api/units/[id]/channels/[rowId].ts:26
+check the {OTA_LABEL[ota]} Hotel ID,check the {OTA_LABEL[channel]} Hotel ID,Channel,swap,2026-10-11,functions/api/units/[id]/channels/lookup.ts:18
+connect {OTA_LABEL[ota]},connect {OTA_LABEL[channel]},Channel,swap,2026-10-11,functions/api/units/[id]/channels/index.ts:52
+connected a booking site,connected a channel,Channel,swap,2026-10-11,src/components/RecordHistory.tsx:36
+could not update the booking sites,could not update the channels,Channel,swap,2026-10-11,src/components/RecordHistory.tsx:32
+Disconnect {OTA_LABEL[c.ota]},Disconnect {OTA_LABEL[c.channel]},Channel,swap,2026-10-11,src/components/ChannexChannelsCard.tsx:57
+Disconnect {OTA_LABEL[c.ota]} from this unit?,Disconnect {OTA_LABEL[c.channel]} from this unit?,Channel,swap,2026-10-11,src/components/ChannexChannelsCard.tsx:57
+disconnected a booking site,disconnected a channel,Channel,swap,2026-10-11,src/components/RecordHistory.tsx:36
+Guest total less {ota ? site : 'the platform'}'s share,Guest total less {channel ? site : 'channel'}'s share,Channel,swap,2026-10-11,src/components/booking/BookingDrawer.tsx:135
+"In Channex, but not connected to any booking site yet.","In Channex, but not connected to any channel yet.",Channel,swap,2026-10-11,src/components/ChannexChannelsCard.tsx:83
+Only the booking sites each unit is connected to are changed.,Only the channels each unit is connected to are changed.,Channel,swap,2026-10-11,src/components/calendar/CalendarModals.tsx:248
+Owed by booking sites,Owed by channels,Channel,swap,2026-10-11,src/pages/BookingsPage.tsx:420
+read the {OTA_LABEL[ota]} rooms,read the {OTA_LABEL[channel]} units,Channel + Unit,reword,2026-10-11,functions/api/units/[id]/channels/lookup.ts:24
+received a cancellation from the booking site,received a cancellation from the channel,Channel,swap,2026-10-11,src/components/RecordHistory.tsx:31
+received a change from the booking site,received a change from the channel,Channel,swap,2026-10-11,src/components/RecordHistory.tsx:30
+Shown for a weekday night. Each booking site keeps its own markup on top of the base price; sites a unit is not connected to are never written.,Shown for a weekday night. Each channel keeps its own markup on top of the nightly price; sites a unit is not connected to are never written.,Channel + Nightly price,swap,2026-10-11,src/components/calendar/CalendarModals.tsx:397
+Shown on the hold. A unit linked to Channex has the nights closed on the booking sites.,Shown on the hold. A unit linked to Channex has the nights closed on the channels.,Channel,swap,2026-10-11,src/components/calendar/CalendarModals.tsx:81
+switch the {OTA_LABEL[ota]} connection on,switch the {OTA_LABEL[channel]} connection on,Channel,swap,2026-10-11,functions/api/units/[id]/channels/index.ts:56
+The booking sites could not be updated. See System health.,The channels could not be updated. See System health.,Channel,swap,2026-10-11,src/lib/bookingStatus.ts:14
+The calendar shows which booking sites each unit is connected to.,The calendar shows which channels each unit is connected to.,Channel,swap,2026-10-11,functions/_lib/access.ts:73
+The dates were queued to close on the booking sites.,The dates were queued to close on the channels.,Channel,swap,2026-10-11,src/lib/bookingStatus.ts:12
+The dates were queued to reopen on the booking sites.,The dates were queued to reopen on the channels.,Channel,swap,2026-10-11,src/lib/bookingStatus.ts:12
+The new dates were queued for the booking sites.,The new dates were queued for the channels.,Channel,swap,2026-10-11,src/lib/bookingStatus.ts:12
+the platform,channel,Channel,swap,2026-10-11,src/components/booking/BookingDrawer.tsx:135
+"This conversation isn't linked to the guest's platform, so they won't see this reply there.","This conversation isn't linked to the guest's channel, so they won't see this reply there.",Channel,swap,2026-10-11,functions/api/messages/index.ts:74
+"This creates the unit as a listing in Channex (billed as a vacation rental), sends its open dates and prices, and then lets you connect booking sites.","This creates the unit as a listing in Channex (billed as a vacation rental), sends its open dates and prices, and then lets you connect channels.",Channel,swap,2026-10-11,src/components/ChannexChannelsCard.tsx:103
+This unit is already connected to {OTA_LABEL[ota]}.,This unit is already connected to {OTA_LABEL[channel]}.,Channel,swap,2026-10-11,functions/api/units/[id]/channels/index.ts:33
+"This unit is not linked to Channex, so no booking site was updated.","This unit is not linked to Channex, so no channel was updated.",Channel,swap,2026-10-11,src/lib/bookingStatus.ts:13
+Those prices or dates are not on the booking sites. Run a full sync from Integrations.,Those prices or dates are not on the channels. Run a full update from Integrations.,Channel + (say what happens),reword,2026-10-11,functions/api/system/health/index.ts:120
+what you keep after the platform fee,what you keep after channelfee,Channel + Service fee,swap,2026-10-11,src/pages/PricingPage.tsx:415
+· {departures.length} departures with no clean,· {checkouts.length} checkouts with no clean,Check-in / Checkout,swap,2026-10-11,src/pages/CleaningPage.tsx:170
+{arrival ? 'Arriving' : 'Depart} {m.day} · {time(when)},{check-in ? 'Arriving' : 'Depart} {m.day} · {time(when)},Check-in / Checkout,swap,2026-10-11,src/pages/GuestsPage.tsx:645
+{code}: dates are missing or check-out is not after check-in.,{code}: dates are missing or checkout is not after check-in.,Check-in / Checkout,swap,2026-10-11,functions/_lib/hostplatformImport.ts:692
+{data.arrivals.filter(a => a.re} units ready,{data.check-ins.filter(a => a.re} units ready,Check-in / Checkout,swap,2026-10-11,src/pages/OperationsTodayPage.tsx:70
+{dayLabel(date)} · {data.arrivals.length} arriving · {data.departures.length} leaving · {c!.done} of {c!.total} cleans done,{dayLabel(date)} · {data.check-ins.length} arriving · {data.checkouts.length} leaving · {c!.done} of {c!.total} cleaning jobs done,Check-in / Checkout + Cleaning job,swap,2026-10-11,src/pages/OperationsTodayPage.tsx:64
+{dayLabel(date)} · {total} {total === 1 ? 'clean' : 'clean} · {done} done · {ready} ready to clean{unassigned ? ` · ${unassigned}}{departures.length ? ` · ${depa},{dayLabel(date)} · {total} {total === 1 ? 'clean' : 'clean} · {done} done · {ready} ready to clean{unassigned ? ` · ${unassigned}}{checkouts.length ? ` · ${depa},Check-in / Checkout,swap,2026-10-11,src/pages/CleaningPage.tsx:170
+"{plural(x.arrivals, 'arrival')}, {plural(x.departures, 'departur}.","{plural(x.check-ins, 'check-in')}, {plural(x.checkouts, 'departur}.",Check-in / Checkout,swap,2026-10-11,functions/_lib/cronJobs.ts:146
+A clean is already queued for this arrival.,A clean is already queued for this check-in.,Check-in / Checkout,swap,2026-10-11,src/pages/GuestsPage.tsx:665
+arrival,check-in,Check-in / Checkout,swap,2026-10-11,functions/_lib/cronJobs.ts:146
+Arrival not prepared.,Check-in not prepared.,Check-in / Checkout,swap,2026-10-11,src/pages/GuestsPage.tsx:266
+Arrival prepared,Check-in prepared,Check-in / Checkout,swap,2026-10-11,functions/api/reservations/[id].ts:60
+Before arrival,Before check-in,Check-in / Checkout,swap,2026-10-11,src/pages/AutomationsPage.tsx:109
+Change check-in or check-out time,Change check-in or checkout time,Check-in / Checkout,swap,2026-10-11,src/components/booking/BookingDrawer.tsx:664
+Check-in and check-out must be dates.,Check-in and checkout must be dates.,Check-in / Checkout,swap,2026-10-11,functions/_lib/hostplatformImport.ts:362
+Check-in and check-out times,Check-in and checkout times,Check-in / Checkout,swap,2026-10-11,src/components/booking/BookingDrawer.tsx:453
+"Check-in from {inTime} on {date(d.checkIn)}, check-out by {outTime} on {date(d.checkOut)}. Cleaning plans with the new times.","Check-in from {inTime} on {date(d.checkIn)}, checkout by {outTime} on {date(d.checkOut)}. Cleaning plans with the new times.",Check-in / Checkout,swap,2026-10-11,src/components/booking/BookingDrawer.tsx:445
+Check-in opens on the arrival day.,Check-in opens on the check-in day.,Check-in / Checkout,swap,2026-10-11,src/pages/GuestsPage.tsx:670
+Check-in or check-out time changed,Check-in or checkout time changed,Check-in / Checkout,swap,2026-10-11,functions/api/reservations/[id].ts:65
+Check-in to check-out,Check-in to checkout,Check-in / Checkout,swap,2026-10-11,src/pages/BookingsPage.tsx:291
+Check-out,Checkout,Check-in / Checkout,swap,2026-10-11,functions/api/reservations/[id]/dates.ts:27 functions/api/reservations/export.ts:61 functions/api/reservations/import.ts:27 functions/api/reservations/index.ts:66 src/components/RecordHistory.tsx:60 src/components/booking/BookingDrawer.tsx:331 src/pages/BookingsPage.tsx:296 src/pages/BookingsPage.tsx:745
+Check-out (leaving),Checkout (leaving),Check-in / Checkout,swap,2026-10-11,src/pages/CleaningPage.tsx:254
+Check-out and the review that follows.,Checkout and the review that follows.,Check-in / Checkout,swap,2026-10-11,src/pages/AutomationsPage.tsx:110
+Check-out at {property} {unit} is tomorrow by {checkOutTime}. Leave keys in the lockbox. Need a late check-out? Just ask.,Checkout at {building} {unit} is tomorrow by {checkOutTime}. Leave keys in the lockbox. Need a late checkout? Just ask.,Check-in / Checkout + Building,reword,2026-10-11,functions/_lib/automationCatalog.ts:102 src/pages/AutomationsPage.tsx:175
+Check-out by,Checkout by,Check-in / Checkout,swap,2026-10-11,src/pages/BookingsPage.tsx:750
+Check-out by ({date(d.checkOut)}),Checkout by ({date(d.checkOut)}),Check-in / Checkout,swap,2026-10-11,src/components/booking/BookingDrawer.tsx:458
+Check-out by {after.checkOutTime},Checkout by {after.checkOutTime},Check-in / Checkout,swap,2026-10-11,functions/api/reservations/[id].ts:65
+Check-out due,Checkout due,Check-in / Checkout,swap,2026-10-11,functions/api/reservations/[id].ts:130
+Check-out is not after check-in.,Checkout is not after check-in.,Check-in / Checkout,swap,2026-10-11,functions/_lib/hostplatformImport.ts:363
+Check-out must be after check-in.,Checkout must be after check-in.,Check-in / Checkout,swap,2026-10-11,functions/api/reservations/[id]/dates.ts:30 functions/api/reservations/import.ts:32 functions/api/reservations/index.ts:71 src/components/booking/BookingDrawer.tsx:332 src/pages/BookingsPage.tsx:652 src/pages/BookingsPage.tsx:746
+Check-out opens on the departure day.,Checkout opens on the checkout day.,Check-in / Checkout,swap,2026-10-11,src/pages/GuestsPage.tsx:678
+Check-out time,Checkout time,Check-in / Checkout,swap,2026-10-11,src/components/RecordHistory.tsx:60
+"Check-out time, key return, late check-out option","Checkout time, key return, late checkout option",Check-in / Checkout,swap,2026-10-11,functions/_lib/automationCatalog.ts:101 src/pages/AutomationsPage.tsx:174
+Check-out undone,Checkout undone,Check-in / Checkout,swap,2026-10-11,functions/api/reservations/[id].ts:43
+Check-out{s.checkOutTime ? ` · by ${s.ch},Checkout{s.checkOutTime ? ` · by ${s.ch},Check-in / Checkout,swap,2026-10-11,src/components/booking/BookingDrawer.tsx:652
+Check-outs,Checkouts,Check-in / Checkout,swap,2026-10-11,src/pages/DashboardPage.tsx:130
+departure,checkout,Check-in / Checkout,swap,2026-10-11,functions/_lib/cronJobs.ts:146 src/pages/CleaningPage.tsx:209
+departures,checkouts,Check-in / Checkout,swap,2026-10-11,src/pages/CleaningPage.tsx:209
+e.g. Arrivals this week,e.g. Check-ins this week,Check-in / Checkout,swap,2026-10-11,src/components/DataTable.tsx:1081
+"e.g. Cancelled 10 days before arrival, full refund","e.g. Cancelled 10 days before check-in, full refund",Check-in / Checkout,swap,2026-10-11,src/components/booking/BookingDrawer.tsx:419
+"e.g. Deposit, balance on arrival","e.g. Deposit, balance on check-in",Check-in / Checkout,swap,2026-10-11,src/components/booking/BookingDrawer.tsx:416
+Enter the standard check-out time.,Enter the standard checkout time.,Check-in / Checkout,swap,2026-10-11,src/pages/SettingsPage.tsx:272
+"For an early check-in or a late check-out. The dates do not change, and the guest is not messaged.","For an early check-in or a late checkout. The dates do not change, and the guest is not messaged.",Check-in / Checkout,swap,2026-10-11,src/components/booking/BookingDrawer.tsx:453
+"Hi Nadia, your check-in details and door code are ready. Let me know if you need anything before arrival.","Hi Nadia, your check-in details and door code are ready. Let me know if you need anything before check-in.",Check-in / Checkout,swap,2026-10-11,src/pages/InboxPage.tsx:72
+Late check-out,Late checkout,Check-in / Checkout,swap,2026-10-11,src/pages/CleaningPage.tsx:260 src/pages/CleaningPage.tsx:303 src/pages/CleaningPage.tsx:374
+Later for a late check-out.,Later for a late checkout.,Check-in / Checkout,swap,2026-10-11,src/pages/BookingsPage.tsx:750
+No arrival,No check-in,Check-in / Checkout,swap,2026-10-11,src/pages/CleaningPage.tsx:261 src/pages/CleaningPage.tsx:308 src/pages/CleaningPage.tsx:384 src/pages/FieldTodayPage.tsx:92
+No arrivals or departures tomorrow.,No check-ins or checkouts tomorrow.,Check-in / Checkout,swap,2026-10-11,src/pages/GuestsPage.tsx:78
+Only on the day of the check-out.,Only on the day of the checkout.,Check-in / Checkout,swap,2026-10-11,functions/_lib/bookingLifecycle.ts:92
+Pick at least one check-out to plan.,Pick at least one checkout to plan.,Check-in / Checkout,swap,2026-10-11,functions/api/housekeeping/plan.ts:16
+Plan at most 300 check-outs at a time.,Plan at most 300 checkouts at a time.,Check-in / Checkout,swap,2026-10-11,functions/api/housekeeping/plan.ts:17
+Prepare for arrival,Prepare for check-in,Check-in / Checkout,swap,2026-10-11,functions/_lib/bookingLifecycle.ts:217
+prepared the arrival,prepared the check-in,Check-in / Checkout,swap,2026-10-11,src/components/RecordHistory.tsx:27
+Standard check-out,Standard checkout,Check-in / Checkout,swap,2026-10-11,src/pages/SettingsPage.tsx:416
+Stay and departure,Stay and checkout,Check-in / Checkout,swap,2026-10-11,src/pages/AutomationsPage.tsx:110
+The guest is already in. Only the check-out date can change.,The guest is already in. Only the checkout date can change.,Check-in / Checkout,swap,2026-10-11,functions/api/reservations/[id]/dates.ts:43
+To (check-out day),To (checkout day),Check-in / Checkout,swap,2026-10-11,src/components/calendar/CalendarModals.tsx:66
+Undo check-out,Undo checkout,Check-in / Checkout,swap,2026-10-11,functions/_lib/bookingLifecycle.ts:91
+Housekeeper,Cleaner,Cleaner,swap,2026-10-11,src/lib/vocabulary.ts:50
+Link to a housekeeper login (optional),Link to a cleaner login (optional),Cleaner,swap,2026-10-11,src/pages/CleanersPage.tsx:240
+"Management always has full access and is not listed, so nobody can be locked out. Housekeepers, technicians and owners use their own apps and are fixed.","Management always has full access and is not listed, so nobody can be locked out. Cleaners, technicians and owners use their own apps and are fixed.",Cleaner,swap,2026-10-11,src/components/PermissionsChart.tsx:94
+Push to housekeepers and technicians. Never financial.,Push to cleaners and technicians. Never financial.,Cleaner,swap,2026-10-11,src/pages/AutomationsPage.tsx:114
+That housekeeper account does not exist.,That cleaner account does not exist.,Cleaner,swap,2026-10-11,functions/api/housekeeping/cleaners.ts:59
+Your own housekeepers. They log in and get push jobs.,Your own cleaners. They log in and get push jobs.,Cleaner,swap,2026-10-11,src/pages/CleanersPage.tsx:117
+{n} {n === 1 ? 'clean' : 'cleans'} in {assignFor.name} given to {who}.,{n} {n === 1 ? 'clean' : 'cleaning jobs'} in {assignFor.name} given to {who}.,Cleaning job,swap,2026-10-11,src/pages/CleaningPage.tsx:221
+"{plural(x.cleans, 'clean')}{x.unassigned ? `, ${x.unassign}.","{plural(x.cleaning jobs, 'clean')}{x.unassigned ? `, ${x.unassign}.",Cleaning job,swap,2026-10-11,functions/_lib/cronJobs.ts:147
+{unit} turnover is due {dueTime} with no cleaner assigned. Assign from Operations today.,{unit} cleaning job is due {dueTime} with no cleaner assigned. Assign from Operations today.,Cleaning job,swap,2026-10-11,functions/_lib/automationCatalog.ts:269 src/pages/AutomationsPage.tsx:231
+{visibleDepartures.length} cleans planned.,{visibleDepartures.length} cleaning jobs planned.,Cleaning job,swap,2026-10-11,src/pages/CleaningPage.tsx:165
+A turnover clean was created.,A cleaning job clean was created.,Cleaning job,swap,2026-10-11,src/components/booking/BookingDrawer.tsx:564
+All cleans,All cleaning jobs,Cleaning job,swap,2026-10-11,src/pages/CleaningPage.tsx:561
+Back to Checked in. Removes the turnover clean if nobody has started it.,Back to Checked in. Removes the cleaning job clean if nobody has started it.,Cleaning job,swap,2026-10-11,functions/_lib/bookingLifecycle.ts:91
+Check-in risk: {unit} turnover is incomplete with a guest arriving {arrivalTime}. Assign or escalate now.,Check-in risk: {unit} cleaning job is incomplete with a guest arriving {arrivalTime}. Assign or escalate now.,Cleaning job,swap,2026-10-11,functions/_lib/automationCatalog.ts:253 src/pages/AutomationsPage.tsx:226
+cleans,cleaning jobs,Cleaning job,swap,2026-10-11,functions/api/housekeeping/assign-building.ts:38 functions/api/housekeeping/auto-assign.ts:54 src/pages/CleaningPage.tsx:221 src/pages/CleaningPage.tsx:658 src/pages/HostPlatformImportPage.tsx:222
+Cleans,Cleaning jobs,Cleaning job,swap,2026-10-11,src/pages/HostPlatformImportPage.tsx:216
+Cleans appear when guests check out. Add one by hand for a deep clean or a refresh.,Cleaning jobs appear when guests check out. Add one by hand for a deep clean or a refresh.,Cleaning job,swap,2026-10-11,src/pages/CleaningPage.tsx:181
+Cleans assigned.,Cleaning jobs assigned.,Cleaning job,swap,2026-10-11,src/pages/CleaningPage.tsx:167
+Cleans done,Cleaning jobs done,Cleaning job,swap,2026-10-11,src/pages/OperationsTodayPage.tsx:72
+finished cleans,finished cleaning jobs,Cleaning job,swap,2026-10-11,src/pages/CleaningPage.tsx:647
+Finished cleans,Finished cleaning jobs,Cleaning job,swap,2026-10-11,src/pages/CleaningPage.tsx:651
+"For a deep clean, a refresh, or a turnover the bookings did not create.","For a deep clean, a refresh, or a cleaning job the reservations did not create.",Cleaning job + Reservation,swap,2026-10-11,src/pages/CleaningPage.tsx:495
+Guest has left. Unit is marked dirty and a turnover clean is created.,Guest has left. Unit is marked dirty and a cleaning job clean is created.,Cleaning job,swap,2026-10-11,functions/_lib/bookingLifecycle.ts:83
+Hours a turnover needs before the next check-in. The SLA counts down to it.,Hours a cleaning job needs before the next check-in. The Time allowed counts down to it.,Cleaning job + (say what happens),reword,2026-10-11,src/pages/SettingsPage.tsx:429
+Housekeeping,Cleaning,Cleaning job,swap,2026-10-11,functions/api/owner/statements/[id]/index.ts:6 functions/api/owner/summary.ts:7 functions/api/owners/[id]/pnl.ts:6 src/lib/status.ts:156 src/pages/ExpensesPage.tsx:38 src/pages/UnitsPage.tsx:59
+Housekeeping · 11 turnovers,Cleaning · 11 cleaning jobs,Cleaning job,swap,2026-10-11,src/pages/OwnerPortalPage.tsx:80 src/pages/OwnerPortalPage.tsx:132
+"Marked {plural(tasks.length, 'task')} Overdue; announced {recentCleans.length} cleans, {repairs.length} repairs, {stale.length} unsent statements.","Marked {plural(tasks.length, 'task')} Overdue; announced {recentCleans.length} cleaning jobs, {repairs.length} repairs, {stale.length} unsent statements.",Cleaning job,swap,2026-10-11,functions/_lib/cronJobs.ts:125
+"New task: {unit} turnover, due {dueTime}. Address {address}. Access {accessInstruction}.","New task: {unit} cleaning job, due {dueTime}. Address {address}. Access {accessInstruction}.",Cleaning job,swap,2026-10-11,functions/_lib/automationCatalog.ts:369 src/pages/AutomationsPage.tsx:263
+No cleans in these dates.,No cleaning jobs in these dates.,Cleaning job,swap,2026-10-11,src/pages/CleaningPage.tsx:659
+No cleans marked done.,No cleaning jobs marked done.,Cleaning job,swap,2026-10-11,src/pages/CleaningPage.tsx:627
+No cleans match these filters.,No cleaning jobs match these filters.,Cleaning job,swap,2026-10-11,src/pages/CleaningPage.tsx:180
+No cleans on {dayLabel(date)}.,No cleaning jobs on {dayLabel(date)}.,Cleaning job,swap,2026-10-11,src/pages/CleaningPage.tsx:180
+No cleans started.,No cleaning jobs started.,Cleaning job,swap,2026-10-11,src/pages/CleaningPage.tsx:627
+No cleans.,No cleaning jobs.,Cleaning job,swap,2026-10-11,functions/_lib/cronJobs.ts:147
+No unfinished cleans in these dates.,No unfinished cleaning jobs in these dates.,Cleaning job,swap,2026-10-11,src/pages/CleaningPage.tsx:659
+Only cleans with no cleaner yet,Only cleaning jobs with no cleaner yet,Cleaning job,swap,2026-10-11,src/pages/CleaningPage.tsx:544
+Plan cleans for,Plan cleaning jobs for,Cleaning job,swap,2026-10-11,src/pages/CleaningPage.tsx:209
+Schedule change: {unit} turnover moved from {oldTime} to {newTime}.,Schedule change: {unit} cleaning job moved from {oldTime} to {newTime}.,Cleaning job,swap,2026-10-11,functions/_lib/automationCatalog.ts:401 src/pages/AutomationsPage.tsx:273
+Sets held per unit so a turnover always has fresh linen ready.,Sets held per unit so a cleaning job always has fresh linen ready.,Cleaning job,swap,2026-10-11,src/pages/SettingsPage.tsx:438
+Standard turnover timings.,Standard cleaning job timings.,Cleaning job,swap,2026-10-11,src/pages/SettingsPage.tsx:402
+"The cleaning records and cleaning prices sheets. Each clean becomes a housekeeping task (done if the date has passed) given to the cleaner named in the person-in-charge column, who joins the cleaner roster, and, when the owner pays, a cleaning expense at the unit's price.","The cleaning records and cleaning prices sheets. Each clean becomes a cleaning task (done if the date has passed) given to the cleaner named in the person-in-charge column, who joins the cleaner roster, and, when the owner pays, a cleaning expense at the unit's price.",Cleaning job,swap,2026-10-11,src/pages/HostPlatformImportPage.tsx:212
+Turnover after check-out,Cleaning job after checkout,Cleaning job + Check-in / Checkout,swap,2026-10-11,functions/_lib/bookingLifecycle.ts:211
+Turnover clean,Cleaning job clean,Cleaning job,swap,2026-10-11,functions/api/housekeeping/tasks.ts:12 src/pages/CleaningPage.tsx:490
+Unassigned cleans from today on now have a cleaner.,Unassigned cleaning jobs from today on now have a cleaner.,Cleaning job,swap,2026-10-11,src/pages/CleaningPage.tsx:167
+unfinished cleans,unfinished cleaning jobs,Cleaning job,swap,2026-10-11,src/pages/CleaningPage.tsx:647
+You can see the history of your own cleans and repairs only.,You can see the history of your own cleaning jobs and repairs only.,Cleaning job,swap,2026-10-11,functions/api/audit/index.ts:77
+"{count} finalised statements for {period} are still unsent, {days} days after close.","{count} final statements for {period} are still unsent, {days} days after close.",Draft / Final,swap,2026-10-11,functions/_lib/automationCatalog.ts:336 src/pages/AutomationsPage.tsx:251
+{count} provisional {count === 1 ? 'statement is' :} ready to check{skipped ? `; ${skipped} alread}.,{count} draft {count === 1 ? 'statement is' :} ready to check{skipped ? `; ${skipped} alread}.,Draft / Final,swap,2026-10-11,functions/api/statements/generate.ts:130
+{MODEL[d.revenueModel].label}.{r.split ? ' This unit now has } Provisional statements change when regenerated; final ones keep their figures.,{MODEL[d.revenueModel].label}.{r.split ? ' This unit now has } Draft statements change when regenerated; final ones keep their figures.,Draft / Final,swap,2026-10-11,src/pages/units/ContractTab.tsx:136
+"{plural(n.statements, 'statemen} finalised, not sent","{plural(n.statements, 'statemen} final, not sent",Draft / Final,swap,2026-10-11,functions/api/nav/badges.ts:53
+"{res.finalised} finalised, {res.failed.length} not.","{res.final} final, {res.failed.length} not.",Draft / Final,swap,2026-10-11,src/pages/StatementsPage.tsx:130
+{res.skipped} already finalised and left as they are.,{res.skipped} already final and left as they are.,Draft / Final,swap,2026-10-11,src/pages/StatementsPage.tsx:114
+{rm(sendTargets.rows.reduce((su} total · finalised statements only,{rm(sendTargets.rows.reduce((su} total · final statements only,Draft / Final,swap,2026-10-11,src/pages/StatementsPage.tsx:337
+"<div class=""lh-flag"">Provisional figures. This statement is not final and may change before it is issued.</div>","<div class=""lh-flag"">Draft figures. This statement is not final and may change before it is issued.</div>",Draft / Final,swap,2026-10-11,functions/api/statements/pdf.ts:64
+August owner statements are finalised and waiting to go out.,August owner statements are final and waiting to go out.,Draft / Final,swap,2026-10-11,src/pages/DashboardPage.tsx:191
+"Builds each owner's month by the owner workbook's rules: stays split by night into the month, cleaning, bills and other deductions, the contract split, then owner adjustments. Statements land as Provisional and must be reviewed before sending.","Builds each owner's month by the owner workbook's rules: stays split by night into the month, cleaning, bills and other deductions, the contract split, then owner adjustments. Statements land as Draft and must be reviewed before sending.",Draft / Final,swap,2026-10-11,src/pages/StatementsPage.tsx:380
+Cannot send. This statement is still provisional.,Cannot send. This statement is still draft.,Draft / Final,swap,2026-10-11,functions/api/statements/send.ts:64
+Finalised,Final,Draft / Final,swap,2026-10-11,src/lib/status.ts:80 src/pages/StatementDetailPage.tsx:119
+Finalised {day(s.finalised_at)} · PDF,Final {day(s.finalised_at)} · PDF,Draft / Final,swap,2026-10-11,functions/api/owner/documents.ts:25
+Finalised 1 Sep 2026 · PDF,Final 1 Sep 2026 · PDF,Draft / Final,swap,2026-10-11,src/pages/OwnerPortalPage.tsx:112
+finalised statement,final statement,Draft / Final,swap,2026-10-11,functions/_lib/cronJobs.ts:105
+Finalised statement.,Final statement.,Draft / Final,swap,2026-10-11,src/pages/OwnerPortalPage.tsx:230
+finalised statements unsent 3 days after close,final statements unsent 3 days after close,Draft / Final,swap,2026-10-11,functions/_lib/automationCatalog.ts:329 src/pages/AutomationsPage.tsx:249
+finalised the statement,final the statement,Draft / Final,swap,2026-10-11,src/components/RecordHistory.tsx:39
+Not finalised.,Not final.,Draft / Final,swap,2026-10-11,src/pages/StatementsPage.tsx:133
+"On the cycle day, statements are generated as provisional for review. Turn off to generate them by hand each period.","On the cycle day, statements are generated as draft for review. Turn off to generate them by hand each period.",Draft / Final,swap,2026-10-11,src/pages/SettingsPage.tsx:473
+Only a provisional statement can be finalised.,Only a draft statement can be final.,Draft / Final,swap,2026-10-11,functions/api/statements/finalise.ts:16
+Owner statements are finalised and waiting to go out.,Owner statements are final and waiting to go out.,Draft / Final,swap,2026-10-11,functions/api/dashboard/exceptions.ts:69
+Provisional,Draft,Draft / Final,swap,2026-10-11,src/lib/status.ts:79
+Provisional figures. This statement is not final and may change.,Draft figures. This statement is not final and may change.,Draft / Final,swap,2026-10-11,src/pages/OwnerPortalPage.tsx:230
+Provisional: figures can still change,Draft: figures can still change,Draft / Final,swap,2026-10-11,src/pages/OwnerIncomeReportPage.tsx:83
+Statement finalised.,Statement final.,Draft / Final,swap,2026-10-11,src/pages/StatementDetailPage.tsx:66
+"{monthLabel(s.period)} · {rm(s.revenue, { cents: false }} · {percent(s.occupancy)} occupancy","{monthLabel(s.period)} · {rm(s.earnings, { cents: false }} · {percent(s.occupancy)} occupancy",Earnings,reword,2026-10-11,src/pages/DashboardPage.tsx:424
+{name}: total revenue for {g.month} (owner workbook),{name}: total earnings for {g.month} (owner workbook),Earnings,reword,2026-10-11,functions/_lib/hostplatformImportDb.ts:739
+{RANGE_SUB[range]} · revenue collected on stays that start in each month,{RANGE_SUB[range]} · earnings collected on stays that start in each month,Earnings,reword,2026-10-11,src/pages/AnalyticsPage.tsx:227
+{unit} is off-sale for maintenance {dates}: {reason}. Estimated revenue impact {revenueAtRisk}. Expected back {expectedReturn}.,{unit} is off-sale for maintenance {dates}: {reason}. Estimated earnings impact {revenueAtRisk}. Expected back {expectedReturn}.,Earnings,reword,2026-10-11,functions/_lib/automationCatalog.ts:236 src/pages/AutomationsPage.tsx:219
+"Creates an owner account with a temporary password. They can view their statements, revenue and property health, and approve quotes.","Creates an owner account with a temporary password. They can view their statements, earnings and building health, and approve quotes.",Earnings + Building,reword,2026-10-11,src/pages/OwnerProfilePage.tsx:112
+"Dates blocked, reason, revenue at risk, expected return","Dates blocked, reason, earnings at risk, expected return",Earnings,reword,2026-10-11,functions/_lib/automationCatalog.ts:235 src/pages/AutomationsPage.tsx:218
+"Each unit has its own contract and revenue model, set on the unit's Contract tab.","Each unit has its own contract and earnings model, set on the unit's Contract tab.",Earnings,reword,2026-10-11,src/pages/OwnerProfilePage.tsx:222
+"Each unit is worked out the way its owner statement is, by its revenue model: income split by night into the month, less the costs the owner pays, then the share, minimum or fixed rent, and owner credits and charges. Guaranteed rent is counted on its own, not as a share of revenue. Until the month's statement is final, these are estimates.","Each unit is worked out the way its owner statement is, by its earnings model: income split by night into the month, less the costs the owner pays, then the share, minimum or fixed rent, and owner adjustments. Guaranteed rent is counted on its own, not as a share of earnings. Until the month's statement is final, these are estimates.",Earnings + Owner Adjustments,reword,2026-10-11,src/pages/OwnersPage.tsx:167
+"Listing, building, owner and revenue model.","Listing, building, owner and earnings model.",Earnings,reword,2026-10-11,src/pages/UnitsPage.tsx:458
+One revenue model per contract decides how the owner statement is worked out. Package,One earnings model per contract decides how the owner statement is worked out. Package,Earnings,reword,2026-10-11,src/pages/units/UnitForms.tsx:92
+Pick one revenue model.,Pick one earnings model.,Earnings,reword,2026-10-11,functions/_lib/revenueModel.ts:65
+Reminder: {title} on {unit} is awaiting your approval. Revenue at risk while blocked: {revenueAtRisk}.,Reminder: {title} on {unit} is awaiting your approval. Earnings at risk while blocked: {revenueAtRisk}.,Earnings,reword,2026-10-11,functions/_lib/automationCatalog.ts:219 src/pages/AutomationsPage.tsx:214
+Revenue,Earnings,Earnings,reword,2026-10-11,src/pages/AnalyticsPage.tsx:171 src/pages/AnalyticsPage.tsx:394 src/pages/AnalyticsPage.tsx:422 src/pages/DashboardPage.tsx:28 src/pages/DashboardPage.tsx:236 src/pages/PortfolioPage.tsx:113 src/pages/PortfolioPage.tsx:126 src/pages/PortfolioPage.tsx:187
+Revenue and occupancy trend,Earnings and occupancy trend,Earnings,reword,2026-10-11,src/pages/DashboardPage.tsx:377
+Revenue divided by booked nights,Earnings divided by booked nights,Earnings,reword,2026-10-11,src/pages/AnalyticsPage.tsx:423
+"Revenue in {monthLabel(tp.delta.period)} against {monthLabel(tp.delta.against)}, the last two complete months","Earnings in {monthLabel(tp.delta.period)} against {monthLabel(tp.delta.against)}, the last two complete months",Earnings,reword,2026-10-11,src/pages/DashboardPage.tsx:380
+Revenue model,Earnings model,Earnings,reword,2026-10-11,src/pages/units/ContractTab.tsx:83 src/pages/units/ContractTab.tsx:160 src/pages/units/ContractTab.tsx:180 src/pages/units/UnitForms.tsx:87
+Revenue model: {u.revenueModelLabel}. Change it on the Contract tab.,Earnings model: {u.revenueModelLabel}. Change it on the Contract tab.,Earnings,reword,2026-10-11,src/pages/UnitsPage.tsx:379
+"Revenue, high to low","Earnings, high to low",Earnings,reword,2026-10-11,src/pages/PortfolioPage.tsx:169
+"Revenue, low to high","Earnings, low to high",Earnings,reword,2026-10-11,src/pages/PortfolioPage.tsx:170
+"Same, plus the revenue at risk if the unit is blocked","Same, plus the earnings at risk if the unit is blocked",Earnings,reword,2026-10-11,functions/_lib/automationCatalog.ts:218 src/pages/AutomationsPage.tsx:213
+"The {Math.min(TOP_UNITS, allRows.le} highest by revenue of {plural(portfolio.data.units, '} in {plural(portfolio.data.building}{period ? ` · ${monthLabel(peri}","The {Math.min(TOP_UNITS, allRows.le} highest by earnings of {plural(portfolio.data.units, '} in {plural(portfolio.data.building}{period ? ` · ${monthLabel(peri}",Earnings,reword,2026-10-11,src/pages/DashboardPage.tsx:509
+"The owner receives the dates blocked, the reason, the revenue at risk and the expected return date. Nothing is charged and no work is approved by this notice.","The owner receives the dates blocked, the reason, the earnings at risk and the expected return date. Nothing is charged and no work is approved by this notice.",Earnings,reword,2026-10-11,src/pages/DashboardPage.tsx:561
+"The owner statement for the month so far, by the unit's revenue model: income split by night into the month, less the costs the owner pays. The month is not closed yet, so the figures still move.","The owner statement for the month so far, by the unit's earnings model: income split by night into the month, less the costs the owner pays. The month is not closed yet, so the figures still move.",Earnings,reword,2026-10-11,src/pages/UnitsPage.tsx:532
+"The sub-unit inherits the owner and bank details of its parent. You can give it its own code, revenue split and expenses.","The sub-unit inherits the owner and bank details of its parent. You can give it its own code, earnings split and expenses.",Earnings,reword,2026-10-11,src/pages/UnitsPage.tsx:206
+TOTAL REVENUE,TOTAL EARNINGS,Earnings,reword,2026-10-11,functions/_lib/hostplatformImport.ts:60 functions/_lib/hostplatformImport.ts:871
+Where revenue came from,Where earnings came from,Earnings,reword,2026-10-11,src/pages/AnalyticsPage.tsx:335
+整体报告 is the {reportMonth} report: {breakdown.size} units get its revenue and deductions on their {reportMonth} statement; every other month shows the payout only.,整体报告 is the {reportMonth} report: {breakdown.size} units get its earnings and deductions on their {reportMonth} statement; every other month shows the payout only.,Earnings,reword,2026-10-11,functions/_lib/hostplatformImport.ts:873
+"<tr><td>Gross booking value</td><td>—</td><td>{esc(longDate(s.period_end))}</td><td class=""num"">{ringgit(s.gross_booking_value)}</td></tr> <tr><td>Management fee</td><td>—</td><td>{esc(longDate(s.period_end))}</td><td class=""num"">− {ringgit(s.management_fee)}</td></tr> <tr><td>Expenses</td><td>—</td><td>{esc(longDate(s.period_end))}</td><td class=""num"">− {ringgit(s.expenses_total)}</td></tr>","<tr><td>Guest totalal</td><td>—</td><td>{esc(longDate(s.period_end))}</td><td class=""num"">{ringgit(s.gross_booking_value)}</td></tr> <tr><td>Operator share</td><td>—</td><td>{esc(longDate(s.period_end))}</td><td class=""num"">− {ringgit(s.management_fee)}</td></tr> <tr><td>Expenses</td><td>—</td><td>{esc(longDate(s.period_end))}</td><td class=""num"">− {ringgit(s.expenses_total)}</td></tr>",Guest total + Reservation + To Operator (Operator share),reword,2026-10-11,functions/api/statements/pdf.ts:68
+Gross booking value,Guest totalal,Guest total + Reservation,swap,2026-10-11,functions/api/owner/summary.ts:46 functions/api/owner/summary.ts:56 functions/api/owners/[id]/pnl.ts:94 functions/api/owners/[id]/pnl.ts:98 src/pages/AnalyticsPage.tsx:295 src/pages/DashboardPage.tsx:445 src/pages/OwnerPortalPage.tsx:78 src/pages/OwnerPortalPage.tsx:130
+Gross booking value is the total before documented fees and expenses.,Guest totalal is the total before documented fees and expenses.,Guest total + Reservation,swap,2026-10-11,src/pages/OwnerPortalPage.tsx:248
+"Gross booking value, stays split by night · occupancy under each month","Guest totalal, stays split by night · occupancy under each month",Guest total + Reservation,swap,2026-10-11,src/pages/DashboardPage.tsx:386
+share of gross booking value,share of guest totalal,Guest total + Reservation,swap,2026-10-11,src/pages/AnalyticsPage.tsx:335
+Collected revenue,Earningss,Host payout + Earnings,reword,2026-10-11,src/pages/AnalyticsPage.tsx:296 src/pages/DashboardPage.tsx:446
+Site payout,Host payout,Host payout,swap,2026-10-11,src/components/booking/BookingDrawer.tsx:398
+{crew} reported {issue} at {unit}. Opened as a maintenance issue — review and triage.,{crew} reported {issue} at {unit}. Opened as a maintenance jobs — review and triage.,Maintenance job,swap,2026-10-11,functions/_lib/automationCatalog.ts:286 src/pages/AutomationsPage.tsx:236
+Destination: the maintenance issue,Destination: the maintenance jobs,Maintenance job,swap,2026-10-11,functions/_lib/automationCatalog.ts:285 src/pages/AutomationsPage.tsx:235
+field app creates a maintenance issue,field app creates a maintenance jobs,Maintenance job,swap,2026-10-11,functions/_lib/automationCatalog.ts:279 src/pages/AutomationsPage.tsx:234
+Inbox,Messages,Messages,swap,2026-10-11,src/lib/navigation.ts:36 src/pages/InboxPage.tsx:167
+Current weekday prices. Nothing is priced; only the minimum stay or stop sell below changes.,Current weekday prices. Nothing is priced; only the minimum nights or blocked below changes.,Minimum nights + Blocked nights,swap,2026-10-11,src/components/calendar/CalendarModals.tsx:397
+Minimum stay,Minimum nights,Minimum nights,swap,2026-10-11,src/components/calendar/CalendarModals.tsx:401
+Minimum stay must be 1 to 60 nights{at}.,Minimum nights must be 1 to 60 nights{at}.,Minimum nights,swap,2026-10-11,functions/api/rates/bulk.ts:74
+"No minimum stay, open for sale","No minimum nights, available",Minimum nights + Blocked nights,swap,2026-10-11,src/pages/CalendarPage.tsx:699
+"Set a price, a minimum stay or stop sell{at}.","Set a price, a minimum nights or blocked{at}.",Minimum nights + Blocked nights,swap,2026-10-11,functions/api/rates/bulk.ts:69
+"Set a price, minimum stay or stop sell","Set a price, minimum nights or blocked",Minimum nights + Blocked nights,swap,2026-10-11,src/components/calendar/CalendarModals.tsx:418
+Net owner payout,Net Payout to Ownerner,Net Payout to Owner,swap,2026-10-11,src/pages/AnalyticsPage.tsx:298 src/pages/DashboardPage.tsx:448
+Net payout,Net Payout to Owner,Net Payout to Owner,swap,2026-10-11,functions/api/owner/summary.ts:52 functions/api/owner/summary.ts:59 functions/api/owners/[id]/pnl.ts:101 src/components/RecordHistory.tsx:62 src/pages/OwnerPortalPage.tsx:82 src/pages/StatementsPage.tsx:200
+Net payout ·,Net Payout to Owner ·,Net Payout to Owner,swap,2026-10-11,src/pages/OwnerPortalPage.tsx:223 src/pages/OwnerPortalPage.tsx:393
+NET PAYOUT (RM),Net Payout to Owner (RM),Net Payout to Owner,swap,2026-10-11,src/pages/OwnerIncomeReportPage.tsx:231
+Net payout after adjustment,Net Payout to Owner after adjustment,Net Payout to Owner,swap,2026-10-11,src/pages/StatementsPage.tsx:454
+Net payout by month: {desc},Net Payout to Owner by month: {desc},Net Payout to Owner,swap,2026-10-11,src/pages/OwnerPortalPage.tsx:454
+Net payout to owner,Net Payout to Owner,Net Payout to Owner,swap,2026-10-11,functions/api/units/detail.ts:137 src/pages/StatementDetailPage.tsx:115 src/pages/StatementDetailPage.tsx:165 src/pages/units/ContractTab.tsx:278 src/pages/units/ContractTab.tsx:285 src/pages/units/ContractTab.tsx:295
+Net Payout to Owner,Net Payout to Owner,Net Payout to Owner,swap,2026-10-11,src/pages/OwnerIncomeReportPage.tsx:170
+"Net payout, RM · last","Net Payout to Owner, RM · last",Net Payout to Owner,swap,2026-10-11,src/pages/OwnerPortalPage.tsx:275
+{differentWeekend} units have a different weekend price on HostPlatform. Property OS has no weekend rate yet; only the weekday price was imported.,{differentWeekend} units have a different weekend price on HostPlatform. Property OS has no weekend price yet; only the weekday price was imported.,Nightly price,swap,2026-10-11,functions/_lib/hostplatformImport.ts:301
+"{plural(rows.length, 'unit')}{noRate ? ` · ${noRate} with no} · Friday and Saturday nights use each unit's weekend rate","{plural(rows.length, 'unit')}{noRate ? ` · ${noRate} with no} · Friday and Saturday nights use each unit's weekend price",Nightly price,swap,2026-10-11,src/pages/PricingPage.tsx:294
+Average nightly rate,Average nightly price,Nightly price,swap,2026-10-11,src/pages/OwnerPortalPage.tsx:201
+Base nightly rate,Nightly price,Nightly price,swap,2026-10-11,src/pages/units/UnitForms.tsx:71
+Base nightly rate (RM),Nightly price (RM),Nightly price,swap,2026-10-11,src/pages/units/UnitForms.tsx:70
+Base price (Web / Direct),Nightly price (Web / Direct),Nightly price,swap,2026-10-11,src/components/calendar/CalendarModals.tsx:351
+base web rate,base direct price,Nightly price,swap,2026-10-11,src/pages/PricingPage.tsx:362
+Base web rate,Base direct price,Nightly price,swap,2026-10-11,src/pages/PricingPage.tsx:357
+Base web rate updated.,Base direct price updated.,Nightly price,swap,2026-10-11,src/pages/PricingPage.tsx:210
+Enter a nightly rate above RM 0.00.,Enter a nightly price above RM 0.00.,Nightly price,swap,2026-10-11,functions/api/rates/index.ts:34
+"Enter a weekend rate above RM 0.00, or clear it to use the base rate.","Enter a weekend price above RM 0.00, or clear it to use the base rate.",Nightly price,swap,2026-10-11,functions/api/rates/index.ts:44
+"Set a base price first for: {unpriced.map(u => u.unit_numbe} (Performance, then Pricing). Nothing was sent.","Set a nightly price first for: {unpriced.map(u => u.unit_numbe} (Performance, then Pricing). Nothing was sent.",Nightly price,swap,2026-10-11,functions/api/integrations/channex/full-sync.ts:18
+"Set this unit's base price first (Performance, then Pricing). Channex needs a price for every night.","Set this unit's nightly price first (Performance, then Pricing). Channex needs a price for every night.",Nightly price,swap,2026-10-11,functions/api/units/[id]/channex-setup.ts:24
+Web rate,Direct price,Nightly price,swap,2026-10-11,src/components/calendar/CalendarModals.tsx:35
+Weekend rate cleared.,Weekend price cleared.,Nightly price,swap,2026-10-11,src/pages/PricingPage.tsx:217
+Weekend rate updated.,Weekend price updated.,Nightly price,swap,2026-10-11,src/pages/PricingPage.tsx:217
+weekend web rate,weekend direct price,Nightly price,swap,2026-10-11,src/pages/PricingPage.tsx:373
+Weekend web rate,Weekend direct price,Nightly price,swap,2026-10-11,src/pages/PricingPage.tsx:368
+{n(wbExpenses.credits.length)} lines are money back to the owner. They are kept as owner credits: credits dated in a month step 7 covers were already in that month's payout; later ones go on the next statement.,{n(wbExpenses.credits.length)} lines are money back to the owner. They are kept as owner adjustments: credits dated in a month step 7 covers were already in that month's payout; later ones go on the next statement.,Owner Adjustments,swap,2026-10-11,src/pages/HostPlatformImportPage.tsx:232
+"Each unit's own report follows, with every income line, deduction and owner credit or charge. To operator is after any minimum guarantee top-up.","Each unit's own report follows, with every income line, deduction and owner adjustments or charge. To operator is after any minimum guarantee top-up.",Owner Adjustments,swap,2026-10-11,src/pages/OwnerIncomeReportPage.tsx:255
+"Guest refunds, payout runs, owner credits and charges, debt write-offs and expenses above the amount below wait on the Approvals page. Nobody approves their own request, except the only management user, with a written reason.","Guest refunds, payout runs, owner adjustments, debt write-offs and expenses above the amount below wait on the Approvals page. Nobody approves their own request, except the only management user, with a written reason.",Owner Adjustments,swap,2026-10-11,src/pages/SettingsPage.tsx:527
+Owner credit or charge,Owner adjustments or charge,Owner Adjustments,swap,2026-10-11,functions/_lib/approvals.ts:26
+Owner credits & charges,Owner adjustments & charges,Owner Adjustments,swap,2026-10-11,functions/api/units/detail.ts:136 src/pages/OwnerProfilePage.tsx:276 src/pages/OwnerProfilePage.tsx:279 src/pages/OwnerProfilePage.tsx:288 src/pages/units/ContractTab.tsx:277 src/pages/units/ContractTab.tsx:284 src/pages/units/ContractTab.tsx:294
+Owner credits &amp; charges,Owner adjustments &amp; charges,Owner Adjustments,swap,2026-10-11,src/pages/StatementDetailPage.tsx:114
+Owner credits and debts,Owner adjustments and debts,Owner Adjustments,swap,2026-10-11,src/pages/HostPlatformImportPage.tsx:346
+Payout before owner credits &amp; charges,Payout before owner adjustments &amp; charges,Owner Adjustments,swap,2026-10-11,src/pages/StatementDetailPage.tsx:162
+"Refunds, payout runs, owner credits and charges, expenses above","Refunds, payout runs, owner adjustments, expenses above",Owner Adjustments,swap,2026-10-11,src/pages/ApprovalsPage.tsx:119
+"Refunds, payout runs, owner credits and charges, expenses and debt write-offs happen at once, without a second person. Management can turn approvals back on in Settings.","Refunds, payout runs, owner adjustments, expenses and debt write-offs happen at once, without a second person. Management can turn approvals back on in Settings.",Owner Adjustments,swap,2026-10-11,src/pages/ApprovalsPage.tsx:112
+"Refunds, payout runs, owner credits and charges, large expenses and write-offs.","Refunds, payout runs, owner adjustments, large expenses and write-offs.",Owner Adjustments,swap,2026-10-11,functions/api/nav/badges.ts:48
+"Refunds, payout runs, owner credits and charges, write-offs and large expenses now wait for a second person.","Refunds, payout runs, owner adjustments, write-offs and large expenses now wait for a second person.",Owner Adjustments,swap,2026-10-11,src/pages/SettingsPage.tsx:297
+"When someone asks for a refund, a payout run, an owner credit or charge, a large expense or a write-off, it waits here.","When someone asks for a refund, a payout run, an owner adjustments or charge, a large expense or a write-off, it waits here.",Owner Adjustments,swap,2026-10-11,src/pages/ApprovalsPage.tsx:128
+"Whether money going out waits for someone else to approve it. Off: refunds, payout runs, owner credits and charges, write-offs and expenses happen as soon as they are entered.","Whether money going out waits for someone else to approve it. Off: refunds, payout runs, owner adjustments, write-offs and expenses happen as soon as they are entered.",Owner Adjustments,swap,2026-10-11,src/pages/SettingsPage.tsx:520
+OWNER INCOME REPORT,OWNER OWNER STATEMENT,Owner statement,swap,2026-10-11,src/pages/OwnerIncomeReportPage.tsx:144
+OWNER INCOME REPORT (ALL UNITS),OWNER OWNER STATEMENT (ALL UNITS),Owner statement,swap,2026-10-11,src/pages/OwnerIncomeReportPage.tsx:224
+Owner report,Owner statement,Owner statement,swap,2026-10-11,src/pages/SettingsPage.tsx:482
+Owner report PDF,Owner statement PDF,Owner statement,swap,2026-10-11,src/pages/OwnerProfilePage.tsx:180
+Owner report wording saved.,Owner statement wording saved.,Owner statement,swap,2026-10-11,src/pages/SettingsPage.tsx:295
+Save owner report,Save owner statement,Owner statement,swap,2026-10-11,src/pages/SettingsPage.tsx:484
+YEAR-TO-DATE OWNER INCOME REPORT (JAN - DEC,YEAR-TO-DATE OWNER OWNER STATEMENT (JAN - DEC,Owner statement,swap,2026-10-11,src/pages/OwnerIncomeReportPage.tsx:186
+"YEAR-TO-DATE OWNER INCOME REPORT, ALL UNITS (JAN - DEC","YEAR-TO-DATE OWNER OWNER STATEMENT, ALL UNITS (JAN - DEC",Owner statement,swap,2026-10-11,src/pages/OwnerIncomeReportPage.tsx:274
+", including every guest message, are written but nothing sends them: they need a timed background sender that is not set up yet and, for guests, the email and WhatsApp keys. Until then, guests get only the messages staff send from the Inbox and Bookings.",", including every guest message, are written but nothing sends them: they need a timed background sender that is not set up yet and, for guests, the email and WhatsApp keys. Until then, guests get only the messages staff send from the Inbox and Reservations.",Reservation,swap,2026-10-11,src/pages/AutomationsPage.tsx:364
+", so it stays as recorded. Change the booking on the site too.",", so it stays as recorded. Change the reservation on the site too.",Reservation,swap,2026-10-11,src/components/booking/BookingDrawer.tsx:342
+· {counts.missing_id} with a stay coming are missing ID details,· {counts.missing_id} with a reservation coming are missing ID details,Reservation,swap,2026-10-11,src/pages/GuestsPage.tsx:336
+'^(Airbnb|Booking\.com|Agoda|Direct|OTA) guest$','^(Airbnb|Reservation\.com|Agoda|Direct|Channel) guest$',Reservation + Channel,swap,2026-10-11,functions/_lib/hostplatformImportDb.ts:517
+{n(unmatchedRes.length)} bookings are on units that are not in Property OS and will be refused. Import the listing first.,{n(unmatchedRes.length)} reservations are on units that are not in Property OS and will be refused. Import the listing first.,Reservation,swap,2026-10-11,src/pages/HostPlatformImportPage.tsx:196
+"{num(counts.upcoming)} upcoming · {num(counts.inhouse)} in house · {plural(counts.all, 'booking')} in total{searching ? ' matching the fil}","{num(counts.upcoming)} upcoming · {num(counts.inhouse)} in house · {plural(counts.all, 'reservation')} in total{searching ? ' matching the fil}",Reservation,swap,2026-10-11,src/pages/BookingsPage.tsx:328
+"{plural(left, 'ticked booking')} {left === 1 ? 'is' : 'are'} left out: not a booking-site stay, cancelled, or nothing owed.","{plural(left, 'ticked reservation')} {left === 1 ? 'is' : 'are'} left out: not a reservation-site stay, cancelled, or nothing owed.",Reservation,swap,2026-10-11,src/pages/BookingsPage.tsx:582
+"{plural(n, 'booking update')} pulled from Channex.","{plural(n, 'reservation update')} pulled from Channex.",Reservation,swap,2026-10-11,src/pages/CalendarPage.tsx:370
+"{plural(total, 'booking')} with the money breakdown and payments. The first lines name the filters and totals.","{plural(total, 'reservation')} with the money breakdown and payments. The first lines name the filters and totals.",Reservation,swap,2026-10-11,src/pages/BookingsPage.tsx:257
+"{s!.externalRef ?? 'Booking'} is now {statusLabel('booking', res.sta}.","{s!.externalRef ?? 'Reservation'} is now {statusLabel('reservation', res.sta}.",Reservation,swap,2026-10-11,src/components/booking/BookingDrawer.tsx:569
+{skipped} booking(s) could not be matched automatically — see the audit log.,{skipped} reservation(s) could not be matched automatically — see the history.,Reservation + (say what happens),reword,2026-10-11,functions/_lib/channexBookingSync.ts:38
+"{todoMeta.label}: {plural(counts.all, 'booking')}{searching ? ' matching the fil}","{todoMeta.label}: {plural(counts.all, 'reservation')}{searching ? ' matching the fil}",Reservation,swap,2026-10-11,src/pages/BookingsPage.tsx:326
+"9 steps · units, bookings, the owner workbook and two clean-ups","9 steps · units, reservations, the owner workbook and two clean-ups",Reservation,swap,2026-10-11,src/pages/HostPlatformImportPage.tsx:146
+a booking,a reservation,Reservation,swap,2026-10-11,src/components/calendar/SelectionPopover.tsx:54
+A booking already holds some of those nights. Pick dates when the unit is free.,A reservation already holds some of those nights. Pick dates when the unit is free.,Reservation,swap,2026-10-11,src/pages/MaintenancePage.tsx:561
+A booking that is {LABEL[cur.state]} cannot be moved to {LABEL[target]}.,A reservation that is {LABEL[cur.state]} cannot be moved to {LABEL[target]}.,Reservation,swap,2026-10-11,functions/_lib/bookingLifecycle.ts:164
+A cancelled or no-show booking is not invoiced.,A cancelled or no-show reservation is not invoiced.,Reservation,swap,2026-10-11,functions/_lib/guestDocuments.ts:86
+"A finished, cancelled or no-show booking cannot move.","A finished, cancelled or no-show reservation cannot move.",Reservation,swap,2026-10-11,functions/api/reservations/[id].ts:170
+All bookings,All reservations,Reservation,swap,2026-10-11,functions/api/reservations/export.ts:8 src/pages/UnitsPage.tsx:424
+An invoice was just issued for this booking by someone else.,An invoice was just issued for this reservation by someone else.,Reservation,swap,2026-10-11,functions/_lib/guestDocuments.ts:192
+"attachment; filename=""bookings-{q.todo ?? q.view}-{q.today}.csv""","attachment; filename=""reservations-{q.todo ?? q.view}-{q.today}.csv""",Reservation,swap,2026-10-11,functions/api/reservations/export.ts:81
+Balance still due on this booking: {ringgit(s.balance)}.,Balance still due on this reservation: {ringgit(s.balance)}.,Reservation,swap,2026-10-11,functions/_lib/guestDocumentPdf.ts:55
+Book a stay,Book a reservation,Reservation,swap,2026-10-11,src/pages/GuestsPage.tsx:496
+booking,reservation,Reservation,swap,2026-10-11,functions/api/reservations/[id]/payments.ts:46 src/components/BulkAssignCleaner.tsx:21 src/pages/BookingsPage.tsx:257 src/pages/BookingsPage.tsx:326 src/pages/BookingsPage.tsx:328 src/pages/BookingsPage.tsx:368 src/pages/BookingsPage.tsx:575 src/pages/BookingsPage.tsx:582 src/pages/units/BookingsTab.tsx:91
+Booking,Reservation,Reservation,swap,2026-10-11,functions/_lib/guestDocumentPdf.ts:39 src/components/booking/BookingDrawer.tsx:569 src/pages/CalendarPage.tsx:39 src/pages/GuestDocumentsPage.tsx:67 src/pages/GuestDocumentsPage.tsx:72 src/pages/units/BookingsTab.tsx:65
+Booking {code} appears twice; the first one was kept.,Reservation {code} appears twice; the first one was kept.,Reservation,swap,2026-10-11,functions/_lib/hostplatformImport.ts:357
+Booking cancelled: {b.unit},Reservation cancelled: {b.unit},Reservation,swap,2026-10-11,functions/_lib/notices.ts:43
+Booking created,Reservation created,Reservation,swap,2026-10-11,functions/api/reservations/[id].ts:36
+Booking dates changed: {b.unit},Reservation dates changed: {b.unit},Reservation,swap,2026-10-11,functions/_lib/notices.ts:48
+Booking moved.,Reservation moved.,Reservation,swap,2026-10-11,src/pages/CalendarPage.tsx:337
+Booking not duplicated.,Reservation not duplicated.,Reservation,swap,2026-10-11,src/components/booking/BookingDrawer.tsx:611
+Booking not moved.,Reservation not moved.,Reservation,swap,2026-10-11,src/pages/CalendarPage.tsx:342
+Booking notifications,Reservation notifications,Reservation,swap,2026-10-11,functions/api/system/health/index.ts:96
+Booking notifications are off. Channex is not sending bookings to this site yet.,Reservation notifications are off. Channex is not sending reservations to this site yet.,Reservation,swap,2026-10-11,src/components/ChannexSyncPanel.tsx:74
+Booking notifications are on.,Reservation notifications are on.,Reservation,swap,2026-10-11,src/components/ChannexSyncPanel.tsx:48 src/components/ChannexSyncPanel.tsx:79
+Booking notifications cannot be turned on yet: the notification secret (CHANNEX_WEBHOOK_SECRET) is not set on this site.,Reservation notifications cannot be turned on yet: the notification secret (CHANNEX_WEBHOOK_SECRET) is not set on this site.,Reservation,swap,2026-10-11,src/components/ChannexSyncPanel.tsx:75
+Booking recorded,Reservation recorded,Reservation,swap,2026-10-11,functions/api/reservations/[id].ts:110
+"Booking reference, guest, phone, unit or owner","Reservation reference, guest, phone, unit or owner",Reservation,swap,2026-10-11,src/components/TopBar.tsx:168
+Booking revenue,Reservation earnings,Reservation + Earnings,reword,2026-10-11,src/pages/OwnersPage.tsx:202 src/pages/owners/shared.tsx:133
+"Booking revenue, {monthCol}","Reservation earnings, {monthCol}",Reservation + Earnings,reword,2026-10-11,src/pages/OwnersPage.tsx:143
+"Booking revenue, managed units","Reservation earnings, managed units",Reservation + Earnings,reword,2026-10-11,src/pages/OwnersPage.tsx:163
+booking status reverted,reservation status reverted,Reservation,swap,2026-10-11,functions/_lib/bookingLifecycle.ts:251
+Booking total,Reservation total,Reservation,swap,2026-10-11,src/components/RecordHistory.tsx:61 src/components/RecordHistory.tsx:62
+booking update,reservation update,Reservation,swap,2026-10-11,src/pages/CalendarPage.tsx:370
+Booking value,Reservationotal,Reservation + Guest total,swap,2026-10-11,src/pages/GuestsPage.tsx:99 src/pages/GuestsPage.tsx:253 src/pages/GuestsPage.tsx:510
+Booking views,Reservation views,Reservation,swap,2026-10-11,src/pages/BookingsPage.tsx:381
+Booking-site payout pending,Reservation-host payout pending,Reservation + Host payout,swap,2026-10-11,src/pages/BookingsPage.tsx:51
+bookings,reservations,Reservation,swap,2026-10-11,src/pages/BookingsPage.tsx:368 src/pages/HostPlatformImportPage.tsx:199 src/pages/HostPlatformImportPage.tsx:210 src/pages/units/BookingsTab.tsx:91
+Bookings,Reservations,Reservation,swap,2026-10-11,src/components/TopBar.tsx:34 src/lib/navigation.ts:34 src/pages/BookingsPage.tsx:333 src/pages/BookingsPage.tsx:416 src/pages/HostPlatformImportPage.tsx:192 src/pages/HostPlatformImportPage.tsx:205 src/pages/HostPlatformImportPage.tsx:345 src/pages/OwnerPortalPage.tsx:202 src/pages/UnitsPage.tsx:59 src/pages/units/BookingsTab.tsx:96
+Bookings are not available to field roles.,Reservations are not available to cleaners and technicians.,Reservation + (say what happens),reword,2026-10-11,functions/api/reservations/[id].ts:75 functions/api/reservations/export.ts:27 functions/api/reservations/index.ts:15
+"Bookings attach to units, and the workbook's money attaches to bookings, so each step needs the one before it. Nothing here is sent to Airbnb, Booking.com or Channex: these bookings already exist on the booking sites.","Reservations attach to units, and the workbook's money attaches to reservations, so each step needs the one before it. Nothing here is sent to Airbnb, Booking.com or Channex: these reservations already exist on the channels.",Reservation + Channel,swap,2026-10-11,src/pages/HostPlatformImportPage.tsx:157
+Bookings could not be read from Channex,Reservations could not be read from Channex,Reservation,swap,2026-10-11,functions/api/system/health/index.ts:19
+Bookings normally arrive by themselves through Channex. Type one in only if it did not.,Reservations normally arrive by themselves through Channex. Type one in only if it did not.,Reservation,swap,2026-10-11,src/pages/BookingsPage.tsx:733
+Cancel {s.externalRef ?? 'this booking}?,Cancel {s.externalRef ?? 'this reservation}?,Reservation,swap,2026-10-11,src/components/booking/BookingDrawer.tsx:743
+Cancel booking,Cancel reservation,Reservation,swap,2026-10-11,functions/_lib/bookingLifecycle.ts:60 src/components/booking/BookingDrawer.tsx:725 src/components/booking/BookingDrawer.tsx:748
+cancelled the booking,cancelled the reservation,Reservation,swap,2026-10-11,src/components/RecordHistory.tsx:26
+"Channex now sends new, changed and cancelled bookings to this site.","Channex now sends new, changed and cancelled reservations to this site.",Reservation,swap,2026-10-11,src/components/ChannexSyncPanel.tsx:48
+Channex refused the booking feed (status {res.status}).,Channex refused the reservation feed (status {res.status}).,Reservation,swap,2026-10-11,functions/_lib/channexBookingSync.ts:28
+Check for bookings,Check for reservations,Reservation,swap,2026-10-11,src/pages/IntegrationsPage.tsx:216
+"Checked against the unit's other bookings before it is saved, then closed on the booking sites the unit is sold on.","Checked against the unit's other reservations before it is saved, then closed on the channels the unit is sold on.",Reservation + Channel,swap,2026-10-11,src/pages/BookingsPage.tsx:719
+Checked against the unit's other bookings before it is saved. The guest is not messaged.,Checked against the unit's other reservations before it is saved. The guest is not messaged.,Reservation,swap,2026-10-11,src/components/booking/BookingDrawer.tsx:323
+"Connected through Channex. Prices and open dates are sent as they change, and bookings arrive automatically.","Connected through Channex. Prices and open dates are sent as they change, and reservations arrive automatically.",Reservation,swap,2026-10-11,src/pages/IntegrationsPage.tsx:86
+Created as a copy of another booking,Created as a copy of another reservation,Reservation,swap,2026-10-11,functions/api/reservations/[id].ts:37
+created this booking,created this reservation,Reservation,swap,2026-10-11,src/components/RecordHistory.tsx:25
+created this booking as a copy,created this reservation as a copy,Reservation,swap,2026-10-11,src/components/RecordHistory.tsx:25
+"Creates the guest's record only. To give them a unit and dates, use Book a stay on their profile.","Creates the guest's record only. To give them a unit and dates, use Book a reservation on their profile.",Reservation,swap,2026-10-11,src/pages/GuestsPage.tsx:760
+Current and next stays,Current and next reservations,Reservation,swap,2026-10-11,src/pages/UnitsPage.tsx:423
+Direct booking,Direct reservation,Reservation,swap,2026-10-11,src/pages/BookingsPage.tsx:722
+"Drag a booking within its own row. To move it to another unit, edit the booking.","Drag a reservation within its own row. To move it to another unit, edit the reservation.",Reservation,swap,2026-10-11,src/pages/CalendarPage.tsx:356
+Each booking's open turnover clean goes to the cleaner.,Each reservation's open cleaning job clean goes to the cleaner.,Reservation + Cleaning job,swap,2026-10-11,src/components/BulkAssignCleaner.tsx:39
+Estimated bookings affected: RM {(b.revenueAtRisk / 100).toLoca}.,Estimated reservations affected: RM {(b.revenueAtRisk / 100).toLoca}.,Reservation,swap,2026-10-11,functions/api/owners/[id]/notify.ts:23
+"Every booking under these filters with the full money breakdown and each payment, as CSV.","Every reservation under these filters with the full money breakdown and each payment, as CSV.",Reservation,swap,2026-10-11,src/pages/BookingsPage.tsx:337
+Every direct booking is paid.,Every direct reservation is paid.,Reservation,swap,2026-10-11,src/pages/BookingsPage.tsx:50
+Every finished booking-site stay is paid out.,Every finished reservation-site stay is paid out.,Reservation,swap,2026-10-11,src/pages/BookingsPage.tsx:51
+Every guest with a stay coming has their registration details.,Every guest with a reservation coming has their registration details.,Reservation,swap,2026-10-11,src/pages/GuestsPage.tsx:79
+Example with sample details. Each real message uses the booking's or owner's own details.,Example with sample details. Each real message uses the reservation's or owner's own details.,Reservation,swap,2026-10-11,src/pages/AutomationsPage.tsx:533
+Filters only hide booking bars. Free and Full always count every booking.,Filters only hide reservation bars. Free and Full always count every reservation.,Reservation,swap,2026-10-11,src/pages/CalendarPage.tsx:459
+"Generate the period to draw every settled booking, fee and documented expense into provisional statements.","Generate the period to draw every settled reservation, fee and documented expense into draft statements.",Reservation + Draft / Final,swap,2026-10-11,src/pages/StatementsPage.tsx:255
+"Good morning Aaron. Yes, bay B2-114 is reserved for your stay. I will send the access card details on arrival.","Good morning Aaron. Yes, bay B2-114 is reserved for your reservation. I will send the access card details on check-in.",Reservation + Check-in / Checkout,swap,2026-10-11,src/pages/InboxPage.tsx:63
+"Guest messages arrive here from Airbnb and Booking.com once units are connected through Channex (Integrations), and from WhatsApp for direct bookings.","Guest messages arrive here from Airbnb and Booking.com once units are connected through Channex (Integrations), and from WhatsApp for direct reservations.",Reservation,swap,2026-10-11,src/pages/InboxPage.tsx:199
+"Guest total less what has been received, for these direct bookings.","Guest total less what has been received, for these direct reservations.",Reservation,swap,2026-10-11,src/pages/BookingsPage.tsx:421
+"Hi {g.fullName.split(' ')[0]}, checking in on your stay…","Hi {g.fullName.split(' ')[0]}, checking in on your reservation…",Reservation,swap,2026-10-11,src/pages/GuestsPage.tsx:719
+"Hi {guest}, your booking at {property} {unit} for {dates} has been cancelled. {refundPosition} Reply here and we will help.","Hi {guest}, your reservation at {building} {unit} for {dates} has been cancelled. {refundPosition} Reply here and we will help.",Reservation + Building,reword,2026-10-11,functions/_lib/automationCatalog.ts:37 src/pages/AutomationsPage.tsx:151
+"Hi {guest}, your booking at {property} {unit} is confirmed for {checkIn}–{checkOut} ({nights}). Total {total}. We are on WhatsApp if you need anything.","Hi {guest}, your reservation at {building} {unit} is confirmed for {checkIn}–{checkOut} ({nights}). Total {total}. We are on WhatsApp if you need anything.",Reservation + Building,reword,2026-10-11,functions/_lib/automationCatalog.ts:21 src/pages/AutomationsPage.tsx:146
+"HostPlatform bookings,","HostPlatform reservations,",Reservation,swap,2026-10-11,src/pages/HostPlatformImportPage.tsx:356
+Invoice {live.doc_no} is already issued for this booking. Void it first to issue a new one.,Invoice {live.doc_no} is already issued for this reservation. Void it first to issue a new one.,Reservation,swap,2026-10-11,functions/_lib/guestDocuments.ts:170
+Issue an invoice or an official receipt from a booking's money section. Each gets the next INV- or OR- number.,Issue an invoice or an official receipt from a reservation's money section. Each gets the next INV- or OR- number.,Reservation,swap,2026-10-11,src/pages/GuestDocumentsPage.tsx:106
+It is a direct booking: it is not on the original booking site.,It is a direct reservation: it is not on the original channel.,Reservation + Channel,swap,2026-10-11,src/components/booking/BookingDrawer.tsx:607
+Keep booking,Keep reservation,Reservation,swap,2026-10-11,src/components/booking/BookingDrawer.tsx:747
+"Last booking in {last.at.slice(0, 10)}","Last reservation in {last.at.slice(0, 10)}",Reservation,swap,2026-10-11,functions/api/system/health/index.ts:104
+Loading bookings,Loading reservations,Reservation,swap,2026-10-11,src/pages/BookingsPage.tsx:329
+Loading the booking…,Loading the reservation…,Reservation,swap,2026-10-11,src/components/booking/BookingDrawer.tsx:547
+Messaging a guest from a booking or a guest record; the Inbox itself stays under Communication.,Messaging a guest from a reservation or a guest record; the Inbox itself stays under Communication.,Reservation,swap,2026-10-11,functions/_lib/access.ts:76
+Move booking,Move reservation,Reservation,swap,2026-10-11,src/pages/CalendarPage.tsx:331
+Move this booking?,Move this reservation?,Reservation,swap,2026-10-11,src/pages/CalendarPage.tsx:328
+"Name, phone, email or booking reference","Name, phone, email or reservation reference",Reservation,swap,2026-10-11,src/pages/GuestsPage.tsx:375 src/pages/GuestsPage.tsx:861
+Names of the cleaning crew for the assign pickers on the dashboard and in bookings.,Names of the cleaning crew for the assign pickers on the dashboard and in reservations.,Reservation,swap,2026-10-11,functions/_lib/access.ts:72
+New booking,New reservation,Reservation,swap,2026-10-11,src/pages/AutomationsPage.tsx:108
+New booking: {b.unit},New reservation: {b.unit},Reservation,swap,2026-10-11,functions/_lib/notices.ts:41
+New bookings from the booking sites will not arrive on their own.,New reservations from the channels will not arrive on their own.,Reservation + Channel,swap,2026-10-11,functions/api/system/health/index.ts:98
+New bookings from the booking sites will not arrive on their own. Turn them on from Integrations.,New reservations from the channels will not arrive on their own. Turn them on from Integrations.,Reservation + Channel,swap,2026-10-11,functions/api/system/health/index.ts:105
+"New stay: {dateRange(checkIn, checkOut)} · {fmtNights(n)}","New reservation: {dateRange(checkIn, checkOut)} · {fmtNights(n)}",Reservation,swap,2026-10-11,src/components/booking/BookingDrawer.tsx:333
+No booking received yet,No reservation received yet,Reservation,swap,2026-10-11,functions/api/system/health/index.ts:104
+No bookings for this unit yet.,No reservations for this unit yet.,Reservation,swap,2026-10-11,src/pages/units/BookingsTab.tsx:19
+No bookings in the files.,No reservations in the files.,Reservation,swap,2026-10-11,src/pages/HostPlatformImportPage.tsx:198
+No bookings in the next two weeks,No reservations in the next two weeks,Reservation,swap,2026-10-11,functions/api/dashboard/exceptions.ts:89
+No bookings yet.,No reservations yet.,Reservation,swap,2026-10-11,src/pages/BookingsPage.tsx:42
+No breakdown recorded for this booking.,No breakdown recorded for this reservation.,Reservation,swap,2026-10-11,src/components/booking/BookingDrawer.tsx:122
+No cancelled bookings for this unit.,No cancelled reservations for this unit.,Reservation,swap,2026-10-11,src/pages/units/BookingsTab.tsx:18
+No cancelled bookings.,No cancelled reservations.,Reservation,swap,2026-10-11,src/pages/BookingsPage.tsx:41
+"No matches for ""{debounced}"". Try the booking reference from Airbnb or Booking.com, a guest name or a phone number.","No matches for ""{debounced}"". Try the reservation reference from Airbnb or Booking.com, a guest name or a phone number.",Reservation,swap,2026-10-11,src/components/TopBar.tsx:175
+No money is recorded on this booking.,No money is recorded on this reservation.,Reservation,swap,2026-10-11,src/components/booking/BookingDrawer.tsx:133
+"No notifications yet. New bookings, cancellations, cleans and repairs that concern you appear here.","No notifications yet. New reservations, cancellations, cleaning jobs and repairs that concern you appear here.",Reservation + Cleaning job,swap,2026-10-11,src/pages/NotificationsPage.tsx:62
+"No notifications yet. New bookings, cleans and repairs that concern you appear here.","No notifications yet. New reservations, cleaning jobs and repairs that concern you appear here.",Reservation + Cleaning job,swap,2026-10-11,src/components/NotificationBell.tsx:162
+No open clean is linked to this booking.,No open clean is linked to this reservation.,Reservation,swap,2026-10-11,functions/api/tasks/bulk-assign.ts:36
+No past bookings for this unit.,No past reservations for this unit.,Reservation,swap,2026-10-11,src/pages/units/BookingsTab.tsx:17
+No stays yet. Cancelled bookings are not listed here.,No stays yet. Cancelled reservations are not listed here.,Reservation,swap,2026-10-11,src/pages/GuestsPage.tsx:527
+No upcoming bookings for this unit.,No upcoming reservations for this unit.,Reservation,swap,2026-10-11,src/pages/units/BookingsTab.tsx:16
+No upcoming bookings.,No upcoming reservations.,Reservation,swap,2026-10-11,src/pages/BookingsPage.tsx:38
+None of the ticked bookings is waiting for a booking-site payout.,None of the ticked reservations is waiting for a reservation-host payout.,Reservation + Host payout,swap,2026-10-11,src/pages/BookingsPage.tsx:598
+Not a booking-site booking.,Not a reservation-site reservation.,Reservation,swap,2026-10-11,functions/api/reservations/mark-paid-out.ts:41
+"Noted, 13:00 works. Enjoy your stay.","Noted, 13:00 works. Enjoy your reservation.",Reservation,swap,2026-10-11,src/pages/InboxPage.tsx:79 src/pages/InboxPage.tsx:82
+Nothing further is due on this booking.,Nothing further is due on this reservation.,Reservation,swap,2026-10-11,functions/_lib/guestDocumentPdf.ts:55
+Nothing to split: no booking is under a nameless placeholder guest.,Nothing to split: no reservation is under a nameless placeholder guest.,Reservation,swap,2026-10-11,functions/_lib/hostplatformImportDb.ts:550
+"One-off clean-up. Bookings that came without a guest name all went under one guest called 'Airbnb guest' (or 'Booking.com guest'), so 23 stays looked like one person's. This gives each of those bookings its own guest, named with the booking's reference ('Airbnb guest HM...'), and removes the empty placeholder. Needs no file; running it again changes nothing.","One-off clean-up. Reservations that came without a guest name all went under one guest called 'Airbnb guest' (or 'Booking.com guest'), so 23 stays looked like one person's. This gives each of those reservations its own guest, named with the reservation's reference ('Airbnb guest HM...'), and removes the empty placeholder. Needs no file; running it again changes nothing.",Reservation,swap,2026-10-11,src/pages/HostPlatformImportPage.tsx:252
+Only the guest record was created. Use Book a stay to give them a unit and dates.,Only the guest record was created. Use Book a reservation to give them a unit and dates.,Reservation,swap,2026-10-11,src/pages/GuestsPage.tsx:320
+Open bookings,Open reservations,Reservation,swap,2026-10-11,src/pages/GuestDocumentsPage.tsx:106
+Overlaps a stay,Overlaps a reservation,Reservation,swap,2026-10-11,src/pages/CleaningPage.tsx:278
+"Owner stay line, not a booking.","Owner stay line, not a reservation.",Reservation,swap,2026-10-11,functions/_lib/hostplatformImport.ts:689
+Payment for booking {b.external_ref ?? ''},Payment for reservation {b.external_ref ?? ''},Reservation,swap,2026-10-11,functions/_lib/guestDocuments.ts:112
+Pick between 1 and 500 bookings.,Pick between 1 and 500 reservations.,Reservation,swap,2026-10-11,functions/api/reservations/mark-paid-out.ts:22
+"Prices, open dates and bookings are not moving until this clears.","Prices, open dates and reservations are not moving until this clears.",Reservation,swap,2026-10-11,functions/api/system/health/index.ts:91
+Pull new bookings from the channels,Pull new reservations from the channels,Reservation,swap,2026-10-11,src/pages/CalendarPage.tsx:397 src/pages/CalendarPage.tsx:403
+Pulling new bookings from the channels,Pulling new reservations from the channels,Reservation,swap,2026-10-11,src/pages/CalendarPage.tsx:403
+Pushed to the connected channel for this night. Confirmed bookings keep their original rate.,Pushed to the connected channel for this night. Confirmed reservations keep their original rate.,Reservation,swap,2026-10-11,src/components/calendar/CalendarModals.tsx:38
+received this booking from the booking site,received this reservation from the channel,Reservation + Channel,swap,2026-10-11,src/components/RecordHistory.tsx:30
+"Records one payout per booking for what it still has outstanding: {plural(rows.length, 'booking')}, {rm(owed)} in all.{left ? ` ${plural(left, 'ticke}","Records one payout per reservation for what it still has outstanding: {plural(rows.length, 'reservation')}, {rm(owed)} in all.{left ? ` ${plural(left, 'ticke}",Reservation,swap,2026-10-11,src/pages/BookingsPage.tsx:582
+Refund RM {(amount / 100).toLocaleString(} to the guest of {r.external_ref ?? 'booking ' +},Refund RM {(amount / 100).toLocaleString(} to the guest of {r.external_ref ?? 'reservation ' +},Reservation,swap,2026-10-11,functions/api/reservations/[id]/payments.ts:46
+Reinstate booking,Reinstate reservation,Reservation,swap,2026-10-11,functions/_lib/bookingLifecycle.ts:97
+Review the rows before importing. Rejected rows are left out. Each booking is closed on the booking sites its unit is sold on.,Review the rows before importing. Rejected rows are left out. Each reservation is closed on the channels its unit is sold on.,Reservation + Channel,swap,2026-10-11,src/pages/BookingsPage.tsx:779
+Rotates after each stay,Rotates after each reservation,Reservation,swap,2026-10-11,src/pages/units/AccessTab.tsx:138 src/pages/units/AccessTab.tsx:171
+"Saved, but not read yet: new bookings use 15:00 and 11:00, and whether a photo is needed is set on each task. Housekeeping rules are on the Housekeeping screen.","Saved, but not read yet: new reservations use 15:00 and 11:00, and whether a photo is needed is set on each task. Cleaning rules are on the Cleaning screen.",Reservation + Cleaning job,swap,2026-10-11,src/pages/SettingsPage.tsx:403
+Say which booking.,Say which reservation.,Reservation,swap,2026-10-11,functions/api/guest-documents/index.ts:62
+Say which clean or booking.,Say which clean or reservation.,Reservation,swap,2026-10-11,functions/api/housekeeping/guest-left.ts:31
+"Search booking ref, guest, unit","Search reservation ref, guest, unit",Reservation,swap,2026-10-11,src/components/TopBar.tsx:130
+Search bookings,Search reservations,Reservation,swap,2026-10-11,src/pages/BookingsPage.tsx:408
+"Search number, guest, booking or unit","Search number, guest, reservation or unit",Reservation,swap,2026-10-11,src/pages/GuestDocumentsPage.tsx:97
+"Search owner, booking, reason or person","Search owner, reservation, reason or person",Reservation,swap,2026-10-11,src/pages/ApprovalsPage.tsx:100
+Set the booking total first: there is nothing to invoice.,Set the reservation total first: there is nothing to invoice.,Reservation,swap,2026-10-11,functions/_lib/guestDocuments.ts:91
+"Short-term rental management for owners, units, bookings and payouts.","Short-term rental management for owners, units, reservations and payouts.",Reservation,swap,2026-10-11,src/pages/LoginPage.tsx:123
+Split nameless booking-site guests,Split nameless reservation-site guests,Reservation,swap,2026-10-11,src/pages/HostPlatformImportPage.tsx:252
+That booking does not exist or was cancelled.,That reservation does not exist or was cancelled.,Reservation,swap,2026-10-11,functions/api/housekeeping/guest-left.ts:29
+That booking does not exist.,That reservation does not exist.,Reservation,swap,2026-10-11,functions/_lib/guestDocuments.ts:72
+That payment is not on this booking.,That payment is not on this reservation.,Reservation,swap,2026-10-11,functions/_lib/guestDocuments.ts:94
+"The Airbnb order data sheet. Replaces HostPlatform's amounts with the payout, fee and gross from Airbnb's earnings report, and adds stays HostPlatform never had. A stay of 28 nights or more that Airbnb pays in monthly instalments is summed over all its lines, and each instalment is listed on the booking (paid, or still to come).","The Airbnb order data sheet. Replaces HostPlatform's amounts with the payout, fee and gross from Airbnb's earnings report, and adds stays HostPlatform never had. A reservation of 28 nights or more that Airbnb pays in monthly instalments is summed over all its lines, and each instalment is listed on the reservation (paid, or still to come).",Reservation,swap,2026-10-11,src/pages/HostPlatformImportPage.tsx:201
+The booking,The reservation,Reservation,swap,2026-10-11,src/pages/CalendarPage.tsx:337
+The booking no longer exists.,The reservation no longer exists.,Reservation,swap,2026-10-11,functions/_lib/approvals.ts:309
+The code changes after each stay,The code changes after each reservation,Reservation,swap,2026-10-11,src/pages/units/AccessTab.tsx:248
+"The dates of a finished, cancelled or no-show booking cannot change.","The dates of a finished, cancelled or no-show reservation cannot change.",Reservation,swap,2026-10-11,functions/api/reservations/[id]/dates.ts:36
+The move is checked against the unit's other bookings. If the unit is linked to Channex the new dates go to the booking sites. The guest is not messaged.,The move is checked against the unit's other reservations. If the unit is linked to Channex the new dates go to the channels. The guest is not messaged.,Reservation + Channel,swap,2026-10-11,src/pages/CalendarPage.tsx:329
+"The times of a finished, cancelled or no-show booking cannot change.","The times of a finished, cancelled or no-show reservation cannot change.",Reservation,swap,2026-10-11,functions/api/reservations/[id]/details.ts:26
+"The unit list feeds every unit picker (calendar, cleaning, maintenance, bookings, expenses).","The unit list feeds every unit picker (calendar, cleaning, maintenance, reservations, expenses).",Reservation,swap,2026-10-11,functions/_lib/access.ts:71
+"The WhatsApp Business keys (WHATSAPP_TOKEN and WHATSAPP_PHONE_ID) are not set, so WhatsApp messages to direct-booking guests wait in the queue. Management adds them once in Cloudflare.","The WhatsApp Business keys (WHATSAPP_TOKEN and WHATSAPP_PHONE_ID) are not set, so WhatsApp messages to direct-reservation guests wait in the queue. Management adds them once in Cloudflare.",Reservation,swap,2026-10-11,functions/api/integrations/index.ts:55
+They have left Booking-site payout pending.,They have left Reservation-host payout pending.,Reservation + Host payout,swap,2026-10-11,src/pages/BookingsPage.tsx:575
+this booking,this reservation,Reservation,swap,2026-10-11,src/components/booking/BookingDrawer.tsx:743
+This booking,This reservation,Reservation,swap,2026-10-11,functions/_lib/bookingMoney.ts:120 functions/_lib/bookingMoney.ts:141
+This booking came from {ch.label}. Change its dates there; the new dates come back here on the next sync.,This reservation came from {ch.label}. Change its dates there; the new dates come back here on the next update.,Reservation + (say what happens),reword,2026-10-11,src/pages/CalendarPage.tsx:650
+This booking changed while you were looking at it. Refresh and try again.,This reservation changed while you were looking at it. Refresh and try again.,Reservation,swap,2026-10-11,functions/_lib/bookingLifecycle.ts:182 functions/api/reservations/[id]/dates.ts:69
+This booking is paid in full. Thank you.,This reservation is paid in full. Thank you.,Reservation,swap,2026-10-11,functions/_lib/guestDocumentPdf.ts:56
+This is a {CHANNEL_LABEL[row.channel]} booking: its dates and price are set on {CHANNEL_LABEL[row.channel]}. Change them there; the change comes back here through Channex.,This is a {CHANNEL_LABEL[row.channel]} reservation: its dates and price are set on {CHANNEL_LABEL[row.channel]}. Change them there; the change comes back here through Channex.,Reservation,swap,2026-10-11,functions/api/reservations/[id].ts:170
+This is a {site} booking: its dates are set on {site}. Change them there; the change comes back here through Channex.,This is a {site} reservation: its dates are set on {site}. Change them there; the change comes back here through Channex.,Reservation,swap,2026-10-11,functions/api/reservations/[id]/dates.ts:41
+This sends the current rates to {names} for every open night in the range. Confirmed bookings keep the rate they were sold at.,This sends the current rates to {names} for every open night in the range. Confirmed reservations keep the rate they were sold at.,Reservation,swap,2026-10-11,src/pages/PricingPage.tsx:239
+"This unit is not for sale on Airbnb, Booking.com or any other channel, so no bookings come in through them. Connect it under Channels on the Overview tab.","This unit is not for sale on Airbnb, Booking.com or any other channel, so no reservations come in through them. Connect it under Channels on the Overview tab.",Reservation,swap,2026-10-11,src/pages/UnitsPage.tsx:385
+"Tick the stays the booking site has paid out, then mark them received.","Tick the reservations the channel has paid out, then mark them received.",Reservation + Channel,swap,2026-10-11,src/pages/BookingsPage.tsx:422
+ticked booking,ticked reservation,Reservation,swap,2026-10-11,src/pages/BookingsPage.tsx:582
+Turn on booking notifications,Turn on reservation notifications,Reservation,swap,2026-10-11,src/components/ChannexSyncPanel.tsx:76
+Unit income (bookings),Unit income (reservations),Reservation,swap,2026-10-11,functions/api/units/detail.ts:147 src/pages/units/ContractTab.tsx:270
+When a booking is cancelled,When a reservation is cancelled,Reservation,swap,2026-10-11,src/pages/AutomationsPage.tsx:53
+When a booking is confirmed,When a reservation is confirmed,Reservation,swap,2026-10-11,src/pages/AutomationsPage.tsx:52
+When a booking-site connection fails,When a reservation-site connection fails,Reservation,swap,2026-10-11,src/pages/AutomationsPage.tsx:70
+Which bookings,Which reservations,Reservation,swap,2026-10-11,src/pages/units/BookingsTab.tsx:99
+Your stay at {property} {unit} starts {checkIn}. Check-in from {checkInTime}. Address: {address}. Parking: {parkingNote}.,Your reservation at {building} {unit} starts {checkIn}. Check-in from {checkInTime}. Address: {address}. Parking: {parkingNote}.,Reservation + Building,reword,2026-10-11,functions/_lib/automationCatalog.ts:54 src/pages/AutomationsPage.tsx:158
+{COMMISSION[ch]}% commission,{SERVICE FEE[ch]}% service fee,Service fee,swap,2026-10-11,src/components/calendar/CalendarModals.tsx:383
+Channel fee,Service fee,Service fee,swap,2026-10-11,src/lib/revenueModel.ts:47 src/lib/status.ts:162 src/pages/ExpensesPage.tsx:40
+Channel fees,Service fee,Service fee,swap,2026-10-11,functions/api/owner/statements/[id]/index.ts:7 functions/api/owner/summary.ts:8 functions/api/owners/[id]/pnl.ts:8
+Commission,Service fee,Service fee,swap,2026-10-11,functions/_lib/bookingMoney.ts:141 src/pages/BookingsPage.tsx:306 src/pages/BookingsPage.tsx:419
+Commission (RM),Service fee (RM),Service fee,swap,2026-10-11,functions/api/reservations/export.ts:63
+Site fee,Service fee,Service fee,swap,2026-10-11,src/components/RecordHistory.tsx:62
+Default management fee,Default operator share,To Operator (Operator share),reword,2026-10-11,src/components/RecordHistory.tsx:64 src/pages/SettingsPage.tsx:390
+Default management fee %,Default operator share %,To Operator (Operator share),reword,2026-10-11,src/pages/OwnerProfilePage.tsx:316
+Management fee,Operator share,To Operator (Operator share),reword,2026-10-11,functions/api/owner/statements/[id]/index.ts:93 functions/api/owner/summary.ts:8 functions/api/owner/summary.ts:57 functions/api/owners/[id]/pnl.ts:8 functions/api/units/detail.ts:154 src/components/RecordHistory.tsx:62 src/components/RecordHistory.tsx:64 src/lib/revenueModel.ts:47 src/lib/status.ts:161 src/pages/ContractsPage.tsx:189 src/pages/ContractsPage.tsx:250 src/pages/ExpensesPage.tsx:39
+Management fee · {feePct}%,Operator share · {feePct}%,To Operator (Operator share),reword,2026-10-11,functions/api/owners/[id]/pnl.ts:99
+Management fee · 25%,Operator share · 25%,To Operator (Operator share),reword,2026-10-11,src/pages/OwnerPortalPage.tsx:79 src/pages/OwnerPortalPage.tsx:131
+Management fee (% of revenue),Operator share (% of earnings),To Operator (Operator share) + Earnings,reword,2026-10-11,src/pages/ContractsPage.tsx:383 src/pages/owners/shared.tsx:221
+Management fee {fmtPct(100 - (m.ownerPct ?? 0)} of the rent,Operator share {fmtPct(100 - (m.ownerPct ?? 0)} of the rent,To Operator (Operator share),reword,2026-10-11,functions/api/units/detail.ts:133
+Management fee {fmtPct(100 - (terms.ownerPct ?} of the rent,Operator share {fmtPct(100 - (terms.ownerPct ?} of the rent,To Operator (Operator share),reword,2026-10-11,functions/_lib/ownerStatement.ts:284
+Management fee {operatorPct ?? 0}%,Operator share {operatorPct ?? 0}%,To Operator (Operator share),reword,2026-10-11,src/pages/OwnerProfilePage.tsx:284
+Management fee {pctText(100 - (x.ownerPct ?? 1}% of the rent,Operator share {pctText(100 - (x.ownerPct ?? 1}% of the rent,To Operator (Operator share),reword,2026-10-11,src/pages/units/ContractTab.tsx:283
+Management fee %,Operator share %,To Operator (Operator share),reword,2026-10-11,src/pages/ContractsPage.tsx:190 src/pages/ContractsPage.tsx:385 src/pages/owners/shared.tsx:223 src/pages/owners/shared.tsx:237
+Management fee % of the rent,Operator share % of the rent,To Operator (Operator share),reword,2026-10-11,src/pages/units/ContractTab.tsx:216
+Management fees,Operator share,To Operator (Operator share),reword,2026-10-11,src/pages/AnalyticsPage.tsx:297 src/pages/DashboardPage.tsx:447
+Management fees and net owner payout come from owner statements generated for these months; a month with no statements adds nothing to them yet.,Operator share and Net Payout to Owner come from owner statements generated for these months; a month with no statements adds nothing to them yet.,To Operator (Operator share) + Net Payout to Owner,reword,2026-10-11,src/pages/AnalyticsPage.tsx:301
+Management share,Operator share,To Operator (Operator share),swap,2026-10-11,functions/_lib/revenueModel.ts:11 src/lib/revenueModel.ts:8
+Owner default management fee,Owner default operator share,To Operator (Operator share),reword,2026-10-11,src/pages/OwnerProfilePage.tsx:312
+"Provide a default management fee, or null to clear it.","Provide a default operator share, or null to clear it.",To Operator (Operator share),reword,2026-10-11,functions/api/owners/[id].ts:16
+The owner gets the tenant's rent less the management fee and owner-paid costs.,The owner gets the tenant's rent less the operator share and owner-paid costs.,To Operator (Operator share),reword,2026-10-11,src/lib/revenueModel.ts:17
+{(m.channelFee / base * 100).to}% of the room and fees,{(m.channelFee / base * 100).to}% of the unit and fees,Unit,reword,2026-10-11,functions/_lib/bookingMoney.ts:127
+A room or floor let separately inside this unit.,A unit or floor let separately inside this unit.,Unit,reword,2026-10-11,src/pages/UnitsPage.tsx:206
+A room or floor under the unit — fill in its details below.,A unit or floor under the unit — fill in its details below.,Unit,reword,2026-10-11,src/pages/UnitsPage.tsx:185
+Find rooms,Find units,Unit,reword,2026-10-11,src/components/ChannexChannelsCard.tsx:165
+Find the rooms and pick one,Find the units and pick one,Unit,reword,2026-10-11,src/components/ChannexChannelsCard.tsx:188
+HostPlatform recorded room charges of {ringgit(m.roomRevenue)}; the guest total less the fees listed leaves {ringgit(room)}.,HostPlatform recorded unit charges of {ringgit(m.roomRevenue)}; the guest total less the fees listed leaves {ringgit(unit)}.,Unit,reword,2026-10-11,functions/_lib/bookingMoney.ts:116
+returned no rooms for this Hotel ID.,returned no units for this Hotel ID.,Unit,reword,2026-10-11,src/components/ChannexChannelsCard.tsx:168
+Room / floor,Unit / floor,Unit,reword,2026-10-11,src/pages/units/UnitTree.tsx:195
+Room as recorded (RM),Unit as recorded (RM),Unit,reword,2026-10-11,functions/api/reservations/export.ts:62
+Room charges,Unit charges,Unit,reword,2026-10-11,functions/_lib/bookingMoney.ts:121
+Room rate (on Airbnb bookings HostPlatform records the payout here),Unit rate (on Airbnb reservations HostPlatform records the payout here),Unit + Reservation,reword,2026-10-11,functions/_lib/bookingMoney.ts:121
+"What the guest paid for the stay: room, fees and the taxes we collect. Tax a booking site keeps is not included.","What the guest paid for the stay: unit, fees and the taxes we collect. Tax a channel keeps is not included.",Unit + Channel,reword,2026-10-11,src/pages/BookingsPage.tsx:302

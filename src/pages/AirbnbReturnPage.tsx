@@ -23,7 +23,7 @@ export default function AirbnbReturnPage() {
         <div className="p-6 max-w-[640px]">
           {ok && channelId && unitId
             ? <AirbnbListingPicker unitId={unitId} channelId={channelId}
-                onDone={() => { toast({ tone: 'success', title: 'Airbnb connected.', body: 'Prices and open dates now sync to Airbnb, and its existing bookings are being brought in.' }); backToUnit(); }}
+                onDone={() => { toast({ tone: 'success', title: 'Airbnb connected.', body: 'Prices and available dates now go to Airbnb, and its existing reservations are being brought in.' }); backToUnit(); }}
                 onCancel={backToUnit} />
             : (
               <div className="flex flex-col gap-3 text-[13.5px]">

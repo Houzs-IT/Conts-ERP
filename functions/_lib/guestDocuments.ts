@@ -69,7 +69,7 @@ async function loadBooking(env: Env, id: string): Promise<{ b: Booking; payments
            r.payout_amount, r.payout_date, r.payment_method, r.notes
     FROM reservations r JOIN units u ON u.id = r.unit_id JOIN properties p ON p.id = u.property_id LEFT JOIN guests g ON g.id = r.guest_id
     WHERE r.id = ?`, id);
-  if (!b) throw new DocRefused('NOT_FOUND', 'That booking does not exist.', 404);
+  if (!b) throw new DocRefused('NOT_FOUND', 'That reservation does not exist.', 404);
   const payments = (await all<any>(env, `SELECT * FROM booking_payments WHERE reservation_id = ? ORDER BY COALESCE(received_on, '9999'), created_at, id`, id)).map(toPayment);
   return { b, payments };
 }
@@ -83,16 +83,16 @@ const guestPaid = (ps: PaymentRow[]) => ps.filter(p => p.status === 'received' &
 /** Why this booking cannot have the document, or null. Shared with the drawer so its buttons say the same thing. */
 export function invoiceRefusal(b: Pick<Booking, 'channel' | 'state' | 'gross_booking_value'>, payments: PaymentRow[]): string | null {
   if (b.channel === 'maintenance_block' || b.channel === 'owner_stay') return 'Blocks and owner stays have no guest to invoice.';
-  if (b.state === 'cancelled' || b.state === 'no_show') return 'A cancelled or no-show booking is not invoiced.';
+  if (b.state === 'cancelled' || b.state === 'no_show') return 'A cancelled or no-show reservation is not invoiced.';
   if (OTA_CHANNELS.includes(b.channel)) {
     return payments.some(p => p.kind === 'guest_payment' && p.status === 'received') ? null
       : `${CHANNEL_LABEL[b.channel]} invoices its guests itself. An invoice here is only for money the guest paid us directly.`;
   }
-  return Number(b.gross_booking_value) > 0 ? null : 'Set the booking total first: there is nothing to invoice.';
+  return Number(b.gross_booking_value) > 0 ? null : 'Set the guest total first: there is nothing to invoice.';
 }
 export function receiptRefusal(p: PaymentRow | undefined): string | null {
-  if (!p) return 'That payment is not on this booking.';
-  if (p.kind !== 'guest_payment') return p.kind === 'refund' ? 'A refund is money going back; it gets no receipt.' : 'A booking site payout is not money from the guest; it gets no receipt.';
+  if (!p) return 'That payment is not on this reservation.';
+  if (p.kind !== 'guest_payment') return p.kind === 'refund' ? 'A refund is money going back; it gets no receipt.' : 'A host payout is not money from the guest; it gets no receipt.';
   if (p.status !== 'received') return 'Only money already received gets a receipt.';
   return null;
 }
@@ -109,7 +109,7 @@ function snapshotFor(t: DocType, no: string, now: string, who: Session, company:
   const paid = guestPaid(payments);
   let lines: Snapshot['lines'], total: number;
   if (t === 'receipt') {
-    lines = [{ label: `Payment for booking ${b.external_ref ?? ''}`.trim(), sub: payment?.note ?? undefined, amount: payment!.amount }];
+    lines = [{ label: `Payment for reservation ${b.external_ref ?? ''}`.trim(), sub: payment?.note ?? undefined, amount: payment!.amount }];
     total = payment!.amount;
   } else if (ota) {
     lines = direct.map(p => ({ label: p.note || 'Charges paid to us directly', sub: p.receivedOn ? `Paid ${p.receivedOn}` : undefined, amount: p.amount }));
@@ -167,7 +167,7 @@ export async function issue(env: Env, session: Session, x: { type: DocType; rese
         const why = invoiceRefusal(b, payments);
         if (why) throw new DocRefused('NOT_INVOICEABLE', why, 422);
         const live = await one<{ doc_no: string }>(tx, `SELECT doc_no FROM issued_documents WHERE reservation_id = ? AND doc_type = 'invoice' AND voided_at IS NULL`, b.id);
-        if (live) throw new DocRefused('ALREADY_ISSUED', `Invoice ${live.doc_no} is already issued for this booking. Void it first to issue a new one.`);
+        if (live) throw new DocRefused('ALREADY_ISSUED', `Invoice ${live.doc_no} is already issued for this reservation. Void it first to issue a new one.`);
       } else {
         payment = payments.find(p => p.id === x.paymentId);
         const why = receiptRefusal(payment);
@@ -189,7 +189,7 @@ export async function issue(env: Env, session: Session, x: { type: DocType; rese
   } catch (e: any) {
     // Two people pressing Issue at the same moment: the second hits the one-live-document index and its number is rolled back.
     if (e?.code === '23505' && /live_(invoice|receipt)/.test(String(e?.constraint_name ?? e?.message))) {
-      throw new DocRefused('ALREADY_ISSUED', x.type === 'invoice' ? 'An invoice was just issued for this booking by someone else.' : 'A receipt was just issued for this payment by someone else.');
+      throw new DocRefused('ALREADY_ISSUED', x.type === 'invoice' ? 'An invoice was just issued for this reservation by someone else.' : 'A receipt was just issued for this payment by someone else.');
     }
     throw e;
   }

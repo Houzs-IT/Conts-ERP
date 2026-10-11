@@ -36,9 +36,9 @@ type Category =
 
 const CAT_LABEL: Record<Category, string> = {
   internet: 'Internet', electricity: 'Electricity', water: 'Water', cleaning: 'Cleaning',
-  housekeeping: 'Housekeeping', maintenance: 'Maintenance', utilities: 'Utilities',
-  consumables: 'Consumables', furniture: 'Furniture', management_fee: 'Management fee',
-  channel_fee: 'Channel fee', other: 'Other',
+  housekeeping: 'Cleaning', maintenance: 'Maintenance', utilities: 'Utilities',
+  consumables: 'Consumables', furniture: 'Furniture', management_fee: 'Operator share',
+  channel_fee: 'Service fee', other: 'Other',
 };
 const CAT_TONE: Record<Category, Tone> = {
   internet: 'info', electricity: 'warning', water: 'info', cleaning: 'info',

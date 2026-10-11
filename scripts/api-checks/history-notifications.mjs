@@ -79,7 +79,7 @@ r = await call('management', 'POST', '/api/reservations', { unitId: unit.id, che
 check('booking created', r.status === 201, r.text);
 const bookingId = r.json?.id;
 let n = (await notices('opsMgr', 'booking.created')).find(x => x.entityId === bookingId);
-check('new booking: operations manager notified', !!n && n.link === `/reservations/bookings?open=${bookingId}` && /New booking/.test(n.title), JSON.stringify(n));
+check('new booking: operations manager notified', !!n && n.link === `/reservations/bookings?open=${bookingId}` && /New reservation/.test(n.title), JSON.stringify(n));
 check('new booking: operations staff notified', (await notices('ops', 'booking.created')).some(x => x.entityId === bookingId));
 check('new booking: housekeeper not told', !(await notices('hk', 'booking.created')).some(x => x.entityId === bookingId));
 check('new booking: whoever made it is not told', !(await notices('management', 'booking.created')).some(x => x.entityId === bookingId));

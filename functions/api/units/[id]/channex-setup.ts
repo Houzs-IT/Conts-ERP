@@ -56,7 +56,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
     const sent = await flushChannexQueue(env, { fullSync: true });
     ariOk = (sent.availability?.status ?? 0) < 300 && (sent.availability?.status ?? 0) >= 200 && (sent.restrictions?.status ?? 0) >= 200 && (sent.restrictions?.status ?? 0) < 300;
   } catch (e) {
-    await audit(env, { actorId: null, actorLabel: 'Channex sync', action: 'channex.initial_push_failed', entityTable: 'units', entityId: id, after: { error: e instanceof Error ? e.message : String(e) } }).catch(() => {});
+    await audit(env, { actorId: null, actorLabel: 'Channex', action: 'channex.initial_push_failed', entityTable: 'units', entityId: id, after: { error: e instanceof Error ? e.message : String(e) } }).catch(() => {});
   }
 
   return json({ propertyId, roomTypeId, ratePlanId, availabilitySent: ariOk }, 201);

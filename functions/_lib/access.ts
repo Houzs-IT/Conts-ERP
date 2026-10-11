@@ -29,7 +29,7 @@ export const AREAS: Area[] = [
   { key: 'portfolio', label: 'Portfolio', group: 'Workspace', api: ['portfolio'], managed: true, strictRead: true, defaults: OPS_NONE },
   { key: 'reservations', label: 'Reservations', group: 'Operations', api: ['reservations', 'guests', 'blocks', 'guest-documents'] },
   { key: 'operations', label: 'Operations', group: 'Operations', api: ['operations', 'housekeeping', 'maintenance', 'tasks'], defaults: { finance_admin: 'none' } },
-  { key: 'properties', label: 'Properties', group: 'Operations', api: ['properties', 'units', 'inventory', 'access-credentials', 'residence-rules'] },
+  { key: 'properties', label: 'Units', group: 'Operations', api: ['properties', 'units', 'inventory', 'access-credentials', 'residence-rules'] },
   { key: 'serviceCases', label: 'Service cases', group: 'Operations', api: [] },
   { key: 'projects', label: 'Projects', group: 'Operations', api: [], defaults: { operations_staff: 'view' } },
   { key: 'scSales', label: 'Sales order', group: 'Supply chain', api: ['sales-orders', 'so-amendments', 'delivery-orders', 'sales-returns', 'customers'] },
@@ -69,12 +69,12 @@ export function builtIn(role: string, area: Area): Level {
  * its levels (a picker's reference list); the handler's own checks still apply.
  */
 export const ROUTE_AREAS: { method: string; path: RegExp; area: string | null; why: string }[] = [
-  { method: 'GET', path: /^\/api\/units$/, area: null, why: 'The unit list feeds every unit picker (calendar, cleaning, maintenance, bookings, expenses).' },
-  { method: 'GET', path: /^\/api\/housekeeping\/(cleaners|crew)$/, area: null, why: 'Names of the cleaning crew for the assign pickers on the dashboard and in bookings.' },
-  { method: 'GET', path: /^\/api\/integrations$/, area: 'reservations', why: 'The calendar shows which booking sites each unit is connected to.' },
-  { method: 'POST', path: /^\/api\/integrations\/sync$/, area: 'reservations', why: 'The calendar\'s Sync now button.' },
+  { method: 'GET', path: /^\/api\/units$/, area: null, why: 'The unit list feeds every unit picker (calendar, cleaning, maintenance, reservations, expenses).' },
+  { method: 'GET', path: /^\/api\/housekeeping\/(cleaners|crew)$/, area: null, why: 'Names of the cleaners for the assign pickers on the dashboard and in reservations.' },
+  { method: 'GET', path: /^\/api\/integrations$/, area: 'reservations', why: 'The calendar shows which channels each unit is connected to.' },
+  { method: 'POST', path: /^\/api\/integrations\/sync$/, area: 'reservations', why: 'The calendar\'s button that gets new reservations from the channels.' },
   { method: 'POST', path: /^\/api\/owners\/[^/]+\/notify$/, area: 'dashboard', why: 'The dashboard\'s exception action that tells an owner about a problem with their unit.' },
-  { method: 'POST', path: /^\/api\/messages$/, area: 'reservations', why: 'Messaging a guest from a booking or a guest record; the Inbox itself stays under Communication.' },
+  { method: 'POST', path: /^\/api\/messages$/, area: 'reservations', why: 'Messaging a guest from a reservation or a guest record; Messages itself stays under Communication.' },
   { method: 'POST', path: /^\/api\/maintenance\/issues\/[^/]+\/approve$/, area: 'finance', why: 'Recording an owner\'s approval of a repair quote is a money decision.' },
   { method: 'GET', path: /^\/api\/audit$/, area: null, why: 'The History panel on every record: the handler applies the area of the record asked for; the whole trail stays management and finance only.' },
   { method: 'GET', path: /^\/api\/(warehouses|suppliers|drivers|vehicles|threepl-companies)$/, area: null, why: 'Supply chain reference lists that every supply chain screen picks from.' },

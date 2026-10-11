@@ -81,13 +81,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const source = b.reportSource ?? (field ? 'cleaner' : 'staff');
   if (!SOURCES.includes(source)) return fail('VALIDATION', 'Say who reported it.', 422, { reportSource: 'Guest, cleaner, inspection or staff.' });
   if (b.assigneeKind != null && !ASSIGNEE_KINDS.includes(b.assigneeKind)) return fail('VALIDATION', 'In-house or contractor.', 422, { assigneeKind: 'In-house or contractor.' });
-  if (field && b.quotedAmount != null) return fail('FORBIDDEN', 'Field roles cannot set amounts.', 403);
+  if (field && b.quotedAmount != null) return fail('FORBIDDEN', 'Cleaners and technicians cannot set amounts.', 403);
   if (b.quotedAmount != null && (!Number.isInteger(b.quotedAmount) || b.quotedAmount < 0)) return fail('VALIDATION', 'The amount must be a whole number of sen.', 422);
 
   let sourceTaskId: string | null = null;
   if (typeof b.sourceTaskId === 'string' && b.sourceTaskId) {
     const t = await one<{ id: string; unit_id: string; assignee_id: string | null }>(env, 'SELECT id, unit_id, assignee_id FROM tasks WHERE id = ?', b.sourceTaskId);
-    if (!t || t.unit_id !== unit.id) return fail('VALIDATION', 'That clean is not on this unit.', 422);
+    if (!t || t.unit_id !== unit.id) return fail('VALIDATION', 'That cleaning job is not on this unit.', 422);
     if (field && t.assignee_id !== session.userId) return fail('FORBIDDEN', 'That job is assigned to someone else.', 403);
     sourceTaskId = t.id;
   }

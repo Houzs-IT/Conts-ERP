@@ -12,7 +12,7 @@ import { bookingNotice } from '../../_lib/notices';
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Bookings are not available to field roles.', 403);
+  if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Reservations are not available to cleaners and technicians.', 403);
 
   const q = parseListQuery(new URL(request.url));
   const schema = await moneySchema(env);
@@ -57,18 +57,18 @@ const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Field roles cannot create reservations.', 403);
+  if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Cleaners and technicians cannot create reservations.', 403);
 
   const b = await request.json<any>().catch(() => null);
   if (!b?.unitId || !b.checkIn || !b.checkOut) return fail('VALIDATION', 'Unit and dates are required.', 422);
   const fields: Fields = {};
   checkDate(fields, 'checkIn', b.checkIn, { label: 'Check-in', required: true });
-  checkDate(fields, 'checkOut', b.checkOut, { label: 'Check-out', required: true });
+  checkDate(fields, 'checkOut', b.checkOut, { label: 'Checkout', required: true });
   checkInt(fields, 'guestsCount', b.guestsCount, { label: 'Guests', min: 1 });
   checkSen(fields, 'grossBookingValue', b.grossBookingValue, { label: 'Guest total' });
   checkPhone(fields, 'guest.phone', b.guest?.phone, { label: 'Phone' });
   const bad = invalid(fields); if (bad) return bad;
-  if (b.checkOut <= b.checkIn) return fail('VALIDATION', 'Check-out must be after check-in.', 422, { checkOut: 'Check-out must be after check-in.' });
+  if (b.checkOut <= b.checkIn) return fail('VALIDATION', 'Checkout must be after check-in.', 422, { checkOut: 'Checkout must be after check-in.' });
   const channel = b.channel ?? 'direct';
   if (!CHANNELS.includes(channel)) return fail('VALIDATION', 'Unknown channel.', 422, { channel: 'Pick a channel.' });
   if (!(await one(env, 'SELECT 1 AS x FROM units WHERE id = ?', b.unitId))) return fail('NOT_FOUND', 'That unit does not exist.', 404);

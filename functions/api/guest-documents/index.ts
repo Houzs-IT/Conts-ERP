@@ -59,7 +59,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!MONEY_ROLES.includes(session.role)) return fail('FORBIDDEN', 'Only management, finance and operations managers issue guest documents.', 403);
   const b = await request.json<{ type?: string; reservationId?: string; paymentId?: string }>().catch(() => null);
   if (b?.type !== 'invoice' && b?.type !== 'receipt') return fail('VALIDATION', 'Choose an invoice or a receipt.', 422);
-  if (!b.reservationId) return fail('VALIDATION', 'Say which booking.', 422);
+  if (!b.reservationId) return fail('VALIDATION', 'Say which reservation.', 422);
   if (b.type === 'receipt' && !b.paymentId) return fail('VALIDATION', 'Choose the payment the receipt is for.', 422);
   try {
     return json(await issue(env, session, { type: b.type as DocType, reservationId: String(b.reservationId), paymentId: b.paymentId ? String(b.paymentId) : null }), 201);

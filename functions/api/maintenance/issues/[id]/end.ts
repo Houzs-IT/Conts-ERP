@@ -7,7 +7,7 @@ import { requireSession, isFieldRole } from '../../../../_lib/auth';
 export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Field roles cannot end jobs from here.', 403);
+  if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Cleaners and technicians cannot end jobs from here.', 403);
 
   const id = String(params.id);
   const cur = await one<any>(env, 'SELECT id, state, started_at, ended_at FROM maintenance_issues WHERE id = ?', id);

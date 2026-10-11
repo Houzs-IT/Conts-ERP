@@ -12,10 +12,10 @@ import { processChannexMessagesAndReviews } from '../../_lib/channexMessageSync'
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!mayWork(session, ['management', 'operations_manager', 'operations_staff'])) return fail('FORBIDDEN', 'You cannot start a channel sync.', 403);
+  if (!mayWork(session, ['management', 'operations_manager', 'operations_staff'])) return fail('FORBIDDEN', 'You cannot check the channels for new reservations.', 403);
 
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'integration.sync_requested', entityTable: 'integrations', entityId: 'all' });
-  if (!channexConfigured(env)) return fail('NOT_CONNECTED', 'Channel syncing is not connected yet. Bookings from Airbnb, Booking.com and Agoda are entered or imported by hand for now.', 501);
+  if (!channexConfigured(env)) return fail('NOT_CONNECTED', 'Channels are not connected yet. Reservations from Airbnb, Booking.com and Agoda are entered or imported by hand for now.', 501);
 
   const bookings = await processChannexBookingFeed(env);
   const rest = await processChannexMessagesAndReviews(env);

@@ -164,14 +164,15 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
   const guestLeft = (body: { taskId?: string; reservationId?: string }, unit: string) =>
     act(`left-${body.taskId ?? body.reservationId}`, () => api.post('/housekeeping/guest-left', body), { title: `${unit}: guest out.`, body: 'Ready to clean.' });
   const plan = (d: Departure) =>
-    act(`plan-${d.reservationId}`, () => api.post('/housekeeping/plan', { reservationIds: [d.reservationId] }), { title: `Clean planned for ${d.unitNumber}.` });
+    act(`plan-${d.reservationId}`, () => api.post('/housekeeping/plan', { reservationIds: [d.reservationId] }), { title: `Cleaning job planned for ${d.unitNumber}.` });
   const planAll = () =>
-    act('plan-all', () => api.post('/housekeeping/plan', { reservationIds: visibleDepartures.map(d => d.reservationId) }), { title: `${visibleDepartures.length} cleans planned.` });
+    act('plan-all', () => api.post('/housekeeping/plan', { reservationIds: visibleDepartures.map(d => d.reservationId) }), { title: `${visibleDepartures.length} cleaning jobs planned.` });
   const autoAssign = () =>
-    act('auto', async () => { const r = await api.post<{ assigned: number }>('/housekeeping/auto-assign', {}); if (!r.assigned) throw new ApiFailure(409, 'NONE', 'Every clean from today on already has a cleaner.'); }, { title: 'Cleans assigned.', body: 'Unassigned cleans from today on now have a cleaner.' });
+    act('auto', async () => { const r = await api.post<{ assigned: number }>('/housekeeping/auto-assign', {}); if (!r.assigned) throw new ApiFailure(409, 'NONE', 'Every cleaning job from today on already has a cleaner.'); }, { title: 'Cleaning jobs assigned.', body: 'Unassigned cleaning jobs from today on now have a cleaner.' });
 
   const subtitle = data
-    ? `${dayLabel(date)} · ${total} ${total === 1 ? 'clean' : 'cleans'} · ${done} done · ${ready} ready to clean${unassigned ? ` · ${unassigned} unassigned` : ''}${departures.length ? ` · ${departures.length} departures with no clean` : ''}`
+    // vocab-ok: departures is the API field name; the words on screen say checkouts
+    ? `${dayLabel(date)} · ${total} ${total === 1 ? 'cleaning job' : 'cleaning jobs'} · ${done} done · ${ready} ready to clean${unassigned ? ` · ${unassigned} unassigned` : ''}${departures.length ? ` · ${departures.length} checkouts with no cleaning job` : ''}`
     : dayLabel(date);
 
   const list = (
@@ -181,9 +182,9 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
         <div className="flex flex-col gap-3.5">{[0, 1].map(i => <div key={i} className="bg-card rounded-card border border-solid border-line p-4 flex flex-col gap-3"><Skeleton width="40%" height={16} /><Skeleton height={44} /><Skeleton height={44} /></div>)}</div>
       ) : groups.length === 0 ? (
         <EmptyState icon="Sparkles" kind={building || cleaner ? 'filtered' : 'empty'}
-          title={building || cleaner ? 'No cleans match these filters.' : `No cleans on ${dayLabel(date)}.`}
-          body={building || cleaner ? undefined : 'Cleans appear when guests check out. Add one by hand for a deep clean or a refresh.'}
-          action={building || cleaner ? { label: 'Clear filters', onClick: () => { setBuilding(''); setCleaner(''); } } : { label: 'New clean', onClick: () => setCreating(true) }} />
+          title={building || cleaner ? 'No cleaning jobs match these filters.' : `No cleaning jobs on ${dayLabel(date)}.`}
+          body={building || cleaner ? undefined : 'Cleaning jobs appear when guests check out. Add one by hand for a deep clean or a refresh.'}
+          action={building || cleaner ? { label: 'Clear filters', onClick: () => { setBuilding(''); setCleaner(''); } } : { label: 'Add cleaning job', onClick: () => setCreating(true) }} />
       ) : groups.map(g => (
         <BuildingCard key={g.id} group={g} now={now} future={date > mytDay(0)} selected={selected} busy={busy}
           onSelect={id => setSelected(id)} onGuestLeft={guestLeft} onPlan={plan}
@@ -200,7 +201,7 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
           <Button size="sm" variant="secondary" icon={<Icon name="Users" size="sm" />} onClick={() => navigate('/operations/cleaners')}>Cleaners</Button>
           <Button size="sm" variant="secondary" icon={<Icon name="Shuffle" size="sm" />} loading={busy === 'auto'} onClick={() => void autoAssign()}>Auto-assign</Button>
         </>}
-        primary={<Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setCreating(true)}>New clean</Button>} />
+        primary={<Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setCreating(true)}>Add cleaning job</Button>} />
 
       <div className="flex items-end gap-2 flex-wrap">
         <Segmented label="Day" value={pick} onChange={setPick}
@@ -210,7 +211,7 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
         <Select label="Building" value={building} onChange={setBuilding} options={buildingOptions} placeholder="All buildings" className="flex-1 min-w-[140px] md:flex-none md:w-[180px]" />
         {visibleDepartures.length > 0 && (
           <Button size="sm" variant="brand" loading={busy === 'plan-all'} onClick={() => void planAll()} className="ml-auto">
-            Plan cleans for {visibleDepartures.length} {visibleDepartures.length === 1 ? 'departure' : 'departures'}
+            Plan cleaning for {visibleDepartures.length} {visibleDepartures.length === 1 ? 'checkout' : 'checkouts'}
           </Button>
         )}
       </div>
@@ -222,7 +223,7 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
       {creating && <NewCleanModal date={date} onClose={() => setCreating(false)} onDone={() => { setCreating(false); reload(); }} />}
       {assignFor && (
         <AssignBuildingModal building={assignFor} date={date} onClose={() => setAssignFor(null)}
-          onDone={(n, who) => { setAssignFor(null); toast({ tone: 'success', title: `${n} ${n === 1 ? 'clean' : 'cleans'} in ${assignFor.name} given to ${who}.` }); reload(); }} />
+          onDone={(n, who) => { setAssignFor(null); toast({ tone: 'success', title: `${n} ${n === 1 ? 'cleaning job' : 'cleaning jobs'} in ${assignFor.name} given to ${who}.` }); reload(); }} />
       )}
     </div>
   );
@@ -256,20 +257,20 @@ function BuildingCard({ group, now, future, selected, busy, onSelect, onGuestLef
         </div>
       </header>
       <div className={cx('hidden text-meta font-semibold text-muted-ink px-5 py-2 [border-top:1px_solid_var(--color-line-soft)]', COLS)}>
-        <div>Unit</div><div>Check-out (leaving)</div><div>Check-in (arriving)</div><div>Time left</div><div>Type</div><div>Cleaner</div><div>Status</div>
+        <div>Unit</div><div>Checkout (leaving)</div><div>Check-in (arriving)</div><div>Time left</div><div>Type</div><div>Cleaner</div><div>Status</div>
       </div>
       {group.rows.map(r => <CleanRow key={r.id} r={r} now={now} active={r.id === selected} busy={busy === `left-${r.id}`} onSelect={() => onSelect(r.id)} onGuestLeft={() => onGuestLeft({ taskId: r.id }, r.unitNumber)} />)}
       {group.departures.map(d => (
         <div key={d.reservationId} className={cx('px-4 @2xl:px-5 py-3 [border-top:1px_solid_var(--color-line-soft)] text-copy flex flex-col gap-1.5', COLS)}>
-          <div className="flex items-center gap-2"><b>{d.unitNumber}</b><span className="@2xl:hidden"><StatusBadge tone="critical">No clean planned</StatusBadge></span></div>
-          <div><b className="[font-variant-numeric:tabular-nums]">{d.checkOutTime}</b> · {d.guestName}{d.lateCheckOut && <StatusBadge tone="warning" className="ml-1">Late check-out</StatusBadge>}{d.state === 'checked_out' && <StatusBadge tone="gold" className="ml-1">Out</StatusBadge>}</div>
-          <div>{d.next ? <><b className="[font-variant-numeric:tabular-nums]">{d.next.checkInTime}</b> · {d.next.guestName}</> : <span className="text-muted-ink">No arrival</span>}</div>
+          <div className="flex items-center gap-2"><b>{d.unitNumber}</b><span className="@2xl:hidden"><StatusBadge tone="critical">No cleaning job planned</StatusBadge></span></div>
+          <div><b className="[font-variant-numeric:tabular-nums]">{d.checkOutTime}</b> · {d.guestName}{d.lateCheckOut && <StatusBadge tone="warning" className="ml-1">Late checkout</StatusBadge>}{d.state === 'checked_out' && <StatusBadge tone="gold" className="ml-1">Out</StatusBadge>}</div>
+          <div>{d.next ? <><b className="[font-variant-numeric:tabular-nums]">{d.next.checkInTime}</b> · {d.next.guestName}</> : <span className="text-muted-ink">No check-in</span>}</div>
           <div><span className="@2xl:hidden text-muted-ink">Time left </span><TimeLeft at={d.next?.checkInAt} now={now} /></div>
           <div className="hidden @2xl:block text-muted-ink">—</div>
           <div className="hidden @2xl:block text-muted-ink">—</div>
           <div className="flex items-center gap-1.5 flex-wrap">
-            <span className="hidden @2xl:inline"><StatusBadge tone="critical">No clean</StatusBadge></span>
-            <Button size="sm" variant="primary" loading={busy === `plan-${d.reservationId}`} onClick={() => onPlan(d)}>Plan clean</Button>
+            <span className="hidden @2xl:inline"><StatusBadge tone="critical">No cleaning job</StatusBadge></span>
+            <Button size="sm" variant="primary" loading={busy === `plan-${d.reservationId}`} onClick={() => onPlan(d)}>Plan cleaning</Button>
             {d.state !== 'checked_out' && !future && <Button size="sm" variant="secondary" loading={busy === `left-${d.reservationId}`} onClick={() => onGuestLeft({ reservationId: d.reservationId }, d.unitNumber)}>Guest left</Button>}
           </div>
         </div>
@@ -280,7 +281,7 @@ function BuildingCard({ group, now, future, selected, busy, onSelect, onGuestLef
             <div key={w.id} className="flex items-center gap-2 text-meta flex-wrap">
               <Icon name="Wrench" size="sm" color="var(--color-gold-ink)" />
               <span><b>{w.unitNumber}</b> repair window {hm(w.startsAt)}–{hm(w.endsAt)}: {w.title}{w.assigneeName ? ` (${w.assigneeName})` : ''}</span>
-              {w.overlaps.length > 0 && <StatusBadge tone="critical">Overlaps a stay</StatusBadge>}
+              {w.overlaps.length > 0 && <StatusBadge tone="critical">Overlaps a reservation</StatusBadge>}
             </div>
           ))}
         </div>
@@ -305,12 +306,12 @@ function CleanRow({ r, now, active, busy, onSelect, onGuestLeft }: { r: Row; now
       <div className="min-w-0">
         <span className="@2xl:hidden text-muted-ink">Out </span>
         {r.previous ? <><b className="[font-variant-numeric:tabular-nums]">{r.previous.checkOutTime}</b> · {r.previous.guestName}</> : <span className="text-muted-ink">No departing guest</span>}
-        {r.previous?.lateCheckOut && <StatusBadge tone="warning" className="ml-1">Late check-out</StatusBadge>}
+        {r.previous?.lateCheckOut && <StatusBadge tone="warning" className="ml-1">Late checkout</StatusBadge>}
         {r.guestOut && r.guestLeftAt && <div className="text-meta text-gold-ink">Left at {hm(r.guestLeftAt)}</div>}
       </div>
       <div className="min-w-0">
         <span className="@2xl:hidden text-muted-ink">In </span>
-        {r.next ? <><b className="[font-variant-numeric:tabular-nums]">{r.next.checkInTime}</b> · {r.next.guestName}</> : <span className="text-muted-ink">No arrival</span>}
+        {r.next ? <><b className="[font-variant-numeric:tabular-nums]">{r.next.checkInTime}</b> · {r.next.guestName}</> : <span className="text-muted-ink">No check-in</span>}
         {r.next?.earlyCheckIn && <StatusBadge tone="warning" className="ml-1">Early check-in</StatusBadge>}
       </div>
       <div><span className="@2xl:hidden text-muted-ink">Time left </span><TimeLeft at={r.next?.checkInAt} now={now} done={r.status === 'done'} /></div>
@@ -379,7 +380,7 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft }: { row: Row; 
         <div className="rounded-control bg-muted p-2.5 flex flex-col gap-0.5">
           <span className="text-meta text-muted-ink">Leaving</span>
           {row.previous ? <><span><b>{row.previous.checkOutTime}</b> {row.previous.guestName}</span>
-            {row.previous.lateCheckOut && <span className="text-meta text-warning">Late check-out</span>}
+            {row.previous.lateCheckOut && <span className="text-meta text-warning">Late checkout</span>}
             {row.guestOut ? <span className="text-meta text-gold-ink font-medium">Guest out{row.guestLeftAt ? ` at ${hm(row.guestLeftAt)}` : ''}</span>
               : !done && row.day <= mytDay(0) && <Button size="sm" variant="secondary" className="mt-1 self-start" onClick={onGuestLeft}>Guest left</Button>}</>
             : <span className="text-muted-ink">No departing guest</span>}
@@ -389,7 +390,7 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft }: { row: Row; 
           {row.next ? <><span><b>{row.next.checkInTime}</b> {row.next.guestName}{row.next.guests ? ` · ${row.next.guests} ${row.next.guests === 1 ? 'guest' : 'guests'}` : ''}</span>
             {row.next.earlyCheckIn && <span className="text-meta text-warning">Early check-in</span>}
             <span className="text-meta">Time left <TimeLeft at={row.next.checkInAt} now={now} done={done} /></span></>
-            : <span className="text-muted-ink">No arrival</span>}
+            : <span className="text-muted-ink">No check-in</span>}
         </div>
       </div>
 
@@ -438,7 +439,7 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft }: { row: Row; 
             </select>
           </FormRow>
           <FormRow label="Type">
-            <select className={INPUT} value={picked.kind ?? row.kind} disabled={busy === 'kind'} onChange={e => { const v = e.target.value; setPicked(p => ({ ...p, kind: v })); void act('kind', () => api.patch(`/housekeeping/tasks/${row.id}`, { kind: v, title: v === 'deep_clean' ? 'Deep clean' : row.title }), 'Clean type changed.').then(ok => { if (!ok) setPicked(p => ({ ...p, kind: undefined })); }); }}>
+            <select className={INPUT} value={picked.kind ?? row.kind} disabled={busy === 'kind'} onChange={e => { const v = e.target.value; setPicked(p => ({ ...p, kind: v })); void act('kind', () => api.patch(`/housekeeping/tasks/${row.id}`, { kind: v, title: v === 'deep_clean' ? 'Deep clean' : row.title }), 'Cleaning type changed.').then(ok => { if (!ok) setPicked(p => ({ ...p, kind: undefined })); }); }}>
               <option value="turnover">Standard</option><option value="deep_clean">Deep</option><option value="light_clean">Light</option>
             </select>
           </FormRow>
@@ -450,13 +451,13 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft }: { row: Row; 
       {!done && (
         <div className="flex gap-2">
           {row.state !== 'in_progress' && (
-            <Button variant="secondary" className="flex-1" loading={busy === 'start'} onClick={() => void act('start', () => api.post(`/housekeeping/tasks/${row.id}/start`, {}), 'Clean started.')}>Start</Button>
+            <Button variant="secondary" className="flex-1" loading={busy === 'start'} onClick={() => void act('start', () => api.post(`/housekeeping/tasks/${row.id}/start`, {}), 'Cleaning job started.')}>Start</Button>
           )}
           <Button variant="primary" className="flex-1" loading={busy === 'complete'} disabled={files === 0} disabledReason="Add at least one photo or video first."
             onClick={() => void act('complete', async () => {
               const r = await api.post<{ cost: { amount: number; created: boolean; reason: string | null } | null }>(`/tasks/${row.id}/complete`, { photoIds: [] });
               if (r.cost && !r.cost.created && r.cost.reason && r.cost.reason !== 'already charged') toast({ tone: 'info', title: 'Cost not added.', body: `Not charged to the unit: ${r.cost.reason}.` });
-            }, 'Clean complete.', `${unitLabel} is ready.`)}>
+            }, 'Cleaning job complete.', `${unitLabel} is ready.`)}>
             Mark complete
           </Button>
         </div>
@@ -495,13 +496,13 @@ function NewCleanModal({ date, onClose, onDone }: { date: string; onClose: () =>
     if (!unitId) { setError('Pick a unit.'); return; }
     setBusy(true); setError(null);
     try {
-      await api.post('/housekeeping/tasks', { unitId, date: day, kind, cleanerId: cleanerId || undefined, instructions: notes.trim() || undefined, title: kind === 'deep_clean' ? 'Deep clean' : kind === 'light_clean' ? 'Light clean' : 'Turnover clean' });
+      await api.post('/housekeeping/tasks', { unitId, date: day, kind, cleanerId: cleanerId || undefined, instructions: notes.trim() || undefined, title: kind === 'deep_clean' ? 'Deep clean' : kind === 'light_clean' ? 'Light clean' : 'Standard clean' });
       onDone();
     } catch (e) { setError(errorMessage(e, 'Not saved. Try again.')); setBusy(false); }
   }
   return (
-    <OpsModal title="New clean" sub="For a deep clean, a refresh, or a turnover the bookings did not create." onClose={onClose} busy={busy}
-      footer={<><Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" variant="primary" loading={busy} onClick={() => void save()}>Add clean</Button></>}>
+    <OpsModal title="Add cleaning job" sub="For a deep clean, a refresh, or a cleaning job no reservation created." onClose={onClose} busy={busy}
+      footer={<><Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" variant="primary" loading={busy} onClick={() => void save()}>Add cleaning job</Button></>}>
       <FormRow label="Unit" error={error}>
         <SearchSelect label="Unit" value={unitId} onChange={setUnitId} options={unitOptions} placeholder="Search units" size="md" />
       </FormRow>
@@ -539,7 +540,7 @@ function AssignBuildingModal({ building, date, onClose, onDone }: { building: { 
     } catch (e) { setError(errorMessage(e, 'Not saved. Try again.')); setBusy(false); }
   }
   return (
-    <OpsModal title={`Assign ${building.name}`} sub={`Every unfinished clean in this building on ${dayLabel(date)} goes to one cleaner.`} onClose={onClose} busy={busy}
+    <OpsModal title={`Assign ${building.name}`} sub={`Every unfinished cleaning job in this building on ${dayLabel(date)} goes to one cleaner.`} onClose={onClose} busy={busy}
       footer={<><Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" variant="primary" loading={busy} onClick={() => void save()}>Assign</Button></>}>
       <FormRow label="Cleaner" error={error}>
         <select className={INPUT} value={cleanerId} onChange={e => setCleanerId(e.target.value)}>
@@ -549,7 +550,7 @@ function AssignBuildingModal({ building, date, onClose, onDone }: { building: { 
       </FormRow>
       <label className="flex items-center gap-2 text-copy cursor-pointer">
         <input type="checkbox" checked={onlyUnassigned} onChange={e => setOnlyUnassigned(e.target.checked)} className="w-4 h-4 accent-black" />
-        Only cleans with no cleaner yet
+        Only cleaning jobs with no cleaner yet
       </label>
     </OpsModal>
   );
@@ -566,7 +567,7 @@ interface HistoryPayload { total: number; page: number; pageSize: number; data: 
 /** URL parameters the History list owns; dropped when going back to the board. */
 const HISTORY_PARAMS = ['q', 'cleaner', 'from', 'to', 'state', 'sort', 'page', 'size'];
 const SHOW: { value: string; label: string }[] = [
-  { value: '', label: 'Finished' }, { value: 'active', label: 'Not finished' }, { value: 'all', label: 'All cleans' },
+  { value: '', label: 'Finished' }, { value: 'active', label: 'Not finished' }, { value: 'all', label: 'All cleaning jobs' },
 ];
 const TASK_STATE: Record<string, { label: string; tone: Tone }> = {
   open: { label: 'Open', tone: 'neutral' }, assigned: { label: 'Assigned', tone: 'info' }, in_progress: { label: 'Cleaning', tone: 'info' },
@@ -634,7 +635,7 @@ function HistoryView({ onTab }: { onTab: (t: Tab) => void }) {
     const failed = [...res.failed, ...left];
     toast({
       tone: res.ok === 0 ? 'critical' : failed.length ? 'warning' : 'success',
-      title: res.ok ? `${plural(res.ok, 'clean')} ${move === 'start' ? 'started' : 'marked done'}.` : move === 'start' ? 'No cleans started.' : 'No cleans marked done.',
+      title: res.ok ? `${plural(res.ok, 'cleaning job')} ${move === 'start' ? 'started' : 'marked done'}.` : move === 'start' ? 'No cleaning jobs started.' : 'No cleaning jobs marked done.',
       body: skippedNote(failed) || undefined,
     });
     clear(); setConfirmDone(null); reload();
@@ -649,24 +650,24 @@ function HistoryView({ onTab }: { onTab: (t: Tab) => void }) {
     { key: 'state', label: 'Status', type: 'status', value: r => r.state, status: r => TASK_STATE[r.state] ?? { label: r.state, tone: 'neutral' }, sortKey: 'state', width: 120, hidden: !show },
     { key: 'finished', label: 'Finished', type: 'datetime', value: r => r.completedAt, sortKey: 'finished', width: 150,
       render: r => (r.completedAt ? <span className="text-muted-ink whitespace-nowrap">{stamp(r.completedAt)}</span> : <span className="text-muted-ink">—</span>) },
-    { key: 'proof', label: 'Proof', type: 'number', value: r => r.photoCount, width: 80, title: 'Photos and videos on the clean.' },
+    { key: 'proof', label: 'Proof', type: 'number', value: r => r.photoCount, width: 80, title: 'Photos and videos on the cleaning job.' },
   ], [show]);
 
   const filtered = !!(urlQ || cleaner || params.get('from') || params.get('to'));
   const clearAll = () => { setDraft(''); update(p => ['q', 'cleaner', 'from', 'to'].forEach(k => p.delete(k))); };
-  const showLabel = show === 'active' ? 'unfinished cleans' : show === 'all' ? 'cleans' : 'finished cleans';
+  const showLabel = show === 'active' ? 'unfinished cleaning jobs' : show === 'all' ? 'cleaning jobs' : 'finished cleaning jobs';
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader title="Cleaning" sub={data ? `${count(data.total)} ${data.total === 1 ? showLabel.replace(/s$/, '') : showLabel} from ${dayLabel(from)} to ${dayLabel(to)}` : 'Finished cleans'}
+      <PageHeader title="Cleaning" sub={data ? `${count(data.total)} ${data.total === 1 ? showLabel.replace(/s$/, '') : showLabel} from ${dayLabel(from)} to ${dayLabel(to)}` : 'Finished cleaning jobs'}
         actions={<TabSwitch tab="history" onTab={onTab} />} />
       <DataTable<HistoryRow>
         id="cleaning.history" columns={columns} rows={data ? data.data : null} rowKey={r => r.id}
         loading={loading} error={error} onRetry={reload}
         server={{ total: data?.total ?? 0, page: data?.page ?? 1, pageSize: data?.pageSize ?? 50, sizes: [25, 50, 100], defaultPageSize: 50, fetchAll }}
         viewParams={['state', 'cleaner', 'q']} filtered={filtered} onClearFilters={clearAll}
-        noun={['clean', 'cleans']} exportName="cleaning-history" selectionKey={`${show}|${from}|${to}`}
-        empty={{ title: show === 'active' ? 'No unfinished cleans in these dates.' : 'No cleans in these dates.', icon: 'Sparkles' }}
+        noun={['cleaning job', 'cleaning jobs']} exportName="cleaning-history" selectionKey={`${show}|${from}|${to}`}
+        empty={{ title: show === 'active' ? 'No unfinished cleaning jobs in these dates.' : 'No cleaning jobs in these dates.', icon: 'Sparkles' }}
         selectable={canBulk}
         bulkActions={(picked, clear) => <>
           <Button size="sm" variant="secondary" icon={<Icon name="UserPlus" size="sm" />} onClick={() => setBulkAssign({ ids: picked.map(r => r.id), clear })}>Assign cleaner</Button>
@@ -690,8 +691,8 @@ function HistoryView({ onTab }: { onTab: (t: Tab) => void }) {
       {bulkAssign && <BulkAssignCleaner taskIds={bulkAssign.ids} onClose={() => setBulkAssign(null)}
         onDone={() => { bulkAssign.clear(); setBulkAssign(null); reload(); }} />}
       {confirmDone && (
-        <OpsModal title={`Mark ${plural(confirmDone.rows.length, 'clean')} done?`} onClose={() => setConfirmDone(null)} busy={bulkBusy === 'done'}
-          sub="Each unit turns Ready and its clean is charged to the unit. A clean with no photo or video is refused and named afterwards."
+        <OpsModal title={`Mark ${plural(confirmDone.rows.length, 'cleaning job')} done?`} onClose={() => setConfirmDone(null)} busy={bulkBusy === 'done'}
+          sub="Each unit turns Ready and its cleaning job is charged to the unit. A cleaning job with no photo or video is refused and named afterwards."
           footer={<>
             <Button size="sm" variant="secondary" onClick={() => setConfirmDone(null)} disabled={bulkBusy === 'done'}>Cancel</Button>
             <Button size="sm" variant="primary" loading={bulkBusy === 'done'} onClick={() => void bulkMove(confirmDone.rows, 'done', confirmDone.clear)}>Mark done</Button>

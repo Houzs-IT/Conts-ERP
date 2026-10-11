@@ -15,7 +15,7 @@ const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 export const onRequestGet: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Guest contact details are not available to field roles.', 403);
+  if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Guest contact details are not available to cleaners and technicians.', 403);
   const contact = mayWork(session, CONTACT_ROLES);
   const cols = await hasGuestColumns(env);
 

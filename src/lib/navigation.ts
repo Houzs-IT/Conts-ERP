@@ -31,9 +31,9 @@ export const NAV: NavGroup[] = [
   ] },
   { label: 'RESERVATIONS', workspace: 'rental', items: [
     { key: 'calendar', label: 'Calendar', icon: 'calendar-days', path: '/reservations/calendar', area: 'reservations' },
-    { key: 'bookings', label: 'Bookings', icon: 'book-open', path: '/reservations/bookings', area: 'reservations' },
+    { key: 'bookings', label: 'Reservations', icon: 'book-open', path: '/reservations/bookings', area: 'reservations' },
     { key: 'guests', label: 'Guests', icon: 'users', path: '/reservations/guests', area: 'reservations' },
-    { key: 'inbox', label: 'Inbox', icon: 'inbox', path: '/communication/inbox', area: 'comms', badge: 'inbox' },
+    { key: 'inbox', label: 'Messages', icon: 'inbox', path: '/communication/inbox', area: 'comms', badge: 'inbox' },
   ] },
   // Three screens (owner, 10 Oct): Inspections is gone and "All tasks" is the History tab of Cleaning and
   // Maintenance; the old addresses redirect (App.tsx). Housekeeping is called Cleaning everywhere.
@@ -42,7 +42,7 @@ export const NAV: NavGroup[] = [
     { key: 'cleaning', label: 'Cleaning', icon: 'sparkles', path: '/operations/cleaning', area: 'operations' },
     { key: 'maintenance', label: 'Maintenance', icon: 'wrench', path: '/operations/maintenance', area: 'operations', badge: 'maintenance' },
   ] },
-  { label: 'PROPERTIES', workspace: 'rental', items: [
+  { label: 'UNITS', workspace: 'rental', items: [
     // Buildings, the unit record and access codes are one Units screen (owner, 8 Oct).
     { key: 'units', label: 'Units', icon: 'building-2', path: '/properties/units', area: 'properties' },
     { key: 'ownerList', label: 'Owners', icon: 'user-round', path: '/owners', area: 'owners' },
@@ -51,7 +51,7 @@ export const NAV: NavGroup[] = [
   ] },
   { label: 'MONEY', workspace: 'rental', items: [
     { key: 'statements', label: 'Owner statements', icon: 'receipt', path: '/finance/statements', area: 'finance', badge: 'statements' },
-    { key: 'payouts', label: 'Payouts', icon: 'banknote', path: '/finance/payouts', area: 'finance' },
+    { key: 'payouts', label: 'Owner payouts', icon: 'banknote', path: '/finance/payouts', area: 'finance' },
     { key: 'expenses', label: 'Expenses', icon: 'wallet', path: '/finance/expenses', area: 'finance' },
     { key: 'approvals', label: 'Approvals', icon: 'stamp', path: '/finance/approvals', area: 'finance', badge: 'approvals' },
     { key: 'guestDocuments', label: 'Guest documents', icon: 'file-text', path: '/finance/documents', area: 'finance' },
@@ -101,7 +101,7 @@ export const NAV: NavGroup[] = [
       { key: 'purchaseConsignmentReturn', label: 'Purchase consignment return', path: '/consignment/purchase-return' },
     ] },
     { key: 'scProcurement', label: 'Procurement', icon: 'package', area: 'scProcurement', children: [
-      { key: 'procurement', label: 'Products & Maintenance', path: '/procurement/products' },
+      { key: 'procurement', label: 'Products', path: '/procurement/products' },
       { key: 'suppliers', label: 'Suppliers', path: '/procurement/suppliers' },
       { key: 'mrp', label: 'MRP · Stock Status', path: '/procurement/mrp' },
       { key: 'purchaseOrders', label: 'Purchase orders', path: '/procurement/purchase-orders' },
@@ -123,7 +123,7 @@ export const NAV: NavGroup[] = [
       { key: 'warehouses', label: 'Warehouses', path: '/procurement/warehouses' },
       { key: 'racksBins', label: 'Racks & bins', path: '/procurement/racks' },
       { key: 'stock', label: 'Stock', path: '/procurement/stock' },
-      { key: 'adjustments', label: 'Adjustments', path: '/procurement/adjustments' },
+      { key: 'adjustments', label: 'Stock adjustments', path: '/procurement/adjustments' },
       { key: 'stockTransfers', label: 'Transfers', path: '/procurement/stock-transfers' },
       { key: 'stockTakes', label: 'Stock take', path: '/procurement/stock-takes' },
     ] },

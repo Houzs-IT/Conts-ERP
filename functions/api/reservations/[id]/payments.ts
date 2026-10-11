@@ -41,7 +41,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
     const got = await one<{ received: number }>(env, `SELECT ${m.received} AS received FROM reservations r ${m.join} WHERE r.id = ?`, id);
     const held = Math.max(Number(got?.received ?? 0), 0);
     if (Math.round(Number(b.amount)) > held) {
-      const msg = held > 0 ? `A refund can be at most what was received: RM ${(held / 100).toLocaleString('en-MY', { minimumFractionDigits: 2 })}.` : 'Nothing has been received on this booking, so there is nothing to refund.';
+      const msg = held > 0 ? `A refund can be at most what was received: RM ${(held / 100).toLocaleString('en-MY', { minimumFractionDigits: 2 })}.` : 'Nothing has been received on this reservation, so there is nothing to refund.';
       return fail('VALIDATION', msg, 422, { amount: msg });
     }
     // With approvals on, money going back to a guest waits for a second person (functions/_lib/approvals.ts), and the
@@ -52,7 +52,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
     const amount = Math.round(Number(b.amount));
     return submit(env, session, {
       kind: 'guest_refund', entity: 'reservations', entityId: id, amount, reason,
-      summary: `Refund RM ${(amount / 100).toLocaleString('en-MY', { minimumFractionDigits: 2 })} to the guest of ${r.external_ref ?? 'booking ' + id}`,
+      summary: `Refund RM ${(amount / 100).toLocaleString('en-MY', { minimumFractionDigits: 2 })} to the guest of ${r.external_ref ?? 'reservation ' + id}`,
       payload: { reservationId: id, amount, receivedOn: b.receivedOn, method: clean(b.method, 60), reference: clean(b.reference, 120), note: clean(b.note, 500) },
     }, res => json({ id: res.paymentId, kind: 'refund', amount }, 201));
   }

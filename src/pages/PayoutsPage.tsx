@@ -208,10 +208,10 @@ export default function PayoutsPage() {
   return (
     <>
       <PageHeader
-        title="Payouts"
+        title="Owner payouts"
         sub={sum ? `${moneyString(sum.due, 'exact')} not yet paid · ${plural(sum.counts.pending, 'payout')} waiting for a run · ${sum.counts.failed} failed` : ' '}
         primary={<Button size="sm" variant="primary" icon={<Icon name="PlayCircle" size="sm" />} onClick={() => setRunOpen(true)}
-          disabled={!sum || sum.counts.pending === 0} disabledReason="No payouts are waiting. Payouts appear here when statements are sent.">Start payout run</Button>}
+          disabled={!sum || sum.counts.pending === 0} disabledReason="No owner payouts are waiting. They appear here when owner statements are sent.">Start payout run</Button>}
       />
 
       <StatRow cols={3}>
@@ -246,7 +246,7 @@ export default function PayoutsPage() {
         server={{ total, page: data?.page ?? page, pageSize: data?.pageSize ?? size, sizes: SIZES, defaultPageSize: PAGE_SIZE, fetchAll }}
         viewParams={['state', 'period', 'q']} filtered={filtered} onClearFilters={() => url.set({ state: null, period: null, q: null, page: null })}
         noun={['payout', 'payouts']} exportName="payouts"
-        empty={{ icon: 'Banknote', title: 'No payouts yet', body: 'A payout is created for each owner statement when it is sent. Send statements from Owner statements, then start a payout run here.' }}
+        empty={{ icon: 'Banknote', title: 'No owner payouts yet', body: 'An owner payout is created for each owner statement when it is sent. Send statements from Owner statements, then start a payout run here.' }}
         selectable={canAct ? (r => r.state === 'processing') : false}
         bulkActions={canAct ? ((picked, clear) => (
           <Button size="sm" variant="primary" icon={<Icon name="CheckCircle2" size="sm" />} onClick={() => setBulkPaid({ rows: picked, clear })}>Mark paid</Button>

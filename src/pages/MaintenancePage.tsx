@@ -106,7 +106,7 @@ export default function MaintenancePage() {
 
   const sub = data
     ? `${open.length} open · ${urgent} urgent · ${approval.length} awaiting owner approval${money ? ` · this month ${rm(monthCost, { cents: false })}` : ''}`
-    : 'Repairs on every unit';
+    : 'Maintenance jobs on every unit';
 
   async function saveThreshold(sen: number) {
     try { await api.put('/settings', { operations: { maintenanceApprovalThreshold: sen } }); toast({ tone: 'success', title: `Owner approval needed above ${rm(sen)}.` }); setThreshold(false); reload(); }
@@ -130,8 +130,8 @@ export default function MaintenancePage() {
         above={tab === 'history' && rows.length > 0 && money ? (
           <div className="text-copy text-muted-ink py-2 px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line-soft)]">{rows.length} {rows.length === 1 ? 'job' : 'jobs'} · {rm(historySpend)} spent{q ? ` matching "${q}"` : ''}</div>
         ) : undefined}
-        empty={{ title: tab === 'approval' ? 'Nothing is waiting for an owner.' : tab === 'done' ? 'No job finished in the last 30 days.' : tab === 'history' ? 'No jobs yet.' : 'No open repairs.',
-          action: tab === 'open' ? { label: 'New job', onClick: () => setCreating(true) } : undefined }} />
+        empty={{ title: tab === 'approval' ? 'Nothing is waiting for an owner.' : tab === 'done' ? 'No job finished in the last 30 days.' : tab === 'history' ? 'No jobs yet.' : 'No open maintenance jobs.',
+          action: tab === 'open' ? { label: 'Add maintenance job', onClick: () => setCreating(true) } : undefined }} />
     </>
   );
 
@@ -144,7 +144,7 @@ export default function MaintenancePage() {
           </Button>}
           <Button size="sm" variant={tab === 'catalog' ? 'primary' : 'secondary'} icon={<Icon name="Package" size="sm" />} onClick={() => setTab(tab === 'catalog' ? 'open' : 'catalog')}>Parts catalog</Button>
         </>}
-        primary={<Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setCreating(true)}>New job</Button>} />
+        primary={<Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setCreating(true)}>Add maintenance job</Button>} />
 
       {tab === 'catalog' ? (
         <CatalogPanel skus={sku.data?.data ?? []} loading={sku.loading} canWrite={['management', 'operations_manager', 'operations_staff'].includes(user!.role)} onCreate={createSku} onUpdate={updateSku} />
@@ -158,7 +158,7 @@ export default function MaintenancePage() {
               { value: 'history', label: 'History' },
             ]} />
             <div className="flex gap-2 flex-wrap md:ml-auto max-md:w-full">
-              {tab === 'history' && <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search unit or issue" aria-label="Search" className={cx(INPUT, 'h-9 w-[200px] max-md:w-full')} />}
+              {tab === 'history' && <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search unit or problem" aria-label="Search" className={cx(INPUT, 'h-9 w-[200px] max-md:w-full')} />}
               <Select label="Category" value={category} onChange={setCategory} options={Object.entries(CATEGORY).map(([value, label]) => ({ value, label }))} placeholder="All categories" className="w-[150px] max-md:flex-1" />
               <Select label="Building" value={building} onChange={setBuilding} options={buildingOptions} placeholder="All buildings" className="w-[170px] max-md:flex-1" />
             </div>
@@ -217,7 +217,7 @@ function IssueTable({ tab, rows, loading, error, onRetry, selected, onSelect, mo
   const columns = useMemo<Column<Issue>[]>(() => [
     { key: 'unit', label: 'Unit', value: i => i.unitNumber, text: i => `${i.unitNumber} ${i.propertyName}`, sub: i => i.propertyName, hideable: false, width: 120,
       render: i => <b className="text-ink">{i.unitNumber}</b> },
-    { key: 'issue', label: 'Issue', value: i => i.title, width: 280,
+    { key: 'issue', label: 'Problem', value: i => i.title, width: 280,
       sub: i => <>From {SOURCE[i.source] ?? i.source}{i.reporter ? ` (${i.reporter})` : ''} · {stamp(i.reportedAt)}{i.windows.length > 0 && ` · window ${stamp(i.windows[0].startsAt)}`}{i.blocksUnit && ' · unit blocked'}</>,
       render: i => <span className="block whitespace-normal text-ink">{i.title}</span> },
     { key: 'category', label: 'Category', value: i => i.category, text: i => CATEGORY[i.category] ?? i.category, width: 120, filter: false },
@@ -418,7 +418,7 @@ function IssueDetail({ issue: i, threshold, money, skus, onClose, onChanged }: {
                 {!done && <button type="button" aria-label="Remove window" className="text-muted-ink cursor-pointer hover:text-danger" onClick={() => void act(`w-${w.id}`, () => api.del(`/maintenance/issues/${i.id}/windows/${w.id}`), 'Window removed.')}><Icon name="Trash2" size="sm" /></button>}
               </div>
               {w.note && <span className="text-muted-ink">{w.note}</span>}
-              {w.overlaps.map(o => <span key={o.reservationId} className="text-meta text-danger">Overlaps the stay of {o.guestName} ({dateShort(o.checkIn)} {o.checkInTime} to {dateShort(o.checkOut)} {o.checkOutTime}). Make sure the guest agreed.</span>)}
+              {w.overlaps.map(o => <span key={o.reservationId} className="text-meta text-danger">Overlaps the reservation of {o.guestName} ({dateShort(o.checkIn)} {o.checkInTime} to {dateShort(o.checkOut)} {o.checkOutTime}). Make sure the guest agreed.</span>)}
             </div>
           ))}
       </section>
@@ -469,8 +469,8 @@ function IssueDetail({ issue: i, threshold, money, skus, onClose, onChanged }: {
 
       <HistoryDisclosure entity="maintenance_issues" id={i.id} refreshKey={i} />
 
-      {windowOpen && <WindowModal issue={i} onClose={() => setWindowOpen(false)} onDone={(n) => { setWindowOpen(false); toast({ tone: n ? 'warning' : 'success', title: 'Repair window added.', body: n ? `It overlaps ${n} ${n === 1 ? 'stay' : 'stays'}. Make sure the guest agreed.` : 'No guest is in the unit then.' }); refresh(); }} />}
-      {blockOpen && <BlockModal issue={i} onClose={() => setBlockOpen(false)} onDone={() => { setBlockOpen(false); toast({ tone: 'success', title: 'Unit blocked.', body: 'The dates are off sale on the calendar until the repair is done.' }); refresh(); }} />}
+      {windowOpen && <WindowModal issue={i} onClose={() => setWindowOpen(false)} onDone={(n) => { setWindowOpen(false); toast({ tone: n ? 'warning' : 'success', title: 'Repair window added.', body: n ? `It overlaps ${n} ${n === 1 ? 'reservation' : 'reservations'}. Make sure the guest agreed.` : 'No guest is in the unit then.' }); refresh(); }} />}
+      {blockOpen && <BlockModal issue={i} onClose={() => setBlockOpen(false)} onDone={() => { setBlockOpen(false); toast({ tone: 'success', title: 'Unit blocked.', body: 'The nights are blocked on the calendar until the repair is done.' }); refresh(); }} />}
       {completeOpen && <CompleteModal issue={i} onClose={() => setCompleteOpen(false)} onDone={() => { setCompleteOpen(false); toast({ tone: 'success', title: 'Job done.', body: 'The cost is on the unit as an expense.' }); refresh(); }} />}
       {exchange && <ExchangeModal jobLabel={`${i.propertyName} ${i.unitNumber} · ${i.title}`} skus={skus.filter(s => s.active)} onClose={() => setExchange(false)}
         onExchange={(s, qty) => { setExchange(false); void act('exchange', () => api.post(`/maintenance/issues/${i.id}/exchange`, { skuId: s.id, qty }), 'Drawn from stock.', `${qty} x ${s.name}.`); }} />}
@@ -509,7 +509,7 @@ function NewJobModal({ onClose, onDone, money, threshold }: { onClose: () => voi
     }
   }
   return (
-    <OpsModal title="New job" sub="A repair on one unit." onClose={onClose} busy={busy} width={540} footer={footer(onClose, busy, 'Open job', () => void save())}>
+    <OpsModal title="Add maintenance job" sub="A repair on one unit." onClose={onClose} busy={busy} width={540} footer={footer(onClose, busy, 'Open job', () => void save())}>
       <FormRow label="Unit" error={error.unitId}><SearchSelect label="Unit" value={f.unitId} onChange={v => { setF(x => ({ ...x, unitId: v })); setError(x => ({ ...x, unitId: undefined })); }} options={units.map(u => ({ value: u.id, label: u.unitNumber, group: u.propertyName }))} placeholder="Search units" size="md" /></FormRow>
       <FormRow label="What is wrong" error={error.title}><input className={INPUT} value={f.title} onChange={e => { set('title')(e); setError(x => ({ ...x, title: undefined })); }} placeholder="e.g. Aircon not cooling, guest complained" maxLength={160} /></FormRow>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -565,13 +565,13 @@ function BlockModal({ issue, onClose, onDone }: { issue: Issue; onClose: () => v
   async function save() {
     setBusy(true); setError(null);
     try { await api.post('/blocks', { unitId: issue.unitId, from, to, reason: `Maintenance: ${issue.title}`.slice(0, 200), issueId: issue.id }); onDone(); }
-    catch (e) { setError(e instanceof ApiFailure && e.status === 409 ? 'A booking already holds some of those nights. Pick dates when the unit is free.' : errText(e)); setBusy(false); }
+    catch (e) { setError(e instanceof ApiFailure && e.status === 409 ? 'A reservation already holds some of those nights. Pick dates when the unit is free.' : errText(e)); setBusy(false); }
   }
   return (
-    <OpsModal title="Block unit until fixed" sub={`${issue.propertyName} ${issue.unitNumber} comes off sale for these nights, and shows as under maintenance.`} onClose={onClose} busy={busy} footer={footer(onClose, busy, 'Block unit', () => void save())}>
+    <OpsModal title="Block unit until fixed" sub={`${issue.propertyName} ${issue.unitNumber} is blocked for these nights, and shows as under maintenance.`} onClose={onClose} busy={busy} footer={footer(onClose, busy, 'Block unit', () => void save())}>
       <div className="grid grid-cols-2 gap-3">
         <FormRow label="First night" error={error}><DateField aria-label="First night" className={INPUT} value={from} onChange={v => v && setFrom(v)} /></FormRow>
-        <FormRow label="Back on sale"><DateField aria-label="Back on sale" className={INPUT} value={to} min={from || undefined} onChange={v => v && setTo(v)} /></FormRow>
+        <FormRow label="Available again"><DateField aria-label="Available again" className={INPUT} value={to} min={from || undefined} onChange={v => v && setTo(v)} /></FormRow>
       </div>
     </OpsModal>
   );
@@ -597,7 +597,7 @@ function CompleteModal({ issue, onClose, onDone }: { issue: Issue; onClose: () =
       <FormRow label="Who pays">
         <select className={INPUT} value={payer} onChange={e => setPayer(e.target.value as ChargeTo)}>{(['owner', 'the_conts', 'guest_deposit', 'warranty'] as ChargeTo[]).map(p => <option key={p} value={p}>{PAYER[p]}</option>)}</select>
       </FormRow>
-      {issue.blocksUnit && <span className="text-meta text-muted-ink">The unit goes back to ready, and the nights blocked for this repair go back on sale.</span>}
+      {issue.blocksUnit && <span className="text-meta text-muted-ink">The unit goes back to ready, and the nights blocked for this repair become available again.</span>}
     </OpsModal>
   );
 }

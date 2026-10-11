@@ -17,36 +17,36 @@ const MOVABLE = ['inquiry', 'pending', 'confirmed', 'checked_in'];
 export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Field roles cannot change reservations.', 403);
+  if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Cleaners and technicians cannot change reservations.', 403);
 
   const id = String(params.id);
   const b = await request.json<any>().catch(() => null);
   if (!b?.checkIn || !b.checkOut || !ISO_DAY.test(b.checkIn) || !ISO_DAY.test(b.checkOut)) return fail('VALIDATION', 'Both dates are required.', 422);
   const fields: Fields = {};
   checkDate(fields, 'checkIn', b.checkIn, { label: 'Check-in', required: true });
-  checkDate(fields, 'checkOut', b.checkOut, { label: 'Check-out', required: true });
-  checkSen(fields, 'grossBookingValue', b.grossBookingValue, { label: 'Total' });
+  checkDate(fields, 'checkOut', b.checkOut, { label: 'Checkout', required: true });
+  checkSen(fields, 'grossBookingValue', b.grossBookingValue, { label: 'Guest total' });
   const bad = invalid(fields); if (bad) return bad;
-  if (b.checkOut <= b.checkIn) return fail('VALIDATION', 'Check-out must be after check-in.', 422, { checkOut: 'Check-out must be after check-in.' });
+  if (b.checkOut <= b.checkIn) return fail('VALIDATION', 'Checkout must be after check-in.', 422, { checkOut: 'Checkout must be after check-in.' });
 
   const cur = await one<any>(env, `
     SELECT r.id, r.unit_id, r.state, r.channel, r.check_in, r.check_out, r.gross_booking_value, COALESCE(NULLIF(g.full_name, ''), 'The booking') AS guest_name
     FROM reservations r LEFT JOIN guests g ON g.id = r.guest_id WHERE r.id = ?`, id);
   if (!cur) return fail('NOT_FOUND', 'That reservation does not exist.', 404);
-  if (!MOVABLE.includes(cur.state)) return fail('CONFLICT', 'The dates of a finished, cancelled or no-show booking cannot change.', 409);
+  if (!MOVABLE.includes(cur.state)) return fail('CONFLICT', 'The dates of a past, cancelled or no-show reservation cannot change.', 409);
   // A booking site owns its bookings' dates (drag on the calendar included): changed here, the site would still
   // hold the old nights and sell the new ones to someone else.
   if (['airbnb', 'booking_com', 'agoda'].includes(cur.channel)) {
     const site = cur.channel === 'airbnb' ? 'Airbnb' : cur.channel === 'booking_com' ? 'Booking.com' : 'Agoda';
-    return fail('OTA_LOCKED', `This is a ${site} booking: its dates are set on ${site}. Change them there; the change comes back here through Channex.`, 409);
+    return fail('OTA_LOCKED', `This is a ${site} reservation: its dates are set on ${site}. Change them there; the change comes back here by itself.`, 409);
   }
-  if (cur.state === 'checked_in' && b.checkIn !== cur.check_in) return fail('CONFLICT', 'The guest is already in. Only the check-out date can change.', 409);
+  if (cur.state === 'checked_in' && b.checkIn !== cur.check_in) return fail('CONFLICT', 'The guest is already in. Only the checkout date can change.', 409);
 
   let gross: number | null = null;
   if (b.grossBookingValue != null) {
-    if (['airbnb', 'booking_com', 'agoda'].includes(cur.channel)) return fail('VALIDATION', 'A booking site sets its own price. Change it on the site.', 422);
+    if (['airbnb', 'booking_com', 'agoda'].includes(cur.channel)) return fail('VALIDATION', 'A channel sets its own price. Change it on the channel.', 422);
     gross = Math.round(Number(b.grossBookingValue));
-    if (!Number.isFinite(gross) || gross < 0) return fail('VALIDATION', 'The total must be zero or more.', 422, { grossBookingValue: 'Enter an amount.' });
+    if (!Number.isFinite(gross) || gross < 0) return fail('VALIDATION', 'The guest total must be zero or more.', 422, { grossBookingValue: 'Enter an amount.' });
   }
 
   const clash = await findClash(env, cur.unit_id, b.checkIn, b.checkOut, id);
@@ -66,7 +66,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     return { clash: null, moved: !!row };
   });
   if (saved.clash) return json(clashResponseBody(saved.clash), 409);
-  if (!saved.moved) return fail('CONFLICT', 'This booking changed while you were looking at it. Refresh and try again.', 409);
+  if (!saved.moved) return fail('CONFLICT', 'This reservation changed while you were looking at it. Refresh and try again.', 409);
   await audit(env, {
     actorId: session.userId, actorLabel: session.fullName, action: 'reservation.dates', entityTable: 'reservations', entityId: id,
     before: { checkIn: cur.check_in, checkOut: cur.check_out, ...(gross != null ? { grossBookingValue: Number(cur.gross_booking_value) } : {}) },

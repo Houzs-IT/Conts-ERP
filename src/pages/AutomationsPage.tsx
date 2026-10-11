@@ -49,30 +49,30 @@ interface Rule {
 
 /** What starts each rule, in words a person reads (the catalog's trigger is the developer's version). */
 const WHEN: Record<string, string> = {
-  'guest.booking_confirmed': 'When a booking is confirmed',
-  'guest.cancellation': 'When a booking is cancelled',
+  'guest.booking_confirmed': 'When a reservation is confirmed',
+  'guest.cancellation': 'When a reservation is cancelled',
   'guest.pre_arrival': '48 hours before check-in',
   'guest.access_details': '2 hours before check-in, once the unit is ready',
   'guest.checkin_delayed': 'When cleaning runs past the check-in time',
-  'guest.checkout_reminder': '12 hours before check-out',
-  'guest.review_request': '24 hours after check-out',
-  'owner.statement_ready': 'When a statement is sent to the owner',
-  'owner.payout_paid': 'When a payout is marked paid',
-  'owner.payout_failed': 'When a payout is marked failed',
+  'guest.checkout_reminder': '12 hours before checkout',
+  'guest.review_request': '24 hours after checkout',
+  'owner.statement_ready': 'When an owner statement is sent',
+  'owner.payout_paid': 'When an owner payout is marked paid',
+  'owner.payout_failed': 'When an owner payout is marked failed',
   'owner.monthly_summary': 'On the 1st of each month',
   'owner.approval_required': 'When a repair needs the owner to approve a quote',
   'owner.approval_reminder': '48 hours, then 5 days, after a quote is still waiting',
-  'owner.unit_blocked': 'When a unit is taken off sale for repairs',
+  'owner.unit_blocked': 'When a unit is blocked for repairs',
   'ops.checkin_at_risk': '60 minutes before check-in, if cleaning is not finished',
-  'ops.task_unassigned': '3 hours before a task is due with nobody on it',
+  'ops.task_unassigned': '3 hours before a job is due with nobody on it',
   'ops.damage_reported': 'When a cleaner reports damage in the field app',
   'ops.guest_message': 'When a guest sends a message',
-  'ops.channel_sync_failed': 'When a booking-site connection fails',
-  'finance.statements_unsent': '3 days after month end, if statements are still not sent',
-  'finance.payout_failed': 'When a payout is marked failed',
-  'field.task_assigned': 'When a task is given to someone',
-  'field.task_reassigned': 'When a task is moved to someone else',
-  'field.schedule_changed': 'When a task time changes',
+  'ops.channel_sync_failed': 'When a channel connection fails',
+  'finance.statements_unsent': '3 days after month end, if owner statements are still not sent',
+  'finance.payout_failed': 'When an owner payout is marked failed',
+  'field.task_assigned': 'When a job is given to someone',
+  'field.task_reassigned': 'When a job is moved to someone else',
+  'field.schedule_changed': 'When a job time changes',
   'field.sync_failed': 'When a change from the field app could not be saved',
   'account.invited': 'When a new user is invited',
   'account.password_reset': 'When someone asks to reset their password',
@@ -90,7 +90,7 @@ const SAMPLE: Record<string, string> = {
   accessInstruction: 'Lockbox by the lift lobby.', newTime: '16:30', contact: '+60 17-465 8868', reviewLink: 'airbnb.com/r/...',
   period: 'Sep 2026', netPayout: 'RM 4,364.86', portalLink: 'owner.theconts.com', amount: 'RM 4,364.86', bank: 'Maybank', last4: '8212',
   valueDate: '3 Oct 2026', reason: 'the account name does not match', occupancy: '78%', adr: 'RM 240', rating: '4.8', upcomingCount: '9',
-  title: 'an aircon repair', consequence: 'the unit stays off sale', revenueAtRisk: 'RM 1,200', expectedReturn: '20 Oct',
+  title: 'an aircon repair', consequence: 'the unit stays blocked', revenueAtRisk: 'RM 1,200', expectedReturn: '20 Oct',
   arrivalTime: '15:00', dueTime: '13:00', dueDate: '12 Oct', crew: 'Nurul', issue: 'a cracked mirror', snippet: 'Hi, is early check-in possible?',
   provider: 'Channex', time: '14:06', owner: 'Tan Boon Huat', count: '4', days: '3', oldTime: '13:00', signInLink: 'erp.theconts.com',
   tempPassword: '(temporary password)', resetLink: '(reset link)', device: 'Chrome on Windows', securityLink: '(security link)',
@@ -105,22 +105,22 @@ interface Payload {
 }
 
 const GROUPS: { key: GroupKey; label: string; icon: string; audience: Audience; desc: string }[] = [
-  { key: 'new_booking',     label: 'New booking',                 icon: 'CalendarPlus', audience: 'guest',   desc: 'When a reservation is confirmed or cancelled.' },
-  { key: 'before_arrival',  label: 'Before arrival',              icon: 'DoorOpen',     audience: 'guest',   desc: 'The run-up to check-in.' },
-  { key: 'stay_departure',  label: 'Stay and departure',          icon: 'LogOut',       audience: 'guest',   desc: 'Check-out and the review that follows.' },
+  { key: 'new_booking',     label: 'New reservation',                 icon: 'CalendarPlus', audience: 'guest',   desc: 'When a reservation is confirmed or cancelled.' },
+  { key: 'before_arrival',  label: 'Before check-in',              icon: 'DoorOpen',     audience: 'guest',   desc: 'The run-up to check-in.' },
+  { key: 'stay_departure',  label: 'Stay and checkout',          icon: 'LogOut',       audience: 'guest',   desc: 'Checkout and the review that follows.' },
   { key: 'owner_finance',   label: 'Owner statements and payouts',icon: 'Receipt',      audience: 'owner',   desc: 'Money leaving for the owner.' },
   { key: 'owner_approvals', label: 'Owner approvals and blocks',  icon: 'BadgeCheck',   audience: 'owner',   desc: 'Decisions and disruptions an owner should see.' },
   { key: 'ops_alerts',      label: 'Operations alerts',           icon: 'Bell',         audience: 'staff',   desc: 'Internal nudges that keep the day on track.' },
-  { key: 'field',           label: 'Field app',                   icon: 'Smartphone',   audience: 'field',   desc: 'Push to housekeepers and technicians. Never financial.' },
+  { key: 'field',           label: 'Field app',                   icon: 'Smartphone',   audience: 'field',   desc: 'Push to cleaners and technicians. Never financial.' },
   { key: 'account',         label: 'Account and security',        icon: 'ShieldCheck',  audience: 'account', desc: 'Sign-in and account safety.' },
 ];
 
 const AUDIENCE_LABEL: Record<Audience, string> = {
-  guest: 'Guest', owner: 'Owner', staff: 'Operations', field: 'Field crew', account: 'Account',
+  guest: 'Guest', owner: 'Owner', staff: 'Operations', field: 'Cleaners and technicians', account: 'Account',
 };
 
 const QH_LABEL: Record<QuietHours, { label: string; tone: Tone }> = {
-  queue:    { label: 'Queues to 08:00',            tone: 'neutral' },
+  queue:    { label: 'Waits until 08:00',            tone: 'neutral' },
   override: { label: 'Overrides quiet hours',      tone: 'warning' },
   always:   { label: 'Not subject to quiet hours', tone: 'neutral' },
 };
@@ -136,30 +136,34 @@ const FALLBACK: Payload = {
   generatedAt: '',
   quietHours: {
     from: '22:00', to: '08:00', timezone: 'Asia/Kuala_Lumpur',
-    note: 'Non-urgent guest and owner messages queue until 08:00. Check-in risk and payout failure override.',
+    note: 'Non-urgent guest and owner messages wait until 08:00. Check-in risk and owner payout failures are sent at once.',
   },
   data: [
     // New booking
-    { id: 'guest.booking_confirmed', name: 'Booking confirmed', template: 'guest.booking_confirmed', group: 'new_booking',
+    { id: 'guest.booking_confirmed', name: 'Reservation confirmed', template: 'guest.booking_confirmed', group: 'new_booking',
       trigger: 'reservation.state → confirmed', timing: 'Immediate', channels: ['Email', 'WhatsApp'],
-      needs: 'Guest name, property, unit, dates, nights, total, contact',
-      preview: 'Hi {guest}, your booking at {property} {unit} is confirmed for {checkIn}–{checkOut} ({nights}). Total {total}. We are on WhatsApp if you need anything.',
+      needs: 'Guest name, building, unit, dates, nights, total, contact',
+      // vocab-ok: {property} and {adr} are template tokens the sender fills in
+      preview: 'Hi {guest}, your reservation at {property} {unit} is confirmed for {checkIn}–{checkOut} ({nights}). Total {total}. We are on WhatsApp if you need anything.',
       delivery: 'transactional', quietHours: 'queue', isActive: true },
-    { id: 'guest.cancellation', name: 'Booking cancelled', template: 'guest.cancellation', group: 'new_booking',
+    { id: 'guest.cancellation', name: 'Reservation cancelled', template: 'guest.cancellation', group: 'new_booking',
       trigger: 'reservation.state → cancelled', timing: 'Immediate', channels: ['Email'],
       needs: 'Refund position, reason, contact',
-      preview: 'Hi {guest}, your booking at {property} {unit} for {dates} has been cancelled. {refundPosition} Reply here and we will help.',
+      // vocab-ok: {property} and {adr} are template tokens the sender fills in
+      preview: 'Hi {guest}, your reservation at {property} {unit} for {dates} has been cancelled. {refundPosition} Reply here and we will help.',
       delivery: 'transactional', quietHours: 'queue', isActive: true },
 
     // Before arrival
-    { id: 'guest.pre_arrival', name: 'Pre-arrival details', template: 'guest.pre_arrival', group: 'before_arrival',
+    { id: 'guest.pre_arrival', name: 'Check-in details', template: 'guest.pre_arrival', group: 'before_arrival',
       trigger: 'reservation.check_in approaching', timing: '48 hours before check-in', channels: ['Email', 'WhatsApp'],
       needs: 'Check-in window, address, parking note',
-      preview: 'Your stay at {property} {unit} starts {checkIn}. Check-in from {checkInTime}. Address: {address}. Parking: {parkingNote}.',
+      // vocab-ok: {property} and {adr} are template tokens the sender fills in
+      preview: 'You check in at {property} {unit} on {checkIn}, from {checkInTime}. Address: {address}. Parking: {parkingNote}.',
       delivery: 'transactional', quietHours: 'queue', isActive: true },
     { id: 'guest.access_details', name: 'Access details', template: 'guest.access_details', group: 'before_arrival',
       trigger: 'unit.readiness = ready AND check-in approaching', timing: '2 hours before check-in, never earlier', channels: ['WhatsApp'],
-      needs: 'Access instruction, door code, wifi. Code rotates after the stay',
+      needs: 'Access instruction, door code, wifi. Code changes after checkout',
+      // vocab-ok: {property} and {adr} are template tokens the sender fills in
       preview: 'You are all set for {property} {unit}. Door code {doorCode}, wifi {wifiName} / {wifiPass}. {accessInstruction}',
       delivery: 'transactional', quietHours: 'queue', isActive: true },
     { id: 'guest.checkin_delayed', name: 'Check-in delayed', template: 'guest.checkin_delayed', group: 'before_arrival',
@@ -169,37 +173,40 @@ const FALLBACK: Payload = {
       delivery: 'transactional', quietHours: 'override', isActive: false },
 
     // Stay and departure
-    { id: 'guest.checkout_reminder', name: 'Check-out reminder', template: 'guest.checkout_reminder', group: 'stay_departure',
-      trigger: 'reservation.check_out approaching', timing: '12 hours before check-out', channels: ['WhatsApp'],
-      needs: 'Check-out time, key return, late check-out option',
-      preview: 'Check-out at {property} {unit} is tomorrow by {checkOutTime}. Leave keys in the lockbox. Need a late check-out? Just ask.',
+    { id: 'guest.checkout_reminder', name: 'Checkout reminder', template: 'guest.checkout_reminder', group: 'stay_departure',
+      trigger: 'reservation.check_out approaching', timing: '12 hours before checkout', channels: ['WhatsApp'],
+      needs: 'Checkout time, key return, late checkout option',
+      // vocab-ok: {property} and {adr} are template tokens the sender fills in
+      preview: 'Checkout at {property} {unit} is tomorrow by {checkOutTime}. Leave keys in the lockbox. Need a late checkout? Just ask.',
       delivery: 'transactional', quietHours: 'queue', isActive: true },
     { id: 'guest.review_request', name: 'Review request', template: 'guest.review_request', group: 'stay_departure',
-      trigger: 'reservation.state → checked_out', timing: '24 hours after check-out', channels: ['Email', 'Channel API'],
+      trigger: 'reservation.state → checked_out', timing: '24 hours after checkout', channels: ['Email', 'Channel API'],
       needs: 'Channel review link',
+      // vocab-ok: {property} and {adr} are template tokens the sender fills in
       preview: 'Thanks for staying at {property} {unit}, {guest}. If it felt like home, a quick review helps a lot: {reviewLink}',
       delivery: 'opt_out', quietHours: 'queue', isActive: true },
 
     // Owner statements and payouts
-    { id: 'owner.statement_ready', name: 'Statement ready', template: 'owner.statement_ready', group: 'owner_finance',
+    { id: 'owner.statement_ready', name: 'Owner statement ready', template: 'owner.statement_ready', group: 'owner_finance',
       trigger: 'statement.state → sent', timing: 'On send', channels: ['Email', 'Portal'],
-      needs: 'Period, net payout, portal link, PDF',
-      preview: 'Your {period} statement for {unit} is ready. Net payout {netPayout}. View it in your portal: {portalLink}',
+      needs: 'Period, Net Payout to Owner, owner portal link, PDF',
+      preview: 'Your {period} owner statement for {unit} is ready. Net Payout to Owner {netPayout}. View it in your owner portal: {portalLink}',
       delivery: 'transactional', quietHours: 'queue', isActive: true },
-    { id: 'owner.payout_paid', name: 'Payout paid', template: 'owner.payout_paid', group: 'owner_finance',
+    { id: 'owner.payout_paid', name: 'Owner payout paid', template: 'owner.payout_paid', group: 'owner_finance',
       trigger: 'payout.state → paid', timing: 'Immediate', channels: ['Email', 'Portal'],
       needs: 'Amount, bank last 4, value date',
-      preview: 'Payout of {amount} for {period} has been transferred to {bank} ••••{last4}, value date {valueDate}.',
+      preview: 'Your owner payout of {amount} for {period} has been transferred to {bank} ••••{last4}, value date {valueDate}.',
       delivery: 'transactional', quietHours: 'queue', isActive: true },
-    { id: 'owner.payout_failed', name: 'Payout failed', template: 'owner.payout_failed', group: 'owner_finance',
+    { id: 'owner.payout_failed', name: 'Owner payout failed', template: 'owner.payout_failed', group: 'owner_finance',
       trigger: 'payout.state → failed', timing: 'Immediate', channels: ['Email', 'Phone call task'],
       needs: 'Amount, reason, next step. Also creates an internal task',
-      preview: 'We could not complete your {amount} payout for {period}: {reason}. We are on it and will call you shortly.',
+      preview: 'We could not complete your owner payout of {amount} for {period}: {reason}. We are on it and will call you shortly.',
       delivery: 'transactional', quietHours: 'override', isActive: true },
     { id: 'owner.monthly_summary', name: 'Monthly summary', template: 'owner.monthly_summary', group: 'owner_finance',
       trigger: 'period close', timing: '1st of the month', channels: ['Email'],
-      needs: 'Occupancy, ADR, rating, upcoming bookings',
-      preview: 'Your {period} summary for {unit}: occupancy {occupancy}, ADR {adr}, rating {rating}. {upcomingCount} bookings ahead.',
+      needs: 'Occupancy, avg nightly price, rating, upcoming reservations',
+      // vocab-ok: {property} and {adr} are template tokens the sender fills in
+      preview: 'Your {period} summary for {unit}: occupancy {occupancy}, avg nightly price {adr}, rating {rating}. {upcomingCount} reservations ahead.',
       delivery: 'opt_out', quietHours: 'queue', isActive: true },
 
     // Owner approvals and blocks
@@ -210,59 +217,59 @@ const FALLBACK: Payload = {
       delivery: 'transactional', quietHours: 'queue', isActive: true },
     { id: 'owner.approval_reminder', name: 'Approval reminder', template: 'owner.approval_reminder', group: 'owner_approvals',
       trigger: 'approval outstanding', timing: '48 hours, then 5 days', channels: ['Email'],
-      needs: 'Same, plus the revenue at risk if the unit is blocked',
-      preview: 'Reminder: {title} on {unit} is awaiting your approval. Revenue at risk while blocked: {revenueAtRisk}.',
+      needs: 'Same, plus the earnings at risk if the unit is blocked',
+      preview: 'Reminder: {title} on {unit} is awaiting your approval. Gross Income at risk while blocked: {revenueAtRisk}.',
       delivery: 'transactional', quietHours: 'queue', isActive: false },
     { id: 'owner.unit_blocked', name: 'Unit blocked', template: 'owner.unit_blocked', group: 'owner_approvals',
       trigger: 'unit.readiness → maintenance with nights blocked', timing: 'Immediate', channels: ['Email', 'Portal'],
-      needs: 'Dates blocked, reason, revenue at risk, expected return',
-      preview: '{unit} is off-sale for maintenance {dates}: {reason}. Estimated revenue impact {revenueAtRisk}. Expected back {expectedReturn}.',
+      needs: 'Dates blocked, reason, earnings at risk, expected return',
+      preview: '{unit} is blocked for maintenance {dates}: {reason}. Gross Income at risk {revenueAtRisk}. Expected back {expectedReturn}.',
       delivery: 'transactional', quietHours: 'queue', isActive: true },
 
     // Operations alerts
     { id: 'ops.checkin_at_risk', name: 'Check-in at risk', template: 'ops.checkin_at_risk', group: 'ops_alerts',
       trigger: 'turnover incomplete within 60 min of check-in', timing: '60 min before check-in', channels: ['In-app', 'WhatsApp group'],
       needs: 'Destination: Operations today, filtered to check-in risk',
-      preview: 'Check-in risk: {unit} turnover is incomplete with a guest arriving {arrivalTime}. Assign or escalate now.',
+      preview: 'Check-in risk: the {unit} cleaning job is not finished and a guest checks in at {arrivalTime}. Assign or escalate now.',
       delivery: 'transactional', quietHours: 'override', isActive: true },
-    { id: 'ops.task_unassigned', name: 'Task unassigned', template: 'ops.task_unassigned', group: 'ops_alerts',
+    { id: 'ops.task_unassigned', name: 'Job unassigned', template: 'ops.task_unassigned', group: 'ops_alerts',
       trigger: 'task within 3 h of due with no assignee', timing: '3 hours before due', channels: ['In-app'],
       needs: 'Destination: Operations today, Unassigned filter',
-      preview: '{unit} turnover is due {dueTime} with no cleaner assigned. Assign from Operations today.',
+      preview: 'The {unit} cleaning job is due {dueTime} with no cleaner assigned. Assign from Operations today.',
       delivery: 'transactional', quietHours: 'always', isActive: true },
     { id: 'ops.damage_reported', name: 'Damage reported', template: 'ops.damage_reported', group: 'ops_alerts',
-      trigger: 'field app creates a maintenance issue', timing: 'Immediate', channels: ['In-app', 'WhatsApp'],
-      needs: 'Destination: the maintenance issue',
-      preview: '{crew} reported {issue} at {unit}. Opened as a maintenance issue — review and triage.',
+      trigger: 'field app creates a maintenance job', timing: 'Immediate', channels: ['In-app', 'WhatsApp'],
+      needs: 'Destination: the maintenance job',
+      preview: '{crew} reported {issue} at {unit}. Opened as a maintenance job — review and triage.',
       delivery: 'transactional', quietHours: 'always', isActive: true },
     { id: 'ops.guest_message', name: 'Guest message', template: 'ops.guest_message', group: 'ops_alerts',
       trigger: 'inbound guest message', timing: 'Immediate', channels: ['In-app'],
-      needs: 'Destination: Inbox thread',
-      preview: 'New message from {guest} about {unit}: "{snippet}". Reply in the inbox.',
+      needs: 'Destination: Messages',
+      preview: 'New message from {guest} about {unit}: "{snippet}". Reply in Messages.',
       delivery: 'transactional', quietHours: 'always', isActive: true },
-    { id: 'ops.channel_sync_failed', name: 'Channel sync failed', template: 'ops.channel_sync_failed', group: 'ops_alerts',
+    { id: 'ops.channel_sync_failed', name: 'Channel connection failed', template: 'ops.channel_sync_failed', group: 'ops_alerts',
       trigger: 'integration.state → failed', timing: 'Immediate', channels: ['In-app banner', 'Email to management'],
       needs: 'Destination: System, Integrations',
-      preview: '{provider} sync failed at {time}. Bookings may be delayed until it is reconnected.',
+      preview: '{provider} connection failed at {time}. New reservations may arrive late until it is reconnected.',
       delivery: 'transactional', quietHours: 'always', isActive: true },
-    { id: 'finance.statements_unsent', name: 'Statements unsent', template: 'finance.statements_unsent', group: 'ops_alerts',
-      trigger: 'finalised statements unsent 3 days after close', timing: '3 days after period close', channels: ['In-app', 'Email'],
+    { id: 'finance.statements_unsent', name: 'Owner statements unsent', template: 'finance.statements_unsent', group: 'ops_alerts',
+      trigger: 'final owner statements unsent 3 days after close', timing: '3 days after period close', channels: ['In-app', 'Email'],
       needs: 'Destination: Owner statements, Not sent filter',
-      preview: '{count} finalised statements for {period} are still unsent, {days} days after close.',
+      preview: '{count} final owner statements for {period} are still unsent, {days} days after close.',
       delivery: 'transactional', quietHours: 'always', isActive: true },
-    { id: 'finance.payout_failed', name: 'Payout failed (internal)', template: 'finance.payout_failed', group: 'ops_alerts',
+    { id: 'finance.payout_failed', name: 'Owner payout failed (internal)', template: 'finance.payout_failed', group: 'ops_alerts',
       trigger: 'payout.state → failed', timing: 'Immediate', channels: ['In-app', 'Email'],
-      needs: 'Destination: Payouts',
-      preview: 'Payout to {owner} ({amount}) failed: {reason}. Retry or update bank details in Payouts.',
+      needs: 'Destination: Owner payouts',
+      preview: 'Owner payout to {owner} ({amount}) failed: {reason}. Retry or update bank details in Owner payouts.',
       delivery: 'transactional', quietHours: 'always', isActive: true },
 
     // Field app
-    { id: 'field.task_assigned', name: 'Task assigned', template: 'field.task_assigned', group: 'field',
+    { id: 'field.task_assigned', name: 'Job assigned', template: 'field.task_assigned', group: 'field',
       trigger: 'task.assignee_id set', timing: 'Immediate', channels: ['Push'],
       needs: 'Unit, due time, address. No financials',
-      preview: 'New task: {unit} turnover, due {dueTime}. Address {address}. Access {accessInstruction}.',
+      preview: 'New cleaning job: {unit}, due {dueTime}. Address {address}. Access {accessInstruction}.',
       delivery: 'transactional', quietHours: 'always', isActive: true },
-    { id: 'field.task_reassigned', name: 'Task reassigned', template: 'field.task_reassigned', group: 'field',
+    { id: 'field.task_reassigned', name: 'Job reassigned', template: 'field.task_reassigned', group: 'field',
       trigger: 'assignee changed away', timing: 'Immediate', channels: ['Push'],
       needs: 'Removes it from their list',
       preview: '{unit} on {dueDate} has been reassigned. It has been removed from your list.',
@@ -270,12 +277,12 @@ const FALLBACK: Payload = {
     { id: 'field.schedule_changed', name: 'Schedule changed', template: 'field.schedule_changed', group: 'field',
       trigger: 'task.due_at moved', timing: 'Immediate', channels: ['Push'],
       needs: 'Old and new time stated',
-      preview: 'Schedule change: {unit} turnover moved from {oldTime} to {newTime}.',
+      preview: 'Schedule change: the {unit} cleaning job moved from {oldTime} to {newTime}.',
       delivery: 'transactional', quietHours: 'always', isActive: false },
-    { id: 'field.sync_failed', name: 'Sync failed', template: 'field.sync_failed', group: 'field',
+    { id: 'field.sync_failed', name: 'Change not saved', template: 'field.sync_failed', group: 'field',
       trigger: 'offline mutation rejected', timing: 'On failure', channels: ['In-app, persistent'],
-      needs: 'Stays visible as Failed to sync until resolved',
-      preview: 'A change you made offline could not be saved. It stays marked Failed to sync until it goes through.',
+      needs: 'Stays visible as Not saved until it goes through',
+      preview: 'A change you made offline could not be saved. It stays marked Not saved until it goes through.',
       delivery: 'transactional', quietHours: 'always', isActive: true },
 
     // Account and security
@@ -360,9 +367,9 @@ export default function AutomationsPage() {
       <div className="flex items-start gap-2.5 py-3 px-3.5 rounded-control bg-warning-bg text-warning text-pretty" style={{ borderLeft: '2px solid var(--color-warning-line)' }}>
         <Icon name="CircleAlert" size="sm" style={{ marginTop: 1 }} />
         <span className="text-meta">
-          <strong className="font-semibold">Most rules do not run yet.</strong> {running} are sent by the system when they happen (owner statements and payouts, staff and account emails).
+          <strong className="font-semibold">Most rules do not run yet.</strong> {running} are sent by the system when they happen (owner statements and owner payouts, staff and account emails).
           The other {total - running}, including every guest message, are written but nothing sends them: they need a timed background sender that is not set up yet and, for guests, the email and WhatsApp keys.
-          Until then, guests get only the messages staff send from the Inbox and Bookings.
+          Until then, guests get only the messages staff send from Messages and Reservations.
         </span>
       </div>
 
@@ -530,7 +537,7 @@ function RulePanel({ r, onClose, onToggle }: { r: Rule; onClose: () => void; onT
             {sample(r.preview)}
           </div>
           <span className="block mt-2 text-meta text-faint text-pretty">
-            Example with sample details. Each real message uses the booking's or owner's own details.
+            Example with sample details. Each real message uses the reservation's or owner's own details.
           </span>
         </div>
       </div>

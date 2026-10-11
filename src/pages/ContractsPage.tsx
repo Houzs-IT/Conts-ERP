@@ -68,7 +68,7 @@ const stateOf = (c: Contract): ContractState => {
   return 'Active';
 };
 const feeLabel = (c: Contract) =>
-  c.model === 'grr' ? `GRR ${rm(c.grrAmount, { cents: false })}/mo` : `${c.managementFeePct}% fee`;
+  c.model === 'grr' ? `GRR ${rm(c.grrAmount, { cents: false })}/mo` : `${c.managementFeePct}% operator share`;
 const inDays = (d: number) => d === 0 ? 'ends today' : d > 0 ? `in ${d} ${d === 1 ? 'day' : 'days'}` : `${-d} ${d === -1 ? 'day' : 'days'} ago`;
 
 type FilterKey = 'all' | 'soon' | 'active' | 'ended';
@@ -137,7 +137,7 @@ export default function ContractsPage() {
   async function addContract(input: Omit<Contract, 'id'>) {
     try {
       await api.post('/contracts', input);
-      toast({ tone: 'success', title: 'Contract added.', body: `Management agreement recorded for ${titleCase(input.ownerName)}.` });
+      toast({ tone: 'success', title: 'Contract added.', body: `Contract recorded for ${titleCase(input.ownerName)}.` });
       setModal(null); reload();
     } catch (e) {
       toast({ tone: 'critical', title: 'Contract was not added.', body: errorMessage(e, 'Try again in a moment.') });
@@ -185,9 +185,9 @@ export default function ContractsPage() {
         </span>
       ) },
     { key: 'units', label: 'Units', value: r => r.unitsLabel, width: 200 },
-    { key: 'fee', label: 'Fee model', value: r => feeLabel(r), width: 140, render: r => <span className="text-copy font-medium truncate block" title={feeLabel(r)}>{feeLabel(r)}</span> },
-    { key: 'model', label: 'Model', value: r => (r.model === 'grr' ? 'Guaranteed rent' : 'Management fee'), hidden: true, width: 140, filter: { kind: 'select' } },
-    { key: 'feePct', label: 'Management fee %', type: 'number', value: r => (r.model === 'management' ? r.managementFeePct : null), hidden: true, width: 120 },
+    { key: 'fee', label: 'Income model', value: r => feeLabel(r), width: 140, render: r => <span className="text-copy font-medium truncate block" title={feeLabel(r)}>{feeLabel(r)}</span> },
+    { key: 'model', label: 'Model', value: r => (r.model === 'grr' ? 'Guaranteed rent' : 'Operator share'), hidden: true, width: 140, filter: { kind: 'select' } },
+    { key: 'feePct', label: 'Operator share %', type: 'number', value: r => (r.model === 'management' ? r.managementFeePct : null), hidden: true, width: 120 },
     { key: 'grr', label: 'Guaranteed rent / month', type: 'money', value: r => (r.model === 'grr' ? r.grrAmount : null), hidden: true, width: 150 },
     { key: 'started', label: 'Started', type: 'date', value: r => r.startsOn, width: 110 },
     { key: 'ends', label: 'Ends', type: 'date', value: r => expiryOf(r), width: 140, title: 'The end date, or the renewal date when no end date is recorded.',
@@ -246,8 +246,8 @@ export default function ContractsPage() {
         }
         toolbar={<>
           <SearchBox className="flex-1 min-w-[200px]" label="Search contracts" placeholder="Search owner or unit" value={url.get('q')} onChange={v => url.set({ q: v || null, page: null })} />
-          <Select className="flex-[1_1_160px] sm:flex-[0_1_180px]" label="Fee model" value={model} onChange={v => url.set({ model: v || null, page: null })}
-            options={[{ value: '', label: 'All fee models' }, { value: 'management', label: 'Management fee' }, { value: 'grr', label: 'Guaranteed rent' }]} />
+          <Select className="flex-[1_1_160px] sm:flex-[0_1_180px]" label="Income model" value={model} onChange={v => url.set({ model: v || null, page: null })}
+            options={[{ value: '', label: 'All income models' }, { value: 'management', label: 'Operator share' }, { value: 'grr', label: 'Guaranteed rent' }]} />
           {phone && (
             <Select className="flex-[1_1_160px]" label="Sort by" value={url.get('sort')} onChange={v => url.set({ sort: v || null, page: null })}
               options={[{ value: '', label: 'Sort: ending soonest' }, { value: 'owner:asc', label: 'Sort: owner A-Z' }, { value: 'started:desc', label: 'Sort: newest first' }]} />
@@ -379,10 +379,10 @@ function ContractModal({ existing, onClose, onSubmit }: { existing?: Contract; o
         <Field label="Owner" placeholder="e.g. Lim Chee Keong" value={ownerName} onChange={e => setOwnerName(e.target.value)} />
         <Field label="Unit" placeholder="e.g. Vista Jaya One #A-12-03" value={unitsLabel} onChange={e => setUnitsLabel(e.target.value)} help="For multiple units, name the primary one; link the rest on the owner." />
       </>)}
-      <Select showLabel size="md" label="Fee model" value={model} onChange={v => setModel(v as FeeModel)}
-        options={[{ value: 'management', label: 'Management fee (% of revenue)' }, { value: 'grr', label: 'GRR — guaranteed monthly rent' }]} />
+      <Select showLabel size="md" label="Income model" value={model} onChange={v => setModel(v as FeeModel)}
+        options={[{ value: 'management', label: 'Operator share (% of income)' }, { value: 'grr', label: 'GRR — guaranteed monthly rent' }]} />
       {model === 'management'
-        ? <PercentInput label="Management fee %" value={feePct} onChange={setFeePct} help="The Conts keeps this share; the owner receives the rest." />
+        ? <PercentInput label="Operator share %" value={feePct} onChange={setFeePct} help="The Conts keeps this share; the owner receives the rest." />
         : <MoneyInput label="Guaranteed rent (RM / month)" placeholder="e.g. 3,500.00" valueSen={grrSen} onChangeSen={setGrrSen} help="The owner is paid this fixed amount regardless of occupancy." />}
       <div className="grid grid-cols-2 gap-3">
         <DateField label="Start date" value={startsOn} onChange={setStartsOn} />

@@ -33,8 +33,8 @@ const OTA = `r.channel IN ('airbnb','booking_com','agoda')`;
 
 const CHANNEL_LABEL = `CASE r.channel WHEN 'airbnb' THEN 'Airbnb' WHEN 'booking_com' THEN 'Booking.com' WHEN 'agoda' THEN 'Agoda'
   WHEN 'direct' THEN 'Direct' WHEN 'owner_stay' THEN 'Owner stay' ELSE 'Block' END`;
-const STATE_LABEL = `CASE r.state WHEN 'inquiry' THEN 'Inquiry' WHEN 'pending' THEN 'Pending' WHEN 'confirmed' THEN 'Confirmed'
-  WHEN 'checked_in' THEN 'Checked in' WHEN 'checked_out' THEN 'Checked out' WHEN 'cancelled' THEN 'Cancelled' ELSE 'No show' END`;
+const STATE_LABEL = `CASE r.state WHEN 'inquiry' THEN 'Inquiry' WHEN 'pending' THEN 'Pending' WHEN 'confirmed' THEN 'Upcoming'
+  WHEN 'checked_in' THEN 'Currently hosting' WHEN 'checked_out' THEN 'Past' WHEN 'cancelled' THEN 'Cancelled' ELSE 'No-show' END`;
 
 export interface Schema { payoutCols: boolean; payments: boolean }
 

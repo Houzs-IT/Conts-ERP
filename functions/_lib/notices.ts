@@ -38,14 +38,14 @@ export async function bookingNotice(env: Env, id: string, event: BookingEvent, b
   const via = CHANNEL[b.channel] ?? b.channel;
 
   if (event === 'created') {
-    await notifyUsers(env, 'ops', { ...base, kind: 'booking.created', title: `New booking: ${b.unit}`, body: `${who}, ${stay(b.check_in, b.check_out)} (${via}).`, dedupeKey: `booking-created-${id}` });
+    await notifyUsers(env, 'ops', { ...base, kind: 'booking.created', title: `New reservation: ${b.unit}`, body: `${who}, ${stay(b.check_in, b.check_out)} (${via}).`, dedupeKey: `booking-created-${id}` });
   } else if (event === 'cancelled') {
-    await notifyUsers(env, 'ops', { ...base, kind: 'booking.cancelled', title: `Booking cancelled: ${b.unit}`, body: `${who}, ${stay(b.check_in, b.check_out)} (${via}). The nights are open again.`, dedupeKey: `booking-cancelled-${id}-${b.check_in}` });
+    await notifyUsers(env, 'ops', { ...base, kind: 'booking.cancelled', title: `Reservation cancelled: ${b.unit}`, body: `${who}, ${stay(b.check_in, b.check_out)} (${via}). The nights are open again.`, dedupeKey: `booking-cancelled-${id}-${b.check_in}` });
   } else if (event === 'no_show') {
     await notifyUsers(env, 'ops', { ...base, kind: 'booking.no_show', title: `No-show: ${b.unit}`, body: `${who} did not arrive (${stay(b.check_in, b.check_out)}).`, dedupeKey: `booking-noshow-${id}` });
   } else if (event === 'dates') {
     const from = extra.from ? `${stay(extra.from.checkIn, extra.from.checkOut)} to ` : '';
-    await notifyUsers(env, 'ops', { ...base, kind: 'booking.dates_changed', title: `Booking dates changed: ${b.unit}`, body: `${who} moved from ${from}${stay(b.check_in, b.check_out)}.`, dedupeKey: `booking-dates-${id}-${b.check_in}-${b.check_out}` });
+    await notifyUsers(env, 'ops', { ...base, kind: 'booking.dates_changed', title: `Reservation dates changed: ${b.unit}`, body: `${who} moved from ${from}${stay(b.check_in, b.check_out)}.`, dedupeKey: `booking-dates-${id}-${b.check_in}-${b.check_out}` });
   } else if (event === 'checked_out') {
     let cleaners: string[] = [];
     let taskId: string | null = null;
@@ -78,12 +78,12 @@ export async function cleaningNotice(env: Env, id: string, event: 'assigned' | '
   const base = { link, entityTable: 'tasks', entityId: id, except: by };
   if (event === 'assigned') {
     const people = await taskPeople(env, id);
-    if (people.length) await notifyUsers(env, people, { ...base, kind: 'cleaning.assigned', title: `Clean assigned to you: ${t.unit}`, body: `${t.title}${when}.`, dedupeKey: `clean-assigned-${id}-${people.join('-')}` });
+    if (people.length) await notifyUsers(env, people, { ...base, kind: 'cleaning.assigned', title: `Cleaning job assigned to you: ${t.unit}`, body: `${t.title}${when}.`, dedupeKey: `clean-assigned-${id}-${people.join('-')}` });
   } else if (event === 'completed') {
-    await notifyUsers(env, 'ops', { ...base, kind: 'cleaning.completed', title: `Clean done: ${t.unit}`, body: `${t.title} is finished; the unit is ready.`, dedupeKey: `clean-done-${id}` });
+    await notifyUsers(env, 'ops', { ...base, kind: 'cleaning.completed', title: `Cleaning job done: ${t.unit}`, body: `${t.title} is finished; the unit is ready.`, dedupeKey: `clean-done-${id}` });
   } else {
     const people = await taskPeople(env, id);
-    await notifyUsers(env, { roles: ['ops_managers'], userIds: people }, { ...base, kind: 'cleaning.overdue', title: `Clean overdue: ${t.unit}`, body: `${t.title} was due${t.due_at ? ` by ${day(t.due_at)}` : ''} and is not finished.`, dedupeKey: `clean-overdue-${id}`, except: null });
+    await notifyUsers(env, { roles: ['ops_managers'], userIds: people }, { ...base, kind: 'cleaning.overdue', title: `Cleaning job overdue: ${t.unit}`, body: `${t.title} was due${t.due_at ? ` by ${day(t.due_at)}` : ''} and is not finished.`, dedupeKey: `clean-overdue-${id}`, except: null });
   }
 }
 
@@ -107,28 +107,28 @@ export async function repairNotice(env: Env, id: string, event: RepairEvent, by:
   const link = `/operations/maintenance?id=${encodeURIComponent(id)}`;
   const base = { link, entityTable: 'maintenance_issues', entityId: id, except: by };
   const tech = await technicianFor(env, m.vendor_name);
-  const urgent = m.urgency === 'urgent' ? 'Urgent repair' : 'Repair';
+  const urgent = m.urgency === 'urgent' ? 'Urgent maintenance job' : 'Maintenance job';
   switch (event) {
     case 'reported':
       await notifyUsers(env, 'ops', { ...base, kind: 'maintenance.reported', title: `${urgent} reported: ${m.unit}`, body: m.title, dedupeKey: `repair-reported-${id}` });
       break;
     case 'assigned':
-      await notifyUsers(env, { roles: ['ops_managers'], userIds: tech }, { ...base, kind: 'maintenance.assigned', title: `Repair assigned: ${m.unit}`, body: `${m.title}${m.vendor_name ? ` – ${m.vendor_name}` : ''}.`, dedupeKey: `repair-assigned-${id}-${(m.vendor_name ?? '').toLowerCase()}` });
+      await notifyUsers(env, { roles: ['ops_managers'], userIds: tech }, { ...base, kind: 'maintenance.assigned', title: `Maintenance job assigned: ${m.unit}`, body: `${m.title}${m.vendor_name ? ` – ${m.vendor_name}` : ''}.`, dedupeKey: `repair-assigned-${id}-${(m.vendor_name ?? '').toLowerCase()}` });
       break;
     case 'window':
-      await notifyUsers(env, { roles: ['ops'], userIds: tech }, { ...base, kind: 'maintenance.window', title: `Repair visit scheduled: ${m.unit}`, body: `${m.title}${detail ? `. ${detail}` : ''}.` });
+      await notifyUsers(env, { roles: ['ops'], userIds: tech }, { ...base, kind: 'maintenance.window', title: `Maintenance visit scheduled: ${m.unit}`, body: `${m.title}${detail ? `. ${detail}` : ''}.` });
       break;
     case 'done':
-      await notifyUsers(env, { roles: ['ops'], userIds: [m.reported_by] }, { ...base, kind: 'maintenance.done', title: `Repair done: ${m.unit}`, body: m.title, dedupeKey: `repair-done-${id}` });
+      await notifyUsers(env, { roles: ['ops'], userIds: [m.reported_by] }, { ...base, kind: 'maintenance.done', title: `Maintenance job done: ${m.unit}`, body: m.title, dedupeKey: `repair-done-${id}` });
       break;
     case 'overdue':
-      await notifyUsers(env, { roles: ['ops_managers'], userIds: tech }, { ...base, kind: 'maintenance.overdue', title: `Repair overdue: ${m.unit}`, body: `${m.title} is still open.`, dedupeKey: `repair-overdue-${id}`, except: null });
+      await notifyUsers(env, { roles: ['ops_managers'], userIds: tech }, { ...base, kind: 'maintenance.overdue', title: `Maintenance job overdue: ${m.unit}`, body: `${m.title} is still open.`, dedupeKey: `repair-overdue-${id}`, except: null });
       break;
     case 'approval_requested':
       await notifyUsers(env, 'managers', { ...base, kind: 'approval.requested', title: `Owner approval requested: ${m.unit}`, body: `${m.title}${detail ? `. ${detail}` : ''}.` });
       break;
     case 'approval_decided':
-      await notifyUsers(env, { roles: ['ops'], userIds: tech }, { ...base, kind: 'approval.decided', title: `Repair ${detail ?? 'decided'}: ${m.unit}`, body: m.title });
+      await notifyUsers(env, { roles: ['ops'], userIds: tech }, { ...base, kind: 'approval.decided', title: `Maintenance job ${detail ?? 'decided'}: ${m.unit}`, body: m.title });
       break;
   }
 }

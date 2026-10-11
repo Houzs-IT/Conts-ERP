@@ -3,8 +3,8 @@ import { requireSession } from '../../../../_lib/auth';
 import { ownerFor, VISIBLE } from '../../../../_lib/ownerScope';
 
 const CATEGORY_LABEL: Record<string, string> = {
-  housekeeping: 'Housekeeping', cleaning: 'Cleaning', maintenance: 'Maintenance', utilities: 'Utilities', internet: 'Internet',
-  electricity: 'Electricity', water: 'Water', consumables: 'Consumables', furniture: 'Furniture', channel_fee: 'Channel fees', other: 'Other',
+  housekeeping: 'Cleaning', cleaning: 'Cleaning', maintenance: 'Maintenance', utilities: 'Utilities', internet: 'Internet',
+  electricity: 'Electricity', water: 'Water', consumables: 'Consumables', furniture: 'Furniture', channel_fee: 'Service fee', other: 'Other',
 };
 
 interface DetailLine { label: string; amount: number; type: string; category?: string; reference?: string; occurredOn?: string }
@@ -90,8 +90,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
     for (let k = 0; k < Math.abs(remainder); k++) shares[order[k % order.length].i] += step;
     units.forEach((u, i) => assign(u, shares[i]));
   };
-  allocate(ownerFee, (u, s) => { if (s) { u.fee += s; u.lines.push({ label: 'Management fee', amount: -s, type: 'fee' }); } });
-  allocate(ownerAdj, (u, s) => { if (s) { u.adjustments += s; u.lines.push({ label: 'Adjustment', amount: s, type: 'adjustment' }); } });
+  allocate(ownerFee, (u, s) => { if (s) { u.fee += s; u.lines.push({ label: 'To Operator', amount: -s, type: 'fee' }); } });
+  allocate(ownerAdj, (u, s) => { if (s) { u.adjustments += s; u.lines.push({ label: 'Owner Adjustments', amount: s, type: 'adjustment' }); } });
 
   for (const u of units) u.net = u.gross - u.fee - u.expenses + u.adjustments;
 

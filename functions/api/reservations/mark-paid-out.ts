@@ -13,14 +13,14 @@ const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!MONEY_ROLES.includes(session.role)) return fail('FORBIDDEN', 'Only management, finance and operations managers can record payouts.', 403);
+  if (!MONEY_ROLES.includes(session.role)) return fail('FORBIDDEN', 'Only management, finance and operations managers can record host payouts.', 403);
   const schema = await moneySchema(env);
   if (!schema.payments) return fail('NOT_READY', 'Payments are not set up on this database yet (migration 0091).', 503);
 
   const b = await request.json<any>().catch(() => null);
   const ids = Array.isArray(b?.ids) ? [...new Set(b.ids.filter((x: unknown) => typeof x === 'string'))] as string[] : [];
-  if (!ids.length || ids.length > 500) return fail('VALIDATION', 'Pick between 1 and 500 bookings.', 422);
-  if (!b.receivedOn || !ISO_DAY.test(b.receivedOn)) return fail('VALIDATION', 'Pick the date the payout arrived.', 422, { receivedOn: 'Pick the date the payout arrived.' });
+  if (!ids.length || ids.length > 500) return fail('VALIDATION', 'Pick between 1 and 500 reservations.', 422);
+  if (!b.receivedOn || !ISO_DAY.test(b.receivedOn)) return fail('VALIDATION', 'Pick the date the host payout arrived.', 422, { receivedOn: 'Pick the date the host payout arrived.' });
   if (b.receivedOn > new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)) return fail('VALIDATION', 'The date cannot be in the future.', 422, { receivedOn: 'The date cannot be in the future.' });
   const fields: Fields = {};
   checkDate(fields, 'receivedOn', b.receivedOn, { label: 'Arrived on', required: true });
@@ -38,10 +38,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   for (const id of ids) {
     const r = byId.get(id);
     if (!r) { skipped.push({ id, ref: null, reason: 'Not found.' }); continue; }
-    if (!['airbnb', 'booking_com', 'agoda'].includes(r.channel)) { skipped.push({ id, ref: r.external_ref, reason: 'Not a booking-site booking.' }); continue; }
+    if (!['airbnb', 'booking_com', 'agoda'].includes(r.channel)) { skipped.push({ id, ref: r.external_ref, reason: 'Not from Airbnb, Booking.com or Agoda.' }); continue; }
     if (r.state === 'cancelled' || r.state === 'no_show') { skipped.push({ id, ref: r.external_ref, reason: 'Cancelled or no-show.' }); continue; }
     const owed = Number(r.outstanding);
     if (!(owed > 0)) { skipped.push({ id, ref: r.external_ref, reason: 'Nothing outstanding.' }); continue; }
+    // vocab-ok: stored payment method value, one of PAYMENT_METHODS
     const p = await insertPayment(env, { reservationId: id, amount: owed, receivedOn: b.receivedOn, method: 'Booking site payout', reference, kind: 'ota_payout', note: 'Marked received in bulk', userId: session.userId });
     await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'reservation.payment', entityTable: 'reservations', entityId: id,
       after: { paymentId: p.id, amount: owed, kind: 'ota_payout', receivedOn: b.receivedOn, reference, bulk: true } });

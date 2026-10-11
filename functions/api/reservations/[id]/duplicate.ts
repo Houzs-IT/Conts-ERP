@@ -7,7 +7,7 @@ import { findClash, clashResponseBody, nextBookingRef, holdOnChannels, withUnitL
 export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Field roles cannot create reservations.', 403);
+  if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Cleaners and technicians cannot create reservations.', 403);
 
   const src = await one<any>(env, 'SELECT * FROM reservations WHERE id = ?', String(params.id));
   if (!src) return fail('NOT_FOUND', 'That reservation does not exist.', 404);

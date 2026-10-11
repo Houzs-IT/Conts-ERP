@@ -114,23 +114,25 @@ export function ledger(m: MoneyIn, payments: PaymentRow[], site: string): Ledger
     if (room < 0) {
       notes.push(`The fees and taxes recorded (${ringgit(otherSum)}) are more than the guest total (${ringgit(guestTotal)}).`);
     } else {
-      guestLines = [{ key: 'room', label: `Room, ${m.nights} ${m.nights === 1 ? 'night' : 'nights'}`, amount: room }, ...others];
+      guestLines = [{ key: 'room', label: `Accommodation, ${m.nights} ${m.nights === 1 ? 'night' : 'nights'}`, amount: room }, ...others];
       if (m.roomRevenue != null && Math.abs(m.roomRevenue - room) > TOLERANCE
         // HostPlatform's "room rate" on an Airbnb booking is Airbnb's payout to us (the stay after Airbnb's fee,
         // cleaning included): that is its convention, not a disagreement.
         && !(m.channel === 'airbnb' && [m.gross - m.channelFee, m.payoutAmount, m.collected].some(x => x != null && Math.abs(m.roomRevenue! - x) <= TOLERANCE))) {
-        notes.push(`HostPlatform recorded room charges of ${ringgit(m.roomRevenue)}; the guest total less the fees listed leaves ${ringgit(room)}.`);
+        // vocab-ok: roomRevenue is a field name, the text says accommodation
+        notes.push(`HostPlatform recorded accommodation charges of ${ringgit(m.roomRevenue)}; the guest total less the fees listed leaves ${ringgit(room)}.`);
       }
     }
   }
-  sources.push({ label: 'Guest total', amount: guestTotal, from: m.fromWorkbook ? 'Owner workbook (Airbnb earnings report)' : ota ? `${site} via HostPlatform or Channex` : 'This booking' });
-  if (m.roomRevenue != null) sources.push({ label: m.channel === 'airbnb' ? 'Room rate (on Airbnb bookings HostPlatform records the payout here)' : 'Room charges', amount: m.roomRevenue, from: 'HostPlatform export' });
+  sources.push({ label: 'Guest total', amount: guestTotal, from: m.fromWorkbook ? 'Owner workbook (Airbnb earnings report)' : ota ? `${site} via HostPlatform or Channex` : 'This reservation' });
+  if (m.roomRevenue != null) sources.push({ label: m.channel === 'airbnb' ? 'Accommodation (on Airbnb reservations HostPlatform records the host payout here)' : 'Accommodation charges', amount: m.roomRevenue, from: 'HostPlatform export' });
   for (const l of others) sources.push({ label: l.label, amount: l.amount, from: l.key === 'cleaning' && m.fromWorkbook ? 'Owner workbook' : 'HostPlatform export' });
 
   // (2)
   const platformLines: LedgerLine[] = [];
   const base = guestTotal - v(m.sstAmount) - v(m.tourismTax);
-  if (m.channelFee > 0) platformLines.push({ key: 'commission', label: `${ota ? site : 'Booking site'} commission`, sub: base > 0 ? `${(m.channelFee / base * 100).toFixed(1)}% of the room and fees` : undefined, amount: m.channelFee });
+  // vocab-ok: ota is a code flag, the text says channel and service fee
+  if (m.channelFee > 0) platformLines.push({ key: 'commission', label: `${ota ? site : 'Channel'} service fee`, sub: base > 0 ? `${(m.channelFee / base * 100).toFixed(1)}% of the accommodation and fees` : undefined, amount: m.channelFee });
   if (v(m.paymentProcessingFee)) platformLines.push({ key: 'processing', label: 'Payment processing', amount: v(m.paymentProcessingFee) });
   const platformTotal = platformLines.reduce((n, l) => n + l.amount, 0);
 
@@ -140,11 +142,11 @@ export function ledger(m: MoneyIn, payments: PaymentRow[], site: string): Ledger
   const computed = guestTotal - platformTotal;
   const expected = imported.length ? reported : m.payoutAmount ?? computed;
   if ((imported.length || m.payoutAmount != null) && Math.abs(expected - computed) > TOLERANCE && !dead) {
-    notes.push(`${site} reported a payout of ${ringgit(expected)}; the guest total less the platform's share is ${ringgit(computed)}. ${site}'s figure is used.`);
+    notes.push(`${site} reported a host payout of ${ringgit(expected)}; the guest total less the channel's share is ${ringgit(computed)}. ${site}'s figure is used.`);
   }
-  if (imported.length) sources.push({ label: `${site} payout lines (${imported.length})`, amount: reported, from: 'Owner workbook' });
-  else if (m.payoutAmount != null) sources.push({ label: 'Payout reported', amount: m.payoutAmount, from: m.fromWorkbook ? 'Owner workbook' : 'HostPlatform export' });
-  sources.push({ label: 'Commission', amount: m.channelFee, from: m.fromWorkbook ? 'Owner workbook' : ota ? `${site} via HostPlatform or Channex` : 'This booking' });
+  if (imported.length) sources.push({ label: `${site} host payout lines (${imported.length})`, amount: reported, from: 'Owner workbook' });
+  else if (m.payoutAmount != null) sources.push({ label: 'Host payout reported', amount: m.payoutAmount, from: m.fromWorkbook ? 'Owner workbook' : 'HostPlatform export' });
+  sources.push({ label: 'Service fee', amount: m.channelFee, from: m.fromWorkbook ? 'Owner workbook' : ota ? `${site} via HostPlatform or Channex` : 'This reservation' });
 
   const paid = payments.filter(p => p.status === 'received').reduce((n, p) => n + (p.kind === 'refund' ? -p.amount : p.amount), 0);
   const receivedBefore = imported.length ? 0 : Math.max(m.collected, v(m.payoutAmount));
@@ -164,6 +166,7 @@ export function ledger(m: MoneyIn, payments: PaymentRow[], site: string): Ledger
 }
 
 export const PAYMENT_KINDS = ['guest_payment', 'ota_payout', 'refund'] as const;
+// vocab-ok: stored payment method values, validated and kept on old rows
 export const PAYMENT_METHODS = ['Bank transfer', 'Cash', 'Card', 'DuitNow / QR', 'Booking site payout', 'Other'] as const;
 /** Who may record or remove money received: management, finance and operations managers. */
 export const MONEY_ROLES = ['management', 'finance_admin', 'operations_manager'];

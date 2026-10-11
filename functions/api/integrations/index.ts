@@ -29,7 +29,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     return {
       state: !configured || units === 0 ? 'not_connected' : refused ? 'degraded' : 'connected',
       lastSyncedAt: units ? lastSent?.at ?? null : null,
-      lastError: units && refused ? `${refused} ${refused === 1 ? 'update was' : 'updates were'} refused by Channex. See Channex sync above.` : null,
+      lastError: units && refused ? `${refused} ${refused === 1 ? 'update was' : 'updates were'} refused by Channex. See Channex updates above.` : null,
       unitsLinked: units, syncInterval: 'As changes happen', credentialMasked: null, viaChannex: true,
     };
   };
@@ -52,7 +52,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       unitsLinked: 0, syncInterval: 'As messages are sent', credentialMasked: null,
       detail: configured ? null : channel === 'email'
         ? 'The email key (MAIL_API_KEY, Resend) is not set on this environment, so statement, payout and invite emails are not delivered. Management adds it once in Cloudflare.'
-        : 'The WhatsApp Business keys (WHATSAPP_TOKEN and WHATSAPP_PHONE_ID) are not set, so WhatsApp messages to direct-booking guests wait in the queue. Management adds them once in Cloudflare.',
+        : 'The WhatsApp Business keys (WHATSAPP_TOKEN and WHATSAPP_PHONE_ID) are not set, so WhatsApp messages to direct guests wait to send. Management adds them once in Cloudflare.',
     };
   };
 
@@ -68,7 +68,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       { id: 'email', provider: 'email', ...messaging('email', !!e.MAIL_API_KEY) },
       { id: 'whatsapp', provider: 'whatsapp', ...messaging('whatsapp', !!(e.WHATSAPP_TOKEN && e.WHATSAPP_PHONE_ID)) },
       { id: 'bank', provider: 'bank', state: 'manual', lastSyncedAt: null, lastError: null, unitsLinked: 0, syncInterval: null, credentialMasked: null,
-        detail: 'Not connected to a bank. Owner payouts are transferred in the bank’s own system, then recorded on Payouts (Start payout run, then Mark paid).' },
+        detail: 'Not connected to a bank. Owner payouts are transferred in the bank’s own system, then recorded on Owner payouts (Start payout run, then Mark paid).' },
     ],
   });
 };

@@ -18,7 +18,7 @@ export function BulkAssignCleaner({ taskIds, reservationIds, onClose, onDone }: 
   const [force, setForce] = useState(false);
   const [busy, setBusy] = useState(false);
   const n = (taskIds?.length ?? 0) + (reservationIds?.length ?? 0);
-  const what = reservationIds?.length ? plural(n, 'booking') : plural(n, 'clean');
+  const what = reservationIds?.length ? plural(n, 'reservation') : plural(n, 'cleaning job');
   async function submit(e: FormEvent) {
     e.preventDefault();
     if (!cleanerId) return;
@@ -30,15 +30,15 @@ export function BulkAssignCleaner({ taskIds, reservationIds, onClose, onDone }: 
       const overlapHint = r.skipped.some(s => /overlapping/.test(s.reason)) ? ' Tick "Assign even where it overlaps" to give them anyway.' : '';
       toast({
         tone: r.skipped.length ? 'warning' : 'success',
-        title: r.assigned ? `${plural(r.assigned, 'clean')} given to ${r.cleaner}.` : 'Nothing assigned.',
-        body: r.skipped.length ? `${plural(r.skipped.length, 'clean')} left alone: ${reasons}.${overlapHint}` : undefined,
+        title: r.assigned ? `${plural(r.assigned, 'cleaning job')} given to ${r.cleaner}.` : 'Nothing assigned.',
+        body: r.skipped.length ? `${plural(r.skipped.length, 'cleaning job')} left alone: ${reasons}.${overlapHint}` : undefined,
       });
       onDone();
     } catch (err) { notifyFailure(err); }
     setBusy(false);
   }
   return (
-    <CentreModal title="Assign a cleaner" sub={`${what} ticked.${reservationIds?.length ? ' Each booking\'s open turnover clean goes to the cleaner.' : ''}`} onClose={() => { if (!busy) onClose(); }}>
+    <CentreModal title="Assign a cleaner" sub={`${what} ticked.${reservationIds?.length ? ' Each reservation\'s open cleaning job goes to the cleaner.' : ''}`} onClose={() => { if (!busy) onClose(); }}>
       <form onSubmit={submit} className="px-[22px] py-4 flex flex-col gap-[14px]">
         <Select label="Cleaner" showLabel size="md" value={cleanerId} onChange={setCleanerId} placeholder="Pick a cleaner"
           options={cleaners.map(c => ({ value: c.id, label: c.name, hint: c.employmentType === 'outsourced' ? (c.vendorName ?? 'Outsourced') : `${c.busy} open today` }))} />

@@ -5,16 +5,16 @@ import type { StatusTone } from './status';
 export type RevenueModel = 'management' | 'management_guarantee' | 'grr' | 'master_lease' | 'long_term';
 
 export const MODELS: { key: RevenueModel; label: string; short: string; blurb: string; statement: string }[] = [
-  { key: 'management', label: 'Management share', short: 'Share', blurb: 'We manage the unit and split the profit',
-    statement: 'Income less owner-paid costs, then split: owner %, management %, agent %.' },
-  { key: 'management_guarantee', label: 'Share + minimum', short: 'Share + min.', blurb: 'As above, owner gets at least a monthly minimum (Package D)',
+  { key: 'management', label: 'Income split', short: 'Split', blurb: 'We manage the unit and split the profit',
+    statement: 'Income less owner-paid costs, then split: owner %, operator %, agent %.' },
+  { key: 'management_guarantee', label: 'Split + minimum', short: 'Split + min.', blurb: 'As above, owner gets at least a monthly minimum (Package D)',
     statement: 'The owner gets the higher of their share and the minimum; the company tops up the difference.' },
   { key: 'grr', label: 'Guaranteed rent', short: 'GRR', blurb: 'Fixed rent to the owner each month',
     statement: 'The owner gets the fixed rent. Income and costs are the company\'s.' },
   { key: 'master_lease', label: 'Master lease', short: 'Lease', blurb: 'We rent the unit from the owner',
     statement: 'No owner statement. The rent is a company cost; the unit\'s profit or loss is the company\'s.' },
   { key: 'long_term', label: 'Long-term let', short: 'Long-term', blurb: 'Let to one tenant, not on channels',
-    statement: 'The owner gets the tenant\'s rent less the management fee and owner-paid costs.' },
+    statement: 'The owner gets the tenant\'s rent less the operator share and owner-paid costs.' },
 ];
 export const MODEL: Record<RevenueModel, typeof MODELS[number]> = Object.fromEntries(MODELS.map(m => [m.key, m])) as Record<RevenueModel, typeof MODELS[number]>;
 
@@ -44,5 +44,5 @@ export const ENTRY_CATEGORIES: { value: string; label: string }[] = [
 ];
 export const CATEGORY_LABEL: Record<string, string> = {
   ...Object.fromEntries(ENTRY_CATEGORIES.map(c => [c.value, c.label])),
-  housekeeping: 'Cleaning', utilities: 'Utilities', consumables: 'Consumables', furniture: 'Furniture', management_fee: 'Management fee', channel_fee: 'Channel fee',
+  housekeeping: 'Cleaning', utilities: 'Utilities', consumables: 'Consumables', furniture: 'Furniture', management_fee: 'Operator share', channel_fee: 'Service fee',
 };

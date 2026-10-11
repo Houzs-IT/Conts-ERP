@@ -100,9 +100,9 @@ export async function overdueSweep(env: Env, o: RunOptions = {}): Promise<JobRep
     WHERE s.state = 'finalised' AND s.finalised_at ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T' AND s.finalised_at::timestamptz < (?::timestamptz - interval '3 days')`, now);
 
   const items = [
-    `${plural(tasks.length, 'task')} past due and not finished: marked Overdue; ${plural(recentCleans.length, 'clean')} from the last 7 days announced`,
-    `${plural(repairs.length, 'repair job')} open too long: announced`,
-    `${plural(stale.length, 'finalised statement')} not sent after 3 days: announced to finance`,
+    `${plural(tasks.length, 'task')} past due and not finished: marked Overdue; ${plural(recentCleans.length, 'cleaning job')} from the last 7 days announced`,
+    `${plural(repairs.length, 'maintenance job')} open too long: announced`,
+    `${plural(stale.length, 'final owner statement')} not sent after 3 days: announced to finance`,
   ];
   if (o.dryRun) return { job: 'overdue-sweep', summary: `Would mark ${plural(tasks.length, 'task')} Overdue and send notices for ${recentCleans.length + repairs.length + (stale.length ? 1 : 0)} items.`, items };
 
@@ -118,11 +118,11 @@ export async function overdueSweep(env: Env, o: RunOptions = {}): Promise<JobRep
   if (stale.length) {
     await notifyUsers(env, 'finance', {
       kind: 'statement.unsent', title: `${plural(stale.length, 'owner statement')} final but not sent`,
-      body: `Finalised more than 3 days ago: ${stale.slice(0, 5).map(s => s.owner).join(', ')}${stale.length > 5 ? ` and ${stale.length - 5} more` : ''}.`,
+      body: `Marked final more than 3 days ago: ${stale.slice(0, 5).map(s => s.owner).join(', ')}${stale.length > 5 ? ` and ${stale.length - 5} more` : ''}.`,
       link: '/finance/statements', entityTable: 'owner_statements', entityId: stale[0].id, dedupeKey: `unsent-${mytParts(new Date(now)).day}`,
     });
   }
-  return { job: 'overdue-sweep', summary: `Marked ${plural(tasks.length, 'task')} Overdue; announced ${recentCleans.length} cleans, ${repairs.length} repairs, ${stale.length} unsent statements.`, items };
+  return { job: 'overdue-sweep', summary: `Marked ${plural(tasks.length, 'task')} Overdue; announced ${recentCleans.length} cleaning jobs, ${repairs.length} maintenance jobs, ${stale.length} unsent owner statements.`, items };
 }
 
 /** Daily at 08:00 MYT: one "today" notice for operations: arrivals, departures, cleans (and how many have nobody),
@@ -143,9 +143,11 @@ export async function dailyDigest(env: Env, o: RunOptions = {}): Promise<JobRepo
     day, day, day, day, day, day, day);
   const x = c ?? { arrivals: 0, departures: 0, cleans: 0, unassigned: 0, repairs: 0, urgent: 0, visits: 0, blocked: 0 };
   const body = [
-    `${plural(x.arrivals, 'arrival')}, ${plural(x.departures, 'departure')}.`,
-    x.cleans ? `${plural(x.cleans, 'clean')}${x.unassigned ? `, ${x.unassigned} with nobody assigned` : ', all assigned'}.` : 'No cleans.',
-    `${plural(x.repairs, 'repair job')} open${x.urgent ? ` (${x.urgent} urgent)` : ''}${x.visits ? `, ${plural(x.visits, 'visit')} today` : ''}.`,
+    // vocab-ok: x.arrivals, x.departures and x.cleans are SQL column names, not text
+    `${plural(x.arrivals, 'check-in')}, ${plural(x.departures, 'checkout')}.`,
+    // vocab-ok: x.arrivals, x.departures and x.cleans are SQL column names, not text
+    x.cleans ? `${plural(x.cleans, 'cleaning job')}${x.unassigned ? `, ${x.unassigned} with nobody assigned` : ', all assigned'}.` : 'No cleaning jobs.',
+    `${plural(x.repairs, 'maintenance job')} open${x.urgent ? ` (${x.urgent} urgent)` : ''}${x.visits ? `, ${plural(x.visits, 'visit')} today` : ''}.`,
     x.blocked ? `${plural(x.blocked, 'unit')} blocked for repairs.` : null,
   ].filter(Boolean).join(' ');
   const recipients = await all<{ n: number }>(env, `SELECT count(*)::int AS n FROM users WHERE is_active = 1 AND role IN ('management','operations_manager','operations_staff')`);

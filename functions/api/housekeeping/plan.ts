@@ -9,12 +9,12 @@ import { MYT_DATE } from '../../_lib/ops';
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Field roles cannot plan cleaning.', 403);
+  if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Cleaners and technicians cannot plan cleaning.', 403);
 
   const b = await request.json<any>().catch(() => null);
   const ids: string[] = Array.isArray(b?.reservationIds) ? [...new Set(b.reservationIds.filter((x: unknown) => typeof x === 'string' && x))] as string[] : [];
-  if (!ids.length) return fail('VALIDATION', 'Pick at least one check-out to plan.', 422);
-  if (ids.length > 300) return fail('VALIDATION', 'Plan at most 300 check-outs at a time.', 422);
+  if (!ids.length) return fail('VALIDATION', 'Pick at least one checkout to plan.', 422);
+  if (ids.length > 300) return fail('VALIDATION', 'Plan at most 300 checkouts at a time.', 422);
 
   const now = nowIso();
   const day = MYT_DATE('COALESCE(t.scheduled_for, t.due_at, t.created_at)');

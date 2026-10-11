@@ -13,10 +13,10 @@ const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? o
 
 /** What a recorded failure means in plain words. Keep in sync with the `*_failed` audit actions. */
 const PROBLEM: Record<string, string> = {
-  'channex.push_failed': 'An update to the booking sites was refused',
-  'channex.enqueue_failed': 'An update for the booking sites could not be queued',
-  'channex.initial_push_failed': "A unit's first sync to Channex did not go through",
-  'channex.booking_feed_failed': 'Bookings could not be read from Channex',
+  'channex.push_failed': 'An update to the channels was refused',
+  'channex.enqueue_failed': 'An update for the channels could not be set to send',
+  'channex.initial_push_failed': "A unit's first send to Channex did not go through",
+  'channex.booking_feed_failed': 'Reservations could not be read from Channex',
   'channex.message_push_failed': 'A guest message could not be sent',
   'channex.review_reply_push_failed': 'A review reply could not be sent',
   'unit.import_undo_failed': 'A failed Airbnb import could not be undone',
@@ -88,25 +88,26 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const integrations = { label: 'Open Integrations', path: '/system/integrations' };
 
   const channex = guarded('channex', 'Channex', async () => {
-    if (!hooks) return { value: '—', status: 'off', summary: 'Not connected', detail: 'Airbnb, Booking.com and Agoda do not sync from this site.' };
-    if (!hooks.r?.ok) return { value: 'Down', status: 'critical', summary: hooks.r ? `Refused (${hooks.r.status})` : 'Unreachable', detail: 'Prices, open dates and bookings are not moving until this clears.', link: integrations };
+    if (!hooks) return { value: '—', status: 'off', summary: 'Not connected', detail: 'Prices are not sent to Airbnb, Booking.com and Agoda, and their reservations do not arrive here.' };
+    if (!hooks.r?.ok) return { value: 'Down', status: 'critical', summary: hooks.r ? `Refused (${hooks.r.status})` : 'Unreachable', detail: 'Prices, open dates and reservations are not moving until this clears.', link: integrations };
     const units = await one<{ linked: number; total: number }>(env, 'SELECT count(*) FILTER (WHERE channex_property_id IS NOT NULL)::int AS linked, count(*)::int AS total FROM units');
     return { value: `${hooks.ms} ms`, status: 'ok', summary: `${units?.linked ?? 0} of ${plural(units?.total ?? 0, 'unit')} linked`, link: integrations };
   });
 
-  const bookings = guarded('bookings', 'Booking notifications', async () => {
+  const bookings = guarded('bookings', 'Live updates', async () => {
     if (!hooks) return { value: '—', status: 'off', summary: 'Needs Channex' };
-    if (!env.CHANNEX_WEBHOOK_SECRET) return { value: 'Off', status: 'critical', summary: 'Notification secret missing', detail: 'New bookings from the booking sites will not arrive on their own.', link: integrations };
+    if (!env.CHANNEX_WEBHOOK_SECRET) return { value: 'Off', status: 'critical', summary: 'Notification secret missing', detail: 'New reservations from the channels will not arrive on their own.', link: integrations };
     if (!hooks.r?.ok) return { value: '—', status: 'warning', summary: 'Channex could not be asked' };
+    // vocab-ok: URL path of the live updates address, not shown as words
     const callbackUrl = `${new URL(request.url).origin}/api/integrations/channex-webhook`;
     const on = (hooks.r.body?.data ?? []).some((w: any) => w.attributes?.callback_url === callbackUrl && w.attributes?.is_active !== false);
     const last = await one<{ at: string | null }>(env, "SELECT max(created_at) AS at FROM reservations WHERE channel IN ('airbnb','booking_com','agoda')");
     return on
-      ? { value: 'On', status: 'ok', summary: last?.at ? `Last booking in ${last.at.slice(0, 10)}` : 'No booking received yet' }
-      : { value: 'Off', status: 'critical', summary: 'Not registered with Channex', detail: 'New bookings from the booking sites will not arrive on their own. Turn them on from Integrations.', link: integrations };
+      ? { value: 'On', status: 'ok', summary: last?.at ? `Last reservation in ${last.at.slice(0, 10)}` : 'No reservation received yet' }
+      : { value: 'Off', status: 'critical', summary: 'Not registered with Channex', detail: 'New reservations from the channels will not arrive on their own. Turn on live updates from Integrations.', link: integrations };
   });
 
-  const queue = guarded('queue', 'Sync queue', async () => {
+  const queue = guarded('queue', 'Waiting to send', async () => {
     if (!channexConfigured(env)) return { value: '—', status: 'off', summary: 'Needs Channex' };
     const q = await one<{ queued: number; failed: number; oldest: string | null }>(env, `
       SELECT count(*) FILTER (WHERE status IN ('queued','sending'))::int AS queued,
@@ -118,7 +119,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
              count(*) FILTER (WHERE status NOT BETWEEN 200 AND 299)::int AS refused
       FROM channex_calls WHERE called_at >= ?`, ago(DAY));
     const day = `${c?.ok ?? 0} accepted in 24h${c?.refused ? ` · ${c.refused} retried` : ''}`;
-    if ((q?.failed ?? 0) > 0) return { value: String(q!.failed), status: 'critical', summary: 'Gave up after refusals', detail: 'Those prices or dates are not on the booking sites. Run a full sync from Integrations.', link: integrations };
+    if ((q?.failed ?? 0) > 0) return { value: String(q!.failed), status: 'critical', summary: 'Not sent after refusals', detail: 'Those prices or dates are not on the channels. Use Send everything again on Integrations.', link: integrations };
     if (q?.oldest && q.oldest < ago(10 * MIN)) return { value: String(q.queued), status: 'warning', summary: 'Waiting over 10 minutes', detail: 'They go out on the next save, or by themselves once the background jobs are running.', link: integrations };
     return { value: String(q?.queued ?? 0), status: 'ok', summary: `waiting · ${day}`, link: integrations };
   });
@@ -128,7 +129,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     const tasks = await one<{ n: number }>(env, "SELECT count(*)::int AS n FROM tasks WHERE state IN ('open','assigned','in_progress') AND due_at IS NOT NULL AND due_at < ?", ago(HOUR));
     const mail = await one<{ n: number }>(env, "SELECT count(*)::int AS n FROM notification_log WHERE state = 'queued' AND channel <> 'in_app' AND queued_at < ?", ago(DAY));
     const left = [
-      (tasks?.n ?? 0) > 0 ? `${plural(tasks!.n, 'task')} past due and not marked overdue` : '',
+      (tasks?.n ?? 0) > 0 ? `${plural(tasks!.n, 'job')} past due and not marked overdue` : '',
       (mail?.n ?? 0) > 0 ? `${plural(mail!.n, 'message')} held for more than a day` : '',
     ].filter(Boolean);
     return left.length

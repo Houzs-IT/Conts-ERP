@@ -33,8 +33,8 @@ const CHANNEL_LABEL: Record<string, string> = {
   airbnb: 'Airbnb', booking_com: 'Booking.com', agoda: 'Agoda', direct: 'Direct', maintenance_block: 'Block', owner_stay: 'Owner stay',
 };
 const STATE_LABEL: Record<string, string> = {
-  inquiry: 'Inquiry', pending: 'Pending', confirmed: 'Confirmed', checked_in: 'Checked in',
-  checked_out: 'Checked out', cancelled: 'Cancelled', no_show: 'No show',
+  inquiry: 'Inquiry', pending: 'Pending', confirmed: 'Upcoming', checked_in: 'Currently hosting',
+  checked_out: 'Past', cancelled: 'Cancelled', no_show: 'No-show',
 };
 
 interface TimelineEvent { at: string; label: string; detail?: string; actor?: string; upcoming?: boolean }
@@ -46,21 +46,21 @@ const parse = (s: string | null) => { try { return s ? JSON.parse(s) : null; } c
 function describe(a: { action: string; actor_label: string; before_state: string | null; after_state: string | null }): Omit<TimelineEvent, 'at'> | null {
   const before = parse(a.before_state) ?? {}, after = parse(a.after_state) ?? {};
   switch (a.action) {
-    case 'reservation.create': return { label: 'Booking created', actor: a.actor_label };
+    case 'reservation.create': return { label: 'Reservation created', actor: a.actor_label };
     case 'reservation.block': return { label: after.channel === 'owner_stay' ? 'Owner stay created' : 'Block created', detail: after.reason ? `Note: ${after.reason}` : undefined, actor: a.actor_label };
-    case 'reservation.duplicate': return { label: 'Created as a copy of another booking', actor: a.actor_label };
+    case 'reservation.duplicate': return { label: 'Created as a copy of another reservation', actor: a.actor_label };
     case 'reservation.status':
     case 'reservation.cancel': {
       const to = STATE_LABEL[after.state] ?? after.state;
       const from = STATE_LABEL[before.state] ?? before.state;
       const label = after.state === 'cancelled' ? 'Cancelled' : after.state === 'no_show' ? 'Marked no-show'
-        : after.state === 'checked_in' && before.state === 'checked_out' ? 'Check-out undone'
+        : after.state === 'checked_in' && before.state === 'checked_out' ? 'Checkout undone'
         : after.state === 'confirmed' && before.state === 'checked_in' ? 'Check-in undone'
         : after.state === 'confirmed' && (before.state === 'cancelled' || before.state === 'no_show') ? 'Reinstated'
         : after.state === 'checked_in' ? 'Checked in' : after.state === 'checked_out' ? 'Checked out'
         : `Status changed from ${from} to ${to}`;
       const bits = [after.reason && after.reason !== 'operator_cancelled' ? `Reason: ${after.reason}` : null,
-        after.tasksRemoved ? `${after.tasksRemoved} unstarted ${after.tasksRemoved === 1 ? 'task' : 'tasks'} removed` : null].filter(Boolean);
+        after.tasksRemoved ? `${after.tasksRemoved} unstarted ${after.tasksRemoved === 1 ? 'cleaning job' : 'cleaning jobs'} removed` : null].filter(Boolean);
       return { label, actor: a.actor_label, detail: bits.join(' · ') || undefined };
     }
     case 'reservation.dates':
@@ -68,15 +68,15 @@ function describe(a: { action: string; actor_label: string; before_state: string
         label: 'Dates changed', actor: a.actor_label,
         detail: [
           before.checkIn ? `${dayLabel(before.checkIn)} – ${dayLabel(before.checkOut)} to ${dayLabel(after.checkIn)} – ${dayLabel(after.checkOut)}` : null,
-          after.grossBookingValue != null ? `Total ${ringgit(before.grossBookingValue ?? 0)} to ${ringgit(after.grossBookingValue)}` : null,
+          after.grossBookingValue != null ? `Guest total ${ringgit(before.grossBookingValue ?? 0)} to ${ringgit(after.grossBookingValue)}` : null,
         ].filter(Boolean).join(' · ') || undefined,
       };
-    case 'reservation.prepare': return { label: 'Arrival prepared', detail: 'A clean was queued for the unit', actor: a.actor_label };
-    case 'reservation.payment': return { label: after.kind === 'refund' ? 'Refund recorded' : after.kind === 'ota_payout' ? 'Payout recorded' : 'Payment recorded', detail: after.amount != null ? `${ringgit(after.amount)}${after.receivedOn ? ` on ${dayLabel(after.receivedOn)}` : ''}` : undefined, actor: a.actor_label };
+    case 'reservation.prepare': return { label: 'Check-in prepared', detail: 'A cleaning job was added for the unit', actor: a.actor_label };
+    case 'reservation.payment': return { label: after.kind === 'refund' ? 'Refund recorded' : after.kind === 'ota_payout' ? 'Host payout recorded' : 'Payment recorded', detail: after.amount != null ? `${ringgit(after.amount)}${after.receivedOn ? ` on ${dayLabel(after.receivedOn)}` : ''}` : undefined, actor: a.actor_label };
     case 'document.issue': return { label: `${after.type === 'receipt' ? 'Official receipt' : 'Invoice'} ${after.docNo} issued`, detail: after.amount != null ? ringgit(after.amount) : undefined, actor: a.actor_label };
     case 'document.void': return { label: `${after.docNo} voided`, detail: after.reason ? `Reason: ${after.reason}` : undefined, actor: a.actor_label };
     case 'reservation.payment_removed': return { label: 'Payment removed', detail: before.amount != null ? ringgit(before.amount) : undefined, actor: a.actor_label };
-    case 'reservation.details': return { label: after.checkInTime || after.checkOutTime ? 'Check-in or check-out time changed' : 'Notes changed', detail: after.checkInTime || after.checkOutTime ? [after.checkInTime ? `Check-in from ${after.checkInTime}` : null, after.checkOutTime ? `Check-out by ${after.checkOutTime}` : null].filter(Boolean).join(' · ') : undefined, actor: a.actor_label };
+    case 'reservation.details': return { label: after.checkInTime || after.checkOutTime ? 'Check-in or checkout time changed' : 'Notes changed', detail: after.checkInTime || after.checkOutTime ? [after.checkInTime ? `Check-in from ${after.checkInTime}` : null, after.checkOutTime ? `Checkout by ${after.checkOutTime}` : null].filter(Boolean).join(' · ') : undefined, actor: a.actor_label };
     default: return null;
   }
 }
@@ -86,7 +86,7 @@ function describe(a: { action: string; actor_label: string; before_state: string
 export const onRequestGet: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Bookings are not available to field roles.', 403);
+  if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Reservations are not available to cleaners and technicians.', 403);
   const id = String(params.id);
 
   const present = await optionalColumns(env);
@@ -120,19 +120,19 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
   const what = row.channel === 'maintenance_block' ? 'Block' : row.channel === 'owner_stay' ? 'Owner stay' : null;
   const timeline: TimelineEvent[] = [];
   if (!auditRows.some(a => a.action === 'reservation.create' || a.action === 'reservation.duplicate' || a.action === 'reservation.block')) {
-    timeline.push({ at: row.created_at, label: what ? `${what} recorded` : 'Booking recorded', detail: what ? undefined : `Source: ${channel}` });
+    timeline.push({ at: row.created_at, label: what ? `${what} recorded` : 'Reservation recorded', detail: what ? undefined : `Channel: ${channel}` });
   }
   for (const a of auditRows) {
     const d = describe(a);
-    if (d) timeline.push({ at: a.occurred_at, ...d, ...(what && d.label === 'Booking created' ? { label: `${what} created` } : {}) });
+    if (d) timeline.push({ at: a.occurred_at, ...d, ...(what && d.label === 'Reservation created' ? { label: `${what} created` } : {}) });
   }
   for (const m of messages) {
     timeline.push({ at: m.sent_at, label: m.direction === 'inbound' ? 'Message from guest' : m.is_automated ? 'Automatic message sent' : 'Message sent to guest' });
   }
   for (const n of notices) {
-    timeline.push({ at: n.sent_at ?? n.queued_at, label: `${n.template.replace(/[._]/g, ' ')} by ${n.channel}`, detail: n.state === 'sent' ? 'Sent' : n.state === 'failed' ? 'Failed to send' : 'Queued, not sent yet' });
+    timeline.push({ at: n.sent_at ?? n.queued_at, label: `${n.template.replace(/[._]/g, ' ')} by ${n.channel}`, detail: n.state === 'sent' ? 'Sent' : n.state === 'failed' ? 'Failed to send' : 'Waiting to send' });
   }
-  if (lines.payoutDate && !payments.some(p => p.source === 'owner_workbook')) timeline.push({ at: String(lines.payoutDate), label: 'Paid out to us' });
+  if (lines.payoutDate && !payments.some(p => p.source === 'owner_workbook')) timeline.push({ at: String(lines.payoutDate), label: 'Host payout received' });
   timeline.sort((a, b) => a.at.localeCompare(b.at));
 
   const today = mytDay();
@@ -140,7 +140,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
     timeline.push({ at: `${row.check_in}T${row.check_in_time}:00+08:00`, label: what ? `${what} starts` : 'Check-in due', upcoming: true });
   }
   if (['inquiry', 'pending', 'confirmed', 'checked_in'].includes(row.state) && row.check_out >= today) {
-    timeline.push({ at: `${row.check_out}T${row.check_out_time}:00+08:00`, label: what ? `${what} ends` : 'Check-out due', upcoming: true });
+    timeline.push({ at: `${row.check_out}T${row.check_out_time}:00+08:00`, label: what ? `${what} ends` : 'Checkout due', upcoming: true });
   }
 
   const moves = movesFor(row.state as State, {
@@ -180,7 +180,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
       invoiceReason: invoiceRefusal({ channel: row.channel, state: row.state, gross_booking_value: Number(row.gross_booking_value) }, payments),
       // A booking site owns its bookings' dates and price: they change on the site and come back through Channex.
       changeDates: live && !ota,
-      changeDatesReason: !live ? 'A finished, cancelled or no-show booking cannot move.' : ota ? `This is a ${CHANNEL_LABEL[row.channel]} booking: its dates and price are set on ${CHANNEL_LABEL[row.channel]}. Change them there; the change comes back here through Channex.` : null,
+      changeDatesReason: !live ? 'A past, cancelled or no-show reservation cannot move.' : ota ? `This is a ${CHANNEL_LABEL[row.channel]} reservation: its dates and price are set on ${CHANNEL_LABEL[row.channel]}. Change them there; the change comes back here by itself.` : null,
       recordPayment: schema.payments && MONEY_ROLES.includes(session.role) && row.channel !== 'maintenance_block' && row.channel !== 'owner_stay',
       editDetails: true,
       paymentsReady: schema.payments,
@@ -193,7 +193,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
 export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Field roles cannot change reservations.', 403);
+  if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Cleaners and technicians cannot change reservations.', 403);
 
   const b = await request.json<any>().catch(() => null);
   const r = await applyMove(env, session, String(params.id), b?.state ?? b?.status, typeof b?.reason === 'string' ? b.reason : null);

@@ -25,7 +25,7 @@ export async function processChannexBookingFeed(env: Env): Promise<{ processed: 
   try {
     const res = await channexBookingFeed(env);
     if (!res.ok) {
-      await markIntegrations(env, 'degraded', `Channex refused the booking feed (status ${res.status}).`);
+      await markIntegrations(env, 'degraded', `Channex refused the request for new reservations (status ${res.status}).`);
       return { processed: 0, skipped: 0 };
     }
     for (const entry of (res.body?.data ?? []) as FeedEntry[]) {
@@ -35,10 +35,10 @@ export async function processChannexBookingFeed(env: Env): Promise<{ processed: 
       });
       if (ok) { await channexAckBookingRevision(env, entry.id); processed++; } else skipped++;
     }
-    await markIntegrations(env, 'connected', skipped > 0 ? `${skipped} booking(s) could not be matched automatically — see the audit log.` : null);
+    await markIntegrations(env, 'connected', skipped > 0 ? `${skipped} reservation(s) could not be brought in automatically. See History.` : null);
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
-    await audit(env, { actorId: null, actorLabel: 'Channex sync', action: 'channex.booking_feed_failed', entityTable: 'reservations', entityId: 'feed', after: { error: message } }).catch(() => {});
+    await audit(env, { actorId: null, actorLabel: 'Channex', action: 'channex.booking_feed_failed', entityTable: 'reservations', entityId: 'feed', after: { error: message } }).catch(() => {});
     await markIntegrations(env, 'degraded', message);
   }
   return { processed, skipped };
@@ -72,7 +72,7 @@ async function applyRevision(env: Env, entry: FeedEntry): Promise<boolean> {
   if (a.status === 'cancelled') {
     if (existing && existing.state !== 'cancelled') {
       await run(env, `UPDATE reservations SET state = 'cancelled', updated_at = ? WHERE id = ?`, now, existing.id);
-      await audit(env, { actorId: null, actorLabel: 'Channex sync', action: 'channex.booking_cancelled', entityTable: 'reservations', entityId: existing.id, after: { channexBookingId: a.booking_id } });
+      await audit(env, { actorId: null, actorLabel: 'Channex', action: 'channex.booking_cancelled', entityTable: 'reservations', entityId: existing.id, after: { channexBookingId: a.booking_id } });
       // The nights stayed closed on Airbnb after the first live cancellation (8 Oct 2026): nothing told
       // Channex they were free again. Same release a cancellation made here sends.
       await reopen(env, existing.unit_id, existing.check_in, existing.check_out, existing.id);
@@ -85,7 +85,7 @@ async function applyRevision(env: Env, entry: FeedEntry): Promise<boolean> {
   const guestsCount = Math.max(1, Number(occupancy.adults ?? 1) + Number(occupancy.children ?? 0));
   // A booking with no name gets its reference in the placeholder, so nameless guests do not all become one record.
   const ref = a.ota_reservation_code ?? a.unique_id ?? a.booking_id ?? '';
-  const guestName = [a.customer?.name, a.customer?.surname].filter(Boolean).join(' ').trim() || `${a.ota_name ?? 'OTA'} guest${ref ? ` ${ref}` : ''}`;
+  const guestName = [a.customer?.name, a.customer?.surname].filter(Boolean).join(' ').trim() || `${a.ota_name ?? 'Channel'} guest${ref ? ` ${ref}` : ''}`;
   const guestId = await upsertGuest(env, { fullName: guestName, email: a.customer?.mail ?? null, phone: a.customer?.phone ?? null });
   // Booking value and the site's fee: Channex's amount is the payout on Airbnb (channexAmounts.ts).
   const { grossSen: amountSen, feeSen, source: amountSource } = bookingAmounts(a, room.amount);
@@ -102,9 +102,9 @@ async function applyRevision(env: Env, entry: FeedEntry): Promise<boolean> {
       await syncAvailabilityIfLinked(env, unit.id, checkIn, checkOut, false);
     }
     const clash = await findClash(env, unit.id, checkIn, checkOut, existing.id);
-    if (clash) await audit(env, { actorId: null, actorLabel: 'Channex sync', action: 'channex.booking_clash', entityTable: 'reservations', entityId: existing.id, after: { checkIn, checkOut, clashingReservationId: clash.id, otaBookingId: a.booking_id } });
+    if (clash) await audit(env, { actorId: null, actorLabel: 'Channex', action: 'channex.booking_clash', entityTable: 'reservations', entityId: existing.id, after: { checkIn, checkOut, clashingReservationId: clash.id, otaBookingId: a.booking_id } });
     const moved = existing.check_in !== checkIn || existing.check_out !== checkOut;
-    await audit(env, { actorId: null, actorLabel: 'Channex sync', action: 'channex.booking_updated', entityTable: 'reservations', entityId: existing.id,
+    await audit(env, { actorId: null, actorLabel: 'Channex', action: 'channex.booking_updated', entityTable: 'reservations', entityId: existing.id,
       before: moved ? { checkIn: existing.check_in, checkOut: existing.check_out } : undefined,
       after: { channexBookingId: a.booking_id, ...(moved ? { checkIn, checkOut } : {}) } });
     if (moved) await bookingNotice(env, existing.id, 'dates', null, { from: { checkIn: existing.check_in, checkOut: existing.check_out } });
@@ -120,8 +120,8 @@ async function applyRevision(env: Env, entry: FeedEntry): Promise<boolean> {
   // Taken here, so closed on every booking site this unit is sold on.
   await syncAvailabilityIfLinked(env, unit.id, checkIn, checkOut, false);
   const clash = await findClash(env, unit.id, checkIn, checkOut, id);
-  if (clash) await audit(env, { actorId: null, actorLabel: 'Channex sync', action: 'channex.booking_clash', entityTable: 'reservations', entityId: id, after: { checkIn, checkOut, clashingReservationId: clash.id, otaBookingId: a.booking_id } });
-  await audit(env, { actorId: null, actorLabel: 'Channex sync', action: 'channex.booking_created', entityTable: 'reservations', entityId: id, after: { channexBookingId: a.booking_id, otaName: a.ota_name, grossSen: amountSen, feeSen, amountSource, unitId: unit.id, checkIn, checkOut } });
+  if (clash) await audit(env, { actorId: null, actorLabel: 'Channex', action: 'channex.booking_clash', entityTable: 'reservations', entityId: id, after: { checkIn, checkOut, clashingReservationId: clash.id, otaBookingId: a.booking_id } });
+  await audit(env, { actorId: null, actorLabel: 'Channex', action: 'channex.booking_created', entityTable: 'reservations', entityId: id, after: { channexBookingId: a.booking_id, otaName: a.ota_name, grossSen: amountSen, feeSen, amountSource, unitId: unit.id, checkIn, checkOut } });
   await bookingNotice(env, id, 'created', null);
   return true;
 }
@@ -133,6 +133,6 @@ async function reopen(env: Env, unitId: string, checkIn: string, checkOut: strin
 }
 
 async function auditSkip(env: Env, revisionId: string, reason: string, details: unknown): Promise<false> {
-  await audit(env, { actorId: null, actorLabel: 'Channex sync', action: 'channex.booking_skipped', entityTable: 'reservations', entityId: revisionId, after: { reason, details } }).catch(() => {});
+  await audit(env, { actorId: null, actorLabel: 'Channex', action: 'channex.booking_skipped', entityTable: 'reservations', entityId: revisionId, after: { reason, details } }).catch(() => {});
   return false;
 }

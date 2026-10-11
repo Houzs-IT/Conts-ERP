@@ -23,7 +23,7 @@ import { notifyUsers } from './notify';
 export const APPROVAL_KINDS = ['guest_refund', 'payout_run', 'owner_adjustment', 'expense', 'debt_write_off'] as const;
 export type ApprovalKind = typeof APPROVAL_KINDS[number];
 export const KIND_LABEL: Record<ApprovalKind, string> = {
-  guest_refund: 'Guest refund', payout_run: 'Payout run', owner_adjustment: 'Owner credit or charge', expense: 'Expense', debt_write_off: 'Debt write-off',
+  guest_refund: 'Guest refund', payout_run: 'Owner payout run', owner_adjustment: 'Owner adjustment', expense: 'Expense', debt_write_off: 'Debt write-off',
 };
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'cancelled';
 
@@ -283,7 +283,7 @@ async function notifyRequester(env: Env, r: any, decision: Decision) {
     // An approved payout run is the moment the transfers start: finance is told so each payout gets marked paid.
     if (r.kind === 'payout_run' && r.status === 'approved') {
       await notifyUsers(env, 'finance', {
-        kind: 'payout.run', title: 'Payout run approved: make the transfers', body: `${r.summary}. Mark each payout paid once the bank confirms it.`,
+        kind: 'payout.run', title: 'Owner payout run approved: make the transfers', body: `${r.summary}. Mark each owner payout paid once the bank confirms it.`,
         link: '/finance/payouts', entityTable: 'approval_requests', entityId: r.id, dedupeKey: `payout-run-${r.id}`,
       });
     }
@@ -306,7 +306,7 @@ const EXECUTE: Record<ApprovalKind, Executor> = {
   /** booking_payments refund row, as Record payment writes it, attributed to the person who asked. */
   async guest_refund(tx, p, c) {
     const r = await one<{ id: string }>(tx, 'SELECT id FROM reservations WHERE id = ?', p.reservationId);
-    if (!r) throw new ApprovalRefused('NOT_FOUND', 'The booking no longer exists.', 404);
+    if (!r) throw new ApprovalRefused('NOT_FOUND', 'The reservation no longer exists.', 404);
     const pay = await insertPayment(tx, { reservationId: p.reservationId, amount: Number(p.amount), receivedOn: p.receivedOn, method: p.method ?? null, reference: p.reference ?? null, kind: 'refund', note: p.note ?? null, userId: c.requestedBy });
     await audit(tx, { ...actor(c), action: 'reservation.payment', entityTable: 'reservations', entityId: p.reservationId,
       after: { paymentId: pay.id, amount: pay.amount, kind: 'refund', receivedOn: p.receivedOn, method: pay.method, reference: pay.reference, approvalId: c.approvalId } });
@@ -325,7 +325,7 @@ const EXECUTE: Record<ApprovalKind, Executor> = {
       await audit(tx, { ...actor(c), action: 'payout.run', entityTable: 'payouts', entityId: id, before: { state: 'pending' }, after: { state: 'processing', run: runRef, amount: Number(moved.amount), approvalId: c.approvalId } });
       started.push(id); total += Number(moved.amount);
     }
-    if (!started.length) throw new ApprovalRefused('NOTHING_TO_RUN', 'None of these payouts is still pending. Reject this request and start a new run.');
+    if (!started.length) throw new ApprovalRefused('NOTHING_TO_RUN', 'None of these owner payouts is still pending. Reject this request and start a new run.');
     return { run: runRef, started: started.length, total, skipped };
   },
 

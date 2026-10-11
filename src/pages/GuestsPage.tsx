@@ -75,10 +75,10 @@ interface Guest {
 
 const FILTERS = [
   { key: 'all', label: 'All guests', empty: 'No guests yet.' },
-  { key: 'arriving_today', label: 'Arriving today', empty: 'Nobody arrives today.' },
-  { key: 'departing_today', label: 'Departing today', empty: 'Nobody departs today.' },
-  { key: 'tomorrow', label: 'Tomorrow', empty: 'No arrivals or departures tomorrow.' },
-  { key: 'missing_id', label: 'Missing ID', empty: 'Every guest with a stay coming has their registration details.' },
+  { key: 'arriving_today', label: 'Arriving today', empty: 'Nobody checks in today.' },
+  { key: 'departing_today', label: 'Checking out today', empty: 'Nobody checks out today.' },
+  { key: 'tomorrow', label: 'Tomorrow', empty: 'No check-ins or checkouts tomorrow.' },
+  { key: 'missing_id', label: 'Missing ID', empty: 'Every guest with a reservation coming up has their registration details.' },
   { key: 'repeat', label: 'Repeat', empty: 'No repeat guests yet.' },
   { key: 'vip', label: 'VIP', empty: 'No guest is tagged VIP.' },
   { key: 'blacklist', label: 'Blacklist', empty: 'No guest is blacklisted.' },
@@ -96,10 +96,10 @@ const LIST_FALLBACK: ListPayload = {
 
 // Latest stay first: the guest an operator is looking for is usually the one who just booked or stayed.
 const SORTS = [
-  { key: 'recent', label: 'Latest stay', dir: 'desc' },
+  { key: 'recent', label: 'Latest check-in', dir: 'desc' },
   { key: 'name', label: 'Name A to Z', dir: 'asc' },
-  { key: 'value', label: 'Booking value', dir: 'desc' },
-  { key: 'stays', label: 'Most stays', dir: 'desc' },
+  { key: 'value', label: 'Guest total', dir: 'desc' },
+  { key: 'stays', label: 'Most reservations', dir: 'desc' },
 ] as const;
 
 const OPS_ROLES: UserRole[] = ['management', 'operations_manager', 'operations_staff'];
@@ -240,7 +240,7 @@ export default function GuestsPage() {
       ) },
     { key: 'tag', label: 'Tag', type: 'status', width: 110, phone: 'badge',
       status: g => (g.missingId ? { label: 'Missing ID', tone: 'critical' } : g.tags[0] ? { label: g.tags[0].label, tone: g.tags[0].tone } : null) },
-    { key: 'stays', label: 'Stays', type: 'number', value: g => g.stays, sortKey: 'stays', width: 80,
+    { key: 'stays', label: 'Reservations', type: 'number', value: g => g.stays, sortKey: 'stays', width: 80,
       sub: g => (g.upcoming ? `${fmtCount(g.upcoming)} upcoming` : null) },
     ...(canSeeContact ? [
       { key: 'email', label: 'Email', value: (g: GuestSummary) => g.email, hidden: true, width: 190 },
@@ -251,8 +251,8 @@ export default function GuestsPage() {
     { key: 'nights', label: 'Nights', type: 'number', value: g => g.nights, sortKey: 'nights', hidden: true, width: 80 },
     { key: 'upcoming', label: 'Upcoming', type: 'number', value: g => g.upcoming, sortKey: 'upcoming', hidden: true, width: 90 },
     { key: 'lastCheckIn', label: 'Last check-in', type: 'date', value: g => g.lastCheckIn ?? null, sortKey: 'recent', hidden: true },
-    { key: 'value', label: 'Booking value', type: 'money', value: g => g.lifetimeValue, sortKey: 'value', hidden: true,
-      title: 'Guest totals of every stay, upcoming included.' },
+    { key: 'value', label: 'Guest total', type: 'money', value: g => g.lifetimeValue, sortKey: 'value', hidden: true,
+      title: 'Guest totals of every reservation, upcoming included.' },
   ], [canSeeContact]);
 
   // ---- actions: each toast says what the server did, never what was hoped for ----
@@ -261,10 +261,10 @@ export default function GuestsPage() {
     setBusy(true);
     try {
       const r = await api.post<{ taskCreated: boolean }>(`/reservations/${m.reservationId}/prepare`, {});
-      toast({ tone: 'success', title: r.taskCreated ? `A clean was queued for ${m.propertyName} ${m.unitNumber}.` : `A clean is already open for ${m.propertyName} ${m.unitNumber}.`,
+      toast({ tone: 'success', title: r.taskCreated ? `A cleaning job was added for ${m.propertyName} ${m.unitNumber}.` : `A cleaning job is already open for ${m.propertyName} ${m.unitNumber}.`,
         body: 'Nothing was sent to the guest. Send access details once the unit is Ready.' });
       reloadAll();
-    } catch (e) { toast({ tone: 'critical', title: 'Arrival not prepared.', body: failMessage(e) }); }
+    } catch (e) { toast({ tone: 'critical', title: 'Cleaning job not added.', body: failMessage(e) }); }
     setBusy(false);
   }
   async function sendAccess(g: Guest) {
@@ -293,7 +293,7 @@ export default function GuestsPage() {
     setBusy(true);
     try {
       const r = await api.patch<{ effects?: { turnoverCreated?: boolean } }>(`/reservations/${m.reservationId}`, { state: 'checked_out' });
-      toast({ tone: 'success', title: `${g.fullName} checked out.`, body: r?.effects?.turnoverCreated ? `A cleaning task was created for ${m.propertyName} ${m.unitNumber}.` : `${m.propertyName} ${m.unitNumber} already had a clean planned.` });
+      toast({ tone: 'success', title: `${g.fullName} checked out.`, body: r?.effects?.turnoverCreated ? `A cleaning job was added for ${m.propertyName} ${m.unitNumber}.` : `${m.propertyName} ${m.unitNumber} already had a cleaning job planned.` });
       setCheckout(null);
       reloadAll();
     } catch (e) { toast({ tone: 'critical', title: 'Not checked out.', body: failMessage(e) }); } finally { setBusy(false); }
@@ -318,7 +318,7 @@ export default function GuestsPage() {
       setDraft('');
       updateParams(p => { ['q', 'filter', 'page'].forEach(k => p.delete(k)); p.set('g', r.id); });
       toast(r.created
-        ? { tone: 'success', title: `${input.fullName} added.`, body: 'Only the guest record was created. Use Book a stay to give them a unit and dates.' }
+        ? { tone: 'success', title: `${input.fullName} added.`, body: 'Only the guest record was created. Use Add reservation to give them a unit and dates.' }
         : { tone: 'warning', title: 'This guest is already on file.', body: `${r.existingName} has the same ${input.email ? 'email' : 'phone'}. Their record is open; nothing new was created.` });
       reloadAll();
     } catch (e) {
@@ -334,7 +334,7 @@ export default function GuestsPage() {
     <>
       <PageHeader
         title="Guests"
-        sub={counts ? `${plural(counts.all, 'guest')}${searching ? ' match your search' : ''}${counts.missing_id ? ` · ${counts.missing_id} with a stay coming are missing ID details` : ''}` : 'Loading guests'}
+        sub={counts ? `${plural(counts.all, 'guest')}${searching ? ' match your search' : ''}${counts.missing_id ? ` · ${counts.missing_id} with a reservation coming up are missing ID details` : ''}` : 'Loading guests'}
         primary={canSeeContact ? <Button variant="primary" size="sm" icon={<Icon name="Plus" size="sm" />} onClick={() => setAdding(true)}>Add guest</Button> : undefined}
       />
 
@@ -373,7 +373,7 @@ export default function GuestsPage() {
               <label className="relative flex-[1_1_180px] min-w-0">
                 <span className="absolute left-[10px] top-1/2 -translate-y-1/2 text-muted-ink grid pointer-events-none"><Icon name="Search" size="sm" /></span>
                 <input value={draft} onChange={e => setSearch(e.target.value)} aria-label="Search guests"
-                  placeholder={canSeeContact ? 'Name, phone, email or booking reference' : 'Guest name'}
+                  placeholder={canSeeContact ? 'Name, phone, email or reservation reference' : 'Guest name'}
                   className="h-9 w-full box-border rounded-control border border-solid border-line bg-card text-ink [font-family:inherit] text-copy pl-[32px] pr-3 py-0 outline-none" />
               </label>
               <Select label="Sort guests" value={sortKey} onChange={setSort} className="flex-[1_1_150px] sm:flex-none sm:w-[150px]" options={sortOptions} />
@@ -416,10 +416,10 @@ export default function GuestsPage() {
         busy={busy}
         onClose={() => setCheckout(null)}
         spec={!checkout?.movement ? null : {
-          title: `Mark ${checkout.fullName} checked out?`,
-          body: `${checkout.movement.propertyName} ${checkout.movement.unitNumber} moves to Dirty and the stay is closed.`,
-          meta: 'A cleaning task is created if the unit has none planned.',
-          confirmLabel: 'Mark checked out',
+          title: `Check out ${checkout.fullName}?`,
+          body: `${checkout.movement.propertyName} ${checkout.movement.unitNumber} moves to Dirty and the reservation is closed.`,
+          meta: 'A cleaning job is added if the unit has none planned.',
+          confirmLabel: 'Check out',
           busyLabel: 'Checking out…',
           onConfirm: confirmCheckout,
         }}
@@ -439,7 +439,7 @@ export default function GuestsPage() {
 /* ------------------------------------------------------------------ */
 
 const guestMeta = (g: GuestSummary, canSeeContact: boolean) => {
-  const lastStay = g.upcoming ? 'Stay coming up' : g.lastCheckIn ? `Last stay ${fmtDate(g.lastCheckIn)}` : 'No stays yet';
+  const lastStay = g.upcoming ? 'Reservation coming up' : g.lastCheckIn ? `Last check-in ${fmtDate(g.lastCheckIn)}` : 'No reservations yet';
   return canSeeContact ? [phone(g.phone), g.email].filter(Boolean).join(' · ') || lastStay : lastStay;
 };
 
@@ -456,7 +456,7 @@ function GuestCard({ g, canSeeContact }: { g: GuestSummary; canSeeContact: boole
       </span>
       <span className="flex flex-col items-end gap-1 flex-none">
         {g.missingId ? <StatusBadge tone="critical" label="Missing ID" size="sm" /> : tag && <StatusBadge tone={tag.tone} label={tag.label} size="sm" />}
-        <span className="text-meta text-muted-ink [font-variant-numeric:tabular-nums]">{plural(g.stays, 'stay')}{g.upcoming ? ` (${g.upcoming} upcoming)` : ''}</span>
+        <span className="text-meta text-muted-ink [font-variant-numeric:tabular-nums]">{plural(g.stays, 'reservation')}{g.upcoming ? ` (${g.upcoming} upcoming)` : ''}</span>
       </span>
     </span>
   );
@@ -494,7 +494,7 @@ function ProfilePanel({ g, canSeeContact, busy, onMessage, onBookStay, onEdit, o
           </div>
           <div className="flex gap-2 flex-wrap">
             <Button size="sm" variant="secondary" icon={<Icon name="MessageSquare" size="sm" />} onClick={onMessage}>Message</Button>
-            <Button size="sm" variant="primary" onClick={onBookStay}>Book a stay</Button>
+            <Button size="sm" variant="primary" onClick={onBookStay}>Add reservation</Button>
             {(g.can.edit || g.can.merge) && (
               <Menu label="More actions" trigger={<span className="h-8 inline-flex items-center gap-1 px-3 rounded-control border border-solid border-line bg-card text-copy text-ink">More<Icon name="ChevronDown" size="sm" /></span>}
                 items={[
@@ -506,9 +506,9 @@ function ProfilePanel({ g, canSeeContact, busy, onMessage, onBookStay, onEdit, o
         </div>
 
         <div className="grid grid-cols-[repeat(auto-fit,minmax(120px,1fr))] gap-[14px] pt-4 [border-top:1px_solid_var(--color-line-soft)]">
-          <Stat label="Stays" value={fmtCount(g.stays)} sub={g.upcoming ? `incl. ${g.upcoming} upcoming` : undefined} />
+          <Stat label="Reservations" value={fmtCount(g.stays)} sub={g.upcoming ? `incl. ${g.upcoming} upcoming` : undefined} />
           <Stat label="Nights" value={fmtCount(g.nights)} />
-          <Stat label="Booking value" value={rm(g.lifetimeValue, { cents: false })} sub="Guest totals, upcoming included" />
+          <Stat label="Guest total" value={rm(g.lifetimeValue, { cents: false })} sub="Guest totals, upcoming included" />
           <Stat label="Rating given" value={g.ratingScore != null ? g.ratingScore.toFixed(1) : '—'} />
         </div>
       </div>
@@ -523,9 +523,9 @@ function ProfilePanel({ g, canSeeContact, busy, onMessage, onBookStay, onEdit, o
       )}
 
       <div className="bg-card border border-solid border-line rounded-card overflow-hidden">
-        <div className="pt-5 pb-3.5 px-5 [border-bottom:1px_solid_var(--color-line-soft)] text-[16px] font-semibold tracking-[-0.01em]">Stays</div>
+        <div className="pt-5 pb-3.5 px-5 [border-bottom:1px_solid_var(--color-line-soft)] text-[16px] font-semibold tracking-[-0.01em]">Reservations</div>
         {g.history.length === 0 ? (
-          <div className="py-[18px] px-5 text-copy text-muted-ink">No stays yet. Cancelled bookings are not listed here.</div>
+          <div className="py-[18px] px-5 text-copy text-muted-ink">No reservations yet. Cancelled reservations are not listed here.</div>
         ) : (
           g.history.map((s, i) => (
             <button key={s.reservationId} type="button" onClick={() => onOpenStay(s.reservationId)}
@@ -583,7 +583,7 @@ function Registration({ g, onEdit }: { g: Guest; onEdit: () => void }) {
         {row('Nationality', countryName(r.countryCode) ?? 'Not given', !r.countryCode)}
       </div>
       {g.can.edit && <Button size="sm" variant="secondary" onClick={onEdit} style={{ alignSelf: 'flex-start' }}>{missing ? 'Fill in details' : 'Edit details'}</Button>}
-      {g.can.reveal && <span className="text-caption text-muted-ink">Showing a full ID number is recorded in the audit log.</span>}
+      {g.can.reveal && <span className="text-caption text-muted-ink">Showing a full ID number is recorded in History.</span>}
     </div>
   );
 }
@@ -643,7 +643,8 @@ function MovementStrip({ g, busy, onPrepare, onSendAccess, onCheckIn, onCheckOut
   const m = g.movement!;
   const arrival = m.kind === 'arrival';
   const when = arrival ? m.checkInAt : m.checkOutAt;
-  const heading = `${arrival ? 'Arriving' : 'Departing'} ${m.day} · ${time(when)}`;
+  // vocab-ok: arrival is the variable's name; the heading reads Arriving or Checking out
+  const heading = `${arrival ? 'Arriving' : 'Checking out'} ${m.day} · ${time(when)}`;
   const guard = accessGuard(m);
   const checkedIn = m.state === 'checked_in';
   const checkedOut = m.state === 'checked_out';
@@ -663,21 +664,21 @@ function MovementStrip({ g, busy, onPrepare, onSendAccess, onCheckIn, onCheckOut
       <div className="flex items-center gap-2 flex-wrap">
         {arrival && !checkedIn && (
           <>
-            <Button size="sm" variant="tertiary" onClick={onPrepare} disabled={busy || !!m.preparedAt} disabledReason="A clean is already queued for this arrival.">Queue a clean</Button>
+            <Button size="sm" variant="tertiary" onClick={onPrepare} disabled={busy || !!m.preparedAt} disabledReason="A cleaning job is already added for this check-in.">Add cleaning job</Button>
             <Button size="sm" variant="secondary" onClick={onSendAccess} disabled={busy || !!guard} disabledReason={guard ?? undefined}>Send access details</Button>
             {/* Checking in is for the arrival day itself: tomorrow's guest is not in yet. */}
             {m.day === 'today'
-              ? <Button size="sm" variant="primary" onClick={onCheckIn} disabled={busy}>Mark checked in</Button>
-              : <span className="text-meta text-muted-ink">Check-in opens on the arrival day.</span>}
-            {m.preparedAt && <Chip label="Clean queued" />}
+              ? <Button size="sm" variant="primary" onClick={onCheckIn} disabled={busy}>Check in</Button>
+              : <span className="text-meta text-muted-ink">Check-in opens on the check-in day.</span>}
+            {m.preparedAt && <Chip label="Cleaning job added" />}
             {m.accessSentAt && <Chip label="Access sent" />}
           </>
         )}
         {arrival && checkedIn && <span className="text-meta text-muted-ink">Checked in.</span>}
         {!arrival && (
           <Button size="sm" variant="secondary" onClick={onCheckOut} disabled={busy || checkedOut || m.day !== 'today'}
-            disabledReason={checkedOut ? 'Guest is already checked out.' : 'Check-out opens on the departure day.'}>
-            {checkedOut ? 'Checked out' : 'Mark checked out'}
+            disabledReason={checkedOut ? 'Guest is already checked out.' : 'Checkout opens on the checkout day.'}>
+            {checkedOut ? 'Checked out' : 'Check out'}
           </Button>
         )}
       </div>
@@ -712,12 +713,12 @@ function MessageModal({ g, onClose, onSend }: { g: Guest; onClose: () => void; o
   const [body, setBody] = useState('');
   const [busy, setBusy] = useState(false);
   return (
-    <CentreModal title={`Message ${g.fullName}`} sub={`Goes to the guest's latest stay conversation on ${threadName(g.channel)}.`} onClose={() => { if (!busy) onClose(); }}>
+    <CentreModal title={`Message ${g.fullName}`} sub={`Goes to the guest's latest conversation on ${threadName(g.channel)}.`} onClose={() => { if (!busy) onClose(); }}>
       <form onSubmit={async (e: FormEvent) => { e.preventDefault(); if (!body.trim()) return; setBusy(true); await onSend(body.trim()); setBusy(false); }} className="px-[22px] py-4 flex flex-col gap-[14px]">
         <div className="flex flex-col gap-[6px]">
           <label htmlFor="msg-body" className={labelClass}>Message</label>
           <textarea id="msg-body" required value={body} onChange={e => setBody(e.target.value)} rows={4}
-            placeholder={`Hi ${greetName(g.fullName)}, checking in on your stay…`} className={cx(fieldBase, 'p-[10px_12px] resize-y')} />
+            placeholder={`Hi ${greetName(g.fullName)}, just checking that everything is fine…`} className={cx(fieldBase, 'p-[10px_12px] resize-y')} />
         </div>
         <div className="flex justify-end gap-[9px]">
           <Button type="button" size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
@@ -758,7 +759,7 @@ function AddGuestModal({ onClose, onAdd }: { onClose: () => void; onAdd: (input:
     setBusy(false);
   }
   return (
-    <CentreModal title="Add guest" sub="Creates the guest's record only. To give them a unit and dates, use Book a stay on their profile." onClose={() => { if (!busy) onClose(); }}>
+    <CentreModal title="Add guest" sub="Creates the guest's record only. To give them a unit and dates, use Add reservation on their profile." onClose={() => { if (!busy) onClose(); }}>
       <form onSubmit={submit} className="px-[22px] py-4 flex flex-col gap-[14px]">
         <Field label="Full name" value={fullName} onChange={e => setFullName(e.target.value)} placeholder="Jane Tan" required />
         <div className="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-3">
@@ -849,17 +850,17 @@ function MergeModal({ g, onClose, onMerged }: { g: Guest; onClose: () => void; o
     setBusy(true);
     try {
       const r = await api.post<{ reservationsMoved: number; threadsMoved: number }>(`/guests/${g.id}/merge`, { intoId: into.id });
-      toast({ tone: 'success', title: `${g.fullName} merged into ${into.fullName}.`, body: `${plural(r.reservationsMoved, 'stay')} and ${plural(r.threadsMoved, 'conversation')} moved. The duplicate is hidden from the list.` });
+      toast({ tone: 'success', title: `${g.fullName} merged into ${into.fullName}.`, body: `${plural(r.reservationsMoved, 'reservation')} and ${plural(r.threadsMoved, 'conversation')} moved. The duplicate is hidden from the list.` });
       onMerged(into.id);
     } catch (e) { toast({ tone: 'critical', title: 'Guests not merged.', body: failMessage(e) }); }
     setBusy(false);
   }
   return (
-    <CentreModal title={`Merge ${g.fullName}`} sub={`Pick the guest to keep. ${g.fullName}'s ${plural(g.stays, 'stay')} and conversations move to them, and details they lack are filled in.`} onClose={() => { if (!busy) onClose(); }} maxWidth={520}>
+    <CentreModal title={`Merge ${g.fullName}`} sub={`Pick the guest to keep. ${g.fullName}'s ${plural(g.stays, 'reservation')} and conversations move to them, and details they lack are filled in.`} onClose={() => { if (!busy) onClose(); }} maxWidth={520}>
       <div className="px-[22px] py-4 flex flex-col gap-[14px]">
         <label className="relative">
           <span className="absolute left-[10px] top-1/2 -translate-y-1/2 text-muted-ink grid"><Icon name="Search" size="sm" /></span>
-          <input autoFocus value={q} onChange={e => { setQ(e.target.value); setInto(null); }} placeholder="Name, phone, email or booking reference" aria-label="Find the guest to keep"
+          <input autoFocus value={q} onChange={e => { setQ(e.target.value); setInto(null); }} placeholder="Name, phone, email or reservation reference" aria-label="Find the guest to keep"
             className={cx(fieldBase, 'h-10 pl-[32px] pr-3')} />
         </label>
         <div className="max-h-[260px] overflow-y-auto border border-solid border-line rounded-control">
@@ -873,7 +874,7 @@ function MergeModal({ g, onClose, onMerged }: { g: Guest; onClose: () => void; o
                   <span className="text-copy font-medium truncate">{x.fullName}</span>
                   <span className="text-meta text-muted-ink truncate">{[phone(x.phone), x.email].filter(Boolean).join(' · ') || x.since}</span>
                 </span>
-                <span className="text-meta text-muted-ink whitespace-nowrap">{plural(x.stays, 'stay')}</span>
+                <span className="text-meta text-muted-ink whitespace-nowrap">{plural(x.stays, 'reservation')}</span>
               </button>
             ))}
         </div>

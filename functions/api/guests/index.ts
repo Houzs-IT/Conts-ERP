@@ -13,7 +13,7 @@ const OPS = CONTACT_ROLES;
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Guest contact details are not available to field roles.', 403);
+  if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Guest contact details are not available to cleaners and technicians.', 403);
   const contact = mayWork(session, OPS);
   const cols = await hasGuestColumns(env);
 

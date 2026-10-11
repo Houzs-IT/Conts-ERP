@@ -34,8 +34,8 @@ export default function ChannexSyncPanel() {
       const r = await api.post<{ units: number; sent: { availability?: { status: number }; restrictions?: { status: number } } }>('/integrations/channex/full-sync', {});
       const ok = [r.sent.availability?.status, r.sent.restrictions?.status].every(s => s !== undefined && s >= 200 && s < 300);
       toast(ok
-        ? { tone: 'success', title: 'Full sync sent.', body: `500 days for ${r.units} ${r.units === 1 ? 'unit, in two calls' : 'units, two calls each'}.` }
-        : { tone: 'warning', title: 'Full sync queued.', body: 'Channex did not take it straight away. It is retried automatically.' });
+        ? { tone: 'success', title: 'Everything sent again.', body: `500 days for ${r.units} ${r.units === 1 ? 'unit, in two calls' : 'units, two calls each'}.` }
+        : { tone: 'warning', title: 'Waiting to send.', body: 'Channex did not take it straight away. It is sent again automatically.' });
       reload();
     } catch (e) { notifyFailure(e); } finally { setBusy(false); }
   }
@@ -45,7 +45,7 @@ export default function ChannexSyncPanel() {
     setHookBusy(true);
     try {
       await api.post('/integrations/channex-webhook-setup', {});
-      toast({ tone: 'success', title: 'Booking notifications are on.', body: 'Channex now sends new, changed and cancelled bookings to this site.' });
+      toast({ tone: 'success', title: 'Live updates are on.', body: 'Channex now sends new, changed and cancelled reservations to this site.' });
       reload();
     } catch (e) { notifyFailure(e); } finally { setHookBusy(false); }
   }
@@ -54,13 +54,13 @@ export default function ChannexSyncPanel() {
     <Card>
       <div className="pt-[18px] px-[22px] pb-[14px] flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-3">
-          <span className="text-title font-semibold">Channex sync</span>
+          <span className="text-title font-semibold">Channex updates</span>
           <StatusBadge tone={!data.configured ? 'neutral' : data.failed ? 'critical' : data.queued ? 'warning' : 'success'}
-            label={!data.configured ? 'Not connected' : data.failed ? `${data.failed} failed` : data.queued ? `${data.queued} waiting` : 'Up to date'} />
+            label={!data.configured ? 'Not connected' : data.failed ? `${data.failed} not sent` : data.queued ? `${data.queued} waiting to send` : 'Up to date'} />
         </div>
         <div className="flex items-center gap-2">
           <Button size="sm" variant="secondary" onClick={reload}>Refresh</Button>
-          {canRun && data.configured && <Button size="sm" variant="primary" loading={busy} disabled={!data.linkedUnits} disabledReason="Set a unit up in Channex first" onClick={() => void fullSync()}>Full sync</Button>}
+          {canRun && data.configured && <Button size="sm" variant="primary" loading={busy} disabled={!data.linkedUnits} disabledReason="Set a unit up in Channex first" onClick={() => void fullSync()}>Send everything again</Button>}
         </div>
       </div>
       <div className="px-[22px] pb-3 text-copy text-muted-ink">
@@ -71,12 +71,12 @@ export default function ChannexSyncPanel() {
       {n && n.registered === false && (
         <div className="mx-[22px] mb-3 p-3 rounded-card border border-solid border-line bg-page flex items-center justify-between gap-3 flex-wrap text-copy">
           <span>{n.secretSet
-            ? 'Booking notifications are off. Channex is not sending bookings to this site yet.'
-            : 'Booking notifications cannot be turned on yet: the notification secret (CHANNEX_WEBHOOK_SECRET) is not set on this site.'}</span>
-          {n.secretSet && <Button size="sm" variant="primary" loading={hookBusy} onClick={() => void turnOnNotifications()}>Turn on booking notifications</Button>}
+            ? 'Live updates are off. Channex is not sending reservations to this site yet.'
+            : 'Live updates cannot be turned on yet: the notification secret (CHANNEX_WEBHOOK_SECRET) is not set on this site.'}</span>
+          {n.secretSet && <Button size="sm" variant="primary" loading={hookBusy} onClick={() => void turnOnNotifications()}>Turn on live updates</Button>}
         </div>
       )}
-      {n && n.registered === true && <div className="px-[22px] pb-3 text-copy text-muted-ink">Booking notifications are on.</div>}
+      {n && n.registered === true && <div className="px-[22px] pb-3 text-copy text-muted-ink">Live updates are on.</div>}
       {data.recentCalls.length > 0 && (
         <div className="overflow-x-auto">
           <table className="w-full border-collapse min-w-[640px]">
@@ -88,7 +88,7 @@ export default function ChannexSyncPanel() {
                   <tr key={i} className="[border-top:1px_solid_var(--color-line-soft)]">
                     <td className="py-2 px-[22px] text-copy whitespace-nowrap">{date(c.calledAt)} · {timeWithZone(c.calledAt)}</td>
                     <td className="py-2 px-[22px] text-copy">{c.unit ?? '—'}</td>
-                    <td className="py-2 px-[22px] text-copy">{c.kind === 'availability' ? 'Availability' : 'Prices and restrictions'}{c.fullSync ? ' (full sync)' : ''}</td>
+                    <td className="py-2 px-[22px] text-copy">{c.kind === 'availability' ? 'Availability' : 'Prices and restrictions'}{c.fullSync ? ' (all 500 days)' : ''}</td>
                     <td className="py-2 px-[22px] text-copy tabular-nums">{c.rows}</td>
                     <td className={cx('py-2 px-[22px] text-copy', ok ? 'text-[var(--color-ink-2)]' : 'text-danger')}>{ok ? 'Accepted' : c.status === 429 ? 'Busy, retrying' : c.status === 0 ? 'No connection, retrying' : `Refused (${c.status})`}</td>
                     <td className="py-2 px-[22px] text-meta whitespace-nowrap [font-family:var(--font-mono,ui-monospace,monospace)] select-all">{c.taskId ?? '—'}</td>

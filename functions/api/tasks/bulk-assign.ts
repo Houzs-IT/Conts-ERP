@@ -12,7 +12,7 @@ const MAX = 200;
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Field roles cannot assign work.', 403);
+  if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Cleaners and technicians cannot assign work.', 403);
 
   const b = await request.json<any>().catch(() => null);
   const ids = (v: unknown) => (Array.isArray(v) ? [...new Set(v.filter((x): x is string => typeof x === 'string' && !!x.trim()))] : []);
@@ -33,7 +33,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const targets = [...new Set([...taskIds, ...fromBookings.map(t => t.id)])];
 
   let assigned = 0;
-  const skipped: { id: string; reason: string }[] = reservationIds.filter(r => !withClean.has(r)).map(id => ({ id, reason: 'No open clean is linked to this booking.' }));
+  const skipped: { id: string; reason: string }[] = reservationIds.filter(r => !withClean.has(r)).map(id => ({ id, reason: 'No open cleaning job is linked to this reservation.' }));
   for (const id of targets) {
     const res = await assignCleaner(env, session, id, { ...cleaner, busy: 0 }, b?.force === true);
     if (res.ok) { assigned++; continue; }

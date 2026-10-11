@@ -8,7 +8,7 @@ export interface CatalogRule {
 export const CATALOG: CatalogRule[] = [
   {
     "id": "guest.booking_confirmed",
-    "name": "Booking confirmed",
+    "name": "Reservation confirmed",
     "template": "guest.booking_confirmed",
     "group": "new_booking",
     "trigger": "reservation.state → confirmed",
@@ -17,15 +17,16 @@ export const CATALOG: CatalogRule[] = [
       "Email",
       "WhatsApp"
     ],
-    "needs": "Guest name, property, unit, dates, nights, total, contact",
-    "preview": "Hi {guest}, your booking at {property} {unit} is confirmed for {checkIn}–{checkOut} ({nights}). Total {total}. We are on WhatsApp if you need anything.",
+    "needs": "Guest name, building, unit, dates, nights, total, contact",
+    // vocab-ok: {property} and {adr} are template tokens the sender fills in
+    "preview": "Hi {guest}, your reservation at {property} {unit} is confirmed for {checkIn}–{checkOut} ({nights}). Total {total}. We are on WhatsApp if you need anything.",
     "delivery": "transactional",
     "quietHours": "queue",
     "isActive": true
   },
   {
     "id": "guest.cancellation",
-    "name": "Booking cancelled",
+    "name": "Reservation cancelled",
     "template": "guest.cancellation",
     "group": "new_booking",
     "trigger": "reservation.state → cancelled",
@@ -34,14 +35,15 @@ export const CATALOG: CatalogRule[] = [
       "Email"
     ],
     "needs": "Refund position, reason, contact",
-    "preview": "Hi {guest}, your booking at {property} {unit} for {dates} has been cancelled. {refundPosition} Reply here and we will help.",
+    // vocab-ok: {property} and {adr} are template tokens the sender fills in
+    "preview": "Hi {guest}, your reservation at {property} {unit} for {dates} has been cancelled. {refundPosition} Reply here and we will help.",
     "delivery": "transactional",
     "quietHours": "queue",
     "isActive": true
   },
   {
     "id": "guest.pre_arrival",
-    "name": "Pre-arrival details",
+    "name": "Check-in details",
     "template": "guest.pre_arrival",
     "group": "before_arrival",
     "trigger": "reservation.check_in approaching",
@@ -51,7 +53,8 @@ export const CATALOG: CatalogRule[] = [
       "WhatsApp"
     ],
     "needs": "Check-in window, address, parking note",
-    "preview": "Your stay at {property} {unit} starts {checkIn}. Check-in from {checkInTime}. Address: {address}. Parking: {parkingNote}.",
+    // vocab-ok: {property} and {adr} are template tokens the sender fills in
+    "preview": "You check in at {property} {unit} on {checkIn}, from {checkInTime}. Address: {address}. Parking: {parkingNote}.",
     "delivery": "transactional",
     "quietHours": "queue",
     "isActive": true
@@ -66,7 +69,8 @@ export const CATALOG: CatalogRule[] = [
     "channels": [
       "WhatsApp"
     ],
-    "needs": "Access instruction, door code, wifi. Code rotates after the stay",
+    "needs": "Access instruction, door code, wifi. Code changes after checkout",
+    // vocab-ok: {property} and {adr} are template tokens the sender fills in
     "preview": "You are all set for {property} {unit}. Door code {doorCode}, wifi {wifiName} / {wifiPass}. {accessInstruction}",
     "delivery": "transactional",
     "quietHours": "queue",
@@ -90,16 +94,17 @@ export const CATALOG: CatalogRule[] = [
   },
   {
     "id": "guest.checkout_reminder",
-    "name": "Check-out reminder",
+    "name": "Checkout reminder",
     "template": "guest.checkout_reminder",
     "group": "stay_departure",
     "trigger": "reservation.check_out approaching",
-    "timing": "12 hours before check-out",
+    "timing": "12 hours before checkout",
     "channels": [
       "WhatsApp"
     ],
-    "needs": "Check-out time, key return, late check-out option",
-    "preview": "Check-out at {property} {unit} is tomorrow by {checkOutTime}. Leave keys in the lockbox. Need a late check-out? Just ask.",
+    "needs": "Checkout time, key return, late checkout option",
+    // vocab-ok: {property} and {adr} are template tokens the sender fills in
+    "preview": "Checkout at {property} {unit} is tomorrow by {checkOutTime}. Leave keys in the lockbox. Need a late checkout? Just ask.",
     "delivery": "transactional",
     "quietHours": "queue",
     "isActive": true
@@ -110,12 +115,13 @@ export const CATALOG: CatalogRule[] = [
     "template": "guest.review_request",
     "group": "stay_departure",
     "trigger": "reservation.state → checked_out",
-    "timing": "24 hours after check-out",
+    "timing": "24 hours after checkout",
     "channels": [
       "Email",
       "Channel API"
     ],
     "needs": "Channel review link",
+    // vocab-ok: {property} and {adr} are template tokens the sender fills in
     "preview": "Thanks for staying at {property} {unit}, {guest}. If it felt like home, a quick review helps a lot: {reviewLink}",
     "delivery": "opt_out",
     "quietHours": "queue",
@@ -123,7 +129,7 @@ export const CATALOG: CatalogRule[] = [
   },
   {
     "id": "owner.statement_ready",
-    "name": "Statement ready",
+    "name": "Owner statement ready",
     "template": "owner.statement_ready",
     "group": "owner_finance",
     "trigger": "statement.state → sent",
@@ -132,15 +138,15 @@ export const CATALOG: CatalogRule[] = [
       "Email",
       "Portal"
     ],
-    "needs": "Period, net payout, portal link, PDF",
-    "preview": "Your {period} statement for {unit} is ready. Net payout {netPayout}. View it in your portal: {portalLink}",
+    "needs": "Period, Net Payout to Owner, owner portal link, PDF",
+    "preview": "Your {period} owner statement for {unit} is ready. Net Payout to Owner {netPayout}. View it in your owner portal: {portalLink}",
     "delivery": "transactional",
     "quietHours": "queue",
     "isActive": true
   },
   {
     "id": "owner.payout_paid",
-    "name": "Payout paid",
+    "name": "Owner payout paid",
     "template": "owner.payout_paid",
     "group": "owner_finance",
     "trigger": "payout.state → paid",
@@ -150,14 +156,14 @@ export const CATALOG: CatalogRule[] = [
       "Portal"
     ],
     "needs": "Amount, bank last 4, value date",
-    "preview": "Payout of {amount} for {period} has been transferred to {bank} ••••{last4}, value date {valueDate}.",
+    "preview": "Your owner payout of {amount} for {period} has been transferred to {bank} ••••{last4}, value date {valueDate}.",
     "delivery": "transactional",
     "quietHours": "queue",
     "isActive": true
   },
   {
     "id": "owner.payout_failed",
-    "name": "Payout failed",
+    "name": "Owner payout failed",
     "template": "owner.payout_failed",
     "group": "owner_finance",
     "trigger": "payout.state → failed",
@@ -167,7 +173,7 @@ export const CATALOG: CatalogRule[] = [
       "Phone call task"
     ],
     "needs": "Amount, reason, next step. Also creates an internal task",
-    "preview": "We could not complete your {amount} payout for {period}: {reason}. We are on it and will call you shortly.",
+    "preview": "We could not complete your owner payout of {amount} for {period}: {reason}. We are on it and will call you shortly.",
     "delivery": "transactional",
     "quietHours": "override",
     "isActive": true
@@ -182,8 +188,9 @@ export const CATALOG: CatalogRule[] = [
     "channels": [
       "Email"
     ],
-    "needs": "Occupancy, ADR, rating, upcoming bookings",
-    "preview": "Your {period} summary for {unit}: occupancy {occupancy}, ADR {adr}, rating {rating}. {upcomingCount} bookings ahead.",
+    "needs": "Occupancy, avg nightly price, rating, upcoming reservations",
+    // vocab-ok: {property} and {adr} are template tokens the sender fills in
+    "preview": "Your {period} summary for {unit}: occupancy {occupancy}, avg nightly price {adr}, rating {rating}. {upcomingCount} reservations ahead.",
     "delivery": "opt_out",
     "quietHours": "queue",
     "isActive": true
@@ -215,8 +222,8 @@ export const CATALOG: CatalogRule[] = [
     "channels": [
       "Email"
     ],
-    "needs": "Same, plus the revenue at risk if the unit is blocked",
-    "preview": "Reminder: {title} on {unit} is awaiting your approval. Revenue at risk while blocked: {revenueAtRisk}.",
+    "needs": "Same, plus the earnings at risk if the unit is blocked",
+    "preview": "Reminder: {title} on {unit} is awaiting your approval. Gross Income at risk while blocked: {revenueAtRisk}.",
     "delivery": "transactional",
     "quietHours": "queue",
     "isActive": false
@@ -232,8 +239,8 @@ export const CATALOG: CatalogRule[] = [
       "Email",
       "Portal"
     ],
-    "needs": "Dates blocked, reason, revenue at risk, expected return",
-    "preview": "{unit} is off-sale for maintenance {dates}: {reason}. Estimated revenue impact {revenueAtRisk}. Expected back {expectedReturn}.",
+    "needs": "Dates blocked, reason, earnings at risk, expected return",
+    "preview": "{unit} is blocked for maintenance {dates}: {reason}. Gross Income at risk {revenueAtRisk}. Expected back {expectedReturn}.",
     "delivery": "transactional",
     "quietHours": "queue",
     "isActive": true
@@ -250,14 +257,14 @@ export const CATALOG: CatalogRule[] = [
       "WhatsApp group"
     ],
     "needs": "Destination: Operations today, filtered to check-in risk",
-    "preview": "Check-in risk: {unit} turnover is incomplete with a guest arriving {arrivalTime}. Assign or escalate now.",
+    "preview": "Check-in risk: the {unit} cleaning job is not finished and a guest checks in at {arrivalTime}. Assign or escalate now.",
     "delivery": "transactional",
     "quietHours": "override",
     "isActive": true
   },
   {
     "id": "ops.task_unassigned",
-    "name": "Task unassigned",
+    "name": "Job unassigned",
     "template": "ops.task_unassigned",
     "group": "ops_alerts",
     "trigger": "task within 3 h of due with no assignee",
@@ -266,7 +273,7 @@ export const CATALOG: CatalogRule[] = [
       "In-app"
     ],
     "needs": "Destination: Operations today, Unassigned filter",
-    "preview": "{unit} turnover is due {dueTime} with no cleaner assigned. Assign from Operations today.",
+    "preview": "The {unit} cleaning job is due {dueTime} with no cleaner assigned. Assign from Operations today.",
     "delivery": "transactional",
     "quietHours": "always",
     "isActive": true
@@ -276,14 +283,14 @@ export const CATALOG: CatalogRule[] = [
     "name": "Damage reported",
     "template": "ops.damage_reported",
     "group": "ops_alerts",
-    "trigger": "field app creates a maintenance issue",
+    "trigger": "field app creates a maintenance job",
     "timing": "Immediate",
     "channels": [
       "In-app",
       "WhatsApp"
     ],
-    "needs": "Destination: the maintenance issue",
-    "preview": "{crew} reported {issue} at {unit}. Opened as a maintenance issue — review and triage.",
+    "needs": "Destination: the maintenance job",
+    "preview": "{crew} reported {issue} at {unit}. Opened as a maintenance job — review and triage.",
     "delivery": "transactional",
     "quietHours": "always",
     "isActive": true
@@ -298,15 +305,15 @@ export const CATALOG: CatalogRule[] = [
     "channels": [
       "In-app"
     ],
-    "needs": "Destination: Inbox thread",
-    "preview": "New message from {guest} about {unit}: \"{snippet}\". Reply in the inbox.",
+    "needs": "Destination: Messages",
+    "preview": "New message from {guest} about {unit}: \"{snippet}\". Reply in Messages.",
     "delivery": "transactional",
     "quietHours": "always",
     "isActive": true
   },
   {
     "id": "ops.channel_sync_failed",
-    "name": "Channel sync failed",
+    "name": "Channel connection failed",
     "template": "ops.channel_sync_failed",
     "group": "ops_alerts",
     "trigger": "integration.state → failed",
@@ -316,31 +323,31 @@ export const CATALOG: CatalogRule[] = [
       "Email to management"
     ],
     "needs": "Destination: System, Integrations",
-    "preview": "{provider} sync failed at {time}. Bookings may be delayed until it is reconnected.",
+    "preview": "{provider} connection failed at {time}. New reservations may arrive late until it is reconnected.",
     "delivery": "transactional",
     "quietHours": "always",
     "isActive": true
   },
   {
     "id": "finance.statements_unsent",
-    "name": "Statements unsent",
+    "name": "Owner statements unsent",
     "template": "finance.statements_unsent",
     "group": "ops_alerts",
-    "trigger": "finalised statements unsent 3 days after close",
+    "trigger": "final owner statements unsent 3 days after close",
     "timing": "3 days after period close",
     "channels": [
       "In-app",
       "Email"
     ],
     "needs": "Destination: Owner statements, Not sent filter",
-    "preview": "{count} finalised statements for {period} are still unsent, {days} days after close.",
+    "preview": "{count} final owner statements for {period} are still unsent, {days} days after close.",
     "delivery": "transactional",
     "quietHours": "always",
     "isActive": true
   },
   {
     "id": "finance.payout_failed",
-    "name": "Payout failed (internal)",
+    "name": "Owner payout failed (internal)",
     "template": "finance.payout_failed",
     "group": "ops_alerts",
     "trigger": "payout.state → failed",
@@ -349,15 +356,15 @@ export const CATALOG: CatalogRule[] = [
       "In-app",
       "Email"
     ],
-    "needs": "Destination: Payouts",
-    "preview": "Payout to {owner} ({amount}) failed: {reason}. Retry or update bank details in Payouts.",
+    "needs": "Destination: Owner payouts",
+    "preview": "Owner payout to {owner} ({amount}) failed: {reason}. Retry or update bank details in Owner payouts.",
     "delivery": "transactional",
     "quietHours": "always",
     "isActive": true
   },
   {
     "id": "field.task_assigned",
-    "name": "Task assigned",
+    "name": "Job assigned",
     "template": "field.task_assigned",
     "group": "field",
     "trigger": "task.assignee_id set",
@@ -366,14 +373,14 @@ export const CATALOG: CatalogRule[] = [
       "Push"
     ],
     "needs": "Unit, due time, address. No financials",
-    "preview": "New task: {unit} turnover, due {dueTime}. Address {address}. Access {accessInstruction}.",
+    "preview": "New cleaning job: {unit}, due {dueTime}. Address {address}. Access {accessInstruction}.",
     "delivery": "transactional",
     "quietHours": "always",
     "isActive": true
   },
   {
     "id": "field.task_reassigned",
-    "name": "Task reassigned",
+    "name": "Job reassigned",
     "template": "field.task_reassigned",
     "group": "field",
     "trigger": "assignee changed away",
@@ -398,14 +405,14 @@ export const CATALOG: CatalogRule[] = [
       "Push"
     ],
     "needs": "Old and new time stated",
-    "preview": "Schedule change: {unit} turnover moved from {oldTime} to {newTime}.",
+    "preview": "Schedule change: the {unit} cleaning job moved from {oldTime} to {newTime}.",
     "delivery": "transactional",
     "quietHours": "always",
     "isActive": false
   },
   {
     "id": "field.sync_failed",
-    "name": "Sync failed",
+    "name": "Change not saved",
     "template": "field.sync_failed",
     "group": "field",
     "trigger": "offline mutation rejected",
@@ -413,8 +420,8 @@ export const CATALOG: CatalogRule[] = [
     "channels": [
       "In-app, persistent"
     ],
-    "needs": "Stays visible as Failed to sync until resolved",
-    "preview": "A change you made offline could not be saved. It stays marked Failed to sync until it goes through.",
+    "needs": "Stays visible as Not saved until it goes through",
+    "preview": "A change you made offline could not be saved. It stays marked Not saved until it goes through.",
     "delivery": "transactional",
     "quietHours": "always",
     "isActive": true
@@ -505,7 +512,7 @@ export const QUIET_HOURS = {
   "from": "22:00",
   "to": "08:00",
   "timezone": "Asia/Kuala_Lumpur",
-  "note": "Non-urgent guest and owner messages queue until 08:00. Check-in risk and payout failure override."
+  "note": "Non-urgent guest and owner messages wait until 08:00. Check-in risk and owner payout failures are sent at once."
 };
 
 /** The rules some code really sends today (grep the template name in functions/ to check). Everything else
@@ -519,12 +526,12 @@ export const RUNNING = new Set([
 
 /** What a rule that is not running would need before it could. */
 export function needsToRun(rule: CatalogRule): string {
-  if (rule.template === 'finance.statements_unsent') return 'Written, but it runs from the timed background job (theconts-cron), which is not deployed yet.';
+  if (rule.template === 'finance.statements_unsent') return 'Written, but it runs from the scheduled run (theconts-cron), which is not deployed yet.';
   const timed = /before|after|approaching|outstanding|period close|1st of the month|within|unassigned/i.test(`${rule.trigger} ${rule.timing}`);
   const toGuest = rule.group === 'new_booking' || rule.group === 'before_arrival' || rule.group === 'stay_departure';
   return [
     'No code sends this message yet.',
-    timed ? 'It needs the timed background job (theconts-cron) to check the time.' : 'It needs the event to call the message sender.',
+    timed ? 'It needs the scheduled run (theconts-cron) to check the time.' : 'It needs the event to call the message sender.',
     toGuest ? 'Guest messages also need the email and WhatsApp keys.' : '',
   ].filter(Boolean).join(' ');
 }

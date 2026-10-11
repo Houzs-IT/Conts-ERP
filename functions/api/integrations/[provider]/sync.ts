@@ -13,7 +13,7 @@ const CHANNEX_PROVIDERS = ['airbnb', 'booking_com', 'agoda'];
 export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!mayWork(session, ['management', 'operations_manager', 'operations_staff'])) return fail('FORBIDDEN', 'You cannot start a channel sync.', 403);
+  if (!mayWork(session, ['management', 'operations_manager', 'operations_staff'])) return fail('FORBIDDEN', 'You cannot check the channels for new reservations.', 403);
 
   const provider = String(params.provider);
   const row = await one<{ id: string }>(env, 'SELECT id FROM integrations WHERE provider = ?', provider);
@@ -21,7 +21,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'integration.sync_requested', entityTable: 'integrations', entityId: row.id });
 
   if (!CHANNEX_PROVIDERS.includes(provider) || !channexConfigured(env)) {
-    return fail('NOT_CONNECTED', 'Channel syncing is not connected yet. Bookings are entered or imported by hand for now.', 501);
+    return fail('NOT_CONNECTED', 'Channels are not connected yet. Reservations are entered or imported by hand for now.', 501);
   }
   const bookings = await processChannexBookingFeed(env);
   const rest = await processChannexMessagesAndReviews(env);

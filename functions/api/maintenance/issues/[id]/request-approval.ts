@@ -6,7 +6,7 @@ import { repairNotice } from '../../../../_lib/notices';
 export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Field roles cannot request approval.', 403);
+  if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Cleaners and technicians cannot request approval.', 403);
 
   const id = String(params.id);
   const cur = await one<any>(env, 'SELECT id, state, quoted_amount, owner_approved_at FROM maintenance_issues WHERE id = ?', id);

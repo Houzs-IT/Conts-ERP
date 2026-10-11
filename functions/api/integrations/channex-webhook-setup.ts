@@ -27,6 +27,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!env.CHANNEX_WEBHOOK_SECRET) return fail('NOT_CONFIGURED', 'CHANNEX_WEBHOOK_SECRET is not set on this environment.', 501);
 
   const b = await request.json<{ callbackUrl?: string }>().catch(() => ({}) as { callbackUrl?: string });
+  // vocab-ok: URL path of the live updates address, not shown as words
   const callbackUrl = b.callbackUrl ?? `${new URL(request.url).origin}/api/integrations/channex-webhook`;
 
   const existing = await channexListWebhooks(env);
@@ -34,13 +35,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (already) {
     if (already.attributes?.event_mask === CHANNEX_EVENT_MASK) return json({ alreadyRegistered: true, id: already.id, callbackUrl });
     const upd = await channexUpdateWebhookMask(env, already.id, { callbackUrl, secret: env.CHANNEX_WEBHOOK_SECRET });
-    if (!upd.ok) return fail('CHANNEX_ERROR', `Channex refused the webhook update (status ${upd.status}).`, 502);
+    if (!upd.ok) return fail('CHANNEX_ERROR', `Channex refused the change to live updates (status ${upd.status}).`, 502);
     await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'channex.webhook_updated', entityTable: 'integrations', entityId: 'channex', after: { callbackUrl, eventMask: CHANNEX_EVENT_MASK } });
     return json({ updated: true, id: already.id, callbackUrl, eventMask: CHANNEX_EVENT_MASK });
   }
 
   const res = await channexCreateWebhook(env, { callbackUrl, secret: env.CHANNEX_WEBHOOK_SECRET });
-  if (!res.ok) return fail('CHANNEX_ERROR', `Channex refused the webhook registration (status ${res.status}).`, 502);
+  if (!res.ok) return fail('CHANNEX_ERROR', `Channex refused to turn on live updates (status ${res.status}).`, 502);
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'channex.webhook_registered', entityTable: 'integrations', entityId: 'channex', after: { callbackUrl, eventMask: CHANNEX_EVENT_MASK } });
   return json({ registered: true, id: res.body?.data?.id, callbackUrl, eventMask: CHANNEX_EVENT_MASK });
 };

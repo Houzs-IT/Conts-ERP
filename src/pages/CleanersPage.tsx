@@ -113,8 +113,8 @@ export default function CleanersPage() {
       {error && <StaleBanner message={`Showing the last roster we have. ${error}`} onRetry={reload} />}
 
       <div className="flex flex-col gap-5">
-        <RosterSection kind="internal" title="Internal staff" hint="Your own housekeepers. They log in and get push jobs." emptyTitle="No internal cleaners yet." addLabel="Add internal cleaner" onAdd={() => setModal({ mode: 'create', draft: emptyDraft('internal') })} cleaners={loading && roster.length === 0 ? null : internal} onEdit={openEdit} onToggle={toggleActive} />
-        <RosterSection kind="outsourced" title="Outsourced / third-party" hint="Vendor crews you assign by hand or by rule. No login." emptyTitle="No outsourced cleaners yet." addLabel="Add outsourced" onAdd={() => setModal({ mode: 'create', draft: emptyDraft('outsourced') })} cleaners={loading && roster.length === 0 ? null : outsourced} onEdit={openEdit} onToggle={toggleActive} />
+        <RosterSection kind="internal" title="Internal staff" hint="Your own cleaners. They log in and get jobs on their phone." emptyTitle="No internal cleaners yet." addLabel="Add internal cleaner" onAdd={() => setModal({ mode: 'create', draft: emptyDraft('internal') })} cleaners={loading && roster.length === 0 ? null : internal} onEdit={openEdit} onToggle={toggleActive} />
+        <RosterSection kind="outsourced" title="Outsourced / third-party" hint="Outside cleaning companies you assign by hand or by rule. No login." emptyTitle="No outsourced cleaners yet." addLabel="Add outsourced" onAdd={() => setModal({ mode: 'create', draft: emptyDraft('outsourced') })} cleaners={loading && roster.length === 0 ? null : outsourced} onEdit={openEdit} onToggle={toggleActive} />
       </div>
 
       {modal && (
@@ -239,7 +239,7 @@ function FormModal({ title, busy, draft, crew, takenUserIds, currentUserId, onCh
 
           {draft.employmentType === 'internal' && (
             <div className="flex flex-col gap-[7px]">
-              <Select label="Link to a housekeeper login (optional)" showLabel size="md" value={draft.userId} disabled={busy}
+              <Select label="Link to a cleaner login (optional)" showLabel size="md" value={draft.userId} disabled={busy}
                 onChange={v => set({ userId: v })} placeholder="No login link"
                 options={linkable.map(u => ({ value: u.id, label: u.name }))} />
             </div>

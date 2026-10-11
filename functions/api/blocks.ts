@@ -17,7 +17,7 @@ const KIND_LABEL: Record<typeof KINDS[number], string> = { maintenance: 'Mainten
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Field roles cannot block dates.', 403);
+  if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Cleaners and technicians cannot block nights.', 403);
 
   const b = await request.json<any>().catch(() => null);
   const unit = await resolveUnit(env, b?.unitId, b?.propertyName);

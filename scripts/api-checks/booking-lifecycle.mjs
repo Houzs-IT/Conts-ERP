@@ -52,7 +52,7 @@ check('create says what happened on the channels', ['queued', 'not_linked', 'fai
 let d = await detail(future.id);
 check('detail: confirmed, money is the real gross only', d.state === 'confirmed' && d.money.gross === 40000 && d.money.channelFee === 0 && d.money.collected === 0, JSON.stringify(d.money));
 check('detail: no invented lines (cleaning / tourism tax null unless stored)', d.money.guestCleaningFee == null || typeof d.money.guestCleaningFee === 'number');
-check('detail: timeline from records (created by a person, check-in due)', d.timeline.some(e => e.label === 'Booking created' && e.actor) && d.timeline.some(e => e.label === 'Check-in due' && e.upcoming) && !d.timeline.some(e => /access code|smart lock|payment received/i.test(e.label)), JSON.stringify(d.timeline));
+check('detail: timeline from records (created by a person, check-in due)', d.timeline.some(e => e.label === 'Reservation created' && e.actor) && d.timeline.some(e => e.label === 'Check-in due' && e.upcoming) && !d.timeline.some(e => /access code|smart lock|payment received/i.test(e.label)), JSON.stringify(d.timeline));
 const ci = d.moves.find(m => m.to === 'checked_in');
 check('detail: Check in listed but closed until the day, with the reason', ci && !ci.allowed && /Check-in opens on \d{1,2} [A-Z][a-z]{2} \d{4}/.test(ci.reason), JSON.stringify(d.moves));
 check('detail: confirmed offers only check in / no-show / cancel', JSON.stringify(d.moves.map(m => m.to).sort()) === JSON.stringify(['cancelled', 'checked_in', 'no_show']), JSON.stringify(d.moves.map(m => m.to)));
@@ -60,7 +60,7 @@ check('detail: confirmed offers only check in / no-show / cancel', JSON.stringif
 let r = await move(future.id, 'checked_in');
 check('illegal: check in before the day -> 409', r.status === 409 && r.json.error.code === 'ILLEGAL_TRANSITION', r.text);
 r = await move(future.id, 'checked_out');
-check('illegal: confirmed -> checked out -> 409 with words', r.status === 409 && /Confirmed cannot be moved to Checked out/.test(r.json.error.message), r.text);
+check('illegal: confirmed -> checked out -> 409 with words', r.status === 409 && /Upcoming cannot be moved to Past/.test(r.json.error.message), r.text);
 r = await move(future.id, 'no_show', 'x');
 check('illegal: no-show before the check-in day -> 409', r.status === 409, r.text);
 r = await move(future.id, 'cancelled');
