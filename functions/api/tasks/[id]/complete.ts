@@ -32,9 +32,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   await run(env, "UPDATE tasks SET state = 'resolved', completed_at = ?, completed_by = ?, updated_at = ? WHERE id = ?", now, session.userId, now, id);
   if (['turnover', 'inspection', 'deep_clean', 'light_clean'].includes(t.kind)) {
     await run(env, "UPDATE units SET readiness = 'ready', updated_at = ? WHERE id = ?", now, t.unit_id);
-    await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'unit.readiness_change', entityTable: 'units', entityId: t.unit_id, after: { readiness: 'ready' }, source: 'field_app' });
+    await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'unit.readiness_change', entityTable: 'units', entityId: t.unit_id, after: { readiness: 'ready' }, source: isFieldRole(session.role) ? 'field_app' : 'web' });
   }
-  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'task.complete', entityTable: 'tasks', entityId: id, before: { state: t.state }, after: { state: 'resolved', note: b.note ?? null, photoWaived }, source: 'field_app' });
+  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'task.complete', entityTable: 'tasks', entityId: id, before: { state: t.state }, after: { state: 'resolved', note: b.note ?? null, photoWaived }, source: isFieldRole(session.role) ? 'field_app' : 'web' });
   const cost = isClean ? await chargeClean(env, session, t) : null;
   await cleaningNotice(env, id, 'completed', session.userId);
   return json({ ok: true, photoWaived, cost });

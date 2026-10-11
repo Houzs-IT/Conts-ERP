@@ -617,7 +617,9 @@ function HistoryView({ onTab }: { onTab: (t: Tab) => void }) {
 
   /** Starts or finishes the ticked cleans one by one; finished (or already started) ones are left alone and named. */
   async function bulkMove(rows: HistoryRow[], move: 'start' | 'done', clear: () => void) {
-    const skip = (r: HistoryRow) => (r.state === 'resolved' ? 'Already finished' : move === 'start' && r.state === 'in_progress' ? 'Already started' : null);
+    // A clean needs a photo or video to be marked done: say so up front rather than send requests bound to be refused.
+    const skip = (r: HistoryRow) => (r.state === 'resolved' ? 'Already finished' : move === 'start' && r.state === 'in_progress' ? 'Already started'
+      : move === 'done' && !r.photoCount ? 'No photo or video yet' : null);
     const todo = rows.filter(r => !skip(r));
     const left = rows.filter(r => skip(r)).map(r => ({ label: historyLabel(r), reason: skip(r)! }));
     setBulkBusy(move);
@@ -652,7 +654,7 @@ function HistoryView({ onTab }: { onTab: (t: Tab) => void }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader title="Cleaning" sub={data ? `${count(data.total)} ${showLabel} from ${dayLabel(from)} to ${dayLabel(to)}` : 'Finished cleans'}
+      <PageHeader title="Cleaning" sub={data ? `${count(data.total)} ${data.total === 1 ? showLabel.replace(/s$/, '') : showLabel} from ${dayLabel(from)} to ${dayLabel(to)}` : 'Finished cleans'}
         actions={<TabSwitch tab="history" onTab={onTab} />} />
       <DataTable<HistoryRow>
         id="cleaning.history" columns={columns} rows={data ? data.data : null} rowKey={r => r.id}
