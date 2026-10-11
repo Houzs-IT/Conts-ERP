@@ -2,6 +2,7 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { HashRouter } from 'react-router-dom';
 import App from './App';
+import { CrashScreen } from './components/CrashScreen';
 import './styles/tokens.css';
 
 // Self-heal after a deploy. Pages are lazy-loaded, so a browser holding a stale
@@ -11,21 +12,24 @@ import './styles/tokens.css';
 // index.html + chunk names. The sessionStorage guard prevents a reload loop if
 // the failure is real (e.g. truly offline). Covers both Vite's preloadError and
 // the raw rejected dynamic import.
-function healChunkError(reason: unknown) {
+function healChunkError(reason: unknown): boolean {
   const msg = String((reason as { message?: string })?.message ?? reason ?? '');
-  if (!/dynamically imported module|Importing a module script failed|Failed to fetch|ChunkLoadError|error loading dynamically imported module/i.test(msg)) return;
+  if (!/dynamically imported module|Importing a module script failed|Failed to fetch|ChunkLoadError|error loading dynamically imported module/i.test(msg)) return false;
   try {
     // Loop-safe: reload at most once per 10s. A genuine offline failure then
     // stops reloading; a stale-chunk failure heals on the first reload.
     const last = Number(sessionStorage.getItem('chunk-reload-at') ?? 0);
-    if (Date.now() - last < 10000) return;
+    if (Date.now() - last < 10000) return false;
     sessionStorage.setItem('chunk-reload-at', String(Date.now()));
     window.location.reload();
-  } catch { /* storage blocked: skip the reload rather than risk a loop */ }
+    return true;
+  } catch { return false; /* storage blocked: skip the reload rather than risk a loop */ }
 }
-window.addEventListener('vite:preloadError', e => { e.preventDefault(); healChunkError((e as unknown as { payload?: unknown }).payload); });
+// Swallow the error only when a reload is on its way. Swallowed without one, the lazy import resolves to nothing
+// and the page crashed blank; left alone it reaches CrashScreen, which offers Reload.
+window.addEventListener('vite:preloadError', e => { if (healChunkError((e as unknown as { payload?: unknown }).payload)) e.preventDefault(); });
 window.addEventListener('unhandledrejection', e => healChunkError(e.reason));
 
 createRoot(document.getElementById('root')!).render(
-  <React.StrictMode><HashRouter><App /></HashRouter></React.StrictMode>
+  <React.StrictMode><CrashScreen><HashRouter><App /></HashRouter></CrashScreen></React.StrictMode>
 );
