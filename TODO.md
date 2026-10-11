@@ -249,7 +249,6 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Performance "Management fees" over 12 months only counts Aug 2026: the workbook's 整体报告 breakdown exists for that month alone.
 
 ## Reservations click sweep (fix/sweep-reservations, 11 Oct 2026)
-- Inbox: the messages table keeps no delivery state, so after a reload a reply WhatsApp refused looks sent (marked only until the page reloads). Needs a migration (a delivery column) — no number was reserved for this sweep.
 - Owner to decide: a guest name "请设置姓名" (Airbnb's "please set your name" placeholder) arrives from the booking data; treat it as no name at import?
 - Owner to decide: changing the dates or total of a booking that already has an issued invoice leaves that invoice for the old stay; warn, or void and reissue?
 - Owner to decide: adding a guest with the phone of an existing guest gives no duplicate warning (merge exists after the fact).

@@ -1,5 +1,5 @@
 import { type Env, one, run, json, fail, audit, nowIso } from '../../_lib/db';
-import { requireSession, isFieldRole } from '../../_lib/auth';
+import { requireSession, isFieldRole, hasColumn } from '../../_lib/auth';
 import { notify } from '../../_lib/notify';
 import { pushMessageIfLinked } from '../../_lib/channexMessageSync';
 
@@ -72,6 +72,16 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     delivery = pushed.state === 'sent'
       ? { state: 'sent' }
       : { state: 'not_linked', reason: pushed.reason ?? "This conversation isn't linked to the guest's platform, so they won't see this reply there." };
+  }
+  // Kept on the message (migration 0104) so the Inbox still shows "Not delivered" after a reload. Never fails the
+  // reply, which is already saved and sent.
+  try {
+    if (await hasColumn(env, 'messages', 'delivery_state')) {
+      const state = ['sent', 'failed', 'queued', 'not_linked'].includes(delivery.state) ? delivery.state : 'failed';
+      await run(env, 'UPDATE messages SET delivery_state = ?, delivery_error = ? WHERE id = ?', state, state === 'sent' || !delivery.reason ? null : delivery.reason.slice(0, 500), id);
+    }
+  } catch (e) {
+    await audit(env, { actorId: null, actorLabel: 'system', action: 'message.delivery_state_failed', entityTable: 'message_threads', entityId: thread.id, after: { messageId: id, error: String(e).slice(0, 300) } }).catch(() => {});
   }
   return json({ id, threadId: thread.id, sentAt: now, delivery: delivery.state, reason: delivery.reason }, 201);
 };
