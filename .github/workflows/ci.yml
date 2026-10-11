@@ -89,6 +89,11 @@ jobs:
           BASE: http://localhost:8788
           BIGDATA_PORT: '5432'
           BIGDATA_DB: ci
+      - name: Unit costs (unit-costs)
+        run: node scripts/api-checks/unit-costs.mjs
+        env:
+          API_BASE: http://localhost:8788
+          DB_URL: postgres://postgres@127.0.0.1:5432/ci
       - name: Server log
         if: failure()
         run: tail -n 200 wrangler.log

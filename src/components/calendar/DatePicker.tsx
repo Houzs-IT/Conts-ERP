@@ -93,15 +93,22 @@ const quickBtn = 'h-9 md:h-8 px-2.5 text-left rounded-control border-none bg-tra
 const sizeBtn = (on: boolean) => cx('h-9 md:h-8 px-2.5 rounded-pill border border-solid cursor-pointer font-sans text-meta whitespace-nowrap',
   on ? 'bg-black text-white border-black font-semibold' : 'bg-card text-ink border-line hover:bg-muted font-medium');
 
-export const WINDOW_SIZES = [7, 14, 30] as const;
 export const MAX_WINDOW = 92;
+/** The spans the board can show. Month is the calendar month, 1st to last; the arrows then step a month at a time. */
+const VIEWS: { key: string; label: string; days?: number }[] = [
+  { key: '7', label: '1 week', days: 7 }, { key: '14', label: '2 weeks', days: 14 }, { key: '30', label: '30 days', days: 30 },
+  { key: 'month', label: 'Month' }, { key: '60', label: '60 days', days: 60 }, { key: '90', label: '90 days', days: 90 },
+];
+const isMonthWindow = (start: string, days: number) => start.endsWith('-01') && days === monthLength(start);
 /** How many days before today a window opens on when it follows today: today then sits near the left edge with
  *  the last two check-outs still in view, as on Airbnb's multi-calendar. */
 export const LEAD_DAYS = 2;
 
 /**
- * The Calendar's date control: [<] [11 Oct – 9 Nov 2026 v] [>] [Today]. The label opens a month picker to jump to
- * any day, quick ranges, and the window size (1 week, 2 weeks or 30 days; This month and Next month give the month's length).
+ * The Calendar's date control: [<] [11 Oct – 9 Nov 2026 v] [>] [Today] [View: 30 days v]. The arrows step back or
+ * forward a whole window (a month in Month view), so earlier dates are a click or two away; the label opens a month
+ * picker to jump to any day, past or future, and quick ranges. The view (1 week to 90 days, or a calendar month) is a
+ * visible menu beside it from md up, and inside the picker on phones.
  */
 export function CalendarRangeControl({ start, days, today, phone, onChange, isDefault }: {
   start: string; days: number; today: string; phone: boolean; isDefault: boolean;
@@ -111,33 +118,54 @@ export function CalendarRangeControl({ start, days, today, phone, onChange, isDe
   const last = addDaysIso(start, days - 1);
   const [month, setMonth] = useState(firstOfMonth(start));
   useEffect(() => { if (open) setMonth(firstOfMonth(start)); }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
-  const step = Math.min(7, days);
   const go = (s: string | null, n = days) => { onChange(s, Math.max(1, Math.min(MAX_WINDOW, n))); };
-  const monthStart = firstOfMonth(today), nextMonth = shiftMonth(today, 1);
+  const monthView = isMonthWindow(start, days);
+  const view = monthView ? 'month' : VIEWS.some(v => v.days === days) ? String(days) : '';
+  const stepBy = (dir: 1 | -1) => {
+    if (monthView) { const m = shiftMonth(start, dir); go(m, monthLength(m)); } else go(addDaysIso(start, dir * days));
+  };
+  const stepLabel = (dir: 1 | -1) => (monthView ? (dir < 0 ? 'Previous month' : 'Next month') : `${dir < 0 ? 'Back' : 'Forward'} ${plural(days, 'day')}`);
+  const pickView = (key: string) => {
+    if (key === 'month') { const m = firstOfMonth(isDefault ? today : start); go(m, monthLength(m)); return; }
+    go(isDefault ? null : start, Number(key));
+  };
+  const monthStart = firstOfMonth(today), nextMonth = shiftMonth(today, 1), lastMonth = shiftMonth(today, -1);
   const quick: { label: string; on: () => void }[] = [
     { label: 'Today', on: () => go(null) },
     { label: 'This week', on: () => go(mondayOf(today), 7) },
     { label: 'Next 2 weeks', on: () => go(today, 14) },
     { label: 'This month', on: () => go(monthStart, monthLength(monthStart)) },
     { label: 'Next month', on: () => go(nextMonth, monthLength(nextMonth)) },
+    { label: 'Last month', on: () => go(lastMonth, monthLength(lastMonth)) },
+    { label: 'Past 30 days', on: () => go(addDaysIso(today, -29), 30) },
   ];
   const seg = 'h-full min-w-10 md:min-w-0 px-2.5 grid place-items-center bg-transparent hover:bg-muted border-none cursor-pointer font-sans text-copy text-ink';
 
   return (
     <div className="relative flex flex-1 md:flex-none min-w-0">
       <div className="flex flex-1 md:flex-none min-w-0 items-stretch h-[42px] md:h-9 box-border rounded-control border border-solid border-line bg-card overflow-hidden">
-        <button type="button" onClick={() => go(addDaysIso(start, -step))} className={seg} aria-label={`Back ${plural(step, 'day')}`} title={`Back ${plural(step, 'day')}`}><Icon name="ChevronLeft" size="sm" /></button>
+        <button type="button" onClick={() => stepBy(-1)} className={seg} aria-label={stepLabel(-1)} title={`${stepLabel(-1)}: see earlier dates`}><Icon name="ChevronLeft" size="sm" /></button>
         <button type="button" data-popover-trigger onClick={() => setOpen(v => !v)} aria-expanded={open} aria-haspopup="dialog"
-          title="Pick dates"
+          title="Jump to any date, past or future"
           className="flex-1 md:flex-none min-w-0 px-2 md:px-3 inline-flex items-center justify-center gap-1.5 bg-transparent hover:bg-muted border-none [border-left:1px_solid_var(--color-line)] [border-right:1px_solid_var(--color-line)] cursor-pointer font-sans text-copy font-medium text-ink whitespace-nowrap [font-variant-numeric:tabular-nums] md:min-w-[176px]">
           <Icon name="CalendarDays" size="sm" color="var(--color-text-muted)" />
           <span className="min-w-0 overflow-hidden">{rangeLabel(start, last, !phone)}</span>
           <Icon name="ChevronDown" size="sm" color="var(--color-text-muted)" />
         </button>
-        <button type="button" onClick={() => go(addDaysIso(start, step))} className={seg} aria-label={`Forward ${plural(step, 'day')}`} title={`Forward ${plural(step, 'day')}`}><Icon name="ChevronRight" size="sm" /></button>
-        <button type="button" onClick={() => go(null)} disabled={isDefault}
+        <button type="button" onClick={() => stepBy(1)} className={seg} aria-label={stepLabel(1)} title={stepLabel(1)}><Icon name="ChevronRight" size="sm" /></button>
+        <button type="button" onClick={() => go(null)} disabled={isDefault} title={isDefault ? 'Showing today' : 'Back to today'}
           className={`${seg} [border-left:1px_solid_var(--color-line)]! px-3 font-medium disabled:text-faint disabled:cursor-default disabled:hover:bg-transparent`}>Today</button>
       </div>
+      {!phone && (
+        <label className="ml-2 flex-none inline-flex items-center h-9 box-border rounded-control border border-solid border-line bg-card hover:bg-muted pl-3 pr-1 gap-1 text-copy text-muted-ink cursor-pointer">
+          View
+          <select value={view} onChange={e => pickView(e.target.value)} aria-label="How many days to show"
+            className="h-full pl-1 pr-1 border-none bg-transparent font-sans text-copy font-medium text-ink cursor-pointer outline-none">
+            {!view && <option value="">{plural(days, 'day')}</option>}
+            {VIEWS.map(v => <option key={v.key} value={v.key}>{v.label}</option>)}
+          </select>
+        </label>
+      )}
       <Popover open={open} onClose={() => setOpen(false)} phone={phone} label="Pick dates">
         <div className="flex flex-col md:flex-row gap-3 md:gap-4">
           <div className="flex md:flex-col gap-1 overflow-x-auto [scrollbar-width:none] md:w-[124px] md:[border-right:1px_solid_var(--color-line-soft)] md:pr-3">
@@ -149,11 +177,11 @@ export function CalendarRangeControl({ start, days, today, phone, onChange, isDe
             <MonthGrid month={month} today={today} from={start} to={last} onMonth={setMonth}
               onPick={d => { go(d); setOpen(false); }} />
             <div className="flex flex-col gap-1.5">
-              <span className="text-meta text-muted-ink">Show</span>
+              <span className="text-meta text-muted-ink">View</span>
               <div className="flex flex-wrap items-center gap-1.5">
-                {WINDOW_SIZES.map(s => (
-                  <button key={s} type="button" className={sizeBtn(days === s)} aria-pressed={days === s} onClick={() => { go(start, s); setOpen(false); }}>
-                    {s === 7 ? '1 week' : s === 14 ? '2 weeks' : '30 days'}
+                {VIEWS.map(v => (
+                  <button key={v.key} type="button" className={sizeBtn(view === v.key)} aria-pressed={view === v.key} onClick={() => { pickView(v.key); setOpen(false); }}>
+                    {v.label}
                   </button>
                 ))}
               </div>

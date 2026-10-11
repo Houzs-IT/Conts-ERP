@@ -17,6 +17,7 @@ import { api, ApiFailure, errorMessage } from '../lib/api';
 import { rm, monthLabel, todayMyt, titleCase, plural } from '../lib/format';
 import { MODEL, type RevenueModel } from '../lib/revenueModel';
 import { PayoutDetails } from './owners/PayoutDetails';
+import { OwnerDetails } from './owners/OwnerDetails';
 import { OwnerCostsCard } from './owners/Costs';
 import { ModelChip } from './units/ContractTab';
 import { RecordHistory } from '../components/RecordHistory';
@@ -191,6 +192,8 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
       />
 
       {error && <StaleBanner message={`Showing the last record we have. ${error}`} onRetry={reload} />}
+
+      <OwnerDetails owner={o} ready={!!data?.detailsReady} canEdit onSaved={reload} />
 
       {/* Month, report view and the report itself. */}
       <Card>

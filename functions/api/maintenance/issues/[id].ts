@@ -1,14 +1,22 @@
 import { type Env, one, run, json, fail, audit, nowIso } from '../../../_lib/db';
 import { requireSession, isFieldRole } from '../../../_lib/auth';
-import { CATEGORIES, URGENCIES, ASSIGNEE_KINDS, CHARGE_TO, approvalThreshold, needsApproval, assigneeUserId } from '../../../_lib/maintenance';
+import { MASTER_ROLES } from '../../../_lib/properties';
+import { CATEGORIES, URGENCIES, CHARGE_TO, DAY, assigneeUserId, assigneeKindFor, hasBilling } from '../../../_lib/maintenance';
+import { isPeriodLocked } from '../../../_lib/expenses';
 import { repairNotice } from '../../../_lib/notices';
 
+/** The money follow-up a finished job still takes (migration 0108): when it is billed, when the payer's money came in,
+ *  what the technician or contractor is owed and when accounts paid them. */
+const MONEY_KEYS = ['billingDate', 'collectedAt', 'contractorAmount', 'contractorPaidAt'] as const;
+
 /** PATCH /api/maintenance/issues/:id — any of:
- *   { assigneeId | assigneeName, assigneeKind }  the technician or contractor (a NAME: outside vendors are not accounts)
+ *   { assigneeName }                             the technician or contractor (a NAME: outside vendors are not accounts);
+ *                                                in-house or contractor follows from whether the name is a staff account
  *   { category, urgency, chargeTo, title, detail, quotedAmount }
+ *   { billingDate, collectedAt, contractorAmount, contractorPaidAt }   also on a finished job
  *   { state: 'reopened' }                        a finished job back to work
- *  A quote (or a change of payer) is checked against the approval threshold: above it, a repair the owner pays waits
- *  for the owner; back under it, a job still waiting goes back to work. An approval already given stands. */
+ *  Nothing here sends a job to the owner: that is "Send to owner for approval" (request-approval.ts) only.
+ *  A new billing date on a finished job moves its expense to that day, unless either month's owner statement is final. */
 export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
@@ -19,6 +27,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   const cur = await one<any>(env, 'SELECT * FROM maintenance_issues WHERE id = ?', id);
   if (!cur) return fail('NOT_FOUND', 'That job no longer exists.', 404);
   const now = nowIso();
+  const moneyRole = MASTER_ROLES.includes(session.role);
 
   if (b?.state === 'reopened') {
     if (cur.state !== 'resolved') return fail('CONFLICT', 'Only a finished job can be reopened.', 409);
@@ -26,7 +35,8 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'maintenance.reopen', entityTable: 'maintenance_issues', entityId: id, before: { state: cur.state }, after: { state: 'reopened' } });
     return json({ ok: true, state: 'reopened' });
   }
-  if (cur.state === 'resolved') return fail('CONFLICT', 'That job is finished. Reopen it to change it.', 409);
+  const moneyOnly = b && typeof b === 'object' && Object.keys(b).length > 0 && Object.keys(b).every(k => (MONEY_KEYS as readonly string[]).includes(k));
+  if (cur.state === 'resolved' && !moneyOnly) return fail('CONFLICT', 'That job is finished. Reopen it to change it.', 409);
 
   const sets: string[] = [], args: unknown[] = [];
   const before: Record<string, unknown> = {}, after: Record<string, unknown> = {};
@@ -34,12 +44,11 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
 
   const name = typeof b?.assigneeName === 'string' ? b.assigneeName : typeof b?.assigneeId === 'string' ? b.assigneeId : undefined;
   if (name !== undefined) {
-    if (!name.trim()) return fail('VALIDATION', 'Name the technician or contractor.', 422, { assigneeName: 'Enter a name.' });
-    put('vendor_name', 'assignee', name.trim().slice(0, 80));
-    const kind = b?.assigneeKind ?? cur.assignee_kind ?? 'contractor';
-    if (!ASSIGNEE_KINDS.includes(kind)) return fail('VALIDATION', 'In-house or contractor.', 422, { assigneeKind: 'In-house or contractor.' });
-    put('assignee_kind', 'assigneeKind', kind);
-    const userId = await assigneeUserId(env, name.trim().slice(0, 80));
+    if (!name.trim()) return fail('VALIDATION', 'Pick the technician or contractor.', 422, { assigneeName: 'Pick who does the job.' });
+    const picked = name.trim().slice(0, 80);
+    put('vendor_name', 'assignee', picked);
+    put('assignee_kind', 'assigneeKind', await assigneeKindFor(env, picked));
+    const userId = await assigneeUserId(env, picked);
     if (userId !== undefined) put('assignee_user_id', 'assigneeUserId', userId);
   }
   if (b?.category !== undefined) {
@@ -60,32 +69,58 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   }
   if (typeof b?.detail === 'string') put('detail', 'detail', b.detail.trim().slice(0, 2000) || null);
   if (b?.quotedAmount !== undefined) {
-    if (!session.manage && session.role !== 'operations_manager') return fail('FORBIDDEN', 'Only operations managers, finance and management can set a quote.', 403);
+    if (!moneyRole) return fail('FORBIDDEN', 'Only operations managers, finance and management can set a quote.', 403);
     if (b.quotedAmount !== null && (!Number.isInteger(b.quotedAmount) || b.quotedAmount < 0)) return fail('VALIDATION', 'Enter the quote in sen, RM 0.00 or more.', 422, { quotedAmount: 'Enter the quote.' });
     put('quoted_amount', 'quotedAmount', b.quotedAmount);
   }
+
+  const money = MONEY_KEYS.filter(k => b?.[k] !== undefined);
+  if (money.length) {
+    if (!moneyRole) return fail('FORBIDDEN', 'Only operations managers, finance and management can record billing and payments.', 403);
+    if (!(await hasBilling(env))) return fail('NOT_CONFIGURED', 'Billing dates and payments need a database update (migration 0108) that is not applied yet.', 501);
+    for (const [key, col, label] of [['billingDate', 'billing_date', 'the billing date'], ['collectedAt', 'collected_at', 'the day the money came in'], ['contractorPaidAt', 'contractor_paid_at', 'the day the contractor was paid']] as const) {
+      if (b?.[key] === undefined) continue;
+      if (b[key] !== null && (typeof b[key] !== 'string' || !DAY.test(b[key]))) return fail('VALIDATION', `Pick ${label}.`, 422, { [key]: `Pick ${label}.` });
+      put(col, key, b[key]);
+    }
+    if (b?.contractorAmount !== undefined) {
+      if (b.contractorAmount !== null && (!Number.isInteger(b.contractorAmount) || b.contractorAmount < 0)) return fail('VALIDATION', 'Enter the amount owed, RM 0.00 or more.', 422, { contractorAmount: 'Enter the amount owed.' });
+      put('contractor_amount', 'contractorAmount', b.contractorAmount);
+    }
+  }
   if (!sets.length) return fail('VALIDATION', 'Nothing to change.', 422);
 
-  // The state that follows: approval gate first, then whether someone is on it.
-  const quote = b?.quotedAmount !== undefined ? b.quotedAmount : cur.quoted_amount;
+  // A finished job's expense follows its billing date into the right month.
+  let moved: { id: string; from: string; to: string } | null = null;
+  if (b?.billingDate !== undefined && cur.state === 'resolved') {
+    const exp = await one<{ id: string; incurred_on: string }>(env, 'SELECT id, incurred_on FROM expenses WHERE maintenance_id = ? ORDER BY created_at LIMIT 1', id);
+    const to = b.billingDate ?? exp?.incurred_on;
+    if (exp && to && to !== exp.incurred_on) {
+      if (await isPeriodLocked(env, cur.unit_id, exp.incurred_on)) return fail('PERIOD_LOCKED', 'The owner statement this cost is on is already final, so it cannot move to another month.', 409);
+      if (await isPeriodLocked(env, cur.unit_id, to)) return fail('PERIOD_LOCKED', "That month's owner statement is already final, so the cost cannot be added to it.", 409, { billingDate: 'That month is closed.' });
+      moved = { id: exp.id, from: exp.incurred_on, to };
+    }
+  }
+
+  // The state that follows. A job sent to the owner stops waiting only if the company or the guest now pays.
   const payer = b?.chargeTo ?? cur.charge_to;
   const vendor = after.assignee ?? cur.vendor_name;
   let state = cur.state;
-  if (b?.quotedAmount !== undefined || b?.chargeTo !== undefined) {
-    const required = needsApproval(quote, payer, await approvalThreshold(env));
-    if (required && !cur.owner_approved_at) {
-      put('owner_approval_required', 'ownerApprovalRequired', 1);
-      state = 'waiting';
-    } else if (!required && !cur.owner_approved_at && cur.state === 'waiting') {
+  if (cur.state !== 'resolved') {
+    if (cur.state === 'waiting' && !cur.owner_approved_at && payer !== 'owner') {
       put('owner_approval_required', 'ownerApprovalRequired', 0);
       state = cur.started_at ? 'in_progress' : vendor ? 'assigned' : 'open';
     }
+    if (state === 'open' && vendor) state = 'assigned';
+    if (state !== cur.state) put('state', 'state', state);
   }
-  if (state === 'open' && vendor) state = 'assigned';
-  if (state !== cur.state) put('state', 'state', state);
 
   await run(env, `UPDATE maintenance_issues SET ${sets.join(', ')}, updated_at = ? WHERE id = ?`, ...args, now, id);
+  if (moved) {
+    await run(env, 'UPDATE expenses SET incurred_on = ? WHERE id = ?', moved.to, moved.id);
+    await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'expense.update', entityTable: 'expenses', entityId: moved.id, before: { incurredOn: moved.from }, after: { incurredOn: moved.to, reason: 'Maintenance billing date changed' } });
+  }
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: name !== undefined ? 'maintenance.assign' : 'maintenance.edit', entityTable: 'maintenance_issues', entityId: id, before, after });
   if (name !== undefined && after.assignee !== before.assignee) await repairNotice(env, id, 'assigned', session.userId);
-  return json({ ok: true, state });
+  return json({ ok: true, state, expenseMovedTo: moved?.to ?? null });
 };

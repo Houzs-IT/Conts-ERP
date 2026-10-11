@@ -25,6 +25,9 @@ const OWNER_ALLOWED: [string, RegExp][] = [
   // The Owner Income Report: the handler resolves the owner from the session (ownerFor) and shows only their final statements.
   ['GET', /^\/api\/statements\/[^/]+\/report$/],
   ['POST', /^\/api\/maintenance\/issues\/[^/]+\/approve$/],
+  // Their own notices (a repair quote waiting for their approval); the handlers only ever read the signed-in person's rows.
+  ['GET', /^\/api\/notifications(\/count)?$/],
+  ['PATCH', /^\/api\/notifications$/],
   // A file staff marked visible to the owner (their contract); the handler checks it is theirs.
   ['GET', /^\/api\/documents\/[^/]+\/download$/],
 ];

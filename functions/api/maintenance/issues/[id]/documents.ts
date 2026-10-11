@@ -24,8 +24,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
 
 const MAX_BYTES = 15 * 1024 * 1024;
 
-/** POST /api/maintenance/issues/:id/documents — multipart `file`, `kind` (pod/invoice). Backs the
- *  expense on the owner statement. Stored in R2 (binding MEDIA); without that binding the request
+/** POST /api/maintenance/issues/:id/documents — multipart `file`, `kind`: claim (the technician's or contractor's bill
+ *  to the company), invoice (the bill to the owner or guest), receipt (proof a payment was made), pod (proof of work).
+ *  Accounts pay the contractor from these, and they back the expense on the owner statement. Stored in R2 (binding MEDIA); without that binding the request
  *  is refused, not faked. */
 export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
@@ -40,7 +41,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   const file = form?.get('file');
   if (!(file instanceof File)) return fail('VALIDATION', 'Attach a file.', 422);
   if (file.size > MAX_BYTES) return fail('VALIDATION', 'That file is too large (15 MB limit).', 422);
-  const kind = ['pod', 'invoice'].includes(String(form?.get('kind'))) ? String(form?.get('kind')) : 'other'; // counted as a document, not a photo
+  const kind = ['pod', 'invoice', 'claim', 'receipt'].includes(String(form?.get('kind'))) ? String(form?.get('kind')) : 'other'; // counted as a document, not a photo
 
   const docId = crypto.randomUUID();
   const key = `maintenance/${id}/${docId}`;

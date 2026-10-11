@@ -3,12 +3,12 @@ import { requireSession, isFieldRole } from '../../_lib/auth';
 import { notify } from '../../_lib/notify';
 import { resolveUnit } from '../../_lib/ops';
 import { windowsFor } from '../../_lib/cleaning';
-import { CATEGORIES, URGENCIES, SOURCES, ASSIGNEE_KINDS, CHARGE_TO, approvalThreshold, needsApproval, assigneeUserId } from '../../_lib/maintenance';
+import { CATEGORIES, URGENCIES, SOURCES, CHARGE_TO, assigneeUserId, assigneeKindFor, hasBilling } from '../../_lib/maintenance';
 import { repairNotice } from '../../_lib/notices';
 
 /** GET /api/maintenance/issues?state=&unitId= — every job, with its technician, category, urgency, source, repair
  *  windows (and the stays each overlaps), photo and document counts, and what it cost and who paid once done.
- *  `threshold` is the quote above which a repair the owner pays waits for the owner's approval. */
+ *  A job waits for the owner only after the office sends it for approval. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
@@ -24,10 +24,13 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
            s.code AS sku_code, s.name AS sku_name,
            (SELECT COUNT(*) FROM documents d WHERE d.maintenance_id = m.id AND d.kind IN ('photo','video')) AS photo_count,
            (SELECT COUNT(*) FROM documents d WHERE d.maintenance_id = m.id AND d.kind NOT IN ('photo','video')) AS document_count,
-           (SELECT COALESCE(SUM(e.amount), 0) FROM expenses e WHERE e.maintenance_id = m.id) AS expensed
+           (SELECT COALESCE(SUM(e.amount), 0) FROM expenses e WHERE e.maintenance_id = m.id) AS expensed,
+           (SELECT min(e.incurred_on) FROM expenses e WHERE e.maintenance_id = m.id) AS expensed_on,
+           (o.user_id IS NOT NULL) AS owner_has_login
     FROM maintenance_issues m
     JOIN units u ON u.id = m.unit_id
     JOIN properties p ON p.id = u.property_id
+    LEFT JOIN owners o ON o.id = u.owner_id
     LEFT JOIN users r ON r.id = m.reported_by
     LEFT JOIN maintenance_skus s ON s.id = m.sku_id
     ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
@@ -35,9 +38,11 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   const windows = await windowsFor(env, rows.map(r => r.id));
   const money = session.manage || session.role === 'operations_manager';
+  const billing = await hasBilling(env);
   return json({
     generatedAt: nowIso(),
-    threshold: await approvalThreshold(env),
+    // False until migration 0108 is applied: the screen then hides billing date, collected and contractor payment.
+    billing,
     data: rows.map(r => ({
       id: r.id, unitId: r.unit_id, unitNumber: r.unit_number, propertyName: r.property_name, buildingId: r.property_id,
       title: r.title, detail: r.detail, state: r.state,
@@ -54,14 +59,17 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       windows: windows.get(r.id) ?? [],
       // Amounts are omitted entirely for roles without finance access.
       quotedAmount: money ? r.quoted_amount : null, finalAmount: money ? r.final_amount : null,
-      expensed: money ? Number(r.expensed) : null,
+      expensed: money ? Number(r.expensed) : null, expensedOn: money ? r.expensed_on ?? null : null,
+      ownerHasLogin: !!r.owner_has_login,
+      billingDate: money && billing ? r.billing_date ?? null : null, collectedAt: money && billing ? r.collected_at ?? null : null,
+      contractorAmount: money && billing ? r.contractor_amount ?? null : null, contractorPaidAt: money && billing ? r.contractor_paid_at ?? null : null,
     })),
   });
 };
 
 /** POST /api/maintenance/issues — a job from the office, or damage reported from a clean or the field app.
  *  unitId may be a unit id or its display number (with propertyName when two buildings share a number).
- *  A quote above the approval threshold on a repair the owner pays sends the job to the owner first. */
+ *  `ownerApprovalRequired: true` sends it to the owner at once; otherwise nothing waits for the owner. */
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
@@ -80,7 +88,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!URGENCIES.includes(urgency)) return fail('VALIDATION', 'Pick how urgent it is.', 422, { urgency: 'Normal or urgent.' });
   const source = b.reportSource ?? (field ? 'cleaner' : 'staff');
   if (!SOURCES.includes(source)) return fail('VALIDATION', 'Say who reported it.', 422, { reportSource: 'Guest, cleaner, inspection or staff.' });
-  if (b.assigneeKind != null && !ASSIGNEE_KINDS.includes(b.assigneeKind)) return fail('VALIDATION', 'In-house or contractor.', 422, { assigneeKind: 'In-house or contractor.' });
   if (field && b.quotedAmount != null) return fail('FORBIDDEN', 'Cleaners and technicians cannot set amounts.', 403);
   if (b.quotedAmount != null && (!Number.isInteger(b.quotedAmount) || b.quotedAmount < 0)) return fail('VALIDATION', 'The amount must be a whole number of sen.', 422);
 
@@ -103,8 +110,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     if (quoted == null && !field) quoted = sku.default_price;
   }
 
-  const threshold = await approvalThreshold(env);
-  const approval = needsApproval(quoted, chargeTo, threshold) || !!b.ownerApprovalRequired;
+  const approval = !!b.ownerApprovalRequired;
   const vendor = typeof b.assigneeName === 'string' && b.assigneeName.trim() && !field ? b.assigneeName.trim().slice(0, 80) : null;
   const state = approval ? 'waiting' : vendor ? 'assigned' : 'open';
 
@@ -120,7 +126,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     id, unit.id, session.userId, state, b.title.trim().slice(0, 160), b.detail ? String(b.detail).slice(0, 2000) : null, skuId,
     quoted, approval ? 1 : 0,
     b.blocksUnit ? 1 : 0, b.blocksUnit ? (b.blockedFrom ?? mytToday()) : null, b.blockedTo ?? null,
-    chargeTo, category, urgency, source, sourceTaskId, vendor, vendor ? (b.assigneeKind ?? 'contractor') : null,
+    chargeTo, category, urgency, source, sourceTaskId, vendor, vendor ? await assigneeKindFor(env, vendor) : null,
     now, now, now, ...(withUser ? [userId] : []));
 
   if (b.blocksUnit) await run(env, "UPDATE units SET readiness = 'maintenance', updated_at = ? WHERE id = ?", now, unit.id);
@@ -133,5 +139,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     entityTable: 'maintenance_issues', entityId: id, urgent: !!b.blocksUnit || urgency === 'urgent',
   });
   await repairNotice(env, id, 'reported', session.userId);
+  if (approval) await repairNotice(env, id, 'approval_requested', session.userId);
   return json({ id, state, ownerApprovalRequired: approval }, 201);
 };

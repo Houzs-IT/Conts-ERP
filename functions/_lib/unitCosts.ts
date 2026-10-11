@@ -3,6 +3,7 @@ import { monthEndExclusive } from './revenue';
 import { modelOf, type RevenueModel } from './revenueModel';
 import { UNIT_SQL } from './ownerStatement';
 import { LOCKED_SQL } from './expenses';
+import { CLEAN_KINDS_SQL } from './cleaning';
 
 /** A month's costs on a unit, or on every unit of an owner, grouped the way the owner reads them (owner, 11 Oct 2026):
  *    Cleaning fees       every clean charged to the unit (category cleaning / housekeeping)
@@ -60,6 +61,18 @@ export function kindOf(e: { category: string; description: string | null; mainte
   return 'other';
 }
 
+/** How a cost reached the unit (owner, 11 Oct 2026): a finished cleaning job, a maintenance job's billing date, a bill
+ *  paid (utilities and the condo fee, from Add a bill or the monthly utility bills), anything else entered by hand,
+ *  or the owner workbook import (ids 'wb-...'). Read from what the row is linked to; nothing extra is stored. */
+export type CostSource = 'cleaning_job' | 'maintenance_job' | 'bill' | 'manual' | 'import';
+const BILL_KINDS = new Set(['water', 'electricity', 'internet', 'sewerage', 'building_fee']);
+export function sourceOf(e: { id: string; task_id: string | null; maintenance_id: string | null }, kind: string): CostSource {
+  if (e.task_id) return 'cleaning_job';
+  if (e.maintenance_id) return 'maintenance_job';
+  if (String(e.id).startsWith('wb-')) return 'import';
+  return BILL_KINDS.has(kind) ? 'bill' : 'manual';
+}
+
 /** maintenanceFee: the month's condo fee, after the split as an owner charge plus any still saved as an expense. */
 interface Totals { cleaning: number; maintenance: number; utilities: number; maintenanceFee: number; other: number; deducted: number; notCharged: number; credits: number; charges: number }
 const zero = (): Totals => ({ cleaning: 0, maintenance: 0, utilities: 0, maintenanceFee: 0, other: 0, deducted: 0, notCharged: 0, credits: 0, charges: 0 });
@@ -67,9 +80,10 @@ const zero = (): Totals => ({ cleaning: 0, maintenance: 0, utilities: 0, mainten
 export interface CostItem {
   id: string; unitId: string; unitLabel: string; kind: string; kindLabel: string; group: CostGroup; category: string; description: string;
   amount: number; chargeTo: string; incurredOn: string; reference: string | null; receiptDocumentId: string | null; locked: boolean;
+  source: CostSource; taskId: string | null; maintenanceId: string | null;
 }
 export interface AdjustmentItem {
-  id: string; unitId: string; unitLabel: string; placedOnFirstUnit: boolean; kind: string; amount: number; description: string;
+  id: string; unitId: string; unitLabel: string; placedOnFirstUnit: boolean; kind: string; amount: number; description: string; isMaintenanceFee: boolean;
   occurredOn: string; reference: string | null; state: string; source: string; inMonth: boolean;
   statement: { id: string; period: string; state: string } | null;
 }
@@ -81,9 +95,9 @@ export async function unitCosts(env: Env, month: string, scope: { unitId?: strin
   const units = await all<any>(env, `${UNIT_SQL} ${where} ORDER BY p.name, u.unit_number`, arg);
   const ids = JSON.stringify(units.map(u => u.id));
   const ownerIds = JSON.stringify([...new Set(units.map(u => u.owner_id))]);
-  const [expenses, adjustments] = await Promise.all([
+  const [expenses, adjustments, cleans] = await Promise.all([
     all<any>(env, `
-      SELECT e.id, e.unit_id, e.category, e.description, e.amount, e.incurred_on, e.charge_to, e.reference, e.maintenance_id, e.receipt_document_id,
+      SELECT e.id, e.unit_id, e.category, e.description, e.amount, e.incurred_on, e.charge_to, e.reference, e.maintenance_id, e.task_id, e.receipt_document_id,
              ${LOCKED_SQL} AS locked
       FROM expenses e JOIN units u ON u.id = e.unit_id
       WHERE e.unit_id IN (SELECT jsonb_array_elements_text(?::text::jsonb)) AND e.incurred_on >= ? AND e.incurred_on < ?
@@ -96,6 +110,14 @@ export async function unitCosts(env: Env, month: string, scope: { unitId?: strin
       WHERE a.owner_id IN (SELECT jsonb_array_elements_text(?::text::jsonb))
         AND ((a.occurred_on >= ? AND a.occurred_on < ?) OR a.state = 'held' OR (a.state = 'open' AND a.statement_id IS NULL AND a.occurred_on < ?))
       ORDER BY a.occurred_on, a.created_at`, ownerIds, from, toEx, toEx),
+    // Finished cleans around the month that carry no cost: the day is worked out below in Malaysian time.
+    all<any>(env, `
+      SELECT t.id, t.unit_id, t.kind, t.title, COALESCE(t.completed_at, t.due_at) AS done_at
+      FROM tasks t
+      WHERE t.unit_id IN (SELECT jsonb_array_elements_text(?::text::jsonb)) AND t.state = 'resolved' AND t.kind IN ${CLEAN_KINDS_SQL}
+        AND COALESCE(t.completed_at, t.due_at) >= ? AND COALESCE(t.completed_at, t.due_at) < ?
+        AND NOT EXISTS (SELECT 1 FROM expenses x WHERE x.task_id = t.id)
+      ORDER BY 5`, ids, shiftDay(from, -1), shiftDay(toEx, 1)),
   ]);
 
   const label = (u: any) => `${u.property_name} ${u.unit_number}`;
@@ -114,7 +136,17 @@ export async function unitCosts(env: Env, month: string, scope: { unitId?: strin
       id: e.id, unitId: e.unit_id, unitLabel: label(byId.get(e.unit_id)), kind: k.key, kindLabel: k.label, group: k.group, category: e.category,
       description: e.description ?? '', amount: Number(e.amount), chargeTo: e.charge_to, incurredOn: String(e.incurred_on).slice(0, 10),
       reference: e.reference ?? null, receiptDocumentId: e.receipt_document_id ?? null, locked: !!e.locked,
+      source: sourceOf(e, k.key), taskId: e.task_id ?? null, maintenanceId: e.maintenance_id ?? null,
     };
+  });
+  // A finished clean with no cost: imported as done without a price, or finished on a day the unit already had a
+  // cleaning cost, or before its month's statement was final. Listed so it can be charged (POST /api/expenses/clean-charges).
+  const cleaningDays = new Set(items.filter(i => i.kind === 'cleaning').map(i => `${i.unitId}|${i.incurredOn}`));
+  const unchargedCleans = cleans.flatMap(t => {
+    const day = mytDay(t.done_at);
+    if (!day || day < from || day >= toEx) return [];
+    return [{ taskId: t.id, unitId: t.unit_id, unitLabel: label(byId.get(t.unit_id)), kind: t.kind, title: t.title, doneOn: day,
+      sameDayCost: cleaningDays.has(`${t.unit_id}|${day}`) }];
   });
   const adj: AdjustmentItem[] = adjustments.flatMap(a => {
     const placed = byId.get(a.unit_id ?? firstOf(a.owner_id)?.id);
@@ -122,6 +154,7 @@ export async function unitCosts(env: Env, month: string, scope: { unitId?: strin
     const occurred = String(a.occurred_on).slice(0, 10);
     return [{
       id: a.id, unitId: placed.id, unitLabel: label(placed), placedOnFirstUnit: !a.unit_id, kind: a.kind, amount: Number(a.amount),
+      isMaintenanceFee: Number(a.amount) < 0 && MAINTENANCE_FEE_CHARGE.test(String(a.description)),
       description: String(a.description).replace(/^O2:\s*/i, ''), occurredOn: occurred, reference: a.reference ?? null, state: a.state, source: a.source,
       inMonth: occurred >= from && occurred < toEx,
       statement: a.statement_id ? { id: a.statement_id, period: String(a.period_start).slice(0, 7), state: a.statement_state } : null,
@@ -168,6 +201,13 @@ export async function unitCosts(env: Env, month: string, scope: { unitId?: strin
       ...shape(bucket(u.id), u.id),
     })),
     total: shape(all_, ''),
-    items, adjustments: adj,
+    items, adjustments: adj, unchargedCleans,
   };
+}
+
+const shiftDay = (d: string, by: number) => new Date(Date.parse(`${d}T00:00:00Z`) + by * 864e5).toISOString().slice(0, 10);
+/** The Malaysian calendar day of a stored instant ('2026-10-03T04:00:00.000Z', '2026-10-03T12:00:00+08:00'). */
+export function mytDay(at: string | null): string | null {
+  const t = Date.parse(String(at ?? ''));
+  return Number.isFinite(t) ? new Date(t + 8 * 3600e3).toISOString().slice(0, 10) : null;
 }

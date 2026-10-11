@@ -10,7 +10,7 @@ import { useNow } from '../lib/useMedia';
 import { api, errorMessage } from '../lib/api';
 import { cx } from '../lib/design-tokens';
 import {
-  TimeLeft, KIND_LABEL, uploadTo, Checklist, ReportDamageModal, Segmented, hm, dayLabel, mytDay, type ChecklistItem, type MediaItem,
+  TimeLeft, KIND_LABEL, uploadTo, ReportDamageModal, Segmented, hm, dayLabel, mytDay, type MediaItem,
 } from '../components/ops/OpsUi';
 import { StatusBadge } from '../components/StatusBadge';
 
@@ -22,10 +22,10 @@ interface Job {
   previous: { guestName: string; checkOutTime: string; state: string } | null;
   next: { guestName: string; checkInTime: string; checkInAt: string } | null;
 }
-interface Detail { checklist: ChecklistItem[]; media: MediaItem[]; access: { id: string; label: string; instruction: string }[] }
+interface Detail { media: MediaItem[]; access: { id: string; label: string; instruction: string }[] }
 
 /** The cleaner's phone: today's jobs grouped by building, each with the guest leaving and arriving, the time left,
- *  and the steps: guest left, start, checklist, photos and videos, complete. One column, 44px targets. */
+ *  and the steps: guest left, start, photos and videos, complete. One column, 44px targets. */
 export default function FieldTodayPage() {
   const now = useNow(30000);
   const [pick, setPick] = useState<'today' | 'tomorrow'>('today');
@@ -67,8 +67,6 @@ function JobCard({ job: j, now, open, onToggle, onChanged }: { job: Job; now: nu
   const [busy, setBusy] = useState<string | null>(null);
   const [damage, setDamage] = useState(false);
   const detail = useApi<Detail>(open ? `/housekeeping/tasks/${j.id}` : null);
-  const [checklist, setChecklist] = useState<ChecklistItem[] | null>(null);
-  const items = checklist ?? detail.data?.checklist ?? null;
   const files = detail.data?.media.length ?? j.photoCount;
   const isClean = ['turnover', 'deep_clean', 'light_clean'].includes(j.kind);
 
@@ -107,13 +105,6 @@ function JobCard({ job: j, now, open, onToggle, onChanged }: { job: Job; now: nu
               {j.previous && !j.guestOut && <Button size="touch" variant="secondary" loading={busy === 'left'} onClick={() => void act('left', () => api.post('/housekeeping/guest-left', { taskId: j.id }), 'Guest out. Ready to clean.')}>Guest left</Button>}
               {j.state !== 'in_progress' && <Button size="touch" variant="secondary" loading={busy === 'start'} onClick={() => void act('start', () => api.post(`/housekeeping/tasks/${j.id}/start`, {}), 'Started.')}>Start</Button>}
             </div>
-          )}
-
-          {isClean && (
-            <section className="flex flex-col gap-1">
-              <h3 className="m-0 text-copy font-semibold">Checklist {items && <span className="text-muted-ink font-normal">{items.filter(c => c.done).length} of {items.length}</span>}</h3>
-              {items ? <Checklist taskId={j.id} items={items} readOnly={j.done} onChange={setChecklist} /> : <Skeleton height={120} />}
-            </section>
           )}
 
           <section className="flex flex-col gap-2">

@@ -1,4 +1,4 @@
-import { type Env, all, json, fail, audit, nowIso } from '../../_lib/db';
+import { type Env, all, run, json, fail, nowIso } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
 import { MYT_DATE } from '../../_lib/ops';
 
@@ -37,11 +37,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     RETURNING id, reservation_id`, now, now, JSON.stringify(ids));
 
   if (created.length) {
-    await audit(env, {
-      actorId: session.userId, actorLabel: session.fullName, action: 'housekeeping.plan', entityTable: 'tasks',
-      entityId: created.length === 1 ? created[0].id : `${created.length} tasks`,
-      after: { created: created.map(c => ({ taskId: c.id, reservationId: c.reservation_id })) }, source: b?.source ?? 'web',
-    });
+    // One entry per job, so each cleaning job's own History says who planned it; one statement for the batch.
+    await run(env, `
+      INSERT INTO audit_log (actor_id, actor_label, action, entity_table, entity_id, after_state, source, occurred_at)
+      SELECT ?, ?, 'housekeeping.plan', 'tasks', x->>'taskId', jsonb_build_object('reservationId', x->>'reservationId')::text, ?, ?
+      FROM jsonb_array_elements(?::text::jsonb) x`,
+      session.userId, session.fullName, b?.source ?? 'web', now,
+      JSON.stringify(created.map(c => ({ taskId: c.id, reservationId: c.reservation_id }))));
   }
   return json({ created: created.length, skipped: ids.length - created.length, taskIds: created.map(c => c.id) }, created.length ? 201 : 200);
 };

@@ -46,10 +46,28 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 - Demo walkthrough data: scripts/demo-ops-seed.mjs (--apply --confirm=<ref>, --remove); not run on staging or production yet.
 - Done (feat/s3-history-notify): closing a repair job gives back its calendar block at once (cancelled if not started, ends today if under way), also for blocks made before migration 0095 (matched by the note); the scheduled job sweeps any left.
 - Videos are capped at 50 MB per file (Workers request memory); longer clips need direct-to-R2 upload.
+- Done (feat/cleaning-pod-audit, no migration): cleaning checklist removed from the board and the phone (owner, 11 Oct; its table and endpoint stay, unused); cleaner and type at the top of the job; board refreshes every 30 s so a clean finished on the phone shows as "Done HH:MM" without a reload; History in the Houzs ERP layout everywhere (one entry per action, coloured initials, "via Field app", changes folded); cleaning jobs now record their creation (checkout, prepare, plan) and show the checkout of the reservation they follow. Tested: scripts/api-checks/cleaning-pod-audit.mjs.
+- Owner asked for several cleaners on one job (11 Oct, earlier list); one cleaner per job today. Needs a task_cleaners table (migration) and phone access for each cleaner; not built.
+- Cleaning jobs imported from HostPlatform have no creation entry; their History starts with "Cleaning job created" from the job's own date.
+- Logo is blurry: public/brand art is 203 x 181 px cropped from a report and no larger file exists in the repo or the brand guide; needs the original logo file (AI, SVG or PNG at 1000 px+) from the owner.
+
+## Maintenance rework (feat/maintenance-rework, 11 Oct 2026)
+- Migration 0108 (maintenance_issues.billing_date, collected_at, contractor_amount, contractor_paid_at) must be applied on staging, then production. Until then the screen hides billing date, collected and contractor payment, and a repair's expense is dated the day it is marked done, as before.
+- Guessed default: "collected from the owner" is ticked by hand (date picked); the owner statement already deducts the cost in the billing month, so for most owners the statement payout is the collection. Owner to confirm whether it should tick itself when that month's statement is paid.
+- Guessed default: the quote is what the payer is charged; "owed to the technician or contractor" is entered separately (from their claim). No automatic markup between the two.
+- Guessed default: a finished job's billing date can still be changed; its expense moves with it unless either month's owner statement is final.
+- Guessed default: the technician list is every active technician, housekeeper and operations account (in-house) plus every contractor name used on a job before; a new contractor is typed once and then appears in the list. No separate contractor register (phone, bank details) yet.
+- Finance admins have no Operations access by default (Settings > Access), so they cannot open Maintenance to pay contractors. Owner to decide: grant finance_admin Operations (view), or a contractor payouts list on the finance side.
+- Owners now see their own notices (bell on the owner portal); a quote sent for approval also emails them where mail is configured (MAIL_API_KEY), with a link that is a bare "/" rather than the portal address.
+- scripts/api-checks/maintenance.mjs "unit with another open blocker stays off sale" fails on a fresh demo database: the demo data has no other open blocking job on #2207. Test-data issue, not code; fix the check's setup.
+- No Who pays choice in the create form any more: a new job defaults to the owner paying, changed in the job's panel.
+- No owner approval threshold any more (owner, 11 Oct): a quote goes to the owner only through "Send to owner for approval". The old setting operations.maintenanceApprovalThreshold may still be in the settings table and still saves through /api/settings; nothing reads it. Remove it from settings/index.ts when convenient.
+- Parts catalog (the SKU list) is hidden from the Maintenance header until the owner sets it up: flip SHOW_CATALOG in src/pages/MaintenancePage.tsx; "Draw a part" still appears on a job only when stocked items exist.
+- Photos of the problem picked in Add maintenance job and Report damage go up after the job is saved, as Before photos; a failed photo is named in a warning and does not undo the job. A cleaner may add photos to a job they reported. Report damage with photos was checked through the API only (no clean on the demo board to open it in the browser).
 
 ## Performance (audit 11 Oct 2026, docs/audits/performance-from-sister-erps.md)
 - Owner decision: Workers Paid on the Conts ERP account. On the free plan, Send statements makes one email call per owner (~100 a month) against 50 outside calls per request; calls past 50 fail and are not retried while the cron is off. Until then send 40 at a time.
-- A bulk price update for all 139 units over a year builds 152,205 rate rows in one request (12.6 s locally); UNTESTED against the free plan's CPU limit on Cloudflare.
+- Done (feat/calendar-bulk): a bulk price change goes a few units per request (6,000 price rows at most; the server refuses over 20,000 with 413), so a year for all 139 units is about 25 requests in a row; the time per request on Cloudflare's free plan is UNTESTED.
 - Confirm the Hyperdrive origin is Supabase's session pooler (port 5432), not the transaction pooler.
 - libphonenumber (149 KB) is in the entry script because src/lib/format.ts formats phones; lazy-load it if the entry budget (scripts/checks/entry-bundle.mjs, 180 KB gzipped) gets tight.
 
@@ -189,6 +207,10 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Migration 0092 (units.weekend_rate, reservations.block_reason) is not yet applied to staging or production. It backfills weekend_rate = round(base_rate x 1.22) for every priced unit so live Fri/Sat prices do not move; units created later sell the weekend at the base rate until a weekend rate is set (Pricing page).
 - Channex full sync (functions/_lib/channexQueue.ts) still counts inquiries as taken nights; the board and the clash check do not. Decide whether an inquiry should close the nights on the booking sites.
 - Rate update lists the units on the board, so with one building filtered it offers only that building; open it with All buildings to price across buildings.
+- Done (feat/calendar-bulk): tick units on the board (per unit, per building, all shown) and Change prices sets a nightly and optional Fri/Sat price, min nights or blocked nights for a date range, per channel; step 4 shows each unit's price now and after (server dry run) before saving; one audit entry per request (rate.bulk, entity bulk:<batch>, old and new per unit). Phones keep the unit list inside Update prices instead of ticks.
+- The unit column's Nightly / Weekend lines show the unit's standard prices, not prices set for single nights; after a bulk change the nights show the new price but the column does not. Decide whether it should say "from RM x" for the window.
+- Calendar views: 1 week, 2 weeks, 30 days, calendar month, 60 and 90 days (the API allows 92); arrows step a whole window (a month in Month view). No year jump in the date picker; going back a year is 12 clicks in Month view.
+- POST /api/blocks hangs on the local PGlite database (single connection) and then blocks every later request until the server restarts; calendar-rates.mjs stops at its owner-stay step there. Not seen on Postgres; check with a real local Postgres.
 
 ## Money approvals and guest documents (feat/s4-money-docs, migrations 0096-0097)
 - Migrations 0096 (approval_requests) and 0097 (document_counters, issued_documents) must be applied on production before this ships; until then refunds, payout runs, owner credits and charges, large expenses and write-offs answer with a database error.
@@ -277,3 +299,24 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Owner to decide: housekeepers and technicians still cannot open Today (they have their own field job list); "field staff" in the request may mean operations staff, who can.
 - "Guest arrived" is allowed while the unit still needs cleaning (the booking drawer allows it too); owner to decide whether to block it.
 - Not done: no test on staging data; scripts/dev-pglite.mjs is not on main (copied locally from another worktree for the browser check).
+## Unit costs (feat/unit-costs, no migration)
+- Unit Financials has one Costs panel (cards + one dated table, month stepper) read from GET /api/expenses/breakdown, the rows and month rule (incurred_on in the month) the owner statement uses; "Every expense this month" is gone. Owner page "Every cost" uses the same table.
+- How a cost arrived is read, not stored: task_id = Cleaning job, maintenance_id = Maintenance job, utilities and condo fee = Bill, id 'wb-...' = Imported, else Manual. A source column would need a migration; not added.
+- Finished cleans with no cost (imported as done without a price, or a second clean the same day) are listed on the unit with "Charge N cleaning jobs" (POST /api/expenses/clean-charges), dated the day each was finished. Default guessed: charged at the unit's cleaning price, owner pays; owner to confirm.
+- A second clean on the same unit and day is still never charged automatically (chargeClean's import guard); it shows as uncharged and charging it is skipped too. Owner to decide whether two cleans in a day should both charge.
+- Maintenance: the unit reads category maintenance / maintenance_id rows by incurred_on; feat/maintenance-rework must write the billing date into incurred_on for the month to be right. Not checked against that branch.
+- Add a bill now covers every manual cost (Paid by included; Record expense removed); the bulk "Utility bills, all units" stays on the owner page only and now asks for a bill date (was the month's last day, unseen).
+- Owner adjustments dated in the month are rows of the unit table; held ones and earlier open ones are listed below it as waiting. Their hold/release actions for in-month ones are on the owner page only.
+- The statement and the panel both count rollup headers (parent_expense_id) with their line items; /api/finance/expenses does not. No rollups exist today; if they appear, decide which is right.
+- scripts/api-checks/unit-costs.mjs runs in CI (rbac job). Locally on PGlite use STATEMENTS=lib: POST /api/statements/generate opens a second connection for its transaction and PGlite serves one, so it hangs there.
+
+## Owner details (feat/owner-details, migration 0110)
+- Migration 0110 (owner mailing address and alternate contact) must be applied by hand: staging, check the owner page there, then production. Until then the Owner details card works without the address and alternate contact, and saves ignore them.
+- Production: 116 owners, none with phone or email yet (the source workbooks had none); they are entered on each owner's page (Owner details, Edit).
+- Changing an invited owner's email on the owner page does not change their portal sign-in email; owner to decide whether it should.
+
+## Layout and logo sweep (fix/ui-oct11, 11 Oct)
+- Owner to send the original logo file (vector or large PNG): mark-gold.png is 117x136 and logo-gold.png 195x162, so the login hero (112px tall) is upscaled on 2x screens and soft. Rerun scripts/brand/make-logo-variants.py with it; the optical-centre nudge (MARK_OPTICAL in Logo.tsx) may need re-measuring.
+- Calendar: the grid box has a fixed md:max-h-[74vh], so at 1366x768 and 1920x1040 the page scrolls 50-120px as well as the grid (two scrollbars). Swap it for useFillHeight in CalendarPage.tsx line ~489 once feat/calendar-bulk has merged (left alone to avoid a conflict).
+- Guests: the list box is a fixed calc(100dvh - 420px) beside a profile that can be thousands of px tall (a repeat guest lists every stay), so the list scrolls out of view; make the left column sticky with useFillHeight({ column: true }) and cap the stay list. Owner to say whether a guest's stay list should page after ~20.
+- Owner decision: at 1366x768 Reservations has room for only ~5 rows under the to-do cards, so the table takes a full screen and the page scrolls first (two scrollers by design, useFillHeight). Option: fold the four to-do cards into one row of chips on short screens.
