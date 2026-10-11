@@ -1,6 +1,6 @@
 /** Supplier master, ported from 2990's SCM. Money is integer sen. Conts is
  *  single-tenant, so 2990's per-company scoping is dropped. */
-import { checkInt, checkPhone, checkSen, type Fields } from './validate';
+import { checkEmail, checkInt, checkPhone, checkSen, type Fields } from './validate';
 
 export const SUPPLIER_STATUSES = ['ACTIVE', 'INACTIVE', 'BLOCKED'] as const;
 export type SupplierStatus = typeof SUPPLIER_STATUSES[number];
@@ -43,6 +43,7 @@ export function checkSupplierFields(fields: Fields, b: Record<string, unknown>) 
   checkPhone(fields, 'phone', b.phone, { label: 'Phone' });
   checkPhone(fields, 'mobile', b.mobile, { label: 'Mobile' });
   checkPhone(fields, 'whatsappNumber', b.whatsappNumber, { label: 'WhatsApp' });
+  checkEmail(fields, 'email', b.email);
 }
 
 /** The first problem with a create body, or null. */

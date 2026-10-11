@@ -31,6 +31,8 @@ export function cardFieldProblems(b: Record<string, unknown>) {
   const fields: Fields = {};
   checkSen(fields, 'minChargeSen', b.minChargeSen, { label: 'Minimum charge' });
   checkSen(fields, 'capSen', b.capSen, { label: 'Charge cap' });
+  const min = Number(b.minChargeSen), cap = Number(b.capSen);
+  if (!fields.minChargeSen && !fields.capSen && b.minChargeSen != null && b.capSen != null && b.minChargeSen !== '' && b.capSen !== '' && cap < min) fields.capSen = 'The charge cap cannot be below the minimum charge.';
   if (Array.isArray(b.rules)) (b.rules as RuleInput[]).forEach((r, i) => {
     checkInt(fields, `rules.${i}.tierPosition`, r?.tierPosition, { label: 'Position', min: 0 });
     checkInt(fields, `rules.${i}.bracketMin`, r?.bracketMin, { label: 'Bracket min', min: 0 });

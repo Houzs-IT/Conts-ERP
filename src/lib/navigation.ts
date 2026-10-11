@@ -165,7 +165,7 @@ export function areaOfPath(path: string): string | null {
     const child = it.children?.find(c => c.path === path);
     if (child) return areaOfChild(it, child);
   }
-  return null;
+  return SUPPLY_OFF_MENU[path]?.[2] ?? null;
 }
 
 /** Whether a screen is closed to this person: No access on its area, or a Full-only screen below Full. */
@@ -191,8 +191,32 @@ export function navFor(role: UserRole, engine = false, access?: Record<string, A
     .filter(g => g.items.length > 0);
 }
 
+/** Supply chain screens the owner took out of the sidebar (25 Sep 2026) that are still reachable by address.
+ *  They keep the supply chain sidebar and a proper breadcrumb instead of flipping to Rental under "Home". */
+const SUPPLY_OFF_MENU: Record<string, [group: string, label: string, area: string]> = {
+  '/sales/customers': ['Sales order', 'Customers', 'scSales'],
+  '/sales/unbilled': ['Sales order', 'Unbilled deliveries', 'scInvoices'],
+  '/procurement/categories': ['Procurement', 'Categories', 'scProcurement'],
+  '/procurement/product-models': ['Procurement', 'Product models', 'scProcurement'],
+  '/procurement/payment-vouchers': ['Procurement', 'Payment vouchers', 'scInvoices'],
+  '/furniture/fabrics': ['Procurement', 'Fabric library', 'scProcurement'],
+  '/transport/drivers': ['Transportation', 'Drivers', 'scTransportPlan'],
+  '/transport/driver-leave': ['Transportation', 'Driver leave', 'scTransportPlan'],
+  '/transport/vehicles': ['Transportation', 'Vehicles', 'scTransportPlan'],
+  '/transport/fleet-health': ['Transportation', 'Fleet health', 'scTransportPlan'],
+  '/transport/coverage': ['Transportation', 'Coverage & fleet', 'scTransportPlan'],
+  '/transport/3pl': ['Transportation', '3PL companies', 'scTransportPlan'],
+  '/transport/zones': ['Transportation', 'Delivery zones', 'scTransportPlan'],
+  '/transport/residence-rules': ['Transportation', 'Residence rules', 'scTransportPlan'],
+  '/transport/rate-cards': ['Transportation', 'Carriers & rates', 'scTransportPlan'],
+  // The server keeps these money screens to finance roles (MONEY_ONLY in functions/api/_middleware.ts).
+  '/accounting': ['Accounting', 'Payables & receivables', 'scInvoices'],
+  '/accounting/credit-notes': ['Accounting', 'Credit / debit notes', 'scInvoices'],
+};
+
 /** Which workspace an address belongs to; addresses outside the menu (records, profile) stay where they are. */
 export function workspaceOf(path: string): Workspace | null {
+  if (SUPPLY_OFF_MENU[path]) return 'supply';
   for (const g of NAV) for (const it of g.items) {
     if (it.path && (path === it.path || (it.path !== '/' && path.startsWith(it.path + '/')))) return g.workspace;
     if (it.children?.some(c => c.path === path)) return g.workspace;
@@ -223,6 +247,8 @@ export function findNav(path: string): { group: string; item: string; label: str
     if (it.path === path) return { group: groupName(g.label), item: it.label, label: it.label };
     for (const c of it.children ?? []) if (c.path === path) return { group: it.label, item: it.label, label: c.label };
   }
+  const off = SUPPLY_OFF_MENU[path];
+  if (off) return { group: off[0], item: off[1], label: off[1] };
   const sub = SUB_PAGES.find(([re]) => re.test(path));
   const parent = path.replace(/\/[^/]+$/, '');
   if (parent && parent !== path) {
