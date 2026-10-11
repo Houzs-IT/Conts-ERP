@@ -25,6 +25,7 @@ import { Select, Menu } from '../components/Select';
 import { Chip as FilterChip } from './finance/listKit';
 import type { BookingChannel, ReservationState, UnitReadiness, UserRole, Tone } from '../lib/types';
 import { RecordHistory } from '../components/RecordHistory';
+import { Eyebrow, Figure } from '../components/Metric';
 
 /* ------------------------------------------------------------------ */
 /* Model                                                               */
@@ -522,7 +523,7 @@ function ProfilePanel({ g, canSeeContact, busy, onMessage, onBookStay, onEdit, o
       )}
 
       <div className="bg-card border border-solid border-line rounded-card overflow-hidden">
-        <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)] text-heading font-semibold">Stays</div>
+        <div className="pt-5 pb-3.5 px-5 [border-bottom:1px_solid_var(--color-line-soft)] text-[16px] font-semibold tracking-[-0.01em]">Stays</div>
         {g.history.length === 0 ? (
           <div className="py-[18px] px-5 text-copy text-muted-ink">No stays yet. Cancelled bookings are not listed here.</div>
         ) : (
@@ -567,7 +568,7 @@ function Registration({ g, onEdit }: { g: Guest; onEdit: () => void }) {
   return (
     <div className={cx('bg-card border border-solid rounded-card p-5 flex flex-col gap-3', missing && r.required ? 'border-danger-line' : 'border-line')}>
       <div className="flex items-start justify-between gap-2">
-        <span className="text-heading font-semibold">Registration details</span>
+        <span className="text-[16px] font-semibold tracking-[-0.01em]">Registration details</span>
         {missing && r.required && <span className="text-meta text-danger text-right">Needed before check-in</span>}
       </div>
       <div className="grid grid-cols-[120px_1fr] gap-x-3 gap-y-2 text-copy">
@@ -605,7 +606,7 @@ function NotesAndTags({ g, onSaved }: { g: Guest; onSaved: () => void }) {
   };
   return (
     <div className="bg-card border border-solid border-line rounded-card p-5 flex flex-col gap-3">
-      <span className="text-heading font-semibold">Internal notes and tags</span>
+      <span className="text-[16px] font-semibold tracking-[-0.01em]">Internal notes and tags</span>
       <div className="flex gap-2 flex-wrap items-center">
         {g.tags.filter(t => t.key !== 'vip' && t.key !== 'blacklist').map(t => <StatusBadge key={t.key} tone={t.tone} label={t.label} size="sm" />)}
         {(['vip', 'blacklist'] as const).map(t => {
@@ -651,7 +652,7 @@ function MovementStrip({ g, busy, onPrepare, onSendAccess, onCheckIn, onCheckOut
       <div className="flex items-center gap-3 flex-wrap">
         <ChannelMark ch={m.channel} size={24} />
         <div className="flex flex-col gap-[2px] min-w-0 flex-1">
-          <span className="text-heading font-semibold">{heading}</span>
+          <span className="text-[16px] font-semibold tracking-[-0.01em]">{heading}</span>
           <span className="text-meta text-muted-ink">{m.propertyName} {m.unitNumber} · {fmtGuests(m.guestsCount)} · {fmtNights(m.nights)}</span>
         </div>
         <div className="flex items-center gap-[7px]">
@@ -686,9 +687,9 @@ function MovementStrip({ g, busy, onPrepare, onSendAccess, onCheckIn, onCheckOut
 
 function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
-    <div className="flex flex-col gap-[3px]">
-      <span className="text-meta text-muted-ink">{label}</span>
-      <span className="text-title font-semibold [font-variant-numeric:tabular-nums]">{value}</span>
+    <div className="flex flex-col gap-1.5 min-w-0">
+      <Eyebrow>{label}</Eyebrow>
+      <Figure value={value} className="text-[20px] sm:text-[22px] leading-none font-medium tracking-[-0.02em] text-ink" />
       {sub && <span className="text-caption text-muted-ink">{sub}</span>}
     </div>
   );
