@@ -65,8 +65,9 @@ because the supply chain cannot be separated from the rest of that code). Rules 
   `WRANGLER_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE` at the staging DB and mint a
   signed test session cookie matching `_lib/auth.ts`'s format.
 - Manual test suites live in `scripts/api-checks/*.mjs` (`harness.mjs` for local/role-aware
-  runs, a staging-adapted harness for real staging data). There is no CI test gate — these
-  only run when invoked, so run the relevant ones before calling a change done.
+  runs, a staging-adapted harness for real staging data). CI runs only `rbac-matrix.mjs` and
+  `role-access.mjs` (the `rbac` job, on a throwaway Postgres built by `scripts/ci-api-db.mjs`);
+  the rest only run when invoked, so run the relevant ones before calling a change done.
 - Secrets: Cloudflare Pages secrets via `wrangler pages secret put` (add `--env preview`
   for staging; omit for production — they're separate). Local-only secrets go in gitignored
   `.dev.vars*` files (`.dev.vars`, `.dev.vars.production`, `.dev.vars.channex`, ...),

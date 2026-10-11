@@ -6,6 +6,7 @@ import { flushWhenQuiet, FLUSH_DELAY_MS } from '../_lib/channexQueue';
 import { closePastStaysSometimes } from '../_lib/autoCheckout';
 import { twoStepSetupDue } from '../_lib/signIn';
 import { overLimit } from '../_lib/textLimits';
+import { once } from '../_lib/idempotency';
 
 /**
  * Runs before every /api endpoint. Most endpoints only check that someone is signed
@@ -78,9 +79,10 @@ const handle: PagesFunction<Env> = async ({ request, env, next, waitUntil }) => 
   // The cookie only says who signed in. Their role and whether the account is still on are read from
   // users on every request (one query, shared with the security settings below), so switching someone
   // off or changing their role on Users and roles takes effect on their very next click.
-  const live = await sessionState(env, signed.userId);
-  // A cookie signed before management's "Sign out everywhere" (or a password reset) is refused the same way.
-  if (!live.user?.active || signed.iat < live.user.revokedAt) {
+  const live = await sessionState(env, signed.userId, signed.sid);
+  // A cookie signed before management's "Sign out everywhere" (or a password reset) is refused the same way, and so
+  // is one whose browser signed out (its user_sessions row is gone), even if the cookie was copied elsewhere.
+  if (!live.user?.active || signed.iat < live.user.revokedAt || !live.user.sessionLive) {
     return new Response(JSON.stringify({ error: { code: 'UNAUTHENTICATED', message: 'This account has been switched off or changed. Sign in again, or ask management.' } }),
       { status: 401, headers: { 'content-type': 'application/json; charset=utf-8', 'set-cookie': clearCookie(request) } });
   }
@@ -131,7 +133,8 @@ const handle: PagesFunction<Env> = async ({ request, env, next, waitUntil }) => 
     if (over) return fail('VALIDATION', over.message, 422, { [over.field]: over.message });
   }
 
-  const response = await next(forward);
+  // A money or document write sent again with the same Idempotency-Key gets the first answer back (functions/_lib/idempotency.ts).
+  const response = await once(env, forward, session.userId, () => next(forward));
   closePastStaysSometimes(env, waitUntil);
   // Any write may have queued Channex updates; send them once the burst of edits has gone quiet.
   if (request.method !== 'GET' && response.status < 400) {

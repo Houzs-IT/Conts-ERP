@@ -18,6 +18,8 @@ import { SIGN_IN_METHOD, SIGN_IN_RESULT, deviceOf } from '../lib/signIns';
 interface Account {
   twoStep: { enabled: boolean; enabledAt: string | null; backupCodesLeft: number; available: boolean; unavailableReason: string | null; requiredForRole: boolean };
   recentSignIns: { at: string; ip: string | null; userAgent: string | null; result: string; method: string }[];
+  /** Browsers signed in now; null until the database has migration 0106. */
+  devices: { id: string; since: string; ip: string | null; userAgent: string | null; current: boolean }[] | null;
 }
 
 /**
@@ -38,8 +40,21 @@ export default function AccountPage({ gate = false }: { gate?: boolean }) {
       await api.post('/account/sign-out-others');
       toast({ tone: 'success', title: 'Signed out of every other device.', body: 'This browser stays signed in.' });
       setConfirm(null);
+      reload();
     } catch (err) {
       toast({ tone: 'critical', title: 'Other devices were not signed out.', body: errorMessage(err, 'Try again in a moment.') });
+    } finally { setBusy(false); }
+  }
+
+  async function signOutDevice(id: string) {
+    setBusy(true);
+    try {
+      await api.post(`/account/sessions/${id}/end`);
+      toast({ tone: 'success', title: 'That device is signed out.' });
+      setConfirm(null);
+      reload();
+    } catch (err) {
+      toast({ tone: 'critical', title: 'That device was not signed out.', body: errorMessage(err, 'Try again in a moment.') });
     } finally { setBusy(false); }
   }
 
@@ -63,6 +78,34 @@ export default function AccountPage({ gate = false }: { gate?: boolean }) {
       <PageHeader title="My account" sub={user ? `${user.fullName} · ${user.email}` : undefined} />
       {twoStep}
       <PasswordCard />
+      {data?.devices && (
+        <Card>
+          <CardHeader title="Signed in now" />
+          <div className="flex flex-col">
+            {data.devices.map(d => (
+              <div key={d.id} className="flex items-center gap-3 px-5 py-2.5 [border-top:1px_solid_var(--color-line-soft)] flex-wrap">
+                <span className="flex-1 min-w-[160px] flex flex-col gap-px">
+                  <span className="text-copy">{deviceOf(d.userAgent)}</span>
+                  <span className="text-caption text-muted-ink">Since {dateTime(d.since)}{d.ip ? ` · ${d.ip}` : ''}</span>
+                </span>
+                {d.current ? (
+                  <>
+                    <StatusBadge tone="success" label="This device" size="sm" />
+                    <Button variant="tertiary" size="sm" onClick={logout}>Log out</Button>
+                  </>
+                ) : (
+                  <Button variant="secondary" size="sm" onClick={() => setConfirm({
+                    title: `Sign out ${deviceOf(d.userAgent)}?`,
+                    body: 'That device is signed out on its next click and must sign in again. This browser stays signed in.',
+                    confirmLabel: 'Sign out', busyLabel: 'Signing out…', danger: true,
+                    onConfirm: () => signOutDevice(d.id),
+                  })}>Sign out</Button>
+                )}
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
       <Card>
         <CardHeader title="Recent sign-ins" right={
           <Button variant="secondary" size="sm" onClick={() => setConfirm({

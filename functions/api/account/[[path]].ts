@@ -1,5 +1,5 @@
 import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/db';
-import { requireSession, securitySettings, verifyPassword, hashPassword, revokeSessions, signSession, cookie, sessionLimits } from '../../_lib/auth';
+import { requireSession, securitySettings, verifyPassword, hashPassword, revokeSessions, signSession, cookie, sessionLimits, sessionTable, endSession } from '../../_lib/auth';
 import { notify } from '../../_lib/notify';
 import {
   backupCodesLeft, decryptSecret, encryptSecret, issueBackupCodes, matchTotp, newSecret, otpauthUri,
@@ -8,13 +8,14 @@ import {
 
 /**
  * My account: the signed-in person's own sign-in security.
- *   GET  /api/account                      two-step state, the last 10 sign-ins
+ *   GET  /api/account                      two-step state, the last 10 sign-ins, the browsers signed in now (0106)
  *   POST /api/account/password             { current, password } change their own password
  *   POST /api/account/2fa/setup            start setting up: a new secret, returned once with its otpauth:// address
  *   POST /api/account/2fa/confirm          { code } finish: turns it on and returns 10 backup codes, once
  *   POST /api/account/2fa/disable          { password } turn it off (refused when their role requires it)
  *   POST /api/account/2fa/backup-codes     { password } replace the backup codes, returned once
  *   POST /api/account/sign-out-others      end every other session; this one carries on
+ *   POST /api/account/sessions/:id/end     end one of their other signed-in browsers (migration 0106)
  */
 
 const UNAVAILABLE = 'Two-step sign-in cannot be set up yet: the server key for it (TOTP_ENC_KEY) has not been added. Ask management. Signing in with your password still works.';
@@ -33,6 +34,11 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
     ? await all<{ at: string; ip: string | null; user_agent: string | null; result: string; method: string }>(env,
       'SELECT at, ip, user_agent, result, method FROM login_events WHERE user_id = ? ORDER BY at DESC LIMIT 10', session.userId)
     : [];
+  // null (not []) without migration 0106, so the screen can leave the list out rather than claim nobody is signed in.
+  const devices = await sessionTable(env)
+    ? await all<{ id: string; created_at: string; ip: string | null; user_agent: string | null }>(env,
+      'SELECT id, created_at, ip, user_agent FROM user_sessions WHERE user_id = ? AND expires_at > ? ORDER BY created_at DESC LIMIT 20', session.userId, nowIso())
+    : null;
   return json({
     twoStep: {
       enabled: !!user?.totp_enabled_at,
@@ -43,6 +49,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
       requiredForRole: settings.require2faRoles.includes(session.role),
     },
     recentSignIns: recent.map(r => ({ at: r.at, ip: r.ip, userAgent: r.user_agent, result: r.result, method: r.method })),
+    devices: devices?.map(d => ({ id: d.id, since: d.created_at, ip: d.ip, userAgent: d.user_agent, current: d.id === session.sid })) ?? null,
   }, 200, { 'cache-control': 'no-store' });
 };
 
@@ -80,13 +87,22 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   }
 
   if (path === 'sign-out-others') {
-    if (!(await revokeSessions(env, session.userId))) return fail('NOT_MIGRATED', 'Signing out other devices needs a database update (migration 0055) that has not been applied yet.', 503);
+    if (!(await revokeSessions(env, session.userId, session.sid))) return fail('NOT_MIGRATED', 'Signing out other devices needs a database update (migration 0055) that has not been applied yet.', 503);
     await audit(env, { ...me, action: 'account.sign_out_others' });
     // This browser gets a session signed after the stamp, so it is the one that carries on.
     await new Promise(r => setTimeout(r, 2));
     const { ttlHours, absoluteDays } = sessionLimits(await securitySettings(env), session.role);
-    const token = await signSession(env.SESSION_SECRET, { userId: session.userId, email: session.email, role: session.role, fullName: session.fullName }, ttlHours, absoluteDays);
+    const token = await signSession(env.SESSION_SECRET, { userId: session.userId, email: session.email, role: session.role, fullName: session.fullName, sid: session.sid }, ttlHours, absoluteDays);
     return json({ ok: true }, 200, { 'set-cookie': cookie(request, token, ttlHours * 3600) });
+  }
+
+  const ending = /^sessions\/([0-9a-f-]{36})\/end$/.exec(path);
+  if (ending) {
+    if (ending[1] === session.sid) return fail('VALIDATION', 'That is this browser. Use Log out instead.', 422);
+    if (!(await sessionTable(env))) return fail('NOT_MIGRATED', 'Signing out one device needs a database update (migration 0106) that has not been applied yet.', 503);
+    await endSession(env, ending[1], session.userId);
+    await audit(env, { ...me, action: 'account.session_ended', after: { session: ending[1] } });
+    return json({ ok: true });
   }
 
   if (!path.startsWith('2fa/')) return fail('NOT_FOUND', 'Not found.', 404);

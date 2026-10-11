@@ -1,5 +1,5 @@
 import { type Env, all, one, json, fail, audit } from '../../_lib/db';
-import { readSession, readCookie, signSession, cookie, clearCookie, sessionLimits, securitySettings, type Session } from '../../_lib/auth';
+import { readSession, readCookie, signSession, cookie, clearCookie, sessionLimits, securitySettings, startSession, type Session } from '../../_lib/auth';
 import { doorFor, HOME } from '../../_lib/door';
 
 /**
@@ -60,10 +60,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const mine = sessionLimits(settings, w.origin.role);
   const theirs = sessionLimits(settings, user.role);
   const back = user.id === w.origin.userId;
+  const sid = await startSession(env, request, user.id, theirs.absoluteDays);
   const session = await signSession(env.SESSION_SECRET,
-    { userId: user.id, email: user.email, role: user.role, fullName: user.full_name }, theirs.ttlHours, theirs.absoluteDays);
+    { userId: user.id, email: user.email, role: user.role, fullName: user.full_name, sid }, theirs.ttlHours, theirs.absoluteDays);
   const origin = await signSession(env.SESSION_SECRET,
-    { userId: w.origin.userId, email: w.origin.email, role: w.origin.role, fullName: w.origin.fullName }, mine.ttlHours, mine.absoluteDays, w.origin.iat);
+    { userId: w.origin.userId, email: w.origin.email, role: w.origin.role, fullName: w.origin.fullName, sid: w.origin.sid }, mine.ttlHours, mine.absoluteDays, w.origin.iat);
 
   if (!back) await audit(env, {
     actorId: w.origin.userId, actorLabel: w.origin.fullName, action: 'user.view_as',
