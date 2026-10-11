@@ -25,6 +25,9 @@ export interface Send {
   entityId?: string;
   /** Overrides quiet hours. Check-in risk and payout failure only. */
   urgent?: boolean;
+  /** Set when every call is a new message (a staff reply): the default key below would treat a second reply to the
+   *  same guest within the hour as a retry of the first, skip it and report the first one's result. */
+  idempotencyKey?: string;
 }
 
 const QUIET_FROM = 22;
@@ -46,7 +49,7 @@ function nextSendTime(now = new Date()) {
 
 /** {template, entity, hour} — a retry of the same event never double-sends. */
 async function key(s: Send) {
-  const raw = `${s.template}|${s.entityId ?? s.recipient}|${new Date().toISOString().slice(0, 13)}`;
+  const raw = s.idempotencyKey ?? `${s.template}|${s.entityId ?? s.recipient}|${new Date().toISOString().slice(0, 13)}`;
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw));
   return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 32);
 }
