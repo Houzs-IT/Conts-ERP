@@ -11,7 +11,8 @@ const MYT = 'Asia/Kuala_Lumpur';
 
 export const rm = (sen: number, opts?: { cents?: boolean }) => {
   const showCents = opts?.cents ?? true;
-  const v = sen / 100;
+  // A negated zero, or a fraction of a sen below zero, would print as "-0.00".
+  const v = Number((sen / 100).toFixed(showCents ? 2 : 0)) || 0;
   return 'RM ' + v.toLocaleString('en-MY', {
     minimumFractionDigits: showCents ? 2 : 0,
     maximumFractionDigits: showCents ? 2 : 0,
