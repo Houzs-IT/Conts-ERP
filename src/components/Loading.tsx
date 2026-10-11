@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from 'react';
+import { useEffect, useSyncExternalStore } from 'react';
 import { cx } from '../lib/design-tokens';
 import { refreshingCount, subscribeRefreshing } from '../lib/useApi';
 
@@ -20,12 +20,26 @@ export function RefreshLine() {
   return <BusyLine on={n > 0} className="z-[60]" />;
 }
 
+// Read before React replaces #root: index.html carries the mark inline, so the boot screen never waits on a request for it.
+const BOOT_MARK = typeof document !== 'undefined'
+  ? document.querySelector<HTMLImageElement>('#root .boot-mark img')?.getAttribute('src') ?? '/brand/mark-gold.png'
+  : '/brand/mark-gold.png';
+
+/* True once a page has finished loading in the shell. Until then the page placeholder shows at once: right after
+   the opening screen there is no earlier page to keep on screen, so a delay would only leave the content area empty. */
+let pageShown = false;
+/** Rendered beside the routed page inside Suspense; it commits only when the page itself does. */
+export function PageShown() {
+  useEffect(() => { pageShown = true; }, []);
+  return null;
+}
+
 /** Shown while the session is checked: the gold mark on the page colour, a quiet line beneath it.
  *  index.html draws the same markup before the script runs, so the hand-over is seamless. */
 export function BootScreen() {
   return (
     <div className="boot-screen boot-live" role="status" aria-label="Opening The Conts">
-      <div className="boot-mark"><img src="/brand/mark-gold.png" alt="" width={31} height={36} /></div>
+      <div className="boot-mark"><img src={BOOT_MARK} alt="" width={31} height={36} /></div>
       <div className="boot-track"><div className="boot-bar" /></div>
     </div>
   );
@@ -71,10 +85,10 @@ export function RowsSkeleton({ rows = 6, cols = 5, header = true }: { rows?: num
 }
 
 /** A page whose code is still downloading: title and subtitle, a row of tiles, then a list card.
- *  It fades in after 150ms, so a page that arrives quickly never shows it at all. */
+ *  Once the app is open it fades in after 150ms, so a page that arrives quickly never shows it at all. */
 export function PageSkeleton({ tiles = 4 }: { tiles?: number }) {
   return (
-    <div className="page-skeleton flex flex-col gap-4 sm:gap-5 min-w-0" role="status" aria-label="Loading">
+    <div className={cx(pageShown && 'page-skeleton', 'flex flex-col gap-4 sm:gap-5 min-w-0')} role="status" aria-label="Loading">
       <div className="flex items-end justify-between gap-4">
         <div className="flex flex-col gap-[10px] min-w-0 flex-1">
           <Bar className="h-[26px] sm:h-[32px] w-[min(240px,60%)] rounded-control" />

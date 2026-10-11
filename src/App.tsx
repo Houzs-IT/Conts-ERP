@@ -10,7 +10,7 @@ import UpdateNotice from './components/UpdateNotice';
 import OwnerShell from './components/OwnerShell';
 import LoginPage from './pages/LoginPage';
 import { HOME, screenClosed } from './lib/navigation';
-import { BootScreen, PageSkeleton } from './components/Loading';
+import { BootScreen, PageShown, PageSkeleton } from './components/Loading';
 
 /** react-router (ERP convention) with route-level code splitting — every page is
  *  lazy-loaded so the initial bundle stays small. HashRouter (see main.tsx) keeps
@@ -120,7 +120,7 @@ function AppLayout() {
       {closed ? <NoAccess />
         : viaEngine ? <SupplyChainEngine enginePath={enginePath} />
         : enginePath && !engine.data && engine.loading ? <Fallback />
-        : <CrashScreen inline key={location.pathname}><Suspense fallback={<Fallback />}><Outlet /></Suspense></CrashScreen>}
+        : <CrashScreen inline key={location.pathname}><Suspense fallback={<Fallback />}><PageShown /><Outlet /></Suspense></CrashScreen>}
     </AppShell>
   );
 }
