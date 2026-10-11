@@ -74,9 +74,9 @@ interface Guest {
 }
 
 const FILTERS = [
-  { key: 'all', label: 'All guests', empty: 'No guests yet.' },
-  { key: 'arriving_today', label: 'Arriving today', empty: 'Nobody arrives today.' },
-  { key: 'departing_today', label: 'Departing today', empty: 'Nobody departs today.' },
+  { key: 'all', label: 'All guests', short: 'All', empty: 'No guests yet.' },
+  { key: 'arriving_today', label: 'Arriving today', short: 'Arriving', empty: 'Nobody arrives today.' },
+  { key: 'departing_today', label: 'Departing today', short: 'Departing', empty: 'Nobody departs today.' },
   { key: 'tomorrow', label: 'Tomorrow', empty: 'No arrivals or departures tomorrow.' },
   { key: 'missing_id', label: 'Missing ID', empty: 'Every guest with a stay coming has their registration details.' },
   { key: 'repeat', label: 'Repeat', empty: 'No repeat guests yet.' },
@@ -365,7 +365,7 @@ export default function GuestsPage() {
             header={
               <div className="py-3 px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line)]">
                 <FilterBar<Filter> label="Guest views" value={filter} onChange={setFilter}
-                  views={FILTERS.filter(f => VIEW_KEYS.includes(f.key)).map(f => ({ key: f.key, label: f.label, count: counts?.[f.key] }))}
+                  views={FILTERS.filter(f => VIEW_KEYS.includes(f.key)).map(f => ({ key: f.key, label: f.label, short: 'short' in f ? f.short : undefined, count: counts?.[f.key] }))}
                   tags={{
                     single: true, active: [filter], onClear: () => setFilter('all'),
                     onToggle: k => setFilter(k === filter ? 'all' : k as Filter),

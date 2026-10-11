@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { TONE, cx } from '../lib/design-tokens';
 import { count } from '../lib/format';
 import type { Tone } from '../lib/types';
@@ -81,7 +81,11 @@ export function SectionTitle({ title, count, right }: { title: string; count?: n
 
 /** One choice in a Segmented switch. `count` shows as a quiet number beside the label; `tone` marks a count
  *  that needs attention with a small dot instead of colouring the whole option. */
-export interface SegmentOption<K extends string> { key: K; label: ReactNode; count?: number; tone?: 'danger' | 'warning' }
+export interface SegmentOption<K extends string> {
+  key: K; label: ReactNode; count?: number; tone?: 'danger' | 'warning';
+  /** Shorter label used only when the full labels would not fit in one line ("Arriving" for "Arriving today"). */
+  short?: string;
+}
 
 /** Pill-style segmented switch (range, metric, a list's main views). Never wraps: on a narrow screen the
  *  options scroll sideways inside the track. `value` may be a key that is not offered (a filter chosen
@@ -91,6 +95,24 @@ export function Segmented<K extends string>({ label, options, value, onChange, c
 }) {
   const track = useRef<HTMLDivElement>(null);
   const [edges, setEdges] = useState({ left: false, right: false });
+  // Try the full labels; if they overflow, fall back to the short ones. The fallback is undone only when the
+  // space around the track grows past the width it was taken at, so a parent that shrinks with its content
+  // cannot flip it back and forth.
+  const hasShort = options.some(o => o.short);
+  const [compact, setCompact] = useState(false);
+  const compactAt = useRef(0);
+  useLayoutEffect(() => {
+    const el = track.current;
+    if (!hasShort || compact || !el) return;
+    if (el.scrollWidth > el.clientWidth + 1) { compactAt.current = el.parentElement?.clientWidth ?? 0; setCompact(true); }
+  });
+  useEffect(() => {
+    const host = track.current?.parentElement;
+    if (!hasShort || !host || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => { if (host.clientWidth > compactAt.current + 1) setCompact(false); });
+    ro.observe(host);
+    return () => ro.disconnect();
+  }, [hasShort]);
   useEffect(() => {
     const el = track.current;
     if (!el) return;
@@ -120,15 +142,18 @@ export function Segmented<K extends string>({ label, options, value, onChange, c
       className={cx('relative inline-flex items-center p-[3px] gap-[2px] rounded-control bg-muted max-w-full min-w-0 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden', className)}>
       {options.map(o => {
         const on = o.key === value;
+        const short = compact && o.short;
+        // A zero stays a normal, clickable option; only its number goes quiet.
         const empty = o.count === 0 && !on;
         const flagged = !!o.tone && !!o.count;
         return (
           <button key={o.key} type="button" onClick={() => onChange(o.key)} aria-pressed={on}
+            title={short && typeof o.label === 'string' ? o.label : undefined}
             className={cx(
               'flex-none inline-flex items-center gap-1.5 h-8 px-3 rounded-[6px] cursor-pointer text-copy whitespace-nowrap transition-colors duration-[var(--motion-fast)] outline-none focus-visible:[box-shadow:inset_0_0_0_2px_var(--color-gold)]',
-              on ? 'bg-card text-ink font-medium shadow-[var(--shadow-card)]' : empty ? 'text-faint hover:text-muted-ink' : 'text-muted-ink hover:text-ink',
+              on ? 'bg-card text-ink font-medium shadow-[var(--shadow-card)]' : 'text-muted-ink hover:text-ink',
             )}>
-            {o.label}
+            {short ? o.short : o.label}
             {o.count !== undefined && (
               <span className={cx('inline-flex items-center gap-1 text-meta font-normal tabular-nums',
                 flagged ? (o.tone === 'danger' ? 'text-danger' : 'text-warning') : empty ? 'text-faint' : 'text-muted-ink')}>
