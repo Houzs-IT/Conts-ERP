@@ -75,6 +75,14 @@ if (created) {
   check('a payment typed by mistake can be removed', r.status === 200, r.text.slice(0, 200));
   r = await call('GET', `/api/reservations?todo=unpaid&ref=${created.externalRef}`);
   check('removed: back on the unpaid card', r.json.total === 1, r.text.slice(0, 200));
+  r = await call('POST', `/api/reservations/${id}/payments`, { amount: 20001, receivedOn: '2026-10-02', kind: 'refund', method: 'Bank transfer' });
+  check('a refund larger than what was received (RM 200) is refused on the amount', r.status === 422 && r.json.error.fields.amount, r.text.slice(0, 200));
+  r = await call('POST', `/api/reservations/${id}/payments`, { amount: 5000, receivedOn: '2026-10-02', kind: 'refund', method: 'Bank transfer' });
+  check('a refund within what was received is recorded', r.status === 201, r.text.slice(0, 200));
+  const rf = r.json?.id;
+  r = await call('GET', `/api/reservations/${id}`);
+  check('ledger after the refund: received 150, outstanding 450', r.json.ledger.received === 15000 && r.json.ledger.outstanding === 45000, JSON.stringify(r.json.ledger).slice(0, 300));
+  if (rf) await call('DELETE', `/api/reservations/${id}/payments/${rf}`);
   r = await call('PATCH', `/api/reservations/${id}/details`, { checkInTime: '12:00', checkOutTime: '14:00', staffNotes: 'Early arrival' });
   r = await call('GET', `/api/reservations/${id}`);
   check('early check-in and late check-out times and notes saved', r.json.checkInTime === '12:00' && r.json.checkOutTime === '14:00' && r.json.staffNotes === 'Early arrival', `${r.json.checkInTime} ${r.json.checkOutTime} ${r.json.staffNotes}`);
@@ -83,8 +91,27 @@ if (created) {
   r = await call('POST', `/api/reservations/${id}/duplicate`, {});
   check('duplicate gets its own TC reference', r.status === 201 && /^TC-\d{4}-\d{4}$/.test(r.json.externalRef) && r.json.externalRef !== created.externalRef, r.text.slice(0, 200));
   const dup = r.json?.id;
+  if (dup) {
+    r = await call('GET', `/api/reservations/${dup}`);
+    check('the copy keeps the total', r.json.money.gross === 60000, String(r.json.money.gross));
+  }
   await call('DELETE', `/api/reservations/${id}/payments/${p1}`);
   for (const x of [id, dup].filter(Boolean)) await call('PATCH', `/api/reservations/${x}`, { state: 'cancelled', reason: 'api check clean-up' });
+}
+
+/* ---------- duplicate keeps the price breakdown ---------- */
+{
+  const direct = (await call('GET', '/api/reservations?view=upcoming&ch=direct&size=50')).json.data;
+  let src = null;
+  for (const x of direct) { const d = (await call('GET', `/api/reservations/${x.id}`)).json; if (d.ledger.guestLines.some(l => l.key === 'cleaning')) { src = d; break; } }
+  if (src) {
+    r = await call('POST', `/api/reservations/${src.id}/duplicate`, {});
+    if (r.status === 201) {
+      const copy = (await call('GET', `/api/reservations/${r.json.id}`)).json;
+      check('a copied direct booking keeps its cleaning fee line', copy.ledger.guestLines.some(l => l.key === 'cleaning' && l.amount === src.ledger.guestLines.find(g => g.key === 'cleaning').amount), JSON.stringify(copy.ledger.guestLines));
+      await call('PATCH', `/api/reservations/${r.json.id}`, { state: 'cancelled', reason: 'api check clean-up' });
+    } else console.log(`  duplicate skipped: ${r.status}`);
+  } else console.log('  no upcoming direct booking with a cleaning fee to copy');
 }
 
 /* ---------- OTA: dates locked, payouts, ledger ---------- */
