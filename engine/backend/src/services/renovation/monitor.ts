@@ -159,7 +159,8 @@ export function monitorFlags(f: MonitorFacts, today: string): FlagKey[] {
   if (f.hold === "in_defect") out.push("in_defect");
   if (f.overdueTasks > 0) out.push("task_overdue");
   if (!f.hasSo && f.step !== "closed" && f.createdAt && daysBetween(f.createdAt, today) > NO_SO_FLAG_DAYS) out.push("no_so_after_days");
-  if (f.handedOver && f.contractSen != null && f.contractSen > 0 && f.receivedSen != null && !isFullyPaid(f.contractSen, f.receivedSen)) out.push("handed_over_unpaid");
+  /* closed by hand while money is outstanding is the boss's decision, not a flag */
+  if (f.handedOver && f.step !== "closed" && f.contractSen != null && f.contractSen > 0 && f.receivedSen != null && !isFullyPaid(f.contractSen, f.receivedSen)) out.push("handed_over_unpaid");
   if (f.worksBeforeGate) out.push("works_before_gate");
   return out;
 }

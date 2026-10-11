@@ -150,6 +150,7 @@ describe("red flags", () => {
   test("handed over but not fully paid; hidden money raises nothing", () => {
     expect(fl({ handedOver: true, step: "handover" })).toContain("handed_over_unpaid");
     expect(fl({ handedOver: true, step: "closed", receivedSen: 100_000_00 })).not.toContain("handed_over_unpaid");
+    expect(fl({ handedOver: true, step: "closed" })).not.toContain("handed_over_unpaid");
     expect(fl({ handedOver: true, step: "handover", contractSen: null, receivedSen: null })).not.toContain("handed_over_unpaid");
   });
 });
