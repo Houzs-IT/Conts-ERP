@@ -6,6 +6,7 @@ import { loadInputs, computeMonth, statementSettings, fmtPct, type Query } from 
 import { contractView, unitExample } from '../../_lib/unitContract';
 import { MODEL_LABEL } from '../../_lib/revenueModel';
 import { DEDUCTION_WORDS } from '../../_lib/unitCosts';
+import { addressOf, ownerDetailsReady } from '../../_lib/ownerDetails';
 
 const PAYER_LABEL: Record<string, string> = { the_conts: 'The Conts', tenant: 'Tenant', guest_deposit: 'Guest', warranty: 'Warranty' };
 const CATEGORY_LABEL: Record<string, string> = {
@@ -29,9 +30,11 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const unitId = url.searchParams.get('unitId');
   if (!unitId) return fail('VALIDATION', 'A unit is required.', 422);
 
+  const ownerAddress = await ownerDetailsReady(env);
   const unit = await one<any>(env, `
     SELECT u.*, p.name AS property_name, p.address_line, p.city, p.state, p.postcode,
-           o.id AS owner_id, o.display_name AS owner_name, o.email AS owner_email,
+           o.id AS owner_id, o.display_name AS owner_name, o.email AS owner_email, o.phone AS owner_phone,
+           ${ownerAddress ? 'o.address_lines, o.address_postcode, o.address_city, o.address_state, o.address_country,' : ''}
            c.management_fee_pct, c.renews_on, c.starts_on, c.id AS c_id, c.revenue_model, c.model, c.minimum_guarantee, c.grr_amount,
            c.agent_fee_pct, c.agent_name, c.tenant_name, c.deposit_amount, c.ends_on, c.guarantee_starts_on, c.guarantee_ends_on, c.misc_charges AS c_misc
     FROM units u
@@ -194,6 +197,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       owner: {
         id: unit.owner_id, name: unit.owner_name,
         email: session.manage ? unit.owner_email : null,
+        // Contact details for the roles that manage owners; edited on the owner's page only.
+        phone: session.manage ? unit.owner_phone ?? null : null,
+        address: session.manage ? addressOf(unit) : null,
       },
       contract: unit.management_fee_pct != null ? {
         id: unit.c_id ?? null,
