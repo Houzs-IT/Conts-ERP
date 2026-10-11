@@ -6,9 +6,10 @@ export type BadgeKey = 'today' | 'maintenance' | 'inbox' | 'statements' | 'appro
 export type Workspace = 'rental' | 'supply';
 /** `area` is the permission area (functions/_lib/access.ts AREAS) the screen belongs to. */
 export interface NavChild { key: string; label: string; path: string; area?: string; badge?: BadgeKey }
+/** `full`: the screen's data is for roles with Full on its area (the server refuses Edit), so it is shown only then. */
 export interface NavItem {
   key: string; label: string; icon: string; path?: string; area?: string;
-  badge?: BadgeKey; children?: NavChild[];
+  badge?: BadgeKey; children?: NavChild[]; full?: boolean;
 }
 export interface NavGroup { label: string; workspace: Workspace; items: NavItem[] }
 
@@ -26,7 +27,7 @@ export const NAV: NavGroup[] = [
   { label: 'HOME', workspace: 'rental', items: [
     { key: 'dashboard', label: 'Dashboard', icon: 'layout-dashboard', path: '/', area: 'dashboard' },
     { key: 'portfolio', label: 'Portfolio', icon: 'layers', path: '/portfolio', area: 'portfolio' },
-    { key: 'analytics', label: 'Performance', icon: 'trending-up', path: '/performance/analytics', area: 'performance' },
+    { key: 'analytics', label: 'Performance', icon: 'trending-up', path: '/performance/analytics', area: 'performance', full: true },
   ] },
   { label: 'RESERVATIONS', workspace: 'rental', items: [
     { key: 'calendar', label: 'Calendar', icon: 'calendar-days', path: '/reservations/calendar', area: 'reservations' },
@@ -56,7 +57,7 @@ export const NAV: NavGroup[] = [
     { key: 'guestDocuments', label: 'Guest documents', icon: 'file-text', path: '/finance/documents', area: 'finance' },
   ] },
   { label: 'GROWTH', workspace: 'rental', items: [
-    { key: 'pricing', label: 'Pricing', icon: 'tag', path: '/performance/pricing', area: 'performance' },
+    { key: 'pricing', label: 'Pricing', icon: 'tag', path: '/performance/pricing', area: 'performance', full: true },
     { key: 'reviews', label: 'Reviews', icon: 'star', path: '/performance/reviews', area: 'performance' },
     { key: 'automations', label: 'Automations', icon: 'workflow', path: '/communication/automations', area: 'comms' },
   ] },
@@ -167,13 +168,24 @@ export function areaOfPath(path: string): string | null {
   return null;
 }
 
+/** Whether a screen is closed to this person: No access on its area, or a Full-only screen below Full. */
+export function screenClosed(path: string, access?: Record<string, AccessLevel>): boolean {
+  if (!access) return false;
+  const area = areaOfPath(path);
+  if (!area) return false;
+  if (access[area] === 'none') return true;
+  const item = NAV.flatMap(g => g.items).find(i => i.path === path);
+  return !!item?.full && access[area] !== 'full';
+}
+
 export function navFor(role: UserRole, engine = false, access?: Record<string, AccessLevel>): NavGroup[] {
   const deny = [...denied(role, access), ...(engine ? [] : ENGINE_ONLY_AREAS)];
   if (deny.includes('*')) return [];
   const open = (key: string, area: string) => !deny.includes(key) && !deny.includes(area);
+  const enough = (i: NavItem) => !i.full || !access || FIXED_ROLES.includes(role) || access[areaOfItem(i)] === 'full';
   return NAV
     .map(g => ({ ...g, items: g.items
-      .filter(i => open(i.key, areaOfItem(i)))
+      .filter(i => open(i.key, areaOfItem(i)) && enough(i))
       .map(i => i.children ? { ...i, children: i.children.filter(c => open(c.key, areaOfChild(i, c))) } : i)
       .filter(i => !i.children || i.children.length > 0) }))
     .filter(g => g.items.length > 0);

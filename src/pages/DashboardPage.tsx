@@ -10,6 +10,7 @@ import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { useCrew } from '../lib/useCrew';
+import { useSession } from '../lib/session';
 import { api, notifyFailure } from '../lib/api';
 import { rm, rmCompact, time, percent, monthLabel, MONTHS, plural, count, humanize } from '../lib/format';
 import { Select } from '../components/Select';
@@ -261,7 +262,23 @@ export default function DashboardPage() {
 
   const today = useApi<TodayPayload>('/dashboard/today', TODAY_FALLBACK);
   const exc = useApi<ExceptionPayload>('/dashboard/exceptions', EXCEPTION_FALLBACK);
-  const portfolio = useApi<PortfolioPayload>('/portfolio/performance', PORTFOLIO_FALLBACK);
+  // Each part follows the role's levels (Users and roles > Permissions): a role with no access to Portfolio does
+  // not load or see unit revenue, and an exception offers only the action the server will accept from it.
+  const { user } = useSession();
+  const level = (area: string) => user?.role === 'management' ? 'full' : user?.access?.[area] ?? 'none';
+  const works = (area: string) => level(area) === 'edit' || level(area) === 'full';
+  const seesPortfolio = level('portfolio') !== 'none';
+  const seesOps = level('operations') !== 'none';
+  const portfolio = useApi<PortfolioPayload>(seesPortfolio ? '/portfolio/performance' : null, PORTFOLIO_FALLBACK);
+  const mayAct = (e: Exception) => {
+    switch (e.action.label) {
+      case 'Assign cleaner': return works('operations');
+      case 'Notify owner': return ['management', 'operations_manager', 'operations_staff'].includes(user?.role ?? '');
+      case 'Review and send': return level('finance') !== 'none';
+      case 'Open pricing': return level('performance') === 'full';
+      default: return true;
+    }
+  };
 
   const toast = useToast();
 
@@ -434,7 +451,7 @@ export default function DashboardPage() {
         </Card>
 
         <Card>
-          <CardHeader title="Needs attention" right={<LinkAction onClick={() => go('#/operations/today')}>Open operations →</LinkAction>} />
+          <CardHeader title="Needs attention" right={seesOps ? <LinkAction onClick={() => go('#/operations/today')}>Open operations →</LinkAction> : undefined} />
           {exc.loading && exceptions.length === 0 ? (
             <div className="pb-2"><TableSkeleton rows={3} cols={1} /></div>
           ) : exceptions.length === 0 ? (
@@ -445,7 +462,7 @@ export default function DashboardPage() {
                 <span className="text-copy font-semibold text-pretty">{e.title}</span>
                 <span className="text-meta text-muted-ink leading-[1.5] text-pretty">{e.detail}</span>
               </div>
-              <div>
+              {mayAct(e) && <div>
                 <Button
                   variant={e.action.label === 'Assign cleaner' ? 'primary' : 'secondary'}
                   size="sm"
@@ -453,7 +470,7 @@ export default function DashboardPage() {
                 >
                   {e.action.label}
                 </Button>
-              </div>
+              </div>}
             </div>
           ))}
           {allExceptions.length > exceptions.length && (
@@ -466,7 +483,7 @@ export default function DashboardPage() {
 
       {/* Today */}
       <Card>
-        <CardHeader title="Today" right={<LinkAction onClick={() => go('#/operations/today')}>Open operations →</LinkAction>} />
+        <CardHeader title="Today" right={seesOps ? <LinkAction onClick={() => go('#/operations/today')}>Open operations →</LinkAction> : undefined} />
         <div className="[border-top:1px_solid_var(--color-line)]">
          <div className="-ml-px -mt-px grid grid-cols-2 sm:grid-cols-[repeat(auto-fit,minmax(150px,1fr))]">
           {(today.data?.rows ?? []).map(r => (
@@ -483,7 +500,7 @@ export default function DashboardPage() {
       </Card>
 
       {/* Portfolio performance */}
-      <Card>
+      {seesPortfolio && <Card>
         <CardHeader
           title="Top units this month"
           right={<LinkAction onClick={() => go('#/portfolio')}>{portfolio.data ? `All ${count(portfolio.data.units)} units →` : 'All units →'}</LinkAction>}
@@ -504,7 +521,7 @@ export default function DashboardPage() {
               <span className="flex-none text-copy font-semibold [font-variant-numeric:tabular-nums]">{rm(u.revenue, { cents: false })}</span>
             </span>
           )} />
-      </Card>
+      </Card>}
 
       {/* Assign cleaner — a chooser, so a local form modal (shared Dialog is confirm-only). */}
       {assign && (
