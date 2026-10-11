@@ -50,8 +50,8 @@ export default function StockTransfersPage() {
     { key: 'status', label: 'Status', type: 'status', value: t => t.status, status: t => t.status === 'POSTED' ? { label: 'Posted', tone: 'success' } : { label: 'Cancelled', tone: 'neutral' } },
   ], []);
 
-  function created(t: Transfer) { setAdded(a => [t, ...a]); toast({ tone: 'success', title: 'Stock transferred.', body: t.transferNumber }); setDrawer(null); }
-  function cancel(t: Transfer) { setEdits(e => ({ ...e, [t.id]: { ...e[t.id], status: 'CANCELLED' } })); api.patch(`/stock-transfers/${t.id}`, { status: 'CANCELLED' }).catch(notifyFailure); toast({ tone: 'success', title: 'Transfer cancelled.', body: t.transferNumber }); setDrawer(null); }
+  function created(t: Transfer) { setAdded(a => [t, ...a]); reload(); toast({ tone: 'success', title: 'Stock transferred.', body: t.transferNumber }); setDrawer(null); }
+  function cancel(t: Transfer) { setEdits(e => ({ ...e, [t.id]: { ...e[t.id], status: 'CANCELLED' } })); persist(api.patch(`/stock-transfers/${t.id}`, { status: 'CANCELLED' }), { reload, ok: () => toast({ tone: 'success', title: 'Transfer cancelled.', body: t.transferNumber }) }); setDrawer(null); }
 
   return (
     <>
@@ -164,7 +164,7 @@ function ViewDrawer({ t, canWrite, onClose, onCancel }: { t: Transfer; canWrite:
         <div className="text-[13px]"><span className="text-muted-ink">{t.fromName}</span> → <span className="text-muted-ink">{t.toName}</span> · {t.transferDate ? date(t.transferDate) : ''}</div>
         <div className="border border-solid border-line rounded-card overflow-hidden">
           <DataTable<Line & { i: number }> id="scm.stock-transfers.lines" urlPrefix="lines." bare noViews noToolbar pageSize={0}
-            columns={lineColumns} rows={(record?.lines ?? t.lines ?? []).map((l, i) => ({ ...l, i }))} rowKey={l => String(l.i)}
+            columns={lineColumns} rows={(record?.lines ?? t.lines ?? []).map((l, i) => ({ ...l, i }))} rowKey={l => String(l.i)} loading={linesLoading} error={linesError}
             noun={['line', 'lines']} exportName={`${t.transferNumber}-lines`} empty={{ title: 'No lines.' }} />
         </div>
       </div>

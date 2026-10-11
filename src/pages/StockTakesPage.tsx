@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Plus, Trash2, X } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
@@ -129,8 +129,9 @@ function CreateDrawer({ warehouses, canWrite, onClose, onCreated }: { warehouses
 
 function CountDrawer({ k, canWrite, onClose, onAct }: { k: Take; canWrite: boolean; onClose: () => void; onAct: (k: Take, patch: Record<string, unknown>, optimistic: Partial<Take>, title: string) => void }) {
   const { record, loading: linesLoading, error: linesError } = useRecord<Take>('stock-takes', k.id);
-  const editable = canWrite && k.status === 'OPEN';
-  const [lines, setLines] = useState<TakeLine[]>((record?.lines ?? k.lines ?? []).map(l => ({ ...l })));
+  const editable = canWrite && k.status === 'OPEN' && !linesLoading && !linesError;
+  const [lines, setLines] = useState<TakeLine[]>((k.lines ?? []).map(l => ({ ...l })));
+  useEffect(() => { if (record?.lines) setLines(record.lines.map(l => ({ ...l }))); }, [record]);
   const setCount = (i: number, counted: number | null) => setLines(ls => ls.map((l, j) => j !== i ? l : { ...l, countedQty: counted, variance: counted === null ? null : counted - l.systemQty }));
 
   function saveCounts() { onAct(k, { lines: lines.map(l => ({ id: l.id, countedQty: l.countedQty })) }, { lines }, 'Counts saved.'); }
@@ -153,6 +154,7 @@ function CountDrawer({ k, canWrite, onClose, onAct }: { k: Take; canWrite: boole
                   <td className={cx('py-2 px-3 text-right tabular-nums text-[13px] font-semibold', l.variance == null ? 'text-muted-ink' : l.variance === 0 ? 'text-muted-ink' : l.variance > 0 ? 'text-success' : 'text-danger')}>{l.variance == null ? '—' : l.variance > 0 ? `+${l.variance}` : l.variance}</td>
                 </tr>
               ))}
+              {lines.length === 0 && <tr><td colSpan={4} className="py-6 text-center text-[12.5px] text-muted-ink">{linesLoading ? 'Loading lines…' : linesError ?? 'No lines on this stock take.'}</td></tr>}
             </tbody>
           </table>
         </div>

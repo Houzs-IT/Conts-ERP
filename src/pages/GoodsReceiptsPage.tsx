@@ -278,7 +278,7 @@ function ViewDrawer({ grn, canWrite, onClose, onCancel }: { grn: Grn; canWrite: 
         </div>
         <div className="border border-solid border-line rounded-card overflow-hidden">
           <DataTable<GrnLine & { i: number }>
-            id="scm.goods-receipt.lines" urlPrefix="lines." columns={LINE_COLUMNS} rows={(record?.lines ?? grn.lines ?? []).map((l, i) => ({ ...l, i }))} rowKey={l => String(l.i)}
+            id="scm.goods-receipt.lines" urlPrefix="lines." columns={LINE_COLUMNS} rows={(record?.lines ?? grn.lines ?? []).map((l, i) => ({ ...l, i }))} rowKey={l => String(l.i)} loading={linesLoading} error={linesError}
             bare noViews noToolbar pageSize={0} noun={['line', 'lines']} exportName={`${grn.grnNumber}-lines`}
             empty={{ title: 'No lines on this receipt.' }} />
         </div>

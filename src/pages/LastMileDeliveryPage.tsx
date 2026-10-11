@@ -3,7 +3,8 @@ import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
-import { api, notifyFailure } from '../lib/api';
+import { api } from '../lib/api';
+import { persist, useResetOnReload } from '../lib/persist';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { date } from '../lib/format';
@@ -27,14 +28,14 @@ export default function LastMileDeliveryPage() {
   const canWrite = !!user && ['management', 'operations_manager', 'finance_admin'].includes(user.role);
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>('active');
   const [edits, setEdits] = useState<Record<string, SchedStatus>>({});
+  useResetOnReload(data, () => { setEdits({}); });
 
   const all = useMemo(() => (data?.data ?? []).map(r => ({ ...r, status: edits[r.id] ?? r.status })), [data, edits]);
   const rows = all.filter(r => filter === 'active' ? (r.status === 'SCHEDULED' || r.status === 'DISPATCHED') : r.status === filter);
 
   function act(r: Sched, action: 'dispatch' | 'deliver', next: SchedStatus, label: string) {
     setEdits(e => ({ ...e, [r.id]: next }));
-    api.patch(`/delivery-schedule/${r.id}`, { action }).catch(notifyFailure);
-    toast({ tone: 'success', title: label, body: `${r.soDocNo} · ${r.customerName}` });
+    persist(api.patch(`/delivery-schedule/${r.id}`, { action }), { reload, ok: () => toast({ tone: 'success', title: label, body: `${r.soDocNo} · ${r.customerName}` }) });
   }
 
   const columns = useMemo<Column<Sched>[]>(() => [

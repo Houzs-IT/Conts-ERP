@@ -208,7 +208,7 @@ function ViewDrawer({ si, canWrite, onClose, onAct }: { si: Si; canWrite: boolea
         <div className="border border-solid border-line rounded-card overflow-hidden">
           <DataTable<SiLine & { key: string }>
             id="scm.sales-invoice.lines" urlPrefix="lines." bare noViews noToolbar pageSize={0}
-            columns={lineColumns} rows={lineRows} rowKey={l => l.key}
+            columns={lineColumns} rows={lineRows} rowKey={l => l.key} loading={linesLoading} error={linesError}
             noun={['line', 'lines']} exportName={`${si.invoiceNumber}-lines`}
             empty={{ title: 'No lines on this invoice.' }} />
         </div>

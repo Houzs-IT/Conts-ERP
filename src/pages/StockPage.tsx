@@ -7,7 +7,8 @@ import { NumberInput } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
-import { api, notifyFailure } from '../lib/api';
+import { api } from '../lib/api';
+import { persist, useResetOnReload } from '../lib/persist';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { cx } from '../lib/design-tokens';
@@ -45,6 +46,7 @@ export default function StockPage() {
   const [search, setSearch] = useState('');
   const [adjusting, setAdjusting] = useState(false);
   const [added, setAdded] = useState<Movement[]>([]);
+  useResetOnReload(moves.data, () => setAdded([]));
 
   const q = search.trim().toLowerCase();
   const onhand = (data?.data ?? []).filter(r => (whFilter === 'all' || r.warehouseId === whFilter) && (!q || `${r.itemCode} ${r.itemName}`.toLowerCase().includes(q)));
@@ -89,7 +91,10 @@ export default function StockPage() {
     </div>
   );
 
-  function adjusted(m: Movement) { setAdded(a => [m, ...a]); toast({ tone: 'success', title: 'Stock adjusted.', body: `${m.itemCode} ${m.qtyDelta > 0 ? '+' : ''}${m.qtyDelta}` }); setAdjusting(false); reload(); }
+  function adjusted(m: Movement, req: Promise<unknown>) {
+    setAdded(a => [m, ...a]); setAdjusting(false);
+    persist(req, { reload: () => { reload(); moves.reload(); }, ok: () => toast({ tone: 'success', title: 'Stock adjusted.', body: `${m.itemCode} ${m.qtyDelta > 0 ? '+' : ''}${m.qtyDelta}` }) });
+  }
 
   return (
     <>
@@ -123,7 +128,7 @@ function Chip({ label, active, onClick }: { label: string; active: boolean; onCl
   return <button onClick={onClick} aria-pressed={active} className={cx('h-8 flex items-center px-4 py-0 rounded-full cursor-pointer font-sans text-[13px] font-semibold border border-solid', active ? 'border-black bg-black text-white' : 'border-line bg-card text-ink')}>{label}</button>;
 }
 
-function AdjustDrawer({ warehouses, canWrite, onClose, onDone }: { warehouses: Opt[]; canWrite: boolean; onClose: () => void; onDone: (m: Movement) => void }) {
+function AdjustDrawer({ warehouses, canWrite, onClose, onDone }: { warehouses: Opt[]; canWrite: boolean; onClose: () => void; onDone: (m: Movement, req: Promise<unknown>) => void }) {
   const [itemCode, setItemCode] = useState('');
   const [warehouseId, setWarehouseId] = useState(warehouses[0]?.id ?? '');
   const [qty, setQty] = useState<number | null>(null);
@@ -132,9 +137,9 @@ function AdjustDrawer({ warehouses, canWrite, onClose, onDone }: { warehouses: O
   const canSave = canWrite && itemCode.trim() !== '' && warehouseId !== '' && qtyDelta !== 0;
 
   function submit() {
-    api.post('/stock', { itemCode: itemCode.trim(), warehouseId, qtyDelta, note }).catch(notifyFailure);
+    const req = api.post('/stock', { itemCode: itemCode.trim(), warehouseId, qtyDelta, note });
     const wh = warehouses.find(w => w.id === warehouseId);
-    onDone({ id: `mv-new-${crypto.randomUUID().slice(0, 8)}`, itemCode: itemCode.trim(), warehouseName: wh?.name ?? '', qtyDelta, movementType: 'ADJUSTMENT', refType: 'ADJ', note, movedAt: new Date().toISOString().slice(0, 10) });
+    onDone({ id: `mv-new-${crypto.randomUUID().slice(0, 8)}`, itemCode: itemCode.trim(), warehouseName: wh?.name ?? '', qtyDelta, movementType: 'ADJUSTMENT', refType: 'ADJ', note, movedAt: new Date().toISOString().slice(0, 10) }, req);
   }
 
   return (

@@ -244,7 +244,7 @@ function ViewDrawer({ pv, canWrite, onClose, onCancel }: { pv: Pv; canWrite: boo
         </div>
         <div className="border border-solid border-line rounded-card overflow-hidden">
           <DataTable<Alloc & { i: number }>
-            id="scm.payment-voucher.allocations" urlPrefix="alloc." columns={ALLOC_COLUMNS} rows={(record?.allocations ?? pv.allocations ?? []).map((a, i) => ({ ...a, i }))} rowKey={a => String(a.i)}
+            id="scm.payment-voucher.allocations" urlPrefix="alloc." columns={ALLOC_COLUMNS} rows={(record?.allocations ?? pv.allocations ?? []).map((a, i) => ({ ...a, i }))} rowKey={a => String(a.i)} loading={linesLoading} error={linesError}
             bare noViews noToolbar pageSize={0} noun={['allocation', 'allocations']} exportName={`${pv.voucherNumber}-allocations`}
             empty={{ title: 'No invoices on this voucher.' }} />
         </div>

@@ -246,7 +246,7 @@ function ViewDrawer({ sret, canWrite, onClose, onComplete, onCancel }: { sret: S
         <div className="border border-solid border-line rounded-card overflow-hidden">
           <DataTable<SretLine & { key: string }>
             id="scm.sales-return.lines" urlPrefix="lines." bare noViews noToolbar pageSize={0}
-            columns={lineColumns} rows={lineRows} rowKey={l => l.key}
+            columns={lineColumns} rows={lineRows} rowKey={l => l.key} loading={linesLoading} error={linesError}
             noun={['line', 'lines']} exportName={`${sret.returnNumber}-lines`}
             empty={{ title: 'No lines on this return.' }} />
         </div>

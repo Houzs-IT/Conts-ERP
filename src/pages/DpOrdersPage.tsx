@@ -9,7 +9,8 @@ import { DateField } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
 import { StaleBanner } from '../components/DataState';
 import { useApi } from '../lib/useApi';
-import { api, notifyFailure } from '../lib/api';
+import { api } from '../lib/api';
+import { persist, useResetOnReload } from '../lib/persist';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { cx } from '../lib/design-tokens';
@@ -38,6 +39,7 @@ export default function DpOrdersPage() {
   const [added, setAdded] = useState<Sched[]>([]);
   const [edits, setEdits] = useState<Record<string, Partial<Sched>>>({});
   const [removed, setRemoved] = useState<Set<string>>(new Set());
+  useResetOnReload(data, () => { setAdded([]); setEdits({}); setRemoved(new Set()); });
 
   const all = useMemo(() => [...added, ...(data?.data ?? [])].filter(r => !removed.has(r.id)).map(r => ({ ...r, ...edits[r.id] })), [added, data, edits, removed]);
   const q = search.trim().toLowerCase();
@@ -53,9 +55,9 @@ export default function DpOrdersPage() {
     { key: 'status', label: 'Status', type: 'status', value: r => r.status, entity: 'delivery_schedule', width: 130 },
   ], []);
 
-  function created(r: Sched) { setAdded(a => [r, ...a]); toast({ tone: 'success', title: 'Added to the schedule.', body: `${r.soDocNo} · ${r.customerName}` }); setDrawer(null); }
-  function saved(r: Sched) { setEdits(e => ({ ...e, [r.id]: { ...e[r.id], ...r } })); toast({ tone: 'success', title: 'Schedule updated.', body: r.soDocNo }); setDrawer(null); }
-  function remove(r: Sched) { setRemoved(s => new Set(s).add(r.id)); api.del(`/delivery-schedule/${r.id}`).catch(notifyFailure); toast({ tone: 'success', title: 'Removed from schedule.', body: r.soDocNo }); setDrawer(null); }
+  function created(r: Sched, req: Promise<unknown>) { setAdded(a => [r, ...a]); setDrawer(null); persist(req, { reload, ok: () => toast({ tone: 'success', title: 'Added to the schedule.', body: `${r.soDocNo} · ${r.customerName}` }) }); }
+  function saved(r: Sched, req: Promise<unknown>) { setEdits(e => ({ ...e, [r.id]: { ...e[r.id], ...r } })); setDrawer(null); persist(req, { reload, ok: () => toast({ tone: 'success', title: 'Schedule updated.', body: r.soDocNo }) }); }
+  function remove(r: Sched) { setRemoved(s => new Set(s).add(r.id)); setDrawer(null); persist(api.del(`/delivery-schedule/${r.id}`), { reload, ok: () => toast({ tone: 'success', title: 'Removed from schedule.', body: r.soDocNo }) }); }
 
   return (
     <>
@@ -82,14 +84,14 @@ function Chip({ label, active, onClick }: { label: string; active: boolean; onCl
   return <button onClick={onClick} aria-pressed={active} className={cx('h-8 flex items-center px-4 py-0 rounded-full cursor-pointer font-sans text-[13px] font-semibold border border-solid', active ? 'border-black bg-black text-white' : 'border-line bg-card text-ink')}>{label}</button>;
 }
 
-function NewDrawer({ openSos, onClose, onCreated }: { openSos: { id: string; docNo: string; customerName: string }[]; onClose: () => void; onCreated: (r: Sched) => void }) {
+function NewDrawer({ openSos, onClose, onCreated }: { openSos: { id: string; docNo: string; customerName: string }[]; onClose: () => void; onCreated: (r: Sched, req: Promise<unknown>) => void }) {
   const [soId, setSoId] = useState('');
   const [plannedDate, setPlannedDate] = useState('');
   const [notes, setNotes] = useState('');
   const so = openSos.find(s => s.id === soId);
   function submit() {
-    api.post('/delivery-schedule', { salesOrderId: soId, plannedDate: plannedDate || null, notes }).catch(notifyFailure);
-    onCreated(schedFallback([{ id: `dsch-new-${crypto.randomUUID().slice(0, 8)}`, salesOrderId: soId, soDocNo: so?.docNo ?? '', customerName: so?.customerName ?? '', plannedDate, notes, status: 'UNPLANNED' }]).data[0]);
+    const req = api.post('/delivery-schedule', { salesOrderId: soId, plannedDate: plannedDate || null, notes });
+    onCreated(schedFallback([{ id: `dsch-new-${crypto.randomUUID().slice(0, 8)}`, salesOrderId: soId, soDocNo: so?.docNo ?? '', customerName: so?.customerName ?? '', plannedDate, notes, status: 'UNPLANNED' }]).data[0], req);
   }
   return (
     <Drawer open onClose={onClose} width={520}>
@@ -112,7 +114,7 @@ function NewDrawer({ openSos, onClose, onCreated }: { openSos: { id: string; doc
   );
 }
 
-function EditDrawer({ row, onClose, onSaved, onDelete }: { row: Sched; onClose: () => void; onSaved: (r: Sched) => void; onDelete: () => void }) {
+function EditDrawer({ row, onClose, onSaved, onDelete }: { row: Sched; onClose: () => void; onSaved: (r: Sched, req: Promise<unknown>) => void; onDelete: () => void }) {
   const drivers = useApi('/drivers', DRIVERS_FALLBACK).data?.data ?? [];
   const vehicles = useApi('/vehicles', VEHICLES_FALLBACK).data?.data ?? [];
   const [f, setF] = useState<Sched>(row);
@@ -120,8 +122,8 @@ function EditDrawer({ row, onClose, onSaved, onDelete }: { row: Sched; onClose: 
     const driverName = drivers.find((d: { id: string }) => d.id === f.driverId)?.name ?? '';
     const vehicleCode = vehicles.find((v: { id: string }) => v.id === f.vehicleId)?.code ?? '';
     const status: SchedStatus = (row.status === 'DISPATCHED' || row.status === 'DELIVERED' || row.status === 'CANCELLED') ? row.status : (f.plannedDate && f.driverId ? 'SCHEDULED' : 'UNPLANNED');
-    api.patch(`/delivery-schedule/${row.id}`, { plannedDate: f.plannedDate || null, timeSlot: f.timeSlot || null, plannedTime: f.plannedTime || null, driverId: f.driverId || null, vehicleId: f.vehicleId || null, sequenceNo: f.sequenceNo, notes: f.notes }).catch(notifyFailure);
-    onSaved({ ...f, driverName, vehicleCode, status });
+    const req = api.patch(`/delivery-schedule/${row.id}`, { plannedDate: f.plannedDate || null, timeSlot: f.timeSlot || null, plannedTime: f.plannedTime || null, driverId: f.driverId || null, vehicleId: f.vehicleId || null, sequenceNo: f.sequenceNo, notes: f.notes });
+    onSaved({ ...f, driverName, vehicleCode, status }, req);
   }
   return (
     <Drawer open onClose={onClose} width={560}>

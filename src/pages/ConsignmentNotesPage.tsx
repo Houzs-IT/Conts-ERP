@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Search, Plus, Trash2, X } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
@@ -183,9 +183,10 @@ function CreateDrawer({ canWrite, onClose, onCreated }: { canWrite: boolean; onC
 
 function SettleDrawer({ cn, canWrite, onClose, onAct }: { cn: Cn; canWrite: boolean; onClose: () => void; onAct: (c: Cn, patch: Record<string, unknown>, optimistic: Partial<Cn>, title: string) => void }) {
   const { record, loading: linesLoading, error: linesError } = useRecord<Cn>('consignment-notes', cn.id);
-  const editable = canWrite && (cn.status === 'OPEN' || cn.status === 'PARTIALLY_SETTLED');
   const lines = record?.lines ?? cn.lines ?? [];
   const [qty, setQty] = useState<{ sold: number | null; returned: number | null }[]>(lines.map(l => ({ sold: l.qtySold, returned: l.qtyReturned })));
+  useEffect(() => { if (record?.lines) setQty(record.lines.map(l => ({ sold: l.qtySold, returned: l.qtyReturned }))); }, [record]);
+  const editable = canWrite && (cn.status === 'OPEN' || cn.status === 'PARTIALLY_SETTLED') && !linesLoading && !linesError && qty.length === lines.length;
   const [submitted, setSubmitted] = useState(false);
   const setLine = (i: number, k: 'sold' | 'returned', v: number | null) => setQty(qs => qs.map((q, j) => j === i ? { ...q, [k]: v } : q));
   const overError = (i: number) => (qty[i].sold ?? 0) + (qty[i].returned ?? 0) > lines[i].qtyConsigned ? `Sold and returned cannot exceed ${lines[i].qtyConsigned}.` : undefined;
@@ -222,6 +223,7 @@ function SettleDrawer({ cn, canWrite, onClose, onAct }: { cn: Cn; canWrite: bool
                   <td className="py-2 px-3 text-right">{editable ? <NumCell label={`Returned quantity for ${l.itemCode}`} value={qty[i].returned} error={emptyError(qty[i].returned)} onChange={v => setLine(i, 'returned', v)} /> : <span className="tabular-nums text-[13px]">{l.qtyReturned}</span>}</td>
                 </tr>
               ))}
+              {lines.length === 0 && <tr><td colSpan={4} className="py-6 text-center text-[12.5px] text-muted-ink">{linesLoading ? 'Loading lines…' : linesError ?? 'No lines on this note.'}</td></tr>}
             </tbody>
           </table>
         </div>

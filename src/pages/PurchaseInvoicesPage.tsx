@@ -249,7 +249,7 @@ function ViewDrawer({ pi, canWrite, onClose, onCancel }: { pi: Pi; canWrite: boo
         </div>
         <div className="border border-solid border-line rounded-card overflow-hidden">
           <DataTable<PiLine & { i: number }>
-            id="scm.purchase-invoice.lines" urlPrefix="lines." columns={LINE_COLUMNS} rows={(record?.lines ?? pi.lines ?? []).map((l, i) => ({ ...l, i }))} rowKey={l => String(l.i)}
+            id="scm.purchase-invoice.lines" urlPrefix="lines." columns={LINE_COLUMNS} rows={(record?.lines ?? pi.lines ?? []).map((l, i) => ({ ...l, i }))} rowKey={l => String(l.i)} loading={linesLoading} error={linesError}
             bare noViews noToolbar pageSize={0} noun={['line', 'lines']} exportName={`${pi.invoiceNumber}-lines`}
             empty={{ title: 'No lines on this invoice.' }} />
         </div>

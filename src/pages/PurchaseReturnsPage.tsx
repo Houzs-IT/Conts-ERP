@@ -75,11 +75,10 @@ export default function PurchaseReturnsPage() {
     { key: 'refund', label: 'Refund', type: 'money', value: p => p.status === 'CANCELLED' ? null : p.refundSen },
   ], []);
 
-  function created(pret: Pret) { setAdded(a => [pret, ...a]); toast({ tone: 'success', title: 'Return raised.', body: `${pret.returnNumber} · ${pret.supplierName}` }); setDrawer(null); }
+  function created(pret: Pret) { setAdded(a => [pret, ...a]); reload(); toast({ tone: 'success', title: 'Return raised.', body: `${pret.returnNumber} · ${pret.supplierName}` }); setDrawer(null); }
   function patch(p: Pret, status: Status, label: string) {
     setEdits(e => ({ ...e, [p.id]: { ...e[p.id], status } }));
-    api.patch(`/purchase-returns/${p.id}`, { status }).catch(notifyFailure);
-    toast({ tone: 'success', title: label, body: p.returnNumber });
+    persist(api.patch(`/purchase-returns/${p.id}`, { status }), { reload, ok: () => toast({ tone: 'success', title: label, body: p.returnNumber }) });
     setDrawer(null);
   }
 
@@ -258,7 +257,7 @@ function ViewDrawer({ pret, canWrite, onClose, onComplete, onCancel }: { pret: P
         {pret.reason && <div className="text-[13px]"><span className="text-muted-ink">Reason: </span>{pret.reason}</div>}
         <div className="border border-solid border-line rounded-card overflow-hidden">
           <DataTable<PretLine & { i: number }>
-            id="scm.purchase-return.lines" urlPrefix="lines." columns={LINE_COLUMNS} rows={(record?.lines ?? pret.lines ?? []).map((l, i) => ({ ...l, i }))} rowKey={l => String(l.i)}
+            id="scm.purchase-return.lines" urlPrefix="lines." columns={LINE_COLUMNS} rows={(record?.lines ?? pret.lines ?? []).map((l, i) => ({ ...l, i }))} rowKey={l => String(l.i)} loading={linesLoading} error={linesError}
             bare noViews noToolbar pageSize={0} noun={['line', 'lines']} exportName={`${pret.returnNumber}-lines`}
             empty={{ title: 'No lines on this return.' }} />
         </div>
