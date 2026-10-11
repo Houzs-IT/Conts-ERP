@@ -1,0 +1,183 @@
+/* ==========================================================================
+   THE CONTS — login cover motion
+   Scoped to .conts-login. Decorative only: nothing here affects sign-in.
+
+   Rules
+   - transform and opacity only, so no animation triggers layout
+   - photograph and light are clipped to .login-hero; the form never moves
+   - every loop alternates, so there is no visible reset
+   - paused while the tab is hidden (data-hidden="true", set in LoginPage)
+   - prefers-reduced-motion shows a finished static frame
+   ========================================================================== */
+
+.conts-login {
+  --login-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --login-gold: 200, 164, 106;
+  --login-ink: 21, 21, 21;
+}
+
+/* --- 1. Photograph: Ken Burns, 1.00 to 1.04 over 30s, alternating --------- */
+
+.conts-login .login-photo {
+  transform: scale(1) translate3d(0, 0, 0);
+  transform-origin: 46% 54%;
+  will-change: transform;
+  animation: login-kenburns 30s ease-in-out infinite alternate;
+  backface-visibility: hidden;
+}
+
+@keyframes login-kenburns {
+  0%   { transform: scale(1.000) translate3d(0, 0, 0); }
+  100% { transform: scale(1.040) translate3d(-1.1%, -0.7%, 0); }
+}
+
+/* --- 2. Light and depth ---------------------------------------------------
+   A warm-gold glow drifting over 22s, on a layer larger than the panel so its
+   edges never come into view. The scrim underneath carries text contrast and
+   does not move, so the headline never loses its background. */
+
+.conts-login .login-light {
+  background:
+    radial-gradient(42% 38% at 30% 30%, rgba(var(--login-gold), 0.20) 0%, rgba(var(--login-gold), 0) 70%),
+    radial-gradient(36% 34% at 74% 66%, rgba(var(--login-gold), 0.09) 0%, rgba(var(--login-gold), 0) 72%),
+    radial-gradient(60% 50% at 60% 20%, rgba(var(--login-ink), 0.30) 0%, rgba(var(--login-ink), 0) 70%);
+  mix-blend-mode: soft-light;
+  opacity: 0.9;
+  will-change: transform, opacity;
+  animation: login-drift 22s ease-in-out infinite alternate;
+}
+
+@keyframes login-drift {
+  0%   { transform: translate3d(-4%, -2%, 0); opacity: 0.70; }
+  50%  { opacity: 1; }
+  100% { transform: translate3d(5%, 3%, 0); opacity: 0.80; }
+}
+
+.conts-login .login-scrim {
+  /* Static. Darkest where the type sits: top for the logo, bottom for the
+     headline and strapline, and a left-weighted veil on desktop. */
+  background:
+    linear-gradient(180deg, rgba(var(--login-ink), 0.66) 0%, rgba(var(--login-ink), 0.16) 38%, rgba(var(--login-ink), 0.90) 100%);
+}
+
+@media (min-width: 1024px) {
+  .conts-login .login-scrim {
+    background:
+      linear-gradient(90deg, rgba(var(--login-ink), 0.58) 0%, rgba(var(--login-ink), 0.10) 62%, rgba(var(--login-ink), 0) 100%),
+      linear-gradient(180deg, rgba(var(--login-ink), 0.62) 0%, rgba(var(--login-ink), 0.12) 40%, rgba(var(--login-ink), 0.88) 100%);
+  }
+}
+
+/* --- 3. Entrance ----------------------------------------------------------
+   Logo, then headline, then form. 600–900ms, ease-out, small stagger.
+   The form only fades; it does not move, and it is interactive from the
+   first frame because opacity never blocks input. */
+
+.conts-login .login-in {
+  animation-duration: 760ms;
+  animation-timing-function: var(--login-ease);
+  animation-fill-mode: both;
+}
+.conts-login .login-in-1 { animation-name: login-rise; animation-delay: 80ms; }
+.conts-login .login-in-2 { animation-name: login-rise; animation-delay: 220ms; animation-duration: 860ms; }
+.conts-login .login-in-3 { animation-name: login-fade; animation-delay: 420ms; }
+.conts-login .login-in-form { animation-name: login-fade; animation-delay: 340ms; animation-duration: 640ms; }
+
+.conts-login .login-rule {
+  transform-origin: left center;
+  animation: login-draw 900ms var(--login-ease) 300ms both;
+}
+
+@keyframes login-rise { from { opacity: 0; transform: translate3d(0, 7px, 0); } to { opacity: 1; transform: none; } }
+@keyframes login-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes login-draw { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+
+/* --- 4. Interactions ------------------------------------------------------ */
+
+.conts-login .login-form input,
+.conts-login .login-form select,
+.conts-login .login-form textarea {
+  transition:
+    border-color 180ms var(--login-ease),
+    box-shadow 180ms var(--login-ease),
+    background-color 180ms var(--login-ease);
+}
+
+.conts-login .login-form input:focus,
+.conts-login .login-form input:focus-visible {
+  border-color: rgba(var(--login-gold), 0.85) !important;
+  box-shadow: 0 0 0 3px rgba(var(--login-gold), 0.22) !important;
+  outline: none !important;
+}
+
+/* The checkbox keeps its own focus treatment */
+.conts-login .login-form input[type="checkbox"]:focus,
+.conts-login .login-form input[type="checkbox"]:focus-visible {
+  box-shadow: 0 0 0 3px rgba(var(--login-gold), 0.30) !important;
+  border-color: transparent !important;
+}
+
+.conts-login .login-submit {
+  transition:
+    background-color 200ms var(--login-ease),
+    filter 200ms var(--login-ease),
+    box-shadow 200ms var(--login-ease);
+}
+.conts-login .login-submit:hover:not(:disabled) {
+  filter: brightness(1.22);
+  box-shadow: 0 6px 18px -8px rgba(var(--login-ink), 0.45), inset 0 -1px 0 rgba(var(--login-gold), 0.55);
+}
+.conts-login .login-submit:active:not(:disabled) {
+  filter: brightness(0.92);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35);
+  transition-duration: 90ms;
+}
+.conts-login .login-submit:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(var(--login-gold), 0.35);
+}
+
+/* --- 5. Phone and tablet: slower, lighter, no pointer effects ------------- */
+
+@media (max-width: 1023.98px) {
+  .conts-login .login-photo {
+    animation-duration: 42s;
+    animation-name: login-kenburns-soft;
+  }
+  .conts-login .login-light {
+    animation-duration: 30s;
+    opacity: 0.6;
+  }
+  /* The form sheet sits over the image edge and never moves */
+  .conts-login .login-panel { z-index: 1; box-shadow: 0 -10px 30px -18px rgba(var(--login-ink), 0.5); }
+}
+
+@keyframes login-kenburns-soft {
+  0%   { transform: scale(1.000) translate3d(0, 0, 0); }
+  100% { transform: scale(1.025) translate3d(-0.6%, -0.4%, 0); }
+}
+
+@media (hover: none) {
+  .conts-login .login-submit:hover:not(:disabled) { filter: none; box-shadow: none; }
+}
+
+/* --- 6. Pause when hidden, and reduced motion ----------------------------- */
+
+.conts-login[data-hidden="true"] .login-photo,
+.conts-login[data-hidden="true"] .login-light {
+  animation-play-state: paused;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .conts-login .login-photo,
+  .conts-login .login-light,
+  .conts-login .login-in,
+  .conts-login .login-rule {
+    animation: none !important;
+  }
+  /* Polished static frame: the photograph rests slightly forward and the
+     light settles where it reads best. */
+  .conts-login .login-photo { transform: scale(1.02); }
+  .conts-login .login-light { transform: translate3d(1%, 0.5%, 0); opacity: 0.85; }
+  .conts-login .login-submit { transition: none; }
+}

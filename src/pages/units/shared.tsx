@@ -32,6 +32,7 @@ export interface Unit {
   baseRate?: number;
   /** Sen. The standard clean's price (0 or null: not set). Money roles only; saved from the Financials tab. */
   cleaningPrice?: number | null;
+  deepCleaningPrice?: number | null;
   /** The old "Recurring monthly costs" list. Only its cleaning row was ever used (as the cleaning price); kept for reference. */
   expenses: Expense[];
   contract: {

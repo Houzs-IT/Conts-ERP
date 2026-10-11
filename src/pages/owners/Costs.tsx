@@ -375,8 +375,8 @@ export function CostTotals({ lines }: { lines: CostLine[] }) {
  *  functions/_lib/unitCosts.ts, the rows and month rule the owner statement uses). Costs arrive three ways: a finished
  *  cleaning job, a maintenance job on its billing date, and Add a bill (utilities, the condo fee, anything else). The
  *  cards total the table. Finished cleans that carry no cost are offered to charge. */
-export function UnitCostsCard({ unitId, ownerId, unitLabel, canEdit, cleaningPrice, legacyCosts, onChanged }: {
-  unitId: string; ownerId: string; unitLabel: string; canEdit: boolean; cleaningPrice: number | null | undefined;
+export function UnitCostsCard({ unitId, ownerId, unitLabel, canEdit, cleaningPrice, deepCleaningPrice, legacyCosts, onChanged }: {
+  unitId: string; ownerId: string; unitLabel: string; canEdit: boolean; cleaningPrice: number | null | undefined; deepCleaningPrice?: number | null;
   legacyCosts: { category: string; amount: number }[]; onChanged: () => void;
 }) {
   const toast = useToast();
@@ -460,7 +460,7 @@ export function UnitCostsCard({ unitId, ownerId, unitLabel, canEdit, cleaningPri
         </div>
       )}
       <div className="px-5 pb-5">
-        <CleaningPrice unitId={unitId} price={cleaningPrice} legacy={legacyCosts} canEdit={canEdit} onSaved={onChanged} />
+        <CleaningPrice unitId={unitId} price={cleaningPrice} deepPrice={deepCleaningPrice} legacy={legacyCosts} canEdit={canEdit} onSaved={onChanged} />
       </div>
       {modal === 'bill' && <BillModal units={[{ id: unitId, label: unitLabel }]} defaultUnitId={unitId} ownerId={ownerId} canAdjust={!!data?.canChangeAdjustments}
         month={month} onClose={() => setModal(null)} onSaved={changed} />}
@@ -469,33 +469,43 @@ export function UnitCostsCard({ unitId, ownerId, unitLabel, canEdit, cleaningPri
 }
 
 /** The unit's standard cleaning price: what a finished standard clean charges the unit (functions/_lib/cleaning.ts). */
-function CleaningPrice({ unitId, price, legacy, canEdit, onSaved }: { unitId: string; price: number | null | undefined; legacy: { category: string; amount: number }[]; canEdit: boolean; onSaved: () => void }) {
+function CleaningPrice({ unitId, price, deepPrice, legacy, canEdit, onSaved }: {
+  unitId: string; price: number | null | undefined; deepPrice: number | null | undefined; legacy: { category: string; amount: number }[]; canEdit: boolean; onSaved: () => void;
+}) {
   const toast = useToast();
   const current = price && price > 0 ? price : null;
+  const currentDeep = deepPrice && deepPrice > 0 ? deepPrice : null;
   const [draft, setDraft] = useState<number | null | undefined>(undefined);
+  const [draftDeep, setDraftDeep] = useState<number | null | undefined>(undefined);
   const [busy, setBusy] = useState(false);
   const shown = draft === undefined ? current : draft;
-  const dirty = draft !== undefined && draft !== current;
-  // The old "Recurring monthly costs" rows other than cleaning: kept, never deducted from any statement.
-  const notDeducted = legacy.filter(e => e.category.toLowerCase() !== 'cleaning' && e.amount > 0);
+  const shownDeep = draftDeep === undefined ? currentDeep : draftDeep;
+  const dirty = (draft !== undefined && draft !== current) || (draftDeep !== undefined && draftDeep !== currentDeep);
+  // The old "Recurring monthly costs" rows other than the two cleaning prices: kept, never deducted from any statement.
+  const notDeducted = legacy.filter(e => !['cleaning', 'cleaning_deep'].includes(e.category.toLowerCase()) && e.amount > 0);
   async function save() {
     setBusy(true);
     try {
-      await api.patch(`/units/${encodeURIComponent(unitId)}`, { cleaningPrice: draft ?? null });
-      toast({ tone: 'success', title: 'Cleaning price saved.', body: draft ? `A finished standard clean now charges ${rm(draft)}.` : 'Cleared: cleaning jobs charge the last price used or the default.' });
-      setDraft(undefined); onSaved();
+      const body: Record<string, number | null> = {};
+      if (draft !== undefined) body.cleaningPrice = draft ?? null;
+      if (draftDeep !== undefined) body.deepCleaningPrice = draftDeep ?? null;
+      await api.patch(`/units/${encodeURIComponent(unitId)}`, body);
+      toast({ tone: 'success', title: 'Cleaning prices saved.', body: 'A finished clean charges the unit at its own price, owner pays.' });
+      setDraft(undefined); setDraftDeep(undefined); onSaved();
     } catch (e) { notifyFailure(e); } finally { setBusy(false); }
   }
   return (
     <div className="flex flex-col gap-3 pt-4 [border-top:1px_solid_var(--color-line-soft)]">
       <div className="flex flex-wrap items-end gap-3">
-        <div className="w-[220px] max-w-full">
-          <MoneyInput label="Standard cleaning price (RM)" placeholder="Not set" valueSen={shown ?? null} onChangeSen={v => setDraft(v)} disabled={!canEdit}
-            help="Charged to the unit, owner pays, when a standard clean is finished." />
+        <div className="w-[200px] max-w-full">
+          <MoneyInput label="Standard clean (RM)" placeholder="Not set" valueSen={shown ?? null} onChangeSen={v => setDraft(v)} disabled={!canEdit} />
         </div>
-        {canEdit && <Button size="sm" variant="secondary" loading={busy} disabled={!dirty} disabledReason="Nothing has changed" onClick={() => void save()}>Save price</Button>}
+        <div className="w-[200px] max-w-full">
+          <MoneyInput label="Deep clean (RM)" placeholder="Not set" valueSen={shownDeep ?? null} onChangeSen={v => setDraftDeep(v)} disabled={!canEdit} />
+        </div>
+        {canEdit && <Button size="sm" variant="secondary" loading={busy} disabled={!dirty} disabledReason="Nothing has changed" onClick={() => void save()}>Save prices</Button>}
       </div>
-      {!current && <span className="text-meta text-muted-ink">Not set: a clean charges the last price used on this unit, or the default in Settings.</span>}
+      <span className="text-meta text-muted-ink">Charged to the unit, owner pays, when a clean of that type is finished.{!current || !currentDeep ? ' A price not set falls back to the last price used on this unit, or the default in Settings.' : ''}</span>
       {notDeducted.length > 0 && (
         <div className="rounded-control bg-muted px-3 py-2.5 text-meta text-muted-ink text-pretty">
           From the old monthly costs list, never deducted from a statement: {notDeducted.map(e => `${e.category} ${rm(e.amount)}`).join(', ')}.

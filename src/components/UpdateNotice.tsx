@@ -17,7 +17,10 @@ export default function UpdateNotice() {
         const r = await fetch(`/version.json?t=${Date.now()}`, { cache: 'no-store' });
         if (!r.ok) return;
         const { version } = (await r.json()) as { version?: string };
-        if (live && version && version !== __BUILD_ID__) setStale(true);
+        if (!(live && version && version !== __BUILD_ID__)) return;
+        // Nothing can be lost on the sign-in screen, so take the new version straight away.
+        if (window.location.hash.startsWith('#/login') || window.location.pathname.endsWith('/login')) { window.location.reload(); return; }
+        setStale(true);
       } catch { /* offline or mid-deploy: try again at the next check */ }
     }
     const timer = window.setInterval(check, CHECK_EVERY_MS);
@@ -38,7 +41,7 @@ export default function UpdateNotice() {
   return (
     <div role="status" aria-live="polite"
       className="fixed left-1/2 -translate-x-1/2 bottom-5 z-[90] flex items-center gap-3 max-w-[calc(100vw-24px)] py-2.5 pl-4 pr-2.5 rounded-card bg-black text-white shadow-[var(--shadow-overlay)] text-[13.5px]">
-      <span>A new version of Conts is available.</span>
+      <span>A new version of The Conts is ready. Reloading takes a second and keeps you signed in.</span>
       <button type="button" onClick={() => window.location.reload()}
         className="h-8 px-3 rounded-control border-none cursor-pointer font-sans text-[13px] font-semibold bg-gold text-black whitespace-nowrap">Reload</button>
       <button type="button" onClick={() => setDismissed(true)} aria-label="Later"

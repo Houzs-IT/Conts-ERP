@@ -7,6 +7,7 @@ import { Logo } from '../components/Logo';
 import { Button } from '../components/Button';
 import { Field, PasswordField } from '../components/Field';
 import { CodeInput } from '../components/inputs';
+import '../styles/login.css';
 
 type Screen = 'signin' | 'forgot' | 'change' | 'reset' | 'code';
 
@@ -105,50 +106,69 @@ export default function LoginPage({ forceChangePassword = false, resetToken = nu
   const labelCaps = 'text-caption font-semibold uppercase tracking-[0.06em]';
   const newPassword = screen === 'change' || screen === 'reset';
 
+  // Decorative motion only. Pauses while the tab is hidden so the photograph and
+  // light layer do not run in the background. Has no effect on sign-in.
+  const [pageHidden, setPageHidden] = useState(() => typeof document !== 'undefined' && document.hidden);
+  useEffect(() => {
+    const onVis = () => setPageHidden(document.hidden);
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  }, []);
+
+  const headline = <>Homes worth staying in.<br />Numbers worth trusting.</>;
+
   return (
-    <div className="flex-1 min-h-screen lg:min-h-[980px] grid grid-cols-1 lg:grid-cols-[minmax(0,1.55fr)_minmax(420px,0.62fr)]">
-      {/* Brand stage. The photograph is the hero; type sits on a scrim, never on bare image. */}
-      {/* The photograph is optional. Drop one at public/brand/login-hero.jpg and it
-          appears; without it the blueprint grid carries the panel on its own, so a
-          clean install never shows a broken image. */}
-      <div className="hidden lg:block bg-blueprint relative min-h-full [background:var(--color-black)]!">
-        <div
-          aria-hidden
-          className="absolute inset-0 bg-[url(/brand/login-hero.jpg)] bg-cover bg-center"
-        />
-        <div className="absolute inset-0 [background:linear-gradient(180deg,rgba(21,21,21,0.62)_0%,rgba(21,21,21,0.12)_40%,rgba(21,21,21,0.88)_100%)]" />
-        <div className="absolute inset-[26px] border border-solid border-[rgba(200,164,106,0.24)]" />
+    <div
+      data-hidden={pageHidden ? 'true' : 'false'}
+      className="conts-login flex-1 min-h-[100dvh] lg:h-[100dvh] grid grid-cols-1 lg:grid-cols-[minmax(0,1.55fr)_minmax(420px,0.62fr)]"
+    >
+      {/* Hero. Photograph and light are decorative and clipped to this panel only.
+          Drop a photograph at public/brand/login-hero.jpg; without one the blueprint
+          grid carries the panel, so a clean install never shows a broken image. */}
+      <div className="login-hero bg-blueprint relative overflow-hidden h-[236px] sm:h-[288px] lg:h-auto">
+        <div aria-hidden className="login-photo absolute inset-[-3%] bg-[url(/brand/login-hero.jpg)] bg-cover bg-center" />
+        <div aria-hidden className="login-light absolute inset-[-20%] pointer-events-none" />
+        <div aria-hidden className="login-scrim absolute inset-0 pointer-events-none" />
+        <div aria-hidden className="hidden lg:block absolute inset-[26px] border border-solid border-[rgba(200,164,106,0.24)] pointer-events-none" />
 
-        <div className="relative min-h-full box-border py-[52px] px-[64px] flex flex-col justify-between gap-9">
-          <Logo variant="full" size="lg" onDark />
+        {/* Desktop composition */}
+        <div className="relative hidden lg:flex h-full box-border py-[52px] px-[64px] flex-col justify-between gap-9">
+          <div className="login-in login-in-1"><Logo variant="full" size="lg" onDark /></div>
 
-          <div className="flex flex-col gap-[26px] max-w-[620px]">
-            <div className="h-px w-[72px] bg-gold" />
+          <div className="login-in login-in-2 flex flex-col gap-[26px] max-w-[620px]">
+            <div className="login-rule h-px w-[72px] bg-gold" />
             {/* Display type for the public hero only; the in-app scale stops at 26. */}
-            <h2 className="m-0 text-[56px] leading-[1.04] font-semibold tracking-[-0.025em] text-white text-pretty">
-              Homes worth staying in.<br />Numbers worth trusting.
-            </h2>
+            <h2 className="m-0 text-[56px] leading-[1.04] font-semibold tracking-[-0.025em] text-white text-pretty">{headline}</h2>
           </div>
 
-          <div className="flex items-end justify-between gap-8 flex-wrap">
+          <div className="login-in login-in-3 flex items-end justify-between gap-8 flex-wrap">
             <span className="text-heading text-white text-pretty max-w-[420px]">
               Short-term rental management for owners, units, reservations and owner payouts.
             </span>
             <span className={`${labelCaps} text-[var(--color-text-on-dark-muted)]`}>KUALA LUMPUR · PETALING JAYA</span>
           </div>
         </div>
+
+        {/* Phone and tablet: compact image header, same wording */}
+        <div className="relative lg:hidden h-full box-border px-5 pt-6 pb-11 sm:px-10 flex flex-col justify-between">
+          <div className="login-in login-in-1"><Logo variant="full" size="sm" onDark /></div>
+          <div className="login-in login-in-2 flex flex-col gap-3">
+            <div className="login-rule h-px w-12 bg-gold" />
+            <h2 className="m-0 text-[26px] sm:text-[32px] leading-[1.08] font-semibold tracking-[-0.02em] text-white text-pretty">{headline}</h2>
+          </div>
+        </div>
       </div>
 
-      <div className="pt-8 px-4 pb-8 sm:pt-12 sm:px-14 sm:pb-10 flex flex-col justify-between gap-8 bg-white">
-        <div className="flex items-center justify-between lg:justify-end gap-2">
-          <span className="lg:hidden"><Logo variant="full" size="sm" /></span>
+      {/* Form side. Steady: a single opacity fade that never blocks input. */}
+      <div className="login-panel relative -mt-6 lg:mt-0 rounded-t-[20px] lg:rounded-none pt-8 px-5 pb-8 sm:pt-12 sm:px-14 sm:pb-10 flex flex-col justify-between gap-8 bg-white lg:overflow-y-auto">
+        <div className="flex items-center justify-end gap-2">
           <span className="flex items-center gap-2 text-caption text-faint">
             <Icon name="Lock" size="sm" />
             <span>Secure sign-in</span>
           </span>
         </div>
 
-        <form onSubmit={submit} className="w-full max-w-[344px] self-center flex flex-col gap-8">
+        <form onSubmit={submit} className="login-form login-in login-in-form w-full max-w-[344px] self-center flex flex-col gap-8">
           <div className="flex flex-col gap-2.5">
             <span className={`${labelCaps} text-gold-ink`}>{c.eyebrow}</span>
             <h1 className="m-0 text-headline leading-[1.15] font-semibold tracking-[-0.01em]">{c.heading}</h1>
@@ -217,12 +237,12 @@ export default function LoginPage({ forceChangePassword = false, resetToken = nu
           </div>
 
           {screen === 'reset' && tokenState === 'invalid' ? (
-            <Button type="button" variant="primary" size="touch" style={{ width: '100%' }}
+            <Button type="button" variant="primary" size="touch" className="login-submit" style={{ width: '100%' }}
               onClick={() => { window.location.hash = '/'; setScreen('forgot'); setError(''); }}>
               Request a new link
             </Button>
           ) : screen !== 'reset' || tokenState === 'valid' ? (
-            <Button type="submit" variant="primary" size="touch" loading={busy} style={{ width: '100%' }}>
+            <Button type="submit" variant="primary" size="touch" loading={busy} className="login-submit" style={{ width: '100%' }}>
               {c.submit}
             </Button>
           ) : null}

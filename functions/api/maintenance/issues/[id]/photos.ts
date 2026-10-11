@@ -1,5 +1,6 @@
 import { type Env, one, run, json, fail, audit, nowIso } from '../../../../_lib/db';
-import { requireSession, isFieldRole, hasColumn } from '../../../../_lib/auth';
+import { requireSession, isFieldRole } from '../../../../_lib/auth';
+import { isAssignee } from '../../../../_lib/maintenance';
 import { mediaKind } from '../../../../_lib/media';
 
 /** POST /api/maintenance/issues/:id/photos — multipart `file` (a photo or a video), optional `kind` (before/after).
@@ -11,10 +12,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   if (!env.MEDIA) return fail('NOT_CONFIGURED', 'File upload is not set up yet. Ask an administrator to enable media storage.', 501);
 
   const id = String(params.id);
-  const issue = await one<{ id: string; unit_id: string; reported_by: string | null }>(env, 'SELECT id, unit_id, reported_by FROM maintenance_issues WHERE id = ?', id);
+  const issue = await one<{ id: string; unit_id: string; reported_by: string | null; state: string }>(env, 'SELECT id, unit_id, reported_by, state FROM maintenance_issues WHERE id = ?', id);
   if (!issue) return fail('NOT_FOUND', 'That job no longer exists.', 404);
   // A cleaner who reported the damage adds the photos of it, though the repair is not theirs.
-  if (isFieldRole(session.role) && issue.reported_by !== session.userId && !(await assignedTo(env, id, session.userId))) return fail('FORBIDDEN', 'That job is assigned to someone else.', 403);
+  if (isFieldRole(session.role) && issue.reported_by !== session.userId && !(await isAssignee(env, id, session.userId))) return fail('FORBIDDEN', 'That job is assigned to someone else.', 403);
+  if (isFieldRole(session.role) && issue.state === 'resolved') return fail('CONFLICT', 'That job is closed. Ask the office to reopen it.', 409);
 
   const form = await request.formData().catch(() => null);
   const file = form?.get('file');
@@ -30,17 +32,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
     INSERT INTO documents (id, kind, file_name, mime_type, byte_size, storage_key, unit_id, maintenance_id, uploaded_by, captured_at, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     docId, media.kind, `${stage}-${file.name}`.slice(0, 120), file.type, file.size, key, issue.unit_id, id, session.userId, nowIso(), nowIso());
-  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'maintenance.photo', entityTable: 'maintenance_issues', entityId: id, after: { documentId: docId, stage, kind: media.kind } });
+  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'maintenance.photo', entityTable: 'maintenance_issues', entityId: id, after: { documentId: docId, stage, kind: media.kind }, source: isFieldRole(session.role) ? 'field_app' : 'web' });
   return json({ documentId: docId, kind: media.kind }, 201);
 };
-
-/** A job assigned since migration 0105 names its technician's account; older jobs (and a database without the column)
- *  are matched by the technician's name, the same rule as the field history (functions/api/audit/index.ts). */
-async function assignedTo(env: Env, id: string, userId: string) {
-  const byId = await hasColumn(env, 'maintenance_issues', 'assignee_user_id').catch(() => false);
-  const named = 'lower(m.vendor_name) = (SELECT lower(full_name) FROM users WHERE id = ?)';
-  return !!(await one(env, `
-    SELECT 1 AS x FROM maintenance_issues m
-    WHERE m.id = ? AND (${byId ? `m.assignee_user_id = ? OR (m.assignee_user_id IS NULL AND ${named})` : named})`,
-    id, ...(byId ? [userId] : []), userId));
-}

@@ -86,7 +86,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!CATEGORIES.includes(category)) return fail('VALIDATION', 'Pick a category.', 422, { category: 'Pick a category.' });
   const urgency = b.urgency ?? 'normal';
   if (!URGENCIES.includes(urgency)) return fail('VALIDATION', 'Pick how urgent it is.', 422, { urgency: 'Normal or urgent.' });
-  const source = b.reportSource ?? (field ? 'cleaner' : 'staff');
+  const source = b.reportSource ?? (session.role === 'housekeeper' ? 'cleaner' : 'staff');
   if (!SOURCES.includes(source)) return fail('VALIDATION', 'Say who reported it.', 422, { reportSource: 'Guest, cleaner, inspection or staff.' });
   if (field && b.quotedAmount != null) return fail('FORBIDDEN', 'Cleaners and technicians cannot set amounts.', 403);
   if (b.quotedAmount != null && (!Number.isInteger(b.quotedAmount) || b.quotedAmount < 0)) return fail('VALIDATION', 'The amount must be a whole number of sen.', 422);
@@ -131,7 +131,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
   if (b.blocksUnit) await run(env, "UPDATE units SET readiness = 'maintenance', updated_at = ? WHERE id = ?", now, unit.id);
 
-  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'maintenance.create', entityTable: 'maintenance_issues', entityId: id, after: { unitId: unit.id, title: b.title, category, urgency, source, sourceTaskId, blocksUnit: !!b.blocksUnit, approval }, source: b.source ?? 'web' });
+  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'maintenance.create', entityTable: 'maintenance_issues', entityId: id, after: { unitId: unit.id, title: b.title, category, urgency, source, sourceTaskId, blocksUnit: !!b.blocksUnit, approval }, source: field ? 'field_app' : b.source ?? 'web' });
   await notify(env, {
     template: 'ops.damage_reported', recipient: 'operations@theconts.com', channel: 'in_app',
     subject: b.blocksUnit ? 'Unit blocked' : urgency === 'urgent' ? 'Urgent repair reported' : 'Damage reported',

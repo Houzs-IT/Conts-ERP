@@ -49,6 +49,8 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 - Done (feat/cleaning-pod-audit, no migration): cleaning checklist removed from the board and the phone (owner, 11 Oct; its table and endpoint stay, unused); cleaner and type at the top of the job; board refreshes every 30 s so a clean finished on the phone shows as "Done HH:MM" without a reload; History in the Houzs ERP layout everywhere (one entry per action, coloured initials, "via Field app", changes folded); cleaning jobs now record their creation (checkout, prepare, plan) and show the checkout of the reservation they follow. Tested: scripts/api-checks/cleaning-pod-audit.mjs.
 - Owner asked for several cleaners on one job (11 Oct, earlier list); one cleaner per job today. Needs a task_cleaners table (migration) and phone access for each cleaner; not built.
 - Cleaning jobs imported from HostPlatform have no creation entry; their History starts with "Cleaning job created" from the job's own date.
+- Done (fix/deep-clean-price-and-uploads): owner workbooks untracked and ignored (uploads/*.xlsx); copies kept outside the repo in C:/Users/User/Desktop/Conts-ERP-private. They stay in git history (private repo); purging history is a separate, owner-approved step. The plaintext logins on the workbook sheet 用户管理 must be changed by the owner.
+- Done: a unit has a deep clean price (unit_expenses category cleaning_deep, unit Costs panel) that cleanPrice() charges for a deep clean. Tested: scripts/api-checks/deep-clean-price.mjs.
 - Logo is blurry: public/brand art is 203 x 181 px cropped from a report and no larger file exists in the repo or the brand guide; needs the original logo file (AI, SVG or PNG at 1000 px+) from the owner.
 
 ## Maintenance rework (feat/maintenance-rework, 11 Oct 2026)
@@ -71,6 +73,19 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 - Owner question: Guest documents (guest invoices and receipts) is guest invoicing, not part of the unit contract; its menu entry moved under Reservations, page and address unchanged. Owner to confirm that is where it belongs.
 - The FINANCE menu group (Accounts payable, Approvals) is left off the phone menu for every staff role; the screens still open by link. The Owners list's Statements and Payouts tabs show on a phone only when a link opened one.
 - "Accounts payable" is not yet in docs/VOCABULARY.md as a decided word; the owner used "AP" (11 Oct).
+
+## Field app on the phone: technicians and cleaners (feat/mobile-field, 11 Oct 2026)
+- No technician account exists on staging or production: create one per technician (Users and roles, role Technician) before they can sign in. Local demo has Hafiz Rahman (scripts/local-demo-setup.mjs).
+- Technician cannot enter the amount owed for a claim: the money fields stay operations manager, finance and management only (existing rule). They upload the claim file; the office types the amount. Owner to decide whether technicians should type it.
+- Technician notes live in the job's History (audit_log, action maintenance.note), no notes column. If notes need editing or deleting, add a table.
+- A technician cannot give back a picked job on the phone; the office reassigns it. Add "Release job" if the owner wants it.
+- Only role technician may pick up jobs; a cleaner given a repair works it on the phone but cannot pick up open ones. Operations staff who repair use the desk screen.
+- Access instructions are free text, and some demo instructions contain the door code (e.g. "Smart lock 9021#"); the field app shows the instruction, never the stored code. Owner to check real instructions do not carry codes he wants hidden.
+- Office phone controls: buttons and inputs are 44px on touch screens under 768px (tokens.css), OpsModal is full screen on phones. Only Maintenance and Cleaning were checked at 390px; other office pages get the same sizes untested.
+- scripts/api-checks/maintenance.mjs "field tasks" can fail on a random uuid containing "fee" (the check greps the JSON for revenue|fee|payout). Test issue; match keys instead.
+- scripts/api-checks/maintenance-billing.mjs "operations staff cannot record money" fails locally: the demo data has no operations staff user (11111111-...-000000000004). Seed one.
+- Next (owner priority 3): owner portal on the phone. Seen at 390px: no horizontal scroll, but Unit health lists every job ever (dozens on a busy unit, no grouping or "show more"), the header cuts the owner's name ("Lim Chee ..."), the Documents list is one long column of statements (no year grouping).
+- Next (owner priority 4): management read-only on the phone. Seen at 390px: Dashboard, Operations Today and Bookings fit with no horizontal scroll; not checked for every desktop field being visible on the phone cards.
 
 ## Performance (audit 11 Oct 2026, docs/audits/performance-from-sister-erps.md)
 - Owner decision: Workers Paid on the Conts ERP account. On the free plan, Send statements makes one email call per owner (~100 a month) against 50 outside calls per request; calls past 50 fail and are not retried while the cron is off. Until then send 40 at a time.
