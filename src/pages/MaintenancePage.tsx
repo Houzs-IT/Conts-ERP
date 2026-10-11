@@ -246,6 +246,7 @@ function IssueTable({ tab, rows, loading, error, onRetry, selected, onSelect, mo
     <>
       <DataTable<Issue>
         id="maintenance.jobs" columns={columns} rows={rows} rowKey={i => i.id} loading={loading} error={error} onRetry={onRetry}
+        renderCard={i => <JobCard i={i} money={money} />}
         onRowClick={i => onSelect(i.id)} rowTone={i => (i.id === selected ? 'gold' : i.state === 'resolved' ? 'muted' : null)}
         noun={['job', 'jobs']} exportName="maintenance-jobs" selectionKey={tab} above={above}
         filtered={filtered} onClearFilters={onClearFilters}
@@ -264,6 +265,28 @@ function IssueTable({ tab, rows, loading, error, onRetry, selected, onSelect, mo
       {assigning && <BulkAssignModal rows={assigning.rows} onClose={() => setAssigning(null)}
         onDone={() => { assigning.clear(); setAssigning(null); onChanged(); }} />}
     </>
+  );
+}
+
+/** The phone row: unit and cost, the problem, category and who has it, then urgency and status. */
+function JobCard({ i, money }: { i: Issue; money: boolean }) {
+  const s = statusOf(i);
+  const cost = i.finalAmount ?? i.quotedAmount;
+  return (
+    <span className="flex flex-col gap-1 min-w-0">
+      <span className="flex items-baseline justify-between gap-2">
+        <span className="min-w-0 truncate"><b className="text-copy text-ink">{i.unitNumber}</b><span className="text-meta text-muted-ink"> · {i.propertyName}</span></span>
+        {money && cost != null && <span className="text-copy font-medium tabular-nums whitespace-nowrap">{rm(cost, { cents: false })}{i.finalAmount == null && <span className="text-meta text-muted-ink font-normal"> quote</span>}</span>}
+      </span>
+      <span className="text-copy text-ink [overflow-wrap:anywhere]">{i.title}</span>
+      <span className="text-meta text-muted-ink">
+        {CATEGORY[i.category] ?? i.category} · {i.vendorName ? i.vendorName : <span className="text-danger">Unassigned</span>}
+      </span>
+      <span className="flex gap-1.5 flex-wrap pt-0.5">
+        {i.urgency === 'urgent' && <StatusBadge tone="critical">Urgent</StatusBadge>}
+        <StatusBadge tone={s.tone === 'gold' ? 'neutral' : s.tone}>{s.label}</StatusBadge>
+      </span>
+    </span>
   );
 }
 

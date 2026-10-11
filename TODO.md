@@ -61,6 +61,9 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 - Owners now see their own notices (bell on the owner portal); a quote sent for approval also emails them where mail is configured (MAIL_API_KEY), with a link that is a bare "/" rather than the portal address.
 - scripts/api-checks/maintenance.mjs "unit with another open blocker stays off sale" fails on a fresh demo database: the demo data has no other open blocking job on #2207. Test-data issue, not code; fix the check's setup.
 - No Who pays choice in the create form any more: a new job defaults to the owner paying, changed in the job's panel.
+- No owner approval threshold any more (owner, 11 Oct): a quote goes to the owner only through "Send to owner for approval". The old setting operations.maintenanceApprovalThreshold may still be in the settings table and still saves through /api/settings; nothing reads it. Remove it from settings/index.ts when convenient.
+- Parts catalog (the SKU list) is hidden from the Maintenance header until the owner sets it up: flip SHOW_CATALOG in src/pages/MaintenancePage.tsx; "Draw a part" still appears on a job only when stocked items exist.
+- Photos of the problem picked in Add maintenance job and Report damage go up after the job is saved, as Before photos; a failed photo is named in a warning and does not undo the job. A cleaner may add photos to a job they reported. Report damage with photos was checked through the API only (no clean on the demo board to open it in the browser).
 
 ## Performance (audit 11 Oct 2026, docs/audits/performance-from-sister-erps.md)
 - Owner decision: Workers Paid on the Conts ERP account. On the free plan, Send statements makes one email call per owner (~100 a month) against 50 outside calls per request; calls past 50 fail and are not retried while the cron is off. Until then send 40 at a time.
