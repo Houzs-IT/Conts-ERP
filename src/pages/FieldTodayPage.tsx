@@ -17,7 +17,7 @@ import { StatusBadge } from '../components/StatusBadge';
 /* GET /api/field/tasks (functions/api/field/tasks.ts) */
 interface Job {
   id: string; unitId: string; kind: string; state: string; unit: { unitNumber: string; propertyName: string }; buildingId: string;
-  addressLine: string; accessInstruction: string | null; work: string; startedAt: string | null; completedAt: string | null; readiness: string; done: boolean;
+  addressLine: string; accessInstruction: string | null; work: string; instructions: string | null; day: string; startedAt: string | null; completedAt: string | null; readiness: string; done: boolean;
   photoCount: number; checklist: { done: number; total: number }; guestOut: boolean;
   previous: { guestName: string; checkOutTime: string; state: string } | null;
   next: { guestName: string; checkInTime: string; checkInAt: string } | null;
@@ -36,6 +36,9 @@ export default function FieldTodayPage() {
   const groups = useMemo(() => {
     const m = new Map<string, { name: string; jobs: Job[] }>();
     for (const j of jobs) { const g = m.get(j.buildingId) ?? { name: j.unit.propertyName, jobs: [] }; g.jobs.push(j); m.set(j.buildingId, g); }
+    // In each building: what is still to do first, the one the next guest reaches soonest at the top.
+    const by = (j: Job) => `${j.done ? 1 : 0}${j.next?.checkInAt ?? '9'}${j.unit.unitNumber}`;
+    for (const g of m.values()) g.jobs.sort((a, b) => by(a).localeCompare(by(b)));
     return [...m.entries()].sort((a, b) => a[1].name.localeCompare(b[1].name));
   }, [jobs]);
   const left = jobs.filter(j => !j.done).length;
@@ -90,7 +93,14 @@ function JobCard({ job: j, now, open, onToggle, onChanged }: { job: Job; now: nu
           <div className="rounded-control bg-muted px-2.5 py-2"><span className="block text-meta text-muted-ink">Leaving</span>{j.previous ? <><b>{j.previous.checkOutTime}</b> {j.previous.guestName}</> : <span className="text-muted-ink">No departing guest</span>}</div>
           <div className="rounded-control bg-gold-tint px-2.5 py-2"><span className="block text-meta text-muted-ink">Arriving</span>{j.next ? <><b>{j.next.checkInTime}</b> {j.next.guestName}</> : <span className="text-muted-ink">No check-in</span>}</div>
         </div>
-        {j.next && !j.done && <div className="text-copy">Time left <TimeLeft at={j.next.checkInAt} now={now} /></div>}
+        {!j.done && (
+          <div className="flex items-center gap-2 flex-wrap text-copy">
+            {j.next ? <><span>Finish by <b className="tabular-nums">{j.next.checkInTime}</b></span><span className="text-muted-ink">·</span><span><TimeLeft at={j.next.checkInAt} now={now} />{Date.parse(j.next.checkInAt) > now ? ' left' : ''}</span></>
+              : <span className="text-muted-ink">No guest arriving today. Finish any time today.</span>}
+            {j.day < mytDay(0) && <StatusBadge tone="warning">From {dayLabel(j.day)}</StatusBadge>}
+          </div>
+        )}
+        {j.instructions && <div className="text-copy rounded-control bg-warning-bg text-ink px-2.5 py-2"><span className="block text-meta text-muted-ink">From the office</span>{j.instructions}</div>}
       </button>
 
       {open && (
