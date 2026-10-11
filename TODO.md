@@ -159,7 +159,6 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 ## UI audit follow-ups: shell, system and growth pages (fix/system-growth)
 - Automations: 9 of 30 rules are sent by code today; the other 21 (every guest message) need a sender in the cron worker (theconts-cron, not deployed) plus email/WhatsApp keys. The page says so; the on/off switch is stored only. Owner decision: build the sender.
 - Imported owner ids embed the IC number (e.g. wb-owner-940413-13-6097, functions/_lib/hostplatformImport*), so it shows in URLs and the audit log. Data agent to switch to opaque ids.
-- Settings: operations defaults and statement settings are saved but not read anywhere (marked "Not used yet"), nor the locale's language/timezone/currency; wire or remove. Company details and Owner report are used by the report; the default fee by statements.
 - Pricing: channel commission (15/15/18%) and the 22% weekend uplift are fixed in code; owner to decide whether they become settings.
 
 ## Booking lifecycle (fix/booking-lifecycle)
@@ -246,7 +245,6 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 
 ## Open from the money-and-system sweep (fix/sweep-money-system, 11 Oct 2026)
 - Owner to decide: expenses can be added and edited but never deleted (no button, no endpoint). A wrong expense today can only be edited to RM 0.00.
-- Owner to decide: Portfolio "This month" counts every night booked in the whole month, while "Quarter to date" stops at today; the caption now says so. Pick one rule for both.
 - Owner to decide: should finance admins see Users and roles? The list refuses them (functions/api/users), so their built-in access is now none; management can still raise it, and then the page shows "could not load".
 - Imported paid payouts have no paid date (the workbook has none), so Payouts shows "Date not recorded" for 531 of 536.
 - Performance "Management fees" over 12 months only counts Aug 2026: the workbook's 整体报告 breakdown exists for that month alone.

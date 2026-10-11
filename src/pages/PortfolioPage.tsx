@@ -39,8 +39,8 @@ function periods() {
   const last = m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}`;
   const q = Math.ceil(m / 3);
   return [
-    // The month figures count every night booked in the whole month (functions/api/portfolio/performance.ts), not just the days so far.
-    { key: t.slice(0, 7), label: 'This month', caption: `${monthLabel(t.slice(0, 7))}, whole month as booked` },
+    // This month and this quarter stop at today (functions/api/portfolio/performance.ts); last month is complete.
+    { key: t.slice(0, 7), label: 'This month', caption: `${monthLabel(t.slice(0, 7))} to date` },
     { key: last, label: 'Last month', caption: monthLabel(last) },
     { key: `${y}-q${q}`, label: 'Quarter to date', caption: `Q${q} ${y} to date` },
   ];

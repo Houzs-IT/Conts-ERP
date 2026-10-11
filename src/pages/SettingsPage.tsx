@@ -17,9 +17,10 @@ import { refreshNavCounts } from '../lib/navBadges';
 
 /* ------------------------------------------------------------------ *
  * Settings — organisation-wide defaults (routes.json → SYSTEM →
- * SettingsPage): Company, Locale and money, Operations defaults,
- * Statements and payouts, Security. BUTTONS.md §14: every field saves
- * through PUT /api/settings and every write is audited.
+ * SettingsPage): Company, Management fee, Operations defaults, Owner
+ * report, Approvals, Security. Only settings something in the system
+ * reads are shown (owner, 11 Oct 2026); BUTTONS.md §14: every field
+ * saves through PUT /api/settings and every write is audited.
  *
  * Each section owns its own Save button and dirty state so one edit
  * never commits another section's half-finished change. There is no
@@ -28,13 +29,14 @@ import { refreshNavCounts } from '../lib/navBadges';
  * always visible whether or not the endpoint answers.
  * ------------------------------------------------------------------ */
 
-type SectionKey = 'company' | 'locale' | 'operations' | 'statements' | 'report' | 'approvals' | 'security';
+type SectionKey = 'company' | 'locale' | 'operations' | 'report' | 'approvals' | 'security';
 
 interface Settings {
   company: { legalName: string; companyNumber: string; address: string; supportPhone: string; supportEmail: string };
-  locale: { default: string; timezone: string; currency: string; dateFormat: string; managementFeePct: number };
-  operations: { checkIn: string; checkOut: string; cleaningWindowHours: number; linenSets: number; photoRequiredToMarkReady: boolean };
-  statements: { cycleDay: number; autoGenerate: boolean; payoutMethod: string };
+  /** Statements use the fee for a unit whose contract has none (functions/_lib/ownerStatement.ts). */
+  locale: { managementFeePct: number };
+  /** The housekeeping board's standard times (functions/api/housekeeping/board.ts). */
+  operations: { checkIn: string; checkOut: string };
   /** The Owner Income Report's wording; miscChargeMonthly is sen. Terms are one per line. */
   report: { paymentTerms: string; monthlyTerms: string; yearTerms: string; miscChargeMonthly: number };
   /** Maker-checker, off by default (owner, 11 Oct 2026); limits in sen (functions/_lib/approvals.ts). */
@@ -57,9 +59,8 @@ const FALLBACK: Settings = {
     supportPhone: '+60 11-6133 3289',
     supportEmail: 't.conts725@gmail.com',
   },
-  locale: { default: 'en-MY', timezone: 'Asia/Kuala_Lumpur', currency: 'MYR', dateFormat: 'D MMM YYYY', managementFeePct: 25 },
-  operations: { checkIn: '15:00', checkOut: '11:00', cleaningWindowHours: 4, linenSets: 2, photoRequiredToMarkReady: true },
-  statements: { cycleDay: 1, autoGenerate: true, payoutMethod: 'bank_transfer' },
+  locale: { managementFeePct: 25 },
+  operations: { checkIn: '15:00', checkOut: '11:00' },
   report: { paymentTerms: '7th every month', monthlyTerms: '', yearTerms: '', miscChargeMonthly: 10000 },
   approvals: { enabled: false, expenseThreshold: 50000, financeAdminLimit: 200000 },
   security: { staffInactivityTimeoutMins: 10080, ownerInactivityTimeoutMins: 480, absoluteTimeoutHours: 720, lockoutAttempts: 5, lockoutMinutes: 15, require2faRoles: '' },
@@ -67,27 +68,6 @@ const FALLBACK: Settings = {
 
 /* -------------------------------- options -------------------------------- */
 const TWO_STEP_ROLES = ['management', 'finance_admin', 'operations_manager', 'operations_staff', 'housekeeper', 'technician', 'owner'];
-const LOCALES = [
-  { value: 'en-MY', label: 'English (Malaysia)' },
-  { value: 'ms-MY', label: 'Bahasa Melayu (planned)', disabled: true },
-  { value: 'zh-Hans', label: 'Chinese, simplified (planned)', disabled: true },
-];
-const TIMEZONES = ['Asia/Kuala_Lumpur', 'Asia/Singapore', 'Asia/Bangkok', 'Asia/Jakarta'];
-const CURRENCIES = [
-  { value: 'MYR', label: 'MYR — Malaysian ringgit, shown as RM' },
-  { value: 'SGD', label: 'SGD — Singapore dollar' },
-  { value: 'THB', label: 'THB — Thai baht' },
-  { value: 'IDR', label: 'IDR — Indonesian rupiah' },
-];
-// One date format everywhere (docs/DATE-FORMAT.md): 16 Sep 2026. Numeric formats are not offered.
-const DATE_FORMATS = [
-  { value: 'D MMM YYYY', label: '16 Sep 2026' },
-];
-const PAYOUT_METHODS = [
-  { value: 'bank_transfer', label: 'Bank transfer' },
-  { value: 'cheque', label: 'Cheque' },
-  { value: 'manual', label: 'Manual, recorded elsewhere' },
-];
 const INACTIVITY = [
   { value: 15, label: '15 minutes' },
   { value: 30, label: '30 minutes' },
@@ -146,23 +126,16 @@ function ToggleField({ label, description, checked, onChange }: {
 }
 
 /** One saveable section. Owns its Save / Discard controls and dirty pill. */
-function SectionCard({ title, description, dirty, busy, onSave, onDiscard, saveLabel, children, notUsed, notUsedLabel = 'Not used yet', readOnly }: {
+function SectionCard({ title, description, dirty, busy, onSave, onDiscard, saveLabel, children, readOnly }: {
   title: string; description: string; dirty: boolean; busy: boolean; readOnly?: boolean;
   onSave: () => void; onDiscard: () => void; saveLabel: string; children: ReactNode;
-  /** Saved but nothing reads it yet: say so, so nobody believes changing it changes the system. */
-  notUsed?: string;
-  notUsedLabel?: string;
 }) {
   return (
     <Card>
       <div className="px-5 pt-5 pb-4 [border-bottom:1px_solid_var(--color-line-soft)] flex items-start justify-between gap-4 flex-wrap">
         <div className="flex flex-col gap-1 min-w-0 flex-1">
-          <span className="flex items-center gap-2 flex-wrap">
-            <span className="text-[16px] font-semibold tracking-[-0.01em]">{title}</span>
-            {notUsed && <StatusBadge tone="warning" label={notUsedLabel} size="sm" />}
-          </span>
+          <span className="text-[16px] font-semibold tracking-[-0.01em]">{title}</span>
           <span className="text-meta text-muted-ink leading-[1.45]">{description}</span>
-          {notUsed && <span className="text-meta text-warning leading-[1.45] text-pretty">{notUsed}</span>}
         </div>
         {readOnly ? <StatusBadge tone="neutral" label="Management changes these" size="sm" /> : <div className="flex items-center gap-2 flex-wrap">
           {dirty && (
@@ -226,7 +199,6 @@ export default function SettingsPage() {
     company: { ...base.company, ...saved.company },
     locale: { ...base.locale, ...saved.locale },
     operations: { ...base.operations, ...saved.operations },
-    statements: { ...base.statements, ...saved.statements },
     report: { ...base.report, ...saved.report },
     approvals: { ...FALLBACK.approvals, ...base.approvals, ...saved.approvals },
     security: { ...base.security, ...saved.security },
@@ -266,8 +238,6 @@ export default function SettingsPage() {
       if (fee == null || fee < 0 || fee > 100) e['locale.managementFeePct'] = 'Enter a share from 0 to 100%.';
     }
     if (k === 'operations') {
-      if (!inRange(draft.operations.cleaningWindowHours, 1, 24)) e['operations.cleaningWindowHours'] = 'Enter whole hours from 1 to 24.';
-      if (!inRange(draft.operations.linenSets, 1, 10)) e['operations.linenSets'] = 'Enter a whole number from 1 to 10.';
       if (!draft.operations.checkIn) e['operations.checkIn'] = 'Enter the standard check-in time.';
       if (!draft.operations.checkOut) e['operations.checkOut'] = 'Enter the standard checkout time.';
     }
@@ -284,15 +254,9 @@ export default function SettingsPage() {
 
   const MESSAGES: Record<SectionKey, { title: string; body?: string }> = {
     company: { title: 'Company details saved.', body: 'They appear on the letterhead of statements, invoices and receipts.' },
-    locale: { title: 'Locale and money settings saved.', body: 'New documents use the updated timezone, currency and date format.' },
-    operations: { title: 'Operations defaults saved.', body: 'New reservations and cleaning jobs use these times.' },
-    statements: {
-      title: 'Owner statements and payouts saved.',
-      body: draft.statements.autoGenerate
-        ? `Owner statements are made automatically on day ${draft.statements.cycleDay} of each month.`
-        : 'Automatic statements are off. Make owner statements by hand each period.',
-    },
-    report: { title: 'Owner statement wording saved.', body: 'Statements opened from now on use it. The miscellaneous charge applies to statements generated from now on.' },
+    locale: { title: 'Operator share saved.', body: 'Statements generated from now on use it for units with no share on their contract.' },
+    operations: { title: 'Operations defaults saved.', body: 'The cleaning board uses these times from now on.' },
+    report: { title: 'Owner statement wording saved.', body: 'Reports opened from now on use it. The miscellaneous charge applies to statements generated from now on.' },
     approvals: draft.approvals.enabled
       ? { title: 'Approvals switched on.', body: 'Refunds, owner payouts, owner adjustments, write-offs and large expenses now wait for a second person.' }
       : { title: 'Approvals switched off.', body: 'Money actions happen at once, without a second person.' },
@@ -372,36 +336,28 @@ export default function SettingsPage() {
             </Grid>
           </SectionCard>
 
-          {/* ----------------------- Locale and money ----------------------- */}
+          {/* ------------------------ Operator share ------------------------ */}
           <SectionCard
-            title="Locale and money"
-            description="How dates, times and money are read. The system works in English, Malaysia time and ringgit."
-            notUsedLabel="Partly used"
-            notUsed="The default fee is used by statements for a unit with no fee on its contract. The language, timezone and currency are fixed for now: changing them has no effect yet."
-            readOnly={readOnly} dirty={dirty('locale')} busy={busy === 'locale'} saveLabel="Save locale"
+            title="Operator share"
+            description="The share owner statements take for a unit whose contract does not set its own."
+            readOnly={readOnly} dirty={dirty('locale')} busy={busy === 'locale'} saveLabel="Save share"
             onSave={() => save('locale')} onDiscard={() => discard('locale')}
           >
-            <Grid>
-              <SelectField label="Default locale" value={draft.locale.default} onChange={v => patch('locale', { default: v })} options={LOCALES} />
-              <SelectField label="Timezone" value={draft.locale.timezone} onChange={v => patch('locale', { timezone: v })}
-                options={TIMEZONES.map(tz => ({ value: tz, label: tz.replace('_', ' ') }))} />
-              <SelectField label="Currency" value={draft.locale.currency} onChange={v => patch('locale', { currency: v })} options={CURRENCIES} />
-              <SelectField label="Date format" value={draft.locale.dateFormat} onChange={v => patch('locale', { dateFormat: v })} options={DATE_FORMATS} />
+            <div className="max-w-[340px]">
               <PercentInput
                 label="Default operator share"
                 value={draft.locale.managementFeePct}
                 error={errors['locale.managementFeePct']}
-                help="Applied to new contracts unless the owner's contract sets its own."
+                help="Used when a statement is generated for a unit with no share on its contract."
                 onChange={v => patch('locale', { managementFeePct: held(v) }, 'locale.managementFeePct')}
               />
-            </Grid>
+            </div>
           </SectionCard>
 
           {/* --------------------- Operations defaults --------------------- */}
           <SectionCard
             title="Operations defaults"
-            description="Standard times for check-in, checkout and cleaning."
-            notUsed="Saved, but not read yet: new reservations use 15:00 and 11:00, and whether a photo is needed is set on each cleaning job. Cleaning rules are on the Cleaning screen."
+            description="Standard check-in and checkout times. The cleaning board uses them for a reservation with no time of its own, and to flag early check-ins and late checkouts."
             readOnly={readOnly} dirty={dirty('operations')} busy={busy === 'operations'} saveLabel="Save operations"
             onSave={() => save('operations')} onDiscard={() => discard('operations')}
           >
@@ -420,62 +376,7 @@ export default function SettingsPage() {
                 error={errors['operations.checkOut']}
                 onChange={v => patch('operations', { checkOut: v }, 'operations.checkOut')}
               />
-              <NumberInput
-                label="Cleaning window"
-                min={1}
-                max={24}
-                suffix="h"
-                value={draft.operations.cleaningWindowHours}
-                error={errors['operations.cleaningWindowHours']}
-                help="Hours a cleaning job needs before the next check-in. Its time allowed counts down to it."
-                onChange={v => patch('operations', { cleaningWindowHours: held(v) }, 'operations.cleaningWindowHours')}
-              />
-              <NumberInput
-                label="Linen sets per unit"
-                min={1}
-                max={10}
-                value={draft.operations.linenSets}
-                error={errors['operations.linenSets']}
-                help="Sets held per unit so every cleaning job has fresh linen ready."
-                onChange={v => patch('operations', { linenSets: held(v) }, 'operations.linenSets')}
-              />
             </Grid>
-            <div className="[border-top:1px_solid_var(--color-line-soft)] pt-4">
-              <ToggleField
-                label="Require a photo to mark a unit ready"
-                description="A cleaning job cannot be completed without at least one photo. Enforced in the field app."
-                checked={draft.operations.photoRequiredToMarkReady}
-                onChange={v => patch('operations', { photoRequiredToMarkReady: v })}
-              />
-            </div>
-          </SectionCard>
-
-          {/* -------------------- Statements and payouts -------------------- */}
-          <SectionCard
-            title="Owner statements and payouts"
-            description="When owner statements are cut and how owners are paid."
-            notUsed="Saved, but not read yet: statements are made by hand from Owner statements, and owner payouts are recorded on Owner payouts."
-            readOnly={readOnly} dirty={dirty('statements')} busy={busy === 'statements'} saveLabel="Save statements"
-            onSave={() => save('statements')} onDiscard={() => discard('statements')}
-          >
-            <Grid>
-              <SelectField
-                label="Statement cycle day"
-                value={draft.statements.cycleDay}
-                help="Day of the month the previous period is closed and statements are cut."
-                onChange={v => patch('statements', { cycleDay: Number(v) })}
-                options={Array.from({ length: 28 }, (_, i) => i + 1).map(day => ({ value: String(day), label: `Day ${day}` }))}
-              />
-              <SelectField label="Owner payout method" value={draft.statements.payoutMethod} onChange={v => patch('statements', { payoutMethod: v })} options={PAYOUT_METHODS} />
-            </Grid>
-            <div className="[border-top:1px_solid_var(--color-line-soft)] pt-4">
-              <ToggleField
-                label="Generate statements automatically"
-                description="On the cycle day, owner statements are made as drafts for review. Turn off to make them by hand each period."
-                checked={draft.statements.autoGenerate}
-                onChange={v => patch('statements', { autoGenerate: v })}
-              />
-            </div>
           </SectionCard>
 
           {/* ------------------------- Owner report ------------------------- */}
