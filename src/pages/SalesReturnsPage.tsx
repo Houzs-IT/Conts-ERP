@@ -11,7 +11,7 @@ import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
-import { rm, date } from '../lib/format';
+import { rm, date, todayMyt } from '../lib/format';
 import { cx } from '../lib/design-tokens';
 import { StatusBadge } from '../components/StatusBadge';
 import { statusLabel } from '../lib/status';
@@ -116,7 +116,7 @@ interface RetLine { doLineId: string; itemCode: string; description: string; uom
 function ReturnDrawer({ openDos, canWrite, onClose, onCreated }: { openDos: OpenDo[]; canWrite: boolean; onClose: () => void; onCreated: (p: Sret) => void }) {
   const [doId, setDoId] = useState('');
   const [lines, setLines] = useState<RetLine[]>([]);
-  const [returnDate, setReturnDate] = useState(new Date().toISOString().slice(0, 10));
+  const [returnDate, setReturnDate] = useState(todayMyt());
   const [reason, setReason] = useState('');
   const [creditNoteRef, setCreditNoteRef] = useState('');
   const [notes, setNotes] = useState('');
@@ -135,7 +135,7 @@ function ReturnDrawer({ openDos, canWrite, onClose, onCreated }: { openDos: Open
   const refund = willReturn.reduce((s, l) => s + Math.min(l.qty ?? 0, l.returnable) * l.unitPriceSen, 0);
   const canSave = canWrite && doId !== '' && willReturn.length > 0;
   const qtyError = (l: RetLine) => (l.qty ?? 0) > l.returnable ? `Only ${l.returnable} can be returned.` : undefined;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayMyt();
   const dateError = submitted && !returnDate ? 'Enter the return date.' : undefined;
 
   function submit() {
@@ -144,7 +144,7 @@ function ReturnDrawer({ openDos, canWrite, onClose, onCreated }: { openDos: Open
     const payloadLines = willReturn.map(l => ({ deliveryOrderLineId: l.doLineId, itemCode: l.itemCode, description: l.description, uom: l.uom, unitPriceSen: l.unitPriceSen, qtyReturned: l.qty ?? 0, reason: l.reason }));
     api.post('/sales-returns', { deliveryOrderId: doId, returnDate, reason, creditNoteRef, notes, lines: payloadLines }).catch(notifyFailure);
     onCreated({
-      id: `sret-new-${crypto.randomUUID().slice(0, 8)}`, returnNumber: `SRET-${new Date().getFullYear()}-NEW`, customerName: dord?.customerName ?? '', doNumber: dord?.doNumber ?? '',
+      id: `sret-new-${crypto.randomUUID().slice(0, 8)}`, returnNumber: `SRET-${todayMyt().slice(0, 4)}-NEW`, customerName: dord?.customerName ?? '', doNumber: dord?.doNumber ?? '',
       returnDate, status: 'POSTED', refundSen: refund, creditNoteRef, reason, notes,
       lines: payloadLines.map(l => ({ itemCode: l.itemCode, description: l.description, uom: l.uom, qtyReturned: l.qtyReturned, unitPriceSen: l.unitPriceSen, lineTotalSen: l.qtyReturned * l.unitPriceSen, reason: l.reason })),
     });

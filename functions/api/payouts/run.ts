@@ -1,4 +1,4 @@
-import { type Env, all, json, fail, nowIso } from '../../_lib/db';
+import { type Env, all, json, fail, mytToday } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { approvalsEnabled, submit } from '../../_lib/approvals';
 
@@ -35,7 +35,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   }
   if (!chosen.length) return fail('NOTHING_TO_RUN', skipped[0]?.reason ?? 'None of these payouts can join a run.', 409);
 
-  const runRef = `RUN-${nowIso().slice(0, 10).replace(/-/g, '')}-${crypto.randomUUID().slice(0, 4).toUpperCase()}`;
+  const runRef = `RUN-${mytToday().replace(/-/g, '')}-${crypto.randomUUID().slice(0, 4).toUpperCase()}`;
   const total = chosen.reduce((n, r) => n + Number(r.amount), 0);
   const owners = new Set(chosen.map(r => r.owner_id)).size;
   const amount = `RM ${(total / 100).toLocaleString('en-MY', { minimumFractionDigits: 2 })}`;

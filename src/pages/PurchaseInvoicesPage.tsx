@@ -11,7 +11,7 @@ import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
-import { rm, date } from '../lib/format';
+import { rm, date, todayMyt } from '../lib/format';
 import { cx } from '../lib/design-tokens';
 import { StatusBadge } from '../components/StatusBadge';
 import { statusLabel } from '../lib/status';
@@ -126,7 +126,7 @@ function BillDrawer({ openGrns, canWrite, onClose, onCreated }: { openGrns: Open
   const [grnId, setGrnId] = useState('');
   const [lines, setLines] = useState<BillLine[]>([]);
   const [ref, setRef] = useState('');
-  const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().slice(0, 10));
+  const [invoiceDate, setInvoiceDate] = useState(todayMyt());
   const [dueDate, setDueDate] = useState('');
   const [notes, setNotes] = useState('');
   const grn = openGrns.find(g => g.id === grnId);
@@ -151,7 +151,7 @@ function BillDrawer({ openGrns, canWrite, onClose, onCreated }: { openGrns: Open
     const payloadLines = willBill.map(l => ({ grnLineId: l.grnLineId, itemCode: l.itemCode, description: l.description, uom: l.uom, unitPriceSen: l.unitPriceSen, qty: l.qty ?? 0 }));
     api.post('/purchase-invoices', { grnId, supplierInvoiceRef: ref, invoiceDate, dueDate: dueDate || null, notes, lines: payloadLines }).catch(notifyFailure);
     onCreated({
-      id: `pi-new-${crypto.randomUUID().slice(0, 8)}`, invoiceNumber: `PINV-${new Date().getFullYear()}-NEW`, supplierInvoiceRef: ref, supplierName: grn?.supplierName ?? '', supplierCode: '',
+      id: `pi-new-${crypto.randomUUID().slice(0, 8)}`, invoiceNumber: `PINV-${todayMyt().slice(0, 4)}-NEW`, supplierInvoiceRef: ref, supplierName: grn?.supplierName ?? '', supplierCode: '',
       grnNumber: grn?.grnNumber ?? '', poNumber: grn?.poNumber ?? '', invoiceDate, dueDate, status: 'POSTED', totalSen: total, paidSen: 0, outstandingSen: total, notes,
       lines: payloadLines.map(l => ({ itemCode: l.itemCode, description: l.description, uom: l.uom, qty: l.qty, unitPriceSen: l.unitPriceSen, lineTotalSen: l.qty * l.unitPriceSen })),
     });

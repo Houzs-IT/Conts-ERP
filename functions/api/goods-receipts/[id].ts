@@ -1,4 +1,4 @@
-import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/db';
+import { type Env, all, one, run, json, fail, nowIso, audit, mytToday } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { recomputePoStatus, toGrnHeaderPayload, toGrnLinePayload, type GrnHeaderRow, type GrnLineRow } from '../../_lib/goods-receipts';
 import { postStockMovement, stockShortages, shortageText } from '../../_lib/stock-ops';
@@ -52,7 +52,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     for (const l of lines) {
       if (l.purchase_order_line_id) await run(env, 'UPDATE purchase_order_lines SET received_qty = GREATEST(0, received_qty - ?) WHERE id = ?', l.qty_accepted, l.purchase_order_line_id);
       // Reverse the stock this GRN posted into the receiving warehouse.
-      if (cur.warehouse_id && l.qty_accepted > 0) await postStockMovement(env, { itemCode: l.item_code, warehouseId: cur.warehouse_id, qtyDelta: -l.qty_accepted, movementType: 'RECEIPT', refType: 'GRN-REV', refId: id, note: `${cur.grn_number} cancelled`, movedAt: now.slice(0, 10), createdBy: session.userId });
+      if (cur.warehouse_id && l.qty_accepted > 0) await postStockMovement(env, { itemCode: l.item_code, warehouseId: cur.warehouse_id, qtyDelta: -l.qty_accepted, movementType: 'RECEIPT', refType: 'GRN-REV', refId: id, note: `${cur.grn_number} cancelled`, movedAt: mytToday(), createdBy: session.userId });
     }
     await run(env, 'UPDATE goods_receipts SET status = ?, updated_at = ? WHERE id = ?', 'CANCELLED', now, id);
     await recomputePoStatus(env, cur.purchase_order_id);
