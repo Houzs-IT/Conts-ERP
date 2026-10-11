@@ -317,7 +317,7 @@ unbilledDeliveries.get('/', async (c) => {
        Note this is a VALUE test, not a QTY test: a line can have remaining units
        worth nothing, and that is not leakage either.
        CONSIGNMENT needs no test at all — consignment DOs are a different TABLE
-       (scm.consignment_delivery_orders, mig 0153, CN- numbering; see
+       (scm.consignment_delivery_orders, mig 0153, CSN- numbering (CN- before 11 Oct 2026); see
        routes/consignment-notes.ts). This report only ever reads delivery_orders,
        so a consignment note can never reach it. */
     if (!a || a.unbilled <= 0) continue;

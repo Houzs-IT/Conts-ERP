@@ -45,7 +45,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   // Two notes made at once can pick the same next number; the second header insert then clashes before anything is
   // written and takes the next one (isNumberClash).
   for (let attempt = 1; ; attempt++) {
-    cnNumber = await nextNumber(env, 'consignment_notes', 'cn_number', 'CN');
+    cnNumber = await nextNumber(env, 'consignment_notes', 'cn_number', 'CSN');
     try {
       await run(env, `INSERT INTO consignment_notes (id, cn_number, consignee_name, consignee_phone, cn_date, status, notes, total_sen, created_by, created_at, updated_at)
                       VALUES (?, ?, ?, ?, ?, 'OPEN', ?, ?, ?, ?, ?)`,

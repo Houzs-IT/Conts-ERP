@@ -68,4 +68,10 @@ check("another supplier's invoice refused (422)", r.status === 422, r.text);
 r = await call('GET', '/api/credit-notes', undefined, 'housekeeper'); check('housekeeper cannot list notes (403)', r.status === 403, r.text);
 r = await call('POST', '/api/credit-notes', { kind: 'CN', partyName: 'x', lines: [{ amountSen: 100 }] }, 'housekeeper'); check('housekeeper cannot raise notes (403)', r.status === 403, r.text);
 
+// --- consignment notes number under CSN-, never CN- (owner, 11 Oct 2026) ---
+r = await call('POST', '/api/credit-notes', { kind: 'CN', partyName: `Series ${tag}`, lines: [{ description: 'Series check', amountSen: 100 }] });
+check('a credit note numbers under CN-', r.status === 201 && /^CN-\d{4}-\d{4}$/.test(r.json?.noteNumber ?? ''), r.text);
+r = await call('POST', '/api/consignment-notes', { consigneeName: `Showroom ${tag}`, lines: [{ itemCode: `CNI-${tag}`, description: 'CN item', qtyConsigned: 1, unitPriceSen: 100 }] });
+check('a consignment note numbers under CSN-, so the two never share a prefix', r.status === 201 && /^CSN-\d{4}-\d{4}$/.test(r.json?.cnNumber ?? ''), r.text);
+
 done();
