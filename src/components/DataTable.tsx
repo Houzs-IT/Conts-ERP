@@ -249,7 +249,8 @@ function cellFace<R>(c: Column<R>, r: R): ReactNode {
     case 'phone': return <PhoneText value={v ? String(v) : null} whatsapp={false} />;
     case 'ref': return v ? <span className="font-mono text-meta whitespace-nowrap">{String(v)}</span> : none;
     default: {
-      const s = v !== null && v !== undefined && v !== '' ? String(v) : textOf(c, r);
+      // A column's text() is its words (a label for a stored code); the raw value only when it has none.
+      const s = c.text ? textOf(c, r) : v !== null && v !== undefined && v !== '' ? String(v) : '';
       return s ? <span className="block whitespace-nowrap overflow-hidden text-ellipsis" title={s}>{s}</span> : none;
     }
   }

@@ -16,7 +16,7 @@ import { useSession } from '../lib/session';
 import { useUnitRoster } from '../lib/useUnitRoster';
 import { useMedia } from '../lib/useMedia';
 import { cx } from '../lib/design-tokens';
-import { rm, plural } from '../lib/format';
+import { rm, plural, dateShort } from '../lib/format';
 import { runEach, skippedNote } from '../lib/bulk';
 import {
   PillTabs, OpsModal, FormRow, INPUT, TEXTAREA, CloseButton, MediaGrid, MediaDrop, uploadTo, CATEGORY, stamp, hm, mytDay, type MediaItem,
@@ -415,7 +415,7 @@ function IssueDetail({ issue: i, threshold, money, skus, onClose, onChanged }: {
                 {!done && <button type="button" aria-label="Remove window" className="text-muted-ink cursor-pointer hover:text-danger" onClick={() => void act(`w-${w.id}`, () => api.del(`/maintenance/issues/${i.id}/windows/${w.id}`), 'Window removed.')}><Icon name="Trash2" size="sm" /></button>}
               </div>
               {w.note && <span className="text-muted-ink">{w.note}</span>}
-              {w.overlaps.map(o => <span key={o.reservationId} className="text-meta text-danger">Overlaps the stay of {o.guestName} ({o.checkIn} {o.checkInTime} to {o.checkOut} {o.checkOutTime}). Make sure the guest agreed.</span>)}
+              {w.overlaps.map(o => <span key={o.reservationId} className="text-meta text-danger">Overlaps the stay of {o.guestName} ({dateShort(o.checkIn)} {o.checkInTime} to {dateShort(o.checkOut)} {o.checkOutTime}). Make sure the guest agreed.</span>)}
             </div>
           ))}
       </section>
@@ -590,7 +590,7 @@ function CompleteModal({ issue, onClose, onDone }: { issue: Issue; onClose: () =
       <FormRow label="Who pays">
         <select className={INPUT} value={payer} onChange={e => setPayer(e.target.value as ChargeTo)}>{(['owner', 'the_conts', 'guest_deposit', 'warranty'] as ChargeTo[]).map(p => <option key={p} value={p}>{PAYER[p]}</option>)}</select>
       </FormRow>
-      {issue.blocksUnit && <span className="text-meta text-muted-ink">The unit goes back to ready. Remove any calendar block that is no longer needed on the Calendar.</span>}
+      {issue.blocksUnit && <span className="text-meta text-muted-ink">The unit goes back to ready, and the nights blocked for this repair go back on sale.</span>}
     </OpsModal>
   );
 }

@@ -124,6 +124,12 @@ export interface MediaItem { id: string; kind: string; url: string; fileName: st
 /** Thumbnails: photos as images, videos as a play tile. Click opens the file full size. */
 export function MediaGrid({ items, cols = 4 }: { items: MediaItem[]; cols?: number }) {
   const [view, setView] = useState<MediaItem | null>(null);
+  useEffect(() => {
+    if (!view) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); setView(null); } };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [view]);
   if (!items.length) return null;
   return (
     <>
@@ -134,7 +140,7 @@ export function MediaGrid({ items, cols = 4 }: { items: MediaItem[]; cols?: numb
             {m.kind === 'video'
               ? <span className="absolute inset-0 grid place-items-center bg-charcoal text-white"><Icon name="Play" size="lg" /><span className="absolute bottom-1 left-1 right-1 text-caption truncate text-[var(--color-text-on-dark)]">Video</span></span>
               : <img src={m.url} alt={m.fileName} loading="lazy" className="w-full h-full object-cover block" />}
-            {m.stage && <span className="absolute top-1 left-1 px-1.5 rounded-pill text-caption bg-[rgba(21,21,21,0.7)] text-white capitalize">{m.stage}</span>}
+            {m.stage && <span className="absolute top-1 left-1 px-1.5 rounded-pill text-caption bg-[rgba(21,21,21,0.7)] text-white">{m.stage.charAt(0).toUpperCase() + m.stage.slice(1)}</span>}
           </button>
         ))}
       </div>
