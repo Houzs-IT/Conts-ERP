@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import { lazy, Suspense, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import Icon from '../components/Icon';
 import PageHeader from '../components/PageHeader';
 import { StatusBadge } from '../components/StatusBadge';
@@ -25,6 +25,10 @@ import {
   useUrlState, ListCard, SearchBox, shiftMonth,
   useFinanceFilters, type FinanceFilters,
 } from './finance/listKit';
+import { Segmented as Tabs } from '../components/ops/OpsUi';
+import { RowsSkeleton } from '../components/Loading';
+
+const ContractorClaims = lazy(() => import('./finance/ContractorClaims'));
 
 // Category is a closed list. The monthly-expense dialog only offers the recurring
 // operating categories (internet / electricity / water / cleaning / maintenance /
@@ -100,7 +104,31 @@ function qs(base: Record<string, string>, extra: Record<string, string | number>
   return p.toString();
 }
 
-export default function ExpensesPage() {
+/** Accounts payable (owner, 11 Oct 2026: "expenses I treat as AP, done by finance"), `#/finance/payables`; the old
+ *  `#/finance/expenses` redirects here. Two tabs: Bills, the expenses entered against units (the same rows unit
+ *  costs and owner statements read, unchanged), and Contractor claims, what maintenance jobs owe their technician or
+ *  contractor, paid or not. */
+type ApTab = 'bills' | 'claims';
+const BILL_KEYS = ['month', 'category', 'building', 'unit', 'owner', 'q', 'view', 'sort', 'page', 'size', 'paid'];
+
+export default function AccountsPayablePage() {
+  const url = useUrlState();
+  const tab: ApTab = url.get('tab') === 'claims' ? 'claims' : 'bills';
+  const tabs = (
+    <Tabs<ApTab> label="Bills or contractor claims" value={tab} onChange={t => url.set({ tab: t === 'bills' ? null : t, ...Object.fromEntries(BILL_KEYS.map(k => [k, null])) })}
+      className="self-start" options={[{ value: 'bills', label: 'Bills' }, { value: 'claims', label: 'Contractor claims' }]} />
+  );
+  if (tab === 'bills') return <ExpenseBills tabs={tabs} />;
+  return (
+    <>
+      <PageHeader title="Accounts payable" sub="What maintenance jobs owe their technician or contractor, and whether it is paid." />
+      {tabs}
+      <Suspense fallback={<RowsSkeleton rows={6} cols={5} />}><ContractorClaims /></Suspense>
+    </>
+  );
+}
+
+function ExpenseBills({ tabs }: { tabs: ReactNode }) {
   const toast = useToast();
   const url = useUrlState();
   const filters = useFinanceFilters();
@@ -254,11 +282,12 @@ export default function ExpensesPage() {
   return (
     <>
       <PageHeader
-        title="Expenses"
+        title="Accounts payable"
         sub={data ? subParts.join(' · ') : 'Loading…'}
         actions={<Button size="sm" variant="secondary" onClick={() => setReporting(true)}>Generate report</Button>}
         primary={<Button size="sm" variant="primary" onClick={() => setCreating(true)}>Add expense</Button>}
       />
+      {tabs}
 
       {error && view === 'grouped' && <StaleBanner message={`Showing the last figures we have. ${error}`} onRetry={refresh} />}
 

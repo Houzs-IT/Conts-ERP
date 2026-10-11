@@ -37,7 +37,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     data: rows.map(r => ({
       accountId: r.id, unitId: r.unit_id, unitLabel: `${r.property_name} ${r.unit_number}`, kind: r.kind, kindLabel: KIND_LABEL[r.kind],
       accountNo: r.account_no, provider: r.provider, expenseId: r.expense_id, amount: r.amount == null ? null : Number(r.amount), chargeTo: r.charge_to ?? null,
-      // A bill recorded some other way (the owner workbook import, the Expenses screen) is shown but not replaced here.
+      // A bill recorded some other way (the owner workbook import, Accounts payable) is shown but not replaced here.
       recordedElsewhere: !!r.expense_id && r.e_ref !== r.account_no,
     })),
   });

@@ -120,9 +120,9 @@ const parse = (v: unknown) => (typeof v === 'string' ? (() => { try { return JSO
 function linkFor(kind: ApprovalKind, entityId: string, payload: any): string | null {
   switch (kind) {
     case 'guest_refund': return `/reservations/bookings?open=${encodeURIComponent(entityId)}`;
-    case 'payout_run': return '/finance/payouts?state=pending';
+    case 'payout_run': return '/owners?view=payouts&state=pending';
     case 'owner_adjustment': case 'debt_write_off': return payload?.ownerId ? `/owners/${encodeURIComponent(payload.ownerId)}` : null;
-    case 'expense': return payload?.unitId ? `/finance/expenses?unit=${encodeURIComponent(payload.unitId)}` : '/finance/expenses';
+    case 'expense': return payload?.unitId ? `/finance/payables?unit=${encodeURIComponent(payload.unitId)}` : '/finance/payables';
   }
 }
 
@@ -285,7 +285,7 @@ async function notifyRequester(env: Env, r: any, decision: Decision) {
     if (r.kind === 'payout_run' && r.status === 'approved') {
       await notifyUsers(env, 'finance', {
         kind: 'payout.run', title: 'Owner payout run approved: make the transfers', body: `${r.summary}. Mark each owner payout paid once the bank confirms it.`,
-        link: '/finance/payouts', entityTable: 'approval_requests', entityId: r.id, dedupeKey: `payout-run-${r.id}`,
+        link: '/owners?view=payouts', entityTable: 'approval_requests', entityId: r.id, dedupeKey: `payout-run-${r.id}`,
       });
     }
   } catch (e) {

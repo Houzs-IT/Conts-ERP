@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Card } from '../components/Card';
-import PageHeader from '../components/PageHeader';
 import { StatusBadge } from '../components/StatusBadge';
+import { SectionHead, PayoutBadge, payoutDestination, payoutStatus, type PayoutRow } from './owners/OwnerMoney';
 import { Button } from '../components/Button';
 import Icon from '../components/Icon';
 import { ConfirmDialog, type ConfirmSpec } from '../components/ConfirmDialog';
@@ -17,20 +17,17 @@ import { api, errorMessage } from '../lib/api';
 import { fetchAllPages } from '../lib/export';
 import { runEach, skippedNote } from '../lib/bulk';
 import { refreshNavCounts } from '../lib/navBadges';
-import { masked, date as fmtDate, monthLabel, plural, titleCase, count } from '../lib/format';
+import { monthLabel, plural, titleCase, count } from '../lib/format';
 import { cx } from '../lib/design-tokens';
-import { PAYOUT, bankName } from '../lib/vocabulary';
+import { PAYOUT } from '../lib/vocabulary';
 import type { PayoutState } from '../lib/types';
 import { useUrlState, SearchBox, FilterSelect } from './finance/listKit';
 import ApprovalBanner from '../components/ApprovalBanner';
 import { isStaged, stagedToast, useApprovalsOn, type Approval, type Staged } from '../lib/approvals';
-import { statusLabel, statusOf } from '../lib/status';
+import { statusLabel } from '../lib/status';
 import { StatRow, StatTile } from '../components/Metric';
 
-interface Payout {
-  id: string; ref?: string; period?: string | null; ownerName: string; amount: number; state: PayoutState; method: string;
-  bankName: string | null; bankLast4: string | null; paidAt: string | null; failureReason: string | null;
-}
+type Payout = PayoutRow;
 interface Payload {
   data: Payout[]; generatedAt: string;
   total?: number; page?: number; pageSize?: number; counts?: Record<PayoutState, number>; outstanding?: number; periods?: string[];
@@ -53,20 +50,10 @@ const GROUP_ORDER: PayoutState[] = ['failed', 'pending', 'processing', 'paid'];
 const RANK: Record<PayoutState, number> = { failed: 0, pending: 1, processing: 2, paid: 3 };
 type Filter = 'all' | PayoutState;
 
-/** Bank never shows more than the tail; the raw number needs an audited reveal on the owner profile. */
-const destination = (p: Payout) => p.bankLast4 ? `${bankName(p.bankName) ?? 'Bank'} ${masked(p.bankLast4)}` : (bankName(p.bankName) ?? 'No bank account');
-/** One status, the paid date folded in when there is one (owner, 11 Oct 2026: "paid date is not needed; simply merge
- *  it"). 531 of 536 imported payouts have no date, so a separate date column mostly said "Date not recorded". */
-const payoutStatus = (p: Payout) =>
-  p.state === 'paid' ? (p.paidAt ? `Paid · ${fmtDate(p.paidAt)}` : 'Paid')
-    : p.state === 'processing' ? 'Transfer in progress'
-    : p.state === 'failed' ? 'Failed'
-    : 'Not paid yet';
-const PayoutBadge = ({ p, size }: { p: Payout; size?: 'sm' | 'md' }) => (
-  <StatusBadge label={payoutStatus(p)} tone={statusOf('payout', p.state).tone} size={size} />
-);
+const destination = payoutDestination;
 
-export default function PayoutsPage() {
+/** `embedded`: shown as the Owners list's Payouts tab (owner, 11 Oct 2026), under the Owners title. */
+export default function PayoutsPage({ embedded = false }: { embedded?: boolean }) {
   const url = useUrlState();
   const { user } = useSession();
   const canAct = !!user && user.role !== 'owner';
@@ -210,7 +197,7 @@ export default function PayoutsPage() {
 
   return (
     <>
-      <PageHeader
+      <SectionHead embedded={embedded}
         title="Owner payouts"
         sub={sum ? `${moneyString(sum.due, 'exact')} not yet paid · ${plural(sum.counts.pending, 'payout')} waiting for a run · ${sum.counts.failed} failed` : ' '}
         primary={<Button size="sm" variant="primary" icon={<Icon name="PlayCircle" size="sm" />} onClick={() => setRunOpen(true)}
@@ -249,7 +236,7 @@ export default function PayoutsPage() {
         server={{ total, page: data?.page ?? page, pageSize: data?.pageSize ?? size, sizes: SIZES, defaultPageSize: PAGE_SIZE, fetchAll }}
         viewParams={['state', 'period', 'q']} filtered={filtered} onClearFilters={() => url.set({ state: null, period: null, q: null, page: null })}
         noun={['payout', 'payouts']} exportName="payouts"
-        empty={{ icon: 'Banknote', title: 'No owner payouts yet', body: 'An owner payout is created for each owner statement when it is sent. Send statements from Owner statements, then start a payout run here.' }}
+        empty={{ icon: 'Banknote', title: 'No owner payouts yet', body: 'An owner payout is created for each owner statement when it is sent. Send statements from the Statements tab, then start a payout run here.' }}
         selectable={canAct ? (r => r.state === 'processing') : false}
         bulkActions={canAct ? ((picked, clear) => (
           <Button size="sm" variant="primary" icon={<Icon name="CheckCircle2" size="sm" />} onClick={() => setBulkPaid({ rows: picked, clear })}>Mark paid</Button>

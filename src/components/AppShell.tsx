@@ -118,7 +118,7 @@ export default function AppShell({
               pointerEvents: drawerOpen ? 'auto' : 'none',
             }}
           >
-            <Sidebar path={path} navigate={drawerNavigate} open onToggle={() => setDrawerOpen(false)} />
+            <Sidebar path={path} navigate={drawerNavigate} open phone onToggle={() => setDrawerOpen(false)} />
           </div>
         </>
       ) : (

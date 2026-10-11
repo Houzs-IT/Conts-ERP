@@ -77,10 +77,8 @@ const StockTransfersPage = lazy(() => import('./pages/StockTransfersPage'));
 const StockTakesPage = lazy(() => import('./pages/StockTakesPage'));
 const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage'));
 const ExpensesPage = lazy(() => import('./pages/ExpensesPage'));
-const StatementsPage = lazy(() => import('./pages/StatementsPage'));
 const StatementDetailPage = lazy(() => import('./pages/StatementDetailPage'));
 const OwnerIncomeReportPage = lazy(() => import('./pages/OwnerIncomeReportPage'));
-const PayoutsPage = lazy(() => import('./pages/PayoutsPage'));
 const ApprovalsPage = lazy(() => import('./pages/ApprovalsPage'));
 const GuestDocumentsPage = lazy(() => import('./pages/GuestDocumentsPage'));
 const OwnersPage = lazy(() => import('./pages/OwnersPage'));
@@ -152,6 +150,19 @@ function ToUnits({ tab }: { tab?: string }) {
 function ToTaskHistory() {
   const kind = new URLSearchParams(useLocation().search).get('kind');
   return <Navigate replace to={kind === 'maintenance' ? '/operations/maintenance' : '/operations/cleaning?tab=history'} />;
+}
+
+/** A screen that moved: its old address opens the new one and keeps the filters, because links in notifications,
+ *  emails and bookmarks carry the old one. `add` sets extra query values, such as the Owners list's tab. */
+function Moved({ to, add }: { to: string; add?: Record<string, string> }) {
+  const q = new URLSearchParams(useLocation().search);
+  for (const [k, v] of Object.entries(add ?? {})) q.set(k, v);
+  const qs = q.toString();
+  return <Navigate replace to={`${to}${qs ? `?${qs}` : ''}`} />;
+}
+function MovedStatement() {
+  const { id = '' } = useParams();
+  return <Moved to={`/owners/statements/${encodeURIComponent(id)}`} />;
 }
 
 function OwnerProfileRoute() {
@@ -280,15 +291,19 @@ function Routed() {
         {/* Revenue was the same screen as Performance > Analytics (UI audit); one route, the old address redirects. */}
         <Route path="/finance/revenue" element={<Navigate to="/performance/analytics" replace />} />
         <Route path="/performance" element={<Navigate to="/performance/analytics" replace />} />
-        <Route path="/finance/expenses" element={<ExpensesPage />} />
-        <Route path="/finance/statements" element={<StatementsPage />} />
-        <Route path="/finance/statements/:id" element={<StatementDetailPage />} />
-        <Route path="/finance/payouts" element={<PayoutsPage />} />
+        {/* Owner statements and owner payouts moved onto the owner; Expenses is Accounts payable (owner, 11 Oct 2026). */}
+        <Route path="/finance/payables" element={<ExpensesPage />} />
+        <Route path="/finance/expenses" element={<Moved to="/finance/payables" />} />
+        <Route path="/finance/statements" element={<Moved to="/owners" add={{ view: 'statements' }} />} />
+        <Route path="/finance/statements/:id" element={<MovedStatement />} />
+        <Route path="/finance/payouts" element={<Moved to="/owners" add={{ view: 'payouts' }} />} />
         <Route path="/finance/approvals" element={<ApprovalsPage />} />
         <Route path="/finance/documents" element={<GuestDocumentsPage />} />
         <Route path="/owners" element={<OwnersPage />} />
         <Route path="/owners/:id" element={<OwnerProfileRoute />} />
         <Route path="/owners/contracts" element={<ContractsPage />} />
+        <Route path="/owners/statements" element={<Moved to="/owners" add={{ view: 'statements' }} />} />
+        <Route path="/owners/statements/:id" element={<StatementDetailPage />} />
         <Route path="/performance/analytics" element={<AnalyticsPage />} />
         <Route path="/performance/pricing" element={<PricingPage />} />
         <Route path="/performance/reviews" element={<ReviewsPage />} />

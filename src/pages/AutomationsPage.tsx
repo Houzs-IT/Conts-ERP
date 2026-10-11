@@ -259,7 +259,7 @@ const FALLBACK: Payload = {
     { id: 'finance.payout_failed', name: 'Owner payout failed (internal)', template: 'finance.payout_failed', group: 'ops_alerts',
       trigger: 'payout.state → failed', timing: 'Immediate', channels: ['In-app', 'Email'],
       needs: 'Destination: Owner payouts',
-      preview: 'Owner payout to {owner} ({amount}) failed: {reason}. Retry or update bank details in Owner payouts.',
+      preview: 'Owner payout to {owner} ({amount}) failed: {reason}. Retry or update bank details on the owner page.',
       delivery: 'transactional', quietHours: 'always', isActive: true },
 
     // Field app

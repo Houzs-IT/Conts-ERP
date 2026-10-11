@@ -7,7 +7,7 @@ import { refOf } from '../../_lib/ops';
 const STATES = ['failed', 'pending', 'processing', 'paid'];
 const METHOD_LABEL: Record<string, string> = { bank_transfer: 'Bank transfer', ibg: 'IBG', duitnow: 'DuitNow' };
 
-/** GET /api/payouts?state=&period=YYYY-MM&q=&page=&pageSize=
+/** GET /api/payouts?state=&period=YYYY-MM&q=&ownerId=&page=&pageSize=
  *  Attention order (failed, pending, processing, then paid newest first), a page at a time, with counts per
  *  state and the amount still outstanding for the whole filter so the header never depends on the page. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
@@ -23,6 +23,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const state = url.searchParams.get('state');
   const period = url.searchParams.get('period');
   const q = url.searchParams.get('q')?.trim() || null;
+  // One owner's payouts, for the owner's page.
+  const ownerId = url.searchParams.get('ownerId')?.trim() || null;
   if (state && !STATES.includes(state)) return fail('VALIDATION', 'Unknown payout state.', 422);
   if (period && !/^\d{4}-\d{2}$/.test(period)) return fail('VALIDATION', 'Period must look like 2026-08.', 422);
   const page = Math.max(1, Math.floor(Number(url.searchParams.get('page')) || 1));
@@ -32,6 +34,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const base: string[] = [], args: unknown[] = [];
   if (ownerScoped) { base.push('o.user_id = ?'); args.push(session.userId); }
   if (period) { base.push('s.period_start = ?'); args.push(`${period}-01`); }
+  if (ownerId) { base.push('y.owner_id = ?'); args.push(ownerId); }
   if (q) { base.push('o.display_name ILIKE ?'); args.push(`%${q.replace(/[%_\\]/g, m => '\\' + m)}%`); }
   const baseSql = base.length ? 'AND ' + base.join(' AND ') : '';
   const FROM = 'FROM payouts y JOIN owners o ON o.id = y.owner_id LEFT JOIN owner_statements s ON s.id = y.statement_id';
@@ -51,7 +54,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   return json({
     generatedAt: new Date().toISOString(),
-    filtersApplied: { state: state ?? 'all', period: period ?? 'all', q: q ?? '' },
+    filtersApplied: { state: state ?? 'all', period: period ?? 'all', q: q ?? '', ownerId: ownerId ?? '' },
     page, pageSize,
     total: state ? byState[state].count : STATES.reduce((n, st) => n + byState[st].count, 0),
     counts: Object.fromEntries(STATES.map(st => [st, byState[st].count])),
@@ -166,7 +169,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env }) => {
   if (state === 'failed') {
     await notifyUsers(env, 'finance', {
       kind: 'payout.failed', title: `Payout to ${owner?.display_name ?? 'an owner'} failed`,
-      body: failureReason ?? null, link: '/finance/payouts', entityTable: 'payouts', entityId: id, except: session.userId,
+      body: failureReason ?? null, link: '/owners?view=payouts', entityTable: 'payouts', entityId: id, except: session.userId,
     });
   }
   if (owner && (state === 'paid' || state === 'failed')) {

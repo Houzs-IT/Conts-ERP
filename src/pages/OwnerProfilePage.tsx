@@ -31,6 +31,9 @@ import {
 import { statusLabel } from '../lib/status';
 import { TERMS, toOperator } from '../lib/statementTerms';
 import { PhoneText } from '../components/PhoneText';
+import { OwnerPayouts, StatementSteps } from './owners/OwnerMoney';
+import { useSession } from '../lib/session';
+import { areaOpen } from '../lib/navigation';
 
 /**
  * The OWNER PROFILE (`#/owners/:id`): one card per unit with its revenue model and the month's Unit P&L (Gross Income,
@@ -39,6 +42,9 @@ import { PhoneText } from '../components/PhoneText';
  * or by unit, generated here when the month has no owner statement yet. Below: expenses by unit (Cleaning,
  * Maintenance repair, Utilities, Maintenance fee (condo), Other fees), payout details (edited here; they are the owner's, not a unit's) and the
  * statement history, each statement's make-up opening in place.
+ *
+ * Owner statements and owner payouts are run from here (owner, 11 Oct 2026): the month bar takes the statement's
+ * next step (mark final, send, mark paid, add an adjustment) and Owner payouts lists every transfer to this owner.
  */
 
 type ReportView = 'owner' | 'unit';
@@ -47,6 +53,8 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
   const navigate = useNavigate();
   const toast = useToast();
   const rosterUnits = useUnitRoster();
+  const { user } = useSession();
+  const money = !!user && areaOpen(user.role, 'finance', user.access);
   const [params, setParams] = useSearchParams();
   const thisMonth = todayMyt().slice(0, 7);
   // Opens on last month: the month whose statement is being prepared or was just sent.
@@ -101,7 +109,7 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
         toast({ tone: 'info', title: `Nothing to report for ${monthLabel(month)}.`, body: r.skipped ? 'This owner statement is already final; open it from the statement history.' : 'No reservations, costs or charges on this owner\'s units that month.' });
         return;
       }
-      toast({ tone: 'success', title: `Owner statement for ${monthLabel(month)} generated as a draft.`, body: 'Opening the Owner Income Report. Review it on Owner statements before sending.' });
+      toast({ tone: 'success', title: `Owner statement for ${monthLabel(month)} generated as a draft.`, body: 'Opening the Owner Income Report. Check it, then mark it final and send it from this page.' });
       window.location.hash = `#/finance/statements/${encodeURIComponent(made.id)}/report${view === 'owner' ? '?view=owner' : ''}`;
     } catch (e) {
       const locked = e instanceof ApiFailure && e.status === 409;
@@ -200,8 +208,9 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
         <div className="flex flex-wrap items-center gap-3 py-3 px-4">
           <MonthStepper label={monthLabel(month)} onStep={by => setParam('month', shiftMonth(month, by) === shiftMonth(thisMonth, -1) ? null : shiftMonth(month, by))} />
           <span className="text-meta text-muted-ink">Owner statement: {st ? statusLabel('statement', st.state) : 'not generated yet'}
-            {st && <> · <a href={`#/finance/statements/${encodeURIComponent(st.id)}`} className="text-gold-ink no-underline font-medium">Open</a></>}
+            {st && <> · <a href={`#/owners/statements/${encodeURIComponent(st.id)}`} className="text-gold-ink no-underline font-medium">Open</a></>}
           </span>
+          {st && money && <span className="flex flex-wrap items-center gap-2"><StatementSteps key={st.id} statementId={st.id} unitsLabel={o.units.map(u => u.unitLabel).join(', ')} onChanged={reload} /></span>}
           <span className="flex-1" />
           <Segmented<ReportView> label="Report by" value={view} onChange={v => setParam('report', v === 'owner' ? null : 'unit')}
             options={[{ key: 'owner', label: 'By owner' }, { key: 'unit', label: 'By unit' }]} />
@@ -245,6 +254,7 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
           <div className="p-5 flex flex-col gap-5">
             <PayoutDetails owner={o} canEdit onSaved={reload} />
             <StatementHistory key={o.id} o={o} />
+            {money && <OwnerPayouts ownerId={o.id} onChanged={reload} />}
           </div>
         </Card>
         <div className="flex flex-col gap-5 min-w-0">

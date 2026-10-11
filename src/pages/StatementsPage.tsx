@@ -1,12 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import PageHeader from '../components/PageHeader';
 import { StatusBadge } from '../components/StatusBadge';
 import { Button } from '../components/Button';
 import Icon from '../components/Icon';
 import { ConfirmDialog } from '../components/ConfirmDialog';
-import { Field } from '../components/Field';
 import { Select } from '../components/Select';
-import { MoneyInput } from '../components/inputs';
 import { EmptyState } from '../components/States';
 import { StaleBanner } from '../components/DataState';
 import { DataTable, type Column } from '../components/DataTable';
@@ -20,7 +17,8 @@ import type { StatementState } from '../lib/types';
 import { useUrlState, SearchBox, shiftMonth } from './finance/listKit';
 import { FilterBar } from '../components/FilterBar';
 import { statusLabel } from '../lib/status';
-import { Eyebrow, Figure, Segmented } from '../components/Metric';
+import { Eyebrow, Figure } from '../components/Metric';
+import { AdjustDialog, SectionHead } from './owners/OwnerMoney';
 
 interface Statement {
   id: string; period?: string; ownerName: string; unitsLabel: string; state: StatementState;
@@ -51,7 +49,8 @@ const PAGE_SIZE = 200;
 const SIZES = [50, 100, 200, 500];
 const STATE_ORDER: StatementState[] = ['provisional', 'finalised', 'sent', 'paid'];
 
-export default function StatementsPage() {
+/** `embedded`: shown as the Owners list's Statements tab (owner, 11 Oct 2026), under the Owners title, not as a page of its own. */
+export default function StatementsPage({ embedded = false }: { embedded?: boolean }) {
   const url = useUrlState();
   const thisMonth = todayMyt().slice(0, 7);
   const pickedPeriod = /^\d{4}-\d{2}$/.test(url.get('period')) ? url.get('period') : '';
@@ -187,7 +186,7 @@ export default function StatementsPage() {
     return r.rows;
   }
 
-  function openRow(r: Statement) { window.location.hash = `#/finance/statements/${r.id}`; }
+  function openRow(r: Statement) { window.location.hash = `#/owners/statements/${encodeURIComponent(r.id)}`; }
 
   const columns = useMemo<Column<Statement>[]>(() => [
     { key: 'owner', label: 'Owner', value: r => r.ownerName, hideable: false, width: 240, sub: r => r.unitsLabel,
@@ -226,7 +225,7 @@ export default function StatementsPage() {
 
   return (
     <>
-      <PageHeader
+      <SectionHead embedded={embedded}
         title="Owner statements"
         sub={data ? `${periodLabel(viewPeriod)} period · ${plural(current?.count ?? 0, 'statement')} · ${notSent} not yet sent` : `${periodLabel(viewPeriod)} period`}
         right={
@@ -409,62 +408,6 @@ function GenerateDialog({ initialPeriod, periods, lockedPeriods, onClose, onGene
             Generate
           </Button>
         </div>
-      </div>
-    </div>
-  );
-}
-
-/** Records a manual +/- line on one statement. The net moves by exactly the amount;
- *  gross, fee and expenses stay as generated. Local to this page. */
-function AdjustDialog({ target, busy, onClose, onSubmit }: {
-  target: Statement; busy: boolean; onClose: () => void; onSubmit: (label: string, amountSen: number) => void;
-}) {
-  const [label, setLabel] = useState('');
-  const [amount, setAmount] = useState<number | null>(null);
-  const [direction, setDirection] = useState<'deduct' | 'add'>('deduct');
-  const ref = useRef<HTMLDivElement>(null);
-
-  const sen = (amount ?? 0) * (direction === 'deduct' ? -1 : 1);
-  const valid = label.trim() !== '' && sen !== 0;
-  const preview = valid ? target.netPayout + sen : target.netPayout;
-
-  useEffect(() => {
-    ref.current?.querySelector<HTMLInputElement>('input')?.focus();
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !busy) onClose(); };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [busy, onClose]);
-
-  return (
-    <div role="dialog" aria-modal="true" aria-label="Adjust statement"
-      className="fixed inset-0 z-[60] grid place-items-center p-4 sm:p-6 bg-[var(--color-surface-scrim)] [animation:fade-in_var(--motion-standard)_var(--ease-out)_both]">
-      <div onClick={busy ? undefined : onClose} className="absolute inset-0" />
-      <div ref={ref} className="relative w-full max-w-[440px] bg-card rounded-card shadow-[var(--shadow-overlay)] overflow-hidden [animation:dialog-in_var(--motion-slow)_var(--ease-out)_both]">
-        <form onSubmit={e => { e.preventDefault(); if (valid && !busy) onSubmit(label.trim(), sen); }}>
-          <div className="px-[22px] pt-[22px] pb-[18px] flex flex-col gap-3">
-            <h2 className="m-0 text-title font-semibold">Adjust statement</h2>
-            <p className="m-0 text-[13px] leading-[1.55] text-muted-ink">
-              {target.ownerName} · {target.unitsLabel}. Adds a labelled line to the statement and rebalances the net payout. The gross, fee and expenses are unchanged.
-            </p>
-            <Field label="What is this adjustment for?" placeholder="e.g. Goodwill credit, prior-month correction" value={label} onChange={e => setLabel(e.target.value)} />
-            <div className="flex flex-col gap-[7px]">
-              <span className="text-[12px] font-medium text-muted-ink" aria-hidden>Direction</span>
-              <Segmented<'deduct' | 'add'> label="Direction" value={direction} onChange={setDirection} className="self-start"
-                options={[{ key: 'deduct', label: 'Deduct from payout' }, { key: 'add', label: 'Add to payout' }]} />
-            </div>
-            <MoneyInput label="Amount (RM)" placeholder="e.g. 150.00" valueSen={amount} onChangeSen={setAmount} />
-            <div className="py-[9px] px-[11px] rounded-control bg-page border border-solid border-line text-[12px] flex items-center justify-between">
-              <span className="text-muted-ink">Net Payout to Owner after adjustment</span>
-              <span className="font-semibold tabular-nums">{rm(preview)}</span>
-            </div>
-          </div>
-          <div className="py-[14px] px-[22px] [border-top:1px_solid_var(--color-line)] bg-page flex items-center justify-end gap-[9px] flex-wrap">
-            <Button size="sm" variant="secondary" type="button" onClick={onClose} disabled={busy}>Cancel</Button>
-            <Button size="sm" variant="primary" type="submit" loading={busy} disabled={!valid} disabledReason="Add a description and a non-zero amount.">
-              Record adjustment
-            </Button>
-          </div>
-        </form>
       </div>
     </div>
   );

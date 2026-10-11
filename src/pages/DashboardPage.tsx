@@ -312,7 +312,7 @@ export default function DashboardPage() {
     switch (e.action.label) {
       case 'Assign cleaner': setAssign({ ex: e, cleanerId: CREW[0]?.id ?? '' }); break;
       case 'Notify owner': setNotify(e); break;
-      case 'Review and send': go('#/finance/statements'); break;
+      case 'Review and send': go('#/owners?view=statements'); break;
       case 'Open pricing': go(`#/performance/pricing?unitId=${encodeURIComponent(e.unitId ?? '')}`); break;
     }
   }
