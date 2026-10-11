@@ -3,11 +3,15 @@ import { requireSession, isFieldRole } from '../../../_lib/auth';
 import { channexConfigured, channexServer, channexListWebhooks } from '../../../_lib/channex';
 
 /** GET /api/integrations/channex/status — the outbox at a glance: linked units, what is waiting or
- *  failed, and the last calls with Channex's task ids (what the certification form asks for). */
+ *  failed, and the calls with Channex's task ids (what the certification form asks for), newest first,
+ *  ?page=1&pageSize=10 at a time. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
   if (isFieldRole(session.role)) return json({ configured: false, restricted: true });
+  const url = new URL(request.url);
+  const page = Math.max(1, Math.floor(Number(url.searchParams.get('page')) || 1));
+  const pageSize = Math.min(200, Math.max(1, Math.floor(Number(url.searchParams.get('pageSize')) || 10)));
 
   const linked = await one<{ n: number }>(env, 'SELECT count(*)::int AS n FROM units WHERE channex_property_id IS NOT NULL');
   const q = await one<{ queued: number; failed: number; oldest: string | null }>(env, `
@@ -18,7 +22,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const calls = await all<{ kind: string; called_at: string; status: number; task_id: string | null; row_count: number; full_sync: boolean; property_id: string | null; unit: string | null }>(env, `
     SELECT c.kind, c.called_at, c.status, c.task_id, c.row_count, c.full_sync, c.property_id,
            (SELECT u.unit_number FROM units u WHERE u.channex_property_id = c.property_id LIMIT 1) AS unit
-    FROM channex_calls c ORDER BY c.called_at DESC LIMIT 500`);
+    FROM channex_calls c ORDER BY c.called_at DESC, c.id DESC LIMIT ? OFFSET ?`, pageSize, (page - 1) * pageSize);
+  const callCount = await one<{ n: number }>(env, 'SELECT count(*)::int AS n FROM channex_calls');
   // Whether Channex is set to notify this site about bookings (management only: it is theirs to switch on).
   // `registered` is null when Channex could not be asked, so the panel does not claim either way.
   let notifications: { secretSet: boolean; registered: boolean | null } | null = null;
@@ -36,6 +41,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     server: channexServer(env),
     linkedUnits: linked?.n ?? 0,
     queued: q?.queued ?? 0, failed: q?.failed ?? 0, oldestQueuedAt: q?.oldest ?? null,
+    page, pageSize, callsTotal: callCount?.n ?? 0,
     recentCalls: calls.map(c => ({ kind: c.kind, calledAt: c.called_at, status: c.status, taskId: c.task_id, rows: c.row_count, fullSync: c.full_sync, propertyId: c.property_id, unit: c.unit })),
   });
 };

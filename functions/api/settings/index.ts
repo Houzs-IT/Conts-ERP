@@ -62,7 +62,7 @@ const SPEC: Record<string, Record<string, Field>> = {
     staffInactivityTimeoutMins: { def: 10080, kind: 'number', min: 15, max: 43200 },
     ownerInactivityTimeoutMins: { def: 480, kind: 'number', min: 15, max: 43200 },
     absoluteTimeoutHours: { def: 720, kind: 'number', min: 1, max: 720 },
-    lockoutAttempts: { def: 5, kind: 'number', min: 3, max: 20, integer: true },
+    lockoutAttempts: { def: 5, kind: 'number', min: 3, max: 10, integer: true },
     lockoutMinutes: { def: 15, kind: 'number', min: 1, max: 120, integer: true },
     // Comma-separated roles that must use two-step sign-in (functions/_lib/signIn.ts twoStepSetupDue).
     require2faRoles: { def: '', kind: 'roles' },
