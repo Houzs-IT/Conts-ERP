@@ -152,8 +152,8 @@ export default function MaintenancePage() {
         <>
           <div className="flex items-center gap-2 flex-wrap">
             <PillTabs value={tab} onChange={t => { setTab(t); setSelected(null); }} tabs={[
-              { value: 'open', label: 'Open', count: open.length - approval.length },
-              { value: 'approval', label: 'Awaiting owner approval', count: approval.length },
+              { value: 'open', label: 'Open', count: data ? open.length - approval.length : undefined },
+              { value: 'approval', label: 'Awaiting owner approval', count: data ? approval.length : undefined },
               { value: 'done', label: 'Done' },
               { value: 'history', label: 'History' },
             ]} />

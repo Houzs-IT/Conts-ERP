@@ -98,6 +98,7 @@ export default function InventoryPage() {
   const invested = all.reduce((s, i) => s + (i.purchaseCost ?? 0), 0);
   const attention = all.filter(isAttention).length;
   const dueCount = all.filter(isDue).length;
+  const shown = (v: string) => data ? v : loading ? undefined : '—';
   const filtersOn = unitFilter !== 'all' || condFilter !== 'all' || dueOnly;
 
   /** Show the change now; toast once saved, or put the old value back if the server refuses. */
@@ -153,28 +154,28 @@ export default function InventoryPage() {
     <>
       <PageHeader
         title="Fit-out register"
-        sub={`${plural(all.length, 'item')} across ${plural(unitCount, 'unit')}`}
+        sub={data ? `${plural(all.length, 'item')} across ${plural(unitCount, 'unit')}` : 'Loading the register…'}
         primary={<Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setAdding(true)}>Add item</Button>}
       />
 
       {error && <StaleBanner message={`Showing the last register we have. ${error}`} onRetry={reload} />}
 
       <StatRow cols={4}>
-        <StatTile label="Invested in-house" value={rm(invested, { cents: false })} hint="Total fit-out value" />
-        <StatTile label="Needs attention" value={String(attention)} tone={attention ? 'warning' : undefined}
+        <StatTile label="Invested in-house" value={shown(rm(invested, { cents: false }))} hint="Total fit-out value" />
+        <StatTile label="Needs attention" value={shown(String(attention))} tone={attention ? 'warning' : undefined}
           active={condFilter === 'attention'} onClick={() => setCondFilter(f => f === 'attention' ? 'all' : 'attention')} hint="Replace soon or damaged" />
-        <StatTile label="Due for replacement" value={String(dueCount)} tone={dueCount ? 'warning' : undefined}
+        <StatTile label="Due for replacement" value={shown(String(dueCount))} tone={dueCount ? 'warning' : undefined}
           active={dueOnly} onClick={() => setDueOnly(v => !v)} hint={`On schedule within ${DUE_WINDOW_DAYS} days`} />
-        <StatTile label="Units furnished" value={String(unitCount)} hint="With items on the register" />
+        <StatTile label="Units furnished" value={shown(String(unitCount))} hint="With items on the register" />
       </StatRow>
 
       <div className="flex items-center gap-2 flex-wrap">
         <SearchSelect label="Unit" className="w-[260px] max-w-full" allLabel="All units" placeholder="Search unit or building"
           value={unitFilter === 'all' ? '' : unitFilter} onChange={v => setUnitFilter(v || 'all')}
           options={units.map(u => ({ value: `${u.propertyName}|${u.unitNumber}`, label: u.unitNumber, group: u.propertyName }))} />
-        <Chip on={condFilter === 'all'} onClick={() => setCondFilter('all')} count={all.length}>All</Chip>
-        <Chip on={condFilter === 'attention'} onClick={() => setCondFilter('attention')} count={attention}>Needs attention</Chip>
-        {CONDITIONS.map(c => <Chip key={c} on={condFilter === c} onClick={() => setCondFilter(c)} count={all.filter(i => i.condition === c).length}>{COND_LABEL[c]}</Chip>)}
+        <Chip on={condFilter === 'all'} onClick={() => setCondFilter('all')} count={data ? all.length : undefined}>All</Chip>
+        <Chip on={condFilter === 'attention'} onClick={() => setCondFilter('attention')} count={data ? attention : undefined}>Needs attention</Chip>
+        {CONDITIONS.map(c => <Chip key={c} on={condFilter === c} onClick={() => setCondFilter(c)} count={data ? all.filter(i => i.condition === c).length : undefined}>{COND_LABEL[c]}</Chip>)}
         {filtersOn && <Button size="sm" variant="tertiary" onClick={clearFilters}>Clear filters</Button>}
       </div>
 

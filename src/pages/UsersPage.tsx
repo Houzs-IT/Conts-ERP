@@ -430,7 +430,7 @@ export default function UsersPage() {
     <>
       <PageHeader
         title="Users and roles"
-        sub={`${plural(rows.length, 'account')} · ${count(invitedCount)} invited and not yet signed in`}
+        sub={data ? `${plural(rows.length, 'account')} · ${count(invitedCount)} invited and not yet signed in` : 'Loading accounts…'}
         primary={tab === 'users' && canManage && (
           <Button variant="primary" size="sm" onClick={() => { setLastTempPassword(null); setInviteOpen(true); }}>
             Invite user

@@ -291,7 +291,7 @@ export default function PricingPage() {
     <>
       <PageHeader
         title="Pricing"
-        sub={`${plural(rows.length, 'unit')}${noRate ? ` · ${noRate} with no base rate` : ''} · Friday and Saturday nights use each unit's weekend rate`}
+        sub={data ? `${plural(rows.length, 'unit')}${noRate ? ` · ${noRate} with no base rate` : ''} · Friday and Saturday nights use each unit's weekend rate` : "Friday and Saturday nights use each unit's weekend rate"}
       />
 
       {error && <StaleBanner message={`Showing the last rates we have. ${error}`} onRetry={reload} />}

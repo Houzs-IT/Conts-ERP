@@ -256,7 +256,7 @@ export default function PayoutsPage() {
           <FilterSelect className="flex-[1_1_180px]" label="Statement month" all="All statement months" value={period} onChange={v => url.set({ period: v || null, page: null })}
             options={(data?.periods ?? []).map(p => ({ value: p, label: monthLabel(p) }))} />
           <Select label="Filter by status" value={filter} onChange={v => setFilter(v as Filter)} className="flex-[1_1_180px]"
-            options={[{ value: 'all', label: `All statuses · ${allCount}` }, ...GROUP_ORDER.map(s => ({ value: s, label: `${statusLabel('payout', s)} · ${counts[s]}` }))]} />
+            options={[{ value: 'all', label: data ? `All statuses · ${allCount}` : 'All statuses' }, ...GROUP_ORDER.map(s => ({ value: s, label: data ? `${statusLabel('payout', s)} · ${counts[s]}` : statusLabel('payout', s) }))]} />
         </>}
         renderCard={r => (
           <span className="flex items-start gap-3 text-ink">
@@ -275,7 +275,7 @@ export default function PayoutsPage() {
         )}
         footer={
           <div className="flex items-center justify-between gap-3 flex-wrap px-[22px] max-md:px-4 py-3 [border-top:1px_solid_var(--color-line-soft)] text-meta text-muted-ink">
-            <span>{count(total)} of {count(allCount)} payouts</span>
+            <span>{data ? `${count(total)} of ${count(allCount)} payouts` : ''}</span>
             <span>Only the last four digits of any account are shown. Nothing here sends money: transfers are made at the bank.</span>
           </div>
         }
