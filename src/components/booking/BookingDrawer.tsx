@@ -104,7 +104,7 @@ const Group = ({ title, children }: { title: string; children: ReactNode }) => (
 
 const KIND_LABEL: Record<Payment['kind'], string> = { guest_payment: 'Guest payment', ota_payout: 'Host payout', refund: 'Refund' };
 
-/** The money in three parts that add up: what the guest paid, what the platform took, what we receive. The server
+/** The money in three parts that add up: guest total, service fee, host payout (docs/VOCABULARY.md decision 13). The server
  *  works the figures out (functions/_lib/bookingMoney.ts); where its sources disagree it says so, and the figures
  *  behind it are one click away instead of being shown side by side as if they agreed. */
 function MoneyPanel({ d, onRecord, onRemove }: { d: Detail; onRecord: () => void; onRemove: (p: Payment) => void }) {
@@ -117,7 +117,7 @@ function MoneyPanel({ d, onRecord, onRemove }: { d: Detail; onRecord: () => void
   return (
     <div className="flex flex-col gap-2">
       <div className="border border-solid border-line rounded-card overflow-hidden">
-        <Group title="1 · What the guest paid">
+        <Group title="Guest">
           {L.guestLines.map(l => <Line key={l.key} label={l.label} sub={l.sub} value={rm(l.amount)} />)}
           <Line strong label={dead ? `Guest total before it was ${d.state === 'cancelled' ? 'cancelled' : 'marked no-show'}` : 'Guest total'}
             value={L.guestTotal > 0 ? rm(L.guestTotal) : 'Not recorded'} muted={L.guestTotal <= 0}
@@ -125,17 +125,17 @@ function MoneyPanel({ d, onRecord, onRemove }: { d: Detail; onRecord: () => void
           {L.otaTax ? <Line label={`Tax collected by ${site}`} sub="Paid by the guest to the channel and kept by it. Not ours." value={rm(L.otaTax)} muted /> : null}
         </Group>
         {L.platformLines.length > 0 && (
-          <Group title="2 · Taken by the channel">
+          <Group title="Service fee">
             {L.platformLines.map(l => <Line key={l.key} label={l.label} sub={l.sub} value={rm(l.amount)} minus />)}
           </Group>
         )}
-        <Group title={`${L.platformLines.length ? 3 : 2} · What we receive`}>
+        <Group title={ota ? 'Host payout' : 'Guest payment'}>
           {dead ? (
             <Line strong label={d.state === 'cancelled' ? 'Kept after cancellation' : 'Kept after no-show'} value={rm(L.received)}
               sub={L.received ? undefined : 'No money is recorded on this reservation.'} />
           ) : <>
-            <Line strong label="Expected" value={rm(L.expected)} sub={L.platformTotal ? /* vocab-ok: ota is a code flag, the text says channel */ `Guest total less ${ota ? site : 'the channel'}'s share` : undefined} />
-            {L.receivedBefore > 0 && <Line label="Received before payments were recorded here" sub="From the import or the owner workbook" value={rm(L.receivedBefore)} />}
+            <Line strong label="Expected" value={rm(L.expected)} sub={L.platformTotal ? /* vocab-ok: ota is a code flag, the text says channel */ 'Guest total less the service fee' : undefined} />
+            {L.receivedBefore > 0 && <Line label="Received earlier" value={rm(L.receivedBefore)} />}
             {L.payments.map(p => (
               <div key={p.id} className="flex justify-between items-baseline gap-3 py-[7px] px-[14px]">
                 <span className="flex flex-col min-w-0">
@@ -173,7 +173,8 @@ function MoneyPanel({ d, onRecord, onRemove }: { d: Detail; onRecord: () => void
           <span className="text-ink leading-[1.45]">{L.disagree}</span>
         </div>
       )}
-      {L.sources.length > 1 && (
+      {/* Where each figure came from is only worth showing when the figures disagree; otherwise it is plumbing. */}
+      {L.disagree && L.sources.length > 1 && (
         <button type="button" onClick={() => setSources(v => !v)} aria-expanded={sources}
           className={cx('self-start p-0 border-none bg-transparent [font-family:inherit] text-meta underline cursor-pointer', L.disagree ? 'font-semibold text-ink' : 'text-muted-ink')}>
           {sources ? 'Hide sources' : 'View sources'}
