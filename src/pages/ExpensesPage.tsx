@@ -20,8 +20,9 @@ import { TONE, cx } from '../lib/design-tokens';
 import type { Tone } from '../lib/types';
 import { HistoryDisclosure } from '../components/RecordHistory';
 import { Eyebrow, Figure, Segmented } from '../components/Metric';
+import { FilterBar } from '../components/FilterBar';
 import {
-  useUrlState, usePhone, ListCard, SearchBox, Chip, shiftMonth,
+  useUrlState, ListCard, SearchBox, shiftMonth,
   useFinanceFilters, type FinanceFilters,
 } from './finance/listKit';
 
@@ -101,7 +102,6 @@ function qs(base: Record<string, string>, extra: Record<string, string | number>
 
 export default function ExpensesPage() {
   const toast = useToast();
-  const phone = usePhone();
   const url = useUrlState();
   const filters = useFinanceFilters();
 
@@ -263,15 +263,13 @@ export default function ExpensesPage() {
       {error && view === 'grouped' && <StaleBanner message={`Showing the last figures we have. ${error}`} onRetry={refresh} />}
 
       {/* Category chips carry counts for the month and the other filters, so a click never lands on nothing. */}
-      <div className={cx('flex gap-[7px] shrink-0', phone ? 'overflow-x-auto -mx-4 px-4 pb-1 [scrollbar-width:none]' : 'flex-wrap')}>
-        <Chip on={!cat} onClick={() => setFilter({ category: null })} count={data ? catCount : undefined}>All categories</Chip>
-        {catPills.map(c => (
-          <Chip key={c.category} on={cat === c.category} onClick={() => setFilter({ category: cat === c.category ? null : c.category })} count={c.count}>
-            {catLabel(c.category)}
-          </Chip>
-        ))}
-        {cat && !cats.some(c => c.category === cat) && <Chip on onClick={() => setFilter({ category: null })} count={0}>{catLabel(cat)}</Chip>}
-      </div>
+      <FilterBar label="Expense category" className="shrink-0" value={cat}
+        onChange={k => setFilter({ category: k && k !== cat ? k : null })}
+        views={[
+          { key: '', label: 'All categories', count: data ? catCount : undefined },
+          ...catPills.map(c => ({ key: c.category as string, label: catLabel(c.category), count: c.count })),
+          ...(cat && !cats.some(c => c.category === cat) ? [{ key: cat as string, label: catLabel(cat), count: 0 }] : []),
+        ]} />
 
       <div className="flex flex-wrap gap-2 items-center shrink-0">
         <SearchBox className="flex-[2_1_220px]" label="Search expenses" placeholder="Search expenses" value={q} onChange={v => setFilter({ q: v || null })} />

@@ -16,7 +16,8 @@ import { fetchAllPages } from '../lib/export';
 import { rm, todayMyt, monthLabel, plural } from '../lib/format';
 import { TONE, cx } from '../lib/design-tokens';
 import type { StatementState } from '../lib/types';
-import { useUrlState, usePhone, SearchBox, Chip, shiftMonth } from './finance/listKit';
+import { useUrlState, SearchBox, shiftMonth } from './finance/listKit';
+import { FilterBar } from '../components/FilterBar';
 import { statusLabel } from '../lib/status';
 import { Eyebrow, Figure, Segmented } from '../components/Metric';
 
@@ -51,7 +52,6 @@ const STATE_ORDER: StatementState[] = ['provisional', 'finalised', 'sent', 'paid
 
 export default function StatementsPage() {
   const url = useUrlState();
-  const phone = usePhone();
   const thisMonth = todayMyt().slice(0, 7);
   const pickedPeriod = /^\d{4}-\d{2}$/.test(url.get('period')) ? url.get('period') : '';
   const stateFilter = (STATE_ORDER as string[]).includes(url.get('state')) ? url.get('state') as StatementState : '';
@@ -274,11 +274,12 @@ export default function StatementsPage() {
             </>;
           }}
           header={
-            <div className={cx('flex gap-[7px] py-3 px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line)]', phone ? 'overflow-x-auto' : 'flex-wrap')}>
-              <Chip on={!stateFilter} onClick={() => url.set({ state: null, page: null })} count={current?.count}>All</Chip>
-              {STATE_ORDER.map(st => (
-                <Chip key={st} on={stateFilter === st} onClick={() => url.set({ state: stateFilter === st ? null : st, page: null })} count={current ? current[st] : undefined}>{statusLabel('statement', st)}</Chip>
-              ))}
+            <div className="py-3 px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line)]">
+              <FilterBar<StatementState | ''> label="Statement state" value={stateFilter} onChange={k => url.set({ state: k && k !== stateFilter ? k : null, page: null })}
+                views={[
+                  { key: '', label: 'All', count: current?.count },
+                  ...STATE_ORDER.map(st => ({ key: st, label: statusLabel('statement', st), count: current ? current[st] : undefined })),
+                ]} />
             </div>
           }
           toolbar={<SearchBox className="flex-[1_1_260px] max-w-[420px]" label="Search statements" placeholder="Search owner or unit" value={q} onChange={v => url.set({ q: v || null, page: null })} />}

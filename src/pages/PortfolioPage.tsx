@@ -7,9 +7,9 @@ import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { rm, percent, rating as fmtRating, todayMyt, monthLabel, plural, count, titleCase } from '../lib/format';
 import { Button } from '../components/Button';
-import { StatTile } from '../components/Metric';
+import { StatTile, Segmented } from '../components/Metric';
 import { Select } from '../components/Select';
-import { Chip, SearchBox } from './finance/listKit';
+import { SearchBox } from './finance/listKit';
 import type { Tone } from '../lib/types';
 
 /* GET /api/portfolio/performance?period= — one row per listed unit for the period. The whole set is
@@ -134,11 +134,8 @@ export default function PortfolioPage() {
         title="Portfolio performance"
         sub={data ? `${plural(data.units ?? rows.length, 'listed unit')} · ${plural(data.buildings ?? buildings.length, 'building')} · ${caption}` : caption}
         actions={
-          <div role="group" aria-label="Period" className="flex items-center gap-2 max-w-full overflow-x-auto [scrollbar-width:none]">
-            {PERIODS.map((p, i) => (
-              <Chip key={p.key} on={p.key === period} onClick={() => set({ period: i === 0 ? null : p.key })}>{p.label}</Chip>
-            ))}
-          </div>
+          <Segmented label="Period" value={period} onChange={k => set({ period: k === PERIODS[0].key ? null : k })}
+            options={PERIODS.map(p => ({ key: p.key, label: p.label }))} />
         }
       />
 

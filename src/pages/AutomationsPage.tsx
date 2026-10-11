@@ -6,7 +6,7 @@ import Icon from '../components/Icon';
 import { Drawer } from '../components/Dialog';
 import { StaleBanner } from '../components/DataState';
 import { EmptyState } from '../components/States';
-import { Chip } from './finance/listKit';
+import { FilterBar } from '../components/FilterBar';
 import { useApi } from '../lib/useApi';
 import { api, errorMessage } from '../lib/api';
 import { useToast } from '../components/Toast';
@@ -375,14 +375,7 @@ export default function AutomationsPage() {
         </div>
       )}
 
-      <div className="flex gap-2 flex-wrap">
-        {FILTERS.map(f => {
-          const on = filter === f.key;
-          return (
-            <Chip key={f.key} on={on} onClick={() => setFilter(f.key)}>{f.label}</Chip>
-          );
-        })}
-      </div>
+      <FilterBar label="Who the messages go to" value={filter} onChange={setFilter} views={FILTERS} />
 
       <div className="flex flex-col gap-5">
         {visibleGroups.map(g => {

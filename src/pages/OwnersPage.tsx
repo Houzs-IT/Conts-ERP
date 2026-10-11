@@ -11,13 +11,13 @@ import { api, errorMessage } from '../lib/api';
 import { rmShort, monthLabel, todayMyt, titleCase, plural } from '../lib/format';
 import { MoneyText } from '../components/MoneyText';
 import { Select } from '../components/Select';
-import { cx } from '../lib/design-tokens';
 import {
   type Owner, type Payload,
   FALLBACK, netOf, grossOf, guaranteedOf, managedNetOf, managedGrossOf, terms,
   Roll, AddOwnerModal,
 } from './owners/shared';
-import { useUrlState, usePhone, SearchBox, Chip, MonthStepper, shiftMonth, useFinanceFilters } from './finance/listKit';
+import { FilterBar } from '../components/FilterBar';
+import { useUrlState, usePhone, SearchBox, MonthStepper, shiftMonth, useFinanceFilters } from './finance/listKit';
 import { MODELS, type RevenueModel } from '../lib/revenueModel';
 import { ModelChip } from './units/ContractTab';
 
@@ -177,12 +177,13 @@ export default function OwnersPage() {
         noun={['owner', 'owners']} exportName="owners"
         empty={{ title: 'No owners yet.', body: 'Add an owner, then link their units and set the fee or guaranteed rent.', action: { label: 'Add owner', onClick: () => setModal(true) } }}
         header={
-          <div className={cx('flex gap-2 py-3 px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line)]', phone ? 'overflow-x-auto' : 'flex-wrap')}>
-            <Chip on={!model} onClick={() => url.set({ model: null, page: null })} count={data ? counts.all : undefined}>All owners</Chip>
-            {MODELS.filter(m => counts[m.key] > 0 || model === m.key).map(m => (
-              <Chip key={m.key} on={model === m.key} onClick={() => url.set({ model: m.key, page: null })} count={counts[m.key]}>{m.label}</Chip>
-            ))}
-            <Chip on={model === 'none'} onClick={() => url.set({ model: 'none', page: null })} count={data ? counts.none : undefined}>No units</Chip>
+          <div className="py-3 px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line)]">
+            <FilterBar<ModelFilter> label="Owners by fee model" value={model} onChange={k => url.set({ model: k || null, page: null })}
+              views={[
+                { key: '', label: 'All owners', count: data ? counts.all : undefined },
+                ...MODELS.filter(m => counts[m.key] > 0 || model === m.key).map(m => ({ key: m.key as ModelFilter, label: m.label, count: counts[m.key] })),
+                { key: 'none', label: 'No units', count: data ? counts.none : undefined },
+              ]} />
           </div>
         }
         toolbar={<>
