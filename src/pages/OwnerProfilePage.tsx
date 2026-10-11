@@ -192,9 +192,11 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
       {o.units.length === 0 ? (
         <Card><EmptyState bare title="No units linked yet." body="Link a unit to assign it to this owner and set how they are paid." action={{ label: 'Link unit', onClick: () => setModal('link') }} /></Card>
       ) : (
+        view === 'owner' ? <OwnerCombined o={o} month={month} /> : (
         <div className="grid grid-cols-[repeat(auto-fill,minmax(min(300px,100%),1fr))] gap-4">
           {o.units.map(u => <UnitCard key={u.unitId} u={u} reportHref={st ? `#/finance/statements/${encodeURIComponent(st.id)}/report?unit=${encodeURIComponent(u.unitId)}` : null} />)}
         </div>
+        )
       )}
 
       {o.units.length > 0 && (
@@ -270,6 +272,56 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
   );
 }
 
+/** By owner: one combined report across the owner's units, in the report's words, with each unit's part inside. */
+function OwnerCombined({ o, month }: { o: Owner; month: string }) {
+  const units = o.units.filter(u => u.figures);
+  if (!units.length) return <Card><div className="p-5 text-copy text-muted-ink">Figures are visible to finance and management.</div></Card>;
+  const sum = (k: keyof NonNullable<UnitLine['figures']>) => units.reduce((n, u) => n + Number(u.figures![k] ?? 0), 0);
+  const fixed = units.filter(u => (u.revenueModel ?? u.model) === 'grr' || u.revenueModel === 'master_lease');
+  const share = units.filter(u => !fixed.includes(u));
+  const income = share.reduce((n, u) => n + u.figures!.income, 0), costs = share.reduce((n, u) => n + u.figures!.costs, 0);
+  const operator = share.reduce((n, u) => n + u.figures!.operatorShare, 0);
+  const pcts = [...new Set(share.map(u => u.feePct))];
+  const Line = ({ label, sen, strong, sub }: { label: string; sen: number; strong?: boolean; sub?: boolean }) => (
+    <div className={cx('flex items-baseline justify-between gap-3 py-2 [border-bottom:1px_solid_var(--color-line-soft)]', strong && 'font-semibold')}>
+      <span className={cx('text-copy min-w-0', sub ? 'text-muted-ink pl-3' : 'text-ink')}>{label}</span>
+      <MoneyText sen={sen} mode="exact" className={cx('text-copy whitespace-nowrap', strong && 'font-semibold')} />
+    </div>
+  );
+  return (
+    <Card>
+      <div className="py-4 px-5 flex flex-col">
+        <div className="flex items-baseline justify-between gap-3 flex-wrap mb-1">
+          <span className="text-heading font-semibold">{titleCase(o.displayName)} · all {plural(units.length, 'unit')}</span>
+          <span className="text-meta text-muted-ink">{monthLabel(month, { long: true })}</span>
+        </div>
+        {share.length > 0 && <>
+          <Line label={TERMS.grossIncome} sen={income} />
+          <Line label={TERMS.totalDeduction} sen={-costs} sub />
+          <Line label={pcts.length === 1 && pcts[0] != null ? toOperator(pcts[0]) : TERMS.toOperator} sen={-operator} sub />
+          {sum('topUp') !== 0 && <Line label={TERMS.topUp} sen={sum('topUp')} sub />}
+        </>}
+        {fixed.length > 0 && <Line label={TERMS.fixedRent} sen={fixed.reduce((n, u) => n + u.figures!.fixedRent, 0)} />}
+        {sum('adjustments') !== 0 && <Line label={TERMS.adjustments} sen={sum('adjustments')} sub />}
+        <Line label={TERMS.netPayout} sen={sum('netPayout')} strong />
+        <div className="mt-3 text-meta font-semibold text-muted-ink">By unit</div>
+        {units.map(u => {
+          const f = u.figures!, none = f.nights === 0 && f.income === 0 && !fixed.includes(u);
+          return (
+            <div key={u.unitId} className="flex items-baseline justify-between gap-3 py-2 [border-bottom:1px_solid_var(--color-line-soft)] last:border-b-0">
+              <span className="flex flex-col min-w-0">
+                <a href={`#/properties/units/${encodeURIComponent(u.unitId)}?tab=financials`} className="text-copy text-ink no-underline [overflow-wrap:anywhere]">{titleCase(u.unitLabel)}</a>
+                <span className="text-meta text-muted-ink">{u.termsLabel ?? terms(u)}{none ? ' · No reservations this month' : fixed.includes(u) ? '' : ` · ${TERMS.grossIncome} ${rm(f.income)}`}</span>
+              </span>
+              <MoneyText sen={f.netPayout} mode="exact" className="text-copy whitespace-nowrap" />
+            </div>
+          );
+        })}
+      </div>
+    </Card>
+  );
+}
+
 /** One unit's month, the way its revenue model pays the owner. */
 function UnitCard({ u, reportHref }: { u: UnitLine; reportHref: string | null }) {
   const f = u.figures;
@@ -295,7 +347,9 @@ function UnitCard({ u, reportHref }: { u: UnitLine; reportHref: string | null })
         {f.adjustments !== 0 && <Row label={TERMS.adjustments} sen={f.adjustments} sign />}
         <Row label="Unit income (the company's)" sen={f.income} muted />
       </> : <>
-        <Row label={model === 'long_term' ? TERMS.monthlyRent : `${TERMS.hospitalityIncome} (${f.nights} ${f.nights === 1 ? 'night' : 'nights'})`} sen={f.income} />
+        {model !== 'long_term' && f.nights === 0 && f.income === 0
+          ? <div className="text-meta text-muted-ink">No reservations this month.</div>
+          : <Row label={model === 'long_term' ? TERMS.monthlyRent : `${TERMS.hospitalityIncome} (${f.nights} ${f.nights === 1 ? 'night' : 'nights'})`} sen={f.income} />}
         <Row label={TERMS.expenseDeduction} sen={-f.costs} />
         <Row label={toOperator(operatorPct)} sen={-f.operatorShare} />
         {f.guarantee > 0 && (f.topUp > 0
