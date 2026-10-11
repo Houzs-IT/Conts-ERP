@@ -152,6 +152,21 @@ check('a unit to book exists', !!unitId && !!unitId2, units.text.slice(0, 200));
   check('dashboard period is the MYT month', k.json?.period === mytDay(0).slice(0, 7), `${k.json?.period} vs ${mytDay(0).slice(0, 7)}`);
 }
 
+// 12. Markup in a guest's name or a payment reference prints as text on the guest invoice and receipt.
+{
+  const r = await c('POST', '/api/reservations', { unitId, checkIn: runDay(50), checkOut: runDay(52), channel: 'direct', guestsCount: 1, grossBookingValue: 30000, guest: { fullName: '<script>alert(1)</script> Tan' } });
+  check('booking for a guest named <script>', r.status === 201, r.text.slice(0, 200));
+  const p = await c('POST', `/api/reservations/${r.json?.id}/payments`, { amount: 10000, receivedOn: mytDay(0), kind: 'guest_payment', method: 'Cash', reference: '<img src=x onerror=alert(2)>' });
+  const inv = await c('POST', '/api/guest-documents', { type: 'invoice', reservationId: r.json?.id });
+  const rec = await c('POST', '/api/guest-documents', { type: 'receipt', reservationId: r.json?.id, paymentId: p.json?.id });
+  for (const [label, d] of [['invoice', inv], ['receipt', rec]]) {
+    if (d.status !== 201) { check(`${label} issued`, false, d.text.slice(0, 200)); continue; }
+    const html = await c('GET', `/api/guest-documents/${d.json.id}/pdf`);
+    check(`${label}: the name prints escaped, never as a tag`, html.text.includes('&lt;script&gt;alert(1)&lt;/script&gt;') && !html.text.includes('<script>alert(1)'), html.text.slice(0, 120));
+    if (label === 'receipt') check('receipt: the reference prints escaped', html.text.includes('&lt;img src=x') && !html.text.includes('<img src=x'), '');
+  }
+}
+
 // 11. Supply chain numbers: ten stock takes at once all save, each with its own number.
 {
   const w = await c('POST', '/api/warehouses', { code: `AU${Date.now() % 100000}`, name: 'Audit warehouse' });
