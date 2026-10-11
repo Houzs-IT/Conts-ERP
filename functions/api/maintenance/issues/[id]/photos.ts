@@ -3,6 +3,7 @@ import { requireSession, isFieldRole, hasColumn } from '../../../../_lib/auth';
 import { mediaKind } from '../../../../_lib/media';
 
 /** POST /api/maintenance/issues/:id/photos — multipart `file` (a photo or a video), optional `kind` (before/after).
+ *  Field roles: the technician on the job, or the person who reported it (photos of the problem when reporting).
  *  Stored in R2 (binding MEDIA); without that binding the request is refused, not faked. */
 export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
@@ -10,9 +11,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   if (!env.MEDIA) return fail('NOT_CONFIGURED', 'File upload is not set up yet. Ask an administrator to enable media storage.', 501);
 
   const id = String(params.id);
-  const issue = await one<{ id: string; unit_id: string }>(env, 'SELECT id, unit_id FROM maintenance_issues WHERE id = ?', id);
+  const issue = await one<{ id: string; unit_id: string; reported_by: string | null }>(env, 'SELECT id, unit_id, reported_by FROM maintenance_issues WHERE id = ?', id);
   if (!issue) return fail('NOT_FOUND', 'That job no longer exists.', 404);
-  if (isFieldRole(session.role) && !(await assignedTo(env, id, session.userId))) return fail('FORBIDDEN', 'That job is assigned to someone else.', 403);
+  // A cleaner who reported the damage adds the photos of it, though the repair is not theirs.
+  if (isFieldRole(session.role) && issue.reported_by !== session.userId && !(await assignedTo(env, id, session.userId))) return fail('FORBIDDEN', 'That job is assigned to someone else.', 403);
 
   const form = await request.formData().catch(() => null);
   const file = form?.get('file');

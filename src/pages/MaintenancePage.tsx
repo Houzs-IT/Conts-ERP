@@ -16,12 +16,11 @@ import { refreshNavCounts } from '../lib/navBadges';
 import { api, ApiFailure, errorMessage } from '../lib/api';
 import { useSession } from '../lib/session';
 import { useUnitRoster } from '../lib/useUnitRoster';
-import { useMedia } from '../lib/useMedia';
 import { cx } from '../lib/design-tokens';
 import { rm, plural, dateShort, date, monthLabel } from '../lib/format';
 import { runEach, skippedNote } from '../lib/bulk';
 import {
-  PillTabs, Segmented, OpsModal, FormRow, INPUT, TEXTAREA, CloseButton, uploadTo, CATEGORY, stamp, hm, mytDay, type MediaItem,
+  PillTabs, Segmented, OpsModal, ProblemPhotos, usePickedMedia, FormRow, INPUT, TEXTAREA, CloseButton, uploadTo, CATEGORY, stamp, hm, mytDay, type MediaItem,
 } from '../components/ops/OpsUi';
 import type { AnyTone } from '../lib/status';
 import { StatusBadge } from '../components/StatusBadge';
@@ -43,7 +42,7 @@ interface Issue {
   ownerHasLogin: boolean; billingDate: string | null; collectedAt: string | null; contractorAmount: number | null; contractorPaidAt: string | null;
 }
 /** `billing` is false until migration 0108 is applied; billing date, collected and contractor payment are then hidden. */
-interface Payload { threshold: number; billing?: boolean; data: Issue[] }
+interface Payload { billing?: boolean; data: Issue[] }
 interface Technician { name: string; kind: 'in_house' | 'contractor'; role: string | null }
 interface FileItem extends MediaItem { stage: 'before' | 'after' | null; uploadedAt: string; byteSize?: number }
 
@@ -52,6 +51,8 @@ const PAYER: Record<ChargeTo, string> = { owner: 'Owner (on the statement)', the
 const PAYER_SHORT: Record<ChargeTo, string> = { owner: 'owner pays', the_conts: 'company pays', guest_deposit: 'guest pays', warranty: 'warranty' };
 const SOURCE: Record<string, string> = { guest: 'Guest', cleaner: 'Cleaner', inspection: 'Inspection', staff: 'Office' };
 const MONEY_ROLES = ['management', 'finance_admin', 'operations_manager'];
+// The parts catalog (SKU list) is hidden until the owner sets it up (11 Oct 2026); the code stays.
+const SHOW_CATALOG = false;
 const KIND_WORD: Record<'in_house' | 'contractor', string> = { in_house: 'In-house', contractor: 'Contractor' };
 const DOC_KIND: Record<string, string> = { claim: 'Claim from the technician or contractor', invoice: 'Invoice to the payer', receipt: 'Receipt', pod: 'Proof of work', other: 'File' };
 /** Who the money is collected from; the company and a warranty pay their own share, so nothing is collected. */
@@ -79,7 +80,6 @@ export default function MaintenancePage() {
   const selected = params.get('id');
   const setSelected = (id: string | null) => setParams(p => { const n = new URLSearchParams(p); if (id) n.set('id', id); else n.delete('id'); return n; }, { replace: true });
   const [creating, setCreating] = useState(false);
-  const [threshold, setThreshold] = useState(false);
 
   const { data, loading, error, reload: reloadData } = useApi<Payload>('/maintenance/issues');
   // The side menu's counts (open jobs, today's work) follow what was just done here.
@@ -116,10 +116,6 @@ export default function MaintenancePage() {
     ? `${open.length} open · ${urgent} urgent · ${approval.length} awaiting owner approval${money ? ` · this month ${rm(monthCost, { cents: false })}` : ''}`
     : 'Maintenance jobs on every unit';
 
-  async function saveThreshold(sen: number) {
-    try { await api.put('/settings', { operations: { maintenanceApprovalThreshold: sen } }); toast({ tone: 'success', title: `Owner approval needed above ${rm(sen)}.` }); setThreshold(false); reload(); }
-    catch (e) { toast({ tone: 'critical', title: 'Not saved.', body: errorMessage(e, 'Try again.') }); }
-  }
   async function createSku(input: CatalogInput) {
     try { await api.post('/maintenance/skus', input); toast({ tone: 'success', title: 'Item added.' }); sku.reload(); return null; }
     catch (e) { return errorMessage(e, 'Not saved. Try again.'); }
@@ -146,12 +142,7 @@ export default function MaintenancePage() {
   return (
     <div className="flex flex-col gap-4 flex-1 min-h-0">
       <PageHeader title="Maintenance" sub={sub}
-        actions={<>
-          {data && <Button size="sm" variant="secondary" onClick={() => user!.role === 'management' ? setThreshold(true) : toast({ tone: 'info', title: `Owner approval is needed above ${rm(data.threshold)}.`, body: 'Management can change this.' })}>
-            Owner approval above {rm(data.threshold, { cents: false })}
-          </Button>}
-          <Button size="sm" variant={tab === 'catalog' ? 'primary' : 'secondary'} icon={<Icon name="Package" size="sm" />} onClick={() => setTab(tab === 'catalog' ? 'open' : 'catalog')}>Parts catalog</Button>
-        </>}
+        actions={SHOW_CATALOG ? <Button size="sm" variant={tab === 'catalog' ? 'primary' : 'secondary'} icon={<Icon name="Package" size="sm" />} onClick={() => setTab(tab === 'catalog' ? 'open' : 'catalog')}>Parts catalog</Button> : undefined}
         primary={<Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setCreating(true)}>Add maintenance job</Button>} />
 
       {tab === 'catalog' ? (
@@ -173,12 +164,11 @@ export default function MaintenancePage() {
           </div>
           <SplitPane list={list} open={!!sel} onClose={() => setSelected(null)} width={440}
             empty={<div className="text-center text-copy text-muted-ink p-6 max-w-[260px]"><Icon name="MousePointerClick" size="lg" /><p className="mt-2">Pick a job to see its timeline, repair windows, photos and cost.</p></div>}
-            detail={sel ? <IssueDetail key={sel.id} issue={sel} threshold={data!.threshold} billing={!!data!.billing} money={money} skus={sku.data?.data ?? []} onClose={() => setSelected(null)} onChanged={reload} /> : null} />
+            detail={sel ? <IssueDetail key={sel.id} issue={sel} billing={!!data!.billing} money={money} skus={sku.data?.data ?? []} onClose={() => setSelected(null)} onChanged={reload} /> : null} />
         </>
       )}
 
       {creating && <NewJobModal onClose={() => setCreating(false)} onDone={id => { setCreating(false); reload(); setTab('open'); setSelected(id); }} />}
-      {threshold && data && <ThresholdModal value={data.threshold} onClose={() => setThreshold(false)} onSave={sen => void saveThreshold(sen)} />}
     </div>
   );
 }
@@ -337,7 +327,7 @@ function BulkAssignModal({ rows, onClose, onDone }: { rows: Issue[]; onClose: ()
 
 /* ---------- the detail panel ---------- */
 
-function IssueDetail({ issue: i, threshold, billing, money, skus, onClose, onChanged }: { issue: Issue; threshold: number; billing: boolean; money: boolean; skus: Sku[]; onClose: () => void; onChanged: () => void }) {
+function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { issue: Issue; billing: boolean; money: boolean; skus: Sku[]; onClose: () => void; onChanged: () => void }) {
   const toast = useToast();
   const files = useApi<{ data: FileItem[] }>(`/maintenance/issues/${i.id}/documents`);
   const techs = useTechnicians();
@@ -382,7 +372,6 @@ function IssueDetail({ issue: i, threshold, billing, money, skus, onClose, onCha
   if (!done && quoteSen !== i.quotedAmount) billingDelta.quotedAmount = quoteSen;
   if (billing && (billingDate || null) !== i.billingDate) billingDelta.billingDate = billingDate || null;
   if (!done && payer !== i.chargeTo) billingDelta.chargeTo = payer;
-  const willWait = !done && payer === 'owner' && quoteSen != null && quoteSen > threshold && !i.ownerApprovedAt && !awaitingOwner(i);
 
   const steps: { label: string; at: string | null; on: boolean; note?: string }[] = [
     { label: 'Reported', at: i.reportedAt, on: true, note: `${SOURCE[i.source] ?? i.source}${i.reporter ? `, ${i.reporter}` : ''}` },
@@ -469,17 +458,16 @@ function IssueDetail({ issue: i, threshold, billing, money, skus, onClose, onCha
                 </select>}
             </FormRow>
           </div>
-          {willWait && <span className="text-meta text-warning">Above {rm(threshold, { cents: false })}: saving sends it to the owner for approval.</span>}
           {(!done || billing) && <Button size="sm" variant="secondary" className="self-start" disabled={!Object.keys(billingDelta).length} disabledReason="Change something first."
             loading={busy === 'billing'} onClick={() => void act('billing', () => api.patch(`/maintenance/issues/${i.id}`, billingDelta), 'Saved.',
-              willWait ? 'The owner has been asked to approve the quote.' : done && billingDelta.billingDate ? 'The cost on the unit moved to the new billing date.' : undefined)}>Save</Button>}
+              done && billingDelta.billingDate ? 'The cost on the unit moved to the new billing date.' : undefined)}>Save</Button>}
 
           {!done && i.chargeTo === 'owner' && i.quotedAmount != null && !awaitingOwner(i) && (
             <div className="flex items-center gap-3 flex-wrap pt-2.5 [border-top:1px_solid_var(--color-line-soft)]">
               <span className="flex-1 min-w-[180px] flex flex-col">
                 <span className="font-medium">Owner approval</span>
                 <span className="text-meta text-muted-ink">{i.ownerApprovedAt ? `Approved ${stamp(i.ownerApprovedAt)}.`
-                  : `Not required: the quote is not above ${rm(threshold, { cents: false })}. Send it if this owner should agree first.`}</span>
+                  : 'Not sent. Send the quote if the owner should agree before work starts.'}</span>
               </span>
               {!i.ownerApprovedAt && <Button size="sm" variant="secondary" icon={<Icon name="Send" size="sm" />} loading={busy === 'ask'}
                 onClick={() => void act('ask', () => api.post(`/maintenance/issues/${i.id}/request-approval`, {}), 'Sent to the owner for approval.',
@@ -649,21 +637,33 @@ function NewJobModal({ onClose, onDone }: { onClose: () => void; onDone: (id: st
   const units = useUnitRoster();
   const [f, setF] = useState({ unitId: '', title: '', category: '', urgency: 'normal', detail: '' });
   const [busy, setBusy] = useState(false);
+  const [sending, setSending] = useState(false);
   const [error, setError] = useState<{ unitId?: string; title?: string; category?: string; form?: string }>({});
+  const picked = usePickedMedia();
+  const toast = useToast();
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF(x => ({ ...x, [k]: e.target.value }));
   async function save() {
     const bad = { unitId: f.unitId ? undefined : 'Pick the unit.', title: f.title.trim() ? undefined : 'Say what is wrong.', category: f.category ? undefined : 'Pick the kind of problem.' };
     if (bad.unitId || bad.title || bad.category) { setError(bad); return; }
     setBusy(true); setError({});
+    let id: string;
     try {
       const r = await api.post<{ id: string }>('/maintenance/issues', {
         unitId: f.unitId, title: f.title.trim(), detail: f.detail.trim() || undefined, category: f.category, urgency: f.urgency, reportSource: 'staff',
       });
-      onDone(r.id);
+      id = r.id;
     } catch (e) {
       const fields = e instanceof ApiFailure ? e.fields ?? {} : {};
       setError({ unitId: fields.unitId, title: fields.title, category: fields.category, form: fields.unitId || fields.title || fields.category ? undefined : errText(e) }); setBusy(false);
+      return;
     }
+    // The job is saved; a photo that fails is named, not a reason to undo it.
+    if (picked.files.length) {
+      setSending(true);
+      const failed = await picked.send(id);
+      if (failed.length) toast({ tone: 'warning', title: 'Job added, but some photos were not.', body: `Not added: ${failed.join(', ')}. Add them in the job's Before photos.` });
+    }
+    onDone(id);
   }
   return (
     <OpsModal title="Add maintenance job" sub="Pick the unit and the problem. Assign the technician, the quote and who pays in the job afterwards." onClose={onClose} busy={busy}
@@ -680,6 +680,7 @@ function NewJobModal({ onClose, onDone }: { onClose: () => void; onDone: (id: st
       </div>
       <FormRow label="What is wrong" error={error.title}><input className={INPUT} value={f.title} onChange={e => { set('title')(e); setError(x => ({ ...x, title: undefined })); }} placeholder="e.g. Aircon not cooling, guest complained" maxLength={160} /></FormRow>
       <FormRow label="Details (optional)"><textarea className={TEXTAREA} value={f.detail} onChange={set('detail')} placeholder="Where it is, what you saw" maxLength={2000} /></FormRow>
+      <ProblemPhotos picked={picked} sending={sending} />
       {error.form && <span className="text-meta text-danger" role="alert">{error.form}</span>}
     </OpsModal>
   );
@@ -755,18 +756,6 @@ function CompleteModal({ issue, billing, onClose, onDone }: { issue: Issue; bill
         <select className={INPUT} value={payer} onChange={e => setPayer(e.target.value as ChargeTo)}>{(['owner', 'the_conts', 'guest_deposit', 'warranty'] as ChargeTo[]).map(p => <option key={p} value={p}>{PAYER[p]}</option>)}</select>
       </FormRow>
       {issue.blocksUnit && <span className="text-meta text-muted-ink">The unit goes back to ready, and the nights blocked for this repair become available again.</span>}
-    </OpsModal>
-  );
-}
-
-function ThresholdModal({ value, onClose, onSave }: { value: number; onClose: () => void; onSave: (sen: number) => void }) {
-  const [sen, setSen] = useState<number | null>(value);
-  const [error, setError] = useState<string | null>(null);
-  const phone = !useMedia('(min-width: 640px)');
-  return (
-    <OpsModal title="Owner approval threshold" sub="A repair the owner pays, quoted above this, waits for the owner's approval before work starts." onClose={onClose}
-      footer={<><Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button><Button size="sm" variant="primary" onClick={() => { if (sen == null) { setError('Enter the threshold.'); return; } onSave(sen); }}>Save</Button></>}>
-      <FormRow label="Threshold, RM" error={error}><MoneyInput className={cx(INPUT, phone && 'text-heading')} valueSen={sen} onChangeSen={v => { setSen(v); setError(null); }} aria-label="Threshold in RM" /></FormRow>
     </OpsModal>
   );
 }
