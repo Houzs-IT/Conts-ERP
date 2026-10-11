@@ -15,6 +15,8 @@ const DQ = "$notion_json$";
    to the database (copied into a SQL console, for instance) fails as a whole instead of writing wrong rows. */
 let payloads = null;
 
+const SPACE_LIKE = new RegExp(`[${[0xa0, 0x2007, 0x202f, 0x2009, 0x200a, 0x3000].map((c) => String.fromCharCode(c)).join("")}]`, "g");
+
 /** null / undefined / "" fields are dropped from the JSON (they read back as null). */
 function compact(o) {
   const out = {};
@@ -26,7 +28,9 @@ function jsonLiteral(rows) {
   // one row per line, so a chunk can be read and pasted in pieces;
   // non-ASCII characters stay as they are (UTF-8): a \u escape can be turned into the character on its way to a
   // SQL console, which would change the checksum without changing the data
-  const s = `[\n${rows.map((r) => JSON.stringify(compact(r))).join(",\n")}\n]`;
+  // invisible look-alikes of a space (Notion writes "MYR 1.00" with a no-break space) become plain spaces, so what
+  // is typed or pasted is what gets checksummed
+  const s = `[\n${rows.map((r) => JSON.stringify(compact(r))).join(",\n")}\n]`.replace(SPACE_LIKE, " ");
   if (s.includes(DQ)) throw new Error("data contains the dollar-quote tag");
   payloads.push(s);
   return `(select j from _payload where k = ${payloads.length})`;
@@ -384,7 +388,8 @@ ${statsTail(label)}
 }
 
 function chunkActivity(m, co, activity, label) {
-  const rows = activity.map((a) => ({ p: short(a.project.ref), n: a.note }));
+  // lines as a JSON array, joined in SQL: a note carries no \n escapes
+  const rows = activity.map((a) => ({ p: short(a.project.ref), l: a.note.split(String.fromCharCode(10)) }));
   return `-- Notion import ${label}: "Imported from Notion" activity notes (company ${co}). A note is added only when it differs
 -- from the project's latest import note, so a re-run with the same export adds nothing.
 begin;
@@ -393,7 +398,8 @@ ${statsHead}
 with ins as (
   insert into project_activity (project_id, action, from_value, note, company_id)
   select p.id, 'notion_import', 'notion', x.n, ${co}
-    from jsonb_to_recordset(${jsonLiteral(rows)}) as x(p text, n text)
+    from (select r.p, array_to_string(array(select jsonb_array_elements_text(r.l)), chr(10)) as n
+            from jsonb_to_recordset(${jsonLiteral(rows)}) as r(p text, l jsonb)) as x
     join projects p on p.company_id = ${co} and p.source_ref = ${fullRef("x.p")}
    where x.n is distinct from (select a.note from project_activity a where a.project_id = p.id and a.action = 'notion_import'
                                 order by a.id desc limit 1)
