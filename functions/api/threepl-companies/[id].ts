@@ -2,7 +2,7 @@ import { type Env, one, run, json, fail, nowIso, audit } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { toThreePlPayload, type ThreePlRow } from '../../_lib/threepl-companies';
 import { strOrNull, flag } from '../../_lib/scm-util';
-import { checkPhone, invalid, type Fields } from '../../_lib/validate';
+import { checkPhone, checkEmail, invalid, type Fields } from '../../_lib/validate';
 
 const COLS = 'id, code, name, registration_no, contact_name, contact_phone, office_phone, email, address, is_active, notes';
 
@@ -24,6 +24,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   const fields: Fields = {};
   checkPhone(fields, 'contactPhone', b.contactPhone, { label: 'Contact phone' });
   checkPhone(fields, 'officePhone', b.officePhone, { label: 'Office phone' });
+  checkEmail(fields, 'email', b.email);
   const bad = invalid(fields); if (bad) return bad;
   const sets: string[] = []; const args: unknown[] = [];
   const setStr = (col: string, k: string) => { if (b[k] !== undefined) { sets.push(`${col} = ?`); args.push(strOrNull(b[k])); } };

@@ -3,7 +3,9 @@ import { DateField } from '../components/inputs';
 import PageHeader from '../components/PageHeader';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
-import { api, notifyFailure } from '../lib/api';
+import { api } from '../lib/api';
+import { persist, useResetOnReload } from '../lib/persist';
+import { date } from '../lib/format';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { schedFallback, type Sched, type SchedPayload } from '../lib/schedule';
@@ -22,6 +24,7 @@ export default function DeliveryDateArrangementPage() {
   const { user } = useSession();
   const canWrite = !!user && ['management', 'operations_manager', 'finance_admin'].includes(user.role);
   const [edits, setEdits] = useState<Record<string, string>>({});
+  useResetOnReload(data, () => { setEdits({}); });
   const [onlyUndated, setOnlyUndated] = useState(true);
 
   const all = useMemo(() => (data?.data ?? []).map(r => ({ ...r, plannedDate: edits[r.id] ?? r.plannedDate })), [data, edits]);
@@ -29,8 +32,7 @@ export default function DeliveryDateArrangementPage() {
 
   function setDate(r: Sched, value: string) {
     setEdits(e => ({ ...e, [r.id]: value }));
-    api.patch(`/delivery-schedule/${r.id}`, { plannedDate: value || null }).catch(notifyFailure);
-    if (value) toast({ tone: 'success', title: 'Delivery date set.', body: `${r.soDocNo} · ${value}` });
+    persist(api.patch(`/delivery-schedule/${r.id}`, { plannedDate: value || null }), { reload, ok: () => { if (value) toast({ tone: 'success', title: 'Delivery date set.', body: `${r.soDocNo} · ${date(value)}` }); } });
   }
 
   const columns = useMemo<Column<Sched>[]>(() => [

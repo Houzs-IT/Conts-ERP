@@ -108,7 +108,7 @@ export function shiftRange(start: string | null, end: string | null, delta: numb
 }
 
 const ERROR_TEXT: Record<string, string> = {
-  hardware_gate_closed: "Hardware works cannot start yet.",
+  hardware_gate_closed: "Not ready for site works yet.",
   unskippable: "This cannot be skipped.",
   reason_required: "Give a reason of at least 3 characters.",
   already_done: "It is already done.",

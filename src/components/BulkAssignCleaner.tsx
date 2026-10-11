@@ -25,11 +25,13 @@ export function BulkAssignCleaner({ taskIds, reservationIds, onClose, onDone }: 
     setBusy(true);
     try {
       const r = await api.post<{ assigned: number; skipped: { id: string; reason: string }[]; cleaner: string }>('/tasks/bulk-assign', { taskIds, reservationIds, cleanerId, force });
-      const reasons = [...new Set(r.skipped.map(s => s.reason.replace(/\.$/, '')))].slice(0, 2).join('; ');
+      // The API's clash reason ends with a question meant for a single assign; here the checkbox is the answer.
+      const reasons = [...new Set(r.skipped.map(s => s.reason.replace(/\s*Assign anyway\?$/, '').replace(/\.$/, '')))].slice(0, 2).join('; ');
+      const overlapHint = r.skipped.some(s => /overlapping/.test(s.reason)) ? ' Tick "Assign even where it overlaps" to give them anyway.' : '';
       toast({
         tone: r.skipped.length ? 'warning' : 'success',
         title: r.assigned ? `${plural(r.assigned, 'clean')} given to ${r.cleaner}.` : 'Nothing assigned.',
-        body: r.skipped.length ? `${plural(r.skipped.length, 'row')} left alone: ${reasons}.` : undefined,
+        body: r.skipped.length ? `${plural(r.skipped.length, 'clean')} left alone: ${reasons}.${overlapHint}` : undefined,
       });
       onDone();
     } catch (err) { notifyFailure(err); }

@@ -8,7 +8,8 @@ import { MoneyInput, NumberInput } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
-import { api, notifyFailure } from '../lib/api';
+import { api } from '../lib/api';
+import { persist, useResetOnReload } from '../lib/persist';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { rm } from '../lib/format';
@@ -42,6 +43,7 @@ export default function FabricsPage() {
   const [added, setAdded] = useState<Fabric[]>([]);
   const [edits, setEdits] = useState<Record<string, Partial<Fabric>>>({});
   const [removed, setRemoved] = useState<Set<string>>(new Set());
+  useResetOnReload(data, () => { setAdded([]); setEdits({}); setRemoved(new Set()); });
 
   const q = search.trim().toLowerCase();
   const rows = useMemo(() => [...added, ...(data?.data ?? [])].filter(f => !removed.has(f.id)).map(f => ({ ...f, ...edits[f.id] }))
@@ -60,15 +62,15 @@ export default function FabricsPage() {
 
   function save(d: Draft) {
     const body = { id: d.id.trim(), fabricCode: d.fabricCode.trim(), label: d.label.trim(), tier: d.tier.trim() || 'standard', defaultSurchargeSen: d.defaultSurchargeSen, sofaTier: d.sofaTier.trim(), bedframeTier: d.bedframeTier.trim(), active: d.active, sortOrder: d.sortOrder };
-    if (d.isNew) { setAdded(a => [{ ...body }, ...a]); api.post('/fabrics', body).catch(notifyFailure); toast({ tone: 'success', title: 'Fabric added.', body: body.label }); }
-    else { setEdits(e => ({ ...e, [d.id]: { ...e[d.id], ...body } })); api.patch(`/fabrics/${d.id}`, body).catch(notifyFailure); toast({ tone: 'success', title: 'Fabric updated.', body: body.label }); }
+    if (d.isNew) { if (!rows.some(x => x.id === body.id)) setAdded(a => [{ ...body }, ...a]); persist(api.post('/fabrics', body), { reload, ok: () => toast({ tone: 'success', title: 'Fabric added.', body: body.label }) }); }
+    else { setEdits(e => ({ ...e, [d.id]: { ...e[d.id], ...body } })); persist(api.patch(`/fabrics/${d.id}`, body), { reload, ok: () => toast({ tone: 'success', title: 'Fabric updated.', body: body.label }) }); }
     setDrawer(null);
   }
-  function remove(f: Fabric) { setRemoved(r => new Set(r).add(f.id)); api.del(`/fabrics/${f.id}`).catch(notifyFailure); toast({ tone: 'success', title: 'Fabric removed.', body: f.label }); setDrawer(null); }
+  function remove(f: Fabric) { setRemoved(r => new Set(r).add(f.id)); persist(api.del(`/fabrics/${f.id}`), { reload, ok: () => toast({ tone: 'success', title: 'Fabric removed.', body: f.label }) }); setDrawer(null); }
 
   return (
     <>
-      <PageHeader title="Fabric library" sub={`${rows.length} fabrics · upholstery catalogue`}
+      <PageHeader title="Fabric library" sub={data ? `${rows.length} ${rows.length === 1 ? 'fabric' : 'fabrics'} · upholstery catalogue` : '\u00a0'}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer(emptyDraft())}>New fabric</Button> : undefined} />
       <DataTable<Fabric>
         id="scm.fabrics" columns={columns} rows={data ? rows : null} rowKey={f => f.id}

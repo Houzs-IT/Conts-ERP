@@ -21,6 +21,7 @@ import {
 } from '../../lib/renovation/api';
 import { buildPrintDoc } from '../../lib/renovation/print-doc';
 import { PrintDialog } from './PrintDialog';
+import { ContractProjectCard } from './ContractProjectCard';
 import { Card, ErrorBanner, Field, fmtDate, inputCls, MoneyInput, pctLabel, rm, Stat, StatusPill, todayIso } from './shared';
 import { cn } from '../../lib/utils';
 
@@ -278,6 +279,7 @@ export function RenovationSalesOrder() {
         )}
       />
       <ErrorBanner error={error} onClose={() => setError(null)} />
+      <ContractProjectCard docNo={k.docNo} projectId={k.projectId} canWrite={can('projects.write')} />
       <div className="grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-6">
         <Stat label="Original contract" value={rm(k.totals.originalContractSen)} />
         <Stat label="Variation orders" value={rm(k.totals.voTotalSen)} tone={k.totals.voTotalSen ? 'warn' : 'muted'} />

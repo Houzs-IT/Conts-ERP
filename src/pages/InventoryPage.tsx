@@ -86,7 +86,7 @@ export default function InventoryPage() {
   // Units the header/stat report are the distinct units actually present in the
   // register — derived from the items themselves, not the unit roster, which is
   // empty when its own endpoint is unavailable (leaving a wrong "0 units").
-  const unitCount = useMemo(() => new Set(all.map(i => i.unitNumber)).size, [all]);
+  const unitCount = useMemo(() => new Set(all.map(i => `${i.propertyName}|${i.unitNumber}`)).size, [all]);
 
   const rows = all.filter(i =>
     (unitFilter === 'all' || `${i.propertyName}|${i.unitNumber}` === unitFilter) &&
@@ -262,13 +262,13 @@ interface UnitOption { unitNumber: string; propertyName: string; label: string }
 function AddItemModal({ units, onClose, onSubmit }: { units: UnitOption[]; onClose: () => void; onSubmit: (i: Item) => void }) {
   const ref = useRef<HTMLDivElement>(null);
   const [f, setF] = useState({
-    name: '', unitNumber: units[0]?.unitNumber ?? '', newProperty: '', newUnit: '',
+    // The unit is picked by building and number together: the same number exists in more than one building.
+    name: '', unit: '',
     category: 'furniture' as Category, quantity: '1', condition: 'good' as Condition,
     installedOn: '', replaceBy: '', notes: '',
   });
   const [valueSen, setValueSen] = useState<number | null>(null);
   const set = <K extends keyof typeof f>(k: K) => (e: { target: { value: string } }) => setF(s => ({ ...s, [k]: e.target.value }));
-  const addingNewUnit = f.unitNumber === '__new';
 
   useEffect(() => {
     ref.current?.querySelector<HTMLInputElement>('input,select')?.focus();
@@ -277,13 +277,12 @@ function AddItemModal({ units, onClose, onSubmit }: { units: UnitOption[]; onClo
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  const canSubmit = f.name.trim() !== '' && (addingNewUnit ? f.newProperty.trim() !== '' && f.newUnit.trim() !== '' : f.unitNumber !== '')
+  const unitKey = (u: UnitOption) => `${u.propertyName}|${u.unitNumber}`;
+  const canSubmit = f.name.trim() !== '' && f.unit !== ''
     && (!f.installedOn || f.installedOn <= todayMyt()) && (!f.replaceBy || !f.installedOn || f.replaceBy >= f.installedOn);
 
   function submit() {
-    const unit = addingNewUnit
-      ? { unitNumber: f.newUnit.trim(), propertyName: f.newProperty.trim() }
-      : units.find(u => u.unitNumber === f.unitNumber)!;
+    const unit = units.find(u => unitKey(u) === f.unit)!;
     onSubmit({
       id: crypto.randomUUID(),
       unitNumber: unit.unitNumber, propertyName: unit.propertyName,
@@ -310,14 +309,9 @@ function AddItemModal({ units, onClose, onSubmit }: { units: UnitOption[]; onClo
           <div className="py-4 px-[22px] flex flex-col gap-[14px]">
             <Field label="Item" placeholder="e.g. Queen bed frame and mattress" value={f.name} onChange={set('name')} />
 
-            <SearchSelect label="Unit" showLabel value={f.unitNumber} onChange={v => set('unitNumber')({ target: { value: v } })} placeholder="Search unit or building"
-              options={[...units.map(u => ({ value: u.unitNumber, label: u.unitNumber, group: u.propertyName })), { value: '__new', label: 'Add a new unit…' }]} />
-            {addingNewUnit && (
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Property" placeholder="e.g. Arte Mont Kiara" value={f.newProperty} onChange={set('newProperty')} />
-                <Field label="Unit number" placeholder="e.g. #MK2-09-16" value={f.newUnit} onChange={set('newUnit')} />
-              </div>
-            )}
+            {/* Only units already under Properties: the register refuses any other. */}
+            <SearchSelect label="Unit" showLabel value={f.unit} onChange={v => set('unit')({ target: { value: v } })} placeholder="Search unit or building"
+              options={units.map(u => ({ value: unitKey(u), label: u.unitNumber, group: u.propertyName }))} />
 
             <div className="grid grid-cols-2 gap-3">
               <Select size="md" showLabel label="Category" value={f.category} onChange={v => set('category')({ target: { value: v } })} options={CATEGORIES.map(c => ({ value: c, label: CAT_LABEL[c] }))} />

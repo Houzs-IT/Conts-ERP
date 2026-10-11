@@ -2,7 +2,7 @@ import { type Env, one, run, json, fail, nowIso, audit } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { isCustomerStatus, toCustomerPayload, type CustomerRow } from '../../_lib/customers';
 import { strOrNull, intOrNull } from '../../_lib/scm-util';
-import { checkSen, checkPhone, invalid, type Fields } from '../../_lib/validate';
+import { checkSen, checkPhone, checkEmail, invalid, type Fields } from '../../_lib/validate';
 
 const COLS = `id, code, name, status, contact_person, phone, email, address, area, postcode, state, country,
               payment_terms, credit_limit_sen, currency, tin_number, business_reg_no, customer_type, notes`;
@@ -24,6 +24,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   const b = await request.json<Record<string, unknown>>().catch(() => null) ?? {};
   const fields: Fields = {};
   checkPhone(fields, 'phone', b.phone);
+  checkEmail(fields, 'email', b.email);
   checkSen(fields, 'creditLimitSen', b.creditLimitSen, { label: 'Credit limit' });
   const bad = invalid(fields); if (bad) return bad;
   const sets: string[] = []; const args: unknown[] = [];

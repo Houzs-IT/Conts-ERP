@@ -75,6 +75,12 @@ export function checkPhone(fields: Fields, key: string, v: unknown, o: { label?:
   if (!p?.possible) fields[key] = `${label} is not a complete number for its country. Start with + and the country code, e.g. +60 12-345 6789 or +44 7700 900123.`;
 }
 
+/** An email address, if one is given. */
+export function checkEmail(fields: Fields, key: string, v: unknown, o: { label?: string } = {}) {
+  if (absent(v)) return;
+  if (typeof v !== 'string' || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v.trim())) fields[key] = `${o.label ?? 'Email'} does not look right. Check it, or leave it blank.`;
+}
+
 /** The 422 response when any check failed, else null. */
 export function invalid(fields: Fields, message = 'Some fields need attention.') {
   return Object.keys(fields).length ? fail('VALIDATION', message, 422, fields) : null;

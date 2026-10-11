@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Search, Plus, Trash2, X } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
@@ -8,7 +8,8 @@ import { MoneyInput, NumberInput, PhoneInput, DateField } from '../components/in
 import { Drawer } from '../components/Dialog';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
-import { api, notifyFailure } from '../lib/api';
+import { api } from '../lib/api';
+import { persist, useRecord, useResetOnReload } from '../lib/persist';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { rm, todayMyt } from '../lib/format';
@@ -51,6 +52,10 @@ export default function SalesOrdersPage() {
   const [isNew, setIsNew] = useState(false);
   const [added, setAdded] = useState<So[]>([]);
   const [edits, setEdits] = useState<Record<string, Partial<So>>>({});
+  useResetOnReload(data, () => {
+    setAdded([]); setEdits({});
+    setDrawer(d => { const fresh = d?.id ? data?.data.find(x => x.id === d.id) : undefined; return d && fresh ? { ...d, ...fresh, lines: d.lines } : d; });
+  });
 
   const all = useMemo(() => [...added, ...(data?.data ?? [])].map(p => ({ ...p, ...edits[p.id] })), [added, data, edits]);
   const q = search.trim().toLowerCase();
@@ -74,26 +79,23 @@ export default function SalesOrdersPage() {
   function save(so: So, lines: Line[]) {
     const t = totalsOf(lines, so.taxSen);
     if (isNew) {
-      setAdded(a => [{ ...so, ...t, id: `so-new-${crypto.randomUUID().slice(0, 8)}`, docNo: `SO-${todayMyt().slice(0, 4)}-NEW`, outstandingSen: t.totalSen - so.paidSen, lines }, ...a]);
-      api.post('/sales-orders', body(so, lines)).catch(notifyFailure);
-      toast({ tone: 'success', title: 'Sales order raised.', body: so.customerName });
+      setAdded(a => [{ ...so, ...t, id: `so-new-${crypto.randomUUID().slice(0, 8)}`, docNo: 'Saving…', outstandingSen: t.totalSen - so.paidSen, lines }, ...a]);
+      persist(api.post('/sales-orders', body(so, lines)), { reload, ok: () => toast({ tone: 'success', title: 'Sales order raised.', body: so.customerName }) });
     } else {
       setEdits(e => ({ ...e, [so.id]: { ...e[so.id], ...t, customerName: so.customerName, customerPhone: so.customerPhone, customerPo: so.customerPo, soDate: so.soDate, targetDate: so.targetDate, depositSen: so.depositSen, notes: so.notes, outstandingSen: t.totalSen - so.paidSen, lines } }));
-      api.patch(`/sales-orders/${so.id}`, body(so, lines)).catch(notifyFailure);
-      toast({ tone: 'success', title: 'Sales order updated.', body: so.docNo });
+      persist(api.patch(`/sales-orders/${so.id}`, body(so, lines)), { reload, ok: () => toast({ tone: 'success', title: 'Sales order updated.', body: so.docNo }) });
     }
     setDrawer(null);
   }
   function act(so: So, patch: Record<string, unknown>, optimistic: Partial<So>, title: string) {
     setEdits(e => ({ ...e, [so.id]: { ...e[so.id], ...optimistic } }));
-    api.patch(`/sales-orders/${so.id}`, patch).catch(notifyFailure);
-    toast({ tone: 'success', title, body: so.docNo });
+    persist(api.patch(`/sales-orders/${so.id}`, patch), { reload, ok: () => toast({ tone: 'success', title, body: so.docNo }) });
     setDrawer(d => d ? { ...d, ...optimistic } : d);
   }
 
   return (
     <>
-      <PageHeader title="Sales orders" sub={`${all.length} orders · ${rm(outstanding, { cents: false })} outstanding`}
+      <PageHeader title="Sales orders" sub={data ? `${all.length} ${all.length === 1 ? 'order' : 'orders'} · ${rm(outstanding, { cents: false })} outstanding` : '\u00a0'}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={openNew}>New sales order</Button> : undefined} />
       <DataTable<So>
         id="scm.sales-orders" columns={columns} rows={data ? rows : null} rowKey={p => p.id}
@@ -130,15 +132,17 @@ function SoDrawer({ so, isNew, canWrite, onClose, onSave, onAct, totalsOf }: {
   so: So; isNew: boolean; canWrite: boolean; onClose: () => void; onSave: (s: So, l: Line[]) => void;
   onAct: (s: So, patch: Record<string, unknown>, optimistic: Partial<So>, title: string) => void; totalsOf: (l: Line[], t: number) => { subtotalSen: number; taxSen: number; totalSen: number };
 }) {
-  const editable = canWrite && (isNew || so.status === 'CONFIRMED');
+  const { record, loading: linesLoading, error: linesError } = useRecord<So>('sales-orders', isNew ? null : so.id);
+  const editable = canWrite && (isNew || so.status === 'CONFIRMED') && !linesLoading && !linesError;
   const [h, setH] = useState<So>(so);
   const [lines, setLines] = useState<DraftLine[]>((so.lines ?? []).map(toDraftLine));
+  useEffect(() => { if (record?.lines) setLines(record.lines.map(toDraftLine)); }, [record]);
   const [taxSen, setTaxSen] = useState<number | null>(so.taxSen || null);
   const [paySen, setPaySen] = useState<number | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const setHf = <K extends keyof So>(k: K) => (e: { target: { value: string } }) => setH(s => ({ ...s, [k]: e.target.value as So[K] }));
   const setLine = <K extends keyof DraftLine>(i: number, k: K, v: DraftLine[K]) => setLines(ls => ls.map((l, j) => j === i ? { ...l, [k]: v } : l));
-  const subtotal = lines.reduce((s, l) => s + lineTotal(l), 0);
+  const subtotal = !isNew && linesLoading ? so.subtotalSen : lines.reduce((s, l) => s + lineTotal(l), 0);
   const total = subtotal + Math.max(0, taxSen ?? 0);
   const built = (): Line[] => lines.filter(isUsed).map(l => ({ itemCode: l.itemCode.trim(), description: l.description.trim(), uom: l.uom.trim() || 'UNIT', qty: l.qty ?? 0, unitPriceSen: l.unitPriceSen ?? 0, discountSen: l.discountSen ?? 0, lineTotalSen: lineTotal(l) }));
   function problems() {
@@ -152,13 +156,13 @@ function SoDrawer({ so, isNew, canWrite, onClose, onSave, onAct, totalsOf }: {
     return e;
   }
   const canSave = h.customerName.trim() !== '' && built().length > 0;
-  const advanceLabel = (() => { const i = FLOW.indexOf(h.status); return i >= 0 && i < FLOW.length - 1 ? statusLabel('sales_order', FLOW[i + 1]) : null; })();
-  const outstanding = Math.max(0, (isNew ? total : h.totalSen) - h.paidSen);
+  const advanceLabel = (() => { const i = FLOW.indexOf(so.status); return i >= 0 && i < FLOW.length - 1 ? statusLabel('sales_order', FLOW[i + 1]) : null; })();
+  const outstanding = Math.max(0, (isNew ? total : so.totalSen) - so.paidSen);
 
   return (
     <Drawer open onClose={onClose} width={880}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5">
-        <div className="flex items-center gap-3"><h2 className="m-0 text-[19px] font-semibold">{isNew ? 'New sales order' : so.docNo}</h2>{!isNew && <StatusBadge entity="sales_order" value={h.status} />}</div>
+        <div className="flex items-center gap-3"><h2 className="m-0 text-[19px] font-semibold">{isNew ? 'New sales order' : so.docNo}</h2>{!isNew && <StatusBadge entity="sales_order" value={so.status} />}</div>
         <button onClick={onClose} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted"><X size={18} /></button>
       </div>
       <div className="px-6 pb-5 overflow-y-auto grow flex flex-col gap-5">
@@ -187,45 +191,45 @@ function SoDrawer({ so, isNew, canWrite, onClose, onSave, onAct, totalsOf }: {
                     <td className="p-1.5 text-center">{editable && <button onClick={() => setLines(ls => ls.filter((_, j) => j !== i))} aria-label="Remove line" className="text-muted-ink hover:text-danger bg-transparent border-none cursor-pointer p-1"><Trash2 size={15} /></button>}</td>
                   </tr>
                 ))}
-                {lines.length === 0 && <tr><td colSpan={8} className="py-6 text-center text-[12.5px] text-muted-ink">No lines yet.</td></tr>}
+                {lines.length === 0 && <tr><td colSpan={8} className="py-6 text-center text-[12.5px] text-muted-ink">{linesLoading ? 'Loading lines…' : linesError ?? 'No lines yet.'}</td></tr>}
               </tbody>
             </table>
           </div>
           {editable && <div><Button size="sm" variant="secondary" icon={<Plus size={15} strokeWidth={1.75} />} onClick={() => setLines(ls => [...ls, blankLine()])}>Add line</Button></div>}
         </div>
-        <div className="grid grid-cols-2 gap-5">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           <Field label="Notes" placeholder="Optional" value={h.notes} onChange={setHf('notes')} disabled={!editable} />
           <div className="flex flex-col gap-1.5 items-end justify-end">
             <div className="flex gap-8 text-[13px]"><span className="text-muted-ink">Subtotal</span><span className="tabular-nums w-[120px] text-right">{rm(subtotal)}</span></div>
             <div className="flex gap-8 text-[13px] items-center"><span className="text-muted-ink">Tax</span><MoneyInput aria-label="Tax (RM)" disabled={!editable} valueSen={taxSen} onChangeSen={setTaxSen} className="h-8 w-[120px] box-border px-2 py-0 text-right font-sans text-[13px] tabular-nums text-ink bg-card border border-solid border-line rounded-control outline-none disabled:opacity-70" /></div>
             <div className="flex gap-8 text-[15px] font-semibold"><span>Total</span><span className="tabular-nums w-[120px] text-right">{rm(total)}</span></div>
             {!isNew && <>
-              <div className="flex gap-8 text-[13px]"><span className="text-muted-ink">Paid</span><span className="tabular-nums w-[120px] text-right">{rm(h.paidSen)}</span></div>
+              <div className="flex gap-8 text-[13px]"><span className="text-muted-ink">Paid</span><span className="tabular-nums w-[120px] text-right">{rm(so.paidSen)}</span></div>
               <div className="flex gap-8 text-[13px] font-semibold"><span>Outstanding</span><span className="tabular-nums w-[120px] text-right">{rm(outstanding)}</span></div>
             </>}
           </div>
         </div>
 
-        {!isNew && canWrite && h.status !== 'CANCELLED' && outstanding > 0 && (
+        {!isNew && canWrite && so.status !== 'CANCELLED' && outstanding > 0 && (
           <div className="flex items-center gap-2.5 justify-end">
             <span className="text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink">Record payment</span>
             <MoneyInput aria-label="Payment amount (RM)" valueSen={paySen} onChangeSen={setPaySen} className="h-9 w-[130px] box-border px-2 py-0 text-right font-sans text-[13px] tabular-nums text-ink bg-card border border-solid border-line rounded-control outline-none" />
-            <Button size="sm" variant="secondary" disabled={!paySen || paySen <= 0} disabledReason="Enter an amount" onClick={() => { const amt = Math.min(paySen ?? 0, outstanding); onAct(h, { paySen: amt }, { paidSen: h.paidSen + amt, outstandingSen: outstanding - amt }, 'Payment recorded.'); setPaySen(null); }}>Record</Button>
+            <Button size="sm" variant="secondary" disabled={!paySen || paySen <= 0} disabledReason="Enter an amount" onClick={() => { const amt = Math.min(paySen ?? 0, outstanding); onAct(so, { paySen: amt }, { paidSen: so.paidSen + amt, outstandingSen: outstanding - amt }, 'Payment recorded.'); setPaySen(null); }}>Record</Button>
           </div>
         )}
       </div>
 
       <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line)] bg-page flex-wrap">
         <div className="flex gap-2.5">
-          {!isNew && canWrite && h.status !== 'CANCELLED' && h.status !== 'DELIVERED' && h.status !== 'INVOICED' && h.status !== 'CLOSED' &&
-            <ConfirmButton confirm={{ title: `Cancel ${h.docNo}?`, body: 'It is marked Cancelled and can no longer be delivered.', meta: `${h.customerName} · ${rm(h.totalSen)}`, confirmLabel: 'Cancel order', cancelLabel: 'Keep order' }} onConfirm={() => onAct(h, { status: 'CANCELLED' }, { status: 'CANCELLED' }, 'Sales order cancelled.')}>Cancel order</ConfirmButton>}
-          {!isNew && canWrite && h.status === 'ON_HOLD' && <Button size="sm" variant="secondary" onClick={() => onAct(h, { status: 'CONFIRMED' }, { status: 'CONFIRMED' }, 'Order resumed.')}>Resume</Button>}
-          {!isNew && canWrite && FLOW.includes(h.status) && h.status !== 'CLOSED' && <Button size="sm" variant="secondary" onClick={() => onAct(h, { status: 'ON_HOLD' }, { status: 'ON_HOLD' }, 'Order put on hold.')}>Hold</Button>}
+          {!isNew && canWrite && so.status !== 'CANCELLED' && so.status !== 'DELIVERED' && so.status !== 'INVOICED' && so.status !== 'CLOSED' &&
+            <ConfirmButton confirm={{ title: `Cancel ${so.docNo}?`, body: 'It is marked Cancelled and can no longer be delivered.', meta: `${so.customerName} · ${rm(so.totalSen)}`, confirmLabel: 'Cancel order', cancelLabel: 'Keep order' }} onConfirm={() => onAct(so, { status: 'CANCELLED' }, { status: 'CANCELLED' }, 'Sales order cancelled.')}>Cancel order</ConfirmButton>}
+          {!isNew && canWrite && so.status === 'ON_HOLD' && <Button size="sm" variant="secondary" onClick={() => onAct(so, { status: 'CONFIRMED' }, { status: 'CONFIRMED' }, 'Order resumed.')}>Resume</Button>}
+          {!isNew && canWrite && FLOW.includes(so.status) && so.status !== 'CLOSED' && <Button size="sm" variant="secondary" onClick={() => onAct(so, { status: 'ON_HOLD' }, { status: 'ON_HOLD' }, 'Order put on hold.')}>Hold</Button>}
         </div>
         <div className="flex gap-2.5">
           <Button size="sm" variant="secondary" onClick={onClose}>Close</Button>
           {editable && <Button size="sm" variant="primary" disabled={!canSave} disabledReason="Enter a customer and add at least one line" onClick={() => { const e = problems(); setErrors(e); if (Object.keys(e).length) return; const l = built(); onSave({ ...h, ...totalsOf(l, taxSen ?? 0) }, l); }}>{isNew ? 'Raise order' : 'Save'}</Button>}
-          {!isNew && canWrite && advanceLabel && h.status !== 'ON_HOLD' && <Button size="sm" variant="primary" onClick={() => onAct(h, { action: 'advance' }, { status: FLOW[FLOW.indexOf(h.status) + 1] }, `Advanced to ${advanceLabel}.`)}>Advance → {advanceLabel}</Button>}
+          {!isNew && canWrite && advanceLabel && so.status !== 'ON_HOLD' && <Button size="sm" variant="primary" onClick={() => onAct(so, { action: 'advance' }, { status: FLOW[FLOW.indexOf(so.status) + 1] }, `Advanced to ${advanceLabel}.`)}>Advance → {advanceLabel}</Button>}
         </div>
       </div>
     </Drawer>

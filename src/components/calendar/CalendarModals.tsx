@@ -217,10 +217,9 @@ export function RateUpdate({ units, pricing, initial, busy, onClose, onSave, bui
     })();
   const daysLabel = allWeek ? 'Every night' : `Only ${WEEK.filter(w => days.has(w.d)).map(w => w.label).join(', ')}`;
   const rangesLabel = ranges.filter(rangeOk).map(r => (r.from === r.to ? dateShort(r.from) : `${dateShort(r.from)} – ${date(r.to)}`)).join('; ') || 'None yet';
-  const siteSummary = (['airbnb', 'booking_com', 'agoda'] as const).map(ch => {
-    const n = linkedCount(ch);
-    return `${CH_LABEL[ch]} ${n === 0 ? '0 (not connected, not changed)' : plural(n, 'unit')}`;
-  }).join(' · ');
+  const linkedSites = (['airbnb', 'booking_com', 'agoda'] as const).filter(ch => linkedCount(ch) > 0);
+  const siteSummary = linkedSites.map(ch => `${CH_LABEL[ch]}: ${plural(linkedCount(ch), 'unit')}`).join(' · ')
+    + (linkedSites.length < 3 ? `${linkedSites.length ? '. ' : ''}Not connected, so not changed: ${(['airbnb', 'booking_com', 'agoda'] as const).filter(ch => !linkedSites.includes(ch)).map(ch => CH_LABEL[ch]).join(', ')}.` : '');
 
   const stepChip = (n: 1 | 2 | 3, label: string, ok: boolean) => (
     <li key={n}>

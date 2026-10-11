@@ -17,7 +17,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   const rows = await all<any>(env, `
     SELECT t.id, t.unit_id, t.kind, t.title, t.state, t.due_at, t.scheduled_for, t.next_guest_at, t.requires_photo, t.sync, t.updated_at,
-           t.started_at, t.guest_left_at, ${when} AS day,
+           t.started_at, t.completed_at, t.guest_left_at, ${when} AS day,
            u.unit_number, u.readiness, p.id AS property_id, p.name AS property_name, p.address_line,
            (SELECT c.instruction FROM access_credentials c WHERE c.unit_id = u.id ORDER BY c.updated_at DESC LIMIT 1) AS access_instruction,
            (SELECT COUNT(*) FROM documents d WHERE d.task_id = t.id AND d.kind IN ('photo','video')) AS photo_count,
@@ -50,7 +50,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         id: r.id, unitId: r.unit_id, kind: r.kind, state: r.state,
         unit: { unitNumber: r.unit_number, propertyName: r.property_name }, buildingId: r.property_id,
         addressLine: String(r.address_line ?? '').replace(/[\s,]+$/, ''), accessInstruction: r.access_instruction ?? null,
-        work: r.title, dueAt: r.due_at, nextGuestAt: r.next_guest_at, startedAt: r.started_at ?? null,
+        work: r.title, dueAt: r.due_at, nextGuestAt: r.next_guest_at, startedAt: r.started_at ?? null, completedAt: r.completed_at ?? null,
         readiness: r.readiness, done: r.state === 'resolved', flag: sameDay ? 'Same-day turnaround' : null,
         requiresPhoto: !!r.requires_photo, photoCount: Number(r.photo_count),
         checklist: { done: Number(r.ticks), total: standardItems(r.kind).length + Number(r.custom_items) },

@@ -3,13 +3,15 @@
 
 import { billingPrompts, instalmentOneReceived, paymentSummary, type BillingPrompt, type PaymentSummary } from "./billing";
 import { boardConditions, unitKeyStatus, type ConditionSummary, type UnitKeyStatus } from "./conditions";
-import { evaluateHardwareGate, isSoConfirmed, permitStateOf, type GateResult } from "./gate";
+import { evaluateHardwareGate, GATE_REASON_TEXT, isSoConfirmed, permitStateOf, type GateResult } from "./gate";
 import type { ProjectFacts, TaskRow } from "./load";
 import { podCoverage, podQtyBySoItem, type PodCoverage } from "./pod";
 import { redFlags, type RedFlag } from "./redFlags";
 import { currentStage, deriveStageViews, type StageView } from "./stages";
 import { tradeTaskStatus, type TaskStatus } from "./tradeTasks";
-import type { StageKey } from "../../scm/shared/renovation-stages";
+import { isFlowStepKey, type HoldFlag, type StageKey } from "../../scm/shared/renovation-stages";
+import { derivedFlowStep, effectiveFlowStep, type FlowFacts, type FlowView } from "./flow";
+import type { KeyHolder, VoSummary } from "./load";
 
 export interface TaskView extends TaskRow {
   status: TaskStatus;
@@ -28,6 +30,34 @@ export interface ProjectView {
   tasks: TaskView[];
   redFlags: RedFlag[];
   openSnags: number;
+  /** the simplified 6-step flow (owner decisions 11 Oct 2026) */
+  flow: FlowView;
+  hold: { flag: HoldFlag; note: string | null; at: string | null } | null;
+  /** contract total (SO incl. VOs) and received so far, from the SO's billing; never stored on the project */
+  money: { contractSen: number | null; receivedSen: number | null; receivedPct: number | null };
+  keyHolder: KeyHolder | null;
+  vo: VoSummary | null;
+}
+
+/** What the six flow steps read from the modules. */
+export function flowFactsOf(f: ProjectFacts, tasks: ReadonlyArray<Pick<TaskView, "state" | "actual_start" | "status">>): FlowFacts {
+  return {
+    hasSo: !!f.so,
+    hasPoLine: f.poLines.length > 0,
+    taskStarted: tasks.some((t) => t.status !== "skipped" && (t.state === "in_progress" || t.state === "done" || !!t.actual_start || t.status === "done")),
+    handedOver: !!f.handover || !!f.project.handed_over_at,
+    contractSen: f.billing.available ? f.billing.contractSen : (f.so?.local_total_sen ?? null),
+    receivedSen: f.billing.receivedTotalSen ?? 0,
+    closedAt: f.project.closed_at,
+  };
+}
+
+export function moneyOf(f: ProjectFacts): ProjectView["money"] {
+  if (!f.so) return { contractSen: null, receivedSen: null, receivedPct: null };
+  const contractSen = f.billing.available ? f.billing.contractSen : (f.so.local_total_sen ?? null);
+  const receivedSen = f.billing.available ? (f.billing.receivedTotalSen ?? 0) : null;
+  const receivedPct = contractSen && contractSen > 0 && receivedSen != null ? Math.round((receivedSen / contractSen) * 1000) / 10 : null;
+  return { contractSen, receivedSen, receivedPct };
 }
 
 export function computeProjectView(f: ProjectFacts, today: string): ProjectView {
@@ -71,7 +101,19 @@ export function computeProjectView(f: ProjectFacts, today: string): ProjectView 
   }));
   const openSnags = f.defects.filter((d) => d.phase === "snag" && !d.closed_at);
   const handedOver = !!f.handover || !!f.project.handed_over_at;
+  const flowSteps = f.flowSteps ?? [];
+  const derived = derivedFlowStep(flowSteps, flowFactsOf(f, tasks));
+  const manualStep = isFlowStepKey(f.project.flow_manual_step) ? f.project.flow_manual_step : null;
+  const flow = effectiveFlowStep(flowSteps, derived, manualStep
+    ? { step: manualStep, base: isFlowStepKey(f.project.flow_manual_base_step) ? f.project.flow_manual_base_step : null }
+    : null);
+  const holdFlag = f.project.hold_flag === "in_defect" || f.project.hold_flag === "on_hold" ? f.project.hold_flag : null;
   return {
+    flow,
+    hold: holdFlag ? { flag: holdFlag, note: f.project.hold_note ?? null, at: f.project.hold_at ?? null } : null,
+    money: moneyOf(f),
+    keyHolder: f.keyHolder ?? null,
+    vo: f.vo ?? null,
     stages,
     currentStage: currentStage(views),
     gate,
@@ -92,6 +134,7 @@ export function computeProjectView(f: ProjectFacts, today: string): ProjectView 
       plannedHandoverDate: f.project.planned_handover_date,
       handedOver,
       gateOpen: gate.open,
+      gateMessages: gate.reasons.map((r) => GATE_REASON_TEXT[r]),
     }),
   };
 }

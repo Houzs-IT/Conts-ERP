@@ -14,6 +14,19 @@ const OPTIONAL_MONEY = {
   deposit_collected: 'depositCollected', deposit_refunded: 'depositRefunded', payout_amount: 'payoutAmount',
   payout_date: 'payoutDate', payment_method: 'paymentMethod', rate_plan: 'ratePlan', guest_nationality: 'guestNationality',
 } as const;
+/** Which optional columns this database has. Remembered once all are there, so opening a booking stops paying a
+ *  catalogue query on every request; until then it is asked each time, so a migration applied later is seen. */
+let optionalSeen: { column_name: string }[] | null = null;
+async function optionalColumns(env: Env): Promise<{ column_name: string }[]> {
+  if (optionalSeen) return optionalSeen;
+  const wanted = [...Object.keys(OPTIONAL_MONEY), 'staff_notes'];
+  const rows = await all<{ column_name: string }>(env, `
+    SELECT column_name FROM information_schema.columns
+    WHERE table_name = 'reservations' AND table_schema = ANY(current_schemas(false))
+      AND column_name IN (${wanted.map(c => `'${c}'`).join(', ')})`);
+  if (rows.length === wanted.length) optionalSeen = rows;
+  return rows;
+}
 const TEXT_FIELDS = new Set(['payout_date', 'payment_method', 'rate_plan', 'guest_nationality']);
 
 const CHANNEL_LABEL: Record<string, string> = {
@@ -34,6 +47,7 @@ function describe(a: { action: string; actor_label: string; before_state: string
   const before = parse(a.before_state) ?? {}, after = parse(a.after_state) ?? {};
   switch (a.action) {
     case 'reservation.create': return { label: 'Booking created', actor: a.actor_label };
+    case 'reservation.block': return { label: after.channel === 'owner_stay' ? 'Owner stay created' : 'Block created', detail: after.reason ? `Note: ${after.reason}` : undefined, actor: a.actor_label };
     case 'reservation.duplicate': return { label: 'Created as a copy of another booking', actor: a.actor_label };
     case 'reservation.status':
     case 'reservation.cancel': {
@@ -75,10 +89,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
   if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Bookings are not available to field roles.', 403);
   const id = String(params.id);
 
-  const present = await all<{ column_name: string }>(env, `
-    SELECT column_name FROM information_schema.columns
-    WHERE table_name = 'reservations' AND table_schema = ANY(current_schemas(false))
-      AND column_name IN (${[...Object.keys(OPTIONAL_MONEY), 'staff_notes'].map(c => `'${c}'`).join(', ')})`);
+  const present = await optionalColumns(env);
   const extra = present.map(c => c.column_name).filter(c => c in OPTIONAL_MONEY);
   const hasStaffNotes = present.some(c => c.column_name === 'staff_notes');
   const schema = await moneySchema(env);
@@ -105,13 +116,15 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
   ]);
 
   const channel = CHANNEL_LABEL[row.channel] ?? row.channel;
+  // A block or an owner stay is not a booking: its events say so, and it has a start and an end, not a check-in.
+  const what = row.channel === 'maintenance_block' ? 'Block' : row.channel === 'owner_stay' ? 'Owner stay' : null;
   const timeline: TimelineEvent[] = [];
-  if (!auditRows.some(a => a.action === 'reservation.create' || a.action === 'reservation.duplicate')) {
-    timeline.push({ at: row.created_at, label: 'Booking recorded', detail: row.channel === 'maintenance_block' || row.channel === 'owner_stay' ? undefined : `Source: ${channel}` });
+  if (!auditRows.some(a => a.action === 'reservation.create' || a.action === 'reservation.duplicate' || a.action === 'reservation.block')) {
+    timeline.push({ at: row.created_at, label: what ? `${what} recorded` : 'Booking recorded', detail: what ? undefined : `Source: ${channel}` });
   }
   for (const a of auditRows) {
     const d = describe(a);
-    if (d) timeline.push({ at: a.occurred_at, ...d });
+    if (d) timeline.push({ at: a.occurred_at, ...d, ...(what && d.label === 'Booking created' ? { label: `${what} created` } : {}) });
   }
   for (const m of messages) {
     timeline.push({ at: m.sent_at, label: m.direction === 'inbound' ? 'Message from guest' : m.is_automated ? 'Automatic message sent' : 'Message sent to guest' });
@@ -124,10 +137,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
 
   const today = mytDay();
   if (['inquiry', 'pending', 'confirmed'].includes(row.state) && row.check_in >= today) {
-    timeline.push({ at: `${row.check_in}T${row.check_in_time}:00+08:00`, label: 'Check-in due', upcoming: true });
+    timeline.push({ at: `${row.check_in}T${row.check_in_time}:00+08:00`, label: what ? `${what} starts` : 'Check-in due', upcoming: true });
   }
   if (['inquiry', 'pending', 'confirmed', 'checked_in'].includes(row.state) && row.check_out >= today) {
-    timeline.push({ at: `${row.check_out}T${row.check_out_time}:00+08:00`, label: 'Check-out due', upcoming: true });
+    timeline.push({ at: `${row.check_out}T${row.check_out_time}:00+08:00`, label: what ? `${what} ends` : 'Check-out due', upcoming: true });
   }
 
   const moves = movesFor(row.state as State, {

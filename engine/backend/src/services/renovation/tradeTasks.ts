@@ -11,13 +11,21 @@
    - A trade whose every line was omitted by a variation order is skipped
      automatically ('vo_omitted'); a VO that adds it back re-opens it.
    - Template tasks: INTERNAL_TASKS whose stage the project type runs, stored as
-     trade_code 'INTERNAL:<key>', fulfilment_kind 'internal', no PO. */
+     trade_code 'INTERNAL:<key>', fulfilment_kind 'internal', no PO.
+   - Every task carries its Notion category (TASK_CATEGORIES) and is named by it.
+     A trade task may be switched to our own in-house crew (fulfilment_kind
+     'internal', people assigned, ticked done); a contract sync never puts a PO
+     back on it. Extra tasks are added by hand from a category, and a category may
+     repeat (occurrence 2, 3...); the sync only ever owns occurrence 1. */
 
 import {
   INTERNAL_TASKS,
   NON_TASK_TRADES,
   TRADE_ORDER,
+  categoryOfTask,
+  taskCodeOfCategory,
   type StageKey,
+  type TaskCategoryDef,
 } from "../../scm/shared/renovation-stages";
 
 export type FixPhase = "single" | "first" | "second";
@@ -43,7 +51,7 @@ const TRADE_LABEL: Readonly<Record<string, string>> = {
 };
 
 export function tradeTaskLabel(trade: string, fix: FixPhase): string {
-  return TRADE_LABEL[`${trade}:${fix}`] ?? TRADE_LABEL[trade] ?? trade.replace(/_/g, " ");
+  return categoryOfTask(trade, fix)?.label ?? TRADE_LABEL[`${trade}:${fix}`] ?? TRADE_LABEL[trade] ?? trade.replace(/_/g, " ");
 }
 
 export function internalTradeCode(key: string): string {
@@ -72,11 +80,14 @@ export interface ExistingTask {
   skip_source?: string | null;
   purchase_order_id?: string | null;
   supplier_id?: string | null;
+  fulfilment_kind?: string | null;
+  occurrence?: number | null;
 }
 
 export interface TaskPlanRow {
   tradeCode: string;
   fixPhase: FixPhase;
+  categoryCode: string | null;
   label: string;
   stageKey: StageKey;
   seq: number;
@@ -140,6 +151,7 @@ export function planTradeTasks(input: PlanInput): TaskPlan {
       wanted.set(key(trade, fix), {
         tradeCode: trade,
         fixPhase: fix,
+        categoryCode: categoryOfTask(trade, fix)?.code ?? null,
         label: tradeTaskLabel(trade, fix),
         stageKey,
         seq: stageKey === "handover" ? 950 : orderSeq(trade, fix),
@@ -154,10 +166,12 @@ export function planTradeTasks(input: PlanInput): TaskPlan {
   }
   INTERNAL_TASKS.forEach((t, i) => {
     if (!typeStages.has(t.stage)) return;
+    const cat = categoryOfTask(internalTradeCode(t.key), "single");
     wanted.set(key(internalTradeCode(t.key), "single"), {
       tradeCode: internalTradeCode(t.key),
       fixPhase: "single",
-      label: t.label,
+      categoryCode: cat?.code ?? null,
+      label: cat?.label ?? t.label,
       stageKey: t.stage,
       seq: t.key === "pre_reno_delivery" ? 5 : t.stage === "hardware" ? 990 : 960 + i,
       fulfilmentKind: "internal",
@@ -169,8 +183,13 @@ export function planTradeTasks(input: PlanInput): TaskPlan {
     });
   });
 
+  /* The sync owns the first occurrence only; repeats added by hand are left alone. */
   const existingBy = new Map<string, ExistingTask>();
-  for (const e of input.existing) existingBy.set(key(e.trade_code, e.fix_phase), e);
+  for (const e of input.existing) {
+    const k = key(e.trade_code, e.fix_phase);
+    const cur = existingBy.get(k);
+    if (!cur || Number(e.occurrence ?? 1) < Number(cur.occurrence ?? 1)) existingBy.set(k, e);
+  }
 
   const plan: TaskPlan = { create: [], refresh: [], autoSkip: [], reopen: [] };
   for (const [k, row] of wanted) {
@@ -180,7 +199,11 @@ export function planTradeTasks(input: PlanInput): TaskPlan {
       if (!allOmitted) plan.create.push(clean);
       continue;
     }
-    if (clean.fulfilmentKind === "po") plan.refresh.push({ ...clean, id: ex.id });
+    if (clean.fulfilmentKind === "po") {
+      /* switched to in-house crew: keep its line links, never give it a PO or supplier */
+      const inHouse = ex.fulfilment_kind === "internal";
+      plan.refresh.push({ ...clean, id: ex.id, ...(inHouse ? { purchaseOrderId: null, supplierId: null } : {}) });
+    }
     if (allOmitted && ex.state !== "skipped" && ex.state !== "done") plan.autoSkip.push(ex.id);
     if (!allOmitted && ex.state === "skipped" && ex.skip_source === "vo_omitted") plan.reopen.push(ex.id);
   }
@@ -226,4 +249,29 @@ export function plannedDatesRefusal(start: string | null | undefined, end: strin
   if (end != null && end !== "" && !re.test(end)) return "invalid_date";
   if (start && end && end < start) return "end_before_start";
   return null;
+}
+
+export interface ManualTaskRow {
+  tradeCode: string;
+  fixPhase: FixPhase;
+  categoryCode: string;
+  label: string;
+  stageKey: StageKey;
+  seq: number;
+  occurrence: number;
+  fulfilmentKind: FulfilmentKind;
+}
+
+/** A task added by hand from a category: the next free occurrence of its task code. Template tasks and
+    categories with no trade are always our own people's; a trade defaults to in-house unless a PO is wanted. */
+export function manualTaskRow(
+  cat: TaskCategoryDef,
+  existing: ReadonlyArray<{ trade_code: string; fix_phase: string; occurrence?: number | null }>,
+  opts: { fulfilment?: FulfilmentKind } = {},
+): ManualTaskRow {
+  const tradeCode = taskCodeOfCategory(cat);
+  const used = existing.filter((e) => e.trade_code === tradeCode && e.fix_phase === cat.fix).map((e) => Number(e.occurrence ?? 1));
+  const occurrence = used.length ? Math.max(...used) + 1 : 1;
+  const fulfilmentKind: FulfilmentKind = isInternalTradeCode(tradeCode) ? "internal" : (opts.fulfilment ?? "internal");
+  return { tradeCode, fixPhase: cat.fix, categoryCode: cat.code, label: cat.label, stageKey: cat.stage, seq: cat.sort * 10 + occurrence, occurrence, fulfilmentKind };
 }

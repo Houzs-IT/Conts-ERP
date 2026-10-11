@@ -28,6 +28,7 @@ import { SUPPLY_CONDITION_LABEL } from "../services/renovation/conditions";
 import { groupEvidence, type EvidencePhoto } from "../services/renovation/pod";
 import { renderPodNoteHtml } from "../services/renovation/podNote";
 import { syncTradeTasks, writeCachedStage } from "../services/renovation/contractSync";
+import renovationProject from "./renovationProject";
 
 type Ctx = Context<{ Bindings: Env }>;
 const app = new Hono<{ Bindings: Env }>();
@@ -74,6 +75,9 @@ function parseId(x: string | undefined): number | null {
   const n = Number(x);
   return Number.isInteger(n) && n > 0 ? n : null;
 }
+
+// ── Simplified project (owner decisions 11 Oct 2026): own file, mounted before the /:id routes ──
+app.route("/", renovationProject);
 
 // ── Mode: which Projects screens this install shows (app_settings projects_mode, mig 0082) ──
 
@@ -191,9 +195,12 @@ app.get("/calendar", requirePageAccess("projects.list"), async (c) => {
   if (plannedDatesRefusal(from, to)) return c.json({ error: "invalid_range" }, 400);
   const supplierId = c.req.query("supplierId") || null;
   const projectId = c.req.query("projectId") ? parseId(c.req.query("projectId")) : null;
+  const personId = c.req.query("personId") ? parseId(c.req.query("personId")) : null;
   const res = await db(c).prepare(
     `SELECT t.id::int AS id, t.project_id::int AS project_id, p.code AS project_code, p.name AS project_name, p.building, p.unit_no,
-            t.stage_key, t.trade_code, t.fix_phase, t.label, t.fulfilment_kind, t.state,
+            t.stage_key, t.trade_code, t.fix_phase, t.label, t.fulfilment_kind, t.state, t.category_code, t.occurrence::int AS occurrence,
+            coalesce((SELECT json_agg(json_build_object('id', pp.id::int, 'name', pp.name) ORDER BY pp.name)
+                        FROM project_trade_task_assignees a JOIN project_people pp ON pp.id = a.person_id WHERE a.task_id = t.id), '[]'::json) AS assignees,
             t.supplier_id::text AS supplier_id, sup.name AS supplier_name, po.po_number,
             t.planned_start::text AS planned_start, t.planned_end::text AS planned_end,
             t.actual_start::text AS actual_start, t.actual_end::text AS actual_end,
@@ -210,9 +217,10 @@ app.get("/calendar", requirePageAccess("projects.list"), async (c) => {
         AND coalesce(t.planned_end, t.planned_start) >= ?::date
         AND (?::uuid IS NULL OR t.supplier_id = ?::uuid)
         AND (?::bigint IS NULL OR t.project_id = ?::bigint)
+        AND (?::bigint IS NULL OR EXISTS (SELECT 1 FROM project_trade_task_assignees a WHERE a.task_id = t.id AND a.person_id = ?::bigint))
         ${coSql(c, "p.company_id")}
       ORDER BY coalesce(t.planned_start, t.planned_end), p.code, t.seq`,
-  ).bind(to, from, supplierId, supplierId, projectId, projectId).all<Record<string, unknown>>();
+  ).bind(to, from, supplierId, supplierId, projectId, projectId, personId, personId).all<Record<string, unknown>>();
   const today = todayMyt();
   const data = (res.results ?? []).map((r) => ({
     ...r,
@@ -227,7 +235,12 @@ app.get("/calendar", requirePageAccess("projects.list"), async (c) => {
     `SELECT DISTINCT sup.id::text AS id, sup.name FROM project_trade_tasks t JOIN projects p ON p.id = t.project_id
        JOIN scm.suppliers sup ON sup.id = t.supplier_id WHERE p.archived_at IS NULL${coSql(c, "p.company_id")} ORDER BY sup.name`,
   ).bind().all();
-  return c.json({ from, to, data, contractors: contractors.results ?? [] });
+  const crew = await db(c).prepare(
+    `SELECT DISTINCT pp.id::int AS id, pp.name FROM project_trade_task_assignees a JOIN project_people pp ON pp.id = a.person_id
+       JOIN project_trade_tasks t ON t.id = a.task_id JOIN projects p ON p.id = t.project_id
+      WHERE p.archived_at IS NULL${coSql(c, "p.company_id")} ORDER BY pp.name`,
+  ).bind().all();
+  return c.json({ from, to, data, contractors: contractors.results ?? [], crew: crew.results ?? [] });
 });
 
 // ── Checklist skip (with reason) ─────────────────────────────────────────
@@ -309,13 +322,6 @@ app.post("/trade-tasks/:taskId/start", requirePermission("projects.write"), fail
   const task = await taskWithProject(c, taskId);
   if (!task) return c.json({ error: "not_found" }, 404);
   if (task.state === "skipped" || task.state === "done") return c.json({ error: `task_${task.state}` }, 409);
-  if (task.stage_key === "hardware") {
-    const one = await loadOne(c, task.project_id, { checklistKeys: BOARD_CHECKLIST_KEYS });
-    if (!one) return c.json({ error: "not_found" }, 404);
-    if (!one.view.gate.open) {
-      return c.json({ error: "hardware_gate_closed", reasons: one.view.gate.reasons, messages: one.view.gate.reasons.map((r) => GATE_REASON_TEXT[r]) }, 409);
-    }
-  }
   await db(c).prepare(`UPDATE project_trade_tasks SET state = 'in_progress', actual_start = coalesce(actual_start, ?::date), updated_at = now() WHERE id = ?`)
     .bind(todayMyt(), taskId).run();
   return c.json({ ok: true });
@@ -327,7 +333,9 @@ app.post("/trade-tasks/:taskId/complete", requirePermission("projects.write"), a
   const task = await taskWithProject(c, taskId);
   if (!task) return c.json({ error: "not_found" }, 404);
   if (task.fulfilment_kind === "po") {
-    return c.json({ error: "po_task_completes_on_receipt", message: "A subcontracted task completes when its purchase order is received on site." }, 409);
+    /* A PO task with PO lines completes on receipt; one added by hand with no PO line (e.g. curtain by a contractor) is ticked. */
+    const linked = await db(c).prepare(`SELECT 1 AS x FROM project_trade_task_lines WHERE task_id = ? AND purchase_order_item_id IS NOT NULL LIMIT 1`).bind(taskId).first();
+    if (linked) return c.json({ error: "po_task_completes_on_receipt", message: "A subcontracted task completes when its purchase order is received on site." }, 409);
   }
   if (task.state === "skipped") return c.json({ error: "task_skipped" }, 409);
   const b = await c.req.json<{ note?: string }>().catch(() => ({} as { note?: string }));
@@ -429,6 +437,16 @@ app.get("/:id", requirePageAccess("projects.list"), failClosed(async (c) => {
     purchaseOrders: [...pos.values()],
     receipts: grns.results ?? [],
     financeHidden: hideMoney,
+    flow: v.flow,
+    hold: v.hold,
+    money: hideMoney ? { contractSen: null, receivedSen: null, receivedPct: null } : v.money,
+    keyHolder: v.keyHolder,
+    vo: v.vo,
+    people: {
+      sales: { id: f.project.sales_person_id ?? null, name: f.project.sales_person_name ?? null },
+      designer: { id: f.project.designer_person_id ?? null, name: f.project.designer_person_name ?? null },
+      renoPic: { id: f.project.reno_pic_person_id ?? null, name: f.project.reno_pic_person_name ?? null },
+    },
   });
 }));
 
@@ -446,9 +464,6 @@ app.post("/:id/stages/:key/start", requirePermission("projects.write"), failClos
   const stage = one.view.stages.find((s) => s.key === key)!;
   if (stage.state === "skipped") return c.json({ error: "stage_skipped", message: "Un-skip the stage first." }, 409);
   if (stage.state !== "not_started") return c.json({ error: `stage_${stage.state}` }, 409);
-  if (key === "hardware" && !one.view.gate.open) {
-    return c.json({ error: "hardware_gate_closed", reasons: one.view.gate.reasons, messages: one.view.gate.reasons.map((r) => GATE_REASON_TEXT[r]) }, 409);
-  }
   await db(c).prepare(
     `UPDATE project_stages SET state = 'in_progress', started_at = now(), started_by = ?, updated_at = now() WHERE project_id = ? AND stage_key = ?`,
   ).bind(userId(c), id, key).run();
@@ -464,7 +479,6 @@ app.post("/:id/stages/:key/complete", requirePermission("projects.write"), failC
   const one = await loadOne(c, id);
   if (!one) return c.json({ error: "not_found" }, 404);
   const blockers = stageCompletionBlockers(one.facts, one.view, key);
-  if (key === "hardware" && !one.view.gate.open) blockers.push("hardware_gate_closed");
   if (blockers.length > 0) return c.json({ error: "stage_blocked", blockers }, 409);
   await db(c).prepare(
     `UPDATE project_stages SET state = 'done', started_at = coalesce(started_at, now()), started_by = coalesce(started_by, ?),

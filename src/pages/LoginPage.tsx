@@ -12,7 +12,7 @@ type Screen = 'signin' | 'forgot' | 'change' | 'reset' | 'code';
 const COPY: Record<Screen, { eyebrow: string; heading: string; sub: string; submit: string }> = {
   signin: { eyebrow: 'CONTS ERP', heading: 'Sign in', sub: 'Use the work email your administrator invited.', submit: 'Sign in' },
   forgot: { eyebrow: 'ACCOUNT RECOVERY', heading: 'Reset password', sub: 'We will email you a reset link.', submit: 'Send reset link' },
-  change: { eyebrow: 'FIRST SIGN-IN', heading: 'Set a new password', sub: 'Your invitation used a temporary password.', submit: 'Save and continue' },
+  change: { eyebrow: 'NEW PASSWORD', heading: 'Set a new password', sub: 'You signed in with a temporary password. Choose your own to continue.', submit: 'Save and continue' },
   reset: { eyebrow: 'ACCOUNT RECOVERY', heading: 'Set a new password', sub: 'Choose a new password for your account.', submit: 'Save and sign in' },
   code: { eyebrow: 'TWO-STEP SIGN-IN', heading: 'Enter your code', sub: 'Open your authenticator app and enter the 6-digit code for Conts ERP.', submit: 'Verify and sign in' },
 };

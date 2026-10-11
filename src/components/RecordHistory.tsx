@@ -27,6 +27,7 @@ const ACTION: Record<string, string> = {
   'reservation.details': 'changed the details', 'reservation.prepare': 'prepared the arrival', 'reservation.payment': 'recorded a payment',
   'reservation.payment_removed': 'removed a payment', 'reservation.block_released': 'released the calendar block',
   'reservation.side_effect_failed': 'hit a problem finishing a status change',
+  'reservation.block': 'held these dates', 'document.issue': 'issued a document', 'document.void': 'voided a document', 'message.send': 'sent a message',
   'channex.booking_created': 'received this booking from the booking site', 'channex.booking_updated': 'received a change from the booking site',
   'channex.booking_cancelled': 'received a cancellation from the booking site', 'channex.booking_clash': 'found it clashes with another stay',
   'channex.availability_failed': 'could not update the booking sites',
@@ -74,23 +75,34 @@ const FIELD: Record<string, [string, Kind?]> = {
   listingName: ['Listing name'], unitNumber: ['Unit number'], unitCode: ['Unit code'], building: ['Building'], owner: ['Owner'], package: ['Package'], term: ['Term'],
   split: ['Split'], splitValue: ['Split value'], guaranteePeriod: ['Guarantee period'], bedrooms: ['Bedrooms'], address: ['Address'],
   ownerBankOrId: ['Owner bank or ID details'], monthlyCosts: ['Monthly costs'], tasksRemoved: ['Unstarted tasks removed'], run: ['Payout run'], failureReason: ['Why it failed'],
+  quantity: ['Quantity'], stockOnHand: ['Left in stock'],
   employment: ['Employment', 'state'], via: ['Through', 'state'], label: ['Item'], ownerApprovalRequired: ['Needs owner approval', 'bool'], released: ['Released', 'state'],
   blockFrom: ['From', 'date'], blockTo: ['Until', 'date'], copiedFrom: ['Copied from', 'name'], otaName: ['Booking site'],
+  type: ['Document', 'state'], docNo: ['Document number'], voided: ['Voided', 'bool'],
+  countryCode: ['Nationality'], idType: ['ID type'], idNumber: ['ID number'], dateOfBirth: ['Date of birth'], language: ['Language'],
 };
+const ID_TYPE: Record<string, string> = { mykad: 'MyKad', passport: 'Passport', other: 'Other ID' };
+const countryLabel = (code: string) => { try { return new Intl.DisplayNames(['en'], { type: 'region' }).of(code) ?? code; } catch { return code; } };
 /** Kept in the record for the system's own use; nothing a person needs to read. */
-const HIDDEN = new Set(['documentId', 'windowId', 'channexBookingId', 'statementId', 'amountSource', 'sourceTaskId', 'reservationId', 'maintenanceIssueId', 'issueId', 'paymentId', 'otaBookingId', 'clashingReservationId', 'checked', 'created', 'fields', 'hasEmail', 'hasPhone', 'overlaps']);
+const HIDDEN = new Set(['moveId', 'documentId', 'windowId', 'channexBookingId', 'statementId', 'amountSource', 'sourceTaskId', 'reservationId', 'maintenanceIssueId', 'issueId', 'paymentId', 'otaBookingId', 'clashingReservationId', 'checked', 'created', 'fields', 'hasEmail', 'hasPhone', 'overlaps']);
+
+/** Who reported a repair, in the words the Maintenance screen uses. */
+const REPORTED_BY: Record<string, string> = { guest: 'Guest', cleaner: 'Cleaner', inspection: 'Inspection', staff: 'Office' };
 
 const labelOf = (k: string) => FIELD[k]?.[0] ?? humanize(k.replace(/([a-z])([A-Z])/g, '$1_$2'));
 
 function show(k: string, v: unknown, names: Record<string, string>): string {
   if (v === null || v === undefined || v === '') return 'none';
   const kind = FIELD[k]?.[1] ?? (typeof v === 'number' && /(amount|total|payout|price|cost|deposit|rate)$/i.test(k) ? 'money' : 'text');
+  if (k === 'countryCode' && typeof v === 'string' && /^[A-Z]{2}$/.test(v)) return countryLabel(v);
+  if (k === 'idType' && typeof v === 'string') return ID_TYPE[v] ?? humanize(v);
   if (k === 'tags' && typeof v === 'string') return v.split(',').filter(Boolean).map(t => t === 'vip' ? 'VIP' : humanize(t)).join(', ') || 'none';
   if (typeof v === 'boolean' || kind === 'bool') return v === true || v === 1 || v === '1' ? 'Yes' : 'No';
   if (kind === 'money' && typeof v === 'number') return rm(v);
   if (kind === 'pct' && (typeof v === 'number' || typeof v === 'string') && v !== '') return `${Number(v)}%`;
   if (kind === 'name' && typeof v === 'string') return names[v] ?? 'a record no longer here';
   if (kind === 'role' && typeof v === 'string') return ROLE_LABEL[v] ?? humanize(v);
+  if (k === 'source' && typeof v === 'string' && REPORTED_BY[v]) return REPORTED_BY[v];
   if (kind === 'channel' && typeof v === 'string') return CHANNEL[v as keyof typeof CHANNEL]?.label ?? humanize(v);
   if (kind === 'state' && typeof v === 'string') return k === 'state' || k === 'status' ? stateLabel('task', v) : humanize(v);
   if (typeof v === 'string') {

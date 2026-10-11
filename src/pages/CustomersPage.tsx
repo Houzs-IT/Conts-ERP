@@ -8,7 +8,8 @@ import { MoneyInput, PhoneInput } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
-import { api, notifyFailure } from '../lib/api';
+import { api } from '../lib/api';
+import { persist, useResetOnReload } from '../lib/persist';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { rm } from '../lib/format';
@@ -40,6 +41,8 @@ type Draft = Omit<Customer, 'creditLimitSen'> & { creditLimitSen: number | null 
 const toDraft = (c: Customer): Draft => ({ ...c });
 const emptyDraft = (): Draft => toDraft(C({ id: '', code: '', name: '' }));
 
+const emailBad = (v: string) => v.trim() !== '' && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v.trim());
+
 export default function CustomersPage() {
   const { data, loading, error, reload } = useApi<Payload>('/customers', FALLBACK);
   const toast = useToast();
@@ -51,6 +54,7 @@ export default function CustomersPage() {
   const [added, setAdded] = useState<Customer[]>([]);
   const [edits, setEdits] = useState<Record<string, Partial<Customer>>>({});
   const [removed, setRemoved] = useState<Set<string>>(new Set());
+  useResetOnReload(data, () => { setAdded([]); setEdits({}); setRemoved(new Set()); });
 
   const all = useMemo(() => [...added, ...(data?.data ?? [])].filter(c => !removed.has(c.id)).map(c => ({ ...c, ...edits[c.id] })), [added, data, edits, removed]);
   const q = search.trim().toLowerCase();
@@ -69,15 +73,15 @@ export default function CustomersPage() {
   function save(draft: Draft, isNew: boolean) {
     const { creditLimitSen, ...rest } = draft;
     const body = { ...rest, creditLimitSen: creditLimitSen ?? 0 };
-    if (isNew) { setAdded(a => [C({ ...body, id: `cust-new-${crypto.randomUUID().slice(0, 8)}` }), ...a]); api.post('/customers', body).catch(notifyFailure); toast({ tone: 'success', title: 'Customer added.', body: `${body.code} ${body.name}` }); }
-    else { setEdits(e => ({ ...e, [rest.id]: { ...e[rest.id], ...body } })); api.patch(`/customers/${rest.id}`, body).catch(notifyFailure); toast({ tone: 'success', title: 'Customer updated.', body: `${body.code} ${body.name}` }); }
+    if (isNew) { setAdded(a => [C({ ...body, id: `cust-new-${crypto.randomUUID().slice(0, 8)}` }), ...a]); persist(api.post('/customers', body), { reload, ok: () => toast({ tone: 'success', title: 'Customer added.', body: `${body.code} ${body.name}` }) }); }
+    else { setEdits(e => ({ ...e, [rest.id]: { ...e[rest.id], ...body } })); persist(api.patch(`/customers/${rest.id}`, body), { reload, ok: () => toast({ tone: 'success', title: 'Customer updated.', body: `${body.code} ${body.name}` }) }); }
     setDrawer(null);
   }
-  function remove(c: Customer) { setRemoved(r => new Set(r).add(c.id)); api.del(`/customers/${c.id}`).catch(notifyFailure); toast({ tone: 'success', title: 'Customer removed.', body: c.code }); setDrawer(null); }
+  function remove(c: Customer) { setRemoved(r => new Set(r).add(c.id)); persist(api.del(`/customers/${c.id}`), { reload, ok: () => toast({ tone: 'success', title: 'Customer removed.', body: c.code }) }); setDrawer(null); }
 
   return (
     <>
-      <PageHeader title="Customers" sub={`${all.length} customers · ${all.filter(c => c.status === 'ACTIVE').length} active`}
+      <PageHeader title="Customers" sub={data ? `${all.length} ${all.length === 1 ? 'customer' : 'customers'} · ${all.filter(c => c.status === 'ACTIVE').length} active` : '\u00a0'}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer({ draft: emptyDraft(), isNew: true })}>New customer</Button> : undefined} />
       <DataTable<Customer>
         id="customers" columns={columns} rows={data ? rows : null} rowKey={c => c.id}
@@ -106,7 +110,7 @@ function Chip({ label, active, onClick }: { label: string; active: boolean; onCl
 function CustomerDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: Draft; isNew: boolean; onClose: () => void; onSave: (d: Draft, isNew: boolean) => void; onDelete?: () => void }) {
   const [f, setF] = useState<Draft>(draft);
   const set = <K extends keyof Draft>(k: K) => (e: { target: { value: string } }) => setF(s => ({ ...s, [k]: e.target.value as Draft[K] }));
-  const canSave = f.code.trim() !== '' && f.name.trim() !== '';
+  const canSave = f.code.trim() !== '' && f.name.trim() !== '' && !emailBad(f.email);
   return (
     <Drawer open onClose={onClose} width={640}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5"><h2 className="m-0 text-[19px] font-semibold">{isNew ? 'New customer' : 'Edit customer'}</h2><button onClick={onClose} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted">✕</button></div>
@@ -120,7 +124,7 @@ function CustomerDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: Dr
         <Section title="Contact">
           <Field label="Contact person" value={f.contactPerson} onChange={set('contactPerson')} />
           <PhoneInput label="Phone" value={f.phone} onChange={v => setF(s => ({ ...s, phone: v }))} />
-          <Field label="Email" type="email" value={f.email} onChange={set('email')} />
+          <Field label="Email" type="email" value={f.email} onChange={set('email')} error={emailBad(f.email) ? 'Check the email, or leave it blank.' : undefined} />
           <div className="col-span-2"><Field label="Address" value={f.address} onChange={set('address')} /></div>
           <Field label="Postcode" value={f.postcode} onChange={set('postcode')} />
           <Field label="State" value={f.state} onChange={set('state')} />
@@ -137,7 +141,7 @@ function CustomerDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: Dr
         <div>{onDelete && <ConfirmButton icon={<Trash2 size={15} strokeWidth={1.75} />} confirm={{ title: `Delete customer ${draft.name}?`, body: 'It is deleted for good and drops off the customer list.', confirmLabel: 'Delete customer', cancelLabel: 'Keep it' }} onConfirm={onDelete}>Delete</ConfirmButton>}</div>
         <div className="flex gap-2.5">
           <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button size="sm" variant="primary" disabled={!canSave} disabledReason="Enter a code and a name first" onClick={() => onSave(f, isNew)}>{isNew ? 'Create customer' : 'Save'}</Button>
+          <Button size="sm" variant="primary" disabled={!canSave} disabledReason={emailBad(f.email) ? 'Check the email first' : 'Enter a code and a name first'} onClick={() => onSave(f, isNew)}>{isNew ? 'Create customer' : 'Save'}</Button>
         </div>
       </div>
     </Drawer>
