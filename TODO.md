@@ -252,3 +252,12 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - The sign-in footer phone (+60 17-465 8868) is fixed in LoginPage.tsx; Settings > Support phone is not read there before sign-in.
 - Integrations header counts "2 not connected" from the provider cards only; the Channex panel above it is not counted.
 - A new password equal to the current one is accepted on My account.
+
+## Reservations click sweep (fix/sweep-reservations, 11 Oct 2026)
+- Inbox: the messages table keeps no delivery state, so after a reload a reply WhatsApp refused looks sent (marked only until the page reloads). Needs a migration (a delivery column) — no number was reserved for this sweep.
+- Owner to decide: a guest name "请设置姓名" (Airbnb's "please set your name" placeholder) arrives from the booking data; treat it as no name at import?
+- Owner to decide: changing the dates or total of a booking that already has an issued invoice leaves that invoice for the old stay; warn, or void and reissue?
+- Owner to decide: adding a guest with the phone of an existing guest gives no duplicate warning (merge exists after the fact).
+- Owner to decide: finance_admin sees "Create reservation" on Bookings and the Dashboard; confirm finance should create bookings.
+- The login page always logs one console 401 (GET /api/auth/session before sign-in); auth area, not changed here.
+- `[font:inherit]` next to a text-size class resets the size to 16px; fixed in the booking drawer, Bookings and Guests, still present in Units, Owners, Users and Guest documents pages.
