@@ -6,6 +6,7 @@ import { loadInputs, computeMonth, statementSettings, type Query } from '../../_
 import { contractView, unitExample } from '../../_lib/unitContract';
 import { MODEL_LABEL } from '../../_lib/revenueModel';
 import { TERMS, toOperator } from '../../../src/lib/statementTerms';
+import { layoutLabel } from '../../../src/lib/unitLayout';
 
 const PAYER_LABEL: Record<string, string> = { the_conts: 'Company', tenant: 'Tenant', guest_deposit: 'Guest', warranty: 'Warranty' };
 const CATEGORY_LABEL: Record<string, string> = {
@@ -183,6 +184,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       readiness: unit.readiness,
       bedrooms: unit.bedrooms,
       bathrooms: unit.bathrooms,
+      layoutType: unit.layout_type ?? null, layoutLabel: layoutLabel(unit.layout_type, unit.bedrooms, unit.bathrooms),
       maxGuests: unit.max_guests,
       sizeSqft: unit.size_sqft,
       isListed: !!unit.is_listed,

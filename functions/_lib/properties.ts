@@ -1,5 +1,6 @@
 import { type Env, one, all, run, audit, nowIso } from './db';
 import type { Session } from './auth';
+import { isLayoutType } from '../../src/lib/unitLayout';
 
 export const MASTER_ROLES = ['management', 'operations_manager', 'finance_admin'];
 export const PACKAGES = ['Package A', 'Package B', 'Package C', 'Package D'];
@@ -12,7 +13,7 @@ export interface UnitInput {
   buildingId?: string; parentUnitId?: string | null; listingName?: string; unitCode?: string; address?: string;
   ownerName?: string; ic?: string; bankName?: string; bankAccount?: string; accountHolder?: string;
   pkg?: string; term?: string; split?: string; splitValue?: number | null; guaranteePeriod?: string;
-  bedrooms?: number;
+  bedrooms?: number; bathrooms?: number; sizeSqft?: number | null; layoutType?: string | null;
   expenses?: { id?: string; category: string; amount: number; note?: string }[];
   contract?: { feePct: number; startedOn: string; renewsOn: string };
 }
@@ -35,6 +36,9 @@ export function invalidUnit(b: UnitInput): { field: string; message: string } | 
   if (b.splitValue != null && (!Number.isInteger(b.splitValue) || b.splitValue < 0)) return { field: 'splitValue', message: 'Enter a whole number.' };
   if (b.guaranteePeriod !== undefined && !GUARANTEE_PERIODS.includes(b.guaranteePeriod)) return { field: 'guaranteePeriod', message: 'Pick month or year.' };
   if (b.bedrooms !== undefined && (!Number.isInteger(b.bedrooms) || b.bedrooms < 0 || b.bedrooms > 20)) return { field: 'bedrooms', message: 'Bedrooms must be a whole number from 0 to 20.' };
+  if (b.bathrooms !== undefined && (!Number.isInteger(b.bathrooms) || b.bathrooms < 0 || b.bathrooms > 20)) return { field: 'bathrooms', message: 'Bathrooms must be a whole number from 0 to 20.' };
+  if (b.sizeSqft !== undefined && b.sizeSqft !== null && (!Number.isInteger(b.sizeSqft) || b.sizeSqft < 50 || b.sizeSqft > 20000)) return { field: 'sizeSqft', message: 'Enter the size in square feet, 50 to 20,000.' };
+  if (b.layoutType !== undefined && b.layoutType !== null && !isLayoutType(b.layoutType)) return { field: 'layoutType', message: 'Pick a layout type from the list.' };
   if (b.contract) {
     if (!(b.contract.feePct >= 0 && b.contract.feePct <= 100)) return { field: 'feePct', message: 'The fee must be between 0 and 100.' };
     if (!b.contract.startedOn) return { field: 'startedOn', message: 'Enter the start date.' };

@@ -1,6 +1,7 @@
 import { type Env, all, one, run, json, fail, nowIso } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { invalidUnit, ownerFor, saveExpenses, saveContract, auditUnit, type UnitInput } from '../../_lib/properties';
+import { layoutFromBedrooms, layoutLabel } from '../../../src/lib/unitLayout';
 
 /** GET /api/units?propertyId=&readiness= — the unit list (also the roster behind every unit picker). */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
@@ -19,7 +20,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if (session.role === 'owner') args.push(session.userId);
 
   const rows = await all<any>(env, `
-    SELECT u.id, u.unit_number, u.readiness, u.base_rate, u.is_listed, u.bedrooms, u.bathrooms, u.max_guests,
+    SELECT u.id, u.unit_number, u.readiness, u.base_rate, u.is_listed, u.bedrooms, u.bathrooms, u.max_guests, u.layout_type, u.size_sqft,
            p.id AS property_id, p.name AS property_name, p.city, p.state,
            o.id AS owner_id, o.display_name AS owner_name
     FROM units u
@@ -37,7 +38,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       id: r.id, unitNumber: r.unit_number, readiness: r.readiness,
       propertyId: r.property_id, propertyName: r.property_name, area: r.city, city: r.city, state: r.state,
       ownerId: r.owner_id, ownerName: r.owner_name,
-      bedrooms: r.bedrooms, bathrooms: r.bathrooms, maxGuests: r.max_guests,
+      bedrooms: r.bedrooms, bathrooms: r.bathrooms, maxGuests: r.max_guests, sizeSqft: r.size_sqft ?? null,
+      // The layout for cleaning: the type picked on the unit (or the one its bedrooms imply) and "2 bedroom · 2 bath".
+      layoutType: r.layout_type ?? layoutFromBedrooms(r.bedrooms), layoutLabel: layoutLabel(r.layout_type, r.bedrooms, r.bathrooms),
       isListed: !!r.is_listed,
       // baseRate is integer sen. Field roles never receive money at all.
       ...(session.manage ? { baseRate: r.base_rate } : {}),

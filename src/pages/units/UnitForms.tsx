@@ -17,6 +17,7 @@ import {
   SectionHead, Grid3, Labeled, Select, ReadOnly, CentreModal,
   type Unit, type Building, type UnitDetail,
 } from './shared';
+import { LAYOUTS, layoutFromBedrooms } from '../../lib/unitLayout';
 
 type Change = (p: Partial<Unit>) => void;
 type Doc = UnitDetail['documents'][number];
@@ -62,16 +63,32 @@ export function DetailsForm({ u, buildings, money, canEdit, onChange, onOpenCont
         <Labeled label="Address" span2>
           <Field label="" aria-label="Address" value={u.address} onChange={e => onChange({ address: e.target.value })} />
         </Labeled>
-        <Labeled label="Bedrooms" help="0 for a studio">
-          <NumberInput label="" aria-label="Bedrooms" min={0} max={20} value={u.bedrooms ?? null}
-            onChange={n => onChange({ bedrooms: n ?? undefined })} />
-        </Labeled>
         {money && u.baseRate !== undefined && (
           <Labeled label="Base nightly rate (RM)" help="The web price before channel uplifts. Saving it re-sends prices to linked channels.">
             <MoneyInput label="" aria-label="Base nightly rate" minSen={100} valueSen={u.baseRate}
               onChangeSen={sen => onChange({ baseRate: sen ?? 0 })} />
           </Labeled>
         )}
+      </Grid3>
+
+      <SectionHead>Layout</SectionHead>
+      <Grid3>
+        <Labeled label="Layout type" help={u.layoutType ? 'Shown to cleaners with the bedrooms and bathrooms.' : 'Not picked yet: shown from the bedroom count.'}>
+          <Select label="Layout type" value={u.layoutType ?? layoutFromBedrooms(u.bedrooms) ?? ''} onChange={v => onChange({ layoutType: v || null })}
+            options={LAYOUTS.map(([value, label]) => ({ value, label }))} />
+        </Labeled>
+        <Labeled label="Bedrooms" help="0 for a studio">
+          <NumberInput label="" aria-label="Bedrooms" min={0} max={20} value={u.bedrooms ?? null}
+            onChange={n => onChange({ bedrooms: n ?? undefined, ...(u.layoutType ? {} : { layoutType: null }) })} />
+        </Labeled>
+        <Labeled label="Bathrooms">
+          <NumberInput label="" aria-label="Bathrooms" min={0} max={20} value={u.bathrooms ?? null}
+            onChange={n => onChange({ bathrooms: n ?? undefined })} />
+        </Labeled>
+        <Labeled label="Size (sq ft)" help="Optional">
+          <NumberInput label="" aria-label="Size in square feet" min={50} max={20000} value={u.sizeSqft ?? null}
+            onChange={n => onChange({ sizeSqft: n ?? null })} />
+        </Labeled>
       </Grid3>
 
       <SectionHead>Owner</SectionHead>

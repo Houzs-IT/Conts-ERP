@@ -25,7 +25,7 @@ export interface Unit {
   pkg: string; term: string; split: string; splitValue: number | null; guaranteePeriod: GuaranteePeriod;
   /** The revenue model (0093) and its short terms ("Share 75/20/5"); terms only for roles that see money. Read-only here. */
   revenueModel?: RevenueModel; termsLabel?: string | null;
-  bedrooms?: number;
+  bedrooms?: number; bathrooms?: number; sizeSqft?: number | null; layoutType?: string | null;
   /** Sen. Present only for roles that see money; saved through PUT /api/rates, not the unit PATCH. */
   baseRate?: number;
   expenses: Expense[];
