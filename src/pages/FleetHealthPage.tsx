@@ -85,7 +85,7 @@ export default function FleetHealthPage() {
 
   return (
     <>
-      <PageHeader title="Fleet health" sub={`${all.length} ${all.length === 1 ? 'record' : 'records'}${overdue ? ` · ${overdue} overdue` : ''}`}
+      <PageHeader title="Fleet health" sub={data ? `${all.length} ${all.length === 1 ? 'record' : 'records'}${overdue ? ` · ${overdue} overdue` : ''}` : '\u00a0'}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer({ draft: emptyRec(), isNew: true })}>Log maintenance</Button> : undefined} />
       <DataTable<Rec>
         id="scm.fleet-health" columns={columns} rows={data ? rows : null} rowKey={r => r.id}

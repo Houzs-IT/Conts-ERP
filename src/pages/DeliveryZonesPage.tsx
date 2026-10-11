@@ -70,7 +70,7 @@ export default function DeliveryZonesPage() {
 
   return (
     <>
-      <PageHeader title="Delivery zones" sub={`${rows.length} ${rows.length === 1 ? 'postcode-prefix rule' : 'postcode-prefix rules'}`}
+      <PageHeader title="Delivery zones" sub={data ? `${rows.length} ${rows.length === 1 ? 'postcode-prefix rule' : 'postcode-prefix rules'}` : '\u00a0'}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer({ draft: emptyZone(), isNew: true })}>New rule</Button> : undefined} />
       {usingDefault && (
         <div className="flex items-center justify-between gap-4 flex-wrap p-4 rounded-card bg-[var(--color-gold-50)] [border:1px_solid_var(--color-line)]">

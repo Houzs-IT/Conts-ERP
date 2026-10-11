@@ -77,7 +77,7 @@ export default function CreditNotesPage() {
 
   return (
     <>
-      <PageHeader title="Credit / debit notes" sub={`${all.length} ${all.length === 1 ? 'note' : 'notes'} · only posted notes change what is owed`}
+      <PageHeader title="Credit / debit notes" sub={data ? `${all.length} ${all.length === 1 ? 'note' : 'notes'} · only posted notes change what is owed` : '\u00a0'}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer({ mode: 'new' })}>New note</Button> : undefined} />
 
       <DataTable<Note>

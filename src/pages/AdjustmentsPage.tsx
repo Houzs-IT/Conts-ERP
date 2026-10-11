@@ -65,7 +65,7 @@ export default function AdjustmentsPage() {
 
   return (
     <>
-      <PageHeader title="Adjustments" sub={`${all.length} ${all.length === 1 ? 'stock adjustment' : 'stock adjustments'}`}
+      <PageHeader title="Adjustments" sub={data ? `${all.length} ${all.length === 1 ? 'stock adjustment' : 'stock adjustments'}` : '\u00a0'}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer(true)}>New adjustment</Button> : undefined} />
       <DataTable<Mv>
         id="scm.adjustments" columns={columns} rows={data ? rows : null} rowKey={m => m.id}

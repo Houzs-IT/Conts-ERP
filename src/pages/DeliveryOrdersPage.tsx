@@ -88,7 +88,7 @@ export default function DeliveryOrdersPage() {
 
   return (
     <>
-      <PageHeader title="Delivery orders" sub={`${all.length} ${all.length === 1 ? 'delivery' : 'deliveries'}`}
+      <PageHeader title="Delivery orders" sub={data ? `${all.length} ${all.length === 1 ? 'delivery' : 'deliveries'}` : '\u00a0'}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer({ mode: 'new' })}>New delivery</Button> : undefined} />
       <DataTable<Do>
         id="scm.delivery-orders" columns={columns} rows={data ? rows : null} rowKey={r => r.id}

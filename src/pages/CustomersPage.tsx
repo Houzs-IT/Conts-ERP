@@ -81,7 +81,7 @@ export default function CustomersPage() {
 
   return (
     <>
-      <PageHeader title="Customers" sub={`${all.length} ${all.length === 1 ? 'customer' : 'customers'} · ${all.filter(c => c.status === 'ACTIVE').length} active`}
+      <PageHeader title="Customers" sub={data ? `${all.length} ${all.length === 1 ? 'customer' : 'customers'} · ${all.filter(c => c.status === 'ACTIVE').length} active` : '\u00a0'}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer({ draft: emptyDraft(), isNew: true })}>New customer</Button> : undefined} />
       <DataTable<Customer>
         id="customers" columns={columns} rows={data ? rows : null} rowKey={c => c.id}

@@ -60,7 +60,7 @@ export default function DriversPage() {
 
   return (
     <>
-      <PageHeader title="Drivers" sub={`${rows.length} ${rows.length === 1 ? 'driver' : 'drivers'} · ${rows.filter(d => d.active).length} active`}
+      <PageHeader title="Drivers" sub={data ? `${rows.length} ${rows.length === 1 ? 'driver' : 'drivers'} · ${rows.filter(d => d.active).length} active` : '\u00a0'}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer(emptyDraft())}>New driver</Button> : undefined} />
       <DataTable<Driver>
         id="scm.drivers" columns={columns} rows={data ? rows : null} rowKey={d => d.id}

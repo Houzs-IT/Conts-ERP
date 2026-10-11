@@ -46,7 +46,7 @@ export default function UnbilledDeliveriesPage() {
 
   return (
     <>
-      <PageHeader title="Unbilled deliveries" sub={`${all.length} ${all.length === 1 ? 'delivery order' : 'delivery orders'} awaiting a sales invoice`} />
+      <PageHeader title="Unbilled deliveries" sub={data ? `${all.length} ${all.length === 1 ? 'delivery order' : 'delivery orders'} awaiting a sales invoice` : '\u00a0'} />
       <DataTable<Row>
         id="scm.unbilled-deliveries" columns={columns} rows={data ? rows : null} rowKey={r => r.id}
         loading={loading} error={error} onRetry={reload} pageSize={0}

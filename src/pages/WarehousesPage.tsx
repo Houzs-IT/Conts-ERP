@@ -81,7 +81,7 @@ export default function WarehousesPage() {
 
   return (
     <>
-      <PageHeader title="Warehouses" sub={`${rows.length} ${rows.length === 1 ? 'warehouse' : 'warehouses'}`}
+      <PageHeader title="Warehouses" sub={data ? `${rows.length} ${rows.length === 1 ? 'warehouse' : 'warehouses'}` : '\u00a0'}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer(emptyDraft())}>New warehouse</Button> : undefined} />
 
       <DataTable<Warehouse>

@@ -84,7 +84,7 @@ export default function SalesReturnsPage() {
 
   return (
     <>
-      <PageHeader title="Delivery returns" sub={`${all.length} ${all.length === 1 ? 'return' : 'returns'} · from customers`}
+      <PageHeader title="Delivery returns" sub={data ? `${all.length} ${all.length === 1 ? 'return' : 'returns'} · from customers` : '\u00a0'}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer({ mode: 'new' })}>New return</Button> : undefined} />
 
       <DataTable<Sret>

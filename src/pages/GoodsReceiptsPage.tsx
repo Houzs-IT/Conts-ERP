@@ -100,7 +100,7 @@ export default function GoodsReceiptsPage() {
 
   return (
     <>
-      <PageHeader title="Goods received" sub={`${all.length} ${all.length === 1 ? 'receipt' : 'receipts'} · against purchase orders`}
+      <PageHeader title="Goods received" sub={data ? `${all.length} ${all.length === 1 ? 'receipt' : 'receipts'} · against purchase orders` : '\u00a0'}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer({ mode: 'new' })}>Receive goods</Button> : undefined} />
 
       <DataTable<Grn>

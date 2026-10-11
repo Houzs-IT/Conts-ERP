@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Search, Plus, Download, Upload, Pencil, Trash2 } from 'lucide-react';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
@@ -24,6 +25,11 @@ const CATEGORIES: Category[] = ['SOFA', 'BEDFRAME', 'ACCESSORY', 'MATTRESS', 'BE
 const CAT_LABEL: Record<Category, string> = {
   SOFA: 'Sofa', BEDFRAME: 'Bedframe', ACCESSORY: 'Accessory', MATTRESS: 'Mattress',
   BEDLINES: 'Bedlines', DINING: 'Dining', DIFFUSER: 'Diffuser', CARPET: 'Carpet', SERVICE: 'Service',
+};
+
+/** Tabs whose screen already exists elsewhere open it instead of the "later step" note. */
+const TAB_SCREEN: Record<string, { path: string; label: string }> = {
+  categories: { path: '/procurement/categories', label: 'Open categories' },
 };
 
 const TABS: { key: string; label: string }[] = [
@@ -102,6 +108,7 @@ const draftFrom = (p: Product): Draft => ({
 export default function ProductsPage() {
   const { data, loading, error, reload } = useApi<Payload>('/products', FALLBACK);
   const toast = useToast();
+  const navigate = useNavigate();
   const { user } = useSession();
   const canWrite = !!user && ['management', 'operations_manager', 'finance_admin'].includes(user.role);
 
@@ -253,8 +260,11 @@ export default function ProductsPage() {
       {tab !== 'sku' ? (
         <Card>
           <div className="py-[38px] px-[22px] text-center flex flex-col gap-1.5 items-center">
-            <span className="text-[14px] font-semibold">{TABS.find(t => t.key === tab)?.label} is part of the furniture-specific module.</span>
-            <span className="text-[12.5px] text-muted-ink max-w-[420px]">The SKU Master is ported first. Modular models, variants, combo pricing and the fabric converter come across in a later step.</span>
+            {TAB_SCREEN[tab] ? <span className="text-[14px] font-semibold">Product categories are kept on their own screen.</span> : <>
+              <span className="text-[14px] font-semibold">{TABS.find(t => t.key === tab)?.label} is part of the furniture-specific module.</span>
+              <span className="text-[12.5px] text-muted-ink max-w-[420px]">The SKU Master is ported first. Modular models, variants, combo pricing and the fabric converter come across in a later step.</span>
+            </>}
+            {TAB_SCREEN[tab] && <div className="mt-2"><Button variant="secondary" size="sm" onClick={() => navigate(TAB_SCREEN[tab].path)}>{TAB_SCREEN[tab].label}</Button></div>}
           </div>
         </Card>
       ) : (

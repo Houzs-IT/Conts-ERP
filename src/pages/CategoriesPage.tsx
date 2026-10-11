@@ -78,7 +78,7 @@ export default function CategoriesPage() {
 
   return (
     <>
-      <PageHeader title="Categories" sub={`${rows.length} ${rows.length === 1 ? 'product category' : 'product categories'}`}
+      <PageHeader title="Categories" sub={data ? `${rows.length} ${rows.length === 1 ? 'product category' : 'product categories'}` : '\u00a0'}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer(emptyDraft())}>New category</Button> : undefined} />
 
       <DataTable<Category>

@@ -66,7 +66,7 @@ export default function RacksBinsPage() {
 
   return (
     <>
-      <PageHeader title="Racks & bins" sub={`${all.length} ${all.length === 1 ? 'rack location' : 'rack locations'}`}
+      <PageHeader title="Racks & bins" sub={data ? `${all.length} ${all.length === 1 ? 'rack location' : 'rack locations'}` : '\u00a0'}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer({ draft: emptyRack(warehouses[0]?.id ?? ''), isNew: true })}>New rack</Button> : undefined} />
       <DataTable<Rack>
         id="scm.racks-bins" columns={columns} rows={data ? rows : null} rowKey={r => r.id}

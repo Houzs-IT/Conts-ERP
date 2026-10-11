@@ -95,7 +95,7 @@ export default function SalesOrdersPage() {
 
   return (
     <>
-      <PageHeader title="Sales orders" sub={`${all.length} ${all.length === 1 ? 'order' : 'orders'} · ${rm(outstanding, { cents: false })} outstanding`}
+      <PageHeader title="Sales orders" sub={data ? `${all.length} ${all.length === 1 ? 'order' : 'orders'} · ${rm(outstanding, { cents: false })} outstanding` : '\u00a0'}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={openNew}>New sales order</Button> : undefined} />
       <DataTable<So>
         id="scm.sales-orders" columns={columns} rows={data ? rows : null} rowKey={p => p.id}

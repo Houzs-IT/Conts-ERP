@@ -61,7 +61,7 @@ export default function DpOrdersPage() {
 
   return (
     <>
-      <PageHeader title="DP orders" sub={`${all.length} ${all.length === 1 ? 'delivery' : 'deliveries'} in the planning queue`}
+      <PageHeader title="DP orders" sub={data ? `${all.length} ${all.length === 1 ? 'delivery' : 'deliveries'} in the planning queue` : '\u00a0'}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer({ mode: 'new' })}>Schedule a sales order</Button> : undefined} />
       {error && <StaleBanner message={`Showing the last schedule we have. ${error}`} onRetry={reload} />}
       <div className="flex items-center justify-between gap-5 flex-wrap">
