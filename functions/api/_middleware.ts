@@ -22,6 +22,34 @@ const OWNER_ALLOWED: [string, RegExp][] = [
   // The Owner Income Report: the handler resolves the owner from the session (ownerFor) and shows only their final statements.
   ['GET', /^\/api\/statements\/[^/]+\/report$/],
   ['POST', /^\/api\/maintenance\/issues\/[^/]+\/approve$/],
+  // A file staff marked visible to the owner (their contract); the handler checks it is theirs.
+  ['GET', /^\/api\/documents\/[^/]+\/download$/],
+];
+
+/**
+ * Housekeepers and technicians work from the field app (FieldTodayPage): today's jobs, start, checklist,
+ * photos, done, report damage. They are deny-by-default like owners, so a desk endpoint that only checks for
+ * a signed-in user (units, search, portfolio revenue, owner documents) is never theirs by accident. Each
+ * handler below still checks the job is assigned to them.
+ */
+const FIELD_ALLOWED: [string, RegExp][] = [
+  ['GET', /^\/api\/auth\/session$/],
+  ['POST', /^\/api\/auth\/logout$/],
+  ['POST', /^\/api\/auth\/change-password$/],
+  ['GET', /^\/api\/account$/],
+  ['POST', /^\/api\/account\/[a-z0-9/-]+$/],
+  ['GET', /^\/api\/notifications(\/count)?$/],
+  ['PATCH', /^\/api\/notifications$/],
+  ['GET', /^\/api\/field\/tasks$/],
+  ['GET', /^\/api\/housekeeping\/tasks\/[^/]+(\/checklist|\/photos)?$/],
+  ['POST', /^\/api\/housekeeping\/tasks\/[^/]+\/(checklist|start)$/],
+  ['POST', /^\/api\/housekeeping\/guest-left$/],
+  ['POST', /^\/api\/tasks\/[^/]+\/(complete|photos)$/],
+  ['POST', /^\/api\/maintenance\/issues$/],
+  ['POST', /^\/api\/maintenance\/issues\/[^/]+\/photos$/],
+  ['GET', /^\/api\/documents\/[^/]+\/download$/],
+  // The history of their own cleans and repairs (functions/api/audit/index.ts limits it to those).
+  ['GET', /^\/api\/audit$/],
 ];
 
 /** Supply chain endpoints only check for a signed-in user, and carry prices and costs;
@@ -84,8 +112,11 @@ const handle: PagesFunction<Env> = async ({ request, env, next, waitUntil }) => 
   if (isFieldRole(session.role) && SUPPLY_CHAIN.test(path)) {
     return fail('FORBIDDEN', 'Your account does not have access to supply chain records.', 403);
   }
-  // A level management chose on Users and roles > Permissions replaces the built-in rule for that area.
-  const access = await accessFor(env, session.role, path);
+  if (isFieldRole(session.role) && !FIELD_ALLOWED.some(([m, re]) => m === request.method && re.test(path))) {
+    return fail('FORBIDDEN', 'This is not available in the field app.', 403);
+  }
+  // The level on Users and roles > Permissions (chosen by management, or the built-in one it shows).
+  const access = await accessFor(env, session.role, path, request.method);
   const refused = refusalFor(access, request.method);
   if (refused) return fail('FORBIDDEN', refused, 403);
   if (MONEY_ONLY.test(path) && !(access.chosen ? access.level !== 'none' : canSeeFinance(session.role))) {
