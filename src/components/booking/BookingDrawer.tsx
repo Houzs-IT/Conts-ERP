@@ -657,8 +657,8 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
 
         <div className="grid grid-cols-2 gap-px bg-line border border-solid border-line rounded-card overflow-hidden">
           {([
-            [date(s.checkIn), `Check-in${s.checkInTime ? ` · from ${s.checkInTime}` : ''}`],
-            [date(s.checkOut), `Check-out${s.checkOutTime ? ` · by ${s.checkOutTime}` : ''}`],
+            [date(s.checkIn), block ? 'From' : `Check-in${s.checkInTime ? ` · from ${s.checkInTime}` : ''}`],
+            [date(s.checkOut), block ? 'Until (the day it frees up)' : `Check-out${s.checkOutTime ? ` · by ${s.checkOutTime}` : ''}`],
             [fmtNights(nights), 'Length'],
             [s.guestsCount > 0 ? fmtGuests(s.guestsCount) : '—', 'Guests'],
           ] as const).map(([v, l]) => (
@@ -668,7 +668,7 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
             </div>
           ))}
         </div>
-        {d && live && (
+        {d && live && !block && (
           <button type="button" onClick={() => setTimesOpen(true)}
             className="self-start -mt-3 p-0 border-none bg-transparent [font:inherit] text-meta text-ink underline cursor-pointer">Change check-in or check-out time</button>
         )}
