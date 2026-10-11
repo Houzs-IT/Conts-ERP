@@ -39,6 +39,31 @@ import { MonthStepper, shiftMonth } from './finance/listKit';
 import { DateRange } from './units/BookingsTab';
 
 /** True at the width where the tree becomes a sticky pane (Tailwind xl). */
+/** The tree pane's height on a wide screen: from where the pane starts on screen to the bottom of the window, so the
+ *  list scrolls inside it and its end is never below the fold (at the top of the page the header pushes it down; once
+ *  scrolled it sticks under the top bar). Re-measured as the page scrolls and the window resizes. */
+function usePaneHeight(on: boolean) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [h, setH] = useState<number | null>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!on || !el) { setH(null); return; }
+    let scroller: HTMLElement | null = el.parentElement;
+    while (scroller && !/(auto|scroll)/.test(getComputedStyle(scroller).overflowY)) scroller = scroller.parentElement;
+    const fit = () => {
+      const top = el.getBoundingClientRect().top;
+      const bottom = scroller ? Math.min(window.innerHeight, scroller.getBoundingClientRect().bottom) : window.innerHeight;
+      setH(Math.max(320, Math.floor(bottom - top - 16)));
+    };
+    fit();
+    const target: HTMLElement | Window = scroller ?? window;
+    target.addEventListener('scroll', fit, { passive: true });
+    window.addEventListener('resize', fit);
+    return () => { target.removeEventListener('scroll', fit); window.removeEventListener('resize', fit); };
+  }, [on]);
+  return { ref, height: h };
+}
+
 function useWide() {
   const q = '(min-width: 1280px)';
   const [on, setOn] = useState(() => typeof window !== 'undefined' && window.matchMedia(q).matches);
@@ -75,6 +100,7 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
   const { user } = useSession();
   const canEdit = !!user && MASTER_ROLES.includes(user.role);
   const wide = useWide();
+  const pane = usePaneHeight(wide);
 
   const props = useApi<PropertiesPayload>('/properties', PROPERTIES_FALLBACK);
   const roster = useApi<{ data: RosterRow[] }>('/units');
@@ -254,7 +280,7 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
       <div className="grid grid-cols-1 xl:grid-cols-[minmax(260px,300px)_minmax(0,1fr)] gap-5 items-start min-w-0">
         {/* On a wide screen the tree is its own pane: it stays put under the top bar, as tall as the window, and
             scrolls by itself, so it never runs out while the record on the right scrolls. */}
-        <div className="flex flex-col gap-2 min-w-0 xl:sticky xl:top-0 xl:h-[calc(100vh-100px)] xl:z-[1]">
+        <div ref={pane.ref} style={wide && pane.height ? { height: pane.height } : undefined} className="flex flex-col gap-2 min-w-0 xl:sticky xl:top-0 xl:z-[1]">
           {/* Below the wide-desktop breakpoint the tree folds away behind a picker once a unit is open. */}
           <button onClick={() => setTreeOpen(o => !o)} aria-expanded={treeOpen}
             className="xl:hidden flex items-center gap-3 w-full py-[11px] px-[14px] bg-card border border-solid border-line rounded-card cursor-pointer [font:inherit] text-left">
@@ -499,7 +525,7 @@ function UnitRecord({ pnlMonth, setPnlMonth, d, form, buildings, building, unitL
       )}
       {shown === 'financials' && d.pnl && (
         <>
-          <ExpensesCard title="Expenses this month" unitId={u.id} month={todayMyt().slice(0, 7)} units={[{ id: u.id, label: unitLabel }]} canEdit={canEdit} onChanged={reloadDetail}
+          <ExpensesCard title={pnlMonth ? "Expenses" : "Expenses this month"} unitId={u.id} month={p.period} units={[{ id: u.id, label: unitLabel }]} canEdit={canEdit} onChanged={reloadDetail}
             fixedRent={u.revenueModel === 'grr' || u.revenueModel === 'master_lease'} />
           {form && (
             <Card>

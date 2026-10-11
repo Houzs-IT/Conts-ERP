@@ -199,7 +199,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       const reservations = stayItems(t.lines, statement.channelOf);
       companyPnl = [
         { label: TERMS.hospitalityIncome, amount: t.gross, type: 'gross', items: reservations.length ? reservations : [{ label: 'No reservations this month', amount: 0 }] },
-        ...t.deductionGroups.filter(g => g.amount && g.category !== 'misc').map(g => ({ label: `${g.label} (paid by owner)`, amount: -g.amount, type: 'expense', items: costItems(t.lines, g.category) })),
+        ...t.deductionGroups.filter(g => g.amount && g.category !== 'misc').map(g => ({ label: g.label, amount: -g.amount, type: 'expense', items: costItems(t.lines, g.category) })),
         ...others,
         { label: m.terms.model === 'master_lease' ? 'Lease rent paid to owner' : `${TERMS.fixedRent} paid to owner`, amount: -example.company.rentToOwner, type: 'fee' },
         { label: 'Company result', amount: example.company.result, type: 'net' },
