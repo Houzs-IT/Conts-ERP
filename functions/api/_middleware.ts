@@ -1,4 +1,4 @@
-import { type Env, fail, withDbGate } from '../_lib/db';
+import { type Env, fail, withRequestDb } from '../_lib/db';
 import { readSession, readCookie, signSession, cookie, clearCookie, sessionLimits, sessionState, isFieldRole, canSeeFinance } from '../_lib/auth';
 import { doorFor, doorRefusal } from '../_lib/door';
 import { accessFor, refusalFor } from '../_lib/access';
@@ -153,7 +153,7 @@ const handle: PagesFunction<Env> = async ({ request, env, next, waitUntil }) => 
  *  page or a raw message. It is logged here and answered in the standard envelope with a plain sentence instead. */
 export const onRequest: PagesFunction<Env> = async (ctx) => {
   try {
-    return await withDbGate(async () => handle(ctx));
+    return await withRequestDb(async () => handle(ctx), p => ctx.waitUntil(p));
   } catch (e) {
     console.error('Unhandled error', ctx.request.method, new URL(ctx.request.url).pathname, e);
     // A write may have saved part of its work before it failed, so it does not claim "nothing was saved" (a person who
