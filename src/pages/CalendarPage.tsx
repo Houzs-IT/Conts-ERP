@@ -363,6 +363,12 @@ export default function CalendarPage() {
 
   async function refresh() {
     if (syncing) return;
+    // With no booking site linked there is nothing to pull: refresh the board instead of asking Channex and failing.
+    if (integrations && !otaRows.some(r => r.state !== 'not_connected')) {
+      reload(); reloadIntegrations();
+      toast({ tone: 'info', title: 'Calendar refreshed.', body: 'No booking site is linked yet, so there is nothing to pull from Airbnb, Booking.com or Agoda.' });
+      return;
+    }
     setSyncing(true);
     try {
       const res = await api.post<{ bookings?: { processed: number } }>('/integrations/sync');
@@ -616,7 +622,7 @@ export default function CalendarPage() {
                             return (
                               <div aria-hidden className="absolute top-2.5 bottom-2.5 z-[3] box-border rounded-[8px] border-2 border-solid border-gold bg-gold-tint/80 grid place-items-center pointer-events-none text-meta font-semibold text-[var(--color-text-accent)] whitespace-nowrap overflow-hidden"
                                 style={{ left: lo * COL + 2, width: n * COL - 4 }}>
-                                {n * COL > 90 ? `${n === 1 ? dateShort(dayIso(lo)) : `${dateShort(dayIso(lo))} – ${dateShort(dayIso(hi))}`} · ${plural(n, 'night')}` : n}
+                                {n * COL > 190 ? `${n === 1 ? dateShort(dayIso(lo)) : `${dateShort(dayIso(lo))} – ${dateShort(dayIso(hi))}`} · ${plural(n, 'night')}` : n * COL > 80 ? plural(n, 'night') : n}
                               </div>
                             );
                           })()}

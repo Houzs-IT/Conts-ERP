@@ -1,6 +1,7 @@
 /** The printed Invoice and Official Receipt, from the document's frozen snapshot, on the shared letterhead. */
 import { printPage, esc, ringgit, longDate } from './letterhead';
 import type { Snapshot } from './guestDocuments';
+import { parsePhone } from '../../src/lib/phone';
 
 const ONES = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
 const TENS = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
@@ -30,7 +31,7 @@ export function renderDocument(s: Snapshot, voided: { at: string; reason: string
   const stay = `${longDate(s.booking.checkIn)} to ${longDate(s.booking.checkOut)} (${s.booking.nights} ${s.booking.nights === 1 ? 'night' : 'nights'})`;
   const left: [string, string][] = [
     [receipt ? 'Received from' : 'Bill to', s.guest.name],
-    ...(s.guest.phone ? [['Phone', s.guest.phone] as [string, string]] : []),
+    ...(s.guest.phone ? [['Phone', parsePhone(s.guest.phone)?.international ?? s.guest.phone] as [string, string]] : []),
     ...(s.guest.email ? [['Email', s.guest.email] as [string, string]] : []),
   ];
   const right: [string, string][] = [

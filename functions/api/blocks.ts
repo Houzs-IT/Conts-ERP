@@ -50,6 +50,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     });
     if (clash) return json(clashResponseBody(clash), 409);
     id = newId;
+    // On the block itself too, so its History says who made it.
+    await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'reservation.block', entityTable: 'reservations', entityId: id,
+      after: { unitId: unit.id, channel: kind === 'owner_stay' ? 'owner_stay' : 'maintenance_block', checkIn: b.from, checkOut: b.to, reason: note || null } });
     // The repair job this block is for, so closing the job gives the nights back (migration 0095; skipped without it).
     if (b.issueId) await run(env, 'UPDATE reservations SET maintenance_issue_id = ? WHERE id = ? AND EXISTS (SELECT 1 FROM maintenance_issues WHERE id = ? AND unit_id = ?)', String(b.issueId), id, String(b.issueId), unit.id).catch(() => {});
   } else if (!b.issueId) {

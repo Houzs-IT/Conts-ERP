@@ -11,6 +11,7 @@ import { api, notifyFailure, errorMessage } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { relative, time, count } from '../lib/format';
 import { Button } from '../components/Button';
+import { deliveryToast } from '../lib/bookingStatus';
 import type { BookingChannel } from '../lib/types';
 
 /** A single message in a thread. `status` only ever exists on an outbound message
@@ -22,7 +23,7 @@ interface Message {
   body: string;
   sentAt: string;
   isAutomated: boolean;
-  status?: 'sending' | 'sent';
+  status?: 'sending' | 'sent' | 'undelivered';
 }
 interface Thread {
   id: string;
@@ -149,11 +150,9 @@ export default function InboxPage() {
       // Only now, after the round-trip resolves, does it read as sent.
       setSentByThread(s => ({
         ...s,
-        [activeId]: (s[activeId] ?? []).map(m => (m.id === id ? { ...m, status: 'sent' } : m)),
+        [activeId]: (s[activeId] ?? []).map(m => (m.id === id ? { ...m, status: res.delivery === 'sent' ? 'sent' : 'undelivered' } : m)),
       }));
-      toast(res.delivery === 'sent'
-        ? { tone: 'success', title: 'Message sent.' }
-        : { tone: 'warning', title: 'Message saved, not delivered yet.', body: res.reason ?? 'WhatsApp is not connected yet, so it is queued.' });
+      toast(deliveryToast(res.delivery, open?.guestName || 'the guest', res.reason));
     } catch (e) {
       setSentByThread(s => ({ ...s, [activeId]: (s[activeId] ?? []).filter(m => m.id !== id) }));
       setDraft(body);
@@ -260,6 +259,7 @@ export default function InboxPage() {
                       <span className="text-caption text-muted-ink">
                         {sending ? 'Sending…' : time(m.sentAt)}
                       </span>
+                      {m.status === 'undelivered' && <StatusBadge tone="critical" label="Not delivered" size="sm" />}
                       {m.isAutomated && <StatusBadge tone="neutral" label="Automated" size="sm" />}
                     </div>
                   </div>

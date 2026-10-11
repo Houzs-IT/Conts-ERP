@@ -19,7 +19,8 @@ import { useApi } from '../lib/useApi';
 import { api, ApiFailure, errorMessage } from '../lib/api';
 import { useSession } from '../lib/session';
 import { deliveryToast } from '../lib/bookingStatus';
-import { rm, dateRange, time, date as fmtDate, nights as fmtNights, guests as fmtGuests, plural, count as fmtCount, phone, todayMyt } from '../lib/format';
+import { rm, dateRange, time, date as fmtDate, nights as fmtNights, guests as fmtGuests, plural, count as fmtCount, phone, todayMyt, greetName } from '../lib/format';
+import { phoneCountries } from '../lib/phone';
 import { Select, Menu } from '../components/Select';
 import { Chip as FilterChip } from './finance/listKit';
 import type { BookingChannel, ReservationState, UnitReadiness, UserRole, Tone } from '../lib/types';
@@ -107,9 +108,8 @@ const threadName = (ch: BookingChannel) => (ch === 'direct' ? 'WhatsApp' : chann
 const failMessage = (e: unknown) => (errorMessage(e, 'Try again in a moment.'));
 
 const ID_TYPES: Record<string, string> = { mykad: 'MyKad', passport: 'Passport', other: 'Other ID' };
-/** Common guest nationalities; any other ISO code still shows by name. */
-const COUNTRY_CODES = ['MY', 'SG', 'ID', 'TH', 'PH', 'VN', 'BN', 'CN', 'HK', 'TW', 'JP', 'KR', 'IN', 'PK', 'BD', 'LK', 'AU', 'NZ', 'GB', 'IE', 'US', 'CA',
-  'DE', 'FR', 'NL', 'IT', 'ES', 'CH', 'SE', 'NO', 'DK', 'RU', 'SA', 'AE', 'QA', 'KW', 'OM', 'EG', 'TR', 'IR', 'MV', 'NG', 'ZA'];
+/** Every country (a guest can come from anywhere; registration needs the nationality). */
+const COUNTRY_CODES: string[] = phoneCountries().map(c => c.code);
 const countryName = (code: string | null | undefined) => {
   if (!code) return null;
   try { return new Intl.DisplayNames(['en'], { type: 'region' }).of(code) ?? code; } catch { return code; }
@@ -575,7 +575,7 @@ function Registration({ g, onEdit }: { g: Guest; onEdit: () => void }) {
         {row('ID number', r.hasIdNumber ? (
           <span className="inline-flex items-center gap-2 flex-wrap">
             <span className="font-mono">{revealed ?? r.idNumberMasked}</span>
-            {g.can.reveal && !revealed && <button type="button" onClick={reveal} className="p-0 border-none bg-transparent [font:inherit] text-meta text-ink underline cursor-pointer">Show</button>}
+            {g.can.reveal && !revealed && <button type="button" onClick={reveal} className="p-0 border-none bg-transparent [font-family:inherit] text-meta text-ink underline cursor-pointer">Show</button>}
           </span>
         ) : 'Not given', !r.hasIdNumber)}
         {row('Date of birth', r.dateOfBirth ? fmtDate(r.dateOfBirth) : 'Not given', !r.dateOfBirth)}
@@ -612,7 +612,7 @@ function NotesAndTags({ g, onSaved }: { g: Guest; onSaved: () => void }) {
           const on = g.manualTags.includes(t);
           return (
             <button key={t} type="button" onClick={() => toggle(t)} disabled={busy || !g.can.edit} aria-pressed={on}
-              className={cx('h-7 inline-flex items-center gap-1 px-[10px] rounded-full [font:inherit] text-meta cursor-pointer border border-solid',
+              className={cx('h-7 inline-flex items-center gap-1 px-[10px] rounded-full [font-family:inherit] text-meta cursor-pointer border border-solid',
                 on ? (t === 'blacklist' ? 'bg-danger-bg border-danger-line text-danger font-semibold' : 'bg-warning-bg border-warning-line text-warning font-semibold')
                   : 'bg-card border-dashed border-line text-muted-ink')}>
               <Icon name={on ? 'Check' : 'Plus'} size="sm" />{t === 'vip' ? 'VIP' : 'Blacklist'}
@@ -716,7 +716,7 @@ function MessageModal({ g, onClose, onSend }: { g: Guest; onClose: () => void; o
         <div className="flex flex-col gap-[6px]">
           <label htmlFor="msg-body" className={labelClass}>Message</label>
           <textarea id="msg-body" required value={body} onChange={e => setBody(e.target.value)} rows={4}
-            placeholder={`Hi ${g.fullName.split(' ')[0]}, checking in on your stay…`} className={cx(fieldBase, 'p-[10px_12px] resize-y')} />
+            placeholder={`Hi ${greetName(g.fullName)}, checking in on your stay…`} className={cx(fieldBase, 'p-[10px_12px] resize-y')} />
         </div>
         <div className="flex justify-end gap-[9px]">
           <Button type="button" size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
