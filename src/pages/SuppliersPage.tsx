@@ -6,6 +6,7 @@ import { ConfirmButton } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
 import { MoneyInput, NumberInput, PhoneInput, phoneProblem } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
+import { Segmented } from '../components/Metric';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { api } from '../lib/api';
@@ -13,7 +14,6 @@ import { persist, useResetOnReload } from '../lib/persist';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { rm } from '../lib/format';
-import { cx } from '../lib/design-tokens';
 import { statusLabel } from '../lib/status';
 
 /** Suppliers — supplier master, ported from 2990's SCM (logic) and drawn in Conts.
@@ -127,10 +127,7 @@ export default function SuppliersPage() {
         onRowClick={canWrite ? s => setDrawer({ draft: toDraft(s), isNew: false }) : undefined}
         noun={['supplier', 'suppliers']} exportName="suppliers"
         toolbar={<>
-          <div className="flex gap-2 flex-wrap">
-            <Chip label="All" active={statusFilter === 'all'} onClick={() => setStatusFilter('all')} />
-            {STATUSES.map(s => <Chip key={s} label={statusLabel('supplier', s)} active={statusFilter === s} onClick={() => setStatusFilter(s)} />)}
-          </div>
+          <Segmented label="Status" options={[{ key: 'all' as const, label: 'All' }, ...STATUSES.map(s => ({ key: s, label: statusLabel('supplier', s) }))]} value={statusFilter} onChange={setStatusFilter} />
           <div className="relative">
             <Search size={16} strokeWidth={1.75} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-ink" />
             <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search suppliers..." aria-label="Search suppliers"
@@ -148,15 +145,6 @@ export default function SuppliersPage() {
 
 /* ---------- primitives ---------- */
 
-function Chip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
-  return (
-    <button onClick={onClick} aria-pressed={active}
-      className={cx('h-8 flex items-center px-4 py-0 rounded-full cursor-pointer font-sans text-[13px] font-semibold border border-solid',
-        active ? 'border-black bg-black text-white' : 'border-line bg-card text-ink')}>
-      {label}
-    </button>
-  );
-}
 
 /* ---------- New / Edit drawer ---------- */
 

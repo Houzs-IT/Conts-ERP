@@ -18,6 +18,7 @@ import { TONE, cx } from '../lib/design-tokens';
 import type { StatementState } from '../lib/types';
 import { useUrlState, usePhone, SearchBox, Chip, shiftMonth } from './finance/listKit';
 import { statusLabel } from '../lib/status';
+import { Eyebrow, Figure, Segmented } from '../components/Metric';
 
 interface Statement {
   id: string; period?: string; ownerName: string; unitsLabel: string; state: StatementState;
@@ -286,7 +287,7 @@ export default function StatementsPage() {
               <span className="flex flex-col gap-[3px] min-w-0 flex-1">
                 <span className="text-[13.5px] font-medium truncate">{s.ownerName}</span>
                 <span className="text-[12px] text-muted-ink truncate">{s.unitsLabel}</span>
-                <span className="text-[11.5px] text-muted-ink tabular-nums">Gross {rm(s.grossBookingValue, { cents: false })} · fees {rm(s.managementFee, { cents: false })} · costs {rm(s.expensesTotal, { cents: false })}</span>
+                <span className="text-[11.5px] text-muted-ink tabular-nums">Income {rm(s.grossBookingValue, { cents: false })} · to operator {rm(s.managementFee, { cents: false })} · deductions {rm(s.expensesTotal, { cents: false })}</span>
               </span>
               <span className="flex flex-col items-end gap-[5px] shrink-0">
                 <span className="text-[13.5px] font-semibold tabular-nums">{rm(s.netPayout, { cents: false })}</span>
@@ -294,18 +295,20 @@ export default function StatementsPage() {
               </span>
             </span>
           )}
-          footer={rows.length > 0 && <>
-            <div className="flex items-center justify-between gap-x-5 gap-y-1 flex-wrap px-[22px] max-md:px-4 py-[12px] [border-top:1px_solid_var(--color-line)] bg-page text-[13px] font-semibold">
-              <span>Total · {plural(total, 'owner')}{filtered ? ' · filtered' : ''}</span>
-              <span className="flex gap-x-5 gap-y-1 flex-wrap tabular-nums">
-                <span><span className="text-muted-ink font-normal">Income </span>{rm(totals.gross, { cents: false })}</span>
-                <span><span className="text-muted-ink font-normal">To operator </span>&minus; {rm(totals.fee, { cents: false })}</span>
-                <span><span className="text-muted-ink font-normal">Deductions </span>&minus; {rm(totals.expenses, { cents: false })}</span>
-                <span><span className="text-muted-ink font-normal">Net </span>{rm(totals.net)}</span>
-              </span>
+          footer={rows.length > 0 && (
+            <div className="px-[22px] max-md:px-4 pt-4 pb-3 [border-top:1px_solid_var(--color-line)] flex flex-col gap-3">
+              <div className="flex items-baseline justify-between gap-3 flex-wrap">
+                <span className="text-copy font-semibold">Total · {plural(total, 'owner')}{filtered ? ' · filtered' : ''}</span>
+                <span className="text-meta text-muted-ink">Every deduction carries a category, date and amount.</span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-3">
+                <Sum label="Income" value={rm(totals.gross, { cents: false })} />
+                <Sum label="To operator" value={rm(totals.fee, { cents: false })} minus />
+                <Sum label="Deductions" value={rm(totals.expenses, { cents: false })} minus />
+                <Sum label="Net" value={rm(totals.net)} strong />
+              </div>
             </div>
-            <div className="px-[22px] max-md:px-4 pb-[11px] bg-page text-[12px] text-muted-ink">Every deduction carries a category, date and amount.</div>
-          </>}
+          )}
         />
       )}
 
@@ -339,6 +342,18 @@ export default function StatementsPage() {
         }}
       />
     </>
+  );
+}
+
+/** One figure in the totals strip: deductions keep their minus sign, the net reads strongest. */
+function Sum({ label, value, minus, strong }: { label: string; value: string; minus?: boolean; strong?: boolean }) {
+  return (
+    <div className="flex flex-col gap-1 min-w-0">
+      <Eyebrow>{label}</Eyebrow>
+      <span className={cx('inline-flex items-baseline gap-1 text-[17px] tracking-[-0.015em] text-ink', strong ? 'font-semibold' : 'font-medium')}>
+        {minus && <span className="text-muted-ink">&minus;</span>}<Figure value={value} />
+      </span>
+    </div>
   );
 }
 
@@ -439,15 +454,9 @@ function AdjustDialog({ target, busy, onClose, onSubmit }: {
             </p>
             <Field label="What is this adjustment for?" placeholder="e.g. Goodwill credit, prior-month correction" value={label} onChange={e => setLabel(e.target.value)} />
             <div className="flex flex-col gap-[7px]">
-              <span className="text-[12px] font-medium text-muted-ink">Direction</span>
-              <div className="grid grid-cols-2 gap-[7px]">
-                {(['deduct', 'add'] as const).map(d => (
-                  <button key={d} type="button" onClick={() => setDirection(d)}
-                    className={`h-[var(--control-height)] rounded-control border border-solid text-[13px] font-medium cursor-pointer ${direction === d ? 'border-transparent bg-black text-white' : 'border-line bg-card text-ink'}`}>
-                    {d === 'deduct' ? 'Deduct from payout' : 'Add to payout'}
-                  </button>
-                ))}
-              </div>
+              <span className="text-[12px] font-medium text-muted-ink" aria-hidden>Direction</span>
+              <Segmented<'deduct' | 'add'> label="Direction" value={direction} onChange={setDirection} className="self-start"
+                options={[{ key: 'deduct', label: 'Deduct from payout' }, { key: 'add', label: 'Add to payout' }]} />
             </div>
             <MoneyInput label="Amount (RM)" placeholder="e.g. 150.00" valueSen={amount} onChangeSen={setAmount} />
             <div className="py-[9px] px-[11px] rounded-control bg-page border border-solid border-line text-[12px] flex items-center justify-between">

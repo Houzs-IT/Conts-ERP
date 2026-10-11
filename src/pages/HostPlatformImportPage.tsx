@@ -152,7 +152,7 @@ export default function HostPlatformImportPage() {
 
       <Card>
         <div className="py-4 px-5 flex flex-col gap-1.5 text-copy leading-[1.5] text-[var(--color-ink-2)]">
-          <span className="font-semibold text-ink">Run the steps in order</span>
+          <span className="text-[16px] font-semibold tracking-[-0.01em] text-ink">Run the steps in order</span>
           <span>Safe to run again until cutover: a second run updates what the first one wrote and never adds duplicates.</span>
           <span>Bookings attach to units, and the workbook's money attaches to bookings, so each step needs the one before it. Nothing here is sent to Airbnb, Booking.com or Channex: these bookings already exist on the booking sites.</span>
           <span>Files stay on this computer; only the columns the import needs are sent. Card and identity numbers in the HostPlatform exports are never sent.</span>
@@ -267,7 +267,7 @@ function Step({ no, title, hint, picker, preview, action, run, waitFor }: {
         <div className="flex items-start gap-3">
           <span className="flex-none grid place-items-center w-7 h-7 rounded-full bg-page [border:1px_solid_var(--color-line-soft)] text-copy font-semibold">{no}</span>
           <div className="flex flex-col gap-1 flex-1 min-w-0">
-            <span className="text-heading font-semibold">{title}</span>
+            <span className="text-[16px] font-semibold tracking-[-0.01em]">{title}</span>
             <span className="text-meta leading-[1.5] text-muted-ink [text-wrap:pretty]">{hint}</span>
           </div>
           {state && <StatusBadge tone={state.tone} label={state.label} />}
@@ -287,7 +287,7 @@ function Step({ no, title, hint, picker, preview, action, run, waitFor }: {
         {run?.result && <ResultView r={run.result} />}
       </div>
       {action && (
-        <div className="flex items-center gap-2 flex-wrap py-3 px-5 [border-top:1px_solid_var(--color-line-soft)] bg-page">
+        <div className="flex items-center gap-2 flex-wrap py-3 px-5 [border-top:1px_solid_var(--color-line-soft)]">
           {action}
           {run?.result && !run.busy && <span className="text-meta text-muted-ink">Running it again updates the same rows.</span>}
         </div>
@@ -314,9 +314,9 @@ function Stats({ items, errors, notes }: { items: [string, string][]; errors: Ro
     <div className="flex flex-col gap-2">
       <div className="grid grid-cols-[repeat(auto-fill,minmax(112px,1fr))] gap-2">
         {items.map(([k, v]) => (
-          <div key={k} className="flex flex-col gap-0.5 py-2 px-3 rounded-control bg-page min-w-0">
+          <div key={k} className="flex flex-col gap-1 py-2.5 px-3 rounded-control border border-solid border-line-soft min-w-0">
             <span className="text-meta text-muted-ink">{k}</span>
-            <span className="text-copy font-semibold [font-variant-numeric:tabular-nums] break-words">{v}</span>
+            <span className="text-[15px] font-semibold tracking-[-0.01em] [font-variant-numeric:tabular-nums] break-words">{v}</span>
           </div>
         ))}
       </div>

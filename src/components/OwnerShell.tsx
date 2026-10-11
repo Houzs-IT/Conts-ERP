@@ -5,6 +5,7 @@ import { useSession } from '../lib/session';
 import { Logo } from './Logo';
 import Icon from './Icon';
 import { Button } from './Button';
+import { Eyebrow } from './Metric';
 
 /** Owners get one page and no staff navigation: a dark bar, their name, log out. */
 export default function OwnerShell({ children }: { children: ReactNode }) {
@@ -18,7 +19,7 @@ export default function OwnerShell({ children }: { children: ReactNode }) {
       }}>
         <Logo variant="mark" size="sm" onDark />
         <div style={{ display: 'flex', flexDirection: 'column', gap: 1, flex: 1, minWidth: 0 }}>
-          <span style={{ fontSize: text.caption, fontWeight: 600, letterSpacing: '0.06em', color: color.gold }}>OWNER PORTAL</span>
+          <Eyebrow className="text-gold!">Owner portal</Eyebrow>
           <span style={{ fontSize: text.copy, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{user!.fullName}</span>
         </div>
         <a href={atAccount ? '#/' : '#/account'} aria-label={atAccount ? 'Back to my portal' : 'My account'} title={atAccount ? 'Back to my portal' : 'My account'}

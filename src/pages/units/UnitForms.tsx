@@ -26,7 +26,7 @@ export function SaveBar({ title, sub, dirty, saving, canEdit, onSave, extra }: {
   return (
     <div className="flex flex-wrap items-start justify-between gap-3 py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)]">
       <div className="flex flex-col gap-1 min-w-0">
-        <span className="text-heading font-semibold">{title}</span>
+        <span className="text-[16px] font-semibold tracking-[-0.01em]">{title}</span>
         {sub && <span className="text-meta text-muted-ink">{sub}</span>}
       </div>
       <div className="flex flex-wrap items-center gap-2">
@@ -87,7 +87,7 @@ export function DetailsForm({ u, buildings, money, canEdit, onChange, onOpenCont
       <SectionHead>Revenue model</SectionHead>
       <div className="flex flex-wrap items-center gap-3 mb-[6px]">
         <span className="text-copy">{u.revenueModel ? (u.termsLabel ?? MODEL[u.revenueModel].label) : u.pkg}</span>
-        {onOpenContract && <button type="button" onClick={onOpenContract} className="p-0 bg-transparent border-none cursor-pointer [font:inherit] text-meta! font-semibold text-gold-ink">Change on the Contract tab</button>}
+        {onOpenContract && <button type="button" onClick={onOpenContract} className="p-0 bg-transparent border-none cursor-pointer [font-family:inherit] text-meta font-semibold text-gold-ink">Change on the Contract tab</button>}
       </div>
       <p className="m-0 text-meta text-muted-ink">One revenue model per contract decides how the owner statement is worked out. Package {u.pkg.replace('Package ', '')} is kept from the owner workbook for reference.</p>
     </fieldset>
@@ -134,13 +134,13 @@ export function DocumentsCard({ unitId, unitLabel, documents, onUploaded }: { un
   return (
     <Card>
       <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex flex-col gap-1">
-        <span className="text-heading font-semibold">Documents</span>
+        <span className="text-[16px] font-semibold tracking-[-0.01em]">Documents</span>
         <span className="text-meta text-muted-ink">Agreements, statements, inspection reports and photos for this unit.</span>
       </div>
       <DataTable<Doc> id="unit.documents" urlPrefix="doc." bare noViews noToolbar pageSize={0} maxHeight="none"
         columns={docColumns} rows={documents} rowKey={doc => doc.id} noun={['document', 'documents']}
         empty={{ title: 'No documents on this unit yet.', icon: 'FileText' }} />
-      <div className="flex flex-wrap items-center gap-2 py-3 px-5 bg-page">
+      <div className="flex flex-wrap items-center gap-2 py-3 px-5 [border-top:1px_solid_var(--color-line-soft)]">
         <div className="w-[180px] max-w-full"><Select label="Kind of document" value={kind} onChange={setKind} options={UPLOAD_KINDS} /></div>
         <Button size="sm" variant="secondary" loading={busy} icon={<Icon name="Upload" size="sm" />} onClick={() => fileRef.current?.click()}>Upload a document</Button>
         <input ref={fileRef} type="file" className="hidden" onChange={e => { const f = e.currentTarget.files?.item(0); if (f) void upload(f); e.currentTarget.value = ''; }} />

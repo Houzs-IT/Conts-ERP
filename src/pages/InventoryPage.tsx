@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import PageHeader from '../components/PageHeader';
+import { StatRow, StatTile } from '../components/Metric';
 import { SearchSelect, Select } from '../components/Select';
 import { StatusDot } from '../components/StatusBadge';
 import { DataTable, type Column } from '../components/DataTable';
@@ -158,14 +159,14 @@ export default function InventoryPage() {
 
       {error && <StaleBanner message={`Showing the last register we have. ${error}`} onRetry={reload} />}
 
-      <div className="grid grid-cols-[repeat(auto-fit,minmax(190px,1fr))] gap-3">
-        <Stat label="Invested in-house" value={rm(invested, { cents: false })} hint="Total fit-out value" />
-        <Stat label="Needs attention" value={String(attention)} tone={attention ? 'warning' : undefined}
+      <StatRow cols={4}>
+        <StatTile label="Invested in-house" value={rm(invested, { cents: false })} hint="Total fit-out value" />
+        <StatTile label="Needs attention" value={String(attention)} tone={attention ? 'warning' : undefined}
           active={condFilter === 'attention'} onClick={() => setCondFilter(f => f === 'attention' ? 'all' : 'attention')} hint="Replace soon or damaged" />
-        <Stat label="Due for replacement" value={String(dueCount)} tone={dueCount ? 'warning' : undefined}
+        <StatTile label="Due for replacement" value={String(dueCount)} tone={dueCount ? 'warning' : undefined}
           active={dueOnly} onClick={() => setDueOnly(v => !v)} hint={`On schedule within ${DUE_WINDOW_DAYS} days`} />
-        <Stat label="Units furnished" value={String(unitCount)} hint="With items on the register" />
-      </div>
+        <StatTile label="Units furnished" value={String(unitCount)} hint="With items on the register" />
+      </StatRow>
 
       <div className="flex items-center gap-2 flex-wrap">
         <SearchSelect label="Unit" className="w-[260px] max-w-full" allLabel="All units" placeholder="Search unit or building"
@@ -208,25 +209,6 @@ export default function InventoryPage() {
 }
 
 /* ---------- small local primitives ---------- */
-
-function Stat({ label, value, hint, tone, active, onClick }: { label: string; value: string; hint?: string; tone?: Tone; active?: boolean; onClick?: () => void }) {
-  const interactive = !!onClick;
-  return (
-    <div
-      role={interactive ? 'button' : undefined}
-      tabIndex={interactive ? 0 : undefined}
-      aria-pressed={interactive ? active : undefined}
-      onClick={onClick}
-      onKeyDown={interactive ? e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick!(); } } : undefined}
-      className={cx('flex flex-col gap-[3px] py-[13px] px-[15px] rounded-card bg-card border border-solid',
-        active ? 'border-black' : 'border-line',
-        interactive ? 'cursor-pointer' : 'cursor-default')}>
-      <span className={cx('text-title font-semibold tabular-nums', tone ? TONE[tone].text : 'text-ink')}>{value}</span>
-      <span className="text-meta font-medium">{label}</span>
-      {hint && <span className="text-caption text-muted-ink">{hint}</span>}
-    </div>
-  );
-}
 
 function NoteCell({ value, onSave, label }: { value: string; onSave: (v: string) => void; label: string }) {
   const [editing, setEditing] = useState(false);

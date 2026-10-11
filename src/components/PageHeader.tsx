@@ -36,7 +36,8 @@ export default function PageHeader({ title, sub, right, actions, primary, back, 
           <div data-print-hide className="flex items-center gap-2 flex-wrap justify-start sm:justify-end">
             {actions}
             {right}
-            {primary}
+            {/* On a phone the buttons wrap under the title; the primary one leads there instead of trailing on its own line. */}
+            {primary && <span className="contents max-sm:[&>*]:order-first">{primary}</span>}
           </div>
         )}
       </div>

@@ -6,6 +6,7 @@ import { ConfirmButton } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
 import { MoneyInput, DateField } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
+import { Segmented } from '../components/Metric';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { api } from '../lib/api';
@@ -93,9 +94,7 @@ export default function PaymentVouchersPage() {
         onRowClick={p => setDrawer({ mode: 'view', pv: p })}
         noun={['payment voucher', 'payment vouchers']} exportName="payment-vouchers"
         toolbar={<>
-          <div className="flex gap-2 flex-wrap">
-            {(['all', 'POSTED', 'CANCELLED'] as const).map(f => <Chip key={f} label={f === 'all' ? 'All' : f === 'POSTED' ? 'Posted' : 'Cancelled'} active={statusFilter === f} onClick={() => setStatusFilter(f)} />)}
-          </div>
+          <Segmented label="Status" options={(['all', 'POSTED', 'CANCELLED'] as const).map(f => ({ key: f, label: f === 'all' ? 'All' : f === 'POSTED' ? 'Posted' : 'Cancelled' }))} value={statusFilter} onChange={setStatusFilter} />
           <div className="relative">
             <Search size={16} strokeWidth={1.75} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-ink" />
             <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search voucher or supplier..." aria-label="Search payment vouchers"
@@ -109,10 +108,6 @@ export default function PaymentVouchersPage() {
       {drawer?.mode === 'view' && <ViewDrawer pv={drawer.pv} canWrite={canWrite} onClose={() => setDrawer(null)} onCancel={cancel} />}
     </>
   );
-}
-
-function Chip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
-  return <button onClick={onClick} aria-pressed={active} className={cx('h-8 flex items-center px-4 py-0 rounded-full cursor-pointer font-sans text-[13px] font-semibold border border-solid', active ? 'border-black bg-black text-white' : 'border-line bg-card text-ink')}>{label}</button>;
 }
 
 /* ---------- pay (create) drawer ---------- */

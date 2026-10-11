@@ -155,10 +155,10 @@ function SectionCard({ title, description, dirty, busy, onSave, onDiscard, saveL
 }) {
   return (
     <Card>
-      <div className="px-5 py-4 [border-bottom:1px_solid_var(--color-line)] flex items-start justify-between gap-4 flex-wrap">
+      <div className="px-5 pt-5 pb-4 [border-bottom:1px_solid_var(--color-line-soft)] flex items-start justify-between gap-4 flex-wrap">
         <div className="flex flex-col gap-1 min-w-0 flex-1">
           <span className="flex items-center gap-2 flex-wrap">
-            <span className="text-heading font-semibold">{title}</span>
+            <span className="text-[16px] font-semibold tracking-[-0.01em]">{title}</span>
             {notUsed && <StatusBadge tone="warning" label={notUsedLabel} size="sm" />}
           </span>
           <span className="text-meta text-muted-ink leading-[1.45]">{description}</span>

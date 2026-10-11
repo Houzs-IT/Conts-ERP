@@ -15,6 +15,7 @@ import type { BookingChannel } from '../lib/types';
 import { Segmented, dayLabel, hm, mytDay, CATEGORY } from '../components/ops/OpsUi';
 import type { AnyTone } from '../lib/status';
 import { StatusBadge } from '../components/StatusBadge';
+import { StatRow, StatTile, SectionTitle } from '../components/Metric';
 import type { RepairOnDay } from './CleaningPage';
 
 interface Arrival {
@@ -69,12 +70,12 @@ export default function OperationsTodayPage() {
         primary={<Button size="sm" variant="primary" icon={<Icon name="Sparkles" size="sm" />} onClick={() => navigate('/operations/cleaning')}>Open Cleaning</Button>} />
       {error && <StaleBanner message={`Showing the last figures we have. ${error}`} onRetry={reload} />}
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <Stat label="Arriving" value={data?.arrivals.length} hint={data ? `${data.arrivals.filter(a => a.state === 'checked_in' || (a.readiness === 'ready' && (!a.cleanState || a.cleanState === 'resolved'))).length} units ready` : undefined} />
-        <Stat label="Leaving" value={data?.departures.length} hint={data ? `${out} out so far` : undefined} />
-        <Stat label="Cleans done" value={c ? `${c.done} / ${c.total}` : undefined} hint={c ? `${c.ready} ready to clean · ${c.cleaning} in progress${c.unassigned ? ` · ${c.unassigned} unassigned` : ''}` : undefined} warn={!!c?.unassigned} onClick={() => navigate('/operations/cleaning')} />
-        <Stat label={pick === 'today' ? 'Repairs today' : 'Repairs tomorrow'} value={data?.repairs.length} hint={data ? `${data.urgent.length} urgent open` : undefined} warn={!!data?.urgent.length} onClick={() => navigate('/operations/maintenance')} />
-      </div>
+      <StatRow cols={4}>
+        <StatTile label="Arriving" value={data ? String(data.arrivals.length) : undefined} hint={data ? `${data.arrivals.filter(a => a.state === 'checked_in' || (a.readiness === 'ready' && (!a.cleanState || a.cleanState === 'resolved'))).length} units ready` : undefined} />
+        <StatTile label="Leaving" value={data ? String(data.departures.length) : undefined} hint={data ? `${out} out so far` : undefined} />
+        <StatTile label="Cleans done" value={c ? `${c.done} / ${c.total}` : undefined} hint={c ? `${c.ready} ready to clean · ${c.cleaning} in progress${c.unassigned ? ` · ${c.unassigned} unassigned` : ''}` : undefined} hintTone={c?.unassigned ? 'critical' : undefined} onClick={() => navigate('/operations/cleaning')} />
+        <StatTile label={pick === 'today' ? 'Repairs today' : 'Repairs tomorrow'} value={data ? String(data.repairs.length) : undefined} hint={data ? `${data.urgent.length} urgent open` : undefined} hintTone={data?.urgent.length ? 'critical' : undefined} onClick={() => navigate('/operations/maintenance')} />
+      </StatRow>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 items-start">
         <Panel title="Leaving" count={data?.departures.length} loading={loading && !data} empty="Nobody checks out on this day.">
@@ -83,7 +84,7 @@ export default function OperationsTodayPage() {
               right={d.guestOut ? <StatusBadge tone="gold">Guest out{d.taskState === 'resolved' ? ', cleaned' : ''}</StatusBadge>
                 : d.channel === 'owner_stay' ? <StatusBadge tone="neutral">Owner stay</StatusBadge>
                 : data!.date > data!.today ? <StatusBadge tone="neutral">Leaves {d.checkOutTime}</StatusBadge>
-                : <Button size="sm" variant="secondary" loading={busy === d.reservationId} onClick={() => void guestLeft(d)}>Guest out</Button>}
+                : <Button size="sm" variant="secondary" loading={busy === d.reservationId} onClick={() => void guestLeft(d)}>Guest left</Button>}
               sub={d.taskId ? undefined : 'No clean planned yet'} subTone="critical" />
           ))}
         </Panel>
@@ -99,7 +100,7 @@ export default function OperationsTodayPage() {
         </Panel>
         <Panel title="Repairs with a window" count={data?.repairs.length} loading={loading && !data} empty="No repair is booked into a unit on this day.">
           {data?.repairs.map(w => (
-            <div key={w.id} className="px-4 py-3 [border-top:1px_solid_var(--color-line-soft)] first:border-t-0 flex items-center gap-3 text-copy">
+            <div key={w.id} className="px-5 py-3 [border-top:1px_solid_var(--color-line-soft)] first:border-t-0 flex items-center gap-3 text-copy">
               <span className="w-[86px] flex-none font-semibold [font-variant-numeric:tabular-nums]">{hm(w.startsAt)}–{hm(w.endsAt)}</span>
               <span className="flex-1 min-w-0"><b>{w.propertyName} {w.unitNumber}</b> · {w.title}<span className="block text-meta text-muted-ink">{CATEGORY[w.category] ?? w.category}{w.assigneeName ? ` · ${w.assigneeName}` : ' · nobody assigned'}{w.note ? ` · ${w.note}` : ''}</span></span>
               {w.overlaps.length > 0 ? <StatusBadge tone="critical">Guest in unit</StatusBadge> : w.urgency === 'urgent' ? <StatusBadge tone="critical">Urgent</StatusBadge> : null}
@@ -109,7 +110,7 @@ export default function OperationsTodayPage() {
         <Panel title="Urgent repairs open" count={data?.urgent.length} loading={loading && !data} empty="No urgent repair is open.">
           {data?.urgent.map(m => (
             <button key={m.id} type="button" onClick={() => navigate(`/operations/maintenance?id=${m.id}`)}
-              className="w-full text-left px-4 py-3 [border-top:1px_solid_var(--color-line-soft)] first:border-t-0 flex items-center gap-3 text-copy cursor-pointer hover:bg-page">
+              className="w-full text-left px-5 py-3 [border-top:1px_solid_var(--color-line-soft)] first:border-t-0 flex items-center gap-3 text-copy cursor-pointer hover:bg-page">
               <span className="flex-1 min-w-0"><b>{m.propertyName} {m.unitNumber}</b> · {m.title}<span className="block text-meta text-muted-ink">{CATEGORY[m.category] ?? m.category} · {m.assigneeName ?? 'nobody assigned'}</span></span>
               {m.blocksUnit && <StatusBadge tone="critical">Unit blocked</StatusBadge>}
               <Icon name="ChevronRight" size="sm" color="var(--color-faint)" />
@@ -121,32 +122,22 @@ export default function OperationsTodayPage() {
   );
 }
 
-function Stat({ label, value, hint, warn, onClick }: { label: string; value: number | string | undefined; hint?: string; warn?: boolean; onClick?: () => void }) {
-  const Tag = onClick ? 'button' : 'div';
-  return (
-    <Tag type={onClick ? 'button' : undefined} onClick={onClick}
-      className={cx('text-left bg-card rounded-card border border-solid border-line p-4 flex flex-col gap-1 min-w-0', onClick && 'cursor-pointer hover:bg-page')}>
-      <span className="text-meta text-muted-ink">{label}</span>
-      {value === undefined ? <Skeleton width={60} height={26} /> : <span className="text-headline font-semibold [font-variant-numeric:tabular-nums]">{value}</span>}
-      {hint && <span className={cx('text-meta', warn ? 'text-danger' : 'text-muted-ink')}>{hint}</span>}
-    </Tag>
-  );
-}
-
 function Panel({ title, count, loading, empty, children }: { title: string; count?: number; loading: boolean; empty: string; children: ReactNode }) {
   return (
     <section className="bg-card rounded-card border border-solid border-line overflow-hidden">
-      <header className="px-4 py-3 bg-muted flex items-center gap-2"><b className="text-heading">{title}</b>{count !== undefined && <span className="text-muted-ink">{count}</span>}</header>
-      {loading ? <div className="p-4 flex flex-col gap-2"><Skeleton height={36} /><Skeleton height={36} /></div>
-        : count === 0 ? <p className="m-0 px-4 py-5 text-copy text-muted-ink">{empty}</p>
-        : <div className="max-h-[420px] overflow-y-auto ops-scroll">{children}</div>}
+      <SectionTitle title={title} count={count} />
+      <div className="[border-top:1px_solid_var(--color-line-soft)]">
+        {loading ? <div className="p-5 flex flex-col gap-2"><Skeleton height={36} /><Skeleton height={36} /></div>
+          : count === 0 ? <p className="m-0 px-5 py-5 text-copy text-muted-ink">{empty}</p>
+          : <div className="max-h-[420px] overflow-y-auto ops-scroll">{children}</div>}
+      </div>
     </section>
   );
 }
 
 function Line({ channel, time, unit, guest, right, sub, subTone }: { channel: string; time: string; unit: string; guest: string; right: ReactNode; sub?: string; subTone?: 'critical' | 'warning' }) {
   return (
-    <div className="px-4 py-3 [border-top:1px_solid_var(--color-line-soft)] first:border-t-0 flex items-center gap-3 text-copy">
+    <div className="px-5 py-3 [border-top:1px_solid_var(--color-line-soft)] first:border-t-0 flex items-center gap-3 text-copy">
       <span className="w-[46px] flex-none font-semibold [font-variant-numeric:tabular-nums]">{time}</span>
       {CHANNELS.includes(channel) && <ChannelMark ch={channel as BookingChannel} size={20} />}
       <span className="flex-1 min-w-0">

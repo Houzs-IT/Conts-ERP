@@ -11,6 +11,7 @@ import { useToast } from '../components/Toast';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
 import ChannexSyncPanel from '../components/ChannexSyncPanel';
+import { Eyebrow } from '../components/Metric';
 import { api, errorMessage } from '../lib/api';
 import { count, date, plural, timeWithZone, masked } from '../lib/format';
 import { INTEGRATION } from '../lib/vocabulary';
@@ -184,7 +185,7 @@ export default function IntegrationsPage() {
                   <div className="flex items-center gap-3">
                     <Monogram label={label} />
                     <div className="flex flex-col gap-1 flex-1 min-w-0">
-                      <span className="text-heading font-semibold">{label}</span>
+                      <span className="text-[16px] font-semibold tracking-[-0.01em]">{label}</span>
                       <span className="text-meta text-muted-ink">{syncedLine(row)}</span>
                     </div>
                     <StatusBadge tone={m.tone} label={m.label} />
@@ -205,7 +206,7 @@ export default function IntegrationsPage() {
 
                 {/* The action strip only when it has an action; an empty grey band read as a broken card. */}
                 {(act.reconnect || act.retry || row.viaChannex || row.provider === 'utilities') && (
-                <div className="flex items-center gap-2 flex-wrap py-3 px-5 [border-top:1px_solid_var(--color-line-soft)] bg-page">
+                <div className="flex items-center gap-2 flex-wrap py-3 px-5 [border-top:1px_solid_var(--color-line-soft)]">
                   {act.reconnect && (
                     <Button size="sm" variant="brand" icon={<Icon name="PlugZap" size="sm" />} onClick={() => setReconnectId(row.id)}>
                       Reconnect
@@ -343,7 +344,7 @@ function ManagePanel({
 function Section({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <span className="text-caption font-semibold text-muted-ink uppercase tracking-[0.06em]">{label}</span>
+      <Eyebrow>{label}</Eyebrow>
       {children}
     </div>
   );

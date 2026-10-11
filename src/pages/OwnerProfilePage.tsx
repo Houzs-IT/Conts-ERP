@@ -23,6 +23,7 @@ import { ModelChip } from './units/ContractTab';
 import { RecordHistory } from '../components/RecordHistory';
 import { MonthStepper, shiftMonth } from './finance/listKit';
 import { cx } from '../lib/design-tokens';
+import { Eyebrow, Segmented } from '../components/Metric';
 import {
   type Owner, type UnitLine, type Payload,
   FALLBACK, terms, Section, StatementHistory, LinkUnitModal,
@@ -167,14 +168,8 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
         <div className="flex flex-wrap items-center gap-3 py-3 px-4">
           <MonthStepper label={monthLabel(month)} onStep={by => setParam('month', shiftMonth(month, by) === shiftMonth(thisMonth, -1) ? null : shiftMonth(month, by))} />
           <span className="flex-1" />
-          <div role="group" aria-label="Report by" className="inline-flex border border-solid border-line rounded-control overflow-hidden">
-            {(['owner', 'unit'] as const).map(v => (
-              <button key={v} type="button" aria-pressed={view === v} onClick={() => setParam('report', v === 'owner' ? null : 'unit')}
-                className={cx('h-[36px] px-[14px] border-none cursor-pointer [font:inherit] text-meta! font-medium', view === v ? 'bg-black text-white' : 'bg-card text-ink')}>
-                {v === 'owner' ? 'By owner' : 'By unit'}
-              </button>
-            ))}
-          </div>
+          <Segmented<ReportView> label="Report by" value={view} onChange={v => setParam('report', v === 'owner' ? null : 'unit')}
+            options={[{ key: 'owner', label: 'By owner' }, { key: 'unit', label: 'By unit' }]} />
           <Button size="sm" variant="primary" icon={<Icon name="FileText" size="sm" />} disabled={!reportHref}
             disabledReason={`No ${monthLabel(month)} statement for this owner yet. Generate it on Finance, Statements.`}
             onClick={() => { if (reportHref) window.location.hash = reportHref.slice(1); }}>Owner report PDF</Button>
@@ -193,9 +188,12 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
       )}
 
       {o.units.length > 0 && (
-        <section aria-label={`${monthLabel(month)} total`} className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 py-4 px-[22px] rounded-card bg-black text-white">
-          <span className="text-copy">{monthLabel(month, { long: true })} total · {plural(o.units.length, 'unit')}</span>
-          <MoneyText sen={total} mode="exact" className="text-title font-semibold text-white!" />
+        <section aria-label={`${monthLabel(month)} total`} className="relative flex flex-wrap items-end justify-between gap-x-6 gap-y-3 py-5 px-5 sm:px-6 rounded-card bg-black text-white overflow-hidden">
+          <span aria-hidden className="absolute left-5 sm:left-6 top-0 h-[2px] w-8 bg-gold" />
+          <span className="flex flex-col gap-2.5 min-w-0">
+            <Eyebrow className="text-gold!">{monthLabel(month, { long: true })} total · {plural(o.units.length, 'unit')}</Eyebrow>
+            <MoneyText sen={total} mode="exact" className="text-[26px] sm:text-[30px] leading-none font-medium tracking-[-0.025em] text-white!" />
+          </span>
           <span className="text-copy text-[var(--color-text-on-dark)]">
             Statement: {st ? statusLabel('statement', st.state) : 'not generated yet'}
             {st && <> · <a href={`#/finance/statements/${encodeURIComponent(st.id)}`} style={{ color: "var(--color-gold)" }}>Open statement</a></>}
@@ -268,7 +266,7 @@ function UnitCard({ u, reportHref }: { u: UnitLine; reportHref: string | null })
   return (
     <section className="bg-card border border-solid border-line rounded-card p-4 flex flex-col gap-2 min-w-0">
       <div className="flex items-start justify-between gap-2">
-        <a href={`#/properties/units/${encodeURIComponent(u.unitId)}?tab=contract`} className="text-heading font-semibold text-ink! no-underline min-w-0 [overflow-wrap:anywhere]">{titleCase(u.unitLabel)}</a>
+        <a href={`#/properties/units/${encodeURIComponent(u.unitId)}?tab=contract`} className="text-[16px] font-semibold tracking-[-0.01em] text-ink! no-underline min-w-0 [overflow-wrap:anywhere]">{titleCase(u.unitLabel)}</a>
         <ModelChip model={model} label={terms(u)} />
       </div>
       {!f ? <div className="text-meta text-muted-ink">Figures are visible to finance and management.</div> : model === 'master_lease' ? <>

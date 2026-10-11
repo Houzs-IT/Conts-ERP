@@ -16,6 +16,8 @@ import { rm, date, todayMyt } from '../lib/format';
 import { cx } from '../lib/design-tokens';
 import { StatusBadge } from '../components/StatusBadge';
 import { statusLabel } from '../lib/status';
+import { Eyebrow, Figure, Segmented } from '../components/Metric';
+import { FilterSelect } from './finance/listKit';
 
 /** Credit / debit notes — copied from Houzs ERP (Finance › Money in), drawn in Conts.
  *  A note is a draft until posted; only a posted note changes what a customer or supplier owes
@@ -86,18 +88,14 @@ export default function CreditNotesPage() {
         onRowClick={n => setDrawer({ mode: 'view', id: n.id })}
         noun={['note', 'notes']} exportName="credit-debit-notes"
         toolbar={<>
-          <div className="flex gap-2 flex-wrap">
-            {(['all', 'CN', 'DN', 'SCN'] as const).map(k => <Chip key={k} label={k === 'all' ? 'All' : KIND_LABEL[k] + 's'} active={kindFilter === k} onClick={() => setKindFilter(k)} />)}
-          </div>
-          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as Status | 'all')} aria-label="Status"
-            className="h-9 box-border px-3 py-0 font-sans text-[13px] text-ink bg-card border border-solid border-line rounded-control outline-none cursor-pointer">
-            <option value="all">All statuses</option>
-            {(['DRAFT', 'POSTED', 'CANCELLED'] as const).map(s => <option key={s} value={s}>{statusLabel('credit_note', s)}</option>)}
-          </select>
+          <Segmented<Kind | 'all'> label="Note type" value={kindFilter} onChange={setKindFilter}
+            options={(['all', 'CN', 'DN', 'SCN'] as const).map(k => ({ key: k, label: k === 'all' ? 'All' : KIND_LABEL[k] + 's' }))} />
+          <FilterSelect label="Status" all="All statuses" value={statusFilter === 'all' ? '' : statusFilter} onChange={v => setStatusFilter((v || 'all') as Status | 'all')}
+            options={(['DRAFT', 'POSTED', 'CANCELLED'] as const).map(s => ({ value: s, label: statusLabel('credit_note', s) }))} />
           <div className="relative">
             <Search size={16} strokeWidth={1.75} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-ink" />
             <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search note, customer or supplier..." aria-label="Search notes"
-              className="h-9 box-border pl-10 pr-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none w-[280px] max-w-full" />
+              className="h-9 box-border pl-10 pr-3 py-0 font-sans text-copy text-ink bg-card border border-solid border-line rounded-control outline-none w-[280px] max-w-full" />
           </div>
         </>}
         filtered={!!q || kindFilter !== 'all' || statusFilter !== 'all'} onClearFilters={() => { setSearch(''); setKindFilter('all'); setStatusFilter('all'); }}
@@ -112,9 +110,6 @@ export default function CreditNotesPage() {
 
 const against = (n: Note) => [n.salesInvoiceNumber, n.soDocNo, n.purchaseInvoiceNumber, n.sourceDocNo].filter(Boolean).join(' · ');
 
-function Chip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
-  return <button onClick={onClick} aria-pressed={active} className={cx('h-8 flex items-center px-4 py-0 rounded-full cursor-pointer font-sans text-[13px] font-semibold border border-solid', active ? 'border-black bg-black text-white' : 'border-line bg-card text-ink')}>{label}</button>;
-}
 
 /* ---------- new note ---------- */
 
@@ -290,7 +285,7 @@ function ViewNoteDrawer({ id, canWrite, onClose, onDone }: { id: string; canWrit
                 bare noViews noToolbar pageSize={0} noun={['line', 'lines']} exportName={`${n.noteNumber}-lines`}
                 empty={{ title: 'No lines on this note.' }} />
             </div>
-            <div className="flex justify-end"><div className="flex gap-8 text-[15px] font-semibold"><span>Total</span><span className="tabular-nums w-[120px] text-right">{rm(n.totalSen)}</span></div></div>
+            <div className="flex justify-end"><div className="flex flex-col items-end gap-1"><Eyebrow>Total</Eyebrow><Figure value={rm(n.totalSen)} className="text-[20px] font-semibold tracking-[-0.015em]" /></div></div>
             {n.status === 'DRAFT' && <div className="text-[12.5px] text-muted-ink">This is a draft. It changes nothing until it is posted.</div>}
             {n.status === 'POSTED' && <div className="text-[12.5px] text-muted-ink">Posted notes are never edited. To correct it, cancel it and raise a new one.</div>}
           </>
@@ -308,5 +303,5 @@ function ViewNoteDrawer({ id, canWrite, onClose, onDone }: { id: string; canWrit
 }
 
 function Meta({ label, value }: { label: string; value: string }) {
-  return <div className="flex flex-col gap-0.5"><span className="text-[11px] uppercase tracking-[0.08em] text-muted-ink">{label}</span><span className="text-[13.5px]">{value}</span></div>;
+  return <div className="flex flex-col gap-1 min-w-0"><Eyebrow>{label}</Eyebrow><span className="text-copy break-words">{value}</span></div>;
 }

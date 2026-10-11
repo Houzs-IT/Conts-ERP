@@ -24,10 +24,13 @@ export function PageControls({ page, pageSize, total, onPage, onSize, sizes = [2
         {onSize && (
           <label className="flex items-center gap-[6px]">
             <span className="max-sm:hidden">Rows</span>
-            <select value={pageSize} onChange={e => onSize(Number(e.target.value))} aria-label="Rows per page"
-              className="h-8 px-2 rounded-control border border-solid border-line bg-card text-ink [font-family:inherit] text-meta cursor-pointer">
-              {sizes.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
+            <span className="relative inline-flex items-center">
+              <select value={pageSize} onChange={e => onSize(Number(e.target.value))} aria-label="Rows per page"
+                className="h-8 pl-2.5 pr-7 appearance-none rounded-control border border-solid border-line bg-card text-ink [font-family:inherit] text-meta tabular-nums cursor-pointer hover:border-line-strong">
+                {sizes.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+              <span aria-hidden className="pointer-events-none absolute right-2 text-muted-ink"><Icon name="ChevronDown" size="sm" /></span>
+            </span>
           </label>
         )}
         <span className="[font-variant-numeric:tabular-nums] px-1">Page {n(page)} of {n(last)}</span>
