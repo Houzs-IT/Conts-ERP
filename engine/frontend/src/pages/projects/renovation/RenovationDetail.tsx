@@ -90,7 +90,7 @@ export function RenovationDetail({ id, canWrite, embedded = false }: { id: numbe
           {d.serviceCases.length > 0 && <WarrantyPanel d={d} />}
           <EvidenceGallery projectId={id} />
           <details className="rounded-lg border border-border bg-surface p-3">
-            <summary className="cursor-pointer text-sm font-semibold text-ink">Stage details: checklists, hardware gate, billing prompts</summary>
+            <summary className="cursor-pointer text-sm font-semibold text-ink">Stage details: checklists, readiness, billing prompts</summary>
             <div className="mt-3 space-y-3">
               {!d.financeHidden && d.so && <BillingPromptBanner d={d} canWrite={canWrite} onDone={done} onError={failed} />}
               <GateCard d={d} />
@@ -172,7 +172,7 @@ function BillingPromptBanner({ d, canWrite, onDone, onError }: { d: ProjectDetai
   const [date, setDate] = useState(() => new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10));
   const [busy, setBusy] = useState(false);
   if (!d.billing.available) {
-    return <div className="mb-3 rounded-md border border-border bg-surface-dim px-3 py-2 text-sm text-ink-secondary">Customer billing is not available yet, so no instalment can be billed from here and the hardware gate stays closed.</div>;
+    return <div className="mb-3 rounded-md border border-border bg-surface-dim px-3 py-2 text-sm text-ink-secondary">Customer billing is not available yet, so no instalment can be billed from here.</div>;
   }
   if (d.prompts.length === 0) return null;
   return (
@@ -223,7 +223,7 @@ function GateCard({ d }: { d: ProjectDetail }) {
     <section className={cn("mb-3 rounded-lg border p-3", d.gate.open ? "border-synced/30 bg-synced-bg" : "border-warning-text/20 bg-warning-bg")}>
       <h3 className={cn("text-sm font-semibold flex items-center gap-1", d.gate.open ? "text-synced" : "text-warning-text")}>
         {d.gate.open ? <Unlock size={14} /> : <Lock size={14} />}
-        {d.gate.open ? "Hardware works may start" : "Hardware works cannot start yet"}
+        {d.gate.open ? "Ready for site works" : "Not ready for site works yet (works can still start)"}
       </h3>
       {!d.gate.open && <ul className="mt-1 list-disc pl-5 text-sm text-warning-text">{d.gate.messages.map((m) => <li key={m}>{m}</li>)}</ul>}
     </section>

@@ -232,23 +232,6 @@ siteReceipts.post("/", async (c) => {
   const photoBad = photoRuleRefusal(body.photos, hasGoods);
   if (photoBad) return refuseWithoutWriting(c, photoBad, 400);
 
-  if (hasWorks) {
-    /* Hardware gate: a trade's completion cannot be received before site works
-       may start. Unreadable facts keep it closed. */
-    try {
-      const rows = await loadProjectRows(db(c), ` AND p.company_id = ${co.companyId}`, { projectId, includeArchived: true });
-      const facts = (await loadRenovationFacts(db(c), rows, { checklistKeys: BOARD_CHECKLIST_KEYS })).get(projectId);
-      const gate = facts ? computeProjectView(facts, todayMyt()).gate : null;
-      if (!gate?.open) {
-        const reasons = gate?.reasons ?? [];
-        return refuseWithoutWriting(c, { error: "hardware_gate_closed", reasons, messages: reasons.map((r) => GATE_REASON_TEXT[r]) }, 409);
-      }
-    } catch (e) {
-      console.error("[site-receipt] gate read failed", e);
-      return refuseWithoutWriting(c, { error: "hardware_gate_unreadable", message: "The hardware gate could not be checked, so nothing was received." }, 409);
-    }
-  }
-
   const coreRes = await createDraftGrnsFromPoItemsCore({
     req: { json: async () => ({ picks: body.lines.map((l) => ({ poItemId: l.poItemId, qty: l.qty })), notes: body.notes ?? `Site receipt at project ${projectId}`, receivedDate: todayMyt() }) },
     get: ((key: string) => c.get(key as "supabase")) as unknown as GrnFromPoItemsContext["get"],

@@ -107,7 +107,7 @@ check('converting the quotation created the ELECTRICAL trade task (phase 2 hook 
 r = await call('POST', `${S}/sales-orders/${soDocNo}/po-split`, {});
 check('SO -> PO: one PO for the subcontractor', r.status === 201 && r.json?.created?.length === 1 && r.json.created[0].supplierId === supplierId, show(r));
 r = await call('POST', `${R}/${projectId}/stages/hardware/start`);
-check('the hardware gate refuses to start works before instalment 1 is received (409)', r.status === 409 && r.json?.error === 'hardware_gate_closed', show(r));
+check('works may start before instalment 1 (the gate warns, it does not block)', r.status === 200, show(r));
 p = await project(projectId);
 check('...and says why: instalment 1, shop drawings, permit', ['instalment1_unpaid', 'shop_drawings_unsigned', 'permit_pending'].every((x) => p.gate?.reasons?.includes(x)), JSON.stringify(p.gate));
 
@@ -119,8 +119,6 @@ const afterKey = await up('after');
 const sigKey = await up('supervisor_signature');
 check('site photo and signature uploaded', !!afterKey && !!sigKey, `${afterKey} ${sigKey}`);
 const receipt = () => ({ projectId, lines: [{ poItemId: wiringLine.po_item_id, qty: 1 }], photos: [{ r2Key: afterKey, kind: 'after', location: 'Living', takenAt: new Date().toISOString() }], supervisorSignatureR2Key: sigKey });
-r = await call('POST', '/api/scm/site-receipts', receipt(), { 'Idempotency-Key': randomUUID() });
-check('a trade cannot be received on site while the gate is closed (409)', r.status === 409 && r.json?.error === 'hardware_gate_closed', show(r));
 
 /* ---------- billing prompt -> instalment 1 paid -> gate opens ---------- */
 const prompt = (p.prompts ?? []).find((x) => x.seq === 1);
@@ -141,8 +139,7 @@ check('renovation permit skipped with a reason', r.status === 200, show(r));
 p = await project(projectId);
 check('the gate opens', p.gate?.open === true, JSON.stringify(p.gate));
 check('payment condition shows instalment 1 received', p.payment?.receivedCount === 1, JSON.stringify(p.payment));
-r = await call('POST', `${R}/${projectId}/stages/hardware/start`);
-check('hardware works start', r.status === 200, show(r));
+check('hardware works are already in progress (started before the gate opened)', p.stages?.find?.((s) => s.key === 'hardware')?.state === 'in_progress', JSON.stringify(p.stages?.find?.((s) => s.key === 'hardware')));
 
 /* ---------- site receipt: no stock, PO received, task done, POD by room ---------- */
 r = await call('POST', '/api/scm/site-receipts', receipt(), { 'Idempotency-Key': randomUUID() });
