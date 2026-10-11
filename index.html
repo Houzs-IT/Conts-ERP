@@ -14,7 +14,7 @@
       html { background: #FAF9F6; }
       .boot-screen { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; background: #FAF9F6; font-family: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif; color: #706D67; animation: boot-in 300ms ease-out both; }
       .boot-mark { width: 52px; height: 52px; border-radius: 13px; background: #151515; display: grid; place-items: center; box-shadow: 0 10px 28px -14px rgba(21, 21, 21, 0.5); }
-      .boot-mark img { display: block; }
+      .boot-mark img { display: block; transform: translate(-1.55px, -0.72px); } /* optical centre, as MARK_OPTICAL in Logo.tsx */
       .boot-track { position: relative; width: 72px; height: 2px; border-radius: 2px; overflow: hidden; background: #EDEAE4; opacity: 0; animation: boot-in 300ms ease-out 400ms both; }
       .boot-bar { position: absolute; top: 0; bottom: 0; left: 0; width: 40%; border-radius: 2px; background: #C8A46A; animation: boot-travel 1.4s cubic-bezier(0.45, 0, 0.25, 1) infinite; }
       /* React's copy takes over mid-animation: it must not fade in a second time. */

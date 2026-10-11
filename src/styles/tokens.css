@@ -180,7 +180,10 @@ body { margin: 0; }
 html:has(.app-main) { overflow: hidden; }
 .app-main { scrollbar-gutter: stable; }
 .app-main:focus { outline: none; }
-/* An open dialog, drawer or the phone menu locks the page behind it; a scroll that reaches the dialog's end does not
-   carry on into the page. */
-body:has([aria-modal="true"]) .app-main { overflow: hidden !important; }
-[aria-modal="true"], [aria-modal="true"] * { overscroll-behavior: contain; }
+/* An open dialog or the phone menu locks the page behind it; a scroll that reaches the dialog's end does not carry on
+   into the page. A side drawer (Dialog.tsx) leaves the list beside it scrollable: the wheel over its dimmed strip moves
+   the list, so the page under it must stay a scroller. */
+body:has([aria-modal="true"]:not([data-side-drawer])) .app-main { overflow: hidden !important; }
+/* Only on the dialog itself: Chrome also stops a wheel at any overflow: hidden box marked contain (every rounded card),
+   so the old "[aria-modal] *" rule left a drawer or dialog unscrollable whenever the pointer sat over a card in it. */
+[aria-modal="true"] { overscroll-behavior: contain; }

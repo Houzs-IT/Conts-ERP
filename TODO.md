@@ -299,3 +299,9 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Migration 0110 (owner mailing address and alternate contact) must be applied by hand: staging, check the owner page there, then production. Until then the Owner details card works without the address and alternate contact, and saves ignore them.
 - Production: 116 owners, none with phone or email yet (the source workbooks had none); they are entered on each owner's page (Owner details, Edit).
 - Changing an invited owner's email on the owner page does not change their portal sign-in email; owner to decide whether it should.
+
+## Layout and logo sweep (fix/ui-oct11, 11 Oct)
+- Owner to send the original logo file (vector or large PNG): mark-gold.png is 117x136 and logo-gold.png 195x162, so the login hero (112px tall) is upscaled on 2x screens and soft. Rerun scripts/brand/make-logo-variants.py with it; the optical-centre nudge (MARK_OPTICAL in Logo.tsx) may need re-measuring.
+- Calendar: the grid box has a fixed md:max-h-[74vh], so at 1366x768 and 1920x1040 the page scrolls 50-120px as well as the grid (two scrollbars). Swap it for useFillHeight in CalendarPage.tsx line ~489 once feat/calendar-bulk has merged (left alone to avoid a conflict).
+- Guests: the list box is a fixed calc(100dvh - 420px) beside a profile that can be thousands of px tall (a repeat guest lists every stay), so the list scrolls out of view; make the left column sticky with useFillHeight({ column: true }) and cap the stay list. Owner to say whether a guest's stay list should page after ~20.
+- Owner decision: at 1366x768 Reservations has room for only ~5 rows under the to-do cards, so the table takes a full screen and the page scrolls first (two scrollers by design, useFillHeight). Option: fold the four to-do cards into one row of chips on short screens.
