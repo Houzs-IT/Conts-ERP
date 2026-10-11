@@ -8,7 +8,7 @@ import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { useToast } from '../components/Toast';
 import { api, errorMessage } from '../lib/api';
-import { rmShort, monthLabel, todayMyt, titleCase, plural } from '../lib/format';
+import { rmShort, monthLabel, todayMyt, titleCase, plural, phone as formatPhone } from '../lib/format';
 import { MoneyText } from '../components/MoneyText';
 import { Select } from '../components/Select';
 import {
@@ -46,6 +46,8 @@ function ownerTerms(o: Owner): string {
   return all.every(t => t === all[0]) ? `All ${all.length}: ${all[0]}` : `${new Set(all).size} different terms`;
 }
 const unitsText = (o: Owner) => o.units.length === 0 ? 'No units yet' : o.units.length === 1 ? o.units[0].unitLabel : `${o.units.length} units`;
+/** Under the name in the list: email and phone, whichever are on file (the Phone column shows the phone alone). */
+const contactText = (o: Owner) => [o.email, formatPhone(o.phone)].filter(Boolean).join(' · ');
 const addressText = (o: Owner) => addressLines(o.address).join(', ');
 /** What the search box matches: name, legal name, email, phone (digits only, so "012 345" finds "+60 12-345..."),
  *  address and unit names. */
@@ -124,12 +126,12 @@ export default function OwnersPage() {
           <span className="w-[30px] h-[30px] flex-none rounded-full bg-black text-gold grid place-items-center text-caption font-semibold">{initials(o.displayName)}</span>
           <span className="flex flex-col gap-px min-w-0">
             <span className="text-copy font-medium truncate" title={o.displayName}>{titleCase(o.displayName)}</span>
-            {o.email && <span className="text-meta text-muted-ink truncate" title={o.email}>{o.email}</span>}
+            {(o.email || o.phone) && <span className="text-meta text-muted-ink truncate" title={contactText(o)}>{contactText(o)}</span>}
           </span>
         </span>
       ) },
     { key: 'email', label: 'Email', value: o => o.email || null, hidden: true, filter: false, width: 200 },
-    { key: 'phone', label: 'Phone', type: 'phone', value: o => o.phone, filter: false, width: 150 },
+    { key: 'phone', label: 'Phone', type: 'phone', value: o => o.phone, hidden: true, filter: false, width: 150 },
     { key: 'address', label: 'Mailing address', value: o => addressText(o) || null, hidden: true, filter: false, width: 260 },
     { key: 'units', label: 'Units', type: 'number', align: 'left', value: o => o.units.length, width: 140, filter: false,
       render: o => <span className="text-copy text-muted-ink truncate block" title={o.units.map(u => u.unitLabel).join(', ')}>{unitsText(o)}</span> },
