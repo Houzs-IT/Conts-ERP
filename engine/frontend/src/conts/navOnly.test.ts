@@ -34,9 +34,10 @@ describe("Conts switched-off modules", () => {
 
   it("the real menu carries no switched-off link", async () => {
     const { NAV_TABS } = await import("../components/Sidebar");
+    type Node = { to?: string; children?: Node[] };
     const links: string[] = [];
-    const walk = (ts: Array<{ to?: string; children?: unknown[] }>) => ts.forEach((t) => { if (t.to) links.push(t.to); if (t.children) walk(t.children as never); });
-    walk(NAV_TABS as never);
+    const walk = (ts: Node[]) => ts.forEach((t) => { if (t.to) links.push(t.to); if (t.children) walk(t.children); });
+    walk(NAV_TABS);
     expect(links.length).toBeGreaterThan(5);
     expect(links.filter((l) => isContsHiddenPath(l))).toEqual([]);
     expect(links).toContain("/scm/credit-notes");

@@ -231,7 +231,8 @@ export interface NavTab {
  * Management). Tabs declare permission via `perm` / `anyPerm`; the
  * filter recurses so groups with no visible kids hide entirely.
  */
-const ALL_NAV_TABS: NavTab[] = [
+/** Houzs's whole registry, before Conts trims it (conts/navOnly.ts). Exported for the tests that pin its shape. */
+export const ALL_NAV_TABS: NavTab[] = [
   // ══ WORKSPACE ════════════════════════════════════════════════
   {
     section: "workspace",
