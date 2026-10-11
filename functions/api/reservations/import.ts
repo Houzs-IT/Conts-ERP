@@ -1,4 +1,4 @@
-import { type Env, one, run, json, fail, audit, nowIso } from '../../_lib/db';
+import { type Env, all, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
 import { findClash, upsertGuest, nextBookingRef, holdOnChannels } from '../../_lib/reservations';
 
@@ -12,13 +12,18 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Field roles cannot import reservations.', 403);
 
   const b = await request.json<any>().catch(() => null);
-  if (!Array.isArray(b?.rows) || b.rows.length === 0 || b.rows.length > 500) return fail('VALIDATION', 'Send between 1 and 500 rows.', 422);
+  if (!Array.isArray(b?.rows) || b.rows.length === 0 || b.rows.length > 100) return fail('VALIDATION', 'Send between 1 and 100 rows.', 422);
 
   let created = 0;
   const channels = { queued: 0, not_linked: 0, failed: 0 };
   const failed: { row: number; reason: string }[] = [];
+  // Every unit named in the file, in one query rather than one per row.
+  const numbers = [...new Set(b.rows.map((r: any) => String(r.unitNumber ?? '')))];
+  const unitOf = new Map((await all<{ id: string; unit_number: string }>(env,
+    'SELECT DISTINCT ON (unit_number) id, unit_number FROM units WHERE unit_number IN (SELECT jsonb_array_elements_text(?::text::jsonb)) ORDER BY unit_number, id',
+    JSON.stringify(numbers))).map(u => [u.unit_number, { id: u.id }]));
   for (const [i, r] of b.rows.entries()) {
-    const unit = await one<{ id: string }>(env, 'SELECT id FROM units WHERE unit_number = ? LIMIT 1', String(r.unitNumber ?? ''));
+    const unit = unitOf.get(String(r.unitNumber ?? ''));
     if (!unit) { failed.push({ row: i + 1, reason: `No unit ${r.unitNumber}.` }); continue; }
     if (!r.checkIn || !r.checkOut || r.checkOut <= r.checkIn) { failed.push({ row: i + 1, reason: 'Check-out must be after check-in.' }); continue; }
     if (!['airbnb', 'booking_com', 'agoda', 'direct'].includes(r.channel)) { failed.push({ row: i + 1, reason: 'Unknown channel.' }); continue; }
