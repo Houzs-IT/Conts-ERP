@@ -67,7 +67,7 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 
 ## Performance (audit 11 Oct 2026, docs/audits/performance-from-sister-erps.md)
 - Owner decision: Workers Paid on the Conts ERP account. On the free plan, Send statements makes one email call per owner (~100 a month) against 50 outside calls per request; calls past 50 fail and are not retried while the cron is off. Until then send 40 at a time.
-- A bulk price update for all 139 units over a year builds 152,205 rate rows in one request (12.6 s locally); UNTESTED against the free plan's CPU limit on Cloudflare.
+- Done (feat/calendar-bulk): a bulk price change goes a few units per request (6,000 price rows at most; the server refuses over 20,000 with 413), so a year for all 139 units is about 25 requests in a row; the time per request on Cloudflare's free plan is UNTESTED.
 - Confirm the Hyperdrive origin is Supabase's session pooler (port 5432), not the transaction pooler.
 - libphonenumber (149 KB) is in the entry script because src/lib/format.ts formats phones; lazy-load it if the entry budget (scripts/checks/entry-bundle.mjs, 180 KB gzipped) gets tight.
 
@@ -207,6 +207,10 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Migration 0092 (units.weekend_rate, reservations.block_reason) is not yet applied to staging or production. It backfills weekend_rate = round(base_rate x 1.22) for every priced unit so live Fri/Sat prices do not move; units created later sell the weekend at the base rate until a weekend rate is set (Pricing page).
 - Channex full sync (functions/_lib/channexQueue.ts) still counts inquiries as taken nights; the board and the clash check do not. Decide whether an inquiry should close the nights on the booking sites.
 - Rate update lists the units on the board, so with one building filtered it offers only that building; open it with All buildings to price across buildings.
+- Done (feat/calendar-bulk): tick units on the board (per unit, per building, all shown) and Change prices sets a nightly and optional Fri/Sat price, min nights or blocked nights for a date range, per channel; step 4 shows each unit's price now and after (server dry run) before saving; one audit entry per request (rate.bulk, entity bulk:<batch>, old and new per unit). Phones keep the unit list inside Update prices instead of ticks.
+- The unit column's Nightly / Weekend lines show the unit's standard prices, not prices set for single nights; after a bulk change the nights show the new price but the column does not. Decide whether it should say "from RM x" for the window.
+- Calendar views: 1 week, 2 weeks, 30 days, calendar month, 60 and 90 days (the API allows 92); arrows step a whole window (a month in Month view). No year jump in the date picker; going back a year is 12 clicks in Month view.
+- POST /api/blocks hangs on the local PGlite database (single connection) and then blocks every later request until the server restarts; calendar-rates.mjs stops at its owner-stay step there. Not seen on Postgres; check with a real local Postgres.
 
 ## Money approvals and guest documents (feat/s4-money-docs, migrations 0096-0097)
 - Migrations 0096 (approval_requests) and 0097 (document_counters, issued_documents) must be applied on production before this ships; until then refunds, payout runs, owner credits and charges, large expenses and write-offs answer with a database error.
