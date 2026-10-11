@@ -228,7 +228,6 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 
 ## System bugs from Houzs / Hookka (fix/audit-system, docs/audits/system-from-sister-erps.md)
 - Done: same nights cannot be booked twice at the same moment (unit lock); status and dates changes are compare-and-set; statement generation is one transaction per period; supply chain numbers retry on a clash; MYT dates everywhere (gate myt-dates); CSV formula guard (gate csv-formula); uploads that are not images, video or PDF download instead of opening; 300 / 10,000-character text limits on every write; bookings CSV import validates each row.
-- Open: the 15-minute email/WhatsApp retry does not claim its rows, so a double-fired cron could resend one message; add a 'sending' state (migration) before the cron worker is deployed.
 - Open: built-in supply chain create screens add a placeholder row before the save answers and keep it if the save fails; only matters if the engine is switched off.
 - Open: field edits are last-write-wins (no version column); status and dates are already protected.
 
