@@ -5,6 +5,7 @@ import { MASTER_ROLES } from '../../_lib/properties';
 import { todayMyt } from '../../_lib/ops';
 import { loadInputs, computeMonth, statementSettings, type Query, type UnitRow } from '../../_lib/ownerStatement';
 import { contractView } from '../../_lib/unitContract';
+import { DEDUCTION_WORDS } from '../../_lib/unitCosts';
 import { monthEndExclusive } from '../../_lib/revenue';
 import { checkPhone } from '../../_lib/validate';
 
@@ -34,7 +35,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     statementSettings(q),
     loadInputs(q, `${month}-01`, monthEndExclusive(month), id ? { ownerIds: [id] } : {}),
     all<any>(env, `SELECT * FROM owner_contracts ${id ? 'WHERE owner_id = ?' : ''} ORDER BY starts_on DESC`, ...(id ? [id] : [])),
-    all<any>(env, `SELECT id, owner_id, state FROM owner_statements WHERE period_start = ? ${id ? 'AND owner_id = ?' : ''}`, `${month}-01`, ...(id ? [id] : [])),
+    // hasUnits: built by the workbook rules, so it has an Owner Income Report; months paid before Property OS carry only the payout.
+    all<any>(env, `SELECT s.id, s.owner_id, s.state, EXISTS (SELECT 1 FROM statement_units su WHERE su.statement_id = s.id) AS has_units
+      FROM owner_statements s WHERE s.period_start = ? ${id ? 'AND s.owner_id = ?' : ''}`, `${month}-01`, ...(id ? [id] : [])),
   ]);
   const months = new Map(computeMonth(month, inputs, settings, 'dated').map(m => [m.unitId, m]));
   const statementOf = new Map(statements.map(s => [s.owner_id, s]));
@@ -60,7 +63,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         portalInvited: !!o.user_id,
         defaultManagementFeePct: ownerDefault,
         contract: mine ? { feePct: Number(mine.management_fee_pct), startedOn: mine.starts_on, renewsOn: mine.renews_on, endsOn: mine.ends_on ?? null } : null,
-        statement: st ? { id: st.id, state: st.state } : null,
+        statement: st ? { id: st.id, state: st.state, hasUnits: !!st.has_units } : null,
         units: (unitsOf.get(o.id) ?? []).map(u => {
           const m = months.get(u.id)!;
           const view = contractView(u.contract_id ? { ...u, id: u.contract_id, misc_charges: u.contract_misc } : null, { ...u, misc_charges: u.unit_misc }, settings.defaultFeePct);
@@ -78,7 +81,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
               figures: {
                 income: m.gross, costs: m.deductions, operatorShare: m.operatorShare, guarantee: m.guarantee, topUp: m.topUp, fixedRent: m.terms.model === 'master_lease' ? 0 : m.fixedRent,
                 payoutBeforeAdjustments: m.payoutBeforeAdjustments, adjustments: m.adjustmentsTotal, netPayout: m.netPayout, nights: m.nights,
-                costLines: m.deductionGroups.filter(g => g.amount).map(g => ({ label: g.label, amount: g.amount })),
+                costLines: m.deductionGroups.filter(g => g.amount).map(g => ({ label: DEDUCTION_WORDS[g.category] ?? g.label, amount: g.amount })),
               },
             } : {}),
           };
