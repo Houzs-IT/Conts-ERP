@@ -27,42 +27,7 @@ catch { console.error('DATABASE_URL is not a valid connection string. Nothing wa
 const out = await build({ entryPoints: [join(root, 'src/lib/statementTerms.ts')], bundle: true, format: 'esm', platform: 'node', write: false, logLevel: 'error' });
 const tmp = mkdtempSync(join(tmpdir(), 'terms-'));
 writeFileSync(join(tmp, 't.mjs'), out.outputFiles[0].text);
-const { TERMS, deductionTerm, toOperator } = await import(pathToFileURL(join(tmp, 't.mjs')).href);
-
-/** The description the line would carry if it were written today; null = leave it. */
-export function reword(l) {
-  const d = String(l.description ?? '');
-  const unit = l.unit_label ?? '';
-  const workbook = /\(owner workbook(, no breakdown)?\)\s*$/i.test(d);
-  const noUnit = s => (unit && s.startsWith(`${unit} · `) ? s.slice(unit.length + 3) : unit && s.startsWith(`${unit}: `) ? s.slice(unit.length + 2) : s);
-  switch (l.line_type) {
-    case 'gross':
-      if (workbook) return TERMS.hospitalityIncome;
-      if (l.category === 'long_term_rent') {
-        const m = /monthly rent(?: from (.+?))?(?: \(\d+ of \d+ days\))?$/i.exec(noUnit(d));
-        return m ? `${TERMS.monthlyRent}${m[1] ? ` · ${m[1]}` : ''}` : null;
-      }
-      return noUnit(d);
-    case 'expense':
-      if (workbook) {
-        if (l.category === 'other') return /miscellaneous/i.test(d) ? deductionTerm('misc') : deductionTerm('additional');
-        return deductionTerm(l.category);
-      }
-      if (l.category === 'misc' && /^miscellaneous charges/i.test(d)) return deductionTerm('misc');
-      return null;
-    case 'management_fee': {
-      if (workbook) return TERMS.toOperator;
-      const m = /^(\d+(?:\.\d+)?)% to operator$/i.exec(d) ?? /^management fee (\d+(?:\.\d+)?)% of the rent$/i.exec(d);
-      return m ? toOperator(Number(m[1])) : null;
-    }
-    case 'adjustment':
-      if (l.category === 'guarantee_top_up') return TERMS.topUp;
-      if (l.category === 'fixed_rent') return TERMS.fixedRent;
-      if (l.category === 'workbook_payout' && workbook) return /top-up/i.test(d) ? (l.grr ? TERMS.fixedRentTopUp : TERMS.topUp) : TERMS.payout;
-      return null;
-    default: return null;
-  }
-}
+const { rewordStored } = await import(pathToFileURL(join(tmp, 't.mjs')).href);
 
 const sql = postgres(url, { max: 1, prepare: false, onnotice: () => {}, connection: { search_path: 'pos' } });
 try {
@@ -73,7 +38,7 @@ try {
     LEFT JOIN owner_contracts c ON c.id = u.contract_id`;
   const changes = [];
   for (const r of rows) {
-    const next = reword(r);
+    const next = rewordStored(r);
     const description = next ?? r.description;
     const reference = r.reference && /^owner workbook$/i.test(r.reference.trim()) ? null : r.reference;
     if (description !== r.description || reference !== r.reference) changes.push({ id: r.id, description, reference, before: r.description });

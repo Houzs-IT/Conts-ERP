@@ -143,3 +143,39 @@ export function summaryRows(lines: (TermLine & { amount: number | string })[], n
   rows.push({ label: TERMS.netPayout, amount: netPayout, type: 'net' });
   return rows;
 }
+
+/** For scripts/fix-statement-line-wording.mjs: the description a stored line would carry if the generator or the import wrote
+ *  it today; null = leave it as it is. Owner credits and charges, and expense lines' own text, are never touched. */
+export function rewordStored(l: TermLine & { unit_label?: string | null; grr?: boolean | null }): string | null {
+  const d = String(l.description ?? '');
+  const unit = l.unit_label ?? '';
+  const workbook = /\(owner workbook(, no breakdown)?\)\s*$/i.test(d);
+  const noUnit = (s: string) => (unit && s.startsWith(`${unit} · `) ? s.slice(unit.length + 3) : unit && s.startsWith(`${unit}: `) ? s.slice(unit.length + 2) : s);
+  switch (l.line_type) {
+    case 'gross':
+      if (workbook) return TERMS.hospitalityIncome;
+      if (l.category === 'long_term_rent') {
+        const m = /monthly rent(?: from (.+?))?(?: \(\d+ of \d+ days\))?$/i.exec(noUnit(d));
+        return m ? `${TERMS.monthlyRent}${m[1] ? ` · ${m[1]}` : ''}` : null;
+      }
+      return noUnit(d);
+    case 'expense':
+      if (workbook) {
+        if (l.category === 'other') return /miscellaneous/i.test(d) ? deductionTerm('misc') : deductionTerm('additional');
+        return deductionTerm(l.category);
+      }
+      if (l.category === 'misc' && /^miscellaneous charges/i.test(d)) return deductionTerm('misc');
+      return null;
+    case 'management_fee': {
+      if (workbook) return TERMS.toOperator;
+      const m = /^(\d+(?:\.\d+)?)% to operator$/i.exec(d) ?? /^management fee (\d+(?:\.\d+)?)% of the rent$/i.exec(d);
+      return m ? toOperator(Number(m[1])) : null;
+    }
+    case 'adjustment':
+      if (l.category === 'guarantee_top_up') return TERMS.topUp;
+      if (l.category === 'fixed_rent') return TERMS.fixedRent;
+      if (l.category === 'workbook_payout' && workbook) return /top-up/i.test(d) ? (l.grr ? TERMS.fixedRentTopUp : TERMS.topUp) : TERMS.payout;
+      return null;
+    default: return null;
+  }
+}
