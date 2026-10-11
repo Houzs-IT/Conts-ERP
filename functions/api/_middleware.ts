@@ -4,6 +4,7 @@ import { doorFor, doorRefusal } from '../_lib/door';
 import { accessFor, refusalFor } from '../_lib/access';
 import { flushWhenQuiet, FLUSH_DELAY_MS } from '../_lib/channexQueue';
 import { twoStepSetupDue } from '../_lib/signIn';
+import { overLimit } from '../_lib/textLimits';
 
 /**
  * Runs before every /api endpoint. Most endpoints only check that someone is signed
@@ -92,6 +93,12 @@ const handle: PagesFunction<Env> = async ({ request, env, next, waitUntil }) => 
     return fail('FORBIDDEN', 'Only finance and management can see invoices and payments.', 403);
   }
 
+  if (request.method !== 'GET' && (request.headers.get('content-type') ?? '').includes('application/json')) {
+    const body = await request.clone().json().catch(() => undefined);
+    const over = overLimit(body);
+    if (over) return fail('VALIDATION', over.message, 422, { [over.field]: over.message });
+  }
+
   const response = await next(forward);
   // Any write may have queued Channex updates; send them once the burst of edits has gone quiet.
   if (request.method !== 'GET' && response.status < 400) {
@@ -116,6 +123,9 @@ export const onRequest: PagesFunction<Env> = async (ctx) => {
     return await handle(ctx);
   } catch (e) {
     console.error('Unhandled error', ctx.request.method, new URL(ctx.request.url).pathname, e);
-    return fail('INTERNAL', 'Something went wrong on our side and nothing was saved. Try again; if it keeps happening, tell IT.', 500);
+    // A write may have saved part of its work before it failed, so it does not claim "nothing was saved" (a person who
+    // believes that and presses again can make a second copy). A read saved nothing.
+    if (ctx.request.method === 'GET') return fail('INTERNAL', 'Something went wrong on our side and this could not load. Try again; if it keeps happening, tell IT.', 500);
+    return fail('INTERNAL', 'Something went wrong on our side. Refresh the page to see whether the change was saved before trying again; if it keeps happening, tell IT.', 500);
   }
 };

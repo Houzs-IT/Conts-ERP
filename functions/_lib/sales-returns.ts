@@ -1,6 +1,6 @@
 /** Sales Returns, ported from 2990's SCM. Sell-side twin of Purchase Returns: a customer
  *  returns goods delivered on a DO. Money integer sen. */
-import { type Env, one, nowIso, mytToday } from './db';
+import { type Env, one, mytToday } from './db';
 
 export const SRET_STATUSES = ['POSTED', 'COMPLETED', 'CANCELLED'] as const;
 export const isSretStatus = (v: unknown): v is typeof SRET_STATUSES[number] => typeof v === 'string' && (SRET_STATUSES as readonly string[]).includes(v);

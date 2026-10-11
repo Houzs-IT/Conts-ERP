@@ -1,5 +1,6 @@
 import { type Env, all, fail } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
+import { csvCell } from '../../_lib/csv';
 import { fromSql, columnsSql, parseListQuery, viewWhere, todoWhere, toRow } from '../../_lib/bookingList';
 import { moneySchema } from '../../_lib/bookingMoney';
 
@@ -46,7 +47,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     }
   }
 
-  const esc = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const esc = csvCell;
   const opt = (sen: unknown) => (sen == null ? '' : money(Number(sen)));
   const rows = raw.map(r => ({ r, x: toRow(r) }));
   const filters = [VIEW_LABEL[q.view] ?? q.view, ...(q.todo ? [TODO_LABEL[q.todo]] : []),

@@ -1,5 +1,5 @@
 /** Purchase Returns, ported from 2990's SCM. Returns GRN-received goods to the supplier. */
-import { type Env, one, nowIso, mytToday } from './db';
+import { type Env, one, mytToday } from './db';
 
 export const PRET_STATUSES = ['POSTED', 'COMPLETED', 'CANCELLED'] as const;
 

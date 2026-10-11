@@ -1,5 +1,5 @@
 /** Payment Vouchers (AP), ported from 2990's SCM. Pays purchase invoices. */
-import { type Env, one, nowIso, mytToday } from './db';
+import { type Env, one, mytToday } from './db';
 
 export const PV_METHODS = ['TRANSFER', 'CASH', 'CHEQUE', 'CARD', 'OTHER'] as const;
 

@@ -1,8 +1,9 @@
 import { type Env, all, one, fail, audit } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
+import { csvCell } from '../../_lib/csv';
 import { readExpenseFilter, expenseWhere, IS_PARENT_SQL } from '../../_lib/expenses';
 
-const q = (v: string | number | null) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+const q = (v: string | number | null) => csvCell(v);
 
 /** GET /api/expenses/report?month=YYYY-MM&category=&building=&unit=&owner=&q= (also the older unitId= / period=) — a CSV download. Filters applied and generation time are printed at the top. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {

@@ -1,7 +1,7 @@
 /** Credit and debit notes, copied from Houzs ERP (backend/src/scm/routes/credit-notes.ts,
  *  backend/src/acc/credit-notes.ts). See migrations-pg/0037_credit_notes.sql for what each kind
  *  does to a balance. */
-import { type Env, one, nowIso, mytToday } from './db';
+import { type Env, one, mytToday } from './db';
 
 export const NOTE_KINDS = ['CN', 'DN', 'SCN'] as const;
 export type NoteKind = typeof NOTE_KINDS[number];

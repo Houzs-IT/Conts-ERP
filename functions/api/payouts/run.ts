@@ -1,4 +1,4 @@
-import { type Env, all, json, fail, nowIso, mytToday } from '../../_lib/db';
+import { type Env, all, json, fail, mytToday } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { approvalsEnabled, submit } from '../../_lib/approvals';
 
