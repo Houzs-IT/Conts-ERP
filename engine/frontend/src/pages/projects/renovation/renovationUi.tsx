@@ -173,8 +173,10 @@ export interface GpsFix { lat: number; lng: number; accuracyM: number | null; at
 /** One location reading; null when denied or unavailable (never blocks). */
 export function readGps(timeoutMs = 8000): Promise<GpsFix | null> {
   return new Promise((resolve) => {
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- lib.dom says always present; older/embedded browsers lack it
     if (typeof navigator === "undefined" || !navigator.geolocation) return resolve(null);
     navigator.geolocation.getCurrentPosition(
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- some browsers/emulators omit accuracy; store null, not undefined
       (p) => resolve({ lat: p.coords.latitude, lng: p.coords.longitude, accuracyM: p.coords.accuracy ?? null, atIso: new Date(p.timestamp).toISOString() }),
       () => resolve(null),
       { enableHighAccuracy: true, timeout: timeoutMs, maximumAge: 60000 },

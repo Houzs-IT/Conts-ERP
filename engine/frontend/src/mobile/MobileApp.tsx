@@ -146,7 +146,7 @@ type Screen =
   | { t: "racks" }
   | { t: "service"; startNew?: boolean }
   | { t: "delivery-planning" }
-  | { t: "pms"; projectId?: number }
+  | { t: "pms"; projectId?: number; view?: "monitor" }
   | { t: "mail" }
   | { t: "roles" }
   | { t: "titles" }
@@ -179,7 +179,9 @@ export function destinationScreen(to: string, label: string): DestinationTarget 
   if (path === "/scm/amendments") return { t: "amendments" };
   if (path === "/scm/po-amendments") return { t: "po-amendments" };
   if (path === "/assr") return { t: "service" };
-  if (path === "/projects") return { t: "pms" };
+  if (path === "/projects") {
+    return new URLSearchParams(to.split("?")[1] || "").get("view") === "monitor" ? { t: "pms", view: "monitor" } : { t: "pms" };
+  }
   if (path === "/mail-center") return { t: "mail" };
   if (path === "/announcements") return { t: "announcements" };
   if (path === "/activity-inbox") return { t: "inbox" };
@@ -669,7 +671,12 @@ function MobileAppInner() {
 
   const [tab, setTab] = useState<Tab>(initialRoute.t === "tab" ? initialRoute.tab : firstTab);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [screen, setScreen] = useState<Screen>(() => initialScreenFor(initialRoute));
+  const [screen, setScreen] = useState<Screen>(() => {
+    const first = initialScreenFor(initialRoute);
+    /* /projects?view=monitor (the Property OS "Project monitor" entry) opens the monitor tab of Projects. */
+    const monitor = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("view") === "monitor";
+    return first.t === "pms" && monitor ? { ...first, view: "monitor" } : first;
+  });
   /* The crash-reset key for the overlay boundaries. Mobile navigation lives in
      `screen`, never in the URL, so the desktop shell's pathname key is useless
      here — serialise the state itself, which is a small discriminated union. */
@@ -1010,7 +1017,7 @@ function MobileAppInner() {
   else if (screen.t === "mileage-capture") overlay = <MobileMileageCapture onBack={back} />;
   else if (screen.t === "service") overlay = <MobileServiceCase onBack={back} startNew={screen.startNew} />;
   else if (screen.t === "delivery-planning") overlay = <MobileDeliveryPlanning onBack={back} onOpen={(doc) => setScreen({ t: "so-detail", docNo: doc })} onPod={(doNumber) => setScreen({ t: "pod", docNo: doNumber, from: "delivery-planning" })} />;
-  else if (screen.t === "pms") overlay = <MobileProjectsEntry onBack={back} initialProjectId={screen.projectId} exhibition={() => <MobilePMS onBack={back} initialProjectId={screen.projectId} />} />;
+  else if (screen.t === "pms") overlay = <MobileProjectsEntry onBack={back} initialProjectId={screen.projectId} initialView={screen.view} exhibition={() => <MobilePMS onBack={back} initialProjectId={screen.projectId} />} />;
   else if (screen.t === "mail") overlay = <MobileMailCenter onBack={back} />;
   else if (screen.t === "roles") overlay = can("roles.read") ? <MobileRoles onBack={back} /> : <TabLocked title="Roles" />;
   else if (screen.t === "titles") overlay = can("users.read") ? <MobileTitles onBack={back} /> : <TabLocked title="Titles" />;

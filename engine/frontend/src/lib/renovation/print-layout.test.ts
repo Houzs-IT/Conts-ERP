@@ -30,10 +30,10 @@ describe('AVA Residence B31-09, format 1 (amount only)', () => {
 
   test('numbering restarts per section, add-ons and dimensions unnumbered', () => {
     const rows = buildRows(d).filter((r) => r.type === 'line');
-    const nums = rows.map((r) => (r.type === 'line' ? r.cells.no ?? '' : ''));
+    const nums = rows.map((r) => r.cells.no ?? '');
     expect(nums.slice(0, 4)).toEqual(['1', '', '', '']);
-    const wiring = rows.find((r) => r.type === 'line' && r.cells.desc?.startsWith('LOOPING NEW LIGHTING POINT'));
-    expect(wiring?.type === 'line' && wiring.cells.no).toBe('1');
+    const wiring = rows.find((r) => r.cells.desc?.startsWith('LOOPING NEW LIGHTING POINT'));
+    expect(wiring?.cells.no).toBe('1');
   });
 
   test('measured line prints "20FT" and its rate "15/FT"; lump-sum section prints its price on the band', () => {
@@ -102,7 +102,7 @@ describe('the other formats', () => {
   test('promotion vs standard (KL 48): promotion = unit price, standard = list price, total at promotion', () => {
     const d = kl48();
     const rows = buildRows(d).filter((r) => r.type === 'line');
-    expect(rows[0].type === 'line' && [rows[0].cells.promo, rows[0].cells.standard, rows[0].cells.qty]).toEqual(['1800', '2000', 'FULL UNIT']);
+    expect([rows[0].cells.promo, rows[0].cells.standard, rows[0].cells.qty]).toEqual(['1800', '2000', 'FULL UNIT']);
     // The sample prints 14,200; its lines add to 14,600 (owner question 1: lines are the rule).
     expect(layoutDocument(d).closing.summary.finalSen).toBe(RM(14600));
   });
@@ -110,8 +110,8 @@ describe('the other formats', () => {
   test('unit price format; FOC prints FOC; document discount adds TOTAL -> DISCOUNT -> GRAND TOTAL', () => {
     const d = doc('UNIT_PRICE', [section('X', [item('LOOPING NEW LIGHTING POINT', 65, { qty: 31 }), item('DESIGN', 800, { isFoc: true })])], { docDiscountSen: RM(15), docDiscountLabel: 'Showroom discount' });
     const rows = buildRows(d).filter((r) => r.type === 'line');
-    expect(rows[0].type === 'line' && [rows[0].cells.unit, rows[0].cells.amount]).toEqual(['65', '2015']);
-    expect(rows[1].type === 'line' && rows[1].cells.amount).toBe('FOC');
+    expect([rows[0].cells.unit, rows[0].cells.amount]).toEqual(['65', '2015']);
+    expect(rows[1].cells.amount).toBe('FOC');
     const s = layoutDocument(d).closing.summary;
     expect(summaryRows(d, s).map((r) => [r.label, r.sen])).toEqual([['TOTAL (RM)', RM(2015)], ['SHOWROOM DISCOUNT (RM)', RM(15)], ['GRAND TOTAL', RM(2000)]]);
   });

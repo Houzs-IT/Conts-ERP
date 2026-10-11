@@ -8,7 +8,7 @@ import { useState } from "react";
 import { Plus, RefreshCw, Users } from "lucide-react";
 import { Button } from "../../../components/Button";
 import { useQuery } from "../../../hooks/useQuery";
-import { STAGE_LABEL, type StageKey } from "../../../vendor/shared/renovation-stages";
+import { STAGE_LABEL } from "../../../vendor/shared/renovation-stages";
 import { renovationApi } from "./renovationApi";
 import { simpleApi, type TaskViewV2 } from "./simpleApi";
 import { TASK_STATUS_LABEL, errorText, shortDate, taskTone } from "./renovationModel";
@@ -48,7 +48,7 @@ export function SiteTasksPanel({ projectId, tasks, canWrite, linesAvailable, onA
       {visible.length === 0 && <p className="mt-3 text-sm text-ink-secondary">No site tasks yet.</p>}
       {stages.map((st) => (
         <div key={st} className="mt-3">
-          <div className="text-xs font-medium uppercase tracking-wide text-ink-secondary">{STAGE_LABEL[st as StageKey] ?? st}</div>
+          <div className="text-xs font-medium uppercase tracking-wide text-ink-secondary">{(STAGE_LABEL as Partial<Record<string, string>>)[st] ?? st}</div>
           <ul className="mt-1 space-y-2">
             {visible.filter((t) => t.stage_key === st).map((t) => <SiteTaskRow key={t.id} t={t} canWrite={canWrite} onAct={onAct} onSkip={() => onSkip(t)} />)}
           </ul>

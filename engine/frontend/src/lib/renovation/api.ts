@@ -211,7 +211,7 @@ export const renoSend = send;
 
 /** The server's machine code and detail on a refusal (authedFetch keeps the raw body on the error). */
 export function refusalOf(err: unknown): { code: string | null; message: string; detail: Record<string, unknown> } {
-  const e = err as { message?: string; body?: string };
+  const e = err as { message?: string; body?: string } | null | undefined;
   let detail: Record<string, unknown> = {};
   try { detail = JSON.parse(e?.body ?? '{}'); } catch { /* not JSON */ }
   return { code: typeof detail.error === 'string' ? detail.error : null, message: (typeof detail.message === 'string' ? detail.message : e?.message) ?? 'Something went wrong.', detail };

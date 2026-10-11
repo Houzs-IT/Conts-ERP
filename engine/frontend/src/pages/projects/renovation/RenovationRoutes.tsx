@@ -11,6 +11,7 @@ import { renovationApi } from "./renovationApi";
 import { RenovationBoard } from "./RenovationBoard";
 import { RenovationCalendar } from "./RenovationCalendar";
 import { RenovationDetail } from "./RenovationDetail";
+import { ProjectMonitor } from "./ProjectMonitor";
 
 export function useProjectsMode(): "renovation" | "exhibition" | null {
   const q = useQuery(["renovation", "mode"], () => renovationApi.mode(), [], { staleTime: 5 * 60_000 });
@@ -30,6 +31,11 @@ export function RenovationListView() {
   return <RenovationBoard canCreate={can("projects.write")} />;
 }
 
+export function RenovationMonitorView() {
+  const { can } = useAuth();
+  return <ProjectMonitor canWrite={can("projects.write")} />;
+}
+
 export function RenovationCalendarView() {
   const { can } = useAuth();
   return <RenovationCalendar canWrite={can("projects.write")} />;
@@ -45,7 +51,7 @@ export function RenovationProjectRoute({ id, fallback }: { id: number; fallback:
     setKind("checking");
     renovationApi.detail(id)
       .then(() => { if (live) setKind("renovation"); })
-      .catch((e: unknown) => { if (live) setKind((e as { status?: number })?.status === 404 ? "other" : "renovation"); });
+      .catch((e: unknown) => { if (live) setKind((e as { status?: number } | null)?.status === 404 ? "other" : "renovation"); });
     return () => { live = false; };
   }, [id]);
   if (kind === "checking") return <p className="py-10 text-center text-sm text-ink-secondary">Loading project...</p>;

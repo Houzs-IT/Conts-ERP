@@ -556,9 +556,9 @@ export function PhotoGallery(props: PhotoGalleryProps) {
                   idx={idx}
                   total={photos.length}
                   busy={
-                    (setPrimaryMut.isPending && setPrimaryMut.variables?.photoId === p.id) ||
-                    (deleteMut.isPending && deleteMut.variables?.photoId === p.id) ||
-                    (reorderMut.isPending && reorderMut.variables?.photoId === p.id)
+                    (setPrimaryMut.isPending && setPrimaryMut.variables.photoId === p.id) ||
+                    (deleteMut.isPending && deleteMut.variables.photoId === p.id) ||
+                    (reorderMut.isPending && reorderMut.variables.photoId === p.id)
                   }
                   onSetPrimary={() => setPrimaryMut.mutate({ photoId: p.id })}
                   onDelete={() => deleteMut.mutate({ photoId: p.id })}

@@ -7,6 +7,7 @@ export const ENGINE_PATH: Record<string, string> = {
   '/service/maintenance': '/assr?view=settings',
   '/service/my-cases': '/my-cases',
   '/projects/list': '/projects?view=list',
+  '/projects/monitor': '/projects?view=monitor',
   '/projects/calendar': '/projects?view=calendar',
   '/projects/finances': '/projects?view=finances',
   '/projects/maintenance': '/projects?view=maintenance',
