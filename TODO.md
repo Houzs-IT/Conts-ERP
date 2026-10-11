@@ -52,7 +52,6 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 - A bulk price update for all 139 units over a year builds 152,205 rate rows in one request (12.6 s locally); UNTESTED against the free plan's CPU limit on Cloudflare.
 - Not yet batched (allow-listed in scripts/checks/no-query-in-loop.mjs): reservations/mark-paid-out (3 queries per booking), expenses/utilities (~6 per bill), payouts/index (payout run), approvals bulk approve.
 - Reviews list and Channex call log stop at 500 rows without paging; add paging before 500 reviews.
-- GETs are not retried on 502/503/504 (a cold Hyperdrive pool after a quiet spell); a single retry for GETs in src/lib/api.ts.
 - Confirm the Hyperdrive origin is Supabase's session pooler (port 5432), not the transaction pooler.
 - libphonenumber (149 KB) is in the entry script because src/lib/format.ts formats phones; lazy-load it if the entry budget (scripts/checks/entry-bundle.mjs, 180 KB gzipped) gets tight.
 
