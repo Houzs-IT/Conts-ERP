@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Button } from '../components/Button';
-import { EmptyState, SkeletonRows } from '../components/States';
+import { EmptyState } from '../components/States';
 import { usePhone } from './finance/listKit';
 import { useSearchParams } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
@@ -498,11 +498,27 @@ export default function CalendarPage() {
               </div>
             </div>
 
-            {units.length === 0 && (
+            {units.length === 0 && loading && (
+              // The board's own rows: the unit column, then a stay or two along the nights, at the 64px row height.
+              <div aria-hidden>
+                {[[1, 4], [6, 3], [0, 6], [3, 5], [8, 2], [2, 4]].map(([at, nights], r) => (
+                  <div key={r} className="flex h-16 [border-bottom:1px_solid_var(--color-line)]">
+                    <div className={`${STICKY_COL} z-10 flex flex-col justify-center gap-[7px] px-2 md:px-3`}>
+                      <div className={`skeleton h-[12px] ${r % 2 ? 'w-[52%]' : 'w-[64%]'}`} />
+                      <div className="skeleton h-[9px] w-[40%]" />
+                    </div>
+                    <div className="relative flex-none" style={{ width: span * COL, backgroundImage: `repeating-linear-gradient(to right, var(--color-line-soft) 0 1px, transparent 1px ${COL}px)` }}>
+                      <div className="skeleton absolute top-[18px] h-7 rounded-control!" style={{ left: at * COL + COL / 2, width: nights * COL - 4 }} />
+                      <div className="skeleton absolute top-[18px] h-7 rounded-control!" style={{ left: (at + nights + 3) * COL + COL / 2, width: Math.max(2, 7 - nights) * COL - 4 }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {units.length === 0 && !loading && (
               // Pinned to the visible part of the wide grid so it does not centre on the 30-night track.
               <div className="sticky left-0 w-[min(100%,calc(100vw-2rem))] md:w-[min(100%,720px)]">
-                {loading ? <div className="p-4"><SkeletonRows rows={4} height={64} /></div>
-                  : filtersDirty
+                {filtersDirty
                     ? <EmptyState bare kind="filtered" title="No units match these filters." action={{ label: 'Clear filters', onClick: () => { setOff({}); setStatusOff({}); setProperty('all'); } }} />
                     : <EmptyState bare icon="CalendarDays" title="No units on the board yet." body="Units appear here once they are added under Properties." action={{ label: 'Open units', onClick: () => { window.location.hash = '#/properties/units'; } }} />}
               </div>

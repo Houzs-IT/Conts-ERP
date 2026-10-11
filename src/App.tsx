@@ -10,6 +10,7 @@ import UpdateNotice from './components/UpdateNotice';
 import OwnerShell from './components/OwnerShell';
 import LoginPage from './pages/LoginPage';
 import { HOME, screenClosed } from './lib/navigation';
+import { BootScreen, PageShown, PageSkeleton } from './components/Loading';
 
 /** react-router (ERP convention) with route-level code splitting — every page is
  *  lazy-loaded so the initial bundle stays small. HashRouter (see main.tsx) keeps
@@ -100,7 +101,8 @@ const FieldTodayPage = lazy(() => import('./pages/FieldTodayPage'));
 const OwnerPortalPage = lazy(() => import('./pages/OwnerPortalPage'));
 const AccountPage = lazy(() => import('./pages/AccountPage'));
 
-const Fallback = () => null;
+/** A page's code is still downloading: its shape, inside the shell, after a short wait (Loading.tsx). */
+const Fallback = () => <PageSkeleton />;
 
 /** Desktop shell as a layout route; the matched page renders into <Outlet />. */
 function AppLayout() {
@@ -118,7 +120,7 @@ function AppLayout() {
       {closed ? <NoAccess />
         : viaEngine ? <SupplyChainEngine enginePath={enginePath} />
         : enginePath && !engine.data && engine.loading ? <Fallback />
-        : <CrashScreen inline key={location.pathname}><Suspense fallback={<Fallback />}><Outlet /></Suspense></CrashScreen>}
+        : <CrashScreen inline key={location.pathname}><Suspense fallback={<Fallback />}><PageShown /><Outlet /></Suspense></CrashScreen>}
     </AppShell>
   );
 }
@@ -160,7 +162,7 @@ function Routed() {
   const { user, loading } = useSession();
   const location = useLocation();
 
-  if (loading) return null;
+  if (loading) return <BootScreen />;
 
   // Emailed reset links carry a token and must work with no session at all.
   if (location.pathname === '/reset-password') {

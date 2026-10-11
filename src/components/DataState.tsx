@@ -1,4 +1,5 @@
-import { color, radius, text } from '../theme';
+import { radius, text } from '../theme';
+import { RowsSkeleton } from './Loading';
 
 /** Shown above content that failed to refresh. The stale figures stay visible —
  *  blanking a screen the user was reading is worse than a labelled staleness. */
@@ -18,20 +19,7 @@ export function StaleBanner({ message, onRetry }: { message: string; onRetry: ()
   );
 }
 
-/** Skeleton rows for a table that has never loaded. */
+/** Skeleton rows for a list that has never loaded: the same rows DataTable draws (Loading.tsx), without its header. */
 export function TableSkeleton({ rows = 5, cols = 5 }: { rows?: number; cols?: number }) {
-  return (
-    <div aria-hidden>
-      {Array.from({ length: rows }).map((_, r) => (
-        <div key={r} style={{
-          display: 'grid', gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: 14,
-          padding: '14px 22px', borderBottom: `1px solid ${color.borderMuted}`,
-        }}>
-          {Array.from({ length: cols }).map((_, c) => (
-            <div key={c} className="skeleton" style={{ height: 13, width: c === 0 ? '70%' : '45%' }} />
-          ))}
-        </div>
-      ))}
-    </div>
-  );
+  return <RowsSkeleton rows={rows} cols={cols} header={false} />;
 }

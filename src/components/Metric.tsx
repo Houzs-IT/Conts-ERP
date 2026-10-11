@@ -48,7 +48,8 @@ export function StatTile({ label, value, hint, hintTone, tone, loading, hero, on
       {hero && <span aria-hidden className="absolute left-4 sm:left-5 top-0 h-[2px] w-8 bg-gold" />}
       <Eyebrow className={hero ? 'text-gold' : alert ? TONE[tone].text : undefined}>{label}</Eyebrow>
       {loading || value === undefined
-        ? <div className={cx('skeleton h-8 w-3/4', hero && 'opacity-20')} />
+        // The block is the figure's own height (leading-none at the same clamp), so the tile does not grow when it lands.
+        ? <div className={cx('skeleton w-3/4', hero ? 'h-[clamp(20px,13cqi,40px)] skeleton-on-dark' : 'h-[clamp(16px,12cqi,30px)]')} />
         : <Figure value={value} className={cx(
             'leading-none font-medium tracking-[-0.025em]',
             // Sized to the tile, so five across on a laptop never clips "RM 121,900".

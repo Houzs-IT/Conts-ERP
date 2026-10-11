@@ -279,7 +279,7 @@ export function MessageGuestModal({ r, onClose, onSent }: { r: { id: string; gue
         </div>
         <div className="flex justify-end gap-[9px]">
           <Button type="button" size="sm" variant="secondary" onClick={onClose} disabled={busy}>Close</Button>
-          <Button type="submit" size="sm" variant="primary" loading={busy} disabled={!body.trim()} disabledReason="Write a message first.">{busy ? 'Sending…' : 'Send message'}</Button>
+          <Button type="submit" size="sm" variant="primary" loading={busy} disabled={!body.trim()} disabledReason="Write a message first.">Send message</Button>
         </div>
       </form>
     </CentreModal>
@@ -347,7 +347,7 @@ function ChangeDatesModal({ d, onClose, onSaved }: { d: Detail; onClose: () => v
         {error && <p role="alert" className="m-0 text-meta text-danger">{error}</p>}
         <div className="flex justify-end gap-[9px]">
           <Button type="button" size="sm" variant="secondary" onClick={onClose} disabled={busy}>Close</Button>
-          <Button type="submit" size="sm" variant="primary" loading={busy} disabled={!valid} disabledReason="Pick a new, valid date range first.">{busy ? 'Saving…' : 'Save new dates'}</Button>
+          <Button type="submit" size="sm" variant="primary" loading={busy} disabled={!valid} disabledReason="Pick a new, valid date range first.">Save new dates</Button>
         </div>
       </form>
     </CentreModal>
@@ -430,7 +430,7 @@ function RecordPaymentModal({ d, onClose, onSaved }: { d: Detail; onClose: () =>
         </>}
         <div className="flex justify-end gap-[9px]">
           <Button type="button" size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
-          <Button type="submit" size="sm" variant="primary" loading={busy} disabled={!valid} disabledReason={tooMuch ? 'A refund cannot be more than what was received.' : refund && approvalsOn ? 'Enter an amount, a date and the reason.' : 'Enter an amount and a date.'}>{busy ? 'Saving…' : refund ? (approvalsOn ? 'Send for approval' : 'Record refund') : 'Record payment'}</Button>
+          <Button type="submit" size="sm" variant="primary" loading={busy} disabled={!valid} disabledReason={tooMuch ? 'A refund cannot be more than what was received.' : refund && approvalsOn ? 'Enter an amount, a date and the reason.' : 'Enter an amount and a date.'}>{refund ? (approvalsOn ? 'Send for approval' : 'Record refund') : 'Record payment'}</Button>
         </div>
       </form>
     </CentreModal>
@@ -468,7 +468,7 @@ function TimesModal({ d, onClose, onSaved }: { d: Detail; onClose: () => void; o
         </div>
         <div className="flex justify-end gap-[9px]">
           <Button type="button" size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
-          <Button type="submit" size="sm" variant="primary" loading={busy} disabled={!changed} disabledReason="Change a time first.">{busy ? 'Saving…' : 'Save times'}</Button>
+          <Button type="submit" size="sm" variant="primary" loading={busy} disabled={!changed} disabledReason="Change a time first.">Save times</Button>
         </div>
       </form>
     </CentreModal>

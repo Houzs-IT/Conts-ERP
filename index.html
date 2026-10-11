@@ -9,51 +9,39 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" />
+    <style>
+      /* Opening screen. Here rather than in the app's stylesheet so it draws before any CSS or script arrives. */
+      html { background: #FAF9F6; }
+      .boot-screen { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; background: #FAF9F6; font-family: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif; color: #706D67; animation: boot-in 300ms ease-out both; }
+      .boot-mark { width: 52px; height: 52px; border-radius: 13px; background: #151515; display: grid; place-items: center; box-shadow: 0 10px 28px -14px rgba(21, 21, 21, 0.5); }
+      .boot-mark img { display: block; }
+      .boot-track { position: relative; width: 72px; height: 2px; border-radius: 2px; overflow: hidden; background: #EDEAE4; opacity: 0; animation: boot-in 300ms ease-out 400ms both; }
+      .boot-bar { position: absolute; top: 0; bottom: 0; left: 0; width: 40%; border-radius: 2px; background: #C8A46A; animation: boot-travel 1.4s cubic-bezier(0.45, 0, 0.25, 1) infinite; }
+      /* React's copy takes over mid-animation: it must not fade in a second time. */
+      .boot-live, .boot-live .boot-track { animation: none; opacity: 1; }
+      .boot-file-note { display: none; max-width: 340px; margin: 0; padding: 0 24px; text-align: center; font-size: 13px; line-height: 1.55; }
+      .from-file .boot-file-note { display: block; }
+      .from-file .boot-track { display: none; }
+      @keyframes boot-travel { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+      @keyframes boot-in { from { opacity: 0; } to { opacity: 1; } }
+      @media (prefers-reduced-motion: reduce) {
+        .boot-screen, .boot-track { animation: none; opacity: 1; }
+        .boot-bar { animation: none; width: 100%; opacity: 0.6; }
+      }
+    </style>
   </head>
   <body>
-    <!-- React replaces everything inside #root on mount. The markup below only
-         appears when the bundle has not run — i.e. when this file is opened
-         directly instead of served by Vite. -->
+    <!-- The opening screen: the gold mark on the page colour while the app's code downloads and the session is
+         checked. BootScreen (src/components/Loading.tsx) renders this same markup, so nothing moves when React
+         takes over. The mark is inlined so it is there in the first paint, not after its own request. Opened straight from disk the script never runs, so the note below says what to do instead. -->
     <div id="root">
-      <div style="min-height:100vh;display:grid;place-items:center;padding:24px;background:#FAF9F6;font-family:'IBM Plex Sans',ui-sans-serif,system-ui,-apple-system,sans-serif;color:#252525">
-        <div style="max-width:440px;display:flex;flex-direction:column;gap:20px">
-          <div style="display:flex;align-items:center;gap:14px">
-            <div style="width:44px;height:44px;flex:none;border-radius:8px;border:1px dashed #C7C1B6;display:grid;place-items:center;font-size:11px;color:#706D67">SVG</div>
-            <div style="display:flex;flex-direction:column;gap:4px">
-              <div style="font-size:14px;font-weight:600;letter-spacing:0.18em">THE CONTS</div>
-              <div style="font-size:11px;letter-spacing:0.26em;color:#706D67">PROPERTY MANAGEMENT</div>
-            </div>
-          </div>
-
-          <div style="height:1px;width:72px;background:#C8A46A"></div>
-
-          <div style="display:flex;flex-direction:column;gap:8px">
-            <h1 style="margin:0;font-size:24px;line-height:1.2;font-weight:600;letter-spacing:-0.01em">This file needs a dev server</h1>
-            <p style="margin:0;font-size:14px;line-height:1.55;color:#706D67;text-wrap:pretty">
-              It is the Vite entry point, not a page. The browser cannot run
-              <code style="font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:13px;background:#F1F0ED;padding:1px 5px;border-radius:4px">/src/main.tsx</code>
-              on its own.
-            </p>
-          </div>
-
-          <div style="padding:16px 18px;border:1px solid #DEDAD3;border-radius:12px;background:#FFFFFF;display:flex;flex-direction:column;gap:10px">
-            <div style="font-size:11px;font-weight:600;letter-spacing:0.1em;color:#706D67">TO RUN THE APP</div>
-            <pre style="margin:0;font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:13px;line-height:1.7;white-space:pre-wrap">npm install
-npm run setup
-npm run dev</pre>
-            <div style="font-size:12.5px;color:#706D67">Then open <strong style="font-weight:600;color:#252525">http://localhost:8788</strong></div>
-          </div>
-
-          <div style="padding-top:16px;border-top:1px solid #DEDAD3;display:flex;flex-direction:column;gap:6px">
-            <div style="font-size:12.5px;color:#706D67;text-wrap:pretty">
-              To review the design without running anything, open
-              <strong style="font-weight:600;color:#252525">The Conts Desktop.dc.html</strong>.
-            </div>
-            <div style="font-size:12.5px;color:#706D67">Setup and deploy steps are in <strong style="font-weight:600;color:#252525">README-react.md</strong>.</div>
-          </div>
-        </div>
+      <div class="boot-screen" role="status" aria-label="Opening The Conts">
+        <div class="boot-mark"><img src="data:image/png;base64,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" alt="" width="31" height="36" /></div>
+        <div class="boot-track"><div class="boot-bar"></div></div>
+        <p class="boot-file-note">This file is the Vite entry point. Run <code>npm run dev</code> and open http://localhost:8788, or open <strong>The Conts Desktop.dc.html</strong> to review the design.</p>
       </div>
     </div>
+    <script>if (location.protocol === 'file:') document.documentElement.classList.add('from-file');</script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

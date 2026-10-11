@@ -158,10 +158,10 @@ export default function OwnersPage() {
       <Card>
         <div className="flex flex-wrap items-start justify-between gap-x-8 gap-y-5 pt-5 pb-4 px-5 sm:px-[22px]">
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-x-8 gap-y-5 flex-1 min-w-[min(100%,560px)] items-end">
-            <Roll label={`Owner payouts, ${monthText} (estimate)`} value={data ? rmShort(portfolioNet) : '—'} strong />
-            <Roll label="from managed units" value={data ? rmShort(portfolioManagedNet) : '—'} />
-            <Roll label="guaranteed rent (GRR units)" value={data ? rmShort(portfolioGuaranteed) : '—'} />
-            <Roll label={`Booking revenue, managed units`} value={data ? rmShort(portfolioManagedGross) : '—'} />
+            <Roll label={`Owner payouts, ${monthText} (estimate)`} value={data ? rmShort(portfolioNet) : undefined} strong />
+            <Roll label="from managed units" value={data ? rmShort(portfolioManagedNet) : undefined} />
+            <Roll label="guaranteed rent (GRR units)" value={data ? rmShort(portfolioGuaranteed) : undefined} />
+            <Roll label={`Booking revenue, managed units`} value={data ? rmShort(portfolioManagedGross) : undefined} />
           </div>
           <MonthStepper label={monthLabel(month)} onStep={by => url.set({ month: shiftMonth(month, by) === thisMonth ? null : shiftMonth(month, by) })} />
         </div>

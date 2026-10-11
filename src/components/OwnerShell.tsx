@@ -6,13 +6,15 @@ import { Logo } from './Logo';
 import Icon from './Icon';
 import { Button } from './Button';
 import { Eyebrow } from './Metric';
+import { RefreshLine } from './Loading';
 
 /** Owners get one page and no staff navigation: a dark bar, their name, log out. */
 export default function OwnerShell({ children }: { children: ReactNode }) {
   const { user, logout } = useSession();
   const atAccount = useLocation().pathname === '/account';
   return (
-    <div style={{ flex: 1, minHeight: '100vh', display: 'flex', flexDirection: 'column', background: color.page }}>
+    <div style={{ position: 'relative', flex: 1, minHeight: '100vh', display: 'flex', flexDirection: 'column', background: color.page }}>
+      <RefreshLine />
       <header style={{
         flex: 'none', background: color.black, color: 'var(--color-text-inverse)',
         padding: '12px clamp(16px, 4vw, 32px)', display: 'flex', alignItems: 'center', gap: 14,

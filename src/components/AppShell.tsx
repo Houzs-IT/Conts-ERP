@@ -3,6 +3,7 @@ import Sidebar from './Sidebar';
 import TopBar from './TopBar';
 import Icon from './Icon';
 import { Logo } from './Logo';
+import { RefreshLine } from './Loading';
 import { color, radius, motion } from '../theme';
 
 /** Persisted so the collapse choice survives a reload (BUTTONS §2, Writes = localStorage).
@@ -113,7 +114,8 @@ export default function AppShell({
         <Sidebar path={path} navigate={navigate} open={navOpen} onToggle={toggleNav} />
       )}
 
-      <div data-print-root style={{ flex: 1, minWidth: 0, height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div data-print-root style={{ position: 'relative', flex: 1, minWidth: 0, height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <RefreshLine />
         {isNarrow && (
           // One row on phones: menu, logo, then search / bell / page action. The desk top bar's crumbs are
           // dropped here because each page's own title sits right below.

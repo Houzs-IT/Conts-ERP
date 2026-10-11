@@ -14,7 +14,8 @@ import { Button } from '../components/Button';
 import Icon from '../components/Icon';
 import ChannelMark from '../components/ChannelMark';
 import ChannexChannelsCard from '../components/ChannexChannelsCard';
-import { StaleBanner, TableSkeleton } from '../components/DataState';
+import { StaleBanner } from '../components/DataState';
+import { RecordSkeleton, TreeSkeleton } from './units/UnitsSkeleton';
 import { DataTable, type Column } from '../components/DataTable';
 import { UnitList } from './units/UnitList';
 import { useApi } from '../lib/useApi';
@@ -223,7 +224,22 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
     );
   }
   if (props.loading && units.length === 0) {
-    return <div className="flex flex-col gap-5">{header}<Card><TableSkeleton rows={6} cols={3} /></Card></div>;
+    // The tree and the record as they will stand, so the page does not rearrange itself when the units arrive.
+    return (
+      <div className="flex flex-col gap-5 min-w-0">
+        {header}
+        <div className="grid grid-cols-1 xl:grid-cols-[minmax(260px,300px)_minmax(0,1fr)] gap-5 items-start min-w-0">
+          <div className="min-w-0 xl:h-[calc(100vh-100px)]">
+            <div className="max-xl:hidden h-full"><TreeSkeleton fill /></div>
+            <div aria-hidden className="xl:hidden h-[58px] bg-card border border-solid border-line rounded-card flex items-center gap-3 px-[14px]">
+              <div className="skeleton h-[16px] w-[16px]" /><div className="flex flex-col gap-[6px] flex-1"><div className="skeleton h-[9px] w-[30%]" /><div className="skeleton h-[12px] w-[45%]" /></div>
+            </div>
+            {treeOpen && <div className="xl:hidden mt-2"><TreeSkeleton /></div>}
+          </div>
+          <RecordSkeleton />
+        </div>
+      </div>
+    );
   }
   if (units.length === 0 && props.data) {
     return (
@@ -272,7 +288,7 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
 
         <div className="flex flex-col gap-5 min-w-0">
           {!d ? (
-            <Card><div className="p-10 text-center text-muted-ink text-copy">{detail.error ?? 'Loading unit…'}</div></Card>
+            detail.error ? <Card><div className="p-10 text-center text-muted-ink text-copy">{detail.error}</div></Card> : <RecordSkeleton />
           ) : (
             <UnitRecord d={d} form={form} buildings={buildings} building={building} unitLabel={unitLabel}
               tab={tab} setTab={setTab} canEdit={canEdit} dirty={dirty} saving={saving} onSave={() => void save()}

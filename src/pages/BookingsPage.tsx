@@ -591,7 +591,7 @@ function BulkPayoutModal({ rows: ticked, onClose, onDone }: { rows: Row[]; onClo
         </div>
         <div className="flex justify-end gap-[9px]">
           <Button type="button" size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
-          <Button type="submit" size="sm" variant="primary" loading={busy} disabled={!receivedOn || !rows.length} disabledReason={!rows.length ? 'None of the ticked bookings is waiting for a booking-site payout.' : 'Pick the date.'}>{busy ? 'Recording…' : 'Mark received'}</Button>
+          <Button type="submit" size="sm" variant="primary" loading={busy} disabled={!receivedOn || !rows.length} disabledReason={!rows.length ? 'None of the ticked bookings is waiting for a booking-site payout.' : 'Pick the date.'}>Mark received</Button>
         </div>
       </form>
     </CentreModal>
@@ -761,7 +761,7 @@ function CreateReservationModal({ units: UNITS, prefill, onClose, onCreate }: {
         </div>
         <div className="flex justify-end gap-[9px] pt-1">
           <Button type="button" size="sm" variant="secondary" onClick={onClose} disabled={busy}>Close</Button>
-          <Button type="submit" size="sm" variant="primary" loading={busy} disabled={!valid} disabledReason={missing}>{busy ? 'Saving…' : owner ? 'Save owner stay' : 'Create reservation'}</Button>
+          <Button type="submit" size="sm" variant="primary" loading={busy} disabled={!valid} disabledReason={missing}>{owner ? 'Save owner stay' : 'Create reservation'}</Button>
         </div>
       </form>
     </CentreModal>
