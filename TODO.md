@@ -54,7 +54,7 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 - Logo is blurry: public/brand art is 203 x 181 px cropped from a report and no larger file exists in the repo or the brand guide; needs the original logo file (AI, SVG or PNG at 1000 px+) from the owner.
 
 ## Maintenance rework (feat/maintenance-rework, 11 Oct 2026)
-- Migration 0108 (maintenance_issues.billing_date, collected_at, contractor_amount, contractor_paid_at) must be applied on staging, then production. Until then the screen hides billing date, collected and contractor payment, and a repair's expense is dated the day it is marked done, as before.
+- Done (12 Oct): migration 0108 applied on staging and production.
 - Guessed default: "collected from the owner" is ticked by hand (date picked); the owner statement already deducts the cost in the billing month, so for most owners the statement payout is the collection. Owner to confirm whether it should tick itself when that month's statement is paid.
 - Guessed default: the quote is what the payer is charged; "owed to the technician or contractor" is entered separately (from their claim). No automatic markup between the two.
 - Guessed default: a finished job's billing date can still be changed; its expense moves with it unless either month's owner statement is final.
@@ -334,7 +334,7 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - scripts/api-checks/unit-costs.mjs runs in CI (rbac job). Locally on PGlite use STATEMENTS=lib: POST /api/statements/generate opens a second connection for its transaction and PGlite serves one, so it hangs there.
 
 ## Owner details (feat/owner-details, migration 0110)
-- Migration 0110 (owner mailing address and alternate contact) must be applied by hand: staging, check the owner page there, then production. Until then the Owner details card works without the address and alternate contact, and saves ignore them.
+- Done (12 Oct): migration 0110 applied on staging and production; the address fields are live.
 - Production: 116 owners, none with phone or email yet (the source workbooks had none); they are entered on each owner's page (Owner details, Edit).
 - Changing an invited owner's email on the owner page does not change their portal sign-in email; owner to decide whether it should.
 
@@ -345,3 +345,4 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Owner decision: at 1366x768 Reservations has room for only ~5 rows under the to-do cards, so the table takes a full screen and the page scrolls first (two scrollers by design, useFillHeight). Option: fold the four to-do cards into one row of chips on short screens.
 - Two-step sign-in prompt (feat/two-step-prompt, owner 12 Oct): after each password-only sign-in a centred dialog asks the person to turn on two-step sign-in (Set up now opens My account; Later closes it until the next sign-in). Shows only where it can be set up (TOTP_ENC_KEY present, migration 0098) and the person has not got it. src/components/TwoStepPrompt.tsx, flag in src/lib/twoStepPrompt.ts raised by login() in session.tsx. Checked in the browser on a local server. scripts/add-two-step-key.mjs adds the key to live and staging (owner runs it once).
 - IT Support (feat/it-support, owner 12 Oct): desk roles report a problem to the Houzs IT Hub from System > IT Support and follow it there; requests live in the hub (system code CONTS), not in Conts. Open: set IT_HUB_URL and IT_HUB_API_KEY on production after the owner has seen it on staging; housekeepers and technicians have no IT Support in the field app yet (owner to decide); no api-checks suite yet (it needs a stand-in hub), the flow was run by hand against a local hub.
+- Done (12 Oct): migrations 0100, 0103-0108 and 0110 applied on staging and production through the Supabase connector (one transaction each, recorded in pos_migrations with migrate-pg checksums).
