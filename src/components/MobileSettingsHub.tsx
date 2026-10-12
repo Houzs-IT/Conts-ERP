@@ -22,8 +22,6 @@ const GROUPS: { label: string; items: { label: string; sub: string; icon: string
   ] },
 ];
 
-const DARK_MODE_READY = false;
-
 export default function MobileSettingsHub({ navigate }: { navigate: (p: string) => void }) {
   const { user, logout } = useSession();
   const [theme, setThemeState] = useState<ThemePref>(getThemePref);
@@ -52,8 +50,6 @@ export default function MobileSettingsHub({ navigate }: { navigate: (p: string) 
         <Icon name="ChevronRight" size="sm" color={color.faint} />
       </button>
 
-      {/* Light / Dark stays hidden until every page uses colour tokens; only Dashboard and Portfolio do so far. */}
-      {DARK_MODE_READY && (
       <section style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         <span style={label}>APPEARANCE</span>
         <div role="radiogroup" aria-label="Appearance" style={{ display: 'flex', padding: 4, borderRadius: 14, background: color.muted }}>
@@ -67,7 +63,6 @@ export default function MobileSettingsHub({ navigate }: { navigate: (p: string) 
           ))}
         </div>
       </section>
-      )}
 
       {groups.map(g => (
         <section key={g.label} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>

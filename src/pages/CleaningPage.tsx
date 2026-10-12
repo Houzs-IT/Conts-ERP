@@ -207,8 +207,12 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
       <PageHeader title="Cleaning" sub={subtitle}
         actions={<>
           <TabSwitch tab="board" onTab={onTab} />
-          <Button size="sm" variant="secondary" icon={<Icon name="Users" size="sm" />} onClick={() => navigate('/operations/cleaners')}>Cleaners</Button>
-          <Button size="sm" variant="secondary" icon={<Icon name="Shuffle" size="sm" />} loading={busy === 'auto'} onClick={() => void autoAssign()}>Auto-assign</Button>
+          {/* Phones: Cleaners and Auto-assign sit behind one "…" so the header is View + Add (owner, Oct 2026). */}
+          <span className="contents max-md:hidden">
+            <Button size="sm" variant="secondary" icon={<Icon name="Users" size="sm" />} onClick={() => navigate('/operations/cleaners')}>Cleaners</Button>
+            <Button size="sm" variant="secondary" icon={<Icon name="Shuffle" size="sm" />} loading={busy === 'auto'} onClick={() => void autoAssign()}>Auto-assign</Button>
+          </span>
+          <CleaningMore onCleaners={() => navigate('/operations/cleaners')} onAuto={() => void autoAssign()} autoBusy={busy === 'auto'} />
         </>}
         primary={<Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setCreating(true)}>Add cleaning job</Button>} />
 
@@ -219,7 +223,7 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
         <Select label="Cleaner" value={cleaner} onChange={setCleaner} options={cleanerOptions} placeholder="All cleaners" className="flex-1 min-w-[140px] md:flex-none md:w-[160px]" />
         <Select label="Building" value={building} onChange={setBuilding} options={buildingOptions} placeholder="All buildings" className="flex-1 min-w-[140px] md:flex-none md:w-[180px]" />
         {visibleDepartures.length > 0 && (
-          <Button size="sm" variant="brand" loading={busy === 'plan-all'} onClick={() => void planAll()} className="ml-auto">
+          <Button size="sm" variant="brand" loading={busy === 'plan-all'} onClick={() => void planAll()} className="ml-auto max-md:ml-0 max-md:w-full">
             Plan cleaning for {visibleDepartures.length} {visibleDepartures.length === 1 ? 'checkout' : 'checkouts'}
           </Button>
         )}
@@ -720,5 +724,29 @@ function HistoryView({ onTab }: { onTab: (t: Tab) => void }) {
         </OpsModal>
       )}
     </div>
+  );
+}
+
+/** Phones only: the less-used Cleaning header actions in a bottom sheet. */
+function CleaningMore({ onCleaners, onAuto, autoBusy }: { onCleaners: () => void; onAuto: () => void; autoBusy: boolean }) {
+  const [open, setOpen] = useState(false);
+  const row = 'min-h-12 flex items-center gap-3 px-1 border-0 [border-bottom:1px_solid_var(--color-line-soft)] bg-transparent cursor-pointer text-left text-copy text-ink';
+  return (
+    <span className="md:hidden">
+      <button type="button" onClick={() => setOpen(true)} aria-label="More cleaning actions" aria-haspopup="menu"
+        className="h-9 w-9 grid place-items-center rounded-control border border-solid border-line bg-card text-ink cursor-pointer">
+        <Icon name="Ellipsis" size="sm" />
+      </button>
+      {open && (
+        <div role="dialog" aria-modal aria-label="Cleaning actions" className="fixed inset-0 z-[70] flex flex-col justify-end">
+          <div onClick={() => setOpen(false)} className="absolute inset-0 bg-[var(--color-surface-scrim)]" />
+          <div role="menu" className="relative bg-card rounded-t-[20px] pt-2.5 pb-[calc(16px+env(safe-area-inset-bottom))] px-4 flex flex-col">
+            <span aria-hidden className="w-[38px] h-1 rounded-full bg-line self-center mb-3" />
+            <button type="button" role="menuitem" className={row} onClick={() => { setOpen(false); onCleaners(); }}><Icon name="Users" size="sm" /><span className="flex-1">Cleaners</span></button>
+            <button type="button" role="menuitem" className={row} disabled={autoBusy} onClick={() => { setOpen(false); onAuto(); }}><Icon name="Shuffle" size="sm" /><span className="flex-1">{autoBusy ? 'Assigning…' : 'Auto-assign'}</span></button>
+          </div>
+        </div>
+      )}
+    </span>
   );
 }

@@ -205,17 +205,17 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
 
       {/* Month, report view and the report itself. */}
       <Card>
-        <div className="flex flex-wrap items-center gap-3 py-3 px-4">
+        <div className="flex flex-wrap items-center gap-3 py-3 px-4 max-md:flex-col max-md:items-stretch">
           <MonthStepper label={monthLabel(month)} onStep={by => setParam('month', shiftMonth(month, by) === shiftMonth(thisMonth, -1) ? null : shiftMonth(month, by))} />
           <span className="text-meta text-muted-ink">Owner statement: {st ? statusLabel('statement', st.state) : 'not generated yet'}
             {st && <> · <a href={`#/owners/statements/${encodeURIComponent(st.id)}`} className="text-gold-ink no-underline font-medium">Open</a></>}
           </span>
           {st && money && <span className="flex flex-wrap items-center gap-2"><StatementSteps key={st.id} statementId={st.id} unitsLabel={o.units.map(u => u.unitLabel).join(', ')} onChanged={reload} /></span>}
-          <span className="flex-1" />
+          <span className="flex-1 max-md:hidden" />
           <Segmented<ReportView> label="Report by" value={view} onChange={v => setParam('report', v === 'owner' ? null : 'unit')}
             options={[{ key: 'owner', label: 'By owner' }, { key: 'unit', label: 'By unit' }]} />
           <Button size="sm" variant="primary" icon={<Icon name="FileText" size="sm" />} loading={busy && reportAction === 'generate'} disabled={o.units.length === 0}
-            disabledReason="Link a unit to this owner first." onClick={() => void ownerReport()}>
+            disabledReason="Link a unit to this owner first." onClick={() => void ownerReport()} className="max-md:hidden">
             {reportAction === 'generate' ? 'Generate owner statement' : reportAction === 'legacy' ? 'Owner statement PDF' : 'Owner statement PDF'}
           </Button>
         </div>
@@ -292,6 +292,24 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
       {modal === 'link' && <LinkUnitModal owner={o.displayName} units={rosterUnits} onClose={() => setModal(null)} onSubmit={linkUnit} />}
       {modal === 'defaultFee' && <DefaultFeeModal current={o.defaultManagementFeePct} owner={o.displayName} onClose={() => setModal(null)} onSubmit={saveDefaultFee} />}
       <ConfirmDialog spec={dialog} busy={busy} onClose={() => { if (!busy) setDialog(null); }} />
+      {/* Phones (owner, Oct 2026): the two things done most on an owner, fixed above the tab bar. */}
+      <div data-print-hide className="md:hidden fixed left-0 right-0 z-30 bottom-[calc(64px+env(safe-area-inset-bottom))] px-4 py-2.5 bg-card [border-top:1px_solid_var(--color-line)] flex gap-2.5">
+        {o.phone
+          ? <a href={`https://wa.me/${o.phone.replace(/[^0-9]/g, '')}`} target="_blank" rel="noreferrer"
+              className="flex-1 h-11 inline-flex items-center justify-center gap-2 rounded-control border border-solid border-line bg-card text-ink no-underline text-copy font-semibold">
+              <Icon name="MessageCircle" size="sm" />Message
+            </a>
+          : o.email
+            ? <a href={`mailto:${o.email}`} className="flex-1 h-11 inline-flex items-center justify-center gap-2 rounded-control border border-solid border-line bg-card text-ink no-underline text-copy font-semibold">
+                <Icon name="Mail" size="sm" />Email
+              </a>
+            : null}
+        <Button variant="primary" icon={<Icon name="FileText" size="sm" />} loading={busy && reportAction === 'generate'} disabled={o.units.length === 0}
+          disabledReason="Link a unit to this owner first." onClick={() => void ownerReport()} className="flex-1 h-11">
+          {reportAction === 'generate' ? 'Generate statement' : 'Statement PDF'}
+        </Button>
+      </div>
+      <div aria-hidden className="md:hidden h-16" />
     </div>
   );
 }
