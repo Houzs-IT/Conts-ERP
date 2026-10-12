@@ -207,8 +207,12 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
       <PageHeader title="Cleaning" sub={subtitle}
         actions={<>
           <TabSwitch tab="board" onTab={onTab} />
-          <Button size="sm" variant="secondary" icon={<Icon name="Users" size="sm" />} onClick={() => navigate('/operations/cleaners')}>Cleaners</Button>
-          <Button size="sm" variant="secondary" icon={<Icon name="Shuffle" size="sm" />} loading={busy === 'auto'} onClick={() => void autoAssign()}>Auto-assign</Button>
+          {/* Phones: Cleaners and Auto-assign sit behind one "…" so the header is View + Add (owner, Oct 2026). */}
+          <span className="contents max-md:hidden">
+            <Button size="sm" variant="secondary" icon={<Icon name="Users" size="sm" />} onClick={() => navigate('/operations/cleaners')}>Cleaners</Button>
+            <Button size="sm" variant="secondary" icon={<Icon name="Shuffle" size="sm" />} loading={busy === 'auto'} onClick={() => void autoAssign()}>Auto-assign</Button>
+          </span>
+          <CleaningMore onCleaners={() => navigate('/operations/cleaners')} onAuto={() => void autoAssign()} autoBusy={busy === 'auto'} />
         </>}
         primary={<Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setCreating(true)}>Add cleaning job</Button>} />
 
@@ -219,7 +223,7 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
         <Select label="Cleaner" value={cleaner} onChange={setCleaner} options={cleanerOptions} placeholder="All cleaners" className="flex-1 min-w-[140px] md:flex-none md:w-[160px]" />
         <Select label="Building" value={building} onChange={setBuilding} options={buildingOptions} placeholder="All buildings" className="flex-1 min-w-[140px] md:flex-none md:w-[180px]" />
         {visibleDepartures.length > 0 && (
-          <Button size="sm" variant="brand" loading={busy === 'plan-all'} onClick={() => void planAll()} className="ml-auto">
+          <Button size="sm" variant="brand" loading={busy === 'plan-all'} onClick={() => void planAll()} className="ml-auto max-md:ml-0 max-md:w-full">
             Plan cleaning for {visibleDepartures.length} {visibleDepartures.length === 1 ? 'checkout' : 'checkouts'}
           </Button>
         )}
@@ -252,19 +256,25 @@ function BuildingCard({ group, now, future, selected, busy, onSelect, onGuestLef
   const open = group.rows.filter(r => r.status !== 'done');
   const unassigned = open.filter(r => !r.cleanerId && !r.assigneeId && !r.assigneeName).length;
   const names = [...new Set(group.rows.map(r => r.assigneeName).filter(Boolean))];
+  // Each building folds shut; it starts open only when something in it still needs a person.
+  const [shut, setShut] = useState(() => open.length === 0 && group.departures.length === 0);
   return (
     <section className="@container bg-card rounded-card border border-solid border-line overflow-hidden flex-none">
       <header className="flex items-center justify-between gap-3 flex-wrap px-4 @2xl:px-5 pt-4 pb-3">
-        <div className="min-w-0 flex items-baseline gap-2 flex-wrap">
+        <button type="button" onClick={() => setShut(v => !v)} aria-expanded={!shut}
+          className="min-w-0 flex items-center gap-2 flex-wrap bg-transparent border-none p-0 cursor-pointer text-left text-ink [font-family:inherit]">
+          <Icon name={shut ? 'ChevronRight' : 'ChevronDown'} size="sm" color="var(--color-muted-ink)" />
           <span className="text-[16px] font-semibold tracking-[-0.01em]">{group.name}</span>
           <span className="text-meta text-muted-ink tabular-nums">{count} {count === 1 ? 'unit' : 'units'} · {doneN} done</span>
-        </div>
+          {group.departures.length > 0 && <StatusBadge tone="critical">{group.departures.length} to plan</StatusBadge>}
+        </button>
         <div className="flex items-center gap-2 text-copy flex-wrap">
           {unassigned > 0 ? <span className="text-danger font-medium">{unassigned} unassigned</span>
             : names.length ? <span className="text-muted-ink">Cleaner <b className="text-ink">{names.length === 1 ? names[0] : `${names.length} people`}</b></span> : null}
           {open.length > 0 && <Button size="sm" variant="secondary" onClick={onAssign}>Assign whole building</Button>}
         </div>
       </header>
+      {!shut && <>
       <div className={cx('hidden text-meta font-semibold text-muted-ink px-5 py-2 [border-top:1px_solid_var(--color-line-soft)]', COLS)}>
         <div>Unit</div><div>Checkout (leaving)</div><div>Check-in (arriving)</div><div>Time left</div><div>Type</div><div>Cleaner</div><div>Status</div>
       </div>
@@ -277,7 +287,7 @@ function BuildingCard({ group, now, future, selected, busy, onSelect, onGuestLef
           <div><span className="@2xl:hidden text-muted-ink">Time left </span><TimeLeft at={d.next?.checkInAt} now={now} /></div>
           <div className="hidden @2xl:block text-muted-ink">—</div>
           <div className="hidden @2xl:block text-muted-ink">—</div>
-          <div className="flex items-center gap-1.5 flex-wrap">
+          <div className="basis-full @2xl:basis-auto flex items-center gap-2 flex-wrap justify-end @2xl:justify-start pt-1 @2xl:pt-0">
             <span className="hidden @2xl:inline"><StatusBadge tone="critical">No cleaning job</StatusBadge></span>
             <Button size="sm" variant="primary" loading={busy === `plan-${d.reservationId}`} onClick={() => onPlan(d)}>Plan cleaning</Button>
             {d.state !== 'checked_out' && !future && <Button size="sm" variant="secondary" loading={busy === `left-${d.reservationId}`} onClick={() => onGuestLeft({ reservationId: d.reservationId }, d.unitNumber)}>Guest left</Button>}
@@ -295,6 +305,7 @@ function BuildingCard({ group, now, future, selected, busy, onSelect, onGuestLef
           ))}
         </div>
       )}
+          </>}
     </section>
   );
 }
@@ -376,17 +387,17 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft }: { row: Row; 
   } : undefined;
 
   return (
-    <div className="flex flex-col gap-4 p-5 text-copy">
-      <div className="sticky top-0 z-[2] -mx-5 -mt-5 px-5 pt-5 pb-3 bg-card [border-bottom:1px_solid_var(--color-line-soft)] flex items-start gap-3">
-        <div className="flex-1 min-w-0">
-          <div className="text-meta text-muted-ink">{row.propertyName}</div>
-          <div className="text-title font-semibold">{row.unitNumber} · {kindName}</div>
+    <div className="ops-detail flex flex-col gap-4 p-5 text-copy">
+      <div className="sticky top-0 z-[2] -mx-5 -mt-5 px-5 pt-4 pb-4 bg-black text-white flex items-start gap-3">
+        <div className="flex-1 min-w-0 flex flex-col gap-1">
+          <div className="text-[11px] font-semibold tracking-[0.12em] uppercase text-gold">{row.propertyName}</div>
+          <div className="text-[19px] leading-tight font-semibold">{row.unitNumber} · {kindName}</div>
           <div className="mt-1 flex items-center gap-2 flex-wrap">
             <StatusBadge tone={st.tone}>{done && row.completedAt ? `Done ${hm(row.completedAt)}` : st.label}</StatusBadge>
-            {row.startedAt && <span className="text-meta text-muted-ink">Started {hm(row.startedAt)}{used != null ? ` · ${done ? 'took' : 'so far'} ${minutesLabel(used)}` : ''}</span>}
+            {row.startedAt && <span className="text-meta text-on-dark">Started {hm(row.startedAt)}{used != null ? ` · ${done ? 'took' : 'so far'} ${minutesLabel(used)}` : ''}</span>}
           </div>
         </div>
-        <CloseButton onClick={onClose} />
+        <span className="[&_button]:text-white [&_button]:border-charcoal [&_button]:bg-transparent"><CloseButton onClick={onClose} /></span>
       </div>
       {error && <StaleBanner message={error} onRetry={reload} />}
 
@@ -720,5 +731,29 @@ function HistoryView({ onTab }: { onTab: (t: Tab) => void }) {
         </OpsModal>
       )}
     </div>
+  );
+}
+
+/** Phones only: the less-used Cleaning header actions in a bottom sheet. */
+function CleaningMore({ onCleaners, onAuto, autoBusy }: { onCleaners: () => void; onAuto: () => void; autoBusy: boolean }) {
+  const [open, setOpen] = useState(false);
+  const row = 'min-h-12 flex items-center gap-3 px-1 border-0 [border-bottom:1px_solid_var(--color-line-soft)] bg-transparent cursor-pointer text-left text-copy text-ink';
+  return (
+    <span className="md:hidden">
+      <button type="button" onClick={() => setOpen(true)} aria-label="More cleaning actions" aria-haspopup="menu"
+        className="h-9 w-9 grid place-items-center rounded-control border border-solid border-line bg-card text-ink cursor-pointer">
+        <Icon name="Ellipsis" size="sm" />
+      </button>
+      {open && (
+        <div role="dialog" aria-modal aria-label="Cleaning actions" className="fixed inset-0 z-[70] flex flex-col justify-end">
+          <div onClick={() => setOpen(false)} className="absolute inset-0 bg-[var(--color-surface-scrim)]" />
+          <div role="menu" className="relative bg-card rounded-t-[20px] pt-2.5 pb-[calc(16px+env(safe-area-inset-bottom))] px-4 flex flex-col">
+            <span aria-hidden className="w-[38px] h-1 rounded-full bg-line self-center mb-3" />
+            <button type="button" role="menuitem" className={row} onClick={() => { setOpen(false); onCleaners(); }}><Icon name="Users" size="sm" /><span className="flex-1">Cleaners</span></button>
+            <button type="button" role="menuitem" className={row} disabled={autoBusy} onClick={() => { setOpen(false); onAuto(); }}><Icon name="Shuffle" size="sm" /><span className="flex-1">{autoBusy ? 'Assigning…' : 'Auto-assign'}</span></button>
+          </div>
+        </div>
+      )}
+    </span>
   );
 }

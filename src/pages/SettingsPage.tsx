@@ -1,6 +1,7 @@
 import { useEffect, useId, useMemo, useState, type ReactNode } from 'react';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
+import { SystemStats } from '../components/SystemStats';
 import { StatusBadge } from '../components/StatusBadge';
 import { Button } from '../components/Button';
 import { Field } from '../components/Field';
@@ -284,6 +285,13 @@ export default function SettingsPage() {
   return (
     <>
       <PageHeader title="Settings" sub="Organisation-wide defaults. Every change is audited." />
+
+      <SystemStats loading={loading && !data} stats={[
+        { label: 'Operator share', value: data ? `${data.locale.managementFeePct}%` : undefined, hint: 'Default when a contract has none' },
+        { label: 'Check-in · out', value: data ? `${data.operations.checkIn} · ${data.operations.checkOut}` : undefined, hint: 'Cleaning board times' },
+        { label: 'Sign-in lockout', value: data ? `${data.security.lockoutAttempts} tries` : undefined, hint: data ? `Locked for ${data.security.lockoutMinutes} min` : undefined },
+        { label: 'Approvals', value: data ? (data.approvals.enabled ? 'On' : 'Off') : undefined, hint: 'Maker-checker on expenses' },
+      ]} />
 
       {error && <StaleBanner message={`Showing the last settings we have. ${error}`} onRetry={reload} />}
 

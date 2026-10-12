@@ -175,6 +175,9 @@ const METRICS: Record<Metric, {
 };
 
 const METRIC_ORDER: Metric[] = ['revenue', 'occupancy', 'adr', 'revpar'];
+/** Columns on the best / weakest lists. */
+const RANK_COLS = ['revenue', 'occupancy', 'adr', 'rating'] as const;
+const RANK_COL_LABEL: Record<(typeof RANK_COLS)[number], string> = { revenue: 'Earnings', occupancy: 'Occupancy', adr: 'Nightly', rating: 'Rating' };
 
 const RANGES: { key: Range; label: string }[] = [
   { key: '3m', label: '3 months' },
@@ -285,20 +288,31 @@ export default function AnalyticsPage() {
         {[{ key: 'best', title: 'Best performing', rows: best }, { key: 'weak', title: 'Weakest performing', rows: weakest }].map(g => (
           <Card key={g.key}>
             <CardHeader title={g.title} right={<span className="text-meta text-muted-ink">by {m.label.toLowerCase()}</span>} />
+            {!loading && g.rows.length > 0 && (
+              <div className="max-md:hidden grid grid-cols-[24px_minmax(0,1fr)_repeat(4,74px)] gap-[14px] items-center px-5 pb-2 text-caption font-semibold text-muted-ink">
+                <span /><span>Unit</span>
+                {RANK_COLS.map(k => <span key={k} className={cx('text-right', k === metric && 'text-gold-ink')}>{RANK_COL_LABEL[k]}</span>)}
+              </div>
+            )}
             {g.key === 'weak' && idle > 0 && <div className="px-5 pb-2 -mt-1 text-meta text-muted-ink">{plural(idle, 'listed unit')} had no booked nights in this window and {idle === 1 ? 'is' : 'are'} not ranked.</div>}
             {loading ? <TableSkeleton rows={4} cols={2} /> : g.rows.length === 0 ? (
               <EmptyState bare title="Not enough data for this period." body="Units appear here once they have booked nights in the window." />
             ) : g.rows.map((u, i) => (
-              <div key={u.unitId} className="flex items-center gap-[14px] px-5 py-3 [border-top:1px_solid_var(--color-line-soft)]">
+              <div key={u.unitId} className="flex md:grid md:grid-cols-[24px_minmax(0,1fr)_repeat(4,74px)] items-center gap-[14px] px-5 py-3 [border-top:1px_solid_var(--color-line-soft)]">
                 <span className={cx('w-6 h-6 rounded-full grid place-items-center text-caption font-semibold flex-none tabular-nums', g.key === 'best' && i === 0 ? 'bg-gold-tint text-gold-ink' : 'bg-muted text-muted-ink')}>{i + 1}</span>
                 <div className="flex flex-col gap-px min-w-0 flex-1">
                   <span className="text-copy font-medium">{u.unitNumber}</span>
                   <span className="text-meta text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{u.propertyName}</span>
                 </div>
-                <div className="flex flex-col items-end gap-px flex-none">
+                <div className="md:hidden flex flex-col items-end gap-px flex-none">
                   <span className="text-copy font-semibold tabular-nums">{m.full(m.pick(u))}</span>
                   <span className="text-meta text-muted-ink">{u.occupancy.toFixed(1)}% occupancy</span>
                 </div>
+                {RANK_COLS.map(k => (
+                  <span key={k} className={cx('max-md:hidden text-right tabular-nums text-copy', k === metric ? 'font-semibold text-ink' : 'text-muted-ink')}>
+                    {k === 'rating' ? (u.rating == null ? '—' : u.rating.toFixed(2)) : METRICS[k].full(METRICS[k].pick(u))}
+                  </span>
+                ))}
               </div>
             ))}
           </Card>

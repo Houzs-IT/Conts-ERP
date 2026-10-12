@@ -23,6 +23,7 @@ import { SelectionPopover, type NightSelection } from '../components/calendar/Se
 import { BarContent, BarHoverCard, barStyle, displayName, holdName, phaseOf, PHASE_LABEL, type StayPhase } from '../components/calendar/ReservationBar';
 import { CalendarRangeControl, addDaysIso, daysBetween, isDay, LEAD_DAYS, MAX_WINDOW } from '../components/calendar/DatePicker';
 import { type CalendarBlock as Block, type CalendarUnit as Unit } from '../components/calendar/types';
+import UnitMonthCalendar from '../components/calendar/UnitMonthCalendar';
 
 /** Width of one night column, px (narrower on phones, so a thumb's swipe covers a week). The unit column width is the
  *  CSS variable --unit-col. */
@@ -141,6 +142,14 @@ function useFolded(userId: string | undefined) {
 }
 
 export default function CalendarPage() {
+  const phone = usePhone();
+  const [params] = useSearchParams();
+  if (phone && params.get('rates') !== '1') return <UnitMonthCalendar />;
+  return <CalendarBoard />;
+}
+
+/** The multi-unit board: every unit a row, nights as columns. Tablets and desktop (and phones opening a price change). */
+function CalendarBoard() {
   // The window lives in the address (?start=YYYY-MM-DD&days=N, ?b=building), so a link or a reload shows the same
   // board. With no start the window follows today, opening LEAD_DAYS before it; 30 days on a laptop, 14 on a phone.
   const [params, setParams] = useSearchParams();
@@ -198,7 +207,20 @@ export default function CalendarPage() {
   const lastPointer = useRef<string>('mouse');
   // A booking-site bar that was refused a drag: the click that follows the attempt must not open its drawer.
   const refusedDrag = useRef(false);
-  const [rateUpdate, setRateUpdate] = useState<false | { unitIds?: string[]; from?: string; to?: string; step?: 2 | 3 }>(false);
+  const [rateUpdate, setRateUpdateState] = useState<false | { unitIds?: string[]; from?: string; to?: string; step?: 2 | 3 }>(false);
+  // Opened from a phone's unit month (?rates=1&unit=&from=&to=): go straight to the price change, and back to the
+  // month when it closes.
+  const fromPhoneMonth = params.get('rates') === '1';
+  useEffect(() => {
+    if (!fromPhoneMonth) return;
+    const u = params.get('unit'), f = params.get('from'), t = params.get('to');
+    setRateUpdateState({ unitIds: u ? [u] : undefined, from: isDay(f) ? f! : undefined, to: isDay(t) ? t! : undefined, step: 2 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const setRateUpdate = (v: typeof rateUpdate) => {
+    setRateUpdateState(v);
+    if (v === false && fromPhoneMonth) setParams(p => { const q = new URLSearchParams(p); ['rates', 'from', 'to'].forEach(k => q.delete(k)); return q; }, { replace: true });
+  };
   const [openBlock, setOpenBlock] = useState<Block | null>(null);
   const [hover, setHover] = useState<{ b: Block; phase: StayPhase; unit: string; x: number; y: number } | null>(null);
   const [busy, setBusy] = useState(false);

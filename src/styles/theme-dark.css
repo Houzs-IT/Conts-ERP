@@ -70,3 +70,10 @@
 /* Smooth swap on a user switch, never on first paint. */
 :root.theme-ready, :root.theme-ready * { transition: background-color 200ms ease, border-color 200ms ease, color 200ms ease; }
 @media (prefers-reduced-motion: reduce) { :root.theme-ready, :root.theme-ready * { transition: none !important; } }
+
+/* Fields and panels still written as `bg-white` in 11 files (textareas, inputs, the login panel). One rule here
+ * instead of 11 file edits: in dark mode they take the card surface. Toggle knobs (rounded-full) and the 2-step QR
+ * code (an svg, which must stay white to scan) keep their white. */
+[data-theme="dark"] .bg-white:not(.rounded-full):not(svg) {
+  background-color: var(--color-surface-card);
+}

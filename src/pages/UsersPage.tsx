@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
+import { SystemStats } from '../components/SystemStats';
 import PermissionsChart from '../components/PermissionsChart';
 import UsersSignIns from './UsersSignIns';
 import { StatusBadge } from '../components/StatusBadge';
@@ -437,6 +438,13 @@ export default function UsersPage() {
           </Button>
         )}
       />
+
+      <SystemStats loading={loading && rows.length === 0} stats={[
+        { label: 'Accounts', value: data ? count(rows.length) : undefined, hint: `${count(rows.filter(r => r.isActive).length)} active` },
+        { label: 'Invited', value: data ? count(invitedCount) : undefined, hint: 'Not signed in yet', warn: invitedCount > 0 },
+        { label: 'Two-step on', value: data ? count(rows.filter(r => r.twoStep).length) : undefined, hint: 'Sign-in with a code' },
+        { label: 'Locked', value: data ? count(rows.filter(r => r.isLocked).length) : undefined, hint: 'Too many wrong passwords', warn: rows.some(r => r.isLocked) },
+      ]} />
 
       <div role="tablist" aria-label="Users and roles sections" className="flex shrink-0 gap-1 [border-bottom:1px_solid_var(--color-line)] overflow-x-auto mt-0.5">
         {tabs.map(t => {
