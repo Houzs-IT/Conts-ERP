@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { api, ApiFailure } from './api';
+import { twoStepPrompt } from './twoStepPrompt';
 import { invalidateCachePrefix } from './cached-fetch';
 import type { SessionUser } from './types';
 
@@ -68,8 +69,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     return { home: res.home };
   };
 
-  const login = async (email: string, password: string, remember: boolean) =>
-    finish(await api.post<SignInAnswer>('/auth/login', { email, password, remember }));
+  const login = async (email: string, password: string, remember: boolean) => {
+    const done = finish(await api.post<SignInAnswer>('/auth/login', { email, password, remember }));
+    // Signed in with the password alone: they have no second step yet, so the next screen offers it.
+    if (!done.twoStep) twoStepPrompt.raise();
+    return done;
+  };
 
   /** The second step: a code from the authenticator app or a backup code. */
   const verifyCode = async (challenge: string, code: string) =>
