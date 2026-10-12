@@ -4,6 +4,7 @@ import { navFor, workspaceOf, WORKSPACE_LABEL, type BadgeKey, type NavGroup, typ
 import { useApi } from '../lib/useApi';
 import { useSession } from '../lib/session';
 import { useNavCounts } from '../lib/navBadges';
+import { useItUnread } from '../lib/itSupport';
 import { ROLE_LABEL } from '../lib/vocabulary';
 import Icon, { toPascal } from './Icon';
 import { Logo } from './Logo';
@@ -74,7 +75,8 @@ export default function Sidebar({ path, navigate, open, onToggle, phone = false 
   };
   useEffect(() => () => window.clearTimeout(scrollTimer.current), []);
 
-  const countOf = (k?: BadgeKey) => (k && counts?.[k]) || 0;
+  const itUnread = useItUnread();
+  const countOf = (k?: BadgeKey) => (k === 'itSupport' ? itUnread : (k && counts?.[k]) || 0);
 
   const badge = (on: boolean): CSSProperties => ({
     fontSize: text.micro, fontWeight: 600, padding: '1px 6px', borderRadius: radius.pill, flex: 'none',

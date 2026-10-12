@@ -137,6 +137,24 @@ export const STATUS_VOCAB = {
     replied: { label: 'Replied', tone: 'success' },
     needs_reply: { label: 'Needs reply', tone: 'warning' },
   },
+  /** A request on IT Support, as the person who sent it reads it. The values are the IT Hub's. `resolved` is IT
+   *  saying it is fixed and asking the person to check; `waiting_reporter` is IT waiting for their answer. */
+  it_request: {
+    open: { label: 'Sent', tone: 'neutral' },
+    in_progress: { label: 'In progress', tone: 'info' },
+    on_hold: { label: 'On hold', tone: 'neutral' },
+    testing: { label: 'Being tested', tone: 'info' },
+    waiting_reporter: { label: 'Waiting for you', tone: 'warning' },
+    resolved: { label: 'Done, please confirm', tone: 'success' },
+    closed: { label: 'Closed', tone: 'neutral' },
+    rejected: { label: 'Not going ahead', tone: 'danger', outline: true },
+  },
+  it_urgency: {
+    urgent: { label: 'Urgent', tone: 'danger' },
+    high: { label: 'High', tone: 'warning' },
+    medium: { label: 'Normal', tone: 'neutral' },
+    low: { label: 'Low', tone: 'neutral' },
+  },
   condition: {
     good: { label: 'Good', tone: 'success' },
     fair: { label: 'Fair', tone: 'neutral' },
