@@ -27,7 +27,13 @@ function Row({ l }: { l: PnlRow }) {
         <div className="mt-1.5 pl-3 flex flex-col gap-1">
           {shown.map((it, j) => (
             <div key={j} className="flex items-baseline justify-between gap-4 text-meta text-muted-ink">
-              <span className="min-w-0 [overflow-wrap:anywhere]">{it.label}</span>
+              {/* "Guest · 2 Oct – 5 Oct · 3 nights · Airbnb": the guest on the first line, the rest small underneath. */}
+              {(() => { const [head, ...rest] = it.label.split(' · '); return (
+                <span className="min-w-0 flex flex-col leading-tight">
+                  <span className="text-ink-2 truncate">{head}</span>
+                  {rest.length > 0 && <span className="text-[12px] text-muted-ink truncate">{rest.join(' · ')}</span>}
+                </span>
+              ); })()}
               {(items.length > 1 || it.amount !== l.amount) && it.amount !== 0 && <MoneyText sen={it.amount} mode="exact" tone="muted" className="text-meta whitespace-nowrap" />}
             </div>
           ))}

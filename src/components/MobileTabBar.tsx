@@ -100,7 +100,7 @@ function MoreSheet({ path, navigate, onClose }: { path: string; navigate: (p: st
       }}>
         <div style={{ width: 38, height: 4, borderRadius: radius.pill, background: color.border, margin: '10px auto 4px' }} />
         <div style={{ padding: '8px 18px 4px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-          <span style={{ fontSize: 22, fontWeight: 600, color: color.ink }}>More</span>
+          <span style={{ fontSize: 20, fontWeight: 600, color: color.ink }}>More</span>
           <button type="button" onClick={onClose} aria-label="Close" style={{ width: 44, height: 44, flex: 'none', display: 'grid', placeItems: 'center', border: `1px solid ${color.border}`, borderRadius: radius.pill, background: color.card, color: color.ink, cursor: 'pointer' }}>
             <Icon name="X" size="base" />
           </button>
@@ -112,7 +112,7 @@ function MoreSheet({ path, navigate, onClose }: { path: string; navigate: (p: st
               style={{ flex: 1, minWidth: 0, border: 'none', outline: 'none', background: 'transparent', fontSize: 16, color: color.ink }} />
           </div>
         </div>
-        <div style={{ overflowY: 'auto', padding: '4px 18px 24px', display: 'flex', flexDirection: 'column', gap: 18 }}>
+        <div style={{ overflowY: 'auto', padding: '2px 16px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
           {groups.map(g => (
             <section key={g.label} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               <span style={{ fontSize: 12, fontWeight: 600, letterSpacing: '0.1em', color: color.textMuted }}>{g.label}</span>
@@ -122,14 +122,14 @@ function MoreSheet({ path, navigate, onClose }: { path: string; navigate: (p: st
                   return (
                     <button key={it.key} type="button" onClick={() => navigate(it.path)} aria-current={on ? 'page' : undefined}
                       style={{
-                        width: '100%', minHeight: 54, padding: '0 16px', display: 'flex', alignItems: 'center', gap: 13,
+                        width: '100%', minHeight: 46, padding: '0 14px', display: 'flex', alignItems: 'center', gap: 11,
                         border: 'none', borderTop: i ? `1px solid ${color.borderMuted}` : 'none', cursor: 'pointer', textAlign: 'left', font: 'inherit',
                         background: on ? color.goldTint : 'transparent', color: color.ink,
                       }}>
-                      <span style={{ width: 34, height: 34, flex: 'none', borderRadius: 10, display: 'grid', placeItems: 'center', background: color.goldTint }}>
+                      <span style={{ width: 28, height: 28, flex: 'none', borderRadius: 8, display: 'grid', placeItems: 'center', background: color.goldTint }}>
                         <Icon name={toPascal(it.icon)} size="sm" color={color.goldInk} />
                       </span>
-                      <span style={{ flex: 1, minWidth: 0, fontSize: 16, fontWeight: on ? 600 : 400 }}>{it.label}</span>
+                      <span style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: on ? 600 : 400 }}>{it.label}</span>
                       {it.count > 0 && (
                         <span style={{ minWidth: 24, height: 24, padding: '0 8px', borderRadius: radius.pill, display: 'grid', placeItems: 'center', fontSize: 12, fontWeight: 600, background: color.ink, color: color.card }}>{it.count}</span>
                       )}

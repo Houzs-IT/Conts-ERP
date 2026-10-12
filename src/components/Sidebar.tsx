@@ -85,7 +85,7 @@ export default function Sidebar({ path, navigate, open, onToggle, phone = false 
   });
 
   return (
-    <div data-print-hide style={{
+    <div data-print-hide data-sidebar style={{
       width: open ? shell.sidebar : shell.sidebarCollapsed, flex: 'none', height: '100dvh',
       display: 'flex', flexDirection: 'column', background: color.black, color: 'var(--color-text-inverse)',
       transition: `width ${motion.standard} ${motion.ease}`,

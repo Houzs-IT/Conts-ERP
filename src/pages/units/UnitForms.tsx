@@ -88,14 +88,14 @@ export function DetailsForm({ u, owner, buildings, money, canEdit, onChange, onO
           {owner.address && <span className="whitespace-pre-line text-muted-ink">{addressLines(owner.address).join('\n')}</span>}
         </div>
       )}
-      <p className="mt-0 mb-[22px] text-meta text-muted-ink">The owner's contact and payout details belong to the owner and are edited on the owner's page, for every unit they own. To give this unit to another owner, use Link unit on that owner's page.</p>
+      <details className="mt-0 mb-[22px] text-meta text-muted-ink [&>summary]:cursor-pointer"><summary className="w-fit list-none inline-flex items-center gap-1 text-muted-ink"><span aria-hidden className="inline-grid place-items-center w-4 h-4 rounded-full border border-solid border-line text-[10px] font-semibold">?</span> How this works</summary><p className="m-0 mt-1.5">The owner's contact and payout details belong to the owner and are edited on the owner's page, for every unit they own. To give this unit to another owner, use Link unit on that owner's page.</p></details>
 
       <SectionHead>Income model</SectionHead>
       <div className="flex flex-wrap items-center gap-3 mb-[6px]">
         <span className="text-copy">{u.revenueModel ? (u.termsLabel ?? MODEL[u.revenueModel].label) : u.pkg}</span>
         {onOpenContract && <button type="button" onClick={onOpenContract} className="p-0 bg-transparent border-none cursor-pointer [font-family:inherit] text-meta font-semibold text-gold-ink">Change on the Contract tab</button>}
       </div>
-      <p className="m-0 text-meta text-muted-ink">One income model per contract decides how the owner statement is worked out. Package {u.pkg.replace('Package ', '')} is kept from the owner workbook for reference.</p>
+      <details className="m-0 text-meta text-muted-ink [&>summary]:cursor-pointer"><summary className="w-fit list-none inline-flex items-center gap-1 text-muted-ink"><span aria-hidden className="inline-grid place-items-center w-4 h-4 rounded-full border border-solid border-line text-[10px] font-semibold">?</span> How this works</summary><p className="m-0 mt-1.5">One income model per contract decides how the owner statement is worked out. Package {u.pkg.replace('Package ', '')} is kept from the owner workbook for reference.</p></details>
     </fieldset>
   );
 }
