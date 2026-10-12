@@ -559,13 +559,22 @@ export function DataTable<R>(props: DataTableProps<R>) {
               <ToolButton icon="ListFilter" label="Filter" btnRef={filtersBtn} active={panel === 'filters'} count={activeFilters.length}
                 onClick={() => setPanel(p => (p === 'filters' ? null : 'filters'))} />
             )}
-            {!noViews && (
+            {/* Phones: Sort and Filter stay; Views, Columns and Export move behind one "More" button,
+                so the row is three controls instead of six (owner, Oct 2026). Same panels, nothing new per page. */}
+            <span className="contents max-md:hidden">
+              {!noViews && (
               <ToolButton icon="Bookmark" label={active ? active.name : 'Views'} btnRef={viewsBtn} active={panel === 'views'}
                 onClick={() => setPanel(p => (p === 'views' ? null : 'views'))} title="Saved views" />
             )}
             <ToolButton icon="Columns3" label="Columns" btnRef={colsBtn} active={panel === 'columns'} onClick={() => setPanel(p => (p === 'columns' ? null : 'columns'))} />
             <ToolButton icon={exporting ? 'Loader' : 'Download'} label={exporting ? `Exporting ${exporting}` : 'Export'} btnRef={exportBtn} active={panel === 'export'}
               onClick={() => { if (!exporting) setPanel(p => (p === 'export' ? null : 'export')); }} />
+            </span>
+            <PhoneMoreMenu items={[
+              ...(!noViews ? [{ icon: 'Bookmark', label: active ? `View: ${active.name}` : 'Saved views', go: () => setPanel('views') }] : []),
+              { icon: 'Columns3', label: 'Columns', go: () => setPanel('columns') },
+              { icon: 'Download', label: exporting ? `Exporting ${exporting}` : 'Export', go: () => { if (!exporting) setPanel('export'); } },
+            ]} />
           </div>
         </div>
       )}
@@ -1098,5 +1107,32 @@ function SaveViewDialog({ initial, canShare, onClose, onSave }: {
         </div>
       </form>
     </div>
+  );
+}
+
+/** Phones only: one button opening the less-used table tools in a bottom sheet. */
+function PhoneMoreMenu({ items }: { items: { icon: string; label: string; go: () => void }[] }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <span className="md:hidden">
+      <button type="button" onClick={() => setOpen(true)} aria-label="More table tools" aria-haspopup="menu"
+        className="h-9 w-9 grid place-items-center rounded-control border border-solid border-line bg-card text-ink cursor-pointer">
+        <Icon name="Ellipsis" size="sm" />
+      </button>
+      {open && (
+        <div role="dialog" aria-modal aria-label="Table tools" className="fixed inset-0 z-[70] flex flex-col justify-end">
+          <div onClick={() => setOpen(false)} className="absolute inset-0 bg-[var(--color-surface-scrim)]" />
+          <div role="menu" className="relative bg-card rounded-t-[20px] pt-2.5 pb-[calc(16px+env(safe-area-inset-bottom))] px-4 flex flex-col">
+            <span aria-hidden className="w-[38px] h-1 rounded-full bg-line self-center mb-3" />
+            {items.map(it => (
+              <button key={it.label} type="button" role="menuitem" onClick={() => { setOpen(false); it.go(); }}
+                className="min-h-12 flex items-center gap-3 px-1 border-0 [border-bottom:1px_solid_var(--color-line-soft)] bg-transparent cursor-pointer text-left text-copy text-ink">
+                <Icon name={it.icon} size="sm" /><span className="flex-1">{it.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </span>
   );
 }

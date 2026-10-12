@@ -1,3 +1,4 @@
+
 /* ==========================================================================
    THE CONTS — login cover motion
    Scoped to .conts-login. Decorative only: nothing here affects sign-in.
@@ -181,3 +182,78 @@
   .conts-login .login-light { transform: translate3d(1%, 0.5%, 0); opacity: 0.85; }
   .conts-login .login-submit { transition: none; }
 }
+
+
+/* ---------- Display type ----------
+ * Display headline and form heading, same face as the rest of the product. */
+.login-display {
+  /* One typeface across the product (brand guide 5.1): IBM Plex Sans. */
+  font-family: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+/* ---------- Form side: warm linen, not white ----------
+ * Pure white fought the sunlit photograph. The panel now takes its tone from
+ * the room: a linen ground with a soft window glow in the top corner, so photo
+ * and form read as one space. Inputs stay white, which lifts them off it. */
+.login-panel {
+  isolation: isolate;
+  overflow: hidden;
+  background:
+    radial-gradient(90% 55% at 100% 0%, rgba(255, 233, 196, 0.75) 0%, rgba(255, 233, 196, 0) 70%),
+    linear-gradient(180deg, #FAF6EF 0%, #F6F0E6 100%);
+}
+.login-panel::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 12%; bottom: 12%;
+  width: 1px;
+  background: linear-gradient(180deg, transparent, rgba(200, 164, 106, 0.55), transparent);
+  display: none;
+}
+@media (min-width: 1024px) { .login-panel::before { display: block; } }
+
+.login-watermark {
+  position: absolute;
+  right: -70px; bottom: -60px;
+  width: 360px;
+  opacity: 0.07;
+  pointer-events: none;
+  z-index: -1;
+  filter: sepia(0.2);
+}
+@media (max-width: 1023px) { .login-watermark { width: 240px; right: -50px; bottom: -40px; } }
+
+/* Small text on linen must still clear 4.5:1 — faint grey does not. */
+.login-panel .text-faint { color: #706D67; }
+
+.login-panel input {
+  background: #FFFFFF;
+  border-color: #E2DACB;
+  box-shadow: 0 1px 0 rgba(21, 21, 21, 0.03);
+}
+.login-panel input:hover { border-color: #CDBF9F; }
+
+/* Phone and tablet: a dark band behind the logo lockup, so "PROPERTY MANAGEMENT"
+ * reads on any photograph. Desktop already has a full-height scrim. */
+@media (max-width: 1023px) {
+  .login-hero::before {
+    content: '';
+    position: absolute; left: 0; right: 0; top: 0; height: 130px;
+    background: linear-gradient(180deg, rgba(15, 13, 10, 0.82) 0%, rgba(15, 13, 10, 0.45) 55%, rgba(15, 13, 10, 0) 100%);
+    z-index: 1; pointer-events: none;
+  }
+  .login-hero > .relative { z-index: 2; }
+  .login-hero .login-in-1 * { color: #DEDAD3; }
+}
+
+/* Dark mode: the form side becomes warm charcoal instead of linen. */
+:root[data-theme="theconts-dark"] .login-panel {
+  background:
+    radial-gradient(90% 55% at 100% 0%, rgba(200, 164, 106, 0.12) 0%, rgba(200, 164, 106, 0) 70%),
+    linear-gradient(180deg, #161513 0%, #11100F 100%);
+}
+:root[data-theme="theconts-dark"] .login-panel input { background: #1F1D1A; border-color: #3D3934; box-shadow: none; }
+:root[data-theme="theconts-dark"] .login-panel .text-faint { color: #A8A29A; }
+:root[data-theme="theconts-dark"] .login-watermark { opacity: 0.05; filter: none; }

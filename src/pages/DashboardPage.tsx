@@ -228,6 +228,40 @@ const PORTFOLIO_FALLBACK: PortfolioPayload = {
 };
 
 
+/* ------------------------------------------------------- Channel share -- */
+/* Real platform colours so the source reads before the name. Direct is gold:
+ * it is our own channel and carries no commission. */
+
+interface ChannelShare { key: string; label: string; share: number; revenue: number }
+interface ChannelPayload { channels: ChannelShare[]; generatedAt: string }
+
+const CHANNEL_FALLBACK: ChannelPayload = {
+  generatedAt: '2026-09-16T06:06:00Z',
+  channels: [
+    { key: 'airbnb', label: 'Airbnb', share: 46, revenue: 5607400 },
+    { key: 'booking_com', label: 'Booking.com', share: 28, revenue: 3413200 },
+    { key: 'agoda', label: 'Agoda', share: 11, revenue: 1340900 },
+    { key: 'direct', label: 'Direct', share: 15, revenue: 1828500 },
+  ],
+};
+
+const CHANNEL_FILL: Record<string, string> = {
+  airbnb: 'var(--color-airbnb)', booking_com: 'var(--color-booking)', agoda: 'var(--color-agoda)', direct: 'var(--color-gold)',
+};
+
+/** Occupancy band for the building bars. Gold above 90%, amber below 80%. */
+const occTone = (o: number) => o >= 90 ? 'var(--color-gold)' : o < 80 ? 'var(--color-warning-line)' : 'var(--color-ink)';
+
+/* KPI row sizing: a wrapping row, so every line fills edge to edge. The hero
+ * never drops below 320px and the rest never below 150px — wide enough for
+ * "RM 79,416" — so no figure can overflow its tile at any width. */
+// Five figures. Wide screens: one row, revenue a little wider. Narrower: revenue
+// takes its own row and the other four go two per row. Phones keep two per row.
+// A grid, not flex-wrap: flex-wrap left "Net payout to owner" alone on a row.
+const KPI_ROW = 'grid grid-cols-2 xl:grid-cols-[minmax(0,1.5fr)_repeat(4,minmax(0,1fr))] gap-3 sm:gap-4';
+const KPI_HERO_FLEX = 'col-span-2 xl:col-span-1 min-w-0';
+const KPI_FLEX = 'min-w-0';
+
 const go = (hash: string) => { window.location.hash = hash; };
 
 const NUM = 'tabular-nums whitespace-nowrap';
@@ -276,6 +310,7 @@ export default function DashboardPage() {
   const seesPortfolio = level('portfolio') !== 'none';
   const seesOps = level('operations') !== 'none';
   const portfolio = useApi<PortfolioPayload>(seesPortfolio ? '/portfolio/performance' : null, PORTFOLIO_FALLBACK);
+  const channels = useApi<ChannelPayload>(seesPortfolio ? '/dashboard/channels' : null, CHANNEL_FALLBACK);
   const mayAct = (e: Exception) => {
     switch (e.action.label) {
       case 'Assign cleaner': return works('operations');
@@ -299,6 +334,13 @@ export default function DashboardPage() {
   const exceptions = allExceptions.slice(0, 5);
   const allRows = portfolio.data?.rows ?? [];
   const rows = [...allRows].sort((a, b) => b.revenue - a.revenue || b.occupancy - a.occupancy).slice(0, TOP_UNITS);
+
+  // Average occupancy per building, highest first.
+  const buildings = Object.values(allRows.reduce<Record<string, { name: string; sum: number; n: number }>>((acc, r) => {
+    const b = acc[r.propertyName] ?? (acc[r.propertyName] = { name: r.propertyName, sum: 0, n: 0 });
+    b.sum += r.occupancy; b.n += 1; return acc;
+  }, {})).map(b => ({ name: b.name, occupancy: b.sum / b.n, units: b.n })).sort((a, b) => b.occupancy - a.occupancy);
+  const channelRows = channels.data?.channels ?? [];
 
   const failure = kpi.error ?? today.error ?? exc.error ?? portfolio.error;
   const lastUpdated = kpi.data?.generatedAt ? time(kpi.data.generatedAt) : null;
@@ -356,18 +398,18 @@ export default function DashboardPage() {
         primary={<Button variant="primary" size="sm" icon={<Icon name="Plus" size="sm" />} onClick={() => go('#/reservations/bookings?create=1')}>Create reservation</Button>}
       />
 
-      {failure && <StaleBanner message={`Showing the last figures we have. ${failure}`} onRetry={() => { kpi.reload(); trend.reload(); today.reload(); exc.reload(); portfolio.reload(); }} />}
+      {failure && <StaleBanner message={`Showing the last figures we have. ${failure}`} onRetry={() => { kpi.reload(); trend.reload(); today.reload(); exc.reload(); portfolio.reload(); channels.reload(); }} />}
 
       {/* KPI row — revenue leads as the one dark statement tile; the rest follow at equal weight. */}
-      <div className="grid grid-cols-2 xl:grid-cols-[minmax(0,1.35fr)_repeat(4,minmax(0,1fr))] gap-3 sm:gap-4">
+      <div className={KPI_ROW}>
         {kpi.loading && kpis.length === 0
           // The five tiles that arrive, revenue first as the dark one, so the row does not reflow when they land.
-          ? Array.from({ length: 5 }, (_, i) => <TileSkeleton key={i} hero={i === 0} hint={i === 0} className={i === 0 ? 'col-span-2 xl:col-span-1' : undefined} />)
+          ? Array.from({ length: 5 }, (_, i) => <TileSkeleton key={i} hero={i === 0} hint={i === 0} className={i === 0 ? KPI_HERO_FLEX : KPI_FLEX} />)
           : kpis.map(k => {
               const hero = k.key === HERO_KPI;
               return (
                 <StatTile key={k.key} label={KPI_LABEL[k.key] ?? humanize(k.key)} value={kpiValue(k)}
-                  hero={hero} className={hero ? 'col-span-2 xl:col-span-1' : undefined}
+                  hero={hero} className={hero ? KPI_HERO_FLEX : KPI_FLEX}
                   hint={hero && period ? `${monthLabel(period)} to date` : undefined} />
               );
             })}
@@ -469,6 +511,52 @@ export default function DashboardPage() {
          </div>
         </div>
       </Card>
+
+      {/* Channel share + occupancy by building */}
+      {seesPortfolio && <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
+        <Card>
+          <CardHeader title="Where reservations come from" />
+          <div className="px-5 pb-5 flex flex-col gap-4">
+            <div className="flex h-[10px] rounded-full overflow-hidden" role="img"
+              aria-label={channelRows.map(c => `${c.label} ${c.share}%`).join(', ')}>
+              {channelRows.map(c => <span key={c.key} style={{ width: `${c.share}%`, background: CHANNEL_FILL[c.key] ?? 'var(--color-line)' }} />)}
+            </div>
+            <div className="flex flex-col">
+              {channelRows.map(c => (
+                <div key={c.key} className="flex items-center gap-3 py-[9px] [border-top:1px_solid_var(--color-line-soft)] first:[border-top:0]">
+                  <span className="w-[9px] h-[9px] rounded-[3px] flex-none" style={{ background: CHANNEL_FILL[c.key] ?? 'var(--color-line)' }} aria-hidden />
+                  <span className="text-copy flex-1 min-w-0">
+                    {c.label}
+                    {c.key === 'direct' && <span className="text-meta text-muted-ink"> · no service fee</span>}
+                  </span>
+                  <span className="text-meta text-muted-ink tabular-nums">{rm(c.revenue, { cents: false })}</span>
+                  <span className="text-copy font-semibold tabular-nums w-[42px] text-right">{c.share}%</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </Card>
+
+        <Card>
+          <CardHeader title="Occupancy by building" right={<LinkAction onClick={() => go('#/portfolio')}>Portfolio →</LinkAction>} />
+          <div className="px-5 pb-5 flex flex-col gap-[11px]">
+            {buildings.length === 0
+              ? <EmptyState bare icon="Building2" title="No building figures for this month yet." />
+              : buildings.map(b => (
+                <div key={b.name} className="flex flex-col gap-[6px]">
+                  <div className="flex items-baseline justify-between gap-3">
+                    <span className="text-copy min-w-0 whitespace-nowrap overflow-hidden text-ellipsis">{b.name}
+                      <span className="text-meta text-muted-ink"> · {plural(b.units, 'unit')}</span></span>
+                    <span className="text-copy font-semibold tabular-nums">{b.occupancy.toFixed(1)}%</span>
+                  </div>
+                  <div className="h-[6px] rounded-full bg-[var(--color-line-soft)] overflow-hidden">
+                    <div className="h-full rounded-full" style={{ width: `${Math.min(100, b.occupancy)}%`, background: occTone(b.occupancy) }} />
+                  </div>
+                </div>
+              ))}
+          </div>
+        </Card>
+      </div>}
 
       {/* Portfolio performance */}
       {seesPortfolio && <Card>

@@ -48,6 +48,43 @@ function periods() {
 
 const NUM = 'tabular-nums whitespace-nowrap';
 
+/* Building photography: drop public/brand/buildings/<slug>.jpg per building. Until one exists the
+ * card falls back to the login hero, framed on a different part of it per card. */
+const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+const FRAMES = ['30% 40%', '70% 55%', '50% 30%', '20% 70%', '80% 35%', '45% 65%'];
+const occColour = (o: number) => o >= 90 ? 'var(--color-gold)' : o < 80 ? 'var(--color-warning-line)' : 'white';
+
+interface BuildingCard { id: string; name: string; units: number; occupancy: number; adr: number; revenue: number; issues: number }
+
+function BuildingTile({ b, i, money, onOpen }: { b: BuildingCard; i: number; money: boolean; onOpen: () => void }) {
+  return (
+    <button type="button" onClick={onOpen}
+      className="group relative text-left rounded-card overflow-hidden border border-solid border-line bg-black min-h-[232px] flex flex-col justify-end cursor-pointer transition-[transform,box-shadow] duration-200 ease-out hover:-translate-y-[3px] hover:shadow-[var(--shadow-overlay)] focus-visible:outline-none focus-visible:shadow-[var(--focus-ring)]">
+      <span aria-hidden className="absolute inset-0 bg-cover transition-transform duration-[1200ms] ease-out group-hover:scale-[1.05]"
+        style={{ backgroundImage: `url(/brand/buildings/${slug(b.name)}.jpg), url(/brand/login-hero.jpg)`, backgroundPosition: FRAMES[i % FRAMES.length] }} />
+      <span aria-hidden className="absolute inset-0 bg-[linear-gradient(180deg,rgba(21,21,21,0.08)_0%,rgba(21,21,21,0.30)_42%,rgba(21,21,21,0.90)_100%)]" />
+      <span className="relative flex flex-col gap-3 p-[18px]">
+        <span className="flex items-end justify-between gap-3">
+          <span className="flex flex-col gap-[3px] min-w-0">
+            <span className="text-[17px] leading-tight font-semibold text-white whitespace-nowrap overflow-hidden text-ellipsis">{b.name}</span>
+            <span className="text-meta text-on-dark">{plural(b.units, 'unit')}{b.issues > 0 ? ` · ${b.issues} with exceptions` : ''}</span>
+          </span>
+          <span className="text-[26px] leading-none font-semibold tabular-nums" style={{ color: occColour(b.occupancy) }}>{percent(b.occupancy)}</span>
+        </span>
+        <span className="h-[4px] rounded-full bg-[rgba(255,255,255,0.16)] overflow-hidden">
+          <span className="block h-full rounded-full" style={{ width: `${Math.min(100, b.occupancy)}%`, background: occColour(b.occupancy) }} />
+        </span>
+        {money && (
+          <span className="flex items-center justify-between gap-3 text-meta text-on-dark tabular-nums">
+            <span>Avg nightly {rm(b.adr, { cents: false })}</span>
+            <span className="font-semibold text-white">{rm(b.revenue, { cents: false })}</span>
+          </span>
+        )}
+      </span>
+    </button>
+  );
+}
+
 export default function PortfolioPage() {
   const PERIODS = useMemo(periods, []);
   const navigate = useNavigate();
@@ -57,6 +94,7 @@ export default function PortfolioPage() {
   const period = PERIODS.some(p => p.key === params.get('period')) ? params.get('period')! : PERIODS[0].key;
   const q = params.get('q') ?? '';
   const building = params.get('b') ?? 'all';
+  const view = params.get('view') === 'units' ? 'units' : 'buildings';
   const set = (patch: Record<string, string | null>) => setParams(p => {
     const n = new URLSearchParams(p);
     for (const [k, v] of Object.entries(patch)) { if (v == null || v === '') n.delete(k); else n.set(k, v); }
@@ -100,6 +138,22 @@ export default function PortfolioPage() {
   const withRating = rows.some(r => r.rating != null);
   const withException = rows.some(r => !!r.exception);
 
+  // One card per building, weighted like the summary (sold nights over available nights).
+  const buildingCards = useMemo<BuildingCard[]>(() => {
+    const m = new Map<string, { id: string; name: string; units: number; nights: number; revenue: number; issues: number }>();
+    for (const r of rows) {
+      const id = r.propertyId ?? r.propertyName;
+      const b = m.get(id) ?? { id, name: r.propertyName, units: 0, nights: 0, revenue: 0, issues: 0 };
+      b.units++; b.nights += r.nights ?? (r.occupancy * days) / 100; b.revenue += r.revenue; if (r.exception) b.issues++;
+      m.set(id, b);
+    }
+    return [...m.values()].map(b => ({
+      id: b.id, name: b.name, units: b.units, issues: b.issues, revenue: b.revenue,
+      occupancy: b.units ? (b.nights / (b.units * days)) * 100 : 0,
+      adr: b.nights ? Math.round(b.revenue / b.nights) : 0,
+    })).sort((a, b) => b.revenue - a.revenue || b.occupancy - a.occupancy);
+  }, [rows, days]);
+
   const columns = useMemo<Column<PortfolioRow>[]>(() => [
     { key: 'unit', label: 'Unit', value: r => r.unitNumber, text: r => `${r.unitNumber} ${r.propertyName}`, exportValue: r => `${r.propertyName} ${r.unitNumber}`,
       hideable: false, width: 180, sub: r => r.propertyName,
@@ -133,23 +187,35 @@ export default function PortfolioPage() {
       <PageHeader
         title="Portfolio performance"
         sub={data ? `${plural(data.units ?? rows.length, 'listed unit')} · ${plural(data.buildings ?? buildings.length, 'building')} · ${caption}` : caption}
-        actions={
+        actions={<div className="flex items-center gap-2 flex-wrap">
+          <Segmented label="View" value={view} onChange={k => set({ view: k === 'buildings' ? null : k })}
+            options={[{ key: 'buildings', label: 'Buildings' }, { key: 'units', label: 'Units' }]} />
           <Segmented label="Period" value={period} onChange={k => set({ period: k === PERIODS[0].key ? null : k })}
             options={PERIODS.map(p => ({ key: p.key, label: p.label }))} />
-        }
+        </div>}
       />
 
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
+      <div className="flex flex-wrap gap-3 sm:gap-4">
         {/* Until the figures arrive the tiles show a skeleton, not a zero that then jumps. Revenue leads as the dark tile. */}
         {[tiles[3], tiles[0], tiles[1], tiles[2]].map((t, i) => (
-          <StatTile key={t.label} label={t.label} value={data ? t.value : '—'} loading={loading && !data} hero={i === 0} />
+          <div key={t.label} className={i === 0 ? 'flex-[2_1_320px] min-w-0' : 'flex-[1_1_150px] min-w-0'}>
+            <StatTile label={t.label} value={data ? t.value : '—'} loading={loading && !data} hero={i === 0} />
+          </div>
         ))}
       </div>
 
-      <DataTable<PortfolioRow>
+      {view === 'buildings' && (
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-4">
+          {loading && !data
+            ? Array.from({ length: 6 }, (_, i) => <span key={i} className="skeleton block h-[232px] rounded-card" />)
+            : buildingCards.map((b, i) => <BuildingTile key={b.id} b={b} i={i} money={money} onOpen={() => set({ view: 'units', b: b.id })} />)}
+        </div>
+      )}
+
+      {view === 'units' && <DataTable<PortfolioRow>
         id="portfolio" phoneSort={false} columns={columns} rows={data ? filtered : null} rowKey={r => r.unitId}
         loading={loading} error={error} onRetry={reload} onRowClick={r => navigate(`/properties/units/${encodeURIComponent(r.unitId)}`)}
-        noun={['unit', 'units']} exportName={`portfolio-${period}`} viewParams={['period', 'q', 'b']}
+        noun={['unit', 'units']} exportName={`portfolio-${period}`} viewParams={['period', 'q', 'b', 'view']}
         filtered={narrowed} onClearFilters={() => set({ q: null, b: null })}
         empty={{ title: 'No listed units for this period.', icon: 'BarChart3', body: 'Units appear here once they are listed and have nights in the period.',
           action: { label: 'View all units', onClick: () => navigate('/properties/units') } }}
@@ -185,7 +251,7 @@ export default function PortfolioPage() {
             </>}
           </div>
         )}
-      />
+      />}
     </>
   );
 }

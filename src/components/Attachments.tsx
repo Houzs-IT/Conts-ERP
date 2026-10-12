@@ -61,6 +61,16 @@ export function MediaGallery({ items, upload, onDone, addLabel = 'Add photo', ca
   const [pending, setPending] = useState<Pending[]>([]);
   const [notice, setNotice] = useState<string | null>(null);
   const input = useRef<HTMLInputElement>(null);
+  // One standard for every photo and video upload (owner, Oct 2026). On a phone the add tile asks where from:
+  // Take photo / Record video open the camera; after each shot the sheet comes back with "Take another", so
+  // several can be shot in a row without leaving the job. Photo library picks many at once. Desktop goes
+  // straight to the file picker and accepts drag-and-drop.
+  const cameraPhoto = useRef<HTMLInputElement>(null);
+  const cameraVideo = useRef<HTMLInputElement>(null);
+  const [source, setSource] = useState<null | 'choose' | 'again'>(null);
+  const [lastKind, setLastKind] = useState<'photo' | 'video'>('photo');
+  const isTouch = typeof window !== 'undefined' && 'matchMedia' in window && window.matchMedia('(pointer: coarse)').matches;
+  const openAdd = () => { if (isTouch) setSource('choose'); else input.current?.click(); };
   const busy = pending.some(p => p.state === 'queued' || p.state === 'uploading');
 
   // An uploaded tile stays until the reloaded list carries the file, so the grid does not blink.
@@ -153,7 +163,7 @@ export function MediaGallery({ items, upload, onDone, addLabel = 'Add photo', ca
         ))}
 
         {upload && (
-          <button type="button" onClick={() => input.current?.click()}
+          <button type="button" onClick={openAdd}
             className={cx(DASHED, 'aspect-square flex flex-col items-center justify-center gap-1.5 p-2 cursor-pointer text-center', drop.over ? DASHED_OVER : DASHED_IDLE)}>
             <Icon name={drop.over ? 'Download' : 'ImagePlus'} size="base" />
             <span className="text-meta font-medium leading-tight">{drop.over ? 'Drop here' : addLabel}</span>
@@ -162,8 +172,23 @@ export function MediaGallery({ items, upload, onDone, addLabel = 'Add photo', ca
       </div>
 
       {upload && (
-        <input ref={input} type="file" multiple accept="image/*,video/*" {...(capture ? { capture: 'environment' as const } : {})} className="hidden"
-          onChange={e => { if (e.target.files?.length) void send(e.target.files); e.target.value = ''; }} />
+        <>
+          {/* Library: many at once, photos and videos. `capture` is kept for callers that want camera-only. */}
+          <input ref={input} type="file" multiple accept="image/*,video/*" {...(capture ? { capture: 'environment' as const } : {})} className="hidden"
+            onChange={e => { if (e.target.files?.length) void send(e.target.files); e.target.value = ''; }} />
+          {/* Camera: one shot per open (the OS camera returns one file), then "Take another" re-opens it. */}
+          <input ref={cameraPhoto} type="file" accept="image/*" capture="environment" className="hidden"
+            onChange={e => { if (e.target.files?.length) { void send(e.target.files); setLastKind('photo'); setSource('again'); } e.target.value = ''; }} />
+          <input ref={cameraVideo} type="file" accept="video/*" capture="environment" className="hidden"
+            onChange={e => { if (e.target.files?.length) { void send(e.target.files); setLastKind('video'); setSource('again'); } e.target.value = ''; }} />
+        </>
+      )}
+      {source && (
+        <MediaSourceSheet again={source === 'again'} lastKind={lastKind} count={items.length + pending.filter(p => p.state !== 'failed').length}
+          onPhoto={() => { setSource(null); cameraPhoto.current?.click(); }}
+          onVideo={() => { setSource(null); cameraVideo.current?.click(); }}
+          onLibrary={() => { setSource(null); input.current?.click(); }}
+          onClose={() => setSource(null)} />
       )}
       {busy && <span className="text-meta text-muted-ink" aria-live="polite">Uploading {total - active + 1} of {total}…</span>}
       {notice && <span className="text-meta text-danger">{notice}</span>}
@@ -340,6 +365,47 @@ export function CoverPhotoDrop({ photo, onPick, busy, label = 'Add a photo', hin
       )}
       {refused && <span className="absolute left-2.5 bottom-2.5 px-2 py-0.5 rounded-control bg-card text-danger text-meta shadow-[var(--shadow-raised)]">Only photos can be added here.</span>}
       <input ref={input} type="file" accept="image/*" className="hidden" onChange={e => { if (e.currentTarget.files?.length) take(e.currentTarget.files); e.currentTarget.value = ''; }} />
+    </div>
+  );
+}
+
+/** Where a photo or video comes from. After a camera shot it reopens as "Take another", so shooting a whole room
+ *  is: shot, tap, shot, tap, Done. Rows are 52px for gloves and wet hands. */
+export function MediaSourceSheet({ again, lastKind, count, onPhoto, onVideo, onLibrary, onClose }: {
+  again: boolean; lastKind: 'photo' | 'video'; count: number;
+  onPhoto: () => void; onVideo: () => void; onLibrary: () => void; onClose: () => void;
+}) {
+  const row = 'min-h-[52px] flex items-center gap-3 px-1 border-0 [border-bottom:1px_solid_var(--color-line-soft)] bg-transparent cursor-pointer text-left text-copy text-ink';
+  return (
+    <div role="dialog" aria-modal aria-label="Add photo or video" className="fixed inset-0 z-[70] flex flex-col justify-end">
+      <div onClick={onClose} className="absolute inset-0 bg-[var(--color-surface-scrim)]" />
+      <div className="relative bg-card rounded-t-[20px] pt-2.5 pb-[calc(16px+env(safe-area-inset-bottom))] px-4 flex flex-col">
+        <span aria-hidden className="w-[38px] h-1 rounded-full bg-line self-center mb-3" />
+        {again ? (
+          <>
+            <span className="text-heading font-semibold">{lastKind === 'video' ? 'Video added' : 'Photo added'}</span>
+            <span className="text-meta text-muted-ink mb-2">{count} on this job so far. Uploads keep going in the background.</span>
+            <button type="button" onClick={lastKind === 'video' ? onVideo : onPhoto} className={cx(row, 'font-semibold')}>
+              <Icon name={lastKind === 'video' ? 'Video' : 'Camera'} size="sm" /><span className="flex-1">{lastKind === 'video' ? 'Record another' : 'Take another'}</span>
+            </button>
+            <button type="button" onClick={lastKind === 'video' ? onPhoto : onVideo} className={row}>
+              <Icon name={lastKind === 'video' ? 'Camera' : 'Video'} size="sm" /><span className="flex-1">{lastKind === 'video' ? 'Take a photo' : 'Record a video'}</span>
+            </button>
+            <button type="button" onClick={onLibrary} className={row}><Icon name="Images" size="sm" /><span className="flex-1">From photo library</span></button>
+            <button type="button" onClick={onClose} className="mt-3 h-12 rounded-control border-0 bg-ink text-white text-copy font-semibold cursor-pointer">Done</button>
+          </>
+        ) : (
+          <>
+            <span className="text-heading font-semibold mb-2">Add photo or video</span>
+            <button type="button" onClick={onPhoto} className={row}><Icon name="Camera" size="sm" /><span className="flex-1">Take photo</span></button>
+            <button type="button" onClick={onVideo} className={row}><Icon name="Video" size="sm" /><span className="flex-1">Record video</span></button>
+            <button type="button" onClick={onLibrary} className={row}>
+              <Icon name="Images" size="sm" /><span className="flex-1">From photo library</span><span className="text-meta text-muted-ink">Pick several</span>
+            </button>
+            <button type="button" onClick={onClose} className="mt-3 h-12 rounded-control border border-solid border-line bg-card text-ink text-copy font-semibold cursor-pointer">Cancel</button>
+          </>
+        )}
+      </div>
     </div>
   );
 }

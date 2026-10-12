@@ -5,6 +5,11 @@ import App from './App';
 import { CrashScreen } from './components/CrashScreen';
 import './styles/tokens.css';
 import './styles/devices.css';
+import './styles/theme-dark.css';
+import './styles/hover.css';
+import { initTheme } from './lib/theme';
+
+initTheme();
 
 // Self-heal after a deploy. Pages are lazy-loaded, so a browser holding a stale
 // index.html asks for an old chunk hash that no longer exists; Cloudflare Pages

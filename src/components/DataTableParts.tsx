@@ -128,7 +128,7 @@ export function PersonCell({ name }: { name: string | null | undefined }) {
   if (!name) return <span className="text-muted-ink">—</span>;
   return (
     <span className="inline-flex items-center gap-2 min-w-0">
-      <span aria-hidden className="w-6 h-6 rounded-full grid place-items-center shrink-0 bg-muted text-muted-ink text-[10px] font-semibold">{initials(name)}</span>
+      <span aria-hidden className="w-6 h-6 rounded-full grid place-items-center shrink-0 bg-muted text-muted-ink text-[11px] leading-none font-semibold">{initials(name)}</span>
       <span className="text-copy whitespace-nowrap overflow-hidden text-ellipsis" title={name}>{name}</span>
     </span>
   );

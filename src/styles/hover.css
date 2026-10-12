@@ -1,0 +1,51 @@
+/* Hover and press feedback for the sidebar and the notification bell.
+ *
+ * Both are drawn with inline style objects, and inline styles cannot express
+ * :hover. Rewriting them would touch every active-state rule, so instead this
+ * file lays a translucent wash OVER whatever background is already there,
+ * using background-image. background-color is never touched, so the active
+ * item, the gold inset bar and the dark theme all keep their own colours.
+ *
+ * Mouse only: (hover: hover) keeps touch screens from showing a stuck highlight
+ * after a tap.
+ */
+
+@media (hover: hover) {
+  /* Sidebar: L1 group headers, L2 items, L3 children, collapse, workspace switch, profile. */
+  .nav-scroll button:not([aria-current="page"]):not(:disabled),
+  [aria-label="Collapse navigation"],
+  [aria-label="Expand navigation"],
+  [role="tab"][aria-selected="false"] {
+    transition: background-image var(--motion-fast, 120ms) ease-out;
+  }
+  .nav-scroll button:not([aria-current="page"]):not(:disabled):hover,
+  [aria-label="Collapse navigation"]:hover,
+  [aria-label="Expand navigation"]:hover,
+  [role="tab"][aria-selected="false"]:hover {
+    background-image: linear-gradient(rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.06)) !important;
+  }
+
+  /* Notification bell, light and dark top bars. */
+  button[aria-label^="Notifications"] {
+    transition: background-image var(--motion-fast, 120ms) ease-out;
+  }
+  button[aria-label^="Notifications"]:hover {
+    background-image: linear-gradient(rgba(21, 21, 21, 0.05), rgba(21, 21, 21, 0.05)) !important;
+  }
+  :root[data-theme="theconts-dark"] button[aria-label^="Notifications"]:hover {
+    background-image: linear-gradient(rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.07)) !important;
+  }
+}
+
+/* Press feedback everywhere these apply, mouse and touch alike. */
+.nav-scroll button:not(:disabled):active,
+button[aria-label^="Notifications"]:active {
+  background-image: linear-gradient(rgba(0, 0, 0, 0.10), rgba(0, 0, 0, 0.10)) !important;
+}
+
+/* Keyboard focus stays visible on the dark shell. */
+.nav-scroll button:focus-visible,
+button[aria-label^="Notifications"]:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--color-gold, #C8A46A) !important;
+}

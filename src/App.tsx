@@ -1,4 +1,5 @@
 import { lazy, Suspense } from 'react';
+import { readDevice } from './lib/deviceClass';
 import { CrashScreen } from './components/CrashScreen';
 import { Routes, Route, Outlet, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { SessionProvider, useSession } from './lib/session';
@@ -98,6 +99,13 @@ const PlaceholderPage = lazy(() => import('./pages/PlaceholderPage'));
 const FieldHome = lazy(() => import('./pages/FieldHome'));
 const OwnerPortalPage = lazy(() => import('./pages/OwnerPortalPage'));
 const AccountPage = lazy(() => import('./pages/AccountPage'));
+const MobileSettingsHub = lazy(() => import('./components/MobileSettingsHub'));
+
+/** The phone tab bar's Settings hub; a desktop has the full Settings page instead. */
+function SettingsHome() {
+  const navigate = useNavigate();
+  return readDevice().cls === 'phone' ? <MobileSettingsHub navigate={(p: string) => navigate(p)} /> : <Navigate to="/system/settings" replace />;
+}
 
 /** A page's code is still downloading: its shape, inside the shell, after a short wait (Loading.tsx). */
 const Fallback = () => <PageSkeleton />;
@@ -314,6 +322,7 @@ function Routed() {
         <Route path="/system/users" element={<UsersPage />} />
         <Route path="/system/integrations" element={<IntegrationsPage />} />
         <Route path="/system/integrations/hostplatform" element={<HostPlatformImportPage />} />
+        <Route path="/settings" element={<SettingsHome />} />
         <Route path="/system/settings" element={<SettingsPage />} />
         <Route path="/system/audit" element={<Navigate to="/system/health" replace />} />
         <Route path="/system/health" element={<SystemHealthPage />} />

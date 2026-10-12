@@ -1,0 +1,72 @@
+/* ============================================================================
+ * The Conts — dark theme
+ * Activated by <html data-theme="theconts-dark">, set by src/lib/theme.ts.
+ * Overrides both token families in use: the Tailwind @theme names (--color-ink,
+ * --color-card …) and the brand semantic names (--color-surface-*, --color-text-*).
+ * The sidebar is already dark in light mode, so its tokens do not change.
+ * ========================================================================== */
+:root[data-theme="theconts-dark"] {
+  color-scheme: dark;
+
+  --color-page: #0F0F0E;
+  --color-card: #1A1917;
+  --color-muted: #23211E;
+  --color-sunken: #141312;
+  --color-ink: #F2EFE9;
+  --color-ink-2: #D6D1C8;
+  --color-muted-ink: #A8A29A;
+  --color-faint: #8A8680;
+  --color-line: #2E2B27;
+  --color-line-soft: #24221F;
+  --color-line-strong: #3D3934;
+  --color-gold-ink: #D0B37E;
+  --color-gold-tint: rgba(200, 164, 106, 0.14);
+
+  --color-success: #5FC79A;  --color-success-bg: rgba(22, 132, 91, 0.18);  --color-success-line: #2FA674;
+  --color-warning: #E3B25A;  --color-warning-bg: rgba(183, 121, 31, 0.20); --color-warning-line: #C99332;
+  --color-danger: #F08A84;   --color-danger-bg: rgba(194, 65, 59, 0.20);   --color-danger-line: #D9605A;
+  --color-critical: #F08A84; --color-critical-bg: rgba(194, 65, 59, 0.20); --color-critical-line: #D9605A;
+  --color-info: #7DB3E6;     --color-info-bg: rgba(46, 109, 164, 0.22);    --color-info-line: #5A95CE;
+  --color-neutral: #A8A29A;  --color-neutral-bg: #23211E;                  --color-neutral-line: #3D3934;
+  --color-accent: #D0B37E;   --color-accent-bg: rgba(200, 164, 106, 0.14); --color-accent-line: #C8A46A;
+
+  --color-surface-page: #0F0F0E;
+  --color-surface-card: #1A1917;
+  --color-surface-elevated: #23211E;
+  --color-surface-muted: #23211E;
+  --color-surface-sunken: #141312;
+  --color-surface-selected: rgba(200, 164, 106, 0.12);
+  --color-surface-hover: #201E1B;
+  --color-surface-press: #2A2723;
+  --color-surface-scrim: rgba(0, 0, 0, 0.6);
+  --color-surface-skeleton: #24221F;
+  --color-text-primary: #F2EFE9;
+  --color-text-secondary: #D6D1C8;
+  --color-text-muted: #A8A29A;
+  --color-text-faint: #8A8680;
+  --color-text-accent: #D0B37E;
+  --color-text-link: #F2EFE9;
+  --color-text-link-hover: #D0B37E;
+  --color-border-default: #2E2B27;
+  --color-border-strong: #3D3934;
+  --color-border-muted: #24221F;
+  --color-border-hairline: #2A2723;
+
+  /* A near-black primary button vanishes on a near-black card, so in dark mode
+     the primary action becomes brand gold with dark ink (7.80:1). */
+  --color-brand-black: #C8A46A;
+  --color-text-inverse: #151515;
+}
+
+:root[data-theme="theconts-dark"] input,
+:root[data-theme="theconts-dark"] select,
+:root[data-theme="theconts-dark"] textarea {
+  background-color: var(--color-surface-card);
+  color: var(--color-text-primary);
+  border-color: var(--color-border-strong);
+}
+:root[data-theme="theconts-dark"] ::placeholder { color: var(--color-text-faint); }
+
+/* Smooth swap on a user switch, never on first paint. */
+:root.theme-ready, :root.theme-ready * { transition: background-color 200ms ease, border-color 200ms ease, color 200ms ease; }
+@media (prefers-reduced-motion: reduce) { :root.theme-ready, :root.theme-ready * { transition: none !important; } }

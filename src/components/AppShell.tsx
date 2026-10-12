@@ -3,10 +3,11 @@ import { useScrollMemory } from '../lib/useScrollMemory';
 import { useDevice } from '../lib/deviceClass';
 import Sidebar from './Sidebar';
 import TopBar from './TopBar';
-import Icon from './Icon';
 import { Logo } from './Logo';
 import { RefreshLine } from './Loading';
-import { color, radius, motion } from '../theme';
+import MobileTabBar, { TAB_BAR_HEIGHT } from './MobileTabBar';
+import { PagePrimaryScope } from './States';
+import { color, motion } from '../theme';
 
 /** Persisted so the collapse choice survives a reload (BUTTONS §2, Writes = localStorage).
  *  Storage can throw (private mode, blocked cookies), so every access is guarded. */
@@ -131,15 +132,7 @@ export default function AppShell({
           // One row on phones: menu, logo, then search / bell / page action. The desk top bar's crumbs are
           // dropped here because each page's own title sits right below.
           <div data-print-hide style={{ flex: 'none', display: 'flex', alignItems: 'center', gap: 10, padding: '8px 16px', background: color.card, borderBottom: `1px solid ${color.border}` }}>
-            <button
-              type="button"
-              onClick={() => setDrawerOpen(true)}
-              aria-label="Open navigation"
-              aria-expanded={drawerOpen}
-              style={{ width: 40, height: 40, flex: 'none', display: 'grid', placeItems: 'center', border: `1px solid ${color.border}`, borderRadius: radius.control, background: color.card, color: color.ink, cursor: 'pointer' }}
-            >
-              <Icon name="Menu" size="base" />
-            </button>
+            {/* Phones navigate from the bottom tab bar. */}
             <Logo variant="mark" size="sm" />
             <span style={{ flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12, fontWeight: 600, letterSpacing: '0.18em', color: color.ink }}>THE CONTS</span>
             <TopBar path={path} navigate={navigate} action={action} compact />
@@ -150,11 +143,12 @@ export default function AppShell({
         {/* The phone's bottom padding clears the home indicator / browser bar (safe area). */}
         <main ref={mainRef} data-app-main tabIndex={-1} className="app-main" style={{
           flex: 1, minHeight: 0, overflowY: flush ? 'hidden' : 'auto', overflowX: 'hidden',
-          padding: flush ? 0 : isNarrow ? '16px 16px calc(32px + env(safe-area-inset-bottom))' : '24px 28px 40px',
+          padding: flush ? 0 : isNarrow ? `16px 16px calc(${TAB_BAR_HEIGHT + 24}px + env(safe-area-inset-bottom))` : '24px 28px 40px',
           display: 'flex', flexDirection: 'column', gap: flush ? 0 : isNarrow ? 16 : 20,
         }}>
-          {children}
+          <PagePrimaryScope path={path}>{children}</PagePrimaryScope>
         </main>
+        {isNarrow && <MobileTabBar path={path} navigate={navigate} />}
       </div>
     </div>
   );
