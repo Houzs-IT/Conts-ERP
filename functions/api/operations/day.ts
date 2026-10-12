@@ -2,6 +2,7 @@ import { type Env, all, json, fail, nowIso } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
 import { MYT_DATE } from '../../_lib/ops';
 import { CLEAN_KINDS_SQL, LIVE_STAY_SQL, windowsOnDay, mytToday, isDay } from '../../_lib/cleaning';
+import { hasAssigneeUser } from '../../_lib/maintenance';
 
 // The last time the booking was moved into a state, from the audit trail: when the guest was recorded in or out.
 const MOVED_AT = (state: string) => `(SELECT a.occurred_at FROM audit_log a WHERE a.entity_table = 'reservations' AND a.entity_id = r.id
@@ -99,8 +100,10 @@ async function maintenanceOnDay(env: Env, date: string, today: string) {
   // A visit counts as missed once it is over: up to now for today and later days (a visit later today is not missed
   // yet), up to the start of the day for a past day.
   const cutoff = date >= today ? new Date().toISOString() : from;
+  // Migration 0105 may not be applied yet; without the column the screen failed to load at all.
+  const assignee = (await hasAssigneeUser(env)) ? 'm.assignee_user_id' : 'NULL AS assignee_user_id';
   const rows = await all<any>(env, `
-    SELECT m.id, m.title, m.state, m.urgency, m.category, m.vendor_name, m.assignee_user_id, m.blocks_unit, m.blocked_to,
+    SELECT m.id, m.title, m.state, m.urgency, m.category, m.vendor_name, ${assignee}, m.blocks_unit, m.blocked_to,
            m.owner_approval_required, m.owner_approved_at, m.charge_to, m.started_at, m.ended_at, m.resolved_at, m.reported_at,
            u.id AS unit_id, u.unit_number, p.id AS property_id, p.name AS property_name,
            w.starts_at AS window_start, w.ends_at AS window_end,
