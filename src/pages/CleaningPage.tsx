@@ -387,17 +387,17 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft }: { row: Row; 
   } : undefined;
 
   return (
-    <div className="flex flex-col gap-4 p-5 text-copy">
-      <div className="sticky top-0 z-[2] -mx-5 -mt-5 px-5 pt-5 pb-3 bg-card [border-bottom:1px_solid_var(--color-line-soft)] flex items-start gap-3">
-        <div className="flex-1 min-w-0">
-          <div className="text-meta text-muted-ink">{row.propertyName}</div>
-          <div className="text-title font-semibold">{row.unitNumber} · {kindName}</div>
+    <div className="ops-detail flex flex-col gap-4 p-5 text-copy">
+      <div className="sticky top-0 z-[2] -mx-5 -mt-5 px-5 pt-4 pb-4 bg-black text-white flex items-start gap-3">
+        <div className="flex-1 min-w-0 flex flex-col gap-1">
+          <div className="text-[11px] font-semibold tracking-[0.12em] uppercase text-gold">{row.propertyName}</div>
+          <div className="text-[19px] leading-tight font-semibold">{row.unitNumber} · {kindName}</div>
           <div className="mt-1 flex items-center gap-2 flex-wrap">
             <StatusBadge tone={st.tone}>{done && row.completedAt ? `Done ${hm(row.completedAt)}` : st.label}</StatusBadge>
-            {row.startedAt && <span className="text-meta text-muted-ink">Started {hm(row.startedAt)}{used != null ? ` · ${done ? 'took' : 'so far'} ${minutesLabel(used)}` : ''}</span>}
+            {row.startedAt && <span className="text-meta text-on-dark">Started {hm(row.startedAt)}{used != null ? ` · ${done ? 'took' : 'so far'} ${minutesLabel(used)}` : ''}</span>}
           </div>
         </div>
-        <CloseButton onClick={onClose} />
+        <span className="[&_button]:text-white [&_button]:border-charcoal [&_button]:bg-transparent"><CloseButton onClick={onClose} /></span>
       </div>
       {error && <StaleBanner message={error} onRetry={reload} />}
 

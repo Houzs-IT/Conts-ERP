@@ -406,13 +406,19 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
   const current = steps.findIndex(s => !s.on);
 
   return (
-    <div className="flex flex-col gap-4 p-5 text-copy">
-      <div className="sticky top-0 z-[2] -mx-5 -mt-5 px-5 pt-5 pb-3 bg-card [border-bottom:1px_solid_var(--color-line-soft)] flex items-start gap-3">
-        <div className="flex-1 min-w-0">
-          <div className="text-meta text-muted-ink">{i.propertyName} · {i.unitNumber}</div>
-          <div className="text-title font-semibold">{i.title}</div>
+    <div className="ops-detail flex flex-col gap-4 p-5 text-copy">
+      <div className="sticky top-0 z-[2] -mx-5 -mt-5 px-5 pt-4 pb-4 bg-black text-white flex items-start gap-3">
+        <div className="flex-1 min-w-0 flex flex-col gap-1">
+          <div className="text-[11px] font-semibold tracking-[0.12em] uppercase text-gold">{i.propertyName} · {i.unitNumber}</div>
+          <div className="text-[19px] leading-tight font-semibold">{i.title}</div>
+          <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
+            {steps.map((s, k) => (
+              <span key={s.label} title={s.label} className={cx('h-1.5 rounded-full flex-1 min-w-[18px]', s.on ? 'bg-gold' : k === current ? 'bg-faint' : 'bg-charcoal')} />
+            ))}
+          </div>
+          <div className="text-meta text-on-dark">{current < 0 ? 'Done' : `Next: ${steps[current].label}`}</div>
         </div>
-        <CloseButton onClick={onClose} />
+        <span className="[&_button]:text-white [&_button]:border-charcoal [&_button]:bg-transparent"><CloseButton onClick={onClose} /></span>
       </div>
       <div className="flex gap-1.5 flex-wrap">
         {i.urgency === 'urgent' && <StatusBadge tone="critical">Urgent</StatusBadge>}
