@@ -236,7 +236,7 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
     return (
       <div className="flex flex-col gap-5 min-w-0">
         {header}
-        <div className="grid grid-cols-1 xl:grid-cols-[minmax(260px,300px)_minmax(0,1fr)] gap-5 items-start min-w-0">
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(300px,340px)_minmax(0,1fr)] 2xl:grid-cols-[minmax(340px,380px)_minmax(0,1fr)] gap-5 items-start min-w-0">
           <div className="min-w-0 xl:h-[calc(100vh-100px)]">
             <div className="max-xl:hidden h-full"><TreeSkeleton fill /></div>
             <div aria-hidden className="xl:hidden h-[58px] bg-card border border-solid border-line rounded-card flex items-center gap-3 px-[14px]">
@@ -273,7 +273,7 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
       {header}
       {(props.error || detail.error) && <StaleBanner message={`Showing the last record we have. ${props.error ?? detail.error}`} onRetry={reloadAll} />}
 
-      <div className="grid grid-cols-1 xl:grid-cols-[minmax(260px,300px)_minmax(0,1fr)] gap-5 items-start min-w-0">
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(300px,340px)_minmax(0,1fr)] 2xl:grid-cols-[minmax(340px,380px)_minmax(0,1fr)] gap-5 items-start min-w-0">
         {/* On a wide screen the tree is its own pane: it stays put under the top bar, as tall as the window, and
             scrolls by itself, so it never runs out while the record on the right scrolls. */}
         <div className="flex flex-col gap-2 min-w-0 xl:sticky xl:top-0 xl:h-[calc(100vh-100px)] xl:z-[1]">

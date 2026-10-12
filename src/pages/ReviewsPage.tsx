@@ -14,6 +14,7 @@ import { api, errorMessage } from '../lib/api';
 import { rating as fmtRating, date as fmtDate, todayMyt, count, plural } from '../lib/format';
 import type { BookingChannel } from '../lib/types';
 import { FilterBar } from '../components/FilterBar';
+import { TONE, cx } from '../lib/design-tokens';
 import { PageControls } from '../components/PageControls';
 
 /** A guest review pulled in from a channel. `reply`/`repliedAt` are set once the
@@ -48,15 +49,6 @@ function Stars({ n }: { n: number }) {
     <span className="flex gap-0.5" role="img" aria-label={`${n} out of 5`}>
       {[1, 2, 3, 4, 5].map(i => <Icon key={i} name="Star" size="sm" color={i <= n ? color.gold : color.border} />)}
     </span>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex flex-col gap-1 px-5 py-4">
-      <span className="text-meta text-muted-ink">{label}</span>
-      <span className="text-headline font-semibold tabular-nums tracking-[-0.01em]">{value}</span>
-    </div>
   );
 }
 
@@ -140,18 +132,44 @@ export default function ReviewsPage() {
 
       {error && <StaleBanner message={`Showing the last reviews we have. ${error}`} onRetry={reload} />}
 
-      {/* Summary header */}
-      <Card>
-        <div className="grid grid-cols-1 sm:grid-cols-3">
-          <div className="max-sm:[border-bottom:1px_solid_var(--color-line-soft)] sm:[border-right:1px_solid_var(--color-line-soft)]">
-            <Stat label="Average rating" value={average != null ? fmtRating(average, true) : '—'} />
-          </div>
-          <div className="max-sm:[border-bottom:1px_solid_var(--color-line-soft)] sm:[border-right:1px_solid_var(--color-line-soft)]">
-            <Stat label="Reviews" value={data ? count(total) : '—'} />
-          </div>
-          <Stat label="Replied" value={data ? `${pctReplied}%` : '—'} />
+      {/* Summary: the average as the dark statement tile, how the stars spread, and the reply backlog. */}
+      <div className="grid grid-cols-1 md:grid-cols-[minmax(240px,1fr)_minmax(0,1.6fr)_minmax(200px,1fr)] gap-3 sm:gap-4">
+        <div className="relative rounded-card bg-black text-white p-5 flex flex-col gap-2 overflow-hidden">
+          <span aria-hidden className="absolute left-5 top-0 h-[2px] w-8 bg-gold" />
+          <span className="text-[11px] font-semibold tracking-[0.12em] uppercase text-gold">Average rating</span>
+          <span className="text-[40px] leading-none font-semibold tabular-nums text-gold">{average != null ? fmtRating(average) : '—'}</span>
+          {average != null && <Stars n={Math.round(average)} />}
+          <span className="text-meta text-on-dark">{data ? `across ${plural(total, 'review')}` : 'Loading…'}</span>
         </div>
-      </Card>
+        <Card>
+          <div className="px-5 py-4 flex flex-col gap-2">
+            <span className="text-[11px] font-semibold tracking-[0.12em] uppercase text-muted-ink">How guests rate</span>
+            {([5, 4, 3, 2, 1] as const).map(n => {
+              const k = rows.filter(r => Math.round(r.rating) === n).length;
+              const pct = rows.length ? Math.round((k / rows.length) * 100) : 0;
+              return (
+                <button key={n} type="button" onClick={() => rate(ratingFilter === n ? 'all' : n as RatingFilter)}
+                  className={cx('flex items-center gap-3 bg-transparent border-none p-0 cursor-pointer text-left [font-family:inherit]', ratingFilter === n ? 'text-ink' : 'text-ink-2')}>
+                  <span className="w-10 text-meta tabular-nums">{n} ★</span>
+                  <span className="flex-1 h-2 rounded-full bg-muted overflow-hidden"><span className="block h-full rounded-full bg-gold" style={{ width: `${pct}%` }} /></span>
+                  <span className="w-10 text-right text-meta tabular-nums text-muted-ink">{k}</span>
+                </button>
+              );
+            })}
+          </div>
+        </Card>
+        <div className="grid grid-cols-2 md:grid-cols-1 gap-3 sm:gap-4">
+          <button type="button" onClick={() => replyState('needs_reply')}
+            className={cx('rounded-card border border-solid p-4 flex flex-col gap-1.5 text-left cursor-pointer [font-family:inherit]', needsReplyCount ? cx('border-warning-line', TONE.warning.bg) : 'border-line bg-card')}>
+            <span className={cx('text-[11px] font-semibold tracking-[0.12em] uppercase', needsReplyCount ? TONE.warning.text : 'text-muted-ink')}>Needs reply</span>
+            <span className={cx('text-[26px] leading-none font-semibold tabular-nums', needsReplyCount ? TONE.warning.text : 'text-ink')}>{data ? count(needsReplyCount) : '—'}</span>
+          </button>
+          <div className="rounded-card border border-solid border-line bg-card p-4 flex flex-col gap-1.5">
+            <span className="text-[11px] font-semibold tracking-[0.12em] uppercase text-muted-ink">Replied</span>
+            <span className="text-[26px] leading-none font-semibold tabular-nums">{data ? `${pctReplied}%` : '—'}</span>
+          </div>
+        </div>
+      </div>
 
       {/* Reply state is the main view; a star rating narrows it from the Filter menu. */}
       <FilterBar<ReplyState> label="Filter by reply state" value={replyFilter} onChange={replyState}

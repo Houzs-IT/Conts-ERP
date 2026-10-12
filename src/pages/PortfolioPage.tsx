@@ -62,7 +62,7 @@ function BuildingTile({ b, i, money, onOpen }: { b: BuildingCard; i: number; mon
       className="group relative text-left rounded-card overflow-hidden border border-solid border-line bg-black min-h-[232px] flex flex-col justify-end cursor-pointer transition-[transform,box-shadow] duration-200 ease-out hover:-translate-y-[3px] hover:shadow-[var(--shadow-overlay)] focus-visible:outline-none focus-visible:shadow-[var(--focus-ring)]">
       <span aria-hidden className="absolute inset-0 bg-cover transition-transform duration-[1200ms] ease-out group-hover:scale-[1.05]"
         style={{ backgroundImage: `url(/brand/buildings/${slug(b.name)}.jpg), url(/brand/login-hero.jpg)`, backgroundPosition: FRAMES[i % FRAMES.length] }} />
-      <span aria-hidden className="absolute inset-0 bg-[linear-gradient(180deg,rgba(21,21,21,0.08)_0%,rgba(21,21,21,0.30)_42%,rgba(21,21,21,0.90)_100%)]" />
+      <span aria-hidden className="absolute inset-0 bg-[linear-gradient(180deg,rgba(21,21,21,0.20)_0%,rgba(21,21,21,0.55)_40%,rgba(21,21,21,0.94)_100%)] [&~*]:[text-shadow:0_1px_8px_rgba(0,0,0,0.6)]" />
       <span className="relative flex flex-col gap-3 p-[18px]">
         <span className="flex items-end justify-between gap-3">
           <span className="flex flex-col gap-[3px] min-w-0">

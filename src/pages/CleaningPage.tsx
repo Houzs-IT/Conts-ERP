@@ -256,19 +256,25 @@ function BuildingCard({ group, now, future, selected, busy, onSelect, onGuestLef
   const open = group.rows.filter(r => r.status !== 'done');
   const unassigned = open.filter(r => !r.cleanerId && !r.assigneeId && !r.assigneeName).length;
   const names = [...new Set(group.rows.map(r => r.assigneeName).filter(Boolean))];
+  // Each building folds shut; it starts open only when something in it still needs a person.
+  const [shut, setShut] = useState(() => open.length === 0 && group.departures.length === 0);
   return (
     <section className="@container bg-card rounded-card border border-solid border-line overflow-hidden flex-none">
       <header className="flex items-center justify-between gap-3 flex-wrap px-4 @2xl:px-5 pt-4 pb-3">
-        <div className="min-w-0 flex items-baseline gap-2 flex-wrap">
+        <button type="button" onClick={() => setShut(v => !v)} aria-expanded={!shut}
+          className="min-w-0 flex items-center gap-2 flex-wrap bg-transparent border-none p-0 cursor-pointer text-left text-ink [font-family:inherit]">
+          <Icon name={shut ? 'ChevronRight' : 'ChevronDown'} size="sm" color="var(--color-muted-ink)" />
           <span className="text-[16px] font-semibold tracking-[-0.01em]">{group.name}</span>
           <span className="text-meta text-muted-ink tabular-nums">{count} {count === 1 ? 'unit' : 'units'} · {doneN} done</span>
-        </div>
+          {group.departures.length > 0 && <StatusBadge tone="critical">{group.departures.length} to plan</StatusBadge>}
+        </button>
         <div className="flex items-center gap-2 text-copy flex-wrap">
           {unassigned > 0 ? <span className="text-danger font-medium">{unassigned} unassigned</span>
             : names.length ? <span className="text-muted-ink">Cleaner <b className="text-ink">{names.length === 1 ? names[0] : `${names.length} people`}</b></span> : null}
           {open.length > 0 && <Button size="sm" variant="secondary" onClick={onAssign}>Assign whole building</Button>}
         </div>
       </header>
+      {!shut && <>
       <div className={cx('hidden text-meta font-semibold text-muted-ink px-5 py-2 [border-top:1px_solid_var(--color-line-soft)]', COLS)}>
         <div>Unit</div><div>Checkout (leaving)</div><div>Check-in (arriving)</div><div>Time left</div><div>Type</div><div>Cleaner</div><div>Status</div>
       </div>
@@ -281,7 +287,7 @@ function BuildingCard({ group, now, future, selected, busy, onSelect, onGuestLef
           <div><span className="@2xl:hidden text-muted-ink">Time left </span><TimeLeft at={d.next?.checkInAt} now={now} /></div>
           <div className="hidden @2xl:block text-muted-ink">—</div>
           <div className="hidden @2xl:block text-muted-ink">—</div>
-          <div className="flex items-center gap-1.5 flex-wrap">
+          <div className="basis-full @2xl:basis-auto flex items-center gap-2 flex-wrap justify-end @2xl:justify-start pt-1 @2xl:pt-0">
             <span className="hidden @2xl:inline"><StatusBadge tone="critical">No cleaning job</StatusBadge></span>
             <Button size="sm" variant="primary" loading={busy === `plan-${d.reservationId}`} onClick={() => onPlan(d)}>Plan cleaning</Button>
             {d.state !== 'checked_out' && !future && <Button size="sm" variant="secondary" loading={busy === `left-${d.reservationId}`} onClick={() => onGuestLeft({ reservationId: d.reservationId }, d.unitNumber)}>Guest left</Button>}
@@ -299,6 +305,7 @@ function BuildingCard({ group, now, future, selected, busy, onSelect, onGuestLef
           ))}
         </div>
       )}
+          </>}
     </section>
   );
 }

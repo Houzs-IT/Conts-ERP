@@ -53,3 +53,12 @@
 @media (pointer: coarse) {
   .tc-tap { min-height: 44px; min-width: 44px; }
 }
+
+/* Phone: a table's own filters (search, selects, date) fill the row instead of stopping at ~80% width. */
+@media (max-width: 767px) {
+  .dt-toolbar > * { flex: 1 1 100%; min-width: 0; max-width: none !important; }
+  .dt-toolbar input:not([type='checkbox']):not([type='radio']), .dt-toolbar select { width: 100% !important; max-width: none !important; }
+}
+
+@keyframes split-in { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { [style*="split-in"] { animation: none !important; } }

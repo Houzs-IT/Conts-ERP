@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { DARK_MODE_READY } from '../lib/theme';
 import { color, radius } from '../theme';
 import { screenClosed } from '../lib/navigation';
 import { useSession } from '../lib/session';
@@ -50,6 +51,7 @@ export default function MobileSettingsHub({ navigate }: { navigate: (p: string) 
         <Icon name="ChevronRight" size="sm" color={color.faint} />
       </button>
 
+      {DARK_MODE_READY && (
       <section style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         <span style={label}>APPEARANCE</span>
         <div role="radiogroup" aria-label="Appearance" style={{ display: 'flex', padding: 4, borderRadius: 14, background: color.muted }}>
@@ -63,6 +65,7 @@ export default function MobileSettingsHub({ navigate }: { navigate: (p: string) 
           ))}
         </div>
       </section>
+      )}
 
       {groups.map(g => (
         <section key={g.label} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
