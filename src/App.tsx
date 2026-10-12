@@ -94,6 +94,7 @@ const UsersPage = lazy(() => import('./pages/UsersPage'));
 const IntegrationsPage = lazy(() => import('./pages/IntegrationsPage'));
 const HostPlatformImportPage = lazy(() => import('./pages/HostPlatformImportPage'));
 const SystemHealthPage = lazy(() => import('./pages/SystemHealthPage'));
+const ItSupportPage = lazy(() => import('./pages/ItSupportPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 const NotDesignedPage = lazy(() => import('./pages/NotDesignedPage'));
 const PlaceholderPage = lazy(() => import('./pages/PlaceholderPage'));
@@ -327,6 +328,7 @@ function Routed() {
         <Route path="/system/settings" element={<SettingsPage />} />
         <Route path="/system/audit" element={<Navigate to="/system/health" replace />} />
         <Route path="/system/health" element={<SystemHealthPage />} />
+        <Route path="/system/it-support" element={<ItSupportPage />} />
         <Route path="*" element={<NotDesignedPage />} />
       </Route>
     </Routes>

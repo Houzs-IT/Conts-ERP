@@ -1,7 +1,7 @@
 import type { UserRole, AccessLevel } from './types';
 
 /** `badge` names a live count from /api/nav/badges; shown only when above zero. */
-export type BadgeKey = 'today' | 'maintenance' | 'inbox' | 'statements' | 'approvals';
+export type BadgeKey = 'today' | 'maintenance' | 'inbox' | 'statements' | 'approvals' | 'itSupport';
 /** The sidebar shows one workspace at a time. Rental is the daily work; supply chain sits behind the switch. */
 export type Workspace = 'rental' | 'supply';
 /** `area` is the permission area (functions/_lib/access.ts AREAS) the screen belongs to. */
@@ -70,6 +70,9 @@ export const NAV: NavGroup[] = [
     { key: 'integrations', label: 'Integrations', icon: 'plug', path: '/system/integrations', area: 'integrations' },
     { key: 'settings', label: 'Settings', icon: 'settings', path: '/system/settings', area: 'settings' },
     { key: 'health', label: 'System health', icon: 'activity', path: '/system/health', area: 'health' },
+    // Every desk role: report a problem with the system to IT and follow it. No permission area, since a person
+    // only ever reads their own requests (functions/_lib/itHub.ts). Its count comes from lib/itSupport.ts.
+    { key: 'itSupport', label: 'IT Support', icon: 'life-buoy', path: '/system/it-support', badge: 'itSupport' },
   ] },
 
   // Supply chain workspace. Mirrors Houzs's hierarchy: section -> collapsible area -> page.
