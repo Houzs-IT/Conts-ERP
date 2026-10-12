@@ -539,9 +539,9 @@ export function DataTable<R>(props: DataTableProps<R>) {
     <>
       {header}
       {!noToolbar && (
-        <div className="flex items-center gap-2 flex-wrap py-[10px] px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line-soft)]">
-          {toolbar && <div className="flex items-center gap-2 flex-wrap flex-[1_1_260px] min-w-0 max-md:basis-full">{toolbar}</div>}
-          <div className={cx('flex items-center gap-2 flex-wrap max-md:w-full', toolbar ? 'ml-auto max-md:ml-0' : 'ml-auto')}>
+        <div className="@container/tb flex items-center gap-2 flex-wrap py-[10px] px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line-soft)]">
+          {toolbar && <div className="dt-toolbar flex items-center gap-2 flex-wrap flex-[1_1_260px] min-w-0">{toolbar}</div>}
+          <div className={cx('flex items-center gap-2 flex-wrap max-md:flex-[1_1_auto] max-md:justify-end', 'ml-auto')}>
             {actions}
             {phoneSort && sortChoices.length > 0 && (
               <label className="md:hidden relative flex items-center flex-[1_1_96px] min-w-0">
@@ -561,7 +561,7 @@ export function DataTable<R>(props: DataTableProps<R>) {
             )}
             {/* Phones: Sort and Filter stay; Views, Columns and Export move behind one "More" button,
                 so the row is three controls instead of six (owner, Oct 2026). Same panels, nothing new per page. */}
-            <span className="contents max-md:hidden">
+            <span className="contents max-md:hidden @max-3xl/tb:hidden">
               {!noViews && (
               <ToolButton icon="Bookmark" label={active ? active.name : 'Views'} btnRef={viewsBtn} active={panel === 'views'}
                 onClick={() => setPanel(p => (p === 'views' ? null : 'views'))} title="Saved views" />
@@ -641,10 +641,10 @@ export function DataTable<R>(props: DataTableProps<R>) {
                       <th key={c.key} scope="col" aria-sort={on ? (sortDir === 'desc' ? 'descending' : 'ascending') : undefined}
                         className={cx('group/th sticky top-0 z-[2] bg-muted [border-bottom:1px_solid_var(--color-line)] py-[9px] text-meta font-semibold text-muted-ink',
                           i === 0 && !pickCol ? 'pl-[22px] pr-[7px]' : 'px-[7px]', i === visible.length - 1 && 'pr-[22px]', right ? 'text-right' : c.align === 'center' ? 'text-center' : 'text-left')}>
-                        <span className={cx('inline-flex items-center gap-[2px] max-w-full', right && 'flex-row-reverse')}>
+                        <span className={cx('flex items-center gap-[2px] max-w-full', right && 'justify-end')}>
                           {k ? (
                             <button type="button" onClick={() => toggleSort(c)} title={c.title ?? `Sort by ${c.label}`}
-                              className={cx('inline-flex items-center gap-1 min-w-0 font-sans text-meta font-semibold bg-transparent border-none cursor-pointer p-0', on ? 'text-ink' : 'text-muted-ink', right && 'flex-row-reverse')}>
+                              className={cx('inline-flex items-center gap-1 min-w-0 font-sans text-meta font-semibold bg-transparent border-none cursor-pointer p-0', on ? 'text-ink' : 'text-muted-ink')}>
                               <span className={cx('line-clamp-2 leading-[1.25] [overflow-wrap:normal]', right ? 'text-right' : 'text-left')}>{c.label}</span>
                               <Icon name={on ? (sortDir === 'desc' ? 'ArrowDown' : 'ArrowUp') : 'ChevronsUpDown'} size="sm" color={on ? 'var(--color-ink)' : 'var(--color-line-strong)'} />
                             </button>
@@ -1114,7 +1114,7 @@ function SaveViewDialog({ initial, canShare, onClose, onSave }: {
 function PhoneMoreMenu({ items }: { items: { icon: string; label: string; go: () => void }[] }) {
   const [open, setOpen] = useState(false);
   return (
-    <span className="md:hidden">
+    <span className="md:hidden @max-3xl/tb:inline">
       <button type="button" onClick={() => setOpen(true)} aria-label="More table tools" aria-haspopup="menu"
         className="h-9 w-9 grid place-items-center rounded-control border border-solid border-line bg-card text-ink cursor-pointer">
         <Icon name="Ellipsis" size="sm" />

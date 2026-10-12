@@ -1,6 +1,5 @@
 import { lazy, Suspense, useMemo, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import Icon from '../components/Icon';
@@ -14,7 +13,7 @@ import { Select } from '../components/Select';
 import {
   type Owner, type Payload,
   FALLBACK, netOf, grossOf, guaranteedOf, managedNetOf, managedGrossOf, terms, addressLines,
-  Roll, AddOwnerModal,
+  AddOwnerModal,
 } from './owners/shared';
 import { FilterBar } from '../components/FilterBar';
 import { useUrlState, usePhone, SearchBox, MonthStepper, shiftMonth, useFinanceFilters } from './finance/listKit';
@@ -210,20 +209,34 @@ function OwnerList({ tabs }: { tabs: ReactNode }) {
         primary={<Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setModal(true)}>Add owner</Button>} />
       {tabs}
 
-      <Card>
-        <div className="flex flex-wrap items-start justify-between gap-x-8 gap-y-5 pt-5 pb-4 px-5 sm:px-[22px]">
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-x-8 gap-y-5 flex-1 min-w-[min(100%,560px)] items-end">
-            <Roll label={`Owner payouts, ${monthText} (estimate)`} value={data ? rmShort(portfolioNet) : undefined} strong />
-            <Roll label="from managed units" value={data ? rmShort(portfolioManagedNet) : undefined} />
-            <Roll label="guaranteed rent (GRR units)" value={data ? rmShort(portfolioGuaranteed) : undefined} />
-            <Roll label={`Gross Income, managed units`} value={data ? rmShort(portfolioManagedGross) : undefined} />
+      {/* The month's payout as the dark statement tile; the split and the gross beside it; the month stepper on top. */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <span className="text-[11px] font-semibold tracking-[0.12em] uppercase text-muted-ink">Owner payouts · {monthText} (estimate)</span>
+        <MonthStepper label={monthLabel(month)} onStep={by => url.set({ month: shiftMonth(month, by) === thisMonth ? null : shiftMonth(month, by) })} />
+      </div>
+      <div className="grid grid-cols-2 lg:grid-cols-[minmax(0,1.4fr)_repeat(3,minmax(0,1fr))] gap-3 sm:gap-4">
+        <div className="col-span-2 lg:col-span-1 relative rounded-card bg-black text-white p-5 flex flex-col gap-2 overflow-hidden">
+          <span aria-hidden className="absolute left-5 top-0 h-[2px] w-8 bg-gold" />
+          <span className="text-[11px] font-semibold tracking-[0.12em] uppercase text-gold">To pay owners</span>
+          <span className="text-[34px] leading-none font-semibold tabular-nums text-gold">{data ? rmShort(portfolioNet) : '—'}</span>
+          <span className="text-meta text-on-dark">{data ? `${plural(all.length, 'owner')} · ${plural(unitCount, 'unit')}` : 'Loading…'}</span>
+        </div>
+        {([
+          ['From managed units', portfolioManagedNet, 'Income split, after costs'],
+          ['Guaranteed rent', portfolioGuaranteed, 'GRR units, fixed'],
+          ['Gross income', portfolioManagedGross, 'Managed units, before split'],
+        ] as const).map(([label, v, hint]) => (
+          <div key={label} className="rounded-card border border-solid border-line bg-card p-4 sm:p-5 flex flex-col gap-2 min-w-0">
+            <span className="text-[11px] font-semibold tracking-[0.12em] uppercase text-muted-ink">{label}</span>
+            <span className="text-[24px] leading-none font-semibold tabular-nums">{data ? rmShort(v) : '—'}</span>
+            <span className="text-meta text-muted-ink truncate">{hint}</span>
           </div>
-          <MonthStepper label={monthLabel(month)} onStep={by => url.set({ month: shiftMonth(month, by) === thisMonth ? null : shiftMonth(month, by) })} />
-        </div>
-        <div className="px-5 sm:px-[22px] pt-4 pb-4 [border-top:1px_solid_var(--color-line-soft)] text-meta text-muted-ink text-pretty">
-          Each unit is worked out the way its owner statement is, by its payout model: income split by night into the month, less the costs the owner pays, then the share, minimum or fixed rent, and Owner Adjustments. Guaranteed rent is counted on its own, not as a share of earnings. Until the month's statement is final, these are estimates.
-        </div>
-      </Card>
+        ))}
+      </div>
+      <details className="text-meta text-muted-ink -mt-1">
+        <summary className="cursor-pointer select-none w-fit">How these are worked out</summary>
+        <p className="m-0 mt-2 max-w-[880px] text-pretty">Each unit is worked out the way its owner statement is, by its payout model: income split by night into the month, less the costs the owner pays, then the share, minimum or fixed rent, and Owner Adjustments. Guaranteed rent is counted on its own, not as a share of earnings. Until the month's statement is final, these are estimates.</p>
+      </details>
 
       <DataTable<Owner>
         id="owners" phoneSort={false} columns={columns} rows={data ? rows : null} rowKey={o => o.id}

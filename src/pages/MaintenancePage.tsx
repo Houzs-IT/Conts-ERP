@@ -352,8 +352,6 @@ function BulkAssignModal({ rows, onClose, onDone }: { rows: Issue[]; onClose: ()
 function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { issue: Issue; billing: boolean; money: boolean; skus: Sku[]; onClose: () => void; onChanged: () => void }) {
   const toast = useToast();
   const files = useApi<{ data: FileItem[] }>(`/maintenance/issues/${i.id}/documents`);
-  // What the technician wrote from the phone (kept in History; the field app's job read returns them as a list).
-  const fieldNotes = useApi<{ notes: { note: string; by: string; at: string; done: boolean }[] }>(`/field/repairs/${i.id}`);
   const techs = useTechnicians();
   const [busy, setBusy] = useState<string | null>(null);
   const [assignee, setAssignee] = useState(i.vendorName ?? '');
@@ -375,7 +373,7 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
   const charge = i.finalAmount ?? i.quotedAmount;
   const collectFrom = COLLECT_FROM[i.chargeTo];
 
-  const refresh = useCallback(() => { files.reload(); fieldNotes.reload(); onChanged(); }, [files, fieldNotes, onChanged]);
+  const refresh = useCallback(() => { files.reload(); onChanged(); }, [files, onChanged]);
   async function act(key: string, fn: () => Promise<unknown>, ok: string, body?: string) {
     setBusy(key);
     try { await fn(); toast({ tone: 'success', title: ok, body }); refresh(); return true; }
@@ -403,19 +401,24 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
     { label: 'Quote', at: null, on: i.quotedAmount != null, note: money && i.quotedAmount != null ? `${rm(i.quotedAmount)}${i.billingDate ? `, billed ${date(i.billingDate)}` : ''}` : undefined },
     { label: i.ownerApprovalRequired ? 'Owner approved' : 'Approval', at: i.ownerApprovedAt, on: !!i.ownerApprovedAt || (i.quotedAmount != null && !awaitingOwner(i)), note: awaitingOwner(i) ? 'Waiting for the owner' : !i.ownerApprovalRequired && i.quotedAmount != null ? 'Not needed' : undefined },
     { label: 'In progress', at: i.startedAt, on: !!i.startedAt },
-    { label: 'Repair finished', at: i.endedAt, on: !!i.endedAt || done },
     { label: 'Done', at: i.resolvedAt, on: done, note: done && money && i.finalAmount != null ? `${rm(i.finalAmount)}, ${PAYER_SHORT[i.chargeTo]}` : undefined },
   ];
   const current = steps.findIndex(s => !s.on);
 
   return (
-    <div className="flex flex-col gap-4 p-5 text-copy">
-      <div className="sticky top-0 z-[2] -mx-5 -mt-5 px-5 pt-5 pb-3 bg-card [border-bottom:1px_solid_var(--color-line-soft)] flex items-start gap-3">
-        <div className="flex-1 min-w-0">
-          <div className="text-meta text-muted-ink">{i.propertyName} · {i.unitNumber}</div>
-          <div className="text-title font-semibold">{i.title}</div>
+    <div className="ops-detail flex flex-col gap-4 p-5 text-copy">
+      <div className="sticky top-0 z-[2] -mx-5 -mt-5 px-5 pt-4 pb-4 bg-black text-white flex items-start gap-3">
+        <div className="flex-1 min-w-0 flex flex-col gap-1">
+          <div className="text-[11px] font-semibold tracking-[0.12em] uppercase text-gold">{i.propertyName} · {i.unitNumber}</div>
+          <div className="text-[19px] leading-tight font-semibold">{i.title}</div>
+          <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
+            {steps.map((s, k) => (
+              <span key={s.label} title={s.label} className={cx('h-1.5 rounded-full flex-1 min-w-[18px]', s.on ? 'bg-gold' : k === current ? 'bg-faint' : 'bg-charcoal')} />
+            ))}
+          </div>
+          <div className="text-meta text-on-dark">{current < 0 ? 'Done' : `Next: ${steps[current].label}`}</div>
         </div>
-        <CloseButton onClick={onClose} />
+        <span className="[&_button]:text-white [&_button]:border-charcoal [&_button]:bg-transparent"><CloseButton onClick={onClose} /></span>
       </div>
       <div className="flex gap-1.5 flex-wrap">
         {i.urgency === 'urgent' && <StatusBadge tone="critical">Urgent</StatusBadge>}
@@ -427,17 +430,6 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
           : <StatusBadge tone="warning">Not collected</StatusBadge>)}
       </div>
       {i.detail && <p className="m-0 text-ink whitespace-pre-wrap">{i.detail}</p>}
-      {(fieldNotes.data?.notes.length ?? 0) > 0 && (
-        <section className="flex flex-col gap-1.5">
-          <h3 className="m-0 text-copy font-semibold">Notes from the technician</h3>
-          {fieldNotes.data!.notes.map((n, k) => (
-            <div key={k} className="rounded-control bg-muted px-3 py-2">
-              <span className="whitespace-pre-wrap [overflow-wrap:anywhere]">{n.note}</span>
-              <span className="block text-meta text-muted-ink">{n.by} · {stamp(n.at)}{n.done ? ' · when finishing' : ''}</span>
-            </div>
-          ))}
-        </section>
-      )}
 
       <ol className="m-0 p-0 list-none flex flex-col">
         {steps.map((s, n) => (
@@ -563,13 +555,14 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
 
       <section className="flex flex-col gap-2.5">
         <AttachmentLabel title="Photos and videos" count={media.length} />
-        <Segmented label="Before or after the repair" value={stage} onChange={setStage} options={[
-          { value: 'before', label: <>Before <span className="text-muted-ink tabular-nums">{counts.before}</span></> },
-          { value: 'after', label: <>After <span className="text-muted-ink tabular-nums">{counts.after}</span></> },
+        <Segmented label="Problem or fixed" value={stage} onChange={setStage} options={[
+          { value: 'before', label: <>The problem <span className="text-muted-ink tabular-nums">{counts.before}</span></> },
+          { value: 'after', label: <>Fixed <span className="text-muted-ink tabular-nums">{counts.after}</span></> },
         ]} />
+        <span className="text-meta text-muted-ink">{stage === 'before' ? 'What was wrong, as reported.' : 'Proof the job is settled. Needed before the job can be marked done.'}</span>
         {files.loading && !files.data ? <Skeleton height={96} /> : (
           <MediaGallery key={stage} items={shownMedia} upload={done ? undefined : uploadTo(`/maintenance/issues/${i.id}/photos`, { kind: stage })} onDone={refresh}
-            addLabel={stage === 'before' ? 'Add before photo' : 'Add after photo'} emptyText={stage === 'before' ? 'No before photo.' : 'No after photo.'} />
+            addLabel={stage === 'before' ? 'Add photo of the problem' : 'Add proof it is fixed'} emptyText={stage === 'before' ? 'No photo of the problem yet.' : 'No proof yet. Add one when the job is settled.'} />
         )}
       </section>
 
@@ -621,7 +614,9 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
           {(!i.startedAt || money) && <section className="flex gap-2 pt-4 [border-top:1px_solid_var(--color-line-soft)]">
             {!i.startedAt && <Button variant="secondary" className="flex-1" loading={busy === 'start'} disabled={awaitingOwner(i)} disabledReason="Waiting for the owner's approval."
               onClick={() => void act('start', () => api.post(`/maintenance/issues/${i.id}/start`, {}), 'Repair started.')}>Start repair</Button>}
-            {money && <Button variant="primary" className="flex-1" disabled={awaitingOwner(i)} disabledReason="Waiting for the owner's approval." onClick={() => setCompleteOpen(true)}>Mark done</Button>}
+            {money && <Button variant="primary" className="flex-1" disabled={awaitingOwner(i) || counts.after === 0}
+          disabledReason={awaitingOwner(i) ? "Waiting for the owner's approval." : 'Add a photo of the fixed job first (Photos, Fixed).'}
+          onClick={() => setCompleteOpen(true)}>Mark done</Button>}
           </section>}
         </>
       )}

@@ -75,8 +75,7 @@ export function PillTabs<T extends string>({ value, tabs, onChange }: { value: T
   );
 }
 
-/** A form dialog: title, body, and the buttons at the bottom right (secondary left of primary). On a phone it fills the
- *  screen, the body scrolls on its own, and the buttons share the bottom row at touch height. */
+/** A form dialog: title, body, and the buttons at the bottom right (secondary left of primary). */
 export function OpsModal({ title, sub, children, footer, onClose, busy, width = 480 }: {
   title: string; sub?: ReactNode; children: ReactNode; footer: ReactNode; onClose: () => void; busy?: boolean; width?: number;
 }) {
@@ -89,15 +88,15 @@ export function OpsModal({ title, sub, children, footer, onClose, busy, width = 
     return () => { document.removeEventListener('keydown', onKey); back?.focus?.(); };
   }, [busy, onClose]);
   return (
-    <div role="dialog" aria-modal="true" aria-label={title} className="fixed inset-0 z-[60] grid place-items-center p-4 max-sm:p-0 bg-[var(--color-surface-scrim)]">
+    <div role="dialog" aria-modal="true" aria-label={title} className="fixed inset-0 z-[60] grid place-items-center p-4 bg-[var(--color-surface-scrim)]">
       <div className="absolute inset-0" onClick={busy ? undefined : onClose} />
-      <div ref={ref} style={{ maxWidth: width }} className="relative w-full max-h-[calc(100dvh-32px)] flex flex-col bg-card rounded-card overflow-hidden shadow-[var(--shadow-overlay)] max-sm:h-[100dvh] max-sm:max-h-[100dvh] max-sm:rounded-none">
-        <div className="px-[22px] max-sm:px-4 pt-5 pb-3 flex flex-col gap-1">
+      <div ref={ref} style={{ maxWidth: width }} className="relative w-full max-h-[calc(100dvh-32px)] flex flex-col bg-card rounded-card overflow-hidden shadow-[var(--shadow-overlay)]">
+        <div className="px-[22px] pt-5 pb-3 flex flex-col gap-1">
           <h2 className="m-0 text-title font-semibold">{title}</h2>
           {sub && <div className="text-copy text-muted-ink">{sub}</div>}
         </div>
-        <div className="px-[22px] max-sm:px-4 pb-4 overflow-y-auto flex-1 min-h-0 flex flex-col gap-3.5">{children}</div>
-        <div className="px-[22px] max-sm:px-4 py-3.5 max-sm:pb-[max(14px,env(safe-area-inset-bottom))] [border-top:1px_solid_var(--color-line)] bg-page flex items-center justify-end gap-2 flex-wrap max-sm:[&>button]:flex-1 max-sm:[&>button]:min-h-11">{footer}</div>
+        <div className="px-[22px] pb-4 overflow-y-auto flex flex-col gap-3.5">{children}</div>
+        <div className="px-[22px] py-3.5 [border-top:1px_solid_var(--color-line)] bg-page flex items-center justify-end gap-2 flex-wrap">{footer}</div>
       </div>
     </div>
   );
@@ -113,7 +112,7 @@ export function FormRow({ label, children, error, hint }: { label: string; child
     </label>
   );
 }
-export const INPUT = 'h-10 max-sm:h-11 w-full box-border px-3 rounded-control border border-solid border-line bg-card text-copy text-ink';
+export const INPUT = 'h-10 w-full box-border px-3 rounded-control border border-solid border-line bg-card text-copy text-ink';
 export const TEXTAREA = 'w-full box-border px-3 py-2 rounded-control border border-solid border-line bg-card text-copy text-ink min-h-[76px] resize-y';
 
 /** The X at the top of a detail panel (shown as a drawer on narrow screens): the shared drawer close button. */
@@ -217,7 +216,7 @@ export function MaintenanceJobForm({ unit, units, taskId, onClose, onDone }: {
     if (picked.files.length) {
       setSending(true);
       const failed = await picked.send(id);
-      if (failed.length) toast({ tone: 'warning', title: 'Job added, but some photos were not.', body: `Not added: ${failed.join(', ')}. Add them in the job's Before photos.` });
+      if (failed.length) toast({ tone: 'warning', title: 'Job added, but some photos were not.', body: `Not added: ${failed.join(', ')}. Add them in the job's photos, under The problem.` });
     }
     onDone(id);
   }

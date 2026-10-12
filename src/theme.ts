@@ -6,9 +6,9 @@ export const color = {
   gold: '#C8A46A', goldInk: '#8A6A2F',
   black: '#151515', charcoal: '#242424', basalt700: '#1E1E1E',
   dim: '#8A8680', onDark: '#DEDAD3',
-  page: '#FAF9F6', card: '#FFFFFF', muted: '#F1F0ED', sunken: '#EDEAE4',
-  border: '#DEDAD3', borderMuted: '#EDEAE4', borderStrong: '#C7C1B6',
-  ink: '#252525', inkSecondary: '#4A4844', textMuted: '#706D67', faint: '#A8A29A',
+  page: 'var(--color-page, #FAF9F6)', card: 'var(--color-card, #FFFFFF)', muted: 'var(--color-muted, #F1F0ED)', sunken: 'var(--color-sunken, #EDEAE4)',
+  border: 'var(--color-line, #DEDAD3)', borderMuted: 'var(--color-line-soft, #EDEAE4)', borderStrong: 'var(--color-line-strong, #C7C1B6)',
+  ink: 'var(--color-ink, #252525)', inkSecondary: 'var(--color-ink-2, #4A4844)', textMuted: 'var(--color-muted-ink, #706D67)', faint: 'var(--color-faint, #A8A29A)',
 } as const;
 
 /** bg / fg / line. fg is AA on bg; line is for dots, borders, fills.

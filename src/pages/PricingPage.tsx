@@ -4,6 +4,7 @@ import { color } from '../theme';
 import { channel as CH } from '../theme';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
+import { SystemStats } from '../components/SystemStats';
 import { StatusBadge } from '../components/StatusBadge';
 import { Button } from '../components/Button';
 import { DateField, MoneyInput } from '../components/inputs';
@@ -296,6 +297,13 @@ export default function PricingPage() {
         title="Pricing"
         sub={data ? `${plural(rows.length, 'unit')}${noRate ? ` · ${noRate} with no nightly price` : ''} · Friday and Saturday nights use each unit's weekend price` : "Friday and Saturday nights use each unit's weekend price"}
       />
+
+      <SystemStats loading={loading && units.length === 0} stats={[
+        { label: 'Average nightly', value: rows.some(u => u.baseRate > 0) ? rm(Math.round(rows.filter(u => u.baseRate > 0).reduce((s, u) => s + u.baseRate, 0) / rows.filter(u => u.baseRate > 0).length)) : undefined, hint: 'Weeknight nightly price' },
+        { label: 'Units priced', value: data ? String(rows.length - noRate) : undefined, hint: `of ${rows.length}` },
+        { label: 'No price', value: data ? String(noRate) : undefined, hint: 'Cannot be booked', warn: noRate > 0 },
+        { label: 'Failed pushes', value: data ? String(rows.reduce((s, u) => s + u.rates.filter(r => r.sync === 'failed').length, 0)) : undefined, hint: 'To channels', warn: rows.some(u => u.rates.some(r => r.sync === 'failed')) },
+      ]} />
 
       {error && <StaleBanner message={`Showing the last prices we have. ${error}`} onRetry={reload} />}
 

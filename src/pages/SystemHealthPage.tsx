@@ -211,6 +211,7 @@ export default function SystemHealthPage() {
         rows={feed.data ? rows : null} rowKey={r => String(r.id)} loading={feed.loading} error={feed.error} onRetry={reloadFeed}
         onRowClick={r => setOpenRow(openRow === r.id ? null : r.id)} rowTone={r => (r.id === openRow ? 'gold' : null)}
         noun={['event', 'events']} exportName={`audit-${range}${sensitiveOnly ? '-sensitive' : ''}`} selectionKey={`${range}|${sensitiveOnly}`}
+        renderCard={r => <AuditCard r={r} />}
         filtered={sensitiveOnly} onClearFilters={() => { setSensitiveOnly(false); setLimit(100); }}
         empty={{ title: `No events in the last ${range}.`, icon: 'ClipboardCheck' }}
         header={
@@ -274,3 +275,21 @@ const AUDIT_COLUMNS: Column<AuditRow>[] = [
     render: r => <span className="text-muted-ink">{words(r.entity_type)}</span> },
   { key: 'record', label: 'Record', type: 'ref', value: r => String(r.entity_id), hidden: true, width: 150 },
 ];
+
+/** Phone audit row: who did what to which record, and when. Danger actions (delete, fail, payout, password) in red. */
+const RISKY = /delete|remove|fail|payout|password|role|disable/i;
+function AuditCard({ r }: { r: AuditRow }) {
+  const who = r.actor_label || 'System';
+  const ini = who.split(/\s+/).map(p => p[0]).join('').slice(0, 2).toUpperCase();
+  const risky = RISKY.test(r.action);
+  return (
+    <span className="flex items-start gap-3">
+      <span className={cx('w-9 h-9 flex-none rounded-full grid place-items-center text-meta font-semibold', who === 'System' ? 'bg-muted text-muted-ink' : 'bg-black text-gold')}>{ini || 'S'}</span>
+      <span className="flex-1 min-w-0 flex flex-col gap-0.5">
+        <span className="text-copy"><b className="font-semibold">{who}</b> <span className={risky ? 'text-danger' : 'text-ink'}>{words(r.action).toLowerCase()}</span></span>
+        <span className="text-meta text-muted-ink truncate">{words(r.entity_type)}{r.entity_id ? ` · ${String(r.entity_id).slice(0, 12)}` : ''}</span>
+      </span>
+      <span className="flex-none text-meta text-muted-ink whitespace-nowrap" title={dateTime(r.created_at)}>{relative(r.created_at)}</span>
+    </span>
+  );
+}

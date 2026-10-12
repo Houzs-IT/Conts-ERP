@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { DARK_MODE_READY } from '../lib/theme';
 import { color, radius } from '../theme';
 import { screenClosed } from '../lib/navigation';
 import { useSession } from '../lib/session';
@@ -21,8 +22,6 @@ const GROUPS: { label: string; items: { label: string; sub: string; icon: string
     { label: 'System health', sub: 'Status, problems and the audit trail', icon: 'Activity', path: '/system/health' },
   ] },
 ];
-
-const DARK_MODE_READY = false;
 
 export default function MobileSettingsHub({ navigate }: { navigate: (p: string) => void }) {
   const { user, logout } = useSession();
@@ -52,7 +51,6 @@ export default function MobileSettingsHub({ navigate }: { navigate: (p: string) 
         <Icon name="ChevronRight" size="sm" color={color.faint} />
       </button>
 
-      {/* Light / Dark stays hidden until every page uses colour tokens; only Dashboard and Portfolio do so far. */}
       {DARK_MODE_READY && (
       <section style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         <span style={label}>APPEARANCE</span>

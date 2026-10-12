@@ -8,6 +8,8 @@ import { useItUnread } from '../lib/itSupport';
 import { ROLE_LABEL } from '../lib/vocabulary';
 import Icon, { toPascal } from './Icon';
 import { Logo } from './Logo';
+import { ThemeToggle } from './ThemeToggle';
+import { DARK_MODE_READY } from '../lib/theme';
 import { cx } from '../lib/design-tokens';
 import { count as countLabel } from '../lib/format';
 
@@ -227,6 +229,9 @@ export default function Sidebar({ path, navigate, open, onToggle, phone = false 
             <div style={{ padding: '14px 16px', borderBottom: `1px solid ${color.borderMuted}`, display: 'flex', flexDirection: 'column', gap: 3 }}>
               <span style={{ fontSize: text.copy, fontWeight: 600, color: color.ink }}>{user!.fullName}</span>
               <span style={{ fontSize: text.small, color: color.textMuted }}>{user!.email}</span>
+            </div>
+            <div style={{ padding: '10px 16px', borderBottom: `1px solid ${color.borderMuted}` }}>
+              {DARK_MODE_READY && <ThemeToggle />}
             </div>
             {[
               // BUTTONS §2: Notification settings have no screen yet, so they are not offered. My account holds the

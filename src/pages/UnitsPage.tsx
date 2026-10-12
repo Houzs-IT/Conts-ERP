@@ -144,7 +144,7 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
     // Owner and payout details belong to the owner and are edited on the owner's page; the old monthly costs list and
     // the cleaning price are saved on the Financials tab. None of them is sent from this form.
     const { baseRate, contract: _contract, revenueModel: _model, termsLabel: _terms, ownerName: _on, ic: _ic, bankName: _bn, bankAccount: _ba,
-      accountHolder: _ah, expenses: _ex, cleaningPrice: _cp, deepCleaningPrice: _dcp, ...body } = form;
+      accountHolder: _ah, expenses: _ex, cleaningPrice: _cp, ...body } = form;
     setSaving(true);
     try {
       await api.patch(`/units/${form.id}`, body);
@@ -236,7 +236,7 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
     return (
       <div className="flex flex-col gap-5 min-w-0">
         {header}
-        <div className="grid grid-cols-1 xl:grid-cols-[minmax(260px,300px)_minmax(0,1fr)] gap-5 items-start min-w-0">
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(300px,340px)_minmax(0,1fr)] 2xl:grid-cols-[minmax(340px,380px)_minmax(0,1fr)] gap-5 items-start min-w-0">
           <div className="min-w-0 xl:h-[calc(100vh-100px)]">
             <div className="max-xl:hidden h-full"><TreeSkeleton fill /></div>
             <div aria-hidden className="xl:hidden h-[58px] bg-card border border-solid border-line rounded-card flex items-center gap-3 px-[14px]">
@@ -273,7 +273,7 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
       {header}
       {(props.error || detail.error) && <StaleBanner message={`Showing the last record we have. ${props.error ?? detail.error}`} onRetry={reloadAll} />}
 
-      <div className="grid grid-cols-1 xl:grid-cols-[minmax(260px,300px)_minmax(0,1fr)] gap-5 items-start min-w-0">
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(300px,340px)_minmax(0,1fr)] 2xl:grid-cols-[minmax(340px,380px)_minmax(0,1fr)] gap-5 items-start min-w-0">
         {/* On a wide screen the tree is its own pane: it stays put under the top bar, as tall as the window, and
             scrolls by itself, so it never runs out while the record on the right scrolls. */}
         <div className="flex flex-col gap-2 min-w-0 xl:sticky xl:top-0 xl:h-[calc(100vh-100px)] xl:z-[1]">
@@ -525,7 +525,7 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
       {stacked && on('financials') && <h3 className="m-0 mt-2 text-heading font-semibold">Financials</h3>}
       {on('financials') && d.pnl && (
         <>
-          <UnitCostsCard unitId={u.id} ownerId={u.owner.id} unitLabel={unitLabel} canEdit={canEdit} cleaningPrice={form?.cleaningPrice} deepCleaningPrice={form?.deepCleaningPrice}
+          <UnitCostsCard unitId={u.id} ownerId={u.owner.id} unitLabel={unitLabel} canEdit={canEdit} cleaningPrice={form?.cleaningPrice}
             legacyCosts={form?.expenses ?? []} onChanged={() => { reloadDetail(); reload(); }} />
           <Card>
             <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex items-baseline justify-between gap-3 flex-wrap">

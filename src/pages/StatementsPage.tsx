@@ -17,7 +17,7 @@ import type { StatementState } from '../lib/types';
 import { useUrlState, SearchBox, shiftMonth } from './finance/listKit';
 import { FilterBar } from '../components/FilterBar';
 import { statusLabel } from '../lib/status';
-import { Eyebrow, Figure } from '../components/Metric';
+import { Eyebrow, Figure, StatRow, StatTile } from '../components/Metric';
 import { AdjustDialog, SectionHead } from './owners/OwnerMoney';
 
 interface Statement {
@@ -248,6 +248,15 @@ export default function StatementsPage({ embedded = false }: { embedded?: boolea
           </div>
         }
       />
+
+      {!periodHasNone && (
+        <StatRow cols={4}>
+          <StatTile className="col-span-2 sm:col-span-1" label="Net Payout to Owner" value={data ? rm(totals.net) : undefined} hint={`${plural(total, 'owner')} · ${notSent} not yet sent`} hero />
+          <StatTile label="Gross income" value={data ? rm(totals.gross) : undefined} />
+          <StatTile label="To operator" value={data ? `− ${rm(totals.fee)}` : undefined} />
+          <StatTile label="Deductions" value={data ? `− ${rm(totals.expenses)}` : undefined} />
+        </StatRow>
+      )}
 
       {error && periodHasNone && <StaleBanner message={`Showing the last figures we have. ${error}`} onRetry={reload} />}
 

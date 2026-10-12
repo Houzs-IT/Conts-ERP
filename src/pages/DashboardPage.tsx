@@ -44,6 +44,63 @@ const KPI_FALLBACK: KpiPayload = {
 
 /** The one figure shown as the dark statement tile. */
 const HERO_KPI = 'accommodation_revenue';
+/** Where each KPI tile goes when tapped (design: every card opens its module). */
+const KPI_LINK: Record<string, string> = {
+  occupancy: '#/portfolio', adr: '#/performance/pricing', revpar: '#/portfolio', net_owner_payout: '#/finance/statements',
+};
+
+/** Revenue statement tile (design "Redesign Desktop A" Dashboard, and the phone Dashboard): dark card, the month's
+ *  earnings in gold, the change against the last complete month, and a 12-month line drawn from /dashboard/trend. */
+function RevenueHero({ label, value, period, points, delta, className }: {
+  label: string; value: string; period: string | undefined; points: TrendPoint[];
+  delta: { value: number; direction: 'up' | 'down' | 'flat'; tone: Tone; period?: string; against?: string };
+  className?: string;
+}) {
+  const vals = points.map(p => p.revenue);
+  const max = Math.max(1, ...vals), min = Math.min(...vals, max);
+  const W = 240, H = 56;
+  const xy = vals.map((v, i) => [vals.length > 1 ? (i / (vals.length - 1)) * W : W, H - 4 - ((v - min) / Math.max(1, max - min)) * (H - 10)]);
+  const line = xy.map(([x, y], i) => `${i ? 'L' : 'M'}${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
+  const area = xy.length ? `${line} L${W},${H} L0,${H} Z` : '';
+  const last = xy[xy.length - 1];
+  return (
+    <div className={cx('relative overflow-hidden rounded-card p-4 sm:p-5 flex flex-col gap-2 text-white', className)}
+      style={{ background: 'radial-gradient(120% 140% at 100% 0%, color-mix(in srgb, var(--color-gold) 22%, var(--color-black)) 0%, var(--color-charcoal) 46%, var(--color-black) 100%)' }}>
+      <span aria-hidden className="absolute left-4 sm:left-5 top-0 h-[2px] w-8 bg-gold" />
+      <Eyebrow className="text-gold">{label}</Eyebrow>
+      <Figure value={value} className="leading-none font-semibold tracking-[-0.02em] text-gold text-[30px] sm:text-[36px]" />
+      <span className="text-meta text-on-dark">
+        {delta.period && delta.against
+          ? <><span className="font-semibold" style={{ color: delta.tone === 'critical' ? 'var(--color-danger-bg)' : delta.tone === 'warning' ? 'var(--color-warning-bg)' : 'var(--color-success-bg)' }}>{ARROW[delta.direction]} {delta.value.toFixed(1)}%</span> {shortMonth(delta.period)} vs {shortMonth(delta.against)}</>
+          : period ? `${monthLabel(period)} to date` : null}
+      </span>
+      {xy.length > 1 && (
+        <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" aria-hidden className="block w-full h-[56px] mt-1">
+          <defs><linearGradient id="dash-hero-fill" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stopColor="var(--color-gold)" stopOpacity="0.32" /><stop offset="1" stopColor="var(--color-gold)" stopOpacity="0" /></linearGradient></defs>
+          <path d={area} fill="url(#dash-hero-fill)" />
+          <path d={line} fill="none" stroke="var(--color-gold)" strokeWidth="1.75" vectorEffect="non-scaling-stroke" strokeLinejoin="round" strokeLinecap="round" />
+          {last && <circle cx={last[0]} cy={last[1]} r="3" fill="var(--color-gold)" />}
+        </svg>
+      )}
+    </div>
+  );
+}
+
+/** Occupancy as a ring under the figure: gold at 90% and up, amber under 70%. */
+function OccupancyRing({ pct }: { pct: number }) {
+  const r = 9, c = 2 * Math.PI * r, p = Math.max(0, Math.min(100, pct));
+  const col = p >= 90 ? 'var(--color-gold)' : p < 70 ? 'var(--color-warning-line)' : 'var(--color-ink)';
+  return (
+    <span className="inline-flex items-center gap-2">
+      <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden>
+        <circle cx="12" cy="12" r={r} fill="none" stroke="var(--color-line)" strokeWidth="3" />
+        <circle cx="12" cy="12" r={r} fill="none" stroke={col} strokeWidth="3" strokeLinecap="round"
+          strokeDasharray={`${(p / 100) * c} ${c}`} transform="rotate(-90 12 12)" />
+      </svg>
+      <span className="text-meta text-muted-ink">of available nights</span>
+    </span>
+  );
+}
 
 function kpiValue(k: Kpi) {
   if (k.unit === 'percent') return `${k.value}%`;
@@ -354,7 +411,7 @@ export default function DashboardPage() {
     switch (e.action.label) {
       case 'Assign cleaner': setAssign({ ex: e, cleanerId: CREW[0]?.id ?? '' }); break;
       case 'Notify owner': setNotify(e); break;
-      case 'Review and send': go('#/owners?view=statements'); break;
+      case 'Review and send': go('#/finance/statements'); break;
       case 'Open pricing': go(`#/performance/pricing?unitId=${encodeURIComponent(e.unitId ?? '')}`); break;
     }
   }
@@ -400,24 +457,30 @@ export default function DashboardPage() {
 
       {failure && <StaleBanner message={`Showing the last figures we have. ${failure}`} onRetry={() => { kpi.reload(); trend.reload(); today.reload(); exc.reload(); portfolio.reload(); channels.reload(); }} />}
 
+      <div className="flex flex-col gap-5">
       {/* KPI row — revenue leads as the one dark statement tile; the rest follow at equal weight. */}
-      <div className={KPI_ROW}>
+      <div className={cx(KPI_ROW, 'max-md:order-1')}>
         {kpi.loading && kpis.length === 0
           // The five tiles that arrive, revenue first as the dark one, so the row does not reflow when they land.
           ? Array.from({ length: 5 }, (_, i) => <TileSkeleton key={i} hero={i === 0} hint={i === 0} className={i === 0 ? KPI_HERO_FLEX : KPI_FLEX} />)
           : kpis.map(k => {
-              const hero = k.key === HERO_KPI;
+              if (k.key === HERO_KPI) return (
+                <RevenueHero key={k.key} label={KPI_LABEL[k.key] ?? humanize(k.key)} value={kpiValue(k)} className={KPI_HERO_FLEX}
+                  period={period} points={tp.points} delta={tp.delta} />
+              );
+              const to = KPI_LINK[k.key];
+              const occ = k.key === 'occupancy' ? Number(k.value) : null;
               return (
-                <StatTile key={k.key} label={KPI_LABEL[k.key] ?? humanize(k.key)} value={kpiValue(k)}
-                  hero={hero} className={hero ? KPI_HERO_FLEX : KPI_FLEX}
-                  hint={hero && period ? `${monthLabel(period)} to date` : undefined} />
+                <StatTile key={k.key} label={KPI_LABEL[k.key] ?? humanize(k.key)} value={kpiValue(k)} className={KPI_FLEX}
+                  onClick={to ? () => go(to) : undefined}
+                  hint={occ != null && Number.isFinite(occ) ? <OccupancyRing pct={occ} /> : undefined} />
               );
             })}
       </div>
 
-      {/* Trend chart + exceptions */}
-      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)] gap-5 items-start">
-        <Card style={{ padding: 0 }}>
+      {/* Trend chart + exceptions. Phones: the hero already draws the 12-month line, so the chart is dropped there. */}
+      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)] gap-5 items-start max-md:order-4">
+        <Card style={{ padding: 0 }} className="max-md:hidden">
           <div className="flex flex-col gap-5 p-4 sm:p-6">
             <div className="flex items-start justify-between gap-[14px] flex-wrap">
               <div className="flex flex-col gap-1.5 min-w-0">
@@ -495,7 +558,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Today */}
-      <Card>
+      <Card className="max-md:order-3">
         <CardHeader title="Today" right={seesOps ? <LinkAction onClick={() => go('#/operations/today')}>Open operations →</LinkAction> : undefined} />
         <div className="[border-top:1px_solid_var(--color-line)]">
          <div className="-ml-px -mt-px grid grid-cols-2 sm:grid-cols-[repeat(auto-fit,minmax(150px,1fr))]">
@@ -513,7 +576,7 @@ export default function DashboardPage() {
       </Card>
 
       {/* Channel share + occupancy by building */}
-      {seesPortfolio && <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
+      {seesPortfolio && <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start max-md:order-2">
         <Card>
           <CardHeader title="Where reservations come from" />
           <div className="px-5 pb-5 flex flex-col gap-4">
@@ -559,7 +622,7 @@ export default function DashboardPage() {
       </div>}
 
       {/* Portfolio performance */}
-      {seesPortfolio && <Card>
+      {seesPortfolio && <Card className="max-md:order-5">
         <CardHeader
           title="Top units this month"
           right={<LinkAction onClick={() => go('#/portfolio')}>{portfolio.data ? `All ${count(portfolio.data.units)} units →` : 'All units →'}</LinkAction>}
@@ -581,6 +644,8 @@ export default function DashboardPage() {
             </span>
           )} />
       </Card>}
+
+      </div>
 
       {/* Assign cleaner — a chooser, so a local form modal (shared Dialog is confirm-only). */}
       {assign && (

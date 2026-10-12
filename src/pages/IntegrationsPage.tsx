@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react';
 import { cx } from '../lib/design-tokens';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
+import { SystemStats } from '../components/SystemStats';
 import { StatusBadge } from '../components/StatusBadge';
 import { Button } from '../components/Button';
 import { Drawer } from '../components/Dialog';
@@ -171,6 +172,13 @@ export default function IntegrationsPage() {
     <>
       <PageHeader title="Integrations" sub={data ? `${count(connected)} connected · ${count(notConnected)} not connected · ${count(problems)} needing attention` : 'Loading connections…'}
         actions={<Button size="sm" variant="secondary" icon={<Icon name="FileUp" size="sm" />} onClick={() => { window.location.hash = '#/system/integrations/hostplatform'; }}>Import from HostPlatform</Button>} />
+
+      <SystemStats loading={loading && rows.length === 0} stats={[
+        { label: 'Connected', value: data ? count(connected) : undefined, hint: `of ${count(connected + notConnected + problems)}` },
+        { label: 'Needs attention', value: data ? count(problems) : undefined, hint: problems ? 'Reconnect below' : 'All healthy', warn: problems > 0 },
+        { label: 'Not connected', value: data ? count(notConnected) : undefined, hint: 'Available to set up' },
+        { label: 'Channel manager', value: channex === 'connected' ? 'Live' : channex === 'attention' ? 'Check' : channex === 'not_connected' ? 'Off' : undefined, hint: 'Channex', warn: channex === 'attention' },
+      ]} />
 
       {error && <StaleBanner message={`Showing the last status we have. ${error}`} onRetry={reload} />}
 
