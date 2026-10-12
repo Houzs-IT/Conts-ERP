@@ -52,14 +52,14 @@ const NUM = 'tabular-nums whitespace-nowrap';
  * card falls back to the login hero, framed on a different part of it per card. */
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 const FRAMES = ['30% 40%', '70% 55%', '50% 30%', '20% 70%', '80% 35%', '45% 65%'];
-const occColour = (o: number) => o >= 90 ? 'var(--color-gold)' : o < 80 ? '#E0A646' : '#FFFFFF';
+const occColour = (o: number) => o >= 90 ? 'var(--color-gold)' : o < 80 ? 'var(--color-warning-line)' : 'white';
 
 interface BuildingCard { id: string; name: string; units: number; occupancy: number; adr: number; revenue: number; issues: number }
 
 function BuildingTile({ b, i, money, onOpen }: { b: BuildingCard; i: number; money: boolean; onOpen: () => void }) {
   return (
     <button type="button" onClick={onOpen}
-      className="group relative text-left rounded-card overflow-hidden border border-solid border-line bg-[#151515] min-h-[232px] flex flex-col justify-end cursor-pointer transition-[transform,box-shadow] duration-200 ease-out hover:-translate-y-[3px] hover:shadow-[var(--shadow-overlay)] focus-visible:outline-none focus-visible:shadow-[var(--focus-ring)]">
+      className="group relative text-left rounded-card overflow-hidden border border-solid border-line bg-black min-h-[232px] flex flex-col justify-end cursor-pointer transition-[transform,box-shadow] duration-200 ease-out hover:-translate-y-[3px] hover:shadow-[var(--shadow-overlay)] focus-visible:outline-none focus-visible:shadow-[var(--focus-ring)]">
       <span aria-hidden className="absolute inset-0 bg-cover transition-transform duration-[1200ms] ease-out group-hover:scale-[1.05]"
         style={{ backgroundImage: `url(/brand/buildings/${slug(b.name)}.jpg), url(/brand/login-hero.jpg)`, backgroundPosition: FRAMES[i % FRAMES.length] }} />
       <span aria-hidden className="absolute inset-0 bg-[linear-gradient(180deg,rgba(21,21,21,0.08)_0%,rgba(21,21,21,0.30)_42%,rgba(21,21,21,0.90)_100%)]" />
@@ -67,7 +67,7 @@ function BuildingTile({ b, i, money, onOpen }: { b: BuildingCard; i: number; mon
         <span className="flex items-end justify-between gap-3">
           <span className="flex flex-col gap-[3px] min-w-0">
             <span className="text-[17px] leading-tight font-semibold text-white whitespace-nowrap overflow-hidden text-ellipsis">{b.name}</span>
-            <span className="text-meta text-[#DEDAD3]">{plural(b.units, 'unit')}{b.issues > 0 ? ` · ${b.issues} with exceptions` : ''}</span>
+            <span className="text-meta text-on-dark">{plural(b.units, 'unit')}{b.issues > 0 ? ` · ${b.issues} with exceptions` : ''}</span>
           </span>
           <span className="text-[26px] leading-none font-semibold tabular-nums" style={{ color: occColour(b.occupancy) }}>{percent(b.occupancy)}</span>
         </span>
@@ -75,7 +75,7 @@ function BuildingTile({ b, i, money, onOpen }: { b: BuildingCard; i: number; mon
           <span className="block h-full rounded-full" style={{ width: `${Math.min(100, b.occupancy)}%`, background: occColour(b.occupancy) }} />
         </span>
         {money && (
-          <span className="flex items-center justify-between gap-3 text-meta text-[#DEDAD3] tabular-nums">
+          <span className="flex items-center justify-between gap-3 text-meta text-on-dark tabular-nums">
             <span>Avg nightly {rm(b.adr, { cents: false })}</span>
             <span className="font-semibold text-white">{rm(b.revenue, { cents: false })}</span>
           </span>

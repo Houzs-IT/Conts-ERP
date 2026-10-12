@@ -90,7 +90,7 @@ export default function MobileSettingsHub({ navigate }: { navigate: (p: string) 
       ))}
 
       {!confirm ? (
-        <button type="button" onClick={() => setConfirm(true)} style={{ height: 52, borderRadius: 14, border: `1px solid ${color.border}`, background: color.card, color: '#A8352F', fontSize: 15, fontWeight: 600, cursor: 'pointer' }}>
+        <button type="button" onClick={() => setConfirm(true)} style={{ height: 52, borderRadius: 14, border: `1px solid ${color.border}`, background: color.card, color: 'var(--color-danger)', fontSize: 15, fontWeight: 600, cursor: 'pointer' }}>
           Log out
         </button>
       ) : (
@@ -99,7 +99,7 @@ export default function MobileSettingsHub({ navigate }: { navigate: (p: string) 
           <span style={{ fontSize: 13, color: color.textMuted }}>You will need your password and 2-step code to sign in again.</span>
           <div style={{ display: 'flex', gap: 10 }}>
             <button type="button" onClick={() => setConfirm(false)} style={{ flex: 1, height: 44, borderRadius: radius.control, border: `1px solid ${color.border}`, background: color.card, color: color.ink, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
-            <button type="button" onClick={() => logout()} style={{ flex: 1, height: 44, borderRadius: radius.control, border: 'none', background: '#A8352F', color: '#FFFFFF', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>Log out</button>
+            <button type="button" onClick={() => logout()} style={{ flex: 1, height: 44, borderRadius: radius.control, border: 'none', background: 'var(--color-danger)', color: 'white', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>Log out</button>
           </div>
         </div>
       )}

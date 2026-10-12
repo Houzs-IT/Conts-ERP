@@ -250,7 +250,7 @@ const CHANNEL_FILL: Record<string, string> = {
 };
 
 /** Occupancy band for the building bars. Gold above 90%, amber below 80%. */
-const occTone = (o: number) => o >= 90 ? 'var(--color-gold)' : o < 80 ? 'var(--color-warning-line, #B7791F)' : 'var(--color-ink)';
+const occTone = (o: number) => o >= 90 ? 'var(--color-gold)' : o < 80 ? 'var(--color-warning-line)' : 'var(--color-ink)';
 
 /* KPI row sizing: a wrapping row, so every line fills edge to edge. The hero
  * never drops below 320px and the rest never below 150px — wide enough for
@@ -515,7 +515,7 @@ export default function DashboardPage() {
       {/* Channel share + occupancy by building */}
       {seesPortfolio && <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
         <Card>
-          <CardHeader title="Where bookings come from" />
+          <CardHeader title="Where reservations come from" />
           <div className="px-5 pb-5 flex flex-col gap-4">
             <div className="flex h-[10px] rounded-full overflow-hidden" role="img"
               aria-label={channelRows.map(c => `${c.label} ${c.share}%`).join(', ')}>
@@ -527,7 +527,7 @@ export default function DashboardPage() {
                   <span className="w-[9px] h-[9px] rounded-[3px] flex-none" style={{ background: CHANNEL_FILL[c.key] ?? 'var(--color-line)' }} aria-hidden />
                   <span className="text-copy flex-1 min-w-0">
                     {c.label}
-                    {c.key === 'direct' && <span className="text-meta text-muted-ink"> · no commission</span>}
+                    {c.key === 'direct' && <span className="text-meta text-muted-ink"> · no service fee</span>}
                   </span>
                   <span className="text-meta text-muted-ink tabular-nums">{rm(c.revenue, { cents: false })}</span>
                   <span className="text-copy font-semibold tabular-nums w-[42px] text-right">{c.share}%</span>

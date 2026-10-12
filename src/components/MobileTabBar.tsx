@@ -12,7 +12,7 @@ const TABS = [
   { key: 'dashboard', label: 'Dashboard', icon: 'LayoutDashboard', path: '/' },
   { key: 'calendar', label: 'Calendar', icon: 'CalendarDays', path: '/reservations/calendar' },
   { key: 'more', label: 'More', icon: 'LayoutGrid', path: '' },
-  { key: 'bookings', label: 'Bookings', icon: 'BookOpen', path: '/reservations/bookings' },
+  { key: 'bookings', label: 'Reservations', icon: 'BookOpen', path: '/reservations/bookings' },
   { key: 'settings', label: 'Settings', icon: 'Settings', path: '/settings' },
 ] as const;
 
