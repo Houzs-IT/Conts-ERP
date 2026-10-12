@@ -48,6 +48,7 @@
  "GET /api/credit-notes/[id]": "AAFAFFFU",
  "GET /api/customers": "AAAAFFFU",
  "GET /api/customers/[id]": "AAAAFFFU",
+ "GET /api/dashboard/channels": "AAAAFFFU",
  "GET /api/dashboard/exceptions": "AAAAFFFU",
  "GET /api/dashboard/kpis": "AAAAFFFU",
  "GET /api/dashboard/today": "AAAAFFFU",
