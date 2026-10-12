@@ -5,6 +5,7 @@ import { Routes, Route, Outlet, Navigate, useLocation, useNavigate, useParams } 
 import { SessionProvider, useSession } from './lib/session';
 import { ToastProvider } from './components/Toast';
 import ViewAs from './components/ViewAs';
+import TwoStepPrompt from './components/TwoStepPrompt';
 import AppShell from './components/AppShell';
 import FieldShell from './components/FieldShell';
 import UpdateNotice from './components/UpdateNotice';
@@ -339,6 +340,7 @@ export default function App() {
         <Routed />
         <UpdateNotice />
         <ViewAs />
+        <TwoStepPrompt />
       </ToastProvider>
     </SessionProvider>
   );
