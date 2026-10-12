@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
+import { SystemStats } from '../components/SystemStats';
 import { StatusBadge } from '../components/StatusBadge';
 import Icon from '../components/Icon';
 import { Drawer } from '../components/Dialog';
@@ -363,6 +364,13 @@ export default function AutomationsPage() {
         title="Automations"
         sub={data ? `${running} of ${total} run today · ${total - running} not running yet${qh ? ` · quiet hours ${qh.from}–${qh.to} MYT` : ''}` : 'Loading rules…'}
       />
+
+      <SystemStats loading={!data} stats={[
+        { label: 'Rules', value: data ? String(total) : undefined, hint: 'Written and saved' },
+        { label: 'Running', value: data ? String(running) : undefined, hint: 'Sent by the system today' },
+        { label: 'Not running', value: data ? String(total - running) : undefined, hint: 'Need the background sender', warn: total - running > 0 },
+        { label: 'Quiet hours', value: data ? (qh ? `${qh.from}–${qh.to}` : 'None') : undefined, hint: 'MYT' },
+      ]} />
 
       <div className="flex items-start gap-2.5 py-3 px-3.5 rounded-control bg-warning-bg text-warning text-pretty" style={{ borderLeft: '2px solid var(--color-warning-line)' }}>
         <Icon name="CircleAlert" size="sm" style={{ marginTop: 1 }} />
