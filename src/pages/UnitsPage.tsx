@@ -511,15 +511,6 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
               columns={JOB_COLUMNS} rows={d.maintenance} rowKey={m => m.id} noun={['maintenance job', 'maintenance jobs']} exportName={`${stem}-maintenance`}
               empty={{ title: 'No maintenance jobs reported.', icon: 'Wrench' }} />
           </Card>
-          <Card>
-            <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex items-center justify-between gap-3 flex-wrap">
-              <span className="text-[16px] font-semibold tracking-[-0.01em]">Fit-out register</span>
-              <a href="#/properties/inventory" className="text-meta font-semibold text-gold-ink no-underline">Open fit-out register</a>
-            </div>
-            <DataTable<ItemRow> id="unit.fitout" urlPrefix="fit." bare noViews pageSize={0} maxHeight="none"
-              columns={ITEM_COLUMNS} rows={d.inventory} rowKey={i => i.id} noun={['item', 'items']} exportName={`${stem}-fit-out`}
-              empty={{ title: 'Nothing recorded in this unit.', icon: 'Package' }} />
-          </Card>
         </>
       )}
       {stacked && on('financials') && <h3 className="m-0 mt-2 text-heading font-semibold">Financials</h3>}
@@ -567,7 +558,6 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
 
 type TaskRow = UnitDetail['tasks'][number];
 type JobRow = UnitDetail['maintenance'][number];
-type ItemRow = UnitDetail['inventory'][number];
 
 const TASK_COLUMNS: Column<TaskRow>[] = [
   { key: 'title', label: 'Cleaning job', value: t => t.title, hideable: false, width: 220 },
@@ -596,11 +586,4 @@ const JOB_COLUMNS: Column<JobRow>[] = [
     sub: m => (m.finalAmount != null ? 'Final' : m.quotedAmount != null ? 'Quoted' : null) },
 ];
 
-const ITEM_COLUMNS: Column<ItemRow>[] = [
-  { key: 'name', label: 'Item', value: i => i.name, hideable: false, width: 220, sub: i => (i.suppliedInHouse ? 'Supplied by The Conts' : null) },
-  { key: 'quantity', label: 'Quantity', value: i => i.quantity, width: 90 },
-  { key: 'condition', label: 'Condition', type: 'status', value: i => i.condition, entity: 'condition', width: 130 },
-  { key: 'cost', label: 'Cost', type: 'money', value: i => i.purchaseCost ?? null, width: 110,
-    render: i => <span className="tabular-nums whitespace-nowrap">{i.purchaseCost != null ? rm(i.purchaseCost, { cents: false }) : '—'}</span> },
-];
 
