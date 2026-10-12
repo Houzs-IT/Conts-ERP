@@ -37,7 +37,6 @@ export const NAV: NavGroup[] = [
     { key: 'inbox', label: 'Messages', icon: 'inbox', path: '/communication/inbox', area: 'comms', badge: 'inbox' },
     // Invoices and receipts issued to guests: guest invoicing, so it sits with reservations. Still money work, so
     // its permission area stays Finance (who can open it does not change).
-    { key: 'guestDocuments', label: 'Guest documents', icon: 'file-text', path: '/finance/documents', area: 'finance' },
   ] },
   // Three screens (owner, 10 Oct): Inspections is gone and "All tasks" is the History tab of Cleaning and
   // Maintenance; the old addresses redirect (App.tsx). Housekeeping is called Cleaning everywhere.
@@ -53,7 +52,6 @@ export const NAV: NavGroup[] = [
     // list's Statements and Payouts tabs for a whole month. Their old addresses redirect (App.tsx).
     { key: 'ownerList', label: 'Owners', icon: 'user-round', path: '/owners', area: 'owners', badge: 'statements' },
     { key: 'contracts', label: 'Contracts', icon: 'file-signature', path: '/owners/contracts', area: 'owners' },
-    { key: 'inventory', label: 'Fit-out register', icon: 'sofa', path: '/properties/inventory', area: 'properties' },
   ] },
   // Finance's desk work. Not on the phone (owner, 11 Oct 2026: money is not needed on the phone).
   { label: 'FINANCE', workspace: 'rental', phone: false, items: [
