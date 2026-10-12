@@ -56,7 +56,9 @@
 
 /* Phone: a table's own filters (search, selects, date) fill the row instead of stopping at ~80% width. */
 @media (max-width: 767px) {
-  .dt-toolbar > * { flex: 1 1 100%; min-width: 0; max-width: none !important; }
+  .dt-toolbar > * { flex: 1 1 calc(50% - 4px); min-width: 0; max-width: none !important; }
+  .dt-toolbar > label:has(input:not([type='checkbox']):not([type='radio'])), .dt-toolbar > :has(> input[type='search']), .dt-toolbar > [role='search'] { flex-basis: 100%; }
+  .dt-toolbar > button { flex: 0 0 auto; }
   .dt-toolbar input:not([type='checkbox']):not([type='radio']), .dt-toolbar select { width: 100% !important; max-width: none !important; }
 }
 

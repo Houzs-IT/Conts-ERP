@@ -403,7 +403,9 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
     { label: 'In progress', at: i.startedAt, on: !!i.startedAt },
     { label: 'Done', at: i.resolvedAt, on: done, note: done && money && i.finalAmount != null ? `${rm(i.finalAmount)}, ${PAYER_SHORT[i.chargeTo]}` : undefined },
   ];
-  const current = steps.findIndex(s => !s.on);
+  // "Next" is the first step not done AFTER the furthest one that is done, so a skipped step (no assignee, no quote) never shows as next.
+  const lastOn = steps.reduce((n, s, k) => (s.on ? k : n), -1);
+  const current = done ? -1 : steps.findIndex((s, k) => k > lastOn && !s.on);
 
   return (
     <div className="ops-detail flex flex-col gap-4 p-5 text-copy">
@@ -638,19 +640,20 @@ function DateMark({ label, amount, at, busy, markLabel, note, onSet }: {
 }) {
   const [day, setDay] = useState(mytDay(0));
   return (
-    <div className="flex flex-col gap-1.5">
-      <div className="flex items-center gap-2 flex-wrap">
-        <span className="flex-1 min-w-[160px] flex flex-col">
-          <span className="font-medium">{label}{amount != null && <span className="tabular-nums">: {rm(amount)}</span>}</span>
-          <span className={cx('text-meta', at ? 'text-success' : 'text-muted-ink')}>{at ? `Yes, on ${date(at)}.` : 'Not yet.'}{note && !at ? ` ${note}` : ''}</span>
-        </span>
-        {at
-          ? <Button size="sm" variant="tertiary" loading={busy} onClick={() => onSet(null)}>Undo</Button>
-          : <span className="flex gap-2 items-center">
-            <DateField aria-label={`${markLabel}: day`} className={cx(INPUT, 'h-9 w-[150px]')} value={day} max={mytDay(0)} onChange={v => v && setDay(v)} />
-            <Button size="sm" variant="secondary" loading={busy} disabled={amount == null} disabledReason={note} onClick={() => onSet(day)}>{markLabel}</Button>
-          </span>}
-      </div>
+    // One compact line: label + amount, then a status chip. The date picker only appears once there is an amount to mark.
+    <div className="flex items-center gap-2 py-2 [&+&]:[border-top:1px_solid_var(--color-line-soft)]">
+      <span className="flex-1 min-w-0 flex flex-col leading-tight">
+        <span className="text-meta font-medium truncate">{label}</span>
+        <span className="text-[12px] text-muted-ink tabular-nums">{amount != null ? rm(amount) : note ?? '—'}</span>
+      </span>
+      {at
+        ? <><span className="text-[12px] font-medium text-success whitespace-nowrap">{date(at)}</span><Button size="sm" variant="tertiary" loading={busy} onClick={() => onSet(null)}>Undo</Button></>
+        : amount == null
+          ? <span className="text-[12px] text-muted-ink whitespace-nowrap">Not yet</span>
+          : <span className="flex gap-1.5 items-center flex-none">
+              <DateField aria-label={`${markLabel}: day`} className={cx(INPUT, 'h-8 w-[128px] text-meta')} value={day} max={mytDay(0)} onChange={v => v && setDay(v)} />
+              <Button size="sm" variant="secondary" loading={busy} onClick={() => onSet(day)}>{markLabel.replace(/^Mark /, '')}</Button>
+            </span>}
     </div>
   );
 }

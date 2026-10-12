@@ -98,6 +98,8 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
   const date = pick === 'today' ? mytDay(0) : pick === 'tomorrow' ? mytDay(1) : picked;
   const [cleaner, setCleaner] = useState('');
   const [building, setBuilding] = useState('');
+  // Phone-design status switch: To do (not started, incl. checkouts with no job), In progress, Done.
+  const [phase, setPhase] = useState<'todo' | 'doing' | 'done'>('todo');
   const [selected, setSelected] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [assignFor, setAssignFor] = useState<{ buildingId: string; name: string } | null>(null);
@@ -126,9 +128,12 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
   }, [rows, departures]);
   const cleanerOptions: SelectOption[] = [{ value: 'none', label: 'Unassigned' }, ...cleaners.map(c => ({ value: c.id, label: c.name }))];
 
-  const visible = rows.filter(r => (!building || r.buildingId === building)
+  const phaseOf = (r: Row) => (r.status === 'done' ? 'done' : r.status === 'cleaning' ? 'doing' : 'todo');
+  const filteredRows = rows.filter(r => (!building || r.buildingId === building)
     && (!cleaner || (cleaner === 'none' ? !r.cleanerId && !r.assigneeId && !r.assigneeName : r.cleanerId === cleaner)));
-  const visibleDepartures = departures.filter(d => (!building || d.buildingId === building) && (!cleaner || cleaner === 'none'));
+  const phaseCount = { todo: filteredRows.filter(r => phaseOf(r) === 'todo').length, doing: filteredRows.filter(r => phaseOf(r) === 'doing').length, done: filteredRows.filter(r => phaseOf(r) === 'done').length };
+  const visible = filteredRows.filter(r => phaseOf(r) === phase);
+  const visibleDepartures = phase !== 'todo' ? [] : departures.filter(d => (!building || d.buildingId === building) && (!cleaner || cleaner === 'none'));
 
   // One card per building, in name order; each lists its cleans, then guests leaving with no clean yet.
   const groups = useMemo(() => {
@@ -216,6 +221,12 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
         </>}
         primary={<Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setCreating(true)}>Add cleaning job</Button>} />
 
+      <Segmented label="Status" value={phase} onChange={setPhase} options={[
+        // vocab-ok: departures is the API field's name; the label itself says To do
+        { value: 'todo', label: `To do · ${phaseCount.todo + (departures.length && !cleaner ? departures.filter(d => !building || d.buildingId === building).length : 0)}` },
+        { value: 'doing', label: `In progress · ${phaseCount.doing}` },
+        { value: 'done', label: `Done · ${phaseCount.done}` },
+      ]} />
       <div className="flex items-end gap-2 flex-wrap">
         <Segmented label="Day" value={pick} onChange={setPick}
           options={[{ value: 'today', label: 'Today' }, { value: 'tomorrow', label: 'Tomorrow' }, { value: 'pick', label: 'Pick date' }]} />
@@ -260,11 +271,11 @@ function BuildingCard({ group, now, future, selected, busy, onSelect, onGuestLef
   const [shut, setShut] = useState(() => open.length === 0 && group.departures.length === 0);
   return (
     <section className="@container bg-card rounded-card border border-solid border-line overflow-hidden flex-none">
-      <header className="flex items-center justify-between gap-3 flex-wrap px-4 @2xl:px-5 pt-4 pb-3">
+      <header className="flex items-center justify-between gap-3 flex-wrap px-4 @2xl:px-5 py-3">
         <button type="button" onClick={() => setShut(v => !v)} aria-expanded={!shut}
           className="min-w-0 flex items-center gap-2 flex-wrap bg-transparent border-none p-0 cursor-pointer text-left text-ink [font-family:inherit]">
           <Icon name={shut ? 'ChevronRight' : 'ChevronDown'} size="sm" color="var(--color-muted-ink)" />
-          <span className="text-[16px] font-semibold tracking-[-0.01em]">{group.name}</span>
+          <span className="text-[15px] font-semibold tracking-[-0.005em]">{group.name}</span>
           <span className="text-meta text-muted-ink tabular-nums">{count} {count === 1 ? 'unit' : 'units'} · {doneN} done</span>
           {group.departures.length > 0 && <StatusBadge tone="critical">{group.departures.length} to plan</StatusBadge>}
         </button>
@@ -318,10 +329,10 @@ function CleanRow({ r, now, active, busy, onSelect, onGuestLeft }: { r: Row; now
     <div role="button" tabIndex={0} aria-pressed={active} onClick={onSelect} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(); } }}
       className={cx('px-4 @2xl:px-5 py-3 [border-top:1px_solid_var(--color-line-soft)] text-copy cursor-pointer flex flex-wrap items-baseline gap-x-4 gap-y-1 outline-none focus-visible:[box-shadow:inset_0_0_0_2px_var(--color-gold)]', COLS,
         active ? 'bg-gold-tint [box-shadow:inset_3px_0_0_var(--color-gold)]' : 'hover:bg-page', r.status === 'done' && 'text-muted-ink')}>
-      <div className="basis-full @2xl:basis-auto flex items-center gap-2 flex-wrap">
-        <b className="text-ink">{r.unitNumber}</b>
-        {r.carriedOver && <StatusBadge tone="warning" className="whitespace-normal">From {dayLabel(r.day)}</StatusBadge>}
-        <span className="@2xl:hidden ml-auto"><StatusBadge tone={st.tone}>{r.status === 'done' && r.completedAt ? `Done ${hm(r.completedAt)}` : st.label}</StatusBadge></span>
+      <div className="basis-full @2xl:basis-auto flex items-center gap-2 min-w-0">
+        <b className="text-ink flex-none">{r.unitNumber}</b>
+        {r.carriedOver && <span className="flex-none"><StatusBadge tone="warning" title={`Carried over from ${dayLabel(r.day)}`}>{dayLabel(r.day).replace(/^\w+\s/, '')}</StatusBadge></span>}
+        <span className="@2xl:hidden ml-auto flex-none"><StatusBadge tone={st.tone}>{r.status === 'done' && r.completedAt ? `Done ${hm(r.completedAt)}` : st.label}</StatusBadge></span>
       </div>
       <div className="min-w-0">
         <span className="@2xl:hidden text-muted-ink">Out </span>

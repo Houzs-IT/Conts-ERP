@@ -446,7 +446,7 @@ export default function UsersPage() {
         { label: 'Locked', value: data ? count(rows.filter(r => r.isLocked).length) : undefined, hint: 'Too many wrong passwords', warn: rows.some(r => r.isLocked) },
       ]} />
 
-      <div role="tablist" aria-label="Users and roles sections" className="flex shrink-0 gap-1 [border-bottom:1px_solid_var(--color-line)] overflow-x-auto mt-0.5">
+      <div role="tablist" aria-label="Users and roles sections" className="flex shrink-0 gap-1 [border-bottom:1px_solid_var(--color-line)] overflow-x-auto mt-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {tabs.map(t => {
           const on = tab === t.key;
           return (

@@ -72,7 +72,7 @@ export function AdjustmentActions({ ownerId, a, onChanged }: { ownerId: string; 
   if (!items.length) return null;
 
   return (
-    <span className="inline-flex items-center gap-1 flex-wrap" onClick={e => e.stopPropagation()}>
+    <span className="flex items-center gap-1 flex-wrap w-full basis-full min-w-0 [&>button]:flex-none" onClick={e => e.stopPropagation()}>
       {items.map(it => (
         <Button key={it.key} size="sm" variant="tertiary" icon={it.icon ? <Icon name={it.icon} size="sm" /> : undefined} title={it.hint}
           disabled={!!it.disabledReason} disabledReason={it.disabledReason} onClick={it.onSelect}>{it.label}</Button>

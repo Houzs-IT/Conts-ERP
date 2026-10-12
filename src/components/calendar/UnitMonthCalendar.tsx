@@ -290,7 +290,7 @@ function MonthView({ unit, data, ym, first, next, nights, today, error, reload, 
                       color: hold || dim ? ch.ink : b.channel === 'direct' || b.channel === 'airbnb' ? 'var(--color-black)' : 'white',
                     }}>
                     {!clipL && !hold && <span className="flex-none"><ChannelMark ch={b.channel} size={16} muted={dim} /></span>}
-                    <span className="text-[12px] font-semibold whitespace-nowrap overflow-hidden text-ellipsis">{hold ? holdName(b) : (b.guestName.split(/\s+/)[0] || ch.label)}</span>
+                    <span className="text-[12px] font-semibold whitespace-nowrap overflow-hidden text-ellipsis">{(() => { const name = hold ? holdName(b) : (b.guestName.split(/\s+/)[0] || ch.label); return width < 22 && !clipL ? '' : width < 22 ? name.slice(0, 1) : name; })()}</span>
                   </button>
                 );
               })}
@@ -308,7 +308,7 @@ function MonthView({ unit, data, ym, first, next, nights, today, error, reload, 
       </div>
 
       {/* The month at a glance, fixed above the tab bar. */}
-      <div className="fixed left-0 right-0 z-30 bottom-[calc(64px+env(safe-area-inset-bottom))] bg-card [border-top:1px_solid_var(--color-line)] px-4 py-2.5 grid grid-cols-4 gap-2">
+      <div className="fixed left-0 right-0 z-30 bottom-[calc(92px+env(safe-area-inset-bottom))] mx-3 rounded-card bg-card border border-solid border-line shadow-[var(--shadow-raised)] px-4 py-2.5 grid grid-cols-4 gap-2">
         <Stat label="Occupancy" value={`${Math.round(stats.occupancy * 100)}%`} gold={stats.occupancy >= 0.9} />
         <Stat label="Earnings" value={rmShort(stats.revenue)} />
         <Stat label="Avg nightly price" value={stats.adr ? rmShort(stats.adr) : '—'} />
@@ -316,7 +316,7 @@ function MonthView({ unit, data, ym, first, next, nights, today, error, reload, 
       </div>
 
       {tapStart && !popover && (
-        <div role="status" className="fixed left-3 right-3 z-[55] bottom-[calc(132px+env(safe-area-inset-bottom))] bg-black text-white rounded-card shadow-[var(--shadow-overlay)] px-4 py-3 flex items-center gap-3">
+        <div role="status" className="fixed left-3 right-3 z-[55] bottom-[calc(160px+env(safe-area-inset-bottom))] bg-black text-white rounded-card shadow-[var(--shadow-overlay)] px-4 py-3 flex items-center gap-3">
           <span className="flex-1 text-copy">Now tap the last night.</span>
           <button type="button" onClick={() => setTapStart(null)} className="h-9 px-3 rounded-control border-0 bg-transparent text-white/85 text-meta font-semibold cursor-pointer font-sans">Cancel</button>
         </div>

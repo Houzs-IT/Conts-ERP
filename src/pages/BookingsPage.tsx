@@ -18,6 +18,7 @@ import { DataTable, type Column } from '../components/DataTable';
 import { BulkAssignCleaner } from '../components/BulkAssignCleaner';
 import { fetchAllPages } from '../lib/export';
 import { useApi } from '../lib/useApi';
+import { useMedia } from '../lib/useMedia';
 import { useSession } from '../lib/session';
 import { useUnitRoster, type RosterUnit } from '../lib/useUnitRoster';
 import { useToast } from '../components/Toast';
@@ -105,6 +106,8 @@ export default function BookingsPage() {
   const { user } = useSession();
   const canMoney = !!user && MONEY_ROLES.includes(user.role);
   const canOps = !!user && OPS_ROLES.includes(user.role);
+  // Phones list bookings as cards to open, not to tick: bulk actions stay on tablet and desktop.
+  const phone = useMedia('(max-width: 767.98px)');
 
   // URL-as-state (react-router, HashRouter): tab, card, filters, sort, page and search live in the query
   // string, so a link or a refresh shows the same list. The calendar deep-links with ?create=1.
@@ -382,7 +385,7 @@ export default function BookingsPage() {
         viewParams={['view', 'todo', 'building', 'q']} filtered={searching || !!todo} onClearFilters={clearAll}
         noun={['reservation', 'reservations']} exportName="bookings" selectionKey={`${view}|${todo ?? ''}`}
         empty={{ title: todoMeta?.empty ?? viewMeta.empty, icon: 'CalendarDays' }}
-        selectable={canMoney || canOps}
+        selectable={(canMoney || canOps) && !phone}
         bulkActions={(picked, clear) => <>
           {canOps && (
             <Button size="sm" variant="secondary" icon={<Icon name="UserPlus" size="sm" />} onClick={() => setBulkAssign({ ids: picked.map(r => r.id), clear })}>Assign cleaner</Button>
@@ -436,7 +439,7 @@ export default function BookingsPage() {
               </span>
               <span className="text-meta text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{b.externalRef ?? '—'} · {b.unitNumber} · {b.propertyName}</span>
               <span className="flex items-center justify-between gap-2 pt-[2px]">
-                <span className="text-meta whitespace-nowrap min-w-0 overflow-hidden text-ellipsis">{dateRange(b.checkIn, b.checkOut)} · {fmtNights(b.nights)}</span>
+                <span className="text-meta min-w-0 flex flex-col leading-tight"><span className="whitespace-nowrap">{dateRange(b.checkIn, b.checkOut)}</span><span className="text-muted-ink">{fmtNights(b.nights)}</span></span>
                 <StatusBadge entity="booking" value={b.state} size="sm" />
               </span>
               {todoMeta?.money && b.outstanding > 0 && <span className="text-meta text-warning">{rm(b.outstanding)} owed</span>}

@@ -77,3 +77,8 @@
 [data-theme="dark"] .bg-white:not(.rounded-full):not(svg) {
   background-color: var(--color-surface-card);
 }
+
+/* The sidebar is dark in both themes: keep its "inverse" text white so the active item, the Rental/Supply chain
+   toggle and the name at the bottom stay readable. The profile pop-up inside it uses card/ink and is unaffected. */
+:root[data-theme="theconts-dark"] [data-sidebar] { --color-text-inverse: #FFFFFF; }
+:root[data-theme="theconts-dark"] [data-sidebar] [role="tablist"] button[aria-selected="true"] { background: #2E2B27 !important; box-shadow: inset 0 0 0 1px #4A4339; }
