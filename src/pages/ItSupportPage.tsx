@@ -13,7 +13,7 @@ import Icon from '../components/Icon';
 import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
 import { api, ApiFailure, errorMessage } from '../lib/api';
-import { refreshItUnread } from '../lib/itSupport';
+import { pageBeforeItSupport, refreshItUnread } from '../lib/itSupport';
 import { statusLabel } from '../lib/status';
 import { dateTime, relative } from '../lib/format';
 
@@ -321,7 +321,7 @@ export default function ItSupportPage() {
     return (
       <>
         <PageHeader title="Report a problem" sub="Goes straight to IT. Their reply appears on this screen." back={{ label: 'IT Support', onClick: () => go({}) }} />
-        <NewRequest from={params.get('from') ?? ''} onCancel={() => go({})} onSent={c => { setSent(n => n + 1); go({ request: c }); }} />
+        <NewRequest from={params.get('from') ?? pageBeforeItSupport()} onCancel={() => go({})} onSent={c => { setSent(n => n + 1); go({ request: c }); }} />
       </>
     );
   }

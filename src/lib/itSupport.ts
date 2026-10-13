@@ -22,6 +22,16 @@ function load(force = false) {
   return inflight;
 }
 
+let lastPage = '';
+/** The menu calls this on every move, so a new request can say which screen the problem was on. */
+export function rememberPage(path: string) {
+  if (!path.endsWith('/it-support')) lastPage = path;
+}
+/** The screen the person was on before IT Support, as a full address IT can open, or '' if none. */
+export function pageBeforeItSupport() {
+  return lastPage ? `${window.location.origin}/#${lastPage}` : '';
+}
+
 /** Call after opening a request or sending a reply: the count has just changed. */
 export function refreshItUnread() { void load(true); }
 
