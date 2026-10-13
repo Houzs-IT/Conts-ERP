@@ -2,7 +2,7 @@ import { useId, useState, type InputHTMLAttributes, type ReactNode } from 'react
 import { Eye, EyeOff } from 'lucide-react';
 
 interface Props extends Omit<InputHTMLAttributes<HTMLInputElement>, 'size'> {
-  label: string;
+  label: ReactNode;
   /** Shown under the field. Error tone when `error` is set. */
   help?: string;
   error?: string;
