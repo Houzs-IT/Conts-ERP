@@ -1,4 +1,4 @@
-import { lazy, useEffect, useState, type ReactNode } from "react";
+import { lazy, useEffect, useRef, useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
@@ -29,6 +29,7 @@ import { AndroidInstallGuide } from "../components/AndroidInstallGuide";
 import { MobileModuleList, MODULE_CONFIGS, FORM_MEMBERS_EDIT } from "./MobileModuleList";
 import { MobileInvitations } from "./MobileInvitations";
 import { mobileDestinationMatches, resolveMobileRoute, type MobileRoute } from "./mobileRoute";
+import { CONTS_EMBEDDED } from "../conts/embed";
 import type { FlowDocNav, FlowNav } from "./relationship-map-model";
 import type { SearchNav } from "./MobileSearch";
 import type { MobileScanPrefill } from "./MobileScan";
@@ -569,8 +570,9 @@ export function MobileApp() {
                 webviews, Chrome post-decline) got NO install path at all —
                 the guides self-guard on platform/standalone/cool-off, and
                 the Android one defers to PwaBanners' one-tap Install. */}
-            <IosInstallGuide />
-            <AndroidInstallGuide />
+            {/* Conts: inside Property OS there is nothing to install; it is one screen of that system. */}
+            {!CONTS_EMBEDDED && <IosInstallGuide />}
+            {!CONTS_EMBEDDED && <AndroidInstallGuide />}
             <MobileAppInner />
           </ChoiceProvider>
         </PromptProvider>
@@ -661,27 +663,60 @@ function MobileAppInner() {
      buys is that a typed, bookmarked, notification or shared link either lands
      on the RIGHT screen or says so plainly — instead of silently rendering the
      Sales Orders list under, say, /scm/purchase-orders. */
-  const initialRoute = resolveMobileRoute(
+  const routeNow = () => resolveMobileRoute(
     typeof window === "undefined"
       ? "/"
       : `${window.location.pathname}${window.location.search}${window.location.hash}`,
     visibleDestinations,
     allKnownDestinations,
   );
-
-  const [tab, setTab] = useState<Tab>(initialRoute.t === "tab" ? initialRoute.tab : firstTab);
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [screen, setScreen] = useState<Screen>(() => {
-    const first = initialScreenFor(initialRoute);
+  /* Conts only: Property OS's menu names a view of Service cases and Projects (?view=...). The phone has the
+     case list, the project list and monitor, and the calendar tab; the other views exist on a computer only,
+     and saying so is better than showing the list under another menu item's name. */
+  const contsView = (route: MobileRoute): { tab?: Tab; screen: Screen } | null => {
+    if (route.t !== "menu" || typeof window === "undefined") return null;
+    const path = window.location.pathname.replace(/\/+$/, "");
+    const view = new URLSearchParams(window.location.search).get("view");
+    if (path === "/projects" && view === "calendar" && canCalendar) return { tab: "calendar", screen: { t: "tab" } };
+    const computerOnly = (path === "/assr" && (view === "metrics" || view === "settings"))
+      || (path === "/projects" && (view === "finances" || view === "maintenance"));
+    return computerOnly ? { screen: { t: "desktop-only", path: `${path}?view=${view}` } } : null;
+  };
+  const tabFor = (route: MobileRoute): Tab => (route.t === "tab" ? route.tab : contsView(route)?.tab ?? firstTab);
+  const screenFor = (route: MobileRoute): Screen => {
+    const named = contsView(route);
+    if (named) return named.screen;
+    const first = initialScreenFor(route);
     /* /projects?view=monitor (the Property OS "Project monitor" entry) opens the monitor tab of Projects. */
     const monitor = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("view") === "monitor";
     return first.t === "pms" && monitor ? { ...first, view: "monitor" } : first;
-  });
+  };
+  const initialRoute = routeNow();
+
+  const [tab, setTab] = useState<Tab>(() => tabFor(initialRoute));
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [screen, setScreen] = useState<Screen>(() => screenFor(initialRoute));
+  /* Conts only: inside Property OS the menu is Property OS's. It changes the address without reloading
+     (conts/embed.ts), so here, and only here, the address is followed after mount as well. */
+  const followMenu = useRef<() => void>(() => {});
+  followMenu.current = () => {
+    const route = routeNow();
+    setMenuOpen(false);
+    setTab(tabFor(route));
+    setScreen(screenFor(route));
+  };
+  useEffect(() => {
+    if (!CONTS_EMBEDDED) return;
+    const follow = () => followMenu.current();
+    window.addEventListener("popstate", follow);
+    return () => window.removeEventListener("popstate", follow);
+  }, []);
   /* The crash-reset key for the overlay boundaries. Mobile navigation lives in
      `screen`, never in the URL, so the desktop shell's pathname key is useless
      here — serialise the state itself, which is a small discriminated union. */
   const screenKey = JSON.stringify(screen);
-  const back = () => setScreen({ t: "tab" });
+  // Conts: "back" returns to the screen Property OS's menu is on, not to this app's own first tab.
+  const back = () => setScreen(CONTS_EMBEDDED ? screenFor(routeNow()) : { t: "tab" });
   const leaveUrlDeadEnd = () => {
     navigate("/", { replace: true });
     setScreen({ t: "tab" });
@@ -1078,7 +1113,8 @@ function MobileAppInner() {
         </MobileCrashBoundary>
       </div>
 
-      <div className="navwrap">
+      {/* Conts: Property OS's own bottom bar and menu do the navigating; a second bar under it only gets in the way. */}
+      <div className="navwrap" style={CONTS_EMBEDDED ? { display: "none" } : undefined}>
         <nav className="tabbar">
           <button className={`tab${tab === "orders" ? " on" : ""}`} onClick={() => setTab("orders")}>
             <svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M7 3h7l4 4v14H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z" /><path d="M14 3v4h4" /><path d="M9.5 12.5h5M9.5 16h3" /></svg>
@@ -1192,12 +1228,15 @@ function UrlDeadEnd({ title, body, onHome }: { title: string; body: string; onHo
       </header>
       <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 16, padding: 24, textAlign: "center" }}>
         <div style={{ color: "#9aa093", fontSize: 12.5, lineHeight: 1.6, maxWidth: 300 }}>{body}</div>
-        <button
-          onClick={onHome}
-          style={{ background: "var(--teal)", color: "#fff", border: "none", borderRadius: 10, padding: "10px 20px", fontFamily: "inherit", fontSize: 13, fontWeight: 700 }}
-        >
-          Go to the app
-        </button>
+        {/* Conts: inside Property OS the way out is its own menu, right below. */}
+        {!CONTS_EMBEDDED && (
+          <button
+            onClick={onHome}
+            style={{ background: "var(--teal)", color: "#fff", border: "none", borderRadius: 10, padding: "10px 20px", fontFamily: "inherit", fontSize: 13, fontWeight: 700 }}
+          >
+            Go to the app
+          </button>
+        )}
       </div>
     </div>
   );
@@ -1222,7 +1261,9 @@ function DesktopOnly({ path, onHome }: { path: string; onHome: () => void }) {
   return (
     <UrlDeadEnd
       title="Not available on mobile"
-      body={`${path} hasn't been built for phones yet. Open it on a computer to use this page.`}
+      body={CONTS_EMBEDDED
+        ? "This screen hasn't been built for phones yet. Open it on a computer, or pick another screen from the menu."
+        : `${path} hasn't been built for phones yet. Open it on a computer to use this page.`}
       onHome={onHome}
     />
   );

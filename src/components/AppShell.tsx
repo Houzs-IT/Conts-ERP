@@ -142,8 +142,8 @@ export default function AppShell({
         {/* Phones get the standard 16px side gutter; the desk keeps its wider one. */}
         {/* The phone's bottom padding clears the home indicator / browser bar (safe area). */}
         <main ref={mainRef} data-app-main tabIndex={-1} className="app-main" style={{
-          flex: 1, minHeight: 0, overflowY: flush ? 'hidden' : 'auto', overflowX: 'hidden',
-          padding: flush ? 0 : isNarrow ? `16px 16px calc(${TAB_BAR_HEIGHT + 24}px + env(safe-area-inset-bottom))` : '24px 28px 40px',
+          flex: 1, minHeight: 0, overflowY: flush ? 'hidden' : 'auto', overflowX: 'hidden', scrollbarGutter: flush ? 'auto' : undefined,
+          padding: flush ? (isNarrow ? `0 0 calc(${TAB_BAR_HEIGHT}px + env(safe-area-inset-bottom))` : 0) : isNarrow ? `16px 16px calc(${TAB_BAR_HEIGHT + 24}px + env(safe-area-inset-bottom))` : '24px 28px 40px',
           display: 'flex', flexDirection: 'column', gap: flush ? 0 : isNarrow ? 16 : 20,
         }}>
           <PagePrimaryScope path={path}>{children}</PagePrimaryScope>
