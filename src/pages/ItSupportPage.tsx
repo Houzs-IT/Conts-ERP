@@ -41,7 +41,7 @@ interface Detail {
   events: Step[];
 }
 
-const KINDS = [{ value: 'bug', label: 'Something is not working' }, { value: 'development', label: 'Ask for a change' }];
+const KINDS = [{ value: 'bug', label: 'Bug' }, { value: 'development', label: 'Development' }];
 const URGENCY = [{ value: 'low', label: 'Low' }, { value: 'medium', label: 'Medium' }, { value: 'high', label: 'High' }];
 const MAX_FILES = 5;
 const MAX_BYTES = 10 * 1024 * 1024;
