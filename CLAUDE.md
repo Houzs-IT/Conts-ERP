@@ -26,9 +26,9 @@ because the supply chain cannot be separated from the rest of that code). Rules 
 - Production: `engine/backend/wrangler.production.toml` (worker `conts-scm-engine`, in the Conts ERP
   Cloudflare account) is deployed only through `node scripts/engine-production.mjs <step>`, run by the
   owner; it checks the file names nothing but Conts's production resources before it sends anything.
-  The account is on the free Workers plan (owner's decision, 8 Oct 2026): a request may make 50 outside
-  calls, so delivery orders, goods receipts and delivery returns can answer slowly and skip their
-  stock step until the plan is upgraded.
+  The account is on Workers Paid since 13 Oct 2026 (1,000 outside calls and 30 s of CPU per request).
+  On the free plan before that, a delivery order (about 83 calls) took 50-85 s and skipped its stock step,
+  and the password check could be cut off at 10 ms of CPU: if either comes back, check the plan first.
 
 ## What this app is
 - Property OS: short-term rental management (owners, units, bookings, rates, payouts)
