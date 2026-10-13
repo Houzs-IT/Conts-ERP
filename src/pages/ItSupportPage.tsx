@@ -41,11 +41,8 @@ interface Detail {
   events: Step[];
 }
 
-const KINDS = [{ value: 'bug', label: 'Something is not working' }, { value: 'development', label: 'Ask for a change' }];
-const URGENCY = [
-  { value: 'urgent', label: 'Urgent: work has stopped' }, { value: 'high', label: 'High' },
-  { value: 'medium', label: 'Normal' }, { value: 'low', label: 'Low' },
-];
+const KINDS = [{ value: 'bug', label: 'Bug' }, { value: 'development', label: 'Development' }];
+const URGENCY = [{ value: 'low', label: 'Low' }, { value: 'medium', label: 'Medium' }, { value: 'high', label: 'High' }];
 const MAX_FILES = 5;
 const MAX_BYTES = 10 * 1024 * 1024;
 const ACCEPT = 'image/*,video/mp4,video/quicktime,application/pdf';
@@ -56,27 +53,67 @@ const notConnected = (e: unknown) => e instanceof ApiFailure && e.code === 'NOT_
 
 function Files({ files, onChange }: { files: File[]; onChange: (f: File[]) => void }) {
   const [refused, setRefused] = useState<string | null>(null);
-  function add(list: FileList) {
-    const next = [...files, ...Array.from(list)];
+  const [urls, setUrls] = useState<(string | null)[]>([]);
+  const add = useCallback((list: File[]) => {
+    const next = [...files, ...list];
     const big = next.find(f => f.size > MAX_BYTES);
     if (big) { setRefused(`${big.name} is larger than 10 MB.`); return; }
     if (next.length > MAX_FILES) { setRefused(`Attach at most ${MAX_FILES} files.`); return; }
     setRefused(null); onChange(next);
-  }
+  }, [files, onChange]);
+
+  // Made in the effect, not a memo, so StrictMode's second mount never holds revoked addresses.
+  useEffect(() => {
+    const made = files.map(f => (f.type.startsWith('image/') ? URL.createObjectURL(f) : null));
+    setUrls(made);
+    return () => made.forEach(u => u && URL.revokeObjectURL(u));
+  }, [files]);
+
+  // A screenshot pasted anywhere on the screen (Ctrl+V) is attached. Pasted text is left alone.
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      const pasted = Array.from(e.clipboardData?.files ?? []).filter(f => f.type.startsWith('image/'));
+      if (!pasted.length) return;
+      e.preventDefault();
+      // Every clipboard screenshot arrives as "image.png"; give each its own name.
+      const stamp = Date.now();
+      add(pasted.map((f, i) => new File([f], `screenshot-${stamp}-${i + 1}.${f.type.split('/')[1] || 'png'}`, { type: f.type })));
+    };
+    document.addEventListener('paste', onPaste);
+    return () => document.removeEventListener('paste', onPaste);
+  }, [add]);
+
   return (
-    <div className="flex flex-col gap-2 min-w-0">
-      {files.map((f, i) => (
-        <div key={`${f.name}-${i}`} className="flex items-center gap-2 text-copy min-w-0">
-          <Icon name="Paperclip" size="sm" />
-          <span className="truncate">{f.name}</span>
-          <Button type="button" size="sm" variant="tertiary" onClick={() => onChange(files.filter((_, j) => j !== i))}>Remove</Button>
-        </div>
-      ))}
+    <div className="flex flex-col gap-3 min-w-0">
       {files.length < MAX_FILES && (
-        <FileDropRow label="Add a screenshot or file" hint="Pictures, MP4 or MOV video, or PDF. Up to 5 files, 10 MB each."
-          accept={ACCEPT} multiple onPick={add} />
+        <FileDropRow tall label="Drop files here, click to browse, or paste a screenshot"
+          hint={`Up to ${MAX_FILES} files, 10 MB each: pictures, PDF, MP4 or MOV.`}
+          accept={ACCEPT} multiple onPick={l => add(Array.from(l))} />
       )}
       {refused && <span className="text-meta text-danger" role="alert">{refused}</span>}
+      {files.length > 0 && (
+        <ul className="m-0 p-0 list-none flex flex-wrap gap-3">
+          {files.map((f, i) => (
+            <li key={`${f.name}-${i}`} className="relative w-20 h-20">
+              {urls[i] ? (
+                <a href={urls[i]!} target="_blank" rel="noreferrer" title={f.name}
+                  className="block w-full h-full overflow-hidden rounded-control border border-solid border-line hover:border-gold">
+                  <img src={urls[i]!} alt={f.name} className="w-full h-full object-cover" />
+                </a>
+              ) : (
+                <div title={f.name} className="w-full h-full flex flex-col items-center justify-center gap-1 rounded-control border border-solid border-line bg-page text-muted-ink">
+                  <Icon name={f.type.startsWith('video/') ? 'Film' : 'FileText'} />
+                  <span className="max-w-full truncate px-1 text-[10px] font-semibold">{f.name.includes('.') ? f.name.split('.').pop()!.toUpperCase() : 'FILE'}</span>
+                </div>
+              )}
+              <button type="button" aria-label={`Remove ${f.name}`} onClick={() => { setRefused(null); onChange(files.filter((_, j) => j !== i)); }}
+                className="absolute -right-2 -top-2 w-6 h-6 grid place-items-center rounded-full border-0 bg-ink text-white cursor-pointer hover:bg-danger">
+                <Icon name="X" size="sm" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
@@ -115,26 +152,27 @@ function NewRequest({ from, onSent, onCancel }: { from: string; onSent: (code: s
 
   return (
     <Card>
-      <form onSubmit={send} className="flex flex-col gap-4 px-5 py-5">
-        <Field label="What is the problem?" value={title} maxLength={200} onChange={e => setTitle(e.target.value)}
-          placeholder="The calendar does not show a new reservation" error={error && !title.trim() ? error : undefined} />
+      <form onSubmit={send} noValidate className="flex flex-col gap-4 p-6 sm:p-8">
+        <Field label={<>What is the problem? <span className="text-danger">*</span></>} required value={title} maxLength={200} onChange={e => setTitle(e.target.value)}
+          placeholder="e.g. The calendar does not show a new reservation" error={error && !title.trim() ? error : undefined} />
         <div className="flex flex-col gap-[7px]">
           <label htmlFor="it-details" className="text-meta font-medium text-muted-ink">Details</label>
-          <textarea id="it-details" value={description} maxLength={10000} rows={6} onChange={e => setDescription(e.target.value)}
-            placeholder="What you did, what you expected, and what happened instead." className={TEXTAREA} />
+          <textarea id="it-details" value={description} maxLength={10000} rows={5} onChange={e => setDescription(e.target.value)}
+            aria-describedby="it-details-help" className={TEXTAREA} />
+          <span id="it-details-help" className="text-meta text-muted-ink">What you did, what you expected, and what happened instead.</span>
         </div>
-        <div className="flex gap-3 flex-wrap">
+        <div className="grid gap-4 sm:grid-cols-2">
           <Select label="Kind of request" showLabel size="md" value={kind} onChange={setKind} options={KINDS} />
-          <Select label="How urgent" showLabel size="md" value={urgency} onChange={setUrgency} options={URGENCY} />
+          <Select label="How urgent?" showLabel size="md" value={urgency} onChange={setUrgency} options={URGENCY} />
         </div>
         <div className="flex flex-col gap-[7px]">
           <span className="text-meta font-medium text-muted-ink">Screenshots</span>
           <Files files={files} onChange={setFiles} />
         </div>
         {error && title.trim() && <div className="text-copy text-danger" role="alert">{error}</div>}
-        <div className="flex gap-2 justify-end">
+        <div className="flex gap-3 pt-2">
+          <Button type="submit" variant="primary" loading={busy}>Send</Button>
           <Button type="button" variant="secondary" onClick={onCancel} disabled={busy} disabledReason="Sending">Cancel</Button>
-          <Button type="submit" variant="primary" loading={busy}>Send to IT</Button>
         </div>
       </form>
     </Card>
@@ -319,10 +357,10 @@ export default function ItSupportPage() {
 
   if (isNew) {
     return (
-      <>
+      <div className="mx-auto w-full max-w-3xl flex flex-col gap-4">
         <PageHeader title="Report a problem" sub="Goes straight to IT. Their reply appears on this screen." back={{ label: 'IT Support', onClick: () => go({}) }} />
         <NewRequest from={params.get('from') ?? pageBeforeItSupport()} onCancel={() => go({})} onSent={c => { setSent(n => n + 1); go({ request: c }); }} />
-      </>
+      </div>
     );
   }
   if (code) {

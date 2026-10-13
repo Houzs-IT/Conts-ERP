@@ -274,9 +274,11 @@ export function FileRow({ file }: { file: FileRowItem }) {
 
 /** The dashed "Add file" row: click to browse or drop a file on it. Dropped files are held to `accept` as the
  *  picker would be. With `chosen`, a single-file picker shows what was picked and offers to change it. */
-export function FileDropRow({ label = 'Add file', hint, accept, multiple, onPick, busy, chosen, disabled, ariaLabel }: {
+export function FileDropRow({ label = 'Add file', hint, accept, multiple, onPick, busy, chosen, disabled, ariaLabel, tall }: {
   label?: string; hint?: ReactNode; accept?: string; multiple?: boolean; onPick: (files: FileList) => void;
   busy?: boolean; chosen?: string | null; disabled?: boolean; ariaLabel?: string;
+  /** A tall centred drop zone instead of a row, for forms where attaching is the point (IT Support). */
+  tall?: boolean;
 }) {
   const input = useRef<HTMLInputElement>(null);
   const [refused, setRefused] = useState<string | null>(null);
@@ -290,14 +292,14 @@ export function FileDropRow({ label = 'Add file', hint, accept, multiple, onPick
   return (
     <div className="flex flex-col gap-1.5 min-w-0">
       <button type="button" disabled={busy || disabled} onClick={() => input.current?.click()} aria-label={ariaLabel} {...drop.handlers}
-        className={cx(DASHED, 'w-full min-h-12 flex items-center gap-3 px-3 py-2 text-left',
+        className={cx(DASHED, tall ? 'w-full min-h-28 flex flex-col items-center justify-center gap-1.5 px-4 py-6 text-center' : 'w-full min-h-12 flex items-center gap-3 px-3 py-2 text-left',
           busy || disabled ? 'border-line bg-page text-faint cursor-not-allowed' : cx('cursor-pointer', drop.over ? DASHED_OVER : DASHED_IDLE))}>
         <span className="w-8 h-8 flex-none grid place-items-center rounded-[6px] bg-card [box-shadow:inset_0_0_0_1px_var(--color-line)]">
-          {busy ? <Spinner className="w-4 h-4" /> : <Icon name={chosen ? fileIcon(chosen) : drop.over ? 'Download' : 'Plus'} size="sm" />}
+          {busy ? <Spinner className="w-4 h-4" /> : <Icon name={chosen ? fileIcon(chosen) : drop.over ? 'Download' : tall ? 'Upload' : 'Plus'} size="sm" />}
         </span>
-        <span className="flex-1 min-w-0 flex flex-col">
-          <span className={cx('text-copy font-medium truncate', busy || disabled ? '' : 'text-ink')}>{busy ? 'Uploading…' : drop.over ? 'Drop to add' : chosen ?? label}</span>
-          {hint && !busy && <span className="text-meta text-muted-ink truncate">{chosen ? 'Click or drop to replace' : hint}</span>}
+        <span className={cx('min-w-0 flex flex-col', tall ? 'items-center' : 'flex-1')}>
+          <span className={cx('text-copy font-medium', tall ? '' : 'truncate', busy || disabled ? '' : 'text-ink')}>{busy ? 'Uploading…' : drop.over ? 'Drop to add' : chosen ?? label}</span>
+          {hint && !busy && <span className={cx('text-meta text-muted-ink', !tall && 'truncate')}>{chosen ? 'Click or drop to replace' : hint}</span>}
         </span>
         {chosen && !busy && <span className="text-meta font-medium text-accent flex-none">Change</span>}
       </button>

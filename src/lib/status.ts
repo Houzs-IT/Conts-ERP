@@ -152,7 +152,7 @@ export const STATUS_VOCAB = {
   it_urgency: {
     urgent: { label: 'Urgent', tone: 'danger' },
     high: { label: 'High', tone: 'warning' },
-    medium: { label: 'Normal', tone: 'neutral' },
+    medium: { label: 'Medium', tone: 'neutral' },
     low: { label: 'Low', tone: 'neutral' },
   },
   condition: {
