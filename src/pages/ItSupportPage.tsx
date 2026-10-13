@@ -174,7 +174,7 @@ function NewRequest({ from, onSent, onCancel }: { from: string; onSent: (code: s
         </div>
         {error && title.trim() && <div className="text-copy text-danger" role="alert">{error}</div>}
         <div className="flex gap-3 pt-2">
-          <Button type="submit" variant="primary" loading={busy}>Send to IT</Button>
+          <Button type="submit" variant="primary" loading={busy}>Send</Button>
           <Button type="button" variant="secondary" onClick={onCancel} disabled={busy} disabledReason="Sending">Cancel</Button>
         </div>
       </form>
