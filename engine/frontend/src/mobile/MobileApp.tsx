@@ -670,7 +670,22 @@ function MobileAppInner() {
     visibleDestinations,
     allKnownDestinations,
   );
+  /* Conts only: Property OS's menu names a view of Service cases and Projects (?view=...). The phone has the
+     case list, the project list and monitor, and the calendar tab; the other views exist on a computer only,
+     and saying so is better than showing the list under another menu item's name. */
+  const contsView = (route: MobileRoute): { tab?: Tab; screen: Screen } | null => {
+    if (route.t !== "menu" || typeof window === "undefined") return null;
+    const path = window.location.pathname.replace(/\/+$/, "");
+    const view = new URLSearchParams(window.location.search).get("view");
+    if (path === "/projects" && view === "calendar" && canCalendar) return { tab: "calendar", screen: { t: "tab" } };
+    const computerOnly = (path === "/assr" && (view === "metrics" || view === "settings"))
+      || (path === "/projects" && (view === "finances" || view === "maintenance"));
+    return computerOnly ? { screen: { t: "desktop-only", path: `${path}?view=${view}` } } : null;
+  };
+  const tabFor = (route: MobileRoute): Tab => (route.t === "tab" ? route.tab : contsView(route)?.tab ?? firstTab);
   const screenFor = (route: MobileRoute): Screen => {
+    const named = contsView(route);
+    if (named) return named.screen;
     const first = initialScreenFor(route);
     /* /projects?view=monitor (the Property OS "Project monitor" entry) opens the monitor tab of Projects. */
     const monitor = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("view") === "monitor";
@@ -678,7 +693,7 @@ function MobileAppInner() {
   };
   const initialRoute = routeNow();
 
-  const [tab, setTab] = useState<Tab>(initialRoute.t === "tab" ? initialRoute.tab : firstTab);
+  const [tab, setTab] = useState<Tab>(() => tabFor(initialRoute));
   const [menuOpen, setMenuOpen] = useState(false);
   const [screen, setScreen] = useState<Screen>(() => screenFor(initialRoute));
   /* Conts only: inside Property OS the menu is Property OS's. It changes the address without reloading
@@ -687,7 +702,7 @@ function MobileAppInner() {
   followMenu.current = () => {
     const route = routeNow();
     setMenuOpen(false);
-    setTab(route.t === "tab" ? route.tab : firstTab);
+    setTab(tabFor(route));
     setScreen(screenFor(route));
   };
   useEffect(() => {
