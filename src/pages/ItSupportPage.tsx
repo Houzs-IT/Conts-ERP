@@ -42,10 +42,7 @@ interface Detail {
 }
 
 const KINDS = [{ value: 'bug', label: 'Something is not working' }, { value: 'development', label: 'Ask for a change' }];
-const URGENCY = [
-  { value: 'urgent', label: 'Urgent: work has stopped' }, { value: 'high', label: 'High' },
-  { value: 'medium', label: 'Normal' }, { value: 'low', label: 'Low' },
-];
+const URGENCY = [{ value: 'low', label: 'Low' }, { value: 'medium', label: 'Medium' }, { value: 'high', label: 'High' }];
 const MAX_FILES = 5;
 const MAX_BYTES = 10 * 1024 * 1024;
 const ACCEPT = 'image/*,video/mp4,video/quicktime,application/pdf';
