@@ -24,6 +24,8 @@ export interface NavGroup { label: string; workspace: Workspace; items: NavItem[
  *  - Projects > Calendar is "Schedule"; Service / Project maintenance are "Case settings" / "Project settings",
  *    so no two menu entries share a name.
  */
+const SUPPLY_SUPPORT = 'SUPPORT';
+
 export const NAV: NavGroup[] = [
   { label: 'HOME', workspace: 'rental', items: [
     { key: 'dashboard', label: 'Dashboard', icon: 'layout-dashboard', path: '/', area: 'dashboard' },
@@ -134,6 +136,11 @@ export const NAV: NavGroup[] = [
     ] },
     // Houzs keeps credit / debit notes under Finance > Money in; finance roles only.
   ] },
+  // The same IT Support screen as under System, at its own address so the supply chain sidebar stays put.
+  // A Property OS screen, not an engine one: the engine must not call a Houzs address (CLAUDE.md).
+  { label: SUPPLY_SUPPORT, workspace: 'supply', items: [
+    { key: 'itSupportSupply', label: 'IT Support', icon: 'life-buoy', path: '/supply/it-support', area: 'itSupport', badge: 'itSupport' },
+  ] },
 ];
 
 export const WORKSPACE_LABEL: Record<Workspace, string> = { rental: 'Rental', supply: 'Supply chain' };
@@ -197,6 +204,13 @@ export function screenClosed(path: string, access?: Record<string, AccessLevel>)
 }
 
 export function navFor(role: UserRole, engine = false, access?: Record<string, AccessLevel>): NavGroup[] {
+  const groups = navGroups(role, engine, access);
+  // IT Support alone must not open the supply chain workspace to someone with no supply chain screens.
+  const supplyWork = groups.some(g => g.workspace === 'supply' && g.label !== SUPPLY_SUPPORT);
+  return supplyWork ? groups : groups.filter(g => g.label !== SUPPLY_SUPPORT);
+}
+
+function navGroups(role: UserRole, engine: boolean, access?: Record<string, AccessLevel>): NavGroup[] {
   const deny = [...denied(role, access), ...SWITCHED_OFF_AREAS, ...(engine ? [] : ENGINE_ONLY_AREAS)];
   if (deny.includes('*')) return [];
   const open = (key: string, area: string) => !deny.includes(key) && !deny.includes(area);

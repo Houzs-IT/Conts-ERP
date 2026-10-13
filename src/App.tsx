@@ -329,6 +329,7 @@ function Routed() {
         <Route path="/system/audit" element={<Navigate to="/system/health" replace />} />
         <Route path="/system/health" element={<SystemHealthPage />} />
         <Route path="/system/it-support" element={<ItSupportPage />} />
+        <Route path="/supply/it-support" element={<ItSupportPage />} />
         <Route path="*" element={<NotDesignedPage />} />
       </Route>
     </Routes>

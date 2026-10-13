@@ -4,7 +4,7 @@ import { navFor, workspaceOf, WORKSPACE_LABEL, type BadgeKey, type NavGroup, typ
 import { useApi } from '../lib/useApi';
 import { useSession } from '../lib/session';
 import { useNavCounts } from '../lib/navBadges';
-import { useItUnread } from '../lib/itSupport';
+import { rememberPage, useItUnread } from '../lib/itSupport';
 import { ROLE_LABEL } from '../lib/vocabulary';
 import Icon, { toPascal } from './Icon';
 import { Logo } from './Logo';
@@ -55,6 +55,7 @@ export default function Sidebar({ path, navigate, open, onToggle, phone = false 
   // Opening a supply chain address (a link, the back button) shows its workspace; otherwise the last choice stands.
   const [ws, setWs] = useState<Workspace>(() => workspaceOf(path) ?? readWs());
   useEffect(() => { const w = workspaceOf(path); if (w) { setWs(w); saveWs(w); } }, [path]);
+  useEffect(() => rememberPage(path), [path]);
   const pick = (w: Workspace) => {
     setWs(w); saveWs(w);
     const first = all.find(g => g.workspace === w)?.items[0];
