@@ -10,6 +10,9 @@ server and screens, copied whole at Houzs commit c20343f5 with the owner's appro
 because the supply chain cannot be separated from the rest of that code). Rules for it:
 - Houzs's own repository, database and live system are read-only reference. Never change
   them, never deploy to them, never point `engine/` at a Houzs address.
+  One approved exception (12-13 Oct 2026): the IT Support page that sends requests to the
+  Houzs IT Hub may be built in Houzs ERP's own repository, on a feature branch there, under
+  that repository's rules. Merging and deploying it stays with Houzs's own people.
 - Change as little as possible inside `engine/`, except the renovation work: the owner decided
   on 9 Oct 2026 to rework the engine's Projects module, catalog and sales documents in place
   for Conts's renovation business (design: `docs/superpowers/specs/2026-10-09-renovation-flow-design.md`,
