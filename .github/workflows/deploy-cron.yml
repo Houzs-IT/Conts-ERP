@@ -1,0 +1,35 @@
+# Publishes the scheduled worker (theconts-cron: Channex retries, email / WhatsApp sending, overdue sweep, 08:00
+# digest) whenever a merge to main changes it, or by hand. Runs scripts/cron-deploy.mjs, so the same checks apply:
+# the worker must use the production database of wrangler.toml and the token's account must own theconts-os.
+# Repository secrets: CLOUDFLARE_API_TOKEN (Conts ERP account, Workers Scripts > Edit) and CHANNEX_API_KEY (the
+# live Channex key, stored on the worker on every run; without it the Channex retry job reports "not configured").
+name: Deploy scheduled jobs
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'worker/**'
+      - 'functions/_lib/**'
+      - 'wrangler.cron.toml'
+      - 'scripts/cron-deploy.mjs'
+      - 'package-lock.json'
+      - '.github/workflows/deploy-cron.yml'
+  workflow_dispatch:
+concurrency: deploy-cron
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: 3a9ff01edda85702f9e2649fb340f1cc
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Publish scheduled worker
+        env:
+          CRON_CHANNEX_API_KEY: ${{ secrets.CHANNEX_API_KEY }}
+        run: node scripts/cron-deploy.mjs
