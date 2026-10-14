@@ -816,7 +816,7 @@ export function PurchaseOrdersListV2() {
   // PARTIALLY_RECEIVED). `all` omits the filter.
   const apiStatus = status === "all" ? undefined : status;
 
-  const { data, isLoading, isFetching, isPlaceholderData, error } = usePurchaseOrdersPaged({
+  const { data, isLoading, isFetching, isPlaceholderData, error, refetch } = usePurchaseOrdersPaged({
     page,
     pageSize,
     status: apiStatus,
@@ -842,6 +842,8 @@ export function PurchaseOrdersListV2() {
   // rows it describes. Same flag SearchScopeHint already uses for its count.
   const statsPending =
     isLoading || isPlaceholderData || Boolean(error) || searchTransition.resultsAreStale;
+  // Conts: a failed load says so on the cards, with Retry, instead of "Loading…" for ever.
+  const statsFail = { failed: Boolean(error), onRetry: () => void refetch() };
   const { cancelPo } = usePoCancelAction();
   const holdAction = useHoldAction("po");
 
@@ -1480,7 +1482,7 @@ export function PurchaseOrdersListV2() {
               match count and is right until a client-side funnel hides part of
               the page, at which point it contradicts the table underneath. */}
           <StatCard
-            pending={statsPending}
+            pending={statsPending} {...statsFail}
             label="Total POs"
             value={(visible.filtered ? visible.rows.length : total).toLocaleString("en-MY")}
             subtitle={visible.filtered ? "Filtered · shown below" : "All matching POs"}
@@ -1488,14 +1490,14 @@ export function PurchaseOrdersListV2() {
             active
           />
           <StatCard
-            pending={statsPending}
+            pending={statsPending} {...statsFail}
             label="Committed"
             value={fmtRm(money.committed)}
             subtitle={visible.filtered ? "Filtered · sum shown below" : "Sum on this page"}
             rail="bg-accent"
           />
           <StatCard
-            pending={statsPending}
+            pending={statsPending} {...statsFail}
             label="Outstanding"
             value={fmtRm(money.outstanding)}
             subtitle={
@@ -1507,7 +1509,7 @@ export function PurchaseOrdersListV2() {
             rail="bg-accent-bright"
           />
           <StatCard
-            pending={statsPending}
+            pending={statsPending} {...statsFail}
             label="Received"
             value={fmtRm(money.received)}
             subtitle={

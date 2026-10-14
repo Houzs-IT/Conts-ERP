@@ -3,7 +3,7 @@
    same responsive screen as desktop), and the site receipt. In exhibition mode the original MobilePMS opens instead. */
 
 import { useState, type ReactNode } from "react";
-import { ArrowLeft, PackageCheck } from "lucide-react";
+import { ArrowLeft, PackageCheck, Plus } from "lucide-react";
 import { useQuery } from "../hooks/useQuery";
 import { useAuth } from "../auth/AuthContext";
 import { simpleApi } from "../pages/projects/renovation/simpleApi";
@@ -13,12 +13,14 @@ import { RenovationDetail } from "../pages/projects/renovation/RenovationDetail"
 import { useProjectsMode } from "../pages/projects/renovation/RenovationRoutes";
 import { MobileSiteReceipt } from "./MobileSiteReceipt";
 import { ProjectMonitor } from "../pages/projects/renovation/ProjectMonitor";
+import { CreateRenovationPanel } from "../pages/projects/renovation/CreateRenovationPanel";
 
-function TopBar({ title, onBack }: { title: string; onBack: () => void }) {
+function TopBar({ title, onBack, action }: { title: string; onBack: () => void; action?: ReactNode }) {
   return (
     <header className="sticky top-0 z-10 flex items-center gap-2 bg-surface border-b border-border px-3 py-3">
       <button type="button" aria-label="Back" onClick={onBack} className="p-1"><ArrowLeft size={20} /></button>
-      <div className="text-base font-semibold text-ink truncate">{title}</div>
+      <div className="min-w-0 flex-1 text-base font-semibold text-ink truncate">{title}</div>
+      {action}
     </header>
   );
 }
@@ -35,6 +37,7 @@ function MobileRenovationProjects({ onBack, initialProjectId, initialView }: { o
   const [projectId, setProjectId] = useState<number | null>(initialProjectId ?? null);
   const [receiving, setReceiving] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
   // Project monitor was dropped (owner, 11 Oct 2026): the phone opens the list; the monitor code stays for now.
   const [view] = useState<"list" | "monitor">("list");
   const board = useQuery(["renovation", "board-rows"], () => simpleApi.boardRows());
@@ -73,7 +76,22 @@ function MobileRenovationProjects({ onBack, initialProjectId, initialView }: { o
 
   return (
     <div className="min-h-screen bg-surface-dim">
-      <TopBar title="Projects" onBack={onBack} />
+      {/* The same New project form as the desktop list (QA sweep, 15 Oct 2026, finding 16). */}
+      <TopBar
+        title="Projects"
+        onBack={onBack}
+        action={can("projects.write") ? (
+          <button type="button" onClick={() => setCreating(true)} className="flex shrink-0 items-center gap-1 rounded-md bg-primary px-3 py-1.5 text-sm font-semibold text-white">
+            <Plus size={16} />New project
+          </button>
+        ) : undefined}
+      />
+      {creating && (
+        <CreateRenovationPanel
+          onClose={() => setCreating(false)}
+          onCreated={(id) => { setCreating(false); board.reload(); setProjectId(id); }}
+        />
+      )}
       {view === "monitor" ? (
         <div className="p-3">
           <ProjectMonitor canWrite={can("projects.write")} embedded docLinks={false} onOpenProject={(id) => setProjectId(id)} />

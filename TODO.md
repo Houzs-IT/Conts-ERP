@@ -102,7 +102,7 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 ## Renovation Project List and Calendar week (feat/reno-list-calendar, no migration, 15 Oct 2026)
 - Done: the Project List in renovation mode shows step tiles (projects per step, click to filter, ?step=) instead of Live now / Upcoming / Overdue tasks; each card / table row shows name, customer, Project PIC, the 6-step track, planned handover and Late / At risk (handover within 14 days before Handover); a step opens the project at its section (#reno-design, #reno-contract, #reno-procurement, #reno-unit-key). Hide completed = hide the Closed step; the date filter matches created date to planned handover. The checklist "Task" filter is hidden in renovation mode.
 - Done: Calendar Week view in renovation mode shows dated items per day (onsite, 3D / 2D submissions, PO and delivery dates, site tasks, planned handover) instead of project bars (GET /api/projects/calendar/events?items=1). Month view keeps the bars. Exhibition mode unchanged.
-- Owner to confirm: "At risk" window of 14 days (AT_RISK_DAYS in engine/frontend/src/pages/projects/renovation/renovationListModel.ts). The phone app's Calendar tab (MobileCalendar) still shows bars in its week view.
+- Owner to confirm: "At risk" window of 14 days (AT_RISK_DAYS in engine/frontend/src/pages/projects/renovation/renovationListModel.ts).
 
 ## Renovation project screens, round 2 (feat/reno-project-ux-2, migration 0114, 14 Oct 2026)
 - OPEN, before merge: apply migration 0114 on staging, then production (lead). It adds several PICs per Onsite entry and per design version, Onsite photos / files, and closes 2D amendment requests by the version that answers them (existing 2D notes are closed by the next 2D version after them).
@@ -112,8 +112,8 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 ## QA sweep (fix/qa-sweep, 15 Oct 2026, docs/qa/2026-10-15-qa-sweep.md)
 - OWNER: Dashboard "12 months" strip adds every owner statement (workbook months too) beside a guest total from reservations only, so payout reads larger than guest total (finding 6).
 - OWNER: Create reservation silently files a matching phone under the existing guest's name and drops the typed name (finding 7).
-- OWNER: Fit-out register and Guest documents are reachable only by typing the address: link them or retire them (finding 8).
-- Engine (Houzs code): table "Failed to load" / empty messages run off wide tables; summary cards stay "Loading..." on failure; the engine's own tab strip, search and bell show inside Property OS (findings 12-14).
+- Done (fix/engine-polish): Fit-out register and Guest documents screens retired (owner, 14 Oct); their addresses show "This page does not exist". Their server endpoints and data stay; guest invoices and receipts are still issued from a reservation (finding 8).
+- Done (fix/engine-polish): engine table messages stay in the visible part of wide tables; list summary cards say "Couldn't load" with Retry; inside Property OS the engine draws no top bar of its own (tab strip, search, refresh, bell) and the phone Calendar has no second search; Settings drops the AutoCount Sync tab and its /api/sync/status call; the phone project list has New project (findings 12-16). Renovation PO: a line of another category is named before Save, and the database refusal shows inline. Phone Calendar Week in renovation mode lists dated items like the desktop.
 - Supply chain data screens could not be checked locally (engine reads through Supabase REST); check them on the staging preview (finding 17).
 
 ## Later

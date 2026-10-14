@@ -20,7 +20,7 @@ export interface NavGroup { label: string; workspace: Workspace; items: NavItem[
  * Merged duplicates keep their old addresses as redirects (App.tsx):
  *  - Finance > Revenue was the same page as Growth > Analytics: one "Performance" entry.
  *  - Owners moved from Finance to Properties; Inbox from Growth to Reservations.
- *  - Properties > Inventory is the "Fit-out register" (not the warehouse's stock list).
+ *  - The Fit-out register and Guest documents screens were retired (owner, 14 Oct 2026); guest invoices and receipts are issued from a reservation.
  *  - Projects > Calendar is "Schedule"; Service / Project maintenance are "Case settings" / "Project settings",
  *    so no two menu entries share a name.
  */
@@ -276,8 +276,6 @@ const groupName = (label: string) => label.charAt(0) + label.slice(1).toLowerCas
 /** Rental screens reached from another screen rather than the menu: their breadcrumb, instead of "Home". */
 const RENTAL_OFF_MENU: Record<string, { group: string; item: string; page?: string }> = {
   '/operations/cleaners': { group: 'Operations', item: 'Cleaning', page: 'Cleaners' },
-  '/properties/inventory': { group: 'Units', item: 'Fit-out register' },
-  '/finance/documents': { group: 'Finance', item: 'Guest documents' },
 };
 
 /** Breadcrumbs: group, menu entry and, on a record or sub-page, the page itself. */

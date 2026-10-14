@@ -24,6 +24,10 @@ interface Props {
    * never be rendered as a figure — least of all a money one.
    */
   pending?: boolean;
+  /** Conts: the figure's data failed to load. The card says so, with Retry when `onRetry` is given, instead of
+   *  staying on "Loading…" for ever (QA sweep, 15 Oct 2026, finding 13). Implies `pending`. */
+  failed?: boolean;
+  onRetry?: () => void;
 }
 
 /**
@@ -35,16 +39,19 @@ interface Props {
  * type switches to <button> so it's keyboard-accessible; we also bump
  * hover affordance to make it read as clickable.
  */
-export function StatCard({ label, value, subtitle, tone = "default", onClick, active, rail, pending }: Props) {
-  const Tag = onClick ? "button" : "div";
+export function StatCard({ label, value, subtitle, tone = "default", onClick, active, rail, pending: pendingProp, failed, onRetry }: Props) {
+  const pending = pendingProp || failed;
+  // A failed card holds its own Retry button, and a button cannot sit inside another.
+  const clickable = failed ? undefined : onClick;
+  const Tag = clickable ? "button" : "div";
   return (
     <Tag
-      onClick={onClick}
-      type={onClick ? "button" : undefined}
-      aria-pressed={onClick ? !!active : undefined}
+      onClick={clickable}
+      type={clickable ? "button" : undefined}
+      aria-pressed={clickable ? !!active : undefined}
       className={cn(
         "group relative h-full overflow-hidden rounded-lg border border-border bg-surface px-4 py-4 text-left shadow-stone transition-all duration-200 hover:-translate-y-px hover:shadow-slab sm:px-5 sm:py-5",
-        onClick &&
+        clickable &&
           "cursor-pointer hover:border-primary/40 focus:outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/30",
         active && "border-primary/60 bg-primary-soft/50 ring-1 ring-primary/30"
       )}
@@ -77,9 +84,18 @@ export function StatCard({ label, value, subtitle, tone = "default", onClick, ac
         aria-busy={pending || undefined}
         data-pending={pending ? "true" : undefined}
       >
-        {pending ? <span title="Not loaded yet">&mdash;</span> : value}
+        {pending ? <span title={failed ? "Could not load" : "Not loaded yet"}>&mdash;</span> : value}
       </div>
-      {subtitle && (
+      {failed ? (
+        <div role="alert" className="mt-2 flex flex-wrap items-center gap-x-2 text-[11px] font-medium text-err">
+          <span>Couldn't load</span>
+          {onRetry && (
+            <button type="button" onClick={onRetry} className="font-semibold text-primary underline-offset-2 hover:underline">
+              Retry
+            </button>
+          )}
+        </div>
+      ) : subtitle && (
         <div className="mt-2 text-[11px] font-medium text-ink-secondary">
           {pending ? "Loading…" : subtitle}
         </div>

@@ -7,6 +7,8 @@ import { useBranding } from "../hooks/useBranding";
 import { HOUZS_COMPANY_CODE, shortCompanyName } from "../lib/branding";
 import { compareCalendarEvents } from "../lib/calendarSort";
 import "./mobile.css";
+import { useProjectsMode } from "../pages/projects/renovation/RenovationRoutes";
+import { MobileRenovationWeek } from "./MobileRenovationWeek";
 
 /**
  * Mobile Calendar screen — 1:1 with the owner's mobile design prototype,
@@ -242,6 +244,7 @@ export function MobileCalendar({
   const [year, setYear] = useState(initialYear ?? today.getFullYear());
   const [month, setMonth] = useState(initialMonth ?? today.getMonth());
   const [mode, setMode] = useState<"month" | "week">("month");
+  const projectsMode = useProjectsMode();
   const [brandF, setBrandF] = useState("all");
   const [sectionF, setSectionF] = useState("all");
   const [orgF, setOrgF] = useState("all");
@@ -471,6 +474,10 @@ export function MobileCalendar({
     const target = isThisMonth ? today.getDate() : 1;
     weeks = [weeks.find((w) => w.includes(target)) ?? weeks[0]];
   }
+  // Conts, renovation mode: the Week view lists each day's dated items, as the desktop Calendar does.
+  const renoWeek = projectsMode === "renovation" && mode === "week";
+  const weekDayNum = isThisMonth ? today.getDate() : 1;
+  const renoWeekDay = useMemo(() => new Date(year, month, weekDayNum), [year, month, weekDayNum]);
 
   return (
     <div className="hz-m" style={{ display: "flex", flexDirection: "column", height: "100%", background: "#fff" }}>
@@ -482,6 +489,8 @@ export function MobileCalendar({
             <div style={{ fontSize: 14, fontWeight: 800, color: "#15161a" }}>{brandMark}</div>
             <div style={{ fontSize: 7.5, fontWeight: 700, letterSpacing: ".28em", color: "var(--brand)", marginTop: 2 }}>{brandEyebrow}</div>
           </div>
+          {/* Conts: no search here inside Property OS, whose own top bar has one (onOpenSearch is not passed). */}
+          {onOpenSearch && (
           <button
             className="iconbtn"
             onClick={onOpenSearch}
@@ -491,6 +500,7 @@ export function MobileCalendar({
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#414539" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /></svg>
           </button>
+          )}
         </div>
       </header>
 
@@ -536,8 +546,8 @@ export function MobileCalendar({
           <button onClick={() => setShowTasks((v) => !v)} className={`cal-tog${showTasks ? " on" : ""}`}>{showTasks ? "●" : "○"} Tasks</button>
           <button onClick={() => setShowHolidays((v) => !v)} className={`cal-tog${showHolidays ? " on" : ""}`}>{showHolidays ? "●" : "○"} My holidays</button>
         </div>
-        {/* Legend */}
-        <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 6, padding: "0 2px" }}>
+        {/* Legend (the renovation week has its own, by kind of item) */}
+        <div style={{ display: renoWeek ? "none" : "flex", alignItems: "center", gap: 14, marginBottom: 6, padding: "0 2px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <span style={{ width: 9, height: 9, borderRadius: "50%", background: STATUS_COLOR.confirmed }} />
             <span style={{ fontSize: 11, color: "var(--ink2)" }}>Confirmed</span>
@@ -555,14 +565,24 @@ export function MobileCalendar({
           Tip: tap an event for details · use ‹ › to change month
         </div>
 
-        {isLoading && <div style={emptyBox}>Loading…</div>}
-        {error && <div style={{ ...emptyBox, color: "var(--red)" }}>Couldn't load the calendar. Pull to retry.</div>}
+        {renoWeek && (
+          <MobileRenovationWeek
+            day={renoWeekDay}
+            brand={brandF === "all" ? "" : brandF}
+            organizer={orgF === "all" ? "" : orgF}
+            showHolidays={showHolidays}
+            enabled={canViewCalendar}
+            onOpen={onOpenProject}
+          />
+        )}
+        {!renoWeek && isLoading && <div style={emptyBox}>Loading…</div>}
+        {!renoWeek && error && <div style={{ ...emptyBox, color: "var(--red)" }}>Couldn't load the calendar. Pull to retry.</div>}
 
         {/* Month AND Week share the prototype's single .wk grid — week mode just
             renders the one week containing today (computed above) with every bar
             uncapped, exactly as the prototype's calRender() does. No separate
             agenda list (the prototype has none). */}
-        {!isLoading && !error && (
+        {!renoWeek && !isLoading && !error && (
           <MonthGrid weeks={weeks} byDay={byDay} expand={expand} onExpandAll={() => {}} onOpenDay={setDaySheet} empty={events.length === 0} onOpen={onOpenProject} focusProjectId={focusProjectId} todayDay={todayDay} />
         )}
       </div>

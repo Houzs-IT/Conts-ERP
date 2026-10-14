@@ -32,7 +32,6 @@ import SupplyChainEngine from './components/SupplyChainEngine';
 import { ENGINE_PATH } from './lib/scmEngine';
 import { useApi } from './lib/useApi';
 const UnitsPage = lazy(() => import('./pages/UnitsPage'));
-const InventoryPage = lazy(() => import('./pages/InventoryPage'));
 const ProductsPage = lazy(() => import('./pages/ProductsPage'));
 const SuppliersPage = lazy(() => import('./pages/SuppliersPage'));
 const ProductModelsPage = lazy(() => import('./pages/ProductModelsPage'));
@@ -82,7 +81,6 @@ const ExpensesPage = lazy(() => import('./pages/ExpensesPage'));
 const StatementDetailPage = lazy(() => import('./pages/StatementDetailPage'));
 const OwnerIncomeReportPage = lazy(() => import('./pages/OwnerIncomeReportPage'));
 const ApprovalsPage = lazy(() => import('./pages/ApprovalsPage'));
-const GuestDocumentsPage = lazy(() => import('./pages/GuestDocumentsPage'));
 const OwnersPage = lazy(() => import('./pages/OwnersPage'));
 const OwnerProfilePage = lazy(() => import('./pages/OwnerProfilePage'));
 const ContractsPage = lazy(() => import('./pages/ContractsPage'));
@@ -245,7 +243,6 @@ function Routed() {
         <Route path="/properties" element={<ToUnits />} />
         <Route path="/properties/units" element={<UnitsPage unitId="" />} />
         <Route path="/properties/units/:id" element={<UnitsRoute />} />
-        <Route path="/properties/inventory" element={<InventoryPage />} />
         <Route path="/properties/access" element={<ToUnits tab="access" />} />
         <Route path="/procurement/products" element={<ProductsPage />} />
         <Route path="/procurement/suppliers" element={<SuppliersPage />} />
@@ -308,7 +305,6 @@ function Routed() {
         <Route path="/finance/statements/:id" element={<MovedStatement />} />
         <Route path="/finance/payouts" element={<Moved to="/owners" add={{ view: 'payouts' }} />} />
         <Route path="/finance/approvals" element={<ApprovalsPage />} />
-        <Route path="/finance/documents" element={<GuestDocumentsPage />} />
         <Route path="/owners" element={<OwnersPage />} />
         <Route path="/owners/:id" element={<OwnerProfileRoute />} />
         <Route path="/owners/contracts" element={<ContractsPage />} />

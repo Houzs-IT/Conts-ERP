@@ -1091,7 +1091,7 @@ export function MfgSalesOrdersListV2() {
     [customersQ.data],
   );
 
-  const { data, isLoading, isFetching, isPlaceholderData, error } = useMfgSalesOrdersPaged({
+  const { data, isLoading, isFetching, isPlaceholderData, error, refetch } = useMfgSalesOrdersPaged({
     page,
     pageSize,
     status,
@@ -1116,6 +1116,8 @@ export function MfgSalesOrdersListV2() {
   // rows it describes. Same flag SearchScopeHint already uses for its count.
   const statsPending =
     isLoading || isPlaceholderData || Boolean(error) || searchTransition.resultsAreStale;
+  // Conts: a failed load says so on the cards, with Retry, instead of "Loading…" for ever.
+  const statsFail = { failed: Boolean(error), onRetry: () => void refetch() };
   const updateStatus = useUpdateMfgSalesOrderStatus();
   const requestCancel = useCancelRequestAction("so");
   const setHold = useSetDocumentHold("so");
@@ -2005,7 +2007,7 @@ export function MfgSalesOrdersListV2() {
               (the component-root default). */}
           <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
             <StatCard
-              pending={statsPending}
+              pending={statsPending} {...statsFail}
               label="Total Orders"
               value={total.toLocaleString("en-MY")}
               subtitle="All matching orders"
@@ -2013,14 +2015,14 @@ export function MfgSalesOrdersListV2() {
               active
             />
             <StatCard
-              pending={statsPending}
+              pending={statsPending} {...statsFail}
               label="Revenue"
               value={fmtRm(stats.revenueSen)}
               subtitle={stats.fullSet ? "All matching orders" : "Sum on this page"}
               rail="bg-accent"
             />
             <StatCard
-              pending={statsPending}
+              pending={statsPending} {...statsFail}
               label="Outstanding"
               value={fmtRm(stats.outstandingSen)}
               subtitle={stats.fullSet ? "Balance due" : "Balance on this page"}
@@ -2028,7 +2030,7 @@ export function MfgSalesOrdersListV2() {
               rail="bg-err"
             />
             <StatCard
-              pending={statsPending}
+              pending={statsPending} {...statsFail}
               label="Paid"
               value={fmtRm(stats.paidSen)}
               subtitle={stats.fullSet ? "Receipts to date" : "Receipts on this page"}

@@ -64,13 +64,15 @@ export function Layout({ children }: Props) {
 
       <main className="paper-grain thin-scroll flex-1 min-w-0 overflow-y-auto overflow-x-hidden">
         {/* Mobile top bar — brand + topbar chrome only. Hidden on lg+. */}
-        <MobileTopBar />
+        {/* Conts: inside Property OS its top bar (search, bell) is the one people use, so neither bar is drawn
+            here; conts/embed.css moves what pinned itself under them to the top. */}
+        {!CONTS_EMBEDDED && <MobileTopBar />}
 
         {/* Desktop top chrome — ONE 52px bar (2b): workspace tabs inline +
             search / company / bell / avatar. No breadcrumb, no second row.
             Every lg+ sticky below parks at top-[52px]: PageHeader here,
             DetailLayout, the two SCM V2 doc bars. Hidden below lg. */}
-        <TopNavbar />
+        {!CONTS_EMBEDDED && <TopNavbar />}
 
         {writesDisabled && <ReadOnlyBanner />}
 
