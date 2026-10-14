@@ -48,6 +48,7 @@ const MobileCalendar = lazy(() => import("./MobileCalendar").then((m) => ({ defa
 const MobileSearch = lazy(() => import("./MobileSearch").then((m) => ({ default: m.MobileSearch })));
 const MobileInbox = lazy(() => import("./MobileInbox").then((m) => ({ default: m.MobileInbox })));
 const MobileServiceCase = lazy(() => import("./MobileServiceCase").then((m) => ({ default: m.MobileServiceCase })));
+const MobileRenovationDocs = lazy(() => import("./MobileRenovationDocs").then((m) => ({ default: m.MobileRenovationDocs })));
 const MobilePMS = lazy(() => import("./MobilePMS").then((m) => ({ default: m.MobilePMS })));
 // Renovation mode (projects_mode, mig 0082) swaps PMS for the renovation board, detail and site receipt.
 const MobileProjectsEntry = lazy(() => import("./MobileRenovationProject").then((m) => ({ default: m.MobileProjectsEntry })));
@@ -146,6 +147,8 @@ type Screen =
      CREATE stays on MobileModuleList's FORM_RACK, unchanged. */
   | { t: "racks" }
   | { t: "service"; startNew?: boolean }
+  /* Conts: quotations and the other renovation sales documents; the address picks the screen inside it. */
+  | { t: "renovation-docs" }
   | { t: "delivery-planning" }
   | { t: "pms"; projectId?: number; view?: "monitor" }
   | { t: "mail" }
@@ -180,6 +183,7 @@ export function destinationScreen(to: string, label: string): DestinationTarget 
   if (path === "/scm/amendments") return { t: "amendments" };
   if (path === "/scm/po-amendments") return { t: "po-amendments" };
   if (path === "/assr") return { t: "service" };
+  if (path.startsWith("/scm/renovation/")) return { t: "renovation-docs" };
   if (path === "/projects") {
     return new URLSearchParams(to.split("?")[1] || "").get("view") === "monitor" ? { t: "pms", view: "monitor" } : { t: "pms" };
   }
@@ -326,6 +330,7 @@ export type MobileMenuItem = {
 
 export const MOBILE_MENU_GROUPS: { group: string; items: MobileMenuItem[] }[] = [
   { group: "Sales & Finance", items: [
+    { to: "/scm/renovation/quotations", label: "Quotations" },
     { to: "/scm/sales-orders", label: "Sales Orders" },
     { to: "/scm/amendments", label: "Sales Order Amendment" },
     /* SO Maintenance — gated on the BACKEND's own answer, `scm.maintenance.open`.
@@ -684,6 +689,11 @@ function MobileAppInner() {
   };
   const tabFor = (route: MobileRoute): Tab => (route.t === "tab" ? route.tab : contsView(route)?.tab ?? firstTab);
   const screenFor = (route: MobileRoute): Screen => {
+    /* A quotation, its sales order or a variation order has its own address under the list's; the menu row
+       only names the list, so any of them opens the renovation documents when the list may be opened. */
+    if (typeof window !== "undefined" && window.location.pathname.startsWith("/scm/renovation/")) {
+      return allowed("/scm/renovation/quotations") ? { t: "renovation-docs" } : { t: "locked", label: "Quotations" };
+    }
     const named = contsView(route);
     if (named) return named.screen;
     const first = initialScreenFor(route);
@@ -1050,6 +1060,7 @@ function MobileAppInner() {
     overlay = <MobilePOD docNo={screen.docNo} onBack={leavePod} onDone={leavePod} />;
   }
   else if (screen.t === "mileage-capture") overlay = <MobileMileageCapture onBack={back} />;
+  else if (screen.t === "renovation-docs") overlay = <MobileRenovationDocs onBack={back} />;
   else if (screen.t === "service") overlay = <MobileServiceCase onBack={back} startNew={screen.startNew} />;
   else if (screen.t === "delivery-planning") overlay = <MobileDeliveryPlanning onBack={back} onOpen={(doc) => setScreen({ t: "so-detail", docNo: doc })} onPod={(doNumber) => setScreen({ t: "pod", docNo: doNumber, from: "delivery-planning" })} />;
   else if (screen.t === "pms") overlay = <MobileProjectsEntry onBack={back} initialProjectId={screen.projectId} initialView={screen.view} exhibition={() => <MobilePMS onBack={back} initialProjectId={screen.projectId} />} />;
