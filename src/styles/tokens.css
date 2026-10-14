@@ -178,6 +178,9 @@ body { margin: 0; }
    and the field and owner portals have no .app-main and scroll as normal pages. The scrollbar gutter is reserved, so
    the page does not shift sideways when a list loads past the fold or an open dialog locks it. */
 html:has(.app-main) { overflow: hidden; }
+/* Installed on an iPhone (home screen app, translucent status bar) the window is reported short by the height of
+   the status bar, which left a blank strip under the bottom tab bar. Making the page that much taller fills it. */
+@media (display-mode: standalone) { html { min-height: calc(100% + env(safe-area-inset-top)); } }
 .app-main { scrollbar-gutter: stable; }
 .app-main:focus { outline: none; }
 /* An open dialog or the phone menu locks the page behind it; a scroll that reaches the dialog's end does not carry on
