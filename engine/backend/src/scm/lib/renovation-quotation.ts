@@ -7,6 +7,9 @@ import {
   cloneSections, deleteStructure, insertInstalments, insertSections, readInstalments, readSections, readSectionsMany, totalsOf, type DocSectionOut,
 } from './renovation-doc-lines';
 import type { DocHeaderInput, NormInstalment, NormSection, PrintFormat } from './renovation-validate';
+import {
+  EMPTY_QUOTE_PROPERTY, fillBlanksFromProject, quotePropertyReady, readProjectParty, readRevisionProperty, writeRevisionProperty, type QuoteProperty,
+} from './renovation-doc-flow';
 
 export interface RenoActor {
   name: string | null;
@@ -35,7 +38,9 @@ export function revisionDocNo(quoteNo: string, revNo: number): string {
   return revNo <= 1 ? quoteNo : `${quoteNo}-R${revNo}`;
 }
 
-export interface RevisionHeader {
+/* The customer + property block (siteAddress, propertyType, layoutLabel, bedrooms, bathrooms, builtUpSqft) is
+   read and written by renovation-doc-flow.ts once migration 0116 is in. */
+export interface RevisionHeader extends QuoteProperty {
   printFormat: PrintFormat;
   attention: string;
   customerName: string;
@@ -85,6 +90,7 @@ function headerOf(r: RevRow): RevisionHeader {
     docDiscountSen: Number(r.doc_discount_sen),
     docDiscountLabel: r.doc_discount_label,
     promoLines: Array.isArray(r.promo_lines) ? (r.promo_lines as RevisionHeader['promoLines']) : [],
+    ...EMPTY_QUOTE_PROPERTY,
   };
 }
 
@@ -92,7 +98,7 @@ export function mergeHeader(base: Partial<RevisionHeader>, patch: DocHeaderInput
   const h: RevisionHeader = {
     printFormat: 'AMOUNT', attention: '', customerName: '', customerPhone: '', customerEmail: '', building: '', unitNo: '',
     preparedBy: '', docDate: todayKl(), lastAmended: null, validUntil: null, intro: null, termsNote: '', termTemplateId: null,
-    docDiscountSen: 0, docDiscountLabel: '', promoLines: [],
+    docDiscountSen: 0, docDiscountLabel: '', promoLines: [], ...EMPTY_QUOTE_PROPERTY,
     ...base,
   };
   if (!patch) return h;
@@ -130,6 +136,7 @@ async function writeRevisionHeader(db: RenoDb, revisionId: string, h: RevisionHe
     [revisionId, h.printFormat, h.attention, h.customerName, h.customerPhone, h.customerEmail, h.building, h.unitNo, h.preparedBy, h.docDate,
       h.lastAmended, h.validUntil, h.intro, h.termsNote, h.termTemplateId, h.docDiscountSen, h.docDiscountLabel, JSON.stringify(h.promoLines)],
   );
+  await writeRevisionProperty(db, revisionId, h);
 }
 
 export async function projectExists(db: RenoDb, projectId: number, companyId?: number): Promise<boolean> {
@@ -166,7 +173,8 @@ export async function createQuotation(
       if (own.length) instalments = own.map(({ id: _id, ...r }) => r);
     }
   }
-  const header = mergeHeader(base, body.header);
+  /* A quotation for a project starts from the project's customer and property where the form left them blank. */
+  const header = fillBlanksFromProject(mergeHeader(base, body.header), await readProjectParty(db, body.projectId, actor.companyId));
   if (!instalments) {
     const terms = await instalmentsFromTerms(db, actor.companyId, header.termTemplateId);
     instalments = terms.rows;
@@ -215,7 +223,7 @@ export async function lockQuotation(db: RenoDb, id: string, companyId: number): 
 export async function readRevision(db: RenoDb, revisionId: string) {
   const [r] = await db.q<RevRow>(`select ${REV_COLS} from scm.reno_quotation_revisions where id = $1`, [revisionId]);
   if (!r) throw refuse(404, 'revision_not_found', 'That revision does not exist.');
-  const header = headerOf(r);
+  const header: RevisionHeader = { ...headerOf(r), ...(await readRevisionProperty(db, r.id)) };
   const sections = await readSections(db, { kind: 'revision', id: r.id });
   const instalments = await readInstalments(db, { kind: 'revision', id: r.id });
   return {
@@ -248,6 +256,7 @@ export async function getQuotation(db: RenoDb, id: string, companyId: number, re
     revisions: revisions.map((x) => ({ revNo: Number(x.rev_no), docNo: x.doc_no, frozenAt: x.frozen_at, createdAt: x.created_at })),
     revision,
     editable: head.status === 'DRAFT' && !head.lockedAt && revision.revNo === head.currentRev,
+    propertyReady: await quotePropertyReady(db),
   };
 }
 

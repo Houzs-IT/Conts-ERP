@@ -14,6 +14,7 @@ import { auditEntity, auditSo, mintDocNo, refuse, todayKl, yymmOf, type RenoDb }
 import { cloneSections, insertInstalments, insertSections, readInstalments, readSections, totalsOf, toMoneyLine } from './renovation-doc-lines';
 import { lockQuotation, readRevision, type RenoActor } from './renovation-quotation';
 import type { DocHeaderInput, NormSection, PrintFormat } from './renovation-validate';
+import { stampContractFromQuotation } from './renovation-doc-flow';
 import { lineCostSen, soMirrorRow } from '../shared/renovation-money';
 import { isStageKey } from '../shared/renovation-stages';
 
@@ -174,6 +175,10 @@ export async function convertQuotationToSo(
   await insertSoItems(db, docNo, rows, { companyId: actor.companyId, debtorName, lineDate: soDate });
   const revised = await recomputeSoHeader(db, docNo);
   await insertSections(db, { kind: 'so', id: docNo }, sections, actor.companyId);
+  await stampContractFromQuotation(db, docNo, {
+    projectId: q.projectId, companyId: actor.companyId, building: h.building, unitNo: h.unitNo, sections,
+    property: { siteAddress: h.siteAddress, propertyType: h.propertyType, layoutLabel: h.layoutLabel, bedrooms: h.bedrooms, bathrooms: h.bathrooms, builtUpSqft: h.builtUpSqft },
+  });
   await insertInstalments(db, { kind: 'so', id: docNo }, rev.instalments.map(({ id: _id, ...r }) => r), actor.companyId);
   await db.q(
     `insert into scm.reno_so_contracts (so_doc_no, company_id, project_id, quotation_id, quotation_revision_id, quote_doc_no, brand_id, print_format,

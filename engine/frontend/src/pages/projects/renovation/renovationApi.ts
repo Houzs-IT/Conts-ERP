@@ -149,7 +149,7 @@ export interface ProjectDetail {
   financeHidden: boolean;
 }
 
-export interface PodPhoto { id: string; kind: string; location: string | null; r2_key: string; caption?: string | null; grn_number?: string | null }
+export interface PodPhoto { id: string; kind: string; location: string | null; r2_key: string; caption?: string | null; grn_number?: string | null; grn_id?: string | null }
 export interface PodView { rooms: Array<{ room: string; photos: PodPhoto[] }>; receipts: Array<Record<string, unknown>>; deliveries: Array<Record<string, unknown>> }
 
 export interface CalendarTask {

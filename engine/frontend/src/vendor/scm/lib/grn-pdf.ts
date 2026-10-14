@@ -18,6 +18,7 @@ import { loadSupplierDocData, supplierCodeFor, docVariantLine } from './supplier
    what this document prints and what the screen shows must be the same word.
    docs/modules/document-status-vocabulary.md §1. */
 import { statusLabel } from './status-pill';
+import { renoDetailRows, renoLineNote, type RenoDocInfo } from './renovation-doc-print';
 
 type GrnHeader = {
   grn_number: string; status: string;
@@ -28,6 +29,8 @@ type GrnHeader = {
   purchase_order?: { id: string; po_number: string };
 };
 type GrnItem = {
+  /* Line id: pairs the line with its renovation room / category (mig 0116). */
+  id?: string | null;
   item_code: string; material_name: string;
   qty_received: number; qty_accepted: number; qty_rejected: number;
   rejection_reason: string | null; unit_price_sen: number;
@@ -50,7 +53,8 @@ export async function renderGrnInto(
   autoTable: any,
   header: GrnHeader,
   items: GrnItem[],
-  opts?: { docTitle?: string; docNoLabel?: string },
+  /* renovation: project and each line's room / category (mig 0116). */
+  opts?: { docTitle?: string; docNoLabel?: string; renovation?: RenoDocInfo | null },
 ): Promise<void> {
   /* Before ANY drawing: a customer / supplier name, address or remark that
      carries CJK needs the font embedded up front, or helvetica silently paints
@@ -104,6 +108,7 @@ export async function renderGrnInto(
         ['Received', fmtDocDate(header.received_at)],
         ['DN Ref', header.delivery_note_ref],
         ['PO Ref', header.purchase_order?.po_number],
+        ...renoDetailRows(opts?.renovation).slice(0, 1),
         ['Posted', header.posted_at ? fmtDocDate(header.posted_at) : null],
         ['Status', statusText],
       ],
@@ -130,7 +135,8 @@ export async function renderGrnInto(
 
   const rows = orderedItems.map((it, idx) => {
     const specs = docVariantLine(it, fabricMap, fabricDescMap, { labelled: true });
-    const desc = it.description ?? it.material_name;
+    const reno = renoLineNote(opts?.renovation, it.id, true);
+    const desc = [it.description ?? it.material_name, reno].filter(Boolean).join('\n');
     return [
       String(idx + 1),
       supplierCodeFor(it, skuMap),
@@ -185,7 +191,7 @@ export async function renderGrnInto(
 export async function generateGrnPdf(
   header: GrnHeader,
   items: GrnItem[],
-  opts?: { docTitle?: string; docNoLabel?: string; action?: PdfAction },
+  opts?: { docTitle?: string; docNoLabel?: string; action?: PdfAction; renovation?: RenoDocInfo | null },
 ): Promise<void> {
   const { jsPDF } = await import('jspdf');
   const autoTable = (await import('jspdf-autotable')).default;

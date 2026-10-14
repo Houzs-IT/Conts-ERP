@@ -69,13 +69,19 @@ function drawInfo(pdf: JsPdf, d: PrintDoc): void {
   pdf.text('Attention', M + 2, y0);
   pdf.text('To', M + 2, y0 + 4.6);
   pdf.text(h.customerName || h.attention, M + 26, y0 + 4.6, { maxWidth: 90 });
-  if (h.attention && h.customerName && h.attention !== h.customerName) {
+  /* Second line: the attention when it differs from the customer, else the quotation's phone and site address
+     (mig 0116). Third line: the property, then the last-amended date. Blank parts print nothing. */
+  const second = h.attention && h.customerName && h.attention !== h.customerName
+    ? h.attention
+    : [h.customerPhone, (h.siteAddress ?? '').split(/\r?\n/).map((s) => s.trim()).filter(Boolean).join(', ')].filter(Boolean).join(' · ');
+  if (second) {
     pdf.setFont('helvetica', 'normal');
-    pdf.text(h.attention, M + 26, y0 + 9.2, { maxWidth: 90 });
+    pdf.text(second, M + 26, y0 + 9.2, { maxWidth: 90 });
   }
-  if (h.lastAmended) {
+  const third = [h.property, h.lastAmended ? `LAST AMEND : ${dmy(h.lastAmended)}` : ''].filter(Boolean).join('   ');
+  if (third) {
     pdf.setFont('helvetica', 'normal');
-    pdf.text(`LAST AMEND : ${dmy(h.lastAmended)}`, M + 26, y0 + 13.8);
+    pdf.text(third, M + 26, y0 + 13.8, { maxWidth: 90 });
   }
   const lx = 128;
   const vx = RIGHT - 18;

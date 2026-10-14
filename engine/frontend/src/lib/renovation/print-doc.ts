@@ -40,6 +40,13 @@ export async function printBrand(brand: BrandProfile | undefined): Promise<Print
   };
 }
 
+/** "Condo · 3 bed 2 bath · 1,100 sq ft" from a quotation header (mig 0116), '' when none of it is set. */
+export function propertySummary(h: Partial<DocHeader>): string {
+  const layout = h.layoutLabel || (h.bedrooms != null && h.bathrooms != null ? `${h.bedrooms} bed ${h.bathrooms} bath` : '');
+  const sqft = h.builtUpSqft != null ? `${Number(h.builtUpSqft).toLocaleString('en-MY')} sq ft` : '';
+  return [h.propertyType, layout, sqft].filter(Boolean).join(' · ');
+}
+
 export async function buildPrintDoc(p: {
   kind: DocKind; docNo: string; format: PrintFormat; brand: BrandProfile | undefined; header: Partial<DocHeader>; sections: DocSection[];
   instalments?: Instalment[]; reference?: string | null;
@@ -50,6 +57,7 @@ export async function buildPrintDoc(p: {
     header: {
       attention: h.attention ?? '', customerName: h.customerName ?? '', building: h.building ?? '', unitNo: h.unitNo ?? '',
       preparedBy: h.preparedBy ?? '', docDate: h.docDate ?? null, lastAmended: h.lastAmended ?? null, intro: h.intro ?? null,
+      customerPhone: h.customerPhone ?? '', siteAddress: h.siteAddress ?? '', property: propertySummary(h),
     },
     sections: toPrintSections(p.sections),
     docDiscountSen: h.docDiscountSen ?? 0, docDiscountLabel: h.docDiscountLabel ?? '', promoLines: h.promoLines ?? [],

@@ -111,6 +111,7 @@ import { salesInvoiceLinesOpen } from "../../vendor/scm/lib/line-add-lock";
 import { ActivityRow } from "./ActivityRow";
 import { DocumentHistoryDrawer } from "./DocumentHistoryDrawer";
 import { isFocLine } from '../../vendor/scm/lib/foc-line';
+import { RenovationDocBlock, renoLineColumns, useRenoDocInfo } from "./RenovationDocInfo";
 // ─── Row shapes (subset — see SalesInvoiceDetail.tsx for the full 40-field
 // header) ───────────────────────────────────────────────────────────────
 
@@ -576,6 +577,8 @@ function HeroLine({
 
 export function SalesInvoiceDetailV2() {
   const { id } = useParams<{ id: string }>();
+  /* Renovation mode (mig 0116): project, building, unit and line rooms copied from the SO / DO. */
+  const reno = useRenoDocInfo("si", id);
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const location = useLocation();
@@ -824,7 +827,7 @@ export function SalesInvoiceDetailV2() {
     if (!salesInvoice) return;
     return import("../../vendor/scm/lib/sales-invoice-pdf")
       .then(({ generateSalesInvoicePdf }) =>
-        generateSalesInvoicePdf(salesInvoice as never, items as never, { action })
+        generateSalesInvoicePdf(salesInvoice as never, items as never, { action, renovation: reno })
       )
       .catch((e) =>
         notify({
@@ -1568,6 +1571,11 @@ export function SalesInvoiceDetailV2() {
 
             {/* Delivery address + Emergency contact — identical layout to DO
                 detail V2 (the DO's fields carry through to the SI on convert). */}
+            {reno && (
+              <Section title="Project">
+                <RenovationDocBlock data={reno} kind="si" />
+              </Section>
+            )}
             <Section title="Delivery address">
               <div className="grid grid-cols-1 gap-6 sm:grid-cols-[1.4fr_1fr] sm:divide-x sm:divide-border-subtle">
                 <div className="sm:pr-6">
@@ -1629,7 +1637,7 @@ export function SalesInvoiceDetailV2() {
                 layoutFamily={DATA_TABLE_LAYOUT_FAMILIES.salesInvoiceLines} persistSort={false} persistFilters={false}
                 rows={items}
                 loading={false}
-                columns={lineColumns}
+                columns={reno ? [...renoLineColumns<SiItem>(reno, false), ...lineColumns] : lineColumns}
                 getRowKey={(l) => l.id}
                 emptyLabel="No line items"
               />

@@ -99,6 +99,7 @@ import { customerRefOf } from '../../lib/customer-ref';
 import { DocumentHistoryDrawer } from "./DocumentHistoryDrawer";
 import { isFocLine } from '../../vendor/scm/lib/foc-line';
 import { CollectedOnOrderCard } from "../../vendor/scm/components/CollectedOnOrderCard";
+import { RenovationDocBlock, renoLineColumns, useRenoDocInfo } from "./RenovationDocInfo";
 // ─── Header + item shapes (subset — full 40-field row lives in the list V2) ─
 
 type DoLifecycle = "shipped" | "invoiced" | "returned";
@@ -639,6 +640,8 @@ function DriverSubCard({ header }: { header: DoHeader }) {
 
 export function DeliveryOrderDetailV2() {
   const { id } = useParams<{ id: string }>();
+  /* Renovation mode (mig 0116): project, building, unit and line rooms copied from the SO. */
+  const reno = useRenoDocInfo("do", id);
   const [params] = useSearchParams();
   const navigate = useNavigate();
 
@@ -822,7 +825,7 @@ export function DeliveryOrderDetailV2() {
           deliveryOrder as Record<string, unknown>,
           (deliveryOrder as { id?: string }).id ?? "",
         );
-        return generateDeliveryOrderPdf({ ...header, salesperson } as never, items as never, { action });
+        return generateDeliveryOrderPdf({ ...header, salesperson } as never, items as never, { action, renovation: reno });
       })
       .then(() => {
         // Downloads and prints are terminal — close behind them. A new-tab
@@ -1362,6 +1365,11 @@ export function DeliveryOrderDetailV2() {
             </Section>
 
             {/* Delivery address + Emergency contact */}
+            {reno && (
+              <Section title="Project">
+                <RenovationDocBlock data={reno} kind="do" />
+              </Section>
+            )}
             <Section title="Delivery address">
               <div className="grid grid-cols-1 gap-6 sm:grid-cols-[1.4fr_1fr] sm:divide-x sm:divide-border-subtle">
                 <div className="sm:pr-6">
@@ -1477,7 +1485,7 @@ export function DeliveryOrderDetailV2() {
                 layoutFamily={DATA_TABLE_LAYOUT_FAMILIES.deliveryOrderLines} persistSort={false} persistFilters={false}
                 rows={items}
                 loading={false}
-                columns={lineColumns}
+                columns={reno ? [...renoLineColumns<DoItem>(reno, false), ...lineColumns] : lineColumns}
                 getRowKey={(l) => l.id}
                 emptyLabel="No line items"
               />
