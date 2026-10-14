@@ -66,6 +66,11 @@ export interface PrintDoc {
     docDate: string | null;
     lastAmended: string | null;
     intro?: string | null;
+    /** Quotation customer + property block (mig 0116); blank prints nothing. */
+    customerPhone?: string;
+    siteAddress?: string;
+    /** "Condo · 3 bed 2 bath · 1,100 sq ft". */
+    property?: string;
   };
   sections: PrintSectionInput[];
   docDiscountSen: number;

@@ -3,7 +3,7 @@
    it by hand with a reason, and it holds until the data moves past it. The hold
    flag (IN DEFECT / ON HOLD) is separate and can be set or cleared any time. */
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { AlertTriangle, CheckCircle2, Circle, Hand, History } from "lucide-react";
 import { Button } from "../../../components/Button";
 import { useQuery } from "../../../hooks/useQuery";
@@ -39,8 +39,10 @@ export function StepStrip({ flow, hold, compact = false }: { flow: FlowView; hol
   );
 }
 
-export function FlowPanel({ projectId, flow, hold, canWrite, onChanged }: {
+export function FlowPanel({ projectId, flow, hold, canWrite, onChanged, facts }: {
   projectId: number; flow: FlowView; hold: Hold | null; canWrite: boolean; onChanged: (text: string) => void;
+  /** The project's few meaningful facts (contract, received, key, handover), shown under the steps. */
+  facts?: ReactNode;
 }) {
   const [moving, setMoving] = useState(false);
   const [holding, setHolding] = useState(false);
@@ -57,14 +59,24 @@ export function FlowPanel({ projectId, flow, hold, canWrite, onChanged }: {
     <section className="rounded-lg border border-border bg-surface p-3 mb-3">
       <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
         <div className="flex flex-wrap items-center gap-2 text-sm">
-          <span className="font-semibold text-ink">Step {flow.currentIndex + 1} of {flow.steps.length}: {flow.currentLabel}</span>
+          {/* Owner, 14 Oct 2026: plain words, e.g. "Closed (set by hand)" with a small "use data" link. */}
+          <span className="font-semibold text-ink">{flow.currentLabel}</span>
+          {flow.manualInEffect && (
+            <span className="inline-flex items-center gap-1 text-xs text-ink-secondary" title={`The data says ${derivedLabel}`}>
+              <Hand size={12} />(set by hand)
+              {canWrite && (
+                <button type="button" className="text-primary hover:underline" onClick={() => run(() => simpleApi.followData(projectId), "The step follows the data again.")}>
+                  use data ({derivedLabel})
+                </button>
+              )}
+            </span>
+          )}
           {hold && <span className="inline-flex items-center gap-1 rounded-full bg-err-bg px-2 py-0.5 text-xs font-semibold text-err"><AlertTriangle size={12} />{HOLD_FLAG_LABEL[hold.flag]}</span>}
-          {flow.manualInEffect && <span className="inline-flex items-center gap-1 text-xs text-ink-secondary" title={`The data says ${derivedLabel}`}><Hand size={12} />Set by hand (data says {derivedLabel})</span>}
+          <span className="text-xs text-ink-secondary">step {flow.currentIndex + 1} of {flow.steps.length}</span>
         </div>
         {canWrite && (
           <div className="flex flex-wrap gap-2">
             <Button variant="secondary" onClick={() => setMoving(true)}>Move step...</Button>
-            {flow.manualInEffect && <Button variant="ghost" onClick={() => run(() => simpleApi.followData(projectId), "The step follows the data again.")}>Follow data</Button>}
             {hold
               ? <Button variant="secondary" onClick={() => run(() => simpleApi.clearHold(projectId), `${HOLD_FLAG_LABEL[hold.flag]} cleared.`)}>Clear {HOLD_FLAG_LABEL[hold.flag].toLowerCase()}</Button>
               : <Button variant="ghost" onClick={() => setHolding(true)}>Set in defect / on hold...</Button>}
@@ -72,6 +84,7 @@ export function FlowPanel({ projectId, flow, hold, canWrite, onChanged }: {
         )}
       </div>
       <StepStrip flow={flow} hold={hold} />
+      {facts && <div className="mt-2 border-t border-border pt-2">{facts}</div>}
       {hold?.note && <p className="mt-2 text-sm text-err">{hold.note}</p>}
       {error && <p role="alert" className="mt-2 text-sm text-err">{error}</p>}
       <button type="button" className="mt-2 inline-flex items-center gap-1 text-xs text-ink-secondary hover:text-ink" onClick={() => setShowHistory((x) => !x)} aria-expanded={showHistory}>

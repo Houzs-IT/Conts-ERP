@@ -174,6 +174,15 @@ describe('PO split grouping', () => {
     }
   });
 
+  test('one supplier, two category groups: two POs, never one mixed PO (owner, 14 Oct 2026)', () => {
+    const r = groupForPo([
+      row({ description: 'switch', category: 'WORKS' }),
+      row({ description: 'wardrobe', category: 'BUILTIN' }),
+      row({ description: 'socket', category: 'WORKS' }),
+    ]);
+    expect(r.groups.map((g) => [g.categoryGroup, g.lines.map((l) => l.description)])).toEqual([['BUILTIN', ['wardrobe']], ['WORKS', ['switch', 'socket']]]);
+  });
+
   test('measured lines order one unit at measure x cost; partly ordered lines order the rest', () => {
     const r = groupForPo([row({ measure: '42.600', measure_uom: 'FT', unit_cost_sen: 1500 }), row({ qty: 5, ordered_qty: 2 })]);
     expect(r.groups[0].lines.map((l) => [l.qty, l.amountSen])).toEqual([[1, 63900], [3, 3000]]);

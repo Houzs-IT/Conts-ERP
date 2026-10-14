@@ -1,5 +1,5 @@
-/* SO -> PO for a renovation contract: one click, lines grouped by their bound
-   supplier, every PO line keeps so_item_id.
+/* SO -> PO for a renovation contract: one click, lines grouped by their bound supplier and category group (one PO
+   never mixes categories; owner, 14 Oct 2026, mig 0116 enforces it), every PO line keeps so_item_id.
 
    Written directly rather than through convertSosToPosCore: that path prices
    from supplier-material bindings, folds sofa / mattress buckets and requires
@@ -36,6 +36,8 @@ export interface SplitLine {
 }
 
 export interface SplitGroup {
+  /* One PO per supplier AND category group (owner, 14 Oct 2026: a renovation PO never mixes categories). */
+  categoryGroup: string;
   supplierId: string;
   supplierCode: string;
   supplierName: string;
@@ -94,12 +96,13 @@ export function groupForPo(rows: CandidateRow[]): SplitPreview {
       continue;
     }
     if (line.qty <= 0) continue;
-    const g = groups.get(r.supplier_id) ?? { supplierId: r.supplier_id, supplierCode: r.supplier_code ?? '', supplierName: r.supplier_name ?? '', lines: [], totalSen: 0 };
+    const key = `${r.supplier_id}|${group ?? ''}`;
+    const g = groups.get(key) ?? { categoryGroup: group ?? '', supplierId: r.supplier_id, supplierCode: r.supplier_code ?? '', supplierName: r.supplier_name ?? '', lines: [], totalSen: 0 };
     g.lines.push(line);
     g.totalSen += line.amountSen;
-    groups.set(r.supplier_id, g);
+    groups.set(key, g);
   }
-  out.groups = [...groups.values()].sort((a, b) => a.supplierName.localeCompare(b.supplierName));
+  out.groups = [...groups.values()].sort((a, b) => a.supplierName.localeCompare(b.supplierName) || a.categoryGroup.localeCompare(b.categoryGroup));
   return out;
 }
 
@@ -131,7 +134,7 @@ export async function raisePos(
   actor: RenoActor,
   docNo: string,
   body: { supplierIds?: string[] | null; poDate?: string | null; expectedAt?: string | null },
-): Promise<{ created: Array<{ id: string; poNumber: string; supplierId: string; lineCount: number; totalSen: number }> }> {
+): Promise<{ created: Array<{ id: string; poNumber: string; supplierId: string; categoryGroup: string; lineCount: number; totalSen: number }> }> {
   const head = await readContractHead(db, docNo, actor.companyId, true);
   if (!(RENO_LIVE_STATUSES as readonly string[]).includes(head.status)) throw refuse(409, 'contract_not_live', `A ${head.status} contract cannot raise purchase orders.`);
   const preview = groupForPo(await candidates(db, docNo, actor.companyId));
@@ -147,7 +150,7 @@ export async function raisePos(
   const tplLines = tpl
     ? await db.q<{ seq: number; label: string; pct_bp: number; payable_on: string }>(`select seq, label, pct_bp, payable_on from scm.reno_term_template_lines where template_id = $1 order by seq`, [tpl.id])
     : [];
-  const created: Array<{ id: string; poNumber: string; supplierId: string; lineCount: number; totalSen: number }> = [];
+  const created: Array<{ id: string; poNumber: string; supplierId: string; categoryGroup: string; lineCount: number; totalSen: number }> = [];
   for (const g of groups) {
     const poNumber = await mintDocNo(db, 'purchase_orders', 'po_number', `${actor.docPrefix}PO-${yymmOf(poDate)}`);
     const [po] = await db.q<{ id: string }>(
@@ -185,7 +188,7 @@ export async function raisePos(
        values ($1, 'purchase_order', $2, $3, 'CREATE', $4, $5, 'renovation')`,
       [actor.companyId, po.id, poNumber, actor.name, `Raised from renovation contract ${docNo}`],
     );
-    created.push({ id: po.id, poNumber, supplierId: g.supplierId, lineCount: g.lines.length, totalSen: g.totalSen });
+    created.push({ id: po.id, poNumber, supplierId: g.supplierId, categoryGroup: g.categoryGroup, lineCount: g.lines.length, totalSen: g.totalSen });
   }
   await db.q(
     `insert into scm.mfg_so_audit_log (so_doc_no, company_id, action, actor_name_snapshot, source, note) values ($1, $2, 'PO_SPLIT', $3, 'renovation', $4)`,

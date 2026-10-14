@@ -1,7 +1,8 @@
 /* One renovation project, simplified (owner decisions 11 and 14 Oct 2026): the six
    main steps with the hold flag, what the sales order says (contract, received,
-   VO), design (the main task: onsite, 3D, 2D), site tasks, procurement dates per
-   product category, arrivals, the unit key and the project team. The older stage
+   VO), design (the main task: onsite, 3D, 2D), procurement details per product
+   category (the documents hub since batch 4: SO, DO with proof of delivery, POs
+   and GRs), the unit key and the project team. The older stage
    machinery (checklists, gate) still runs underneath on the server; its screen
    section was replaced by Procurement details, and the billing prompt stays on top
    when there is something to bill. Snag list and handover form are no longer on
@@ -10,42 +11,28 @@
 
 import { useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { AlertTriangle, Printer, RefreshCw } from "lucide-react";
+import { AlertTriangle, RefreshCw } from "lucide-react";
 import { PageHeader } from "../../../components/Layout";
 import { Button } from "../../../components/Button";
-import { api } from "../../../api/client";
 import { useQuery } from "../../../hooks/useQuery";
 import { cn } from "../../../lib/utils";
 import { renovationApi, type ProjectDetail } from "./renovationApi";
 import { errorText, money, shortDate, supplyLabel, supplyTone } from "./renovationModel";
-import { AuthImage, Dialog, Field, Pill, SkipReasonDialog, inputClass } from "./renovationUi";
-import { HOLD_FLAG_LABEL } from "../../../vendor/shared/renovation-stages";
+import { Dialog, Field, Pill, inputClass } from "./renovationUi";
 import { simpleApi, type ProjectDetailV2 } from "./simpleApi";
 import { FlowPanel } from "./FlowPanel";
 import { ContractCard, KeyCard, PeopleCard } from "./ProjectRecords";
 import { DesignTaskCard } from "./DesignTask";
 import { ProcurementPanel } from "./ProcurementPanel";
-import { SiteTasksPanel } from "./SiteTasksPanel";
 import { CustomerInfoCard } from "./CustomerInfoCard";
-
-type Skipping = { id: number; label: string };
 
 export function RenovationDetail({ id, canWrite, embedded = false }: { id: number; canWrite: boolean; embedded?: boolean }) {
   const q = useQuery(["renovation", "detail", id], () => simpleApi.detail(id), [id]);
-  const [skipping, setSkipping] = useState<Skipping | null>(null);
   const [notice, setNotice] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
   const d = q.data;
+  /* Procurement details is the documents hub (mig 0116); the older Documents card shows only before it is applied. */
+  const docsReady = useQuery(["renovation", "documents", id], () => simpleApi.documents(id), [id]).data?.ready === true;
 
-  async function act(fn: () => Promise<unknown>, okText?: string) {
-    setNotice(null);
-    try {
-      await fn();
-      if (okText) setNotice({ tone: "ok", text: okText });
-      q.reload();
-    } catch (e) {
-      setNotice({ tone: "err", text: errorText(e) });
-    }
-  }
   const done = (text: string) => { setNotice({ tone: "ok", text }); q.reload(); };
   const failed = (text: string) => setNotice({ tone: "err", text });
 
@@ -70,32 +57,24 @@ export function RenovationDetail({ id, canWrite, embedded = false }: { id: numbe
         </div>
       )}
 
-      <FlowPanel projectId={id} flow={d.flow} hold={d.hold} canWrite={canWrite} onChanged={done} />
-      <SummaryStrip d={d} />
+      <FlowPanel projectId={id} flow={d.flow} hold={d.hold} canWrite={canWrite} onChanged={done} facts={<ProjectFacts d={d} />} />
       {!d.financeHidden && d.so && <BillingPromptBanner d={d} canWrite={canWrite} onDone={done} onError={failed} />}
 
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="lg:col-span-2 space-y-4 min-w-0">
-          {/* Left = work (owner, 14 Oct 2026): Design, Procurement, Site tasks. Right = reference. */}
+          {/* Left = work (owner, 14 Oct 2026): Design and Procurement details (the documents hub, with each DO's proof
+              of delivery). Right = reference. Site tasks and the room photo gallery left this page (their data and
+              APIs are unchanged; the calendar still reads the tasks). */}
           <DesignTaskCard projectId={id} canWrite={canWrite} onDone={(t) => setNotice({ tone: "ok", text: t })} onError={failed} />
-          <ProcurementPanel projectId={id} canWrite={canWrite} onError={failed} />
-          <SiteTasksPanel
-            projectId={id}
-            tasks={d.tasks}
-            canWrite={canWrite}
-            linesAvailable={!d.linesUnavailable}
-            onAct={act}
-            onSkip={(t) => setSkipping({ id: t.id, label: t.label })}
-          />
+          <ProcurementPanel projectId={id} canWrite={canWrite} onError={failed} showMoney={!d.financeHidden} />
           {d.serviceCases.length > 0 && <WarrantyPanel d={d} />}
-          <EvidenceGallery projectId={id} />
         </div>
         <aside className="space-y-4 min-w-0">
           <CustomerInfoCard d={d} canWrite={canWrite} onDone={done} onError={failed} />
           <PeopleCard d={d} canWrite={canWrite} onDone={done} onError={failed} />
           <KeyCard d={d} canWrite={canWrite} onDone={done} onError={failed} />
           <ContractCard d={d} canWrite={canWrite} onDone={done} onError={failed} />
-          <LinkedDocuments d={d} />
+          {!docsReady && <LinkedDocuments d={d} />}
           {d.redFlags.length > 0 && (
             <section className="rounded-lg border border-err/30 bg-err-bg p-3">
               <h3 className="text-sm font-semibold text-err flex items-center gap-1"><AlertTriangle size={14} />Red flags</h3>
@@ -105,41 +84,30 @@ export function RenovationDetail({ id, canWrite, embedded = false }: { id: numbe
         </aside>
       </div>
 
-      {skipping && (
-        <SkipReasonDialog
-          what={skipping.label}
-          onCancel={() => setSkipping(null)}
-          onConfirm={async (reason) => {
-            try {
-              await renovationApi.skipTask(skipping.id, reason);
-            } catch (e) {
-              throw new Error(errorText(e));
-            }
-            setSkipping(null);
-            setNotice({ tone: "ok", text: `${skipping.label} skipped. The reason is recorded.` });
-            q.reload();
-          }}
-        />
-      )}
     </div>
   );
 }
 
-function SummaryStrip({ d }: { d: ProjectDetailV2 }) {
-  const cell = (label: string, value: ReactNode) => (
-    <div className="min-w-0"><div className="text-xs text-ink-secondary">{label}</div><div className="text-sm text-ink truncate">{value}</div></div>
-  );
+/** The facts worth a glance, inside the step card: only those that say something (no row of dashes). */
+function ProjectFacts({ d }: { d: ProjectDetailV2 }) {
+  const facts: Array<[string, ReactNode]> = [];
   const handover = d.handover?.signed_at ?? d.project.handed_over_at;
+  if (d.so && !d.financeHidden) {
+    facts.push(["Contract", money(d.money.contractSen)]);
+    if (d.money.receivedSen != null) facts.push(["Received", `${money(d.money.receivedSen)}${d.money.receivedPct != null ? ` (${d.money.receivedPct}%)` : ""}`]);
+  }
+  if (d.so && d.conditions.furniture?.condition) facts.push(["Furniture", <Pill tone={supplyTone(d.conditions.furniture.condition)}>{supplyLabel(d.conditions.furniture.condition)}</Pill>]);
+  if (d.so && d.conditions.renoItem?.condition) facts.push(["Reno items", <Pill tone={supplyTone(d.conditions.renoItem.condition)}>{supplyLabel(d.conditions.renoItem.condition)}</Pill>]);
+  if (d.keyHolder?.name) facts.push(["Key with", d.keyHolder.name]);
+  if (handover) facts.push(["Handed over", shortDate(handover)]);
+  else if (d.project.planned_handover_date) facts.push(["Handover planned", shortDate(d.project.planned_handover_date)]);
+  if (facts.length === 0) return null;
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 rounded-lg border border-border bg-surface p-3 mb-3">
-      {cell("Status", <span className={d.hold ? "font-semibold text-err" : ""}>{[d.hold ? HOLD_FLAG_LABEL[d.hold.flag] : null, d.flow.currentLabel].filter(Boolean).join(" · ")}</span>)}
-      {cell("Contract total", d.financeHidden ? "Hidden" : d.so ? money(d.money.contractSen) : "No SO yet")}
-      {cell("Received", d.financeHidden ? "Hidden" : !d.so ? "-" : d.money.receivedSen == null ? "Not available" : `${money(d.money.receivedSen)}${d.money.receivedPct != null ? ` (${d.money.receivedPct}%)` : ""}`)}
-      {cell("Furniture", d.so ? <Pill tone={supplyTone(d.conditions.furniture?.condition)}>{supplyLabel(d.conditions.furniture?.condition)}</Pill> : "-")}
-      {cell("Reno items", d.so ? <Pill tone={supplyTone(d.conditions.renoItem?.condition)}>{supplyLabel(d.conditions.renoItem?.condition)}</Pill> : "-")}
-      {cell("Key holder", d.keyHolder?.name ?? "-")}
-      {cell(handover ? "Handed over" : "Planned handover", shortDate(handover ?? d.project.planned_handover_date))}
-    </div>
+    <dl className="flex flex-wrap gap-x-5 gap-y-1 text-xs">
+      {facts.map(([label, value]) => (
+        <div key={label} className="flex items-center gap-1.5"><dt className="text-ink-secondary">{label}</dt><dd className="font-medium text-ink">{value}</dd></div>
+      ))}
+    </dl>
   );
 }
 
@@ -199,37 +167,6 @@ function WarrantyPanel({ d }: { d: ProjectDetail }) {
       {d.serviceCases.length === 0
         ? <p className="mt-2 text-sm text-ink-secondary">No complaints since handover.</p>
         : <ul className="mt-2 divide-y divide-border">{d.serviceCases.map((c) => <li key={c.id} className="py-2 text-sm"><Link className="text-primary" to={`/assr?case=${c.id}`}>{c.assr_no}</Link> · {c.status ?? "-"} · {c.complaint_issue ?? ""}</li>)}</ul>}
-    </section>
-  );
-}
-
-function EvidenceGallery({ projectId }: { projectId: number }) {
-  const q = useQuery(["renovation", "pod", projectId], () => renovationApi.pod(projectId), [projectId]);
-  const [big, setBig] = useState<string | null>(null);
-  const rooms = q.data?.rooms ?? [];
-  return (
-    <section className="rounded-lg border border-border bg-surface p-4">
-      <div className="flex items-center justify-between gap-2">
-        <h3 className="text-base font-semibold text-ink">Proof of delivery by room</h3>
-        <Button variant="secondary" icon={<Printer size={14} />} onClick={() => void api.openHtml(`/api/renovation/${projectId}/pod/print`)}>Print note</Button>
-      </div>
-      {q.loading && <p className="mt-2 text-sm text-ink-secondary">Loading photos...</p>}
-      {!q.loading && rooms.length === 0 && <p className="mt-2 text-sm text-ink-secondary">No site receipt photos yet.</p>}
-      {rooms.map((g) => (
-        <div key={g.room} className="mt-3">
-          <div className="text-sm font-medium text-ink">{g.room} <span className="text-ink-secondary font-normal">({g.photos.length})</span></div>
-          <div className="mt-1 grid grid-cols-3 sm:grid-cols-5 gap-2">
-            {g.photos.map((ph) => (
-              <AuthImage key={ph.id} path={renovationApi.fileUrl(projectId, ph.r2_key)} alt={`${g.room} ${ph.kind}`} className="h-20 w-full rounded" onClick={() => setBig(ph.r2_key)} />
-            ))}
-          </div>
-        </div>
-      ))}
-      {big && (
-        <Dialog title="Photo" onClose={() => setBig(null)}>
-          <AuthImage path={renovationApi.fileUrl(projectId, big)} alt="Proof of delivery" className="w-full rounded" />
-        </Dialog>
-      )}
     </section>
   );
 }

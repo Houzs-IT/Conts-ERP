@@ -53,6 +53,7 @@ import { FocAmount } from "../../vendor/scm/components/FocAmount";
 import { LinePoRefLink } from "../../vendor/scm/components/LinePoRefLink";
 import { ADD_LINE_LABEL, addLineHref } from "../../vendor/scm/lib/add-line-handoff";
 import { SiteReceiptPanel } from "../projects/renovation/SiteReceiptPanel";
+import { RenovationDocBlock, renoLineColumns, useRenoDocInfo } from "./RenovationDocInfo";
 type GrnStatus = "DRAFT" | "POSTED" | "CANCELLED" | string;
 
 type GrnHeader = HoldFields & {
@@ -309,6 +310,8 @@ export function GoodsReceivedDetailV2() {
 
 function GoodsReceivedDetailV2ReadOnly() {
   const { id } = useParams<{ id: string }>();
+  /* Renovation mode (mig 0116): the project and each line's room / category copied from the PO. */
+  const reno = useRenoDocInfo("gr", id);
   const [params] = useSearchParams();
   const navigate = useNavigate();
 
@@ -389,7 +392,7 @@ function GoodsReceivedDetailV2ReadOnly() {
     if (!grn) return;
     return import("../../vendor/scm/lib/grn-pdf")
       .then(({ generateGrnPdf }) =>
-        generateGrnPdf(grn as never, items as never, { action })
+        generateGrnPdf(grn as never, items as never, { action, renovation: reno })
       )
       .catch((e) =>
         notify({
@@ -718,6 +721,12 @@ function GoodsReceivedDetailV2ReadOnly() {
               </div>
             </Section>
 
+            {reno && (
+              <Section title="Project">
+                <RenovationDocBlock data={reno} kind="gr" />
+              </Section>
+            )}
+
             <Section title="Receipt info">
               <div className="grid grid-cols-1 gap-x-5 gap-y-4 sm:grid-cols-4">
                 <Field label="Received at" value={fmtDate(grn.received_at)} />
@@ -746,7 +755,7 @@ function GoodsReceivedDetailV2ReadOnly() {
                 layoutFamily={DATA_TABLE_LAYOUT_FAMILIES.goodsReceivedLines} persistSort={false} persistFilters={false}
                 rows={items}
                 loading={false}
-                columns={lineColumns}
+                columns={reno ? [...renoLineColumns<GrnItem>(reno, true), ...lineColumns] : lineColumns}
                 getRowKey={(l) => l.id}
                 emptyLabel="No line items"
               />

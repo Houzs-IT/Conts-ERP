@@ -23,6 +23,7 @@ import { docVariantLine, loadCustomerFabricMaps } from './supplier-doc-data';
    what this document prints and what the screen shows must be the same word.
    docs/modules/document-status-vocabulary.md §1. */
 import { statusLabel } from './status-pill';
+import { renoDetailRows, renoLineNote, type RenoDocInfo } from './renovation-doc-print';
 
 type SiHeader = {
   invoice_number: string; status: string;
@@ -60,6 +61,8 @@ type SiHeader = {
   customer_delivery_date?: string | null;
 };
 type SiItem = {
+  /* Line id: pairs the line with its renovation room (mig 0116). */
+  id?: string | null;
   item_code: string; description: string | null;
   qty: number; unit_price_sen: number;
   // Older items table rows in 2990s may omit these — keep optional so the
@@ -82,6 +85,8 @@ export async function renderSalesInvoiceInto(
   autoTable: any,
   header: SiHeader,
   items: SiItem[],
+  /** Renovation mode (mig 0116): project, building, unit and each line's room. */
+  reno?: RenoDocInfo | null,
 ): Promise<void> {
   /* Before ANY drawing: a customer / supplier name, address or remark that
      carries CJK needs the font embedded up front, or helvetica silently paints
@@ -134,6 +139,7 @@ export async function renderSalesInvoiceInto(
            files this invoice under — the one their AP clerk searches for. Both
            are captured; print both. Same label + fallback order as the SO PDF. */
         ['SO Ref', header.so_doc_no],
+        ...renoDetailRows(reno),
         ['Customer PO', header.po_doc_no ?? header.customer_so_no],
         ['Date', fmtDocDate(header.invoice_date)],
         ['Delivery Date', header.customer_delivery_date ? fmtDocDate(header.customer_delivery_date) : null],
@@ -147,7 +153,7 @@ export async function renderSalesInvoiceInto(
   const rows = items.map((it, idx) => [
     String(idx + 1),
     it.item_code,
-    stripBookText([it.description, docVariantLine(it, fabric.ext, fabric.desc)].filter(Boolean).join('\n')) || '—',
+    stripBookText([it.description, docVariantLine(it, fabric.ext, fabric.desc), renoLineNote(reno, it.id)].filter(Boolean).join('\n')) || '—',
     String(it.qty),
     fmtRm(it.unit_price_sen, header.currency),
     (it.discount_sen ?? 0) > 0 ? fmtRm(it.discount_sen ?? 0, header.currency) : '—',
@@ -237,12 +243,12 @@ export async function renderSalesInvoiceInto(
 export async function generateSalesInvoicePdf(
   header: SiHeader,
   items: SiItem[],
-  opts?: { action?: PdfAction },
+  opts?: { action?: PdfAction; renovation?: RenoDocInfo | null },
 ): Promise<void> {
   const { jsPDF } = await import('jspdf');
   const autoTable = (await import('jspdf-autotable')).default;
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
-  await renderSalesInvoiceInto(doc, autoTable, header, items);
+  await renderSalesInvoiceInto(doc, autoTable, header, items, opts?.renovation);
   deliverPdf(doc, `${header.invoice_number}-${safeName(header.debtor_name)}.pdf`, opts?.action);
 }
 

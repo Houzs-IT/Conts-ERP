@@ -381,3 +381,10 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - SO attachments (photos and PDFs, 10 MB, up to 50) on the SO page, in the line-photo bucket; line photos are the existing per-line photos.
 - Not checked locally: the State / City / Postcode cascade with real localities (the scratch database has none seeded).
 - Check: scripts/api-checks/reno-customer-property.mjs (59 checks, local engine).
+
+## Renovation document flow (feat/reno-doc-flow, migration 0116, 14 Oct 2026)
+- OPEN, before merge: apply migration 0116 on staging, then production (lead). It adds the quotation's property block, project / building / unit / room on DO and SI, project + category on PO, room + category on PO and GR lines, the copy triggers and the one-category-per-renovation-PO rule. Until it is applied the engine reads as before (every new read checks the columns first).
+- Next: raise POs automatically from the procurement dates (per category / sub-category PO date; expected = the delivery date). Not built.
+- Later: carry the onsite / 3D / 2D design files onto the project's POs, GRs and DOs.
+- The Houzs PO "Add line" screen shows a refused mixed-category line as a failed save (500 insert_failed with the sentence); a friendlier 409 would mean editing Houzs's PO route.
+- Field-by-field list: docs/superpowers/plans/2026-10-14-reno-doc-flow-fields.md. Check: scripts/api-checks/reno-doc-flow.mjs (needs a local Postgres + PostgREST behind the engine's SUPABASE_URL).

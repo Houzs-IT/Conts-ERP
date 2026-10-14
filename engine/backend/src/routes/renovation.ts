@@ -31,6 +31,7 @@ import { syncTradeTasks, writeCachedStage } from "../services/renovation/contrac
 import renovationProject from "./renovationProject";
 import renovationMonitor from "./renovationMonitor";
 import renovationProperty from "./renovationProperty";
+import renovationDocuments from "./renovationDocuments";
 import { propertyColumnsReady, pushProjectToOpenSos, readProjectCustomerInfo, regenerateProjectName, writeProjectShared } from "../services/renovation/customerProperty";
 import { projectNameFrom } from "../scm/shared/renovation-property";
 
@@ -86,6 +87,8 @@ app.route("/", renovationProject);
 app.route("/", renovationMonitor);
 // Customer + property information and its pick lists (mig 0112), also before /:id
 app.route("/", renovationProperty);
+// Every transaction document of a project (mig 0116), also before /:id
+app.route("/", renovationDocuments);
 
 // ── Mode: which Projects screens this install shows (app_settings projects_mode, mig 0082) ──
 

@@ -94,6 +94,13 @@ export interface DocHeader {
   docDiscountLabel: string;
   promoLines: Array<{ text: string; color?: string | null }>;
   brandId?: number | null;
+  /* Quotation customer + property block (mig 0116). */
+  siteAddress?: string;
+  propertyType?: string;
+  layoutLabel?: string;
+  bedrooms?: number | null;
+  bathrooms?: number | null;
+  builtUpSqft?: number | null;
 }
 
 export type QuotationStatus = 'DRAFT' | 'SENT' | 'ACCEPTED' | 'REJECTED' | 'EXPIRED';
@@ -118,6 +125,8 @@ export interface QuotationView {
   revisions: Array<{ revNo: number; docNo: string; frozenAt: string | null; createdAt: string }>;
   revision: Revision;
   editable: boolean;
+  /** Migration 0116 is in: the quotation keeps its site address and property. */
+  propertyReady?: boolean;
 }
 
 export interface BillRow {
@@ -161,7 +170,8 @@ export interface SplitLine {
   unitCostSen: number; amountSen: number; supplierId: string | null; reason?: string;
 }
 export interface SplitPreview {
-  groups: Array<{ supplierId: string; supplierCode: string; supplierName: string; lines: SplitLine[]; totalSen: number }>;
+  /* One PO per supplier and category group (mig 0116). */
+  groups: Array<{ categoryGroup?: string; supplierId: string; supplierCode: string; supplierName: string; lines: SplitLine[]; totalSen: number }>;
   blocked: SplitLine[]; skipped: SplitLine[]; alreadyOrdered: SplitLine[];
 }
 

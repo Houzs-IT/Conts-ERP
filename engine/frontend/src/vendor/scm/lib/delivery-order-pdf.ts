@@ -63,6 +63,7 @@ import {
   type PdfPhotoImage,
 } from './pdf-item-photos';
 import { fetchDoItemPhotoBlob } from './sales-order-queries';
+import { renoDetailRows, renoLineNote, type RenoDocInfo } from './renovation-doc-print';
 
 type DoHeader = {
   /* Row id — the photo proxy route is keyed by it. Optional so the
@@ -390,7 +391,7 @@ function drawCaption(doc: Doc, text: string, x: number, top: number): number {
  * on top. Measuring by drawing into a throwaway pass would double every text
  * call, so instead each column's writer is run once in `measure` mode.
  */
-function drawInfoPanel(doc: Doc, top: number, header: DoHeader): number {
+function drawInfoPanel(doc: Doc, top: number, header: DoHeader, reno?: RenoDocInfo | null): number {
   const PAD_X = 5;
   const PAD_Y = 3;
   const GAP = 8;
@@ -485,6 +486,8 @@ function drawInfoPanel(doc: Doc, top: number, header: DoHeader): number {
 
   const rows: Array<{ label: string; value: string | null; bold?: boolean }> = [
     ...soRows,
+    // Renovation mode (mig 0116): the project, building and unit the DO carries from its SO.
+    ...renoDetailRows(reno, { short: true }).filter((r): r is [string, string] => !!r[1]).map(([label, value]) => ({ label, value })),
     // Who sold the order — printed once the record carries it, omitted (not
     // dashed) otherwise, the rule the Driver / Vehicle rows follow.
     ...(header.salesperson && header.salesperson.trim()
@@ -616,6 +619,8 @@ export async function renderDeliveryOrderInto(
     /** Per-document logo override, same contract as pdf-common's drawHeader:
      *  null/undefined falls back to the company logo memo. */
     logo?: BrandingLogo | null;
+    /** Renovation mode (mig 0116): project, building, unit and each line's room. */
+    renovation?: RenoDocInfo | null;
   },
 ): Promise<void> {
   /* Before ANY drawing — the delivery address is the field that strands a
@@ -659,7 +664,7 @@ export async function renderDeliveryOrderInto(
     docTitle: opts?.docTitle ?? 'DELIVERY ORDER',
     logo: opts?.logo,
   });
-  const panelBottom = drawInfoPanel(doc, ruleY + 4, header);
+  const panelBottom = drawInfoPanel(doc, ruleY + 4, header, opts?.renovation);
 
   // ── Line items ────────────────────────────────────────────────────
   // Description cell = SKU description + the UNIFIED variant line (same composer
@@ -671,7 +676,7 @@ export async function renderDeliveryOrderInto(
   const listCell = (vals?: string[] | null): string =>
     vals && vals.length > 0 ? vals.join('\n') : EM_DASH;
   const descOf = (it: DoItem): string => {
-    const composed = [it.description, docVariantLine(it, fabric.ext, fabric.desc)]
+    const composed = [it.description, docVariantLine(it, fabric.ext, fabric.desc), renoLineNote(opts?.renovation, it.id)]
       .filter((s): s is string => Boolean(s));
     if (composed.length === 0) return EM_DASH;
     /* Owner spec: a row carries NO image — the " (photo)" marker on the first
@@ -828,7 +833,7 @@ export async function renderDeliveryOrderInto(
 export async function generateDeliveryOrderPdf(
   header: DoHeader,
   items: DoItem[],
-  opts?: { docTitle?: string; docNoLabel?: string; showPicking?: boolean; action?: PdfAction },
+  opts?: { docTitle?: string; docNoLabel?: string; showPicking?: boolean; action?: PdfAction; renovation?: RenoDocInfo | null },
 ): Promise<void> {
   const { jsPDF } = await import('jspdf');
   const autoTable = (await import('jspdf-autotable')).default;
