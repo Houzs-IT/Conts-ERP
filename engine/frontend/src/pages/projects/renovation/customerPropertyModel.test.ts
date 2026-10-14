@@ -1,6 +1,9 @@
 import { describe, expect, test } from "vitest";
 import {
+  BLOCK_STRING_KEYS,
   EMPTY_CUSTOMER_PROPERTY,
+  projectGaps,
+  toProjectBody,
   applyLayout,
   fromProject,
   layoutFor,
@@ -20,6 +23,8 @@ const LAYOUTS: LayoutOption[] = [
 
 const PROJECT: ProjectShared = {
   id: 7, code: "RN-2610-001", name: "Skyline A-12-3", customerName: "Tan Ah Kow", customerPhone: "+60123456789", customerEmail: "",
+  salespersonId: "00000000-0000-4000-8000-000000000001", salespersonName: "Aisyah", address1: "A-12-3 Skyline", address2: "Jalan Ampang",
+  state: "Selangor", city: "Ampang", postcode: "68000", country: "Malaysia", salesLocation: "TESTWH",
   siteAddress: "A-12-3 Skyline\nJalan Ampang", building: "Skyline Residence", unitNo: "A-12-3", propertyType: "Condo",
   layoutLabel: "3 bed 2 bath", bedrooms: 3, bathrooms: 2, builtUpSqft: 1100, startDate: "2026-10-20", endDate: null,
 };
@@ -65,13 +70,41 @@ describe("what is sent and what is missing", () => {
   });
 
   test("missing and invalid fields ring, same list as the server", () => {
-    const m = missingFields({ ...EMPTY_CUSTOMER_PROPERTY, propertyType: "Condo" }, { customerName: "Tan", phone: "", address1: "" });
-    expect([...m].sort()).toEqual(["Built-up sq ft", "Delivery address", "Layout", "Phone number"]);
-    expect(missingFields(fromProject(PROJECT), { customerName: "Tan", phone: "012", address1: "A-12-3" }).size).toBe(0);
+    const m = missingFields({ ...EMPTY_CUSTOMER_PROPERTY, customerName: "Tan", propertyType: "Condo" });
+    expect([...m].sort()).toEqual(["Address line 1", "Built-up sq ft", "Layout", "Phone number"]);
+    expect(missingFields(fromProject(PROJECT)).size).toBe(0);
   });
 
   test("dates read as day month year", () => {
     expect(showDate("2026-10-20")).toBe("20 Oct 2026");
     expect(showDate(null)).toBe("Not set");
+  });
+});
+
+describe("the same fields both ways (owner, 14 Oct 2026)", () => {
+  test("a project brings every shared field: customer, salesperson, the whole address, building, unit, property", () => {
+    const v = mergeProjectIntoSo(EMPTY_CUSTOMER_PROPERTY, PROJECT);
+    expect(v).toMatchObject({
+      customerName: "Tan Ah Kow", customerPhone: "+60123456789", salespersonId: PROJECT.salespersonId,
+      address1: "A-12-3 Skyline", address2: "Jalan Ampang", state: "Selangor", city: "Ampang", postcode: "68000",
+      country: "Malaysia", salesLocation: "TESTWH", building: "Skyline Residence", unitNo: "A-12-3",
+      propertyType: "Condo", layoutLabel: "3 bed 2 bath", bedrooms: "3", bathrooms: "2", builtUpSqft: "1100",
+    });
+  });
+  test("a field the project has empty keeps what the SO typed", () => {
+    const typed = { ...EMPTY_CUSTOMER_PROPERTY, customerEmail: "typed@example.com", address1: "Typed street" };
+    const v = mergeProjectIntoSo(typed, { ...PROJECT, customerEmail: "", address1: "", address2: "" });
+    expect(v.customerEmail).toBe("typed@example.com");
+    expect(v.address1).toBe("Typed street");
+  });
+  test("the note under Project names what the picked project has nothing in", () => {
+    expect(projectGaps(PROJECT)).toEqual([]);
+    expect(projectGaps({ ...PROJECT, customerName: "", customerPhone: "", address1: "", building: "", unitNo: "", propertyType: "", layoutLabel: "", builtUpSqft: null }))
+      .toEqual(["customer", "phone", "address", "building and unit", "property"]);
+  });
+  test("the project body carries every shared field, trimmed", () => {
+    const b = toProjectBody({ ...fromProject(PROJECT), city: " Ampang " });
+    expect(Object.keys(b)).toEqual([...BLOCK_STRING_KEYS]);
+    expect(b.city).toBe("Ampang");
   });
 });

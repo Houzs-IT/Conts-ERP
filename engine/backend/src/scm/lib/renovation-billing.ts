@@ -170,9 +170,15 @@ export async function billInstalment(
   if (n.amountSen > 0) {
     const invoiceNumber = await mintDocNo(db, 'sales_invoices', 'invoice_number', `${actor.docPrefix}SI-${yymmOf(invoiceDate)}`);
     const [si] = await db.q<{ id: string }>(
+      /* Phone, email and the delivery address come from the SO as it holds them (owner, 14 Oct 2026); on a database with migration 0116
+         its trigger also stamps the project, building and unit. */
       `insert into scm.sales_invoices (invoice_number, so_doc_no, debtor_code, debtor_name, invoice_date, subtotal_sen, total_sen, others_sen,
-          local_total_sen, line_count, status, sent_at, confirmed_at, notes, branding, created_by, company_id)
-       values ($1, $2, $3, $4, $5::date, $6, $6, $6, $6, 1, 'SENT', now(), now(), $7, $8, $9, $10) returning id`,
+          local_total_sen, line_count, status, sent_at, confirmed_at, notes, branding, created_by, company_id, phone, email, address1, address2,
+          city, postcode, state, customer_state, customer_country)
+       select $1, $2, $3, $4, $5::date, $6, $6, $6, $6, 1, 'SENT', now(), now(), $7, $8, $9, $10, o.phone, o.email, o.address1, o.address2,
+              o.city, o.postcode, o.customer_state, o.customer_state, o.customer_country
+         from scm.mfg_sales_orders o where o.doc_no = $2
+       returning id`,
       [invoiceNumber, soDocNo, head.debtorCode, head.debtorName, invoiceDate, n.amountSen, `Progress billing: ${label}`, head.branding, actor.staffId, actor.companyId],
     );
     await db.q(

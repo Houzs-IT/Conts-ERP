@@ -97,6 +97,7 @@ import { HoldChip } from "../../vendor/scm/components/HoldChip";
 import { DocumentHistoryDrawer } from "./DocumentHistoryDrawer";
 import { FocAmount } from "../../vendor/scm/components/FocAmount";
 import { ADD_LINE_LABEL, addLineHref } from "../../vendor/scm/lib/add-line-handoff";
+import { RenovationDocBlock, renoLineColumns, useRenoDocInfo } from "./RenovationDocInfo";
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 const fmtMoney = (centi: number, currency = "MYR"): string => fmtMoneySen(centi, currency);
@@ -425,6 +426,8 @@ export function PurchaseOrderDetailV2() {
 
 function PurchaseOrderDetailV2ReadOnly() {
   const { id } = useParams<{ id: string }>();
+  /* Renovation mode (mig 0116): the project and each line's room / category copied from the SO. */
+  const reno = useRenoDocInfo("po", id);
   const [params] = useSearchParams();
   const navigate = useNavigate();
 
@@ -592,7 +595,7 @@ function PurchaseOrderDetailV2ReadOnly() {
       .then(async ({ generatePurchaseOrderPdf }) => {
         const { loadSofaCompartmentPhotos } = await import("../../vendor/scm/lib/sales-order-queries");
         const sofaPhotos = await loadSofaCompartmentPhotos(maintenanceQ.data?.data?.sofaCompartmentMeta);
-        return generatePurchaseOrderPdf(headerForPdf as never, items as never, { action, sofaPhotos });
+        return generatePurchaseOrderPdf(headerForPdf as never, items as never, { action, sofaPhotos, renovation: reno });
       })
       .catch((e) =>
         notify({
@@ -1355,6 +1358,12 @@ function PurchaseOrderDetailV2ReadOnly() {
               </div>
             </Section>
 
+            {reno && (
+              <Section title="Project">
+                <RenovationDocBlock data={reno} kind="po" />
+              </Section>
+            )}
+
             {/* PO info */}
             <Section title="PO info">
               <div className="grid grid-cols-1 gap-x-5 gap-y-4 sm:grid-cols-4">
@@ -1445,7 +1454,7 @@ function PurchaseOrderDetailV2ReadOnly() {
                 layoutFamily={DATA_TABLE_LAYOUT_FAMILIES.purchaseOrderLines} persistSort={false} persistFilters={false}
                 rows={items}
                 loading={false}
-                columns={lineColumns}
+                columns={reno ? [...renoLineColumns<PoItemRow>(reno, true), ...lineColumns] : lineColumns}
                 getRowKey={(l) => l.id}
                 emptyLabel="No line items"
               />

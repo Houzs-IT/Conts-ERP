@@ -23,17 +23,19 @@ export function totalsOfSections(sections: DocSection[], docDiscountSen: number)
   })), docDiscountSen);
 }
 
-export function HeaderForm({ header, onChange, disabled, brands, brandId, onBrand, hideCustomer, priceLocked }: {
+export function HeaderForm({ header, onChange, disabled, brands, brandId, onBrand, hideCustomer, priceLocked, partyElsewhere }: {
   header: DocHeader; onChange: (p: Partial<DocHeader>) => void; disabled?: boolean; brands: BrandProfile[]; brandId: number | null;
   onBrand?: (id: number | null) => void; hideCustomer?: boolean; priceLocked?: boolean;
+  /** The customer, building and unit are edited in the quotation's Customer and property card (mig 0116). */
+  partyElsewhere?: boolean;
 }) {
   const set = (k: keyof DocHeader) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => onChange({ [k]: e.target.value } as Partial<DocHeader>);
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-      {!hideCustomer && <Field label="Customer (To)"><input className={inputCls} disabled={disabled} value={header.customerName} onChange={set('customerName')} placeholder="Customer name" /></Field>}
+      {!hideCustomer && !partyElsewhere && <Field label="Customer (To)"><input className={inputCls} disabled={disabled} value={header.customerName} onChange={set('customerName')} placeholder="Customer name" /></Field>}
       {!hideCustomer && <Field label="Attention"><input className={inputCls} disabled={disabled} value={header.attention} onChange={set('attention')} /></Field>}
-      {!hideCustomer && <Field label="Building"><input className={inputCls} disabled={disabled} value={header.building} onChange={set('building')} placeholder="AVA" /></Field>}
-      {!hideCustomer && <Field label="Unit"><input className={inputCls} disabled={disabled} value={header.unitNo} onChange={set('unitNo')} placeholder="B31-09" /></Field>}
+      {!hideCustomer && !partyElsewhere && <Field label="Building"><input className={inputCls} disabled={disabled} value={header.building} onChange={set('building')} placeholder="AVA" /></Field>}
+      {!hideCustomer && !partyElsewhere && <Field label="Unit"><input className={inputCls} disabled={disabled} value={header.unitNo} onChange={set('unitNo')} placeholder="B31-09" /></Field>}
       {!hideCustomer && <Field label="Prepared by"><input className={inputCls} disabled={disabled} value={header.preparedBy} onChange={set('preparedBy')} /></Field>}
       {!hideCustomer && <Field label="Date"><input type="date" className={inputCls} disabled={disabled} value={header.docDate ?? '' /* eslint-disable-line @typescript-eslint/no-unnecessary-condition -- doc_date from the server may be null on a fresh draft */} onChange={set('docDate')} /></Field>}
       {!hideCustomer && <Field label="Last amended"><input type="date" className={inputCls} disabled={disabled} value={header.lastAmended ?? ''} onChange={(e) => onChange({ lastAmended: e.target.value || null })} /></Field>}

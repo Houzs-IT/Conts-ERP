@@ -15,9 +15,9 @@ import { Dialog, Field, inputClass } from "./renovationUi";
 import { PersonSelect, usePeople } from "./PersonSelect";
 import { AttendingPicker } from "./ProjectRecords";
 import type { AttendingPerson } from "./simpleApi";
-import { CustomerPropertyFields } from "./CustomerPropertyFields";
+import { CustomerBlock } from "./CustomerBlock";
 import { projectInfoApi } from "./customerPropertyApi";
-import { EMPTY_CUSTOMER_PROPERTY, toProjectBody, type CustomerPropertyValue } from "./customerPropertyModel";
+import { EMPTY_CUSTOMER_PROPERTY, missingFields, toProjectBody, type CustomerPropertyValue } from "./customerPropertyModel";
 import { projectNameFrom } from "../../../vendor/shared/renovation-property";
 
 export function CreateRenovationPanel({ onClose, onCreated }: { onClose: () => void; onCreated: (id: number) => void }) {
@@ -35,10 +35,14 @@ export function CreateRenovationPanel({ onClose, onCreated }: { onClose: () => v
   const typeId = f.projectTypeId || (activeTypes[0] ? String(activeTypes[0].id) : "");
   const propertyReady = lists.data?.ready === true;
   const projectName = projectNameFrom(cp.building, cp.unitNo, cp.customerName);
-  const missing = error && !cp.customerName.trim() ? new Set(["Customer name"]) : undefined;
+  const [tried, setTried] = useState(false);
+  /* The same required fields as the sales order (owner, 14 Oct 2026); the server checks them too. */
+  const missing = tried && propertyReady ? missingFields(cp) : undefined;
 
   async function submit() {
+    setTried(true);
     if (!cp.customerName.trim()) { setError("Enter the customer or owner name."); return; }
+    if (propertyReady && missingFields(cp).size > 0) { setError(`Fill in: ${[...missingFields(cp)].join(", ")}.`); return; }
     if (!typeId) { setError("Pick a project type."); return; }
     setBusy(true);
     setError(null);
@@ -46,20 +50,11 @@ export function CreateRenovationPanel({ onClose, onCreated }: { onClose: () => v
       const r = await renovationApi.create({
         name: projectName, projectTypeId: Number(typeId), customerName: cp.customerName.trim(),
         customerPhone: cp.customerPhone || null, customerEmail: cp.customerEmail.trim() || null, building: cp.building.trim() || null,
-        unitNo: cp.unitNo.trim() || null, siteAddress: cp.siteAddress.trim() || null, plannedHandoverDate: f.plannedHandoverDate || null,
+        unitNo: cp.unitNo.trim() || null, plannedHandoverDate: f.plannedHandoverDate || null,
         renoPicPersonId: picPersonId, attendingPersonIds: attending.map((a) => a.id),
+        /* The whole block, checked and saved with the project in one request. */
+        ...(propertyReady ? { customerInfo: toProjectBody(cp) } : {}),
       });
-      /* The property (type, layout, sq ft) is saved with the customer block once the project exists. */
-      if (propertyReady && (cp.propertyType || cp.layoutLabel || cp.builtUpSqft.trim())) {
-        try {
-          await projectInfoApi.save(r.id, toProjectBody(cp));
-        } catch (e) {
-          setError(`The project ${r.code} was created, but its property was not saved: ${errorText(e)} Open it and use Edit on Customer info.`);
-          setBusy(false);
-          onCreated(r.id);
-          return;
-        }
-      }
       onCreated(r.id);
     } catch (e) {
       setError(errorText(e));
@@ -89,8 +84,7 @@ export function CreateRenovationPanel({ onClose, onCreated }: { onClose: () => v
           </Field>
         </div>
         <section>
-          <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-ink-secondary">Customer and property</h3>
-          <CustomerPropertyFields mode="project" value={cp} onChange={setCp} lists={lists.data ?? undefined} disabled={busy}
+          <CustomerBlock mode="project" value={cp} onChange={setCp} lists={lists.data ?? undefined} disabled={busy}
             hideProperty={!propertyReady} missing={missing} />
         </section>
         <section>

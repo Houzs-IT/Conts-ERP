@@ -1,21 +1,25 @@
-/* Renovation mode (Conts, 14 Oct 2026; mig 0112): the line items of a sales order
-   grouped into rooms, used by New SO and Edit SO. A room is a heading with its
-   lines under it: rename, reorder, delete when empty, add a line into it.
-   "Generate rooms from layout" adds Living hall, Bedroom 1..N, Bathroom 1..M and
-   Common area from the order's layout (only the missing ones). Each line keeps its
-   own card; a small Room picker above it moves it between rooms. Totals,
-   payments and the line cards themselves are Houzs's, unchanged. */
+/* Renovation mode (Conts, 14 Oct 2026; migrations 0112, 0115): the line items of
+   a sales order by room, used by New SO and Edit SO. Each room is a header row
+   (name, line count, move up / down, delete when empty) with its lines straight
+   under it and "Add line to <room>". Every line belongs to a room: before a layout
+   is chosen the order has one room, Common area, and a line with no room shows
+   there (placeRows). Rooms are made from the layout as soon as one is chosen;
+   "Generate rooms from layout" adds the missing ones later, asking first. A line
+   moves to another room from its small move button. Line numbers run in the order
+   shown. Totals, payments and the line cards themselves are Houzs's, unchanged. */
 
-import { useState, type ReactNode } from 'react';
-import { ArrowDown, ArrowUp, LayoutGrid, Plus, Trash2 } from 'lucide-react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { ArrowDown, ArrowRightLeft, ArrowUp, LayoutGrid, Plus, Trash2 } from 'lucide-react';
 import { cn } from '../../lib/utils';
-import { generateRooms, groupByRoom, moveRoom, nextRoomName, renameRoom } from '../renovation/roomSections';
+import { useConfirm } from '../../vendor/scm/components/ConfirmDialog';
+import { generateRooms, moveRoom, nextRoomName, placeRows, renameRoom } from '../renovation/roomSections';
 
-export interface RoomRow { key: string; room: string; node: ReactNode }
+/** One line: its key, its saved room, and how to draw it given its number in the order shown (0-based). */
+export interface RoomRow { key: string; room: string; render: (displayIndex: number) => ReactNode }
 export interface RoomLayout { label: string; bedrooms: number; bathrooms: number }
 
 const btn = 'inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-surface px-3 text-[12px] font-semibold text-ink-secondary hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:opacity-50';
-const iconBtn = 'p-1 text-ink-secondary hover:text-ink disabled:opacity-30';
+const iconBtn = 'rounded p-1 text-ink-secondary hover:bg-surface-dim hover:text-ink disabled:opacity-30';
 
 function RoomName({ name, disabled, onRename }: { name: string; disabled?: boolean; onRename: (to: string) => boolean }) {
   const [draft, setDraft] = useState(name);
@@ -42,6 +46,38 @@ function RoomName({ name, disabled, onRename }: { name: string; disabled?: boole
   );
 }
 
+/** The small move button on a line: a short list of the other rooms. */
+function MoveLine({ rooms, current, onMove }: { rooms: string[]; current: string; onMove: (room: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [open]);
+  const others = rooms.filter((r) => r !== current);
+  if (others.length === 0) return null;
+  return (
+    <div ref={box} className="absolute -top-2.5 right-10 z-10">
+      <button type="button" aria-label="Move this line to another room" title="Move to another room" onClick={() => setOpen((x) => !x)}
+        className="inline-flex h-6 items-center gap-1 rounded-full border border-border bg-surface px-2 text-[11px] font-semibold text-ink-secondary shadow-sm hover:border-primary hover:text-primary">
+        <ArrowRightLeft size={12} /> Move
+      </button>
+      {open && (
+        <ul role="menu" className="absolute right-0 mt-1 max-h-60 w-48 overflow-auto rounded-md border border-border bg-surface py-1 shadow-lg">
+          {others.map((r) => (
+            <li key={r}>
+              <button type="button" role="menuitem" className="block w-full px-3 py-1.5 text-left text-[12.5px] hover:bg-primary-soft"
+                onClick={() => { setOpen(false); onMove(r); }}>{r}</button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 export function RenovationSoRooms({ rooms, onRoomsChange, rows, onRowRoom, onAddLine, layout, disabled }: {
   rooms: string[];
   /** `rename` is set when one room was renamed, so the parent moves its lines too. */
@@ -53,93 +89,88 @@ export function RenovationSoRooms({ rooms, onRoomsChange, rows, onRowRoom, onAdd
   disabled?: boolean;
 }) {
   const [note, setNote] = useState<string | null>(null);
-  const { groups, unplaced } = groupByRoom(rooms, rows);
+  const confirm = useConfirm();
+  const placed = placeRows(rooms, rows);
+  const shown = placed.rooms;
+  const groups = shown.map((room) => ({ room, rows: rows.filter((r) => placed.roomOf[r.key] === room) }));
+  /* Line numbers in the order shown, across rooms. */
+  const numberOf = new Map<string, number>();
+  let n = 0;
+  for (const g of groups) for (const r of g.rows) numberOf.set(r.key, n++);
 
-  const generate = () => {
+  const generate = async () => {
     if (!layout) return;
-    const r = generateRooms(rooms, layout.bedrooms, layout.bathrooms);
-    setNote(r.added.length ? `Added ${r.added.join(', ')}.` : 'Every room of this layout is already here.');
-    if (r.added.length) onRoomsChange(r.rooms);
+    const r = generateRooms(shown, layout.bedrooms, layout.bathrooms);
+    if (r.added.length === 0) { setNote('Every room of this layout is already here.'); return; }
+    if (rows.length > 0 && !(await confirm({
+      title: 'Add the rooms of this layout?',
+      body: `${r.added.join(', ')} will be added. The rooms already here and their lines stay as they are.`,
+      confirmLabel: 'Add rooms',
+    }))) return;
+    setNote(`Added ${r.added.join(', ')}.`);
+    onRoomsChange(r.rooms);
   };
 
-  const roomPicker = (row: RoomRow) => (
-    <label className="mb-1 flex items-center justify-end gap-2 text-[11px] font-semibold uppercase tracking-wide text-ink-secondary">
-      Room
-      <select className="h-7 rounded-md border border-border bg-surface px-2 text-[12px] normal-case tracking-normal text-ink" value={rooms.some((r) => r === row.room) ? row.room : ''}
-        disabled={disabled} onChange={(e) => onRowRoom(row.key, e.target.value)}>
-        <option value="">Not in a room</option>
-        {rooms.map((r) => <option key={r} value={r}>{r}</option>)}
-      </select>
-    </label>
-  );
-
-  const addLineBtn = (room: string, label: string) => !disabled && (
-    <button type="button" onClick={() => onAddLine(room)}
-      className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-border py-2 text-[12.5px] font-semibold text-ink-secondary hover:border-primary hover:text-primary">
-      <Plus size={14} /> {label}
-    </button>
-  );
-
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-center justify-end gap-2">
+    <div className="flex flex-col">
+      <div className="mb-2 flex flex-wrap items-center justify-end gap-2">
         {note && <span role="status" className="text-[12px] text-ink-secondary">{note}</span>}
-        {!layout && <span className="text-[12px] text-ink-muted">Choose the layout under Order information to generate rooms.</span>}
+        {!layout && <span className="text-[12px] text-ink-muted">Choose the layout under Order information to make the rooms.</span>}
         {!disabled && (
-          <button type="button" className={btn} onClick={() => onRoomsChange([...rooms, nextRoomName(rooms)])}>
+          <button type="button" className={btn} onClick={() => onRoomsChange([...shown, nextRoomName(shown)])}>
             <Plus size={14} /> Add room
           </button>
         )}
-        <button type="button" className={btn} onClick={generate} disabled={disabled || !layout}
+        <button type="button" className={btn} onClick={() => { void generate(); }} disabled={disabled || !layout}
           title={layout ? `${layout.label}: Living hall, ${layout.bedrooms} bedroom(s), ${layout.bathrooms} bathroom(s), Common area` : undefined}>
           <LayoutGrid size={14} /> Generate rooms from layout
         </button>
       </div>
 
       {groups.map((g, i) => (
-        <section key={g.room} className="rounded-lg border border-border bg-surface-dim/40">
-          <header className="flex items-center gap-1 border-b border-border px-2 py-1.5">
+        <section key={g.room} className="border-t border-border pt-2 pb-3 first-of-type:border-t-0">
+          <header className="mb-2 flex items-center gap-1">
             <RoomName name={g.room} disabled={disabled} onRename={(to) => {
-              const next = renameRoom(rooms, g.room, to);
+              const next = renameRoom(shown, g.room, to);
               if (!next) return false;
               onRoomsChange(next, { from: g.room, to: next[i]! });
+              /* Lines shown here without a saved room (Common area by default) follow the new name too. */
+              for (const row of g.rows) if (row.room !== next[i]) onRowRoom(row.key, next[i]!);
               return true;
             }} />
             <span className="whitespace-nowrap px-1 text-[11px] text-ink-secondary">{g.rows.length} line{g.rows.length === 1 ? '' : 's'}</span>
             {!disabled && (
               <>
-                <button type="button" aria-label={`Move ${g.room} up`} className={iconBtn} disabled={i === 0} onClick={() => onRoomsChange(moveRoom(rooms, i, -1))}><ArrowUp size={15} /></button>
-                <button type="button" aria-label={`Move ${g.room} down`} className={iconBtn} disabled={i === groups.length - 1} onClick={() => onRoomsChange(moveRoom(rooms, i, 1))}><ArrowDown size={15} /></button>
-                <button type="button" aria-label={`Delete ${g.room}`} className={iconBtn} disabled={g.rows.length > 0}
-                  title={g.rows.length > 0 ? 'Move or remove its lines first' : 'Delete this room'}
-                  onClick={() => onRoomsChange(rooms.filter((r) => r !== g.room))}><Trash2 size={15} /></button>
+                <button type="button" aria-label={`Move ${g.room} up`} className={iconBtn} disabled={i === 0} onClick={() => onRoomsChange(moveRoom(shown, i, -1))}><ArrowUp size={15} /></button>
+                <button type="button" aria-label={`Move ${g.room} down`} className={iconBtn} disabled={i === groups.length - 1} onClick={() => onRoomsChange(moveRoom(shown, i, 1))}><ArrowDown size={15} /></button>
+                <button type="button" aria-label={`Delete ${g.room}`} className={iconBtn} disabled={g.rows.length > 0 || shown.length === 1}
+                  title={g.rows.length > 0 ? 'Move or remove its lines first' : shown.length === 1 ? 'An order keeps at least one room' : 'Delete this room'}
+                  onClick={() => onRoomsChange(shown.filter((r) => r !== g.room))}><Trash2 size={15} /></button>
               </>
             )}
           </header>
-          <div className="flex flex-col gap-3 p-2 sm:p-3">
-            {g.rows.map((row) => <div key={row.key}>{roomPicker(row)}{row.node}</div>)}
-            {g.rows.length === 0 && disabled && <p className="text-[12px] text-ink-muted">No lines in this room.</p>}
-            {addLineBtn(g.room, `Add line to ${g.room}`)}
+          <div className="flex flex-col gap-3">
+            {g.rows.map((row) => (
+              <div key={row.key} className="relative">
+                {!disabled && <MoveLine rooms={shown} current={g.room} onMove={(room) => onRowRoom(row.key, room)} />}
+                {row.render(numberOf.get(row.key) ?? 0)}
+              </div>
+            ))}
+            {g.rows.length === 0 && disabled && <p className="px-2 text-[12px] text-ink-muted">No lines in this room.</p>}
+            {!disabled && (
+              <button type="button" onClick={() => onAddLine(g.room)}
+                className="inline-flex items-center gap-1.5 self-start rounded-md px-2 py-1 text-[12.5px] font-semibold text-primary hover:bg-primary-soft">
+                <Plus size={14} /> Add line to {g.room}
+              </button>
+            )}
           </div>
         </section>
       ))}
-
-      {(unplaced.length > 0 || rooms.length === 0) && (
-        <section className="rounded-lg border border-dashed border-border">
-          <header className="px-3 py-2 text-[12px] font-bold uppercase tracking-wide text-ink-secondary">
-            {rooms.length === 0 ? 'Lines' : 'Not in a room'}
-          </header>
-          <div className="flex flex-col gap-3 p-2 sm:p-3">
-            {unplaced.map((row) => <div key={row.key}>{rooms.length > 0 && roomPicker(row)}{row.node}</div>)}
-            {addLineBtn('', 'Add line')}
-          </div>
-        </section>
-      )}
     </div>
   );
 }
 
-/** The order's layout for "Generate rooms", from the Order information block (null when not chosen). */
+/** The order's layout for the rooms, from the Order information block (null when not chosen). */
 export function roomLayoutOf(v: { layoutLabel: string; bedrooms: string; bathrooms: string }): RoomLayout | null {
   const b = Number(v.bedrooms);
   const t = Number(v.bathrooms);

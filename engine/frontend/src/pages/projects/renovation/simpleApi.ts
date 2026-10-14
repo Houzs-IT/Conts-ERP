@@ -5,6 +5,7 @@
 import { api } from "../../../api/client";
 import type { ProjectDetail, SupplyCondition, TaskView } from "./renovationApi";
 import type { FlowStepKey, HoldFlag, PersonRole } from "../../../vendor/shared/renovation-stages";
+import type { ProjectDocuments } from "./projectDocsModel";
 
 export type { FlowStepKey, HoldFlag, PersonRole };
 
@@ -172,6 +173,8 @@ export const simpleApi = {
   addDesignNote: (id: number, b: { kind: "2d" | "3d"; notedOn: string; requestedByPersonId: number | null; requestedByText: string | null; note: string }) =>
     api.post<{ id: number }>(`${R}/${id}/design-notes`, b),
   procurement: (id: number) => api.get<{ projectId: number; groups: ProcGroup[] }>(`${R}/${id}/procurement`),
+  /** Every transaction document of the project (mig 0116); ready: false before it is applied. */
+  documents: (id: number) => api.get<ProjectDocuments>(`${R}/${id}/documents`),
   setCategoryDates: (id: number, group: string, b: ProcDates) =>
     api.put<{ ok: true; groups: ProcGroup[] }>(`${R}/${id}/procurement/${encodeURIComponent(group)}`, b),
   setSubDates: (id: number, group: string, sub: string, b: { mode: ProcMode } & Partial<ProcDates>) =>

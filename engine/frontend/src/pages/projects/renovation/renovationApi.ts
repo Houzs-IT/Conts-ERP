@@ -122,7 +122,7 @@ export interface Prompt {
 
 export interface ProjectDetail {
   project: {
-    id: number; code: string | null; name: string; customer_name: string | null; customer_phone: string | null; customer_email?: string | null; customer_kind: string | null;
+    id: number; code: string | null; name: string; customer_name: string | null; customer_phone: string | null; customer_email?: string | null; layout_label?: string | null; customer_kind: string | null;
     building: string | null; unit_no: string | null; site_address: string | null; planned_handover_date: string | null;
     handed_over_at: string | null; salesperson_name: string | null; notes: string | null;
   };
@@ -149,7 +149,7 @@ export interface ProjectDetail {
   financeHidden: boolean;
 }
 
-export interface PodPhoto { id: string; kind: string; location: string | null; r2_key: string; caption?: string | null; grn_number?: string | null }
+export interface PodPhoto { id: string; kind: string; location: string | null; r2_key: string; caption?: string | null; grn_number?: string | null; grn_id?: string | null }
 export interface PodView { rooms: Array<{ room: string; photos: PodPhoto[] }>; receipts: Array<Record<string, unknown>>; deliveries: Array<Record<string, unknown>> }
 
 export interface CalendarTask {

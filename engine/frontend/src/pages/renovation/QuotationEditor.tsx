@@ -20,6 +20,7 @@ import { DocEditor, type RoomLayout } from './DocEditor';
 import { useQuery } from '@tanstack/react-query';
 import { soInfoApi, useSoInfoLists } from '../projects/renovation/customerPropertyApi';
 import { HeaderForm, InstalmentEditor, totalsOfSections, TotalsCard } from './DocParts';
+import { QuotationCustomerCard } from './QuotationCustomerCard';
 import { PrintDialog } from './PrintDialog';
 import { Card, ErrorBanner, fmtDate, StatusPill, todayIso } from './shared';
 
@@ -42,6 +43,8 @@ export function QuotationEditor() {
   const [dirty, setDirty] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [printOpen, setPrintOpen] = useState(false);
+  /* What keeps the customer + property block from saving (an invalid sq ft), [] when fine. */
+  const [partyProblems, setPartyProblems] = useState<string[]>([]);
 
   useEffect(() => {
     if (!q.data) return;
@@ -50,10 +53,11 @@ export function QuotationEditor() {
     setInstalments(q.data.revision.instalments);
     setBrandId(q.data.quotation.brandId);
     setDirty(false);
+    setPartyProblems([]);
   }, [q.data]);
 
-  /* Generate rooms from layout (owner, 14 Oct 2026): the quotation's layout is its
-     project's (the project masters the property; mig 0112). No button before 0112. */
+  /* Generate rooms from layout (owner, 14 Oct 2026): the quotation's own layout (mig 0116),
+     else its project's (the project masters the property; mig 0112). No button before 0112. */
   const roomsOn = useSoInfoLists().data?.ready === true;
   const projectId = q.data?.quotation.projectId ?? null;
   const proj = useQuery({
@@ -62,7 +66,10 @@ export function QuotationEditor() {
     enabled: roomsOn && projectId != null,
     staleTime: 30_000,
   });
+  const ownLayout = header?.bedrooms != null && header.bathrooms != null
+    ? { label: header.layoutLabel || `${header.bedrooms} bed ${header.bathrooms} bath`, bedrooms: header.bedrooms, bathrooms: header.bathrooms } : null;
   const roomLayout: RoomLayout | undefined = !roomsOn ? undefined
+    : ownLayout ? ownLayout
     : projectId == null ? { missing: 'Link the quotation to a project with a layout first.' }
     : proj.data?.project.bedrooms != null && proj.data.project.bathrooms != null
       ? { label: proj.data.project.layoutLabel || `${proj.data.project.bedrooms} bed ${proj.data.project.bathrooms} bath`, bedrooms: proj.data.project.bedrooms, bathrooms: proj.data.project.bathrooms }
@@ -82,9 +89,10 @@ export function QuotationEditor() {
   const { quotation, revision, revisions } = q.data;
   const version = quotation.version;
 
-  const save = () => act(() => renoSend(`/quotations/${quotation.id}`, 'PUT', {
+  const save = () => (partyProblems.length ? Promise.resolve(setError(partyProblems.join(' '))) : act(() => renoSend(`/quotations/${quotation.id}`, 'PUT', {
     version, header: { ...header, brandId }, sections: sectionsForSave(sections), instalments: instalmentsForSave(instalments),
-  })).then(() => setDirty(false)).catch(() => undefined);
+  })).then(() => setDirty(false)).catch(() => undefined));
+  const partyHere = q.data.propertyReady === true;
   const status = async (to: string, confirm?: string) => {
     if (confirm && !(await serviceConfirm({ title: confirm }))) return;
     if (dirty) { setError('Save your changes first.'); return; }
@@ -152,8 +160,15 @@ export function QuotationEditor() {
       )}
       <div className="grid grid-cols-1 gap-4 2xl:grid-cols-[1fr_300px]">
         <div className="min-w-0 space-y-4">
+          {partyHere && (
+            <Card title="Customer and property">
+              <QuotationCustomerCard header={header} projectId={quotation.projectId} disabled={!editable}
+                resetKey={`${revision.id}:${version}`}
+                onChange={(p, problems) => { setHeader((h) => (h ? { ...h, ...p } : h)); setPartyProblems(problems); setDirty(true); }} />
+            </Card>
+          )}
           <Card title="Header">
-            <HeaderForm header={header} disabled={!editable} brands={brands.data?.brands ?? []} brandId={brandId}
+            <HeaderForm header={header} disabled={!editable} brands={brands.data?.brands ?? []} brandId={brandId} partyElsewhere={partyHere}
               onBrand={(b) => { setBrandId(b); setDirty(true); }} onChange={(p) => { setHeader({ ...header, ...p }); setDirty(true); }} />
           </Card>
           <DocEditor sections={sections} disabled={!editable} roomLayout={roomLayout} onChange={(s) => { setSections(s); setDirty(true); }} />

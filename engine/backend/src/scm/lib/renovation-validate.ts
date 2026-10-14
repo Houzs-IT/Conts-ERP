@@ -229,6 +229,13 @@ const headerSchema = z.object({
   docDiscountLabel: z.string().max(200).optional(),
   promoLines: z.array(z.object({ text: z.string().max(300), color: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable().optional() })).max(20).optional(),
   brandId: z.number().int().positive().nullable().optional(),
+  /* Quotation customer + property block (migration 0116; same limits as the SO's, scm/shared/renovation-property.ts). */
+  siteAddress: z.string().max(500).optional(),
+  propertyType: z.string().max(80).optional(),
+  layoutLabel: z.string().max(80).optional(),
+  bedrooms: int.min(0).max(20).nullable().optional(),
+  bathrooms: int.min(0).max(20).nullable().optional(),
+  builtUpSqft: z.number().positive().lt(100_000_000).refine((n) => Math.abs(Math.round(n * 100) - n * 100) < 1e-6, 'at most 2 decimals').nullable().optional(),
 });
 export type DocHeaderInput = z.infer<typeof headerSchema>;
 

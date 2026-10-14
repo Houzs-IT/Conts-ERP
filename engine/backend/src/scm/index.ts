@@ -352,6 +352,7 @@ scm.route("/mfg-purchase-orders", purchaseOrderExports);
 // PATCH /:id/cancel is mounted above, ahead of the area guard.
 // routes/document-cancel-routes.ts — the PO router itself is not edited.
 scm.route("/mfg-purchase-orders", poCancelRequests);
+scm.route("/mfg-purchase-orders", renovationPoInfo); // renovation mode (mig 0116): GET /:id/renovation-info
 scm.route("/mfg-purchase-orders", mfgPurchaseOrders);
 // Per-line photo WRITES (upload / delete PO-owned keys) — separate file because
 // the main router is at its size ceiling; same prefix, same area guard.
@@ -370,6 +371,7 @@ scm.route("/grns", grnsListEnrichment);
 // The list's two exports (every page the filters match) — static /export/...
 // paths, so also BEFORE the main router's `/:id`.
 scm.route("/grns", grnExports);
+scm.route("/grns", renovationGrInfo); // renovation mode (mig 0116): GET /:id/renovation-info
 scm.route("/grns", grns);
 scm.use("/purchase-invoices/*", scmAreaGuard("scm.procurement.pi"));
 // Deferred list enrichment — the MRP-derived PI-list columns (Assigned SO /
@@ -511,6 +513,8 @@ scm.route("/delivery-orders-mfg", deliveryOrderItemPhotos);
 // The list's line export (every page the filters match) — a static /export/...
 // path, so also BEFORE the main router's `/:id`.
 scm.route("/delivery-orders-mfg", deliveryOrderExports);
+// Renovation mode (mig 0116): GET /:id/renovation-info, before the main router.
+scm.route("/delivery-orders-mfg", renovationDoInfo);
 scm.route("/delivery-orders-mfg", deliveryOrdersMfg);
 // Ported 2026-06-20 — SI backend (skipped in the earlier sync; the vendored SI
 // pages 404'd on /sales-invoices). NEEDS scm.sales_invoice_payments +
@@ -523,6 +527,7 @@ scm.route("/delivery-orders-mfg", deliveryOrdersMfg);
 scm.use("/sales-invoices/*", scmAreaGuard("scm.sales.invoices", { readInheritsFrom: "scm.sales.orders" }));
 // The list's two exports — static /export/... paths, BEFORE the main router.
 scm.route("/sales-invoices", salesInvoiceExports);
+scm.route("/sales-invoices", renovationSiInfo); // renovation mode (mig 0116): GET /:id/renovation-info
 scm.route("/sales-invoices", salesInvoices);
 scm.use("/delivery-returns/*", scmAreaGuard("scm.sales.returns"));
 // The list's ONE export (every return the filters match) — a static
@@ -965,6 +970,8 @@ scm.route("/renovation", renovation);
 // Reads ride the Sales Orders view level; saving an SO's order information needs
 // Sales Orders edit, like the header it sits in.
 import { renovationSoInfo } from "./routes/renovation-so-info";
+// Renovation document flow (mig 0116): each DO / SI / PO / GR answers GET /:id/renovation-info on its own prefix (mounted above).
+import { renovationDoInfo, renovationGrInfo, renovationPoInfo, renovationSiInfo } from "./routes/renovation-doc-flow";
 scm.use("/renovation-so-info/*", scmAreaGuard("scm.sales.orders"));
 scm.route("/renovation-so-info", renovationSoInfo);
 

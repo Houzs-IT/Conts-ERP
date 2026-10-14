@@ -105,6 +105,7 @@ import { fairLabel } from "../../vendor/scm/lib/fair-options-queries";
 import { linkedEvent, type LinkedFair } from "../../components/fairPick";
 import { useSoInfoLists, useSoRooms } from "../projects/renovation/customerPropertyApi";
 import { RenovationSoOrderInfo } from "./RenovationSoOrderInfo";
+import { RenovationSoAttachments } from "./RenovationSoAttachments";
 import { roomOrdered } from "../../vendor/scm/lib/so-print-rooms";
 // ─── Row types (subset — see MfgSalesOrdersList.tsx for the full SoRow) ────
 
@@ -1364,6 +1365,12 @@ function SalesOrderDetailV2ReadOnly() {
                   docNo={salesOrder.doc_no}
                   payment={salesOrder.payment_methods_summary || salesOrder.payment_method || null}
                 />
+              </Section>
+            )}
+            {/* Files on the whole order (mig 0115); each line keeps its own photos. */}
+            {renoMode && (
+              <Section title="Attachments">
+                <RenovationSoAttachments docNo={salesOrder.doc_no} canEdit={salesOrder.status !== "CANCELLED"} />
               </Section>
             )}
             {/* Order info + optional amber Note callout */}

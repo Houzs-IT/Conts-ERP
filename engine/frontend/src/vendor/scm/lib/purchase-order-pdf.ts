@@ -70,6 +70,7 @@ import {
   type PhotoRegion,
 } from './pdf-item-photos';
 import { fetchPoItemPhotoBlob } from './sales-order-queries';
+import { renoDetailRows, renoLineNote, type RenoDocInfo } from './renovation-doc-print';
 
 type PoHeader = {
   po_number:     string;
@@ -254,7 +255,8 @@ async function renderPurchaseOrderInto(
   autoTable: AutoTableFn,
   header: PoHeader,
   items: PoItem[],
-  opts?: { docTitle?: string; sofaPhotos?: Record<string, string> },
+  /* renovation: the project and each line's room / category (mig 0116). */
+  opts?: { docTitle?: string; sofaPhotos?: Record<string, string>; renovation?: RenoDocInfo | null },
 ): Promise<{ supplierName: string }> {
   const pageW = doc.internal.pageSize.getWidth();
   const margin = 10; // tighter left/right than the SO's 14 (owner 2026-06-19)
@@ -413,6 +415,7 @@ async function renderPurchaseOrderInto(
         // _R suffix (owner 2026-07-27) — the printed number shows the revision.
         ['PO No', poDisplayNumber(header.po_number, header.revision)],
         ['Your Ref No', yourRef],
+        ...renoDetailRows(opts?.renovation).slice(0, 2),
         ['Date', fmtDocDate(header.po_date)],
         /* Migration 0180 — print the EFFECTIVE (latest revised) delivery date. */
         ['Delivery Date', (() => {
@@ -498,6 +501,7 @@ async function renderPurchaseOrderInto(
       specs || null,
       (it.notes ?? '').trim() ? `Remark: ${(it.notes ?? '').trim()}` : null,
       lineEff ? `Delivery: ${fmtDocDate(lineEff)}` : null,
+      renoLineNote(opts?.renovation, it.id, true) || null,
     ].filter(Boolean) as string[];
     return [
       (it.so_doc_no ?? '').trim() || singleSourceSo || '—',
@@ -838,7 +842,7 @@ function finalizePoPdf(doc: JsPdf): void {
 export async function generatePurchaseOrderPdf(
   header: PoHeader,
   items: PoItem[],
-  opts?: { docTitle?: string; action?: PdfAction; sofaPhotos?: Record<string, string> },
+  opts?: { docTitle?: string; action?: PdfAction; sofaPhotos?: Record<string, string>; renovation?: RenoDocInfo | null },
 ): Promise<void> {
   const { jsPDF } = await import('jspdf');
   const autoTable = (await import('jspdf-autotable')).default;
