@@ -226,6 +226,26 @@ r = await call('PUT', `${SI}/${encodeURIComponent(docNo)}`, { ...block, property
 check('the edit form saves the order information', r.status === 200, show(r));
 check('and writes it back to the project', (await info(projectId))?.propertyType === 'Commercial' && (await info(projectId))?.builtUpSqft === 990.5);
 
+/* ---------- attachments on the whole order (mig 0115) ---------- */
+const upload = async (name, type, bytes) => {
+  const fd = new FormData();
+  fd.append('file', new Blob([bytes], { type }), name);
+  const res = await fetch(`${ENGINE}${SI}/${encodeURIComponent(docNo)}/attachments`, { method: 'POST', headers: { authorization: `Bearer ${token}` }, body: fd });
+  return { status: res.status, json: await res.json().catch(() => ({})) };
+};
+const PNG = Uint8Array.from(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64'));
+r = await upload('site.png', 'image/png', PNG);
+check('a photo attaches to the order (201)', r.status === 201 && !!r.json?.attachment?.id && !('key' in (r.json?.attachment ?? {})), show(r));
+const attId = r.json?.attachment?.id;
+r = await upload('notes.txt', 'text/plain', new TextEncoder().encode('x'));
+check('a text file is refused (photos and PDFs only)', r.status === 400 && r.json?.error === 'invalid_mime', show(r));
+r = await call('GET', `${SI}/${encodeURIComponent(docNo)}/attachments`);
+check('the order lists its attachment', r.json?.attachments?.length === 1 && r.json.attachments[0].name === 'site.png', show(r));
+const fileRes = await fetch(`${ENGINE}${SI}/${encodeURIComponent(docNo)}/attachments/${attId}`, { headers: { authorization: `Bearer ${token}` } });
+check('the file comes back as the photo', fileRes.status === 200 && fileRes.headers.get('content-type') === 'image/png' && (await fileRes.arrayBuffer()).byteLength === PNG.length, `${fileRes.status}`);
+r = await call('DELETE', `${SI}/${encodeURIComponent(docNo)}/attachments/${attId}`);
+check('and can be removed', r.status === 200 && (await call('GET', `${SI}/${encodeURIComponent(docNo)}/attachments`)).json?.attachments?.length === 0, show(r));
+
 /* ---------- a proceeded SO keeps what it was printed with ---------- */
 if (process.env.DATABASE_URL) {
   const { default: postgres } = await import('postgres');

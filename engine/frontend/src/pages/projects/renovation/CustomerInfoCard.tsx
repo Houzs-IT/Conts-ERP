@@ -37,6 +37,10 @@ export function CustomerInfoCard({ d, canWrite, onDone, onError: _onError }: {
     customerEmail: d.project.customer_email ?? "", address1: d.project.site_address ?? "", building: d.project.building ?? "", unitNo: d.project.unit_no ?? "",
   };
 
+  /* Nothing but the name the project was opened with counts as empty. */
+  const empty = [shown.customerPhone, shown.customerEmail, shown.address1, shown.building, shown.unitNo, shown.propertyType, shown.layoutLabel, shown.builtUpSqft]
+    .every((x) => !x.trim());
+
   async function save() {
     if (!editing) return;
     setTried(true);
@@ -63,11 +67,18 @@ export function CustomerInfoCard({ d, canWrite, onDone, onError: _onError }: {
     <Card
       title="Customer info"
       icon={<UserRound size={14} />}
-      actions={canWrite && ready && p
+      actions={canWrite && ready && p && !empty
         ? <Button variant="secondary" icon={<Pencil size={14} />} onClick={() => { setError(null); setTried(false); setEditing(fromProject(p)); }}>Edit</Button>
         : undefined}
     >
-      <CustomerBlock mode="project" readOnly value={shown} onChange={() => undefined} lists={lists.data ?? undefined} project={p} hideProperty={!ready} />
+      {empty ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+          <span className="text-ink-secondary">No customer details yet.</span>
+          {canWrite && ready && p && <Button variant="secondary" onClick={() => { setError(null); setTried(false); setEditing(fromProject(p)); }}>Add details</Button>}
+        </div>
+      ) : (
+        <CustomerBlock mode="project" readOnly value={shown} onChange={() => undefined} lists={lists.data ?? undefined} project={p} hideProperty={!ready} />
+      )}
       {ready && sos.length > 0 && (
         <p className="mt-2 border-t border-border pt-2 text-xs text-ink-secondary">
           Shared with {sos.map((s) => `${s.docNo}${s.followsProject ? "" : " (kept as printed)"}`).join(", ")}.

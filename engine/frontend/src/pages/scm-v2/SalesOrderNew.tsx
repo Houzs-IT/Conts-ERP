@@ -127,7 +127,7 @@ import { useBranding } from '../../hooks/useBranding';
 import styles from './SalesOrderNew.module.css';
 import { CustomerBlock } from '../projects/renovation/CustomerBlock';
 import { RenovationSoRooms, roomLayoutOf } from './RenovationSoRooms';
-import { autoRoomsPlan } from '../renovation/roomSections';
+import { autoRoomsPlan, placeRows } from '../renovation/roomSections';
 import { soInfoApi, useSoInfoLists } from '../projects/renovation/customerPropertyApi';
 import {
   EMPTY_CUSTOMER_PROPERTY, mergeProjectIntoSo, missingFields, toRenovationBlock,
@@ -1519,6 +1519,7 @@ export const SalesOrderNew = () => {
     }
     const validLines = lines.filter((l) => l.itemCode.trim() && l.qty > 0);
     if (reno) setRenoTried(true);
+    const renoPlaced = placeRows(renoRooms, lines.map((l) => ({ key: l.rid, room: renoLineRoom[l.rid] ?? '' })));
     /* Backend is the authority for what blocks this submit (owner 2026-09-16).
        Ask the validate dry-run for the definitive list for THIS press (draft vs
        confirmed differ), and merge the one client-only extra (a NO-MATCH scanned
@@ -1675,13 +1676,14 @@ export const SalesOrderNew = () => {
           /* PR-E — per-item delivery date + cascade override flag. */
           lineDeliveryDate:           l.lineDeliveryDate ?? null,
           lineDeliveryDateOverridden: l.lineDeliveryDateOverridden ?? false,
-          ...(reno ? { room: renoLineRoom[l.rid] ?? '' } : {}),
+          /* Every line belongs to a room: one without a room goes under Common area (placeRows). */
+          ...(reno ? { room: renoPlaced.roomOf[l.rid] ?? '' } : {}),
         })),
         /* Renovation mode (mig 0112): the shared Order information block, stamped
            on the order and written back to its project by the server. A sale for
            a project has no fair, venue, building type or emergency contact. */
         ...(reno ? {
-          renovation: { ...toRenovationBlock(renoInfo), roomSections: renoRooms }, noFair: true,
+          renovation: { ...toRenovationBlock(renoInfo), roomSections: renoPlaced.rooms }, noFair: true,
           fairOrganizer: undefined, fairStart: undefined, fairEnd: undefined, fairDate: undefined,
           buildingType: undefined, customerType: undefined, customerSoNo: undefined, emergencyContactName: undefined, emergencyContactRelationship: undefined, emergencyContactPhone: undefined,
         } : {}),
@@ -2405,7 +2407,7 @@ export const SalesOrderNew = () => {
                 setRenoRooms(next);
                 if (rename) setRenoLineRoom((m) => Object.fromEntries(Object.entries(m).map(([k, r]) => [k, r === rename.from ? rename.to : r])));
               }}
-              rows={lines.map((line, idx) => ({ key: line.rid, room: renoLineRoom[line.rid] ?? '', node: renderNewLine(line, idx) }))}
+              rows={lines.map((line) => ({ key: line.rid, room: renoLineRoom[line.rid] ?? '', render: (n: number) => renderNewLine(line, n) }))}
               onRowRoom={(rid, room) => setRenoLineRoom((m) => ({ ...m, [rid]: room }))}
               onAddLine={(room) => {
                 const l = newLine(deliveryDate || null);

@@ -166,6 +166,7 @@ import {
 } from '../projects/renovation/customerPropertyModel';
 import { soInfoErrorText } from '../projects/renovation/customerPropertyApi';
 import { RenovationSoRooms, roomLayoutOf, type RoomLayout } from './RenovationSoRooms';
+import { placeRows } from '../renovation/roomSections';
 import { DateField } from "../../vendor/scm/components/DateField";
 import { HoldChip } from "../../vendor/scm/components/HoldChip";
 import { CancelRequestPanel } from "../../vendor/scm/components/CancelRequestPanel"; import { useCancelRequestAction } from "./use-cancel-request-action";
@@ -680,13 +681,15 @@ export const SalesOrderDetail = () => {
   }, [renoLines, renoDocNo, isEditing]);
   const saveRenoRooms = async () => {
     if (!renoLines || !renoDocNo) return;
-    const itemRooms: Record<string, string> = {};
-    for (const [k, room] of Object.entries(renoRowRoom)) {
-      const id = renoAddedIds.current[k] ?? k;
-      if (/^[0-9a-f-]{36}$/i.test(id)) itemRooms[id] = room;
-    }
+    /* Every line belongs to a room: a saved line with none is saved under Common area now (placeRows). */
+    const rowsNow = [
+      ...items.map((it) => ({ key: it.id, room: renoRowRoom[it.id] ?? '' })),
+      ...Object.entries(renoAddedIds.current).map(([k, id]) => ({ key: id, room: renoRowRoom[k] ?? '' })),
+    ];
+    const placed = placeRows(renoRooms, rowsNow);
+    const itemRooms = Object.fromEntries(Object.entries(placed.roomOf).filter(([id]) => /^[0-9a-f-]{36}$/i.test(id)));
     await authedFetch(`/renovation-so-info/${encodeURIComponent(renoDocNo)}/rooms`, {
-      method: 'PUT', body: JSON.stringify({ roomSections: renoRooms, itemRooms }),
+      method: 'PUT', body: JSON.stringify({ roomSections: placed.rooms, itemRooms }),
     });
     renoAddedIds.current = {};
   };
@@ -1894,7 +1897,7 @@ export const SalesOrderDetail = () => {
                 </div>
               );
   };
-  const renderStagedLine = (staged: (typeof addingDrafts)[number], i: number) => {
+  const renderStagedLine = (staged: (typeof addingDrafts)[number], i: number, displayIndex?: number) => {
               const cb = addCallbacks.get(staged.key);
               return (
                 <div key={staged.key}>
@@ -1904,7 +1907,7 @@ export const SalesOrderDetail = () => {
                     </span>
                   </div>
                   <SoLineCard
-                    index={visibleLines.persisted + i}
+                    index={displayIndex ?? visibleLines.persisted + i}
                     draft={staged.draft}
                     onChange={cb?.onChange ?? ((patch) => patchAddingDraft(staged.key, patch))}
                     onRemove={cb?.onRemove ?? (() => cancelAddLine(staged.key))}
@@ -2386,8 +2389,8 @@ export const SalesOrderDetail = () => {
                   if (rename) setRenoRowRoom((m) => Object.fromEntries(Object.entries(m).map(([k, r]) => [k, r === rename.from ? rename.to : r])));
                 }}
                 rows={[
-                  ...items.filter((it) => it.id in editingDrafts).map((it, idx) => ({ key: it.id, room: renoRowRoom[it.id] ?? '', node: renderEditLine(it, idx) })),
-                  ...addingDrafts.map((staged, i) => ({ key: staged.key, room: renoRowRoom[staged.key] ?? '', node: renderStagedLine(staged, i) })),
+                  ...items.filter((it) => it.id in editingDrafts).map((it) => ({ key: it.id, room: renoRowRoom[it.id] ?? '', render: (n: number) => renderEditLine(it, n) })),
+                  ...addingDrafts.map((staged, i) => ({ key: staged.key, room: renoRowRoom[staged.key] ?? '', render: (n: number) => renderStagedLine(staged, i, n) })),
                 ]}
                 onRowRoom={(key, room) => setRenoRowRoom((m) => ({ ...m, [key]: room }))}
                 onAddLine={(room) => startAddLine(room)}

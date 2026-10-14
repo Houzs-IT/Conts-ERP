@@ -372,3 +372,12 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Project Maintenance in renovation mode shows only Property types and layouts and Brands (owner, 14 Oct); People, main steps, task categories, project types and the default checklist are hidden, their tables and readers unchanged.
 - Customer Type, Building Type and Relationship lists are hidden in SO Maintenance in renovation mode; customer type and ref no. are no longer shown on the renovation SO form.
 - Check: scripts/api-checks/reno-customer-property.mjs (49 checks, local engine).
+
+## Same customer block on the SO and the project (feat/reno-same-customer-block, migration 0115, 14-15 Oct)
+- Migration 0115 (projects: salesperson_staff_id, address1/2, city, postcode, country, sales_location; projects.state reused; scm.mfg_sales_orders.attachments) is applied only to a local scratch database. Until it is applied the project keeps its single site address and no salesperson; SO attachments answer with a database error.
+- One CustomerBlock (Order information first, then Customer | Delivery address) on New SO, Edit SO, New project, the Customer info Edit dialog and, read-only, the Customer info card. Same fields, labels and required marks (customer name, phone, address line 1, property type, layout, built-up sq ft); the project now requires them too, on create and edit.
+- SHARED_FIELDS (scm/shared/renovation-property.ts) drives every sync: SO -> project, project -> open SOs, Link existing SO; an empty value never clears the other side.
+- Rooms: every line belongs to a room (Common area until a layout is chosen; a line with no room shows and is saved there); rooms are made as soon as a layout is chosen while no line has a product; a line moves rooms from its Move button.
+- SO attachments (photos and PDFs, 10 MB, up to 50) on the SO page, in the line-photo bucket; line photos are the existing per-line photos.
+- Not checked locally: the State / City / Postcode cascade with real localities (the scratch database has none seeded).
+- Check: scripts/api-checks/reno-customer-property.mjs (59 checks, local engine).

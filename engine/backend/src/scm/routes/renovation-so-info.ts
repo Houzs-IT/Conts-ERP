@@ -232,3 +232,77 @@ renovationSoInfo.put('/:docNo', async (c: C) => {
   if (!r.ok) return c.json(r.body, r.status);
   return c.json({ ok: true, docNo, projectId: r.projectId });
 });
+
+/* ── Attachments on the whole order (owner, 14 Oct 2026; mig 0115 scm.mfg_sales_orders.attachments) ──
+   Photos of the site, floor plans, the signed quotation. The files go in the bucket the line photos already
+   use (SO_ITEM_PHOTOS), under so-attachments/<doc no>/; the list lives on the order. Images and PDFs, 10 MB. */
+const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+const ATTACHMENT_TYPES = /^(image\/(jpeg|png|webp|gif|heic|heif)|application\/pdf)$/i;
+export interface SoAttachment { id: string; key: string; name: string; type: string; size: number; at: string; by: string | null }
+
+async function readAttachments(db: Db, docNo: string, companySql: string): Promise<SoAttachment[] | null> {
+  const r = await db.prepare(`SELECT attachments FROM scm.mfg_sales_orders WHERE doc_no = ?${companySql}`).bind(docNo).first<{ attachments: unknown }>();
+  if (!r) return null;
+  const raw = typeof r.attachments === 'string' ? JSON.parse(r.attachments) as unknown : r.attachments;
+  return Array.isArray(raw) ? (raw as SoAttachment[]) : [];
+}
+
+renovationSoInfo.get('/:docNo/attachments', async (c: C) => {
+  const db = dbOf(c);
+  const avail = await renovationSoAvailable(db);
+  if (!avail.ok) return c.json(avail.body, avail.status);
+  const list = await readAttachments(db, c.req.param('docNo') ?? '', activeCompanySql(c));
+  if (!list) return c.json({ error: 'so_not_found' }, 404);
+  return c.json({ attachments: list.map(({ key: _key, ...rest }) => rest) });
+});
+
+renovationSoInfo.post('/:docNo/attachments', async (c: C) => {
+  const db = dbOf(c);
+  const avail = await renovationSoAvailable(db);
+  if (!avail.ok) return c.json(avail.body, avail.status);
+  if (!c.env.SO_ITEM_PHOTOS) return c.json({ error: 'photo_bucket_not_configured' }, 500);
+  const docNo = c.req.param('docNo') ?? '';
+  const list = await readAttachments(db, docNo, activeCompanySql(c));
+  if (!list) return c.json({ error: 'so_not_found', message: `Sales order ${docNo} does not exist.` }, 404);
+  if (list.length >= 50) return c.json({ error: 'too_many', message: 'An order keeps up to 50 attachments.' }, 409);
+  let form: Record<string, unknown>;
+  try { form = await c.req.parseBody(); } catch { return c.json({ error: 'invalid_multipart' }, 400); }
+  const file = form.file as File | undefined;
+  if (!file || typeof file === 'string') return c.json({ error: 'file_field_required', message: 'Choose a file.' }, 400);
+  if (!ATTACHMENT_TYPES.test(file.type || '')) return c.json({ error: 'invalid_mime', message: 'Attach a photo or a PDF.' }, 400);
+  if (file.size > MAX_ATTACHMENT_BYTES) return c.json({ error: 'file_too_large', message: 'The file is over 10 MB.' }, 400);
+  const id = crypto.randomUUID();
+  const ext = (file.name.match(/\.([a-z0-9]{1,5})$/i)?.[1] ?? (file.type === 'application/pdf' ? 'pdf' : 'jpg')).toLowerCase();
+  const key = `so-attachments/${docNo}/${id}.${ext}`;
+  const by = String(c.get('houzsUser')?.name ?? c.get('houzsUser')?.email ?? '') || null;
+  await c.env.SO_ITEM_PHOTOS.put(key, file.stream(), { httpMetadata: { contentType: file.type }, customMetadata: { docNo, uploadedBy: by ?? '' } });
+  const item: SoAttachment = { id, key, name: file.name.slice(0, 160) || `attachment.${ext}`, type: file.type, size: file.size, at: new Date().toISOString(), by };
+  await db.prepare(`UPDATE scm.mfg_sales_orders SET attachments = attachments || ?::text::jsonb, updated_at = now() WHERE doc_no = ?`)
+    .bind(JSON.stringify([item]), docNo).run();
+  const { key: _key, ...shown } = item;
+  return c.json({ attachment: shown }, 201);
+});
+
+renovationSoInfo.get('/:docNo/attachments/:id', async (c: C) => {
+  const db = dbOf(c);
+  const list = await readAttachments(db, c.req.param('docNo') ?? '', activeCompanySql(c));
+  const hit = list?.find((a) => a.id === c.req.param('id'));
+  if (!hit) return c.json({ error: 'not_found' }, 404);
+  if (!c.env.SO_ITEM_PHOTOS) return c.json({ error: 'photo_bucket_not_configured' }, 500);
+  const obj = await c.env.SO_ITEM_PHOTOS.get(hit.key);
+  if (!obj) return c.json({ error: 'file_missing' }, 404);
+  return new Response(obj.body, { headers: { 'content-type': hit.type, 'content-disposition': `inline; filename="${hit.name.replace(/"/g, '')}"`, 'cache-control': 'private, max-age=300' } });
+});
+
+renovationSoInfo.delete('/:docNo/attachments/:id', async (c: C) => {
+  const db = dbOf(c);
+  const docNo = c.req.param('docNo') ?? '';
+  const list = await readAttachments(db, docNo, activeCompanySql(c));
+  const hit = list?.find((a) => a.id === c.req.param('id'));
+  if (!list || !hit) return c.json({ error: 'not_found' }, 404);
+  await db.prepare(`UPDATE scm.mfg_sales_orders SET attachments = ?::text::jsonb, updated_at = now() WHERE doc_no = ?`)
+    .bind(JSON.stringify(list.filter((a) => a.id !== hit.id)), docNo).run();
+  /* The list no longer names it, so the file goes too; a failed delete leaves an orphan file, never a broken list. */
+  try { await c.env.SO_ITEM_PHOTOS?.delete(hit.key); } catch (e) { console.error('[so-attachments] delete failed', e); }
+  return c.json({ ok: true });
+});

@@ -3,9 +3,12 @@
    information"; migrations 0112, 0115). Three sections, the same fields, order,
    labels and required marks everywhere it is used:
 
+     Order information  Project, Start date, End date, Building, Unit, Property type *, Layout *, Built-up sq ft *
      Customer           Customer name *, Phone *, Email, Salesperson
      Delivery address   Address line 1 *, Address line 2, State, City, Postcode, Country, Sales location
-     Order information  Project, Start date, End date, Building, Unit, Property type *, Layout *, Built-up sq ft *
+
+   Order information comes first (picking the project fills the rest), full width;
+   Customer and Delivery address follow side by side at equal height on wide pages.
 
    Used by New SO and Edit SO (renovation mode), the New project form, the project's
    Customer info Edit dialog, and read-only (`readOnly`) by the project's Customer
@@ -55,15 +58,25 @@ function ReadOnly({ children }: { children: ReactNode }) {
   return <div className="flex h-9 min-w-0 items-center truncate rounded-md border border-dashed border-border bg-surface-dim px-2.5 text-sm text-ink-secondary">{children}</div>;
 }
 
-function Section({ title, children, note, compact }: { title: string; children: ReactNode; note?: ReactNode; compact?: boolean }) {
+function Section({ title, children, note, compact, fill }: { title: string; children: ReactNode; note?: ReactNode; compact?: boolean; fill?: boolean }) {
   return (
-    <section className={cn("min-w-0 rounded-lg border border-border bg-surface", compact ? "p-3" : "p-3 sm:p-4")}>
+    <section className={cn("min-w-0 rounded-lg border border-border bg-surface", compact ? "p-3" : "p-3 sm:p-4", fill && "h-full")}>
       <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
         <h3 className="text-[12px] font-bold uppercase tracking-wide text-ink">{title}</h3>
         {note}
       </div>
       {children}
     </section>
+  );
+}
+
+/** Read-only: one label / value row, a muted dash when empty. */
+function Row({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex gap-3 py-0.5 text-[13px] leading-snug">
+      <dt className="w-24 shrink-0 text-ink-secondary">{label}</dt>
+      <dd className="min-w-0 flex-1 break-words text-ink">{children || <span className="text-ink-muted">—</span>}</dd>
+    </div>
   );
 }
 
@@ -224,72 +237,61 @@ export function CustomerBlock({
   const endDate = project?.endDate ?? null;
   const layoutText = value.layoutLabel || (value.bedrooms !== "" ? `${value.bedrooms} bed ${value.bathrooms} bath` : "");
 
-  /* Read-only: the same sections, fields, order and labels, as text. */
+  /* Read-only: the same sections, fields, order and labels, as compact rows. */
   if (readOnly) {
-    const T = ({ label, v, wide }: { label: string; v: ReactNode; wide?: boolean }) => (
-      <div className={cn("min-w-0", wide && "col-span-2")}>
-        <div className={cn(labelCls, "text-ink-secondary")}>{label}</div>
-        <div className="break-words text-sm text-ink">{v || <span className="text-ink-secondary">Not set</span>}</div>
+    const group = (title: string, rows: ReactNode) => (
+      <div className="min-w-0">
+        <div className="mb-0.5 text-[10px] font-bold uppercase tracking-wide text-ink-secondary">{title}</div>
+        <dl>{rows}</dl>
       </div>
     );
+    const where = [value.address1, value.address2, [value.postcode, value.city].filter(Boolean).join(" "), value.state].filter(Boolean).join(", ");
     return (
       <div className="space-y-3">
-        <Section title="Customer" compact>
-          <div className="grid grid-cols-2 gap-x-3 gap-y-2">
-            <T label="Customer name" v={value.customerName} wide />
-            <T label="Phone" v={value.customerPhone} />
-            <T label="Email" v={value.customerEmail} />
-            <T label="Salesperson" v={staffName(value.salespersonId) || project?.salespersonName} wide />
-          </div>
-        </Section>
-        <Section title="Delivery address" compact>
-          <div className="grid grid-cols-2 gap-x-3 gap-y-2">
-            <T label="Address line 1" v={value.address1} wide />
-            <T label="Address line 2" v={value.address2} wide />
-            <T label="State" v={value.state} />
-            <T label="City" v={value.city} />
-            <T label="Postcode" v={value.postcode} />
-            <T label="Country" v={value.country} />
-            <T label="Sales location" v={value.salesLocation} wide />
-          </div>
-        </Section>
-        <Section title="Order information" compact>
-          <div className="grid grid-cols-2 gap-x-3 gap-y-2">
-            <T label="Project" v={projectLabel} wide />
-            <T label="Start date" v={startDate ? showDate(startDate) : ""} />
-            <T label="End date" v={endDate ? showDate(endDate) : ""} />
-            <T label="Building" v={value.building} />
-            <T label="Unit" v={value.unitNo} />
-            {!hideProperty && (
-              <>
-                <T label="Property type" v={value.propertyType} />
-                <T label="Layout" v={layoutText} />
-                <T label="Built-up sq ft" v={value.builtUpSqft ? `${Number(value.builtUpSqft).toLocaleString("en-MY")} sq ft` : ""} />
-              </>
-            )}
-          </div>
-        </Section>
+        {group("Order information", <>
+          <Row label="Project">{projectLabel}</Row>
+          <Row label="Dates">{startDate || endDate ? `${startDate ? showDate(startDate) : "—"} to ${endDate ? showDate(endDate) : "—"}` : ""}</Row>
+          <Row label="Building">{[value.building, value.unitNo].filter(Boolean).join(" · ")}</Row>
+          {!hideProperty && (
+            <>
+              <Row label="Property">{value.propertyType}</Row>
+              <Row label="Layout">{layoutText}</Row>
+              <Row label="Built-up">{value.builtUpSqft ? `${Number(value.builtUpSqft).toLocaleString("en-MY")} sq ft` : ""}</Row>
+            </>
+          )}
+        </>)}
+        {group("Customer", <>
+          <Row label="Name">{value.customerName}</Row>
+          <Row label="Phone">{value.customerPhone}</Row>
+          <Row label="Email">{value.customerEmail}</Row>
+          <Row label="Salesperson">{staffName(value.salespersonId) || project?.salespersonName}</Row>
+        </>)}
+        {group("Delivery address", <>
+          <Row label="Address">{where}</Row>
+          <Row label="Country">{value.address1 ? value.country : ""}</Row>
+          <Row label="Sales location">{value.salesLocation}</Row>
+        </>)}
       </div>
     );
   }
 
   const customer = (
-    <Section title="Customer">
-      <div className="grid grid-cols-2 gap-x-3 gap-y-3 sm:grid-cols-4">
-        <Cell label="Customer name" required missing={miss("Customer name")} className="col-span-2" htmlFor={id("name")}>
+    <Section title="Customer" fill={arrangement === "columns"}>
+      <div className="grid grid-cols-1 gap-x-3 gap-y-3 sm:grid-cols-2">
+        <Cell label="Customer name" required missing={miss("Customer name")} htmlFor={id("name")}>
           <input id={id("name")} className={cn(input, miss("Customer name") && ring)} value={value.customerName} disabled={off("customerName")}
             placeholder="e.g. Lim Mei Hua" onChange={(e) => set({ customerName: e.target.value })} />
         </Cell>
-        <Cell label="Phone" required missing={miss("Phone number")} className="col-span-2">
+        <Cell label="Phone" required missing={miss("Phone number")}>
           <div className={cn(miss("Phone number") && "rounded-md ring-2 ring-err/30")}>
             <PhoneInput className={input} value={value.customerPhone} onChange={(v) => set({ customerPhone: v })} disabled={off("customerPhone")} aria-label="Phone" />
           </div>
         </Cell>
-        <Cell label="Email" className="col-span-2" htmlFor={id("email")}>
+        <Cell label="Email" htmlFor={id("email")}>
           <input id={id("email")} type="email" className={input} value={value.customerEmail} disabled={off("customerEmail")}
             placeholder="customer@example.com" onChange={(e) => set({ customerEmail: e.target.value })} />
         </Cell>
-        <Cell label="Salesperson" className="col-span-2" htmlFor={id("sales")}>
+        <Cell label="Salesperson" htmlFor={id("sales")}>
           <select id={id("sales")} className={input} value={value.salespersonId} disabled={off("salespersonId") || !canChangeSalesperson}
             onChange={(e) => set({ salespersonId: e.target.value })}>
             <option value="">{staff.isLoading ? "Loading..." : "Not set"}</option>
@@ -304,27 +306,27 @@ export function CustomerBlock({
   );
 
   const address = (
-    <Section title="Delivery address">
-      <div className="grid grid-cols-2 gap-x-3 gap-y-3 sm:grid-cols-4">
-        <Cell label="Address line 1" required missing={miss("Address line 1")} className="col-span-2 sm:col-span-4" htmlFor={id("a1")}>
+    <Section title="Delivery address" fill={arrangement === "columns"}>
+      <div className="grid grid-cols-1 gap-x-3 gap-y-3 sm:grid-cols-2">
+        <Cell label="Address line 1" required missing={miss("Address line 1")} className="sm:col-span-2" htmlFor={id("a1")}>
           <input id={id("a1")} className={cn(input, miss("Address line 1") && ring)} value={value.address1} disabled={off("address1")}
             placeholder="Unit, street, area" onChange={(e) => set({ address1: e.target.value })} />
         </Cell>
-        <Cell label="Address line 2" className="col-span-2 sm:col-span-4" htmlFor={id("a2")}>
+        <Cell label="Address line 2" className="sm:col-span-2" htmlFor={id("a2")}>
           <input id={id("a2")} className={input} value={value.address2} disabled={off("address2")}
             placeholder="Apt, floor, building (optional)" onChange={(e) => set({ address2: e.target.value })} />
         </Cell>
-        <Cell label="State" className="col-span-2">
+        <Cell label="State">
           <StatePicker value={value.state} selectClassName={input} disabled={off("state")}
             onChange={(next) => onChange({ ...value, ...pickState(next) })} />
         </Cell>
-        <Cell label="City" className="col-span-2">
+        <Cell label="City">
           <SearchableSelect className={input} value={value.city} disabled={off("city") || loc.isLoading} ariaLabel="City"
             placeholder={loc.isLoading ? "Loading..." : cityPlaceholder(value.state)}
             options={cities.map((c) => ({ value: c, label: c }))}
             onChange={(c) => onChange({ ...value, ...pickCity(rows, triple, c) })} />
         </Cell>
-        <div className="col-span-2 min-w-0">
+        <div className="min-w-0">
           <AddressPostcodeField
             country={country}
             value={value.postcode}
@@ -408,11 +410,14 @@ export function CustomerBlock({
 
   if (arrangement === "columns") {
     return (
-      <div className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,6fr)_minmax(0,5fr)] xl:items-start">
-        <div className="flex min-w-0 flex-col gap-3">{customer}{address}</div>
-        <div className="min-w-0">{orderInfo}</div>
+      <div className="flex min-w-0 flex-col gap-3">
+        {orderInfo}
+        <div className="grid grid-cols-1 items-stretch gap-3 lg:grid-cols-2">
+          <div className="min-w-0">{customer}</div>
+          <div className="min-w-0">{address}</div>
+        </div>
       </div>
     );
   }
-  return <div className="flex min-w-0 flex-col gap-3">{customer}{address}{orderInfo}</div>;
+  return <div className="flex min-w-0 flex-col gap-3">{orderInfo}{customer}{address}</div>;
 }
