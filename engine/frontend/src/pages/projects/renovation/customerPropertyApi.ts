@@ -22,11 +22,21 @@ export function useSoInfoLists() {
   });
 }
 
+/** An SO's rooms (list + each line's room) for the read-only page and the print; off when `enabled` is false. */
+export function useSoRooms(docNo: string | null | undefined, enabled: boolean) {
+  return useQuery({
+    queryKey: ["reno", "so-info", "so", docNo ?? ""],
+    queryFn: () => soInfoApi.so(docNo!),
+    enabled: enabled && !!docNo,
+    staleTime: 30_000,
+  });
+}
+
 export const soInfoApi = {
   projects: (q: string) => authedFetch<{ data: ProjectShared[] }>(`${SO}/projects?q=${encodeURIComponent(q)}`),
   project: (id: number) => authedFetch<{ project: ProjectShared }>(`${SO}/projects/${id}`),
   /** An existing SO's order information (the form's value) and its project. */
-  so: (docNo: string) => authedFetch<{ info: CustomerPropertyValue; project: ProjectShared | null }>(`${SO}/so/${encodeURIComponent(docNo)}`),
+  so: (docNo: string) => authedFetch<{ info: CustomerPropertyValue; project: ProjectShared | null; roomSections: string[]; itemRooms: Record<string, string> }>(`${SO}/so/${encodeURIComponent(docNo)}`),
   save: (docNo: string, block: Record<string, unknown>) =>
     authedFetch<{ ok: true; projectId: number | null }>(`${SO}/${encodeURIComponent(docNo)}`, { method: "PUT", body: JSON.stringify(block) }),
 };

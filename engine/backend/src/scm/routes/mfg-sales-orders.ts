@@ -258,7 +258,7 @@ import {
   findFreeTextSoLines, freeTextSoLineResponse,
 } from '../lib/validate-item-codes';
 import { collectSoConfirmProblems, soConfirmProblemsForDoc } from '../lib/so-confirm-gate';
-import { applyRenovationSoInfo, readRenovationBlock, renovationSoAvailable, renovationSoProblems } from './renovation-so-info';
+import { applyRenovationSoInfo, readRenovationBlock, renovationSoAvailable, renovationSoProblems, stampCreatedRooms } from './renovation-so-info';
 import type { Db as RenoInfoDb } from '../../services/renovation/load';
 import { companyRequiresStockLocation, soLocationProblem, soLocationProblemForDoc } from '../lib/so-location-gate';
 import { collectSoSubmitProblems, soPaymentSubFieldGap } from '../shared/so-submit-problems';
@@ -4762,9 +4762,14 @@ mfgSalesOrders.post('/', async (c) => {
      was. A draft is never asked (the loader says so): that is asked when it is
      confirmed. lib/vp-brand-ask.ts. */
   if (renoBlock && out.status === 201 && typeof out.body.docNo === 'string') {
-    const applied = await applyRenovationSoInfo(c.env.DB as unknown as RenoInfoDb, out.body.docNo, renoBlock, {
+    const createdDocNo = out.body.docNo;
+    const applied = await applyRenovationSoInfo(c.env.DB as unknown as RenoInfoDb, createdDocNo, { ...renoBlock, roomSections: null }, {
       companyId: activeCompanyId(c) ?? 1, companySql: activeCompanySql(c, 'p.company_id'),
       actorId: Number(c.get('houzsUser')?.id ?? 0),
+    }).then(async (r) => {
+      /* Rooms: the room list and each line's room (body.items[i].room), matched to the inserted lines. */
+      if (r.ok) await stampCreatedRooms(c.env.DB as unknown as RenoInfoDb, createdDocNo, renoBlock.roomSections, peek!.items);
+      return r;
     }).catch((e: unknown) => {
       /* The order is committed; a failed stamp must not read as a failed save. */
       console.error('[renovation-so-info] stamp after create failed', e);

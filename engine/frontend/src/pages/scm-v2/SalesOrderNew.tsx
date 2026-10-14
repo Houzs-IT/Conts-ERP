@@ -126,6 +126,7 @@ import { useOrdersWithMoney } from '../../vendor/scm/lib/so-money-queries';
 import { useBranding } from '../../hooks/useBranding';
 import styles from './SalesOrderNew.module.css';
 import { CustomerPropertyFields } from '../projects/renovation/CustomerPropertyFields';
+import { RenovationSoRooms, roomLayoutOf } from './RenovationSoRooms';
 import { soInfoApi, useSoInfoLists } from '../projects/renovation/customerPropertyApi';
 import {
   EMPTY_CUSTOMER_PROPERTY, mergeProjectIntoSo, missingFields, toRenovationBlock,
@@ -306,6 +307,9 @@ export const SalesOrderNew = () => {
   const [renoInfo, setRenoInfo] = useState<CustomerPropertyValue>(EMPTY_CUSTOMER_PROPERTY);
   const [renoProject, setRenoProject] = useState<ProjectShared | null>(null);
   const [renoTried, setRenoTried] = useState(false);
+  /* Rooms: the order's room list and each line's room by its rid. */
+  const [renoRooms, setRenoRooms] = useState<string[]>([]);
+  const [renoLineRoom, setRenoLineRoom] = useState<Record<string, string>>({});
 
   // ── Items state ────────────────────────────────────────────────────
   /* HOOKKA pattern — each line is an inline editable card. First card is
@@ -1671,12 +1675,13 @@ export const SalesOrderNew = () => {
           /* PR-E — per-item delivery date + cascade override flag. */
           lineDeliveryDate:           l.lineDeliveryDate ?? null,
           lineDeliveryDateOverridden: l.lineDeliveryDateOverridden ?? false,
+          ...(reno ? { room: renoLineRoom[l.rid] ?? '' } : {}),
         })),
         /* Renovation mode (mig 0112): the shared Order information block, stamped
            on the order and written back to its project by the server. A sale for
            a project has no fair, venue, building type or emergency contact. */
         ...(reno ? {
-          renovation: toRenovationBlock(renoInfo), noFair: true,
+          renovation: { ...toRenovationBlock(renoInfo), roomSections: renoRooms }, noFair: true,
           fairOrganizer: undefined, fairStart: undefined, fairEnd: undefined, fairDate: undefined,
           buildingType: undefined, customerType: undefined, customerSoNo: undefined, emergencyContactName: undefined, emergencyContactRelationship: undefined, emergencyContactPhone: undefined,
         } : {}),
@@ -1775,6 +1780,40 @@ export const SalesOrderNew = () => {
     () => (renoTried ? missingFields(renoInfo, { customerName: debtorName, phone, address1 }) : new Set<string>()),
     [renoTried, renoInfo, debtorName, phone, address1],
   );
+
+  const renderNewLine = (line: DraftLine, idx: number) => {
+            /* fromScan — the slip rawText still feeds the SKU picker's placeholder
+               hint for a no-match line (searchHint below). The per-line
+               "scanned · NN%" review chip was REMOVED: owner — it is scan-review
+               metadata that won't exist on the created SO, so it must not clutter
+               the create page. (A no-match line is still obvious: its SKU picker
+               is empty + required.) */
+            const meta = scanLineMeta[line.rid];
+            return (
+              <div key={line.rid} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
+                <SoLineCard
+                  index={idx}
+                  draft={line}
+                  onChange={(patch) => updateLine(line.rid, patch)}
+                  onRemove={() => dropLine(line.rid)}
+                  canRemove={lines.length > 1}
+                  inheritVariantsByCategory={inheritVariantsByCategory}
+                  onAddProducts={addProducts}
+                  /* Variants are only mandatory once a Processing Date is set
+                     (matches the backend gate + the Save block above), so the
+                     ` *` marker + red ring stay off while the order is still a
+                     no-date draft (owner 2026-07-14). */
+                  variantsRequired={!!processingDate}
+                  seedSofaLegDefault={true}
+                  /* Scan-Order (Task #73) — a NO-MATCH scanned line seeds an
+                     empty SKU picker; pass the slip rawText as the picker's
+                     placeholder hint so the operator can pick a real SKU
+                     (never free-text). Only while the line is still unpicked. */
+                  searchHint={!line.itemCode && meta?.rawText ? meta.rawText : undefined}
+                />
+              </div>
+            );
+  };
 
   const renoOrderInfoCard = (
     <section className={styles.card}>
@@ -2353,41 +2392,29 @@ export const SalesOrderNew = () => {
           <h2 className={styles.cardTitle}>Line Items ({lines.length})</h2>
         </header>
         <div className={styles.cardBody} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-          {lines.map((line, idx) => {
-            /* fromScan — the slip rawText still feeds the SKU picker's placeholder
-               hint for a no-match line (searchHint below). The per-line
-               "scanned · NN%" review chip was REMOVED: owner — it is scan-review
-               metadata that won't exist on the created SO, so it must not clutter
-               the create page. (A no-match line is still obvious: its SKU picker
-               is empty + required.) */
-            const meta = scanLineMeta[line.rid];
-            return (
-              <div key={line.rid} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
-                <SoLineCard
-                  index={idx}
-                  draft={line}
-                  onChange={(patch) => updateLine(line.rid, patch)}
-                  onRemove={() => dropLine(line.rid)}
-                  canRemove={lines.length > 1}
-                  inheritVariantsByCategory={inheritVariantsByCategory}
-                  onAddProducts={addProducts}
-                  /* Variants are only mandatory once a Processing Date is set
-                     (matches the backend gate + the Save block above), so the
-                     ` *` marker + red ring stay off while the order is still a
-                     no-date draft (owner 2026-07-14). */
-                  variantsRequired={!!processingDate}
-                  seedSofaLegDefault={true}
-                  /* Scan-Order (Task #73) — a NO-MATCH scanned line seeds an
-                     empty SKU picker; pass the slip rawText as the picker's
-                     placeholder hint so the operator can pick a real SKU
-                     (never free-text). Only while the line is still unpicked. */
-                  searchHint={!line.itemCode && meta?.rawText ? meta.rawText : undefined}
-                />
-              </div>
-            );
-          })}
-
-          <AddLineButton variant="block" onClick={addLine} />
+          {reno ? (
+            /* Renovation mode: the lines grouped into rooms (RenovationSoRooms). */
+            <RenovationSoRooms
+              rooms={renoRooms}
+              onRoomsChange={(next, rename) => {
+                setRenoRooms(next);
+                if (rename) setRenoLineRoom((m) => Object.fromEntries(Object.entries(m).map(([k, r]) => [k, r === rename.from ? rename.to : r])));
+              }}
+              rows={lines.map((line, idx) => ({ key: line.rid, room: renoLineRoom[line.rid] ?? '', node: renderNewLine(line, idx) }))}
+              onRowRoom={(rid, room) => setRenoLineRoom((m) => ({ ...m, [rid]: room }))}
+              onAddLine={(room) => {
+                const l = newLine(deliveryDate || null);
+                setLines((prev) => [...prev, l]);
+                if (room) setRenoLineRoom((m) => ({ ...m, [l.rid]: room }));
+              }}
+              layout={roomLayoutOf(renoInfo)}
+            />
+          ) : (
+            <>
+              {lines.map((line, idx) => renderNewLine(line, idx))}
+              <AddLineButton variant="block" onClick={addLine} />
+            </>
+          )}
 
           <div style={{
             display: 'flex',

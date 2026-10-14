@@ -166,6 +166,7 @@ import {
 } from '../projects/renovation/customerPropertyModel';
 import { soInfoErrorText } from '../projects/renovation/customerPropertyApi';
 import { soAddressFromSite } from '../../vendor/shared/renovation-property';
+import { RenovationSoRooms, roomLayoutOf, type RoomLayout } from './RenovationSoRooms';
 import { DateField } from "../../vendor/scm/components/DateField";
 import { HoldChip } from "../../vendor/scm/components/HoldChip";
 import { CancelRequestPanel } from "../../vendor/scm/components/CancelRequestPanel"; import { useCancelRequestAction } from "./use-cancel-request-action";
@@ -658,6 +659,38 @@ export const SalesOrderDetail = () => {
   const [isEditing, setIsEditing] = useState(
     editSearchParams.get('edit') === '1',
   );
+
+  // ── Renovation mode (Conts, 14 Oct 2026; mig 0112): the lines grouped into rooms ──
+  const renoLines = useSoInfoLists().data?.ready === true;
+  const [renoRooms, setRenoRooms] = useState<string[]>([]);
+  /* Room by line key: a saved line's id, or a staged add's key until it is saved. */
+  const [renoRowRoom, setRenoRowRoom] = useState<Record<string, string>>({});
+  const [renoLayout, setRenoLayout] = useState<RoomLayout | null>(null);
+  const renoAddedIds = useRef<Record<string, string>>({});
+  const renoDocNo = docNo ?? '';
+  useEffect(() => {
+    if (!renoLines || !renoDocNo || !isEditing) return;
+    let live = true;
+    void soInfoApi.so(renoDocNo).then((r) => {
+      if (!live) return;
+      setRenoRooms(r.roomSections);
+      setRenoRowRoom(r.itemRooms);
+      setRenoLayout(roomLayoutOf(r.info));
+    }).catch(() => { /* the rooms stay as typed; saving them reports a failure */ });
+    return () => { live = false; };
+  }, [renoLines, renoDocNo, isEditing]);
+  const saveRenoRooms = async () => {
+    if (!renoLines || !renoDocNo) return;
+    const itemRooms: Record<string, string> = {};
+    for (const [k, room] of Object.entries(renoRowRoom)) {
+      const id = renoAddedIds.current[k] ?? k;
+      if (/^[0-9a-f-]{36}$/i.test(id)) itemRooms[id] = room;
+    }
+    await authedFetch(`/renovation-so-info/${encodeURIComponent(renoDocNo)}/rooms`, {
+      method: 'PUT', body: JSON.stringify({ roomSections: renoRooms, itemRooms }),
+    });
+    renoAddedIds.current = {};
+  };
   /* Print preview — the HOOK must live above the isPending / isError early
      returns (owner 2026-08-07). It arrived at its call site further down
      (#1665), which sits PAST those returns: a cold page's first render bails
@@ -977,6 +1010,8 @@ export const SalesOrderDetail = () => {
         },
       }))
       .then(saveHeader)
+      /* Renovation mode: the rooms, after the lines so new lines have their ids. */
+      .then(saveRenoRooms)
       /* AND THE TYPED PAYMENT ROWS — AFTER the document write, deliberately: a
          payment must not be booked against a save that did not happen. */
       .then(async () => commitPaymentsRef.current?.() ?? { committed: 0, failed: 0, blocked: [] })
@@ -1429,10 +1464,12 @@ export const SalesOrderDetail = () => {
   /* Add path — one more inline SoLineCard appended below the table on every
      "+ Add Line Item" click. Every staged draft is committed together with the
      header + line edits by the page-level Save (see saveEdit). */
-  const startAddLine = () => {
+  const startAddLine = (room?: string) => {
     if (!header) return;
+    const key = newIdempotencyKey();
+    if (room) setRenoRowRoom((m) => ({ ...m, [key]: room }));
     setAddingDrafts((prev) => [...prev, {
-      key: newIdempotencyKey(),
+      key,
       idempotencyKey: newIdempotencyKey(),
       draft: {
         ...emptySoLine(),
@@ -1525,6 +1562,7 @@ export const SalesOrderDetail = () => {
        each staged File. Upload failures don't undo the line — surface a
        soft warning so the line can be re-attached. */
     const newItemId = (res.item as { id?: string } | null)?.id;
+    if (newItemId) renoAddedIds.current[staged.key] = newItemId;
     if (newItemId && pendingFiles.length > 0) {
       let failed = 0;
       for (const f of pendingFiles) {
@@ -1634,7 +1672,7 @@ export const SalesOrderDetail = () => {
      Nothing is written directly — submitAmendment routes the diff through the
      approval flow, and the server's line routes still 409 a direct write. */
   const linesLocked = isLocked || (procLockActive && !amendmentMode);
-  addLineHandoff.current = { enabled: isEditing && !linesLocked, onTrigger: startAddLine };
+  addLineHandoff.current = { enabled: isEditing && !linesLocked, onTrigger: () => startAddLine() };
   /* The raw lock, for the few per-line actions that still write DIRECTLY to the
      server (price override) rather than through the amendment diff — those must
      stay disabled on a locked SO or they render-then-409. */
@@ -1808,6 +1846,75 @@ export const SalesOrderDetail = () => {
      over the CURRENT header / items / payments, so Print behaves exactly as it
      did when the hook was created here. */
   deliverPrintPdfRef.current = deliverPrintPdf;
+
+  const renderEditLine = (it: (typeof items)[number], idx: number) => {
+              const editDraft = editingDrafts[it.id];
+              // A freshly-deleted row drops its draft (removeEditingLine) but
+              // lingers in `items` until the re-fetch — skip rendering it.
+              if (!editDraft) return null;
+              const cb = rowCallbacks.get(it.id), frozen = soItemFrozen(it);
+              return (
+                <div key={it.id} style={frozen ? FROZEN_LINE_STYLE : undefined} data-frozen={frozen || undefined}>
+                  {/* Per-line action — Override price ($). Removal is handled
+                      by the SoLineCard's own trash button (onRemove → delete
+                      mutation), so it isn't duplicated here. Override is a
+                      single-line audited operation that the inline card
+                      doesn't expose, so it stays in this small action bar. */}
+                  <div className={styles.actionsCell} style={{ marginBottom: 'var(--space-2)' }}>
+                    {/* Override price writes DIRECTLY to the per-line override
+                        route, which the server 409s on a processing-locked SO —
+                        so it stays gated on the raw lock, not on `linesLocked`
+                        (which now opens in amendment mode). A price change on a
+                        locked SO goes through the amendment's line diff instead,
+                        which carries newUnitPriceSen. Off, not render-then-deny. */}
+                    {frozen && <span style={FROZEN_LINE_LABEL_STYLE}>{FROZEN_LINE_LABEL}</span>}
+                    <button type="button" className={styles.iconBtn} title="Override price"
+                      disabled={overrideLocked || frozen}
+                      onClick={() => !overrideLocked && !frozen && setOverriding(it)}>
+                      <DollarSign {...SM_ICON} />
+                    </button>
+                  </div>
+                  <SoLineCard
+                    index={idx}
+                    draft={editDraft}
+                    onChange={cb?.onChange ?? ((patch) => patchEditingDraft(it.id, patch))}
+                    onRemove={cb?.onRemove ?? (() => removeEditingLine(it.id))}
+                    canRemove={!linesLocked && !frozen}
+                    /* PR-F (#79) wiring — enable photo upload on already-saved
+                       lines. New lines (addingDraft) have no itemId yet so
+                       their photos defer to after the first save. */
+                    docNo={header.doc_no}
+                    itemId={it.id}
+                    isEditing={!linesLocked && !frozen}
+                    /* Variants are mandatory only once a Processing Date is set
+                       (matches this page's Save gate + the backend), so the ` *`
+                       marker + red ring stay off on a no-date draft (owner
+                       2026-07-14). */
+                    variantsRequired={requireVariants} seedSofaLegDefault={true}
+                  />
+                </div>
+              );
+  };
+  const renderStagedLine = (staged: (typeof addingDrafts)[number], i: number) => {
+              const cb = addCallbacks.get(staged.key);
+              return (
+                <div key={staged.key}>
+                  <div className={styles.actionsCell} style={{ marginBottom: 'var(--space-2)' }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: '#a6471e' }}>
+                      {stagedAddLabel(i + 1)} — not saved yet
+                    </span>
+                  </div>
+                  <SoLineCard
+                    index={visibleLines.persisted + i}
+                    draft={staged.draft}
+                    onChange={cb?.onChange ?? ((patch) => patchAddingDraft(staged.key, patch))}
+                    onRemove={cb?.onRemove ?? (() => cancelAddLine(staged.key))}
+                    canRemove={true}
+                    variantsRequired={requireVariants} seedSofaLegDefault={true}
+                  />
+                </div>
+              );
+  };
 
   return (
     /* Commander 2026-05-29 — a CANCELLED SO greys the whole page so it reads
@@ -2223,6 +2330,7 @@ export const SalesOrderDetail = () => {
         isEditing={isEditing}
         amendmentMode={amendmentMode}
         onDeliveryDateChange={cascadeDeliveryDateToLines}
+        onRenoLayout={setRenoLayout}
       />
 
       {/* PR #140 — Commander 2026-05-26: "这个 multi address、customer PO
@@ -2252,7 +2360,7 @@ export const SalesOrderDetail = () => {
               open, capping an edit session at ONE new line (owner 2026-08-16: "it
               should be able to keep adding lines"). `linesLocked` still refuses. */}
           {isEditing && (
-            <Button variant="primary" onClick={startAddLine} disabled={linesLocked}>
+            <Button variant="primary" onClick={() => startAddLine()} disabled={linesLocked}>
               <Plus {...ICON} />
               <span>{ADD_LINE_LABEL}</span>
             </Button>
@@ -2270,80 +2378,35 @@ export const SalesOrderDetail = () => {
              since those operate on a single line. The add-draft (if open)
              renders as one more card at the bottom. */
           <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)', padding: 'var(--space-3)' }}>
-            {items.map((it, idx) => {
-              const editDraft = editingDrafts[it.id];
-              // A freshly-deleted row drops its draft (removeEditingLine) but
-              // lingers in `items` until the re-fetch — skip rendering it.
-              if (!editDraft) return null;
-              const cb = rowCallbacks.get(it.id), frozen = soItemFrozen(it);
-              return (
-                <div key={it.id} style={frozen ? FROZEN_LINE_STYLE : undefined} data-frozen={frozen || undefined}>
-                  {/* Per-line action — Override price ($). Removal is handled
-                      by the SoLineCard's own trash button (onRemove → delete
-                      mutation), so it isn't duplicated here. Override is a
-                      single-line audited operation that the inline card
-                      doesn't expose, so it stays in this small action bar. */}
-                  <div className={styles.actionsCell} style={{ marginBottom: 'var(--space-2)' }}>
-                    {/* Override price writes DIRECTLY to the per-line override
-                        route, which the server 409s on a processing-locked SO —
-                        so it stays gated on the raw lock, not on `linesLocked`
-                        (which now opens in amendment mode). A price change on a
-                        locked SO goes through the amendment's line diff instead,
-                        which carries newUnitPriceSen. Off, not render-then-deny. */}
-                    {frozen && <span style={FROZEN_LINE_LABEL_STYLE}>{FROZEN_LINE_LABEL}</span>}
-                    <button type="button" className={styles.iconBtn} title="Override price"
-                      disabled={overrideLocked || frozen}
-                      onClick={() => !overrideLocked && !frozen && setOverriding(it)}>
-                      <DollarSign {...SM_ICON} />
-                    </button>
-                  </div>
-                  <SoLineCard
-                    index={idx}
-                    draft={editDraft}
-                    onChange={cb?.onChange ?? ((patch) => patchEditingDraft(it.id, patch))}
-                    onRemove={cb?.onRemove ?? (() => removeEditingLine(it.id))}
-                    canRemove={!linesLocked && !frozen}
-                    /* PR-F (#79) wiring — enable photo upload on already-saved
-                       lines. New lines (addingDraft) have no itemId yet so
-                       their photos defer to after the first save. */
-                    docNo={header.doc_no}
-                    itemId={it.id}
-                    isEditing={!linesLocked && !frozen}
-                    /* Variants are mandatory only once a Processing Date is set
-                       (matches this page's Save gate + the backend), so the ` *`
-                       marker + red ring stay off on a no-date draft (owner
-                       2026-07-14). */
-                    variantsRequired={requireVariants} seedSofaLegDefault={true}
-                  />
-                </div>
-              );
-            })}
+            {renoLines ? (
+              /* Renovation mode: the lines grouped into rooms (RenovationSoRooms). */
+              <RenovationSoRooms
+                rooms={renoRooms}
+                onRoomsChange={(next, rename) => {
+                  setRenoRooms(next);
+                  if (rename) setRenoRowRoom((m) => Object.fromEntries(Object.entries(m).map(([k, r]) => [k, r === rename.from ? rename.to : r])));
+                }}
+                rows={[
+                  ...items.filter((it) => it.id in editingDrafts).map((it, idx) => ({ key: it.id, room: renoRowRoom[it.id] ?? '', node: renderEditLine(it, idx) })),
+                  ...addingDrafts.map((staged, i) => ({ key: staged.key, room: renoRowRoom[staged.key] ?? '', node: renderStagedLine(staged, i) })),
+                ]}
+                onRowRoom={(key, room) => setRenoRowRoom((m) => ({ ...m, [key]: room }))}
+                onAddLine={(room) => startAddLine(room)}
+                layout={renoLayout}
+                disabled={linesLocked}
+              />
+            ) : (
+              <>
+                {items.map((it, idx) => renderEditLine(it, idx))}
 
             {/* New lines — as many as the operator asks for, each with its own ADD
                 idempotency key, all committed by the page-level Save. The caption is
                 the "visibly staged" half of the count fix: the row number continues
                 the table, so a staged card would otherwise look like a saved one. */}
-            {addingDrafts.map((staged, i) => {
-              const cb = addCallbacks.get(staged.key);
-              return (
-                <div key={staged.key}>
-                  <div className={styles.actionsCell} style={{ marginBottom: 'var(--space-2)' }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: '#a6471e' }}>
-                      {stagedAddLabel(i + 1)} — not saved yet
-                    </span>
-                  </div>
-                  <SoLineCard
-                    index={visibleLines.persisted + i}
-                    draft={staged.draft}
-                    onChange={cb?.onChange ?? ((patch) => patchAddingDraft(staged.key, patch))}
-                    onRemove={cb?.onRemove ?? (() => cancelAddLine(staged.key))}
-                    canRemove={true}
-                    variantsRequired={requireVariants} seedSofaLegDefault={true}
-                  />
-                </div>
-              );
-            })}
+                {addingDrafts.map((staged, i) => renderStagedLine(staged, i))}
 
+              </>
+            )}
             {items.length === 0 && addingDrafts.length === 0 && (
               <p className={styles.emptyRow} style={{ padding: 'var(--space-3)' }}>
                 No items yet — click "Add Line Item" above to begin.
@@ -2782,6 +2845,8 @@ type CustomerCardProps = {
       the new date into every line that hasn't been manually overridden. The
       parent owns the line drafts, so the card just reports the new value. */
   onDeliveryDateChange?: (date: string) => void;
+  /** Renovation mode: the layout chosen under Order information (room generation reads it). */
+  onRenoLayout?: (layout: RoomLayout | null) => void;
 };
 
 /* Task #99 (UI perf) — Wrap the CustomerCard in memo so parent page state
@@ -2800,6 +2865,7 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
   isEditing = false,
   amendmentMode = false,
   onDeliveryDateChange,
+  onRenoLayout,
 }, ref) => {
   // PR #39 — POS-aligned customer + address form. Maps:
   //   • address1, address2 → free-text lines (POS "Address line 1/2")
@@ -3014,6 +3080,11 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
   const renoMissing = renoTried
     ? missingFields(renoInfo, { customerName: form.customerName, phone: form.phone, address1: form.address1 })
     : new Set<string>();
+  const renoLayoutKey = `${renoInfo.layoutLabel}|${renoInfo.bedrooms}|${renoInfo.bathrooms}`;
+  useEffect(() => {
+    if (reno) onRenoLayout?.(roomLayoutOf(renoInfo));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the layout fields are the trigger
+  }, [reno, renoLayoutKey]);
   const renoChanged = () => reno && JSON.stringify(toRenovationBlock(renoInfo)) !== renoLoaded.current;
   /* Imported-order venue seeding (owner 2026-08-10 "点 edit 的时候它不会不见掉"):
      AutoCount-migrated rows carry the venue as TEXT but nothing the picker's

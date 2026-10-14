@@ -81,7 +81,10 @@ describe("linking and unlinking a sales order", () => {
     expect(linkRefusal(so, { projectCompanyId: 1, projectProjectSo: null, projectId: 5 })).toBeNull();
     expect(linkRefusal(null, { projectCompanyId: 1, projectProjectSo: null, projectId: 5 })).toBe("so_not_found");
     expect(linkRefusal({ ...so, company_id: 2 }, { projectCompanyId: 1, projectProjectSo: null, projectId: 5 })).toBe("so_not_found");
-    expect(linkRefusal({ ...so, so_kind: "STANDARD" }, { projectCompanyId: 1, projectProjectSo: null, projectId: 5 })).toBe("not_renovation_so");
+    expect(linkRefusal({ ...so, so_kind: "STANDARD" }, { projectCompanyId: 1, projectProjectSo: null, projectId: 5 })).toBeNull();
+    expect(linkRefusal({ ...so, so_kind: "CONSIGNMENT" }, { projectCompanyId: 1, projectProjectSo: null, projectId: 5 })).toBe("not_renovation_so");
+    /* only a contract is one per project: a form SO links beside it */
+    expect(linkRefusal({ ...so, so_kind: "STANDARD" }, { projectCompanyId: 1, projectProjectSo: "SO-2", projectId: 5 })).toBeNull();
     expect(linkRefusal({ ...so, status: "CANCELLED" }, { projectCompanyId: 1, projectProjectSo: null, projectId: 5 })).toBe("so_cancelled");
     expect(linkRefusal({ ...so, project_id: 9 }, { projectCompanyId: 1, projectProjectSo: null, projectId: 5 })).toBe("so_has_other_project");
     expect(linkRefusal({ ...so, project_id: 5 }, { projectCompanyId: 1, projectProjectSo: "SO-1", projectId: 5 })).toBe("already_linked");

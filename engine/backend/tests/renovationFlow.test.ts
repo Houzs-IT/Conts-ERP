@@ -23,8 +23,8 @@ describe("derived step: the furthest step whose data is there", () => {
   test("a new project is in design", () => {
     expect(derivedFlowStep(STEPS, none)).toBe("design");
   });
-  test("an SO means signed; a PO line means ordering; a started task means renovation", () => {
-    expect(derivedFlowStep(STEPS, { ...none, hasSo: true })).toBe("signed");
+  test("an SO alone stays in design (Signed is set by hand, owner 14 Oct 2026); a PO line means ordering; a started task means renovation", () => {
+    expect(derivedFlowStep(STEPS, { ...none, hasSo: true })).toBe("design");
     expect(derivedFlowStep(STEPS, { ...none, hasSo: true, hasPoLine: true })).toBe("ordering");
     expect(derivedFlowStep(STEPS, { ...none, hasSo: true, hasPoLine: true, taskStarted: true })).toBe("renovation");
   });
@@ -34,7 +34,7 @@ describe("derived step: the furthest step whose data is there", () => {
     expect(derivedFlowStep(STEPS, { ...ho, receivedSen: 100_00 })).toBe("closed");
   });
   test("fully paid without a handover does not close", () => {
-    expect(derivedFlowStep(STEPS, { ...none, hasSo: true, contractSen: 1, receivedSen: 1 })).toBe("signed");
+    expect(derivedFlowStep(STEPS, { ...none, hasSo: true, contractSen: 1, receivedSen: 1 })).toBe("design");
   });
   test("closed_at closes whatever else is true", () => {
     expect(derivedFlowStep(STEPS, { ...none, closedAt: "2026-10-01" })).toBe("closed");
@@ -44,7 +44,7 @@ describe("derived step: the furthest step whose data is there", () => {
   });
   test("an inactive step is never the answer: the step before it is", () => {
     const steps = STEPS.map((s) => (s.step_key === "ordering" ? { ...s, active: false } : s));
-    expect(derivedFlowStep(steps, { ...none, hasSo: true, hasPoLine: true })).toBe("signed");
+    expect(derivedFlowStep(steps, { ...none, hasSo: true, hasPoLine: true })).toBe("design");
     expect(activeSteps(steps).map((s) => s.step_key)).not.toContain("ordering");
   });
   test("the company's order decides 'furthest'", () => {

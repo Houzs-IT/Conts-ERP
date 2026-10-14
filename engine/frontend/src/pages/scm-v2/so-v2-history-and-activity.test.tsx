@@ -35,7 +35,7 @@ vi.mock("../../vendor/scm/lib/sales-order-queries", () => ({
 }));
 vi.mock("../../hooks/useBreadcrumbs", () => ({ useSetBreadcrumbs: () => undefined }));
 // Renovation mode (mig 0112) is off here: the Houzs detail page as before.
-vi.mock("../projects/renovation/customerPropertyApi", () => ({ useSoInfoLists: () => ({ data: undefined }) }));
+vi.mock("../projects/renovation/customerPropertyApi", () => ({ useSoInfoLists: () => ({ data: undefined }), useSoRooms: () => ({ data: undefined }) }));
 vi.mock("../../hooks/useStaffLookup", () => ({
   useStaffLookup: () => ({ nameOf: () => "Kris" }),
 }));

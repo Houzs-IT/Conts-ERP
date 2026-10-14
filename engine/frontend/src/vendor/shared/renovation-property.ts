@@ -130,3 +130,29 @@ export function missingRoomSections(existingHeadings: readonly string[], bedroom
   const have = new Set(existingHeadings.map(key));
   return roomSectionHeadings(bedrooms, bathrooms).filter((h) => !have.has(key(h)));
 }
+
+/** One room name as stored: trimmed, single spaces, at most 80 characters ('' when blank). */
+export function cleanRoomName(v: unknown): string {
+  return typeof v === 'string' ? v.trim().replace(/\s+/g, ' ').slice(0, 80) : '';
+}
+
+/** An SO's ordered room list as stored: names cleaned, blanks and repeats (any case) dropped, at most 60. */
+export function cleanRoomSections(v: unknown): string[] {
+  if (!Array.isArray(v)) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const x of v) {
+    const name = cleanRoomName(x);
+    const k = name.toLowerCase();
+    if (!name || seen.has(k)) continue;
+    seen.add(k);
+    out.push(name);
+    if (out.length === 60) break;
+  }
+  return out;
+}
+
+/** The room list after the lines are placed: every room a line names is in the list (appended in line order). */
+export function roomsWithLineRooms(sections: readonly string[], lineRooms: readonly string[]): string[] {
+  return cleanRoomSections([...sections, ...lineRooms]);
+}

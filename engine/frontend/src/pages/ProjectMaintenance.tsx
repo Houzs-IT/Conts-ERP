@@ -1,6 +1,4 @@
-import { ProjectTypeManager } from "./projects/renovation/ProjectTypeManager";
 import { PropertyListsManager } from "./projects/renovation/PropertyListsManager";
-import { FlowStepsManager, PeopleManager, TaskCategoriesManager } from "./projects/renovation/RenovationMaintenance";
 import { useProjectsMode } from "./projects/renovation/RenovationRoutes";
 import { SectionStageSelect } from "./projects/renovation/SectionStageSelect";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -118,24 +116,14 @@ export function ProjectMaintenanceView() {
         <PageHeader
           eyebrow="Operations · Projects"
           title="Project Maintenance"
-          description="People, the main steps and site task categories; project types, brands, property types and layouts, and the stage checklist that clones into every new project."
+          description="The defaults every project and sales order picks from: property types and layouts, and the brands (letterheads)."
         />
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-          <PeopleManager />
-          <div className="space-y-6 min-w-0">
-            <FlowStepsManager />
-            <TaskCategoriesManager />
-          </div>
-        </div>
-        <div className="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-2">
-          <ProjectTypeManager />
-          <BrandManager />
-        </div>
-        <div className="mt-6">
+        {/* Owner, 14 Oct 2026: only these two. People (to come from user accounts), main steps, site task
+            categories, project types and the default checklist are hidden here, not deleted: their tables and
+            what reads them (step derivation, tasks and types on existing projects) are unchanged. */}
+        <div className="space-y-6">
           <PropertyListsManager />
-        </div>
-        <div className="mt-6">
-          <ChecklistManager />
+          <BrandManager />
         </div>
       </div>
     );

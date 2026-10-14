@@ -313,6 +313,9 @@ const methodLabel = (p: SoPayment): string => {
    helpers. Re-exported so the SO's existing importers keep their import path. */
 export type { PdfAction } from './pdf-common';
 
+import { roomLabel, roomOrdered, type SoPrintRooms } from './so-print-rooms';
+export type { SoPrintRooms };
+
 type JsPdf = import('jspdf').jsPDF;
 type AutoTableFn = (typeof import('jspdf-autotable'))['default'];
 
@@ -334,7 +337,7 @@ export async function renderSalesOrderInto(
   /* PWP vouchers this SO's trigger items issued (GET /:docNo `pwpCodes`) —
      used to mark trigger lines. Optional so older callers stay valid. */
   pwpCodes: SoPwpCodeRow[] = [],
-  opts?: { docTitle?: string; docNoLabel?: string; docNoun?: string },
+  opts?: { docTitle?: string; docNoLabel?: string; docNoun?: string; rooms?: SoPrintRooms },
 ): Promise<void> {
   /* A cancelled line must never reach a CUSTOMER document — not as a printed
      row and not inside a total. The gate lives HERE, in the one function both
@@ -371,9 +374,13 @@ export async function renderSalesOrderInto(
      const. (Within a buildKey group the module rows print LEFT-TO-RIGHT, Loo
      2026-06-12 — the create path persists that order on new SOs; the in-place
      permute fixes SOs booked before it without moving any other row.) */
-  const orderedItems = orderSofaModuleRowsWithinBuilds(
-    [...items].sort((a, b) => groupRank(a.item_group) - groupRank(b.item_group)),
-  );
+  /* Renovation mode (mig 0112): an order with rooms prints room by room, in the order's room order. */
+  const rooms = opts?.rooms && opts.rooms.order.length > 0 ? opts.rooms : null;
+  const orderedItems = rooms
+    ? roomOrdered(items, rooms)
+    : orderSofaModuleRowsWithinBuilds(
+      [...items].sort((a, b) => groupRank(a.item_group) - groupRank(b.item_group)),
+    );
 
   /* Owner spec 2026-08 — photos follow the line onto the printed document.
      The `.thumb` sibling is fetched first and a line whose thumb 404s falls
@@ -608,9 +615,20 @@ export async function renderSalesOrderInto(
      grey band it used to carry (owner 2026-08-07: no fills on printed
      documents) — the row still has to read as a divider, so the weight moves
      from ink to a line. */
+  /* One divider style for category and room header rows. */
+  const sectionRowStyles = { fontStyle: 'bold', textColor: 40, halign: 'left', lineWidth: { top: 0.4 } as never } as const;
   const bodyRows: RowInput[] = [];
   let lastGroup: string | null = null;
   orderedItems.forEach((it, itIdx) => {
+    if (rooms) {
+      const room = roomLabel(rooms, it.id);
+      if (room !== lastGroup) {
+        bodyRows.push([{ content: room.toUpperCase(), colSpan: 7, styles: sectionRowStyles }]);
+        lastGroup = room;
+      }
+      bodyRows.push(tableRows[itIdx]!);
+      return;
+    }
     const grp = (it.item_group || 'OTHER').toUpperCase();
     if (grp !== lastGroup) {
       bodyRows.push([{
@@ -618,7 +636,7 @@ export async function renderSalesOrderInto(
            FABRIC_ACCESSORY on HC-SO-2609-071 while every screen says Sofa
            Accessory (owner 2026-09-15). An unknown group still prints as stored. */
         content: mfgCategoryLabel(grp).toUpperCase(), colSpan: 7,
-        styles: { fontStyle: 'bold', textColor: 40, halign: 'left', lineWidth: { top: 0.4 } as never },
+        styles: sectionRowStyles,
       }]);
       lastGroup = grp;
     }
@@ -856,7 +874,7 @@ export async function generateSalesOrderPdf(
   /* PWP vouchers this SO's trigger items issued (GET /:docNo `pwpCodes`) —
      used to mark trigger lines. Optional so older callers stay valid. */
   pwpCodes: SoPwpCodeRow[] = [],
-  opts?: { docTitle?: string; docNoLabel?: string; docNoun?: string },
+  opts?: { docTitle?: string; docNoLabel?: string; docNoun?: string; rooms?: SoPrintRooms },
 ): Promise<void> {
   // Dynamic import — code-split into a vendor chunk.
   const { jsPDF } = await import('jspdf');

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import { readRenovationBlock, renovationSoProblems } from './renovation-so-info';
 import { soRouterSource } from '../../../tests/lib/so-router-source';
+import { roomsForCreatedLines } from '../../services/renovation/customerProperty';
 
 describe('the renovation block of a sales order', () => {
   test('reads the project, building, unit and property', () => {
@@ -40,5 +41,20 @@ describe('the create route checks before and stamps after the core', () => {
 
   test('a draft is not held to the renovation required fields', () => {
     expect(handler).toContain("if (peek!.asDraft !== true) {");
+  });
+});
+
+describe('rooms of a new renovation SO', () => {
+  test('the block carries the room list and the edit form line rooms; absent means leave them', () => {
+    const r = readRenovationBlock({ roomSections: ['Living hall', 'living hall', ' Bedroom 1 '], itemRooms: { '11111111-1111-4111-8111-111111111111': ' Bedroom 1 ', bad: 'x' } });
+    expect(r.roomSections).toEqual(['Living hall', 'Bedroom 1']);
+    expect(r.itemRooms).toEqual([{ id: '11111111-1111-4111-8111-111111111111', room: 'Bedroom 1' }]);
+    expect(readRenovationBlock({}).roomSections).toBeNull();
+  });
+
+  test('inserted lines take the sent rooms by item code in order; a line the server added gets none', () => {
+    const inserted = [{ id: 'a', item_code: 'RN-PAINT' }, { id: 'b', item_code: 'FREE-GIFT' }, { id: 'c', item_code: 'RN-PAINT' }, { id: 'd', item_code: 'RN-DOOR' }];
+    const sent = [{ itemCode: 'RN-PAINT', room: 'Living hall' }, { itemCode: 'RN-PAINT', room: 'Bedroom 1' }, { itemCode: 'RN-DOOR', room: '' }];
+    expect(roomsForCreatedLines(inserted, sent)).toEqual([{ id: 'a', room: 'Living hall' }, { id: 'c', room: 'Bedroom 1' }]);
   });
 });

@@ -248,10 +248,15 @@ app.get("/design-records", requirePageAccess("projects.list"), async (c) => {
 app.get("/linkable-sos", requirePageAccess("projects.list"), async (c) => {
   const q = (c.req.query("q") ?? "").trim();
   const res = await db(c).prepare(
-    `SELECT o.doc_no, o.so_date::text AS so_date, o.debtor_name, o.status::text AS status, o.local_total_sen, c.building, c.unit_no
+    /* Owner 14 Oct 2026: an SO raised on the sales order form (STANDARD) links the same way as a renovation
+       contract. Its building is the copy migration 0112 adds, read through to_jsonb so this list still works
+       before that migration is applied. */
+    `SELECT o.doc_no, o.so_date::text AS so_date, o.debtor_name, o.status::text AS status, o.local_total_sen, o.so_kind,
+            coalesce(c.building, to_jsonb(o)->>'building') AS building, coalesce(c.unit_no, to_jsonb(o)->>'unit_no') AS unit_no
        FROM scm.mfg_sales_orders o LEFT JOIN scm.reno_so_contracts c ON c.so_doc_no = o.doc_no
-      WHERE o.so_kind = 'RENOVATION' AND o.status::text <> 'CANCELLED' AND o.project_id IS NULL${coSql(c, "o.company_id")}
-        AND (? = '' OR o.doc_no ILIKE '%' || ? || '%' OR coalesce(o.debtor_name, '') ILIKE '%' || ? || '%' OR coalesce(c.building, '') ILIKE '%' || ? || '%')
+      WHERE o.so_kind IN ('RENOVATION', 'STANDARD') AND o.status::text <> 'CANCELLED' AND o.project_id IS NULL${coSql(c, "o.company_id")}
+        AND (? = '' OR o.doc_no ILIKE '%' || ? || '%' OR coalesce(o.debtor_name, '') ILIKE '%' || ? || '%'
+             OR coalesce(c.building, to_jsonb(o)->>'building', '') ILIKE '%' || ? || '%')
       ORDER BY o.so_date DESC NULLS LAST, o.doc_no DESC LIMIT 50`,
   ).bind(q, q, q, q).all();
   return c.json({ data: res.results ?? [] });

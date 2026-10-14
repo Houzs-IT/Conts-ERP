@@ -103,8 +103,9 @@ import { OrderSlipPhoto } from "../../vendor/scm/components/OrderSlipPhoto";
 import { ADD_LINE_LABEL, addLineHref } from "../../vendor/scm/lib/add-line-handoff";
 import { fairLabel } from "../../vendor/scm/lib/fair-options-queries";
 import { linkedEvent, type LinkedFair } from "../../components/fairPick";
-import { useSoInfoLists } from "../projects/renovation/customerPropertyApi";
+import { useSoInfoLists, useSoRooms } from "../projects/renovation/customerPropertyApi";
 import { RenovationSoOrderInfo } from "./RenovationSoOrderInfo";
+import { roomOrdered } from "../../vendor/scm/lib/so-print-rooms";
 // ─── Row types (subset — see MfgSalesOrdersList.tsx for the full SoRow) ────
 
 type SoHeader = {
@@ -596,6 +597,10 @@ function SalesOrderDetailV2ReadOnly() {
   /* Renovation mode (Conts, mig 0112): Order information replaces Houzs's Order
      info, and the emergency contact half of the address card goes. */
   const renoMode = useSoInfoLists().data?.ready === true;
+  /* Rooms (mig 0112): lines shown and printed room by room. */
+  const renoRooms = useSoRooms(docNo, renoMode).data ?? null;
+  const printRooms = renoMode && renoRooms && renoRooms.roomSections.length > 0
+    ? { order: renoRooms.roomSections, byItem: renoRooms.itemRooms } : undefined;
   const requestCancel = useCancelRequestAction("so");
   const { nameOf: salespersonNameOf } = useStaffLookup();
   const staffRoster = useStaff();
@@ -823,7 +828,8 @@ function SalesOrderDetailV2ReadOnly() {
           items as never,
           payments as never,
           action,
-          pwpCodes
+          pwpCodes,
+          printRooms ? { rooms: printRooms } : undefined
         )
       )
       .catch((e) =>
@@ -1492,9 +1498,15 @@ function SalesOrderDetailV2ReadOnly() {
               <DataTable<SoItem>
                 tableId={`so-lines-${docNo}`}
                 layoutFamily={DATA_TABLE_LAYOUT_FAMILIES.salesOrderLines} persistSort={false} persistFilters={false}
-                rows={items}
+                rows={printRooms ? roomOrdered(items, printRooms) : items}
                 loading={false}
-                columns={lineColumns}
+                columns={printRooms ? [{
+                  key: "room",
+                  label: "Room",
+                  alwaysVisible: true,
+                  getValue: (l: SoItem) => printRooms.byItem[l.id] ?? "",
+                  render: (l: SoItem) => <span className="text-[12.5px] font-semibold text-ink">{printRooms.byItem[l.id] || "—"}</span>,
+                }, ...lineColumns] : lineColumns}
                 getRowKey={(l) => l.id}
                 emptyLabel="No line items"
               />

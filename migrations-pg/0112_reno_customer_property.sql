@@ -1,4 +1,4 @@
--- REVERSAL: alter table scm.mfg_sales_orders drop column building, drop column unit_no, drop column property_type, drop column layout_label, drop column bedrooms, drop column bathrooms, drop column built_up_sqft; alter table public.projects drop constraint projects_bedrooms_check, drop constraint projects_bathrooms_check, drop constraint projects_built_up_sqft_check, drop column property_type, drop column layout_label, drop column bedrooms, drop column bathrooms, drop column built_up_sqft; drop table public.project_layouts; drop table public.project_property_types;
+-- REVERSAL: alter table scm.mfg_sales_order_items drop column room; alter table scm.mfg_sales_orders drop column room_sections, drop column building, drop column unit_no, drop column property_type, drop column layout_label, drop column bedrooms, drop column bathrooms, drop column built_up_sqft; alter table public.projects drop constraint projects_bedrooms_check, drop constraint projects_bathrooms_check, drop constraint projects_built_up_sqft_check, drop column property_type, drop column layout_label, drop column bedrooms, drop column bathrooms, drop column built_up_sqft; drop table public.project_layouts; drop table public.project_property_types;
 -- Customer and property information shared by a renovation sales order and its project (owner, 14 Oct 2026).
 --
 -- * The project is the master record: customer name / phone / email, site address, building and unit already
@@ -11,6 +11,11 @@
 --   project_property_types (Condo, Landed, ...) and project_layouts (Studio, 1 bed 1 bath, ...). The SO and the
 --   project store the chosen label and numbers, not the list id, so renaming or switching off a list row never
 --   changes a saved document.
+-- * Rooms on a renovation-mode sales order (owner, 14 Oct 2026): the order's ordered room list
+--   (mfg_sales_orders.room_sections, a JSON array of names, so an empty room made by "Generate rooms
+--   from layout" survives before any line is in it) and each line's room (mfg_sales_order_items.room).
+--   Totals, payments and the furniture flows read neither. A renovation contract converted from a
+--   quotation keeps using scm.reno_doc_sections (migration 0068).
 --
 -- APPLY: by hand, staging first, then production (node scripts/migrate-pg.mjs --env-file=<file>, dry-run first).
 -- Until it is applied the engine keeps showing Houzs's sales order form (the property lists read as not ready).
@@ -77,7 +82,11 @@ alter table scm.mfg_sales_orders
   add column layout_label text,
   add column bedrooms integer check (bedrooms is null or bedrooms between 0 and 20),
   add column bathrooms integer check (bathrooms is null or bathrooms between 0 and 20),
-  add column built_up_sqft numeric(10, 2) check (built_up_sqft is null or built_up_sqft > 0);
+  add column built_up_sqft numeric(10, 2) check (built_up_sqft is null or built_up_sqft > 0),
+  add column room_sections jsonb not null default '[]'::jsonb check (jsonb_typeof(room_sections) = 'array');
+
+alter table scm.mfg_sales_order_items
+  add column room text;
 
 alter table public.project_property_types owner to scm_engine;
 alter table public.project_layouts owner to scm_engine;

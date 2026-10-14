@@ -8,6 +8,8 @@
 
 import type { Db } from "./load";
 import {
+  cleanRoomSections,
+  roomsWithLineRooms,
   siteAddressFromSo,
   soAddressFromSite,
   soOpenForProjectSync,
@@ -25,6 +27,8 @@ export async function propertyColumnsReady(db: Db): Promise<boolean> {
              AND to_regclass('public.project_property_types') IS NOT NULL
              AND EXISTS (SELECT 1 FROM information_schema.columns
                           WHERE table_schema = 'scm' AND table_name = 'mfg_sales_orders' AND column_name = 'built_up_sqft')
+             AND EXISTS (SELECT 1 FROM information_schema.columns
+                          WHERE table_schema = 'scm' AND table_name = 'mfg_sales_order_items' AND column_name = 'room')
              AND EXISTS (SELECT 1 FROM information_schema.columns
                           WHERE table_schema = 'public' AND table_name = 'projects' AND column_name = 'built_up_sqft')) AS ready`,
   ).bind().first<{ ready: boolean }>();
@@ -130,6 +134,54 @@ export async function writeSoPropertyColumns(db: Db, docNo: string, projectId: n
             layout_label = nullif(?, ''), bedrooms = ?::int, bathrooms = ?::int, built_up_sqft = ?::numeric, updated_at = now()
       WHERE doc_no = ? AND coalesce(so_kind, 'STANDARD') = 'STANDARD'`,
   ).bind(projectId, so.building, so.unitNo, so.propertyType, so.layoutLabel, so.bedrooms, so.bathrooms, so.builtUpSqft, docNo).run();
+}
+
+/** The SO's rooms: its ordered room list and each live line's room (lines of another order are never touched). */
+export async function writeSoRooms(db: Db, docNo: string, sections: readonly string[], itemRooms: ReadonlyArray<{ id: string; room: string }>): Promise<void> {
+  const known = await db.prepare(`SELECT id::text AS id FROM scm.mfg_sales_order_items WHERE doc_no = ?`).bind(docNo).all<{ id: string }>();
+  const mine = new Set((known.results ?? []).map((r) => r.id));
+  const rows = itemRooms.filter((r) => mine.has(r.id));
+  const rooms = roomsWithLineRooms(sections, rows.map((r) => r.room));
+  await db.prepare(`UPDATE scm.mfg_sales_orders SET room_sections = ?::text::jsonb, updated_at = now() WHERE doc_no = ?`)
+    .bind(JSON.stringify(rooms), docNo).run();
+  if (rows.length) {
+    await db.prepare(
+      `UPDATE scm.mfg_sales_order_items i SET room = nullif(x.room, '')
+         FROM jsonb_to_recordset(?::text::jsonb) AS x(id uuid, room text)
+        WHERE i.id = x.id AND i.doc_no = ?`,
+    ).bind(JSON.stringify(rows), docNo).run();
+  }
+}
+
+/** After a create: the inserted lines in line order take the rooms the form sent for its lines, matched by
+    item code in order, so a line the server added (a free item) is left without a room instead of shifting. */
+export function roomsForCreatedLines(
+  inserted: ReadonlyArray<{ id: string; item_code: string | null }>,
+  sent: ReadonlyArray<{ itemCode: string; room: string }>,
+): Array<{ id: string; room: string }> {
+  const queue = new Map<string, string[]>();
+  for (const s of sent) {
+    const list = queue.get(s.itemCode) ?? [];
+    list.push(s.room);
+    queue.set(s.itemCode, list);
+  }
+  const out: Array<{ id: string; room: string }> = [];
+  for (const row of inserted) {
+    const list = queue.get(row.item_code ?? '');
+    const room = list?.shift();
+    if (room) out.push({ id: row.id, room });
+  }
+  return out;
+}
+
+export async function readSoRooms(db: Db, docNo: string): Promise<{ roomSections: string[]; itemRooms: Record<string, string> }> {
+  const h = await db.prepare(`SELECT room_sections FROM scm.mfg_sales_orders WHERE doc_no = ?`).bind(docNo).first<{ room_sections: unknown }>();
+  const items = await db.prepare(`SELECT id::text AS id, room FROM scm.mfg_sales_order_items WHERE doc_no = ? AND room IS NOT NULL`).bind(docNo).all<{ id: string; room: string }>();
+  const raw = typeof h?.room_sections === 'string' ? JSON.parse(h.room_sections) as unknown : h?.room_sections;
+  return {
+    roomSections: cleanRoomSections(raw),
+    itemRooms: Object.fromEntries((items.results ?? []).map((r) => [r.id, r.room])),
+  };
 }
 
 /** Project -> its open SOs (soOpenForProjectSync). Returns the doc numbers refreshed and those left as printed. */

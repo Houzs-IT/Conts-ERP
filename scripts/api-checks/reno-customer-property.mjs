@@ -106,7 +106,8 @@ check('the create refuses the same (422 validation_failed, nothing written)', r.
 const block = { projectId, building: 'TEST Skyline Residence', unitNo: 'A-12-3', propertyType: 'Landed', layoutLabel: '4 bed 3 bath', bedrooms: '4', bathrooms: '3', builtUpSqft: '2400' };
 r = await call('POST', SO, {
   debtorName: `TEST CP SO ${run}`, phone: '+60198765432', email: '', address1: 'No 8 TEST Jalan Bukit', address2: 'Taman TEST', customerState: 'Selangor',
-  items: [line], renovation: block, noFair: true,
+  items: [{ ...line, room: 'Bedroom 1' }, { ...line, room: '' }],
+  renovation: { ...block, roomSections: ['Living hall', 'Bedroom 1', 'Common area'] }, noFair: true,
 });
 if (!check('a complete renovation SO saves (201) with no venue and no fair', r.status === 201 && !!r.json?.docNo && r.json?.renovationInfoSaved !== false, show(r))) stop('no SO');
 const docNo = r.json.docNo;
@@ -118,6 +119,36 @@ check('saving the SO wrote the shared fields back to the project (phone, address
   pj?.customerPhone === '+60198765432' && pj?.siteAddress === 'No 8 TEST Jalan Bukit\nTaman TEST' && pj?.propertyType === 'Landed' && pj?.bedrooms === 4
   && pj?.builtUpSqft === 2400 && pj?.customerEmail === 'cp@example.test' && pj?.customerName === `TEST CP SO ${run}`, show(r));
 check('the project lists the SO as following it', r.json?.salesOrders?.some((s) => s.docNo === docNo && s.followsProject === true), show(r));
+
+/* ---------- rooms ---------- */
+r = await call('GET', `${SI}/so/${encodeURIComponent(docNo)}`);
+const roomIds = Object.keys(r.json?.itemRooms ?? {});
+check('the new SO keeps its rooms in order and the first line is in Bedroom 1',
+  JSON.stringify(r.json?.roomSections) === JSON.stringify(['Living hall', 'Bedroom 1', 'Common area']) && roomIds.length === 1 && r.json.itemRooms[roomIds[0]] === 'Bedroom 1', show(r));
+r = await call('PUT', `${SI}/${encodeURIComponent(docNo)}/rooms`, { roomSections: ['Master bedroom', 'Living hall', 'Common area'], itemRooms: { [roomIds[0]]: 'Master bedroom' } });
+check('the edit form saves renamed and reordered rooms with the line moved along', r.status === 200
+  && JSON.stringify(r.json?.roomSections) === JSON.stringify(['Master bedroom', 'Living hall', 'Common area']) && r.json?.itemRooms?.[roomIds[0]] === 'Master bedroom', show(r));
+r = await call('PUT', `${SI}/${encodeURIComponent(docNo)}/rooms`, { roomSections: ['Living hall'], itemRooms: { [roomIds[0]]: 'Kitchen' } });
+check('a room a line names is kept in the list (appended)', JSON.stringify(r.json?.roomSections) === JSON.stringify(['Living hall', 'Kitchen']), show(r));
+r = await call('GET', `${SO}/${encodeURIComponent(docNo)}`);
+const head = r.json?.salesOrder ?? r.json?.header ?? r.json;
+check('totals are untouched by rooms (2 lines, RM 200.00)', Number(head?.local_total_sen ?? head?.localTotalSen) === 20000, JSON.stringify(head).slice(0, 200));
+
+/* ---------- link from the project side; no automatic Signed ---------- */
+r = await call('GET', `${R}/${projectId}/step`);
+check('an SO made under the project leaves it in Design (Signed is set by hand)', r.json?.current === 'design' || r.json?.flow?.current === 'design', show(r));
+r = await call('POST', SO, { debtorName: `TEST CP Loose ${run}`, phone: '+60122222222', address1: 'Loose TEST address', customerState: 'Selangor', items: [line],
+  renovation: { ...block, projectId: null }, noFair: true });
+const loose = r.json?.docNo;
+check('an SO with no project yet saves', r.status === 201 && !!loose, show(r));
+r = await call('GET', `${R}/linkable-sos?q=${encodeURIComponent(loose)}`);
+check("the project's Link existing SO lists it", r.json?.data?.some((x) => x.doc_no === loose), show(r));
+r = await call('POST', `${R}/link-so`, { projectId, docNo: loose });
+check('linking it from the project side works beside the first SO', r.status === 200, show(r));
+r = await call('GET', `${SI}/so/${encodeURIComponent(loose)}`);
+check('and the SO side shows the project', r.json?.info?.projectId === projectId, show(r));
+r = await call('GET', `${R}/${projectId}/step`);
+check('still Design after the link', r.json?.current === 'design' || r.json?.flow?.current === 'design', show(r));
 
 /* ---------- project -> open SO ---------- */
 r = await call('PATCH', `${R}/${projectId}/customer-info`, {

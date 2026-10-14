@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'vitest';
 import {
+  cleanRoomName,
+  cleanRoomSections,
   missingRoomSections,
+  roomsWithLineRooms,
   parseCount,
   parseSqft,
   readPropertyInput,
@@ -99,5 +102,22 @@ describe('room sections from a layout', () => {
   test('sections already there (any case or spacing) are not added again; order is kept', () => {
     expect(missingRoomSections(['LIVING HALL', 'bedroom  2', 'Kitchen'], 2, 1)).toEqual(['Bedroom 1', 'Bathroom 1', 'Common area']);
     expect(missingRoomSections(roomSectionHeadings(2, 2), 2, 2)).toEqual([]);
+  });
+});
+
+describe('rooms stored on a renovation SO', () => {
+  test('names are trimmed to single spaces; blanks and repeats (any case) drop; order kept', () => {
+    expect(cleanRoomSections([' Living  hall ', 'Bedroom 1', 'living hall', '', 7, 'Common area'])).toEqual(['Living hall', 'Bedroom 1', 'Common area']);
+    expect(cleanRoomSections('Living hall')).toEqual([]);
+    expect(cleanRoomName(null)).toBe('');
+    expect(cleanRoomName('x'.repeat(100))).toHaveLength(80);
+  });
+
+  test('at most 60 rooms', () => {
+    expect(cleanRoomSections(Array.from({ length: 70 }, (_, i) => `Room ${i}`))).toHaveLength(60);
+  });
+
+  test('a room a line names joins the list after the known ones', () => {
+    expect(roomsWithLineRooms(['Living hall'], ['', 'Kitchen', 'living hall'])).toEqual(['Living hall', 'Kitchen']);
   });
 });
