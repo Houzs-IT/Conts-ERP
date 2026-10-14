@@ -62,7 +62,7 @@ if (!check('create a renovation project', r.status === 201, show(r))) stop('no p
 const projectId = r.json.id;
 r = await call('PATCH', `${R}/${projectId}/customer-info`, {
   customerName: `TEST RF Customer ${run}`, customerPhone: '+60123456789', customerEmail: 'rf@example.test',
-  siteAddress: 'B-8-2 TEST Vista Harmoni\nJalan Ampang', building: `TEST RF Vista ${run}`, unitNo: 'B-8-2',
+  address1: 'B-8-2 TEST Vista Harmoni', address2: 'Jalan Ampang', building: `TEST RF Vista ${run}`, unitNo: 'B-8-2',
   propertyType: 'Condo', layoutLabel: '3 bed 2 bath', bedrooms: 3, bathrooms: 2, builtUpSqft: '1,100',
 });
 if (!check('the project holds the customer and property', r.status === 200, show(r))) stop('project not saved');
