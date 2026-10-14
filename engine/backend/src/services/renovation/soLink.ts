@@ -16,6 +16,7 @@ import type { Db } from "./load";
 import { loadProjectRows, loadRenovationFacts } from "./load";
 import { onContractLinesChanged, writeCachedStage } from "./contractSync";
 import { createRenovationProject, type CreateRenovationInput } from "./create";
+import { copySoIntoProject } from "./customerProperty";
 
 export type LinkRefusal =
   | "so_not_found"
@@ -99,6 +100,12 @@ export async function linkSoToProject(db: Db, projectId: number, docNo: string, 
   if (db.batch) await db.batch(stmts);
   else for (const s of stmts) await s.run();
   await onContractLinesChanged(db, docNo);
+  /* The link is made; copying the SO's customer and property into the project must not undo or fail it. */
+  try {
+    await copySoIntoProject(db, docNo, projectId, actorId, p.company_id);
+  } catch (e) {
+    console.error("[renovation] copy SO into project after link failed", e);
+  }
   return { ok: true, docNo };
 }
 

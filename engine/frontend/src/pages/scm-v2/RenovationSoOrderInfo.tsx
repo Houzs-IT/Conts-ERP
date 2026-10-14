@@ -27,6 +27,9 @@ export function RenovationSoOrderInfo({ docNo, payment }: { docNo: string; payme
   const { info, project } = q.data;
   const layout = info.layoutLabel
     || (info.bedrooms !== "" || info.bathrooms !== "" ? `${info.bedrooms || "?"} bed ${info.bathrooms || "?"} bath` : "");
+  /* A custom label ("Penthouse") gets its counts after it; "3 bed 2 bath" already says them. */
+  const layoutCounts = info.layoutLabel && info.bedrooms !== "" && !info.layoutLabel.toLowerCase().includes("bed")
+    ? ` (${info.bedrooms} bed, ${info.bathrooms} bath)` : "";
   return (
     <div className="grid grid-cols-2 gap-x-5 gap-y-4 sm:grid-cols-4">
       <Cell
@@ -42,7 +45,7 @@ export function RenovationSoOrderInfo({ docNo, payment }: { docNo: string; payme
       <Cell label="Building" span value={info.building || "—"} muted={!info.building} />
       <Cell label="Unit" value={info.unitNo || "—"} muted={!info.unitNo} />
       <Cell label="Property type" value={info.propertyType || "—"} muted={!info.propertyType} />
-      <Cell label="Layout" span value={layout ? `${layout}${info.layoutLabel && info.bedrooms !== "" && !/bed/i.test(info.layoutLabel) ? ` (${info.bedrooms} bed, ${info.bathrooms} bath)` : ""}` : "—"} muted={!layout} />
+      <Cell label="Layout" span value={layout ? `${layout}${layoutCounts}` : "—"} muted={!layout} />
       <Cell label="Built-up" value={info.builtUpSqft ? `${Number(info.builtUpSqft).toLocaleString("en-MY")} sq ft` : "—"} muted={!info.builtUpSqft} />
       <Cell label="Payment" value={payment || "—"} muted={!payment} />
     </div>

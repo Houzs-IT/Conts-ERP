@@ -137,17 +137,30 @@ check('totals are untouched by rooms (2 lines, RM 200.00)', Number(head?.local_t
 /* ---------- link from the project side; no automatic Signed ---------- */
 r = await call('GET', `${R}/${projectId}/step`);
 check('an SO made under the project leaves it in Design (Signed is set by hand)', r.json?.current === 'design' || r.json?.flow?.current === 'design', show(r));
-r = await call('POST', SO, { debtorName: `TEST CP Loose ${run}`, phone: '+60122222222', address1: 'Loose TEST address', customerState: 'Selangor', items: [line],
-  renovation: { ...block, projectId: null }, noFair: true });
+/* A second, almost empty project: linking an existing SO from the project fills it from the SO (owner, 14 Oct). */
+r = await call('POST', R, { name: `TEST CP Link ${run}`, projectTypeId: type?.id, customerKind: 'customer', customerName: `TEST CP Link ${run}` });
+const linkProjectId = r.json?.id;
+r = await call('PATCH', `${R}/${linkProjectId}/customer-info`, { customerName: `TEST CP Link ${run}`, customerEmail: 'keep@example.test' });
+check('a second project with only a name and an email', r.status === 200, show(r));
+r = await call('POST', SO, { debtorName: `TEST CP Loose ${run}`, phone: '+60122222222', email: '', address1: 'No 3 TEST Lorong Loose', address2: 'Taman Loose', customerState: 'Selangor', items: [line],
+  renovation: { projectId: null, building: 'TEST Loose Tower', unitNo: 'L-3-3', propertyType: 'Landed', layoutLabel: '2 bed 2 bath', bedrooms: '2', bathrooms: '2', builtUpSqft: '1500' }, noFair: true });
 const loose = r.json?.docNo;
 check('an SO with no project yet saves', r.status === 201 && !!loose, show(r));
 r = await call('GET', `${R}/linkable-sos?q=${encodeURIComponent(loose)}`);
-check("the project's Link existing SO lists it", r.json?.data?.some((x) => x.doc_no === loose), show(r));
-r = await call('POST', `${R}/link-so`, { projectId, docNo: loose });
-check('linking it from the project side works beside the first SO', r.status === 200, show(r));
+check("the project's Link existing SO lists it", r.json?.data?.some((x) => x.doc_no === loose && x.building === 'TEST Loose Tower'), show(r));
+r = await call('POST', `${R}/link-so`, { projectId: linkProjectId, docNo: loose });
+check('linking it from the project side works', r.status === 200, show(r));
+r = await call('GET', `${R}/${linkProjectId}/customer-info`);
+const lp = r.json?.project;
+check('the project now carries the SO customer, address, building, unit, property, layout and sq ft',
+  lp?.customerName === `TEST CP Loose ${run}` && lp?.customerPhone === '+60122222222' && lp?.siteAddress === 'No 3 TEST Lorong Loose\nTaman Loose'
+  && lp?.building === 'TEST Loose Tower' && lp?.unitNo === 'L-3-3' && lp?.propertyType === 'Landed' && lp?.layoutLabel === '2 bed 2 bath'
+  && lp?.bedrooms === 2 && lp?.bathrooms === 2 && lp?.builtUpSqft === 1500, show(r));
+check("the SO's empty email did not clear the project's", lp?.customerEmail === 'keep@example.test', show(r));
+check('and the project lists the SO', r.json?.salesOrders?.some((x) => x.docNo === loose), show(r));
 r = await call('GET', `${SI}/so/${encodeURIComponent(loose)}`);
-check('and the SO side shows the project', r.json?.info?.projectId === projectId, show(r));
-r = await call('GET', `${R}/${projectId}/step`);
+check('the SO side shows the project', r.json?.info?.projectId === linkProjectId, show(r));
+r = await call('GET', `${R}/${linkProjectId}/step`);
 check('still Design after the link', r.json?.current === 'design' || r.json?.flow?.current === 'design', show(r));
 
 /* ---------- project -> open SO ---------- */

@@ -127,6 +127,24 @@ export async function writeSoToProject(db: Db, projectId: number, so: SoShared, 
     .bind(projectId, docNo, "Customer and property information saved from the sales order", actorId, companyId).run();
 }
 
+/** "Link existing SO" on the project (owner, 14 Oct 2026): the SO's customer, address and property come into
+    the project at once. Every SO value that is filled wins; an empty SO value never clears a project field. */
+export async function copySoIntoProject(db: Db, docNo: string, projectId: number, actorId: number, companyId: number): Promise<boolean> {
+  if (!(await propertyColumnsReady(db))) return false;
+  const r = await db.prepare(
+    `SELECT debtor_name, phone, email, address1, address2, building, unit_no, property_type, layout_label, bedrooms, bathrooms,
+            built_up_sqft::float8 AS built_up_sqft
+       FROM scm.mfg_sales_orders WHERE doc_no = ?`,
+  ).bind(docNo).first<Record<string, unknown>>();
+  if (!r) return false;
+  await writeSoToProject(db, projectId, {
+    customerName: s(r.debtor_name), phone: s(r.phone), email: s(r.email), address1: s(r.address1), address2: s(r.address2),
+    building: s(r.building), unitNo: s(r.unit_no), propertyType: s(r.property_type), layoutLabel: s(r.layout_label),
+    bedrooms: n(r.bedrooms), bathrooms: n(r.bathrooms), builtUpSqft: n(r.built_up_sqft),
+  }, actorId, companyId, docNo);
+  return true;
+}
+
 /** Stamp the SO's own copy of the shared property fields and its project link. */
 export async function writeSoPropertyColumns(db: Db, docNo: string, projectId: number | null, so: Pick<SoShared, keyof PropertyValue | "building" | "unitNo">): Promise<void> {
   await db.prepare(
