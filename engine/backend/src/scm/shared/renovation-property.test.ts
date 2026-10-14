@@ -5,6 +5,7 @@ import {
   missingRoomSections,
   roomsWithLineRooms,
   parseCount,
+  projectNameFrom,
   parseSqft,
   readPropertyInput,
   renoSoRequiredProblems,
@@ -119,5 +120,17 @@ describe('rooms stored on a renovation SO', () => {
 
   test('a room a line names joins the list after the known ones', () => {
     expect(roomsWithLineRooms(['Living hall'], ['', 'Kitchen', 'living hall'])).toEqual(['Living hall', 'Kitchen']);
+  });
+});
+
+describe('a renovation project is named after its building and unit', () => {
+  test('building + unit, whichever is filled, single spaces', () => {
+    expect(projectNameFrom(' Vista  Harmoni ', 'B-8-2', 'Lee')).toBe('Vista Harmoni B-8-2');
+    expect(projectNameFrom('', 'B-8-2', 'Lee')).toBe('B-8-2');
+    expect(projectNameFrom('Vista Harmoni', null, 'Lee')).toBe('Vista Harmoni');
+  });
+  test('the customer name when both are empty', () => {
+    expect(projectNameFrom('', ' ', ' Lee Wei Ming ')).toBe('Lee Wei Ming');
+    expect(projectNameFrom(null, undefined, null)).toBe('');
   });
 });

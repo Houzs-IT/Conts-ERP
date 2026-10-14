@@ -131,6 +131,13 @@ export function missingRoomSections(existingHeadings: readonly string[], bedroom
   return roomSectionHeadings(bedrooms, bathrooms).filter((h) => !have.has(key(h)));
 }
 
+/** A renovation project's name (owner, 14 Oct 2026): Building + Unit ("Vista Harmoni B-8-2"), whichever is
+    filled; the customer name when both are empty. The project code (RN-YYMM-NNN) stays the unique id. */
+export function projectNameFrom(building: unknown, unitNo: unknown, customerName: unknown): string {
+  const t = (v: unknown) => (typeof v === 'string' ? v.trim().replace(/\s+/g, ' ') : '');
+  return [t(building), t(unitNo)].filter(Boolean).join(' ') || t(customerName);
+}
+
 /** One room name as stored: trimmed, single spaces, at most 80 characters ('' when blank). */
 export function cleanRoomName(v: unknown): string {
   return typeof v === 'string' ? v.trim().replace(/\s+/g, ' ').slice(0, 80) : '';

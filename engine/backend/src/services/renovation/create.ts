@@ -28,6 +28,8 @@ export interface CreateRenovationInput {
   salesPersonId?: number | null;
   designerPersonId?: number | null;
   renoPicPersonId?: number | null;
+  /** People attending the project from the start (owner, 14 Oct 2026: People = Project PIC + Attending). */
+  attendingPersonIds?: number[] | null;
 }
 
 export type CreateRefusal =
@@ -51,6 +53,10 @@ export function validateCreate(body: Partial<CreateRenovationInput>): CreateRefu
   for (const k of ["salesPersonId", "designerPersonId", "renoPicPersonId"] as const) {
     const v = body[k];
     if (v != null && !(Number.isInteger(Number(v)) && Number(v) > 0)) return "person_invalid";
+  }
+  if (body.attendingPersonIds != null) {
+    if (!Array.isArray(body.attendingPersonIds) || body.attendingPersonIds.length > 100) return "person_invalid";
+    if (body.attendingPersonIds.some((v) => !(Number.isInteger(Number(v)) && Number(v) > 0))) return "person_invalid";
   }
   return null;
 }
@@ -138,11 +144,14 @@ export async function createRenovationProject(
          INSERT INTO project_activity (project_id, action, to_value, user_id, company_id)
          SELECT p.id, 'created', p.code, ?, ? FROM p RETURNING id
        ),
-       -- The sales person and designer picked on the form start out as Attending (owner, 14 Oct 2026).
+       -- The people picked as Attending on the form, plus a sales person / designer an older caller still sends,
+       -- start out as Attending (owner, 14 Oct 2026). Only people of this company.
        att AS (
          INSERT INTO project_attendees (project_id, person_id, created_by)
-         SELECT DISTINCT p.id, x.pid, ?::bigint FROM p CROSS JOIN LATERAL (VALUES (p.sales_person_id), (p.designer_person_id)) AS x(pid)
-          WHERE x.pid IS NOT NULL
+         SELECT DISTINCT p.id, pp.id, ?::bigint
+           FROM p JOIN project_people pp ON pp.company_id = ?
+            AND (pp.id = p.sales_person_id OR pp.id = p.designer_person_id
+                 OR pp.id IN (SELECT (jsonb_array_elements_text(?::text::jsonb))::bigint))
          RETURNING project_id
        )
        SELECT p.id, p.code, (SELECT count(*) FROM att)::int AS attending, (SELECT count(*) FROM st)::int AS stages, (SELECT count(*) FROM items)::int AS items,
@@ -162,7 +171,7 @@ export async function createRenovationProject(
       companyId,
       companyId, JSON.stringify(internal),
       actorId, companyId,
-      actorId,
+      actorId, companyId, JSON.stringify((input.attendingPersonIds ?? []).map(String)),
     )
     .first<{ id: number; code: string }>();
   return row ? { id: Number(row.id), code: row.code } : null;

@@ -123,8 +123,22 @@ export async function writeSoToProject(db: Db, projectId: number, so: SoShared, 
       WHERE id = ? AND project_kind = 'renovation'`,
   ).bind(so.customerName, so.phone, so.email, site, so.building, so.unitNo, so.propertyType, so.layoutLabel,
     so.bedrooms, so.bathrooms, so.builtUpSqft, projectId).run();
+  await regenerateProjectName(db, projectId);
   await db.prepare(`INSERT INTO project_activity (project_id, action, to_value, note, user_id, company_id) VALUES (?, 'customer_info_from_so', ?, ?, ?, ?)`)
     .bind(projectId, docNo, "Customer and property information saved from the sales order", actorId, companyId).run();
+}
+
+/** The project's name follows its building and unit (projectNameFrom in scm/shared/renovation-property.ts;
+    the same rule in SQL, run after the fields it reads are saved). */
+export async function regenerateProjectName(db: Db, projectId: number): Promise<void> {
+  await db.prepare(
+    `UPDATE projects SET name = coalesce(
+        nullif(concat_ws(' ', nullif(regexp_replace(trim(coalesce(building, '')), '[[:space:]]+', ' ', 'g'), ''),
+                              nullif(regexp_replace(trim(coalesce(unit_no, '')), '[[:space:]]+', ' ', 'g'), '')), ''),
+        nullif(regexp_replace(trim(coalesce(customer_name, '')), '[[:space:]]+', ' ', 'g'), ''),
+        name)
+      WHERE id = ? AND project_kind = 'renovation'`,
+  ).bind(projectId).run();
 }
 
 /** "Link existing SO" on the project (owner, 14 Oct 2026): the SO's customer, address and property come into

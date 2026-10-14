@@ -20,6 +20,7 @@ import type { Db } from "../services/renovation/load";
 import {
   propertyColumnsReady,
   pushProjectToOpenSos,
+  regenerateProjectName,
   readProjectShared,
   readPropertyLists,
 } from "../services/renovation/customerProperty";
@@ -168,6 +169,7 @@ app.patch("/:id/customer-info", requirePermission("projects.write"), async (c) =
       WHERE id = ?`,
   ).bind(customerName, text(b.customerPhone, 40), text(b.customerEmail, 160), typeof b.siteAddress === "string" ? b.siteAddress.trim().slice(0, 500) : "",
     text(b.building, 120), text(b.unitNo, 40), value.propertyType, value.layoutLabel, value.bedrooms, value.bathrooms, value.builtUpSqft, id).run();
+  await regenerateProjectName(db(c), id);
   const pushed = await pushProjectToOpenSos(db(c), id);
   await db(c).prepare(`INSERT INTO project_activity (project_id, action, to_value, note, user_id, company_id) VALUES (?, 'customer_info_saved', ?, ?, ?, (SELECT company_id FROM projects WHERE id = ?))`)
     .bind(id, pushed.updated.join(", ") || null, `Customer and property information saved; ${pushed.updated.length} open sales order(s) updated, ${pushed.kept.length} kept as printed`, userId(c), id).run();

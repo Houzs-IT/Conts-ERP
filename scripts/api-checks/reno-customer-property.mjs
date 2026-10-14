@@ -79,10 +79,11 @@ r = await call('PATCH', `${R}/${projectId}/customer-info`, {
   propertyType: 'Condo', layoutLabel: '3 bed 2 bath', bedrooms: 3, bathrooms: 2, builtUpSqft: '1,100',
 });
 check('the project saves its customer and property', r.status === 200 && r.json?.salesOrdersUpdated?.length === 0, show(r));
+check('and is renamed Building + Unit', (await call('GET', `${R}/${projectId}/customer-info`)).json?.project?.name === 'TEST Skyline Residence A-12-3');
 r = await call('PATCH', `${R}/${projectId}/customer-info`, { customerName: 'x', bedrooms: 'two' });
 check('a word for bedrooms is refused (422, field named)', r.status === 422 && r.json?.problems?.[0]?.field === 'Bedrooms', show(r));
 
-r = await call('GET', `${SI}/projects?q=${encodeURIComponent(`TEST CP ${run}`)}`);
+r = await call('GET', `${SI}/projects?q=${encodeURIComponent(`TEST CP Customer ${run}`)}`);
 const found = r.json?.data?.find((p) => p.id === projectId);
 check('the SO project picker finds it with its shared fields', r.status === 200 && found?.builtUpSqft === 1100 && found?.bedrooms === 3 && found?.propertyType === 'Condo', show(r));
 r = await call('GET', `${SI}/projects/${projectId}`);
@@ -157,11 +158,27 @@ check('the project now carries the SO customer, address, building, unit, propert
   && lp?.building === 'TEST Loose Tower' && lp?.unitNo === 'L-3-3' && lp?.propertyType === 'Landed' && lp?.layoutLabel === '2 bed 2 bath'
   && lp?.bedrooms === 2 && lp?.bathrooms === 2 && lp?.builtUpSqft === 1500, show(r));
 check("the SO's empty email did not clear the project's", lp?.customerEmail === 'keep@example.test', show(r));
+check('and the project is renamed after the building and unit it took from the SO', lp?.name === 'TEST Loose Tower L-3-3', show(r));
 check('and the project lists the SO', r.json?.salesOrders?.some((x) => x.docNo === loose), show(r));
 r = await call('GET', `${SI}/so/${encodeURIComponent(loose)}`);
 check('the SO side shows the project', r.json?.info?.projectId === linkProjectId, show(r));
 r = await call('GET', `${R}/${linkProjectId}/step`);
 check('still Design after the link', r.json?.current === 'design' || r.json?.flow?.current === 'design', show(r));
+
+/* ---------- the name rule: Building + Unit, else the customer name ---------- */
+r = await call('POST', R, { projectTypeId: type?.id, customerName: `TEST CP Name ${run}`, building: ' TEST  Vista Harmoni ', unitNo: 'B-8-2' });
+const nameProjectId = r.json?.id;
+check('a project created with no name and no "Customer is" is named Building + Unit', r.status === 201
+  && (await call('GET', `${R}/${nameProjectId}/customer-info`)).json?.project?.name === 'TEST Vista Harmoni B-8-2', show(r));
+r = await call('POST', R, { projectTypeId: type?.id, customerName: `TEST CP Only ${run}` });
+check('with no building or unit it takes the customer name', r.status === 201
+  && (await call('GET', `${R}/${r.json?.id}/customer-info`)).json?.project?.name === `TEST CP Only ${run}`, show(r));
+r = await call('PATCH', `${R}/${nameProjectId}/customer-info`, { customerName: `TEST CP Name ${run}`, building: 'TEST Vista Harmoni', unitNo: 'C-3-1' });
+check('editing the unit under Customer info renames it', (await call('GET', `${R}/${nameProjectId}/customer-info`)).json?.project?.name === 'TEST Vista Harmoni C-3-1', show(r));
+r = await call('POST', SO, { debtorName: `TEST CP Name ${run}`, phone: '+60123333333', address1: 'TEST name rule address', customerState: 'Selangor', items: [line],
+  renovation: { projectId: nameProjectId, building: 'TEST Seri Ampang', unitNo: 'D-1-9', propertyType: 'Condo', layoutLabel: 'Studio', bedrooms: '0', bathrooms: '1', builtUpSqft: '500' }, noFair: true });
+check('an SO saved under it with another building and unit renames it too', r.status === 201
+  && (await call('GET', `${R}/${nameProjectId}/customer-info`)).json?.project?.name === 'TEST Seri Ampang D-1-9', show(r));
 
 /* ---------- project -> open SO ---------- */
 r = await call('PATCH', `${R}/${projectId}/customer-info`, {
