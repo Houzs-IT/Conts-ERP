@@ -13,7 +13,7 @@ import { useQuery } from "../../../hooks/useQuery";
 import { simpleApi, type AttendingPerson, type KeyMove, type ProjectDetailV2 } from "./simpleApi";
 import { errorText, money, shortDate } from "./renovationModel";
 import { Dialog, Field, inputClass, smallBtn, smallInput } from "./renovationUi";
-import { PersonSelect, personPosition, usePeople } from "./PersonSelect";
+import { NO_PEOPLE_TEXT, PersonSelect, isOffered, personLabel, personPosition, usePeople } from "./PersonSelect";
 import { daysBetween, keyDraftRefusal, keyLogRows, type KeyDraft } from "./keyLog";
 
 type OnDone = (text: string) => void;
@@ -138,9 +138,11 @@ export function AttendingPicker({ attending, canWrite, onSave }: {
   const [busy, setBusy] = useState(false);
   const [picking, setPicking] = useState(false);
   const taken = new Set(attending.map((a) => a.id));
-  const available = (people.data?.data ?? []).filter((p) => p.active && !taken.has(p.id));
+  const available = (people.data?.data ?? []).filter((p) => isOffered(p) && !taken.has(p.id));
+  // The chips' position comes from the person's user account, which the people list carries.
+  const byId = new Map((people.data?.data ?? []).map((p) => [p.id, p]));
   const q = search.trim().toLowerCase();
-  const filtered = q ? available.filter((p) => p.name.toLowerCase().includes(q)) : available;
+  const filtered = q ? available.filter((p) => personLabel(p).toLowerCase().includes(q)) : available;
   const current = attending.map((a) => a.id);
 
   async function run(ids: number[], text: string) {
@@ -166,7 +168,7 @@ export function AttendingPicker({ attending, canWrite, onSave }: {
           {attending.map((a) => (
             <span key={a.id} className="inline-flex items-center gap-1 rounded-full border border-border bg-surface-dim py-0.5 pl-2 pr-0.5 text-[11px]">
               <span className="font-medium text-ink">{a.name}{a.active ? "" : " (inactive)"}</span>
-              {personPosition(a) && <span className="text-[10px] text-ink-secondary">· {personPosition(a)}</span>}
+              {personPosition(byId.get(a.id) ?? a) && <span className="text-[10px] text-ink-secondary">· {personPosition(byId.get(a.id) ?? a)}</span>}
               {canWrite && (
                 <button type="button" aria-label={`Remove ${a.name}`} disabled={busy}
                   className="rounded-full p-0.5 text-ink-secondary hover:bg-err/10 hover:text-err"
@@ -181,7 +183,7 @@ export function AttendingPicker({ attending, canWrite, onSave }: {
       {canWrite && (
         <div className="mt-2">
           {people.loading ? <p className="text-xs text-ink-secondary">Loading people...</p>
-            : available.length === 0 ? <p className="text-[11px] italic text-ink-secondary">{(people.data?.data ?? []).length === 0 ? "No people yet. Add them in Project Maintenance." : "Everyone is already attending."}</p>
+            : available.length === 0 ? <p className="text-[11px] italic text-ink-secondary">{!(people.data?.data ?? []).some((p) => isOffered(p)) ? NO_PEOPLE_TEXT : "Everyone is already attending."}</p>
             : !picking ? (
               <button type="button" onClick={() => setPicking(true)} className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-primary hover:underline">
                 <Plus size={11} />Add people
@@ -193,7 +195,7 @@ export function AttendingPicker({ attending, canWrite, onSave }: {
                   {filtered.length === 0 ? <div className="px-2 py-2 text-[11px] text-ink-secondary">No matches.</div> : filtered.map((p) => (
                     <label key={p.id} className="flex cursor-pointer items-center gap-2 border-t border-border px-2 py-1.5 text-[11px] first:border-t-0 hover:bg-surface-dim">
                       <input type="checkbox" checked={selected.has(p.id)} onChange={() => toggle(p.id)} />
-                      <span className="truncate text-ink">{p.name}{personPosition(p) && <span className="ml-1 text-[10px] text-ink-secondary">· {personPosition(p)}</span>}</span>
+                      <span className="truncate text-ink">{personLabel(p)}</span>
                       {p.phone && <span className="ml-auto shrink-0 font-mono text-[10px] text-ink-secondary">{p.phone}</span>}
                     </label>
                   ))}

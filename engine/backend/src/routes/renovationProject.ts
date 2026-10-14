@@ -4,7 +4,7 @@
 
    Read APIs for the Project Monitor and the Notion importer:
      GET /board-rows                 board rows (decision 7 columns)
-     GET /people?role=&active=       people master
+     GET /people?role=&active=       people master, kept in line with the user accounts
      GET /key-log?projectId=         unit key moves
      GET /design-records?projectId=  site measures, design files and design notes
      GET /:id/procurement            PO / delivery dates per catalog category and sub-category
@@ -33,6 +33,7 @@ import { createProjectFromSo, linkSoToProject, unlinkSoFromProject } from "../se
 import { manualTaskRow, plannedDatesRefusal } from "../services/renovation/tradeTasks";
 import { writeCachedStage } from "../services/renovation/contractSync";
 import { SUPPLY_CONDITION_LABEL } from "../services/renovation/conditions";
+import { staffViewReady, syncPeopleFromUsers } from "../services/renovation/peopleSync";
 
 type Ctx = Context<{ Bindings: Env }>;
 const app = new Hono<{ Bindings: Env }>();
@@ -95,17 +96,40 @@ app.get("/board-rows", requirePageAccess("projects.list"), failClosed(async (c) 
 // ── People master ────────────────────────────────────────────────────────
 
 const PERSON_COLS = `id::int AS id, name, to_json(roles) AS roles, active, user_id::int AS user_id, phone, notes, source, source_ref, created_at, updated_at`;
+const PP_COLS = `pp.id::int AS id, pp.name, to_json(pp.roles) AS roles, pp.active, pp.user_id::int AS user_id, pp.phone, pp.notes, pp.source, pp.source_ref, pp.created_at, pp.updated_at`;
 
+/* People come from the user accounts (owner, 14 Oct 2026; services/renovation/peopleSync.ts). Each read brings
+   project_people in line with the accounts first, then offers only people linked to an active account; the
+   rest stay for the names on old records. The one exception is site crew without a login (owner, 14 Oct 2026):
+   people not linked to an account and carrying the site_crew role stay pickable as site task crew only (`crew`),
+   kept in Project Maintenance. `linked` says whether a row follows an account (its name and on/off come from
+   Users and roles, not from here). Before migration 0113 the list is the people master as it was. */
 app.get("/people", requirePageAccess("projects.list"), async (c) => {
   const role = c.req.query("role") ?? "";
   if (role && !(PERSON_ROLES as readonly string[]).includes(role)) return c.json({ error: "role_invalid" }, 400);
   const active = c.req.query("active");
+  const co = requireActiveCompanyId(c);
+  let fromUsers = false;
+  try {
+    fromUsers = co.ok ? await syncPeopleFromUsers(db(c), co.companyId) : await staffViewReady(db(c));
+  } catch (e) {
+    // The list must still open (old records, pickers' current values) when the accounts cannot be read.
+    console.error("[renovation] people sync failed", e);
+  }
+  const activeArg = active === "1" ? true : active === "0" ? false : null;
   const res = await db(c).prepare(
-    `SELECT ${PERSON_COLS} FROM project_people
-      WHERE true${coSql(c)} AND (? = '' OR ? = ANY(roles)) AND (?::boolean IS NULL OR active = ?::boolean)
-      ORDER BY active DESC, lower(name)`,
-  ).bind(role, role, active === "1" ? true : active === "0" ? false : null, active === "1" ? true : active === "0" ? false : null).all();
-  return c.json({ data: res.results ?? [], roles: PERSON_ROLES });
+    fromUsers
+      ? `SELECT ${PP_COLS}, s.position, s.department, (pp.pos_user_id IS NOT NULL AND pp.active) AS offered,
+                  (pp.pos_user_id IS NOT NULL) AS linked, (pp.pos_user_id IS NULL AND pp.active AND 'site_crew' = ANY(pp.roles)) AS crew
+           FROM project_people pp LEFT JOIN conts_staff s ON s.id = pp.pos_user_id
+          WHERE true${coSql(c, "pp.company_id")} AND (? = '' OR ? = ANY(pp.roles)) AND (?::boolean IS NULL OR pp.active = ?::boolean)
+          ORDER BY pp.active DESC, lower(pp.name)`
+      : `SELECT ${PERSON_COLS}, NULL AS position, NULL AS department, active AS offered, false AS linked,
+                (active AND 'site_crew' = ANY(roles)) AS crew FROM project_people
+          WHERE true${coSql(c)} AND (? = '' OR ? = ANY(roles)) AND (?::boolean IS NULL OR active = ?::boolean)
+          ORDER BY active DESC, lower(name)`,
+  ).bind(role, role, activeArg, activeArg).all();
+  return c.json({ data: res.results ?? [], roles: PERSON_ROLES, fromUsers });
 });
 
 app.post("/people", requirePermission("projects.manage"), async (c) => {
@@ -126,6 +150,11 @@ app.patch("/people/:personId", requirePermission("projects.manage"), async (c) =
   const v = cleanPerson(await body(c), true);
   if (!v.ok) return c.json(v, 400);
   const p = v.value;
+  // A person linked to a user account follows the account: change it in Users and roles.
+  if (await staffViewReady(db(c))) {
+    const linked = await db(c).prepare(`SELECT pos_user_id FROM project_people WHERE id = ?${coSql(c)}`).bind(id).first<{ pos_user_id: string | null }>();
+    if (linked?.pos_user_id) return c.json({ error: "person_is_account", message: "This person is a user account. Change the name or switch it off in Property OS, Users and roles." }, 409);
+  }
   const res = await db(c).prepare(
     `UPDATE project_people SET name = CASE WHEN ? THEN ? ELSE name END, roles = CASE WHEN ? THEN ?::text[] ELSE roles END,
             active = CASE WHEN ? THEN ? ELSE active END, user_id = CASE WHEN ? THEN ?::bigint ELSE user_id END,

@@ -3,6 +3,7 @@ import { requireSession, hashPassword } from '../../_lib/auth';
 import { notify } from '../../_lib/notify';
 import { ROLES } from '../../_lib/roles';
 import { twoFactorTables } from '../../_lib/twoFactor';
+import { userJobReady, cleanJob } from '../../_lib/userJob';
 
 const MANAGE = ['management'];
 const VIEW = ['management', 'operations_manager'];
@@ -13,22 +14,23 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if (!session) return response!;
   if (!VIEW.includes(session.role)) return fail('FORBIDDEN', 'User accounts are managed by administrators.', 403);
 
-  const totp = await twoFactorTables(env);
+  const [totp, job] = await Promise.all([twoFactorTables(env), userJobReady(env)]);
   const rows = await all<any>(env, `
-    SELECT id, full_name, email, phone, role, manager_id, is_active, must_change_password, last_login_at, locale, created_at,
+    SELECT id, full_name, email, phone, ${job ? 'department, position' : 'NULL AS department, NULL AS position'}, role, manager_id, is_active, must_change_password, last_login_at, locale, created_at,
       COALESCE(locked_until::timestamptz > now(), false) AS is_locked, ${totp ? 'totp_enabled_at IS NOT NULL' : 'false'} AS two_step
     FROM users ORDER BY role, full_name`);
   return json({
     generatedAt: nowIso(),
+    jobFields: job,
     data: rows.map(r => ({
-      id: r.id, fullName: r.full_name, email: r.email, phone: r.phone ?? null, role: r.role, managerId: r.manager_id,
+      id: r.id, fullName: r.full_name, email: r.email, phone: r.phone ?? null, department: r.department ?? null, position: r.position ?? null, role: r.role, managerId: r.manager_id,
       isActive: !!r.is_active, mustChangePassword: !!r.must_change_password, isLocked: !!r.is_locked, twoStep: !!r.two_step, lastLoginAt: r.last_login_at,
       locale: r.locale, createdAt: r.created_at,
     })),
   });
 };
 
-/** POST /api/users { fullName, email, role, managerId? } — an invitation. The temporary password is emailed and is never in the response. */
+/** POST /api/users { fullName, email, role, managerId?, department?, position? } — an invitation. The temporary password is emailed and is never in the response. */
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
@@ -39,6 +41,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!b?.email?.includes('@')) fields.email = 'Enter a valid work email address.';
   if (!b?.fullName?.trim()) fields.fullName = 'A name is required.';
   if (!ROLES.includes(b?.role)) fields.role = 'Choose a role.';
+  const jobIn = cleanJob(b, fields);
   if (Object.keys(fields).length) return fail('VALIDATION', 'Check the invitation details.', 422, fields);
   if (b.role === 'owner') return fail('VALIDATION', 'Owner logins are created from the owner\'s record under Owners.', 422, { role: 'Invite owners from the Owners screen.' });
 
@@ -46,12 +49,17 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (await one(env, 'SELECT 1 AS x FROM users WHERE email = ?', email)) return fail('DUPLICATE', 'An account already uses that email address.', 409, { email: 'Already in use.' });
   if (b.managerId && !(await one(env, 'SELECT 1 AS x FROM users WHERE id = ?', b.managerId))) return fail('VALIDATION', 'That manager does not exist.', 422, { managerId: 'Pick a manager from the list.' });
 
+  const job = await userJobReady(env);
   const temp = crypto.randomUUID().slice(0, 12) + 'A1';
   const id = crypto.randomUUID(), now = nowIso();
   await run(env, `
     INSERT INTO users (id, email, full_name, phone, password_hash, role, manager_id, must_change_password, locale, is_active, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, 1, 'en-MY', 1, ?, ?)`, id, email, b.fullName.trim(), b.phone ?? null, await hashPassword(temp), b.role, b.managerId ?? null, now, now);
-  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'user.invite', entityTable: 'users', entityId: id, after: { email, role: b.role } });
+  if (job && (jobIn.department || jobIn.position)) {
+    await run(env, 'UPDATE users SET department = ?, position = ? WHERE id = ?', jobIn.department ?? null, jobIn.position ?? null, id);
+  }
+  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'user.invite', entityTable: 'users', entityId: id,
+    after: { email, role: b.role, ...(job ? { department: jobIn.department ?? null, position: jobIn.position ?? null } : {}) } });
 
   // The temporary password leaves the server here and nowhere else: never in the response, a log line or the audit entry.
   const delivery = await notify(env, {

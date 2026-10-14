@@ -73,6 +73,15 @@ export interface Person {
   phone: string | null;
   notes: string | null;
   source: string;
+  /** From the person's user account (migration 0113); null on people not linked to an account. */
+  position?: string | null;
+  department?: string | null;
+  /** Offered in the pickers: linked to an active user account. Before migration 0113, every active person. */
+  offered?: boolean;
+  /** Follows a user account (name and on/off come from Users and roles). */
+  linked?: boolean;
+  /** Site crew without a login (owner, 14 Oct 2026): pickable as site task crew only, kept in Project Maintenance. */
+  crew?: boolean;
 }
 
 export interface FlowStepRow { step_key: FlowStepKey; label: string; sort_order: number; active: boolean }
@@ -117,7 +126,7 @@ export const simpleApi = {
     if (q.role) p.set("role", q.role);
     if (q.active !== undefined) p.set("active", q.active ? "1" : "0");
     const qs = p.toString();
-    return api.get<{ data: Person[] }>(`${R}/people${qs ? `?${qs}` : ""}`);
+    return api.get<{ data: Person[]; fromUsers?: boolean }>(`${R}/people${qs ? `?${qs}` : ""}`);
   },
   createPerson: (b: { name: string; roles: PersonRole[]; phone?: string | null; notes?: string | null }) => api.post<{ id: number }>(`${R}/people`, b),
   patchPerson: (id: number, b: Partial<{ name: string; roles: PersonRole[]; active: boolean; phone: string | null; notes: string | null }>) =>
