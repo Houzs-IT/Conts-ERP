@@ -74,7 +74,9 @@ export function RenovationDetail({ id, canWrite, embedded = false }: { id: numbe
 
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="lg:col-span-2 space-y-4 min-w-0">
+          {/* Left = work (owner, 14 Oct 2026): Design, Procurement, Site tasks. Right = reference. */}
           <DesignTaskCard projectId={id} canWrite={canWrite} onDone={(t) => setNotice({ tone: "ok", text: t })} onError={failed} />
+          <ProcurementPanel projectId={id} canWrite={canWrite} onError={failed} />
           <SiteTasksPanel
             projectId={id}
             tasks={d.tasks}
@@ -83,14 +85,13 @@ export function RenovationDetail({ id, canWrite, embedded = false }: { id: numbe
             onAct={act}
             onSkip={(t) => setSkipping({ id: t.id, label: t.label })}
           />
-          <ProcurementPanel projectId={id} canWrite={canWrite} onError={failed} />
           {d.serviceCases.length > 0 && <WarrantyPanel d={d} />}
           <EvidenceGallery projectId={id} />
         </div>
         <aside className="space-y-4 min-w-0">
-          <ContractCard d={d} canWrite={canWrite} onDone={done} onError={failed} />
           <PeopleCard d={d} canWrite={canWrite} onDone={done} onError={failed} />
           <KeyCard d={d} canWrite={canWrite} onDone={done} onError={failed} />
+          <ContractCard d={d} canWrite={canWrite} onDone={done} onError={failed} />
           <LinkedDocuments d={d} />
           {d.redFlags.length > 0 && (
             <section className="rounded-lg border border-err/30 bg-err-bg p-3">
