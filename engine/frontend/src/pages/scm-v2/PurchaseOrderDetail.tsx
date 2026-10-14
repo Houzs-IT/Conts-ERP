@@ -104,6 +104,20 @@ import { DateField } from "../../vendor/scm/components/DateField";
 import { ADD_LINE_LABEL } from '../../vendor/scm/lib/add-line-handoff';
 import { purchaseOrderLinesLocked } from '../../vendor/scm/lib/line-add-lock';
 import { useAddLineHandoff } from '../../vendor/scm/lib/useAddLineHandoff';
+import { useRenoDocInfo } from './RenovationDocInfo';
+import { renoPoCategoryClashes, renoPoCategoryRefusal } from './renovationPoCategory';
+
+/** The one-category note: the same red as the SO-drift note on a line. */
+const RENO_CATEGORY_NOTE = {
+  fontSize: 'var(--fs-12)', fontWeight: 700,
+  color: 'var(--c-danger, #b8331f)',
+  background: 'rgba(184, 51, 31, 0.06)',
+  border: '1px solid rgba(184, 51, 31, 0.3)',
+  borderRadius: 'var(--radius-sm)',
+  padding: '8px 10px',
+  margin: 'var(--space-2) var(--space-3) 0',
+  display: 'grid', gap: 2,
+} as const;
 const ICON = { size: 16, strokeWidth: 1.75 } as const;
 
 const fmtRm = (centi: number | null | undefined, currency = 'MYR'): string => {
@@ -332,6 +346,10 @@ export const PurchaseOrderDetail = () => {
   const [headerDraft, setHeaderDraft] = useState<HeaderDraft | null>(null);
   const [editLines, setEditLines] = useState<EditLine[]>([]);
   const [savingDraft, setSavingDraft] = useState(false);
+  /* Conts, renovation mode: one category per renovation PO (mig 0116). A line of another category is named next
+     to its card before Save, and the database's refusal shows here instead of a generic failed save. */
+  const reno = useRenoDocInfo('po', id);
+  const [categoryRefusal, setCategoryRefusal] = useState<string | null>(null);
 
   // PR-DRAFT-removal — POs are always SUBMITTED on create (no DRAFT). Header
   // edits stay open while the PO can still be received (SUBMITTED / PARTIALLY_RECEIVED).
@@ -679,6 +697,7 @@ export const PurchaseOrderDetail = () => {
 
   const enterEdit = () => {
     setHeaderDraft(null);
+    setCategoryRefusal(null);
     setEditLines(items.map(draftFromItem));
     setIsEditing(true);
   };
@@ -688,6 +707,7 @@ export const PurchaseOrderDetail = () => {
        · itemId + changed any field → UPDATE (full payload)
      Deletes already fired server-side in removeLine. Then commit the header (if
      touched) and drop back to View. */
+  const categoryClashes = renoPoCategoryClashes(reno, editLines, (code) => allSkus.find((p) => p.code === code)?.category_group);
   const handleSave = async () => {
     if (savingDraft) return;
     // Guard: every line must reference a product before Save.
@@ -696,7 +716,14 @@ export const PurchaseOrderDetail = () => {
       notify({ title: 'Every line needs a product', body: 'Pick a product for each line, or remove the empty one before saving.', tone: 'error' });
       return;
     }
+    if (categoryClashes.size > 0) {
+      setCategoryRefusal([...categoryClashes.values()][0]!);
+      return;
+    }
+    setCategoryRefusal(null);
     setSavingDraft(true);
+    // New lines saved during this Save, so a refused Save does not insert them twice when it is pressed again.
+    const savedNow = new Map<string, PoItemRow>();
     try {
       if (headerDraft) {
         await updateHeader.mutateAsync({
@@ -715,7 +742,7 @@ export const PurchaseOrderDetail = () => {
       for (const d of editLines) {
         if (!d.itemId) {
           // New line — full insert payload.
-          await addItem.mutateAsync({
+          const added = await addItem.mutateAsync({
             poId: po.id,
             materialKind:   d.materialKind,
             itemCode:   d.itemCode,
@@ -736,6 +763,7 @@ export const PurchaseOrderDetail = () => {
             variants:       Object.keys(d.variants).length ? d.variants : undefined,
             soItemId:       d.soItemId ?? null,
           });
+          savedNow.set(d.rid, added.item);
           continue;
         }
         const it = byId.get(d.itemId);
@@ -784,7 +812,12 @@ export const PurchaseOrderDetail = () => {
       setHeaderDraft(null);
       setEditLines([]);
     } catch (e) {
-      notify({ title: 'Save failed', body: `${e instanceof Error ? e.message : 'Something went wrong.'}`, tone: 'error' });
+      const refusal = renoPoCategoryRefusal(e);
+      if (savedNow.size > 0) {
+        setEditLines((prev) => prev.map((l) => { const row = savedNow.get(l.rid); return row ? draftFromItem(row) : l; }));
+      }
+      if (refusal) setCategoryRefusal(refusal);
+      else notify({ title: 'Save failed', body: `${e instanceof Error ? e.message : 'Something went wrong.'}`, tone: 'error' });
     } finally {
       setSavingDraft(false);
     }
@@ -1256,6 +1289,13 @@ export const PurchaseOrderDetail = () => {
           )}
         </header>
 
+        {isEditing && categoryRefusal && (
+          <div role="alert" style={RENO_CATEGORY_NOTE} data-testid="reno-po-category-refusal">
+            <div>Not saved. {categoryRefusal}</div>
+            <div style={{ fontWeight: 500 }}>Remove that line or pick a product of this PO's category, then Save again.</div>
+          </div>
+        )}
+
         {/* SO→PO drift banner — the source SO changed after this PO was raised.
             We never auto-edit a PO that may already be with the supplier; the
             purchaser syncs + re-sends. (Commander 2026-06-16.) */}
@@ -1313,6 +1353,9 @@ export const PurchaseOrderDetail = () => {
                         <div>⚠ SO warehouse moved — change this line's warehouse to the SO's, then Save.</div>
                       )}
                     </div>
+                  )}
+                  {categoryClashes.get(l.rid) && (
+                    <div role="alert" style={{ ...RENO_CATEGORY_NOTE, margin: 0 }}>{categoryClashes.get(l.rid)}</div>
                   )}
                   <PoLineCard
                     index={idx}

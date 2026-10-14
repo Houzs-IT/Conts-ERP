@@ -5,6 +5,7 @@
 // once), then tells the frame where to go when a menu item is clicked. Inside the frame this app hides
 // its own side menu: Property OS's menu is the one people use.
 import { tokenStore, passStore } from "../api/client";
+import "./embed.css";
 
 /** Pages allowed to hold this app in a frame and steer it. */
 const PARENTS = [
@@ -17,6 +18,11 @@ const trusted = (origin: string) => PARENTS.some((p) => p.test(origin));
 export const CONTS_EMBEDDED: boolean = (() => {
   try { return window.self !== window.top; } catch { return true; }
 })();
+
+// Inside the frame this app's own top bars are not drawn (Layout.tsx); embed.css keys off this class.
+if (CONTS_EMBEDDED) {
+  try { document.documentElement.classList.add("conts-embedded"); } catch { /* no document */ }
+}
 
 /** Takes the hand-over from the address fragment: #conts=<base64url of {t, sp?, p}>. */
 export function consumeContsSignIn(): void {

@@ -795,11 +795,13 @@ export function DeliveryReturnsListV2() {
   // The backend delivery-returns endpoint accepts a status arg but not our
   // compressed buckets — pull the full set and filter client-side (matches
   // the DO V2 pattern).
-  const { data, isLoading, error } = useDeliveryReturns(undefined);
+  const { data, isLoading, error, refetch } = useDeliveryReturns(undefined);
   // These tiles are reduces over a row set that is [] until the fetch lands (and
   // stays [] if it fails), so a settled-looking "Refund Value RM 0.00" would
   // describe a list nobody has read yet.
   const statsPending = isLoading || Boolean(error);
+  // Conts: a failed load says so on the cards, with Retry, instead of "Loading…" for ever.
+  const statsFail = { failed: Boolean(error), onRetry: () => void refetch() };
   const updateStatus = useUpdateDeliveryReturnStatus();
 
   const allRows = useMemo<DrRow[]>(
@@ -1531,7 +1533,7 @@ export function DeliveryReturnsListV2() {
 
           <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
             <StatCard
-              pending={statsPending}
+              pending={statsPending} {...statsFail}
               label="Total Returns"
               value={stats.total.toLocaleString("en-MY")}
               subtitle="Scoped to current filter"
@@ -1539,7 +1541,7 @@ export function DeliveryReturnsListV2() {
               active
             />
             <StatCard
-              pending={statsPending}
+              pending={statsPending} {...statsFail}
               label="Refund Value"
               value={fmtRm(stats.refundSen)}
               subtitle="Money owed back"
@@ -1547,7 +1549,7 @@ export function DeliveryReturnsListV2() {
               rail="bg-err"
             />
             <StatCard
-              pending={statsPending}
+              pending={statsPending} {...statsFail}
               label="Pending"
               value={stats.pendingCount.toLocaleString("en-MY")}
               subtitle="Received · awaiting refund"
@@ -1555,7 +1557,7 @@ export function DeliveryReturnsListV2() {
               rail="bg-accent-bright"
             />
             <StatCard
-              pending={statsPending}
+              pending={statsPending} {...statsFail}
               label="Refunded"
               value={stats.refundedCount.toLocaleString("en-MY")}
               subtitle="Refunded / credit noted"

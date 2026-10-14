@@ -30,6 +30,7 @@ import { MobileModuleList, MODULE_CONFIGS, FORM_MEMBERS_EDIT } from "./MobileMod
 import { MobileInvitations } from "./MobileInvitations";
 import { mobileDestinationMatches, resolveMobileRoute, type MobileRoute } from "./mobileRoute";
 import { CONTS_EMBEDDED } from "../conts/embed";
+import { isContsHiddenPath } from "../conts/navOnly";
 import type { FlowDocNav, FlowNav } from "./relationship-map-model";
 import type { SearchNav } from "./MobileSearch";
 import type { MobileScanPrefill } from "./MobileScan";
@@ -891,7 +892,8 @@ function MobileAppInner() {
     /* Guard the SCREEN, not only the menu row: an /autocount-sync URL must not
        mount the page or fire its query for someone the endpoint would 403.
        Same two keys the desktop route and the server accept. OFF, not hidden. */
-    const mayRead = can("*") || can("scm.autocount.read") || can("settings.manage");
+    // Conts: AutoCount is switched off (conts/navOnly.ts), so a typed address never mounts the page or its calls.
+    const mayRead = !isContsHiddenPath("/autocount-sync") && (can("*") || can("scm.autocount.read") || can("settings.manage"));
     overlay = !mayRead ? <TabLocked title="AutoCount Sync" /> : <MobileAutoCountSync onBack={back} />;
   }
   else if (screen.t === "venture-portal-feed") {
@@ -1112,7 +1114,7 @@ function MobileAppInner() {
           {tab === "calendar" && (canCalendar ? (
             <MobileCalendar
               onOpenProject={(id) => setScreen({ t: "pms", projectId: id })}
-              onOpenSearch={() => setScreen({ t: "search" })}
+              onOpenSearch={CONTS_EMBEDDED ? undefined : () => setScreen({ t: "search" })}
               // Search → calendar jump: keyed by the jump nonce so re-jumping to the
               // same month re-triggers the snap + highlight.
               key={calJump ? `caljump-${calJump.nonce}` : "cal"}

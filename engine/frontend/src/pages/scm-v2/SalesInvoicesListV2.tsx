@@ -877,7 +877,7 @@ export function SalesInvoicesListV2() {
   // three tabs 500. The server-side map is the authority (SI_STATUS_BUCKETS).
   const apiStatus = status === "all" ? undefined : status;
 
-  const { data, isLoading, isFetching, isPlaceholderData, error } = useSalesInvoicesPaged({
+  const { data, isLoading, isFetching, isPlaceholderData, error, refetch } = useSalesInvoicesPaged({
     page,
     pageSize,
     status: apiStatus,
@@ -900,6 +900,8 @@ export function SalesInvoicesListV2() {
   // rows it describes. Same flag SearchScopeHint already uses for its count.
   const statsPending =
     isLoading || isPlaceholderData || Boolean(error) || searchTransition.resultsAreStale;
+  // Conts: a failed load says so on the cards, with Retry, instead of "Loading…" for ever.
+  const statsFail = { failed: Boolean(error), onRetry: () => void refetch() };
   const updateStatus = useUpdateSalesInvoiceStatus();
 
   // Server already filtered + sorted this page — render verbatim.
@@ -1775,7 +1777,7 @@ export function SalesInvoicesListV2() {
                 match count and contradicts the table the moment a client-side
                 funnel hides part of the page. */}
             <StatCard
-              pending={statsPending}
+              pending={statsPending} {...statsFail}
               label="Total Invoices"
               value={(visible.filtered ? visible.rows.length : total).toLocaleString("en-MY")}
               subtitle={visible.filtered ? "Filtered · shown below" : "All matching invoices"}
@@ -1783,14 +1785,14 @@ export function SalesInvoicesListV2() {
               active
             />
             <StatCard
-              pending={statsPending}
+              pending={statsPending} {...statsFail}
               label="Billed"
               value={fmtSen(money.revenueSen)}
               subtitle={visible.filtered ? "Filtered · sum shown below" : "Sum on this page"}
               rail="bg-accent"
             />
             <StatCard
-              pending={statsPending}
+              pending={statsPending} {...statsFail}
               label="Outstanding"
               value={fmtSen(money.outstandingSen)}
               subtitle={visible.filtered ? "Balance · filtered" : "Balance on this page"}
@@ -1798,7 +1800,7 @@ export function SalesInvoicesListV2() {
               rail="bg-err"
             />
             <StatCard
-              pending={statsPending}
+              pending={statsPending} {...statsFail}
               label="Paid"
               value={fmtSen(money.paidSen)}
               subtitle={visible.filtered ? "Receipts · filtered" : "Receipts on this page"}

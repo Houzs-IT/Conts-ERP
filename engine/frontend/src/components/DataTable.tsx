@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
+import { VisibleWidth } from "../conts/VisibleWidth";
 import {
   Download,
   Upload,
@@ -2607,8 +2608,10 @@ function DataTableInner<T, L>({
                     colSpan={totalColSpan}
                     className="px-3 py-14 text-center text-sm text-err"
                   >
-                    <div className="font-semibold">Failed to load</div>
-                    <div className="mt-1 text-xs text-ink-muted">{error}</div>
+                    <VisibleWidth scrollRef={scrollWrapRef}>
+                      <div className="font-semibold">Failed to load</div>
+                      <div className="mt-1 text-xs text-ink-muted">{error}</div>
+                    </VisibleWidth>
                   </td>
                 </tr>
               )}
@@ -2618,7 +2621,7 @@ function DataTableInner<T, L>({
                     colSpan={totalColSpan}
                     className="px-3 py-20 text-center text-sm text-ink-muted"
                   >
-                    {emptyLabel}
+                    <VisibleWidth scrollRef={scrollWrapRef}>{emptyLabel}</VisibleWidth>
                   </td>
                 </tr>
               )}

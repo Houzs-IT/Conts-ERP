@@ -34,7 +34,6 @@ and the design disagree, the design is right and the React is a bug.
 | `/operations/maintenance` | `MaintenancePage` | Issues by state, owner-approval gate visible |
 | `/operations/tasks` | `TasksPage` | Task list with photo requirement per row |
 | `/operations/inspections` | `InspectionsPage` | Checklists, pass/fail, release gate |
-| `/properties/inventory` | `InventoryPage` | Fit-out register, condition, replacement schedule |
 | `/finance/expenses` | `ExpensesPage` | Every deduction with category, date, reference |
 | `/finance/payouts` | `PayoutsPage` | Failed payouts surfaced first, masked bank details |
 | `/owners/contracts` | `ContractsPage` | Fee, term, renewal countdown |
@@ -200,7 +199,6 @@ Remove a fallback once that endpoint is reliably seeded.
 | `OperationsTodayPage` | The `409 ASSIGNEE_BUSY` round-trip — warn, confirm, retry with `force` |
 | `InboxPage` | Two queries in one page, and no sent state before the server confirms |
 | `units/AccessTab` | A read that is itself audited, with the audit stated in the toast |
-| `InventoryPage` | Inline edit that PATCHes and reloads |
 
 ## Decisions worth not relitigating
 

@@ -3,7 +3,7 @@
 // aggregate over it is 0, and a card that prints "RM 0.00" is stating a fact it
 // does not have. This suite pins the unknown state so the placeholder can never
 // quietly regress back into a confident number.
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { StatCard } from "./StatCard";
 
@@ -46,5 +46,22 @@ describe("StatCard pending state", () => {
     );
     expect(screen.queryByText("0 consumptions")).toBeNull();
     expect(screen.getByText("Loading…")).toBeTruthy();
+  });
+});
+
+describe("StatCard failed state (Conts)", () => {
+  it("says the figure could not load and offers Retry instead of Loading forever", () => {
+    let retried = 0;
+    render(<StatCard label="Revenue" value="RM 0.00" subtitle="Sum on this page" failed onRetry={() => { retried += 1; }} />);
+    expect(screen.queryByText("RM 0.00")).toBeNull();
+    expect(screen.queryByText("Loading…")).toBeNull();
+    expect(screen.getByText("Couldn't load")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(retried).toBe(1);
+  });
+
+  it("drops its own click target while failed, so Retry is the only button", () => {
+    render(<StatCard label="Total DOs" value="3" failed onClick={() => {}} onRetry={() => {}} />);
+    expect(screen.getAllByRole("button")).toHaveLength(1);
   });
 });

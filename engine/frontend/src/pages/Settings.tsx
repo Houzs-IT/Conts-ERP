@@ -28,6 +28,7 @@ import {
 import type { SyncStatusResponse, Paginated, ExecutionLog } from "../types";
 import { correlatedFetch } from "../lib/requestCorrelation";
 import { DocumentTypesTab } from "./settings/DocumentTypesTab";
+import { CONTS_AUTOCOUNT } from "../conts/navOnly";
 
 type SettingsTab = "connection" | "sync" | "email" | "branding" | "documents" | "logs";
 
@@ -44,7 +45,7 @@ export function Settings() {
 
   const raw = params.get("tab") as SettingsTab | null;
   const active: SettingsTab =
-    raw && ["connection", "sync", "email", "branding", "documents", "logs"].includes(raw)
+    raw && ["connection", "sync", "email", "branding", "documents", "logs"].includes(raw) && (CONTS_AUTOCOUNT || raw !== "sync")
       ? raw
       : "connection";
 
@@ -54,11 +55,11 @@ export function Settings() {
     setParams(p, { replace: true });
   }
 
-  const status = useQuery<SyncStatusResponse>("/api/sync/status", () => api.get("/api/sync/status"));
+  const status = useQuery<SyncStatusResponse>("/api/sync/status", () => api.get("/api/sync/status"), [], { enabled: CONTS_AUTOCOUNT });
 
   const tabs: TabOption<SettingsTab>[] = [
     { value: "connection", label: "Connection" },
-    { value: "sync", label: "Sync" },
+    ...(CONTS_AUTOCOUNT ? [{ value: "sync" as const, label: "Sync" }] : []),
     { value: "email", label: "Email" },
     { value: "branding", label: "Branding" },
     { value: "documents", label: "Documents" },
@@ -71,7 +72,7 @@ export function Settings() {
   > = {
     connection: {
       title: "Connection",
-      description: "Verify the Worker can reach the AutoCount middleware.",
+      description: CONTS_AUTOCOUNT ? "Verify the Worker can reach the AutoCount middleware." : "Check that the screens can reach the server.",
     },
     sync: {
       title: "Sync",

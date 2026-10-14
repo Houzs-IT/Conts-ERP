@@ -432,7 +432,7 @@ const BalancesTab = ({
 }) => {
   const [asOf, setAsOf] = useState(''); // 选日期 (GL item 5) — see InventoryAsOf.tsx
   const { requestTerm } = useDebouncedSearchTerm(search);
-  const { data, isLoading, isFetching, isPlaceholderData, error } = useInventoryProductTotals({
+  const { data, isLoading, isFetching, isPlaceholderData, error, refetch } = useInventoryProductTotals({
     search: requestTerm.trim() || undefined,
     category: category === 'all' ? undefined : category,
     warehouseId: warehouseId ?? undefined,
@@ -480,14 +480,16 @@ const BalancesTab = ({
   // the rows actually on screen. An error is unknown too: the aggregate would
   // otherwise describe a list that failed to load.
   const statsPending = isLoading || searching || resultsAreStale || Boolean(error);
+  // Conts: a failed load says so on the cards, with Retry, instead of "Loading…" for ever.
+  const statsFail = { failed: Boolean(error), onRetry: () => void refetch() };
 
   return (
     <AsOfSection asOf={asOf} onChange={setAsOf} category={category} search={search}>
       <div className={STAT_GRID}>
-        <StatCard label="Own Stock Qty" value={fmtQty(stats.ownQty)} pending={statsPending} />
-        <StatCard label="Consignment Qty" value={fmtQty(stats.heldQty)} pending={statsPending} />
-        <StatCard label="Inventory Value" value={fmtRm(stats.totalValue)} pending={statsPending} />
-        <StatCard label="Consignment Value" value={fmtRm(stats.heldValue)} pending={statsPending} />
+        <StatCard label="Own Stock Qty" value={fmtQty(stats.ownQty)} pending={statsPending} {...statsFail} />
+        <StatCard label="Consignment Qty" value={fmtQty(stats.heldQty)} pending={statsPending} {...statsFail} />
+        <StatCard label="Inventory Value" value={fmtRm(stats.totalValue)} pending={statsPending} {...statsFail} />
+        <StatCard label="Consignment Value" value={fmtRm(stats.heldValue)} pending={statsPending} {...statsFail} />
       </div>
 
       {/* Dead-stock view — SKUs with Spare (surplus) stock beyond all demand.

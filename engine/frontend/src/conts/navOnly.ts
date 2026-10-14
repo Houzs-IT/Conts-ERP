@@ -50,6 +50,10 @@ export function contsNavOnly<T extends NavNode>(tabs: T[]): T[] {
   return pruneHidden(tabs.filter((t) => KEEP.has(t.label)));
 }
 
+/** AutoCount is not used by Conts (CLAUDE.md: no AutoCount in the engine), and the engine has no
+ *  /api/sync/status route. Off: Settings drops its AutoCount Sync tab and never asks for that status. */
+export const CONTS_AUTOCOUNT: boolean = false;
+
 /** Where the app opens: the old landing page is a Houzs-wide overview of areas hidden here. */
 export const CONTS_HOME = "/scm/sales-orders";
 

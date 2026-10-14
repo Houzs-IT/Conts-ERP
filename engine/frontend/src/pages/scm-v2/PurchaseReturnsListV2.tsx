@@ -531,11 +531,13 @@ export function PurchaseReturnsListV2() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [printingDocs, setPrintingDocs] = useState(false);
 
-  const { data, isLoading, error } = usePurchaseReturns();
+  const { data, isLoading, error, refetch } = usePurchaseReturns();
   // These tiles are reduces over a row set that is [] until the fetch lands (and
   // stays [] if it fails), so a settled-looking "Refund Value RM 0.00" would
   // describe a list nobody has read yet.
   const statsPending = isLoading || Boolean(error);
+  // Conts: a failed load says so on the cards, with Retry, instead of "Loading…" for ever.
+  const statsFail = { failed: Boolean(error), onRetry: () => void refetch() };
   const postPr = usePostPurchaseReturn();
   const cancelPr = useCancelPurchaseReturn();
 
@@ -841,10 +843,10 @@ export function PurchaseReturnsListV2() {
         </div>
 
         <div className="mb-5 hidden grid-cols-2 gap-3 md:grid lg:grid-cols-4">
-          <StatCard pending={statsPending} label="Total Returns" value={stats.total.toLocaleString("en-MY")} subtitle="Scoped to current filter" rail="bg-primary" active />
-          <StatCard pending={statsPending} label="Credit Value" value={fmtRm(stats.credit)} subtitle="Money owed back to us" tone="success" rail="bg-synced" />
-          <StatCard pending={statsPending} label="Pending" value={fmtRm(stats.pending)} subtitle="Draft + Posted · awaiting credit note" tone="warning" rail="bg-accent-bright" />
-          <StatCard pending={statsPending} label="Settled" value={fmtRm(stats.settled)} subtitle="Completed · loop closed" rail="bg-accent" />
+          <StatCard pending={statsPending} {...statsFail} label="Total Returns" value={stats.total.toLocaleString("en-MY")} subtitle="Scoped to current filter" rail="bg-primary" active />
+          <StatCard pending={statsPending} {...statsFail} label="Credit Value" value={fmtRm(stats.credit)} subtitle="Money owed back to us" tone="success" rail="bg-synced" />
+          <StatCard pending={statsPending} {...statsFail} label="Pending" value={fmtRm(stats.pending)} subtitle="Draft + Posted · awaiting credit note" tone="warning" rail="bg-accent-bright" />
+          <StatCard pending={statsPending} {...statsFail} label="Settled" value={fmtRm(stats.settled)} subtitle="Completed · loop closed" rail="bg-accent" />
         </div>
 
         <div className="sticky top-0 z-10 -mx-4 mb-3 bg-bg/95 px-4 py-2 backdrop-blur-sm md:hidden">

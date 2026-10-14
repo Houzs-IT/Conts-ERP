@@ -1,0 +1,8 @@
+/* Conts only: inside Property OS this app draws neither of its top bars (Layout.tsx), so the page headers and
+   document bars that pin themselves just under those bars (top-12 / top-14 on a phone or tablet, 52px on a
+   computer) pin to the very top instead of leaving a gap. */
+html.conts-embedded .sticky.top-12,
+html.conts-embedded .sticky.top-14,
+html.conts-embedded .sticky.lg\:top-\[52px\] {
+  top: 0;
+}

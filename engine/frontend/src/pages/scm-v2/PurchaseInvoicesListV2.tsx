@@ -642,7 +642,7 @@ export function PurchaseInvoicesListV2() {
   // `all` omits the filter.
   const apiStatus = status === "all" ? undefined : status;
 
-  const { data, isLoading, isFetching, isPlaceholderData, error } = usePurchaseInvoicesPaged({
+  const { data, isLoading, isFetching, isPlaceholderData, error, refetch } = usePurchaseInvoicesPaged({
     page,
     pageSize,
     status: apiStatus,
@@ -665,6 +665,8 @@ export function PurchaseInvoicesListV2() {
   // rows it describes. Same flag SearchScopeHint already uses for its count.
   const statsPending =
     isLoading || isPlaceholderData || Boolean(error) || searchTransition.resultsAreStale;
+  // Conts: a failed load says so on the cards, with Retry, instead of "Loading…" for ever.
+  const statsFail = { failed: Boolean(error), onRetry: () => void refetch() };
   const cancelPi = useCancelPurchaseInvoice();
   const postPi = usePostPurchaseInvoice();
 
@@ -1202,7 +1204,7 @@ export function PurchaseInvoicesListV2() {
               and contradicts the table the moment a client-side funnel hides
               part of the page. */}
           <StatCard
-            pending={statsPending}
+            pending={statsPending} {...statsFail}
             label="Total PIs"
             value={(visible.filtered ? visible.rows.length : total).toLocaleString("en-MY")}
             subtitle={visible.filtered ? "Filtered · shown below" : "All matching PIs"}
@@ -1210,14 +1212,14 @@ export function PurchaseInvoicesListV2() {
             active
           />
           <StatCard
-            pending={statsPending}
+            pending={statsPending} {...statsFail}
             label="Billed"
             value={fmtRm(money.billed)}
             subtitle={visible.filtered ? "Filtered · sum shown below" : "Sum on this page"}
             rail="bg-accent"
           />
           <StatCard
-            pending={statsPending}
+            pending={statsPending} {...statsFail}
             label="Owed"
             value={fmtRm(money.owed)}
             subtitle={
@@ -1227,7 +1229,7 @@ export function PurchaseInvoicesListV2() {
             rail="bg-err"
           />
           <StatCard
-            pending={statsPending}
+            pending={statsPending} {...statsFail}
             label="Paid"
             value={fmtRm(money.paid)}
             subtitle={visible.filtered ? "Cash out · filtered" : "Cash out · on this page"}

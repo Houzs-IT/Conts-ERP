@@ -201,7 +201,7 @@ export function UnbilledDeliveriesV2() {
      default. The list is a tail of stale documents, so 30s staleTime + the
      shared 1-retry idiom (vendor/scm/lib/outstanding-queries baseQuery) is
      plenty; nothing here is real-time. */
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: ["unbilled-deliveries"],
     queryFn: () => authedFetch<UnbilledResponse>("/unbilled-deliveries"),
     staleTime: 30_000,
@@ -391,6 +391,8 @@ export function UnbilledDeliveriesV2() {
      RM 0.00" — read on a finance screen as "nobody is owed anything", which is
      the opposite of what an unloaded list means. Unknown until it is known. */
   const statsPending = isLoading || Boolean(error);
+  // Conts: a failed load says so on the cards, with Retry, instead of "Loading…" for ever.
+  const statsFail = { failed: Boolean(error), onRetry: () => void refetch() };
 
   return (
     <PullToRefresh onRefresh={onPullToRefresh}>
@@ -426,14 +428,14 @@ export function UnbilledDeliveriesV2() {
           tone={stats.over365Value > 0 ? "error" : undefined}
           rail="bg-err"
           active
-          pending={statsPending}
+          pending={statsPending} {...statsFail}
         />
         <StatCard
           label="Not billed"
           value={fmtRm(stats.unbilled)}
           subtitle="Scoped to current filter"
           rail="bg-primary"
-          pending={statsPending}
+          pending={statsPending} {...statsFail}
         />
         <StatCard
           label="Partly billed"
@@ -441,14 +443,14 @@ export function UnbilledDeliveriesV2() {
           subtitle={`${stats.partlyCount.toLocaleString("en-MY")} part-invoiced deliveries`}
           tone={stats.partlyValue > 0 ? "warning" : undefined}
           rail="bg-accent-bright"
-          pending={statsPending}
+          pending={statsPending} {...statsFail}
         />
         <StatCard
           label="Oldest"
           value={stats.oldest > 0 ? `${stats.oldest.toLocaleString("en-MY")} days` : "—"}
           subtitle={data?.as_of ? `As at ${fmtDate(data.as_of)}` : "Scoped to current filter"}
           rail="bg-accent"
-          pending={statsPending}
+          pending={statsPending} {...statsFail}
         />
       </div>
 
