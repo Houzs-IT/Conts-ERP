@@ -1,4 +1,5 @@
-// Puts the scheduled worker (theconts-cron, wrangler.cron.toml) live. Run by the owner, once, from the repository:
+// Puts the scheduled worker (theconts-cron, wrangler.cron.toml) live. GitHub runs it on merge (deploy-cron.yml);
+// it can also be run by hand from the repository:
 //   npx wrangler login                 sign in to the "Conts ERP" Cloudflare account (the one theconts-os is in)
 //   node scripts/cron-deploy.mjs       checks, then deploys
 //   node scripts/cron-deploy.mjs --secrets   also asks for CHANNEX_API_KEY (typed at wrangler's prompt, never shown)
@@ -57,6 +58,12 @@ if (!wrangler(['deploy', '--config', 'wrangler.cron.toml'], { inherit: true }).o
 if (process.argv.includes('--secrets')) {
   say('\nCHANNEX_API_KEY: paste the production Channex key at the prompt (it is not shown).');
   wrangler(['secret', 'put', 'CHANNEX_API_KEY', '--config', 'wrangler.cron.toml'], { inherit: true });
+} else if (process.env.CRON_CHANNEX_API_KEY) {
+  // From GitHub (deploy-cron.yml): the key comes from the repository secret and is handed to wrangler on its input.
+  const bin = path.join(ROOT, 'node_modules/wrangler/bin/wrangler.js');
+  const r = spawnSync(process.execPath, [bin, 'secret', 'put', 'CHANNEX_API_KEY', '--config', 'wrangler.cron.toml'],
+    { cwd: ROOT, encoding: 'utf8', input: process.env.CRON_CHANNEX_API_KEY });
+  say(r.status === 0 ? '\nCHANNEX_API_KEY stored from the GitHub secret.' : '\nCHANNEX_API_KEY was NOT stored (wrangler refused).');
 }
 
 const list = wrangler(['secret', 'list', '--config', 'wrangler.cron.toml']);
