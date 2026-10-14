@@ -131,7 +131,8 @@ export default function AppShell({
         {isNarrow && (
           // One row on phones: menu, logo, then search / bell / page action. The desk top bar's crumbs are
           // dropped here because each page's own title sits right below.
-          <div data-print-hide style={{ flex: 'none', display: 'flex', alignItems: 'center', gap: 10, padding: '8px 16px', background: color.card, borderBottom: `1px solid ${color.border}` }}>
+          // Installed on an iPhone the page draws under the clock and battery; the top padding clears them.
+          <div data-print-hide style={{ flex: 'none', display: 'flex', alignItems: 'center', gap: 10, padding: 'calc(8px + env(safe-area-inset-top)) 16px 8px', background: color.card, borderBottom: `1px solid ${color.border}` }}>
             {/* Phones navigate from the bottom tab bar. */}
             <Logo variant="mark" size="sm" />
             <span style={{ flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12, fontWeight: 600, letterSpacing: '0.18em', color: color.ink }}>THE CONTS</span>
