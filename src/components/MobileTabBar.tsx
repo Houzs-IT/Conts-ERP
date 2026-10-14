@@ -68,8 +68,13 @@ export default function MobileTabBar({ path, navigate }: { path: string; navigat
   );
 }
 
+type MenuLink = { key: string; label: string; path: string; count: number };
+/** A row in the phone menu: a screen, or a category whose screens open under it. */
+type MenuEntry = MenuLink & { icon: string; children?: MenuLink[] };
+
 /** Every module the person can open, grouped like the desktop sidebar: one card per group, one row per
- *  module (icon tile, name, live count, chevron), as in the phone design. System pages live under Settings. */
+ *  module (icon tile, name, live count, chevron), as in the phone design; a category opens its screens under it.
+ *  System pages live under Settings. */
 function MoreSheet({ path, navigate, onClose }: { path: string; navigate: (p: string) => void; onClose: () => void }) {
   const { user } = useSession();
   const engine = useApi<{ enabled: boolean }>('/supply-chain/engine');
@@ -80,21 +85,34 @@ function MoreSheet({ path, navigate, onClose }: { path: string; navigate: (p: st
   const pick = (w: Workspace) => { setWs(w); saveWs(w); };
   const all = useMemo(() => navFor(user!.role, !!engine.data?.enabled, user!.access).filter(g => g.label !== 'SYSTEM'), [user, engine.data?.enabled]);
   const hasSupply = all.some(g => g.workspace === 'supply');
-  const groups = useMemo(() => {
+  const groups = useMemo((): { label: string; items: MenuEntry[] }[] => {
     const needle = q.trim().toLowerCase();
     const n = (b?: BadgeKey) => (b ? Number(counts?.[b] ?? 0) : 0);
     // A search looks through both sides: people should not need to know which one a module lives in.
+    const hit = (label: string) => !needle || label.toLowerCase().includes(needle);
     return all
       .filter(g => needle || !hasSupply || g.workspace === ws)
       .map(g => ({
         label: g.label,
-        items: g.items.flatMap(it => it.children?.length
-          ? it.children.map(c => ({ key: c.key, label: c.label, path: c.path, icon: it.icon, count: n((c as { badge?: BadgeKey }).badge) }))
-          : it.path ? [{ key: it.key, label: it.label, path: it.path, icon: it.icon, count: n(it.badge) }] : [])
-          .filter(it => !needle || it.label.toLowerCase().includes(needle)),
+        // A category (Sales order, Procurement...) keeps its screens under it, as in the desktop sidebar.
+        // Matching a category's own name shows all of its screens.
+        items: g.items.flatMap((it): MenuEntry[] => {
+          if (it.children?.length) {
+            const children = it.children.filter(c => hit(it.label) || hit(c.label)).map(c => ({ key: c.key, label: c.label, path: c.path, count: n(c.badge) }));
+            return children.length ? [{ key: it.key, label: it.label, icon: it.icon, path: '', count: children.reduce((s, c) => s + c.count, 0), children }] : [];
+          }
+          return it.path && hit(it.label) ? [{ key: it.key, label: it.label, icon: it.icon, path: it.path, count: n(it.badge) }] : [];
+        }),
       }))
       .filter(g => g.items.length);
   }, [all, hasSupply, ws, q, counts]);
+  // A category starts open when it holds the page on screen, or while searching.
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const isOpen = (it: { key: string; children?: { path: string }[] }) =>
+    !!q.trim() || (expanded[it.key] ?? !!it.children?.some(c => c.path === path));
+  const countPill = (count: number) => count > 0 && (
+    <span style={{ minWidth: 24, height: 24, padding: '0 8px', borderRadius: radius.pill, display: 'grid', placeItems: 'center', fontSize: 12, fontWeight: 600, background: color.ink, color: color.card }}>{count}</span>
+  );
 
   return (
     <div role="dialog" aria-modal aria-label="All modules" style={{ position: 'fixed', inset: 0, zIndex: 60, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
@@ -135,23 +153,57 @@ function MoreSheet({ path, navigate, onClose }: { path: string; navigate: (p: st
               <span style={{ fontSize: 12, fontWeight: 600, letterSpacing: '0.1em', color: color.textMuted }}>{g.label}</span>
               <div style={{ borderRadius: 16, background: color.card, border: `1px solid ${color.border}`, overflow: 'hidden' }}>
                 {g.items.map((it, i) => {
-                  const on = path === it.path;
+                  const rowStyle = {
+                    width: '100%', minHeight: 46, padding: '0 14px', display: 'flex', alignItems: 'center', gap: 11,
+                    border: 'none', borderTop: i ? `1px solid ${color.borderMuted}` : 'none', cursor: 'pointer', textAlign: 'left', font: 'inherit', color: color.ink,
+                  } as const;
+                  const tile = (
+                    <span style={{ width: 28, height: 28, flex: 'none', borderRadius: 8, display: 'grid', placeItems: 'center', background: color.goldTint }}>
+                      <Icon name={toPascal(it.icon)} size="sm" color={color.goldInk} />
+                    </span>
+                  );
+                  if (!it.children) {
+                    const on = path === it.path;
+                    return (
+                      <button key={it.key} type="button" onClick={() => navigate(it.path)} aria-current={on ? 'page' : undefined}
+                        style={{ ...rowStyle, background: on ? color.goldTint : 'transparent' }}>
+                        {tile}
+                        <span style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: on ? 600 : 400 }}>{it.label}</span>
+                        {countPill(it.count)}
+                        <Icon name="ChevronRight" size="sm" color={color.textMuted} />
+                      </button>
+                    );
+                  }
+                  const open = isOpen(it);
                   return (
-                    <button key={it.key} type="button" onClick={() => navigate(it.path)} aria-current={on ? 'page' : undefined}
-                      style={{
-                        width: '100%', minHeight: 46, padding: '0 14px', display: 'flex', alignItems: 'center', gap: 11,
-                        border: 'none', borderTop: i ? `1px solid ${color.borderMuted}` : 'none', cursor: 'pointer', textAlign: 'left', font: 'inherit',
-                        background: on ? color.goldTint : 'transparent', color: color.ink,
-                      }}>
-                      <span style={{ width: 28, height: 28, flex: 'none', borderRadius: 8, display: 'grid', placeItems: 'center', background: color.goldTint }}>
-                        <Icon name={toPascal(it.icon)} size="sm" color={color.goldInk} />
-                      </span>
-                      <span style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: on ? 600 : 400 }}>{it.label}</span>
-                      {it.count > 0 && (
-                        <span style={{ minWidth: 24, height: 24, padding: '0 8px', borderRadius: radius.pill, display: 'grid', placeItems: 'center', fontSize: 12, fontWeight: 600, background: color.ink, color: color.card }}>{it.count}</span>
+                    <div key={it.key}>
+                      <button type="button" aria-expanded={open} onClick={() => setExpanded(e => ({ ...e, [it.key]: !open }))}
+                        style={{ ...rowStyle, background: 'transparent' }}>
+                        {tile}
+                        <span style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: 600 }}>{it.label}</span>
+                        {!open && countPill(it.count)}
+                        <Icon name={open ? 'ChevronDown' : 'ChevronRight'} size="sm" color={color.textMuted} />
+                      </button>
+                      {open && (
+                        // Screens sit under their category's name: indented to its text, with a guide line from its icon.
+                        <div style={{ marginInlineStart: 28, marginBlockEnd: 8, paddingInlineStart: 14, borderInlineStart: `1px solid ${color.border}`, display: 'flex', flexDirection: 'column' }}>
+                          {it.children.map(c => {
+                            const on = path === c.path;
+                            return (
+                              <button key={c.key} type="button" onClick={() => navigate(c.path)} aria-current={on ? 'page' : undefined}
+                                style={{
+                                  minHeight: 44, padding: '0 14px 0 10px', display: 'flex', alignItems: 'center', gap: 11, border: 'none', borderRadius: 10,
+                                  cursor: 'pointer', textAlign: 'left', font: 'inherit', color: on ? color.ink : color.textMuted,
+                                  background: on ? color.goldTint : 'transparent', marginInlineEnd: 8,
+                                }}>
+                                <span style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: on ? 600 : 400 }}>{c.label}</span>
+                                {countPill(c.count)}
+                              </button>
+                            );
+                          })}
+                        </div>
                       )}
-                      <Icon name="ChevronRight" size="sm" color={color.textMuted} />
-                    </button>
+                    </div>
                   );
                 })}
               </div>
