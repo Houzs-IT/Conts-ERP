@@ -1,4 +1,7 @@
-# Publishes the supply chain engine (engine/) to PRODUCTION from GitHub, by hand only.
+# Publishes the supply chain engine (engine/) to PRODUCTION from GitHub: by itself when a merge to main
+# changes it (owner, 14 Oct 2026: a merge that left the screens unpublished went unnoticed), or by hand.
+# A merge publishes only the part it changed: engine/backend is the server, engine/frontend the screens.
+# Database updates are still applied by hand first; merge engine code that needs one only after it is applied.
 # Runs the same steps as `node scripts/engine-production.mjs deploy` / `screens` on the owner's machine,
 # so the same safety check applies: the script refuses unless engine/backend/wrangler.production.toml names
 # only Conts's production worker, bucket and settings. Uses the repository secret CLOUDFLARE_API_TOKEN
@@ -6,6 +9,13 @@
 # and fails with an authentication error until the owner adds it.
 name: Deploy engine to production
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'engine/backend/**'
+      - 'engine/frontend/**'
+      - 'scripts/engine-production.mjs'
+      - '.github/workflows/deploy-engine-production.yml'
   workflow_dispatch:
     inputs:
       part:
@@ -26,19 +36,40 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Decide what to publish
+        id: part
+        env:
+          CHOSEN: ${{ inputs.part }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          part="$CHOSEN"
+          if [ -z "$part" ]; then
+            part=both
+            # Anything that stops the comparison (a first push, a history rewrite) publishes both parts.
+            if git fetch --quiet --depth=1 origin "$BEFORE" 2>/dev/null && changed=$(git diff --name-only "$BEFORE" HEAD 2>/dev/null); then
+              server=$(echo "$changed" | grep -c '^engine/backend/' || true)
+              screens=$(echo "$changed" | grep -c '^engine/frontend/' || true)
+              if [ "$server" -gt 0 ] && [ "$screens" -eq 0 ]; then part=server; fi
+              if [ "$screens" -gt 0 ] && [ "$server" -eq 0 ]; then part=screens; fi
+              # Only this file or the script changed: nothing of the engine itself to publish.
+              if [ "$screens" -eq 0 ] && [ "$server" -eq 0 ]; then part=none; fi
+            fi
+          fi
+          echo "Publishing: $part"
+          echo "part=$part" >> "$GITHUB_OUTPUT"
       - name: Install engine server
-        if: inputs.part != 'screens'
+        if: steps.part.outputs.part == 'both' || steps.part.outputs.part == 'server'
         run: npm ci
         working-directory: engine/backend
       - name: Publish engine server
-        if: inputs.part != 'screens'
+        if: steps.part.outputs.part == 'both' || steps.part.outputs.part == 'server'
         # A token without Workers permission must not stop the screens from publishing; the run still shows red.
         continue-on-error: true
         run: node scripts/engine-production.mjs deploy
       - name: Install and build engine screens
-        if: inputs.part != 'server'
+        if: steps.part.outputs.part == 'both' || steps.part.outputs.part == 'screens'
         run: npm ci && npm run build
         working-directory: engine/frontend
       - name: Publish engine screens
-        if: inputs.part != 'server'
+        if: steps.part.outputs.part == 'both' || steps.part.outputs.part == 'screens'
         run: node scripts/engine-production.mjs screens
