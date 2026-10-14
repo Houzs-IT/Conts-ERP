@@ -59,14 +59,26 @@ export function cleanKeyMove(b: Record<string, unknown>, today: string): Refusal
   return { ok: true, value: { movedOn, fromPersonId: from, toPersonId: to, note: text(b.note) } };
 }
 
-export interface SiteMeasureInput { doneOn: string; personId: number | null; note: string | null }
+export interface SiteMeasureInput { doneOn: string; personId: number | null; personIds: number[]; note: string | null }
+
+/** Several people (personIds), or the older single personId. personId answers the first, for single-person readers. */
+function cleanPeopleList(b: Record<string, unknown>): Refusal<{ personId: number | null; personIds: number[] }> {
+  let raw: unknown[];
+  if (Array.isArray(b.personIds)) raw = b.personIds;
+  else if (b.personId == null || b.personId === "") raw = [];
+  else raw = [b.personId];
+  const ids = raw.map(posInt);
+  if (ids.some((x) => x === null)) return no("person_invalid", "Pick the people from the list.");
+  const list = [...new Set(ids as number[])].slice(0, 50);
+  return { ok: true, value: { personId: list[0] ?? null, personIds: list } };
+}
 
 export function cleanSiteMeasure(b: Record<string, unknown>): Refusal<SiteMeasureInput> {
   const doneOn = String(b.doneOn ?? "");
   if (!DATE.test(doneOn)) return no("date_required", "Give the site measure date as YYYY-MM-DD.");
-  const person = b.personId == null || b.personId === "" ? null : posInt(b.personId);
-  if (b.personId != null && b.personId !== "" && person === null) return no("person_invalid", "Pick the person from the list.");
-  return { ok: true, value: { doneOn, personId: person, note: text(b.note) } };
+  const people = cleanPeopleList(b);
+  if (!people.ok) return people;
+  return { ok: true, value: { doneOn, ...people.value, note: text(b.note, 2000) } };
 }
 
 export const DESIGN_FILE_TYPES: Readonly<Record<string, string>> = {
@@ -110,7 +122,7 @@ const pastDate = (x: unknown, today: string): Refusal<string> => {
   return { ok: true, value: s };
 };
 
-export interface DesignLinkInput { kind: "2d" | "3d" | "other"; url: string; submittedOn: string; personId: number | null; nextPersonId: number | null; note: string | null }
+export interface DesignLinkInput { kind: "2d" | "3d" | "other"; url: string; submittedOn: string; personId: number | null; personIds: number[]; nextPersonId: number | null; note: string | null }
 
 /** A design submission given as a link (3D is always a link). nextPersonId (the 2D PIC) applies to 3D only. */
 export function cleanDesignLink(b: Record<string, unknown>, today: string): Refusal<DesignLinkInput> {
@@ -120,10 +132,10 @@ export function cleanDesignLink(b: Record<string, unknown>, today: string): Refu
   if (!/^https?:\/\/\S+$/i.test(url) || url.length > 2000) return no("url_invalid", "Paste the full link, starting with https://.");
   const on = pastDate(b.submittedOn, today);
   if (!on.ok) return on;
-  const person = optPerson(b.personId);
+  const people = cleanPeopleList(b);
   const next = optPerson(b.nextPersonId);
-  if (person === false || next === false) return no("person_invalid", "Pick the people from the list.");
-  return { ok: true, value: { kind, url, submittedOn: on.value, personId: person, nextPersonId: kind === "3d" ? next : null, note: text(b.note) } };
+  if (!people.ok || next === false) return no("person_invalid", "Pick the people from the list.");
+  return { ok: true, value: { kind, url, submittedOn: on.value, ...people.value, nextPersonId: kind === "3d" ? next : null, note: text(b.note) } };
 }
 
 export interface DesignNoteInput { kind: "2d" | "3d"; notedOn: string; requestedByPersonId: number | null; requestedByText: string | null; note: string }
@@ -139,4 +151,34 @@ export function cleanDesignNote(b: Record<string, unknown>, today: string): Refu
   const note = text(b.note, 2000);
   if (!note) return no("note_required", "Say what to change.");
   return { ok: true, value: { kind, notedOn: on.value, requestedByPersonId: person, requestedByText: person ? null : text(b.requestedByText, 120), note } };
+}
+
+export interface DesignFilePatch { personIds?: number[]; personId?: number | null; nextPersonId?: number | null; submittedOn?: string; url?: string; note?: string | null }
+
+/** An edit to a design version: only the fields sent are checked and returned. */
+export function cleanDesignFilePatch(b: Record<string, unknown>, today: string): Refusal<DesignFilePatch> {
+  const out: DesignFilePatch = {};
+  if ("personIds" in b) {
+    const p = cleanPeopleList({ personIds: b.personIds });
+    if (!p.ok) return p;
+    out.personIds = p.value.personIds;
+    out.personId = p.value.personId;
+  }
+  if ("nextPersonId" in b) {
+    const n = optPerson(b.nextPersonId);
+    if (n === false) return no("person_invalid", "Pick the people from the list.");
+    out.nextPersonId = n;
+  }
+  if ("submittedOn" in b) {
+    const on = pastDate(b.submittedOn, today);
+    if (!on.ok) return on;
+    out.submittedOn = on.value;
+  }
+  if ("url" in b) {
+    const url = String(b.url ?? "").trim();
+    if (!/^https?:\/\/\S+$/i.test(url) || url.length > 2000) return no("url_invalid", "Paste the full link, starting with https://.");
+    out.url = url;
+  }
+  if ("note" in b) out.note = text(b.note);
+  return { ok: true, value: out };
 }

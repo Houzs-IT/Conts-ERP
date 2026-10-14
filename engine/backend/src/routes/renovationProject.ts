@@ -25,7 +25,7 @@ import { BOARD_CHECKLIST_KEYS, loadProjectRows, loadRenovationFacts, type Db } f
 import { computeProjectView } from "../services/renovation/view";
 import { boardRowOf } from "../services/renovation/boardRow";
 import {
-  cleanAttending, cleanDesignKind, cleanDesignLink, cleanDesignNote, cleanHold, cleanKeyMove, cleanManualStep, cleanPerson, cleanSiteMeasure,
+  cleanAttending, cleanDesignFilePatch, cleanDesignKind, cleanDesignLink, cleanDesignNote, cleanHold, cleanKeyMove, cleanManualStep, cleanPerson, cleanSiteMeasure,
   DESIGN_FILE_MAX, DESIGN_FILE_TYPES,
 } from "../services/renovation/records";
 import { buildProcurementView, cleanCategoryDates, cleanSubDates, type GroupDefRow, type ProcRow, type SubDefRow } from "../services/renovation/procurement";
@@ -210,7 +210,11 @@ app.get("/design-records", requirePageAccess("projects.list"), async (c) => {
   if (c.req.query("projectId") && !pid) return c.json({ error: "invalid_id" }, 400);
   const measures = await db(c).prepare(
     `SELECT r.id::int AS id, r.project_id::int AS project_id, r.kind, r.done_on::text AS done_on, r.person_id::int AS person_id, pp.name AS person_name,
-            r.note, r.recorded_by::int AS recorded_by, r.created_at, r.source, r.source_ref
+            r.note, r.recorded_by::int AS recorded_by, r.created_at, r.source, r.source_ref,
+            coalesce((SELECT json_agg(json_build_object('id', x.id::int, 'name', x.name) ORDER BY lower(x.name))
+                        FROM project_design_record_people rp JOIN project_people x ON x.id = rp.person_id WHERE rp.record_id = r.id), '[]'::json) AS people,
+            coalesce((SELECT json_agg(json_build_object('id', rf.id::int, 'file_name', rf.file_name, 'r2_key', rf.r2_key, 'content_type', rf.content_type) ORDER BY rf.id)
+                        FROM project_design_record_files rf WHERE rf.record_id = r.id), '[]'::json) AS files
        FROM project_design_records r JOIN projects p ON p.id = r.project_id LEFT JOIN project_people pp ON pp.id = r.person_id
       WHERE (?::bigint IS NULL OR r.project_id = ?::bigint)${coSql(c, "p.company_id")}
       ORDER BY r.done_on DESC NULLS LAST, r.id DESC LIMIT 2000`,
@@ -218,7 +222,9 @@ app.get("/design-records", requirePageAccess("projects.list"), async (c) => {
   const files = await db(c).prepare(
     `SELECT f.id::int AS id, f.project_id::int AS project_id, f.kind, f.version, f.file_name, f.content_type, f.size_bytes, f.r2_key, f.external_url,
             f.person_id::int AS person_id, pp.name AS person_name, f.uploaded_by::int AS uploaded_by, u.name AS uploaded_by_name, f.uploaded_at, f.note,
-            f.submitted_on::text AS submitted_on, f.next_person_id::int AS next_person_id, np.name AS next_person_name, f.source, f.source_ref
+            f.submitted_on::text AS submitted_on, f.next_person_id::int AS next_person_id, np.name AS next_person_name, f.source, f.source_ref,
+            coalesce((SELECT json_agg(json_build_object('id', x.id::int, 'name', x.name) ORDER BY lower(x.name))
+                        FROM project_design_file_people fp JOIN project_people x ON x.id = fp.person_id WHERE fp.file_id = f.id), '[]'::json) AS people
        FROM project_design_files f JOIN projects p ON p.id = f.project_id
        LEFT JOIN project_people pp ON pp.id = f.person_id LEFT JOIN project_people np ON np.id = f.next_person_id
        LEFT JOIN users u ON u.id = f.uploaded_by
@@ -227,7 +233,8 @@ app.get("/design-records", requirePageAccess("projects.list"), async (c) => {
   ).bind(pid, pid).all();
   const notes = await db(c).prepare(
     `SELECT n.id::int AS id, n.project_id::int AS project_id, n.kind, n.noted_on::text AS noted_on, n.requested_by_person_id::int AS requested_by_person_id,
-            pp.name AS requested_by_person_name, n.requested_by_text, n.note, n.created_at, u.name AS created_by_name
+            pp.name AS requested_by_person_name, n.requested_by_text, n.note, n.created_at, u.name AS created_by_name,
+            n.closed_by_file_id::int AS closed_by_file_id, n.closed_at
        FROM project_design_notes n JOIN projects p ON p.id = n.project_id
        LEFT JOIN project_people pp ON pp.id = n.requested_by_person_id LEFT JOIN users u ON u.id = n.created_by
       WHERE (?::bigint IS NULL OR n.project_id = ?::bigint)${coSql(c, "p.company_id")}
@@ -445,6 +452,69 @@ app.post("/:id/key-moves", requirePermission("projects.write"), async (c) => {
   return c.json({ id: row?.id }, 201);
 });
 
+async function keyMoveOf(c: Ctx, moveId: number) {
+  return db(c).prepare(
+    `SELECT km.id::int AS id, km.project_id::int AS project_id, km.company_id::int AS company_id, km.moved_on::text AS moved_on,
+            fp.name AS from_name, tp.name AS to_name
+       FROM project_key_moves km JOIN projects p ON p.id = km.project_id
+       LEFT JOIN project_people fp ON fp.id = km.from_person_id LEFT JOIN project_people tp ON tp.id = km.to_person_id
+      WHERE km.id = ?${coSql(c, "p.company_id")}`,
+  ).bind(moveId).first<{ id: number; project_id: number; company_id: number; moved_on: string; from_name: string | null; to_name: string | null }>();
+}
+const keyMoveText = (on: string, from: string | null, to: string | null) => `${on}: ${from ?? "-"} to ${to ?? "-"}`;
+
+app.patch("/key-moves/:moveId", requirePermission("projects.write"), async (c) => {
+  const moveId = parseId(c.req.param("moveId"));
+  if (!moveId) return c.json({ error: "invalid_id" }, 400);
+  const m = await keyMoveOf(c, moveId);
+  if (!m) return c.json({ error: "not_found" }, 404);
+  const v = cleanKeyMove(await body(c), todayMyt());
+  if (!v.ok) return c.json(v, 400);
+  if (await peopleRefusal(c, m.company_id, [v.value.fromPersonId, v.value.toPersonId])) return c.json({ error: "person_not_found", message: "Pick the people from the list." }, 400);
+  await db(c).batch!([
+    db(c).prepare(
+      `INSERT INTO project_activity (project_id, action, from_value, to_value, user_id, company_id)
+       SELECT ?, 'key_move_edited', ?, ? || ': ' || coalesce((SELECT name FROM project_people WHERE id = ?), '-') || ' to '
+              || coalesce((SELECT name FROM project_people WHERE id = ?), '-'), ?, ?`,
+    ).bind(m.project_id, keyMoveText(m.moved_on, m.from_name, m.to_name), v.value.movedOn, v.value.fromPersonId, v.value.toPersonId, userId(c), m.company_id),
+    db(c).prepare(`UPDATE project_key_moves SET moved_on = ?::date, from_person_id = ?, to_person_id = ?, note = ? WHERE id = ?`)
+      .bind(v.value.movedOn, v.value.fromPersonId, v.value.toPersonId, v.value.note, moveId),
+  ]);
+  return c.json({ ok: true });
+});
+
+app.delete("/key-moves/:moveId", requirePermission("projects.write"), async (c) => {
+  const moveId = parseId(c.req.param("moveId"));
+  if (!moveId) return c.json({ error: "invalid_id" }, 400);
+  const m = await keyMoveOf(c, moveId);
+  if (!m) return c.json({ error: "not_found" }, 404);
+  await db(c).batch!([
+    db(c).prepare(`INSERT INTO project_activity (project_id, action, from_value, user_id, company_id) VALUES (?, 'key_move_deleted', ?, ?, ?)`)
+      .bind(m.project_id, keyMoveText(m.moved_on, m.from_name, m.to_name), userId(c), m.company_id),
+    db(c).prepare(`DELETE FROM project_key_moves WHERE id = ?`).bind(moveId),
+  ]);
+  return c.json({ ok: true });
+});
+
+/** The several PICs of an Onsite entry or a design submission (migration 0114); person_id keeps the first. */
+function peopleInsert(c: Ctx, table: "project_design_record_people" | "project_design_file_people", col: "record_id" | "file_id", rowId: number, ids: number[]) {
+  return db(c).prepare(
+    `INSERT INTO ${table} (${col}, person_id) SELECT ?::bigint, (x)::bigint FROM jsonb_array_elements_text(?::text::jsonb) AS x ON CONFLICT DO NOTHING`,
+  ).bind(rowId, JSON.stringify(ids.map(String)));
+}
+
+/** After a design version is saved: its PICs, and (a 2D version) every 2D amendment request still open, which it answers. */
+async function afterDesignFile(c: Ctx, projectId: number, kind: string, fileId: number, personIds: number[]) {
+  const stmts = [];
+  if (personIds.length) stmts.push(peopleInsert(c, "project_design_file_people", "file_id", fileId, personIds));
+  if (kind === "2d") {
+    stmts.push(db(c).prepare(
+      `UPDATE project_design_notes SET closed_by_file_id = ?, closed_at = now() WHERE project_id = ? AND kind = '2d' AND closed_by_file_id IS NULL`,
+    ).bind(fileId, projectId));
+  }
+  if (stmts.length) await db(c).batch!(stmts);
+}
+
 app.post("/:id/site-measures", requirePermission("projects.write"), async (c) => {
   const id = parseId(c.req.param("id"));
   if (!id) return c.json({ error: "invalid_id" }, 400);
@@ -452,12 +522,37 @@ app.post("/:id/site-measures", requirePermission("projects.write"), async (c) =>
   if (co == null) return c.json({ error: "not_found" }, 404);
   const v = cleanSiteMeasure(await body(c));
   if (!v.ok) return c.json(v, 400);
-  if (await peopleRefusal(c, co, [v.value.personId])) return c.json({ error: "person_not_found" }, 400);
+  if (await peopleRefusal(c, co, v.value.personIds)) return c.json({ error: "person_not_found", message: "Pick the people from the list." }, 400);
   const row = await db(c).prepare(
     `INSERT INTO project_design_records (project_id, company_id, kind, done_on, person_id, note, recorded_by)
      VALUES (?, ?, 'site_measure', ?::date, ?, ?, ?) RETURNING id::int AS id`,
   ).bind(id, co, v.value.doneOn, v.value.personId, v.value.note, userId(c)).first<{ id: number }>();
+  if (row && v.value.personIds.length) await peopleInsert(c, "project_design_record_people", "record_id", row.id, v.value.personIds).run();
   return c.json({ id: row?.id }, 201);
+});
+
+/* One photo or file on an Onsite entry: raw body, ?fileName=. Same types and size limit as design files. */
+app.post("/:id/site-measures/:recordId/files", requirePermission("projects.write"), async (c) => {
+  const id = parseId(c.req.param("id"));
+  const recordId = parseId(c.req.param("recordId"));
+  if (!id || !recordId) return c.json({ error: "invalid_id" }, 400);
+  if ((await projectCompany(c, id)) == null) return c.json({ error: "not_found" }, 404);
+  const rec = await db(c).prepare(`SELECT id FROM project_design_records WHERE id = ? AND project_id = ?`).bind(recordId, id).first();
+  if (!rec) return c.json({ error: "not_found" }, 404);
+  const type = (c.req.header("content-type") || "").split(";")[0]!.trim().toLowerCase();
+  const ext = DESIGN_FILE_TYPES[type];
+  if (!ext) return c.json({ error: "unsupported_type", message: "PDF, image, DWG or ZIP files only." }, 415);
+  const buf = await c.req.arrayBuffer();
+  if (!buf.byteLength) return c.json({ error: "empty" }, 400);
+  if (buf.byteLength > DESIGN_FILE_MAX) return c.json({ error: "too_large", message: "A file can be up to 25 MB." }, 413);
+  const fileName = (c.req.query("fileName") ?? "").trim().slice(0, 200) || `onsite.${ext}`;
+  const key = `renovation/${id}/onsite-${recordId}-${Date.now()}-${crypto.randomUUID().slice(0, 8)}.${ext}`;
+  await c.env.POD_BUCKET.put(key, buf, { httpMetadata: { contentType: type } });
+  const row = await db(c).prepare(
+    `INSERT INTO project_design_record_files (record_id, project_id, file_name, content_type, size_bytes, r2_key, uploaded_by)
+     VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id::int AS id`,
+  ).bind(recordId, id, fileName, type, buf.byteLength, key, userId(c)).first<{ id: number }>();
+  return c.json({ id: row?.id, key }, 201);
 });
 
 /* Upload one design file: raw body, ?kind=2d|3d|other&fileName=&personId=&note=. Versions count up per kind. */
@@ -471,11 +566,14 @@ app.post("/:id/design-files", requirePermission("projects.write"), async (c) => 
   const type = (c.req.header("content-type") || "").split(";")[0]!.trim().toLowerCase();
   const ext = DESIGN_FILE_TYPES[type];
   if (!ext) return c.json({ error: "unsupported_type", message: "PDF, image, DWG or ZIP files only." }, 415);
-  const personId = c.req.query("personId") ? parseId(c.req.query("personId")) : null;
-  if (c.req.query("personId") && !personId) return c.json({ error: "person_invalid" }, 400);
+  const rawIds = (c.req.query("personIds") ?? c.req.query("personId") ?? "").split(",").map((x) => x.trim()).filter(Boolean);
+  const maybeIds = [...new Set(rawIds.map((x) => parseId(x)))];
+  if (maybeIds.some((x) => x === null)) return c.json({ error: "person_invalid" }, 400);
+  const personIds = maybeIds.filter((x): x is number => x !== null);
+  const personId = personIds[0] ?? null;
   const nextPersonId = kind === "3d" && c.req.query("nextPersonId") ? parseId(c.req.query("nextPersonId")) : null;
   if (kind === "3d" && c.req.query("nextPersonId") && !nextPersonId) return c.json({ error: "person_invalid" }, 400);
-  if (await peopleRefusal(c, co, [personId, nextPersonId])) return c.json({ error: "person_not_found" }, 400);
+  if (await peopleRefusal(c, co, [...personIds, nextPersonId])) return c.json({ error: "person_not_found" }, 400);
   const submittedOn = c.req.query("submittedOn") || todayMyt();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(submittedOn) || submittedOn > todayMyt()) return c.json({ error: "date_invalid", message: "Give a submit date that is not ahead of today." }, 400);
   const buf = await c.req.arrayBuffer();
@@ -491,6 +589,7 @@ app.post("/:id/design-files", requirePermission("projects.write"), async (c) => 
      RETURNING id::int AS id, version`,
   ).bind(id, co, kind, fileName, type, buf.byteLength, key, personId, userId(c), (c.req.query("note") ?? "").trim() || null, submittedOn, nextPersonId, id, kind)
     .first<{ id: number; version: number }>();
+  if (row) await afterDesignFile(c, id, kind, row.id, personIds);
   return c.json({ id: row?.id, version: row?.version, key }, 201);
 });
 
@@ -503,14 +602,77 @@ app.post("/:id/design-links", requirePermission("projects.write"), async (c) => 
   const v = cleanDesignLink(await body(c), todayMyt());
   if (!v.ok) return c.json(v, 400);
   const d = v.value;
-  if (await peopleRefusal(c, co, [d.personId, d.nextPersonId])) return c.json({ error: "person_not_found", message: "Pick the people from the list." }, 400);
+  if (await peopleRefusal(c, co, [...d.personIds, d.nextPersonId])) return c.json({ error: "person_not_found", message: "Pick the people from the list." }, 400);
   const name = d.url.replace(/^https?:\/\//i, "").slice(0, 200);
   const row = await db(c).prepare(
     `INSERT INTO project_design_files (project_id, company_id, kind, version, file_name, external_url, person_id, uploaded_by, note, submitted_on, next_person_id)
      SELECT ?, ?, ?, coalesce(max(version), 0) + 1, ?, ?, ?, ?, ?, ?::date, ? FROM project_design_files WHERE project_id = ? AND kind = ?
      RETURNING id::int AS id, version`,
   ).bind(id, co, d.kind, name, d.url, d.personId, userId(c), d.note, d.submittedOn, d.nextPersonId, id, d.kind).first<{ id: number; version: number }>();
+  if (row) await afterDesignFile(c, id, d.kind, row.id, d.personIds);
   return c.json({ id: row?.id, version: row?.version }, 201);
+});
+
+/* Edit a design version (owner, 14 Oct 2026): its PICs (e.g. on an imported v1 that has none), 2D PIC, submit
+   date, note, and the link of a link submission. The file itself and its version number do not change. */
+app.patch("/design-files/:fileId", requirePermission("projects.write"), async (c) => {
+  const fileId = parseId(c.req.param("fileId"));
+  if (!fileId) return c.json({ error: "invalid_id" }, 400);
+  const f = await db(c).prepare(
+    `SELECT f.id::int AS id, f.project_id::int AS project_id, p.company_id::int AS company_id, f.kind, f.version, f.external_url
+       FROM project_design_files f JOIN projects p ON p.id = f.project_id WHERE f.id = ?${coSql(c, "p.company_id")}`,
+  ).bind(fileId).first<{ id: number; project_id: number; company_id: number; kind: string; version: number; external_url: string | null }>();
+  if (!f) return c.json({ error: "not_found" }, 404);
+  const v = cleanDesignFilePatch(await body(c), todayMyt());
+  if (!v.ok) return c.json(v, 400);
+  const e = v.value;
+  if (e.url !== undefined && !f.external_url) return c.json({ error: "not_a_link", message: "This version is an uploaded file; upload a new version instead." }, 409);
+  if (await peopleRefusal(c, f.company_id, [...(e.personIds ?? []), e.nextPersonId])) return c.json({ error: "person_not_found", message: "Pick the people from the list." }, 400);
+  const stmts = [
+    db(c).prepare(
+      `UPDATE project_design_files
+          SET person_id = CASE WHEN ? THEN ?::bigint ELSE person_id END,
+              next_person_id = CASE WHEN ? THEN ?::bigint ELSE next_person_id END,
+              submitted_on = CASE WHEN ? THEN ?::date ELSE submitted_on END,
+              external_url = CASE WHEN ? THEN ? ELSE external_url END,
+              file_name = CASE WHEN ? THEN ? ELSE file_name END,
+              note = CASE WHEN ? THEN ? ELSE note END
+        WHERE id = ?`,
+    ).bind(e.personIds !== undefined, e.personId ?? null, e.nextPersonId !== undefined, e.nextPersonId ?? null,
+      e.submittedOn !== undefined, e.submittedOn ?? null, e.url !== undefined, e.url ?? null,
+      e.url !== undefined, (e.url ?? "").replace(/^https?:\/\//i, "").slice(0, 200), e.note !== undefined, e.note ?? null, fileId),
+    db(c).prepare(`INSERT INTO project_activity (project_id, action, to_value, user_id, company_id) VALUES (?, 'design_version_edited', ?, ?, ?)`)
+      .bind(f.project_id, `${f.kind} v${f.version}`, userId(c), f.company_id),
+  ];
+  if (e.personIds !== undefined) {
+    stmts.push(db(c).prepare(`DELETE FROM project_design_file_people WHERE file_id = ?`).bind(fileId));
+    if (e.personIds.length) stmts.push(peopleInsert(c, "project_design_file_people", "file_id", fileId, e.personIds));
+  }
+  await db(c).batch!(stmts);
+  return c.json({ ok: true });
+});
+
+/* Edit an Onsite entry: date, PICs and remark. */
+app.patch("/site-measures/:recordId", requirePermission("projects.write"), async (c) => {
+  const recordId = parseId(c.req.param("recordId"));
+  if (!recordId) return c.json({ error: "invalid_id" }, 400);
+  const r = await db(c).prepare(
+    `SELECT r.id::int AS id, r.project_id::int AS project_id, p.company_id::int AS company_id
+       FROM project_design_records r JOIN projects p ON p.id = r.project_id WHERE r.id = ?${coSql(c, "p.company_id")}`,
+  ).bind(recordId).first<{ id: number; project_id: number; company_id: number }>();
+  if (!r) return c.json({ error: "not_found" }, 404);
+  const v = cleanSiteMeasure(await body(c));
+  if (!v.ok) return c.json(v, 400);
+  if (await peopleRefusal(c, r.company_id, v.value.personIds)) return c.json({ error: "person_not_found", message: "Pick the people from the list." }, 400);
+  const stmts = [
+    db(c).prepare(`UPDATE project_design_records SET done_on = ?::date, person_id = ?, note = ? WHERE id = ?`).bind(v.value.doneOn, v.value.personId, v.value.note, recordId),
+    db(c).prepare(`DELETE FROM project_design_record_people WHERE record_id = ?`).bind(recordId),
+    db(c).prepare(`INSERT INTO project_activity (project_id, action, to_value, user_id, company_id) VALUES (?, 'onsite_edited', ?, ?, ?)`)
+      .bind(r.project_id, v.value.doneOn, userId(c), r.company_id),
+  ];
+  if (v.value.personIds.length) stmts.push(peopleInsert(c, "project_design_record_people", "record_id", recordId, v.value.personIds));
+  await db(c).batch!(stmts);
+  return c.json({ ok: true });
 });
 
 app.post("/:id/design-notes", requirePermission("projects.write"), async (c) => {

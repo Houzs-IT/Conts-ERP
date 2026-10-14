@@ -12,14 +12,15 @@ import { cn } from "../../../lib/utils";
 import { simpleApi, type ProcGroup, type ProcMode, type ProcSub } from "./simpleApi";
 import { errorText } from "./renovationModel";
 import { smallInput } from "./renovationUi";
+import { subDateEdit } from "./designModel";
 
-const MODE_LABEL: Record<ProcMode, string> = { follow: "Follow category", own: "Own dates", none: "No dates" };
 
 export function ProcurementPanel({ projectId, canWrite, onError }: { projectId: number; canWrite: boolean; onError: (t: string) => void }) {
   const q = useQuery(["renovation", "procurement", projectId], () => simpleApi.procurement(projectId), [projectId]);
   const [groups, setGroups] = useState<ProcGroup[] | null>(null);
   const [open, setOpen] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
+  const [onlyChanged, setOnlyChanged] = useState(false);
   useEffect(() => { if (q.data) setGroups(q.data.groups); }, [q.data]);
 
   async function save(fn: () => Promise<{ groups: ProcGroup[] }>) {
@@ -30,8 +31,13 @@ export function ProcurementPanel({ projectId, canWrite, onError }: { projectId: 
 
   return (
     <section className="rounded-lg border border-border bg-surface p-3">
-      <h3 className="flex items-center gap-1.5 text-sm font-semibold text-ink"><PackageCheck size={14} />Procurement details</h3>
-      <p className="mt-0.5 text-[11px] text-ink-secondary">PO and delivery date per category. Sub-categories follow their category unless given their own dates.</p>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="flex items-center gap-1.5 text-sm font-semibold text-ink"><PackageCheck size={14} />Procurement details</h3>
+        <label className="flex items-center gap-1 text-[11px] text-ink-secondary">
+          <input type="checkbox" checked={onlyChanged} onChange={(e) => setOnlyChanged(e.target.checked)} />Show only changed
+        </label>
+      </div>
+      <p className="mt-0.5 text-[11px] text-ink-secondary">PO and delivery date per category. Type a sub-category date to give it its own; empty both for no dates.</p>
       {q.error && !groups && <p role="alert" className="mt-2 text-xs text-err">Procurement dates could not be loaded: {q.error}</p>}
       {!groups && !q.error && <p className="mt-2 text-xs text-ink-secondary">Loading...</p>}
       {groups && (
@@ -40,17 +46,23 @@ export function ProcurementPanel({ projectId, canWrite, onError }: { projectId: 
           <span className="col-span-2">Category</span><span>PO date</span><span>Delivery date</span>
         </div>
         <ul className="mt-1 divide-y divide-border rounded-md border border-border">
+          {onlyChanged && !groups.some((g) => g.poDate || g.deliveryDate || g.subs.some((s) => s.mode !== "follow")) && (
+            <li className="px-2 py-2 text-xs text-ink-secondary">No dates set yet.</li>
+          )}
           {groups.map((g) => {
-            const isOpen = open.has(g.code);
-            const own = g.subs.filter((s) => s.mode !== "follow").length;
+            const changed = g.subs.filter((s) => s.mode !== "follow");
+            if (onlyChanged && !g.poDate && !g.deliveryDate && changed.length === 0) return null;
+            const subs = onlyChanged ? changed : g.subs;
+            const isOpen = onlyChanged ? changed.length > 0 : open.has(g.code);
+            const own = changed.length;
             return (
               <li key={g.code} className="px-2 py-1.5">
                 <div className="grid grid-cols-2 items-center gap-1 sm:grid-cols-[minmax(0,1fr)_8rem_8.5rem_8.5rem]">
-                  <button type="button" onClick={() => toggle(g.code)} aria-expanded={isOpen} disabled={g.subs.length === 0}
+                  <button type="button" onClick={() => toggle(g.code)} aria-expanded={isOpen} disabled={g.subs.length === 0 || onlyChanged}
                     className="col-span-2 flex min-w-0 items-center gap-1 text-left">
                     {g.subs.length > 0 ? (isOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />) : <span className="w-[13px]" />}
                     <span className="truncate text-xs font-semibold text-ink">{g.label}</span>
-                    {g.subs.length > 0 && <span className="shrink-0 text-[10px] text-ink-secondary">{g.subs.length} sub{own ? ` · ${own} own` : ""}</span>}
+                    {g.subs.length > 0 && <span className="shrink-0 text-[10px] text-ink-secondary">{g.subs.length} sub{own ? ` · ${own} changed` : ""}</span>}
                   </button>
                   <DateBox label={`${g.label} PO date`} caption="PO" value={g.poDate} disabled={!canWrite || busy}
                     onChange={(v) => save(() => simpleApi.setCategoryDates(projectId, g.code, { poDate: v, deliveryDate: g.deliveryDate }))} />
@@ -59,7 +71,7 @@ export function ProcurementPanel({ projectId, canWrite, onError }: { projectId: 
                 </div>
                 {isOpen && (
                   <ul className="mt-1 space-y-1 border-t border-dashed border-border pt-1">
-                    {g.subs.map((s) => <SubRow key={s.code} g={g} s={s} canWrite={canWrite} busy={busy}
+                    {subs.map((s) => <SubRow key={s.code} s={s} canWrite={canWrite} busy={busy}
                       onSave={(b) => save(() => simpleApi.setSubDates(projectId, g.code, s.code, b))} />)}
                   </ul>
                 )}
@@ -73,22 +85,26 @@ export function ProcurementPanel({ projectId, canWrite, onError }: { projectId: 
   );
 }
 
-function SubRow({ g, s, canWrite, busy, onSave }: { g: ProcGroup; s: ProcSub; canWrite: boolean; busy: boolean; onSave: (b: { mode: ProcMode; poDate?: string | null; deliveryDate?: string | null }) => void }) {
-  const own = s.mode === "own";
+/* Owner, 14 Oct 2026: no mode dropdown. Typing a date makes the sub-category its own; emptying both dates means no
+   dates; "follow category" (shown only when it differs) resets it. Following rows show the category's dates muted. */
+function SubRow({ s, canWrite, busy, onSave }: { s: ProcSub; canWrite: boolean; busy: boolean; onSave: (b: { mode: ProcMode; poDate?: string | null; deliveryDate?: string | null }) => void }) {
+  const follows = s.mode === "follow";
   return (
     <li className="grid grid-cols-2 items-center gap-1 sm:grid-cols-[minmax(0,1fr)_8rem_8.5rem_8.5rem]">
-      <span className="truncate pl-4 text-[11px] text-ink" title={s.label}>{s.label}</span>
-      <select aria-label={`${s.label} dates`} className={smallInput} value={s.mode} disabled={!canWrite || busy}
-        onChange={(e) => {
-          const mode = e.target.value as ProcMode;
-          onSave(mode === "own" ? { mode, poDate: s.effective.poDate ?? g.poDate, deliveryDate: s.effective.deliveryDate ?? g.deliveryDate } : { mode });
-        }}>
-        {(Object.keys(MODE_LABEL) as ProcMode[]).map((m) => <option key={m} value={m}>{MODE_LABEL[m]}</option>)}
-      </select>
-      <DateBox label={`${s.label} PO date`} caption="PO" value={s.effective.poDate} muted={!own} disabled={!canWrite || busy || !own}
-        onChange={(v) => onSave({ mode: "own", poDate: v, deliveryDate: s.stored.deliveryDate })} />
-      <DateBox label={`${s.label} delivery date`} caption="Delivery" value={s.effective.deliveryDate} min={s.effective.poDate} muted={!own} disabled={!canWrite || busy || !own}
-        onChange={(v) => onSave({ mode: "own", poDate: s.stored.poDate, deliveryDate: v })} />
+      <span className="flex min-w-0 items-center gap-1 pl-4 text-[11px] text-ink" title={s.label}>
+        <span className="truncate">{s.label}</span>
+        {!follows && <span className="shrink-0 rounded bg-primary/10 px-1 text-[9px] font-semibold uppercase text-primary">{s.mode === "none" ? "no dates" : "own"}</span>}
+      </span>
+      <span className="text-right sm:text-left">
+        {!follows && canWrite && (
+          <button type="button" disabled={busy} onClick={() => onSave({ mode: "follow" })} aria-label={`${s.label}: follow the category`}
+            className="text-[11px] text-primary hover:underline disabled:opacity-50">&#8634; follow category</button>
+        )}
+      </span>
+      <DateBox label={`${s.label} PO date`} caption="PO" value={s.effective.poDate} muted={follows} disabled={!canWrite || busy}
+        onChange={(v) => onSave(subDateEdit(s, "po", v))} />
+      <DateBox label={`${s.label} delivery date`} caption="Delivery" value={s.effective.deliveryDate} min={s.effective.poDate} muted={follows} disabled={!canWrite || busy}
+        onChange={(v) => onSave(subDateEdit(s, "delivery", v))} />
     </li>
   );
 }

@@ -94,10 +94,15 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 - libphonenumber (149 KB) is in the entry script because src/lib/format.ts formats phones; lazy-load it if the entry budget (scripts/checks/entry-bundle.mjs, 180 KB gzipped) gets tight.
 
 ## Renovation project screens (feat/reno-project-ux, migration 0111, 14 Oct 2026)
-- OPEN, before merge: apply migration 0111 on staging, then production (lead). It adds project_attendees (backfilled from sales_person_id / designer_person_id), project_procurement_dates, project_design_notes and two columns on project_design_files. The engine deploys on merge, so the migration must be on production first.
+- Done (14 Oct): migration 0111 applied on staging and production (lead); PR #245 merged. It adds project_attendees (backfilled from sales_person_id / designer_person_id), project_procurement_dates, project_design_notes and two columns on project_design_files. The engine deploys on merge, so the migration must be on production first.
 - Done (14 Oct, owner ruling): renovation projects show on the original Calendar (desktop and phone) from created date to planned handover; else actual handover, else SLA due date (project_types.sla_days, not a column yet), else 45 days marked "end estimated". Computed when read (services/renovation/calendarSpan.ts). The old Task calendar is no longer reachable from any menu.
 - Later: procurement dates (Procurement details) are meant to raise purchase orders automatically; nothing does yet (TODO(auto-PO) in engine/backend/src/services/renovation/procurement.ts).
 - The create form still asks for Sales and Designer; both become Attending. Wiring it to Project PIC / Attending waits for feat/reno-customer-info (migration 0112).
+
+## Renovation project screens, round 2 (feat/reno-project-ux-2, migration 0114, 14 Oct 2026)
+- OPEN, before merge: apply migration 0114 on staging, then production (lead). It adds several PICs per Onsite entry and per design version, Onsite photos / files, and closes 2D amendment requests by the version that answers them (existing 2D notes are closed by the next 2D version after them).
+- Person pickers still read project_people through PersonSelect; feat/people-from-users switches them to user accounts. The position after a name comes from personPosition() in PersonSelect.tsx (roles today).
+- Customer info block on the right column waits for feat/reno-customer-info (migration 0112).
 
 ## Later
 - Packages (8 Oct, chore/update-packages): Property OS has 0 flagged packages (wrangler 4.148, source-map-js, and an override pinning sharp to 0.35.5 inside wrangler's local emulator; all build/dev tools, none ran in production). Engine: the non-breaking fixes are in (hono on the server, dompurify on the screens, and build tools). Left in engine/, each needing a breaking upgrade of Houzs's code or tools: react-router 6 (moderate), wrangler's sharp and undici, esbuild, vitest, braces. Take them with the next Houzs copy.

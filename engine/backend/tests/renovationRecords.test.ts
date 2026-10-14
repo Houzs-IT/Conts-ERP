@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { cleanAttending, cleanDesignKind, cleanDesignLink, cleanDesignNote, cleanHold, cleanKeyMove, cleanManualStep, cleanPerson, cleanSiteMeasure } from "../src/services/renovation/records";
+import { cleanAttending, cleanDesignFilePatch, cleanDesignKind, cleanDesignLink, cleanDesignNote, cleanHold, cleanKeyMove, cleanManualStep, cleanPerson, cleanSiteMeasure } from "../src/services/renovation/records";
 import { boardRowOf } from "../src/services/renovation/boardRow";
 import type { ProjectFacts } from "../src/services/renovation/load";
 import type { ProjectView } from "../src/services/renovation/view";
@@ -98,7 +98,7 @@ describe("project PIC and attending (owner, 14 Oct 2026)", () => {
 describe("design: 3D / 2D submissions by link and change notes", () => {
   test("a link submission needs an http(s) address; dates default to today and never lie ahead", () => {
     expect(cleanDesignLink({ kind: "3d", url: "https://drive.example/x", personId: 3, nextPersonId: 4 }, TODAY))
-      .toEqual({ ok: true, value: { kind: "3d", url: "https://drive.example/x", submittedOn: TODAY, personId: 3, nextPersonId: 4, note: null } });
+      .toEqual({ ok: true, value: { kind: "3d", url: "https://drive.example/x", submittedOn: TODAY, personId: 3, personIds: [3], nextPersonId: 4, note: null } });
     expect(cleanDesignLink({ kind: "3d", url: "javascript:alert(1)" }, TODAY)).toMatchObject({ ok: false, error: "url_invalid" });
     expect(cleanDesignLink({ kind: "4d", url: "https://x.example" }, TODAY)).toMatchObject({ ok: false, error: "kind_invalid" });
     expect(cleanDesignLink({ kind: "2d", url: "https://x.example", submittedOn: "2026-12-01" }, TODAY)).toMatchObject({ ok: false, error: "date_in_future" });
@@ -111,5 +111,37 @@ describe("design: 3D / 2D submissions by link and change notes", () => {
     expect(cleanDesignNote({ kind: "3d", note: " " }, TODAY)).toMatchObject({ ok: false, error: "note_required" });
     expect(cleanDesignNote({ kind: "other", note: "x" }, TODAY)).toMatchObject({ ok: false, error: "kind_invalid" });
     expect(cleanDesignNote({ kind: "3d", note: "x", notedOn: "11/10/2026" }, TODAY)).toMatchObject({ ok: false, error: "date_invalid" });
+  });
+});
+
+describe("several PICs (owner, 14 Oct 2026)", () => {
+  test("onsite: personIds, de-duplicated, first one is personId; the old single personId still works", () => {
+    expect(cleanSiteMeasure({ doneOn: "2026-10-02", personIds: [5, "3", 5], note: " key from guard " }))
+      .toEqual({ ok: true, value: { doneOn: "2026-10-02", personId: 5, personIds: [5, 3], note: "key from guard" } });
+    expect(cleanSiteMeasure({ doneOn: "2026-10-02", personId: 4 })).toMatchObject({ ok: true, value: { personId: 4, personIds: [4] } });
+    expect(cleanSiteMeasure({ doneOn: "2026-10-02" })).toMatchObject({ ok: true, value: { personId: null, personIds: [] } });
+    expect(cleanSiteMeasure({ doneOn: "2026-10-02", personIds: [1, "x"] })).toMatchObject({ ok: false, error: "person_invalid" });
+  });
+  test("3D link: personIds", () => {
+    expect(cleanDesignLink({ kind: "3d", url: "https://x.example", personIds: [3, 7] }, TODAY)).toMatchObject({ ok: true, value: { personId: 3, personIds: [3, 7] } });
+  });
+});
+
+describe("editing a key move", () => {
+  test("the same rules as a new one", () => {
+    expect(cleanKeyMove({ movedOn: "2026-10-05", fromPersonId: null, toPersonId: 9 }, TODAY)).toMatchObject({ ok: true, value: { fromPersonId: null, toPersonId: 9 } });
+    expect(cleanKeyMove({ movedOn: "2026-10-05", fromPersonId: 9, toPersonId: 9 }, TODAY)).toMatchObject({ ok: false, error: "same_person" });
+  });
+});
+
+describe("editing a design version (owner, 14 Oct 2026)", () => {
+  test("only what is sent changes; PICs, 2D PIC, submit date and the link are checked like a new one", () => {
+    expect(cleanDesignFilePatch({ personIds: [4, 4, 2] }, TODAY)).toEqual({ ok: true, value: { personIds: [4, 2], personId: 4 } });
+    expect(cleanDesignFilePatch({ nextPersonId: null, submittedOn: "2026-10-01" }, TODAY)).toEqual({ ok: true, value: { nextPersonId: null, submittedOn: "2026-10-01" } });
+    expect(cleanDesignFilePatch({ url: "https://drive.example/v2" }, TODAY)).toEqual({ ok: true, value: { url: "https://drive.example/v2" } });
+    expect(cleanDesignFilePatch({ url: "ftp://x" }, TODAY)).toMatchObject({ ok: false, error: "url_invalid" });
+    expect(cleanDesignFilePatch({ submittedOn: "2026-12-01" }, TODAY)).toMatchObject({ ok: false, error: "date_in_future" });
+    expect(cleanDesignFilePatch({ personIds: ["a"] }, TODAY)).toMatchObject({ ok: false, error: "person_invalid" });
+    expect(cleanDesignFilePatch({}, TODAY)).toEqual({ ok: true, value: {} });
   });
 });

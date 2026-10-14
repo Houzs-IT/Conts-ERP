@@ -411,9 +411,9 @@ app.get("/:id", requirePageAccess("projects.list"), failClosed(async (c) => {
       WHERE g.project_id = ? ORDER BY g.created_at DESC`,
   ).bind(id).all();
   const attending = await db(c).prepare(
-    `SELECT pp.id::int AS id, pp.name, pp.active, pp.phone FROM project_attendees a JOIN project_people pp ON pp.id = a.person_id
+    `SELECT pp.id::int AS id, pp.name, pp.active, pp.phone, to_json(pp.roles) AS roles FROM project_attendees a JOIN project_people pp ON pp.id = a.person_id
       WHERE a.project_id = ? ORDER BY lower(pp.name)`,
-  ).bind(id).all<{ id: number; name: string; active: boolean; phone: string | null }>();
+  ).bind(id).all<{ id: number; name: string; active: boolean; phone: string | null; roles: string[] }>();
   const pos = new Map<string, { id: string; po_number: string; supplier_name: string | null; status: string; lines: number; received: boolean }>();
   for (const pl of f.poLines) {
     const cur = pos.get(pl.purchase_order_id) ?? { id: pl.purchase_order_id, po_number: pl.po_number, supplier_name: pl.supplier_name, status: pl.po_status, lines: 0, received: true };

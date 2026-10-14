@@ -20,3 +20,14 @@ export function keyLogRows<T extends { id: number; moved_on: string }>(moves: re
     current: i === 0,
   }));
 }
+
+export interface KeyDraft { on: string; from: number | null; to: number | null }
+
+/** Why a key pass cannot be saved yet, in words; null when it can. */
+export function keyDraftRefusal(d: KeyDraft, today: string): string | null {
+  if (!d.on) return "Give the date of the key pass.";
+  if (d.on > today) return "A key pass cannot be in the future.";
+  if (!d.to) return "Pick who received the key.";
+  if (d.from != null && d.from === d.to) return "The key cannot pass from a person to the same person.";
+  return null;
+}
