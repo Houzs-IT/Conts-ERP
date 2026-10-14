@@ -1,24 +1,25 @@
-/* The records of a simplified renovation project (owner decisions 11 Oct 2026):
-   the contract (read from the sales order only), the people on it, design (site
-   measure, 2D / 3D files) and the unit key log. Each fact lives once, in its own
-   module; this page only shows it or records it. */
+/* The records of a simplified renovation project (owner decisions 11 and 14 Oct
+   2026): the contract (read from the sales order only), the project team (Project
+   PIC and Attending) and the unit key log. Each fact lives once, in its own
+   module; this page only shows it or records it. Design lives in DesignTask.tsx. */
 
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
-import { FileText, KeyRound, Link2, Ruler, Unlink, Upload, Users } from "lucide-react";
+import { FileText, KeyRound, Link2, Plus, Unlink, UserCircle2, Users, X } from "lucide-react";
 import { Button } from "../../../components/Button";
 import { useQuery } from "../../../hooks/useQuery";
-import { simpleApi, type DesignFile, type ProjectDetailV2 } from "./simpleApi";
+import { simpleApi, type AttendingPerson, type ProjectDetailV2 } from "./simpleApi";
 import { errorText, money, shortDate } from "./renovationModel";
-import { AuthImage, Dialog, Field, inputClass } from "./renovationUi";
-import { PersonSelect } from "./PersonSelect";
+import { Dialog, Field, inputClass, smallBtn, smallInput } from "./renovationUi";
+import { PersonSelect, usePeople } from "./PersonSelect";
+import { daysBetween, keyLogRows } from "./keyLog";
 
 type OnDone = (text: string) => void;
 type OnError = (text: string) => void;
 
-const todayMyt = () => new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);
+export const todayMyt = () => new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);
 
-function Card({ title, icon, children, actions }: { title: string; icon: React.ReactNode; children: React.ReactNode; actions?: React.ReactNode }) {
+export function Card({ title, icon, children, actions }: { title: string; icon: React.ReactNode; children: React.ReactNode; actions?: React.ReactNode }) {
   return (
     <section className="rounded-lg border border-border bg-surface p-3">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
@@ -105,138 +106,155 @@ function LinkSoDialog({ projectId, onClose, onLinked }: { projectId: number; onC
   );
 }
 
+/** Project PIC (one person) and Attending (several), both from the people master (owner, 14 Oct 2026). */
 export function PeopleCard({ d, canWrite, onDone, onError }: { d: ProjectDetailV2; canWrite: boolean; onDone: OnDone; onError: OnError }) {
   const id = d.project.id;
   const save = async (b: Parameters<typeof simpleApi.setPeople>[1], text: string) => {
     try { await simpleApi.setPeople(id, b); onDone(text); } catch (e) { onError(errorText(e)); }
   };
   return (
-    <Card title="People" icon={<Users size={14} />}>
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3">
-        <Field label="Sales"><PersonSelect label="Sales" role="sales" value={d.people.sales.id} disabled={!canWrite} onChange={(v) => save({ salesPersonId: v }, "Sales person saved.")} /></Field>
-        <Field label="Designer"><PersonSelect label="Designer" role="designer" value={d.people.designer.id} disabled={!canWrite} onChange={(v) => save({ designerPersonId: v }, "Designer saved.")} /></Field>
-        <Field label="Renovation PIC"><PersonSelect label="Renovation PIC" role="reno_pic" value={d.people.renoPic.id} disabled={!canWrite} onChange={(v) => save({ renoPicPersonId: v }, "Renovation PIC saved.")} /></Field>
+    <Card title="Project team" icon={<Users size={14} />}>
+      <div className="mb-1 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-ink-secondary"><UserCircle2 size={11} />Project PIC</div>
+      <PersonSelect label="Project PIC" value={d.people.pic.id} disabled={!canWrite} placeholder="Unassigned" className={smallInput}
+        onChange={(v) => save({ picPersonId: v }, "Project PIC saved.")} />
+      <div className="mt-3 border-t border-border pt-2">
+        <AttendingPicker attending={d.people.attending} canWrite={canWrite}
+          onSave={(ids, text) => save({ attendingPersonIds: ids }, text)} />
       </div>
-      {!d.people.sales.id && d.so?.agent && <p className="mt-1 text-xs text-ink-secondary">Sales order agent: {d.so.agent}</p>}
     </Card>
   );
 }
 
-const KIND_LABEL: Record<DesignFile["kind"], string> = { "2d": "2D drawings", "3d": "3D design", other: "Other files" };
-
-export function DesignCard({ projectId, canWrite, onDone, onError }: { projectId: number; canWrite: boolean; onDone: OnDone; onError: OnError }) {
-  const q = useQuery(["renovation", "design", projectId], () => simpleApi.designRecords(projectId), [projectId]);
-  const [measureOn, setMeasureOn] = useState(todayMyt());
-  const [measurer, setMeasurer] = useState<number | null>(null);
-  const [kind, setKind] = useState<DesignFile["kind"]>("2d");
-  const [drawer, setDrawer] = useState<number | null>(null);
+/* Same look and behaviour as the exhibition "Project team" panel (Projects.tsx
+   ProjectTeamSection): chips with a remove x, a filter box, a ticked list, Add. */
+function AttendingPicker({ attending, canWrite, onSave }: {
+  attending: AttendingPerson[]; canWrite: boolean; onSave: (ids: number[], text: string) => Promise<void>;
+}) {
+  const people = usePeople();
+  const [search, setSearch] = useState("");
+  const [selected, setSelected] = useState<Set<number>>(new Set());
   const [busy, setBusy] = useState(false);
-  const [view, setView] = useState<DesignFile | null>(null);
-  const fileRef = useRef<HTMLInputElement | null>(null);
-  const files = q.data?.files ?? [];
-  const measures = q.data?.measures ?? [];
+  const taken = new Set(attending.map((a) => a.id));
+  const available = (people.data?.data ?? []).filter((p) => p.active && !taken.has(p.id));
+  const q = search.trim().toLowerCase();
+  const filtered = q ? available.filter((p) => p.name.toLowerCase().includes(q)) : available;
+  const current = attending.map((a) => a.id);
 
-  async function run(fn: () => Promise<unknown>, text: string) {
+  async function run(ids: number[], text: string) {
     setBusy(true);
-    try { await fn(); q.reload(); onDone(text); } catch (e) { onError(errorText(e)); } finally { setBusy(false); }
+    try { await onSave(ids, text); } finally { setBusy(false); }
+  }
+  function toggle(pid: number) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(pid)) next.delete(pid); else next.add(pid);
+      return next;
+    });
   }
 
   return (
-    <Card title="Design" icon={<Ruler size={14} />}>
-      <div className="text-sm">
-        <div className="text-xs font-medium text-ink-secondary">Site measure</div>
-        {measures.length === 0 ? <p className="text-ink-secondary">Not measured yet.</p> : (
-          <ul className="mt-1 space-y-0.5">{measures.map((m) => <li key={m.id}>{shortDate(m.done_on)}{m.person_name ? ` · ${m.person_name}` : ""}{m.note ? ` · ${m.note}` : ""}</li>)}</ul>
-        )}
-        {canWrite && (
-          <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-[9rem_1fr_auto] items-end">
-            <Field label="Date"><input type="date" className={inputClass} value={measureOn} max={todayMyt()} onChange={(e) => setMeasureOn(e.target.value)} /></Field>
-            <Field label="Measured by"><PersonSelect label="Measured by" role="designer" value={measurer} onChange={setMeasurer} /></Field>
-            <Button variant="secondary" disabled={busy || !measureOn} onClick={() => run(() => simpleApi.addSiteMeasure(projectId, { doneOn: measureOn, personId: measurer }), "Site measure recorded.")}>Record</Button>
-          </div>
-        )}
+    <div>
+      <div className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-ink-secondary">
+        <Users size={11} />Attending<span className="ml-auto font-mono">{attending.length}</span>
       </div>
-      <div className="mt-3 border-t border-border pt-3 text-sm">
-        {(["2d", "3d", "other"] as const).map((k) => {
-          const list = files.filter((f) => f.kind === k);
-          if (list.length === 0 && k === "other") return null;
-          return (
-            <div key={k} className="mb-2">
-              <div className="text-xs font-medium text-ink-secondary">{KIND_LABEL[k]}</div>
-              {list.length === 0 ? <p className="text-ink-secondary">None yet.</p> : (
-                <ul className="mt-0.5 space-y-0.5">
-                  {list.map((f, i) => (
-                    <li key={f.id} className="flex flex-wrap items-baseline gap-x-1">
-                      <button type="button" className="text-primary text-left" onClick={() => (f.external_url ? window.open(f.external_url, "_blank", "noopener") : setView(f))}>v{f.version} {f.file_name}</button>
-                      {i === 0 && <span className="text-xs text-synced">latest</span>}
-                      <span className="text-xs text-ink-secondary">{[f.person_name, f.uploaded_by_name ? `uploaded by ${f.uploaded_by_name}` : null, shortDate(f.uploaded_at)].filter(Boolean).join(" · ")}</span>
-                    </li>
-                  ))}
-                </ul>
+      {attending.length === 0 && <p className="text-xs text-ink-secondary">Nobody yet.</p>}
+      {attending.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {attending.map((a) => (
+            <span key={a.id} className="inline-flex items-center gap-1 rounded-full border border-border bg-surface-dim py-0.5 pl-2 pr-0.5 text-[11px]">
+              <span className="font-medium text-ink">{a.name}{a.active ? "" : " (inactive)"}</span>
+              {canWrite && (
+                <button type="button" aria-label={`Remove ${a.name}`} disabled={busy}
+                  className="rounded-full p-0.5 text-ink-secondary hover:bg-err/10 hover:text-err"
+                  onClick={() => void run(current.filter((x) => x !== a.id), `${a.name} removed from attending.`)}>
+                  <X size={11} />
+                </button>
               )}
-            </div>
-          );
-        })}
-        {canWrite && (
-          <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-[8rem_1fr_auto] items-end">
-            <Field label="Kind">
-              <select className={inputClass} value={kind} onChange={(e) => setKind(e.target.value as DesignFile["kind"])}>
-                <option value="2d">2D</option><option value="3d">3D</option><option value="other">Other</option>
-              </select>
-            </Field>
-            <Field label="Drawn by"><PersonSelect label="Drawn by" role="designer" value={drawer} onChange={setDrawer} /></Field>
-            <Button variant="secondary" icon={<Upload size={14} />} disabled={busy} onClick={() => fileRef.current?.click()}>Upload</Button>
-            <input ref={fileRef} type="file" className="hidden" accept=".pdf,.png,.jpg,.jpeg,.webp,.dwg,.zip" aria-label="Design file"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                e.target.value = "";
-                if (f) void run(() => simpleApi.uploadDesignFile(projectId, kind, f, drawer, null), `${f.name} uploaded.`);
-              }} />
-          </div>
-        )}
-      </div>
-      {view?.r2_key && (
-        <Dialog title={`v${view.version} ${view.file_name}`} onClose={() => setView(null)}>
-          {/\.(png|jpe?g|webp)$/i.test(view.r2_key)
-            ? <AuthImage path={simpleApi.fileUrl(projectId, view.r2_key)} alt={view.file_name} className="w-full rounded" />
-            : <p className="text-sm"><a className="text-primary" href={simpleApi.fileUrl(projectId, view.r2_key)} target="_blank" rel="noopener">Open the file</a></p>}
-        </Dialog>
+            </span>
+          ))}
+        </div>
       )}
-    </Card>
+      {canWrite && (
+        <div className="mt-2">
+          {people.loading ? <p className="text-xs text-ink-secondary">Loading people...</p>
+            : available.length === 0 ? <p className="text-[11px] italic text-ink-secondary">{(people.data?.data ?? []).length === 0 ? "No people yet. Add them in Project Maintenance." : "Everyone is already attending."}</p>
+            : (
+              <>
+                <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Filter..." aria-label="Filter people" className={smallInput} />
+                <div className="mt-1 max-h-44 overflow-auto rounded border border-border">
+                  {filtered.length === 0 ? <div className="px-2 py-2 text-[11px] text-ink-secondary">No matches.</div> : filtered.map((p) => (
+                    <label key={p.id} className="flex cursor-pointer items-center gap-2 border-t border-border px-2 py-1.5 text-[11px] first:border-t-0 hover:bg-surface-dim">
+                      <input type="checkbox" checked={selected.has(p.id)} onChange={() => toggle(p.id)} />
+                      <span className="truncate text-ink">{p.name}</span>
+                      {p.phone && <span className="ml-auto shrink-0 font-mono text-[10px] text-ink-secondary">{p.phone}</span>}
+                    </label>
+                  ))}
+                </div>
+                <button type="button" disabled={busy || selected.size === 0}
+                  onClick={() => {
+                    const add = [...selected].filter((x) => !taken.has(x));
+                    void run([...current, ...add], `${add.length} added to attending.`).then(() => { setSelected(new Set()); setSearch(""); });
+                  }}
+                  className="mt-2 inline-flex w-full items-center justify-center gap-1 rounded border border-primary/40 bg-surface px-2 py-1.5 text-[11px] font-semibold text-primary hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50">
+                  <Plus size={11} /> Add{selected.size > 0 ? ` ${selected.size} selected` : ""}
+                </button>
+              </>
+            )}
+        </div>
+      )}
+    </div>
   );
 }
 
+/** The unit key: current holder, every move newest first, and an always-open add row (owner, 14 Oct 2026). */
 export function KeyCard({ d, canWrite, onDone, onError }: { d: ProjectDetailV2; canWrite: boolean; onDone: OnDone; onError: OnError }) {
   const id = d.project.id;
   const q = useQuery(["renovation", "keys", id], () => simpleApi.keyLog(id), [id]);
-  const [adding, setAdding] = useState(false);
-  const [from, setFrom] = useState<number | null>(d.keyHolder?.personId ?? null);
+  const [from, setFrom] = useState<number | null>(null);
   const [to, setTo] = useState<number | null>(null);
   const [on, setOn] = useState(todayMyt());
   const [busy, setBusy] = useState(false);
-  const rows = q.data?.data ?? [];
+  const today = todayMyt();
+  const rows = keyLogRows(q.data?.data ?? [], today);
+  const holder = d.keyHolder;
   return (
-    <Card title="Unit key" icon={<KeyRound size={14} />} actions={canWrite && !adding ? <Button variant="ghost" onClick={() => { setFrom(d.keyHolder?.personId ?? null); setAdding(true); }}>Record a pass</Button> : undefined}>
-      <p className="text-sm">{d.keyHolder ? <>With <span className="font-medium">{d.keyHolder.name ?? "someone not in the list"}</span> since {shortDate(d.keyHolder.movedOn)}</> : <span className="text-ink-secondary">No key pass recorded.</span>}</p>
-      {adding && (
-        <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
-          <Field label="Date"><input type="date" className={inputClass} value={on} max={todayMyt()} onChange={(e) => setOn(e.target.value)} /></Field>
-          <Field label="Passed by"><PersonSelect label="Passed by" value={from} onChange={setFrom} /></Field>
-          <Field label="Received by"><PersonSelect label="Received by" value={to} onChange={setTo} /></Field>
-          <div className="sm:col-span-3 flex justify-end gap-2">
-            <Button variant="secondary" onClick={() => setAdding(false)}>Cancel</Button>
-            <Button disabled={busy || (!from && !to)} onClick={async () => {
-              setBusy(true);
-              try { await simpleApi.addKeyMove(id, { movedOn: on, fromPersonId: from, toPersonId: to }); setAdding(false); q.reload(); onDone("Key pass recorded."); }
-              catch (e) { onError(errorText(e)); } finally { setBusy(false); }
-            }}>Save</Button>
-          </div>
+    <Card title="Unit key" icon={<KeyRound size={14} />}>
+      <p className="text-xs">
+        {holder
+          ? <>With <span className="font-semibold text-ink">{holder.name ?? "someone not in the list"}</span> since {shortDate(holder.movedOn)} · {daysBetween(holder.movedOn, today)} day{daysBetween(holder.movedOn, today) === 1 ? "" : "s"}</>
+          : <span className="text-ink-secondary">No key pass recorded.</span>}
+      </p>
+      {canWrite && (
+        <div className="mt-2 grid grid-cols-2 items-center gap-1">
+          <input type="date" aria-label="Key pass date" className={smallInput} value={on} max={today} onChange={(e) => setOn(e.target.value)} />
+          <PersonSelect label="Passed by" placeholder="Passed by" value={from} onChange={setFrom} className={smallInput} />
+          <PersonSelect label="Received by" placeholder="Received by" value={to} onChange={setTo} className={smallInput} />
+          <Button variant="secondary" className={smallBtn} disabled={busy || !to || !on} onClick={async () => {
+            setBusy(true);
+            try { await simpleApi.addKeyMove(id, { movedOn: on, fromPersonId: from, toPersonId: to }); setFrom(null); setTo(null); q.reload(); onDone("Key pass recorded."); }
+            catch (e) { onError(errorText(e)); } finally { setBusy(false); }
+          }}>Add</Button>
         </div>
       )}
+      {q.loading && rows.length === 0 && <p className="mt-2 text-xs text-ink-secondary">Loading key log...</p>}
       {rows.length > 0 && (
-        <ul className="mt-2 divide-y divide-border text-xs">
-          {rows.slice(0, 8).map((r) => <li key={r.id} className="py-1">{shortDate(r.moved_on)} · {r.from_person_name ?? "-"} to {r.to_person_name ?? "-"}{r.note ? ` · ${r.note}` : ""}</li>)}
-        </ul>
+        <div className="mt-2 max-h-72 overflow-auto">
+          <table className="w-full text-[11px]">
+            <thead className="sticky top-0 bg-surface text-left text-ink-secondary">
+              <tr><th className="py-1 pr-2 font-medium">Date</th><th className="py-1 pr-2 font-medium">Passed by</th><th className="py-1 pr-2 font-medium">Received by</th><th className="py-1 text-right font-medium">Days</th></tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {rows.map((r) => (
+                <tr key={r.id} className={r.current ? "font-medium text-ink" : "text-ink"}>
+                  <td className="whitespace-nowrap py-1 pr-2">{shortDate(r.moved_on)}</td>
+                  <td className="py-1 pr-2">{r.from_person_name ?? "-"}</td>
+                  <td className="py-1 pr-2">{r.to_person_name ?? "-"}</td>
+                  <td className="py-1 text-right tabular-nums">{r.daysHeld}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </Card>
   );

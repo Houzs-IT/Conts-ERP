@@ -91,3 +91,52 @@ export function cleanHold(b: Record<string, unknown>): Refusal<{ flag: HoldFlag;
   if (flag !== "in_defect" && flag !== "on_hold") return no("flag_invalid", "Choose In defect or On hold.");
   return { ok: true, value: { flag, note: text(b.note) } };
 }
+
+/** Attending people of a project (owner, 14 Oct 2026): the whole set, replacing what was there. */
+export function cleanAttending(b: Record<string, unknown>): Refusal<number[]> {
+  if (!Array.isArray(b.attendingPersonIds)) return no("person_invalid", "Pick the people from the list.");
+  const ids = b.attendingPersonIds.map(posInt);
+  if (ids.some((x) => x === null)) return no("person_invalid", "Pick the people from the list.");
+  const list = [...new Set(ids as number[])];
+  if (list.length > 100) return no("too_many", "That is more people than a project can list.");
+  return { ok: true, value: list };
+}
+
+const optPerson = (x: unknown): number | null | false => (x == null || x === "" ? null : posInt(x) ?? false);
+const pastDate = (x: unknown, today: string): Refusal<string> => {
+  const s = x == null || x === "" ? today : String(x);
+  if (!DATE.test(s)) return no("date_invalid", "Give the date as YYYY-MM-DD.");
+  if (s > today) return no("date_in_future", "That date is still ahead.");
+  return { ok: true, value: s };
+};
+
+export interface DesignLinkInput { kind: "2d" | "3d" | "other"; url: string; submittedOn: string; personId: number | null; nextPersonId: number | null; note: string | null }
+
+/** A design submission given as a link (3D is always a link). nextPersonId (the 2D PIC) applies to 3D only. */
+export function cleanDesignLink(b: Record<string, unknown>, today: string): Refusal<DesignLinkInput> {
+  const kind = cleanDesignKind(b.kind);
+  if (!kind) return no("kind_invalid", "Say whether this is a 2D, 3D or other submission.");
+  const url = String(b.url ?? "").trim();
+  if (!/^https?:\/\/\S+$/i.test(url) || url.length > 2000) return no("url_invalid", "Paste the full link, starting with https://.");
+  const on = pastDate(b.submittedOn, today);
+  if (!on.ok) return on;
+  const person = optPerson(b.personId);
+  const next = optPerson(b.nextPersonId);
+  if (person === false || next === false) return no("person_invalid", "Pick the people from the list.");
+  return { ok: true, value: { kind, url, submittedOn: on.value, personId: person, nextPersonId: kind === "3d" ? next : null, note: text(b.note) } };
+}
+
+export interface DesignNoteInput { kind: "2d" | "3d"; notedOn: string; requestedByPersonId: number | null; requestedByText: string | null; note: string }
+
+/** A change request on the 3D or the 2D: when, who asked (a person, free text or nobody), what to change. */
+export function cleanDesignNote(b: Record<string, unknown>, today: string): Refusal<DesignNoteInput> {
+  const kind = String(b.kind ?? "").toLowerCase();
+  if (kind !== "2d" && kind !== "3d") return no("kind_invalid", "A note belongs to the 3D or the 2D.");
+  const on = pastDate(b.notedOn, today);
+  if (!on.ok) return on;
+  const person = optPerson(b.requestedByPersonId);
+  if (person === false) return no("person_invalid", "Pick the person from the list.");
+  const note = text(b.note, 2000);
+  if (!note) return no("note_required", "Say what to change.");
+  return { ok: true, value: { kind, notedOn: on.value, requestedByPersonId: person, requestedByText: person ? null : text(b.requestedByText, 120), note } };
+}

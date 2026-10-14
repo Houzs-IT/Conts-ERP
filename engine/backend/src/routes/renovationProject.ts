@@ -6,7 +6,8 @@
      GET /board-rows                 board rows (decision 7 columns)
      GET /people?role=&active=       people master
      GET /key-log?projectId=         unit key moves
-     GET /design-records?projectId=  site measures and design files
+     GET /design-records?projectId=  site measures, design files and design notes
+     GET /:id/procurement            PO / delivery dates per catalog category and sub-category
      GET /:id/step                   current step, derived step, manual step, hold, steps, history
    Writes: people, flow steps, task categories (Project Maintenance); manual step,
    hold flag, people on a project, key moves, site measures, design files, SO
@@ -23,7 +24,11 @@ import { FLOW_STEP_KEYS, PERSON_ROLES, isFlowStepKey, taskCategoryDef } from "..
 import { BOARD_CHECKLIST_KEYS, loadProjectRows, loadRenovationFacts, type Db } from "../services/renovation/load";
 import { computeProjectView } from "../services/renovation/view";
 import { boardRowOf } from "../services/renovation/boardRow";
-import { cleanDesignKind, cleanHold, cleanKeyMove, cleanManualStep, cleanPerson, cleanSiteMeasure, DESIGN_FILE_MAX, DESIGN_FILE_TYPES } from "../services/renovation/records";
+import {
+  cleanAttending, cleanDesignKind, cleanDesignLink, cleanDesignNote, cleanHold, cleanKeyMove, cleanManualStep, cleanPerson, cleanSiteMeasure,
+  DESIGN_FILE_MAX, DESIGN_FILE_TYPES,
+} from "../services/renovation/records";
+import { buildProcurementView, cleanCategoryDates, cleanSubDates, type GroupDefRow, type ProcRow, type SubDefRow } from "../services/renovation/procurement";
 import { createProjectFromSo, linkSoToProject, unlinkSoFromProject } from "../services/renovation/soLink";
 import { manualTaskRow, plannedDatesRefusal } from "../services/renovation/tradeTasks";
 import { writeCachedStage } from "../services/renovation/contractSync";
@@ -34,6 +39,7 @@ const app = new Hono<{ Bindings: Env }>();
 
 const db = (c: Ctx) => c.env.DB as unknown as Db;
 const userId = (c: Ctx): number => Number(c.get("user")?.id ?? 0);
+const userName = (c: Ctx): string => String(c.get("user").name || userId(c));
 const coSql = (c: Ctx, col = "company_id") => activeCompanySql(c, col);
 const body = async (c: Ctx): Promise<Record<string, unknown>> => (await c.req.json<Record<string, unknown>>().catch(() => ({}))) ?? {};
 
@@ -212,13 +218,22 @@ app.get("/design-records", requirePageAccess("projects.list"), async (c) => {
   const files = await db(c).prepare(
     `SELECT f.id::int AS id, f.project_id::int AS project_id, f.kind, f.version, f.file_name, f.content_type, f.size_bytes, f.r2_key, f.external_url,
             f.person_id::int AS person_id, pp.name AS person_name, f.uploaded_by::int AS uploaded_by, u.name AS uploaded_by_name, f.uploaded_at, f.note,
-            f.source, f.source_ref
+            f.submitted_on::text AS submitted_on, f.next_person_id::int AS next_person_id, np.name AS next_person_name, f.source, f.source_ref
        FROM project_design_files f JOIN projects p ON p.id = f.project_id
-       LEFT JOIN project_people pp ON pp.id = f.person_id LEFT JOIN users u ON u.id = f.uploaded_by
+       LEFT JOIN project_people pp ON pp.id = f.person_id LEFT JOIN project_people np ON np.id = f.next_person_id
+       LEFT JOIN users u ON u.id = f.uploaded_by
       WHERE (?::bigint IS NULL OR f.project_id = ?::bigint)${coSql(c, "p.company_id")}
       ORDER BY f.project_id, f.kind, f.version DESC LIMIT 5000`,
   ).bind(pid, pid).all();
-  return c.json({ measures: measures.results ?? [], files: files.results ?? [] });
+  const notes = await db(c).prepare(
+    `SELECT n.id::int AS id, n.project_id::int AS project_id, n.kind, n.noted_on::text AS noted_on, n.requested_by_person_id::int AS requested_by_person_id,
+            pp.name AS requested_by_person_name, n.requested_by_text, n.note, n.created_at, u.name AS created_by_name
+       FROM project_design_notes n JOIN projects p ON p.id = n.project_id
+       LEFT JOIN project_people pp ON pp.id = n.requested_by_person_id LEFT JOIN users u ON u.id = n.created_by
+      WHERE (?::bigint IS NULL OR n.project_id = ?::bigint)${coSql(c, "p.company_id")}
+      ORDER BY n.project_id, n.noted_on DESC, n.id DESC LIMIT 5000`,
+  ).bind(pid, pid).all();
+  return c.json({ measures: measures.results ?? [], files: files.results ?? [], notes: notes.results ?? [] });
 });
 
 // ── SO side: projects an SO can link to, SOs a project can link ─────────
@@ -357,22 +372,61 @@ app.patch("/:id/people", requirePermission("projects.write"), async (c) => {
   const co = await projectCompany(c, id);
   if (co == null) return c.json({ error: "not_found" }, 404);
   const b = await body(c);
-  const cols: Record<string, string> = { salesPersonId: "sales_person_id", designerPersonId: "designer_person_id", renoPicPersonId: "reno_pic_person_id" };
+  // picPersonId is the Project PIC (owner, 14 Oct 2026), stored in reno_pic_person_id like renoPicPersonId.
+  const cols: Record<string, string> = { salesPersonId: "sales_person_id", designerPersonId: "designer_person_id", renoPicPersonId: "reno_pic_person_id", picPersonId: "reno_pic_person_id" };
   const sets: string[] = [];
   const args: unknown[] = [];
   const ids: Array<number | null> = [];
+  const audit: Array<{ action: string; col: string; to: number | null }> = [];
   for (const [k, col] of Object.entries(cols)) {
     if (!(k in b)) continue;
     const val = b[k] == null || b[k] === "" ? null : parseId(String(b[k]));
     if (b[k] != null && b[k] !== "" && val === null) return c.json({ error: "person_invalid" }, 400);
+    if (sets.includes(`${col} = ?`)) continue;
     sets.push(`${col} = ?`);
     args.push(val);
     ids.push(val);
+    audit.push({ action: `${col.replace(/_person_id$/, "")}_changed`, col, to: val });
   }
-  if (sets.length === 0) return c.json({ ok: true });
+  let attending: number[] | null = null;
+  if ("attendingPersonIds" in b) {
+    const a = cleanAttending(b);
+    if (!a.ok) return c.json(a, 400);
+    attending = a.value;
+    ids.push(...attending);
+  }
+  if (sets.length === 0 && attending === null) return c.json({ ok: true });
   if (await peopleRefusal(c, co, ids)) return c.json({ error: "person_not_found", message: "Pick the people from the list." }, 400);
-  await db(c).prepare(`UPDATE projects SET ${sets.join(", ")}, updated_at = to_char(timezone('UTC', now()), 'YYYY-MM-DD"T"HH24:MI:SS"Z"') WHERE id = ?`)
-    .bind(...args, id).run();
+  const nameOf = `(SELECT name FROM project_people WHERE id = ?)`;
+  const stmts = [];
+  for (const a of audit) {
+    stmts.push(db(c).prepare(
+      `INSERT INTO project_activity (project_id, action, from_value, to_value, user_id, company_id)
+       SELECT ?, ?, (SELECT pp.name FROM projects p JOIN project_people pp ON pp.id = p.${a.col} WHERE p.id = ?), ${nameOf}, ?, ?`,
+    ).bind(id, a.action, id, a.to, userId(c), co));
+  }
+  if (sets.length) {
+    stmts.push(db(c).prepare(`UPDATE projects SET ${sets.join(", ")}, updated_at = to_char(timezone('UTC', now()), 'YYYY-MM-DD"T"HH24:MI:SS"Z"') WHERE id = ?`)
+      .bind(...args, id));
+  }
+  if (attending !== null) {
+    const list = JSON.stringify(attending.map(String));
+    stmts.push(
+      db(c).prepare(
+        `INSERT INTO project_activity (project_id, action, from_value, to_value, user_id, company_id)
+         SELECT ?, 'attending_changed',
+                (SELECT string_agg(pp.name, ', ' ORDER BY lower(pp.name)) FROM project_attendees a JOIN project_people pp ON pp.id = a.person_id WHERE a.project_id = ?),
+                (SELECT string_agg(pp.name, ', ' ORDER BY lower(pp.name)) FROM project_people pp WHERE pp.id::text IN (SELECT jsonb_array_elements_text(?::text::jsonb))),
+                ?, ?`,
+      ).bind(id, id, list, userId(c), co),
+      db(c).prepare(`DELETE FROM project_attendees WHERE project_id = ? AND person_id::text NOT IN (SELECT jsonb_array_elements_text(?::text::jsonb))`).bind(id, list),
+      db(c).prepare(
+        `INSERT INTO project_attendees (project_id, person_id, created_by)
+         SELECT ?, (x)::bigint, ? FROM jsonb_array_elements_text(?::text::jsonb) AS x ON CONFLICT (project_id, person_id) DO NOTHING`,
+      ).bind(id, userId(c), list),
+    );
+  }
+  await db(c).batch!(stmts);
   return c.json({ ok: true });
 });
 
@@ -419,7 +473,11 @@ app.post("/:id/design-files", requirePermission("projects.write"), async (c) => 
   if (!ext) return c.json({ error: "unsupported_type", message: "PDF, image, DWG or ZIP files only." }, 415);
   const personId = c.req.query("personId") ? parseId(c.req.query("personId")) : null;
   if (c.req.query("personId") && !personId) return c.json({ error: "person_invalid" }, 400);
-  if (await peopleRefusal(c, co, [personId])) return c.json({ error: "person_not_found" }, 400);
+  const nextPersonId = kind === "3d" && c.req.query("nextPersonId") ? parseId(c.req.query("nextPersonId")) : null;
+  if (kind === "3d" && c.req.query("nextPersonId") && !nextPersonId) return c.json({ error: "person_invalid" }, 400);
+  if (await peopleRefusal(c, co, [personId, nextPersonId])) return c.json({ error: "person_not_found" }, 400);
+  const submittedOn = c.req.query("submittedOn") || todayMyt();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(submittedOn) || submittedOn > todayMyt()) return c.json({ error: "date_invalid", message: "Give a submit date that is not ahead of today." }, 400);
   const buf = await c.req.arrayBuffer();
   if (!buf.byteLength) return c.json({ error: "empty" }, 400);
   if (buf.byteLength > DESIGN_FILE_MAX) return c.json({ error: "too_large", message: "A design file can be up to 25 MB." }, 413);
@@ -427,13 +485,120 @@ app.post("/:id/design-files", requirePermission("projects.write"), async (c) => 
   const key = `renovation/${id}/design-${kind}-${Date.now()}-${crypto.randomUUID().slice(0, 8)}.${ext}`;
   await c.env.POD_BUCKET.put(key, buf, { httpMetadata: { contentType: type } });
   const row = await db(c).prepare(
-    `INSERT INTO project_design_files (project_id, company_id, kind, version, file_name, content_type, size_bytes, r2_key, person_id, uploaded_by, note)
-     SELECT ?, ?, ?, coalesce(max(version), 0) + 1, ?, ?, ?, ?, ?, ?, ? FROM project_design_files WHERE project_id = ? AND kind = ?
+    `INSERT INTO project_design_files (project_id, company_id, kind, version, file_name, content_type, size_bytes, r2_key, person_id, uploaded_by, note,
+                                      submitted_on, next_person_id)
+     SELECT ?, ?, ?, coalesce(max(version), 0) + 1, ?, ?, ?, ?, ?, ?, ?, ?::date, ? FROM project_design_files WHERE project_id = ? AND kind = ?
      RETURNING id::int AS id, version`,
-  ).bind(id, co, kind, fileName, type, buf.byteLength, key, personId, userId(c), (c.req.query("note") ?? "").trim() || null, id, kind)
+  ).bind(id, co, kind, fileName, type, buf.byteLength, key, personId, userId(c), (c.req.query("note") ?? "").trim() || null, submittedOn, nextPersonId, id, kind)
     .first<{ id: number; version: number }>();
   return c.json({ id: row?.id, version: row?.version, key }, 201);
 });
+
+/* A design submission given as a link (3D always; 2D may be a link or an upload). Versions count up per kind like uploads. */
+app.post("/:id/design-links", requirePermission("projects.write"), async (c) => {
+  const id = parseId(c.req.param("id"));
+  if (!id) return c.json({ error: "invalid_id" }, 400);
+  const co = await projectCompany(c, id);
+  if (co == null) return c.json({ error: "not_found" }, 404);
+  const v = cleanDesignLink(await body(c), todayMyt());
+  if (!v.ok) return c.json(v, 400);
+  const d = v.value;
+  if (await peopleRefusal(c, co, [d.personId, d.nextPersonId])) return c.json({ error: "person_not_found", message: "Pick the people from the list." }, 400);
+  const name = d.url.replace(/^https?:\/\//i, "").slice(0, 200);
+  const row = await db(c).prepare(
+    `INSERT INTO project_design_files (project_id, company_id, kind, version, file_name, external_url, person_id, uploaded_by, note, submitted_on, next_person_id)
+     SELECT ?, ?, ?, coalesce(max(version), 0) + 1, ?, ?, ?, ?, ?, ?::date, ? FROM project_design_files WHERE project_id = ? AND kind = ?
+     RETURNING id::int AS id, version`,
+  ).bind(id, co, d.kind, name, d.url, d.personId, userId(c), d.note, d.submittedOn, d.nextPersonId, id, d.kind).first<{ id: number; version: number }>();
+  return c.json({ id: row?.id, version: row?.version }, 201);
+});
+
+app.post("/:id/design-notes", requirePermission("projects.write"), async (c) => {
+  const id = parseId(c.req.param("id"));
+  if (!id) return c.json({ error: "invalid_id" }, 400);
+  const co = await projectCompany(c, id);
+  if (co == null) return c.json({ error: "not_found" }, 404);
+  const v = cleanDesignNote(await body(c), todayMyt());
+  if (!v.ok) return c.json(v, 400);
+  const n = v.value;
+  if (await peopleRefusal(c, co, [n.requestedByPersonId])) return c.json({ error: "person_not_found", message: "Pick the person from the list." }, 400);
+  const row = await db(c).prepare(
+    `INSERT INTO project_design_notes (project_id, company_id, kind, noted_on, requested_by_person_id, requested_by_text, note, created_by)
+     VALUES (?, ?, ?, ?::date, ?, ?, ?, ?) RETURNING id::int AS id`,
+  ).bind(id, co, n.kind, n.notedOn, n.requestedByPersonId, n.requestedByText, n.note, userId(c)).first<{ id: number }>();
+  return c.json({ id: row?.id }, 201);
+});
+
+// ── Procurement details: PO and delivery dates per catalog category / sub-category ──
+
+async function procurementOf(c: Ctx, id: number) {
+  const [groups, subs, rows] = await Promise.all([
+    db(c).prepare(`SELECT code, label, sort_order FROM scm.product_category_groups ORDER BY sort_order, code`).bind().all<GroupDefRow>(),
+    db(c).prepare(`SELECT group_code, code, label, sort_order FROM scm.product_sub_categories WHERE active ORDER BY group_code, sort_order, code`).bind().all<SubDefRow>(),
+    db(c).prepare(
+      `SELECT group_code, sub_code, po_date::text AS po_date, delivery_date::text AS delivery_date, mode, updated_at::text AS updated_at, updated_by
+         FROM project_procurement_dates WHERE project_id = ?`,
+    ).bind(id).all<ProcRow>(),
+  ]);
+  return buildProcurementView(groups.results ?? [], subs.results ?? [], rows.results ?? []);
+}
+
+app.get("/:id/procurement", requirePageAccess("projects.list"), failClosed(async (c) => {
+  const id = parseId(c.req.param("id"));
+  if (!id) return c.json({ error: "invalid_id" }, 400);
+  if ((await projectCompany(c, id)) == null) return c.json({ error: "not_found" }, 404);
+  return c.json({ projectId: id, groups: await procurementOf(c, id) });
+}));
+
+app.put("/:id/procurement/:group", requirePermission("projects.write"), failClosed(async (c) => {
+  const id = parseId(c.req.param("id"));
+  if (!id) return c.json({ error: "invalid_id" }, 400);
+  const co = await projectCompany(c, id);
+  if (co == null) return c.json({ error: "not_found" }, 404);
+  const group = (c.req.param("group") ?? "").toUpperCase();
+  const known = await db(c).prepare(`SELECT code FROM scm.product_category_groups WHERE code = ?`).bind(group).first();
+  if (!known) return c.json({ error: "category_invalid", message: "That product category does not exist." }, 400);
+  const v = cleanCategoryDates(await body(c));
+  if (!v.ok) return c.json(v, 400);
+  await db(c).batch!([
+    db(c).prepare(
+      `INSERT INTO project_procurement_dates (project_id, group_code, sub_code, po_date, delivery_date, mode, updated_at, updated_by)
+       VALUES (?, ?, '', ?::date, ?::date, 'follow', now(), ?)
+       ON CONFLICT (project_id, group_code, sub_code) DO UPDATE SET po_date = excluded.po_date, delivery_date = excluded.delivery_date,
+         updated_at = now(), updated_by = excluded.updated_by`,
+    ).bind(id, group, v.value.poDate, v.value.deliveryDate, userName(c)),
+    db(c).prepare(`INSERT INTO project_activity (project_id, action, to_value, note, user_id, company_id) VALUES (?, 'procurement_dates', ?, ?, ?, ?)`)
+      .bind(id, `PO ${v.value.poDate ?? "-"} / delivery ${v.value.deliveryDate ?? "-"}`, group, userId(c), co),
+  ]);
+  return c.json({ ok: true, groups: await procurementOf(c, id) });
+}));
+
+app.put("/:id/procurement/:group/:sub", requirePermission("projects.write"), failClosed(async (c) => {
+  const id = parseId(c.req.param("id"));
+  if (!id) return c.json({ error: "invalid_id" }, 400);
+  const co = await projectCompany(c, id);
+  if (co == null) return c.json({ error: "not_found" }, 404);
+  const group = (c.req.param("group") ?? "").toUpperCase();
+  const sub = (c.req.param("sub") ?? "").toUpperCase();
+  const known = await db(c).prepare(`SELECT code FROM scm.product_sub_categories WHERE group_code = ? AND code = ?`).bind(group, sub).first();
+  if (!known) return c.json({ error: "sub_category_invalid", message: "That sub-category does not exist under this category." }, 400);
+  const v = cleanSubDates(await body(c));
+  if (!v.ok) return c.json(v, 400);
+  const s = v.value;
+  await db(c).batch!([
+    s.mode === "follow"
+      ? db(c).prepare(`DELETE FROM project_procurement_dates WHERE project_id = ? AND group_code = ? AND sub_code = ?`).bind(id, group, sub)
+      : db(c).prepare(
+        `INSERT INTO project_procurement_dates (project_id, group_code, sub_code, po_date, delivery_date, mode, updated_at, updated_by)
+         VALUES (?, ?, ?, ?::date, ?::date, ?, now(), ?)
+         ON CONFLICT (project_id, group_code, sub_code) DO UPDATE SET po_date = excluded.po_date, delivery_date = excluded.delivery_date,
+           mode = excluded.mode, updated_at = now(), updated_by = excluded.updated_by`,
+      ).bind(id, group, sub, s.poDate, s.deliveryDate, s.mode, userName(c)),
+    db(c).prepare(`INSERT INTO project_activity (project_id, action, to_value, note, user_id, company_id) VALUES (?, 'procurement_dates', ?, ?, ?, ?)`)
+      .bind(id, s.mode === "own" ? `own: PO ${s.poDate ?? "-"} / delivery ${s.deliveryDate ?? "-"}` : s.mode, `${group}/${sub}`, userId(c), co),
+  ]);
+  return c.json({ ok: true, groups: await procurementOf(c, id) });
+}));
 
 app.post("/:id/unlink-so", requirePermission("projects.write"), failClosed(async (c) => {
   const id = parseId(c.req.param("id"));

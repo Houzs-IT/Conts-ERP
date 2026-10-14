@@ -410,6 +410,10 @@ app.get("/:id", requirePageAccess("projects.list"), failClosed(async (c) => {
        FROM scm.grns g LEFT JOIN scm.purchase_orders po ON po.id = g.purchase_order_id LEFT JOIN scm.suppliers sup ON sup.id = g.supplier_id
       WHERE g.project_id = ? ORDER BY g.created_at DESC`,
   ).bind(id).all();
+  const attending = await db(c).prepare(
+    `SELECT pp.id::int AS id, pp.name, pp.active, pp.phone FROM project_attendees a JOIN project_people pp ON pp.id = a.person_id
+      WHERE a.project_id = ? ORDER BY lower(pp.name)`,
+  ).bind(id).all<{ id: number; name: string; active: boolean; phone: string | null }>();
   const pos = new Map<string, { id: string; po_number: string; supplier_name: string | null; status: string; lines: number; received: boolean }>();
   for (const pl of f.poLines) {
     const cur = pos.get(pl.purchase_order_id) ?? { id: pl.purchase_order_id, po_number: pl.po_number, supplier_name: pl.supplier_name, status: pl.po_status, lines: 0, received: true };
@@ -449,6 +453,9 @@ app.get("/:id", requirePageAccess("projects.list"), failClosed(async (c) => {
       sales: { id: f.project.sales_person_id ?? null, name: f.project.sales_person_name ?? null },
       designer: { id: f.project.designer_person_id ?? null, name: f.project.designer_person_name ?? null },
       renoPic: { id: f.project.reno_pic_person_id ?? null, name: f.project.reno_pic_person_name ?? null },
+      // Owner, 14 Oct 2026: the screen shows Project PIC (reno_pic_person_id) and Attending (project_attendees).
+      pic: { id: f.project.reno_pic_person_id ?? null, name: f.project.reno_pic_person_name ?? null },
+      attending: attending.results ?? [],
     },
   });
 }));

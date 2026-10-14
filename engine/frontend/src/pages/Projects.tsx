@@ -128,7 +128,8 @@ import { OrganizerPicker, VenuePicker } from "./projects/ProjectPickers";
 import { CreateProjectPanel } from "./projects/CreateProjectPanel";
 import { DateRangeFilter, MultiSelectFilter, SectionTaskBadges, ImportCsvPanel } from "./projects/ProjectsListParts";
 import { ProjectsCalendarView } from "./projects/ProjectsCalendarView";
-import { ByProjectsMode, RenovationCalendarView, RenovationListView, RenovationProjectRoute } from "./projects/renovation/RenovationRoutes";
+import { ByProjectsMode, RenovationProjectRoute } from "./projects/renovation/RenovationRoutes";
+import { CreateRenovationPanel } from "./projects/renovation/CreateRenovationPanel";
 export { buildCalendarWindow, buildProjectsCalendarModel } from "./projects/calendarModel";
 import { SPEC_INPUT_CLASS, QuickRentalField, SpecTextField, SpecCell, SpecValue } from "./projects/specFields";
 import { LogisticsDateTimeField, GrabHelperBox, type CrewMember } from "./projects/logisticsParts";
@@ -510,9 +511,11 @@ export function Projects() {
 
   return (
     <div>
-      {view === "list" && <ByProjectsMode renovation={() => <RenovationListView />} exhibition={() => <ProjectsListView />} />}
+      {/* Renovation mode shows the original list and calendar again (owner, 14 Oct 2026); only the create form and the
+          project detail differ. RenovationBoard / RenovationCalendar are kept but no longer routed. */}
+      {view === "list" && <ByProjectsMode renovation={() => <ProjectsListView renovation />} exhibition={() => <ProjectsListView />} />}
       {/* Project monitor was dropped from the menus (owner, 11 Oct 2026); an old monitor link opens the Schedule. */}
-      {(view === "calendar" || view === "monitor") && <ByProjectsMode renovation={() => <RenovationCalendarView />} exhibition={() => <ProjectsCalendarView />} />}
+      {(view === "calendar" || view === "monitor") && <ProjectsCalendarView />}
       {view === "finances" &&
         (canProjectFinance ? (
           <ProjectsFinancesView />
@@ -560,8 +563,10 @@ const PROJECTS_LIST_FILTER_KEYS = [
   "page",
 ] as const;
 
-function ProjectsListView() {
+function ProjectsListView({ renovation = false }: { renovation?: boolean }) {
   const { can, user } = useAuth();
+  // Renovation mode creates through the renovation form, open to projects.write (as the renovation board was).
+  const mayCreate = renovation ? can("projects.write") : canCreateEvent(user);
   const seeOrg = canSeeSoloOrganizer(user); // solo roadshow organizer: BD / Owner / weisiang only (owner 2026-09-18)
   const toast = useToast();
   const navigate = useNavigate();
@@ -626,12 +631,12 @@ function ProjectsListView() {
     if (params.get("new") === "1") {
       // Only BD / owner / weisiang may open the create modal (owner 2026-07-24);
       // strip the flag either way so it doesn't linger on the URL.
-      if (canCreateEvent(user)) setShowCreate(true);
+      if (mayCreate) setShowCreate(true);
       const next = new URLSearchParams(params);
       next.delete("new");
       setParams(next, { replace: true });
     }
-  }, [params, setParams, user]);
+  }, [params, setParams, mayCreate]);
   const [showImport, setShowImport] = useState(false);
   const [showArchived, setShowArchived] = useIdentityPreference("projects:showArchived", false, booleanPreference);
   // Hide projects whose every tasklist section is complete — same
@@ -1229,7 +1234,7 @@ function ProjectsListView() {
       <PageHeader
         eyebrow="Operations · Projects"
         title="Project List"
-        description="Exhibitions and solo events — lifecycle, checklist, logistics, finance"
+        description={renovation ? "Renovation projects — open one for design, site tasks, procurement and handover" : "Exhibitions and solo events — lifecycle, checklist, logistics, finance"}
         secondaryActions={
           can("projects.manage")
             ? [
@@ -1242,7 +1247,7 @@ function ProjectsListView() {
             : undefined
         }
         primaryAction={
-          canCreateEvent(user) ? (
+          mayCreate ? (
             <Button variant="primary" icon={<Plus size={14} />} onClick={() => setShowCreate(true)}>
               New Project
             </Button>
@@ -1661,7 +1666,18 @@ function ProjectsListView() {
         />
       )}
 
-      {showCreate && (
+      {showCreate && renovation && (
+        <CreateRenovationPanel
+          onClose={() => setShowCreate(false)}
+          onCreated={(id) => {
+            setShowCreate(false);
+            navigate(`/projects/${id}`);
+            list.reload();
+            summary.reload();
+          }}
+        />
+      )}
+      {showCreate && !renovation && (
         <CreateProjectPanel
           onClose={() => setShowCreate(false)}
           onCreated={(id) => {
