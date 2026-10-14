@@ -59,7 +59,8 @@ export function RenovationDetail({ id, canWrite, embedded = false }: { id: numbe
         back={embedded ? undefined : "/projects"}
         eyebrow={`Renovation · ${p.code ?? ""}`}
         title={p.name}
-        description={[[p.building, p.unit_no].filter(Boolean).join(" "), p.customer_name, d.type?.name].filter(Boolean).join(" · ")}
+        /* One line under the title (owner, 14 Oct 2026): customer · phone · building unit · layout. */
+        description={[p.customer_name, p.customer_phone, [p.building, p.unit_no].filter(Boolean).join(" "), p.layout_label, d.type?.name].filter(Boolean).join(" · ")}
         actions={<Button variant="secondary" icon={<RefreshCw size={16} />} onClick={() => q.reload()}>Refresh</Button>}
       />
 

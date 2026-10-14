@@ -1,5 +1,6 @@
 /* The customer + property block shared by the renovation sales order form and the
-   project screens (owner, 14 Oct 2026; migration 0112). Pure form state: numbers
+   project screens (owner, 14 Oct 2026; migrations 0112, 0115): the same Customer,
+   Delivery address and Order information fields on both. Pure form state: numbers
    stay strings while typed; the server reads and checks them
    (vendor/shared/renovation-property.ts, the same file the backend runs). */
 
@@ -17,6 +18,15 @@ export interface ProjectShared {
   customerName: string;
   customerPhone: string;
   customerEmail: string;
+  salespersonId: string;
+  salespersonName: string;
+  address1: string;
+  address2: string;
+  state: string;
+  city: string;
+  postcode: string;
+  country: string;
+  salesLocation: string;
   siteAddress: string;
   building: string;
   unitNo: string;
@@ -34,7 +44,15 @@ export interface CustomerPropertyValue {
   customerName: string;
   customerPhone: string;
   customerEmail: string;
-  siteAddress: string;
+  /** Employee id (scm.staff), '' when none. */
+  salespersonId: string;
+  address1: string;
+  address2: string;
+  state: string;
+  city: string;
+  postcode: string;
+  country: string;
+  salesLocation: string;
   building: string;
   unitNo: string;
   propertyType: string;
@@ -44,9 +62,17 @@ export interface CustomerPropertyValue {
   builtUpSqft: string;
 }
 
+/** Order of the fields as every form shows them (customer, delivery address, order information). */
+export const BLOCK_STRING_KEYS = [
+  "customerName", "customerPhone", "customerEmail", "salespersonId",
+  "address1", "address2", "state", "city", "postcode", "country", "salesLocation",
+  "building", "unitNo", "propertyType", "layoutLabel", "bedrooms", "bathrooms", "builtUpSqft",
+] as const satisfies ReadonlyArray<keyof CustomerPropertyValue>;
+
 export const EMPTY_CUSTOMER_PROPERTY: CustomerPropertyValue = {
-  projectId: null, customerName: "", customerPhone: "", customerEmail: "", siteAddress: "", building: "", unitNo: "",
-  propertyType: "", layoutLabel: "", bedrooms: "", bathrooms: "", builtUpSqft: "",
+  projectId: null, customerName: "", customerPhone: "", customerEmail: "", salespersonId: "",
+  address1: "", address2: "", state: "", city: "", postcode: "", country: "", salesLocation: "",
+  building: "", unitNo: "", propertyType: "", layoutLabel: "", bedrooms: "", bathrooms: "", builtUpSqft: "",
 };
 
 const numText = (n: number | null | undefined) => (n == null ? "" : String(n));
@@ -55,7 +81,9 @@ const numText = (n: number | null | undefined) => (n == null ? "" : String(n));
 export function fromProject(p: ProjectShared): CustomerPropertyValue {
   return {
     projectId: p.id, customerName: p.customerName, customerPhone: p.customerPhone, customerEmail: p.customerEmail,
-    siteAddress: p.siteAddress, building: p.building, unitNo: p.unitNo, propertyType: p.propertyType, layoutLabel: p.layoutLabel,
+    salespersonId: p.salespersonId, address1: p.address1, address2: p.address2, state: p.state, city: p.city,
+    postcode: p.postcode, country: p.country, salesLocation: p.salesLocation,
+    building: p.building, unitNo: p.unitNo, propertyType: p.propertyType, layoutLabel: p.layoutLabel,
     bedrooms: numText(p.bedrooms), bathrooms: numText(p.bathrooms), builtUpSqft: numText(p.builtUpSqft),
   };
 }
@@ -70,6 +98,17 @@ export function mergeProjectIntoSo(v: CustomerPropertyValue, p: ProjectShared): 
     if (typeof val === "string" && val.trim() !== "") (out as Record<string, unknown>)[k] = val;
   }
   return out;
+}
+
+/** Fields the picked project has nothing in (by form label), for the note under Project. */
+export function projectGaps(p: ProjectShared): string[] {
+  const gaps: string[] = [];
+  if (!p.customerName.trim()) gaps.push("customer");
+  if (!p.customerPhone.trim()) gaps.push("phone");
+  if (!p.address1.trim()) gaps.push("address");
+  if (!p.building.trim() && !p.unitNo.trim()) gaps.push("building and unit");
+  if (!p.propertyType.trim() || !p.layoutLabel.trim() || p.builtUpSqft == null) gaps.push("property");
+  return gaps;
 }
 
 /** The layout list row matching the typed counts, if any. */
@@ -94,15 +133,12 @@ export function toRenovationBlock(v: CustomerPropertyValue) {
 
 /** The body the project's PATCH /:id/customer-info takes. */
 export function toProjectBody(v: CustomerPropertyValue) {
-  return {
-    customerName: v.customerName.trim(), customerPhone: v.customerPhone.trim(), customerEmail: v.customerEmail.trim(),
-    siteAddress: v.siteAddress.trim(), building: v.building.trim(), unitNo: v.unitNo.trim(), propertyType: v.propertyType,
-    layoutLabel: v.layoutLabel, bedrooms: v.bedrooms.trim(), bathrooms: v.bathrooms.trim(), builtUpSqft: v.builtUpSqft.trim(),
-  };
+  return Object.fromEntries(BLOCK_STRING_KEYS.map((k) => [k, v[k].trim()])) as Record<(typeof BLOCK_STRING_KEYS)[number], string>;
 }
 
-/** Field labels to ring red: the same required list the server applies to a renovation SO. */
-export function missingFields(v: CustomerPropertyValue, head: { customerName: string; phone: string; address1: string }): Set<string> {
+/** Field labels to ring red: the same required list the server applies to the SO and to the project. */
+export function missingFields(v: CustomerPropertyValue): Set<string> {
+  const head = { customerName: v.customerName, phone: v.customerPhone, address1: v.address1 };
   const bedrooms = parseCount(v.bedrooms);
   const bathrooms = parseCount(v.bathrooms);
   const sqft = parseSqft(v.builtUpSqft);

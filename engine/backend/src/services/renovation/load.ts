@@ -94,7 +94,7 @@ export interface ProjectRow {
 
 export const PROJECT_COLS =
   "p.id, p.code, p.name, p.company_id, p.project_kind, p.project_type_id, p.customer_kind, p.customer_id::text AS customer_id, " +
-  "p.customer_name, p.customer_phone, p.customer_email, p.pos_owner_id, p.pos_unit_id, p.building, p.unit_no, p.site_address, " +
+  "p.customer_name, p.customer_phone, p.customer_email, p.pos_owner_id, p.pos_unit_id, p.building, p.unit_no, p.site_address, p.layout_label, " +
   "p.reno_stage, p.signed_at, p.planned_handover_date::text AS planned_handover_date, p.handed_over_at, p.closed_at, " +
   "p.salesperson_name, p.pic_id, p.notes, p.created_at, p.archived_at, " +
   "p.sales_person_id::int AS sales_person_id, sp.name AS sales_person_name, p.designer_person_id::int AS designer_person_id, " +

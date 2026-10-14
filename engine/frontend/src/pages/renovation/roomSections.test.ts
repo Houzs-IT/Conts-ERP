@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { generateRooms, groupByRoom, insertRoomSections, moveRoom, nextRoomName, renameRoom } from './roomSections';
+import { autoRoomsPlan, generateRooms, groupByRoom, insertRoomSections, moveRoom, nextRoomName, placeRows, renameRoom } from './roomSections';
 
 const make = (heading: string): { heading: string; made?: boolean } => ({ heading, made: true });
 const heads = (r: { sections: Array<{ heading: string }> }) => r.sections.map((s) => s.heading);
@@ -67,5 +67,39 @@ describe('rooms on a renovation sales order', () => {
     const g = groupByRoom(['Living hall', 'Bedroom 1'], [{ room: 'bedroom 1', id: 1 }, { room: '', id: 2 }, { room: 'Gone', id: 3 }, { room: 'Living hall', id: 4 }]);
     expect(g.groups.map((x) => [x.room, x.rows.map((r) => r.id)])).toEqual([['Living hall', [4]], ['Bedroom 1', [1]]]);
     expect(g.unplaced.map((r) => r.id)).toEqual([2, 3]);
+  });
+});
+
+describe('rooms made as soon as a layout is chosen', () => {
+  const layout = { bedrooms: 2, bathrooms: 1 };
+  test('no rooms and only the empty first line: rooms are made and the line goes into Living hall', () => {
+    expect(autoRoomsPlan([], [{ key: 'r1', filled: false }], layout)).toEqual({
+      rooms: ['Living hall', 'Bedroom 1', 'Bedroom 2', 'Bathroom 1', 'Common area'],
+      assign: { r1: 'Living hall' },
+    });
+  });
+  test('no layout, rooms already there, or a line with a product: left alone', () => {
+    expect(autoRoomsPlan([], [{ key: 'r1', filled: false }], null)).toBeNull();
+    expect(autoRoomsPlan(['Kitchen'], [{ key: 'r1', filled: false }], layout)).toBeNull();
+    expect(autoRoomsPlan([], [{ key: 'r1', filled: true }], layout)).toBeNull();
+  });
+  test('an order with no lines at all still gets its rooms', () => {
+    expect(autoRoomsPlan([], [], { bedrooms: 0, bathrooms: 1 })?.rooms).toEqual(['Living hall', 'Bathroom 1', 'Common area']);
+  });
+});
+
+describe('every line belongs to a room', () => {
+  test('no rooms yet: one Common area holds the lines', () => {
+    expect(placeRows([], [{ key: 'a', room: '' }])).toEqual({ rooms: ['Common area'], roomOf: { a: 'Common area' } });
+  });
+  test('a line with no room, or a room no longer listed, goes under Common area (added at the end when missing)', () => {
+    const r = placeRows(['Living hall', 'Bedroom 1'], [{ key: 'a', room: 'bedroom 1' }, { key: 'b', room: '' }, { key: 'c', room: 'Gone' }]);
+    expect(r.rooms).toEqual(['Living hall', 'Bedroom 1', 'Common area']);
+    expect(r.roomOf).toEqual({ a: 'Bedroom 1', b: 'Common area', c: 'Common area' });
+    expect(placeRows(['Common area', 'Kitchen'], [{ key: 'x', room: '' }]).rooms).toEqual(['Common area', 'Kitchen']);
+  });
+  test('the starting Common area does not stop rooms being made from the layout', () => {
+    expect(autoRoomsPlan(['Common area'], [{ key: 'r1', filled: false }], { bedrooms: 1, bathrooms: 1 })?.rooms)
+      .toEqual(['Living hall', 'Bedroom 1', 'Bathroom 1', 'Common area']);
   });
 });

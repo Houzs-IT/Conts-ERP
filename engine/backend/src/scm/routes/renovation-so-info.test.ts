@@ -20,7 +20,7 @@ describe('the renovation block of a sales order', () => {
   test('the server refuses what the owner made required, and invalid numbers first', () => {
     const r = readRenovationBlock({ propertyType: 'Condo', layoutLabel: 'Odd', bedrooms: '2.5', bathrooms: '1' });
     const p = renovationSoProblems(r, { customerName: 'Tan', phone: '012', address1: '' });
-    expect(p.map((x) => x.field)).toEqual(['Bedrooms', 'Delivery address', 'Layout', 'Built-up sq ft']);
+    expect(p.map((x) => x.field)).toEqual(['Bedrooms', 'Address line 1', 'Layout', 'Built-up sq ft']);
   });
 });
 

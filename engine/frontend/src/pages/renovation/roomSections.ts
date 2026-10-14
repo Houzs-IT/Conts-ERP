@@ -78,3 +78,37 @@ export function groupByRoom<T extends { room: string }>(rooms: readonly string[]
   }
   return { groups, unplaced };
 }
+
+/** Rooms made as soon as a layout is chosen (owner, 14 Oct 2026): only while the order has no rooms and no line
+    with a product yet. The empty lines move into the first room, so nothing is left outside a room. null = leave
+    the order as it is (the "Generate rooms from layout" button is for that case). */
+export function autoRoomsPlan(
+  rooms: readonly string[],
+  lines: ReadonlyArray<{ key: string; filled: boolean }>,
+  layout: { bedrooms: number; bathrooms: number } | null,
+): { rooms: string[]; assign: Record<string, string> } | null {
+  /* The single Common area an order starts with before a layout is chosen does not count as rooms. */
+  const onlyDefault = rooms.length === 1 && key(rooms[0]!) === key(DEFAULT_ROOM);
+  if (!layout || (rooms.length > 0 && !onlyDefault) || lines.some((l) => l.filled)) return null;
+  const made = generateRooms([], layout.bedrooms, layout.bathrooms).rooms;
+  return { rooms: made, assign: Object.fromEntries(lines.map((l) => [l.key, made[0]!])) };
+}
+
+export const DEFAULT_ROOM = 'Common area';
+
+/** Every line belongs to a room (owner, 14 Oct 2026): with no rooms yet the order has one, Common area; a line
+    whose room is blank or no longer listed shows (and is saved) under Common area, added at the end when the
+    order has no room of that name. The saved data changes only when the order is saved. */
+export function placeRows<T extends { key: string; room: string }>(rooms: readonly string[], rows: readonly T[]): { rooms: string[]; roomOf: Record<string, string> } {
+  const list = rooms.length > 0 ? [...rooms] : [DEFAULT_ROOM];
+  const find = (r: string) => list.find((x) => key(x) === key(r));
+  const roomOf: Record<string, string> = {};
+  for (const row of rows) {
+    const hit = row.room.trim() ? find(row.room) : undefined;
+    if (hit) { roomOf[row.key] = hit; continue; }
+    let common = find(DEFAULT_ROOM);
+    if (!common) { list.push(DEFAULT_ROOM); common = DEFAULT_ROOM; }
+    roomOf[row.key] = common;
+  }
+  return { rooms: list, roomOf };
+}

@@ -2,16 +2,21 @@
    project (owner, 14 Oct 2026; migration 0112). Pure: no I/O. The browser keeps a
    byte-identical copy in frontend/src/vendor/shared (renovation-shared.canonical.test.ts).
 
-   THE TWO-WAY RULE (the simplest one that keeps both sides equal):
-   - The project is the master record of the shared fields: customer name, phone,
-     email, site address, building, unit, property type, layout (label + bedrooms +
-     bathrooms) and built-up sq ft.
-   - Saving a sales order that names a project writes the SO's values of those
-     fields onto the project (a blank email on the SO never wipes the project's).
+   THE SAME FIELDS ON BOTH (owner, 14 Oct 2026, migration 0115): the SO and the
+   project ask for exactly the fields in SHARED_FIELDS below, in that order, with
+   the same labels and the same required ones (REQUIRED_FIELDS).
+
+   THE TWO-WAY RULE (every field in SHARED_FIELDS, nothing else):
+   - The project is the master record of the shared fields.
+   - Saving a sales order that names a project writes the SO's values onto the
+     project; an empty SO value never clears a project field.
    - Saving a project copies its values onto every linked sales order that is
      still OPEN: a standard order in DRAFT or CONFIRMED that has not been proceeded
-     (no processing date). A proceeded, delivered or cancelled order and every
-     renovation contract (signed) keep what they were printed with.
+     (no processing date); an empty project value never clears an SO field. A
+     proceeded, delivered or cancelled order and every renovation contract
+     (signed) keep what they were printed with.
+   - Linking an existing SO from the project copies the SO into the project the
+     same way as saving the SO.
    - A new SO opened from a project starts from the project's values. */
 
 export interface PropertyValue {
@@ -26,10 +31,57 @@ export interface SharedCustomerProperty extends PropertyValue {
   customerName: string;
   customerPhone: string;
   customerEmail: string;
-  /** One free-text site / delivery address, lines separated by "\n". */
+  /** The salesperson: an employee id (scm.staff), '' when none. */
+  salespersonId: string;
+  address1: string;
+  address2: string;
+  state: string;
+  city: string;
+  postcode: string;
+  country: string;
+  salesLocation: string;
+  /** The joined address, kept for whatever still reads the project's single address column. */
   siteAddress: string;
   building: string;
   unitNo: string;
+}
+
+export type SharedFieldKey = Exclude<keyof SharedCustomerProperty, 'siteAddress'>;
+export type SharedFieldKind = 'text' | 'uuid' | 'int' | 'numeric';
+
+/** Every field the SO and the project share, in form order, with where each side stores it. The two-way rule
+    reads this list, so a field added here is synced both ways and a field not listed is not. */
+export const SHARED_FIELDS: ReadonlyArray<{ key: SharedFieldKey; project: string; so: string; kind: SharedFieldKind }> = [
+  { key: 'customerName', project: 'customer_name', so: 'debtor_name', kind: 'text' },
+  { key: 'customerPhone', project: 'customer_phone', so: 'phone', kind: 'text' },
+  { key: 'customerEmail', project: 'customer_email', so: 'email', kind: 'text' },
+  { key: 'salespersonId', project: 'salesperson_staff_id', so: 'salesperson_id', kind: 'uuid' },
+  { key: 'address1', project: 'address1', so: 'address1', kind: 'text' },
+  { key: 'address2', project: 'address2', so: 'address2', kind: 'text' },
+  { key: 'state', project: 'state', so: 'customer_state', kind: 'text' },
+  { key: 'city', project: 'city', so: 'city', kind: 'text' },
+  { key: 'postcode', project: 'postcode', so: 'postcode', kind: 'text' },
+  { key: 'country', project: 'country', so: 'customer_country', kind: 'text' },
+  { key: 'salesLocation', project: 'sales_location', so: 'sales_location', kind: 'text' },
+  { key: 'building', project: 'building', so: 'building', kind: 'text' },
+  { key: 'unitNo', project: 'unit_no', so: 'unit_no', kind: 'text' },
+  { key: 'propertyType', project: 'property_type', so: 'property_type', kind: 'text' },
+  { key: 'layoutLabel', project: 'layout_label', so: 'layout_label', kind: 'text' },
+  { key: 'bedrooms', project: 'bedrooms', so: 'bedrooms', kind: 'int' },
+  { key: 'bathrooms', project: 'bathrooms', so: 'bathrooms', kind: 'int' },
+  { key: 'builtUpSqft', project: 'built_up_sqft', so: 'built_up_sqft', kind: 'numeric' },
+];
+
+/** The project columns migration 0115 adds (the rest were there before). */
+export const STRUCTURED_PROJECT_COLUMNS: readonly string[] = ['salesperson_staff_id', 'address1', 'address2', 'state', 'city', 'postcode', 'country', 'sales_location'];
+
+/** The same required fields on the SO and the project, by their form label. */
+export const REQUIRED_FIELDS: readonly string[] = ['Customer name', 'Phone number', 'Address line 1', 'Property type', 'Layout', 'Built-up sq ft'];
+
+/** The project's single address text from the structured address: the lines, "postcode city", then the state. */
+export function siteAddressFromParts(a: { address1?: string; address2?: string; postcode?: string; city?: string; state?: string }): string {
+  const t = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
+  return [t(a.address1), t(a.address2), [t(a.postcode), t(a.city)].filter(Boolean).join(' '), t(a.state)].filter(Boolean).join('\n');
 }
 
 export interface PropertyProblem { code: string; message: string; field: string }
@@ -76,7 +128,7 @@ export function readPropertyInput(raw: Record<string, unknown> | null | undefine
 }
 
 /** What a renovation sales order must carry before it is saved (not a draft):
-    customer name, phone, delivery address, property type, layout (with its counts), sq ft. */
+    customer name, phone, address line 1, property type, layout (with its counts), sq ft. The project asks the same. */
 export function renoSoRequiredProblems(f: {
   customerName: string;
   phone: string;
@@ -87,7 +139,7 @@ export function renoSoRequiredProblems(f: {
   const need = (ok: boolean, field: string) => { if (!ok) out.push({ code: 'required_field', message: `${field} is required.`, field }); };
   need(f.customerName.trim() !== '', 'Customer name');
   need(f.phone.trim() !== '', 'Phone number');
-  need(f.address1.trim() !== '', 'Delivery address');
+  need(f.address1.trim() !== '', 'Address line 1');
   need(f.property.propertyType.trim() !== '', 'Property type');
   /* The layout (from the Project Maintenance list) brings the bedroom and bathroom counts with it. */
   need(f.property.layoutLabel.trim() !== '' && f.property.bedrooms !== null && f.property.bathrooms !== null, 'Layout');

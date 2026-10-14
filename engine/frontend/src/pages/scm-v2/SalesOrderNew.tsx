@@ -125,14 +125,14 @@ import {
 import { useOrdersWithMoney } from '../../vendor/scm/lib/so-money-queries';
 import { useBranding } from '../../hooks/useBranding';
 import styles from './SalesOrderNew.module.css';
-import { CustomerPropertyFields } from '../projects/renovation/CustomerPropertyFields';
+import { CustomerBlock } from '../projects/renovation/CustomerBlock';
 import { RenovationSoRooms, roomLayoutOf } from './RenovationSoRooms';
+import { autoRoomsPlan, placeRows } from '../renovation/roomSections';
 import { soInfoApi, useSoInfoLists } from '../projects/renovation/customerPropertyApi';
 import {
   EMPTY_CUSTOMER_PROPERTY, mergeProjectIntoSo, missingFields, toRenovationBlock,
   type CustomerPropertyValue, type ProjectShared,
 } from '../projects/renovation/customerPropertyModel';
-import { soAddressFromSite } from '../../vendor/shared/renovation-property';
 import { fmtMoneySen } from '@2990s/shared';
 import { DateField } from "../../vendor/scm/components/DateField";
 
@@ -1519,6 +1519,7 @@ export const SalesOrderNew = () => {
     }
     const validLines = lines.filter((l) => l.itemCode.trim() && l.qty > 0);
     if (reno) setRenoTried(true);
+    const renoPlaced = placeRows(renoRooms, lines.map((l) => ({ key: l.rid, room: renoLineRoom[l.rid] ?? '' })));
     /* Backend is the authority for what blocks this submit (owner 2026-09-16).
        Ask the validate dry-run for the definitive list for THIS press (draft vs
        confirmed differ), and merge the one client-only extra (a NO-MATCH scanned
@@ -1675,13 +1676,14 @@ export const SalesOrderNew = () => {
           /* PR-E — per-item delivery date + cascade override flag. */
           lineDeliveryDate:           l.lineDeliveryDate ?? null,
           lineDeliveryDateOverridden: l.lineDeliveryDateOverridden ?? false,
-          ...(reno ? { room: renoLineRoom[l.rid] ?? '' } : {}),
+          /* Every line belongs to a room: one without a room goes under Common area (placeRows). */
+          ...(reno ? { room: renoPlaced.roomOf[l.rid] ?? '' } : {}),
         })),
         /* Renovation mode (mig 0112): the shared Order information block, stamped
            on the order and written back to its project by the server. A sale for
            a project has no fair, venue, building type or emergency contact. */
         ...(reno ? {
-          renovation: { ...toRenovationBlock(renoInfo), roomSections: renoRooms }, noFair: true,
+          renovation: { ...toRenovationBlock(renoInfo), roomSections: renoPlaced.rooms }, noFair: true,
           fairOrganizer: undefined, fairStart: undefined, fairEnd: undefined, fairDate: undefined,
           buildingType: undefined, customerType: undefined, customerSoNo: undefined, emergencyContactName: undefined, emergencyContactRelationship: undefined, emergencyContactPhone: undefined,
         } : {}),
@@ -1748,21 +1750,35 @@ export const SalesOrderNew = () => {
     );
   };
 
-  /* The project is the master record: picking one fills the SO from it (its
-     non-blank values win); the SO's save writes back to it (server side). */
+  /* One block for Customer, Delivery address and Order information, the same one the
+     project uses (owner, 14 Oct 2026). The SO keeps its own state for the header
+     fields; the block reads and writes them through blockValue / applyBlock. */
+  const blockValue: CustomerPropertyValue = {
+    ...renoInfo, customerName: debtorName, customerPhone: phone, customerEmail: email, salespersonId,
+    address1, address2, state, city, postcode, country, salesLocation,
+  };
+  const blockRef = useRef(blockValue);
+  blockRef.current = blockValue;
+  const applyBlock = useCallback((n: CustomerPropertyValue) => {
+    setRenoInfo(n);
+    setDebtorName(n.customerName);
+    setPhone(n.customerPhone);
+    setEmail(n.customerEmail);
+    setSalespersonId(n.salespersonId);
+    setAddress1(n.address1);
+    setAddress2(n.address2);
+    setState(n.state);
+    setCity(n.city);
+    setPostcode(n.postcode);
+    setSalesLocation(n.salesLocation);
+  }, []);
+  /* The project is the master record: picking one fills every shared field it has
+     (a field it has empty keeps what was typed); the SO's save writes back to it. */
   const pickRenoProject = useCallback((p: ProjectShared | null) => {
     setRenoProject(p);
     if (!p) { setRenoInfo((v) => ({ ...v, projectId: null })); return; }
-    setRenoInfo((v) => mergeProjectIntoSo(v, p));
-    if (p.customerName) setDebtorName(p.customerName);
-    if (p.customerPhone) setPhone(p.customerPhone);
-    if (p.customerEmail) setEmail(p.customerEmail);
-    if (p.siteAddress) {
-      const a = soAddressFromSite(p.siteAddress);
-      setAddress1(a.address1);
-      setAddress2(a.address2);
-    }
-  }, []);
+    applyBlock(mergeProjectIntoSo(blockRef.current, p));
+  }, [applyBlock]);
   /* Opened from a project (?projectId=): everything prefilled from it. */
   const renoProjectParam = searchParams.get('projectId');
   useEffect(() => {
@@ -1776,10 +1792,19 @@ export const SalesOrderNew = () => {
     return () => { live = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once per project id; notify is stable enough for a one-off error
   }, [reno, renoProjectParam, pickRenoProject]);
-  const renoMissing = useMemo(
-    () => (renoTried ? missingFields(renoInfo, { customerName: debtorName, phone, address1 }) : new Set<string>()),
-    [renoTried, renoInfo, debtorName, phone, address1],
-  );
+  const renoMissing = renoTried ? missingFields(blockValue) : new Set<string>();
+  /* Rooms as soon as a layout is chosen (or the project brings one), while the order
+     has no rooms and no line with a product yet; the empty first line goes into the
+     first room. Otherwise the "Generate rooms from layout" button does it. */
+  const renoLayoutKey = `${renoInfo.bedrooms}|${renoInfo.bathrooms}`;
+  useEffect(() => {
+    if (!reno) return;
+    const plan = autoRoomsPlan(renoRooms, lines.map((l) => ({ key: l.rid, filled: l.itemCode.trim() !== '' })), roomLayoutOf(renoInfo));
+    if (!plan) return;
+    setRenoRooms(plan.rooms);
+    setRenoLineRoom((m) => ({ ...m, ...plan.assign }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the layout is the trigger
+  }, [reno, renoLayoutKey]);
 
   const renderNewLine = (line: DraftLine, idx: number) => {
             /* fromScan — the slip rawText still feeds the SKU picker's placeholder
@@ -1814,26 +1839,6 @@ export const SalesOrderNew = () => {
               </div>
             );
   };
-
-  const renoOrderInfoCard = (
-    <section className={styles.card}>
-      <header className={styles.cardHeader}>
-        <h2 className={styles.cardTitle}>Order Information</h2>
-        <span style={{ fontSize: 'var(--fs-12)', color: 'var(--fg-muted)' }}>Shared with the project</span>
-      </header>
-      <div className={styles.cardBody}>
-        <CustomerPropertyFields
-          mode="so"
-          value={renoInfo}
-          onChange={setRenoInfo}
-          lists={renoListsQ.data}
-          project={renoProject}
-          onPickProject={pickRenoProject}
-          missing={renoMissing}
-        />
-      </div>
-    </section>
-  );
 
   const customerCard = (
     <>
@@ -2364,15 +2369,17 @@ export const SalesOrderNew = () => {
         /* Renovation mode (Conts, 14 Oct 2026): Customer and Delivery address on the
            left, the shared Order information block on the right; Houzs's Order Info
            and Emergency contact are not used. */
-        <div className={styles.renoLayout}>
-          <div className={styles.renoCol}>
-            {customerCard}
-            {addressCard}
-          </div>
-          <div className={styles.renoCol}>
-            {renoOrderInfoCard}
-          </div>
-        </div>
+        <CustomerBlock
+          mode="so"
+          arrangement="columns"
+          value={blockValue}
+          onChange={applyBlock}
+          lists={renoListsQ.data}
+          project={renoProject}
+          onPickProject={pickRenoProject}
+          missing={renoMissing}
+          canChangeSalesperson={canChangeSalesperson}
+        />
       ) : (
         <>
           {customerCard}
@@ -2400,7 +2407,7 @@ export const SalesOrderNew = () => {
                 setRenoRooms(next);
                 if (rename) setRenoLineRoom((m) => Object.fromEntries(Object.entries(m).map(([k, r]) => [k, r === rename.from ? rename.to : r])));
               }}
-              rows={lines.map((line, idx) => ({ key: line.rid, room: renoLineRoom[line.rid] ?? '', node: renderNewLine(line, idx) }))}
+              rows={lines.map((line) => ({ key: line.rid, room: renoLineRoom[line.rid] ?? '', render: (n: number) => renderNewLine(line, n) }))}
               onRowRoom={(rid, room) => setRenoLineRoom((m) => ({ ...m, [rid]: room }))}
               onAddLine={(room) => {
                 const l = newLine(deliveryDate || null);

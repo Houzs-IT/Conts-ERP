@@ -20,7 +20,8 @@ import type { Db } from "../services/renovation/load";
 import {
   propertyColumnsReady,
   pushProjectToOpenSos,
-  regenerateProjectName,
+  readProjectCustomerInfo,
+  writeProjectShared,
   readProjectShared,
   readPropertyLists,
 } from "../services/renovation/customerProperty";
@@ -156,20 +157,10 @@ app.patch("/:id/customer-info", requirePermission("projects.write"), async (c) =
   if (!(await propertyColumnsReady(db(c)))) return c.json(NOT_READY, 409);
   const before = await readProjectShared(db(c), id, coSql(c, "p.company_id"));
   if (!before) return c.json({ error: "not_found" }, 404);
-  const b = await body(c);
-  const { value, problems } = readPropertyInput(b);
+  /* The same fields and the same required rules as the renovation sales order (owner, 14 Oct 2026). */
+  const { value, problems } = await readProjectCustomerInfo(db(c), await body(c));
   if (problems.length) return c.json({ error: "validation_failed", problems }, 422);
-  const customerName = text(b.customerName, 160);
-  if (!customerName) return c.json({ error: "validation_failed", problems: [{ code: "required_field", message: "Customer name is required.", field: "Customer name" }] }, 422);
-  await db(c).prepare(
-    `UPDATE projects SET customer_name = ?, customer_phone = nullif(?, ''), customer_email = nullif(?, ''), site_address = nullif(?, ''),
-            building = nullif(?, ''), unit_no = nullif(?, ''), property_type = nullif(?, ''), layout_label = nullif(?, ''),
-            bedrooms = ?::int, bathrooms = ?::int, built_up_sqft = ?::numeric,
-            updated_at = to_char(timezone('UTC', now()), 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
-      WHERE id = ?`,
-  ).bind(customerName, text(b.customerPhone, 40), text(b.customerEmail, 160), typeof b.siteAddress === "string" ? b.siteAddress.trim().slice(0, 500) : "",
-    text(b.building, 120), text(b.unitNo, 40), value.propertyType, value.layoutLabel, value.bedrooms, value.bathrooms, value.builtUpSqft, id).run();
-  await regenerateProjectName(db(c), id);
+  await writeProjectShared(db(c), id, value);
   const pushed = await pushProjectToOpenSos(db(c), id);
   await db(c).prepare(`INSERT INTO project_activity (project_id, action, to_value, note, user_id, company_id) VALUES (?, 'customer_info_saved', ?, ?, ?, (SELECT company_id FROM projects WHERE id = ?))`)
     .bind(id, pushed.updated.join(", ") || null, `Customer and property information saved; ${pushed.updated.length} open sales order(s) updated, ${pushed.kept.length} kept as printed`, userId(c), id).run();
