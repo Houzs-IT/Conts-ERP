@@ -9,6 +9,7 @@
 import { useState, type ReactNode } from 'react';
 import { ArrowDown, ArrowUp, LayoutGrid, Plus, Trash2 } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { useConfirm } from '../../vendor/scm/components/ConfirmDialog';
 import { generateRooms, groupByRoom, moveRoom, nextRoomName, renameRoom } from '../renovation/roomSections';
 
 export interface RoomRow { key: string; room: string; node: ReactNode }
@@ -55,9 +56,16 @@ export function RenovationSoRooms({ rooms, onRoomsChange, rows, onRowRoom, onAdd
   const [note, setNote] = useState<string | null>(null);
   const { groups, unplaced } = groupByRoom(rooms, rows);
 
-  const generate = () => {
+  const confirm = useConfirm();
+  const generate = async () => {
     if (!layout) return;
     const r = generateRooms(rooms, layout.bedrooms, layout.bathrooms);
+    /* Rooms are already here: ask first (rooms made as soon as a layout is chosen need no button). */
+    if (rooms.length > 0 && r.added.length > 0 && !(await confirm({
+      title: 'Add the rooms of this layout?',
+      body: `${r.added.join(', ')} will be added. The rooms already here and their lines stay as they are.`,
+      confirmLabel: 'Add rooms',
+    }))) return;
     setNote(r.added.length ? `Added ${r.added.join(', ')}.` : 'Every room of this layout is already here.');
     if (r.added.length) onRoomsChange(r.rooms);
   };
@@ -90,7 +98,7 @@ export function RenovationSoRooms({ rooms, onRoomsChange, rows, onRowRoom, onAdd
             <Plus size={14} /> Add room
           </button>
         )}
-        <button type="button" className={btn} onClick={generate} disabled={disabled || !layout}
+        <button type="button" className={btn} onClick={() => { void generate(); }} disabled={disabled || !layout}
           title={layout ? `${layout.label}: Living hall, ${layout.bedrooms} bedroom(s), ${layout.bathrooms} bathroom(s), Common area` : undefined}>
           <LayoutGrid size={14} /> Generate rooms from layout
         </button>

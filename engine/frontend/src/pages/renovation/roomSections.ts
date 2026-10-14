@@ -78,3 +78,16 @@ export function groupByRoom<T extends { room: string }>(rooms: readonly string[]
   }
   return { groups, unplaced };
 }
+
+/** Rooms made as soon as a layout is chosen (owner, 14 Oct 2026): only while the order has no rooms and no line
+    with a product yet. The empty lines move into the first room, so nothing is left outside a room. null = leave
+    the order as it is (the "Generate rooms from layout" button is for that case). */
+export function autoRoomsPlan(
+  rooms: readonly string[],
+  lines: ReadonlyArray<{ key: string; filled: boolean }>,
+  layout: { bedrooms: number; bathrooms: number } | null,
+): { rooms: string[]; assign: Record<string, string> } | null {
+  if (!layout || rooms.length > 0 || lines.some((l) => l.filled)) return null;
+  const made = generateRooms([], layout.bedrooms, layout.bathrooms).rooms;
+  return { rooms: made, assign: Object.fromEntries(lines.map((l) => [l.key, made[0]!])) };
+}

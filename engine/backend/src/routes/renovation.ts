@@ -31,7 +31,7 @@ import { syncTradeTasks, writeCachedStage } from "../services/renovation/contrac
 import renovationProject from "./renovationProject";
 import renovationMonitor from "./renovationMonitor";
 import renovationProperty from "./renovationProperty";
-import { propertyColumnsReady, pushProjectToOpenSos, regenerateProjectName } from "../services/renovation/customerProperty";
+import { propertyColumnsReady, pushProjectToOpenSos, readProjectCustomerInfo, regenerateProjectName, writeProjectShared } from "../services/renovation/customerProperty";
 import { projectNameFrom } from "../scm/shared/renovation-property";
 
 type Ctx = Context<{ Bindings: Env }>;
@@ -191,11 +191,25 @@ app.post("/", requirePermission("projects.write"), async (c) => {
   /* Owner, 14 Oct 2026: the form no longer asks "Customer is" (an outside customer unless a caller says
      otherwise) nor a free name: the name is Building + Unit, else the customer's name. */
   if (body.customerKind == null) body.customerKind = "customer";
+  /* The New project form sends `customerInfo`: the same fields and required rules as the sales order
+     (owner, 14 Oct 2026), checked before anything is written and saved with the project. */
+  const raw = (body as { customerInfo?: unknown }).customerInfo;
+  const info = raw && typeof raw === "object" && (await propertyColumnsReady(db(c)))
+    ? await readProjectCustomerInfo(db(c), raw as Record<string, unknown>) : null;
+  if (info?.problems.length) return c.json({ error: "validation_failed", problems: info.problems }, 422);
+  if (info) {
+    const v = info.value;
+    Object.assign(body, {
+      customerName: v.customerName, customerPhone: v.customerPhone || null, customerEmail: v.customerEmail || null,
+      building: v.building || null, unitNo: v.unitNo || null,
+    });
+  }
   if (!String(body.name ?? "").trim()) body.name = projectNameFrom(body.building, body.unitNo, body.customerName);
   const refusal = validateCreate(body);
   if (refusal) return c.json({ error: refusal }, 400);
   const created = await createRenovationProject(db(c), body as CreateRenovationInput, userId(c), co.companyId);
   if (!created) return c.json({ error: "type_not_found" }, 400);
+  if (info) await writeProjectShared(db(c), created.id, info.value);
   return c.json(created, 201);
 });
 

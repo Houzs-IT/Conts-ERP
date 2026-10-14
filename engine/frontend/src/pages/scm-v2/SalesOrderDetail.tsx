@@ -158,14 +158,13 @@ import {
 } from './so-version-conflict';
 import { RevisionsTab } from './so-revisions-tab';
 import styles from './SalesOrderDetail.module.css';
-import { CustomerPropertyFields } from '../projects/renovation/CustomerPropertyFields';
+import { CustomerBlock } from '../projects/renovation/CustomerBlock';
 import { soInfoApi, useSoInfoLists } from '../projects/renovation/customerPropertyApi';
 import {
   EMPTY_CUSTOMER_PROPERTY, mergeProjectIntoSo, missingFields, toRenovationBlock,
   type CustomerPropertyValue, type ProjectShared,
 } from '../projects/renovation/customerPropertyModel';
 import { soInfoErrorText } from '../projects/renovation/customerPropertyApi';
-import { soAddressFromSite } from '../../vendor/shared/renovation-property';
 import { RenovationSoRooms, roomLayoutOf, type RoomLayout } from './RenovationSoRooms';
 import { DateField } from "../../vendor/scm/components/DateField";
 import { HoldChip } from "../../vendor/scm/components/HoldChip";
@@ -3062,24 +3061,28 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
       .finally(() => { if (live) setRenoInfoLoading(false); });
     return () => { live = false; };
   }, [reno, header.doc_no]);
-  /* Picking a project fills the order from it (the project is the master record). */
+  /* One block for Customer, Delivery address and Order information, the same one the
+     project uses (owner, 14 Oct 2026): the header fields stay in `form`, the order
+     information in renoInfo. */
+  const blockValue: CustomerPropertyValue = {
+    ...renoInfo, customerName: form.customerName, customerPhone: form.phone, customerEmail: form.email,
+    salespersonId: form.salespersonId, address1: form.address1, address2: form.address2, state: form.state,
+    city: form.city, postcode: form.postcode, country: renoInfo.country, salesLocation: form.salesLocation,
+  };
+  const applyBlock = (n: CustomerPropertyValue) => {
+    setRenoInfo(n);
+    setForm((f) => ({
+      ...f, customerName: n.customerName, phone: n.customerPhone, email: n.customerEmail, salespersonId: n.salespersonId,
+      address1: n.address1, address2: n.address2, state: n.state, city: n.city, postcode: n.postcode, salesLocation: n.salesLocation,
+    }));
+  };
+  /* Picking a project fills every shared field it has (the project is the master record). */
   const pickRenoProject = (p: ProjectShared | null) => {
     setRenoProject(p);
     if (!p) { setRenoInfo((v) => ({ ...v, projectId: null })); return; }
-    setRenoInfo((v) => mergeProjectIntoSo(v, p));
-    const addr = soAddressFromSite(p.siteAddress);
-    setForm((f) => ({
-      ...f,
-      customerName: p.customerName || f.customerName,
-      phone: p.customerPhone || f.phone,
-      email: p.customerEmail || f.email,
-      address1: addr.address1 || f.address1,
-      address2: addr.address1 ? addr.address2 : f.address2,
-    }));
+    applyBlock(mergeProjectIntoSo(blockValue, p));
   };
-  const renoMissing = renoTried
-    ? missingFields(renoInfo, { customerName: form.customerName, phone: form.phone, address1: form.address1 })
-    : new Set<string>();
+  const renoMissing = renoTried ? missingFields(blockValue) : new Set<string>();
   const renoLayoutKey = `${renoInfo.layoutLabel}|${renoInfo.bedrooms}|${renoInfo.bathrooms}`;
   useEffect(() => {
     if (reno) onRenoLayout?.(roomLayoutOf(renoInfo));
@@ -3384,7 +3387,7 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
   const trySaveWithReno: typeof trySave = (cb, opts) => {
     if (!reno) { trySave(cb, opts); return; }
     setRenoTried(true);
-    const miss = missingFields(renoInfo, { customerName: form.customerName, phone: form.phone, address1: form.address1 });
+    const miss = missingFields(blockValue);
     if (miss.size > 0) {
       const msg = `Fill in: ${[...miss].join(', ')}.`;
       if (cb?.onError) cb.onError(msg);
@@ -3844,43 +3847,36 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
       </section>
     </>
   );
-  const renoOrderInfoCard = (
-    <section className={styles.card}>
-      <header className={styles.cardHeader}>
-        <h2 className={styles.cardTitle}>Order Information</h2>
-      </header>
-      <div className={styles.cardBody}>
-        {renoLoadError ? (
-          <p role="alert" style={{ color: 'var(--c-festive-b, #B8331F)', fontSize: 13 }}>{renoLoadError}</p>
-        ) : (
-          <CustomerPropertyFields
-            mode="so"
-            value={renoInfo}
-            onChange={setRenoInfo}
-            lists={renoListsQ.data}
-            project={renoProject}
-            onPickProject={pickRenoProject}
-            missing={renoMissing}
-            disabled={!isEditing || locked || renoInfoLoading}
-          />
-        )}
-      </div>
-    </section>
-  );
+
+  /* The same locks the Houzs cards apply: a live DO / SI freezes the customer and address, a
+     process lock the State / City / Postcode, a locked order everything but the salesperson. */
+  const renoLocked = new Set<keyof CustomerPropertyValue>([
+    ...(locked || identityLocked ? ['customerName', 'customerPhone', 'customerEmail', 'address1', 'address2', 'state', 'city', 'postcode'] as const : []),
+    ...(stateLocked ? ['state', 'city', 'postcode'] as const : []),
+    ...(locked ? ['building', 'unitNo', 'propertyType', 'layoutLabel', 'builtUpSqft'] as const : []),
+  ]);
 
   return (
     <>
       {reno ? (
         /* Renovation mode (Conts, 14 Oct 2026): the same compact layout as New SO. */
-        <div className={styles.renoLayout}>
-          <div className={styles.renoCol}>
-            {customerCard}
-            {addressCard}
-          </div>
-          <div className={styles.renoCol}>
-            {renoOrderInfoCard}
-          </div>
-        </div>
+        renoLoadError ? (
+          <p role="alert" style={{ color: 'var(--c-festive-b, #B8331F)', fontSize: 13 }}>{renoLoadError}</p>
+        ) : (
+          <CustomerBlock
+            mode="so"
+            arrangement="columns"
+            value={blockValue}
+            onChange={applyBlock}
+            lists={renoListsQ.data}
+            project={renoProject}
+            onPickProject={pickRenoProject}
+            missing={renoMissing}
+            disabled={!isEditing || renoInfoLoading}
+            lockedKeys={renoLocked}
+            canChangeSalesperson={canChangeSalesperson}
+          />
+        )
       ) : (
         <>
           {customerCard}

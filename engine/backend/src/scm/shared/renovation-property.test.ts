@@ -6,6 +6,10 @@ import {
   roomsWithLineRooms,
   parseCount,
   projectNameFrom,
+  REQUIRED_FIELDS,
+  SHARED_FIELDS,
+  STRUCTURED_PROJECT_COLUMNS,
+  siteAddressFromParts,
   parseSqft,
   readPropertyInput,
   renoSoRequiredProblems,
@@ -58,7 +62,7 @@ describe('what a renovation SO must have', () => {
       customerName: ' ', phone: '', address1: '',
       property: { propertyType: '', layoutLabel: '', bedrooms: null, bathrooms: null, builtUpSqft: null },
     });
-    expect(p.map((x) => x.field)).toEqual(['Customer name', 'Phone number', 'Delivery address', 'Property type', 'Layout', 'Built-up sq ft']);
+    expect(p.map((x) => x.field)).toEqual(['Customer name', 'Phone number', 'Address line 1', 'Property type', 'Layout', 'Built-up sq ft']);
   });
 
   test('a layout label without its counts is not a layout', () => {
@@ -132,5 +136,32 @@ describe('a renovation project is named after its building and unit', () => {
   test('the customer name when both are empty', () => {
     expect(projectNameFrom('', ' ', ' Lee Wei Ming ')).toBe('Lee Wei Ming');
     expect(projectNameFrom(null, undefined, null)).toBe('');
+  });
+});
+
+describe('the SO and the project ask for the same fields (owner, 14 Oct 2026)', () => {
+  test('every shared field has a column on both sides, once, in form order', () => {
+    expect(SHARED_FIELDS.map((f) => f.key)).toEqual([
+      'customerName', 'customerPhone', 'customerEmail', 'salespersonId',
+      'address1', 'address2', 'state', 'city', 'postcode', 'country', 'salesLocation',
+      'building', 'unitNo', 'propertyType', 'layoutLabel', 'bedrooms', 'bathrooms', 'builtUpSqft',
+    ]);
+    expect(new Set(SHARED_FIELDS.map((f) => f.project)).size).toBe(SHARED_FIELDS.length);
+    expect(new Set(SHARED_FIELDS.map((f) => f.so)).size).toBe(SHARED_FIELDS.length);
+  });
+
+  test('the structured address and the salesperson are the columns 0115 adds', () => {
+    expect(STRUCTURED_PROJECT_COLUMNS.every((c) => SHARED_FIELDS.some((f) => f.project === c))).toBe(true);
+  });
+
+  test('the required list is what renoSoRequiredProblems asks for', () => {
+    const p = renoSoRequiredProblems({ customerName: '', phone: '', address1: '', property: { propertyType: '', layoutLabel: '', bedrooms: null, bathrooms: null, builtUpSqft: null } });
+    expect(p.map((x) => x.field)).toEqual([...REQUIRED_FIELDS]);
+  });
+
+  test("the project's single address text joins the structured address", () => {
+    expect(siteAddressFromParts({ address1: 'B-8-2 Vista Harmoni', address2: 'Jalan Cheras', postcode: '56000', city: 'Kuala Lumpur', state: 'W.P. Kuala Lumpur' }))
+      .toBe('B-8-2 Vista Harmoni\nJalan Cheras\n56000 Kuala Lumpur\nW.P. Kuala Lumpur');
+    expect(siteAddressFromParts({ address1: 'Only line' })).toBe('Only line');
   });
 });

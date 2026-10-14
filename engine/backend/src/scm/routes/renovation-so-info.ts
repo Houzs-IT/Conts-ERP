@@ -21,6 +21,7 @@ import type { Db } from '../../services/renovation/load';
 import {
   propertyColumnsReady,
   readProjectShared,
+  readSoShared,
   readPropertyLists,
   readSoRooms,
   renovationMode,
@@ -127,14 +128,9 @@ export async function applyRenovationSoInfo(
   }
   if (input.roomSections !== null) await writeSoRooms(db, docNo, input.roomSections, input.itemRooms);
   if (input.projectId != null) {
-    const so = await db.prepare(
-      `SELECT debtor_name, phone, email, address1, address2 FROM scm.mfg_sales_orders WHERE doc_no = ?`,
-    ).bind(docNo).first<Record<string, string | null>>();
-    if (!so) return { ok: false, status: 404, body: { error: 'so_not_found' } };
-    const shared: SoShared = {
-      customerName: so.debtor_name ?? '', phone: so.phone ?? '', email: so.email ?? '',
-      address1: so.address1 ?? '', address2: so.address2 ?? '', building: input.building, unitNo: input.unitNo, ...input.property,
-    };
+    /* Every shared field as the SO now holds it (header, address, salesperson, property just stamped). */
+    const shared: SoShared | null = await readSoShared(db, docNo);
+    if (!shared) return { ok: false, status: 404, body: { error: 'so_not_found' } };
     await writeSoToProject(db, input.projectId, shared, ctx.actorId, ctx.companyId, docNo);
   }
   return { ok: true, projectId: input.projectId };
