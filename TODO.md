@@ -99,6 +99,11 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 - Later: procurement dates (Procurement details) are meant to raise purchase orders automatically; nothing does yet (TODO(auto-PO) in engine/backend/src/services/renovation/procurement.ts).
 - The create form still asks for Sales and Designer; both become Attending. Wiring it to Project PIC / Attending waits for feat/reno-customer-info (migration 0112).
 
+## Renovation Project List and Calendar week (feat/reno-list-calendar, no migration, 15 Oct 2026)
+- Done: the Project List in renovation mode shows step tiles (projects per step, click to filter, ?step=) instead of Live now / Upcoming / Overdue tasks; each card / table row shows name, customer, Project PIC, the 6-step track, planned handover and Late / At risk (handover within 14 days before Handover); a step opens the project at its section (#reno-design, #reno-contract, #reno-procurement, #reno-unit-key). Hide completed = hide the Closed step; the date filter matches created date to planned handover. The checklist "Task" filter is hidden in renovation mode.
+- Done: Calendar Week view in renovation mode shows dated items per day (onsite, 3D / 2D submissions, PO and delivery dates, site tasks, planned handover) instead of project bars (GET /api/projects/calendar/events?items=1). Month view keeps the bars. Exhibition mode unchanged.
+- Owner to confirm: "At risk" window of 14 days (AT_RISK_DAYS in engine/frontend/src/pages/projects/renovation/renovationListModel.ts). The phone app's Calendar tab (MobileCalendar) still shows bars in its week view.
+
 ## Renovation project screens, round 2 (feat/reno-project-ux-2, migration 0114, 14 Oct 2026)
 - OPEN, before merge: apply migration 0114 on staging, then production (lead). It adds several PICs per Onsite entry and per design version, Onsite photos / files, and closes 2D amendment requests by the version that answers them (existing 2D notes are closed by the next 2D version after them).
 - Person pickers still read project_people through PersonSelect; feat/people-from-users switches them to user accounts. The position after a name comes from personPosition() in PersonSelect.tsx (roles today).

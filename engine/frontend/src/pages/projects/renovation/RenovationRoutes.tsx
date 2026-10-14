@@ -13,6 +13,7 @@ import { RenovationBoard } from "./RenovationBoard";
 import { RenovationCalendar } from "./RenovationCalendar";
 import { RenovationDetail } from "./RenovationDetail";
 import { ProjectMonitor } from "./ProjectMonitor";
+import { useScrollToRenovationSection } from "./renovationScrollToHash";
 
 export function useProjectsMode(): "renovation" | "exhibition" | null {
   const q = useQuery(["renovation", "mode"], () => renovationApi.mode(), [], { staleTime: 5 * 60_000 });
@@ -55,6 +56,7 @@ export function RenovationProjectRoute({ id, fallback }: { id: number; fallback:
       .catch((e: unknown) => { if (live) setKind((e as { status?: number } | null)?.status === 404 ? "other" : "renovation"); });
     return () => { live = false; };
   }, [id]);
+  useScrollToRenovationSection(kind === "renovation");
   if (kind === "checking") return <p className="py-10 text-center text-sm text-ink-secondary">Loading project...</p>;
   if (kind === "other") return <>{fallback()}</>;
   return <RenovationDetail id={id} canWrite={can("projects.write")} />;

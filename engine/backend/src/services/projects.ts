@@ -1237,6 +1237,11 @@ export interface ListProjectsFilters {
    *  `section` — if the section filter is `__done`, this is ignored
    *  so the user can explicitly view the completed bucket. */
   exclude_done?: boolean;
+  /** Renovation Project List (services/renovation/listScope.ts): keep only / drop these project ids, and let these
+   *  ids pass the from / to range (a renovation project has no start / end date). Unset = no effect. */
+  only_ids?: number[];
+  except_ids?: number[];
+  range_extra_ids?: number[];
   page?: number;
   per_page?: number;
   include_archived?: boolean;
@@ -1425,13 +1430,27 @@ export async function listProjects(env: Env, f: ListProjectsFilters) {
   // bound may be blank; hand-edited URLs that aren't ISO YYYY-MM-DD are ignored.
   const rangeFrom = typeof f.from === "string" && /^\d{4}-\d{2}-\d{2}$/.test(f.from) ? f.from : "";
   const rangeTo = typeof f.to === "string" && /^\d{4}-\d{2}-\d{2}$/.test(f.to) ? f.to : "";
+  const idSet = `(SELECT (jsonb_array_elements_text(?::text::jsonb))::bigint)`;
+  const rangeArms: string[] = [];
   if (rangeFrom) {
-    where.push(`substr(COALESCE(p.end_date, p.start_date), 1, 10) >= ?`);
+    rangeArms.push(`substr(COALESCE(p.end_date, p.start_date), 1, 10) >= ?`);
     binds.push(rangeFrom);
   }
   if (rangeTo) {
-    where.push(`substr(p.start_date, 1, 10) <= ?`);
+    rangeArms.push(`substr(p.start_date, 1, 10) <= ?`);
     binds.push(rangeTo);
+  }
+  if (rangeArms.length && f.range_extra_ids) {
+    where.push(`((${rangeArms.join(" AND ")}) OR p.id IN ${idSet})`);
+    binds.push(JSON.stringify(f.range_extra_ids.map(String)));
+  } else where.push(...rangeArms);
+  if (f.only_ids) {
+    where.push(`p.id IN ${idSet}`);
+    binds.push(JSON.stringify(f.only_ids.map(String)));
+  }
+  if (f.except_ids?.length) {
+    where.push(`p.id NOT IN ${idSet}`);
+    binds.push(JSON.stringify(f.except_ids.map(String)));
   }
   if (f.state) {
     where.push("p.state = ?");

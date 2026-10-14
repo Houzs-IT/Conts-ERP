@@ -130,6 +130,8 @@ import { DateRangeFilter, MultiSelectFilter, SectionTaskBadges, ImportCsvPanel }
 import { ProjectsCalendarView } from "./projects/ProjectsCalendarView";
 import { ByProjectsMode, RenovationProjectRoute } from "./projects/renovation/RenovationRoutes";
 import { CreateRenovationPanel } from "./projects/renovation/CreateRenovationPanel";
+import { RenovationListAside, RenovationProjectCard, RenovationStepTiles, renovationColumns, useRenovationBoard } from "./projects/renovation/renovationListParts";
+import { toggleStep } from "./projects/renovation/renovationListModel";
 export { buildCalendarWindow, buildProjectsCalendarModel } from "./projects/calendarModel";
 import { SPEC_INPUT_CLASS, QuickRentalField, SpecTextField, SpecCell, SpecValue } from "./projects/specFields";
 import { LogisticsDateTimeField, GrabHelperBox, type CrewMember } from "./projects/logisticsParts";
@@ -560,6 +562,8 @@ const PROJECTS_LIST_FILTER_KEYS = [
   "from",
   "to",
   "status",
+  // `step` — renovation mode's step tiles (owner 2026-10-15): comma list of flow step keys.
+  "step",
   "page",
 ] as const;
 
@@ -598,6 +602,9 @@ function ProjectsListView({ renovation = false }: { renovation?: boolean }) {
   const yearList = useMemo(() => csvParam(year), [year]);
   const monthList = useMemo(() => csvParam(month), [month]);
   const statusList = useMemo(() => csvParam(status), [status]);
+  // Renovation mode only: the step tiles' filter (design, signed, ...).
+  const step = renovation ? params.get("step") || "" : "";
+  const stepList = useMemo(() => csvParam(step), [step]);
   // Cohort "Setup"/"Dismantle" pick a date-derived event PHASE (not the stale
   // `stage` enum) — see the field/sales slim bar below + backend f.phase.
   const phase = params.get("phase") || "";
@@ -617,6 +624,7 @@ function ProjectsListView({ renovation = false }: { renovation?: boolean }) {
   const setSection = (v: string) => patchParams({ section: v, page: "1" });
   const setTaskPending = (v: string) => patchParams({ task: v, page: "1" });
   const setStatus = (v: string) => patchParams({ status: v, page: "1" });
+  const setStep = (v: string) => patchParams({ step: v, page: "1" });
   const setDateRange = (f: string, t: string) => patchParams({ from: f, to: t, page: "1" });
   const setPhase = (v: string) => patchParams({ phase: v, page: "1" });
   const setPage = (n: number) => patchParams({ page: String(n) });
@@ -688,8 +696,15 @@ function ProjectsListView({ renovation = false }: { renovation?: boolean }) {
 
   // Skip exclude_done when the user explicitly picked the Completed
   // section pill — otherwise the page would show zero rows.
+  // Renovation mode: Hide completed hides the Closed step instead (reno_hide_closed), so the checklist
+  // predicate is not sent.
   const excludeDoneParam =
-    hideCompleted && !sectionList.includes("__done") ? 1 : undefined;
+    !renovation && hideCompleted && !sectionList.includes("__done") ? 1 : undefined;
+  const renoParams = renovation
+    ? { reno: 1, reno_step: step || undefined, reno_hide_closed: hideCompleted ? 1 : undefined }
+    : {};
+  const reno = useRenovationBoard(showArchived, renovation);
+  const today = todayInAppTz();
 
   const list = useQuery<Paginated<ProjectRow>>("/api/projects:",
     (signal) =>
@@ -717,11 +732,12 @@ function ProjectsListView({ renovation = false }: { renovation?: boolean }) {
           page,
           per_page: perPage,
           include_archived: showArchived ? 1 : undefined,
+          ...renoParams,
           ...sortParams,
         })}`,
         { signal },
       ),
-    [brand, year, month, from, to, section, taskPending, status, phase, restrictedCohort, sendAssignedToMe, excludeDoneParam, myPending, search, page, perPage, showArchived, sort?.key, sort?.dir],
+    [brand, year, month, from, to, section, taskPending, status, phase, restrictedCohort, sendAssignedToMe, excludeDoneParam, myPending, search, page, perPage, showArchived, sort?.key, sort?.dir, renovation, step, hideCompleted],
     // Paginated + filter-switched list: keep the current rows on screen while
     // the next page/filter loads instead of flashing an empty table.
     { keepPreviousData: true }
@@ -782,6 +798,7 @@ function ProjectsListView({ renovation = false }: { renovation?: boolean }) {
             page: pg,
             per_page: per,
             include_archived: showArchived ? 1 : undefined,
+            ...renoParams,
             ...sortParams,
           })}`
         );
@@ -890,7 +907,8 @@ function ProjectsListView({ renovation = false }: { renovation?: boolean }) {
     return c;
   }, [taskTitles.data]);
 
-  const columns: Column<ProjectRow>[] = [
+  const openHref = (href: string) => navigate(href);
+  const houzsColumns: Column<ProjectRow>[] = [
     {
       // Hidden by default — the team identifies projects by name, not the
       // long hyphenated code. Still in the column chooser for the rare
@@ -1228,6 +1246,8 @@ function ProjectsListView({ renovation = false }: { renovation?: boolean }) {
       getValue: (r) => r.venue_size ?? null,
     },
   ];
+  // Renovation mode (owner 2026-10-15): the table carries the same facts as the renovation cards.
+  const columns = renovation ? renovationColumns({ byId: reno.byId, steps: reno.steps, today, onOpen: openHref }) : houzsColumns;
 
   return (
     <div>
@@ -1255,6 +1275,15 @@ function ProjectsListView({ renovation = false }: { renovation?: boolean }) {
         }
       />
 
+      {renovation ? (
+        <RenovationStepTiles
+          steps={reno.steps}
+          counts={reno.counts}
+          selected={stepList}
+          loading={reno.loading || !!reno.error}
+          onToggle={(k) => setStep(toggleStep(stepList, k).join(","))}
+        />
+      ) : (
       <DashboardGrid cols={3}>
         <StatCard
           label="Live Now"
@@ -1274,6 +1303,7 @@ function ProjectsListView({ renovation = false }: { renovation?: boolean }) {
           tone={!summaryUnknown && summary.data!.overdue_tasks > 0 ? "error" : "default"}
         />
       </DashboardGrid>
+      )}
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
         {restrictedCohort ? (
@@ -1315,6 +1345,7 @@ function ProjectsListView({ renovation = false }: { renovation?: boolean }) {
             "Task" on 2026-08-19 (owner: "the left one change word status to
             task") because the real project-status chip sits two along and two
             chips reading "status" was the confusion this rename removes. */}
+        {!renovation && (
         <MultiSelectFilter
           placeholder="Task"
           title="Filter by tasklist section"
@@ -1335,6 +1366,7 @@ function ProjectsListView({ renovation = false }: { renovation?: boolean }) {
             },
           ]}
         />
+        )}
         {/* Outstanding-TASK filter — hidden 2026-07-20 (owner: "REMOVE DROPDOWN
             STATUS BUTTON"). The label 'Status' was misleading — the dropdown
             actually filtered by tasks-not-yet-completed, so the owner saw two
@@ -1368,7 +1400,7 @@ function ProjectsListView({ renovation = false }: { renovation?: boolean }) {
             dropdown keeps its own in-panel "Clear (n)"; this resets them all
             together so the owner doesn't have to open each one. Shown only when
             at least one dropdown is active. Search + My-pending are left alone. */}
-        {(section || taskPending || brand || from || to || status) && (
+        {(section || taskPending || brand || from || to || status || step) && (
           <button
             type="button"
             onClick={() =>
@@ -1381,6 +1413,7 @@ function ProjectsListView({ renovation = false }: { renovation?: boolean }) {
                 from: "",
                 to: "",
                 status: "",
+                step: "",
                 page: "1",
               })
             }
@@ -1415,8 +1448,8 @@ function ProjectsListView({ renovation = false }: { renovation?: boolean }) {
               setHideCompleted(e.target.checked);
             }}
             className="accent-accent"
-            disabled={sectionList.includes("__done")}
-            title={sectionList.includes("__done") ? "Disabled while the Completed section filter is ticked" : undefined}
+            disabled={!renovation && sectionList.includes("__done")}
+            title={renovation ? "Hide projects in the Closed step" : sectionList.includes("__done") ? "Disabled while the Completed section filter is ticked" : undefined}
           />
           Hide completed
         </label>
@@ -1476,6 +1509,12 @@ function ProjectsListView({ renovation = false }: { renovation?: boolean }) {
         ) : cardRows.length === 0 ? (
           <div className="rounded-xl border border-border bg-surface p-8 text-center text-[12px] text-ink-muted shadow-stone">
             No projects yet
+          </div>
+        ) : renovation ? (
+          <div className="space-y-2.5">
+            {cardRows.map((r) => (
+              <RenovationProjectCard key={r.id} row={r} board={reno.byId.get(r.id)} steps={reno.steps} today={today} onOpen={openHref} />
+            ))}
           </div>
         ) : (
           <div className="space-y-2.5">
@@ -1564,7 +1603,7 @@ function ProjectsListView({ renovation = false }: { renovation?: boolean }) {
         )
       ) : (
         <DataTable
-          tableId="projects"
+          tableId={renovation ? "projects-reno" : "projects"}
           exportName="projects"
           onExport={() => void exportProjects()}
           search={{
@@ -1577,10 +1616,10 @@ function ProjectsListView({ renovation = false }: { renovation?: boolean }) {
             totalRecords: list.data?.total,
           }}
           resetFilters={{
-            active: !!(search || brand || year || month || section || taskPending || status),
+            active: !!(search || brand || year || month || section || taskPending || status || step),
             onReset: () => {
               const next = new URLSearchParams(params);
-              ["search", "brand", "year", "month", "section", "task", "status", "page"].forEach((k) =>
+              ["search", "brand", "year", "month", "section", "task", "status", "step", "page"].forEach((k) =>
                 next.delete(k)
               );
               setParams(next, { replace: true });
@@ -1599,7 +1638,10 @@ function ProjectsListView({ renovation = false }: { renovation?: boolean }) {
         />
       )}
       </div>
-      {listMode === "cards" && (
+      {listMode === "cards" && renovation && (
+        <RenovationListAside total={list.data?.total ?? null} board={reno.rows} today={today} onOpen={openHref} />
+      )}
+      {listMode === "cards" && !renovation && (
         <aside className="space-y-4">
           <div className="rounded-xl border border-primary/30 bg-primary-soft p-4 shadow-stone">
             <div className="font-mono text-[10px] font-bold uppercase tracking-brand text-primary-ink">Total</div>

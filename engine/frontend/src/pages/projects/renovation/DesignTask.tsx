@@ -68,7 +68,7 @@ export function DesignTaskCard({ projectId, canWrite, onDone, onError }: {
   const t0 = threeD.at(0);
   const v0 = timeline.versions.at(0);
   return (
-    <Card title="Design" icon={<Ruler size={14} />}
+    <Card id="reno-design" title="Design" icon={<Ruler size={14} />}
       actions={q.data ? <Pill tone={timeline.state === "amending" ? "warn" : timeline.state === "submitted" ? "ok" : "muted"}>{status}</Pill> : undefined}>
       {q.loading && !q.data ? <p className="text-xs text-ink-secondary">Loading design...</p> : (
         <ol className="space-y-1">

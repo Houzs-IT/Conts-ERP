@@ -73,7 +73,9 @@ import { activeCompanyId, activeCompanySql, requireActiveCompanyId } from "../sc
 import { refuseForeignChild, refuseForeignProject } from "./lib/project-company-gate";
 import { isStageKey } from "../scm/shared/renovation-stages";
 import { renovationCalendarRows } from "../services/renovation/calendarSpan";
+import { renovationCalendarItems } from "../services/renovation/calendarItems";
 import type { Db as RenoDb } from "../services/renovation/load";
+import { listScopeQuery, loadListScopeRows, renovationListScope } from "../services/renovation/listScope";
 
 /* The context the extracted handlers below receive. They are exported so the
    route tests can drive them directly; the shape is exactly what app.get/post
@@ -1171,7 +1173,15 @@ app.get("/", requirePageAccess("projects.list"), async (c) => {
     } else if (r === "manager") pendingTitle = "Agreement / Quotation";
     // unmapped roles -> no pending filter (see all)
   }
+  // Renovation Project List (reno=1): step, hide-closed and date range by the computed step / calendar bar.
+  const renoQuery = listScopeQuery(c.req.query());
+  const renoScope = renoQuery
+    ? renovationListScope(await loadListScopeRows(c.env.DB as unknown as RenoDb, activeCompanySql(c, "p.company_id"), c.req.query("include_archived") === "1"), renoQuery)
+    : {};
   const result = await listProjects(c.env, {
+    only_ids: renoScope.onlyIds,
+    except_ids: renoScope.exceptIds,
+    range_extra_ids: renoScope.rangeIds,
     company_id: activeCompanyId(c),
     pending_label: pendingLabel,
     pending_title: pendingTitle,
@@ -5020,7 +5030,9 @@ app.get("/calendar/events", requirePageAccess("projects.calendar"), async (c) =>
 
   // Renovation projects carry no start / end date: their bars are computed here (owner, 14 Oct 2026).
   const reno = await renovationCalendarRows(c.env.DB as unknown as RenoDb, from, to, scopeWhere, scopeBinds, coSql);
-  return c.json({ projects: [...(projects.results ?? []), ...reno], tasks: tasks.results ?? [] });
+  // Renovation Week view (owner, 15 Oct 2026): dated items per day instead of project bars, only when asked for.
+  const renoItems = c.req.query("items") === "1" ? await renovationCalendarItems(c.env.DB as unknown as RenoDb, from, to, scopeWhere, scopeBinds, coSql) : undefined;
+  return c.json({ projects: [...(projects.results ?? []), ...reno], tasks: tasks.results ?? [], ...(renoItems ? { renoItems } : {}) });
 });
 
 // ── CSV import ───────────────────────────────────────────────

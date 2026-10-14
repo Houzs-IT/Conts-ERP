@@ -25,6 +25,11 @@ import {
   buildProjectsCalendarModel,
 } from "./calendarModel";
 import { CalendarTaskChip, DayCountBadge, CalendarBarPopover, CalendarTaskPopover, CalendarDayModal } from "./calendarParts";
+import { useProjectsMode } from "./renovation/RenovationRoutes";
+import { filterRenoItems, itemsByDate, type RenoCalendarItem } from "./renovation/renovationCalendarItems";
+import { RenovationItemLegend, RenovationWeekGrid } from "./renovation/renovationWeekGrid";
+
+const EMPTY_RENO_ITEMS: RenoCalendarItem[] = [];
 
 const PROJECTS_CALENDAR_FILTER_KEYS = [
   "brand",
@@ -258,9 +263,18 @@ export function ProjectsCalendarView() {
 
   // Window: month = 6 weeks (42 cells) from the first Monday on/before
   // the 1st; week = 1 week (7 cells) from the week anchor.
-  const q = useQuery<{ projects: CalendarProject[]; tasks: CalendarTask[] }>("/api/projects/calendar/events?from=:&to=:",
-    () => api.get(`/api/projects/calendar/events?from=${fromStr}&to=${toStr}`),
-    [fromStr, toStr]
+  // Renovation mode's Week view (owner 2026-10-15) shows dated items per day, not project bars; month view
+  // keeps the bars. Exhibition mode is unchanged.
+  const projectsMode = useProjectsMode();
+  const renoWeek = projectsMode === "renovation" && mode === "week";
+  const q = useQuery<{ projects: CalendarProject[]; tasks: CalendarTask[]; renoItems?: RenoCalendarItem[] }>("/api/projects/calendar/events?from=:&to=:",
+    () => api.get(`/api/projects/calendar/events?from=${fromStr}&to=${toStr}${renoWeek ? "&items=1" : ""}`),
+    [fromStr, toStr, renoWeek]
+  );
+  const renoItems = q.data?.renoItems ?? EMPTY_RENO_ITEMS;
+  const renoByDate = useMemo(
+    () => itemsByDate(filterRenoItems(renoItems, { brand, status, organizer, q: search })),
+    [renoItems, brand, status, organizer, search],
   );
 
   const allProjects = q.data?.projects ?? EMPTY_CALENDAR_PROJECTS;
@@ -552,7 +566,9 @@ export function ProjectsCalendarView() {
         </div>
       </div>
 
+      {renoWeek && <RenovationItemLegend />}
       {/* Status legend — bars are tinted by project status (mig 088). */}
+      {!renoWeek && (
       <div className="mb-1.5 flex flex-wrap items-center gap-3 text-[12px]">
         {STATUS_OPTIONS.map((s) => (
           <span key={s.value} className="inline-flex items-center gap-1">
@@ -569,6 +585,7 @@ export function ProjectsCalendarView() {
           </span>
         )}
       </div>
+      )}
 
       {q.loading && <div className="text-[12px] text-ink-muted">Loading calendar…</div>}
       {q.error && (
@@ -577,8 +594,19 @@ export function ProjectsCalendarView() {
         </div>
       )}
 
+      {renoWeek && (
+        <RenovationWeekGrid
+          days={cells.map((c) => c.iso)}
+          byDate={renoByDate}
+          today={today}
+          showHolidays={showHolidays}
+          loading={q.loading}
+          onOpen={(id) => navigate(`/projects/${id}`)}
+        />
+      )}
       {/* The grid always fits its container: the 7 day columns shrink to
           the viewport width on mobile rather than scrolling horizontally. */}
+      {!renoWeek && (
       <div>
         <div ref={gridRef} className="rounded-md border border-border bg-surface">
         {/* Weekday header — month view only. In week view each cell
@@ -875,6 +903,7 @@ export function ProjectsCalendarView() {
         })}
         </div>
       </div>
+      )}
 
       {dayModalIso && (
         <CalendarDayModal

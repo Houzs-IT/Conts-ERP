@@ -47,6 +47,8 @@ export interface BoardRowV2 {
   soDocNo: string | null;
   soDate: string | null;
   sales: { personId: number | null; name: string | null };
+  /** the Project PIC (projects.reno_pic_person_id) */
+  renoPic: { personId: number | null; name: string | null };
   contractSen: number | null;
   receivedSen: number | null;
   receivedPct: number | null;
@@ -61,6 +63,8 @@ export interface BoardRowV2 {
   handoverDate: string | null;
   plannedHandoverDate: string | null;
   redFlagCount: number;
+  /** Optional: an engine older than 15 Oct 2026 sends only the count. */
+  redFlags?: Array<{ code: string; text: string }>;
   archived: boolean;
 }
 
@@ -119,7 +123,7 @@ export interface LinkableSo { doc_no: string; so_date: string | null; debtor_nam
 const R = "/api/renovation";
 
 export const simpleApi = {
-  boardRows: () => api.get<{ data: BoardRowV2[] }>(`${R}/board-rows`),
+  boardRows: (archived = false) => api.get<{ data: BoardRowV2[] }>(`${R}/board-rows${archived ? "?archived=1" : ""}`),
   detail: (id: number) => api.get<ProjectDetailV2>(`${R}/${id}`),
   people: (q: { role?: PersonRole; active?: boolean } = {}) => {
     const p = new URLSearchParams();
