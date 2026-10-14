@@ -18,8 +18,8 @@ interface Props { path: string; navigate: (p: string) => void; open: boolean; on
 
 /** The chosen workspace survives a reload. Storage can throw (private mode), so every access is guarded. */
 const WS_KEY = 'conts.shell.workspace';
-const readWs = (): Workspace => { try { return localStorage.getItem(WS_KEY) === 'supply' ? 'supply' : 'rental'; } catch { return 'rental'; } };
-const saveWs = (w: Workspace) => { try { localStorage.setItem(WS_KEY, w); } catch { /* not kept */ } };
+export const readWs = (): Workspace => { try { return localStorage.getItem(WS_KEY) === 'supply' ? 'supply' : 'rental'; } catch { return 'rental'; } };
+export const saveWs = (w: Workspace) => { try { localStorage.setItem(WS_KEY, w); } catch { /* not kept */ } };
 
 function parentOf(groups: NavGroup[], path: string) {
   for (const g of groups) for (const it of g.items)

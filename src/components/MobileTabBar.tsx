@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react';
 import { color, motion, radius } from '../theme';
-import { navFor, screenClosed , type BadgeKey } from '../lib/navigation';
+import { navFor, screenClosed, workspaceOf, WORKSPACE_LABEL, type BadgeKey, type Workspace } from '../lib/navigation';
 import { useApi } from '../lib/useApi';
 import { useSession } from '../lib/session';
 import { useNavCounts } from '../lib/navBadges';
 import Icon, { toPascal } from './Icon';
+import { readWs, saveWs } from './Sidebar';
 
 /** Phone bottom navigation (owner, Oct 2026): Dashboard, Calendar, More, Reservations, Settings.
  *  More sits in the centre as a raised round button and opens every module, grouped
@@ -12,7 +13,7 @@ import Icon, { toPascal } from './Icon';
 const TABS = [
   { key: 'dashboard', label: 'Dashboard', icon: 'LayoutDashboard', path: '/' },
   { key: 'calendar', label: 'Calendar', icon: 'CalendarDays', path: '/reservations/calendar' },
-  { key: 'more', label: 'More', icon: 'LayoutGrid', path: '' },
+  { key: 'more', label: 'More', icon: 'Menu', path: '' },
   { key: 'bookings', label: 'Reservations', icon: 'BookOpen', path: '/reservations/bookings' },
   { key: 'settings', label: 'Settings', icon: 'Settings', path: '/settings' },
 ] as const;
@@ -43,7 +44,7 @@ export default function MobileTabBar({ path, navigate }: { path: string; navigat
                     background: color.black, color: color.gold, display: 'grid', placeItems: 'center', cursor: 'pointer',
                     boxShadow: '0 6px 16px rgba(21,21,21,0.24)',
                   }}>
-                  <Icon name="LayoutGrid" size="base" />
+                  <Icon name="Menu" size="base" />
                 </button>
               </div>
             );
@@ -74,12 +75,17 @@ function MoreSheet({ path, navigate, onClose }: { path: string; navigate: (p: st
   const engine = useApi<{ enabled: boolean }>('/supply-chain/engine');
   const counts = useNavCounts(path);
   const [q, setQ] = useState('');
+  // Same Rental / Supply chain split as the desktop sidebar, sharing its saved choice.
+  const [ws, setWs] = useState<Workspace>(() => workspaceOf(path) ?? readWs());
+  const pick = (w: Workspace) => { setWs(w); saveWs(w); };
+  const all = useMemo(() => navFor(user!.role, !!engine.data?.enabled, user!.access).filter(g => g.label !== 'SYSTEM'), [user, engine.data?.enabled]);
+  const hasSupply = all.some(g => g.workspace === 'supply');
   const groups = useMemo(() => {
-    const all = navFor(user!.role, !!engine.data?.enabled, user!.access);
     const needle = q.trim().toLowerCase();
     const n = (b?: BadgeKey) => (b ? Number(counts?.[b] ?? 0) : 0);
+    // A search looks through both sides: people should not need to know which one a module lives in.
     return all
-      .filter(g => g.label !== 'SYSTEM')
+      .filter(g => needle || !hasSupply || g.workspace === ws)
       .map(g => ({
         label: g.label,
         items: g.items.flatMap(it => it.children?.length
@@ -88,7 +94,7 @@ function MoreSheet({ path, navigate, onClose }: { path: string; navigate: (p: st
           .filter(it => !needle || it.label.toLowerCase().includes(needle)),
       }))
       .filter(g => g.items.length);
-  }, [user, engine.data?.enabled, q, counts]);
+  }, [all, hasSupply, ws, q, counts]);
 
   return (
     <div role="dialog" aria-modal aria-label="All modules" style={{ position: 'fixed', inset: 0, zIndex: 60, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
@@ -105,6 +111,17 @@ function MoreSheet({ path, navigate, onClose }: { path: string; navigate: (p: st
             <Icon name="X" size="base" />
           </button>
         </div>
+        {hasSupply && (
+          <div role="tablist" aria-label="Workspace" style={{ margin: '8px 18px 0', padding: 3, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 3, borderRadius: 14, border: `1px solid ${color.border}`, background: color.card }}>
+            {(['rental', 'supply'] as Workspace[]).map(w => (
+              <button key={w} type="button" role="tab" aria-selected={ws === w} onClick={() => pick(w)}
+                style={{ height: 40, borderRadius: 11, border: 'none', cursor: 'pointer', font: 'inherit', fontSize: 14, fontWeight: 600,
+                  background: ws === w ? color.black : 'transparent', color: ws === w ? 'var(--color-text-inverse)' : color.textMuted }}>
+                {WORKSPACE_LABEL[w]}
+              </button>
+            ))}
+          </div>
+        )}
         <div style={{ padding: '8px 18px 12px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, height: 46, padding: '0 14px', borderRadius: 14, border: `1px solid ${color.border}`, background: color.card, color: color.textMuted }}>
             <Icon name="Search" size="sm" />
