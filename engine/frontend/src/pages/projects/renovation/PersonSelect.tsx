@@ -16,13 +16,13 @@ export function peopleOptions(all: readonly Person[], role: PersonRole | undefin
   return all.filter((p) => cur.has(p.id) || (p.active && (!role || p.roles.includes(role))));
 }
 
-export function PersonSelect({ value, onChange, role, label, disabled, placeholder = "Not set" }: {
-  value: number | null; onChange: (id: number | null) => void; role?: PersonRole; label: string; disabled?: boolean; placeholder?: string;
+export function PersonSelect({ value, onChange, role, label, disabled, placeholder = "Not set", className = inputClass }: {
+  value: number | null; onChange: (id: number | null) => void; role?: PersonRole; label: string; disabled?: boolean; placeholder?: string; className?: string;
 }) {
   const q = usePeople();
   const opts = peopleOptions(q.data?.data ?? [], role, value ? [value] : []);
   return (
-    <select className={inputClass} aria-label={label} value={value ?? ""} disabled={disabled || q.loading}
+    <select className={className} aria-label={label} value={value ?? ""} disabled={disabled || q.loading}
       onChange={(e) => onChange(e.target.value ? Number(e.target.value) : null)}>
       <option value="">{q.loading ? "Loading..." : placeholder}</option>
       {opts.map((p) => <option key={p.id} value={p.id}>{p.name}{p.active ? "" : " (inactive)"}</option>)}

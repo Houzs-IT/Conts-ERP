@@ -843,6 +843,7 @@ export function ProjectsCalendarView() {
                         top: seg.lane * LANE_TOTAL,
                         height: BAR_H,
                         ...statusBarStyle(seg.project.status),
+                        ...(seg.project.end_estimated ? { borderStyle: "dashed", borderWidth: 1 } : {}),
                       }}
                       className={cn(
                         "cal-bar pointer-events-auto truncate px-2 text-left text-[10.5px] font-semibold leading-[18px] hover:-translate-y-px",
@@ -864,6 +865,7 @@ export function ProjectsCalendarView() {
                           : seg.project.name,
                         seg.project.state,
                       )}
+                      {seg.project.end_estimated && <span className="font-normal opacity-80"> · end estimated</span>}
                     </button>
                   );
                 })}

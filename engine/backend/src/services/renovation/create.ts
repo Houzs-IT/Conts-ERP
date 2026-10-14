@@ -100,7 +100,7 @@ export async function createRenovationProject(
                 (SELECT id FROM project_people WHERE id = ?::bigint AND company_id = ?),
                 (SELECT id FROM project_people WHERE id = ?::bigint AND company_id = ?)
            FROM t, code
-         RETURNING id, code
+         RETURNING id, code, sales_person_id, designer_person_id
        ),
        fin AS (INSERT INTO project_finance (project_id) SELECT id FROM p RETURNING project_id),
        st AS (
@@ -137,8 +137,15 @@ export async function createRenovationProject(
        act AS (
          INSERT INTO project_activity (project_id, action, to_value, user_id, company_id)
          SELECT p.id, 'created', p.code, ?, ? FROM p RETURNING id
+       ),
+       -- The sales person and designer picked on the form start out as Attending (owner, 14 Oct 2026).
+       att AS (
+         INSERT INTO project_attendees (project_id, person_id, created_by)
+         SELECT DISTINCT p.id, x.pid, ?::bigint FROM p CROSS JOIN LATERAL (VALUES (p.sales_person_id), (p.designer_person_id)) AS x(pid)
+          WHERE x.pid IS NOT NULL
+         RETURNING project_id
        )
-       SELECT p.id, p.code, (SELECT count(*) FROM st)::int AS stages, (SELECT count(*) FROM items)::int AS items,
+       SELECT p.id, p.code, (SELECT count(*) FROM att)::int AS attending, (SELECT count(*) FROM st)::int AS stages, (SELECT count(*) FROM items)::int AS items,
               (SELECT count(*) FROM tasks)::int AS tasks, (SELECT count(*) FROM fin)::int AS fin, (SELECT count(*) FROM act)::int AS act
          FROM p`,
     )
@@ -155,6 +162,7 @@ export async function createRenovationProject(
       companyId,
       companyId, JSON.stringify(internal),
       actorId, companyId,
+      actorId,
     )
     .first<{ id: number; code: string }>();
   return row ? { id: Number(row.id), code: row.code } : null;

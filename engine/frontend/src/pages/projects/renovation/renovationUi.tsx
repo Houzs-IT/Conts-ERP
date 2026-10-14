@@ -99,6 +99,10 @@ export function Field({ label, children }: { label: string; children: ReactNode 
 }
 
 export const inputClass = "w-full rounded-md border border-border bg-surface px-3 py-2 text-sm";
+/** Compact field for dense record cards (key log, design steps, procurement dates). */
+export const smallInput = "w-full min-w-0 rounded border border-border bg-surface px-2 py-1 text-xs text-ink disabled:opacity-60";
+/** Compact Button size (cn has no tailwind-merge, so the base h-9 / px-4 need the important prefix). */
+export const smallBtn = "!h-7 !px-2.5 !text-xs";
 
 /** Signature pad. `onChange(true)` fires on the first real stroke and is the only
     signal that someone signed: an untouched canvas still exports a valid (blank)

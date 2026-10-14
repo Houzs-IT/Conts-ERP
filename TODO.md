@@ -93,6 +93,12 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 - Confirm the Hyperdrive origin is Supabase's session pooler (port 5432), not the transaction pooler.
 - libphonenumber (149 KB) is in the entry script because src/lib/format.ts formats phones; lazy-load it if the entry budget (scripts/checks/entry-bundle.mjs, 180 KB gzipped) gets tight.
 
+## Renovation project screens (feat/reno-project-ux, migration 0111, 14 Oct 2026)
+- OPEN, before merge: apply migration 0111 on staging, then production (lead). It adds project_attendees (backfilled from sales_person_id / designer_person_id), project_procurement_dates, project_design_notes and two columns on project_design_files. The engine deploys on merge, so the migration must be on production first.
+- Done (14 Oct, owner ruling): renovation projects show on the original Calendar (desktop and phone) from created date to planned handover; else actual handover, else SLA due date (project_types.sla_days, not a column yet), else 45 days marked "end estimated". Computed when read (services/renovation/calendarSpan.ts). The old Task calendar is no longer reachable from any menu.
+- Later: procurement dates (Procurement details) are meant to raise purchase orders automatically; nothing does yet (TODO(auto-PO) in engine/backend/src/services/renovation/procurement.ts).
+- The create form still asks for Sales and Designer; both become Attending. Wiring it to Project PIC / Attending waits for feat/reno-customer-info (migration 0112).
+
 ## Later
 - Packages (8 Oct, chore/update-packages): Property OS has 0 flagged packages (wrangler 4.148, source-map-js, and an override pinning sharp to 0.35.5 inside wrangler's local emulator; all build/dev tools, none ran in production). Engine: the non-breaking fixes are in (hono on the server, dompurify on the screens, and build tools). Left in engine/, each needing a breaking upgrade of Houzs's code or tools: react-router 6 (moderate), wrangler's sharp and undici, esbuild, vitest, braces. Take them with the next Houzs copy.
 - Email delivery: needs MAIL_API_KEY on the preview environment too; production has it.

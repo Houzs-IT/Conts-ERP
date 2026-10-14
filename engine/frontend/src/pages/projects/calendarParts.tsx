@@ -140,6 +140,7 @@ export function CalendarBarPopover({
     ["Brand", p.brand],
     ["Venue", p.venue],
     ["When", span],
+    ["Ends", p.end_basis === "estimate" ? "Estimate (no planned handover)" : p.end_basis === "sla" ? "SLA due date" : p.end_basis === "handed_over" ? "Handed over" : p.end_basis === "planned_handover" ? "Planned handover" : null],
     ["Organizer", p.organizer],
     ["Stage", stage],
   ];

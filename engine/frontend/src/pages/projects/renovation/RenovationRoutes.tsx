@@ -1,8 +1,9 @@
 /* How the engine's Projects area switches to renovation (app_settings
-   projects_mode = renovation, mig 0082): the list view becomes the board, the
-   calendar view becomes the task calendar, and a renovation project opens the
-   renovation detail. An exhibition project (or an install still in exhibition
-   mode) keeps the original screens. */
+   projects_mode = renovation, mig 0082): a renovation project opens the renovation
+   detail and the list's New project opens the renovation form. Since 14 Oct 2026
+   (owner) the list and calendar are the original screens in both modes; the board
+   and task calendar views below are kept but not routed. An exhibition project (or
+   an install still in exhibition mode) keeps the original screens. */
 
 import { useEffect, useState, type ReactNode } from "react";
 import { useQuery } from "../../../hooks/useQuery";

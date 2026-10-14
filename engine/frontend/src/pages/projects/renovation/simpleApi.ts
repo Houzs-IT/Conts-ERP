@@ -23,6 +23,7 @@ export interface Money { contractSen: number | null; receivedSen: number | null;
 export interface KeyHolder { personId: number | null; name: string | null; movedOn: string }
 export interface PersonRef { id: number | null; name: string | null }
 export interface Assignee { id: number; name: string }
+export interface AttendingPerson { id: number; name: string; active: boolean; phone: string | null }
 
 export type TaskViewV2 = TaskView & { category_code?: string | null; occurrence?: number; assignees?: Assignee[]; actual_start: string | null };
 
@@ -32,7 +33,7 @@ export interface ProjectDetailV2 extends Omit<ProjectDetail, "tasks"> {
   money: Money;
   keyHolder: KeyHolder | null;
   vo: { count: number; approved: number } | null;
-  people: { sales: PersonRef; designer: PersonRef; renoPic: PersonRef };
+  people: { sales: PersonRef; designer: PersonRef; renoPic: PersonRef; pic: PersonRef; attending: AttendingPerson[] };
   tasks: TaskViewV2[];
 }
 
@@ -89,7 +90,16 @@ export interface SiteMeasure { id: number; done_on: string | null; person_name: 
 export interface DesignFile {
   id: number; kind: "2d" | "3d" | "other"; version: number; file_name: string; r2_key: string | null; external_url: string | null;
   person_name: string | null; uploaded_by_name: string | null; uploaded_at: string; note: string | null;
+  submitted_on: string | null; next_person_id: number | null; next_person_name: string | null;
 }
+export interface DesignNote {
+  id: number; kind: "3d" | "2d"; noted_on: string; requested_by_person_id: number | null; requested_by_person_name: string | null;
+  requested_by_text: string | null; note: string; created_by_name: string | null;
+}
+export type ProcMode = "follow" | "own" | "none";
+export interface ProcDates { poDate: string | null; deliveryDate: string | null }
+export interface ProcSub { code: string; label: string; mode: ProcMode; stored: ProcDates; effective: ProcDates; updatedAt: string | null; updatedBy: string | null }
+export interface ProcGroup extends ProcDates { code: string; label: string; updatedAt: string | null; updatedBy: string | null; subs: ProcSub[] }
 export interface LinkableSo { doc_no: string; so_date: string | null; debtor_name: string | null; status: string; local_total_sen: number | null; building: string | null; unit_no: string | null }
 
 const R = "/api/renovation";
@@ -116,19 +126,30 @@ export const simpleApi = {
   followData: (id: number) => api.post<{ ok: true }>(`${R}/${id}/step/follow-data`, {}),
   setHold: (id: number, flag: HoldFlag, note: string | null) => api.post<{ ok: true }>(`${R}/${id}/hold`, { flag, note }),
   clearHold: (id: number) => api.post<{ ok: true }>(`${R}/${id}/hold/clear`, {}),
-  setPeople: (id: number, b: Partial<{ salesPersonId: number | null; designerPersonId: number | null; renoPicPersonId: number | null }>) =>
+  setPeople: (id: number, b: Partial<{ salesPersonId: number | null; designerPersonId: number | null; renoPicPersonId: number | null; picPersonId: number | null; attendingPersonIds: number[] }>) =>
     api.patch<{ ok: true }>(`${R}/${id}/people`, b),
   keyLog: (projectId: number) => api.get<{ data: KeyMove[] }>(`${R}/key-log?projectId=${projectId}`),
   addKeyMove: (id: number, b: { movedOn: string; fromPersonId: number | null; toPersonId: number | null; note?: string | null }) =>
     api.post<{ id: number }>(`${R}/${id}/key-moves`, b),
-  designRecords: (projectId: number) => api.get<{ measures: SiteMeasure[]; files: DesignFile[] }>(`${R}/design-records?projectId=${projectId}`),
+  designRecords: (projectId: number) => api.get<{ measures: SiteMeasure[]; files: DesignFile[]; notes: DesignNote[] }>(`${R}/design-records?projectId=${projectId}`),
   addSiteMeasure: (id: number, b: { doneOn: string; personId: number | null; note?: string | null }) => api.post<{ id: number }>(`${R}/${id}/site-measures`, b),
-  uploadDesignFile: (id: number, kind: "2d" | "3d" | "other", file: File, personId: number | null, note: string | null) => {
+  uploadDesignFile: (id: number, kind: "2d" | "3d" | "other", file: File, personId: number | null, note: string | null, extra: { submittedOn?: string; nextPersonId?: number | null } = {}) => {
     const p = new URLSearchParams({ kind, fileName: file.name });
     if (personId) p.set("personId", String(personId));
+    if (extra.submittedOn) p.set("submittedOn", extra.submittedOn);
+    if (extra.nextPersonId) p.set("nextPersonId", String(extra.nextPersonId));
     if (note) p.set("note", note);
     return api.postBinary<{ id: number; version: number }>(`${R}/${id}/design-files?${p.toString()}`, file, file.type || "application/octet-stream");
   },
+  addDesignLink: (id: number, b: { kind: "2d" | "3d"; url: string; submittedOn: string; personId: number | null; nextPersonId?: number | null; note?: string | null }) =>
+    api.post<{ id: number; version: number }>(`${R}/${id}/design-links`, b),
+  addDesignNote: (id: number, b: { kind: "2d" | "3d"; notedOn: string; requestedByPersonId: number | null; requestedByText: string | null; note: string }) =>
+    api.post<{ id: number }>(`${R}/${id}/design-notes`, b),
+  procurement: (id: number) => api.get<{ projectId: number; groups: ProcGroup[] }>(`${R}/${id}/procurement`),
+  setCategoryDates: (id: number, group: string, b: ProcDates) =>
+    api.put<{ ok: true; groups: ProcGroup[] }>(`${R}/${id}/procurement/${encodeURIComponent(group)}`, b),
+  setSubDates: (id: number, group: string, sub: string, b: { mode: ProcMode } & Partial<ProcDates>) =>
+    api.put<{ ok: true; groups: ProcGroup[] }>(`${R}/${id}/procurement/${encodeURIComponent(group)}/${encodeURIComponent(sub)}`, b),
   fileUrl: (id: number, key: string) => `${R}/${id}/files?key=${encodeURIComponent(key)}`,
   linkableSos: (q: string) => api.get<{ data: LinkableSo[] }>(`${R}/linkable-sos?q=${encodeURIComponent(q)}`),
   linkSo: (projectId: number, docNo: string) => api.post<{ ok: true }>(`${R}/link-so`, { projectId, docNo }),

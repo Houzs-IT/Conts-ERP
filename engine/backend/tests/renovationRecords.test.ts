@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { cleanDesignKind, cleanHold, cleanKeyMove, cleanManualStep, cleanPerson, cleanSiteMeasure } from "../src/services/renovation/records";
+import { cleanAttending, cleanDesignKind, cleanDesignLink, cleanDesignNote, cleanHold, cleanKeyMove, cleanManualStep, cleanPerson, cleanSiteMeasure } from "../src/services/renovation/records";
 import { boardRowOf } from "../src/services/renovation/boardRow";
 import type { ProjectFacts } from "../src/services/renovation/load";
 import type { ProjectView } from "../src/services/renovation/view";
@@ -83,5 +83,33 @@ describe("board row", () => {
   test("money hidden from a user without finance access", () => {
     const r = boardRowOf(f, v, { hideMoney: true });
     expect(r).toMatchObject({ contractSen: null, receivedSen: null, receivedPct: null, moneyHidden: true, redFlagCount: 1 });
+  });
+});
+
+describe("project PIC and attending (owner, 14 Oct 2026)", () => {
+  test("attending is a de-duplicated list of person ids; empty clears it", () => {
+    expect(cleanAttending({ attendingPersonIds: [3, "4", 3] })).toEqual({ ok: true, value: [3, 4] });
+    expect(cleanAttending({ attendingPersonIds: [] })).toEqual({ ok: true, value: [] });
+    expect(cleanAttending({ attendingPersonIds: [1, "x"] })).toMatchObject({ ok: false, error: "person_invalid" });
+    expect(cleanAttending({ attendingPersonIds: "1,2" })).toMatchObject({ ok: false, error: "person_invalid" });
+  });
+});
+
+describe("design: 3D / 2D submissions by link and change notes", () => {
+  test("a link submission needs an http(s) address; dates default to today and never lie ahead", () => {
+    expect(cleanDesignLink({ kind: "3d", url: "https://drive.example/x", personId: 3, nextPersonId: 4 }, TODAY))
+      .toEqual({ ok: true, value: { kind: "3d", url: "https://drive.example/x", submittedOn: TODAY, personId: 3, nextPersonId: 4, note: null } });
+    expect(cleanDesignLink({ kind: "3d", url: "javascript:alert(1)" }, TODAY)).toMatchObject({ ok: false, error: "url_invalid" });
+    expect(cleanDesignLink({ kind: "4d", url: "https://x.example" }, TODAY)).toMatchObject({ ok: false, error: "kind_invalid" });
+    expect(cleanDesignLink({ kind: "2d", url: "https://x.example", submittedOn: "2026-12-01" }, TODAY)).toMatchObject({ ok: false, error: "date_in_future" });
+    expect(cleanDesignLink({ kind: "2d", url: "https://x.example", nextPersonId: 4 }, TODAY)).toMatchObject({ ok: true, value: { nextPersonId: null } });
+  });
+  test("a note needs text; requested by is a person, free text, or nobody", () => {
+    expect(cleanDesignNote({ kind: "3d", note: " move the TV wall ", requestedByPersonId: 2 }, TODAY))
+      .toEqual({ ok: true, value: { kind: "3d", notedOn: TODAY, requestedByPersonId: 2, requestedByText: null, note: "move the TV wall" } });
+    expect(cleanDesignNote({ kind: "2d", note: "x", requestedByText: " Owner's wife " }, TODAY)).toMatchObject({ ok: true, value: { requestedByText: "Owner's wife", requestedByPersonId: null } });
+    expect(cleanDesignNote({ kind: "3d", note: " " }, TODAY)).toMatchObject({ ok: false, error: "note_required" });
+    expect(cleanDesignNote({ kind: "other", note: "x" }, TODAY)).toMatchObject({ ok: false, error: "kind_invalid" });
+    expect(cleanDesignNote({ kind: "3d", note: "x", notedOn: "11/10/2026" }, TODAY)).toMatchObject({ ok: false, error: "date_invalid" });
   });
 });
