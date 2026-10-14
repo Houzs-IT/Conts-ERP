@@ -49,10 +49,21 @@ const roleTone: Record<UserRole, Tone> = {
 
 interface Row {
   id: string; fullName: string; email: string; phone: string | null; role: UserRole;
+  department?: string | null; position?: string | null;
   managerId: string | null;
   isActive: boolean; mustChangePassword: boolean; isLocked?: boolean; twoStep?: boolean; lastLoginAt: string | null;
 }
-interface Payload { data: Row[]; generatedAt: string }
+interface Payload { data: Row[]; generatedAt: string; jobFields?: boolean }
+
+// Department and position are free text (migration 0113): the renovation pickers show them after the name, so
+// picking "Alex · Project PIC · Renovation" says what the person does. These are suggestions, not a fixed list;
+// values already used on other accounts are suggested too, so spellings stay consistent.
+const DEPARTMENT_SUGGESTIONS = ['Management', 'Sales', 'Design', 'Renovation', 'Operations', 'Finance', 'Admin'];
+const POSITION_SUGGESTIONS = ['Director', 'Sales Executive', 'Interior Designer', '3D Designer', '2D Drafter', 'Project PIC', 'Site Supervisor', 'Admin'];
+const suggestionsFrom = (base: string[], used: Array<string | null | undefined>) =>
+  [...new Set([...base, ...used.map(v => (v ?? '').trim()).filter(Boolean)])].sort((a, b) => a.localeCompare(b));
+/** "Position · Department", skipping what is not set. */
+const jobLine = (u: Pick<Row, 'department' | 'position'>) => [u.position, u.department].map(v => (v ?? '').trim()).filter(Boolean).join(' · ');
 
 const FALLBACK: Payload = {
   generatedAt: '',
@@ -135,6 +146,9 @@ export default function UsersPage() {
   const nameById = useMemo(() => Object.fromEntries(rows.map(r => [r.id, r.fullName])), [rows]);
 
   const staff = rows.filter(r => r.role !== 'owner');
+  const jobFields = data?.jobFields === true;
+  const departmentOptions = useMemo(() => suggestionsFrom(DEPARTMENT_SUGGESTIONS, rows.map(r => r.department)), [rows]);
+  const positionOptions = useMemo(() => suggestionsFrom(POSITION_SUGGESTIONS, rows.map(r => r.position)), [rows]);
 
   const columns = useMemo<Column<Row>[]>(() => [
     { key: 'name', label: 'Name', value: u => u.fullName, hideable: false, width: 220,
@@ -149,6 +163,10 @@ export default function UsersPage() {
           </span>
         </span>
       ) },
+    ...(jobFields ? [
+      { key: 'position', label: 'Position', value: (u: Row) => u.position || null, width: 160 },
+      { key: 'department', label: 'Department', value: (u: Row) => u.department || null, width: 140 },
+    ] : []),
     { key: 'email', label: 'Email', value: u => u.email, width: 210 },
     { key: 'phone', label: 'Phone', type: 'phone', value: u => u.phone || null, hidden: true, width: 140 },
     { key: 'role', label: 'Role', type: 'status', value: u => u.role, status: u => ({ label: roleLabel(u.role), tone: roleTone[u.role] }), width: 150 },
@@ -159,7 +177,7 @@ export default function UsersPage() {
     // The menu is read through a ref: its actions depend on state the memoised columns would otherwise hold stale.
     { key: 'actions', label: '', width: 52, align: 'right', noExport: true, sortable: false, filter: false, hideable: false,
       render: u => <RowActions name={u.fullName} items={actionsRef.current(u)} /> },
-  ], [nameById]);
+  ], [nameById, jobFields]);
   const invitedCount = rows.filter(r => status(r).label === 'Invited').length;
   const actionsRef = useRef<(u: Row) => RowAction[]>(() => []);
 
@@ -170,12 +188,14 @@ export default function UsersPage() {
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<UserRole>('operations_staff');
   const [managerId, setManagerId] = useState<string>('');
+  const [department, setDepartment] = useState('');
+  const [position, setPosition] = useState('');
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [lastTempPassword, setLastTempPassword] = useState<{ name: string; password: string } | null>(null);
 
   function resetInvite() {
     setInviteOpen(false); setFullName(''); setEmail(''); setRole('operations_staff');
-    setManagerId(''); setFieldErrors({}); setBusy(false);
+    setManagerId(''); setDepartment(''); setPosition(''); setFieldErrors({}); setBusy(false);
   }
 
   async function submitInvite(e: FormEvent) {
@@ -189,7 +209,8 @@ export default function UsersPage() {
 
     setBusy(true); setFieldErrors({});
     try {
-      const res = await api.post<{ id: string; delivery: string; reason?: string }>('/users', { fullName: fullName.trim(), email: email.trim(), role, managerId: role === 'owner' ? null : managerId || null });
+      const res = await api.post<{ id: string; delivery: string; reason?: string }>('/users', { fullName: fullName.trim(), email: email.trim(), role, managerId: role === 'owner' ? null : managerId || null,
+        ...(jobFields ? { department: department.trim() || null, position: position.trim() || null } : {}) });
       toast(res.delivery === 'sent'
         ? { tone: 'success', title: `Invitation sent to ${fullName.trim()}.`, body: 'A temporary password was emailed. They must change it on first sign-in.' }
         : { tone: 'warning', title: `${fullName.trim()}'s account was created, but the email was not delivered.`, body: res.reason ?? 'The email service is not connected, so the invitation is queued. Ask them to use Forgot password once email works.' });
@@ -210,11 +231,13 @@ export default function UsersPage() {
   const [editName, setEditName] = useState('');
   const [editEmail, setEditEmail] = useState('');
   const [editPhone, setEditPhone] = useState('');
-  const [editErrors, setEditErrors] = useState<{ fullName?: string; email?: string; phone?: string }>({});
+  const [editDepartment, setEditDepartment] = useState('');
+  const [editPosition, setEditPosition] = useState('');
+  const [editErrors, setEditErrors] = useState<{ fullName?: string; email?: string; phone?: string; department?: string; position?: string }>({});
 
   function openEdit(u: Row) {
     setEditing(u); setEditRole(u.role); setEditManager(u.managerId ?? ''); setEditActive(u.isActive);
-    setEditName(u.fullName); setEditEmail(u.email); setEditPhone(u.phone ?? ''); setEditErrors({});
+    setEditName(u.fullName); setEditEmail(u.email); setEditPhone(u.phone ?? ''); setEditDepartment(u.department ?? ''); setEditPosition(u.position ?? ''); setEditErrors({});
   }
   // Re-send the invitation to someone who was invited but never signed in — a fresh
   // temporary password, emailed immediately. See functions/api/users/[id]/resend-invite.ts.
@@ -362,6 +385,7 @@ export default function UsersPage() {
     const patch = {
       ...(roleChanged ? { role: editRole } : {}), managerId: editManager || null, isActive: editActive,
       fullName: editName.trim(), email: editEmail.trim().toLowerCase(), phone: editPhone.trim() || null,
+      ...(jobFields ? { department: editDepartment.trim() || null, position: editPosition.trim() || null } : {}),
     };
     try {
       await api.patch(`/users/${editing.id}`, patch);
@@ -487,6 +511,7 @@ export default function UsersPage() {
                 </span>
                 <span className="flex flex-col gap-1 min-w-0 flex-1">
                   <span className="text-copy font-medium truncate" title={u.fullName}>{u.fullName}</span>
+                  {jobLine(u) && <span className="text-meta text-ink truncate" title={jobLine(u)}>{jobLine(u)}</span>}
                   <span className="text-meta text-muted-ink truncate" title={u.email}>{u.email}</span>
                   <span className="flex items-center gap-1.5 flex-wrap"><StatusBadge tone={roleTone[u.role]} label={roleLabel(u.role)} size="sm" /><StatusBadge tone={s.tone} label={s.label} size="sm" /></span>
                 </span>
@@ -534,6 +559,8 @@ export default function UsersPage() {
           <form id="invite-form" onSubmit={submitInvite} className="flex flex-col gap-4">
             <Field label="Full name" value={fullName} onChange={e => setFullName(e.target.value)} placeholder="Jane Tan" error={fieldErrors.fullName} />
             <Field label="Work email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="jane@theconts.com" error={fieldErrors.email} />
+            {jobFields && <JobFields department={department} position={position} onDepartment={setDepartment} onPosition={setPosition}
+              errors={fieldErrors} departments={departmentOptions} positions={positionOptions} />}
             <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-4">
               <Select label="Role" showLabel size="md" value={role} onChange={v => setRole(v as UserRole)} options={STAFF_ROLE_OPTIONS} />
               {role !== 'owner' && (
@@ -571,6 +598,8 @@ export default function UsersPage() {
             <Field label="Full name" value={editName} onChange={e => setEditName(e.target.value)} error={editErrors.fullName} />
             <Field label="Email" type="email" value={editEmail} onChange={e => setEditEmail(e.target.value)} error={editErrors.email} />
             <PhoneInput label="Phone" value={editPhone} onChange={setEditPhone} error={editErrors.phone} />
+            {jobFields && <JobFields department={editDepartment} position={editPosition} onDepartment={setEditDepartment} onPosition={setEditPosition}
+              errors={editErrors} departments={departmentOptions} positions={positionOptions} />}
             <div className="flex flex-col gap-1.5">
               <Select label="Role" showLabel size="md" value={editRole} onChange={v => setEditRole(v as UserRole)}
                 options={editing.role === 'owner' ? ROLE_OPTIONS.filter(o => o.value === 'owner') : STAFF_ROLE_OPTIONS} disabled={editing.role === 'owner'} />
@@ -675,6 +704,25 @@ export default function UsersPage() {
 }
 
 /* ------------------------------ row actions ------------------------------ */
+/** Position and department: type anything, or pick a suggestion. Shown after the person's name in renovation pickers. */
+function JobFields({ department, position, onDepartment, onPosition, errors, departments, positions }: {
+  department: string; position: string; onDepartment: (v: string) => void; onPosition: (v: string) => void;
+  errors: { department?: string; position?: string }; departments: string[]; positions: string[];
+}) {
+  return (
+    <>
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-4">
+        <Field label="Position" value={position} onChange={e => onPosition(e.target.value)} placeholder="Sales Executive" maxLength={80}
+          list="user-position-options" autoComplete="off" error={errors.position} />
+        <Field label="Department" value={department} onChange={e => onDepartment(e.target.value)} placeholder="Sales" maxLength={80}
+          list="user-department-options" autoComplete="off" error={errors.department} />
+      </div>
+      <datalist id="user-position-options">{positions.map(v => <option key={v} value={v} />)}</datalist>
+      <datalist id="user-department-options">{departments.map(v => <option key={v} value={v} />)}</datalist>
+    </>
+  );
+}
+
 interface RowAction { key: string; label: string; icon: string; danger?: boolean; run: () => void }
 
 /** The "..." button at the end of a row. The menu uses fixed positioning so the table's horizontal

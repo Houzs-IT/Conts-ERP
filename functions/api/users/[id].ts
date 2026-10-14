@@ -2,8 +2,9 @@ import { type Env, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { checkPhone } from '../../_lib/validate';
 import { ROLES } from '../../_lib/roles';
+import { userJobReady, cleanJob } from '../../_lib/userJob';
 
-/** PATCH /api/users/:id { role?, isActive?, managerId?, fullName?, email?, phone? } — management only.
+/** PATCH /api/users/:id { role?, isActive?, managerId?, fullName?, email?, phone?, department?, position? } — management only.
  *  Cannot deactivate yourself, and cannot leave the system without an active management account. */
 export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
@@ -11,7 +12,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   if (session.role !== 'management') return fail('FORBIDDEN', 'Only management can change user accounts.', 403);
 
   const id = String(params.id);
-  const b = await request.json<{ role?: string; isActive?: boolean; managerId?: string | null; fullName?: string; email?: string; phone?: string | null }>().catch(() => null);
+  const b = await request.json<{ role?: string; isActive?: boolean; managerId?: string | null; fullName?: string; email?: string; phone?: string | null; department?: string | null; position?: string | null }>().catch(() => null);
   if (!b) return fail('VALIDATION', 'Nothing to change.', 422);
   if (b.role !== undefined && !ROLES.includes(b.role)) return fail('VALIDATION', 'Unknown role.', 422);
   if (b.role === 'owner') return fail('VALIDATION', 'A staff account cannot become an owner login.', 422);
@@ -22,9 +23,11 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   if (b.fullName !== undefined && !b.fullName.trim()) fields.fullName = 'Enter a name.';
   if (b.email !== undefined && !String(b.email).trim().includes('@')) fields.email = 'Enter a valid email address.';
   checkPhone(fields, 'phone', b.phone);
+  const jobIn = cleanJob(b, fields);
   if (Object.keys(fields).length) return fail('VALIDATION', 'Check the account details.', 422, fields);
 
-  const before = await one<any>(env, 'SELECT role, is_active, manager_id, full_name, email, phone FROM users WHERE id = ?', id);
+  const job = await userJobReady(env);
+  const before = await one<any>(env, `SELECT role, is_active, manager_id, full_name, email, phone${job ? ', department, position' : ''} FROM users WHERE id = ?`, id);
   if (!before) return fail('NOT_FOUND', 'That account no longer exists.', 404);
   if (b.managerId && !(await one(env, 'SELECT 1 AS x FROM users WHERE id = ?', b.managerId))) return fail('VALIDATION', 'That manager does not exist.', 422, { managerId: 'Pick a manager from the list.' });
   if (b.email !== undefined && b.email.trim().toLowerCase() !== before.email.toLowerCase()
@@ -43,12 +46,19 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
       full_name = COALESCE(?, full_name), email = COALESCE(?, email), phone = CASE WHEN ? THEN ? ELSE phone END, updated_at = ? WHERE id = ?`,
     b.role ?? null, b.isActive === undefined ? null : (b.isActive ? 1 : 0), b.managerId !== undefined, b.managerId ?? null,
     b.fullName?.trim() || null, b.email?.trim().toLowerCase() || null, b.phone !== undefined, b.phone?.trim() || null, nowIso(), id);
+  if (job && ('department' in jobIn || 'position' in jobIn)) {
+    await run(env, `UPDATE users SET department = CASE WHEN ? THEN ? ELSE department END, position = CASE WHEN ? THEN ? ELSE position END WHERE id = ?`,
+      'department' in jobIn, jobIn.department ?? null, 'position' in jobIn, jobIn.position ?? null, id);
+  }
+  const jobBefore = job ? { department: before.department ?? null, position: before.position ?? null } : {};
+  const jobAfter = job ? { department: 'department' in jobIn ? jobIn.department : before.department ?? null, position: 'position' in jobIn ? jobIn.position : before.position ?? null } : {};
   await audit(env, {
     actorId: session.userId, actorLabel: session.fullName, action: 'user.update', entityTable: 'users', entityId: id,
-    before: { role: before.role, isActive: !!before.is_active, managerId: before.manager_id, fullName: before.full_name, email: before.email, phone: before.phone },
+    before: { role: before.role, isActive: !!before.is_active, managerId: before.manager_id, fullName: before.full_name, email: before.email, phone: before.phone, ...jobBefore },
     after: {
       role: b.role ?? before.role, isActive: b.isActive ?? !!before.is_active, managerId: b.managerId === undefined ? before.manager_id : b.managerId,
       fullName: b.fullName ?? before.full_name, email: b.email !== undefined ? b.email.trim().toLowerCase() : before.email, phone: b.phone === undefined ? before.phone : b.phone,
+      ...jobAfter,
     },
   });
   return json({ ok: true });
