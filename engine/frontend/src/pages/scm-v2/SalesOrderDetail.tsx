@@ -158,6 +158,14 @@ import {
 } from './so-version-conflict';
 import { RevisionsTab } from './so-revisions-tab';
 import styles from './SalesOrderDetail.module.css';
+import { CustomerPropertyFields } from '../projects/renovation/CustomerPropertyFields';
+import { soInfoApi, useSoInfoLists } from '../projects/renovation/customerPropertyApi';
+import {
+  EMPTY_CUSTOMER_PROPERTY, mergeProjectIntoSo, missingFields, toRenovationBlock,
+  type CustomerPropertyValue, type ProjectShared,
+} from '../projects/renovation/customerPropertyModel';
+import { soInfoErrorText } from '../projects/renovation/customerPropertyApi';
+import { soAddressFromSite } from '../../vendor/shared/renovation-property';
 import { DateField } from "../../vendor/scm/components/DateField";
 import { HoldChip } from "../../vendor/scm/components/HoldChip";
 import { CancelRequestPanel } from "../../vendor/scm/components/CancelRequestPanel"; import { useCancelRequestAction } from "./use-cancel-request-action";
@@ -2959,6 +2967,54 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
   });
 
   const [form, setForm] = useState(() => initialFormFor(header));
+
+  // ── Renovation mode (Conts, 14 Oct 2026; mig 0112) ─────────────────
+  /* The SO's Order information (project, building, property, layout, sq ft) is
+     read and saved through /api/scm/renovation-so-info, beside the header save,
+     so Houzs's header read and PATCH stay as they are. */
+  const renoListsQ = useSoInfoLists();
+  const reno = renoListsQ.data?.ready === true;
+  const [renoInfo, setRenoInfo] = useState<CustomerPropertyValue>(EMPTY_CUSTOMER_PROPERTY);
+  const [renoProject, setRenoProject] = useState<ProjectShared | null>(null);
+  const [renoInfoLoading, setRenoInfoLoading] = useState(false);
+  const [renoLoadError, setRenoLoadError] = useState<string | null>(null);
+  const [renoTried, setRenoTried] = useState(false);
+  const renoLoaded = useRef('');
+  useEffect(() => {
+    if (!reno) return;
+    let live = true;
+    setRenoInfoLoading(true);
+    void soInfoApi.so(header.doc_no)
+      .then((r) => {
+        if (!live) return;
+        setRenoInfo(r.info);
+        setRenoProject(r.project);
+        renoLoaded.current = JSON.stringify(toRenovationBlock(r.info));
+        setRenoLoadError(null);
+      })
+      .catch(() => { if (live) setRenoLoadError('The order information could not be loaded. Reload the page.'); })
+      .finally(() => { if (live) setRenoInfoLoading(false); });
+    return () => { live = false; };
+  }, [reno, header.doc_no]);
+  /* Picking a project fills the order from it (the project is the master record). */
+  const pickRenoProject = (p: ProjectShared | null) => {
+    setRenoProject(p);
+    if (!p) { setRenoInfo((v) => ({ ...v, projectId: null })); return; }
+    setRenoInfo((v) => mergeProjectIntoSo(v, p));
+    const addr = soAddressFromSite(p.siteAddress);
+    setForm((f) => ({
+      ...f,
+      customerName: p.customerName || f.customerName,
+      phone: p.customerPhone || f.phone,
+      email: p.customerEmail || f.email,
+      address1: addr.address1 || f.address1,
+      address2: addr.address1 ? addr.address2 : f.address2,
+    }));
+  };
+  const renoMissing = renoTried
+    ? missingFields(renoInfo, { customerName: form.customerName, phone: form.phone, address1: form.address1 })
+    : new Set<string>();
+  const renoChanged = () => reno && JSON.stringify(toRenovationBlock(renoInfo)) !== renoLoaded.current;
   /* Imported-order venue seeding (owner 2026-08-10 "点 edit 的时候它不会不见掉"):
      AutoCount-migrated rows carry the venue as TEXT but nothing the picker's
      option values recognise in venue_id, so the picker rendered "—" even though
@@ -3252,9 +3308,35 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
      Cancel buttons can drive this card without lifting all of its form
      state to the parent. No deps array → handle re-binds every render so
      `save` always closes over the latest form snapshot. */
+  /* Renovation mode: the header first (Houzs's PATCH, unchanged), then the
+     Order information; a refusal of either keeps the editor open with its words. */
+  const trySaveWithReno: typeof trySave = (cb, opts) => {
+    if (!reno) { trySave(cb, opts); return; }
+    setRenoTried(true);
+    const miss = missingFields(renoInfo, { customerName: form.customerName, phone: form.phone, address1: form.address1 });
+    if (miss.size > 0) {
+      const msg = `Fill in: ${[...miss].join(', ')}.`;
+      if (cb?.onError) cb.onError(msg);
+      else void notify({ title: 'Order information is incomplete', body: msg, tone: 'error' });
+      return;
+    }
+    trySave({
+      onSuccess: () => {
+        void soInfoApi.save(header.doc_no, toRenovationBlock(renoInfo))
+          .then(() => { renoLoaded.current = JSON.stringify(toRenovationBlock(renoInfo)); cb?.onSuccess?.(); })
+          .catch((e: unknown) => {
+            const msg = soInfoErrorText(e);
+            if (cb?.onError) cb.onError(msg, e);
+            else void notify({ title: 'Order information was not saved', body: msg, tone: 'error' });
+          });
+      },
+      onError: cb?.onError,
+    }, opts);
+  };
+
   useImperativeHandle(ref, () => ({
     validate: () => validateDates(),
-    save: (cb, opts) => trySave(cb, opts),
+    save: (cb, opts) => trySaveWithReno(cb, opts),
     /* Cancel re-seeds the form, so the pristine snapshot must move with it —
        otherwise the next edit would diff against the abandoned session. */
     reset: () => {
@@ -3265,7 +3347,7 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
     getPhone: () => form.phone ?? '',
     getLockedHeaderChanges: () =>
       buildAmendmentHeaderChanges(lockedHeaderNow, lockedHeaderOriginal),
-    hasDirectHeaderChanges: () => hasHeaderChanges(directHeaderPatch()),
+    hasDirectHeaderChanges: () => hasHeaderChanges(directHeaderPatch()) || renoChanged(),
     fairDayKeys: () => fairDayCheck(buildPayload(), originalPayloadRef.current),
   }));
 
@@ -3280,7 +3362,7 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
      read identically. The component still exposes its imperative save() /
      reset() handle to the page-level Edit/Save flow; the 4 cards just
      replace the single wrapper. */
-  return (
+  const customerCard = (
     <>
       {/* ── CUSTOMER ──────────────────────────────────────────────── */}
       <section className={styles.card}>
@@ -3292,8 +3374,8 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
               "customer code 不需要"). Field still flows through state +
               payload so the server-side mapping is untouched.
               Customer SO Ref added next to Customer Name. */}
-          <div className={styles.formGrid4}>
-            <label className={styles.field} style={{ gridColumn: 'span 3' }}>
+          <div className={reno ? styles.renoGrid : styles.formGrid4}>
+            <label className={`${styles.field} ${reno ? styles.renoSpan3 : ''}`} style={reno ? undefined : { gridColumn: 'span 3' }}>
               <span className={styles.fieldLabel}>Customer Name *</span>
               <input
                 ref={custInputRef}
@@ -3316,6 +3398,7 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
                 classes={{ list: styles.suggestList, item: styles.suggestItem, code: styles.suggestCode }}
               />
             </label>
+            {!reno && (
             <label className={styles.field}>
               <span className={styles.fieldLabel}>Ref No.</span>
               <input className={styles.fieldInput} value={form.customerSoNo}
@@ -3323,7 +3406,8 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
                 disabled={inputsDisabled}
                 onChange={(e) => set('customerSoNo', e.target.value)} />
             </label>
-            <label className={styles.field}>
+            )}
+            <label className={`${styles.field} ${reno ? styles.renoSpan2 : ''}`}>
               <span className={styles.fieldLabel}>Phone *</span>
               {/* Task #91 — PhoneInput normalizes to E.164 on blur and shows
                   the pretty Malaysian format when unfocused. */}
@@ -3340,6 +3424,7 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
                 disabled={inputsDisabled}
                 onChange={(e) => set('email', e.target.value)} />
             </label>
+            {!reno && (
             <label className={styles.field}>
               <span className={styles.fieldLabel}>Customer Type</span>
               <span className={styles.selectWrap}>
@@ -3360,7 +3445,8 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
                 <ChevronDown size={14} strokeWidth={1.75} className={styles.selectChevron} />
               </span>
             </label>
-            <label className={styles.field}>
+            )}
+            <label className={`${styles.field} ${reno ? styles.renoSpan2 : ''}`}>
               <span className={styles.fieldLabel}>Salesperson</span>
               {/* Commander 2026-05-27: only admin / sales_director can swap
                   the salesperson on an existing SO. Non-admin sales roles
@@ -3401,6 +3487,10 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
         </div>
       </section>
 
+    </>
+  );
+  const houzsOrderInfoCard = (
+    <>
       {/* ── ORDER INFO (venue / dates / note) ─────────────────────── */}
       <section className={styles.card}>
         <header className={styles.cardHeader}>
@@ -3502,6 +3592,10 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
         </div>
       </section>
 
+    </>
+  );
+  const emergencyCard = (
+    <>
       {/* ── EMERGENCY CONTACT ─────────────────────────────────────── */}
       <section className={styles.card}>
         <header className={styles.cardHeader}>
@@ -3562,14 +3656,18 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
           signature now renders directly below Payments (above), and the payment
           slip is shown as a column inside the Payments table. */}
 
+    </>
+  );
+  const addressCard = (
+    <>
       {/* ── DELIVERY ADDRESS ──────────────────────────────────────── */}
       <section className={styles.card}>
         <header className={styles.cardHeader}>
           <h2 className={styles.cardTitle}>Delivery Address</h2>
         </header>
         <div className={styles.cardBody}>
-          <div className={styles.formGrid4}>
-            <label className={`${styles.field}`} style={{ gridColumn: 'span 4' }}>
+          <div className={reno ? styles.renoGrid : styles.formGrid4}>
+            <label className={`${styles.field}`} style={{ gridColumn: reno ? '1 / -1' : 'span 4' }}>
               <span className={styles.fieldLabel}>Address Line 1</span>
               {/* KEEP CHROME'S ADDRESS AUTOFILL OFF THIS BLOCK.
                   Chrome classifies a form by its FIELDS, not one at a time, so
@@ -3587,7 +3685,7 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
                 disabled={inputsDisabled} {...addressLineProps((v) => set('address1', v), { value: form.address2, set: (v) => set('address2', v) })}
                 onChange={(e) => set('address1', e.target.value)} />
             </label>
-            <label className={`${styles.field}`} style={{ gridColumn: 'span 4' }}>
+            <label className={`${styles.field}`} style={{ gridColumn: reno ? '1 / -1' : 'span 4' }}>
               <span className={styles.fieldLabel}>Address Line 2</span>
               <input className={styles.fieldInput} value={form.address2}
                 placeholder="Apt, floor, building (optional)"
@@ -3673,6 +3771,53 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
           </div>
         </div>
       </section>
+    </>
+  );
+  const renoOrderInfoCard = (
+    <section className={styles.card}>
+      <header className={styles.cardHeader}>
+        <h2 className={styles.cardTitle}>Order Information</h2>
+      </header>
+      <div className={styles.cardBody}>
+        {renoLoadError ? (
+          <p role="alert" style={{ color: 'var(--c-festive-b, #B8331F)', fontSize: 13 }}>{renoLoadError}</p>
+        ) : (
+          <CustomerPropertyFields
+            mode="so"
+            value={renoInfo}
+            onChange={setRenoInfo}
+            lists={renoListsQ.data}
+            project={renoProject}
+            onPickProject={pickRenoProject}
+            missing={renoMissing}
+            disabled={!isEditing || locked || renoInfoLoading}
+          />
+        )}
+      </div>
+    </section>
+  );
+
+  return (
+    <>
+      {reno ? (
+        /* Renovation mode (Conts, 14 Oct 2026): the same compact layout as New SO. */
+        <div className={styles.renoLayout}>
+          <div className={styles.renoCol}>
+            {customerCard}
+            {addressCard}
+          </div>
+          <div className={styles.renoCol}>
+            {renoOrderInfoCard}
+          </div>
+        </div>
+      ) : (
+        <>
+          {customerCard}
+          {houzsOrderInfoCard}
+          {emergencyCard}
+          {addressCard}
+        </>
+      )}
     </>
   );
 });

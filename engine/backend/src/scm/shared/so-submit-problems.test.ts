@@ -217,3 +217,19 @@ describe('soPaymentSubFieldGap', () => {
     expect(soPaymentSubFieldGap({ methodLabel: 'whatever' })).toBeNull();
   });
 });
+
+describe('renovation mode (Conts, mig 0112)', () => {
+  it('an order sold for a project asks for no venue and no fair, still for the salesperson', () => {
+    const ps = collectSoSubmitProblems({ ...OK, renovation: true, hasVenue: false, fairChosen: false, noFair: false, fairDayMissing: true, hasSalesperson: false });
+    expect(ps.map((p) => p.message)).toEqual(['Salesperson is required.']);
+  });
+
+  it('its own required fields arrive through extra, after the shared ones', () => {
+    const extra = [{ code: 'required_field', message: 'Property type is required.', field: 'Property type' }];
+    expect(messages({ ...OK, renovation: true, phone: '', extra })).toEqual(['Phone number is required.', 'Property type is required.']);
+  });
+
+  it('a renovation draft is as free as any draft', () => {
+    expect(collectSoSubmitProblems({ ...OK, renovation: true, asDraft: true, hasSalesperson: false, hasVenue: false })).toEqual([]);
+  });
+});

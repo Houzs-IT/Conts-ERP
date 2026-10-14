@@ -16,7 +16,9 @@ import {
   type DocHeader, type DocSection, type Instalment,
 } from '../../lib/renovation/api';
 import { buildPrintDoc } from '../../lib/renovation/print-doc';
-import { DocEditor } from './DocEditor';
+import { DocEditor, type RoomLayout } from './DocEditor';
+import { useQuery } from '@tanstack/react-query';
+import { soInfoApi, useSoInfoLists } from '../projects/renovation/customerPropertyApi';
 import { HeaderForm, InstalmentEditor, totalsOfSections, TotalsCard } from './DocParts';
 import { PrintDialog } from './PrintDialog';
 import { Card, ErrorBanner, fmtDate, StatusPill, todayIso } from './shared';
@@ -49,6 +51,22 @@ export function QuotationEditor() {
     setBrandId(q.data.quotation.brandId);
     setDirty(false);
   }, [q.data]);
+
+  /* Generate rooms from layout (owner, 14 Oct 2026): the quotation's layout is its
+     project's (the project masters the property; mig 0112). No button before 0112. */
+  const roomsOn = useSoInfoLists().data?.ready === true;
+  const projectId = q.data?.quotation.projectId ?? null;
+  const proj = useQuery({
+    queryKey: ['reno', 'so-info', 'project', projectId],
+    queryFn: () => soInfoApi.project(projectId!),
+    enabled: roomsOn && projectId != null,
+    staleTime: 30_000,
+  });
+  const roomLayout: RoomLayout | undefined = !roomsOn ? undefined
+    : projectId == null ? { missing: 'Link the quotation to a project with a layout first.' }
+    : proj.data?.project.bedrooms != null && proj.data.project.bathrooms != null
+      ? { label: proj.data.project.layoutLabel || `${proj.data.project.bedrooms} bed ${proj.data.project.bathrooms} bath`, bedrooms: proj.data.project.bedrooms, bathrooms: proj.data.project.bathrooms }
+      : { missing: proj.isLoading ? 'Reading the project layout...' : "Choose the project's layout first (on the project or its sales order)." };
 
   const editable = Boolean(q.data?.editable) && canQuote;
   const totals = useMemo(() => totalsOfSections(sections, header?.docDiscountSen ?? 0), [sections, header?.docDiscountSen]);
@@ -138,7 +156,7 @@ export function QuotationEditor() {
             <HeaderForm header={header} disabled={!editable} brands={brands.data?.brands ?? []} brandId={brandId}
               onBrand={(b) => { setBrandId(b); setDirty(true); }} onChange={(p) => { setHeader({ ...header, ...p }); setDirty(true); }} />
           </Card>
-          <DocEditor sections={sections} disabled={!editable} onChange={(s) => { setSections(s); setDirty(true); }} />
+          <DocEditor sections={sections} disabled={!editable} roomLayout={roomLayout} onChange={(s) => { setSections(s); setDirty(true); }} />
           <Card title="Payment terms">
             <InstalmentEditor rows={instalments} disabled={!editable} terms={terms.data?.templates ?? []} totalSen={totals.finalSen}
               onChange={(r) => { setInstalments(r); setDirty(true); }} />

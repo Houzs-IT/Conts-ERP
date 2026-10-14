@@ -30,6 +30,8 @@ import { renderPodNoteHtml } from "../services/renovation/podNote";
 import { syncTradeTasks, writeCachedStage } from "../services/renovation/contractSync";
 import renovationProject from "./renovationProject";
 import renovationMonitor from "./renovationMonitor";
+import renovationProperty from "./renovationProperty";
+import { propertyColumnsReady, pushProjectToOpenSos } from "../services/renovation/customerProperty";
 
 type Ctx = Context<{ Bindings: Env }>;
 const app = new Hono<{ Bindings: Env }>();
@@ -81,6 +83,8 @@ function parseId(x: string | undefined): number | null {
 app.route("/", renovationProject);
 // Project Monitor hub (GET /monitor), also before /:id
 app.route("/", renovationMonitor);
+// Customer + property information and its pick lists (mig 0112), also before /:id
+app.route("/", renovationProperty);
 
 // ── Mode: which Projects screens this install shows (app_settings projects_mode, mig 0082) ──
 
@@ -570,6 +574,12 @@ app.patch("/:id", requirePermission("projects.write"), async (c) => {
   if (sets.length === 0) return c.json({ ok: true });
   await db(c).prepare(`UPDATE projects SET ${sets.join(", ")}, updated_at = to_char(timezone('UTC', now()), 'YYYY-MM-DD"T"HH24:MI:SS"Z"') WHERE id = ?`)
     .bind(...args, id).run();
+  /* The project is the master of the customer fields (mig 0112): its open sales orders follow. */
+  const shared = ["building", "unitNo", "siteAddress", "customerName", "customerPhone", "customerEmail"].some((k) => k in b);
+  if (shared && (await propertyColumnsReady(db(c)).catch(() => false))) {
+    const pushed = await pushProjectToOpenSos(db(c), id);
+    return c.json({ ok: true, salesOrdersUpdated: pushed.updated, salesOrdersKept: pushed.kept });
+  }
   return c.json({ ok: true });
 });
 

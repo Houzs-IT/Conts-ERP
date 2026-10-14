@@ -299,3 +299,12 @@ describe('confirm gate — what it does and does not police', () => {
     expect(confirmOf([{ itemCode: '', group: 'bedframe', lineNo: 1 }]).length).toBeGreaterThan(0);
   });
 });
+
+describe('renovation mode: an order sold for a project has no venue (mig 0112)', () => {
+  it('venueOptional lets a venue-less order confirm; the other rules still hold', () => {
+    expect(collectSoConfirmProblems({ ...GOOD, venue: null, venueId: null, venueOptional: true })).toEqual([]);
+    expect(codes(collectSoConfirmProblems({ ...GOOD, venue: null, venueId: null }))).toContain('venue_required');
+    expect(codes(collectSoConfirmProblems({ ...GOOD, venue: null, venueId: null, venueOptional: true, salespersonId: null, agent: null })))
+      .toContain('salesperson_required');
+  });
+});

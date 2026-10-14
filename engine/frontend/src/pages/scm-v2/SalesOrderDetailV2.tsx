@@ -103,6 +103,8 @@ import { OrderSlipPhoto } from "../../vendor/scm/components/OrderSlipPhoto";
 import { ADD_LINE_LABEL, addLineHref } from "../../vendor/scm/lib/add-line-handoff";
 import { fairLabel } from "../../vendor/scm/lib/fair-options-queries";
 import { linkedEvent, type LinkedFair } from "../../components/fairPick";
+import { useSoInfoLists } from "../projects/renovation/customerPropertyApi";
+import { RenovationSoOrderInfo } from "./RenovationSoOrderInfo";
 // ─── Row types (subset — see MfgSalesOrdersList.tsx for the full SoRow) ────
 
 type SoHeader = {
@@ -591,6 +593,9 @@ function SalesOrderDetailV2ReadOnly() {
      the badge + source-PO chips upgrade in place when this arrives. */
   const coverage = useSoLineCoverage(docNo ?? null);
   const updateStatus = useUpdateMfgSalesOrderStatus();
+  /* Renovation mode (Conts, mig 0112): Order information replaces Houzs's Order
+     info, and the emergency contact half of the address card goes. */
+  const renoMode = useSoInfoLists().data?.ready === true;
   const requestCancel = useCancelRequestAction("so");
   const { nameOf: salespersonNameOf } = useStaffLookup();
   const staffRoster = useStaff();
@@ -1309,17 +1314,21 @@ function SalesOrderDetailV2ReadOnly() {
                   value={salesOrder.email || "Not provided"}
                   muted={!salesOrder.email}
                 />
+                {!renoMode && (
                 <Field
                   label="Customer type"
                   value={salesOrder.customer_type || "—"}
                   muted={!salesOrder.customer_type}
                 />
+                )}
+                {!renoMode && (
                 <Field
                   label="Ref No."
                   value={refOf(salesOrder)}
                   mono={refOf(salesOrder) !== "—"}
                   muted={refOf(salesOrder) === "—"}
                 />
+                )}
                 <Field
                   label="Salesperson"
                   value={salespersonNameOf(
@@ -1343,7 +1352,16 @@ function SalesOrderDetailV2ReadOnly() {
               </div>
             </Section>
 
+            {renoMode && (
+              <Section title="Order information">
+                <RenovationSoOrderInfo
+                  docNo={salesOrder.doc_no}
+                  payment={salesOrder.payment_methods_summary || salesOrder.payment_method || null}
+                />
+              </Section>
+            )}
             {/* Order info + optional amber Note callout */}
+            {!renoMode && (
             <Section title="Order info">
               <div className="grid grid-cols-1 gap-x-5 gap-y-4 sm:grid-cols-4">
                 <Field
@@ -1406,10 +1424,11 @@ function SalesOrderDetailV2ReadOnly() {
                 </div>
               )}
             </Section>
+            )}
 
             {/* Delivery address + Emergency contact */}
             <Section title="Delivery address">
-              <div className="grid grid-cols-1 gap-6 sm:grid-cols-[1.4fr_1fr] sm:divide-x sm:divide-border-subtle">
+              <div className={cn("grid grid-cols-1 gap-6", !renoMode && "sm:grid-cols-[1.4fr_1fr] sm:divide-x sm:divide-border-subtle")}>
                 <div className="sm:pr-6">
                   <div className="font-mono text-[9.5px] font-semibold uppercase tracking-brand text-ink-muted">
                     Ship to
@@ -1440,6 +1459,7 @@ function SalesOrderDetailV2ReadOnly() {
                     </div>
                   )}
                 </div>
+                {!renoMode && (
                 <div className="sm:pl-6">
                   <div className="font-mono text-[9.5px] font-semibold uppercase tracking-brand text-ink-muted">
                     Emergency contact
@@ -1454,6 +1474,7 @@ function SalesOrderDetailV2ReadOnly() {
                     Contact — relationship not set
                   </div>
                 </div>
+                )}
               </div>
             </Section>
 
