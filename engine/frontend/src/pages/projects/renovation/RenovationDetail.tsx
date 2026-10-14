@@ -26,6 +26,7 @@ import { ContractCard, KeyCard, PeopleCard } from "./ProjectRecords";
 import { DesignTaskCard } from "./DesignTask";
 import { ProcurementPanel } from "./ProcurementPanel";
 import { SiteTasksPanel } from "./SiteTasksPanel";
+import { CustomerInfoCard } from "./CustomerInfoCard";
 
 type Skipping = { id: number; label: string };
 
@@ -89,6 +90,7 @@ export function RenovationDetail({ id, canWrite, embedded = false }: { id: numbe
           <EvidenceGallery projectId={id} />
         </div>
         <aside className="space-y-4 min-w-0">
+          <CustomerInfoCard d={d} canWrite={canWrite} onDone={done} onError={failed} />
           <PeopleCard d={d} canWrite={canWrite} onDone={done} onError={failed} />
           <KeyCard d={d} canWrite={canWrite} onDone={done} onError={failed} />
           <ContractCard d={d} canWrite={canWrite} onDone={done} onError={failed} />

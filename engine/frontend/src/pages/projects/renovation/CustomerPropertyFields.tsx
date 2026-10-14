@@ -137,9 +137,11 @@ export interface CustomerPropertyFieldsProps {
   /** Labels of required fields still missing (red ring). */
   missing?: ReadonlySet<string>;
   disabled?: boolean;
+  /** Project screens before migration 0112: only the customer, address, building and unit. */
+  hideProperty?: boolean;
 }
 
-export function CustomerPropertyFields({ mode, value, onChange, lists, project, onPickProject, missing, disabled }: CustomerPropertyFieldsProps) {
+export function CustomerPropertyFields({ mode, value, onChange, lists, project, onPickProject, missing, disabled, hideProperty = false }: CustomerPropertyFieldsProps) {
   const uid = useId();
   const id = (k: string) => `${uid}-${k}`;
   const set = (patch: Partial<CustomerPropertyValue>) => onChange({ ...value, ...patch });
@@ -170,14 +172,14 @@ export function CustomerPropertyFields({ mode, value, onChange, lists, project, 
             <input id={id("name")} className={cn(input, miss("Customer name") && ring)} value={value.customerName} disabled={disabled}
               onChange={(e) => set({ customerName: e.target.value })} />
           </Cell>
-          <Cell label="Phone" missing={miss("Phone number")} className="col-span-2 sm:col-span-1">
+          <Cell label="Phone" missing={miss("Phone number")} className="col-span-2">
             <PhoneInput className={input} value={value.customerPhone} onChange={(v) => set({ customerPhone: v })} disabled={disabled} aria-label="Phone" />
           </Cell>
-          <Cell label="Email" className="col-span-2 sm:col-span-1" htmlFor={id("email")}>
+          <Cell label="Email" className="col-span-2 self-start" htmlFor={id("email")}>
             <input id={id("email")} type="email" className={input} value={value.customerEmail} disabled={disabled}
               onChange={(e) => set({ customerEmail: e.target.value })} />
           </Cell>
-          <Cell label="Site address" missing={miss("Delivery address")} className="col-span-2 sm:col-span-4" htmlFor={id("site")}>
+          <Cell label="Site address" missing={miss("Delivery address")} className="col-span-2" htmlFor={id("site")}>
             <textarea id={id("site")} rows={2} className={cn(input, "h-auto py-2", miss("Delivery address") && ring)} value={value.siteAddress} disabled={disabled}
               placeholder="Unit, street, area" onChange={(e) => set({ siteAddress: e.target.value })} />
           </Cell>
@@ -191,6 +193,7 @@ export function CustomerPropertyFields({ mode, value, onChange, lists, project, 
         <input id={id("unit")} className={input} value={value.unitNo} disabled={disabled} placeholder="A-12-3"
           onChange={(e) => set({ unitNo: e.target.value })} />
       </Cell>
+      {!hideProperty && (<>
       <Cell label="Property type" required={required} missing={miss("Property type")} htmlFor={id("ptype")}>
         <select id={id("ptype")} className={cn(input, miss("Property type") && ring)} value={value.propertyType} disabled={disabled}
           onChange={(e) => set({ propertyType: e.target.value })}>
@@ -215,7 +218,8 @@ export function CustomerPropertyFields({ mode, value, onChange, lists, project, 
         <input id={id("sqft")} inputMode="decimal" className={cn(input, miss("Built-up sq ft") && ring)} value={value.builtUpSqft} disabled={disabled}
           placeholder="e.g. 1,100" onChange={(e) => set({ builtUpSqft: e.target.value.replace(/[^\d.,]/g, "") })} />
       </Cell>
-      {lists && !lists.ready && (
+      </>)}
+      {lists && !lists.ready && !hideProperty && (
         <p className="col-span-2 self-end text-xs text-ink-secondary sm:col-span-3">The property lists are not set up yet (Project Maintenance).</p>
       )}
     </div>

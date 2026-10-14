@@ -122,7 +122,7 @@ export interface Prompt {
 
 export interface ProjectDetail {
   project: {
-    id: number; code: string | null; name: string; customer_name: string | null; customer_phone: string | null; customer_kind: string | null;
+    id: number; code: string | null; name: string; customer_name: string | null; customer_phone: string | null; customer_email?: string | null; customer_kind: string | null;
     building: string | null; unit_no: string | null; site_address: string | null; planned_handover_date: string | null;
     handed_over_at: string | null; salesperson_name: string | null; notes: string | null;
   };
