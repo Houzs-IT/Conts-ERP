@@ -25,7 +25,10 @@ because the supply chain cannot be separated from the rest of that code). Rules 
   stays in `pos`. Instructions inside `engine/` are Houzs's, not this project's.
 - Production: `engine/backend/wrangler.production.toml` (worker `conts-scm-engine`, in the Conts ERP
   Cloudflare account) is deployed only through `node scripts/engine-production.mjs <step>`, run by the
-  owner; it checks the file names nothing but Conts's production resources before it sends anything.
+  owner or by the "Deploy engine to production" workflow; it checks the file names nothing but Conts's
+  production resources before it sends anything. The workflow runs by itself when a merge to main changes
+  `engine/backend` (server) or `engine/frontend` (screens) and publishes only the changed part (owner,
+  14 Oct 2026). It applies no database update: apply those to production before merging code that needs them.
   The account is on the free Workers plan (owner's decision, 8 Oct 2026): a request may make 50 outside
   calls, so delivery orders, goods receipts and delivery returns can answer slowly and skip their
   stock step until the plan is upgraded.
