@@ -45,7 +45,7 @@ export function ProcurementPanel({ projectId, canWrite, onError, showMoney = tru
   const toggle = (code: string) => setOpen((s) => { const n = new Set(s); if (n.has(code)) n.delete(code); else n.add(code); return n; });
 
   return (
-    <section className="rounded-lg border border-border bg-surface p-3">
+    <section id="reno-procurement" className="rounded-lg border border-border bg-surface p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="flex items-center gap-1.5 text-sm font-semibold text-ink"><PackageCheck size={14} />Procurement details</h3>
         <label className="flex items-center gap-1 text-[11px] text-ink-secondary">

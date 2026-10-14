@@ -21,9 +21,9 @@ type OnError = (text: string) => void;
 
 export const todayMyt = () => new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);
 
-export function Card({ title, icon, children, actions }: { title: string; icon: React.ReactNode; children: React.ReactNode; actions?: React.ReactNode }) {
+export function Card({ title, icon, children, actions, id }: { title: string; icon: React.ReactNode; children: React.ReactNode; actions?: React.ReactNode; id?: string }) {
   return (
-    <section className="rounded-lg border border-border bg-surface p-3">
+    <section id={id} className="rounded-lg border border-border bg-surface p-3">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <h3 className="flex items-center gap-1.5 text-sm font-semibold text-ink">{icon}{title}</h3>
         {actions}
@@ -39,7 +39,7 @@ export function ContractCard({ d, canWrite, onDone, onError }: { d: ProjectDetai
   const id = d.project.id;
   const hidden = d.financeHidden;
   return (
-    <Card title="Contract (sales order)" icon={<FileText size={14} />}>
+    <Card id="reno-contract" title="Contract (sales order)" icon={<FileText size={14} />}>
       {d.so ? (
         <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
           <div className="col-span-2"><dt className="text-xs text-ink-secondary">Sales order</dt>
@@ -266,7 +266,7 @@ export function KeyCard({ d, canWrite, onDone }: { d: ProjectDetailV2; canWrite:
   }
 
   return (
-    <Card title="Unit key" icon={<KeyRound size={14} />}
+    <Card id="reno-unit-key" title="Unit key" icon={<KeyRound size={14} />}
       actions={canWrite && !formOpen ? (
         <button type="button" onClick={() => { setMsg(null); setDraft(fresh()); setAdding(true); }} className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-primary hover:underline">
           <Plus size={11} />Record key pass

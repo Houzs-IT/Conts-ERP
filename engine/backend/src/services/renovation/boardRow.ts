@@ -37,6 +37,8 @@ export interface BoardRowV2 {
   handoverDate: string | null;
   plannedHandoverDate: string | null;
   redFlagCount: number;
+  /** the red flags themselves (code + text), the same set redFlagCount counts */
+  redFlags: Array<{ code: string; text: string }>;
   archived: boolean;
   source: string;
   sourceRef: string | null;
@@ -45,6 +47,7 @@ export interface BoardRowV2 {
 export function boardRowOf(f: ProjectFacts, v: ProjectView, opts: { hideMoney: boolean }): BoardRowV2 {
   const p = f.project;
   const holdLabel = v.hold ? HOLD_FLAG_LABEL[v.hold.flag] : null;
+  const shownFlags = opts.hideMoney ? v.redFlags.filter((r) => r.code !== "billing_due") : v.redFlags;
   return {
     id: p.id,
     code: p.code,
@@ -70,7 +73,8 @@ export function boardRowOf(f: ProjectFacts, v: ProjectView, opts: { hideMoney: b
     vo: v.vo ? { has: v.vo.count > 0, count: v.vo.count, approved: v.vo.approved } : null,
     handoverDate: f.handover?.signed_at ? String(f.handover.signed_at).slice(0, 10) : (p.handed_over_at ? String(p.handed_over_at).slice(0, 10) : null),
     plannedHandoverDate: p.planned_handover_date,
-    redFlagCount: (opts.hideMoney ? v.redFlags.filter((r) => r.code !== "billing_due") : v.redFlags).length,
+    redFlagCount: shownFlags.length,
+    redFlags: shownFlags.map((r) => ({ code: r.code, text: r.text })),
     archived: !!p.archived_at,
     source: p.source ?? "app",
     sourceRef: p.source_ref ?? null,
