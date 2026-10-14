@@ -33,7 +33,8 @@ export default function OwnerShell({ children }: { children: ReactNode }) {
         </a>
         <Button variant="tertiary" size="touch" onClick={logout} icon={<Icon name="LogOut" size="nav" />}
           style={{ flex: 'none', fontSize: text.copy, color: color.onDark, borderColor: 'rgba(255,255,255,0.14)' }}>
-          Log out
+          {/* On a phone the word gives way to the owner's own name; the icon and the button's name stay. */}
+          <span className="max-[479px]:sr-only">Log out</span>
         </Button>
       </header>
       <main style={{ flex: 1, padding: 'clamp(16px, 3vw, 32px)', width: '100%', maxWidth: 1064, margin: '0 auto', boxSizing: 'border-box' }}>

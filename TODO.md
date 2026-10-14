@@ -109,6 +109,13 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 - Person pickers still read project_people through PersonSelect; feat/people-from-users switches them to user accounts. The position after a name comes from personPosition() in PersonSelect.tsx (roles today).
 - Customer info block on the right column waits for feat/reno-customer-info (migration 0112).
 
+## QA sweep (fix/qa-sweep, 15 Oct 2026, docs/qa/2026-10-15-qa-sweep.md)
+- OWNER: Dashboard "12 months" strip adds every owner statement (workbook months too) beside a guest total from reservations only, so payout reads larger than guest total (finding 6).
+- OWNER: Create reservation silently files a matching phone under the existing guest's name and drops the typed name (finding 7).
+- OWNER: Fit-out register and Guest documents are reachable only by typing the address: link them or retire them (finding 8).
+- Engine (Houzs code): table "Failed to load" / empty messages run off wide tables; summary cards stay "Loading..." on failure; the engine's own tab strip, search and bell show inside Property OS (findings 12-14).
+- Supply chain data screens could not be checked locally (engine reads through Supabase REST); check them on the staging preview (finding 17).
+
 ## Later
 - Packages (8 Oct, chore/update-packages): Property OS has 0 flagged packages (wrangler 4.148, source-map-js, and an override pinning sharp to 0.35.5 inside wrangler's local emulator; all build/dev tools, none ran in production). Engine: the non-breaking fixes are in (hono on the server, dompurify on the screens, and build tools). Left in engine/, each needing a breaking upgrade of Houzs's code or tools: react-router 6 (moderate), wrangler's sharp and undici, esbuild, vitest, braces. Take them with the next Houzs copy.
 - Email delivery: needs MAIL_API_KEY on the preview environment too; production has it.
