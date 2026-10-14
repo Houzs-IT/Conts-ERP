@@ -95,7 +95,7 @@ export function QuotationEditor() {
     <div className="space-y-4 pb-24">
       <PageHeader
         back="/scm/renovation/quotations"
-        eyebrow={`Quotation · ${quotation.projectName ?? `project #${quotation.projectId}`}`}
+        eyebrow={`Quotation · ${quotation.projectName ?? (quotation.projectId ? `project #${quotation.projectId}` : "no project yet")}`}
         title={revision.docNo}
         description={`${header.customerName || 'No customer yet'}${header.building ? ` · ${header.building} ${header.unitNo}` : ''} · ${fmtDate(header.docDate)}`}
         actions={(
