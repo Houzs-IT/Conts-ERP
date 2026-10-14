@@ -92,14 +92,14 @@ INSERT INTO owner_statements (id, owner_id, period_start, period_end, state, gro
 
 INSERT INTO statement_lines (id, statement_id, unit_id, line_type, category, description, occurred_on, amount, reference, sort_order) VALUES
  ('demo-line-001','demo-stmt-001','55555555-5555-4555-8555-000000000001','gross',NULL,'Bookings, August','2026-08-31',926000,NULL,1),
- ('demo-line-002','demo-stmt-001','55555555-5555-4555-8555-000000000001','management_fee','management_fee','Management fee 25%','2026-08-31',-231500,NULL,2),
+ ('demo-line-002','demo-stmt-001','55555555-5555-4555-8555-000000000001','management_fee','management_fee','25% To Operator','2026-08-31',-231500,NULL,2),
  ('demo-line-003','demo-stmt-001','55555555-5555-4555-8555-000000000001','expense','housekeeping','Housekeeping, 11 turnovers','2026-08-31',-38500,'HK-2026-08-A1203',3),
  ('demo-line-004','demo-stmt-001','55555555-5555-4555-8555-000000000001','expense','maintenance','Aircon quarterly service','2026-08-20',-7800,'INV-2026-0820',4),
  ('demo-line-005','demo-stmt-002','55555555-5555-4555-8555-000000000003','gross',NULL,'Bookings, August','2026-08-31',1048000,NULL,1),
- ('demo-line-006','demo-stmt-002','55555555-5555-4555-8555-000000000003','management_fee','management_fee','Management fee 25%','2026-08-31',-262000,NULL,2),
+ ('demo-line-006','demo-stmt-002','55555555-5555-4555-8555-000000000003','management_fee','management_fee','25% To Operator','2026-08-31',-262000,NULL,2),
  ('demo-line-007','demo-stmt-002','55555555-5555-4555-8555-000000000003','expense','furniture','Replacement dining chairs, 2','2026-09-02',-31800,'FRN-2026-114',3),
  ('demo-line-008','demo-stmt-003','55555555-5555-4555-8555-000000000002','gross',NULL,'Bookings, August','2026-08-31',714000,NULL,1),
- ('demo-line-009','demo-stmt-003','55555555-5555-4555-8555-000000000002','management_fee','management_fee','Management fee 25%','2026-08-31',-178500,NULL,2),
+ ('demo-line-009','demo-stmt-003','55555555-5555-4555-8555-000000000002','management_fee','management_fee','25% To Operator','2026-08-31',-178500,NULL,2),
  ('demo-line-010','demo-stmt-003','55555555-5555-4555-8555-000000000002','expense','consumables','Coffee pods, toiletries, 3 months','2026-09-12',-24000,'PO-2026-0912',3);
 
 INSERT INTO payouts (id, statement_id, owner_id, amount, currency, state, method, bank_last4, paid_at, failure_reason, created_at) VALUES

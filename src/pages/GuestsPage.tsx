@@ -243,7 +243,7 @@ export default function GuestsPage() {
       ) },
     { key: 'tag', label: 'Tag', type: 'status', width: 110, phone: 'badge',
       status: g => (g.missingId ? { label: 'Missing ID', tone: 'critical' } : g.tags[0] ? { label: g.tags[0].label, tone: g.tags[0].tone } : null) },
-    { key: 'stays', label: 'Reservations', type: 'number', value: g => g.stays, sortKey: 'stays', width: 80,
+    { key: 'stays', label: 'Reservations', type: 'number', value: g => g.stays, sortKey: 'stays', width: 124,
       sub: g => (g.upcoming ? `${fmtCount(g.upcoming)} upcoming` : null) },
     ...(canSeeContact ? [
       { key: 'email', label: 'Email', value: (g: GuestSummary) => g.email, hidden: true, width: 190 },

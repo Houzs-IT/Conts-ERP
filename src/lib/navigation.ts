@@ -273,6 +273,13 @@ const SUB_PAGES: [RegExp, string][] = [
 
 const groupName = (label: string) => label.charAt(0) + label.slice(1).toLowerCase();
 
+/** Rental screens reached from another screen rather than the menu: their breadcrumb, instead of "Home". */
+const RENTAL_OFF_MENU: Record<string, { group: string; item: string; page?: string }> = {
+  '/operations/cleaners': { group: 'Operations', item: 'Cleaning', page: 'Cleaners' },
+  '/properties/inventory': { group: 'Units', item: 'Fit-out register' },
+  '/finance/documents': { group: 'Finance', item: 'Guest documents' },
+};
+
 /** Breadcrumbs: group, menu entry and, on a record or sub-page, the page itself. */
 export function findNav(path: string): { group: string; item: string; label: string; page?: string } | null {
   for (const g of NAV) for (const it of g.items) {
@@ -281,6 +288,8 @@ export function findNav(path: string): { group: string; item: string; label: str
   }
   const off = SUPPLY_OFF_MENU[path];
   if (off) return { group: off[0], item: off[1], label: off[1] };
+  const rental = RENTAL_OFF_MENU[path];
+  if (rental) return { ...rental, label: rental.item };
   const sub = SUB_PAGES.find(([re]) => re.test(path));
   const parent = path.replace(/\/[^/]+$/, '');
   if (parent && parent !== path) {

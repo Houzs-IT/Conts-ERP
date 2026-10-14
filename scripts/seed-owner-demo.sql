@@ -31,8 +31,8 @@ INSERT INTO owner_statements (id, owner_id, period_start, period_end, state, gro
 
 INSERT INTO statement_lines (id, statement_id, unit_id, line_type, category, description, occurred_on, amount, reference, sort_order) VALUES
  ('51000000-0000-4000-8000-000000000001','5a000000-0000-4000-8000-000000000108','55555555-5555-4555-8555-000000000001','gross',NULL,'Bookings, August','2026-08-31',926000,NULL,1),
- ('51000000-0000-4000-8000-000000000002','5a000000-0000-4000-8000-000000000108','55555555-5555-4555-8555-000000000001','management_fee','management_fee','Management fee 25%','2026-08-31',-231500,NULL,2),
- ('51000000-0000-4000-8000-000000000003','5a000000-0000-4000-8000-000000000108','55555555-5555-4555-8555-000000000001','expense','housekeeping','Turnover cleans x5','2026-08-31',-38500,'HK-0831',3),
+ ('51000000-0000-4000-8000-000000000002','5a000000-0000-4000-8000-000000000108','55555555-5555-4555-8555-000000000001','management_fee','management_fee','25% To Operator','2026-08-31',-231500,NULL,2),
+ ('51000000-0000-4000-8000-000000000003','5a000000-0000-4000-8000-000000000108','55555555-5555-4555-8555-000000000001','expense','housekeeping','Cleaning jobs x5','2026-08-31',-38500,'HK-0831',3),
  ('51000000-0000-4000-8000-000000000004','5a000000-0000-4000-8000-000000000108','55555555-5555-4555-8555-000000000001','expense','maintenance','Aircon filter replacement','2026-08-20',-7800,'MNT-0820',4)
  ON CONFLICT (id) DO UPDATE SET statement_id = excluded.statement_id, unit_id = excluded.unit_id, line_type = excluded.line_type, category = excluded.category, description = excluded.description, occurred_on = excluded.occurred_on, amount = excluded.amount, reference = excluded.reference, sort_order = excluded.sort_order;
 
