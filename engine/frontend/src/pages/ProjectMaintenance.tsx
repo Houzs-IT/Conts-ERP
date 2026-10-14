@@ -1,4 +1,5 @@
 import { PropertyListsManager } from "./projects/renovation/PropertyListsManager";
+import { CrewManager } from "./projects/renovation/RenovationMaintenance";
 import { useProjectsMode } from "./projects/renovation/RenovationRoutes";
 import { SectionStageSelect } from "./projects/renovation/SectionStageSelect";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -116,13 +117,15 @@ export function ProjectMaintenanceView() {
         <PageHeader
           eyebrow="Operations · Projects"
           title="Project Maintenance"
-          description="The defaults every project and sales order picks from: property types and layouts, and the brands (letterheads)."
+          description="The defaults every project and sales order picks from: property types and layouts, site crew without a login, and the brands (letterheads)."
         />
-        {/* Owner, 14 Oct 2026: only these two. People (to come from user accounts), main steps, site task
-            categories, project types and the default checklist are hidden here, not deleted: their tables and
-            what reads them (step derivation, tasks and types on existing projects) are unchanged. */}
+        {/* Owner, 14 Oct 2026: property lists and brands, plus site crew without a login (everyone else is a user
+            account, managed in Property OS). Main steps, site task categories, project types and the default
+            checklist are hidden here, not deleted: their tables and what reads them (step derivation, tasks and
+            types on existing projects) are unchanged. */}
         <div className="space-y-6">
           <PropertyListsManager />
+          <CrewManager />
           <BrandManager />
         </div>
       </div>

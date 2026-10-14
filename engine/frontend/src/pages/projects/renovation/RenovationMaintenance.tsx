@@ -1,13 +1,14 @@
 /* Project Maintenance for the simplified renovation project (owner decisions
-   11 Oct 2026): the people master every "pick a person" field reads, the six
-   main steps (label, order, on/off) and the site task categories (Notion wording). */
+   11 Oct 2026): site crew without a login (everyone else comes from the user
+   accounts, 14 Oct 2026), the six main steps (label, order, on/off) and the site
+   task categories (Notion wording). */
 
 import { useState } from "react";
 import { ChevronDown, ChevronUp, Plus } from "lucide-react";
 import { Button } from "../../../components/Button";
 import { useQuery } from "../../../hooks/useQuery";
 import { cn } from "../../../lib/utils";
-import { PERSON_ROLES, PERSON_ROLE_LABEL, STAGE_LABEL, type PersonRole } from "../../../vendor/shared/renovation-stages";
+import { STAGE_LABEL } from "../../../vendor/shared/renovation-stages";
 import { simpleApi, type FlowStepRow, type Person, type TaskCategoryRow } from "./simpleApi";
 import { errorText } from "./renovationModel";
 import { inputClass } from "./renovationUi";
@@ -22,29 +23,14 @@ function Box({ title, hint, children }: { title: string; hint: string; children:
   );
 }
 
-function RoleChips({ value, onChange }: { value: PersonRole[]; onChange: (r: PersonRole[]) => void }) {
-  return (
-    <div className="flex flex-wrap gap-1">
-      {PERSON_ROLES.map((r) => {
-        const on = value.includes(r);
-        return (
-          <button key={r} type="button" aria-pressed={on} onClick={() => onChange(on ? value.filter((x) => x !== r) : [...value, r])}
-            className={cn("rounded-full border px-2 py-0.5 text-[11px]", on ? "border-primary bg-primary/10 text-ink" : "border-border text-ink-secondary")}>
-            {PERSON_ROLE_LABEL[r]}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-export function PeopleManager() {
+/* Site crew without a login (owner, 14 Oct 2026). Everyone else is a Property OS user account; site crew and
+   contractors (ZAINAL, MONIR, ATUN TEAM ...) have no email, so they stay here: people not linked to an account, with the
+   site crew role. They are offered as site task crew only. Switch one off instead of deleting, so old tasks keep the name. */
+export function CrewManager() {
   const q = useQuery(["renovation", "people", "all"], () => simpleApi.people());
   const [name, setName] = useState("");
-  const [roles, setRoles] = useState<PersonRole[]>([]);
-  const [filter, setFilter] = useState<PersonRole | "">("");
   const [error, setError] = useState<string | null>(null);
-  const list = (q.data?.data ?? []).filter((p) => !filter || p.roles.includes(filter));
+  const list = (q.data?.data ?? []).filter((p) => !p.linked && p.roles.includes("site_crew"));
 
   async function run(fn: () => Promise<unknown>) {
     setError(null);
@@ -52,50 +38,44 @@ export function PeopleManager() {
   }
 
   return (
-    <Box title="People" hint="Sales, designers, renovation PICs, admin, boss and site crew / contractors. Every person field on a project picks from this list. Switch a person off instead of deleting them, so old records keep their name.">
+    <Box title="Crew (no login)" hint="Site crew and contractors without a user account. They can be picked as crew on a site task, nowhere else. Everyone with a login is managed in Property OS under Users and roles. Switch a name off instead of deleting it, so old tasks keep it.">
       {error && <p role="alert" className="mb-2 text-sm text-err">{error}</p>}
-      <div className="mb-3 grid grid-cols-1 gap-2">
-        <input className={inputClass} placeholder="Name, e.g. INHOUSE - ZAINAL" value={name} onChange={(e) => setName(e.target.value)} aria-label="New person name" />
-        <RoleChips value={roles} onChange={setRoles} />
-        <div><Button icon={<Plus size={14} />} disabled={!name.trim()} onClick={() => run(async () => { await simpleApi.createPerson({ name, roles }); setName(""); setRoles([]); })}>Add person</Button></div>
+      <div className="mb-3 flex flex-col gap-2 sm:flex-row">
+        <input className={inputClass} placeholder="Name, e.g. ZAINAL" value={name} onChange={(e) => setName(e.target.value)} aria-label="New crew name" />
+        <div className="shrink-0 whitespace-nowrap"><Button icon={<Plus size={14} />} disabled={!name.trim()} onClick={() => run(async () => { await simpleApi.createPerson({ name: name.trim(), roles: ["site_crew"] }); setName(""); })}>Add crew</Button></div>
       </div>
-      <select className={inputClass + " mb-2 sm:max-w-xs"} value={filter} onChange={(e) => setFilter(e.target.value as PersonRole | "")} aria-label="Filter by role">
-        <option value="">Everyone ({q.data?.data.length ?? 0})</option>
-        {PERSON_ROLES.map((r) => <option key={r} value={r}>{PERSON_ROLE_LABEL[r]}</option>)}
-      </select>
       {q.loading && <p className="text-sm text-ink-secondary">Loading...</p>}
       <ul className="divide-y divide-border">
-        {list.map((p) => <PersonRow key={p.id} p={p} onSave={(b) => run(() => simpleApi.patchPerson(p.id, b))} />)}
-        {!q.loading && list.length === 0 && <li className="py-2 text-sm text-ink-secondary">No people yet.</li>}
+        {list.map((p) => <CrewRow key={p.id} p={p} onSave={(b) => run(() => simpleApi.patchPerson(p.id, b))} />)}
+        {!q.loading && list.length === 0 && <li className="py-2 text-sm text-ink-secondary">No crew without a login yet.</li>}
       </ul>
     </Box>
   );
 }
 
-function PersonRow({ p, onSave }: { p: Person; onSave: (b: Partial<{ name: string; roles: PersonRole[]; active: boolean }>) => void }) {
+function CrewRow({ p, onSave }: { p: Person; onSave: (b: Partial<{ name: string; active: boolean }>) => void }) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(p.name);
-  const [roles, setRoles] = useState<PersonRole[]>(p.roles);
   if (editing) {
     return (
-      <li className="py-2 space-y-2">
-        <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} aria-label="Name" />
-        <RoleChips value={roles} onChange={setRoles} />
+      <li className="flex flex-col gap-2 py-2 sm:flex-row">
+        <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} aria-label={`New name for ${p.name}`} />
         <div className="flex gap-2">
-          <Button disabled={!name.trim()} onClick={() => { onSave({ name, roles }); setEditing(false); }}>Save</Button>
-          <Button variant="secondary" onClick={() => { setName(p.name); setRoles(p.roles); setEditing(false); }}>Cancel</Button>
+          <Button disabled={!name.trim()} onClick={() => { onSave({ name: name.trim() }); setEditing(false); }}>Save</Button>
+          <Button variant="secondary" onClick={() => { setName(p.name); setEditing(false); }}>Cancel</Button>
         </div>
       </li>
     );
   }
   return (
     <li className={cn("flex flex-wrap items-center justify-between gap-2 py-2", !p.active && "opacity-60")}>
-      <div className="min-w-0">
-        <div className="text-sm font-medium text-ink">{p.name}{p.source === "import" ? <span className="ml-1 text-[11px] font-normal text-ink-secondary">imported</span> : null}</div>
-        <div className="text-[11px] text-ink-secondary">{p.roles.length ? p.roles.map((r) => PERSON_ROLE_LABEL[r]).join(", ") : "No role"}</div>
+      <div className="min-w-0 text-sm font-medium text-ink">
+        {p.name}
+        {!p.active && <span className="ml-1 text-[11px] font-normal text-ink-secondary">switched off</span>}
+        {p.source === "import" && <span className="ml-1 text-[11px] font-normal text-ink-secondary">imported</span>}
       </div>
       <div className="flex gap-2">
-        <Button variant="ghost" onClick={() => setEditing(true)}>Edit</Button>
+        <Button variant="ghost" onClick={() => setEditing(true)} aria-label={`Rename ${p.name}`}>Rename</Button>
         <Button variant="ghost" onClick={() => onSave({ active: !p.active })}>{p.active ? "Switch off" : "Switch on"}</Button>
       </div>
     </li>

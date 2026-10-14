@@ -78,6 +78,10 @@ export interface Person {
   department?: string | null;
   /** Offered in the pickers: linked to an active user account. Before migration 0113, every active person. */
   offered?: boolean;
+  /** Follows a user account (name and on/off come from Users and roles). */
+  linked?: boolean;
+  /** Site crew without a login (owner, 14 Oct 2026): pickable as site task crew only, kept in Project Maintenance. */
+  crew?: boolean;
 }
 
 export interface FlowStepRow { step_key: FlowStepKey; label: string; sort_order: number; active: boolean }

@@ -41,3 +41,17 @@ describe("position after the name", () => {
     expect(personPosition({ roles: ["sales", "designer"] })).toBe("Sales, Designer");
   });
 });
+
+describe("site crew without a login", () => {
+  const crew = p(20, { name: "ZAINAL", roles: ["site_crew"], offered: false, crew: true, linked: false, source: "import" });
+  const account = p(1, { name: "Alex", offered: true, linked: true, position: "Project PIC" });
+  test("is offered as site task crew, next to the accounts", () => {
+    expect(peopleOptions([account, crew], "site_crew", []).map((x) => x.id)).toEqual([1, 20]);
+  });
+  test("is not offered anywhere that needs an account", () => {
+    expect(peopleOptions([account, crew], undefined, []).map((x) => x.id)).toEqual([1]);
+  });
+  test("is labelled as crew without a login", () => {
+    expect(personLabel(crew)).toBe("ZAINAL · Crew (no login)");
+  });
+});

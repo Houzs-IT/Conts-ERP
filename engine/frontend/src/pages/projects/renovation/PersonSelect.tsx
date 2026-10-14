@@ -23,9 +23,11 @@ export function usePeople(role?: PersonRole) {
   return useQuery(["renovation", "people", role ?? "all"], () => simpleApi.people({ role }), [role], { staleTime: 60_000 });
 }
 
-/** "Name · Position · Department", skipping what is not set. */
-export function personLabel(p: Pick<Person, "name"> & Partial<Pick<Person, "position" | "department">>): string {
-  return [p.name, p.position, p.department].map((v) => (v ?? "").trim()).filter(Boolean).join(" · ");
+export const CREW_LABEL = "Crew (no login)";
+
+/** "Name · Position · Department", skipping what is not set; site crew without a login reads "Name · Crew (no login)". */
+export function personLabel(p: Pick<Person, "name"> & Partial<Pick<Person, "position" | "department" | "crew">>): string {
+  return [p.name, p.position || (p.crew ? CREW_LABEL : null), p.department].map((v) => (v ?? "").trim()).filter(Boolean).join(" · ");
 }
 
 /** Whether a person may be picked now: linked to an active user account. A server from before migration 0113 sends
@@ -36,13 +38,15 @@ export function isOffered(p: Person, role?: PersonRole): boolean {
 }
 
 /** People offered, plus the current pick even when it is no longer offered (an old record keeps its name). Accounts
- *  carry no project roles, so `role` only narrows the list on a server from before migration 0113. */
+ *  carry no project roles, so `role` only narrows the list on a server from before migration 0113, with one exception:
+ *  asked for site crew, the crew without a login (Project Maintenance) are offered too. */
 export function peopleOptions(all: readonly Person[], role: PersonRole | undefined, current: readonly number[]): Person[] {
   const cur = new Set(current);
-  return all.filter((p) => cur.has(p.id) || isOffered(p, role));
+  return all.filter((p) => cur.has(p.id) || isOffered(p, role) || (role === "site_crew" && p.crew === true));
 }
 
 export const NO_PEOPLE_TEXT = "No people yet. Add them as user accounts in Property OS (Users and roles).";
+const NO_CREW_TEXT = "No people yet. Add user accounts in Property OS, or crew without a login in Project Maintenance.";
 const notOffered = (p: Person) => (p.offered === false || !p.active ? " (no longer listed)" : "");
 
 export function PersonSelect({ value, onChange, role, label, disabled, placeholder = "Not set", className = inputClass }: {
@@ -93,7 +97,7 @@ export function PeoplePicker({ value, onChange, role, label, disabled }: {
   const q = usePeople();
   const opts = peopleOptions(q.data?.data ?? [], role, value);
   if (q.loading) return <p className="text-xs text-ink-secondary">Loading people...</p>;
-  if (opts.length === 0) return <p className="text-xs text-ink-secondary">{NO_PEOPLE_TEXT}</p>;
+  if (opts.length === 0) return <p className="text-xs text-ink-secondary">{role === "site_crew" ? NO_CREW_TEXT : NO_PEOPLE_TEXT}</p>;
   return (
     <div role="group" aria-label={label} className="flex flex-wrap gap-1.5">
       {opts.map((p) => {
