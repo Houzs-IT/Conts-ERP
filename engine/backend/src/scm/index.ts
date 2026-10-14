@@ -961,4 +961,11 @@ import { renovation } from "./routes/renovation";
 scm.use("/renovation/*", scmAreaGuard("scm.sales.orders", { writeLevel: "view" }));
 scm.route("/renovation", renovation);
 
+// ── Renovation mode: a sales order's "Order information" (project, property; mig 0112) ──
+// Reads ride the Sales Orders view level; saving an SO's order information needs
+// Sales Orders edit, like the header it sits in.
+import { renovationSoInfo } from "./routes/renovation-so-info";
+scm.use("/renovation-so-info/*", scmAreaGuard("scm.sales.orders"));
+scm.route("/renovation-so-info", renovationSoInfo);
+
 export default scm;

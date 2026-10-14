@@ -126,6 +126,7 @@ export const SCM_AREA_MOUNTS: ReadonlyArray<readonly [string, string]> = [
   // Renovation phase 3: site receipt = the PO's goods receipt taken at the unit.
   ["/site-receipts/*", "scm.procurement.grn"],
   ["/renovation/*", "scm.sales.orders"],
+  ["/renovation-so-info/*", "scm.sales.orders"],
 ] as const;
 
 /* Routers mounted with NO scmAreaGuard — the cross-area picklists and the

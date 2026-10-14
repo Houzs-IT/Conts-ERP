@@ -46,6 +46,11 @@ describe('the validate route is wired to the shared collector', () => {
     expect(handler).toContain('fairDayMissing: fairDayMissing(body,');
   });
 
+  it('renovation mode adds the renovation block problems and drops venue / fair (mig 0112)', () => {
+    expect(handler).toContain('renovation: !!renoBlock');
+    expect(handler).toContain('renovationSoProblems(renoBlock');
+  });
+
   it('writes NOTHING — it is a dry run', () => {
     expect(handler).not.toMatch(/\.insert\(|\.update\(|\.delete\(/);
     expect(handler).not.toContain('nextDocNo(');

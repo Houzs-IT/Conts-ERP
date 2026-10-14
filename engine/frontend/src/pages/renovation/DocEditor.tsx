@@ -4,13 +4,14 @@
    so the screen and the server agree to the sen. */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Plus, Search, Trash2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, LayoutGrid, Plus, Search, Trash2 } from 'lucide-react';
 import { formatRm, lineAmounts, parseMeasureMilli, type RenoLineKind } from '../../vendor/shared/renovation-money';
 import { RENO_STAGES, STAGE_LABEL } from '../../vendor/shared/renovation-stages';
 import { useSuppliers } from '../../vendor/scm/lib/suppliers-queries';
 import { searchProducts, type DocLine, type DocSection, type ProductPick } from '../../lib/renovation/api';
 import { cn } from '../../lib/utils';
 import { cellBaseCls, cellInputCls, inputCls, MoneyInput, PercentInput, rm } from './shared';
+import { insertRoomSections } from './roomSections';
 
 export const BAND_COLOURS: Array<{ value: string | null; label: string }> = [
   { value: null, label: 'None' },
@@ -382,13 +383,37 @@ export function SectionCard({ section, index, count, disabled, showCost, onChang
   );
 }
 
-export function DocEditor({ sections, onChange, disabled, showCost = true, allowLumpSum = true }: {
+/** "Generate rooms from layout": the document's layout, or why there is none. */
+export type RoomLayout = { label: string; bedrooms: number; bathrooms: number } | { missing: string };
+
+export function DocEditor({ sections, onChange, disabled, showCost = true, allowLumpSum = true, roomLayout }: {
   sections: DocSection[]; onChange: (s: DocSection[]) => void; disabled?: boolean; showCost?: boolean; allowLumpSum?: boolean;
+  /** Omitted: no button (templates, VOs). Given: the button, disabled with the hint when there is no layout. */
+  roomLayout?: RoomLayout;
 }) {
   const sq = useSuppliers({ status: 'ACTIVE' });
   const suppliers = useMemo(() => (sq.data ?? []).map((s) => ({ id: s.id, code: s.code, name: s.name })), [sq.data]);
+  const [roomNote, setRoomNote] = useState<string | null>(null);
+  const layout = roomLayout && !('missing' in roomLayout) ? roomLayout : null;
+  const generateRooms = () => {
+    if (!layout) return;
+    const r = insertRoomSections(sections, layout.bedrooms, layout.bathrooms, (h) => blankSection(h));
+    setRoomNote(r.added.length ? `Added ${r.added.length} room section${r.added.length === 1 ? '' : 's'}: ${r.added.join(', ')}.` : 'Every room of this layout already has a section.');
+    if (r.added.length) onChange(r.sections);
+  };
   return (
     <div className="space-y-3">
+      {roomLayout && !disabled && (
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {roomNote && <span role="status" className="text-[12px] text-ink-secondary">{roomNote}</span>}
+          {!layout && <span className="text-[12px] text-ink-muted">{(roomLayout as { missing: string }).missing}</span>}
+          <button type="button" onClick={generateRooms} disabled={!layout}
+            title={layout ? `${layout.label}: Living hall, ${layout.bedrooms} bedroom(s), ${layout.bathrooms} bathroom(s), Common area` : undefined}
+            className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-surface px-3 text-[12px] font-semibold text-ink-secondary hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:opacity-50">
+            <LayoutGrid size={14} /> Generate rooms from layout
+          </button>
+        </div>
+      )}
       {sections.length === 0 && <div className="rounded-xl border border-dashed border-border p-6 text-center text-[13px] text-ink-muted">No sections yet.</div>}
       {sections.map((s, i) => (
         <SectionCard key={i} section={s} index={i} count={sections.length} disabled={disabled} showCost={showCost} suppliers={suppliers} allowLumpSum={allowLumpSum}

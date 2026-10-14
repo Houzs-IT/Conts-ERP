@@ -40,7 +40,8 @@ describe.each(contracts)('$file created-document recovery contract', (contract) 
     expect(paymentsTable).toBeGreaterThan(hiddenFormEnd);
 
     const hiddenForm = source.slice(hiddenFormStart, hiddenFormEnd);
-    expect(hiddenForm).toContain('>Customer<');
+    /* SalesOrderNew renders its Customer card from a const (renovation mode lays the cards out differently). */
+    expect(hiddenForm).toMatch(/>Customer<|\{customerCard\}/);
     expect(hiddenForm).toContain('Line Items');
     expect(hiddenForm).not.toContain('<PaymentsTable');
   });

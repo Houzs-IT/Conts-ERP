@@ -17,6 +17,7 @@
 // ----------------------------------------------------------------------------
 
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { useSoInfoLists } from '../projects/renovation/customerPropertyApi';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, Plus, Trash2, ChevronDown, ChevronRight, MapPin, Lock } from 'lucide-react';
 import { isCorePaymentMethodRow } from '@2990s/shared/payment-methods';
@@ -1128,17 +1129,36 @@ const DROPDOWN_CARDS: Array<{ category: SoDropdownCategory; title: string; help:
      source of truth. */
 ];
 
+/* Renovation mode (Conts, 14 Oct 2026): the renovation sales order form has no
+   Customer Type pick list in use, no Building Type (the property type list in
+   Project Maintenance replaces it) and no Emergency Contact, so their lists are
+   hidden here. Hidden, not deleted: the rows and Houzs's screens are untouched.
+   Every payment list stays exactly as it is. */
+const RENO_HIDDEN_DROPDOWNS: ReadonlySet<SoDropdownCategory> = new Set<SoDropdownCategory>(['customer_type', 'building_type', 'relationship']);
+
 const DropdownsSection = ({ canEdit }: { canEdit: boolean }) => {
   const all = useAllSoDropdownOptions();
+  const reno = useSoInfoLists().data?.renovationMode === true;
+  const cards = reno ? DROPDOWN_CARDS.filter((c) => !RENO_HIDDEN_DROPDOWNS.has(c.category)) : DROPDOWN_CARDS;
 
   return (
     <>
       <div className={styles.banner}>
-        <strong>Dropdowns.</strong> Edit the values commander sees in the
-        Customer Type / Building Type / Relationship / Payment Method
-        selects on New SO and Edit SO. Used to be hardcoded in code — now
-        editable here. Toggle <em>Active</em> off to hide a value from new
-        SOs while keeping existing rows that reference it valid.
+        {reno ? (
+          <>
+            <strong>Dropdowns.</strong> The payment lists used on New SO and Edit SO. Property
+            types and layouts are in Project Maintenance. Toggle <em>Active</em> off to hide a
+            value from new SOs while keeping existing rows that reference it valid.
+          </>
+        ) : (
+          <>
+            <strong>Dropdowns.</strong> Edit the values commander sees in the
+            Customer Type / Building Type / Relationship / Payment Method
+            selects on New SO and Edit SO. Used to be hardcoded in code — now
+            editable here. Toggle <em>Active</em> off to hide a value from new
+            SOs while keeping existing rows that reference it valid.
+          </>
+        )}
       </div>
 
       {all.isError ? (
@@ -1148,7 +1168,7 @@ const DropdownsSection = ({ canEdit }: { canEdit: boolean }) => {
           <div className={styles.empty}>Loading dropdowns…</div>
         </div>
       ) : (
-        DROPDOWN_CARDS.map((card) => (
+        cards.map((card) => (
           <DropdownCategoryCard
             key={card.category}
             category={card.category}

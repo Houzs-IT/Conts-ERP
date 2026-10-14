@@ -129,7 +129,7 @@ export function PeopleCard({ d, canWrite, onDone, onError }: { d: ProjectDetailV
 
 /* Same look and behaviour as the exhibition "Project team" panel (Projects.tsx
    ProjectTeamSection): chips with a remove x, a filter box, a ticked list, Add. */
-function AttendingPicker({ attending, canWrite, onSave }: {
+export function AttendingPicker({ attending, canWrite, onSave }: {
   attending: AttendingPerson[]; canWrite: boolean; onSave: (ids: number[], text: string) => Promise<void>;
 }) {
   const people = usePeople();

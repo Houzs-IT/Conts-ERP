@@ -258,6 +258,8 @@ import {
   findFreeTextSoLines, freeTextSoLineResponse,
 } from '../lib/validate-item-codes';
 import { collectSoConfirmProblems, soConfirmProblemsForDoc } from '../lib/so-confirm-gate';
+import { applyRenovationSoInfo, readRenovationBlock, renovationSoAvailable, renovationSoProblems, stampCreatedRooms } from './renovation-so-info';
+import type { Db as RenoInfoDb } from '../../services/renovation/load';
 import { companyRequiresStockLocation, soLocationProblem, soLocationProblemForDoc } from '../lib/so-location-gate';
 import { collectSoSubmitProblems, soPaymentSubFieldGap } from '../shared/so-submit-problems';
 import { soAgentToStamp, readStaffForStamp, followSalespersonToAgent } from '../lib/so-agent';
@@ -2595,6 +2597,9 @@ async function createSalesOrderCore(c: SoCreateContext): Promise<SoCreateOutcome
       agent: agentToStamp,
       venue: resolvedVenueName,
       venueId: venueIdToStamp,
+      /* A renovation-mode order (POST / checked the mode) is sold for a project,
+         not at a fair or a showroom: it has no venue. */
+      venueOptional: !!body.renovation && typeof body.renovation === 'object',
       lines: items.map((it) => ({
         itemCode: it.itemCode as string | null | undefined,
         group: (it.itemGroup as string | null | undefined) ?? null,
@@ -4723,6 +4728,25 @@ async function createSalesOrderCore(c: SoCreateContext): Promise<SoCreateOutcome
    factoring. The dynamic-status cast is safe: every core outcome status is a
    contentful JSON status the old inline c.json calls already used. */
 mfgSalesOrders.post('/', async (c) => {
+  /* Renovation mode (Conts, 14 Oct 2026; mig 0112): the New SO form sends a
+     `renovation` block (project, building, property type, layout, sq ft) in place
+     of Houzs's Order Info. Checked BEFORE the core so a refusal writes nothing;
+     stamped AFTER it (the core's fair link writes project_id last) and written back
+     to the project. routes/renovation-so-info.ts holds the rule. */
+  const peek = (await c.req.json().catch(() => null)) as Record<string, unknown> | null;
+  const renoBlock = peek && peek.renovation && typeof peek.renovation === 'object' ? readRenovationBlock(peek.renovation) : null;
+  if (renoBlock) {
+    const avail = await renovationSoAvailable(c.env.DB as unknown as RenoInfoDb);
+    if (!avail.ok) return c.json(avail.body, avail.status);
+    if (peek!.asDraft !== true) {
+      const problems = renovationSoProblems(renoBlock, {
+        customerName: String(peek!.debtorName ?? peek!.customerName ?? ''),
+        phone: String(peek!.phone ?? ''),
+        address1: String(peek!.address1 ?? ''),
+      });
+      if (problems.length) return c.json({ error: 'validation_failed', problems }, 422);
+    }
+  }
   const out = await createSalesOrderCore({
     req: { json: () => c.req.json() },
     /* Forwards every key verbatim — including `sessionOrigin`, which the
@@ -4737,6 +4761,22 @@ mfgSalesOrders.post('/', async (c) => {
      here, after the core has answered, so the create itself is exactly as it
      was. A draft is never asked (the loader says so): that is asked when it is
      confirmed. lib/vp-brand-ask.ts. */
+  if (renoBlock && out.status === 201 && typeof out.body.docNo === 'string') {
+    const createdDocNo = out.body.docNo;
+    const applied = await applyRenovationSoInfo(c.env.DB as unknown as RenoInfoDb, createdDocNo, { ...renoBlock, roomSections: null }, {
+      companyId: activeCompanyId(c) ?? 1, companySql: activeCompanySql(c, 'p.company_id'),
+      actorId: Number(c.get('houzsUser')?.id ?? 0),
+    }).then(async (r) => {
+      /* Rooms: the room list and each line's room (body.items[i].room), matched to the inserted lines. */
+      if (r.ok) await stampCreatedRooms(c.env.DB as unknown as RenoInfoDb, createdDocNo, renoBlock.roomSections, peek!.items);
+      return r;
+    }).catch((e: unknown) => {
+      /* The order is committed; a failed stamp must not read as a failed save. */
+      console.error('[renovation-so-info] stamp after create failed', e);
+      return { ok: false as const, status: 422 as const, body: { error: 'stamp_failed' } };
+    });
+    if (!applied.ok) return c.json({ ...out.body, renovationInfoSaved: false, renovationInfoError: applied.body }, 201);
+  }
   if (out.status === 201 && typeof out.body.docNo === 'string') {
     const vpBrand = await loadVpBrandAsk({
       sb: c.get('supabase'), db: c.env.DB as unknown as VpBrandDb, companyId: activeCompanyId(c) ?? null,
@@ -4797,7 +4837,17 @@ mfgSalesOrders.post('/validate', async (c) => {
     })
     .filter((g): g is { row: number; method: string; missing: string } => g !== null);
 
+  /* Renovation mode (mig 0112): the form's renovation block brings its own
+     required fields; the customer name and phone are already asked for above. */
+  const renoBlock = body.renovation && typeof body.renovation === 'object' ? readRenovationBlock(body.renovation) : null;
+  const renoExtra = renoBlock && !asDraft
+    ? renovationSoProblems(renoBlock, {
+      customerName: str(body.debtorName) || str(body.customerName), phone: str(body.phone), address1: str(body.address1),
+    }).filter((p) => p.field !== 'Customer name' && p.field !== 'Phone number')
+    : [];
   const problems = collectSoSubmitProblems({
+    renovation: !!renoBlock,
+    extra: renoExtra,
     customerName: str(body.debtorName) || str(body.customerName),
     phone: str(body.phone),
     hasNamedLine,

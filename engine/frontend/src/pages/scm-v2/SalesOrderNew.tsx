@@ -125,6 +125,14 @@ import {
 import { useOrdersWithMoney } from '../../vendor/scm/lib/so-money-queries';
 import { useBranding } from '../../hooks/useBranding';
 import styles from './SalesOrderNew.module.css';
+import { CustomerPropertyFields } from '../projects/renovation/CustomerPropertyFields';
+import { RenovationSoRooms, roomLayoutOf } from './RenovationSoRooms';
+import { soInfoApi, useSoInfoLists } from '../projects/renovation/customerPropertyApi';
+import {
+  EMPTY_CUSTOMER_PROPERTY, mergeProjectIntoSo, missingFields, toRenovationBlock,
+  type CustomerPropertyValue, type ProjectShared,
+} from '../projects/renovation/customerPropertyModel';
+import { soAddressFromSite } from '../../vendor/shared/renovation-property';
 import { fmtMoneySen } from '@2990s/shared';
 import { DateField } from "../../vendor/scm/components/DateField";
 
@@ -287,6 +295,21 @@ export const SalesOrderNew = () => {
   const [emergencyName,  setEmergencyName]   = useState('');
   const [emergencyRel,   setEmergencyRel]    = useState<string>('');
   const [emergencyPhone, setEmergencyPhone]  = useState('');
+
+  // ── Renovation mode (Conts, 14 Oct 2026; mig 0112) ─────────────────
+  /* Renovation mode with the property lists in the database switches this form
+     to the renovation layout: Customer, Delivery address and the shared Order
+     information block (project, building, property, layout, sq ft). Anything
+     else, a failed read included, keeps Houzs's form exactly. */
+  const renoListsQ = useSoInfoLists();
+  const reno = renoListsQ.data?.ready === true;
+  const renoPending = renoListsQ.isLoading;
+  const [renoInfo, setRenoInfo] = useState<CustomerPropertyValue>(EMPTY_CUSTOMER_PROPERTY);
+  const [renoProject, setRenoProject] = useState<ProjectShared | null>(null);
+  const [renoTried, setRenoTried] = useState(false);
+  /* Rooms: the order's room list and each line's room by its rid. */
+  const [renoRooms, setRenoRooms] = useState<string[]>([]);
+  const [renoLineRoom, setRenoLineRoom] = useState<Record<string, string>>({});
 
   // ── Items state ────────────────────────────────────────────────────
   /* HOOKKA pattern — each line is an inline editable card. First card is
@@ -1421,7 +1444,9 @@ export const SalesOrderNew = () => {
       convertedFromDocNo: d.convertedFromDocNo,
       amountSen: d.amountSen,
     })),
-  }), [debtorName, phone, lines, effectiveVenueId, fairPick, noFair, salespersonId, branding.companyCode, salesLocation, state, processingDate, deliveryDate, fillAddressLater, address1, postcode, paymentDrafts]);
+    /* Renovation mode: no fair and no venue; the block's own required fields instead. */
+    ...(reno ? { renovation: toRenovationBlock(renoInfo), noFair: true } : {}),
+  }), [debtorName, phone, lines, effectiveVenueId, fairPick, noFair, salespersonId, branding.companyCode, salesLocation, state, processingDate, deliveryDate, fillAddressLater, address1, postcode, paymentDrafts, reno, renoInfo]);
 
   /* Live "Can't save — N to fix" list, asked of the backend as the operator
      types (debounced). Based on the CONFIRMED create (asDraft:false), which is
@@ -1493,6 +1518,7 @@ export const SalesOrderNew = () => {
       return;
     }
     const validLines = lines.filter((l) => l.itemCode.trim() && l.qty > 0);
+    if (reno) setRenoTried(true);
     /* Backend is the authority for what blocks this submit (owner 2026-09-16).
        Ask the validate dry-run for the definitive list for THIS press (draft vs
        confirmed differ), and merge the one client-only extra (a NO-MATCH scanned
@@ -1649,10 +1675,22 @@ export const SalesOrderNew = () => {
           /* PR-E — per-item delivery date + cascade override flag. */
           lineDeliveryDate:           l.lineDeliveryDate ?? null,
           lineDeliveryDateOverridden: l.lineDeliveryDateOverridden ?? false,
+          ...(reno ? { room: renoLineRoom[l.rid] ?? '' } : {}),
         })),
+        /* Renovation mode (mig 0112): the shared Order information block, stamped
+           on the order and written back to its project by the server. A sale for
+           a project has no fair, venue, building type or emergency contact. */
+        ...(reno ? {
+          renovation: { ...toRenovationBlock(renoInfo), roomSections: renoRooms }, noFair: true,
+          fairOrganizer: undefined, fairStart: undefined, fairEnd: undefined, fairDate: undefined,
+          buildingType: undefined, customerType: undefined, customerSoNo: undefined, emergencyContactName: undefined, emergencyContactRelationship: undefined, emergencyContactPhone: undefined,
+        } : {}),
       },
       {
-        onSuccess: async (res: { docNo: string }) => {
+        onSuccess: async (res: { docNo: string; renovationInfoSaved?: boolean }) => {
+          if (res.renovationInfoSaved === false) {
+            void notify({ title: `Sales order ${res.docNo} is saved`, body: 'Its order information did not save. Open the order, press Edit and save the Order information again.', tone: 'error' });
+          }
           /* THE ACCOUNTS MAY HAVE REFUSED IT, and until 2026-08-19 only a queue
              behind a permission key knew. Never blocks — the order is saved. */
           await notifyAcNotSent(notify, res, 'Sales order');
@@ -1710,89 +1748,95 @@ export const SalesOrderNew = () => {
     );
   };
 
-  return (
-    <div>
-      {/* Shared sticky page header — full-bleed, matches SalesOrderMaintenance
-          + the PO/DO V2 lists. DRAFT flow: two create actions run the SAME
-          create + post-create payment/photo flush + navigation; only the
-          `asDraft` flag differs. From a scan handoff (fromScan) the scanned
-          order defaults to DRAFT for operator review, so "Save as Draft" is
-          the PRIMARY button and "Create" the secondary one; for a normal New
-          SO, "Create" stays primary. The buttons stay CLICKABLE even when
-          fields are missing (only blocked while a save is in flight) — onSave
-          validates and tells the operator EXACTLY what's missing. */}
-      <PageHeader back
-        eyebrow="Sales order"
-        title={createdDocNo ? `Complete Sales Order ${createdDocNo}` : 'New Sales Order'}
-        description={createdDocNo
-          ? 'The order already exists. Finish or remove the retained payment rows, then continue to its Detail page.'
-          : 'Customer, order info, delivery address, line items and payments — saved as one order.'}
-        actions={
-          <>
-            {/* h-9 = the <Button> height — this link shares the rail with
-                Cancel / Create Sales Order / Save as Draft. */}
-            <Link
-              to="/scm/sales-orders"
-              className="inline-flex h-9 items-center gap-1.5 rounded-md border border-border bg-surface px-3 text-[11px] font-semibold uppercase tracking-wider text-ink-secondary transition-colors hover:border-primary/40 hover:bg-primary-soft hover:text-primary"
-            >
-              <ArrowLeft size={14} /> Sales Orders
-            </Link>
-            <Button variant="ghost" onClick={() => navigate('/scm/sales-orders')}>
-              <X {...ICON} /> Cancel
-            </Button>
-            {/* Persistent "Can't save — N to fix · tap to see" (owner 2026-09-16):
-                a blocked Save is never silent. Count + list are backend-authored
-                (useSoValidate), so it clears itself as fields are fixed. Renders
-                nothing when the order is complete. */}
-            <SaveBlockedIndicator problems={blockingProblems} onOpen={openBlockingList} />
-            <Button
-              variant={fromScan ? 'secondary' : 'primary'}
-              onClick={() => { void onSave(false); }}
-              disabled={create.isPending}
-            >
-              <Save {...ICON} />
-              {create.isPending
-                ? 'Saving…'
-                : createdDocNo
-                  ? (paymentIntents().length > 0 ? 'Continue payment retry' : 'Open created order')
-                  : 'Create Sales Order'}
-            </Button>
-            <Button
-              variant={fromScan ? 'primary' : 'secondary'}
-              onClick={() => { void onSave(true); }}
-              disabled={create.isPending || !!createdDocNo}
-            >
-              <Save {...ICON} />
-              {create.isPending ? 'Saving…' : 'Save as Draft'}
-            </Button>
-          </>
-        }
-      />
+  /* The project is the master record: picking one fills the SO from it (its
+     non-blank values win); the SO's save writes back to it (server side). */
+  const pickRenoProject = useCallback((p: ProjectShared | null) => {
+    setRenoProject(p);
+    if (!p) { setRenoInfo((v) => ({ ...v, projectId: null })); return; }
+    setRenoInfo((v) => mergeProjectIntoSo(v, p));
+    if (p.customerName) setDebtorName(p.customerName);
+    if (p.customerPhone) setPhone(p.customerPhone);
+    if (p.customerEmail) setEmail(p.customerEmail);
+    if (p.siteAddress) {
+      const a = soAddressFromSite(p.siteAddress);
+      setAddress1(a.address1);
+      setAddress2(a.address2);
+    }
+  }, []);
+  /* Opened from a project (?projectId=): everything prefilled from it. */
+  const renoProjectParam = searchParams.get('projectId');
+  useEffect(() => {
+    if (!reno || !renoProjectParam) return;
+    const id = Number(renoProjectParam);
+    if (!Number.isInteger(id) || id <= 0) return;
+    let live = true;
+    soInfoApi.project(id)
+      .then((r) => { if (live) pickRenoProject(r.project); })
+      .catch(() => { if (live) void notify({ title: 'The project could not be loaded', body: 'Pick it again under Order information.', tone: 'error' }); });
+    return () => { live = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per project id; notify is stable enough for a one-off error
+  }, [reno, renoProjectParam, pickRenoProject]);
+  const renoMissing = useMemo(
+    () => (renoTried ? missingFields(renoInfo, { customerName: debtorName, phone, address1 }) : new Set<string>()),
+    [renoTried, renoInfo, debtorName, phone, address1],
+  );
 
-      <div className="space-y-3">
-      {createdDocNo && (
-        <div role="status" className="rounded-lg border border-warning-text/30 bg-warning-bg px-3 py-2 text-sm text-warning-text">
-          Sales order {createdDocNo} already exists. This recovery view only keeps payment rows; customer, order and line-item fields are hidden so unsaved edits cannot be lost.
-        </div>
-      )}
-      {!createdDocNo && (<>
-      {/* ── SCAN BANNER (fromScan only) ───────────────────────────────
-          Task #73 — the OCR review happens in THIS form now. Tell the operator
-          to check every dropdown-bound field before saving. Changed fields show
-          a blue highlight; each scanned line shows a "scanned · NN%" chip. */}
-      {fromScan && (
-        <div className="flex items-start gap-3 rounded-lg border border-learning/40 bg-learning/5 px-4 py-3 text-[13px] text-learning">
-          <Camera size={18} strokeWidth={1.75} className="mt-0.5 shrink-0" />
-          <div>
-            <div className="font-semibold">Prefilled from a scanned slip — check every dropdown before saving.</div>
-            <div className="mt-0.5 text-learning/80">
-              Confirm the venue, SKU, fabric, size and payment selections, then Create the Sales Order.
-              Fields you change from the scan are highlighted in blue.
-            </div>
-          </div>
-        </div>
-      )}
+  const renderNewLine = (line: DraftLine, idx: number) => {
+            /* fromScan — the slip rawText still feeds the SKU picker's placeholder
+               hint for a no-match line (searchHint below). The per-line
+               "scanned · NN%" review chip was REMOVED: owner — it is scan-review
+               metadata that won't exist on the created SO, so it must not clutter
+               the create page. (A no-match line is still obvious: its SKU picker
+               is empty + required.) */
+            const meta = scanLineMeta[line.rid];
+            return (
+              <div key={line.rid} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
+                <SoLineCard
+                  index={idx}
+                  draft={line}
+                  onChange={(patch) => updateLine(line.rid, patch)}
+                  onRemove={() => dropLine(line.rid)}
+                  canRemove={lines.length > 1}
+                  inheritVariantsByCategory={inheritVariantsByCategory}
+                  onAddProducts={addProducts}
+                  /* Variants are only mandatory once a Processing Date is set
+                     (matches the backend gate + the Save block above), so the
+                     ` *` marker + red ring stay off while the order is still a
+                     no-date draft (owner 2026-07-14). */
+                  variantsRequired={!!processingDate}
+                  seedSofaLegDefault={true}
+                  /* Scan-Order (Task #73) — a NO-MATCH scanned line seeds an
+                     empty SKU picker; pass the slip rawText as the picker's
+                     placeholder hint so the operator can pick a real SKU
+                     (never free-text). Only while the line is still unpicked. */
+                  searchHint={!line.itemCode && meta?.rawText ? meta.rawText : undefined}
+                />
+              </div>
+            );
+  };
 
+  const renoOrderInfoCard = (
+    <section className={styles.card}>
+      <header className={styles.cardHeader}>
+        <h2 className={styles.cardTitle}>Order Information</h2>
+        <span style={{ fontSize: 'var(--fs-12)', color: 'var(--fg-muted)' }}>Shared with the project</span>
+      </header>
+      <div className={styles.cardBody}>
+        <CustomerPropertyFields
+          mode="so"
+          value={renoInfo}
+          onChange={setRenoInfo}
+          lists={renoListsQ.data}
+          project={renoProject}
+          onPickProject={pickRenoProject}
+          missing={renoMissing}
+        />
+      </div>
+    </section>
+  );
+
+  const customerCard = (
+    <>
       {/* ── CUSTOMER ──────────────────────────────────────────────────
           Matches SalesOrderDetail's Customer card: Name * / Phone * /
           Email * / Customer Type / Salesperson / Customer SO Ref.
@@ -1803,8 +1847,8 @@ export const SalesOrderNew = () => {
           <h2 className={styles.cardTitle}>Customer</h2>
         </header>
         <div className={styles.cardBody}>
-          <div className={styles.formGrid4} ref={custGridRef}>
-            <label className={styles.field} style={{ gridColumn: 'span 3' }}>
+          <div className={reno ? styles.renoGrid : styles.formGrid4} ref={custGridRef}>
+            <label className={`${styles.field} ${reno ? styles.renoSpan3 : ''}`} style={reno ? undefined : { gridColumn: 'span 3' }}>
               <span className={`${styles.fieldLabel} ${styles.fieldLabelReq}`}>Customer Name <span className={styles.req}>*</span></span>
               <input
                 ref={debtorInputRef}
@@ -1824,6 +1868,7 @@ export const SalesOrderNew = () => {
                 classes={{ list: styles.suggestList, item: styles.suggestItem, code: styles.suggestCode }}
               />
             </label>
+            {!reno && (
             <label className={styles.field}>
               <span className={styles.fieldLabel}>Ref No.</span>
               <input
@@ -1833,7 +1878,8 @@ export const SalesOrderNew = () => {
                 onChange={(e) => setCustomerSoNo(e.target.value)}
               />
             </label>
-            <label className={styles.field} style={{ gridColumn: 'span 2' }}>
+            )}
+            <label className={`${styles.field} ${reno ? styles.renoSpan2 : ''}`} style={reno ? undefined : { gridColumn: 'span 2' }}>
               <span className={`${styles.fieldLabel} ${styles.fieldLabelReq}`}>Phone <span className={styles.req}>*</span></span>
               <PhoneInput
                 className={styles.fieldInput}
@@ -1851,6 +1897,7 @@ export const SalesOrderNew = () => {
                 placeholder="customer@example.com"
               />
             </label>
+            {!reno && (
             <label className={styles.field}>
               <span className={styles.fieldLabel}>Customer Type</span>
               <span className={styles.selectWrap}>
@@ -1867,7 +1914,8 @@ export const SalesOrderNew = () => {
                 <ChevronDown size={14} strokeWidth={1.75} className={styles.selectChevron} />
               </span>
             </label>
-            <label className={styles.field}>
+            )}
+            <label className={`${styles.field} ${reno ? styles.renoSpan2 : ''}`}>
               <span className={styles.fieldLabel}>Salesperson</span>
               {/* Commander 2026-05-27: "salesperson 还是可以换 只是default
                   跳出来". Defaults to the current user; only admin /
@@ -1907,6 +1955,10 @@ export const SalesOrderNew = () => {
         </div>
       </section>
 
+    </>
+  );
+  const houzsOrderInfoCard = (
+    <>
       {/* ── ORDER INFO (Building Type / Venue / Dates / Note) ────────
           Same card + same field layout as Detail's Order Info. */}
       <section className={styles.card}>
@@ -2021,6 +2073,10 @@ export const SalesOrderNew = () => {
         </div>
       </section>
 
+    </>
+  );
+  const emergencyCard = (
+    <>
       {/* ── EMERGENCY CONTACT ─────────────────────────────────────────
           Mirrors Detail's Emergency Contact card field-for-field. */}
       <section className={styles.card}>
@@ -2069,6 +2125,10 @@ export const SalesOrderNew = () => {
         </div>
       </section>
 
+    </>
+  );
+  const addressCard = (
+    <>
       {/* ── DELIVERY ADDRESS ──────────────────────────────────────────
           Matches Detail's Delivery Address card. The one Detail-only
           field (Sales Location, read from auth) is omitted here. The
@@ -2079,6 +2139,7 @@ export const SalesOrderNew = () => {
           <h2 className={styles.cardTitle}>Delivery Address</h2>
         </header>
         <div className={styles.cardBody}>
+          {!reno && (
           <label
             style={{
               display: 'flex', alignItems: 'flex-start', gap: 'var(--space-3)',
@@ -2103,18 +2164,19 @@ export const SalesOrderNew = () => {
               </div>
             </div>
           </label>
+          )}
 
           {/* Address fields — only Address 1/2 dim when fill-later is on. */}
-          <div className={styles.formGrid4}>
+          <div className={reno ? styles.renoGrid : styles.formGrid4}>
             <label
               className={styles.field}
               style={{
-                gridColumn: 'span 4',
+                gridColumn: reno ? '1 / -1' : 'span 4',
                 opacity: fillAddressLater ? 0.4 : 1,
                 pointerEvents: fillAddressLater ? 'none' : 'auto',
               }}
             >
-              <span className={styles.fieldLabel}>Address Line 1</span>
+              <span className={`${styles.fieldLabel} ${reno ? styles.fieldLabelReq : ''}`}>Address Line 1{reno && <span className={styles.req}> *</span>}</span>
               <input
                 className={`${styles.fieldInput} ${editedClass('address1', address1)}`}
                 value={address1}
@@ -2126,7 +2188,7 @@ export const SalesOrderNew = () => {
             <label
               className={styles.field}
               style={{
-                gridColumn: 'span 4',
+                gridColumn: reno ? '1 / -1' : 'span 4',
                 opacity: fillAddressLater ? 0.4 : 1,
                 pointerEvents: fillAddressLater ? 'none' : 'auto',
               }}
@@ -2210,6 +2272,116 @@ export const SalesOrderNew = () => {
         </div>
       </section>
 
+    </>
+  );
+
+  return (
+    <div>
+      {/* Shared sticky page header — full-bleed, matches SalesOrderMaintenance
+          + the PO/DO V2 lists. DRAFT flow: two create actions run the SAME
+          create + post-create payment/photo flush + navigation; only the
+          `asDraft` flag differs. From a scan handoff (fromScan) the scanned
+          order defaults to DRAFT for operator review, so "Save as Draft" is
+          the PRIMARY button and "Create" the secondary one; for a normal New
+          SO, "Create" stays primary. The buttons stay CLICKABLE even when
+          fields are missing (only blocked while a save is in flight) — onSave
+          validates and tells the operator EXACTLY what's missing. */}
+      <PageHeader back
+        eyebrow="Sales order"
+        title={createdDocNo ? `Complete Sales Order ${createdDocNo}` : 'New Sales Order'}
+        description={createdDocNo
+          ? 'The order already exists. Finish or remove the retained payment rows, then continue to its Detail page.'
+          : 'Customer, order info, delivery address, line items and payments — saved as one order.'}
+        actions={
+          <>
+            {/* h-9 = the <Button> height — this link shares the rail with
+                Cancel / Create Sales Order / Save as Draft. */}
+            <Link
+              to="/scm/sales-orders"
+              className="inline-flex h-9 items-center gap-1.5 rounded-md border border-border bg-surface px-3 text-[11px] font-semibold uppercase tracking-wider text-ink-secondary transition-colors hover:border-primary/40 hover:bg-primary-soft hover:text-primary"
+            >
+              <ArrowLeft size={14} /> Sales Orders
+            </Link>
+            <Button variant="ghost" onClick={() => navigate('/scm/sales-orders')}>
+              <X {...ICON} /> Cancel
+            </Button>
+            {/* Persistent "Can't save — N to fix · tap to see" (owner 2026-09-16):
+                a blocked Save is never silent. Count + list are backend-authored
+                (useSoValidate), so it clears itself as fields are fixed. Renders
+                nothing when the order is complete. */}
+            <SaveBlockedIndicator problems={blockingProblems} onOpen={openBlockingList} />
+            <Button
+              variant={fromScan ? 'secondary' : 'primary'}
+              onClick={() => { void onSave(false); }}
+              disabled={create.isPending}
+            >
+              <Save {...ICON} />
+              {create.isPending
+                ? 'Saving…'
+                : createdDocNo
+                  ? (paymentIntents().length > 0 ? 'Continue payment retry' : 'Open created order')
+                  : 'Create Sales Order'}
+            </Button>
+            <Button
+              variant={fromScan ? 'primary' : 'secondary'}
+              onClick={() => { void onSave(true); }}
+              disabled={create.isPending || !!createdDocNo}
+            >
+              <Save {...ICON} />
+              {create.isPending ? 'Saving…' : 'Save as Draft'}
+            </Button>
+          </>
+        }
+      />
+
+      <div className="space-y-3">
+      {createdDocNo && (
+        <div role="status" className="rounded-lg border border-warning-text/30 bg-warning-bg px-3 py-2 text-sm text-warning-text">
+          Sales order {createdDocNo} already exists. This recovery view only keeps payment rows; customer, order and line-item fields are hidden so unsaved edits cannot be lost.
+        </div>
+      )}
+      {!createdDocNo && (<>
+      {/* ── SCAN BANNER (fromScan only) ───────────────────────────────
+          Task #73 — the OCR review happens in THIS form now. Tell the operator
+          to check every dropdown-bound field before saving. Changed fields show
+          a blue highlight; each scanned line shows a "scanned · NN%" chip. */}
+      {fromScan && (
+        <div className="flex items-start gap-3 rounded-lg border border-learning/40 bg-learning/5 px-4 py-3 text-[13px] text-learning">
+          <Camera size={18} strokeWidth={1.75} className="mt-0.5 shrink-0" />
+          <div>
+            <div className="font-semibold">Prefilled from a scanned slip — check every dropdown before saving.</div>
+            <div className="mt-0.5 text-learning/80">
+              Confirm the venue, SKU, fabric, size and payment selections, then Create the Sales Order.
+              Fields you change from the scan are highlighted in blue.
+            </div>
+          </div>
+        </div>
+      )}
+
+      {renoPending ? (
+        <div className={styles.card}><div className={styles.cardBody} style={{ minHeight: 160 }} aria-busy="true" /></div>
+      ) : reno ? (
+        /* Renovation mode (Conts, 14 Oct 2026): Customer and Delivery address on the
+           left, the shared Order information block on the right; Houzs's Order Info
+           and Emergency contact are not used. */
+        <div className={styles.renoLayout}>
+          <div className={styles.renoCol}>
+            {customerCard}
+            {addressCard}
+          </div>
+          <div className={styles.renoCol}>
+            {renoOrderInfoCard}
+          </div>
+        </div>
+      ) : (
+        <>
+          {customerCard}
+          {houzsOrderInfoCard}
+          {emergencyCard}
+          {addressCard}
+        </>
+      )}
+
       {/* ── LINE ITEMS ──────────────────────────────────────────────
           Same SoLineCard component Edit SO uses inline. Each line on
           New SO is already in inline-edit mode (no saved row exists
@@ -2220,41 +2392,29 @@ export const SalesOrderNew = () => {
           <h2 className={styles.cardTitle}>Line Items ({lines.length})</h2>
         </header>
         <div className={styles.cardBody} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-          {lines.map((line, idx) => {
-            /* fromScan — the slip rawText still feeds the SKU picker's placeholder
-               hint for a no-match line (searchHint below). The per-line
-               "scanned · NN%" review chip was REMOVED: owner — it is scan-review
-               metadata that won't exist on the created SO, so it must not clutter
-               the create page. (A no-match line is still obvious: its SKU picker
-               is empty + required.) */
-            const meta = scanLineMeta[line.rid];
-            return (
-              <div key={line.rid} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
-                <SoLineCard
-                  index={idx}
-                  draft={line}
-                  onChange={(patch) => updateLine(line.rid, patch)}
-                  onRemove={() => dropLine(line.rid)}
-                  canRemove={lines.length > 1}
-                  inheritVariantsByCategory={inheritVariantsByCategory}
-                  onAddProducts={addProducts}
-                  /* Variants are only mandatory once a Processing Date is set
-                     (matches the backend gate + the Save block above), so the
-                     ` *` marker + red ring stay off while the order is still a
-                     no-date draft (owner 2026-07-14). */
-                  variantsRequired={!!processingDate}
-                  seedSofaLegDefault={true}
-                  /* Scan-Order (Task #73) — a NO-MATCH scanned line seeds an
-                     empty SKU picker; pass the slip rawText as the picker's
-                     placeholder hint so the operator can pick a real SKU
-                     (never free-text). Only while the line is still unpicked. */
-                  searchHint={!line.itemCode && meta?.rawText ? meta.rawText : undefined}
-                />
-              </div>
-            );
-          })}
-
-          <AddLineButton variant="block" onClick={addLine} />
+          {reno ? (
+            /* Renovation mode: the lines grouped into rooms (RenovationSoRooms). */
+            <RenovationSoRooms
+              rooms={renoRooms}
+              onRoomsChange={(next, rename) => {
+                setRenoRooms(next);
+                if (rename) setRenoLineRoom((m) => Object.fromEntries(Object.entries(m).map(([k, r]) => [k, r === rename.from ? rename.to : r])));
+              }}
+              rows={lines.map((line, idx) => ({ key: line.rid, room: renoLineRoom[line.rid] ?? '', node: renderNewLine(line, idx) }))}
+              onRowRoom={(rid, room) => setRenoLineRoom((m) => ({ ...m, [rid]: room }))}
+              onAddLine={(room) => {
+                const l = newLine(deliveryDate || null);
+                setLines((prev) => [...prev, l]);
+                if (room) setRenoLineRoom((m) => ({ ...m, [l.rid]: room }));
+              }}
+              layout={roomLayoutOf(renoInfo)}
+            />
+          ) : (
+            <>
+              {lines.map((line, idx) => renderNewLine(line, idx))}
+              <AddLineButton variant="block" onClick={addLine} />
+            </>
+          )}
 
           <div style={{
             display: 'flex',

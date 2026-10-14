@@ -2,7 +2,8 @@
    six steps, each derived from the module that owns the fact.
 
      design      always (the project exists)
-     signed      a live renovation sales order is linked
+     signed      set by hand only (owner, 14 Oct 2026: creating or linking an SO does not move
+                 the project to Signed)
      ordering    a live purchase-order line exists on the SO's lines
      renovation  a site task has started (in progress, done, or its PO received)
      handover    the customer signed the handover
@@ -57,7 +58,7 @@ export function isFullyPaid(contractSen: number | null, receivedSen: number): bo
 function holds(key: FlowStepKey, f: FlowFacts): boolean {
   switch (key) {
     case "design": return true;
-    case "signed": return f.hasSo;
+    case "signed": return false;
     case "ordering": return f.hasPoLine;
     case "renovation": return f.taskStarted;
     case "handover": return f.handedOver;

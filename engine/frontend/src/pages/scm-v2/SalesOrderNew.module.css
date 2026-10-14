@@ -197,3 +197,26 @@ textarea.fieldInput { height: auto; padding: 11px 12px; line-height: 1.5; resize
   font-size: 11px;
   color: #767b6e;
 }
+
+/* Renovation mode (Conts, 14 Oct 2026): a compact two-column header. Customer and
+   Delivery address stack on the left, Order information on the right; one column
+   below 1100px. Fields sit three to a row from 641px, one per row on a phone. */
+.renoLayout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
+@media (min-width: 1100px) {
+  .renoLayout { grid-template-columns: minmax(0, 6fr) minmax(0, 5fr); align-items: start; }
+}
+.renoCol { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.renoGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px 12px;
+}
+@media (min-width: 641px) {
+  .renoGrid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .renoSpan2 { grid-column: span 2; }
+  .renoSpan3 { grid-column: 1 / -1; }
+}

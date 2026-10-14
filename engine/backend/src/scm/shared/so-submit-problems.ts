@@ -106,6 +106,9 @@ export interface SoSubmitFacts {
   /** Surface-specific blockers already SaveProblem-shaped (e.g. an unpicked
    *  scanned line). Appended verbatim. */
   extra?: readonly SaveProblem[];
+  /** Renovation mode (Conts, mig 0112): the order is sold for a project, so it
+   *  has no venue and no fair; its own required fields arrive in `extra`. */
+  renovation?: boolean;
 }
 
 const requiredFieldProblem = (label: string): SaveProblem => ({
@@ -136,7 +139,9 @@ export function collectSoSubmitProblems(facts: SoSubmitFacts): SaveProblem[] {
   }
   if (facts.phone.trim() === '') out.push(requiredFieldProblem('Phone number'));
   if (!facts.hasNamedLine) out.push(requiredFieldProblem('At least one line item with a product'));
-  if (!facts.asDraft) {
+  if (!facts.asDraft && facts.renovation) {
+    if (!facts.hasSalesperson) out.push(requiredFieldProblem('Salesperson'));
+  } else if (!facts.asDraft) {
     if (!facts.hasVenue) out.push(requiredFieldProblem('Venue'));
     // Fair is compulsory (owner 2026-09-26): a fair must be picked, or the sale
     // explicitly marked No-fair / showroom. Blocks the ambiguous "left blank".

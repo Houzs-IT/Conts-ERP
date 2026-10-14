@@ -15,7 +15,7 @@ export function Pill({ tone, children, title }: { tone: Tone; children: ReactNod
   );
 }
 
-export function Dialog({ title, onClose, children, footer }: { title: string; onClose: () => void; children: ReactNode; footer?: ReactNode }) {
+export function Dialog({ title, onClose, children, footer, wide = false }: { title: string; onClose: () => void; children: ReactNode; footer?: ReactNode; wide?: boolean }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", onKey);
@@ -23,7 +23,7 @@ export function Dialog({ title, onClose, children, footer }: { title: string; on
   }, [onClose]);
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-0 sm:p-4" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div role="dialog" aria-modal="true" aria-label={title} className="w-full sm:max-w-md bg-surface rounded-t-xl sm:rounded-xl shadow-xl max-h-[90vh] overflow-y-auto">
+      <div role="dialog" aria-modal="true" aria-label={title} className={cn("w-full bg-surface rounded-t-xl sm:rounded-xl shadow-xl max-h-[90vh] overflow-y-auto", wide ? "sm:max-w-2xl" : "sm:max-w-md")}>
         <div className="flex items-center justify-between border-b border-border px-4 py-3">
           <h2 className="text-base font-semibold text-ink">{title}</h2>
           <button type="button" aria-label="Close" onClick={onClose} className="p-1 text-ink-secondary hover:text-ink"><X size={18} /></button>

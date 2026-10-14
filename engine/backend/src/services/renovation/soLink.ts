@@ -16,6 +16,7 @@ import type { Db } from "./load";
 import { loadProjectRows, loadRenovationFacts } from "./load";
 import { onContractLinesChanged, writeCachedStage } from "./contractSync";
 import { createRenovationProject, type CreateRenovationInput } from "./create";
+import { copySoIntoProject } from "./customerProperty";
 
 export type LinkRefusal =
   | "so_not_found"
@@ -27,7 +28,7 @@ export type LinkRefusal =
 
 export const LINK_REFUSAL_TEXT: Readonly<Record<LinkRefusal, string>> = {
   so_not_found: "That sales order does not exist.",
-  not_renovation_so: "Only a renovation sales order can be linked to a renovation project.",
+  not_renovation_so: "Only a sales order of this business can be linked to a renovation project.",
   so_cancelled: "That sales order is cancelled.",
   so_has_other_project: "That sales order already belongs to another project. Unlink it there first.",
   already_linked: "That sales order is already linked to this project.",
@@ -41,11 +42,13 @@ export function linkRefusal(
   p: { projectCompanyId: number; projectProjectSo: string | null; projectId: number },
 ): LinkRefusal | null {
   if (!so || Number(so.company_id) !== Number(p.projectCompanyId)) return "so_not_found";
-  if (so.so_kind !== "RENOVATION") return "not_renovation_so";
+  /* Owner 14 Oct 2026: an SO raised on the sales order form (STANDARD) links the same way as a
+     renovation contract, from either side. Only a contract is one-per-project. */
+  if (so.so_kind !== "RENOVATION" && so.so_kind !== "STANDARD" && so.so_kind !== null) return "not_renovation_so";
   if (so.status === "CANCELLED") return "so_cancelled";
   if (so.project_id != null && Number(so.project_id) !== p.projectId) return "so_has_other_project";
   if (so.project_id != null && Number(so.project_id) === p.projectId) return "already_linked";
-  if (p.projectProjectSo) return "project_has_so";
+  if (p.projectProjectSo && so.so_kind === "RENOVATION") return "project_has_so";
   return null;
 }
 
@@ -97,6 +100,12 @@ export async function linkSoToProject(db: Db, projectId: number, docNo: string, 
   if (db.batch) await db.batch(stmts);
   else for (const s of stmts) await s.run();
   await onContractLinesChanged(db, docNo);
+  /* The link is made; copying the SO's customer and property into the project must not undo or fail it. */
+  try {
+    await copySoIntoProject(db, docNo, projectId, actorId, p.company_id);
+  } catch (e) {
+    console.error("[renovation] copy SO into project after link failed", e);
+  }
   return { ok: true, docNo };
 }
 

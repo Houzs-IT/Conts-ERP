@@ -89,6 +89,9 @@ export type SoConfirmFacts = {
   agent: string | null | undefined;
   venue: string | null | undefined;
   venueId: string | null | undefined;
+  /** Renovation mode (Conts, mig 0112): an order sold for a project, not at a
+   *  fair or showroom, carries no venue. True only for such an order. */
+  venueOptional?: boolean;
   /** Non-cancelled lines only. */
   lines: readonly SoConfirmLineFacts[];
   /** Non-blank item codes the company's catalog does NOT hold — resolved by
@@ -121,7 +124,7 @@ export function collectSoConfirmProblems(facts: SoConfirmFacts): SaveProblem[] {
   });
   if (agentProblem) out.push(agentProblem);
 
-  if (blank(facts.venue) && blank(facts.venueId)) {
+  if (!facts.venueOptional && blank(facts.venue) && blank(facts.venueId)) {
     out.push({
       code: 'venue_required',
       message: 'A venue is required before this order can be confirmed.',
@@ -206,11 +209,21 @@ export async function soConfirmProblemsForDoc(sb: any, docNo: string): Promise<S
     nonCatalogCodes = codes.filter((c) => !known.has(c));
   }
 
+  /* Renovation mode: an order with a property type was written on the renovation
+     form (mig 0112) and has no venue by design. Read on its own and only when the
+     venue is blank, so a database without that column (error) keeps the venue rule. */
+  let venueOptional = false;
+  if ((h.venue ?? '').trim() === '' && !h.venue_id) {
+    const { data: reno, error: renoErr } = await sb.from('mfg_sales_orders').select('property_type').eq('doc_no', docNo).maybeSingle();
+    venueOptional = !renoErr && !!(reno as { property_type?: string | null } | null)?.property_type;
+  }
+
   return collectSoConfirmProblems({
     salespersonId: h.salesperson_id ?? null,
     agent: h.agent ?? null,
     venue: h.venue ?? null,
     venueId: h.venue_id ?? null,
+    venueOptional,
     lines: lines.map((i) => ({
       itemCode: i.item_code,
       group: i.item_group,
