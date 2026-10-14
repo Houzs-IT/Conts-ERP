@@ -682,7 +682,8 @@ function MobileAppInner() {
     if (route.t !== "menu" || typeof window === "undefined") return null;
     const path = window.location.pathname.replace(/\/+$/, "");
     const view = new URLSearchParams(window.location.search).get("view");
-    if (path === "/projects" && view === "calendar" && canCalendar) return { tab: "calendar", screen: { t: "tab" } };
+    // The monitor link opens the calendar, as on a computer (owner, 14 Oct 2026: one calendar, the Houzs one).
+    if (path === "/projects" && (view === "calendar" || view === "monitor") && canCalendar) return { tab: "calendar", screen: { t: "tab" } };
     const computerOnly = (path === "/assr" && (view === "metrics" || view === "settings"))
       || (path === "/projects" && (view === "finances" || view === "maintenance"));
     return computerOnly ? { screen: { t: "desktop-only", path: `${path}?view=${view}` } } : null;

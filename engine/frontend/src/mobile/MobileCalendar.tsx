@@ -52,6 +52,8 @@ type CalProject = {
   active_section_name: string | null;
   sections_total: number | null;
   event_type_name: string | null;
+  // Renovation projects (owner, 14 Oct 2026): server-computed dates; true when the end is a default-length estimate.
+  end_estimated?: boolean;
 };
 
 type CalTask = {
@@ -343,7 +345,7 @@ export function MobileCalendar({
           projectId: p.id,
           date,
           label: p.code ? `[${p.brand ?? "—"}] ${upcaseLeadingState(p.name, p.state)}` : upcaseLeadingState(p.name, p.state),
-          barLabel: projectBarLabel(p),
+          barLabel: p.end_estimated ? `${projectBarLabel(p)} · end estimated` : projectBarLabel(p),
           color: statusColor(p.status),
           brand: p.brand,
           section: p.active_section_name,

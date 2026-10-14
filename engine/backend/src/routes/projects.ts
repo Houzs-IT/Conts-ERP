@@ -72,6 +72,8 @@ import { and, eq, sql } from "drizzle-orm";
 import { activeCompanyId, activeCompanySql, requireActiveCompanyId } from "../scm/lib/companyScope";
 import { refuseForeignChild, refuseForeignProject } from "./lib/project-company-gate";
 import { isStageKey } from "../scm/shared/renovation-stages";
+import { renovationCalendarRows } from "../services/renovation/calendarSpan";
+import type { Db as RenoDb } from "../services/renovation/load";
 
 /* The context the extracted handlers below receive. They are exported so the
    route tests can drive them directly; the shape is exactly what app.get/post
@@ -5016,7 +5018,9 @@ app.get("/calendar/events", requirePageAccess("projects.calendar"), async (c) =>
     .bind(todayMyt(), from, to, ...scopeBinds)
     .all();
 
-  return c.json({ projects: projects.results ?? [], tasks: tasks.results ?? [] });
+  // Renovation projects carry no start / end date: their bars are computed here (owner, 14 Oct 2026).
+  const reno = await renovationCalendarRows(c.env.DB as unknown as RenoDb, from, to, scopeWhere, scopeBinds, coSql);
+  return c.json({ projects: [...(projects.results ?? []), ...reno], tasks: tasks.results ?? [] });
 });
 
 // ── CSV import ───────────────────────────────────────────────

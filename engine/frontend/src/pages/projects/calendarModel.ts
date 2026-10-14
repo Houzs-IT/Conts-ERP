@@ -20,6 +20,10 @@ export interface CalendarProject {
   // Calendar masks the title to the composed default name for solo
   // event types (backend returns event_type_name on the calendar feed).
   event_type_name?: string | null;
+  // Renovation projects (owner, 14 Oct 2026): dates computed by the server from created date to handover;
+  // end_estimated marks a default-length bar (no planned handover, no SLA).
+  end_basis?: "planned_handover" | "handed_over" | "sla" | "estimate";
+  end_estimated?: boolean;
 }
 
 export interface CalendarTask {
