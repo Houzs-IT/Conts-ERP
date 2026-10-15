@@ -159,7 +159,7 @@ export const Products = () => {
              moved onto the shared PageHeader. */
           <div
             role="tablist"
-            className="inline-flex max-w-full items-center gap-0.5 overflow-x-auto rounded-md border border-border bg-surface p-1 shadow-stone [&>*]:shrink-0"
+            className="inline-flex max-w-full flex-wrap items-center gap-0.5 rounded-md border border-border bg-surface p-1 shadow-stone"
           >
             {visibleProductTabs([
               { value: 'sku' as const, label: 'SKU Master' },
@@ -1522,22 +1522,46 @@ export const MaintenanceTab = ({
   const showingMasterFallback =
     scope !== 'master' && !resolved.data?.data && Boolean(masterFallback.data?.data);
 
+  // Conts hides some lists (conts/catalog.ts); a section left empty is not drawn.
+  const tabsIn = (section: string) =>
+    MAINTENANCE_TABS.filter((t) => t.section === section && !CONTS_HIDDEN_MAINTENANCE_KEYS.has(t.key));
+  const navSections = sections.filter((section) => tabsIn(section).length > 0);
+  const countFor = (t: (typeof MAINTENANCE_TABS)[number]) =>
+    t.key === 'fabrics'
+      ? fabricsCount
+      : t.key === 'brandings'
+        // Brandings come from PMS (project_brands), not the config blob.
+        ? brandingPool.pool.length
+        : (t.key === 'specials' || t.key === 'sofaSpecials')
+          ? (specialAddonsList.data ?? []).filter((r) => r.categories.includes(t.key === 'sofaSpecials' ? 'SOFA' : 'BEDFRAME')).length
+          : countItems(config, t.key);
+
   return (
     <div className={styles.maintLayout}>
+      {/* Phone: the full rail stacked ~15 rows above the list it opens, so the
+          picked list landed off screen. A native picker takes its place there. */}
+      <label className={styles.maintPicker}>
+        <span className={styles.fieldLabel}>List</span>
+        <select
+          className={styles.fieldSelect}
+          value={activeKey}
+          onChange={(e) => setActiveKey(e.target.value as MaintenanceListKey)}
+        >
+          {navSections.map((section) => (
+            <optgroup key={section} label={section}>
+              {tabsIn(section).map((t) => (
+                <option key={t.key} value={t.key}>{t.label} ({countFor(t)})</option>
+              ))}
+            </optgroup>
+          ))}
+        </select>
+      </label>
       <aside className={styles.maintNav}>
-        {/* Conts hides some lists (conts/catalog.ts); a section left empty is not drawn. */}
-        {sections.filter((section) => MAINTENANCE_TABS.some((t) => t.section === section && !CONTS_HIDDEN_MAINTENANCE_KEYS.has(t.key))).map((section) => (
+        {navSections.map((section) => (
           <div key={section}>
             <div className={styles.maintSection}>{section}</div>
-            {MAINTENANCE_TABS.filter((t) => t.section === section && !CONTS_HIDDEN_MAINTENANCE_KEYS.has(t.key)).map((t) => {
-              const count = t.key === 'fabrics'
-                ? fabricsCount
-                : t.key === 'brandings'
-                  // Brandings come from PMS (project_brands), not the config blob.
-                  ? brandingPool.pool.length
-                  : (t.key === 'specials' || t.key === 'sofaSpecials')
-                    ? (specialAddonsList.data ?? []).filter((r) => r.categories.includes(t.key === 'sofaSpecials' ? 'SOFA' : 'BEDFRAME')).length
-                    : countItems(config, t.key);
+            {tabsIn(section).map((t) => {
+              const count = countFor(t);
               return (
                 <button
                   key={t.key}
