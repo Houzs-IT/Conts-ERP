@@ -6,6 +6,7 @@ import { api } from "../../../api/client";
 import type { ProjectDetail, SupplyCondition, TaskView } from "./renovationApi";
 import type { FlowStepKey, HoldFlag, PersonRole } from "../../../vendor/shared/renovation-stages";
 import type { ProjectDocuments } from "./projectDocsModel";
+import type { StatusLine } from "./procurementStatusModel";
 
 export type { FlowStepKey, HoldFlag, PersonRole };
 
@@ -179,6 +180,8 @@ export const simpleApi = {
   procurement: (id: number) => api.get<{ projectId: number; groups: ProcGroup[] }>(`${R}/${id}/procurement`),
   /** Every transaction document of the project (mig 0116); ready: false before it is applied. */
   documents: (id: number) => api.get<ProjectDocuments>(`${R}/${id}/documents`),
+  /** Every item line of the project: ordered, received, delivered, with its GRs and DOs (Procurement details). */
+  procurementStatus: (id: number) => api.get<{ ready: boolean; projectId: number; lines: StatusLine[] }>(`${R}/${id}/procurement-status`),
   setCategoryDates: (id: number, group: string, b: ProcDates) =>
     api.put<{ ok: true; groups: ProcGroup[] }>(`${R}/${id}/procurement/${encodeURIComponent(group)}`, b),
   setSubDates: (id: number, group: string, sub: string, b: { mode: ProcMode } & Partial<ProcDates>) =>

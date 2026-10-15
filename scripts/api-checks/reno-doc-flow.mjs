@@ -5,6 +5,7 @@
 //   rooms, a new revision copies them) -> converted contract SO (address, building, unit, property, room list,
 //   line rooms) -> Raise POs: 3 POs in 2 categories, one category each, a mixed line refused (project, room, category)
 //   -> GR against a PO (project, room, category) -> the project lists every document, POs under their category
+//   -> Procurement details reads each item line as ordered / received / delivered with its GRs and DOs (15 Oct)
 //   -> progress-billing SI (phone, email, address, project, building, unit)
 //   and a renovation-mode standard SO (lines in rooms) -> DO from the SO (project, building, unit, rooms, phone,
 //   address) -> SI from the DO (the same) -> the document pages' GET /:id/renovation-info.
@@ -253,6 +254,26 @@ check('the goods receipt is listed against its PO', pd?.goodsReceipts?.some((g) 
 check('and the delivery order and both sales invoices (progress billing, from the DO)', pd?.deliveryOrders?.length === 1 && pd?.salesInvoices?.length === 2, show(r));
 check('the DO hangs under its SO, the DO invoice under the DO, the progress invoice under the contract',
   pd?.deliveryOrders?.[0]?.soDocNo === soNo && pd?.salesInvoices?.some((s) => s.deliveryOrderId === pd.deliveryOrders[0].id) && pd?.salesInvoices?.some((s) => s.soDocNo === contract && !s.deliveryOrderId), show(r));
+
+/* ---------- Procurement details: each item line ordered -> received -> delivered (owner, 15 Oct 2026) ---------- */
+r = await call('PATCH', `/api/scm/delivery-orders-mfg/${doId}/status`, { status: 'DISPATCHED' });
+const dispatched = r.status;
+r = await call('PATCH', `/api/scm/delivery-orders-mfg/${doId}/status`, { status: 'DELIVERED' });
+const doDelivered = r.status === 200;
+check('the DO is dispatched, then delivered', dispatched === 200 && doDelivered, `${dispatched} ${show(r)}`);
+r = await call('GET', `${R}/${projectId}/procurement-status`);
+const st = r.json?.lines ?? [];
+check('the hub reads 5 item lines (3 contract lines, 2 renovation-mode SO lines; no RENO- system rows)', r.json?.ready === true && st.length === 5, show(r));
+const elec = st.filter((l) => l.categoryGroup === 'WORKS' && l.subCategory === 'ELECTRICAL');
+check('Works / Electrical: the power points are ordered 2 and received 2 by the GR, not yet delivered',
+  elec.some((l) => l.qty === 2 && l.orderedQty === 2 && l.receivedQty === 2 && l.deliveredQty === 0 && l.grs.some((g) => g.id === grnId && g.no)), show(r));
+const onDo = elec.filter((l) => l.dos.some((d) => d.id === doId));
+check('the two renovation-mode SO lines are on the DO and delivered by it (not ordered: they came from stock)',
+  onDo.length === 2 && onDo.every((l) => l.deliveredQty === 1 && l.orderedQty === 0 && l.dos[0].delivered === true), show(r));
+check('the Service line is ordered and not yet received', st.some((l) => l.categoryGroup === 'SERVICE' && l.orderedQty === 1 && l.receivedQty === 0), show(r));
+check('the second Works line (other supplier) is ordered and not received', st.some((l) => l.categoryGroup === 'WORKS' && l.subCategory !== 'ELECTRICAL' && l.orderedQty === 1 && l.receivedQty === 0), show(r));
+r = await call('GET', `${R}/999999/procurement-status`);
+check('another project is not found (404)', r.status === 404, show(r));
 
 /* ---------- a bad id is refused, not a crash ---------- */
 r = await call('GET', '/api/scm/delivery-orders-mfg/not-a-uuid/renovation-info');
