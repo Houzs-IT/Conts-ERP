@@ -38,4 +38,13 @@ describe("where a project's goods stand", () => {
     expect(lines[1]).toMatchObject({ orderedQty: 1, receivedQty: 1, deliveredQty: 1 });
     expect(lines[3]).toMatchObject({ orderedQty: 3, receivedQty: 0, deliveredQty: 0 });
   });
+
+  test("a stock line (never on a PO) reads ordered 0, received 0, and delivered by its DO", () => {
+    const [stock] = buildStatusLines(
+      [{ id: "s9", qty: 2, category_group: "WORKS", sub_category: "ELECTRICAL" }], [], [],
+      [{ so_item_id: "s9", qty: 2, do_id: "d9", do_number: "DO-9", status: "DELIVERED", date: "2026-10-17", delivered: true, signed: false, has_pod: true }],
+    );
+    expect(stock).toMatchObject({ qty: 2, orderedQty: 0, receivedQty: 0, deliveredQty: 2 });
+    expect(stock.dos.map((d) => d.no)).toEqual(["DO-9"]);
+  });
 });
