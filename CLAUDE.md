@@ -29,6 +29,8 @@ because the supply chain cannot be separated from the rest of that code). Rules 
   production resources before it sends anything. The workflow runs by itself when a merge to main changes
   `engine/backend` (server) or `engine/frontend` (screens) and publishes only the changed part (owner,
   14 Oct 2026). It applies no database update: apply those to production before merging code that needs them.
+  Staging (worker conts-scm-engine-staging, screens site theconts-scm) is published by the "Deploy engine to staging"
+  workflow when a push to `staging` or a merge to `main` changes engine/backend or engine/frontend (owner, 15 Oct 2026).
   The account is on the free Workers plan (owner's decision, 8 Oct 2026): a request may make 50 outside
   calls, so delivery orders, goods receipts and delivery returns can answer slowly and skip their
   stock step until the plan is upgraded.
