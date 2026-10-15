@@ -113,7 +113,7 @@ export function ProjectMaintenanceView() {
   const mode = useProjectsMode();
   if (mode === "renovation") {
     return (
-      <div>
+      <div className="max-w-5xl">
         <PageHeader
           eyebrow="Operations · Projects"
           title="Project Maintenance"

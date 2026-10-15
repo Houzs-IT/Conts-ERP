@@ -84,7 +84,7 @@ export function RenovationSkuMaster({
       <DataTable<MfgProductRow>
         tableId="renovation-sku-master"
         persistFilters={false}
-        mobileCard={{ primary: 'name', cells: ['code', 'group', 'sub', 'uom', 'main', 'status'] }}
+        mobileCard={{ primary: 'name', cells: ['code', 'group', 'sub', 'uom', 'main', 'status'], labels: 'top', badge: 'status', subtitle: 'code' }}
         exportName="sku-master"
         rows={rows}
         loading={q.isLoading}

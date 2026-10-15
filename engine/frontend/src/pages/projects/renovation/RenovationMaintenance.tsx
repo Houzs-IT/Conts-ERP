@@ -41,7 +41,7 @@ export function CrewManager() {
     <Box title="Crew (no login)" hint="Site crew and contractors without a user account. They can be picked as crew on a site task, nowhere else. Everyone with a login is managed in Property OS under Users and roles. Switch a name off instead of deleting it, so old tasks keep it.">
       {error && <p role="alert" className="mb-2 text-sm text-err">{error}</p>}
       <div className="mb-3 flex flex-col gap-2 sm:flex-row">
-        <input className={inputClass} placeholder="Name, e.g. ZAINAL" value={name} onChange={(e) => setName(e.target.value)} aria-label="New crew name" />
+        <input className={cn(inputClass, "max-w-md")} placeholder="Name, e.g. ZAINAL" value={name} onChange={(e) => setName(e.target.value)} aria-label="New crew name" />
         <div className="shrink-0 whitespace-nowrap"><Button icon={<Plus size={14} />} disabled={!name.trim()} onClick={() => run(async () => { await simpleApi.createPerson({ name: name.trim(), roles: ["site_crew"] }); setName(""); })}>Add crew</Button></div>
       </div>
       {q.loading && <p className="text-sm text-ink-secondary">Loading...</p>}

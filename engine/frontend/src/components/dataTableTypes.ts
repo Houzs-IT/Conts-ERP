@@ -361,6 +361,12 @@ export interface DataTableProps<T, L = never> {
     layout?: "stack" | "grid-2";
     /** Hide the `<dt>` labels even in "stack" layout. Default false. */
     hideLabels?: boolean;
+    /** "side" (default) puts each label beside its value; "top" stacks the label above the value in a two-column grid. */
+    labels?: "side" | "top";
+    /** Column key shown at the top-right of the card, beside the title (e.g. a status pill). It is not repeated in the cells. */
+    badge?: string;
+    /** Column key shown as a muted line under the title (e.g. a product code). It is not repeated in the cells. */
+    subtitle?: string;
   };
   /**
    * Opt-in drill-down (2990 DataGrid parity). When set, a 32px chevron

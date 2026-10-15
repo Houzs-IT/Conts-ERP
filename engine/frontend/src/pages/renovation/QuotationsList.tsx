@@ -5,12 +5,16 @@
 
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { FileText, Plus } from 'lucide-react';
+import { FileCog, FileText, LayoutTemplate, Plus } from 'lucide-react';
 import { PageHeader } from '../../components/Layout';
 import { Button } from '../../components/Button';
+import { DataTable } from '../../components/DataTable';
+import type { Column } from '../../components/dataTableTypes';
+import { FilterPills } from '../../components/FilterPills';
+import { StatCard } from '../../components/StatCard';
 import { ModalOverlay } from '../../components/scm-v2/DocumentRelationshipMapModal';
 import { useAuth } from '../../auth/AuthContext';
-import { refusalOf, renoSend, searchProjects, useBrands, useQuotations, useTemplates } from '../../lib/renovation/api';
+import { refusalOf, renoSend, searchProjects, useBrands, useQuotations, useTemplates, type QuotationListRow } from '../../lib/renovation/api';
 import { ErrorBanner, Field, fmtDate, inputCls, rm, StatusPill } from './shared';
 import { cn } from '../../lib/utils';
 
@@ -97,71 +101,97 @@ function NewQuotationDialog({ open, onClose, initialProjectId = null }: { open: 
   );
 }
 
+const COLUMNS: Column<QuotationListRow>[] = [
+  { key: 'docNo', label: 'Quotation', alwaysVisible: true, getValue: (r) => r.docNo, disableFilter: true,
+    render: (r) => <span className="font-semibold text-primary">{r.docNo}</span> },
+  { key: 'project', label: 'Project', getValue: (r) => r.projectName ?? (r.projectId ? `#${r.projectId}` : ''),
+    render: (r) => <span className="text-ink-secondary">{r.projectName ?? (r.projectId ? `#${r.projectId}` : '—')}</span> },
+  { key: 'customer', label: 'Customer', getValue: (r) => r.customerName || '', render: (r) => r.customerName || '—' },
+  { key: 'unit', label: 'Building / unit', getValue: (r) => [r.building, r.unitNo].filter(Boolean).join(' '),
+    render: (r) => <span className="text-ink-secondary">{[r.building, r.unitNo].filter(Boolean).join(' ') || '—'}</span> },
+  { key: 'date', label: 'Date', getValue: (r) => r.docDate, filterType: 'date', dateValue: (r) => r.docDate, filterLabel: fmtDate,
+    render: (r) => <span className="text-ink-secondary">{fmtDate(r.docDate)}</span> },
+  { key: 'total', label: 'Total', align: 'right', getValue: (r) => r.totalSen,
+    exportValue: (r) => r.totalSen / 100, disableFilter: true,
+    total: (rows) => rm(rows.reduce((s, r) => s + r.totalSen, 0)),
+    render: (r) => <span className="font-semibold tabular-nums">{rm(r.totalSen)}</span> },
+  { key: 'status', label: 'Status', getValue: (r) => r.status, filterLabel: (v) => FILTERS.find((f) => f.value === v)?.label ?? v,
+    render: (r) => (
+      <span className="inline-flex items-center gap-2">
+        <StatusPill status={r.status} />
+        {r.convertedSoDocNo && <Link to={`/scm/renovation/contracts/${encodeURIComponent(r.convertedSoDocNo)}`} onClick={(e) => e.stopPropagation()} className="text-[12px] text-primary">{r.convertedSoDocNo}</Link>}
+      </span>
+    ) },
+];
+
+const sumSen = (rows: QuotationListRow[]) => rows.reduce((s, r) => s + r.totalSen, 0);
+
 export function QuotationsList() {
+  const navigate = useNavigate();
   const [status, setStatus] = useState('');
   const [q, setQ] = useState('');
   const [params, setParams] = useSearchParams();
   const newFor = Number(params.get('newFor')) || null;
   const [newOpen, setNewOpen] = useState(!!newFor);
-  const list = useQuotations({ status: status || null, q: q || null });
+  // Every status is loaded at once so the cards and pill counts stay whole; the pills filter on screen.
+  // ponytail: the server returns the newest 200, move status to the server when a company outgrows that.
+  const list = useQuotations({ q: q || null });
   const { can } = useAuth();
   const canQuote = can('scm.renovation.quote');
-  const rows = list.data?.quotations ?? [];
+  const all = list.data?.quotations ?? [];
+  const rows = status ? all.filter((r) => r.status === status) : all;
+  const of = (s: string) => all.filter((r) => r.status === s);
+  const pending = list.isLoading;
+  const failed = { failed: Boolean(list.error), onRetry: () => void list.refetch() };
   return (
-    <div className="space-y-4">
+    <div>
       <PageHeader
         eyebrow="Renovation"
         title="Quotations"
         description="Quotations for renovation projects. An accepted revision converts to the sales order in one step."
-        actions={(
-          <div className="flex flex-wrap gap-2">
-            <Link to="/scm/renovation/templates"><Button variant="secondary">Package templates</Button></Link>
-            <Link to="/scm/renovation/settings"><Button variant="secondary">Terms & letterheads</Button></Link>
-            {canQuote && <Button icon={<Plus size={15} />} onClick={() => setNewOpen(true)}>New quotation</Button>}
-          </div>
-        )}
+        primaryAction={canQuote ? <Button variant="primary" icon={<Plus size={14} />} onClick={() => setNewOpen(true)}>New Quotation</Button> : undefined}
+        secondaryActions={[
+          { label: 'Package Templates', icon: LayoutTemplate, onClick: () => navigate('/scm/renovation/templates') },
+          { label: 'Terms & Letterheads', icon: FileCog, onClick: () => navigate('/scm/renovation/settings') },
+        ]}
       />
-      <div className="flex flex-wrap items-center gap-2">
-        {FILTERS.map((f) => (
-          <button key={f.value} type="button" onClick={() => setStatus(f.value)}
-            className={cn('rounded-full border px-3 py-1 text-[12.5px] font-semibold', status === f.value ? 'border-primary bg-primary text-white' : 'border-border bg-surface text-ink-secondary')}>
-            {f.label}
-          </button>
-        ))}
-        <input className={cn(inputCls, 'ml-auto w-full sm:w-64')} placeholder="Search number, customer, building" value={q} onChange={(e) => setQ(e.target.value)} />
+
+      <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <StatCard pending={pending} {...failed} label="Total Quotations" value={all.length.toLocaleString('en-MY')} subtitle="All matching quotations" rail="bg-primary" active />
+        <StatCard pending={pending} {...failed} label="Open Value" value={rm(sumSen([...of('DRAFT'), ...of('SENT')]))} subtitle={`${of('DRAFT').length + of('SENT').length} draft or sent`} rail="bg-accent" />
+        <StatCard pending={pending} {...failed} label="Accepted" value={rm(sumSen(of('ACCEPTED')))} subtitle={`${of('ACCEPTED').length} quotations`} tone="success" rail="bg-synced" />
+        <StatCard pending={pending} {...failed} label="Rejected / Expired" value={rm(sumSen([...of('REJECTED'), ...of('EXPIRED')]))} subtitle={`${of('REJECTED').length + of('EXPIRED').length} quotations`} tone="error" rail="bg-err" />
       </div>
-      <ErrorBanner error={list.error ? refusalOf(list.error).message : null} />
-      <div className="overflow-hidden rounded-xl border border-border bg-surface">
-        <table className="hidden w-full text-left text-[13px] md:table">
-          <thead className="bg-surface-2 text-[11px] uppercase tracking-wide text-ink-muted">
-            <tr><th className="px-3 py-2">Quotation</th><th>Project</th><th>Customer</th><th>Building / unit</th><th>Date</th><th className="text-right">Total</th><th className="px-3">Status</th></tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => (
-              <tr key={r.id} className="border-t border-border-subtle hover:bg-primary-soft/40">
-                <td className="px-3 py-2"><Link className="font-semibold text-primary" to={`/scm/renovation/quotations/${r.id}`}>{r.docNo}</Link></td>
-                <td className="text-ink-secondary">{r.projectName ?? `#${r.projectId}`}</td>
-                <td>{r.customerName || '—'}</td>
-                <td className="text-ink-secondary">{[r.building, r.unitNo].filter(Boolean).join(' ') || '—'}</td>
-                <td className="text-ink-secondary">{fmtDate(r.docDate)}</td>
-                <td className="text-right font-semibold tabular-nums">{rm(r.totalSen)}</td>
-                <td className="px-3"><StatusPill status={r.status} />{r.convertedSoDocNo && <Link to={`/scm/renovation/contracts/${encodeURIComponent(r.convertedSoDocNo)}`} className="ml-2 text-[12px] text-primary">{r.convertedSoDocNo}</Link>}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        <div className="divide-y divide-border-subtle md:hidden">
-          {rows.map((r) => (
-            <Link key={r.id} to={`/scm/renovation/quotations/${r.id}`} className="block px-3 py-2.5">
-              <div className="flex items-center justify-between"><span className="font-semibold text-primary">{r.docNo}</span><StatusPill status={r.status} /></div>
-              <div className="text-[12.5px] text-ink-secondary">{r.customerName || '—'} · {[r.building, r.unitNo].filter(Boolean).join(' ')}</div>
-              <div className="flex justify-between text-[12.5px]"><span className="text-ink-muted">{fmtDate(r.docDate)}</span><span className="font-semibold tabular-nums">{rm(r.totalSen)}</span></div>
-            </Link>
-          ))}
-        </div>
-        {!list.isLoading && rows.length === 0 && <div className="p-8 text-center text-[13px] text-ink-muted">No quotations{status ? ' with this status' : ''} yet.</div>}
-        {list.isLoading && <div className="p-8 text-center text-[13px] text-ink-muted">Loading quotations…</div>}
+
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <FilterPills
+          options={FILTERS.map((f) => ({ ...f, count: pending ? undefined : f.value ? of(f.value).length : all.length }))}
+          value={status}
+          onChange={setStatus}
+        />
       </div>
+
+      <DataTable<QuotationListRow>
+        tableId="renovation-quotations"
+        documentLabel="Quotations"
+        exportName="quotations"
+        rows={rows}
+        loading={list.isLoading}
+        error={list.error ? refusalOf(list.error).message : null}
+        columns={COLUMNS}
+        getRowKey={(r) => r.id}
+        onRowClick={(r) => navigate(`/scm/renovation/quotations/${r.id}`)}
+        mobileCard={{ primary: 'docNo', cells: ['status', 'customer', 'unit', 'date', 'total'] }}
+        emptyLabel={q || status ? 'No quotations match.' : 'No quotations yet.'}
+        search={{
+          value: q,
+          onChange: setQ,
+          placeholder: 'Search number, customer, building…',
+          scope: 'server',
+          totalRecords: rows.length,
+          countPending: list.isLoading,
+        }}
+      />
       <NewQuotationDialog open={newOpen} initialProjectId={newFor} onClose={() => { setNewOpen(false); if (newFor) setParams({}, { replace: true }); }} />
     </div>
   );

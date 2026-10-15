@@ -82,7 +82,7 @@ export function PropertyListsManager() {
             ))}
           </ul>
           <div className="mt-3 flex gap-2">
-            <input className={inputClass} placeholder="e.g. Townhouse" value={typeLabel} onChange={(e) => setTypeLabel(e.target.value)} aria-label="New property type" />
+            <input className={cn(inputClass, "min-w-0 flex-1 max-w-md")} placeholder="e.g. Townhouse" value={typeLabel} onChange={(e) => setTypeLabel(e.target.value)} aria-label="New property type" />
             <Button icon={<Plus size={14} />} disabled={!typeLabel.trim()} onClick={() => run(async () => { await projectInfoApi.addPropertyType(typeLabel.trim()); setTypeLabel(""); })}>Add</Button>
           </div>
         </div>
