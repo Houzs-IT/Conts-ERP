@@ -5,7 +5,7 @@ import { queueFullSync, flushChannexQueue } from '../../../_lib/channexQueue';
 import { ensureOtaRatePlans } from '../../../_lib/channexSync';
 
 /** POST /api/units/:id/channex-setup — sets the unit up in Channex as a room type (with its rate plan) inside its
- *  building's Channex property, creating that property with the building's first unit (migration 0117: Booking.com
+ *  building's Channex property, creating that property with the building's first unit (migration 0119: Booking.com
  *  sells a building as one property whose room types are the units). Then runs a full sync (500 days of availability,
  *  prices and restrictions). If Channex refuses a step, what this request created is deleted again, so no half-built
  *  listing is left behind. */

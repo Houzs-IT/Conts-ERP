@@ -22,7 +22,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
     channexListing: !!b.channex_property_id,
     units: units.map(u => ({
       id: u.id, unitNumber: u.unit_number, title: u.listing_name?.trim() || `${b.name} ${u.unit_number}`,
-      // A unit set up before migration 0117 has a Channex property of its own and cannot share a hotel with the others.
+      // A unit set up before migration 0119 has a Channex property of its own and cannot share a hotel with the others.
       setUp: !!u.channex_property_id && u.channex_property_id === b.channex_property_id,
       ownListing: !!u.channex_property_id && u.channex_property_id !== b.channex_property_id,
       connections: conns.filter(c => c.unit_id === u.id).map(c => ({ ota: c.ota, hotelId: c.external_id, room: c.external_room, rate: c.external_rate })),

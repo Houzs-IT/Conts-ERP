@@ -4,7 +4,7 @@ import { channexDeactivateChannel, channexDeleteChannel, channexDeleteMapping, c
 import { OTA_LABEL, type Ota } from '../../../../_lib/channexChannels';
 
 /** DELETE /api/units/:id/channels/:rowId — disconnects the unit from an OTA. Booking.com / Agoda: a hotel channel only
- *  this unit uses is switched off and deleted; one the building's other units share (migration 0117) keeps running and
+ *  this unit uses is switched off and deleted; one the building's other units share (migration 0119) keeps running and
  *  only this unit's room is taken off it. Airbnb: only this unit's listing mapping is removed; the account's channel
  *  stays for the other units on it. Bookings already received are kept. */
 export const onRequestDelete: PagesFunction<Env> = async ({ request, env, params }) => {

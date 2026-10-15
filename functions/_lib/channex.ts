@@ -102,7 +102,7 @@ export function channexSendAri(env: Env, kind: 'availability' | 'restrictions', 
 
 /* ---- Setting up a unit as a Channex listing (stage 5) ---- */
 
-/** A building's Channex property (one per unit before migration 0117), typed as an apartment: a vacation rental is billed per unit, while
+/** A building's Channex property (one per unit before migration 0119), typed as an apartment: a vacation rental is billed per unit, while
  *  Channex's default type (hotel) is billed as a hotel. Automatic availability updates stay on for new
  *  OTA bookings only, as Channex advises for a PMS that sends its own availability. */
 export function channexCreateProperty(env: Env, p: { title: string; city: string; state: string; address: string }) {
@@ -198,7 +198,7 @@ export async function channexRemoveHotelRoom(env: Env, channelId: string, ratePl
 }
 
 /** A channel can only sell rate plans of the Channex properties it lists. One Airbnb account is one channel for every
- *  unit on it, and since migration 0117 each building is its own property, so a unit in a building the channel does
+ *  unit on it, and since migration 0119 each building is its own property, so a unit in a building the channel does
  *  not list yet adds that building's property to it. */
 export async function channexEnsureChannelProperty(env: Env, channelId: string, propertyId: string) {
   const cur = await channexFetch<{ data?: { attributes?: { properties?: string[] }; relationships?: { properties?: { data?: { id: string }[] } } } }>(env, `/channels/${channelId}`);

@@ -1,4 +1,4 @@
-// Building listings (migration 0117) against the Channex staging sandbox: units of one building become room types of
+// Building listings (migration 0119) against the Channex staging sandbox: units of one building become room types of
 // one Channex property, the building screen lists them, and a Booking.com hotel is connected for the building with
 // each room paired to a unit. Needs the local server started with CHANNEX_API_KEY and
 // CHANNEX_BASE_URL=https://staging.channex.io on a throwaway database. Deletes what it made in Channex afterwards.
