@@ -49,6 +49,8 @@ export interface SubCategoryDef {
   label: string;
   sort: number;
   legacy?: readonly string[];
+  /** false = hidden from pickers (Products > SKU Master > Sub-categories); existing SKUs keep it. */
+  active?: boolean;
 }
 
 /* WORKS sort order is the site trade order (see renovation-stages.ts TRADE_ORDER).
@@ -148,8 +150,14 @@ export function categoryGroupOf(category: string | null | undefined): CatalogGro
   return LEGACY_GROUP[c] ?? null;
 }
 
-export function subCategoriesOf(group: CatalogGroup): SubCategoryDef[] {
-  return SUB_CATEGORIES.filter((s) => s.group === group).sort((a, b) => a.sort - b.sort);
+/* SUB_CATEGORIES above is the built-in seed. Sub-categories are edited at run time in
+   scm.product_sub_categories, so a caller holding the database list passes it as
+   `list`; without one the seed is used. WORKS stays fixed: its sub-categories are
+   the site trades (renovation-stages.ts TRADE_ORDER, generic RN-* SKUs). */
+export const FIXED_SUB_GROUPS: readonly CatalogGroup[] = ['WORKS'];
+
+export function subCategoriesOf(group: CatalogGroup, list: readonly SubCategoryDef[] = SUB_CATEGORIES): SubCategoryDef[] {
+  return list.filter((s) => s.group === group).sort((a, b) => a.sort - b.sort);
 }
 
 /** The sub-category a legacy category implies; null when it implies none. */
@@ -169,13 +177,17 @@ export type CategoryPairResult =
   | { ok: true }
   | { ok: false; error: 'invalid_category' | 'sub_category_required' | 'sub_category_mismatch' };
 
-export function validateCategoryPair(category: string | null | undefined, sub: string | null | undefined): CategoryPairResult {
+export function validateCategoryPair(
+  category: string | null | undefined,
+  sub: string | null | undefined,
+  list: readonly SubCategoryDef[] = SUB_CATEGORIES,
+): CategoryPairResult {
   const c = String(category ?? '').toUpperCase();
   const group = categoryGroupOf(c);
   if (!group) return { ok: false, error: 'invalid_category' };
   const s = sub ? String(sub).toUpperCase() : null;
   if (!s) return NEW_GROUPS.has(c) ? { ok: false, error: 'sub_category_required' } : { ok: true };
-  const def = SUB_CATEGORIES.find((d) => d.code === s);
+  const def = list.find((d) => d.code === s);
   if (!def || def.group !== group) return { ok: false, error: 'sub_category_mismatch' };
   return { ok: true };
 }
@@ -257,11 +269,16 @@ export function genericSkus(): GenericSkuDef[] {
    import can report what it could not read instead of dropping it. */
 const normWord = (s: string) => s.trim().toUpperCase().replace(/[\s\-/]+/g, ' ').replace(/_/g, ' ').replace(/\s+/g, ' ');
 
-export function parseSubCategory(input: string | null | undefined): string | null {
+export function parseSubCategory(input: string | null | undefined, list: readonly SubCategoryDef[] = SUB_CATEGORIES): string | null {
   const raw = String(input ?? '').trim();
   if (!raw) return null;
   const w = normWord(raw);
-  return SUB_CATEGORIES.find((s) => normWord(s.code) === w || normWord(s.label) === w)?.code ?? null;
+  return list.find((s) => normWord(s.code) === w || normWord(s.label) === w)?.code ?? null;
+}
+
+/** The code a new sub-category gets from its label: "Curtain install" -> CURTAIN_INSTALL. '' when nothing usable. */
+export function subCategoryCodeOf(label: string): string {
+  return label.trim().toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40);
 }
 
 export function parseUom(input: string | null | undefined): string | null {

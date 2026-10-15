@@ -44,6 +44,7 @@ import {
   deleteMfgProductPhotoHandler, listMfgProductPhotosHandler, patchMfgProductPhotoHandler,
   photoCountFor, photoKeysFor, primaryPhotosFor, uploadMfgProductPhotoHandler,
 } from './mfg-product-photos';
+import { loadSubCategories } from './renovation-catalog-settings';
 import { resolveDefaultParty, type BindingForParty } from '../lib/default-supply-party';
 
 export const mfgProducts = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -384,7 +385,7 @@ export const createMfgProductHandler = async (c: AppContext) => {
   /* Renovation catalog: a new group (WORKS, BUILTIN, ...) needs a sub-category of
      that group; a legacy Houzs category may carry one but does not need it. */
   const subCategory = typeof body.subCategory === 'string' && body.subCategory.trim() ? body.subCategory.trim().toUpperCase() : null;
-  const pair = validateCategoryPair(category, subCategory);
+  const pair = subCategory ? validateCategoryPair(category, subCategory, (await loadSubCategories(c.get('supabase'))).filter((s) => s.active !== false)) : validateCategoryPair(category, null);
   if (!pair.ok) return c.json({ error: pair.error }, 400);
   const uom = typeof body.uom === 'string' && body.uom.trim() ? body.uom.trim().toUpperCase() : null;
   if (uom && !isUom(uom)) return c.json({ error: 'invalid_uom' }, 400);
@@ -482,6 +483,8 @@ export const batchImportMfgProductsHandler = async (c: AppContext) => {
 
   const plan = await planModelCategoryMoves(supabase, co.companyId, list);
   if (!plan.ok) return c.json({ error: 'load_failed', reason: plan.reason }, 500);
+  let subList: Awaited<ReturnType<typeof loadSubCategories>>;
+  try { subList = await loadSubCategories(supabase); } catch (e) { return c.json({ error: 'load_failed', reason: (e as Error).message }, 500); }
   const modelsMoved: ImportModelMove[] = [];
   const moveFailed = new Map<string, string>();
   // One find-or-create per (category, model_code) for the WHOLE batch: many
@@ -551,7 +554,8 @@ export const batchImportMfgProductsHandler = async (c: AppContext) => {
        label). Filled-cell-only like the rest; an unreadable cell is reported. */
     const subCell = String(r.sub_category ?? r.subCategory ?? '').trim();
     const uomCell = String(r.uom ?? '').trim();
-    const sub = parseSubCategory(subCell);
+    // A hidden sub-category is not read from a sheet; one a SKU already has still validates below.
+    const sub = parseSubCategory(subCell, subList.filter((s) => s.active !== false));
     if (subCell && !sub) {
       failures.push({ code, reason: `"${subCell}" is not a sub-category.` });
       continue;
@@ -566,7 +570,7 @@ export const batchImportMfgProductsHandler = async (c: AppContext) => {
     const categoryChanged = !!category && category !== prev?.category;
     const finalSub = sub ?? (categoryChanged ? null : (prev?.sub_category ?? null));
     if (sub || category) {
-      const pair = validateCategoryPair(finalCategory, finalSub);
+      const pair = validateCategoryPair(finalCategory, finalSub, subList);
       if (!pair.ok) {
         failures.push({
           code,
@@ -1030,7 +1034,7 @@ export const patchMfgProductHandler = async (c: AppContext) => {
     }
     if (body.subCategory !== undefined || categoryChanged) {
       const finalSub = (updates.sub_category as string | null | undefined) ?? null;
-      const pair = validateCategoryPair(finalCategory, finalSub);
+      const pair = finalSub ? validateCategoryPair(finalCategory, finalSub, await loadSubCategories(supabase)) : validateCategoryPair(finalCategory, null);
       if (!pair.ok) return c.json({ error: pair.error }, 400);
     }
     if (body.uom !== undefined) {

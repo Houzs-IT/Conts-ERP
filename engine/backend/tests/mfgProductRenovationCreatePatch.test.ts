@@ -11,6 +11,10 @@
 import { Hono } from 'hono';
 import { describe, expect, test } from 'vitest';
 import { createMfgProductHandler, patchMfgProductHandler } from '../src/scm/routes/mfg-products';
+import { SUB_CATEGORIES } from '../src/scm/shared/renovation-catalog';
+
+// The sub-category table as migration 0061 seeds it; SKU saves and imports check against it.
+const SUB_ROWS = () => SUB_CATEGORIES.map((s) => ({ group_code: s.group, code: s.code, label: s.label, sort_order: s.sort, legacy_categories: [...(s.legacy ?? [])], active: true }));
 
 const CO = 1;
 type Row = Record<string, unknown>;
@@ -51,6 +55,7 @@ class FakeQuery {
 
 function harness(opts: { failPhotoRead?: boolean } = {}) {
   const tables: Record<string, Row[]> = {
+    product_sub_categories: SUB_ROWS(),
     mfg_products: [
       { id: 'p-sofa', company_id: CO, code: 'SOFA-1', name: 'SOFA ONE', category: 'SOFA', sub_category: 'SOFA', model_id: null, status: 'ACTIVE', uom: 'UNIT' },
       { id: 'p-ward', company_id: CO, code: 'WR-1', name: 'Wardrobe 8ft', category: 'BUILTIN', sub_category: 'WARDROBE', model_id: null, status: 'INACTIVE', uom: 'UNIT' },

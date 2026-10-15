@@ -33,6 +33,8 @@ export function renoProjectLabel(d: RenoDocInfo | null | undefined): string | nu
 export function renoCategoryLabel(l: RenoDocLine | undefined): string {
   if (!l) return '';
   const group = RENOVATION_GROUPS.find((g) => g.code === l.categoryGroup)?.label ?? l.categoryGroup;
+  // ponytail: built-in names only; a sub-category added in settings prints from its code ("CURTAIN INSTALL"),
+  // a renamed one keeps its built-in name. Send the label from renovation-doc-flow.ts if prints need the edit.
   const sub = SUB_CATEGORIES.find((s) => s.group === l.categoryGroup && s.code === l.subCategory)?.label ?? l.subCategory.replace(/_/g, ' ');
   return [group, sub].filter(Boolean).join(' / ');
 }

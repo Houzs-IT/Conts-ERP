@@ -7,7 +7,7 @@
    Clicking a row opens the SKU: name, group / sub-category, unit, active, photos,
    and the suppliers drawer the Houzs page already has. */
 import { useMemo, useState } from 'react';
-import { Plus, Search, Truck, Upload, X } from 'lucide-react';
+import { Plus, Search, Settings2, Truck, Upload, X } from 'lucide-react';
 import { Button } from '../../../components/Button';
 import { DataTable } from '../../../components/DataTable';
 import { useDebouncedValue } from '../../../vendor/scm/lib/hooks';
@@ -20,9 +20,11 @@ import {
   type MfgProductRow,
 } from '../../../vendor/scm/lib/mfg-products-queries';
 import { categoryGroupOf, isCatalogGroup, type CatalogGroup } from '../../../vendor/shared/renovation-catalog';
+import { useRenovationCatalog } from '../../../vendor/scm/lib/renovation-catalog-queries';
 import { CatalogChips } from './CatalogChips';
 import { CatalogCategoryPicker } from './CatalogCategoryPicker';
 import { RenovationNewSku } from './RenovationNewSku';
+import { RenovationSubCategorySettings } from './RenovationSubCategorySettings';
 import { SkuPhotoSection } from './SkuPhotoSection';
 import { UomSelect } from './UomSelect';
 import { SkuStatusBadge, SkuThumb, renovationSkuColumns, skuNeedsPhoto } from './renovationSkuColumns';
@@ -41,11 +43,13 @@ export function RenovationSkuMaster({
   const debounced = useDebouncedValue(search, 300);
   const [openId, setOpenId] = useState<string | null>(null);
   const [newOpen, setNewOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const q = useRenovationSkus({ group, sub, search: debounced.trim() || undefined });
   const rows = q.data ?? null;
   const showCost = useMemo(() => (rows ?? []).some((r) => 'mainCostSen' in r), [rows]);
-  const columns = useMemo(() => renovationSkuColumns({ showCost }), [showCost]);
+  const subLabel = useRenovationCatalog().label;
+  const columns = useMemo(() => renovationSkuColumns({ showCost, subLabel }), [showCost, subLabel]);
   const needPhoto = useMemo(() => (rows ?? []).filter((r) => r.status !== 'ACTIVE' && skuNeedsPhoto(r)).length, [rows]);
   const openRow = openId ? (rows ?? []).find((r) => r.id === openId) ?? null : null;
   const count = rows ? `${rows.length} SKU${rows.length === 1 ? '' : 's'}` : 'Loading…';
@@ -71,6 +75,7 @@ export function RenovationSkuMaster({
           {needPhoto > 0 && <span className="text-amber-700"> · {needPhoto} need a photo</span>}
         </span>
         <div className="ml-auto flex gap-2">
+          <Button variant="secondary" onClick={() => setSettingsOpen(true)}><Settings2 size={14} strokeWidth={1.75} /> Sub-categories</Button>
           <Button variant="secondary" onClick={onImport}><Upload size={14} strokeWidth={1.75} /> Import SKUs</Button>
           <Button variant="primary" onClick={() => setNewOpen(true)}><Plus size={14} strokeWidth={1.75} /> New SKU</Button>
         </div>
@@ -97,6 +102,7 @@ export function RenovationSkuMaster({
           onCreated={(c) => { setNewOpen(false); setOpenId(c.id); }}
         />
       )}
+      {settingsOpen && <RenovationSubCategorySettings initialGroup={group} onClose={() => setSettingsOpen(false)} />}
       {openRow && (
         <RenovationSkuDrawer row={openRow} onClose={() => setOpenId(null)} onOpenSuppliers={() => onOpenSuppliers(openRow)} />
       )}

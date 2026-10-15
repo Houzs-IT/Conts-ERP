@@ -15,6 +15,7 @@ const h = vi.hoisted(() => ({
   fetched: [] as string[],
   posted: [] as Array<{ path: string; file: File | null }>,
   heicFails: false,
+  catalog: null as unknown,
 }));
 
 vi.mock('../../../vendor/scm/lib/mfg-products-queries', async (orig) => ({
@@ -35,6 +36,7 @@ vi.mock('../../../vendor/scm/lib/authed-fetch', async (orig) => ({
       h.posted.push({ path, file: (fd.get('file') as File | null) ?? null });
       return { photo: {} };
     }
+    if (path === '/renovation-catalog' && h.catalog) return h.catalog;
     h.fetched.push(path);
     return { photos: [] };
   },
@@ -74,7 +76,7 @@ const sku = (over: Partial<MfgProductRow>): MfgProductRow => ({
   status: 'ACTIVE', unit_m3_milli: 0, ...over,
 });
 
-beforeEach(() => { h.create.mockReset(); h.patch.mockReset(); h.bind.mockReset(); h.fetched = []; h.rows = []; });
+beforeEach(() => { h.create.mockReset(); h.patch.mockReset(); h.bind.mockReset(); h.fetched = []; h.rows = []; h.catalog = null; });
 
 describe('CatalogChips', () => {
   function Harness() {
@@ -83,7 +85,7 @@ describe('CatalogChips', () => {
     return (<><CatalogChips group={g} sub={s} onGroup={setG} onSub={setS} /><output>{`${g}|${s}`}</output></>);
   }
   test('shows the seven groups; a group shows its own sub-categories; picking a new group clears the sub', () => {
-    render(<Harness />);
+    wrap(<Harness />);
     const groups = within(screen.getByRole('group', { name: 'Category group' })).getAllByRole('button');
     expect(groups.map((b) => b.textContent)).toEqual(['All', 'Works', 'Built-in', 'Furniture', 'Lighting', 'Appliances', 'Soft furnishing', 'Service']);
     expect(screen.queryByRole('group', { name: 'Sub-category' })).toBeNull();
@@ -100,13 +102,31 @@ describe('CatalogChips', () => {
 describe('CatalogCategoryPicker', () => {
   test('changing the group drops a sub-category that does not belong to it', () => {
     const onChange = vi.fn();
-    render(<CatalogCategoryPicker group="WORKS" sub="ELECTRICAL" onChange={onChange} />);
+    wrap(<CatalogCategoryPicker group="WORKS" sub="ELECTRICAL" onChange={onChange} />);
     fireEvent.change(screen.getByLabelText('Group *'), { target: { value: 'BUILTIN' } });
     expect(onChange).toHaveBeenCalledWith({ group: 'BUILTIN', sub: null });
   });
   test('names the photo rule for a photo group', () => {
-    render(<CatalogCategoryPicker group="APPLIANCE" sub={null} onChange={() => {}} />);
+    wrap(<CatalogCategoryPicker group="APPLIANCE" sub={null} onChange={() => {}} />);
     expect(screen.getByText(/need a photo before they can be active/)).toBeTruthy();
+  });
+  test('offers the saved list: an added sub-category shows, a hidden one only on the SKU that has it', async () => {
+    h.catalog = {
+      canEdit: true,
+      subCategories: [
+        { group: 'SERVICE', code: 'DELIVERY', label: 'Delivery', sort: 10, active: true },
+        { group: 'SERVICE', code: 'STYLING', label: 'Styling', sort: 20, active: false },
+        { group: 'SERVICE', code: 'CURTAIN_INSTALL', label: 'Curtain install', sort: 50, active: true },
+      ],
+    };
+    const options = () => Array.from((screen.getByLabelText('Sub-category *') as HTMLSelectElement).options).map((o) => o.textContent);
+    const a = wrap(<CatalogCategoryPicker group="SERVICE" sub={null} onChange={() => {}} />);
+    expect(await screen.findByRole('option', { name: 'Curtain install' })).toBeTruthy();
+    expect(options()).toEqual(['Choose…', 'Delivery', 'Curtain install']);
+    a.unmount();
+    wrap(<CatalogCategoryPicker group="SERVICE" sub="STYLING" onChange={() => {}} />);
+    await screen.findByRole('option', { name: 'Curtain install' });
+    expect(options()).toEqual(['Choose…', 'Delivery', 'Styling', 'Curtain install']);
   });
 });
 
