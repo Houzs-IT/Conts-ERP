@@ -1,5 +1,7 @@
 /* Procurement details counts (owner, 15 Oct 2026): per category and sub-category, how many of the project's item lines
-   are Ordered -> Received -> Delivered, the goods receipts and delivery orders that did it, Ready and LATE. The lines
+   are Ordered -> Received -> Delivered, the goods receipts and delivery orders that did it, Ready and LATE.
+   Ready (owner ruling, 15 Oct 2026, option B): every item line delivered, stock lines included; a line that went
+   through a PO must also be received. The lines
    come from GET /api/renovation/:id/procurement-status (engine/backend/src/services/renovation/procurementStatus.ts);
    they are counted here and never listed. Pure. */
 
@@ -19,20 +21,24 @@ export interface StatusLine {
 export interface Stage {
   /** Item lines in the row. */
   items: number;
-  /** Lines fully on purchase orders. */
+  /** Lines fully on purchase orders, out of all item lines. */
   ordered: number;
-  /** Ordered lines fully received (goods receipt or site receipt). */
+  /** Lines that go through a purchase order (any quantity on one): the ones that must be received. */
+  toReceive: number;
+  /** Of those, the lines whose ordered quantity is all received (goods receipt or site receipt). */
   received: number;
-  /** Ordered lines fully delivered (delivery order or site receipt). */
+  /** Lines fully delivered (delivery order or site receipt), out of all item lines, PO or stock. */
   delivered: number;
-  /** Everything ordered here has been received and delivered (and something was ordered). */
+  /** Every item line is delivered, and every line that went through a PO is also received (owner, 15 Oct 2026). */
   ready: boolean;
   grs: GrRef[];
   dos: DoRef[];
 }
 
 const isOrdered = (l: StatusLine) => l.qty > 0 && l.orderedQty >= l.qty;
-const isReceived = (l: StatusLine) => l.receivedQty >= l.qty;
+const needsReceipt = (l: StatusLine) => l.orderedQty > 0;
+/* A line partly on a PO and partly from stock only waits for what was ordered. */
+const isReceived = (l: StatusLine) => l.receivedQty >= Math.min(l.orderedQty, l.qty);
 const isDelivered = (l: StatusLine) => l.deliveredQty >= l.qty;
 
 function addOnce<T extends { id: string }>(list: T[], items: readonly T[]) {
@@ -40,13 +46,14 @@ function addOnce<T extends { id: string }>(list: T[], items: readonly T[]) {
 }
 
 export function stageOf(lines: readonly StatusLine[]): Stage {
-  const ordered = lines.filter(isOrdered);
+  const toReceive = lines.filter(needsReceipt);
   const s: Stage = {
     items: lines.length,
-    ordered: ordered.length,
-    received: ordered.filter(isReceived).length,
-    delivered: ordered.filter(isDelivered).length,
-    ready: ordered.length > 0 && ordered.every((l) => isReceived(l) && isDelivered(l)),
+    ordered: lines.filter(isOrdered).length,
+    toReceive: toReceive.length,
+    received: toReceive.filter(isReceived).length,
+    delivered: lines.filter(isDelivered).length,
+    ready: lines.length > 0 && lines.every((l) => isDelivered(l) && (!needsReceipt(l) || isReceived(l))),
     grs: [],
     dos: [],
   };
@@ -59,9 +66,9 @@ export function stageOf(lines: readonly StatusLine[]): Stage {
 /** A category's stage from its rows that have items: Ready only when every one of them is Ready. */
 export function categoryStage(rows: readonly Stage[]): Stage {
   const withItems = rows.filter((r) => r.items > 0);
-  const out: Stage = { items: 0, ordered: 0, received: 0, delivered: 0, ready: withItems.length > 0 && withItems.every((r) => r.ready), grs: [], dos: [] };
+  const out: Stage = { items: 0, ordered: 0, toReceive: 0, received: 0, delivered: 0, ready: withItems.length > 0 && withItems.every((r) => r.ready), grs: [], dos: [] };
   for (const r of withItems) {
-    out.items += r.items; out.ordered += r.ordered; out.received += r.received; out.delivered += r.delivered;
+    out.items += r.items; out.ordered += r.ordered; out.toReceive += r.toReceive; out.received += r.received; out.delivered += r.delivered;
     addOnce(out.grs, r.grs); addOnce(out.dos, r.dos);
   }
   return out;
@@ -78,8 +85,8 @@ export function isLate(s: Stage, plannedDelivery: string | null, today: string):
   return !!plannedDelivery && plannedDelivery < today && s.items > 0 && !s.ready;
 }
 
-/** "12 items · 8 ordered · 5 received · 3 delivered", '' with no items. */
+/** "12 items · 8 ordered · 5 of 8 received · 3 delivered", '' with no items. */
 export function stageText(s: Stage): string {
   if (s.items === 0) return '';
-  return `${s.items} item${s.items === 1 ? '' : 's'} · ${s.ordered} ordered · ${s.received} received · ${s.delivered} delivered`;
+  return `${s.items} item${s.items === 1 ? '' : 's'} · ${s.ordered} ordered · ${s.received} of ${s.toReceive} received · ${s.delivered} delivered`;
 }

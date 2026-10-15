@@ -18,16 +18,22 @@ function Step({ label, n, of, done }: { label: string; n: number; of: number; do
   );
 }
 
-/** "Ordered 3/5 > Received 2/3 > Delivered 1/3", then Ready or LATE. */
+/** "Ordered 3/5 > Received 2/3 > Delivered 1/5", then Ready or LATE. Received counts only the lines that went through
+    a PO, and is left out when none did; Ordered and Delivered count every item line, stock lines included. */
 export function StagePills({ s, late }: { s: Stage; late: boolean }) {
   if (s.items === 0) return null;
   return (
-    <span className="inline-flex flex-wrap items-center gap-1" aria-label={`${s.ordered} of ${s.items} ordered, ${s.received} received, ${s.delivered} delivered`}>
+    <span className="inline-flex flex-wrap items-center gap-1"
+      aria-label={`${s.ordered} of ${s.items} ordered, ${s.received} of ${s.toReceive} received, ${s.delivered} of ${s.items} delivered`}>
       <Step label="Ordered" n={s.ordered} of={s.items} done={s.ordered === s.items} />
+      {s.toReceive > 0 && (
+        <>
+          <span aria-hidden className="text-[10px] text-ink-secondary">&rsaquo;</span>
+          <Step label="Received" n={s.received} of={s.toReceive} done={s.received === s.toReceive} />
+        </>
+      )}
       <span aria-hidden className="text-[10px] text-ink-secondary">&rsaquo;</span>
-      <Step label="Received" n={s.received} of={s.ordered} done={s.ordered > 0 && s.received === s.ordered} />
-      <span aria-hidden className="text-[10px] text-ink-secondary">&rsaquo;</span>
-      <Step label="Delivered" n={s.delivered} of={s.ordered} done={s.ordered > 0 && s.delivered === s.ordered} />
+      <Step label="Delivered" n={s.delivered} of={s.items} done={s.delivered === s.items} />
       {s.ready && <span className="rounded bg-synced px-1.5 py-0.5 text-[10px] font-semibold uppercase text-white">Ready</span>}
       {late && <span className="rounded bg-err-bg px-1.5 py-0.5 text-[10px] font-semibold uppercase text-err">Late</span>}
     </span>
