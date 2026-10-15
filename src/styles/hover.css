@@ -25,6 +25,17 @@
     background-image: linear-gradient(rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.06)) !important;
   }
 
+  /* Phone menu rows (MobileTabBar's More sheet): a light card, so a dark wash; white on the dark theme. */
+  .menu-sheet button:not([aria-current="page"]) {
+    transition: background-image var(--motion-fast, 120ms) ease-out;
+  }
+  .menu-sheet button:not([aria-current="page"]):hover {
+    background-image: linear-gradient(rgba(21, 21, 21, 0.04), rgba(21, 21, 21, 0.04)) !important;
+  }
+  :root[data-theme="theconts-dark"] .menu-sheet button:not([aria-current="page"]):hover {
+    background-image: linear-gradient(rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.06)) !important;
+  }
+
   /* Notification bell, light and dark top bars. */
   button[aria-label^="Notifications"] {
     transition: background-image var(--motion-fast, 120ms) ease-out;
@@ -39,6 +50,7 @@
 
 /* Press feedback everywhere these apply, mouse and touch alike. */
 .nav-scroll button:not(:disabled):active,
+.menu-sheet button:active,
 button[aria-label^="Notifications"]:active {
   background-image: linear-gradient(rgba(0, 0, 0, 0.10), rgba(0, 0, 0, 0.10)) !important;
 }
@@ -48,4 +60,9 @@ button[aria-label^="Notifications"]:active {
 button[aria-label^="Notifications"]:focus-visible {
   outline: none;
   box-shadow: 0 0 0 2px var(--color-gold, #C8A46A) !important;
+}
+
+/* The phone menu draws its own press wash, so the grey tap flash would double it. */
+.menu-sheet button {
+  -webkit-tap-highlight-color: transparent;
 }

@@ -5,7 +5,8 @@ export type BadgeKey = 'today' | 'maintenance' | 'inbox' | 'statements' | 'appro
 /** The sidebar shows one workspace at a time. Rental is the daily work; supply chain sits behind the switch. */
 export type Workspace = 'rental' | 'supply';
 /** `area` is the permission area (functions/_lib/access.ts AREAS) the screen belongs to. */
-export interface NavChild { key: string; label: string; path: string; area?: string; badge?: BadgeKey }
+/** `icon`: drawn only in the phone menu, where each screen is its own row; the desktop shows its category's icon. */
+export interface NavChild { key: string; label: string; path: string; area?: string; badge?: BadgeKey; icon?: string }
 /** `full`: the screen's data is for roles with Full on its area (the server refuses Edit), so it is shown only then. */
 export interface NavItem {
   key: string; label: string; icon: string; path?: string; area?: string;
@@ -92,12 +93,12 @@ export const NAV: NavGroup[] = [
   { label: 'SUPPLY CHAIN', workspace: 'supply', items: [
     { key: 'scSales', label: 'Sales order', icon: 'shopping-cart', area: 'scSales', children: [
       // Renovation quotations (revisions, package templates, convert to the contract SO): engine only.
-      { key: 'renoQuotations', label: 'Quotations', path: '/sales/quotations' },
-      { key: 'salesOrders', label: 'Sales orders', path: '/sales/orders' },
-      { key: 'salesOrderAmendment', label: 'Sales order amendment', path: '/sales/amendments' },
-      { key: 'deliveryOrders', label: 'Delivery orders', path: '/sales/delivery-orders' },
-      { key: 'salesInvoices', label: 'Sales invoices', path: '/sales/invoices', area: 'scInvoices' },
-      { key: 'salesReturns', label: 'Delivery returns', path: '/sales/returns' },
+      { key: 'renoQuotations', label: 'Quotations', icon: 'file-text', path: '/sales/quotations' },
+      { key: 'salesOrders', label: 'Sales orders', icon: 'shopping-cart', path: '/sales/orders' },
+      { key: 'salesOrderAmendment', label: 'Sales order amendment', icon: 'file-pen-line', path: '/sales/amendments' },
+      { key: 'deliveryOrders', label: 'Delivery orders', icon: 'truck', path: '/sales/delivery-orders' },
+      { key: 'salesInvoices', label: 'Sales invoices', icon: 'receipt', path: '/sales/invoices', area: 'scInvoices' },
+      { key: 'salesReturns', label: 'Delivery returns', icon: 'undo-2', path: '/sales/returns' },
     ] },
     { key: 'scConsignment', label: 'Consignment', icon: 'handshake', area: 'scConsignment', children: [
       { key: 'consignmentOrder', label: 'Consignment order', path: '/consignment/order' },
@@ -108,31 +109,31 @@ export const NAV: NavGroup[] = [
       { key: 'purchaseConsignmentReturn', label: 'Purchase consignment return', path: '/consignment/purchase-return' },
     ] },
     { key: 'scProcurement', label: 'Procurement', icon: 'package', area: 'scProcurement', children: [
-      { key: 'procurement', label: 'Products', path: '/procurement/products' },
-      { key: 'suppliers', label: 'Suppliers', path: '/procurement/suppliers' },
-      { key: 'mrp', label: 'MRP · Stock Status', path: '/procurement/mrp' },
-      { key: 'purchaseOrders', label: 'Purchase orders', path: '/procurement/purchase-orders' },
-      { key: 'poAmendments', label: 'PO amendments', path: '/procurement/po-amendments' },
-      { key: 'cancellationRequests', label: 'Cancellation requests', path: '/procurement/cancellations' },
-      { key: 'goodsReceived', label: 'Goods receipt', path: '/procurement/goods-received' },
-      { key: 'purchaseInvoices', label: 'Purchase invoices', path: '/procurement/purchase-invoices', area: 'scInvoices' },
-      { key: 'purchaseReturns', label: 'Purchase returns', path: '/procurement/purchase-returns' },
+      { key: 'procurement', label: 'Products', icon: 'package', path: '/procurement/products' },
+      { key: 'suppliers', label: 'Suppliers', icon: 'factory', path: '/procurement/suppliers' },
+      { key: 'mrp', label: 'MRP · Stock Status', icon: 'chart-column', path: '/procurement/mrp' },
+      { key: 'purchaseOrders', label: 'Purchase orders', icon: 'clipboard-list', path: '/procurement/purchase-orders' },
+      { key: 'poAmendments', label: 'PO amendments', icon: 'file-diff', path: '/procurement/po-amendments' },
+      { key: 'cancellationRequests', label: 'Cancellation requests', icon: 'ban', path: '/procurement/cancellations' },
+      { key: 'goodsReceived', label: 'Goods receipt', icon: 'package-check', path: '/procurement/goods-received' },
+      { key: 'purchaseInvoices', label: 'Purchase invoices', icon: 'receipt-text', path: '/procurement/purchase-invoices', area: 'scInvoices' },
+      { key: 'purchaseReturns', label: 'Purchase returns', icon: 'package-x', path: '/procurement/purchase-returns' },
     ] },
     { key: 'scTransportPlan', label: 'Transportation', icon: 'truck', area: 'scTransportPlan', children: [
-      { key: 'deliveryPlanning', label: 'Delivery planning', path: '/transport/planning' },
-      { key: 'dpOrders', label: 'DP orders', path: '/transport/dp-orders' },
-      { key: 'deliveryDates', label: 'Delivery date arrangement', path: '/transport/delivery-dates' },
-      { key: 'deliveryTimes', label: 'Delivery time arrangement', path: '/transport/delivery-times' },
-      { key: 'lastMile', label: 'Last mile delivery', path: '/transport/last-mile' },
+      { key: 'deliveryPlanning', label: 'Delivery planning', icon: 'route', path: '/transport/planning' },
+      { key: 'dpOrders', label: 'DP orders', icon: 'list-checks', path: '/transport/dp-orders' },
+      { key: 'deliveryDates', label: 'Delivery date arrangement', icon: 'calendar-range', path: '/transport/delivery-dates' },
+      { key: 'deliveryTimes', label: 'Delivery time arrangement', icon: 'clock', path: '/transport/delivery-times' },
+      { key: 'lastMile', label: 'Last mile delivery', icon: 'map-pin', path: '/transport/last-mile' },
     ] },
     { key: 'scWarehouse', label: 'Warehouse', icon: 'warehouse', area: 'scWarehouse', children: [
-      { key: 'loadingList', label: 'Loading list', path: '/procurement/loading-list' },
-      { key: 'warehouses', label: 'Warehouses', path: '/procurement/warehouses' },
-      { key: 'racksBins', label: 'Racks & bins', path: '/procurement/racks' },
-      { key: 'stock', label: 'Stock', path: '/procurement/stock' },
-      { key: 'adjustments', label: 'Stock adjustments', path: '/procurement/adjustments' },
-      { key: 'stockTransfers', label: 'Transfers', path: '/procurement/stock-transfers' },
-      { key: 'stockTakes', label: 'Stock take', path: '/procurement/stock-takes' },
+      { key: 'loadingList', label: 'Loading list', icon: 'container', path: '/procurement/loading-list' },
+      { key: 'warehouses', label: 'Warehouses', icon: 'warehouse', path: '/procurement/warehouses' },
+      { key: 'racksBins', label: 'Racks & bins', icon: 'archive', path: '/procurement/racks' },
+      { key: 'stock', label: 'Stock', icon: 'boxes', path: '/procurement/stock' },
+      { key: 'adjustments', label: 'Stock adjustments', icon: 'sliders-horizontal', path: '/procurement/adjustments' },
+      { key: 'stockTransfers', label: 'Transfers', icon: 'arrow-left-right', path: '/procurement/stock-transfers' },
+      { key: 'stockTakes', label: 'Stock take', icon: 'clipboard-check', path: '/procurement/stock-takes' },
     ] },
     // Houzs keeps credit / debit notes under Finance > Money in; finance roles only.
   ] },
