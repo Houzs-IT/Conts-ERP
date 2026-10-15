@@ -10,7 +10,6 @@ import {
   RENOVATION_GROUPS,
   categoryGroupOf,
   isPhotoRequiredCategory,
-  uomPrintLabel,
 } from '../../../vendor/shared/renovation-catalog';
 import { fmtSen } from '../../../vendor/shared/format';
 
@@ -51,15 +50,19 @@ export function SkuThumb({ row, size = 40 }: { row: MfgProductRow; size?: number
   return <img src={resolveApiAssetUrl(src)} alt="" loading="lazy" style={box} className="rounded border border-border object-cover" />;
 }
 
-export function renovationSkuColumns(opts: { showCost: boolean; subLabel: (code: string | null | undefined) => string }): Column<MfgProductRow>[] {
-  const { subLabel } = opts;
+export function renovationSkuColumns(opts: {
+  showCost: boolean;
+  subLabel: (code: string | null | undefined) => string;
+  uomPrint: (code: string | null | undefined) => string;
+}): Column<MfgProductRow>[] {
+  const { subLabel, uomPrint } = opts;
   const cols: Column<MfgProductRow>[] = [
     { key: 'photo', label: 'Photo', width: '64px', disableSort: true, disableFilter: true, render: (r) => <SkuThumb row={r} /> },
     { key: 'code', label: 'Product Code', width: '150px', getValue: (r) => r.code, render: (r) => <span className="font-money text-[13px]">{r.code}</span> },
     { key: 'name', label: 'Description', width: '260px', getValue: (r) => r.name, render: (r) => <span className="text-[13px]">{r.name}</span> },
     { key: 'group', label: 'Group', width: '120px', getValue: (r) => groupLabel(r), render: (r) => groupLabel(r) },
     { key: 'sub', label: 'Sub-category', width: '170px', getValue: (r) => subLabel(r.sub_category), render: (r) => subLabel(r.sub_category) || <span className="text-ink-muted">—</span> },
-    { key: 'uom', label: 'Unit', width: '90px', getValue: (r) => uomPrintLabel(r.uom ?? 'UNIT'), render: (r) => uomPrintLabel(r.uom ?? 'UNIT') },
+    { key: 'uom', label: 'Unit', width: '90px', getValue: (r) => uomPrint(r.uom ?? 'UNIT'), render: (r) => uomPrint(r.uom ?? 'UNIT') },
     {
       key: 'main',
       label: 'Main supplier',

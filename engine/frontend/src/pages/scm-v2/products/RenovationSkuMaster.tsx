@@ -7,7 +7,7 @@
    Clicking a row opens the SKU: name, group / sub-category, unit, active, photos,
    and the suppliers drawer the Houzs page already has. */
 import { useMemo, useState } from 'react';
-import { Plus, Search, Settings2, Truck, Upload, X } from 'lucide-react';
+import { Plus, Ruler, Search, Settings2, Truck, Upload, X } from 'lucide-react';
 import { Button } from '../../../components/Button';
 import { DataTable } from '../../../components/DataTable';
 import { useDebouncedValue } from '../../../vendor/scm/lib/hooks';
@@ -25,6 +25,7 @@ import { CatalogChips } from './CatalogChips';
 import { CatalogCategoryPicker } from './CatalogCategoryPicker';
 import { RenovationNewSku } from './RenovationNewSku';
 import { RenovationSubCategorySettings } from './RenovationSubCategorySettings';
+import { RenovationUomSettings } from './RenovationUomSettings';
 import { SkuPhotoSection } from './SkuPhotoSection';
 import { UomSelect } from './UomSelect';
 import { SkuStatusBadge, SkuThumb, renovationSkuColumns, skuNeedsPhoto } from './renovationSkuColumns';
@@ -44,12 +45,13 @@ export function RenovationSkuMaster({
   const [openId, setOpenId] = useState<string | null>(null);
   const [newOpen, setNewOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [unitsOpen, setUnitsOpen] = useState(false);
 
   const q = useRenovationSkus({ group, sub, search: debounced.trim() || undefined });
   const rows = q.data ?? null;
   const showCost = useMemo(() => (rows ?? []).some((r) => 'mainCostSen' in r), [rows]);
-  const subLabel = useRenovationCatalog().label;
-  const columns = useMemo(() => renovationSkuColumns({ showCost, subLabel }), [showCost, subLabel]);
+  const { label: subLabel, uomPrint } = useRenovationCatalog();
+  const columns = useMemo(() => renovationSkuColumns({ showCost, subLabel, uomPrint }), [showCost, subLabel, uomPrint]);
   const needPhoto = useMemo(() => (rows ?? []).filter((r) => r.status !== 'ACTIVE' && skuNeedsPhoto(r)).length, [rows]);
   const openRow = openId ? (rows ?? []).find((r) => r.id === openId) ?? null : null;
   const count = rows ? `${rows.length} SKU${rows.length === 1 ? '' : 's'}` : 'Loading…';
@@ -76,6 +78,7 @@ export function RenovationSkuMaster({
         </span>
         <div className="ml-auto flex flex-wrap gap-2 whitespace-nowrap">
           <Button variant="secondary" onClick={() => setSettingsOpen(true)}><Settings2 size={14} strokeWidth={1.75} /> Sub-categories</Button>
+          <Button variant="secondary" onClick={() => setUnitsOpen(true)}><Ruler size={14} strokeWidth={1.75} /> Units</Button>
           <Button variant="secondary" onClick={onImport}><Upload size={14} strokeWidth={1.75} /> Import SKUs</Button>
           <Button variant="primary" onClick={() => setNewOpen(true)}><Plus size={14} strokeWidth={1.75} /> New SKU</Button>
         </div>
@@ -104,6 +107,7 @@ export function RenovationSkuMaster({
         />
       )}
       {settingsOpen && <RenovationSubCategorySettings initialGroup={group} onClose={() => setSettingsOpen(false)} />}
+      {unitsOpen && <RenovationUomSettings onClose={() => setUnitsOpen(false)} />}
       {openRow && (
         <RenovationSkuDrawer row={openRow} onClose={() => setOpenId(null)} onOpenSuppliers={() => onOpenSuppliers(openRow)} />
       )}
@@ -174,7 +178,7 @@ export function RenovationSkuDrawer({ row, onClose, onOpenSuppliers }: { row: Mf
             <CatalogCategoryPicker idPrefix={`sku-${row.id}`} group={group} sub={sub} onChange={(n) => { setGroup(n.group); setSub(n.sub); }} />
             <label className={styles.field}>
               <span className={styles.fieldLabel}>Unit</span>
-              <UomSelect value={uom} onChange={setUom} />
+              <UomSelect value={uom} onChange={setUom} keep={row.uom} />
             </label>
           </section>
           {error && <p role="alert" className="text-[12px] text-red-700">{error}</p>}

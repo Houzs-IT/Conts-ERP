@@ -11,7 +11,10 @@ import type { Env, Variables } from '../env';
 const sub = (group_code: string, code: string, label: string, sort_order: number, legacy: string[] = [], active = true) =>
   ({ group_code, code, label, sort_order, legacy_categories: legacy, active });
 
-const sb = fakeSb({
+const uom = (code: string, label: string, print_label: string, measure: boolean, sort_order: number, builtin = true) =>
+  ({ code, label, print_label, measure, builtin, sort_order, active: true });
+
+const T: Record<string, Record<string, unknown>[]> = {
   product_category_groups: [{ code: 'WORKS', label: 'Works', sort_order: 10 }, { code: 'SERVICE', label: 'Service', sort_order: 70 }],
   product_sub_categories: [
     sub('WORKS', 'HACKING', 'Hacking', 20),
@@ -19,14 +22,23 @@ const sb = fakeSb({
     sub('SERVICE', 'DELIVERY', 'Delivery', 10),
     sub('SERVICE', 'STYLING', 'Styling', 20),
   ],
-});
+  product_uoms: [
+    uom('UNIT', 'Unit', 'UNIT', false, 20),
+    uom('LOT', 'Lump sum', 'LS', false, 40),
+    uom('FT', 'Feet (run)', 'FT', true, 50),
+    uom('SQFT', 'Square feet', 'SQFT', true, 60),
+  ],
+  mfg_products: [{ id: 'p1', code: 'TL-1', uom: 'SQFT' }],
+  reno_doc_lines: [{ id: 'l1', uom: null, measure_uom: 'SQFT' }],
+};
+const sb = fakeSb(T as never);
 
 vi.mock('../middleware/auth', () => ({ supabaseAuth: async (_c: unknown, next: () => Promise<void>) => next() }));
 
 const CALLER = { id: '7', email: 'a@conts.test', app_metadata: {}, user_metadata: {}, aud: 'authenticated', created_at: '' } as unknown as User;
 
-const { renovationCatalogSettings, loadSubCategories } = await import('./renovation-catalog-settings');
-const { validateCategoryPair, parseSubCategory } = await import('../shared/renovation-catalog');
+const { renovationCatalogSettings, loadSubCategories, loadUoms } = await import('./renovation-catalog-settings');
+const { validateCategoryPair, parseSubCategory, isUom, parseUom, uomPrintLabel } = await import('../shared/renovation-catalog');
 
 function app(perms: string[] = ['*']) {
   const a = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -91,3 +103,64 @@ describe('sub-category settings', () => {
     expect(await r.json()).toMatchObject({ canEdit: false });
   });
 });
+
+describe('unit settings', () => {
+  it('adds a unit after the last one; its code is what prints', async () => {
+    const r = await send('POST', '/uoms', { code: ' box ', label: 'Box' });
+    expect(r.status).toBe(201);
+    expect(await r.json()).toMatchObject({ code: 'BOX' });
+    expect((await send('POST', '/uoms', { code: 'm', label: 'Metre (run)', measure: true })).status).toBe(201);
+    const list = await loadUoms(sb as never);
+    expect(list.find((u) => u.code === 'BOX')).toMatchObject({ label: 'Box', printLabel: 'BOX', measure: false, builtin: false, sort: 70, active: true });
+    expect(list.find((u) => u.code === 'M')).toMatchObject({ measure: true, sort: 80 });
+  });
+
+  it('the saved list is what a SKU save, an import and a document line check against', async () => {
+    const list = await loadUoms(sb as never);
+    expect(isUom('BOX', list)).toBe(true);
+    expect(isUom('BOX')).toBe(false);
+    expect(parseUom('box', list)).toBe('BOX');
+    expect(uomPrintLabel('LOT', list)).toBe('LS');
+    expect(GET_list(await (await app().request('/')).json())).toContain('BOX');
+  });
+
+  it('refuses a bad or taken code, a taken name, and changing the code or measure', async () => {
+    expect((await send('POST', '/uoms', { code: '9X', label: 'Nine' })).status).toBe(400);
+    expect((await send('POST', '/uoms', { code: 'TOOLONGCODE', label: 'Long' })).status).toBe(400);
+    expect((await send('POST', '/uoms', { code: 'ls', label: 'Lump' })).status).toBe(409);
+    expect((await send('POST', '/uoms', { code: 'BX', label: 'box' })).status).toBe(409);
+    expect((await send('PATCH', '/uoms/BOX', { measure: true })).status).toBe(400);
+    expect((await send('PATCH', '/uoms/BOX', { code: 'BX' })).status).toBe(400);
+  });
+
+  it('renames, hides and shows; the fallback units cannot be hidden', async () => {
+    expect((await send('PATCH', '/uoms/BOX', { label: 'Carton box' })).status).toBe(200);
+    expect((await send('PATCH', '/uoms/LOT', { active: false })).status).toBe(200);
+    expect((await loadUoms(sb as never)).find((u) => u.code === 'LOT')).toMatchObject({ active: false });
+    expect((await send('PATCH', '/uoms/LOT', { active: true })).status).toBe(200);
+    for (const code of ['UNIT', 'FT']) {
+      const r = await send('PATCH', `/uoms/${code}`, { active: false });
+      expect(await r.json()).toMatchObject({ error: 'fallback_unit' });
+    }
+  });
+
+  it('deletes an added unit nothing uses; a built-in or used one can only be hidden', async () => {
+    expect(await (await send('DELETE', '/uoms/LOT', {})).json()).toMatchObject({ error: 'builtin_unit' });
+    T.mfg_products.push({ id: 'p2', code: 'BX-1', uom: 'BOX' });
+    const used = await send('DELETE', '/uoms/BOX', {});
+    expect(used.status).toBe(409);
+    expect((await used.json()).message).toMatch(/1 SKU/);
+    T.reno_doc_lines.push({ id: 'l2', uom: null, measure_uom: 'M' });
+    expect(((await (await send('DELETE', '/uoms/M', {})).json()).message)).toMatch(/1 document line/);
+    T.reno_doc_lines.pop();
+    expect((await send('DELETE', '/uoms/M', {})).status).toBe(200);
+    expect((await loadUoms(sb as never)).some((u) => u.code === 'M')).toBe(false);
+  });
+
+  it('needs permission to edit products', async () => {
+    expect((await send('POST', '/uoms', { code: 'ROLL', label: 'Roll' }, [])).status).toBe(403);
+    expect((await send('DELETE', '/uoms/BOX', {}, [])).status).toBe(403);
+  });
+});
+
+const GET_list = (j: { uoms: { code: string }[] }) => j.uoms.map((u) => u.code);

@@ -44,7 +44,7 @@ import {
   deleteMfgProductPhotoHandler, listMfgProductPhotosHandler, patchMfgProductPhotoHandler,
   photoCountFor, photoKeysFor, primaryPhotosFor, uploadMfgProductPhotoHandler,
 } from './mfg-product-photos';
-import { loadSubCategories } from './renovation-catalog-settings';
+import { loadSubCategories, loadUoms } from './renovation-catalog-settings';
 import { resolveDefaultParty, type BindingForParty } from '../lib/default-supply-party';
 
 export const mfgProducts = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -388,7 +388,12 @@ export const createMfgProductHandler = async (c: AppContext) => {
   const pair = subCategory ? validateCategoryPair(category, subCategory, (await loadSubCategories(c.get('supabase'))).filter((s) => s.active !== false)) : validateCategoryPair(category, null);
   if (!pair.ok) return c.json({ error: pair.error }, 400);
   const uom = typeof body.uom === 'string' && body.uom.trim() ? body.uom.trim().toUpperCase() : null;
-  if (uom && !isUom(uom)) return c.json({ error: 'invalid_uom' }, 400);
+  if (uom) {
+    let uoms: Awaited<ReturnType<typeof loadUoms>>;
+    try { uoms = await loadUoms(c.get('supabase')); } catch (e) { return c.json({ error: 'load_failed', reason: (e as Error).message }, 500); }
+    // A hidden unit cannot be picked for a new SKU.
+    if (!isUom(uom, uoms.filter((u) => u.active !== false))) return c.json({ error: 'invalid_uom' }, 400);
+  }
   // A SKU in a photo group cannot be ACTIVE before its first photo (the database
   // trigger from migration 0062 enforces the same on every other path).
   const needsPhoto = isPhotoRequiredCategory(category);
@@ -485,6 +490,8 @@ export const batchImportMfgProductsHandler = async (c: AppContext) => {
   if (!plan.ok) return c.json({ error: 'load_failed', reason: plan.reason }, 500);
   let subList: Awaited<ReturnType<typeof loadSubCategories>>;
   try { subList = await loadSubCategories(supabase); } catch (e) { return c.json({ error: 'load_failed', reason: (e as Error).message }, 500); }
+  let uomList: Awaited<ReturnType<typeof loadUoms>>;
+  try { uomList = (await loadUoms(supabase)).filter((u) => u.active !== false); } catch (e) { return c.json({ error: 'load_failed', reason: (e as Error).message }, 500); }
   const modelsMoved: ImportModelMove[] = [];
   const moveFailed = new Map<string, string>();
   // One find-or-create per (category, model_code) for the WHOLE batch: many
@@ -560,9 +567,10 @@ export const batchImportMfgProductsHandler = async (c: AppContext) => {
       failures.push({ code, reason: `"${subCell}" is not a sub-category.` });
       continue;
     }
-    const uom = parseUom(uomCell);
+    // Like sub-categories, a hidden unit is not read from a sheet.
+    const uom = parseUom(uomCell, uomList);
     if (uomCell && !uom) {
-      failures.push({ code, reason: `"${uomCell}" is not a unit — use PCS, UNIT, SET, LOT (LS), FT, SQFT, POINT or FULL.` });
+      failures.push({ code, reason: `"${uomCell}" is not a unit — use ${uomList.map((u) => (u.printLabel === u.code ? u.code : `${u.code} (${u.printLabel})`)).join(', ')}.` });
       continue;
     }
     const prev = existing as { category?: string; sub_category?: string | null; status?: string } | null;
@@ -1039,7 +1047,9 @@ export const patchMfgProductHandler = async (c: AppContext) => {
     }
     if (body.uom !== undefined) {
       const uom = typeof body.uom === 'string' ? body.uom.trim().toUpperCase() : '';
-      if (!isUom(uom)) return c.json({ error: 'invalid_uom' }, 400);
+      // A hidden unit stays valid on the SKU that already has it.
+      const pickable = (await loadUoms(supabase)).filter((u) => u.active !== false || u.code === current.uom);
+      if (!isUom(uom, pickable)) return c.json({ error: 'invalid_uom' }, 400);
       updates.uom = uom;
     }
     /* Photo rule: a SKU in a photo group is ACTIVE only with a photo. Checked

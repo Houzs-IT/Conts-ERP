@@ -31,7 +31,8 @@ import { normaliseHeader, normaliseInstalments, normalisePoSchedule, normaliseSe
 import { onRenovationSoLinesChanged } from '../lib/renovation-hooks';
 import { postSiRevenue } from '../lib/post-si-revenue';
 import { CREDIT_NOTE_HEADER, postCreditNote } from '../../acc/credit-notes';
-import { categoryGroupOf } from '../shared/renovation-catalog';
+import { categoryGroupOf, type UomDef } from '../shared/renovation-catalog';
+import { loadUomsSql } from './renovation-catalog-settings';
 
 type C = Context<{ Bindings: Env; Variables: Variables }>;
 
@@ -105,10 +106,10 @@ renovation.get('/quotations', handle(null, async (c, { sqlRead }) => {
   return c.json({ quotations: rows });
 }));
 
-renovation.post('/quotations', handle(PERM.quote, async (c, { tx }) => {
+renovation.post('/quotations', handle(PERM.quote, async (c, { tx, sqlRead }) => {
   const b = await json(c);
   const header = need(normaliseHeader(b.header));
-  const sections = b.sections !== undefined ? need(normaliseSections(b.sections)) : undefined;
+  const sections = b.sections !== undefined ? need(normaliseSections(b.sections, 'doc', await loadUomsSql(sqlRead))) : undefined;
   const instalments = b.instalments !== undefined ? need(normaliseInstalments(b.instalments)) : undefined;
   const out = await tx((db) => createQuotation(db, actorOf(c), {
     projectId: b.projectId == null || b.projectId === '' ? null : intParam(b.projectId, 'projectId'), brandId: b.brandId ?? header.brandId ?? null, templateId: b.templateId ?? null, header, sections, instalments,
@@ -121,12 +122,12 @@ renovation.get('/quotations/:id', handle(null, async (c, { sqlRead }) => {
   return c.json(await getQuotation(sqlRead, param(c, 'id'), actorOf(c).companyId, rev ? intParam(rev, 'rev') : undefined));
 }));
 
-renovation.put('/quotations/:id', handle(PERM.quote, async (c, { tx }) => {
+renovation.put('/quotations/:id', handle(PERM.quote, async (c, { tx, sqlRead }) => {
   const b = await json(c);
   const body = {
     version: intParam(b.version, 'version'),
     header: b.header !== undefined ? need(normaliseHeader(b.header)) : undefined,
-    sections: b.sections !== undefined ? need(normaliseSections(b.sections)) : undefined,
+    sections: b.sections !== undefined ? need(normaliseSections(b.sections, 'doc', await loadUomsSql(sqlRead))) : undefined,
     instalments: b.instalments !== undefined ? need(normaliseInstalments(b.instalments)) : undefined,
   };
   return c.json(await tx((db) => saveRevision(db, actorOf(c), param(c, 'id'), body)));
@@ -164,21 +165,23 @@ renovation.get('/templates', handle(null, async (c, { sqlRead }) =>
 
 renovation.get('/templates/:id', handle(null, async (c, { sqlRead }) => c.json(await getTemplate(sqlRead, param(c, 'id'), actorOf(c).companyId))));
 
-const templateFields = (b: Record<string, any>) => ({
+const templateFields = (b: Record<string, any>, uoms: readonly UomDef[]) => ({
   name: b.name, brandId: b.brandId, description: b.description, printFormat: b.printFormat && (PRINT_FORMATS as readonly string[]).includes(b.printFormat) ? b.printFormat : undefined,
   termTemplateId: b.termTemplateId, docDiscountSen: b.docDiscountSen, docDiscountLabel: b.docDiscountLabel, promoLines: b.promoLines, active: b.active,
-  sections: b.sections !== undefined ? need(normaliseSections(b.sections)) : undefined,
+  sections: b.sections !== undefined ? need(normaliseSections(b.sections, 'doc', uoms)) : undefined,
   instalments: b.instalments !== undefined ? need(normaliseInstalments(b.instalments)) : undefined,
 });
 
-renovation.post('/templates', handle(PERM.quote, async (c, { tx }) => {
+renovation.post('/templates', handle(PERM.quote, async (c, { tx, sqlRead }) => {
   const b = await json(c);
-  return c.json(await tx((db) => createTemplate(db, actorOf(c), templateFields(b))), 201);
+  const fields = templateFields(b, await loadUomsSql(sqlRead));
+  return c.json(await tx((db) => createTemplate(db, actorOf(c), fields)), 201);
 }));
 
-renovation.put('/templates/:id', handle(PERM.quote, async (c, { tx }) => {
+renovation.put('/templates/:id', handle(PERM.quote, async (c, { tx, sqlRead }) => {
   const b = await json(c);
-  await tx((db) => saveTemplate(db, actorOf(c), param(c, 'id'), templateFields(b)));
+  const fields = templateFields(b, await loadUomsSql(sqlRead));
+  await tx((db) => saveTemplate(db, actorOf(c), param(c, 'id'), fields));
   return c.json({ ok: true });
 }));
 
@@ -323,11 +326,12 @@ renovation.post('/sales-orders/:docNo/variation-orders', handle(PERM.quote, asyn
 
 renovation.get('/variation-orders/:id', handle(null, async (c, { sqlRead }) => c.json(await readVo(sqlRead, param(c, 'id'), actorOf(c).companyId))));
 
-renovation.put('/variation-orders/:id', handle(PERM.quote, async (c, { tx }) => {
+renovation.put('/variation-orders/:id', handle(PERM.quote, async (c, { tx, sqlRead }) => {
   const b = await json(c);
+  const uoms = await loadUomsSql(sqlRead);
   return c.json(await tx((db) => saveVo(db, actorOf(c), param(c, 'id'), {
     version: intParam(b.version, 'version'), title: typeof b.title === 'string' ? b.title : undefined, docDate: b.docDate ?? undefined,
-    sections: b.sections !== undefined ? need(normaliseSections(b.sections, 'vo')) : undefined,
+    sections: b.sections !== undefined ? need(normaliseSections(b.sections, 'vo', uoms)) : undefined,
   })));
 }));
 

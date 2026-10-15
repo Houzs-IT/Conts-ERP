@@ -57,12 +57,14 @@ import { CatalogChips } from './CatalogChips';
 import { CatalogCategoryPicker } from './CatalogCategoryPicker';
 import { RenovationNewSku } from './RenovationNewSku';
 import { RenovationSkuMaster } from './RenovationSkuMaster';
+import { RenovationUomSettings } from './RenovationUomSettings';
+import { ConfirmProvider } from '../../../vendor/scm/components/ConfirmDialog';
 import { SkuStatusBadge, skuNeedsPhoto } from './renovationSkuColumns';
 import { AddSupplierBinding } from '../AddSupplierBinding';
 import { PhotoGallery } from '../../../components/scm-v2/PhotoGallery';
 import { badgeFor } from '../../../vendor/scm/lib/category-badges';
 import { NotifyProvider } from '../../../vendor/scm/components/NotifyDialog';
-import type { CatalogGroup } from '../../../vendor/shared/renovation-catalog';
+import { SUB_CATEGORIES, UOMS, type CatalogGroup } from '../../../vendor/shared/renovation-catalog';
 
 const wrap = (ui: React.ReactNode) =>
   render(
@@ -239,5 +241,45 @@ describe('badges for the six groups', () => {
     expect(['works', 'builtin', 'furniture', 'lighting', 'appliance', 'soft'].map((g) => badgeFor(g).label)).toEqual([
       'WORKS', 'BUILT-IN', 'FURNITURE', 'LIGHTING', 'APPLIANCES', 'SOFT FURNISHING',
     ]);
+  });
+});
+
+describe('units from SKU Master > Units', () => {
+  const savedUnits = () => [
+    ...UOMS.map((u, i) => ({ ...u, builtin: true, sort: (i + 1) * 10, active: u.code !== 'POINT' })),
+    { code: 'BOX', label: 'Box', printLabel: 'BOX', measure: false, builtin: false, sort: 90, active: true },
+  ];
+
+  test('the unit picker offers an added unit and drops a hidden one, except on the SKU that has it', async () => {
+    h.catalog = { subCategories: SUB_CATEGORIES, uoms: savedUnits(), canEdit: true };
+    wrap(<RenovationNewSku initialGroup="BUILTIN" initialSub={null} onClose={() => {}} onCreated={() => {}} />);
+    await screen.findByRole('option', { name: 'Box (BOX)' });
+    expect(screen.queryByRole('option', { name: /Point/ })).toBeNull();
+
+    h.rows = [sku({ id: 'a', code: 'EL-1', category: 'WORKS', category_group: 'WORKS', sub_category: 'ELECTRICAL', uom: 'POINT' })];
+    wrap(<RenovationSkuMaster onImport={() => {}} onOpenSuppliers={() => {}} />);
+    fireEvent.click(screen.getAllByText('EL-1')[0]);
+    const drawer = screen.getByRole('dialog', { name: 'SKU EL-1' });
+    expect(await within(drawer).findByRole('option', { name: 'Point (POINT) - hidden' })).toBeTruthy();
+  });
+
+  test('the Units panel: built-in units hide but do not delete, UNIT and FT stay shown, an added unit deletes', async () => {
+    h.catalog = { subCategories: SUB_CATEGORIES, uoms: savedUnits(), canEdit: true };
+    wrap(<ConfirmProvider><RenovationUomSettings onClose={() => {}} /></ConfirmProvider>);
+    const panel = await screen.findByRole('dialog', { name: 'Units' });
+    await within(panel).findByLabelText('Delete Box');
+    expect((within(panel).getByLabelText('Delete Box') as HTMLButtonElement).disabled).toBe(false);
+    expect((within(panel).getByLabelText('Delete Lump sum') as HTMLButtonElement).disabled).toBe(true);
+    expect((within(panel).getByLabelText('Hide Unit') as HTMLButtonElement).disabled).toBe(true);
+    expect((within(panel).getByLabelText('Hide Feet (run)') as HTMLButtonElement).disabled).toBe(true);
+    expect(within(panel).getByLabelText('Show Point')).toBeTruthy();
+    expect(within(panel).getAllByText('Measured')).toHaveLength(2);
+
+    const add = within(panel).getByRole('button', { name: /Add unit/ }) as HTMLButtonElement;
+    expect(add.disabled).toBe(true);
+    fireEvent.change(within(panel).getByLabelText('New unit name'), { target: { value: 'Metre' } });
+    fireEvent.change(within(panel).getByLabelText('New unit short code'), { target: { value: 'm-1' } });
+    expect((within(panel).getByLabelText('New unit short code') as HTMLInputElement).value).toBe('M1');
+    expect(add.disabled).toBe(false);
   });
 });
