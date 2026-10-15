@@ -409,3 +409,10 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - A project closed by its data alone (handed over + fully paid, no closed_at) before 0117 gets today as its end date the first time it is read, not the day the last payment came in (payments carry no date in the project facts).
 - Check: scripts/api-checks/reno-customer-property.mjs (71 checks, local engine + PostgREST).
 - Procurement details second version (feat/reno-sku-hub, 15 Oct): per sub-category Ordered -> Received -> Delivered with GR / DO links, Ready and LATE; no item, PO or SO rows. No migration. Check: scripts/api-checks/reno-doc-flow.mjs (65 checks).
+
+## Project Timeline (feat/reno-timeline, migration 0118, 15 Oct 2026)
+- OPEN, before merge: apply migration 0118 on staging, then production. It adds public.project_timeline_notes (the hand-written notes). Until it is applied the Timeline still shows every System entry and hides "+ Add note".
+- System entries are read, not copied: project_activity, project_flow_log (step and hold), key moves, Onsite visits, 3D / 2D submissions, 2D amendment requests and 3D notes, the project's POs / GRs / DOs (same sets as Procurement details), created / handed over / completed (end_date). services/renovation/timeline.ts.
+- Not on the Timeline yet: Procurement-date edits do not refresh the card until Refresh (they have no page-level save callback); a step reached by the data alone (not Move step) has no history row, so only Project completed marks Closed.
+- Note types (Customer, Design, Supplier, Site, Sales) are renamed in renovationTimelineModel.ts CATEGORY_LABEL; the stored keys stay. No photo/file on a note: the service case note has none either.
+- Check: scripts/api-checks/reno-timeline.mjs (41 checks, local engine with migration 0118).
