@@ -25,5 +25,7 @@ uploads/*.csv
 #understand anything
 .ua
 
-# local cache of the design hook
-.impeccable/hook.cache.json
+# design tool notes, kept local
+DESIGN.md
+PRODUCT.md
+.impeccable/
