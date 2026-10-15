@@ -100,3 +100,20 @@ categories. Houzs furniture POs have no project and are never checked.
   a failed save with the sentence (HTTP 500 "insert_failed" with the reason), not as a friendly form error.
 - Documents saved before migration 0116 is applied keep what they had; the migration fills the room, project,
   building and unit on existing renovation-mode documents once, when it is applied.
+
+## Procurement details, second version (owner, 15 Oct 2026)
+
+The owner only wants to know what has been received and delivered, not every item, PO or SO. Procurement details
+now works per category and sub-category:
+
+- **Ordered -> Received -> Delivered**: counts of the project's item lines in that row (lines of its sales orders, and
+  project PO lines no SO line stands behind). Ordered = on a live PO; Received = a goods receipt took the quantity in;
+  Delivered = a delivery order handed it over, or a site receipt took it in at the unit (that is both at once).
+- **Ready**: a sub-category when everything ordered in it is received and delivered; a category when every one of its
+  sub-categories with items is Ready. **LATE**: the planned delivery date has passed and the row is not Ready.
+- Under each row, the goods receipts (date, at site, photos) and delivery orders (date, proof of delivery) behind it,
+  each opening its document. No item, PO or SO rows.
+- A sub-category shows only when it has items or its own dates; a following one shows the category's dates greyed.
+  "Plan another sub-category" brings up any other to give it dates. A category opens by itself only when it has items.
+- Read from `GET /api/renovation/:id/procurement-status` (`engine/backend/src/services/renovation/procurementStatus.ts`),
+  counted in `engine/frontend/src/pages/projects/renovation/procurementStatusModel.ts`. No migration.

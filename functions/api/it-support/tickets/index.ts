@@ -4,7 +4,7 @@ import { hubFor, relay, askHub, readForm, filesRefusal, reporterFields, auditSen
 
 const STATUSES = new Set(['open', 'in_progress', 'on_hold', 'testing', 'waiting_reporter', 'resolved', 'closed', 'rejected']);
 /** What the browser may set. Who is reporting is filled in from the session (reporterFields). */
-const FIELDS = ['title', 'description', 'type', 'priority', 'page_url'] as const;
+const FIELDS = ['title', 'description', 'type', 'priority', 'page_url', 'occurred_at'] as const;
 const TYPES = ['bug', 'development'];
 const PRIORITIES = ['urgent', 'high', 'medium', 'low'];
 

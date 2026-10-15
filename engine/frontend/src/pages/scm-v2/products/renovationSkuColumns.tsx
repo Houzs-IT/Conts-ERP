@@ -10,7 +10,6 @@ import {
   RENOVATION_GROUPS,
   categoryGroupOf,
   isPhotoRequiredCategory,
-  uomPrintLabel,
 } from '../../../vendor/shared/renovation-catalog';
 import { fmtSen } from '../../../vendor/shared/format';
 
@@ -51,15 +50,21 @@ export function SkuThumb({ row, size = 40 }: { row: MfgProductRow; size?: number
   return <img src={resolveApiAssetUrl(src)} alt="" loading="lazy" style={box} className="rounded border border-border object-cover" />;
 }
 
-export function renovationSkuColumns(opts: { showCost: boolean; subLabel: (code: string | null | undefined) => string }): Column<MfgProductRow>[] {
-  const { subLabel } = opts;
+/* Export and Copy write the stored codes under the importer's own headings, so
+   the exported sheet goes straight back in through Import SKUs unchanged. */
+export function renovationSkuColumns(opts: {
+  showCost: boolean;
+  subLabel: (code: string | null | undefined) => string;
+  uomPrint: (code: string | null | undefined) => string;
+}): Column<MfgProductRow>[] {
+  const { subLabel, uomPrint } = opts;
   const cols: Column<MfgProductRow>[] = [
     { key: 'photo', label: 'Photo', width: '64px', disableSort: true, disableFilter: true, render: (r) => <SkuThumb row={r} /> },
-    { key: 'code', label: 'Product Code', width: '150px', getValue: (r) => r.code, render: (r) => <span className="font-money text-[13px]">{r.code}</span> },
-    { key: 'name', label: 'Description', width: '260px', getValue: (r) => r.name, render: (r) => <span className="text-[13px]">{r.name}</span> },
-    { key: 'group', label: 'Group', width: '120px', getValue: (r) => groupLabel(r), render: (r) => groupLabel(r) },
-    { key: 'sub', label: 'Sub-category', width: '170px', getValue: (r) => subLabel(r.sub_category), render: (r) => subLabel(r.sub_category) || <span className="text-ink-muted">—</span> },
-    { key: 'uom', label: 'Unit', width: '90px', getValue: (r) => uomPrintLabel(r.uom ?? 'UNIT'), render: (r) => uomPrintLabel(r.uom ?? 'UNIT') },
+    { key: 'code', label: 'Product Code', exportLabel: 'code', width: '150px', getValue: (r) => r.code, render: (r) => <span className="font-money text-[13px]">{r.code}</span> },
+    { key: 'name', label: 'Description', exportLabel: 'name', width: '260px', getValue: (r) => r.name, render: (r) => <span className="text-[13px]">{r.name}</span> },
+    { key: 'group', label: 'Group', exportLabel: 'category', exportValue: (r) => r.category, width: '120px', getValue: (r) => groupLabel(r), render: (r) => groupLabel(r) },
+    { key: 'sub', label: 'Sub-category', exportLabel: 'sub_category', exportValue: (r) => r.sub_category ?? '', width: '170px', getValue: (r) => subLabel(r.sub_category), render: (r) => subLabel(r.sub_category) || <span className="text-ink-muted">—</span> },
+    { key: 'uom', label: 'Unit', exportLabel: 'uom', exportValue: (r) => r.uom ?? 'UNIT', width: '90px', getValue: (r) => uomPrint(r.uom ?? 'UNIT'), render: (r) => uomPrint(r.uom ?? 'UNIT') },
     {
       key: 'main',
       label: 'Main supplier',
@@ -91,6 +96,8 @@ export function renovationSkuColumns(opts: { showCost: boolean; subLabel: (code:
   cols.push({
     key: 'status',
     label: 'Status',
+    exportLabel: 'status',
+    exportValue: (r) => r.status,
     width: '110px',
     getValue: (r) => (r.status === 'ACTIVE' ? 'Active' : skuNeedsPhoto(r) ? 'Needs photo' : 'Inactive'),
     render: (r) => <SkuStatusBadge row={r} />,

@@ -319,6 +319,10 @@
   align-items: start;
 }
 
+.maintPicker {
+  display: none;
+}
+
 .maintNav {
   background: #fff;
   border: 1px solid #d6d9d2;
@@ -429,9 +433,17 @@
 
 .maintHeader {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
-  gap: var(--space-4);
+  gap: var(--space-3) var(--space-4);
+}
+
+/* The text block keeps a readable width; the Edit / History buttons drop
+   below it on narrow panels instead of squeezing the description. */
+.maintHeader > :first-child {
+  flex: 1 1 16rem;
+  min-width: 0;
 }
 
 .maintTitle {
@@ -692,6 +704,15 @@
   }
   .maintLayout {
     grid-template-columns: 1fr;
+    gap: var(--space-3);
+  }
+  .maintNav {
+    display: none;
+  }
+  .maintPicker {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
   }
   .maintPanel {
     padding: var(--space-4);

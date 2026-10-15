@@ -9,6 +9,7 @@ import { Button } from '../../../components/Button';
 import { useNotify } from '../../../vendor/scm/components/NotifyDialog';
 import { useCreateMfgProduct, type MfgCategory } from '../../../vendor/scm/lib/mfg-products-queries';
 import { genericSkus, isPhotoRequiredCategory, type CatalogGroup } from '../../../vendor/shared/renovation-catalog';
+import { useRenovationCatalog } from '../../../vendor/scm/lib/renovation-catalog-queries';
 import { CatalogCategoryPicker } from './CatalogCategoryPicker';
 import { UomSelect } from './UomSelect';
 import styles from '../Products.module.css';
@@ -35,6 +36,9 @@ export function RenovationNewSku({
   const [sub, setSub] = useState<string | null>(initialSub);
   const [uom, setUom] = useState(defaultUom(initialSub));
   const [uomTouched, setUomTouched] = useState(false);
+  // A trade's default unit may have been hidden under Units; a new SKU then starts on UNIT.
+  const pickable = useRenovationCatalog().pickableUoms(null);
+  const unit = pickable.some((u) => u.code === uom) ? uom : 'UNIT';
   const [error, setError] = useState<string | null>(null);
 
   const submit = () => {
@@ -48,7 +52,7 @@ export function RenovationNewSku({
         name: name.trim(),
         category: group as MfgCategory,
         subCategory: sub,
-        uom,
+        uom: unit,
         description: description.trim() || undefined,
       },
       {
@@ -93,7 +97,7 @@ export function RenovationNewSku({
             />
             <label className={styles.field}>
               <span className={styles.fieldLabel}>Unit</span>
-              <UomSelect value={uom} onChange={(v) => { setUom(v); setUomTouched(true); }} />
+              <UomSelect value={unit} keep={null} onChange={(v) => { setUom(v); setUomTouched(true); }} />
             </label>
             <label className={`${styles.field} ${styles.formGridFull}`}>
               <span className={styles.fieldLabel}>Description</span>

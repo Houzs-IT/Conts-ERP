@@ -33,6 +33,7 @@ import renovationProject from "./renovationProject";
 import renovationMonitor from "./renovationMonitor";
 import renovationProperty from "./renovationProperty";
 import renovationDocuments from "./renovationDocuments";
+import renovationTimeline from "./renovationTimeline";
 import { propertyColumnsReady, pushProjectToOpenSos, readProjectCustomerInfo, regenerateProjectName, writeProjectShared } from "../services/renovation/customerProperty";
 import { projectNameFrom } from "../scm/shared/renovation-property";
 
@@ -93,6 +94,8 @@ app.route("/", renovationMonitor);
 app.route("/", renovationProperty);
 // Every transaction document of a project (mig 0116), also before /:id
 app.route("/", renovationDocuments);
+// The project Timeline: system entries from the existing history plus hand-written notes (mig 0118), also before /:id
+app.route("/", renovationTimeline);
 
 // ── Mode: which Projects screens this install shows (app_settings projects_mode, mig 0082) ──
 

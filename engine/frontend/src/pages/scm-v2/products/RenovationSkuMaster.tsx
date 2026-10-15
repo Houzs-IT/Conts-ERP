@@ -7,9 +7,10 @@
    Clicking a row opens the SKU: name, group / sub-category, unit, active, photos,
    and the suppliers drawer the Houzs page already has. */
 import { useMemo, useState } from 'react';
-import { Plus, Search, Settings2, Truck, Upload, X } from 'lucide-react';
+import { Plus, Ruler, Search, Settings2, Truck, Upload, X } from 'lucide-react';
 import { Button } from '../../../components/Button';
 import { DataTable } from '../../../components/DataTable';
+import { RowActionsMenu } from '../../../components/RowActionsMenu';
 import { useDebouncedValue } from '../../../vendor/scm/lib/hooks';
 import { useNotify } from '../../../vendor/scm/components/NotifyDialog';
 import {
@@ -25,6 +26,7 @@ import { CatalogChips } from './CatalogChips';
 import { CatalogCategoryPicker } from './CatalogCategoryPicker';
 import { RenovationNewSku } from './RenovationNewSku';
 import { RenovationSubCategorySettings } from './RenovationSubCategorySettings';
+import { RenovationUomSettings } from './RenovationUomSettings';
 import { SkuPhotoSection } from './SkuPhotoSection';
 import { UomSelect } from './UomSelect';
 import { SkuStatusBadge, SkuThumb, renovationSkuColumns, skuNeedsPhoto } from './renovationSkuColumns';
@@ -44,12 +46,13 @@ export function RenovationSkuMaster({
   const [openId, setOpenId] = useState<string | null>(null);
   const [newOpen, setNewOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [unitsOpen, setUnitsOpen] = useState(false);
 
   const q = useRenovationSkus({ group, sub, search: debounced.trim() || undefined });
   const rows = q.data ?? null;
   const showCost = useMemo(() => (rows ?? []).some((r) => 'mainCostSen' in r), [rows]);
-  const subLabel = useRenovationCatalog().label;
-  const columns = useMemo(() => renovationSkuColumns({ showCost, subLabel }), [showCost, subLabel]);
+  const { label: subLabel, uomPrint } = useRenovationCatalog();
+  const columns = useMemo(() => renovationSkuColumns({ showCost, subLabel, uomPrint }), [showCost, subLabel, uomPrint]);
   const needPhoto = useMemo(() => (rows ?? []).filter((r) => r.status !== 'ACTIVE' && skuNeedsPhoto(r)).length, [rows]);
   const openRow = openId ? (rows ?? []).find((r) => r.id === openId) ?? null : null;
   const count = rows ? `${rows.length} SKU${rows.length === 1 ? '' : 's'}` : 'Loading…';
@@ -59,25 +62,39 @@ export function RenovationSkuMaster({
       <CatalogChips group={group} sub={sub} onGroup={setGroup} onSub={setSub} />
 
       <div className="flex flex-wrap items-center gap-2">
-        <label className="relative flex min-w-0 flex-1 basis-56 items-center sm:max-w-sm">
+        <label className="relative flex min-w-0 flex-1 basis-32 items-center sm:basis-56 sm:max-w-sm">
           <Search size={14} strokeWidth={1.75} className="pointer-events-none absolute left-2.5 text-ink-muted" />
           <input
             type="search"
             aria-label="Search SKUs"
-            placeholder="Search code, name, description"
+            placeholder="Search SKUs"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-full rounded-md border border-border bg-surface py-1.5 pl-8 pr-2 text-[13px] outline-none focus:border-primary"
           />
         </label>
-        <span className="text-[12px] text-ink-secondary" aria-live="polite">
-          {count}
-          {needPhoto > 0 && <span className="text-amber-700"> · {needPhoto} need a photo</span>}
+        {/* The table below already counts the rows on a phone; only the photo warning stays there. */}
+        <span className={`text-[12px] text-ink-secondary ${needPhoto > 0 ? '' : 'max-sm:hidden'}`} aria-live="polite">
+          <span className="max-sm:hidden">{count}</span>
+          {needPhoto > 0 && <span className="text-amber-700"><span className="max-sm:hidden"> · </span>{needPhoto} need a photo</span>}
         </span>
-        <div className="ml-auto flex flex-wrap gap-2 whitespace-nowrap">
-          <Button variant="secondary" onClick={() => setSettingsOpen(true)}><Settings2 size={14} strokeWidth={1.75} /> Sub-categories</Button>
-          <Button variant="secondary" onClick={onImport}><Upload size={14} strokeWidth={1.75} /> Import SKUs</Button>
+        {/* Phone: search, New SKU and a menu share one row, so the list starts higher. */}
+        <div className="ml-auto flex flex-wrap items-center gap-2 whitespace-nowrap">
+          <Button variant="secondary" className="max-sm:hidden" onClick={() => setSettingsOpen(true)}><Settings2 size={14} strokeWidth={1.75} /> Sub-categories</Button>
+          <Button variant="secondary" className="max-sm:hidden" onClick={() => setUnitsOpen(true)}><Ruler size={14} strokeWidth={1.75} /> Units</Button>
+          <Button variant="secondary" className="max-sm:hidden" onClick={onImport}><Upload size={14} strokeWidth={1.75} /> Import SKUs</Button>
           <Button variant="primary" onClick={() => setNewOpen(true)}><Plus size={14} strokeWidth={1.75} /> New SKU</Button>
+          <div className="sm:hidden">
+            <RowActionsMenu
+              title="More actions"
+              size={36}
+              items={[
+                { icon: Settings2, label: 'Sub-categories', onClick: () => setSettingsOpen(true) },
+                { icon: Ruler, label: 'Units', onClick: () => setUnitsOpen(true) },
+                { icon: Upload, label: 'Import SKUs', onClick: onImport },
+              ]}
+            />
+          </div>
         </div>
       </div>
 
@@ -104,6 +121,7 @@ export function RenovationSkuMaster({
         />
       )}
       {settingsOpen && <RenovationSubCategorySettings initialGroup={group} onClose={() => setSettingsOpen(false)} />}
+      {unitsOpen && <RenovationUomSettings onClose={() => setUnitsOpen(false)} />}
       {openRow && (
         <RenovationSkuDrawer row={openRow} onClose={() => setOpenId(null)} onOpenSuppliers={() => onOpenSuppliers(openRow)} />
       )}
@@ -174,7 +192,7 @@ export function RenovationSkuDrawer({ row, onClose, onOpenSuppliers }: { row: Mf
             <CatalogCategoryPicker idPrefix={`sku-${row.id}`} group={group} sub={sub} onChange={(n) => { setGroup(n.group); setSub(n.sub); }} />
             <label className={styles.field}>
               <span className={styles.fieldLabel}>Unit</span>
-              <UomSelect value={uom} onChange={setUom} />
+              <UomSelect value={uom} onChange={setUom} keep={row.uom} />
             </label>
           </section>
           {error && <p role="alert" className="text-[12px] text-red-700">{error}</p>}
