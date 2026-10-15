@@ -16,6 +16,7 @@ import { todayMyt } from "../../scm/lib/my-time";
 import { loadProjectRows, loadRenovationFacts, type Db, type ProjectFacts } from "./load";
 import { planTradeTasks, type WorksLine } from "./tradeTasks";
 import { computeProjectView } from "./view";
+import { syncProjectDates } from "./projectDates";
 
 /** Legacy `projects.stage` kept meaningful for the exhibition calendar and lists. */
 export function legacyStageOf(stage: StageKey): "draft" | "setup" | "completed" {
@@ -25,7 +26,10 @@ export function legacyStageOf(stage: StageKey): "draft" | "setup" | "completed" 
 }
 
 export async function writeCachedStage(db: Db, projectId: number, facts: ProjectFacts): Promise<StageKey> {
-  const cur = computeProjectView(facts, todayMyt()).currentStage;
+  const today = todayMyt();
+  const view = computeProjectView(facts, today);
+  const cur = view.currentStage;
+  await syncProjectDates(db, facts, view, today);
   await db.prepare(`UPDATE projects SET reno_stage = ?, stage = ?, updated_at = to_char(timezone('UTC', now()), 'YYYY-MM-DD"T"HH24:MI:SS"Z"') WHERE id = ?`)
     .bind(cur, legacyStageOf(cur), projectId).run();
   return cur;

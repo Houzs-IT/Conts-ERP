@@ -31,7 +31,7 @@ import {
   applyLayout,
   layoutFor,
   projectGaps,
-  showDate,
+  projectDatesText,
   type CustomerPropertyValue,
   type ProjectShared,
   type PropertyLists,
@@ -233,8 +233,7 @@ export function CustomerBlock({
 
   const gaps = mode === "so" && project ? projectGaps(project) : [];
   const projectLabel = project ? `${project.code ?? `#${project.id}`} · ${project.name}` : mode === "project" ? "New project" : "";
-  const startDate = project?.startDate ?? null;
-  const endDate = project?.endDate ?? null;
+  const dates = projectDatesText(project, mode);
   const layoutText = value.layoutLabel || (value.bedrooms !== "" ? `${value.bedrooms} bed ${value.bathrooms} bath` : "");
 
   /* Read-only: the same sections, fields, order and labels, as compact rows. */
@@ -250,7 +249,8 @@ export function CustomerBlock({
       <div className="space-y-3">
         {group("Order information", <>
           <Row label="Project">{projectLabel}</Row>
-          <Row label="Dates">{startDate || endDate ? `${startDate ? showDate(startDate) : "—"} to ${endDate ? showDate(endDate) : "—"}` : ""}</Row>
+          <Row label="Start date">{dates.startSet ? dates.start : ""}</Row>
+          <Row label="End date">{dates.endSet ? dates.end : project ? <span className="text-ink-muted">{dates.end}</span> : ""}</Row>
           <Row label="Building">{[value.building, value.unitNo].filter(Boolean).join(" · ")}</Row>
           {!hideProperty && (
             <>
@@ -365,8 +365,9 @@ export function CustomerBlock({
             </p>
           )}
         </Cell>
-        <Cell label="Start date"><ReadOnly>{startDate ? showDate(startDate) : mode === "so" && !project ? "Pick a project" : "Not set"}</ReadOnly></Cell>
-        <Cell label="End date"><ReadOnly>{endDate ? showDate(endDate) : mode === "so" && !project ? "Pick a project" : "Not set"}</ReadOnly></Cell>
+        {/* Filled by the system, never typed (migration 0117): created day, and the day the project reached Closed. */}
+        <Cell label="Start date"><ReadOnly><span data-testid="reno-start-date" title="The day the project was created">{dates.start}</span></ReadOnly></Cell>
+        <Cell label="End date"><ReadOnly><span data-testid="reno-end-date" title="Filled on the day the project reaches Closed">{dates.end}</span></ReadOnly></Cell>
         <Cell label="Building" className="col-span-2" htmlFor={id("building")}>
           <input id={id("building")} className={input} value={value.building} disabled={off("building")} placeholder="e.g. Skyline Residence"
             onChange={(e) => set({ building: e.target.value })} />

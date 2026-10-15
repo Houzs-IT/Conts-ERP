@@ -17,6 +17,7 @@ import type { Env } from "../types";
 import { requirePageAccess, requirePermission } from "../middleware/auth";
 import { activeCompanySql, requireActiveCompanyId } from "../scm/lib/companyScope";
 import type { Db } from "../services/renovation/load";
+import { refreshProjectDates } from "../services/renovation/projectDates";
 import {
   propertyColumnsReady,
   pushProjectToOpenSos,
@@ -146,6 +147,7 @@ app.get("/:id/customer-info", requirePageAccess("projects.list"), async (c) => {
   const id = parseId(c.req.param("id"));
   if (!id) return c.json({ error: "invalid_id" }, 400);
   if (!(await propertyColumnsReady(db(c)))) return c.json(NOT_READY, 409);
+  await refreshProjectDates(db(c), id, coSql(c, "p.company_id"));
   const p = await readProjectShared(db(c), id, coSql(c, "p.company_id"));
   if (!p) return c.json({ error: "not_found" }, 404);
   return c.json({ project: p, salesOrders: await linkedSos(c, id) });

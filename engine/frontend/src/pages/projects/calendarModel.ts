@@ -22,7 +22,7 @@ export interface CalendarProject {
   event_type_name?: string | null;
   // Renovation projects (owner, 14 Oct 2026): dates computed by the server from created date to handover;
   // end_estimated marks a default-length bar (no planned handover, no SLA).
-  end_basis?: "planned_handover" | "handed_over" | "sla" | "estimate";
+  end_basis?: "completed" | "planned_handover" | "handed_over" | "sla" | "estimate";
   end_estimated?: boolean;
 }
 

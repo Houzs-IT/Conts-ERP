@@ -1,8 +1,8 @@
 /* The renovation Project List's own filters (owner, 15 Oct 2026), applied by GET /api/projects?reno=1:
    - reno_step=design,signed,...  only projects whose current step (of the six) is one of these
    - reno_hide_closed=1            "Hide completed" means: hide projects in the Closed step
-   - from / to                     a renovation project has no start / end date, so the range is matched against
-                                   its calendar bar (created date to planned handover, services/renovation/calendarSpan.ts)
+   - from / to                     matched against the project's calendar bar (Start date to End date or planned
+                                   handover, services/renovation/calendarSpan.ts)
    The step is computed (services/renovation/view.ts), not stored, so these become id lists that listProjects
    applies next to its own filters. Exhibition projects keep the Houzs filters unchanged. */
 
@@ -10,6 +10,7 @@ import { isFlowStepKey, type FlowStepKey } from "../../scm/shared/renovation-sta
 import { todayMyt } from "../../scm/lib/my-time";
 import { BOARD_CHECKLIST_KEYS, loadProjectRows, loadRenovationFacts, type Db } from "./load";
 import { computeProjectView } from "./view";
+import { syncProjectDates } from "./projectDates";
 import { renovationCalendarSpan, spanOverlaps } from "./calendarSpan";
 
 export interface ListScopeRow {
@@ -18,6 +19,8 @@ export interface ListScopeRow {
   createdAt: string | null;
   plannedHandover: string | null;
   handedOverAt: string | null;
+  startDate?: string | null;
+  endDate?: string | null;
 }
 
 export interface ListScopeQuery {
@@ -58,7 +61,7 @@ export function renovationListScope(rows: readonly ListScopeRow[], q: ListScopeQ
     const to = q.to || "9999-12-31";
     out.rangeIds = rows
       .filter((r) => {
-        const span = renovationCalendarSpan({ createdAt: r.createdAt, plannedHandover: r.plannedHandover, handedOverAt: r.handedOverAt, slaDays: null });
+        const span = renovationCalendarSpan({ createdAt: r.createdAt, plannedHandover: r.plannedHandover, handedOverAt: r.handedOverAt, slaDays: null, startDate: r.startDate, endDate: r.endDate });
         return !!span && spanOverlaps(span, from, to);
       })
       .map((r) => r.id);
@@ -73,11 +76,20 @@ export async function loadListScopeRows(db: Db, companySql: string, includeArchi
   const today = todayMyt();
   // postgres.js may hand timestamps over as Date objects
   const iso = (x: unknown): string | null => (x == null ? null : x instanceof Date ? x.toISOString() : String(x));
-  return projects.map((p) => ({
-    id: p.id,
-    step: computeProjectView(facts.get(p.id)!, today).flow.current,
-    createdAt: iso(p.created_at),
-    plannedHandover: iso(p.planned_handover_date)?.slice(0, 10) ?? null,
-    handedOverAt: iso(p.handed_over_at),
-  }));
+  const out: ListScopeRow[] = [];
+  for (const p of projects) {
+    const f = facts.get(p.id)!;
+    const v = computeProjectView(f, today);
+    const dates = await syncProjectDates(db, f, v, today);
+    out.push({
+      id: p.id,
+      step: v.flow.current,
+      createdAt: iso(p.created_at),
+      plannedHandover: iso(p.planned_handover_date)?.slice(0, 10) ?? null,
+      handedOverAt: iso(p.handed_over_at),
+      startDate: dates.startDate,
+      endDate: dates.endDate,
+    });
+  }
+  return out;
 }

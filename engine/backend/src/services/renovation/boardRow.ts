@@ -8,6 +8,7 @@ import { HOLD_FLAG_LABEL } from "../../scm/shared/renovation-stages";
 import type { ProjectFacts } from "./load";
 import type { ProjectView } from "./view";
 import type { SupplyCondition } from "./conditions";
+import { dayOf } from "./projectDates";
 
 export interface BoardRowV2 {
   id: number;
@@ -36,6 +37,10 @@ export interface BoardRowV2 {
   vo: { has: boolean; count: number; approved: number } | null;
   handoverDate: string | null;
   plannedHandoverDate: string | null;
+  /** the day the project was created; filled by the app (projectDates.ts) */
+  startDate: string | null;
+  /** the day it reached Closed; null while it is not Closed */
+  endDate: string | null;
   redFlagCount: number;
   /** the red flags themselves (code + text), the same set redFlagCount counts */
   redFlags: Array<{ code: string; text: string }>;
@@ -73,6 +78,8 @@ export function boardRowOf(f: ProjectFacts, v: ProjectView, opts: { hideMoney: b
     vo: v.vo ? { has: v.vo.count > 0, count: v.vo.count, approved: v.vo.approved } : null,
     handoverDate: f.handover?.signed_at ? String(f.handover.signed_at).slice(0, 10) : (p.handed_over_at ? String(p.handed_over_at).slice(0, 10) : null),
     plannedHandoverDate: p.planned_handover_date,
+    startDate: dayOf(p.start_date) ?? dayOf(p.created_at),
+    endDate: v.flow.current === "closed" ? dayOf(p.end_date) : null,
     redFlagCount: shownFlags.length,
     redFlags: shownFlags.map((r) => ({ code: r.code, text: r.text })),
     archived: !!p.archived_at,
