@@ -149,9 +149,9 @@ describe('unit settings', () => {
     T.mfg_products.push({ id: 'p2', code: 'BX-1', uom: 'BOX' });
     const used = await send('DELETE', '/uoms/BOX', {});
     expect(used.status).toBe(409);
-    expect((await used.json()).message).toMatch(/1 SKU/);
+    expect(await used.json()).toMatchObject({ message: expect.stringMatching(/1 SKU/) });
     T.reno_doc_lines.push({ id: 'l2', uom: null, measure_uom: 'M' });
-    expect(((await (await send('DELETE', '/uoms/M', {})).json()).message)).toMatch(/1 document line/);
+    expect(await (await send('DELETE', '/uoms/M', {})).json()).toMatchObject({ message: expect.stringMatching(/1 document line/) });
     T.reno_doc_lines.pop();
     expect((await send('DELETE', '/uoms/M', {})).status).toBe(200);
     expect((await loadUoms(sb as never)).some((u) => u.code === 'M')).toBe(false);
