@@ -110,8 +110,8 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 - Customer info block on the right column waits for feat/reno-customer-info (migration 0112).
 
 ## QA sweep (fix/qa-sweep, 15 Oct 2026, docs/qa/2026-10-15-qa-sweep.md)
-- OWNER: Dashboard "12 months" strip adds every owner statement (workbook months too) beside a guest total from reservations only, so payout reads larger than guest total (finding 6).
-- OWNER: Create reservation silently files a matching phone under the existing guest's name and drops the typed name (finding 7).
+- Decided (owner, 15 Oct): leave as is. Dashboard "12 months" strip keeps adding every owner statement beside the reservation-only guest total (finding 6).
+- Decided (owner, 15 Oct): leave as is. Create reservation keeps filing a matching phone under the existing guest (finding 7).
 - Done (fix/engine-polish): Fit-out register and Guest documents screens retired (owner, 14 Oct); their addresses show "This page does not exist". Their server endpoints and data stay; guest invoices and receipts are still issued from a reservation (finding 8).
 - Done (fix/engine-polish): engine table messages stay in the visible part of wide tables; list summary cards say "Couldn't load" with Retry; inside Property OS the engine draws no top bar of its own (tab strip, search, refresh, bell) and the phone Calendar has no second search; Settings drops the AutoCount Sync tab and its /api/sync/status call; the phone project list has New project (findings 12-16). Renovation PO: a line of another category is named before Save, and the database refusal shows inline. Phone Calendar Week in renovation mode lists dated items like the desktop.
 - Supply chain data screens could not be checked locally (engine reads through Supabase REST); check them on the staging preview (finding 17).
