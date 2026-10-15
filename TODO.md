@@ -400,3 +400,5 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Later: carry the onsite / 3D / 2D design files onto the project's POs, GRs and DOs.
 - The Houzs PO "Add line" screen shows a refused mixed-category line as a failed save (500 insert_failed with the sentence); a friendlier 409 would mean editing Houzs's PO route.
 - Field-by-field list: docs/superpowers/plans/2026-10-14-reno-doc-flow-fields.md. Check: scripts/api-checks/reno-doc-flow.mjs (needs a local Postgres + PostgREST behind the engine's SUPABASE_URL).
+- Sub-category settings: prints (PO, GR, DO, SI) still use the built-in sub-category names; a renamed one prints its old name, an added one prints its code in words. Send the label from renovation-doc-flow.ts to fix.
+- Sub-category settings: a Service sub-category added in settings gets no generic RN-* SKU (migration 0064 seeded those once), so quotation lines for it need a real SKU.

@@ -8,7 +8,6 @@ import { resolveApiAssetUrl } from '../../../components/scm-v2/PhotoGallery';
 import type { MfgProductRow } from '../../../vendor/scm/lib/mfg-products-queries';
 import {
   RENOVATION_GROUPS,
-  SUB_CATEGORIES,
   categoryGroupOf,
   isPhotoRequiredCategory,
   uomPrintLabel,
@@ -19,9 +18,6 @@ export const groupLabel = (row: Pick<MfgProductRow, 'category' | 'category_group
   const g = row.category_group ?? categoryGroupOf(row.category);
   return RENOVATION_GROUPS.find((d) => d.code === g)?.label ?? String((row.category as string | null | undefined) ?? '');
 };
-
-export const subLabel = (code: string | null | undefined): string =>
-  code ? (SUB_CATEGORIES.find((s) => s.code === code)?.label ?? code) : '';
 
 /** A SKU that cannot be activated yet because its group needs a photo it lacks. */
 export const skuNeedsPhoto = (row: Pick<MfgProductRow, 'category' | 'photoCount'>): boolean =>
@@ -55,7 +51,8 @@ export function SkuThumb({ row, size = 40 }: { row: MfgProductRow; size?: number
   return <img src={resolveApiAssetUrl(src)} alt="" loading="lazy" style={box} className="rounded border border-border object-cover" />;
 }
 
-export function renovationSkuColumns(opts: { showCost: boolean }): Column<MfgProductRow>[] {
+export function renovationSkuColumns(opts: { showCost: boolean; subLabel: (code: string | null | undefined) => string }): Column<MfgProductRow>[] {
+  const { subLabel } = opts;
   const cols: Column<MfgProductRow>[] = [
     { key: 'photo', label: 'Photo', width: '64px', disableSort: true, disableFilter: true, render: (r) => <SkuThumb row={r} /> },
     { key: 'code', label: 'Product Code', width: '150px', getValue: (r) => r.code, render: (r) => <span className="font-money text-[13px]">{r.code}</span> },

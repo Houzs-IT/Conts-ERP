@@ -12,6 +12,10 @@
 import { Hono } from 'hono';
 import { describe, expect, test } from 'vitest';
 import { batchImportMfgProductsHandler, patchMfgProductHandler } from '../src/scm/routes/mfg-products';
+import { SUB_CATEGORIES } from '../src/scm/shared/renovation-catalog';
+
+// The sub-category table as migration 0061 seeds it; SKU saves and imports check against it.
+const SUB_ROWS = () => SUB_CATEGORIES.map((s) => ({ group_code: s.group, code: s.code, label: s.label, sort_order: s.sort, legacy_categories: [...(s.legacy ?? [])], active: true }));
 
 const CO = 1;
 type Row = Record<string, unknown>;
@@ -24,6 +28,7 @@ class FakeQuery {
   constructor(private rows: Row[]) {}
   select() { return this; }
   limit() { return this; }
+  order() { return this; }
   update(p: Row) { this.op = 'update'; this.patch = p; return this; }
   insert(p: Row | Row[]) { this.op = 'insert'; this.inserted = Array.isArray(p) ? p : [p]; return this; }
   eq(col: string, val: unknown) { this.preds.push((r) => String(r[col]) === String(val)); return this; }
@@ -44,6 +49,7 @@ class FakeQuery {
 
 function harness() {
   const tables: Record<string, Row[]> = {
+    product_sub_categories: SUB_ROWS(),
     mfg_products: [
       { id: 'p-1', company_id: CO, code: '810 BOLSTER', name: 'RDS BOLSTER 810', category: 'ACCESSORY', model_id: null, description: null },
       { id: 'p-2', company_id: CO, code: 'SOFA-1', name: 'SOFA ONE', category: 'SOFA', model_id: null },
