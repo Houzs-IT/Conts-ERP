@@ -125,6 +125,7 @@ import { normalizeImportHeader, looksLikeGridExport, mapGridHeaders, isGridNoPri
 import { ProductRow, fmtRm, fmtUnit, priceForHeightTier, useSkuGridOrder, saveStagedEdits, stageRowEdit, type ProductEditPatch } from './products/SkuEditRow';
 import { CONTS_HIDDEN_MAINTENANCE_KEYS, CONTS_RENOVATION_CATALOG, resolveProductTab, visibleProductTabs } from '../../conts/catalog';
 import { RenovationSkuMaster } from './products/RenovationSkuMaster';
+import { RenovationImportHint } from './products/RenovationImportHint';
 
 const ICON_PROPS = { size: 16, strokeWidth: 1.75 } as const;
 
@@ -238,7 +239,7 @@ const RenovationSkuTab = () => {
     <>
       <RenovationSkuMaster onImport={() => setImporting(true)} onOpenSuppliers={setSuppliersRow} />
       {suppliersRow && <ProductSuppliersDrawer row={suppliersRow} onClose={() => setSuppliersRow(null)} />}
-      {importing && <ImportSkusDialog sofaSizes={sofaSizes} onClose={() => setImporting(false)} />}
+      {importing && <ImportSkusDialog renovation sofaSizes={sofaSizes} onClose={() => setImporting(false)} />}
     </>
   );
 };
@@ -4674,7 +4675,7 @@ function gridToSkuRecords(grid: string[][]): Array<Record<string, string>> {
   return out;
 }
 
-const ImportSkusDialog = ({ sofaSizes, onClose }: { sofaSizes: string[]; onClose: () => void }) => {
+const ImportSkusDialog = ({ sofaSizes, onClose, renovation = false }: { sofaSizes: string[]; onClose: () => void; renovation?: boolean }) => {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<BatchImportResult | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -4870,11 +4871,11 @@ const ImportSkusDialog = ({ sofaSizes, onClose }: { sofaSizes: string[]; onClose
           <h2 className={styles.drawerTitle}>Import SKUs</h2>
           <button type="button" className={styles.iconBtn} onClick={onClose}><X {...ICON_PROPS} /></button>
         </header>
-        <p style={{ fontSize: 'var(--fs-13)', color: '#767b6e' }}>
+        {renovation ? <RenovationImportHint /> : <p style={{ fontSize: 'var(--fs-13)', color: '#767b6e' }}>
           Pick a CSV or Excel file exported from this page. Edit the prices in Excel,
           save, and import it back. A blank cell is left as it was — it never clears a price.
           Up to 500 SKUs per file. A new category on a SKU that belongs to a model moves the model and all its SKUs.
-        </p>
+        </p>}
         <input
           type="file"
           accept=".csv,.xlsx,.xls"
