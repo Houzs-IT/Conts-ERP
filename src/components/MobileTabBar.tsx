@@ -5,6 +5,7 @@ import { useApi } from '../lib/useApi';
 import { useSession } from '../lib/session';
 import { useNavCounts } from '../lib/navBadges';
 import Icon, { toPascal } from './Icon';
+import { Logo } from './Logo';
 import { readWs, saveWs } from './Sidebar';
 
 /** Phone bottom navigation (owner, Oct 2026): Dashboard, Calendar, More, Reservations, Settings.
@@ -13,7 +14,7 @@ import { readWs, saveWs } from './Sidebar';
 const TABS = [
   { key: 'dashboard', label: 'Dashboard', icon: 'LayoutDashboard', path: '/' },
   { key: 'calendar', label: 'Calendar', icon: 'CalendarDays', path: '/reservations/calendar' },
-  { key: 'more', label: 'More', icon: 'Menu', path: '' },
+  { key: 'more', label: 'More', icon: '', path: '' },
   { key: 'bookings', label: 'Reservations', icon: 'BookOpen', path: '/reservations/bookings' },
   { key: 'settings', label: 'Settings', icon: 'Settings', path: '/settings' },
 ] as const;
@@ -44,7 +45,8 @@ export default function MobileTabBar({ path, navigate }: { path: string; navigat
                     background: color.black, color: color.gold, display: 'grid', placeItems: 'center', cursor: 'pointer',
                     boxShadow: '0 6px 16px rgba(21,21,21,0.24)',
                   }}>
-                  <Icon name="Menu" size="base" />
+                  {/* The company mark, as at the top left: a grid read as a QR scanner and three lines as a page menu. */}
+                  <Logo variant="mark" size="sm" onDark />
                 </button>
               </div>
             );
