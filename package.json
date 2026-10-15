@@ -15,7 +15,8 @@
     "deploy": "npm run build && wrangler pages deploy dist --branch theconts-os",
     "setup": "node scripts/setup.mjs",
     "deploy:cron": "node scripts/cron-deploy.mjs",
-    "cron:dry-run": "node scripts/cron-dry-run.mjs"
+    "cron:dry-run": "node scripts/cron-dry-run.mjs",
+    "dev:all": "node scripts/dev-all.mjs"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",
