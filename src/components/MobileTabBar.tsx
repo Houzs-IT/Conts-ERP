@@ -84,7 +84,11 @@ function MoreSheet({ path, navigate, onClose }: { path: string; navigate: (p: st
   // Same Rental / Supply chain split as the desktop sidebar, sharing its saved choice.
   const [ws, setWs] = useState<Workspace>(() => workspaceOf(path) ?? readWs());
   const pick = (w: Workspace) => { setWs(w); saveWs(w); };
-  const all = useMemo(() => navFor(user!.role, !!engine.data?.enabled, user!.access).filter(g => g.label !== 'SYSTEM'), [user, engine.data?.enabled]);
+  // System pages live under Settings, except IT Support, which every desk role needs: on the rental side it gets
+  // the same SUPPORT card as on the supply chain side.
+  const all = useMemo(() => navFor(user!.role, !!engine.data?.enabled, user!.access)
+    .map(g => g.label === 'SYSTEM' ? { ...g, label: 'SUPPORT', items: g.items.filter(it => it.key === 'itSupport') } : g),
+  [user, engine.data?.enabled]);
   const hasSupply = all.some(g => g.workspace === 'supply');
   const sections = useMemo((): MenuSection[] => {
     const needle = q.trim().toLowerCase();
@@ -93,11 +97,11 @@ function MoreSheet({ path, navigate, onClose }: { path: string; navigate: (p: st
     // Matching a category's own name shows all of its screens.
     const hit = (label: string) => !needle || label.toLowerCase().includes(needle);
     return all
-      .filter(g => needle || !hasSupply || g.workspace === ws)
+      .filter(g => needle ? !(g.workspace === 'supply' && g.label === 'SUPPORT') : (!hasSupply || g.workspace === ws)) // a search lists IT Support once
       .flatMap(g => {
         const out: MenuSection[] = [];
         let loose: MenuRow[] = [];
-        const flush = () => { if (loose.length) out.push({ key: `${g.label}:${out.length}`, label: g.label, rows: loose }); loose = []; };
+        const flush = () => { if (loose.length) out.push({ key: `${g.workspace}:${g.label}:${out.length}`, label: g.label, rows: loose }); loose = []; };
         for (const it of g.items) {
           if (it.children?.length) {
             flush();
