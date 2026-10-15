@@ -21,6 +21,7 @@ import { pwpCodes } from "./routes/pwp-codes";
 import { specialAddons } from "./routes/special-addons";
 import { fabricLibrary } from "./routes/fabric-library";
 import { mfgProducts } from "./routes/mfg-products";
+import { renovationCatalogSettings } from "./routes/renovation-catalog-settings";
 import { productModels } from "./routes/product-models";
 import { sofaCompartmentPhotos } from "./routes/sofa-compartment-photos";
 import { maintenanceConfig } from "./routes/maintenance-config";
@@ -260,6 +261,8 @@ scm.use("/fabric-library/*", scmAreaGuard("scm.procurement.products", { openRead
 scm.route("/fabric-library", fabricLibrary);
 scm.use("/mfg-products/*", scmAreaGuard("scm.procurement.products", { openRead: true }));
 scm.route("/mfg-products", mfgProducts);
+scm.use("/renovation-catalog/*", scmAreaGuard("scm.procurement.products", { openRead: true }));
+scm.route("/renovation-catalog", renovationCatalogSettings);
 scm.use("/product-models/*", scmAreaGuard("scm.procurement.products", { openRead: true }));
 scm.route("/product-models", productModels);
 // POS repoint (cutover P2) — the 2990 POS reads its whole catalog + configurator

@@ -1,0 +1,81 @@
+# Publishes the supply chain engine (engine/) to STAGING: worker conts-scm-engine-staging and the screens site
+# theconts-scm, both pointed at the staging database. Runs when a push to `staging` changes it (a one-off preview)
+# and when a merge to `main` changes it, since sync-staging-branch.yml then makes `staging` equal to `main` with a
+# push that cannot start other workflows. Also by hand. Publishes only the part that changed: engine/backend is the
+# server, engine/frontend the screens. Uses the repository secret CLOUDFLARE_API_TOKEN (Conts ERP account).
+name: Deploy engine to staging
+on:
+  push:
+    branches: [staging, main]
+    paths:
+      - 'engine/backend/**'
+      - 'engine/frontend/**'
+      - '.github/workflows/deploy-engine-staging.yml'
+  workflow_dispatch:
+    inputs:
+      part:
+        description: 'What to publish'
+        required: true
+        default: both
+        type: choice
+        options: [both, screens, server]
+concurrency: deploy-engine-staging
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: 3a9ff01edda85702f9e2649fb340f1cc
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check the settings name only Conts staging
+        # The engine is a copy of Houzs's code: its settings must never name Houzs's worker, site or storage.
+        run: |
+          b=engine/backend/wrangler.toml f=engine/frontend/wrangler.toml
+          grep -q '^name = "conts-scm-engine-staging"' $b || { echo "engine/backend/wrangler.toml is not the Conts staging worker"; exit 1; }
+          grep -q '^name = "theconts-scm"' $f || { echo "engine/frontend/wrangler.toml is not the Conts staging screens site"; exit 1; }
+          grep -q 'API_ORIGIN = "https://conts-scm-engine-staging.conts-erp.workers.dev"' $f || { echo "the staging screens do not point at the staging engine"; exit 1; }
+          grep -q 'AUTOCOUNT_SYNC_DISABLED = "true"' $b || { echo "AutoCount is not switched off"; exit 1; }
+          if grep -E '^\s*(\[triggers\]|crons|routes?\s*=|account_id)' $b; then echo "the staging engine must not have schedules, routes or another account"; exit 1; fi
+          if grep -Ei 'bucket_name = "[^"]*"' $b | grep -v 'theconts-scm-staging'; then echo "a storage bucket other than theconts-scm-staging"; exit 1; fi
+          echo "Settings name only Conts staging."
+      - name: Decide what to publish
+        id: part
+        env:
+          CHOSEN: ${{ inputs.part }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          part="$CHOSEN"
+          if [ -z "$part" ]; then
+            part=both
+            # Anything that stops the comparison (a first push, a history rewrite) publishes both parts.
+            if git fetch --quiet --depth=1 origin "$BEFORE" 2>/dev/null && changed=$(git diff --name-only "$BEFORE" HEAD 2>/dev/null); then
+              server=$(echo "$changed" | grep -c '^engine/backend/' || true)
+              screens=$(echo "$changed" | grep -c '^engine/frontend/' || true)
+              if [ "$server" -gt 0 ] && [ "$screens" -eq 0 ]; then part=server; fi
+              if [ "$screens" -gt 0 ] && [ "$server" -eq 0 ]; then part=screens; fi
+              # Only this file changed: nothing of the engine itself to publish.
+              if [ "$screens" -eq 0 ] && [ "$server" -eq 0 ]; then part=none; fi
+            fi
+          fi
+          echo "Publishing: $part"
+          echo "part=$part" >> "$GITHUB_OUTPUT"
+      - name: Install engine server
+        if: steps.part.outputs.part == 'both' || steps.part.outputs.part == 'server'
+        run: npm ci
+        working-directory: engine/backend
+      - name: Publish engine server
+        if: steps.part.outputs.part == 'both' || steps.part.outputs.part == 'server'
+        run: npx wrangler deploy
+        working-directory: engine/backend
+      - name: Install and build engine screens
+        if: steps.part.outputs.part == 'both' || steps.part.outputs.part == 'screens'
+        run: npm ci && npm run build
+        working-directory: engine/frontend
+      - name: Publish engine screens
+        if: steps.part.outputs.part == 'both' || steps.part.outputs.part == 'screens'
+        run: npx wrangler pages deploy --branch=main --commit-dirty=true
+        working-directory: engine/frontend

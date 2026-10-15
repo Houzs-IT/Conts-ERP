@@ -1,7 +1,8 @@
 /* Group and sub-category chips for the renovation SKU Master (spec 2026-10-09
    section 3). One row of the seven groups, and, once a group is picked, a row of
    its sub-categories. Same pill look as the Houzs category chips. */
-import { RENOVATION_GROUPS, subCategoriesOf, type CatalogGroup } from '../../../vendor/shared/renovation-catalog';
+import { RENOVATION_GROUPS, type CatalogGroup } from '../../../vendor/shared/renovation-catalog';
+import { useRenovationCatalog } from '../../../vendor/scm/lib/renovation-catalog-queries';
 
 const chipClass = (active: boolean, small = false) =>
   [
@@ -23,7 +24,8 @@ export function CatalogChips({
   onGroup: (g: CatalogGroup | null) => void;
   onSub: (s: string | null) => void;
 }) {
-  const subs = group ? subCategoriesOf(group) : [];
+  const catalog = useRenovationCatalog();
+  const subs = group ? catalog.pickable(group, sub) : [];
   return (
     <div className="space-y-2">
       <div role="group" aria-label="Category group" className="flex flex-wrap gap-1.5">
