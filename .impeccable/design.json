@@ -1,0 +1,173 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-15T00:00:00+08:00",
+  "title": "Design System: The Conts ERP",
+  "extensions": {
+    "colorMeta": {
+      "champagne-gold": { "role": "primary", "displayName": "Champagne Gold", "canonical": "#C8A46A", "tonalRamp": ["#4A3817", "#6B5223", "#8A6A2F", "#AE8B52", "#C8A46A", "#DDC597", "#F5EEDF", "#FBF7F0"] },
+      "gold-ink": { "role": "primary", "displayName": "Gold Ink", "canonical": "#8A6A2F" },
+      "gold-tint": { "role": "primary", "displayName": "Gold Tint", "canonical": "#FBF7F0" },
+      "gold-highlight": { "role": "primary", "displayName": "Gold Highlight", "canonical": "#DDC597" },
+      "brand-black": { "role": "neutral", "displayName": "Brand Black", "canonical": "#151515", "tonalRamp": ["#0F0F0F", "#151515", "#1E1E1E", "#242424", "#333331", "#4A4844", "#706D67", "#B8B1A8"] },
+      "basalt-charcoal": { "role": "neutral", "displayName": "Basalt Charcoal", "canonical": "#242424" },
+      "basalt-raised": { "role": "neutral", "displayName": "Basalt Raised", "canonical": "#1E1E1E" },
+      "on-dark": { "role": "neutral", "displayName": "On Dark", "canonical": "#DEDAD3" },
+      "on-dark-muted": { "role": "neutral", "displayName": "On Dark Muted", "canonical": "#8A8680" },
+      "ink": { "role": "neutral", "displayName": "Ink", "canonical": "#252525" },
+      "ink-secondary": { "role": "neutral", "displayName": "Ink Secondary", "canonical": "#4A4844" },
+      "ink-muted": { "role": "neutral", "displayName": "Ink Muted", "canonical": "#706D67" },
+      "ink-faint": { "role": "neutral", "displayName": "Ink Faint", "canonical": "#A8A29A" },
+      "stone-page": { "role": "neutral", "displayName": "Stone Page", "canonical": "#FAF9F6", "tonalRamp": ["#C7C1B6", "#DEDAD3", "#E5E1DA", "#EDEAE4", "#F1F0ED", "#FAF9F6", "#FFFFFF"] },
+      "card-white": { "role": "neutral", "displayName": "Card White", "canonical": "#FFFFFF" },
+      "stone-muted": { "role": "neutral", "displayName": "Stone Muted", "canonical": "#F1F0ED" },
+      "stone-sunken": { "role": "neutral", "displayName": "Stone Sunken", "canonical": "#EDEAE4" },
+      "line-default": { "role": "neutral", "displayName": "Line Default", "canonical": "#DEDAD3" },
+      "line-strong": { "role": "neutral", "displayName": "Line Strong", "canonical": "#C7C1B6" },
+      "line-hairline": { "role": "neutral", "displayName": "Line Hairline", "canonical": "#E5E1DA" },
+      "success-fg": { "role": "status", "displayName": "Success", "canonical": "#11694A", "tonalRamp": ["#0E5C41", "#11694A", "#16845B", "#E9F5EF"] },
+      "warning-fg": { "role": "status", "displayName": "Warning", "canonical": "#8A5A12", "tonalRamp": ["#8A5A12", "#B7791F", "#FFF4D8"] },
+      "critical-fg": { "role": "status", "displayName": "Critical", "canonical": "#A8352F", "tonalRamp": ["#8F2C27", "#A8352F", "#C2413B", "#FCECEB"] },
+      "info-fg": { "role": "status", "displayName": "Info", "canonical": "#2E6DA4", "tonalRamp": ["#2E6DA4", "#EAF2FA"] },
+      "neutral-fg": { "role": "status", "displayName": "Neutral", "canonical": "#706D67", "tonalRamp": ["#706D67", "#C7C1B6", "#F1F0ED"] },
+      "channel-airbnb": { "role": "channel", "displayName": "Airbnb", "canonical": "#FF5A5F" },
+      "channel-booking": { "role": "channel", "displayName": "Booking.com", "canonical": "#003B95" },
+      "channel-agoda": { "role": "channel", "displayName": "Agoda", "canonical": "#5C2D91" }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "Reserved for brand surfaces; not yet used in the app." },
+      "headline": { "displayName": "Headline", "purpose": "Page title in PageHeader." },
+      "title": { "displayName": "Title", "purpose": "Section headings within a page." },
+      "heading": { "displayName": "Heading", "purpose": "Card titles." },
+      "body": { "displayName": "Body", "purpose": "Table cells, form values, nav items, buttons." },
+      "meta": { "displayName": "Meta", "purpose": "Subtitles, field labels, help text, badges." },
+      "label": { "displayName": "Label", "purpose": "Uppercase eyebrows and table column headers." },
+      "mono": { "displayName": "Mono", "purpose": "Codes, IDs and references only." }
+    },
+    "shadows": [
+      { "name": "card", "value": "0 1px 2px 0 rgba(21,21,21,0.04), 0 0 0 1px rgba(21,21,21,0.04)", "purpose": "Whisper of lift; used on the reservation calendar grid." },
+      { "name": "raised", "value": "0 2px 8px 0 rgba(21,21,21,0.06)", "purpose": "Defined, not yet used." },
+      { "name": "dropdown", "value": "0 4px 6px -1px rgba(21,21,21,0.08), 0 2px 4px -2px rgba(21,21,21,0.06)", "purpose": "Menus and select popovers." },
+      { "name": "overlay", "value": "0 12px 32px 0 rgba(21,21,21,0.16)", "purpose": "Dialogs and drawers, over a 44% brand black scrim." },
+      { "name": "focus-ring", "value": "0 0 0 2px rgba(200,164,106,0.35)", "purpose": "Focus on inputs and controls, with a champagne gold border." }
+    ],
+    "motion": [
+      { "name": "motion-fast", "value": "120ms", "purpose": "Hover and pressed states." },
+      { "name": "motion-standard", "value": "200ms", "purpose": "Menus, drawers, toasts." },
+      { "name": "motion-slow", "value": "240ms", "purpose": "Dialogs." },
+      { "name": "ease-out", "value": "cubic-bezier(0.16, 1, 0.3, 1)", "purpose": "Default easing for entrances and state changes." },
+      { "name": "ease-standard", "value": "cubic-bezier(0.4, 0, 0.2, 1)", "purpose": "Symmetric transitions." }
+    ],
+    "breakpoints": [
+      { "name": "sm", "value": "640px" },
+      { "name": "md", "value": "768px" },
+      { "name": "lg", "value": "1024px" },
+      { "name": "content-max", "value": "1600px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The one primary action on a page, last in the action row.",
+      "html": "<button class=\"ds-btn ds-btn-primary\">Generate statement</button>",
+      "css": ".ds-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 40px; padding: 0 16px; font-family: var(--font-sans, 'IBM Plex Sans', sans-serif); font-size: 13px; font-weight: 500; white-space: nowrap; border-radius: 8px; border: 1px solid transparent; cursor: pointer; transition: background 120ms cubic-bezier(0.16,1,0.3,1), border-color 120ms cubic-bezier(0.16,1,0.3,1); } .ds-btn:focus-visible { outline: none; box-shadow: 0 0 0 2px rgba(200,164,106,0.35); border-color: #C8A46A; } .ds-btn-primary { background: #151515; color: #FFFFFF; }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Default button for most actions.",
+      "html": "<button class=\"ds-btn-secondary\">Export</button>",
+      "css": ".ds-btn-secondary { display: inline-flex; align-items: center; height: 40px; padding: 0 16px; font-family: var(--font-sans, 'IBM Plex Sans', sans-serif); font-size: 13px; font-weight: 500; border-radius: 8px; background: #FFFFFF; color: #252525; border: 1px solid #DEDAD3; cursor: pointer; transition: background 120ms cubic-bezier(0.16,1,0.3,1); } .ds-btn-secondary:focus-visible { outline: none; border-color: #C8A46A; box-shadow: 0 0 0 2px rgba(200,164,106,0.35); }"
+    },
+    {
+      "name": "Brand Button",
+      "kind": "button",
+      "refersTo": "button-brand",
+      "description": "The Conts's own premium action: gold border, gold ink text.",
+      "html": "<button class=\"ds-btn-brand\">Set up in Channex</button>",
+      "css": ".ds-btn-brand { display: inline-flex; align-items: center; height: 40px; padding: 0 16px; font-family: var(--font-sans, 'IBM Plex Sans', sans-serif); font-size: 13px; font-weight: 500; border-radius: 8px; background: transparent; color: #8A6A2F; border: 1px solid #C8A46A; cursor: pointer; } .ds-btn-brand:focus-visible { outline: none; box-shadow: 0 0 0 2px rgba(200,164,106,0.35); }"
+    },
+    {
+      "name": "Danger Button",
+      "kind": "button",
+      "refersTo": "button-danger",
+      "description": "Destructive confirm.",
+      "html": "<button class=\"ds-btn-danger\">Delete owner</button>",
+      "css": ".ds-btn-danger { display: inline-flex; align-items: center; height: 40px; padding: 0 16px; font-family: var(--font-sans, 'IBM Plex Sans', sans-serif); font-size: 13px; font-weight: 500; border-radius: 8px; background: #A8352F; color: #FFFFFF; border: 1px solid transparent; cursor: pointer; transition: background 120ms ease-out; } .ds-btn-danger:hover { background: #8F2C27; } .ds-btn-danger:focus-visible { outline: none; box-shadow: 0 0 0 2px rgba(200,164,106,0.35); }"
+    },
+    {
+      "name": "Text Field",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Label always above; gold focus border and ring.",
+      "html": "<label class=\"ds-field\"><span class=\"ds-field-label\">Management fee (%)</span><input class=\"ds-input\" value=\"20.00\" /></label>",
+      "css": ".ds-field { display: flex; flex-direction: column; gap: 7px; font-family: var(--font-sans, 'IBM Plex Sans', sans-serif); } .ds-field-label { font-size: 12px; font-weight: 500; color: #706D67; } .ds-input { height: 40px; padding: 0 14px; font: inherit; font-size: 13px; color: #252525; background: #FFFFFF; border: 1px solid #DEDAD3; border-radius: 8px; outline: none; text-align: right; font-variant-numeric: tabular-nums; transition: border-color 120ms cubic-bezier(0.16,1,0.3,1), box-shadow 120ms cubic-bezier(0.16,1,0.3,1); } .ds-input:focus { border-color: #C8A46A; box-shadow: 0 0 0 2px rgba(200,164,106,0.35); }"
+    },
+    {
+      "name": "Status Badge",
+      "kind": "chip",
+      "refersTo": "badge-success",
+      "description": "Closed status vocabulary: -fg text on -bg tint, label required.",
+      "html": "<span class=\"ds-badge ds-badge-success\">Ready</span> <span class=\"ds-badge ds-badge-warning\">Dirty</span> <span class=\"ds-badge ds-badge-critical\">Overdue</span> <span class=\"ds-badge ds-badge-info\">Confirmed</span> <span class=\"ds-badge ds-badge-neutral\">Checked out</span>",
+      "css": ".ds-badge { display: inline-flex; align-items: center; font-family: var(--font-sans, 'IBM Plex Sans', sans-serif); font-size: 12px; font-weight: 500; line-height: 1.35; padding: 4px 10px; border-radius: 999px; white-space: nowrap; } .ds-badge-success { background: #E9F5EF; color: #11694A; } .ds-badge-warning { background: #FFF4D8; color: #8A5A12; } .ds-badge-critical { background: #FCECEB; color: #A8352F; } .ds-badge-info { background: #EAF2FA; color: #2E6DA4; } .ds-badge-neutral { background: #F1F0ED; color: #706D67; }"
+    },
+    {
+      "name": "Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Flat white card with a 1px warm border and a header row.",
+      "html": "<div class=\"ds-card\"><div class=\"ds-card-head\"><span class=\"ds-card-title\">September statement</span><button class=\"ds-link\">View all</button></div><div class=\"ds-card-body\"><span class=\"ds-eyebrow\">Net payout</span><span class=\"ds-money\">RM 4,812.50</span></div></div>",
+      "css": ".ds-card { background: #FFFFFF; border: 1px solid #DEDAD3; border-radius: 12px; overflow: hidden; font-family: var(--font-sans, 'IBM Plex Sans', sans-serif); max-width: 360px; } .ds-card-head { padding: 18px 20px 14px; display: flex; align-items: center; justify-content: space-between; gap: 12px; } .ds-card-title { font-size: 15px; font-weight: 600; color: #252525; } .ds-link { font: inherit; font-size: 12px; font-weight: 600; color: #8A6A2F; background: none; border: none; cursor: pointer; } .ds-link:hover { color: #6B5223; } .ds-link:focus-visible { outline: 2px solid rgba(200,164,106,0.5); outline-offset: 2px; } .ds-card-body { padding: 0 20px 20px; display: flex; flex-direction: column; gap: 4px; } .ds-eyebrow { font-size: 11px; font-weight: 500; letter-spacing: 0.05em; text-transform: uppercase; color: #706D67; } .ds-money { font-size: 26px; font-weight: 600; letter-spacing: -0.01em; color: #252525; font-variant-numeric: tabular-nums; }"
+    },
+    {
+      "name": "Sidebar Navigation",
+      "kind": "nav",
+      "refersTo": "sidebar-item-active",
+      "description": "Dark basalt shell; active item gets a charcoal fill and a 2px gold inset bar.",
+      "html": "<nav class=\"ds-nav\"><span class=\"ds-nav-group\">Operations</span><a class=\"ds-nav-item ds-nav-active\" href=\"#\">Bookings<span class=\"ds-nav-count\">12</span></a><a class=\"ds-nav-item\" href=\"#\">Calendar</a><a class=\"ds-nav-item\" href=\"#\">Housekeeping</a></nav>",
+      "css": ".ds-nav { width: 224px; padding: 12px 10px; background: #151515; display: flex; flex-direction: column; gap: 2px; font-family: var(--font-sans, 'IBM Plex Sans', sans-serif); border-radius: 12px; } .ds-nav-group { font-size: 10px; font-weight: 600; letter-spacing: 0.13em; text-transform: uppercase; color: #8A8680; padding: 4px 10px 6px; } .ds-nav-item { display: flex; align-items: center; height: 34px; padding: 0 10px; border-radius: 8px; font-size: 13px; color: #DEDAD3; text-decoration: none; transition: background 120ms ease-out; } .ds-nav-item:hover { background: rgba(255,255,255,0.06); } .ds-nav-item:focus-visible { outline: 2px solid rgba(200,164,106,0.6); outline-offset: -2px; } .ds-nav-active { background: #242424; color: #FFFFFF; box-shadow: inset 2px 0 0 #C8A46A; } .ds-nav-count { margin-left: auto; font-size: 11px; padding: 1px 7px; border-radius: 999px; background: rgba(200,164,106,0.18); color: #C8A46A; font-variant-numeric: tabular-nums; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Private Ledger",
+    "overview": "The Conts reads like a well-kept account book. Warm stone paper, near-black ink, and a single champagne gold that appears only where something belongs to The Conts or is selected. Every screen is a page in that ledger: an owner checking a statement, a supervisor clearing today's turnovers, finance closing a payout run. The design earns trust by being exact, not by being loud.\n\nDensity is operational. Tables run at 48px rows (40px compact), body copy sits at 13px, and every number is set in tabular figures so a column never shifts. A dark basalt sidebar frames a light workspace; everything inside the workspace is flat, separated by 1px warm borders rather than shadows. Motion is short (120 to 240ms) and never decorates a number.\n\nThe system is token driven by brand rule: tokens.css at the repo root is the one file a brand change touches, and many of its values are marked PROVISIONAL until the client supplies final artwork. The supply chain engine (engine/) has its own stylesheet and is recoloured to this palette at build time; it is not governed component by component by this file.",
+    "keyCharacteristics": [
+      "Warm neutrals (stone and basalt), never cold greys.",
+      "Champagne gold as identity and selection only, never a status.",
+      "Flat by default: a 1px border and no shadow; shadows only on things that float.",
+      "Status always carries a text label; colour is never the only signal.",
+      "Tabular figures on every money value, date, metric and table.",
+      "One sans family (IBM Plex Sans), mono only for codes and references."
+    ],
+    "rules": [
+      { "name": "The Gold Is a Signature Rule", "body": "Gold marks The Conts or the current selection. It never means success, warning or error, and it is never an accepted Badge tone.", "section": "colors" },
+      { "name": "The Three Roles Rule", "body": "Status text uses -fg on -bg; -line is never used for text.", "section": "colors" },
+      { "name": "The Warm Neutral Rule", "body": "Every grey in the product is warm (stone or basalt). Do not introduce cool slate or pure greys.", "section": "colors" },
+      { "name": "The Tabular Figures Rule", "body": "Every financial value, date, metric and table column uses tabular figures, so a number can never reflow a column.", "section": "typography" },
+      { "name": "The Two Uppercases Rule", "body": "Uppercase is reserved for small labels (eyebrows, column headers, nav group labels) and the THE CONTS wordmark (0.18em tracking). Nothing else is set in capitals.", "section": "typography" },
+      { "name": "The 11px Floor Rule", "body": "No authored size below 11px (the 10px nav group label is the single exception, on the dark shell).", "section": "typography" },
+      { "name": "The Flat by Default Rule", "body": "At rest, a surface is a 1px border and no shadow. If it does not float, it does not cast.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do take every colour, radius, shadow and duration from tokens.css (or src/theme.ts, which mirrors it). Nothing hard-codes a brand hex.",
+      "Do use Gold Ink (#8A6A2F) for any gold text on light surfaces; Champagne Gold is for marks, borders and fills.",
+      "Do pair every status colour with its text label, using -fg on -bg.",
+      "Do set money, dates, metrics and table columns in tabular figures, with \"RM \" before amounts.",
+      "Do keep surfaces flat with 1px warm borders; reserve shadows for menus, dialogs and drawers.",
+      "Do order page actions as [secondary] [secondary] [Primary], with one primary action.",
+      "Do use 44px targets on touch surfaces (field crew, owner portal).",
+      "Do keep motion between 120 and 240ms with the ease-out curve, and honour reduced motion."
+    ],
+    "donts": [
+      "Don't use gold to mean success, warning or error, or as a Badge tone.",
+      "Don't put white-alpha text on the dark shell; use On Dark or On Dark Muted.",
+      "Don't use a -line status colour as text.",
+      "Don't introduce cool greys, a second icon family, or a second sans typeface.",
+      "Don't animate a financial value or loop any animation except the live-connection dot.",
+      "Don't place dense UI text directly on photography; use the photo scrim.",
+      "Don't use uppercase outside small labels and the wordmark."
+    ]
+  }
+}

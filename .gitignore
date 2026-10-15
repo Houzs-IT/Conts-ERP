@@ -21,3 +21,9 @@ engine/frontend/*.tsbuildinfo
 uploads/*.xlsx
 uploads/*.xls
 uploads/*.csv
+
+#understand anything
+.ua
+
+# local cache of the design hook
+.impeccable/hook.cache.json
