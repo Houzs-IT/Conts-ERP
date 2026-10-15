@@ -1,11 +1,12 @@
 import { type Env, one, run, json, fail, audit } from '../../../../_lib/db';
 import { requireSession } from '../../../../_lib/auth';
-import { channexDeactivateChannel, channexDeleteChannel, channexDeleteMapping } from '../../../../_lib/channex';
+import { channexDeactivateChannel, channexDeleteChannel, channexDeleteMapping, channexRemoveHotelRoom } from '../../../../_lib/channex';
 import { OTA_LABEL, type Ota } from '../../../../_lib/channexChannels';
 
-/** DELETE /api/units/:id/channels/:rowId — disconnects the unit from an OTA. Booking.com / Agoda: the
- *  unit's own channel is switched off and deleted. Airbnb: only this unit's listing mapping is removed;
- *  the account's channel stays for the other units on it. Bookings already received are kept. */
+/** DELETE /api/units/:id/channels/:rowId — disconnects the unit from an OTA. Booking.com / Agoda: a hotel channel only
+ *  this unit uses is switched off and deleted; one the building's other units share (migration 0117) keeps running and
+ *  only this unit's room is taken off it. Airbnb: only this unit's listing mapping is removed; the account's channel
+ *  stays for the other units on it. Bookings already received are kept. */
 export const onRequestDelete: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
@@ -20,6 +21,11 @@ export const onRequestDelete: PagesFunction<Env> = async ({ request, env, params
       const r = await channexDeleteMapping(env, row.channex_channel_id, row.channex_mapping_id);
       if (!r.ok && r.status !== 404) return fail('CHANNEX_REFUSED', `Channex did not remove the Airbnb listing (${r.status}).`, 502);
     }
+  } else if (await one(env, 'SELECT 1 AS x FROM channex_channels WHERE channex_channel_id = ? AND id <> ?', row.channex_channel_id, row.id)) {
+    const plan = await one<{ p: string | null }>(env, `SELECT ${row.ota === 'agoda' ? 'channex_rate_plan_agoda' : 'channex_rate_plan_booking_com'} AS p FROM units WHERE id = ?`, String(params.id));
+    const r = plan?.p ? await channexRemoveHotelRoom(env, row.channex_channel_id, plan.p) : null;
+    // vocab-ok: OTA_LABEL is a code name; room is the Booking.com/Agoda word for what the unit is sold as
+    if (!r || (!r.ok && r.status !== 404)) return fail('CHANNEX_REFUSED', `Channex did not take this unit's room off the ${OTA_LABEL[row.ota]} connection (${r?.status ?? 'no rate plan'}).`, 502);
   } else {
     const off = await channexDeactivateChannel(env, row.channex_channel_id);
     const del = await channexDeleteChannel(env, row.channex_channel_id);

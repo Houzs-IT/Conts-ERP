@@ -1,7 +1,7 @@
-import { type Env, one, fail } from './db';
-import { requireSession, type Session } from './auth';
+import { type Env, one, fail, json } from './db';
+import { requireSession, isFieldRole, type Session } from './auth';
 import { MASTER_ROLES } from './properties';
-import { channexConfigured } from './channex';
+import { channexConfigured, channexTestConnection, channexMappingDetails, type HotelOta } from './channex';
 
 export const OTAS = ['airbnb', 'booking_com', 'agoda'] as const;
 export type Ota = typeof OTAS[number];
@@ -30,3 +30,45 @@ export async function linkedUnitFor(request: Request, env: Env, unitId: string):
 /** A Channex refusal as a user-safe failure; the detail goes along for support. */
 export const channexRefused = (what: string, status: number, body: unknown) =>
   fail('CHANNEX_REFUSED', `Channex did not ${what} (${status}).`, 502, { detail: JSON.stringify(body ?? {}).slice(0, 300) });
+
+/** Checks a Booking.com or Agoda Hotel ID with Channex and answers with the rooms and rates that hotel has on the OTA. */
+export async function hotelRooms(env: Env, b: any): Promise<Response> {
+  const ota = b?.ota as HotelOta;
+  if (ota !== 'booking_com' && ota !== 'agoda') return fail('VALIDATION', 'Pick Booking.com or Agoda.', 422);
+  const hotelId = String(b?.hotelId ?? '').trim();
+  if (!/^\d{3,12}$/.test(hotelId)) return fail('VALIDATION', 'Enter the Hotel ID (numbers only).', 422, { hotelId: 'Numbers only.' });
+
+  const test = await channexTestConnection(env, ota, hotelId);
+  // vocab-ok: OTA_LABEL is a code name; the text shows the channel name
+  if (!test.ok) return channexRefused(`check the ${OTA_LABEL[ota]} Hotel ID`, test.status, test.body);
+  if (!test.body?.data?.success) {
+    // vocab-ok: OTA_LABEL is a code name; the text shows the channel name
+    return fail('HOTEL_NOT_READY', `${OTA_LABEL[ota]} did not accept Hotel ID ${hotelId}. Check the number, and that Channex is chosen as the channel manager in the ${OTA_LABEL[ota]} extranet.`, 422,
+      { detail: JSON.stringify(test.body?.data?.errors ?? {}).slice(0, 300) });
+  }
+  const details = await channexMappingDetails(env, ota, hotelId);
+  // vocab-ok: OTA_LABEL is a code name; room is the Booking.com/Agoda word on the linking screen
+  if (!details.ok) return channexRefused(`read the ${OTA_LABEL[ota]} rooms`, details.status, details.body);
+  const d = details.body?.data ?? {};
+  return json({
+    pricingType: d.pricing_type ?? 'Standard',
+    rooms: (d.rooms ?? []).map((r: any) => ({
+      id: String(r.id), title: r.title,
+      rates: (r.rates ?? []).map((x: any) => ({ id: String(x.id), title: x.title, maxPersons: x.max_persons ?? null, pricing: x.pricing ?? d.pricing_type ?? 'Standard', readonly: !!x.readonly })),
+    })),
+  });
+}
+
+export interface ChannexBuilding { id: string; name: string; channex_property_id: string | null }
+
+/** Signed in, allowed to change connections, Channex configured here, and the building has its Channex listing. */
+export async function buildingFor(request: Request, env: Env, id: string): Promise<{ session: Session; building: ChannexBuilding } | { response: Response }> {
+  const { session, response } = await requireSession(request, env);
+  if (!session) return { response: response! };
+  if (!MASTER_ROLES.includes(session.role) || isFieldRole(session.role)) return { response: fail('FORBIDDEN', 'Only management, finance and operations managers can change channel connections.', 403) };
+  if (!channexConfigured(env)) return { response: fail('NOT_CONFIGURED', 'Channex is not connected on this environment yet.', 501) };
+  const building = await one<ChannexBuilding>(env, 'SELECT id, name, channex_property_id FROM properties WHERE id = ?', id);
+  if (!building) return { response: fail('NOT_FOUND', 'That building does not exist.', 404) };
+  if (!building.channex_property_id) return { response: fail('NOT_LINKED', "Set one of this building's units up in Channex first; that creates the building's listing.", 409) };
+  return { session, building };
+}

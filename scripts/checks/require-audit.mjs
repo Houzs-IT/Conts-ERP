@@ -17,6 +17,7 @@ export const allow = {
   'functions/api/supply-chain/engine-session.ts': 'Issues a sign-in for the supply chain engine, like login; nothing in Conts changes.',
   'functions/api/units/[id]/channels/airbnb-link.ts': 'Asks Channex for an Airbnb sign-in link; the connection is stored and audited when Airbnb sends the person back.',
   'functions/api/units/[id]/channels/lookup.ts': 'Read-only check of a Hotel ID with Channex, sent as POST; nothing is stored.',
+  'functions/api/properties/[id]/channels/lookup.ts': 'Read-only check of a Hotel ID with Channex for a building, sent as POST; nothing is stored.',
 };
 
 export const def = {

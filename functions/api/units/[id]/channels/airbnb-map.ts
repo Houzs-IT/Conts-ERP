@@ -1,5 +1,5 @@
 import { type Env, one, run, json, fail, audit, nowIso } from '../../../../_lib/db';
-import { channexCreateMapping, channexActivateChannel, channexLoadFutureReservations, channexDeleteMapping } from '../../../../_lib/channex';
+import { channexCreateMapping, channexActivateChannel, channexLoadFutureReservations, channexDeleteMapping, channexEnsureChannelProperty } from '../../../../_lib/channex';
 import { linkedUnitFor, channexRefused } from '../../../../_lib/channexChannels';
 import { ensureOtaRatePlans } from '../../../../_lib/channexSync';
 
@@ -26,6 +26,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   catch (e) { return fail('CHANNEX_REFUSED', e instanceof Error ? e.message : 'Channex refused the rate plan.', 502); }
   if (!ratePlanId) return fail('NOT_LINKED', 'Set this unit up in Channex first.', 409);
 
+  const listed = await channexEnsureChannelProperty(env, channelId, unit.propertyId);
+  if (!listed.ok) return channexRefused('add this building to the Airbnb connection', listed.status, listed.body);
   const m = await channexCreateMapping(env, channelId, ratePlanId, { listing_id: listingId });
   const mappingId = m.body?.data?.id;
   if (!m.ok || !mappingId) return channexRefused('link the Airbnb listing', m.status, m.body);

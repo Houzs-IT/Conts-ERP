@@ -456,7 +456,7 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
               </div>
             ))}
           </Card>
-          <ChannexChannelsCard unitId={u.id} linked={!!u.channexLinked} canManage={canManageChannels} onChanged={reload} />
+          <ChannexChannelsCard unitId={u.id} linked={!!u.channexLinked} canManage={canManageChannels} onChanged={reload} buildingId={building?.id} buildingName={building?.name} />
           {d.pnl && (
             <Card>
               <SectionTitle title={`${periodLabel} P and L`} />

@@ -17,6 +17,7 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 - Four seeded staff accounts exist on production (management@, finance@, aina@, nurul@theconts.com); owner to confirm whether they are used or switch them off.
 - Scheduled worker theconts-cron (Channex outbox retry, email/WhatsApp retry, overdue sweep, 08:00 digest, repair-block release): published by the "Deploy scheduled jobs" workflow on merge or by hand (.github/workflows/deploy-cron.yml); needs repository secret CHANNEX_API_KEY (live key). Local check: node scripts/cron-dry-run.mjs.
 - Watch: one listing must never be controlled by both the old connection and Channex; plan the import of existing bookings.
+- Building listings (feat/channex-buildings, migration 0117): a unit set up in Channex becomes a room type inside its building's Channex property; Booking.com / Agoda are connected per building with each room paired to a unit, and Disconnect on one unit keeps the others connected. Units set up before 0117 (the live pilot unit) keep a listing of their own and cannot share a hotel until moved. Tested on the Channex sandbox with hotel 4372137: scripts/api-checks/channex-buildings.mjs. Needs 0117 on staging, then production, before merge.
 
 ## Supply Chain as a copy of Houzs (decision: option B, resumed 7 Oct)
 - Plan: copy Houzs's supply chain screens and server code into Conts, re-coloured gold and black, instead of re-drawing each screen. Rental side untouched. Houzs's code is on this machine at C:\dev\Houzs-ERP (reference only).

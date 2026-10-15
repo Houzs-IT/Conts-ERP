@@ -1,12 +1,14 @@
 import { type Env, one, run, json, fail, audit, nowIso } from '../../../_lib/db';
 import { requireSession } from '../../../_lib/auth';
-import { channexConfigured, channexCreateProperty, channexCreateRoomType, channexCreateRatePlan, channexDeleteProperty } from '../../../_lib/channex';
+import { channexConfigured, channexCreateProperty, channexCreateRoomType, channexCreateRatePlan, channexDeleteProperty, channexDeleteRoomType } from '../../../_lib/channex';
 import { queueFullSync, flushChannexQueue } from '../../../_lib/channexQueue';
 import { ensureOtaRatePlans } from '../../../_lib/channexSync';
 
-/** POST /api/units/:id/channex-setup — creates the unit's Channex listing (property, room type, rate plan),
- *  links it, then runs a full sync (500 days of availability, prices and restrictions). If Channex refuses any creation step,
- *  the property made so far is deleted again so no half-built listing is left behind. */
+/** POST /api/units/:id/channex-setup — sets the unit up in Channex as a room type (with its rate plan) inside its
+ *  building's Channex property, creating that property with the building's first unit (migration 0117: Booking.com
+ *  sells a building as one property whose room types are the units). Then runs a full sync (500 days of availability,
+ *  prices and restrictions). If Channex refuses a step, what this request created is deleted again, so no half-built
+ *  listing is left behind. */
 export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
@@ -14,9 +16,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   if (!channexConfigured(env)) return fail('NOT_CONFIGURED', 'Channex is not connected on this environment yet.', 501);
 
   const id = String(params.id);
-  const u = await one<{ id: string; unit_number: string; listing_name: string | null; max_guests: number; base_rate: number; channex_property_id: string | null; property_name: string; city: string; state: string; address_line: string; address: string | null }>(env, `
+  const u = await one<{ id: string; unit_number: string; listing_name: string | null; max_guests: number; base_rate: number; channex_property_id: string | null; building_id: string; building_channex_id: string | null; property_name: string; city: string; state: string; address_line: string; address: string | null }>(env, `
     SELECT u.id, u.unit_number, u.listing_name, u.max_guests, u.base_rate, u.channex_property_id, u.address,
-           p.name AS property_name, p.city, p.state, p.address_line
+           p.id AS building_id, p.channex_property_id AS building_channex_id, p.name AS property_name, p.city, p.state, p.address_line
     FROM units u JOIN properties p ON p.id = u.property_id WHERE u.id = ?`, id);
   if (!u) return fail('NOT_FOUND', 'That unit does not exist.', 404);
   if (u.channex_property_id) return fail('CONFLICT', 'This unit is already set up in Channex.', 409);
@@ -31,21 +33,38 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
     return fail('CHANNEX_REFUSED', `Channex refused to create the ${step} (${status}). Nothing was set up.`, 502, { detail });
   };
 
-  const prop = await channexCreateProperty(env, { title, city: u.city, state: u.state, address: u.address || u.address_line });
-  const propertyId = prop.body?.data?.id;
-  if (!prop.ok || !propertyId) return refused('listing', prop.status, prop.body);
+  // The building's property: made with its first unit. Two first units set up at the same moment would each make one;
+  // only the first to be recorded is kept and the other request moves its unit into it.
+  let propertyId = u.building_channex_id, madeProperty = false;
+  if (!propertyId) {
+    const prop = await channexCreateProperty(env, { title: u.property_name, city: u.city, state: u.state, address: u.address_line || u.address || '' });
+    const made = prop.body?.data?.id;
+    if (!prop.ok || !made) return refused('listing', prop.status, prop.body);
+    const kept = await one<{ id: string }>(env, 'UPDATE properties SET channex_property_id = ?, updated_at = ? WHERE id = ? AND channex_property_id IS NULL RETURNING id', made, nowIso(), u.building_id);
+    if (kept) { propertyId = made; madeProperty = true; }
+    else {
+      await channexDeleteProperty(env, made);
+      propertyId = (await one<{ channex_property_id: string }>(env, 'SELECT channex_property_id FROM properties WHERE id = ?', u.building_id))!.channex_property_id;
+    }
+  }
+  const undo = async (roomTypeId?: string) => {
+    if (madeProperty) {
+      await channexDeleteProperty(env, propertyId!);
+      await run(env, 'UPDATE properties SET channex_property_id = NULL WHERE id = ? AND channex_property_id = ?', u.building_id, propertyId);
+    } else if (roomTypeId) await channexDeleteRoomType(env, roomTypeId);
+  };
 
-  const room = await channexCreateRoomType(env, { propertyId, title, maxGuests: guests });
+  const room = await channexCreateRoomType(env, { propertyId: propertyId!, title, maxGuests: guests });
   const roomTypeId = room.body?.data?.id;
-  if (!room.ok || !roomTypeId) { await channexDeleteProperty(env, propertyId); return refused('room type', room.status, room.body); }
+  if (!room.ok || !roomTypeId) { await undo(); return refused('room type', room.status, room.body); }
 
-  const plan = await channexCreateRatePlan(env, { propertyId, roomTypeId, maxGuests: guests, rate });
+  const plan = await channexCreateRatePlan(env, { propertyId: propertyId!, roomTypeId, maxGuests: guests, rate });
   const ratePlanId = plan.body?.data?.id;
-  if (!plan.ok || !ratePlanId) { await channexDeleteProperty(env, propertyId); return refused('rate plan', plan.status, plan.body); }
+  if (!plan.ok || !ratePlanId) { await undo(roomTypeId); return refused('rate plan', plan.status, plan.body); }
 
   await run(env, 'UPDATE units SET channex_property_id = ?, channex_room_type_id = ?, channex_rate_plan_id = ?, updated_at = ? WHERE id = ?',
     propertyId, roomTypeId, ratePlanId, nowIso(), id);
-  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'unit.channex_setup', entityTable: 'units', entityId: id, after: { propertyId, roomTypeId, ratePlanId } });
+  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'unit.channex_setup', entityTable: 'units', entityId: id, after: { propertyId, roomTypeId, ratePlanId, buildingListingCreated: madeProperty } });
 
   // The first full sync goes through the outbox like every other update. It is not allowed to undo the
   // link: if it cannot go now it stays queued and is retried.
