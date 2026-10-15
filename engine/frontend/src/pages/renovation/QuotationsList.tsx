@@ -3,9 +3,9 @@
 // search; "New quotation" picks the project, or none yet (link it later), and optionally a package template.
 // ?newFor=<projectId> opens it for that project (the project page's "Create quotation").
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { FileCog, FileText, LayoutTemplate, Plus } from 'lucide-react';
+import { Edit3, ExternalLink, FileCog, FileText, LayoutTemplate, Plus, X } from 'lucide-react';
 import { PageHeader } from '../../components/Layout';
 import { Button } from '../../components/Button';
 import { DataTable } from '../../components/DataTable';
@@ -13,8 +13,9 @@ import type { Column } from '../../components/dataTableTypes';
 import { FilterPills } from '../../components/FilterPills';
 import { StatCard } from '../../components/StatCard';
 import { ModalOverlay } from '../../components/scm-v2/DocumentRelationshipMapModal';
+import { ResizableDetailDrawer } from '../../components/ResizableDetailDrawer';
 import { useAuth } from '../../auth/AuthContext';
-import { refusalOf, renoSend, searchProjects, useBrands, useQuotations, useTemplates, type QuotationListRow } from '../../lib/renovation/api';
+import { refusalOf, renoSend, searchProjects, useBrands, useQuotation, useQuotations, useTemplates, type QuotationListRow } from '../../lib/renovation/api';
 import { ErrorBanner, Field, fmtDate, inputCls, rm, StatusPill } from './shared';
 import { cn } from '../../lib/utils';
 
@@ -124,6 +125,111 @@ const COLUMNS: Column<QuotationListRow>[] = [
     ) },
 ];
 
+const label = 'font-mono text-[9.5px] font-semibold uppercase tracking-brand text-ink-muted';
+
+function Meta({ k, v }: { k: string; v: ReactNode }) {
+  return <div><dt className={label}>{k}</dt><dd className="mt-0.5 text-[13px] font-semibold text-ink">{v || '—'}</dd></div>;
+}
+
+function Heading({ children }: { children: ReactNode }) {
+  return <div className="mb-2.5 mt-6 font-mono text-[10px] font-semibold uppercase tracking-brand text-ink-muted">{children}</div>;
+}
+
+// Quick view from the list, the same shape as the sales order list's drawer; the editor stays the full page.
+function QuotationDrawer({ row, onClose }: { row: QuotationListRow | null; onClose: () => void }) {
+  const navigate = useNavigate();
+  const view = useQuotation(row?.id);
+  const rev = view.data?.revision;
+  const h = rev?.header;
+  const t = rev?.totals;
+  const openFull = () => row && navigate(`/scm/renovation/quotations/${row.id}`);
+  return (
+    <ResizableDetailDrawer open={!!row} onClose={onClose} ariaLabel={row ? `Quotation ${row.docNo}` : 'Quotation details'}>
+      {row && (
+        <>
+          <div className="flex h-[60px] shrink-0 items-center gap-3 bg-sidebar px-5 text-sidebar-ink">
+            <button type="button" onClick={onClose} className="text-sidebar-ink-muted hover:text-sidebar-ink" aria-label="Close details"><X size={18} /></button>
+            <div className="min-w-0 flex-1">
+              <div className="truncate font-mono text-[14px] font-bold tracking-wide">{row.docNo}</div>
+              <div className="mt-0.5 text-[11px] text-sidebar-ink-muted">Quotation</div>
+            </div>
+            <button type="button" onClick={openFull}
+              className="inline-flex items-center gap-1.5 rounded-md border border-accent-bright/40 px-2.5 py-1.5 text-[11.5px] font-semibold text-accent-bright hover:bg-accent-bright/10">
+              Open full page <ExternalLink size={12} />
+            </button>
+            <StatusPill status={row.status} />
+          </div>
+
+          <div className="flex-1 overflow-y-auto px-5 py-5">
+            <div className="text-[19px] font-bold text-ink">{row.customerName || '—'}</div>
+            <div className="mt-1.5 text-[12.5px] text-ink-muted">Dated {fmtDate(row.docDate)} · revision {row.currentRev}</div>
+
+            <dl className="mt-5 grid grid-cols-2 gap-x-4 gap-y-3 rounded-lg border border-border bg-surface-2 px-4 py-4">
+              <Meta k="Project" v={row.projectName ?? (row.projectId ? `#${row.projectId}` : 'Not linked yet')} />
+              <Meta k="Building / unit" v={[row.building, row.unitNo].filter(Boolean).join(' ')} />
+              <Meta k="Prepared by" v={h?.preparedBy} />
+              <Meta k="Valid until" v={h?.validUntil ? fmtDate(h.validUntil) : null} />
+              <Meta k="Attention" v={h?.attention} />
+              <Meta k="Sales order" v={row.convertedSoDocNo
+                ? <Link to={`/scm/renovation/contracts/${encodeURIComponent(row.convertedSoDocNo)}`} className="text-primary">{row.convertedSoDocNo}</Link>
+                : null} />
+            </dl>
+
+            <Heading>Customer &amp; site</Heading>
+            <div className="overflow-hidden rounded-lg border border-border bg-surface">
+              {([['Phone', h?.customerPhone], ['Email', h?.customerEmail], ['Site', h?.siteAddress]] as const).map(([k, v]) => (
+                <div key={k} className="flex items-start gap-3 border-b border-border-subtle px-4 py-2.5 last:border-b-0">
+                  <span className={cn(label, 'w-20 shrink-0')}>{k}</span>
+                  <span className="flex-1 text-[13px] font-semibold leading-relaxed text-ink">{v || '—'}</span>
+                </div>
+              ))}
+            </div>
+
+            <Heading>Quotation lines</Heading>
+            <div className="overflow-hidden rounded-lg border border-border">
+              <div className={cn(label, 'grid grid-cols-[minmax(0,1fr)_40px_96px] gap-2 border-b border-border-subtle bg-surface-2 px-4 py-2')}>
+                <span>Item</span><span className="text-right">Qty</span><span className="text-right">Amount</span>
+              </div>
+              {view.isLoading && <div className="px-4 py-8 text-center text-[12px] text-ink-muted">Loading lines…</div>}
+              {view.error && <div className="px-4 py-8 text-center text-[12px] text-err">{refusalOf(view.error).message}</div>}
+              {rev && rev.sections.every((s) => s.lines.length === 0) && <div className="px-4 py-8 text-center text-[12px] text-ink-muted">No lines</div>}
+              {rev?.sections.filter((s) => s.lines.length > 0).map((s, si) => (
+                <div key={s.id ?? si}>
+                  {s.heading && <div className="border-b border-border-subtle bg-surface-2/60 px-4 py-1.5 text-[11.5px] font-bold text-ink">{s.heading}</div>}
+                  {s.lines.filter((l) => l.kind === 'ITEM' || l.kind === 'CHILD').map((l, i) => (
+                    <div key={l.id ?? i} className="grid grid-cols-[minmax(0,1fr)_40px_96px] items-start gap-2 border-b border-border-subtle px-4 py-2.5">
+                      <div className={cn('min-w-0 text-[12.5px] leading-snug text-ink', l.kind === 'CHILD' && 'pl-3 text-ink-secondary')}>
+                        {l.itemCode && <span className="font-medium">{l.itemCode} </span>}{l.description}
+                      </div>
+                      <span className="text-right font-money text-[12.5px] text-ink-secondary">{l.qty}</span>
+                      <span className="text-right font-money text-[12.5px] font-semibold text-ink">{l.isFoc ? 'FOC' : rm(l.netSen)}</span>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-4 space-y-1.5 rounded-lg border border-border bg-surface px-5 py-4 text-[12px]">
+              {t && t.totalDiscountSen > 0 && <>
+                <div className="flex justify-between"><span className="text-ink-muted">List price</span><span className="font-money font-semibold">{rm(t.listSen)}</span></div>
+                <div className="flex justify-between"><span className="text-ink-muted">Discounts</span><span className="font-money font-semibold text-err">-{rm(t.totalDiscountSen)}</span></div>
+              </>}
+              <div className="flex justify-between">
+                <span className="text-[13px] font-semibold text-ink">Total</span>
+                <span className="font-money text-[15px] font-bold text-ink">{rm(t?.finalSen ?? row.totalSen)}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex shrink-0 items-center justify-end gap-2 border-t border-border bg-surface px-5 py-3">
+            <Button variant="primary" icon={<Edit3 size={14} />} onClick={openFull}>{view.data?.editable ? 'Edit quotation' : 'View quotation'}</Button>
+          </div>
+        </>
+      )}
+    </ResizableDetailDrawer>
+  );
+}
+
 const sumSen = (rows: QuotationListRow[]) => rows.reduce((s, r) => s + r.totalSen, 0);
 
 export function QuotationsList() {
@@ -133,6 +239,7 @@ export function QuotationsList() {
   const [params, setParams] = useSearchParams();
   const newFor = Number(params.get('newFor')) || null;
   const [newOpen, setNewOpen] = useState(!!newFor);
+  const [selected, setSelected] = useState<QuotationListRow | null>(null);
   // Every status is loaded at once so the cards and pill counts stay whole; the pills filter on screen.
   // ponytail: the server returns the newest 200, move status to the server when a company outgrows that.
   const list = useQuotations({ q: q || null });
@@ -144,7 +251,8 @@ export function QuotationsList() {
   const pending = list.isLoading;
   const failed = { failed: Boolean(list.error), onRetry: () => void list.refetch() };
   return (
-    <div>
+    // The list makes room for the drawer on desktop, as on the sales order list.
+    <div className={cn('transition-[padding] duration-200', selected && 'md:pr-[540px]')}>
       <PageHeader
         eyebrow="Renovation"
         title="Quotations"
@@ -180,7 +288,7 @@ export function QuotationsList() {
         error={list.error ? refusalOf(list.error).message : null}
         columns={COLUMNS}
         getRowKey={(r) => r.id}
-        onRowClick={(r) => navigate(`/scm/renovation/quotations/${r.id}`)}
+        onRowClick={setSelected}
         mobileCard={{ primary: 'docNo', cells: ['status', 'customer', 'unit', 'date', 'total'] }}
         emptyLabel={q || status ? 'No quotations match.' : 'No quotations yet.'}
         search={{
@@ -192,6 +300,7 @@ export function QuotationsList() {
           countPending: list.isLoading,
         }}
       />
+      <QuotationDrawer row={selected} onClose={() => setSelected(null)} />
       <NewQuotationDialog open={newOpen} initialProjectId={newFor} onClose={() => { setNewOpen(false); if (newFor) setParams({}, { replace: true }); }} />
     </div>
   );

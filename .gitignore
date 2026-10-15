@@ -21,3 +21,11 @@ engine/frontend/*.tsbuildinfo
 uploads/*.xlsx
 uploads/*.xls
 uploads/*.csv
+
+#understand anything
+.ua
+
+# design tool notes, kept local
+DESIGN.md
+PRODUCT.md
+.impeccable/

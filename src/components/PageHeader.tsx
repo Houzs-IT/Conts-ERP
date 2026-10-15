@@ -31,7 +31,12 @@ export default function PageHeader({ title, sub, right, actions, primary, back, 
             <h1 className="m-0 text-[24px] sm:text-[30px] leading-[1.15] font-semibold tracking-[-0.025em] [overflow-wrap:anywhere]">{title}</h1>
             {badge}
           </div>
-          {sub && <div style={{ fontSize: text.copy, color: color.textMuted }}>{sub}</div>}
+          {/* Each "·" fact wraps as a unit on a phone, so "RM 0" or "awaiting owner approval" never splits across lines. */}
+          {sub && <div style={{ fontSize: text.copy, color: color.textMuted }}>
+            {typeof sub === 'string'
+              ? sub.split(' · ').map((part, n) => <span key={n}>{n > 0 && ' · '}<span className="inline-block">{part}</span></span>)
+              : sub}
+          </div>}
         </div>
         {hasActions && (
           // Right-aligned beside the title; once wrapped under it on a phone, left-aligned with it, not a ragged right stack.

@@ -10,6 +10,7 @@ import { useMemo, useState } from 'react';
 import { Plus, Ruler, Search, Settings2, Truck, Upload, X } from 'lucide-react';
 import { Button } from '../../../components/Button';
 import { DataTable } from '../../../components/DataTable';
+import { RowActionsMenu } from '../../../components/RowActionsMenu';
 import { useDebouncedValue } from '../../../vendor/scm/lib/hooks';
 import { useNotify } from '../../../vendor/scm/components/NotifyDialog';
 import {
@@ -61,26 +62,39 @@ export function RenovationSkuMaster({
       <CatalogChips group={group} sub={sub} onGroup={setGroup} onSub={setSub} />
 
       <div className="flex flex-wrap items-center gap-2">
-        <label className="relative flex min-w-0 flex-1 basis-56 items-center sm:max-w-sm">
+        <label className="relative flex min-w-0 flex-1 basis-32 items-center sm:basis-56 sm:max-w-sm">
           <Search size={14} strokeWidth={1.75} className="pointer-events-none absolute left-2.5 text-ink-muted" />
           <input
             type="search"
             aria-label="Search SKUs"
-            placeholder="Search code, name, description"
+            placeholder="Search SKUs"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-full rounded-md border border-border bg-surface py-1.5 pl-8 pr-2 text-[13px] outline-none focus:border-primary"
           />
         </label>
-        <span className="text-[12px] text-ink-secondary" aria-live="polite">
-          {count}
-          {needPhoto > 0 && <span className="text-amber-700"> · {needPhoto} need a photo</span>}
+        {/* The table below already counts the rows on a phone; only the photo warning stays there. */}
+        <span className={`text-[12px] text-ink-secondary ${needPhoto > 0 ? '' : 'max-sm:hidden'}`} aria-live="polite">
+          <span className="max-sm:hidden">{count}</span>
+          {needPhoto > 0 && <span className="text-amber-700"><span className="max-sm:hidden"> · </span>{needPhoto} need a photo</span>}
         </span>
-        <div className="ml-auto flex flex-wrap gap-2 whitespace-nowrap">
-          <Button variant="secondary" onClick={() => setSettingsOpen(true)}><Settings2 size={14} strokeWidth={1.75} /> Sub-categories</Button>
-          <Button variant="secondary" onClick={() => setUnitsOpen(true)}><Ruler size={14} strokeWidth={1.75} /> Units</Button>
-          <Button variant="secondary" onClick={onImport}><Upload size={14} strokeWidth={1.75} /> Import SKUs</Button>
+        {/* Phone: search, New SKU and a menu share one row, so the list starts higher. */}
+        <div className="ml-auto flex flex-wrap items-center gap-2 whitespace-nowrap">
+          <Button variant="secondary" className="max-sm:hidden" onClick={() => setSettingsOpen(true)}><Settings2 size={14} strokeWidth={1.75} /> Sub-categories</Button>
+          <Button variant="secondary" className="max-sm:hidden" onClick={() => setUnitsOpen(true)}><Ruler size={14} strokeWidth={1.75} /> Units</Button>
+          <Button variant="secondary" className="max-sm:hidden" onClick={onImport}><Upload size={14} strokeWidth={1.75} /> Import SKUs</Button>
           <Button variant="primary" onClick={() => setNewOpen(true)}><Plus size={14} strokeWidth={1.75} /> New SKU</Button>
+          <div className="sm:hidden">
+            <RowActionsMenu
+              title="More actions"
+              size={36}
+              items={[
+                { icon: Settings2, label: 'Sub-categories', onClick: () => setSettingsOpen(true) },
+                { icon: Ruler, label: 'Units', onClick: () => setUnitsOpen(true) },
+                { icon: Upload, label: 'Import SKUs', onClick: onImport },
+              ]}
+            />
+          </div>
         </div>
       </div>
 

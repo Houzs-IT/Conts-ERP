@@ -4,9 +4,13 @@
 import { RENOVATION_GROUPS, type CatalogGroup } from '../../../vendor/shared/renovation-catalog';
 import { useRenovationCatalog } from '../../../vendor/scm/lib/renovation-catalog-queries';
 
+/* Phone: one row that scrolls sideways, the cut-off chip at the edge showing there is more,
+   instead of three wrapped rows pushing the list off the first screen. */
+const rowClass = 'flex gap-1.5 max-sm:overflow-x-auto max-sm:[scrollbar-width:none] max-sm:[&::-webkit-scrollbar]:hidden sm:flex-wrap';
+
 const chipClass = (active: boolean, small = false) =>
   [
-    'whitespace-nowrap rounded-full border font-semibold tracking-wide transition-all duration-150',
+    'shrink-0 whitespace-nowrap rounded-full border font-semibold tracking-wide transition-all duration-150',
     small ? 'px-3 py-1 text-[12px]' : 'px-4 py-1.5 text-[13px]',
     active
       ? 'border-primary bg-primary text-white shadow-sm'
@@ -28,7 +32,7 @@ export function CatalogChips({
   const subs = group ? catalog.pickable(group, sub) : [];
   return (
     <div className="space-y-2">
-      <div role="group" aria-label="Category group" className="flex flex-wrap gap-1.5">
+      <div role="group" aria-label="Category group" className={rowClass}>
         <button type="button" className={chipClass(group === null)} aria-pressed={group === null} onClick={() => { onGroup(null); onSub(null); }}>
           All
         </button>
@@ -45,7 +49,7 @@ export function CatalogChips({
         ))}
       </div>
       {group && (
-        <div role="group" aria-label="Sub-category" className="flex flex-wrap gap-1.5 border-l-2 border-primary/30 pl-2">
+        <div role="group" aria-label="Sub-category" className={`${rowClass} border-l-2 border-primary/30 pl-2`}>
           <button type="button" className={chipClass(sub === null, true)} aria-pressed={sub === null} onClick={() => onSub(null)}>
             All {RENOVATION_GROUPS.find((g) => g.code === group)?.label.toLowerCase()}
           </button>
