@@ -68,13 +68,12 @@ export default function MobileTabBar({ path, navigate }: { path: string; navigat
   );
 }
 
-type MenuLink = { key: string; label: string; path: string; count: number };
-/** A row in the phone menu: a screen, or a category whose screens open under it. */
-type MenuEntry = MenuLink & { icon: string; children?: MenuLink[] };
+type MenuRow = { key: string; label: string; icon: string; path: string; count: number };
+type MenuSection = { key: string; label: string; rows: MenuRow[] };
 
-/** Every module the person can open, grouped like the desktop sidebar: one card per group, one row per
- *  module (icon tile, name, live count, chevron), as in the phone design; a category opens its screens under it.
- *  System pages live under Settings. */
+/** Every module the person can open, as a flat list of labelled cards (phone design, owner Oct 2026): no row
+ *  opens or closes. A desktop category (Sales order, Procurement...) becomes its own card with its own label, and
+ *  each of its screens is a row with its own icon. System pages live under Settings. */
 function MoreSheet({ path, navigate, onClose }: { path: string; navigate: (p: string) => void; onClose: () => void }) {
   const { user } = useSession();
   const engine = useApi<{ enabled: boolean }>('/supply-chain/engine');
@@ -85,34 +84,33 @@ function MoreSheet({ path, navigate, onClose }: { path: string; navigate: (p: st
   const pick = (w: Workspace) => { setWs(w); saveWs(w); };
   const all = useMemo(() => navFor(user!.role, !!engine.data?.enabled, user!.access).filter(g => g.label !== 'SYSTEM'), [user, engine.data?.enabled]);
   const hasSupply = all.some(g => g.workspace === 'supply');
-  const groups = useMemo((): { label: string; items: MenuEntry[] }[] => {
+  const sections = useMemo((): MenuSection[] => {
     const needle = q.trim().toLowerCase();
     const n = (b?: BadgeKey) => (b ? Number(counts?.[b] ?? 0) : 0);
     // A search looks through both sides: people should not need to know which one a module lives in.
+    // Matching a category's own name shows all of its screens.
     const hit = (label: string) => !needle || label.toLowerCase().includes(needle);
     return all
       .filter(g => needle || !hasSupply || g.workspace === ws)
-      .map(g => ({
-        label: g.label,
-        // A category (Sales order, Procurement...) keeps its screens under it, as in the desktop sidebar.
-        // Matching a category's own name shows all of its screens.
-        items: g.items.flatMap((it): MenuEntry[] => {
+      .flatMap(g => {
+        const out: MenuSection[] = [];
+        let loose: MenuRow[] = [];
+        const flush = () => { if (loose.length) out.push({ key: `${g.label}:${out.length}`, label: g.label, rows: loose }); loose = []; };
+        for (const it of g.items) {
           if (it.children?.length) {
-            const children = it.children.filter(c => hit(it.label) || hit(c.label)).map(c => ({ key: c.key, label: c.label, path: c.path, count: n(c.badge) }));
-            return children.length ? [{ key: it.key, label: it.label, icon: it.icon, path: '', count: children.reduce((s, c) => s + c.count, 0), children }] : [];
+            flush();
+            const rows = it.children.filter(c => hit(it.label) || hit(c.label))
+              .map(c => ({ key: c.key, label: c.label, icon: c.icon ?? it.icon, path: c.path, count: n(c.badge) }));
+            if (rows.length) out.push({ key: it.key, label: it.label.toUpperCase(), rows });
+          } else if (it.path && hit(it.label)) {
+            loose.push({ key: it.key, label: it.label, icon: it.icon, path: it.path, count: n(it.badge) });
           }
-          return it.path && hit(it.label) ? [{ key: it.key, label: it.label, icon: it.icon, path: it.path, count: n(it.badge) }] : [];
-        }),
-      }))
-      .filter(g => g.items.length);
+        }
+        flush();
+        return out;
+      });
   }, [all, hasSupply, ws, q, counts]);
-  // A category starts open when it holds the page on screen, or while searching.
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-  const isOpen = (it: { key: string; children?: { path: string }[] }) =>
-    !!q.trim() || (expanded[it.key] ?? !!it.children?.some(c => c.path === path));
-  const countPill = (count: number) => count > 0 && (
-    <span style={{ minWidth: 24, height: 24, padding: '0 8px', borderRadius: radius.pill, display: 'grid', placeItems: 'center', fontSize: 12, fontWeight: 600, background: color.ink, color: color.card }}>{count}</span>
-  );
+
 
   return (
     <div role="dialog" aria-modal aria-label="All modules" style={{ position: 'fixed', inset: 0, zIndex: 60, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
@@ -147,69 +145,36 @@ function MoreSheet({ path, navigate, onClose }: { path: string; navigate: (p: st
               style={{ flex: 1, minWidth: 0, border: 'none', outline: 'none', background: 'transparent', fontSize: 16, color: color.ink }} />
           </div>
         </div>
-        <div style={{ overflowY: 'auto', padding: '2px 16px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-          {groups.map(g => (
-            <section key={g.label} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <span style={{ fontSize: 12, fontWeight: 600, letterSpacing: '0.1em', color: color.textMuted }}>{g.label}</span>
+        {/* .menu-sheet: hover and press washes in styles/hover.css. */}
+        <div className="menu-sheet" style={{ overflowY: 'auto', overscrollBehavior: 'contain', padding: '2px 16px 20px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {sections.map(sec => (
+            <section key={sec.key} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <span style={{ fontSize: 12, fontWeight: 600, letterSpacing: '0.1em', color: color.textMuted }}>{sec.label}</span>
               <div style={{ borderRadius: 16, background: color.card, border: `1px solid ${color.border}`, overflow: 'hidden' }}>
-                {g.items.map((it, i) => {
-                  const rowStyle = {
-                    width: '100%', minHeight: 46, padding: '0 14px', display: 'flex', alignItems: 'center', gap: 11,
-                    border: 'none', borderTop: i ? `1px solid ${color.borderMuted}` : 'none', cursor: 'pointer', textAlign: 'left', font: 'inherit', color: color.ink,
-                  } as const;
-                  const tile = (
-                    <span style={{ width: 28, height: 28, flex: 'none', borderRadius: 8, display: 'grid', placeItems: 'center', background: color.goldTint }}>
-                      <Icon name={toPascal(it.icon)} size="sm" color={color.goldInk} />
-                    </span>
-                  );
-                  if (!it.children) {
-                    const on = path === it.path;
-                    return (
-                      <button key={it.key} type="button" onClick={() => navigate(it.path)} aria-current={on ? 'page' : undefined}
-                        style={{ ...rowStyle, background: on ? color.goldTint : 'transparent' }}>
-                        {tile}
-                        <span style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: on ? 600 : 400 }}>{it.label}</span>
-                        {countPill(it.count)}
-                        <Icon name="ChevronRight" size="sm" color={color.textMuted} />
-                      </button>
-                    );
-                  }
-                  const open = isOpen(it);
+                {sec.rows.map((r, i) => {
+                  const on = path === r.path;
                   return (
-                    <div key={it.key}>
-                      <button type="button" aria-expanded={open} onClick={() => setExpanded(e => ({ ...e, [it.key]: !open }))}
-                        style={{ ...rowStyle, background: 'transparent' }}>
-                        {tile}
-                        <span style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: 600 }}>{it.label}</span>
-                        {!open && countPill(it.count)}
-                        <Icon name={open ? 'ChevronDown' : 'ChevronRight'} size="sm" color={color.textMuted} />
-                      </button>
-                      {open && (
-                        // Screens sit under their category's name: indented to its text, with a guide line from its icon.
-                        <div style={{ marginInlineStart: 28, marginBlockEnd: 8, paddingInlineStart: 14, borderInlineStart: `1px solid ${color.border}`, display: 'flex', flexDirection: 'column' }}>
-                          {it.children.map(c => {
-                            const on = path === c.path;
-                            return (
-                              <button key={c.key} type="button" onClick={() => navigate(c.path)} aria-current={on ? 'page' : undefined}
-                                style={{
-                                  minHeight: 44, padding: '0 14px 0 10px', display: 'flex', alignItems: 'center', gap: 11, border: 'none', borderRadius: 10,
-                                  cursor: 'pointer', textAlign: 'left', font: 'inherit', color: on ? color.ink : color.textMuted,
-                                  background: on ? color.goldTint : 'transparent', marginInlineEnd: 8,
-                                }}>
-                                <span style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: on ? 600 : 400 }}>{c.label}</span>
-                                {countPill(c.count)}
-                              </button>
-                            );
-                          })}
-                        </div>
+                    <button key={r.key} type="button" onClick={() => navigate(r.path)} aria-current={on ? 'page' : undefined}
+                      style={{
+                        width: '100%', minHeight: 46, padding: '0 14px', display: 'flex', alignItems: 'center', gap: 11,
+                        border: 'none', borderTop: i ? `1px solid ${color.borderMuted}` : 'none', cursor: 'pointer', textAlign: 'left', font: 'inherit',
+                        background: on ? color.goldTint : 'transparent', color: color.ink,
+                      }}>
+                      <span style={{ width: 28, height: 28, flex: 'none', borderRadius: 8, display: 'grid', placeItems: 'center', background: color.goldTint }}>
+                        <Icon name={toPascal(r.icon)} size="sm" color={color.goldInk} />
+                      </span>
+                      <span style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: on ? 600 : 400 }}>{r.label}</span>
+                      {r.count > 0 && (
+                        <span style={{ minWidth: 24, height: 24, padding: '0 8px', borderRadius: radius.pill, display: 'grid', placeItems: 'center', fontSize: 12, fontWeight: 600, background: color.ink, color: color.card }}>{r.count}</span>
                       )}
-                    </div>
+                      <Icon name="ChevronRight" size="sm" color={color.textMuted} />
+                    </button>
                   );
                 })}
               </div>
             </section>
           ))}
-          {!groups.length && <span style={{ fontSize: 14, color: color.textMuted, textAlign: 'center', padding: '24px 0' }}>No module matches “{q}”.</span>}
+          {!sections.length && <span style={{ fontSize: 14, color: color.textMuted, textAlign: 'center', padding: '24px 0' }}>No module matches “{q}”.</span>}
         </div>
       </div>
     </div>
