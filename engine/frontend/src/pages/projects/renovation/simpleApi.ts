@@ -63,6 +63,10 @@ export interface BoardRowV2 {
   vo: { has: boolean; count: number; approved: number } | null;
   handoverDate: string | null;
   plannedHandoverDate: string | null;
+  /** The day the project was created, and the day it reached Closed (null until then); filled by the system
+      (migration 0117). Optional: an engine older than 15 Oct 2026 does not send them. */
+  startDate?: string | null;
+  endDate?: string | null;
   redFlagCount: number;
   /** Optional: an engine older than 15 Oct 2026 sends only the count. */
   redFlags?: Array<{ code: string; text: string }>;

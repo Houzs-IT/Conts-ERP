@@ -5000,6 +5000,7 @@ app.get("/calendar/events", requirePageAccess("projects.calendar"), async (c) =>
        LEFT JOIN project_event_types et ON et.id = p.event_type_id
       WHERE p.archived_at IS NULL
         AND p.start_date IS NOT NULL
+        AND coalesce(to_jsonb(p)->>'project_kind', 'exhibition') <> 'renovation'
         AND substr(p.start_date, 1, 10) <= substr(?, 1, 10)
         AND substr(COALESCE(p.end_date, p.start_date), 1, 10) >= substr(?, 1, 10)${scopeWhere}${coSql}`
   )
@@ -5028,7 +5029,7 @@ app.get("/calendar/events", requirePageAccess("projects.calendar"), async (c) =>
     .bind(todayMyt(), from, to, ...scopeBinds)
     .all();
 
-  // Renovation projects carry no start / end date: their bars are computed here (owner, 14 Oct 2026).
+  // Renovation projects: their bars are computed here, Start date to End date or planned handover (owner, 14 / 15 Oct 2026).
   const reno = await renovationCalendarRows(c.env.DB as unknown as RenoDb, from, to, scopeWhere, scopeBinds, coSql);
   // Renovation Week view (owner, 15 Oct 2026): dated items per day instead of project bars, only when asked for.
   const renoItems = c.req.query("items") === "1" ? await renovationCalendarItems(c.env.DB as unknown as RenoDb, from, to, scopeWhere, scopeBinds, coSql) : undefined;

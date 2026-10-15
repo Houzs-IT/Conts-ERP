@@ -155,6 +155,25 @@ export function missingFields(v: CustomerPropertyValue): Set<string> {
   return out;
 }
 
+/** What the read-only Start date / End date show (owner, 15 Oct 2026; migration 0117). Nobody types them: the start
+    is the day the project was created, the end the day it reached Closed. A sales order shows its project's dates,
+    and a dash when it has no project; a project not yet created or not yet Closed says when the date will come. */
+export function projectDatesText(project: Pick<ProjectShared, "startDate" | "endDate"> | null | undefined, mode: "so" | "project"): {
+  start: string; end: string; startSet: boolean; endSet: boolean;
+} {
+  if (!project) {
+    return mode === "so"
+      ? { start: "—", end: "—", startSet: false, endSet: false }
+      : { start: "Set when saved", end: "Set when Closed", startSet: false, endSet: false };
+  }
+  return {
+    start: project.startDate ? showDate(project.startDate) : "—",
+    end: project.endDate ? showDate(project.endDate) : "Set when Closed",
+    startSet: !!project.startDate,
+    endSet: !!project.endDate,
+  };
+}
+
 /** "14 Oct 2026" from an ISO date, "Not set" when blank. */
 export function showDate(iso: string | null | undefined): string {
   if (!iso) return "Not set";
