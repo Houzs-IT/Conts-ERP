@@ -50,6 +50,21 @@ describe("migration 0061 seeds the same tree as renovation-catalog.ts", () => {
   });
 });
 
+describe("migration 0118 seeds the same eight units as UOMS", () => {
+  const sql = read("0118_renovation_units.sql");
+
+  test("code, label, print label, measure flag, in order", () => {
+    const rows = tuples(sql, /^\s+\('([A-Z]+)', '([^']+)', '([^']+)', (true|false), true, \d+\)[,;]$/gm);
+    expect(rows.map(([code, label, printLabel, measure]) => ({ code, label, printLabel, measure: measure === "true" }))).toEqual(
+      UOMS.map((u) => ({ code: u.code, label: u.label, printLabel: u.printLabel, measure: u.measure })),
+    );
+  });
+
+  test("first line is the reversal", () => {
+    expect(sql.split("\n")[0]).toMatch(/^-- REVERSAL: /);
+  });
+});
+
 describe("migrations 0064 and 0085 seed the generic SKUs", () => {
   test("RN-<SUB> rows match genericSkus()", () => {
     const byCode = (a: { code: string }, b: { code: string }) => a.code.localeCompare(b.code);

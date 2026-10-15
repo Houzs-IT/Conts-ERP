@@ -1,14 +1,15 @@
-/* The eight renovation units (spec 2026-10-09 section 3). Works are priced
-   supply-and-install, so there are no bag or tin units. */
-import { UOMS } from '../../../vendor/shared/renovation-catalog';
+/* The renovation units as saved under SKU Master > Units (migration 0118).
+   A hidden unit is offered only to the SKU that already has it (`keep`). */
+import { useRenovationCatalog } from '../../../vendor/scm/lib/renovation-catalog-queries';
 import styles from '../Products.module.css';
 
-export function UomSelect({ value, onChange, id }: { value: string; onChange: (v: string) => void; id?: string }) {
+export function UomSelect({ value, onChange, id, keep }: { value: string; onChange: (v: string) => void; id?: string; keep?: string | null }) {
+  const units = useRenovationCatalog().pickableUoms(keep === undefined ? value : keep);
   return (
     <select id={id} aria-label="Unit" className={styles.fieldSelect} value={value} onChange={(e) => onChange(e.target.value)}>
-      {UOMS.map((u) => (
+      {units.map((u) => (
         <option key={u.code} value={u.code}>
-          {u.label}{u.printLabel !== u.code ? ` (prints ${u.printLabel})` : ` (${u.code})`}
+          {u.label}{u.printLabel !== u.code ? ` (prints ${u.printLabel})` : ` (${u.code})`}{u.active === false ? ' - hidden' : ''}
         </option>
       ))}
     </select>

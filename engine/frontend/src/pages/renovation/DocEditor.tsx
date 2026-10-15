@@ -8,6 +8,7 @@ import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, LayoutGrid, Plus, Search
 import { formatRm, lineAmounts, parseMeasureMilli, type RenoLineKind } from '../../vendor/shared/renovation-money';
 import { RENO_STAGES, STAGE_LABEL } from '../../vendor/shared/renovation-stages';
 import { useSuppliers } from '../../vendor/scm/lib/suppliers-queries';
+import { useRenovationCatalog } from '../../vendor/scm/lib/renovation-catalog-queries';
 import { searchProducts, type DocLine, type DocSection, type ProductPick } from '../../lib/renovation/api';
 import { cn } from '../../lib/utils';
 import { cellBaseCls, cellInputCls, inputCls, MoneyInput, PercentInput, rm } from './shared';
@@ -23,8 +24,6 @@ export const BAND_COLOURS: Array<{ value: string | null; label: string }> = [
   { value: '#d9d9d9', label: 'Grey' },
 ];
 
-const MEASURE_UOMS = ['FT', 'SQFT'];
-const UOMS = ['UNIT', 'PCS', 'SET', 'LOT', 'POINT', 'FULL'];
 
 export function blankLine(kind: RenoLineKind): DocLine {
   return {
@@ -107,7 +106,10 @@ export function ProductPicker({ value, onPick, disabled }: { value: string | nul
   );
 }
 
+/* Units come from SKU Master > Units: measured ones (FT, SQFT, ...) for the
+   measure, the rest for the line's unit. A hidden unit stays on the line that has it. */
 function MeasureInput({ line, onChange, disabled }: { line: DocLine; onChange: (p: Partial<DocLine>) => void; disabled?: boolean }) {
+  const measureUnits = useRenovationCatalog().pickableUoms(line.measureUom).filter((u) => u.measure);
   const bad = line.measure ? Number.isNaN(parseMeasureMilli(line.measure)) : false;
   return (
     <div className="flex gap-1">
@@ -119,7 +121,7 @@ function MeasureInput({ line, onChange, disabled }: { line: DocLine; onChange: (
       />
       {line.measure && (
         <select aria-label="Measure unit" disabled={disabled} className={cn(cellBaseCls, 'w-[60px] px-0')} value={line.measureUom ?? 'FT'} onChange={(e) => onChange({ measureUom: e.target.value })}>
-          {MEASURE_UOMS.map((u) => <option key={u}>{u}</option>)}
+          {measureUnits.map((u) => <option key={u.code} value={u.code}>{u.printLabel}</option>)}
         </select>
       )}
     </div>
@@ -140,6 +142,7 @@ interface LineProps {
 
 function LineExtras({ line, disabled, showCost, onChange, suppliers }: Pick<LineProps, 'line' | 'disabled' | 'showCost' | 'onChange' | 'suppliers'>) {
   const priced = line.kind === 'ITEM' || line.kind === 'CHILD';
+  const units = useRenovationCatalog().pickableUoms(line.uom).filter((u) => !u.measure);
   return (
     <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
       <label className="flex flex-col gap-0.5 text-[11px] text-ink-muted">Room
@@ -148,7 +151,7 @@ function LineExtras({ line, disabled, showCost, onChange, suppliers }: Pick<Line
       {priced && (
         <label className="flex flex-col gap-0.5 text-[11px] text-ink-muted">Unit
           <select className={inputCls} disabled={disabled} value={line.uom ?? 'UNIT'} onChange={(e) => onChange({ uom: e.target.value })}>
-            {UOMS.map((u) => <option key={u} value={u}>{u === 'LOT' ? 'LS (lump sum)' : u === 'FULL' ? 'FULL UNIT' : u}</option>)}
+            {units.map((u) => <option key={u.code} value={u.code}>{u.printLabel.toLowerCase() === u.label.toLowerCase() ? u.printLabel : `${u.printLabel} (${u.label})`}</option>)}
           </select>
         </label>
       )}
