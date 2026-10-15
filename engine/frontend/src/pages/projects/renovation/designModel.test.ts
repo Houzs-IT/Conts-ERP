@@ -19,6 +19,19 @@ describe("2D versions and amendment requests", () => {
     expect(t.versions[0]!.answered.map((n) => n.id)).toEqual([10, 11]);
     expect(t.requests.map((r) => [r.note.id, r.open, r.answeredBy])).toEqual([[12, true, null], [11, false, 2], [10, false, 2]]);
   });
+  test("V1 never answers a request (owner, 15 Oct 2026): one recorded as closed by V1 stays open until V2", () => {
+    const v1 = file(1, "2026-10-15", "2026-10-15T01:00:00Z");
+    const only = twoDTimeline([v1], [note(10, "2026-10-14", 1)]);
+    expect(only.state).toBe("amending");
+    expect(only.openCount).toBe(1);
+    expect(only.requests.map((r) => [r.open, r.answeredBy])).toEqual([[true, null]]);
+    expect(only.versions[0]!.answered).toEqual([]);
+    const v2 = file(2, "2026-10-16", "2026-10-16T01:00:00Z");
+    const after = twoDTimeline([v1, v2], [note(10, "2026-10-14", 2)]);
+    expect(after.state).toBe("submitted");
+    expect(after.requests.map((r) => [r.open, r.answeredBy])).toEqual([[false, 2]]);
+    expect(after.versions[0]!.answered.map((n) => n.id)).toEqual([10]);
+  });
   test("no version yet: nothing submitted, even with a request", () => {
     expect(twoDTimeline([], []).state).toBe("none");
     expect(twoDTimeline([], [note(1, "2026-10-01", null)]).state).toBe("none");
