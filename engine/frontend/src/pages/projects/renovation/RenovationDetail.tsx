@@ -167,10 +167,10 @@ function BillingPromptBanner({ d, canWrite, onDone, onError }: { d: ProjectDetai
 function WarrantyPanel({ d }: { d: ProjectDetail }) {
   return (
     <section className="rounded-lg border border-border bg-surface p-4">
-      <h3 className="text-base font-semibold text-ink">Warranty: service cases</h3>
+      <h3 className="text-base font-semibold text-ink">Service cases ({d.serviceCases.length})</h3>
       {d.serviceCases.length === 0
         ? <p className="mt-2 text-sm text-ink-secondary">No complaints since handover.</p>
-        : <ul className="mt-2 divide-y divide-border">{d.serviceCases.map((c) => <li key={c.id} className="py-2 text-sm"><Link className="text-primary" to={`/assr?case=${c.id}`}>{c.assr_no}</Link> · {c.status ?? "-"} · {c.complaint_issue ?? ""}</li>)}</ul>}
+        : <ul className="mt-2 divide-y divide-border">{d.serviceCases.map((c) => <li key={c.id} className="py-2 text-sm"><Link className="text-primary" to={`/assr/${c.id}`}>{c.assr_no}</Link> · {c.status ?? "-"} · {c.complaint_issue ?? ""}</li>)}</ul>}
     </section>
   );
 }

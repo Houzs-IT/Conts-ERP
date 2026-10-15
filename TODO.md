@@ -409,10 +409,16 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Start = created day (Malaysia); End = the day the step reached Closed (Move step or the data), cleared when it leaves Closed. Read-only everywhere; the project PATCH ignores both for renovation projects. Written where the step is computed (services/renovation/projectDates.ts): board, project page, step routes, contract hooks, Customer info and the SO's Order information reads.
 - A project closed by its data alone (handed over + fully paid, no closed_at) before 0117 gets today as its end date the first time it is read, not the day the last payment came in (payments carry no date in the project facts).
 - Check: scripts/api-checks/reno-customer-property.mjs (71 checks, local engine + PostgREST).
+
+## Service case looks up the project (feat/reno-service-project, no migration, 15 Oct 2026)
+- Renovation mode: the desktop New Service Case form picks a PROJECT (code, name, building / unit, customer, phone), fills the customer, phone, email and site address from it, stores project_id (migration 0081) and the project's newest SO as doc_no without asking; no Ref No; Product category is the renovation Category / Sub-category. List, detail header and side panel show the project as a link. Houzs mode unchanged.
+- OPEN: the phone app's new-case screen (mobile/MobileServiceCase.tsx, MobileAssrSoField.tsx) still searches SOs; give it the same project picker (GET /api/assr/renovation/projects).
+- OPEN: the Service Cases list search does not match the project code or name yet (services/assr.ts listAssrCases); search by customer or phone meanwhile.
+- Check: scripts/api-checks/reno-service-project.mjs (34 checks, local engine + PostgREST).
 - Procurement details second version (feat/reno-sku-hub, 15 Oct): per sub-category Ordered -> Received -> Delivered with GR / DO links, Ready and LATE; no item, PO or SO rows. No migration. Check: scripts/api-checks/reno-doc-flow.mjs (65 checks).
 
 ## Project Timeline (feat/reno-timeline, migration 0118, 15 Oct 2026)
-- OPEN, before merge: apply migration 0118 on staging, then production. It adds public.project_timeline_notes (the hand-written notes). Until it is applied the Timeline still shows every System entry and hides "+ Add note".
+- DONE 15 Oct: migration 0118 applied on staging and production. It adds public.project_timeline_notes (the hand-written notes). Until it is applied the Timeline still shows every System entry and hides "+ Add note".
 - System entries are read, not copied: project_activity, project_flow_log (step and hold), key moves, Onsite visits, 3D / 2D submissions, 2D amendment requests and 3D notes, the project's POs / GRs / DOs (same sets as Procurement details), created / handed over / completed (end_date). services/renovation/timeline.ts.
 - Not on the Timeline yet: Procurement-date edits do not refresh the card until Refresh (they have no page-level save callback); a step reached by the data alone (not Move step) has no history row, so only Project completed marks Closed.
 - Note types (Customer, Design, Supplier, Site, Sales) are renamed in renovationTimelineModel.ts CATEGORY_LABEL; the stored keys stay. No photo/file on a note: the service case note has none either.
