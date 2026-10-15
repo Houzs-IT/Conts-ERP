@@ -252,9 +252,16 @@ describe('units from SKU Master > Units', () => {
 
   test('the unit picker offers an added unit and drops a hidden one, except on the SKU that has it', async () => {
     h.catalog = { subCategories: SUB_CATEGORIES, uoms: savedUnits(), canEdit: true };
-    wrap(<RenovationNewSku initialGroup="BUILTIN" initialSub={null} onClose={() => {}} onCreated={() => {}} />);
+    wrap(<RenovationNewSku initialGroup="WORKS" initialSub={null} onClose={() => {}} onCreated={() => {}} />);
     await screen.findByRole('option', { name: 'Box (BOX)' });
     expect(screen.queryByRole('option', { name: /Point/ })).toBeNull();
+    // Electrical defaults to POINT, which is hidden here, so a new SKU starts on UNIT.
+    fireEvent.change(screen.getByLabelText('Code'), { target: { value: 'EL-2' } });
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Switch point' } });
+    fireEvent.change(screen.getByLabelText('Trade *'), { target: { value: 'ELECTRICAL' } });
+    expect((screen.getByLabelText('Unit') as HTMLSelectElement).value).toBe('UNIT');
+    fireEvent.click(screen.getByText('Create SKU'));
+    expect(h.create.mock.calls[0][0]).toMatchObject({ subCategory: 'ELECTRICAL', uom: 'UNIT' });
 
     h.rows = [sku({ id: 'a', code: 'EL-1', category: 'WORKS', category_group: 'WORKS', sub_category: 'ELECTRICAL', uom: 'POINT' })];
     wrap(<RenovationSkuMaster onImport={() => {}} onOpenSuppliers={() => {}} />);

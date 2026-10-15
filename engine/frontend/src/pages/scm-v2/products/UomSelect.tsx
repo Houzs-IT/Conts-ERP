@@ -4,7 +4,7 @@ import { useRenovationCatalog } from '../../../vendor/scm/lib/renovation-catalog
 import styles from '../Products.module.css';
 
 export function UomSelect({ value, onChange, id, keep }: { value: string; onChange: (v: string) => void; id?: string; keep?: string | null }) {
-  const units = useRenovationCatalog().pickableUoms(keep ?? value);
+  const units = useRenovationCatalog().pickableUoms(keep === undefined ? value : keep);
   return (
     <select id={id} aria-label="Unit" className={styles.fieldSelect} value={value} onChange={(e) => onChange(e.target.value)}>
       {units.map((u) => (

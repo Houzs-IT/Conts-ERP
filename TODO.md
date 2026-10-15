@@ -402,3 +402,4 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Field-by-field list: docs/superpowers/plans/2026-10-14-reno-doc-flow-fields.md. Check: scripts/api-checks/reno-doc-flow.mjs (needs a local Postgres + PostgREST behind the engine's SUPABASE_URL).
 - Sub-category settings: prints (PO, GR, DO, SI) still use the built-in sub-category names; a renamed one prints its old name, an added one prints its code in words. Send the label from renovation-doc-flow.ts to fix.
 - Sub-category settings: a Service sub-category added in settings gets no generic RN-* SKU (migration 0064 seeded those once), so quotation lines for it need a real SKU.
+- Unit settings: a unit added under SKU Master > Units prints only the number in a document's Qty column (like PCS), not "3 BOX"; qtyLabel in shared/renovation-money.ts special-cases only LOT, FULL and SET.
