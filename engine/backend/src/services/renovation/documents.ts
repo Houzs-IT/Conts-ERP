@@ -47,6 +47,11 @@ export function expand(sql: string, projectId: number, companyId: number): { tex
   return { text, args };
 }
 
+/** A query over the project's documents: __POS__, __GRS__ and __DOS__ stand for the sets above (used by the Timeline). */
+export function projectDocSql(sql: string, projectId: number, companyId: number): { text: string; args: number[] } {
+  return expand(sql.replace(/__POS__/g, POS).replace(/__GRS__/g, GRS).replace(/__DOS__/g, DOS), projectId, companyId);
+}
+
 const num = (v: unknown) => Number(v ?? 0);
 const s = (v: unknown) => (v == null ? null : String(v).slice(0, 10));
 

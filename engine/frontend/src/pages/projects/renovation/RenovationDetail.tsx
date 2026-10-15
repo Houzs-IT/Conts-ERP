@@ -25,15 +25,18 @@ import { ContractCard, KeyCard, PeopleCard } from "./ProjectRecords";
 import { DesignTaskCard } from "./DesignTask";
 import { ProcurementPanel } from "./ProcurementPanel";
 import { CustomerInfoCard } from "./CustomerInfoCard";
+import { RenovationTimeline } from "./RenovationTimeline";
 
 export function RenovationDetail({ id, canWrite, embedded = false }: { id: number; canWrite: boolean; embedded?: boolean }) {
   const q = useQuery(["renovation", "detail", id], () => simpleApi.detail(id), [id]);
   const [notice, setNotice] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
+  /* Bumped on every save on this page, so the Timeline picks up the new System entry. */
+  const [saved, setSaved] = useState(0);
   const d = q.data;
   /* Procurement details is the documents hub (mig 0116); the older Documents card shows only before it is applied. */
   const docsReady = useQuery(["renovation", "documents", id], () => simpleApi.documents(id), [id]).data?.ready === true;
 
-  const done = (text: string) => { setNotice({ tone: "ok", text }); q.reload(); };
+  const done = (text: string) => { setNotice({ tone: "ok", text }); setSaved((n) => n + 1); q.reload(); };
   const failed = (text: string) => setNotice({ tone: "err", text });
 
   if (q.loading && !d) return <p className="py-10 text-center text-sm text-ink-secondary">Loading project...</p>;
@@ -48,7 +51,7 @@ export function RenovationDetail({ id, canWrite, embedded = false }: { id: numbe
         title={p.name}
         /* One line under the title (owner, 14 Oct 2026): customer · phone · building unit · layout. */
         description={[p.customer_name, p.customer_phone, [p.building, p.unit_no].filter(Boolean).join(" "), p.layout_label, d.type?.name].filter(Boolean).join(" · ")}
-        actions={<Button variant="secondary" icon={<RefreshCw size={16} />} onClick={() => q.reload()}>Refresh</Button>}
+        actions={<Button variant="secondary" icon={<RefreshCw size={16} />} onClick={() => { q.reload(); setSaved((n) => n + 1); }}>Refresh</Button>}
       />
 
       {notice && (
@@ -65,13 +68,14 @@ export function RenovationDetail({ id, canWrite, embedded = false }: { id: numbe
           {/* Left = work (owner, 14 Oct 2026): Design and Procurement details (the documents hub, with each DO's proof
               of delivery). Right = reference. Site tasks and the room photo gallery left this page (their data and
               APIs are unchanged; the calendar still reads the tasks). */}
-          <DesignTaskCard projectId={id} canWrite={canWrite} onDone={(t) => setNotice({ tone: "ok", text: t })} onError={failed} />
+          <DesignTaskCard projectId={id} canWrite={canWrite} onDone={(t) => { setNotice({ tone: "ok", text: t }); setSaved((n) => n + 1); }} onError={failed} />
           <ProcurementPanel projectId={id} canWrite={canWrite} onError={failed} showMoney={!d.financeHidden} />
           {d.serviceCases.length > 0 && <WarrantyPanel d={d} />}
         </div>
         <aside className="space-y-4 min-w-0">
           <CustomerInfoCard d={d} canWrite={canWrite} onDone={done} onError={failed} />
           <PeopleCard d={d} canWrite={canWrite} onDone={done} onError={failed} />
+          <RenovationTimeline projectId={id} canWrite={canWrite} refreshKey={saved} />
           <KeyCard d={d} canWrite={canWrite} onDone={done} onError={failed} />
           <ContractCard d={d} canWrite={canWrite} onDone={done} onError={failed} />
           {!docsReady && <LinkedDocuments d={d} />}
