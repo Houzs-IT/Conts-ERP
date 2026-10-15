@@ -30,18 +30,18 @@ export interface ProjectDocuments {
 }
 
 /* The project's sales orders, POs, DOs and GRs as SQL sets; `?` 1 = project id, 2 = company id. */
-const SOS = `SELECT doc_no FROM scm.mfg_sales_orders WHERE project_id = ?1 AND company_id = ?2`;
-const POS = `SELECT id FROM scm.purchase_orders WHERE project_id = ?1 AND company_id = ?2
+export const SOS = `SELECT doc_no FROM scm.mfg_sales_orders WHERE project_id = ?1 AND company_id = ?2`;
+export const POS = `SELECT id FROM scm.purchase_orders WHERE project_id = ?1 AND company_id = ?2
              UNION SELECT x.purchase_order_id FROM scm.purchase_order_items x JOIN scm.mfg_sales_order_items i ON i.id = x.so_item_id
                     WHERE i.doc_no IN (${SOS})`;
-const DOS = `SELECT id FROM scm.delivery_orders WHERE company_id = ?2 AND (project_id = ?1 OR so_doc_no IN (${SOS}))`;
-const GRS = `SELECT id FROM scm.grns WHERE company_id = ?2 AND (project_id = ?1 OR purchase_order_id IN (${POS}))
+export const DOS = `SELECT id FROM scm.delivery_orders WHERE company_id = ?2 AND (project_id = ?1 OR so_doc_no IN (${SOS}))`;
+export const GRS = `SELECT id FROM scm.grns WHERE company_id = ?2 AND (project_id = ?1 OR purchase_order_id IN (${POS}))
              UNION SELECT g.grn_id FROM scm.grn_items g JOIN scm.purchase_order_items x ON x.id = g.purchase_order_item_id
                     WHERE x.purchase_order_id IN (${POS})`;
 const SIS = `SELECT id FROM scm.sales_invoices WHERE company_id = ?2 AND (project_id = ?1 OR so_doc_no IN (${SOS}) OR delivery_order_id IN (${DOS}))`;
 
 /* The Db shim binds positional `?`; numbered placeholders above are expanded here into the repeated binds. */
-function expand(sql: string, projectId: number, companyId: number): { text: string; args: number[] } {
+export function expand(sql: string, projectId: number, companyId: number): { text: string; args: number[] } {
   const args: number[] = [];
   const text = sql.replace(/\?([12])/g, (_m, n: string) => { args.push(n === "1" ? projectId : companyId); return "?"; });
   return { text, args };
