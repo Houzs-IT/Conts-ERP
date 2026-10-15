@@ -853,23 +853,34 @@ function DataTableInner<T, L>({
     const byKey = new Map(visibleColumns.map((column) => [column.key, column]));
     let primary = visibleColumns[0];
     if (mobileCard?.primary) primary = byKey.get(mobileCard.primary) ?? primary;
+    const badge = mobileCard?.badge ? byKey.get(mobileCard.badge) : undefined;
+    const subtitle = mobileCard?.subtitle ? byKey.get(mobileCard.subtitle) : undefined;
+    const notInCells = (column: Column<T>) =>
+      column.key !== badge?.key && column.key !== subtitle?.key;
 
     const cells = mobileCard?.cells
       ? mobileCard.cells
           .map((key) => byKey.get(key))
-          .filter((column): column is Column<T> => !!column)
-      : visibleColumns.filter((column) => column.key !== primary?.key);
+          .filter((column): column is Column<T> => !!column && notInCells(column))
+      : visibleColumns.filter((column) => column.key !== primary?.key && notInCells(column));
 
     const layout = mobileCard?.layout ?? "stack";
+    const labelsTop = layout === "stack" && mobileCard?.labels === "top";
+    const head = subtitle ? 76 : 58;
     return {
       primary,
+      badge,
+      subtitle,
       cells,
       layout,
+      labelsTop,
       hideLabels: mobileCard?.hideLabels ?? layout === "grid-2",
       estimateHeight:
         layout === "grid-2"
-          ? Math.max(88, 58 + Math.ceil(cells.length / 2) * 24)
-          : Math.max(88, 58 + cells.length * 24),
+          ? Math.max(88, head + Math.ceil(cells.length / 2) * 24)
+          : labelsTop
+            ? Math.max(88, head + Math.ceil(cells.length / 2) * 42)
+            : Math.max(88, head + cells.length * 24),
     };
   }, [mobileCard, visibleColumns]);
 
@@ -3037,8 +3048,11 @@ function DataTableInner<T, L>({
               const customClass = getRowClassName?.(row);
               const {
                 primary: primaryCol,
+                badge: badgeCol,
+                subtitle: subtitleCol,
                 cells: cellCols,
                 layout,
+                labelsTop,
                 hideLabels,
               } = mobileColumns;
               return (
@@ -3067,7 +3081,7 @@ function DataTableInner<T, L>({
                     // Same rule as the table row: a card's own background replaces the default.
                     !(customClass && /(^|\s)!?bg-/.test(customClass)) && "bg-surface",
                     onRowClick &&
-                      "cursor-pointer active:bg-primary/15 hover:border-primary/40",
+                      "cursor-pointer active:bg-primary/15 [@media(hover:hover)]:hover:border-primary/40",
                     customClass,
                   )}
                 >
@@ -3077,9 +3091,15 @@ function DataTableInner<T, L>({
                 <div className="p-3">
                   {primaryCol && (
                     <div className="mb-1.5 flex items-start gap-3">
-                      <div className="min-w-0 flex-1 font-display text-[14.5px] font-extrabold leading-snug tracking-tight text-ink">
-                        {primaryCol.render(row)}
+                      <div className="min-w-0 flex-1">
+                        <div className="font-display text-[14.5px] font-extrabold leading-snug tracking-tight text-ink">
+                          {primaryCol.render(row)}
+                        </div>
+                        {subtitleCol && (
+                          <div className="mt-0.5 text-[12px] text-ink-muted">{subtitleCol.render(row)}</div>
+                        )}
                       </div>
+                      {badgeCol && <div className="shrink-0 text-[12px]">{badgeCol.render(row)}</div>}
                       {onRowClick && (
                         <ChevronRight
                           size={14}
@@ -3109,7 +3129,21 @@ function DataTableInner<T, L>({
                       ))}
                     </dl>
                   )}
-                  {cellCols.length > 0 && layout === "stack" && (
+                  {cellCols.length > 0 && layout === "stack" && labelsTop && (
+                    <dl className="grid grid-cols-2 gap-x-4 gap-y-3 border-t border-border-subtle pt-2">
+                      {cellCols.map((c) => (
+                        <div key={c.key} className="min-w-0">
+                          <dt className="text-[11px] font-medium text-ink-muted">
+                            {c.label}
+                          </dt>
+                          <dd className={cn("mt-0.5 min-w-0 break-words text-left text-[13px] font-semibold text-ink", c.align === "right" && "tabular-nums", c.className)}>
+                            {c.render(row)}
+                          </dd>
+                        </div>
+                      ))}
+                    </dl>
+                  )}
+                  {cellCols.length > 0 && layout === "stack" && !labelsTop && (
                     <dl
                       className={cn(
                         "grid gap-x-3 gap-y-1 border-t border-border-subtle pt-2 text-[12.5px]",

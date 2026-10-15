@@ -74,7 +74,7 @@ export function RenovationSkuMaster({
           {count}
           {needPhoto > 0 && <span className="text-amber-700"> · {needPhoto} need a photo</span>}
         </span>
-        <div className="ml-auto flex gap-2">
+        <div className="ml-auto flex flex-wrap gap-2 whitespace-nowrap">
           <Button variant="secondary" onClick={() => setSettingsOpen(true)}><Settings2 size={14} strokeWidth={1.75} /> Sub-categories</Button>
           <Button variant="secondary" onClick={onImport}><Upload size={14} strokeWidth={1.75} /> Import SKUs</Button>
           <Button variant="primary" onClick={() => setNewOpen(true)}><Plus size={14} strokeWidth={1.75} /> New SKU</Button>
@@ -84,6 +84,7 @@ export function RenovationSkuMaster({
       <DataTable<MfgProductRow>
         tableId="renovation-sku-master"
         persistFilters={false}
+        mobileCard={{ primary: 'name', cells: ['code', 'group', 'sub', 'uom', 'main', 'status'], labels: 'top', badge: 'status', subtitle: 'code' }}
         exportName="sku-master"
         rows={rows}
         loading={q.isLoading}
