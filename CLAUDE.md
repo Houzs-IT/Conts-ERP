@@ -67,6 +67,8 @@ because the supply chain cannot be separated from the rest of that code). Rules 
   level with `main` (`git merge --ff-only origin/main`), never let it diverge.
 - Local dev without any database password: `node scripts/dev-pglite.mjs` (in-memory Postgres, every migration, demo data)
   and point `WRANGLER_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE` at the URL it prints.
+  `npm run dev:all` starts both apps that way (rental 8788, engine 8790, engine screens 5173). The engine's
+  catalog, sales, procurement, warehouse and transport pages need PostgREST, so check those on staging.
 - Local dev: `npm run dev` (builds + `wrangler pages dev`). For real backend logic against
   real staging data without needing a staging login, point
   `WRANGLER_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE` at the staging DB and mint a
