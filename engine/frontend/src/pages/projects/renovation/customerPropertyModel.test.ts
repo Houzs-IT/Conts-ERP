@@ -10,6 +10,7 @@ import {
   mergeProjectIntoSo,
   missingFields,
   showDate,
+  projectDatesText,
   toRenovationBlock,
   type LayoutOption,
   type ProjectShared,
@@ -106,5 +107,18 @@ describe("the same fields both ways (owner, 14 Oct 2026)", () => {
     const b = toProjectBody({ ...fromProject(PROJECT), city: " Ampang " });
     expect(Object.keys(b)).toEqual([...BLOCK_STRING_KEYS]);
     expect(b.city).toBe("Ampang");
+  });
+});
+
+describe("Start date / End date are read-only and come from the project (owner, 15 Oct 2026)", () => {
+  test("an SO with no project shows a dash for both", () => {
+    expect(projectDatesText(null, "so")).toEqual({ start: "—", end: "—", startSet: false, endSet: false });
+  });
+  test("a project not saved yet says when the dates come", () => {
+    expect(projectDatesText(null, "project")).toMatchObject({ start: "Set when saved", end: "Set when Closed" });
+  });
+  test("a linked project: its created day, and its Closed day once it has one", () => {
+    expect(projectDatesText({ startDate: "2026-10-01", endDate: null }, "so")).toEqual({ start: "1 Oct 2026", end: "Set when Closed", startSet: true, endSet: false });
+    expect(projectDatesText({ startDate: "2026-10-01", endDate: "2026-10-15" }, "project")).toEqual({ start: "1 Oct 2026", end: "15 Oct 2026", startSet: true, endSet: true });
   });
 });

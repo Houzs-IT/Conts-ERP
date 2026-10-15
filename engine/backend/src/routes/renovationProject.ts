@@ -32,6 +32,7 @@ import { buildProcurementView, cleanCategoryDates, cleanSubDates, type GroupDefR
 import { createProjectFromSo, linkSoToProject, unlinkSoFromProject } from "../services/renovation/soLink";
 import { manualTaskRow, plannedDatesRefusal } from "../services/renovation/tradeTasks";
 import { writeCachedStage } from "../services/renovation/contractSync";
+import { syncProjectDates } from "../services/renovation/projectDates";
 import { SUPPLY_CONDITION_LABEL } from "../services/renovation/conditions";
 import { staffViewReady, syncPeopleFromUsers } from "../services/renovation/peopleSync";
 
@@ -79,10 +80,18 @@ async function loadViews(c: Ctx, opts: { projectId?: number; includeArchived?: b
   const rows = await loadProjectRows(db(c), coSql(c, "p.company_id"), opts);
   const facts = await loadRenovationFacts(db(c), rows, { checklistKeys: BOARD_CHECKLIST_KEYS });
   const today = todayMyt();
-  return rows.map((p) => {
+  const list = rows.map((p) => {
     const f = facts.get(p.id)!;
     return { f, v: computeProjectView(f, today) };
   });
+  /* The step is computed here, so this is where a project reaching (or leaving) Closed gets its end date written. */
+  for (const { f, v } of list) await syncProjectDates(db(c), f, v, today);
+  return list;
+}
+
+/** After a hand move of the step: read the project again so its end date follows the new step. */
+async function resyncDates(c: Ctx, id: number): Promise<void> {
+  await loadViews(c, { projectId: id, includeArchived: true });
 }
 
 // ── Board rows (read API) ───────────────────────────────────────────────
@@ -356,6 +365,7 @@ app.post("/:id/step", requirePermission("projects.write"), failClosed(async (c) 
     db(c).prepare(`INSERT INTO project_flow_log (project_id, company_id, kind, from_value, to_value, reason, user_id) VALUES (?, ?, 'manual_step', ?, ?, ?, ?)`)
       .bind(id, co, one.v.flow.current, v.value.step, v.value.reason, userId(c)),
   ]);
+  await resyncDates(c, id);
   return c.json({ ok: true });
 }));
 
@@ -373,6 +383,7 @@ app.post("/:id/step/follow-data", requirePermission("projects.write"), failClose
     db(c).prepare(`INSERT INTO project_flow_log (project_id, company_id, kind, from_value, to_value, user_id) VALUES (?, ?, 'follow_data', ?, ?, ?)`)
       .bind(id, Number(one.f.project.company_id), one.v.flow.current, one.v.flow.derived, userId(c)),
   ]);
+  await resyncDates(c, id);
   return c.json({ ok: true });
 }));
 

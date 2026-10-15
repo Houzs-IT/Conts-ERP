@@ -403,3 +403,9 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Sub-category settings: prints (PO, GR, DO, SI) still use the built-in sub-category names; a renamed one prints its old name, an added one prints its code in words. Send the label from renovation-doc-flow.ts to fix.
 - Sub-category settings: a Service sub-category added in settings gets no generic RN-* SKU (migration 0064 seeded those once), so quotation lines for it need a real SKU.
 - Unit settings: a unit added under SKU Master > Units prints only the number in a document's Qty column (like PCS), not "3 BOX"; qtyLabel in shared/renovation-money.ts special-cases only LOT, FULL and SET.
+
+## Automatic project Start / End date (feat/reno-auto-dates, migration 0117, 15 Oct 2026)
+- OPEN, before merge: apply migration 0117 on staging, then production. It adds the insert trigger that stamps a new renovation project's start date and backfills existing ones (start = created day; end = day it entered Closed per step history, else closed_at, else last updated, for projects SQL can tell are Closed; cleared where nothing could have closed it). The engine works without it: the first read of a project fills its start from the created day.
+- Start = created day (Malaysia); End = the day the step reached Closed (Move step or the data), cleared when it leaves Closed. Read-only everywhere; the project PATCH ignores both for renovation projects. Written where the step is computed (services/renovation/projectDates.ts): board, project page, step routes, contract hooks, Customer info and the SO's Order information reads.
+- A project closed by its data alone (handed over + fully paid, no closed_at) before 0117 gets today as its end date the first time it is read, not the day the last payment came in (payments carry no date in the project facts).
+- Check: scripts/api-checks/reno-customer-property.mjs (71 checks, local engine + PostgREST).

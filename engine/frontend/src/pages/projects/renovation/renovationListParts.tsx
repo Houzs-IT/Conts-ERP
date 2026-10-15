@@ -152,6 +152,11 @@ export function RenovationProjectCard({ row, board, steps, today, onOpen }: {
             <span className="text-ink-muted"> · PIC </span>
             <span>{board?.renoPic.name || "not set"}</span>
           </div>
+          {board?.startDate && (
+            <div className="mt-0.5 truncate text-[11.5px] text-ink-muted" data-testid="reno-card-dates">
+              Started {formatDate(board.startDate)}{board.endDate ? ` · Closed ${formatDate(board.endDate)}` : ""}
+            </div>
+          )}
         </div>
         <div className="shrink-0 text-right" title={ho.label}>
           <div className="text-[10px] font-semibold uppercase tracking-wider text-ink-muted">{ho.label}</div>
@@ -207,6 +212,21 @@ export function renovationColumns({ byId, steps, today, onOpen }: {
       },
       getValue: (r) => b(r)?.step.label ?? "",
       sortCompare: (x, y) => stepIndex(x) - stepIndex(y),
+    },
+    /* Filled by the system (migration 0117): the created day, and the day the project reached Closed. */
+    {
+      key: "reno_start",
+      label: "Start date",
+      disableSort: true,
+      render: (r) => <span className="text-[12px]">{b(r)?.startDate ? formatDate(b(r)!.startDate!) : "—"}</span>,
+      getValue: (r) => b(r)?.startDate ?? "",
+    },
+    {
+      key: "reno_end",
+      label: "End date",
+      disableSort: true,
+      render: (r) => <span className="text-[12px]">{b(r)?.endDate ? formatDate(b(r)!.endDate!) : <span className="text-ink-muted">—</span>}</span>,
+      getValue: (r) => b(r)?.endDate ?? "",
     },
     {
       key: "reno_handover",

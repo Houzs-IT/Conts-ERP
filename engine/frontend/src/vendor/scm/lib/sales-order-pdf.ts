@@ -337,7 +337,9 @@ export async function renderSalesOrderInto(
   /* PWP vouchers this SO's trigger items issued (GET /:docNo `pwpCodes`) —
      used to mark trigger lines. Optional so older callers stay valid. */
   pwpCodes: SoPwpCodeRow[] = [],
-  opts?: { docTitle?: string; docNoLabel?: string; docNoun?: string; rooms?: SoPrintRooms },
+  opts?: { docTitle?: string; docNoLabel?: string; docNoun?: string; rooms?: SoPrintRooms;
+    /* Conts renovation (migration 0117): the linked project's Start / End date, already worded ('15 Oct 2026', '—'). */
+    projectDates?: { start: string; end: string } },
 ): Promise<void> {
   /* A cancelled line must never reach a CUSTOMER document — not as a printed
      row and not inside a total. The gate lives HERE, in the one function both
@@ -547,6 +549,10 @@ export async function renderSalesOrderInto(
         ['Emergency Contact', emergencyText],
         ['Branding', header.branding],
         ['Date', fmtDocDate(header.so_date)],
+        /* Conts renovation: the order's dates are its project's (created day; the day it reached Closed). */
+        ...(opts?.projectDates
+          ? ([['Start Date', opts.projectDates.start], ['End Date', opts.projectDates.end]] as Array<[string, string]>)
+          : []),
         ['Delivery Date', deliveryDate ? fmtDocDate(deliveryDate) : 'To be confirmed'],
         ['Processing Date', processingDate ? fmtDocDate(processingDate) : '—'],
         ['Status', statusText],
@@ -874,7 +880,9 @@ export async function generateSalesOrderPdf(
   /* PWP vouchers this SO's trigger items issued (GET /:docNo `pwpCodes`) —
      used to mark trigger lines. Optional so older callers stay valid. */
   pwpCodes: SoPwpCodeRow[] = [],
-  opts?: { docTitle?: string; docNoLabel?: string; docNoun?: string; rooms?: SoPrintRooms },
+  opts?: { docTitle?: string; docNoLabel?: string; docNoun?: string; rooms?: SoPrintRooms;
+    /* Conts renovation (migration 0117): the linked project's Start / End date, already worded ('15 Oct 2026', '—'). */
+    projectDates?: { start: string; end: string } },
 ): Promise<void> {
   // Dynamic import — code-split into a vendor chunk.
   const { jsPDF } = await import('jspdf');

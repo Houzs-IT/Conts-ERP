@@ -9,7 +9,7 @@ import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "../../lib/utils";
 import { soInfoApi } from "../projects/renovation/customerPropertyApi";
-import { showDate } from "../projects/renovation/customerPropertyModel";
+import { projectDatesText } from "../projects/renovation/customerPropertyModel";
 
 function Cell({ label, value, muted, span }: { label: string; value: ReactNode; muted?: boolean; span?: boolean }) {
   return (
@@ -25,6 +25,8 @@ export function RenovationSoOrderInfo({ docNo, payment }: { docNo: string; payme
   if (q.isLoading) return <div className="h-24 animate-pulse rounded-md bg-surface-dim" aria-busy="true" />;
   if (q.isError || !q.data) return <p role="alert" className="text-[13px] text-err">The order information could not be loaded. Reload the page.</p>;
   const { info, project } = q.data;
+  /* The order's dates are its project's (owner, 15 Oct 2026): the created day, and the day it reached Closed. */
+  const dates = projectDatesText(project, "so");
   const layout = info.layoutLabel
     || (info.bedrooms !== "" || info.bathrooms !== "" ? `${info.bedrooms || "?"} bed ${info.bathrooms || "?"} bath` : "");
   /* A custom label ("Penthouse") gets its counts after it; "3 bed 2 bath" already says them. */
@@ -40,8 +42,8 @@ export function RenovationSoOrderInfo({ docNo, payment }: { docNo: string; payme
           : "No project"}
         muted={!project}
       />
-      <Cell label="Start date" value={project ? showDate(project.startDate) : "—"} muted={!project?.startDate} />
-      <Cell label="End date" value={project ? showDate(project.endDate) : "—"} muted={!project?.endDate} />
+      <Cell label="Start date" value={dates.start} muted={!dates.startSet} />
+      <Cell label="End date" value={dates.end} muted={!dates.endSet} />
       <Cell label="Building" span value={info.building || "—"} muted={!info.building} />
       <Cell label="Unit" value={info.unitNo || "—"} muted={!info.unitNo} />
       <Cell label="Property type" value={info.propertyType || "—"} muted={!info.propertyType} />

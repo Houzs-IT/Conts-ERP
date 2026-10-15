@@ -104,6 +104,7 @@ import { ADD_LINE_LABEL, addLineHref } from "../../vendor/scm/lib/add-line-hando
 import { fairLabel } from "../../vendor/scm/lib/fair-options-queries";
 import { linkedEvent, type LinkedFair } from "../../components/fairPick";
 import { useSoInfoLists, useSoRooms } from "../projects/renovation/customerPropertyApi";
+import { projectDatesText } from "../projects/renovation/customerPropertyModel";
 import { RenovationSoOrderInfo } from "./RenovationSoOrderInfo";
 import { RenovationSoAttachments } from "./RenovationSoAttachments";
 import { roomOrdered } from "../../vendor/scm/lib/so-print-rooms";
@@ -602,6 +603,12 @@ function SalesOrderDetailV2ReadOnly() {
   const renoRooms = useSoRooms(docNo, renoMode).data ?? null;
   const printRooms = renoMode && renoRooms && renoRooms.roomSections.length > 0
     ? { order: renoRooms.roomSections, byItem: renoRooms.itemRooms } : undefined;
+  /* The printed Start / End date are the linked project's (owner, 15 Oct 2026), from the same read as the rooms
+     and the Order information section, so the page and the print never disagree. */
+  const renoDates = renoMode && renoRooms ? projectDatesText(renoRooms.project, "so") : null;
+  /* The PDF's standard font has no em dash (it prints blank), so the print says "-" where the page says "—". */
+  const pdfText = (t: string) => t.replace(/—/g, "-");
+  const printProjectDates = renoDates ? { start: pdfText(renoDates.start), end: pdfText(renoDates.end) } : undefined;
   const requestCancel = useCancelRequestAction("so");
   const { nameOf: salespersonNameOf } = useStaffLookup();
   const staffRoster = useStaff();
@@ -830,7 +837,7 @@ function SalesOrderDetailV2ReadOnly() {
           payments as never,
           action,
           pwpCodes,
-          printRooms ? { rooms: printRooms } : undefined
+          printRooms || printProjectDates ? { rooms: printRooms, projectDates: printProjectDates } : undefined
         )
       )
       .catch((e) =>

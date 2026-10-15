@@ -18,6 +18,7 @@ import { supabaseAuth } from '../middleware/auth';
 import { activeCompanyId, activeCompanySql } from '../lib/companyScope';
 import type { Env, Variables } from '../env';
 import type { Db } from '../../services/renovation/load';
+import { refreshProjectDates } from '../../services/renovation/projectDates';
 import {
   propertyColumnsReady,
   readProjectShared,
@@ -158,6 +159,8 @@ renovationSoInfo.get('/projects/:id', async (c: C) => {
   if (!avail.ok) return c.json(avail.body, avail.status);
   const id = Number(c.req.param('id'));
   if (!Number.isInteger(id) || id <= 0) return c.json({ error: 'invalid_id' }, 400);
+  /* The Start / End date the block shows are the project's, kept up to date with its step (migration 0117). */
+  await refreshProjectDates(db, id, activeCompanySql(c, 'p.company_id'));
   const p = await readProjectShared(db, id, activeCompanySql(c, 'p.company_id'));
   if (!p) return c.json({ error: 'not_found', message: 'Project not found.' }, 404);
   return c.json({ project: p });
@@ -176,6 +179,7 @@ renovationSoInfo.get('/so/:docNo', async (c: C) => {
   const t = (v: unknown) => (v == null ? '' : String(v));
   const projectId = r.project_id == null ? null : Number(r.project_id);
   /* project_id on a Houzs order can name an exhibition (its fair): only a renovation project counts here. */
+  if (projectId != null) await refreshProjectDates(db, projectId, activeCompanySql(c, 'p.company_id'));
   const project = projectId != null ? await readProjectShared(db, projectId, activeCompanySql(c, 'p.company_id')) : null;
   const rooms = await readSoRooms(db, c.req.param('docNo') ?? '');
   return c.json({
