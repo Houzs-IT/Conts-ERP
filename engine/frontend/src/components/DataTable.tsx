@@ -3067,7 +3067,7 @@ function DataTableInner<T, L>({
                     // Same rule as the table row: a card's own background replaces the default.
                     !(customClass && /(^|\s)!?bg-/.test(customClass)) && "bg-surface",
                     onRowClick &&
-                      "cursor-pointer active:bg-primary/15 hover:border-primary/40",
+                      "cursor-pointer active:bg-primary/15 [@media(hover:hover)]:hover:border-primary/40",
                     customClass,
                   )}
                 >
