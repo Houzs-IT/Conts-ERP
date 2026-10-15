@@ -408,3 +408,9 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Start = created day (Malaysia); End = the day the step reached Closed (Move step or the data), cleared when it leaves Closed. Read-only everywhere; the project PATCH ignores both for renovation projects. Written where the step is computed (services/renovation/projectDates.ts): board, project page, step routes, contract hooks, Customer info and the SO's Order information reads.
 - A project closed by its data alone (handed over + fully paid, no closed_at) before 0117 gets today as its end date the first time it is read, not the day the last payment came in (payments carry no date in the project facts).
 - Check: scripts/api-checks/reno-customer-property.mjs (71 checks, local engine + PostgREST).
+
+## Service case looks up the project (feat/reno-service-project, no migration, 15 Oct 2026)
+- Renovation mode: the desktop New Service Case form picks a PROJECT (code, name, building / unit, customer, phone), fills the customer, phone, email and site address from it, stores project_id (migration 0081) and the project's newest SO as doc_no without asking; no Ref No; Product category is the renovation Category / Sub-category. List, detail header and side panel show the project as a link. Houzs mode unchanged.
+- OPEN: the phone app's new-case screen (mobile/MobileServiceCase.tsx, MobileAssrSoField.tsx) still searches SOs; give it the same project picker (GET /api/assr/renovation/projects).
+- OPEN: the Service Cases list search does not match the project code or name yet (services/assr.ts listAssrCases); search by customer or phone meanwhile.
+- Check: scripts/api-checks/reno-service-project.mjs (34 checks, local engine + PostgREST).

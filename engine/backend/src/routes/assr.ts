@@ -53,6 +53,9 @@ import {
 } from "../services/assrVisibility";
 import { notifyServiceCaseResponsible } from "../services/assrNotify";
 import { grantCaseAccess, revokeCaseAccess } from "./assrAccess";
+import { caseProjectForCreate, renovationCaseContextRoute, renovationCaseProjectsRoute, withCaseProjects } from "./renovationServiceCases";
+import { stampCaseFromProject, type CaseProject } from "../services/renovation/serviceCaseProject";
+import type { Db as RenoDb } from "../services/renovation/load";
 import { isDirectorUser } from "../services/pmsAccess";
 import type { AuthUser } from "../services/auth";
 import type { Context, MiddlewareHandler } from "hono";
@@ -892,6 +895,7 @@ app.get("/", requireServiceCaseAccess(), async (c) => {
   if (visibleIds !== undefined) {
     for (const row of (result.data as any[]) ?? []) stripCreditorFields(row);
   }
+  await withCaseProjects(c, result.data as Record<string, unknown>[]);
   return c.json(result);
 });
 
@@ -1285,6 +1289,11 @@ app.get("/lookup-items/:docNo", requireServiceCaseAccess(), async (c) => {
 //       cross-company portal) and Houzs SCM SOs that never reached the mirror.
 // Deduped by doc_no (prefer the SCM row — it carries a company tag), newest
 // first, capped at 20.
+// Renovation mode (projects_mode = 'renovation'): the New Service Case form looks up a PROJECT, not an SO
+// (owner, 15 Oct 2026). Bodies in routes/renovationServiceCases.ts.
+app.get("/renovation/context", requireServiceCaseAccess(), (c) => renovationCaseContextRoute(c));
+app.get("/renovation/projects", requireServiceCaseAccess(), (c) => renovationCaseProjectsRoute(c));
+
 app.get("/search-so", requireServiceCaseAccess(), async (c) => {
   const q = (c.req.query("q") ?? "").trim();
   if (q.length < 2) return c.json({ results: [] });
@@ -1606,6 +1615,7 @@ app.get("/:id{[0-9]+}", requireServiceCaseAccess(), async (c) => {
   if (visibleIds !== undefined) {
     stripCreditorFields((detail as { case?: Record<string, any> }).case);
   }
+  await withCaseProjects(c, [(detail as { case?: Record<string, unknown> }).case]);
   return c.json(detail);
 });
 
@@ -1694,14 +1704,24 @@ app.post(
     customer_email?: string | null;
     service_category?: string | string[] | null;
     assigned_to?: number | null;
+    project_id?: number | null;
   }>();
+
+  // Renovation mode: the case names a project; its SO (if any) rides along as doc_no, never picked.
+  let renoProject: CaseProject | null = null;
+  if (body.project_id != null) {
+    const got = await caseProjectForCreate(c, body.project_id);
+    if ("refusal" in got) return got.refusal;
+    renoProject = got.project;
+    body.doc_no = got.project.soDocNo;
+  }
 
   // Owner ruling (2026-07): Issue Category is REQUIRED and must be enforced
   // server-side, not only by the FE button gate — the server previously
   // accepted a null/blank category. Treat whitespace-only as missing.
   const hasCategory =
     typeof body.issue_category === "string" && body.issue_category.trim().length > 0;
-  if (!body.doc_no || !body.complaint_issue || !hasCategory) {
+  if ((!body.doc_no && !renoProject) || !body.complaint_issue || !hasCategory) {
     return c.json(
       { error: "doc_no, complaint_issue and issue_category are required" },
       400,
@@ -1743,10 +1763,10 @@ app.post(
            JOIN assr_items i ON i.assr_id = c.id
           WHERE c.archived_at IS NULL
             AND ${assrOpenStageSql("c")}
-            AND c.doc_no = ?
+            AND ${renoProject ? "c.project_id" : "c.doc_no"} = ?
             AND i.item_code IN (${placeholders})${assrCompanySql(c, "c.company_id")}`,
       )
-        .bind(body.doc_no, ...codes)
+        .bind(renoProject ? renoProject.id : body.doc_no, ...codes)
         .all<{ id: number; doc_no: string; stage: string | null; customer_name: string | null; created_at: string | null; item_code: string }>();
       const rows = dup.results ?? [];
       if (rows.length) {
@@ -1769,8 +1789,8 @@ app.post(
         return c.json({
           error: "duplicate_open_case",
           message: existing.length === 1
-            ? `Case #${existing[0]!.id} is already open on this SO for ${existing[0]!.items.join(", ")}. Please add to that case instead of opening a new one.`
-            : `${existing.length} cases are already open on this SO for the item(s) you selected. Please add to one of them instead of opening a new one.`,
+            ? `Case #${existing[0]!.id} is already open on this ${renoProject ? "project" : "SO"} for ${existing[0]!.items.join(", ")}. Please add to that case instead of opening a new one.`
+            : `${existing.length} cases are already open on this ${renoProject ? "project" : "SO"} for the item(s) you selected. Please add to one of them instead of opening a new one.`,
           existing,
         }, 409);
       }
@@ -1818,6 +1838,9 @@ app.post(
     // (single-company safe).
     company_id: assrCreateCompanyId(c),
   });
+  if (renoProject) {
+    await stampCaseFromProject(c.env.DB as unknown as RenoDb, result.id, renoProject, trimOrNull(body.customer_email));
+  }
 
   // Notify the responsible person(s) + their recursive upline that a new case
   // landed (owner 2026-07-15). createAssrCase resolves the effective assignees

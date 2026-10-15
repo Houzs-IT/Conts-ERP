@@ -108,6 +108,16 @@ import { useAuth } from "../auth/AuthContext";
 import { isSalesStaff } from "../auth/salesAccess";
 import { api, buildQuery } from "../api/client";
 import { formatPhone } from "../vendor/shared/phone";
+import {
+  CaseProjectLink,
+  RenovationItemCategory,
+  RenovationProjectPicker,
+  caseCategoryValue,
+  caseProjectOf,
+  parseCaseCategory,
+  useServiceCaseRenovation,
+  type RenoCaseProject,
+} from "./renovationServiceCase";
 import { uploadAssrAttachment } from "../lib/assrAttachmentUpload";
 import {
   UploadDropZone,
@@ -433,6 +443,8 @@ function CasesView({
   const dialog = useDialog();
   const navigate = useNavigate();
   const { user } = useAuth();
+  /* Renovation mode: a case belongs to a project, so the list shows the project instead of SO No / Ref No. */
+  const reno = useServiceCaseRenovation()?.renovation === true;
   // Search + stage restore from a per-tab session record, so opening a case and
   // clicking Back returns to the still-filtered list (owner 2026-07-24, session
   // scope — see lib/assrListFilter.ts). The other list filters already persist
@@ -939,6 +951,21 @@ function CasesView({
       getValue: (r) => r.creditor_name,
     },
   ];
+  const shownColumns: Column<AssrCase>[] = reno
+    ? columns.flatMap((col) =>
+        col.key === "ref_no"
+          ? []
+          : col.key === "doc_no"
+            ? [{
+                key: "project",
+                filterable: true,
+                label: "Project",
+                render: (r: AssrCase) => <CaseProjectLink row={r as unknown as Record<string, unknown>} />,
+                getValue: (r: AssrCase) => caseProjectOf(r as unknown as Record<string, unknown>)?.label ?? "",
+              } as Column<AssrCase>]
+            : [col],
+      )
+    : columns;
 
   return (
     <div>
@@ -1154,7 +1181,7 @@ function CasesView({
         search={{
           value: search,
           onChange: (v) => { setPage(1); setSearch(v); },
-          placeholder: "Search ASSR no, SO no, Ref no, customer, salesperson, phone…",
+          placeholder: reno ? "Search case no, customer, phone, issue…" : "Search ASSR no, SO no, Ref no, customer, salesperson, phone…",
           searching: searchTransition.isSearching,
           countPending: list.loading || list.placeholder || Boolean(list.error) || searchTransition.resultsAreStale,
           scope: "server",
@@ -1183,7 +1210,7 @@ function CasesView({
             }
           },
         }}
-        columns={columns}
+        columns={shownColumns}
         rows={list.data?.data ?? null}
         loading={list.loading || searchTransition.isSearching}
         error={list.error}
@@ -2452,6 +2479,12 @@ function CreatePanel({
   toast: ReturnType<typeof useToast>;
 }) {
   const { can } = useAuth();
+  /* Renovation mode (owner, 15 Oct 2026): the case looks up the PROJECT, not the SO. null while unknown. */
+  const renoCtx = useServiceCaseRenovation();
+  const reno = renoCtx?.renovation === true;
+  const [project, setProject] = useState<RenoCaseProject | null>(null);
+  const [itemGroup, setItemGroup] = useState("");
+  const [itemSub, setItemSub] = useState("");
   const [docNo, setDocNo] = useState("");
   // Typeahead state: search local SO mirror by partial DocNo /
   // reference / customer name so staff don't have to remember the
@@ -2675,7 +2708,7 @@ function CreatePanel({
   }
 
   async function submit() {
-    if (!docNo.trim() || !issue.trim()) return;
+    if ((reno ? !project : !docNo.trim()) || !issue.trim()) return;
     const items = [...selectedItems].map((code) => {
       const found = lookupItems?.find((i) => i.item_code === code);
       // User-chosen affected qty wins; falls back to the SO line qty.
@@ -2701,7 +2734,17 @@ function CreatePanel({
 
     setSubmitting(true);
     try {
-      const res = await api.post<{ assr_no: string; id: number }>("/api/assr", {
+      const renoCategory = reno ? caseCategoryValue(renoCtx.categories, itemGroup, itemSub) : null;
+      const res = await api.post<{ assr_no: string; id: number }>("/api/assr", reno ? {
+        // The project's SO (if any) is attached by the server; the user never picks one.
+        project_id: project!.id,
+        doc_no: "",
+        items: [],
+        complaint_issue: issue.trim(),
+        issue_category: resolvedCategory,
+        customer_email: customerEmail.trim() || null,
+        service_category: renoCategory ? [renoCategory] : null,
+      } : {
         doc_no: docNo.trim(),
         items,
         complaint_issue: issue.trim(),
@@ -2784,6 +2827,21 @@ function CreatePanel({
 
   return (
     <Panel open onClose={onClose} title="New Service Case" width={560} centered>
+      {renoCtx === null ? (
+        <PanelSection title="Project">
+          <div className="text-[12px] text-ink-muted">Loading...</div>
+        </PanelSection>
+      ) : reno ? (
+        <PanelSection title="Project">
+          <RenovationProjectPicker
+            value={project}
+            onChange={(p) => {
+              setProject(p);
+              setCustomerEmail(p?.customerEmail ?? "");
+            }}
+          />
+        </PanelSection>
+      ) : (
       <PanelSection title="Sales Order">
         <div className="relative flex gap-2">
           <input
@@ -2931,8 +2989,9 @@ function CreatePanel({
             </div>
           )}
       </PanelSection>
+      )}
 
-      {lookupItems !== null && (
+      {!reno && lookupItems !== null && (
         <PanelSection title={`Items (${lookupItems.length})`}>
           {lookupItems.length === 0 ? (
             <div className="text-[12px] text-ink-muted">
@@ -3055,6 +3114,35 @@ function CreatePanel({
           Operations PIC). Capturing them here means a case is created
           complete instead of being backfilled after the fact. Ref No
           seeds from the picked SO's own customer reference. */}
+      {reno ? (
+        <PanelSection title="Customer & Item">
+          <div className="space-y-3">
+            <div>
+              <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-brand text-ink-muted">
+                Customer Email
+              </div>
+              <input
+                type="email"
+                value={customerEmail}
+                onChange={(e) => setCustomerEmail(e.target.value)}
+                placeholder={project ? "No email on the project" : "Filled from the project"}
+                className="w-full rounded-md border border-border bg-bg px-3 py-2 text-[13px] outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+              />
+            </div>
+            <div>
+              <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-brand text-ink-muted">
+                Item category (if the case is about an item)
+              </div>
+              <RenovationItemCategory
+                categories={renoCtx.categories}
+                group={itemGroup}
+                sub={itemSub}
+                onChange={(g, s) => { setItemGroup(g); setItemSub(s); }}
+              />
+            </div>
+          </div>
+        </PanelSection>
+      ) : (
       <PanelSection title="Customer & Assignment">
         <div className="space-y-3">
           <div>
@@ -3092,6 +3180,7 @@ function CreatePanel({
           </div>
         </div>
       </PanelSection>
+      )}
 
       <PanelSection title={`Defect Photos / Videos (${files.length}/${MAX_FILES})`}>
         <div
@@ -3154,7 +3243,8 @@ function CreatePanel({
           onClick={submit}
           disabled={
             submitting ||
-            !docNo.trim() ||
+            renoCtx === null ||
+            (reno ? !project : !docNo.trim()) ||
             !issue.trim() ||
             !issueCategory ||
             (issueCategory === OTHER_SENTINEL && !customCategory.trim())
@@ -3187,6 +3277,9 @@ function DetailContent({
     () => api.get(`/api/assr/${id}`),
     [id]
   );
+  /* Renovation mode: the case belongs to a project; it shows (and links) the project instead of SO / Ref No. */
+  const renoCtx = useServiceCaseRenovation();
+  const reno = renoCtx?.renovation === true;
 
   // PR 4 — the active-stage set collapses to 7 when the resolution
   // method is internal (own team / return-to-store). Compute once
@@ -3526,8 +3619,16 @@ function DetailContent({
             {/* Sub-status implies its stage (Nick 2026-07-23: supplier
                 pending return 应该出现在 stage) — show it when present. */}
             {" · "}Stage <b className="font-semibold text-accent">{caseSubStatus(c)?.label ?? caseStageLabel(c.stage)}</b>
-            {c.doc_no ? <> {" · "}<span className="font-mono text-[12.5px] text-ink-secondary">{c.doc_no}</span></> : null}
-            {c.ref_no ? <> {" · "}Ref <span className="font-mono text-[12.5px]">{c.ref_no}</span></> : null}
+            {reno ? (
+              caseProjectOf(c as unknown as Record<string, unknown>)
+                ? <> {" · "}Project <CaseProjectLink row={c as unknown as Record<string, unknown>} className="font-semibold text-primary hover:underline" /></>
+                : null
+            ) : (
+              <>
+                {c.doc_no ? <> {" · "}<span className="font-mono text-[12.5px] text-ink-secondary">{c.doc_no}</span></> : null}
+                {c.ref_no ? <> {" · "}Ref <span className="font-mono text-[12.5px]">{c.ref_no}</span></> : null}
+              </>
+            )}
           </span>
         ) : undefined
       }
@@ -3896,6 +3997,21 @@ function DetailContent({
             )}
             {/* Product attributes */}
             <div className="mt-1 space-y-2.5 border-t border-border-subtle/50 pt-2.5">
+              {reno ? (
+                <div>
+                  <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-brand text-ink-muted">
+                    Item category
+                  </div>
+                  <RenovationItemCategory
+                    categories={renoCtx.categories}
+                    {...parseCaseCategory(renoCtx.categories, c.service_category)}
+                    onChange={(g, s) => {
+                      const v = caseCategoryValue(renoCtx.categories, g, s);
+                      void patch({ service_category: v ? [v] : [] });
+                    }}
+                  />
+                </div>
+              ) : (
               <div>
                 <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-brand text-ink-muted">
                   Product Category
@@ -3912,6 +4028,7 @@ function DetailContent({
                   onChange={(next) => patch({ service_category: next })}
                 />
               </div>
+              )}
             </div>
             {showAddItem && (() => {
               // Hide items already on the case so users only see what's
@@ -4585,6 +4702,12 @@ function DetailContent({
               {/* SO + Ref side by side — mirrors the read view's twin
                   chips (Nick 2026-07-23). Ref No is a plain editable
                   field (the SO re-match fills it only on SO change). */}
+              {reno ? (
+                <div>
+                  <div className="text-[10px] font-semibold uppercase tracking-brand text-ink-muted">Project</div>
+                  <div className="mt-1 text-[13px]"><CaseProjectLink row={c as unknown as Record<string, unknown>} className="font-semibold text-primary hover:underline" /></div>
+                </div>
+              ) : (
               <div className="grid grid-cols-2 gap-2">
                 <SoNoSearchEdit value={c.doc_no} onSave={(v) => patch({ doc_no: v })} />
                 <InlineEdit
@@ -4594,6 +4717,7 @@ function DetailContent({
                   placeholder="e.g. DLPG 0285"
                 />
               </div>
+              )}
               <InlineEdit
                 label="Phone"
                 value={c.phone}
@@ -4658,6 +4782,14 @@ function DetailContent({
                   </div>
                 </div>
               </div>
+              {reno ? (
+                <div className="rounded-md border border-border-subtle bg-bg/60 px-2.5 py-2">
+                  <div className="font-mono text-[9px] font-semibold uppercase tracking-wider text-ink-muted">Project</div>
+                  <div className="mt-1 truncate text-[13px]">
+                    <CaseProjectLink row={c as unknown as Record<string, unknown>} className="font-semibold text-primary hover:underline" />
+                  </div>
+                </div>
+              ) : (
               <div className="grid grid-cols-2 gap-2">
                 <div className="rounded-md border border-border-subtle bg-bg/60 px-2.5 py-2">
                   <div className="font-mono text-[9px] font-semibold uppercase tracking-wider text-ink-muted">SO No</div>
@@ -4668,6 +4800,7 @@ function DetailContent({
                   <div className="mt-1 truncate font-mono text-[13px] font-semibold text-ink">{c.ref_no || "—"}</div>
                 </div>
               </div>
+              )}
               <div className="flex items-center justify-between gap-2 border-t border-border-subtle pt-2.5">
                 <div className="min-w-0">
                   <div className="font-mono text-[9px] font-semibold uppercase tracking-wider text-ink-muted">Phone</div>
