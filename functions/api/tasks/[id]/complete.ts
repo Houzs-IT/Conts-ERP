@@ -1,4 +1,5 @@
 import { type Env, one, run, json, fail, audit, nowIso } from '../../../_lib/db';
+import { isOnTask } from '../../../_lib/taskCleaners';
 import { requireSession, isFieldRole } from '../../../_lib/auth';
 import { chargeClean } from '../../../_lib/cleaning';
 import { cleaningNotice } from '../../../_lib/notices';
@@ -17,7 +18,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
            (SELECT COUNT(*) FROM documents d WHERE d.task_id = t.id AND d.kind IN ('photo','video')) AS photos
     FROM tasks t WHERE t.id = ?`, id);
   if (!t) return fail('NOT_FOUND', 'That task no longer exists. Refresh the list.', 404);
-  if (isFieldRole(session.role) && t.assignee_id !== session.userId) return fail('FORBIDDEN', 'That job is assigned to someone else.', 403);
+  if (isFieldRole(session.role) && !(await isOnTask(env, t.id, session.userId))) return fail('FORBIDDEN', 'That job is assigned to someone else.', 403);
   if (t.state === 'resolved') return json({ ok: true });
 
   // A clean always needs proof (owner rule, 10 Oct 2026); other tasks only when they say so.

@@ -1,4 +1,5 @@
 import { type Env, one, run, json, fail, audit, nowIso } from '../../../../_lib/db';
+import { isOnTask } from '../../../../_lib/taskCleaners';
 import { requireSession, isFieldRole } from '../../../../_lib/auth';
 import { checklistOf, standardItems } from '../../../../_lib/cleaning';
 
@@ -12,7 +13,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
   if (!session) return response!;
   const t = await load(env, String(params.id));
   if (!t) return fail('NOT_FOUND', 'That clean no longer exists.', 404);
-  if (isFieldRole(session.role) && t.assignee_id !== session.userId) return fail('FORBIDDEN', 'That job is assigned to someone else.', 403);
+  if (isFieldRole(session.role) && !(await isOnTask(env, t.id, session.userId))) return fail('FORBIDDEN', 'That job is assigned to someone else.', 403);
   return json({ data: await checklistOf(env, t.id, t.kind) });
 };
 
@@ -23,7 +24,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   if (!session) return response!;
   const t = await load(env, String(params.id));
   if (!t) return fail('NOT_FOUND', 'That clean no longer exists.', 404);
-  if (isFieldRole(session.role) && t.assignee_id !== session.userId) return fail('FORBIDDEN', 'That job is assigned to someone else.', 403);
+  if (isFieldRole(session.role) && !(await isOnTask(env, t.id, session.userId))) return fail('FORBIDDEN', 'That job is assigned to someone else.', 403);
   if (t.state === 'resolved') return fail('CONFLICT', 'That clean is finished; its checklist is closed.', 409);
 
   const b = await request.json<any>().catch(() => null);

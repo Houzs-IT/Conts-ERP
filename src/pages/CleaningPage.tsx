@@ -10,6 +10,8 @@ import { EmptyState, Skeleton } from '../components/States';
 import { AttachmentLabel, MediaGallery } from '../components/Attachments';
 import { DataTable, type Column } from '../components/DataTable';
 import { BulkAssignCleaner } from '../components/BulkAssignCleaner';
+import { CleanerChecklist, CleanerChips } from '../components/CleanerPicks';
+import { sizeLine } from '../lib/unitSize';
 import SplitPane from '../components/SplitPane';
 import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
@@ -34,10 +36,13 @@ import { StatusBadge } from '../components/StatusBadge';
 /* ---------- what the board endpoint answers (functions/api/housekeeping/board.ts) ---------- */
 
 interface Guest { reservationId: string; guestName: string; channel: string }
+interface TaskCleaner { cleanerId: string | null; userId: string | null; name: string; outsourced: boolean }
+/** The unit's size and layout type (functions/_lib/unitLayout.ts). */
+interface UnitSize { bedrooms: number | null; bathrooms: number | null; size: string | null; layout: string | null }
 interface Row {
   id: string; kind: string; state: string; status: Exclude<CleanStatus, 'unplanned'>; title: string; instructions: string | null;
   day: string; carriedOver: boolean; unitId: string; unitNumber: string; readiness: string; buildingId: string; propertyName: string;
-  assigneeId: string | null; cleanerId: string | null; assigneeName: string | null;
+  assigneeId: string | null; cleanerId: string | null; assigneeName: string | null; cleaners: TaskCleaner[]; unit: UnitSize;
   previous: (Guest & { state: string; checkOutTime: string; lateCheckOut: boolean }) | null;
   next: (Guest & { guests: number; checkInTime: string; earlyCheckIn: boolean; checkInAt: string }) | null;
   guestOut: boolean; guestLeftAt: string | null; startedAt: string | null; completedAt: string | null;
@@ -45,7 +50,7 @@ interface Row {
 }
 interface Departure {
   reservationId: string; state: string; channel: string; guestName: string; checkOutTime: string; lateCheckOut: boolean;
-  unitId: string; unitNumber: string; buildingId: string; propertyName: string;
+  unitId: string; unitNumber: string; buildingId: string; propertyName: string; unit?: UnitSize;
   next: { guestName: string; checkInTime: string; checkInAt: string; earlyCheckIn: boolean } | null;
 }
 export interface RepairOnDay {
@@ -63,6 +68,7 @@ interface Detail {
   cost: { amount: number; source: 'unit' | 'history' | 'default'; charged: boolean } | null;
   damage: { id: string; title: string; state: string; reportedAt: string }[];
   day?: string | null;
+  cleaners?: TaskCleaner[]; unit?: UnitSize;
 }
 
 type Tab = 'board' | 'history';
@@ -130,7 +136,7 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
 
   const phaseOf = (r: Row) => (r.status === 'done' ? 'done' : r.status === 'cleaning' ? 'doing' : 'todo');
   const filteredRows = rows.filter(r => (!building || r.buildingId === building)
-    && (!cleaner || (cleaner === 'none' ? !r.cleanerId && !r.assigneeId && !r.assigneeName : r.cleanerId === cleaner)));
+    && (!cleaner || (cleaner === 'none' ? !r.cleanerId && !r.assigneeId && !r.assigneeName : r.cleanerId === cleaner || r.cleaners.some(c => c.cleanerId === cleaner))));
   const phaseCount = { todo: filteredRows.filter(r => phaseOf(r) === 'todo').length, doing: filteredRows.filter(r => phaseOf(r) === 'doing').length, done: filteredRows.filter(r => phaseOf(r) === 'done').length };
   const visible = filteredRows.filter(r => phaseOf(r) === phase);
   const visibleDepartures = phase !== 'todo' ? [] : departures.filter(d => (!building || d.buildingId === building) && (!cleaner || cleaner === 'none'));
@@ -256,7 +262,7 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
 /* ---------- one building ---------- */
 
 // Columns follow the card's own width, not the window's: with the detail panel open the list is narrow on a laptop.
-const COLS = '@2xl:grid @2xl:grid-cols-[minmax(0,1.3fr)_minmax(0,1.2fr)_minmax(0,1.1fr)_minmax(0,0.6fr)_minmax(0,0.6fr)_minmax(0,0.85fr)_minmax(0,1fr)] @2xl:items-center @2xl:gap-2.5';
+const COLS = '@2xl:grid @2xl:grid-cols-[minmax(0,1.3fr)_minmax(0,1.2fr)_minmax(0,1.1fr)_minmax(0,0.6fr)_minmax(0,0.6fr)_minmax(0,0.75fr)_minmax(0,0.95fr)_minmax(0,1fr)] @2xl:items-center @2xl:gap-2.5';
 
 function BuildingCard({ group, now, future, selected, busy, onSelect, onGuestLeft, onPlan, onAssign }: {
   group: { id: string; name: string; rows: Row[]; departures: Departure[]; repairs: RepairOnDay[] }; now: number; future: boolean; selected: string | null; busy: string | null;
@@ -266,7 +272,7 @@ function BuildingCard({ group, now, future, selected, busy, onSelect, onGuestLef
   const doneN = group.rows.filter(r => r.status === 'done').length;
   const open = group.rows.filter(r => r.status !== 'done');
   const unassigned = open.filter(r => !r.cleanerId && !r.assigneeId && !r.assigneeName).length;
-  const names = [...new Set(group.rows.map(r => r.assigneeName).filter(Boolean))];
+  const names = [...new Set(group.rows.flatMap(r => (r.cleaners.length ? r.cleaners.map(c => c.name) : [r.assigneeName])).filter(Boolean))];
   // Each building folds shut; it starts open only when something in it still needs a person.
   const [shut, setShut] = useState(() => open.length === 0 && group.departures.length === 0);
   return (
@@ -281,22 +287,23 @@ function BuildingCard({ group, now, future, selected, busy, onSelect, onGuestLef
         </button>
         <div className="flex items-center gap-2 text-copy flex-wrap">
           {unassigned > 0 ? <span className="text-danger font-medium">{unassigned} unassigned</span>
-            : names.length ? <span className="text-muted-ink">Cleaner <b className="text-ink">{names.length === 1 ? names[0] : `${names.length} people`}</b></span> : null}
+            : names.length ? <span className="text-muted-ink" title={names.length > 1 ? names.join(', ') : undefined}>{names.length === 1 ? 'Cleaner' : 'Cleaners'} <b className="text-ink">{names.length === 1 ? names[0] : `${names.length} people`}</b></span> : null}
           {open.length > 0 && <Button size="sm" variant="secondary" onClick={onAssign}>Assign whole building</Button>}
         </div>
       </header>
       {!shut && <>
       <div className={cx('hidden text-meta font-semibold text-muted-ink px-5 py-2 [border-top:1px_solid_var(--color-line-soft)]', COLS)}>
-        <div>Unit</div><div>Checkout (leaving)</div><div>Check-in (arriving)</div><div>Time left</div><div>Type</div><div>Cleaner</div><div>Status</div>
+        <div>Unit</div><div>Checkout (leaving)</div><div>Check-in (arriving)</div><div>Time left</div><div>Type</div><div>Layout</div><div>Cleaner</div><div>Status</div>
       </div>
       {group.rows.map(r => <CleanRow key={r.id} r={r} now={now} active={r.id === selected} busy={busy === `left-${r.id}`} onSelect={() => onSelect(r.id)} onGuestLeft={() => onGuestLeft({ taskId: r.id }, r.unitNumber)} />)}
       {group.departures.map(d => (
         <div key={d.reservationId} className={cx('px-4 @2xl:px-5 py-3 [border-top:1px_solid_var(--color-line-soft)] text-copy flex flex-wrap items-baseline gap-x-4 gap-y-1', COLS)}>
-          <div className="basis-full @2xl:basis-auto flex items-center gap-2"><b>{d.unitNumber}</b><span className="@2xl:hidden"><StatusBadge tone="critical">No cleaning job planned</StatusBadge></span></div>
+          <div className="basis-full @2xl:basis-auto flex items-center gap-x-2 flex-wrap min-w-0"><span className="min-w-0"><b>{d.unitNumber}</b>{d.unit?.size && <span className="ml-1.5 @2xl:ml-0 @2xl:block text-meta text-muted-ink truncate">{d.unit.size}</span>}</span><span className="@2xl:hidden"><StatusBadge tone="critical">No cleaning job planned</StatusBadge></span></div>
           <div><b className="[font-variant-numeric:tabular-nums]">{d.checkOutTime}</b> · {d.guestName}{d.lateCheckOut && <StatusBadge tone="warning" className="ml-1">Late checkout</StatusBadge>}{d.state === 'checked_out' && <StatusBadge tone="gold" className="ml-1">Out</StatusBadge>}</div>
           <div>{d.next ? <><b className="[font-variant-numeric:tabular-nums]">{d.next.checkInTime}</b> · {d.next.guestName}</> : <span className="text-muted-ink">No check-in</span>}</div>
           <div><span className="@2xl:hidden text-muted-ink">Time left </span><TimeLeft at={d.next?.checkInAt} now={now} /></div>
           <div className="hidden @2xl:block text-muted-ink">—</div>
+          <div className="hidden @2xl:block truncate">{d.unit?.layout ?? <span className="text-muted-ink">—</span>}</div>
           <div className="hidden @2xl:block text-muted-ink">—</div>
           <div className="basis-full @2xl:basis-auto flex items-center gap-2 flex-wrap justify-end @2xl:justify-start pt-1 @2xl:pt-0">
             <span className="hidden @2xl:inline"><StatusBadge tone="critical">No cleaning job</StatusBadge></span>
@@ -329,8 +336,11 @@ function CleanRow({ r, now, active, busy, onSelect, onGuestLeft }: { r: Row; now
     <div role="button" tabIndex={0} aria-pressed={active} onClick={onSelect} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(); } }}
       className={cx('px-4 @2xl:px-5 py-3 [border-top:1px_solid_var(--color-line-soft)] text-copy cursor-pointer flex flex-wrap items-baseline gap-x-4 gap-y-1 outline-none focus-visible:[box-shadow:inset_0_0_0_2px_var(--color-gold)]', COLS,
         active ? 'bg-gold-tint [box-shadow:inset_3px_0_0_var(--color-gold)]' : 'hover:bg-page', r.status === 'done' && 'text-muted-ink')}>
-      <div className="basis-full @2xl:basis-auto flex items-center gap-2 min-w-0">
-        <b className="text-ink flex-none">{r.unitNumber}</b>
+      <div className="basis-full @2xl:basis-auto flex items-center gap-x-2 min-w-0">
+        <span className="min-w-0">
+          <b className="text-ink">{r.unitNumber}</b>
+          {r.unit?.size && <span className="ml-1.5 @2xl:ml-0 @2xl:block text-meta text-muted-ink truncate">{r.unit.size}</span>}
+        </span>
         {r.carriedOver && <span className="flex-none"><StatusBadge tone="warning" title={`Carried over from ${dayLabel(r.day)}`}>{dayLabel(r.day).replace(/^\w+\s/, '')}</StatusBadge></span>}
         <span className="@2xl:hidden ml-auto flex-none"><StatusBadge tone={st.tone}>{r.status === 'done' && r.completedAt ? `Done ${hm(r.completedAt)}` : st.label}</StatusBadge></span>
       </div>
@@ -347,7 +357,8 @@ function CleanRow({ r, now, active, busy, onSelect, onGuestLeft }: { r: Row; now
       </div>
       <div className={cx(!r.next && 'hidden @2xl:block')}><span className="@2xl:hidden text-muted-ink">Time left </span><TimeLeft at={r.next?.checkInAt} now={now} done={r.status === 'done'} /></div>
       <div><span className="@2xl:hidden text-muted-ink">Type </span>{KIND_LABEL[r.kind] ?? r.kind}</div>
-      <div className={cx('truncate', !r.assigneeName && 'text-danger')}><span className="@2xl:hidden text-muted-ink">Cleaner </span>{r.assigneeName ?? 'Unassigned'}</div>
+      <div className={cx('truncate', !r.unit?.layout && '@max-2xl:hidden')}><span className="@2xl:hidden text-muted-ink">Layout </span>{r.unit?.layout ?? <span className="text-muted-ink">—</span>}</div>
+      <CleanerCell r={r} />
       <div className="flex items-center gap-1.5 flex-wrap">
         <span className="hidden @2xl:inline"><StatusBadge tone={st.tone} className="whitespace-nowrap">{r.status === 'done' ? `Done${r.completedAt ? ` ${hm(r.completedAt)}` : ''}` : st.label}</StatusBadge></span>
         {r.status === 'done' && files > 0 && <span className="hidden @2xl:inline text-meta text-muted-ink whitespace-nowrap">{files} {files === 1 ? 'photo' : 'photos'}</span>}
@@ -355,6 +366,20 @@ function CleanRow({ r, now, active, busy, onSelect, onGuestLeft }: { r: Row; now
           <Button size="sm" variant="secondary" loading={busy} onClick={e => { e.stopPropagation(); onGuestLeft(); }}>Guest left</Button>
         )}
       </div>
+    </div>
+  );
+}
+
+/** The job's cleaners: one name, or the first name and "+N" with everyone in the tooltip. */
+function CleanerCell({ r }: { r: Row }) {
+  const names = r.cleaners.length ? r.cleaners.map(c => c.name) : r.assigneeName ? [r.assigneeName] : [];
+  return (
+    <div className={cx('min-w-0 flex items-baseline gap-1', !names.length && 'text-danger')} title={names.length > 1 ? names.join(', ') : undefined}>
+      <span className="@2xl:hidden text-muted-ink flex-none">{names.length > 1 ? 'Cleaners' : 'Cleaner'} </span>
+      {/* Phones have the room to list everyone; the desk column shows the first and how many more. */}
+      <span className="truncate @2xl:hidden">{names.length ? names.join(', ') : 'Unassigned'}</span>
+      <span className="truncate hidden @2xl:inline">{names[0] ?? 'Unassigned'}</span>
+      {names.length > 1 && <span className="hidden @2xl:inline flex-none text-meta font-semibold text-muted-ink">+{names.length - 1}</span>}
     </div>
   );
 }
@@ -377,8 +402,20 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft }: { row: Row; 
     finally { setBusy(null); }
   }
   // What was just picked shows at once; the board can take a while to come back on a busy day.
-  const [picked, setPicked] = useState<{ cleaner?: string; kind?: string }>({});
-  useEffect(() => { setPicked({}); }, [row.cleanerId, row.kind]);
+  const [picked, setPicked] = useState<{ kind?: string }>({});
+  useEffect(() => { setPicked({}); }, [row.kind]);
+  // The cleaners on the job, in order: what was just saved shows at once, the board's answer replaces it.
+  const rowTeam = row.cleaners.map(c => c.cleanerId).filter((x): x is string => !!x);
+  const [team, setTeam] = useState<string[] | null>(null);
+  useEffect(() => { setTeam(null); }, [rowTeam.join('|')]); // eslint-disable-line react-hooks/exhaustive-deps
+  const shownTeam = team ?? rowTeam;
+  const teamNames: Record<string, string> = Object.fromEntries(row.cleaners.filter(c => c.cleanerId).map(c => [c.cleanerId!, c.name]));
+  function saveTeam(ids: string[]) {
+    setTeam(ids);
+    void act('assign', () => api.post(`/housekeeping/tasks/${row.id}/assign`, { cleanerIds: ids, force: true }),
+      ids.length > 1 ? `${ids.length} cleaners on this job.` : ids.length ? 'Cleaner assigned.' : 'Cleaner taken off.')
+      .then(ok => { if (!ok) setTeam(null); });
+  }
   async function reveal(id: string) {
     try { const r = await api.get<{ secret: string }>(`/access-credentials/${id}?reveal=true`); setRevealed(x => ({ ...x, [id]: r.secret || '(no code set)' })); }
     catch (e) { toast({ tone: 'critical', title: 'Code not shown.', body: errorMessage(e, 'Try again.') }); }
@@ -391,7 +428,8 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft }: { row: Row; 
   const unitLabel = `${row.propertyName} ${row.unitNumber}`;
   const kind = picked.kind ?? row.kind;
   const kindName = KIND_NAME[kind] ?? 'Standard clean';
-  const cleanerName = (picked.cleaner && cleaners.find(c => c.id === picked.cleaner)?.name) || row.assigneeName;
+  const cleanerName = shownTeam.length ? shownTeam.map(id => teamNames[id] ?? cleaners.find(c => c.id === id)?.name ?? 'Cleaner').join(', ') : row.assigneeName;
+  const size = sizeLine(data?.unit?.size ?? row.unit?.size, data?.unit?.layout ?? row.unit?.layout);
   const origin = data?.createdAt ? {
     at: data.createdAt,
     label: row.previous ? `Cleaning job created for ${row.previous.guestName}'s checkout` : 'Cleaning job created',
@@ -403,6 +441,7 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft }: { row: Row; 
         <div className="flex-1 min-w-0 flex flex-col gap-1">
           <div className="text-[11px] font-semibold tracking-[0.12em] uppercase text-gold">{row.propertyName}</div>
           <div className="text-[19px] leading-tight font-semibold">{row.unitNumber} · {kindName}</div>
+          {size && <div className="text-meta text-on-dark">{size}</div>}
           <div className="mt-1 flex items-center gap-2 flex-wrap">
             <StatusBadge tone={st.tone}>{done && row.completedAt ? `Done ${hm(row.completedAt)}` : st.label}</StatusBadge>
             {row.startedAt && <span className="text-meta text-on-dark">Started {hm(row.startedAt)}{used != null ? ` · ${done ? 'took' : 'so far'} ${minutesLabel(used)}` : ''}</span>}
@@ -414,22 +453,21 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft }: { row: Row; 
 
       {done ? (
         <div className="rounded-control border border-solid border-line p-3 grid grid-cols-2 gap-x-3 gap-y-1">
-          <span className="text-meta text-muted-ink">Cleaner</span><span className="text-meta text-muted-ink">Type</span>
+          <span className="text-meta text-muted-ink">{shownTeam.length > 1 ? 'Cleaners' : 'Cleaner'}</span><span className="text-meta text-muted-ink">Type</span>
           <b>{cleanerName ?? 'Not recorded'}</b><b>{kindName}</b>
         </div>
       ) : (
-        <section className="grid grid-cols-2 gap-2.5">
-          <FormRow label="Cleaner">
-            <select className={cx(INPUT, !cleanerName && 'border-danger')} value={picked.cleaner ?? row.cleanerId ?? ''} disabled={busy === 'assign'} onChange={e => { const v = e.target.value; if (!v) return; setPicked(p => ({ ...p, cleaner: v })); void act('assign', () => api.post(`/housekeeping/tasks/${row.id}/assign`, { cleanerId: v, force: true }), 'Cleaner assigned.').then(ok => { if (!ok) setPicked(p => ({ ...p, cleaner: undefined })); }); }}>
-              <option value="">{row.assigneeName && !row.cleanerId ? row.assigneeName : 'Pick a cleaner'}</option>
-              {cleaners.map(c => <option key={c.id} value={c.id}>{c.name}{c.employmentType === 'outsourced' ? ' (outsourced)' : ''}</option>)}
-            </select>
+        <section className="flex flex-col gap-2.5">
+          <FormRow label={shownTeam.length > 1 ? 'Cleaners' : 'Cleaner'} hint={!shownTeam.length && row.assigneeName ? `Now with ${row.assigneeName}, who is not on the cleaner roster.` : undefined}>
+            <CleanerChips cleaners={cleaners} value={shownTeam} names={teamNames} onChange={saveTeam} disabled={busy === 'assign'} required />
           </FormRow>
+          <div className="grid grid-cols-2 gap-2.5">
           <FormRow label="Type">
             <select className={INPUT} value={kind} disabled={busy === 'kind'} onChange={e => { const v = e.target.value; setPicked(p => ({ ...p, kind: v })); void act('kind', () => api.patch(`/housekeeping/tasks/${row.id}`, { kind: v, title: v === 'deep_clean' ? 'Deep clean' : row.title }), 'Cleaning type changed.').then(ok => { if (!ok) setPicked(p => ({ ...p, kind: undefined })); }); }}>
               <option value="turnover">Standard</option><option value="deep_clean">Deep</option><option value="light_clean">Light</option>
             </select>
           </FormRow>
+          </div>
         </section>
       )}
 
@@ -528,7 +566,7 @@ function NewCleanModal({ date, onClose, onDone }: { date: string; onClose: () =>
   const [unitId, setUnitId] = useState('');
   const [day, setDay] = useState(date);
   const [kind, setKind] = useState('turnover');
-  const [cleanerId, setCleanerId] = useState('');
+  const [cleanerIds, setCleanerIds] = useState<string[]>([]);
   const [notes, setNotes] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -537,7 +575,7 @@ function NewCleanModal({ date, onClose, onDone }: { date: string; onClose: () =>
     if (!unitId) { setError('Pick a unit.'); return; }
     setBusy(true); setError(null);
     try {
-      await api.post('/housekeeping/tasks', { unitId, date: day, kind, cleanerId: cleanerId || undefined, instructions: notes.trim() || undefined, title: kind === 'deep_clean' ? 'Deep clean' : kind === 'light_clean' ? 'Light clean' : 'Standard clean' });
+      await api.post('/housekeeping/tasks', { unitId, date: day, kind, cleanerIds, instructions: notes.trim() || undefined, title: kind === 'deep_clean' ? 'Deep clean' : kind === 'light_clean' ? 'Light clean' : 'Standard clean' });
       onDone();
     } catch (e) { setError(errorMessage(e, 'Not saved. Try again.')); setBusy(false); }
   }
@@ -555,11 +593,8 @@ function NewCleanModal({ date, onClose, onDone }: { date: string; onClose: () =>
           </select>
         </FormRow>
       </div>
-      <FormRow label="Cleaner (optional)">
-        <select className={INPUT} value={cleanerId} onChange={e => setCleanerId(e.target.value)}>
-          <option value="">Assign later</option>
-          {cleaners.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-        </select>
+      <FormRow label="Cleaners (optional)" hint={cleanerIds.length ? undefined : 'Leave empty to assign later.'}>
+        <CleanerChips cleaners={cleaners} value={cleanerIds} names={{}} onChange={setCleanerIds} />
       </FormRow>
       <FormRow label="Notes for the cleaner (optional)"><textarea className={TEXTAREA} value={notes} onChange={e => setNotes(e.target.value)} maxLength={1000} /></FormRow>
     </OpsModal>
@@ -568,27 +603,22 @@ function NewCleanModal({ date, onClose, onDone }: { date: string; onClose: () =>
 
 function AssignBuildingModal({ building, date, onClose, onDone }: { building: { buildingId: string; name: string }; date: string; onClose: () => void; onDone: (n: number, who: string) => void }) {
   const { cleaners } = useCleaners(true);
-  const [cleanerId, setCleanerId] = useState('');
+  const [cleanerIds, setCleanerIds] = useState<string[]>([]);
   const [onlyUnassigned, setOnlyUnassigned] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   async function save() {
-    if (!cleanerId) { setError('Pick a cleaner.'); return; }
+    if (!cleanerIds.length) { setError('Pick at least one cleaner.'); return; }
     setBusy(true); setError(null);
     try {
-      const r = await api.post<{ assigned: number; assigneeName: string }>('/housekeeping/assign-building', { buildingId: building.buildingId, date, cleanerId, onlyUnassigned });
+      const r = await api.post<{ assigned: number; assigneeName: string }>('/housekeeping/assign-building', { buildingId: building.buildingId, date, cleanerIds, onlyUnassigned });
       onDone(r.assigned, r.assigneeName);
     } catch (e) { setError(errorMessage(e, 'Not saved. Try again.')); setBusy(false); }
   }
   return (
-    <OpsModal title={`Assign ${building.name}`} sub={`Every unfinished cleaning job in this building on ${dayLabel(date)} goes to one cleaner.`} onClose={onClose} busy={busy}
+    <OpsModal title={`Assign ${building.name}`} sub={`Every unfinished cleaning job in this building on ${dayLabel(date)} goes to the cleaners you tick. Tick two or more to send a team to every unit.`} onClose={onClose} busy={busy}
       footer={<><Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" variant="primary" loading={busy} onClick={() => void save()}>Assign</Button></>}>
-      <FormRow label="Cleaner" error={error}>
-        <select className={INPUT} value={cleanerId} onChange={e => setCleanerId(e.target.value)}>
-          <option value="">Pick a cleaner</option>
-          {cleaners.map(c => <option key={c.id} value={c.id}>{c.name} · {c.busy} today</option>)}
-        </select>
-      </FormRow>
+      <CleanerChecklist cleaners={cleaners} value={cleanerIds} onChange={ids => { setCleanerIds(ids); setError(null); }} error={error} />
       <label className="flex items-center gap-2 text-copy cursor-pointer">
         <input type="checkbox" checked={onlyUnassigned} onChange={e => setOnlyUnassigned(e.target.checked)} className="w-4 h-4 accent-black" />
         Only cleaning jobs with no cleaner yet
