@@ -11,6 +11,7 @@ import { uploadSlipFull, ALLOWED_SLIP_MIMES } from "../vendor/scm/lib/slip";
 import { useConfirm } from "../vendor/scm/components/ConfirmDialog";
 import { useAuth } from "../auth/AuthContext";
 import { canOperateDeliveryOrders } from "../auth/salesAccess";
+import { DocAttachments } from "../components/doc-attachments/DocAttachments";
 import "./mobile.css";
 
 /* Proof-of-Delivery (POD) — mobile driver screen for confirming a Delivery
@@ -423,6 +424,17 @@ export function MobilePOD({ docNo, onBack, onDone }: { docNo: string; onBack: ()
               >
                 {gpsState === "ok" ? "Recapture" : "Capture GPS"}
               </button>
+            </div>
+
+            {/* Saved straight away, separate from the single photo that goes with Confirm. */}
+            <div style={{ marginTop: 18 }}>
+              <DocAttachments
+                docType="delivery_order"
+                docId={doId}
+                canEdit={canOperate && !cancelled}
+                title="More delivery photos"
+                hint="Loading, at site, signed paperwork. Each photo saves as soon as it is added."
+              />
             </div>
 
             {actionError && <div style={{ marginTop: 14, fontSize: 11.5, color: "var(--red)", textAlign: "center" }}>{actionError}</div>}

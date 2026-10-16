@@ -106,7 +106,7 @@ import { linkedEvent, type LinkedFair } from "../../components/fairPick";
 import { useSoInfoLists, useSoRooms } from "../projects/renovation/customerPropertyApi";
 import { projectDatesText } from "../projects/renovation/customerPropertyModel";
 import { RenovationSoOrderInfo } from "./RenovationSoOrderInfo";
-import { RenovationSoAttachments } from "./RenovationSoAttachments";
+import { DocAttachments, LineFilesButton } from "../../components/doc-attachments/DocAttachments";
 import { roomOrdered } from "../../vendor/scm/lib/so-print-rooms";
 // ─── Row types (subset — see MfgSalesOrdersList.tsx for the full SoRow) ────
 
@@ -1007,12 +1007,15 @@ function SalesOrderDetailV2ReadOnly() {
       width: "110px",
       getValue: (l) => (l.photo_urls ?? []).length,
       render: (l) => (
-        <SoLinePhotoStrip
-          source="so"
-          docId={docNo ?? ""}
-          itemId={l.id}
-          photoKeys={l.photo_urls ?? []}
-        />
+        <div className="flex items-center gap-1.5">
+          <SoLinePhotoStrip
+            source="so"
+            docId={docNo ?? ""}
+            itemId={l.id}
+            photoKeys={l.photo_urls ?? []}
+          />
+          <LineFilesButton docType="sales_order" docId={salesOrder?.doc_no} lineId={l.id} canEdit={salesOrder?.status?.toLowerCase() !== "cancelled"} />
+        </div>
       ),
     },
     /* Stock + Incoming PO (owner 2026-08-01) — the SAME per-line readiness +
@@ -1374,12 +1377,6 @@ function SalesOrderDetailV2ReadOnly() {
                 />
               </Section>
             )}
-            {/* Files on the whole order (mig 0115); each line keeps its own photos. */}
-            {renoMode && (
-              <Section title="Attachments">
-                <RenovationSoAttachments docNo={salesOrder.doc_no} canEdit={salesOrder.status !== "CANCELLED"} />
-              </Section>
-            )}
             {/* Order info + optional amber Note callout */}
             {!renoMode && (
             <Section title="Order info">
@@ -1525,6 +1522,8 @@ function SalesOrderDetailV2ReadOnly() {
                 emptyLabel="No line items"
               />
             </Section>
+
+            <DocAttachments docType="sales_order" docId={salesOrder.doc_no} canEdit={salesOrder.status?.toLowerCase() !== "cancelled"} />
 
             {/* Payments — the SAME PaymentsTable the editor renders (Task #105
                 one-source rule), mounted here since 2026-08-09 so "Collect

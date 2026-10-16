@@ -89,17 +89,20 @@ app.get("/:id/document-files", requirePageAccess("projects.list"), async (c) => 
     const groups: ProjectDocGroup[] = [];
     for (const d of docs) {
       const all = files.get(`${d.type}:${d.id}`) ?? [];
-      const list = all.filter((f) => !f.lineId);
+      const lineList = all.some((f) => f.lineId) ? await listLines(db(c), d) : [];
+      const lineIds = new Set(lineList.map((l) => l.id));
+      /* A line rewritten since its files were added: its files stay with the document (see readDocFiles). */
+      const list = all.filter((f) => !f.lineId || !lineIds.has(f.lineId)).map((f) => (f.lineId ? { ...f, from: "a line since changed" } : f));
       if (d.type === "delivery_order") {
         const pod = await podFile(db(c), d.id).catch(() => null);
         if (pod) { const { key: _key, ...shown } = pod; list.unshift(shown); }
       }
       const ev = await evidenceFiles(db(c), { type: d.type, id: d.id, no: d.no, companyId }).catch(() => []);
       list.unshift(...ev.map(({ key: _key, ...f }) => f));
-      const onLines = all.filter((f) => f.lineId);
+      const onLines = all.filter((f) => f.lineId && lineIds.has(f.lineId));
       const lines: ProjectLineGroup[] = [];
       if (onLines.length) {
-        for (const l of await listLines(db(c), d)) {
+        for (const l of lineList) {
           const lf = onLines.filter((f) => f.lineId === l.id);
           if (lf.length) lines.push({ id: l.id, lineNo: l.lineNo, sku: l.sku, description: l.description, files: lf });
         }

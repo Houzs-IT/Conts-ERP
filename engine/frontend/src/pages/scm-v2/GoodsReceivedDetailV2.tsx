@@ -54,6 +54,7 @@ import { LinePoRefLink } from "../../vendor/scm/components/LinePoRefLink";
 import { ADD_LINE_LABEL, addLineHref } from "../../vendor/scm/lib/add-line-handoff";
 import { SiteReceiptPanel } from "../projects/renovation/SiteReceiptPanel";
 import { RenovationDocBlock, renoLineColumns, useRenoDocInfo } from "./RenovationDocInfo";
+import { DocAttachments, LineFilesButton } from "../../components/doc-attachments/DocAttachments";
 type GrnStatus = "DRAFT" | "POSTED" | "CANCELLED" | string;
 
 type GrnHeader = HoldFields & {
@@ -447,18 +448,26 @@ function GoodsReceivedDetailV2ReadOnly() {
           variant: buildVariantSummary(l.item_group ?? "others", l.variants) || (l.description2 ?? ""),
         });
         return (
-          <div className="min-w-0">
-            <div className="truncate text-[13px] font-semibold text-ink">
-              {primary || "—"}
-            </div>
-            {(l.warehouse_code || secondary) && (
-              <div className="mt-0.5 flex flex-wrap items-center gap-2 font-mono text-[11px] text-ink-muted">
-                {l.warehouse_code && <span className="inline-flex items-center gap-0.5 rounded bg-primary-soft px-1.5 py-0 text-[10px] font-semibold text-primary-ink">{l.warehouse_code}</span>}
-                {secondary && (
-                  <span className="truncate text-ink-secondary">{secondary}</span>
-                )}
+          <div className="flex min-w-0 items-start gap-2">
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-[13px] font-semibold text-ink">
+                {primary || "—"}
               </div>
-            )}
+              {(l.warehouse_code || secondary) && (
+                <div className="mt-0.5 flex flex-wrap items-center gap-2 font-mono text-[11px] text-ink-muted">
+                  {l.warehouse_code && <span className="inline-flex items-center gap-0.5 rounded bg-primary-soft px-1.5 py-0 text-[10px] font-semibold text-primary-ink">{l.warehouse_code}</span>}
+                  {secondary && (
+                    <span className="truncate text-ink-secondary">{secondary}</span>
+                  )}
+                </div>
+              )}
+            </div>
+            <LineFilesButton
+              docType="goods_received"
+              docId={grn?.id}
+              lineId={l.id}
+              canEdit={(grn?.status || "").toUpperCase() !== "CANCELLED"}
+            />
           </div>
         );
       },
@@ -760,6 +769,12 @@ function GoodsReceivedDetailV2ReadOnly() {
                 emptyLabel="No line items"
               />
             </Section>
+            <DocAttachments
+              docType="goods_received"
+              docId={grn.id}
+              canEdit={!isCancelled}
+              hint="Photos of the goods as received: condition, labels, damage, the supplier's delivery note."
+            />
             {/* Renovation site receipt: proof of delivery at the unit (renders nothing otherwise). */}
             <SiteReceiptPanel grnId={id} />
           </DetailMain>

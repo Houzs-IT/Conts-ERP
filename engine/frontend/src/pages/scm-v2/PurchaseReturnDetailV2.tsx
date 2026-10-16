@@ -44,6 +44,7 @@ import { PrintPreviewModal, useOpenPrintPreviewFromUrl, usePrintPreview } from "
 import type { PdfAction } from "../../vendor/scm/lib/pdf-common";
 import { statusLabel } from "../../vendor/scm/lib/status-pill";
 import { cn } from "../../lib/utils";
+import { DocAttachments, LineFilesButton } from "../../components/doc-attachments/DocAttachments";
 
 type PrStatus = "DRAFT" | "POSTED" | "COMPLETED" | "CANCELLED" | string;
 
@@ -341,20 +342,28 @@ export function PurchaseReturnDetailV2() {
           variant: buildVariantSummary(l.item_group ?? "others", l.variants) || (l.description2 ?? ""),
         });
         return (
-        <div className="min-w-0">
-          <div className="truncate text-[13px] font-semibold text-ink">
-            {primary || "—"}
-          </div>
-          {(secondary || l.warehouse_code) && (
-            <div className="mt-0.5 flex items-center gap-2 font-mono text-[11px] text-ink-muted">
-              {secondary && (
-                <span className="truncate text-ink-secondary">{secondary}</span>
-              )}
-              {l.warehouse_code && (
-                <span className="inline-flex items-center gap-0.5 rounded bg-primary-soft px-1.5 py-0 text-[10px] font-semibold text-primary-ink">{l.warehouse_code}</span>
-              )}
+        <div className="flex min-w-0 items-start gap-2">
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-[13px] font-semibold text-ink">
+              {primary || "—"}
             </div>
-          )}
+            {(secondary || l.warehouse_code) && (
+              <div className="mt-0.5 flex items-center gap-2 font-mono text-[11px] text-ink-muted">
+                {secondary && (
+                  <span className="truncate text-ink-secondary">{secondary}</span>
+                )}
+                {l.warehouse_code && (
+                  <span className="inline-flex items-center gap-0.5 rounded bg-primary-soft px-1.5 py-0 text-[10px] font-semibold text-primary-ink">{l.warehouse_code}</span>
+                )}
+              </div>
+            )}
+          </div>
+          <LineFilesButton
+            docType="purchase_return"
+            docId={purchaseReturn?.id}
+            lineId={l.id}
+            canEdit={(purchaseReturn?.status || "").toUpperCase() !== "CANCELLED"}
+          />
         </div>
         );
       },
@@ -554,6 +563,7 @@ export function PurchaseReturnDetailV2() {
                 emptyLabel="No line items"
               />
             </Section>
+            <DocAttachments docType="purchase_return" docId={purchaseReturn.id} canEdit={!isCancelled} />
           </DetailMain>
 
           <DetailAside>

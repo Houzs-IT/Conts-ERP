@@ -53,6 +53,7 @@ import { DataTable, type Column } from "../../components/DataTable";
 import { DATA_TABLE_LAYOUT_FAMILIES } from "../../components/dataTableLayoutFamilies";
 import { CommittedBatchCell } from "../../components/DocumentLinesExpansion";
 import { DoLinePhotoStrip } from "../../components/scm-v2/DoLinePhotoStrip";
+import { DocAttachments, LineFilesButton } from "../../components/doc-attachments/DocAttachments";
 import {
   DetailGrid,
   DetailMain,
@@ -1000,11 +1001,14 @@ export function DeliveryOrderDetailV2() {
       width: "110px",
       getValue: (l) => (l.photo_urls ?? []).length,
       render: (l) => (
-        <DoLinePhotoStrip
-          doId={id ?? ""}
-          itemId={l.id}
-          photoKeys={l.photo_urls ?? []}
-        />
+        <div className="flex items-center gap-1.5">
+          <DoLinePhotoStrip
+            doId={id ?? ""}
+            itemId={l.id}
+            photoKeys={l.photo_urls ?? []}
+          />
+          <LineFilesButton docType="delivery_order" docId={deliveryOrder?.id} lineId={l.id} canEdit={canWriteDo && (deliveryOrder?.status || "").toLowerCase() !== "cancelled"} />
+        </div>
       ),
     },
   ];
@@ -1490,6 +1494,13 @@ export function DeliveryOrderDetailV2() {
                 emptyLabel="No line items"
               />
             </Section>
+
+            <DocAttachments
+              docType="delivery_order"
+              docId={deliveryOrder.id}
+              canEdit={canWriteDo && !isCancelled}
+              hint="Delivery photos: loading, at site, signed paperwork. The driver's proof-of-delivery photo shows here too."
+            />
           </DetailMain>
 
           <DetailAside>

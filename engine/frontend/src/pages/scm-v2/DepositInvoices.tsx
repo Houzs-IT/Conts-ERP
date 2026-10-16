@@ -24,6 +24,7 @@ import type { PdfAction } from '../../vendor/scm/lib/pdf-common';
 import { fmtSen, fmtDateOrDash } from '../../vendor/shared/format';
 import { PAYMENT_METHOD_CODES, PAYMENT_METHOD_DEFAULT_LABELS } from '../../vendor/scm/lib/payment-methods';
 import { humaniseStatusKey } from '../../vendor/scm/lib/status-pill';
+import { DocAttachments } from '../../components/doc-attachments/DocAttachments';
 
 const errText = (e: unknown): string => (e instanceof Error && e.message ? e.message : 'That was not accepted.');
 
@@ -291,6 +292,7 @@ const InvoiceDetail = ({ id, onClose }: { id: string; onClose: () => void }) => 
               <div style={{ gridColumn: '1 / -1' }}><div style={soft}>Cancelled</div>{inv.cancel_reason ?? '—'}{inv.cancelled_by ? <span style={soft}> · {inv.cancelled_by}</span> : null}{inv.cancelled_at ? <span style={soft}> · {fmtDateOrDash(inv.cancelled_at)}</span> : null}</div>
             )}
           </div>
+          <DocAttachments docType="deposit_invoice" docId={inv.id} canEdit={inv.status !== 'CANCELLED'} />
           {post.isSuccess && <div style={{ fontSize: 'var(--fs-13)', color: good }}>Posted as {post.data.jeNo}.</div>}
           {printError && <div style={{ fontSize: 'var(--fs-13)', color: danger }}>{printError}</div>}
           {cancel.isSuccess && <div style={{ fontSize: 'var(--fs-13)', color: good }}>Cancelled{cancel.data.contraJeNo ? ` — contra ${cancel.data.contraJeNo}` : ''}.</div>}

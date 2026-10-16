@@ -45,6 +45,7 @@ import type { PvFilePayload, BillExtraction, VendorMemory } from '../../vendor/s
 import { takePvFiles } from '../../vendor/scm/lib/pv-file-handoff';
 import { generateApListingPdf } from '../../vendor/scm/lib/ap-invoice-listing-pdf';
 import { DocFilesCard } from '../../vendor/scm/components/DocFilesCard';
+import { LineFilesButton } from '../../components/doc-attachments/DocAttachments';
 import { Modal } from '../../vendor/scm/components/Modal';
 import { SearchCombo } from '../../vendor/scm/components/SearchCombo';
 import { useAuth as useHouzsAuth } from '../../auth/AuthContext';
@@ -391,6 +392,7 @@ export const ApInvoices = () => {
                 <th style={th}>Account</th>
                 <th style={th}>Description</th>
                 <th style={{ ...th, textAlign: 'right' }}>Amount</th>
+                <th style={th} aria-label="Files" />
               </tr>
             </thead>
             <tbody>
@@ -400,11 +402,13 @@ export const ApInvoices = () => {
                   <td style={td}><span style={mono}>{l.debit_account_code}</span>{accountName(l.debit_account_code) ? <span style={soft}> · {accountName(l.debit_account_code)}</span> : null}</td>
                   <td style={td}>{l.description ?? '—'}</td>
                   <td style={{ ...td, ...right }}>{fmtSen(l.amount_sen)}</td>
+                  <td style={{ ...td, ...right }}><LineFilesButton docType="ap_invoice" docId={detail.invoice.id} lineId={l.id} canEdit={canCreate && detail.invoice.status !== 'CANCELLED'} /></td>
                 </tr>
               ))}
               <tr style={{ borderTop: '1px solid var(--border-weak, #e3e1da)' }}>
                 <td colSpan={3} style={{ ...td, fontWeight: 600 }}>Total · paid {fmtSen(detail.invoice.paid_sen)}</td>
                 <td style={{ ...td, ...right, fontWeight: 700 }}>{fmtSen(detail.invoice.total_sen)}</td>
+                <td style={td} />
               </tr>
             </tbody>
           </table>

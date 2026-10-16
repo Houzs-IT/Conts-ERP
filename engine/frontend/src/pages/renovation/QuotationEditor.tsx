@@ -17,6 +17,7 @@ import {
 } from '../../lib/renovation/api';
 import { buildPrintDoc } from '../../lib/renovation/print-doc';
 import { DocEditor, type RoomLayout } from './DocEditor';
+import { DocAttachments } from '../../components/doc-attachments/DocAttachments';
 import { useQuery } from '@tanstack/react-query';
 import { soInfoApi, useSoInfoLists } from '../projects/renovation/customerPropertyApi';
 import { HeaderForm, InstalmentEditor, totalsOfSections, TotalsCard } from './DocParts';
@@ -171,7 +172,9 @@ export function QuotationEditor() {
             <HeaderForm header={header} disabled={!editable} brands={brands.data?.brands ?? []} brandId={brandId} partyElsewhere={partyHere}
               onBrand={(b) => { setBrandId(b); setDirty(true); }} onChange={(p) => { setHeader({ ...header, ...p }); setDirty(true); }} />
           </Card>
-          <DocEditor sections={sections} disabled={!editable} roomLayout={roomLayout} onChange={(s) => { setSections(s); setDirty(true); }} />
+          <DocEditor sections={sections} disabled={!editable} roomLayout={roomLayout} onChange={(s) => { setSections(s); setDirty(true); }}
+            files={{ docType: 'quotation', docId: quotation.id, canEdit: canQuote }} />
+          <DocAttachments docType="quotation" docId={quotation.id} canEdit={canQuote} />
           <Card title="Payment terms">
             <InstalmentEditor rows={instalments} disabled={!editable} terms={terms.data?.templates ?? []} totalSen={totals.finalSen}
               onChange={(r) => { setInstalments(r); setDirty(true); }} />

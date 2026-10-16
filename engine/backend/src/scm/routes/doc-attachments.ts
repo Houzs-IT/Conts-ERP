@@ -86,7 +86,11 @@ export interface LineFiles { id: string; lineNo: number; sku: string; descriptio
 export async function readDocFiles(db: Db, doc: DocRef): Promise<{ files: DocFile[]; lines: LineFiles[] }> {
   const [own, lines] = await Promise.all([listFiles(db, doc), listLines(db, doc)]);
   const carried = await carriedFiles(db, doc, lines).catch((e) => { console.error('[doc-attachments] carried files', e); return new Map(); });
-  const docFiles = own.filter((f) => !f.lineId);
+  /* Some documents rewrite their lines on every save (receipts, credit notes, AP invoices), so a line can be gone
+     while its files are not: those show with the whole document, marked, rather than vanish. */
+  const lineIds = new Set(lines.map((l) => l.id));
+  const docFiles = own.filter((f) => !f.lineId || !lineIds.has(f.lineId))
+    .map((f) => (f.lineId ? { ...f, from: 'a line since changed' } : f));
   if (doc.type === 'delivery_order') {
     const pod = await podFile(db, doc.id).catch(() => null);
     if (pod) { const { key: _key, ...shown } = pod; docFiles.unshift(shown); }
