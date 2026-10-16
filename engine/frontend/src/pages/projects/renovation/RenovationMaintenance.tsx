@@ -91,13 +91,21 @@ function CrewRow({ p, work, onSave }: { p: Person; work: CrewAssignment[]; onSav
           </button>
         )}
         {open && (
-          <ul className="mt-1 space-y-0.5">
-            {work.map((w) => (
-              <li key={`${w.task_id}`} className="flex flex-wrap gap-x-1.5">
-                <Link to={`/projects/${w.project_id}#reno-site-tasks`} className="font-medium text-ink hover:text-primary hover:underline">{w.project_name}</Link>
-                <span>· {w.label}</span>
-                <span>· {w.state === "done" ? "done" : w.state === "skipped" ? "skipped" : w.state === "in_progress" ? "in progress" : "open"}</span>
-                {(w.planned_start || w.planned_end) && <span>· {[w.planned_start, w.planned_end].filter(Boolean).map((d) => formatDate(d!)).join(" to ")}</span>}
+          <ul className="mt-1 space-y-1">
+            {byProject(work).map((g) => (
+              <li key={g.projectId}>
+                <Link to={`/projects/${g.projectId}#reno-site-tasks`} className="font-medium text-ink hover:text-primary hover:underline">{g.name}</Link>
+                <span> · {g.tasks.length} task{g.tasks.length === 1 ? "" : "s"}{g.open.length ? `, ${g.open.length} open` : ", all done"}</span>
+                {g.open.length > 0 && (
+                  <div className="pl-3">
+                    {g.open.map((w) => (
+                      <div key={w.task_id}>
+                        {w.label}{w.state === "in_progress" ? " (in progress)" : ""}
+                        {(w.planned_start || w.planned_end) && <> · {[w.planned_start, w.planned_end].filter(Boolean).map((d) => formatDate(d!)).join(" to ")}</>}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </li>
             ))}
           </ul>
@@ -203,4 +211,16 @@ function CategoryRow({ c, onSave }: { c: TaskCategoryRow; onSave: (b: Partial<{ 
       <label className="flex items-center gap-1 text-xs text-ink-secondary"><input type="checkbox" checked={c.active} onChange={(e) => onSave({ active: e.target.checked })} />On</label>
     </li>
   );
+}
+
+/** A crew member's tasks per project, projects with open tasks first. */
+function byProject(work: readonly CrewAssignment[]) {
+  const map = new Map<number, { projectId: number; name: string; tasks: CrewAssignment[]; open: CrewAssignment[] }>();
+  for (const w of work) {
+    const g = map.get(w.project_id) ?? { projectId: w.project_id, name: w.project_name, tasks: [], open: [] };
+    g.tasks.push(w);
+    if (w.state !== "done" && w.state !== "skipped") g.open.push(w);
+    map.set(w.project_id, g);
+  }
+  return [...map.values()].sort((a, b) => b.open.length - a.open.length || a.name.localeCompare(b.name));
 }

@@ -5,7 +5,7 @@
    here by category; one category may repeat. */
 
 import { useState } from "react";
-import { Plus, RefreshCw, Users } from "lucide-react";
+import { CalendarDays, Plus, RefreshCw, Users } from "lucide-react";
 import { Button } from "../../../components/Button";
 import { useQuery } from "../../../hooks/useQuery";
 import { STAGE_LABEL } from "../../../vendor/shared/renovation-stages";
@@ -77,6 +77,8 @@ function SiteTaskRow({ t, canWrite, onAct, onSkip }: { t: TaskViewV2; canWrite: 
   const [s, setS] = useState(t.planned_start ?? "");
   const [e, setE] = useState(t.planned_end ?? "");
   const [crewOpen, setCrewOpen] = useState(false);
+  /* Dates open on demand so a project with a dozen tasks stays a short list (owner, 16 Oct 2026). */
+  const [datesOpen, setDatesOpen] = useState(false);
   const dirty = s !== (t.planned_start ?? "") || e !== (t.planned_end ?? "");
   const open = t.status !== "skipped" && t.status !== "done";
   const isTemplate = t.trade_code.startsWith("INTERNAL:");
@@ -87,11 +89,12 @@ function SiteTaskRow({ t, canWrite, onAct, onSkip }: { t: TaskViewV2; canWrite: 
         <div className="min-w-0">
           <div className="text-sm font-medium text-ink">{t.label}{(t.occurrence ?? 1) > 1 ? ` (${t.occurrence})` : ""}</div>
           <div className="text-xs text-ink-secondary">{fulfilmentText(t)}</div>
-          {(t.planned_start || t.planned_end) && !open && <div className="text-xs text-ink-secondary">{shortDate(t.planned_start)} to {shortDate(t.planned_end)}</div>}
+          {(t.planned_start || t.planned_end) && (!open || !datesOpen) && <div className="text-xs text-ink-secondary">{shortDate(t.planned_start)} to {shortDate(t.planned_end)}</div>}
+          {!t.planned_start && !t.planned_end && open && !datesOpen && <div className="text-xs text-ink-secondary">No dates planned</div>}
         </div>
         <Pill tone={taskTone(t.status)}>{TASK_STATUS_LABEL[t.status]}</Pill>
       </div>
-      {open && (
+      {open && datesOpen && (
         <div className="mt-2 grid grid-cols-2 sm:grid-cols-[1fr_1fr_auto] gap-2 items-end">
           <Field label="Start"><input type="date" className={inputClass} value={s} disabled={!canWrite} onChange={(ev) => setS(ev.target.value)} /></Field>
           <Field label="End"><input type="date" className={inputClass} value={e} disabled={!canWrite} onChange={(ev) => setE(ev.target.value)} /></Field>
@@ -103,6 +106,7 @@ function SiteTaskRow({ t, canWrite, onAct, onSkip }: { t: TaskViewV2; canWrite: 
           {t.state === "open" && <Button variant="secondary" onClick={() => onAct(() => renovationApi.startTask(t.id), `${t.label} started.`)}>Start</Button>}
           {(t.fulfilment_kind === "internal" || !poLinked) && <Button onClick={() => onAct(() => renovationApi.completeTask(t.id), `${t.label} done.`)}>Done</Button>}
           <Button variant="ghost" icon={<Users size={14} />} onClick={() => setCrewOpen((x) => !x)}>Crew</Button>
+          <Button variant="ghost" icon={<CalendarDays size={14} />} aria-expanded={datesOpen} onClick={() => setDatesOpen((x) => !x)}>Dates</Button>
           {!isTemplate && (t.fulfilment_kind === "po"
             ? <Button variant="ghost" onClick={() => onAct(() => simpleApi.setFulfilment(t.id, "inhouse"), `${t.label} is now done by our in-house crew.`)}>Do in-house</Button>
             : <Button variant="ghost" onClick={() => onAct(() => simpleApi.setFulfilment(t.id, "po"), `${t.label} now goes to a subcontractor PO.`)}>Use a PO</Button>)}

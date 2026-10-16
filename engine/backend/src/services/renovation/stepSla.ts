@@ -8,7 +8,7 @@
      a step set by hand (Move step)  the day it was set (not the Notion import's own setting, see entryDayOf);
      Design                          the project's start date;
      Handover                        the day the customer signed (or the handover date);
-     Renovation                      the first site task's actual start;
+     Renovation                      the first site task's actual start (else its first planned start);
      anything else                   the day the engine first saw the project there (nothing records it earlier).
    Closed has no SLA. Days in step = today - entered day; Overdue when that is more than the days allowed.
    The step is derived on every read (flow.ts), so the rows are written where the step is computed (board, list,
@@ -62,8 +62,10 @@ export function entryDayOf(f: ProjectFacts, v: Pick<ProjectView, "flow">): strin
     case "design": return dayOf(f.project.start_date) ?? dayOf(f.project.created_at);
     case "handover": return dayOf(f.handover?.signed_at) ?? dayOf(f.project.handed_over_at);
     case "renovation": {
-      const starts = f.tasks.map((t) => dayOf(t.actual_start)).filter((d): d is string => !!d).sort();
-      return starts[0] ?? null;
+      /* the first site task's actual start; the import brought planned dates only, so then the first planned start */
+      const actual = f.tasks.map((t) => dayOf(t.actual_start)).filter((d): d is string => !!d).sort();
+      const planned = f.tasks.map((t) => dayOf(t.planned_start)).filter((d): d is string => !!d).sort();
+      return actual[0] ?? planned[0] ?? null;
     }
     default: return null;
   }

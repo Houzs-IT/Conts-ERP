@@ -11,8 +11,10 @@ import { useQuery } from "../../../hooks/useQuery";
 import { cn } from "../../../lib/utils";
 import { simpleApi, type FlowStepKey, type FlowStepRow, type StepSlaView } from "./simpleApi";
 import { errorText, shortDate } from "./renovationModel";
-import { Dialog, inputClass } from "./renovationUi";
+import { Dialog } from "./renovationUi";
 
+/* inputClass is full width (and cn does not merge classes), so the days box has its own. */
+const dayInput = "w-24 shrink-0 rounded-md border border-border bg-surface px-3 py-2 text-sm";
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
 
 /** "12 days in Design · SLA 14 days", "Overdue by 5 days", or nothing to say. Pure, for the line and its test. */
@@ -77,8 +79,8 @@ function StepSlaDialog({ projectId, sla, onClose, onSaved }: { projectId: number
       <ul className="space-y-2">
         {sla.steps.map((s) => (
           <li key={s.key} className="flex flex-wrap items-center gap-2">
-            <span className={cn("w-28 text-sm", s.key === sla.stepKey ? "font-semibold text-ink" : "text-ink")}>{s.label}{s.key === sla.stepKey ? " (now)" : ""}</span>
-            <input className={cn(inputClass, "w-24")} inputMode="numeric" aria-label={`Days allowed in ${s.label}`} placeholder="No SLA"
+            <span className={cn("w-28 shrink-0 text-sm", s.key === sla.stepKey ? "font-semibold text-ink" : "text-ink")}>{s.label}{s.key === sla.stepKey ? " (now)" : ""}</span>
+            <input className={dayInput} inputMode="numeric" aria-label={`Days allowed in ${s.label}`} placeholder="No SLA"
               value={vals[s.key] ?? ""} disabled={busy} onChange={(e) => setVals((v) => ({ ...v, [s.key]: e.target.value.replace(/[^\d]/g, "") }))} />
             <span className="text-xs text-ink-secondary">days</span>
             <span className="text-[11px] text-ink-secondary">
@@ -132,8 +134,8 @@ function SlaRow({ s, disabled, onSave }: { s: FlowStepRow; disabled: boolean; on
   const dirty = v !== stored;
   return (
     <li className={cn("flex flex-wrap items-center gap-2 py-2", !s.active && "opacity-60")}>
-      <span className="w-32 text-sm font-medium text-ink">{s.label}{!s.active && <span className="ml-1 text-[11px] font-normal text-ink-secondary">off</span>}</span>
-      <input className={cn(inputClass, "w-24")} inputMode="numeric" aria-label={`Days allowed in ${s.label}`} placeholder="No SLA" value={v}
+      <span className="w-32 shrink-0 text-sm font-medium text-ink">{s.label}{!s.active && <span className="ml-1 text-[11px] font-normal text-ink-secondary">off</span>}</span>
+      <input className={dayInput} inputMode="numeric" aria-label={`Days allowed in ${s.label}`} placeholder="No SLA" value={v}
         disabled={disabled || busy} onChange={(e) => setV(e.target.value.replace(/[^\d]/g, ""))} />
       <span className="text-xs text-ink-secondary">days</span>
       {dirty && (

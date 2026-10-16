@@ -78,7 +78,9 @@ export function boardRowOf(f: ProjectFacts, v: ProjectView, opts: { hideMoney: b
     renoItemArrival: v.conditions.renoItem?.condition ?? null,
     keyHolder: v.keyHolder,
     vo: v.vo ? { has: v.vo.count > 0, count: v.vo.count, approved: v.vo.approved } : null,
-    handoverDate: f.handover?.signed_at ? String(f.handover.signed_at).slice(0, 10) : (p.handed_over_at ? String(p.handed_over_at).slice(0, 10) : null),
+    /* dayOf, not String(...).slice(0, 10): postgres.js hands timestamps over as Date objects, whose string starts
+       "Mon Jul 14" (the list showed 2001/07/14 for every imported handover). */
+    handoverDate: dayOf(f.handover?.signed_at) ?? dayOf(p.handed_over_at),
     plannedHandoverDate: p.planned_handover_date,
     startDate: dayOf(p.start_date) ?? dayOf(p.created_at),
     endDate: v.flow.current === "closed" ? dayOf(p.end_date) : null,

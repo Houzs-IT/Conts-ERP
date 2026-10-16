@@ -37,7 +37,9 @@ export function boardColumns(rows: readonly ProjectRow[], byId: ReadonlyMap<numb
 /** Closed projects split into those closed in the last 30 days (newest first) and the older rest. Pure. */
 export function splitClosed(cards: readonly BoardCardData[], today: string): { recent: BoardCardData[]; older: BoardCardData[] } {
   const cutoff = new Date(Date.parse(`${today}T00:00:00Z`) - CLOSED_RECENT_DAYS * 86_400_000).toISOString().slice(0, 10);
-  const day = (c: BoardCardData) => c.board.endDate ?? c.board.handoverDate ?? "";
+  /* The earlier of the handover and the day it reached Closed: an imported project reached Closed on the import day,
+     but it was handed over long before. */
+  const day = (c: BoardCardData) => [c.board.handoverDate, c.board.endDate].filter((d): d is string => !!d).sort()[0] ?? "";
   const sorted = [...cards].sort((a, b) => day(b).localeCompare(day(a)));
   return { recent: sorted.filter((c) => day(c) >= cutoff), older: sorted.filter((c) => day(c) < cutoff) };
 }
@@ -92,8 +94,8 @@ function BoardCard({ c, today, draggable, onOpen, onDragStart }: {
           {flags.late.length > 0 && <Tag title={flags.late.join("\n")} icon={<AlertTriangle size={9} />}>Late</Tag>}
         </div>
       )}
-      <div className="mt-1.5 flex items-center justify-between gap-2 text-[10.5px] text-ink-secondary">
-        <span className="inline-flex min-w-0 items-center gap-1 truncate" title={handover.label}>
+      <div className="mt-1.5 flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5 text-[10.5px] text-ink-secondary">
+        <span className="inline-flex items-center gap-1 whitespace-nowrap" title={handover.label}>
           <CalendarClock size={10} className="shrink-0" />{handover.label}: <span className={cn("font-semibold", handover.value === "Not set" ? "text-ink-muted" : "text-ink")}>{handover.value}</span>
         </span>
         {board.sla && board.sla.daysIn != null && (
