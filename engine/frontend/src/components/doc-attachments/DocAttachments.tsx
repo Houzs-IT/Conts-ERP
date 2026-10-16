@@ -1,16 +1,19 @@
-/* Photos and documents on a document (owner, 16 Oct 2026): the one panel every document of the transaction flow
-   shows (quotation, sales order, variation order, PO, DO, GR, returns, invoices, receipts). Many files at once:
-   pick several, drop several, or take photos with the phone camera. Thumbnails open full screen with the caption,
-   who added it and when, and Remove. A delivery order's proof-of-delivery photo is shown here too and stays. */
+/* Photos and documents on a document and on each of its lines (owner, 16 Oct 2026): the one panel every document
+   of the transaction flow shows (quotation, sales order, variation order, PO, DO, GR, returns, invoices, notes,
+   receipts, vouchers). Many files at once: pick several, drop several, or take photos with the phone camera.
+   Thumbnails open full screen with the caption, who added it and when, and Remove. Shown here but kept elsewhere,
+   and so read-only: a delivery's proof-of-delivery photo, a voucher's supplier bill, and a line's files from the
+   line upstream (a PO line shows its SO line's). <LineFilesButton> opens the same panel for one line. */
 
 import { useCallback, useEffect, useRef, useState, type DragEvent } from 'react';
-import { Camera, FileText, Paperclip, Play, Trash2, Upload } from 'lucide-react';
+import { Camera, FileText, Paperclip, Play, Trash2, Upload, X } from 'lucide-react';
+import { createPortal } from 'react-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../api/client';
 import { MediaLightbox } from '../MediaLightbox';
 import { useConfirm } from '../../vendor/scm/components/ConfirmDialog';
 import {
-  ACCEPT, MAX_FILE_MB, MAX_VIDEO_MB, docFilesKey, filesBaseUrl, formatSize, formatWhen, listDocFiles, refusal,
+  ACCEPT, MAX_FILE_MB, MAX_VIDEO_MB, docFilesKey, filesBaseUrl, formatSize, formatWhen, lineLabel, listDocFiles, refusal,
   removeDocFile, setCaption, uploadDocFile, type DocFile, type DocType,
 } from './docAttachmentsApi';
 
@@ -70,7 +73,7 @@ export function DocFilesViewer({ files, index, onIndex, onClose, baseUrlFor, edi
             <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-[12px] text-white/75">
               <span className="min-w-0 truncate font-semibold text-white">{f.name}</span>
               <span>
-                {[f.by ? `Added by ${f.by}` : f.source === 'pod' ? 'Driver' : null, formatWhen(f.at), formatSize(f.size)].filter(Boolean).join(' · ')}
+                {[f.from ? `From ${f.from}` : null, f.by ? `Added by ${f.by}` : f.source === 'pod' ? 'Driver' : null, formatWhen(f.at), formatSize(f.size)].filter(Boolean).join(' · ')}
               </span>
             </div>
             {canEdit ? (
@@ -107,14 +110,18 @@ export function DocFilesViewer({ files, index, onIndex, onClose, baseUrlFor, edi
 
 interface Pending { key: string; name: string; progress: number; error: string | null }
 
-export function DocAttachments({ docType, docId, canEdit = true, title = 'Photos & documents', hint }: {
+export function DocAttachments({ docType, docId, lineId, canEdit = true, title, hint, bare = false }: {
   docType: DocType;
   /** The document's id (a sales order's doc_no). Nothing renders until it is known. */
   docId: string | null | undefined;
+  /** One line of the document: its files instead of the whole document's. */
+  lineId?: string | null;
   canEdit?: boolean;
   title?: string;
   /** One line under the title, e.g. what the photos are for on this document. */
   hint?: string;
+  /** No card border (inside a dialog). */
+  bare?: boolean;
 }) {
   const qc = useQueryClient();
   const id = docId ?? '';
@@ -127,7 +134,11 @@ export function DocAttachments({ docType, docId, canEdit = true, title = 'Photos
   const [dragging, setDragging] = useState(false);
   const [viewing, setViewing] = useState<number | null>(null);
   const confirm = useConfirm();
-  const files = q.data?.files ?? [];
+  const line = lineId ? q.data?.lines?.find((l) => l.id === lineId) : undefined;
+  const files = (lineId ? line?.files : q.data?.files) ?? [];
+  const lineFiles = lineId ? [] : (q.data?.lines ?? []).filter((l) => l.files.length > 0);
+  const lineFileCount = lineFiles.reduce((n, l) => n + l.files.length, 0);
+  const heading = title ?? (lineId ? 'Line photos & files' : 'Photos & documents');
   const ready = q.data?.ready !== false;
   const editable = canEdit && ready;
   const busy = pending.some((p) => p.progress < 1 && !p.error);
@@ -152,6 +163,7 @@ export function DocAttachments({ docType, docId, canEdit = true, title = 'Photos
         const k = batch[i].key;
         try {
           const r = await uploadDocFile(docType, id, f, {
+            lineId,
             onProgress: (x) => setPending((p) => p.map((e) => (e.key === k ? { ...e, progress: Math.min(0.99, x) } : e))),
           });
           if (r.duplicate) dupes.push(`${f.name} is already attached.`);
@@ -195,8 +207,10 @@ export function DocAttachments({ docType, docId, canEdit = true, title = 'Photos
 
   return (
     <section
-      aria-label={title}
-      className={`rounded-lg border bg-surface p-3 sm:p-4 ${dragging ? 'border-primary ring-2 ring-primary/30' : 'border-border'}`}
+      aria-label={heading}
+      className={bare
+        ? `rounded-md ${dragging ? 'ring-2 ring-primary/30' : ''}`
+        : `rounded-lg border bg-surface p-3 sm:p-4 ${dragging ? 'border-primary ring-2 ring-primary/30' : 'border-border'}`}
       onDragOver={(e) => { if (editable) { e.preventDefault(); setDragging(true); } }}
       onDragLeave={(e) => { if (e.currentTarget === e.target) setDragging(false); }}
       onDrop={onDrop}
@@ -204,7 +218,7 @@ export function DocAttachments({ docType, docId, canEdit = true, title = 'Photos
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
           <h3 className="flex items-center gap-1.5 text-[14px] font-semibold text-ink">
-            <Paperclip size={15} /> {title}
+            <Paperclip size={15} /> {heading}
             {files.length > 0 && <span className="text-[12px] font-normal text-ink-muted">({files.length}{photos && photos !== files.length ? `, ${photos} photo${photos === 1 ? '' : 's'}` : ''})</span>}
           </h3>
           {hint && <p className="mt-0.5 text-[12px] text-ink-muted">{hint}</p>}
@@ -250,7 +264,7 @@ export function DocAttachments({ docType, docId, canEdit = true, title = 'Photos
                   <FileThumb url={`${filesBaseUrl(docType, id)}/${f.id}`} file={f} className="aspect-square w-full" />
                   <span className="block truncate px-1.5 pt-1 text-[11px] font-medium text-ink">{f.caption || f.name}</span>
                   <span className="block truncate px-1.5 pb-1 text-[10px] text-ink-muted">
-                    {f.source === 'pod' ? 'Proof of delivery' : [f.by, formatWhen(f.at).split(',')[0]].filter(Boolean).join(' · ')}
+                    {f.source === 'pod' ? 'Proof of delivery' : f.from ? `From ${f.from}` : [f.by, formatWhen(f.at).split(',')[0]].filter(Boolean).join(' · ')}
                   </span>
                 </button>
                 {editable && !f.readOnly && (
@@ -280,6 +294,11 @@ export function DocAttachments({ docType, docId, canEdit = true, title = 'Photos
             ))}
           </ul>
         )}
+        {lineFileCount > 0 && (
+          <p className="mt-2 text-[12px] text-ink-secondary">
+            Lines: {lineFileCount} file{lineFileCount === 1 ? '' : 's'} on {lineFiles.length} line{lineFiles.length === 1 ? '' : 's'} ({lineFiles.map((l) => `line ${l.lineNo}`).join(', ')}). Open them with the paperclip on each line.
+          </p>
+        )}
         {editable && files.length > 0 && (
           <p className="mt-2 hidden text-[11px] text-ink-muted sm:block">{busy ? 'Uploading...' : 'Drop more files anywhere on this box to add them.'}</p>
         )}
@@ -307,5 +326,53 @@ export function DocAttachments({ docType, docId, canEdit = true, title = 'Photos
         />
       )}
     </section>
+  );
+}
+
+/** The paperclip on a document line: how many files the line has, and the line's panel in a dialog
+    (a sheet from the bottom on a phone). Every button on a page reads the one list the document panel loads. */
+export function LineFilesButton({ docType, docId, lineId, canEdit = true, label }: {
+  docType: DocType;
+  docId: string | null | undefined;
+  lineId: string | null | undefined;
+  canEdit?: boolean;
+  /** Overrides "Line 2 · SKU description" in the dialog title. */
+  label?: string;
+}) {
+  const id = docId ?? '';
+  const q = useQuery({ queryKey: docFilesKey(docType, id), queryFn: () => listDocFiles(docType, id), enabled: !!docId, staleTime: 30_000 });
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open]);
+  if (!docId || !lineId || q.data?.ready === false) return null;
+  const line = q.data?.lines?.find((l) => l.id === lineId);
+  const n = line?.files.length ?? 0;
+  const title = label ?? (line ? lineLabel(line) : 'Line');
+  return (
+    <>
+      <button type="button" onClick={(e) => { e.stopPropagation(); setOpen(true); }}
+        aria-label={`Photos and files for ${title}${n ? ` (${n})` : ''}`} title="Photos and files for this line"
+        className={`inline-flex h-7 shrink-0 items-center gap-1 rounded-md border px-1.5 text-[11.5px] font-semibold ${n ? 'border-primary/40 bg-primary/5 text-primary' : 'border-border text-ink-muted hover:border-primary hover:text-primary'}`}>
+        <Paperclip size={13} />{n > 0 && <span>{n}</span>}
+      </button>
+      {open && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[90] flex items-end justify-center bg-black/50 sm:items-center sm:p-4" role="dialog" aria-modal="true" aria-label={title}
+          onMouseDown={(e) => { if (e.target === e.currentTarget) setOpen(false); }}>
+          <div className="max-h-[90vh] w-full overflow-y-auto rounded-t-xl bg-surface p-4 shadow-xl sm:max-w-3xl sm:rounded-xl">
+            <div className="mb-2 flex items-start justify-between gap-3">
+              <p className="min-w-0 text-[13px] font-semibold text-ink">{title}</p>
+              <button type="button" aria-label="Close" onClick={() => setOpen(false)} className="rounded-full p-1 text-ink-secondary hover:bg-surface-dim"><X size={18} /></button>
+            </div>
+            <DocAttachments docType={docType} docId={docId} lineId={lineId} canEdit={canEdit} bare
+              hint="Photos, videos or PDFs for this line only. Files on the line it came from show here too." />
+          </div>
+        </div>,
+        document.body,
+      )}
+    </>
   );
 }

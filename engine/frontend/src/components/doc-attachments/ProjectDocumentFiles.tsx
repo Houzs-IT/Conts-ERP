@@ -1,6 +1,6 @@
 /* A renovation project's "Documents" roll-up (owner, 16 Oct 2026): every photo and file attached to the project's
    quotations, sales orders, variation orders, POs, DOs (with the driver's proof-of-delivery photo), goods received,
-   returns and invoices, grouped by document, read-only. Files are added on each document's own page; the document
+   returns, invoices and payment vouchers, grouped by document and then by line, read-only. Files are added on each document's own page; the document
    number opens it. GET /api/renovation/:id/document-files (engine/backend/src/routes/renovationDocumentFiles.ts). */
 
 import { useMemo, useState } from 'react';
@@ -9,13 +9,17 @@ import { Paperclip } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../api/client';
 import { FileThumb, DocFilesViewer } from './DocAttachments';
-import { DOC_LABEL, docPagePath, type DocFile, type DocType } from './docAttachmentsApi';
+import { DOC_LABEL, docPagePath, lineLabel, type DocFile, type DocType, type LineFiles } from './docAttachmentsApi';
 
-interface Group { type: DocType; label: string; id: string; no: string; date: string | null; status: string; files: DocFile[] }
+interface Group { type: DocType; label: string; id: string; no: string; date: string | null; status: string; files: DocFile[]; lines: LineFiles[] }
 interface Resp { ready: boolean; documents: Group[] }
 
 const ORDER: DocType[] = ['quotation', 'sales_order', 'variation_order', 'purchase_order', 'goods_received', 'delivery_order',
-  'delivery_return', 'purchase_return', 'purchase_invoice', 'sales_invoice', 'receipt'];
+  'delivery_return', 'purchase_return', 'purchase_invoice', 'ap_invoice', 'payment_voucher', 'sales_invoice', 'credit_note',
+  'deposit_invoice', 'official_receipt', 'receipt'];
+
+/** Everything on a document, its own files first and then each line's, in the order the viewer steps through. */
+const allFiles = (g: Group): DocFile[] => [...g.files, ...g.lines.flatMap((l) => l.files)];
 
 export function ProjectDocumentFiles({ projectId }: { projectId: number }) {
   const q = useQuery({
@@ -27,14 +31,30 @@ export function ProjectDocumentFiles({ projectId }: { projectId: number }) {
   const [viewing, setViewing] = useState<{ group: Group; index: number } | null>(null);
   const docs = q.data?.documents ?? [];
   const withFiles = useMemo(
-    () => docs.filter((d) => d.files.length > 0).sort((a, b) => ORDER.indexOf(a.type) - ORDER.indexOf(b.type)),
+    () => docs.map((d) => ({ ...d, lines: d.lines ?? [] })).filter((d) => allFiles(d).length > 0)
+      .sort((a, b) => ORDER.indexOf(a.type) - ORDER.indexOf(b.type)),
     [docs],
   );
-  const total = withFiles.reduce((n, d) => n + d.files.length, 0);
+  const total = withFiles.reduce((n, d) => n + allFiles(d).length, 0);
   const types = ORDER.filter((t) => withFiles.some((d) => d.type === t));
   const shown = filter === 'all' ? withFiles : withFiles.filter((d) => d.type === filter);
   const empty = docs.length - withFiles.length;
   const base = (g: Group) => `/api/renovation/${projectId}/document-files/${g.type}/${encodeURIComponent(g.id)}`;
+  function Tiles({ g, files }: { g: Group; files: DocFile[] }) {
+    return (
+      <ul className="grid grid-cols-3 gap-2 sm:grid-cols-5 lg:grid-cols-8">
+        {files.map((f) => (
+          <li key={f.id} className="min-w-0">
+            <button type="button" onClick={() => setViewing({ group: g, index: allFiles(g).findIndex((x) => x.id === f.id) })} title={f.caption || f.name}
+              className="block w-full overflow-hidden rounded-md border border-border bg-surface-dim text-left hover:border-primary">
+              <FileThumb url={`${base(g)}/${f.id}`} file={f} className="aspect-square w-full" />
+              <span className="block truncate px-1.5 py-1 text-[11px] text-ink">{f.caption || f.name}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    );
+  }
 
   return (
     <section aria-label="Documents" className="rounded-lg border border-border bg-surface p-3 sm:p-4">
@@ -43,7 +63,10 @@ export function ProjectDocumentFiles({ projectId }: { projectId: number }) {
           <Paperclip size={15} /> Documents
           {total > 0 && <span className="text-[12px] font-normal text-ink-muted">({total} file{total === 1 ? '' : 's'} on {withFiles.length} document{withFiles.length === 1 ? '' : 's'})</span>}
         </h3>
-        <span className="text-[11.5px] text-ink-muted">Photos and files from this project's documents. Add them on each document.</span>
+        <span className="text-[11.5px] text-ink-muted">
+          Photos and files from this project's documents. Add them on each document, or{' '}
+          <Link to="/scm/document-files/import" className="text-primary hover:underline">import a folder</Link>.
+        </span>
       </div>
       {q.isLoading && <p className="mt-3 text-[12.5px] text-ink-muted">Loading files...</p>}
       {q.isError && <p role="alert" className="mt-3 text-[12.5px] text-err">The project's files could not be loaded. Reload the page.</p>}
@@ -69,19 +92,15 @@ export function ProjectDocumentFiles({ projectId }: { projectId: number }) {
             <div className="mb-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
               <span className="text-[12px] font-semibold uppercase tracking-wide text-ink-muted">{g.label}</span>
               <Link to={docPagePath(g.type, g.id)} className="text-[13px] font-semibold text-primary hover:underline">{g.no}</Link>
-              <span className="text-[12px] text-ink-muted">{[g.date, g.status && g.status.toLowerCase().replace(/_/g, ' '), `${g.files.length} file${g.files.length === 1 ? '' : 's'}`].filter(Boolean).join(' · ')}</span>
+              <span className="text-[12px] text-ink-muted">{[g.date, g.status && g.status.toLowerCase().replace(/_/g, ' '), `${allFiles(g).length} file${allFiles(g).length === 1 ? '' : 's'}`].filter(Boolean).join(' · ')}</span>
             </div>
-            <ul className="grid grid-cols-3 gap-2 sm:grid-cols-5 lg:grid-cols-8">
-              {g.files.map((f, i) => (
-                <li key={f.id} className="min-w-0">
-                  <button type="button" onClick={() => setViewing({ group: g, index: i })} title={f.caption || f.name}
-                    className="block w-full overflow-hidden rounded-md border border-border bg-surface-dim text-left hover:border-primary">
-                    <FileThumb url={`${base(g)}/${f.id}`} file={f} className="aspect-square w-full" />
-                    <span className="block truncate px-1.5 py-1 text-[11px] text-ink">{f.caption || f.name}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
+            {g.files.length > 0 && <Tiles g={g} files={g.files} />}
+            {g.lines.map((l) => (
+              <div key={l.id} className="mt-2 border-l-2 border-border pl-2.5">
+                <p className="mb-1 truncate text-[12px] text-ink-secondary">{lineLabel(l)}</p>
+                <Tiles g={g} files={l.files} />
+              </div>
+            ))}
           </div>
         ))}
       </div>
@@ -90,12 +109,15 @@ export function ProjectDocumentFiles({ projectId }: { projectId: number }) {
       )}
       {viewing && (
         <DocFilesViewer
-          files={viewing.group.files}
+          files={allFiles(viewing.group)}
           index={viewing.index}
           onIndex={(index) => setViewing({ group: viewing.group, index })}
           onClose={() => setViewing(null)}
           baseUrlFor={() => base(viewing.group)}
-          docLabel={() => `${viewing.group.label} ${viewing.group.no}`}
+          docLabel={(f) => {
+            const l = f.lineId ? viewing.group.lines.find((x) => x.id === f.lineId) : undefined;
+            return `${viewing.group.label} ${viewing.group.no}${l ? ` · line ${l.lineNo}` : ''}`;
+          }}
         />
       )}
     </section>

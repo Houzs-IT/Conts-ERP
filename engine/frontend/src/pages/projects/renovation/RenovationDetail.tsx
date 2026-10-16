@@ -26,6 +26,7 @@ import { DesignTaskCard } from "./DesignTask";
 import { ProcurementPanel } from "./ProcurementPanel";
 import { CustomerInfoCard } from "./CustomerInfoCard";
 import { RenovationTimeline } from "./RenovationTimeline";
+import { ProjectDocumentFiles } from "../../../components/doc-attachments/ProjectDocumentFiles";
 
 export function RenovationDetail({ id, canWrite, embedded = false }: { id: number; canWrite: boolean; embedded?: boolean }) {
   const q = useQuery(["renovation", "detail", id], () => simpleApi.detail(id), [id]);
@@ -70,6 +71,7 @@ export function RenovationDetail({ id, canWrite, embedded = false }: { id: numbe
               APIs are unchanged; the calendar still reads the tasks). */}
           <DesignTaskCard projectId={id} canWrite={canWrite} onDone={(t) => { setNotice({ tone: "ok", text: t }); setSaved((n) => n + 1); }} onError={failed} />
           <ProcurementPanel projectId={id} canWrite={canWrite} onError={failed} showMoney={!d.financeHidden} />
+          <ProjectDocumentFiles projectId={id} />
           {d.serviceCases.length > 0 && <WarrantyPanel d={d} />}
         </div>
         <aside className="space-y-4 min-w-0">

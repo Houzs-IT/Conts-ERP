@@ -9,7 +9,8 @@ import { prepareImageForUpload } from '../../lib/imagePipeline';
 
 export type DocType =
   | 'quotation' | 'sales_order' | 'variation_order' | 'purchase_order' | 'delivery_order' | 'goods_received'
-  | 'delivery_return' | 'purchase_return' | 'purchase_invoice' | 'sales_invoice' | 'receipt';
+  | 'delivery_return' | 'purchase_return' | 'purchase_invoice' | 'sales_invoice' | 'receipt'
+  | 'credit_note' | 'official_receipt' | 'deposit_invoice' | 'payment_voucher' | 'ap_invoice';
 
 export interface DocFile {
   id: string;
@@ -18,18 +19,27 @@ export interface DocFile {
   kind: 'image' | 'video' | 'pdf' | 'file';
   size: number;
   caption: string;
-  source: 'upload' | 'import' | 'legacy' | 'pod';
+  source: 'upload' | 'import' | 'legacy' | 'pod' | 'evidence';
   by: string | null;
   at: string;
+  /** The line it is on; null for the whole document. */
+  lineId: string | null;
+  /** Shown here, kept elsewhere: a delivery's proof-of-delivery photo, a voucher's bill, or a file on the line upstream. */
   readOnly: boolean;
+  /** For a file carried from upstream: where it is kept, e.g. "Sales order SO-2610-0003". */
+  from?: string;
 }
 
-export interface DocFilesResponse { ready: boolean; doc?: { type: DocType; id: string; no: string }; files: DocFile[] }
+export interface LineFiles { id: string; lineNo: number; sku: string; description: string; files: DocFile[] }
+
+export interface DocFilesResponse { ready: boolean; doc?: { type: DocType; id: string; no: string }; files: DocFile[]; lines?: LineFiles[] }
 
 export const DOC_LABEL: Record<DocType, string> = {
   quotation: 'Quotation', sales_order: 'Sales order', variation_order: 'Variation order', purchase_order: 'Purchase order',
   delivery_order: 'Delivery order', goods_received: 'Goods received', delivery_return: 'Delivery return',
   purchase_return: 'Purchase return', purchase_invoice: 'Purchase invoice', sales_invoice: 'Sales invoice', receipt: 'Receipt',
+  credit_note: 'Credit / debit note', official_receipt: 'Official receipt', deposit_invoice: 'Deposit invoice',
+  payment_voucher: 'Payment voucher', ap_invoice: 'AP invoice',
 };
 
 /* Where each document lives under /api/scm, and its page in the app. */
@@ -37,7 +47,8 @@ const PREFIX: Record<DocType, string> = {
   quotation: '/renovation/quotations', sales_order: '/mfg-sales-orders', variation_order: '/renovation/variation-orders',
   purchase_order: '/mfg-purchase-orders', delivery_order: '/delivery-orders-mfg', goods_received: '/grns',
   delivery_return: '/delivery-returns', purchase_return: '/purchase-returns', purchase_invoice: '/purchase-invoices',
-  sales_invoice: '/sales-invoices', receipt: '/receipts',
+  sales_invoice: '/sales-invoices', receipt: '/receipts', credit_note: '/credit-notes', official_receipt: '/accounting/receipts',
+  deposit_invoice: '/deposit-invoices', payment_voucher: '/payment-vouchers', ap_invoice: '/ap-invoices',
 };
 
 export function docPagePath(type: DocType, id: string): string {
@@ -54,6 +65,11 @@ export function docPagePath(type: DocType, id: string): string {
     case 'purchase_invoice': return `/scm/purchase-invoices/${e}`;
     case 'sales_invoice': return `/scm/sales-invoices/${e}`;
     case 'receipt': return '/scm/receipts';
+    case 'credit_note': return '/scm/credit-notes';
+    case 'official_receipt': return '/scm/official-receipts';
+    case 'deposit_invoice': return '/scm/deposit-invoices';
+    case 'payment_voucher': return `/scm/payment-vouchers/${e}`;
+    case 'ap_invoice': return '/scm/ap-invoices';
   }
 }
 
@@ -66,6 +82,10 @@ export const MAX_FILE_MB = 25;
 export const MAX_VIDEO_MB = 95;
 
 export const docFilesKey = (type: DocType, id: string) => ['doc-attachments', type, id] as const;
+
+/** A line as people know it: "Line 2 · TILE-600 Floor tile". */
+export const lineLabel = (l: Pick<LineFiles, 'lineNo' | 'sku' | 'description'>) =>
+  [`Line ${l.lineNo}`, [l.sku, l.description && l.description !== l.sku ? l.description : ''].filter(Boolean).join(' ')].filter(Boolean).join(' · ');
 
 export async function listDocFiles(type: DocType, id: string): Promise<DocFilesResponse> {
   try {
@@ -115,7 +135,7 @@ export interface UploadResult { ok: true; duplicate: boolean; id?: string; messa
    body (no base64, no multipart), so the server streams them straight into storage. */
 export async function uploadDocFile(
   type: DocType, id: string, file: File,
-  opts: { caption?: string; source?: 'upload' | 'import'; sha256?: string; onProgress?: (fraction: number) => void } = {},
+  opts: { caption?: string; source?: 'upload' | 'import'; sha256?: string; lineId?: string | null; onProgress?: (fraction: number) => void } = {},
 ): Promise<UploadResult> {
   const sha256 = opts.sha256 ?? (await sha256Of(file));
   const mime = mimeOf(file);
@@ -125,6 +145,7 @@ export async function uploadDocFile(
   const sendMime = body === file ? mime : (body.type || mime);
   const q = new URLSearchParams({ name: file.name, sha256, source: opts.source ?? 'upload' });
   if (opts.caption) q.set('caption', opts.caption);
+  if (opts.lineId) q.set('lineId', opts.lineId);
   const token = readAuthToken();
   if (!token) throw new Error('Your session has expired. Please sign in again.');
   const pass = readAuthPass();
