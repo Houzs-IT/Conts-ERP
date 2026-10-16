@@ -30,7 +30,8 @@ export function StepStrip({ flow, hold, compact = false }: { flow: FlowView; hol
         const cur = i === flow.currentIndex;
         return (
           <li key={s.key} aria-current={cur ? "step" : undefined}
-            className={cn("flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm",
+            /* text-xs on a phone: "Renovation" was cut to "Renovati..." in a third of 375px */
+            className={cn("flex min-w-0 items-center gap-1 rounded-md px-1.5 py-1.5 text-xs sm:gap-1.5 sm:px-2 sm:text-sm",
               cur ? (hold ? "bg-err-bg ring-1 ring-err/40" : "bg-primary/10 ring-1 ring-primary/40") : "bg-surface-dim")}>
             {done ? <CheckCircle2 size={15} className="shrink-0 text-synced" /> : <Circle size={15} className={cn("shrink-0", cur ? "text-primary fill-primary/20" : "text-ink-secondary")} />}
             <span className={cn("truncate", cur ? "font-semibold text-ink" : done ? "text-ink" : "text-ink-secondary")}>{s.label}</span>

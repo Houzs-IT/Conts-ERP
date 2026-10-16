@@ -116,7 +116,8 @@ export function RenovationTimeline({ projectId, canWrite, refreshKey = 0 }: { pr
       ) : shown.length === 0 ? (
         <div className="text-[12px] text-ink-muted">{entries.length === 0 ? "No activity yet" : `No ${CATEGORY_LABEL[filter as Exclude<TimelineFilter, "all">]} entries`}</div>
       ) : (
-        <div className="max-h-[28rem] overflow-y-auto overflow-x-hidden pr-1">
+        <div className="overflow-x-hidden lg:max-h-[28rem] lg:overflow-y-auto lg:pr-1">
+          {/* A box of its own only beside the work column (lg); on a phone a scroll area inside the page scroll was a second scrollbar. */}
           <ol className="relative space-y-3 pl-5">
             <span className="pointer-events-none absolute bottom-1.5 left-[7px] top-1.5 w-px bg-border" />
             {shown.map((e) => (

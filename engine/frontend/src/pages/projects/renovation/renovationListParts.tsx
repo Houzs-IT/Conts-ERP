@@ -212,7 +212,17 @@ export function renovationColumns({ byId, steps, today, onOpen }: {
       disableSort: true,
       render: (r) => {
         const row = b(r);
-        return row ? <RenovationStepTrack size="table" steps={steps} current={row.step.key} onPick={(k) => onOpen(projectHref(r.id, k))} /> : <span className="text-ink-muted">—</span>;
+        /* Dense table (owner, 16 Oct 2026): the current step as a pill with its place, not the six-step track, which
+           was squeezed to "Design Si" in a table column. */
+        if (!row) return <span className="text-ink-muted">—</span>;
+        const i = steps.findIndex((s) => s.key === row.step.key);
+        return (
+          <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+            <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-semibold", row.step.key === "closed" ? "bg-synced-bg text-synced" : "bg-primary-soft text-primary-ink")}>{row.step.label}</span>
+            {i >= 0 && <span className="text-[10.5px] text-ink-muted">{i + 1}/{steps.length}</span>}
+            {row.sla?.daysIn != null && <span className={cn("text-[10.5px]", row.sla.overdueBy != null ? "font-semibold text-err" : "text-ink-muted")}>{row.sla.daysIn}d{row.sla.days != null ? `/${row.sla.days}d` : ""}</span>}
+          </span>
+        );
       },
       getValue: (r) => b(r)?.step.label ?? "",
       sortCompare: (x, y) => stepIndex(x) - stepIndex(y),
@@ -239,7 +249,8 @@ export function renovationColumns({ byId, steps, today, onOpen }: {
       render: (r) => {
         const row = b(r);
         if (row?.handoverDate) return <span className="text-[12px]" title="Handed over">{formatDate(row.handoverDate)} <span className="text-ink-muted">(handed over)</span></span>;
-        return <span className={cn("text-[12px]", row && listFlags(row, today).late.length ? "font-semibold text-err" : "")}>{row?.plannedHandoverDate ? formatDate(row.plannedHandoverDate) : "—"}</span>;
+        if (!row?.plannedHandoverDate) return <span className="text-[12px] text-ink-muted">—</span>;
+        return <span className={cn("text-[12px]", listFlags(row, today).late.length ? "font-semibold text-err" : "")}>{formatDate(row.plannedHandoverDate)}</span>;
       },
       getValue: (r) => b(r)?.handoverDate ?? b(r)?.plannedHandoverDate ?? "",
     },
@@ -247,7 +258,7 @@ export function renovationColumns({ byId, steps, today, onOpen }: {
       key: "reno_flags",
       label: "Flags",
       disableSort: true,
-      render: (r) => <span className="flex flex-wrap gap-1"><RenovationFlagPills board={b(r)} today={today} /></span>,
+      render: (r) => <span className="flex min-w-[9rem] flex-wrap gap-1"><RenovationFlagPills board={b(r)} today={today} /></span>,
       getValue: (r) => {
         const row = b(r);
         if (!row) return "";
