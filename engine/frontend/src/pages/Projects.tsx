@@ -605,6 +605,8 @@ function ProjectsListView({ renovation = false }: { renovation?: boolean }) {
   // Renovation mode only: the step tiles' filter (design, signed, ...).
   const step = renovation ? params.get("step") || "" : "";
   const stepList = useMemo(() => csvParam(step), [step]);
+  // Renovation mode only: projects over the SLA of their current step (owner, 16 Oct 2026).
+  const overdue = renovation && params.get("overdue") === "1";
   // Cohort "Setup"/"Dismantle" pick a date-derived event PHASE (not the stale
   // `stage` enum) — see the field/sales slim bar below + backend f.phase.
   const phase = params.get("phase") || "";
@@ -701,7 +703,7 @@ function ProjectsListView({ renovation = false }: { renovation?: boolean }) {
   const excludeDoneParam =
     !renovation && hideCompleted && !sectionList.includes("__done") ? 1 : undefined;
   const renoParams = renovation
-    ? { reno: 1, reno_step: step || undefined, reno_hide_closed: hideCompleted ? 1 : undefined }
+    ? { reno: 1, reno_step: step || undefined, reno_hide_closed: hideCompleted ? 1 : undefined, reno_overdue: overdue ? 1 : undefined }
     : {};
   const reno = useRenovationBoard(showArchived, renovation);
   const today = todayInAppTz();
@@ -737,7 +739,7 @@ function ProjectsListView({ renovation = false }: { renovation?: boolean }) {
         })}`,
         { signal },
       ),
-    [brand, year, month, from, to, section, taskPending, status, phase, restrictedCohort, sendAssignedToMe, excludeDoneParam, myPending, search, page, perPage, showArchived, sort?.key, sort?.dir, renovation, step, hideCompleted],
+    [brand, year, month, from, to, section, taskPending, status, phase, restrictedCohort, sendAssignedToMe, excludeDoneParam, myPending, search, page, perPage, showArchived, sort?.key, sort?.dir, renovation, step, hideCompleted, overdue],
     // Paginated + filter-switched list: keep the current rows on screen while
     // the next page/filter loads instead of flashing an empty table.
     { keepPreviousData: true }
@@ -1453,6 +1455,17 @@ function ProjectsListView({ renovation = false }: { renovation?: boolean }) {
           />
           Hide completed
         </label>
+        {renovation && (
+          <label className="inline-flex items-center gap-1.5 text-[11px] text-ink-secondary" title="Show only projects over the SLA of their current step">
+            <input
+              type="checkbox"
+              checked={overdue}
+              onChange={(e) => patchParams({ overdue: e.target.checked ? "1" : "", page: "1" })}
+              className="accent-accent"
+            />
+            Overdue
+          </label>
+        )}
         <label className="inline-flex items-center gap-1.5 text-[11px] text-ink-secondary">
           <input
             type="checkbox"

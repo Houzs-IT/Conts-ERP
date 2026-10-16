@@ -32,11 +32,11 @@ export function SiteTasksPanel({ projectId, tasks, canWrite, linesAvailable, onA
   const stages = [...new Set(visible.map((t) => t.stage_key))];
   const skipped = tasks.filter((t) => t.status === "skipped").length;
   return (
-    <section className="rounded-lg border border-border bg-surface p-4">
+    <section id="reno-site-tasks" className="rounded-lg border border-border bg-surface p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h3 className="text-base font-semibold text-ink">Site tasks</h3>
-          <p className="text-xs text-ink-secondary">Dates are a plan, not a gate: tasks may overlap and move; only dates that pass raise a flag.</p>
+          <h3 className="text-base font-semibold text-ink">Site tasks and crew</h3>
+          <p className="text-xs text-ink-secondary">Put crew on a project by picking them on a task: press Crew on the task, or pick them when adding one. Crew without a login are kept in Project Maintenance. Dates are a plan, not a gate.</p>
         </div>
         {canWrite && (
           <div className="flex flex-wrap gap-2">

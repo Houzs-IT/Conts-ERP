@@ -7,6 +7,7 @@
 
 export interface GrRef { id: string; no: string; date: string | null; atSite: boolean; photos: number }
 export interface DoRef { id: string; no: string; date: string | null; status: string; delivered: boolean; signed: boolean; hasPod: boolean }
+export interface PoRef { id: string; no: string; date: string | null; status: string }
 export interface StatusLine {
   categoryGroup: string | null;
   subCategory: string | null;
@@ -16,6 +17,8 @@ export interface StatusLine {
   deliveredQty: number;
   grs: GrRef[];
   dos: DoRef[];
+  /** Optional: an engine older than 16 Oct 2026 does not send them. */
+  pos?: PoRef[];
 }
 
 export interface Stage {
@@ -33,6 +36,7 @@ export interface Stage {
   ready: boolean;
   grs: GrRef[];
   dos: DoRef[];
+  pos: PoRef[];
 }
 
 const isOrdered = (l: StatusLine) => l.qty > 0 && l.orderedQty >= l.qty;
@@ -56,8 +60,10 @@ export function stageOf(lines: readonly StatusLine[]): Stage {
     ready: lines.length > 0 && lines.every((l) => isDelivered(l) && (!needsReceipt(l) || isReceived(l))),
     grs: [],
     dos: [],
+    pos: [],
   };
-  for (const l of lines) { addOnce(s.grs, l.grs); addOnce(s.dos, l.dos); }
+  for (const l of lines) { addOnce(s.grs, l.grs); addOnce(s.dos, l.dos); addOnce(s.pos, l.pos ?? []); }
+  s.pos.sort((a, b) => (a.date ?? '').localeCompare(b.date ?? '') || a.no.localeCompare(b.no));
   s.grs.sort((a, b) => (a.date ?? '').localeCompare(b.date ?? '') || a.no.localeCompare(b.no));
   s.dos.sort((a, b) => (a.date ?? '').localeCompare(b.date ?? '') || a.no.localeCompare(b.no));
   return s;
@@ -66,10 +72,10 @@ export function stageOf(lines: readonly StatusLine[]): Stage {
 /** A category's stage from its rows that have items: Ready only when every one of them is Ready. */
 export function categoryStage(rows: readonly Stage[]): Stage {
   const withItems = rows.filter((r) => r.items > 0);
-  const out: Stage = { items: 0, ordered: 0, toReceive: 0, received: 0, delivered: 0, ready: withItems.length > 0 && withItems.every((r) => r.ready), grs: [], dos: [] };
+  const out: Stage = { items: 0, ordered: 0, toReceive: 0, received: 0, delivered: 0, ready: withItems.length > 0 && withItems.every((r) => r.ready), grs: [], dos: [], pos: [] };
   for (const r of withItems) {
     out.items += r.items; out.ordered += r.ordered; out.toReceive += r.toReceive; out.received += r.received; out.delivered += r.delivered;
-    addOnce(out.grs, r.grs); addOnce(out.dos, r.dos);
+    addOnce(out.grs, r.grs); addOnce(out.dos, r.dos); addOnce(out.pos, r.pos);
   }
   return out;
 }

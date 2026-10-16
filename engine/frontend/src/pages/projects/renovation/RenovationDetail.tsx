@@ -18,8 +18,9 @@ import { useQuery } from "../../../hooks/useQuery";
 import { cn } from "../../../lib/utils";
 import { renovationApi, type ProjectDetail } from "./renovationApi";
 import { errorText, money, shortDate, supplyLabel, supplyTone } from "./renovationModel";
-import { Dialog, Field, Pill, inputClass } from "./renovationUi";
+import { Dialog, Field, Pill, SkipReasonDialog, inputClass } from "./renovationUi";
 import { simpleApi, type ProjectDetailV2 } from "./simpleApi";
+import { SiteTasksPanel } from "./SiteTasksPanel";
 import { FlowPanel } from "./FlowPanel";
 import { ContractCard, KeyCard, PeopleCard } from "./ProjectRecords";
 import { DesignTaskCard } from "./DesignTask";
@@ -38,6 +39,12 @@ export function RenovationDetail({ id, canWrite, embedded = false }: { id: numbe
 
   const done = (text: string) => { setNotice({ tone: "ok", text }); setSaved((n) => n + 1); q.reload(); };
   const failed = (text: string) => setNotice({ tone: "err", text });
+  const [skipping, setSkipping] = useState<{ id: number; label: string } | null>(null);
+  /* Site tasks and their crew (owner, 16 Oct 2026: crew without a login get onto a project by being picked on a task). */
+  async function act(fn: () => Promise<unknown>, okText?: string) {
+    setNotice(null);
+    try { await fn(); if (okText) done(okText); else q.reload(); } catch (e) { failed(errorText(e)); }
+  }
 
   if (q.loading && !d) return <p className="py-10 text-center text-sm text-ink-secondary">Loading project...</p>;
   if (q.error || !d) return <p role="alert" className="py-6 text-sm text-err">The project could not be loaded: {q.error ?? "not found"}</p>;
@@ -60,16 +67,20 @@ export function RenovationDetail({ id, canWrite, embedded = false }: { id: numbe
         </div>
       )}
 
-      <FlowPanel projectId={id} flow={d.flow} hold={d.hold} canWrite={canWrite} onChanged={done} facts={<ProjectFacts d={d} />} />
+      <FlowPanel projectId={id} flow={d.flow} hold={d.hold} canWrite={canWrite} onChanged={done} sla={d.stepSla ?? null}
+        facts={<ProjectFacts d={d} canWrite={canWrite} onDone={done} onError={failed} />} />
       {!d.financeHidden && d.so && <BillingPromptBanner d={d} canWrite={canWrite} onDone={done} onError={failed} />}
 
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="lg:col-span-2 space-y-4 min-w-0">
           {/* Left = work (owner, 14 Oct 2026): Design and Procurement details (the documents hub, with each DO's proof
-              of delivery). Right = reference. Site tasks and the room photo gallery left this page (their data and
-              APIs are unchanged; the calendar still reads the tasks). */}
+              of delivery). Right = reference. Site tasks came back on 16 Oct 2026 as "Site tasks and crew": a crew
+              member without a login gets onto a project only by being picked on one of its tasks, and nothing else on
+              this page offered that. The room photo gallery stays off (its data and API are unchanged). */}
           <DesignTaskCard projectId={id} canWrite={canWrite} onDone={(t) => { setNotice({ tone: "ok", text: t }); setSaved((n) => n + 1); }} onError={failed} />
           <ProcurementPanel projectId={id} canWrite={canWrite} onError={failed} showMoney={!d.financeHidden} />
+          <SiteTasksPanel projectId={id} tasks={d.tasks} canWrite={canWrite} linesAvailable={!d.linesUnavailable} onAct={act}
+            onSkip={(t) => setSkipping({ id: t.id, label: t.label })} />
           {d.serviceCases.length > 0 && <WarrantyPanel d={d} />}
         </div>
         <aside className="space-y-4 min-w-0">
@@ -87,13 +98,24 @@ export function RenovationDetail({ id, canWrite, embedded = false }: { id: numbe
           )}
         </aside>
       </div>
-
+      {skipping && (
+        <SkipReasonDialog
+          what={skipping.label}
+          onCancel={() => setSkipping(null)}
+          onConfirm={async (reason) => {
+            try { await renovationApi.skipTask(skipping.id, reason); } catch (e) { throw new Error(errorText(e)); }
+            const label = skipping.label;
+            setSkipping(null);
+            done(`${label} skipped. The reason is recorded.`);
+          }}
+        />
+      )}
     </div>
   );
 }
 
 /** The facts worth a glance, inside the step card: only those that say something (no row of dashes). */
-function ProjectFacts({ d }: { d: ProjectDetailV2 }) {
+function ProjectFacts({ d, canWrite, onDone, onError }: { d: ProjectDetailV2; canWrite: boolean; onDone: (t: string) => void; onError: (t: string) => void }) {
   const facts: Array<[string, ReactNode]> = [];
   const handover = d.handover?.signed_at ?? d.project.handed_over_at;
   if (d.so && !d.financeHidden) {
@@ -104,7 +126,10 @@ function ProjectFacts({ d }: { d: ProjectDetailV2 }) {
   if (d.so && d.conditions.renoItem?.condition) facts.push(["Reno items", <Pill tone={supplyTone(d.conditions.renoItem.condition)}>{supplyLabel(d.conditions.renoItem.condition)}</Pill>]);
   if (d.keyHolder?.name) facts.push(["Key with", d.keyHolder.name]);
   if (handover) facts.push(["Handed over", shortDate(handover)]);
-  else if (d.project.planned_handover_date) facts.push(["Handover planned", shortDate(d.project.planned_handover_date)]);
+  else if (d.flow.current !== "closed" && (canWrite || d.project.planned_handover_date)) {
+    /* Owner, 16 Oct 2026: the planned handover could only be typed when the project was created; set it here. */
+    facts.push(["Planned handover", <PlannedHandover projectId={d.project.id} value={d.project.planned_handover_date ?? null} canWrite={canWrite} onDone={onDone} onError={onError} />]);
+  }
   if (facts.length === 0) return null;
   return (
     <dl className="flex flex-wrap gap-x-5 gap-y-1 text-xs">
@@ -198,5 +223,38 @@ function LinkedDocuments({ d }: { d: ProjectDetail }) {
         </div>
       </dl>
     </section>
+  );
+}
+
+/** The planned handover date, set or changed in place (PATCH /api/renovation/:id). */
+function PlannedHandover({ projectId, value, canWrite, onDone, onError }: {
+  projectId: number; value: string | null; canWrite: boolean; onDone: (t: string) => void; onError: (t: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [v, setV] = useState(value?.slice(0, 10) ?? "");
+  const [busy, setBusy] = useState(false);
+  async function save(next: string | null) {
+    setBusy(true);
+    try {
+      await simpleApi.setPlannedHandover(projectId, next);
+      setEditing(false);
+      onDone(next ? `Planned handover set to ${shortDate(next)}.` : "Planned handover cleared.");
+    } catch (e) { onError(errorText(e)); } finally { setBusy(false); }
+  }
+  if (!editing) {
+    return (
+      <span className="inline-flex items-center gap-1.5" data-testid="planned-handover">
+        <span className={value ? "" : "font-normal text-ink-secondary"}>{value ? shortDate(value) : "Not set"}</span>
+        {canWrite && <button type="button" className="text-primary hover:underline" onClick={() => { setV(value?.slice(0, 10) ?? ""); setEditing(true); }}>{value ? "change" : "set date"}</button>}
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex flex-wrap items-center gap-1.5">
+      <input type="date" className="h-7 rounded border border-border bg-surface px-1.5 text-xs" aria-label="Planned handover date" value={v} disabled={busy} onChange={(e) => setV(e.target.value)} />
+      <Button variant="secondary" disabled={busy || !v} onClick={() => save(v)}>{busy ? "Saving..." : "Save"}</Button>
+      {value && <Button variant="ghost" disabled={busy} onClick={() => save(null)}>Clear</Button>}
+      <Button variant="ghost" disabled={busy} onClick={() => setEditing(false)}>Cancel</Button>
+    </span>
   );
 }
