@@ -1,6 +1,7 @@
 import { type Env, all, json, nowIso } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { MYT_DATE } from '../../_lib/ops';
+import { taskCleanersReady, mineSql, mineArgs, cleanerListSql, parseCleaners } from '../../_lib/taskCleaners';
 import { LIVE_STAY_SQL, mytToday, isDay, standardItems } from '../../_lib/cleaning';
 
 /** GET /api/field/tasks?date=today — the signed-in person's own jobs for the day (plus anything left over from earlier),
@@ -14,10 +15,11 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const asked = new URL(request.url).searchParams.get('date');
   const date = isDay(asked) ? asked : today;
   const when = MYT_DATE('COALESCE(t.scheduled_for, t.due_at, t.created_at)');
+  const ready = await taskCleanersReady(env);
 
   const rows = await all<any>(env, `
     SELECT t.id, t.unit_id, t.kind, t.title, t.instructions, t.state, t.due_at, t.scheduled_for, t.next_guest_at, t.requires_photo, t.sync, t.updated_at,
-           t.started_at, t.completed_at, t.guest_left_at, ${when} AS day,
+           t.started_at, t.completed_at, t.guest_left_at, ${when} AS day, ${cleanerListSql(ready)} AS cleaner_list,
            u.unit_number, u.readiness, p.id AS property_id, p.name AS property_name, p.address_line,
            (SELECT c.instruction FROM access_credentials c WHERE c.unit_id = u.id ORDER BY c.updated_at DESC LIMIT 1) AS access_instruction,
            (SELECT COUNT(*) FROM documents d WHERE d.task_id = t.id AND d.kind IN ('photo','video')) AS photo_count,
@@ -37,9 +39,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       ORDER BY r.check_in_time LIMIT 1
     ) nxt ON TRUE
     LEFT JOIN guests ng ON ng.id = nxt.guest_id
-    WHERE t.assignee_id = ?
+    WHERE ${mineSql(ready)}
       AND (${when} = ? OR (t.state != 'resolved' AND ${when} < ?))
-    ORDER BY p.name, u.unit_number`, session.userId, date, date);
+    ORDER BY p.name, u.unit_number`, ...mineArgs(ready, session.userId), date, date);
 
   return json({
     generatedAt: nowIso(), date,
@@ -51,6 +53,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         unit: { unitNumber: r.unit_number, propertyName: r.property_name }, buildingId: r.property_id,
         addressLine: String(r.address_line ?? '').replace(/[\s,]+$/, ''), accessInstruction: r.access_instruction ?? null,
         work: r.title, instructions: r.instructions ?? null, day: r.day, dueAt: r.due_at, nextGuestAt: r.next_guest_at, startedAt: r.started_at ?? null, completedAt: r.completed_at ?? null,
+        // Who else is on the job with this cleaner (owner, 11 Oct 2026: several cleaners per clean).
+        team: parseCleaners(r.cleaner_list).filter(c => c.userId !== session.userId).map(c => c.name),
         readiness: r.readiness, done: r.state === 'resolved', flag: sameDay ? 'Same-day turnaround' : null,
         requiresPhoto: !!r.requires_photo, photoCount: Number(r.photo_count),
         checklist: { done: Number(r.ticks), total: standardItems(r.kind).length + Number(r.custom_items) },

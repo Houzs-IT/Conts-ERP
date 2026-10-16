@@ -1,4 +1,5 @@
 import { type Env, one, fail } from '../../../_lib/db';
+import { isOnTask } from '../../../_lib/taskCleaners';
 import { requireSession, isFieldRole } from '../../../_lib/auth';
 import { levelsFor } from '../../../_lib/access';
 import { isAssignee, UNASSIGNED_SQL } from '../../../_lib/maintenance';
@@ -22,7 +23,7 @@ async function mayOpen(env: Env, s: { userId: string; role: string }, d: Doc): P
     if (d.task_id) {
       return !!(await one(env, `
         SELECT 1 AS x FROM tasks t LEFT JOIN cleaners c ON c.id = t.cleaner_id
-        WHERE t.id = ? AND (t.assignee_id = ? OR t.completed_by = ? OR c.user_id = ?)`, d.task_id, s.userId, s.userId, s.userId));
+        WHERE t.id = ? AND (t.assignee_id = ? OR t.completed_by = ? OR c.user_id = ?)`, d.task_id, s.userId, s.userId, s.userId)) || await isOnTask(env, d.task_id, s.userId);
     }
     if (d.maintenance_id) {
       // The person who reported the repair, the one doing it, and (to look before picking it up) any technician while nobody has it.

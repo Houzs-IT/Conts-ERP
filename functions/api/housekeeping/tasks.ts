@@ -3,6 +3,7 @@ import { requireSession, isFieldRole } from '../../_lib/auth';
 import { MYT_DATE, SHEET_CLEANER, hhmm, linenSet, resolveUnit } from '../../_lib/ops';
 import { checkDate, invalid, type Fields } from '../../_lib/validate';
 import { cleaningNotice } from '../../_lib/notices';
+import { taskCleanersReady, mineSql, mineArgs, cleanerListSql, parseCleaners, writeTaskCleaners } from '../../_lib/taskCleaners';
 
 /** The three cleaning kinds a manual task may be. Inspection/maintenance/delivery
  *  are their own screens; this endpoint only creates cleaning work. */
@@ -30,13 +31,14 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if (to > maxTo) to = maxTo;
 
   const mine = isFieldRole(session.role);
+  const ready = await taskCleanersReady(env);
   const when = MYT_DATE('COALESCE(t.scheduled_for, t.due_at, t.created_at)');
   const rows = await all<any>(env, `
     SELECT t.id, t.kind, t.state, t.title, t.instructions, t.scheduled_for, t.due_at, t.next_guest_at, t.requires_photo, t.assignee_id, t.cleaner_id,
            t.started_at, t.completed_at, ${when} AS day,
            u.unit_number, u.readiness, u.bedrooms, p.id AS property_id, p.name AS property_name,
            COALESCE(cl.full_name, a.full_name, '') AS assignee_name, ${SHEET_CLEANER('t')} AS sheet_cleaner,
-           cl.employment_type AS employment_type,
+           cl.employment_type AS employment_type, ${cleanerListSql(ready)} AS cleaner_list,
            COALESCE(r.external_ref, 'Manual') AS source_ref,
            r.check_out AS checkout_date, r.check_out_time AS checkout_time,
            (SELECT COUNT(*) FROM documents d WHERE d.task_id = t.id AND d.kind = 'photo') AS photo_count
@@ -48,9 +50,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     LEFT JOIN reservations r ON r.id = t.reservation_id
     WHERE t.kind IN ('turnover','deep_clean','light_clean')
       AND ((${when} BETWEEN ? AND ?) OR (? = ? AND ${when} < ? AND t.state != 'resolved'))
-      ${mine ? 'AND t.assignee_id = ?' : ''}
+      ${mine ? `AND ${mineSql(ready)}` : ''}
     ORDER BY COALESCE(t.scheduled_for, t.due_at, t.created_at)`,
-    ...[from, to, from, today, from, ...(mine ? [session.userId] : [])]);
+    ...[from, to, from, today, from, ...(mine ? mineArgs(ready, session.userId) : [])]);
 
   // Stays leaving in the range with no clean on that unit that day. Cancelled stays and
   // maintenance blocks leave no guest mess behind.
@@ -84,7 +86,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       checkoutTime: r.checkout_time ?? null, checkoutDate: r.checkout_date ?? null,
       // Full ISO start/end so the client can show how long the clean took.
       startedAt: r.started_at ?? null, completedAt: r.completed_at ?? null,
-      assigneeId: r.assignee_id, cleanerId: r.cleaner_id ?? null, assigneeName: r.assignee_name || null,
+      assigneeId: r.assignee_id, cleanerId: r.cleaner_id ?? null,
+      cleaners: parseCleaners(r.cleaner_list, { cleanerId: r.cleaner_id ?? null, userId: r.assignee_id ?? null, name: r.assignee_name || null }),
+      assigneeName: parseCleaners(r.cleaner_list).map(c => c.name).join(', ') || r.assignee_name || null,
       sheetCleaner: r.sheet_cleaner ?? null,
       employmentType: r.employment_type ?? null,
       sequence: i + 1, state: r.state, readiness: r.readiness,
@@ -130,16 +134,23 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   // Assignment: prefer a roster cleanerId; assignee_id is set to the cleaner's login
   // (internal staff) and left null for an outsourced crew. assigneeId stays accepted
   // as the legacy users-based path.
+  // Several cleaners: cleanerIds (in order; the first is the job's main cleaner). cleanerId alone still works.
   let assigneeId: string | null = null;
   let cleanerId: string | null = null;
-  if (typeof b?.cleanerId === 'string' && b.cleanerId.trim()) {
-    const c = await one<{ id: string; user_id: string | null }>(env, 'SELECT id, user_id FROM cleaners WHERE id = ? AND is_active = 1', b.cleanerId.trim());
+  const pickedIds = [...new Set([...(Array.isArray(b?.cleanerIds) ? b.cleanerIds : []), b?.cleanerId]
+    .filter((x): x is string => typeof x === 'string' && !!x.trim()).map(x => x.trim()))].slice(0, 10);
+  const team: { cleanerId: string | null; userId: string | null }[] = [];
+  for (const cid of pickedIds) {
+    const c = await one<{ id: string; user_id: string | null }>(env, 'SELECT id, user_id FROM cleaners WHERE id = ? AND is_active = 1', cid);
     if (!c) return fail('NOT_FOUND', 'That cleaner is not on the active roster.', 404, { cleanerId: 'Pick a cleaner from the roster.' });
-    cleanerId = c.id; assigneeId = c.user_id;
-  } else if (typeof b?.assigneeId === 'string' && b.assigneeId.trim()) {
+    team.push({ cleanerId: c.id, userId: c.user_id });
+  }
+  if (team.length) { cleanerId = team[0].cleanerId; assigneeId = team[0].userId; }
+  else if (typeof b?.assigneeId === 'string' && b.assigneeId.trim()) {
     const person = await one<{ id: string }>(env, 'SELECT id FROM users WHERE id = ? AND is_active = 1', b.assigneeId.trim());
     if (!person) return fail('NOT_FOUND', 'That person is no longer active.', 404, { assigneeId: 'Pick an active cleaner.' });
     assigneeId = person.id;
+    team.push({ cleanerId: null, userId: person.id });
   }
 
   const title = (typeof b?.title === 'string' && b.title.trim()) ? b.title.trim().slice(0, 120) : KIND_TITLE[kind];
@@ -157,11 +168,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     isHhmm(b?.dueAt) ? at(b.dueAt) : null,
     isHhmm(b?.nextGuestAt) ? at(b.nextGuestAt) : null,
     requiresPhoto, now, now);
+  if (team.length) await writeTaskCleaners(env, id, team, session.userId);
 
   await audit(env, {
     actorId: session.userId, actorLabel: session.fullName, action: 'housekeeping.create',
-    entityTable: 'tasks', entityId: id, after: { unitId: unit.id, kind, title, assigneeId, cleanerId }, source: b?.source ?? 'web',
+    entityTable: 'tasks', entityId: id, after: { unitId: unit.id, kind, title, assigneeId, cleanerId, ...(team.length > 1 ? { cleanerIds: team.map(t => t.cleanerId) } : {}) }, source: b?.source ?? 'web',
   });
-  if (assigneeId) await cleaningNotice(env, id, 'assigned', session.userId);
+  if (team.some(t => t.userId)) await cleaningNotice(env, id, 'assigned', session.userId);
   return json({ id }, 201);
 };

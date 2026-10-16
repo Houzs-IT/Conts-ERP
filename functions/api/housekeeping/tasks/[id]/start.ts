@@ -1,4 +1,5 @@
 import { type Env, one, run, json, fail, audit, nowIso } from '../../../../_lib/db';
+import { isOnTask } from '../../../../_lib/taskCleaners';
 import { requireSession, isFieldRole } from '../../../../_lib/auth';
 
 /** POST /api/housekeeping/tasks/:id/start — the cleaner (or a manager) starts the job; the unit shows Cleaning. */
@@ -9,7 +10,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   const id = String(params.id);
   const t = await one<any>(env, 'SELECT id, state, unit_id, kind, assignee_id FROM tasks WHERE id = ?', id);
   if (!t) return fail('NOT_FOUND', 'That task no longer exists. Refresh the list.', 404);
-  if (isFieldRole(session.role) && t.assignee_id !== session.userId) return fail('FORBIDDEN', 'That job is assigned to someone else.', 403);
+  if (isFieldRole(session.role) && !(await isOnTask(env, t.id, session.userId))) return fail('FORBIDDEN', 'That job is assigned to someone else.', 403);
   if (t.state === 'resolved') return fail('CONFLICT', 'That task is already finished.', 409);
   if (t.state === 'in_progress') return json({ ok: true });
 

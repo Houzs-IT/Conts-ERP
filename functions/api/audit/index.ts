@@ -1,4 +1,5 @@
 import { type Env, all, one, json, fail } from '../../_lib/db';
+import { isOnTask } from '../../_lib/taskCleaners';
 import { requireSession, isFieldRole, hasColumn } from '../../_lib/auth';
 import { levelsFor } from '../../_lib/access';
 
@@ -29,7 +30,7 @@ async function fieldOwns(env: Env, userId: string, table: string, id: string) {
   if (table === 'tasks') {
     return !!(await one(env, `
       SELECT 1 AS x FROM tasks t LEFT JOIN cleaners c ON c.id = t.cleaner_id
-      WHERE t.id = ? AND (t.assignee_id = ? OR t.completed_by = ? OR c.user_id = ?)`, id, userId, userId, userId));
+      WHERE t.id = ? AND (t.assignee_id = ? OR t.completed_by = ? OR c.user_id = ?)`, id, userId, userId, userId)) || await isOnTask(env, id, userId);
   }
   if (table === 'maintenance_issues') {
     // A job assigned since migration 0105 names its technician's account; older jobs (and a database without the
