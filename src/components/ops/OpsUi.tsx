@@ -277,7 +277,7 @@ export function MaintenanceJobForm({ unit, units, taskId, onClose, onDone }: {
         form: fields.unitId || fields.title || fields.category || win ? undefined : errorMessage(e, 'Not saved. Try again.') });
       setBusy(false); return;
     }
-    if (overlaps) toast({ tone: 'warning', title: 'The repair window overlaps a stay.', body: `It overlaps ${overlaps} ${overlaps === 1 ? 'reservation' : 'reservations'}. Make sure the guest agreed.` });
+    if (overlaps) toast({ tone: 'warning', title: 'The repair window overlaps a reservation.', body: `It overlaps ${overlaps} ${overlaps === 1 ? 'reservation' : 'reservations'}. Make sure the guest agreed.` });
     // The job is saved; a photo that fails is named, not a reason to undo it.
     if (picked.files.length) {
       setSending(true);

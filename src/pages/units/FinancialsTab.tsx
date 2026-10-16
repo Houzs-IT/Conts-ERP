@@ -1,6 +1,7 @@
 import { useSearchParams } from 'react-router-dom';
 import { Card } from '../../components/Card';
 import { Button } from '../../components/Button';
+import { Select } from '../../components/Select';
 import Icon from '../../components/Icon';
 import { useApi } from '../../lib/useApi';
 import { monthLabel, todayMyt } from '../../lib/format';
@@ -29,8 +30,8 @@ export function MonthStepper({ month, onChange }: { month: string; onChange: (m:
   return (
     <div className="flex items-center gap-1.5">
       <button type="button" aria-label="Previous month" onClick={() => onChange(shift(month, -1))} className="w-9 h-9 grid place-items-center rounded-control border border-solid border-line bg-card text-ink cursor-pointer hover:bg-muted"><Icon name="ChevronLeft" size="sm" /></button>
-      <input type="month" aria-label="Month" value={month} max={shift(now, 12)} onChange={e => e.target.value && onChange(e.target.value)}
-        className="h-9 px-2.5 rounded-control border border-solid border-line bg-card text-ink font-sans text-meta w-[170px]" />
+      <Select label="Month" value={month} onChange={onChange} className="w-[150px]"
+        options={Array.from({ length: 37 }, (_, k) => shift(now, 12 - k)).map(m => ({ value: m, label: monthLabel(m) }))} />
       <button type="button" aria-label="Next month" onClick={() => onChange(shift(month, 1))} className="w-9 h-9 grid place-items-center rounded-control border border-solid border-line bg-card text-ink cursor-pointer hover:bg-muted"><Icon name="ChevronRight" size="sm" /></button>
       {month !== now && <Button size="sm" variant="tertiary" onClick={() => onChange(now)}>This month</Button>}
     </div>
