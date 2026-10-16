@@ -22,9 +22,10 @@ const ALIASES: Record<DocType, string[]> = {
 };
 
 export function docTypeOf(raw: string): DocType | null {
-  const k = raw.trim().toUpperCase().replace(/[\s-]+/g, '_');
+  const norm = (v: string) => v.trim().toUpperCase().replace(/[\s/-]+/g, '_');
+  const k = norm(raw);
   for (const [type, names] of Object.entries(ALIASES) as Array<[DocType, string[]]>) {
-    if (k === type.toUpperCase() || names.includes(k) || k === DOC_LABEL[type].toUpperCase().replace(/[\s/]+/g, '_')) return type;
+    if (k === type.toUpperCase() || names.includes(k) || k === norm(DOC_LABEL[type])) return type;
   }
   return null;
 }
