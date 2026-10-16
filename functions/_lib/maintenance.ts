@@ -59,3 +59,8 @@ export async function isAssignee(env: Env, id: string, userId: string): Promise<
 
 /** A job nobody has: no technician or contractor named and no account linked. Only these can be picked up on the phone. */
 export const UNASSIGNED_SQL = "(m.vendor_name IS NULL OR trim(m.vendor_name) = '')";
+
+/** SQL true when the unit (column `unitCol`) has no open job blocking it: only then may anything put it back on sale
+ *  or mark it cleaning, else a closed second job or a finished clean would sell a unit still under repair. */
+export const noOpenBlockerSql = (unitCol: string) =>
+  `NOT EXISTS (SELECT 1 FROM maintenance_issues mb WHERE mb.unit_id = ${unitCol} AND mb.blocks_unit = 1 AND mb.state != 'resolved')`;

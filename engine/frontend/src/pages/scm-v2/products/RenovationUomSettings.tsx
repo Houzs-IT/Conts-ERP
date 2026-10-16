@@ -41,9 +41,9 @@ export function RenovationUomSettings({ onClose }: { onClose: () => void }) {
   };
 
   const move = async (i: number, dir: -1 | 1) => {
+    if (i < 0 || i >= units.length || i + dir < 0 || i + dir >= units.length) return;
     const a = units[i];
     const b = units[i + dir];
-    if (!a || !b) return;
     setError(null);
     const aSort = a.sort ?? 0;
     const bSort = b.sort ?? 0;

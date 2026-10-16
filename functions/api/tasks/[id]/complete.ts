@@ -3,6 +3,7 @@ import { isOnTask } from '../../../_lib/taskCleaners';
 import { requireSession, isFieldRole } from '../../../_lib/auth';
 import { chargeClean } from '../../../_lib/cleaning';
 import { cleaningNotice } from '../../../_lib/notices';
+import { noOpenBlockerSql } from '../../../_lib/maintenance';
 
 /** POST /api/tasks/:id/complete { photoIds, note } — a finished turnover, deep clean or inspection flips the unit to Ready.
  *  A task that needs proof is refused without at least one photo or video, unless storage is not set up yet (then the
@@ -32,8 +33,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   const now = nowIso();
   await run(env, "UPDATE tasks SET state = 'resolved', completed_at = ?, completed_by = ?, updated_at = ? WHERE id = ?", now, session.userId, now, id);
   if (['turnover', 'inspection', 'deep_clean', 'light_clean'].includes(t.kind)) {
-    await run(env, "UPDATE units SET readiness = 'ready', updated_at = ? WHERE id = ?", now, t.unit_id);
-    await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'unit.readiness_change', entityTable: 'units', entityId: t.unit_id, after: { readiness: 'ready' }, source: isFieldRole(session.role) ? 'field_app' : 'web' });
+    const flipped = await one(env, `UPDATE units SET readiness = 'ready', updated_at = ? WHERE id = ? AND ${noOpenBlockerSql('units.id')} RETURNING id`, now, t.unit_id);
+    if (flipped) await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'unit.readiness_change', entityTable: 'units', entityId: t.unit_id, after: { readiness: 'ready' }, source: isFieldRole(session.role) ? 'field_app' : 'web' });
   }
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'task.complete', entityTable: 'tasks', entityId: id, before: { state: t.state }, after: { state: 'resolved', note: b.note ?? null, photoWaived }, source: isFieldRole(session.role) ? 'field_app' : 'web' });
   const cost = isClean ? await chargeClean(env, session, t) : null;

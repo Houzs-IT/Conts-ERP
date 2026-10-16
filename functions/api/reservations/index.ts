@@ -1,5 +1,5 @@
 import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/db';
-import { requireSession, isFieldRole } from '../../_lib/auth';
+import { requireSession, isFieldRole, hasColumn } from '../../_lib/auth';
 import { findClash, clashResponseBody, upsertGuest, nextBookingRef, holdOnChannels, withUnitLock } from '../../_lib/reservations';
 import { VIEWS, TODOS, FACETS, fromSql, columnsSql, parseListQuery, viewWhere, todoWhere, toRow } from '../../_lib/bookingList';
 import { countryName } from '../../_lib/guestCountry';
@@ -15,7 +15,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if (!session) return response!;
   if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Reservations are not available to cleaners and technicians.', 403);
 
-  const q = parseListQuery(new URL(request.url));
+  const q = parseListQuery(new URL(request.url), { cancelledAt: await hasColumn(env, 'reservations', 'cancelled_at') });
   const schema = await moneySchema(env);
   const m = moneySql(schema);
   const todo = q.todo ? todoWhere(q.todo, q.today, schema) : 'TRUE';

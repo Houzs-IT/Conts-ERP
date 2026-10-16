@@ -1,5 +1,5 @@
 import { type Env, all, fail } from '../../_lib/db';
-import { requireSession, isFieldRole } from '../../_lib/auth';
+import { requireSession, isFieldRole, hasColumn } from '../../_lib/auth';
 import { csvCell } from '../../_lib/csv';
 import { fromSql, columnsSql, parseListQuery, viewWhere, todoWhere, toRow } from '../../_lib/bookingList';
 import { moneySchema } from '../../_lib/bookingMoney';
@@ -26,7 +26,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if (!session) return response!;
   if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Reservations are not available to cleaners and technicians.', 403);
 
-  const q = parseListQuery(new URL(request.url));
+  const q = parseListQuery(new URL(request.url), { cancelledAt: await hasColumn(env, 'reservations', 'cancelled_at') });
   const schema = await moneySchema(env);
   const parts = schema.payoutCols
     ? ', r.room_revenue, r.guest_cleaning_fee, r.extra_fees, r.sst_amount, r.tourism_tax, r.ota_tax, r.payment_processing_fee'

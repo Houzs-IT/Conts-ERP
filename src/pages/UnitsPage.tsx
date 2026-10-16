@@ -334,7 +334,7 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
   const u = d.unit;
   const p = d.performance;
   const money = !!d.pnl;
-  const openIssues = d.maintenance.filter(m => m.state !== 'resolved').length;
+  const openIssues = d.openMaintenanceCount ?? d.maintenance.filter(m => m.state !== 'resolved').length;
   // Financial sections are absent from the payload for roles without access, so that tab is not offered.
   const tabs = TABS.filter(([k]) => k !== 'financials' || money);
   const shown: Tab = tabs.some(([k]) => k === tab) ? tab : 'overview';
@@ -501,7 +501,7 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
             {form && <Button size="sm" variant="tertiary" icon={<Icon name="Download" size="sm" />} onClick={expensesReport}>Expenses report for {monthLabel(fmonth)}</Button>}
           </div>
           <FinancialsTab key={u.id} unitId={u.id} month={fmonth} />
-          <UnitCostsCard unitId={u.id} ownerId={u.owner.id} unitLabel={unitLabel} canEdit={canEdit} cleaningPrice={form?.cleaningPrice}
+          <UnitCostsCard unitId={u.id} ownerId={u.owner.id} unitLabel={unitLabel} canEdit={canEdit} cleaningPrice={form?.cleaningPrice} month={fmonth}
             deepCleaningPrice={form?.deepCleaningPrice} legacyCosts={form?.expenses ?? []} onChanged={() => { reloadDetail(); reload(); }} />
         </>
       )}

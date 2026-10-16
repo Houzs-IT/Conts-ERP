@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { Card } from '../../components/Card';
 import { StatusBadge } from '../../components/StatusBadge';
 import { DataTable, type Column } from '../../components/DataTable';
+import { PersonCell } from '../../components/DataTableParts';
 import { useApi } from '../../lib/useApi';
 import { humanize, dateShort } from '../../lib/format';
 import { STATUS_VOCAB } from '../../lib/status';
@@ -10,7 +11,7 @@ import { StatusChips, DateRange } from './ListFilters';
 
 type CleanStatus = 'unassigned' | 'waiting' | 'cleaning' | 'done';
 type RepairStatus = 'new' | 'assigned' | 'awaiting_owner' | 'in_progress' | 'repair_finished' | 'done';
-interface CleanRow { id: string; title: string; kind: string; state: string; status: CleanStatus; day: string | null; dueAt: string | null; completedAt: string | null; assigneeName: string | null }
+interface CleanRow { id: string; title: string; kind: string; state: string; status: CleanStatus; day: string | null; dueAt: string | null; completedAt: string | null; assigneeName: string | null; cleaners?: string[] }
 interface RepairRow {
   id: string; title: string; detail: string | null; state: string; status: RepairStatus; vendorName: string | null; blocksUnit: boolean; chargeTo: string;
   reportedAt: string; resolvedAt: string | null; quotedAmount?: number | null; finalAmount?: number | null;
@@ -45,7 +46,9 @@ export default function JobsTab({ unitId, stem }: { unitId: string; stem: string
     { key: 'day', label: 'Date', type: 'date', value: t => t.day, width: 110, hideable: false },
     { key: 'title', label: 'Cleaning job', value: t => t.title, width: 180 },
     { key: 'kind', label: 'Type', value: t => humanize(t.kind), width: 100 },
-    { key: 'assignee', label: 'Cleaner', type: 'person', value: t => t.assigneeName ?? 'Unassigned', width: 150 },
+    { key: 'assignee', label: 'Cleaner', type: 'person', value: t => t.assigneeName ?? 'Unassigned', width: 180,
+      // Several cleaners on one job: their names, not one avatar for the lot.
+      render: t => (t.cleaners?.length ?? 0) > 1 ? <span className="text-copy block truncate" title={t.assigneeName ?? undefined}>{t.assigneeName}</span> : <PersonCell name={t.assigneeName ?? 'Unassigned'} /> },
     { key: 'when', label: 'Due or done', type: 'datetime', value: t => t.completedAt ?? t.dueAt, width: 140, sub: t => (t.completedAt ? 'Done' : t.dueAt ? 'Due' : null) },
     { key: 'status', label: 'Status', type: 'status', value: t => STATUS_VOCAB.cleaning[t.status].label, filter: false, width: 150,
       status: t => STATUS_VOCAB.cleaning[t.status] },
