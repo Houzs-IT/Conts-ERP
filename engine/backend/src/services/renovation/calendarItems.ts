@@ -91,8 +91,9 @@ export function peopleOf(x: unknown): CalendarPerson[] {
   }
   const list = Array.isArray(v) ? v : v && typeof v === "object" ? [v] : [];
   const out: CalendarPerson[] = [];
-  for (const p of list as Array<Record<string, unknown>>) {
-    const id = Number(p?.id);
+  for (const p of list as Array<Record<string, unknown> | null>) {
+    if (!p || typeof p !== "object") continue;
+    const id = Number(p.id);
     if (!Number.isFinite(id) || id <= 0 || out.some((o) => o.id === id)) continue;
     let roles = p.roles;
     if (typeof roles === "string") roles = roles.replace(/^\{|\}$/g, "").split(",").filter(Boolean);
@@ -101,7 +102,7 @@ export function peopleOf(x: unknown): CalendarPerson[] {
   return out;
 }
 
-const ROLE_DEPARTMENT: Readonly<Record<string, CalendarDepartment>> = {
+const ROLE_DEPARTMENT: Readonly<Partial<Record<string, CalendarDepartment>>> = {
   designer: "design", sales: "sales", reno_pic: "renovation", admin: "management", boss: "management", site_crew: "site_crew",
 };
 /** When one person holds several roles, the one that names their department. */

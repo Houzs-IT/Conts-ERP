@@ -132,7 +132,7 @@ export function RenoCalendarCard({ item, variant, today, clipLeft = false, clipR
     >
       <span className="flex items-start gap-1">
         <StatusTick status={status} />
-        <span className={cn("min-w-0 flex-1 font-bold tracking-[0.01em]", compact ? "truncate" : "break-words", status === "done" && "line-through decoration-1")}>
+        <span className={cn("min-w-0 flex-1 font-bold tracking-[0.01em]", compact ? "truncate" : "break-words")}>
           {title}
         </span>
       </span>

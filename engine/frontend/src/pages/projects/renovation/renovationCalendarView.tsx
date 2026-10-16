@@ -59,8 +59,8 @@ function useNarrow(): boolean {
     const mq = window.matchMedia(query);
     const on = () => setNarrow(mq.matches);
     on();
-    mq.addEventListener?.("change", on);
-    return () => mq.removeEventListener?.("change", on);
+    mq.addEventListener("change", on);
+    return () => mq.removeEventListener("change", on);
   }, []);
   return narrow;
 }

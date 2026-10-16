@@ -29,14 +29,14 @@ export const DEPARTMENT_BY_KEY: Readonly<Record<RenoDepartment, DepartmentStyle>
   RENO_DEPARTMENTS.map((d) => [d.key, d]),
 ) as Record<RenoDepartment, DepartmentStyle>;
 
-const ROLE_DEPARTMENT: Readonly<Record<string, RenoDepartment>> = {
+const ROLE_DEPARTMENT: Readonly<Partial<Record<string, RenoDepartment>>> = {
   designer: "design", sales: "sales", reno_pic: "renovation", admin: "management", boss: "management", site_crew: "site_crew",
 };
 const DEPARTMENT_ORDER: readonly RenoDepartment[] = ["design", "renovation", "sales", "site_crew", "management"];
 
 /** A person's department: the most telling of their roles, null without one. */
 export function personDepartment(p: Pick<RenoPerson, "roles">): RenoDepartment | null {
-  const set = new Set((p.roles ?? []).map((r) => ROLE_DEPARTMENT[r]).filter(Boolean));
+  const set = new Set(p.roles.map((r) => ROLE_DEPARTMENT[r]).filter(Boolean));
   return DEPARTMENT_ORDER.find((d) => set.has(d)) ?? null;
 }
 
