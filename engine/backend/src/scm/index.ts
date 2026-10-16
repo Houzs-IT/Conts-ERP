@@ -607,12 +607,14 @@ scm.use("/stock-takes/*", scmAreaGuard("scm.warehouse.stock_take"));
 scm.route("/stock-takes", stockTakes);
 // ── SCM Finance (scm.finance.accounting) ────────────────────────────────────
 scm.use("/accounting/*", scmAreaGuard("scm.finance.accounting"));
+scm.route("/accounting/receipts", officialReceiptAttachments); // photos and documents (mig 0119)
 scm.route("/accounting", accounting);
 // Payment Vouchers — standalone AP cash-out doc (port of 2990 0189/0202, Phase
 // 1-B MYR). A finance document that posts a JE to the GL + can settle PIs, so it
 // rides the same L2 area guard as Accounting (GET=view, POST/PATCH=edit); the
 // finer scm.payment_voucher.* gates layer on inside the handlers.
 scm.use("/payment-vouchers/*", scmAreaGuard("scm.finance.accounting"));
+scm.route("/payment-vouchers", paymentVoucherAttachments); // photos and documents (mig 0119)
 scm.route("/payment-vouchers", paymentVouchers);
 // Other Debtors (owner 2026-09-03) — registry + debtor bills + receipts; the
 // same area and the same PV permission family gate the handlers inside.
@@ -626,16 +628,19 @@ scm.route("/receipts", receipts);
 // AP Invoices (owner 2026-09-06) — the non-stock supplier bill beside the
 // purchase invoices it is paid alongside; same area, same PV key family.
 scm.use("/ap-invoices/*", scmAreaGuard("scm.finance.accounting"));
+scm.route("/ap-invoices", apInvoiceAttachments); // photos and documents (mig 0119)
 scm.route("/ap-invoices", apInvoices);
 // Credit and debit notes (owner 2026-09-12; docs/bugs/0827) — the customer's
 // CN / DN and the supplier's SCN, raised by Finance; same area, same PV key
 // family as the AP invoice beside it.
 scm.use("/credit-notes/*", scmAreaGuard("scm.finance.accounting"));
+scm.route("/credit-notes", creditNoteAttachments); // photos and documents (mig 0119)
 scm.route("/credit-notes", creditNotes);
 // Deposit invoices (owner 2026-09-12; docs/bugs/0828) — born with a customer
 // payment when the company's switch is on; Finance reads, cancels, re-posts,
 // and holds the switch. Same area as the notes and receipts beside it.
 scm.use("/deposit-invoices/*", scmAreaGuard("scm.finance.accounting"));
+scm.route("/deposit-invoices", depositInvoiceAttachments); // photos and documents (mig 0119)
 scm.route("/deposit-invoices", depositInvoices);
 // Payment Audit Log — Finance's payment TRAIL (port of 2990's /admin/audit-log):
 // one row per mfg_sales_order_payments entry + its SO header context. Read-only.
@@ -988,7 +993,8 @@ import { renovationSoInfo } from "./routes/renovation-so-info";
 import {
   deliveryOrderAttachments, deliveryReturnAttachments, docAttachmentsImport, goodsReceivedAttachments, purchaseInvoiceAttachments,
   purchaseOrderAttachments, purchaseReturnAttachments, quotationAttachments, receiptAttachments, salesInvoiceAttachments,
-  salesOrderAttachments, variationOrderAttachments,
+  salesOrderAttachments, variationOrderAttachments, creditNoteAttachments, officialReceiptAttachments, depositInvoiceAttachments,
+  paymentVoucherAttachments, apInvoiceAttachments,
 } from "./routes/doc-attachments";
 import { renovationDoInfo, renovationGrInfo, renovationPoInfo, renovationSiInfo } from "./routes/renovation-doc-flow";
 // Import document files (mig 0119): the check that turns document numbers into documents. Reads only; each upload
