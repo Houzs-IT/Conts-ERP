@@ -9,7 +9,8 @@ import { Button } from "../../../components/Button";
 import { useQuery } from "../../../hooks/useQuery";
 import { cn } from "../../../lib/utils";
 import { HOLD_FLAG_LABEL } from "../../../vendor/shared/renovation-stages";
-import { simpleApi, type FlowStepKey, type FlowView, type Hold, type HoldFlag } from "./simpleApi";
+import { simpleApi, type FlowStepKey, type FlowView, type Hold, type HoldFlag, type StepSlaView } from "./simpleApi";
+import { StepSlaLine } from "./StepSlaParts";
 import { errorText, shortDate } from "./renovationModel";
 import { Dialog, Field, inputClass } from "./renovationUi";
 
@@ -24,11 +25,13 @@ export function StepStrip({ flow, hold, compact = false }: { flow: FlowView; hol
   return (
     <ol aria-label="Project steps" className={cn("grid gap-1", compact ? "grid-cols-6" : "grid-cols-3 sm:grid-cols-6")}>
       {flow.steps.map((s, i) => {
-        const done = i < flow.currentIndex;
+        /* Closed is the last step: reaching it means it is done, so it shows a tick, not an empty circle. */
+        const done = i < flow.currentIndex || (i === flow.currentIndex && s.key === "closed");
         const cur = i === flow.currentIndex;
         return (
           <li key={s.key} aria-current={cur ? "step" : undefined}
-            className={cn("flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm",
+            /* text-xs on a phone: "Renovation" was cut to "Renovati..." in a third of 375px */
+            className={cn("flex min-w-0 items-center gap-1 rounded-md px-1.5 py-1.5 text-xs sm:gap-1.5 sm:px-2 sm:text-sm",
               cur ? (hold ? "bg-err-bg ring-1 ring-err/40" : "bg-primary/10 ring-1 ring-primary/40") : "bg-surface-dim")}>
             {done ? <CheckCircle2 size={15} className="shrink-0 text-synced" /> : <Circle size={15} className={cn("shrink-0", cur ? "text-primary fill-primary/20" : "text-ink-secondary")} />}
             <span className={cn("truncate", cur ? "font-semibold text-ink" : done ? "text-ink" : "text-ink-secondary")}>{s.label}</span>
@@ -39,10 +42,12 @@ export function StepStrip({ flow, hold, compact = false }: { flow: FlowView; hol
   );
 }
 
-export function FlowPanel({ projectId, flow, hold, canWrite, onChanged, facts }: {
+export function FlowPanel({ projectId, flow, hold, canWrite, onChanged, facts, sla }: {
   projectId: number; flow: FlowView; hold: Hold | null; canWrite: boolean; onChanged: (text: string) => void;
   /** The project's few meaningful facts (contract, received, key, handover), shown under the steps. */
   facts?: ReactNode;
+  /** The current step against its SLA; absent before migration 0121 and in Closed. */
+  sla?: StepSlaView | null;
 }) {
   const [moving, setMoving] = useState(false);
   const [holding, setHolding] = useState(false);
@@ -84,7 +89,8 @@ export function FlowPanel({ projectId, flow, hold, canWrite, onChanged, facts }:
         )}
       </div>
       <StepStrip flow={flow} hold={hold} />
-      {facts && <div className="mt-2 border-t border-border pt-2">{facts}</div>}
+      {sla && flow.current !== "closed" && <StepSlaLine projectId={projectId} sla={sla} stepLabel={flow.currentLabel} canWrite={canWrite} onChanged={onChanged} />}
+      {facts &&<div className="mt-2 border-t border-border pt-2">{facts}</div>}
       {hold?.note && <p className="mt-2 text-sm text-err">{hold.note}</p>}
       {error && <p role="alert" className="mt-2 text-sm text-err">{error}</p>}
       <button type="button" className="mt-2 inline-flex items-center gap-1 text-xs text-ink-secondary hover:text-ink" onClick={() => setShowHistory((x) => !x)} aria-expanded={showHistory}>

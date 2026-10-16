@@ -1,12 +1,14 @@
-/* Procurement details (owner, 14-15 Oct 2026). Per product category, and per sub-category under it:
+/* Procurement details (owner, 14-16 Oct 2026). Per product category, and per sub-category under it:
    - the planned PO date and delivery date (the plan; GET/PUT /api/renovation/:id/procurement). A sub-category
      follows its category unless it has its own dates or no dates; a following one shows the category's dates greyed.
-   - where its goods stand: of the project's item lines, how many are Ordered -> Received -> Delivered, with the goods
-     receipts and delivery orders that did it (GET /api/renovation/:id/procurement-status). A sub-category is Ready
-     when everything ordered in it has been received and delivered; a category when every sub-category with items is.
-     LATE when the planned delivery date has passed and it is not Ready.
-   No item, PO or SO rows (owner, 15 Oct 2026). Compact: a category opens by itself only when it has items, and shows
-   only the sub-categories with items or their own dates; "Plan another sub-category" brings up any other.
+   - where its goods stand: of the project's item lines, how many are Ordered -> Received -> Delivered, with the
+     purchase orders, goods receipts and delivery orders behind them (GET /api/renovation/:id/procurement-status).
+     A sub-category is Ready when everything ordered in it has been received and delivered; a category when every
+     sub-category with items is. LATE when the planned delivery date has passed and it is not Ready.
+   The categories and sub-categories come from the project's sales orders (owner, 16 Oct 2026: "nobody needs Plan
+   another sub-category"): only those its SO lines (or its own POs) have are listed, plus any that already carry
+   planned dates, so a date typed earlier is never hidden. With no sales order the card asks for one instead of
+   listing empty rows. No item, PO or SO rows (owner, 15 Oct 2026).
    Later these dates will raise purchase orders automatically; nothing does yet. */
 
 import { useEffect, useState } from "react";
@@ -23,19 +25,26 @@ import { DocLinks, StagePills } from "./ProcurementStatus";
 
 const ROW = "grid grid-cols-2 items-center gap-1 sm:grid-cols-[minmax(0,1fr)_8.5rem_8.5rem]";
 
+/** The categories the card lists: those with item lines on the project's sales orders or POs, plus those that already
+    carry planned dates. */
+export function shownGroups(groups: readonly ProcGroup[], lines: readonly StatusLine[]): ProcGroup[] {
+  return groups.filter((g) => lines.some((l) => l.categoryGroup === g.code) || !!g.poDate || !!g.deliveryDate || g.subs.some((s) => s.mode !== "follow"));
+}
+
 export function ProcurementPanel({ projectId, canWrite, onError }: { projectId: number; canWrite: boolean; onError: (t: string) => void; showMoney?: boolean }) {
   const q = useQuery(["renovation", "procurement", projectId], () => simpleApi.procurement(projectId), [projectId]);
   const st = useQuery(["renovation", "procurement-status", projectId], () => simpleApi.procurementStatus(projectId), [projectId]);
   const [groups, setGroups] = useState<ProcGroup[] | null>(null);
-  /* Categories the user opened or closed against their default (open when it has items). */
+  /* Categories the user opened or closed against their default (open when it has items or sub-categories). */
   const [flipped, setFlipped] = useState<Set<string>>(new Set());
-  /* Sub-categories brought up with "Plan another sub-category" (until the page reloads). */
-  const [extra, setExtra] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
-  const [onlyChanged, setOnlyChanged] = useState(false);
   useEffect(() => { if (q.data) setGroups(q.data.groups); }, [q.data]);
   const lines: StatusLine[] = st.data?.ready ? st.data.lines : [];
   const today = todayKl();
+  /* No sales order: nothing to plan from. An engine older than 16 Oct 2026 sends no count; then the rows show. */
+  const noSo = st.data?.soCount === 0;
+  const loading = (!groups && !q.error) || (st.loading && !st.data && !st.error);
+  const list = groups && !noSo ? shownGroups(groups, lines) : [];
 
   async function save(fn: () => Promise<{ groups: ProcGroup[] }>) {
     setBusy(true);
@@ -45,33 +54,37 @@ export function ProcurementPanel({ projectId, canWrite, onError }: { projectId: 
 
   return (
     <section id="reno-procurement" className="rounded-lg border border-border bg-surface p-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="flex items-center gap-1.5 text-sm font-semibold text-ink"><PackageCheck size={14} />Procurement details</h3>
-        <label className="flex items-center gap-1 text-[11px] text-ink-secondary">
-          <input type="checkbox" checked={onlyChanged} onChange={(e) => setOnlyChanged(e.target.checked)} />Only categories with dates or items
-        </label>
-      </div>
-      <p className="mt-0.5 text-[11px] text-ink-secondary">Planned PO and delivery dates per category, and where its goods stand: ordered, received, delivered. Type a sub-category date to give it its own.</p>
+      <h3 className="flex items-center gap-1.5 text-sm font-semibold text-ink"><PackageCheck size={14} />Procurement details</h3>
+      {!noSo && list.length > 0 && (
+        <p className="mt-0.5 text-[11px] text-ink-secondary">The categories on this project's sales order, with planned PO and delivery dates and where the goods stand: ordered, received, delivered. Type a sub-category date to give it its own.</p>
+      )}
       {q.error && !groups && <p role="alert" className="mt-2 text-xs text-err">Procurement dates could not be loaded: {q.error}</p>}
       {st.error && <p role="alert" className="mt-2 text-xs text-err">Where the goods stand could not be loaded: {st.error}</p>}
-      {!groups && !q.error && <p className="mt-2 text-xs text-ink-secondary">Loading...</p>}
-      {groups && (
+      {loading && <p className="mt-2 text-xs text-ink-secondary">Loading...</p>}
+      {!loading && noSo && (
+        <div className="mt-2 rounded-md border border-dashed border-border bg-surface-dim px-3 py-4 text-center" data-testid="proc-no-so">
+          <p className="text-sm font-medium text-ink">Link a sales order to plan procurement</p>
+          <p className="mt-0.5 text-[11px] text-ink-secondary">The categories to order come from the sales order's lines. Create a quotation or link an existing sales order in the Contract card.</p>
+          <a href="#reno-contract" className="mt-1.5 inline-block text-[12px] font-semibold text-primary hover:underline">Go to Contract</a>
+        </div>
+      )}
+      {!loading && groups && !noSo && list.length === 0 && (
+        <p className="mt-2 text-xs text-ink-secondary" data-testid="proc-no-items">The sales order has no item lines with a product category yet.</p>
+      )}
+      {!loading && list.length > 0 && (
         <>
         <div aria-hidden className={cn(ROW, "mt-2 hidden px-2 text-[10px] font-semibold uppercase tracking-wide text-ink-secondary sm:grid")}>
           <span>Category</span><span>PO date</span><span>Delivery date</span>
         </div>
         <ul className="mt-1 divide-y divide-border rounded-md border border-border">
-          {groups.map((g) => {
+          {list.map((g) => {
             const subCodes = g.subs.map((s) => s.code);
-            const ownLines = linesOf(lines, g.code, null, subCodes);
-            const ownStage = stageOf(ownLines);
+            const ownStage = stageOf(linesOf(lines, g.code, null, subCodes));
             const subRows = g.subs.map((s) => ({ s, stage: stageOf(linesOf(lines, g.code, s.code, subCodes)) }));
-            const shown = subRows.filter((r) => r.stage.items > 0 || r.s.mode !== "follow" || extra.has(`${g.code}/${r.s.code}`));
-            const hidden = subRows.filter((r) => !shown.includes(r));
+            const shown = subRows.filter((r) => r.stage.items > 0 || r.s.mode !== "follow");
             const cat = categoryStage([ownStage, ...subRows.map((r) => r.stage)]);
             const late = isLate(ownStage, g.deliveryDate, today) || subRows.some((r) => isLate(r.stage, r.s.effective.deliveryDate, today));
-            if (onlyChanged && !g.poDate && !g.deliveryDate && cat.items === 0 && !g.subs.some((s) => s.mode !== "follow")) return null;
-            const isOpen = (cat.items > 0) !== flipped.has(g.code);
+            const isOpen = (cat.items > 0 || shown.length > 0) !== flipped.has(g.code);
             return (
               <li key={g.code} className="px-2 py-1.5">
                 <div className={ROW}>
@@ -91,7 +104,7 @@ export function ProcurementPanel({ projectId, canWrite, onError }: { projectId: 
                     {ownStage.items > 0 && (
                       <li>
                         <div className="flex flex-wrap items-center gap-1.5 pl-4 text-[11px] text-ink">
-                          <span>No sub-category</span>
+                          <span>{shown.length > 0 ? "No sub-category" : `All ${g.label.toLowerCase()} lines`}</span>
                           <StagePills s={ownStage} late={isLate(ownStage, g.deliveryDate, today)} />
                         </div>
                         <DocLinks s={ownStage} indent />
@@ -102,17 +115,7 @@ export function ProcurementPanel({ projectId, canWrite, onError }: { projectId: 
                         onSave={(b) => save(() => simpleApi.setSubDates(projectId, g.code, s.code, b))} />
                     ))}
                     {shown.length === 0 && ownStage.items === 0 && (
-                      <li className="pl-4 text-[11px] text-ink-secondary">Nothing ordered in {g.label.toLowerCase()} yet.</li>
-                    )}
-                    {canWrite && hidden.length > 0 && (
-                      <li className="pl-4">
-                        <select aria-label={`Plan another ${g.label} sub-category`} value="" disabled={busy}
-                          className="h-7 rounded border border-border bg-surface px-1.5 text-[11px] text-ink-secondary"
-                          onChange={(e) => { const v = e.target.value; if (v) setExtra((x) => new Set(x).add(`${g.code}/${v}`)); }}>
-                          <option value="">Plan another sub-category...</option>
-                          {hidden.map(({ s }) => <option key={s.code} value={s.code}>{s.label}</option>)}
-                        </select>
-                      </li>
+                      <li className="pl-4 text-[11px] text-ink-secondary">No {g.label.toLowerCase()} lines on the sales order; only the planned dates are kept.</li>
                     )}
                   </ul>
                 )}

@@ -22,6 +22,7 @@ import type { ContractLine, StoredStage } from "./stages";
 import { billingViews, type BillingView } from "../../scm/lib/renovation-billing";
 import { renoDbFromD1 } from "./dbBridge";
 import type { FlowStepRow } from "./flow";
+import type { StepSlaView } from "./stepSla";
 
 export interface DbStmt {
   bind(...args: unknown[]): DbStmt;
@@ -222,6 +223,8 @@ export interface ProjectFacts {
   flowSteps?: FlowStepRow[];
   keyHolder?: KeyHolder | null;
   vo?: VoSummary | null;
+  /** the current step against its SLA (stepSla.ts); filled by syncStepSla, absent before migration 0121 */
+  stepSla?: StepSlaView | null;
 }
 
 export interface LoadOptions {
@@ -297,8 +300,8 @@ export async function loadRenovationFacts(db: Db, projects: readonly ProjectRow[
         WHERE project_id IN (SELECT (jsonb_array_elements_text(?::text::jsonb))::bigint) AND archived_at IS NULL
         ORDER BY id`, ids(pids)),
     rows<FlowStepRow & { company_id: number }>(db,
-      `SELECT company_id::int AS company_id, step_key, label, sort_order, active FROM project_flow_steps
-        WHERE company_id IN (SELECT (jsonb_array_elements_text(?::text::jsonb))::bigint)`, ids(companyIds)),
+      `SELECT s.company_id::int AS company_id, s.step_key, s.label, s.sort_order, s.active, (to_jsonb(s)->>'sla_days')::int AS sla_days FROM project_flow_steps s
+        WHERE s.company_id IN (SELECT (jsonb_array_elements_text(?::text::jsonb))::bigint)`, ids(companyIds)),
     rows<{ project_id: number; person_id: number | null; name: string | null; moved_on: string }>(db,
       `SELECT DISTINCT ON (km.project_id) km.project_id::int AS project_id, km.to_person_id::int AS person_id, pp.name, km.moved_on::text AS moved_on
          FROM project_key_moves km LEFT JOIN project_people pp ON pp.id = km.to_person_id
@@ -403,7 +406,8 @@ export async function loadRenovationFacts(db: Db, projects: readonly ProjectRow[
       handover: handovers.find((h) => Number(h.project_id) === project.id) ?? null,
       defects: defects.filter((d) => Number(d.project_id) === project.id),
       flowSteps: flowSteps.filter((s) => Number(s.company_id) === Number(project.company_id))
-        .map((s) => ({ step_key: s.step_key, label: s.label, sort_order: Number(s.sort_order), active: s.active === true || String(s.active) === "true" })),
+        .map((s) => ({ step_key: s.step_key, label: s.label, sort_order: Number(s.sort_order), active: s.active === true || String(s.active) === "true",
+          sla_days: s.sla_days == null ? null : Number(s.sla_days) })),
       keyHolder: (() => {
         const k = keyHolders.find((r) => Number(r.project_id) === project.id);
         return k ? { personId: k.person_id == null ? null : Number(k.person_id), name: k.name, movedOn: k.moved_on } : null;

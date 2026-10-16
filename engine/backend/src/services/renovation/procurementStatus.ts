@@ -12,6 +12,8 @@ import { DOS, GRS, POS, SOS, expand } from "./documents";
 
 export interface GrRef { id: string; no: string; date: string | null; atSite: boolean; photos: number }
 export interface DoRef { id: string; no: string; date: string | null; status: string; delivered: boolean; signed: boolean; hasPod: boolean }
+/** A purchase order behind the line (owner, 16 Oct 2026: the card links every PO, DO and GR of a category). */
+export interface PoRef { id: string; no: string; date: string | null; status: string }
 export interface StatusLine {
   categoryGroup: string | null;
   subCategory: string | null;
@@ -21,10 +23,14 @@ export interface StatusLine {
   deliveredQty: number;
   grs: GrRef[];
   dos: DoRef[];
+  pos: PoRef[];
 }
 
 export interface SoLineRow { id: string; qty: number; category_group: string | null; sub_category: string | null }
-export interface PoLineRow { id: string; so_item_id: string | null; qty: number; category_group: string | null; sub_category: string | null }
+export interface PoLineRow {
+  id: string; so_item_id: string | null; qty: number; category_group: string | null; sub_category: string | null;
+  po_id?: string | null; po_number?: string | null; po_date?: string | null; po_status?: string | null;
+}
 export interface GrLineRow { po_item_id: string | null; qty: number; grn_id: string; grn_number: string; date: string | null; at_site: boolean; photos: number }
 export interface DoLineRow { so_item_id: string | null; qty: number; do_id: string; do_number: string; status: string; date: string | null; delivered: boolean; signed: boolean; has_pod: boolean }
 
@@ -42,10 +48,11 @@ export function buildStatusLines(so: readonly SoLineRow[], po: readonly PoLineRo
   const soIds = new Set(so.map((s) => s.id));
 
   const line = (qty: number, cat: string | null, sub: string | null, poLines: readonly PoLineRow[], doLines: readonly DoLineRow[]): StatusLine => {
-    const out: StatusLine = { categoryGroup: cat, subCategory: sub, qty, orderedQty: 0, receivedQty: 0, deliveredQty: 0, grs: [], dos: [] };
+    const out: StatusLine = { categoryGroup: cat, subCategory: sub, qty, orderedQty: 0, receivedQty: 0, deliveredQty: 0, grs: [], dos: [], pos: [] };
     let siteQty = 0;
     for (const p of poLines) {
       out.orderedQty += n(p.qty);
+      if (p.po_id && p.po_number) pushOnce(out.pos, { id: p.po_id, no: p.po_number, date: p.po_date ?? null, status: p.po_status ?? "" });
       for (const g of grByPo.get(p.id) ?? []) {
         out.receivedQty += n(g.qty);
         if (g.at_site) siteQty += n(g.qty);
@@ -90,7 +97,8 @@ export async function readStatusLines(db: Db, projectId: number, companyId: numb
          FROM scm.mfg_sales_order_items i ${PRODUCT("i.item_code")}
         WHERE i.doc_no IN (${SOS}) AND NOT i.cancelled AND coalesce(i.item_code, '') NOT LIKE 'RENO-%'`),
     run<PoLineRow>(
-      `SELECT x.id::text AS id, x.so_item_id::text AS so_item_id, x.qty,
+      `SELECT x.id::text AS id, x.so_item_id::text AS so_item_id, x.qty, po.id::text AS po_id, po.po_number,
+              po.po_date::text AS po_date, po.status::text AS po_status,
               coalesce(x.category_group, pr.category_group) AS category_group, coalesce(x.sub_category, pr.sub_category) AS sub_category
          FROM scm.purchase_order_items x JOIN scm.purchase_orders po ON po.id = x.purchase_order_id ${PRODUCT("x.item_code")}
         WHERE po.id IN (${POS}) AND po.status::text <> 'CANCELLED'`),

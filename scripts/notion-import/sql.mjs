@@ -405,8 +405,38 @@ with ins as (
                                 order by a.id desc limit 1)
   returning 1)
 insert into _stats select 'activity_notes_inserted', count(*) from ins;
+${startDatesSql(co)}
 ${statsTail(label)}
 `;
+}
+
+/* An imported project starts on the earliest date the import brought with it (owner, 16 Oct 2026), not on the day of
+   the import: the Notion SO date in its import note, its first design record or file, its first site task, its
+   handover. A start date only moves earlier, so running this after every activity chunk is safe. Same statement as
+   migrations-pg/0120_reno_import_start_dates.sql. */
+function startDatesSql(co) {
+  return `with first_seen as (
+  select p.id,
+         to_char(least(
+           (select min(substring(a.note from 'SO date: ([0-9]{4}-[0-9]{2}-[0-9]{2})')::date)
+              from project_activity a where a.project_id = p.id and a.action = 'notion_import'),
+           (select min(d.done_on) from project_design_records d where d.project_id = p.id),
+           (select min(least(coalesce(f.submitted_on, (f.uploaded_at at time zone 'Asia/Kuala_Lumpur')::date),
+                             (f.uploaded_at at time zone 'Asia/Kuala_Lumpur')::date))
+              from project_design_files f where f.project_id = p.id),
+           (select min(least(coalesce(t.planned_start, t.actual_start), coalesce(t.actual_start, t.planned_start)))
+              from project_trade_tasks t where t.project_id = p.id),
+           (p.handed_over_at at time zone 'Asia/Kuala_Lumpur')::date
+         ), 'YYYY-MM-DD') as day
+    from projects p
+   where p.company_id = ${co} and p.project_kind = 'renovation' and p.source = 'import'
+),
+upd as (
+  update projects p set start_date = first_seen.day
+    from first_seen
+   where p.id = first_seen.id and first_seen.day is not null and first_seen.day < p.start_date
+  returning 1)
+insert into _stats select 'start_dates_moved_earlier', count(*) from upd;`;
 }
 
 const groupsOf = (xs, n) => Array.from({ length: Math.ceil(xs.length / n) }, (_, i) => xs.slice(i * n, i * n + n));

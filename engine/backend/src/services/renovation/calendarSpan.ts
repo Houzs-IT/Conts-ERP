@@ -2,10 +2,17 @@
    The bar starts on the project's Start date (its created date, Malaysia time; stored since migration 0117) and
    ends on its End date once it is Closed (the day it got there, projectDates.ts). Until then the end is computed
    when the calendar is read: the planned handover; without one, the actual handover; then the SLA due date
-   (created + the project type's sla_days, read only if that column exists); else RENO_ESTIMATE_DAYS after the
-   start, flagged as an estimate. Exhibition projects keep their own start / end dates and never come through here. */
+   (the start + the days allowed for all the project's steps together, stepSla.ts, migration 0121; owner, 16 Oct 2026);
+   else RENO_ESTIMATE_DAYS after the start, flagged as an estimate. Exhibition projects keep their own start / end dates and never come through here. */
 
 import type { Db } from "./load";
+import { stepSlaReady } from "./stepSla";
+
+/* The days allowed for all of a project's steps but Closed (alias p): its own number where it has one for a step,
+   else the step's default. Same rule as stepSlaViewOf's totalDays. */
+const SLA_TOTAL = `(SELECT sum(CASE WHEN s.sla_source IS NOT NULL THEN s.sla_days ELSE fs.sla_days END)
+     FROM project_flow_steps fs LEFT JOIN project_step_sla s ON s.project_id = p.id AND s.step_key = fs.step_key
+    WHERE fs.company_id = p.company_id AND fs.active AND fs.step_key <> 'closed')`;
 
 export const RENO_ESTIMATE_DAYS = 45;
 export type EndBasis = "completed" | "planned_handover" | "handed_over" | "sla" | "estimate";
@@ -51,11 +58,12 @@ export function spanOverlaps(s: { start: string; end: string }, from: string, to
 /** Calendar rows for renovation projects (the calendar route's own query leaves them out), overlapping [from, to]. `scopeWhere` / `coSql` are the
     calendar route's own fragments (alias p) and `scopeBinds` their binds. */
 export async function renovationCalendarRows(db: Db, from: string, to: string, scopeWhere: string, scopeBinds: unknown[], coSql: string) {
+  const sla = (await stepSlaReady(db)) ? SLA_TOTAL : "NULL";
   const res = await db.prepare(
     `SELECT p.id, p.code, p.name, p.stage, p.status, p.brand, p.organizer, p.venue, p.state, NULL AS event_type_name,
             p.created_at::text AS created_at, p.planned_handover_date::text AS planned_handover_date, p.handed_over_at::text AS handed_over_at,
-            to_jsonb(pt)->>'sla_days' AS sla_days, p.start_date AS start_date_stored, p.end_date AS end_date_stored
-       FROM projects p LEFT JOIN project_types pt ON pt.id = p.project_type_id
+            ${sla}::text AS sla_days, p.start_date AS start_date_stored, p.end_date AS end_date_stored
+       FROM projects p
       WHERE p.archived_at IS NULL
         AND coalesce(to_jsonb(p)->>'project_kind', 'exhibition') = 'renovation'
         AND substr(coalesce(nullif(p.start_date, ''), p.created_at::text), 1, 10) <= substr(?, 1, 10)${scopeWhere}${coSql}`,

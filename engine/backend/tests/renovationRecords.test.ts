@@ -80,6 +80,11 @@ describe("board row", () => {
     });
   });
 
+  test("a handover timestamp handed over as a Date object is still its Malaysian day (not 2001)", () => {
+    const g = { ...f, handover: null, project: { ...f.project, handed_over_at: new Date("2025-07-14T04:00:00Z") } } as unknown as ProjectFacts;
+    expect(boardRowOf(g, v, { hideMoney: false }).handoverDate).toBe("2025-07-14");
+  });
+
   test("money hidden from a user without finance access", () => {
     const r = boardRowOf(f, v, { hideMoney: true });
     expect(r).toMatchObject({ contractSen: null, receivedSen: null, receivedPct: null, moneyHidden: true, redFlagCount: 1 });

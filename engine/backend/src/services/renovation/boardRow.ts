@@ -41,6 +41,8 @@ export interface BoardRowV2 {
   startDate: string | null;
   /** the day it reached Closed; null while it is not Closed */
   endDate: string | null;
+  /** the current step against its SLA (stepSla.ts); null before migration 0121 or in Closed */
+  sla: { days: number | null; daysIn: number | null; overdueBy: number | null } | null;
   redFlagCount: number;
   /** the red flags themselves (code + text), the same set redFlagCount counts */
   redFlags: Array<{ code: string; text: string }>;
@@ -76,10 +78,13 @@ export function boardRowOf(f: ProjectFacts, v: ProjectView, opts: { hideMoney: b
     renoItemArrival: v.conditions.renoItem?.condition ?? null,
     keyHolder: v.keyHolder,
     vo: v.vo ? { has: v.vo.count > 0, count: v.vo.count, approved: v.vo.approved } : null,
-    handoverDate: f.handover?.signed_at ? String(f.handover.signed_at).slice(0, 10) : (p.handed_over_at ? String(p.handed_over_at).slice(0, 10) : null),
+    /* dayOf, not String(...).slice(0, 10): postgres.js hands timestamps over as Date objects, whose string starts
+       "Mon Jul 14" (the list showed 2001/07/14 for every imported handover). */
+    handoverDate: dayOf(f.handover?.signed_at) ?? dayOf(p.handed_over_at),
     plannedHandoverDate: p.planned_handover_date,
     startDate: dayOf(p.start_date) ?? dayOf(p.created_at),
     endDate: v.flow.current === "closed" ? dayOf(p.end_date) : null,
+    sla: f.stepSla && v.flow.current !== "closed" ? { days: f.stepSla.days, daysIn: f.stepSla.daysIn, overdueBy: f.stepSla.overdueBy } : null,
     redFlagCount: shownFlags.length,
     redFlags: shownFlags.map((r) => ({ code: r.code, text: r.text })),
     archived: !!p.archived_at,

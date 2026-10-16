@@ -4,7 +4,7 @@
    come from GET /api/renovation/board-rows and are joined here by id. */
 
 import type { KeyboardEvent, ReactNode } from "react";
-import { AlertTriangle, CalendarClock, Clock } from "lucide-react";
+import { AlertTriangle, CalendarClock, Clock, Timer } from "lucide-react";
 import type { Column } from "../../../components/DataTable";
 import { useQuery } from "../../../hooks/useQuery";
 import { cn, formatDate } from "../../../lib/utils";
@@ -19,7 +19,7 @@ export function useRenovationBoard(includeArchived: boolean, enabled: boolean) {
   const flow = useQuery(["renovation", "flow-steps"], () => simpleApi.flowSteps(), [], { staleTime: 5 * 60_000, enabled });
   const rows = board.data?.data ?? [];
   const byId = new Map(rows.map((r) => [r.id, r] as const));
-  return { rows, byId, steps: activeSteps(flow.data?.data), counts: stepCounts(rows), loading: board.loading && !board.data, error: board.error };
+  return { rows, byId, steps: activeSteps(flow.data?.data), counts: stepCounts(rows), loading: board.loading && !board.data, error: board.error, reload: board.reload };
 }
 
 /** One tile per step with how many projects are in it; a tile filters the list to that step (several can be on). */
@@ -103,6 +103,8 @@ export function RenovationFlagPills({ board, today }: { board: BoardRowV2 | unde
   return (
     <>
       {board.hold && pill("border-err/30 bg-err-bg text-err", null, board.hold.label, board.hold.note ?? board.hold.label)}
+      {board.sla?.overdueBy != null && pill("border-err/30 bg-err-bg text-err", <Timer size={10} />, "Overdue",
+        `${board.step.label}: ${board.sla.daysIn} days in step, ${board.sla.days} allowed (over by ${board.sla.overdueBy} day${board.sla.overdueBy === 1 ? "" : "s"})`)}
       {f.late.length > 0 && pill("border-err/30 bg-err-bg text-err", <AlertTriangle size={10} />, "Late", f.late.join("\n"))}
       {f.atRisk.length > 0 && pill("border-warning-text/30 bg-warning-bg text-warning-text", <Clock size={10} />, "At risk", f.atRisk.join("\n"))}
     </>
@@ -111,6 +113,8 @@ export function RenovationFlagPills({ board, today }: { board: BoardRowV2 | unde
 
 function handoverText(board: BoardRowV2 | undefined): { label: string; value: string } {
   if (board?.handoverDate) return { label: "Handed over", value: formatDate(board.handoverDate) };
+  /* A Closed project without a recorded handover: "Planned handover: Not set" says nothing useful there. */
+  if (board?.step.key === "closed") return { label: "Closed", value: board.endDate ? formatDate(board.endDate) : "Closed" };
   if (board?.plannedHandoverDate) return { label: "Planned handover", value: formatDate(board.plannedHandoverDate) };
   return { label: "Planned handover", value: "Not set" };
 }
@@ -123,7 +127,7 @@ export function RenovationProjectCard({ row, board, steps, today, onOpen }: {
   onOpen: (href: string) => void;
 }) {
   const flags = board ? listFlags(board, today) : { late: [], atRisk: [] };
-  const rail = board?.hold || flags.late.length ? "bg-err" : flags.atRisk.length ? "bg-warning-text" : board?.step.key === "closed" ? "bg-synced" : "bg-primary";
+  const rail = board?.hold || flags.late.length || board?.sla?.overdueBy != null ? "bg-err" : flags.atRisk.length ? "bg-warning-text" : board?.step.key === "closed" ? "bg-synced" : "bg-primary";
   const ho = handoverText(board);
   const open = () => onOpen(projectHref(row.id));
   const onKey = (e: KeyboardEvent) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); open(); } };
@@ -208,7 +212,17 @@ export function renovationColumns({ byId, steps, today, onOpen }: {
       disableSort: true,
       render: (r) => {
         const row = b(r);
-        return row ? <RenovationStepTrack size="table" steps={steps} current={row.step.key} onPick={(k) => onOpen(projectHref(r.id, k))} /> : <span className="text-ink-muted">—</span>;
+        /* Dense table (owner, 16 Oct 2026): the current step as a pill with its place, not the six-step track, which
+           was squeezed to "Design Si" in a table column. */
+        if (!row) return <span className="text-ink-muted">—</span>;
+        const i = steps.findIndex((s) => s.key === row.step.key);
+        return (
+          <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+            <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-semibold", row.step.key === "closed" ? "bg-synced-bg text-synced" : "bg-primary-soft text-primary-ink")}>{row.step.label}</span>
+            {i >= 0 && <span className="text-[10.5px] text-ink-muted">{i + 1}/{steps.length}</span>}
+            {row.sla?.daysIn != null && <span className={cn("text-[10.5px]", row.sla.overdueBy != null ? "font-semibold text-err" : "text-ink-muted")}>{row.sla.daysIn}d{row.sla.days != null ? `/${row.sla.days}d` : ""}</span>}
+          </span>
+        );
       },
       getValue: (r) => b(r)?.step.label ?? "",
       sortCompare: (x, y) => stepIndex(x) - stepIndex(y),
@@ -235,7 +249,8 @@ export function renovationColumns({ byId, steps, today, onOpen }: {
       render: (r) => {
         const row = b(r);
         if (row?.handoverDate) return <span className="text-[12px]" title="Handed over">{formatDate(row.handoverDate)} <span className="text-ink-muted">(handed over)</span></span>;
-        return <span className={cn("text-[12px]", row && listFlags(row, today).late.length ? "font-semibold text-err" : "")}>{row?.plannedHandoverDate ? formatDate(row.plannedHandoverDate) : "—"}</span>;
+        if (!row?.plannedHandoverDate) return <span className="text-[12px] text-ink-muted">—</span>;
+        return <span className={cn("text-[12px]", listFlags(row, today).late.length ? "font-semibold text-err" : "")}>{formatDate(row.plannedHandoverDate)}</span>;
       },
       getValue: (r) => b(r)?.handoverDate ?? b(r)?.plannedHandoverDate ?? "",
     },
@@ -243,12 +258,12 @@ export function renovationColumns({ byId, steps, today, onOpen }: {
       key: "reno_flags",
       label: "Flags",
       disableSort: true,
-      render: (r) => <span className="flex flex-wrap gap-1"><RenovationFlagPills board={b(r)} today={today} /></span>,
+      render: (r) => <span className="flex min-w-[9rem] flex-wrap gap-1"><RenovationFlagPills board={b(r)} today={today} /></span>,
       getValue: (r) => {
         const row = b(r);
         if (!row) return "";
         const f = listFlags(row, today);
-        return [row.hold?.label, f.late.length ? "Late" : null, f.atRisk.length ? "At risk" : null].filter(Boolean).join(", ");
+        return [row.hold?.label, row.sla?.overdueBy != null ? "Overdue" : null, f.late.length ? "Late" : null, f.atRisk.length ? "At risk" : null].filter(Boolean).join(", ");
       },
     },
     { key: "created_by_name", label: "Created By", defaultHidden: true, render: (r) => <span className="text-[11px]">{r.created_by_name || "—"}</span>, getValue: (r) => r.created_by_name ?? "" },
