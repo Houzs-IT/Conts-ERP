@@ -1,6 +1,6 @@
 import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
-import { MYT_DATE, SHEET_CLEANER, hhmm, linenSet, resolveUnit } from '../../_lib/ops';
+import { MYT_DATE, SHEET_CLEANER, hhmm, linenSet, resolveUnit, rosterByIds, pickedCleanerIds } from '../../_lib/ops';
 import { checkDate, invalid, type Fields } from '../../_lib/validate';
 import { cleaningNotice } from '../../_lib/notices';
 import { taskCleanersReady, mineSql, mineArgs, cleanerListSql, parseCleaners, writeTaskCleaners } from '../../_lib/taskCleaners';
@@ -137,14 +137,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   // Several cleaners: cleanerIds (in order; the first is the job's main cleaner). cleanerId alone still works.
   let assigneeId: string | null = null;
   let cleanerId: string | null = null;
-  const pickedIds = [...new Set([...(Array.isArray(b?.cleanerIds) ? b.cleanerIds : []), b?.cleanerId]
-    .filter((x): x is string => typeof x === 'string' && !!x.trim()).map(x => x.trim()))].slice(0, 10);
-  const team: { cleanerId: string | null; userId: string | null }[] = [];
-  for (const cid of pickedIds) {
-    const c = await one<{ id: string; user_id: string | null }>(env, 'SELECT id, user_id FROM cleaners WHERE id = ? AND is_active = 1', cid);
-    if (!c) return fail('NOT_FOUND', 'That cleaner is not on the active roster.', 404, { cleanerId: 'Pick a cleaner from the roster.' });
-    team.push({ cleanerId: c.id, userId: c.user_id });
-  }
+  const pickedIds = pickedCleanerIds(b);
+  const roster = await rosterByIds(env, pickedIds);
+  if (!roster) return fail('NOT_FOUND', 'That cleaner is not on the active roster.', 404, { cleanerId: 'Pick a cleaner from the roster.' });
+  const team: { cleanerId: string | null; userId: string | null }[] = roster.map(c => ({ cleanerId: c.id, userId: c.user_id }));
   if (team.length) { cleanerId = team[0].cleanerId; assigneeId = team[0].userId; }
   else if (typeof b?.assigneeId === 'string' && b.assigneeId.trim()) {
     const person = await one<{ id: string }>(env, 'SELECT id FROM users WHERE id = ? AND is_active = 1', b.assigneeId.trim());

@@ -34,12 +34,6 @@ export const cleanerListSql = (ready: boolean, a = 't') => (ready
       WHERE tc_l.task_id = ${a}.id)`
   : 'NULL');
 
-/** SQL true when roster cleaner ? (with login ?) is on job `a`. Binds: cleanerId, userId, userId. */
-export const hasCleanerSql = (ready: boolean, a = 't') =>
-  `(${a}.cleaner_id = ? OR (?::text IS NOT NULL AND ${a}.assignee_id = ?)${ready ? ` OR EXISTS (SELECT 1 FROM task_cleaners tc_h WHERE tc_h.task_id = ${a}.id AND tc_h.cleaner_id = ?)` : ''})`;
-export const hasCleanerArgs = (ready: boolean, cleanerId: string, userId: string | null) =>
-  (ready ? [cleanerId, userId, userId, cleanerId] : [cleanerId, userId, userId]);
-
 export interface TaskCleaner { cleanerId: string | null; userId: string | null; name: string; outsourced: boolean }
 
 /** Parses cleanerListSql's text; when nothing is listed (table missing, or a job only the old columns name),
@@ -59,17 +53,23 @@ export async function writeTaskCleaners(env: Env, taskId: string, people: { clea
     'SELECT cleaner_id, user_id, assigned_at, assigned_by FROM task_cleaners WHERE task_id = ?', taskId);
   const key = (c: string | null, u: string | null) => (c ? `c:${c}` : `u:${u}`);
   const kept = new Map(before.map(r => [key(r.cleaner_id, r.user_id), r]));
-  await run(env, 'DELETE FROM task_cleaners WHERE task_id = ?', taskId);
   const now = nowIso();
   const seen = new Set<string>();
-  let pos = 0;
-  for (const p of people) {
+  const rows = people.filter(p => {
     const k = key(p.cleanerId, p.userId);
-    if (seen.has(k) || (!p.cleanerId && !p.userId)) continue;
-    seen.add(k);
-    const old = kept.get(k);
-    await run(env, `INSERT INTO task_cleaners (id, task_id, cleaner_id, user_id, position, assigned_at, assigned_by) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      crypto.randomUUID(), taskId, p.cleanerId, p.userId, pos++, old?.assigned_at ?? now, old ? old.assigned_by : by);
+    if (seen.has(k) || (!p.cleanerId && !p.userId)) return false;
+    seen.add(k); return true;
+  }).map((p, position) => {
+    const old = kept.get(key(p.cleanerId, p.userId));
+    return { id: crypto.randomUUID(), cleaner_id: p.cleanerId, user_id: p.userId, position, assigned_at: old?.assigned_at ?? now, assigned_by: old ? old.assigned_by : by };
+  });
+  await run(env, 'DELETE FROM task_cleaners WHERE task_id = ?', taskId);
+  if (rows.length) {
+    await run(env, `
+      INSERT INTO task_cleaners (id, task_id, cleaner_id, user_id, position, assigned_at, assigned_by)
+      SELECT r.id, ?, r.cleaner_id, r.user_id, r.position, r.assigned_at, r.assigned_by
+      FROM jsonb_to_recordset(?::text::jsonb) AS r(id text, cleaner_id text, user_id text, position int, assigned_at text, assigned_by text)`,
+      taskId, JSON.stringify(rows));
   }
 }
 

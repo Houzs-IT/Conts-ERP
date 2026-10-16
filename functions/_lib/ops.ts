@@ -2,7 +2,7 @@ import { type Env, one, all, run, json, fail, audit, nowIso } from './db';
 import type { Session } from './auth';
 import { notify } from './notify';
 import { cleaningNotice } from './notices';
-import { taskCleanersReady, currentCleaners, writeTaskCleaners, hasCleanerSql, hasCleanerArgs } from './taskCleaners';
+import { taskCleanersReady, currentCleaners, writeTaskCleaners } from './taskCleaners';
 
 export const MYT_DATE = (col: string) => `to_char((${col})::timestamptz AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM-DD')`;
 
@@ -143,14 +143,16 @@ export async function assignCleaners(env: Env, session: Session, taskId: string,
   const list = ready ? wanted : wanted.slice(0, 1);
   const added = list.filter(w => w.c && !before.some(b => b.cleanerId === w.cleanerId)).map(w => w.c!);
 
-  if (!force && task.due_at) {
+  if (!force && task.due_at && added.length) {
+    // Every other open job within 90 minutes of this one, with who is on it; each new cleaner is matched against it.
+    const near = await all<{ id: string; cleaner_id: string | null; assignee_id: string | null; listed: string | null }>(env, `
+      SELECT t.id, t.cleaner_id, t.assignee_id, ${ready ? `(SELECT string_agg(tc.cleaner_id, ',') FROM task_cleaners tc WHERE tc.task_id = t.id)` : 'NULL'} AS listed
+      FROM tasks t
+      WHERE t.id != ? AND t.state NOT IN ('resolved') AND t.due_at IS NOT NULL
+        AND abs(extract(epoch from (t.due_at::timestamptz - ?::timestamptz))) < 5400`, taskId, task.due_at);
     for (const cleaner of added) {
-      const clash = await all<{ id: string }>(env, `
-        SELECT t.id FROM tasks t
-        WHERE t.id != ? AND t.state NOT IN ('resolved') AND t.due_at IS NOT NULL
-          AND ${hasCleanerSql(ready)}
-          AND abs(extract(epoch from (t.due_at::timestamptz - ?::timestamptz))) < 5400`,
-        taskId, ...hasCleanerArgs(ready, cleaner.id, cleaner.user_id), task.due_at);
+      const clash = near.filter(t => t.cleaner_id === cleaner.id || (!!cleaner.user_id && t.assignee_id === cleaner.user_id)
+        || (t.listed ?? '').split(',').includes(cleaner.id)).map(t => ({ id: t.id }));
       if (clash.length) {
         return json({
           error: { code: 'ASSIGNEE_BUSY', message: `${cleaner.full_name} has ${clash.length} overlapping ${clash.length === 1 ? 'task' : 'tasks'} around that time. Assign anyway?` },
@@ -174,14 +176,12 @@ export async function assignCleaners(env: Env, session: Session, taskId: string,
   if (added.length) {
     const unit = await one<{ unit_number: string; property_name: string }>(env, `
       SELECT u.unit_number, p.name AS property_name FROM units u JOIN properties p ON p.id = u.property_id WHERE u.id = ?`, task.unit_id);
-    for (const cleaner of added) {
-      if (cleaner.employment_type !== 'internal' || !cleaner.phone) continue;
-      await notify(env, {
-        template: 'field.task_assigned', recipient: cleaner.phone, channel: 'push',
-        body: `New clean: ${unit?.property_name} ${unit?.unit_number}${task.due_at ? `, due ${hhmm(task.due_at)}` : ''}.`,
-        entityTable: 'tasks', entityId: taskId, urgent: true,
-      });
-    }
+    // At most ten cleaners on a job (pickedCleanerIds), so at most ten pushes.
+    await Promise.all(added.filter(c => c.employment_type === 'internal' && c.phone).map(cleaner => notify(env, {
+      template: 'field.task_assigned', recipient: cleaner.phone!, channel: 'push',
+      body: `New clean: ${unit?.property_name} ${unit?.unit_number}${task.due_at ? `, due ${hhmm(task.due_at)}` : ''}.`,
+      entityTable: 'tasks', entityId: taskId, urgent: true,
+    })));
     if (!quiet) await cleaningNotice(env, taskId, 'assigned', session.userId);
   }
   return json({ ok: true, assigneeName: names(list), cleaners: list.map(l => ({ cleanerId: l.cleanerId, userId: l.userId, name: l.name })) });

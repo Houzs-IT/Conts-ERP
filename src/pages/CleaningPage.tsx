@@ -11,6 +11,7 @@ import { AttachmentLabel, MediaGallery } from '../components/Attachments';
 import { DataTable, type Column } from '../components/DataTable';
 import { BulkAssignCleaner } from '../components/BulkAssignCleaner';
 import { CleanerChecklist, CleanerChips } from '../components/CleanerPicks';
+import { sizeLine } from '../lib/unitSize';
 import SplitPane from '../components/SplitPane';
 import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
@@ -286,7 +287,7 @@ function BuildingCard({ group, now, future, selected, busy, onSelect, onGuestLef
         </button>
         <div className="flex items-center gap-2 text-copy flex-wrap">
           {unassigned > 0 ? <span className="text-danger font-medium">{unassigned} unassigned</span>
-            : names.length ? <span className="text-muted-ink">Cleaner <b className="text-ink">{names.length === 1 ? names[0] : `${names.length} people`}</b></span> : null}
+            : names.length ? <span className="text-muted-ink" title={names.length > 1 ? names.join(', ') : undefined}>{names.length === 1 ? 'Cleaner' : 'Cleaners'} <b className="text-ink">{names.length === 1 ? names[0] : `${names.length} people`}</b></span> : null}
           {open.length > 0 && <Button size="sm" variant="secondary" onClick={onAssign}>Assign whole building</Button>}
         </div>
       </header>
@@ -428,7 +429,7 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft }: { row: Row; 
   const kind = picked.kind ?? row.kind;
   const kindName = KIND_NAME[kind] ?? 'Standard clean';
   const cleanerName = shownTeam.length ? shownTeam.map(id => teamNames[id] ?? cleaners.find(c => c.id === id)?.name ?? 'Cleaner').join(', ') : row.assigneeName;
-  const size = [data?.unit?.size ?? row.unit?.size, data?.unit?.layout ?? row.unit?.layout].filter(Boolean).join(' · ');
+  const size = sizeLine(data?.unit?.size ?? row.unit?.size, data?.unit?.layout ?? row.unit?.layout);
   const origin = data?.createdAt ? {
     at: data.createdAt,
     label: row.previous ? `Cleaning job created for ${row.previous.guestName}'s checkout` : 'Cleaning job created',

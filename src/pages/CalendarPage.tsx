@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode, type MutableRefObject } from 'react';
 import { Button } from '../components/Button';
 import { EmptyState } from '../components/States';
 import { usePhone } from './finance/listKit';
@@ -24,6 +24,7 @@ import { BarContent, BarHoverCard, barStyle, displayName, holdName, phaseOf, PHA
 import { CalendarRangeControl, addDaysIso, daysBetween, isDay, LEAD_DAYS, MAX_WINDOW } from '../components/calendar/DatePicker';
 import { type CalendarBlock as Block, type CalendarUnit as Unit } from '../components/calendar/types';
 import UnitMonthCalendar from '../components/calendar/UnitMonthCalendar';
+import { useFillHeight } from '../lib/useFillHeight';
 
 /** Width of one night column, px (narrower on phones, so a thumb's swipe covers a week). The unit column width is the
  *  CSS variable --unit-col. */
@@ -187,6 +188,9 @@ function CalendarBoard() {
   const gridRef = useRef<HTMLDivElement>(null);
   // A new window starts at its first night; a reload of the same window keeps the scroll where it was.
   useEffect(() => { gridRef.current?.scrollTo({ left: 0 }); }, [from]);
+  // The grid is the page's one scroller: it runs to the bottom of the window whatever the window's height, so the page
+  // itself never scrolls as well (owner request G1). A fixed 74vh left the page scrolling 80-120px on a laptop.
+  const fillGrid = useFillHeight({ fallback: '74vh', min: 320 });
   const [unitOpen, setUnitOpen] = useState<Record<string, boolean>>({});
   // Prices set on the board before the reload brings them back, keyed `${unitId}:${channel}:${date}`: by date, not
   // by column, so they stay on their night when the board pages to another 30 days.
@@ -513,8 +517,8 @@ function CalendarBoard() {
         </div>
 
         {/* Grid: scrolls inside the card both ways; the date header and unit column stay put. */}
-        <div ref={gridRef} tabIndex={0} aria-label="Reservation calendar. Arrow keys scroll."
-          className="max-h-[calc(100dvh-230px)] md:max-h-[74vh] min-h-[320px] overflow-auto overscroll-contain rounded-none md:rounded-b-card [scrollbar-width:thin] outline-none focus-visible:[box-shadow:inset_0_0_0_2px_var(--color-gold)] [--unit-col:104px] md:[--unit-col:256px]">
+        <div ref={el => { (gridRef as MutableRefObject<HTMLDivElement | null>).current = el; fillGrid(el); }} tabIndex={0} aria-label="Reservation calendar. Arrow keys scroll."
+          className="min-h-[320px] overflow-auto overscroll-contain rounded-none md:rounded-b-card [scrollbar-width:thin] outline-none focus-visible:[box-shadow:inset_0_0_0_2px_var(--color-gold)] [--unit-col:104px] md:[--unit-col:256px]">
           <div style={{ minWidth: `calc(var(--unit-col) + ${span * COL}px)` }} aria-busy={loading}
             className={`transition-opacity duration-150 ${loading && data ? 'opacity-70' : ''}`}>
             <div className="sticky top-0 z-20 flex bg-muted [border-bottom:1px_solid_var(--color-line)]">

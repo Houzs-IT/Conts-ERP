@@ -13,6 +13,7 @@ import {
   TimeLeft, KIND_LABEL, uploadTo, ReportDamageModal, Segmented, hm, dayLabel, mytDay, type MediaItem,
 } from '../components/ops/OpsUi';
 import { StatusBadge } from '../components/StatusBadge';
+import { sizeLine } from '../lib/unitSize';
 
 /* GET /api/field/tasks (functions/api/field/tasks.ts) */
 interface Job {
@@ -91,7 +92,7 @@ function JobCard({ job: j, now, open, onToggle, onChanged }: { job: Job; now: nu
         </div>
         {(j.unit.size || j.unit.layout || (j.team && j.team.length > 0)) && (
           <div className="text-meta text-muted-ink flex flex-wrap gap-x-2">
-            {[j.unit.size, j.unit.layout].filter(Boolean).length > 0 && <span>{[j.unit.size, j.unit.layout].filter(Boolean).join(' · ')}</span>}
+            {(j.unit.size || j.unit.layout) && <span>{sizeLine(j.unit.size, j.unit.layout)}</span>}
             {j.team && j.team.length > 0 && <span className="text-ink">With {j.team.join(', ')}</span>}
           </div>
         )}
