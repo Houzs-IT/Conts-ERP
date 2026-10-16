@@ -87,18 +87,22 @@ export const DOC_TYPES: Record<DocType, DocTypeSpec> = {
   },
   goods_received: {
     label: "Goods received", table: "scm.grns", idCol: "id", idKind: "uuid", noExpr: "d.grn_number",
+    /* Lines saved in one go share a timestamp: number them in their PO lines' order, as the person sees them. */
     lines: item("grn_items", "grn_id", {
+      order: "(SELECT p.line_no FROM scm.purchase_order_items p WHERE p.id = x.purchase_order_item_id) NULLS LAST, x.created_at, x.id",
       description: "coalesce(nullif(x.description, ''), nullif(x.material_name, ''), x.item_code)",
       parent: { type: "purchase_order", col: "purchase_order_item_id" },
     }),
   },
   delivery_return: {
     label: "Delivery return", table: "scm.delivery_returns", idCol: "id", idKind: "uuid", noExpr: "d.return_number",
-    lines: item("delivery_return_items", "delivery_return_id", { parent: { type: "delivery_order", col: "do_item_id" } }),
+    lines: item("delivery_return_items", "delivery_return_id", {
+      order: "(SELECT o.line_no FROM scm.delivery_order_items o WHERE o.id = x.do_item_id) NULLS LAST, x.created_at, x.id", parent: { type: "delivery_order", col: "do_item_id" } }),
   },
   purchase_return: {
     label: "Purchase return", table: "scm.purchase_returns", idCol: "id", idKind: "uuid", noExpr: "d.return_number",
     lines: item("purchase_return_items", "purchase_return_id", {
+      order: "(SELECT p.line_no FROM scm.grn_items g JOIN scm.purchase_order_items p ON p.id = g.purchase_order_item_id WHERE g.id = x.grn_item_id) NULLS LAST, x.created_at, x.id",
       description: "coalesce(nullif(x.description, ''), nullif(x.material_name, ''), x.item_code)",
       parent: { type: "goods_received", col: "grn_item_id" },
     }),
@@ -106,6 +110,7 @@ export const DOC_TYPES: Record<DocType, DocTypeSpec> = {
   purchase_invoice: {
     label: "Purchase invoice", table: "scm.purchase_invoices", idCol: "id", idKind: "uuid", noExpr: "d.invoice_number",
     lines: item("purchase_invoice_items", "purchase_invoice_id", {
+      order: "(SELECT p.line_no FROM scm.grn_items g JOIN scm.purchase_order_items p ON p.id = g.purchase_order_item_id WHERE g.id = x.grn_item_id) NULLS LAST, x.created_at, x.id",
       description: "coalesce(nullif(x.description, ''), nullif(x.material_name, ''), x.item_code)",
       parent: { type: "goods_received", col: "grn_item_id" },
     }),
