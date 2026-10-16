@@ -1,10 +1,11 @@
 import { type Env, one, run, json, fail, nowIso } from '../../_lib/db';
 import { changedFields } from '../../_lib/history';
 import { requireSession } from '../../_lib/auth';
-import { invalidUnit, typed, saveExpenses, saveCleaningPrice, saveContract, auditUnit, type UnitInput } from '../../_lib/properties';
+import { invalidUnit, ownerFieldIn, saveExpenses, saveCleaningPrice, saveContract, auditUnit, type UnitInput } from '../../_lib/properties';
 
 /** PATCH /api/units/:id — the Units screen's Save. Sends the whole unit; only what is present is changed.
- *  Owner name, ID number and bank details belong to the owner, so they change for every unit that owner has.
+ *  The owner is picked by ownerId; their name, ID number and bank details are edited on the owner's page only, so a
+ *  request carrying any of them is refused (422).
  *  A unit moved to another building takes its sub-units with it; a sub-unit cannot leave its parent's building. */
 export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
@@ -13,7 +14,9 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
 
   const id = String(params.id);
   const b = await request.json<UnitInput>().catch(() => null);
-  if (!b) return fail('VALIDATION', 'Nothing to save.', 422);
+  if (!b || typeof b !== 'object') return fail('VALIDATION', 'Nothing to save.', 422);
+  const ownerField = ownerFieldIn(b);
+  if (ownerField) return fail('VALIDATION', "The owner's name, IC and bank details are edited on the owner's page, not on the unit.", 422, { [ownerField]: "Edit this on the owner's page." });
   const bad = invalidUnit(b);
   if (bad) return fail('VALIDATION', bad.message, 422, { [bad.field]: bad.message });
 
@@ -29,8 +32,8 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   const was = await snapshot(env, id);
 
   const now = nowIso();
-  if (typeof (b as { ownerId?: string }).ownerId === 'string') {
-    const to = (b as { ownerId: string }).ownerId;
+  if (typeof b.ownerId === 'string') {
+    const to = b.ownerId;
     if (!(await one(env, 'SELECT 1 AS x FROM owners WHERE id = ?', to))) return fail('NOT_FOUND', 'That owner does not exist.', 404, { ownerId: 'Pick an owner.' });
     // A contract belongs to one owner, so it does not follow the unit to the next.
     if (to !== cur.owner_id) {
@@ -54,31 +57,20 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   await run(env, `
     UPDATE units SET property_id = ?, unit_number = ?, unit_code = COALESCE(?, unit_code), listing_name = COALESCE(?, listing_name), address = COALESCE(?, address),
                      package = COALESCE(?, package), term = COALESCE(?, term), split_kind = COALESCE(?, split_kind), split_value = ?,
-                     guarantee_period = COALESCE(?, guarantee_period), bedrooms = COALESCE(?, bedrooms), updated_at = ?
+                     guarantee_period = COALESCE(?, guarantee_period), bedrooms = COALESCE(?, bedrooms), bathrooms = COALESCE(?, bathrooms),
+                     size_sqft = CASE WHEN ? THEN ? ELSE size_sqft END, layout_type = CASE WHEN ? THEN ? ELSE layout_type END, updated_at = ?
     WHERE id = ?`,
     propertyId, number, code ?? null, b.listingName ?? null, b.address ?? null, b.pkg ?? null, b.term ?? null, b.split ?? null,
-    b.splitValue === undefined ? null : b.splitValue, b.guaranteePeriod ?? null, b.bedrooms ?? null, now, id);
+    b.splitValue === undefined ? null : b.splitValue, b.guaranteePeriod ?? null, b.bedrooms ?? null, b.bathrooms ?? null,
+    b.sizeSqft !== undefined, b.sizeSqft ?? null, b.layoutType !== undefined, b.layoutType ?? null, now, id);
   if (target) await run(env, 'UPDATE units SET property_id = ?, updated_at = ? WHERE parent_unit_id = ?', propertyId, now, id);
   if (b.cleaningPrice !== undefined) await saveCleaningPrice(env, id, b.cleaningPrice ?? 0);
   if (b.deepCleaningPrice !== undefined) await saveCleaningPrice(env, id, b.deepCleaningPrice ?? 0, 'cleaning_deep');
 
-  // The form shows IC and bank number masked; sent back unchanged they keep the stored value.
-  const ic = typed(b.ic), bankAccount = typed(b.bankAccount);
-  if (b.ownerName !== undefined || ic !== undefined || b.bankName !== undefined || bankAccount !== undefined || b.accountHolder !== undefined) {
-    await run(env, `
-      UPDATE owners SET display_name = COALESCE(NULLIF(?, ''), display_name), ic_number = COALESCE(?, ic_number), bank_name = COALESCE(?, bank_name),
-                        bank_account_holder = COALESCE(?, bank_account_holder), bank_account_number = COALESCE(?, bank_account_number),
-                        bank_account_last4 = COALESCE(?, bank_account_last4), updated_at = ?
-      WHERE id = ?`,
-      b.ownerName?.trim() ?? '', ic ?? null, b.bankName ?? null, b.accountHolder ?? null, bankAccount ?? null,
-      typeof bankAccount === 'string' ? (bankAccount.slice(-4) || null) : null, now, cur.owner_id);
-  }
   if (b.expenses) await saveExpenses(env, id, b.expenses);
   if (b.contract) await saveContract(env, id, cur.owner_id, b.contract);
 
-  // Banking details are recorded as changed, never copied into the audit trail.
   const { before, after } = changedFields(was, await snapshot(env, id));
-  if (bankAccount !== undefined || ic !== undefined) { before.ownerBankOrId = 'unchanged'; after.ownerBankOrId = 'changed'; }
   await auditUnit(env, session, 'unit.update', id, after, before);
   return json({ ok: true });
 };
@@ -87,7 +79,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
 async function snapshot(env: Env, id: string): Promise<Record<string, unknown>> {
   const r = await one<Record<string, unknown>>(env, `
     SELECT p.name AS building, u.unit_number AS "unitNumber", u.unit_code AS "unitCode", u.listing_name AS "listingName", u.address,
-           u.package, u.term, u.split_kind AS split, u.split_value AS "splitValue", u.guarantee_period AS "guaranteePeriod", u.bedrooms,
+           u.package, u.term, u.split_kind AS split, u.split_value AS "splitValue", u.guarantee_period AS "guaranteePeriod", u.bedrooms, u.bathrooms, u.size_sqft AS "sizeSqft", u.layout_type AS "layoutType",
            o.display_name AS owner, (SELECT e.amount FROM unit_expenses e WHERE e.unit_id = u.id AND e.category = 'cleaning' ORDER BY e.sort_order LIMIT 1) AS "cleaningPrice",
            (SELECT e.amount FROM unit_expenses e WHERE e.unit_id = u.id AND e.category = 'cleaning_deep' ORDER BY e.sort_order LIMIT 1) AS "deepCleaningPrice", c.management_fee_pct AS "managementFeePct", c.starts_on AS "contractStartsOn", c.renews_on AS "contractRenewsOn",
            (SELECT string_agg(e.category || ' RM ' || to_char(e.amount / 100.0, 'FM999,990.00'), ', ' ORDER BY e.sort_order) FROM unit_expenses e WHERE e.unit_id = u.id) AS "monthlyCosts"

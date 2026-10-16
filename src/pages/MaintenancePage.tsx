@@ -15,12 +15,12 @@ import { useApi } from '../lib/useApi';
 import { refreshNavCounts } from '../lib/navBadges';
 import { api, ApiFailure, errorMessage } from '../lib/api';
 import { useSession } from '../lib/session';
-import { useUnitRoster } from '../lib/useUnitRoster';
+import { useUnitRoster, type RosterUnit } from '../lib/useUnitRoster';
 import { cx } from '../lib/design-tokens';
 import { rm, plural, dateShort, date, monthLabel } from '../lib/format';
 import { runEach, skippedNote } from '../lib/bulk';
 import {
-  PillTabs, Segmented, OpsModal, FormRow, INPUT, CloseButton, uploadTo, CATEGORY, stamp, hm, mytDay, type MediaItem, MaintenanceJobForm } from '../components/ops/OpsUi';
+  PillTabs, Segmented, OpsModal, FormRow, INPUT, CloseButton, uploadTo, CATEGORY, stamp, hm, mytDay, type MediaItem, MaintenanceJobForm, AssigneePicker, useTechnicians, KIND_WORD } from '../components/ops/OpsUi';
 import type { AnyTone } from '../lib/status';
 import { StatusBadge } from '../components/StatusBadge';
 import { CatalogPanel, ExchangeModal, type Sku, type SkuPayload, type CatalogInput } from './MaintenanceCatalog';
@@ -37,12 +37,11 @@ interface Issue {
   vendorName: string | null; assigneeKind: 'in_house' | 'contractor' | null; reportedAt: string; resolvedAt: string | null;
   blocksUnit: boolean; ownerApprovalRequired: boolean; ownerApprovedAt: string | null; chargeTo: ChargeTo; reporter: string | null;
   startedAt: string | null; endedAt: string | null; photoCount: number; documentCount: number; windows: RepairWin[];
-  quotedAmount: number | null; finalAmount: number | null; expensed: number | null; expensedOn: string | null; skuName: string | null;
+  quotedAmount: number | null; finalAmount: number | null; expensed: number | null; expensedOn: string | null; skuId: string | null; skuName: string | null; skuCode: string | null;
   ownerHasLogin: boolean; billingDate: string | null; collectedAt: string | null; contractorAmount: number | null; contractorPaidAt: string | null;
 }
 /** `billing` is false until migration 0108 is applied; billing date, collected and contractor payment are then hidden. */
 interface Payload { billing?: boolean; data: Issue[] }
-interface Technician { name: string; kind: 'in_house' | 'contractor'; role: string | null }
 interface FileItem extends MediaItem { stage: 'before' | 'after' | null; uploadedAt: string; byteSize?: number }
 
 type Tab = 'open' | 'approval' | 'done' | 'history' | 'catalog';
@@ -50,9 +49,8 @@ const PAYER: Record<ChargeTo, string> = { owner: 'Owner (on the statement)', the
 const PAYER_SHORT: Record<ChargeTo, string> = { owner: 'owner pays', the_conts: 'company pays', guest_deposit: 'guest pays', warranty: 'warranty' };
 const SOURCE: Record<string, string> = { guest: 'Guest', cleaner: 'Cleaner', inspection: 'Inspection', staff: 'Office' };
 const MONEY_ROLES = ['management', 'finance_admin', 'operations_manager'];
-// The parts catalog (SKU list) is hidden until the owner sets it up (11 Oct 2026); the code stays.
-const SHOW_CATALOG = false;
-const KIND_WORD: Record<'in_house' | 'contractor', string> = { in_house: 'In-house', contractor: 'Contractor' };
+// The item catalog: staff pick an item (or Other) on a job; management and operations keep the list (request M3).
+const SHOW_CATALOG = true;
 const DOC_KIND: Record<string, string> = { claim: 'Claim from the technician or contractor', invoice: 'Invoice to the payer', receipt: 'Receipt', pod: 'Proof of work', other: 'File' };
 /** Who the money is collected from; the company and a warranty pay their own share, so nothing is collected. */
 const COLLECT_FROM: Partial<Record<ChargeTo, string>> = { owner: 'the owner', guest_deposit: "the guest's deposit" };
@@ -104,10 +102,13 @@ export default function MaintenancePage() {
   const rows = base.filter(i => (!category || i.category === category) && (!building || i.buildingId === building)
     && (!ql || `${i.unitNumber} ${i.propertyName} ${i.title} ${i.vendorName ?? ''}`.toLowerCase().includes(ql)))
     .sort((a, b) => tab === 'open' ? (a.urgency === b.urgency ? b.reportedAt.localeCompare(a.reportedAt) : a.urgency === 'urgent' ? -1 : 1) : b.reportedAt.localeCompare(a.reportedAt));
+  // Every building with units, not only those with a job loaded (request M1): a filter that lists a building with no
+  // jobs simply shows none.
+  const roster = useUnitRoster();
   const buildingOptions: SelectOption[] = useMemo(() => {
-    const m = new Map(issues.map(i => [i.buildingId, i.propertyName]));
-    return [...m.entries()].sort((a, b) => a[1].localeCompare(b[1])).map(([value, label]) => ({ value, label }));
-  }, [issues]);
+    const m = new Map<string, string>([...roster.filter(u => u.propertyId).map(u => [u.propertyId!, u.propertyName] as [string, string]), ...issues.map(i => [i.buildingId, i.propertyName] as [string, string])]);
+    return [...m.entries()].sort((a, b) => a[1].localeCompare(b[1], 'en', { numeric: true })).map(([value, label]) => ({ value, label }));
+  }, [issues, roster]);
   const sel = issues.find(i => i.id === selected) ?? null;
   const historySpend = tab === 'history' ? rows.reduce((s, i) => s + (i.finalAmount ?? 0), 0) : 0;
 
@@ -141,7 +142,7 @@ export default function MaintenancePage() {
   return (
     <div className="flex flex-col gap-4 flex-1 min-h-0">
       <PageHeader title="Maintenance" sub={sub}
-        actions={SHOW_CATALOG ? <Button size="sm" variant={tab === 'catalog' ? 'primary' : 'secondary'} icon={<Icon name="Package" size="sm" />} onClick={() => setTab(tab === 'catalog' ? 'open' : 'catalog')}>Parts catalog</Button> : undefined}
+        actions={SHOW_CATALOG ? <Button size="sm" variant={tab === 'catalog' ? 'primary' : 'secondary'} icon={<Icon name="Package" size="sm" />} onClick={() => setTab(tab === 'catalog' ? 'open' : 'catalog')}>Item catalog</Button> : undefined}
         primary={<Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setCreating(true)}>Add maintenance job</Button>} />
 
       {tab === 'catalog' ? (
@@ -167,7 +168,7 @@ export default function MaintenancePage() {
         </>
       )}
 
-      {creating && <NewJobModal onClose={() => setCreating(false)} onDone={id => { setCreating(false); reload(); setTab('open'); setSelected(id); }} />}
+      {creating && <NewJobModal units={roster} onClose={() => setCreating(false)} onDone={id => { setCreating(false); reload(); setTab('open'); setSelected(id); }} />}
     </div>
   );
 }
@@ -289,35 +290,6 @@ function JobCard({ i, money }: { i: Issue; money: boolean }) {
   );
 }
 
-/** Who can be given a job: the company's own people and every contractor used before (GET /maintenance/technicians).
- *  The kind (in-house or contractor) follows from who is picked; a contractor not on the list is typed once. */
-function useTechnicians() {
-  const r = useApi<{ data: Technician[] }>('/maintenance/technicians');
-  return r.data?.data ?? [];
-}
-
-function AssigneePicker({ value, onChange, techs, autoFocus }: { value: string; onChange: (name: string) => void; techs: Technician[]; autoFocus?: boolean }) {
-  const known = techs.some(t => t.name === value);
-  const [typing, setTyping] = useState(!!value && !known && techs.length > 0);
-  const kind = techs.find(t => t.name.toLowerCase() === value.trim().toLowerCase())?.kind ?? (value.trim() ? 'contractor' : null);
-  return (
-    <div className="flex flex-col gap-1.5 min-w-0">
-      {typing ? (
-        <input className={INPUT} value={value} onChange={e => onChange(e.target.value)} placeholder="Contractor or company name" aria-label="New contractor name" maxLength={80} autoFocus={autoFocus} />
-      ) : (
-        <SearchSelect label="Technician or contractor" value={known ? value : ''} onChange={onChange} size="md" placeholder="Search technicians and contractors"
-          options={techs.map(t => ({ value: t.name, label: t.name, group: t.kind === 'in_house' ? 'In-house' : 'Contractors' }))} />
-      )}
-      <span className="text-meta text-muted-ink flex gap-1.5 flex-wrap items-center">
-        {kind && <span>{KIND_WORD[kind]}{kind === 'in_house' ? ', a staff account' : ''}.</span>}
-        <button type="button" className="text-accent cursor-pointer font-medium" onClick={() => { setTyping(!typing); onChange(''); }}>
-          {typing ? 'Pick from the list' : 'New contractor'}
-        </button>
-      </span>
-    </div>
-  );
-}
-
 /** One technician or contractor for every ticked job (PATCH each job, as the detail panel does). */
 function BulkAssignModal({ rows, onClose, onDone }: { rows: Issue[]; onClose: () => void; onDone: () => void }) {
   const toast = useToast();
@@ -355,6 +327,7 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
   const techs = useTechnicians();
   const [busy, setBusy] = useState<string | null>(null);
   const [assignee, setAssignee] = useState(i.vendorName ?? '');
+  const [item, setItem] = useState(i.skuId ?? 'other');
   const [quoteSen, setQuoteSen] = useState<number | null>(i.quotedAmount);
   const [billingDate, setBillingDate] = useState(i.billingDate ?? '');
   const [payer, setPayer] = useState<ChargeTo>(i.chargeTo);
@@ -468,6 +441,16 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
             loading={busy === 'assign'} onClick={() => void act('assign', () => api.patch(`/maintenance/issues/${i.id}`, { assigneeName: assignee.trim() }), 'Job assigned.')}>Save</Button>
         </section>
       )}
+      {!done && (
+        <section className="flex flex-col gap-2">
+          <h3 className="m-0 text-copy font-semibold">Item</h3>
+          <SearchSelect label="Item" size="md" value={item} onChange={setItem} placeholder="Search items by name or code"
+            options={[...skus.filter(s => s.active || s.id === i.skuId).map(s => ({ value: s.id, label: s.name, hint: s.code, group: CATEGORY[s.category] ?? 'Other' })), { value: 'other', label: 'Other (not on the list)', group: 'Not in the catalog' }]} />
+          <Button size="sm" variant="secondary" className="self-start" disabled={item === (i.skuId ?? 'other')} disabledReason="Pick a different item."
+            loading={busy === 'item'} onClick={() => void act('item', () => api.patch(`/maintenance/issues/${i.id}`, { skuId: item === 'other' ? null : item }), 'Item saved.')}>Save</Button>
+        </section>
+      )}
+      {done && <p className="m-0 text-muted-ink">Item: {i.skuName ? `${i.skuName}${i.skuCode ? ` (${i.skuCode})` : ''}` : 'Other (not on the list)'}.</p>}
       {done && i.vendorName && <p className="m-0 text-muted-ink">Done by {i.vendorName}{i.assigneeKind ? ` (${KIND_WORD[i.assigneeKind].toLowerCase()})` : ''}.</p>}
 
       {money ? (
@@ -666,8 +649,7 @@ function footer(onClose: () => void, busy: boolean, label: string, onSave: () =>
 const errText = (e: unknown) => errorMessage(e, 'Not saved. Try again.');
 
 /** Same form as "Report damage" from a clean (components/ops/OpsUi MaintenanceJobForm), with a unit picker. */
-function NewJobModal({ onClose, onDone }: { onClose: () => void; onDone: (id: string) => void }) {
-  const units = useUnitRoster();
+function NewJobModal({ units, onClose, onDone }: { units: RosterUnit[]; onClose: () => void; onDone: (id: string) => void }) {
   return <MaintenanceJobForm units={units} onClose={onClose} onDone={onDone} />;
 }
 

@@ -12,13 +12,22 @@ import { color } from '../../theme';
 import { api, notifyFailure, downloadFile } from '../../lib/api';
 import { titleCase } from '../../lib/format';
 import { PhoneText } from '../../components/PhoneText';
-import { addressLines, type OwnerAddress } from '../owners/shared';
+import { addressLines, type OwnerAddress, type Owner } from '../owners/shared';
+import { SearchSelect } from '../../components/Select';
+import { useApi } from '../../lib/useApi';
+import { masked as maskTail } from '../../lib/format';
 import { MODEL } from '../../lib/revenueModel';
 import {
-  STATES, cap,
+  STATES, cap, LAYOUTS, layoutFromBedrooms,
   SectionHead, Grid3, Labeled, Select, ReadOnly, CentreModal,
-  type Unit, type Building, type UnitDetail,
+  type Unit, type Building, type UnitDetail, type LayoutType,
 } from './shared';
+
+/** Every owner profile, for the owner pickers (GET /api/owners, management roles). */
+export function useOwnerOptions(on = true) {
+  const r = useApi<{ data: Owner[] }>(on ? '/owners' : null);
+  return { owners: r.data?.data ?? null, loading: r.loading };
+}
 
 type Change = (p: Partial<Unit>) => void;
 type Doc = UnitDetail['documents'][number];
@@ -44,6 +53,17 @@ export function SaveBar({ title, sub, dirty, saving, canEdit, onSave, extra }: {
 
 export function DetailsForm({ u, owner, buildings, money, canEdit, onChange, onOpenContract }: { u: Unit; owner: { id: string; name: string; email?: string | null; phone?: string | null; address?: OwnerAddress | null }; buildings: Building[]; money: boolean; canEdit: boolean; onChange: Change; onOpenContract?: () => void }) {
   const building = buildings.find(b => b.id === u.buildingId);
+  const { owners } = useOwnerOptions(canEdit);
+  const ownerId = u.ownerId ?? owner.id;
+  const moved = ownerId !== owner.id;
+  const shown = owners?.find(o => o.id === ownerId);
+  // The picked owner's details from their profile (last four only); before the list arrives, the unit's own copy.
+  const ic = shown ? (shown.icLast4 ? maskTail(shown.icLast4) : '') : moved ? '' : u.ic;
+  const bank = shown ? shown.bankName ?? '' : moved ? '' : u.bankName;
+  const account = shown ? (shown.bankAccountLast4 ? maskTail(shown.bankAccountLast4) : '') : moved ? '' : u.bankAccount;
+  const holder = shown ? shown.accountHolder ?? '' : moved ? '' : u.accountHolder;
+  const suggested = !u.layoutType ? layoutFromBedrooms(u.bedrooms) : null;
+  const layout = u.layoutType ?? suggested;
   return (
     <fieldset disabled={!canEdit} className="p-5 m-0 border-0 min-w-0">
       <SectionHead>Listing</SectionHead>
@@ -64,10 +84,6 @@ export function DetailsForm({ u, owner, buildings, money, canEdit, onChange, onO
         <Labeled label="Address" span2>
           <Field label="" aria-label="Address" value={u.address} onChange={e => onChange({ address: e.target.value })} />
         </Labeled>
-        <Labeled label="Bedrooms" help="0 for a studio">
-          <NumberInput label="" aria-label="Bedrooms" min={0} max={20} value={u.bedrooms ?? null}
-            onChange={n => onChange({ bedrooms: n ?? undefined })} />
-        </Labeled>
         {money && u.baseRate !== undefined && (
           <Labeled label="Nightly price (RM)" help="The price of one night before each channel's markup. Saving it sends new prices to the linked channels.">
             <MoneyInput label="" aria-label="Nightly price" minSen={100} valueSen={u.baseRate}
@@ -76,19 +92,57 @@ export function DetailsForm({ u, owner, buildings, money, canEdit, onChange, onO
         )}
       </Grid3>
 
+      <SectionHead>Layout</SectionHead>
+      <Grid3>
+        <Labeled label="Layout type" help={u.layoutType ? undefined : suggested ? `Suggested from ${u.bedrooms === 0 ? 'no bedrooms' : `${u.bedrooms} ${u.bedrooms === 1 ? 'bedroom' : 'bedrooms'}`}. Saved with the next save.` : 'Pick one.'}>
+          <Select label="Layout type" value={layout ?? ''} onChange={v => onChange({ layoutType: (v || null) as LayoutType | null })}
+            options={[...(layout ? [] : [{ value: '', label: 'Not set' }]), ...LAYOUTS.map(([value, label]) => ({ value, label }))]} />
+        </Labeled>
+        <Labeled label="Bedrooms" help="0 for a studio">
+          <NumberInput label="" aria-label="Bedrooms" min={0} max={20} value={u.bedrooms ?? null}
+            onChange={n => onChange({ bedrooms: n ?? undefined })} />
+        </Labeled>
+        <Labeled label="Bathrooms">
+          <NumberInput label="" aria-label="Bathrooms" min={0} max={20} value={u.bathrooms ?? null}
+            onChange={n => onChange({ bathrooms: n ?? undefined })} />
+        </Labeled>
+        <Labeled label="Size (sq ft)" help="Built-up area">
+          <NumberInput label="" aria-label="Size in square feet" min={1} max={100000} value={u.sizeSqft ?? null}
+            onChange={n => onChange({ sizeSqft: n ?? null })} />
+        </Labeled>
+      </Grid3>
+
       <SectionHead>Owner</SectionHead>
-      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 mb-[6px]">
-        <a href={`#/owners/${encodeURIComponent(owner.id)}`} className="text-copy font-semibold text-ink! no-underline [overflow-wrap:anywhere]">{titleCase(owner.name)}</a>
-        <a href={`#/owners/${encodeURIComponent(owner.id)}`} className="text-meta font-semibold text-gold-ink no-underline">Edit on the owner's page</a>
+      <Grid3>
+        <Labeled label="Owner" help={moved ? 'Saving moves this unit to this owner. Its current contract stays with the previous owner.' : 'Picked from the owner profiles.'}>
+          {canEdit && owners ? (
+            <SearchSelect label="Owner" size="md" value={ownerId} placeholder="Search owners"
+              onChange={v => onChange({ ownerId: v })}
+              options={owners.map(o => ({ value: o.id, label: titleCase(o.displayName), hint: o.units.length ? `${o.units.length} ${o.units.length === 1 ? 'unit' : 'units'}` : undefined }))} />
+          ) : <ReadOnly>{titleCase(shown?.displayName ?? owner.name)}</ReadOnly>}
+        </Labeled>
+        <Labeled label="IC / company number">
+          <ReadOnly>{ic || 'Not recorded'}</ReadOnly>
+        </Labeled>
+        <Labeled label="Bank">
+          <ReadOnly>{[bank, account].filter(Boolean).join(' · ') || 'Not recorded'}</ReadOnly>
+        </Labeled>
+        <Labeled label="Account holder">
+          <ReadOnly>{holder ? titleCase(holder) : 'Not recorded'}</ReadOnly>
+        </Labeled>
+      </Grid3>
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 -mt-3 mb-[6px]">
+        <a href={`#/owners/${encodeURIComponent(ownerId)}`} className="text-meta font-semibold text-gold-ink no-underline">Edit on owner profile</a>
+        <span className="text-meta text-muted-ink">IC, bank and contact details are kept on the owner, for every unit they own.</span>
       </div>
-      {(owner.phone || owner.email || owner.address) && (
-        <div className="flex flex-col gap-1 mb-[6px] text-copy text-ink">
+      {!moved && (owner.phone || owner.email || owner.address) && (
+        <div className="flex flex-col gap-1 mb-[22px] text-copy text-ink">
           {owner.phone && <PhoneText value={owner.phone} />}
           {owner.email && <a href={`mailto:${owner.email}`} className="text-ink underline underline-offset-2 [overflow-wrap:anywhere]">{owner.email}</a>}
           {owner.address && <span className="whitespace-pre-line text-muted-ink">{addressLines(owner.address).join('\n')}</span>}
         </div>
       )}
-      <details className="mt-0 mb-[22px] text-meta text-muted-ink [&>summary]:cursor-pointer"><summary className="w-fit list-none inline-flex items-center gap-1 text-muted-ink"><span aria-hidden className="inline-grid place-items-center w-4 h-4 rounded-full border border-solid border-line text-[10px] font-semibold">?</span> How this works</summary><p className="m-0 mt-1.5">The owner's contact and payout details belong to the owner and are edited on the owner's page, for every unit they own. To give this unit to another owner, use Link unit on that owner's page.</p></details>
+      {moved && <div className="mb-[22px]" />}
 
       <SectionHead>Income model</SectionHead>
       <div className="flex flex-wrap items-center gap-3 mb-[6px]">
@@ -173,6 +227,22 @@ export function ConfirmAdd({ title, sub, body, confirm, onClose, onConfirm }: { 
     <CentreModal title={title} sub={sub} onClose={onClose}
       footer={<><Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button><Button size="sm" variant="primary" onClick={onConfirm}>{confirm}</Button></>}>
       <p className="m-0 text-copy text-muted-ink">{body}</p>
+    </CentreModal>
+  );
+}
+
+/** Adds a unit to a building: the owner is picked from the owner profiles first (a unit always has one). */
+export function AddUnitModal({ buildingName, onClose, onConfirm }: { buildingName: string; onClose: () => void; onConfirm: (ownerId: string) => void }) {
+  const { owners, loading } = useOwnerOptions();
+  const [ownerId, setOwnerId] = useState('');
+  return (
+    <CentreModal title={`Add a unit to ${buildingName}`} sub="A blank unit opens for you to fill in." onClose={onClose}
+      footer={<><Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button><Button size="sm" variant="primary" disabled={!ownerId} disabledReason="Pick the owner" onClick={() => onConfirm(ownerId)}>Add unit</Button></>}>
+      <Labeled label="Owner" help={owners && owners.length === 0 ? 'No owner profiles yet. Add the owner on the Owners page first.' : 'Not listed? Add the owner on the Owners page first.'}>
+        <SearchSelect label="Owner" size="md" value={ownerId} onChange={setOwnerId} placeholder={loading ? 'Loading owners' : 'Search owners'}
+          options={(owners ?? []).map(o => ({ value: o.id, label: titleCase(o.displayName) }))} />
+      </Labeled>
+      <p className="m-0 text-copy text-muted-ink">You will set the listing name, code, layout, package and contract on its Details tab.</p>
     </CentreModal>
   );
 }

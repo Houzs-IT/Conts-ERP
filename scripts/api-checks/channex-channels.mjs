@@ -11,7 +11,7 @@ const tag = Date.now().toString().slice(-6);
 
 let r = await call('POST', '/api/properties', { name: `Channex Channels ${tag}`, state: 'Kuala Lumpur', city: 'Kuala Lumpur' });
 const BID = r.json?.id;
-r = await call('POST', '/api/units', { buildingId: BID, unitCode: `CC-${tag}`, unitNumber: `CC-${tag}`, listingName: `Channex Channels Studio ${tag}` });
+r = await call('POST', '/api/units', { buildingId: BID, ownerId: (await call('GET', '/api/owners')).json.data[0].id, unitCode: `CC-${tag}`, unitNumber: `CC-${tag}`, listingName: `Channex Channels Studio ${tag}` });
 const UID = r.json?.id;
 
 await call('PUT', '/api/rates', { unitId: UID, baseRate: 20000 });   // Channex setup needs a base price

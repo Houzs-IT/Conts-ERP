@@ -23,7 +23,8 @@ export default function OwnerShell({ children }: { children: ReactNode }) {
         <Logo variant="mark" size="sm" onDark />
         <div style={{ display: 'flex', flexDirection: 'column', gap: 1, flex: 1, minWidth: 0 }}>
           <Eyebrow className="text-gold!">Owner portal</Eyebrow>
-          <span style={{ fontSize: text.copy, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{user!.fullName}</span>
+          {/* Up to two lines, so a long or joint name is read whole on a phone instead of cut to "Lim Chee ...". */}
+          <span className="line-clamp-2 [overflow-wrap:anywhere] leading-tight" style={{ fontSize: text.copy, fontWeight: 600 }}>{user!.fullName}</span>
         </div>
         {/* A repair quote waiting for their approval reaches them here, not only on the next visit to the portal. */}
         <FieldNotificationBell />

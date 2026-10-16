@@ -157,6 +157,8 @@ const QUERY = {
   '/api/statements/pdf': ids => `?id=${ids.statements}`,
   '/api/units/detail': ids => `?unitId=${ids.units}`,
   '/api/units/stays': ids => `?unitId=${ids.units}`,
+  '/api/units/jobs': ids => `?unitId=${ids.units}`,
+  '/api/units/financials': ids => `?unitId=${ids.units}`,
   '/api/search': () => '?q=a',
   '/api/audit': ids => `?entityTable=units&entityId=${ids.units}`,
 };

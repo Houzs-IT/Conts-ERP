@@ -137,6 +137,9 @@ const BREAKDOWN: StatementDetail = {
   ],
 };
 
+/** Finished jobs shown before "Show more" in Unit health. */
+const DONE_SHOWN = 3;
+
 const DOC_ICON: Record<OwnerDoc['type'], string> = {
   statement: 'FileText', contract: 'FileSignature', invoice: 'ReceiptText', report: 'FileBarChart',
 };
@@ -150,6 +153,7 @@ export default function OwnerPortalPage() {
 
   const [approved, setApproved] = useState<Record<string, true>>({});
   const [approve, setApprove] = useState<HealthIssue | null>(null);
+  const [showAllDone, setShowAllDone] = useState(false);
 
   const st = summary.data ?? (import.meta.env.DEV ? SUMMARY : null);
   const points = trend.data?.points ?? [];
@@ -161,6 +165,19 @@ export default function OwnerPortalPage() {
     () => issues.map(i => (approved[i.id] ? { ...i, state: 'assigned' as TaskState } : i)),
     [issues, approved],
   );
+
+  // Unit health on a busy unit runs to dozens of jobs: open ones (and quotes to approve) always, finished ones folded.
+  const openJobs = rows.filter(i => i.state !== 'resolved');
+  const doneJobs = rows.filter(i => i.state === 'resolved').sort((a, b) => (b.resolvedAt ?? b.reportedAt).localeCompare(a.resolvedAt ?? a.reportedAt));
+  // Documents by year, newest first; the latest year open.
+  const docYears = useMemo(() => {
+    const m = new Map<string, OwnerDoc[]>();
+    for (const d of [...documents].sort((a, b) => b.issuedAt.localeCompare(a.issuedAt))) {
+      const y = d.issuedAt.slice(0, 4) || 'Undated';
+      m.set(y, [...(m.get(y) ?? []), d]);
+    }
+    return [...m.entries()];
+  }, [documents]);
 
   if (!st) {
     return <div className="p-6 text-copy text-muted-ink">{summary.error ?? 'Loading your account…'}</div>;
@@ -279,7 +296,7 @@ export default function OwnerPortalPage() {
         <section className="bg-card border border-solid border-line rounded-card overflow-hidden flex flex-col">
           <div className="px-5 py-[18px] text-[16px] font-semibold tracking-[-0.01em] [border-bottom:1px_solid_var(--color-line-soft)]">Unit health</div>
           {health.data && rows.length === 0 && <EmptyState bare icon="Wrench" title="No maintenance on your units" body="Repairs and quotes that need your approval appear here." />}
-          {rows.map(i => {
+          {[...openJobs, ...(showAllDone ? doneJobs : doneJobs.slice(0, DONE_SHOWN))].map(i => {
             const v = TASK[i.state];
             const waiting = i.state === 'waiting' && i.quotedAmount != null;
             return (
@@ -297,6 +314,12 @@ export default function OwnerPortalPage() {
               </div>
             );
           })}
+          {doneJobs.length > DONE_SHOWN && (
+            <button type="button" onClick={() => setShowAllDone(v => !v)}
+              className="px-5 py-3 min-h-11 text-left bg-transparent border-none cursor-pointer font-sans text-meta font-semibold text-gold-ink">
+              {showAllDone ? 'Show fewer finished jobs' : `Show ${doneJobs.length - DONE_SHOWN} more finished ${doneJobs.length - DONE_SHOWN === 1 ? 'job' : 'jobs'}`}
+            </button>
+          )}
         </section>
       </div>
 
@@ -304,17 +327,29 @@ export default function OwnerPortalPage() {
       <section className="bg-card border border-solid border-line rounded-card overflow-hidden">
         <div className="px-5 py-[18px] text-[16px] font-semibold tracking-[-0.01em] [border-bottom:1px_solid_var(--color-line-soft)]">Documents</div>
         {docs.data && documents.length === 0 && <EmptyState bare icon="FileText" title="No documents yet" body="Your statements and contract will appear here." />}
-        {documents.map(d => (
-          <div key={d.id} className="px-5 py-3 [border-bottom:1px_solid_var(--color-line-soft)] flex items-center gap-3.5">
-            <span className="w-[34px] h-[34px] flex-none grid place-items-center rounded-control bg-muted text-[var(--color-ink-2)]">
-              <Icon name={DOC_ICON[d.type]} size="sm" />
-            </span>
-            <div className="flex flex-col gap-px min-w-0 flex-1">
-              <span className="text-copy font-medium [overflow-wrap:anywhere] text-pretty">{d.title}</span>
-              <span className="text-meta text-muted-ink">{d.meta}</span>
-            </div>
-            <Button size="md" variant="secondary" icon={<Icon name="Download" size="sm" />} onClick={() => downloadDoc(d)}>Download</Button>
-          </div>
+        {docYears.map(([year, list], yi) => (
+          <details key={year} open={yi === 0} className="[&[open]>summary_.chev]:rotate-90 [border-bottom:1px_solid_var(--color-line-soft)] last:border-b-0">
+            <summary className="list-none cursor-pointer px-5 py-3 min-h-11 flex items-center gap-2 bg-page text-meta font-semibold text-ink [&::-webkit-details-marker]:hidden">
+              <span className="chev inline-flex transition-transform"><Icon name="ChevronRight" size="sm" /></span>
+              <span className="flex-1">{year}</span>
+              <span className="font-normal text-muted-ink">{plural(list.length, 'document')}</span>
+            </summary>
+            {list.map(d => (
+              <div key={d.id} className="px-5 py-3 [border-top:1px_solid_var(--color-line-soft)] flex items-center gap-3.5">
+                <span className="w-[34px] h-[34px] flex-none grid place-items-center rounded-control bg-muted text-[var(--color-ink-2)]">
+                  <Icon name={DOC_ICON[d.type]} size="sm" />
+                </span>
+                <div className="flex flex-col gap-px min-w-0 flex-1">
+                  <span className="text-copy font-medium [overflow-wrap:anywhere] text-pretty">{d.title}</span>
+                  <span className="text-meta text-muted-ink">{d.meta}</span>
+                </div>
+                {/* On a phone the button is the icon alone, so the title keeps the row's width. */}
+                <Button size="md" variant="secondary" icon={<Icon name="Download" size="sm" />} onClick={() => downloadDoc(d)} aria-label={`Download ${d.title}`}>
+                  <span className="max-sm:hidden">Download</span>
+                </Button>
+              </div>
+            ))}
+          </details>
         ))}
       </section>
 

@@ -6,7 +6,7 @@ const ex = (id: string, category: string, amount: number, note = ''): Expense =>
 /** A blank or sample unit. Also used to build the new unit sent by Add unit / Add sub-unit. */
 export const mkUnit = (id: string, buildingId: string, listingName: string, unitCode: string, state: string, address: string, owner: Partial<Unit>): Unit => ({
   id, buildingId, parentUnitId: owner.parentUnitId ?? null, listingName, unitCode, state, address,
-  ownerName: owner.ownerName ?? '', ic: owner.ic ?? '', bankName: owner.bankName ?? BANKS[1], bankAccount: owner.bankAccount ?? '', accountHolder: owner.accountHolder ?? owner.ownerName ?? '',
+  ownerId: owner.ownerId, ownerName: owner.ownerName ?? '', ic: owner.ic ?? '', bankName: owner.bankName ?? BANKS[1], bankAccount: owner.bankAccount ?? '', accountHolder: owner.accountHolder ?? owner.ownerName ?? '',
   pkg: owner.pkg ?? 'Package C', term: owner.term ?? 'Long term', split: owner.split ?? 'Not set', splitValue: owner.splitValue ?? null, guaranteePeriod: owner.guaranteePeriod ?? 'month',
   bedrooms: owner.bedrooms, baseRate: owner.baseRate,
   expenses: owner.expenses ?? [ex('e1', 'Internet', 12900), ex('e2', 'Electricity', 18000), ex('e3', 'Water', 4500), ex('e4', 'Cleaning', 35000)],

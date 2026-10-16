@@ -160,6 +160,8 @@ export interface DataTableProps<R> {
   phoneSort?: boolean;
   /** No saved views (tiny tables). */
   noViews?: boolean;
+  /** No Columns menu (lists embedded in a record, owner Oct 2026); Export stays. */
+  noColumns?: boolean;
   footer?: ReactNode;
 }
 
@@ -291,7 +293,7 @@ export function DataTable<R>(props: DataTableProps<R>) {
   const {
     id, columns, rows, rowKey, loading, error, onRetry, onRowClick, rowTone, urlPrefix = '', pageSize: clientSize = 50,
     server, header, toolbar, actions, above, viewParams = [], filtered, onClearFilters, empty, selectable, bulkActions, selectionKey,
-    exportName, noun = ['row', 'rows'], renderCard, maxHeight, bare, noToolbar, noViews, footer, defaultSort, phoneSort = true,
+    exportName, noun = ['row', 'rows'], renderCard, maxHeight, bare, noToolbar, noViews, noColumns, footer, defaultSort, phoneSort = true,
   } = props;
   const toast = useToast();
   const [params, setParams] = useSearchParams();
@@ -564,20 +566,21 @@ export function DataTable<R>(props: DataTableProps<R>) {
             )}
             {/* Phones: Sort and Filter stay; Views, Columns and Export move behind one "More" button,
                 so the row is three controls instead of six (owner, Oct 2026). Same panels, nothing new per page. */}
-            <span className="contents max-md:hidden @max-3xl/tb:hidden">
+            {/* Only Export left (no views, no columns): it stays a button at every width. */}
+            <span className={noViews && noColumns ? 'contents' : 'contents max-md:hidden @max-3xl/tb:hidden'}>
               {!noViews && (
               <ToolButton icon="Bookmark" label={active ? active.name : 'Views'} btnRef={viewsBtn} active={panel === 'views'}
                 onClick={() => setPanel(p => (p === 'views' ? null : 'views'))} title="Saved views" />
             )}
-            <ToolButton icon="Columns3" label="Columns" btnRef={colsBtn} active={panel === 'columns'} onClick={() => setPanel(p => (p === 'columns' ? null : 'columns'))} />
+            {!noColumns && <ToolButton icon="Columns3" label="Columns" btnRef={colsBtn} active={panel === 'columns'} onClick={() => setPanel(p => (p === 'columns' ? null : 'columns'))} />}
             <ToolButton icon={exporting ? 'Loader' : 'Download'} label={exporting ? `Exporting ${exporting}` : 'Export'} btnRef={exportBtn} active={panel === 'export'}
               onClick={() => { if (!exporting) setPanel(p => (p === 'export' ? null : 'export')); }} />
             </span>
-            <PhoneMoreMenu items={[
+            {!(noViews && noColumns) && <PhoneMoreMenu items={[
               ...(!noViews ? [{ icon: 'Bookmark', label: active ? `View: ${active.name}` : 'Saved views', go: () => setPanel('views') }] : []),
-              { icon: 'Columns3', label: 'Columns', go: () => setPanel('columns') },
+              ...(!noColumns ? [{ icon: 'Columns3', label: 'Columns', go: () => setPanel('columns') }] : []),
               { icon: 'Download', label: exporting ? `Exporting ${exporting}` : 'Export', go: () => { if (!exporting) setPanel('export'); } },
-            ]} />
+            ]} />}
           </div>
         </div>
       )}
