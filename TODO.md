@@ -104,6 +104,10 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 - Done: Calendar Week view in renovation mode shows dated items per day (onsite, 3D / 2D submissions, PO and delivery dates, site tasks, planned handover) instead of project bars (GET /api/projects/calendar/events?items=1). Month view keeps the bars. Exhibition mode unchanged.
 - Owner to confirm: "At risk" window of 14 days (AT_RISK_DAYS in engine/frontend/src/pages/projects/renovation/renovationListModel.ts).
 
+## Renovation Calendar like Notion (feat/reno-calendar-notion, no migration, 16 Oct 2026)
+- Done: in renovation mode Projects > Calendar is a Sunday-first Month / Week of task cards (tick + heading, people, project, status, department), multi-day site tasks as one wide card, "+N more" opens the day, a card opens the item with Open project; coloured by department from project_people.roles (designer Design, sales Sales, reno_pic Renovation, admin / boss Management, site_crew Site crew; else the kind of work); filters Department, Person, My tasks, project search, Open / Done, all in the URL; phone: list by day, filters in a sheet. Feed: GET /api/projects/calendar/events?items=1 now adds 3D / 2D amendments, people, department and spans, plus renoMe. Project bars no longer show in renovation mode.
+- Open: meetings and briefings have no table of their own; they show when added as site task categories (Project Maintenance, stage Design) with dates and people. "My tasks" needs the person linked to the login (project_people.user_id or the same email in Property OS).
+
 ## Renovation project screens, round 2 (feat/reno-project-ux-2, migration 0114, 14 Oct 2026)
 - OPEN, before merge: apply migration 0114 on staging, then production (lead). It adds several PICs per Onsite entry and per design version, Onsite photos / files, and closes 2D amendment requests by the version that answers them (existing 2D notes are closed by the next 2D version after them).
 - Person pickers still read project_people through PersonSelect; feat/people-from-users switches them to user accounts. The position after a name comes from personPosition() in PersonSelect.tsx (roles today).
