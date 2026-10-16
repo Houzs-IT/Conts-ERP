@@ -27,10 +27,10 @@ export function useFinancialMonth(): [string, (m: string) => void] {
 export function MonthStepper({ month, onChange }: { month: string; onChange: (m: string) => void }) {
   const now = todayMyt().slice(0, 7);
   return (
-    <div className="flex items-center gap-1.5 flex-wrap">
+    <div className="flex items-center gap-1.5">
       <button type="button" aria-label="Previous month" onClick={() => onChange(shift(month, -1))} className="w-9 h-9 grid place-items-center rounded-control border border-solid border-line bg-card text-ink cursor-pointer hover:bg-muted"><Icon name="ChevronLeft" size="sm" /></button>
       <input type="month" aria-label="Month" value={month} max={shift(now, 12)} onChange={e => e.target.value && onChange(e.target.value)}
-        className="field-input h-9! w-[160px]" />
+        className="h-9 px-2.5 rounded-control border border-solid border-line bg-card text-ink font-sans text-meta w-[170px]" />
       <button type="button" aria-label="Next month" onClick={() => onChange(shift(month, 1))} className="w-9 h-9 grid place-items-center rounded-control border border-solid border-line bg-card text-ink cursor-pointer hover:bg-muted"><Icon name="ChevronRight" size="sm" /></button>
       {month !== now && <Button size="sm" variant="tertiary" onClick={() => onChange(now)}>This month</Button>}
     </div>

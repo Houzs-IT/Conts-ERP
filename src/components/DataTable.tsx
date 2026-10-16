@@ -563,7 +563,8 @@ export function DataTable<R>(props: DataTableProps<R>) {
             )}
             {/* Phones: Sort and Filter stay; Views, Columns and Export move behind one "More" button,
                 so the row is three controls instead of six (owner, Oct 2026). Same panels, nothing new per page. */}
-            <span className="contents max-md:hidden @max-3xl/tb:hidden">
+            {/* Only Export left (no views, no columns): it stays a button at every width. */}
+            <span className={noViews && noColumns ? 'contents' : 'contents max-md:hidden @max-3xl/tb:hidden'}>
               {!noViews && (
               <ToolButton icon="Bookmark" label={active ? active.name : 'Views'} btnRef={viewsBtn} active={panel === 'views'}
                 onClick={() => setPanel(p => (p === 'views' ? null : 'views'))} title="Saved views" />
@@ -572,11 +573,11 @@ export function DataTable<R>(props: DataTableProps<R>) {
             <ToolButton icon={exporting ? 'Loader' : 'Download'} label={exporting ? `Exporting ${exporting}` : 'Export'} btnRef={exportBtn} active={panel === 'export'}
               onClick={() => { if (!exporting) setPanel(p => (p === 'export' ? null : 'export')); }} />
             </span>
-            <PhoneMoreMenu items={[
+            {!(noViews && noColumns) && <PhoneMoreMenu items={[
               ...(!noViews ? [{ icon: 'Bookmark', label: active ? `View: ${active.name}` : 'Saved views', go: () => setPanel('views') }] : []),
               ...(!noColumns ? [{ icon: 'Columns3', label: 'Columns', go: () => setPanel('columns') }] : []),
               { icon: 'Download', label: exporting ? `Exporting ${exporting}` : 'Export', go: () => { if (!exporting) setPanel('export'); } },
-            ]} />
+            ]} />}
           </div>
         </div>
       )}

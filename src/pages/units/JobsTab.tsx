@@ -43,16 +43,16 @@ export default function JobsTab({ unitId, stem }: { unitId: string; stem: string
 
   const cleanColumns = useMemo<Column<CleanRow>[]>(() => [
     { key: 'day', label: 'Date', type: 'date', value: t => t.day, width: 110, hideable: false },
-    { key: 'title', label: 'Cleaning job', value: t => t.title, width: 220 },
-    { key: 'kind', label: 'Type', value: t => humanize(t.kind), width: 120 },
-    { key: 'assignee', label: 'Cleaner', type: 'person', value: t => t.assigneeName ?? 'Unassigned', width: 160 },
-    { key: 'when', label: 'Due or done', type: 'datetime', value: t => t.completedAt ?? t.dueAt, width: 160, sub: t => (t.completedAt ? 'Done' : t.dueAt ? 'Due' : null) },
+    { key: 'title', label: 'Cleaning job', value: t => t.title, width: 180 },
+    { key: 'kind', label: 'Type', value: t => humanize(t.kind), width: 100 },
+    { key: 'assignee', label: 'Cleaner', type: 'person', value: t => t.assigneeName ?? 'Unassigned', width: 150 },
+    { key: 'when', label: 'Due or done', type: 'datetime', value: t => t.completedAt ?? t.dueAt, width: 140, sub: t => (t.completedAt ? 'Done' : t.dueAt ? 'Due' : null) },
     { key: 'status', label: 'Status', type: 'status', value: t => STATUS_VOCAB.cleaning[t.status].label, filter: false, width: 150,
       status: t => STATUS_VOCAB.cleaning[t.status] },
   ], []);
   const repairColumns = useMemo<Column<RepairRow>[]>(() => [
     { key: 'reported', label: 'Reported', type: 'date', value: m => m.reportedAt, width: 110, hideable: false },
-    { key: 'title', label: 'Job', value: m => m.title, width: 240,
+    { key: 'title', label: 'Job', value: m => m.title, width: 200,
       render: m => (
         <span className="flex items-center gap-2 min-w-0">
           <span className="font-semibold whitespace-nowrap overflow-hidden text-ellipsis" title={m.title}>{m.title}</span>
