@@ -103,6 +103,21 @@ export async function activeCleaners(env: Env, prefer: 'internal' | 'outsourced'
     ORDER BY c.full_name`, ...(prefer === 'any' ? [] : [prefer]));
 }
 
+/** Active roster cleaners by id, in the order asked; null when any is missing or inactive. */
+export async function rosterByIds(env: Env, ids: string[]): Promise<RosterCleaner[] | null> {
+  if (!ids.length) return [];
+  const found = await all<RosterCleaner>(env,
+    'SELECT id, full_name, employment_type, user_id, phone FROM cleaners WHERE is_active = 1 AND id IN (SELECT jsonb_array_elements_text(?::text::jsonb))', JSON.stringify(ids));
+  if (found.length !== ids.length) return null;
+  return ids.map(id => ({ ...found.find(c => c.id === id)!, busy: 0 }));
+}
+
+/** The cleaner ids a request names: cleanerIds (in order) or a single cleanerId, at most 10. */
+export function pickedCleanerIds(b: any): string[] {
+  const raw: unknown[] = Array.isArray(b?.cleanerIds) ? b.cleanerIds : [b?.cleanerId];
+  return [...new Set(raw.filter((x): x is string => typeof x === 'string' && !!x.trim()).map(x => x.trim()))].slice(0, 10);
+}
+
 /** Assign one clean to one roster cleaner, replacing whoever was on it (see assignCleaners). */
 /** `quiet`: a bulk assignment sends one notice per cleaner afterwards instead of one per clean. */
 export async function assignCleaner(env: Env, session: Session, taskId: string, cleaner: RosterCleaner, force: boolean, quiet = false): Promise<Response> {

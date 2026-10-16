@@ -1,6 +1,7 @@
 import { type Env, all, json, nowIso } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { MYT_DATE } from '../../_lib/ops';
+import { unitLayoutSql, unitLayout } from '../../_lib/unitLayout';
 import { taskCleanersReady, mineSql, mineArgs, cleanerListSql, parseCleaners } from '../../_lib/taskCleaners';
 import { LIVE_STAY_SQL, mytToday, isDay, standardItems } from '../../_lib/cleaning';
 
@@ -16,11 +17,12 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const date = isDay(asked) ? asked : today;
   const when = MYT_DATE('COALESCE(t.scheduled_for, t.due_at, t.created_at)');
   const ready = await taskCleanersReady(env);
+  const layoutSql = await unitLayoutSql(env);
 
   const rows = await all<any>(env, `
     SELECT t.id, t.unit_id, t.kind, t.title, t.instructions, t.state, t.due_at, t.scheduled_for, t.next_guest_at, t.requires_photo, t.sync, t.updated_at,
            t.started_at, t.completed_at, t.guest_left_at, ${when} AS day, ${cleanerListSql(ready)} AS cleaner_list,
-           u.unit_number, u.readiness, p.id AS property_id, p.name AS property_name, p.address_line,
+           u.unit_number, u.readiness, u.bedrooms, u.bathrooms, ${layoutSql} AS layout_type, p.id AS property_id, p.name AS property_name, p.address_line,
            (SELECT c.instruction FROM access_credentials c WHERE c.unit_id = u.id ORDER BY c.updated_at DESC LIMIT 1) AS access_instruction,
            (SELECT COUNT(*) FROM documents d WHERE d.task_id = t.id AND d.kind IN ('photo','video')) AS photo_count,
            (SELECT COUNT(*)::int FROM task_checklist_items c WHERE c.task_id = t.id AND c.done_at IS NOT NULL) AS ticks,
@@ -50,7 +52,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       const guestOut = !!r.guest_left_at || r.prev_state === 'checked_out';
       return {
         id: r.id, unitId: r.unit_id, kind: r.kind, state: r.state,
-        unit: { unitNumber: r.unit_number, propertyName: r.property_name }, buildingId: r.property_id,
+        unit: { unitNumber: r.unit_number, propertyName: r.property_name, size: unitLayout(r).size, layout: unitLayout(r).layout }, buildingId: r.property_id,
         addressLine: String(r.address_line ?? '').replace(/[\s,]+$/, ''), accessInstruction: r.access_instruction ?? null,
         work: r.title, instructions: r.instructions ?? null, day: r.day, dueAt: r.due_at, nextGuestAt: r.next_guest_at, startedAt: r.started_at ?? null, completedAt: r.completed_at ?? null,
         // Who else is on the job with this cleaner (owner, 11 Oct 2026: several cleaners per clean).

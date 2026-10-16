@@ -16,7 +16,7 @@ import { StatusBadge } from '../components/StatusBadge';
 
 /* GET /api/field/tasks (functions/api/field/tasks.ts) */
 interface Job {
-  id: string; unitId: string; kind: string; state: string; unit: { unitNumber: string; propertyName: string }; buildingId: string;
+  id: string; unitId: string; kind: string; state: string; unit: { unitNumber: string; propertyName: string; size?: string | null; layout?: string | null }; team?: string[]; buildingId: string;
   addressLine: string; accessInstruction: string | null; work: string; instructions: string | null; day: string; startedAt: string | null; completedAt: string | null; readiness: string; done: boolean;
   photoCount: number; checklist: { done: number; total: number }; guestOut: boolean;
   previous: { guestName: string; checkOutTime: string; state: string } | null;
@@ -89,6 +89,12 @@ function JobCard({ job: j, now, open, onToggle, onChanged }: { job: Job; now: nu
           <b className="text-heading flex-1">{j.unit.unitNumber}<span className="text-copy text-muted-ink font-normal"> · {isClean ? `${KIND_LABEL[j.kind] ?? j.kind} clean` : j.work}</span></b>
           {status}
         </div>
+        {(j.unit.size || j.unit.layout || (j.team && j.team.length > 0)) && (
+          <div className="text-meta text-muted-ink flex flex-wrap gap-x-2">
+            {[j.unit.size, j.unit.layout].filter(Boolean).length > 0 && <span>{[j.unit.size, j.unit.layout].filter(Boolean).join(' · ')}</span>}
+            {j.team && j.team.length > 0 && <span className="text-ink">With {j.team.join(', ')}</span>}
+          </div>
+        )}
         <div className="grid grid-cols-2 gap-2 text-copy">
           <div className="rounded-control bg-muted px-2.5 py-2"><span className="block text-meta text-muted-ink">Leaving</span>{j.previous ? <><b>{j.previous.checkOutTime}</b> {j.previous.guestName}</> : <span className="text-muted-ink">No departing guest</span>}</div>
           <div className="rounded-control bg-gold-tint px-2.5 py-2"><span className="block text-meta text-muted-ink">Arriving</span>{j.next ? <><b>{j.next.checkInTime}</b> {j.next.guestName}</> : <span className="text-muted-ink">No check-in</span>}</div>
