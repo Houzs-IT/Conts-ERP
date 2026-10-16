@@ -31,7 +31,7 @@ export function ProjectDocumentFiles({ projectId }: { projectId: number }) {
   const [viewing, setViewing] = useState<{ group: Group; index: number } | null>(null);
   const docs = q.data?.documents ?? [];
   const withFiles = useMemo(
-    () => docs.map((d) => ({ ...d, lines: d.lines ?? [] })).filter((d) => allFiles(d).length > 0)
+    () => docs.filter((d) => allFiles(d).length > 0)
       .sort((a, b) => ORDER.indexOf(a.type) - ORDER.indexOf(b.type)),
     [docs],
   );

@@ -294,7 +294,7 @@ export async function upstreamLines(db: Db, type: DocType, lines: DocLine[]): Pr
 }
 
 interface Row {
-  id: string; file_name: string; mime: string; size_bytes: number | string; caption: string; source: string;
+  id: string; file_name: string; mime: string; size_bytes: number | string | null; caption: string | null; source: string;
   uploaded_by_name: string | null; created_at: string; doc_type: string; doc_id: string; line_id: string | null;
 }
 
@@ -418,7 +418,7 @@ export async function adoptLegacySoAttachments(db: Db, doc: DocRef): Promise<voi
     return;
   }
   if (!Array.isArray(raw) || raw.length === 0) return;
-  for (const a of raw as Array<{ key?: string; name?: string; type?: string; size?: number; at?: string; by?: string | null }>) {
+  for (const a of raw as Array<null | { key?: string; name?: string; type?: string; size?: number; at?: string; by?: string | null }>) {
     if (!a?.key || !fileKind(String(a.type ?? ""))) continue;
     await db.prepare(
       `INSERT INTO scm.doc_attachments (company_id, doc_type, doc_id, r2_key, file_name, mime, size_bytes, source, uploaded_by_name, created_at)
@@ -440,7 +440,7 @@ export async function evidenceFiles(db: Db, doc: DocRef): Promise<Array<DocFile 
   const res = await db.prepare(
     `SELECT id::text AS id, file_key, file_name, mime, size_bytes, created_at FROM ${ev.table}
       WHERE ${ev.fk}::text = ? AND company_id = ? ORDER BY sort_no, created_at`,
-  ).bind(doc.id, doc.companyId).all<{ id: string; file_key: string; file_name: string; mime: string; size_bytes: number; created_at: string }>();
+  ).bind(doc.id, doc.companyId).all<{ id: string; file_key: string; file_name: string; mime: string; size_bytes: number | null; created_at: string }>();
   return (res.results ?? []).map((r) => ({
     id: `ev-${r.id}`, key: r.file_key, name: r.file_name, mime: r.mime, kind: fileKind(r.mime) ?? "file", size: Number(r.size_bytes ?? 0),
     caption: "", source: "evidence" as const, by: null, at: r.created_at ? new Date(r.created_at).toISOString() : "",

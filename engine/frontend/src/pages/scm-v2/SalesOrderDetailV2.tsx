@@ -1014,7 +1014,7 @@ function SalesOrderDetailV2ReadOnly() {
             itemId={l.id}
             photoKeys={l.photo_urls ?? []}
           />
-          <LineFilesButton docType="sales_order" docId={salesOrder?.doc_no} lineId={l.id} canEdit={salesOrder?.status?.toLowerCase() !== "cancelled"} />
+          <LineFilesButton docType="sales_order" docId={salesOrder?.doc_no} lineId={l.id} canEdit={salesOrder?.status.toLowerCase() !== "cancelled"} />
         </div>
       ),
     },
@@ -1523,7 +1523,7 @@ function SalesOrderDetailV2ReadOnly() {
               />
             </Section>
 
-            <DocAttachments docType="sales_order" docId={salesOrder.doc_no} canEdit={salesOrder.status?.toLowerCase() !== "cancelled"} />
+            <DocAttachments docType="sales_order" docId={salesOrder.doc_no} canEdit={salesOrder.status.toLowerCase() !== "cancelled"} />
 
             {/* Payments — the SAME PaymentsTable the editor renders (Task #105
                 one-source rule), mounted here since 2026-08-09 so "Collect

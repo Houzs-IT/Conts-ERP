@@ -51,10 +51,10 @@ export function DocFilesViewer({ files, index, onIndex, onClose, baseUrlFor, edi
   edit?: { save: (f: DocFile, caption: string) => Promise<void>; remove: (f: DocFile) => Promise<void> };
   docLabel?: (f: DocFile) => string | undefined;
 }) {
-  const f = files[index];
+  const f = files.at(index);
   const [draft, setDraft] = useState(f?.caption ?? '');
   const [saving, setSaving] = useState(false);
-  useEffect(() => { setDraft(files[index]?.caption ?? ''); }, [files, index]);
+  useEffect(() => { setDraft(files.at(index)?.caption ?? ''); }, [files, index]);
   if (!f) return null;
   /* MediaLightbox streams `${baseUrl}/${r2_key}`; here the last segment is the file id. */
   const items = files.map((x) => ({ r2_key: x.id, content_type: x.mime, caption: x.caption || x.name }));
@@ -87,7 +87,7 @@ export function DocFilesViewer({ files, index, onIndex, onClose, baseUrlFor, edi
                   className="h-9 min-w-0 flex-1 rounded-md border border-white/25 bg-white/10 px-3 text-[13px] text-white placeholder:text-white/50 focus:border-white/60 focus:outline-none"
                 />
                 <div className="flex gap-2">
-                  <button type="button" disabled={saving || draft.trim() === (f.caption ?? '').trim()}
+                  <button type="button" disabled={saving || draft.trim() === f.caption.trim()}
                     onClick={() => { setSaving(true); void edit.save(f, draft.trim()).finally(() => setSaving(false)); }}
                     className="h-9 flex-1 rounded-md bg-white px-4 text-[13px] font-semibold text-black disabled:opacity-40 sm:flex-none">
                     {saving ? 'Saving...' : 'Save caption'}

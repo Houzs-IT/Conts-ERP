@@ -92,7 +92,7 @@ export async function listDocFiles(type: DocType, id: string): Promise<DocFilesR
     return await authedFetch<DocFilesResponse>(base(type, id));
   } catch (e) {
     /* Before migration 0119 every call answers 409 not_ready: the panel says so instead of failing. */
-    if (/not switched on|not_ready/i.test(String((e as Error)?.message ?? e))) return { ready: false, files: [] };
+    if (/not switched on|not_ready/i.test(String((e as Error | null)?.message ?? e))) return { ready: false, files: [] };
     throw e;
   }
 }

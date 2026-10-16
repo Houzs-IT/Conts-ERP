@@ -137,7 +137,8 @@ function router(type: DocType) {
   app.put('/:id/attachments', async (c: C) => {
     const doc = await docOr404(c, type);
     if (doc instanceof Response) return doc;
-    const bucket = c.env.SO_ITEM_PHOTOS;
+    /* Typed as always bound; a worker deployed without the binding should answer, not crash. */
+    const bucket = c.env.SO_ITEM_PHOTOS as R2Bucket | undefined;
     if (!bucket) return c.json({ error: 'bucket_not_configured' }, 500);
     const db = dbOf(c);
     const lineId = (c.req.query('lineId') ?? '').trim() || null;
@@ -178,7 +179,7 @@ function router(type: DocType) {
     } catch (e) {
       /* Two uploads of the same file racing: the unique index keeps one; the second's bytes go. */
       await bucket.delete(key).catch(() => undefined);
-      if (/doc_attachments_same_file_idx|duplicate key/i.test(String((e as Error)?.message ?? e))) {
+      if (/doc_attachments_same_file_idx|duplicate key/i.test(String((e as Error | null)?.message ?? e))) {
         return c.json({ ok: true, duplicate: true, message: `${name} is already attached to ${where}.` });
       }
       throw e;
