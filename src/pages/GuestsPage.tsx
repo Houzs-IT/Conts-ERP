@@ -25,7 +25,7 @@ import { deliveryToast } from '../lib/bookingStatus';
 import { rm, dateRange, time, date as fmtDate, nights as fmtNights, guests as fmtGuests, plural, count as fmtCount, phone, todayMyt, greetName } from '../lib/format';
 import { phoneCountries } from '../lib/phone';
 import { Select, Menu } from '../components/Select';
-import { FilterBar } from '../components/FilterBar';
+import { FilterBar, FilterMenu } from '../components/FilterBar';
 import type { BookingChannel, ReservationState, UnitReadiness, UserRole, Tone } from '../lib/types';
 import { RecordHistory } from '../components/RecordHistory';
 import { Eyebrow, Figure } from '../components/Metric';
@@ -200,7 +200,8 @@ export default function GuestsPage() {
 
   const selected = detail.data && !detail.data.redirectTo ? detail.data : null;
   const wide = useMedia('(min-width: 768px)');
-  const profileBox = useFillHeight({ enabled: wide, fallback: 'auto', prop: 'height' });
+  // The row of both panes takes the rest of the window; the profile fills it and scrolls, the list's own box fits it.
+  const paneRow = useFillHeight({ enabled: wide, fallback: 'auto', prop: 'height' });
   const profileStale = !!selected && selected.id !== selectedId;
 
   function reloadAll() { list.reload(); detail.reload(); }
@@ -248,17 +249,21 @@ export default function GuestsPage() {
   // The Country filter offers the countries in the list under the search and chip on screen, with their counts.
   const facetKey = JSON.stringify(list.data?.facets?.country ?? []);
   const picked = params.get('country') ?? '';
-  const countryOptions = useMemo(() => {
+  const countryItems = useMemo(() => {
     const facets: { value: string; count: number; label: string }[] = JSON.parse(facetKey);
-    const opts = facets.map(f => ({ value: f.value, label: `${f.label} (${fmtCount(f.count)})` }));
+    const items = facets.map(f => ({ key: f.value, label: f.label, count: f.count }));
     for (const v of picked.split(',').filter(Boolean)) {
-      if (!opts.some(o => o.value === v)) opts.push({ value: v, label: v === 'none' ? 'Not known' : countryName(v.toUpperCase()) ?? v });
+      if (!items.some(o => o.key === v)) items.push({ key: v, label: v === 'none' ? 'Not known' : countryName(v.toUpperCase()) ?? v, count: 0 });
     }
-    return opts;
+    return items;
   }, [facetKey, picked]);
+  const pickedCountries = picked.split(',').filter(Boolean);
+  function setCountries(next: string[]) {
+    updateParams(p => { if (next.length) p.set('country', next.join(',')); else p.delete('country'); p.delete('page'); p.delete('g'); });
+  }
 
   const columns = useMemo<Column<GuestSummary>[]>(() => [
-    { key: 'name', label: 'Guest', value: g => g.fullName, sortKey: 'name', hideable: false, width: 210,
+    { key: 'name', label: 'Guest', value: g => g.fullName, sortKey: 'name', hideable: false, width: 196,
       render: g => (
         <span className="flex items-center gap-[10px] min-w-0">
           <span className="w-[30px] h-[30px] flex-none rounded-full bg-muted text-muted-ink grid place-items-center text-caption font-semibold">{initials(g.fullName)}</span>
@@ -268,25 +273,25 @@ export default function GuestsPage() {
           </span>
         </span>
       ) },
-    { key: 'tag', label: 'Tag', type: 'status', width: 110, phone: 'badge',
+    { key: 'tag', label: 'Tag', type: 'status', width: 104, phone: 'badge',
       status: g => (g.missingId ? { label: 'Missing ID', tone: 'critical' } : g.tags[0] ? { label: g.tags[0].label, tone: g.tags[0].tone } : null) },
-    { key: 'stays', label: 'Reservations', type: 'number', value: g => g.stays, sortKey: 'stays', width: 124,
+    { key: 'stays', label: 'Reservations', type: 'number', value: g => g.stays, sortKey: 'stays', width: 112,
       sub: g => (g.upcoming ? `${fmtCount(g.upcoming)} upcoming` : null) },
     ...(canSeeContact ? [
       { key: 'email', label: 'Email', value: (g: GuestSummary) => g.email, hidden: true, width: 190 },
       { key: 'phone', label: 'Phone', type: 'phone' as const, value: (g: GuestSummary) => g.phone, hidden: true, width: 140 },
     ] : []),
     // A new key, not 'country': layouts saved when this column was a hidden Nationality would keep it hidden.
-    { key: 'origin', label: 'Country', value: g => g.country?.name ?? countryName(g.countryCode), width: 120,
-      sub: g => (g.country?.from === 'phone' ? 'from phone' : null),
-      filter: { kind: 'select', param: 'country', multi: true, options: countryOptions } },
+    { key: 'origin', label: 'Country', value: g => g.country?.name ?? countryName(g.countryCode), width: 116,
+      title: 'The nationality on record, else the country of the phone number.',
+      sub: g => (g.country?.from === 'phone' ? 'from phone' : null) },
     { key: 'channel', label: 'Latest channel', type: 'channel', value: g => g.channel, hidden: true },
     { key: 'nights', label: 'Nights', type: 'number', value: g => g.nights, sortKey: 'nights', hidden: true, width: 80 },
     { key: 'upcoming', label: 'Upcoming', type: 'number', value: g => g.upcoming, sortKey: 'upcoming', hidden: true, width: 90 },
     { key: 'lastCheckIn', label: 'Last check-in', type: 'date', value: g => g.lastCheckIn ?? null, sortKey: 'recent', hidden: true },
     { key: 'value', label: 'Guest total', type: 'money', value: g => g.lifetimeValue, sortKey: 'value', hidden: true,
       title: 'Guest totals of every reservation, upcoming included.' },
-  ], [canSeeContact, countryOptions]);
+  ], [canSeeContact]);
 
   // ---- actions: each toast says what the server did, never what was hoped for ----
   async function prepareEarly(g: Guest) {
@@ -373,7 +378,7 @@ export default function GuestsPage() {
 
       {/* Desktop: the list and the profile are two panes that each scroll by themselves and both end at the bottom of the
           window, so the page itself does not scroll and the title stays put. Phones: the list, then a full-screen profile. */}
-      <div className="flex gap-5 items-start max-w-[1600px] max-md:flex-col max-md:items-stretch">
+      <div ref={paneRow} className="flex gap-5 items-start max-w-[1600px] max-md:flex-col max-md:items-stretch">
         {/* -------- left: directory list -------- */}
         <div className={cx('md:flex-[0_1_560px] md:min-w-[360px] md:max-w-[600px] w-full min-w-0', pickedId && 'max-md:hidden')}>
           <DataTable<GuestSummary>
@@ -381,7 +386,7 @@ export default function GuestsPage() {
             loading={list.loading} error={list.error} onRetry={list.reload} onRowClick={g => select(g.id)}
             rowTone={g => (g.id === selectedId ? 'gold' : null)}
             server={{ total, page: list.data?.page ?? 1, pageSize: list.data?.pageSize ?? 50, sizes: [25, 50, 100], defaultPageSize: 50, fetchAll }}
-            viewParams={['filter', 'q']} filtered={searching} onClearFilters={() => setSearch('')}
+            viewParams={['filter', 'country', 'q']} filtered={searching || pickedCountries.length > 0} onClearFilters={() => { setSearch(''); setCountries([]); }}
             noun={['guest', 'guests']} exportName="guests"
             empty={{ title: emptyText, icon: 'Users' }}
             selectable
@@ -396,7 +401,7 @@ export default function GuestsPage() {
                 ]} />
             ) : undefined}
             header={
-              <div className="py-3 px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line)]">
+              <div className="py-3 px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line)] flex items-center gap-2 flex-wrap">
                 <FilterBar<Filter> label="Guest views" value={filter} onChange={setFilter}
                   views={FILTERS.filter(f => VIEW_KEYS.includes(f.key)).map(f => ({ key: f.key, label: f.label, short: 'short' in f ? f.short : undefined, count: counts?.[f.key] }))}
                   tags={{
@@ -414,14 +419,16 @@ export default function GuestsPage() {
                   className="h-9 w-full box-border rounded-control border border-solid border-line bg-card text-ink [font-family:inherit] text-copy pl-[32px] pr-3 py-0 outline-none" />
               </label>
               <Select label="Sort guests" value={sortKey} onChange={setSort} className="flex-[1_1_150px] sm:flex-none sm:w-[150px]" options={sortOptions} />
+              <FilterMenu label="Country" items={countryItems} active={pickedCountries} onClear={() => setCountries([])}
+                  onToggle={k => setCountries(pickedCountries.includes(k) ? pickedCountries.filter(x => x !== k) : [...pickedCountries, k])} />
             </>}
             renderCard={g => <GuestCard g={g} canSeeContact={canSeeContact} />}
           />
         </div>
 
         {/* -------- right: guest profile -------- */}
-        <div ref={profileBox} data-keep-scroll="guest-profile"
-          className={cx('md:flex-[1.6_1_460px] min-w-0 flex flex-col gap-5 md:overflow-y-auto md:overscroll-contain md:[scrollbar-gutter:stable]', !pickedId && 'max-md:hidden')}>
+        <div data-keep-scroll="guest-profile"
+          className={cx('md:flex-[1.6_1_460px] md:h-full min-w-0 flex flex-col gap-5 [&>*]:shrink-0 md:overflow-y-auto md:overscroll-contain md:[scrollbar-gutter:stable]', !pickedId && 'max-md:hidden')}>
           <button type="button" onClick={() => updateParams(p => p.delete('g'))}
             className="md:hidden self-start h-9 inline-flex items-center gap-1 px-2 -ml-2 rounded-control border-none bg-transparent text-ink [font-family:inherit] text-copy font-medium cursor-pointer">
             <Icon name="ChevronLeft" size="sm" /> All guests
@@ -483,7 +490,7 @@ const guestMeta = (g: GuestSummary, canSeeContact: boolean) => {
 
 /** The phone card: the face the directory rows had before the list became a table. */
 function GuestCard({ g, canSeeContact }: { g: GuestSummary; canSeeContact: boolean }) {
-  const meta = guestMeta(g, canSeeContact);
+  const meta = [g.country?.name, guestMeta(g, canSeeContact)].filter(Boolean).join(' · ');
   const tag = g.tags[0];
   return (
     <span className="flex items-center gap-3 min-w-0">
@@ -495,7 +502,6 @@ function GuestCard({ g, canSeeContact }: { g: GuestSummary; canSeeContact: boole
       <span className="flex flex-col items-end gap-1 flex-none">
         {g.missingId ? <StatusBadge tone="critical" label="Missing ID" size="sm" /> : tag && <StatusBadge tone={tag.tone} label={tag.label} size="sm" />}
         <span className="text-meta text-muted-ink [font-variant-numeric:tabular-nums]">{plural(g.stays, 'reservation')}{g.upcoming ? ` (${g.upcoming} upcoming)` : ''}</span>
-        {g.country && <span className="text-meta text-muted-ink">{g.country.name}</span>}
       </span>
     </span>
   );
@@ -612,7 +618,8 @@ function StayRow({ s, last, onOpen }: { s: Stay; last: boolean; onOpen: () => vo
         <span className={cx('text-muted-ink grid transition-transform', open && 'rotate-180')}><Icon name="ChevronDown" size="sm" /></span>
       </button>
       {open && (
-        <div className="px-5 pb-4 pt-1 grid grid-cols-2 max-lg:grid-cols-1 gap-x-8 gap-y-3 text-copy">
+        <div className="@container">
+        <div className="px-5 pb-4 pt-1 grid grid-cols-1 @min-[640px]:grid-cols-2 gap-x-8 gap-y-3 text-copy">
           <div className="flex flex-col">
             <Eyebrow>Times</Eyebrow>
             {line('Expected check-in', `${fmtDate(s.checkIn)} · from ${s.checkInTime}`)}
@@ -640,6 +647,7 @@ function StayRow({ s, last, onOpen }: { s: Stay; last: boolean; onOpen: () => vo
           <div className="col-span-full">
             <Button size="sm" variant="secondary" onClick={onOpen}>Open reservation</Button>
           </div>
+        </div>
         </div>
       )}
     </div>

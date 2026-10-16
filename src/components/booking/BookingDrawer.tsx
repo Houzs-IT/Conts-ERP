@@ -121,6 +121,7 @@ function MoneyPanel({ d, onRecord, onRemove }: { d: Detail; onRecord: () => void
   const nights = d.nights || 0;
   const perNight = room && nights > 0 ? Math.round(room.amount / nights) : null;
   const roomLabel = room && perNight != null
+    // vocab-ok: room is the ledger line's key, the text is a price per night
     ? `${rm(perNight)}${perNight * nights === room.amount ? '' : ' avg.'} x ${fmtNights(nights)}`
     : room?.label ?? '';
   // The commission's share of what it is charged on: the guest total less the taxes passed on (as bookingMoney.ts has it).
@@ -128,6 +129,8 @@ function MoneyPanel({ d, onRecord, onRemove }: { d: Detail; onRecord: () => void
   const base = L.guestTotal - taxes;
   const pctOf = (amount: number) => (base > 0 ? ` (${(amount / base * 100).toFixed(1)}%)` : '');
   const payout = ota || L.platformLines.length > 0;
+  // vocab-ok: ota is a code flag; the label names the channel itself
+  const feeOwner = ota ? site : 'Channel';
   const status = moneyStatus({ channel: d.channel, state: d.state, expected: L.expected, received: L.received, outstanding: L.outstanding, paidOn: lastPaidOn(L.payments, d.money.payoutDate) });
   const statusIcon = status.tone === 'success' ? 'CheckCircle2' : status.tone === 'warning' ? 'AlertCircle' : 'Clock';
 
@@ -174,11 +177,11 @@ function MoneyPanel({ d, onRecord, onRemove }: { d: Detail; onRecord: () => void
         ) : payout ? (
           <Group title="Host payout">
             {room ? <>
-              <Line label="Room" value={rm(room.amount)} />
+              <Line label="Accommodation" value={rm(room.amount)} />
               {fees.map(l => <Line key={l.key} label={l.label} value={rm(l.amount)} />)}
             </> : <Line label="Guest total" value={rm(L.guestTotal)} />}
             {L.platformLines.map(l => (
-              <Line key={l.key} label={l.key === 'commission' ? `${ota ? site : 'Channel'} commission${pctOf(l.amount)}` : l.label} value={rm(l.amount)} minus />
+              <Line key={l.key} label={l.key === 'commission' ? `${feeOwner} service fee${pctOf(l.amount)}` : l.label} value={rm(l.amount)} minus />
             ))}
             <Line strong label="Total (MYR)" value={rm(L.expected)} />
           </Group>
@@ -212,7 +215,7 @@ function MoneyPanel({ d, onRecord, onRemove }: { d: Detail; onRecord: () => void
         <div className="border border-solid border-line rounded-card overflow-hidden">
           {!dead && payout && (
             <Group title="Payout">
-              <Line label="Expected" value={rm(L.expected)} sub={L.platformTotal ? 'Guest total less the commission' : undefined} />
+              <Line label="Expected" value={rm(L.expected)} sub={L.platformTotal ? 'Guest total less the service fee' : undefined} />
               {L.receivedBefore > 0 && <Line label="Received earlier" value={rm(L.receivedBefore)} />}
               {L.payments.map(paymentRow)}
               <Line label="Received" value={rm(L.received)} />

@@ -25,7 +25,7 @@ export const SEEDS: Record<string, Seed[]> = {
   ],
   guests: [
     // The Missing ID filter already counts only guests with a stay coming up or under way (functions/_lib/guestList.ts).
-    view('guests', 'missing-id', 'Missing ID with an upcoming stay', { filter: 'missing_id' }),
+    view('guests', 'missing-id', 'Missing ID with an upcoming reservation', { filter: 'missing_id' }),
     view('guests', 'repeat', 'Repeat guests', { filter: 'repeat' }, 'stays:desc'),
     view('guests', 'vip', 'VIP', { filter: 'vip' }),
   ],

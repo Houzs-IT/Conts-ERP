@@ -17,11 +17,11 @@ export function moneyStatus(m: MoneyState): { label: string; tone: 'success' | '
   if (m.state === 'cancelled' || m.state === 'no_show') {
     return m.received > 0 ? { label: `${rm(m.received)} kept`, tone: 'neutral' } : { label: 'Nothing kept', tone: 'neutral' };
   }
-  if (m.outstanding <= 0 && m.received > 0) {
-    return { label: m.paidOn ? `${ota ? 'Paid' : 'Paid in full'} on ${date(m.paidOn)}` : ota ? 'Paid' : 'Paid in full', tone: 'success' };
-  }
+  // vocab-ok: ota is a code flag; the words shown are Paid and Paid in full
+  const paid = ota ? 'Paid' : 'Paid in full';
+  if (m.outstanding <= 0 && m.received > 0) return { label: m.paidOn ? `${paid} on ${date(m.paidOn)}` : paid, tone: 'success' };
   if (m.outstanding <= 0) return { label: 'Nothing to collect', tone: 'neutral' };
-  if (m.received > 0) return { label: `${rm(m.received)} of ${rm(m.expected)} received · ${rm(m.outstanding)} to come`, tone: 'warning' };
+  if (m.received > 0) return { label: ota ? `Part paid out · ${rm(m.outstanding)} to come` : `Part paid · ${rm(m.outstanding)} due`, tone: 'warning' };
   const before = m.state === 'inquiry' || m.state === 'pending' || m.state === 'confirmed';
   if (ota) return before ? { label: 'Expected after check-in', tone: 'neutral' } : { label: 'Not paid yet', tone: 'warning' };
   return { label: `Not paid yet · ${rm(m.outstanding)} due`, tone: before ? 'neutral' : 'warning' };
