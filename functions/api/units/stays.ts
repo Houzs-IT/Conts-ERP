@@ -1,22 +1,25 @@
 import { type Env, all, one, json, fail } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 
-const WHEN = ['upcoming', 'past', 'cancelled', 'all'] as const;
+const WHEN = ['all', 'upcoming', 'arriving', 'hosting', 'checking_out', 'past', 'cancelled'] as const;
 type When = typeof WHEN[number];
+const ISO = /^\d{4}-\d{2}-\d{2}$/;
 
-// Upcoming reads soonest first; everything else newest first.
-const FILTER: Record<When, { where: string; order: string; usesToday: boolean }> = {
-  upcoming: { where: `AND r.state != 'cancelled' AND r.check_out >= ?`, order: 'r.check_in ASC, r.id', usesToday: true },
-  past: { where: `AND r.state != 'cancelled' AND r.check_out < ?`, order: 'r.check_in DESC, r.id', usesToday: true },
-  cancelled: { where: `AND r.state = 'cancelled'`, order: 'r.check_in DESC, r.id', usesToday: false },
-  all: { where: '', order: 'r.check_in DESC, r.id', usesToday: false },
-};
+/** Each reservation's one status in the owner's words (docs/VOCABULARY.md section 2), worked out from the stored state
+ *  and the dates the way the calendar does (ReservationBar phaseOf): Arriving soon is a check-in today or tomorrow,
+ *  Checking out a checkout today. $1 is today, $2 tomorrow. */
+const PHASE = `CASE WHEN r.state = 'cancelled' THEN 'cancelled'
+  WHEN r.state IN ('checked_out', 'no_show') OR r.check_out < $1 THEN 'past'
+  WHEN r.check_out = $1 AND (r.state = 'checked_in' OR r.check_in < $1) THEN 'checking_out'
+  WHEN r.state = 'checked_in' OR r.check_in < $1 THEN 'hosting'
+  WHEN r.check_in <= $2 THEN 'arriving'
+  ELSE 'upcoming' END`;
 
 /**
- * GET /api/units/stays?unitId=&when=upcoming|past|cancelled|all&page=1&pageSize=20
- * One page of a unit's bookings for the unit record's Bookings tab, with the count of
- * each filter so the tab can label them. A busy unit has a few hundred bookings a year,
- * so the record itself only carries the latest few.
+ * GET /api/units/stays?unitId=&when=all|upcoming|arriving|hosting|checking_out|past|cancelled&from=&to=&page=1&pageSize=20
+ * One page of a unit's reservations for the unit record's Reservations tab, with the count of each status so the
+ * chips can label them. from/to (YYYY-MM-DD) keep the stays that touch the range. A busy unit has a few hundred
+ * reservations a year, so the record itself only carries the next few.
  */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
@@ -25,9 +28,12 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const url = new URL(request.url);
   const unitId = url.searchParams.get('unitId');
   if (!unitId) return fail('VALIDATION', 'A unit is required.', 422);
-  const whenParam = url.searchParams.get('when') ?? 'upcoming';
+  const whenParam = url.searchParams.get('when') ?? 'all';
   if (!(WHEN as readonly string[]).includes(whenParam)) return fail('VALIDATION', 'Unknown filter.', 422);
   const when = whenParam as When;
+  const from = url.searchParams.get('from') || null, to = url.searchParams.get('to') || null;
+  if ((from && !ISO.test(from)) || (to && !ISO.test(to))) return fail('VALIDATION', 'Dates are YYYY-MM-DD.', 422);
+  if (from && to && to < from) return fail('VALIDATION', 'The end date is before the start date.', 422, { to: 'Pick a later date.' });
   const pageSize = Math.min(100, Math.max(5, Number(url.searchParams.get('pageSize')) || 20));
   const page = Math.max(1, Math.floor(Number(url.searchParams.get('page')) || 1));
 
@@ -38,36 +44,42 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     if (!owned?.n) return fail('FORBIDDEN', 'This unit is not on your account.', 403);
   }
   const money = session.manage;
-  const today = (await one<{ d: string }>(env, `SELECT to_char(now() AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM-DD') AS d`))!.d;
-  const f = FILTER[when];
+  const today = (await one<{ d: string; t: string }>(env, `SELECT to_char(now() AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM-DD') AS d,
+    to_char(now() AT TIME ZONE 'Asia/Kuala_Lumpur' + interval '1 day', 'YYYY-MM-DD') AS t`))!;
 
+  // $1 today, $2 tomorrow, $3 unit, then the range; postgres numbers the placeholders, so the CASE reads them by number.
+  const range = `${from ? ' AND r.check_out >= $4' : ''}${to ? ` AND r.check_in <= $${from ? 5 : 4}` : ''}`;
+  const base = [today.d, today.t, unitId, ...(from ? [from] : []), ...(to ? [to] : [])];
+  const scoped = `SELECT r.*, ${PHASE} AS phase FROM reservations r WHERE r.unit_id = $3${range}`;
+  // Upcoming reads soonest first; everything else newest first.
+  const order = ['upcoming', 'arriving'].includes(when) ? 'x.check_in ASC, x.id' : 'x.check_in DESC, x.id';
+  const n = base.length;
   const [counts, rows] = await Promise.all([
-    one<any>(env, `
-      SELECT COUNT(*) FILTER (WHERE state != 'cancelled' AND check_out >= ?) AS upcoming,
-             COUNT(*) FILTER (WHERE state != 'cancelled' AND check_out < ?) AS past,
-             COUNT(*) FILTER (WHERE state = 'cancelled') AS cancelled,
-             COUNT(*) AS all_count,
-             COALESCE(SUM(gross_booking_value) FILTER (WHERE state != 'cancelled' AND check_out >= ?), 0) AS upcoming_gross,
-             COALESCE(SUM(gross_booking_value) FILTER (WHERE state != 'cancelled' AND check_out < ?), 0) AS past_gross
-      FROM reservations WHERE unit_id = ?`, today, today, today, today, unitId),
+    all<{ phase: string; n: number; gross: number }>(env, `SELECT phase, COUNT(*)::int AS n, COALESCE(SUM(gross_booking_value), 0)::bigint AS gross FROM (${scoped}) x GROUP BY phase`, ...base),
     all<any>(env, `
-      SELECT r.id, r.channel, r.state, r.check_in, r.check_out, r.guests_count, r.external_ref,
-             r.gross_booking_value, COALESCE(g.full_name, '') AS guest_name
-      FROM reservations r LEFT JOIN guests g ON g.id = r.guest_id
-      WHERE r.unit_id = ? ${f.where}
-      ORDER BY ${f.order}
-      LIMIT ? OFFSET ?`, ...[unitId, ...(f.usesToday ? [today] : []), pageSize, (page - 1) * pageSize]),
+      SELECT x.id, x.channel, x.state, x.phase, x.check_in, x.check_out, x.guests_count, x.external_ref,
+             x.gross_booking_value, COALESCE(g.full_name, '') AS guest_name
+      FROM (${scoped}) x LEFT JOIN guests g ON g.id = x.guest_id
+      ${when === 'all' ? '' : `WHERE x.phase = $${n + 1}`}
+      ORDER BY ${order}
+      LIMIT $${n + (when === 'all' ? 1 : 2)} OFFSET $${n + (when === 'all' ? 2 : 3)}`, ...base, ...(when === 'all' ? [] : [when]), pageSize, (page - 1) * pageSize),
   ]);
 
-  const total = when === 'all' ? Number(counts.all_count) : Number(counts[when]);
-  const gross = when === 'upcoming' ? counts.upcoming_gross : when === 'past' ? counts.past_gross : null;
+  const byPhase = Object.fromEntries(WHEN.map(w => [w, 0])) as Record<When, number>;
+  let gross = 0, grossAll = 0;
+  for (const c of counts) {
+    byPhase[c.phase as When] = Number(c.n); byPhase.all += Number(c.n);
+    if (c.phase !== 'cancelled') grossAll += Number(c.gross);
+    if (c.phase === when) gross = Number(c.gross);
+  }
+  const total = byPhase[when];
   return json({
     generatedAt: new Date().toISOString(),
-    today, when, page, pageSize, total,
-    counts: { upcoming: Number(counts.upcoming), past: Number(counts.past), cancelled: Number(counts.cancelled), all: Number(counts.all_count) },
-    ...(money && gross != null ? { totalGross: Number(gross) } : {}),
+    today: today.d, when, from, to, page, pageSize, total, counts: byPhase,
+    // The guest total of what is shown; cancelled reservations never count.
+    ...(money && when !== 'cancelled' ? { totalGross: when === 'all' ? grossAll : gross } : {}),
     rows: rows.map(s => ({
-      id: s.id, guestName: s.guest_name || null, channel: s.channel, state: s.state,
+      id: s.id, guestName: s.guest_name || null, channel: s.channel, state: s.state, phase: s.phase,
       checkIn: s.check_in, checkOut: s.check_out, guestsCount: s.guests_count, externalRef: s.external_ref,
       ...(money ? { grossBookingValue: Number(s.gross_booking_value) } : {}),
     })),

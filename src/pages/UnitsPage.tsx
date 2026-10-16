@@ -15,21 +15,21 @@ import ChannelMark from '../components/ChannelMark';
 import ChannexChannelsCard from '../components/ChannexChannelsCard';
 import { StaleBanner } from '../components/DataState';
 import { RecordSkeleton, TreeSkeleton } from './units/UnitsSkeleton';
-import { DataTable, type Column } from '../components/DataTable';
 import { UnitList } from './units/UnitList';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure, downloadFile } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
-import { rm, dateRange, date, monthLabel, plural, humanize, titleCase } from '../lib/format';
+import { rm, dateRange, date, monthLabel, plural, titleCase } from '../lib/format';
 import type { UnitReadiness } from '../lib/types';
 import UnitTree, { firstUnitId } from './units/UnitTree';
 import AccessTab from './units/AccessTab';
 import BookingsTab from './units/BookingsTab';
+import JobsTab from './units/JobsTab';
+import FinancialsTab, { MonthStepper, useFinancialMonth } from './units/FinancialsTab';
 import { SaveBar, DetailsForm, DocumentsCard, BuildingModal, ConfirmAdd, AddUnitModal } from './units/UnitForms';
 import { UnitCostsCard } from './owners/Costs';
 import ContractTab, { ModelChip } from './units/ContractTab';
-import { todayMyt } from '../lib/format';
 import { PROPERTIES_FALLBACK, DETAIL_FALLBACK, mkUnit } from './units/fallback';
 import { RecordHistory } from '../components/RecordHistory';
 import {
@@ -63,8 +63,6 @@ function useWide() {
 /** The unit lifecycle states an operator can set by hand, in the order they read on the record. */
 const READINESS_OPTIONS: UnitReadiness[] = ['ready', 'occupied', 'cleaning', 'dirty', 'inspection', 'maintenance', 'blocked'];
 
-const CHARGE_LABEL: Record<string, string> = { owner: 'Owner', guest_deposit: 'Guest deposit', the_conts: 'The Conts', warranty: 'Warranty' };
-
 // Short labels so the eight tabs sit on one row; the title carries the full name.
 const TABS = [
   ['overview', 'Overview', 'Overview'], ['details', 'Details', 'Details and owner'], ['contract', 'Contract', 'Contract and documents'],
@@ -72,6 +70,8 @@ const TABS = [
   ['financials', 'Financials', 'Financials'], ['activity', 'History', 'History of changes'],
 ] as const;
 type Tab = typeof TABS[number][0];
+/** The Reservations and Jobs tabs' filters and paging in the address. */
+const TAB_PARAMS = ['fmonth', 'when', 'from', 'to', 'page', 'size', 'jfrom', 'jto', 'clean', 'repair'];
 const isTab = (t: string | null): t is Tab => TABS.some(([k]) => k === t);
 
 type Modal = null | { kind: 'building' } | { kind: 'editBuilding'; building: Building } | { kind: 'unit'; buildingId: string } | { kind: 'subunit'; buildingId: string; parent: Unit };
@@ -99,8 +99,8 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
   const setTab = (t: Tab) => setParams(p => {
     const n = new URLSearchParams(p);
     if (t === 'overview') n.delete('tab'); else n.set('tab', t);
-    // The Bookings tab's own filter and page do not carry over to another tab.
-    n.delete('when'); n.delete('page'); n.delete('size');
+    // A tab's own filters and page do not carry over to another tab.
+    for (const k of TAB_PARAMS) n.delete(k);
     return n;
   }, { replace: true });
 
@@ -325,6 +325,7 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
   // Matches MASTER_ROLES on the server's channex-setup / channex-connect.
   const canManageChannels = !!user && MASTER_ROLES.includes(user.role);
   const wideRecord = useSmUp();
+  const [fmonth, setFmonth] = useFinancialMonth();
   const tabsRef = useRef<HTMLDivElement>(null);
   const [photo, setPhoto] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -371,7 +372,7 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
   function expensesReport() {
     if (!form) return;
     toast({ tone: 'info', title: 'Preparing report', body: `Expenses for ${unitLabel} — served as a download.` });
-    downloadFile('/expenses/report', { unitId: form.id, period: todayMyt().slice(0, 7) }).catch(notifyFailure);
+    downloadFile('/expenses/report', { unitId: form.id, period: fmonth }).catch(notifyFailure);
   }
   const needsForm = <Card><div className="p-8 text-center text-copy text-muted-ink">This unit's master data is not available to your role.</div></Card>;
   const title = form?.listingName || `${u.propertyName} ${u.unitNumber}`;
@@ -491,60 +492,17 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
       {on('reservations') && <BookingsTab key={u.id} unitId={u.id} />}
 
       {stacked && on('operations') && <h3 className="m-0 mt-2 text-heading font-semibold">Cleaning, maintenance and fit-out</h3>}
-      {on('operations') && (
-        <>
-          <Card>
-            <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex items-baseline justify-between gap-3 flex-wrap">
-              <span className="text-[16px] font-semibold tracking-[-0.01em]">Cleaning jobs</span>
-              {/* units/detail.ts sends the latest 12; the full list is on the Housekeeping board. */}
-              {d.tasks.length >= 12 && <span className="text-meta text-muted-ink">Latest 12</span>}
-            </div>
-            <DataTable<TaskRow> id="unit.tasks" urlPrefix="tasks." bare noViews pageSize={0} maxHeight="none"
-              columns={TASK_COLUMNS} rows={d.tasks} rowKey={t => t.id} noun={['cleaning job', 'cleaning jobs']} exportName={`${stem}-tasks`}
-              empty={{ title: 'No cleaning jobs for this unit.', icon: 'Sparkles' }} />
-          </Card>
-          <Card>
-            <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex items-baseline justify-between gap-3 flex-wrap">
-              <span className="text-[16px] font-semibold tracking-[-0.01em]">Maintenance</span>
-              {d.maintenance.length >= 12 && <span className="text-meta text-muted-ink">Latest 12</span>}
-            </div>
-            <DataTable<JobRow> id="unit.maintenance" urlPrefix="jobs." bare noViews pageSize={0} maxHeight="none"
-              columns={JOB_COLUMNS} rows={d.maintenance} rowKey={m => m.id} noun={['maintenance job', 'maintenance jobs']} exportName={`${stem}-maintenance`}
-              empty={{ title: 'No maintenance jobs reported.', icon: 'Wrench' }} />
-          </Card>
-        </>
-      )}
+      {on('operations') && <JobsTab key={u.id} unitId={u.id} stem={stem} />}
       {stacked && on('financials') && <h3 className="m-0 mt-2 text-heading font-semibold">Financials</h3>}
       {on('financials') && d.pnl && (
         <>
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <MonthStepper month={fmonth} onChange={setFmonth} />
+            {form && <Button size="sm" variant="tertiary" icon={<Icon name="Download" size="sm" />} onClick={expensesReport}>Expenses report for {monthLabel(fmonth)}</Button>}
+          </div>
+          <FinancialsTab key={u.id} unitId={u.id} month={fmonth} />
           <UnitCostsCard unitId={u.id} ownerId={u.owner.id} unitLabel={unitLabel} canEdit={canEdit} cleaningPrice={form?.cleaningPrice}
-            legacyCosts={form?.expenses ?? []} onChanged={() => { reloadDetail(); reload(); }} />
-          <Card>
-            <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex items-baseline justify-between gap-3 flex-wrap">
-              <span className="text-[16px] font-semibold tracking-[-0.01em]">Unit P&amp;L this month</span>
-              <span className="text-meta text-muted-ink">{periodLabel}</span>
-            </div>
-            <PnlTable rows={d.pnl} />
-            <div className="py-[13px] px-5 text-meta text-muted-ink [text-wrap:pretty]">
-              The owner statement for this unit so far, by its income model: Gross Income split by night into the month, less the costs the owner pays, less the operator's share. It rolls up to the owner by the unit's split. The month is not closed yet, so the figures still move.
-            </div>
-          </Card>
-          {d.companyPnl && (
-            <Card>
-              <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex flex-col gap-1">
-                <span className="text-[16px] font-semibold tracking-[-0.01em]">The Conts' share</span>
-                <span className="text-meta text-muted-ink">What The Conts keeps or pays on this unit, {periodLabel.toLowerCase()}. Costs paid by The Conts, a tenant or a guest show here, never on the owner statement.</span>
-              </div>
-              <PnlTable rows={d.companyPnl} />
-            </Card>
-          )}
-        </>
-      )}
-
-      {stacked && on('financials') && <h3 className="m-0 mt-2 text-heading font-semibold">Financials</h3>}
-      {on('financials') && d.pnl && (
-        <>
-          {form && <div className="flex justify-end -mt-2"><Button size="sm" variant="tertiary" icon={<Icon name="Download" size="sm" />} onClick={expensesReport}>Expenses report</Button></div>}
+            deepCleaningPrice={form?.deepCleaningPrice} legacyCosts={form?.expenses ?? []} onChanged={() => { reloadDetail(); reload(); }} />
         </>
       )}
 
@@ -556,35 +514,3 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
     </>
   );
 }
-
-type TaskRow = UnitDetail['tasks'][number];
-type JobRow = UnitDetail['maintenance'][number];
-
-const TASK_COLUMNS: Column<TaskRow>[] = [
-  { key: 'title', label: 'Cleaning job', value: t => t.title, hideable: false, width: 220 },
-  { key: 'kind', label: 'Type', value: t => humanize(t.kind), width: 120 },
-  { key: 'assignee', label: 'Assigned to', type: 'person', value: t => t.assigneeName ?? 'Unassigned', width: 160 },
-  { key: 'when', label: 'Due or done', type: 'datetime', value: t => t.completedAt ?? t.dueAt, width: 160,
-    sub: t => (t.completedAt ? 'Done' : t.dueAt ? 'Due' : null) },
-  { key: 'state', label: 'Status', type: 'status', value: t => t.state, entity: 'task', width: 130 },
-];
-
-const JOB_COLUMNS: Column<JobRow>[] = [
-  { key: 'title', label: 'Job', value: m => m.title, hideable: false, width: 240,
-    render: m => (
-      <span className="flex items-center gap-2 min-w-0">
-        <span className="font-semibold whitespace-nowrap overflow-hidden text-ellipsis" title={m.title}>{m.title}</span>
-        {m.blocksUnit && <StatusBadge tone="critical" label="Blocks the unit" size="sm" />}
-      </span>
-    ),
-    sub: m => (m.detail ? <span title={m.detail}>{m.detail}</span> : null) },
-  { key: 'detail', label: 'Detail', value: m => m.detail, hidden: true, width: 240 },
-  { key: 'reported', label: 'Reported', type: 'date', value: m => m.reportedAt, width: 116 },
-  { key: 'vendor', label: 'Contractor', value: m => m.vendorName, width: 140 },
-  { key: 'charge', label: 'Charged to', value: m => CHARGE_LABEL[m.chargeTo] ?? humanize(m.chargeTo), width: 130 },
-  { key: 'state', label: 'Status', type: 'status', value: m => m.state, entity: 'task', width: 130 },
-  { key: 'amount', label: 'Amount', type: 'money', value: m => m.finalAmount ?? m.quotedAmount ?? null, width: 120,
-    sub: m => (m.finalAmount != null ? 'Final' : m.quotedAmount != null ? 'Quoted' : null) },
-];
-
-
