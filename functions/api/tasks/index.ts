@@ -1,6 +1,7 @@
 import { type Env, all, json, nowIso } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
 import { MYT_DATE, hhmm, slaFor, SHEET_CLEANER } from '../../_lib/ops';
+import { taskCleanersReady, mineSql, mineArgs, cleanerNamesSql } from '../../_lib/taskCleaners';
 
 const STATES = ['open', 'assigned', 'in_progress', 'waiting', 'overdue', 'reopened', 'resolved'];
 const KINDS = ['turnover', 'deep_clean', 'light_clean', 'inspection', 'maintenance', 'delivery', 'other'];
@@ -29,17 +30,22 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const page = Math.max(1, Math.floor(Number(sp.get('page')) || 1));
 
   const day = MYT_DATE('COALESCE(t.scheduled_for, t.due_at, t.created_at)');
+  const ready = await taskCleanersReady(env);
   // Every filter except state, so the state chips can show their counts under the rest.
   const where: string[] = [];
   const args: unknown[] = [];
-  if (isFieldRole(session.role)) { where.push('t.assignee_id = ?'); args.push(session.userId); }
+  if (isFieldRole(session.role)) { where.push(mineSql(ready)); args.push(...mineArgs(ready, session.userId)); }
   if (id) { where.push('t.id = ?'); args.push(id); }
   if (kind === 'cleaning') where.push(`t.kind IN (${CLEANING.map(k => `'${k}'`).join(',')})`);
   else if (KINDS.includes(kind)) { where.push('t.kind = ?'); args.push(kind); }
   if (building) { where.push('u.property_id = ?'); args.push(building); }
   if (assignee === 'none') where.push(`t.assignee_id IS NULL AND t.cleaner_id IS NULL AND ${SHEET_CLEANER('t')} IS NULL`);
-  else if (assignee?.startsWith('u:')) { where.push('t.assignee_id = ?'); args.push(assignee.slice(2)); }
-  else if (assignee?.startsWith('c:')) { where.push('t.cleaner_id = ?'); args.push(assignee.slice(2)); }
+  // A cleaner filter finds every job they are on, not only those where they are listed first.
+  else if (assignee?.startsWith('u:')) { where.push(mineSql(ready)); args.push(...mineArgs(ready, assignee.slice(2))); }
+  else if (assignee?.startsWith('c:')) {
+    where.push(ready ? '(t.cleaner_id = ? OR EXISTS (SELECT 1 FROM task_cleaners tc WHERE tc.task_id = t.id AND tc.cleaner_id = ?))' : 't.cleaner_id = ?');
+    args.push(...(ready ? [assignee.slice(2), assignee.slice(2)] : [assignee.slice(2)]));
+  }
   else if (assignee?.startsWith('s:')) { where.push(`${SHEET_CLEANER('t')} = ?`); args.push(assignee.slice(2)); }
   if (isDate(from)) { where.push(`${day} >= ?`); args.push(from); }
   if (isDate(to)) { where.push(`${day} <= ?`); args.push(to); }
@@ -68,7 +74,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const rows = await all<any>(env, `
     SELECT t.id, t.unit_id, t.kind, t.state, t.title, t.instructions, t.assignee_id, t.cleaner_id, t.scheduled_for, t.due_at, t.next_guest_at,
            t.requires_photo, t.sync, t.started_at, t.completed_at, u.unit_number, p.id AS property_id, p.name AS property_name, ${day} AS day,
-           COALESCE(cl.full_name, a.full_name) AS assignee_name, ${SHEET_CLEANER('t')} AS sheet_cleaner,
+           COALESCE(${cleanerNamesSql(ready)}, cl.full_name, a.full_name) AS assignee_name, ${SHEET_CLEANER('t')} AS sheet_cleaner,
            (SELECT COUNT(*) FROM documents d WHERE d.task_id = t.id AND d.kind IN ('photo','video')) AS photo_count
     ${base}
     LEFT JOIN users a ON a.id = t.assignee_id

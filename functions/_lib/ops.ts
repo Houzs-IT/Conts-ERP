@@ -2,6 +2,7 @@ import { type Env, one, all, run, json, fail, audit, nowIso } from './db';
 import type { Session } from './auth';
 import { notify } from './notify';
 import { cleaningNotice } from './notices';
+import { taskCleanersReady, currentCleaners, writeTaskCleaners } from './taskCleaners';
 
 export const MYT_DATE = (col: string) => `to_char((${col})::timestamptz AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM-DD')`;
 
@@ -66,7 +67,10 @@ export async function assignTask(env: Env, session: Session, taskId: string, ass
     }
   }
 
-  await run(env, "UPDATE tasks SET assignee_id = ?, state = 'assigned', updated_at = ? WHERE id = ?", assigneeId, nowIso(), taskId);
+  // The old users-based path: the person becomes the job's only cleaner (their roster entry, if they have one).
+  const roster = await one<{ id: string }>(env, 'SELECT id FROM cleaners WHERE user_id = ?', assigneeId);
+  await run(env, "UPDATE tasks SET assignee_id = ?, cleaner_id = ?, state = 'assigned', updated_at = ? WHERE id = ?", assigneeId, roster?.id ?? null, nowIso(), taskId);
+  await writeTaskCleaners(env, taskId, [{ cleanerId: roster?.id ?? null, userId: assigneeId }], session.userId);
   await audit(env, {
     actorId: session.userId, actorLabel: session.fullName, action: 'task.assign', entityTable: 'tasks', entityId: taskId,
     before: { assigneeId: task.assignee_id, state: task.state }, after: { assigneeId, state: 'assigned' },
@@ -87,10 +91,11 @@ export interface RosterCleaner { id: string; full_name: string; employment_type:
 /** The active cleaner roster with today's open-job load, for the assign pickers and
  *  auto-assign. `prefer` narrows to one employment dimension when the rule asks for it. */
 export async function activeCleaners(env: Env, prefer: 'internal' | 'outsourced' | 'any' = 'any'): Promise<RosterCleaner[]> {
+  const ready = await taskCleanersReady(env);
   return all<RosterCleaner>(env, `
     SELECT c.id, c.full_name, c.employment_type, c.user_id, c.phone,
            (SELECT COUNT(*) FROM tasks t
-              WHERE (t.cleaner_id = c.id OR (c.user_id IS NOT NULL AND t.assignee_id = c.user_id))
+              WHERE (t.cleaner_id = c.id OR (c.user_id IS NOT NULL AND t.assignee_id = c.user_id)${ready ? ' OR EXISTS (SELECT 1 FROM task_cleaners tc WHERE tc.task_id = t.id AND tc.cleaner_id = c.id)' : ''})
                 AND t.state NOT IN ('resolved')
                 AND ${MYT_DATE('COALESCE(t.scheduled_for, t.due_at, t.created_at)')} = to_char(now() AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM-DD')) AS busy
     FROM cleaners c
@@ -98,48 +103,88 @@ export async function activeCleaners(env: Env, prefer: 'internal' | 'outsourced'
     ORDER BY c.full_name`, ...(prefer === 'any' ? [] : [prefer]));
 }
 
-/** Assign one clean to a roster cleaner. Sets cleaner_id always, and assignee_id to
- *  the cleaner's login when it is internal staff (outsourced crews have no login, so
- *  assignee_id is cleared). Overlapping work is a 409 ASSIGNEE_BUSY unless force. */
+/** Active roster cleaners by id, in the order asked; null when any is missing or inactive. */
+export async function rosterByIds(env: Env, ids: string[]): Promise<RosterCleaner[] | null> {
+  if (!ids.length) return [];
+  const found = await all<RosterCleaner>(env,
+    'SELECT id, full_name, employment_type, user_id, phone FROM cleaners WHERE is_active = 1 AND id IN (SELECT jsonb_array_elements_text(?::text::jsonb))', JSON.stringify(ids));
+  if (found.length !== ids.length) return null;
+  return ids.map(id => ({ ...found.find(c => c.id === id)!, busy: 0 }));
+}
+
+/** The cleaner ids a request names: cleanerIds (in order) or a single cleanerId, at most 10. */
+export function pickedCleanerIds(b: any): string[] {
+  const raw: unknown[] = Array.isArray(b?.cleanerIds) ? b.cleanerIds : [b?.cleanerId];
+  return [...new Set(raw.filter((x): x is string => typeof x === 'string' && !!x.trim()).map(x => x.trim()))].slice(0, 10);
+}
+
+/** Assign one clean to one roster cleaner, replacing whoever was on it (see assignCleaners). */
 /** `quiet`: a bulk assignment sends one notice per cleaner afterwards instead of one per clean. */
 export async function assignCleaner(env: Env, session: Session, taskId: string, cleaner: RosterCleaner, force: boolean, quiet = false): Promise<Response> {
+  return assignCleaners(env, session, taskId, [cleaner], force, quiet);
+}
+
+/** Put one or more roster cleaners on a clean (owner, 11 Oct 2026: a big unit can take two or three people).
+ *  `replace` (default) makes the list exactly `cleaners`; `add` keeps whoever is already on it. The first cleaner is
+ *  mirrored into tasks.cleaner_id, and tasks.assignee_id gets that cleaner's login (empty for an outsourced crew), so
+ *  every older reader still sees one cleaner. An empty list unassigns the clean. A cleaner newly added whose other work
+ *  overlaps is a 409 ASSIGNEE_BUSY unless force. */
+export async function assignCleaners(env: Env, session: Session, taskId: string, cleaners: RosterCleaner[], force: boolean, quiet = false, mode: 'replace' | 'add' = 'replace'): Promise<Response> {
   const task = await one<any>(env, 'SELECT id, state, cleaner_id, assignee_id, due_at, unit_id FROM tasks WHERE id = ?', taskId);
   if (!task) return fail('NOT_FOUND', 'That task no longer exists. Refresh the list.', 404);
   if (task.state === 'resolved') return fail('CONFLICT', 'That task is already finished.', 409);
 
-  if (!force && task.due_at) {
-    const clash = await all<{ id: string }>(env, `
-      SELECT t.id FROM tasks t
+  const ready = await taskCleanersReady(env);
+  const before = await currentCleaners(env, taskId);
+  const wanted: { cleanerId: string | null; userId: string | null; name: string; c?: RosterCleaner }[] = mode === 'add'
+    ? [...before.map(b => ({ cleanerId: b.cleanerId, userId: b.userId, name: b.name })), ...cleaners.filter(c => !before.some(b => b.cleanerId === c.id)).map(c => ({ cleanerId: c.id, userId: c.user_id, name: c.full_name, c }))]
+    : cleaners.map(c => ({ cleanerId: c.id, userId: c.user_id, name: c.full_name, c }));
+  // Before migration 0122 a job holds one cleaner: the first one picked.
+  const list = ready ? wanted : wanted.slice(0, 1);
+  const added = list.filter(w => w.c && !before.some(b => b.cleanerId === w.cleanerId)).map(w => w.c!);
+
+  if (!force && task.due_at && added.length) {
+    // Every other open job within 90 minutes of this one, with who is on it; each new cleaner is matched against it.
+    const near = await all<{ id: string; cleaner_id: string | null; assignee_id: string | null; listed: string | null }>(env, `
+      SELECT t.id, t.cleaner_id, t.assignee_id, ${ready ? `(SELECT string_agg(tc.cleaner_id, ',') FROM task_cleaners tc WHERE tc.task_id = t.id)` : 'NULL'} AS listed
+      FROM tasks t
       WHERE t.id != ? AND t.state NOT IN ('resolved') AND t.due_at IS NOT NULL
-        AND (t.cleaner_id = ? OR (?::text IS NOT NULL AND t.assignee_id = ?))
-        AND abs(extract(epoch from (t.due_at::timestamptz - ?::timestamptz))) < 5400`,
-      taskId, cleaner.id, cleaner.user_id, cleaner.user_id, task.due_at);
-    if (clash.length) {
-      return json({
-        error: { code: 'ASSIGNEE_BUSY', message: `${cleaner.full_name} has ${clash.length} overlapping ${clash.length === 1 ? 'task' : 'tasks'} around that time. Assign anyway?` },
-        conflicts: clash,
-      }, 409);
+        AND abs(extract(epoch from (t.due_at::timestamptz - ?::timestamptz))) < 5400`, taskId, task.due_at);
+    for (const cleaner of added) {
+      const clash = near.filter(t => t.cleaner_id === cleaner.id || (!!cleaner.user_id && t.assignee_id === cleaner.user_id)
+        || (t.listed ?? '').split(',').includes(cleaner.id)).map(t => ({ id: t.id }));
+      if (clash.length) {
+        return json({
+          error: { code: 'ASSIGNEE_BUSY', message: `${cleaner.full_name} has ${clash.length} overlapping ${clash.length === 1 ? 'task' : 'tasks'} around that time. Assign anyway?` },
+          conflicts: clash,
+        }, 409);
+      }
     }
   }
 
-  await run(env, "UPDATE tasks SET cleaner_id = ?, assignee_id = ?, state = 'assigned', updated_at = ? WHERE id = ?",
-    cleaner.id, cleaner.user_id, nowIso(), taskId);
+  const first = list[0] ?? null;
+  const state = first ? (task.state === 'in_progress' ? 'in_progress' : 'assigned') : (task.state === 'assigned' ? 'open' : task.state);
+  await run(env, 'UPDATE tasks SET cleaner_id = ?, assignee_id = ?, state = ?, updated_at = ? WHERE id = ?',
+    first?.cleanerId ?? null, first?.userId ?? null, state, nowIso(), taskId);
+  await writeTaskCleaners(env, taskId, list, session.userId);
+  const names = (xs: { name: string }[]) => xs.map(x => x.name).join(', ') || null;
   await audit(env, {
     actorId: session.userId, actorLabel: session.fullName, action: 'task.assign_cleaner', entityTable: 'tasks', entityId: taskId,
-    before: { cleanerId: task.cleaner_id, assigneeId: task.assignee_id, state: task.state },
-    after: { cleanerId: cleaner.id, assigneeId: cleaner.user_id, employment: cleaner.employment_type, state: 'assigned' },
+    before: { cleanerId: task.cleaner_id, assigneeId: task.assignee_id, cleaners: names(before), state: task.state },
+    after: { cleanerId: first?.cleanerId ?? null, assigneeId: first?.userId ?? null, cleaners: names(list), state },
   });
-  if (cleaner.employment_type === 'internal' && cleaner.phone) {
+  if (added.length) {
     const unit = await one<{ unit_number: string; property_name: string }>(env, `
       SELECT u.unit_number, p.name AS property_name FROM units u JOIN properties p ON p.id = u.property_id WHERE u.id = ?`, task.unit_id);
-    await notify(env, {
-      template: 'field.task_assigned', recipient: cleaner.phone, channel: 'push',
+    // At most ten cleaners on a job (pickedCleanerIds), so at most ten pushes.
+    await Promise.all(added.filter(c => c.employment_type === 'internal' && c.phone).map(cleaner => notify(env, {
+      template: 'field.task_assigned', recipient: cleaner.phone!, channel: 'push',
       body: `New clean: ${unit?.property_name} ${unit?.unit_number}${task.due_at ? `, due ${hhmm(task.due_at)}` : ''}.`,
       entityTable: 'tasks', entityId: taskId, urgent: true,
-    });
+    })));
+    if (!quiet) await cleaningNotice(env, taskId, 'assigned', session.userId);
   }
-  if (!quiet) await cleaningNotice(env, taskId, 'assigned', session.userId);
-  return json({ ok: true, assigneeName: cleaner.full_name });
+  return json({ ok: true, assigneeName: names(list), cleaners: list.map(l => ({ cleanerId: l.cleanerId, userId: l.userId, name: l.name })) });
 }
 
 /** A unit given as an id or as its display number (the screens send either). Property name narrows a number shared by two buildings. */

@@ -1,4 +1,5 @@
 import { type Env, one, run, json, fail, audit, nowIso } from '../../../_lib/db';
+import { isOnTask } from '../../../_lib/taskCleaners';
 import { requireSession, isFieldRole } from '../../../_lib/auth';
 import { mediaKind } from '../../../_lib/media';
 
@@ -13,7 +14,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   const id = String(params.id);
   const t = await one<any>(env, 'SELECT id, unit_id, assignee_id FROM tasks WHERE id = ?', id);
   if (!t) return fail('NOT_FOUND', 'That task no longer exists.', 404);
-  if (isFieldRole(session.role) && t.assignee_id !== session.userId) return fail('FORBIDDEN', 'That job is assigned to someone else.', 403);
+  if (isFieldRole(session.role) && !(await isOnTask(env, t.id, session.userId))) return fail('FORBIDDEN', 'That job is assigned to someone else.', 403);
 
   const form = await request.formData().catch(() => null);
   const file = form?.get('file');

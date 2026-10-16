@@ -1,6 +1,7 @@
 import { mayWork } from '../../_lib/access';
 import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
+import { taskCleanersReady } from '../../_lib/taskCleaners';
 
 const EMPLOYMENT = ['internal', 'outsourced'] as const;
 type Employment = (typeof EMPLOYMENT)[number];
@@ -17,10 +18,11 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Cleaners and technicians cannot see the roster.', 403);
 
   const activeOnly = new URL(request.url).searchParams.get('active') === '1';
+  const ready = await taskCleanersReady(env);
   const rows = await all<any>(env, `
     SELECT c.id, c.full_name, c.employment_type, c.vendor_name, c.phone, c.user_id, c.is_active,
            (SELECT COUNT(*) FROM tasks t
-              WHERE (t.cleaner_id = c.id OR (c.user_id IS NOT NULL AND t.assignee_id = c.user_id))
+              WHERE (t.cleaner_id = c.id OR (c.user_id IS NOT NULL AND t.assignee_id = c.user_id)${ready ? ' OR EXISTS (SELECT 1 FROM task_cleaners tc WHERE tc.task_id = t.id AND tc.cleaner_id = c.id)' : ''})
                 AND t.state NOT IN ('resolved')
                 AND to_char((COALESCE(t.scheduled_for, t.due_at, t.created_at))::timestamptz AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM-DD')
                     = to_char(now() AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM-DD')) AS busy

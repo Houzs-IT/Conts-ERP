@@ -242,13 +242,17 @@ export async function notifyUsers(env: Env, target: NotifyTarget, n: UserNotice)
   }
 }
 
-/** The people a clean is for: the assigned user, or the user behind the assigned cleaner on the roster. */
+/** The people a clean is for: the assigned user, the user behind the assigned cleaner on the roster, and every other cleaner listed on it. */
 export async function taskPeople(env: Env, taskId: string): Promise<string[]> {
   try {
     const r = await all<{ id: string | null }>(env, `
       SELECT t.assignee_id AS id FROM tasks t WHERE t.id = ? AND t.assignee_id IS NOT NULL
       UNION SELECT c.user_id FROM tasks t JOIN cleaners c ON c.id = t.cleaner_id WHERE t.id = ? AND c.user_id IS NOT NULL`, taskId, taskId);
-    return r.map(x => x.id).filter((x): x is string => !!x);
+    // Every cleaner on the job (migration 0122), when that table exists.
+    if (await hasColumn(env, 'task_cleaners', 'task_id').catch(() => false)) {
+      r.push(...await all<{ id: string | null }>(env, 'SELECT user_id AS id FROM task_cleaners WHERE task_id = ? AND user_id IS NOT NULL', taskId));
+    }
+    return [...new Set(r.map(x => x.id).filter((x): x is string => !!x))];
   } catch { return []; }
 }
 
