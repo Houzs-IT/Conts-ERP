@@ -3,7 +3,7 @@ import { requireSession, isFieldRole } from '../../_lib/auth';
 import { MYT_DATE, SHEET_CLEANER, hhmm, linenSet, resolveUnit, rosterByIds, pickedCleanerIds } from '../../_lib/ops';
 import { checkDate, invalid, type Fields } from '../../_lib/validate';
 import { cleaningNotice } from '../../_lib/notices';
-import { taskCleanersReady, mineSql, mineArgs, cleanerListSql, parseCleaners, writeTaskCleaners } from '../../_lib/taskCleaners';
+import { taskCleanersReady, mineSql, mineArgs, cleanerListSql, parseCleaners, writeTaskCleaners, rosterIdSql } from '../../_lib/taskCleaners';
 
 /** The three cleaning kinds a manual task may be. Inspection/maintenance/delivery
  *  are their own screens; this endpoint only creates cleaning work. */
@@ -38,7 +38,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
            t.started_at, t.completed_at, ${when} AS day,
            u.unit_number, u.readiness, u.bedrooms, p.id AS property_id, p.name AS property_name,
            COALESCE(cl.full_name, a.full_name, '') AS assignee_name, ${SHEET_CLEANER('t')} AS sheet_cleaner,
-           cl.employment_type AS employment_type, ${cleanerListSql(ready)} AS cleaner_list,
+           cl.employment_type AS employment_type, ${cleanerListSql(ready)} AS cleaner_list, ${rosterIdSql()} AS roster_id,
            COALESCE(r.external_ref, 'Manual') AS source_ref,
            r.check_out AS checkout_date, r.check_out_time AS checkout_time,
            (SELECT COUNT(*) FROM documents d WHERE d.task_id = t.id AND d.kind = 'photo') AS photo_count
@@ -87,7 +87,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       // Full ISO start/end so the client can show how long the clean took.
       startedAt: r.started_at ?? null, completedAt: r.completed_at ?? null,
       assigneeId: r.assignee_id, cleanerId: r.cleaner_id ?? null,
-      cleaners: parseCleaners(r.cleaner_list, { cleanerId: r.cleaner_id ?? null, userId: r.assignee_id ?? null, name: r.assignee_name || null }),
+      cleaners: parseCleaners(r.cleaner_list, { cleanerId: r.roster_id ?? null, userId: r.assignee_id ?? null, name: r.assignee_name || null }),
       assigneeName: parseCleaners(r.cleaner_list).map(c => c.name).join(', ') || r.assignee_name || null,
       sheetCleaner: r.sheet_cleaner ?? null,
       employmentType: r.employment_type ?? null,

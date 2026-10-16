@@ -36,8 +36,10 @@ export function CleanerChecklist({ cleaners, value, onChange, label = 'Cleaners'
 
 /** The cleaners on one job as removable chips, plus a picker to add another. Every change is saved at once by the
  *  caller (onChange gets the whole new list). */
-export function CleanerChips({ cleaners, value, names, onChange, disabled }: {
+export function CleanerChips({ cleaners, value, names, onChange, disabled, required }: {
   cleaners: Cleaner[]; value: string[]; names: Record<string, string>; onChange: (ids: string[]) => void; disabled?: boolean;
+  /** An empty list shows as needing attention (a job on the board), not as optional (a new job). */
+  required?: boolean;
 }) {
   const others = cleaners.filter(c => !value.includes(c.id));
   return (
@@ -55,7 +57,7 @@ export function CleanerChips({ cleaners, value, names, onChange, disabled }: {
       {others.length > 0 && (
         <select aria-label={value.length ? 'Add another cleaner' : 'Pick a cleaner'} disabled={disabled} value=""
           onChange={e => { const v = e.target.value; if (v) onChange([...value, v]); }}
-          className={cx('h-8 rounded-full border border-solid px-2.5 bg-card text-copy text-ink cursor-pointer max-w-[200px]', value.length ? 'border-dashed border-line' : 'border-danger')}>
+          className={cx('h-8 rounded-full border border-solid px-2.5 bg-card text-copy text-ink cursor-pointer max-w-[200px]', value.length ? 'border-dashed border-line' : required ? 'border-danger' : 'border-line')}>
           <option value="">{value.length ? '+ Add cleaner' : 'Pick a cleaner'}</option>
           {others.map(c => <option key={c.id} value={c.id}>{c.name}{c.employmentType === 'outsourced' ? ' (outsourced)' : ''}</option>)}
         </select>

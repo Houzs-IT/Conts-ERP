@@ -32,9 +32,11 @@ ALTER TABLE task_cleaners OWNER TO pos_app;
 ALTER TABLE task_cleaners ENABLE ROW LEVEL SECURITY;
 GRANT SELECT, INSERT, UPDATE, DELETE ON task_cleaners TO pos_app;
 
--- Every job that has a cleaner today: the roster entry with its login, or the login alone.
+-- Every job that has a cleaner today: the roster entry with its login, or the login alone (matched to that login's
+-- roster entry when it has one).
 INSERT INTO task_cleaners (id, task_id, cleaner_id, user_id, position, assigned_at, assigned_by)
-SELECT 'tc-' || t.id, t.id, t.cleaner_id, COALESCE(t.assignee_id, c.user_id), 0, COALESCE(t.updated_at, t.created_at), NULL
+SELECT 'tc-' || t.id, t.id, COALESCE(t.cleaner_id, (SELECT r.id FROM cleaners r WHERE r.user_id = t.assignee_id LIMIT 1)),
+       COALESCE(t.assignee_id, c.user_id), 0, COALESCE(t.updated_at, t.created_at), NULL
 FROM tasks t LEFT JOIN cleaners c ON c.id = t.cleaner_id
 WHERE (t.cleaner_id IS NOT NULL OR t.assignee_id IS NOT NULL)
   AND NOT EXISTS (SELECT 1 FROM task_cleaners x WHERE x.task_id = t.id);

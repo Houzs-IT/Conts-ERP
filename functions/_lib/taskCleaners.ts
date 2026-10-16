@@ -34,6 +34,10 @@ export const cleanerListSql = (ready: boolean, a = 't') => (ready
       WHERE tc_l.task_id = ${a}.id)`
   : 'NULL');
 
+/** SQL for job `a`'s roster cleaner in the old columns: cleaner_id, or the roster entry of the login in assignee_id
+ *  (jobs assigned by login before the roster existed), so a screen can show and keep that person. */
+export const rosterIdSql = (a = 't') => `COALESCE(${a}.cleaner_id, (SELECT rc.id FROM cleaners rc WHERE rc.user_id = ${a}.assignee_id LIMIT 1))`;
+
 export interface TaskCleaner { cleanerId: string | null; userId: string | null; name: string; outsourced: boolean }
 
 /** Parses cleanerListSql's text; when nothing is listed (table missing, or a job only the old columns name),
@@ -77,7 +81,7 @@ export async function writeTaskCleaners(env: Env, taskId: string, people: { clea
 export async function currentCleaners(env: Env, taskId: string): Promise<TaskCleaner[]> {
   const ready = await taskCleanersReady(env);
   const r = await one<{ list: string | null; cleaner_id: string | null; assignee_id: string | null; name: string | null }>(env, `
-    SELECT ${cleanerListSql(ready)} AS list, t.cleaner_id, t.assignee_id, COALESCE(c.full_name, u.full_name) AS name
+    SELECT ${cleanerListSql(ready)} AS list, ${rosterIdSql()} AS cleaner_id, t.assignee_id, COALESCE(c.full_name, u.full_name) AS name
     FROM tasks t LEFT JOIN cleaners c ON c.id = t.cleaner_id LEFT JOIN users u ON u.id = t.assignee_id WHERE t.id = ?`, taskId);
   if (!r) return [];
   return parseCleaners(r.list, { cleanerId: r.cleaner_id, userId: r.assignee_id, name: r.name });

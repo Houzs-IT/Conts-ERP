@@ -459,7 +459,7 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft }: { row: Row; 
       ) : (
         <section className="flex flex-col gap-2.5">
           <FormRow label={shownTeam.length > 1 ? 'Cleaners' : 'Cleaner'} hint={!shownTeam.length && row.assigneeName ? `Now with ${row.assigneeName}, who is not on the cleaner roster.` : undefined}>
-            <CleanerChips cleaners={cleaners} value={shownTeam} names={teamNames} onChange={saveTeam} disabled={busy === 'assign'} />
+            <CleanerChips cleaners={cleaners} value={shownTeam} names={teamNames} onChange={saveTeam} disabled={busy === 'assign'} required />
           </FormRow>
           <div className="grid grid-cols-2 gap-2.5">
           <FormRow label="Type">
