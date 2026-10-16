@@ -2,7 +2,8 @@ import { useId, useState, type InputHTMLAttributes, type ReactNode } from 'react
 import { Eye, EyeOff } from 'lucide-react';
 
 interface Props extends Omit<InputHTMLAttributes<HTMLInputElement>, 'size'> {
-  label: ReactNode;
+  /** Omit when the label is printed beside the field (settings rows); pass aria-label instead. */
+  label?: ReactNode;
   /** Shown under the field. Error tone when `error` is set. */
   help?: string;
   error?: string;
@@ -16,9 +17,11 @@ export function Field({ label, help, error, numeric, trailing, style, ...rest }:
   const id = useId();
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-      <label htmlFor={id} style={{ fontSize: 'var(--text-small)', fontWeight: 500, color: 'var(--color-text-muted)' }}>
-        {label}
-      </label>
+      {label !== undefined && (
+        <label htmlFor={id} style={{ fontSize: 'var(--text-small)', fontWeight: 500, color: 'var(--color-text-muted)' }}>
+          {label}
+        </label>
+      )}
       <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
         <input
           {...rest}

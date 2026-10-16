@@ -7,15 +7,34 @@ import { ROLE_LABEL } from '../lib/vocabulary';
 import { getThemePref, setThemePref, type ThemePref } from '../lib/theme';
 import Icon from './Icon';
 
+export type SettingsSectionKey = 'company' | 'operations' | 'locale' | 'report' | 'approvals' | 'security';
+
+/** The Settings page's categories, in order, under their headers. The desktop left list and this phone
+ *  hub both draw from it, so the two always name and group them the same way. */
+export const SETTINGS_SECTIONS: { key: SettingsSectionKey; group: string; label: string; icon: string; description: string }[] = [
+  { key: 'company', group: 'ORGANISATION', label: 'Company details', icon: 'Building2', description: 'Printed on the letterhead of every owner statement, guest invoice and receipt.' },
+  { key: 'operations', group: 'ORGANISATION', label: 'Check-in and checkout', icon: 'Clock', description: 'Standard times the cleaning board uses when a reservation has none of its own.' },
+  { key: 'locale', group: 'OWNERS AND MONEY', label: 'Operator share', icon: 'Percent', description: 'The share owner statements take when a unit\'s contract does not set one.' },
+  { key: 'report', group: 'OWNERS AND MONEY', label: 'Owner statements', icon: 'FileText', description: 'Wording on the Owner Income Report, and its monthly miscellaneous charge.' },
+  { key: 'approvals', group: 'OWNERS AND MONEY', label: 'Approvals', icon: 'Stamp', description: 'Whether money going out waits for a second person to approve it.' },
+  { key: 'security', group: 'SECURITY', label: 'Sign-in and sessions', icon: 'Lock', description: 'How long people stay signed in, when accounts lock, and who needs two-step sign-in.' },
+];
+
+const SETTINGS_GROUPS = [...new Set(SETTINGS_SECTIONS.map(s => s.group))].map(label => ({
+  label,
+  items: SETTINGS_SECTIONS.filter(s => s.group === label)
+    .map(s => ({ label: s.label, sub: s.description, icon: s.icon, path: `/system/settings#${s.key}` })),
+}));
+
 /** Phone Settings tab (owner, Oct 2026). One place for the account and every system page;
  *  the More sheet keeps only daily modules. Rows the person cannot open are dropped.
  *  The audit trail lives inside System health in this codebase (/system/audit redirects there). */
 const GROUPS: { label: string; items: { label: string; sub: string; icon: string; path: string }[] }[] = [
   { label: 'ACCOUNT', items: [
-    { label: 'Company and defaults', sub: 'Name, address, SSM number, operator share', icon: 'Building2', path: '/system/settings#company' },
     { label: 'Profile and password', sub: 'Your name, phone, 2-step sign-in', icon: 'User', path: '/account' },
     { label: 'Notifications', sub: 'What you are told about, and when', icon: 'Bell', path: '/notifications' },
   ] },
+  ...SETTINGS_GROUPS,
   { label: 'SYSTEM', items: [
     { label: 'Users and roles', sub: 'Accounts, permissions, organisation chart', icon: 'ShieldCheck', path: '/system/users' },
     { label: 'Integrations', sub: 'Channex, email, WhatsApp, bank', icon: 'Plug', path: '/system/integrations' },
