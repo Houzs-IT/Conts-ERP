@@ -55,6 +55,7 @@ const {
   lastPaymentsTableProps: { current: null as null | { payments: PaymentDraft[]; locked: boolean } },
 }));
 
+vi.mock('../../components/doc-attachments/DocAttachments', () => ({ DocAttachments: () => null, LineFilesButton: () => null })); // has its own tests and API check
 vi.mock("../../vendor/scm/lib/sales-invoice-queries", () => ({
   useSalesInvoiceDetail: detail,
   useSalesInvoicePayments: payments,

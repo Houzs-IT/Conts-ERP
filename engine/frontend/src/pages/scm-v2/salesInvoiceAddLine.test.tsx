@@ -41,6 +41,7 @@ const {
   confirm: vi.fn(),
 }));
 
+vi.mock('../../components/doc-attachments/DocAttachments', () => ({ DocAttachments: () => null, LineFilesButton: () => null })); // has its own tests and API check
 vi.mock("../../vendor/scm/lib/sales-invoice-queries", () => ({
   useSalesInvoiceDetail: detail,
   useSalesInvoicePayments: payments,

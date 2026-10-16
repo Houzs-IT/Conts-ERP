@@ -25,6 +25,7 @@ const { detail, auditLog, relatedAuditLog, payments, updateStatus } = vi.hoisted
   updateStatus: vi.fn(),
 }));
 
+vi.mock('../../components/doc-attachments/DocAttachments', () => ({ DocAttachments: () => null, LineFilesButton: () => null })); // has its own tests and API check
 vi.mock("../../vendor/scm/lib/sales-order-queries", () => ({
   useMfgSalesOrderDetail: detail,
   useSalesOrderAuditLog: auditLog,

@@ -33,6 +33,7 @@ const pdfSingle = vi.fn(async (..._args: unknown[]) => {});
 const pdfBatch = vi.fn(async (..._args: unknown[]) => {});
 const LINES = [{ id: 'l1', line_no: 1, description: 'Scratched leg — goodwill', account_code: '510-0000', amount_sen: 15000 }];
 
+vi.mock('../../components/doc-attachments/DocAttachments', () => ({ DocAttachments: () => null, LineFilesButton: () => null })); // has its own tests and API check
 vi.mock('../../vendor/scm/lib/credit-note-pdf', () => ({ generateCreditNotePdf: pdfSingle, generateCreditNotesPdf: pdfBatch }));
 vi.mock('../../vendor/scm/lib/authed-fetch', async (importOriginal) => ({
   ...(await importOriginal() as object),
