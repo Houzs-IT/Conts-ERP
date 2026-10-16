@@ -12,6 +12,7 @@ import { useToast } from './Toast';
 import { PhoneText } from './PhoneText';
 import { Floating, ToolButton, PanelItem, PanelHeading, StatusCell, ChannelCell, PersonCell, channelLabel } from './DataTableParts';
 import { useTableViews, type TableLayout, type SavedView } from './DataTableViews';
+import { resolveRelative, isRelative } from '../lib/relativeDates';
 import { rm, date as fmtDate, dateTime as fmtDateTime, count as fmtCount, plural, phone as fmtPhone } from '../lib/format';
 import { downloadTable, type ExportColumn, type ExportCell, type ExportKind } from '../lib/export';
 import { cx } from '../lib/design-tokens';
@@ -470,6 +471,8 @@ export function DataTable<R>(props: DataTableProps<R>) {
   const currentLayout = (): TableLayout => {
     const filters: Record<string, string> = {};
     for (const k of managedKeys) { const v = params.get(k); if (v) filters[k] = v; }
+    // A relative date the open view holds ("this month") stays relative when the view is saved again unchanged.
+    for (const [k, v] of Object.entries(active?.layout.filters ?? {})) if (isRelative(v) && filters[k] === resolveRelative(v)) filters[k] = v;
     const s = Number(params.get(SIZE));
     return { columns: layoutCols, sort: params.get(SORT) || null, pageSize: !server && s > 0 ? s : server && s > 0 ? s : null, filters };
   };
@@ -478,7 +481,7 @@ export function DataTable<R>(props: DataTableProps<R>) {
     setParams(prev => {
       const next = new URLSearchParams(prev);
       for (const k of [...managedKeys, SORT, PAGE, SIZE]) next.delete(k);
-      for (const [k, v] of Object.entries(l.filters ?? {})) if (managedKeys.includes(k) && v) next.set(k, v);
+      for (const [k, v] of Object.entries(l.filters ?? {})) if (managedKeys.includes(k) && v) next.set(k, resolveRelative(v));
       if (l.sort) next.set(SORT, l.sort);
       if (l.pageSize && l.pageSize !== defaultSize) next.set(SIZE, String(l.pageSize));
       return next;

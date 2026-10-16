@@ -1,4 +1,6 @@
 import { readDevice } from '../lib/deviceClass';
+import { useMedia } from '../lib/useMedia';
+import { useFillHeight } from '../lib/useFillHeight';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { channel } from '../theme';
@@ -23,10 +25,11 @@ import { deliveryToast } from '../lib/bookingStatus';
 import { rm, dateRange, time, date as fmtDate, nights as fmtNights, guests as fmtGuests, plural, count as fmtCount, phone, todayMyt, greetName } from '../lib/format';
 import { phoneCountries } from '../lib/phone';
 import { Select, Menu } from '../components/Select';
-import { FilterBar } from '../components/FilterBar';
+import { FilterBar, FilterMenu } from '../components/FilterBar';
 import type { BookingChannel, ReservationState, UnitReadiness, UserRole, Tone } from '../lib/types';
 import { RecordHistory } from '../components/RecordHistory';
 import { Eyebrow, Figure } from '../components/Metric';
+import { moneyStatus, isOtaChannel } from '../lib/payoutStatus';
 
 /* ------------------------------------------------------------------ */
 /* Model                                                               */
@@ -36,6 +39,11 @@ interface Stay {
   reservationId: string; externalRef: string | null;
   checkIn: string; checkOut: string; unitNumber: string; propertyName: string;
   nights: number; channel: BookingChannel; value: number; state: ReservationState; rating: number | null;
+  review: { text: string; at: string | null } | null;
+  /** Expected times (HH:MM) and when the guest was actually checked in and out, if someone recorded it. */
+  checkInTime: string; checkOutTime: string; checkedInAt: string | null; checkedOutAt: string | null;
+  /** Host payout for a channel stay, guest payments for a direct one (functions/_lib/bookingMoney.ts). */
+  expected: number; received: number; outstanding: number; paidOn: string | null;
 }
 
 /** An arrival or departure the guest has on the board today or tomorrow. */
@@ -56,6 +64,8 @@ interface Tag { key: string; label: string; tone: Tone }
 interface GuestSummary {
   id: string; fullName: string; email: string | null; phone: string | null; countryCode: string | null;
   channel: BookingChannel; tags: Tag[]; missingId: boolean;
+  /** Where the guest is from: the nationality on record, else the country of their phone number. */
+  country: { code: string; name: string; from: 'nationality' | 'phone' } | null;
   since: string;
   stays: number; upcoming: number; nights: number; lifetimeValue: number;
   lastCheckIn?: string | null;
@@ -66,6 +76,7 @@ interface Guest {
   id: string; fullName: string; email: string | null; phone: string | null; language: string | null;
   channel: BookingChannel; tags: Tag[]; manualTags: string[]; since: string;
   stays: number; upcoming: number; nights: number; lifetimeValue: number; ratingScore: number | null;
+  received: number; outstanding: number;
   registration: { idType: string | null; idNumberMasked: string | null; hasIdNumber: boolean; dateOfBirth: string | null; countryCode: string | null; missing: string[]; required: boolean };
   notes: string | null;
   can: { edit: boolean; reveal: boolean; merge: boolean };
@@ -90,6 +101,7 @@ const VIEW_KEYS: readonly Filter[] = ['all', 'arriving_today', 'departing_today'
 interface ListPayload {
   data: GuestSummary[]; total: number; page: number; pageSize: number; generatedAt: string; registrationReady: boolean;
   counts: Record<Filter, number>;
+  facets?: { country: { value: string; count: number; label: string }[] };
 }
 
 const LIST_FALLBACK: ListPayload = {
@@ -151,7 +163,7 @@ export default function GuestsPage() {
 
   const listQuery = useMemo(() => {
     const p = new URLSearchParams();
-    for (const k of ['q', 'filter', 'page', 'size']) { const v = params.get(k); if (v) p.set(k, v); }
+    for (const k of ['q', 'filter', 'country', 'page', 'size']) { const v = params.get(k); if (v) p.set(k, v); }
     p.set('sort', params.get('sort') ?? 'recent');
     return p.toString();
   }, [params]);
@@ -187,12 +199,16 @@ export default function GuestsPage() {
   const [merging, setMerging] = useState<Guest | null>(null);
 
   const selected = detail.data && !detail.data.redirectTo ? detail.data : null;
+  const wide = useMedia('(min-width: 768px)');
+  // The row of both panes takes the rest of the window; the profile fills it and scrolls, the list's own box fits it.
+  const paneRow = useFillHeight({ enabled: wide, fallback: 'auto', prop: 'height' });
   const profileStale = !!selected && selected.id !== selectedId;
 
   function reloadAll() { list.reload(); detail.reload(); }
   function select(id: string) {
     updateParams(p => p.set('g', id));
     if (readDevice().cls === 'phone') document.querySelector('main')?.scrollTo({ top: 0 });
+    else document.querySelector('[data-keep-scroll="guest-profile"]')?.scrollTo({ top: 0 });
   }
   function setFilter(key: Filter) { updateParams(p => { if (key === 'all') p.delete('filter'); else p.set('filter', key); p.delete('page'); p.delete('g'); }); }
   function setSort(key: string) {
@@ -205,7 +221,7 @@ export default function GuestsPage() {
   /** Every guest under the current search, chip and sort, for the table's Export. */
   async function fetchAll(onProgress: (got: number, of: number) => void) {
     const q: Record<string, string> = { export: '1', sort: params.get('sort') ?? 'recent' };
-    for (const k of ['q', 'filter']) { const v = params.get(k); if (v) q[k] = v; }
+    for (const k of ['q', 'filter', 'country']) { const v = params.get(k); if (v) q[k] = v; }
     const r = await fetchAllPages<GuestSummary>(async (page, size) => {
       const p = await api.get<ListPayload>('/guests', { ...q, page, size });
       return { rows: p.data, total: p.total };
@@ -230,8 +246,24 @@ export default function GuestsPage() {
     if (ok) { clear(); reloadAll(); }
   }
 
+  // The Country filter offers the countries in the list under the search and chip on screen, with their counts.
+  const facetKey = JSON.stringify(list.data?.facets?.country ?? []);
+  const picked = params.get('country') ?? '';
+  const countryItems = useMemo(() => {
+    const facets: { value: string; count: number; label: string }[] = JSON.parse(facetKey);
+    const items = facets.map(f => ({ key: f.value, label: f.label, count: f.count }));
+    for (const v of picked.split(',').filter(Boolean)) {
+      if (!items.some(o => o.key === v)) items.push({ key: v, label: v === 'none' ? 'Not known' : countryName(v.toUpperCase()) ?? v, count: 0 });
+    }
+    return items;
+  }, [facetKey, picked]);
+  const pickedCountries = picked.split(',').filter(Boolean);
+  function setCountries(next: string[]) {
+    updateParams(p => { if (next.length) p.set('country', next.join(',')); else p.delete('country'); p.delete('page'); p.delete('g'); });
+  }
+
   const columns = useMemo<Column<GuestSummary>[]>(() => [
-    { key: 'name', label: 'Guest', value: g => g.fullName, sortKey: 'name', hideable: false, width: 210,
+    { key: 'name', label: 'Guest', value: g => g.fullName, sortKey: 'name', hideable: false, width: 196,
       render: g => (
         <span className="flex items-center gap-[10px] min-w-0">
           <span className="w-[30px] h-[30px] flex-none rounded-full bg-muted text-muted-ink grid place-items-center text-caption font-semibold">{initials(g.fullName)}</span>
@@ -241,15 +273,18 @@ export default function GuestsPage() {
           </span>
         </span>
       ) },
-    { key: 'tag', label: 'Tag', type: 'status', width: 110, phone: 'badge',
+    { key: 'tag', label: 'Tag', type: 'status', width: 104, phone: 'badge',
       status: g => (g.missingId ? { label: 'Missing ID', tone: 'critical' } : g.tags[0] ? { label: g.tags[0].label, tone: g.tags[0].tone } : null) },
-    { key: 'stays', label: 'Reservations', type: 'number', value: g => g.stays, sortKey: 'stays', width: 124,
+    { key: 'stays', label: 'Reservations', type: 'number', value: g => g.stays, sortKey: 'stays', width: 112,
       sub: g => (g.upcoming ? `${fmtCount(g.upcoming)} upcoming` : null) },
     ...(canSeeContact ? [
       { key: 'email', label: 'Email', value: (g: GuestSummary) => g.email, hidden: true, width: 190 },
       { key: 'phone', label: 'Phone', type: 'phone' as const, value: (g: GuestSummary) => g.phone, hidden: true, width: 140 },
     ] : []),
-    { key: 'country', label: 'Nationality', value: g => countryName(g.countryCode), hidden: true, width: 130 },
+    // A new key, not 'country': layouts saved when this column was a hidden Nationality would keep it hidden.
+    { key: 'origin', label: 'Country', value: g => g.country?.name ?? countryName(g.countryCode), width: 116,
+      title: 'The nationality on record, else the country of the phone number.',
+      sub: g => (g.country?.from === 'phone' ? 'from phone' : null) },
     { key: 'channel', label: 'Latest channel', type: 'channel', value: g => g.channel, hidden: true },
     { key: 'nights', label: 'Nights', type: 'number', value: g => g.nights, sortKey: 'nights', hidden: true, width: 80 },
     { key: 'upcoming', label: 'Upcoming', type: 'number', value: g => g.upcoming, sortKey: 'upcoming', hidden: true, width: 90 },
@@ -341,16 +376,18 @@ export default function GuestsPage() {
         primary={canSeeContact ? <Button variant="primary" size="sm" icon={<Icon name="Plus" size="sm" />} onClick={() => setAdding(true)}>Add guest</Button> : undefined}
       />
 
-      <div className="flex gap-5 items-start max-w-[1600px] max-md:flex-col max-md:items-stretch">
+      {/* Desktop: the list and the profile are two panes that each scroll by themselves and both end at the bottom of the
+          window, so the page itself does not scroll and the title stays put. Phones: the list, then a full-screen profile. */}
+      <div ref={paneRow} className="flex gap-5 items-start max-w-[1600px] max-md:flex-col max-md:items-stretch">
         {/* -------- left: directory list -------- */}
-        <div className={cx('md:flex-[0_1_520px] md:min-w-[340px] md:max-w-[560px] w-full min-w-0', pickedId && 'max-md:hidden')}>
+        <div className={cx('md:flex-[0_1_560px] md:min-w-[360px] md:max-w-[600px] w-full min-w-0', pickedId && 'max-md:hidden')}>
           <DataTable<GuestSummary>
             id="guests" phoneSort={false} columns={columns} rows={list.data ? rows : null} rowKey={g => g.id}
             loading={list.loading} error={list.error} onRetry={list.reload} onRowClick={g => select(g.id)}
             rowTone={g => (g.id === selectedId ? 'gold' : null)}
             server={{ total, page: list.data?.page ?? 1, pageSize: list.data?.pageSize ?? 50, sizes: [25, 50, 100], defaultPageSize: 50, fetchAll }}
-            viewParams={['filter', 'q']} filtered={searching} onClearFilters={() => setSearch('')}
-            noun={['guest', 'guests']} exportName="guests" maxHeight="calc(100dvh - 420px)"
+            viewParams={['filter', 'country', 'q']} filtered={searching || pickedCountries.length > 0} onClearFilters={() => { setSearch(''); setCountries([]); }}
+            noun={['guest', 'guests']} exportName="guests"
             empty={{ title: emptyText, icon: 'Users' }}
             selectable
             bulkActions={canSeeContact ? (picked, clear) => (
@@ -364,7 +401,7 @@ export default function GuestsPage() {
                 ]} />
             ) : undefined}
             header={
-              <div className="py-3 px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line)]">
+              <div className="py-3 px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line)] flex items-center gap-2 flex-wrap">
                 <FilterBar<Filter> label="Guest views" value={filter} onChange={setFilter}
                   views={FILTERS.filter(f => VIEW_KEYS.includes(f.key)).map(f => ({ key: f.key, label: f.label, short: 'short' in f ? f.short : undefined, count: counts?.[f.key] }))}
                   tags={{
@@ -382,13 +419,16 @@ export default function GuestsPage() {
                   className="h-9 w-full box-border rounded-control border border-solid border-line bg-card text-ink [font-family:inherit] text-copy pl-[32px] pr-3 py-0 outline-none" />
               </label>
               <Select label="Sort guests" value={sortKey} onChange={setSort} className="flex-[1_1_150px] sm:flex-none sm:w-[150px]" options={sortOptions} />
+              <FilterMenu label="Country" items={countryItems} active={pickedCountries} onClear={() => setCountries([])}
+                  onToggle={k => setCountries(pickedCountries.includes(k) ? pickedCountries.filter(x => x !== k) : [...pickedCountries, k])} />
             </>}
             renderCard={g => <GuestCard g={g} canSeeContact={canSeeContact} />}
           />
         </div>
 
         {/* -------- right: guest profile -------- */}
-        <div className={cx('md:flex-[1.6_1_460px] min-w-0 flex flex-col gap-5', !pickedId && 'max-md:hidden')}>
+        <div data-keep-scroll="guest-profile"
+          className={cx('md:flex-[1.6_1_460px] md:h-full min-w-0 flex flex-col gap-5 [&>*]:shrink-0 md:overflow-y-auto md:overscroll-contain md:[scrollbar-gutter:stable]', !pickedId && 'max-md:hidden')}>
           <button type="button" onClick={() => updateParams(p => p.delete('g'))}
             className="md:hidden self-start h-9 inline-flex items-center gap-1 px-2 -ml-2 rounded-control border-none bg-transparent text-ink [font-family:inherit] text-copy font-medium cursor-pointer">
             <Icon name="ChevronLeft" size="sm" /> All guests
@@ -450,7 +490,7 @@ const guestMeta = (g: GuestSummary, canSeeContact: boolean) => {
 
 /** The phone card: the face the directory rows had before the list became a table. */
 function GuestCard({ g, canSeeContact }: { g: GuestSummary; canSeeContact: boolean }) {
-  const meta = guestMeta(g, canSeeContact);
+  const meta = [g.country?.name, guestMeta(g, canSeeContact)].filter(Boolean).join(' · ');
   const tag = g.tags[0];
   return (
     <span className="flex items-center gap-3 min-w-0">
@@ -483,7 +523,8 @@ function ProfilePanel({ g, canSeeContact, busy, onMessage, onBookStay, onEdit, o
     : 'Contact restricted to operations roles';
   return (
     <>
-      <div className="bg-card border border-solid border-line rounded-card p-5 flex flex-col gap-4">
+      {/* The name and actions stay at the top of the profile pane while its stays scroll under them. */}
+      <div className="md:sticky md:top-0 md:z-[3] bg-card border border-solid border-line rounded-card p-5 flex flex-col gap-4 md:shadow-[0_6px_12px_-10px_rgba(0,0,0,0.25)]">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-[14px] min-w-0">
             <span className="w-[46px] h-[46px] flex-none rounded-full bg-muted text-muted-ink grid place-items-center text-heading font-semibold">{initials(g.fullName)}</span>
@@ -510,12 +551,14 @@ function ProfilePanel({ g, canSeeContact, busy, onMessage, onBookStay, onEdit, o
           </div>
         </div>
 
-        <div className="grid grid-cols-[repeat(auto-fit,minmax(120px,1fr))] gap-[14px] pt-4 [border-top:1px_solid_var(--color-line-soft)]">
-          <Stat label="Reservations" value={fmtCount(g.stays)} sub={g.upcoming ? `incl. ${g.upcoming} upcoming` : undefined} />
-          <Stat label="Nights" value={fmtCount(g.nights)} />
-          <Stat label="Guest total" value={rm(g.lifetimeValue, { cents: false })} sub="Guest totals, upcoming included" />
-          <Stat label="Rating given" value={g.ratingScore != null ? g.ratingScore.toFixed(1) : '—'} />
-        </div>
+      </div>
+
+      <div className="bg-card border border-solid border-line rounded-card p-5 grid grid-cols-[repeat(auto-fit,minmax(120px,1fr))] gap-[14px]">
+        <Stat label="Reservations" value={fmtCount(g.stays)} sub={g.upcoming ? `incl. ${g.upcoming} upcoming` : undefined} />
+        <Stat label="Nights" value={fmtCount(g.nights)} />
+        <Stat label="Total spent" value={rm(g.lifetimeValue, { cents: false })}
+          sub={`Guest totals of ${plural(g.stays, 'reservation')}${g.upcoming ? ', upcoming included' : ''}`} />
+        <Stat label="Rating given" value={g.ratingScore != null ? g.ratingScore.toFixed(1) : '—'} />
       </div>
 
       {g.movement && <MovementStrip g={g} busy={busy} onPrepare={onPrepare} onSendAccess={onSendAccess} onCheckIn={onCheckIn} onCheckOut={onCheckOut} />}
@@ -528,27 +571,86 @@ function ProfilePanel({ g, canSeeContact, busy, onMessage, onBookStay, onEdit, o
       )}
 
       <div className="bg-card border border-solid border-line rounded-card overflow-hidden">
-        <div className="pt-5 pb-3.5 px-5 [border-bottom:1px_solid_var(--color-line-soft)] text-[16px] font-semibold tracking-[-0.01em]">Reservations</div>
+        <div className="pt-5 pb-3.5 px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex items-baseline justify-between gap-3 flex-wrap">
+          <span className="text-[16px] font-semibold tracking-[-0.01em]">Reservations</span>
+          {g.history.length > 0 && <span className="text-meta text-muted-ink">Open one for its times, payment and review</span>}
+        </div>
         {g.history.length === 0 ? (
           <div className="py-[18px] px-5 text-copy text-muted-ink">No reservations yet. Cancelled reservations are not listed here.</div>
         ) : (
-          g.history.map((s, i) => (
-            <button key={s.reservationId} type="button" onClick={() => onOpenStay(s.reservationId)}
-              className={cx('w-full text-left [font:inherit] bg-transparent border-none cursor-pointer hover:bg-page flex items-center gap-[14px] py-[13px] px-5 flex-wrap', i < g.history.length - 1 ? '[border-bottom:1px_solid_var(--color-line-soft)]' : '')}>
-              <ChannelMark ch={s.channel} size={24} />
-              <div className="flex flex-col gap-[2px] min-w-[150px] flex-1">
-                <span className="text-copy font-medium text-ink">{s.propertyName} {s.unitNumber}</span>
-                <span className="text-meta text-muted-ink">{dateRange(s.checkIn, s.checkOut)} · {fmtNights(s.nights)}{s.externalRef ? ` · ${s.externalRef}` : ''}{s.rating != null ? ` · rated ${s.rating.toFixed(1)}` : ''}</span>
-              </div>
-              <span className="text-copy font-medium w-[92px] text-right [font-variant-numeric:tabular-nums] text-ink">{rm(s.value, { cents: false })}</span>
-              <StatusBadge entity="booking" value={s.state} size="sm" />
-            </button>
-          ))
+          g.history.map((s, i) => <StayRow key={s.reservationId} s={s} last={i === g.history.length - 1} onOpen={() => onOpenStay(s.reservationId)} />)
         )}
       </div>
 
       <RecordHistory entity="guests" id={g.id} refreshKey={g} />
     </>
+  );
+}
+
+/** One stay: the line the list always showed and, opened, its expected and actual times, its money and the guest's review. */
+function StayRow({ s, last, onOpen }: { s: Stay; last: boolean; onOpen: () => void }) {
+  const [open, setOpen] = useState(false);
+  const ota = isOtaChannel(s.channel);
+  const status = moneyStatus({ channel: s.channel, state: s.state, expected: s.expected, received: s.received, outstanding: s.outstanding, paidOn: s.paidOn });
+  const before = s.state === 'confirmed' || s.state === 'pending' || s.state === 'inquiry';
+  const actual = (at: string | null, happened: boolean) => (at ? `${fmtDate(at)} · ${time(at)}` : happened ? 'Time not recorded' : 'Not yet');
+  const line = (label: string, value: ReactNode, sub?: ReactNode) => (
+    <div className="flex justify-between gap-3 py-[5px]">
+      <span className="text-muted-ink">{label}</span>
+      <span className="text-right min-w-0">{value}{sub ? <span className="block text-caption text-muted-ink">{sub}</span> : null}</span>
+    </div>
+  );
+  const tone = status.tone === 'success' ? 'text-success' : status.tone === 'warning' ? 'text-warning' : 'text-muted-ink';
+  return (
+    <div className={cx(!last && '[border-bottom:1px_solid_var(--color-line-soft)]')}>
+      <button type="button" onClick={() => setOpen(o => !o)} aria-expanded={open}
+        className="w-full text-left [font:inherit] bg-transparent border-none cursor-pointer hover:bg-page flex items-center gap-[14px] py-[13px] px-5 flex-wrap">
+        <ChannelMark ch={s.channel} size={24} />
+        <div className="flex flex-col gap-[2px] min-w-[150px] flex-1">
+          <span className="text-copy font-medium text-ink">{s.propertyName} {s.unitNumber}</span>
+          <span className="text-meta text-muted-ink">{dateRange(s.checkIn, s.checkOut)} · {fmtNights(s.nights)}{s.externalRef ? ` · ${s.externalRef}` : ''}{s.rating != null ? ` · rated ${s.rating.toFixed(1)}` : ''}</span>
+        </div>
+        <span className="flex flex-col items-end min-w-[92px] max-w-[190px]">
+          <span className="text-copy font-medium [font-variant-numeric:tabular-nums] text-ink">{rm(s.value, { cents: false })}</span>
+          <span className={cx('text-caption text-right', tone)}>{status.label}</span>
+        </span>
+        <StatusBadge entity="booking" value={s.state} size="sm" />
+        <span className={cx('text-muted-ink grid transition-transform', open && 'rotate-180')}><Icon name="ChevronDown" size="sm" /></span>
+      </button>
+      {open && (
+        <div className="@container">
+        <div className="px-5 pb-4 pt-1 grid grid-cols-1 @min-[640px]:grid-cols-2 gap-x-8 gap-y-3 text-copy">
+          <div className="flex flex-col">
+            <Eyebrow>Times</Eyebrow>
+            {line('Expected check-in', `${fmtDate(s.checkIn)} · from ${s.checkInTime}`)}
+            {line('Checked in', actual(s.checkedInAt, s.state === 'checked_in' || s.state === 'checked_out'))}
+            {line('Expected checkout', `${fmtDate(s.checkOut)} · by ${s.checkOutTime}`)}
+            {line('Checked out', actual(s.checkedOutAt, s.state === 'checked_out'))}
+          </div>
+          <div className="flex flex-col">
+            <Eyebrow>Payment</Eyebrow>
+            {line('Guest total', rm(s.value))}
+            {ota ? line('Host payout', rm(s.expected), <span className={tone}>{status.label}</span>) : <>
+              {line('Paid', rm(s.received))}
+              {line('Balance due', s.outstanding > 0 ? rm(s.outstanding) : 'Nothing')}
+            </>}
+          </div>
+          <div className="flex flex-col col-span-full">
+            <Eyebrow>Review</Eyebrow>
+            {s.review || s.rating != null ? (
+              <div className="pt-1 flex flex-col gap-1">
+                {s.rating != null && <span className="font-medium">{s.rating.toFixed(1)} out of 5{s.review?.at ? <span className="text-muted-ink font-normal"> · {fmtDate(s.review.at)}</span> : null}</span>}
+                {s.review && <p className="m-0 text-ink leading-[1.45] break-words">{s.review.text}</p>}
+              </div>
+            ) : <span className="pt-1 text-muted-ink">{before || s.state === 'checked_in' ? 'The guest can leave a review after checkout.' : 'No review from this guest.'}</span>}
+          </div>
+          <div className="col-span-full">
+            <Button size="sm" variant="secondary" onClick={onOpen}>Open reservation</Button>
+          </div>
+        </div>
+        </div>
+      )}
+    </div>
   );
 }
 
