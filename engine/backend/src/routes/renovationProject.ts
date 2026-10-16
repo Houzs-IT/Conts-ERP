@@ -631,14 +631,25 @@ function peopleInsert(c: Ctx, table: "project_design_record_people" | "project_d
   ).bind(rowId, JSON.stringify(ids.map(String)));
 }
 
-/** After a design version is saved: its PICs, and (a 2D version) every 2D amendment request still open, which it answers. */
+/** The first 2D version, in the order the Design card numbers them (submit date, then upload). */
+const FIRST_2D_FILE_SQL = `(SELECT f1.id FROM project_design_files f1 WHERE f1.project_id = ? AND f1.kind = '2d'
+                             ORDER BY coalesce(f1.submitted_on, f1.uploaded_at::date), f1.uploaded_at, f1.id LIMIT 1)`;
+
+/**
+ * After a design version is saved: its PICs, and (a 2D amended version) every 2D amendment request still open,
+ * which it answers. V1 is the first submission, never an answer to a request (owner, 15 Oct 2026), so nothing
+ * closes while the project has a single 2D version; a request V1 was once recorded as closing counts as open.
+ */
 async function afterDesignFile(c: Ctx, projectId: number, kind: string, fileId: number, personIds: number[]) {
   const stmts = [];
   if (personIds.length) stmts.push(peopleInsert(c, "project_design_file_people", "file_id", fileId, personIds));
   if (kind === "2d") {
     stmts.push(db(c).prepare(
-      `UPDATE project_design_notes SET closed_by_file_id = ?, closed_at = now() WHERE project_id = ? AND kind = '2d' AND closed_by_file_id IS NULL`,
-    ).bind(fileId, projectId));
+      `UPDATE project_design_notes SET closed_by_file_id = ?, closed_at = now()
+        WHERE project_id = ? AND kind = '2d'
+          AND (closed_by_file_id IS NULL OR closed_by_file_id = ${FIRST_2D_FILE_SQL})
+          AND ? <> ${FIRST_2D_FILE_SQL}`,
+    ).bind(fileId, projectId, projectId, fileId, projectId));
   }
   if (stmts.length) await db(c).batch!(stmts);
 }

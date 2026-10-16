@@ -358,9 +358,11 @@ function TwoDFlow({ projectId, canWrite, busy, run, onOpen, timeline, others }: 
   const nextNumber = timeline.versions.length + 1;
   const lastVersion = timeline.versions.at(0);
   const last = lastVersion?.file;
-  const answers = timeline.openCount ? ` It answers ${timeline.openCount} open amendment request${timeline.openCount === 1 ? "" : "s"}.` : "";
+  // V1 is the first submission, never an answer to a request (owner, 15 Oct 2026).
+  const answers = timeline.openCount && nextNumber > 1 ? ` It answers ${timeline.openCount} open amendment request${timeline.openCount === 1 ? "" : "s"}.` : "";
   const byId = new Map(timeline.versions.map((v) => [v.file.id, v]));
   const reqNo = new Map(timeline.requests.map((r) => [r.note.id, r.number]));
+  const reqOf = new Map(timeline.requests.map((r) => [r.note.id, r]));
   return (
     <div className="space-y-3">
       <Section title="2D versions" addLabel={timeline.versions.length ? `Upload amended version (V${nextNumber})` : "New submission"} canWrite={canWrite} empty={timeline.versions.length === 0}
@@ -402,7 +404,11 @@ function TwoDFlow({ projectId, canWrite, busy, run, onOpen, timeline, others }: 
         )}
       </Section>
       <NotesLog projectId={projectId} canWrite={canWrite} busy={busy} run={run} onOpen={onOpen} kind="2d" title="2D amendment request" notes={timeline.requests.map((r) => r.note)} numberOf={reqNo}
-        status={(n) => (n.closed_by_file_id == null ? <Pill tone="warn">Open</Pill> : <span className="text-synced">Closed by V{byId.get(n.closed_by_file_id)?.number ?? "?"}{byId.get(n.closed_by_file_id) ? ` (${shortDate(submittedOf(byId.get(n.closed_by_file_id)!.file))})` : ""}</span>)} />
+        status={(n) => {
+          const r = reqOf.get(n.id);
+          const by = r && !r.open && n.closed_by_file_id != null ? byId.get(n.closed_by_file_id) : undefined;
+          return !r || r.open ? <Pill tone="warn">Open</Pill> : <span className="text-synced">Closed by V{r.answeredBy ?? "?"}{by ? ` (${shortDate(submittedOf(by.file))})` : ""}</span>;
+        }} />
     </div>
   );
 }

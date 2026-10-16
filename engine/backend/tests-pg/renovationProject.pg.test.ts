@@ -322,4 +322,24 @@ describePg("renovation project routes on the real schema", () => {
     expect(secs.some((x) => x.name === `Site safety ${run}` && x.stage_key === "hardware")).toBe(true);
     expect(secs.some((x) => x.name === `No stage ${run}`)).toBe(false);
   });
+
+  test("2D: V1 never closes an amendment request; V2 does, including one V1 was once recorded as closing", async () => {
+    const r = await call("POST", "/", { name: `2D rule ${run}`, projectTypeId: typeId, customerKind: "customer", customerName: "Ms Wong" });
+    expect(r.status).toBe(201);
+    const pid = r.json.id;
+    const notes = async () => (await call("GET", `/design-records?projectId=${pid}`)).json.notes as any[];
+    const req = await call("POST", `/${pid}/design-notes`, { kind: "2d", notedOn: "2026-10-14", requestedByText: "dsa", note: "dsa" });
+    expect(req.status).toBe(201);
+    const v1 = await call("POST", `/${pid}/design-links`, { kind: "2d", url: "https://example.com/v1", submittedOn: "2026-10-15" });
+    expect(v1.status).toBe(201);
+    expect((await notes())[0].closed_by_file_id).toBeNull();
+    // Data written before the rule: the request recorded as closed by V1.
+    await sql`update public.project_design_notes set closed_by_file_id = ${v1.json.id}, closed_at = now() where id = ${req.json.id}`;
+    const v2 = await call("POST", `/${pid}/design-links`, { kind: "2d", url: "https://example.com/v2", submittedOn: "2026-10-15" });
+    expect(v2.status).toBe(201);
+    expect((await notes())[0].closed_by_file_id).toBe(v2.json.id);
+    // A request made after V2 waits for V3.
+    const req2 = await call("POST", `/${pid}/design-notes`, { kind: "2d", notedOn: "2026-10-15", requestedByText: "dsa", note: "again" });
+    expect((await notes()).find((n) => n.id === req2.json.id).closed_by_file_id).toBeNull();
+  });
 });
