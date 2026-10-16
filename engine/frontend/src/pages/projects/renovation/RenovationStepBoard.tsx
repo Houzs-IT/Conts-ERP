@@ -136,7 +136,7 @@ export function RenovationStepBoard({ rows, byId, steps, today, canWrite, onOpen
   const [over, setOver] = useState<FlowStepKey | null>(null);
   const [moving, setMoving] = useState<{ card: BoardCardData; to: StepDef } | null>(null);
 
-  const firstWithCards = steps.find((s) => (cols.get(s.key)?.length ?? 0) > 0)?.key ?? steps[0]?.key ?? null;
+  const firstWithCards = (steps.find((s) => (cols.get(s.key)?.length ?? 0) > 0) ?? steps.at(0))?.key ?? null;
   const phoneKey = phoneStep ?? firstWithCards;
 
   const cardsOf = (key: FlowStepKey, all: boolean) => {

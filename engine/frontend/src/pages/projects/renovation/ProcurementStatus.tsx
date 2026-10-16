@@ -42,7 +42,7 @@ export function StagePills({ s, late }: { s: Stage; late: boolean }) {
 
 /** The purchase orders, goods receipts and delivery orders of a row, one line each kind, each number opening its document. */
 export function DocLinks({ s, indent }: { s: Stage; indent?: boolean }) {
-  const pos = s.pos ?? [];
+  const pos = s.pos;
   if (s.grs.length === 0 && s.dos.length === 0 && pos.length === 0) return null;
   return (
     <div className={cn("space-y-0.5 text-[11px] leading-snug text-ink-secondary", indent ? "pl-4" : "pl-[17px]")}>
