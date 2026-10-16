@@ -405,7 +405,7 @@ export default function BookingsPage() {
                 options={[{ value: '', label: 'All buildings' }, ...(data?.buildings ?? []).map(b => ({ value: b.id, label: b.name }))]} />
               <CountryFilter value={params.get('country') ?? ''} onChange={v => setParam('country', v)} facets={data?.facets?.country} />
               {(params.get('cancelledFrom') || params.get('cancelledTo')) && (
-                <Button size="sm" variant="secondary" icon={<Icon name="X" size="sm" />} aria-label="Remove the cancelled-date filter"
+                <Button size="sm" variant="secondary" icon={<Icon name="X" size="sm" />} aria-label={`Remove filter: ${cancelledLabel(params.get('cancelledFrom') ?? '', params.get('cancelledTo') ?? '')}`}
                   onClick={() => updateParams(p => { p.delete('cancelledFrom'); p.delete('cancelledTo'); p.delete('page'); })}>
                   {cancelledLabel(params.get('cancelledFrom') ?? '', params.get('cancelledTo') ?? '')}
                 </Button>

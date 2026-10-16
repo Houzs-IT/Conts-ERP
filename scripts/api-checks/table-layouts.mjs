@@ -141,7 +141,7 @@ r = await M('GET', '/api/table-layouts?table=bookings');
 const seeded = (r.json?.company ?? []).filter(v => v.id.startsWith('seed.bookings.'));
 check('reservations come with 7 company views', seeded.length === 7, JSON.stringify(seeded.map(v => v.name)));
 const month = seeded.find(v => v.id === 'seed.bookings.cancelled-this-month');
-check('"Cancelled this month" holds relative dates', month?.layout.filters.from === '@month_start' && month?.layout.filters.to === '@month_end', JSON.stringify(month?.layout));
+check('"Cancelled this month" holds relative dates', month?.layout.filters.cancelledFrom === '@month_start' && month?.layout.filters.cancelledTo === '@month_end', JSON.stringify(month?.layout));
 r = await M('GET', '/api/table-layouts?table=guests');
 check('guests come with 3 company views', (r.json?.company ?? []).filter(v => v.id.startsWith('seed.guests.')).length === 3, r.text.slice(0, 300));
 const renamed = `Long stays ${Date.now().toString(36)}`;
