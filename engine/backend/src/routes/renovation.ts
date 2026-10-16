@@ -29,6 +29,7 @@ import { groupEvidence, type EvidencePhoto } from "../services/renovation/pod";
 import { renderPodNoteHtml } from "../services/renovation/podNote";
 import { syncTradeTasks, writeCachedStage } from "../services/renovation/contractSync";
 import { syncProjectDates } from "../services/renovation/projectDates";
+import { syncStepSla } from "../services/renovation/stepSla";
 import renovationProject from "./renovationProject";
 import renovationMonitor from "./renovationMonitor";
 import renovationProperty from "./renovationProperty";
@@ -55,6 +56,7 @@ async function loadOne(c: Ctx, id: number, opts: { checklistKeys?: readonly stri
   const today = todayMyt();
   const view = computeProjectView(facts, today);
   await syncProjectDates(db(c), facts, view, today);
+  await syncStepSla(db(c), [{ f: facts, v: view }], today);
   return { facts, view };
 }
 
@@ -480,6 +482,7 @@ app.get("/:id", requirePageAccess("projects.list"), failClosed(async (c) => {
     receipts: grns.results ?? [],
     financeHidden: hideMoney,
     flow: v.flow,
+    stepSla: f.stepSla ?? null,
     hold: v.hold,
     money: hideMoney ? { contractSen: null, receivedSen: null, receivedPct: null } : v.money,
     keyHolder: v.keyHolder,

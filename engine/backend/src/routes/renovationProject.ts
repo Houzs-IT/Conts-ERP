@@ -33,6 +33,8 @@ import { createProjectFromSo, linkSoToProject, unlinkSoFromProject } from "../se
 import { manualTaskRow, plannedDatesRefusal } from "../services/renovation/tradeTasks";
 import { writeCachedStage } from "../services/renovation/contractSync";
 import { syncProjectDates } from "../services/renovation/projectDates";
+import { stepSlaReady, syncStepSla } from "../services/renovation/stepSla";
+import { audit } from "../services/audit";
 import { SUPPLY_CONDITION_LABEL } from "../services/renovation/conditions";
 import { staffViewReady, syncPeopleFromUsers } from "../services/renovation/peopleSync";
 
@@ -86,6 +88,7 @@ async function loadViews(c: Ctx, opts: { projectId?: number; includeArchived?: b
   });
   /* The step is computed here, so this is where a project reaching (or leaving) Closed gets its end date written. */
   for (const { f, v } of list) await syncProjectDates(db(c), f, v, today);
+  await syncStepSla(db(c), list, today);
   return list;
 }
 
@@ -141,6 +144,21 @@ app.get("/people", requirePageAccess("projects.list"), async (c) => {
   return c.json({ data: res.results ?? [], roles: PERSON_ROLES, fromUsers });
 });
 
+/* Which projects and site tasks each person is crew on (owner, 16 Oct 2026: Project Maintenance shows it next to
+   every crew member without a login). Open tasks first; archived projects left out. */
+app.get("/crew-assignments", requirePageAccess("projects.list"), async (c) => {
+  const res = await db(c).prepare(
+    `SELECT a.person_id::int AS person_id, t.id::int AS task_id, t.label, t.state, t.planned_start::text AS planned_start,
+            t.planned_end::text AS planned_end, p.id::int AS project_id, p.code AS project_code, p.name AS project_name
+       FROM project_trade_task_assignees a
+       JOIN project_trade_tasks t ON t.id = a.task_id
+       JOIN projects p ON p.id = t.project_id AND p.archived_at IS NULL AND p.project_kind = 'renovation'
+      WHERE true${coSql(c, "p.company_id")}
+      ORDER BY a.person_id, (t.state IN ('done', 'skipped')), t.planned_start NULLS LAST, p.name, t.seq`,
+  ).bind().all();
+  return c.json({ data: res.results ?? [] });
+});
+
 app.post("/people", requirePermission("projects.manage"), async (c) => {
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
@@ -178,8 +196,37 @@ app.patch("/people/:personId", requirePermission("projects.manage"), async (c) =
 // ── Flow steps and task categories (Project Maintenance) ────────────────
 
 app.get("/flow-steps", requirePageAccess("projects.list"), async (c) => {
-  const res = await db(c).prepare(`SELECT step_key, label, sort_order, active FROM project_flow_steps WHERE true${coSql(c)} ORDER BY sort_order, step_key`).bind().all();
-  return c.json({ data: res.results ?? [], keys: FLOW_STEP_KEYS });
+  const res = await db(c).prepare(
+    `SELECT s.step_key, s.label, s.sort_order, s.active, (to_jsonb(s)->>'sla_days')::int AS sla_days
+       FROM project_flow_steps s WHERE true${coSql(c, "s.company_id")} ORDER BY s.sort_order, s.step_key`,
+  ).bind().all();
+  return c.json({ data: res.results ?? [], keys: FLOW_STEP_KEYS, slaReady: await stepSlaReady(db(c)) });
+});
+
+/** Whole days 1-3650, or null (blank = no SLA); undefined when the value is not a valid number of days. */
+function cleanSlaDays(v: unknown): number | null | undefined {
+  if (v == null || v === "") return null;
+  const n = Number(v);
+  return Number.isInteger(n) && n >= 1 && n <= 3650 ? n : undefined;
+}
+
+/* SLA per step (owner, 16 Oct 2026; migration 0121): the default days a project may stay in a step. A project copies
+   it when it enters the step (services/renovation/stepSla.ts). Audited. */
+app.put("/flow-steps/:key/sla", requirePermission("projects.manage"), async (c) => {
+  const key = c.req.param("key");
+  if (!isFlowStepKey(key) || key === "closed") return c.json({ error: "step_invalid", message: "Closed has no SLA." }, 400);
+  if (!(await stepSlaReady(db(c)))) return c.json({ error: "sla_not_ready", message: "SLA needs a database update (migration 0121) that is not applied yet." }, 409);
+  const days = cleanSlaDays((await body(c)).days);
+  if (days === undefined) return c.json({ error: "days_invalid", message: "Days allowed is a whole number from 1 to 3650, or blank for no SLA." }, 400);
+  const before = await db(c).prepare(`SELECT sla_days, label FROM project_flow_steps WHERE step_key = ?${coSql(c)}`).bind(key).first<{ sla_days: number | null; label: string }>();
+  if (!before) return c.json({ error: "not_found" }, 404);
+  await db(c).prepare(`UPDATE project_flow_steps SET sla_days = ?, updated_at = now() WHERE step_key = ?${coSql(c)}`).bind(days, key).run();
+  await audit(c, {
+    action: "project_step_sla.update", entityType: "project_flow_step", entityId: key,
+    summary: `SLA for ${before.label}: ${before.sla_days ?? "none"} -> ${days ?? "none"} days`,
+    meta: { before: before.sla_days ?? null, after: days },
+  });
+  return c.json({ ok: true, days });
 });
 
 app.patch("/flow-steps/:key", requirePermission("projects.manage"), async (c) => {
@@ -416,6 +463,42 @@ app.post("/:id/hold/clear", requirePermission("projects.write"), async (c) => {
       .bind(id, co, cur.hold_flag, note, userId(c)),
   ]);
   return c.json({ ok: true });
+});
+
+/* A project's own SLA for one of its steps (owner, 16 Oct 2026): blank puts the step back on the default. Written to
+   the project's activity, so it shows on its Timeline. */
+app.put("/:id/step-sla/:key", requirePermission("projects.write"), async (c) => {
+  const id = parseId(c.req.param("id"));
+  const key = c.req.param("key");
+  if (!id) return c.json({ error: "invalid_id" }, 400);
+  if (!isFlowStepKey(key) || key === "closed") return c.json({ error: "step_invalid", message: "Closed has no SLA." }, 400);
+  const co = await projectCompany(c, id);
+  if (co == null) return c.json({ error: "not_found" }, 404);
+  if (!(await stepSlaReady(db(c)))) return c.json({ error: "sla_not_ready", message: "SLA needs a database update (migration 0121) that is not applied yet." }, 409);
+  const b = await body(c);
+  const useDefault = b.useDefault === true;
+  const days = useDefault ? null : cleanSlaDays(b.days);
+  if (days === undefined) return c.json({ error: "days_invalid", message: "Days allowed is a whole number from 1 to 3650, or blank for no SLA." }, 400);
+  const prev = await db(c).prepare(
+    `SELECT s.sla_days, s.sla_source, fs.sla_days AS default_days, fs.label FROM project_flow_steps fs
+       LEFT JOIN project_step_sla s ON s.project_id = ? AND s.step_key = fs.step_key
+      WHERE fs.company_id = ? AND fs.step_key = ?`,
+  ).bind(id, co, key).first<{ sla_days: number | null; sla_source: string | null; default_days: number | null; label: string }>();
+  const fromDays = prev?.sla_source ? prev.sla_days : prev?.default_days ?? null;
+  const toDays = useDefault ? prev?.default_days ?? null : days;
+  await db(c).batch!([
+    db(c).prepare(
+      `INSERT INTO project_step_sla (project_id, company_id, step_key, sla_days, sla_source, updated_by)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT (project_id, step_key) DO UPDATE SET sla_days = excluded.sla_days, sla_source = excluded.sla_source,
+         updated_by = excluded.updated_by, updated_at = now()`,
+    ).bind(id, co, key, toDays, useDefault ? (toDays == null ? null : "default") : "project", userId(c)),
+    db(c).prepare(
+      `INSERT INTO project_activity (project_id, action, from_value, to_value, note, user_id, company_id) VALUES (?, 'sla_changed', ?, ?, ?, ?, ?)`,
+    ).bind(id, fromDays == null ? "no SLA" : `${fromDays} days`, toDays == null ? "no SLA" : `${toDays} days`,
+      `SLA for ${prev?.label ?? key}${useDefault ? " (back to the default)" : ""}`, userId(c), co),
+  ]);
+  return c.json({ ok: true, days: toDays });
 });
 
 app.patch("/:id/people", requirePermission("projects.write"), async (c) => {

@@ -41,6 +41,8 @@ export interface BoardRowV2 {
   startDate: string | null;
   /** the day it reached Closed; null while it is not Closed */
   endDate: string | null;
+  /** the current step against its SLA (stepSla.ts); null before migration 0121 or in Closed */
+  sla: { days: number | null; daysIn: number | null; overdueBy: number | null } | null;
   redFlagCount: number;
   /** the red flags themselves (code + text), the same set redFlagCount counts */
   redFlags: Array<{ code: string; text: string }>;
@@ -80,6 +82,7 @@ export function boardRowOf(f: ProjectFacts, v: ProjectView, opts: { hideMoney: b
     plannedHandoverDate: p.planned_handover_date,
     startDate: dayOf(p.start_date) ?? dayOf(p.created_at),
     endDate: v.flow.current === "closed" ? dayOf(p.end_date) : null,
+    sla: f.stepSla && v.flow.current !== "closed" ? { days: f.stepSla.days, daysIn: f.stepSla.daysIn, overdueBy: f.stepSla.overdueBy } : null,
     redFlagCount: shownFlags.length,
     redFlags: shownFlags.map((r) => ({ code: r.code, text: r.text })),
     archived: !!p.archived_at,
