@@ -135,4 +135,20 @@ check('field roles have no saved views', r.status === 403, r.text);
 
 for (const v of [mine, company]) await M('DELETE', `/api/table-layouts/${v.id}`);
 await S('DELETE', `/api/table-layouts/${staffView.id}`);
+
+// Ready-made company views (functions/_lib/tableLayoutSeeds.ts): there on first look, never overwritten.
+r = await M('GET', '/api/table-layouts?table=bookings');
+const seeded = (r.json?.company ?? []).filter(v => v.id.startsWith('seed.bookings.'));
+check('reservations come with 7 company views', seeded.length === 7, JSON.stringify(seeded.map(v => v.name)));
+const month = seeded.find(v => v.id === 'seed.bookings.cancelled-this-month');
+check('"Cancelled this month" holds relative dates', month?.layout.filters.from === '@month_start' && month?.layout.filters.to === '@month_end', JSON.stringify(month?.layout));
+r = await M('GET', '/api/table-layouts?table=guests');
+check('guests come with 3 company views', (r.json?.company ?? []).filter(v => v.id.startsWith('seed.guests.')).length === 3, r.text.slice(0, 300));
+const renamed = `Long stays ${Date.now().toString(36)}`;
+r = await M('PATCH', '/api/table-layouts/seed.bookings.long-stays', { name: renamed });
+check('a seeded view can be renamed', r.status === 200, r.text);
+r = await M('GET', '/api/table-layouts?table=bookings');
+check('a renamed seed is not put back or duplicated', r.json.company.filter(v => v.id === 'seed.bookings.long-stays' && v.name === renamed).length === 1
+  && !r.json.company.some(v => v.name === 'Long stays (28+ nights)'), JSON.stringify(r.json.company.map(v => v.name)));
+await M('PATCH', '/api/table-layouts/seed.bookings.long-stays', { name: 'Long stays (28+ nights)' });
 done();

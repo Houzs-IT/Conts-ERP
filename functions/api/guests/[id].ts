@@ -5,11 +5,13 @@ import { CONTACT_ROLES, guestTags, monthYear, todayAndTomorrow, hasGuestColumns,
 import { countryCode } from '../../_lib/hostplatformImport';
 import { checkPhone, isIsoDate } from '../../_lib/validate';
 import { countryJoin, countryName } from '../../_lib/guestCountry';
+import { moneySchema, moneySql } from '../../_lib/bookingMoney';
 
 const nightsBetween = (a: string, b: string) => Math.max(1, Math.round((Date.parse(b) - Date.parse(a)) / 864e5));
 const at = (date: string, time: string) => `${date}T${time}:00+08:00`;
 const ID_TYPES = ['mykad', 'passport', 'other'];
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+const iso = (v: unknown) => (v instanceof Date ? v.toISOString() : String(v));
 
 /** GET /api/guests/:id — one guest's profile: lifetime figures (upcoming stays included), tags, registration details
  *  (the ID number masked to its last four), internal notes, stay history and today/tomorrow movement. */
@@ -26,13 +28,26 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
   if (g.merged_into) return json({ redirectTo: g.merged_into }, 200);
 
   const { today, tomorrow } = todayAndTomorrow();
+  const schema = await moneySchema(env);
+  const m = moneySql(schema);
+  // When the guest actually arrived and left: the last time someone moved the reservation to Currently hosting or Past.
+  // The nightly automatic checkout (source 'system') is not a time the guest left, so it is not counted.
+  const moved = (state: string) => `(SELECT MAX(a.occurred_at) FROM audit_log a WHERE a.entity_table = 'reservations' AND a.entity_id = r.id
+             AND a.action IN ('reservation.status', 'reservation.cancel') AND a.source <> 'system' AND a.after_state LIKE '%"state":"${state}"%')`;
   const mine = await all<any>(env, `
     SELECT r.id, r.channel, r.state, r.check_in, r.check_out, r.check_in_time, r.check_out_time, r.guests_count, r.external_ref,
            r.gross_booking_value, u.unit_number, u.readiness, p.name AS property_name,
            (SELECT MIN(t.created_at) FROM tasks t WHERE t.reservation_id = r.id) AS prepared_at,
            (SELECT MAX(n.sent_at) FROM notification_log n WHERE n.template = 'access_details' AND n.entity_id = r.id) AS access_sent_at,
-           (SELECT AVG(v.rating) FROM reviews v WHERE v.reservation_id = r.id) AS rating
+           (SELECT AVG(v.rating) FROM reviews v WHERE v.reservation_id = r.id) AS rating,
+           (SELECT v.comment FROM reviews v WHERE v.reservation_id = r.id AND COALESCE(v.comment, '') <> '' ORDER BY v.reviewed_at DESC LIMIT 1) AS review_text,
+           (SELECT MAX(v.reviewed_at) FROM reviews v WHERE v.reservation_id = r.id) AS reviewed_at,
+           ${moved('checked_in')} AS checked_in_at, ${moved('checked_out')} AS checked_out_at,
+           ${m.expected} AS expected_payout, ${m.received} AS received, ${m.outstanding} AS outstanding,
+           ${schema.payments ? `(SELECT MAX(bq.received_on) FROM booking_payments bq WHERE bq.reservation_id = r.id AND bq.status = 'received' AND bq.kind <> 'refund')` : 'NULL::text'} AS paid_on,
+           ${schema.payoutCols ? 'r.payout_date' : 'NULL::text'} AS payout_date
     FROM reservations r JOIN units u ON u.id = r.unit_id JOIN properties p ON p.id = u.property_id
+    ${m.join}
     WHERE r.guest_id = ? AND r.channel NOT IN ('maintenance_block','owner_stay') AND r.state NOT IN ('cancelled','no_show','inquiry')
     ORDER BY r.check_in DESC`, g.id);
 
@@ -75,6 +90,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
     stays: mine.length, upcoming: upcoming.length,
     nights: mine.reduce((n, s) => n + nightsBetween(s.check_in, s.check_out), 0),
     lifetimeValue: mine.reduce((n, s) => n + Number(s.gross_booking_value), 0),
+    // Direct guests pay us; a channel guest pays the channel, which pays us out. Both are what has come in for their stays.
+    received: mine.reduce((n, s) => n + Number(s.received ?? 0), 0),
+    outstanding: mine.reduce((n, s) => n + Number(s.outstanding ?? 0), 0),
     ratingScore: ratings.length ? Number((ratings.reduce((a, b) => a + b, 0) / ratings.length).toFixed(1)) : null,
     registration: { ...reg, missing, required: live },
     // Where the guest is from: the stored nationality, else the country of their phone.
@@ -85,6 +103,11 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
       reservationId: s.id, externalRef: s.external_ref, checkIn: s.check_in, checkOut: s.check_out, unitNumber: s.unit_number, propertyName: s.property_name,
       nights: nightsBetween(s.check_in, s.check_out), channel: s.channel, value: Number(s.gross_booking_value), state: s.state,
       rating: s.rating == null ? null : Number(Number(s.rating).toFixed(1)),
+      review: s.review_text ? { text: String(s.review_text), at: s.reviewed_at ? String(s.reviewed_at).slice(0, 10) : null } : null,
+      checkInTime: s.check_in_time, checkOutTime: s.check_out_time,
+      checkedInAt: s.checked_in_at ? iso(s.checked_in_at) : null, checkedOutAt: s.checked_out_at ? iso(s.checked_out_at) : null,
+      expected: Number(s.expected_payout ?? 0), received: Number(s.received ?? 0), outstanding: Number(s.outstanding ?? 0),
+      paidOn: s.paid_on ? iso(s.paid_on).slice(0, 10) : s.payout_date ? iso(s.payout_date).slice(0, 10) : null,
     })),
     ...(movement ? { movement } : {}),
   });
