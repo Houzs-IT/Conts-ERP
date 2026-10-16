@@ -22,6 +22,8 @@ export interface FlowStepRow {
   label: string;
   sort_order: number;
   active: boolean;
+  /** days a project may stay in this step (Project Maintenance, migration 0121); null = no SLA */
+  sla_days?: number | null;
 }
 
 export interface FlowFacts {

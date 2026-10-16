@@ -42,8 +42,13 @@ app.get("/:id/procurement-status", requirePageAccess("projects.list"), async (c)
     const p = await db(c).prepare(`SELECT company_id::int AS company_id FROM projects WHERE id = ? AND project_kind = 'renovation'${activeCompanySql(c)}`)
       .bind(id).first<{ company_id: number }>();
     if (!p) return c.json({ error: "not_found" }, 404);
-    if (!(await docFlowColumnsReady(db(c)))) return c.json({ ready: false, projectId: id, lines: [] });
-    return c.json({ ready: true, projectId: id, lines: await readStatusLines(db(c), id, Number(p.company_id)) });
+    /* Procurement details lists only the categories the project's sales orders have (owner, 16 Oct 2026), so it says
+       whether there is one: without, the card asks for a sales order instead of showing empty rows. */
+    const so = await db(c).prepare(`SELECT count(*)::int AS n FROM scm.mfg_sales_orders WHERE project_id = ? AND company_id = ? AND status::text <> 'CANCELLED'`)
+      .bind(id, Number(p.company_id)).first<{ n: number }>();
+    const soCount = Number(so?.n ?? 0);
+    if (!(await docFlowColumnsReady(db(c)))) return c.json({ ready: false, projectId: id, soCount, lines: [] });
+    return c.json({ ready: true, projectId: id, soCount, lines: await readStatusLines(db(c), id, Number(p.company_id)) });
   } catch (e) {
     console.error("[renovation] procurement status read failed", e);
     return c.json({ error: "renovation_read_failed", message: "Where the goods stand could not be read. Try again." }, 409);

@@ -107,6 +107,9 @@ export function activityText(a: Row): { title: string; body: string | null } {
     case "archived": return { title: "Project archived", body: null };
     case "restored": return { title: "Project restored", body: null };
     case "note": return { title: "Note", body: note };
+    /* The importer writes from_value 'notion' as its source, not a value that changed ("notion to -" on screen). */
+    case "notion_import": return { title: "Notion import", body: note };
+    case "sla_changed": return { title: `${note ?? "SLA"} changed`, body: arrow(from, to) };
   }
   if (TEAM[action]) return { title: `${TEAM[action]} changed`, body: arrow(from, to) };
   const parts = [from || to ? arrow(from, to) : null, note].filter(Boolean);

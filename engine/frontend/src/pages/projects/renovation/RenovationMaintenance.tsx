@@ -5,11 +5,12 @@
 
 import { useState } from "react";
 import { ChevronDown, ChevronUp, Plus } from "lucide-react";
+import { Link } from "react-router-dom";
 import { Button } from "../../../components/Button";
 import { useQuery } from "../../../hooks/useQuery";
-import { cn } from "../../../lib/utils";
+import { cn, formatDate } from "../../../lib/utils";
 import { STAGE_LABEL } from "../../../vendor/shared/renovation-stages";
-import { simpleApi, type FlowStepRow, type Person, type TaskCategoryRow } from "./simpleApi";
+import { simpleApi, type CrewAssignment, type FlowStepRow, type Person, type TaskCategoryRow } from "./simpleApi";
 import { errorText } from "./renovationModel";
 import { inputClass } from "./renovationUi";
 
@@ -28,6 +29,8 @@ function Box({ title, hint, children }: { title: string; hint: string; children:
    site crew role. They are offered as site task crew only. Switch one off instead of deleting, so old tasks keep the name. */
 export function CrewManager() {
   const q = useQuery(["renovation", "people", "all"], () => simpleApi.people());
+  /* Which projects and tasks each crew member is on (owner, 16 Oct 2026). */
+  const work = useQuery(["renovation", "crew-assignments"], () => simpleApi.crewAssignments().catch(() => ({ data: [] as CrewAssignment[] })));
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const list = (q.data?.data ?? []).filter((p) => !p.linked && p.roles.includes("site_crew"));
@@ -38,7 +41,7 @@ export function CrewManager() {
   }
 
   return (
-    <Box title="Crew (no login)" hint="Site crew and contractors without a user account. They can be picked as crew on a site task, nowhere else. Everyone with a login is managed in Property OS under Users and roles. Switch a name off instead of deleting it, so old tasks keep it.">
+    <Box title="Crew (no login)" hint="Site crew and contractors without a user account. To put one on a project, open the project and press Crew on one of its site tasks (Site tasks and crew). Everyone with a login is managed in Property OS under Users and roles. Switch a name off instead of deleting it, so old tasks keep it.">
       {error && <p role="alert" className="mb-2 text-sm text-err">{error}</p>}
       <div className="mb-3 flex flex-col gap-2 sm:flex-row">
         <input className={cn(inputClass, "max-w-md")} placeholder="Name, e.g. ZAINAL" value={name} onChange={(e) => setName(e.target.value)} aria-label="New crew name" />
@@ -46,16 +49,19 @@ export function CrewManager() {
       </div>
       {q.loading && <p className="text-sm text-ink-secondary">Loading...</p>}
       <ul className="divide-y divide-border">
-        {list.map((p) => <CrewRow key={p.id} p={p} onSave={(b) => run(() => simpleApi.patchPerson(p.id, b))} />)}
+        {list.map((p) => <CrewRow key={p.id} p={p} work={(work.data?.data ?? []).filter((w) => Number(w.person_id) === p.id)} onSave={(b) => run(() => simpleApi.patchPerson(p.id, b))} />)}
         {!q.loading && list.length === 0 && <li className="py-2 text-sm text-ink-secondary">No crew without a login yet.</li>}
       </ul>
     </Box>
   );
 }
 
-function CrewRow({ p, onSave }: { p: Person; onSave: (b: Partial<{ name: string; active: boolean }>) => void }) {
+function CrewRow({ p, work, onSave }: { p: Person; work: CrewAssignment[]; onSave: (b: Partial<{ name: string; active: boolean }>) => void }) {
   const [editing, setEditing] = useState(false);
+  const [open, setOpen] = useState(false);
   const [name, setName] = useState(p.name);
+  const live = work.filter((w) => w.state !== "done" && w.state !== "skipped");
+  const projects = new Set(work.map((w) => w.project_id)).size;
   if (editing) {
     return (
       <li className="flex flex-col gap-2 py-2 sm:flex-row">
@@ -72,11 +78,38 @@ function CrewRow({ p, onSave }: { p: Person; onSave: (b: Partial<{ name: string;
       <div className="min-w-0 text-sm font-medium text-ink">
         {p.name}
         {!p.active && <span className="ml-1 text-[11px] font-normal text-ink-secondary">switched off</span>}
-        {p.source === "import" && <span className="ml-1 text-[11px] font-normal text-ink-secondary">imported</span>}
+        {p.source === "import" && <span className="ml-1 text-[11px] font-normal text-ink-secondary" title="Came over with the Notion import">from Notion</span>}
       </div>
       <div className="flex gap-2">
         <Button variant="ghost" onClick={() => setEditing(true)} aria-label={`Rename ${p.name}`}>Rename</Button>
         <Button variant="ghost" onClick={() => onSave({ active: !p.active })}>{p.active ? "Switch off" : "Switch on"}</Button>
+      </div>
+      <div className="w-full text-[11px] text-ink-secondary">
+        {work.length === 0 ? "Not on any site task yet." : (
+          <button type="button" className="text-primary hover:underline" aria-expanded={open} onClick={() => setOpen((x) => !x)}>
+            {`On ${work.length} task${work.length === 1 ? "" : "s"} in ${projects} project${projects === 1 ? "" : "s"}${live.length ? ` (${live.length} open)` : ""}`}{open ? ", hide" : ", show"}
+          </button>
+        )}
+        {open && (
+          <ul className="mt-1 space-y-1">
+            {byProject(work).map((g) => (
+              <li key={g.projectId}>
+                <Link to={`/projects/${g.projectId}#reno-site-tasks`} className="font-medium text-ink hover:text-primary hover:underline">{g.name}</Link>
+                <span> · {g.tasks.length} task{g.tasks.length === 1 ? "" : "s"}{g.open.length ? `, ${g.open.length} open` : ", all done"}</span>
+                {g.open.length > 0 && (
+                  <div className="pl-3">
+                    {g.open.map((w) => (
+                      <div key={w.task_id}>
+                        {w.label}{w.state === "in_progress" ? " (in progress)" : ""}
+                        {(w.planned_start || w.planned_end) && <> · {[w.planned_start, w.planned_end].filter(Boolean).map((d) => formatDate(d!)).join(" to ")}</>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
     </li>
   );
@@ -178,4 +211,16 @@ function CategoryRow({ c, onSave }: { c: TaskCategoryRow; onSave: (b: Partial<{ 
       <label className="flex items-center gap-1 text-xs text-ink-secondary"><input type="checkbox" checked={c.active} onChange={(e) => onSave({ active: e.target.checked })} />On</label>
     </li>
   );
+}
+
+/** A crew member's tasks per project, projects with open tasks first. */
+function byProject(work: readonly CrewAssignment[]) {
+  const map = new Map<number, { projectId: number; name: string; tasks: CrewAssignment[]; open: CrewAssignment[] }>();
+  for (const w of work) {
+    const g = map.get(w.project_id) ?? { projectId: w.project_id, name: w.project_name, tasks: [], open: [] };
+    g.tasks.push(w);
+    if (w.state !== "done" && w.state !== "skipped") g.open.push(w);
+    map.set(w.project_id, g);
+  }
+  return [...map.values()].sort((a, b) => b.open.length - a.open.length || a.name.localeCompare(b.name));
 }
