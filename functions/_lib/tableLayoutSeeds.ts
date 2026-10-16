@@ -19,8 +19,9 @@ export const SEEDS: Record<string, Seed[]> = {
     view('bookings', 'currently-hosting', 'Currently hosting', { view: 'inhouse' }),
     view('bookings', 'unpaid-direct', 'Unpaid direct reservations', { todo: 'unpaid' }),
     view('bookings', 'payout-pending', 'Channel payout pending', { todo: 'payout' }),
-    // Reservations has no cancellation date of its own: "this month" is cancelled stays that fall in this month.
-    view('bookings', 'cancelled-this-month', 'Cancelled this month', { view: 'cancelled', from: '@month_start', to: '@month_end' }),
+    // Cancelled during this month (reservations.cancelled_at, migration 0124, which also moved views seeded before it);
+    // a cancellation with no known date counts by its stay dates.
+    view('bookings', 'cancelled-this-month', 'Cancelled this month', { view: 'cancelled', cancelledFrom: '@month_start', cancelledTo: '@month_end' }),
     view('bookings', 'long-stays', 'Long stays (28+ nights)', { view: 'all', nightsMin: '28' }, 'stay:desc'),
   ],
   guests: [

@@ -375,13 +375,16 @@ export function CostTotals({ lines }: { lines: CostLine[] }) {
  *  functions/_lib/unitCosts.ts, the rows and month rule the owner statement uses). Costs arrive three ways: a finished
  *  cleaning job, a maintenance job on its billing date, and Add a bill (utilities, the condo fee, anything else). The
  *  cards total the table. Finished cleans that carry no cost are offered to charge. */
-export function UnitCostsCard({ unitId, ownerId, unitLabel, canEdit, cleaningPrice, deepCleaningPrice, legacyCosts, onChanged }: {
+export function UnitCostsCard({ unitId, ownerId, unitLabel, canEdit, cleaningPrice, deepCleaningPrice, legacyCosts, onChanged, month: shownMonth }: {
   unitId: string; ownerId: string; unitLabel: string; canEdit: boolean; cleaningPrice: number | null | undefined; deepCleaningPrice?: number | null;
   legacyCosts: { category: string; amount: number }[]; onChanged: () => void;
+  /** The month to show, when the page around the card picks it (unit Financials); without it the card steps its own. */
+  month?: string;
 }) {
   const toast = useToast();
   const thisMonth = todayMyt().slice(0, 7);
-  const [month, setMonth] = useState(thisMonth);
+  const [ownMonth, setMonth] = useState(thisMonth);
+  const month = shownMonth ?? ownMonth;
   const { data, loading, error, reload } = useApi<Payload>(`/expenses/breakdown?month=${month}&unitId=${encodeURIComponent(unitId)}`);
   const [modal, setModal] = useState<null | 'bill'>(null);
   const [charging, setCharging] = useState(false);
@@ -413,7 +416,9 @@ export function UnitCostsCard({ unitId, ownerId, unitLabel, canEdit, cleaningPri
           <span className="text-meta text-muted-ink [text-wrap:pretty]">Every cost recorded to {unitLabel}, by its date: cleaning jobs when finished, maintenance jobs on their billing date, and bills. The date decides the month and the owner statement. The cards total the table.</span>
         </div>
         <div className="flex gap-2 flex-wrap items-center">
-          <MonthStepper label={monthLabel(month)} note={month === thisMonth ? 'so far' : undefined} onStep={by => setMonth(m => shiftMonth(m, by))} />
+          {shownMonth
+            ? <span className="text-meta text-muted-ink">{monthLabel(month)}{month === thisMonth ? ' so far' : ''}</span>
+            : <MonthStepper label={monthLabel(month)} note={month === thisMonth ? 'so far' : undefined} onStep={by => setMonth(m => shiftMonth(m, by))} />}
           {canEdit && <Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setModal('bill')}>Add a bill</Button>}
         </div>
       </div>

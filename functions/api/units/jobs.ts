@@ -1,13 +1,14 @@
 import { type Env, all, one, json, fail } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
+import { taskCleanersReady, cleanerListSql, parseCleaners, rosterIdSql } from '../../_lib/taskCleaners';
 
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
 
 /** A clean in the words of the Cleaning board (STATUS_VOCAB.cleaning). */
-function cleaningStatus(t: { state: string; assignee_id: string | null }) {
+function cleaningStatus(t: { state: string }, cleaners: number) {
   if (t.state === 'resolved') return 'done';
   if (t.state === 'in_progress') return 'cleaning';
-  return t.assignee_id ? 'waiting' : 'unassigned';
+  return cleaners ? 'waiting' : 'unassigned';
 }
 /** A repair in the words of the Maintenance screen (STATUS_VOCAB.maintenance, MaintenancePage statusOf). */
 function repairStatus(m: any) {
@@ -43,12 +44,14 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const myt = (col: string) => `to_char((${col})::timestamptz AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM-DD')`;
   const range = (col: string) => `${from ? ` AND ${myt(col)} >= ?` : ''}${to ? ` AND ${myt(col)} <= ?` : ''}`;
   const dates = [...(from ? [from] : []), ...(to ? [to] : [])];
+  const ready = await taskCleanersReady(env);
 
   const [tasks, repairs] = await Promise.all([
     all<any>(env, `
-      SELECT t.id, t.title, t.kind, t.state, t.assignee_id, t.due_at, t.completed_at, COALESCE(a.full_name, '') AS assignee_name,
+      SELECT t.id, t.title, t.kind, t.state, t.assignee_id, t.due_at, t.completed_at, COALESCE(cl.full_name, a.full_name, '') AS assignee_name,
+             ${cleanerListSql(ready)} AS cleaner_list, ${rosterIdSql()} AS roster_id,
              ${myt('COALESCE(t.completed_at, t.due_at, t.created_at)')} AS day
-      FROM tasks t LEFT JOIN users a ON a.id = t.assignee_id
+      FROM tasks t LEFT JOIN users a ON a.id = t.assignee_id LEFT JOIN cleaners cl ON cl.id = t.cleaner_id
       WHERE t.unit_id = ? AND t.kind <> 'maintenance'${range('COALESCE(t.completed_at, t.due_at, t.created_at)')}
       ORDER BY COALESCE(t.due_at, t.completed_at, t.created_at) DESC`, unitId, ...dates),
     all<any>(env, `
@@ -60,11 +63,16 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   return json({
     generatedAt: new Date().toISOString(), from, to,
-    cleaning: tasks.map(t => ({
-      id: t.id, title: t.title, kind: t.kind, state: t.state, status: cleaningStatus(t),
-      // The day the clean is for (done day once finished), so a row always carries a date.
-      day: t.day, dueAt: t.due_at, completedAt: t.completed_at, assigneeName: t.assignee_name || null,
-    })),
+    cleaning: tasks.map(t => {
+      // Every cleaner on the job (migration 0122), not only the first one the old columns name.
+      const cleaners = parseCleaners(t.cleaner_list, { cleanerId: t.roster_id, userId: t.assignee_id, name: t.assignee_name || null });
+      return {
+        id: t.id, title: t.title, kind: t.kind, state: t.state, status: cleaningStatus(t, cleaners.length),
+        // The day the clean is for (done day once finished), so a row always carries a date.
+        day: t.day, dueAt: t.due_at, completedAt: t.completed_at,
+        assigneeName: cleaners.map(c => c.name).filter(Boolean).join(', ') || null, cleaners: cleaners.map(c => c.name),
+      };
+    }),
     maintenance: repairs.map(m => ({
       id: m.id, title: m.title, detail: m.detail, state: m.state, status: repairStatus(m),
       vendorName: m.vendor_name, blocksUnit: !!m.blocks_unit, chargeTo: m.charge_to,

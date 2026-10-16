@@ -81,7 +81,7 @@ const FALLBACK: Payload = {
 
 /** Searches the server reads. The column searches are kept for links from global search (?ref=, ?guest=). */
 const SEARCH_PARAMS = ['q', 'ref', 'guest', 'unit', 'channel', 'stay', 'gross', 'status'];
-const FILTER_PARAMS = ['ch', 'building', 'country', 'from', 'to', 'grossMin', 'grossMax', 'nightsMin', 'nightsMax'];
+const FILTER_PARAMS = ['ch', 'building', 'country', 'from', 'to', 'cancelledFrom', 'cancelledTo', 'grossMin', 'grossMax', 'nightsMin', 'nightsMax'];
 /** URL parameters the server reads. The drawer's `open` stays out so opening a booking does not refetch the list. */
 const API_PARAMS = ['view', 'todo', 'sort', 'page', 'size', ...SEARCH_PARAMS, ...FILTER_PARAMS];
 const CHANNEL_CHOICES: BookingChannel[] = ['airbnb', 'booking_com', 'agoda', 'direct'];
@@ -383,7 +383,7 @@ export default function BookingsPage() {
         id="bookings" columns={columns} rows={data ? rows : null} rowKey={r => r.id}
         loading={loading} error={error} onRetry={reload} onRowClick={b => setOpenId(b.id)}
         server={{ total, page: data?.page ?? 1, pageSize: data?.pageSize ?? 50, sizes: [25, 50, 100, 200], defaultPageSize: 50, fetchAll }}
-        viewParams={['view', 'todo', 'building', 'country', 'q']} filtered={searching || !!todo} onClearFilters={clearAll}
+        viewParams={['view', 'todo', 'building', 'country', 'q', 'cancelledFrom', 'cancelledTo']} filtered={searching || !!todo} onClearFilters={clearAll}
         noun={['reservation', 'reservations']} exportName="bookings" selectionKey={`${view}|${todo ?? ''}`}
         empty={{ title: todoMeta?.empty ?? viewMeta.empty, icon: 'CalendarDays' }}
         selectable={(canMoney || canOps) && !phone}
@@ -404,6 +404,12 @@ export default function BookingsPage() {
               <Select label="Building" value={params.get('building') ?? ''} onChange={v => setParam('building', v)} className="w-[170px] max-md:w-full max-md:order-last"
                 options={[{ value: '', label: 'All buildings' }, ...(data?.buildings ?? []).map(b => ({ value: b.id, label: b.name }))]} />
               <CountryFilter value={params.get('country') ?? ''} onChange={v => setParam('country', v)} facets={data?.facets?.country} />
+              {(params.get('cancelledFrom') || params.get('cancelledTo')) && (
+                <Button size="sm" variant="secondary" icon={<Icon name="X" size="sm" />} aria-label="Remove the cancelled-date filter"
+                  onClick={() => updateParams(p => { p.delete('cancelledFrom'); p.delete('cancelledTo'); p.delete('page'); })}>
+                  {cancelledLabel(params.get('cancelledFrom') ?? '', params.get('cancelledTo') ?? '')}
+                </Button>
+              )}
               <DateFilter from={params.get('from') ?? ''} to={params.get('to') ?? ''}
                 onChange={(f, t) => updateParams(p => { if (f) p.set('from', f); else p.delete('from'); if (t) p.set('to', t); else p.delete('to'); p.delete('page'); })} />
             </div>
@@ -537,6 +543,10 @@ function CountryFilter({ value, onChange, facets }: { value: string; onChange: (
 
 const shift = (iso: string, days: number) => new Date(Date.parse(iso) + days * 864e5).toISOString().slice(0, 10);
 const monthStart = (iso: string, add = 0) => { const d = new Date(Date.parse(iso.slice(0, 7) + '-01T00:00:00Z')); d.setUTCMonth(d.getUTCMonth() + add); return d.toISOString().slice(0, 10); };
+
+/** The chip of a "Cancelled this month" style filter: when the reservations were cancelled. */
+const cancelledLabel = (from: string, to: string) =>
+  `Cancelled ${from && to ? dateRange(from, to) : from ? `from ${date(from)}` : `until ${date(to)}`}`;
 
 function DateFilter({ from, to, onChange }: { from: string; to: string; onChange: (from: string, to: string) => void }) {
   const today = todayMyt();

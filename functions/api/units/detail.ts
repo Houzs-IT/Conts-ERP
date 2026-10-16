@@ -7,6 +7,7 @@ import { contractView } from '../../_lib/unitContract';
 import { MODEL_LABEL } from '../../_lib/revenueModel';
 import { unitMonthPnl, cachedQuery } from '../../_lib/unitPnl';
 import { addressOf, ownerDetailsReady } from '../../_lib/ownerDetails';
+import { taskCleanersReady, cleanerNamesSql } from '../../_lib/taskCleaners';
 
 /**
  * The whole unit record in one request. Seven tabs of a detail page firing seven
@@ -55,7 +56,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const monthEndEx = monthEndExclusive(month), daysInMonth = daysInMonthOf(month);
   // The P and L and the settings read the same settings and month inputs: asked once per request.
   const q = cachedQuery(env);
-  const [channels, stays, tasks, maintenance, inventory, access, documents, activity, perfRows, rating, money2, settings] = await Promise.all([
+  const ready = await taskCleanersReady(env);
+  const [channels, stays, tasks, maintenance, inventory, access, documents, activity, perfRows, rating, money2, settings, openJobs] = await Promise.all([
     all<{ channel: string }>(env,
       'SELECT channel FROM unit_channels WHERE unit_id = ? AND is_active = 1', unitId),
 
@@ -70,8 +72,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
     all<any>(env, `
       SELECT t.id, t.title, t.kind, t.state, t.due_at, t.completed_at,
-             COALESCE(a.full_name,'') AS assignee_name
-      FROM tasks t LEFT JOIN users a ON a.id = t.assignee_id
+             COALESCE(${cleanerNamesSql(ready)}, cl.full_name, a.full_name, '') AS assignee_name
+      FROM tasks t LEFT JOIN users a ON a.id = t.assignee_id LEFT JOIN cleaners cl ON cl.id = t.cleaner_id
       WHERE t.unit_id = ? ORDER BY COALESCE(t.due_at, t.created_at) DESC LIMIT 12`, unitId),
 
     all<any>(env, `
@@ -111,6 +113,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     // The month to date as the owner statement will work it out (functions/_lib/unitPnl.ts); any month on /units/financials.
     money ? unitMonthPnl(env, q, unitId, month) : Promise.resolve(null),
     statementSettings(q),
+
+    // Every open job, not only the latest 12 listed above (the Overview's "Open maintenance jobs").
+    one<{ n: number }>(env, `SELECT COUNT(*)::int AS n FROM maintenance_issues WHERE unit_id = ? AND state != 'resolved'`, unitId),
   ]);
   const perf = metrics(perfRows, daysInMonth);
 
@@ -175,6 +180,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       id: t.id, title: t.title, kind: t.kind, state: t.state,
       dueAt: stampMyt(t.due_at), completedAt: stampMyt(t.completed_at), assigneeName: t.assignee_name || null,
     })),
+    openMaintenanceCount: Number(openJobs?.n ?? 0),
     maintenance: maintenance.map(m => ({
       id: m.id, title: m.title, detail: m.detail, state: m.state,
       vendorName: m.vendor_name, ownerApprovalRequired: !!m.owner_approval_required,

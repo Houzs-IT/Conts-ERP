@@ -150,7 +150,8 @@ export interface ListQuery {
   page: number; pageSize: number;
   searches: Partial<Record<SearchKey, string>>;
   filters: {
-    channel: string | null; property: string | null; from: string | null; to: string | null; grossMin: number | null; grossMax: number | null;
+    channel: string | null; property: string | null; from: string | null; to: string | null; cancelledFrom: string | null; cancelledTo: string | null;
+    grossMin: number | null; grossMax: number | null;
     country: string[]; states: string[]; nightsMin: number | null; nightsMax: number | null;
   };
   sortLabel: string | null;
@@ -163,7 +164,8 @@ const OLD_VIEWS: Record<string, { view: View; todo?: Todo }> = {
   arriving: { view: 'all', todo: 'arriving' }, blocks: { view: 'all' },
 };
 
-export function parseListQuery(url: URL): ListQuery {
+/** opts.cancelledAt: reservations.cancelled_at exists (migration 0124). */
+export function parseListQuery(url: URL, opts: { cancelledAt?: boolean } = {}): ListQuery {
   const sp = url.searchParams;
   const rawView = sp.get('view') ?? '';
   const old = OLD_VIEWS[rawView];
@@ -214,6 +216,18 @@ export function parseListQuery(url: URL): ListQuery {
   const to = ISO_DAY.test(sp.get('to') ?? '') ? sp.get('to')! : null;
   if (from) add('stay', 'r.check_out > ?', [from]);
   if (to) add('stay', 'r.check_in <= ?', [to]);
+  // Cancelled between two days ("Cancelled this month"): by the day it was cancelled, Malaysia time; a cancellation
+  // with no known date (imported, or cancelled before migration 0124) by its stay dates instead.
+  const cancelledFrom = ISO_DAY.test(sp.get('cancelledFrom') ?? '') ? sp.get('cancelledFrom')! : null;
+  const cancelledTo = ISO_DAY.test(sp.get('cancelledTo') ?? '') ? sp.get('cancelledTo')! : null;
+  if (cancelledFrom || cancelledTo) {
+    const lo = cancelledFrom ?? '0000-01-01', hi = cancelledTo ?? '9999-12-31';
+    const day = `to_char((r.cancelled_at)::timestamptz AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM-DD')`;
+    add('cancelled', opts.cancelledAt
+      ? `r.state = 'cancelled' AND (CASE WHEN r.cancelled_at IS NOT NULL THEN ${day} BETWEEN ? AND ? ELSE r.check_out > ? AND r.check_in <= ? END)`
+      : `r.state = 'cancelled' AND r.check_out > ? AND r.check_in <= ?`,
+      opts.cancelledAt ? [lo, hi, lo, hi] : [lo, hi]);
+  }
   const intArg = (k: string) => { const raw = sp.get(k); const n = Number(raw); return raw && Number.isInteger(n) && n >= 0 && n < 10000 ? n : null; };
   const nightsMin = intArg('nightsMin'), nightsMax = intArg('nightsMax');
   if (nightsMin !== null) add('nights', '(r.check_out::date - r.check_in::date) >= ?', [nightsMin]);
@@ -241,7 +255,7 @@ export function parseListQuery(url: URL): ListQuery {
   const whole = build(null);
   return {
     view: viewFinal, todo, today, where: whole.where, args: whole.args, whereExcept: k => build(k), orderBy, page, pageSize, searches,
-    filters: { channel: channels.join(',') || null, property: buildings.join(',') || null, from, to, grossMin, grossMax, country: countries, states, nightsMin, nightsMax },
+    filters: { channel: channels.join(',') || null, property: buildings.join(',') || null, from, to, cancelledFrom, cancelledTo, grossMin, grossMax, country: countries, states, nightsMin, nightsMax },
     sortLabel: sortExpr ? `${sortKey} ${asc ? 'ascending' : 'descending'}` : null,
   };
 }
