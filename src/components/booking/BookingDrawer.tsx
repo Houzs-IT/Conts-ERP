@@ -23,6 +23,7 @@ import ApprovalBanner from '../ApprovalBanner';
 import { DocumentsSection, type GuestDocument } from './GuestDocuments';
 import { isStaged, stagedToast, useApprovalsOn, type Approval } from '../../lib/approvals';
 import { CloseButton } from '../CloseButton';
+import { moneyStatus, lastPaidOn, isOtaChannel } from '../../lib/payoutStatus';
 
 /* ------------------------------------------------------------------ */
 /* Shapes (GET /api/reservations/:id)                                  */
@@ -105,67 +106,96 @@ const Group = ({ title, children }: { title: string; children: ReactNode }) => (
 
 const KIND_LABEL: Record<Payment['kind'], string> = { guest_payment: 'Guest payment', ota_payout: 'Host payout', refund: 'Refund' };
 
-/** The money in three parts that add up: guest total, service fee, host payout (docs/VOCABULARY.md decision 13). The server
- *  works the figures out (functions/_lib/bookingMoney.ts); where its sources disagree it says so, and the figures
- *  behind it are one click away instead of being shown side by side as if they agreed. */
+/** The money the way Airbnb shows a host (owner, 11 Oct 2026): what the guest paid, what the host is paid after the
+ *  channel's commission, then one line saying where the payout stands. Expected / Received / Outstanding, each payment
+ *  and where every figure came from sit behind Details. The server works the figures out (functions/_lib/bookingMoney.ts);
+ *  this only lays them out, so the numbers are the ledger's own. */
 function MoneyPanel({ d, onRecord, onRemove }: { d: Detail; onRecord: () => void; onRemove: (p: Payment) => void }) {
   const L = d.ledger;
-  const [sources, setSources] = useState(false);
+  const [details, setDetails] = useState(false);
   const dead = d.state === 'cancelled' || d.state === 'no_show';
   const site = CHANNEL_META[d.channel].label;
-  const ota = d.channel === 'airbnb' || d.channel === 'booking_com' || d.channel === 'agoda';
+  const ota = isOtaChannel(d.channel);
+  const room = L.guestLines.find(l => l.key === 'room');
+  const fees = L.guestLines.filter(l => l.key !== 'room');
+  const nights = d.nights || 0;
+  const perNight = room && nights > 0 ? Math.round(room.amount / nights) : null;
+  const roomLabel = room && perNight != null
+    ? `${rm(perNight)}${perNight * nights === room.amount ? '' : ' avg.'} x ${fmtNights(nights)}`
+    : room?.label ?? '';
+  // The commission's share of what it is charged on: the guest total less the taxes passed on (as bookingMoney.ts has it).
+  const taxes = L.guestLines.filter(l => l.key === 'sst' || l.key === 'tourism').reduce((n, l) => n + l.amount, 0);
+  const base = L.guestTotal - taxes;
+  const pctOf = (amount: number) => (base > 0 ? ` (${(amount / base * 100).toFixed(1)}%)` : '');
+  const payout = ota || L.platformLines.length > 0;
+  const status = moneyStatus({ channel: d.channel, state: d.state, expected: L.expected, received: L.received, outstanding: L.outstanding, paidOn: lastPaidOn(L.payments, d.money.payoutDate) });
+  const statusIcon = status.tone === 'success' ? 'CheckCircle2' : status.tone === 'warning' ? 'AlertCircle' : 'Clock';
+
+  const paymentRow = (p: Payment) => (
+    <div key={p.id} className="flex justify-between items-baseline gap-3 py-[7px] px-[14px]">
+      <span className="flex flex-col min-w-0">
+        <span className="text-copy text-muted-ink">
+          {p.status === 'expected' ? `${KIND_LABEL[p.kind]} expected` : `${KIND_LABEL[p.kind]}${p.receivedOn ? ` · ${date(p.receivedOn)}` : ''}`}
+        </span>
+        <span className="text-caption text-muted-ink">
+          {[p.note, p.method, p.reference ? `Ref ${p.reference}` : null,
+            p.source === 'owner_workbook' ? (p.status === 'received' && !p.receivedOn ? 'Paid out (owner workbook; no date given)' : 'From the owner workbook') : p.createdBy ? `Recorded by ${p.createdBy}` : null,
+          ].filter(Boolean).join(' · ')}
+        </span>
+      </span>
+      <span className="flex items-center gap-1">
+        <span className={cx('text-copy [font-variant-numeric:tabular-nums] whitespace-nowrap', p.status === 'expected' && 'text-warning')}>
+          {p.kind === 'refund' ? `− ${rm(p.amount)}` : rm(p.amount)}{p.status === 'expected' ? ' not received' : ''}
+        </span>
+        {p.source === 'manual' && d.can.recordPayment && (
+          <button type="button" onClick={() => onRemove(p)} aria-label="Remove this payment" title="Remove this payment"
+            className="w-7 h-7 grid place-items-center rounded-control border-none bg-transparent text-muted-ink cursor-pointer hover:bg-muted"><Icon name="Trash2" size="sm" /></button>
+        )}
+      </span>
+    </div>
+  );
 
   return (
     <div className="flex flex-col gap-2">
       <div className="border border-solid border-line rounded-card overflow-hidden">
-        <Group title="Guest">
-          {L.guestLines.map(l => <Line key={l.key} label={l.label} sub={l.sub} value={rm(l.amount)} />)}
-          <Line strong label={dead ? `Guest total before it was ${d.state === 'cancelled' ? 'cancelled' : 'marked no-show'}` : 'Guest total'}
+        <Group title="Guest paid">
+          {room && <Line label={roomLabel} value={rm(room.amount)} />}
+          {fees.map(l => <Line key={l.key} label={l.label} sub={l.sub} value={rm(l.amount)} />)}
+          <Line strong label={dead ? `Total (MYR) before it was ${d.state === 'cancelled' ? 'cancelled' : 'marked no-show'}` : 'Total (MYR)'}
             value={L.guestTotal > 0 ? rm(L.guestTotal) : 'Not recorded'} muted={L.guestTotal <= 0}
             sub={!L.guestLines.length && L.guestTotal > 0 ? 'No breakdown recorded for this reservation.' : undefined} />
           {L.otaTax ? <Line label={`Tax collected by ${site}`} sub="Paid by the guest to the channel and kept by it. Not ours." value={rm(L.otaTax)} muted /> : null}
         </Group>
-        {L.platformLines.length > 0 && (
-          <Group title="Service fee">
-            {L.platformLines.map(l => <Line key={l.key} label={l.label} sub={l.sub} value={rm(l.amount)} minus />)}
-          </Group>
-        )}
-        <Group title={ota ? 'Host payout' : 'Guest payment'}>
-          {dead ? (
+        {dead ? (
+          <Group title={ota ? 'Host payout' : 'Payments'}>
             <Line strong label={d.state === 'cancelled' ? 'Kept after cancellation' : 'Kept after no-show'} value={rm(L.received)}
               sub={L.received ? undefined : 'No money is recorded on this reservation.'} />
-          ) : <>
-            <Line strong label="Expected" value={rm(L.expected)} sub={L.platformTotal ? /* vocab-ok: ota is a code flag, the text says channel */ 'Guest total less the service fee' : undefined} />
-            {L.receivedBefore > 0 && <Line label="Received earlier" value={rm(L.receivedBefore)} />}
-            {L.payments.map(p => (
-              <div key={p.id} className="flex justify-between items-baseline gap-3 py-[7px] px-[14px]">
-                <span className="flex flex-col min-w-0">
-                  <span className="text-copy text-muted-ink">
-                    {p.status === 'expected' ? `${KIND_LABEL[p.kind]} expected` : `${KIND_LABEL[p.kind]}${p.receivedOn ? ` · ${date(p.receivedOn)}` : ''}`}
-                  </span>
-                  <span className="text-caption text-muted-ink">
-                    {[p.note, p.method, p.reference ? `Ref ${p.reference}` : null,
-                      p.source === 'owner_workbook' ? (p.status === 'received' && !p.receivedOn ? 'Paid out (owner workbook; no date given)' : 'From the owner workbook') : p.createdBy ? `Recorded by ${p.createdBy}` : null,
-                    ].filter(Boolean).join(' · ')}
-                  </span>
-                </span>
-                <span className="flex items-center gap-1">
-                  <span className={cx('text-copy [font-variant-numeric:tabular-nums] whitespace-nowrap', p.status === 'expected' && 'text-warning')}>
-                    {p.kind === 'refund' ? `− ${rm(p.amount)}` : rm(p.amount)}{p.status === 'expected' ? ' not received' : ''}
-                  </span>
-                  {p.source === 'manual' && d.can.recordPayment && (
-                    <button type="button" onClick={() => onRemove(p)} aria-label="Remove this payment" title="Remove this payment"
-                      className="w-7 h-7 grid place-items-center rounded-control border-none bg-transparent text-muted-ink cursor-pointer hover:bg-muted"><Icon name="Trash2" size="sm" /></button>
-                  )}
-                </span>
-              </div>
+          </Group>
+        ) : payout ? (
+          <Group title="Host payout">
+            {room ? <>
+              <Line label="Room" value={rm(room.amount)} />
+              {fees.map(l => <Line key={l.key} label={l.label} value={rm(l.amount)} />)}
+            </> : <Line label="Guest total" value={rm(L.guestTotal)} />}
+            {L.platformLines.map(l => (
+              <Line key={l.key} label={l.key === 'commission' ? `${ota ? site : 'Channel'} commission${pctOf(l.amount)}` : l.label} value={rm(l.amount)} minus />
             ))}
-            <Line strong label="Received" value={rm(L.received)} />
-            <Line strong label="Outstanding" value={L.outstanding > 0 ? rm(L.outstanding) : 'Nothing'}
-              sub={L.outstanding > 0 ? (ota ? `${site} has not paid this out yet.` : 'Still owed by the guest.') : undefined} />
-            {L.paymentMethod && <Line label="Payment method" value={L.paymentMethod} />}
-          </>}
-        </Group>
+            <Line strong label="Total (MYR)" value={rm(L.expected)} />
+          </Group>
+        ) : (
+          <Group title="Payments">
+            {L.receivedBefore > 0 && <Line label="Received earlier" value={rm(L.receivedBefore)} />}
+            {L.payments.map(paymentRow)}
+            {!L.receivedBefore && !L.payments.length && <Line label="No payment recorded yet" value="" />}
+            <Line strong label="Balance due" value={L.outstanding > 0 ? rm(L.outstanding) : 'Nothing'} />
+          </Group>
+        )}
+        {!dead && (
+          <div className={cx('flex items-center gap-2 px-[14px] py-[10px] [border-top:1px_solid_var(--color-line-soft)] text-copy font-medium',
+            status.tone === 'success' ? 'text-success' : status.tone === 'warning' ? 'text-warning' : 'text-ink')}>
+            <Icon name={statusIcon} size="sm" /><span>{status.label}</span>
+          </div>
+        )}
       </div>
 
       {L.disagree && (
@@ -174,21 +204,31 @@ function MoneyPanel({ d, onRecord, onRemove }: { d: Detail; onRecord: () => void
           <span className="text-ink leading-[1.45]">{L.disagree}</span>
         </div>
       )}
-      {/* Where each figure came from is only worth showing when the figures disagree; otherwise it is plumbing. */}
-      {L.disagree && L.sources.length > 1 && (
-        <button type="button" onClick={() => setSources(v => !v)} aria-expanded={sources}
-          className={cx('self-start p-0 border-none bg-transparent [font-family:inherit] text-meta underline cursor-pointer', L.disagree ? 'font-semibold text-ink' : 'text-muted-ink')}>
-          {sources ? 'Hide sources' : 'View sources'}
-        </button>
-      )}
-      {sources && (
+      <button type="button" onClick={() => setDetails(v => !v)} aria-expanded={details}
+        className="self-start p-0 border-none bg-transparent [font-family:inherit] text-meta text-muted-ink underline cursor-pointer">
+        {details ? 'Hide details' : 'Details'}
+      </button>
+      {details && (
         <div className="border border-solid border-line rounded-card overflow-hidden">
-          {L.sources.map((x, i) => (
-            <div key={i} className="flex justify-between gap-3 px-[14px] py-[7px] text-meta [border-bottom:1px_solid_var(--color-line-soft)] last:border-b-0">
-              <span className="flex flex-col min-w-0"><span className="text-ink">{x.label}</span><span className="text-caption text-muted-ink">{x.from}</span></span>
-              <span className="[font-variant-numeric:tabular-nums] whitespace-nowrap">{x.amount == null ? '—' : rm(x.amount)}</span>
-            </div>
-          ))}
+          {!dead && payout && (
+            <Group title="Payout">
+              <Line label="Expected" value={rm(L.expected)} sub={L.platformTotal ? 'Guest total less the commission' : undefined} />
+              {L.receivedBefore > 0 && <Line label="Received earlier" value={rm(L.receivedBefore)} />}
+              {L.payments.map(paymentRow)}
+              <Line label="Received" value={rm(L.received)} />
+              <Line label="Outstanding" value={L.outstanding > 0 ? rm(L.outstanding) : 'Nothing'}
+                sub={L.outstanding > 0 ? `${site} has not paid this out yet.` : undefined} />
+            </Group>
+          )}
+          {L.paymentMethod && <Group title="Payment method"><Line label={L.paymentMethod} value="" /></Group>}
+          <Group title="Where the figures come from">
+            {L.sources.map((x, i) => (
+              <div key={i} className="flex justify-between gap-3 px-[14px] py-[7px] text-meta">
+                <span className="flex flex-col min-w-0"><span className="text-ink">{x.label}</span><span className="text-caption text-muted-ink">{x.from}</span></span>
+                <span className="[font-variant-numeric:tabular-nums] whitespace-nowrap">{x.amount == null ? '—' : rm(x.amount)}</span>
+              </div>
+            ))}
+          </Group>
         </div>
       )}
       {d.can.recordPayment && !dead && (
