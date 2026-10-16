@@ -37,9 +37,9 @@ export function RenovationSubCategorySettings({ initialGroup, onClose }: { initi
   };
 
   const move = async (i: number, dir: -1 | 1) => {
+    if (i < 0 || i >= subs.length || i + dir < 0 || i + dir >= subs.length) return;
     const a = subs[i];
     const b = subs[i + dir];
-    if (!a || !b) return;
     setError(null);
     const aSort = a.sort === b.sort ? b.sort + dir : b.sort;
     try {
