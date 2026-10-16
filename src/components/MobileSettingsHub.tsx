@@ -1,29 +1,16 @@
 import { useState } from 'react';
 import { DARK_MODE_READY } from '../lib/theme';
 import { color, radius } from '../theme';
-import { screenClosed } from '../lib/navigation';
+import { SETTINGS_SECTIONS, screenClosed } from '../lib/navigation';
 import { useSession } from '../lib/session';
 import { ROLE_LABEL } from '../lib/vocabulary';
 import { getThemePref, setThemePref, type ThemePref } from '../lib/theme';
 import Icon from './Icon';
 
-export type SettingsSectionKey = 'company' | 'operations' | 'locale' | 'report' | 'approvals' | 'security';
-
-/** The Settings page's categories, in order, under their headers. The desktop left list and this phone
- *  hub both draw from it, so the two always name and group them the same way. */
-export const SETTINGS_SECTIONS: { key: SettingsSectionKey; group: string; label: string; icon: string; description: string }[] = [
-  { key: 'company', group: 'ORGANISATION', label: 'Company details', icon: 'Building2', description: 'Printed on the letterhead of every owner statement, guest invoice and receipt.' },
-  { key: 'operations', group: 'ORGANISATION', label: 'Check-in and checkout', icon: 'Clock', description: 'Standard times the cleaning board uses when a reservation has none of its own.' },
-  { key: 'locale', group: 'OWNERS AND MONEY', label: 'Operator share', icon: 'Percent', description: 'The share owner statements take when a unit\'s contract does not set one.' },
-  { key: 'report', group: 'OWNERS AND MONEY', label: 'Owner statements', icon: 'FileText', description: 'Wording on the Owner Income Report, and its monthly miscellaneous charge.' },
-  { key: 'approvals', group: 'OWNERS AND MONEY', label: 'Approvals', icon: 'Stamp', description: 'Whether money going out waits for a second person to approve it.' },
-  { key: 'security', group: 'SECURITY', label: 'Sign-in and sessions', icon: 'Lock', description: 'How long people stay signed in, when accounts lock, and who needs two-step sign-in.' },
-];
-
 const SETTINGS_GROUPS = [...new Set(SETTINGS_SECTIONS.map(s => s.group))].map(label => ({
   label,
   items: SETTINGS_SECTIONS.filter(s => s.group === label)
-    .map(s => ({ label: s.label, sub: s.description, icon: s.icon, path: `/system/settings#${s.key}` })),
+    .map(s => ({ label: s.label, sub: s.description, icon: s.icon, path: `/system/settings/${s.key}` })),
 }));
 
 /** Phone Settings tab (owner, Oct 2026). One place for the account and every system page;
@@ -31,7 +18,7 @@ const SETTINGS_GROUPS = [...new Set(SETTINGS_SECTIONS.map(s => s.group))].map(la
  *  The audit trail lives inside System health in this codebase (/system/audit redirects there). */
 const GROUPS: { label: string; items: { label: string; sub: string; icon: string; path: string }[] }[] = [
   { label: 'ACCOUNT', items: [
-    { label: 'Profile and password', sub: 'Your name, phone, 2-step sign-in', icon: 'User', path: '/account' },
+    { label: 'My account', sub: 'Your password, 2-step sign-in and devices', icon: 'User', path: '/account' },
     { label: 'Notifications', sub: 'What you are told about, and when', icon: 'Bell', path: '/notifications' },
   ] },
   ...SETTINGS_GROUPS,
@@ -50,7 +37,7 @@ export default function MobileSettingsHub({ navigate }: { navigate: (p: string) 
   if (!user) return null;
   const initials = user.fullName.split(/\s+/).map(p => p[0]).join('').slice(0, 2).toUpperCase();
   const groups = GROUPS
-    .map(g => ({ ...g, items: g.items.filter(it => !screenClosed(it.path.split('#')[0], user.access)) }))
+    .map(g => ({ ...g, items: g.items.filter(it => !screenClosed(it.path, user.access)) }))
     .filter(g => g.items.length);
 
   const row = { display: 'flex', alignItems: 'center', gap: 13, minHeight: 56, padding: '8px 16px', borderBottom: `1px solid ${color.borderMuted}`, background: 'transparent', border: 'none', width: '100%', textAlign: 'left' as const, cursor: 'pointer', color: color.ink };

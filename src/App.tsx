@@ -321,7 +321,7 @@ function Routed() {
         <Route path="/system/integrations" element={<IntegrationsPage />} />
         <Route path="/system/integrations/hostplatform" element={<HostPlatformImportPage />} />
         <Route path="/settings" element={<SettingsHome />} />
-        <Route path="/system/settings" element={<SettingsPage />} />
+        <Route path="/system/settings/:section?" element={<SettingsPage />} />
         <Route path="/system/audit" element={<Navigate to="/system/health" replace />} />
         <Route path="/system/health" element={<SystemHealthPage />} />
         <Route path="/system/it-support" element={<ItSupportPage />} />

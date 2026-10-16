@@ -27,6 +27,20 @@ export interface NavGroup { label: string; workspace: Workspace; items: NavItem[
  */
 const SUPPLY_SUPPORT = 'SUPPORT';
 
+export type SettingsSectionKey = 'company' | 'operations' | 'locale' | 'report' | 'approvals' | 'security';
+
+/** The Settings page's categories, one screen each (/system/settings/<key>). The desktop menu nests them under
+ *  Settings and the phone Settings tab lists them under these headers, so both name and order them the same. */
+export const SETTINGS_SECTIONS: { key: SettingsSectionKey; group: string; label: string; icon: string; description: string }[] = [
+  { key: 'company', group: 'ORGANISATION', label: 'Company details', icon: 'Building2', description: 'Printed on the letterhead of every owner statement, guest invoice and receipt.' },
+  { key: 'operations', group: 'ORGANISATION', label: 'Check-in and checkout', icon: 'Clock', description: 'Standard times the cleaning board uses when a reservation has none of its own.' },
+  { key: 'locale', group: 'OWNERS AND MONEY', label: 'Operator share', icon: 'Percent', description: 'The share owner statements take when a unit\'s contract does not set one.' },
+  { key: 'report', group: 'OWNERS AND MONEY', label: 'Owner statements', icon: 'FileText', description: 'Wording on the Owner Income Report, and its monthly miscellaneous charge.' },
+  // Not "Approvals": the Finance menu already has an Approvals entry (the queue itself).
+  { key: 'approvals', group: 'OWNERS AND MONEY', label: 'Approval rules', icon: 'Stamp', description: 'Whether money going out waits for a second person to approve it.' },
+  { key: 'security', group: 'SECURITY', label: 'Sign-in and sessions', icon: 'Lock', description: 'How long people stay signed in, when accounts lock, and who needs two-step sign-in.' },
+];
+
 export const NAV: NavGroup[] = [
   { label: 'HOME', workspace: 'rental', items: [
     { key: 'dashboard', label: 'Dashboard', icon: 'layout-dashboard', path: '/', area: 'dashboard' },
@@ -69,7 +83,12 @@ export const NAV: NavGroup[] = [
   { label: 'SYSTEM', workspace: 'rental', items: [
     { key: 'users', label: 'Users and roles', icon: 'shield-check', path: '/system/users', area: 'users' },
     { key: 'integrations', label: 'Integrations', icon: 'plug', path: '/system/integrations', area: 'integrations' },
-    { key: 'settings', label: 'Settings', icon: 'settings', path: '/system/settings', area: 'settings' },
+    // My account and Notifications are every person's own, so they carry an area no role is ever denied.
+    { key: 'settings', label: 'Settings', icon: 'settings', area: 'settings', children: [
+      ...SETTINGS_SECTIONS.map(s => ({ key: `settings_${s.key}`, label: s.label, path: `/system/settings/${s.key}` })),
+      { key: 'myAccount', label: 'My account', path: '/account', area: 'account' },
+      { key: 'notifications', label: 'Notifications', path: '/notifications', area: 'account' },
+    ] },
     { key: 'health', label: 'System health', icon: 'activity', path: '/system/health', area: 'health' },
     // Every desk role: report a problem with the system to IT and follow it. No permission area, since a person
     // only ever reads their own requests (functions/_lib/itHub.ts). Its count comes from lib/itSupport.ts.

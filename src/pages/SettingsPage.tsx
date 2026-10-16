@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { StatusBadge } from '../components/StatusBadge';
@@ -8,12 +8,12 @@ import { Field } from '../components/Field';
 import { MoneyInput, NumberInput, PercentInput, PhoneInput, TimeField } from '../components/inputs';
 import { Select } from '../components/Select';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
-import { SETTINGS_SECTIONS, type SettingsSectionKey } from '../components/MobileSettingsHub';
 import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
 import { api, errorMessage } from '../lib/api';
 import { cx } from '../lib/design-tokens';
 import { useDevice } from '../lib/deviceClass';
+import { SETTINGS_SECTIONS, type SettingsSectionKey } from '../lib/navigation';
 import { useSession } from '../lib/session';
 import { ROLE_LABEL } from '../lib/vocabulary';
 import { refreshNavCounts } from '../lib/navBadges';
@@ -25,10 +25,10 @@ import { refreshNavCounts } from '../lib/navBadges';
  * reads are shown (owner, 11 Oct 2026); BUTTONS.md §14: every field
  * saves through PUT /api/settings and every write is audited.
  *
- * One category at a time (owner, 16 Oct 2026): a list of categories on
- * the left (SETTINGS_SECTIONS, shared with the phone Settings tab), the
- * chosen one on the right as label | control rows; the URL hash names it.
- * On a phone the list is the Settings tab and this page shows one category.
+ * One category at a time (owner, 16 Oct 2026), at /system/settings/<key>:
+ * the desktop menu nests the categories under Settings and the phone
+ * Settings tab lists them (SETTINGS_SECTIONS); each shows as label | control
+ * rows no wider than max-w-4xl.
  *
  * Each section owns its own Save button and dirty state so one edit
  * never commits another section's half-finished change. Drafts live in
@@ -128,39 +128,26 @@ function Row({ label, description, children }: { label: string; description?: Re
   );
 }
 
-/** The chosen category: its title and one-line description, its rows, and its own Save / Discard. */
-function Panel({ title, description, dirty, busy, onSave, onDiscard, saveLabel, children, readOnly, showTitle }: {
-  title: string; description: string; dirty: boolean; busy: boolean; readOnly?: boolean; showTitle: boolean;
+/** The chosen category's rows and its own Save / Discard. */
+function Panel({ dirty, busy, onSave, onDiscard, saveLabel, children, readOnly }: {
+  dirty: boolean; busy: boolean; readOnly?: boolean;
   onSave: () => void; onDiscard: () => void; saveLabel: string; children: ReactNode;
 }) {
   return (
-    <section aria-label={title} className="flex flex-col gap-4">
-      {(showTitle || readOnly) && (
-        <div className="flex items-start justify-between gap-4 flex-wrap">
-          {showTitle && (
-            <div className="flex flex-col gap-1 min-w-0 flex-1">
-              <h2 className="m-0 text-[18px] font-semibold tracking-[-0.01em]">{title}</h2>
-              <p className="m-0 text-meta text-muted-ink leading-[1.45]">{description}</p>
-            </div>
-          )}
-          {readOnly && <StatusBadge tone="neutral" label="Management changes these" size="sm" />}
+    <Card className="@container">
+      <fieldset disabled={readOnly} className="m-0 p-0 border-0 min-w-0">
+        {children}
+      </fieldset>
+      {!readOnly && (
+        <div className="flex items-center justify-end gap-2 flex-wrap px-5 py-3 bg-muted [border-top:1px_solid_var(--color-line-soft)]">
+          {dirty && <StatusBadge tone="warning" label="Unsaved changes" size="sm" />}
+          {dirty && <Button variant="tertiary" size="sm" onClick={onDiscard} disabled={busy}>Discard</Button>}
+          <Button variant="primary" size="sm" onClick={onSave} loading={busy} disabled={!dirty} disabledReason="No changes to save.">
+            {saveLabel}
+          </Button>
         </div>
       )}
-      <Card className="@container">
-        <fieldset disabled={readOnly} className="m-0 p-0 border-0 min-w-0">
-          {children}
-        </fieldset>
-        {!readOnly && (
-          <div className="flex items-center justify-end gap-2 flex-wrap px-5 py-3 bg-muted [border-top:1px_solid_var(--color-line-soft)]">
-            {dirty && <StatusBadge tone="warning" label="Unsaved changes" size="sm" />}
-            {dirty && <Button variant="tertiary" size="sm" onClick={onDiscard} disabled={busy}>Discard</Button>}
-            <Button variant="primary" size="sm" onClick={onSave} loading={busy} disabled={!dirty} disabledReason="No changes to save.">
-              {saveLabel}
-            </Button>
-          </div>
-        )}
-      </Card>
-    </section>
+    </Card>
   );
 }
 
@@ -183,10 +170,10 @@ export default function SettingsPage() {
   // PUT /api/settings accepts management only; everyone else reads.
   const readOnly = useSession().user?.role !== 'management';
   const navigate = useNavigate();
-  const { hash } = useLocation();
+  const { section } = useParams();
   const phone = useDevice().cls === 'phone';
-  // A phone opens the list on the Settings tab, so here it always has a category; a desk starts on the first.
-  const current = SETTINGS_SECTIONS.find(s => `#${s.key}` === hash) ?? (phone ? undefined : SETTINGS_SECTIONS[0]);
+  // With no category named, a phone goes back to the list on its Settings tab and a desk opens the first one.
+  const current = SETTINGS_SECTIONS.find(s => s.key === section);
 
   const base = data ?? FALLBACK;
   // Committed local state: the last-saved values overlaid on what the API returned.
@@ -426,67 +413,28 @@ export default function SettingsPage() {
     </> },
   };
 
-  if (phone && !current) return <Navigate to="/settings" replace />;
+  if (!current) return <Navigate to={phone ? '/settings' : `/system/settings/${SETTINGS_SECTIONS[0].key}`} replace />;
   const loadingNow = (loading || !data) && !(import.meta.env.DEV && data);
-  const groups = [...new Set(SETTINGS_SECTIONS.map(s => s.group))];
-  const navItem = 'flex items-center gap-2 text-left min-h-9 px-3 rounded-[10px] border-none cursor-pointer text-copy w-auto @3xl:w-full';
-  const idle = 'bg-transparent text-muted-ink hover:bg-muted hover:text-ink';
-  const header = 'hidden @3xl:block px-3 pb-1 text-[11px] font-semibold tracking-[0.08em] text-muted-ink';
 
   return (
     <>
-      {phone && current
-        ? <PageHeader title={current.label} sub={current.description} back={{ label: 'Settings', onClick: () => navigate('/settings') }} />
-        : <PageHeader title="Settings" sub="Organisation-wide defaults. Every change is audited." />}
+      <PageHeader title={current.label} sub={current.description}
+        back={phone ? { label: 'Settings', onClick: () => navigate('/settings') } : undefined}
+        badge={readOnly ? <StatusBadge tone="neutral" label="Management changes these" size="sm" /> : undefined} />
 
       {error && <StaleBanner message={`Showing the last settings we have. ${error}`} onRetry={reload} />}
 
-      {/* Side by side once the page is wide enough for the list and a readable panel; above that, the list wraps on top. */}
-      <div className="@container">
-        <div className="flex flex-col gap-5 @3xl:flex-row @3xl:items-start @3xl:gap-8">
-          {!phone && (
-            <nav aria-label="Settings categories" className="flex flex-wrap gap-1 @3xl:flex-col @3xl:flex-nowrap @3xl:gap-5 @3xl:w-64 @3xl:flex-none @3xl:sticky @3xl:top-0">
-              {groups.map(g => (
-                <div key={g} className="contents @3xl:flex @3xl:flex-col @3xl:gap-0.5">
-                  <span className={header}>{g}</span>
-                  {SETTINGS_SECTIONS.filter(s => s.group === g).map(s => {
-                    const on = s.key === current?.key;
-                    return (
-                      <button key={s.key} type="button" aria-current={on ? 'page' : undefined}
-                        onClick={() => navigate({ hash: s.key })}
-                        className={cx(navItem, on ? 'bg-gold-tint text-ink font-semibold [box-shadow:inset_3px_0_0_var(--color-gold)]' : idle)}>
-                        <span className="flex-1 min-w-0 truncate">{s.label}</span>
-                        {dirty(s.key) && <span title="Unsaved changes" className="w-2 h-2 rounded-full bg-warning flex-none"><span className="sr-only">Unsaved changes</span></span>}
-                      </button>
-                    );
-                  })}
-                </div>
-              ))}
-              <div className="contents @3xl:flex @3xl:flex-col @3xl:gap-0.5">
-                <span className={header}>ACCOUNT</span>
-                <button type="button" onClick={() => navigate('/account')} className={cx(navItem, idle)}>
-                  <span className="flex-1 min-w-0 truncate">My account</span>
-                </button>
-              </div>
-            </nav>
-          )}
-
-          <div className="flex-1 min-w-0 max-w-4xl">
-            {loadingNow || !current ? (
-              <Card><TableSkeleton rows={5} cols={2} /></Card>
-            ) : (
-              <Panel
-                title={current.label}
-                description={current.description}
-                showTitle={!phone}
-                readOnly={readOnly} dirty={dirty(current.key)} busy={busy === current.key} saveLabel={ROWS[current.key].saveLabel}
-                onSave={() => save(current.key)} onDiscard={() => discard(current.key)}
-              >
-                {ROWS[current.key].rows}
-              </Panel>
-            )}
-          </div>
-        </div>
+      <div className="max-w-4xl">
+        {loadingNow ? (
+          <Card><TableSkeleton rows={5} cols={2} /></Card>
+        ) : (
+          <Panel
+            readOnly={readOnly} dirty={dirty(current.key)} busy={busy === current.key} saveLabel={ROWS[current.key].saveLabel}
+            onSave={() => save(current.key)} onDiscard={() => discard(current.key)}
+          >
+            {ROWS[current.key].rows}
+          </Panel>
+        )}
       </div>
     </>
   );
