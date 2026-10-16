@@ -40,11 +40,24 @@ export function StagePills({ s, late }: { s: Stage; late: boolean }) {
   );
 }
 
-/** The goods receipts and delivery orders of a row, one line each kind, each number opening its document. */
+/** The purchase orders, goods receipts and delivery orders of a row, one line each kind, each number opening its document. */
 export function DocLinks({ s, indent }: { s: Stage; indent?: boolean }) {
-  if (s.grs.length === 0 && s.dos.length === 0) return null;
+  const pos = s.pos;
+  if (s.grs.length === 0 && s.dos.length === 0 && pos.length === 0) return null;
   return (
     <div className={cn("space-y-0.5 text-[11px] leading-snug text-ink-secondary", indent ? "pl-4" : "pl-[17px]")}>
+      {pos.length > 0 && (
+        <div>
+          <span className="font-semibold text-ink">PO </span>
+          {pos.map((p, i) => (
+            <span key={p.id}>
+              {i > 0 && ", "}
+              <Link to={`/scm/purchase-orders/${p.id}`} className={docLink}>{p.no}</Link>
+              {p.date ? ` ${shortDate(p.date)}` : ""}
+            </span>
+          ))}
+        </div>
+      )}
       {s.grs.length > 0 && (
         <div>
           <span className="font-semibold text-ink">GR </span>

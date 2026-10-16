@@ -73,7 +73,7 @@ export function DesignTaskCard({ projectId, canWrite, onDone, onError }: {
       {q.loading && !q.data ? <p className="text-xs text-ink-secondary">Loading design...</p> : (
         <ol className="space-y-1">
           <Step n={1} label="Onsite" state={stateOf("onsite", measures.length > 0)} last={false} open={openSet.has("onsite")} count={measures.length} onToggle={() => toggle("onsite")}
-            summary={m0 ? `${shortDate(m0.done_on)} · ${names(m0.people, m0.person_name) ?? "PIC not set"}${m0.files?.length ? ` · ${m0.files.length} photo${m0.files.length === 1 ? "" : "s"} / file${m0.files.length === 1 ? "" : "s"}` : ""}` : "Not measured yet"}
+            summary={m0 ? `${m0.done_on ? `${shortDate(m0.done_on)} · ` : "Date not recorded · "}${names(m0.people, m0.person_name) ?? "PIC not set"}${m0.files?.length ? ` · ${m0.files.length} photo${m0.files.length === 1 ? "" : "s"} / file${m0.files.length === 1 ? "" : "s"}` : ""}` : "Not measured yet"}
             muted={!m0}>
             <OnsiteHistory {...shared} measures={measures} />
           </Step>
