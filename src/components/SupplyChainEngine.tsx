@@ -49,11 +49,12 @@ export default function SupplyChainEngine({ enginePath }: { enginePath: string }
   }, [src]);
 
   const steer = () => { if (site.current) frame.current?.contentWindow?.postMessage({ type: 'conts:navigate', path: wanted.current }, site.current); };
-  // On every menu click, the item already open included (location.key changes), so it leaves a record.
+  // On every menu click, the item already open included (location.key changes), so it leaves a record. The path is
+  // watched too: an address typed or changed in the bar twice in a row keeps the same key ("default").
   useEffect(() => {
     if (followed.current === location.pathname) { followed.current = null; return; }
     steer();
-  }, [location.key, src]);
+  }, [location.key, location.pathname, src]);
   useEffect(() => {
     const onMessage = (e: MessageEvent) => {
       if (e.origin !== site.current || e.source !== frame.current?.contentWindow) return;
