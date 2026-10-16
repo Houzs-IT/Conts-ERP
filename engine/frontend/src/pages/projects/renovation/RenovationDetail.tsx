@@ -27,6 +27,7 @@ import { DesignTaskCard } from "./DesignTask";
 import { ProcurementPanel } from "./ProcurementPanel";
 import { CustomerInfoCard } from "./CustomerInfoCard";
 import { RenovationTimeline } from "./RenovationTimeline";
+import { ProjectDocumentFiles } from "../../../components/doc-attachments/ProjectDocumentFiles";
 
 export function RenovationDetail({ id, canWrite, embedded = false }: { id: number; canWrite: boolean; embedded?: boolean }) {
   const q = useQuery(["renovation", "detail", id], () => simpleApi.detail(id), [id]);
@@ -81,6 +82,7 @@ export function RenovationDetail({ id, canWrite, embedded = false }: { id: numbe
           <ProcurementPanel projectId={id} canWrite={canWrite} onError={failed} showMoney={!d.financeHidden} />
           <SiteTasksPanel projectId={id} tasks={d.tasks} canWrite={canWrite} linesAvailable={!d.linesUnavailable} onAct={act}
             onSkip={(t) => setSkipping({ id: t.id, label: t.label })} />
+          <ProjectDocumentFiles projectId={id} />
           {d.serviceCases.length > 0 && <WarrantyPanel d={d} />}
         </div>
         <aside className="space-y-4 min-w-0">

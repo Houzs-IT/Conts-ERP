@@ -50,6 +50,7 @@ import styles from './SalesOrderDetail.module.css';
 import { PageHeader } from '../../components/Layout';
 import { fmtDate, fmtSen } from '../../vendor/shared/format';
 import { humaniseStatusKey } from '../../vendor/scm/lib/status-pill';
+import { DocAttachments, LineFilesButton } from '../../components/doc-attachments/DocAttachments';
 
 const ICON = { size: 16, strokeWidth: 1.75 } as const;
 
@@ -162,7 +163,7 @@ const buildReceiptColumns = (h: {
   },
 ];
 
-type Line = { rid: number; description: string; creditAccountCode: string; amountSen: number };
+type Line = { rid: number; id?: string; description: string; creditAccountCode: string; amountSen: number };
 
 export const Receipts = () => {
   const askConfirm = useConfirm();
@@ -226,7 +227,7 @@ export const Receipts = () => {
     setBank(receipt.bank_account_code);
     setReceiptDate(String(receipt.receipt_date).slice(0, 10));
     setLines(rows.length > 0
-      ? rows.map((l, i) => ({ rid: i + 1, description: l.description ?? '', creditAccountCode: l.credit_account_code, amountSen: Number(l.amount_sen) }))
+      ? rows.map((l, i) => ({ rid: i + 1, id: l.id, description: l.description ?? '', creditAccountCode: l.credit_account_code, amountSen: Number(l.amount_sen) }))
       : [{ rid: 1, description: '', creditAccountCode: '', amountSen: 0 }]);
     setAdding(true);
   }, [editing, detailQ.data]);
@@ -427,7 +428,7 @@ export const Receipts = () => {
               )
             )}
             {!debtorMode && lines.map((l) => (
-              <div key={l.rid} style={{ display: 'grid', gridTemplateColumns: 'minmax(200px, 1fr) minmax(240px, 1fr) 160px', gap: 'var(--space-2)', alignItems: 'center' }}>
+              <div key={l.rid} style={{ display: 'grid', gridTemplateColumns: `minmax(200px, 1fr) minmax(240px, 1fr) 160px${editing ? ' auto' : ''}`, gap: 'var(--space-2)', alignItems: 'center' }}>
                 <input placeholder="Description" value={l.description} className={styles.fieldInput}
                   onChange={(e) => patchLine(l.rid, { description: e.target.value })} />
                 <AccountSelect accounts={accounts} value={l.creditAccountCode} className={styles.fieldInput}
@@ -435,6 +436,7 @@ export const Receipts = () => {
                 <MoneyInput bare valueSen={l.amountSen > 0 ? l.amountSen : null} allowBlank placeholder="Amount (RM)"
                   aria-label={`line ${l.rid} amount`} inputClassName={styles.fieldInput}
                   onCommit={(sen) => patchLine(l.rid, { amountSen: sen ?? 0 })} />
+                {editing && (l.id ? <LineFilesButton docType="receipt" docId={editing.id} lineId={l.id} canEdit={canEdit} /> : <span />)}
               </div>
             ))}
             <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
@@ -451,6 +453,7 @@ export const Receipts = () => {
               </Button>
               <Button variant="ghost" size="sm" onClick={closeForm}>Close</Button>
             </div>
+            {editing && <DocAttachments docType="receipt" docId={editing.id} canEdit={canEdit} />}
           </div>
         </Modal>
       )}

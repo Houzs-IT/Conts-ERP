@@ -54,6 +54,7 @@ import { Badge } from "../../components/Badge";
 import { Button } from "../../components/Button";
 import { DataTable, type Column } from "../../components/DataTable";
 import { DATA_TABLE_LAYOUT_FAMILIES } from "../../components/dataTableLayoutFamilies";
+import { DocAttachments, LineFilesButton } from "../../components/doc-attachments/DocAttachments";
 import {
   DetailGrid,
   DetailMain,
@@ -644,6 +645,7 @@ export function DeliveryReturnDetailV2() {
           variant: buildVariantSummary(l.item_group ?? "others", l.variants) || (l.description2 ?? ""),
         });
         return (
+        <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="truncate text-[13px] font-semibold text-ink">
             {primary}
@@ -663,6 +665,8 @@ export function DeliveryReturnDetailV2() {
               )}
             </div>
           )}
+        </div>
+        <LineFilesButton docType="delivery_return" docId={deliveryReturn?.id} lineId={l.id} canEdit={(deliveryReturn?.status || "").toUpperCase() !== "CANCELLED"} />
         </div>
         );
       },
@@ -1114,6 +1118,8 @@ export function DeliveryReturnDetailV2() {
                 emptyLabel="No line items"
               />
             </Section>
+
+            <DocAttachments docType="delivery_return" docId={deliveryReturn.id} canEdit={rawStatus !== "CANCELLED"} />
           </DetailMain>
 
           <DetailAside>

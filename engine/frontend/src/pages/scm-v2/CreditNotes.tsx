@@ -29,6 +29,7 @@ import {
 import { authedFetch } from '../../vendor/scm/lib/authed-fetch';
 import type { PdfAction } from '../../vendor/scm/lib/pdf-common';
 import { fmtSen, fmtDateOrDash } from '../../vendor/shared/format';
+import { DocAttachments, LineFilesButton } from '../../components/doc-attachments/DocAttachments';
 
 const KIND_WORD: Record<NoteKind, string> = { CN: 'Credit note', DN: 'Debit note', SCN: 'Supplier credit note' };
 /* The kind filter's tabs, off the one label map — not a second list of kinds. */
@@ -256,14 +257,15 @@ const NoteDetail = ({ id, onClose, onEdit }: { id: string; onClose: () => void; 
             <div style={{ gridColumn: '1 / -1' }}><div style={soft}>Reason</div>{n.reason ?? '—'}</div>
           </div>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead><tr><th style={th}>#</th><th style={th}>Description</th><th style={th}>Account</th><th style={{ ...th, textAlign: 'right' }}>Amount</th></tr></thead>
+            <thead><tr><th style={th}>#</th><th style={th}>Description</th><th style={th}>Account</th><th style={{ ...th, textAlign: 'right' }}>Amount</th><th style={th} aria-label="Files" /></tr></thead>
             <tbody>
               {lines.map((l) => (
-                <tr key={l.id}><td style={td}>{l.line_no}</td><td style={td}>{l.description ?? '—'}</td><td style={{ ...td, fontFamily: 'var(--font-mono)' }}>{l.account_code}</td><td style={{ ...td, ...num }}>{fmtSen(l.amount_sen)}</td></tr>
+                <tr key={l.id}><td style={td}>{l.line_no}</td><td style={td}>{l.description ?? '—'}</td><td style={{ ...td, fontFamily: 'var(--font-mono)' }}>{l.account_code}</td><td style={{ ...td, ...num }}>{fmtSen(l.amount_sen)}</td><td style={{ ...td, textAlign: 'right' }}><LineFilesButton docType="credit_note" docId={n.id} lineId={l.id} canEdit={n.status !== 'CANCELLED'} /></td></tr>
               ))}
-              <tr><td colSpan={3} style={{ ...td, fontWeight: 700 }}>Total</td><td style={{ ...td, ...num, fontWeight: 700 }}>{fmtSen(n.total_sen)}</td></tr>
+              <tr><td colSpan={3} style={{ ...td, fontWeight: 700 }}>Total</td><td style={{ ...td, ...num, fontWeight: 700 }}>{fmtSen(n.total_sen)}</td><td style={td} /></tr>
             </tbody>
           </table>
+          <DocAttachments docType="credit_note" docId={n.id} canEdit={n.status !== 'CANCELLED'} />
           {post.isSuccess && <div style={{ fontSize: 'var(--fs-13)', color: good }}>Posted as {post.data.jeNo}.</div>}
           {printError && <div style={{ fontSize: 'var(--fs-13)', color: danger }}>{printError}</div>}
           {failed != null && <div style={{ fontSize: 'var(--fs-13)', color: danger }}>{errText(failed)}</div>}

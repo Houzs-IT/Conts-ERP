@@ -85,7 +85,8 @@ describe("executable route contract", () => {
     // 169 since 2026-10-09 (Conts): the seven /scm/renovation/* pages — quotations
     // (list, editor), package templates (list, editor), the contract, the
     // variation order and payment terms & letterheads.
-    expect(STAFF_ROUTE_PATTERNS).toHaveLength(169);
+    // 170 since 2026-10-16 (Conts): /scm/document-files/import, files onto many documents at once.
+    expect(STAFF_ROUTE_PATTERNS).toHaveLength(170);
     expect(new Set(STAFF_ROUTE_PATTERNS).size).toBe(STAFF_ROUTE_PATTERNS.length);
     expect([...STAFF_ROUTE_PATTERNS].sort()).toEqual([...appPages].sort());
   });
@@ -126,7 +127,8 @@ describe("executable route contract", () => {
     // 170 since 2026-09-21 — /scm/forecast; see the staff-route count above.
     // 171 since 2026-09-21 — /scm/finance-dashboard; see the staff-route count above.
     // 178 since 2026-10-09 — the seven /scm/renovation/* pages (Conts); see the staff-route count above.
-    expect(ROUTE_CONTRACT).toHaveLength(178);
+    // 179 since 2026-10-16 — /scm/document-files/import (Conts).
+    expect(ROUTE_CONTRACT).toHaveLength(179);
   });
 
   it("keeps every desktop nav destination on a live staff route", () => {

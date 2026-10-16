@@ -180,6 +180,7 @@ const ScmSalesOrderNewFromProductsV2 = lazy(() => import("./pages/scm-v2/SalesOr
 const ScmCategoriesV2 = lazy(() => import("./pages/scm-v2/Categories").then((m) => ({ default: m.Categories })));
 const ScmSoFromProductsV2 = lazy(() => import("./pages/scm-v2/SoFromProducts").then((m) => ({ default: m.SoFromProducts })));
 const ScmSalesOrderDetailV2 = lazy(() => import("./pages/scm-v2/SalesOrderDetailV2").then((m) => ({ default: m.SalesOrderDetailV2 })));
+const ScmDocumentFilesImport = lazy(() => import("./pages/scm-v2/DocumentFilesImport").then((m) => ({ default: m.DocumentFilesImport })));
 // Renovation sales documents (Conts, 2026-10-09): quotations, package templates, the contract, VOs, terms.
 const RenoQuotationsList = lazy(() => import("./pages/renovation/QuotationsList").then((m) => ({ default: m.QuotationsList })));
 const RenoQuotationEditor = lazy(() => import("./pages/renovation/QuotationEditor").then((m) => ({ default: m.QuotationEditor })));
@@ -874,6 +875,7 @@ export default function App() {
         <Route path="/scm/renovation/contracts/:docNo" element={<ScmGuard area="scm.sales.orders"><Scm2990Shell><RenoSalesOrder /></Scm2990Shell></ScmGuard>} />
         <Route path="/scm/renovation/variation-orders/:id" element={<ScmGuard area="scm.sales.orders"><Scm2990Shell><RenoVariationOrderEditor /></Scm2990Shell></ScmGuard>} />
         <Route path="/scm/renovation/settings" element={<ScmGuard area="scm.sales.orders"><Scm2990Shell><RenoSettings /></Scm2990Shell></ScmGuard>} />
+        <Route path="/scm/document-files/import" element={<ScmGuard area="scm.sales.orders"><Scm2990Shell><ScmDocumentFilesImport /></Scm2990Shell></ScmGuard>} />
         {/* SCM Reports v2 — AutoCount-style detail listings. Each wrapped in <Scm2990Shell>. */}
         <Route path="/scm/reports/sales-order-detail-listing" element={<ScmGuard area="scm.sales.orders"><Scm2990Shell><ScmSoDetailListingV2 /></Scm2990Shell></ScmGuard>} />
         <Route path="/scm/reports/delivery-order-detail-listing" element={<ScmGuard area="scm.sales.delivery"><Scm2990Shell><ScmDoDetailListingV2 /></Scm2990Shell></ScmGuard>} />

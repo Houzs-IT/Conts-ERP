@@ -41,6 +41,7 @@ const postMutate = vi.fn();
 const lastList = { value: '' };
 const pdfSingle = vi.fn(async (..._args: unknown[]) => {});
 const pdfBatch = vi.fn(async (..._args: unknown[]) => {});
+vi.mock('../../components/doc-attachments/DocAttachments', () => ({ DocAttachments: () => null, LineFilesButton: () => null })); // has its own tests and API check
 vi.mock('../../vendor/scm/lib/deposit-invoice-pdf', () => ({ generateDepositInvoicePdf: pdfSingle, generateDepositInvoicesPdf: pdfBatch }));
 
 vi.mock('../../vendor/scm/lib/deposit-invoice-queries', async (importOriginal) => ({

@@ -436,3 +436,11 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Not on the Timeline yet: Procurement-date edits do not refresh the card until Refresh (they have no page-level save callback); a step reached by the data alone (not Move step) has no history row, so only Project completed marks Closed.
 - Note types (Customer, Design, Supplier, Site, Sales) are renamed in renovationTimelineModel.ts CATEGORY_LABEL; the stored keys stay. No photo/file on a note: the service case note has none either.
 - Check: scripts/api-checks/reno-timeline.mjs (41 checks, local engine with migration 0118).
+
+## Photos and documents on every flow document (feat/reno-doc-attachments, migration 0119, 16 Oct 2026)
+- Apply migration 0119 to staging, then production (node scripts/migrate-pg.mjs --env-file=<file>, dry-run first). Until then every document page says "Attachments are not switched on yet".
+- Receipts, credit/debit notes and AP invoices rewrite their lines on each save, so a line's files then show on the whole document ("from a line since changed"). Fix by updating lines in place on save.
+- A renovation quotation's new revision has new line ids: line files of an earlier revision show on the whole quotation, not on the new revision's lines.
+- The phone app's delivery order detail (MobileModuleDetail) has no files panel; the driver's Proof of Delivery screen has one.
+- Payment vouchers and AP invoices keep their supplier bills in their own Files panel (print bundle, posting lock); the shared panel shows them read-only and adds line files.
+- Renovation site-receipt photos (goods received at the unit) stay in their own panel and are not in the project's Documents roll-up yet.

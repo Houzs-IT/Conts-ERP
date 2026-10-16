@@ -135,6 +135,7 @@ export const STAFF_ROUTE_PATTERNS = [
   "/scm/renovation/contracts/:docNo",
   "/scm/renovation/variation-orders/:id",
   "/scm/renovation/settings",
+  "/scm/document-files/import",
   "/scm/reports/sales-order-detail-listing",
   "/scm/reports/delivery-order-detail-listing",
   "/scm/reports/sales-invoice-detail-listing",

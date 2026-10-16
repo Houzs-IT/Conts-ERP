@@ -22,6 +22,7 @@ import {
 import { buildPrintDoc } from '../../lib/renovation/print-doc';
 import { PrintDialog } from './PrintDialog';
 import { ContractProjectCard } from './ContractProjectCard';
+import { DocAttachments, LineFilesButton } from '../../components/doc-attachments/DocAttachments';
 import { Card, ErrorBanner, Field, fmtDate, inputCls, MoneyInput, pctLabel, rm, Stat, StatusPill, todayIso } from './shared';
 import { cn } from '../../lib/utils';
 
@@ -145,7 +146,7 @@ function PoSplitCard({ c, canSplit }: { c: ContractView; canSplit: boolean }) {
   );
 }
 
-function LinesCard({ c, canEdit }: { c: ContractView; canEdit: boolean }) {
+function LinesCard({ c, canEdit, filesEditable }: { c: ContractView; canEdit: boolean; filesEditable: boolean }) {
   const sq = useSuppliers({ status: 'ACTIVE' });
   const suppliers = sq.data ?? [];
   const [edits, setEdits] = useState<Record<string, { supplierId?: string | null; unitCostSen?: number; stageCode?: string | null }>>({});
@@ -170,7 +171,7 @@ function LinesCard({ c, canEdit }: { c: ContractView; canEdit: boolean }) {
           </thead>
           <tbody>
             {c.sections.map((s, si) => (
-              <SectionRows key={si} section={s} canEdit={canEdit} edits={edits} setEdits={setEdits} suppliers={suppliers} supplierName={supplierName} />
+              <SectionRows key={si} section={s} canEdit={canEdit} edits={edits} setEdits={setEdits} suppliers={suppliers} supplierName={supplierName} docNo={c.docNo} filesEditable={filesEditable} />
             ))}
           </tbody>
         </table>
@@ -179,10 +180,10 @@ function LinesCard({ c, canEdit }: { c: ContractView; canEdit: boolean }) {
   );
 }
 
-function SectionRows({ section, canEdit, edits, setEdits, suppliers, supplierName }: {
+function SectionRows({ section, canEdit, edits, setEdits, suppliers, supplierName, docNo, filesEditable }: {
   section: ContractView['sections'][number]; canEdit: boolean; edits: Record<string, { supplierId?: string | null; unitCostSen?: number; stageCode?: string | null }>;
   setEdits: (f: (e: Record<string, { supplierId?: string | null; unitCostSen?: number; stageCode?: string | null }>) => Record<string, { supplierId?: string | null; unitCostSen?: number; stageCode?: string | null }>) => void;
-  suppliers: Array<{ id: string; code: string; name: string }>; supplierName: Map<string, string>;
+  suppliers: Array<{ id: string; code: string; name: string }>; supplierName: Map<string, string>; docNo: string; filesEditable: boolean;
 }) {
   return (
     <>
@@ -200,7 +201,7 @@ function SectionRows({ section, canEdit, edits, setEdits, suppliers, supplierNam
         const set = (p: { supplierId?: string | null; unitCostSen?: number; stageCode?: string | null }) => l.id && setEdits((x) => ({ ...x, [l.id!]: { ...x[l.id!], ...p } }));
         return (
           <tr key={l.id} className={cn('border-t border-border-subtle', gone && 'text-ink-muted line-through')}>
-            <td className={cn('px-3 py-1', l.kind !== 'ITEM' && 'pl-7', l.kind === 'ITEM' && 'font-semibold')}>{l.description}{l.room ? <span className="font-normal text-ink-muted"> @ {l.room}</span> : null}{l.itemCode ? <span className="ml-1 text-[11px] font-normal text-ink-muted">{l.itemCode}</span> : null}{l.supplyByOwner && <span className="ml-1 text-[11px] font-normal text-warning-text">supply by owner</span>}</td>
+            <td className={cn('px-3 py-1', l.kind !== 'ITEM' && 'pl-7', l.kind === 'ITEM' && 'font-semibold')}>{l.description}{l.room ? <span className="font-normal text-ink-muted"> @ {l.room}</span> : null}{l.itemCode ? <span className="ml-1 text-[11px] font-normal text-ink-muted">{l.itemCode}</span> : null}{l.supplyByOwner && <span className="ml-1 text-[11px] font-normal text-warning-text">supply by owner</span>}{priced && l.soItemId && <span className="ml-1.5 inline-block align-middle no-underline"><LineFilesButton docType="sales_order" docId={docNo} lineId={l.soItemId} canEdit={filesEditable} /></span>}</td>
             <td className="text-center tabular-nums">{priced ? lineQty(l) : ''}</td>
             <td className="whitespace-nowrap pl-2 text-right tabular-nums">{priced && section.lumpSumSen === null ? (l.isFoc ? 'FOC' : rm(l.netSen ?? 0)) : ''}</td>
             <td className="pl-4">
@@ -355,7 +356,8 @@ export function RenovationSalesOrder() {
           </ul>
         </Card>
       )}
-      <LinesCard c={k} canEdit={live && can('scm.renovation.po_split')} />
+      <LinesCard c={k} canEdit={live && can('scm.renovation.po_split')} filesEditable={k.status !== 'CANCELLED'} />
+      <DocAttachments docType="sales_order" docId={k.docNo} canEdit={k.status !== 'CANCELLED'} />
       <BillDialog c={k} inst={billing} onClose={() => setBilling(null)} />
       <PrintDialog open={printOpen} onClose={() => setPrintOpen(false)} title="sales order" docNo={k.docNo} defaultFormat={k.header.printFormat}
         build={(format) => buildPrintDoc({ kind: 'SALES_ORDER', docNo: k.docNo, format, brand, header: { ...k.header, customerName: k.header.customerName || k.debtorName, docDate: k.header.docDate ?? k.soDate /* eslint-disable-line @typescript-eslint/no-unnecessary-condition -- doc_date may be null on older SOs; fall back to the SO date */ }, sections: k.sections, instalments: k.instalments })} />
