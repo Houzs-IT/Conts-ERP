@@ -15,6 +15,16 @@ export const SPLITS = ['Not set', 'Profit share', 'GRR — guaranteed rent'];
 /** Roles that may edit unit master data: MASTER_ROLES in functions/_lib/properties.ts. */
 export const MASTER_ROLES = ['management', 'operations_manager', 'finance_admin'];
 
+export const LAYOUTS = [
+  ['studio', 'Studio'], ['1_bedroom', '1 bedroom'], ['2_bedroom', '2 bedroom'], ['3_bedroom', '3 bedroom'], ['4_plus_bedroom', '4+ bedroom'],
+  ['duplex', 'Duplex'], ['dual_key', 'Dual key'], ['penthouse', 'Penthouse'], ['other', 'Other'],
+] as const;
+export type LayoutType = typeof LAYOUTS[number][0];
+export const layoutLabel = (t: string | null | undefined) => LAYOUTS.find(([k]) => k === t)?.[1] ?? null;
+/** The layout a unit with this many bedrooms most likely has, to pre-fill an empty Layout type. */
+export const layoutFromBedrooms = (n: number | null | undefined): LayoutType | null =>
+  n == null ? null : n <= 0 ? 'studio' : n === 1 ? '1_bedroom' : n === 2 ? '2_bedroom' : n === 3 ? '3_bedroom' : '4_plus_bedroom';
+
 export const cap = (s: string) => s.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
 
 /* ---- GET /api/properties: the tree and the editable unit master data ---- */
@@ -23,11 +33,16 @@ export type GuaranteePeriod = 'month' | 'year';
 export interface Unit {
   id: string; buildingId: string; parentUnitId: string | null;
   listingName: string; unitCode: string; state: string; address: string;
+  /** The owner, picked from the owner profiles. The name, masked IC and bank fields are read-only here: they are edited on
+   *  the owner's page, and the unit endpoints refuse them. */
+  ownerId?: string;
   ownerName: string; ic: string; bankName: string; bankAccount: string; accountHolder: string;
   pkg: string; term: string; split: string; splitValue: number | null; guaranteePeriod: GuaranteePeriod;
   /** The revenue model (0093) and its short terms ("Share 75/20/5"); terms only for roles that see money. Read-only here. */
   revenueModel?: RevenueModel; termsLabel?: string | null;
-  bedrooms?: number;
+  bedrooms?: number; bathrooms?: number; sizeSqft?: number | null;
+  /** Migration 0123. null: not set yet (the form proposes one from the bedrooms). */
+  layoutType?: LayoutType | null;
   /** Sen. Present only for roles that see money; saved through PUT /api/rates, not the unit PATCH. */
   baseRate?: number;
   /** Sen. The standard clean's price (0 or null: not set). Money roles only; saved from the Financials tab. */

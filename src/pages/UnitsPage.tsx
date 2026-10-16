@@ -26,14 +26,14 @@ import type { UnitReadiness } from '../lib/types';
 import UnitTree, { firstUnitId } from './units/UnitTree';
 import AccessTab from './units/AccessTab';
 import BookingsTab from './units/BookingsTab';
-import { SaveBar, DetailsForm, DocumentsCard, BuildingModal, ConfirmAdd } from './units/UnitForms';
+import { SaveBar, DetailsForm, DocumentsCard, BuildingModal, ConfirmAdd, AddUnitModal } from './units/UnitForms';
 import { UnitCostsCard } from './owners/Costs';
 import ContractTab, { ModelChip } from './units/ContractTab';
 import { todayMyt } from '../lib/format';
 import { PROPERTIES_FALLBACK, DETAIL_FALLBACK, mkUnit } from './units/fallback';
 import { RecordHistory } from '../components/RecordHistory';
 import {
-  MASTER_ROLES, STATES,
+  MASTER_ROLES, STATES, layoutFromBedrooms,
   type Unit, type Building, type PropertiesPayload, type UnitDetail, type RosterRow,
 } from './units/shared';
 import { statusLabel } from '../lib/status';
@@ -144,7 +144,9 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
     // Owner and payout details belong to the owner and are edited on the owner's page; the old monthly costs list and
     // the cleaning price are saved on the Financials tab. None of them is sent from this form.
     const { baseRate, contract: _contract, revenueModel: _model, termsLabel: _terms, ownerName: _on, ic: _ic, bankName: _bn, bankAccount: _ba,
-      accountHolder: _ah, expenses: _ex, cleaningPrice: _cp, ...body } = form;
+      accountHolder: _ah, expenses: _ex, cleaningPrice: _cp, deepCleaningPrice: _dcp, ownerId, ...rest } = form;
+    // An empty layout takes the one proposed from the bedrooms, as the form shows it.
+    const body = { ...rest, layoutType: rest.layoutType ?? layoutFromBedrooms(rest.bedrooms), ...(ownerId && ownerId !== before?.ownerId ? { ownerId } : {}) };
     setSaving(true);
     try {
       await api.patch(`/units/${form.id}`, body);
@@ -180,7 +182,7 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
       props.reload();
     } catch (e) { notifyFailure(e); }
   }
-  async function createUnit(nu: Unit, title: string, body: string) {
+  async function createUnit(nu: ReturnType<typeof newUnit>, title: string, body: string) {
     try {
       const r = await api.post<{ id: string }>('/units', nu);
       setModal(null);
@@ -189,15 +191,15 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
       props.reload(); roster.reload();
     } catch (e) { notifyFailure(e); }
   }
-  function addUnit(buildingId: string) {
+  // Only the unit's own fields go to the server; the owner is picked (a sub-unit takes its parent's).
+  const newUnit = (u: Unit) => ({ id: u.id, buildingId: u.buildingId, parentUnitId: u.parentUnitId, ownerId: u.ownerId, listingName: '', unitCode: '', pkg: u.pkg, term: u.term, split: u.split, splitValue: u.splitValue });
+  function addUnit(buildingId: string, ownerId: string) {
     const state = buildings.find(b => b.id === buildingId)?.state ?? STATES[0];
-    void createUnit(mkUnit(crypto.randomUUID(), buildingId, '', '', state, '', { ownerName: '' }), 'Unit added.', 'Fill in its details below.');
+    void createUnit(newUnit(mkUnit(crypto.randomUUID(), buildingId, '', '', state, '', { ownerId })), 'Unit added.', 'Fill in its details below.');
   }
   function addSubUnit(buildingId: string, parent: Unit) {
-    const nu = mkUnit(crypto.randomUUID(), buildingId, '', '', parent.state, '', {
-      parentUnitId: parent.id, ownerName: parent.ownerName, ic: parent.ic, bankName: parent.bankName, bankAccount: parent.bankAccount, accountHolder: parent.accountHolder, split: 'Profit share',
-    });
-    void createUnit(nu, 'Sub-unit added.', 'Fill in its details below.');
+    const nu = mkUnit(crypto.randomUUID(), buildingId, '', '', parent.state, '', { parentUnitId: parent.id, split: 'Profit share' });
+    void createUnit(newUnit(nu), 'Sub-unit added.', 'Fill in its details below.');
   }
 
   // ?view=list shows every unit as one table instead of the tree and one record.
@@ -214,11 +216,10 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
     {modal?.kind === 'editBuilding' && <BuildingModal initial={modal.building} onClose={() => setModal(null)}
       onSubmit={b => void saveBuilding(modal.building.id, b)}
       onDelete={units.every(u => u.buildingId !== modal.building.id) ? () => void deleteBuilding(modal.building) : undefined} />}
-    {modal?.kind === 'unit' && <ConfirmAdd title={`Add a unit to ${buildings.find(b => b.id === modal.buildingId)?.name ?? 'this building'}`}
-      sub="A blank unit opens for you to fill in." body="You will set the listing name, code, owner, package and GRR on its Details tab." confirm="Add unit"
-      onClose={() => setModal(null)} onConfirm={() => addUnit(modal.buildingId)} />}
+    {modal?.kind === 'unit' && <AddUnitModal buildingName={buildings.find(b => b.id === modal.buildingId)?.name ?? 'this building'}
+      onClose={() => setModal(null)} onConfirm={ownerId => addUnit(modal.buildingId, ownerId)} />}
     {modal?.kind === 'subunit' && <ConfirmAdd title={`Add a sub-unit under ${modal.parent.unitCode || 'this unit'}`}
-      sub="A part of this unit let on its own, such as a bedroom or a floor." body="The sub-unit inherits the owner and bank details of its parent. You can give it its own code, split and expenses." confirm="Add sub-unit"
+      sub="A part of this unit let on its own, such as a bedroom or a floor." body="The sub-unit belongs to the same owner as its parent. You can give it its own code, split and expenses." confirm="Add sub-unit"
       onClose={() => setModal(null)} onConfirm={() => addSubUnit(modal.buildingId, modal.parent)} />}
   </>;
 
