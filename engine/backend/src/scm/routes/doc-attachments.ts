@@ -46,7 +46,10 @@ async function docOr404(c: C, type: DocType): Promise<DocRef | Response> {
   const db = dbOf(c);
   if (!(await attachmentsReady(db).catch(() => false))) return notReady(c);
   const doc = await loadDoc(db, type, c.req.param('id') ?? '', activeCompanySql(c, 'd.company_id'));
-  if (!doc) return c.json({ error: 'not_found', message: `That ${DOC_TYPES[type].label.toLowerCase()} is not in the company you are working in.` }, 404);
+  if (!doc) const label = DOC_TYPES[type].label;
+    /* "purchase order", but "AP invoice". */
+    const said = /^[A-Z]{2}/.test(label) ? label : label.charAt(0).toLowerCase() + label.slice(1);
+    return c.json({ error: 'not_found', message: `That ${said} is not in the company you are working in.` }, 404);
   return doc;
 }
 
@@ -113,8 +116,11 @@ export async function readDocFiles(db: Db, doc: DocRef): Promise<{ files: DocFil
    leaves writes to a permission inside each handler; their files follow the same permission. */
 const WRITE_PERM: Partial<Record<DocType, string>> = { quotation: 'scm.renovation.quote', variation_order: 'scm.renovation.quote' };
 
-function router(type: DocType) {
+/* `sub` puts the document under a prefix that already exists (quotations and variation orders under /renovation,
+   official receipts under /accounting), so scm/index.ts gains no new top-level prefix for the write freeze to map. */
+function router(type: DocType, sub = '') {
   const app = new Hono<{ Bindings: Env; Variables: Variables }>();
+  const P = `${sub}/:id/attachments`;
   app.use('*', supabaseAuth);
   const writeGate = async (c: C, next: Next) => {
     const perm = WRITE_PERM[type];
@@ -123,10 +129,10 @@ function router(type: DocType) {
     }
     await next();
   };
-  app.use('/:id/attachments', writeGate);
-  app.use('/:id/attachments/*', writeGate);
+  app.use(P, writeGate);
+  app.use(`${P}/*`, writeGate);
 
-  app.get('/:id/attachments', async (c: C) => {
+  app.get(P, async (c: C) => {
     const doc = await docOr404(c, type);
     if (doc instanceof Response) return doc;
     const db = dbOf(c);
@@ -134,7 +140,7 @@ function router(type: DocType) {
     return c.json({ ready: true, doc: { type, id: doc.id, no: doc.no }, ...(await readDocFiles(db, doc)) });
   });
 
-  app.put('/:id/attachments', async (c: C) => {
+  app.put(P, async (c: C) => {
     const doc = await docOr404(c, type);
     if (doc instanceof Response) return doc;
     /* Typed as always bound; a worker deployed without the binding should answer, not crash. */
@@ -186,7 +192,7 @@ function router(type: DocType) {
     }
   });
 
-  app.patch('/:id/attachments/:fileId', async (c: C) => {
+  app.patch(`${P}/:fileId`, async (c: C) => {
     const doc = await docOr404(c, type);
     if (doc instanceof Response) return doc;
     const body = (await c.req.json().catch(() => null)) as { caption?: unknown } | null;
@@ -199,7 +205,7 @@ function router(type: DocType) {
     return c.json({ ok: true });
   });
 
-  app.delete('/:id/attachments/:fileId', async (c: C) => {
+  app.delete(`${P}/:fileId`, async (c: C) => {
     const doc = await docOr404(c, type);
     if (doc instanceof Response) return doc;
     const fileId = c.req.param('fileId') ?? '';
@@ -215,7 +221,7 @@ function router(type: DocType) {
     return c.json({ ok: true });
   });
 
-  app.get('/:id/attachments/:fileId', async (c: C) => {
+  app.get(`${P}/:fileId`, async (c: C) => {
     const doc = await docOr404(c, type);
     if (doc instanceof Response) return doc;
     const fileId = c.req.param('fileId') ?? '';
@@ -239,9 +245,9 @@ function router(type: DocType) {
   return app;
 }
 
-export const quotationAttachments = router('quotation');
+export const quotationAttachments = router('quotation', '/quotations');
 export const salesOrderAttachments = router('sales_order');
-export const variationOrderAttachments = router('variation_order');
+export const variationOrderAttachments = router('variation_order', '/variation-orders');
 export const purchaseOrderAttachments = router('purchase_order');
 export const deliveryOrderAttachments = router('delivery_order');
 export const goodsReceivedAttachments = router('goods_received');
@@ -251,7 +257,7 @@ export const purchaseInvoiceAttachments = router('purchase_invoice');
 export const salesInvoiceAttachments = router('sales_invoice');
 export const receiptAttachments = router('receipt');
 export const creditNoteAttachments = router('credit_note');
-export const officialReceiptAttachments = router('official_receipt');
+export const officialReceiptAttachments = router('official_receipt', '/receipts');
 export const depositInvoiceAttachments = router('deposit_invoice');
 export const paymentVoucherAttachments = router('payment_voucher');
 export const apInvoiceAttachments = router('ap_invoice');

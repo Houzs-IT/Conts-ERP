@@ -607,7 +607,7 @@ scm.use("/stock-takes/*", scmAreaGuard("scm.warehouse.stock_take"));
 scm.route("/stock-takes", stockTakes);
 // ── SCM Finance (scm.finance.accounting) ────────────────────────────────────
 scm.use("/accounting/*", scmAreaGuard("scm.finance.accounting"));
-scm.route("/accounting/receipts", officialReceiptAttachments); // photos and documents (mig 0119)
+scm.route("/accounting", officialReceiptAttachments); // photos and documents (mig 0119)
 scm.route("/accounting", accounting);
 // Payment Vouchers — standalone AP cash-out doc (port of 2990 0189/0202, Phase
 // 1-B MYR). A finance document that posts a JE to the GL + can settle PIs, so it
@@ -981,8 +981,8 @@ scm.route("/site-receipts", siteReceipts);
 // scm.renovation.* key inside routes/renovation.ts.
 import { renovation } from "./routes/renovation";
 scm.use("/renovation/*", scmAreaGuard("scm.sales.orders", { writeLevel: "view" }));
-scm.route("/renovation/quotations", quotationAttachments); // photos and documents (mig 0119)
-scm.route("/renovation/variation-orders", variationOrderAttachments); // photos and documents (mig 0119)
+scm.route("/renovation", quotationAttachments); // photos and documents (mig 0119)
+scm.route("/renovation", variationOrderAttachments); // photos and documents (mig 0119)
 scm.route("/renovation", renovation);
 
 // ── Renovation mode: a sales order's "Order information" (project, property; mig 0112) ──
