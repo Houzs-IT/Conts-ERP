@@ -116,6 +116,15 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 - Done (fix/engine-polish): engine table messages stay in the visible part of wide tables; list summary cards say "Couldn't load" with Retry; inside Property OS the engine draws no top bar of its own (tab strip, search, refresh, bell) and the phone Calendar has no second search; Settings drops the AutoCount Sync tab and its /api/sync/status call; the phone project list has New project (findings 12-16). Renovation PO: a line of another category is named before Save, and the database refusal shows inline. Phone Calendar Week in renovation mode lists dated items like the desktop.
 - Supply chain data screens could not be checked locally (engine reads through Supabase REST); check them on the staging preview (finding 17).
 
+## Renovation project screens fix (fix/reno-projects-ui, migrations 0120-0121, 16 Oct 2026)
+- Before merge: apply migrations 0120 (imported projects' real start date) and 0121 (SLA per step) to staging, then production; the engine reads 0121 only once it is there (SLA hidden before).
+- SLA defaults are blank until someone fills Project Maintenance > SLA; until then no project shows Overdue.
+- Data: 91 of 97 projects have PIC "Alex", an imported name not linked to the ALEX GOH account, so pickers show "Alex (no longer listed)"; owner to decide whether to move them to the account.
+- Data: production has the Notion import note on 70 of 96 imported projects (chunk 04c_activity looks unapplied); 12 imported projects keep the import day as start because Notion gave no earlier date.
+- Imported Closed projects without a handover show the import day as their closed day (Notion did not export when they closed).
+- Duplicate migration number on main: 0118_project_timeline_notes.sql and 0118_renovation_units.sql (both applied; numbering only).
+- The board loads at most 200 filtered projects (the list endpoint's largest page); it says so above the board when there are more.
+
 ## Later
 - Packages (8 Oct, chore/update-packages): Property OS has 0 flagged packages (wrangler 4.148, source-map-js, and an override pinning sharp to 0.35.5 inside wrangler's local emulator; all build/dev tools, none ran in production). Engine: the non-breaking fixes are in (hono on the server, dompurify on the screens, and build tools). Left in engine/, each needing a breaking upgrade of Houzs's code or tools: react-router 6 (moderate), wrangler's sharp and undici, esbuild, vitest, braces. Take them with the next Houzs copy.
 - Email delivery: needs MAIL_API_KEY on the preview environment too; production has it.
