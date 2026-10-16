@@ -381,6 +381,11 @@ function List({ tab, onTab, onOpen, onNew }: { tab: Tab; onTab: (t: Tab) => void
       render: r => <span className="inline-flex"><StatusBadge entity="it_urgency" value={r.priority} size="sm" dot={false} /></span>, exportValue: r => statusLabel('it_urgency', r.priority),
     },
     { key: 'assignee', label: 'Handled by', value: r => r.assignee_name ?? 'Not picked up yet', phone: 'meta' },
+    {
+      // A phone card shows two dates; this one says which it is.
+      key: 'created', label: 'Submitted', type: 'datetime', value: r => r.created_at, phone: 'meta',
+      render: r => <><span className="md:hidden">Submitted </span>{dateTime(r.created_at)}</>,
+    },
     { key: 'updated', label: 'Last update', type: 'datetime', value: r => r.updated_at, phone: 'right' },
   ], []);
 
