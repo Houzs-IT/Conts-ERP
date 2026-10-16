@@ -1,21 +1,27 @@
 import { useState } from 'react';
 import { DARK_MODE_READY } from '../lib/theme';
 import { color, radius } from '../theme';
-import { screenClosed } from '../lib/navigation';
+import { SETTINGS_SECTIONS, screenClosed } from '../lib/navigation';
 import { useSession } from '../lib/session';
 import { ROLE_LABEL } from '../lib/vocabulary';
 import { getThemePref, setThemePref, type ThemePref } from '../lib/theme';
 import Icon from './Icon';
+
+const SETTINGS_GROUPS = [...new Set(SETTINGS_SECTIONS.map(s => s.group))].map(label => ({
+  label,
+  items: SETTINGS_SECTIONS.filter(s => s.group === label)
+    .map(s => ({ label: s.label, sub: s.description, icon: s.icon, path: `/system/settings/${s.key}` })),
+}));
 
 /** Phone Settings tab (owner, Oct 2026). One place for the account and every system page;
  *  the More sheet keeps only daily modules. Rows the person cannot open are dropped.
  *  The audit trail lives inside System health in this codebase (/system/audit redirects there). */
 const GROUPS: { label: string; items: { label: string; sub: string; icon: string; path: string }[] }[] = [
   { label: 'ACCOUNT', items: [
-    { label: 'Company and defaults', sub: 'Name, address, SSM number, operator share', icon: 'Building2', path: '/system/settings#company' },
-    { label: 'Profile and password', sub: 'Your name, phone, 2-step sign-in', icon: 'User', path: '/account' },
+    { label: 'My account', sub: 'Your password, 2-step sign-in and devices', icon: 'User', path: '/account' },
     { label: 'Notifications', sub: 'What you are told about, and when', icon: 'Bell', path: '/notifications' },
   ] },
+  ...SETTINGS_GROUPS,
   { label: 'SYSTEM', items: [
     { label: 'Users and roles', sub: 'Accounts, permissions, organisation chart', icon: 'ShieldCheck', path: '/system/users' },
     { label: 'Integrations', sub: 'Channex, email, WhatsApp, bank', icon: 'Plug', path: '/system/integrations' },
@@ -31,7 +37,7 @@ export default function MobileSettingsHub({ navigate }: { navigate: (p: string) 
   if (!user) return null;
   const initials = user.fullName.split(/\s+/).map(p => p[0]).join('').slice(0, 2).toUpperCase();
   const groups = GROUPS
-    .map(g => ({ ...g, items: g.items.filter(it => !screenClosed(it.path.split('#')[0], user.access)) }))
+    .map(g => ({ ...g, items: g.items.filter(it => !screenClosed(it.path, user.access)) }))
     .filter(g => g.items.length);
 
   const row = { display: 'flex', alignItems: 'center', gap: 13, minHeight: 56, padding: '8px 16px', borderBottom: `1px solid ${color.borderMuted}`, background: 'transparent', border: 'none', width: '100%', textAlign: 'left' as const, cursor: 'pointer', color: color.ink };

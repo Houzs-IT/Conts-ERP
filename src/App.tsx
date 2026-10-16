@@ -127,7 +127,8 @@ function AppLayout() {
       {closed ? <NoAccess />
         : viaEngine ? <SupplyChainEngine enginePath={enginePath} />
         : enginePath && !engine.data && engine.loading ? <Fallback />
-        : <CrashScreen inline key={location.pathname}><Suspense fallback={<Fallback />}><PageShown /><Outlet /></Suspense></CrashScreen>}
+        // Settings categories share one page, so an unsaved edit in one survives a visit to another.
+        : <CrashScreen inline key={location.pathname.replace(/^\/system\/settings\/.*/, '/system/settings')}><Suspense fallback={<Fallback />}><PageShown /><Outlet /></Suspense></CrashScreen>}
     </AppShell>
   );
 }
@@ -321,7 +322,7 @@ function Routed() {
         <Route path="/system/integrations" element={<IntegrationsPage />} />
         <Route path="/system/integrations/hostplatform" element={<HostPlatformImportPage />} />
         <Route path="/settings" element={<SettingsHome />} />
-        <Route path="/system/settings" element={<SettingsPage />} />
+        <Route path="/system/settings/:section?" element={<SettingsPage />} />
         <Route path="/system/audit" element={<Navigate to="/system/health" replace />} />
         <Route path="/system/health" element={<SystemHealthPage />} />
         <Route path="/system/it-support" element={<ItSupportPage />} />
