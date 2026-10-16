@@ -46,10 +46,12 @@ async function docOr404(c: C, type: DocType): Promise<DocRef | Response> {
   const db = dbOf(c);
   if (!(await attachmentsReady(db).catch(() => false))) return notReady(c);
   const doc = await loadDoc(db, type, c.req.param('id') ?? '', activeCompanySql(c, 'd.company_id'));
-  if (!doc) const label = DOC_TYPES[type].label;
+  if (!doc) {
+    const label = DOC_TYPES[type].label;
     /* "purchase order", but "AP invoice". */
     const said = /^[A-Z]{2}/.test(label) ? label : label.charAt(0).toLowerCase() + label.slice(1);
     return c.json({ error: 'not_found', message: `That ${said} is not in the company you are working in.` }, 404);
+  }
   return doc;
 }
 
