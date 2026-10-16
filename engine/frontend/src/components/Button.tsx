@@ -30,7 +30,7 @@ export function Button({ variant = "primary", icon, className, children, ...rest
     <button
       {...rest}
       className={cn(
-        "inline-flex h-9 items-center justify-center gap-1.5 rounded-md px-4 text-[13px] font-semibold tracking-wide transition-all duration-150",
+        "inline-flex h-9 items-center justify-center gap-1.5 rounded-md px-4 text-[13px] font-semibold tracking-wide transition-[color,background-color,border-color,box-shadow,transform,opacity] duration-150 ease-out enabled:active:scale-[0.96]",
         VARIANTS[variant],
         className
       )}

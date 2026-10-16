@@ -60,7 +60,7 @@ export function BackToTopFAB() {
         // peer of the primary pill, so it whispers until hovered.
         "fixed z-40 inline-flex h-9 w-9 items-center justify-center rounded-lg",
         "border border-border/70 bg-surface/70 text-ink-muted backdrop-blur-sm",
-        "transition-all duration-200 hover:bg-surface hover:text-primary hover:border-primary/40 active:scale-95",
+        "transition-[color,background-color,border-color,transform] duration-200 hover:bg-surface hover:text-primary hover:border-primary/40 active:scale-[0.96]",
         // Parks directly ABOVE the "New Case" pill, sharing its right offset.
         // Above-offsets = pill bottom + pill height (48) + 8 px gap:
         //   Mobile:  96 + 48 + 8 = 152 px  (+ safe-area-inset)

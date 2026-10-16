@@ -753,7 +753,7 @@ function CasesView({
       label: "Customer",
       render: (r) => (
         <span
-          className="block max-w-[180px] truncate"
+          className="block truncate sm:max-w-[180px]"
           title={r.customer_name || undefined}
         >
           {r.customer_name || "—"}
@@ -768,7 +768,7 @@ function CasesView({
       // The SO's sales agent — copied onto the case at intake from the
       // AutoCount mirror; server search matches it too.
       render: (r) => (
-        <span className="block max-w-[140px] truncate" title={r.sales_agent || undefined}>
+        <span className="block truncate sm:max-w-[140px]" title={r.sales_agent || undefined}>
           {r.sales_agent || "—"}
         </span>
       ),
@@ -857,7 +857,7 @@ function CasesView({
       label: "Complaint Issue",
       render: (r) =>
         r.complaint_issue ? (
-          <span className="block max-w-[280px] truncate text-[12px]" title={r.complaint_issue}>
+          <span className="block truncate text-[12px] sm:max-w-[280px]" title={r.complaint_issue}>
             {r.complaint_issue}
           </span>
         ) : (
@@ -1218,6 +1218,12 @@ function CasesView({
         getRowKey={(r) => r.id}
         getRowClassName={(r) => (r.archived_at ? "opacity-60" : undefined)}
         onRowClick={(r) => navigate(`/assr/${r.id}`)}
+        mobileCard={{
+          primary: "assr_no",
+          badge: "stage",
+          labels: "top",
+          cells: ["complained_date", "do_numbers", "doc_no", "project", "po", "customer_name", "sales_agent", "priority_dwell", "assigned_to_name", "complaint_issue"],
+        }}
         serverSort
         onSortChange={handleSortChange}
       />
@@ -5173,7 +5179,7 @@ function DetailContent({
               return (
                 // Bounded, self-scrolling timeline — a long history scrolls
                 // inside this box instead of stretching the whole page.
-                <div className="max-h-[65vh] overflow-y-auto overflow-x-hidden pr-1">
+                <div className="max-h-[65vh] overflow-y-auto overflow-x-hidden overscroll-y-contain pr-1">
                 <ol className="relative space-y-3 pl-5">
                   <span className="pointer-events-none absolute left-[7px] top-1.5 bottom-1.5 w-px bg-border" />
                   {rows.map((a: any) => {
@@ -5839,11 +5845,19 @@ function WorkflowCard({
   const isVoided = currentStage === "voided";
   const curIdx = Math.max(0, stages.findIndex((s) => s.id === currentStage));
   const n = stages.length;
+  const stepsRef = useRef<HTMLOListElement>(null);
+  // Phones scroll the stepper sideways; bring the current step into view. No-op when it fits.
+  useEffect(() => {
+    const ol = stepsRef.current;
+    const step = ol?.children[curIdx]?.firstElementChild;
+    if (!ol || !step || ol.scrollWidth <= ol.clientWidth) return;
+    ol.scrollLeft += step.getBoundingClientRect().left - ol.getBoundingClientRect().left - (ol.clientWidth - step.clientWidth) / 2;
+  }, [curIdx, isVoided]);
   return (
-    <div className="rounded-lg border border-border bg-surface px-6 pb-4 pt-5 shadow-stone">
+    <div className="rounded-lg border border-border bg-surface px-6 pb-4 pt-5 shadow-stone max-sm:px-4">
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div className="text-[13px] font-bold tracking-tight text-ink">Workflow</div>
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2.5 max-sm:w-full max-sm:flex-wrap">
           <span className="font-mono text-[11px] text-ink-muted">
             {isVoided ? "Voided" : `Step ${curIdx + 1} / ${n}`}
           </span>
@@ -5856,7 +5870,7 @@ function WorkflowCard({
                 value={currentStage}
                 onChange={(e) => onChange(e.target.value as AssrStage)}
                 disabled={transitioning}
-                className="h-8 rounded-md border border-border bg-bg px-2.5 text-[12.5px] font-semibold outline-none focus:border-primary disabled:opacity-60"
+                className="h-8 rounded-md border border-border bg-bg px-2.5 text-[12.5px] font-semibold outline-none focus:border-primary disabled:opacity-60 max-sm:min-w-0 max-sm:grow max-sm:basis-32"
                 title="Move this case to any stage"
               >
                 {/* The FILTERED prop, not the module table. This mapped
@@ -5877,7 +5891,7 @@ function WorkflowCard({
                   value={subStatus?.key ?? ASSR_SUB_STATUSES[currentStage][0].key}
                   onChange={(e) => onSubChange(e.target.value)}
                   disabled={transitioning}
-                  className="h-8 rounded-md border border-accent/40 bg-accent-soft/20 px-2.5 text-[12.5px] font-semibold text-accent outline-none focus:border-accent disabled:opacity-60"
+                  className="h-8 rounded-md border border-accent/40 bg-accent-soft/20 px-2.5 text-[12.5px] font-semibold text-accent outline-none focus:border-accent disabled:opacity-60 max-sm:min-w-0 max-sm:grow max-sm:basis-32"
                   title="Switch the sub-status within this stage"
                 >
                   {ASSR_SUB_STATUSES[currentStage].map((o) => (
@@ -5904,7 +5918,11 @@ function WorkflowCard({
           </div>
         </div>
       ) : (
-      <ol className="flex items-start">
+      // -my-1/py-1 keep the current step's ring from being clipped by the scroll box.
+      <ol
+        ref={stepsRef}
+        className="mask-fade-r flex items-start max-sm:-mx-4 max-sm:-my-1 max-sm:overflow-x-auto max-sm:overscroll-x-contain max-sm:px-4 max-sm:py-1"
+      >
         {stages.map((s, i) => {
           const done = i < curIdx;
           const current = i === curIdx;
@@ -5942,7 +5960,7 @@ function WorkflowCard({
               {!last && (
                 <span
                   className={cn(
-                    "mt-[14px] h-0.5 flex-1",
+                    "mt-[14px] h-0.5 flex-1 max-sm:min-w-6",
                     i < curIdx ? "bg-primary" : "bg-border",
                   )}
                 />
@@ -6038,9 +6056,9 @@ function StatusSummaryBar({
   ];
 
   return (
-    <div className="flex items-stretch overflow-hidden rounded-lg border border-border bg-surface shadow-stone">
+    <div className="flex items-stretch overflow-hidden rounded-lg border border-border bg-surface shadow-stone max-sm:grid max-sm:grid-cols-2 max-sm:gap-px max-sm:bg-border-subtle">
       {cells.map((cell, i) => (
-        <div key={cell.label} className={cn("flex-1 px-5 py-3.5", i > 0 && "border-l border-border-subtle")}>
+        <div key={cell.label} className={cn("flex-1 px-5 py-3.5 max-sm:bg-surface max-sm:px-4 max-sm:last:col-span-2", i > 0 && "border-l border-border-subtle max-sm:border-l-0")}>
           <div className="font-mono text-[9px] font-semibold uppercase tracking-brand text-ink-muted">
             {cell.label}
           </div>
