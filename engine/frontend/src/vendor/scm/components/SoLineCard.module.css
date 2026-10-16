@@ -26,6 +26,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
+  container-type: inline-size;
 }
 
 /* ── Main single-row layout ───────────────────────────────────────── */
@@ -55,6 +56,48 @@
 @media (max-width: 1100px) {
   .row {
     grid-template-columns: 32px minmax(180px, 1.5fr) minmax(120px, 1fr) 60px 84px 104px 120px 88px auto 28px;
+  }
+}
+
+/* Conts: the single row needs about 960px. On a narrower card (a phone, a tablet, a desktop window beside a menu)
+   it stacks into labelled rows instead of cutting off the price, discount and date. Keyed to the card's own
+   width, not to the kind of device. Children in order: no, item, remarks, qty, price, discount, date, amount,
+   badge, trash, then the four .cellLabel spans that show only here. */
+.cellLabel { display: none; }
+
+@container (max-width: 960px) {
+  .row {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-template-areas:
+      "no    item  item   item   item  trash"
+      "rem   rem   rem    rem    rem   rem"
+      "qtyL  qtyL  priceL priceL discL discL"
+      "qty   qty   price  price  disc  disc"
+      "dateL dateL dateL  dateL  badge badge"
+      "date  date  date   date   amt   amt";
+    row-gap: 4px;
+  }
+  .row > :nth-child(1) { grid-area: no; }
+  .row > :nth-child(2) { grid-area: item; }
+  .row > :nth-child(3) { grid-area: rem; }
+  .row > :nth-child(4) { grid-area: qty; }
+  .row > :nth-child(5) { grid-area: price; }
+  .row > :nth-child(6) { grid-area: disc; }
+  .row > :nth-child(7) { grid-area: date; }
+  .row > :nth-child(8) { grid-area: amt; }
+  .row > :nth-child(9) { grid-area: badge; justify-self: end; }
+  .row > :nth-child(10) { grid-area: trash; }
+  .row > :nth-child(11) { grid-area: qtyL; }
+  .row > :nth-child(12) { grid-area: priceL; }
+  .row > :nth-child(13) { grid-area: discL; }
+  .row > :nth-child(14) { grid-area: dateL; }
+  .cellLabel {
+    display: block;
+    margin-top: 4px;
+    font-family: var(--font-sans);
+    font-size: var(--fs-11);
+    font-weight: 600;
+    color: var(--fg-muted);
   }
 }
 
