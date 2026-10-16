@@ -47,3 +47,16 @@ export const ENGINE_PATH: Record<string, string> = {
   '/procurement/stock-takes': '/scm/stock-takes',
   '/accounting/credit-notes': '/scm/credit-notes',
 };
+
+/** The menu destination an engine address sits under (its screen or a record on it), longest match first;
+ *  null when none does. On a tie the later entry wins, so the Schedule, not the old Project monitor address. */
+export function menuPathFor(enginePath: string): string | null {
+  let best: string | null = null;
+  let len = 0;
+  for (const [menu, eng] of Object.entries(ENGINE_PATH)) {
+    if (!enginePath.startsWith(eng) || eng.length < len) continue;
+    const next = enginePath.charAt(eng.length);
+    if (next === '' || (eng.includes('?') ? next === '&' : next === '/' || next === '?')) { best = menu; len = eng.length; }
+  }
+  return best;
+}

@@ -13,8 +13,7 @@ import { DARK_MODE_READY } from '../lib/theme';
 import { cx } from '../lib/design-tokens';
 import { count as countLabel } from '../lib/format';
 
-/** `phone`: the phone drawer, which leaves out the groups marked phone: false (navigation.ts). */
-interface Props { path: string; navigate: (p: string) => void; open: boolean; onToggle: () => void; phone?: boolean }
+interface Props { path: string; navigate: (p: string) => void; open: boolean; onToggle: () => void }
 
 /** The chosen workspace survives a reload. Storage can throw (private mode), so every access is guarded. */
 const WS_KEY = 'conts.shell.workspace';
@@ -27,10 +26,11 @@ function parentOf(groups: NavGroup[], path: string) {
   return null;
 }
 
-/** The item a path belongs to: exact match, or the deepest menu path it sits under (records, sub-pages). */
-function activeKey(groups: NavGroup[], path: string) {
+/** The item a path belongs to: exact match, or the deepest menu path it sits under (records, sub-pages).
+ *  Children count too, so the phone menu (one row per screen) can use it. */
+export function activeKey(groups: NavGroup[], path: string) {
   let best: { key: string; len: number } | null = null;
-  for (const g of groups) for (const it of g.items) {
+  for (const g of groups) for (const it of [...g.items, ...g.items.flatMap(i => i.children ?? [])]) {
     if (!it.path) continue;
     if (it.path === path) return it.key;
     if (it.path !== '/' && path.startsWith(it.path + '/') && (!best || it.path.length > best.len)) best = { key: it.key, len: it.path.length };
@@ -38,18 +38,33 @@ function activeKey(groups: NavGroup[], path: string) {
   return best?.key ?? null;
 }
 
-export default function Sidebar({ path, navigate, open, onToggle, phone = false }: Props) {
+/** Approvals are off unless Settings turns them on (owner, 11 Oct 2026); the page stays reachable by its address.
+ *  Shared with the phone menu so both menus hide the same things. */
+export const withoutOffItems = (groups: NavGroup[], approvalsOn: boolean) =>
+  groups.map(g => ({ ...g, items: g.items.filter(it => it.key !== 'approvals' || approvalsOn) }));
+
+export default function Sidebar({ path, navigate, open, onToggle }: Props) {
   const { user, logout } = useSession();
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
   const [profileOpen, setProfileOpen] = useState(false);
+  const profileRef = useRef<HTMLDivElement>(null);
   const engine = useApi<{ enabled: boolean }>('/supply-chain/engine');
   const counts = useNavCounts(path);
-  // Approvals are off unless Settings turns them on (owner, 11 Oct 2026); the page stays reachable by its address.
   const approvalsOn = counts?.approvalsOn === true;
-  const all = useMemo(() => navFor(user!.role, !!engine.data?.enabled, user!.access)
-    .filter(g => !phone || g.phone !== false)
-    .map(g => ({ ...g, items: g.items.filter(it => it.key !== 'approvals' || approvalsOn) })), [user, engine.data?.enabled, approvalsOn, phone]);
+  const all = useMemo(() => withoutOffItems(navFor(user!.role, !!engine.data?.enabled, user!.access), approvalsOn),
+    [user, engine.data?.enabled, approvalsOn]);
+
+  // The account menu closes the usual ways: Escape, a click anywhere else, or moving to another page.
+  useEffect(() => setProfileOpen(false), [path]);
+  useEffect(() => {
+    if (!profileOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setProfileOpen(false); };
+    const onDown = (e: PointerEvent) => { if (!profileRef.current?.contains(e.target as Node)) setProfileOpen(false); };
+    document.addEventListener('keydown', onKey);
+    document.addEventListener('pointerdown', onDown);
+    return () => { document.removeEventListener('keydown', onKey); document.removeEventListener('pointerdown', onDown); };
+  }, [profileOpen]);
   const hasSupply = all.some(g => g.workspace === 'supply');
 
   // Opening a supply chain address (a link, the back button) shows its workspace; otherwise the last choice stands.
@@ -79,10 +94,11 @@ export default function Sidebar({ path, navigate, open, onToggle, phone = false 
   const itUnread = useItUnread();
   const countOf = (k?: BadgeKey) => (k === 'itSupport' ? itUnread : (k && counts?.[k]) || 0);
 
+  // Badge text uses the menu's own text colours: gold and dim on these washes fell under 4.5:1.
   const badge = (on: boolean): CSSProperties => ({
-    fontSize: text.micro, fontWeight: 600, padding: '1px 6px', borderRadius: radius.pill, flex: 'none',
+    fontSize: text.micro, fontWeight: 600, padding: '1px 6px', borderRadius: radius.pill, flex: 'none', fontVariantNumeric: 'tabular-nums',
     background: on ? 'rgba(200,164,106,0.18)' : 'rgba(255,255,255,0.08)',
-    color: on ? color.gold : color.dim,
+    color: on ? 'var(--color-text-inverse)' : color.onDark,
   });
 
   return (
@@ -111,9 +127,9 @@ export default function Sidebar({ path, navigate, open, onToggle, phone = false 
           <div role="tablist" aria-label="Workspace" style={{ margin: '12px 10px 0', padding: 3, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 3, borderRadius: radius.control, background: color.charcoal }}>
             {(['rental', 'supply'] as Workspace[]).map(w => (
               <button key={w} role="tab" aria-selected={ws === w} onClick={() => pick(w)}
-                style={{ height: 28, borderRadius: 6, border: 'none', cursor: 'pointer', font: 'inherit', fontSize: text.meta, fontWeight: 500,
-                  background: ws === w ? color.black : 'transparent', color: ws === w ? 'var(--color-text-inverse)' : color.dim,
-                  boxShadow: ws === w ? `inset 0 0 0 1px rgba(200,164,106,0.35)` : 'none' }}>
+                // A real border, not a shadow, so high-contrast mode still shows which side is chosen.
+                style={{ height: 28, borderRadius: 6, border: `1px solid ${ws === w ? color.gold : 'transparent'}`, cursor: 'pointer', font: 'inherit', fontSize: text.meta, fontWeight: 500,
+                  background: ws === w ? color.black : 'transparent', color: ws === w ? 'var(--color-text-inverse)' : color.onDark }}>
                 {WORKSPACE_LABEL[w]}
               </button>
             ))}
@@ -164,6 +180,7 @@ export default function Sidebar({ path, navigate, open, onToggle, phone = false 
                     title={open ? undefined : (n > 0 ? `${it.label} (${n})` : it.label)}
                     aria-label={open ? undefined : it.label}
                     aria-current={selfActive && !it.children ? 'page' : undefined}
+                    aria-expanded={open && it.children ? isOpen : undefined}
                     onClick={() => {
                       if (it.children) {
                         if (!open) { navigate(it.children[0].path); return; }
@@ -207,10 +224,12 @@ export default function Sidebar({ path, navigate, open, onToggle, phone = false 
                               font: 'inherit', textAlign: 'left',
                               color: on ? 'var(--color-text-inverse)' : color.faint,
                               background: on ? 'rgba(200,164,106,0.14)' : 'transparent',
+                              // The same gold bar as a top-level item: the tint alone was too faint to find.
+                              boxShadow: on ? `inset 2px 0 0 ${color.gold}` : 'none',
                               fontWeight: on ? 500 : 400,
                             }}>
                             <span style={{ flex: 1, minWidth: 0, fontSize: text.meta, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.label}</span>
-                            {countOf(c.badge) > 0 && <span style={badge(on)}>{countOf(c.badge)}</span>}
+                            {countOf(c.badge) > 0 && <span style={badge(on)}>{countLabel(countOf(c.badge))}</span>}
                           </button>
                         );
                       })}
@@ -224,9 +243,10 @@ export default function Sidebar({ path, navigate, open, onToggle, phone = false 
         })}
       </nav>
 
-      <div style={{ flex: 'none', padding: 10, borderTop: `1px solid ${color.charcoal}`, position: 'relative' }}>
+      <div ref={profileRef} style={{ flex: 'none', padding: 10, borderTop: `1px solid ${color.charcoal}`, position: 'relative' }}>
         {profileOpen && (
-          <div style={{ position: 'absolute', left: 10, bottom: 62, width: Math.max(224, open ? shell.sidebar - 20 : 224), zIndex: 30, background: color.card, border: `1px solid ${color.border}`, borderRadius: radius.card, boxShadow: '0 12px 32px rgba(21,21,21,0.24)', overflow: 'hidden' }}>
+          // .menu-sheet: the light-card hover and press washes in styles/hover.css.
+          <div className="menu-sheet" style={{ position: 'absolute', left: 10, bottom: 62, width: Math.max(224, open ? shell.sidebar - 20 : 224), zIndex: 30, background: color.card, border: `1px solid ${color.border}`, borderRadius: radius.card, boxShadow: '0 12px 32px rgba(21,21,21,0.24)', overflow: 'hidden' }}>
             <div style={{ padding: '14px 16px', borderBottom: `1px solid ${color.borderMuted}`, display: 'flex', flexDirection: 'column', gap: 3 }}>
               <span style={{ fontSize: text.copy, fontWeight: 600, color: color.ink }}>{user!.fullName}</span>
               <span style={{ fontSize: text.small, color: color.textMuted }}>{user!.email}</span>
@@ -248,7 +268,7 @@ export default function Sidebar({ path, navigate, open, onToggle, phone = false 
             ))}
           </div>
         )}
-        <button onClick={() => setProfileOpen(v => !v)} aria-label={open ? undefined : `${user!.fullName}, account menu`}
+        <button onClick={() => setProfileOpen(v => !v)} aria-label={open ? undefined : `${user!.fullName}, account menu`} aria-expanded={profileOpen}
           style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 8, borderRadius: radius.control, cursor: 'pointer', width: '100%', border: 'none', font: 'inherit', textAlign: 'left', justifyContent: open ? 'flex-start' : 'center', background: profileOpen ? 'rgba(255,255,255,0.06)' : 'transparent', color: 'var(--color-text-inverse)' }}>
           <span style={{ width: 30, height: 30, flex: 'none', borderRadius: radius.pill, background: color.charcoal, color: color.gold, display: 'grid', placeItems: 'center', fontSize: text.micro, fontWeight: 600 }}>
             {user!.fullName.split(' ').map(n => n[0]).slice(0, 2).join('')}

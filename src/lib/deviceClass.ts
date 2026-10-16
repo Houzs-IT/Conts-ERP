@@ -14,10 +14,10 @@ import { useEffect, useState } from "react";
  *   phone   < 600px            iPhone SE–Pro Max, Fold cover (344–390), Duo single pane (540)
  *   tablet  600–1199, touch    iPad mini/Air/Pro portrait + landscape, Fold inner screen
  *   dual    2 viewport segments Surface Duo spanned, Fold in book posture with the hinge API
- *   desktop fine pointer, or ≥ 1200
+ *   desktop fine pointer at 600px or wider, or ≥ 1200
  *
- * A desktop browser stays desktop at any window size (owner rule 2026-07-31,
- * kept from useIsMobile). `?device=phone|tablet|dual|desktop` forces a class
+ * A desktop browser stays desktop at 600px and wider, however it is resized; below 600px it gets the phone
+ * layout like any phone (owner, 16 Oct 2026). `?device=phone|tablet|dual|desktop` forces a class
  * for preview and lives in sessionStorage, same as the old `?mobile=1`.
  */
 export type DeviceClass = "phone" | "tablet" | "dual" | "desktop";
@@ -65,8 +65,11 @@ export function readDevice(): DeviceInfo {
   const f = forced();
   if (f) return { cls: f, segments: segs, fold };
   if (segs.length > 1) return { cls: "dual", segments: segs, fold };
-  if (!touch()) return { cls: "desktop", segments: segs, fold };
   const w = window.innerWidth;
+  // Under 600px the desk layout cannot fit beside its sidebar, so even a computer window gets the phone layout
+  // (owner, 16 Oct 2026). Wider computer windows stay desktop however they are resized.
+  if (w < 600) return { cls: "phone", segments: segs, fold };
+  if (!touch()) return { cls: "desktop", segments: segs, fold };
   return { cls: w < 600 ? "phone" : w < 1200 ? "tablet" : "desktop", segments: segs, fold };
 }
 

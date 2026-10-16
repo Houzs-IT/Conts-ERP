@@ -1,12 +1,13 @@
-import { useMemo, useState } from 'react';
-import { color, motion, radius } from '../theme';
+import { useEffect, useMemo, useState } from 'react';
+import { color, radius } from '../theme';
 import { navFor, screenClosed, workspaceOf, WORKSPACE_LABEL, type BadgeKey, type Workspace } from '../lib/navigation';
 import { useApi } from '../lib/useApi';
 import { useSession } from '../lib/session';
 import { useNavCounts } from '../lib/navBadges';
 import Icon, { toPascal } from './Icon';
 import { Logo } from './Logo';
-import { readWs, saveWs } from './Sidebar';
+import { activeKey, readWs, saveWs, withoutOffItems } from './Sidebar';
+import { count as countLabel } from '../lib/format';
 
 /** Phone bottom navigation (owner, Oct 2026): Dashboard, Calendar, More, Reservations, Settings.
  *  More sits in the centre as a raised round button and opens every module, grouped
@@ -81,14 +82,23 @@ function MoreSheet({ path, navigate, onClose }: { path: string; navigate: (p: st
   const engine = useApi<{ enabled: boolean }>('/supply-chain/engine');
   const counts = useNavCounts(path);
   const [q, setQ] = useState('');
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
   // Same Rental / Supply chain split as the desktop sidebar, sharing its saved choice.
   const [ws, setWs] = useState<Workspace>(() => workspaceOf(path) ?? readWs());
   const pick = (w: Workspace) => { setWs(w); saveWs(w); };
   // System pages live under Settings, except IT Support, which every desk role needs: on the rental side it gets
   // the same SUPPORT card as on the supply chain side.
-  const all = useMemo(() => navFor(user!.role, !!engine.data?.enabled, user!.access)
+  // Groups marked phone: false (Finance, owner 11 Oct 2026) stay off the phone; switched-off items stay off as on the desk.
+  const all = useMemo(() => withoutOffItems(navFor(user!.role, !!engine.data?.enabled, user!.access), counts?.approvalsOn === true)
+    .filter(g => g.phone !== false)
     .map(g => g.label === 'SYSTEM' ? { ...g, label: 'SUPPORT', items: g.items.filter(it => it.key === 'itSupport') } : g),
-  [user, engine.data?.enabled]);
+  [user, engine.data?.enabled, counts?.approvalsOn]);
+  // Highlights the row a record or sub-page belongs to, the same rule as the desk sidebar.
+  const current = useMemo(() => activeKey(all, path), [all, path]);
   const hasSupply = all.some(g => g.workspace === 'supply');
   const sections = useMemo((): MenuSection[] => {
     const needle = q.trim().toLowerCase();
@@ -124,7 +134,6 @@ function MoreSheet({ path, navigate, onClose }: { path: string; navigate: (p: st
       <div style={{
         position: 'relative', maxHeight: '88dvh', display: 'flex', flexDirection: 'column', background: color.page,
         borderRadius: '22px 22px 0 0', paddingBottom: 'env(safe-area-inset-bottom)',
-        animation: `sheet-up ${motion.slow} ${motion.ease} both`,
       }}>
         <div style={{ width: 38, height: 4, borderRadius: radius.pill, background: color.border, margin: '10px auto 4px' }} />
         <div style={{ padding: '8px 18px 4px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
@@ -158,7 +167,7 @@ function MoreSheet({ path, navigate, onClose }: { path: string; navigate: (p: st
               <span style={{ fontSize: 12, fontWeight: 600, letterSpacing: '0.1em', color: color.textMuted }}>{sec.label}</span>
               <div style={{ borderRadius: 16, background: color.card, border: `1px solid ${color.border}`, overflow: 'hidden' }}>
                 {sec.rows.map((r, i) => {
-                  const on = path === r.path;
+                  const on = r.key === current;
                   return (
                     <button key={r.key} type="button" onClick={() => navigate(r.path)} aria-current={on ? 'page' : undefined}
                       style={{
@@ -171,7 +180,7 @@ function MoreSheet({ path, navigate, onClose }: { path: string; navigate: (p: st
                       </span>
                       <span style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: on ? 600 : 400 }}>{r.label}</span>
                       {r.count > 0 && (
-                        <span style={{ minWidth: 24, height: 24, padding: '0 8px', borderRadius: radius.pill, display: 'grid', placeItems: 'center', fontSize: 12, fontWeight: 600, background: color.ink, color: color.card }}>{r.count}</span>
+                        <span style={{ minWidth: 24, height: 24, padding: '0 8px', borderRadius: radius.pill, display: 'grid', placeItems: 'center', fontSize: 12, fontWeight: 600, fontVariantNumeric: 'tabular-nums', background: color.ink, color: color.card }}>{countLabel(r.count)}</span>
                       )}
                       <Icon name="ChevronRight" size="sm" color={color.textMuted} />
                     </button>
