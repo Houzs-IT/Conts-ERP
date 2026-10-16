@@ -78,4 +78,12 @@ export function listenForContsNavigation(): void {
   window.addEventListener("popstate", tellLocation);
   // Lets Property OS know the frame is ready to be steered, and when the session has ended.
   try { window.parent.postMessage({ type: "conts:ready" }, "*"); } catch { /* no parent */ }
+  // And when a screen is on view: until then the frame is blank while it signs in and loads, so Property OS keeps
+  // its own loading message up.
+  const shown = window.setInterval(() => {
+    const main = document.querySelector("main");
+    if (!main || (main.textContent ?? "").trim().length < 20) return;
+    window.clearInterval(shown);
+    try { window.parent.postMessage({ type: "conts:shown" }, "*"); } catch { /* no parent */ }
+  }, 150);
 }

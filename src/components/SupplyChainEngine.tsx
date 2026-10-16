@@ -41,6 +41,13 @@ export default function SupplyChainEngine({ enginePath }: { enginePath: string }
     return () => { live = false; };
   }, [attempt]);
 
+  // Never a loading message for good: an engine that does not say it is showing (an older build) is revealed anyway.
+  useEffect(() => {
+    if (!src) return;
+    const t = window.setTimeout(() => setStarted(true), 20000);
+    return () => window.clearTimeout(t);
+  }, [src]);
+
   const steer = () => { if (site.current) frame.current?.contentWindow?.postMessage({ type: 'conts:navigate', path: wanted.current }, site.current); };
   // On every menu click, the item already open included (location.key changes), so it leaves a record.
   useEffect(() => {
@@ -51,7 +58,8 @@ export default function SupplyChainEngine({ enginePath }: { enginePath: string }
     const onMessage = (e: MessageEvent) => {
       if (e.origin !== site.current || e.source !== frame.current?.contentWindow) return;
       // The engine says when it has started, in case a menu click arrived before it was listening.
-      if (e.data?.type === 'conts:ready') { setStarted(true); steer(); }
+      if (e.data?.type === 'conts:ready') steer();
+      if (e.data?.type === 'conts:shown') setStarted(true);
       // A link inside the frame moved it: the address and the menu follow, without a new history entry.
       if (e.data?.type === 'conts:location' && typeof e.data.path === 'string') {
         const to = menuPathFor(e.data.path);
@@ -72,10 +80,10 @@ export default function SupplyChainEngine({ enginePath }: { enginePath: string }
   }
   const opening = <div style={{ padding: '24px 28px', fontSize: 13.5, color: color.textMuted }}>Opening supply chain…</div>;
   if (!src) return opening;
-  // The frame loads underneath; the message stays over it until the engine has started (or the page has loaded).
+  // The frame loads underneath; the message stays over it until the engine shows a screen.
   return (
     <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', position: 'relative' }}>
-      <iframe ref={frame} src={src} title="Supply chain" onLoad={() => setStarted(true)}
+      <iframe ref={frame} src={src} title="Supply chain"
         style={{ flex: 1, width: '100%', minHeight: 0, border: 'none', display: 'block', background: color.page }} />
       {!started && <div style={{ position: 'absolute', inset: 0, background: color.page }}>{opening}</div>}
     </div>
