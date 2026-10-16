@@ -73,8 +73,8 @@
       "rem   rem   rem    rem    rem   rem"
       "qtyL  qtyL  priceL priceL discL discL"
       "qty   qty   price  price  disc  disc"
-      "dateL dateL dateL  badge  badge badge"
-      "date  date  date   amt    amt   amt";
+      "dateL dateL dateL  dateL  badge badge"
+      "date  date  date   date   amt   amt";
     row-gap: 4px;
   }
   .row > :nth-child(1) { grid-area: no; }
