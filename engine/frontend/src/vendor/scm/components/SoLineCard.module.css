@@ -67,14 +67,14 @@
 
 @container (max-width: 960px) {
   .row {
-    grid-template-columns: 20px repeat(3, minmax(0, 1fr)) 28px;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
     grid-template-areas:
-      "no item   item   item  trash"
-      ".  rem    rem    rem   ."
-      ".  qtyL   priceL discL ."
-      ".  qty    price  disc  ."
-      ".  dateL  dateL  badge ."
-      ".  date   date   amt   .";
+      "no    item  item   item   item  trash"
+      "rem   rem   rem    rem    rem   rem"
+      "qtyL  qtyL  priceL priceL discL discL"
+      "qty   qty   price  price  disc  disc"
+      "dateL dateL dateL  badge  badge badge"
+      "date  date  date   amt    amt   amt";
     row-gap: 4px;
   }
   .row > :nth-child(1) { grid-area: no; }
