@@ -205,6 +205,9 @@ test("buildSql: deterministic, upsert-only, refuses unsafe input", () => {
   }
   assert.match(a[0].sql, /p\.updated_at is not distinct from p\.created_at/);
   assert.match(a[1].sql, /t\.updated_at = t\.created_at/);
+  // an imported project starts on its earliest Notion date, not the import day; the start only moves earlier
+  assert.match(a[4].sql, /start_dates_moved_earlier/);
+  assert.match(a[4].sql, /first_seen\.day < p\.start_date/);
   assert.throws(() => buildSql(mapExport(fixture()), { companyId: "1; drop" }));
 });
 
