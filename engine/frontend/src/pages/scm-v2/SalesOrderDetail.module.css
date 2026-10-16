@@ -112,6 +112,12 @@
   padding: var(--space-4);
 }
 
+/* Conts: a line table wider than its card (a phone) slides sideways instead of being cut off by the card,
+   which hid the last columns and the remove button. */
+.cardBody:has(> .table) {
+  overflow-x: auto;
+}
+
 /* ── Customer info grid ─────────────────────────────────────────────── */
 
 .formGrid2 {
