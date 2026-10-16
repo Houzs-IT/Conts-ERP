@@ -2,8 +2,8 @@ import { type Env, all, one, run, json, fail, audit, nowIso, mytToday } from '..
 import { requireSession, isFieldRole } from '../../_lib/auth';
 import { notify } from '../../_lib/notify';
 import { resolveUnit } from '../../_lib/ops';
-import { windowsFor } from '../../_lib/cleaning';
-import { CATEGORIES, URGENCIES, SOURCES, CHARGE_TO, assigneeUserId, assigneeKindFor, hasBilling } from '../../_lib/maintenance';
+import { windowsFor, staysOverlapping } from '../../_lib/cleaning';
+import { CATEGORIES, URGENCIES, SOURCES, CHARGE_TO, assigneeUserId, assigneeKindFor, hasBilling, toInstant } from '../../_lib/maintenance';
 import { repairNotice } from '../../_lib/notices';
 
 /** GET /api/maintenance/issues?state=&unitId= — every job, with its technician, category, urgency, source, repair
@@ -69,7 +69,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
 /** POST /api/maintenance/issues — a job from the office, or damage reported from a clean or the field app.
  *  unitId may be a unit id or its display number (with propertyName when two buildings share a number).
- *  `ownerApprovalRequired: true` sends it to the owner at once; otherwise nothing waits for the owner. */
+ *  `ownerApprovalRequired: true` sends it to the owner at once; otherwise nothing waits for the owner.
+ *  The office may set who does it (assigneeName) and a first repair window ({ window: { startsAt, endsAt, note? } },
+ *  same rules as POST /issues/:id/windows) in the same request; the answer lists the stays that window overlaps. */
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
@@ -110,6 +112,17 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     if (quoted == null && !field) quoted = sku.default_price;
   }
 
+  let win: { startsAt: string; endsAt: string; note: string | null } | null = null;
+  if (b.window != null) {
+    if (field) return fail('FORBIDDEN', 'Cleaners and technicians cannot plan repair windows.', 403);
+    const startsAt = toInstant(b.window.startsAt), endsAt = toInstant(b.window.endsAt);
+    if (!startsAt) return fail('VALIDATION', 'Enter when the repair window starts.', 422, { windowStartsAt: 'Pick a start.' });
+    if (!endsAt) return fail('VALIDATION', 'Enter when the repair window ends.', 422, { windowEndsAt: 'Pick an end.' });
+    if (Date.parse(endsAt) <= Date.parse(startsAt)) return fail('VALIDATION', 'The window must end after it starts.', 422, { windowEndsAt: 'Pick a later end.' });
+    if (Date.parse(endsAt) - Date.parse(startsAt) > 14 * 864e5) return fail('VALIDATION', 'Keep one window under 14 days.', 422, { windowEndsAt: 'Pick an earlier end.' });
+    win = { startsAt, endsAt, note: typeof b.window.note === 'string' && b.window.note.trim() ? b.window.note.trim().slice(0, 300) : null };
+  }
+
   const approval = !!b.ownerApprovalRequired;
   const vendor = typeof b.assigneeName === 'string' && b.assigneeName.trim() && !field ? b.assigneeName.trim().slice(0, 80) : null;
   const state = approval ? 'waiting' : vendor ? 'assigned' : 'open';
@@ -130,8 +143,14 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     now, now, now, ...(withUser ? [userId] : []));
 
   if (b.blocksUnit) await run(env, "UPDATE units SET readiness = 'maintenance', updated_at = ? WHERE id = ?", now, unit.id);
+  let overlaps: unknown[] = [];
+  if (win) {
+    await run(env, `INSERT INTO maintenance_windows (id, issue_id, starts_at, ends_at, note, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      crypto.randomUUID(), id, win.startsAt, win.endsAt, win.note, session.userId, now);
+    overlaps = await staysOverlapping(env, unit.id, win.startsAt, win.endsAt);
+  }
 
-  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'maintenance.create', entityTable: 'maintenance_issues', entityId: id, after: { unitId: unit.id, title: b.title, category, urgency, source, sourceTaskId, blocksUnit: !!b.blocksUnit, approval }, source: field ? 'field_app' : b.source ?? 'web' });
+  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'maintenance.create', entityTable: 'maintenance_issues', entityId: id, after: { unitId: unit.id, title: b.title, category, urgency, source, sourceTaskId, blocksUnit: !!b.blocksUnit, approval, skuId, assignee: vendor, window: win }, source: field ? 'field_app' : b.source ?? 'web' });
   await notify(env, {
     template: 'ops.damage_reported', recipient: 'operations@theconts.com', channel: 'in_app',
     subject: b.blocksUnit ? 'Unit blocked' : urgency === 'urgent' ? 'Urgent repair reported' : 'Damage reported',
@@ -140,5 +159,5 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   });
   await repairNotice(env, id, 'reported', session.userId);
   if (approval) await repairNotice(env, id, 'approval_requested', session.userId);
-  return json({ id, state, ownerApprovalRequired: approval }, 201);
+  return json({ id, state, ownerApprovalRequired: approval, overlaps }, 201);
 };

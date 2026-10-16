@@ -13,6 +13,7 @@ const MONEY_KEYS = ['billingDate', 'collectedAt', 'contractorAmount', 'contracto
  *   { assigneeName }                             the technician or contractor (a NAME: outside vendors are not accounts);
  *                                                in-house or contractor follows from whether the name is a staff account
  *   { category, urgency, chargeTo, title, detail, quotedAmount }
+ *   { skuId }                                    the item from the maintenance catalog; null = Other (not on the list)
  *   { billingDate, collectedAt, contractorAmount, contractorPaidAt }   also on a finished job
  *   { state: 'reopened' }                        a finished job back to work
  *  Nothing here sends a job to the owner: that is "Send to owner for approval" (request-approval.ts) only.
@@ -66,6 +67,10 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   if (typeof b?.title === 'string') {
     if (!b.title.trim()) return fail('VALIDATION', 'A short title is required.', 422, { title: 'Enter a short title.' });
     put('title', 'title', b.title.trim().slice(0, 160));
+  }
+  if (b?.skuId !== undefined) {
+    if (b.skuId !== null && !(await one(env, 'SELECT 1 AS x FROM maintenance_skus WHERE id = ?', String(b.skuId)))) return fail('NOT_FOUND', 'That catalog item does not exist.', 404, { skuId: 'Pick an item from the catalog, or Other.' });
+    put('sku_id', 'skuId', b.skuId === null ? null : String(b.skuId));
   }
   if (typeof b?.detail === 'string') put('detail', 'detail', b.detail.trim().slice(0, 2000) || null);
   if (b?.quotedAmount !== undefined) {
