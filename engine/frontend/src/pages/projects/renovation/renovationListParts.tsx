@@ -19,7 +19,7 @@ export function useRenovationBoard(includeArchived: boolean, enabled: boolean) {
   const flow = useQuery(["renovation", "flow-steps"], () => simpleApi.flowSteps(), [], { staleTime: 5 * 60_000, enabled });
   const rows = board.data?.data ?? [];
   const byId = new Map(rows.map((r) => [r.id, r] as const));
-  return { rows, byId, steps: activeSteps(flow.data?.data), counts: stepCounts(rows), loading: board.loading && !board.data, error: board.error };
+  return { rows, byId, steps: activeSteps(flow.data?.data), counts: stepCounts(rows), loading: board.loading && !board.data, error: board.error, reload: board.reload };
 }
 
 /** One tile per step with how many projects are in it; a tile filters the list to that step (several can be on). */

@@ -5,7 +5,7 @@
      When a step had no default as the project entered it, nothing is copied, and the first default set afterwards is
      taken: otherwise every project in a step on the day SLAs were first set up would never get one.
    The day a project entered its current step:
-     a step set by hand (Move step)  the day it was set;
+     a step set by hand (Move step)  the day it was set (not the Notion import's own setting, see entryDayOf);
      Design                          the project's start date;
      Handover                        the day the customer signed (or the handover date);
      Renovation                      the first site task's actual start;
@@ -54,7 +54,10 @@ export function daysBetween(from: string, to: string): number {
 
 /** The day the project entered its current step, as far as the data tells; null when it does not (first seen today). */
 export function entryDayOf(f: ProjectFacts, v: Pick<ProjectView, "flow">): string | null {
-  if (v.flow.manualInEffect) return dayOf(f.project.flow_manual_at);
+  /* The Notion import set every imported project's step by hand, on the day of the import and by nobody: that day is
+     not when the project got there, so those read the step's own data like a project that follows it. */
+  const setByImport = f.project.source === "import" && f.project.flow_manual_by == null;
+  if (v.flow.manualInEffect && !setByImport) return dayOf(f.project.flow_manual_at);
   switch (v.flow.current) {
     case "design": return dayOf(f.project.start_date) ?? dayOf(f.project.created_at);
     case "handover": return dayOf(f.handover?.signed_at) ?? dayOf(f.project.handed_over_at);

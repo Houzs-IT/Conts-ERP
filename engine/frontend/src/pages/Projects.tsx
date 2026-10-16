@@ -131,6 +131,10 @@ import { ProjectsCalendarView } from "./projects/ProjectsCalendarView";
 import { ByProjectsMode, RenovationProjectRoute } from "./projects/renovation/RenovationRoutes";
 import { CreateRenovationPanel } from "./projects/renovation/CreateRenovationPanel";
 import { RenovationListAside, RenovationProjectCard, RenovationStepTiles, renovationColumns, useRenovationBoard } from "./projects/renovation/renovationListParts";
+import { RenovationStepBoard } from "./projects/renovation/RenovationStepBoard";
+
+/** The board loads every filtered project in one page: the list endpoint's largest page. */
+const BOARD_MAX = 200;
 import { toggleStep } from "./projects/renovation/renovationListModel";
 export { buildCalendarWindow, buildProjectsCalendarModel } from "./projects/calendarModel";
 import { SPEC_INPUT_CLASS, QuickRentalField, SpecTextField, SpecCell, SpecValue } from "./projects/specFields";
@@ -634,6 +638,10 @@ function ProjectsListView({ renovation = false }: { renovation?: boolean }) {
   const [perPage, setPerPage] = useIdentityPreference("pp:projects", 50, pageSizePreference([10, 25, 50, 100, 200]));
   // List render mode — cards (P2 design) vs the full data table. Default cards.
   const [listMode, setListMode] = useIdentityPreference("projects:listMode", "cards", enumPreference(["cards", "table"] as const));
+  // Renovation: a board by step (owner, 16 Oct 2026) or the table; remembered per person, board by default.
+  const [renoMode, setRenoMode] = useIdentityPreference("projects:renoListMode", "board", enumPreference(["board", "table"] as const));
+  const viewMode: "board" | "cards" | "table" = renovation ? renoMode : listMode;
+  const boardMode = viewMode === "board";
   const [showCreate, setShowCreate] = useState(false);
   // Deep-link: the global "+" quick-action FAB opens the New Project modal via
   // /projects?new=1. Consume the flag once and strip it so refresh/back don't reopen.
@@ -703,7 +711,7 @@ function ProjectsListView({ renovation = false }: { renovation?: boolean }) {
   const excludeDoneParam =
     !renovation && hideCompleted && !sectionList.includes("__done") ? 1 : undefined;
   const renoParams = renovation
-    ? { reno: 1, reno_step: step || undefined, reno_hide_closed: hideCompleted ? 1 : undefined, reno_overdue: overdue ? 1 : undefined }
+    ? { reno: 1, reno_step: (!boardMode && step) || undefined, reno_hide_closed: hideCompleted ? 1 : undefined, reno_overdue: overdue ? 1 : undefined }
     : {};
   const reno = useRenovationBoard(showArchived, renovation);
   const today = todayInAppTz();
@@ -731,15 +739,16 @@ function ProjectsListView({ renovation = false }: { renovation?: boolean }) {
           // param), so the list stays paginated (per_page=perPage) even while
           // a status pill is active — no more fetch-all page-1 workaround.
           status: restrictedCohort ? undefined : status || undefined,
-          page,
-          per_page: perPage,
+          // The board shows every filtered project at once (the list endpoint's most per page).
+          page: boardMode ? 1 : page,
+          per_page: boardMode ? BOARD_MAX : perPage,
           include_archived: showArchived ? 1 : undefined,
           ...renoParams,
           ...sortParams,
         })}`,
         { signal },
       ),
-    [brand, year, month, from, to, section, taskPending, status, phase, restrictedCohort, sendAssignedToMe, excludeDoneParam, myPending, search, page, perPage, showArchived, sort?.key, sort?.dir, renovation, step, hideCompleted, overdue],
+    [brand, year, month, from, to, section, taskPending, status, phase, restrictedCohort, sendAssignedToMe, excludeDoneParam, myPending, search, page, perPage, showArchived, sort?.key, sort?.dir, renovation, step, hideCompleted, overdue, boardMode],
     // Paginated + filter-switched list: keep the current rows on screen while
     // the next page/filter loads instead of flashing an empty table.
     { keepPreviousData: true }
@@ -1277,7 +1286,7 @@ function ProjectsListView({ renovation = false }: { renovation?: boolean }) {
         }
       />
 
-      {renovation ? (
+      {renovation && boardMode ? null : renovation ? (
         <RenovationStepTiles
           steps={reno.steps}
           counts={reno.counts}
@@ -1486,7 +1495,7 @@ function ProjectsListView({ renovation = false }: { renovation?: boolean }) {
       <div className="mb-3 flex items-center justify-end gap-2">
         {/* Export is part of the Table toolbar; add it here so Cards view can
             export too (same filtered rows + columns as the table). */}
-        {listMode === "cards" && (
+        {viewMode !== "table" && (
           <button
             onClick={() => void exportProjects()}
             disabled={exporting}
@@ -1496,6 +1505,24 @@ function ProjectsListView({ renovation = false }: { renovation?: boolean }) {
             <Download size={13} /> {exporting ? "Exporting…" : "Export"}
           </button>
         )}
+        {renovation ? (
+          <div className="inline-flex overflow-hidden rounded-md border border-border bg-surface text-[11px] font-semibold" role="group" aria-label="View">
+            <button
+              onClick={() => setRenoMode("board")}
+              aria-pressed={boardMode}
+              className={cn("px-3 py-1.5 transition-colors", boardMode ? "bg-primary text-white" : "text-ink-secondary hover:bg-surface-dim")}
+            >
+              Board
+            </button>
+            <button
+              onClick={() => setRenoMode("table")}
+              aria-pressed={!boardMode}
+              className={cn("px-3 py-1.5 transition-colors", !boardMode ? "bg-primary text-white" : "text-ink-secondary hover:bg-surface-dim")}
+            >
+              Table
+            </button>
+          </div>
+        ) : (
         <div className="inline-flex overflow-hidden rounded-md border border-border bg-surface text-[11px] font-semibold">
           <button
             onClick={() => setListMode("cards")}
@@ -1510,11 +1537,29 @@ function ProjectsListView({ renovation = false }: { renovation?: boolean }) {
             Table
           </button>
         </div>
+        )}
       </div>
 
-      <div className={cn(listMode === "cards" && "grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_300px]")}>
+      <div className={cn(viewMode === "cards" && "grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_300px]")}>
       <div className="min-w-0">
-      {listMode === "cards" ? (
+      {boardMode ? (
+        list.error ? (
+          <ListErrorPanel message={list.error} />
+        ) : (list.loading && !list.data) || (reno.loading && !reno.error) || searchTransition.isSearching ? (
+          <SearchPendingPanel label={searchTransition.statusText} />
+        ) : (
+          <RenovationStepBoard
+            rows={cardRows}
+            byId={reno.byId}
+            steps={reno.steps}
+            today={today}
+            canWrite={can("projects.write")}
+            onOpen={openHref}
+            onMoved={(text) => { toast.success(text); list.reload(); reno.reload(); }}
+            truncatedAt={(list.data?.total ?? 0) > cardRows.length ? { shown: cardRows.length, total: list.data!.total } : null}
+          />
+        )
+      ) : viewMode === "cards" ? (
         list.error ? (
           <ListErrorPanel message={list.error} />
         ) : (list.loading && !list.data) || searchTransition.isSearching ? (
@@ -1651,10 +1696,10 @@ function ProjectsListView({ renovation = false }: { renovation?: boolean }) {
         />
       )}
       </div>
-      {listMode === "cards" && renovation && (
+      {viewMode === "cards" && renovation && (
         <RenovationListAside total={list.data?.total ?? null} board={reno.rows} today={today} onOpen={openHref} />
       )}
-      {listMode === "cards" && !renovation && (
+      {viewMode === "cards" && !renovation && (
         <aside className="space-y-4">
           <div className="rounded-xl border border-primary/30 bg-primary-soft p-4 shadow-stone">
             <div className="font-mono text-[10px] font-bold uppercase tracking-brand text-primary-ink">Total</div>

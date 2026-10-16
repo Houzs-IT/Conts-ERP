@@ -28,7 +28,10 @@ export function SiteTasksPanel({ projectId, tasks, canWrite, linesAvailable, onA
 }) {
   const [adding, setAdding] = useState(false);
   const [showSkipped, setShowSkipped] = useState(false);
-  const visible = tasks.filter((t) => showSkipped || t.status !== "skipped");
+  /* Done tasks fold away (a finished project listed every task); open ones always show. */
+  const [showDone, setShowDone] = useState(false);
+  const visible = tasks.filter((t) => (showSkipped || t.status !== "skipped") && (showDone || t.status !== "done"));
+  const doneCount = tasks.filter((t) => t.status === "done").length;
   const stages = [...new Set(visible.map((t) => t.stage_key))];
   const skipped = tasks.filter((t) => t.status === "skipped").length;
   return (
@@ -45,7 +48,8 @@ export function SiteTasksPanel({ projectId, tasks, canWrite, linesAvailable, onA
           </div>
         )}
       </div>
-      {visible.length === 0 && <p className="mt-3 text-sm text-ink-secondary">No site tasks yet.</p>}
+      {tasks.length === 0 && <p className="mt-3 text-sm text-ink-secondary">No site tasks yet. Add one to plan the work and put crew on it.</p>}
+      {tasks.length > 0 && visible.length === 0 && <p className="mt-3 text-sm text-ink-secondary">No open site tasks.</p>}
       {stages.map((st) => (
         <div key={st} className="mt-3">
           <div className="text-xs font-medium uppercase tracking-wide text-ink-secondary">{(STAGE_LABEL as Partial<Record<string, string>>)[st] ?? st}</div>
@@ -54,6 +58,11 @@ export function SiteTasksPanel({ projectId, tasks, canWrite, linesAvailable, onA
           </ul>
         </div>
       ))}
+      {doneCount > 0 && (
+        <button type="button" className="mr-3 mt-2 text-xs text-primary hover:underline" aria-expanded={showDone} onClick={() => setShowDone((x) => !x)}>
+          {showDone ? "Hide done tasks" : `Show ${doneCount} done task${doneCount === 1 ? "" : "s"} and their crew`}
+        </button>
+      )}
       {skipped > 0 && (
         <button type="button" className="mt-2 text-xs text-ink-secondary hover:text-ink" onClick={() => setShowSkipped((x) => !x)}>
           {showSkipped ? "Hide skipped tasks" : `Show ${skipped} skipped task${skipped === 1 ? "" : "s"}`}
