@@ -8,6 +8,7 @@ import {
   shortCompanyName,
 } from "../lib/branding";
 import { useIsMobile } from "../mobile/useIsMobile";
+import { CONTS_EMBEDDED } from "../conts/embed";
 
 // Code-split the mobile app: desktop users never download it, and it stays out
 // of the initial JS bundle (keeps the bundle-budget CI gate green).
@@ -63,7 +64,9 @@ export function AuthGate({ children }: { children: ReactNode }) {
   // The mobile build exists ONLY for HOUZS (the owner's phone design). 2990 (and
   // any other company) has no mobile UI, so on the 2990 host we fall back to the
   // desktop app even on phones — "2990 手机关闭".
-  const mobileEnabled = isMobile && hostDefaultCompanyCode() === HOUZS_COMPANY_CODE;
+  // Conts: inside Property OS every screen is the one layout, fitted to the phone (owner, 16 Oct 2026), so
+  // no screen is "not available on mobile".
+  const mobileEnabled = isMobile && !CONTS_EMBEDDED && hostDefaultCompanyCode() === HOUZS_COMPANY_CODE;
 
   // Track the hash so in-page links (#forgot, back-to-login) re-render
   // the gate without a full navigation. #invite= arrives as a fresh
