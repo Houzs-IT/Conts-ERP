@@ -1,13 +1,9 @@
 import { type Env, one, all, json, fail } from '../../../../_lib/db';
 import { requireSession } from '../../../../_lib/auth';
 import { ownerFor, VISIBLE } from '../../../../_lib/ownerScope';
+import { lineTerm, lineDetail } from '../../../../../src/lib/statementTerms';
 
-const CATEGORY_LABEL: Record<string, string> = {
-  housekeeping: 'Cleaning', cleaning: 'Cleaning', maintenance: 'Maintenance', utilities: 'Utilities', internet: 'Internet',
-  electricity: 'Electricity', water: 'Water', consumables: 'Consumables', furniture: 'Furniture', channel_fee: 'Service fee', other: 'Other',
-};
-
-interface DetailLine { label: string; amount: number; type: string; category?: string; reference?: string; occurredOn?: string }
+interface DetailLine { label: string; amount: number; type: string; category?: string; reference?: string; occurredOn?: string; receipt?: { id: string; name: string } }
 interface UnitBreak { id: string; label: string; gross: number; fee: number; expenses: number; adjustments: number; net: number; lines: DetailLine[] }
 
 /** GET /api/owner/statements/:id — one statement drilled to per-unit, per-line detail.
@@ -27,10 +23,12 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
 
   const lines = await all<any>(env, `
     SELECT l.line_type, l.category, l.description, l.amount, l.reference, l.occurred_on, l.unit_id,
-           u.unit_number, p.name AS property_name
+           u.unit_number, p.name AS property_name, d.id AS receipt_id, d.file_name AS receipt_name
     FROM statement_lines l
     LEFT JOIN units u ON u.id = l.unit_id
     LEFT JOIN properties p ON p.id = u.property_id
+    LEFT JOIN expenses e ON e.id = l.expense_id
+    LEFT JOIN documents d ON d.id = e.receipt_document_id
     WHERE l.statement_id = ? ORDER BY l.sort_order, l.occurred_on`, st.id);
 
   const unitLabel = (l: any) => l.property_name ? `${l.property_name} ${l.unit_number}` : 'Unassigned';
@@ -63,11 +61,16 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
       u.lines.push({ label: stayLabel(l), amount: amt, type: 'gross', occurredOn: l.occurred_on });
     } else if (l.line_type === 'expense') {
       const u = bucket(l.unit_id, unitLabel(l));
-      u.expenses += Math.abs(amt);
-      u.lines.push({ label: `${CATEGORY_LABEL[l.category ?? 'other'] ?? 'Other'} · ${l.description}`, amount: -Math.abs(amt), type: 'expense', category: l.category ?? 'other', ...(l.reference ? { reference: l.reference } : {}), occurredOn: l.occurred_on });
+      u.expenses -= amt;
+      // The report's own words ("Water Usage", "Additional Deduction") and the bill's text, with its receipt when there is one.
+      const term = lineTerm(l), detail = lineDetail({ ...l, unitLabel: unitLabel(l) });
+      u.lines.push({ label: detail ? `${term} · ${detail}` : term, amount: amt, type: 'expense', category: l.category ?? 'other', ...(l.reference ? { reference: l.reference } : {}), occurredOn: l.occurred_on,
+        ...(l.receipt_id ? { receipt: { id: l.receipt_id, name: l.receipt_name } } : {}) });
     } else if (l.line_type === 'management_fee') {
-      if (l.unit_id) { const u = bucket(l.unit_id, unitLabel(l)); u.fee += Math.abs(amt); u.lines.push({ label: l.description, amount: -Math.abs(amt), type: 'fee' }); }
-      else ownerFee += Math.abs(amt);
+      // Signed: on a month whose net income is negative the operator's share is negative too (it carries its part of
+      // the loss), so the line is a credit to the owner. Taking the absolute value used to subtract it instead.
+      if (l.unit_id) { const u = bucket(l.unit_id, unitLabel(l)); u.fee -= amt; u.lines.push({ label: l.description, amount: amt, type: 'fee' }); }
+      else ownerFee -= amt;
     } else if (l.line_type === 'adjustment') {
       if (l.unit_id) { const u = bucket(l.unit_id, unitLabel(l)); u.adjustments += amt; u.lines.push({ label: l.description, amount: amt, type: 'adjustment' }); }
       else ownerAdj += amt;

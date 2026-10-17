@@ -73,6 +73,8 @@ export const NAV: NavGroup[] = [
   // Finance's desk work. Not on the phone (owner, 11 Oct 2026: money is not needed on the phone).
   { label: 'FINANCE', workspace: 'rental', phone: false, items: [
     { key: 'payables', label: 'Accounts payable', icon: 'wallet', path: '/finance/payables', area: 'finance' },
+    // Staff could not find where utilities go (comment sheet, Oct 2026): the month's bills of every unit, on Accounts payable.
+    { key: 'utilityBills', label: 'Utility bills', icon: 'zap', path: '/finance/utility-bills', area: 'finance' },
     { key: 'approvals', label: 'Approvals', icon: 'stamp', path: '/finance/approvals', area: 'finance', badge: 'approvals' },
   ] },
   { label: 'GROWTH', workspace: 'rental', items: [

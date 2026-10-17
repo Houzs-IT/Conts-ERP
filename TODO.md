@@ -375,6 +375,14 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - The statement and the panel both count rollup headers (parent_expense_id) with their line items; /api/finance/expenses does not. No rollups exist today; if they appear, decide which is right.
 - scripts/api-checks/unit-costs.mjs runs in CI (rbac job). Locally on PGlite use STATEMENTS=lib: POST /api/statements/generate opens a second connection for its transaction and PGlite serves one, so it hangs there.
 
+## Utility bills findable (feat/staff-utilities, no migration, 17 Oct 2026)
+- Staff could not find where utilities go. Now: Finance > Utility bills (the monthly bills by account number, every unit), "Utility bills" and "Add utility bill" on Accounts payable, "Add utility bill" on the unit Financials tab. All reuse Add a bill / Utility bills, all units; no second store.
+- Owner statement lines (staff page and owner portal) link each bill's receipt; an owner may open a receipt only once that statement is final.
+- Done (fix/bills-receipt-portal-net, no migration): a bill the owner pays needs its receipt (sensible default for the owner's open question): every utility bill and additional deduction charged to the owner, on Add a bill, Add utility bill, AP Add expense and the monthly screen; server-enforced (src/lib/receipts.ts, 422 RECEIPT_REQUIRED). Company / tenant / guest bills and cleaning need none. Older owner bills without one stay valid and show "No receipt" with "Add receipt" (owner page, unit Financials, AP list); attaching a receipt is allowed on a final month (it changes no figure, audited as expense.receipt). Check: scripts/api-checks/bills-receipts.mjs.
+- Done (same PR): the monthly utility bills screen also lists units with no account number on file ("No account on file", Add account: POST /api/expenses/utility-accounts). Re-entering a month keeps the receipt already on that bill.
+- Done (same PR): owner portal per-unit net on a negative month now equals the staff statement (the operator's share was taken as an absolute value; it is negative on a loss month). The hero's gross-to-net lines had the same sign error. Check: scripts/api-checks/portal-negative-net.mjs.
+- Imported owner bills (HostPlatform workbook) have no receipts, so after the import most utility lines will read "No receipt" until finance attaches them.
+
 ## Owner details (feat/owner-details, migration 0110)
 - Done (12 Oct): migration 0110 applied on staging and production; the address fields are live.
 - Production: 116 owners, none with phone or email yet (the source workbooks had none); they are entered on each owner's page (Owner details, Edit).
