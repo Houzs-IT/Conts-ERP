@@ -162,7 +162,8 @@ export const isDay = (v: unknown): v is string => typeof v === 'string' && /^\d{
 /** Nobody tapped "Guest left": from the checkout time on, the guest counts as out (owner, 17 Oct 2026; early leavers are
  *  still tapped by staff). There is no scheduled worker, so whichever screen first reads the clean after that time stamps
  *  it, once, at the checkout time itself, and writes the history row ("Automatic, at checkout 11:00"). Rows are changed
- *  in place (guest_left_at, guest_left_auto). Never throws: a screen read must not fail over it. */
+ *  in place (guest_left_at, guest_left_auto). The stamp is the checkout instant in +08:00 form, which a tap (an ISO 'Z'
+ *  instant) never is, so later reads still know it was automatic. Never throws: a screen read must not fail over it. */
 export async function autoGuestLeft(env: Env, rows: any[], stdOut: string): Promise<void> {
   const now = Date.now();
   const due: { id: string; at: string; time: string; unit: string | null }[] = [];

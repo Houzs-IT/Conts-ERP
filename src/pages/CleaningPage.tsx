@@ -278,7 +278,7 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
 /* ---------- one building ---------- */
 
 // Columns follow the card's own width, not the window's: with the detail panel open the list is narrow on a laptop.
-const COLS = '@2xl:grid @2xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1.3fr)_minmax(0,1.2fr)_minmax(0,0.6fr)_minmax(0,0.55fr)_minmax(0,0.7fr)_minmax(0,0.6fr)_minmax(0,0.9fr)_minmax(0,0.95fr)] @2xl:items-center @2xl:gap-2.5';
+const COLS = '@2xl:grid @2xl:grid-cols-[minmax(0,1.05fr)_minmax(0,1.3fr)_minmax(0,1.2fr)_minmax(0,0.6fr)_minmax(0,0.55fr)_minmax(0,0.5fr)_minmax(0,0.6fr)_minmax(0,0.85fr)_minmax(0,1.2fr)] @2xl:items-center @2xl:gap-2.5';
 
 function BuildingCard({ group, now, future, selected, busy, onSelect, onGuestLeft, onUndoLeft, onCheckIn, onPlan, onAssign }: {
   group: { id: string; name: string; rows: Row[]; departures: Departure[]; repairs: RepairOnDay[] }; now: number; future: boolean; selected: string | null; busy: string | null;
@@ -357,7 +357,7 @@ function CleanRow({ r, now, active, busy, savingIn, onSelect, onGuestLeft, onUnd
   const files = r.photoCount + r.videoCount;
   // One tap on the row marks the guest out (or takes the mark back while nobody has started); the tick is the button.
   const mayTick = !!r.previous && r.status !== 'done' && r.status !== 'cleaning' && r.day <= mytDay(0);
-  const label = r.status === 'done' ? `Ready to check in${r.completedAt ? ` · ${hm(r.completedAt)}` : ''}` : st.label;
+  const label = r.status === 'done' ? 'Ready to check in' : st.label;
   return (
     <div role="button" tabIndex={0} aria-pressed={active} onClick={onSelect} onKeyDown={e => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onSelect(); } }}
       className={cx('px-4 @2xl:px-5 py-3 [border-top:1px_solid_var(--color-line-soft)] text-copy cursor-pointer flex flex-wrap items-baseline gap-x-4 gap-y-1 outline-none focus-visible:[box-shadow:inset_0_0_0_2px_var(--color-gold)]', COLS,
@@ -392,7 +392,7 @@ function CleanRow({ r, now, active, busy, savingIn, onSelect, onGuestLeft, onUnd
       <CleanerCell r={r} />
       <div className="flex items-center gap-1.5 flex-wrap">
         <span className="hidden @2xl:inline"><StatusBadge tone={st.tone} className="whitespace-nowrap">{label}</StatusBadge></span>
-        {r.status === 'done' && files > 0 && <span className="hidden @2xl:inline text-meta text-muted-ink whitespace-nowrap">{files} {files === 1 ? 'photo' : 'photos'}</span>}
+        {r.status === 'done' && <span className="hidden @2xl:inline text-meta text-muted-ink whitespace-nowrap">{r.completedAt ? `Done ${hm(r.completedAt)}` : 'Done'}{files > 0 ? ` · ${files} ${files === 1 ? 'photo' : 'photos'}` : ''}</span>}
       </div>
     </div>
   );

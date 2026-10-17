@@ -181,7 +181,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
        scheduled_for, due_at, next_guest_at, requires_photo, created_at, updated_at${priced ? ', amount, cleaner_pay, external_address, external_client, external_phone' : ''})
     VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?${priced ? ', ?, ?, ?, ?, ?' : ''})`,
     id, unit ? unit.id : null, kind, cleanerId ? 'assigned' : 'open', title, instructions, assigneeId, cleanerId,
-    isHhmm(b?.scheduledFor) ? at(b.scheduledFor) : null,
+    // With no window the job still lands on the day picked (it used to land on the day it was added): from 11:00, checkout time.
+    isHhmm(b?.scheduledFor) ? at(b.scheduledFor) : at('11:00'),
     isHhmm(b?.dueAt) ? at(b.dueAt) : null,
     isHhmm(b?.nextGuestAt) ? at(b.nextGuestAt) : null,
     requiresPhoto, now, now, ...(priced ? [amount, cleanerPay, ext?.address ?? null, ext?.client ?? null, ext?.phone ?? null] : []));

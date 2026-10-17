@@ -132,7 +132,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
           checkInTime: r.next_time || stdIn, earlyCheckIn: !!r.next_time && r.next_time < stdIn,
           checkInAt: at(r.day, r.next_time, stdIn),
         } : null,
-        guestOut, guestLeftAt: leftAt, guestLeftAuto: !!r.guest_left_auto,
+        guestOut, guestLeftAt: leftAt, guestLeftAuto: !!r.guest_left_auto || (!!r.guest_left_at && r.guest_left_at === `${r.day}T${r.prev_time || stdOut}:00+08:00`),
         // What the clean is charged (external) and what the cleaner is paid (internal): the job's own, else the price table.
         amount: r.amount ?? p.external, cleanerPay: r.cleaner_pay ?? p.internal, priceSource: r.amount != null ? 'job' : p.source, external: null,
         startedAt: r.started_at ?? null, completedAt: r.completed_at ?? null,
