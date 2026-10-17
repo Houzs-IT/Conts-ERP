@@ -2,7 +2,7 @@
  *  Figures come from the statement as generated (statement_units + statement_lines), so the report shows exactly
  *  what was finalised; earlier months of the year come from their own statements, else are worked out from the
  *  data by the same rules (ownerStatement.ts), else, for months only the owner workbook knows, show what was paid. */
-import { DEDUCTIONS, loadInputs, computeMonth, statementSettings, type Query } from './ownerStatement';
+import { DEDUCTIONS, loadInputs, withYearToDate, computeMonth, statementSettings, type Query } from './ownerStatement';
 import { monthEndExclusive } from './revenue';
 import { companyFrom, type Company } from './letterhead';
 
@@ -131,7 +131,7 @@ async function yearToDate(q: Query, unitId: string, ownerId: string, period: str
   const live = new Map<string, ReturnType<typeof computeMonth>[number]>();
   if (missing.length) {
     const [settings, inputs] = await Promise.all([statementSettings(q), loadInputs(q, `${missing[0]}-01`, monthEndExclusive(missing[missing.length - 1]), { unitId })]);
-    for (const m of missing) { const r = computeMonth(m, inputs, settings, 'dated').find(x => x.unitId === unitId); if (r) live.set(m, r); }
+    for (const m of missing) { const r = computeMonth(m, await withYearToDate(q, inputs, m, settings), settings, 'dated').find(x => x.unitId === unitId); if (r) live.set(m, r); }
   }
   return MON.map((label, i) => {
     const month = `${year}-${String(i + 1).padStart(2, '0')}`;

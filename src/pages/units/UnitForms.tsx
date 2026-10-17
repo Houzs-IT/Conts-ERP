@@ -16,7 +16,8 @@ import { addressLines, type OwnerAddress, type Owner } from '../owners/shared';
 import { SearchSelect } from '../../components/Select';
 import { useApi } from '../../lib/useApi';
 import { masked as maskTail } from '../../lib/format';
-import { MODEL } from '../../lib/revenueModel';
+import { MODEL, CODE, PURPOSES, USED_BY } from '../../lib/revenueModel';
+import { BedsEditor, BaysEditor, bedsText, baysText } from './UnitExtras';
 import {
   STATES, cap, LAYOUTS, layoutFromBedrooms,
   SectionHead, Grid3, Labeled, Select, ReadOnly, CentreModal,
@@ -84,12 +85,24 @@ export function DetailsForm({ u, owner, buildings, money, canEdit, onChange, onO
         <Labeled label="Address" span2>
           <Field label="" aria-label="Address" value={u.address} onChange={e => onChange({ address: e.target.value })} />
         </Labeled>
-        {money && u.baseRate !== undefined && (
+        {money && u.baseRate !== undefined && (u.purpose ?? 'rental') === 'rental' && (
           <Labeled label="Nightly price (RM)" help="The price of one night before each channel's markup. Saving it sends new prices to the linked channels.">
             <MoneyInput label="" aria-label="Nightly price" minSen={100} valueSen={u.baseRate}
               onChangeSen={sen => onChange({ baseRate: sen ?? 0 })} />
           </Labeled>
         )}
+      </Grid3>
+
+      <SectionHead>What the unit is for</SectionHead>
+      <Grid3>
+        <Labeled label="Purpose" help={PURPOSES.find(p => p.value === (u.purpose ?? 'rental'))?.help}>
+          <Select label="Purpose" value={u.purpose ?? 'rental'} onChange={v => onChange({ purpose: v as NonNullable<Unit['purpose']> })}
+            options={PURPOSES.map(p => ({ value: p.value, label: p.label }))} />
+        </Labeled>
+        <Labeled label="Used by" help="Optional: which business uses the unit.">
+          <Select label="Used by" value={u.usedBy ?? ''} onChange={v => onChange({ usedBy: v || null })}
+            options={[{ value: '', label: 'Not set' }, ...USED_BY]} />
+        </Labeled>
       </Grid3>
 
       <SectionHead>Layout</SectionHead>
@@ -111,6 +124,19 @@ export function DetailsForm({ u, owner, buildings, money, canEdit, onChange, onO
             onChange={n => onChange({ sizeSqft: n ?? null })} />
         </Labeled>
       </Grid3>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-8 gap-y-4 mb-[22px]">
+        <div className="flex flex-col gap-2 min-w-0">
+          <SectionHead noMargin>Beds and mattresses</SectionHead>
+          {(u.beds?.length ?? 0) > 0 && <span className="text-copy font-medium">{bedsText(u.beds)}</span>}
+          <BedsEditor beds={u.beds ?? []} disabled={!canEdit} onChange={beds => onChange({ beds })} />
+        </div>
+        <div className="flex flex-col gap-2 min-w-0">
+          <SectionHead noMargin>Car park</SectionHead>
+          {(u.parkingBays?.length ?? 0) > 0 && <span className="text-copy font-medium">{baysText(u.parkingBays)}</span>}
+          <BaysEditor bays={u.parkingBays ?? []} disabled={!canEdit} onChange={parkingBays => onChange({ parkingBays })} />
+        </div>
+      </div>
 
       <SectionHead>Owner</SectionHead>
       <Grid3>
@@ -146,7 +172,7 @@ export function DetailsForm({ u, owner, buildings, money, canEdit, onChange, onO
 
       <SectionHead>Income model</SectionHead>
       <div className="flex flex-wrap items-center gap-3 mb-[6px]">
-        <span className="text-copy">{u.revenueModel ? (u.termsLabel ?? MODEL[u.revenueModel].label) : u.pkg}</span>
+        <span className="text-copy">{u.contractCode ? `${u.contractCode} · ${CODE[u.contractCode].label}${u.termsLabel ? ` · ${u.termsLabel}` : ''}` : u.revenueModel ? (u.termsLabel ?? MODEL[u.revenueModel].label) : u.pkg}</span>
         {onOpenContract && <button type="button" onClick={onOpenContract} className="p-0 bg-transparent border-none cursor-pointer [font-family:inherit] text-meta font-semibold text-gold-ink">Change on the Contract tab</button>}
       </div>
       <details className="m-0 text-meta text-muted-ink [&>summary]:cursor-pointer"><summary className="w-fit list-none inline-flex items-center gap-1 text-muted-ink"><span aria-hidden className="inline-grid place-items-center w-4 h-4 rounded-full border border-solid border-line text-[10px] font-semibold">?</span> How this works</summary><p className="m-0 mt-1.5">One income model per contract decides how the owner statement is worked out. Package {u.pkg.replace('Package ', '')} is kept from the owner workbook for reference.</p></details>

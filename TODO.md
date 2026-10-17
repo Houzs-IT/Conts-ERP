@@ -133,6 +133,13 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 - Duplicate migration number on main: 0118_project_timeline_notes.sql and 0118_renovation_units.sql (both applied; numbering only).
 - The board loads at most 200 filtered projects (the list endpoint's largest page); it says so above the board when there are more.
 
+## Staff sheet UNIT: purpose, contracts, Agent to let (feat/staff-units-contracts, migration 0125, 17 Oct 2026)
+- Migration 0125 to apply on production (lead) before merging; until then the new parts stay hidden or answer "needs the latest database update".
+- Settings > Agreement template holds a neutral placeholder: the company pastes its real agreement wording there.
+- PS YGRR true-up uses the earlier months as this engine works them out today, not the figures on statements already final.
+- Showroom and warehouse units: the office Maintenance job screen does not show access or car park; the cleaning drawer and field app do.
+- Contracts page Add / Edit (owner-level) still offer only operator share and GRR; per-unit contract types are set on the unit's Contract tab.
+
 ## Later
 - Packages (8 Oct, chore/update-packages): Property OS has 0 flagged packages (wrangler 4.148, source-map-js, and an override pinning sharp to 0.35.5 inside wrangler's local emulator; all build/dev tools, none ran in production). Engine: the non-breaking fixes are in (hono on the server, dompurify on the screens, and build tools). Left in engine/, each needing a breaking upgrade of Houzs's code or tools: react-router 6 (moderate), wrangler's sharp and undici, esbuild, vitest, braces. Take them with the next Houzs copy.
 - Email delivery: needs MAIL_API_KEY on the preview environment too; production has it.

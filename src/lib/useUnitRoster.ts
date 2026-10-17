@@ -4,6 +4,8 @@ export interface RosterUnit {
   id: string; unitNumber: string; propertyName: string; ownerId?: string; ownerName?: string;
   /** The unit's code ("C13-13A"), its building's id, and its layout, for the unit picker. */
   unitCode?: string; propertyId?: string; bedrooms?: number; bathrooms?: number; layoutType?: string | null;
+  /** 0125: rental, showroom or warehouse. Only rental units take reservations. */
+  purpose?: string;
 }
 
 /** Every unit, for pickers. The ids are the real ones the API accepts. */

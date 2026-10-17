@@ -1,4 +1,5 @@
 import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/db';
+import { purposeOf } from '../../_lib/unitPurpose';
 import { requireSession, isFieldRole, hasColumn } from '../../_lib/auth';
 import { findClash, clashResponseBody, upsertGuest, nextBookingRef, holdOnChannels, withUnitLock } from '../../_lib/reservations';
 import { VIEWS, TODOS, FACETS, fromSql, columnsSql, parseListQuery, viewWhere, todoWhere, toRow } from '../../_lib/bookingList';
@@ -95,6 +96,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const channel = b.channel ?? 'direct';
   if (!CHANNELS.includes(channel)) return fail('VALIDATION', 'Unknown channel.', 422, { channel: 'Pick a channel.' });
   if (!(await one(env, 'SELECT 1 AS x FROM units WHERE id = ?', b.unitId))) return fail('NOT_FOUND', 'That unit does not exist.', 404);
+  // A showroom or warehouse takes no reservations, so it never gets a turnover clean or a channel hold (0125).
+  if ((await purposeOf(env, b.unitId)) !== 'rental') return fail('NOT_RENTAL', 'Showroom and warehouse units take no reservations.', 409, { unitId: 'Pick a rental unit.' });
   for (const k of ['checkInTime', 'checkOutTime'] as const) if (b[k] != null && !TIME.test(String(b[k]))) return fail('VALIDATION', 'Times are HH:MM.', 422, { [k]: 'Use HH:MM, e.g. 15:00.' });
 
   const id = crypto.randomUUID(), now = nowIso();

@@ -1,4 +1,5 @@
 import { type Env, all, one, json, fail, mytToday } from '../../_lib/db';
+import { purposeReady } from '../../_lib/unitPurpose';
 import { requireSession } from '../../_lib/auth';
 import { stampMyt } from '../../_lib/ops';
 import { stayMonths, metrics, monthEndExclusive, daysInMonth as daysInMonthOf } from '../../_lib/revenue';
@@ -26,12 +27,13 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if (!unitId) return fail('VALIDATION', 'A unit is required.', 422);
 
   const ownerAddress = await ownerDetailsReady(env);
+  const purposeCols = await purposeReady(env);
   const unit = await one<any>(env, `
     SELECT u.*, p.name AS property_name, p.address_line, p.city, p.state, p.postcode,
            o.id AS owner_id, o.display_name AS owner_name, o.email AS owner_email, o.phone AS owner_phone,
            ${ownerAddress ? 'o.address_lines, o.address_postcode, o.address_city, o.address_state, o.address_country,' : ''}
            c.management_fee_pct, c.renews_on, c.starts_on, c.id AS c_id, c.revenue_model, c.model, c.minimum_guarantee, c.grr_amount,
-           c.agent_fee_pct, c.agent_name, c.tenant_name, c.deposit_amount, c.ends_on, c.guarantee_starts_on, c.guarantee_ends_on, c.misc_charges AS c_misc
+           c.agent_fee_pct, c.agent_name, c.tenant_name, c.deposit_amount, c.ends_on, c.guarantee_starts_on, c.guarantee_ends_on, c.misc_charges AS c_misc, c.minimum_guarantee_annual${purposeCols ? ', c.contract_code' : ''}
     FROM units u
     JOIN properties p ON p.id = u.property_id
     JOIN owners o ON o.id = u.owner_id
@@ -140,6 +142,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       maxGuests: unit.max_guests,
       sizeSqft: unit.size_sqft,
       isListed: !!unit.is_listed,
+      // 0125: a showroom or warehouse is never on the channels; the screen hides the channel and occupancy parts.
+      purpose: unit.purpose ?? 'rental', usedBy: unit.used_by ?? null, contractCode: unit.c_id ? terms.contractCode : null,
       listedAt: unit.listed_at,
       fittedOutAt: unit.fitted_out_at,
       channels: channels.map(c => c.channel),

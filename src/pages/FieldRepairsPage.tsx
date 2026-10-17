@@ -26,7 +26,7 @@ interface ListPayload { mine: Repair[]; open: Repair[]; mayPick: boolean }
 interface FileDoc { id: string; kind: string; url: string; fileName: string; byteSize: number; uploadedAt: string; uploader: string | null }
 interface Detail {
   job: Repair; mine: boolean; mayPick: boolean; media: (MediaItem & { stage: 'before' | 'after' })[]; files: FileDoc[];
-  access: { id: string; label: string; instruction: string }[]; notes: { note: string; by: string; at: string; done: boolean }[];
+  access: { id: string; label: string; instruction: string }[]; parking?: string | null; notes: { note: string; by: string; at: string; done: boolean }[];
 }
 
 const SOURCE: Record<string, string> = { guest: 'a guest', cleaner: 'a cleaner', inspection: 'an inspection', staff: 'the office' };
@@ -228,6 +228,7 @@ function RepairSheet({ id, onClose, onChanged, onPicked }: { id: string; onClose
                   <InfoRow key={a.id} icon="KeyRound" label={a.label}><span className="whitespace-pre-wrap">{a.instruction}</span></InfoRow>
                 )) : <InfoRow icon="KeyRound" label="Getting in"><span className="text-muted-ink">No access instruction on this unit. Ask the office.</span></InfoRow>
               ) : d.data!.mayPick && <InfoRow icon="KeyRound" label="Getting in"><span className="text-muted-ink">Shown once you pick up the job.</span></InfoRow>}
+              {mine && d.data!.parking && <InfoRow icon="Car" label="Car park">{d.data!.parking}</InfoRow>}
               <InfoRow icon="CalendarClock" label="When you may go in">
                 {windows.length ? windows.map(w => (
                   <span key={w.id} className={cx('block', Date.parse(w.endsAt) < Date.now() && 'text-muted-ink')}>

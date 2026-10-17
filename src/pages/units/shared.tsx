@@ -2,7 +2,7 @@ import { useEffect, useRef, type ReactNode } from 'react';
 import { cx } from '../../lib/design-tokens';
 import { Select as UiSelect } from '../../components/Select';
 import type { UnitReadiness, TaskState, BookingChannel, ReservationState } from '../../lib/types';
-import type { RevenueModel } from '../../lib/revenueModel';
+import type { RevenueModel, ContractCode, UnitPurpose } from '../../lib/revenueModel';
 import type { OwnerAddress } from '../owners/shared';
 import type { PnlRow } from './PnlTable';
 
@@ -43,6 +43,12 @@ export interface Unit {
   bedrooms?: number; bathrooms?: number; sizeSqft?: number | null;
   /** Migration 0123. null: not set yet (the form proposes one from the bedrooms). */
   layoutType?: LayoutType | null;
+  /** Migration 0125: what the unit is for (only rental units are on the channels), who uses it, beds, car park bays.
+   *  The labels ("1 King · 2 Single", "2 bays: L2-105, L2-106") come from the server and are never sent back. */
+  purpose?: UnitPurpose; usedBy?: string | null;
+  beds?: Bed[]; bedsLabel?: string; parkingBays?: Bay[]; parkingLabel?: string;
+  /** The contract's short code (PS, PS GRR, WH, ...); null with no contract record. Read-only here. */
+  contractCode?: ContractCode | null;
   /** Sen. Present only for roles that see money; saved through PUT /api/rates, not the unit PATCH. */
   baseRate?: number;
   /** Sen. The standard clean's price (0 or null: not set). Money roles only; saved from the Financials tab. */
@@ -56,6 +62,8 @@ export interface Unit {
     minimumGuarantee?: number; minimumGuaranteeAnnual?: number | null; guaranteeStartsOn?: string | null; guaranteeEndsOn?: string | null;
   };
 }
+export interface Bed { size: string; quantity: number }
+export interface Bay { id?: string; lotNumber: string; level: string | null; note: string | null }
 export interface Building { id: string; name: string; city: string; state: string }
 export interface PropertiesPayload { buildings: Building[]; units: Unit[]; generatedAt: string }
 
@@ -72,6 +80,7 @@ export interface UnitDetail {
     contract: { id?: string | null; managementFeePct: number; startsOn: string; renewsOn: string | null } | null;
     revenueModel?: RevenueModel; revenueModelLabel?: string; termsLabel?: string;
     baseRate?: number;
+    purpose?: UnitPurpose; usedBy?: string | null; contractCode?: ContractCode | null;
   };
   performance: {
     period: string; occupancy: number; occupiedNights: number; adr: number;

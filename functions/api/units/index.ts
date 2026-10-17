@@ -1,6 +1,7 @@
 import { type Env, all, one, run, json, fail, nowIso } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { invalidUnit, ownerFieldIn, saveExpenses, saveContract, auditUnit, type UnitInput } from '../../_lib/properties';
+import { purposeReady, saveBays } from '../../_lib/unitPurpose';
 
 /** GET /api/units?propertyId=&readiness= — the unit list (also the roster behind every unit picker). */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
@@ -18,8 +19,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if (readiness) args.push(readiness);
   if (session.role === 'owner') args.push(session.userId);
 
+  const ready = await purposeReady(env);
   const rows = await all<any>(env, `
-    SELECT u.id, u.unit_number, u.unit_code, u.readiness, u.base_rate, u.is_listed, u.bedrooms, u.bathrooms, u.max_guests, u.size_sqft, u.layout_type,
+    SELECT ${ready ? 'u.purpose,' : ''} u.id, u.unit_number, u.unit_code, u.readiness, u.base_rate, u.is_listed, u.bedrooms, u.bathrooms, u.max_guests, u.size_sqft, u.layout_type,
            p.id AS property_id, p.name AS property_name, p.city, p.state,
            o.id AS owner_id, o.display_name AS owner_name
     FROM units u
@@ -38,7 +40,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       propertyId: r.property_id, propertyName: r.property_name, area: r.city, city: r.city, state: r.state,
       ownerId: r.owner_id, ownerName: r.owner_name,
       bedrooms: r.bedrooms, bathrooms: r.bathrooms, maxGuests: r.max_guests, sizeSqft: r.size_sqft ?? null, layoutType: r.layout_type ?? null,
-      isListed: !!r.is_listed,
+      isListed: !!r.is_listed, purpose: r.purpose ?? 'rental',
       // baseRate is integer sen. Field roles never receive money at all.
       ...(session.manage ? { baseRate: r.base_rate } : {}),
     })),
@@ -86,6 +88,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     b.bedrooms ?? 1, b.bathrooms ?? 1, b.sizeSqft ?? null, b.layoutType ?? null, now, now);
   if (b.expenses?.length) await saveExpenses(env, id, b.expenses);
   if (b.contract) await saveContract(env, id, ownerId, b.contract);
-  await auditUnit(env, session, 'unit.create', id, { buildingId: b.buildingId, unitCode: number });
+  if (await purposeReady(env)) {
+    await run(env, 'UPDATE units SET purpose = ?, used_by = ?, beds = ?::text::jsonb WHERE id = ?', b.purpose ?? 'rental', b.usedBy ?? null, JSON.stringify(b.beds ?? []), id);
+    if (b.parkingBays?.length) await saveBays(env, id, b.parkingBays);
+  }
+  await auditUnit(env, session, 'unit.create', id, { buildingId: b.buildingId, unitCode: number, purpose: b.purpose ?? 'rental' });
   return json({ id }, 201);
 };

@@ -1,4 +1,5 @@
 import { type Env, all, one, json, fail } from '../../_lib/db';
+import { rentalOnly } from '../../_lib/unitPurpose';
 import { requireSession } from '../../_lib/auth';
 import { stayMonths, metrics, groupBy, toDate, monthEndExclusive } from '../../_lib/revenue';
 
@@ -40,7 +41,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     FROM units u
     JOIN properties p ON p.id = u.property_id
     JOIN owners o ON o.id = u.owner_id
-    WHERE u.is_listed = 1
+    WHERE u.is_listed = 1${await rentalOnly(env)}
     ORDER BY p.name, u.unit_number`);
   // functions/_lib/revenue.ts: gross value and nights split by night into the window (a period to date stops today).
   const byUnit = groupBy(await stayMonths(env, dateFrom, dateToExclusive, { listedOnly: true }), r => r.unit_id);

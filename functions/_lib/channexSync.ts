@@ -2,6 +2,7 @@ import { type Env, one, all, run, mytToday } from './db';
 import { enqueueAvailability, enqueueRestrictions } from './channexQueue';
 import { channexCreateRatePlan } from './channex';
 import { OTA_CHANNELS, standardRate, type SalesChannel } from './channelPrice';
+import { purposeOf } from './unitPurpose';
 
 /** A unit's Channex listing. `ratePlans` holds one rate plan per sales channel that has one: 'web' is the
  *  direct plan (always present on a linked unit); each OTA gets its own so it can carry its own price. */
@@ -14,6 +15,9 @@ export async function channexMappingFor(env: Env, unitId: string): Promise<Chann
   const u = await one<{ channex_property_id: string | null; channex_room_type_id: string | null; channex_rate_plan_id: string | null; channex_rate_plan_airbnb: string | null; channex_rate_plan_booking_com: string | null; channex_rate_plan_agoda: string | null }>(
     env, 'SELECT channex_property_id, channex_room_type_id, channex_rate_plan_id, channex_rate_plan_airbnb, channex_rate_plan_booking_com, channex_rate_plan_agoda FROM units WHERE id = ?', unitId);
   if (!u?.channex_property_id || !u.channex_room_type_id || !u.channex_rate_plan_id) return null;
+  // A showroom or warehouse is never sent to the channels, whatever ids it carries (owner, 17 Oct 2026). Every
+  // enqueue and rate-plan path goes through here.
+  if ((await purposeOf(env, unitId)) !== 'rental') return null;
   return {
     propertyId: u.channex_property_id, roomTypeId: u.channex_room_type_id, ratePlanId: u.channex_rate_plan_id,
     ratePlans: {

@@ -4,6 +4,7 @@ import { syncRateIfLinked } from '../../_lib/channexSync';
 import { queueFullSync } from '../../_lib/channexQueue';
 import type { SalesChannel } from '../../_lib/channelPrice';
 import { checkDate, invalid, type Fields } from '../../_lib/validate';
+import { purposeOf } from '../../_lib/unitPurpose';
 
 const CHANNELS = ['web', 'airbnb', 'booking_com', 'agoda'];
 const OTAS = ['airbnb', 'booking_com', 'agoda'];
@@ -26,6 +27,7 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
   if (!b?.unitId) return fail('VALIDATION', 'Say which unit.', 422);
   const unit = await one<{ id: string; base_rate: number; weekend_rate: number | null; cost_floor: number }>(env, 'SELECT id, base_rate, weekend_rate, cost_floor FROM units WHERE id = ?', b.unitId);
   if (!unit) return fail('NOT_FOUND', 'That unit does not exist.', 404);
+  if ((await purposeOf(env, unit.id)) !== 'rental') return fail('NOT_RENTAL', 'Showroom and warehouse units are not priced or sold on the channels.', 409);
   const now = nowIso();
   const done = (action: string, before: unknown, after: unknown) =>
     audit(env, { actorId: session.userId, actorLabel: session.fullName, action, entityTable: 'units', entityId: unit.id, before, after });
