@@ -2,6 +2,7 @@ import { type Env, all, one, run, audit, nowIso } from './db';
 import type { Session } from './auth';
 import { isPeriodLocked } from './expenses';
 import { hasCleanPrices, cleanAmounts } from './cleaningPrices';
+import { hasJobInvoices } from './jobProfit';
 
 export const CLEAN_KINDS = ['turnover', 'deep_clean', 'light_clean'] as const;
 export const CLEAN_KINDS_SQL = `('turnover','deep_clean','light_clean')`;
@@ -69,15 +70,20 @@ export async function chargeClean(env: Env, session: Session, task: { id: string
     // The clean's own amount (typed on the job) or the price table's, kept on the job as charged; none set: the old pricing.
     let set: { amount: number; source: 'job' | 'unit' | 'table' } | null = null;
     if (await hasCleanPrices(env)) {
-      const own = await one<{ amount: number | null; cleaner_pay: number | null }>(env, 'SELECT amount, cleaner_pay FROM tasks WHERE id = ?', task.id);
-      const p = await cleanAmounts(env, task.unit_id, task.kind);
+      // Priced on the clean's own day, so a price change dated later never reaches it.
+      const own = await one<{ amount: number | null; cleaner_pay: number | null; day_at: string | null }>(env,
+        'SELECT amount, cleaner_pay, COALESCE(scheduled_for, due_at, created_at) AS day_at FROM tasks WHERE id = ?', task.id);
+      const p = await cleanAmounts(env, task.unit_id, task.kind, own?.day_at);
       const amount = own?.amount ?? p.external, pay = own?.cleaner_pay ?? p.internal;
-      await run(env, 'UPDATE tasks SET amount = ?, cleaner_pay = ? WHERE id = ?', amount, pay, task.id);
+      if (p.itemId !== undefined) await run(env, 'UPDATE tasks SET amount = ?, cleaner_pay = ?, service_item_id = COALESCE(service_item_id, ?) WHERE id = ?', amount, pay, p.itemId, task.id);
+      else await run(env, 'UPDATE tasks SET amount = ?, cleaner_pay = ? WHERE id = ?', amount, pay, task.id);
       if (amount != null) set = { amount: Number(amount), source: own?.amount != null ? 'job' : p.source ?? 'table' };
     }
     const existing = await one<{ amount: number }>(env, `SELECT amount FROM expenses WHERE task_id = ? LIMIT 1`, task.id);
     if (existing) return { amount: Number(existing.amount), created: false, reason: 'already charged' };
-    const sameDay = await one<{ amount: number }>(env, `SELECT amount FROM expenses WHERE unit_id = ? AND category = 'cleaning' AND incurred_on = ? LIMIT 1`, task.unit_id, day);
+    // A cleaner's or vendor's invoice (0127) is The Conts' cost, not a charge to the unit, so it never stands in for one.
+    const invoices = (await hasJobInvoices(env)) ? ' AND invoice_task_id IS NULL AND invoice_maintenance_id IS NULL' : '';
+    const sameDay = await one<{ amount: number }>(env, `SELECT amount FROM expenses WHERE unit_id = ? AND category = 'cleaning' AND incurred_on = ?${invoices} LIMIT 1`, task.unit_id, day);
     if (sameDay) return { amount: Number(sameDay.amount), created: false, reason: 'a clean is already charged on this unit today' };
     const price = set ?? await cleanPrice(env, task.unit_id, task.kind);
     if (await isPeriodLocked(env, task.unit_id, day)) return { amount: price.amount, created: false, reason: "this month's owner statement is already final" };

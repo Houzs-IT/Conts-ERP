@@ -1,6 +1,7 @@
 import { mayWork } from '../../../_lib/access';
 import { type Env, one, run, json, fail, audit, nowIso } from '../../../_lib/db';
 import { requireSession } from '../../../_lib/auth';
+import { hasServicePrices, setPriceToday } from '../../../_lib/servicePrices';
 
 const CATEGORIES = ['plumbing', 'electrical', 'aircon', 'furniture', 'appliance', 'cleaning', 'general', 'other'];
 const UNIT_LABELS = ['job', 'unit', 'hour'];
@@ -44,6 +45,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     typeof b?.active === 'boolean' ? (b.active ? 1 : 0) : null,
     typeof b?.notes === 'string' ? b.notes.slice(0, 500) : null,
     nowIso(), id);
+  if (b?.defaultPrice != null && await hasServicePrices(env)) await setPriceToday(env, id, b.defaultPrice, session.userId);
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'maintenance_sku.update', entityTable: 'maintenance_skus', entityId: id, before: { active: !!cur.active, defaultPrice: cur.default_price }, after: { active: b?.active ?? !!cur.active, defaultPrice: b?.defaultPrice ?? cur.default_price } });
   return json({ ok: true });
 };

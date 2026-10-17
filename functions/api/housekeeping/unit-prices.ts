@@ -1,6 +1,7 @@
 import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession, isFieldRole, hasColumn } from '../../_lib/auth';
 import { hasCleanPrices, priceBook, layoutKey, PRICE_KINDS } from '../../_lib/cleaningPrices';
+import { hasServicePrices, serviceBook } from '../../_lib/servicePrices';
 
 /** GET /api/housekeeping/unit-prices — every unit with its layout and, per clean type, the cleaner's pay and the charge
  *  per clean that apply (its own override, else the price table), and where they come from. */
@@ -13,8 +14,13 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const units = await all<any>(env, `
     SELECT u.id, u.unit_number, u.bedrooms, ${layout} AS layout_type, p.id AS property_id, p.name AS property_name
     FROM units u JOIN properties p ON p.id = u.property_id ORDER BY p.name, u.unit_number`);
-  const own = await all<{ unit_id: string; kind: string; internal_cost: number | null; external_charge: number | null }>(env,
-    'SELECT unit_id, kind, internal_cost, external_charge FROM unit_cleaning_prices');
+  // Since Service prices (0127) a unit's own figures are per item: the cleaning item of each clean type.
+  const own = (await hasServicePrices(env))
+    ? await all<{ unit_id: string; kind: string; internal_cost: number | null; external_charge: number | null }>(env,
+      `SELECT o.unit_id, s.clean_kind AS kind, o.internal_cost, o.owner_price AS external_charge
+       FROM unit_service_prices o JOIN service_items s ON s.id = o.item_id WHERE s.clean_kind IS NOT NULL AND s.active = 1`)
+    : await all<{ unit_id: string; kind: string; internal_cost: number | null; external_charge: number | null }>(env,
+      'SELECT unit_id, kind, internal_cost, external_charge FROM unit_cleaning_prices');
   const ownAt = new Map(own.map(o => [`${o.unit_id}:${o.kind}`, o]));
   const price = await priceBook(env, units.map(u => u.id));
   return json({
@@ -45,6 +51,19 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
   const ok = (v: unknown) => v == null || (Number.isInteger(v) && (v as number) >= 0);
   if (!ok(b.internalCost) || !ok(b.externalCharge)) return fail('VALIDATION', 'Amounts are sen, RM 0.00 or more, or empty.', 422);
   if (!(await one(env, 'SELECT 1 AS x FROM units WHERE id = ?', String(b.unitId ?? '')))) return fail('NOT_FOUND', 'That unit does not exist.', 404);
+  if (await hasServicePrices(env)) {
+    const item = (await serviceBook(env, [])).itemForKind(b.kind);
+    if (!item) return fail('NOT_FOUND', 'There is no active cleaning item for that clean type in Service prices.', 404);
+    const was = await one<any>(env, 'SELECT internal_cost, owner_price FROM unit_service_prices WHERE unit_id = ? AND item_id = ?', b.unitId, item.id);
+    if (b.internalCost == null && b.externalCharge == null) await run(env, 'DELETE FROM unit_service_prices WHERE unit_id = ? AND item_id = ?', b.unitId, item.id);
+    else await run(env, `INSERT INTO unit_service_prices (unit_id, item_id, owner_price, internal_cost, updated_at, updated_by) VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT (unit_id, item_id) DO UPDATE SET owner_price = excluded.owner_price, internal_cost = excluded.internal_cost, updated_at = excluded.updated_at, updated_by = excluded.updated_by`,
+      b.unitId, item.id, b.externalCharge ?? null, b.internalCost ?? null, nowIso(), session.userId);
+    await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'cleaning.unit_price', entityTable: 'units', entityId: b.unitId,
+      before: was ? { kind: b.kind, itemId: item.id, internalCost: was.internal_cost, externalCharge: was.owner_price } : { kind: b.kind, itemId: item.id },
+      after: { kind: b.kind, itemId: item.id, internalCost: b.internalCost ?? null, externalCharge: b.externalCharge ?? null } });
+    return json({ ok: true });
+  }
   const before = await one<any>(env, 'SELECT internal_cost, external_charge FROM unit_cleaning_prices WHERE unit_id = ? AND kind = ?', b.unitId, b.kind);
   if (b.internalCost == null && b.externalCharge == null) {
     await run(env, 'DELETE FROM unit_cleaning_prices WHERE unit_id = ? AND kind = ?', b.unitId, b.kind);

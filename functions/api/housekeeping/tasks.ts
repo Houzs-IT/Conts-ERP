@@ -3,7 +3,8 @@ import { requireSession, isFieldRole } from '../../_lib/auth';
 import { MYT_DATE, SHEET_CLEANER, hhmm, linenSet, resolveUnit, rosterByIds, pickedCleanerIds } from '../../_lib/ops';
 import { checkDate, invalid, type Fields } from '../../_lib/validate';
 import { cleaningNotice } from '../../_lib/notices';
-import { hasCleanPrices, cleanAmounts } from '../../_lib/cleaningPrices';
+import { hasCleanPrices, cleanAmounts, layoutKey } from '../../_lib/cleaningPrices';
+import { hasServicePrices, serviceBook, GRID_LAYOUTS } from '../../_lib/servicePrices';
 import { taskCleanersReady, mineSql, mineArgs, cleanerListSql, parseCleaners, writeTaskCleaners, rosterIdSql } from '../../_lib/taskCleaners';
 
 /** The three cleaning kinds a manual task may be. Inspection/maintenance/delivery
@@ -129,15 +130,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   } : null;
   if (ext && !ext.address) return fail('VALIDATION', 'Enter the address of the external job.', 422, { address: 'Enter the address.' });
   if (b?.amount != null && (!Number.isInteger(b.amount) || b.amount < 0)) return fail('VALIDATION', 'Enter the amount, RM 0.00 or more.', 422, { amount: 'Enter the amount.' });
-  if (ext && b?.amount == null) return fail('VALIDATION', 'An external job needs its amount.', 422, { amount: 'Enter the amount.' });
-  if (b?.amount != null && !priced) return fail('NOT_CONFIGURED', 'Cleaning amounts need a database update (migration 0126) that is not applied yet.', 501);
+  if (b?.cleanerPay != null && (!Number.isInteger(b.cleanerPay) || b.cleanerPay < 0)) return fail('VALIDATION', "Enter the cleaner's pay, RM 0.00 or more.", 422, { cleanerPay: "Enter the cleaner's pay." });
+  if ((b?.amount != null || b?.cleanerPay != null) && !priced) return fail('NOT_CONFIGURED', 'Cleaning amounts need a database update (migration 0126) that is not applied yet.', 501);
   const unit = ext ? null : await resolveUnit(env, b?.unitId ?? b?.unitNumber, b?.propertyName);
   if (unit === 'ambiguous') return fail('VALIDATION', 'More than one unit has that number. Say which building.', 422, { unitNumber: 'Pick the building too.' });
   if (!ext && !unit) return fail('NOT_FOUND', 'That unit does not exist.', 404, { unitNumber: 'Pick a unit that exists.' });
-  // A unit's clean takes the price table's figures unless the office typed its own amount.
-  const prices = unit && priced ? await cleanAmounts(env, unit.id, kind) : null;
-  const amount: number | null = b?.amount ?? prices?.external ?? null;
-  const cleanerPay: number | null = ext ? null : prices?.internal ?? null;
   const fields: Fields = {};
   checkDate(fields, 'date', b?.date, { label: 'Day' });
   const bad = invalid(fields); if (bad) return bad;
@@ -145,6 +142,36 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   // A manual task lands on a day (default today, Malaysia) with an optional window.
   const today = (await one<{ d: string }>(env, `SELECT to_char(now() AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM-DD') AS d`))!.d;
   const day = isDate(b?.date) ? b.date : today;
+
+  // The amounts: an item from Service prices (the one for the clean type unless another is picked; "other" = none, typed
+  // amounts) at its prices in force on the job's day, for the unit's layout or, at an outside address, the layout picked.
+  // What the office typed wins. An external job charges the client the owner price.
+  let amount: number | null = b?.amount ?? null;
+  let cleanerPay: number | null = b?.cleanerPay ?? null;
+  let serviceItemId: string | null = null;
+  const service = priced && await hasServicePrices(env);
+  if (service) {
+    const book = await serviceBook(env, unit ? [unit.id] : []);
+    const picked = b?.serviceItemId;
+    if (picked != null && picked !== 'other' && !book.items.some(i => i.id === picked && i.domain === 'cleaning' && i.active)) return fail('NOT_FOUND', 'That cleaning item is not on the price list.', 404, { serviceItemId: 'Pick a cleaning item, or Other.' });
+    const item = picked === 'other' ? null : picked ? book.items.find(i => i.id === picked)! : book.itemForKind(kind);
+    if (b?.layout != null && !(GRID_LAYOUTS as readonly string[]).includes(b.layout)) return fail('VALIDATION', 'Pick the layout.', 422, { layout: 'Pick the layout.' });
+    let layout = typeof b?.layout === 'string' ? b.layout : 'other';
+    if (unit) {
+      const u = await one<{ layout_type: string | null; bedrooms: number | null }>(env, 'SELECT * FROM units WHERE id = ?', unit.id);
+      layout = layoutKey(u?.layout_type, u?.bedrooms);
+    }
+    const a = book.amounts(item?.id ?? null, unit ? unit.id : null, layout, day);
+    serviceItemId = item?.id ?? null;
+    amount ??= a.owner;
+    cleanerPay ??= a.internal;
+  } else if (unit && priced) {
+    const prices = await cleanAmounts(env, unit.id, kind, day);
+    amount ??= prices.external;
+    cleanerPay ??= prices.internal;
+  }
+  if (ext && amount == null) return fail('VALIDATION', 'An external job needs its amount.', 422, { amount: 'Enter the amount.' });
+
   const at = (hm: string) => `${day}T${hm}:00+08:00`;
 
   if (b?.scheduledFor != null && !isHhmm(b.scheduledFor)) return fail('VALIDATION', 'Enter the window start as HH:MM.', 422, { scheduledFor: 'Use HH:MM.' });
@@ -178,19 +205,19 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   await run(env, `
     INSERT INTO tasks
       (id, unit_id, reservation_id, kind, state, title, instructions, assignee_id, cleaner_id,
-       scheduled_for, due_at, next_guest_at, requires_photo, created_at, updated_at${priced ? ', amount, cleaner_pay, external_address, external_client, external_phone' : ''})
-    VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?${priced ? ', ?, ?, ?, ?, ?' : ''})`,
+       scheduled_for, due_at, next_guest_at, requires_photo, created_at, updated_at${priced ? ', amount, cleaner_pay, external_address, external_client, external_phone' : ''}${service ? ', service_item_id' : ''})
+    VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?${priced ? ', ?, ?, ?, ?, ?' : ''}${service ? ', ?' : ''})`,
     id, unit ? unit.id : null, kind, cleanerId ? 'assigned' : 'open', title, instructions, assigneeId, cleanerId,
     // With no window the job still lands on the day picked (it used to land on the day it was added): from 11:00, checkout time.
     isHhmm(b?.scheduledFor) ? at(b.scheduledFor) : at('11:00'),
     isHhmm(b?.dueAt) ? at(b.dueAt) : null,
     isHhmm(b?.nextGuestAt) ? at(b.nextGuestAt) : null,
-    requiresPhoto, now, now, ...(priced ? [amount, cleanerPay, ext?.address ?? null, ext?.client ?? null, ext?.phone ?? null] : []));
+    requiresPhoto, now, now, ...(priced ? [amount, cleanerPay, ext?.address ?? null, ext?.client ?? null, ext?.phone ?? null] : []), ...(service ? [serviceItemId] : []));
   if (team.length) await writeTaskCleaners(env, id, team, session.userId);
 
   await audit(env, {
     actorId: session.userId, actorLabel: session.fullName, action: 'housekeeping.create',
-    entityTable: 'tasks', entityId: id, after: { unitId: unit ? unit.id : null, external: ext, amount, kind, title, assigneeId, cleanerId, ...(team.length > 1 ? { cleanerIds: team.map(t => t.cleanerId) } : {}) }, source: b?.source ?? 'web',
+    entityTable: 'tasks', entityId: id, after: { unitId: unit ? unit.id : null, external: ext, amount, cleanerPay, serviceItemId, kind, title, assigneeId, cleanerId, ...(team.length > 1 ? { cleanerIds: team.map(t => t.cleanerId) } : {}) }, source: b?.source ?? 'web',
   });
   if (team.some(t => t.userId)) await cleaningNotice(env, id, 'assigned', session.userId);
   return json({ id }, 201);

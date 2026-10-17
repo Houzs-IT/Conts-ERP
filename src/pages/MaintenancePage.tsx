@@ -24,6 +24,8 @@ import {
 import type { AnyTone } from '../lib/status';
 import { StatusBadge } from '../components/StatusBadge';
 import { CatalogPanel, ExchangeModal, type Sku, type SkuPayload, type CatalogInput } from './MaintenanceCatalog';
+import { ServicePrices } from './ServicePrices';
+import { JobMoneyPanel, JobProfitView } from '../components/ops/JobMoney';
 import { HistoryDisclosure } from '../components/RecordHistory';
 
 /* ---------- the API's shape (functions/api/maintenance/issues.ts) ---------- */
@@ -56,7 +58,7 @@ const waitingParts = (i: Issue) => i.state !== 'resolved' && i.approvalStatus ==
 interface Payload { billing?: boolean; jobTypes?: boolean; data: Issue[] }
 interface FileItem extends MediaItem { stage: 'before' | 'after' | null; uploadedAt: string; byteSize?: number }
 
-type Tab = 'open' | 'approval' | 'done' | 'history' | 'catalog' | 'rules';
+type Tab = 'open' | 'approval' | 'done' | 'history' | 'catalog' | 'rules' | 'profit';
 const PAYER: Record<ChargeTo, string> = { owner: 'Owner (on the statement)', the_conts: 'Company', guest_deposit: 'Guest (from the deposit)', warranty: 'Warranty' };
 const PAYER_SHORT: Record<ChargeTo, string> = { owner: 'owner pays', the_conts: 'company pays', guest_deposit: 'guest pays', warranty: 'warranty' };
 const SOURCE: Record<string, string> = { guest: 'Guest', cleaner: 'Cleaner', inspection: 'Inspection', staff: 'Office' };
@@ -100,7 +102,7 @@ export default function MaintenancePage() {
   // A link from a clean (?id=) opens the right tab.
   useEffect(() => {
     const it = issues.find(i => i.id === selected);
-    if (it && tab !== 'history' && tab !== 'catalog' && tab !== 'rules') setTab(it.state === 'resolved' ? 'done' : awaitingOwner(it) ? 'approval' : 'open');
+    if (it && tab !== 'history' && tab !== 'catalog' && tab !== 'rules' && tab !== 'profit') setTab(it.state === 'resolved' ? 'done' : awaitingOwner(it) ? 'approval' : 'open');
   }, [data]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const monthStart = mytDay(0).slice(0, 7);
@@ -162,12 +164,13 @@ export default function MaintenancePage() {
       <PageHeader title="Maintenance" sub={sub}
         actions={<>
           {data?.jobTypes && <Button size="sm" variant={tab === 'rules' ? 'primary' : 'secondary'} icon={<Icon name="ShieldCheck" size="sm" />} onClick={() => setTab(tab === 'rules' ? 'open' : 'rules')}>Approval rules</Button>}
+          {money && <Button size="sm" variant={tab === 'profit' ? 'primary' : 'secondary'} icon={<Icon name="TrendingUp" size="sm" />} onClick={() => setTab(tab === 'profit' ? 'open' : 'profit')}>Profit by job</Button>}
           {SHOW_CATALOG && <Button size="sm" variant={tab === 'catalog' ? 'primary' : 'secondary'} icon={<Icon name="Package" size="sm" />} onClick={() => setTab(tab === 'catalog' ? 'open' : 'catalog')}>Item catalog</Button>}
         </>}
         primary={<Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setCreating(true)}>Add maintenance job</Button>} />
 
-      {tab === 'rules' ? <ApprovalRulesPanel /> : tab === 'catalog' ? (
-        <CatalogPanel skus={sku.data?.data ?? []} loading={sku.loading} canWrite={['management', 'operations_manager', 'operations_staff'].includes(user!.role)} onCreate={createSku} onUpdate={updateSku} />
+      {tab === 'rules' ? <ApprovalRulesPanel /> : tab === 'profit' ? <div className="flex-1 min-h-0 overflow-y-auto"><JobProfitView kind="maintenance" onOpen={id => { setTab('history'); setSelected(id); }} /></div> : tab === 'catalog' ? (
+        <MaintenanceItems fallback={<CatalogPanel skus={sku.data?.data ?? []} loading={sku.loading} canWrite={['management', 'operations_manager', 'operations_staff'].includes(user!.role)} onCreate={createSku} onUpdate={updateSku} />} onChanged={sku.reload} />
       ) : (
         <>
           <div className="flex items-center gap-2 flex-wrap">
@@ -471,16 +474,24 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
             loading={busy === 'assign'} onClick={() => void act('assign', () => api.patch(`/maintenance/issues/${i.id}`, { assigneeName: assignee.trim() }), 'Job assigned.')}>Save</Button>
         </section>
       )}
+      <section className="flex flex-col gap-2 rounded-card border border-solid border-line p-3.5">
+        <h3 className="m-0 text-copy font-semibold">Items, cost and profit</h3>
+        <JobMoneyPanel kind="maintenance" jobId={i.id} unitId={i.unitId} catalog={skus} onChanged={onChanged}
+          itemsLocked={done ? 'The job is finished; reopen it to change its items.' : i.ownerApprovedAt && i.chargeTo === 'owner' ? 'The owner approved this quote, so its items stay as they are.' : null}
+          fallback={<>
       {!done && (
-        <section className="flex flex-col gap-2">
-          <h3 className="m-0 text-copy font-semibold">Item</h3>
-          <SearchSelect label="Item" size="md" value={item} onChange={setItem} placeholder="Search items by name or code"
-            options={[...skus.filter(s => s.active || s.id === i.skuId).map(s => ({ value: s.id, label: s.name, hint: s.code, group: CATEGORY[s.category] ?? 'Other' })), { value: 'other', label: 'Other (not on the list)', group: 'Not in the catalog' }]} />
-          <Button size="sm" variant="secondary" className="self-start" disabled={item === (i.skuId ?? 'other')} disabledReason="Pick a different item."
-            loading={busy === 'item'} onClick={() => void act('item', () => api.patch(`/maintenance/issues/${i.id}`, { skuId: item === 'other' ? null : item }), 'Item saved.')}>Save</Button>
-        </section>
-      )}
-      {done && <p className="m-0 text-muted-ink">Item: {i.skuName ? `${i.skuName}${i.skuCode ? ` (${i.skuCode})` : ''}` : 'Other (not on the list)'}.</p>}
+          <section className="flex flex-col gap-2">
+            <h3 className="m-0 text-copy font-semibold">Item</h3>
+            <SearchSelect label="Item" size="md" value={item} onChange={setItem} placeholder="Search items by name or code"
+              options={[...skus.filter(s => s.active || s.id === i.skuId).map(s => ({ value: s.id, label: s.name, hint: s.code, group: CATEGORY[s.category] ?? 'Other' })), { value: 'other', label: 'Other (not on the list)', group: 'Not in the catalog' }]} />
+            <Button size="sm" variant="secondary" className="self-start" disabled={item === (i.skuId ?? 'other')} disabledReason="Pick a different item."
+              loading={busy === 'item'} onClick={() => void act('item', () => api.patch(`/maintenance/issues/${i.id}`, { skuId: item === 'other' ? null : item }), 'Item saved.')}>Save</Button>
+          </section>
+        )}
+        {done && <p className="m-0 text-muted-ink">Item: {i.skuName ? `${i.skuName}${i.skuCode ? ` (${i.skuCode})` : ''}` : 'Other (not on the list)'}.</p>}
+              {done && <p className="m-0 text-muted-ink">Item: {i.skuName ? `${i.skuName}${i.skuCode ? ` (${i.skuCode})` : ''}` : 'Other (not on the list)'}.</p>}
+          </>} />
+      </section>
       {done && i.vendorName && <p className="m-0 text-muted-ink">Done by {i.vendorName}{i.assigneeKind ? ` (${KIND_WORD[i.assigneeKind].toLowerCase()})` : ''}.</p>}
 
       {money ? (
@@ -856,4 +867,13 @@ function ApprovalRulesPanel() {
       ) : <span className="text-meta text-muted-ink">Only management changes these rules.</span>}
     </section>
   );
+}
+
+/** Item catalog: the maintenance part of Service prices (0127); before that update, the old catalog. */
+function MaintenanceItems({ fallback, onChanged }: { fallback: ReactNode; onChanged: () => void }) {
+  const service = useApi<{ ready: boolean }>('/operations/service-prices?domain=maintenance');
+  if (!service.data) return <Skeleton height={240} />;
+  if (!service.data.ready) return <>{fallback}</>;
+  return <ServicePrices domain="maintenance" onChanged={onChanged}
+    above={<p className="m-0 text-meta text-muted-ink">Picking an item on a job fills its owner price (the quote) and its internal cost; both stay editable on the job. The whole list, cleaning too, is under Settings, Service prices.</p>} />;
 }

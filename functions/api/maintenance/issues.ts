@@ -5,6 +5,10 @@ import { resolveUnit } from '../../_lib/ops';
 import { windowsFor, staysOverlapping } from '../../_lib/cleaning';
 import { CATEGORIES, URGENCIES, SOURCES, CHARGE_TO, JOB_TYPES, SEVERITIES, DAY, assigneeUserId, assigneeKindFor, hasBilling, toInstant, hasJobType, urgencyOf, approvalRules, ruleNeedsApproval } from '../../_lib/maintenance';
 import { repairNotice } from '../../_lib/notices';
+import { hasServicePrices, serviceBook } from '../../_lib/servicePrices';
+import { layoutKey } from '../../_lib/cleaningPrices';
+import { hasJobInvoices } from '../../_lib/jobProfit';
+import { priceLines, linesTotal, writeLines, type Line } from '../../_lib/jobItems';
 
 /** GET /api/maintenance/issues?state=&unitId= — every job, with its technician, category, urgency, source, repair
  *  windows (and the stays each overlaps), photo and document counts, and what it cost and who paid once done.
@@ -116,16 +120,35 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     sourceTaskId = t.id;
   }
 
-  // Optional catalog item. When one is picked and no quote is supplied, its preset selling
-  // price seeds the quote — the operator can still override it before completing the job.
+  if (field && b.contractorAmount != null) return fail('FORBIDDEN', 'Cleaners and technicians cannot set amounts.', 403);
+  if (b.contractorAmount != null && (!Number.isInteger(b.contractorAmount) || b.contractorAmount < 0)) return fail('VALIDATION', 'The internal cost must be a whole number of sen.', 422, { contractorAmount: 'Enter the internal cost.' });
+
+  // Optional item from Service prices. When one is picked, its owner price in force today seeds the quote and its internal
+  // cost the contractor amount, unless the office typed them; "Other" (no item) keeps what was typed.
   let skuId: string | null = null;
   let quoted: number | null = b.quotedAmount ?? null;
+  let internal: number | null = b.contractorAmount ?? null;
   if (b.skuId) {
     const sku = await one<any>(env, 'SELECT id, default_price FROM maintenance_skus WHERE id = ?', String(b.skuId));
     if (!sku) return fail('NOT_FOUND', 'That catalog item does not exist.', 404, { skuId: 'Pick a catalog item that exists.' });
     skuId = sku.id;
-    if (quoted == null && !field) quoted = sku.default_price;
+    if (!field && await hasServicePrices(env)) {
+      const u = await one<{ layout_type: string | null; bedrooms: number | null }>(env, 'SELECT * FROM units WHERE id = ?', unit.id);
+      const a = (await serviceBook(env, [unit.id])).amounts(sku.id, unit.id, layoutKey(u?.layout_type, u?.bedrooms), mytToday());
+      quoted ??= a.owner;
+      internal ??= a.internal;
+    } else if (quoted == null && !field) quoted = sku.default_price;
   }
+  // The job's items (owner, 17 Oct 2026): picked from Service prices with a quantity; their total is the quote.
+  let lines: Line[] = [];
+  if (Array.isArray(b.items) && b.items.length && !field && await hasJobInvoices(env)) {
+    const priced = await priceLines(env, unit.id, b.items);
+    if ('error' in priced) return priced.error;
+    lines = priced.lines;
+    quoted = linesTotal(lines);
+    skuId = lines.find(l => l.item_id)?.item_id ?? skuId;
+  }
+  const billingCols = internal != null && await hasBilling(env);
 
   let win: { startsAt: string; endsAt: string; note: string | null } | null = null;
   if (b.window != null) {
@@ -151,14 +174,15 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     INSERT INTO maintenance_issues
       (id, unit_id, reported_by, state, title, detail, sku_id, quoted_amount, owner_approval_required,
        blocks_unit, blocked_from, blocked_to, charge_to, category, urgency, source, source_task_id, vendor_name, assignee_kind,
-       reported_at, created_at, updated_at${withUser ? ', assignee_user_id' : ''}${cols ? ', job_type, severity, needs_parts, due_on' : ''})
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?${withUser ? ', ?' : ''}${cols ? ', ?, ?, ?, ?' : ''})`,
+       reported_at, created_at, updated_at${withUser ? ', assignee_user_id' : ''}${cols ? ', job_type, severity, needs_parts, due_on' : ''}${billingCols ? ', contractor_amount' : ''})
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?${withUser ? ', ?' : ''}${cols ? ', ?, ?, ?, ?' : ''}${billingCols ? ', ?' : ''})`,
     id, unit.id, session.userId, state, b.title.trim().slice(0, 160), b.detail ? String(b.detail).slice(0, 2000) : null, skuId,
     quoted, approval ? 1 : 0,
     b.blocksUnit ? 1 : 0, b.blocksUnit ? (b.blockedFrom ?? mytToday()) : null, b.blockedTo ?? null,
     chargeTo, category, urgency, source, sourceTaskId, vendor, vendor ? await assigneeKindFor(env, vendor) : null,
-    now, now, now, ...(withUser ? [userId] : []), ...(cols ? [jobType, severity, b.needsParts ? 1 : 0, b.dueOn ?? null] : []));
+    now, now, now, ...(withUser ? [userId] : []), ...(cols ? [jobType, severity, b.needsParts ? 1 : 0, b.dueOn ?? null] : []), ...(billingCols ? [internal] : []));
 
+  if (lines.length) await writeLines(env, id, lines, session.userId);
   if (b.blocksUnit) await run(env, "UPDATE units SET readiness = 'maintenance', updated_at = ? WHERE id = ?", now, unit.id);
   let overlaps: unknown[] = [];
   if (win) {
@@ -167,7 +191,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     overlaps = await staysOverlapping(env, unit.id, win.startsAt, win.endsAt);
   }
 
-  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'maintenance.create', entityTable: 'maintenance_issues', entityId: id, after: { unitId: unit.id, title: b.title, category, urgency, jobType, severity, needsParts: !!b.needsParts, dueOn: b.dueOn ?? null, approvalByRule: approval && !asked, source, sourceTaskId, blocksUnit: !!b.blocksUnit, approval, skuId, assignee: vendor, window: win }, source: field ? 'field_app' : b.source ?? 'web' });
+  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'maintenance.create', entityTable: 'maintenance_issues', entityId: id, after: { unitId: unit.id, title: b.title, category, urgency, jobType, severity, needsParts: !!b.needsParts, dueOn: b.dueOn ?? null, approvalByRule: approval && !asked, source, sourceTaskId, blocksUnit: !!b.blocksUnit, approval, skuId, quotedAmount: quoted, internalCost: internal, items: lines, assignee: vendor, window: win }, source: field ? 'field_app' : b.source ?? 'web' });
   await notify(env, {
     template: 'ops.damage_reported', recipient: 'operations@theconts.com', channel: 'in_app',
     subject: b.blocksUnit ? 'Unit blocked' : urgency === 'urgent' ? 'Urgent repair reported' : 'Damage reported',

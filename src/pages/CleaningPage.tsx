@@ -29,6 +29,7 @@ import { rm, plural, count } from '../lib/format';
 import type { Tone } from '../lib/types';
 import { RecordHistory } from '../components/RecordHistory';
 import { PricesView, PayView } from './CleaningSetup';
+import { JobMoneyPanel, JobProfitView } from '../components/ops/JobMoney';
 import {
   KIND_LABEL, TimeLeft, Segmented, OpsModal, FormRow, INPUT, TEXTAREA, CloseButton, uploadTo, ReportDamageModal, dayLabel, hm, stamp, minutesLabel, mytDay, type CleanStatus, type MediaItem,
 } from '../components/ops/OpsUi';
@@ -77,7 +78,7 @@ interface Detail {
   cleaners?: TaskCleaner[]; unit?: UnitSize;
 }
 
-type Tab = 'board' | 'history' | 'prices' | 'pay';
+type Tab = 'board' | 'history' | 'prices' | 'pay' | 'profit';
 type DayPick = 'today' | 'tomorrow' | 'pick';
 
 const KIND_NAME: Record<string, string> = { turnover: 'Standard clean', deep_clean: 'Deep clean', light_clean: 'Light clean' };
@@ -88,7 +89,7 @@ const BOARD_ORDER: Record<string, number> = { done: 0, cleaning: 1, ready: 2, wa
 export default function CleaningPage() {
   const [params, setParams] = useSearchParams();
   const asked = params.get('tab');
-  const tab: Tab = asked === 'history' || asked === 'prices' || asked === 'pay' ? asked : 'board';
+  const tab: Tab = asked === 'history' || asked === 'prices' || asked === 'pay' || asked === 'profit' ? asked : 'board';
   const setTab = (t: Tab) => setParams(p => {
     const n = new URLSearchParams(p);
     if (t !== 'board') n.set('tab', t); else n.delete('tab');
@@ -98,11 +99,20 @@ export default function CleaningPage() {
 
   if (tab === 'prices') return <PricesView tabs={<TabSwitch tab={tab} onTab={setTab} />} />;
   if (tab === 'pay') return <PayView tabs={<TabSwitch tab={tab} onTab={setTab} />} />;
+  if (tab === 'profit') return (
+    <div className="flex flex-col gap-4 flex-1 min-h-0 overflow-y-auto">
+      <PageHeader title="Cleaning" sub="Profit by job: what each clean billed against what it cost" actions={<TabSwitch tab={tab} onTab={setTab} />} />
+      <JobProfitView kind="cleaning" />
+    </div>
+  );
   return tab === 'history' ? <HistoryView onTab={setTab} /> : <BoardView onTab={setTab} />;
 }
 
 function TabSwitch({ tab, onTab }: { tab: Tab; onTab: (t: Tab) => void }) {
-  return <Segmented label="View" value={tab} onChange={onTab} options={[{ value: 'board', label: 'Board' }, { value: 'history', label: 'History' }, { value: 'prices', label: 'Prices' }, { value: 'pay', label: 'Pay' }]} />;
+  const { user } = useSession();
+  const profit = !!user && ['management', 'operations_manager', 'finance_admin'].includes(user.role);
+  return <Segmented label="View" value={tab} onChange={onTab} options={[{ value: 'board', label: 'Board' }, { value: 'history', label: 'History' }, { value: 'prices', label: 'Prices' }, { value: 'pay', label: 'Pay' },
+    ...(profit ? [{ value: 'profit' as const, label: 'Profit' }] : [])]} />;
 }
 
 /* ============================== board ============================== */
@@ -588,6 +598,12 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft }: { row: Row; 
         </div>
       )}
       {data?.cost && <CleanAmount taskId={row.id} cost={data.cost} external={!!row.external} done={done} kindName={kindName} onSaved={refresh} />}
+      {data?.cost && (
+        <section className="flex flex-col gap-2">
+          <h3 className="m-0 text-copy font-semibold">Cost and profit</h3>
+          <JobMoneyPanel kind="cleaning" jobId={row.id} unitId={row.unitId ?? null} onChanged={refresh} />
+        </section>
+      )}
 
       {!row.external && <section className="flex flex-col gap-2">
         <h3 className="m-0 text-copy font-semibold">Door access</h3>
@@ -688,23 +704,41 @@ function NewCleanModal({ date, onClose, onDone }: { date: string; onClose: () =>
   const [phone, setPhone] = useState('');
   const [amount, setAmount] = useState<number | null>(null);
   const [touchedAmount, setTouchedAmount] = useState(false);
+  const [pay, setPay] = useState<number | null>(null);
+  const [touchedPay, setTouchedPay] = useState(false);
+  const [itemId, setItemId] = useState('');
+  const [layout, setLayout] = useState('studio');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<{ unit?: string; address?: string; amount?: string; form?: string }>({});
   const external = unitId === EXTERNAL;
-  // On one of our units the amount starts at the price table's figure for this unit and type; it can be typed over.
-  const prices = useApi<{ ready: boolean; rows: { unitId: string; prices: Record<string, { externalCharge: number | null }> }[] }>('/housekeeping/unit-prices');
-  const suggested = !external && unitId ? prices.data?.rows.find(r => r.unitId === unitId)?.prices[kind]?.externalCharge ?? null : null;
-  useEffect(() => { if (!touchedAmount) setAmount(external ? null : suggested); }, [unitId, kind, suggested]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The job is priced from Service prices: the item for the clean type (or another one picked, or Other with typed
+  // amounts), at the unit's layout, its own figures first. Both amounts can be typed over.
+  const service = useApi<{ ready: boolean; layouts: string[]; items: { id: string; code: string; name: string; active: boolean; cleanKind: string | null; byLayout: boolean; current: Record<string, { ownerPrice: number | null; internalCost: number | null }> }[] }>('/operations/service-prices?domain=cleaning');
+  const items = (service.data?.items ?? []).filter(i => i.active);
+  const ready = !!service.data?.ready;
+  const prices = useApi<{ ready: boolean; rows: { unitId: string; layout: string; prices: Record<string, { externalCharge: number | null; internalCost: number | null }> }[] }>('/housekeeping/unit-prices');
+  const unitRow = !external && unitId ? prices.data?.rows.find(r => r.unitId === unitId) : undefined;
+  const forKind = items.find(i => i.cleanKind === kind);
+  const item = itemId === 'other' ? null : items.find(i => i.id === itemId) ?? forKind ?? null;
+  useEffect(() => { setItemId(''); }, [kind]);
+  const at = item ? item.current[item.byLayout ? (external ? layout : unitRow?.layout ?? 'other') : 'all'] : undefined;
+  const fromUnit = !external && item && item.id === forKind?.id ? unitRow?.prices[kind] : undefined;
+  const suggested = itemId === 'other' ? null : fromUnit?.externalCharge ?? at?.ownerPrice ?? (ready ? null : unitRow?.prices[kind]?.externalCharge ?? null);
+  const suggestedPay = itemId === 'other' ? null : fromUnit?.internalCost ?? at?.internalCost ?? null;
+  useEffect(() => { if (!touchedAmount) setAmount(suggested); }, [unitId, kind, itemId, layout, suggested]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (!touchedPay) setPay(suggestedPay); }, [unitId, kind, itemId, layout, suggestedPay]); // eslint-disable-line react-hooks/exhaustive-deps
   async function save() {
     const bad = { unit: unitId ? undefined : 'Pick a unit, or External.', address: external && !address.trim() ? 'Enter the address.' : undefined, amount: external && amount == null ? 'Enter the amount.' : undefined };
     if (bad.unit || bad.address || bad.amount) { setError(bad); return; }
     setBusy(true); setError({});
     try {
-      const title = kind === 'deep_clean' ? 'Deep clean' : kind === 'light_clean' ? 'Light clean' : 'Standard clean';
+      const title = item && itemId ? item.name : kind === 'deep_clean' ? 'Deep clean' : kind === 'light_clean' ? 'Light clean' : 'Standard clean';
       await api.post('/housekeeping/tasks', {
-        ...(external ? { external: { address: address.trim(), clientName: client.trim() || undefined, clientPhone: phone.trim() || undefined } } : { unitId }),
+        ...(external ? { external: { address: address.trim(), clientName: client.trim() || undefined, clientPhone: phone.trim() || undefined }, layout } : { unitId }),
         date: day, kind, cleanerIds, instructions: notes.trim() || undefined, title,
-        ...(amount != null && (external || touchedAmount) ? { amount } : {}),
+        ...(ready && itemId ? { serviceItemId: itemId } : {}),
+        ...(amount != null && (external || touchedAmount || itemId === 'other') ? { amount } : {}),
+        ...(pay != null && (touchedPay || itemId === 'other') ? { cleanerPay: pay } : {}),
       });
       onDone();
     } catch (e) { setError({ form: errorMessage(e, 'Not saved. Try again.') }); setBusy(false); }
@@ -734,10 +768,33 @@ function NewCleanModal({ date, onClose, onDone }: { date: string; onClose: () =>
           </select>
         </FormRow>
       </div>
-      <FormRow label={external ? 'Amount, RM' : 'Amount, RM (optional)'} error={error.amount}
-        hint={external ? 'What the job is charged. It counts in the cleaner\'s pay, never in a unit\'s costs.' : unitId ? (suggested != null ? 'From the price table; type over it for this job.' : 'Price not set for this unit and type: leave empty to use the old cleaning rate, or type one.') : undefined}>
-        <MoneyInput className={INPUT} valueSen={amount} onChangeSen={v => { setAmount(v); setTouchedAmount(true); setError(x => ({ ...x, amount: undefined })); }} aria-label="Amount in RM" />
-      </FormRow>
+      {ready && (
+        <div className="grid grid-cols-2 gap-3">
+          <FormRow label="Item" hint={itemId === 'other' ? 'Type both amounts below.' : 'From Service prices.'}>
+            <select className={INPUT} value={itemId || forKind?.id || ''} onChange={e => setItemId(e.target.value)} aria-label="Item">
+              {!forKind && <option value="">No item for this type</option>}
+              {items.map(i => <option key={i.id} value={i.id}>{i.name} ({i.code})</option>)}
+              <option value="other">Other (type the amounts)</option>
+            </select>
+          </FormRow>
+          {external && item?.byLayout && (
+            <FormRow label="Layout" hint="Priced as this layout.">
+              <select className={INPUT} value={layout} onChange={e => setLayout(e.target.value)} aria-label="Layout">
+                {(service.data?.layouts ?? []).map(l => <option key={l} value={l}>{LAYOUT_NAME[l] ?? l}</option>)}
+              </select>
+            </FormRow>
+          )}
+        </div>
+      )}
+      <div className="grid grid-cols-2 gap-3">
+        <FormRow label={external ? 'Charge, RM' : 'Owner price, RM'} error={error.amount}
+          hint={external ? 'What the client is charged.' : unitId ? (suggested != null && !touchedAmount ? 'From Service prices; type over it for this job.' : 'Leave empty to use the old cleaning rate, or type one.') : undefined}>
+          <MoneyInput className={INPUT} valueSen={amount} onChangeSen={v => { setAmount(v); setTouchedAmount(true); setError(x => ({ ...x, amount: undefined })); }} aria-label="Owner price in RM" />
+        </FormRow>
+        <FormRow label="Cleaner's pay, RM" hint="Internal cost. Counts in the cleaner's pay.">
+          <MoneyInput className={INPUT} valueSen={pay} onChangeSen={v => { setPay(v); setTouchedPay(true); }} aria-label="Cleaner's pay in RM" placeholder="Not set" />
+        </FormRow>
+      </div>
       <div className="flex flex-col gap-1.5 min-w-0">
         <CleanerChecklist cleaners={cleaners} value={cleanerIds} onChange={setCleanerIds} label="Cleaners (optional)" />
         {!cleanerIds.length && <span className="text-meta text-muted-ink">Leave empty to assign later. Tick more than one for a team.</span>}
@@ -749,6 +806,7 @@ function NewCleanModal({ date, onClose, onDone }: { date: string; onClose: () =>
 }
 
 const EXTERNAL = '__external__';
+const LAYOUT_NAME: Record<string, string> = { studio: 'Studio', '1_bedroom': '1 bedroom', '2_bedroom': '2 bedroom', '3_bedroom': '3 bedroom', '4_plus_bedroom': '4+ bedroom', duplex: 'Duplex', dual_key: 'Dual key', penthouse: 'Penthouse', other: 'Other' };
 const EXTERNAL_CHOICE = { id: EXTERNAL, label: 'External (not one of our units)' };
 
 function AssignBuildingModal({ building, date, onClose, onDone }: { building: { buildingId: string; name: string }; date: string; onClose: () => void; onDone: (n: number, who: string) => void }) {

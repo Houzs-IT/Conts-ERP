@@ -1,9 +1,11 @@
-import { type Env, one, run, json, fail, audit, nowIso } from '../../../_lib/db';
+import { type Env, one, run, json, fail, audit, nowIso, mytToday } from '../../../_lib/db';
 import { requireSession, isFieldRole } from '../../../_lib/auth';
 import { MASTER_ROLES } from '../../../_lib/properties';
 import { CATEGORIES, URGENCIES, CHARGE_TO, DAY, JOB_TYPES, SEVERITIES, assigneeUserId, assigneeKindFor, hasBilling, hasJobType, urgencyOf, approvalRules, ruleNeedsApproval } from '../../../_lib/maintenance';
 import { isPeriodLocked } from '../../../_lib/expenses';
 import { repairNotice } from '../../../_lib/notices';
+import { hasServicePrices, serviceBook } from '../../../_lib/servicePrices';
+import { layoutKey } from '../../../_lib/cleaningPrices';
 
 /** The money follow-up a finished job still takes (migration 0108): when it is billed, when the payer's money came in,
  *  what the technician or contractor is owed and when accounts paid them. */
@@ -101,6 +103,13 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   if (b?.skuId !== undefined) {
     if (b.skuId !== null && !(await one(env, 'SELECT 1 AS x FROM maintenance_skus WHERE id = ?', String(b.skuId)))) return fail('NOT_FOUND', 'That catalog item does not exist.', 404, { skuId: 'Pick an item from the catalog, or Other.' });
     put('sku_id', 'skuId', b.skuId === null ? null : String(b.skuId));
+    // A newly picked item fills a quote and an internal cost not yet set, from its prices in force today.
+    if (b.skuId !== null && moneyRole && await hasServicePrices(env)) {
+      const u = await one<{ layout_type: string | null; bedrooms: number | null }>(env, 'SELECT * FROM units WHERE id = ?', cur.unit_id);
+      const a = (await serviceBook(env, [cur.unit_id])).amounts(String(b.skuId), cur.unit_id, layoutKey(u?.layout_type, u?.bedrooms), mytToday());
+      if (cur.quoted_amount == null && b.quotedAmount === undefined && a.owner != null) put('quoted_amount', 'quotedAmount', a.owner);
+      if (cur.contractor_amount == null && b.contractorAmount === undefined && a.internal != null && await hasBilling(env)) put('contractor_amount', 'contractorAmount', a.internal);
+    }
   }
   if (typeof b?.detail === 'string') put('detail', 'detail', b.detail.trim().slice(0, 2000) || null);
   if (b?.quotedAmount !== undefined) {

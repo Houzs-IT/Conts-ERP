@@ -37,8 +37,8 @@ export const SKU_FALLBACK: SkuPayload = {
   ],
 };
 
-const INPUT_CX = 'block w-full box-border h-10 px-3 py-0 text-ink bg-white border border-solid border-line rounded-control outline-none font-sans text-copy font-normal';
-const LABEL_CX = 'text-meta font-medium text-muted-ink';
+export const INPUT_CX = 'block w-full box-border h-10 px-3 py-0 text-ink bg-white border border-solid border-line rounded-control outline-none font-sans text-copy font-normal';
+export const LABEL_CX = 'text-meta font-medium text-muted-ink';
 
 /** "1h 25m" / "45m" / "3h" — the gap between two stamps, for the job's duration. Null when it can't be shown. */
 export function durationLabel(startedAt?: string | null, endedAt?: string | null): string | null {
@@ -256,7 +256,7 @@ export function ExchangeModal({ jobLabel, skus, onClose, onExchange }: {
 
 // ---- Local modal shell (kept local to the maintenance domain) --------------
 
-function Modal({ title, sub, onClose, footer, children, width = 480 }: {
+export function Modal({ title, sub, onClose, footer, children, width = 480 }: {
   title: string; sub?: string; onClose: () => void; footer: ReactNode; children: ReactNode; width?: number;
 }) {
   return (
@@ -278,7 +278,7 @@ function Modal({ title, sub, onClose, footer, children, width = 480 }: {
   );
 }
 
-function LabeledField({ label, children }: { label: string; children: ReactNode }) {
+export function LabeledField({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex flex-col gap-1.5">
       <label className={LABEL_CX}>{label}</label>

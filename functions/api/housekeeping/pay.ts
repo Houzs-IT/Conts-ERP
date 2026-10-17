@@ -18,7 +18,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const ready = await taskCleanersReady(env);
   const layout = (await hasColumn(env, 'units', 'layout_type').catch(() => false)) ? 'u.layout_type' : 'NULL::text';
   const jobs = await all<any>(env, `
-    SELECT t.id, t.kind, t.unit_id, t.cleaner_pay, t.amount, t.cleaner_id, u.bedrooms, ${layout} AS layout_type,
+    SELECT t.id, t.kind, t.unit_id, t.cleaner_pay, t.amount, t.cleaner_id, COALESCE(t.scheduled_for, t.due_at, t.created_at) AS day_at, u.bedrooms, ${layout} AS layout_type,
            ${ready ? '(SELECT json_agg(tc.cleaner_id)::text FROM task_cleaners tc WHERE tc.task_id = t.id AND tc.cleaner_id IS NOT NULL)' : 'NULL::text'} AS team
     FROM tasks t LEFT JOIN units u ON u.id = t.unit_id
     WHERE t.kind IN ${CLEAN_KINDS_SQL} AND t.state = 'resolved' AND t.completed_at IS NOT NULL AND substr(${MYT_DATE('t.completed_at')}, 1, 7) = ?`, month);
@@ -30,7 +30,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     if (!team.length && j.cleaner_id) team.push(j.cleaner_id);
     if (!team.length) continue;
     const ext = !j.unit_id;
-    const pay: number | null = ext ? (j.cleaner_pay ?? j.amount) : (j.cleaner_pay ?? price(j.unit_id, j.kind, layoutKey(j.layout_type, j.bedrooms)).internal);
+    const pay: number | null = ext ? (j.cleaner_pay ?? j.amount) : (j.cleaner_pay ?? price(j.unit_id, j.kind, layoutKey(j.layout_type, j.bedrooms), j.day_at).internal);
     for (const id of team) {
       const row = by.get(id);
       if (!row) continue;

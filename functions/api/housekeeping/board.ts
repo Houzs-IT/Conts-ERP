@@ -108,7 +108,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       // The guest is out when the booking is Checked out or someone pressed "Guest left" on the clean.
       const leftAt: string | null = r.guest_left_at ?? r.prev_out_at ?? (r.prev_state === 'checked_out' ? r.day + 'T' + (r.prev_time || stdOut) + ':00+08:00' : null);
       const guestOut = !!r.guest_left_at || r.prev_state === 'checked_out';
-      const p = price(r.unit_id, r.kind, layoutKey(r.layout_type, r.bedrooms));
+      const p = price(r.unit_id, r.kind, layoutKey(r.layout_type, r.bedrooms), r.day);
       const status = r.state === 'resolved' ? 'done'
         : r.state === 'in_progress' ? 'cleaning'
         : guestOut ? 'ready'
