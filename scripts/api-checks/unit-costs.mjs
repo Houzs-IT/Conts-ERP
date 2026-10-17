@@ -90,7 +90,8 @@ for (const u of units) {
   if (!b?.units?.[0]?.deductsFromOwner) continue;
   // A probe bill of RM 0.00 tells whether either month is already final for this owner.
   const probe = await call('POST', '/api/expenses', { unitId: u.id, category: 'other', amount: 0, incurredOn: `${lastMonth}-02`, description: 'probe' });
-  if (probe.status !== 201) continue;
+  // Open: refused only for its missing receipt (422); a final month answers 409 first.
+  if (probe.status === 409) continue;
   unit = u; break;
 }
 check('found a unit that deducts costs and is open last month', !!unit);
@@ -121,7 +122,7 @@ check('Cleaning fees card went up by exactly the clean', nowB.units[0].totals.cl
 
 /* ---------- 2. a bill dated last month ---------- */
 const billDay = `${lastMonth}-17`, billAmount = 12345;
-r = await call('POST', '/api/expenses', { unitId: unit.id, category: 'water', amount: billAmount, incurredOn: billDay, chargeTo: 'owner', reference: 'CHK-WATER', description: 'Water check bill' });
+r = await call('POST', '/api/expenses', { unitId: unit.id, category: 'water', amount: billAmount, incurredOn: billDay, chargeTo: 'owner', reference: 'CHK-WATER', description: 'Water check bill', receiptDocumentId: await receiptFor(unit.id) });
 check('bill with a past bill date recorded', r.status === 201, r.text);
 const billId = r.json?.id;
 r = await call('POST', '/api/expenses', { unitId: unit.id, category: 'water', amount: 100, chargeTo: 'owner' });

@@ -273,6 +273,7 @@
  "POST /api/expenses": "AAFAFFFU",
  "POST /api/expenses/clean-charges": "AAFAFFFU",
  "POST /api/expenses/utilities": "AAFAFFFU",
+ "POST /api/expenses/utility-accounts": "AAFAFFFU",
  "POST /api/fabrics": "AAFAFFFU",
  "POST /api/field/repairs/[id]/note": "AAAAAAFU",
  "POST /api/field/repairs/[id]/pick": "FFFFFAFU",
