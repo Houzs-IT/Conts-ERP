@@ -117,7 +117,7 @@ export function UtilitiesModal({ ownerId, unitId, month: initial, onClose, onSav
         : error ? <div className="text-copy text-critical">{error}</div>
         : <>
           {rows.length > 0 && (
-            <div className="border border-solid border-line rounded-card overflow-hidden">
+            <div className="shrink-0 border border-solid border-line rounded-card overflow-hidden">
               {rows.map(r => {
                 const amount = value(r);
                 const owes = !r.recordedElsewhere && (amount ?? 0) > 0 && receiptRequired(r.kind, payer(r));
@@ -189,7 +189,7 @@ function RowReceipt({ label, file, onPick, existing, needed, error }: {
 function NoAccountUnits({ units, onAdded }: { units: BareUnit[]; onAdded: () => void }) {
   const [open, setOpen] = useState<string | null>(null);
   return (
-    <div className="flex flex-col gap-2">
+    <div className="shrink-0 flex flex-col gap-2">
       <span className="text-meta font-medium text-muted-ink">No account on file · {units.length} {units.length === 1 ? 'unit' : 'units'}</span>
       <div className="border border-solid border-line rounded-card overflow-hidden">
         {units.map(u => (

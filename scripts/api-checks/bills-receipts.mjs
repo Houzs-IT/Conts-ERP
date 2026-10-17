@@ -56,10 +56,10 @@ r = await call('GET', `/api/expenses/utilities?month=${month}`);
 check('the all-units screen lists it too', r.json?.unitsWithoutAccount?.some(u => u.unitId === unit.id), '');
 r = await call('POST', '/api/expenses/utility-accounts', { unitId: unit.id, kind: 'water', accountNo: '' });
 check('an account needs its number', r.status === 422 && !!r.json?.error?.fields?.accountNo, r.text);
-r = await call('POST', '/api/expenses/utility-accounts', { unitId: unit.id, kind: 'water', accountNo: 'AIR-CHK-1', provider: 'Air Selangor' });
+r = await call('POST', '/api/expenses/utility-accounts', { unitId: unit.id, kind: 'sewerage', accountNo: 'IWK-CHK-1', provider: 'Indah Water' });
 check('account number put on file', r.status === 201 && !!r.json?.id, r.text);
 const accountId = r.json?.id;
-r = await call('POST', '/api/expenses/utility-accounts', { unitId: unit.id, kind: 'water', accountNo: 'air-chk-1' });
+r = await call('POST', '/api/expenses/utility-accounts', { unitId: unit.id, kind: 'sewerage', accountNo: 'iwk-chk-1' });
 check('the same account twice is refused', r.status === 409, r.text);
 r = await call('POST', '/api/expenses/utility-accounts', { unitId: unit.id, kind: 'water', accountNo: 'X' }, 'housekeeper');
 check('a field role cannot add one', r.status === 403, r.text);
@@ -73,13 +73,13 @@ check('monthly screen: the company paying needs none', r.status === 201 && r.jso
 const r2 = await receiptFor(unit.id);
 r = await call('POST', '/api/expenses/utilities', { month, date: day, rows: [{ accountId, amount: 6200, chargeTo: 'owner', receiptDocumentId: r2 }] });
 check('monthly screen: owner-paid bill with its receipt recorded', r.status === 201 && r.json?.saved === 1, r.text);
-let [bill] = await db(`SELECT id, amount, receipt_document_id FROM expenses WHERE unit_id = $1 AND reference = 'AIR-CHK-1' AND incurred_on LIKE $2`, unit.id, `${month}%`);
+let [bill] = await db(`SELECT id, amount, receipt_document_id FROM expenses WHERE unit_id = $1 AND reference = 'IWK-CHK-1' AND incurred_on LIKE $2`, unit.id, `${month}%`);
 check('...the bill carries the receipt', bill?.receipt_document_id === r2 && Number(bill.amount) === 6200, JSON.stringify(bill));
 r = await call('GET', `/api/expenses/utilities?month=${month}&unitId=${encodeURIComponent(unit.id)}`);
 check('...and the screen shows it on file', r.json?.data?.find(a => a.accountId === accountId)?.receiptDocumentId === r2, r.text);
 r = await call('POST', '/api/expenses/utilities', { month, date: day, rows: [{ accountId, amount: 6300, chargeTo: 'owner' }] });
 check('re-entering the month keeps the receipt already on that bill', r.status === 201, r.text);
-[bill] = await db(`SELECT id, amount, receipt_document_id FROM expenses WHERE unit_id = $1 AND reference = 'AIR-CHK-1' AND incurred_on LIKE $2`, unit.id, `${month}%`);
+[bill] = await db(`SELECT id, amount, receipt_document_id FROM expenses WHERE unit_id = $1 AND reference = 'IWK-CHK-1' AND incurred_on LIKE $2`, unit.id, `${month}%`);
 check('...same receipt, new amount', bill?.receipt_document_id === r2 && Number(bill.amount) === 6300, JSON.stringify(bill));
 
 /* ---------- final month: a receipt can still be attached ---------- */
