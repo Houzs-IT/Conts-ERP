@@ -29,6 +29,7 @@ import { rm, plural, count } from '../lib/format';
 import type { Tone } from '../lib/types';
 import { RecordHistory } from '../components/RecordHistory';
 import { PricesView, PayView } from './CleaningSetup';
+import { JobMoneyPanel, JobProfitView } from '../components/ops/JobMoney';
 import {
   KIND_LABEL, TimeLeft, Segmented, OpsModal, FormRow, INPUT, TEXTAREA, CloseButton, uploadTo, ReportDamageModal, dayLabel, hm, stamp, minutesLabel, mytDay, type CleanStatus, type MediaItem,
 } from '../components/ops/OpsUi';
@@ -77,7 +78,7 @@ interface Detail {
   cleaners?: TaskCleaner[]; unit?: UnitSize;
 }
 
-type Tab = 'board' | 'history' | 'prices' | 'pay';
+type Tab = 'board' | 'history' | 'prices' | 'pay' | 'profit';
 type DayPick = 'today' | 'tomorrow' | 'pick';
 
 const KIND_NAME: Record<string, string> = { turnover: 'Standard clean', deep_clean: 'Deep clean', light_clean: 'Light clean' };
@@ -88,7 +89,7 @@ const BOARD_ORDER: Record<string, number> = { done: 0, cleaning: 1, ready: 2, wa
 export default function CleaningPage() {
   const [params, setParams] = useSearchParams();
   const asked = params.get('tab');
-  const tab: Tab = asked === 'history' || asked === 'prices' || asked === 'pay' ? asked : 'board';
+  const tab: Tab = asked === 'history' || asked === 'prices' || asked === 'pay' || asked === 'profit' ? asked : 'board';
   const setTab = (t: Tab) => setParams(p => {
     const n = new URLSearchParams(p);
     if (t !== 'board') n.set('tab', t); else n.delete('tab');
@@ -98,11 +99,20 @@ export default function CleaningPage() {
 
   if (tab === 'prices') return <PricesView tabs={<TabSwitch tab={tab} onTab={setTab} />} />;
   if (tab === 'pay') return <PayView tabs={<TabSwitch tab={tab} onTab={setTab} />} />;
+  if (tab === 'profit') return (
+    <div className="flex flex-col gap-4 flex-1 min-h-0 overflow-y-auto">
+      <PageHeader title="Cleaning" sub="Profit by job: what each clean billed against what it cost" actions={<TabSwitch tab={tab} onTab={setTab} />} />
+      <JobProfitView kind="cleaning" />
+    </div>
+  );
   return tab === 'history' ? <HistoryView onTab={setTab} /> : <BoardView onTab={setTab} />;
 }
 
 function TabSwitch({ tab, onTab }: { tab: Tab; onTab: (t: Tab) => void }) {
-  return <Segmented label="View" value={tab} onChange={onTab} options={[{ value: 'board', label: 'Board' }, { value: 'history', label: 'History' }, { value: 'prices', label: 'Prices' }, { value: 'pay', label: 'Pay' }]} />;
+  const { user } = useSession();
+  const profit = !!user && ['management', 'operations_manager', 'finance_admin'].includes(user.role);
+  return <Segmented label="View" value={tab} onChange={onTab} options={[{ value: 'board', label: 'Board' }, { value: 'history', label: 'History' }, { value: 'prices', label: 'Prices' }, { value: 'pay', label: 'Pay' },
+    ...(profit ? [{ value: 'profit' as const, label: 'Profit' }] : [])]} />;
 }
 
 /* ============================== board ============================== */
@@ -588,6 +598,12 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft }: { row: Row; 
         </div>
       )}
       {data?.cost && <CleanAmount taskId={row.id} cost={data.cost} external={!!row.external} done={done} kindName={kindName} onSaved={refresh} />}
+      {data?.cost && (
+        <section className="flex flex-col gap-2">
+          <h3 className="m-0 text-copy font-semibold">Cost and profit</h3>
+          <JobMoneyPanel kind="cleaning" jobId={row.id} unitId={row.unitId ?? null} onChanged={refresh} />
+        </section>
+      )}
 
       {!row.external && <section className="flex flex-col gap-2">
         <h3 className="m-0 text-copy font-semibold">Door access</h3>

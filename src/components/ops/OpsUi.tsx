@@ -11,7 +11,8 @@ import { useApi } from '../../lib/useApi';
 import { useSession } from '../../lib/session';
 import { UnitPicker } from '../UnitPicker';
 import type { RosterUnit } from '../../lib/useUnitRoster';
-import { DateField, DateTimeField, MoneyInput } from '../inputs';
+import { DateField, DateTimeField } from '../inputs';
+import { LinesEditor, linesPayload, type DraftLine } from './JobMoney';
 
 /* ---------- small pieces shared by Cleaning, Maintenance, Today and the field app ---------- */
 
@@ -236,7 +237,8 @@ export function MaintenanceJobForm({ unit, units, taskId, onClose, onDone }: {
 }) {
   const { user } = useSession();
   const office = !!user && !FIELD.includes(user.role) && user.role !== 'owner';
-  const [f, setF] = useState({ unitId: unit?.id ?? '', skuId: '', title: '', category: '', jobType: 'normal' as 'normal' | 'urgent' | 'pass_key', severity: 'minor' as 'minor' | 'major', dueOn: '', needsParts: false, detail: '', assignee: '', from: '', to: '', windowNote: '', ownerPrice: null as number | null, internalCost: null as number | null });
+  const [f, setF] = useState({ unitId: unit?.id ?? '', skuId: '', title: '', category: '', jobType: 'normal' as 'normal' | 'urgent' | 'pass_key', severity: 'minor' as 'minor' | 'major', dueOn: '', needsParts: false, detail: '', assignee: '', from: '', to: '', windowNote: '' });
+  const [lines, setLines] = useState<DraftLine[]>([]);
   const [busy, setBusy] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<{ unitId?: string; title?: string; category?: string; window?: string; form?: string }>({});
@@ -248,13 +250,15 @@ export function MaintenanceJobForm({ unit, units, taskId, onClose, onDone }: {
   const fromClean = !!taskId;
   const set = (p: Partial<typeof f>) => setF(x => ({ ...x, ...p }));
 
-  function pickItem(id: string) {
-    const s = items.find(x => x.id === id);
-    // The item fills the kind of problem and, when nothing is written yet, what is wrong; both can still be changed.
-    // Its owner price and internal cost from Service prices fill the amounts; both can be typed over, or typed for Other.
-    set({ skuId: id, ownerPrice: s?.defaultPrice ?? null, internalCost: s?.internalCost ?? null,
-      ...(s ? { category: CATEGORY[s.category] ? s.category : 'other', title: f.title.trim() ? f.title : s.name } : {}) });
-    if (s) setError(x => ({ ...x, category: undefined, title: undefined }));
+  /** The items picked (owner, 17 Oct 2026): the first one fills the kind of problem and, when nothing is written yet,
+   *  what is wrong; both can still be changed. Their total is the job's owner price. */
+  function pickLines(next: DraftLine[]) {
+    setLines(next);
+    const s = items.find(x => x.id === next.find(l => l.itemId && l.itemId !== 'other')?.itemId);
+    if (s && !f.skuId) {
+      set({ skuId: s.id, category: f.category || (CATEGORY[s.category] ? s.category : 'other'), title: f.title.trim() ? f.title : s.name });
+      setError(x => ({ ...x, category: undefined, title: undefined }));
+    }
   }
   /** A window's end three hours after its start, the same day, when the start is picked first. */
   const endFor = (start: string) => `${start.slice(0, 11)}${String(Math.min(23, Number(start.slice(11, 13)) + 3)).padStart(2, '0')}${start.slice(13)}`;
@@ -270,9 +274,7 @@ export function MaintenanceJobForm({ unit, units, taskId, onClose, onDone }: {
         // Job type (staff comment sheet): the office has Pass key too; a cleaner reporting damage says Normal or Urgent.
         ...(office ? { jobType: f.jobType, severity: f.severity, ...(f.dueOn ? { dueOn: f.dueOn } : {}), ...(f.needsParts ? { needsParts: true } : {}) } : { urgency: f.jobType === 'urgent' ? 'urgent' : 'normal' }),
         reportSource: fromClean ? 'cleaner' : 'staff', sourceTaskId: taskId, source: 'web',
-        ...(office && f.skuId && f.skuId !== 'other' ? { skuId: f.skuId } : {}),
-        ...(office && f.skuId && f.ownerPrice != null ? { quotedAmount: f.ownerPrice } : {}),
-        ...(office && f.skuId && f.internalCost != null ? { contractorAmount: f.internalCost } : {}),
+        ...(office && lines.some(l => l.itemId) ? { items: linesPayload(lines), ...(lines.find(l => l.itemId && l.itemId !== 'other') ? { skuId: lines.find(l => l.itemId && l.itemId !== 'other')!.itemId } : {}) } : {}),
         ...(office && f.assignee.trim() ? { assigneeName: f.assignee.trim() } : {}),
         ...(office && f.from && f.to ? { window: { startsAt: f.from, endsAt: f.to, note: f.windowNote.trim() || undefined } } : {}),
       });
@@ -304,20 +306,9 @@ export function MaintenanceJobForm({ unit, units, taskId, onClose, onDone }: {
         </FormRow>
       )}
       {office && (
-        <FormRow label="Item (optional)" hint={items.length ? 'From Service prices. Pick Other when it is not on the list.' : catalog.data ? 'The list is empty. Add items under Item catalog on Maintenance.' : undefined}>
-          <SearchSelect label="Item" size="md" value={f.skuId} onChange={pickItem} placeholder="Search items by name or code" allLabel="No item"
-            options={[...items.map(s => ({ value: s.id, label: s.name, hint: s.code, group: CATEGORY[s.category] ?? 'Other' })), { value: 'other', label: 'Other (not on the list)', group: 'Not in the catalog' }]} />
+        <FormRow label="Items (optional)" hint={items.length ? 'Pick the items and how many, from Service prices; their total is the owner price. Other only when it is not on the list.' : catalog.data ? 'The list is empty. Add items under Item catalog on Maintenance.' : undefined}>
+          <LinesEditor lines={lines} catalog={items} onChange={pickLines} money={false} />
         </FormRow>
-      )}
-      {office && f.skuId && (
-        <div className="grid grid-cols-2 gap-3">
-          <FormRow label="Owner price (optional)" hint={f.skuId === 'other' ? 'What the owner is charged.' : 'From Service prices; type over it for this job.'}>
-            <MoneyInput className={INPUT} valueSen={f.ownerPrice} onChangeSen={v => set({ ownerPrice: v })} placeholder="Not set" aria-label="Owner price" />
-          </FormRow>
-          <FormRow label="Internal cost (optional)" hint="What it costs us: contractor, parts.">
-            <MoneyInput className={INPUT} valueSen={f.internalCost} onChangeSen={v => set({ internalCost: v })} placeholder="Not set" aria-label="Internal cost" />
-          </FormRow>
-        </div>
       )}
       <div className="grid grid-cols-2 gap-3">
         <FormRow label="Problem category" error={error.category}>
