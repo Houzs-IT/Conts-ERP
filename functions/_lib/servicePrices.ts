@@ -165,14 +165,14 @@ export async function writePrices(env: Env, itemId: string, set: PriceSet, userI
 export const LABEL = {
   domain: { cleaning: 'Cleaning', maintenance: 'Maintenance' } as Record<string, string>,
   category: {
-    turnover: 'Turnover', deep_clean: 'Deep clean', light_clean: 'Light clean', laundry: 'Laundry', aircon: 'Aircon', plumbing: 'Plumbing',
+    turnover: 'Standard clean', deep_clean: 'Deep clean', light_clean: 'Light clean', laundry: 'Laundry', aircon: 'Aircon', plumbing: 'Plumbing',
     electrical: 'Electrical', furniture: 'Furniture', appliance: 'Appliance', cleaning: 'Cleaning', general: 'General', other: 'Other',
   } as Record<string, string>,
   layout: {
     all: 'All', studio: 'Studio', '1_bedroom': '1 bedroom', '2_bedroom': '2 bedroom', '3_bedroom': '3 bedroom', '4_plus_bedroom': '4+ bedroom',
     duplex: 'Duplex', dual_key: 'Dual key', penthouse: 'Penthouse', other: 'Other',
   } as Record<string, string>,
-  cleanType: { turnover: 'Turnover', deep_clean: 'Deep clean', light_clean: 'Light clean' } as Record<string, string>,
+  cleanType: { turnover: 'Standard clean', deep_clean: 'Deep clean', light_clean: 'Light clean' } as Record<string, string>,
   uom: { job: 'Job', unit: 'Unit', hour: 'Hour', visit: 'Visit', set: 'Set' } as Record<string, string>,
 };
 export const SHEET_COLUMNS = ['Code', 'Name', 'Type', 'Sub-category', 'Unit of measure', 'Priced by layout', 'Reservation clean type', 'Layout',
@@ -218,7 +218,7 @@ export function sheetRows(items: any[], prices: Map<string, PriceRow[]>, today: 
 export interface ImportPlan {
   errors: { line: number; message: string }[];
   creates: { code: string; item: { name: string; domain: string; category: string; uom: string; cleanKind: string | null; byLayout: boolean; active: boolean; notes: string | null }; prices: PriceSet | null }[];
-  updates: { id: string; code: string; changes: Record<string, unknown>; before: Record<string, unknown> }[];
+  updates: { id: string; code: string; changes: Record<string, unknown>; before: Record<string, unknown>; row: { name: string; category: string; unit_label: string; clean_kind: string | null; active: number; notes: string | null } }[];
   prices: { id: string; code: string; set: PriceSet }[];
   unchanged: number;
 }
@@ -261,7 +261,7 @@ export function planImport(raw: Record<string, unknown>[], items: any[], prices:
     if (cur && byL != null && byL !== !!cur.by_layout) { err(first.line, 'Priced by layout cannot change once an item exists. Use a new code.'); continue; }
     const byLayout = cur ? !!cur.by_layout : byL ?? rows.some(r => { const l = fromLabel(LABEL.layout, r.get('Layout')); return !!l && l !== 'all'; });
     const cleanKind = blank(first.get('Reservation clean type')) ? cur?.clean_kind ?? null : fromLabel(LABEL.cleanType, first.get('Reservation clean type'));
-    if (cleanKind === undefined || (cleanKind && domain !== 'cleaning')) { err(first.line, 'Reservation clean type is Turnover, Deep clean or Light clean, on a cleaning item only.'); continue; }
+    if (cleanKind === undefined || (cleanKind && domain !== 'cleaning')) { err(first.line, 'Reservation clean type is Standard clean, Deep clean or Light clean, on a cleaning item only.'); continue; }
     const act = yesNo(first.get('Active'));
     if (act === undefined) { err(first.line, 'Active must be Yes or No.'); continue; }
     const active = act ?? (cur ? !!cur.active : true);
@@ -297,9 +297,24 @@ export function planImport(raw: Record<string, unknown>[], items: any[], prices:
     const diff = (key: string, col: string, v: unknown) => { if ((cur[col] ?? null) !== v) { changes[key] = v; before[key] = cur[col] ?? null; } };
     diff('name', 'name', name.slice(0, 120)); diff('category', 'category', category); diff('unit_label', 'unit_label', uom);
     diff('clean_kind', 'clean_kind', cleanKind); diff('active', 'active', active ? 1 : 0); diff('notes', 'notes', notes);
-    if (Object.keys(changes).length) plan.updates.push({ id: cur.id, code: cur.code, changes, before });
+    if (Object.keys(changes).length) plan.updates.push({ id: cur.id, code: cur.code, changes, before,
+      row: { name: name.slice(0, 120), category, unit_label: uom, clean_kind: cleanKind, active: active ? 1 : 0, notes } });
     if (set) plan.prices.push({ id: cur.id, code: cur.code, set });
     if (!Object.keys(changes).length && !set) plan.unchanged++;
   }
   return plan;
+}
+
+/** Several dated price changes in one statement (an import). Same rules as writePrices. */
+export async function writePriceSets(env: Env, sets: { itemId: string; set: PriceSet }[], userId: string) {
+  const rows = sets.flatMap(({ itemId, set }) => set.rows.map(r => ({ item_id: itemId, layout: r.layout, effective_from: set.effectiveFrom, owner_price: r.ownerPrice, internal_cost: r.internalCost, note: set.note })));
+  if (!rows.length) return;
+  await run(env, `INSERT INTO service_item_prices (id, item_id, layout, effective_from, owner_price, internal_cost, note, created_at, created_by)
+    SELECT gen_random_uuid()::text, x.item_id, x.layout, x.effective_from, x.owner_price, x.internal_cost, x.note, ?, ?
+    FROM jsonb_to_recordset(?::text::jsonb) AS x(item_id text, layout text, effective_from text, owner_price int, internal_cost int, note text)
+    ON CONFLICT (item_id, layout, effective_from) DO UPDATE SET owner_price = excluded.owner_price, internal_cost = excluded.internal_cost,
+      note = excluded.note, created_at = excluded.created_at, created_by = excluded.created_by`, nowIso(), userId, JSON.stringify(rows));
+  const flat = rows.filter(r => r.layout === 'all' && r.owner_price != null && r.effective_from <= mytToday());
+  if (flat.length) await run(env, `UPDATE service_items s SET default_price = x.owner_price, updated_at = ? FROM jsonb_to_recordset(?::text::jsonb) AS x(item_id text, owner_price int)
+    WHERE s.id = x.item_id`, nowIso(), JSON.stringify(flat.map(r => ({ item_id: r.item_id, owner_price: r.owner_price }))));
 }

@@ -24,6 +24,7 @@ import {
 import type { AnyTone } from '../lib/status';
 import { StatusBadge } from '../components/StatusBadge';
 import { CatalogPanel, ExchangeModal, type Sku, type SkuPayload, type CatalogInput } from './MaintenanceCatalog';
+import { ServicePrices } from './ServicePrices';
 import { HistoryDisclosure } from '../components/RecordHistory';
 
 /* ---------- the API's shape (functions/api/maintenance/issues.ts) ---------- */
@@ -167,7 +168,7 @@ export default function MaintenancePage() {
         primary={<Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setCreating(true)}>Add maintenance job</Button>} />
 
       {tab === 'rules' ? <ApprovalRulesPanel /> : tab === 'catalog' ? (
-        <CatalogPanel skus={sku.data?.data ?? []} loading={sku.loading} canWrite={['management', 'operations_manager', 'operations_staff'].includes(user!.role)} onCreate={createSku} onUpdate={updateSku} />
+        <MaintenanceItems fallback={<CatalogPanel skus={sku.data?.data ?? []} loading={sku.loading} canWrite={['management', 'operations_manager', 'operations_staff'].includes(user!.role)} onCreate={createSku} onUpdate={updateSku} />} onChanged={sku.reload} />
       ) : (
         <>
           <div className="flex items-center gap-2 flex-wrap">
@@ -856,4 +857,13 @@ function ApprovalRulesPanel() {
       ) : <span className="text-meta text-muted-ink">Only management changes these rules.</span>}
     </section>
   );
+}
+
+/** Item catalog: the maintenance part of Service prices (0127); before that update, the old catalog. */
+function MaintenanceItems({ fallback, onChanged }: { fallback: ReactNode; onChanged: () => void }) {
+  const service = useApi<{ ready: boolean }>('/operations/service-prices?domain=maintenance');
+  if (!service.data) return <Skeleton height={240} />;
+  if (!service.data.ready) return <>{fallback}</>;
+  return <ServicePrices domain="maintenance" onChanged={onChanged}
+    above={<p className="m-0 text-meta text-muted-ink">Picking an item on a job fills its owner price (the quote) and its internal cost; both stay editable on the job. The whole list, cleaning too, is under Settings, Service prices.</p>} />;
 }

@@ -27,7 +27,7 @@ export interface NavGroup { label: string; workspace: Workspace; items: NavItem[
  */
 const SUPPLY_SUPPORT = 'SUPPORT';
 
-export type SettingsSectionKey = 'company' | 'operations' | 'locale' | 'report' | 'agreement' | 'approvals' | 'security';
+export type SettingsSectionKey = 'company' | 'operations' | 'locale' | 'report' | 'agreement' | 'approvals' | 'services' | 'security';
 
 /** The Settings page's categories, one screen each (/system/settings/<key>). The desktop menu nests them under
  *  Settings and the phone Settings tab lists them under these headers, so both name and order them the same. */
@@ -39,6 +39,7 @@ export const SETTINGS_SECTIONS: { key: SettingsSectionKey; group: string; label:
   { key: 'agreement', group: 'OWNERS AND MONEY', label: 'Agreement template', icon: 'FileSignature', description: 'The management agreement that Generate agreement fills in from the unit, owner and contract.' },
   // Not "Approvals": the Finance menu already has an Approvals entry (the queue itself).
   { key: 'approvals', group: 'OWNERS AND MONEY', label: 'Approval rules', icon: 'Stamp', description: 'Whether money going out waits for a second person to approve it.' },
+  { key: 'services', group: 'OWNERS AND MONEY', label: 'Service prices', icon: 'Tag', description: 'Cleaning and maintenance items: what the owner is charged, what each costs us, and from when.' },
   { key: 'security', group: 'SECURITY', label: 'Sign-in and sessions', icon: 'Lock', description: 'How long people stay signed in, when accounts lock, and who needs two-step sign-in.' },
 ];
 

@@ -14,6 +14,7 @@ import { api, errorMessage } from '../lib/api';
 import { cx } from '../lib/design-tokens';
 import { useDevice } from '../lib/deviceClass';
 import { SETTINGS_SECTIONS, type SettingsSectionKey } from '../lib/navigation';
+import { ServicePrices } from './ServicePrices';
 import { useSession } from '../lib/session';
 import { ROLE_LABEL } from '../lib/vocabulary';
 import { refreshNavCounts } from '../lib/navBadges';
@@ -40,7 +41,7 @@ import AgreementTemplateSettings from './settings/AgreementTemplate';
  * ------------------------------------------------------------------ */
 
 // The agreement template has its own versioned store and screen (settings/AgreementTemplate.tsx), not these rows.
-type SectionKey = Exclude<SettingsSectionKey, 'agreement'>;
+type SectionKey = Exclude<SettingsSectionKey, 'agreement' | 'services'>;
 
 interface Settings {
   company: { legalName: string; companyNumber: string; address: string; supportPhone: string; supportEmail: string };
@@ -424,6 +425,15 @@ export default function SettingsPage() {
           back={phone ? { label: 'Settings', onClick: () => navigate('/settings') } : undefined}
           badge={readOnly ? <StatusBadge tone="neutral" label="Management changes these" size="sm" /> : undefined} />
         <div className="max-w-6xl"><AgreementTemplateSettings readOnly={readOnly} /></div>
+      </>
+    );
+  }
+  if (current.key === 'services') {
+    return (
+      <>
+        <PageHeader title={current.label} sub={current.description}
+          back={phone ? { label: 'Settings', onClick: () => navigate('/settings') } : undefined} />
+        <ServicePrices />
       </>
     );
   }

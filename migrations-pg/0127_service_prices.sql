@@ -8,7 +8,7 @@
 --                             pointing at the same rows. maintenance_skus stays as a view over it, so code that still
 --                             reads or writes the old name works unchanged.
 --     .domain                 cleaning | maintenance
---     .category               the sub-category: Turnover, Deep clean, Light clean, Laundry (cleaning); Aircon,
+--     .category               the sub-category: Standard clean, Deep clean, Light clean, Laundry (cleaning); Aircon,
 --                             Plumbing, Electrical... (maintenance)
 --     .clean_kind             for a cleaning item: the clean type a reservation's clean picks it for (one active item
 --                             per type)
@@ -19,7 +19,7 @@
 --   unit_service_prices       one unit's own owner price / internal cost for an item (the old unit_cleaning_prices).
 --   tasks.service_item_id     the item a cleaning job was priced from.
 --
--- Carried across, nothing removed: cleaning_prices -> three cleaning items (Turnover, Deep, Light clean) priced by
+-- Carried across, nothing removed: cleaning_prices -> three cleaning items (Standard, Deep, Light clean) priced by
 -- layout, unit_cleaning_prices -> unit_service_prices, each maintenance item's default_price -> its owner price. Moved
 -- prices take effect from 2000-01-01 so every job, past and future, prices as it did. The old tables stay untouched as
 -- the fallback the code reads while this migration is not applied. Nothing here changes an expense, a job's amount or
@@ -81,7 +81,7 @@ alter table tasks add column if not exists service_item_id text references servi
 insert into service_items (id, code, name, category, unit_label, default_price, active, notes, created_at, updated_at, domain, clean_kind, by_layout)
 select x.id, x.code, x.name, x.kind, 'job', 0, 1, null, to_char(now() at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
        to_char(now() at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'), 'cleaning', x.kind, 1
-from (values ('svc-clean-turnover', 'CLN-TURNOVER', 'Turnover clean', 'turnover'),
+from (values ('svc-clean-standard', 'CLN-STANDARD', 'Standard clean', 'turnover'),
              ('svc-clean-deep', 'CLN-DEEP', 'Deep clean', 'deep_clean'),
              ('svc-clean-light', 'CLN-LIGHT', 'Light clean', 'light_clean')) as x(id, code, name, kind)
 where not exists (select 1 from service_items s where s.id = x.id or lower(s.code) = lower(x.code));

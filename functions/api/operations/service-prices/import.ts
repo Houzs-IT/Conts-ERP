@@ -1,7 +1,7 @@
 import { type Env, all, run, json, fail, audit, nowIso, mytToday, transaction } from '../../../_lib/db';
 import { requireSession } from '../../../_lib/auth';
 import { mayWork } from '../../../_lib/access';
-import { hasServicePrices, loadPrices, planImport, writePrices, isDayStr, ITEM_WRITERS } from '../../../_lib/servicePrices';
+import { hasServicePrices, loadPrices, planImport, writePriceSets, isDayStr, ITEM_WRITERS } from '../../../_lib/servicePrices';
 
 /** POST /api/operations/service-prices/import { rows: [{ Code, Name, Type, ... }], effectiveFrom?, dryRun? } — the item
  *  list back from a spreadsheet (the screen reads the CSV or Excel file and sends its rows, keyed by the export's column
@@ -31,23 +31,26 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       ...plan.prices.map(p => ({ code: p.code, action: 'price', detail: `${p.set.rows.length} ${p.set.rows.length === 1 ? 'price' : 'prices'} from ${effectiveFrom}` })),
     ].slice(0, 200),
   };
-  if (plan.errors.length) return json({ ok: false, ...summary }, 422);
+  // A sheet with mistakes is an answer to show row by row, not a failed request.
+  if (plan.errors.length) return json({ ok: false, dryRun: !!b.dryRun, ...summary });
   if (b.dryRun) return json({ ok: true, dryRun: true, ...summary });
 
   await transaction(env, async tx => {
     const now = nowIso();
-    for (const c of plan.creates) {
-      const id = crypto.randomUUID();
-      await run(tx, `INSERT INTO service_items (id, code, name, domain, category, unit_label, clean_kind, by_layout, default_price, active, notes, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)`, id, c.code, c.item.name, c.item.domain, c.item.category, c.item.uom, c.item.cleanKind,
-        c.item.byLayout ? 1 : 0, c.item.active ? 1 : 0, c.item.notes, now, now);
-      if (c.prices) await writePrices(tx, id, c.prices, session.userId);
-    }
-    for (const u of plan.updates) {
-      const cols = Object.keys(u.changes);
-      await run(tx, `UPDATE service_items SET ${cols.map(c => `${c} = ?`).join(', ')}, updated_at = ? WHERE id = ?`, ...cols.map(c => u.changes[c]), now, u.id);
-    }
-    for (const p of plan.prices) await writePrices(tx, p.id, p.set, session.userId);
+    const created = plan.creates.map(c => ({ ...c, id: crypto.randomUUID() }));
+    if (created.length) await run(tx, `INSERT INTO service_items (id, code, name, domain, category, unit_label, clean_kind, by_layout, default_price, active, notes, created_at, updated_at)
+      SELECT x.id, x.code, x.name, x.domain, x.category, x.uom, x.clean_kind, x.by_layout, 0, x.active, x.notes, ?, ?
+      FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, code text, name text, domain text, category text, uom text, clean_kind text, by_layout int, active int, notes text)`,
+      now, now, JSON.stringify(created.map(c => ({ id: c.id, code: c.code, name: c.item.name, domain: c.item.domain, category: c.item.category, uom: c.item.uom,
+        clean_kind: c.item.cleanKind, by_layout: c.item.byLayout ? 1 : 0, active: c.item.active ? 1 : 0, notes: c.item.notes }))));
+    if (plan.updates.length) await run(tx, `UPDATE service_items s SET name = x.name, category = x.category, unit_label = x.unit_label, clean_kind = x.clean_kind,
+      active = x.active, notes = x.notes, updated_at = ?
+      FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, name text, category text, unit_label text, clean_kind text, active int, notes text) WHERE s.id = x.id`,
+      now, JSON.stringify(plan.updates.map(u => ({ id: u.id, ...u.row }))));
+    await writePriceSets(tx, [
+      ...created.filter(c => c.prices).map(c => ({ itemId: c.id, set: c.prices! })),
+      ...plan.prices.map(p => ({ itemId: p.id, set: p.set })),
+    ], session.userId);
     await audit(tx, { actorId: session.userId, actorLabel: session.fullName, action: 'service_item.import', entityTable: 'service_items', entityId: 'import',
       after: { effectiveFrom, created: plan.creates.map(c => c.code), updated: plan.updates.map(u => ({ code: u.code, before: u.before, after: u.changes })), prices: plan.prices.map(p => ({ code: p.code, rows: p.set.rows })) } });
   });
