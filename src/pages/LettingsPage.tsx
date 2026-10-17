@@ -42,11 +42,11 @@ export default function LettingsPage() {
   const days = data?.remindDays ?? 90;
 
   const columns: Column<Letting>[] = [
-    { key: 'unit', label: 'Unit', value: r => r.unitLabel, hideable: false, width: 200, render: r => <span className="font-medium truncate block" title={r.unitLabel}>{r.unitLabel}</span> },
+    { key: 'unit', label: 'Unit', value: r => r.unitLabel, hideable: false, width: 180, render: r => <span className="font-medium truncate block" title={r.unitLabel}>{r.unitLabel}</span> },
     { key: 'building', label: 'Building', value: r => r.building, hidden: true, width: 160, filter: { kind: 'select' } },
-    { key: 'owner', label: 'Owner', type: 'person', value: r => titleCase(r.ownerName), width: 170 },
-    { key: 'status', label: 'Status', type: 'status', value: r => LETTING_STATUS[r.status].label, status: r => LETTING_STATUS[r.status], width: 150, filter: { kind: 'select' } },
-    { key: 'tenant', label: 'Tenant', value: r => r.tenantName, width: 170, sub: r => r.tenantPhone },
+    { key: 'owner', label: 'Owner', type: 'person', value: r => titleCase(r.ownerName), width: 150 },
+    { key: 'status', label: 'Status', type: 'status', value: r => LETTING_STATUS[r.status].label, status: r => LETTING_STATUS[r.status], width: 140, filter: { kind: 'select' } },
+    { key: 'tenant', label: 'Tenant', value: r => r.tenantName, width: 150, sub: r => r.tenantPhone },
     { key: 'starts', label: 'Starts', type: 'date', value: r => r.startsOn, width: 110 },
     { key: 'ends', label: 'Ends', type: 'date', value: r => r.endsOn, width: 150,
       render: r => (
@@ -56,8 +56,8 @@ export default function LettingsPage() {
         </span>
       ) },
     ...(money ? [
-      { key: 'rent', label: 'Rent / month', type: 'money', value: (r: Letting) => r.monthlyRent ?? null, width: 120 } satisfies Column<Letting>,
-      { key: 'fee', label: 'Agent fee', type: 'money', value: (r: Letting) => r.agentFee ?? null, width: 110 } satisfies Column<Letting>,
+      { key: 'rent', label: 'Rent / month', type: 'money', value: (r: Letting) => r.monthlyRent ?? null, width: 110 } satisfies Column<Letting>,
+      { key: 'fee', label: 'Agent fee', type: 'money', value: (r: Letting) => r.agentFee ?? null, width: 100 } satisfies Column<Letting>,
     ] : []),
     { key: 'notes', label: 'Notes', value: r => r.notes, hidden: true, width: 220 },
   ];
@@ -72,16 +72,16 @@ export default function LettingsPage() {
     <>
       <PageHeader title="Agent to let" sub={data ? `${plural(counts.all, 'unit')} we are letting for owners · ${counts.soon} ending within ${days} days` : 'Loading…'}
         primary={canEdit && data?.ready !== false ? <Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setModal({ letting: null })}>Record a unit to let</Button> : undefined} />
-      <div className="grid grid-cols-1 min-[480px]:grid-cols-3 gap-3 sm:gap-4">
+      <div className="grid grid-cols-3 gap-2 sm:gap-4">
         {tiles.map(t => {
           const n = data ? counts[t.key] : undefined, on = filter === t.key, warn = t.tone === 'warning' && !!n;
           return (
             <button key={t.key} type="button" aria-pressed={on} onClick={() => url.set({ state: on ? null : t.key, page: null })}
-              className={cx('text-left rounded-card border border-solid p-4 sm:p-5 flex flex-col gap-2 min-w-0 cursor-pointer [font-family:inherit]',
+              className={cx('text-left rounded-card border border-solid p-3 sm:p-5 flex flex-col gap-1.5 sm:gap-2 min-w-0 cursor-pointer [font-family:inherit]',
                 on ? 'border-black shadow-[0_0_0_1px_var(--color-black)]' : warn ? 'border-warning-line' : 'border-line hover:border-line-strong', warn ? TONE.warning.bg : 'bg-card')}>
-              <span className={cx('text-[11px] font-semibold tracking-[0.12em] uppercase', warn ? TONE.warning.text : 'text-muted-ink')}>{t.label}</span>
-              <span className={cx('text-[28px] leading-none font-semibold tabular-nums', warn ? TONE.warning.text : 'text-ink')}>{n ?? '—'}</span>
-              <span className="text-meta text-muted-ink truncate">{t.hint}</span>
+              <span className={cx('text-[10px] sm:text-[11px] font-semibold tracking-[0.08em] sm:tracking-[0.12em] uppercase leading-tight', warn ? TONE.warning.text : 'text-muted-ink')}>{t.label}</span>
+              <span className={cx('text-[22px] sm:text-[28px] leading-none font-semibold tabular-nums', warn ? TONE.warning.text : 'text-ink')}>{n ?? '—'}</span>
+              <span className="max-sm:hidden text-meta text-muted-ink truncate">{t.hint}</span>
             </button>
           );
         })}

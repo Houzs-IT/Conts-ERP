@@ -451,7 +451,7 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
               {form?.parentUnitId && <StatusBadge tone="warning" label="Sub-unit" />}
               <PurposeBadge purpose={u.purpose} />
               <CodeBadge code={u.contractCode} />
-              {u.revenueModel && <span title={`Income model: ${u.revenueModelLabel}. Change it on the Contract tab.`}><ModelChip model={u.revenueModel} label={u.termsLabel ?? u.revenueModelLabel} /></span>}
+              {u.revenueModel && (rental || u.contractCode) && <span title={`Income model: ${u.revenueModelLabel}. Change it on the Contract tab.`}><ModelChip model={u.revenueModel} label={u.termsLabel ?? u.revenueModelLabel} /></span>}
               {u.channels.length > 0 && (
                 <span className="inline-flex items-center gap-1.5" aria-label={`Sold on ${u.channels.map(c => CH[c].label).join(', ')}`}>
                   {u.channels.map(c => <span key={c} title={CH[c].label} className="flex"><ChannelMark ch={c} size={22} /></span>)}

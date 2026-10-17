@@ -208,7 +208,7 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unit
           {current.sharedWith > 0 && mode === 'update' && <div className="py-[10px] px-[14px] rounded-control bg-muted text-meta text-muted-ink">This contract record also covers {current.sharedWith} other {current.sharedWith === 1 ? 'unit' : 'units'} of the owner. Saving here gives this unit its own copy; the others are not changed.</div>}
 
           {purpose !== 'rental' && <div className="py-[10px] px-[14px] rounded-control bg-muted text-meta text-muted-ink">A {PURPOSE_LABEL[purpose].toLowerCase()} unit is not run on the channels: its only contract is a WH lease, a fixed monthly rent to the owner.</div>}
-          <div role="radiogroup" aria-label="Contract type" className={cx('grid grid-cols-1 min-[480px]:grid-cols-2 gap-[10px]', offered.length > 3 && 'lg:grid-cols-3 2xl:grid-cols-6')}>
+          <div role="radiogroup" aria-label="Contract type" className={cx('grid grid-cols-2 gap-2 sm:gap-[10px]', offered.length > 3 && 'lg:grid-cols-3 2xl:grid-cols-6')}>
             {offered.map(o => {
               const on = o.code === d.contractCode;
               return (
@@ -218,7 +218,7 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unit
                     <span className="text-copy font-semibold">{o.code}</span>
                   </span>
                   <span className="text-meta font-medium text-ink">{o.label}</span>
-                  <span className="text-meta text-muted-ink [text-wrap:pretty]">{o.blurb}</span>
+                  <span className="max-sm:hidden text-meta text-muted-ink [text-wrap:pretty]">{o.blurb}</span>
                 </label>
               );
             })}

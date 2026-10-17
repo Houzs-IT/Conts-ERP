@@ -48,7 +48,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
         const code = codeOf(modelOf({ ...now0, contract_id: now0.c_id }), now0.contract_code);
         if (!codesFor(purpose).includes(code)) {
           if (!b.endContract) {
-            return fail('CONTRACT_MISMATCH', `Its ${code} contract (${CODE_LABEL[code]}) does not fit a ${PURPOSE_LABEL[purpose].toLowerCase()} unit. Saving with "end the contract" ends it today and keeps it in the history; then add a ${codesFor(purpose).join(' or ')} contract.`, 409, { purpose: 'The contract does not fit.', endContract: code });
+            return fail('CONTRACT_MISMATCH', `Its ${code} contract (${CODE_LABEL[code]}) does not fit a ${PURPOSE_LABEL[purpose].toLowerCase()} unit. To go ahead, end it today (it stays in the contract history), then add a ${codesFor(purpose).join(' or ')} contract.`, 409, { purpose: 'The contract does not fit.', endContract: code });
           }
           endContract = { id: now0.c_id, code, shared: Number(now0.shared) > 0 };
         }
