@@ -1,5 +1,6 @@
 import { OTA_CHANNELS, upliftFor, defaultUpliftShare } from '../../_lib/channelPrice';
 import { type Env, all, json, fail } from '../../_lib/db';
+import { rentalOnly } from '../../_lib/unitPurpose';
 import { requireSession, isFieldRole } from '../../_lib/auth';
 import { accessFor, canManage, refusalFor } from '../../_lib/access';
 
@@ -26,10 +27,13 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if (!ymd.test(from) || !ymd.test(to) || to < from) return fail('VALIDATION', 'Pick a start and end date, the end on or after the start.', 422);
   if ((Date.parse(to) - Date.parse(from)) / 864e5 + 1 > MAX_CALENDAR_DAYS) return fail('VALIDATION', `Show at most ${MAX_CALENDAR_DAYS} days at a time.`, 422);
 
+  // Showroom and warehouse units take no reservations (0125).
+  const rental = await rentalOnly(env);
   const [allUnits, onChannel, connected] = await Promise.all([
     all<any>(env, `
       SELECT u.id, u.unit_number, u.base_rate, u.weekend_rate, u.property_id, p.name AS property_name
       FROM units u JOIN properties p ON p.id = u.property_id
+      WHERE 1 = 1${rental}
       ORDER BY p.name, u.unit_number`),
     // Which booking sites each unit is on, so the board shows a rate row only for those. A connection made
     // through Channex (channex_channels: written on connect, removed on disconnect) is the truth; the

@@ -19,6 +19,8 @@ import { FilterBar } from '../components/FilterBar';
 import { useUrlState, usePhone, SearchBox, MonthStepper, shiftMonth, useFinanceFilters } from './finance/listKit';
 import { MODELS, type RevenueModel } from '../lib/revenueModel';
 import { ModelChip } from './units/ContractTab';
+import { CodeBadge } from './units/UnitExtras';
+import { CODES } from '../lib/revenueModel';
 import { Segmented } from '../components/ops/OpsUi';
 import { RowsSkeleton } from '../components/Loading';
 import { useSession } from '../lib/session';
@@ -73,6 +75,21 @@ function matches(o: Owner, q: string) {
   return [o.displayName, o.legalName, o.email, addressText(o), ...o.units.map(u => u.unitLabel)].some(s => (s ?? '').toLowerCase().includes(q))
     || (qd.length >= 3 && !!o.phone && local(digits(o.phone)).includes(local(qd)));
 }
+/** The owner's contract code for the list's filter: the one code all their units share, "Mixed", or none. */
+const codeText = (o: Owner) => {
+  const codes = [...new Set(o.units.map(u => u.contractCode).filter(Boolean))] as string[];
+  return codes.length === 0 ? null : codes.length === 1 ? codes[0] : 'Mixed';
+};
+const bankText = (o: Owner) => (o.hasBankDetails ? 'On file' : 'Missing');
+/** The DataTable's own column filters (the Filter button), applied again here so the totals under the table add up
+ *  the owners the table shows. Same rules as DataTable: select = any of the ticked values, number = from~to, text = contains. */
+function byColumnFilters(list: Owner[], get: (k: string) => string, buildingName: (o: Owner) => string): Owner[] {
+  const sel = (k: string, v: string | null) => { const f = get(`f.${k}`); return !f || f.split(',').includes(v ?? ''); };
+  const units = get('f.units'), [lo, hi] = units ? units.split('~') : ['', ''];
+  const b = get('f.building').toLowerCase();
+  return list.filter(o => sel('code', codeText(o)) && sel('portal', portalBadge(o, true).label) && sel('bank', bankText(o))
+    && (!lo || o.units.length >= Number(lo)) && (!hi || o.units.length <= Number(hi)) && (!b || buildingName(o).toLowerCase().includes(b)));
+}
 const initials = (name: string) => name.split(/\s+/).filter(Boolean).map(n => n[0]).slice(0, 2).join('').toUpperCase();
 
 type View = 'owners' | 'statements' | 'payouts';
@@ -116,6 +133,8 @@ function OwnerList({ tabs }: { tabs: ReactNode }) {
 
   const { data, loading, error, reload } = useApi<Payload>(`/owners${month === thisMonth ? '' : `?month=${month}`}`, FALLBACK);
   const filters = useFinanceFilters();
+  const buildingNameOf = useMemo(() => new Map((filters?.buildings ?? []).map(b => [b.id, b.name])), [filters]);
+  const buildingsOf = (o: Owner) => [...new Set(o.units.map(u => (u.buildingId ? buildingNameOf.get(u.buildingId) : null)).filter(Boolean))].join(', ');
   const toast = useToast();
   const navigate = useNavigate();
   const [modal, setModal] = useState(false);
@@ -149,8 +168,9 @@ function OwnerList({ tabs }: { tabs: ReactNode }) {
   const portfolioGuaranteed = all.reduce((s, o) => s + guaranteedOf(o), 0);
   const portfolioManagedNet = all.reduce((s, o) => s + managedNetOf(o), 0);
   const portfolioManagedGross = all.reduce((s, o) => s + managedGrossOf(o), 0);
-  const shownNet = rows.reduce((s, o) => s + netOf(o), 0);
-  const shownGross = rows.reduce((s, o) => s + grossOf(o), 0);
+  const tableRows = byColumnFilters(rows, url.get, buildingsOf);
+  const shownNet = tableRows.reduce((s, o) => s + netOf(o), 0);
+  const shownGross = tableRows.reduce((s, o) => s + grossOf(o), 0);
   const filtered = !!(q || building || model);
   const monthText = month === thisMonth ? 'this month' : monthLabel(month);
 
@@ -184,8 +204,13 @@ function OwnerList({ tabs }: { tabs: ReactNode }) {
     { key: 'email', label: 'Email', value: o => o.email || null, hidden: true, filter: false, width: 200 },
     { key: 'phone', label: 'Phone', type: 'phone', value: o => o.phone, hidden: true, filter: false, width: 150 },
     { key: 'address', label: 'Mailing address', value: o => addressText(o) || null, hidden: true, filter: false, width: 260 },
-    { key: 'units', label: 'Units', type: 'number', align: 'left', value: o => o.units.length, width: 140, filter: false,
+    { key: 'units', label: 'Units', type: 'number', align: 'left', value: o => o.units.length, width: 140, filter: { kind: 'number', hint: 'Number of units' },
       render: o => <span className="text-copy text-muted-ink truncate block" title={o.units.map(u => u.unitLabel).join(', ')}>{unitsText(o)}</span> },
+    { key: 'code', label: 'Contract', value: o => codeText(o), width: 110, title: 'The contract type: PS, PS GRR, PS YGRR, LT, RTR, MANAGE, WH. Mixed: units on different types.',
+      filter: { kind: 'select', options: [...CODES.map(c => ({ value: c.code, label: `${c.code} · ${c.label}` })), { value: 'Mixed', label: 'Mixed (units on different types)' }] },
+      render: o => { const c = codeText(o); return !c ? <span className="text-muted-ink">—</span> : c === 'Mixed' ? <span className="text-meta text-muted-ink">Mixed</span> : <CodeBadge code={o.units.find(u => u.contractCode)?.contractCode} size="sm" />; } },
+    { key: 'bank', label: 'Bank details', value: o => bankText(o), hidden: true, width: 120, filter: { kind: 'select', options: [{ value: 'On file', label: 'On file' }, { value: 'Missing', label: 'Missing' }] } },
+    { key: 'building', label: 'Buildings', value: o => buildingsOf(o) || null, hidden: true, width: 200, filter: { kind: 'text', hint: 'Owners with a unit in a building whose name contains' } },
     { key: 'unitList', label: 'Unit list', value: o => o.units.map(u => u.unitLabel).join(', ') || null, hidden: true, filter: false, width: 220 },
     { key: 'terms', label: 'Terms', value: o => ownerTerms(o), width: 220, filter: false,
       text: o => o.units.length > 1 ? o.units.map(u => `${u.unitLabel}: ${terms(u)}`).join('; ') : ownerTerms(o),
@@ -211,12 +236,13 @@ function OwnerList({ tabs }: { tabs: ReactNode }) {
       render: o => <MoneyText sen={netOf(o)} mode="exact" tone="auto" className="text-copy font-medium" /> },
     { key: 'guaranteed', label: `Guaranteed rent, ${monthCol}`, type: 'money', value: o => guaranteedOf(o), hidden: true, filter: false, width: 150 },
     { key: 'defaultFee', label: 'Default fee %', type: 'number', value: o => o.defaultManagementFeePct, hidden: true, filter: false, width: 110 },
-    { key: 'portal', label: 'Portal', type: 'status', width: 120, filter: false,
+    { key: 'portal', label: 'Portal', type: 'status', width: 120,
+      filter: { kind: 'select', options: ['Active', 'Invited', 'Not invited', 'Switched off'].map(v => ({ value: v, label: v })) },
       value: o => portalBadge(o, true).label,
       status: o => portalBadge(o, true) },
     ...(inviter ? [{ key: 'actions', label: '', width: 52, align: 'right' as const, noExport: true, sortable: false, filter: false, hideable: false,
       render: (o: Owner) => <RowActions name={titleCase(o.displayName)} items={actionsRef.current(o)} /> } satisfies Column<Owner>] : []),
-  ], [open, monthCol, inviter]);
+  ], [open, monthCol, inviter, buildingNameOf]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <>
@@ -282,9 +308,9 @@ function OwnerList({ tabs }: { tabs: ReactNode }) {
           )}
           {filtered && <Button size="sm" variant="tertiary" onClick={clearFilters}>Clear filters</Button>}
         </>}
-        footer={rows.length > 0 && (
+        footer={tableRows.length > 0 && (
           <div className="flex items-center gap-x-5 gap-y-1 flex-wrap py-3 px-[22px] max-md:px-4 bg-page [border-top:1px_solid_var(--color-line)] text-copy font-semibold">
-            <span>{filtered ? `${rows.length} of ${plural(all.length, 'owner')}` : plural(rows.length, 'owner')}</span>
+            <span>{filtered || tableRows.length !== rows.length ? `${tableRows.length} of ${plural(all.length, 'owner')}` : plural(rows.length, 'owner')}</span>
             <span className="ml-auto max-md:ml-0 inline-flex items-baseline gap-1.5"><span className="text-meta text-muted-ink font-normal">Gross Income</span><MoneyText sen={shownGross} mode="exact" /></span>
             <span className="inline-flex items-baseline gap-1.5"><span className="text-meta text-muted-ink font-normal">Owner payout</span><MoneyText sen={shownNet} mode="exact" /></span>
           </div>

@@ -1,6 +1,6 @@
 import { type Env, all } from './db';
 import { monthEndExclusive } from './revenue';
-import { loadInputs, computeMonth, statementSettings, fmtPct, classifyCost, DEDUCTIONS, type Query } from './ownerStatement';
+import { loadInputs, withYearToDate, computeMonth, statementSettings, fmtPct, classifyCost, DEDUCTIONS, type Query } from './ownerStatement';
 import { unitExample } from './unitContract';
 import { DEDUCTION_WORDS } from './unitCosts';
 
@@ -48,7 +48,7 @@ export async function unitMonthPnl(env: Env, q: Query, unitId: string, month: st
       FROM expenses e LEFT JOIN tasks t ON t.id = e.task_id
       WHERE e.unit_id = ? AND e.incurred_on >= ? AND e.incurred_on < ? ORDER BY e.incurred_on`, unitId, from, toEx),
   ]);
-  const m = computeMonth(month, inputs, settings, 'dated').find(x => x.unitId === unitId) ?? null;
+  const m = computeMonth(month, await withYearToDate(q, inputs, month, settings), settings, 'dated').find(x => x.unitId === unitId) ?? null;
   if (!m) return {};
   const channelOf = new Map(inputs.stays.map(st => [st.id, st.channel]));
 

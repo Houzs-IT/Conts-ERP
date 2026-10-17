@@ -2,6 +2,7 @@ import { type Env, one, fail } from './db';
 import { requireSession, type Session } from './auth';
 import { MASTER_ROLES } from './properties';
 import { channexConfigured } from './channex';
+import { purposeOf, NOT_ON_CHANNELS } from './unitPurpose';
 
 export const OTAS = ['airbnb', 'booking_com', 'agoda'] as const;
 export type Ota = typeof OTAS[number];
@@ -20,6 +21,7 @@ export async function linkedUnitFor(request: Request, env: Env, unitId: string):
     SELECT u.id, u.unit_number, u.listing_name, u.max_guests, u.channex_property_id, u.channex_rate_plan_id, p.name AS property_name
     FROM units u JOIN properties p ON p.id = u.property_id WHERE u.id = ?`, unitId);
   if (!u) return { response: fail('NOT_FOUND', 'That unit does not exist.', 404) };
+  if ((await purposeOf(env, unitId)) !== 'rental') return { response: fail('NOT_RENTAL', NOT_ON_CHANNELS, 409) };
   if (!u.channex_property_id || !u.channex_rate_plan_id) return { response: fail('NOT_LINKED', 'Set this unit up in Channex first.', 409) };
   return { session, unit: {
     id: u.id, unitNumber: u.unit_number, title: u.listing_name?.trim() || `${u.property_name} ${u.unit_number}`,

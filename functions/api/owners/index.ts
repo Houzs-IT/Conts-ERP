@@ -3,12 +3,13 @@ import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/d
 import { requireSession } from '../../_lib/auth';
 import { MASTER_ROLES } from '../../_lib/properties';
 import { todayMyt } from '../../_lib/ops';
-import { loadInputs, computeMonth, statementSettings, type Query, type UnitRow } from '../../_lib/ownerStatement';
+import { loadInputs, withYearToDate, computeMonth, statementSettings, type Query, type UnitRow } from '../../_lib/ownerStatement';
 import { contractView } from '../../_lib/unitContract';
 import { DEDUCTION_WORDS } from '../../_lib/unitCosts';
 import { monthEndExclusive } from '../../_lib/revenue';
 import { checkPhone } from '../../_lib/validate';
 import { addressOf, altContactOf, ownerDetailsReady } from '../../_lib/ownerDetails';
+import { purposeReady, codeOf, type ContractCode } from '../../_lib/unitPurpose';
 
 const READ_ROLES = [...MASTER_ROLES, 'operations_staff'];
 /** Last four characters, ignoring spaces and dashes ("680606-08-5101" -> "5101"). */
@@ -42,10 +43,12 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     ownerDetailsReady(env),
     portalStates(env, owners),
   ]);
-  const months = new Map(computeMonth(month, inputs, settings, 'dated').map(m => [m.unitId, m]));
+  const months = new Map(computeMonth(month, await withYearToDate(q, inputs, month, settings), settings, 'dated').map(m => [m.unitId, m]));
   const statementOf = new Map(statements.map(s => [s.owner_id, s]));
   const unitsOf = new Map<string, UnitRow[]>();
   for (const u of inputs.units) { const l = unitsOf.get(u.owner_id); if (l) l.push(u); else unitsOf.set(u.owner_id, [u]); }
+  // The staff's contract codes (0125); MANAGE and PS share a model, so the stored code is read when there is one.
+  const codeById = new Map((await purposeReady(env)) ? (await all<{ id: string; contract_code: string | null }>(env, 'SELECT id, contract_code FROM owner_contracts WHERE contract_code IS NOT NULL')).map(r => [r.id, r.contract_code]) : []);
   const propertyOf = new Map((await all<any>(env, `SELECT id, property_id FROM units ${id ? 'WHERE owner_id = ?' : ''}`, ...(id ? [id] : []))).map(r => [r.id, r.property_id]));
 
   return json({
@@ -65,6 +68,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         ic: null, bankAccount: null,
         icLast4: banking && o.ic_number ? tail(o.ic_number) : null,
         bankAccountLast4: banking ? (o.bank_account_last4 ?? (o.bank_account_number ? tail(o.bank_account_number) : null)) : null,
+        // For the list's filter: whether payout details are on file (never the numbers themselves).
+        hasBankDetails: !!(o.bank_name && (o.bank_account_number || o.bank_account_last4)),
         bankName: banking ? o.bank_name : null, accountHolder: banking ? (o.bank_account_holder ?? o.display_name) : null,
         portalInvited: !!o.user_id,
         portal: portalOf.get(o.id) ?? { state: 'none', invitedAt: null, lastLoginAt: null },
@@ -80,6 +85,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
             unitId: u.id, unitLabel: `${u.property_name} ${u.unit_number}`, buildingId: propertyOf.get(u.id),
             // model: the two-way split older screens filter on; revenueModel: the five models.
             model: m.terms.model === 'grr' ? 'grr' : 'management', revenueModel: m.terms.model, termsLabel: view.termsLabel,
+            contractCode: u.contract_id ? codeOf(m.terms.model, codeById.get(u.contract_id)) as ContractCode : null,
             ...(fixed ? { grrAmount: m.terms.fixedRent } : { feePct: 100 - (m.ownerPct ?? 0) }),
             feeSource: unitPct != null ? 'unit' : ownerDefault != null ? 'owner-default' : 'fallback',
             occupancy: Math.min(100, Math.round(m.occupancy * 100)), adr: m.nights ? Math.round(m.gross / m.nights) : 0,

@@ -20,6 +20,7 @@ import { PayoutDetails } from './owners/PayoutDetails';
 import { OwnerDetails } from './owners/OwnerDetails';
 import { OwnerCostsCard } from './owners/Costs';
 import { ModelChip } from './units/ContractTab';
+import { CodeBadge } from './units/UnitExtras';
 import { RecordHistory } from '../components/RecordHistory';
 import { MonthStepper, shiftMonth } from './finance/listKit';
 import { cx } from '../lib/design-tokens';
@@ -367,7 +368,7 @@ function UnitCard({ u, reportHref }: { u: UnitLine; reportHref: string | null })
     <section className="bg-card border border-solid border-line rounded-card p-4 flex flex-col gap-2 min-w-0">
       <div className="flex items-start justify-between gap-2">
         <a href={`#/properties/units/${encodeURIComponent(u.unitId)}?tab=contract`} className="text-[16px] font-semibold tracking-[-0.01em] text-ink! no-underline min-w-0 [overflow-wrap:anywhere]">{titleCase(u.unitLabel)}</a>
-        <ModelChip model={model} label={terms(u)} />
+        <span className="inline-flex flex-wrap items-center justify-end gap-1.5"><CodeBadge code={u.contractCode} /><ModelChip model={model} label={terms(u)} /></span>
       </div>
       {!f ? <div className="text-meta text-muted-ink">Figures are visible to finance and management.</div> : model === 'master_lease' ? <>
         <div className="text-meta text-muted-ink">{MODEL.master_lease.statement}</div>

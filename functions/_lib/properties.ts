@@ -1,5 +1,6 @@
 import { type Env, one, all, run, audit, nowIso } from './db';
 import type { Session } from './auth';
+import { PURPOSES, USED_BY, invalidBeds, invalidBays, type Bed, type BayInput } from './unitPurpose';
 
 export const MASTER_ROLES = ['management', 'operations_manager', 'finance_admin'];
 export const PACKAGES = ['Package A', 'Package B', 'Package C', 'Package D'];
@@ -22,6 +23,10 @@ export interface UnitInput {
   bedrooms?: number; bathrooms?: number; sizeSqft?: number | null;
   /** Migration 0123; null clears it. */
   layoutType?: string | null;
+  /** Migration 0125: rental, showroom or warehouse; who uses it (null clears); beds; car park bays (the whole list). */
+  purpose?: string; usedBy?: string | null; beds?: Bed[]; parkingBays?: BayInput[];
+  /** With a purpose change: end the contract in force today when it does not fit the new purpose. */
+  endContract?: boolean;
   /** The standard clean's price on this unit (sen): the unit's one 'cleaning' row in unit_expenses, which cleanPrice()
    *  reads. null clears it (amount 0, so cleans charge the last price used or the default). */
   cleaningPrice?: number | null;
@@ -52,6 +57,10 @@ export function invalidUnit(b: UnitInput): { field: string; message: string } | 
   if (b.bathrooms !== undefined && (!Number.isInteger(b.bathrooms) || b.bathrooms < 0 || b.bathrooms > 20)) return { field: 'bathrooms', message: 'Bathrooms must be a whole number from 0 to 20.' };
   if (b.sizeSqft != null && (!Number.isInteger(b.sizeSqft) || b.sizeSqft < 1 || b.sizeSqft > 100000)) return { field: 'sizeSqft', message: 'Enter the size in whole square feet.' };
   if (b.layoutType != null && !LAYOUT_TYPES.includes(b.layoutType)) return { field: 'layoutType', message: 'Pick a layout type.' };
+  if (b.purpose !== undefined && !(PURPOSES as readonly string[]).includes(b.purpose)) return { field: 'purpose', message: 'Pick rental, showroom or warehouse.' };
+  if (b.usedBy != null && !(USED_BY as readonly string[]).includes(b.usedBy)) return { field: 'usedBy', message: 'Pick who uses the unit.' };
+  if (b.beds !== undefined) { const m = invalidBeds(b.beds); if (m) return { field: 'beds', message: m }; }
+  if (b.parkingBays !== undefined) { const m = invalidBays(b.parkingBays); if (m) return { field: 'parkingBays', message: m }; }
   if (b.cleaningPrice != null && (!Number.isInteger(b.cleaningPrice) || b.cleaningPrice < 0 || b.cleaningPrice > 10_000_000)) return { field: 'cleaningPrice', message: 'Enter the cleaning price in ringgit, RM 0.00 or more.' };
   if (b.deepCleaningPrice != null && (!Number.isInteger(b.deepCleaningPrice) || b.deepCleaningPrice < 0 || b.deepCleaningPrice > 10_000_000)) return { field: 'deepCleaningPrice', message: 'Enter the deep cleaning price in ringgit, RM 0.00 or more.' };
   if (b.contract) {

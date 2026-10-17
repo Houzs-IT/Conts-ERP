@@ -1,5 +1,6 @@
 import { type Env, one, run, json, fail, audit, nowIso } from '../../../_lib/db';
 import { requireSession } from '../../../_lib/auth';
+import { purposeOf, NOT_ON_CHANNELS } from '../../../_lib/unitPurpose';
 
 /** PATCH /api/units/:id/channex-mapping
  *    { channexPropertyId, channexRoomTypeId, channexRatePlanId } — link the unit to a Channex listing.
@@ -23,6 +24,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     return json({ ok: true });
   }
 
+  if ((await purposeOf(env, id)) !== 'rental') return fail('NOT_RENTAL', NOT_ON_CHANNELS, 409);
   const fields: Record<string, string> = {};
   // vocab-ok: Channex calls it a property; unit channel setup screen
   if (!b?.channexPropertyId?.trim()) fields.channexPropertyId = 'Enter the Channex property id.';
