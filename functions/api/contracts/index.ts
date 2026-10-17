@@ -4,6 +4,7 @@ import { requireSession } from '../../_lib/auth';
 import { type ContractInput, normalise, invalidContract } from '../../_lib/contracts';
 import { modelOf } from '../../_lib/revenueModel';
 import { codeOf } from '../../_lib/unitPurpose';
+import { contractView } from '../../_lib/unitContract';
 
 const READ_ROLES = ['management', 'operations_manager', 'operations_staff', 'finance_admin'];
 
@@ -34,6 +35,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       id: r.id, ownerId: r.owner_id, ownerName: r.display_name, unitsLabel: r.units_label ?? '—', unitCount: Number(r.unit_count), model: r.model,
       managementFeePct: Number(r.management_fee_pct), grrAmount: Number(r.grr_amount),
       startsOn: r.starts_on, renewsOn: r.renews_on, endsOn: r.ends_on, offerLetter: r.offer_letter,
+      termsLabel: contractView(r, { package: r.package }, 25).termsLabel,
       revenueModel: modelOf({ ...r, contract_id: r.id }), contractCode: codeOf(modelOf({ ...r, contract_id: r.id }), r.contract_code),
       units: (typeof r.in_force_units === 'string' ? JSON.parse(r.in_force_units) : r.in_force_units) ?? [],
     })),

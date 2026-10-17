@@ -41,7 +41,7 @@ interface Contract {
   endsOn?: string | null;
   offerLetter: string | null;
   /** The staff's short code (PS, PS GRR, WH, ...) and the units this record is in force on (0125). */
-  contractCode?: ContractCode; units?: { id: string; label: string }[];
+  contractCode?: ContractCode; units?: { id: string; label: string }[]; termsLabel?: string;
 }
 interface Payload { data: Contract[]; generatedAt: string }
 
@@ -75,8 +75,8 @@ const stateOf = (c: Contract): ContractState => {
   if (d <= ENDING_WINDOW_DAYS) return 'Ending soon';
   return 'Active';
 };
-const feeLabel = (c: Contract) =>
-  c.model === 'grr' ? `GRR ${rm(c.grrAmount, { cents: false })}/mo` : `${c.managementFeePct}% operator share`;
+const feeLabel = (c: Contract) => c.termsLabel ?? (
+  c.model === 'grr' ? `GRR ${rm(c.grrAmount, { cents: false })}/mo` : `${c.managementFeePct}% operator share`);
 const inDays = (d: number) => d === 0 ? 'ends today' : d > 0 ? `in ${d} ${d === 1 ? 'day' : 'days'}` : `${-d} ${d === -1 ? 'day' : 'days'} ago`;
 
 type FilterKey = 'all' | 'soon' | 'active' | 'ended';

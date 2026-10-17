@@ -504,7 +504,8 @@ export async function withYearToDate(q: Query, inputs: Inputs, month: string, se
     const before = await loadInputs(q, `${y.yearFrom}-01`, `${month}-01`, { unitId: u.id });
     let total = 0;
     for (let m = y.yearFrom; m < month; m = addMonths(m, 1)) {
-      const r = computeMonth(m, before, settings, 'dated').find(x => x.unitId === u.id);
+      // The unit as given (terms not saved yet on the Contract tab's example), with the earlier months' stays and costs.
+      const r = computeMonth(m, { ...before, units: [{ ...u, year_shares_before: undefined }] }, settings, 'dated').find(x => x.unitId === u.id);
       if (r && unitForMonth(u, m).contract_id === asOf.contract_id) total += r.ownerShare;
     }
     return { ...u, year_shares_before: total };
