@@ -2,6 +2,7 @@ import { type Env, all, one, json, fail } from '../../../_lib/db';
 import { requireSession, isFieldRole } from '../../../_lib/auth';
 import { mineSql, hasAssigneeUser, UNASSIGNED_SQL } from '../../../_lib/maintenance';
 import { fieldRepairs } from '../../../_lib/fieldRepairs';
+import { parkingFor } from '../../../_lib/unitPurpose';
 
 /** GET /api/field/repairs/:id — one repair job for the phone: the job, its Before and After photos and videos, its
  *  files (claim, invoice, receipt), the notes left on it, and, once it is theirs, how to get into the unit (the
@@ -42,6 +43,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
     files: docs.filter(d => !isMedia(d)).map(d => ({ id: d.id, kind: d.kind, url: `/api/documents/${d.id}/download`, fileName: d.file_name,
       byteSize: Number(d.byte_size), uploadedAt: d.created_at, uploader: d.uploader ?? null })),
     access: access.filter(a => a.instruction).map(a => ({ id: a.id, label: a.label, instruction: a.instruction })),
+    // The unit's car park bays (staff sheet UNIT, 17 Oct 2026), with the access details.
+    parking: flags.mine ? await parkingFor(env, job.unitId) : null,
     notes: notes.map(n => ({ note: n.note, by: n.actor_label, at: n.occurred_at, done: n.action === 'maintenance.end' })),
   });
 };

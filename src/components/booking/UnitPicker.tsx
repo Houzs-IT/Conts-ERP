@@ -2,7 +2,8 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import Icon from '../Icon';
 import { cx } from '../../lib/design-tokens';
 
-export interface PickerUnit { id: string; unitNumber: string; propertyName: string }
+/** purpose (0125): a showroom or warehouse takes no reservations, so it is never offered here. */
+export interface PickerUnit { id: string; unitNumber: string; propertyName: string; purpose?: string }
 
 const byName = (a: string, b: string) => a.localeCompare(b, 'en', { numeric: true, sensitivity: 'base' });
 
@@ -22,6 +23,7 @@ export function UnitPicker({ units, value, onChange, label = 'Unit', placeholder
   const flat = useMemo(() => {
     const words = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
     return units
+      .filter(u => !u.purpose || u.purpose === 'rental')
       .filter(u => { const hay = `${u.propertyName} ${u.unitNumber}`.toLowerCase(); return words.every(w => hay.includes(w)); })
       .sort((a, b) => byName(a.propertyName, b.propertyName) || byName(a.unitNumber, b.unitNumber));
   }, [units, q]);

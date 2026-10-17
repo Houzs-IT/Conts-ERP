@@ -23,7 +23,7 @@ interface Job {
   previous: { guestName: string; checkOutTime: string; state: string } | null;
   next: { guestName: string; checkInTime: string; checkInAt: string } | null;
 }
-interface Detail { media: MediaItem[]; access: { id: string; label: string; instruction: string }[] }
+interface Detail { media: MediaItem[]; access: { id: string; label: string; instruction: string }[]; parking?: string | null }
 
 /** The cleaner's phone: today's jobs grouped by building, each with the guest leaving and arriving, the time left,
  *  and the steps: guest left, start, photos and videos, complete. One column, 44px targets. */
@@ -115,6 +115,7 @@ function JobCard({ job: j, now, open, onToggle, onChanged }: { job: Job; now: nu
           {(detail.data?.access.length ? detail.data.access : j.accessInstruction ? [{ id: 'a', label: 'Access', instruction: j.accessInstruction }] : []).map(a => (
             <div key={a.id} className="rounded-control bg-muted p-2.5 text-copy"><b>{a.label}</b><div className="text-muted-ink">{a.instruction}</div></div>
           ))}
+          {detail.data?.parking && <div className="rounded-control bg-muted p-2.5 text-copy"><b>Car park</b><div className="text-muted-ink">{detail.data.parking}</div></div>}
           {j.addressLine && <div className="text-meta text-muted-ink">{j.addressLine}</div>}
 
           {!j.done && (

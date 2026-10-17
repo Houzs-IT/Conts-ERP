@@ -539,7 +539,7 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
         </>)}
 
       {stacked && on('access') && <h3 className="m-0 mt-2 text-heading font-semibold">Access and keys</h3>}
-      {on('access') && <AccessTab key={u.id} unitId={u.id} unitLabel={unitLabel} />}
+      {on('access') && <AccessTab key={u.id} unitId={u.id} unitLabel={unitLabel} parking={form?.parkingLabel} />}
 
       {stacked && on('reservations') && <h3 className="m-0 mt-2 text-heading font-semibold">Reservations</h3>}
       {on('reservations') && <BookingsTab key={u.id} unitId={u.id} />}

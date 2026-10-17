@@ -1,4 +1,5 @@
 import { type Env, all, one, run, json, fail, audit, nowIso } from '../../../_lib/db';
+import { parkingFor } from '../../../_lib/unitPurpose';
 import { isOnTask, currentCleaners } from '../../../_lib/taskCleaners';
 import { unitLayoutSql, unitLayout } from '../../../_lib/unitLayout';
 import { requireSession, isFieldRole } from '../../../_lib/auth';
@@ -41,6 +42,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
     // Field staff get the instruction only, not even the masked tail (same rule as /api/access-credentials).
     access: creds.map(c => ({ id: c.id, kind: c.kind, label: c.label, instruction: c.instruction, masked: field ? '' : mask(c.secret), hasCode: !!c.secret })),
     mayReveal: mayEditCredentials(session),
+    // The unit's car park bays (staff sheet UNIT, 17 Oct 2026), with the access details.
+    parking: await parkingFor(env, t.unit_id),
     // Amounts are for the office only.
     cost: field ? null : { amount: charged ? Number(charged.amount) : price.amount, source: price.source, charged: !!charged },
     damage: damage.map(d => ({ id: d.id, title: d.title, state: d.state, reportedAt: d.reported_at })),

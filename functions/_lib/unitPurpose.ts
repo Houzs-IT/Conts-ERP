@@ -132,3 +132,10 @@ export async function saveBays(env: Env, unitId: string, bays: BayInput[]) {
     SELECT gen_random_uuid()::text, ?, x.lot, NULLIF(x.level, ''), NULLIF(x.note, ''), x.n, ? FROM jsonb_to_recordset(?::text::jsonb) AS x(lot text, level text, note text, n int)`,
     unitId, now, JSON.stringify(bays.map((b, n) => ({ lot: b.lotNumber.trim(), level: b.level?.trim() ?? '', note: b.note?.trim() ?? '', n }))));
 }
+
+/** "2 bays: L2-105, L2-106" for one unit, or null (also before 0125). For the screens that show how to get in. */
+export async function parkingFor(env: Env, unitId: string): Promise<string | null> {
+  if (!(await purposeReady(env))) return null;
+  const bays = await all<{ lot_number: string; level: string | null }>(env, 'SELECT lot_number, level FROM unit_parking_bays WHERE unit_id = ? ORDER BY sort_order, lot_number', unitId);
+  return baysLabel(bays.map(b => ({ lotNumber: b.lot_number, level: b.level }))) || null;
+}

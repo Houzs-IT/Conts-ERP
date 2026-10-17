@@ -64,7 +64,7 @@ interface Detail {
   startedAt: string | null; completedAt: string | null; guestLeftAt: string | null;
   completedBy: string | null; createdAt: string | null; reservationId: string | null;
   media: MediaItem[];
-  access: { id: string; kind: string; label: string; instruction: string; masked: string; hasCode: boolean }[]; mayReveal: boolean;
+  access: { id: string; kind: string; label: string; instruction: string; masked: string; hasCode: boolean }[]; mayReveal: boolean; parking?: string | null;
   cost: { amount: number; source: 'unit' | 'history' | 'default'; charged: boolean } | null;
   damage: { id: string; title: string; state: string; reportedAt: string }[];
   day?: string | null;
@@ -534,6 +534,7 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft }: { row: Row; 
             </div>
           ))}
         {data && !data.mayReveal && data.access.some(a => a.hasCode) && <span className="text-meta text-muted-ink">Codes are shown to operations managers and management only.</span>}
+        {data?.parking && <span className="text-meta"><span className="text-muted-ink">Car park:</span> {data.parking}</span>}
       </section>
 
       {data && data.damage.length > 0 && (
