@@ -7,6 +7,8 @@ import { CATEGORIES, URGENCIES, SOURCES, CHARGE_TO, JOB_TYPES, SEVERITIES, DAY, 
 import { repairNotice } from '../../_lib/notices';
 import { hasServicePrices, serviceBook } from '../../_lib/servicePrices';
 import { layoutKey } from '../../_lib/cleaningPrices';
+import { hasJobInvoices } from '../../_lib/jobProfit';
+import { priceLines, linesTotal, writeLines, type Line } from '../../_lib/jobItems';
 
 /** GET /api/maintenance/issues?state=&unitId= — every job, with its technician, category, urgency, source, repair
  *  windows (and the stays each overlaps), photo and document counts, and what it cost and who paid once done.
@@ -137,6 +139,15 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       internal ??= a.internal;
     } else if (quoted == null && !field) quoted = sku.default_price;
   }
+  // The job's items (owner, 17 Oct 2026): picked from Service prices with a quantity; their total is the quote.
+  let lines: Line[] = [];
+  if (Array.isArray(b.items) && b.items.length && !field && await hasJobInvoices(env)) {
+    const priced = await priceLines(env, unit.id, b.items);
+    if ('error' in priced) return priced.error;
+    lines = priced.lines;
+    quoted = linesTotal(lines);
+    skuId = lines.find(l => l.item_id)?.item_id ?? skuId;
+  }
   const billingCols = internal != null && await hasBilling(env);
 
   let win: { startsAt: string; endsAt: string; note: string | null } | null = null;
@@ -171,6 +182,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     chargeTo, category, urgency, source, sourceTaskId, vendor, vendor ? await assigneeKindFor(env, vendor) : null,
     now, now, now, ...(withUser ? [userId] : []), ...(cols ? [jobType, severity, b.needsParts ? 1 : 0, b.dueOn ?? null] : []), ...(billingCols ? [internal] : []));
 
+  if (lines.length) await writeLines(env, id, lines, session.userId);
   if (b.blocksUnit) await run(env, "UPDATE units SET readiness = 'maintenance', updated_at = ? WHERE id = ?", now, unit.id);
   let overlaps: unknown[] = [];
   if (win) {
@@ -179,7 +191,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     overlaps = await staysOverlapping(env, unit.id, win.startsAt, win.endsAt);
   }
 
-  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'maintenance.create', entityTable: 'maintenance_issues', entityId: id, after: { unitId: unit.id, title: b.title, category, urgency, jobType, severity, needsParts: !!b.needsParts, dueOn: b.dueOn ?? null, approvalByRule: approval && !asked, source, sourceTaskId, blocksUnit: !!b.blocksUnit, approval, skuId, quotedAmount: quoted, internalCost: internal, assignee: vendor, window: win }, source: field ? 'field_app' : b.source ?? 'web' });
+  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'maintenance.create', entityTable: 'maintenance_issues', entityId: id, after: { unitId: unit.id, title: b.title, category, urgency, jobType, severity, needsParts: !!b.needsParts, dueOn: b.dueOn ?? null, approvalByRule: approval && !asked, source, sourceTaskId, blocksUnit: !!b.blocksUnit, approval, skuId, quotedAmount: quoted, internalCost: internal, items: lines, assignee: vendor, window: win }, source: field ? 'field_app' : b.source ?? 'web' });
   await notify(env, {
     template: 'ops.damage_reported', recipient: 'operations@theconts.com', channel: 'in_app',
     subject: b.blocksUnit ? 'Unit blocked' : urgency === 'urgent' ? 'Urgent repair reported' : 'Damage reported',
