@@ -96,7 +96,7 @@ const isShare = (m: RevenueModel) => m === 'management' || m === 'management_gua
 
 const HISTORY_COLUMNS: Column<ContractView>[] = [
   { key: 'code', label: 'Code', value: h => h.contractCode ?? codeFromModel(h.revenueModel), width: 90, render: h => <CodeBadge code={h.contractCode ?? codeFromModel(h.revenueModel)} size="sm" /> },
-  { key: 'model', label: 'Income model', value: h => MODEL[h.revenueModel].label, width: 170, render: h => <span><ModelChip model={h.revenueModel} /></span> },
+  { key: 'model', label: 'Contract type', value: h => CODE[h.contractCode ?? codeFromModel(h.revenueModel)].label, width: 190, render: h => <span><ModelChip model={h.revenueModel} label={CODE[h.contractCode ?? codeFromModel(h.revenueModel)].label} /></span> },
   { key: 'terms', label: 'Terms', value: h => h.termsLabel, width: 200 },
   { key: 'starts', label: 'From', type: 'date', value: h => h.startsOn, width: 116, render: h => <span className="whitespace-nowrap">{h.startsOn ? date(h.startsOn) : 'No start'}</span> },
   { key: 'ends', label: 'To', type: 'date', value: h => h.endsOn, width: 116, render: h => <span className="whitespace-nowrap">{h.endsOn ? date(h.endsOn) : 'Open'}</span> },
@@ -194,7 +194,7 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unit
           {canEdit && (
             <div className="flex flex-wrap items-center gap-2">
               {dirty && <span className="text-meta text-warning">Unsaved changes</span>}
-              {current.id && <GenerateAgreement unitId={unitId} refreshKey={current.id + (current.startsOn ?? '')} />}
+              <GenerateAgreement unitId={unitId} refreshKey={(current.id ?? 'none') + (current.startsOn ?? '')} />
               {current.id && mode === 'update' && !dirty && <Button size="sm" variant="secondary" icon={<Icon name="CalendarPlus" size="sm" />} onClick={() => setExtending(true)}>Extend / renew</Button>}
               {current.id && mode === 'update' && <Button size="sm" variant="secondary" onClick={() => { setMode('new'); set({ startsOn: '', endsOn: '', renewsOn: '' }); }}>Start a new contract</Button>}
               {mode === 'new' && <Button size="sm" variant="tertiary" onClick={() => { setMode('update'); setDraft(original); }}>Cancel new contract</Button>}

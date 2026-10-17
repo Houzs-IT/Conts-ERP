@@ -38,9 +38,11 @@ export function contractView(c: any | null, unit: { split_kind?: string | null; 
   const fee = Number(c.management_fee_pct ?? defaultFeePct), agent = c.agent_fee_pct == null ? null : Number(c.agent_fee_pct);
   const share = isShare(model);
   const ownerPct = share ? 100 - fee : null;
+  const code = codeOf(model, c.contract_code);
   return {
     id: c.id, revenueModel: model,
-    termsLabel: termsLabel(model, { ownerPct, agentPct: agent, rent: Number(c.grr_amount ?? 0), guarantee: Number(model === 'management_yearly_guarantee' ? c.minimum_guarantee_annual ?? 0 : c.minimum_guarantee ?? 0) }),
+    // A WH lease is worked out as a master lease but is named as the staff name it.
+    termsLabel: code === 'WH' ? `Lease RM ${(Number(c.grr_amount ?? 0) / 100).toLocaleString('en-MY', { maximumFractionDigits: 0 })}/mo` : termsLabel(model, { ownerPct, agentPct: agent, rent: Number(c.grr_amount ?? 0), guarantee: Number(model === 'management_yearly_guarantee' ? c.minimum_guarantee_annual ?? 0 : c.minimum_guarantee ?? 0) }),
     ownerPct, managementPct: share ? fee - (agent ?? 0) : model === 'long_term' ? fee : null, agentPct: share ? agent : null, agentName: c.agent_name ?? null,
     minimumGuarantee: model === 'management_guarantee' ? Number(c.minimum_guarantee ?? 0) : 0,
     yearlyGuarantee: model === 'management_yearly_guarantee' ? Number(c.minimum_guarantee_annual ?? 0) : 0,

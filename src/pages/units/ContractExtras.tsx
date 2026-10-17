@@ -81,13 +81,13 @@ export function GenerateAgreement({ unitId, refreshKey }: { unitId: string; refr
   if (!data) return null;
   const missing = data.missing;
   return (
-    <span className="relative inline-flex flex-col items-end gap-1">
+    <span className="relative inline-flex flex-col items-start gap-1">
       <Button size="sm" variant="secondary" icon={<Icon name="FileText" size="sm" />}
         onClick={() => (missing.length ? setOpen(o => !o) : window.open(`/api/units/${encodeURIComponent(unitId)}/agreement`, '_blank', 'noopener'))}>
         Generate agreement
       </Button>
       {open && missing.length > 0 && (
-        <div role="note" className="absolute right-0 top-[calc(100%+6px)] z-10 w-[min(340px,80vw)] p-3 rounded-card bg-card border border-solid border-line shadow-[var(--shadow-overlay)] text-meta flex flex-col gap-1.5">
+        <div role="note" className="absolute left-0 top-[calc(100%+6px)] z-10 w-[min(340px,80vw)] p-3 rounded-card bg-card border border-solid border-line shadow-[var(--shadow-overlay)] text-meta flex flex-col gap-1.5">
           <span className="font-semibold text-ink">Fill these in first</span>
           {missing.map(m => <span key={m.key} className="text-muted-ink">{m.label}{m.where ? <> · on {m.where}</> : null}</span>)}
           <span className="text-muted-ink">Template: {data.template.title}, version {data.template.version} (Settings &gt; Agreement template).</span>

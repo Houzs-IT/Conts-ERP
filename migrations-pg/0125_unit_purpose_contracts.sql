@@ -93,7 +93,7 @@ INSERT INTO agreement_templates (id, version, title, body, created_at, created_b
   || E'This agreement runs from {{start_date}} to {{end_date}}.\n\n'
   || E'# 3. Income model\n'
   || E'{{model_code}}: {{model_name}}. {{terms}}\n'
-  || E'Owner share: {{owner_pct}}. Management share: {{management_pct}}. Guarantee: {{guarantee}}. Monthly rent: {{monthly_rent}}.\n\n'
+  || E'Owner share: {{owner_pct}}. Operator share: {{management_pct}}. Guarantee: {{guarantee}}. Monthly rent: {{monthly_rent}}.\n\n'
   || E'# 4. Payment\n'
   || E'Payments to the Owner are made to {{bank_name}} account {{bank_account}} in the name of {{account_holder}}.\n\n'
   || E'# 5. Signatures\n'

@@ -34,7 +34,7 @@ export const PLACEHOLDERS: Placeholder[] = [
   { key: 'model_name', label: 'Contract type in words', where: "the unit's Contract tab" },
   { key: 'terms', label: 'Terms in short ("Share 75/25")', where: "the unit's Contract tab" },
   { key: 'owner_pct', label: "Owner's share %", where: "the unit's Contract tab" },
-  { key: 'management_pct', label: 'Management share %', where: "the unit's Contract tab" },
+  { key: 'management_pct', label: 'Operator share %', where: "the unit's Contract tab" },
   { key: 'agent_pct', label: 'Agent share %', where: "the unit's Contract tab", optional: true },
   { key: 'guarantee', label: 'Guarantee (monthly or yearly)', where: "the unit's Contract tab" },
   { key: 'monthly_rent', label: 'Monthly rent', where: "the unit's Contract tab" },

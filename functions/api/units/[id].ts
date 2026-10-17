@@ -163,7 +163,7 @@ export const onRequestDelete: PagesFunction<Env> = async ({ request, env, params
   const found = ([
     ['HAS_SUB_UNITS', 'sub_units', 'sub-unit'], ['HAS_RESERVATIONS', 'reservations', 'reservation'], ['HAS_STATEMENTS', 'statements', 'owner statement line'],
     ['HAS_EXPENSES', 'expenses', 'expense'], ['HAS_CONTRACT', 'contracts', 'contract'], ['HAS_JOBS', 'jobs', 'cleaning or maintenance job'],
-    ['HAS_ADJUSTMENTS', 'adjustments', 'owner credit or charge'], ['HAS_LETTINGS', 'lettings', 'Agent-to-let record'],
+    ['HAS_ADJUSTMENTS', 'adjustments', 'owner adjustment'], ['HAS_LETTINGS', 'lettings', 'Agent-to-let record'],
   ] as const).map(([code, key, what]) => ({ code: code as string, n: Number(c?.[key] ?? 0), what: what as string })).filter(f => f.n > 0);
   if (u.channex_property_id) found.push({ code: 'CHANNEL_LINKED', n: 1, what: 'channel connection' });
   if (found.length) {
