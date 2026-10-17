@@ -1,7 +1,10 @@
-import { type Env, one, run, json, fail, nowIso } from '../../_lib/db';
+import { type Env, one, all, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { changedFields } from '../../_lib/history';
 import { requireSession } from '../../_lib/auth';
 import { invalidUnit, ownerFieldIn, saveExpenses, saveCleaningPrice, saveContract, auditUnit, type UnitInput } from '../../_lib/properties';
+import { purposeReady, saveBays, codesFor, codeOf, PURPOSE_LABEL, CODE_LABEL, type Purpose } from '../../_lib/unitPurpose';
+import { modelOf } from '../../_lib/revenueModel';
+import { todayMyt } from '../../_lib/ops';
 
 /** PATCH /api/units/:id — the Units screen's Save. Sends the whole unit; only what is present is changed.
  *  The owner is picked by ownerId; their name, ID number and bank details are edited on the owner's page only, so a
@@ -29,6 +32,29 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     if (!(await one(env, 'SELECT 1 AS x FROM properties WHERE id = ?', target))) return fail('NOT_FOUND', 'That building does not exist.', 404, { buildingId: 'Pick a building.' });
   }
   const propertyId: string = target ?? cur.property_id;
+  const ready = await purposeReady(env);
+  // A purpose change (0125). A showroom or warehouse is never on the channels, and its contract can only be a lease.
+  const purpose = ready && typeof b.purpose === 'string' ? b.purpose as Purpose : undefined;
+  let endContract: { id: string; code: string; shared: boolean } | null = null;
+  if (purpose) {
+    const now0 = await one<any>(env, `SELECT u.purpose, u.channex_property_id, c.id AS c_id, c.revenue_model, c.model, c.minimum_guarantee, c.contract_code, u.package,
+      (SELECT COUNT(*) FROM units x WHERE x.contract_id = c.id AND x.id <> u.id) AS shared
+      FROM units u LEFT JOIN owner_contracts c ON c.id = u.contract_id WHERE u.id = ?`, id);
+    if (now0 && now0.purpose !== purpose) {
+      if (purpose !== 'rental' && now0.channex_property_id) {
+        return fail('CHANNEL_LINKED', `This unit is connected to the channels. Disconnect it on the Overview tab before making it a ${PURPOSE_LABEL[purpose].toLowerCase()}.`, 409, { purpose: 'Disconnect the channels first.' });
+      }
+      if (now0.c_id) {
+        const code = codeOf(modelOf({ ...now0, contract_id: now0.c_id }), now0.contract_code);
+        if (!codesFor(purpose).includes(code)) {
+          if (!b.endContract) {
+            return fail('CONTRACT_MISMATCH', `Its ${code} contract (${CODE_LABEL[code]}) does not fit a ${PURPOSE_LABEL[purpose].toLowerCase()} unit. Saving with "end the contract" ends it today and keeps it in the history; then add a ${codesFor(purpose).join(' or ')} contract.`, 409, { purpose: 'The contract does not fit.', endContract: code });
+          }
+          endContract = { id: now0.c_id, code, shared: Number(now0.shared) > 0 };
+        }
+      }
+    }
+  }
   const was = await snapshot(env, id);
 
   const now = nowIso();
@@ -64,6 +90,25 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     b.splitValue === undefined ? null : b.splitValue, b.guaranteePeriod ?? null, b.bedrooms ?? null, b.bathrooms ?? null,
     b.sizeSqft !== undefined, b.sizeSqft ?? null, b.layoutType !== undefined, b.layoutType ?? null, now, id);
   if (target) await run(env, 'UPDATE units SET property_id = ?, updated_at = ? WHERE parent_unit_id = ?', propertyId, now, id);
+  if (ready && (purpose || b.usedBy !== undefined || b.beds !== undefined)) {
+    await run(env, `UPDATE units SET purpose = COALESCE(?, purpose), used_by = CASE WHEN ? THEN ? ELSE used_by END,
+      beds = CASE WHEN ? THEN ?::text::jsonb ELSE beds END, updated_at = ? WHERE id = ?`,
+      purpose ?? null, b.usedBy !== undefined, b.usedBy ?? null, b.beds !== undefined, JSON.stringify(b.beds ?? []), now, id);
+    // Not sold anywhere: off the channel list, and nothing left waiting to be sent to Channex.
+    if (purpose && purpose !== 'rental') {
+      await run(env, 'UPDATE units SET is_listed = 0 WHERE id = ?', id);
+      await run(env, "DELETE FROM channex_outbox WHERE unit_id = ? AND status IN ('queued','failed')", id);
+    }
+  }
+  if (ready && b.parkingBays !== undefined) await saveBays(env, id, b.parkingBays);
+  if (endContract) {
+    const today = todayMyt();
+    // The contract stays in the unit's history; a record shared with other units keeps serving them unchanged.
+    if (!endContract.shared) await run(env, 'UPDATE owner_contracts SET ends_on = CASE WHEN ends_on IS NULL OR ends_on > ? THEN ? ELSE ends_on END, unit_id = COALESCE(unit_id, ?) WHERE id = ?', today, today, id, endContract.id);
+    await run(env, 'UPDATE units SET contract_id = NULL, updated_at = ? WHERE id = ?', now, id);
+    await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'contract.end', entityTable: 'owner_contracts', entityId: endContract.id,
+      after: { unitId: id, endsOn: today, reason: `Unit made a ${purpose}`, code: endContract.code, shared: endContract.shared } });
+  }
   if (b.cleaningPrice !== undefined) await saveCleaningPrice(env, id, b.cleaningPrice ?? 0);
   if (b.deepCleaningPrice !== undefined) await saveCleaningPrice(env, id, b.deepCleaningPrice ?? 0, 'cleaning_deep');
 
@@ -80,6 +125,7 @@ async function snapshot(env: Env, id: string): Promise<Record<string, unknown>> 
   const r = await one<Record<string, unknown>>(env, `
     SELECT p.name AS building, u.unit_number AS "unitNumber", u.unit_code AS "unitCode", u.listing_name AS "listingName", u.address,
            u.package, u.term, u.split_kind AS split, u.split_value AS "splitValue", u.guarantee_period AS "guaranteePeriod", u.bedrooms, u.bathrooms, u.size_sqft AS "sizeSqft", u.layout_type AS "layoutType",
+           ${(await purposeReady(env)) ? `u.purpose, u.used_by AS "usedBy", u.beds::text AS beds, (SELECT string_agg(b.lot_number || COALESCE(' (' || b.level || ')', ''), ', ' ORDER BY b.sort_order) FROM unit_parking_bays b WHERE b.unit_id = u.id) AS "parkingBays",` : ''}
            o.display_name AS owner, (SELECT e.amount FROM unit_expenses e WHERE e.unit_id = u.id AND e.category = 'cleaning' ORDER BY e.sort_order LIMIT 1) AS "cleaningPrice",
            (SELECT e.amount FROM unit_expenses e WHERE e.unit_id = u.id AND e.category = 'cleaning_deep' ORDER BY e.sort_order LIMIT 1) AS "deepCleaningPrice", c.management_fee_pct AS "managementFeePct", c.starts_on AS "contractStartsOn", c.renews_on AS "contractRenewsOn",
            (SELECT string_agg(e.category || ' RM ' || to_char(e.amount / 100.0, 'FM999,990.00'), ', ' ORDER BY e.sort_order) FROM unit_expenses e WHERE e.unit_id = u.id) AS "monthlyCosts"
@@ -87,3 +133,49 @@ async function snapshot(env: Env, id: string): Promise<Record<string, unknown>> 
     WHERE u.id = ?`, id);
   return r ?? {};
 }
+
+/** DELETE /api/units/:id — removes a unit added by mistake (staff sheet UNIT, 17 Oct 2026). Only a unit nothing real
+ *  hangs off: no sub-units, reservations, statements, expenses, contracts, cleaning or maintenance jobs, owner credits
+ *  or charges, Agent-to-let records, and not connected to the channels. Otherwise it is refused with what is in the
+ *  way, and the unit can be taken out of use instead (its state set to Blocked). What exists only for the unit (its
+ *  settings, prices, car park bays, access codes and files) goes with it. Audited. */
+export const onRequestDelete: PagesFunction<Env> = async ({ request, env, params }) => {
+  const { session, response } = await requireSession(request, env);
+  if (!session) return response!;
+  if (!session.manage) return fail('FORBIDDEN', 'Only management, finance and operations managers can delete units.', 403);
+  const id = String(params.id);
+  const u = await one<any>(env, `SELECT u.id, u.unit_number, u.unit_code, u.listing_name, u.contract_id, u.channex_property_id, u.owner_id, p.name AS building
+    FROM units u JOIN properties p ON p.id = u.property_id WHERE u.id = ?`, id);
+  if (!u) return fail('NOT_FOUND', 'That unit no longer exists.', 404);
+
+  const lettings = await one<{ x: number }>(env, "SELECT 1 AS x FROM information_schema.tables WHERE table_schema = 'pos' AND table_name = 'unit_lettings'");
+  // Everything that would be lost or left pointing at nothing, counted in one query.
+  const c = await one<Record<string, number>>(env, `SELECT
+      (SELECT COUNT(*) FROM units WHERE parent_unit_id = $1) AS sub_units,
+      (SELECT COUNT(*) FROM reservations WHERE unit_id = $1) AS reservations,
+      (SELECT COUNT(*) FROM statement_units WHERE unit_id = $1) + (SELECT COUNT(*) FROM statement_lines WHERE unit_id = $1) AS statements,
+      (SELECT COUNT(*) FROM expenses WHERE unit_id = $1) AS expenses,
+      (SELECT COUNT(*) FROM owner_contracts WHERE unit_id = $1) + (SELECT COUNT(*) FROM units WHERE id = $1 AND contract_id IS NOT NULL) AS contracts,
+      (SELECT COUNT(*) FROM tasks WHERE unit_id = $1) + (SELECT COUNT(*) FROM maintenance_issues WHERE unit_id = $1) AS jobs,
+      (SELECT COUNT(*) FROM owner_adjustments WHERE unit_id = $1) AS adjustments
+      ${lettings ? ', (SELECT COUNT(*) FROM unit_lettings WHERE unit_id = $1) AS lettings' : ''}`, id);
+  const label = `${u.building} ${u.unit_code || u.unit_number}`;
+  const found = ([
+    ['HAS_SUB_UNITS', 'sub_units', 'sub-unit'], ['HAS_RESERVATIONS', 'reservations', 'reservation'], ['HAS_STATEMENTS', 'statements', 'owner statement line'],
+    ['HAS_EXPENSES', 'expenses', 'expense'], ['HAS_CONTRACT', 'contracts', 'contract'], ['HAS_JOBS', 'jobs', 'cleaning or maintenance job'],
+    ['HAS_ADJUSTMENTS', 'adjustments', 'owner credit or charge'], ['HAS_LETTINGS', 'lettings', 'Agent-to-let record'],
+  ] as const).map(([code, key, what]) => ({ code: code as string, n: Number(c?.[key] ?? 0), what: what as string })).filter(f => f.n > 0);
+  if (u.channex_property_id) found.push({ code: 'CHANNEL_LINKED', n: 1, what: 'channel connection' });
+  if (found.length) {
+    const list = found.map(f => `${f.n} ${f.what}${f.n === 1 ? '' : 's'}`).join(', ');
+    return fail(found[0].code, `${label} has ${list}, so it cannot be deleted. Set its state to Blocked to take it out of use instead.`, 409);
+  }
+
+  const docs = await all<{ storage_key: string }>(env, 'SELECT storage_key FROM documents WHERE unit_id = ?', id);
+  const before = await snapshot(env, id);
+  await run(env, 'DELETE FROM units WHERE id = ?', id);
+  // Files are removed after the record; a storage hiccup leaves an orphan file, never a half-deleted unit.
+  if (env.MEDIA) for (const d of docs) await env.MEDIA.delete(d.storage_key).catch(() => {});
+  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'unit.delete', entityTable: 'units', entityId: id, before: { ...before, label, files: docs.length } });
+  return json({ ok: true });
+};

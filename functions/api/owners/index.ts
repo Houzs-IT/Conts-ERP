@@ -3,7 +3,7 @@ import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/d
 import { requireSession } from '../../_lib/auth';
 import { MASTER_ROLES } from '../../_lib/properties';
 import { todayMyt } from '../../_lib/ops';
-import { loadInputs, computeMonth, statementSettings, type Query, type UnitRow } from '../../_lib/ownerStatement';
+import { loadInputs, withYearToDate, computeMonth, statementSettings, type Query, type UnitRow } from '../../_lib/ownerStatement';
 import { contractView } from '../../_lib/unitContract';
 import { DEDUCTION_WORDS } from '../../_lib/unitCosts';
 import { monthEndExclusive } from '../../_lib/revenue';
@@ -42,7 +42,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     ownerDetailsReady(env),
     portalStates(env, owners),
   ]);
-  const months = new Map(computeMonth(month, inputs, settings, 'dated').map(m => [m.unitId, m]));
+  const months = new Map(computeMonth(month, await withYearToDate(q, inputs, month, settings), settings, 'dated').map(m => [m.unitId, m]));
   const statementOf = new Map(statements.map(s => [s.owner_id, s]));
   const unitsOf = new Map<string, UnitRow[]>();
   for (const u of inputs.units) { const l = unitsOf.get(u.owner_id); if (l) l.push(u); else unitsOf.set(u.owner_id, [u]); }
