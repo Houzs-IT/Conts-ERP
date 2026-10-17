@@ -24,8 +24,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
       SELECT su.*, u.unit_number, u.package, p.name AS property_name FROM statement_units su JOIN units u ON u.id = su.unit_id JOIN properties p ON p.id = u.property_id
       WHERE su.statement_id = ? ORDER BY p.name, u.unit_number`, id),
     all<any>(env, `
-      SELECT l.*, u.unit_number, p.name AS property_name, r.check_in, r.check_out, r.channel, r.external_ref
+      SELECT l.*, u.unit_number, p.name AS property_name, r.check_in, r.check_out, r.channel, r.external_ref, d.id AS receipt_id, d.file_name AS receipt_name
       FROM statement_lines l LEFT JOIN units u ON u.id = l.unit_id LEFT JOIN properties p ON p.id = u.property_id LEFT JOIN reservations r ON r.id = l.reservation_id
+      LEFT JOIN expenses e ON e.id = l.expense_id LEFT JOIN documents d ON d.id = e.receipt_document_id
       WHERE l.statement_id = ? ORDER BY l.sort_order, l.occurred_on`, id),
     one<any>(env, 'SELECT id, state, amount, paid_at, failure_reason FROM payouts WHERE statement_id = ? ORDER BY created_at DESC LIMIT 1', id),
   ]);
@@ -49,6 +50,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
         id: l.id, unitId: l.unit_id, unitLabel: l.property_name ? `${l.property_name} ${l.unit_number}` : null, type: l.line_type, category: l.category,
         description: l.description, occurredOn: l.occurred_on, amount: l.amount, quantity: l.quantity === null ? null : Number(l.quantity), reference: l.reference,
         reservationId: l.reservation_id, expenseId: l.expense_id, adjustmentId: l.adjustment_id,
+        receipt: l.receipt_id ? { id: l.receipt_id, name: l.receipt_name } : null,
         booking: l.reservation_id ? { checkIn: l.check_in, checkOut: l.check_out, channel: l.channel, ref: l.external_ref } : null,
       })),
     },

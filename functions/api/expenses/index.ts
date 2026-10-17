@@ -4,9 +4,11 @@ import { isIsoDate } from '../../_lib/validate';
 import { resolveUnit } from '../../_lib/ops';
 import { EXPENSE_CATEGORIES, CHARGE_TO, isPeriodLocked, expenseCategoryLabel, expenseDayLabel } from '../../_lib/expenses';
 import { approvalSettings, approvalsEnabled, stage } from '../../_lib/approvals';
+import { receiptRequired, RECEIPT_REQUIRED } from '../../../src/lib/receipts';
 
 /** POST /api/expenses { unitId | unitNumber (+propertyName), category, amount, incurredOn, description, reference, chargeTo, receiptDocumentId }
- *  Every deduction needs a category, an amount and a date: that is what makes an owner statement explainable. */
+ *  Every deduction needs a category, an amount and a date: that is what makes an owner statement explainable. A bill
+ *  the owner pays also needs its receipt (src/lib/receipts.ts). */
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
@@ -27,6 +29,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!unit) return fail('NOT_FOUND', 'That unit does not exist.', 404, { unitId: 'Pick a unit that exists.' });
   if (await isPeriodLocked(env, unit.id, b.incurredOn)) return fail('PERIOD_LOCKED', 'That month\'s owner statement is already final, so nothing can be added to it.', 409, { incurredOn: 'This period is locked.' });
 
+  if (!b.receiptDocumentId && receiptRequired(b.category, b.chargeTo)) return fail('RECEIPT_REQUIRED', RECEIPT_REQUIRED, 422, { receipt: RECEIPT_REQUIRED });
   if (b.receiptDocumentId && !(await one(env, "SELECT 1 AS x FROM documents WHERE id = ? AND kind = 'receipt'", b.receiptDocumentId))) {
     return fail('VALIDATION', 'That receipt was not found. Upload it again.', 422, { receipt: 'Upload the receipt again.' });
   }

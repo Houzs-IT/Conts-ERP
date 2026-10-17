@@ -19,7 +19,8 @@ import { sizeLine } from '../lib/unitSize';
 interface Job {
   id: string; unitId: string; kind: string; state: string; unit: { unitNumber: string; propertyName: string; size?: string | null; layout?: string | null }; team?: string[]; buildingId: string;
   addressLine: string; accessInstruction: string | null; work: string; instructions: string | null; day: string; startedAt: string | null; completedAt: string | null; readiness: string; done: boolean;
-  photoCount: number; checklist: { done: number; total: number }; guestOut: boolean;
+  photoCount: number; checklist: { done: number; total: number }; guestOut: boolean; guestLeftAuto?: boolean;
+  external?: { address: string; clientName: string | null; clientPhone: string | null } | null;
   previous: { guestName: string; checkOutTime: string; state: string } | null;
   next: { guestName: string; checkInTime: string; checkInAt: string } | null;
 }
@@ -40,7 +41,7 @@ export default function FieldTodayPage() {
     // In each building: what is still to do first, the one the next guest reaches soonest at the top.
     const by = (j: Job) => `${j.done ? 1 : 0}${j.next?.checkInAt ?? '9'}${j.unit.unitNumber}`;
     for (const g of m.values()) g.jobs.sort((a, b) => by(a).localeCompare(by(b)));
-    return [...m.entries()].sort((a, b) => a[1].name.localeCompare(b[1].name));
+    return [...m.entries()].sort((a, b) => (a[0] === 'external' ? 1 : 0) - (b[0] === 'external' ? 1 : 0) || a[1].name.localeCompare(b[1].name));
   }, [jobs]);
   const left = jobs.filter(j => !j.done).length;
 
@@ -96,10 +97,15 @@ function JobCard({ job: j, now, open, onToggle, onChanged }: { job: Job; now: nu
             {j.team && j.team.length > 0 && <span className="text-ink">With {j.team.join(', ')}</span>}
           </div>
         )}
+        {j.external ? (
+          <div className="rounded-control bg-muted px-2.5 py-2 text-copy"><span className="block text-meta text-muted-ink">External job</span><b>{j.external.address}</b>{j.external.clientName ? ` · ${j.external.clientName}` : ''}</div>
+        ) : (
         <div className="grid grid-cols-2 gap-2 text-copy">
-          <div className="rounded-control bg-muted px-2.5 py-2"><span className="block text-meta text-muted-ink">Leaving</span>{j.previous ? <><b>{j.previous.checkOutTime}</b> {j.previous.guestName}</> : <span className="text-muted-ink">No departing guest</span>}</div>
+          <div className="rounded-control bg-muted px-2.5 py-2"><span className="block text-meta text-muted-ink">Leaving</span>{j.previous ? <><b>{j.previous.checkOutTime}</b> {j.previous.guestName}</> : <span className="text-muted-ink">No departing guest</span>}
+            {j.guestOut && j.guestLeftAuto && <span className="block text-meta text-gold-ink">Out at checkout time</span>}</div>
           <div className="rounded-control bg-gold-tint px-2.5 py-2"><span className="block text-meta text-muted-ink">Arriving</span>{j.next ? <><b>{j.next.checkInTime}</b> {j.next.guestName}</> : <span className="text-muted-ink">No check-in</span>}</div>
         </div>
+        )}
         {!j.done && (
           <div className="flex items-center gap-2 flex-wrap text-copy">
             {j.next ? <><span>Finish by <b className="tabular-nums">{j.next.checkInTime}</b></span><span className="text-muted-ink">·</span><span><TimeLeft at={j.next.checkInAt} now={now} />{Date.parse(j.next.checkInAt) > now ? ' left' : ''}</span></>
@@ -131,7 +137,7 @@ function JobCard({ job: j, now, open, onToggle, onChanged }: { job: Job; now: nu
               : <Skeleton height={84} />}
           </section>
 
-          <Button size="touch" variant="secondary" icon={<Icon name="TriangleAlert" size="sm" />} onClick={() => setDamage(true)}>Report damage</Button>
+          {!j.external && <Button size="touch" variant="secondary" icon={<Icon name="TriangleAlert" size="sm" />} onClick={() => setDamage(true)}>Report damage</Button>}
           {!j.done && (
             <Button size="touch" variant="primary" loading={busy === 'done'} disabled={files === 0} disabledReason="Add at least one photo or video first."
               onClick={() => void act('done', () => api.post(`/tasks/${j.id}/complete`, { photoIds: [] }), `${j.unit.unitNumber} done. Thank you.`)}>

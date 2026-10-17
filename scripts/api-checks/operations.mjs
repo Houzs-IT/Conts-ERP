@@ -21,7 +21,7 @@ if (open) {
 }
 r = await call('PUT', '/api/housekeeping/rules', { rule: 'building' }); check('rule set', r.status === 200, r.text);
 r = await call('PUT', '/api/housekeeping/rules', { rule: 'bogus' }); check('rule bad 422', r.status === 422, r.text);
-r = await call('POST', '/api/housekeeping/auto-assign', { rule: 'building' }); check('auto-assign', r.status === 200 && typeof r.json.assigned === 'number', r.text);
+// Auto-assign was switched off (staff comment sheet, 16 Oct 2026): cleans are assigned by building or one by one.
+r = await call('POST', '/api/housekeeping/auto-assign', { rule: 'building' }); check('auto-assign is gone', r.status === 404 || r.status === 405, r.text.slice(0, 100));
 r = await call('GET', '/api/tasks', undefined, 'housekeeper'); check('housekeeper sees only own tasks', r.status === 200 && r.json.data.every(x => x.assigneeId === NURUL), r.text.slice(0, 200));
-r = await call('POST', '/api/housekeeping/auto-assign', {}, 'housekeeper'); check('housekeeper cannot auto-assign 403', r.status === 403, r.text);
 done();

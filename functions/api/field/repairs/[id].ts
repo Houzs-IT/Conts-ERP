@@ -1,6 +1,6 @@
 import { type Env, all, one, json, fail } from '../../../_lib/db';
 import { requireSession, isFieldRole } from '../../../_lib/auth';
-import { mineSql, hasAssigneeUser, UNASSIGNED_SQL } from '../../../_lib/maintenance';
+import { mineSql, hasAssigneeUser, UNASSIGNED_SQL, hasJobType, fieldVisibleSql } from '../../../_lib/maintenance';
 import { fieldRepairs } from '../../../_lib/fieldRepairs';
 import { parkingFor } from '../../../_lib/unitPurpose';
 
@@ -14,12 +14,13 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
   const id = String(params.id);
 
   const byId = await hasAssigneeUser(env);
-  const flags = await one<{ mine: boolean; unassigned: boolean; reported: boolean }>(env, `
-    SELECT ${mineSql(byId)} AS mine, (${UNASSIGNED_SQL} AND m.state IN ('open','reopened')) AS unassigned, (m.reported_by IS NOT DISTINCT FROM ?) AS reported
+  const flags = await one<{ mine: boolean; unassigned: boolean; reported: boolean; visible: boolean }>(env, `
+    SELECT ${fieldVisibleSql(await hasJobType(env))} AS visible, ${mineSql(byId)} AS mine, (${UNASSIGNED_SQL} AND m.state IN ('open','reopened')) AS unassigned, (m.reported_by IS NOT DISTINCT FROM ?) AS reported
     FROM maintenance_issues m WHERE m.id = ?`, ...(byId ? [session.userId, session.userId] : [session.userId]), session.userId, id);
   if (!flags) return fail('NOT_FOUND', 'That job no longer exists.', 404);
   const field = isFieldRole(session.role);
   const mayPick = session.role === 'technician' && !!flags.unassigned;
+  if (field && !flags.visible && !flags.reported) return fail('FORBIDDEN', 'That job is waiting for the owner. The office will send it when it can go ahead.', 403);
   if (field && !flags.mine && !mayPick && !flags.reported) return fail('FORBIDDEN', 'That job is assigned to someone else.', 403);
 
   const [job] = await fieldRepairs(env, 'm.id = ?', [id]);

@@ -11,7 +11,7 @@ import { useApi } from '../../lib/useApi';
 import { useSession } from '../../lib/session';
 import { UnitPicker } from '../UnitPicker';
 import type { RosterUnit } from '../../lib/useUnitRoster';
-import { DateTimeField } from '../inputs';
+import { DateField, DateTimeField } from '../inputs';
 
 /* ---------- small pieces shared by Cleaning, Maintenance, Today and the field app ---------- */
 
@@ -235,7 +235,7 @@ export function MaintenanceJobForm({ unit, units, taskId, onClose, onDone }: {
 }) {
   const { user } = useSession();
   const office = !!user && !FIELD.includes(user.role) && user.role !== 'owner';
-  const [f, setF] = useState({ unitId: unit?.id ?? '', skuId: '', title: '', category: '', urgency: 'normal' as 'normal' | 'urgent', detail: '', assignee: '', from: '', to: '', windowNote: '' });
+  const [f, setF] = useState({ unitId: unit?.id ?? '', skuId: '', title: '', category: '', jobType: 'normal' as 'normal' | 'urgent' | 'pass_key', severity: 'minor' as 'minor' | 'major', dueOn: '', needsParts: false, detail: '', assignee: '', from: '', to: '', windowNote: '' });
   const [busy, setBusy] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<{ unitId?: string; title?: string; category?: string; window?: string; form?: string }>({});
@@ -263,7 +263,9 @@ export function MaintenanceJobForm({ unit, units, taskId, onClose, onDone }: {
     let id: string, overlaps = 0;
     try {
       const r = await api.post<{ id: string; overlaps?: unknown[] }>('/maintenance/issues', {
-        unitId: f.unitId, title: f.title.trim(), detail: f.detail.trim() || undefined, category: f.category, urgency: f.urgency,
+        unitId: f.unitId, title: f.title.trim(), detail: f.detail.trim() || undefined, category: f.category,
+        // Job type (staff comment sheet): the office has Pass key too; a cleaner reporting damage says Normal or Urgent.
+        ...(office ? { jobType: f.jobType, severity: f.severity, ...(f.dueOn ? { dueOn: f.dueOn } : {}), ...(f.needsParts ? { needsParts: true } : {}) } : { urgency: f.jobType === 'urgent' ? 'urgent' : 'normal' }),
         reportSource: fromClean ? 'cleaner' : 'staff', sourceTaskId: taskId, source: 'web',
         ...(office && f.skuId && f.skuId !== 'other' ? { skuId: f.skuId } : {}),
         ...(office && f.assignee.trim() ? { assigneeName: f.assignee.trim() } : {}),
@@ -309,12 +311,31 @@ export function MaintenanceJobForm({ unit, units, taskId, onClose, onDone }: {
             {Object.entries(CATEGORY).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
           </select>
         </FormRow>
-        <FormRow label="Urgency">
-          <select className={INPUT} value={f.urgency} onChange={e => set({ urgency: e.target.value as 'normal' | 'urgent' })}>
-            <option value="normal">Normal</option><option value="urgent">Urgent (affects the next guest)</option>
+        <FormRow label={office ? 'Job type' : 'Urgency'}>
+          <select className={INPUT} value={f.jobType} onChange={e => set({ jobType: e.target.value as 'normal' | 'urgent' | 'pass_key' })}>
+            <option value="normal">Normal{office ? ' (done in date order)' : ''}</option><option value="urgent">Urgent (affects the next guest)</option>
+            {office && <option value="pass_key">Pass key (hand over or collect a key)</option>}
           </select>
         </FormRow>
       </div>
+      {office && (
+        <div className="grid grid-cols-2 gap-3">
+          <FormRow label="Severity" hint="Management's approval rules can ask the owner first for major jobs.">
+            <select className={INPUT} value={f.severity} onChange={e => set({ severity: e.target.value as 'minor' | 'major' })}>
+              <option value="minor">Minor</option><option value="major">Major</option>
+            </select>
+          </FormRow>
+          <FormRow label="Due (optional)" hint="Normal jobs are worked one by one in this order.">
+            <DateField aria-label="Due date" className={INPUT} value={f.dueOn} onChange={v => set({ dueOn: v })} />
+          </FormRow>
+        </div>
+      )}
+      {office && (
+        <label className="flex items-center gap-2 text-copy cursor-pointer">
+          <input type="checkbox" className="w-4 h-4 accent-black" checked={f.needsParts} onChange={e => set({ needsParts: e.target.checked })} />
+          Needs parts or stock (tick Parts arrived on the job when they come)
+        </label>
+      )}
       <FormRow label="What is wrong" error={error.title}>
         <input className={INPUT} value={f.title} onChange={e => { set({ title: e.target.value }); setError(x => ({ ...x, title: undefined })); }} placeholder="e.g. Aircon not cooling, guest complained" maxLength={160} />
       </FormRow>
