@@ -113,6 +113,21 @@ export function ServicePrices({ domain, above, onChanged }: { domain?: Domain; a
         id={`service-prices${domain ? `.${domain}` : ''}`} urlPrefix="sp." columns={columns} rows={!d ? null : items} rowKey={i => i.id}
         pageSize={0} noun={['item', 'items']} exportName="service-prices" defaultSort="code:asc"
         rowTone={i => (i.active ? null : 'muted')} onRowClick={i => setOpenId(i.id)}
+        renderCard={i => {
+          const ls = layoutsOf(i, layouts);
+          const owner = range(ls.map(l => i.current[l]?.ownerPrice ?? null)), cost = range(ls.map(l => i.current[l]?.internalCost ?? null));
+          const marg = range(ls.map(l => margin(i.current[l]?.ownerPrice ?? null, i.current[l]?.internalCost ?? null)));
+          return (
+            <span className="flex flex-col gap-0.5 min-w-0" data-item={i.code}>
+              <span className="flex items-baseline gap-2">
+                <span className="text-copy font-semibold flex-1 min-w-0 truncate">{i.name}</span>
+                {owner ? <span className="text-copy font-semibold tabular-nums">{owner}</span> : <span className="text-warning text-meta">Not set</span>}
+              </span>
+              <span className="text-meta text-muted-ink">{i.code} · {SUB_LABEL[i.category] ?? i.category} · {UOM_LABEL[i.uom] ?? i.uom}{i.byLayout ? ' · by layout' : ''}</span>
+              <span className="text-meta text-muted-ink tabular-nums">Internal cost {cost ?? 'not set'}{marg ? ` · margin ${marg}` : ''}{i.next ? ` · changes ${dayText(i.next.effectiveFrom)}` : ''}{i.active ? '' : ' · retired'}</span>
+            </span>
+          );
+        }}
         filtered={!showRetired && (d?.items.some(i => !i.active) ?? false)} onClearFilters={() => setShowRetired(true)}
         toolbar={<div className="flex items-center gap-3 flex-wrap">
           {!domain && <Select label="Type" value={type} onChange={v => setType(v as 'all' | Domain)} options={[{ value: 'all', label: 'Cleaning and maintenance' }, { value: 'cleaning', label: 'Cleaning' }, { value: 'maintenance', label: 'Maintenance' }]} />}
@@ -123,8 +138,8 @@ export function ServicePrices({ domain, above, onChanged }: { domain?: Domain; a
             <input type="checkbox" checked={showRetired} onChange={e => setShowRetired(e.target.checked)} />
             Show retired
           </label>
-          <Button size="sm" variant="secondary" icon={<Icon name="Download" size="sm" />} onClick={() => { downloadFile('/operations/service-prices/export', { domain }).catch(e => toast({ tone: 'critical', title: 'Not downloaded.', body: errorMessage(e) })); }}>Export</Button>
-          {d?.mayEdit && <Button size="sm" variant="secondary" icon={<Icon name="Upload" size="sm" />} onClick={() => setImporting(true)}>Import</Button>}
+          <Button size="sm" variant="secondary" icon={<Icon name="Download" size="sm" />} onClick={() => { downloadFile('/operations/service-prices/export', { domain }).catch(e => toast({ tone: 'critical', title: 'Not downloaded.', body: errorMessage(e) })); }}>Price sheet</Button>
+          {d?.mayEdit && <Button size="sm" variant="secondary" icon={<Icon name="Upload" size="sm" />} onClick={() => setImporting(true)}>Import prices</Button>}
           {d?.mayEdit && <Button size="sm" variant="primary" onClick={() => setCreating(true)}>New item</Button>}
         </>}
         empty={{ title: 'No service items yet', icon: 'Tag', body: d?.mayEdit ? 'Add an item, or import a spreadsheet of items and prices.' : 'Items appear here once operations adds them.',
@@ -446,9 +461,9 @@ function ImportModal({ domain, mayPrice, today, onClose, onDone }: { domain?: Do
 
   const nothing = plan && plan.ok && !plan.created && !plan.updated && !plan.priceChanges;
   return (
-    <Modal title="Import service prices" sub="Fill the Export file in Excel (or start from it), then bring it back here. New codes become items; changed prices start on the date below." onClose={onClose} width={640}
+    <Modal title="Import service prices" sub="Download the price sheet, fill it in Excel, then bring it back here. New codes become items; changed prices start on the date below." onClose={onClose} width={640}
       footer={<>
-        <Button size="sm" variant="secondary" icon={<Icon name="Download" size="sm" />} onClick={() => { downloadFile('/operations/service-prices/export', { domain }).catch(e => toast({ tone: 'critical', title: 'Not downloaded.', body: errorMessage(e) })); }}>Download the current list</Button>
+        <Button size="sm" variant="secondary" icon={<Icon name="Download" size="sm" />} onClick={() => { downloadFile('/operations/service-prices/export', { domain }).catch(e => toast({ tone: 'critical', title: 'Not downloaded.', body: errorMessage(e) })); }}>Download the price sheet</Button>
         <div className="flex-1" />
         <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
         <Button size="sm" variant="primary" loading={busy} disabled={!plan?.ok || !!nothing} disabledReason={!rows ? 'Pick a file first.' : nothing ? 'The file changes nothing.' : 'Fix the rows listed first.'} onClick={() => void send(false)}>Import</Button>
