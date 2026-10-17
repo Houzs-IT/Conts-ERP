@@ -69,10 +69,13 @@ export async function chargeClean(env: Env, session: Session, task: { id: string
     // The clean's own amount (typed on the job) or the price table's, kept on the job as charged; none set: the old pricing.
     let set: { amount: number; source: 'job' | 'unit' | 'table' } | null = null;
     if (await hasCleanPrices(env)) {
-      const own = await one<{ amount: number | null; cleaner_pay: number | null }>(env, 'SELECT amount, cleaner_pay FROM tasks WHERE id = ?', task.id);
-      const p = await cleanAmounts(env, task.unit_id, task.kind);
+      // Priced on the clean's own day, so a price change dated later never reaches it.
+      const own = await one<{ amount: number | null; cleaner_pay: number | null; day_at: string | null }>(env,
+        'SELECT amount, cleaner_pay, COALESCE(scheduled_for, due_at, created_at) AS day_at FROM tasks WHERE id = ?', task.id);
+      const p = await cleanAmounts(env, task.unit_id, task.kind, own?.day_at);
       const amount = own?.amount ?? p.external, pay = own?.cleaner_pay ?? p.internal;
-      await run(env, 'UPDATE tasks SET amount = ?, cleaner_pay = ? WHERE id = ?', amount, pay, task.id);
+      if (p.itemId !== undefined) await run(env, 'UPDATE tasks SET amount = ?, cleaner_pay = ?, service_item_id = COALESCE(service_item_id, ?) WHERE id = ?', amount, pay, p.itemId, task.id);
+      else await run(env, 'UPDATE tasks SET amount = ?, cleaner_pay = ? WHERE id = ?', amount, pay, task.id);
       if (amount != null) set = { amount: Number(amount), source: own?.amount != null ? 'job' : p.source ?? 'table' };
     }
     const existing = await one<{ amount: number }>(env, `SELECT amount FROM expenses WHERE task_id = ? LIMIT 1`, task.id);

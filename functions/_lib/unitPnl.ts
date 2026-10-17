@@ -3,6 +3,8 @@ import { monthEndExclusive } from './revenue';
 import { loadInputs, withYearToDate, computeMonth, statementSettings, fmtPct, classifyCost, DEDUCTIONS, type Query } from './ownerStatement';
 import { unitExample } from './unitContract';
 import { DEDUCTION_WORDS } from './unitCosts';
+import { hasCleanPrices } from './cleaningPrices';
+import { hasBilling } from './maintenance';
 
 export type Item = { label: string; amount: number };
 export type PnlRow = { label: string; amount: number; type: string; items?: Item[] };
@@ -112,12 +114,38 @@ export async function unitMonthPnl(env: Env, q: Query, unitId: string, month: st
     const others: PnlRow[] = [...byPayer.entries()].map(([label, items]) => ({ label, amount: items.reduce((n, i) => n + i.amount, 0), type: 'expense', items }))
       .sort((a, b) => a.amount - b.amount);
     const othersTotal = others.reduce((n, l) => n + l.amount, 0);
+    // Cleaning and repairs the owner paid us for, against what they cost us (the cleaner's pay, the contractor), when that
+    // cost is known: the margin is The Conts' (Service prices, owner 17 Oct 2026). The owner statement is unchanged.
+    const jobs = await serviceJobs(env, unitId, from, toEx);
+    const charged = jobs.reduce((n, j) => n + j.owner, 0), cost = jobs.reduce((n, j) => n + j.internal, 0);
+    const service: PnlRow[] = jobs.length ? [
+      { label: 'Cleaning and repairs charged to the owner', amount: charged, type: 'gross', items: jobs.map(j => ({ label: `${j.label} · ${dm(j.day)}`, amount: j.owner })) },
+      { label: 'Their internal cost (cleaner pay, contractors)', amount: neg(cost), type: 'expense', items: jobs.map(j => ({ label: `${j.label} · ${dm(j.day)}`, amount: neg(j.internal) })) },
+    ] : [];
     companyPnl = [
       { label: m.terms.model === 'long_term' ? 'Operator share' : `${fmtPct(100 - (m.ownerPct ?? 0))} To Operator (management and agent)`, amount: m.operatorShare, type: 'gross' },
       ...(m.topUp ? [{ label: 'Minimum guarantee top-up paid', amount: -m.topUp, type: 'fee' }] : []),
+      ...service,
       ...others,
-      { label: "The Conts' result", amount: m.operatorShare - m.topUp + othersTotal, type: 'net' },
+      { label: "The Conts' result", amount: m.operatorShare - m.topUp + othersTotal + charged - cost, type: 'net' },
     ];
   }
   return { pnl, companyPnl };
+}
+
+/** The owner-paid cleans and repairs on a unit in [from, toEx) whose internal cost is known: what the owner was charged
+ *  (the expense) and what the job cost us (tasks.cleaner_pay, maintenance_issues.contractor_amount). */
+async function serviceJobs(env: Env, unitId: string, from: string, toEx: string): Promise<{ label: string; day: string; owner: number; internal: number }[]> {
+  const [cleans, repairs] = await Promise.all([
+    hasCleanPrices(env).then(ok => !ok ? [] : all<any>(env, `
+      SELECT e.description, e.incurred_on, e.amount, t.cleaner_pay FROM expenses e JOIN tasks t ON t.id = e.task_id
+      WHERE e.unit_id = ? AND e.charge_to = 'owner' AND e.incurred_on >= ? AND e.incurred_on < ? AND t.cleaner_pay IS NOT NULL ORDER BY e.incurred_on`, unitId, from, toEx)),
+    hasBilling(env).then(ok => !ok ? [] : all<any>(env, `
+      SELECT m.title AS description, min(e.incurred_on) AS incurred_on, SUM(e.amount) AS amount, m.contractor_amount AS cleaner_pay
+      FROM expenses e JOIN maintenance_issues m ON m.id = e.maintenance_id
+      WHERE e.unit_id = ? AND e.charge_to = 'owner' AND e.incurred_on >= ? AND e.incurred_on < ? AND m.contractor_amount IS NOT NULL
+      GROUP BY m.id, m.title, m.contractor_amount ORDER BY min(e.incurred_on)`, unitId, from, toEx)),
+  ]);
+  return [...cleans, ...repairs].map(r => ({ label: r.description || 'Service', day: String(r.incurred_on).slice(0, 10), owner: Number(r.amount), internal: Number(r.cleaner_pay) }))
+    .sort((a, b) => a.day.localeCompare(b.day));
 }

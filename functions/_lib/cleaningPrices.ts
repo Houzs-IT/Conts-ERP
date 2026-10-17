@@ -1,5 +1,6 @@
 import { type Env, all, one } from './db';
 import { hasColumn } from './auth';
+import { hasServicePrices, serviceBook, mytDay } from './servicePrices';
 
 /** Cleaning prices (owner, 17 Oct 2026): clean type x unit layout, each with the internal cost (what the cleaner is paid)
  *  and the external charge (what is charged for the clean: the cleaning fee on the unit's costs). A unit may override
@@ -18,12 +19,21 @@ export function layoutKey(layoutType: unknown, bedrooms: unknown): string {
   return n <= 0 ? 'studio' : n >= 4 ? '4_plus_bedroom' : `${n}_bedroom`;
 }
 
-export interface CleanAmounts { internal: number | null; external: number | null; source: 'unit' | 'table' | null }
+export interface CleanAmounts { internal: number | null; external: number | null; source: 'unit' | 'table' | null; itemId?: string | null }
 const priceKind = (kind: string) => ((PRICE_KINDS as readonly string[]).includes(kind) ? kind : 'turnover');
 
-/** The amounts for cleans on these units, keyed `${unitId}:${kind}`. A unit's own figure wins, field by field. */
-export async function priceBook(env: Env, unitIds: string[]): Promise<(unitId: string, kind: string, layout: string) => CleanAmounts> {
+/** The amounts for cleans on these units, on a day (default today). From the service prices (0127): the cleaning item
+ *  for the clean type, its price in force that day for the unit's layout, a unit's own figure winning field by field.
+ *  Before 0127, the old price table and unit overrides. */
+export async function priceBook(env: Env, unitIds: string[]): Promise<(unitId: string, kind: string, layout: string, day?: string | null) => CleanAmounts> {
   if (!(await hasCleanPrices(env))) return () => ({ internal: null, external: null, source: null });
+  if (await hasServicePrices(env)) {
+    const book = await serviceBook(env, unitIds);
+    return (unitId, kind, layout, day) => {
+      const a = book.amounts(book.itemForKind(priceKind(kind))?.id ?? null, unitId, layout, mytDay(day));
+      return { internal: a.internal, external: a.owner, source: a.source, itemId: a.itemId };
+    };
+  }
   const table = await all<{ kind: string; layout: string; internal_cost: number | null; external_charge: number | null }>(env,
     'SELECT kind, layout, internal_cost, external_charge FROM cleaning_prices');
   const ids = [...new Set(unitIds.filter(Boolean))];
@@ -40,10 +50,10 @@ export async function priceBook(env: Env, unitIds: string[]): Promise<(unitId: s
   };
 }
 
-/** The amounts for one clean on one unit. */
-export async function cleanAmounts(env: Env, unitId: string, kind: string): Promise<CleanAmounts> {
+/** The amounts for one clean on one unit, on the clean's day (default today). */
+export async function cleanAmounts(env: Env, unitId: string, kind: string, day?: string | null): Promise<CleanAmounts> {
   const u = await one<{ layout: string | null; bedrooms: number | null }>(env,
     `SELECT ${(await hasColumn(env, 'units', 'layout_type').catch(() => false)) ? 'layout_type' : 'NULL::text'} AS layout, bedrooms FROM units WHERE id = ?`, unitId);
   if (!u) return { internal: null, external: null, source: null };
-  return (await priceBook(env, [unitId]))(unitId, kind, layoutKey(u.layout, u.bedrooms));
+  return (await priceBook(env, [unitId]))(unitId, kind, layoutKey(u.layout, u.bedrooms), day);
 }

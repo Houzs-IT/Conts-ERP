@@ -33,7 +33,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
   const creds = await all<any>(env, `SELECT id, kind, label, instruction, secret FROM access_credentials WHERE unit_id = ? ORDER BY label`, t.unit_id);
   const charged = await one<{ amount: number }>(env, `SELECT amount FROM expenses WHERE task_id = ? LIMIT 1`, id);
   // The job's own amount, else the price table's, else (price not set) the old pricing. An external job has only its own.
-  const table = t.unit_id && priced ? await cleanAmounts(env, t.unit_id, t.kind) : null;
+  const table = t.unit_id && priced ? await cleanAmounts(env, t.unit_id, t.kind, t.day_at) : null;
   const own = t.amount ?? table?.external ?? null;
   const price = own != null ? { amount: Number(own), source: t.amount != null ? 'job' : table?.source ?? 'table' }
     : t.unit_id ? await cleanPrice(env, t.unit_id, t.kind) : { amount: 0, source: 'job' };
