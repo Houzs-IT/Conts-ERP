@@ -17,7 +17,10 @@ import { StaleBanner } from '../components/DataState';
 import { RecordSkeleton, TreeSkeleton } from './units/UnitsSkeleton';
 import { UnitList } from './units/UnitList';
 import { useApi } from '../lib/useApi';
-import { api, notifyFailure, downloadFile } from '../lib/api';
+import { api, notifyFailure, downloadFile, ApiFailure, errorMessage } from '../lib/api';
+import { useConfirm } from '../components/ConfirmDialog';
+import { PurposeBadge, CodeBadge } from './units/UnitExtras';
+import LettingTab from './units/LettingTab';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { rm, dateRange, date, monthLabel, plural, titleCase } from '../lib/format';
@@ -67,7 +70,7 @@ const READINESS_OPTIONS: UnitReadiness[] = ['ready', 'occupied', 'cleaning', 'di
 const TABS = [
   ['overview', 'Overview', 'Overview'], ['details', 'Details', 'Details and owner'], ['contract', 'Contract', 'Contract and documents'],
   ['access', 'Access', 'Access and keys'], ['reservations', 'Reservations', 'Reservations'], ['operations', 'Jobs', 'Cleaning, maintenance and fit-out'],
-  ['financials', 'Financials', 'Financials'], ['activity', 'History', 'History of changes'],
+  ['financials', 'Financials', 'Financials'], ['letting', 'Agent to let', 'Agent to let: finding a long-term tenant for the owner'], ['activity', 'History', 'History of changes'],
 ] as const;
 type Tab = typeof TABS[number][0];
 /** The Reservations and Jobs tabs' filters and paging in the address. */
@@ -93,6 +96,7 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
   const [modal, setModal] = useState<Modal>(null);
   const [treeOpen, setTreeOpen] = useState(!unitId);
   const [saving, setSaving] = useState(false);
+  const [dialog, ask] = useConfirm();
   // The open tab lives in the address (?tab=), so a link or a reload lands on the same tab.
   const tabParam = params.get('tab');
   const tab: Tab = isTab(tabParam) ? tabParam : 'overview';
@@ -136,7 +140,7 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
   const dirty = !!form && !!edits[form.id];
 
   // Every write waits for the server; a refused save leaves the edits in place to correct and save again.
-  async function save() {
+  async function save(endContract = false): Promise<void> {
     if (!form) return;
     const before = original.find(u => u.id === form.id);
     // The contract is saved on its own tab (PUT /units/:id/contract); never sent from here, so an older copy in
@@ -144,19 +148,61 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
     // Owner and payout details belong to the owner and are edited on the owner's page; the old monthly costs list and
     // the cleaning price are saved on the Financials tab. None of them is sent from this form.
     const { baseRate, contract: _contract, revenueModel: _model, termsLabel: _terms, ownerName: _on, ic: _ic, bankName: _bn, bankAccount: _ba,
-      accountHolder: _ah, expenses: _ex, cleaningPrice: _cp, deepCleaningPrice: _dcp, ownerId, ...rest } = form;
+      accountHolder: _ah, expenses: _ex, cleaningPrice: _cp, deepCleaningPrice: _dcp, bedsLabel: _bl, parkingLabel: _pl, contractCode: _cc, ownerId, ...rest } = form;
     // An empty layout takes the one proposed from the bedrooms, as the form shows it.
-    const body = { ...rest, layoutType: rest.layoutType ?? layoutFromBedrooms(rest.bedrooms), ...(ownerId && ownerId !== before?.ownerId ? { ownerId } : {}) };
+    // The purpose, beds and bays go only when changed: a database without migration 0125 never sees them.
+    const changed = (k: 'purpose' | 'usedBy' | 'beds' | 'parkingBays') => JSON.stringify(rest[k] ?? null) !== JSON.stringify(before?.[k] ?? null);
+    const { purpose, usedBy, beds, parkingBays, ...plain } = rest;
+    const body = {
+      ...plain, layoutType: rest.layoutType ?? layoutFromBedrooms(rest.bedrooms), ...(ownerId && ownerId !== before?.ownerId ? { ownerId } : {}),
+      ...(changed('purpose') ? { purpose } : {}), ...(changed('usedBy') ? { usedBy: usedBy ?? null } : {}), ...(changed('beds') ? { beds } : {}),
+      ...(changed('parkingBays') ? { parkingBays: (parkingBays ?? []).map(b => ({ lotNumber: b.lotNumber, level: b.level, note: b.note })) } : {}),
+      ...(endContract ? { endContract: true } : {}),
+    };
     setSaving(true);
+    let retry = false;
     try {
       await api.patch(`/units/${form.id}`, body);
-      // The base rate has its own endpoint because changing it re-sends prices to linked channels.
-      if (baseRate !== undefined && baseRate !== before?.baseRate) await api.put('/rates', { unitId: form.id, baseRate });
+      // The base rate has its own endpoint because changing it re-sends prices to linked channels. A showroom or
+      // warehouse has no nightly price.
+      if (baseRate !== undefined && baseRate !== before?.baseRate && (purpose ?? 'rental') === 'rental') await api.put('/rates', { unitId: form.id, baseRate });
       toast({ tone: 'success', title: 'Changes saved.', body: `${form.listingName || form.unitCode} updated.` });
       setEdits(e => { const n = { ...e }; delete n[form.id]; return n; });
       reloadAll();
-    } catch (e) { notifyFailure(e); }
+    } catch (e) {
+      // A new purpose the contract does not fit: say so, and on a yes end the contract and save again.
+      if (e instanceof ApiFailure && e.code === 'CONTRACT_MISMATCH' && !endContract) {
+        retry = (await ask({ title: 'End the current contract?', body: e.message, meta: 'The ended contract stays in the contract history of the unit.',
+          confirmLabel: 'End contract and save', cancelLabel: 'Keep it', danger: true })) !== null;
+      } else notifyFailure(e);
+    }
     finally { setSaving(false); }
+    if (retry) await save(true);
+  }
+  // Delete only a unit added by mistake; anything with history is refused and offered Blocked instead.
+  async function deleteUnit() {
+    if (!form) return;
+    const name = form.unitCode || form.listingName || 'this unit';
+    if ((await ask({ title: `Delete ${name}?`, body: 'Only a unit with no reservations, statements, expenses, contracts or jobs can be deleted. It is removed for good, with its car park bays, access codes and files.',
+      confirmLabel: 'Delete unit', cancelLabel: 'Keep it', danger: true })) === null) return;
+    try {
+      await api.del(`/units/${encodeURIComponent(form.id)}`);
+      toast({ tone: 'success', title: 'Unit deleted.', body: `${name} is gone from the list.` });
+      setEdits(e => { const n = { ...e }; delete n[form.id]; return n; });
+      navigate('/properties/units');
+      reloadAll();
+    } catch (e) {
+      if (e instanceof ApiFailure && e.status === 409) {
+        const block = await ask({ title: `${name} cannot be deleted`, body: e.message, meta: 'Blocked keeps its history and stops it being used; you can set it back to Ready at any time.',
+          confirmLabel: 'Set to Blocked', cancelLabel: 'Leave it', danger: false });
+        if (block === null) return;
+        try {
+          await api.patch(`/units/${form.id}/readiness`, { readiness: 'blocked' });
+          toast({ tone: 'success', title: 'Unit blocked.', body: `${name} is out of use; its history is kept.` });
+          reloadAll();
+        } catch (err) { toast({ tone: 'critical', title: 'Not blocked.', body: errorMessage(err) }); }
+      } else toast({ tone: 'critical', title: 'Unit was not deleted.', body: errorMessage(e) });
+    }
   }
   async function addBuilding(b: Omit<Building, 'id'>) {
     try {
@@ -300,7 +346,7 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
             detail.error ? <Card><div className="p-10 text-center text-muted-ink text-copy">{detail.error}</div></Card> : <RecordSkeleton />
           ) : (
             <UnitRecord d={d} form={form} buildings={buildings} building={building} unitLabel={unitLabel}
-              tab={tab} setTab={setTab} canEdit={canEdit} dirty={dirty} saving={saving} onSave={() => void save()}
+              tab={tab} setTab={setTab} canEdit={canEdit} dirty={dirty} saving={saving} onSave={() => void save()} onDelete={() => void deleteUnit()}
               onChange={p => form && patch(form.id, p)} reload={reloadAll} reloadDetail={detail.reload}
               readiness={readiness[d.unit.id] ?? d.unit.readiness}
               setReadiness={(id, r) => setReadinessEdits(m => { const n = { ...m }; if (r) n[id] = r; else delete n[id]; return n; })} />
@@ -308,18 +354,19 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
         </div>
       </div>
       {modals}
+      {dialog}
     </div>
   );
 }
 
 interface RecordProps {
   d: UnitDetail; form: Unit | null; buildings: Building[]; building: Building | undefined; unitLabel: string;
-  tab: Tab; setTab: (t: Tab) => void; canEdit: boolean; dirty: boolean; saving: boolean; onSave: () => void;
+  tab: Tab; setTab: (t: Tab) => void; canEdit: boolean; dirty: boolean; saving: boolean; onSave: () => void; onDelete: () => void;
   onChange: (p: Partial<Unit>) => void; reload: () => void; reloadDetail: () => void;
   readiness: UnitReadiness; setReadiness: (id: string, r: UnitReadiness | null) => void;
 }
 
-function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canEdit, dirty, saving, onSave, onChange, reload, reloadDetail, readiness, setReadiness }: RecordProps) {
+function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canEdit, dirty, saving, onSave, onDelete, onChange, reload, reloadDetail, readiness, setReadiness }: RecordProps) {
   const toast = useToast();
   const { user } = useSession();
   // Matches MASTER_ROLES on the server's channex-setup / channex-connect.
@@ -334,6 +381,8 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
   const u = d.unit;
   const p = d.performance;
   const money = !!d.pnl;
+  // A showroom or warehouse is never on the channels (0125): no channel card, no nightly price, no occupancy.
+  const rental = (u.purpose ?? form?.purpose ?? 'rental') === 'rental';
   const openIssues = d.openMaintenanceCount ?? d.maintenance.filter(m => m.state !== 'resolved').length;
   // Financial sections are absent from the payload for roles without access, so that tab is not offered.
   const tabs = TABS.filter(([k]) => k !== 'financials' || money);
@@ -400,13 +449,15 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
                   options={READINESS_OPTIONS.map(r => ({ value: r, label: statusLabel('readiness', r) }))} />
               </span>
               {form?.parentUnitId && <StatusBadge tone="warning" label="Sub-unit" />}
+              <PurposeBadge purpose={u.purpose} />
+              <CodeBadge code={u.contractCode} />
               {u.revenueModel && <span title={`Income model: ${u.revenueModelLabel}. Change it on the Contract tab.`}><ModelChip model={u.revenueModel} label={u.termsLabel ?? u.revenueModelLabel} /></span>}
               {u.channels.length > 0 && (
                 <span className="inline-flex items-center gap-1.5" aria-label={`Sold on ${u.channels.map(c => CH[c].label).join(', ')}`}>
                   {u.channels.map(c => <span key={c} title={CH[c].label} className="flex"><ChannelMark ch={c} size={22} /></span>)}
                 </span>
               )}
-              {!u.isListed && <span title="This unit is not for sale on Airbnb, Booking.com or any other channel, so no reservations come in through them. Connect it under Channels on the Overview tab."><StatusBadge tone="neutral" label="Not listed on any channel" /></span>}
+              {!u.isListed && rental && <span title="This unit is not for sale on Airbnb, Booking.com or any other channel, so no reservations come in through them. Connect it under Channels on the Overview tab."><StatusBadge tone="neutral" label="Not listed on any channel" /></span>}
             </div>
           </div>
           {/* Owner names run long (several co-owners, company names); they wrap instead of running off a phone. */}
@@ -418,10 +469,10 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
         </div>
 
         <div className="grid grid-cols-3 sm:grid-cols-[repeat(auto-fit,minmax(96px,1fr))] gap-x-4 gap-y-5 pt-5 px-5 sm:px-6 pb-5 [border-top:1px_solid_var(--color-line-soft)]">
-          {[
+          {(rental ? [
             ['Occupancy', `${p.occupancy}%`], ['Avg nightly price', rm(p.adr, { cents: false })], ['Earnings per available night', rm(p.revpar, { cents: false })],
             ['Rating', p.rating != null ? p.rating.toFixed(2) : '—'], ['Open maintenance jobs', String(openIssues)],
-          ].map(([label, value]) => (
+          ] : [['Purpose', u.purpose === 'warehouse' ? 'Warehouse' : 'Showroom'], ['Car park bays', form?.parkingBays?.length ? String(form.parkingBays.length) : '—'], ['Open maintenance jobs', String(openIssues)]]).map(([label, value]) => (
             <div key={label} className="flex flex-col gap-2 min-w-0">
               <Eyebrow>{label}</Eyebrow>
               <Figure value={value} className="text-[20px] sm:text-[24px] font-medium tracking-[-0.02em] leading-none text-ink" />
@@ -458,7 +509,8 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
               </div>
             ))}
           </Card>
-          <ChannexChannelsCard unitId={u.id} linked={!!u.channexLinked} canManage={canManageChannels} onChanged={reload} />
+          {rental ? <ChannexChannelsCard unitId={u.id} linked={!!u.channexLinked} canManage={canManageChannels} onChanged={reload} />
+            : <Card><SectionTitle title="Channels" /><div className="py-4 px-5 text-copy text-muted-ink [border-top:1px_solid_var(--color-line-soft)]">A {u.purpose} unit is not connected to Airbnb, Booking.com or any other channel, and takes no reservations.</div></Card>}
           {d.pnl && (
             <Card>
               <SectionTitle title={`${periodLabel} P and L`} />
@@ -471,7 +523,8 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
       {stacked && on('details') && <h3 className="m-0 mt-2 text-heading font-semibold">Details and owner</h3>}
       {on('details') && (form ? (
         <Card>
-          <SaveBar title="Details & owner" sub="Listing name, building, owner and income model." dirty={dirty} saving={saving} canEdit={canEdit} onSave={onSave} />
+          <SaveBar title="Details & owner" sub="Listing name, purpose, layout, beds, car park, owner and income model." dirty={dirty} saving={saving} canEdit={canEdit} onSave={onSave}
+            extra={canEdit ? <Button size="sm" variant="tertiary" icon={<Icon name="Trash2" size="sm" />} onClick={onDelete}>Delete unit</Button> : undefined} />
           <DetailsForm u={form} owner={u.owner} buildings={buildings} money={money} canEdit={canEdit} onChange={onChange} onOpenContract={() => setTab('contract')} />
         </Card>
       ) : needsForm)}
@@ -505,6 +558,9 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
             deepCleaningPrice={form?.deepCleaningPrice} legacyCosts={form?.expenses ?? []} onChanged={() => { reloadDetail(); reload(); }} />
         </>
       )}
+
+      {stacked && on('letting') && <h3 className="m-0 mt-2 text-heading font-semibold">Agent to let</h3>}
+      {on('letting') && <LettingTab key={u.id} unitId={u.id} canEdit={canEdit} money={money} />}
 
       {stacked && on('activity') && <h3 className="m-0 mt-2 text-heading font-semibold">History of changes</h3>}
       {on('activity') && (

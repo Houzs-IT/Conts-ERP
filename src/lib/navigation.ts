@@ -65,6 +65,8 @@ export const NAV: NavGroup[] = [
   { label: 'UNITS', workspace: 'rental', items: [
     // Buildings, the unit record and access codes are one Units screen (owner, 8 Oct).
     { key: 'units', label: 'Units', icon: 'building-2', path: '/properties/units', area: 'properties' },
+    // Units we find a long-term tenant for, for the owner (staff sheet UNIT, 17 Oct 2026).
+    { key: 'agentToLet', label: 'Agent to let', icon: 'key-round', path: '/properties/agent-to-let', area: 'properties' },
     // Owner statements and owner payouts live on the owner (owner, 11 Oct 2026): each owner's page, and the Owners
     // list's Statements and Payouts tabs for a whole month. Their old addresses redirect (App.tsx).
     { key: 'ownerList', label: 'Owners', icon: 'user-round', path: '/owners', area: 'owners', badge: 'statements' },
