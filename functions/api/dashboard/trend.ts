@@ -1,4 +1,5 @@
 import { type Env, all, one, json, fail } from '../../_lib/db';
+import { rentalOnly } from '../../_lib/unitPurpose';
 import { requireSession } from '../../_lib/auth';
 import { monthsBack, daysIn } from '../../_lib/ops';
 import { stayMonths, metrics, groupBy, monthEndExclusive } from '../../_lib/revenue';
@@ -20,7 +21,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   // functions/_lib/revenue.ts: each stay's gross value and nights split by night into the months it covers.
   const rows = await stayMonths(env, `${periods[0]}-01`, monthEndExclusive(periods[periods.length - 1]));
-  const listedIds = new Set((await all<{ id: string }>(env, 'SELECT id FROM units WHERE is_listed = 1')).map(u => u.id));
+  const listedIds = new Set((await all<{ id: string }>(env, `SELECT id FROM units WHERE is_listed = 1${await rentalOnly(env, 'units')}`)).map(u => u.id));
   const byPeriod = groupBy(rows, r => r.month);
   const finance = session.manage;
 

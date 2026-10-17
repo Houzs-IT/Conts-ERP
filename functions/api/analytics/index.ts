@@ -1,4 +1,5 @@
 import { type Env, all, json, fail } from '../../_lib/db';
+import { rentalOnly } from '../../_lib/unitPurpose';
 import { requireSession } from '../../_lib/auth';
 import { monthsBack, daysIn, todayMyt } from '../../_lib/ops';
 import { stayMonths, metrics, groupBy, monthEndExclusive } from '../../_lib/revenue';
@@ -38,7 +39,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   // functions/_lib/revenue.ts: gross value and nights split by night into the months they fall in.
   const from = `${[periods[0], before[0]].sort()[0]}-01`, to = monthEndExclusive(periods[periods.length - 1]);
   const rows = await stayMonths(env, from, to);
-  const listedIds = new Set((await all<{ id: string }>(env, 'SELECT id FROM units WHERE is_listed = 1')).map(u => u.id));
+  const listedIds = new Set((await all<{ id: string }>(env, `SELECT id FROM units WHERE is_listed = 1${await rentalOnly(env, 'units')}`)).map(u => u.id));
   const listed = listedIds.size;
   const inList = (list: string[]) => { const set = new Set(list); return rows.filter(r => set.has(r.month)); };
   const listedRows = (rs: typeof rows) => rs.filter(r => listedIds.has(r.unit_id));
@@ -65,7 +66,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const unitRows = await all<any>(env, `
     SELECT u.id, u.unit_number, u.property_id, p.name AS property_name,
            (SELECT ROUND(AVG(v.rating)::numeric, 2) FROM reviews v WHERE v.unit_id = u.id) AS rating
-    FROM units u JOIN properties p ON p.id = u.property_id WHERE u.is_listed = 1`);
+    FROM units u JOIN properties p ON p.id = u.property_id WHERE u.is_listed = 1${await rentalOnly(env)}`);
   const byUnit = groupBy(window, r => r.unit_id);
   const byChannel = groupBy(window, r => r.channel);
   const channels = [...byChannel.entries()].map(([channel, rs]) => ({ channel, revenue: metrics(rs, 0).gross })).sort((a, b) => b.revenue - a.revenue);

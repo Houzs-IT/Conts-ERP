@@ -1,4 +1,5 @@
 import { type Env, all, json, fail, nowIso } from '../../_lib/db';
+import { rentalOnly } from '../../_lib/unitPurpose';
 import { requireSession } from '../../_lib/auth';
 
 import { upliftFor, defaultUpliftShare } from '../../_lib/channelPrice';
@@ -14,7 +15,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   // before it can be sold anywhere (Channex setup refuses a unit without a base price).
   const units = await all<any>(env, `
     SELECT u.id, u.unit_number, u.base_rate, u.weekend_rate, u.cost_floor, u.channex_rate_plan_airbnb, u.channex_rate_plan_booking_com, u.channex_rate_plan_agoda, p.name AS property_name
-    FROM units u JOIN properties p ON p.id = u.property_id ORDER BY p.name, u.unit_number`);
+    FROM units u JOIN properties p ON p.id = u.property_id WHERE 1 = 1${await rentalOnly(env)} ORDER BY p.name, u.unit_number`);
   const uplifts = await all<any>(env, 'SELECT unit_id, channel, uplift FROM channel_uplifts');
   // Sync state per unit and channel comes from the real Channex connection and its outbox, never from a
   // stored sample status: not connected until the unit is linked to that booking site.
