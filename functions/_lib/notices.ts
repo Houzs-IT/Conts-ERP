@@ -65,8 +65,8 @@ interface Task { id: string; title: string; kind: string; unit: string; schedule
 async function task(env: Env, id: string): Promise<Task | null> {
   try {
     return await one<Task>(env, `
-      SELECT t.id, t.title, t.kind, t.scheduled_for, t.due_at, trim(coalesce(p.name, '') || ' ' || u.unit_number) AS unit
-      FROM tasks t JOIN units u ON u.id = t.unit_id LEFT JOIN properties p ON p.id = u.property_id WHERE t.id = ?`, id);
+      SELECT t.id, t.title, t.kind, t.scheduled_for, t.due_at, COALESCE(trim(coalesce(p.name, '') || ' ' || u.unit_number), 'External job') AS unit
+      FROM tasks t LEFT JOIN units u ON u.id = t.unit_id LEFT JOIN properties p ON p.id = u.property_id WHERE t.id = ?`, id);
   } catch { return null; }
 }
 

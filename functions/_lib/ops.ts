@@ -79,7 +79,7 @@ export async function assignTask(env: Env, session: Session, taskId: string, ass
     SELECT u.unit_number, p.name AS property_name FROM units u JOIN properties p ON p.id = u.property_id WHERE u.id = ?`, task.unit_id);
   const delivery = await notify(env, {
     template: 'field.task_assigned', recipient: assignee.phone ?? assignee.full_name, channel: 'push',
-    body: `New job: ${unit?.property_name} ${unit?.unit_number}${task.due_at ? `, due ${hhmm(task.due_at)}` : ''}.`,
+    body: `New job: ${unit ? `${unit.property_name} ${unit.unit_number}` : 'external address'}${task.due_at ? `, due ${hhmm(task.due_at)}` : ''}.`,
     entityTable: 'tasks', entityId: taskId, urgent: true,
   });
   await cleaningNotice(env, taskId, 'assigned', session.userId);
@@ -87,21 +87,6 @@ export async function assignTask(env: Env, session: Session, taskId: string, ass
 }
 
 export interface RosterCleaner { id: string; full_name: string; employment_type: 'internal' | 'outsourced'; user_id: string | null; phone: string | null; busy: number }
-
-/** The active cleaner roster with today's open-job load, for the assign pickers and
- *  auto-assign. `prefer` narrows to one employment dimension when the rule asks for it. */
-export async function activeCleaners(env: Env, prefer: 'internal' | 'outsourced' | 'any' = 'any'): Promise<RosterCleaner[]> {
-  const ready = await taskCleanersReady(env);
-  return all<RosterCleaner>(env, `
-    SELECT c.id, c.full_name, c.employment_type, c.user_id, c.phone,
-           (SELECT COUNT(*) FROM tasks t
-              WHERE (t.cleaner_id = c.id OR (c.user_id IS NOT NULL AND t.assignee_id = c.user_id)${ready ? ' OR EXISTS (SELECT 1 FROM task_cleaners tc WHERE tc.task_id = t.id AND tc.cleaner_id = c.id)' : ''})
-                AND t.state NOT IN ('resolved')
-                AND ${MYT_DATE('COALESCE(t.scheduled_for, t.due_at, t.created_at)')} = to_char(now() AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM-DD')) AS busy
-    FROM cleaners c
-    WHERE c.is_active = 1 ${prefer === 'any' ? '' : 'AND c.employment_type = ?'}
-    ORDER BY c.full_name`, ...(prefer === 'any' ? [] : [prefer]));
-}
 
 /** Active roster cleaners by id, in the order asked; null when any is missing or inactive. */
 export async function rosterByIds(env: Env, ids: string[]): Promise<RosterCleaner[] | null> {
@@ -179,7 +164,7 @@ export async function assignCleaners(env: Env, session: Session, taskId: string,
     // At most ten cleaners on a job (pickedCleanerIds), so at most ten pushes.
     await Promise.all(added.filter(c => c.employment_type === 'internal' && c.phone).map(cleaner => notify(env, {
       template: 'field.task_assigned', recipient: cleaner.phone!, channel: 'push',
-      body: `New clean: ${unit?.property_name} ${unit?.unit_number}${task.due_at ? `, due ${hhmm(task.due_at)}` : ''}.`,
+      body: `New clean: ${unit ? `${unit.property_name} ${unit.unit_number}` : 'external address'}${task.due_at ? `, due ${hhmm(task.due_at)}` : ''}.`,
       entityTable: 'tasks', entityId: taskId, urgent: true,
     })));
     if (!quiet) await cleaningNotice(env, taskId, 'assigned', session.userId);

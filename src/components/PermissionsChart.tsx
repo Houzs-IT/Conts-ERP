@@ -28,7 +28,7 @@ const LEVEL_COLOR: Record<AccessLevel, string> = {
 const FIXED_ROLES = [
   { name: 'Management', note: 'full access to everything, always.' },
   { name: 'Cleaner', note: 'the field app only: their own cleaning jobs.' },
-  { name: 'Technician', note: 'the field app only: their own maintenance jobs.' },
+  { name: 'Maintenance technician', note: 'the field app only: their own maintenance jobs, once any owner approval and parts are in.' },
   { name: 'Owner', note: 'the owner portal only: their own units, statements and documents.' },
 ];
 const GRID ='grid grid-cols-[minmax(190px,1.4fr)_110px_repeat(3,minmax(150px,1fr))] gap-2.5 items-center px-5';

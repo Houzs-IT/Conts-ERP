@@ -9,7 +9,7 @@ import { day } from '../../_lib/notices';
 /** POST /api/housekeeping/assign-building { buildingId, date, cleanerIds | cleanerId, onlyUnassigned? }
  *  Every unfinished clean in one building on one day goes to the cleaners picked, all of them on every job (time
  *  clashes are accepted: the team works the building in one round). `onlyUnassigned` leaves cleans that already
- *  have someone. */
+ *  have someone. buildingId 'external' is the board's External group (cleans at outside addresses). */
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
@@ -24,8 +24,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!team) return fail('NOT_FOUND', 'That cleaner is not on the active roster.', 404, { cleanerId: 'Pick a cleaner from the roster.' });
 
   const tasks = await all<{ id: string }>(env, `
-    SELECT t.id FROM tasks t JOIN units u ON u.id = t.unit_id
-    WHERE u.property_id = ? AND t.kind IN ${CLEAN_KINDS_SQL} AND t.state != 'resolved'
+    SELECT t.id FROM tasks t LEFT JOIN units u ON u.id = t.unit_id
+    WHERE ${b.buildingId === 'external' ? "t.unit_id IS NULL AND 'external' = ?" : 'u.property_id = ?'} AND t.kind IN ${CLEAN_KINDS_SQL} AND t.state != 'resolved'
       AND ${MYT_DATE('COALESCE(t.scheduled_for, t.due_at, t.created_at)')} = ?
       ${b.onlyUnassigned ? 'AND t.cleaner_id IS NULL AND t.assignee_id IS NULL' : ''}`, b.buildingId, b.date);
   if (!tasks.length) return fail('NOTHING_TO_ASSIGN', 'There is no unfinished cleaning job in that building on that day.', 409);

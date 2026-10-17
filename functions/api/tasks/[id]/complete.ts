@@ -32,12 +32,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
 
   const now = nowIso();
   await run(env, "UPDATE tasks SET state = 'resolved', completed_at = ?, completed_by = ?, updated_at = ? WHERE id = ?", now, session.userId, now, id);
-  if (['turnover', 'inspection', 'deep_clean', 'light_clean'].includes(t.kind)) {
+  if (t.unit_id && ['turnover', 'inspection', 'deep_clean', 'light_clean'].includes(t.kind)) {
     const flipped = await one(env, `UPDATE units SET readiness = 'ready', updated_at = ? WHERE id = ? AND ${noOpenBlockerSql('units.id')} RETURNING id`, now, t.unit_id);
     if (flipped) await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'unit.readiness_change', entityTable: 'units', entityId: t.unit_id, after: { readiness: 'ready' }, source: isFieldRole(session.role) ? 'field_app' : 'web' });
   }
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'task.complete', entityTable: 'tasks', entityId: id, before: { state: t.state }, after: { state: 'resolved', note: b.note ?? null, photoWaived }, source: isFieldRole(session.role) ? 'field_app' : 'web' });
-  const cost = isClean ? await chargeClean(env, session, t) : null;
+  // An external clean (no unit) touches no unit and no owner statement.
+  const cost = isClean && t.unit_id ? await chargeClean(env, session, t) : null;
   await cleaningNotice(env, id, 'completed', session.userId);
   return json({ ok: true, photoWaived, cost });
 };

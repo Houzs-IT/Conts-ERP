@@ -1,6 +1,7 @@
 import { type Env, all, one, run, audit, nowIso } from './db';
 import type { Session } from './auth';
 import { isPeriodLocked } from './expenses';
+import { hasCleanPrices, cleanAmounts } from './cleaningPrices';
 
 export const CLEAN_KINDS = ['turnover', 'deep_clean', 'light_clean'] as const;
 export const CLEAN_KINDS_SQL = `('turnover','deep_clean','light_clean')`;
@@ -65,11 +66,20 @@ export async function cleanPrice(env: Env, unitId: string, kind: string): Promis
 export async function chargeClean(env: Env, session: Session, task: { id: string; unit_id: string; kind: string; title: string }, day = mytToday()):
   Promise<{ amount: number; created: boolean; reason: string | null }> {
   try {
+    // The clean's own amount (typed on the job) or the price table's, kept on the job as charged; none set: the old pricing.
+    let set: { amount: number; source: 'job' | 'unit' | 'table' } | null = null;
+    if (await hasCleanPrices(env)) {
+      const own = await one<{ amount: number | null; cleaner_pay: number | null }>(env, 'SELECT amount, cleaner_pay FROM tasks WHERE id = ?', task.id);
+      const p = await cleanAmounts(env, task.unit_id, task.kind);
+      const amount = own?.amount ?? p.external, pay = own?.cleaner_pay ?? p.internal;
+      await run(env, 'UPDATE tasks SET amount = ?, cleaner_pay = ? WHERE id = ?', amount, pay, task.id);
+      if (amount != null) set = { amount: Number(amount), source: own?.amount != null ? 'job' : p.source ?? 'table' };
+    }
     const existing = await one<{ amount: number }>(env, `SELECT amount FROM expenses WHERE task_id = ? LIMIT 1`, task.id);
     if (existing) return { amount: Number(existing.amount), created: false, reason: 'already charged' };
     const sameDay = await one<{ amount: number }>(env, `SELECT amount FROM expenses WHERE unit_id = ? AND category = 'cleaning' AND incurred_on = ? LIMIT 1`, task.unit_id, day);
     if (sameDay) return { amount: Number(sameDay.amount), created: false, reason: 'a clean is already charged on this unit today' };
-    const price = await cleanPrice(env, task.unit_id, task.kind);
+    const price = set ?? await cleanPrice(env, task.unit_id, task.kind);
     if (await isPeriodLocked(env, task.unit_id, day)) return { amount: price.amount, created: false, reason: "this month's owner statement is already final" };
     if (price.amount <= 0) return { amount: 0, created: false, reason: 'no price' };
     const id = crypto.randomUUID();
@@ -148,3 +158,26 @@ export async function windowsOnDay(env: Env, day: string) {
 /** Malaysian calendar day today. */
 export const mytToday = () => new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);
 export const isDay = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
+
+/** Nobody tapped "Guest left": from the checkout time on, the guest counts as out (owner, 17 Oct 2026; early leavers are
+ *  still tapped by staff). There is no scheduled worker, so whichever screen first reads the clean after that time stamps
+ *  it, once, at the checkout time itself, and writes the history row ("Automatic, at checkout 11:00"). Rows are changed
+ *  in place (guest_left_at, guest_left_auto). Never throws: a screen read must not fail over it. */
+export async function autoGuestLeft(env: Env, rows: any[], stdOut: string): Promise<void> {
+  const now = Date.now();
+  for (const r of rows) {
+    if (r.guest_left_at || !r.prev_id || r.prev_state === 'checked_out' || r.state === 'resolved' || !r.day) continue;
+    const time = r.prev_time && /^\d{2}:\d{2}$/.test(r.prev_time) ? r.prev_time : stdOut;
+    const at = `${r.day}T${time}:00+08:00`;
+    if (Date.parse(at) > now) continue;
+    try {
+      const set = await one<{ id: string }>(env, 'UPDATE tasks SET guest_left_at = ?, updated_at = ? WHERE id = ? AND guest_left_at IS NULL RETURNING id', at, nowIso(), r.id);
+      r.guest_left_at = at; r.guest_left_auto = true;
+      if (!set) continue;
+      if (r.unit_id) await run(env, `UPDATE units SET readiness = 'dirty', updated_at = ? WHERE id = ? AND readiness IN ('occupied','ready')`, nowIso(), r.unit_id);
+      await run(env, `INSERT INTO audit_log (actor_id, actor_label, action, entity_table, entity_id, before_state, after_state, source, occurred_at)
+        VALUES (NULL, 'Automatic', 'task.guest_left', 'tasks', ?, NULL, ?, 'system', ?)`,
+        r.id, JSON.stringify({ guestLeftAt: at, auto: true, reason: `Automatic, at checkout ${time}` }), nowIso());
+    } catch { /* the next read tries again */ }
+  }
+}

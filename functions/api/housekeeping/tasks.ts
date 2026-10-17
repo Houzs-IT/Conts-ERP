@@ -3,6 +3,7 @@ import { requireSession, isFieldRole } from '../../_lib/auth';
 import { MYT_DATE, SHEET_CLEANER, hhmm, linenSet, resolveUnit, rosterByIds, pickedCleanerIds } from '../../_lib/ops';
 import { checkDate, invalid, type Fields } from '../../_lib/validate';
 import { cleaningNotice } from '../../_lib/notices';
+import { hasCleanPrices, cleanAmounts } from '../../_lib/cleaningPrices';
 import { taskCleanersReady, mineSql, mineArgs, cleanerListSql, parseCleaners, writeTaskCleaners, rosterIdSql } from '../../_lib/taskCleaners';
 
 /** The three cleaning kinds a manual task may be. Inspection/maintenance/delivery
@@ -102,7 +103,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   });
 };
 
-/** POST /api/housekeeping/tasks — create a cleaning task by hand.
+/** POST /api/housekeeping/tasks — create a cleaning task by hand, on one of our units ({ unitId }) or at an outside
+ *  address ({ external: { address, clientName?, clientPhone? }, amount } — amount in sen, required). On a unit the
+ *  amount defaults to the price table's and may be typed.
  *  The auto path (one clean per checkout) is the cron worker; this is the manual
  *  equivalent for ad-hoc turnovers, deep cleans and post-works refreshes. The
  *  task carries no reservation, so the roster shows its source as "Manual". */
@@ -114,9 +117,27 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const b = await request.json<any>().catch(() => null);
 
   const kind: CleanKind = CLEAN_KINDS.includes(b?.kind) ? b.kind : 'turnover';
-  const unit = await resolveUnit(env, b?.unitId ?? b?.unitNumber, b?.propertyName);
+  // External: a clean at an address that is not one of our units (owner, 17 Oct 2026). It needs an address and an amount,
+  // has no unit, and so never reaches a unit's costs or an owner statement.
+  const priced = await hasCleanPrices(env);
+  const external = b?.external && typeof b.external === 'object' ? b.external : null;
+  if (external && !priced) return fail('NOT_CONFIGURED', 'External cleaning jobs need a database update (migration 0126) that is not applied yet.', 501);
+  const ext = external ? {
+    address: typeof external.address === 'string' ? external.address.trim().slice(0, 300) : '',
+    client: typeof external.clientName === 'string' && external.clientName.trim() ? external.clientName.trim().slice(0, 120) : null,
+    phone: typeof external.clientPhone === 'string' && external.clientPhone.trim() ? external.clientPhone.trim().slice(0, 40) : null,
+  } : null;
+  if (ext && !ext.address) return fail('VALIDATION', 'Enter the address of the external job.', 422, { address: 'Enter the address.' });
+  if (b?.amount != null && (!Number.isInteger(b.amount) || b.amount < 0)) return fail('VALIDATION', 'Enter the amount, RM 0.00 or more.', 422, { amount: 'Enter the amount.' });
+  if (ext && b?.amount == null) return fail('VALIDATION', 'An external job needs its amount.', 422, { amount: 'Enter the amount.' });
+  if (b?.amount != null && !priced) return fail('NOT_CONFIGURED', 'Cleaning amounts need a database update (migration 0126) that is not applied yet.', 501);
+  const unit = ext ? null : await resolveUnit(env, b?.unitId ?? b?.unitNumber, b?.propertyName);
   if (unit === 'ambiguous') return fail('VALIDATION', 'More than one unit has that number. Say which building.', 422, { unitNumber: 'Pick the building too.' });
-  if (!unit) return fail('NOT_FOUND', 'That unit does not exist.', 404, { unitNumber: 'Pick a unit that exists.' });
+  if (!ext && !unit) return fail('NOT_FOUND', 'That unit does not exist.', 404, { unitNumber: 'Pick a unit that exists.' });
+  // A unit's clean takes the price table's figures unless the office typed its own amount.
+  const prices = unit && priced ? await cleanAmounts(env, unit.id, kind) : null;
+  const amount: number | null = b?.amount ?? prices?.external ?? null;
+  const cleanerPay: number | null = ext ? null : prices?.internal ?? null;
   const fields: Fields = {};
   checkDate(fields, 'date', b?.date, { label: 'Day' });
   const bad = invalid(fields); if (bad) return bad;
@@ -157,18 +178,18 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   await run(env, `
     INSERT INTO tasks
       (id, unit_id, reservation_id, kind, state, title, instructions, assignee_id, cleaner_id,
-       scheduled_for, due_at, next_guest_at, requires_photo, created_at, updated_at)
-    VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    id, unit.id, kind, cleanerId ? 'assigned' : 'open', title, instructions, assigneeId, cleanerId,
+       scheduled_for, due_at, next_guest_at, requires_photo, created_at, updated_at${priced ? ', amount, cleaner_pay, external_address, external_client, external_phone' : ''})
+    VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?${priced ? ', ?, ?, ?, ?, ?' : ''})`,
+    id, unit ? unit.id : null, kind, cleanerId ? 'assigned' : 'open', title, instructions, assigneeId, cleanerId,
     isHhmm(b?.scheduledFor) ? at(b.scheduledFor) : null,
     isHhmm(b?.dueAt) ? at(b.dueAt) : null,
     isHhmm(b?.nextGuestAt) ? at(b.nextGuestAt) : null,
-    requiresPhoto, now, now);
+    requiresPhoto, now, now, ...(priced ? [amount, cleanerPay, ext?.address ?? null, ext?.client ?? null, ext?.phone ?? null] : []));
   if (team.length) await writeTaskCleaners(env, id, team, session.userId);
 
   await audit(env, {
     actorId: session.userId, actorLabel: session.fullName, action: 'housekeeping.create',
-    entityTable: 'tasks', entityId: id, after: { unitId: unit.id, kind, title, assigneeId, cleanerId, ...(team.length > 1 ? { cleanerIds: team.map(t => t.cleanerId) } : {}) }, source: b?.source ?? 'web',
+    entityTable: 'tasks', entityId: id, after: { unitId: unit ? unit.id : null, external: ext, amount, kind, title, assigneeId, cleanerId, ...(team.length > 1 ? { cleanerIds: team.map(t => t.cleanerId) } : {}) }, source: b?.source ?? 'web',
   });
   if (team.some(t => t.userId)) await cleaningNotice(env, id, 'assigned', session.userId);
   return json({ id }, 201);

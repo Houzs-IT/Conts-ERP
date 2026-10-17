@@ -3,14 +3,16 @@ import { requireSession, isFieldRole } from '../../_lib/auth';
 import { MYT_DATE, SHEET_CLEANER } from '../../_lib/ops';
 import { taskCleanersReady, cleanerListSql, parseCleaners, rosterIdSql } from '../../_lib/taskCleaners';
 import { unitLayoutSql, unitLayout } from '../../_lib/unitLayout';
-import { CLEAN_KINDS_SQL, LIVE_STAY_SQL, standardItems, windowsOnDay, mytToday, isDay } from '../../_lib/cleaning';
+import { CLEAN_KINDS_SQL, LIVE_STAY_SQL, standardItems, windowsOnDay, mytToday, isDay, autoGuestLeft } from '../../_lib/cleaning';
+import { hasCleanPrices, priceBook, layoutKey } from '../../_lib/cleaningPrices';
 
 /** GET /api/housekeeping/board?date=YYYY-MM-DD — the Cleaning screen for one day, one row per clean.
  *  Each row carries the guest leaving (check-out time, name, whether they have left) and the guest arriving
  *  (check-in time, name), from the bookings: a late check-out or early check-in on the booking replaces the
  *  default times. Today also shows cleans left over from earlier days. `departures` are guests leaving that
  *  day with no clean planned yet; `repairs` are repair windows on that day. Grouping by building is the
- *  screen's job: every row carries its building. */
+ *  screen's job: every row carries its building. A guest nobody marked out counts as out from the checkout time
+ *  (autoGuestLeft). Each clean carries its amount and cleaner pay; `external` lists cleans at outside addresses. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
@@ -28,8 +30,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   const ready = await taskCleanersReady(env);
   const layoutSql = await unitLayoutSql(env);
+  const priced = await hasCleanPrices(env);
+  const money = priced ? 't.amount, t.cleaner_pay,' : 'NULL::int AS amount, NULL::int AS cleaner_pay,';
   const rows = await all<any>(env, `
-    SELECT t.id, t.kind, t.state, t.title, t.instructions, t.scheduled_for, t.due_at, t.started_at, t.completed_at, t.guest_left_at,
+    SELECT ${money} t.id, t.kind, t.state, t.title, t.instructions, t.scheduled_for, t.due_at, t.started_at, t.completed_at, t.guest_left_at,
            t.assignee_id, t.cleaner_id, t.unit_id, t.reservation_id, ${when} AS day,
            u.unit_number, u.readiness, u.bedrooms, u.bathrooms, ${layoutSql} AS layout_type, p.id AS property_id, p.name AS property_name,
            COALESCE(cl.full_name, a.full_name) AS assignee_name, ${SHEET_CLEANER('t')} AS sheet_cleaner, ${cleanerListSql(ready)} AS cleaner_list, ${rosterIdSql()} AS roster_id,
@@ -64,11 +68,27 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       AND (${when} = ? OR (? = ? AND ${when} < ? AND t.state != 'resolved'))
     ORDER BY p.name, u.unit_number`, date, date, today, date);
 
+  await autoGuestLeft(env, rows, stdOut);
+
+  // External cleans (an address, no unit): their own group on the board, never a unit's cost.
+  const external = !priced ? [] : await all<any>(env, `
+    SELECT t.id, t.kind, t.state, t.title, t.instructions, t.started_at, t.completed_at, t.assignee_id, t.cleaner_id, t.amount, t.cleaner_pay,
+           t.external_address, t.external_client, t.external_phone, ${when} AS day,
+           COALESCE(cl.full_name, a.full_name) AS assignee_name, ${cleanerListSql(ready)} AS cleaner_list, ${rosterIdSql()} AS roster_id,
+           (SELECT COUNT(*)::int FROM documents d WHERE d.task_id = t.id AND d.kind = 'photo') AS photos,
+           (SELECT COUNT(*)::int FROM documents d WHERE d.task_id = t.id AND d.kind = 'video') AS videos
+    FROM tasks t LEFT JOIN users a ON a.id = t.assignee_id LEFT JOIN cleaners cl ON cl.id = t.cleaner_id
+    WHERE t.unit_id IS NULL AND t.kind IN ${CLEAN_KINDS_SQL}
+      AND (${when} = ? OR (? = ? AND ${when} < ? AND t.state != 'resolved'))
+    ORDER BY COALESCE(t.scheduled_for, t.due_at, t.created_at)`, date, date, today, date);
+  const price = await priceBook(env, rows.map(r => r.unit_id));
+
   // Guests leaving that day with no clean on the unit: the gap the board must not hide.
   const departures = await all<any>(env, `
     SELECT r.id, r.state, r.check_out_time, r.channel, u.id AS unit_id, u.unit_number, u.bedrooms, u.bathrooms, ${layoutSql} AS layout_type, p.id AS property_id, p.name AS property_name,
            COALESCE(NULLIF(g.full_name, ''), 'Guest') AS guest_name,
            (SELECT n.check_in_time FROM reservations n WHERE n.unit_id = r.unit_id AND n.check_in = r.check_out AND n.id != r.id AND ${LIVE_STAY_SQL('n')} LIMIT 1) AS next_time,
+           (SELECT n.id FROM reservations n WHERE n.unit_id = r.unit_id AND n.check_in = r.check_out AND n.id != r.id AND ${LIVE_STAY_SQL('n')} LIMIT 1) AS next_id,
            (SELECT COALESCE(NULLIF(ng.full_name, ''), 'Guest') FROM reservations n LEFT JOIN guests ng ON ng.id = n.guest_id
               WHERE n.unit_id = r.unit_id AND n.check_in = r.check_out AND n.id != r.id AND ${LIVE_STAY_SQL('n')} LIMIT 1) AS next_guest
     FROM reservations r JOIN units u ON u.id = r.unit_id JOIN properties p ON p.id = u.property_id LEFT JOIN guests g ON g.id = r.guest_id
@@ -88,6 +108,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       // The guest is out when the booking is Checked out or someone pressed "Guest left" on the clean.
       const leftAt: string | null = r.guest_left_at ?? r.prev_out_at ?? (r.prev_state === 'checked_out' ? r.day + 'T' + (r.prev_time || stdOut) + ':00+08:00' : null);
       const guestOut = !!r.guest_left_at || r.prev_state === 'checked_out';
+      const p = price(r.unit_id, r.kind, layoutKey(r.layout_type, r.bedrooms));
       const status = r.state === 'resolved' ? 'done'
         : r.state === 'in_progress' ? 'cleaning'
         : guestOut ? 'ready'
@@ -111,7 +132,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
           checkInTime: r.next_time || stdIn, earlyCheckIn: !!r.next_time && r.next_time < stdIn,
           checkInAt: at(r.day, r.next_time, stdIn),
         } : null,
-        guestOut, guestLeftAt: leftAt,
+        guestOut, guestLeftAt: leftAt, guestLeftAuto: !!r.guest_left_auto,
+        // What the clean is charged (external) and what the cleaner is paid (internal): the job's own, else the price table.
+        amount: r.amount ?? p.external, cleanerPay: r.cleaner_pay ?? p.internal, priceSource: r.amount != null ? 'job' : p.source, external: null,
         startedAt: r.started_at ?? null, completedAt: r.completed_at ?? null,
         photoCount: Number(r.photos), videoCount: Number(r.videos),
         checklist: { done: Number(r.ticks), total: standardItems(r.kind).length + Number(r.custom_items) },
@@ -121,8 +144,22 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       reservationId: d.id, state: d.state, channel: d.channel, guestName: d.guest_name,
       checkOutTime: d.check_out_time || stdOut, lateCheckOut: !!d.check_out_time && d.check_out_time > stdOut,
       unitId: d.unit_id, unitNumber: d.unit_number, buildingId: d.property_id, propertyName: d.property_name, unit: unitLayout(d),
-      next: d.next_time ? { guestName: d.next_guest, checkInTime: d.next_time, checkInAt: at(date, d.next_time, stdIn), earlyCheckIn: d.next_time < stdIn } : null,
+      next: d.next_time ? { reservationId: d.next_id, guestName: d.next_guest, checkInTime: d.next_time, checkInAt: at(date, d.next_time, stdIn), earlyCheckIn: d.next_time < stdIn } : null,
     })),
     repairs,
+    externalEnabled: priced,
+    external: external.map(r => ({
+      id: r.id, kind: r.kind, state: r.state, title: r.title, instructions: r.instructions ?? null, day: r.day, carriedOver: r.day < date,
+      status: r.state === 'resolved' ? 'done' : r.state === 'in_progress' ? 'cleaning' : !r.cleaner_id && !r.assignee_id ? 'unassigned' : 'waiting',
+      unitId: null, unitNumber: r.external_address, readiness: '', buildingId: 'external', propertyName: 'External',
+      assigneeId: r.assignee_id, cleanerId: r.cleaner_id ?? null,
+      cleaners: parseCleaners(r.cleaner_list, { cleanerId: r.roster_id ?? null, userId: r.assignee_id ?? null, name: r.assignee_name ?? null }),
+      assigneeName: parseCleaners(r.cleaner_list).map(c => c.name).join(', ') || r.assignee_name || null,
+      unit: { bedrooms: null, bathrooms: null, size: null, layout: null }, previous: null, next: null,
+      guestOut: false, guestLeftAt: null, guestLeftAuto: false, startedAt: r.started_at ?? null, completedAt: r.completed_at ?? null,
+      photoCount: Number(r.photos), videoCount: Number(r.videos), checklist: { done: 0, total: 0 },
+      amount: r.amount, cleanerPay: r.cleaner_pay, priceSource: 'job',
+      external: { address: r.external_address, clientName: r.external_client ?? null, clientPhone: r.external_phone ?? null },
+    })),
   });
 };
