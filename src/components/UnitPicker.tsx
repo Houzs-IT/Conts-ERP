@@ -25,15 +25,18 @@ export function bedBath(u: Pick<RosterUnit, 'bedrooms' | 'bathrooms'>): string {
 /** "C13-13A · Agile · 2 bed · 2 bath": the line a unit reads as everywhere a unit is picked. */
 export const unitLine = (u: RosterUnit) => [code(u), u.propertyName, bedBath(u)].filter(Boolean).join(' · ');
 
-interface Row { u: RosterUnit; group: string }
+interface Row { u: RosterUnit; group: string; pinned?: boolean }
+/** A choice that is not a unit (e.g. External), always listed first above the buildings. */
+export interface PinnedChoice { id: string; label: string }
 
 /**
  * The one unit picker (owner, 11 Oct 2026, request M2): the units grouped by building under sticky headings, each
  * read as "C13-13A · Agile · 2 bed · 2 bath", the last few picked on this device first, and a search on building and
  * unit together ("agile 13a"). Keyboard: type to search, arrows to move, Enter to pick, Escape to close.
  */
-export function UnitPicker({ units, value, onChange, label = 'Unit', placeholder = 'Search building or unit', disabled, error, autoFocus }: {
+export function UnitPicker({ units, value, onChange, label = 'Unit', placeholder = 'Search building or unit', disabled, error, autoFocus, pinned }: {
   units: RosterUnit[]; value: string; onChange: (id: string) => void; label?: string; placeholder?: string; disabled?: boolean; error?: string; autoFocus?: boolean;
+  pinned?: PinnedChoice;
 }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
@@ -45,6 +48,7 @@ export function UnitPicker({ units, value, onChange, label = 'Unit', placeholder
   const trigger = useRef<HTMLButtonElement>(null);
   const listId = useId();
   const current = units.find(u => u.id === value);
+  const pinnedOn = !!pinned && value === pinned.id;
 
   const rows = useMemo<Row[]>(() => {
     const words = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
@@ -56,8 +60,10 @@ export function UnitPicker({ units, value, onChange, label = 'Unit', placeholder
     const sorted = [...units].filter(hit).sort((a, b) =>
       a.propertyName.localeCompare(b.propertyName, 'en', { numeric: true }) || code(a).localeCompare(code(b), 'en', { numeric: true }));
     const recentRows = words.length ? [] : recent.map(id => units.find(u => u.id === id)).filter((u): u is RosterUnit => !!u).map(u => ({ u, group: 'Recent' }));
-    return [...recentRows, ...sorted.map(u => ({ u, group: u.propertyName }))];
-  }, [units, q, recent]);
+    const pin = pinned && (!words.length || words.every(w => pinned.label.toLowerCase().includes(w)))
+      ? [{ u: { id: pinned.id, unitNumber: pinned.label, propertyName: '' }, group: '', pinned: true }] : [];
+    return [...pin, ...recentRows, ...sorted.map(u => ({ u, group: u.propertyName }))];
+  }, [units, q, recent, pinned]);
 
   useEffect(() => {
     if (!open) return;
@@ -77,7 +83,7 @@ export function UnitPicker({ units, value, onChange, label = 'Unit', placeholder
   function choose(r?: Row) {
     if (!r) return;
     onChange(r.u.id);
-    pushRecent(r.u.id); setRecent(readRecent());
+    if (!r.pinned) { pushRecent(r.u.id); setRecent(readRecent()); }
     setOpen(false); setQ('');
     trigger.current?.focus();
   }
@@ -100,7 +106,7 @@ export function UnitPicker({ units, value, onChange, label = 'Unit', placeholder
 
   return (
     <div ref={box} className="relative min-w-0">
-      <button ref={trigger} type="button" aria-haspopup="listbox" aria-expanded={open} aria-label={`${label}: ${current ? unitLine(current) : 'none picked'}`}
+      <button ref={trigger} type="button" aria-haspopup="listbox" aria-expanded={open} aria-label={`${label}: ${current ? unitLine(current) : pinnedOn ? pinned!.label : 'none picked'}`}
         disabled={disabled} autoFocus={autoFocus}
         onClick={() => setOpen(v => !v)}
         onKeyDown={e => { if (!open && (e.key === 'ArrowDown' || e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); setOpen(true); } else if (!open && e.key.length === 1 && /\S/.test(e.key)) { setQ(e.key); setOpen(true); } }}
@@ -112,7 +118,8 @@ export function UnitPicker({ units, value, onChange, label = 'Unit', placeholder
             <b className="font-semibold text-ink">{code(current)}</b>
             <span className="text-muted-ink"> · {current.propertyName}{bedBath(current) ? ` · ${bedBath(current)}` : ''}</span>
           </span>
-        ) : <span className="flex-1 min-w-0 truncate text-muted-ink">Pick the unit</span>}
+        ) : pinnedOn ? <span className="flex-1 min-w-0 truncate font-semibold text-ink">{pinned!.label}</span>
+          : <span className="flex-1 min-w-0 truncate text-muted-ink">Pick the unit</span>}
         <Icon name="ChevronDown" size="sm" color="var(--color-muted-ink)" />
       </button>
       {open && (
@@ -123,15 +130,15 @@ export function UnitPicker({ units, value, onChange, label = 'Unit', placeholder
               role="combobox" aria-controls={listId} aria-expanded aria-autocomplete="list" aria-label={`Search ${label.toLowerCase()}`}
               aria-activedescendant={rows[active] ? `${listId}-${active}` : undefined}
               className="flex-1 min-w-0 border-none outline-none bg-transparent font-sans text-copy text-ink" />
-            <span className="text-caption text-muted-ink tabular-nums flex-none">{rows.length - (q ? 0 : groups[0]?.name === 'Recent' ? groups[0].rows.length : 0)} units</span>
+            <span className="text-caption text-muted-ink tabular-nums flex-none">{rows.filter(r => !r.pinned && (q || r.group !== 'Recent')).length} units</span>
           </div>
           <div ref={list} id={listId} role="listbox" aria-label={label} className="max-h-[min(360px,50vh)] overflow-y-auto overscroll-contain">
             {rows.length === 0 && <div className="px-3 py-3 text-meta text-muted-ink">No unit matches "{q.trim()}".</div>}
             {groups.map((g, gi) => (
-              <div key={`${g.name}-${gi}`} role="group" aria-label={g.name}>
-                <div className="sticky top-0 z-[1] px-3 py-1.5 bg-page [border-bottom:1px_solid_var(--color-line-soft)] text-caption font-semibold uppercase tracking-[0.06em] text-muted-ink flex justify-between">
+              <div key={`${g.name}-${gi}`} role="group" aria-label={g.name || pinned?.label} className={cx(!g.name && '[border-bottom:1px_solid_var(--color-line)] pb-0.5')}>
+                {g.name && <div className="sticky top-0 z-[1] px-3 py-1.5 bg-page [border-bottom:1px_solid_var(--color-line-soft)] text-caption font-semibold uppercase tracking-[0.06em] text-muted-ink flex justify-between">
                   <span className="truncate">{g.name}</span><span className="tabular-nums font-normal">{g.rows.length}</span>
-                </div>
+                </div>}
                 {g.rows.map(({ r, i }) => (
                   <div key={`${r.group}-${r.u.id}`} id={`${listId}-${i}`} data-i={i} role="option" aria-selected={r.u.id === value}
                     onMouseEnter={() => setActive(i)} onMouseDown={e => { e.preventDefault(); choose(r); }}
