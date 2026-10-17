@@ -21,7 +21,7 @@ import { writeFileSync, mkdtempSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { call, check, done, cookieFor } from './harness.mjs';
+import { call, check, done, cookieFor, receiptFor } from './harness.mjs';
 
 const BASE = process.env.API_BASE ?? 'http://localhost:8788';
 const DB_URL = process.env.DB_URL ?? '';
