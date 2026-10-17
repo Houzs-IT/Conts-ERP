@@ -34,6 +34,7 @@ import { PhoneText } from '../components/PhoneText';
 import { OwnerPayouts, StatementSteps } from './owners/OwnerMoney';
 import { useSession } from '../lib/session';
 import { areaOpen } from '../lib/navigation';
+import { mayInviteOwners, portalAction, portalBadge, portalOf } from './owners/portalAccess';
 
 /**
  * The OWNER PROFILE (`#/owners/:id`): one card per unit with its revenue model and the month's Unit P&L (Gross Income,
@@ -144,24 +145,12 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
       toast({ tone: 'critical', title: 'Default fee was not saved.', body: errorMessage(e, 'Try again in a moment.') });
     }
   }
-  function invite() {
-    if (!o) return;
-    setDialog({
-      title: `Invite ${titleCase(o.displayName)} to the owner portal?`,
-      body: 'Creates an owner account with a temporary password. They can view their statements, income and building health, and approve quotes.',
-      meta: o.email, confirmLabel: 'Send invite',
-      onConfirm: async () => {
-        setBusy(true);
-        try {
-          await api.post(`/owners/${o.id}/invite`);
-          patch({ portalInvited: true });
-          toast({ tone: 'success', title: 'Invite sent.', body: `${titleCase(o.displayName)} can now sign in to the owner portal.` });
-        } catch (e) {
-          toast({ tone: 'critical', title: 'Invite was not sent.', body: errorMessage(e, 'Try again in a moment.') });
-        } finally { setBusy(false); setDialog(null); }
-      },
-    });
-  }
+  // Invite, resend the invitation or email a reset link, whichever fits the login's state (owners/portalAccess.ts).
+  const portal = mayInviteOwners(user?.role) ? portalAction(o, {
+    toast, confirm: setDialog,
+    onDone: state => { patch({ portalInvited: true, portal: { ...portalOf(o), state, invitedAt: state === 'invited' ? new Date().toISOString() : portalOf(o).invitedAt } }); reload(); },
+  }) : null;
+  const badge = portalBadge(o);
   function deleteOwner() {
     if (!o) return;
     setDialog({
@@ -188,7 +177,7 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
       <PageHeader
         title={titleCase(o.displayName)}
         back={{ label: 'All owners', onClick: () => navigate('/owners') }}
-        badge={o.portalInvited ? <StatusBadge tone="success" label="Portal active" /> : <StatusBadge tone="neutral" label="Not invited" />}
+        badge={<span className="inline-flex items-center gap-2 flex-wrap"><StatusBadge tone={badge.tone} label={badge.label} />{badge.hint && <span className="text-meta text-muted-ink font-normal">{badge.hint}</span>}</span>}
         sub={
           <span className="flex flex-wrap gap-x-3 gap-y-1">
             <span>{identity}</span>
@@ -196,7 +185,7 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
             {o.phone && <PhoneText value={o.phone} className="text-ink" />}
           </span>
         }
-        primary={o.portalInvited ? undefined : <Button size="sm" variant="secondary" icon={<Icon name="Mail" size="sm" />} onClick={invite}>Invite to portal</Button>}
+        primary={portal ? <Button size="sm" variant="secondary" icon={<Icon name={portal.icon} size="sm" />} onClick={portal.run}>{portal.label}</Button> : undefined}
       />
 
       {error && <StaleBanner message={`Showing the last record we have. ${error}`} onRetry={reload} />}

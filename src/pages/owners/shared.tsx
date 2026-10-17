@@ -43,6 +43,8 @@ export interface Owner {
   /** The API sends only the last four characters; the full number needs an audited reveal. */
   icLast4?: string | null; bankAccountLast4?: string | null;
   portalInvited: boolean;
+  /** The portal login's state and when the newest invitation went out (owners GET, portalStates). */
+  portal?: PortalLogin;
   /** Owner-level default management fee, applied to units with no per-unit override. Null = none set. */
   defaultManagementFeePct: number | null;
   contract: { feePct: number; startedOn: string; renewsOn: string | null; endsOn?: string | null } | null;
@@ -53,6 +55,7 @@ export interface Owner {
   statement?: { id: string; state: StatementState; hasUnits?: boolean } | null;
   units: UnitLine[];
 }
+export interface PortalLogin { state: 'none' | 'invited' | 'active' | 'off'; invitedAt: string | null; lastLoginAt: string | null }
 export interface OwnerAddress { lines: string | null; postcode: string | null; city: string | null; state: string | null; country: string | null }
 /** False until migration 0110 is applied on this database: the address and alternate contact are then hidden. */
 export interface Payload { data: Owner[]; generatedAt: string; month?: string; detailsReady?: boolean }
