@@ -25,3 +25,13 @@ export async function callAsUser(u, method, path, body) {
 let fails = 0;
 export function check(name, cond, extra = '') { if (!cond) fails++; console.log(`${cond ? 'ok  ' : 'FAIL'} ${name}${cond ? '' : ' :: ' + String(extra).slice(0, 400)}`); }
 export const done = () => { console.log(fails ? `\n${fails} FAILED` : '\nall ok'); process.exit(fails ? 1 : 0); };
+/** Uploads a small PDF as a receipt (management) and returns its document id: an owner-paid bill needs one (src/lib/receipts.ts). */
+export async function receiptFor(unitId, role = 'management') {
+  const fd = new FormData();
+  fd.append('file', new Blob(['%PDF-1.4 check receipt'], { type: 'application/pdf' }), 'receipt.pdf');
+  fd.append('kind', 'receipt'); if (unitId) fd.append('unitId', unitId);
+  const r = await fetch(`${BASE}/api/documents`, { method: 'POST', headers: { cookie: cookieFor(role) }, body: fd });
+  const j = await r.json().catch(() => null);
+  if (r.status !== 201) throw new Error(`receipt upload failed: ${r.status} ${JSON.stringify(j)}`);
+  return j.id;
+}

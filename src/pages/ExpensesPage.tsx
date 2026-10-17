@@ -28,6 +28,9 @@ import {
 } from './finance/listKit';
 import { Segmented as Tabs } from '../components/ops/OpsUi';
 import { RowsSkeleton } from '../components/Loading';
+import { ReceiptCell } from '../components/ReceiptCell';
+import { FileRow, FileDropRow } from '../components/Attachments';
+import { receiptRequired, missingReceipt } from '../lib/receipts';
 
 const ContractorClaims = lazy(() => import('./finance/ContractorClaims'));
 const AddUtilityBill = lazy(() => import('../components/AddUtilityBill').then(m => ({ default: m.AddUtilityBill })));
@@ -69,6 +72,7 @@ interface Expense {
   id: string; unitNumber: string; propertyName: string; category: Category;
   description: string; amount: number; incurredOn: string; reference: string | null; chargeTo: ChargeTo;
   unitId?: string; locked?: boolean;
+  receiptDocumentId?: string | null; taskId?: string | null; maintenanceId?: string | null;
   // When set, this row is a line item under another expense (its parent). The
   // grouped view nests it under that rollup; the parent then carries no amount of
   // its own — its children hold the money. See api.md.
@@ -196,10 +200,16 @@ function ExpenseBills({ tabs, utilities }: { tabs: ReactNode; utilities?: boolea
   const [reporting, setReporting] = useState(false);
   const [formFields, setFormFields] = useState<Record<string, string>>({});
 
-  async function createExpense(input: { unitId: string; category: Category; amount: number; incurredOn: string; reference: string; description: string }) {
+  async function createExpense({ receipt, ...input }: { unitId: string; category: Category; amount: number; incurredOn: string; reference: string; description: string; receipt: File | null }) {
     try {
       setFormFields({});
-      const res = await api.post<unknown>('/expenses', input);
+      let receiptDocumentId: string | null = null;
+      if (receipt) {
+        const fd = new FormData();
+        fd.append('file', receipt); fd.append('unitId', input.unitId); fd.append('kind', 'receipt');
+        receiptDocumentId = (await api.post<{ id: string }>('/documents', fd)).id;
+      }
+      const res = await api.post<unknown>('/expenses', { ...input, receiptDocumentId });
       setCreating(false);
       // Above the approval threshold it waits for a second person and is not on the list yet.
       if (isStaged(res)) { toast(stagedToast(res)); void refreshNavCounts(); return; }
@@ -268,6 +278,10 @@ function ExpenseBills({ tabs, utilities }: { tabs: ReactNode; utilities?: boolea
     { key: 'chargeTo', label: 'Charged to', value: r => CHARGE_LABEL[r.chargeTo] ?? r.chargeTo, hidden: true, filter: false, width: 130 },
     { key: 'amount', label: 'Amount', type: 'money', value: r => r.amount, sortKey: 'amount', width: 120, filter: false,
       render: r => <MoneyText sen={r.amount} mode="exact" className="font-medium" /> },
+    { key: 'receipt', label: 'Receipt', width: 120, noExport: true, sortable: false, filter: false,
+      render: r => (r.unitId ? <ReceiptCell expenseId={r.id} unitId={r.unitId} receiptDocumentId={r.receiptDocumentId ?? null}
+        missing={missingReceipt({ category: r.category, chargeTo: r.chargeTo, receiptDocumentId: r.receiptDocumentId ?? null, taskId: r.taskId, maintenanceId: r.maintenanceId })}
+        canAdd onAdded={refresh} /> : null) },
     { key: 'edit', label: '', width: 84, align: 'right', noExport: true, sortable: false, filter: false, hideable: false,
       render: r => (
         <Button size="sm" variant="secondary" onClick={e => { e.stopPropagation(); setEditing(r); }}
@@ -611,7 +625,7 @@ function ExpenseModal({ mode, expense, filters, defaultBuilding, defaultUnit, lo
   locked?: boolean;
   lockReason?: string;
   onClose: () => void;
-  onSubmit?: (e: { unitId: string; category: Category; amount: number; incurredOn: string; reference: string; description: string }) => Promise<void> | void;
+  onSubmit?: (e: { unitId: string; category: Category; amount: number; incurredOn: string; reference: string; description: string; receipt: File | null }) => Promise<void> | void;
   onSave?: (delta: Partial<Expense>) => Promise<void> | void;
 }) {
   const startUnit = defaultUnit ? filters?.units.find(u => u.id === defaultUnit) : undefined;
@@ -622,14 +636,17 @@ function ExpenseModal({ mode, expense, filters, defaultBuilding, defaultUnit, lo
   const [incurredOn, setIncurredOn] = useState(expense?.incurredOn ?? todayMyt());
   const [reference, setReference] = useState(expense?.reference ?? '');
   const [description, setDescription] = useState(expense?.description ?? '');
+  const [receipt, setReceipt] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
+  // This dialog records bills the owner pays, so a utility bill or other deduction needs its receipt (src/lib/receipts.ts).
+  const needsReceipt = mode === 'create' && receiptRequired(category, 'owner');
 
   const readOnly = mode === 'edit' && !!locked;
   // A new deduction needs a reference so the statement line can be traced. Imported
   // expenses arrived without one, so an edit does not insist on it.
   const needsRef = mode === 'create';
   const valid = !readOnly && (mode === 'edit' || unitId !== '') && !!sen && sen > 0 && incurredOn !== ''
-    && (!needsRef || reference.trim() !== '') && description.trim() !== '';
+    && (!needsRef || reference.trim() !== '') && description.trim() !== '' && (!needsReceipt || !!receipt);
 
   // The dialog's category select must always be able to show the current value,
   // even when it came in from a category outside the add-set.
@@ -643,7 +660,7 @@ function ExpenseModal({ mode, expense, filters, defaultBuilding, defaultUnit, lo
     setBusy(true);
     try {
       if (mode === 'create') {
-        await onSubmit?.({ unitId, category, description: description.trim(), amount: sen, incurredOn, reference: reference.trim() });
+        await onSubmit?.({ unitId, category, description: description.trim(), amount: sen, incurredOn, reference: reference.trim(), receipt: needsReceipt ? receipt : null });
       } else {
         await onSave?.({ category, description: description.trim(), amount: sen, incurredOn, ...(reference.trim() ? { reference: reference.trim() } : {}) });
       }
@@ -655,6 +672,7 @@ function ExpenseModal({ mode, expense, filters, defaultBuilding, defaultUnit, lo
     : !sen || sen <= 0 ? 'Enter the amount.'
     : needsRef && !reference.trim() ? 'A reference is required on every new expense.'
     : !description.trim() ? 'Add a short description.'
+    : needsReceipt && !receipt ? 'Attach the receipt: the owner pays this bill.'
     : 'Complete the required fields.';
 
   return (
@@ -699,6 +717,15 @@ function ExpenseModal({ mode, expense, filters, defaultBuilding, defaultUnit, lo
           <textarea disabled={readOnly} value={description} onChange={e => setDescription(e.target.value)} placeholder="Internet, September" rows={2}
             className="block w-full box-border px-3 py-[10px] border border-solid border-line rounded-control outline-none bg-card text-ink font-sans text-copy font-normal h-auto resize-y leading-[1.5]" />
         </LabeledField>
+        {needsReceipt && (
+          <div className="flex flex-col gap-1.5">
+            <span className="text-meta font-medium text-muted-ink">Receipt</span>
+            {receipt
+              ? <FileRow file={{ id: 'receipt', name: receipt.name, size: receipt.size, onRemove: () => setReceipt(null), removeLabel: 'Remove receipt' }} />
+              : <FileDropRow label="Add receipt" hint="Photo or PDF" accept="image/*,application/pdf" onPick={fl => setReceipt(fl.item(0))} />}
+            <span className={cx('text-meta', fieldErrors.receipt ? 'text-critical' : 'text-muted-ink')}>{fieldErrors.receipt ?? 'The owner pays this bill, so its receipt goes with it.'}</span>
+          </div>
+        )}
       </form>
       {mode === 'edit' && expense && <div className="mt-4"><HistoryDisclosure entity="expenses" id={expense.id} /></div>}
     </Modal>

@@ -33,7 +33,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       const fees = lines.filter(l => l.line_type === 'management_fee');
       const fee = fees.length ? {
         label: fees.length === 1 ? String(fees[0].description).replace(/ (\d+(\.\d+)?)%$/, ' · $1%') : `To Operator · ${fees.length} units`,
-        amount: -Math.abs(fees.reduce((n, l) => n + Number(l.amount), 0)),
+        amount: fees.reduce((n, l) => n + Number(l.amount), 0),
       } : null;
       const costs = lines.filter(l => l.line_type === 'expense');
       const byCategory = new Map<string, any[]>();
@@ -42,16 +42,16 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         { label: 'Gross Income', amount: Number(st.gross_booking_value), type: 'gross' },
         ...(fee ? [{ ...fee, type: 'fee' }] : []),
         ...[...byCategory.entries()].map(([cat, list]) => list.length === 1
-          ? { label: `${deductionTerm(cat, list[0].description)} · ${list[0].description}`, amount: -Math.abs(Number(list[0].amount)), type: 'expense', ...(list[0].reference ? { reference: list[0].reference } : {}) }
-          : { label: `${deductionTerm(cat)} · ${list.length} items`, amount: -list.reduce((n, l) => n + Math.abs(Number(l.amount)), 0), type: 'expense' }),
+          ? { label: `${deductionTerm(cat, list[0].description)} · ${list[0].description}`, amount: Number(list[0].amount), type: 'expense', ...(list[0].reference ? { reference: list[0].reference } : {}) }
+          : { label: `${deductionTerm(cat)} · ${list.length} items`, amount: list.reduce((n, l) => n + Number(l.amount), 0), type: 'expense' }),
         ...(Number(st.adjustments_total) ? [{ label: 'Owner Adjustments', amount: Number(st.adjustments_total), type: 'expense' }] : []),
         { label: 'Net Payout to Owner', amount: Number(st.net_payout), type: 'net' },
       ];
     } else {
       grossToNet = [
         { label: 'Gross Income', amount: Number(st.gross_booking_value), type: 'gross' },
-        { label: 'To Operator', amount: -Math.abs(Number(st.management_fee)), type: 'fee' },
-        ...(Number(st.expenses_total) ? [{ label: 'Total Deduction', amount: -Math.abs(Number(st.expenses_total)), type: 'expense' }] : []),
+        { label: 'To Operator', amount: -Number(st.management_fee), type: 'fee' },
+        ...(Number(st.expenses_total) ? [{ label: 'Total Deduction', amount: -Number(st.expenses_total), type: 'expense' }] : []),
         { label: 'Net Payout to Owner', amount: Number(st.net_payout), type: 'net' },
       ];
     }

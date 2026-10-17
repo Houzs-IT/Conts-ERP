@@ -61,14 +61,16 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
       u.lines.push({ label: stayLabel(l), amount: amt, type: 'gross', occurredOn: l.occurred_on });
     } else if (l.line_type === 'expense') {
       const u = bucket(l.unit_id, unitLabel(l));
-      u.expenses += Math.abs(amt);
+      u.expenses -= amt;
       // The report's own words ("Water Usage", "Additional Deduction") and the bill's text, with its receipt when there is one.
       const term = lineTerm(l), detail = lineDetail({ ...l, unitLabel: unitLabel(l) });
-      u.lines.push({ label: detail ? `${term} · ${detail}` : term, amount: -Math.abs(amt), type: 'expense', category: l.category ?? 'other', ...(l.reference ? { reference: l.reference } : {}), occurredOn: l.occurred_on,
+      u.lines.push({ label: detail ? `${term} · ${detail}` : term, amount: amt, type: 'expense', category: l.category ?? 'other', ...(l.reference ? { reference: l.reference } : {}), occurredOn: l.occurred_on,
         ...(l.receipt_id ? { receipt: { id: l.receipt_id, name: l.receipt_name } } : {}) });
     } else if (l.line_type === 'management_fee') {
-      if (l.unit_id) { const u = bucket(l.unit_id, unitLabel(l)); u.fee += Math.abs(amt); u.lines.push({ label: l.description, amount: -Math.abs(amt), type: 'fee' }); }
-      else ownerFee += Math.abs(amt);
+      // Signed: on a month whose net income is negative the operator's share is negative too (it carries its part of
+      // the loss), so the line is a credit to the owner. Taking the absolute value used to subtract it instead.
+      if (l.unit_id) { const u = bucket(l.unit_id, unitLabel(l)); u.fee -= amt; u.lines.push({ label: l.description, amount: amt, type: 'fee' }); }
+      else ownerFee -= amt;
     } else if (l.line_type === 'adjustment') {
       if (l.unit_id) { const u = bucket(l.unit_id, unitLabel(l)); u.adjustments += amt; u.lines.push({ label: l.description, amount: amt, type: 'adjustment' }); }
       else ownerAdj += amt;

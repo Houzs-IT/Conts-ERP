@@ -19,6 +19,7 @@ const shape = (r: any) => ({
   category: r.category, description: r.description, amount: Number(r.amount),
   incurredOn: r.incurred_on, reference: r.reference, chargeTo: r.charge_to,
   parentExpenseId: r.parent_expense_id ?? null, locked: !!r.locked, receiptDocumentId: r.receipt_document_id ?? null,
+  taskId: r.task_id ?? null, maintenanceId: r.maintenance_id ?? null,
 });
 
 /** GET /api/finance/expenses?month=YYYY-MM|all&category=&building=&unit=&owner=&q=&sort=&page=&pageSize=&view=list|tree&export=1
