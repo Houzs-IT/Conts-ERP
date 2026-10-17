@@ -320,6 +320,8 @@
  "POST /api/owners/[id]/adjustments": "AAFAFFFU",
  "POST /api/owners/[id]/invite": "AAFFFFFU",
  "POST /api/owners/[id]/notify": "AAAFFFFU",
+ "POST /api/owners/[id]/resend-invite": "AAFFFFFU",
+ "POST /api/owners/[id]/reset-email": "AAFFFFFU",
  "POST /api/payment-vouchers": "AAFAFFFU",
  "POST /api/payouts": "AAFAFFFU",
  "POST /api/payouts/run": "AAFAFFFU",

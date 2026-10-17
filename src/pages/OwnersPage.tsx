@@ -1,4 +1,4 @@
-import { lazy, Suspense, useMemo, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
@@ -23,6 +23,9 @@ import { Segmented } from '../components/ops/OpsUi';
 import { RowsSkeleton } from '../components/Loading';
 import { useSession } from '../lib/session';
 import { areaOpen } from '../lib/navigation';
+import { RowActions, type RowAction } from '../components/RowActions';
+import { ConfirmDialog, type ConfirmSpec } from '../components/ConfirmDialog';
+import { mayInviteOwners, portalAction, portalBadge } from './owners/portalAccess';
 
 const StatementsPage = lazy(() => import('./StatementsPage'));
 const PayoutsPage = lazy(() => import('./PayoutsPage'));
@@ -116,6 +119,15 @@ function OwnerList({ tabs }: { tabs: ReactNode }) {
   const toast = useToast();
   const navigate = useNavigate();
   const [modal, setModal] = useState(false);
+  const { user } = useSession();
+  const inviter = mayInviteOwners(user?.role);
+  const [dialog, setDialog] = useState<ConfirmSpec | null>(null);
+  // Read through a ref: the memoised columns would otherwise hold a stale toast/dialog closure.
+  const actionsRef = useRef<(o: Owner) => RowAction[]>(() => []);
+  actionsRef.current = o => {
+    const portal = portalAction(o, { toast, confirm: setDialog, onDone: () => reload() });
+    return [{ key: 'open', label: 'Open profile', icon: 'ArrowRight', run: () => navigate(`/owners/${encodeURIComponent(o.id)}`) }, ...(portal ? [portal] : [])];
+  };
 
   const all = useMemo(() => data?.data ?? [], [data]);
   const counts = useMemo(() => ({
@@ -200,8 +212,11 @@ function OwnerList({ tabs }: { tabs: ReactNode }) {
     { key: 'guaranteed', label: `Guaranteed rent, ${monthCol}`, type: 'money', value: o => guaranteedOf(o), hidden: true, filter: false, width: 150 },
     { key: 'defaultFee', label: 'Default fee %', type: 'number', value: o => o.defaultManagementFeePct, hidden: true, filter: false, width: 110 },
     { key: 'portal', label: 'Portal', type: 'status', width: 120, filter: false,
-      status: o => (o.portalInvited ? { label: 'Active', tone: 'success' } : { label: 'Not invited', tone: 'neutral' }) },
-  ], [open, monthCol]);
+      value: o => portalBadge(o, true).label,
+      status: o => portalBadge(o, true) },
+    ...(inviter ? [{ key: 'actions', label: '', width: 52, align: 'right' as const, noExport: true, sortable: false, filter: false, hideable: false,
+      render: (o: Owner) => <RowActions name={titleCase(o.displayName)} items={actionsRef.current(o)} /> } satisfies Column<Owner>] : []),
+  ], [open, monthCol, inviter]);
 
   return (
     <>
@@ -287,11 +302,13 @@ function OwnerList({ tabs }: { tabs: ReactNode }) {
               <MoneyText sen={netOf(o)} mode="exact" tone="auto" strong className="text-copy" />
               <span className="text-caption text-muted-ink">net</span>
             </span>
+            {inviter && <RowActions name={titleCase(o.displayName)} items={actionsRef.current(o)} />}
           </span>
         )}
       />
 
       {modal && <AddOwnerModal onClose={() => setModal(false)} onSubmit={addOwner} />}
+      <ConfirmDialog spec={dialog} onClose={() => setDialog(null)} />
     </>
   );
 }

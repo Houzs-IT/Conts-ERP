@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { SystemStats } from '../components/SystemStats';
@@ -7,7 +7,6 @@ import UsersSignIns from './UsersSignIns';
 import { StatusBadge } from '../components/StatusBadge';
 import { Button } from '../components/Button';
 import { ConfirmDialog, type ConfirmSpec } from '../components/ConfirmDialog';
-import Icon from '../components/Icon';
 import { Field } from '../components/Field';
 import { PhoneInput, phoneProblem } from '../components/inputs';
 import { Select } from '../components/Select';
@@ -22,6 +21,9 @@ import { ROLE_LABEL } from '../lib/vocabulary';
 import { TONE, cx } from '../lib/design-tokens';
 import type { Tone, UserRole } from '../lib/types';
 import { HistoryDisclosure } from '../components/RecordHistory';
+import { RowActions, type RowAction } from '../components/RowActions';
+import { deliveryToast } from '../lib/emailDelivery';
+import Icon from '../components/Icon';
 
 /* ------------------------------------------------------------------ *
  * Users and roles — three tabs (routes.json → SYSTEM → UsersPage):
@@ -52,6 +54,8 @@ interface Row {
   department?: string | null; position?: string | null;
   managerId: string | null;
   isActive: boolean; mustChangePassword: boolean; isLocked?: boolean; twoStep?: boolean; lastLoginAt: string | null;
+  /** When the newest invitation email went out (audit_log user.invite / user.resend_invite). */
+  lastInvitedAt?: string | null;
 }
 interface Payload { data: Row[]; generatedAt: string; jobFields?: boolean }
 
@@ -88,6 +92,19 @@ function status(u: Row): { label: string; tone: Tone } {
   if (u.role === 'owner') return { label: 'Portal only', tone: 'neutral' };
   if (u.mustChangePassword && !u.lastLoginAt) return { label: 'Invited', tone: 'warning' };
   return { label: 'Active', tone: 'success' };
+}
+
+const isInvited = (u: Row) => status(u).label === 'Invited';
+const NO_MAIL_INVITE = 'To get them in now, use Reset password in their row menu and pass the temporary password on yourself.';
+
+/** When the newest invitation went out, and a Resend button for management. */
+function InviteCell({ u, onResend }: { u: Row; onResend?: () => void }) {
+  return (
+    <span className="flex items-center gap-2 min-w-0 flex-wrap" onClick={e => e.stopPropagation()}>
+      <span className="text-meta text-muted-ink whitespace-nowrap">{u.lastInvitedAt ? `Sent ${date(u.lastInvitedAt)}` : 'Sent date unknown'}</span>
+      {onResend && <Button size="sm" variant="secondary" icon={<Icon name="Send" size="sm" />} onClick={onResend} aria-label={`Resend invitation to ${u.fullName}`}>Resend</Button>}
+    </span>
+  );
 }
 
 const initials = (name: string) => name.split(' ').map(n => n[0]).slice(0, 2).join('');
@@ -174,12 +191,17 @@ export default function UsersPage() {
     { key: 'lastLogin', label: 'Last sign-in', type: 'date', value: u => u.lastLoginAt, width: 120,
       render: u => <span className="text-copy text-muted-ink whitespace-nowrap">{u.lastLoginAt ? date(u.lastLoginAt) : 'Never'}</span> },
     { key: 'status', label: 'Status', type: 'status', value: u => status(u).label, status: u => status(u), width: 110 },
+    { key: 'invite', label: 'Invitation', type: 'date', value: u => (isInvited(u) ? u.lastInvitedAt ?? null : null), width: 210, filter: false,
+      render: u => isInvited(u) ? <InviteCell u={u} onResend={canManageRef.current ? () => resendRef.current(u) : undefined} /> : <span className="text-muted-ink">-</span> },
     // The menu is read through a ref: its actions depend on state the memoised columns would otherwise hold stale.
     { key: 'actions', label: '', width: 52, align: 'right', noExport: true, sortable: false, filter: false, hideable: false,
       render: u => <RowActions name={u.fullName} items={actionsRef.current(u)} /> },
   ], [nameById, jobFields]);
-  const invitedCount = rows.filter(r => status(r).label === 'Invited').length;
+  const invitedRows = rows.filter(isInvited);
+  const invitedCount = invitedRows.length;
   const actionsRef = useRef<(u: Row) => RowAction[]>(() => []);
+  const resendRef = useRef<(u: Row) => void>(() => {});
+  const canManageRef = useRef(false);
 
   /* ------------------------------ invite ------------------------------ */
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -246,10 +268,9 @@ export default function UsersPage() {
     setBusy(true);
     try {
       const res = await api.post<{ delivery: string; reason?: string }>(`/users/${u.id}/resend-invite`, {});
-      if (res.delivery === 'sent') toast({ tone: 'success', title: `Invitation re-sent to ${u.email}.`, body: 'A fresh temporary password is on its way.' });
-      else if (res.delivery === 'failed') toast({ tone: 'critical', title: 'Invitation could not be sent.', body: res.reason ?? 'The email provider is not configured — see IT.' });
-      else toast({ tone: 'warning', title: 'Invitation queued, not yet delivered.', body: res.reason ?? 'It will send shortly.' });
+      toast(deliveryToast(res, { title: `Invitation re-sent to ${u.email}.`, body: 'A fresh temporary password is on its way.' }, 'invitation', NO_MAIL_INVITE));
       setEditing(null); setConfirm(null);
+      reload();
     } catch (err) {
       toast({ tone: 'critical', title: 'Could not re-send the invitation.', body: errorMessage(err, 'Try again in a moment.') });
     } finally {
@@ -279,6 +300,42 @@ export default function UsersPage() {
   const canManage = me?.role === 'management';
   const [confirm, setConfirm] = useState<ConfirmSpec | null>(null);
   const [tempShown, setTempShown] = useState<{ name: string; email: string; password: string } | null>(null);
+
+  function confirmResend(u: Row) {
+    setConfirm({
+      title: `Resend the invitation to ${u.fullName}?`,
+      body: 'They get a fresh temporary password by email. The one in the earlier email stops working.',
+      meta: `Sent to ${u.email}${u.lastInvitedAt ? ` · last sent ${date(u.lastInvitedAt)}` : ''}`, confirmLabel: 'Resend invitation', busyLabel: 'Sending…',
+      onConfirm: () => resendInvite(u),
+    });
+  }
+  resendRef.current = confirmResend;
+  canManageRef.current = canManage;
+  // One request per person, one after another, so each gets their own password and audit row; a refusal for one
+  // (they signed in meanwhile) does not stop the rest.
+  async function resendAll() {
+    const list = invitedRows;
+    let sent = 0, noMail = 0, other = 0;
+    const refused: string[] = [];
+    setBusy(true);
+    for (const u of list) {
+      try {
+        const res = await api.post<{ delivery: string; reason?: string }>(`/users/${u.id}/resend-invite`, {});
+        if (res.delivery === 'sent') sent++;
+        else if (res.delivery === 'failed' && /not configured/i.test(res.reason ?? '')) noMail++;
+        else other++;
+      } catch { refused.push(u.fullName); }
+    }
+    setBusy(false);
+    setConfirm(null);
+    reload();
+    const tail = refused.length ? ` Not re-sent: ${refused.join(', ')}.` : '';
+    if (noMail) toast({ tone: 'critical', title: 'Invitations were not emailed: email is not set up on this system.',
+      body: `New temporary passwords were made for ${plural(list.length - refused.length, 'person', 'people')}, but no mail provider key is set here, so nothing went out. ${NO_MAIL_INVITE}${tail}` });
+    else if (other || refused.length) toast({ tone: 'warning', title: `${sent} of ${list.length} invitations sent.`,
+      body: `${other ? `${other} queued or failed and will be retried.` : ''}${tail}`.trim() });
+    else toast({ tone: 'success', title: `${plural(sent, 'invitation')} re-sent.`, body: 'Each person has a fresh temporary password by email.' });
+  }
 
   async function act(u: Row, call: () => Promise<unknown>, done: string, body?: string) {
     setBusy(true);
@@ -315,12 +372,7 @@ export default function UsersPage() {
     // Only management may change an account (functions/api/users/[id].ts); others read the list.
     if (!canManage) return [];
     const items: RowAction[] = [{ key: 'edit', label: 'Edit details', icon: 'Pencil', run: () => openEdit(u) }];
-    if (u.isActive && invited) items.push({ key: 'invite', label: 'Resend invitation', icon: 'Send', run: () => setConfirm({
-      title: `Resend the invitation to ${u.fullName}?`,
-      body: 'They get a fresh temporary password by email. The one in the first email stops working.',
-      meta: `Sent to ${u.email}`, confirmLabel: 'Resend invitation', busyLabel: 'Sending…',
-      onConfirm: () => resendInvite(u),
-    }) });
+    if (u.isActive && invited) items.push({ key: 'invite', label: 'Resend invitation', icon: 'Send', run: () => confirmResend(u) });
     if (u.isActive && !invited) items.push({ key: 'reset', label: 'Email a password reset link', icon: 'Mail', run: () => setConfirm({
       title: `Send ${u.fullName} a password reset link?`,
       body: 'They get an email with a link to choose a new password. It works once and expires in 60 minutes. Their current password keeps working until they use it.',
@@ -457,9 +509,19 @@ export default function UsersPage() {
         title="Users and roles"
         sub={data ? `${plural(rows.length, 'account')} · ${count(invitedCount)} invited and not yet signed in` : 'Loading accounts…'}
         primary={tab === 'users' && canManage && (
-          <Button variant="primary" size="sm" onClick={() => { setLastTempPassword(null); setInviteOpen(true); }}>
-            Invite user
-          </Button>
+          <span className="flex gap-2 flex-wrap">
+            {invitedCount > 0 && (
+              <Button variant="secondary" size="sm" icon={<Icon name="Send" size="sm" />} onClick={() => setConfirm({
+                title: `Resend the invitation to all ${plural(invitedCount, 'invited person', 'invited people')}?`,
+                body: 'Everyone who was invited and has not signed in yet gets a fresh temporary password by email. The passwords in their earlier emails stop working.',
+                meta: invitedRows.map(u => u.fullName).join(', '), confirmLabel: `Resend ${plural(invitedCount, 'invitation')}`, busyLabel: 'Sending…',
+                onConfirm: resendAll,
+              })}>Resend to all invited ({count(invitedCount)})</Button>
+            )}
+            <Button variant="primary" size="sm" onClick={() => { setLastTempPassword(null); setInviteOpen(true); }}>
+              Invite user
+            </Button>
+          </span>
         )}
       />
 
@@ -514,6 +576,7 @@ export default function UsersPage() {
                   {jobLine(u) && <span className="text-meta text-ink truncate" title={jobLine(u)}>{jobLine(u)}</span>}
                   <span className="text-meta text-muted-ink truncate" title={u.email}>{u.email}</span>
                   <span className="flex items-center gap-1.5 flex-wrap"><StatusBadge tone={roleTone[u.role]} label={roleLabel(u.role)} size="sm" /><StatusBadge tone={s.tone} label={s.label} size="sm" /></span>
+                  {isInvited(u) && <InviteCell u={u} onResend={canManage ? () => confirmResend(u) : undefined} />}
                 </span>
                 <RowActions name={u.fullName} items={actionsFor(u)} />
               </span>
@@ -720,54 +783,6 @@ function JobFields({ department, position, onDepartment, onPosition, errors, dep
       <datalist id="user-position-options">{positions.map(v => <option key={v} value={v} />)}</datalist>
       <datalist id="user-department-options">{departments.map(v => <option key={v} value={v} />)}</datalist>
     </>
-  );
-}
-
-interface RowAction { key: string; label: string; icon: string; danger?: boolean; run: () => void }
-
-/** The "..." button at the end of a row. The menu uses fixed positioning so the table's horizontal
- *  scroll box cannot clip it on the last rows; clicks stop here so they do not also open Edit. */
-function RowActions({ name, items }: { name: string; items: RowAction[] }) {
-  const [at, setAt] = useState<{ top: number; right: number } | null>(null);
-  const ref = useRef<HTMLSpanElement>(null);
-  useEffect(() => {
-    if (!at) return;
-    const close = (e: Event) => { if (!ref.current?.contains(e.target as Node)) setAt(null); };
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setAt(null); };
-    const shut = () => setAt(null);
-    document.addEventListener('mousedown', close); document.addEventListener('keydown', onKey);
-    window.addEventListener('scroll', shut, true); window.addEventListener('resize', shut);
-    return () => {
-      document.removeEventListener('mousedown', close); document.removeEventListener('keydown', onKey);
-      window.removeEventListener('scroll', shut, true); window.removeEventListener('resize', shut);
-    };
-  }, [at]);
-  return (
-    <span ref={ref} onClick={e => e.stopPropagation()} className="flex-none">
-      <button type="button" aria-label={`Actions for ${name}`} aria-haspopup="menu" aria-expanded={!!at}
-        onClick={e => {
-          const r = e.currentTarget.getBoundingClientRect();
-          setAt(at ? null : { top: Math.min(r.bottom + 4, window.innerHeight - 40 * items.length - 16), right: window.innerWidth - r.right });
-        }}
-        className="w-8 h-8 grid place-items-center rounded-control border-none bg-transparent text-muted-ink cursor-pointer hover:bg-muted hover:text-ink">
-        <Icon name="MoreHorizontal" size="sm" />
-      </button>
-      {at && (
-        <div role="menu" style={{ top: at.top, right: at.right }}
-          className="fixed z-[55] w-[240px] p-1 bg-card border border-solid border-line rounded-card shadow-[var(--shadow-overlay)]">
-          {items.map((a, i) => (
-            <Fragment key={a.key}>
-              {a.danger && i > 0 && !items[i - 1].danger && <div role="separator" className="my-1 mx-1 h-px bg-line-soft" />}
-              <button type="button" role="menuitem" onClick={() => { setAt(null); a.run(); }}
-                className={cx('w-full text-left flex gap-2.5 items-center px-2.5 py-2 rounded-[8px] border-none bg-transparent [font-family:inherit] text-copy cursor-pointer hover:bg-muted',
-                  a.danger ? 'text-danger' : 'text-ink')}>
-                <Icon name={a.icon} size="sm" />{a.label}
-              </button>
-            </Fragment>
-          ))}
-        </div>
-      )}
-    </span>
   );
 }
 
