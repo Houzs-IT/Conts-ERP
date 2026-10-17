@@ -375,6 +375,13 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - The statement and the panel both count rollup headers (parent_expense_id) with their line items; /api/finance/expenses does not. No rollups exist today; if they appear, decide which is right.
 - scripts/api-checks/unit-costs.mjs runs in CI (rbac job). Locally on PGlite use STATEMENTS=lib: POST /api/statements/generate opens a second connection for its transaction and PGlite serves one, so it hangs there.
 
+## Utility bills findable (feat/staff-utilities, no migration, 17 Oct 2026)
+- Staff could not find where utilities go. Now: Finance > Utility bills (the monthly bills by account number, every unit), "Utility bills" and "Add utility bill" on Accounts payable, "Add utility bill" on the unit Financials tab. All reuse Add a bill / Utility bills, all units; no second store.
+- Owner statement lines (staff page and owner portal) link each bill's receipt; an owner may open a receipt only once that statement is final.
+- Owner to decide: should a bill the owner pays REQUIRE a receipt? Today the receipt is optional, one per bill; the monthly screen takes none.
+- Monthly screen lists only units with account numbers on file (unit_utility_accounts); units without them are entered one by one with Add utility bill.
+- Owner portal Statement breakdown: on a month with a negative net the per-unit net subtracts the operator share instead of adding it back (RM -122.76 vs the hero's RM -73.66 on demo data). Pre-existing, not touched.
+
 ## Owner details (feat/owner-details, migration 0110)
 - Done (12 Oct): migration 0110 applied on staging and production; the address fields are live.
 - Production: 116 owners, none with phone or email yet (the source workbooks had none); they are entered on each owner's page (Owner details, Edit).
