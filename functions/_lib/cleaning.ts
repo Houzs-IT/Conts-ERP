@@ -165,19 +165,31 @@ export const isDay = (v: unknown): v is string => typeof v === 'string' && /^\d{
  *  in place (guest_left_at, guest_left_auto). Never throws: a screen read must not fail over it. */
 export async function autoGuestLeft(env: Env, rows: any[], stdOut: string): Promise<void> {
   const now = Date.now();
+  const due: { id: string; at: string; time: string; unit: string | null }[] = [];
   for (const r of rows) {
     if (r.guest_left_at || !r.prev_id || r.prev_state === 'checked_out' || r.state === 'resolved' || !r.day) continue;
     const time = r.prev_time && /^\d{2}:\d{2}$/.test(r.prev_time) ? r.prev_time : stdOut;
     const at = `${r.day}T${time}:00+08:00`;
     if (Date.parse(at) > now) continue;
-    try {
-      const set = await one<{ id: string }>(env, 'UPDATE tasks SET guest_left_at = ?, updated_at = ? WHERE id = ? AND guest_left_at IS NULL RETURNING id', at, nowIso(), r.id);
-      r.guest_left_at = at; r.guest_left_auto = true;
-      if (!set) continue;
-      if (r.unit_id) await run(env, `UPDATE units SET readiness = 'dirty', updated_at = ? WHERE id = ? AND readiness IN ('occupied','ready')`, nowIso(), r.unit_id);
-      await run(env, `INSERT INTO audit_log (actor_id, actor_label, action, entity_table, entity_id, before_state, after_state, source, occurred_at)
-        VALUES (NULL, 'Automatic', 'task.guest_left', 'tasks', ?, NULL, ?, 'system', ?)`,
-        r.id, JSON.stringify({ guestLeftAt: at, auto: true, reason: `Automatic, at checkout ${time}` }), nowIso());
-    } catch { /* the next read tries again */ }
+    r.guest_left_at = at; r.guest_left_auto = true;
+    due.push({ id: r.id, at, time, unit: r.unit_id ?? null });
   }
+  if (!due.length) return;
+  try {
+    const stamp = nowIso();
+    // Only the rows this read stamped get a history line: two screens reading at once write it once.
+    const set = await all<{ id: string }>(env, `
+      UPDATE tasks t SET guest_left_at = x.at, updated_at = ?
+      FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, at text)
+      WHERE t.id = x.id AND t.guest_left_at IS NULL RETURNING t.id`, stamp, JSON.stringify(due));
+    const done = due.filter(d => set.some(s => s.id === d.id));
+    if (!done.length) return;
+    await run(env, `UPDATE units SET readiness = 'dirty', updated_at = ? WHERE id IN (SELECT jsonb_array_elements_text(?::text::jsonb)) AND readiness IN ('occupied','ready')`,
+      stamp, JSON.stringify(done.map(d => d.unit).filter(Boolean)));
+    await run(env, `
+      INSERT INTO audit_log (actor_id, actor_label, action, entity_table, entity_id, before_state, after_state, source, occurred_at)
+      SELECT NULL, 'Automatic', 'task.guest_left', 'tasks', x.id, NULL, x.after, 'system', ?
+      FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, after text)`,
+      stamp, JSON.stringify(done.map(d => ({ id: d.id, after: JSON.stringify({ guestLeftAt: d.at, auto: true, reason: `Automatic, at checkout ${d.time}` }) }))));
+  } catch { /* the next read tries again */ }
 }

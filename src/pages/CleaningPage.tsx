@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
-import { DateField, MoneyInput } from '../components/inputs';
+import { DateField, MoneyInput, TimeField } from '../components/inputs';
 import Icon from '../components/Icon';
 import { Select, SearchSelect, type SelectOption } from '../components/Select';
 import { StaleBanner } from '../components/DataState';
@@ -427,8 +427,9 @@ function CheckInTime({ time, saving, onSave }: { time: string; saving: boolean; 
   }
   const save = () => { setEditing(false); if (v && v !== time) onSave(v); };
   return (
-    <span onClick={e => e.stopPropagation()} onKeyDown={e => { e.stopPropagation(); if (e.key === 'Enter') save(); if (e.key === 'Escape') { setV(time); setEditing(false); } }} className="inline-flex">
-      <input type="time" aria-label="Next check-in time" autoFocus value={v} onChange={e => setV(e.target.value)} onBlur={save} className={cx(INPUT, 'h-8 w-[110px] px-2')} />
+    <span onClick={e => e.stopPropagation()} onKeyDown={e => { e.stopPropagation(); if (e.key === 'Enter') save(); if (e.key === 'Escape') { setV(time); setEditing(false); } }} className="inline-flex items-center gap-1 align-middle">
+      <TimeField aria-label="Next check-in time" autoFocus value={v} onChange={setV} className={cx(INPUT, 'h-8 w-[110px] px-2')} />
+      <button type="button" onClick={save} aria-label="Save the check-in time" className="h-8 w-8 grid place-items-center rounded-control border border-solid border-black bg-black text-white cursor-pointer"><Icon name="Check" size="sm" /></button>
     </span>
   );
 }

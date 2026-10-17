@@ -23,6 +23,8 @@ const LAYOUT: Record<string, string> = {
   studio: 'Studio', '1_bedroom': '1 bedroom', '2_bedroom': '2 bedroom', '3_bedroom': '3 bedroom', '4_plus_bedroom': '4+ bedroom',
   duplex: 'Duplex', dual_key: 'Dual key', penthouse: 'Penthouse', other: 'Other',
 };
+/** This month and the ones before it, newest first, YYYY-MM. */
+const lastMonths = (n: number) => Array.from({ length: n }, (_, k) => { const d = new Date(`${mytDay(0).slice(0, 7)}-01T00:00:00Z`); d.setUTCMonth(d.getUTCMonth() - k); return d.toISOString().slice(0, 7); });
 const money = (v: number | null) => (v == null ? <span className="text-warning">Not set</span> : <span className="tabular-nums">{rm(v)}</span>);
 
 /** Cleaning > Prices: the price table (clean type x unit layout, the cleaner's pay and the charge per clean) and each
@@ -36,7 +38,7 @@ export function PricesView({ tabs }: { tabs: ReactNode }) {
       <PageHeader title="Cleaning" sub="Prices: what each clean pays the cleaner and what it is charged" actions={tabs} />
       {table.error && <StaleBanner message={table.error} onRetry={table.reload} />}
       {!t ? <Skeleton height={240} /> : !t.ready ? (
-        <EmptyState icon="Sparkles" title="Cleaning prices are not switched on yet." body="They need a database update (migration 0126). Until then cleans are charged at the old rates." />
+        <EmptyState icon="Sparkles" title="Cleaning prices are not switched on yet." body="They need a database update (migration 0126). Until then cleaning jobs are charged at the old rates." />
       ) : <>
         <PriceTableCard data={t} onSaved={() => { table.reload(); units.reload(); }} />
         <UnitPricesCard rows={units.data?.rows ?? null} mayEdit={!!units.data?.mayEdit} onSaved={units.reload} />
@@ -57,7 +59,7 @@ function PriceTableCard({ data, onSaved }: { data: PriceTable; onSaved: () => vo
   const notSet = data.rows.filter(r => r.internalCost == null && r.externalCharge == null).length;
   async function save() {
     setBusy(true);
-    try { await api.put('/housekeeping/prices', { rows: Object.values(draft) }); toast({ tone: 'success', title: 'Prices saved.', body: 'Cleans not yet finished use them from now on.' }); onSaved(); }
+    try { await api.put('/housekeeping/prices', { rows: Object.values(draft) }); toast({ tone: 'success', title: 'Prices saved.', body: 'Cleaning jobs not yet finished use them from now on.' }); onSaved(); }
     catch (e) { toast({ tone: 'critical', title: 'Not saved.', body: errorMessage(e, 'Try again in a moment.') }); }
     finally { setBusy(false); }
   }
@@ -66,7 +68,7 @@ function PriceTableCard({ data, onSaved }: { data: PriceTable; onSaved: () => vo
       <div className="flex items-start gap-3 flex-wrap">
         <div className="flex-1 min-w-[200px]">
           <h2 className="m-0 text-heading font-semibold">Price table</h2>
-          <p className="m-0 text-meta text-muted-ink">Cleans made from reservations take their amount from here, by the unit's layout. {notSet ? `${notSet} of ${data.rows.length} prices are not set yet: those cleans show "Price not set" and are charged at the old rate.` : 'Every price is set.'}</p>
+          <p className="m-0 text-meta text-muted-ink">Cleaning jobs made from reservations take their amount from here, by the unit's layout. {notSet ? `${notSet} of ${data.rows.length} prices are not set yet: those cleaning jobs show "Price not set" and are charged at the old rate.` : 'Every price is set.'}</p>
         </div>
         <div role="tablist" className="flex gap-1">
           {data.kinds.map(k => (
@@ -186,14 +188,16 @@ export function PayView({ tabs }: { tabs: ReactNode }) {
       <PageHeader title="Cleaning" sub={data?.ready ? `Pay for ${monthLabel(`${month}-01`)} · ${rm(total)} for ${rows.length} ${rows.length === 1 ? 'cleaner' : 'cleaners'}` : 'Cleaner pay'} actions={tabs} />
       <div className="flex items-center gap-2 flex-wrap">
         <label className="flex items-center gap-2 text-meta text-muted-ink">Month
-          <input type="month" className={cx(INPUT, 'h-9 w-auto')} value={month} max={mytDay(0).slice(0, 7)} onChange={e => e.target.value && setMonth(e.target.value)} />
+          <select className={cx(INPUT, 'h-9 w-auto')} value={month} onChange={e => setMonth(e.target.value)}>
+            {lastMonths(12).map(m => <option key={m} value={m}>{monthLabel(`${m}-01`)}</option>)}
+          </select>
         </label>
-        {unpriced > 0 && <span className="text-meta text-warning">{unpriced} {unpriced === 1 ? 'clean has' : 'cleans have'} no cleaner's pay set: set it in Prices.</span>}
+        {unpriced > 0 && <span className="text-meta text-warning">{unpriced} {unpriced === 1 ? 'cleaning job has' : 'cleaning jobs have'} no cleaner's pay set: set it in Prices.</span>}
       </div>
       {error && <StaleBanner message={error} onRetry={reload} />}
       {loading && !data ? <Skeleton height={160} /> : data && !data.ready ? (
         <EmptyState icon="Sparkles" title="Cleaner pay is not switched on yet." body="It needs a database update (migration 0126)." />
-      ) : rows.length === 0 ? <EmptyState icon="Sparkles" title={`No finished cleans in ${monthLabel(`${month}-01`)}.`} /> : (
+      ) : rows.length === 0 ? <EmptyState icon="Sparkles" title={`No finished cleaning jobs in ${monthLabel(`${month}-01`)}.`} /> : (
         <section className="bg-card rounded-card border border-solid border-line p-4 flex flex-col">
           <div className="hidden md:grid grid-cols-[minmax(0,1.4fr)_repeat(4,minmax(0,1fr))] gap-3 text-meta font-semibold text-muted-ink pb-2">
             <span>Cleaner</span><span>Our units</span><span>External jobs</span><span>Not priced</span><span className="text-right">Pay</span>

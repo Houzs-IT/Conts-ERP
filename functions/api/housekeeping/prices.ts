@@ -37,11 +37,11 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
     if (!amountOk(r.internalCost ?? null) || !amountOk(r.externalCharge ?? null)) return fail('VALIDATION', 'Amounts are sen, RM 0.00 or more, or empty.', 422);
   }
   const now = nowIso();
-  for (const r of b.rows) {
-    await run(env, `INSERT INTO cleaning_prices (kind, layout, internal_cost, external_charge, updated_at, updated_by) VALUES (?, ?, ?, ?, ?, ?)
-      ON CONFLICT (kind, layout) DO UPDATE SET internal_cost = excluded.internal_cost, external_charge = excluded.external_charge, updated_at = excluded.updated_at, updated_by = excluded.updated_by`,
-      r.kind, r.layout, r.internalCost ?? null, r.externalCharge ?? null, now, session.userId);
-  }
+  await run(env, `INSERT INTO cleaning_prices (kind, layout, internal_cost, external_charge, updated_at, updated_by)
+    SELECT x.kind, x.layout, x.internal_cost, x.external_charge, ?, ?
+    FROM jsonb_to_recordset(?::text::jsonb) AS x(kind text, layout text, internal_cost int, external_charge int)
+    ON CONFLICT (kind, layout) DO UPDATE SET internal_cost = excluded.internal_cost, external_charge = excluded.external_charge, updated_at = excluded.updated_at, updated_by = excluded.updated_by`,
+    now, session.userId, JSON.stringify(b.rows.map((r: any) => ({ kind: r.kind, layout: r.layout, internal_cost: r.internalCost ?? null, external_charge: r.externalCharge ?? null }))));
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'cleaning.prices', entityTable: 'cleaning_prices', entityId: 'table', after: { rows: b.rows } });
   return json({ ok: true, saved: b.rows.length });
 };
