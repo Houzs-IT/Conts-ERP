@@ -301,6 +301,7 @@ function Routed() {
         <Route path="/performance" element={<Navigate to="/performance/analytics" replace />} />
         {/* Owner statements and owner payouts moved onto the owner; Expenses is Accounts payable (owner, 11 Oct 2026). */}
         <Route path="/finance/payables" element={<ExpensesPage />} />
+        <Route path="/finance/utility-bills" element={<ExpensesPage utilities />} />
         <Route path="/finance/expenses" element={<Moved to="/finance/payables" />} />
         <Route path="/finance/statements" element={<Moved to="/owners" add={{ view: 'statements' }} />} />
         <Route path="/finance/statements/:id" element={<MovedStatement />} />

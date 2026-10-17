@@ -28,7 +28,7 @@ import BookingsTab from './units/BookingsTab';
 import JobsTab from './units/JobsTab';
 import FinancialsTab, { MonthStepper, useFinancialMonth } from './units/FinancialsTab';
 import { SaveBar, DetailsForm, DocumentsCard, BuildingModal, ConfirmAdd, AddUnitModal } from './units/UnitForms';
-import { UnitCostsCard } from './owners/Costs';
+import { UnitCostsCard, BillModal } from './owners/Costs';
 import ContractTab, { ModelChip } from './units/ContractTab';
 import { PROPERTIES_FALLBACK, DETAIL_FALLBACK, mkUnit } from './units/fallback';
 import { RecordHistory } from '../components/RecordHistory';
@@ -326,6 +326,8 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
   const canManageChannels = !!user && MASTER_ROLES.includes(user.role);
   const wideRecord = useSmUp();
   const [fmonth, setFmonth] = useFinancialMonth();
+  const [utilityBill, setUtilityBill] = useState(false);
+  const [billsSaved, setBillsSaved] = useState(0);
   const tabsRef = useRef<HTMLDivElement>(null);
   const [photo, setPhoto] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -498,10 +500,15 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
         <>
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <MonthStepper month={fmonth} onChange={setFmonth} />
-            {form && <Button size="sm" variant="tertiary" icon={<Icon name="Download" size="sm" />} onClick={expensesReport}>Expenses report for {monthLabel(fmonth)}</Button>}
+            <div className="flex items-center gap-2 flex-wrap">
+              {form && <Button size="sm" variant="tertiary" icon={<Icon name="Download" size="sm" />} onClick={expensesReport}>Expenses report for {monthLabel(fmonth)}</Button>}
+              {canEdit && <Button size="sm" variant="secondary" icon={<Icon name="Zap" size="sm" />} onClick={() => setUtilityBill(true)}>Add utility bill</Button>}
+            </div>
           </div>
-          <FinancialsTab key={u.id} unitId={u.id} month={fmonth} />
-          <UnitCostsCard unitId={u.id} ownerId={u.owner.id} unitLabel={unitLabel} canEdit={canEdit} cleaningPrice={form?.cleaningPrice} month={fmonth}
+          {utilityBill && <BillModal units={[{ id: u.id, label: unitLabel }]} defaultUnitId={u.id} ownerId={u.owner.id} canAdjust={false} month={fmonth}
+            onClose={() => setUtilityBill(false)} onSaved={() => { setBillsSaved(n => n + 1); reloadDetail(); reload(); }} />}
+          <FinancialsTab key={`fin.${u.id}.${billsSaved}`} unitId={u.id} month={fmonth} />
+          <UnitCostsCard key={`costs.${u.id}.${billsSaved}`} unitId={u.id} ownerId={u.owner.id} unitLabel={unitLabel} canEdit={canEdit} cleaningPrice={form?.cleaningPrice} month={fmonth}
             deepCleaningPrice={form?.deepCleaningPrice} legacyCosts={form?.expenses ?? []} onChanged={() => { reloadDetail(); reload(); }} />
         </>
       )}
