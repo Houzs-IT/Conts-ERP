@@ -1,6 +1,6 @@
 import { type Env, one, json, fail, audit, nowIso } from '../../../../_lib/db';
 import { requireSession } from '../../../../_lib/auth';
-import { hasAssigneeUser, UNASSIGNED_SQL } from '../../../../_lib/maintenance';
+import { hasAssigneeUser, UNASSIGNED_SQL, hasJobType, fieldVisibleSql } from '../../../../_lib/maintenance';
 import { repairNotice } from '../../../../_lib/notices';
 
 /** POST /api/field/repairs/:id/pick — a technician takes an open job nobody has. Only a job with no technician or
@@ -19,7 +19,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   const now = nowIso();
   const taken = await one<{ id: string }>(env, `
     UPDATE maintenance_issues m SET vendor_name = ?, assignee_kind = 'in_house', state = 'assigned', updated_at = ?${byId ? ', assignee_user_id = ?' : ''}
-    WHERE m.id = ? AND ${UNASSIGNED_SQL} AND m.state IN ('open','reopened')${byId ? ' AND m.assignee_user_id IS NULL' : ''}
+    WHERE m.id = ? AND ${UNASSIGNED_SQL} AND ${fieldVisibleSql(await hasJobType(env))} AND m.state IN ('open','reopened')${byId ? ' AND m.assignee_user_id IS NULL' : ''}
     RETURNING m.id`, session.fullName, now, ...(byId ? [session.userId] : []), id);
   if (!taken) {
     return fail('CONFLICT', cur.vendor_name?.trim() ? `${cur.vendor_name.trim()} already has this job.` : 'This job cannot be picked up now. Refresh the list.', 409);
