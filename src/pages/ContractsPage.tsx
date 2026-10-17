@@ -19,6 +19,10 @@ import { TONE, cx } from '../lib/design-tokens';
 import { useUrlState, usePhone, SearchBox } from './finance/listKit';
 import { FilterBar } from '../components/FilterBar';
 import { statusOf } from '../lib/status';
+import { CODES, CODE, type ContractCode } from '../lib/revenueModel';
+import { CodeBadge } from './units/UnitExtras';
+import { ExtendContractModal } from './units/ContractExtras';
+import { CentreModal, Labeled, Select as FormSelect } from './units/shared';
 
 type FeeModel = 'management' | 'grr';
 type ContractState = 'Active' | 'Ending soon' | 'Ended';
@@ -36,6 +40,8 @@ interface Contract {
   renewsOn: string | null;
   endsOn?: string | null;
   offerLetter: string | null;
+  /** The staff's short code (PS, PS GRR, WH, ...) and the units this record is in force on (0125). */
+  contractCode?: ContractCode; units?: { id: string; label: string }[];
 }
 interface Payload { data: Contract[]; generatedAt: string }
 
@@ -49,8 +55,8 @@ const FALLBACK: Payload = {
   ],
 };
 
-/** A contract within this many days of its end date is flagged for a renewal conversation. */
-const ENDING_WINDOW_DAYS = 60;
+/** A contract within this many days of its end date is flagged for a renewal conversation (staff, 17 Oct 2026: 90). */
+const ENDING_WINDOW_DAYS = 90;
 /** The stored-status key for each contract state (lib/status.ts, entity contract). */
 const STATE_KEY: Record<ContractState, string> = { Active: 'active', 'Ending soon': 'ending_soon', Ended: 'ended' };
 
@@ -88,7 +94,7 @@ export default function ContractsPage() {
   const phone = usePhone();
   const url = useUrlState();
   const [edits, setEdits] = useState<Record<string, Partial<Contract>>>({});
-  const [modal, setModal] = useState<null | { mode: 'add' } | { mode: 'edit'; id: string }>(null);
+  const [modal, setModal] = useState<null | { mode: 'add' } | { mode: 'edit'; id: string } | { mode: 'extend'; contract: Contract | null }>(null);
 
   const filter: FilterKey = (['soon', 'active', 'ended'].includes(url.get('state')) ? url.get('state') : 'all') as FilterKey;
   const model = url.get('model');
@@ -116,7 +122,7 @@ export default function ContractsPage() {
       if (filter === 'soon' && s !== 'Ending soon') return false;
       if (filter === 'active' && s !== 'Active') return false;
       if (filter === 'ended' && s !== 'Ended') return false;
-      if (model && r.model !== model) return false;
+      if (model && (r.contractCode ?? (r.model === 'grr' ? 'GRR' : 'PS')) !== model) return false;
       return !q || r.ownerName.toLowerCase().includes(q) || r.unitsLabel.toLowerCase().includes(q);
     });
     // Until someone sorts by a column: the next to end first, open-ended after, the ones already ended last (latest first).
@@ -187,6 +193,8 @@ export default function ContractsPage() {
         </span>
       ) },
     { key: 'units', label: 'Units', value: r => r.unitsLabel, width: 200 },
+    { key: 'code', label: 'Code', value: r => r.contractCode ?? null, width: 96, title: 'The contract type: PS, PS GRR, PS YGRR, LT, RTR, MANAGE, WH.',
+      render: r => <CodeBadge code={r.contractCode} size="sm" />, filter: { kind: 'select', options: CODES.map(c => ({ value: c.code, label: `${c.code} · ${c.label}` })) } },
     { key: 'fee', label: 'Income model', value: r => feeLabel(r), width: 140, render: r => <span className="text-copy font-medium truncate block" title={feeLabel(r)}>{feeLabel(r)}</span> },
     { key: 'model', label: 'Model', value: r => (r.model === 'grr' ? 'Guaranteed rent' : 'Operator share'), hidden: true, width: 140, filter: { kind: 'select' } },
     { key: 'feePct', label: 'Operator share %', type: 'number', value: r => (r.model === 'management' ? r.managementFeePct : null), hidden: true, width: 120 },
@@ -198,8 +206,15 @@ export default function ContractsPage() {
     { key: 'renewsOn', label: 'Renews on', type: 'date', value: r => r.renewsOn, hidden: true },
     { key: 'offer', label: 'Offer letter', value: r => r.offerLetter, hidden: true, width: 180 },
     { key: 'status', label: 'Status', type: 'status', value: r => stateOf(r), status: r => statusOf('contract', STATE_KEY[stateOf(r)]), width: 120 },
-    { key: 'edit', label: '', width: 56, noExport: true, sortable: false, filter: false, align: 'right',
+    { key: 'edit', label: '', width: 104, noExport: true, sortable: false, filter: false, align: 'right',
       render: r => (
+        <span className="inline-flex items-center gap-1.5">
+        {(r.units?.length ?? 0) > 0 && (
+          <button onClick={e => { e.stopPropagation(); setModal({ mode: 'extend', contract: r }); }} aria-label={`Extend contract for ${titleCase(r.ownerName)}`} title="Extend or renew (needs the new agreement or memo)"
+            className="grid place-items-center w-9 h-9 rounded-control bg-card border border-solid border-line cursor-pointer text-muted-ink">
+            <Icon name="CalendarPlus" size="sm" />
+          </button>
+        )}
         <button
           onClick={e => { e.stopPropagation(); setModal({ mode: 'edit', id: r.id }); }}
           aria-label={`Edit contract for ${titleCase(r.ownerName)}`}
@@ -207,6 +222,7 @@ export default function ContractsPage() {
         >
           <Icon name="Pencil" size="sm" />
         </button>
+        </span>
       ) },
   ];
 
@@ -215,6 +231,7 @@ export default function ContractsPage() {
       <PageHeader
         title="Contracts"
         sub={data ? `${plural(counts.all, 'management agreement')} · ${counts.soon} ending within ${ENDING_WINDOW_DAYS} days · ${counts.ended} ended` : 'Loading contracts…'}
+        actions={<Button size="sm" variant="secondary" icon={<Icon name="CalendarPlus" size="sm" />} onClick={() => setModal({ mode: 'extend', contract: null })}>Extend a contract</Button>}
         primary={<Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setModal({ mode: 'add' })}>Add contract</Button>}
       />
 
@@ -259,7 +276,7 @@ export default function ContractsPage() {
         toolbar={<>
           <SearchBox className="flex-1 min-w-[200px]" label="Search contracts" placeholder="Search owner or unit" value={url.get('q')} onChange={v => url.set({ q: v || null, page: null })} />
           <Select className="flex-[1_1_160px] sm:flex-[0_1_180px]" label="Income model" value={model} onChange={v => url.set({ model: v || null, page: null })}
-            options={[{ value: '', label: 'All income models' }, { value: 'management', label: 'Operator share' }, { value: 'grr', label: 'Guaranteed rent' }]} />
+            options={[{ value: '', label: 'All contract types' }, ...CODES.map(c => ({ value: c.code, label: `${c.code} · ${c.label}` }))]} />
           {phone && (
             <Select className="flex-[1_1_160px]" label="Sort by" value={url.get('sort')} onChange={v => url.set({ sort: v || null, page: null })}
               options={[{ value: '', label: 'Sort: ending soonest' }, { value: 'owner:asc', label: 'Sort: owner A-Z' }, { value: 'started:desc', label: 'Sort: newest first' }]} />
@@ -277,7 +294,7 @@ export default function ContractsPage() {
               </span>
               <span className="text-meta text-muted-ink truncate w-full" title={r.unitsLabel}>{r.unitsLabel}</span>
               <span className="flex items-center justify-between gap-2 w-full flex-wrap">
-                <span className="text-meta font-medium">{feeLabel(r)}</span>
+                <span className="text-meta font-medium inline-flex items-center gap-1.5"><CodeBadge code={r.contractCode} size="sm" />{feeLabel(r)}</span>
                 <EndsCell r={r} />
               </span>
             </span>
@@ -286,6 +303,7 @@ export default function ContractsPage() {
       />
 
       {modal?.mode === 'add' && <ContractModal onClose={() => setModal(null)} onSubmit={addContract} />}
+      {modal?.mode === 'extend' && <ExtendFromList contract={modal.contract} rows={rows} onClose={() => setModal(null)} onSaved={() => { setModal(null); reload(); }} />}
       {modal?.mode === 'edit' && editing && <ContractModal existing={editing} onClose={() => setModal(null)} onSubmit={input => saveEdit(editing.id, input)} />}
     </>
   );
@@ -392,5 +410,28 @@ function ContractModal({ existing, onClose, onSubmit }: { existing?: Contract; o
       <OfferLetterField value={offerLetter} onChange={setOfferLetter} />
       {existing && <HistoryDisclosure entity="owner_contracts" id={existing.id} />}
     </Modal>
+  );
+}
+
+/** Extend from the Contracts list: the unit is picked first when the contract (or the page) covers several. */
+function ExtendFromList({ contract, rows, onClose, onSaved }: { contract: Contract | null; rows: Contract[]; onClose: () => void; onSaved: () => void }) {
+  const choices = (contract ? [contract] : rows).flatMap(c => (c.units ?? []).map(u => ({ unit: u, c })));
+  const [picked, setPicked] = useState(choices.length === 1 ? choices[0].unit.id : '');
+  const [go, setGo] = useState(choices.length === 1);
+  const chosen = choices.find(x => x.unit.id === picked);
+  if (go && chosen) {
+    return <ExtendContractModal unitId={chosen.unit.id} unitLabel={chosen.unit.label}
+      current={{ code: chosen.c.contractCode ?? (chosen.c.model === 'grr' ? 'GRR' : 'PS'), termsLabel: feeLabel(chosen.c), startsOn: chosen.c.startsOn, endsOn: chosen.c.endsOn ?? chosen.c.renewsOn ?? null }}
+      onClose={onClose} onSaved={onSaved} />;
+  }
+  return (
+    <CentreModal title="Extend a contract" sub="Pick the unit whose contract runs on for a new period. The new agreement or memo is required." onClose={onClose}
+      footer={<><Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button><Button size="sm" variant="primary" disabled={!chosen} disabledReason="Pick the unit" onClick={() => setGo(true)}>Next</Button></>}>
+      <Labeled label="Unit">
+        <FormSelect label="Unit" value={picked} onChange={setPicked}
+          options={[{ value: '', label: choices.length ? 'Pick a unit' : 'No unit has a contract in force' }, ...choices.map(x => ({ value: x.unit.id, label: `${x.unit.label} · ${x.c.contractCode ?? ''} · ${titleCase(x.c.ownerName)}` }))]} />
+      </Labeled>
+      {chosen && <p className="m-0 text-meta text-muted-ink">{CODE[chosen.c.contractCode ?? 'PS']?.label}: {feeLabel(chosen.c)}{chosen.c.endsOn ? `, ends ${date(chosen.c.endsOn)}` : ''}.</p>}
+    </CentreModal>
   );
 }

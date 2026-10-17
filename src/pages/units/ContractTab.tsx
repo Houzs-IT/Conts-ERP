@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import Icon from '../../components/Icon';
 import { Card } from '../../components/Card';
 import { Button } from '../../components/Button';
 import { Field } from '../../components/Field';
@@ -9,7 +10,9 @@ import { useApi } from '../../lib/useApi';
 import { api, ApiFailure, errorMessage } from '../../lib/api';
 import { date, monthLabel, rm } from '../../lib/format';
 import { cx } from '../../lib/design-tokens';
-import { MODELS, MODEL, MODEL_TONE, type RevenueModel } from '../../lib/revenueModel';
+import { MODEL, MODEL_TONE, CODES, CODE, codeFromModel, PURPOSE_LABEL, type RevenueModel, type ContractCode, type UnitPurpose } from '../../lib/revenueModel';
+import { ExtendContractModal, GenerateAgreement } from './ContractExtras';
+import { CodeBadge } from './UnitExtras';
 import { DataTable, type Column } from '../../components/DataTable';
 import { StatusBadge } from '../../components/StatusBadge';
 
@@ -21,6 +24,8 @@ interface ContractView {
   id: string | null; revenueModel: RevenueModel; termsLabel: string;
   ownerPct: number | null; managementPct: number | null; agentPct: number | null; agentName: string | null;
   minimumGuarantee: number; guaranteeStartsOn: string | null; guaranteeEndsOn: string | null;
+  /** PS YGRR: the guarantee for each contract year, sen. */
+  yearlyGuarantee?: number; contractCode?: ContractCode; agreementDocumentId?: string | null;
   monthlyRent: number; deposit: number | null; tenantName: string | null;
   startsOn: string | null; endsOn: string | null; renewsOn: string | null; miscCharges: boolean; sharedWith: number; createdAt: string | null;
 }
@@ -30,11 +35,17 @@ export interface Example {
   ownerPct: number | null; ownerShare: number; operatorShare: number; managementShare: number; agentShare: number;
   guarantee: number; topUp: number; rent: number; payout: number; adjustments: number; netPayout: number;
   company: { income: number; costs: number; rentToOwner: number; result: number } | null; otherPayers: number;
+  yearly?: { annual: number; due: number; yearFrom: string; yearTo: string; trueUp: boolean; sharesBefore: number | null; yearShares: number | null } | null;
 }
-interface Payload { month: string; unit: { id: string; label: string; ownerName: string }; current: ContractView; history: ContractView[]; example: Example | null }
+interface Payload {
+  month: string; unit: { id: string; label: string; ownerName: string; purpose?: UnitPurpose };
+  /** The codes this unit may take: a showroom or warehouse only WH (0125). */
+  allowedCodes?: ContractCode[];
+  current: ContractView; history: ContractView[]; example: Example | null;
+}
 
 interface Draft {
-  revenueModel: RevenueModel; ownerPct: number | null; managementPct: number | null; agentPct: number | null; agentName: string;
+  revenueModel: RevenueModel; contractCode: ContractCode; yearlyGuarantee: number | null; ownerPct: number | null; managementPct: number | null; agentPct: number | null; agentName: string;
   minimumGuarantee: number | null; guaranteeStartsOn: string; guaranteeEndsOn: string;
   monthlyRent: number | null; deposit: number | null; tenantName: string; ltFeePct: number | null;
   startsOn: string; endsOn: string; renewsOn: string; miscCharges: boolean;
@@ -45,7 +56,7 @@ const pctText = (n: number | null | undefined) => (n == null ? '' : String(Numbe
 
 function draftOf(c: ContractView): Draft {
   return {
-    revenueModel: c.revenueModel,
+    revenueModel: c.revenueModel, contractCode: c.contractCode ?? codeFromModel(c.revenueModel), yearlyGuarantee: senOrEmpty(c.yearlyGuarantee),
     ownerPct: pctOf(c.ownerPct ?? 75), managementPct: pctOf(c.managementPct != null && c.revenueModel !== 'long_term' ? c.managementPct : c.ownerPct != null ? 100 - c.ownerPct - (c.agentPct ?? 0) : 25),
     agentPct: pctOf(c.agentPct ?? 0), agentName: c.agentName ?? '',
     minimumGuarantee: senOrEmpty(c.minimumGuarantee), guaranteeStartsOn: c.guaranteeStartsOn ?? '', guaranteeEndsOn: c.guaranteeEndsOn ?? '',
@@ -54,9 +65,10 @@ function draftOf(c: ContractView): Draft {
   };
 }
 function bodyOf(d: Draft) {
-  const m = d.revenueModel, share = m === 'management' || m === 'management_guarantee';
+  const m = d.revenueModel, share = isShare(m);
   return {
-    revenueModel: m,
+    revenueModel: m, contractCode: d.contractCode,
+    ...(m === 'management_yearly_guarantee' ? { yearlyGuarantee: d.yearlyGuarantee ?? 0 } : {}),
     ...(share ? { ownerPct: d.ownerPct ?? 0, managementPct: d.managementPct ?? 0, agentPct: d.agentPct ?? 0, agentName: d.agentName || null, miscCharges: d.miscCharges } : {}),
     ...(m === 'management_guarantee' ? { minimumGuarantee: d.minimumGuarantee ?? 0, guaranteeStartsOn: d.guaranteeStartsOn || null, guaranteeEndsOn: d.guaranteeEndsOn || null } : {}),
     ...(!share ? { monthlyRent: d.monthlyRent ?? 0 } : {}),
@@ -68,10 +80,11 @@ function bodyOf(d: Draft) {
 /** Problems the form can see before asking the server (the server checks the same and more). */
 function problems(d: Draft): Record<string, string> {
   const f: Record<string, string> = {}, m = d.revenueModel;
-  if (m === 'management' || m === 'management_guarantee') {
+  if (isShare(m)) {
     const sum = (d.ownerPct ?? 0) + (d.managementPct ?? 0) + (d.agentPct ?? 0);
     if (Math.abs(sum - 100) > 0.001) f.ownerPct = `Owner, management and agent add up to ${Number(sum.toFixed(2))}%, not 100%.`;
     if (m === 'management_guarantee' && !((d.minimumGuarantee ?? 0) > 0)) f.minimumGuarantee = 'Enter the monthly minimum.';
+    if (m === 'management_yearly_guarantee' && !((d.yearlyGuarantee ?? 0) > 0)) f.yearlyGuarantee = 'Enter the guarantee for each contract year.';
   } else if (!((d.monthlyRent ?? 0) > 0)) f.monthlyRent = 'Enter the monthly rent.';
   if (m === 'long_term' && !d.tenantName.trim()) f.tenantName = 'Enter the tenant.';
   if (d.endsOn && d.startsOn && d.endsOn < d.startsOn) f.endsOn = 'The end date is before the start date.';
@@ -79,7 +92,10 @@ function problems(d: Draft): Record<string, string> {
   return f;
 }
 
+const isShare = (m: RevenueModel) => m === 'management' || m === 'management_guarantee' || m === 'management_yearly_guarantee';
+
 const HISTORY_COLUMNS: Column<ContractView>[] = [
+  { key: 'code', label: 'Code', value: h => h.contractCode ?? codeFromModel(h.revenueModel), width: 90, render: h => <CodeBadge code={h.contractCode ?? codeFromModel(h.revenueModel)} size="sm" /> },
   { key: 'model', label: 'Income model', value: h => MODEL[h.revenueModel].label, width: 170, render: h => <span><ModelChip model={h.revenueModel} /></span> },
   { key: 'terms', label: 'Terms', value: h => h.termsLabel, width: 200 },
   { key: 'starts', label: 'From', type: 'date', value: h => h.startsOn, width: 116, render: h => <span className="whitespace-nowrap">{h.startsOn ? date(h.startsOn) : 'No start'}</span> },
@@ -99,9 +115,17 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unit
   const [saving, setSaving] = useState(false);
   const [preview, setPreview] = useState<Example | null>(null);
   const [previewing, setPreviewing] = useState(false);
+  const [extending, setExtending] = useState(false);
 
   const current = data?.current ?? null;
-  const original = useMemo(() => (current ? draftOf(current) : null), [current]);
+  const allowedCodes = data?.allowedCodes;
+  const original = useMemo(() => {
+    if (!current) return null;
+    const o = draftOf(current);
+    // No contract yet on a unit whose own split is not a code it may take (a showroom): start from the first it may.
+    if (!current.id && allowedCodes?.length && !allowedCodes.includes(o.contractCode)) return { ...o, contractCode: allowedCodes[0], revenueModel: CODE[allowedCodes[0]].model };
+    return o;
+  }, [current, allowedCodes]);
   useEffect(() => { if (original) { setDraft(original); setMode('update'); setFields({}); setPreview(null); } }, [original]);
   const d = draft ?? original;
   const dirty = !!d && !!original && JSON.stringify(d) !== JSON.stringify(original);
@@ -124,7 +148,10 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unit
   }
   const set = (p: Partial<Draft>) => { setDraft({ ...d, ...p }); setFields({}); };
   const m = d.revenueModel;
-  const share = m === 'management' || m === 'management_guarantee';
+  const share = isShare(m);
+  const purpose = data?.unit.purpose ?? 'rental';
+  // The current code stays offered even if the list has moved on (an older GRR), so the form can show it.
+  const offered = CODES.filter(c => (data?.allowedCodes ?? CODES.filter(x => x.code !== 'WH' && x.code !== 'GRR').map(x => x.code)).includes(c.code) || c.code === d.contractCode);
   const example = preview ?? data?.example ?? null;
 
   async function save() {
@@ -133,7 +160,7 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unit
     try {
       const r = await api.put<{ split: boolean }>(`/units/${encodeURIComponent(unitId)}/contract`, { ...bodyOf(d), mode });
       toast({ tone: 'success', title: mode === 'new' ? 'New contract started.' : 'Contract saved.',
-        body: `${MODEL[d.revenueModel].label}.${r.split ? ' This unit now has its own contract; the other units keep theirs.' : ''} Draft owner statements change when regenerated; final ones keep their figures.` });
+        body: `${d.contractCode}: ${CODE[d.contractCode].label}.${r.split ? ' This unit now has its own contract; the other units keep theirs.' : ''} Draft owner statements change when regenerated; final ones keep their figures.` });
       setMode('update'); reload(); onSaved();
     } catch (e) {
       if (e instanceof ApiFailure && e.fields) setFields(e.fields);
@@ -144,7 +171,7 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unit
   const pct = (k: 'ownerPct' | 'managementPct' | 'agentPct' | 'ltFeePct', label: string) => (
     <PercentInput label={label} value={d[k]} onChange={v => set({ [k]: v })} error={shown[k === 'ltFeePct' ? 'managementPct' : k]} />
   );
-  const money = (k: 'minimumGuarantee' | 'monthlyRent' | 'deposit', label: string, help?: string) => (
+  const money = (k: 'minimumGuarantee' | 'yearlyGuarantee' | 'monthlyRent' | 'deposit', label: string, help?: string) => (
     <MoneyInput label={label} placeholder="e.g. 3,000.00" valueSen={d[k]} onChangeSen={v => set({ [k]: v })} error={shown[k]} help={help} />
   );
   const day = (k: 'startsOn' | 'endsOn' | 'renewsOn' | 'guaranteeStartsOn' | 'guaranteeEndsOn', label: string) => (
@@ -159,6 +186,7 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unit
           <div className="flex flex-col gap-1 min-w-0">
             <span className="text-[16px] font-semibold tracking-[-0.01em]">Income model</span>
             <span className="text-meta text-muted-ink">
+              {current.id && current.contractCode && <><CodeBadge code={current.contractCode} size="sm" />{' '}</>}
               {current.id ? <>In force {current.startsOn ? `from ${date(current.startsOn)}` : ''}{current.endsOn ? ` to ${date(current.endsOn)}` : ''} · {current.termsLabel}</> : <>No contract record yet: the unit's own split is used ({current.termsLabel}). Saving creates its contract.</>}
               {data!.history.length > 0 && <> · <a href="#contract-history" className="text-gold-ink">Contract history ({data!.history.length})</a></>}
             </span>
@@ -166,6 +194,8 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unit
           {canEdit && (
             <div className="flex flex-wrap items-center gap-2">
               {dirty && <span className="text-meta text-warning">Unsaved changes</span>}
+              {current.id && <GenerateAgreement unitId={unitId} refreshKey={current.id + (current.startsOn ?? '')} />}
+              {current.id && mode === 'update' && !dirty && <Button size="sm" variant="secondary" icon={<Icon name="CalendarPlus" size="sm" />} onClick={() => setExtending(true)}>Extend / renew</Button>}
               {current.id && mode === 'update' && <Button size="sm" variant="secondary" onClick={() => { setMode('new'); set({ startsOn: '', endsOn: '', renewsOn: '' }); }}>Start a new contract</Button>}
               {mode === 'new' && <Button size="sm" variant="tertiary" onClick={() => { setMode('update'); setDraft(original); }}>Cancel new contract</Button>}
               <Button size="sm" variant="primary" loading={saving} disabled={!dirty || Object.keys(local).length > 0}
@@ -177,15 +207,17 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unit
           {mode === 'new' && <div className="py-[10px] px-[14px] rounded-control bg-gold-tint text-copy">A new contract from its start date. The current one ends the day before and stays in this unit's history; statements before the new start keep using it.</div>}
           {current.sharedWith > 0 && mode === 'update' && <div className="py-[10px] px-[14px] rounded-control bg-muted text-meta text-muted-ink">This contract record also covers {current.sharedWith} other {current.sharedWith === 1 ? 'unit' : 'units'} of the owner. Saving here gives this unit its own copy; the others are not changed.</div>}
 
-          <div role="radiogroup" aria-label="Income model" className="grid grid-cols-1 min-[480px]:grid-cols-2 lg:grid-cols-5 gap-[10px]">
-            {MODELS.map(o => {
-              const on = o.key === m;
+          {purpose !== 'rental' && <div className="py-[10px] px-[14px] rounded-control bg-muted text-meta text-muted-ink">A {PURPOSE_LABEL[purpose].toLowerCase()} unit is not run on the channels: its only contract is a WH lease, a fixed monthly rent to the owner.</div>}
+          <div role="radiogroup" aria-label="Contract type" className={cx('grid grid-cols-1 min-[480px]:grid-cols-2 gap-[10px]', offered.length > 3 && 'lg:grid-cols-3 2xl:grid-cols-6')}>
+            {offered.map(o => {
+              const on = o.code === d.contractCode;
               return (
-                <label key={o.key} className={cx('flex flex-col gap-1 rounded-card p-3 cursor-pointer min-w-0', on ? '[border:2px_solid_var(--color-gold)] bg-gold-tint' : '[border:1px_solid_var(--color-line)] bg-card hover:bg-page')}>
+                <label key={o.code} className={cx('flex flex-col gap-1 rounded-card p-3 cursor-pointer min-w-0', on ? '[border:2px_solid_var(--color-gold)] bg-gold-tint' : '[border:1px_solid_var(--color-line)] bg-card hover:bg-page')}>
                   <span className="flex items-center gap-2">
-                    <input type="radio" aria-label={o.label} name={`model-${unitId}`} checked={on} onChange={() => set({ revenueModel: o.key })} className="accent-[var(--color-gold-ink)]" />
-                    <span className="text-copy font-semibold">{o.label}</span>
+                    <input type="radio" aria-label={`${o.code}: ${o.label}`} name={`model-${unitId}`} checked={on} onChange={() => set({ contractCode: o.code, revenueModel: o.model })} className="accent-[var(--color-gold-ink)]" />
+                    <span className="text-copy font-semibold">{o.code}</span>
                   </span>
+                  <span className="text-meta font-medium text-ink">{o.label}</span>
                   <span className="text-meta text-muted-ink [text-wrap:pretty]">{o.blurb}</span>
                 </label>
               );
@@ -205,9 +237,10 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unit
               {day('guaranteeStartsOn', 'Minimum applies from')}
               {day('guaranteeEndsOn', 'Minimum applies until')}
             </>}
+            {m === 'management_yearly_guarantee' && money('yearlyGuarantee', 'Guarantee per contract year (RM)', 'Checked once a year: on the last statement of each contract year the company tops up any shortfall.')}
             {m === 'grr' && money('monthlyRent', 'Monthly rent to owner (RM)', 'Paid whatever the unit earns.')}
             {m === 'master_lease' && <>
-              {money('monthlyRent', 'Monthly rent we pay (RM)', 'Recorded as a company cost; no owner statement.')}
+              {money('monthlyRent', d.contractCode === 'WH' ? 'Monthly rent to the owner (RM)' : 'Monthly rent we pay (RM)', 'Recorded as a company cost; no owner statement.')}
               {money('deposit', 'Deposit (RM)')}
             </>}
             {m === 'long_term' && <>
@@ -231,6 +264,9 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unit
         </fieldset>
       </Card>
 
+      {extending && current.id && <ExtendContractModal unitId={unitId} unitLabel={data!.unit.label}
+        current={{ code: current.contractCode ?? codeFromModel(current.revenueModel), termsLabel: current.termsLabel, startsOn: current.startsOn, endsOn: current.endsOn }}
+        onClose={() => setExtending(false)} onSaved={() => { setExtending(false); reload(); onSaved(); }} />}
       <StatementExample example={example} month={data!.month} draft={dirty && !!preview} busy={previewing} />
 
       {data!.history.length > 0 && (
@@ -290,10 +326,12 @@ export function StatementExample({ example: x, month, draft, busy }: { example: 
             <Row label={`Owner ${pctText(x.ownerPct)}%`} sen={x.ownerShare} />
             <Row label={x.agentShare ? 'Management' : `Management ${pctText(100 - (x.ownerPct ?? 0))}%`} sen={x.managementShare} sub />
             {x.agentShare > 0 && <Row label="Agent" sen={x.agentShare} sub />}
-            {x.guarantee > 0 && <Row label={x.topUp > 0 ? `Below the ${rm(x.guarantee)} minimum: company tops up` : `Above the ${rm(x.guarantee)} minimum: no top-up`} sen={x.topUp} />}
+            {x.guarantee > 0 && !x.yearly && <Row label={x.topUp > 0 ? `Below the ${rm(x.guarantee)} minimum: company tops up` : `Above the ${rm(x.guarantee)} minimum: no top-up`} sen={x.topUp} />}
+            {x.yearly?.trueUp && x.yearly.yearShares != null && <Row label={x.topUp > 0 ? `Contract year ${x.yearly.yearFrom} to ${x.yearly.yearTo}: owner's shares ${rm(x.yearly.yearShares)}, below the ${rm(x.yearly.due)} yearly guarantee, company tops up` : `Contract year ${x.yearly.yearFrom} to ${x.yearly.yearTo}: owner's shares ${rm(x.yearly.yearShares)}, above the ${rm(x.yearly.due)} yearly guarantee`} sen={x.topUp} />}
             {x.adjustments !== 0 && <Row label="Owner Adjustments" sen={x.adjustments} />}
             <Row label="Net Payout to Owner" sen={x.netPayout} strong />
           </>}
+          {x.yearly && !x.yearly.trueUp && <p className="m-0 mt-2 text-meta text-muted-ink">Yearly guarantee {rm(x.yearly.due)}: checked on the {x.yearly.yearTo} statement, the last of the contract year from {x.yearly.yearFrom}.</p>}
           {x.otherPayers > 0 && <p className="m-0 mt-2 text-meta text-muted-ink">{rm(x.otherPayers)} of costs paid by the company, a tenant or a guest are not on the statement.</p>}
         </div>
       )}

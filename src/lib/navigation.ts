@@ -27,7 +27,7 @@ export interface NavGroup { label: string; workspace: Workspace; items: NavItem[
  */
 const SUPPLY_SUPPORT = 'SUPPORT';
 
-export type SettingsSectionKey = 'company' | 'operations' | 'locale' | 'report' | 'approvals' | 'security';
+export type SettingsSectionKey = 'company' | 'operations' | 'locale' | 'report' | 'agreement' | 'approvals' | 'security';
 
 /** The Settings page's categories, one screen each (/system/settings/<key>). The desktop menu nests them under
  *  Settings and the phone Settings tab lists them under these headers, so both name and order them the same. */
@@ -36,6 +36,7 @@ export const SETTINGS_SECTIONS: { key: SettingsSectionKey; group: string; label:
   { key: 'operations', group: 'ORGANISATION', label: 'Check-in and checkout', icon: 'Clock', description: 'Standard times the cleaning board uses when a reservation has none of its own.' },
   { key: 'locale', group: 'OWNERS AND MONEY', label: 'Operator share', icon: 'Percent', description: 'The share owner statements take when a unit\'s contract does not set one.' },
   { key: 'report', group: 'OWNERS AND MONEY', label: 'Owner statements', icon: 'FileText', description: 'Wording on the Owner Income Report, and its monthly miscellaneous charge.' },
+  { key: 'agreement', group: 'OWNERS AND MONEY', label: 'Agreement template', icon: 'FileSignature', description: 'The management agreement that Generate agreement fills in from the unit, owner and contract.' },
   // Not "Approvals": the Finance menu already has an Approvals entry (the queue itself).
   { key: 'approvals', group: 'OWNERS AND MONEY', label: 'Approval rules', icon: 'Stamp', description: 'Whether money going out waits for a second person to approve it.' },
   { key: 'security', group: 'SECURITY', label: 'Sign-in and sessions', icon: 'Lock', description: 'How long people stay signed in, when accounts lock, and who needs two-step sign-in.' },

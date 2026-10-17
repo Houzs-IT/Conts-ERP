@@ -17,6 +17,7 @@ import { SETTINGS_SECTIONS, type SettingsSectionKey } from '../lib/navigation';
 import { useSession } from '../lib/session';
 import { ROLE_LABEL } from '../lib/vocabulary';
 import { refreshNavCounts } from '../lib/navBadges';
+import AgreementTemplateSettings from './settings/AgreementTemplate';
 
 /* ------------------------------------------------------------------ *
  * Settings — organisation-wide defaults (routes.json → SYSTEM →
@@ -38,7 +39,8 @@ import { refreshNavCounts } from '../lib/navBadges';
  * always visible whether or not the endpoint answers.
  * ------------------------------------------------------------------ */
 
-type SectionKey = SettingsSectionKey;
+// The agreement template has its own versioned store and screen (settings/AgreementTemplate.tsx), not these rows.
+type SectionKey = Exclude<SettingsSectionKey, 'agreement'>;
 
 interface Settings {
   company: { legalName: string; companyNumber: string; address: string; supportPhone: string; supportEmail: string };
@@ -415,6 +417,17 @@ export default function SettingsPage() {
 
   if (!current) return <Navigate to={phone ? '/settings' : `/system/settings/${SETTINGS_SECTIONS[0].key}`} replace />;
   const loadingNow = (loading || !data) && !(import.meta.env.DEV && data);
+  if (current.key === 'agreement') {
+    return (
+      <>
+        <PageHeader title={current.label} sub={current.description}
+          back={phone ? { label: 'Settings', onClick: () => navigate('/settings') } : undefined}
+          badge={readOnly ? <StatusBadge tone="neutral" label="Management changes these" size="sm" /> : undefined} />
+        <div className="max-w-6xl"><AgreementTemplateSettings readOnly={readOnly} /></div>
+      </>
+    );
+  }
+  const key: SectionKey = current.key;
 
   return (
     <>
@@ -429,10 +442,10 @@ export default function SettingsPage() {
           <Card><TableSkeleton rows={5} cols={2} /></Card>
         ) : (
           <Panel
-            readOnly={readOnly} dirty={dirty(current.key)} busy={busy === current.key} saveLabel={ROWS[current.key].saveLabel}
-            onSave={() => save(current.key)} onDiscard={() => discard(current.key)}
+            readOnly={readOnly} dirty={dirty(key)} busy={busy === key} saveLabel={ROWS[key].saveLabel}
+            onSave={() => save(key)} onDiscard={() => discard(key)}
           >
-            {ROWS[current.key].rows}
+            {ROWS[key].rows}
           </Panel>
         )}
       </div>
