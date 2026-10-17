@@ -88,7 +88,8 @@ export function OpsModal({ title, sub, children, footer, onClose, busy, width = 
   useEffect(() => {
     const back = document.activeElement as HTMLElement | null;
     ref.current?.querySelector<HTMLElement>('input, select, textarea, button')?.focus();
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !busy) onClose(); };
+    // A picker inside the dialog closes itself on Escape and marks the key handled; only then is the dialog left open.
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !e.defaultPrevented && !busy) onClose(); };
     document.addEventListener('keydown', onKey);
     return () => { document.removeEventListener('keydown', onKey); back?.focus?.(); };
   }, [busy, onClose]);
@@ -311,10 +312,10 @@ export function MaintenanceJobForm({ unit, units, taskId, onClose, onDone }: {
             {Object.entries(CATEGORY).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
           </select>
         </FormRow>
-        <FormRow label={office ? 'Job type' : 'Urgency'}>
+        <FormRow label={office ? 'Job type' : 'Urgency'} hint={f.jobType === 'urgent' ? 'Affects the next guest; done first.' : f.jobType === 'pass_key' ? 'Hand over or collect a key.' : office ? 'Done in date order.' : undefined}>
           <select className={INPUT} value={f.jobType} onChange={e => set({ jobType: e.target.value as 'normal' | 'urgent' | 'pass_key' })}>
-            <option value="normal">Normal{office ? ' (done in date order)' : ''}</option><option value="urgent">Urgent (affects the next guest)</option>
-            {office && <option value="pass_key">Pass key (hand over or collect a key)</option>}
+            <option value="normal">Normal</option><option value="urgent">Urgent</option>
+            {office && <option value="pass_key">Pass key</option>}
           </select>
         </FormRow>
       </div>

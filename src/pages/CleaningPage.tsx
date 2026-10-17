@@ -4,7 +4,7 @@ import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { DateField, MoneyInput, TimeField } from '../components/inputs';
 import Icon from '../components/Icon';
-import { Select, SearchSelect, type SelectOption } from '../components/Select';
+import { Select, type SelectOption } from '../components/Select';
 import { StaleBanner } from '../components/DataState';
 import { EmptyState, Skeleton } from '../components/States';
 import { AttachmentLabel, MediaGallery } from '../components/Attachments';
@@ -19,6 +19,7 @@ import { refreshNavCounts } from '../lib/navBadges';
 import { api, errorMessage } from '../lib/api';
 import { useCleaners } from '../lib/useCleaners';
 import { useUnitRoster } from '../lib/useUnitRoster';
+import { UnitPicker } from '../components/UnitPicker';
 import { useNow } from '../lib/useMedia';
 import { useSession } from '../lib/session';
 import { runEach, skippedNote } from '../lib/bulk';
@@ -278,7 +279,7 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
 /* ---------- one building ---------- */
 
 // Columns follow the card's own width, not the window's: with the detail panel open the list is narrow on a laptop.
-const COLS = '@2xl:grid @2xl:grid-cols-[minmax(0,1.05fr)_minmax(0,1.3fr)_minmax(0,1.2fr)_minmax(0,0.6fr)_minmax(0,0.55fr)_minmax(0,0.5fr)_minmax(0,0.6fr)_minmax(0,0.85fr)_minmax(0,1.2fr)] @2xl:items-center @2xl:gap-2.5';
+const COLS = '@2xl:grid @2xl:grid-cols-[minmax(0,1.05fr)_minmax(0,1.15fr)_minmax(0,1.05fr)_minmax(0,0.6fr)_minmax(0,0.55fr)_minmax(0,0.8fr)_minmax(0,0.6fr)_minmax(0,0.85fr)_minmax(0,1.2fr)] @2xl:items-center @2xl:gap-2.5';
 
 function BuildingCard({ group, now, future, selected, busy, onSelect, onGuestLeft, onUndoLeft, onCheckIn, onPlan, onAssign }: {
   group: { id: string; name: string; rows: Row[]; departures: Departure[]; repairs: RepairOnDay[] }; now: number; future: boolean; selected: string | null; busy: string | null;
@@ -319,12 +320,12 @@ function BuildingCard({ group, now, future, selected, busy, onSelect, onGuestLef
         onCheckIn={t => r.next?.reservationId && onCheckIn(r.next.reservationId, t, r.unitNumber)} />)}
       {group.departures.map(d => (
         <div key={d.reservationId} className={cx('px-4 @2xl:px-5 py-3 [border-top:1px_solid_var(--color-line-soft)] text-copy flex flex-wrap items-baseline gap-x-4 gap-y-1', COLS)}>
-          <div className="basis-full @2xl:basis-auto flex items-center gap-x-2 flex-wrap min-w-0"><span className="min-w-0"><b>{d.unitNumber}</b>{d.unit?.size && <span className="ml-1.5 @2xl:ml-0 @2xl:block text-meta text-muted-ink truncate">{d.unit.size}</span>}</span><span className="@2xl:hidden"><StatusBadge tone="critical">No cleaning job planned</StatusBadge></span></div>
+          <div className="basis-full @2xl:basis-auto flex items-center gap-x-2 flex-wrap min-w-0"><span className="min-w-0"><b>{d.unitNumber}</b>{d.unit?.size && <span className="ml-1.5 @2xl:hidden text-meta text-muted-ink">{d.unit.size}</span>}</span><span className="@2xl:hidden"><StatusBadge tone="critical">No cleaning job planned</StatusBadge></span></div>
           <div><b className="[font-variant-numeric:tabular-nums]">{d.checkOutTime}</b> · {d.guestName}{d.lateCheckOut && <StatusBadge tone="warning" className="ml-1">Late checkout</StatusBadge>}{d.state === 'checked_out' && <StatusBadge tone="gold" className="ml-1">Out</StatusBadge>}</div>
           <div>{d.next ? <><CheckInTime time={d.next.checkInTime} saving={!!d.next.reservationId && busy === `in-${d.next.reservationId}`} onSave={d.next.reservationId ? t => onCheckIn(d.next!.reservationId!, t, d.unitNumber) : undefined} /> · {d.next.guestName}</> : <span className="text-muted-ink">No check-in</span>}</div>
           <div><span className="@2xl:hidden text-muted-ink">Time left </span><TimeLeft at={d.next?.checkInAt} now={now} /></div>
           <div className="hidden @2xl:block text-muted-ink">—</div>
-          <div className="hidden @2xl:block truncate">{d.unit?.layout ?? <span className="text-muted-ink">—</span>}</div>
+          <div className="hidden @2xl:block min-w-0">{d.unit?.layout ?? d.unit?.size ?? <span className="text-muted-ink">—</span>}</div>
           <div className="hidden @2xl:block text-muted-ink">—</div>
           <div className="hidden @2xl:block text-muted-ink">—</div>
           <div className="basis-full @2xl:basis-auto flex items-center gap-2 flex-wrap justify-end @2xl:justify-start pt-1 @2xl:pt-0">
@@ -365,7 +366,7 @@ function CleanRow({ r, now, active, busy, savingIn, onSelect, onGuestLeft, onUnd
       <div className="basis-full @2xl:basis-auto flex items-center gap-x-2 min-w-0">
         <span className="min-w-0">
           <b className="text-ink">{r.unitNumber}</b>
-          {r.unit?.size && <span className="ml-1.5 @2xl:ml-0 @2xl:block text-meta text-muted-ink truncate">{r.unit.size}</span>}
+          {r.unit?.size && <span className="ml-1.5 @2xl:hidden text-meta text-muted-ink">{r.unit.size}</span>}
         </span>
         {r.carriedOver && <span className="flex-none"><StatusBadge tone="warning" title={`Carried over from ${dayLabel(r.day)}`}>{dayLabel(r.day).replace(/^\w+\s/, '')}</StatusBadge></span>}
         <span className="@2xl:hidden ml-auto flex-none"><StatusBadge tone={st.tone}>{label}</StatusBadge></span>
@@ -387,7 +388,8 @@ function CleanRow({ r, now, active, busy, savingIn, onSelect, onGuestLeft, onUnd
       </div>
       <div className={cx(!r.next && 'hidden @2xl:block')}><span className="@2xl:hidden text-muted-ink">Time left </span><TimeLeft at={r.next?.checkInAt} now={now} done={r.status === 'done'} /></div>
       <div><span className="@2xl:hidden text-muted-ink">Type </span>{KIND_LABEL[r.kind] ?? r.kind}</div>
-      <div className={cx('truncate', !r.unit?.layout && '@max-2xl:hidden')}><span className="@2xl:hidden text-muted-ink">Layout </span>{r.unit?.layout ?? <span className="text-muted-ink">—</span>}</div>
+      {/* Desktop: the layout type, else the size ("Studio · 1 bath"); the phone card already shows the size under the unit. */}
+      <div className={cx('min-w-0', !r.unit?.layout && '@max-2xl:hidden')}><span className="@2xl:hidden text-muted-ink">Layout </span>{r.unit?.layout ?? r.unit?.size ?? <span className="text-muted-ink">—</span>}</div>
       <div className="whitespace-nowrap"><span className="@2xl:hidden text-muted-ink">Amount </span>{r.amount != null ? <span className="tabular-nums">{rm(r.amount, { cents: false })}</span> : <span className="text-warning" title="Set it in Cleaning > Prices">Price not set</span>}</div>
       <CleanerCell r={r} />
       <div className="flex items-center gap-1.5 flex-wrap">
@@ -693,7 +695,6 @@ function NewCleanModal({ date, onClose, onDone }: { date: string; onClose: () =>
   const prices = useApi<{ ready: boolean; rows: { unitId: string; prices: Record<string, { externalCharge: number | null }> }[] }>('/housekeeping/unit-prices');
   const suggested = !external && unitId ? prices.data?.rows.find(r => r.unitId === unitId)?.prices[kind]?.externalCharge ?? null : null;
   useEffect(() => { if (!touchedAmount) setAmount(external ? null : suggested); }, [unitId, kind, suggested]); // eslint-disable-line react-hooks/exhaustive-deps
-  const unitOptions = [{ value: EXTERNAL, label: 'External (not one of our units)', group: 'Outside job' }, ...units.map(u => ({ value: u.id, label: u.unitNumber, group: u.propertyName }))];
   async function save() {
     const bad = { unit: unitId ? undefined : 'Pick a unit, or External.', address: external && !address.trim() ? 'Enter the address.' : undefined, amount: external && amount == null ? 'Enter the amount.' : undefined };
     if (bad.unit || bad.address || bad.amount) { setError(bad); return; }
@@ -712,7 +713,7 @@ function NewCleanModal({ date, onClose, onDone }: { date: string; onClose: () =>
     <OpsModal title="Add cleaning job" sub="For a deep clean, a refresh, a cleaning job no reservation created, or a job at an outside address." onClose={onClose} busy={busy}
       footer={<><Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" variant="primary" loading={busy} onClick={() => void save()}>Add cleaning job</Button></>}>
       <FormRow label="Unit" error={error.unit} hint="One of our units, or External for a job at another address.">
-        <SearchSelect label="Unit" value={unitId} onChange={v => { setUnitId(v); setError(x => ({ ...x, unit: undefined })); }} options={unitOptions} placeholder="Search units, or pick External" size="md" />
+        <UnitPicker units={units} value={unitId} onChange={v => { setUnitId(v); setError(x => ({ ...x, unit: undefined })); }} pinned={EXTERNAL_CHOICE} placeholder="Search building or unit, or External" />
       </FormRow>
       {external && (
         <>
@@ -737,9 +738,10 @@ function NewCleanModal({ date, onClose, onDone }: { date: string; onClose: () =>
         hint={external ? 'What the job is charged. It counts in the cleaner\'s pay, never in a unit\'s costs.' : unitId ? (suggested != null ? 'From the price table; type over it for this job.' : 'Price not set for this unit and type: leave empty to use the old cleaning rate, or type one.') : undefined}>
         <MoneyInput className={INPUT} valueSen={amount} onChangeSen={v => { setAmount(v); setTouchedAmount(true); setError(x => ({ ...x, amount: undefined })); }} aria-label="Amount in RM" />
       </FormRow>
-      <FormRow label="Cleaners (optional)" hint={cleanerIds.length ? undefined : 'Leave empty to assign later. Tick more than one for a team.'}>
-        <CleanerChips cleaners={cleaners} value={cleanerIds} names={{}} onChange={setCleanerIds} />
-      </FormRow>
+      <div className="flex flex-col gap-1.5 min-w-0">
+        <CleanerChecklist cleaners={cleaners} value={cleanerIds} onChange={setCleanerIds} label="Cleaners (optional)" />
+        {!cleanerIds.length && <span className="text-meta text-muted-ink">Leave empty to assign later. Tick more than one for a team.</span>}
+      </div>
       <FormRow label="Notes for the cleaner (optional)"><textarea className={TEXTAREA} value={notes} onChange={e => setNotes(e.target.value)} maxLength={1000} /></FormRow>
       {error.form && <span className="text-meta text-danger" role="alert">{error.form}</span>}
     </OpsModal>
@@ -747,6 +749,7 @@ function NewCleanModal({ date, onClose, onDone }: { date: string; onClose: () =>
 }
 
 const EXTERNAL = '__external__';
+const EXTERNAL_CHOICE = { id: EXTERNAL, label: 'External (not one of our units)' };
 
 function AssignBuildingModal({ building, date, onClose, onDone }: { building: { buildingId: string; name: string }; date: string; onClose: () => void; onDone: (n: number, who: string) => void }) {
   const { cleaners } = useCleaners(true);
