@@ -1,5 +1,6 @@
 import { type Env, one, all } from './db';
 import { notifyUsers, taskPeople, technicianFor } from './notify';
+import { fieldVisibleSql, hasJobType } from './maintenance';
 
 /** The notices staff get when something happens to a booking, a clean or a repair job. Every function here
  *  is safe to await inside a handler: notifyUsers never throws, and the lookups are wrapped the same way. */
@@ -64,8 +65,8 @@ interface Task { id: string; title: string; kind: string; unit: string; schedule
 async function task(env: Env, id: string): Promise<Task | null> {
   try {
     return await one<Task>(env, `
-      SELECT t.id, t.title, t.kind, t.scheduled_for, t.due_at, trim(coalesce(p.name, '') || ' ' || u.unit_number) AS unit
-      FROM tasks t JOIN units u ON u.id = t.unit_id LEFT JOIN properties p ON p.id = u.property_id WHERE t.id = ?`, id);
+      SELECT t.id, t.title, t.kind, t.scheduled_for, t.due_at, COALESCE(trim(coalesce(p.name, '') || ' ' || u.unit_number), 'External job') AS unit
+      FROM tasks t LEFT JOIN units u ON u.id = t.unit_id LEFT JOIN properties p ON p.id = u.property_id WHERE t.id = ?`, id);
   } catch { return null; }
 }
 
@@ -114,9 +115,12 @@ export async function repairNotice(env: Env, id: string, event: RepairEvent, by:
     case 'reported':
       await notifyUsers(env, 'ops', { ...base, kind: 'maintenance.reported', title: `${urgent} reported: ${m.unit}`, body: m.title, dedupeKey: `repair-reported-${id}` });
       break;
-    case 'assigned':
-      await notifyUsers(env, { roles: ['ops_managers'], userIds: tech }, { ...base, kind: 'maintenance.assigned', title: `Maintenance job assigned: ${m.unit}`, body: `${m.title}${m.vendor_name ? ` – ${m.vendor_name}` : ''}.`, dedupeKey: `repair-assigned-${id}-${(m.vendor_name ?? '').toLowerCase()}` });
+    case 'assigned': {
+      // A job held for the owner (or its parts) is not in the technician's app yet, so they are not told about it yet.
+      const shown = await one(env, `SELECT 1 AS x FROM maintenance_issues m WHERE m.id = ? AND ${fieldVisibleSql(await hasJobType(env))}`, id).catch(() => ({ x: 1 }));
+      await notifyUsers(env, { roles: ['ops_managers'], userIds: shown ? tech : [] }, { ...base, kind: 'maintenance.assigned', title: `Maintenance job assigned: ${m.unit}`, body: `${m.title}${m.vendor_name ? ` – ${m.vendor_name}` : ''}.`, dedupeKey: `repair-assigned-${id}-${(m.vendor_name ?? '').toLowerCase()}` });
       break;
+    }
     case 'picked':
       await notifyUsers(env, { roles: ['ops_managers'] }, { ...base, kind: 'maintenance.assigned', title: `Maintenance job picked up: ${m.unit}`, body: `${m.title} – ${m.vendor_name ?? 'a technician'} took it on the phone.`, dedupeKey: `repair-picked-${id}` });
       break;

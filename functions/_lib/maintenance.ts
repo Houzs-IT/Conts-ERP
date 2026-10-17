@@ -18,8 +18,8 @@ export const ASSIGNEE_KINDS = ['in_house', 'contractor'] as const;
 /** Who pays: the owner through the statement, the company, the guest from the deposit, or a warranty. */
 export const CHARGE_TO = ['owner', 'the_conts', 'guest_deposit', 'warranty'] as const;
 
-// No approval threshold (owner, 11 Oct 2026): a quote goes to the owner only when the office presses "Send to owner for
-// approval" (request-approval.ts). The old setting operations.maintenanceApprovalThreshold may still be saved; nothing reads it.
+// The old single threshold (operations.maintenanceApprovalThreshold) is not read. Since 17 Oct 2026 management sets a rule
+// per category (approvalRules below); the office can still send any quote to the owner (request-approval.ts).
 
 /** A Malaysian-time instant "YYYY-MM-DDTHH:MM:00+08:00" from a datetime-local value ("2026-10-10T14:00", read as
  *  Malaysian time) or any ISO instant, or null. One format, so stored instants also compare as text. */
@@ -54,7 +54,8 @@ export const hasAssigneeUser = (env: Env) => hasColumn(env, 'maintenance_issues'
 /** Whether a repair job is the signed-in field user's: the rule every field write on a repair checks. */
 export async function isAssignee(env: Env, id: string, userId: string): Promise<boolean> {
   const byId = await hasAssigneeUser(env);
-  return !!(await one(env, `SELECT 1 AS x FROM maintenance_issues m WHERE m.id = ? AND ${mineSql(byId)}`, id, ...(byId ? [userId, userId] : [userId])));
+  const visible = fieldVisibleSql(await hasJobType(env));
+  return !!(await one(env, `SELECT 1 AS x FROM maintenance_issues m WHERE m.id = ? AND ${mineSql(byId)} AND ${visible}`, id, ...(byId ? [userId, userId] : [userId])));
 }
 
 /** A job nobody has: no technician or contractor named and no account linked. Only these can be picked up on the phone. */
@@ -64,3 +65,50 @@ export const UNASSIGNED_SQL = "(m.vendor_name IS NULL OR trim(m.vendor_name) = '
  *  or mark it cleaning, else a closed second job or a finished clean would sell a unit still under repair. */
 export const noOpenBlockerSql = (unitCol: string) =>
   `NOT EXISTS (SELECT 1 FROM maintenance_issues mb WHERE mb.unit_id = ${unitCol} AND mb.blocks_unit = 1 AND mb.state != 'resolved')`;
+
+/** Job types (staff comment sheet, 16-17 Oct 2026): Urgent first, then Pass key (hand over or collect a key), then
+ *  Normal, worked one by one in due-date order. urgency stays in step for older readers: urgent <-> 'urgent'. */
+export const JOB_TYPES = ['urgent', 'pass_key', 'normal'] as const;
+export const SEVERITIES = ['minor', 'major'] as const;
+export const urgencyOf = (jobType: string) => (jobType === 'urgent' ? 'urgent' : 'normal');
+
+/** Migration 0126: job type, severity, parts and due date. Without it jobs are Normal or Urgent as before. */
+export const hasJobType = (env: Env) => hasColumn(env, 'maintenance_issues', 'job_type').catch(() => false);
+
+/** Management's rule per problem category for when the owner must approve a job before work starts
+ *  (Maintenance > Approval rules, owner 17 Oct 2026): never, always, only Major jobs, or when the quote is over an amount. */
+export type ApprovalMode = 'never' | 'always' | 'major' | 'over';
+export interface ApprovalRule { mode: ApprovalMode; amount?: number }
+export const APPROVAL_MODES: ApprovalMode[] = ['never', 'always', 'major', 'over'];
+export const RULES_KEY = 'maintenance.approvalRules';
+
+export async function approvalRules(env: Env): Promise<Record<string, ApprovalRule>> {
+  const row = await one<{ value: string }>(env, 'SELECT value FROM settings WHERE key = ?', RULES_KEY).catch(() => null);
+  let raw: any = {};
+  try { raw = row?.value ? JSON.parse(row.value) : {}; } catch { raw = {}; }
+  return Object.fromEntries(CATEGORIES.map(c => {
+    const r = raw?.[c];
+    const mode: ApprovalMode = APPROVAL_MODES.includes(r?.mode) ? r.mode : 'never';
+    return [c, mode === 'over' ? { mode, amount: Number.isInteger(r?.amount) && r.amount >= 0 ? r.amount : 0 } : { mode }];
+  }));
+}
+
+/** Whether the rules say this job waits for the owner. A quote not yet known never trips an amount rule. */
+export function ruleNeedsApproval(rules: Record<string, ApprovalRule>, category: string, severity: string, quote: number | null): boolean {
+  const r = rules[category] ?? { mode: 'never' };
+  if (r.mode === 'always') return true;
+  if (r.mode === 'major') return severity === 'major';
+  if (r.mode === 'over') return quote != null && quote > (r.amount ?? 0);
+  return false;
+}
+
+/** SQL true when the job on alias `m` may show in the field app: a job waiting for the owner stays with the office
+ *  until the owner approved and, when it needs parts, they arrived (owner, 17 Oct 2026). */
+export const fieldVisibleSql = (cols: boolean) => cols
+  ? `NOT (m.owner_approval_required = 1 AND m.charge_to = 'owner' AND (m.owner_approved_at IS NULL OR (m.needs_parts = 1 AND m.parts_arrived_at IS NULL)))`
+  : `NOT (m.owner_approval_required = 1 AND m.charge_to = 'owner' AND m.owner_approved_at IS NULL)`;
+
+/** Field order: Urgent, Pass key, then Normal by due date (the day reported when none is set), oldest first. */
+export const fieldOrderSql = (cols: boolean) => cols
+  ? `CASE m.job_type WHEN 'urgent' THEN 0 WHEN 'pass_key' THEN 1 ELSE 2 END, COALESCE(m.due_on, substr(m.reported_at, 1, 10)), m.reported_at`
+  : `(m.urgency = 'urgent') DESC, m.reported_at`;

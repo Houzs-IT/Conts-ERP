@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
-import { DateField } from '../components/inputs';
+import { DateField, MoneyInput, TimeField } from '../components/inputs';
 import Icon from '../components/Icon';
 import { Select, SearchSelect, type SelectOption } from '../components/Select';
 import { StaleBanner } from '../components/DataState';
@@ -16,7 +16,7 @@ import SplitPane from '../components/SplitPane';
 import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
 import { refreshNavCounts } from '../lib/navBadges';
-import { api, ApiFailure, errorMessage } from '../lib/api';
+import { api, errorMessage } from '../lib/api';
 import { useCleaners } from '../lib/useCleaners';
 import { useUnitRoster } from '../lib/useUnitRoster';
 import { useNow } from '../lib/useMedia';
@@ -27,6 +27,7 @@ import { cx } from '../lib/design-tokens';
 import { rm, plural, count } from '../lib/format';
 import type { Tone } from '../lib/types';
 import { RecordHistory } from '../components/RecordHistory';
+import { PricesView, PayView } from './CleaningSetup';
 import {
   KIND_LABEL, TimeLeft, Segmented, OpsModal, FormRow, INPUT, TEXTAREA, CloseButton, uploadTo, ReportDamageModal, dayLabel, hm, stamp, minutesLabel, mytDay, type CleanStatus, type MediaItem,
 } from '../components/ops/OpsUi';
@@ -45,19 +46,22 @@ interface Row {
   assigneeId: string | null; cleanerId: string | null; assigneeName: string | null; cleaners: TaskCleaner[]; unit: UnitSize;
   previous: (Guest & { state: string; checkOutTime: string; lateCheckOut: boolean }) | null;
   next: (Guest & { guests: number; checkInTime: string; earlyCheckIn: boolean; checkInAt: string }) | null;
-  guestOut: boolean; guestLeftAt: string | null; startedAt: string | null; completedAt: string | null;
+  guestOut: boolean; guestLeftAt: string | null; guestLeftAuto?: boolean; startedAt: string | null; completedAt: string | null;
   photoCount: number; videoCount: number; checklist: { done: number; total: number };
+  /** What the clean is charged and what the cleaner is paid, in sen; null = price not set. */
+  amount?: number | null; cleanerPay?: number | null; priceSource?: 'job' | 'unit' | 'table' | null;
+  external?: { address: string; clientName: string | null; clientPhone: string | null } | null;
 }
 interface Departure {
   reservationId: string; state: string; channel: string; guestName: string; checkOutTime: string; lateCheckOut: boolean;
   unitId: string; unitNumber: string; buildingId: string; propertyName: string; unit?: UnitSize;
-  next: { guestName: string; checkInTime: string; checkInAt: string; earlyCheckIn: boolean } | null;
+  next: { reservationId?: string; guestName: string; checkInTime: string; checkInAt: string; earlyCheckIn: boolean } | null;
 }
 export interface RepairOnDay {
   id: string; issueId: string; startsAt: string; endsAt: string; note: string | null; title: string; state: string; urgency: string; category: string;
   assigneeName: string | null; unitId: string; unitNumber: string; buildingId: string; propertyName: string; overlaps: { guestName: string }[];
 }
-interface Board { date: string; today: string; rows: Row[]; departures: Departure[]; repairs: RepairOnDay[]; defaults: { checkIn: string; checkOut: string } }
+interface Board { date: string; today: string; rows: Row[]; departures: Departure[]; repairs: RepairOnDay[]; defaults: { checkIn: string; checkOut: string }; external?: Row[]; externalEnabled?: boolean }
 
 interface Detail {
   id: string; kind: string; state: string; unitId: string; unitNumber: string; propertyName: string; instructions: string | null;
@@ -65,32 +69,39 @@ interface Detail {
   completedBy: string | null; createdAt: string | null; reservationId: string | null;
   media: MediaItem[];
   access: { id: string; kind: string; label: string; instruction: string; masked: string; hasCode: boolean }[]; mayReveal: boolean;
-  cost: { amount: number; source: 'unit' | 'history' | 'default'; charged: boolean } | null;
+  cost: { amount: number; source: 'unit' | 'history' | 'default' | 'job' | 'table'; charged: boolean; cleanerPay?: number | null; priceSet?: boolean } | null;
+  external?: { address: string; clientName: string | null; clientPhone: string | null } | null;
   damage: { id: string; title: string; state: string; reportedAt: string }[];
   day?: string | null;
   cleaners?: TaskCleaner[]; unit?: UnitSize;
 }
 
-type Tab = 'board' | 'history';
+type Tab = 'board' | 'history' | 'prices' | 'pay';
 type DayPick = 'today' | 'tomorrow' | 'pick';
 
 const KIND_NAME: Record<string, string> = { turnover: 'Standard clean', deep_clean: 'Deep clean', light_clean: 'Light clean' };
-const COST_SOURCE: Record<string, string> = { unit: 'unit rate', history: 'last charged on this unit', default: 'standard rate' };
+const COST_SOURCE: Record<string, string> = { unit: "the unit's own price", history: 'last charged on this unit', default: 'standard rate', job: 'set on this job', table: 'price table' };
+/** Board order (staff comment sheet): units ready to check in at the top, then being cleaned, then guest out, then the rest. */
+const BOARD_ORDER: Record<string, number> = { done: 0, cleaning: 1, ready: 2, waiting: 3, guest_in: 4, unassigned: 5 };
 
 export default function CleaningPage() {
   const [params, setParams] = useSearchParams();
-  const tab: Tab = params.get('tab') === 'history' ? 'history' : 'board';
+  const asked = params.get('tab');
+  const tab: Tab = asked === 'history' || asked === 'prices' || asked === 'pay' ? asked : 'board';
   const setTab = (t: Tab) => setParams(p => {
     const n = new URLSearchParams(p);
-    if (t === 'history') n.set('tab', 'history'); else { n.delete('tab'); HISTORY_PARAMS.forEach(k => n.delete(k)); }
+    if (t !== 'board') n.set('tab', t); else n.delete('tab');
+    if (t !== 'history') HISTORY_PARAMS.forEach(k => n.delete(k));
     return n;
   }, { replace: true });
 
+  if (tab === 'prices') return <PricesView tabs={<TabSwitch tab={tab} onTab={setTab} />} />;
+  if (tab === 'pay') return <PayView tabs={<TabSwitch tab={tab} onTab={setTab} />} />;
   return tab === 'history' ? <HistoryView onTab={setTab} /> : <BoardView onTab={setTab} />;
 }
 
 function TabSwitch({ tab, onTab }: { tab: Tab; onTab: (t: Tab) => void }) {
-  return <Segmented label="View" value={tab} onChange={onTab} options={[{ value: 'board', label: 'Board' }, { value: 'history', label: 'History' }]} />;
+  return <Segmented label="View" value={tab} onChange={onTab} options={[{ value: 'board', label: 'Board' }, { value: 'history', label: 'History' }, { value: 'prices', label: 'Prices' }, { value: 'pay', label: 'Pay' }]} />;
 }
 
 /* ============================== board ============================== */
@@ -104,8 +115,8 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
   const date = pick === 'today' ? mytDay(0) : pick === 'tomorrow' ? mytDay(1) : picked;
   const [cleaner, setCleaner] = useState('');
   const [building, setBuilding] = useState('');
-  // Phone-design status switch: To do (not started, incl. checkouts with no job), In progress, Done.
-  const [phase, setPhase] = useState<'todo' | 'doing' | 'done'>('todo');
+  // Status switch: All (the default, ready units on top), To do (not started, incl. checkouts with no job), In progress, Done.
+  const [phase, setPhase] = useState<'all' | 'todo' | 'doing' | 'done'>('all');
   const [selected, setSelected] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [assignFor, setAssignFor] = useState<{ buildingId: string; name: string } | null>(null);
@@ -122,7 +133,8 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
     return () => { window.clearInterval(t); document.removeEventListener('visibilitychange', tick); };
   }, [date]); // eslint-disable-line react-hooks/exhaustive-deps
   const { cleaners } = useCleaners(true);
-  const rows = data?.rows ?? [];
+  // External cleans (an address, not a unit) sit in their own group, after the buildings.
+  const rows = useMemo(() => [...(data?.rows ?? []), ...(data?.external ?? [])], [data]);
   const departures = data?.departures ?? [];
   const repairs = data?.repairs ?? [];
 
@@ -138,8 +150,8 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
   const filteredRows = rows.filter(r => (!building || r.buildingId === building)
     && (!cleaner || (cleaner === 'none' ? !r.cleanerId && !r.assigneeId && !r.assigneeName : r.cleanerId === cleaner || r.cleaners.some(c => c.cleanerId === cleaner))));
   const phaseCount = { todo: filteredRows.filter(r => phaseOf(r) === 'todo').length, doing: filteredRows.filter(r => phaseOf(r) === 'doing').length, done: filteredRows.filter(r => phaseOf(r) === 'done').length };
-  const visible = filteredRows.filter(r => phaseOf(r) === phase);
-  const visibleDepartures = phase !== 'todo' ? [] : departures.filter(d => (!building || d.buildingId === building) && (!cleaner || cleaner === 'none'));
+  const visible = filteredRows.filter(r => phase === 'all' || phaseOf(r) === phase);
+  const visibleDepartures = phase !== 'todo' && phase !== 'all' ? [] : departures.filter(d => (!building || d.buildingId === building) && (!cleaner || cleaner === 'none'));
 
   // One card per building, in name order; each lists its cleans, then guests leaving with no clean yet.
   const groups = useMemo(() => {
@@ -148,7 +160,8 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
     for (const r of visible) get(r.buildingId, r.propertyName).rows.push(r);
     for (const d of visibleDepartures) get(d.buildingId, d.propertyName).departures.push(d);
     for (const w of repairs) if (m.has(w.buildingId)) m.get(w.buildingId)!.repairs.push(w);
-    return [...m.values()].sort((a, b) => a.name.localeCompare(b.name));
+    for (const g of m.values()) g.rows.sort((a, b) => BOARD_ORDER[a.status] - BOARD_ORDER[b.status] || a.unitNumber.localeCompare(b.unitNumber, undefined, { numeric: true }));
+    return [...m.values()].sort((a, b) => (a.id === 'external' ? 1 : 0) - (b.id === 'external' ? 1 : 0) || a.name.localeCompare(b.name));
   }, [visible, visibleDepartures, repairs]);
 
   const total = rows.length, done = rows.filter(r => r.status === 'done').length;
@@ -187,8 +200,10 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
     act(`plan-${d.reservationId}`, () => api.post('/housekeeping/plan', { reservationIds: [d.reservationId] }), { title: `Cleaning job planned for ${d.unitNumber}.` });
   const planAll = () =>
     act('plan-all', () => api.post('/housekeeping/plan', { reservationIds: visibleDepartures.map(d => d.reservationId) }), { title: `${visibleDepartures.length} cleaning jobs planned.` });
-  const autoAssign = () =>
-    act('auto', async () => { const r = await api.post<{ assigned: number }>('/housekeeping/auto-assign', {}); if (!r.assigned) throw new ApiFailure(409, 'NONE', 'Every cleaning job from today on already has a cleaner.'); }, { title: 'Cleaning jobs assigned.', body: 'Unassigned cleaning jobs from today on now have a cleaner.' });
+  const undoLeft = (taskId: string, unit: string) =>
+    act(`left-${taskId}`, () => api.post('/housekeeping/guest-left', { taskId, undo: true }), { title: `${unit}: guest no longer marked out.` });
+  const setCheckIn = (reservationId: string, time: string, unit: string) =>
+    act(`in-${reservationId}`, () => api.patch(`/reservations/${reservationId}/details`, { checkInTime: time }), { title: `${unit}: next check-in ${time}.` });
 
   const subtitle = data
     // vocab-ok: departures is the API field name; the words on screen say checkouts
@@ -207,7 +222,7 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
           action={building || cleaner ? { label: 'Clear filters', onClick: () => { setBuilding(''); setCleaner(''); } } : { label: 'Add cleaning job', onClick: () => setCreating(true) }} />
       ) : groups.map(g => (
         <BuildingCard key={g.id} group={g} now={now} future={date > mytDay(0)} selected={selected} busy={busy}
-          onSelect={id => setSelected(id)} onGuestLeft={guestLeft} onPlan={plan}
+          onSelect={id => setSelected(id)} onGuestLeft={guestLeft} onUndoLeft={undoLeft} onCheckIn={setCheckIn} onPlan={plan}
           onAssign={() => setAssignFor({ buildingId: g.id, name: g.name })} />
       ))}
     </>
@@ -218,16 +233,17 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
       <PageHeader title="Cleaning" sub={subtitle}
         actions={<>
           <TabSwitch tab="board" onTab={onTab} />
-          {/* Phones: Cleaners and Auto-assign sit behind one "…" so the header is View + Add (owner, Oct 2026). */}
+          {/* Phones: Cleaners sits behind one "..." so the header is View + Add (owner, Oct 2026). No auto-assign: cleans are
+              given by building or one by one (staff comment sheet, 16 Oct 2026). */}
           <span className="contents max-md:hidden">
             <Button size="sm" variant="secondary" icon={<Icon name="Users" size="sm" />} onClick={() => navigate('/operations/cleaners')}>Cleaners</Button>
-            <Button size="sm" variant="secondary" icon={<Icon name="Shuffle" size="sm" />} loading={busy === 'auto'} onClick={() => void autoAssign()}>Auto-assign</Button>
           </span>
-          <CleaningMore onCleaners={() => navigate('/operations/cleaners')} onAuto={() => void autoAssign()} autoBusy={busy === 'auto'} />
+          <CleaningMore onCleaners={() => navigate('/operations/cleaners')} />
         </>}
         primary={<Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setCreating(true)}>Add cleaning job</Button>} />
 
       <Segmented label="Status" value={phase} onChange={setPhase} options={[
+        { value: 'all', label: `All · ${filteredRows.length + (departures.length && !cleaner ? departures.filter(d => !building || d.buildingId === building).length : 0)}` },
         // vocab-ok: departures is the API field's name; the label itself says To do
         { value: 'todo', label: `To do · ${phaseCount.todo + (departures.length && !cleaner ? departures.filter(d => !building || d.buildingId === building).length : 0)}` },
         { value: 'doing', label: `In progress · ${phaseCount.doing}` },
@@ -262,12 +278,14 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
 /* ---------- one building ---------- */
 
 // Columns follow the card's own width, not the window's: with the detail panel open the list is narrow on a laptop.
-const COLS = '@2xl:grid @2xl:grid-cols-[minmax(0,1.3fr)_minmax(0,1.2fr)_minmax(0,1.1fr)_minmax(0,0.6fr)_minmax(0,0.6fr)_minmax(0,0.75fr)_minmax(0,0.95fr)_minmax(0,1fr)] @2xl:items-center @2xl:gap-2.5';
+const COLS = '@2xl:grid @2xl:grid-cols-[minmax(0,1.05fr)_minmax(0,1.3fr)_minmax(0,1.2fr)_minmax(0,0.6fr)_minmax(0,0.55fr)_minmax(0,0.5fr)_minmax(0,0.6fr)_minmax(0,0.85fr)_minmax(0,1.2fr)] @2xl:items-center @2xl:gap-2.5';
 
-function BuildingCard({ group, now, future, selected, busy, onSelect, onGuestLeft, onPlan, onAssign }: {
+function BuildingCard({ group, now, future, selected, busy, onSelect, onGuestLeft, onUndoLeft, onCheckIn, onPlan, onAssign }: {
   group: { id: string; name: string; rows: Row[]; departures: Departure[]; repairs: RepairOnDay[] }; now: number; future: boolean; selected: string | null; busy: string | null;
-  onSelect: (id: string) => void; onGuestLeft: (b: { taskId?: string; reservationId?: string }, unit: string) => void; onPlan: (d: Departure) => void; onAssign: () => void;
+  onSelect: (id: string) => void; onGuestLeft: (b: { taskId?: string; reservationId?: string }, unit: string) => void; onUndoLeft: (taskId: string, unit: string) => void;
+  onCheckIn: (reservationId: string, time: string, unit: string) => void; onPlan: (d: Departure) => void; onAssign: () => void;
 }) {
+  const external = group.id === 'external';
   const count = group.rows.length + group.departures.length;
   const doneN = group.rows.filter(r => r.status === 'done').length;
   const open = group.rows.filter(r => r.status !== 'done');
@@ -288,22 +306,26 @@ function BuildingCard({ group, now, future, selected, busy, onSelect, onGuestLef
         <div className="flex items-center gap-2 text-copy flex-wrap">
           {unassigned > 0 ? <span className="text-danger font-medium">{unassigned} unassigned</span>
             : names.length ? <span className="text-muted-ink" title={names.length > 1 ? names.join(', ') : undefined}>{names.length === 1 ? 'Cleaner' : 'Cleaners'} <b className="text-ink">{names.length === 1 ? names[0] : `${names.length} people`}</b></span> : null}
-          {open.length > 0 && <Button size="sm" variant="secondary" onClick={onAssign}>Assign whole building</Button>}
+          {/* The main way to give out cleans (staff comment sheet, 16 Oct 2026); one job at a time stays in its panel. */}
+          {open.length > 0 && <Button size="sm" variant="primary" icon={<Icon name="Users" size="sm" />} onClick={onAssign}>{external ? 'Assign external jobs' : 'Assign whole building'}</Button>}
         </div>
       </header>
       {!shut && <>
       <div className={cx('hidden text-meta font-semibold text-muted-ink px-5 py-2 [border-top:1px_solid_var(--color-line-soft)]', COLS)}>
-        <div>Unit</div><div>Checkout (leaving)</div><div>Check-in (arriving)</div><div>Time left</div><div>Type</div><div>Layout</div><div>Cleaner</div><div>Status</div>
+        <div>{external ? 'Address' : 'Unit'}</div><div>{external ? 'Client' : 'Checkout (leaving)'}</div><div>{external ? '' : 'Check-in (arriving)'}</div><div>Time left</div><div>Type</div><div>Layout</div><div>Amount</div><div>Cleaner</div><div>Status</div>
       </div>
-      {group.rows.map(r => <CleanRow key={r.id} r={r} now={now} active={r.id === selected} busy={busy === `left-${r.id}`} onSelect={() => onSelect(r.id)} onGuestLeft={() => onGuestLeft({ taskId: r.id }, r.unitNumber)} />)}
+      {group.rows.map(r => <CleanRow key={r.id} r={r} now={now} active={r.id === selected} busy={busy === `left-${r.id}`} savingIn={!!r.next?.reservationId && busy === `in-${r.next.reservationId}`}
+        onSelect={() => onSelect(r.id)} onGuestLeft={() => onGuestLeft({ taskId: r.id }, r.unitNumber)} onUndoLeft={() => onUndoLeft(r.id, r.unitNumber)}
+        onCheckIn={t => r.next?.reservationId && onCheckIn(r.next.reservationId, t, r.unitNumber)} />)}
       {group.departures.map(d => (
         <div key={d.reservationId} className={cx('px-4 @2xl:px-5 py-3 [border-top:1px_solid_var(--color-line-soft)] text-copy flex flex-wrap items-baseline gap-x-4 gap-y-1', COLS)}>
           <div className="basis-full @2xl:basis-auto flex items-center gap-x-2 flex-wrap min-w-0"><span className="min-w-0"><b>{d.unitNumber}</b>{d.unit?.size && <span className="ml-1.5 @2xl:ml-0 @2xl:block text-meta text-muted-ink truncate">{d.unit.size}</span>}</span><span className="@2xl:hidden"><StatusBadge tone="critical">No cleaning job planned</StatusBadge></span></div>
           <div><b className="[font-variant-numeric:tabular-nums]">{d.checkOutTime}</b> · {d.guestName}{d.lateCheckOut && <StatusBadge tone="warning" className="ml-1">Late checkout</StatusBadge>}{d.state === 'checked_out' && <StatusBadge tone="gold" className="ml-1">Out</StatusBadge>}</div>
-          <div>{d.next ? <><b className="[font-variant-numeric:tabular-nums]">{d.next.checkInTime}</b> · {d.next.guestName}</> : <span className="text-muted-ink">No check-in</span>}</div>
+          <div>{d.next ? <><CheckInTime time={d.next.checkInTime} saving={!!d.next.reservationId && busy === `in-${d.next.reservationId}`} onSave={d.next.reservationId ? t => onCheckIn(d.next!.reservationId!, t, d.unitNumber) : undefined} /> · {d.next.guestName}</> : <span className="text-muted-ink">No check-in</span>}</div>
           <div><span className="@2xl:hidden text-muted-ink">Time left </span><TimeLeft at={d.next?.checkInAt} now={now} /></div>
           <div className="hidden @2xl:block text-muted-ink">—</div>
           <div className="hidden @2xl:block truncate">{d.unit?.layout ?? <span className="text-muted-ink">—</span>}</div>
+          <div className="hidden @2xl:block text-muted-ink">—</div>
           <div className="hidden @2xl:block text-muted-ink">—</div>
           <div className="basis-full @2xl:basis-auto flex items-center gap-2 flex-wrap justify-end @2xl:justify-start pt-1 @2xl:pt-0">
             <span className="hidden @2xl:inline"><StatusBadge tone="critical">No cleaning job</StatusBadge></span>
@@ -328,45 +350,87 @@ function BuildingCard({ group, now, future, selected, busy, onSelect, onGuestLef
   );
 }
 
-function CleanRow({ r, now, active, busy, onSelect, onGuestLeft }: { r: Row; now: number; active: boolean; busy: boolean; onSelect: () => void; onGuestLeft: () => void }) {
+function CleanRow({ r, now, active, busy, savingIn, onSelect, onGuestLeft, onUndoLeft, onCheckIn }: {
+  r: Row; now: number; active: boolean; busy: boolean; savingIn: boolean; onSelect: () => void; onGuestLeft: () => void; onUndoLeft: () => void; onCheckIn: (time: string) => void;
+}) {
   const st = statusOf('cleaning', r.status);
   const files = r.photoCount + r.videoCount;
-  const canMarkLeft = r.previous && !r.guestOut && r.status !== 'done' && r.status !== 'cleaning' && r.day <= mytDay(0);
+  // One tap on the row marks the guest out (or takes the mark back while nobody has started); the tick is the button.
+  const mayTick = !!r.previous && r.status !== 'done' && r.status !== 'cleaning' && r.day <= mytDay(0);
+  const label = r.status === 'done' ? 'Ready to check in' : st.label;
   return (
-    <div role="button" tabIndex={0} aria-pressed={active} onClick={onSelect} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(); } }}
+    <div role="button" tabIndex={0} aria-pressed={active} onClick={onSelect} onKeyDown={e => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onSelect(); } }}
       className={cx('px-4 @2xl:px-5 py-3 [border-top:1px_solid_var(--color-line-soft)] text-copy cursor-pointer flex flex-wrap items-baseline gap-x-4 gap-y-1 outline-none focus-visible:[box-shadow:inset_0_0_0_2px_var(--color-gold)]', COLS,
-        active ? 'bg-gold-tint [box-shadow:inset_3px_0_0_var(--color-gold)]' : 'hover:bg-page', r.status === 'done' && 'text-muted-ink')}>
+        active ? 'bg-gold-tint [box-shadow:inset_3px_0_0_var(--color-gold)]' : 'hover:bg-page')}>
       <div className="basis-full @2xl:basis-auto flex items-center gap-x-2 min-w-0">
         <span className="min-w-0">
           <b className="text-ink">{r.unitNumber}</b>
           {r.unit?.size && <span className="ml-1.5 @2xl:ml-0 @2xl:block text-meta text-muted-ink truncate">{r.unit.size}</span>}
         </span>
         {r.carriedOver && <span className="flex-none"><StatusBadge tone="warning" title={`Carried over from ${dayLabel(r.day)}`}>{dayLabel(r.day).replace(/^\w+\s/, '')}</StatusBadge></span>}
-        <span className="@2xl:hidden ml-auto flex-none"><StatusBadge tone={st.tone}>{r.status === 'done' && r.completedAt ? `Done ${hm(r.completedAt)}` : st.label}</StatusBadge></span>
+        <span className="@2xl:hidden ml-auto flex-none"><StatusBadge tone={st.tone}>{label}</StatusBadge></span>
       </div>
-      <div className="min-w-0">
-        <span className="@2xl:hidden text-muted-ink">Out </span>
-        {r.previous ? <><b className="[font-variant-numeric:tabular-nums]">{r.previous.checkOutTime}</b> · {r.previous.guestName}</> : <span className="text-muted-ink">No departing guest</span>}
-        {r.previous?.lateCheckOut && <StatusBadge tone="warning" className="ml-1">Late checkout</StatusBadge>}
-        {r.guestOut && r.guestLeftAt && <div className="text-meta text-gold-ink">Left at {hm(r.guestLeftAt)}</div>}
+      <div className="min-w-0 flex items-start gap-2">
+        {mayTick && <GuestOutTick out={r.guestOut} busy={busy} onTick={r.guestOut ? onUndoLeft : onGuestLeft} />}
+        <div className="min-w-0">
+          {r.external ? <>{r.external.clientName ?? <span className="text-muted-ink">No client name</span>}{r.external.clientPhone && <div className="text-meta text-muted-ink">{r.external.clientPhone}</div>}</>
+            : <><span className="@2xl:hidden text-muted-ink">Out </span>
+              {r.previous ? <><b className="[font-variant-numeric:tabular-nums]">{r.previous.checkOutTime}</b> · {r.previous.guestName}</> : <span className="text-muted-ink">No departing guest</span>}
+              {r.previous?.lateCheckOut && <StatusBadge tone="warning" className="ml-1">Late checkout</StatusBadge>}
+              {r.guestOut && r.guestLeftAt && <div className="text-meta text-gold-ink">{r.guestLeftAuto ? `Out at checkout ${hm(r.guestLeftAt)} (automatic)` : `Left at ${hm(r.guestLeftAt)}`}</div>}</>}
+        </div>
       </div>
-      <div className="min-w-0">
-        <span className="@2xl:hidden text-muted-ink">In </span>
-        {r.next ? <><b className="[font-variant-numeric:tabular-nums]">{r.next.checkInTime}</b> · {r.next.guestName}</> : <span className="text-muted-ink">No check-in</span>}
-        {r.next?.earlyCheckIn && <StatusBadge tone="warning" className="ml-1">Early check-in</StatusBadge>}
+      <div className={cx('min-w-0', r.external && 'hidden @2xl:block')}>
+        {!r.external && <><span className="@2xl:hidden text-muted-ink">In </span>
+          {r.next ? <><CheckInTime time={r.next.checkInTime} saving={savingIn} onSave={r.next.reservationId && r.status !== 'done' ? onCheckIn : undefined} /> · {r.next.guestName}</> : <span className="text-muted-ink">No check-in</span>}
+          {r.next?.earlyCheckIn && <StatusBadge tone="warning" className="ml-1">Early check-in</StatusBadge>}</>}
       </div>
       <div className={cx(!r.next && 'hidden @2xl:block')}><span className="@2xl:hidden text-muted-ink">Time left </span><TimeLeft at={r.next?.checkInAt} now={now} done={r.status === 'done'} /></div>
       <div><span className="@2xl:hidden text-muted-ink">Type </span>{KIND_LABEL[r.kind] ?? r.kind}</div>
       <div className={cx('truncate', !r.unit?.layout && '@max-2xl:hidden')}><span className="@2xl:hidden text-muted-ink">Layout </span>{r.unit?.layout ?? <span className="text-muted-ink">—</span>}</div>
+      <div className="whitespace-nowrap"><span className="@2xl:hidden text-muted-ink">Amount </span>{r.amount != null ? <span className="tabular-nums">{rm(r.amount, { cents: false })}</span> : <span className="text-warning" title="Set it in Cleaning > Prices">Price not set</span>}</div>
       <CleanerCell r={r} />
       <div className="flex items-center gap-1.5 flex-wrap">
-        <span className="hidden @2xl:inline"><StatusBadge tone={st.tone} className="whitespace-nowrap">{r.status === 'done' ? `Done${r.completedAt ? ` ${hm(r.completedAt)}` : ''}` : st.label}</StatusBadge></span>
-        {r.status === 'done' && files > 0 && <span className="hidden @2xl:inline text-meta text-muted-ink whitespace-nowrap">{files} {files === 1 ? 'photo' : 'photos'}</span>}
-        {canMarkLeft && (
-          <Button size="sm" variant="secondary" loading={busy} onClick={e => { e.stopPropagation(); onGuestLeft(); }}>Guest left</Button>
-        )}
+        <span className="hidden @2xl:inline"><StatusBadge tone={st.tone} className="whitespace-nowrap">{label}</StatusBadge></span>
+        {r.status === 'done' && <span className="hidden @2xl:inline text-meta text-muted-ink whitespace-nowrap">{r.completedAt ? `Done ${hm(r.completedAt)}` : 'Done'}{files > 0 ? ` · ${files} ${files === 1 ? 'photo' : 'photos'}` : ''}</span>}
       </div>
     </div>
+  );
+}
+
+/** The "guest has checked out" tick: one tap marks them out, a second tap takes it back (until the clean starts). */
+function GuestOutTick({ out, busy, onTick }: { out: boolean; busy: boolean; onTick: () => void }) {
+  return (
+    <button type="button" role="checkbox" aria-checked={out} aria-label={out ? 'Guest is out. Tap to undo.' : 'Mark the guest as checked out'} disabled={busy}
+      title={out ? 'Guest is out. Tap to undo.' : 'Guest has checked out'}
+      onClick={e => { e.stopPropagation(); onTick(); }} onKeyDown={e => e.stopPropagation()}
+      className={cx('flex-none w-7 h-7 -my-1 grid place-items-center rounded-control border border-solid cursor-pointer disabled:opacity-50',
+        out ? 'bg-black border-black text-white' : 'bg-card border-line text-transparent hover:border-ink hover:text-muted-ink')}>
+      <Icon name="Check" size="sm" />
+    </button>
+  );
+}
+
+/** The next guest's check-in time: tap it to change it right on the row (a time picker), which moves Time left. */
+function CheckInTime({ time, saving, onSave }: { time: string; saving: boolean; onSave?: (time: string) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [v, setV] = useState(time);
+  useEffect(() => { setV(time); }, [time]);
+  if (!onSave) return <b className="[font-variant-numeric:tabular-nums]">{time}</b>;
+  if (!editing) {
+    return (
+      <button type="button" onClick={e => { e.stopPropagation(); setEditing(true); }} onKeyDown={e => e.stopPropagation()} disabled={saving} title="Change the check-in time"
+        className="p-0 bg-transparent border-0 [border-bottom:1px_dashed_var(--color-muted-ink)] cursor-pointer font-bold text-ink [font-family:inherit] text-[length:inherit] [font-variant-numeric:tabular-nums]">
+        {saving ? '...' : time}
+      </button>
+    );
+  }
+  const save = () => { setEditing(false); if (v && v !== time) onSave(v); };
+  return (
+    <span onClick={e => e.stopPropagation()} onKeyDown={e => { e.stopPropagation(); if (e.key === 'Enter') save(); if (e.key === 'Escape') { setV(time); setEditing(false); } }} className="inline-flex items-center gap-1 align-middle">
+      <TimeField aria-label="Next check-in time" autoFocus value={v} onChange={setV} className={cx(INPUT, 'h-8 w-[110px] px-2')} />
+      <button type="button" onClick={save} aria-label="Save the check-in time" className="h-8 w-8 grid place-items-center rounded-control border border-solid border-black bg-black text-white cursor-pointer"><Icon name="Check" size="sm" /></button>
+    </span>
   );
 }
 
@@ -471,12 +535,20 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft }: { row: Row; 
         </section>
       )}
 
+      {row.external ? (
+        <div className="rounded-control bg-muted p-2.5 flex flex-col gap-0.5">
+          <span className="text-meta text-muted-ink">External job</span>
+          <b>{row.external.address}</b>
+          {(row.external.clientName || row.external.clientPhone) && <span>{[row.external.clientName, row.external.clientPhone].filter(Boolean).join(' · ')}</span>}
+          <span className="text-meta text-muted-ink">Not one of our units: it counts in the cleaner's pay and never reaches a unit's costs or an owner statement.</span>
+        </div>
+      ) : (
       <div className="grid grid-cols-2 gap-2.5">
         <div className="rounded-control bg-muted p-2.5 flex flex-col gap-0.5">
           <span className="text-meta text-muted-ink">Leaving</span>
           {row.previous ? <><span><b>{row.previous.checkOutTime}</b> {row.previous.guestName}</span>
             {row.previous.lateCheckOut && <span className="text-meta text-warning">Late checkout</span>}
-            {row.guestOut ? <span className="text-meta text-gold-ink font-medium">Guest out{row.guestLeftAt ? ` at ${hm(row.guestLeftAt)}` : ''}</span>
+            {row.guestOut ? <span className="text-meta text-gold-ink font-medium">Guest out{row.guestLeftAt ? ` at ${hm(row.guestLeftAt)}` : ''}{row.guestLeftAuto ? ' (automatic, at the checkout time)' : ''}</span>
               : !done && row.day <= mytDay(0) && <Button size="sm" variant="secondary" className="mt-1 self-start" onClick={onGuestLeft}>Guest left</Button>}</>
             : <span className="text-muted-ink">No departing guest</span>}
         </div>
@@ -488,6 +560,7 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft }: { row: Row; 
             : <span className="text-muted-ink">No check-in</span>}
         </div>
       </div>
+      )}
 
       <section className="flex flex-col gap-2">
         <AttachmentLabel title="Proof of work" count={files} hint={!done && files === 0 ? 'At least 1 photo or video to complete' : undefined} />
@@ -512,13 +585,9 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft }: { row: Row; 
           </Button>
         </div>
       )}
-      {data?.cost && (
-        <p className="m-0 text-meta text-muted-ink">
-          {data.cost.charged ? `Charged to the unit: ${kindName} ${rm(data.cost.amount)}.` : `Charged to the unit when complete: ${kindName} ${rm(data.cost.amount)} (${COST_SOURCE[data.cost.source]}).`}
-        </p>
-      )}
+      {data?.cost && <CleanAmount taskId={row.id} cost={data.cost} external={!!row.external} done={done} kindName={kindName} onSaved={refresh} />}
 
-      <section className="flex flex-col gap-2">
+      {!row.external && <section className="flex flex-col gap-2">
         <h3 className="m-0 text-copy font-semibold">Door access</h3>
         {!data ? <Skeleton height={36} /> : data.access.length === 0 ? <span className="text-muted-ink">No access details on this unit. Add them on the unit's Access tab.</span>
           : data.access.map(a => (
@@ -534,7 +603,7 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft }: { row: Row; 
             </div>
           ))}
         {data && !data.mayReveal && data.access.some(a => a.hasCode) && <span className="text-meta text-muted-ink">Codes are shown to operations managers and management only.</span>}
-      </section>
+      </section>}
 
       {data && data.damage.length > 0 && (
         <section className="flex flex-col gap-1">
@@ -542,7 +611,7 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft }: { row: Row; 
           {data.damage.map(d => <a key={d.id} href={`#/operations/maintenance?id=${d.id}`} className="text-gold-ink">{d.title} · {stamp(d.reportedAt)}</a>)}
         </section>
       )}
-      <Button variant="secondary" icon={<Icon name="TriangleAlert" size="sm" />} onClick={() => setDamage(true)}>Report damage</Button>
+      {!row.external && <Button variant="secondary" icon={<Icon name="TriangleAlert" size="sm" />} onClick={() => setDamage(true)}>Report damage</Button>}
 
       <section className="rounded-card border border-solid border-line overflow-hidden">
         <div className="py-2.5 px-4 [border-bottom:1px_solid_var(--color-line-soft)] flex items-center gap-2 text-copy font-semibold"><Icon name="History" size="sm" />History</div>
@@ -550,11 +619,54 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft }: { row: Row; 
           bare pageSize={10} refreshKey={data} origin={origin} />
       </section>
 
-      {damage && (
+      {damage && row.unitId && (
         <ReportDamageModal unitId={row.unitId} unitLabel={unitLabel} taskId={row.id} onClose={() => setDamage(false)}
           onDone={() => { setDamage(false); toast({ tone: 'success', title: 'Damage reported.', body: 'A Maintenance job is open on this unit.' }); refresh(); }} />
       )}
     </div>
+  );
+}
+
+/** The clean's amount: what it is charged (the cleaning fee on the unit's costs, or the external job's price) and what the
+ *  cleaner is paid. The office may type its own figure until the clean is charged. */
+function CleanAmount({ taskId, cost, external, done, kindName, onSaved }: {
+  taskId: string; cost: NonNullable<Detail['cost']>; external: boolean; done: boolean; kindName: string; onSaved: () => void;
+}) {
+  const toast = useToast();
+  const [editing, setEditing] = useState(false);
+  const [sen, setSen] = useState<number | null>(cost.amount);
+  const [busy, setBusy] = useState(false);
+  const notSet = cost.priceSet === false;
+  async function save() {
+    if (external && sen == null) { toast({ tone: 'critical', title: 'An external job needs its amount.' }); return; }
+    setBusy(true);
+    try { await api.patch(`/housekeeping/tasks/${taskId}`, { amount: sen }); toast({ tone: 'success', title: 'Amount saved.' }); setEditing(false); onSaved(); }
+    catch (e) { toast({ tone: 'critical', title: 'Not saved.', body: errorMessage(e, 'Try again in a moment.') }); }
+    finally { setBusy(false); }
+  }
+  return (
+    <section className="rounded-control border border-solid border-line p-3 flex flex-col gap-1.5">
+      <div className="flex items-baseline gap-2">
+        <span className="flex-1 font-semibold">Amount</span>
+        {!done && !cost.charged && !editing && <button type="button" onClick={() => { setSen(notSet ? null : cost.amount); setEditing(true); }} className="text-gold-ink font-medium cursor-pointer bg-transparent border-0 p-0 [font-family:inherit]">Change</button>}
+      </div>
+      {editing ? (
+        <div className="flex items-center gap-2">
+          <MoneyInput className={cx(INPUT, 'flex-1')} valueSen={sen} onChangeSen={setSen} aria-label="Amount in RM" />
+          <Button size="sm" variant="secondary" onClick={() => setEditing(false)} disabled={busy}>Cancel</Button>
+          <Button size="sm" variant="primary" loading={busy} onClick={() => void save()}>Save</Button>
+        </div>
+      ) : notSet ? (
+        <span className="text-warning">Price not set. {external ? '' : 'Set it in Cleaning > Prices, or type one here; until then the old cleaning rate is used.'}</span>
+      ) : (
+        <span className="text-heading tabular-nums">{rm(cost.amount)}</span>
+      )}
+      <span className="text-meta text-muted-ink">
+        {external ? 'The price of this external job.'
+          : cost.charged ? `Charged to the unit: ${kindName}.` : `Charged to the unit when complete: ${kindName} (${COST_SOURCE[cost.source] ?? cost.source}).`}
+        {cost.cleanerPay != null ? ` Cleaner's pay ${rm(cost.cleanerPay)}.` : ''}
+      </span>
+    </section>
   );
 }
 
@@ -568,23 +680,50 @@ function NewCleanModal({ date, onClose, onDone }: { date: string; onClose: () =>
   const [kind, setKind] = useState('turnover');
   const [cleanerIds, setCleanerIds] = useState<string[]>([]);
   const [notes, setNotes] = useState('');
+  const [address, setAddress] = useState('');
+  const [client, setClient] = useState('');
+  const [phone, setPhone] = useState('');
+  const [amount, setAmount] = useState<number | null>(null);
+  const [touchedAmount, setTouchedAmount] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const unitOptions = units.map(u => ({ value: u.id, label: u.unitNumber, group: u.propertyName }));
+  const [error, setError] = useState<{ unit?: string; address?: string; amount?: string; form?: string }>({});
+  const external = unitId === EXTERNAL;
+  // On one of our units the amount starts at the price table's figure for this unit and type; it can be typed over.
+  const prices = useApi<{ ready: boolean; rows: { unitId: string; prices: Record<string, { externalCharge: number | null }> }[] }>('/housekeeping/unit-prices');
+  const suggested = !external && unitId ? prices.data?.rows.find(r => r.unitId === unitId)?.prices[kind]?.externalCharge ?? null : null;
+  useEffect(() => { if (!touchedAmount) setAmount(external ? null : suggested); }, [unitId, kind, suggested]); // eslint-disable-line react-hooks/exhaustive-deps
+  const unitOptions = [{ value: EXTERNAL, label: 'External (not one of our units)', group: 'Outside job' }, ...units.map(u => ({ value: u.id, label: u.unitNumber, group: u.propertyName }))];
   async function save() {
-    if (!unitId) { setError('Pick a unit.'); return; }
-    setBusy(true); setError(null);
+    const bad = { unit: unitId ? undefined : 'Pick a unit, or External.', address: external && !address.trim() ? 'Enter the address.' : undefined, amount: external && amount == null ? 'Enter the amount.' : undefined };
+    if (bad.unit || bad.address || bad.amount) { setError(bad); return; }
+    setBusy(true); setError({});
     try {
-      await api.post('/housekeeping/tasks', { unitId, date: day, kind, cleanerIds, instructions: notes.trim() || undefined, title: kind === 'deep_clean' ? 'Deep clean' : kind === 'light_clean' ? 'Light clean' : 'Standard clean' });
+      const title = kind === 'deep_clean' ? 'Deep clean' : kind === 'light_clean' ? 'Light clean' : 'Standard clean';
+      await api.post('/housekeeping/tasks', {
+        ...(external ? { external: { address: address.trim(), clientName: client.trim() || undefined, clientPhone: phone.trim() || undefined } } : { unitId }),
+        date: day, kind, cleanerIds, instructions: notes.trim() || undefined, title,
+        ...(amount != null && (external || touchedAmount) ? { amount } : {}),
+      });
       onDone();
-    } catch (e) { setError(errorMessage(e, 'Not saved. Try again.')); setBusy(false); }
+    } catch (e) { setError({ form: errorMessage(e, 'Not saved. Try again.') }); setBusy(false); }
   }
   return (
-    <OpsModal title="Add cleaning job" sub="For a deep clean, a refresh, or a cleaning job no reservation created." onClose={onClose} busy={busy}
+    <OpsModal title="Add cleaning job" sub="For a deep clean, a refresh, a cleaning job no reservation created, or a job at an outside address." onClose={onClose} busy={busy}
       footer={<><Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" variant="primary" loading={busy} onClick={() => void save()}>Add cleaning job</Button></>}>
-      <FormRow label="Unit" error={error}>
-        <SearchSelect label="Unit" value={unitId} onChange={setUnitId} options={unitOptions} placeholder="Search units" size="md" />
+      <FormRow label="Unit" error={error.unit} hint="One of our units, or External for a job at another address.">
+        <SearchSelect label="Unit" value={unitId} onChange={v => { setUnitId(v); setError(x => ({ ...x, unit: undefined })); }} options={unitOptions} placeholder="Search units, or pick External" size="md" />
       </FormRow>
+      {external && (
+        <>
+          <FormRow label="Address" error={error.address}>
+            <input className={INPUT} value={address} onChange={e => { setAddress(e.target.value); setError(x => ({ ...x, address: undefined })); }} maxLength={300} placeholder="e.g. 12 Jalan Ampang, Kuala Lumpur" />
+          </FormRow>
+          <div className="grid grid-cols-2 gap-3">
+            <FormRow label="Client name (optional)"><input className={INPUT} value={client} onChange={e => setClient(e.target.value)} maxLength={120} /></FormRow>
+            <FormRow label="Client phone (optional)"><input className={INPUT} value={phone} onChange={e => setPhone(e.target.value)} maxLength={40} inputMode="tel" /></FormRow>
+          </div>
+        </>
+      )}
       <div className="grid grid-cols-2 gap-3">
         <FormRow label="Day"><DateField aria-label="Day" className={INPUT} value={day} onChange={v => v && setDay(v)} /></FormRow>
         <FormRow label="Type">
@@ -593,13 +732,20 @@ function NewCleanModal({ date, onClose, onDone }: { date: string; onClose: () =>
           </select>
         </FormRow>
       </div>
-      <FormRow label="Cleaners (optional)" hint={cleanerIds.length ? undefined : 'Leave empty to assign later.'}>
+      <FormRow label={external ? 'Amount, RM' : 'Amount, RM (optional)'} error={error.amount}
+        hint={external ? 'What the job is charged. It counts in the cleaner\'s pay, never in a unit\'s costs.' : unitId ? (suggested != null ? 'From the price table; type over it for this job.' : 'Price not set for this unit and type: leave empty to use the old cleaning rate, or type one.') : undefined}>
+        <MoneyInput className={INPUT} valueSen={amount} onChangeSen={v => { setAmount(v); setTouchedAmount(true); setError(x => ({ ...x, amount: undefined })); }} aria-label="Amount in RM" />
+      </FormRow>
+      <FormRow label="Cleaners (optional)" hint={cleanerIds.length ? undefined : 'Leave empty to assign later. Tick more than one for a team.'}>
         <CleanerChips cleaners={cleaners} value={cleanerIds} names={{}} onChange={setCleanerIds} />
       </FormRow>
       <FormRow label="Notes for the cleaner (optional)"><textarea className={TEXTAREA} value={notes} onChange={e => setNotes(e.target.value)} maxLength={1000} /></FormRow>
+      {error.form && <span className="text-meta text-danger" role="alert">{error.form}</span>}
     </OpsModal>
   );
 }
+
+const EXTERNAL = '__external__';
 
 function AssignBuildingModal({ building, date, onClose, onDone }: { building: { buildingId: string; name: string }; date: string; onClose: () => void; onDone: (n: number, who: string) => void }) {
   const { cleaners } = useCleaners(true);
@@ -776,7 +922,7 @@ function HistoryView({ onTab }: { onTab: (t: Tab) => void }) {
 }
 
 /** Phones only: the less-used Cleaning header actions in a bottom sheet. */
-function CleaningMore({ onCleaners, onAuto, autoBusy }: { onCleaners: () => void; onAuto: () => void; autoBusy: boolean }) {
+function CleaningMore({ onCleaners }: { onCleaners: () => void }) {
   const [open, setOpen] = useState(false);
   const row = 'min-h-12 flex items-center gap-3 px-1 border-0 [border-bottom:1px_solid_var(--color-line-soft)] bg-transparent cursor-pointer text-left text-copy text-ink';
   return (
@@ -791,7 +937,6 @@ function CleaningMore({ onCleaners, onAuto, autoBusy }: { onCleaners: () => void
           <div role="menu" className="relative bg-card rounded-t-[20px] pt-2.5 pb-[calc(16px+env(safe-area-inset-bottom))] px-4 flex flex-col">
             <span aria-hidden className="w-[38px] h-1 rounded-full bg-line self-center mb-3" />
             <button type="button" role="menuitem" className={row} onClick={() => { setOpen(false); onCleaners(); }}><Icon name="Users" size="sm" /><span className="flex-1">Cleaners</span></button>
-            <button type="button" role="menuitem" className={row} disabled={autoBusy} onClick={() => { setOpen(false); onAuto(); }}><Icon name="Shuffle" size="sm" /><span className="flex-1">{autoBusy ? 'Assigning…' : 'Auto-assign'}</span></button>
           </div>
         </div>
       )}

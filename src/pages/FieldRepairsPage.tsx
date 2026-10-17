@@ -16,7 +16,7 @@ import { CATEGORY, FormRow, INPUT, TEXTAREA, ProblemPhotos, Segmented, hm, stamp
 /* GET /api/field/repairs and /api/field/repairs/:id (functions/api/field/repairs*.ts). No amounts: the server never sends any. */
 interface Repair {
   id: string; unitId: string; unitNumber: string; propertyName: string; buildingId: string; addressLine: string;
-  title: string; detail: string | null; category: string; urgency: string; state: string; source: string;
+  title: string; detail: string | null; category: string; urgency: string; jobType?: string; dueOn?: string | null; state: string; source: string;
   reportedAt: string; reporter: string | null; assigneeName: string | null;
   startedAt: string | null; endedAt: string | null; resolvedAt: string | null; blocksUnit: boolean; waitingForOwner: boolean;
   beforeCount: number; afterCount: number; documentCount: number;
@@ -102,9 +102,11 @@ function RepairCard({ r, offer, onOpen }: { r: Repair; offer?: boolean; onOpen: 
       <span className="flex items-center gap-2">
         <b className="text-heading flex-1 min-w-0 truncate">{r.unitNumber}<span className="text-copy text-muted-ink font-normal"> · {r.propertyName}</span></b>
         {r.urgency === 'urgent' && r.state !== 'resolved' && <StatusBadge tone="critical">Urgent</StatusBadge>}
+        {r.jobType === 'pass_key' && r.state !== 'resolved' && <StatusBadge tone="info">Pass key</StatusBadge>}
       </span>
       <span className="text-copy text-ink [overflow-wrap:anywhere]">{r.title}</span>
       <span className="text-meta text-muted-ink">{CATEGORY[r.category] ?? r.category} · reported {relative(r.reportedAt)}{r.beforeCount ? ` · ${plural(r.beforeCount, 'photo')}` : ''}</span>
+      {r.dueOn && r.state !== 'resolved' && r.jobType !== 'urgent' && <span className="text-meta text-ink">Due {dateShort(r.dueOn)}</span>}
       {next && <span className="text-meta text-ink flex items-center gap-1.5"><Icon name="CalendarClock" size="sm" />Go in {stamp(next.startsAt)} to {hm(next.endsAt)}</span>}
       <span className="flex gap-1.5 flex-wrap pt-0.5">
         {offer ? <StatusBadge tone="gold">Open to pick up</StatusBadge> : <StatusBadge entity="maintenance" value={progress(r)} />}
@@ -205,6 +207,8 @@ function RepairSheet({ id, onClose, onChanged, onPicked }: { id: string; onClose
             <>
               <div className="flex gap-1.5 flex-wrap">
                 {j.urgency === 'urgent' && !closed && <StatusBadge tone="critical">Urgent</StatusBadge>}
+                {j.jobType === 'pass_key' && !closed && <StatusBadge tone="info">Pass key</StatusBadge>}
+                {j.dueOn && !closed && j.jobType !== 'urgent' && <StatusBadge tone="neutral">Due {dateShort(j.dueOn)}</StatusBadge>}
                 <StatusBadge tone="neutral">{CATEGORY[j.category] ?? j.category}</StatusBadge>
                 {d.data!.mayPick ? <StatusBadge tone="gold">Open to pick up</StatusBadge> : <StatusBadge entity="maintenance" value={progress(j)} />}
                 {j.blocksUnit && <StatusBadge tone="critical">Unit blocked</StatusBadge>}

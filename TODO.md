@@ -457,3 +457,9 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Payment vouchers and AP invoices keep their supplier bills in their own Files panel (print bundle, posting lock); the shared panel shows them read-only and adds line files.
 - Renovation site-receipt photos (goods received at the unit) stay in their own panel and are not in the project's Documents roll-up yet.
 - tests-pg/renovationProject.pg.test.ts fails 2 of 10 on main (PGlite, 15 Oct 2026): "skip rules ... hardware gate refuses start" (expects 409, gets 200) and "with phase 2's real tables ... gate opens" (gate stays closed). Not from the 2D rule change.
+
+## Staff operations (comment sheet OPERATION / Sheet3, PR feat/staff-operations)
+- Migration 0126 to apply on staging, then production (lead): job type, severity, parts, due date, cleaning prices, external cleaning jobs.
+- Owner to give the real cleaning prices (Cleaning > Prices): until then every price is "not set" and cleans are charged at the old rate.
+- Confirm with YJ: external cleaning jobs count in the cleaner's pay at the job's full amount, split equally between the cleaners on it.
+- Maintenance amount: keep finalAmount on POST /api/maintenance/issues/:id/complete as the field a future integration fills.
