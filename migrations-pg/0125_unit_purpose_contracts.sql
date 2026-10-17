@@ -81,6 +81,12 @@ CREATE TABLE IF NOT EXISTS agreement_templates (
   created_by_label TEXT
 );
 
+-- The app reaches these through pos_app only; row level security on with no policies, as for every pos table.
+ALTER TABLE unit_parking_bays ENABLE ROW LEVEL SECURITY;
+ALTER TABLE unit_lettings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE agreement_templates ENABLE ROW LEVEL SECURITY;
+GRANT SELECT, INSERT, UPDATE, DELETE ON unit_parking_bays, unit_lettings, agreement_templates TO pos_app;
+
 -- A neutral placeholder: the company pastes its real agreement wording in Settings > Agreement template.
 INSERT INTO agreement_templates (id, version, title, body, created_at, created_by_label) VALUES (
   'agreement-template-v1', 1, 'Property Management Agreement',
