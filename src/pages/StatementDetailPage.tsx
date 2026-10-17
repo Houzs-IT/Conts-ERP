@@ -31,6 +31,8 @@ interface Line {
   id: string; unitId: string | null; unitLabel: string | null; type: 'gross' | 'expense' | 'management_fee' | 'adjustment'; category: string | null;
   description: string; occurredOn: string; amount: number; quantity: number | null; reference: string | null;
   reservationId: string | null; expenseId: string | null; adjustmentId: string | null;
+  /** The bill's receipt (photo or PDF), when one was attached. */
+  receipt?: { id: string; name: string } | null;
   booking: { checkIn: string; checkOut: string; channel: string; ref: string | null } | null;
 }
 interface Detail {
@@ -233,6 +235,7 @@ function LineList({ id, lines }: { id: string; lines: Line[] }) {
             : l.expenseId ? <a href="#/finance/payables" className="text-ink underline underline-offset-2">{lineText(l)}</a>
             : lineText(l)}
           {refOf(l) && !l.booking && <span className="text-muted-ink"> · {refOf(l)}</span>}
+          {l.receipt && <> · <a href={`/api/documents/${encodeURIComponent(l.receipt.id)}/download`} target="_blank" rel="noopener" title={l.receipt.name} className="text-ink underline underline-offset-2">Receipt</a></>}
         </span>
       ) },
     { key: 'unit', label: 'Unit', value: l => l.unitLabel, hidden: true, width: 160 },

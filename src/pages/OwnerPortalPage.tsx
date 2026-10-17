@@ -60,7 +60,7 @@ interface OwnerDoc {
   id: string; type: 'statement' | 'contract' | 'invoice' | 'report';
   refId?: string; title: string; meta: string; issuedAt: string;
 }
-interface DetailLine { label: string; amount: number; type: 'gross' | 'fee' | 'expense' | 'adjustment'; reference?: string }
+interface DetailLine { label: string; amount: number; type: 'gross' | 'fee' | 'expense' | 'adjustment'; reference?: string; receipt?: { id: string; name: string } }
 interface DetailUnit { id: string; label: string; gross: number; fee: number; expenses: number; adjustments: number; net: number; lines: DetailLine[] }
 interface StatementDetail {
   id: string; period: string; isFinal: boolean; unitsLabel: string;
@@ -416,6 +416,7 @@ function StatementBreakdown({ statementId }: { statementId: string }) {
                       <span className="text-copy text-muted-ink text-pretty">
                         {l.label}
                         {l.reference && <span className="text-faint"> · {l.reference}</span>}
+                        {l.receipt && <> · <a href={`/api/documents/${encodeURIComponent(l.receipt.id)}/download`} target="_blank" rel="noopener" title={l.receipt.name} className="text-ink underline underline-offset-2">View receipt</a></>}
                       </span>
                       <MoneyText sen={l.amount} mode="exact" className={cx('text-copy', l.type === 'gross' ? 'text-ink font-medium' : 'text-muted-ink')} />
                     </div>
