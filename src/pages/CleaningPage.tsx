@@ -132,6 +132,13 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
   const [creating, setCreating] = useState(false);
   const [assignFor, setAssignFor] = useState<{ buildingId: string; name: string } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const { user } = useSession();
+  // Closing overdue jobs in bulk is management's (functions/api/housekeeping/overdue.ts); cleaners never see it.
+  const mayBulk = !!user && ['management', 'operations_manager', 'finance_admin'].includes(user.role);
+  const [overdueOpen, setOverdueOpen] = useState(() => { try { return localStorage.getItem('cleaning.overdueOpen') === '1'; } catch { return false; } });
+  const toggleOverdue = () => setOverdueOpen(v => { try { localStorage.setItem('cleaning.overdueOpen', v ? '0' : '1'); } catch { /* private window */ } return !v; });
+  const [picks, setPicks] = useState<Set<string>>(new Set());
+  const [bulk, setBulk] = useState<'done' | 'cancel' | null>(null);
 
   const { data, loading, error, reload: reloadData } = useApi<Board>(`/housekeeping/board?date=${date}`);
   // The side menu's counts (open jobs, today's work) follow what was just done here.
@@ -181,10 +188,17 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
   const groups = useMemo(() => toGroups(visible.filter(r => !isOverdue(r)), visibleDepartures, repairs, ''), [visible, visibleDepartures, repairs]); // eslint-disable-line react-hooks/exhaustive-deps
   const overdueGroups = useMemo(() => toGroups(overdueRows, [], [], 'overdue-'), [visible]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const total = rows.length, done = rows.filter(r => r.status === 'done').length;
-  const overdueAll = rows.filter(r => r.carriedOver && r.status !== 'done').length;
-  const unassigned = rows.filter(r => r.status !== 'done' && !r.cleanerId && !r.assigneeId && !r.assigneeName).length;
-  const ready = rows.filter(r => r.status === 'ready').length;
+  // The header speaks of the day; overdue jobs are counted on their own, so day + overdue = the All tab.
+  const dayRows = rows.filter(r => !isOverdue(r));
+  const total = dayRows.length, done = dayRows.filter(r => r.status === 'done').length;
+  const overdueAll = rows.length - dayRows.length;
+  const unassigned = dayRows.filter(r => r.status !== 'done' && !r.cleanerId && !r.assigneeId && !r.assigneeName).length;
+  const ready = dayRows.filter(r => r.status === 'ready').length;
+  // A pick only lives while its job is still overdue and on screen.
+  const overdueIds = overdueRows.map(r => r.id).join(',');
+  useEffect(() => { setPicks(p => { const keep = new Set(overdueRows.map(r => r.id)); const n = new Set([...p].filter(id => keep.has(id))); return n.size === p.size ? p : n; }); }, [overdueIds]); // eslint-disable-line react-hooks/exhaustive-deps
+  const togglePicks = (ids: string[], on: boolean) => setPicks(p => { const n = new Set(p); ids.forEach(id => (on ? n.add(id) : n.delete(id))); return n; });
+  const allPicked = overdueRows.length > 0 && overdueRows.every(r => picks.has(r.id));
   const sel = rows.find(r => r.id === selected) ?? null;
   useEffect(() => { if (selected && data && !rows.some(r => r.id === selected)) setSelected(null); }, [data]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -225,7 +239,7 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
 
   const subtitle = data
     // vocab-ok: departures is the API field name; the words on screen say checkouts
-    ? `${dayLabel(date)} · ${total} ${total === 1 ? 'cleaning job' : 'cleaning jobs'}${overdueAll ? ` (${overdueAll} overdue)` : ''} · ${done} done · ${ready} ready to clean${unassigned ? ` · ${unassigned} unassigned` : ''}${departures.length ? ` · ${departures.length} checkouts with no cleaning job` : ''}`
+    ? `${dayLabel(date)} · ${total} ${total === 1 ? 'cleaning job' : 'cleaning jobs'} · ${done} done · ${ready} ready to clean${unassigned ? ` · ${unassigned} unassigned` : ''}${departures.length ? ` · ${departures.length} checkouts with no cleaning job` : ''}${overdueAll ? ` · ${overdueAll} overdue from earlier days` : ''}`
     : dayLabel(date);
 
   const list = (
@@ -240,24 +254,51 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
           action={building || cleaner ? { label: 'Clear filters', onClick: () => { setBuilding(''); setCleaner(''); } } : { label: 'Add cleaning job', onClick: () => setCreating(true) }} />
       ) : <>
         {overdueGroups.length > 0 && (
-          <section aria-label="Overdue cleaning jobs" className="flex flex-col gap-3.5">
-            <div className="flex items-baseline gap-2 flex-wrap px-1">
-              <h2 className="m-0 text-heading font-semibold text-critical">Overdue</h2>
-              <span className="text-meta text-muted-ink">
-                {overdueRows.length} open {overdueRows.length === 1 ? 'cleaning job' : 'cleaning jobs'} from earlier days{oldestOverdue ? ` · oldest ${dayLabel(oldestOverdue)}` : ''}
-              </span>
-            </div>
-            {overdueGroups.map(g => (
-              <BuildingCard key={g.key} group={g} now={now} future={false} selected={selected} busy={busy}
-                onSelect={id => setSelected(id)} onGuestLeft={guestLeft} onUndoLeft={undoLeft} onCheckIn={setCheckIn} onPlan={plan}
-                onAssign={() => setAssignFor({ buildingId: g.id, name: g.name })} />
-            ))}
+          <section aria-label="Overdue cleaning jobs" className="flex-none rounded-card border border-solid border-danger-line bg-danger-bg flex flex-col">
+            <header className="flex items-center gap-x-3 gap-y-2 flex-wrap px-4 py-3">
+              <button type="button" onClick={toggleOverdue} aria-expanded={overdueOpen}
+                className="min-w-0 flex items-center gap-2 flex-wrap bg-transparent border-none p-0 cursor-pointer text-left text-ink [font-family:inherit]">
+                <Icon name={overdueOpen ? 'ChevronDown' : 'ChevronRight'} size="sm" color="var(--color-muted-ink)" />
+                <h2 className="m-0 text-heading font-semibold text-critical">Overdue</h2>
+                <StatusBadge tone="critical">{overdueRows.length}</StatusBadge>
+                <span className="text-meta text-muted-ink">
+                  open {overdueRows.length === 1 ? 'cleaning job' : 'cleaning jobs'} from earlier days{oldestOverdue ? ` · oldest ${dayLabel(oldestOverdue)}` : ''}
+                </span>
+              </button>
+              {mayBulk && overdueOpen && (
+                <label className="ml-auto flex items-center gap-2 text-copy cursor-pointer">
+                  <input type="checkbox" checked={allPicked} ref={el => { if (el) el.indeterminate = picks.size > 0 && !allPicked; }}
+                    onChange={e => setPicks(e.target.checked ? new Set(overdueRows.map(r => r.id)) : new Set())}
+                    className="w-4 h-4 m-0 accent-[var(--color-brand-black)] cursor-pointer" />
+                  Select all
+                </label>
+              )}
+            </header>
+            {mayBulk && overdueOpen && picks.size > 0 && (
+              <div role="toolbar" aria-label="Close the selected overdue jobs" className="sticky top-0 z-[1] mx-3 mb-3 px-3 py-2 rounded-control bg-card border border-solid border-line flex items-center gap-2 flex-wrap shadow-[var(--shadow-overlay)]">
+                <span className="text-copy font-medium">{picks.size} selected</span>
+                <Button size="sm" variant="tertiary" onClick={() => setPicks(new Set())} className="mr-auto">Clear</Button>
+                <span className="flex gap-2 max-md:w-full">
+                  <Button size="sm" variant="primary" icon={<Icon name="Check" size="sm" />} onClick={() => setBulk('done')} className="max-md:flex-1">Mark done</Button>
+                  <Button size="sm" variant="secondary" onClick={() => setBulk('cancel')} className="max-md:flex-1">Cancel job</Button>
+                </span>
+              </div>
+            )}
+            {overdueOpen && (
+              <div className="px-3 pb-3 flex flex-col gap-3">
+                {overdueGroups.map(g => (
+                  <BuildingCard key={g.key} group={g} now={now} future={false} selected={selected} busy={busy}
+                    onSelect={id => setSelected(id)} onGuestLeft={guestLeft} onUndoLeft={undoLeft} onCheckIn={setCheckIn} onPlan={plan}
+                    picks={mayBulk ? { has: id => picks.has(id), toggle: togglePicks } : undefined} />
+                ))}
+              </div>
+            )}
           </section>
         )}
         {overdueGroups.length > 0 && (
           <div className="flex items-baseline gap-2 flex-wrap px-1 mt-1">
             <h2 className="m-0 text-heading font-semibold">{pick === 'today' ? 'Today' : dayLabel(date)}</h2>
-            {groups.length === 0 && <span className="text-meta text-muted-ink">Nothing else on this day.</span>}
+            <span className="text-meta text-muted-ink">{groups.length === 0 ? 'Nothing else on this day.' : `${total} ${total === 1 ? 'cleaning job' : 'cleaning jobs'}`}</span>
           </div>
         )}
         {groups.map(g => (
@@ -307,6 +348,10 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
         empty={<div className="text-center text-copy text-muted-ink p-6 max-w-[260px]"><Icon name="MousePointerClick" size="lg" /><p className="mt-2">Pick a unit to see its cleaner, door code and proof photos.</p></div>}
         detail={sel ? <CleanDetail key={sel.id} row={sel} now={now} onClose={() => setSelected(null)} onChanged={reload} onGuestLeft={() => void guestLeft({ taskId: sel.id }, sel.unitNumber)} /> : null} />
 
+      {bulk && (
+        <BulkCloseModal action={bulk} jobs={overdueRows.filter(r => picks.has(r.id))} onClose={() => setBulk(null)}
+          onDone={(title, body) => { setBulk(null); setPicks(new Set()); toast({ tone: 'success', title, body }); reload(); }} />
+      )}
       {creating && <NewCleanModal date={date} onClose={() => setCreating(false)} onDone={() => { setCreating(false); reload(); }} />}
       {assignFor && (
         <AssignBuildingModal building={assignFor} date={date} onClose={() => setAssignFor(null)}
@@ -316,15 +361,76 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
   );
 }
 
+/* ---------- closing overdue jobs in bulk (management) ---------- */
+
+interface BulkResult { closed: number; skipped: { id: string; unitNumber: string | null; reason: string }[]; charged: number; chargedAmount: number; notCharged?: { unitNumber: string | null; reason: string }[] }
+
+/** Mark done (no photo, note "closed in bulk", charged like a finished clean) or Cancel job (a reason, nothing charged)
+ *  for the overdue jobs ticked on the board: functions/api/housekeeping/overdue.ts. */
+function BulkCloseModal({ action, jobs, onClose, onDone }: { action: 'done' | 'cancel'; jobs: Row[]; onClose: () => void; onDone: (title: string, body?: string) => void }) {
+  const [reason, setReason] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const n = jobs.length;
+  const priced = jobs.filter(j => j.unitId && j.amount != null);
+  const estimate = priced.reduce((s, j) => s + Number(j.amount), 0);
+  async function save() {
+    if (action === 'cancel' && !reason.trim()) { setError('Say why these jobs are cancelled.'); return; }
+    setBusy(true);
+    try {
+      // In parts of 50: each finished clean is charged one by one on the server, so a part stays a short request.
+      const r: BulkResult = { closed: 0, skipped: [], charged: 0, chargedAmount: 0 };
+      for (let i = 0; i < jobs.length; i += 50) {
+        const part = await api.post<BulkResult>('/housekeeping/overdue', { action, taskIds: jobs.slice(i, i + 50).map(j => j.id), ...(action === 'cancel' ? { reason: reason.trim() } : {}) });
+        r.closed += part.closed; r.skipped.push(...part.skipped); r.charged += part.charged; r.chargedAmount += part.chargedAmount;
+      }
+      const left = skippedNote(r.skipped.map(x => ({ label: x.unitNumber ?? 'A job', reason: x.reason })));
+      const money = action === 'done' ? (r.charged ? `${plural(r.charged, 'charge')} to units, ${rm(r.chargedAmount, { cents: false })}.` : 'Nothing new charged to units.') : 'Nothing charged.';
+      onDone(action === 'done' ? `${plural(r.closed, 'cleaning job')} marked done.` : `${plural(r.closed, 'cleaning job')} cancelled.`, [money, left].filter(Boolean).join(' '));
+    } catch (e) { setError(errorMessage(e, 'Not saved. Try again in a moment.')); setBusy(false); }
+  }
+  const list = (
+    <ul className="m-0 p-0 list-none max-h-[180px] overflow-y-auto rounded-control border border-solid border-line divide-y divide-[var(--color-line-soft)]">
+      {jobs.map(j => (
+        <li key={j.id} className="px-3 py-1.5 text-copy flex items-baseline gap-2">
+          <b>{j.unitNumber}</b><span className="text-muted-ink truncate">{j.propertyName}</span>
+          <span className="ml-auto text-meta text-muted-ink whitespace-nowrap">{dayLabel(j.day)}</span>
+        </li>
+      ))}
+    </ul>
+  );
+  return action === 'done' ? (
+    <OpsModal title={`Mark ${plural(n, 'overdue cleaning job')} done?`} onClose={onClose} busy={busy}
+      sub="Recorded as done by you, now, with the note 'closed in bulk'. No photo is asked for. Each one is charged to its unit like a finished clean, on the job's own day."
+      footer={<><Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Back</Button><Button size="sm" variant="primary" loading={busy} onClick={() => void save()}>Mark {plural(n, 'job')} done</Button></>}>
+      {list}
+      {estimate > 0 && <p className="m-0 text-copy text-muted-ink">About {rm(estimate, { cents: false })} to units ({plural(priced.length, 'priced job')}). A unit already charged for a clean that day is not charged twice.</p>}
+      {error && <p role="alert" className="m-0 text-copy text-danger">{error}</p>}
+    </OpsModal>
+  ) : (
+    <OpsModal title={`Cancel ${plural(n, 'overdue cleaning job')}?`} onClose={onClose} busy={busy}
+      sub="The jobs are removed and nothing is charged. The reason is kept in the history. A job a cleaner started, or one with photos, is kept: mark it done instead."
+      footer={<><Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Back</Button><Button size="sm" variant="danger" loading={busy} onClick={() => void save()}>Cancel {plural(n, 'job')}</Button></>}>
+      {list}
+      <FormRow label="Reason" error={error}>
+        <textarea className={TEXTAREA} value={reason} maxLength={500} onChange={e => { setReason(e.target.value); setError(null); }} placeholder="e.g. Imported job, the stay ended days ago and the unit was cleaned" />
+      </FormRow>
+    </OpsModal>
+  );
+}
+
 /* ---------- one building ---------- */
 
 // Columns follow the card's own width, not the window's: with the detail panel open the list is narrow on a laptop.
 const COLS = '@2xl:grid @2xl:grid-cols-[minmax(0,1.05fr)_minmax(0,1.15fr)_minmax(0,1.05fr)_minmax(0,0.6fr)_minmax(0,0.55fr)_minmax(0,0.8fr)_minmax(0,0.6fr)_minmax(0,0.85fr)_minmax(0,1.2fr)] @2xl:items-center @2xl:gap-2.5';
 
-function BuildingCard({ group, now, future, selected, busy, onSelect, onGuestLeft, onUndoLeft, onCheckIn, onPlan, onAssign }: {
+/** Ticks for the overdue bulk close: only passed in the Overdue section, and only for management. */
+interface Picks { has: (id: string) => boolean; toggle: (ids: string[], on: boolean) => void }
+
+function BuildingCard({ group, now, future, selected, busy, onSelect, onGuestLeft, onUndoLeft, onCheckIn, onPlan, onAssign, picks }: {
   group: { id: string; name: string; rows: Row[]; departures: Departure[]; repairs: RepairOnDay[] }; now: number; future: boolean; selected: string | null; busy: string | null;
   onSelect: (id: string) => void; onGuestLeft: (b: { taskId?: string; reservationId?: string }, unit: string) => void; onUndoLeft: (taskId: string, unit: string) => void;
-  onCheckIn: (reservationId: string, time: string, unit: string) => void; onPlan: (d: Departure) => void; onAssign: () => void;
+  onCheckIn: (reservationId: string, time: string, unit: string) => void; onPlan: (d: Departure) => void; onAssign?: () => void; picks?: Picks;
 }) {
   const external = group.id === 'external';
   const count = group.rows.length + group.departures.length;
@@ -334,9 +440,16 @@ function BuildingCard({ group, now, future, selected, busy, onSelect, onGuestLef
   const names = [...new Set(group.rows.flatMap(r => (r.cleaners.length ? r.cleaners.map(c => c.name) : [r.assigneeName])).filter(Boolean))];
   // Each building folds shut; it starts open only when something in it still needs a person.
   const [shut, setShut] = useState(() => open.length === 0 && group.departures.length === 0);
+  const ids = group.rows.map(r => r.id);
+  const allPicked = !!picks && ids.length > 0 && ids.every(id => picks.has(id));
+  const somePicked = !!picks && ids.some(id => picks.has(id));
   return (
     <section className="@container bg-card rounded-card border border-solid border-line overflow-hidden flex-none">
       <header className="flex items-center justify-between gap-3 flex-wrap px-4 @2xl:px-5 py-3">
+        {picks && (
+          <input type="checkbox" checked={allPicked} ref={el => { if (el) el.indeterminate = somePicked && !allPicked; }} onChange={e => picks.toggle(ids, e.target.checked)}
+            aria-label={`Select every overdue job in ${group.name}`} className="flex-none w-4 h-4 m-0 -mr-1 accent-[var(--color-brand-black)] cursor-pointer" />
+        )}
         <button type="button" onClick={() => setShut(v => !v)} aria-expanded={!shut}
           className="min-w-0 flex items-center gap-2 flex-wrap bg-transparent border-none p-0 cursor-pointer text-left text-ink [font-family:inherit]">
           <Icon name={shut ? 'ChevronRight' : 'ChevronDown'} size="sm" color="var(--color-muted-ink)" />
@@ -344,11 +457,11 @@ function BuildingCard({ group, now, future, selected, busy, onSelect, onGuestLef
           <span className="text-meta text-muted-ink tabular-nums">{count} {count === 1 ? 'unit' : 'units'} · {doneN} done</span>
           {group.departures.length > 0 && <StatusBadge tone="critical">{group.departures.length} to plan</StatusBadge>}
         </button>
-        <div className="flex items-center gap-2 text-copy flex-wrap">
+        <div className={cx('flex items-center gap-2 text-copy flex-wrap', picks && 'ml-auto')}>
           {unassigned > 0 ? <span className="text-danger font-medium">{unassigned} unassigned</span>
             : names.length ? <span className="text-muted-ink" title={names.length > 1 ? names.join(', ') : undefined}>{names.length === 1 ? 'Cleaner' : 'Cleaners'} <b className="text-ink">{names.length === 1 ? names[0] : `${names.length} people`}</b></span> : null}
           {/* The main way to give out cleans (staff comment sheet, 16 Oct 2026); one job at a time stays in its panel. */}
-          {open.length > 0 && <Button size="sm" variant="primary" icon={<Icon name="Users" size="sm" />} onClick={onAssign}>{external ? 'Assign external jobs' : 'Assign whole building'}</Button>}
+          {open.length > 0 && onAssign && <Button size="sm" variant="primary" icon={<Icon name="Users" size="sm" />} onClick={onAssign}>{external ? 'Assign external jobs' : 'Assign whole building'}</Button>}
         </div>
       </header>
       {!shut && <>
@@ -356,6 +469,7 @@ function BuildingCard({ group, now, future, selected, busy, onSelect, onGuestLef
         <div>{external ? 'Address' : 'Unit'}</div><div>{external ? 'Client' : 'Checkout (leaving)'}</div><div>{external ? '' : 'Check-in (arriving)'}</div><div>Time left</div><div>Type</div><div>Layout</div><div>Amount</div><div>Cleaner</div><div>Status</div>
       </div>
       {group.rows.map(r => <CleanRow key={r.id} r={r} now={now} active={r.id === selected} busy={busy === `left-${r.id}`} savingIn={!!r.next?.reservationId && busy === `in-${r.next.reservationId}`}
+        picked={picks ? picks.has(r.id) : undefined} onPick={picks ? on => picks.toggle([r.id], on) : undefined}
         onSelect={() => onSelect(r.id)} onGuestLeft={() => onGuestLeft({ taskId: r.id }, r.unitNumber)} onUndoLeft={() => onUndoLeft(r.id, r.unitNumber)}
         onCheckIn={t => r.next?.reservationId && onCheckIn(r.next.reservationId, t, r.unitNumber)} />)}
       {group.departures.map(d => (
@@ -391,8 +505,9 @@ function BuildingCard({ group, now, future, selected, busy, onSelect, onGuestLef
   );
 }
 
-function CleanRow({ r, now, active, busy, savingIn, onSelect, onGuestLeft, onUndoLeft, onCheckIn }: {
+function CleanRow({ r, now, active, busy, savingIn, onSelect, onGuestLeft, onUndoLeft, onCheckIn, picked, onPick }: {
   r: Row; now: number; active: boolean; busy: boolean; savingIn: boolean; onSelect: () => void; onGuestLeft: () => void; onUndoLeft: () => void; onCheckIn: (time: string) => void;
+  picked?: boolean; onPick?: (on: boolean) => void;
 }) {
   const st = statusOf('cleaning', r.status);
   const files = r.photoCount + r.videoCount;
@@ -403,9 +518,13 @@ function CleanRow({ r, now, active, busy, savingIn, onSelect, onGuestLeft, onUnd
     <div role="button" tabIndex={0} aria-pressed={active} onClick={onSelect} onKeyDown={e => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onSelect(); } }}
       className={cx('px-4 @2xl:px-5 py-3 [border-top:1px_solid_var(--color-line-soft)] text-copy cursor-pointer flex flex-wrap items-baseline gap-x-4 gap-y-1 outline-none focus-visible:[box-shadow:inset_0_0_0_2px_var(--color-gold)]', COLS,
         active ? 'bg-gold-tint [box-shadow:inset_3px_0_0_var(--color-gold)]' : 'hover:bg-page')}>
-      <div className="basis-full @2xl:basis-auto flex items-center gap-x-2 min-w-0">
+      <div className="basis-full @2xl:basis-auto flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0">
+        {onPick && (
+          <input type="checkbox" checked={!!picked} onChange={e => onPick(e.target.checked)} onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}
+            aria-label={`Select ${r.unitNumber}, ${dayLabel(r.day)}`} className="flex-none w-4 h-4 m-0 accent-[var(--color-brand-black)] cursor-pointer" />
+        )}
         <span className="min-w-0">
-          <b className="text-ink">{r.unitNumber}</b>
+          <b className="text-ink whitespace-nowrap">{r.unitNumber}</b>
           {r.unit?.size && <span className="ml-1.5 @2xl:hidden text-meta text-muted-ink">{r.unit.size}</span>}
         </span>
         {r.carriedOver && <span className="flex-none"><StatusBadge tone="warning" title={`Carried over from ${dayLabel(r.day)}`}>{dayLabel(r.day).replace(/^\w+\s/, '')}</StatusBadge></span>}
