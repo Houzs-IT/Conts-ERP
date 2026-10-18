@@ -304,6 +304,7 @@
  "POST /api/housekeeping/assign-building": "AAAFFFFU",
  "POST /api/housekeeping/cleaners": "AAAFFFFU",
  "POST /api/housekeeping/guest-left": "AAAFAAFU",
+ "POST /api/housekeeping/overdue": "AAFFFFFU",
  "POST /api/housekeeping/plan": "AAAFFFFU",
  "POST /api/housekeeping/tasks": "AAAFFFFU",
  "POST /api/housekeeping/tasks/[id]/assign": "AAAFFFFU",
