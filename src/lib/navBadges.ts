@@ -6,6 +6,8 @@ export interface NavCounts extends Partial<Record<BadgeKey, number>> {
   channels?: { units: number; lastSentAt: string | null; failed: number };
   /** Whether money actions wait for a second person (Settings > Approvals). */
   approvalsOn?: boolean;
+  /** Of `maintenance`, the jobs waiting for the owner's approval (the rest are open). */
+  maintenanceAwaiting?: number;
   /** What the bell lists: the same live events that drive the menu counts. */
   alerts?: { key: string; title: string; body: string; target: string; tone: 'critical' | 'warning' | 'info'; count: number }[];
 }

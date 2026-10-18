@@ -16,12 +16,13 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if (isFieldRole(session.role)) return json({ today: 0, maintenance: 0, inbox: 0, statements: 0, channels: { units: 0, lastSentAt: null, failed: 0 }, alerts: [] });
 
   // Every menu load and every open tab once a minute asks this: the four reads go out together, not one after another.
-  const [c, ch, approvals, approvalsOn, lv] = await Promise.all([one<{ today: number; overdue: number; maintenance: number; inbox: number; statements: number; payouts_failed: number; payouts_pending: number; mail_failed: number }>(env, `
+  const [c, ch, approvals, approvalsOn, lv] = await Promise.all([one<{ today: number; overdue: number; maintenance: number; maintenance_awaiting: number; inbox: number; statements: number; payouts_failed: number; payouts_pending: number; mail_failed: number }>(env, `
     SELECT
       (SELECT count(*)::int FROM tasks WHERE state != 'resolved'
          AND ${MYT_DATE('COALESCE(scheduled_for, due_at, created_at)')} <= to_char(now() AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM-DD')) AS today,
       (SELECT count(*)::int FROM tasks WHERE state != 'resolved' AND (state = 'overdue' OR (due_at IS NOT NULL AND due_at < ?))) AS overdue,
       (SELECT count(*)::int FROM maintenance_issues WHERE state != 'resolved') AS maintenance,
+      (SELECT count(*)::int FROM maintenance_issues WHERE state != 'resolved' AND owner_approval_required = 1 AND owner_approved_at IS NULL AND charge_to = 'owner') AS maintenance_awaiting,
       (SELECT count(*)::int FROM message_threads WHERE is_read = 0) AS inbox,
       (SELECT count(*)::int FROM owner_statements WHERE state = 'finalised') AS statements,
       (SELECT count(*)::int FROM payouts WHERE state = 'failed') AS payouts_failed,
@@ -57,6 +58,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   // Today lists open maintenance alongside the day's tasks (operations/today.ts), so its count does too.
   return json({
     channels, today: ops ? n.today + n.maintenance : 0, maintenance: ops ? n.maintenance : 0, inbox,
+    // What the maintenance count is made of, for the menu's tooltip: the same split as the Maintenance header.
+    maintenanceAwaiting: ops ? n.maintenance_awaiting : 0,
     statements: money ? n.statements : 0, approvals, approvalsOn, alerts,
   });
 };
