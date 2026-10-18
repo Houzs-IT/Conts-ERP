@@ -250,3 +250,23 @@ export async function ensureTurnovers(env: Env, scope: { from: string; to: strin
     return 0;
   }
 }
+
+/**
+ * A stay whose dates moved or that was cancelled no longer leaves on the day its automatic turnover job was made for:
+ * that job is removed when nobody has touched it (still open, no cleaner, not started, no photo), and a moved stay gets
+ * one on its new checkout day. A job someone is already on is kept for the office to sort out. Never throws.
+ */
+export async function replanTurnover(env: Env, reservationId: string, live: boolean): Promise<void> {
+  try {
+    const gone = await all<{ id: string }>(env, `
+      DELETE FROM tasks t WHERE t.reservation_id = ? AND t.kind = 'turnover' AND t.state = 'open'
+        AND t.assignee_id IS NULL AND t.cleaner_id IS NULL AND t.started_at IS NULL
+        AND NOT EXISTS (SELECT 1 FROM documents d WHERE d.task_id = t.id)
+        AND NOT EXISTS (SELECT 1 FROM task_cleaners c WHERE c.task_id = t.id)
+      RETURNING t.id`, reservationId);
+    if (gone.length) await audit(env, { actorId: null, actorLabel: 'System', action: 'task.remove', entityTable: 'reservations', entityId: reservationId, after: { removed: gone.map(g => g.id), reason: live ? 'dates moved' : 'reservation cancelled' } });
+    if (live) await ensureTurnovers(env, { reservationIds: [reservationId] });
+  } catch (e) {
+    console.error('replanTurnover failed', e);
+  }
+}
