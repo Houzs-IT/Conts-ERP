@@ -23,7 +23,7 @@ import type { Tone } from '../lib/types';
 /* ------------------------------------------------------------------ KPIs -- */
 /* Kept as the existing read-only KPI row — see the brief: keep KPI row + chart. */
 
-interface Kpi { key: string; value: number | string; currency?: string; unit?: string }
+interface Kpi { key: string; value: number | string; currency?: string; unit?: string; estimate?: boolean }
 interface KpiPayload { kpis: Kpi[]; period: string; generatedAt: string }
 
 const KPI_LABEL: Record<string, string> = {
@@ -116,7 +116,7 @@ function kpiValue(k: Kpi) {
 type Range = '3m' | '12m' | 'ytd';
 
 interface TrendPoint { period: string; revenue: number; occupancy: number; isCurrent?: boolean }
-interface TrendTotals { grossBookingValue: number; collectedRevenue: number; managementFees: number; netOwnerPayout: number }
+interface TrendTotals { grossBookingValue: number; collectedRevenue: number; managementFees: number; netOwnerPayout: number; statementIncome?: number; ownerCosts?: number; estimate?: boolean }
 interface TrendPayload {
   generatedAt: string; currency: string;
   points: TrendPoint[];
@@ -471,7 +471,7 @@ export default function DashboardPage() {
               const to = KPI_LINK[k.key];
               const occ = k.key === 'occupancy' ? Number(k.value) : null;
               return (
-                <StatTile key={k.key} label={KPI_LABEL[k.key] ?? humanize(k.key)} value={kpiValue(k)} className={KPI_FLEX}
+                <StatTile key={k.key} label={`${KPI_LABEL[k.key] ?? humanize(k.key)}${k.estimate ? ' (estimate)' : ''}`} value={kpiValue(k)} className={KPI_FLEX}
                   onClick={to ? () => go(to) : undefined}
                   hint={occ != null && Number.isFinite(occ) ? <OccupancyRing pct={occ} /> : undefined} />
               );
@@ -520,9 +520,16 @@ export default function DashboardPage() {
             <TotalsRow items={[
               { label: 'Guest total', value: money(tp.totals.grossBookingValue) },
               { label: 'Earnings', value: money(tp.totals.collectedRevenue) },
-              { label: 'Operator share', value: money(tp.totals.managementFees) },
-              { label: 'Net Payout to Owner', value: money(tp.totals.netOwnerPayout) },
+              { label: tp.totals.estimate ? 'Operator share (estimate)' : 'Operator share', value: money(tp.totals.managementFees) },
+              { label: tp.totals.estimate ? 'Net Payout to Owner (estimate)' : 'Net Payout to Owner', value: money(tp.totals.netOwnerPayout) },
             ]} />
+            {tp.totals.statementIncome != null && tp.totals.statementIncome > 0 && (
+              <p className="m-0 mt-3 text-meta text-muted-ink text-pretty">
+                Worked out like the owner statements and the Owners page: gross income {money(tp.totals.statementIncome)} less owner costs {money(tp.totals.ownerCosts ?? 0)} is
+                the operator share plus the owners' share; the net payout also adds minimum top-ups, fixed rents and Owner Adjustments. Guest total and Earnings
+                count every reservation as the guest paid it. Estimates until each month's statement is final.
+              </p>
+            )}
           </div>
         </Card>
 
