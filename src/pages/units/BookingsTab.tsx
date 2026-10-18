@@ -10,6 +10,8 @@ import { api } from '../../lib/api';
 import { fetchAllPages } from '../../lib/export';
 import { rm, dateRange, dateShort, count } from '../../lib/format';
 import { type UnitDetail } from './shared';
+import { stayPhase, stayWho } from '../../lib/bookingStatus';
+import { cx } from '../../lib/design-tokens';
 
 type When = 'all' | 'upcoming' | 'arriving' | 'hosting' | 'checking_out' | 'past' | 'cancelled';
 /** The owner's status words (docs/VOCABULARY.md section 2), worked out from the dates by functions/api/units/stays.ts. */
@@ -73,27 +75,31 @@ export default function BookingsTab({ unitId }: { unitId: string }) {
     ? `${count(d.total)} ${d.total === 1 ? 'reservation' : 'reservations'}${d.totalGross != null ? ` · ${rm(d.totalGross, { cents: false })} guest total` : ''}`
     : null;
 
+  const today = d?.today;
   const columns = useMemo<Column<Stay>[]>(() => [
     { key: 'reference', label: 'Reservation', type: 'ref', value: s => s.externalRef, width: 150, hideable: false,
       render: s => (
         <span className="flex items-center gap-[9px] min-w-0">
           <span title={CH[s.channel].label} className="flex flex-none"><ChannelMark ch={s.channel} size={20} /></span>
           <span className="sr-only">{CH[s.channel].label}</span>
-          <span className="font-mono text-meta whitespace-nowrap overflow-hidden text-ellipsis" title={s.externalRef ?? undefined}>{s.externalRef ?? '—'}</span>
+          {s.externalRef
+            ? <span className="font-mono text-meta whitespace-nowrap overflow-hidden text-ellipsis" title={s.externalRef}>{s.externalRef}</span>
+            : <span className="text-meta text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{stayWho(s).hold ? CH[s.channel].label : 'No reference'}</span>}
         </span>
       ) },
     { key: 'channel', label: 'Channel', type: 'channel', value: s => s.channel, hidden: true, width: 130 },
-    { key: 'guest', label: 'Guest', value: s => s.guestName ?? 'No guest', width: 170,
-      sub: s => `${s.guestsCount} ${s.guestsCount === 1 ? 'guest' : 'guests'}` },
+    { key: 'guest', label: 'Guest', value: s => stayWho(s).name, width: 170,
+      render: s => { const w = stayWho(s); return <span className={cx('whitespace-nowrap overflow-hidden text-ellipsis block', w.missing || w.hold ? 'text-muted-ink' : 'font-medium')} title={w.name}>{w.name}</span>; },
+      sub: s => stayWho(s).hold ? null : [stayWho(s).missing ? 'No guest name' : null, `${s.guestsCount} ${s.guestsCount === 1 ? 'guest' : 'guests'}`].filter(Boolean).join(' · ') },
     { key: 'stay', label: 'Dates', type: 'date', value: s => s.checkIn, width: 160,
       render: s => <span className="whitespace-nowrap">{dateRange(s.checkIn, s.checkOut)}</span>,
       exportKind: 'text', exportValue: s => `${s.checkIn} to ${s.checkOut}` },
     { key: 'nights', label: 'Nights', type: 'number', value: s => nightsOf(s), width: 70 },
     ...(money ? [{ key: 'gross', label: 'Guest total', type: 'money', value: s => (s.grossBookingValue != null && s.grossBookingValue > 0 ? s.grossBookingValue : null), width: 110,
       render: s => <span className="font-medium tabular-nums whitespace-nowrap">{s.grossBookingValue != null && s.grossBookingValue > 0 ? rm(s.grossBookingValue, { cents: false }) : '—'}</span> }] as Column<Stay>[] : []),
-    { key: 'status', label: 'Status', type: 'status', value: s => s.state, entity: 'booking', width: 130, filter: false,
-      render: s => <StatusBadge entity="booking" value={s.state} /> },
-  ], [money]);
+    { key: 'status', label: 'Status', type: 'status', value: s => stayPhase(s, today), entity: 'stay', width: 130, filter: false,
+      render: s => <StatusBadge entity="stay" value={stayPhase(s, today)} /> },
+  ], [money, today]);
 
   return (
     <DataTable<Stay>
@@ -119,7 +125,7 @@ export default function BookingsTab({ unitId }: { unitId: string }) {
         <span className="flex items-center gap-3">
           <span title={CH[s.channel].label} className="flex flex-none"><ChannelMark ch={s.channel} size={26} /></span>
           <span className="flex flex-col gap-[2px] flex-1 min-w-0">
-            <span className="text-copy font-semibold whitespace-nowrap overflow-hidden text-ellipsis">{s.guestName ?? 'No guest'}</span>
+            <span className={cx('text-copy font-semibold whitespace-nowrap overflow-hidden text-ellipsis', (stayWho(s).missing || stayWho(s).hold) && 'text-muted-ink')}>{stayWho(s).name}</span>
             <span className="text-meta text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">
               {/* The year only when it is not this year: room for the nights on a phone row. */}
               {dateShort(s.checkIn)} – {dateShort(s.checkOut)}{d && s.checkOut.slice(0, 4) !== d.today.slice(0, 4) ? ` ${s.checkOut.slice(0, 4)}` : ''} · {nightsOf(s)} {nightsOf(s) === 1 ? 'night' : 'nights'}
@@ -129,7 +135,7 @@ export default function BookingsTab({ unitId }: { unitId: string }) {
             {s.grossBookingValue != null && s.grossBookingValue > 0 && (
               <span className="text-copy font-medium [font-variant-numeric:tabular-nums]">{rm(s.grossBookingValue, { cents: false })}</span>
             )}
-            <StatusBadge entity="booking" value={s.state} size="sm" />
+            <StatusBadge entity="stay" value={stayPhase(s, d?.today)} size="sm" />
           </span>
         </span>
       )}

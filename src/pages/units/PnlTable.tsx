@@ -6,8 +6,26 @@ export interface PnlRow { label: string; amount: number; type: string; items?: {
 
 /** A P&L as the owner's report and an Airbnb earnings page read it: each row in the report's words, and under it what
  *  makes it up (every reservation, every bill). Long lists fold after a few lines. */
-export function PnlTable({ rows }: { rows: PnlRow[] }) {
-  return <div>{rows.map((l, i) => <Row key={i} l={l} />)}</div>;
+export function PnlTable({ rows, hideZero = false }: { rows: PnlRow[]; hideZero?: boolean }) {
+  const [all, setAll] = useState(false);
+  // hideZero: a cost line at RM 0.00 says nothing, so a short card lists only lines with money on them. Income, subtotals
+  // and the net always show, and the totals are the same either way.
+  const zero = (l: PnlRow) => l.amount === 0 && !(l.items?.length) && l.type !== 'gross' && l.type !== 'net' && l.type !== 'subtotal';
+  const hidden = hideZero ? rows.filter(zero).length : 0;
+  const shown = hidden && !all ? rows.filter(l => !zero(l)) : rows;
+  return (
+    <div>
+      {shown.map((l, i) => <Row key={i} l={l} />)}
+      {hidden > 0 && (
+        <div className="py-2.5 px-5 [border-top:1px_solid_var(--color-line-soft)]">
+          <button type="button" onClick={() => setAll(a => !a)} aria-expanded={all}
+            className="p-0 bg-transparent border-none cursor-pointer font-sans text-meta font-medium text-gold-ink">
+            {all ? 'Hide lines at RM 0.00' : `Show all lines (${hidden} at RM 0.00)`}
+          </button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 const FOLD = 6;

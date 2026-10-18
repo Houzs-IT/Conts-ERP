@@ -5,7 +5,7 @@
 //   node scripts/dev-pglite.mjs                       (leave it running; PORT defaults to 55441)
 //   WRANGLER_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE=postgres://pos_app:local@127.0.0.1:55441/postgres npm run dev
 //
-// Everything lives in memory and is gone when this process stops. One connection at a time (PGlite is single-user).
+// Everything lives in memory and is gone when this process stops. One session (PGlite is single-user), shared by up to 20 connections.
 import { readFileSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -33,7 +33,41 @@ for (const f of readdirSync(join(root, 'migrations-pg')).filter((x) => x.endsWit
 console.log(failed.length ? `migrations that did not apply on PGlite:\n  ${failed.join('\n  ')}` : 'all migrations applied');
 await pg.exec('set search_path = pos, public');
 
-const server = new PGLiteSocketServer({ db: pg, port: PORT });
+// More than one connection: each API request and each transaction opens its own (functions/_lib/db.ts). With the default
+// of 1, a transaction (making a reservation) waited forever for a connection and every later request hung behind it.
+const server = new PGLiteSocketServer({ db: pg, port: PORT, maxConnections: 20 });
+// The socket server queues single protocol messages, so two connections' Parse/Bind/Execute could interleave in PGlite's
+// one session ("unnamed prepared statement does not exist"). Keep a connection's extended-protocol messages together up
+// to its Sync, and a transaction's statements together up to its end, as a real server would.
+const STICKY = new Set([0x50, 0x42, 0x44, 0x45, 0x43, 0x48]); // Parse, Bind, Describe, Execute, Close, Flush
+const queue = server.queryQueue;
+queue.sticky = null;
+queue.processQueue = async function () {
+  if (this.processing || this.queue.length === 0) return;
+  this.processing = true;
+  while (this.queue.length > 0) {
+    const owner = this.sticky ?? (this.db.isInTransaction() ? this.lastHandlerId : null);
+    const at = owner == null ? 0 : this.queue.findIndex(q => q.handlerId === owner);
+    if (at === -1) break; // that connection's next message has not arrived yet; it restarts the queue when it does
+    const item = this.queue.splice(at, 1)[0];
+    try {
+      await this.db.runExclusive(() => this.db.execProtocolRawStream(item.message, { onRawData: d => item.onData(d) }));
+    } catch (e) {
+      this.sticky = null;
+      item.reject(e);
+      continue;
+    }
+    this.lastHandlerId = item.handlerId;
+    this.sticky = STICKY.has(item.message[0]) ? item.handlerId : null;
+    item.resolve(0);
+  }
+  this.processing = false;
+};
+const clearFor = queue.clearQueueForHandler.bind(queue);
+queue.clearQueueForHandler = function (id) {
+  clearFor(id);
+  if (this.sticky === id) { this.sticky = null; setImmediate(() => this.processQueue()); }
+};
 await server.start();
 const url = `postgres://pos_app:local@127.0.0.1:${PORT}/postgres`;
 // Async on purpose: the socket server answers from this process's event loop, which a sync child would block.

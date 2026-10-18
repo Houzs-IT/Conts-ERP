@@ -21,7 +21,7 @@ import { cx } from '../lib/design-tokens';
 import { useApi } from '../lib/useApi';
 import { api, ApiFailure, errorMessage } from '../lib/api';
 import { useSession } from '../lib/session';
-import { deliveryToast } from '../lib/bookingStatus';
+import { deliveryToast, stayPhase } from '../lib/bookingStatus';
 import { rm, dateRange, time, date as fmtDate, nights as fmtNights, guests as fmtGuests, plural, count as fmtCount, phone, todayMyt, greetName } from '../lib/format';
 import { phoneCountries } from '../lib/phone';
 import { Select, Menu } from '../components/Select';
@@ -52,6 +52,7 @@ interface GuestMovement {
   kind: 'arrival' | 'departure';
   day: 'today' | 'tomorrow';
   checkInAt: string; checkOutAt: string;
+  checkIn?: string; checkOut?: string;
   unitNumber: string; propertyName: string; channel: BookingChannel;
   nights: number; guestsCount: number;
   state: ReservationState; readiness: UnitReadiness;
@@ -614,7 +615,7 @@ function StayRow({ s, last, onOpen }: { s: Stay; last: boolean; onOpen: () => vo
           <span className="text-copy font-medium [font-variant-numeric:tabular-nums] text-ink">{rm(s.value, { cents: false })}</span>
           <span className={cx('text-caption text-right', tone)}>{status.label}</span>
         </span>
-        <StatusBadge entity="booking" value={s.state} size="sm" />
+        <StatusBadge entity="stay" value={stayPhase(s)} size="sm" />
         <span className={cx('text-muted-ink grid transition-transform', open && 'rotate-180')}><Icon name="ChevronDown" size="sm" /></span>
       </button>
       {open && (
@@ -764,7 +765,7 @@ function MovementStrip({ g, busy, onPrepare, onSendAccess, onCheckIn, onCheckOut
           <span className="text-meta text-muted-ink">{m.propertyName} {m.unitNumber} · {fmtGuests(m.guestsCount)} · {fmtNights(m.nights)}</span>
         </div>
         <div className="flex items-center gap-[7px]">
-          <StatusBadge entity="booking" value={m.state} size="sm" />
+          {m.checkIn && m.checkOut ? <StatusBadge entity="stay" value={stayPhase({ state: m.state, checkIn: m.checkIn, checkOut: m.checkOut })} size="sm" /> : <StatusBadge entity="booking" value={m.state} size="sm" />}
           <StatusBadge entity="readiness" value={m.readiness} size="sm" />
         </div>
       </div>

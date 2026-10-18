@@ -1,3 +1,4 @@
+import { ensureTurnovers, replanTurnover } from './cleaning';
 import { syncAvailabilityIfLinked } from './channexSync';
 import { bookingAmounts } from './channexAmounts';
 import { type Env, one, run, audit, nowIso } from './db';
@@ -77,6 +78,7 @@ async function applyRevision(env: Env, entry: FeedEntry): Promise<boolean> {
       // Channex they were free again. Same release a cancellation made here sends.
       await reopen(env, existing.unit_id, existing.check_in, existing.check_out, existing.id);
       await bookingNotice(env, existing.id, 'cancelled', null);
+      await replanTurnover(env, existing.id, false);
     }
     return true; // nothing local to cancel is not a failure
   }
@@ -111,6 +113,7 @@ async function applyRevision(env: Env, entry: FeedEntry): Promise<boolean> {
       before: moved ? { checkIn: existing.check_in, checkOut: existing.check_out } : undefined,
       after: { channexBookingId: a.booking_id, ...(moved ? { checkIn, checkOut } : {}) } });
     if (moved) await bookingNotice(env, existing.id, 'dates', null, { from: { checkIn: existing.check_in, checkOut: existing.check_out } });
+    if (existing.check_out !== checkOut) await replanTurnover(env, existing.id, true); else await ensureTurnovers(env, { reservationIds: [existing.id] });
     return true;
   }
 
@@ -126,6 +129,7 @@ async function applyRevision(env: Env, entry: FeedEntry): Promise<boolean> {
   if (clash) await audit(env, { actorId: null, actorLabel: 'Channex', action: 'channex.booking_clash', entityTable: 'reservations', entityId: id, after: { checkIn, checkOut, clashingReservationId: clash.id, otaBookingId: a.booking_id } });
   await audit(env, { actorId: null, actorLabel: 'Channex', action: 'channex.booking_created', entityTable: 'reservations', entityId: id, after: { channexBookingId: a.booking_id, otaName: a.ota_name, grossSen: amountSen, feeSen, amountSource, unitId: unit.id, checkIn, checkOut } });
   await bookingNotice(env, id, 'created', null);
+  await ensureTurnovers(env, { reservationIds: [id] });
   return true;
 }
 

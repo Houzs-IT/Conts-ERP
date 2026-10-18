@@ -5,7 +5,7 @@ import PageHeader from '../components/PageHeader';
 import { StatusBadge } from '../components/StatusBadge';
 import { BookingDrawer, MessageGuestModal, CentreModal, ModalActions } from '../components/booking/BookingDrawer';
 import { UnitPicker } from '../components/booking/UnitPicker';
-import { channelNote, STATUS } from '../lib/bookingStatus';
+import { channelNote, stayPhase, stayWho } from '../lib/bookingStatus';
 import { Button } from '../components/Button';
 import Icon from '../components/Icon';
 import ChannelMark from '../components/ChannelMark';
@@ -26,7 +26,7 @@ import { api, notifyFailure, downloadFile, ApiFailure, errorMessage } from '../l
 import { rm, date, dateRange, nights as fmtNights, guests as fmtGuests, todayMyt, plural, count as countLabel } from '../lib/format';
 import { CHANNEL_META, cx } from '../lib/design-tokens';
 import type { BookingChannel, ReservationState } from '../lib/types';
-import { statusOptions } from '../lib/status';
+import { statusOptions, statusLabel } from '../lib/status';
 
 interface Row {
   id: string; externalRef: string | null; guestName: string; guestsCount: number;
@@ -300,12 +300,14 @@ export default function BookingsPage() {
       render: b => (
         <span className="flex items-center gap-[9px] min-w-0">
           <ChannelMark ch={b.channel} size={20} />
-          <span className="font-mono text-meta whitespace-nowrap overflow-hidden text-ellipsis" title={`${CHANNEL_META[b.channel].label} · ${b.externalRef ?? ''}`}>{b.externalRef ?? '—'}</span>
+          {b.externalRef
+            ? <span className="font-mono text-meta whitespace-nowrap overflow-hidden text-ellipsis" title={`${CHANNEL_META[b.channel].label} · ${b.externalRef}`}>{b.externalRef}</span>
+            : <span className="text-meta text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{CHANNEL_META[b.channel].label} · no reference</span>}
         </span>
       ) },
     { key: 'guest', label: 'Guest', value: r => r.guestName, sortKey: 'guest', width: 170, filter: { kind: 'text', param: 'guest' },
-      render: b => <span className="font-medium whitespace-nowrap overflow-hidden text-ellipsis block" title={b.guestName}>{b.guestName || '—'}</span>,
-      sub: b => [b.guestsCount > 0 ? fmtGuests(b.guestsCount) : null, countryOf(b)].filter(Boolean).join(' · ') || '—' },
+      render: b => { const w = stayWho(b); return <span className={cx('font-medium whitespace-nowrap overflow-hidden text-ellipsis block', w.missing && 'text-muted-ink')} title={w.name}>{w.name}</span>; },
+      sub: b => [stayWho(b).missing ? 'No guest name' : null, b.guestsCount > 0 ? fmtGuests(b.guestsCount) : null, countryOf(b)].filter(Boolean).join(' · ') || null },
     { key: 'unit', label: 'Unit', value: r => r.unitNumber, text: r => `${r.unitNumber} ${r.propertyName}`, sortKey: 'unit', width: 140,
       filter: { kind: 'text', param: 'unit' }, exportValue: r => r.unitNumber, sub: b => b.propertyName },
     { key: 'building', label: 'Building', value: r => r.propertyName, hidden: true, width: 150, filter: false },
@@ -331,9 +333,9 @@ export default function BookingsPage() {
     { key: 'expected', label: 'Expected to receive', type: 'money', value: r => r.expectedPayout, hidden: true, filter: false },
     { key: 'received', label: 'Received', type: 'money', value: r => r.received, hidden: true, filter: false },
     { key: 'outstanding', label: 'Outstanding', type: 'money', value: r => (['cancelled', 'no_show'].includes(r.state) ? 0 : r.outstanding), hidden: true, filter: false },
-    { key: 'status', label: 'Status', type: 'status', value: r => r.state, text: r => STATUS[r.state]?.label ?? r.state, sortKey: 'status', width: 130,
-      filter: { kind: 'select', param: 'status', multi: false, options: statusOptions('booking').map(o => ({ value: o.label, label: o.label })) },
-      render: b => <StatusBadge entity="booking" value={b.state} size="sm" /> },
+    { key: 'status', label: 'Status', type: 'status', value: r => stayPhase(r), text: r => statusLabel('stay', stayPhase(r)), sortKey: 'status', width: 130,
+      filter: { kind: 'select', param: 'status', multi: false, options: statusOptions('stay').map(o => ({ value: o.label, label: o.label })) },
+      render: b => <StatusBadge entity="stay" value={stayPhase(b)} size="sm" /> },
     { key: 'created', label: 'Booked on', type: 'datetime', value: r => r.createdAt, hidden: true, sortKey: 'created', filter: false },
     { key: 'chat', label: 'Chat', width: 56, align: 'center', noExport: true, sortable: false, filter: false,
       render: b => (
@@ -441,13 +443,13 @@ export default function BookingsPage() {
             <ChannelMark ch={b.channel} size={22} />
             <span className="flex flex-col gap-[3px] min-w-0 flex-1">
               <span className="flex items-center justify-between gap-2">
-                <span className="text-copy font-semibold whitespace-nowrap overflow-hidden text-ellipsis">{b.guestName || '—'}</span>
+                <span className={cx('text-copy font-semibold whitespace-nowrap overflow-hidden text-ellipsis', stayWho(b).missing && 'text-muted-ink')}>{stayWho(b).name}</span>
                 <span className="text-copy font-medium [font-variant-numeric:tabular-nums] whitespace-nowrap">{b.grossBookingValue > 0 ? rm(b.grossBookingValue, { cents: false }) : '—'}</span>
               </span>
-              <span className="text-meta text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{b.externalRef ?? '—'} · {b.unitNumber} · {b.propertyName}</span>
+              <span className="text-meta text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{b.externalRef ?? (stayWho(b).missing ? 'No guest name, no reference' : 'No reference')} · {b.unitNumber} · {b.propertyName}</span>
               <span className="flex items-center justify-between gap-2 pt-[2px]">
                 <span className="text-meta min-w-0 flex flex-col leading-tight"><span className="whitespace-nowrap">{dateRange(b.checkIn, b.checkOut)}</span><span className="text-muted-ink">{fmtNights(b.nights)}</span></span>
-                <StatusBadge entity="booking" value={b.state} size="sm" />
+                <StatusBadge entity="stay" value={stayPhase(b)} size="sm" />
               </span>
               {todoMeta?.money && b.outstanding > 0 && <span className="text-meta text-warning">{rm(b.outstanding)} owed</span>}
             </span>
@@ -617,7 +619,7 @@ function BulkPayoutModal({ rows: ticked, onClose, onDone }: { rows: Row[]; onClo
         <div className="max-h-[180px] overflow-y-auto border border-solid border-line rounded-control">
           {rows.map(r => (
             <div key={r.id} className="flex justify-between gap-3 px-3 py-2 text-meta [border-bottom:1px_solid_var(--color-line-soft)] last:border-b-0">
-              <span className="min-w-0 truncate"><span className="font-mono">{r.externalRef}</span> · {r.guestName || '—'}</span>
+              <span className="min-w-0 truncate"><span className="font-mono">{r.externalRef ?? 'No reference'}</span> · {stayWho(r).name}</span>
               <span className="[font-variant-numeric:tabular-nums] whitespace-nowrap">{rm(r.outstanding)}</span>
             </div>
           ))}

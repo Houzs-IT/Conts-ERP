@@ -3,7 +3,7 @@ import { requireSession, isFieldRole } from '../../_lib/auth';
 import { MYT_DATE, SHEET_CLEANER } from '../../_lib/ops';
 import { taskCleanersReady, cleanerListSql, parseCleaners, rosterIdSql } from '../../_lib/taskCleaners';
 import { unitLayoutSql, unitLayout } from '../../_lib/unitLayout';
-import { CLEAN_KINDS_SQL, LIVE_STAY_SQL, standardItems, windowsOnDay, mytToday, isDay, autoGuestLeft } from '../../_lib/cleaning';
+import { CLEAN_KINDS_SQL, LIVE_STAY_SQL, standardItems, windowsOnDay, mytToday, isDay, autoGuestLeft, ensureTurnovers } from '../../_lib/cleaning';
 import { hasCleanPrices, priceBook, layoutKey } from '../../_lib/cleaningPrices';
 
 /** GET /api/housekeeping/board?date=YYYY-MM-DD — the Cleaning screen for one day, one row per clean.
@@ -22,6 +22,11 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const asked = new URL(request.url).searchParams.get('date');
   const date = isDay(asked) ? asked : today;
   const when = MYT_DATE('COALESCE(t.scheduled_for, t.due_at, t.created_at)');
+  // Checkouts from any path (import, channel sync, older data) get their turnover job before the board is read; the
+  // next 60 days too, so a backlog clears within a few looks. Idempotent, never for a past day, and at most 50 jobs per
+  // load (soonest first, so the day being looked at is always covered).
+  if (date >= today) await ensureTurnovers(env, { from: today, to: date }, 50);
+  if (date >= today) await ensureTurnovers(env, { from: today, to: plusDays(today, 60) }, 50);
 
   const defaults = await all<{ key: string; value: string }>(env, `SELECT key, value FROM settings WHERE key IN ('operations.checkIn','operations.checkOut','ops.check_in','ops.check_out')`);
   const pick = (a: string, b: string, d: string) => defaults.find(x => x.key === a)?.value ?? defaults.find(x => x.key === b)?.value ?? d;
@@ -163,3 +168,5 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     })),
   });
 };
+
+const plusDays = (d: string, n: number) => new Date(Date.parse(`${d}T00:00:00Z`) + n * 864e5).toISOString().slice(0, 10);

@@ -1,3 +1,4 @@
+import { ensureTurnovers } from '../../_lib/cleaning';
 import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { purposeOf } from '../../_lib/unitPurpose';
 import { requireSession, isFieldRole, hasColumn } from '../../_lib/auth';
@@ -122,5 +123,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'reservation.create', entityTable: 'reservations', entityId: id, after: { unitId: b.unitId, checkIn: b.checkIn, checkOut: b.checkOut, channel, externalRef: ref } });
   const sync = await holdOnChannels(env, b.unitId, b.checkIn, b.checkOut, false, id);
   await bookingNotice(env, id, 'created', session.userId);
+  await ensureTurnovers(env, { reservationIds: [id] });
   return json({ id, externalRef: ref, effects: { channel: sync } }, 201);
 };

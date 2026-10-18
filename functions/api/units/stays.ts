@@ -57,7 +57,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const [counts, rows] = await Promise.all([
     all<{ phase: string; n: number; gross: number }>(env, `SELECT phase, COUNT(*)::int AS n, COALESCE(SUM(gross_booking_value), 0)::bigint AS gross FROM (${scoped}) x GROUP BY phase`, ...base),
     all<any>(env, `
-      SELECT x.id, x.channel, x.state, x.phase, x.check_in, x.check_out, x.guests_count, x.external_ref,
+      SELECT x.id, x.channel, x.state, x.phase, x.block_reason, x.check_in, x.check_out, x.guests_count, x.external_ref,
              x.gross_booking_value, COALESCE(g.full_name, '') AS guest_name
       FROM (${scoped}) x LEFT JOIN guests g ON g.id = x.guest_id
       ${when === 'all' ? '' : `WHERE x.phase = $${n + 1}`}
@@ -79,7 +79,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     // The guest total of what is shown; cancelled reservations never count.
     ...(money && when !== 'cancelled' ? { totalGross: when === 'all' ? grossAll : gross } : {}),
     rows: rows.map(s => ({
-      id: s.id, guestName: s.guest_name || null, channel: s.channel, state: s.state, phase: s.phase,
+      id: s.id, guestName: s.guest_name || null, channel: s.channel, state: s.state, phase: s.phase, blockReason: s.block_reason ?? null,
       checkIn: s.check_in, checkOut: s.check_out, guestsCount: s.guests_count, externalRef: s.external_ref,
       ...(money ? { grossBookingValue: Number(s.gross_booking_value) } : {}),
     })),

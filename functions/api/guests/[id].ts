@@ -62,13 +62,14 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
   const candidates = mine.flatMap(s => {
     const out: { kind: 'arrival' | 'departure'; day: 'today' | 'tomorrow'; s: any }[] = [];
     if ((s.state === 'confirmed' || s.state === 'pending' || s.state === 'checked_in') && (s.check_in === today || s.check_in === tomorrow)) out.push({ kind: 'arrival', day: s.check_in === today ? 'today' : 'tomorrow', s });
-    if ((s.state === 'checked_in' || s.state === 'checked_out') && (s.check_out === today || s.check_out === tomorrow)) out.push({ kind: 'departure', day: s.check_out === today ? 'today' : 'tomorrow', s });
+    if ((s.state === 'confirmed' || s.state === 'checked_in' || s.state === 'checked_out') && (s.check_out === today || s.check_out === tomorrow)) out.push({ kind: 'departure', day: s.check_out === today ? 'today' : 'tomorrow', s });
     return out;
   }).sort((a, b) => (a.day === b.day ? (a.kind === 'arrival' ? -1 : 1) : a.day === 'today' ? -1 : 1));
   if (candidates[0]) {
     const { kind, day, s } = candidates[0];
     movement = {
       reservationId: s.id, kind, day,
+      checkIn: s.check_in, checkOut: s.check_out,
       checkInAt: at(s.check_in, s.check_in_time), checkOutAt: at(s.check_out, s.check_out_time),
       unitNumber: s.unit_number, propertyName: s.property_name, channel: s.channel,
       nights: nightsBetween(s.check_in, s.check_out), guestsCount: s.guests_count,

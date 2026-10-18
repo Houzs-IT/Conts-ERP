@@ -4,10 +4,12 @@ import { countryJoin, countryWhere, parseCountries, countryName, countryNameSql,
 /** The Bookings list: one place that turns the screen's URL (tab, to-do card, filters, searches, sort)
  *  into SQL, shared by the paged list, its CSV export and the single-booking read.
  *
- *  Five tabs, and every booking is in exactly one of them, so their counts add up to All:
- *    upcoming   not arrived yet and the stay has not ended
- *    inhouse    checked in
- *    past       checked out, or the stay ended without being checked in or out ("Checked out")
+ *  Five tabs, and every booking is in exactly one of them, so their counts add up to All. They go by the dates, not
+ *  only the stored state: imported and channel reservations are never pressed Check in, so a stored "confirmed" whose
+ *  check-in has passed is a guest staying now (owner, 18 Oct 2026; same rule as src/lib/bookingStatus.ts stayPhase):
+ *    upcoming   check-in today or later and not checked in (Upcoming / Arriving soon), plus inquiries and pending
+ *    inhouse    checked in, or check-in before today and checkout today or later (Currently hosting / Checking out)
+ *    past       checked out, or the checkout date has passed
  *    cancelled  cancelled or no-show
  *    all
  *  Blocks and owner stays are not bookings and live on the calendar and the unit page, not here.
@@ -35,9 +37,17 @@ const OTA = `r.channel IN ('airbnb','booking_com','agoda')`;
 
 const CHANNEL_LABEL = `CASE r.channel WHEN 'airbnb' THEN 'Airbnb' WHEN 'booking_com' THEN 'Booking.com' WHEN 'agoda' THEN 'Agoda'
   WHEN 'direct' THEN 'Direct' WHEN 'owner_stay' THEN 'Owner stay' ELSE 'Block' END`;
-// The decided status words (docs/VOCABULARY.md): stored values stay, people read Upcoming / Currently hosting / Past.
-const STATE_LABEL = `CASE r.state WHEN 'inquiry' THEN 'Inquiry' WHEN 'pending' THEN 'Pending' WHEN 'confirmed' THEN 'Upcoming'
-  WHEN 'checked_in' THEN 'Currently hosting' WHEN 'checked_out' THEN 'Past' WHEN 'cancelled' THEN 'Cancelled' ELSE 'No-show' END`;
+// The status people read (docs/VOCABULARY.md), worked out from the stored state and the dates the same way as the
+// screens (src/lib/bookingStatus.ts stayPhase) and the unit's Reservations tab (functions/api/units/stays.ts).
+const phaseLabelSql = (today: string) => {
+  const t = `'${today}'`, t1 = `('${today}'::date + 1)::text`;
+  return `CASE WHEN r.state = 'cancelled' THEN 'Cancelled' WHEN r.state = 'no_show' THEN 'No-show'
+  WHEN r.state = 'inquiry' THEN 'Inquiry' WHEN r.state = 'pending' THEN 'Pending'
+  WHEN r.state = 'checked_out' OR r.check_out < ${t} THEN 'Past'
+  WHEN r.check_out = ${t} AND (r.state = 'checked_in' OR r.check_in < ${t}) THEN 'Checking out'
+  WHEN r.state = 'checked_in' OR r.check_in < ${t} THEN 'Currently hosting'
+  WHEN r.check_in <= ${t1} THEN 'Arriving soon' ELSE 'Upcoming' END`;
+};
 export const STATES = ['inquiry', 'pending', 'confirmed', 'checked_in', 'checked_out', 'cancelled', 'no_show'] as const;
 
 export interface Schema { payoutCols: boolean; payments: boolean }
@@ -65,13 +75,16 @@ export function todayMyt() {
   return new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);
 }
 
+const PAST = (t: string) => `(r.state = 'checked_out' OR r.check_out < ${t})`;
+const STAYING = (t: string) => `(r.state = 'checked_in' OR (r.check_in < ${t} AND r.state NOT IN ('inquiry','pending')))`;
+
 /** The WHERE clause of each tab. The four live tabs split every booking between them with no overlap. */
 export function viewWhere(v: View, today: string): string {
   const t = `'${today}'`;
   switch (v) {
-    case 'upcoming': return `NOT ${BLOCK} AND NOT ${DEAD} AND r.state NOT IN ('checked_in','checked_out') AND r.check_out >= ${t}`;
-    case 'inhouse': return `NOT ${BLOCK} AND NOT ${DEAD} AND r.state = 'checked_in'`;
-    case 'past': return `NOT ${BLOCK} AND NOT ${DEAD} AND r.state <> 'checked_in' AND (r.state = 'checked_out' OR r.check_out < ${t})`;
+    case 'upcoming': return `NOT ${BLOCK} AND NOT ${DEAD} AND NOT (${PAST(t)}) AND NOT (${STAYING(t)})`;
+    case 'inhouse': return `NOT ${BLOCK} AND NOT ${DEAD} AND NOT (${PAST(t)}) AND ${STAYING(t)}`;
+    case 'past': return `NOT ${BLOCK} AND NOT ${DEAD} AND ${PAST(t)}`;
     case 'cancelled': return `NOT ${BLOCK} AND ${DEAD}`;
     default: return `NOT ${BLOCK}`;
   }
@@ -194,7 +207,7 @@ export function parseListQuery(url: URL, opts: { cancelledAt?: boolean } = {}): 
       }
       case 'unit': add('unit', '(u.unit_number ILIKE ? OR p.name ILIKE ?)', [p, p]); break;
       case 'channel': add('channel', `(${CHANNEL_LABEL}) ILIKE ?`, [p]); break;
-      case 'status': add('status', `(${STATE_LABEL}) ILIKE ?`, [p]); break;
+      case 'status': add('status', `(${phaseLabelSql(today)}) ILIKE ?`, [p]); break;
       // Matches what the Stay column shows ("12 Oct") as well as ISO dates ("2026-10").
       case 'stay': add('stay', `(r.check_in || ' ' || r.check_out || ' ' || to_char(r.check_in::date, 'FMDD Mon YYYY') || ' ' || to_char(r.check_out::date, 'FMDD Mon YYYY')) ILIKE ?`, [p]); break;
       case 'gross': add('gross', `to_char(r.gross_booking_value / 100.0, 'FM999999990.00') ILIKE ?`, [like(v.replace(/[^0-9.]/g, ''))]); break;

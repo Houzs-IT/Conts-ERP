@@ -2,6 +2,7 @@ import { type Env, all, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
 import { findClash, upsertGuest, nextBookingRef, holdOnChannels, withUnitLock } from '../../_lib/reservations';
 import { checkDate, checkInt, checkSen, type Fields } from '../../_lib/validate';
+import { ensureTurnovers } from '../../_lib/cleaning';
 
 /** POST /api/reservations/import { rows: [{ unitNumber, channel, guest, checkIn, checkOut, guestsCount, grossBookingValue, externalRef? }] }
  *  Each row stands alone: a clash or unknown unit rejects that row only. Each booking created closes its nights on the
@@ -23,6 +24,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const unitOf = new Map((await all<{ id: string; unit_number: string }>(env,
     'SELECT DISTINCT ON (unit_number) id, unit_number FROM units WHERE unit_number IN (SELECT jsonb_array_elements_text(?::text::jsonb)) ORDER BY unit_number, id',
     JSON.stringify(numbers))).map(u => [u.unit_number, { id: u.id }]));
+  const madeIds: string[] = [];
   for (const [i, r] of b.rows.entries()) {
     const unit = unitOf.get(String(r.unitNumber ?? ''));
     if (!unit) { failed.push({ row: i + 1, reason: `No unit ${r.unitNumber}.` }); continue; }
@@ -50,8 +52,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     });
     if (!ok) { failed.push({ row: i + 1, reason: 'Dates already taken.' }); continue; }
     created++;
+    madeIds.push(id);
     channels[await holdOnChannels(env, unit.id, r.checkIn, r.checkOut, false, id)]++;
   }
+  await ensureTurnovers(env, { reservationIds: madeIds });
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'reservation.import', entityTable: 'reservations', entityId: 'import', after: { created, failed: failed.length, channels } });
   return json({ created, failed, effects: { channels } }, created ? 201 : 200);
 };

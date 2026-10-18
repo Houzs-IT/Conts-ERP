@@ -23,7 +23,7 @@ export interface JobMoneyData {
 }
 export interface CatalogEntry { id: string; code: string; name: string; category: string; active: boolean; defaultPrice?: number | null; internalCost?: number | null }
 
-const COST_SOURCE: Record<string, string> = { invoice: 'From invoices', estimate: 'Estimated', cleaner_pay: "Cleaner's pay" };
+const COST_SOURCE: Record<string, string> = { invoice: 'From invoices', estimate: 'Estimated', cleaner_pay: 'Internal cost (cleaner)' };
 const BILLED_SOURCE: Record<string, string> = { statement: 'On the owner statement', charged: 'Charged to the payer', quote: 'Quote, not billed yet', price: 'List price, not billed yet', none: 'Paid by The Conts: nothing billed' };
 
 /* ---- lines (the items a maintenance job is made of) ---- */
@@ -153,7 +153,7 @@ export function JobMoneyPanel({ kind, jobId, unitId, catalog, itemsLocked, onCha
       <div className="flex flex-col gap-1.5">
         <div className="flex items-center gap-2">
           <b className="text-copy flex-1">Invoices {d.invoices.length ? `(${d.invoices.length})` : ''}</b>
-          <Button size="sm" variant="secondary" onClick={() => setSubmitting(true)} disabled={!unitId} disabledReason="An external cleaning job is costed by the cleaner's pay.">Submit invoice</Button>
+          <Button size="sm" variant="secondary" onClick={() => setSubmitting(true)} disabled={!unitId} disabledReason="An external cleaning job is costed by its internal cost (what the cleaner is paid).">Submit invoice</Button>
         </div>
         {d.invoices.length === 0 ? <span className="text-meta text-muted-ink">No supplier, contractor or cleaner invoice yet{d.money && d.actual != null ? ': the actual cost is an estimate until one comes in.' : '.'}</span> : (
           <ul className="m-0 p-0 list-none flex flex-col text-copy">
@@ -256,7 +256,7 @@ export function JobProfitView({ kind, onOpen }: { kind: Kind; onOpen?: (id: stri
     { key: 'who', label: kind === 'maintenance' ? 'Contractor' : 'Cleaner', value: r => r.who ?? '', width: 140 },
     { key: 'billed', label: 'Billed', type: 'money', value: r => r.billed, width: 120, align: 'right' },
     { key: 'actual', label: 'Actual cost', type: 'money', value: r => r.actual, width: 130, align: 'right',
-      sub: r => (r.actualSource === 'invoice' ? `${r.invoices} ${r.invoices === 1 ? 'invoice' : 'invoices'}` : r.actualSource === 'cleaner_pay' ? "Cleaner's pay" : r.actualSource === 'estimate' ? 'Estimated' : 'Not known') },
+      sub: r => (r.actualSource === 'invoice' ? `${r.invoices} ${r.invoices === 1 ? 'invoice' : 'invoices'}` : r.actualSource === 'cleaner_pay' ? 'Internal cost (cleaner)' : r.actualSource === 'estimate' ? 'Estimated' : 'Not known') },
     { key: 'profit', label: 'Profit', type: 'money', value: r => r.profit, width: 120, align: 'right', phone: 'right',
       render: r => (r.profit == null ? <span className="text-muted-ink">–</span> : <b className={cx('tabular-nums', r.profit < 0 && 'text-danger')}>{rm(r.profit)}</b>) },
   ], [kind]);

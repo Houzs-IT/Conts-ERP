@@ -65,7 +65,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
     // The stay in the unit now and the next few. The full history is paged by /api/units/stays.
     all<any>(env, `
-      SELECT r.id, r.channel, r.state, r.check_in, r.check_out, r.guests_count,
+      SELECT r.id, r.channel, r.state, r.check_in, r.check_out, r.guests_count, r.block_reason,
              r.external_ref, r.gross_booking_value, COALESCE(g.full_name,'') AS guest_name
       FROM reservations r LEFT JOIN guests g ON g.id = r.guest_id
       WHERE r.unit_id = ? AND r.state NOT IN ('cancelled')
@@ -177,7 +177,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     stays: stays.map(s => ({
       id: s.id, guestName: s.guest_name || null, channel: s.channel, state: s.state,
       checkIn: s.check_in, checkOut: s.check_out, guestsCount: s.guests_count,
-      externalRef: s.external_ref,
+      externalRef: s.external_ref, blockReason: s.block_reason ?? null,
       ...(money ? { grossBookingValue: s.gross_booking_value } : {}),
     })),
     tasks: tasks.map(t => ({

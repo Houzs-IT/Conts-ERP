@@ -148,7 +148,7 @@ export default function TopBar({
         <NotificationBell path={path} navigate={go} size={ctl} />
 
         {action && (
-          <button onClick={action.onClick} aria-label={compact ? action.label : undefined} title={compact ? action.label : undefined}
+          <button type="button" onClick={action.onClick} aria-label={action.label} title={compact ? action.label : undefined}
             style={{ height: ctl, width: compact ? ctl : undefined, flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: compact ? 0 : '0 14px', borderRadius: radius.control, background: color.black, color: 'var(--color-text-inverse)', fontSize: text.copy, fontWeight: 500, whiteSpace: 'nowrap', border: 'none', cursor: 'pointer', transition: `background ${motion.fast} ease-out` }}>
             <Icon name="Plus" size="sm" />
             {!compact && <span style={{ whiteSpace: 'nowrap' }}>{action.label}</span>}

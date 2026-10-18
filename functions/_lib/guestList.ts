@@ -52,7 +52,8 @@ export function statsCte(today: string, tomorrow: string) {
   const T = `'${today}'`, TM = `'${tomorrow}'`;
   const UPCOMING = `r.state IN ('confirmed','pending') AND r.check_in >= ${T}`;
   const ARRIVES = `r.state IN ('confirmed','pending','checked_in')`;
-  const LEAVES = `r.state IN ('checked_in','checked_out')`;
+  // A stored confirmed counts too: imported and channel stays are never pressed Check in, yet the guest still leaves.
+  const LEAVES = `r.state IN ('confirmed','checked_in','checked_out')`;
   // MATERIALIZED: computed once. Inlined, the planner re-ran the aggregate per guest under some filters (25 s for Missing ID).
   return `WITH s AS MATERIALIZED (
     SELECT r.guest_id,

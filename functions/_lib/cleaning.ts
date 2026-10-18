@@ -3,6 +3,7 @@ import type { Session } from './auth';
 import { isPeriodLocked } from './expenses';
 import { hasCleanPrices, cleanAmounts } from './cleaningPrices';
 import { hasJobInvoices } from './jobProfit';
+import { rentalOnly } from './unitPurpose';
 
 export const CLEAN_KINDS = ['turnover', 'deep_clean', 'light_clean'] as const;
 export const CLEAN_KINDS_SQL = `('turnover','deep_clean','light_clean')`;
@@ -199,4 +200,76 @@ export async function autoGuestLeft(env: Env, rows: any[], stdOut: string): Prom
       FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, after text)`,
       stamp, JSON.stringify(done.map(d => ({ id: d.id, after: JSON.stringify({ guestLeftAt: d.at, auto: true, reason: `Automatic, at checkout ${d.time}` }) }))));
   } catch { /* the next read tries again */ }
+}
+
+/**
+ * Every live checkout of a rental unit gets its turnover cleaning job without anyone pressing Plan (lead, 18 Oct 2026):
+ * imported and channel reservations never passed through a screen that made one, so the board showed dozens of
+ * "checkouts with no cleaning job". Same job as POST /housekeeping/plan makes. Idempotent: a stay that already has a
+ * clean, or a unit with a clean on that day, is skipped. Never for a checkout before today. Owner stays and blocks
+ * get none (the board does not list them either). At most `limit` jobs per call, soonest checkout first, so a backlog
+ * clears over a few calls without one request doing it all. Returns how many jobs it made; failures never reach the caller.
+ */
+export async function ensureTurnovers(env: Env, scope: { from: string; to: string } | { reservationIds: string[] }, limit = 200): Promise<number> {
+  try {
+    const today = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);
+    const ids = 'reservationIds' in scope ? scope.reservationIds.filter(Boolean) : null;
+    if (ids && !ids.length) return 0;
+    const from = ids ? today : (scope as { from: string }).from < today ? today : (scope as { from: string }).from;
+    const to = ids ? '9999-12-31' : (scope as { to: string }).to;
+    if (to < from) return 0;
+    const rental = await rentalOnly(env, 'u');
+    const day = `to_char((COALESCE(t.scheduled_for, t.due_at, t.created_at))::timestamptz AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM-DD')`;
+    const now = nowIso();
+    const created = await all<{ id: string; reservation_id: string }>(env, `
+      INSERT INTO tasks (id, unit_id, reservation_id, kind, state, title, scheduled_for, due_at, next_guest_at, requires_photo, created_at, updated_at)
+      SELECT gen_random_uuid()::text, r.unit_id, r.id, 'turnover', 'open', 'Turnover after check-out',
+             r.check_out || 'T' || COALESCE(NULLIF(r.check_out_time, ''), '11:00') || ':00+08:00',
+             CASE WHEN n.check_in_time IS NOT NULL THEN r.check_out || 'T' || n.check_in_time || ':00+08:00' END,
+             CASE WHEN n.check_in_time IS NOT NULL THEN r.check_out || 'T' || n.check_in_time || ':00+08:00' END,
+             1, ?, ?
+      FROM reservations r
+      JOIN units u ON u.id = r.unit_id
+      LEFT JOIN LATERAL (
+        SELECT x.check_in_time FROM reservations x WHERE x.unit_id = r.unit_id AND x.check_in = r.check_out AND x.id != r.id AND ${LIVE_STAY_SQL('x')} LIMIT 1
+      ) n ON TRUE
+      WHERE r.check_out >= ? AND r.check_out <= ? ${ids ? 'AND r.id IN (SELECT jsonb_array_elements_text(?::text::jsonb))' : ''}
+        AND ${LIVE_STAY_SQL('r')} AND r.channel != 'owner_stay'${rental}
+        AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.reservation_id = r.id AND t.kind IN ${CLEAN_KINDS_SQL})
+        AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.unit_id = r.unit_id AND t.kind IN ${CLEAN_KINDS_SQL} AND ${day} = r.check_out)
+      ORDER BY r.check_out, r.id
+      LIMIT ${Math.max(1, Math.min(500, Math.floor(limit)))}
+      RETURNING id, reservation_id`, now, now, from, to, ...(ids ? [JSON.stringify(ids)] : []));
+    if (created.length) {
+      await run(env, `
+        INSERT INTO audit_log (actor_id, actor_label, action, entity_table, entity_id, after_state, source, occurred_at)
+        SELECT NULL, 'System', 'housekeeping.plan', 'tasks', x->>'taskId', jsonb_build_object('reservationId', x->>'reservationId', 'via', 'auto')::text, 'system', ?
+        FROM jsonb_array_elements(?::text::jsonb) x`,
+        now, JSON.stringify(created.map(c => ({ taskId: c.id, reservationId: c.reservation_id }))));
+    }
+    return created.length;
+  } catch (e) {
+    console.error('ensureTurnovers failed', e);
+    return 0;
+  }
+}
+
+/**
+ * A stay whose dates moved or that was cancelled no longer leaves on the day its automatic turnover job was made for:
+ * that job is removed when nobody has touched it (still open, no cleaner, not started, no photo), and a moved stay gets
+ * one on its new checkout day. A job someone is already on is kept for the office to sort out. Never throws.
+ */
+export async function replanTurnover(env: Env, reservationId: string, live: boolean): Promise<void> {
+  try {
+    const gone = await all<{ id: string }>(env, `
+      DELETE FROM tasks t WHERE t.reservation_id = ? AND t.kind = 'turnover' AND t.state = 'open'
+        AND t.assignee_id IS NULL AND t.cleaner_id IS NULL AND t.started_at IS NULL
+        AND NOT EXISTS (SELECT 1 FROM documents d WHERE d.task_id = t.id)
+        AND NOT EXISTS (SELECT 1 FROM task_cleaners c WHERE c.task_id = t.id)
+      RETURNING t.id`, reservationId);
+    if (gone.length) await audit(env, { actorId: null, actorLabel: 'System', action: 'task.remove', entityTable: 'reservations', entityId: reservationId, after: { removed: gone.map(g => g.id), reason: live ? 'dates moved' : 'reservation cancelled' } });
+    if (live) await ensureTurnovers(env, { reservationIds: [reservationId] });
+  } catch (e) {
+    console.error('replanTurnover failed', e);
+  }
 }

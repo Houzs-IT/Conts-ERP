@@ -7,7 +7,7 @@ import Icon from '../../components/Icon';
 import { useToast } from '../../components/Toast';
 import { useApi } from '../../lib/useApi';
 import { api, ApiFailure, downloadFile, errorMessage, notifyFailure } from '../../lib/api';
-import { monthLabel, titleCase } from '../../lib/format';
+import { monthLabel, titleCase, rm } from '../../lib/format';
 import { cx } from '../../lib/design-tokens';
 import { PAYERS } from '../../lib/revenueModel';
 import { Field } from '../../components/Field';
@@ -45,13 +45,15 @@ interface UtilityRow {
   accountId: string; unitId: string; unitLabel: string; kind: string; kindLabel: string; accountNo: string; provider: string | null;
   expenseId: string | null; amount: number | null; chargeTo: string | null; receiptDocumentId: string | null; recordedElsewhere: boolean;
 }
-interface BareUnit { unitId: string; unitLabel: string }
+interface BareUnit { unitId: string; unitLabel: string; recorded?: { kind: string; kindLabel: string; amount: number }[] }
+/** A bill typed for a unit with no account number on file: recorded with no reference (POST rows with unitId + kind). */
+interface LooseLine { key: string; unitId: string; kind: string; amount: number | null; payer: string; file: File | null }
 
 const ACCOUNT_KINDS = [{ value: 'electricity', label: 'Electricity' }, { value: 'water', label: 'Water' }, { value: 'internet', label: 'Wi-Fi' }, { value: 'sewerage', label: 'IndahWater' }];
 
 /** A month's utility bills, one line per account number on the owner's (or the unit's, or every) unit. A bill the owner
  *  pays goes in with its receipt (src/lib/receipts.ts); one already on file for that bill is kept. Units with no
- *  account number on file are listed under the bills with "Add account", so none is left out of the month. */
+ *  account number on file are listed under the bills and take a bill too, so none is left out of the month. */
 export function UtilitiesModal({ ownerId, unitId, month: initial, onClose, onSaved }: { ownerId?: string; unitId?: string; month: string; onClose: () => void; onSaved: () => void }) {
   const toast = useToast();
   const [month, setMonth] = useState(initial);
@@ -67,11 +69,22 @@ export function UtilitiesModal({ ownerId, unitId, month: initial, onClose, onSav
   const dateOk = /^\d{4}-\d{2}-\d{2}$/.test(billDate) && billDate.startsWith(month);
   const rows = data?.data ?? [];
   const bare = data?.unitsWithoutAccount ?? [];
+  const [loose, setLoose] = useState<LooseLine[]>([]);
+  // One empty line per unit without an account, on the first bill kind it has nothing recorded for this month.
+  useEffect(() => {
+    setLoose((data?.unitsWithoutAccount ?? []).flatMap(u => {
+      const kind = ACCOUNT_KINDS.find(k => !u.recorded?.some(x => x.kind === k.value))?.value;
+      return kind ? [{ key: `${u.unitId}:${kind}`, unitId: u.unitId, kind, amount: null, payer: 'owner', file: null }] : [];
+    }));
+  }, [data]);
+  const looseEntered = loose.filter(l => (l.amount ?? 0) > 0);
+  const looseMissing = looseEntered.filter(l => receiptRequired(l.kind, l.payer) && !l.file);
   const value = (r: UtilityRow): number | null => r.accountId in amounts ? amounts[r.accountId] : (r.amount != null && !r.recordedElsewhere ? r.amount : null);
   const payer = (r: UtilityRow) => payers[r.accountId] ?? r.chargeTo ?? 'owner';
   const entered = rows.filter(r => !r.recordedElsewhere && (value(r) ?? 0) > 0);
   const needsReceipt = (r: UtilityRow) => receiptRequired(r.kind, payer(r)) && !receipts[r.accountId] && !r.receiptDocumentId;
-  const missing = entered.filter(needsReceipt);
+  const missing = [...entered.filter(needsReceipt), ...looseMissing];
+  const count = entered.length + looseEntered.length;
 
   async function save() {
     setBusy(true); setRowErrors({});
@@ -84,8 +97,17 @@ export function UtilitiesModal({ ownerId, unitId, month: initial, onClose, onSav
         fd.append('file', file); fd.append('unitId', x.unitId); fd.append('kind', 'receipt');
         uploaded[x.accountId] = (await api.post<{ id: string }>('/documents', fd)).id;
       }
+      for (const l of looseEntered) {
+        if (!l.file || !receiptRequired(l.kind, l.payer)) continue;
+        const fd = new FormData();
+        fd.append('file', l.file); fd.append('unitId', l.unitId); fd.append('kind', 'receipt');
+        uploaded[`${l.unitId}:${l.kind}`] = (await api.post<{ id: string }>('/documents', fd)).id;
+      }
       const r = await api.post<{ saved: number; locked: string[]; recordedElsewhere: string[] }>('/expenses/utilities', {
-        month, date: billDate, rows: entered.map(x => ({ accountId: x.accountId, amount: value(x), chargeTo: payer(x), receiptDocumentId: uploaded[x.accountId] ?? null })),
+        month, date: billDate, rows: [
+          ...entered.map(x => ({ accountId: x.accountId, amount: value(x), chargeTo: payer(x), receiptDocumentId: uploaded[x.accountId] ?? null })),
+          ...looseEntered.map(l => ({ unitId: l.unitId, kind: l.kind, amount: l.amount, chargeTo: l.payer, receiptDocumentId: uploaded[`${l.unitId}:${l.kind}`] ?? null })),
+        ],
       });
       const skipped = r.locked.length + r.recordedElsewhere.length;
       toast({ tone: skipped ? 'warning' : 'success', title: `${r.saved} ${r.saved === 1 ? 'bill' : 'bills'} recorded for ${monthLabel(month)}.`,
@@ -99,11 +121,11 @@ export function UtilitiesModal({ ownerId, unitId, month: initial, onClose, onSav
 
   const step = (by: number) => { const [y, m] = month.split('-').map(Number); const d = new Date(Date.UTC(y, m - 1 + by, 1)); setMonth(`${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`); };
   const disabledReason = !dateOk ? `Pick a bill date in ${monthLabel(month)}`
-    : !entered.length ? 'Enter at least one bill'
+    : !count ? 'Enter at least one bill'
     : `Attach the receipt for each bill the owner pays (${missing.length} missing)`;
   return (
     <Sheet wide title="Monthly utility bills" sub="One line per account number. Enter the bill amount and attach its receipt; empty lines are skipped. Re-entering a month replaces what was entered here." onClose={onClose}
-      footer={<><Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button><Button size="sm" variant="primary" loading={busy} disabled={!entered.length || !dateOk || missing.length > 0} disabledReason={disabledReason} onClick={() => void save()}>Record {entered.length || ''} {entered.length === 1 ? 'bill' : 'bills'}</Button></>}>
+      footer={<><Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button><Button size="sm" variant="primary" loading={busy} disabled={!count || !dateOk || missing.length > 0} disabledReason={disabledReason} onClick={() => void save()}>Record {count || ''} {count === 1 ? 'bill' : 'bills'}</Button></>}>
       <div className="flex items-center gap-2">
         <button type="button" aria-label="Previous month" onClick={() => step(-1)} className="w-[34px] h-[34px] grid place-items-center rounded-control bg-card border border-solid border-line cursor-pointer text-muted-ink"><Icon name="ChevronLeft" size="sm" /></button>
         <span className="text-copy font-semibold min-w-[96px] text-center">{monthLabel(month)}</span>
@@ -149,7 +171,7 @@ export function UtilitiesModal({ ownerId, unitId, month: initial, onClose, onSav
             </div>
           )}
           {rows.length === 0 && bare.length === 0 && <div className="text-copy text-muted-ink">No units here.</div>}
-          {bare.length > 0 && <NoAccountUnits units={bare} onAdded={reload} />}
+          {bare.length > 0 && <NoAccountUnits units={bare} lines={loose} setLines={setLoose} errors={rowErrors} onAdded={reload} />}
         </>}
     </Sheet>
   );
@@ -185,25 +207,65 @@ function RowReceipt({ label, file, onPick, existing, needed, error }: {
   );
 }
 
-/** Units with no utility account number on file: listed so none is missed in the month, each with "Add account". */
-function NoAccountUnits({ units, onAdded }: { units: BareUnit[]; onAdded: () => void }) {
+/** Units with no utility account number on file: listed so none is missed in the month. A bill goes in here as on an
+ *  account line (bill, amount, who pays, receipt), recorded with no account number; "Add account" saves the number for
+ *  next time. */
+function NoAccountUnits({ units, lines, setLines, errors, onAdded }: {
+  units: BareUnit[]; lines: LooseLine[]; setLines: (f: (l: LooseLine[]) => LooseLine[]) => void; errors: Record<string, string>; onAdded: () => void;
+}) {
   const [open, setOpen] = useState<string | null>(null);
+  const patch = (key: string, p: Partial<LooseLine>) => setLines(ls => ls.map(l => (l.key === key ? { ...l, ...p, key: p.kind ? `${l.unitId}:${p.kind}` : l.key } : l)));
+  const kindLabel = (k: string) => ACCOUNT_KINDS.find(x => x.value === k)?.label ?? k;
   return (
     <div className="shrink-0 flex flex-col gap-2">
       <span className="text-meta font-medium text-muted-ink">No account on file · {units.length} {units.length === 1 ? 'unit' : 'units'}</span>
       <div className="border border-solid border-line rounded-card overflow-hidden">
-        {units.map(u => (
-          <div key={u.unitId} className="py-[10px] px-3 flex flex-col gap-2 [border-bottom:1px_solid_var(--color-line-soft)] last:border-b-0">
-            <div className="flex items-center justify-between gap-3 min-w-0">
+        {units.map(u => {
+          const mine = lines.filter(l => l.unitId === u.unitId);
+          const taken = new Set([...(u.recorded ?? []).map(x => x.kind), ...mine.map(l => l.kind)]);
+          const nextKind = ACCOUNT_KINDS.find(k => !taken.has(k.value))?.value;
+          return (
+            <div key={u.unitId} className="py-[10px] px-3 flex flex-col gap-2 [border-bottom:1px_solid_var(--color-line-soft)] last:border-b-0">
               <span className="flex flex-col min-w-0">
                 <span className="text-copy font-medium truncate" title={u.unitLabel}>{titleCase(u.unitLabel)}</span>
-                <span className="text-meta text-muted-ink">No account on file</span>
+                <span className="text-meta text-muted-ink">
+                  No account on file, a bill can still go in.
+                  {(u.recorded ?? []).length > 0 && ` Already recorded this month: ${u.recorded!.map(x => `${kindLabel(x.kind)} ${rm(x.amount)}`).join(', ')}.`}
+                </span>
               </span>
-              {open !== u.unitId && <Button size="sm" variant="secondary" onClick={() => setOpen(u.unitId)}>Add account</Button>}
+              {mine.map(l => {
+                const owes = (l.amount ?? 0) > 0 && receiptRequired(l.kind, l.payer);
+                const what = `${titleCase(u.unitLabel)} ${kindLabel(l.kind)}`;
+                return (
+                  <div key={l.key} className="grid grid-cols-[minmax(0,1fr)_112px] sm:grid-cols-[minmax(0,1fr)_120px_140px_150px] gap-x-3 gap-y-2 items-center">
+                    <Select size="sm" label={`Which bill for ${titleCase(u.unitLabel)}`} className="w-full" value={l.kind}
+                      onChange={v => patch(l.key, { kind: v })} options={ACCOUNT_KINDS.filter(k => k.value === l.kind || !taken.has(k.value))} />
+                    <MoneyInput aria-label={`${what} amount in ringgit`} valueSen={l.amount} onChangeSen={sen => patch(l.key, { amount: sen })}
+                      className="field-input h-[38px]! min-w-0 text-right tabular-nums" />
+                    <div className="col-span-2 sm:col-span-1 min-w-0">
+                      <Select size="sm" label={`Who pays ${what}`} className="w-full" value={l.payer} onChange={v => patch(l.key, { payer: v })}
+                        options={PAYERS.map(p => ({ value: p.value, label: p.label }))} />
+                    </div>
+                    <div className="col-span-2 sm:col-span-1 min-w-0">
+                      <RowReceipt label={what} file={l.file} onPick={f => patch(l.key, { file: f })} existing={null} needed={owes && !l.file} error={errors[l.key]} />
+                    </div>
+                  </div>
+                );
+              })}
+              <div className="flex items-center gap-4 flex-wrap">
+                {nextKind && (
+                  <button type="button" onClick={() => setLines(ls => [...ls, { key: `${u.unitId}:${nextKind}`, unitId: u.unitId, kind: nextKind, amount: null, payer: 'owner', file: null }])}
+                    className="p-0 bg-transparent border-none cursor-pointer text-meta font-medium text-gold-ink [font-family:inherit]">Another bill for this unit</button>
+                )}
+                {open !== u.unitId && (
+                  <button type="button" onClick={() => setOpen(u.unitId)}
+                    className="p-0 bg-transparent border-none cursor-pointer text-meta font-medium text-ink underline [font-family:inherit]">Add account number</button>
+                )}
+              </div>
+              {open === u.unitId && <AddAccountForm unitId={u.unitId} unitLabel={u.unitLabel} onCancel={() => setOpen(null)} onAdded={() => { setOpen(null); onAdded(); }} />}
             </div>
-            {open === u.unitId && <AddAccountForm unitId={u.unitId} unitLabel={u.unitLabel} onCancel={() => setOpen(null)} onAdded={() => { setOpen(null); onAdded(); }} />}
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
