@@ -69,6 +69,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
     const { kind, day, s } = candidates[0];
     movement = {
       reservationId: s.id, kind, day,
+      checkIn: s.check_in, checkOut: s.check_out,
       checkInAt: at(s.check_in, s.check_in_time), checkOutAt: at(s.check_out, s.check_out_time),
       unitNumber: s.unit_number, propertyName: s.property_name, channel: s.channel,
       nights: nightsBetween(s.check_in, s.check_out), guestsCount: s.guests_count,

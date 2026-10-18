@@ -3,6 +3,7 @@ import ChannelMark from '../ChannelMark';
 import { CHANNEL } from '../../lib/vocabulary';
 import { dateRange, nights as nightsLabel, rm } from '../../lib/format';
 import type { CalendarBlock as Block } from './types';
+import { stayPhase } from '../../lib/bookingStatus';
 
 /*
  * What a reservation bar on the Calendar says, by how much room it has. Borrowed from Airbnb's multi-calendar
@@ -27,12 +28,10 @@ export const PHASE_LABEL: Record<StayPhase, string> = {
 export function phaseOf(b: Block, today: string): StayPhase {
   if (b.channel === 'maintenance_block' || b.channel === 'owner_stay') return 'hold';
   if (b.state === 'inquiry') return 'inquiry';
-  if (b.state === 'checked_out' || b.checkOut < today) return 'past';
-  if (b.state === 'checked_in') return b.checkOut === today ? 'checking_out' : 'hosting';
-  if (b.checkIn <= addOne(today)) return b.checkIn < today ? 'hosting' : 'arriving';
-  return 'upcoming';
+  // The same rule as the lists and the reservation drawer (lib/bookingStatus stayPhase).
+  const p = stayPhase(b.state === 'pending' ? { ...b, state: 'confirmed' } : b, today);
+  return p === 'upcoming' || p === 'arriving' || p === 'hosting' || p === 'checking_out' || p === 'past' ? p : 'upcoming';
 }
-const addOne = (d: string) => new Date(Date.parse(`${d}T00:00:00Z`) + 864e5).toISOString().slice(0, 10);
 
 /** What a hold is called on the board: Owner stay, Repair or Blocked (vocabulary: the reason sits next to "Blocked"). */
 export function holdName(b: Block) {

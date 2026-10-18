@@ -1,8 +1,41 @@
 import type { ReservationState, Tone } from './types';
 import { statusOptions } from './status';
+import { todayMyt } from './format';
+import { CHANNEL } from './vocabulary';
 
 /** One label and one look per booking status, from src/lib/status.ts (shared by Bookings, the drawer and Calendar). */
 export const STATUS = Object.fromEntries(statusOptions('booking').map(o => [o.value, { label: o.label, tone: (o.tone === 'danger' ? 'critical' : o.tone === 'accent' ? 'neutral' : o.tone) as Tone, outline: o.outline }])) as Record<ReservationState, { label: string; tone: Tone; outline?: boolean }>;
+
+export type StayPhase = 'upcoming' | 'arriving' | 'hosting' | 'checking_out' | 'past' | 'cancelled' | 'no_show' | 'inquiry' | 'pending';
+
+/**
+ * The one status a reservation shows (owner vocabulary: Upcoming / Arriving soon / Currently hosting / Checking out /
+ * Past / Cancelled), from the stored state and the dates. A confirmed stay whose checkout has passed is Past even if
+ * nobody pressed Check out. Same rule as the calendar bars and functions/api/units/stays.ts (PHASE) and
+ * functions/_lib/bookingList.ts (phaseLabelSql). Read it with <StatusBadge entity="stay" value={stayPhase(r)} />.
+ */
+export function stayPhase(r: { state: string; checkIn: string; checkOut: string }, today: string = todayMyt()): StayPhase {
+  if (r.state === 'cancelled' || r.state === 'no_show' || r.state === 'inquiry' || r.state === 'pending') return r.state;
+  if (r.state === 'checked_out' || r.checkOut < today) return 'past';
+  if (r.checkOut === today && (r.state === 'checked_in' || r.checkIn < today)) return 'checking_out';
+  if (r.state === 'checked_in' || r.checkIn < today) return 'hosting';
+  if (r.checkIn <= addDay(today)) return 'arriving';
+  return 'upcoming';
+}
+const addDay = (d: string) => new Date(Date.parse(`${d}T00:00:00Z`) + 864e5).toISOString().slice(0, 10);
+
+/**
+ * Who a row is for, never a bare dash: an owner stay or a block says so ("Owner stay", "Blocked: repair"), a guest
+ * reservation without a name reads like the calendar bar ("Airbnb guest") with `missing` set so the row can add
+ * "No guest name".
+ */
+export function stayWho(r: { channel: string; guestName?: string | null; blockReason?: string | null }): { name: string; missing: boolean; hold: boolean } {
+  if (r.channel === 'owner_stay') return { name: r.guestName ? `Owner stay: ${r.guestName}` : 'Owner stay', missing: false, hold: true };
+  if (r.channel === 'maintenance_block') return { name: !r.blockReason || r.blockReason === 'maintenance' ? 'Blocked: repair' : 'Blocked', missing: false, hold: true };
+  if (r.guestName) return { name: r.guestName, missing: false, hold: false };
+  const label = CHANNEL[r.channel as keyof typeof CHANNEL]?.label ?? 'Channel';
+  return { name: `${label} guest`, missing: true, hold: false };
+}
 
 /** What the server did on the booking sites, as returned in `effects.channel`. */
 export type ChannelSync = 'queued' | 'not_linked' | 'failed' | null | undefined;

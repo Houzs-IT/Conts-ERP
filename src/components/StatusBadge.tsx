@@ -72,9 +72,11 @@ export interface StatusOption {
  * The current status as a pill; clicking it lists the moves offered, each with a line on what it does or why it is
  * not possible. `options === null` means still loading; an empty list means the status is final (shown as Locked).
  */
-export function StatusMenu({ entity, value, options, busy, onPick, align = 'right', label = 'Change status' }: {
+export function StatusMenu({ entity, value, options, busy, onPick, align = 'right', label = 'Change status', shown }: {
   entity: StatusEntity; value: string; options: StatusOption[] | null; busy?: boolean;
   onPick: (o: StatusOption) => void; align?: 'left' | 'right'; label?: string;
+  /** What the pill reads when it differs from the stored value (a reservation shows its date-based status). */
+  shown?: { entity: StatusEntity; value: string };
 }) {
   const { open, setOpen, ref } = usePopover();
   const locked = options !== null && options.length === 0;
@@ -83,7 +85,7 @@ export function StatusMenu({ entity, value, options, busy, onPick, align = 'righ
       <button type="button" onClick={() => !locked && options && setOpen(o => !o)} disabled={busy || !options} aria-haspopup="menu" aria-expanded={open}
         title={locked ? 'No further status changes' : label}
         className={cx('inline-flex items-center gap-1 p-0 bg-transparent border-none [font:inherit]', locked || !options ? 'cursor-default' : 'cursor-pointer')}>
-        <StatusBadge entity={entity} value={value} />
+        <StatusBadge entity={shown?.entity ?? entity} value={shown?.value ?? value} />
         {busy ? <span className="text-meta text-muted-ink">Saving…</span>
           : locked ? <span className="inline-flex items-center gap-1 text-meta text-muted-ink"><Icon name="Lock" size="sm" />Locked</span>
           : options ? <Icon name="ChevronDown" size="sm" color="var(--color-text-muted)" /> : null}

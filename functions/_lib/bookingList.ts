@@ -35,9 +35,17 @@ const OTA = `r.channel IN ('airbnb','booking_com','agoda')`;
 
 const CHANNEL_LABEL = `CASE r.channel WHEN 'airbnb' THEN 'Airbnb' WHEN 'booking_com' THEN 'Booking.com' WHEN 'agoda' THEN 'Agoda'
   WHEN 'direct' THEN 'Direct' WHEN 'owner_stay' THEN 'Owner stay' ELSE 'Block' END`;
-// The decided status words (docs/VOCABULARY.md): stored values stay, people read Upcoming / Currently hosting / Past.
-const STATE_LABEL = `CASE r.state WHEN 'inquiry' THEN 'Inquiry' WHEN 'pending' THEN 'Pending' WHEN 'confirmed' THEN 'Upcoming'
-  WHEN 'checked_in' THEN 'Currently hosting' WHEN 'checked_out' THEN 'Past' WHEN 'cancelled' THEN 'Cancelled' ELSE 'No-show' END`;
+// The status people read (docs/VOCABULARY.md), worked out from the stored state and the dates the same way as the
+// screens (src/lib/bookingStatus.ts stayPhase) and the unit's Reservations tab (functions/api/units/stays.ts).
+const phaseLabelSql = (today: string) => {
+  const t = `'${today}'`, t1 = `('${today}'::date + 1)::text`;
+  return `CASE WHEN r.state = 'cancelled' THEN 'Cancelled' WHEN r.state = 'no_show' THEN 'No-show'
+  WHEN r.state = 'inquiry' THEN 'Inquiry' WHEN r.state = 'pending' THEN 'Pending'
+  WHEN r.state = 'checked_out' OR r.check_out < ${t} THEN 'Past'
+  WHEN r.check_out = ${t} AND (r.state = 'checked_in' OR r.check_in < ${t}) THEN 'Checking out'
+  WHEN r.state = 'checked_in' OR r.check_in < ${t} THEN 'Currently hosting'
+  WHEN r.check_in <= ${t1} THEN 'Arriving soon' ELSE 'Upcoming' END`;
+};
 export const STATES = ['inquiry', 'pending', 'confirmed', 'checked_in', 'checked_out', 'cancelled', 'no_show'] as const;
 
 export interface Schema { payoutCols: boolean; payments: boolean }
@@ -194,7 +202,7 @@ export function parseListQuery(url: URL, opts: { cancelledAt?: boolean } = {}): 
       }
       case 'unit': add('unit', '(u.unit_number ILIKE ? OR p.name ILIKE ?)', [p, p]); break;
       case 'channel': add('channel', `(${CHANNEL_LABEL}) ILIKE ?`, [p]); break;
-      case 'status': add('status', `(${STATE_LABEL}) ILIKE ?`, [p]); break;
+      case 'status': add('status', `(${phaseLabelSql(today)}) ILIKE ?`, [p]); break;
       // Matches what the Stay column shows ("12 Oct") as well as ISO dates ("2026-10").
       case 'stay': add('stay', `(r.check_in || ' ' || r.check_out || ' ' || to_char(r.check_in::date, 'FMDD Mon YYYY') || ' ' || to_char(r.check_out::date, 'FMDD Mon YYYY')) ILIKE ?`, [p]); break;
       case 'gross': add('gross', `to_char(r.gross_booking_value / 100.0, 'FM999999990.00') ILIKE ?`, [like(v.replace(/[^0-9.]/g, ''))]); break;

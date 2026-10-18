@@ -13,7 +13,7 @@ import { useToast } from '../Toast';
 import { api, ApiFailure, errorMessage } from '../../lib/api';
 import { rm, date, dateRange, dateTime, time, nights as fmtNights, guests as fmtGuests, greetName } from '../../lib/format';
 import { CHANNEL_META, cx } from '../../lib/design-tokens';
-import { channelNote, deliveryToast, type ChannelSync } from '../../lib/bookingStatus';
+import { channelNote, deliveryToast, stayPhase, type ChannelSync } from '../../lib/bookingStatus';
 import { statusLabel } from '../../lib/status';
 import { StatusMenu } from '../StatusBadge';
 import { ConfirmDialog } from '../ConfirmDialog';
@@ -703,7 +703,7 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
         {!block && (
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <span className="text-meta font-medium text-muted-ink">Status</span>
-            <StatusMenu entity="booking" value={s.state} busy={busy}
+            <StatusMenu entity="booking" value={s.state} shown={{ entity: 'stay', value: stayPhase(s) }} busy={busy}
               options={d ? d.moves.map(m => ({ value: m.to, label: m.label, hint: m.allowed ? m.hint : m.reason, disabled: !m.allowed, icon: MOVE_ICON[m.to], danger: m.to === 'cancelled' || m.to === 'no_show' })) : null}
               onPick={o => { const m = d?.moves.find(x => x.to === o.value && x.label === o.label); if (m) pick(m); }} />
           </div>

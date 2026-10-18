@@ -90,7 +90,7 @@ export interface UnitDetail {
   pnl?: PnlRow[];
   /** The company's side of the unit this month (what it keeps or pays, costs others paid). Money roles only. */
   companyPnl?: PnlRow[];
-  stays: { id: string; guestName: string | null; channel: BookingChannel; state: ReservationState; checkIn: string; checkOut: string; guestsCount: number; externalRef: string | null; grossBookingValue?: number }[];
+  stays: { id: string; guestName: string | null; channel: BookingChannel; state: ReservationState; checkIn: string; checkOut: string; guestsCount: number; externalRef: string | null; grossBookingValue?: number; blockReason?: string | null }[];
   tasks: { id: string; title: string; kind: string; state: TaskState; dueAt: string | null; completedAt: string | null; assigneeName: string | null }[];
   /** Every open maintenance job on the unit; maintenance below lists the latest 12 only. */
   openMaintenanceCount?: number;
