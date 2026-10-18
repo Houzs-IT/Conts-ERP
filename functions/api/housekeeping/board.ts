@@ -99,6 +99,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     FROM reservations r JOIN units u ON u.id = r.unit_id JOIN properties p ON p.id = u.property_id LEFT JOIN guests g ON g.id = r.guest_id
     WHERE r.check_out = ? AND ${LIVE_STAY_SQL('r')} AND r.channel != 'owner_stay'
       AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.kind IN ${CLEAN_KINDS_SQL} AND (t.reservation_id = r.id OR (t.unit_id = r.unit_id AND ${when} = r.check_out)))
+      -- A cleaning job management cancelled (housekeeping/overdue.ts) is not a gap to plan again.
+      AND NOT EXISTS (SELECT 1 FROM audit_log l WHERE l.entity_table = 'reservations' AND l.entity_id = r.id AND l.action = 'cleaning.cancel')
     ORDER BY p.name, u.unit_number`, date);
 
   const repairs = await windowsOnDay(env, date);
