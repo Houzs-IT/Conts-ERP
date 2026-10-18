@@ -207,9 +207,10 @@ export async function autoGuestLeft(env: Env, rows: any[], stdOut: string): Prom
  * imported and channel reservations never passed through a screen that made one, so the board showed dozens of
  * "checkouts with no cleaning job". Same job as POST /housekeeping/plan makes. Idempotent: a stay that already has a
  * clean, or a unit with a clean on that day, is skipped. Never for a checkout before today. Owner stays and blocks
- * get none (the board does not list them either). Returns how many jobs it made; failures never reach the caller.
+ * get none (the board does not list them either). At most `limit` jobs per call, soonest checkout first, so a backlog
+ * clears over a few calls without one request doing it all. Returns how many jobs it made; failures never reach the caller.
  */
-export async function ensureTurnovers(env: Env, scope: { from: string; to: string } | { reservationIds: string[] }): Promise<number> {
+export async function ensureTurnovers(env: Env, scope: { from: string; to: string } | { reservationIds: string[] }, limit = 200): Promise<number> {
   try {
     const today = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);
     const ids = 'reservationIds' in scope ? scope.reservationIds.filter(Boolean) : null;
@@ -236,6 +237,8 @@ export async function ensureTurnovers(env: Env, scope: { from: string; to: strin
         AND ${LIVE_STAY_SQL('r')} AND r.channel != 'owner_stay'${rental}
         AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.reservation_id = r.id AND t.kind IN ${CLEAN_KINDS_SQL})
         AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.unit_id = r.unit_id AND t.kind IN ${CLEAN_KINDS_SQL} AND ${day} = r.check_out)
+      ORDER BY r.check_out, r.id
+      LIMIT ${Math.max(1, Math.min(500, Math.floor(limit)))}
       RETURNING id, reservation_id`, now, now, from, to, ...(ids ? [JSON.stringify(ids)] : []));
     if (created.length) {
       await run(env, `
