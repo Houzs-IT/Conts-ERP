@@ -1,3 +1,4 @@
+import { ensureTurnovers } from '../../../_lib/cleaning';
 import { type Env, one, run, json, fail, audit, nowIso } from '../../../_lib/db';
 import { requireSession, isFieldRole } from '../../../_lib/auth';
 import { findClash, clashResponseBody, nextBookingRef, holdOnChannels, withUnitLock } from '../../../_lib/reservations';
@@ -35,5 +36,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   const ref = saved.ref;
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'reservation.duplicate', entityTable: 'reservations', entityId: id, after: { copiedFrom: src.id } });
   const sync = await holdOnChannels(env, src.unit_id, checkIn, checkOut, false, id);
+  await ensureTurnovers(env, { reservationIds: [id] });
   return json({ id, externalRef: ref, checkIn, checkOut, channel, effects: { channel: sync } }, 201);
 };
