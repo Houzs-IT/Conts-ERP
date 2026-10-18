@@ -41,6 +41,7 @@ import {
 } from './units/shared';
 import { statusLabel } from '../lib/status';
 import { PnlTable } from './units/PnlTable';
+import { stayPhase, stayWho } from '../lib/bookingStatus';
 
 /** True at the width where the tree becomes a sticky pane (Tailwind xl). */
 /** True at 768px and up: the unit record uses tabs; below it the sections stack. */
@@ -504,10 +505,10 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
               <div key={s.id} className="flex items-center gap-3 py-[13px] px-5 [border-top:1px_solid_var(--color-line-soft)]">
                 <span title={CH[s.channel].label} className="flex"><ChannelMark ch={s.channel} size={28} /></span>
                 <div className="flex flex-col gap-[3px] flex-1 min-w-0">
-                  <span className="text-copy font-semibold whitespace-nowrap overflow-hidden text-ellipsis">{s.guestName ?? 'No guest'}</span>
+                  <span className={cx('text-copy font-semibold whitespace-nowrap overflow-hidden text-ellipsis', (stayWho(s).missing || stayWho(s).hold) && 'text-muted-ink')}>{stayWho(s).name}</span>
                   <span className="text-meta text-muted-ink"><span className="sr-only">{CH[s.channel].label} · </span>{dateRange(s.checkIn, s.checkOut)}</span>
                 </div>
-                <StatusBadge entity="booking" value={s.state} />
+                <StatusBadge entity="stay" value={stayPhase(s)} />
               </div>
             ))}
           </Card>
@@ -516,7 +517,7 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
           {d.pnl && (
             <Card>
               <SectionTitle title={`${periodLabel} P and L`} />
-              <div className="[border-top:1px_solid_var(--color-line-soft)]"><PnlTable rows={d.pnl} /></div>
+              <div className="[border-top:1px_solid_var(--color-line-soft)]"><PnlTable rows={d.pnl} hideZero /></div>
             </Card>
           )}
         </div>

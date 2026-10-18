@@ -683,7 +683,7 @@ function CleanAmount({ taskId, cost, external, done, kindName, onSaved }: {
       <span className="text-meta text-muted-ink">
         {external ? 'The price of this external job.'
           : cost.charged ? `Charged to the unit: ${kindName}.` : `Charged to the unit when complete: ${kindName} (${COST_SOURCE[cost.source] ?? cost.source}).`}
-        {cost.cleanerPay != null ? ` Cleaner's pay ${rm(cost.cleanerPay)}.` : ''}
+        {cost.cleanerPay != null ? ` Internal cost ${rm(cost.cleanerPay)}.` : ''}
       </span>
     </section>
   );
@@ -791,8 +791,8 @@ function NewCleanModal({ date, onClose, onDone }: { date: string; onClose: () =>
           hint={external ? 'What the client is charged.' : unitId ? (suggested != null && !touchedAmount ? 'From Service prices; type over it for this job.' : 'Leave empty to use the old cleaning rate, or type one.') : undefined}>
           <MoneyInput className={INPUT} valueSen={amount} onChangeSen={v => { setAmount(v); setTouchedAmount(true); setError(x => ({ ...x, amount: undefined })); }} aria-label="Owner price in RM" />
         </FormRow>
-        <FormRow label="Cleaner's pay, RM" hint="Internal cost. Counts in the cleaner's pay.">
-          <MoneyInput className={INPUT} valueSen={pay} onChangeSen={v => { setPay(v); setTouchedPay(true); }} aria-label="Cleaner's pay in RM" placeholder="Not set" />
+        <FormRow label="Internal cost, RM" hint="What the cleaner is paid for this job.">
+          <MoneyInput className={INPUT} valueSen={pay} onChangeSen={v => { setPay(v); setTouchedPay(true); }} aria-label="Internal cost in RM" placeholder="Not set" />
         </FormRow>
       </div>
       <div className="flex flex-col gap-1.5 min-w-0">

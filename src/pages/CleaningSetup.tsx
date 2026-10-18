@@ -84,15 +84,15 @@ function PriceTableCard({ data, onSaved }: { data: PriceTable; onSaved: () => vo
       </div>
       <div className="grid grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)] gap-x-3 gap-y-2 items-center text-copy">
         <span className="text-meta font-semibold text-muted-ink">Layout</span>
-        <span className="text-meta font-semibold text-muted-ink">Cleaner's pay (internal)</span>
-        <span className="text-meta font-semibold text-muted-ink">Charge per clean (external)</span>
+        <span className="text-meta font-semibold text-muted-ink">Owner price</span>
+        <span className="text-meta font-semibold text-muted-ink">Internal cost</span>
         {rows.map(r => (
           <div key={r.layout} className="contents">
             <span>{LAYOUT[r.layout] ?? r.layout}</span>
             {data.mayEdit ? <>
-              <MoneyInput className={INPUT} valueSen={r.internalCost} onChangeSen={v => set(r, { internalCost: v })} aria-label={`${LAYOUT[r.layout]} cleaner's pay`} placeholder="Not set" />
-              <MoneyInput className={INPUT} valueSen={r.externalCharge} onChangeSen={v => set(r, { externalCharge: v })} aria-label={`${LAYOUT[r.layout]} charge per clean`} placeholder="Not set" />
-            </> : <>{money(r.internalCost)}{money(r.externalCharge)}</>}
+              <MoneyInput className={INPUT} valueSen={r.externalCharge} onChangeSen={v => set(r, { externalCharge: v })} aria-label={`${LAYOUT[r.layout]} owner price`} placeholder="Not set" />
+              <MoneyInput className={INPUT} valueSen={r.internalCost} onChangeSen={v => set(r, { internalCost: v })} aria-label={`${LAYOUT[r.layout]} internal cost`} placeholder="Not set" />
+            </> : <>{money(r.externalCharge)}{money(r.internalCost)}</>}
           </div>
         ))}
       </div>
@@ -127,7 +127,7 @@ function UnitPricesCard({ rows, mayEdit, onSaved }: { rows: UnitRow[] | null; ma
       {!rows ? <Skeleton height={120} /> : shown.length === 0 ? <span className="text-muted-ink">No unit matches.</span> : (
         <div className="flex flex-col">
           <div className="hidden md:grid grid-cols-[minmax(0,1.4fr)_minmax(0,0.8fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.6fr)] gap-3 text-meta font-semibold text-muted-ink pb-2">
-            <span>Unit</span><span>Layout</span><span>Cleaner's pay</span><span>Owner price</span><span />
+            <span>Unit</span><span>Layout</span><span>Owner price</span><span>Internal cost</span><span />
           </div>
           {shown.map(r => {
             const p = r.prices[kind];
@@ -137,8 +137,8 @@ function UnitPricesCard({ rows, mayEdit, onSaved }: { rows: UnitRow[] | null; ma
                 <div key={r.unitId} className="grid grid-cols-2 md:grid-cols-[minmax(0,1.4fr)_minmax(0,0.8fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.6fr)] gap-x-3 gap-y-1 py-2 [border-top:1px_solid_var(--color-line-soft)] items-center text-copy">
                   <span className="col-span-2 md:col-span-1"><b>{r.unitNumber}</b> <span className="text-muted-ink">{r.propertyName}</span></span>
                   <span className="text-muted-ink">{LAYOUT[r.layout] ?? r.layout}</span>
-                  <span className="max-md:order-4"><span className="md:hidden text-muted-ink">Pay </span>{money(p?.internalCost ?? null)}</span>
-                  <span className="max-md:order-5"><span className="md:hidden text-muted-ink">Owner </span>{money(p?.externalCharge ?? null)}{p?.override && <span className="ml-1 text-meta text-gold-ink">own</span>}</span>
+                  <span className="max-md:order-4"><span className="md:hidden text-muted-ink">Owner price </span>{money(p?.externalCharge ?? null)}{p?.override && <span className="ml-1 text-meta text-gold-ink">own</span>}</span>
+                  <span className="max-md:order-5"><span className="md:hidden text-muted-ink">Internal cost </span>{money(p?.internalCost ?? null)}</span>
                   <span className="text-right">{mayEdit && <button type="button" onClick={() => setEditing(r.unitId)} className="text-gold-ink font-medium cursor-pointer bg-transparent border-0 p-0 [font-family:inherit]">Edit</button>}</span>
                 </div>
               );
@@ -167,8 +167,8 @@ function UnitPriceEdit({ row, kind, onClose, onSaved }: { row: UnitRow; kind: st
     <div className="py-3 [border-top:1px_solid_var(--color-line-soft)] flex flex-col gap-2 bg-page -mx-4 px-4">
       <b>{row.unitNumber} <span className="font-normal text-muted-ink">{row.propertyName} · {KIND[kind]} clean</span></b>
       <div className="grid grid-cols-2 gap-3">
-        <label className="flex flex-col gap-1 text-meta text-muted-ink">Cleaner's pay<MoneyInput className={INPUT} valueSen={pay} onChangeSen={setPay} placeholder={p?.source === 'table' && p.internalCost != null ? `Table ${(p.internalCost / 100).toFixed(2)}` : 'Not set'} aria-label="Cleaner's pay" /></label>
         <label className="flex flex-col gap-1 text-meta text-muted-ink">Owner price<MoneyInput className={INPUT} valueSen={charge} onChangeSen={setCharge} placeholder={p?.source === 'table' && p.externalCharge != null ? `Table ${(p.externalCharge / 100).toFixed(2)}` : 'Not set'} aria-label="Owner price" /></label>
+        <label className="flex flex-col gap-1 text-meta text-muted-ink">Internal cost<MoneyInput className={INPUT} valueSen={pay} onChangeSen={setPay} placeholder={p?.source === 'table' && p.internalCost != null ? `Table ${(p.internalCost / 100).toFixed(2)}` : 'Not set'} aria-label="Internal cost" /></label>
       </div>
       <span className="text-meta text-muted-ink">Leave a box empty to use the list price for that figure.</span>
       <div className="flex gap-2 justify-end flex-wrap">
@@ -197,7 +197,7 @@ export function PayView({ tabs }: { tabs: ReactNode }) {
             {lastMonths(12).map(m => <option key={m} value={m}>{monthLabel(`${m}-01`)}</option>)}
           </select>
         </label>
-        {unpriced > 0 && <span className="text-meta text-warning">{unpriced} {unpriced === 1 ? 'cleaning job has' : 'cleaning jobs have'} no cleaner's pay set: set it in Prices.</span>}
+        {unpriced > 0 && <span className="text-meta text-warning">{unpriced} {unpriced === 1 ? 'cleaning job has' : 'cleaning jobs have'} no internal cost set, so the cleaner's pay is not known: set it in Prices.</span>}
       </div>
       {error && <StaleBanner message={error} onRetry={reload} />}
       {loading && !data ? <Skeleton height={160} /> : data && !data.ready ? (
@@ -205,7 +205,7 @@ export function PayView({ tabs }: { tabs: ReactNode }) {
       ) : rows.length === 0 ? <EmptyState icon="Sparkles" title={`No finished cleaning jobs in ${monthLabel(`${month}-01`)}.`} /> : (
         <section className="bg-card rounded-card border border-solid border-line p-4 flex flex-col">
           <div className="hidden md:grid grid-cols-[minmax(0,1.4fr)_repeat(4,minmax(0,1fr))] gap-3 text-meta font-semibold text-muted-ink pb-2">
-            <span>Cleaner</span><span>Our units</span><span>External jobs</span><span>Not priced</span><span className="text-right">Pay</span>
+            <span>Cleaner</span><span>Our units</span><span>External jobs</span><span>Not priced</span><span className="text-right" title="What each cleaner is paid: the internal cost of the cleaning jobs they finished.">Pay (internal cost)</span>
           </div>
           {rows.map(r => (
             <div key={r.cleanerId} className="grid grid-cols-2 md:grid-cols-[minmax(0,1.4fr)_repeat(4,minmax(0,1fr))] gap-x-3 gap-y-1 py-2.5 [border-top:1px_solid_var(--color-line-soft)] text-copy items-baseline">
