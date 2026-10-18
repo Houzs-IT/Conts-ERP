@@ -3,6 +3,7 @@ import { requireSession, isFieldRole, hasColumn } from '../../_lib/auth';
 import { csvCell } from '../../_lib/csv';
 import { fromSql, columnsSql, parseListQuery, viewWhere, todoWhere, toRow } from '../../_lib/bookingList';
 import { moneySchema } from '../../_lib/bookingMoney';
+import { stayPhase, STAY_LABEL } from '../../../src/lib/stayPhase';
 
 const VIEW_LABEL: Record<string, string> = {
   upcoming: 'Upcoming', inhouse: 'Currently hosting', past: 'Past', cancelled: 'Cancelled', all: 'All reservations',
@@ -12,9 +13,6 @@ const TODO_LABEL: Record<string, string> = {
 };
 const CHANNEL: Record<string, string> = {
   airbnb: 'Airbnb', booking_com: 'Booking.com', agoda: 'Agoda', direct: 'Direct', owner_stay: 'Owner stay', maintenance_block: 'Maintenance block',
-};
-const STATE: Record<string, string> = {
-  inquiry: 'Inquiry', pending: 'Pending', confirmed: 'Upcoming', checked_in: 'Currently hosting', checked_out: 'Past', cancelled: 'Cancelled', no_show: 'No-show',
 };
 const KIND: Record<string, string> = { guest_payment: 'guest payment', ota_payout: 'host payout', refund: 'refund' };
 const MAX_ROWS = 50000;
@@ -73,7 +71,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     head.map(esc).join(','),
     ...rows.map(({ r, x }) => [
       x.externalRef, x.guestName, x.guestsCount, x.guestPhone, x.country?.name ?? '', x.unitNumber, x.propertyName, CHANNEL[x.channel] ?? x.channel,
-      x.checkIn, x.checkOut, x.nights, STATE[x.state] ?? x.state,
+      x.checkIn, x.checkOut, x.nights, STAY_LABEL[stayPhase(x, q.today)],
       opt(r.room_revenue), opt(r.guest_cleaning_fee), opt(r.extra_fees), opt(r.sst_amount), opt(r.tourism_tax), money(x.grossBookingValue), opt(r.ota_tax),
       money(x.channelFee), opt(r.payment_processing_fee), money(x.expectedPayout), money(x.received), money(['cancelled', 'no_show'].includes(x.state) ? 0 : x.outstanding),
       (pays.get(x.id) ?? []).join('; '),

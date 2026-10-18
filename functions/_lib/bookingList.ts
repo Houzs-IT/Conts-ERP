@@ -4,10 +4,12 @@ import { countryJoin, countryWhere, parseCountries, countryName, countryNameSql,
 /** The Bookings list: one place that turns the screen's URL (tab, to-do card, filters, searches, sort)
  *  into SQL, shared by the paged list, its CSV export and the single-booking read.
  *
- *  Five tabs, and every booking is in exactly one of them, so their counts add up to All:
- *    upcoming   not arrived yet and the stay has not ended
- *    inhouse    checked in
- *    past       checked out, or the stay ended without being checked in or out ("Checked out")
+ *  Five tabs, and every booking is in exactly one of them, so their counts add up to All. They go by the dates, not
+ *  only the stored state: imported and channel reservations are never pressed Check in, so a stored "confirmed" whose
+ *  check-in has passed is a guest staying now (owner, 18 Oct 2026; same rule as src/lib/bookingStatus.ts stayPhase):
+ *    upcoming   check-in today or later and not checked in (Upcoming / Arriving soon), plus inquiries and pending
+ *    inhouse    checked in, or check-in before today and checkout today or later (Currently hosting / Checking out)
+ *    past       checked out, or the checkout date has passed
  *    cancelled  cancelled or no-show
  *    all
  *  Blocks and owner stays are not bookings and live on the calendar and the unit page, not here.
@@ -73,13 +75,16 @@ export function todayMyt() {
   return new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);
 }
 
+const PAST = (t: string) => `(r.state = 'checked_out' OR r.check_out < ${t})`;
+const STAYING = (t: string) => `(r.state = 'checked_in' OR (r.check_in < ${t} AND r.state NOT IN ('inquiry','pending')))`;
+
 /** The WHERE clause of each tab. The four live tabs split every booking between them with no overlap. */
 export function viewWhere(v: View, today: string): string {
   const t = `'${today}'`;
   switch (v) {
-    case 'upcoming': return `NOT ${BLOCK} AND NOT ${DEAD} AND r.state NOT IN ('checked_in','checked_out') AND r.check_out >= ${t}`;
-    case 'inhouse': return `NOT ${BLOCK} AND NOT ${DEAD} AND r.state = 'checked_in'`;
-    case 'past': return `NOT ${BLOCK} AND NOT ${DEAD} AND r.state <> 'checked_in' AND (r.state = 'checked_out' OR r.check_out < ${t})`;
+    case 'upcoming': return `NOT ${BLOCK} AND NOT ${DEAD} AND NOT (${PAST(t)}) AND NOT (${STAYING(t)})`;
+    case 'inhouse': return `NOT ${BLOCK} AND NOT ${DEAD} AND NOT (${PAST(t)}) AND ${STAYING(t)}`;
+    case 'past': return `NOT ${BLOCK} AND NOT ${DEAD} AND ${PAST(t)}`;
     case 'cancelled': return `NOT ${BLOCK} AND ${DEAD}`;
     default: return `NOT ${BLOCK}`;
   }
