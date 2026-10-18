@@ -7,7 +7,7 @@ import Icon from '../../components/Icon';
 import { useToast } from '../../components/Toast';
 import { useApi } from '../../lib/useApi';
 import { api, ApiFailure, downloadFile, errorMessage, notifyFailure } from '../../lib/api';
-import { monthLabel, titleCase } from '../../lib/format';
+import { monthLabel, titleCase, rm } from '../../lib/format';
 import { cx } from '../../lib/design-tokens';
 import { PAYERS } from '../../lib/revenueModel';
 import { Field } from '../../components/Field';
@@ -230,7 +230,7 @@ function NoAccountUnits({ units, lines, setLines, errors, onAdded }: {
                 <span className="text-copy font-medium truncate" title={u.unitLabel}>{titleCase(u.unitLabel)}</span>
                 <span className="text-meta text-muted-ink">
                   No account on file, a bill can still go in.
-                  {(u.recorded ?? []).length > 0 && ` Already recorded this month: ${u.recorded!.map(x => `${kindLabel(x.kind)} RM ${(x.amount / 100).toFixed(2)}`).join(', ')}.`}
+                  {(u.recorded ?? []).length > 0 && ` Already recorded this month: ${u.recorded!.map(x => `${kindLabel(x.kind)} ${rm(x.amount)}`).join(', ')}.`}
                 </span>
               </span>
               {mine.map(l => {
