@@ -164,18 +164,25 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
   const visible = filteredRows.filter(r => phase === 'all' || phaseOf(r) === phase);
   const visibleDepartures = phase !== 'todo' && phase !== 'all' ? [] : departures.filter(d => (!building || d.buildingId === building) && (!cleaner || cleaner === 'none'));
 
+  // Open jobs from an earlier day sit in their own Overdue group above the day's work, so the day reads as the day.
+  const isOverdue = (r: Row) => r.carriedOver && r.status !== 'done';
+  const overdueRows = visible.filter(isOverdue);
+  const oldestOverdue = overdueRows.reduce<string | null>((o, r) => (!o || r.day < o ? r.day : o), null);
   // One card per building, in name order; each lists its cleans, then guests leaving with no clean yet.
-  const groups = useMemo(() => {
-    const m = new Map<string, { id: string; name: string; rows: Row[]; departures: Departure[]; repairs: RepairOnDay[] }>();
-    const get = (id: string, name: string) => m.get(id) ?? (m.set(id, { id, name, rows: [], departures: [], repairs: [] }), m.get(id)!);
-    for (const r of visible) get(r.buildingId, r.propertyName).rows.push(r);
-    for (const d of visibleDepartures) get(d.buildingId, d.propertyName).departures.push(d);
-    for (const w of repairs) if (m.has(w.buildingId)) m.get(w.buildingId)!.repairs.push(w);
-    for (const g of m.values()) g.rows.sort((a, b) => BOARD_ORDER[a.status] - BOARD_ORDER[b.status] || a.unitNumber.localeCompare(b.unitNumber, undefined, { numeric: true }));
+  const toGroups = (rs: Row[], deps: Departure[], reps: RepairOnDay[], tag: string) => {
+    const m = new Map<string, { id: string; key: string; name: string; rows: Row[]; departures: Departure[]; repairs: RepairOnDay[] }>();
+    const get = (id: string, name: string) => m.get(id) ?? (m.set(id, { id, key: `${tag}${id}`, name, rows: [], departures: [], repairs: [] }), m.get(id)!);
+    for (const r of rs) get(r.buildingId, r.propertyName).rows.push(r);
+    for (const d of deps) get(d.buildingId, d.propertyName).departures.push(d);
+    for (const w of reps) if (m.has(w.buildingId)) m.get(w.buildingId)!.repairs.push(w);
+    for (const g of m.values()) g.rows.sort((a, b) => (tag ? a.day.localeCompare(b.day) : 0) || BOARD_ORDER[a.status] - BOARD_ORDER[b.status] || a.unitNumber.localeCompare(b.unitNumber, undefined, { numeric: true }));
     return [...m.values()].sort((a, b) => (a.id === 'external' ? 1 : 0) - (b.id === 'external' ? 1 : 0) || a.name.localeCompare(b.name));
-  }, [visible, visibleDepartures, repairs]);
+  };
+  const groups = useMemo(() => toGroups(visible.filter(r => !isOverdue(r)), visibleDepartures, repairs, ''), [visible, visibleDepartures, repairs]); // eslint-disable-line react-hooks/exhaustive-deps
+  const overdueGroups = useMemo(() => toGroups(overdueRows, [], [], 'overdue-'), [visible]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const total = rows.length, done = rows.filter(r => r.status === 'done').length;
+  const overdueAll = rows.filter(r => r.carriedOver && r.status !== 'done').length;
   const unassigned = rows.filter(r => r.status !== 'done' && !r.cleanerId && !r.assigneeId && !r.assigneeName).length;
   const ready = rows.filter(r => r.status === 'ready').length;
   const sel = rows.find(r => r.id === selected) ?? null;
@@ -218,7 +225,7 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
 
   const subtitle = data
     // vocab-ok: departures is the API field name; the words on screen say checkouts
-    ? `${dayLabel(date)} · ${total} ${total === 1 ? 'cleaning job' : 'cleaning jobs'} · ${done} done · ${ready} ready to clean${unassigned ? ` · ${unassigned} unassigned` : ''}${departures.length ? ` · ${departures.length} checkouts with no cleaning job` : ''}`
+    ? `${dayLabel(date)} · ${total} ${total === 1 ? 'cleaning job' : 'cleaning jobs'}${overdueAll ? ` (${overdueAll} overdue)` : ''} · ${done} done · ${ready} ready to clean${unassigned ? ` · ${unassigned} unassigned` : ''}${departures.length ? ` · ${departures.length} checkouts with no cleaning job` : ''}`
     : dayLabel(date);
 
   const list = (
@@ -226,16 +233,39 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
       {error && <StaleBanner message={`Showing the last board we have. ${error}`} onRetry={reload} />}
       {loading && !data ? (
         <div className="flex flex-col gap-3.5">{[0, 1].map(i => <div key={i} className="bg-card rounded-card border border-solid border-line p-4 flex flex-col gap-3"><Skeleton width="40%" height={16} /><Skeleton height={44} /><Skeleton height={44} /></div>)}</div>
-      ) : groups.length === 0 ? (
+      ) : groups.length === 0 && overdueGroups.length === 0 ? (
         <EmptyState icon="Sparkles" kind={building || cleaner ? 'filtered' : 'empty'}
           title={building || cleaner ? 'No cleaning jobs match these filters.' : `No cleaning jobs on ${dayLabel(date)}.`}
           body={building || cleaner ? undefined : 'Cleaning jobs appear when guests check out. Add one by hand for a deep clean or a refresh.'}
           action={building || cleaner ? { label: 'Clear filters', onClick: () => { setBuilding(''); setCleaner(''); } } : { label: 'Add cleaning job', onClick: () => setCreating(true) }} />
-      ) : groups.map(g => (
-        <BuildingCard key={g.id} group={g} now={now} future={date > mytDay(0)} selected={selected} busy={busy}
-          onSelect={id => setSelected(id)} onGuestLeft={guestLeft} onUndoLeft={undoLeft} onCheckIn={setCheckIn} onPlan={plan}
-          onAssign={() => setAssignFor({ buildingId: g.id, name: g.name })} />
-      ))}
+      ) : <>
+        {overdueGroups.length > 0 && (
+          <section aria-label="Overdue cleaning jobs" className="flex flex-col gap-3.5">
+            <div className="flex items-baseline gap-2 flex-wrap px-1">
+              <h2 className="m-0 text-heading font-semibold text-critical">Overdue</h2>
+              <span className="text-meta text-muted-ink">
+                {overdueRows.length} open {overdueRows.length === 1 ? 'cleaning job' : 'cleaning jobs'} from earlier days{oldestOverdue ? ` · oldest ${dayLabel(oldestOverdue)}` : ''}
+              </span>
+            </div>
+            {overdueGroups.map(g => (
+              <BuildingCard key={g.key} group={g} now={now} future={false} selected={selected} busy={busy}
+                onSelect={id => setSelected(id)} onGuestLeft={guestLeft} onUndoLeft={undoLeft} onCheckIn={setCheckIn} onPlan={plan}
+                onAssign={() => setAssignFor({ buildingId: g.id, name: g.name })} />
+            ))}
+          </section>
+        )}
+        {overdueGroups.length > 0 && (
+          <div className="flex items-baseline gap-2 flex-wrap px-1 mt-1">
+            <h2 className="m-0 text-heading font-semibold">{pick === 'today' ? 'Today' : dayLabel(date)}</h2>
+            {groups.length === 0 && <span className="text-meta text-muted-ink">Nothing else on this day.</span>}
+          </div>
+        )}
+        {groups.map(g => (
+          <BuildingCard key={g.key} group={g} now={now} future={date > mytDay(0)} selected={selected} busy={busy}
+            onSelect={id => setSelected(id)} onGuestLeft={guestLeft} onUndoLeft={undoLeft} onCheckIn={setCheckIn} onPlan={plan}
+            onAssign={() => setAssignFor({ buildingId: g.id, name: g.name })} />
+        ))}
+      </>}
     </>
   );
 
