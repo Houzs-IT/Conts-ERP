@@ -19,9 +19,11 @@ try {
   let r = await call('POST', '/api/properties', { name: `Building Test ${tag}`, state: 'Kuala Lumpur', city: 'Kuala Lumpur' });
   const BID = r.json?.id;
   check('test building created', !!BID, r.text);
+  // A unit needs its owner (POST /api/units, since 17 Oct).
+  const ownerId = (await call('GET', '/api/owners')).json.data[0].id;
   const units = [];
   for (const n of ['A-01', 'A-02', 'A-03']) {
-    r = await call('POST', '/api/units', { buildingId: BID, unitCode: `${n}-${tag}`, unitNumber: `${n}-${tag}`, listingName: `Building Test ${n} ${tag}` });
+    r = await call('POST', '/api/units', { buildingId: BID, ownerId, unitCode: `${n}-${tag}`, unitNumber: `${n}-${tag}`, listingName: `Building Test ${n} ${tag}` });
     units.push(r.json?.id);
     await call('PUT', '/api/rates', { unitId: r.json?.id, baseRate: 20000 });
   }
