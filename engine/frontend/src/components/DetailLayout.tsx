@@ -103,10 +103,10 @@ export function DetailLayout({
           stickyTitle ? "bg-bg" : "bg-bg/85 backdrop-blur-md"
         )}
       >
-        <div className="flex h-10 w-full items-center gap-3 px-4 sm:px-6 lg:px-10 xl:px-12 2xl:px-16">
+        <div className="flex h-10 w-full items-center gap-3 px-4 max-sm:h-auto max-sm:min-h-10 max-sm:flex-wrap max-sm:py-1 sm:px-6 lg:px-10 xl:px-12 2xl:px-16">
           <button
             onClick={goBack}
-            className="group flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-border bg-surface text-ink-muted transition-all hover:-translate-x-0.5 hover:border-accent/50 hover:text-accent"
+            className="group flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-border bg-surface text-ink-muted transition-[color,border-color,transform] motion-safe:hover:-translate-x-0.5 hover:border-accent/50 hover:text-accent"
             aria-label="Back"
             title="Back"
           >
@@ -140,7 +140,7 @@ export function DetailLayout({
           <div className="hidden flex-1 lg:block" />
 
           {actions && (
-            <div className="flex shrink-0 flex-wrap items-center gap-1.5">{actions}</div>
+            <div className="flex shrink-0 flex-wrap items-center gap-1.5 max-sm:shrink">{actions}</div>
           )}
         </div>
         {stickyTitle && (
@@ -378,7 +378,7 @@ export function HeaderButton({
   children: ReactNode;
 }) {
   const base =
-    "inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-[11.5px] font-bold uppercase tracking-wider transition-all disabled:opacity-50 disabled:pointer-events-none";
+    "inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-[11.5px] font-bold uppercase tracking-wider transition-[color,background-color,border-color,opacity] disabled:opacity-50 disabled:pointer-events-none";
   const variants = {
     ghost:
       "border border-border bg-surface text-ink-secondary hover:border-accent/40 hover:bg-accent-soft/40 hover:text-accent",

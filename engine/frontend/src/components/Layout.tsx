@@ -326,7 +326,7 @@ export function PageHeader({
             onClick={() => { void goBack(); }}
             aria-label="Back"
             title="Back"
-            className="mb-1.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-border bg-surface text-ink-muted transition-all hover:-translate-x-0.5 hover:border-accent/50 hover:text-accent sm:mb-2"
+            className="mb-1.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-border bg-surface text-ink-muted transition-[color,border-color,transform] motion-safe:hover:-translate-x-0.5 hover:border-accent/50 hover:text-accent sm:mb-2"
           >
             <ArrowLeft size={14} strokeWidth={2.2} />
           </button>

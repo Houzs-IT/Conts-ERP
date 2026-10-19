@@ -33,7 +33,8 @@ export default function ViewAs() {
   const viewing = state.viewing;
   const roles = [...new Set((state.users ?? []).map(u => u.role))];
   return (
-    <div className="fixed right-3 bottom-3 z-[70] flex flex-col items-end [font-family:inherit] text-meta">
+    // On phones (under 600px, deviceClass.ts) it sits above the 64px bottom tab bar instead of over its tabs.
+    <div className="fixed right-3 bottom-3 max-[600px]:bottom-[calc(76px+env(safe-area-inset-bottom))] z-[70] flex flex-col items-end [font-family:inherit] text-meta">
       {open && (
         <div className="mb-2 w-[300px] max-h-[60vh] overflow-y-auto bg-card rounded-card border border-solid border-line [box-shadow:var(--shadow-overlay)]">
           <div className="px-3 py-2 text-[11px] text-muted-ink [border-bottom:1px_solid_var(--color-line-soft)]">
