@@ -1,9 +1,10 @@
 # Keeps `staging` level with `main` after every merge, so staging-preview always
 # reflects what's actually live on production unless someone deliberately pushes
-# extra commits to `staging` for a one-off preview. Fast-forward only, never a
-# force-push: if `staging` has diverged (commits of its own not yet in main), the
-# sync step fails loudly instead of discarding that work — resolve it by hand,
-# then it resumes automatically on the next push to main.
+# extra commits to `staging` for a one-off preview. If `staging` has diverged
+# (preview-only commits not in main), those commits are first saved on a
+# `staging-backup/<timestamp>` branch, then `staging` is reset to main. Nothing is
+# lost and the sync never needs a manual fix. Delete old backup branches when
+# you no longer need them.
 #
 # Deploys right here instead of leaving it to deploy-staging-preview.yml's own
 # `push: branches: [staging]` trigger: a push made with the default GITHUB_TOKEN
@@ -26,7 +27,14 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - run: git push origin origin/main:refs/heads/staging
+      - name: Move staging to main, backing up preview-only commits
+        run: |
+          if git merge-base --is-ancestor origin/staging origin/main; then
+            git push origin origin/main:refs/heads/staging
+          else
+            git push origin "origin/staging:refs/heads/staging-backup/$(date -u +%Y%m%d-%H%M%S)"
+            git push --force-with-lease=staging:"$(git rev-parse origin/staging)" origin origin/main:refs/heads/staging
+          fi
       - uses: actions/setup-node@v4
         with:
           node-version: 22
