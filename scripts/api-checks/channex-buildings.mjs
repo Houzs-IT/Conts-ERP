@@ -67,13 +67,17 @@ try {
   else {
     r = await call('POST', `/api/properties/${BID}/channels/lookup`, { ota: 'booking_com', hotelId: hotel });
     check('test hotel rooms found', r.status === 200 && r.json.rooms.length >= 2, r.text);
-    const pairs = (r.json?.rooms ?? []).slice(0, 2).map((room, i) => ({ unitId: units[i], roomId: room.id, roomTitle: room.title, rateId: room.rates[0]?.id, rateTitle: room.rates[0]?.title }));
+    // A unit is a whole room: every price option the site lets a channel manager set is mapped to it.
+    const sellable = room => room.rates.filter(x => !x.readonly).map(x => ({ id: x.id, title: x.title }));
+    const pairs = (r.json?.rooms ?? []).slice(0, 2).map((room, i) => ({ unitId: units[i], roomId: room.id, roomTitle: room.title, rates: sellable(room) }));
+    const expected = pairs.reduce((n, p) => n + p.rates.length, 0);
     r = await call('POST', `/api/properties/${BID}/channels`, { ota: 'booking_com', hotelId: hotel, pricingType: r.json?.pricingType, rooms: pairs });
     if (r.json?.channelId) made.channels.add(r.json.channelId);
     check('both units connected to the one Booking.com hotel in one go (201)', r.status === 201 && r.json.connected === 2, r.text);
     const channelId = r.json?.channelId;
     const ch = await chx(`/channels/${channelId}`);
-    check('Channex: one channel, two rooms mapped', (ch.json?.data?.attributes?.rate_plans ?? []).length === 2, JSON.stringify(ch.json).slice(0, 300));
+    check(`Channex: one channel, both rooms mapped with all ${expected} of their prices`, (ch.json?.data?.attributes?.rate_plans ?? []).length === expected, JSON.stringify(ch.json).slice(0, 300));
+    check('each unit carries all prices of its room on one rate plan', new Set((ch.json?.data?.attributes?.rate_plans ?? []).map(x => x.rate_plan_id)).size === 2, JSON.stringify(ch.json?.data?.attributes?.rate_plans ?? []).slice(0, 300));
     // channexEnsureChannelProperty reads the channel's properties from here.
     check('Channex lists the building\'s property on the channel (attributes.properties)', (ch.json?.data?.attributes?.properties ?? []).includes(first.propertyId), JSON.stringify(ch.json?.data?.attributes?.properties));
 
@@ -85,17 +89,17 @@ try {
     if (!third) console.log('skip adding a room later: the test hotel has fewer than three rooms');
     else {
       r = await call('POST', `/api/properties/${BID}/channels`, { ota: 'booking_com', hotelId: hotel, pricingType: look.json.pricingType,
-        rooms: [{ unitId: units[2], roomId: third.id, roomTitle: third.title, rateId: third.rates[0]?.id, rateTitle: third.rates[0]?.title }] });
+        rooms: [{ unitId: units[2], roomId: third.id, roomTitle: third.title, rates: sellable(third) }] });
       check('a later unit is added to the same Booking.com connection (201)', r.status === 201 && r.json.addedToExisting === true && r.json.channelId === channelId, r.text);
       const ch2 = await chx(`/channels/${channelId}`);
-      check('Channex: the channel now maps three rooms', (ch2.json?.data?.attributes?.rate_plans ?? []).length === 3, JSON.stringify(ch2.json?.data?.attributes?.rate_plans ?? []).slice(0, 300));
+      check('Channex: the channel now maps the third room too', new Set((ch2.json?.data?.attributes?.rate_plans ?? []).map(x => x.rate_plan_id)).size === 3, JSON.stringify(ch2.json?.data?.attributes?.rate_plans ?? []).slice(0, 300));
     }
     // Disconnecting one unit keeps the building's connection for the others.
     const row = (await call('GET', `/api/units/${units[0]}/channels`)).json?.data?.find(c => c.ota === 'booking_com');
     r = await call('DELETE', `/api/units/${units[0]}/channels/${row?.id}`);
     check('disconnecting one unit answers ok', r.status === 200, r.text);
     const ch3 = await chx(`/channels/${channelId}`);
-    check('Channex: the connection stays on, without that unit\'s room', ch3.json?.data?.attributes?.is_active === true && (ch3.json?.data?.attributes?.rate_plans ?? []).length === (third ? 2 : 1), JSON.stringify(ch3.json?.data?.attributes ?? {}).slice(0, 300));
+    check('Channex: the connection stays on, without any of that unit\'s prices', ch3.json?.data?.attributes?.is_active === true && new Set((ch3.json?.data?.attributes?.rate_plans ?? []).map(x => x.rate_plan_id)).size === (third ? 2 : 1), JSON.stringify(ch3.json?.data?.attributes ?? {}).slice(0, 300));
     r = await call('GET', `/api/properties/${BID}/channels`);
     check('building screen shows the Booking.com room of each unit still connected', (r.json?.units ?? []).filter(u => u.connections.some(c => c.ota === 'booking_com' && c.hotelId === hotel)).length === (third ? 2 : 1), r.text);
   }

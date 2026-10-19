@@ -69,6 +69,8 @@ export default function ChannexChannelsCard({ unitId, linked, canManage, onChang
       // vocab-ok: c.ota is a code field holding the channel key, not a word on screen
       toast({ tone: 'success', title: `${OTA_LABEL[c.ota]} disconnected.`, body: 'Prices and open dates are no longer sent to it for this unit.' });
       conns.reload();
+      building.reload();
+      onChanged();
     } catch (e) { notifyFailure(e); }
   }
 
@@ -78,6 +80,7 @@ export default function ChannexChannelsCard({ unitId, linked, canManage, onChang
     toast({ tone: 'success', title: `${OTA_LABEL[ota]} connected.`, body: 'Prices and open dates are now sent to it, and its existing reservations are being brought in.' });
     conns.reload();
     building.reload();
+    onChanged();
   };
 
   return (

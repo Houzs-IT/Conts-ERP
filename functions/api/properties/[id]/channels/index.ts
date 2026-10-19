@@ -5,6 +5,7 @@ import { channexRefused, buildingFor, OTA_LABEL, type ChannexBuilding } from '..
 import { ensureOtaRatePlans } from '../../../../_lib/channexSync';
 import { rentalOnly } from '../../../../_lib/unitPurpose';
 
+interface RoomPick { unitId: string; roomId: string; roomTitle?: string; occupancy?: number; rates: { id: string; title: string }[] }
 interface BuildingUnit { id: string; unit_number: string; listing_name: string | null; max_guests: number; channex_property_id: string | null }
 
 /** GET /api/properties/:id/channels — the building's Channex listing and, for each unit, whether it is set up in it
@@ -32,9 +33,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
   });
 };
 
-/** POST /api/properties/:id/channels { ota, hotelId, pricingType?, rooms: [{ unitId, roomId, roomTitle, rateId, rateTitle, occupancy? }] }
- *  Connects a Booking.com or Agoda hotel to the building: each chosen room is mapped to one unit's rate plan for that
- *  site, in the building's Channex property. The first connection creates the Channex channel, switches it on and
+/** POST /api/properties/:id/channels { ota, hotelId, pricingType?, rooms: [{ unitId, roomId, roomTitle, rates: [{ id, title }], occupancy? }] }
+ *  (a single rateId / rateTitle is still taken for rates). Connects a Booking.com or Agoda hotel to the building: each
+ *  chosen room is one unit, and every rate of that room (standard, non-refundable ...) is mapped to that unit's rate plan
+ *  for the site, in the building's Channex property, so all of them carry the unit's price and open dates. The first connection creates the Channex channel, switches it on and
  *  loads the bookings already on the site (if switching on fails the channel is deleted again); later ones add their
  *  rooms to that channel. */
 export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }) => {
@@ -47,13 +49,17 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   if (ota !== 'booking_com' && ota !== 'agoda') return fail('VALIDATION', 'Pick Booking.com or Agoda.', 422);
   const hotelId = String(b?.hotelId ?? '').trim();
   if (!/^\d{3,12}$/.test(hotelId)) return fail('VALIDATION', 'Enter the Hotel ID (numbers only).', 422, { hotelId: 'Numbers only.' });
-  const picks = (Array.isArray(b?.rooms) ? b.rooms : []).filter((r: any) => r?.unitId && r?.roomId && r?.rateId) as { unitId: string; roomId: string; roomTitle?: string; rateId: string; rateTitle?: string; occupancy?: number }[];
+  const picks: RoomPick[] = (Array.isArray(b?.rooms) ? b.rooms : []).map((r: any) => ({
+    unitId: String(r?.unitId ?? ''), roomId: String(r?.roomId ?? ''), roomTitle: r?.roomTitle as string | undefined, occupancy: r?.occupancy as number | undefined,
+    rates: (Array.isArray(r?.rates) ? r.rates : r?.rateId ? [{ id: r.rateId, title: r.rateTitle }] : [])
+      .filter((x: any) => x?.id).map((x: any) => ({ id: String(x.id), title: x.title ? String(x.title) : String(x.id) })) as { id: string; title: string }[],
+  })).filter((p: { unitId: string; roomId: string; rates: unknown[] }) => p.unitId && p.roomId && p.rates.length);
   // vocab-ok: Booking.com and Agoda call what a unit is sold as a room; these name both sides of the pairing
   if (!picks.length) return fail('VALIDATION', 'Pick a unit for at least one room.', 422);
   // vocab-ok: Booking.com and Agoda call what a unit is sold as a room; these name both sides of the pairing
   if (new Set(picks.map(p => p.unitId)).size !== picks.length) return fail('VALIDATION', 'Each unit can be one room only.', 422);
   // vocab-ok: Booking.com and Agoda call what a unit is sold as a room; these name both sides of the pairing
-  if (new Set(picks.map(p => `${p.roomId}/${p.rateId}`)).size !== picks.length) return fail('VALIDATION', 'Each room can be one unit only.', 422);
+  if (new Set(picks.map(p => p.roomId)).size !== picks.length) return fail('VALIDATION', 'Each room can be one unit only.', 422);
 
   const units = await all<BuildingUnit>(env, `SELECT id, unit_number, listing_name, max_guests, channex_property_id FROM units u WHERE property_id = ?${await rentalOnly(env)} AND id IN (SELECT jsonb_array_elements_text(?::text::jsonb))`,
     building.id, JSON.stringify(picks.map(p => p.unitId)));
@@ -65,7 +71,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   // vocab-ok: OTA_LABEL is a code name; the text shows the channel name
   if (already.length) return fail('CONFLICT', `${already.map(u => u.unit_number).join(', ')} already connected to ${OTA_LABEL[ota]}.`, 409);
 
-  // Each room is mapped to its unit's rate plan for this site, so it carries this site's price.
+  // Every rate of a room is mapped to its unit's rate plan for this site, so each carries this site's price.
   const rooms: HotelRoomMap[] = [];
   for (const p of picks) {
     const u = units.find(x => x.id === p.unitId)!;
@@ -74,7 +80,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
     catch (e) { return fail('CHANNEX_REFUSED', e instanceof Error ? e.message : 'Channex refused the rate plan.', 502); }
     if (!ratePlanId) return fail('NOT_LINKED', `Set ${u.unit_number} up in Channex first.`, 409);
     const occupancy = Number.isInteger(p.occupancy) && p.occupancy! > 0 ? p.occupancy! : Math.max(1, Number(u.max_guests) || 2);
-    rooms.push({ ratePlanId, roomCode: String(p.roomId), rateCode: String(p.rateId), occupancy, readonly: false });
+    for (const rate of p.rates) rooms.push({ ratePlanId, roomCode: p.roomId, rateCode: rate.id, occupancy, readonly: false });
   }
   const pricingType = String(b?.pricingType || 'Standard');
 
@@ -108,13 +114,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   }
 
   const now = nowIso();
-  const rows = picks.map(p => ({ id: crypto.randomUUID(), unit_id: p.unitId, room: String(p.roomTitle ?? p.roomId).slice(0, 200), rate: String(p.rateTitle ?? p.rateId).slice(0, 200) }));
+  const rows = picks.map(p => ({ id: crypto.randomUUID(), unit_id: p.unitId, room: String(p.roomTitle ?? p.roomId).slice(0, 200), rate: p.rates.map(r => r.title).join(', ').slice(0, 200) }));
   await run(env, `INSERT INTO channex_channels (id, unit_id, ota, channex_channel_id, external_id, external_room, external_rate, title, created_by, created_at)
     SELECT x.id, x.unit_id, ?, ?, ?, x.room, x.rate, ?, ?, ? FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, unit_id text, room text, rate text)`,
     ota, channelId, hotelId, `${OTA_LABEL[ota]} hotel ${hotelId}`, session.userId, now, JSON.stringify(rows));
   // A unit sold on a booking site is listed: it counts in occupancy and the dashboard from here on.
   await run(env, `UPDATE units SET is_listed = 1, updated_at = ? WHERE is_listed = 0 AND id IN (SELECT jsonb_array_elements_text(?::text::jsonb))`, now, JSON.stringify(picks.map(p => p.unitId)));
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'channel.connect_building', entityTable: 'properties', entityId: building.id,
-    after: { ota, hotelId, channelId, addedToExisting: !!existing, rooms: picks.map(p => ({ unitId: p.unitId, room: p.roomId, rate: p.rateId })), bookingsLoadRequested: loadRequested } });
+    after: { ota, hotelId, channelId, addedToExisting: !!existing, rooms: picks.map(p => ({ unitId: p.unitId, room: p.roomId, rates: p.rates.map(r => r.id) })), bookingsLoadRequested: loadRequested } });
   return json({ channelId, connected: picks.length, addedToExisting: !!existing, bookingsLoadRequested: loadRequested }, 201);
 };

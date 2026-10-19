@@ -37,17 +37,19 @@ export default function BuildingHotelConnect({ buildingId, buildingName, ota, un
     if (!rooms) return;
     setBusy(true);
     try {
-      const picked = chosen.map(([key, unitId]) => {
-        const [roomId, rateId] = key.split('/');
-        const room = rooms.find(r => r.id === roomId)!, rate = room.rates.find(x => x.id === rateId)!;
-        return { unitId, roomId, roomTitle: room.title, rateId, rateTitle: rate.title, occupancy: rate.maxPersons ?? undefined };
+      // A unit is the whole room: every price option the site lets a channel manager set goes to it.
+      const picked = chosen.map(([roomId, unitId]) => {
+        const room = rooms.find(r => r.id === roomId)!, rates = sellable(room);
+        return { unitId, roomId, roomTitle: room.title, rates: rates.map(x => ({ id: x.id, title: x.title })), occupancy: Math.max(0, ...rates.map(x => x.maxPersons ?? 0)) || undefined };
       });
       const r = await api.post<{ connected: number }>(`/properties/${buildingId}/channels`, { ota, hotelId: hotelId.trim(), pricingType, rooms: picked });
       onDone(r.connected);
     } catch (e) { notifyFailure(e); } finally { setBusy(false); }
   }
 
-  const rows = (rooms ?? []).flatMap(room => room.rates.map(rate => ({ key: `${room.id}/${rate.id}`, room, rate })));
+  // A read-only price option is worked out by the site from another one, so nothing is sent to it.
+  const sellable = (room: Room) => room.rates.filter(r => !r.readonly);
+  const rows = (rooms ?? []).filter(room => sellable(room).length > 0);
   return (
     <div className="flex flex-col gap-4">
       {/* vocab-ok: Booking.com and Agoda call what a unit is sold as a room on this linking screen */}
@@ -69,16 +71,20 @@ export default function BuildingHotelConnect({ buildingId, buildingName, ota, un
           <div className="flex flex-col gap-2">
             {/* vocab-ok: Booking.com and Agoda call what a unit is sold as a room on this linking screen */}
             <span className="text-[12px] font-medium text-muted-ink">Which unit is each room? Leave a room on "Not this building's" to skip it.</span>
-            {rows.map(({ key, room, rate }) => {
+            {rows.map(room => {
+              const key = room.id, rates = sellable(room), guests = Math.max(0, ...rates.map(x => x.maxPersons ?? 0));
               const taken = new Set(Object.entries(pairs).filter(([k, v]) => k !== key && v).map(([, v]) => v));
               return (
                 <div key={key} className="flex items-center gap-3 p-3 border border-solid border-line rounded-card">
                   <span className="flex flex-col gap-0.5 grow min-w-0">
                     <span className="text-copy font-semibold">{room.title}</span>
-                    <span className="text-[12px] text-muted-ink">{rate.title}{rate.maxPersons ? ` · up to ${rate.maxPersons} ${rate.maxPersons === 1 ? 'guest' : 'guests'}` : ''}</span>
+                    <span className="text-[12px] text-muted-ink">
+                      {rates.length === 1 ? rates[0].title : `${rates.length} prices: ${rates.map(x => x.title).join(', ')}`}
+                      {guests ? ` · up to ${guests} ${guests === 1 ? 'guest' : 'guests'}` : ''}
+                    </span>
                   </span>
                   {/* vocab-ok: room.title is the Booking.com / Agoda room's own name, read out for screen readers */}
-                  <Select className="w-[45%] shrink-0" label={`Unit for ${room.title}, ${rate.title}`} value={pairs[key] ?? ''} placeholder="Not this building's"
+                  <Select className="w-[45%] shrink-0" label={`Unit for ${room.title}`} value={pairs[key] ?? ''} placeholder="Not this building's"
                     onChange={v => setPairs(p => ({ ...p, [key]: v }))}
                     options={free.map(u => ({ value: u.id, label: `${u.unitNumber}${u.id === currentUnitId ? ' (this unit)' : ''}`, disabled: taken.has(u.id) }))} />
                 </div>
