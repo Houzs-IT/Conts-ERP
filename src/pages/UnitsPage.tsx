@@ -512,7 +512,7 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
               </div>
             ))}
           </Card>
-          {rental ? <ChannexChannelsCard unitId={u.id} linked={!!u.channexLinked} canManage={canManageChannels} onChanged={reload} />
+          {rental ? <ChannexChannelsCard unitId={u.id} linked={!!u.channexLinked} canManage={canManageChannels} onChanged={reload} buildingId={building?.id} buildingName={building?.name} />
             : <Card><SectionTitle title="Channels" /><div className="py-4 px-5 text-copy text-muted-ink [border-top:1px_solid_var(--color-line-soft)]">A {u.purpose} unit is not connected to Airbnb, Booking.com or any other channel, and takes no reservations.</div></Card>}
           {d.pnl && (
             <Card>

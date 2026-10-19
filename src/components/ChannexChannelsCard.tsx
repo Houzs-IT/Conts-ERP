@@ -6,6 +6,7 @@ import { Drawer } from './Dialog';
 import { useConfirm } from './ConfirmDialog';
 import { Field } from './Field';
 import AirbnbListingPicker from './AirbnbListingPicker';
+import BuildingHotelConnect, { type BuildingChannelUnit } from './BuildingHotelConnect';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
 import { useToast } from './Toast';
@@ -20,8 +21,8 @@ interface Room { id: string; title: string; rates: { id: string; title: string; 
 
 /** A unit's link to Channex: set it up as a Channex listing, then connect Airbnb, Booking.com and Agoda
  *  from here through Channex's Channel API. */
-export default function ChannexChannelsCard({ unitId, linked, canManage, onChanged }: {
-  unitId: string; linked: boolean; canManage: boolean; onChanged: () => void;
+export default function ChannexChannelsCard({ unitId, linked, canManage, onChanged, buildingId, buildingName }: {
+  unitId: string; linked: boolean; canManage: boolean; onChanged: () => void; buildingId?: string; buildingName?: string;
 }) {
   const toast = useToast();
   const [busy, setBusy] = useState(false);
@@ -31,11 +32,17 @@ export default function ChannexChannelsCard({ unitId, linked, canManage, onChang
   const conns = useApi<{ data: Connection[] }>(linked ? `/units/${unitId}/channels` : null);
   const connected = conns.data?.data ?? [];
   const has = (o: Ota) => connected.some(c => c.ota === o);
+  // Since migration 0128 a unit is set up inside its building's Channex listing, and Booking.com / Agoda are connected
+  // for the building (one hotel, each unit one of its rooms). A unit set up before that keeps its own listing and the
+  // one-unit connection below.
+  const building = useApi<{ channexListing: boolean; units: BuildingChannelUnit[] }>(linked && buildingId ? `/properties/${buildingId}/channels` : null);
+  const inBuildingListing = !!building.data?.units.find(x => x.id === unitId)?.setUp;
 
   async function setUp() {
     setBusy(true);
     try {
       const r = await api.post<{ availabilitySent: boolean }>(`/units/${unitId}/channex-setup`, {});
+      building.reload();
       setConfirming(false);
       toast(r.availabilitySent
         ? { tone: 'success', title: 'Set up in Channex.', body: 'The listing exists with its open dates and prices. Next, connect a channel.' }
@@ -62,6 +69,8 @@ export default function ChannexChannelsCard({ unitId, linked, canManage, onChang
       // vocab-ok: c.ota is a code field holding the channel key, not a word on screen
       toast({ tone: 'success', title: `${OTA_LABEL[c.ota]} disconnected.`, body: 'Prices and open dates are no longer sent to it for this unit.' });
       conns.reload();
+      building.reload();
+      onChanged();
     } catch (e) { notifyFailure(e); }
   }
 
@@ -70,6 +79,8 @@ export default function ChannexChannelsCard({ unitId, linked, canManage, onChang
     // vocab-ok: ota is a code variable holding the channel key, not a word on screen
     toast({ tone: 'success', title: `${OTA_LABEL[ota]} connected.`, body: 'Prices and open dates are now sent to it, and its existing reservations are being brought in.' });
     conns.reload();
+    building.reload();
+    onChanged();
   };
 
   return (
@@ -103,7 +114,7 @@ export default function ChannexChannelsCard({ unitId, linked, canManage, onChang
           </>
         ) : confirming ? (
           <>
-            <span className="text-ink">This creates the unit as a listing in Channex (billed as a vacation rental), sends its open dates and prices, and then lets you connect channels.</span>
+            <span className="text-ink">This adds the unit to {buildingName ? `${buildingName}'s` : "its building's"} listing in Channex (the building's first unit creates it; billed as a vacation rental), sends its open dates and prices, and then lets you connect channels.</span>
             <div className="flex gap-2.5">
               <Button size="sm" variant="secondary" disabled={busy} onClick={() => setConfirming(false)}>Cancel</Button>
               <Button size="sm" variant="primary" loading={busy} onClick={() => void setUp()}>Set up now</Button>
@@ -123,7 +134,10 @@ export default function ChannexChannelsCard({ unitId, linked, canManage, onChang
           <CloseButton onClick={() => setConnecting(null)} />
         </div>
         <div className="px-6 pb-6 overflow-y-auto grow">
-          {(connecting === 'booking_com' || connecting === 'agoda') && <HotelConnect unitId={unitId} ota={connecting} onDone={() => done(connecting)} onCancel={() => setConnecting(null)} />}
+          {(connecting === 'booking_com' || connecting === 'agoda') && (inBuildingListing && buildingId && building.data
+            ? <BuildingHotelConnect buildingId={buildingId} buildingName={buildingName ?? 'This building'} ota={connecting} units={building.data.units} currentUnitId={unitId}
+                onDone={() => done(connecting)} onCancel={() => setConnecting(null)} />
+            : <HotelConnect unitId={unitId} ota={connecting} onDone={() => done(connecting)} onCancel={() => setConnecting(null)} />)}
           {connecting && typeof connecting === 'object' && <AirbnbListingPicker unitId={unitId} channelId={connecting.airbnbChannelId} onDone={() => done('airbnb')} onCancel={() => setConnecting(null)} />}
         </div>
       </Drawer>
@@ -180,7 +194,7 @@ function HotelConnect({ unitId, ota, onDone, onCancel }: { unitId: string; ota: 
                   <input type="radio" name="hotel-rate" checked={on} onChange={() => setPick({ room, rate })} className="mt-1" />
                   <span className="flex flex-col gap-0.5">
                     <span className="text-copy font-semibold">{room.title}</span>
-                    <span className="text-[12px] text-muted-ink">{rate.title}{rate.maxPersons ? ` · up to ${rate.maxPersons} guests` : ''}</span>
+                    <span className="text-[12px] text-muted-ink">{rate.title}{rate.maxPersons ? ` · up to ${rate.maxPersons} ${rate.maxPersons === 1 ? 'guest' : 'guests'}` : ''}</span>
                   </span>
                 </label>
               );

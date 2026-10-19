@@ -17,6 +17,7 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 - Four seeded staff accounts exist on production (management@, finance@, aina@, nurul@theconts.com); owner to confirm whether they are used or switch them off.
 - Scheduled worker theconts-cron (Channex outbox retry, email/WhatsApp retry, overdue sweep, 08:00 digest, repair-block release): published by the "Deploy scheduled jobs" workflow on merge or by hand (.github/workflows/deploy-cron.yml); needs repository secret CHANNEX_API_KEY (live key). Local check: node scripts/cron-dry-run.mjs.
 - Watch: one listing must never be controlled by both the old connection and Channex; plan the import of existing bookings.
+- Building listings (feat/channex-buildings, migration 0128): a unit set up in Channex becomes a room type inside its building's Channex property; Booking.com / Agoda are connected per building with each room paired to a unit, and Disconnect on one unit keeps the others connected. Units set up before 0128 (the live pilot unit) keep a listing of their own and cannot share a hotel until moved. Tested on the Channex sandbox with hotel 4372137: scripts/api-checks/channex-buildings.mjs. Needs 0128 on staging, then production, before merge.
 
 ## Supply Chain as a copy of Houzs (decision: option B, resumed 7 Oct)
 - Plan: copy Houzs's supply chain screens and server code into Conts, re-coloured gold and black, instead of re-drawing each screen. Rental side untouched. Houzs's code is on this machine at C:\dev\Houzs-ERP (reference only).
@@ -463,8 +464,8 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Note types (Customer, Design, Supplier, Site, Sales) are renamed in renovationTimelineModel.ts CATEGORY_LABEL; the stored keys stay. No photo/file on a note: the service case note has none either.
 - Check: scripts/api-checks/reno-timeline.mjs (41 checks, local engine with migration 0118).
 
-## Photos and documents on every flow document (feat/reno-doc-attachments, migration 0119, 16 Oct 2026)
-- Apply migration 0119 to staging, then production (node scripts/migrate-pg.mjs --env-file=<file>, dry-run first). Until then every document page says "Attachments are not switched on yet".
+## Photos and documents on every flow document (feat/reno-doc-attachments, migration 0128, 16 Oct 2026)
+- Apply migration 0128 to staging, then production (node scripts/migrate-pg.mjs --env-file=<file>, dry-run first). Until then every document page says "Attachments are not switched on yet".
 - Receipts, credit/debit notes and AP invoices rewrite their lines on each save, so a line's files then show on the whole document ("from a line since changed"). Fix by updating lines in place on save.
 - A renovation quotation's new revision has new line ids: line files of an earlier revision show on the whole quotation, not on the new revision's lines.
 - The phone app's delivery order detail (MobileModuleDetail) has no files panel; the driver's Proof of Delivery screen has one.

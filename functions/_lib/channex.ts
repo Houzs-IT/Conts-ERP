@@ -102,7 +102,7 @@ export function channexSendAri(env: Env, kind: 'availability' | 'restrictions', 
 
 /* ---- Setting up a unit as a Channex listing (stage 5) ---- */
 
-/** One Channex property per unit, typed as an apartment: a vacation rental is billed per unit, while
+/** A building's Channex property (one per unit before migration 0128), typed as an apartment: a vacation rental is billed per unit, while
  *  Channex's default type (hotel) is billed as a hotel. Automatic availability updates stay on for new
  *  OTA bookings only, as Channex advises for a PMS that sends its own availability. */
 export function channexCreateProperty(env: Env, p: { title: string; city: string; state: string; address: string }) {
@@ -137,6 +137,7 @@ export function channexCreateRatePlan(env: Env, p: { propertyId: string; roomTyp
 }
 
 export const channexDeleteProperty = (env: Env, propertyId: string) => channexFetch(env, `/properties/${propertyId}`, { method: 'DELETE' });
+export const channexDeleteRoomType = (env: Env, roomTypeId: string) => channexFetch(env, `/room_types/${roomTypeId}`, { method: 'DELETE' });
 
 /* ---- Channel connections through the Channel API (replaces the deprecated embedded /channels screen) ---- */
 
@@ -161,13 +162,50 @@ export const channexMappingDetails = (env: Env, ota: HotelOta, hotelId: string) 
 
 /** Creates the connection (always created inactive by Channex) with the unit's one rate plan mapped. */
 export function channexCreateHotelChannel(env: Env, p: { ota: HotelOta; groupId: string; propertyId: string; ratePlanId: string; hotelId: string; title: string; roomCode: string; rateCode: string; occupancy: number; pricingType: string; readonly: boolean }) {
+  return channexCreateHotelChannelRooms(env, { ...p, rooms: [{ ratePlanId: p.ratePlanId, roomCode: p.roomCode, rateCode: p.rateCode, occupancy: p.occupancy, readonly: p.readonly }] });
+}
+
+/** One hotel room and rate on the OTA, mapped to a unit's rate plan in Channex. */
+export interface HotelRoomMap { ratePlanId: string; roomCode: string; rateCode: string; occupancy: number; readonly: boolean }
+const hotelRatePlan = (r: HotelRoomMap, pricingType: string) =>
+  ({ rate_plan_id: r.ratePlanId, settings: { room_type_code: r.roomCode, rate_plan_code: r.rateCode, occupancy: r.occupancy, pricing_type: pricingType, primary_occ: true, readonly: r.readonly } });
+
+/** A Booking.com or Agoda hotel connected to one Channex property, with each of its rooms mapped to one unit. */
+export function channexCreateHotelChannelRooms(env: Env, p: { ota: HotelOta; groupId: string; propertyId: string; hotelId: string; title: string; pricingType: string; rooms: HotelRoomMap[] }) {
   return channexFetch<{ data?: { id: string } }>(env, '/channels', {
     method: 'POST',
     body: JSON.stringify({ channel: {
       channel: OTA_ADAPTER[p.ota], group_id: p.groupId, title: p.title, properties: [p.propertyId], settings: { hotel_id: p.hotelId },
-      rate_plans: [{ rate_plan_id: p.ratePlanId, settings: { room_type_code: p.roomCode, rate_plan_code: p.rateCode, occupancy: p.occupancy, pricing_type: p.pricingType, primary_occ: true, readonly: p.readonly } }],
+      rate_plans: p.rooms.map(r => hotelRatePlan(r, p.pricingType)),
     } }),
   });
+}
+
+/** Adds rooms to a hotel channel that already exists: Channex replaces the whole list, so the current one is sent with them. */
+export async function channexAddHotelRooms(env: Env, channelId: string, pricingType: string, rooms: HotelRoomMap[]) {
+  const cur = await channexFetch<{ data?: { attributes?: { rate_plans?: { rate_plan_id: string; settings: Record<string, unknown> }[] } } }>(env, `/channels/${channelId}`);
+  if (!cur.ok) return cur;
+  const kept = (cur.body?.data?.attributes?.rate_plans ?? []).map(r => ({ rate_plan_id: r.rate_plan_id, settings: r.settings }));
+  return channexFetch(env, `/channels/${channelId}`, { method: 'PUT', body: JSON.stringify({ channel: { rate_plans: [...kept, ...rooms.map(r => hotelRatePlan(r, pricingType))] } }) });
+}
+
+/** Takes one unit's room off a hotel channel that other units of the building still use. */
+export async function channexRemoveHotelRoom(env: Env, channelId: string, ratePlanId: string) {
+  const cur = await channexFetch<{ data?: { attributes?: { rate_plans?: { rate_plan_id: string; settings: Record<string, unknown> }[] } } }>(env, `/channels/${channelId}`);
+  if (!cur.ok) return cur;
+  const kept = (cur.body?.data?.attributes?.rate_plans ?? []).filter(r => r.rate_plan_id !== ratePlanId).map(r => ({ rate_plan_id: r.rate_plan_id, settings: r.settings }));
+  return channexFetch(env, `/channels/${channelId}`, { method: 'PUT', body: JSON.stringify({ channel: { rate_plans: kept } }) });
+}
+
+/** A channel can only sell rate plans of the Channex properties it lists. One Airbnb account is one channel for every
+ *  unit on it, and since migration 0128 each building is its own property, so a unit in a building the channel does
+ *  not list yet adds that building's property to it. */
+export async function channexEnsureChannelProperty(env: Env, channelId: string, propertyId: string) {
+  const cur = await channexFetch<{ data?: { attributes?: { properties?: string[] }; relationships?: { properties?: { data?: { id: string }[] } } } }>(env, `/channels/${channelId}`);
+  if (!cur.ok) return cur;
+  const listed = cur.body?.data?.attributes?.properties ?? (cur.body?.data?.relationships?.properties?.data ?? []).map(p => p.id);
+  if (listed.includes(propertyId)) return cur;
+  return channexFetch(env, `/channels/${channelId}`, { method: 'PUT', body: JSON.stringify({ channel: { properties: [...listed, propertyId] } }) });
 }
 
 export const channexActivateChannel = (env: Env, channelId: string) => channexFetch(env, `/channels/${channelId}/activate`, { method: 'POST' });
