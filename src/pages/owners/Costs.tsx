@@ -15,7 +15,7 @@ import { MonthStepper, shiftMonth } from '../finance/listKit';
 import ApprovalBanner from '../../components/ApprovalBanner';
 import { useToast } from '../../components/Toast';
 import { useApi } from '../../lib/useApi';
-import { api, ApiFailure, downloadFile, notifyFailure, errorMessage } from '../../lib/api';
+import { api, ApiFailure, notifyFailure, errorMessage } from '../../lib/api';
 import { isStaged, stagedToast, type Approval } from '../../lib/approvals';
 import { refreshNavCounts } from '../../lib/navBadges';
 import { rm, monthLabel, date as fmtDate, todayMyt, titleCase, plural } from '../../lib/format';
@@ -23,6 +23,8 @@ import { cx } from '../../lib/design-tokens';
 import { PAYER_LABEL, PAYERS } from '../../lib/revenueModel';
 import { UtilitiesModal, type UnitChoice } from './ExpenseEntry';
 import { AdjustmentActions, ADJUSTMENT_KIND, ADJUSTMENT_STATE } from './Adjustments';
+import { ReceiptCell } from '../../components/ReceiptCell';
+import { receiptRequired, missingReceipt } from '../../lib/receipts';
 
 /** A month's costs the way the owner reads them (GET /api/expenses/breakdown, functions/_lib/unitCosts.ts):
  *  Cleaning fees, Maintenance repair, Utilities (water, electricity, Wi-Fi, IndahWater), Maintenance fee (condo) and
@@ -107,10 +109,11 @@ export function BillModal({ units, defaultUnitId, ownerId, canAdjust, month, onC
   const accounts = (accountsApi.data?.data ?? []).filter(a => a.kind === category);
   // The first account is picked until someone chooses; '' means "another account", typed by hand.
   const picked = UTILITY.has(category) && account !== '' ? accounts.find(a => a.accountId === account) ?? accounts[0] : undefined;
-  const ok = !!unitId && amount != null && amount > 0 && validDay;
+  const fee = category === 'building_fee';
+  const needsReceipt = !fee && receiptRequired(category, chargeTo);
+  const ok = !!unitId && amount != null && amount > 0 && validDay && (!needsReceipt || !!receipt);
   const kinds = canAdjust ? BILL_KINDS : BILL_KINDS.filter(k => k.value !== 'building_fee');
   const kind = shortKind(BILL_KINDS.find(k => k.value === category)?.label ?? category);
-  const fee = category === 'building_fee';
   const payer = PAYERS.find(p => p.value === chargeTo);
 
   async function save() {
@@ -179,16 +182,17 @@ export function BillModal({ units, defaultUnitId, ownerId, canAdjust, month, onC
           <Field label="Description (optional)" placeholder={fee ? `e.g. ${maintenanceFeeText('', validDay ? incurredOn : lastDayOf(month))}` : `e.g. ${kind} ${monthLabel(billMonth)}`} maxLength={fee ? 200 : 300}
             value={description} onChange={e => setDescription(e.target.value)} error={fields.description} />
           {!fee && <div className="flex flex-col gap-1.5">
-            <span className="text-meta font-medium text-muted-ink">Receipt (optional)</span>
+            <span className="text-meta font-medium text-muted-ink">{needsReceipt ? 'Receipt' : 'Receipt (optional)'}</span>
             {receipt
               ? <FileRow file={{ id: 'receipt', name: receipt.name, size: receipt.size, onRemove: () => setReceipt(null), removeLabel: 'Remove receipt' }} />
               : <FileDropRow label="Add receipt" hint="Photo or PDF" accept="image/*,application/pdf" onPick={fl => setReceipt(fl.item(0))} />}
-            {fields.receipt && <span className="text-meta text-critical">{fields.receipt}</span>}
+            {fields.receipt ? <span className="text-meta text-critical">{fields.receipt}</span>
+              : needsReceipt && !receipt && <span className="text-meta text-muted-ink">The owner pays this bill, so its receipt goes with it.</span>}
           </div>}
         </div>
         <div className="py-[14px] px-[22px] [border-top:1px_solid_var(--color-line)] bg-page flex justify-end flex-wrap gap-[9px] flex-none">
           <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button size="sm" variant="primary" loading={busy} disabled={!ok} disabledReason="Pick the bill and enter the amount and bill date" onClick={() => void save()}>Add bill</Button>
+          <Button size="sm" variant="primary" loading={busy} disabled={!ok} disabledReason={needsReceipt && !receipt && amount && validDay ? 'Attach the receipt: the owner pays this bill' : 'Pick the bill and enter the amount and bill date'} onClick={() => void save()}>Add bill</Button>
         </div>
       </div>
     </div>
@@ -241,8 +245,8 @@ function KindBreakdown({ b, deducts = true }: { b: Breakdown; deducts?: boolean 
 }
 
 /** The bills (utilities, maintenance fee, other fees) and the owner's credits and charges, one list. */
-function PaidOnBehalfList({ items, adjustments, ownerId, showUnit, canChange, onChanged }: {
-  items: CostItem[]; adjustments: AdjustmentItem[]; ownerId: string; showUnit: boolean; canChange: boolean; onChanged: () => void;
+function PaidOnBehalfList({ items, adjustments, ownerId, showUnit, canChange, canAddReceipt = false, onChanged }: {
+  items: CostItem[]; adjustments: AdjustmentItem[]; ownerId: string; showUnit: boolean; canChange: boolean; canAddReceipt?: boolean; onChanged: () => void;
 }) {
   if (!items.length && !adjustments.length) return <div className="py-3 text-copy text-muted-ink">No bills or maintenance fee this month.</div>;
   return (
@@ -253,7 +257,7 @@ function PaidOnBehalfList({ items, adjustments, ownerId, showUnit, canChange, on
             <span className="text-copy text-ink [overflow-wrap:anywhere]">{it.description || it.kindLabel}</span>
             <span className="text-meta text-muted-ink">
               {[it.kindLabel, fmtDate(it.incurredOn), showUnit ? titleCase(it.unitLabel) : null, it.reference].filter(Boolean).join(' · ')}
-              {it.receiptDocumentId && <> · <button type="button" onClick={() => downloadFile(`/documents/${it.receiptDocumentId}/download`).catch(notifyFailure)} className="p-0 bg-transparent border-none cursor-pointer text-meta text-gold-ink underline [font-family:inherit]">Receipt</button></>}
+              {(it.receiptDocumentId || missingReceipt(it)) && <> · <ReceiptCell expenseId={it.id} unitId={it.unitId} receiptDocumentId={it.receiptDocumentId} missing={missingReceipt(it)} canAdd={canAddReceipt} onAdded={onChanged} /></>}
             </span>
           </span>
           <span className="flex flex-col items-end shrink-0">
@@ -297,6 +301,8 @@ export interface CostLine {
   /** before: the owner pays, deducted before the operator's share; after: an owner charge after it; credit: money to the
    *  owner; others: The Conts, a tenant or a guest paid, not deducted. */
   effect: 'before' | 'after' | 'credit' | 'others'; payer: string; receiptDocumentId: string | null;
+  /** The expense behind the line (null for an owner credit or charge), and whether it is an owner-paid bill with no receipt. */
+  expenseId: string | null; unitId: string; missingReceipt: boolean;
 }
 const EFFECT: Record<CostLine['effect'], string> = { before: 'Owner, before the split', after: 'Owner, after the split', credit: 'Credit to owner', others: 'not deducted' };
 const effectText = (l: CostLine) => (l.effect === 'others' ? `${l.payer}, not deducted` : EFFECT[l.effect]);
@@ -307,6 +313,7 @@ export function costLines(items: CostItem[], adjustments: AdjustmentItem[]): Cos
   const lines: CostLine[] = items.map(i => ({
     id: i.id, unitLabel: i.unitLabel, date: i.incurredOn, description: i.description || i.kindLabel, kindLabel: i.kindLabel, how: HOW[i.source] ?? 'Manual',
     amount: i.amount, effect: i.chargeTo === 'owner' ? 'before' : 'others', payer: PAYER_LABEL[i.chargeTo] ?? i.chargeTo, receiptDocumentId: i.receiptDocumentId,
+    expenseId: i.id, unitId: i.unitId, missingReceipt: missingReceipt(i),
   }));
   for (const a of adjustments) {
     if (!a.inMonth || a.state === 'held') continue;
@@ -315,17 +322,21 @@ export function costLines(items: CostItem[], adjustments: AdjustmentItem[]): Cos
       kindLabel: a.isMaintenanceFee ? 'Maintenance fee (condo)' : ADJUSTMENT_KIND[a.kind] ?? a.kind,
       how: a.source === 'owner_workbook' ? 'Imported' : a.isMaintenanceFee ? 'Bill' : 'Manual',
       amount: Math.abs(a.amount), effect: a.amount < 0 ? 'after' : 'credit', payer: 'Owner', receiptDocumentId: null,
+      expenseId: null, unitId: a.unitId, missingReceipt: false,
     });
   }
   return lines.sort((x, y) => x.date.localeCompare(y.date));
 }
 
-const receiptCell = (id: string | null) => id
-  ? <button type="button" onClick={() => downloadFile(`/documents/${id}/download`).catch(notifyFailure)} className="p-0 bg-transparent border-none cursor-pointer text-meta text-gold-ink underline [font-family:inherit]">Receipt</button>
-  : <span className="text-muted-ink">—</span>;
+/** The receipt of a line, or "No receipt" with "Add receipt" on an owner-paid bill that has none. */
+function LineReceipt({ r, canAdd, onAdded }: { r: CostLine; canAdd: boolean; onAdded: () => void }) {
+  if (!r.expenseId) return <span className="text-meta text-muted-ink">—</span>;
+  return <ReceiptCell expenseId={r.expenseId} unitId={r.unitId} receiptDocumentId={r.receiptDocumentId} missing={r.missingReceipt} canAdd={canAdd} onAdded={onAdded} />;
+}
 
-/** The columns of a cost table; `unit` adds the unit when it lists several. */
-export function costColumns(unit: boolean): Column<CostLine>[] {
+/** The columns of a cost table; `unit` adds the unit when it lists several. With `canAdd`, a bill without its receipt
+ *  offers "Add receipt". */
+export function costColumns(unit: boolean, canAdd = false, onAdded: () => void = () => {}): Column<CostLine>[] {
   return [
     { key: 'date', label: 'Date', type: 'date', value: r => r.date, width: 110 },
     ...(unit ? [{ key: 'unit', label: 'Unit', value: (r: CostLine) => r.unitLabel, width: 170, filter: { kind: 'select' as const } }] : []),
@@ -336,17 +347,18 @@ export function costColumns(unit: boolean): Column<CostLine>[] {
       render: r => <span className={cx('text-meta', r.effect === 'others' ? 'text-muted-ink' : 'text-ink font-medium')}>{effectText(r)}</span> },
     { key: 'amount', label: 'Amount', type: 'money', value: r => (r.effect === 'credit' ? -r.amount : r.amount), width: 110,
       render: r => <MoneyText sen={r.amount} mode="exact" className={cx('text-copy font-medium', r.effect === 'credit' && 'before:content-["+_"]')} /> },
-    { key: 'receipt', label: 'Receipt', width: 80, noExport: true, sortable: false, filter: false, render: r => receiptCell(r.receiptDocumentId) },
+    { key: 'receipt', label: 'Receipt', width: 120, noExport: true, sortable: false, filter: false, render: r => <LineReceipt r={r} canAdd={canAdd} onAdded={onAdded} /> },
   ];
 }
 
-export function CostCard({ r, unit }: { r: CostLine; unit: boolean }) {
+export function CostCard({ r, unit, canAdd = false, onAdded = () => {} }: { r: CostLine; unit: boolean; canAdd?: boolean; onAdded?: () => void }) {
   return (
     <span className="flex items-start justify-between gap-3 min-w-0">
       <span className="flex flex-col min-w-0">
         {unit && <span className="text-meta text-muted-ink truncate">{titleCase(r.unitLabel)}</span>}
         <span className="text-copy truncate" title={r.description}>{r.description}</span>
         <span className="text-meta text-muted-ink">{fmtDate(r.date)} · {r.kindLabel} · {r.how}</span>
+        {(r.receiptDocumentId || r.missingReceipt) && <span className="pt-0.5"><LineReceipt r={r} canAdd={canAdd} onAdded={onAdded} /></span>}
       </span>
       <span className="flex flex-col items-end shrink-0">
         <MoneyText sen={r.amount} mode="exact" className={cx('text-copy font-medium', r.effect === 'credit' && 'before:content-["+_"]')} />
@@ -375,13 +387,16 @@ export function CostTotals({ lines }: { lines: CostLine[] }) {
  *  functions/_lib/unitCosts.ts, the rows and month rule the owner statement uses). Costs arrive three ways: a finished
  *  cleaning job, a maintenance job on its billing date, and Add a bill (utilities, the condo fee, anything else). The
  *  cards total the table. Finished cleans that carry no cost are offered to charge. */
-export function UnitCostsCard({ unitId, ownerId, unitLabel, canEdit, cleaningPrice, deepCleaningPrice, legacyCosts, onChanged }: {
+export function UnitCostsCard({ unitId, ownerId, unitLabel, canEdit, cleaningPrice, deepCleaningPrice, legacyCosts, onChanged, month: shownMonth }: {
   unitId: string; ownerId: string; unitLabel: string; canEdit: boolean; cleaningPrice: number | null | undefined; deepCleaningPrice?: number | null;
   legacyCosts: { category: string; amount: number }[]; onChanged: () => void;
+  /** The month to show, when the page around the card picks it (unit Financials); without it the card steps its own. */
+  month?: string;
 }) {
   const toast = useToast();
   const thisMonth = todayMyt().slice(0, 7);
-  const [month, setMonth] = useState(thisMonth);
+  const [ownMonth, setMonth] = useState(thisMonth);
+  const month = shownMonth ?? ownMonth;
   const { data, loading, error, reload } = useApi<Payload>(`/expenses/breakdown?month=${month}&unitId=${encodeURIComponent(unitId)}`);
   const [modal, setModal] = useState<null | 'bill'>(null);
   const [charging, setCharging] = useState(false);
@@ -392,7 +407,7 @@ export function UnitCostsCard({ unitId, ownerId, unitLabel, canEdit, cleaningPri
   const lines = useMemo(() => (data ? costLines(data.items, data.adjustments) : null), [data]);
   const waiting = (data?.adjustments ?? []).filter(a => !a.inMonth || a.state === 'held');
   const uncharged = data?.unchargedCleans ?? [];
-  const columns = useMemo(() => costColumns(false), []);
+  const columns = useMemo(() => costColumns(false, canEdit, changed), [canEdit]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function chargeCleans() {
     setCharging(true);
@@ -413,7 +428,9 @@ export function UnitCostsCard({ unitId, ownerId, unitLabel, canEdit, cleaningPri
           <span className="text-meta text-muted-ink [text-wrap:pretty]">Every cost recorded to {unitLabel}, by its date: cleaning jobs when finished, maintenance jobs on their billing date, and bills. The date decides the month and the owner statement. The cards total the table.</span>
         </div>
         <div className="flex gap-2 flex-wrap items-center">
-          <MonthStepper label={monthLabel(month)} note={month === thisMonth ? 'so far' : undefined} onStep={by => setMonth(m => shiftMonth(m, by))} />
+          {shownMonth
+            ? <span className="text-meta text-muted-ink">{monthLabel(month)}{month === thisMonth ? ' so far' : ''}</span>
+            : <MonthStepper label={monthLabel(month)} note={month === thisMonth ? 'so far' : undefined} onStep={by => setMonth(m => shiftMonth(m, by))} />}
           {canEdit && <Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setModal('bill')}>Add a bill</Button>}
         </div>
       </div>
@@ -450,7 +467,7 @@ export function UnitCostsCard({ unitId, ownerId, unitLabel, canEdit, cleaningPri
           columns={columns} rows={lines} rowKey={r => r.id} loading={loading} error={error} onRetry={reload}
           noun={['cost', 'costs']} exportName={`${unitLabel} costs ${month}`}
           empty={{ title: `No costs recorded for ${monthLabel(month)}.`, icon: 'Receipt' }}
-          renderCard={r => <CostCard r={r} unit={false} />}
+          renderCard={r => <CostCard r={r} unit={false} canAdd={canEdit} onAdded={changed} />}
           footer={lines && lines.length > 0 ? <CostTotals lines={lines} /> : undefined} />
       </div>
       {data && waiting.length > 0 && (
@@ -529,7 +546,7 @@ export function OwnerCostsCard({ ownerId, ownerName, month, units, canEdit, onCh
   const changed = () => { reload(); pending.reload(); onChanged(); };
   const many = units.length > 1;
   const items = data?.items ?? [];
-  const columns = useMemo(() => costColumns(many), [many]);
+  const columns = useMemo(() => costColumns(many, canEdit, changed), [many, canEdit]); // eslint-disable-line react-hooks/exhaustive-deps
   const lines = useMemo(() => (data ? costLines(items, data.adjustments) : null), [data, items]);
   const t = data?.total.totals;
   const value = (sen: number | undefined) => (sen === undefined ? undefined : rm(sen));
@@ -563,7 +580,7 @@ export function OwnerCostsCard({ ownerId, ownerName, month, units, canEdit, onCh
               <div className="flex flex-col gap-2 min-w-0">
                 <Eyebrow>Bills and after-split charges</Eyebrow>
                 <PaidOnBehalfList items={items.filter(i => isBill(i.group))} adjustments={data.adjustments} ownerId={ownerId} showUnit={many}
-                  canChange={canEdit && data.canChangeAdjustments} onChanged={changed} />
+                  canChange={canEdit && data.canChangeAdjustments} canAddReceipt={canEdit} onChanged={changed} />
               </div>
             </div>
           ) : (
@@ -580,7 +597,7 @@ export function OwnerCostsCard({ ownerId, ownerName, month, units, canEdit, onCh
                       Bills and charges on this unit ({items.filter(i => i.unitId === u.unitId && isBill(i.group)).length + data.adjustments.filter(a => a.unitId === u.unitId).length})
                     </summary>
                     <PaidOnBehalfList items={items.filter(i => i.unitId === u.unitId && isBill(i.group))} adjustments={data.adjustments.filter(a => a.unitId === u.unitId)}
-                      ownerId={ownerId} showUnit={false} canChange={canEdit && data.canChangeAdjustments} onChanged={changed} />
+                      ownerId={ownerId} showUnit={false} canChange={canEdit && data.canChangeAdjustments} canAddReceipt={canEdit} onChanged={changed} />
                   </details>
                 </section>
               ))}
@@ -601,7 +618,7 @@ export function OwnerCostsCard({ ownerId, ownerName, month, units, canEdit, onCh
           columns={columns} rows={lines} rowKey={r => r.id} loading={loading} error={error} onRetry={reload}
           noun={['cost', 'costs']} exportName={`${ownerName} costs ${month}`}
           empty={{ title: `No costs recorded for ${monthLabel(month)}.`, icon: 'Receipt' }}
-          renderCard={r => <CostCard r={r} unit={many} />}
+          renderCard={r => <CostCard r={r} unit={many} canAdd={canEdit} onAdded={changed} />}
           footer={lines && lines.length > 0 ? <CostTotals lines={lines} /> : undefined} />
       </div>
       {modal === 'bill' && <BillModal units={units} ownerId={ownerId} canAdjust={!!data?.canChangeAdjustments} month={month} onClose={() => setModal(null)} onSaved={changed} />}

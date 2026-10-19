@@ -1,5 +1,6 @@
 import { PropertyListsManager } from "./projects/renovation/PropertyListsManager";
 import { CrewManager } from "./projects/renovation/RenovationMaintenance";
+import { SlaDefaultsManager } from "./projects/renovation/StepSlaParts";
 import { useProjectsMode } from "./projects/renovation/RenovationRoutes";
 import { SectionStageSelect } from "./projects/renovation/SectionStageSelect";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -113,11 +114,11 @@ export function ProjectMaintenanceView() {
   const mode = useProjectsMode();
   if (mode === "renovation") {
     return (
-      <div>
+      <div className="max-w-5xl">
         <PageHeader
           eyebrow="Operations · Projects"
           title="Project Maintenance"
-          description="The defaults every project and sales order picks from: property types and layouts, site crew without a login, and the brands (letterheads)."
+          description="The defaults every project and sales order picks from: property types and layouts, the SLA per step, site crew without a login, and the brands (letterheads)."
         />
         {/* Owner, 14 Oct 2026: property lists and brands, plus site crew without a login (everyone else is a user
             account, managed in Property OS). Main steps, site task categories, project types and the default
@@ -125,6 +126,7 @@ export function ProjectMaintenanceView() {
             types on existing projects) are unchanged. */}
         <div className="space-y-6">
           <PropertyListsManager />
+          <SlaDefaultsManager />
           <CrewManager />
           <BrandManager />
         </div>

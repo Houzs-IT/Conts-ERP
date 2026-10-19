@@ -7,6 +7,12 @@ import { api, ApiFailure, errorMessage } from '../../lib/api';
 import { SearchSelect } from '../Select';
 import { time, weekdayDate, dateTimeShort } from '../../lib/format';
 import { useToast } from '../Toast';
+import { useApi } from '../../lib/useApi';
+import { useSession } from '../../lib/session';
+import { UnitPicker } from '../UnitPicker';
+import type { RosterUnit } from '../../lib/useUnitRoster';
+import { DateField, DateTimeField } from '../inputs';
+import { LinesEditor, linesPayload, type DraftLine } from './JobMoney';
 
 /* ---------- small pieces shared by Cleaning, Maintenance, Today and the field app ---------- */
 
@@ -83,7 +89,8 @@ export function OpsModal({ title, sub, children, footer, onClose, busy, width = 
   useEffect(() => {
     const back = document.activeElement as HTMLElement | null;
     ref.current?.querySelector<HTMLElement>('input, select, textarea, button')?.focus();
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !busy) onClose(); };
+    // A picker inside the dialog closes itself on Escape and marks the key handled; only then is the dialog left open.
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !e.defaultPrevented && !busy) onClose(); };
     document.addEventListener('keydown', onKey);
     return () => { document.removeEventListener('keydown', onKey); back?.focus?.(); };
   }, [busy, onClose]);
@@ -175,43 +182,111 @@ export function Checklist({ taskId, items, readOnly, onChange }: { taskId: strin
   );
 }
 
+/* ---------- who does a repair ---------- */
+
+export interface Technician { name: string; kind: 'in_house' | 'contractor'; role: string | null }
+export const KIND_WORD: Record<'in_house' | 'contractor', string> = { in_house: 'In-house', contractor: 'Contractor' };
+
+/** Who can be given a job: the company's own people and every contractor used before (GET /maintenance/technicians).
+ *  The kind (in-house or contractor) follows from who is picked; a contractor not on the list is typed once. */
+export function useTechnicians(on = true) {
+  const r = useApi<{ data: Technician[] }>(on ? '/maintenance/technicians' : null);
+  return r.data?.data ?? [];
+}
+
+export function AssigneePicker({ value, onChange, techs, autoFocus }: { value: string; onChange: (name: string) => void; techs: Technician[]; autoFocus?: boolean }) {
+  const known = techs.some(t => t.name === value);
+  const [typing, setTyping] = useState(!!value && !known && techs.length > 0);
+  const kind = techs.find(t => t.name.toLowerCase() === value.trim().toLowerCase())?.kind ?? (value.trim() ? 'contractor' : null);
+  return (
+    <div className="flex flex-col gap-1.5 min-w-0">
+      {typing ? (
+        <input className={INPUT} value={value} onChange={e => onChange(e.target.value)} placeholder="Contractor or company name" aria-label="New contractor name" maxLength={80} autoFocus={autoFocus} />
+      ) : (
+        <SearchSelect label="Technician or contractor" value={known ? value : ''} onChange={onChange} size="md" placeholder="Search technicians and contractors"
+          options={techs.map(t => ({ value: t.name, label: t.name, group: t.kind === 'in_house' ? 'In-house' : 'Contractors' }))} />
+      )}
+      <span className="text-meta text-muted-ink flex gap-1.5 flex-wrap items-center">
+        {kind && <span>{KIND_WORD[kind]}{kind === 'in_house' ? ', a staff account' : ''}.</span>}
+        <button type="button" className="text-accent cursor-pointer font-medium" onClick={() => { setTyping(!typing); onChange(''); }}>
+          {typing ? 'Pick from the list' : 'New contractor'}
+        </button>
+      </span>
+    </div>
+  );
+}
+
 /* ---------- damage report: opens a Maintenance job linked to the unit (and the clean) ---------- */
 
 export const CATEGORY: Record<string, string> = { plumbing: 'Plumbing', electrical: 'Electrical', aircon: 'Aircon', furniture: 'Furniture', appliance: 'Appliance', other: 'Other' };
 
+interface CatalogItem { id: string; code: string; name: string; category: string; active: boolean; defaultPrice?: number | null; internalCost?: number | null }
+const FIELD = ['housekeeper', 'technician'];
+
 /** The one maintenance job form (owner, Oct 2026). "Add maintenance job" on Maintenance and "Report damage" from a
  *  clean are the same form and send the same fields; from a clean the unit is filled in and locked, and the job is
- *  linked to the cleaning task. Who fixes it, the quote and who pays are decided afterwards in the job. */
+ *  linked to the cleaning task. The office also picks the catalog item (or Other), who does it and a first repair
+ *  window here (request M6); the quote and who pays are decided in the job. Cleaners and technicians see the problem
+ *  fields only. */
 export function MaintenanceJobForm({ unit, units, taskId, onClose, onDone }: {
   /** Fixed unit (from a clean or a unit page). Leave out to pick one. */
   unit?: { id: string; label: string };
   /** Units to pick from when `unit` is not given. */
-  units?: { id: string; unitNumber: string; propertyName: string }[];
+  units?: RosterUnit[];
   taskId?: string; onClose: () => void; onDone: (id: string) => void;
 }) {
-  const [f, setF] = useState({ unitId: unit?.id ?? '', title: '', category: '', urgency: 'normal' as 'normal' | 'urgent', detail: '' });
+  const { user } = useSession();
+  const office = !!user && !FIELD.includes(user.role) && user.role !== 'owner';
+  const [f, setF] = useState({ unitId: unit?.id ?? '', skuId: '', title: '', category: '', jobType: 'normal' as 'normal' | 'urgent' | 'pass_key', severity: 'minor' as 'minor' | 'major', dueOn: '', needsParts: false, detail: '', assignee: '', from: '', to: '', windowNote: '' });
+  const [lines, setLines] = useState<DraftLine[]>([]);
   const [busy, setBusy] = useState(false);
   const [sending, setSending] = useState(false);
-  const [error, setError] = useState<{ unitId?: string; title?: string; category?: string; form?: string }>({});
+  const [error, setError] = useState<{ unitId?: string; title?: string; category?: string; window?: string; form?: string }>({});
   const picked = usePickedMedia();
   const toast = useToast();
+  const techs = useTechnicians(office);
+  const catalog = useApi<{ data: CatalogItem[] }>(office ? '/maintenance/skus?active=1' : null);
+  const items = (catalog.data?.data ?? []).filter(s => s.active);
   const fromClean = !!taskId;
+  const set = (p: Partial<typeof f>) => setF(x => ({ ...x, ...p }));
+
+  /** The items picked (owner, 17 Oct 2026): the first one fills the kind of problem and, when nothing is written yet,
+   *  what is wrong; both can still be changed. Their total is the job's owner price. */
+  function pickLines(next: DraftLine[]) {
+    setLines(next);
+    const s = items.find(x => x.id === next.find(l => l.itemId && l.itemId !== 'other')?.itemId);
+    if (s && !f.skuId) {
+      set({ skuId: s.id, category: f.category || (CATEGORY[s.category] ? s.category : 'other'), title: f.title.trim() ? f.title : s.name });
+      setError(x => ({ ...x, category: undefined, title: undefined }));
+    }
+  }
+  /** A window's end three hours after its start, the same day, when the start is picked first. */
+  const endFor = (start: string) => `${start.slice(0, 11)}${String(Math.min(23, Number(start.slice(11, 13)) + 3)).padStart(2, '0')}${start.slice(13)}`;
   async function submit() {
-    const bad = { unitId: f.unitId ? undefined : 'Pick the unit.', title: f.title.trim() ? undefined : 'Say what is wrong.', category: f.category ? undefined : 'Pick the kind of problem.' };
-    if (bad.unitId || bad.title || bad.category) { setError(bad); return; }
+    const bad = { unitId: f.unitId ? undefined : 'Pick the unit.', title: f.title.trim() ? undefined : 'Say what is wrong.', category: f.category ? undefined : 'Pick the kind of problem.',
+      window: (f.from || f.to) && !(f.from && f.to) ? 'Give the window a start and an end, or leave both empty.' : f.from && f.to && f.to <= f.from ? 'The window must end after it starts.' : undefined };
+    if (bad.unitId || bad.title || bad.category || bad.window) { setError(bad); return; }
     setBusy(true); setError({});
-    let id: string;
+    let id: string, overlaps = 0;
     try {
-      const r = await api.post<{ id: string }>('/maintenance/issues', {
-        unitId: f.unitId, title: f.title.trim(), detail: f.detail.trim() || undefined, category: f.category, urgency: f.urgency,
+      const r = await api.post<{ id: string; overlaps?: unknown[] }>('/maintenance/issues', {
+        unitId: f.unitId, title: f.title.trim(), detail: f.detail.trim() || undefined, category: f.category,
+        // Job type (staff comment sheet): the office has Pass key too; a cleaner reporting damage says Normal or Urgent.
+        ...(office ? { jobType: f.jobType, severity: f.severity, ...(f.dueOn ? { dueOn: f.dueOn } : {}), ...(f.needsParts ? { needsParts: true } : {}) } : { urgency: f.jobType === 'urgent' ? 'urgent' : 'normal' }),
         reportSource: fromClean ? 'cleaner' : 'staff', sourceTaskId: taskId, source: 'web',
+        ...(office && lines.some(l => l.itemId) ? { items: linesPayload(lines), ...(lines.find(l => l.itemId && l.itemId !== 'other') ? { skuId: lines.find(l => l.itemId && l.itemId !== 'other')!.itemId } : {}) } : {}),
+        ...(office && f.assignee.trim() ? { assigneeName: f.assignee.trim() } : {}),
+        ...(office && f.from && f.to ? { window: { startsAt: f.from, endsAt: f.to, note: f.windowNote.trim() || undefined } } : {}),
       });
-      id = r.id;
+      id = r.id; overlaps = r.overlaps?.length ?? 0;
     } catch (e) {
       const fields = e instanceof ApiFailure ? e.fields ?? {} : {};
-      setError({ unitId: fields.unitId, title: fields.title, category: fields.category, form: fields.unitId || fields.title || fields.category ? undefined : errorMessage(e, 'Not saved. Try again.') });
+      const win = fields.windowStartsAt || fields.windowEndsAt;
+      setError({ unitId: fields.unitId, title: fields.title, category: fields.category, window: win,
+        form: fields.unitId || fields.title || fields.category || win ? undefined : errorMessage(e, 'Not saved. Try again.') });
       setBusy(false); return;
     }
+    if (overlaps) toast({ tone: 'warning', title: 'The repair window overlaps a reservation.', body: `It overlaps ${overlaps} ${overlaps === 1 ? 'reservation' : 'reservations'}. Make sure the guest agreed.` });
     // The job is saved; a photo that fails is named, not a reason to undo it.
     if (picked.files.length) {
       setSending(true);
@@ -222,34 +297,73 @@ export function MaintenanceJobForm({ unit, units, taskId, onClose, onDone }: {
   }
   const label = fromClean ? 'Report damage' : 'Add maintenance job';
   return (
-    <OpsModal title={label} sub={unit ? `${unit.label}. Opens a Maintenance job on this unit.` : 'Pick the unit and the problem. Assign the technician, the quote and who pays in the job afterwards.'}
+    <OpsModal title={label} sub={unit ? `${unit.label}. Opens a Maintenance job on this unit.` : office ? 'The unit, the problem and, if known, who fixes it and when. The quote and who pays are set in the job.' : 'Pick the unit and say what is wrong.'}
       onClose={onClose} busy={busy}
       footer={<><Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" variant="primary" loading={busy} onClick={() => void submit()}>{label}</Button></>}>
       {!unit && (
-        <FormRow label="Unit" error={error.unitId}>
-          <SearchSelect label="Unit" value={f.unitId} onChange={v => { setF(x => ({ ...x, unitId: v })); setError(x => ({ ...x, unitId: undefined })); }}
-            options={(units ?? []).map(u => ({ value: u.id, label: u.unitNumber, group: u.propertyName }))} placeholder="Search units" size="md" />
+        <FormRow label="Unit" error={error.unitId} hint="Grouped by building. Type the building or the unit, e.g. agile 13a.">
+          <UnitPicker units={units ?? []} value={f.unitId} error={error.unitId} onChange={v => { set({ unitId: v }); setError(x => ({ ...x, unitId: undefined })); }} />
+        </FormRow>
+      )}
+      {office && (
+        <FormRow label="Items (optional)" hint={items.length ? 'Pick the items and how many, from Service prices; their total is the owner price. Other only when it is not on the list.' : catalog.data ? 'The list is empty. Add items under Item catalog on Maintenance.' : undefined}>
+          <LinesEditor lines={lines} catalog={items} onChange={pickLines} money={false} />
         </FormRow>
       )}
       <div className="grid grid-cols-2 gap-3">
         <FormRow label="Problem category" error={error.category}>
-          <select className={INPUT} value={f.category} onChange={e => { setF(x => ({ ...x, category: e.target.value })); setError(x => ({ ...x, category: undefined })); }}>
+          <select className={INPUT} value={f.category} onChange={e => { set({ category: e.target.value }); setError(x => ({ ...x, category: undefined })); }}>
             <option value="" disabled>Pick one</option>
             {Object.entries(CATEGORY).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
           </select>
         </FormRow>
-        <FormRow label="Urgency">
-          <select className={INPUT} value={f.urgency} onChange={e => setF(x => ({ ...x, urgency: e.target.value as 'normal' | 'urgent' }))}>
-            <option value="normal">Normal</option><option value="urgent">Urgent (affects the next guest)</option>
+        <FormRow label={office ? 'Job type' : 'Urgency'} hint={f.jobType === 'urgent' ? 'Affects the next guest; done first.' : f.jobType === 'pass_key' ? 'Hand over or collect a key.' : office ? 'Done in date order.' : undefined}>
+          <select className={INPUT} value={f.jobType} onChange={e => set({ jobType: e.target.value as 'normal' | 'urgent' | 'pass_key' })}>
+            <option value="normal">Normal</option><option value="urgent">Urgent</option>
+            {office && <option value="pass_key">Pass key</option>}
           </select>
         </FormRow>
       </div>
+      {office && (
+        <div className="grid grid-cols-2 gap-3">
+          <FormRow label="Severity" hint="Management's approval rules can ask the owner first for major jobs.">
+            <select className={INPUT} value={f.severity} onChange={e => set({ severity: e.target.value as 'minor' | 'major' })}>
+              <option value="minor">Minor</option><option value="major">Major</option>
+            </select>
+          </FormRow>
+          <FormRow label="Due (optional)" hint="Normal jobs are worked one by one in this order.">
+            <DateField aria-label="Due date" className={INPUT} value={f.dueOn} onChange={v => set({ dueOn: v })} />
+          </FormRow>
+        </div>
+      )}
+      {office && (
+        <label className="flex items-center gap-2 text-copy cursor-pointer">
+          <input type="checkbox" className="w-4 h-4 accent-black" checked={f.needsParts} onChange={e => set({ needsParts: e.target.checked })} />
+          Needs parts or stock (tick Parts arrived on the job when they come)
+        </label>
+      )}
       <FormRow label="What is wrong" error={error.title}>
-        <input className={INPUT} value={f.title} onChange={e => { setF(x => ({ ...x, title: e.target.value })); setError(x => ({ ...x, title: undefined })); }} placeholder="e.g. Aircon not cooling, guest complained" maxLength={160} />
+        <input className={INPUT} value={f.title} onChange={e => { set({ title: e.target.value }); setError(x => ({ ...x, title: undefined })); }} placeholder="e.g. Aircon not cooling, guest complained" maxLength={160} />
       </FormRow>
       <FormRow label="Details (optional)">
-        <textarea className={TEXTAREA} value={f.detail} onChange={e => setF(x => ({ ...x, detail: e.target.value }))} placeholder="Where it is, what you saw" maxLength={2000} />
+        <textarea className={TEXTAREA} value={f.detail} onChange={e => set({ detail: e.target.value })} placeholder="Where it is, what you saw" maxLength={2000} />
       </FormRow>
+      {office && (
+        <FormRow label="Who fixes it (optional)" hint="An in-house technician or a contractor. Leave empty to assign later.">
+          <AssigneePicker value={f.assignee} onChange={v => set({ assignee: v })} techs={techs} />
+        </FormRow>
+      )}
+      {office && (
+        <FormRow label="Repair window (optional)" error={error.window} hint="When the technician may enter, Malaysia time. Leave empty to plan it later.">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <DateTimeField aria-label="Window from" className={INPUT} value={f.from}
+              onChange={v => { set({ from: v, ...(v && !f.to ? { to: endFor(v) } : {}) }); setError(x => ({ ...x, window: undefined })); }} />
+            <DateTimeField aria-label="Window to" className={INPUT} value={f.to} min={f.from || undefined}
+              onChange={v => { set({ to: v }); setError(x => ({ ...x, window: undefined })); }} />
+          </div>
+          {f.from && <input className={cx(INPUT, 'mt-2')} value={f.windowNote} onChange={e => set({ windowNote: e.target.value })} maxLength={300} placeholder="Note for the window (optional), e.g. Between guests" aria-label="Window note" />}
+        </FormRow>
+      )}
       <ProblemPhotos picked={picked} sending={sending} />
       {error.form && <span className="text-meta text-danger" role="alert">{error.form}</span>}
     </OpsModal>

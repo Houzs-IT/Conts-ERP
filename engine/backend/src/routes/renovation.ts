@@ -28,10 +28,14 @@ import { SUPPLY_CONDITION_LABEL } from "../services/renovation/conditions";
 import { groupEvidence, type EvidencePhoto } from "../services/renovation/pod";
 import { renderPodNoteHtml } from "../services/renovation/podNote";
 import { syncTradeTasks, writeCachedStage } from "../services/renovation/contractSync";
+import { syncProjectDates } from "../services/renovation/projectDates";
+import { syncStepSla } from "../services/renovation/stepSla";
 import renovationProject from "./renovationProject";
 import renovationMonitor from "./renovationMonitor";
 import renovationProperty from "./renovationProperty";
 import renovationDocuments from "./renovationDocuments";
+import renovationDocumentFiles from "./renovationDocumentFiles";
+import renovationTimeline from "./renovationTimeline";
 import { propertyColumnsReady, pushProjectToOpenSos, readProjectCustomerInfo, regenerateProjectName, writeProjectShared } from "../services/renovation/customerProperty";
 import { projectNameFrom } from "../scm/shared/renovation-property";
 
@@ -50,7 +54,11 @@ async function loadOne(c: Ctx, id: number, opts: { checklistKeys?: readonly stri
   const rows = await loadProjectRows(db(c), coSql(c, "p.company_id"), { projectId: id, includeArchived: true });
   if (rows.length === 0) return null;
   const facts = (await loadRenovationFacts(db(c), rows, opts)).get(id)!;
-  return { facts, view: computeProjectView(facts, todayMyt()) };
+  const today = todayMyt();
+  const view = computeProjectView(facts, today);
+  await syncProjectDates(db(c), facts, view, today);
+  await syncStepSla(db(c), [{ f: facts, v: view }], today);
+  return { facts, view };
 }
 
 /** Wrap a handler so an unexpected read failure answers 409 and never opens a gate. */
@@ -89,6 +97,9 @@ app.route("/", renovationMonitor);
 app.route("/", renovationProperty);
 // Every transaction document of a project (mig 0116), also before /:id
 app.route("/", renovationDocuments);
+app.route("/", renovationDocumentFiles);
+// The project Timeline: system entries from the existing history plus hand-written notes (mig 0118), also before /:id
+app.route("/", renovationTimeline);
 
 // ── Mode: which Projects screens this install shows (app_settings projects_mode, mig 0082) ──
 
@@ -155,9 +166,11 @@ app.get("/", requirePageAccess("projects.list"), failClosed(async (c) => {
   const facts = await loadRenovationFacts(db(c), rows, { checklistKeys: BOARD_CHECKLIST_KEYS });
   const today = todayMyt();
   const hideMoney = stripFinance(c);
+  const views = new Map(rows.map((p) => [p.id, computeProjectView(facts.get(p.id)!, today)]));
+  for (const p of rows) await syncProjectDates(db(c), facts.get(p.id)!, views.get(p.id)!, today);
   const data = rows.map((p) => {
     const f = facts.get(p.id)!;
-    const v = computeProjectView(f, today);
+    const v = views.get(p.id)!;
     return {
       id: p.id,
       code: p.code,
@@ -471,6 +484,7 @@ app.get("/:id", requirePageAccess("projects.list"), failClosed(async (c) => {
     receipts: grns.results ?? [],
     financeHidden: hideMoney,
     flow: v.flow,
+    stepSla: f.stepSla ?? null,
     hold: v.hold,
     money: hideMoney ? { contractSen: null, receivedSen: null, receivedPct: null } : v.money,
     keyHolder: v.keyHolder,

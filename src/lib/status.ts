@@ -33,6 +33,19 @@ const BOOKING = {
 export const STATUS_VOCAB = {
   /* ---------- Rental side ---------- */
   booking: BOOKING,
+  /** A reservation as people read it: the stored state worked out against today's date (lib/bookingStatus stayPhase,
+   *  the same rule as the calendar and functions/api/units/stays.ts). Lists, the drawer and the calendar all show this. */
+  stay: {
+    upcoming: BOOKING.confirmed,
+    arriving: { label: 'Arriving soon', tone: 'info' },
+    hosting: BOOKING.checked_in,
+    checking_out: { label: 'Checking out', tone: 'warning' },
+    past: BOOKING.checked_out,
+    cancelled: BOOKING.cancelled,
+    no_show: BOOKING.no_show,
+    inquiry: BOOKING.inquiry,
+    pending: BOOKING.pending,
+  },
   /** The calendar's status filter: the live booking states plus maintenance blocks, which have no booking state. */
   calendar: {
     confirmed: BOOKING.confirmed, checked_in: BOOKING.checked_in, checked_out: BOOKING.checked_out, pending: BOOKING.pending,

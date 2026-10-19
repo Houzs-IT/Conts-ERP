@@ -78,6 +78,19 @@ export default function Sidebar({ path, navigate, open, onToggle, phone = false 
 
   const itUnread = useItUnread();
   const countOf = (k?: BadgeKey) => (k === 'itSupport' ? itUnread : (k && counts?.[k]) || 0);
+  /** What a count means, for the tooltip and screen readers ("2 awaiting owner approval"). */
+  const countWords = (k: BadgeKey | undefined, n: number): string => {
+    if (!n) return '';
+    if (k === 'maintenance') {
+      const waiting = Math.min(n, counts?.maintenanceAwaiting ?? 0), openJobs = n - waiting;
+      return [openJobs ? `${openJobs} open` : '', waiting ? `${waiting} awaiting owner approval` : ''].filter(Boolean).join(', ');
+    }
+    if (k === 'inbox') return `${n} unread`;
+    if (k === 'today') return `${n} to do`;
+    if (k === 'statements') return `${n} final, not sent`;
+    if (k === 'approvals') return `${n} waiting for approval`;
+    return `${n} new`;
+  };
 
   const badge = (on: boolean): CSSProperties => ({
     fontSize: text.micro, fontWeight: 600, padding: '1px 6px', borderRadius: radius.pill, flex: 'none',
@@ -136,9 +149,10 @@ export default function Sidebar({ path, navigate, open, onToggle, phone = false 
           return (
           <div key={g.label} style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             {open ? (
-              <button
+              <button type="button"
                 onClick={() => setCollapsedSections(s => ({ ...s, [g.label]: !s[g.label] }))}
                 aria-expanded={!sectionCollapsed}
+                aria-label={`${g.label.charAt(0)}${g.label.slice(1).toLowerCase()} section`}
                 style={{
                   display: 'flex', alignItems: 'center', gap: 6, width: '100%', padding: '6px 8px 4px',
                   background: 'none', border: 'none', cursor: 'pointer', font: 'inherit', textAlign: 'left',
@@ -160,9 +174,9 @@ export default function Sidebar({ path, navigate, open, onToggle, phone = false 
               const n = countOf(it.badge) || (it.children ?? []).reduce((s, c) => s + countOf(c.badge), 0);
               return (
                 <div key={it.key} style={{ display: 'flex', flexDirection: 'column' }}>
-                  <button
-                    title={open ? undefined : (n > 0 ? `${it.label} (${n})` : it.label)}
-                    aria-label={open ? undefined : it.label}
+                  <button type="button"
+                    title={n > 0 ? `${it.label}: ${countWords(it.badge ?? it.children?.find(c => countOf(c.badge))?.badge, n)}` : it.label}
+                    aria-label={n > 0 ? `${it.label}, ${countWords(it.badge ?? it.children?.find(c => countOf(c.badge))?.badge, n)}` : it.label}
                     aria-current={selfActive && !it.children ? 'page' : undefined}
                     onClick={() => {
                       if (it.children) {
@@ -200,7 +214,9 @@ export default function Sidebar({ path, navigate, open, onToggle, phone = false 
                       {it.children.map(c => {
                         const on = c.path === path;
                         return (
-                          <button key={c.key} onClick={() => navigate(c.path)} aria-current={on ? 'page' : undefined}
+                          <button key={c.key} type="button" onClick={() => navigate(c.path)} aria-current={on ? 'page' : undefined}
+                            aria-label={countOf(c.badge) > 0 ? `${c.label}, ${countWords(c.badge, countOf(c.badge))}` : c.label}
+                            title={countOf(c.badge) > 0 ? `${c.label}: ${countWords(c.badge, countOf(c.badge))}` : undefined}
                             style={{
                               display: 'flex', alignItems: 'center', gap: 8, height: shell.navItemL3,
                               padding: '0 9px', borderRadius: 7, cursor: 'pointer', border: 'none', width: '100%',
@@ -248,7 +264,7 @@ export default function Sidebar({ path, navigate, open, onToggle, phone = false 
             ))}
           </div>
         )}
-        <button onClick={() => setProfileOpen(v => !v)} aria-label={open ? undefined : `${user!.fullName}, account menu`}
+        <button type="button" onClick={() => setProfileOpen(v => !v)} aria-label={`${user!.fullName}, account menu`} aria-expanded={profileOpen}
           style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 8, borderRadius: radius.control, cursor: 'pointer', width: '100%', border: 'none', font: 'inherit', textAlign: 'left', justifyContent: open ? 'flex-start' : 'center', background: profileOpen ? 'rgba(255,255,255,0.06)' : 'transparent', color: 'var(--color-text-inverse)' }}>
           <span style={{ width: 30, height: 30, flex: 'none', borderRadius: radius.pill, background: color.charcoal, color: color.gold, display: 'grid', placeItems: 'center', fontSize: text.micro, fontWeight: 600 }}>
             {user!.fullName.split(' ').map(n => n[0]).slice(0, 2).join('')}

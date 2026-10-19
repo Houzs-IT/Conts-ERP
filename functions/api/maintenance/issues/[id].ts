@@ -1,9 +1,11 @@
-import { type Env, one, run, json, fail, audit, nowIso } from '../../../_lib/db';
+import { type Env, one, run, json, fail, audit, nowIso, mytToday } from '../../../_lib/db';
 import { requireSession, isFieldRole } from '../../../_lib/auth';
 import { MASTER_ROLES } from '../../../_lib/properties';
-import { CATEGORIES, URGENCIES, CHARGE_TO, DAY, assigneeUserId, assigneeKindFor, hasBilling } from '../../../_lib/maintenance';
+import { CATEGORIES, URGENCIES, CHARGE_TO, DAY, JOB_TYPES, SEVERITIES, assigneeUserId, assigneeKindFor, hasBilling, hasJobType, urgencyOf, approvalRules, ruleNeedsApproval } from '../../../_lib/maintenance';
 import { isPeriodLocked } from '../../../_lib/expenses';
 import { repairNotice } from '../../../_lib/notices';
+import { hasServicePrices, serviceBook } from '../../../_lib/servicePrices';
+import { layoutKey } from '../../../_lib/cleaningPrices';
 
 /** The money follow-up a finished job still takes (migration 0108): when it is billed, when the payer's money came in,
  *  what the technician or contractor is owed and when accounts paid them. */
@@ -13,7 +15,10 @@ const MONEY_KEYS = ['billingDate', 'collectedAt', 'contractorAmount', 'contracto
  *   { assigneeName }                             the technician or contractor (a NAME: outside vendors are not accounts);
  *                                                in-house or contractor follows from whether the name is a staff account
  *   { category, urgency, chargeTo, title, detail, quotedAmount }
+ *   { skuId }                                    the item from the maintenance catalog; null = Other (not on the list)
  *   { billingDate, collectedAt, contractorAmount, contractorPaidAt }   also on a finished job
+ *   { jobType, severity, needsParts, partsArrived, dueOn }   job type (urgent | normal | pass_key), minor | major, whether
+ *                                                it waits for parts, the "Parts arrived" tick (true / false) and the due date
  *   { state: 'reopened' }                        a finished job back to work
  *  Nothing here sends a job to the owner: that is "Send to owner for approval" (request-approval.ts) only.
  *  A new billing date on a finished job moves its expense to that day, unless either month's owner statement is final. */
@@ -55,9 +60,37 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     if (!CATEGORIES.includes(b.category)) return fail('VALIDATION', 'Pick a category.', 422, { category: 'Pick a category.' });
     put('category', 'category', b.category);
   }
-  if (b?.urgency !== undefined) {
+  const cols = await hasJobType(env);
+  if (b?.jobType !== undefined) {
+    if (!JOB_TYPES.includes(b.jobType) || (!cols && b.jobType === 'pass_key')) return fail('VALIDATION', 'Urgent, Normal or Pass key.', 422, { jobType: 'Urgent, Normal or Pass key.' });
+    if (cols) put('job_type', 'jobType', b.jobType);
+    put('urgency', 'urgency', urgencyOf(b.jobType));
+  } else if (b?.urgency !== undefined) {
     if (!URGENCIES.includes(b.urgency)) return fail('VALIDATION', 'Normal or urgent.', 422, { urgency: 'Normal or urgent.' });
     put('urgency', 'urgency', b.urgency);
+    // Urgency from an older screen moves the type with it; a Pass key job stays one unless made urgent.
+    if (cols && (b.urgency === 'urgent' || cur.job_type === 'urgent')) put('job_type', 'jobType', b.urgency === 'urgent' ? 'urgent' : 'normal');
+  }
+  if (b?.severity !== undefined || b?.needsParts !== undefined || b?.partsArrived !== undefined || b?.dueOn !== undefined) {
+    if (!cols) return fail('NOT_CONFIGURED', 'Severity, parts and due dates need a database update (migration 0126) that is not applied yet.', 501);
+    if (b.severity !== undefined) {
+      if (!SEVERITIES.includes(b.severity)) return fail('VALIDATION', 'Minor or major.', 422, { severity: 'Minor or major.' });
+      put('severity', 'severity', b.severity);
+    }
+    if (b.needsParts !== undefined) {
+      if (typeof b.needsParts !== 'boolean') return fail('VALIDATION', 'Say whether the job needs parts.', 422, { needsParts: 'Yes or no.' });
+      put('needs_parts', 'needsParts', b.needsParts ? 1 : 0);
+      if (!b.needsParts) put('parts_arrived_at', 'partsArrivedAt', null);
+    }
+    if (b.partsArrived !== undefined) {
+      if (typeof b.partsArrived !== 'boolean') return fail('VALIDATION', 'Say whether the parts arrived.', 422, { partsArrived: 'Yes or no.' });
+      if (b.partsArrived) put('needs_parts', 'needsParts', 1);
+      put('parts_arrived_at', 'partsArrivedAt', b.partsArrived ? cur.parts_arrived_at ?? now : null);
+    }
+    if (b.dueOn !== undefined) {
+      if (b.dueOn !== null && (typeof b.dueOn !== 'string' || !DAY.test(b.dueOn))) return fail('VALIDATION', 'Pick the due date.', 422, { dueOn: 'Pick the due date.' });
+      put('due_on', 'dueOn', b.dueOn);
+    }
   }
   if (b?.chargeTo !== undefined) {
     if (!CHARGE_TO.includes(b.chargeTo)) return fail('VALIDATION', 'Pick who pays.', 422, { chargeTo: 'Pick who pays.' });
@@ -66,6 +99,17 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   if (typeof b?.title === 'string') {
     if (!b.title.trim()) return fail('VALIDATION', 'A short title is required.', 422, { title: 'Enter a short title.' });
     put('title', 'title', b.title.trim().slice(0, 160));
+  }
+  if (b?.skuId !== undefined) {
+    if (b.skuId !== null && !(await one(env, 'SELECT 1 AS x FROM maintenance_skus WHERE id = ?', String(b.skuId)))) return fail('NOT_FOUND', 'That catalog item does not exist.', 404, { skuId: 'Pick an item from the catalog, or Other.' });
+    put('sku_id', 'skuId', b.skuId === null ? null : String(b.skuId));
+    // A newly picked item fills a quote and an internal cost not yet set, from its prices in force today.
+    if (b.skuId !== null && moneyRole && await hasServicePrices(env)) {
+      const u = await one<{ layout_type: string | null; bedrooms: number | null }>(env, 'SELECT * FROM units WHERE id = ?', cur.unit_id);
+      const a = (await serviceBook(env, [cur.unit_id])).amounts(String(b.skuId), cur.unit_id, layoutKey(u?.layout_type, u?.bedrooms), mytToday());
+      if (cur.quoted_amount == null && b.quotedAmount === undefined && a.owner != null) put('quoted_amount', 'quotedAmount', a.owner);
+      if (cur.contractor_amount == null && b.contractorAmount === undefined && a.internal != null && await hasBilling(env)) put('contractor_amount', 'contractorAmount', a.internal);
+    }
   }
   if (typeof b?.detail === 'string') put('detail', 'detail', b.detail.trim().slice(0, 2000) || null);
   if (b?.quotedAmount !== undefined) {
@@ -110,6 +154,14 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     if (cur.state === 'waiting' && !cur.owner_approved_at && payer !== 'owner') {
       put('owner_approval_required', 'ownerApprovalRequired', 0);
       state = cur.started_at ? 'in_progress' : vendor ? 'assigned' : 'open';
+    }
+    // Management's approval rules: a change of category, severity, quote or payer can make a job need the owner's approval
+    // before anyone has started or approved it. Rules only ever add the wait; taking a job off it is the payer's change above.
+    const touched = ['category', 'severity', 'quotedAmount', 'chargeTo'].some(k => k in after);
+    if (cols && touched && payer === 'owner' && !cur.owner_approval_required && !cur.owner_approved_at && !cur.started_at
+      && ruleNeedsApproval(await approvalRules(env), String(after.category ?? cur.category), String(after.severity ?? cur.severity), (after.quotedAmount ?? cur.quoted_amount) as number | null)) {
+      put('owner_approval_required', 'ownerApprovalRequired', 1);
+      state = 'waiting';
     }
     if (state === 'open' && vendor) state = 'assigned';
     if (state !== cur.state) put('state', 'state', state);

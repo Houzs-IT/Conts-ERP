@@ -126,6 +126,29 @@ check('a long-term let needs its tenant', !!M.invalidDraft({ revenueModel: 'long
   check('management stores the operator share 25% (agent 5%) and no rent', d.management_fee_pct === 25 && d.agent_fee_pct === 5 && d.grr_amount === 0);
 }
 
+/* ---------- 5b. Yearly guarantee (PS YGRR, staff sheet 17 Oct 2026) ---------- */
+console.log('5b. Yearly guarantee');
+{
+  const yu = (over = {}) => unit({ revenue_model: 'management_yearly_guarantee', starts_on: '2025-10-01', minimum_guarantee_annual: 3600000, ...over });
+  const y = M.yearlyFor('2026-09', '2025-10-01', null, 3600000);
+  check('Sep 2026 closes the contract year Oct 2025 - Sep 2026', y && y.trueUp && y.yearFrom === '2025-10' && y.yearTo === '2026-09' && y.due === 3600000, JSON.stringify(y));
+  check('Aug 2026 is inside the year, no true-up', M.yearlyFor('2026-08', '2025-10-01', null, 3600000)?.trueUp === false);
+  check('a contract ending in Mar 2026 trues up in Mar, guarantee prorated 6/12', (() => { const z = M.yearlyFor('2026-03', '2025-10-01', '2026-03-31', 3600000); return z?.trueUp && z.due === 1800000; })());
+  const s1 = [stay('2026-09-01', '2026-09-11', 200000)];
+  const mid = M.computeUnitMonth('2026-08', yu(), M.termsFor(yu(), 25), [stay('2026-08-01', '2026-08-11', 200000)], [], [], 10000);
+  check('a month inside the year: plain 75% share, no top-up', mid.topUp === 0 && mid.payoutBeforeAdjustments === 150000 && mid.guarantee === 0, `${mid.topUp} ${mid.payoutBeforeAdjustments}`);
+  const short = { ...yu(), year_shares_before: 1650000 };
+  const end = M.computeUnitMonth('2026-09', short, M.termsFor(short, 25), s1, [], [], 10000);
+  check('year-end below the guarantee: tops up RM 36,000 - (16,500 + 1,500) = RM 18,000', end.topUp === 1800000 && end.payoutBeforeAdjustments === 150000 + 1800000 && end.guarantee === 3600000 && adds(end), `${rm(end.topUp)} ${rm(end.payoutBeforeAdjustments)}`);
+  check('the top-up line names the year and the shares', end.lines.some(l => l.category === 'guarantee_top_up' && /2025-10 to 2026-09/.test(l.description)));
+  const over = { ...yu(), year_shares_before: 3500000 };
+  const end2 = M.computeUnitMonth('2026-09', over, M.termsFor(over, 25), s1, [], [], 10000);
+  check('year-end above the guarantee: no top-up', end2.topUp === 0 && end2.payoutBeforeAdjustments === 150000);
+  const unknown = M.computeUnitMonth('2026-09', yu(), M.termsFor(yu(), 25), s1, [], [], 10000);
+  check('year-end with earlier months not worked out: no top-up and a warning', unknown.topUp === 0 && unknown.warnings.some(w => /Yearly guarantee/.test(w)));
+  check('existing models unchanged: PS GRR still tops up monthly', (() => { const g = unit({ revenue_model: 'management_guarantee', minimum_guarantee: 300000 }); const m = month(g, s1, []); return m.topUp === 150000 && m.payoutBeforeAdjustments === 300000; })());
+}
+
 /* ---------- 6. Against the local database (optional) ---------- */
 if (process.env.BIGDATA_PORT) {
   const { default: postgres } = await import('postgres');

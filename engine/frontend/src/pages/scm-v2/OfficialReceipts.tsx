@@ -24,6 +24,8 @@ import { PAYMENT_METHOD_CODES, PAYMENT_METHOD_DEFAULT_LABELS } from '../../vendo
 import { humaniseStatusKey } from '../../vendor/scm/lib/status-pill';
 import { DataTable, type Column } from '../../components/DataTable';
 import { generateReceiptPdf, type ReceiptPdfData } from '../../vendor/scm/lib/receipt-pdf';
+import { Modal } from '../../vendor/scm/components/Modal';
+import { DocAttachments } from '../../components/doc-attachments/DocAttachments';
 
 type ReceiptRow = ReceiptPdfData & {
   id: number;
@@ -71,6 +73,7 @@ export const OfficialReceipts = () => {
   const [status, setStatus] = useState<'' | 'DRAFT' | 'FORMAL'>('');
   /* '' = any month: the newest 100 receipts. */
   const [month, setMonth] = useState<string>(mytMonth());
+  const [filesFor, setFilesFor] = useState<ReceiptRow | null>(null);
   const listPath = `/accounting/receipts${[status ? `status=${status}` : '', month ? `month=${month}` : ''].filter(Boolean).map((p, i) => (i === 0 ? `?${p}` : `&${p}`)).join('')}`;
   const q = useQuery({
     queryKey: ['official-receipts', status, month],
@@ -114,6 +117,7 @@ export const OfficialReceipts = () => {
       render: (r) => (
         <span style={{ whiteSpace: 'nowrap' }}>
           <button type="button" style={btn()} onClick={() => { void generateReceiptPdf(r, { action: 'print' }); }}>Print</button>{' '}
+          <button type="button" style={btn()} onClick={() => setFilesFor(r)}>Files</button>{' '}
           {r.status !== 'FORMAL' && (
             <button type="button" style={btn(true, formalise.isPending)} disabled={formalise.isPending}
               onClick={() => formalise.mutate(r.id)}>
@@ -203,6 +207,11 @@ export const OfficialReceipts = () => {
         getRowKey={(r) => r.id}
         onFilteredRowsChange={setShown}
       />
+      {filesFor && (
+        <Modal title={`Files — ${filesFor.or_number || `Draft receipt ${filesFor.id}`}`} onClose={() => setFilesFor(null)} width="min(720px, 100%)" ariaLabel="Receipt files">
+          <DocAttachments docType="official_receipt" docId={String(filesFor.id)} canEdit bare />
+        </Modal>
+      )}
       {shown.length > 0 && (
         <div data-testid="receipts-total"
           style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 10px', borderTop: '2px solid var(--c-ink, #221f20)', fontWeight: 700, fontSize: 'var(--fs-13)' }}>

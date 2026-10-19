@@ -57,7 +57,7 @@ function IconAction({ name, label, onClick }: { name: string; label: string; onC
   );
 }
 
-export default function AccessTab({ unitId, unitLabel }: { unitId: string; unitLabel: string }) {
+export default function AccessTab({ unitId, unitLabel, parking }: { unitId: string; unitLabel: string; parking?: string }) {
   const { data, loading, error, reload } = useApi<Payload>(`/access-credentials?unitId=${encodeURIComponent(unitId)}`, FALLBACK);
   const { user } = useSession();
   const toast = useToast();
@@ -187,6 +187,7 @@ export default function AccessTab({ unitId, unitLabel }: { unitId: string; unitL
           <div className="flex flex-col gap-1 min-w-0">
             <span className="text-[16px] font-semibold tracking-[-0.01em]">Access and keys</span>
             <span className="text-meta text-muted-ink">Codes are masked. Revealing one is recorded in the audit trail.</span>
+            <span className="text-meta"><span className="text-muted-ink">Car park:</span> {parking || 'No bays recorded. Add them on the Details tab.'}</span>
           </div>
           {canEdit && <Button size="sm" variant="secondary" icon={<Icon name="Plus" size="sm" />} onClick={() => setEditing('new')}>Add access</Button>}
         </div>

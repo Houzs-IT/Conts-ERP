@@ -2,7 +2,7 @@ import { useEffect, useRef, type ReactNode } from 'react';
 import { cx } from '../../lib/design-tokens';
 import { Select as UiSelect } from '../../components/Select';
 import type { UnitReadiness, TaskState, BookingChannel, ReservationState } from '../../lib/types';
-import type { RevenueModel } from '../../lib/revenueModel';
+import type { RevenueModel, ContractCode, UnitPurpose } from '../../lib/revenueModel';
 import type { OwnerAddress } from '../owners/shared';
 import type { PnlRow } from './PnlTable';
 
@@ -15,6 +15,16 @@ export const SPLITS = ['Not set', 'Profit share', 'GRR — guaranteed rent'];
 /** Roles that may edit unit master data: MASTER_ROLES in functions/_lib/properties.ts. */
 export const MASTER_ROLES = ['management', 'operations_manager', 'finance_admin'];
 
+export const LAYOUTS = [
+  ['studio', 'Studio'], ['1_bedroom', '1 bedroom'], ['2_bedroom', '2 bedroom'], ['3_bedroom', '3 bedroom'], ['4_plus_bedroom', '4+ bedroom'],
+  ['duplex', 'Duplex'], ['dual_key', 'Dual key'], ['penthouse', 'Penthouse'], ['other', 'Other'],
+] as const;
+export type LayoutType = typeof LAYOUTS[number][0];
+export const layoutLabel = (t: string | null | undefined) => LAYOUTS.find(([k]) => k === t)?.[1] ?? null;
+/** The layout a unit with this many bedrooms most likely has, to pre-fill an empty Layout type. */
+export const layoutFromBedrooms = (n: number | null | undefined): LayoutType | null =>
+  n == null ? null : n <= 0 ? 'studio' : n === 1 ? '1_bedroom' : n === 2 ? '2_bedroom' : n === 3 ? '3_bedroom' : '4_plus_bedroom';
+
 export const cap = (s: string) => s.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
 
 /* ---- GET /api/properties: the tree and the editable unit master data ---- */
@@ -23,11 +33,22 @@ export type GuaranteePeriod = 'month' | 'year';
 export interface Unit {
   id: string; buildingId: string; parentUnitId: string | null;
   listingName: string; unitCode: string; state: string; address: string;
+  /** The owner, picked from the owner profiles. The name, masked IC and bank fields are read-only here: they are edited on
+   *  the owner's page, and the unit endpoints refuse them. */
+  ownerId?: string;
   ownerName: string; ic: string; bankName: string; bankAccount: string; accountHolder: string;
   pkg: string; term: string; split: string; splitValue: number | null; guaranteePeriod: GuaranteePeriod;
   /** The revenue model (0093) and its short terms ("Share 75/20/5"); terms only for roles that see money. Read-only here. */
   revenueModel?: RevenueModel; termsLabel?: string | null;
-  bedrooms?: number;
+  bedrooms?: number; bathrooms?: number; sizeSqft?: number | null;
+  /** Migration 0123. null: not set yet (the form proposes one from the bedrooms). */
+  layoutType?: LayoutType | null;
+  /** Migration 0125: what the unit is for (only rental units are on the channels), who uses it, beds, car park bays.
+   *  The labels ("1 King · 2 Single", "2 bays: L2-105, L2-106") come from the server and are never sent back. */
+  purpose?: UnitPurpose; usedBy?: string | null;
+  beds?: Bed[]; bedsLabel?: string; parkingBays?: Bay[]; parkingLabel?: string;
+  /** The contract's short code (PS, PS GRR, WH, ...); null with no contract record. Read-only here. */
+  contractCode?: ContractCode | null;
   /** Sen. Present only for roles that see money; saved through PUT /api/rates, not the unit PATCH. */
   baseRate?: number;
   /** Sen. The standard clean's price (0 or null: not set). Money roles only; saved from the Financials tab. */
@@ -41,6 +62,8 @@ export interface Unit {
     minimumGuarantee?: number; minimumGuaranteeAnnual?: number | null; guaranteeStartsOn?: string | null; guaranteeEndsOn?: string | null;
   };
 }
+export interface Bed { size: string; quantity: number }
+export interface Bay { id?: string; lotNumber: string; level: string | null; note: string | null }
 export interface Building { id: string; name: string; city: string; state: string }
 export interface PropertiesPayload { buildings: Building[]; units: Unit[]; generatedAt: string }
 
@@ -57,6 +80,7 @@ export interface UnitDetail {
     contract: { id?: string | null; managementFeePct: number; startsOn: string; renewsOn: string | null } | null;
     revenueModel?: RevenueModel; revenueModelLabel?: string; termsLabel?: string;
     baseRate?: number;
+    purpose?: UnitPurpose; usedBy?: string | null; contractCode?: ContractCode | null;
   };
   performance: {
     period: string; occupancy: number; occupiedNights: number; adr: number;
@@ -66,8 +90,10 @@ export interface UnitDetail {
   pnl?: PnlRow[];
   /** The company's side of the unit this month (what it keeps or pays, costs others paid). Money roles only. */
   companyPnl?: PnlRow[];
-  stays: { id: string; guestName: string | null; channel: BookingChannel; state: ReservationState; checkIn: string; checkOut: string; guestsCount: number; externalRef: string | null; grossBookingValue?: number }[];
+  stays: { id: string; guestName: string | null; channel: BookingChannel; state: ReservationState; checkIn: string; checkOut: string; guestsCount: number; externalRef: string | null; grossBookingValue?: number; blockReason?: string | null }[];
   tasks: { id: string; title: string; kind: string; state: TaskState; dueAt: string | null; completedAt: string | null; assigneeName: string | null }[];
+  /** Every open maintenance job on the unit; maintenance below lists the latest 12 only. */
+  openMaintenanceCount?: number;
   maintenance: { id: string; title: string; detail: string | null; state: TaskState; vendorName: string | null; ownerApprovalRequired: boolean; blocksUnit: boolean; chargeTo: string; reportedAt: string; resolvedAt: string | null; quotedAmount?: number | null; finalAmount?: number | null }[];
   inventory: { id: string; name: string; quantity: string; condition: string; suppliedInHouse: boolean; installedOn: string | null; lastChecked: string | null; purchaseCost?: number | null }[];
   documents: { id: string; name: string; kind: string; sizeLabel: string; updatedAt: string }[];

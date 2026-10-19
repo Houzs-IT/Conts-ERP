@@ -5,7 +5,7 @@
    here by category; one category may repeat. */
 
 import { useState } from "react";
-import { Plus, RefreshCw, Users } from "lucide-react";
+import { CalendarDays, Plus, RefreshCw, Users } from "lucide-react";
 import { Button } from "../../../components/Button";
 import { useQuery } from "../../../hooks/useQuery";
 import { STAGE_LABEL } from "../../../vendor/shared/renovation-stages";
@@ -28,15 +28,18 @@ export function SiteTasksPanel({ projectId, tasks, canWrite, linesAvailable, onA
 }) {
   const [adding, setAdding] = useState(false);
   const [showSkipped, setShowSkipped] = useState(false);
-  const visible = tasks.filter((t) => showSkipped || t.status !== "skipped");
+  /* Done tasks fold away (a finished project listed every task); open ones always show. */
+  const [showDone, setShowDone] = useState(false);
+  const visible = tasks.filter((t) => (showSkipped || t.status !== "skipped") && (showDone || t.status !== "done"));
+  const doneCount = tasks.filter((t) => t.status === "done").length;
   const stages = [...new Set(visible.map((t) => t.stage_key))];
   const skipped = tasks.filter((t) => t.status === "skipped").length;
   return (
-    <section className="rounded-lg border border-border bg-surface p-4">
+    <section id="reno-site-tasks" className="rounded-lg border border-border bg-surface p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h3 className="text-base font-semibold text-ink">Site tasks</h3>
-          <p className="text-xs text-ink-secondary">Dates are a plan, not a gate: tasks may overlap and move; only dates that pass raise a flag.</p>
+          <h3 className="text-base font-semibold text-ink">Site tasks and crew</h3>
+          <p className="text-xs text-ink-secondary">Put crew on a project by picking them on a task: press Crew on the task, or pick them when adding one. Crew without a login are kept in Project Maintenance. Dates are a plan, not a gate.</p>
         </div>
         {canWrite && (
           <div className="flex flex-wrap gap-2">
@@ -45,7 +48,8 @@ export function SiteTasksPanel({ projectId, tasks, canWrite, linesAvailable, onA
           </div>
         )}
       </div>
-      {visible.length === 0 && <p className="mt-3 text-sm text-ink-secondary">No site tasks yet.</p>}
+      {tasks.length === 0 && <p className="mt-3 text-sm text-ink-secondary">No site tasks yet. Add one to plan the work and put crew on it.</p>}
+      {tasks.length > 0 && visible.length === 0 && <p className="mt-3 text-sm text-ink-secondary">No open site tasks.</p>}
       {stages.map((st) => (
         <div key={st} className="mt-3">
           <div className="text-xs font-medium uppercase tracking-wide text-ink-secondary">{(STAGE_LABEL as Partial<Record<string, string>>)[st] ?? st}</div>
@@ -54,6 +58,11 @@ export function SiteTasksPanel({ projectId, tasks, canWrite, linesAvailable, onA
           </ul>
         </div>
       ))}
+      {doneCount > 0 && (
+        <button type="button" className="mr-3 mt-2 text-xs text-primary hover:underline" aria-expanded={showDone} onClick={() => setShowDone((x) => !x)}>
+          {showDone ? "Hide done tasks" : `Show ${doneCount} done task${doneCount === 1 ? "" : "s"} and their crew`}
+        </button>
+      )}
       {skipped > 0 && (
         <button type="button" className="mt-2 text-xs text-ink-secondary hover:text-ink" onClick={() => setShowSkipped((x) => !x)}>
           {showSkipped ? "Hide skipped tasks" : `Show ${skipped} skipped task${skipped === 1 ? "" : "s"}`}
@@ -68,6 +77,8 @@ function SiteTaskRow({ t, canWrite, onAct, onSkip }: { t: TaskViewV2; canWrite: 
   const [s, setS] = useState(t.planned_start ?? "");
   const [e, setE] = useState(t.planned_end ?? "");
   const [crewOpen, setCrewOpen] = useState(false);
+  /* Dates open on demand so a project with a dozen tasks stays a short list (owner, 16 Oct 2026). */
+  const [datesOpen, setDatesOpen] = useState(false);
   const dirty = s !== (t.planned_start ?? "") || e !== (t.planned_end ?? "");
   const open = t.status !== "skipped" && t.status !== "done";
   const isTemplate = t.trade_code.startsWith("INTERNAL:");
@@ -78,11 +89,12 @@ function SiteTaskRow({ t, canWrite, onAct, onSkip }: { t: TaskViewV2; canWrite: 
         <div className="min-w-0">
           <div className="text-sm font-medium text-ink">{t.label}{(t.occurrence ?? 1) > 1 ? ` (${t.occurrence})` : ""}</div>
           <div className="text-xs text-ink-secondary">{fulfilmentText(t)}</div>
-          {(t.planned_start || t.planned_end) && !open && <div className="text-xs text-ink-secondary">{shortDate(t.planned_start)} to {shortDate(t.planned_end)}</div>}
+          {(t.planned_start || t.planned_end) && (!open || !datesOpen) && <div className="text-xs text-ink-secondary">{shortDate(t.planned_start)} to {shortDate(t.planned_end)}</div>}
+          {!t.planned_start && !t.planned_end && open && !datesOpen && <div className="text-xs text-ink-secondary">No dates planned</div>}
         </div>
         <Pill tone={taskTone(t.status)}>{TASK_STATUS_LABEL[t.status]}</Pill>
       </div>
-      {open && (
+      {open && datesOpen && (
         <div className="mt-2 grid grid-cols-2 sm:grid-cols-[1fr_1fr_auto] gap-2 items-end">
           <Field label="Start"><input type="date" className={inputClass} value={s} disabled={!canWrite} onChange={(ev) => setS(ev.target.value)} /></Field>
           <Field label="End"><input type="date" className={inputClass} value={e} disabled={!canWrite} onChange={(ev) => setE(ev.target.value)} /></Field>
@@ -94,6 +106,7 @@ function SiteTaskRow({ t, canWrite, onAct, onSkip }: { t: TaskViewV2; canWrite: 
           {t.state === "open" && <Button variant="secondary" onClick={() => onAct(() => renovationApi.startTask(t.id), `${t.label} started.`)}>Start</Button>}
           {(t.fulfilment_kind === "internal" || !poLinked) && <Button onClick={() => onAct(() => renovationApi.completeTask(t.id), `${t.label} done.`)}>Done</Button>}
           <Button variant="ghost" icon={<Users size={14} />} onClick={() => setCrewOpen((x) => !x)}>Crew</Button>
+          <Button variant="ghost" icon={<CalendarDays size={14} />} aria-expanded={datesOpen} onClick={() => setDatesOpen((x) => !x)}>Dates</Button>
           {!isTemplate && (t.fulfilment_kind === "po"
             ? <Button variant="ghost" onClick={() => onAct(() => simpleApi.setFulfilment(t.id, "inhouse"), `${t.label} is now done by our in-house crew.`)}>Do in-house</Button>
             : <Button variant="ghost" onClick={() => onAct(() => simpleApi.setFulfilment(t.id, "po"), `${t.label} now goes to a subcontractor PO.`)}>Use a PO</Button>)}

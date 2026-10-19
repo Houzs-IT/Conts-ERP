@@ -103,7 +103,9 @@ if (today.id) {
   r = await move(today.id, 'cancelled', 'x');
   check('illegal: checked in -> cancelled -> 409', r.status === 409, r.text);
   r = await move(today.id, 'checked_out');
-  check('check out -> dirty + one turnover created', r.status === 200 && r.json.effects.readiness === 'dirty' && r.json.effects.turnoverCreated === true, r.text);
+  // The turnover is made when the stay is booked (ensureTurnovers), so check-out finds it rather than making a second.
+  const cleans = ((await call('GET', `/api/housekeeping/board?date=${MYT(2)}`)).json?.rows ?? []).filter(x => x.unitId === today.unitId);
+  check('check out -> dirty + exactly one turnover', r.status === 200 && r.json.effects.readiness === 'dirty' && cleans.length === 1, `${r.text} cleans=${cleans.length}`);
   d = await detail(today.id);
   check('checked out: management may undo the same day', d.moves.length === 1 && d.moves[0].to === 'checked_in' && d.moves[0].allowed, JSON.stringify(d.moves));
   if (staff) {

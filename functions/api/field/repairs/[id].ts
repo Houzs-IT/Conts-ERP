@@ -1,7 +1,8 @@
 import { type Env, all, one, json, fail } from '../../../_lib/db';
 import { requireSession, isFieldRole } from '../../../_lib/auth';
-import { mineSql, hasAssigneeUser, UNASSIGNED_SQL } from '../../../_lib/maintenance';
+import { mineSql, hasAssigneeUser, UNASSIGNED_SQL, hasJobType, fieldVisibleSql } from '../../../_lib/maintenance';
 import { fieldRepairs } from '../../../_lib/fieldRepairs';
+import { parkingFor } from '../../../_lib/unitPurpose';
 
 /** GET /api/field/repairs/:id — one repair job for the phone: the job, its Before and After photos and videos, its
  *  files (claim, invoice, receipt), the notes left on it, and, once it is theirs, how to get into the unit (the
@@ -13,12 +14,13 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
   const id = String(params.id);
 
   const byId = await hasAssigneeUser(env);
-  const flags = await one<{ mine: boolean; unassigned: boolean; reported: boolean }>(env, `
-    SELECT ${mineSql(byId)} AS mine, (${UNASSIGNED_SQL} AND m.state IN ('open','reopened')) AS unassigned, (m.reported_by IS NOT DISTINCT FROM ?) AS reported
+  const flags = await one<{ mine: boolean; unassigned: boolean; reported: boolean; visible: boolean }>(env, `
+    SELECT ${fieldVisibleSql(await hasJobType(env))} AS visible, ${mineSql(byId)} AS mine, (${UNASSIGNED_SQL} AND m.state IN ('open','reopened')) AS unassigned, (m.reported_by IS NOT DISTINCT FROM ?) AS reported
     FROM maintenance_issues m WHERE m.id = ?`, ...(byId ? [session.userId, session.userId] : [session.userId]), session.userId, id);
   if (!flags) return fail('NOT_FOUND', 'That job no longer exists.', 404);
   const field = isFieldRole(session.role);
   const mayPick = session.role === 'technician' && !!flags.unassigned;
+  if (field && !flags.visible && !flags.reported) return fail('FORBIDDEN', 'That job is waiting for the owner. The office will send it when it can go ahead.', 403);
   if (field && !flags.mine && !mayPick && !flags.reported) return fail('FORBIDDEN', 'That job is assigned to someone else.', 403);
 
   const [job] = await fieldRepairs(env, 'm.id = ?', [id]);
@@ -42,6 +44,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
     files: docs.filter(d => !isMedia(d)).map(d => ({ id: d.id, kind: d.kind, url: `/api/documents/${d.id}/download`, fileName: d.file_name,
       byteSize: Number(d.byte_size), uploadedAt: d.created_at, uploader: d.uploader ?? null })),
     access: access.filter(a => a.instruction).map(a => ({ id: a.id, label: a.label, instruction: a.instruction })),
+    // The unit's car park bays (staff sheet UNIT, 17 Oct 2026), with the access details.
+    parking: flags.mine ? await parkingFor(env, job.unitId) : null,
     notes: notes.map(n => ({ note: n.note, by: n.actor_label, at: n.occurred_at, done: n.action === 'maintenance.end' })),
   });
 };

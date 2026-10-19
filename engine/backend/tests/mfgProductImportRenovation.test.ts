@@ -4,9 +4,11 @@
 import { Hono } from 'hono';
 import { describe, expect, test } from 'vitest';
 import { batchImportMfgProductsHandler } from '../src/scm/routes/mfg-products';
-import { SUB_CATEGORIES, parseSubCategory, parseUom } from '../src/scm/shared/renovation-catalog';
+import { SUB_CATEGORIES, parseSubCategory, parseUom, UOMS } from '../src/scm/shared/renovation-catalog';
 
 // The sub-category table as migration 0061 seeds it; SKU saves and imports check against it.
+// The unit table as migration 0118 seeds it.
+const UOM_ROWS = () => UOMS.map((u, i) => ({ code: u.code, label: u.label, print_label: u.printLabel, measure: u.measure, builtin: true, sort_order: (i + 1) * 10, active: true }));
 const SUB_ROWS = () => SUB_CATEGORIES.map((s) => ({ group_code: s.group, code: s.code, label: s.label, sort_order: s.sort, legacy_categories: [...(s.legacy ?? [])], active: true }));
 
 type Row = Record<string, unknown>;
@@ -40,6 +42,7 @@ class FakeQuery {
 function harness() {
   const tables: Record<string, Row[]> = {
     product_sub_categories: SUB_ROWS(),
+    product_uoms: UOM_ROWS(),
     mfg_products: [
       { id: 'p-hk', company_id: 1, code: 'HK-1', name: 'Hacking', category: 'WORKS', sub_category: 'HACKING', uom: 'LOT', status: 'ACTIVE', model_id: null },
       { id: 'p-wr', company_id: 1, code: 'WR-1', name: 'Wardrobe', category: 'BUILTIN', sub_category: 'WARDROBE', uom: 'UNIT', status: 'INACTIVE', model_id: null },
@@ -63,7 +66,7 @@ function harness() {
     return (await res.json()) as { upserted: number; failures: Array<{ code: string; reason: string }> };
   };
   const sku = (code: string) => tables.mfg_products.find((r) => r.code === code);
-  return { run, sku };
+  return { run, sku, tables };
 }
 
 describe('parsers', () => {
@@ -144,5 +147,26 @@ describe('POST /mfg-products/batch-import — renovation columns', () => {
     expect(out.upserted).toBe(0);
     expect(out.failures[0].reason).toMatch(/photo/i);
     expect(sku('WR-1')!.status).toBe('INACTIVE');
+  });
+
+  test('the page export goes back in unchanged, even on a hidden unit', async () => {
+    const { run, sku, tables } = harness();
+    tables.product_uoms.find((u) => u.code === 'LOT')!.active = false;
+    const out = await run([
+      { code: 'HK-1', name: 'Hacking', category: 'WORKS', sub_category: 'HACKING', uom: 'LOT', status: 'active' },
+      { code: 'WR-1', name: 'Wardrobe', category: 'BUILTIN', sub_category: 'WARDROBE', uom: 'UNIT', status: 'INACTIVE' },
+    ]);
+    expect(out.failures).toEqual([]);
+    expect(sku('HK-1')).toMatchObject({ uom: 'LOT', status: 'ACTIVE' });
+    // A hidden unit is still refused as a change.
+    const moved = await run([{ code: 'WR-1', uom: 'LOT' }]);
+    expect(moved.failures[0].reason).toMatch(/not a unit/i);
+  });
+
+  test('a status other than Active or Inactive is reported', async () => {
+    const { run, sku } = harness();
+    const out = await run([{ code: 'HK-1', status: 'Needs photo' }]);
+    expect(out.failures[0].reason).toMatch(/Active or Inactive/);
+    expect(sku('HK-1')!.status).toBe('ACTIVE');
   });
 });

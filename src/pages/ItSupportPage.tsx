@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import { Search } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import { Card } from '../components/Card';
@@ -8,6 +9,8 @@ import { Select } from '../components/Select';
 import { StatusBadge } from '../components/StatusBadge';
 import { EmptyState } from '../components/States';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
+import { DataTable, type Column } from '../components/DataTable';
+import { Segmented } from '../components/Metric';
 import { FileDropRow } from '../components/Attachments';
 import Icon from '../components/Icon';
 import { useToast } from '../components/Toast';
@@ -22,7 +25,9 @@ import { dateTime, relative } from '../lib/format';
  * and sees only its own requests (the server reads who is asking from the session; functions/_lib/itHub.ts).
  *
  * One screen, three views, chosen by the address so a link can open any of them:
- *   the list (default), ?new=1 the form (&from=<address> fills in the page the problem is on), ?request=CONTS-0001.
+ *   the list (?tab=active|resolved, All when absent), ?new=1 the form (&from=<address> fills in the page the problem
+ *   is on), ?request=CONTS-0001.
+ * Laid out and worded like Hookka's and Houzs Century's IT Support, so every system's works the same way.
  *
  * A request that could not be loaded is shown as that. "Nothing sent yet" is drawn only when the server answered so.
  */
@@ -41,11 +46,14 @@ interface Detail {
   events: Step[];
 }
 
-const KINDS = [{ value: 'bug', label: 'Bug' }, { value: 'development', label: 'Development' }];
+const KINDS = [{ value: 'bug', label: 'Something is not working' }, { value: 'development', label: 'Ask for a change' }];
+const kindLabel = (k: string) => KINDS.find(x => x.value === k)?.label ?? k;
 const URGENCY = [{ value: 'low', label: 'Low' }, { value: 'medium', label: 'Medium' }, { value: 'high', label: 'High' }];
 const MAX_FILES = 5;
 const MAX_BYTES = 10 * 1024 * 1024;
 const ACCEPT = 'image/*,video/mp4,video/quicktime,application/pdf';
+/* ACCEPT only filters the file browser; a dropped or pasted file is checked here. */
+const accepted = (f: File) => f.type.startsWith('image/') || ['application/pdf', 'video/mp4', 'video/quicktime'].includes(f.type);
 const TEXTAREA = 'w-full box-border px-3 py-2.5 [font-family:inherit] text-copy text-ink bg-card border border-solid border-line rounded-control outline-none resize-y';
 
 /** IT Support answered that it is not set up here, as opposed to failing. */
@@ -54,8 +62,17 @@ const notConnected = (e: unknown) => e instanceof ApiFailure && e.code === 'NOT_
 function Files({ files, onChange }: { files: File[]; onChange: (f: File[]) => void }) {
   const [refused, setRefused] = useState<string | null>(null);
   const [urls, setUrls] = useState<(string | null)[]>([]);
+  const [viewing, setViewing] = useState<number | null>(null);
+  useEffect(() => {
+    if (viewing === null) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setViewing(null); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [viewing]);
   const add = useCallback((list: File[]) => {
     const next = [...files, ...list];
+    const odd = next.find(f => !accepted(f));
+    if (odd) { setRefused(`${odd.name} is not a picture, PDF, MP4 or MOV.`); return; }
     const big = next.find(f => f.size > MAX_BYTES);
     if (big) { setRefused(`${big.name} is larger than 10 MB.`); return; }
     if (next.length > MAX_FILES) { setRefused(`Attach at most ${MAX_FILES} files.`); return; }
@@ -96,10 +113,10 @@ function Files({ files, onChange }: { files: File[]; onChange: (f: File[]) => vo
           {files.map((f, i) => (
             <li key={`${f.name}-${i}`} className="relative w-20 h-20">
               {urls[i] ? (
-                <a href={urls[i]!} target="_blank" rel="noreferrer" title={f.name}
-                  className="block w-full h-full overflow-hidden rounded-control border border-solid border-line hover:border-gold">
+                <button type="button" onClick={() => setViewing(i)} title={f.name} aria-label={`Preview ${f.name}`}
+                  className="block w-full h-full p-0 overflow-hidden rounded-control border border-solid border-line bg-card cursor-zoom-in hover:border-gold">
                   <img src={urls[i]!} alt={f.name} className="w-full h-full object-cover" />
-                </a>
+                </button>
               ) : (
                 <div title={f.name} className="w-full h-full flex flex-col items-center justify-center gap-1 rounded-control border border-solid border-line bg-page text-muted-ink">
                   <Icon name={f.type.startsWith('video/') ? 'Film' : 'FileText'} />
@@ -113,6 +130,12 @@ function Files({ files, onChange }: { files: File[]; onChange: (f: File[]) => vo
             </li>
           ))}
         </ul>
+      )}
+      {viewing !== null && urls[viewing] && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label={files[viewing]?.name}>
+          <button type="button" aria-label="Close preview" onClick={() => setViewing(null)} className="absolute inset-0 border-0 bg-black/70 cursor-zoom-out" />
+          <img src={urls[viewing]!} alt={files[viewing]?.name} className="relative max-h-[85vh] max-w-[90vw] rounded-control bg-card object-contain" />
+        </div>
       )}
     </div>
   );
@@ -137,6 +160,7 @@ function NewRequest({ from, onSent, onCancel }: { from: string; onSent: (code: s
     form.set('description', description.trim());
     form.set('type', kind);
     form.set('priority', urgency);
+    form.set('occurred_at', new Date().toISOString());
     if (from) form.set('page_url', from);
     files.forEach(f => form.append('files', f, f.name));
     try {
@@ -196,6 +220,11 @@ function OneRequest({ code }: { code: string }) {
 
   // Opening a request marks it read at IT's end, so the menu's count has just changed.
   useEffect(() => { if (data) refreshItUnread(); }, [data]);
+  // IT's reply appears while the person keeps the request open.
+  useEffect(() => {
+    const t = window.setInterval(() => { if (document.visibilityState === 'visible') reload(); }, 30_000);
+    return () => window.clearInterval(t);
+  }, [reload]);
 
   async function send(e: FormEvent) {
     e.preventDefault();
@@ -242,7 +271,7 @@ function OneRequest({ code }: { code: string }) {
             <span className="text-copy font-semibold tabular-nums">{t.code}</span>
             <StatusBadge entity="it_request" value={t.status} />
             <StatusBadge entity="it_urgency" value={t.priority} size="sm" dot={false} />
-            <span className="text-meta text-muted-ink">{t.assignee_name ? `Handled by ${t.assignee_name}` : 'Not picked up yet'}</span>
+            <span className="text-meta text-muted-ink">{kindLabel(t.type)} · {t.assignee_name ? `Handled by ${t.assignee_name}` : 'Not picked up yet'}</span>
           </div>
           <h2 className="m-0 text-title font-semibold [overflow-wrap:anywhere]">{t.title}</h2>
           {t.description && <p className="m-0 text-copy leading-[1.55] whitespace-pre-wrap [overflow-wrap:anywhere]">{t.description}</p>}
@@ -302,10 +331,20 @@ function OneRequest({ code }: { code: string }) {
   );
 }
 
-function List({ onOpen, onNew }: { onOpen: (code: string) => void; onNew: () => void }) {
+/* The list's three tabs. Done-please-confirm sits with Resolved: IT's part is over and the request waits only on
+   the person's "Yes, it is fixed". */
+type Tab = 'all' | 'active' | 'resolved';
+const TABS: { key: Tab; label: string }[] = [{ key: 'all', label: 'All' }, { key: 'active', label: 'Active' }, { key: 'resolved', label: 'Resolved' }];
+const RESOLVED = new Set(['resolved', 'closed', 'rejected']);
+const inTab = (status: string, tab: Tab) => tab === 'all' || (tab === 'resolved') === RESOLVED.has(status);
+const isTab = (s: string | null): s is Tab => s === 'all' || s === 'active' || s === 'resolved';
+const URGENCY_RANK = ['urgent', 'high', 'medium', 'low'];
+
+function List({ tab, onTab, onOpen, onNew }: { tab: Tab; onTab: (t: Tab) => void; onOpen: (code: string) => void; onNew: () => void }) {
   const [rows, setRows] = useState<RequestRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [off, setOff] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
 
   const load = useCallback(() => {
     api.get<{ tickets: RequestRow[] }>('/it-support/tickets')
@@ -317,6 +356,38 @@ function List({ onOpen, onNew }: { onOpen: (code: string) => void; onNew: () => 
     const t = window.setInterval(() => { if (document.visibilityState === 'visible') load(); }, 60_000);
     return () => window.clearInterval(t);
   }, [load]);
+
+  // Counts come from every request, never from what the search box left.
+  const counts = useMemo(() => Object.fromEntries(TABS.map(t => [t.key, (rows ?? []).filter(r => inTab(r.status, t.key)).length])) as Record<Tab, number>, [rows]);
+  const q = search.trim().toLowerCase();
+  const shown = useMemo(() => (rows ?? []).filter(r => inTab(r.status, tab) && (!q
+    || [r.code, r.title, r.assignee_name ?? '', statusLabel('it_request', r.status), statusLabel('it_urgency', r.priority)].some(v => v.toLowerCase().includes(q)))), [rows, tab, q]);
+
+  const columns = useMemo<Column<RequestRow>[]>(() => [
+    { key: 'code', label: 'Request', type: 'ref', value: r => r.code, hideable: false, phone: 'meta' },
+    {
+      key: 'title', label: 'Problem', value: r => r.title, phone: 'title',
+      render: r => (
+        <span className="inline-flex items-center gap-2 min-w-0">
+          <span className={`[overflow-wrap:anywhere] ${r.unread ? 'font-semibold' : ''}`}>{r.title}</span>
+          {r.unread && <StatusBadge tone="accent" label="New reply" size="sm" />}
+        </span>
+      ),
+    },
+    { key: 'status', label: 'Status', type: 'status', value: r => r.status, entity: 'it_request', phone: 'badge' },
+    {
+      // Sorted most urgent first, not by the word.
+      key: 'priority', label: 'Urgency', type: 'number', align: 'left', value: r => URGENCY_RANK.indexOf(r.priority), filter: false, phone: 'meta',
+      render: r => <span className="inline-flex"><StatusBadge entity="it_urgency" value={r.priority} size="sm" dot={false} /></span>, exportValue: r => statusLabel('it_urgency', r.priority),
+    },
+    { key: 'assignee', label: 'Handled by', value: r => r.assignee_name ?? 'Not picked up yet', phone: 'meta' },
+    {
+      // A phone card shows two dates; this one says which it is.
+      key: 'created', label: 'Submitted', type: 'datetime', value: r => r.created_at, phone: 'meta',
+      render: r => <><span className="md:hidden">Submitted </span>{dateTime(r.created_at)}</>,
+    },
+    { key: 'updated', label: 'Last update', type: 'datetime', value: r => r.updated_at, phone: 'right' },
+  ], []);
 
   if (off) return <EmptyState icon="LifeBuoy" title="IT Support is not connected yet" body={off} />;
   if (!rows) {
@@ -331,19 +402,19 @@ function List({ onOpen, onNew }: { onOpen: (code: string) => void; onNew: () => 
   return (
     <>
       {error && <StaleBanner message={`Showing what was last loaded. ${error}`} onRetry={load} />}
-      <Card>
-        {rows.map(r => (
-          <button key={r.code} type="button" onClick={() => onOpen(r.code)}
-            className="w-full flex items-center gap-3 flex-wrap text-left bg-transparent border-0 border-b border-solid border-line last:border-b-0 px-5 py-3.5 cursor-pointer [font-family:inherit] text-ink hover:bg-muted">
-            <span className="text-meta text-muted-ink tabular-nums w-[92px] flex-none">{r.code}</span>
-            <span className={`text-copy flex-1 min-w-[200px] [overflow-wrap:anywhere] ${r.unread ? 'font-semibold' : ''}`}>{r.title}</span>
-            {r.unread && <StatusBadge tone="accent" label="New reply" size="sm" />}
-            <StatusBadge entity="it_request" value={r.status} size="sm" />
-            <span className="text-meta text-muted-ink w-[150px] flex-none">{r.assignee_name ?? 'Not picked up yet'}</span>
-            <span className="text-meta text-muted-ink w-[110px] flex-none text-right" title={dateTime(r.updated_at)}>{relative(r.updated_at)}</span>
-          </button>
-        ))}
-      </Card>
+      <DataTable<RequestRow>
+        id="it-support.my-requests" columns={columns} rows={shown} rowKey={r => r.code}
+        pageSize={0} onRowClick={r => onOpen(r.code)} noun={['request', 'requests']} exportName="it-requests"
+        toolbar={<>
+          <Segmented label="Which requests" options={TABS.map(t => ({ key: t.key, label: t.label, count: counts[t.key] }))} value={tab} onChange={onTab} />
+          <div className="relative">
+            <Search size={16} strokeWidth={1.75} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-ink" />
+            <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search my requests" aria-label="Search my requests"
+              className="h-9 box-border pl-10 pr-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none w-[280px] max-w-full" />
+          </div>
+        </>}
+        filtered={!!q || tab !== 'all'} onClearFilters={() => { setSearch(''); onTab('all'); }}
+        empty={{ title: tab === 'active' ? 'Nothing is with IT right now.' : tab === 'resolved' ? 'No resolved requests yet.' : 'No requests match.' }} />
     </>
   );
 }
@@ -352,6 +423,8 @@ export default function ItSupportPage() {
   const [params, setParams] = useSearchParams();
   const code = params.get('request') ?? '';
   const isNew = params.get('new') === '1';
+  const tabParam = params.get('tab');
+  const tab: Tab = isTab(tabParam) ? tabParam : 'all';
   const [sent, setSent] = useState(0);
   const go = (next: Record<string, string>) => setParams(next);
 
@@ -375,7 +448,7 @@ export default function ItSupportPage() {
     <>
       <PageHeader title="IT Support" sub="Report a problem with the system or ask for a change, and follow what IT is doing about it."
         primary={<Button variant="primary" onClick={() => go({ new: '1' })}>Report a problem</Button>} />
-      <List key={sent} onOpen={c => go({ request: c })} onNew={() => go({ new: '1' })} />
+      <List key={sent} tab={tab} onTab={t => go(t === 'all' ? {} : { tab: t })} onOpen={c => go({ request: c })} onNew={() => go({ new: '1' })} />
     </>
   );
 }

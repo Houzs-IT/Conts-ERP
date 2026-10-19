@@ -39,6 +39,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
     template: 'account.invited', recipient: user.email, channel: 'email', subject: 'Your Conts ERP account',
     body: `${session.fullName} re-sent your account invitation.\n\nEmail: ${user.email}\nTemporary password: ${temp}\n\nYou will be asked to choose a new password when you first sign in.`,
     entityTable: 'users', entityId: id,
+    // Every resend carries a new password, so it is a new message: the default hourly key would skip a second
+    // send within the hour of the first and leave the person holding a password that no longer works.
+    idempotencyKey: crypto.randomUUID(),
     urgent: true,
   });
   return json({ id, delivery: delivery.state, reason: delivery.reason });

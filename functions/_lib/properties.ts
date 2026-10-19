@@ -1,5 +1,6 @@
 import { type Env, one, all, run, audit, nowIso } from './db';
 import type { Session } from './auth';
+import { PURPOSES, USED_BY, invalidBeds, invalidBays, type Bed, type BayInput } from './unitPurpose';
 
 export const MASTER_ROLES = ['management', 'operations_manager', 'finance_admin'];
 export const PACKAGES = ['Package A', 'Package B', 'Package C', 'Package D'];
@@ -7,12 +8,25 @@ export const TERMS = ['Long term', 'Short term'];
 export const SPLITS = ['Not set', 'Profit share', 'GRR — guaranteed rent'];
 
 export const GUARANTEE_PERIODS = ['month', 'year'];
+export const LAYOUT_TYPES = ['studio', '1_bedroom', '2_bedroom', '3_bedroom', '4_plus_bedroom', 'duplex', 'dual_key', 'penthouse', 'other'];
+
+/** Owner identity and bank fields the unit endpoints once took. They belong to the owner profile (owners/[id]), so a unit
+ *  request carrying one is refused rather than silently changing the owner of every unit they have. */
+export const OWNER_FIELDS = ['ownerName', 'ic', 'bankName', 'bankAccount', 'accountHolder'];
+export const ownerFieldIn = (b: object) => OWNER_FIELDS.find(k => k in b) ?? null;
 
 export interface UnitInput {
   buildingId?: string; parentUnitId?: string | null; listingName?: string; unitCode?: string; address?: string;
-  ownerName?: string; ic?: string; bankName?: string; bankAccount?: string; accountHolder?: string;
+  /** The owner, picked from the owner profiles. Their name, IC and bank details are edited on the owner, never here. */
+  ownerId?: string;
   pkg?: string; term?: string; split?: string; splitValue?: number | null; guaranteePeriod?: string;
-  bedrooms?: number;
+  bedrooms?: number; bathrooms?: number; sizeSqft?: number | null;
+  /** Migration 0123; null clears it. */
+  layoutType?: string | null;
+  /** Migration 0125: rental, showroom or warehouse; who uses it (null clears); beds; car park bays (the whole list). */
+  purpose?: string; usedBy?: string | null; beds?: Bed[]; parkingBays?: BayInput[];
+  /** With a purpose change: end the contract in force today when it does not fit the new purpose. */
+  endContract?: boolean;
   /** The standard clean's price on this unit (sen): the unit's one 'cleaning' row in unit_expenses, which cleanPrice()
    *  reads. null clears it (amount 0, so cleans charge the last price used or the default). */
   cleaningPrice?: number | null;
@@ -40,6 +54,13 @@ export function invalidUnit(b: UnitInput): { field: string; message: string } | 
   if (b.splitValue != null && (!Number.isInteger(b.splitValue) || b.splitValue < 0)) return { field: 'splitValue', message: 'Enter a whole number.' };
   if (b.guaranteePeriod !== undefined && !GUARANTEE_PERIODS.includes(b.guaranteePeriod)) return { field: 'guaranteePeriod', message: 'Pick month or year.' };
   if (b.bedrooms !== undefined && (!Number.isInteger(b.bedrooms) || b.bedrooms < 0 || b.bedrooms > 20)) return { field: 'bedrooms', message: 'Bedrooms must be a whole number from 0 to 20.' };
+  if (b.bathrooms !== undefined && (!Number.isInteger(b.bathrooms) || b.bathrooms < 0 || b.bathrooms > 20)) return { field: 'bathrooms', message: 'Bathrooms must be a whole number from 0 to 20.' };
+  if (b.sizeSqft != null && (!Number.isInteger(b.sizeSqft) || b.sizeSqft < 1 || b.sizeSqft > 100000)) return { field: 'sizeSqft', message: 'Enter the size in whole square feet.' };
+  if (b.layoutType != null && !LAYOUT_TYPES.includes(b.layoutType)) return { field: 'layoutType', message: 'Pick a layout type.' };
+  if (b.purpose !== undefined && !(PURPOSES as readonly string[]).includes(b.purpose)) return { field: 'purpose', message: 'Pick rental, showroom or warehouse.' };
+  if (b.usedBy != null && !(USED_BY as readonly string[]).includes(b.usedBy)) return { field: 'usedBy', message: 'Pick who uses the unit.' };
+  if (b.beds !== undefined) { const m = invalidBeds(b.beds); if (m) return { field: 'beds', message: m }; }
+  if (b.parkingBays !== undefined) { const m = invalidBays(b.parkingBays); if (m) return { field: 'parkingBays', message: m }; }
   if (b.cleaningPrice != null && (!Number.isInteger(b.cleaningPrice) || b.cleaningPrice < 0 || b.cleaningPrice > 10_000_000)) return { field: 'cleaningPrice', message: 'Enter the cleaning price in ringgit, RM 0.00 or more.' };
   if (b.deepCleaningPrice != null && (!Number.isInteger(b.deepCleaningPrice) || b.deepCleaningPrice < 0 || b.deepCleaningPrice > 10_000_000)) return { field: 'deepCleaningPrice', message: 'Enter the deep cleaning price in ringgit, RM 0.00 or more.' };
   if (b.contract) {
@@ -51,24 +72,6 @@ export function invalidUnit(b: UnitInput): { field: string; message: string } | 
     if (!Number.isInteger(e.amount) || e.amount < 0) return { field: 'expenses', message: 'Expense amounts must be whole sen, zero or more.' };
   }
   return null;
-}
-
-/** The owner a unit belongs to: reuse the one with the same ID number or name, otherwise create. */
-export async function ownerFor(env: Env, b: UnitInput): Promise<string> {
-  const name = (b.ownerName ?? '').trim() || 'New owner';
-  // A masked IC (copied from another unit's form) cannot be matched; fall back to the name.
-  const ic = (typed(b.ic) ?? '').trim() || null;
-  const bankAccount = typed(b.bankAccount);
-  const found = ic
-    ? await one<{ id: string }>(env, 'SELECT id FROM owners WHERE ic_number = ? LIMIT 1', ic)
-    : await one<{ id: string }>(env, 'SELECT id FROM owners WHERE lower(display_name) = lower(?) LIMIT 1', name);
-  if (found) return found.id;
-  const id = crypto.randomUUID(), now = nowIso();
-  await run(env, `
-    INSERT INTO owners (id, display_name, email, ic_number, bank_name, bank_account_holder, bank_account_number, bank_account_last4, created_at, updated_at)
-    VALUES (?, ?, '', ?, ?, ?, ?, ?, ?, ?)`,
-    id, name, ic, b.bankName ?? null, b.accountHolder ?? null, bankAccount ?? null, (bankAccount ?? '').slice(-4) || null, now, now);
-  return id;
 }
 
 /** Sets the unit's standard or deep cleaning price: updates its first 'cleaning' or 'cleaning_deep' row in unit_expenses (the row cleanPrice() in

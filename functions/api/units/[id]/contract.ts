@@ -2,14 +2,16 @@ import { type Env, all, one, run, json, fail, audit, nowIso } from '../../../_li
 import { requireSession } from '../../../_lib/auth';
 import { todayMyt } from '../../../_lib/ops';
 import { statementSettings, type Query } from '../../../_lib/ownerStatement';
-import { invalidDraft, draftColumns, MODEL_LABEL, type ContractDraft } from '../../../_lib/revenueModel';
+import { invalidDraft, draftColumns, modelOf, MODEL_LABEL, type ContractDraft } from '../../../_lib/revenueModel';
 import { contractView, unitExample, lastMonth } from '../../../_lib/unitContract';
+import { purposeReady, codesFor, codeOf, isContractCode, CODE_MODEL, CODE_LABEL, PURPOSE_LABEL, type Purpose, type ContractCode } from '../../../_lib/unitPurpose';
 
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
 
 async function unitOf(env: Env, id: string) {
+  const ready = await purposeReady(env);
   return one<any>(env, `
-    SELECT u.id, u.owner_id, u.contract_id, u.unit_number, u.package, u.split_kind, u.split_value, u.misc_charges, p.name AS property_name, o.display_name AS owner_name
+    SELECT ${ready ? 'u.purpose,' : "'rental' AS purpose,"} u.id, u.owner_id, u.contract_id, u.unit_number, u.package, u.split_kind, u.split_value, u.misc_charges, p.name AS property_name, o.display_name AS owner_name
     FROM units u JOIN properties p ON p.id = u.property_id JOIN owners o ON o.id = u.owner_id WHERE u.id = ?`, id);
 }
 
@@ -34,10 +36,13 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
     unitExample(q, id, month),
   ]);
   const current = rows.find(r => r.id === u.contract_id) ?? null;
+  const view = contractView(current, u, settings.defaultFeePct, Number(shared?.n ?? 0));
   return json({
     generatedAt: nowIso(), month,
-    unit: { id, label: `${u.property_name} ${u.unit_number}`, ownerId: u.owner_id, ownerName: u.owner_name },
-    current: contractView(current, u, settings.defaultFeePct, Number(shared?.n ?? 0)),
+    unit: { id, label: `${u.property_name} ${u.unit_number}`, ownerId: u.owner_id, ownerName: u.owner_name, purpose: u.purpose as Purpose },
+    // The income models this unit may take (a showroom or warehouse: a lease only; owner, 17 Oct 2026).
+    allowedCodes: codesFor(u.purpose as Purpose, current ? view.contractCode : null),
+    current: view,
     history: rows.filter(r => r.id !== u.contract_id).map(r => contractView(r, u, settings.defaultFeePct)),
     example,
   });
@@ -76,8 +81,16 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env, params })
   const u = await unitOf(env, id);
   if (!u) return fail('NOT_FOUND', 'That unit no longer exists.', 404);
 
-  const c = draftColumns(b), now = nowIso();
   const cur = u.contract_id ? await one<any>(env, 'SELECT * FROM owner_contracts WHERE id = ?', u.contract_id) : null;
+  // The staff's code decides the model; a request with only a model (older screens) takes that model's code.
+  const code: ContractCode = isContractCode(b.contractCode) ? b.contractCode : codeOf(b.revenueModel as never);
+  if (CODE_MODEL[code] !== b.revenueModel) return fail('VALIDATION', 'Check the contract details.', 422, { contractCode: `${code} is worked out as ${MODEL_LABEL[CODE_MODEL[code]]}, not ${MODEL_LABEL[b.revenueModel as keyof typeof MODEL_LABEL]}.` });
+  const curCode = cur ? codeOf(modelOf({ ...cur, contract_id: cur.id, package: u.package }), cur.contract_code) : null;
+  const allowed = codesFor(u.purpose as Purpose, curCode);
+  if (!allowed.includes(code)) {
+    return fail('VALIDATION', `A ${PURPOSE_LABEL[u.purpose as Purpose].toLowerCase()} unit can take ${allowed.join(', ')} only, not ${code} (${CODE_LABEL[code]}).`, 422, { contractCode: `Pick ${allowed.join(' or ')}.` });
+  }
+  const c = { ...draftColumns(b), ...((await purposeReady(env)) ? { contract_code: code } : {}) }, now = nowIso();
   const shared = cur ? Number((await one<{ n: number }>(env, 'SELECT COUNT(*) AS n FROM units WHERE contract_id = ? AND id <> ?', cur.id, id))?.n ?? 0) : 0;
   const mode = b.mode === 'new' ? 'new' : 'update';
   if (mode === 'new' && cur && cur.starts_on && c.starts_on <= String(cur.starts_on).slice(0, 10)) {

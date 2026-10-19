@@ -98,6 +98,7 @@ import { DocumentHistoryDrawer } from "./DocumentHistoryDrawer";
 import { FocAmount } from "../../vendor/scm/components/FocAmount";
 import { ADD_LINE_LABEL, addLineHref } from "../../vendor/scm/lib/add-line-handoff";
 import { RenovationDocBlock, renoLineColumns, useRenoDocInfo } from "./RenovationDocInfo";
+import { DocAttachments, LineFilesButton } from "../../components/doc-attachments/DocAttachments";
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 const fmtMoney = (centi: number, currency = "MYR"): string => fmtMoneySen(centi, currency);
@@ -861,21 +862,29 @@ function PurchaseOrderDetailV2ReadOnly() {
       width: "110px",
       getValue: (l) => (l.photo_urls ?? []).length,
       render: (l) => (
-        <SoLinePhotoStrip
-          source="po"
-          docId={purchaseOrder?.id ?? ""}
-          itemId={l.id}
-          photoKeys={l.photo_urls ?? []}
-          edit={
-            mayEditPoPhotos && purchaseOrder?.status !== "CANCELLED"
-              ? {
-                  onUpload: (file) => uploadLinePhoto(l.id, file),
-                  onDelete: (key) => deleteLinePhoto(l.id, key),
-                  canDeleteKey: isPoOwnedPhotoKey,
-                }
-              : null
-          }
-        />
+        <div className="flex items-center gap-1.5">
+          <SoLinePhotoStrip
+            source="po"
+            docId={purchaseOrder?.id ?? ""}
+            itemId={l.id}
+            photoKeys={l.photo_urls ?? []}
+            edit={
+              mayEditPoPhotos && purchaseOrder?.status !== "CANCELLED"
+                ? {
+                    onUpload: (file) => uploadLinePhoto(l.id, file),
+                    onDelete: (key) => deleteLinePhoto(l.id, key),
+                    canDeleteKey: isPoOwnedPhotoKey,
+                  }
+                : null
+            }
+          />
+          <LineFilesButton
+            docType="purchase_order"
+            docId={purchaseOrder?.id}
+            lineId={l.id}
+            canEdit={purchaseOrder?.status !== "CANCELLED"}
+          />
+        </div>
       ),
     },
     {
@@ -1459,6 +1468,7 @@ function PurchaseOrderDetailV2ReadOnly() {
                 emptyLabel="No line items"
               />
             </Section>
+            <DocAttachments docType="purchase_order" docId={purchaseOrder.id} canEdit={!isCancelled} />
             {/* Renovation PO payment schedule (Conts, 2026-10-09): Mobilise / Completion / Retention. */}
             <PoPaymentScheduleCard poId={purchaseOrder.id} offerDefault={items.some((l) => l.item_group === "RENOVATION")} />
           </DetailMain>

@@ -16,6 +16,12 @@
  *    - fixed rent (GRR): the owner gets the monthly rent; the income and costs are the company's.
  *    - long-term let (revenue model long_term, no bookings): the income is the tenant's monthly rent, prorated by the
  *      tenancy days in the month; owner-paid costs come off it, and the management fee is a percentage of the rent.
+ *    - yearly guarantee (PS YGRR, management_yearly_guarantee; staff sheet, 17 Oct 2026): a share every month as above,
+ *      with no monthly minimum. The guarantee is for each contract year (12 months from the contract's start month).
+ *      On the statement of the year's last month (or the contract's end month, when it ends earlier, with the
+ *      guarantee prorated by the months it ran), the owner's shares for the year are added up; if they come to less
+ *      than the guarantee, the company tops up the difference on that statement. The earlier months' shares are worked
+ *      out again by this engine (withYearToDate), the same way the year-to-date page shows them.
  *    - master lease: the company rents the unit from the owner. There is no owner statement; the rent is a company
  *      cost (units/detail.ts shows it). Owner credits and charges on such a unit still reach the owner.
  *  Only expenses paid by the owner (expenses.charge_to = 'owner', "Paid by: Owner" on screen) are deducted; the
@@ -48,13 +54,18 @@ export interface UnitRow {
   contract_misc: number | null;
   /** 0093: the contract's revenue model (null = read from model / minimum guarantee / package), tenant, agent. */
   revenue_model?: string | null; tenant_name?: string | null; agent_fee_pct?: number | null;
+  /** PS YGRR (0125): the guarantee for each contract year, sen. */
+  minimum_guarantee_annual?: number | null;
+  /** PS YGRR: the owner's shares for the earlier months of the contract year, filled by withYearToDate. Absent: the
+   *  true-up is not worked out (the statement says so). */
+  year_shares_before?: number;
   /** The unit's other contracts (history), newest start first: used for a month before the current contract began. */
   history?: ContractRow[];
 }
 export interface ContractRow {
   id: string; unit_id: string; revenue_model: string | null; model: string | null; management_fee_pct: number | null; grr_amount: number | null;
   starts_on: string | null; ends_on: string | null; minimum_guarantee: number | null; guarantee_starts_on: string | null; guarantee_ends_on: string | null;
-  misc_charges: number | null; tenant_name: string | null; agent_fee_pct: number | null;
+  misc_charges: number | null; tenant_name: string | null; agent_fee_pct: number | null; minimum_guarantee_annual?: number | null;
 }
 export interface StayRow {
   id: string; unit_id: string; check_in: string; check_out: string; collected_revenue: number; channel: string; external_ref: string | null; guest_name: string | null;
@@ -73,6 +84,38 @@ export interface Terms {
   ownerPct: number | null; fixedRent: number; guarantee: number;
   activeFrom: string | null; activeTo: string | null; guaranteeFrom: string | null; guaranteeTo: string | null;
   miscCharges: boolean;
+  /** PS YGRR only: the guarantee for each contract year, sen. */
+  yearlyGuarantee?: number;
+}
+export interface YearlyGuarantee {
+  /** The guarantee for the whole year, and the part that applies (prorated when the contract ends early). */
+  annual: number; due: number;
+  /** First and last month of this contract year (YYYY-MM), and whether this month's statement carries the true-up. */
+  yearFrom: string; yearTo: string; trueUp: boolean;
+}
+
+const addMonths = (month: string, n: number) => {
+  const [y, m] = month.split('-').map(Number);
+  const t = y * 12 + (m - 1) + n;
+  return `${Math.floor(t / 12)}-${String((t % 12) + 1).padStart(2, '0')}`;
+};
+const monthsBetween = (a: string, b: string) => {
+  const [ya, ma] = a.split('-').map(Number), [yb, mb] = b.split('-').map(Number);
+  return (yb * 12 + mb) - (ya * 12 + ma);
+};
+
+/** Where `month` falls in a yearly-guarantee contract: the contract year it belongs to and whether it is the year's
+ *  last month (or the contract's end month). Null before the contract starts or after it ends. */
+export function yearlyFor(month: string, startsOn: string | null, endsOn: string | null, annual: number): YearlyGuarantee | null {
+  if (!startsOn) return null;
+  const first = startsOn.slice(0, 7), endMonth = endsOn ? endsOn.slice(0, 7) : null;
+  const k = monthsBetween(first, month);
+  if (k < 0 || (endMonth && month > endMonth)) return null;
+  const yearFrom = addMonths(first, Math.floor(k / 12) * 12);
+  const fullTo = addMonths(yearFrom, 11);
+  const yearTo = endMonth && endMonth < fullTo ? endMonth : fullTo;
+  const months = monthsBetween(yearFrom, yearTo) + 1;
+  return { annual, due: roundSen((annual * months) / 12), yearFrom, yearTo, trueUp: month === yearTo };
 }
 
 /** The split a unit is on. Its contract when it has one; else the unit's own split (Unit资料 rows with no contract
@@ -85,6 +128,10 @@ export function termsFor(u: UnitRow, defaultFeePct: number): Terms {
     const agentPct = u.agent_fee_pct == null ? null : Number(u.agent_fee_pct);
     if (model === 'grr') return { ...base, model, basis: 'fixed_rent', source: 'contract', ownerPct: null, fixedRent: Number(u.grr_amount ?? 0), guarantee: 0 };
     if (model === 'master_lease') return { ...base, model, basis: 'none', source: 'contract', ownerPct: null, fixedRent: Number(u.grr_amount ?? 0), guarantee: 0, miscCharges: false };
+    if (model === 'management_yearly_guarantee') {
+      const annual = Number(u.minimum_guarantee_annual ?? 0);
+      return { ...base, model, agentPct, basis: 'share', source: 'contract', ownerPct: 100 - Number(u.management_fee_pct ?? defaultFeePct), fixedRent: 0, guarantee: 0, yearlyGuarantee: annual };
+    }
     if (model === 'long_term') return { ...base, model, basis: 'share', source: 'contract', ownerPct: 100 - Number(u.management_fee_pct ?? 0), fixedRent: Number(u.grr_amount ?? 0), guarantee: 0, miscCharges: false, tenantName: u.tenant_name ?? null };
     // A management share never carries a guarantee; one with a guarantee is management_guarantee (modelOf reads a
     // contract with a minimum as that, so the figures are the ones the statement always gave).
@@ -110,6 +157,7 @@ export function unitForMonth(u: UnitRow, month: string): UnitRow {
     ...u, contract_id: c.id, revenue_model: c.revenue_model, model: c.model, management_fee_pct: c.management_fee_pct, grr_amount: c.grr_amount,
     starts_on: c.starts_on, ends_on: c.ends_on, minimum_guarantee: c.minimum_guarantee, guarantee_starts_on: c.guarantee_starts_on,
     guarantee_ends_on: c.guarantee_ends_on, contract_misc: c.misc_charges, tenant_name: c.tenant_name, agent_fee_pct: c.agent_fee_pct,
+    minimum_guarantee_annual: c.minimum_guarantee_annual ?? null,
   };
 }
 
@@ -141,6 +189,8 @@ export interface UnitMonth {
   ownerPct: number | null; operatorShare: number; ownerShare: number; guarantee: number; topUp: number; fixedRent: number;
   payoutBeforeAdjustments: number; adjustmentsTotal: number; netPayout: number;
   lines: Line[]; adjustmentIds: string[];
+  /** PS YGRR: the contract year this month belongs to; on its last month, the shares checked against the guarantee. */
+  yearly?: YearlyGuarantee & { sharesBefore: number | null; yearShares: number | null };
   /** Things finance should look at before finalising (shown on the statement screen, never on the owner's report). */
   warnings: string[];
 }
@@ -235,6 +285,7 @@ export function computeUnitMonth(month: string, unit: UnitRow, terms: Terms, sta
 
   // The split.
   let ownerShare = 0, operatorShare = 0, topUp = 0, guarantee = 0, fixedRent = 0, payoutBeforeAdjustments = 0;
+  let yearly: UnitMonth['yearly'];
   if (terms.basis === 'none') {
     // Master lease: nothing earned or owed by the owner through a statement.
   } else if (terms.model === 'long_term') {
@@ -261,6 +312,19 @@ export function computeUnitMonth(month: string, unit: UnitRow, terms: Terms, sta
       payoutBeforeAdjustments = ownerShare;
     }
     operatorShare = net - ownerShare;
+    // PS YGRR: on the contract year's last statement, the year's shares are checked against the yearly guarantee.
+    if (terms.model === 'management_yearly_guarantee' && terms.yearlyGuarantee) {
+      const y = yearlyFor(month, terms.activeFrom, terms.activeTo, terms.yearlyGuarantee);
+      if (y) {
+        yearly = { ...y, sharesBefore: unit.year_shares_before ?? null, yearShares: null };
+        if (y.trueUp && unit.year_shares_before !== undefined) {
+          const yearShares = unit.year_shares_before + ownerShare;
+          yearly.yearShares = yearShares;
+          guarantee = y.due;
+          if (y.due > yearShares) { topUp = y.due - yearShares; payoutBeforeAdjustments = ownerShare + topUp; }
+        }
+      }
+    }
   }
 
   // Lines, in the order the report shows them. A fixed-rent owner's statement carries the rent, not the unit's trading.
@@ -289,7 +353,9 @@ export function computeUnitMonth(month: string, unit: UnitRow, terms: Terms, sta
     if (operatorShare) lines.push({ type: 'management_fee', category: 'operator_share', unitId: unit.id, quantity: null, amount: -operatorShare, occurredOn: end,
       description: `${fmtPct(100 - (terms.ownerPct ?? 0))} To Operator` });
     if (topUp) lines.push({ type: 'adjustment', category: 'guarantee_top_up', unitId: unit.id, quantity: null, amount: topUp, occurredOn: end,
-      description: `Minimum guarantee top-up (guaranteed RM ${(guarantee / 100).toFixed(2)})` });
+      description: yearly
+        ? `Yearly guarantee top-up (guaranteed RM ${(guarantee / 100).toFixed(2)} for ${yearly.yearFrom} to ${yearly.yearTo}; owner's share over the year RM ${((yearly.yearShares ?? 0) / 100).toFixed(2)})`
+        : `Minimum guarantee top-up (guaranteed RM ${(guarantee / 100).toFixed(2)})` });
   } else if (fixedRent) {
     lines.push({ type: 'adjustment', category: 'fixed_rent', unitId: unit.id, quantity: null, amount: fixedRent, occurredOn: end, description: `${label}: fixed monthly rent` });
   }
@@ -303,12 +369,13 @@ export function computeUnitMonth(month: string, unit: UnitRow, terms: Terms, sta
   const unpaid = mine.filter(x => !(x.paid > 0));
   if (unpaid.length) warnings.push(`${unpaid.length} ${unpaid.length === 1 ? 'reservation has' : 'reservations have'} no host payout recorded (${unpaid.reduce((n, x) => n + x.n, 0)} nights counted at RM 0): ${unpaid.map(x => `${x.s.check_in} to ${x.s.check_out}`).join(', ')}.`);
   if (terms.model === 'long_term' && !gross) warnings.push('Long-term let with no rent this month: check the tenancy dates on the contract.');
+  if (yearly?.trueUp && yearly.yearShares === null) warnings.push(`Yearly guarantee: this is the last month of the contract year (${yearly.yearFrom} to ${yearly.yearTo}), but the earlier months were not worked out here, so no top-up is shown.`);
   if (terms.source === 'default') warnings.push(`No contract or split on this unit: the default ${fmtPct(100 - (terms.ownerPct ?? 0))} operator share was used.`);
 
   return {
     unitId: unit.id, ownerId: unit.owner_id, month, terms, nights, days, occupancy,
     grossExact, gross, deductionGroups, deductions, deductionsExact, net,
-    ownerPct: terms.ownerPct, operatorShare, ownerShare, guarantee, topUp, fixedRent,
+    ownerPct: terms.ownerPct, operatorShare, ownerShare, guarantee, topUp, fixedRent, yearly,
     payoutBeforeAdjustments, adjustmentsTotal, netPayout: payoutBeforeAdjustments + adjustmentsTotal,
     lines, adjustmentIds: mineAdj.map(a => a.id), warnings,
   };
@@ -332,7 +399,7 @@ export const UNIT_SQL = `
          u.package, u.term, u.split_kind, u.split_value, u.misc_charges AS unit_misc,
          c.id AS contract_id, c.model, c.management_fee_pct, c.grr_amount, c.starts_on, c.ends_on,
          c.minimum_guarantee, c.guarantee_starts_on, c.guarantee_ends_on, c.misc_charges AS contract_misc,
-         c.revenue_model, c.tenant_name, c.agent_fee_pct
+         c.revenue_model, c.tenant_name, c.agent_fee_pct, c.minimum_guarantee_annual
   FROM units u JOIN properties p ON p.id = u.property_id JOIN owners o ON o.id = u.owner_id
   LEFT JOIN owner_contracts c ON c.id = u.contract_id`;
 
@@ -359,7 +426,7 @@ export async function loadInputs(q: Query, from: string, toExclusive: string, sc
       ORDER BY a.occurred_on, a.id`, toExclusive, ids),
     q<ContractRow>(`
       SELECT c.id, c.unit_id, c.revenue_model, c.model, c.management_fee_pct, c.grr_amount, c.starts_on, c.ends_on, c.minimum_guarantee,
-             c.guarantee_starts_on, c.guarantee_ends_on, c.misc_charges, c.tenant_name, c.agent_fee_pct
+             c.guarantee_starts_on, c.guarantee_ends_on, c.misc_charges, c.tenant_name, c.agent_fee_pct, c.minimum_guarantee_annual
       FROM owner_contracts c WHERE c.unit_id IN (SELECT jsonb_array_elements_text(?::text::jsonb))
       ORDER BY c.starts_on DESC, c.created_at DESC`, ids),
   ]);
@@ -420,4 +487,28 @@ export function computeMonth(month: string, inputs: Inputs, settings: { defaultF
     for (const u of asOf) out.push(computeUnitMonth(month, u, termsFor(u, settings.defaultFeePct), stays, costs, adj, settings.miscMonthly));
   }
   return out;
+}
+
+/** PS YGRR: for every unit whose statement for `month` closes a contract year, works out the owner's shares for the
+ *  year's earlier months (this engine, live figures, under the same contract) and puts the total on the unit
+ *  (year_shares_before), so computeMonth can apply the yearly true-up. Units on other models come back unchanged.
+ *  Only contract-year-end months cost anything: one loadInputs for that unit's earlier months. */
+export async function withYearToDate(q: Query, inputs: Inputs, month: string, settings: { defaultFeePct: number; miscMonthly: number }): Promise<Inputs> {
+  const units = await Promise.all(inputs.units.map(async u => {
+    const asOf = unitForMonth(u, month);
+    const t = termsFor(asOf, settings.defaultFeePct);
+    if (t.model !== 'management_yearly_guarantee' || !t.yearlyGuarantee) return u;
+    const y = yearlyFor(month, t.activeFrom, t.activeTo, t.yearlyGuarantee);
+    if (!y?.trueUp) return u;
+    if (y.yearFrom === month) return { ...u, year_shares_before: 0 };
+    const before = await loadInputs(q, `${y.yearFrom}-01`, `${month}-01`, { unitId: u.id });
+    let total = 0;
+    for (let m = y.yearFrom; m < month; m = addMonths(m, 1)) {
+      // The unit as given (terms not saved yet on the Contract tab's example), with the earlier months' stays and costs.
+      const r = computeMonth(m, { ...before, units: [{ ...u, year_shares_before: undefined }] }, settings, 'dated').find(x => x.unitId === u.id);
+      if (r && unitForMonth(u, m).contract_id === asOf.contract_id) total += r.ownerShare;
+    }
+    return { ...u, year_shares_before: total };
+  }));
+  return { ...inputs, units };
 }

@@ -16,6 +16,7 @@ import { refusalOf, renoSend, sectionsForSave, useBrands, useContract, useRenoMu
 import { buildPrintDoc } from '../../lib/renovation/print-doc';
 import { amountsOf, blankSection, DocEditor } from './DocEditor';
 import { PrintDialog } from './PrintDialog';
+import { DocAttachments } from '../../components/doc-attachments/DocAttachments';
 import { Card, ErrorBanner, Field, inputCls, rm, StatusPill, todayIso } from './shared';
 import { cn } from '../../lib/utils';
 
@@ -65,6 +66,7 @@ export function VariationOrderEditor() {
   if (vo.isLoading || !vo.data) return <div className="p-8 text-center text-[13px] text-ink-muted">{vo.error ? refusalOf(vo.error).message : 'Loading variation order…'}</div>;
   const v = vo.data;
   const editable = v.status === 'DRAFT' && can('scm.renovation.quote');
+  const filesEditable = v.status !== 'CANCELLED' && can('scm.renovation.quote');
   const addSen = adds.reduce((s, sec) => s + sec.lines.reduce((t, l) => t + amountsOf(l).netSen, 0), 0);
   const omitSen = v.status === 'APPROVED' ? v.totals.omitSen : omits.reduce((s, o) => {
     const t = targets.find((x) => x.line.id === o.lineId);
@@ -140,7 +142,8 @@ export function VariationOrderEditor() {
           </Card>
           <div>
             <h2 className="mb-2 text-[13.5px] font-semibold text-ink">Add</h2>
-            <DocEditor sections={adds} disabled={!editable} allowLumpSum={false} onChange={(s) => { setAdds(s); setDirty(true); }} />
+            <DocEditor sections={adds} disabled={!editable} allowLumpSum={false} onChange={(s) => { setAdds(s); setDirty(true); }}
+              files={{ docType: 'variation_order', docId: v.id, canEdit: filesEditable }} />
           </div>
           <Card title="Omit from the contract" dense>
             {v.status === 'APPROVED' ? (
@@ -177,6 +180,7 @@ export function VariationOrderEditor() {
               </div>
             )}
           </Card>
+          <DocAttachments docType="variation_order" docId={v.id} canEdit={filesEditable} />
         </div>
         <div className="2xl:sticky 2xl:top-4 2xl:self-start">
           <Card title="Variation">

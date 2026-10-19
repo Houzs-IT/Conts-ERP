@@ -198,11 +198,17 @@ export function defaultStageOf(category: string | null | undefined): StageKey | 
   return g ? groupDef(g).stage : null;
 }
 
+/* The eight built-in units. The live list is scm.product_uoms (migration 0118,
+   edited under Products > SKU Master > Units); these are its seed and the
+   fallback while it loads. Helpers take the live list when the caller has it. */
 export interface UomDef {
   code: string;
   label: string;
   printLabel: string;
   measure: boolean;
+  builtin?: boolean;
+  sort?: number;
+  active?: boolean;
 }
 
 export const UOMS: readonly UomDef[] = [
@@ -216,13 +222,13 @@ export const UOMS: readonly UomDef[] = [
   { code: 'FULL', label: 'Full unit', printLabel: 'FULL UNIT', measure: false },
 ];
 
-export function isUom(x: string | null | undefined): boolean {
-  return UOMS.some((u) => u.code === String(x ?? '').toUpperCase());
+export function isUom(x: string | null | undefined, uoms: readonly UomDef[] = UOMS): boolean {
+  return uoms.some((u) => u.code === String(x ?? '').toUpperCase());
 }
 
-export function uomPrintLabel(code: string | null | undefined): string {
+export function uomPrintLabel(code: string | null | undefined, uoms: readonly UomDef[] = UOMS): string {
   const c = String(code ?? '').toUpperCase();
-  return UOMS.find((u) => u.code === c)?.printLabel ?? c;
+  return uoms.find((u) => u.code === c)?.printLabel ?? c;
 }
 
 /* Generic SKUs: one per WORKS and SERVICE sub-category (code RN-<SUB>), so every
@@ -281,9 +287,9 @@ export function subCategoryCodeOf(label: string): string {
   return label.trim().toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40);
 }
 
-export function parseUom(input: string | null | undefined): string | null {
+export function parseUom(input: string | null | undefined, uoms: readonly UomDef[] = UOMS): string | null {
   const raw = String(input ?? '').trim();
   if (!raw) return null;
   const w = normWord(raw);
-  return UOMS.find((u) => normWord(u.code) === w || normWord(u.label) === w || normWord(u.printLabel) === w)?.code ?? null;
+  return uoms.find((u) => normWord(u.code) === w || normWord(u.label) === w || normWord(u.printLabel) === w)?.code ?? null;
 }

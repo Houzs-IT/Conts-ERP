@@ -1,6 +1,8 @@
-import { type Env, all, one, json, fail, mytToday } from '../../_lib/db';
+import { type Env, all, json, fail, mytToday } from '../../_lib/db';
+import { rentalOnly } from '../../_lib/unitPurpose';
 import { stayMonths, metrics, monthEndExclusive, toDate } from '../../_lib/revenue';
 import { requireSession } from '../../_lib/auth';
+import { ownerMonths } from '../../_lib/ownerEstimate';
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
@@ -15,10 +17,12 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   // sold); revenue counts every unit.
   const { toExclusive, days } = toDate(`${period}-01`, monthEndExclusive(period), mytToday());
   const rows = await stayMonths(env, `${period}-01`, toExclusive);
-  const listedIds = new Set((await all<{ id: string }>(env, 'SELECT id FROM units WHERE is_listed = 1')).map(u => u.id));
+  const listedIds = new Set((await all<{ id: string }>(env, `SELECT id FROM units WHERE is_listed = 1${await rentalOnly(env, 'units')}`)).map(u => u.id));
   const listed = metrics(rows.filter(r => listedIds.has(r.unit_id)), listedIds.size * days);
   const everything = metrics(rows, 0);
-  const payout = await one<{ net: number }>(env, `SELECT COALESCE(SUM(net_payout), 0) AS net FROM owner_statements WHERE substr(period_start, 1, 7) = ?`, period);
+  // The owners' payout for the whole month by the statement engine, the same estimate as the Owners page's "To pay
+  // owners" (stored statements only exist once a month is generated, so they read RM 0 for the month in progress).
+  const owners = session.manage ? (await ownerMonths(env, [period])).get(period) : undefined;
 
   const kpis = [
     { key: 'occupancy', value: listed.occupancy.toFixed(1), unit: 'percent' },
@@ -26,7 +30,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       { key: 'accommodation_revenue', value: everything.gross, currency: 'MYR' },
       { key: 'adr', value: listed.adr, currency: 'MYR' },
       { key: 'revpar', value: listed.revpar, currency: 'MYR' },
-      { key: 'net_owner_payout', value: Number(payout?.net ?? 0), currency: 'MYR' },
+      { key: 'net_owner_payout', value: owners?.netPayout ?? 0, currency: 'MYR', estimate: true },
     ] : []),
   ];
 

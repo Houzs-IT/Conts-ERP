@@ -1,20 +1,24 @@
-import { useEffect, useId, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
-import { SystemStats } from '../components/SystemStats';
 import { StatusBadge } from '../components/StatusBadge';
 import { Button } from '../components/Button';
 import { Field } from '../components/Field';
 import { MoneyInput, NumberInput, PercentInput, PhoneInput, TimeField } from '../components/inputs';
-import { Select, type SelectOption } from '../components/Select';
+import { Select } from '../components/Select';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
 import { api, errorMessage } from '../lib/api';
 import { cx } from '../lib/design-tokens';
+import { useDevice } from '../lib/deviceClass';
+import { SETTINGS_SECTIONS, type SettingsSectionKey } from '../lib/navigation';
+import { ServicePrices } from './ServicePrices';
 import { useSession } from '../lib/session';
 import { ROLE_LABEL } from '../lib/vocabulary';
 import { refreshNavCounts } from '../lib/navBadges';
+import AgreementTemplateSettings from './settings/AgreementTemplate';
 
 /* ------------------------------------------------------------------ *
  * Settings — organisation-wide defaults (routes.json → SYSTEM →
@@ -23,14 +27,21 @@ import { refreshNavCounts } from '../lib/navBadges';
  * reads are shown (owner, 11 Oct 2026); BUTTONS.md §14: every field
  * saves through PUT /api/settings and every write is audited.
  *
+ * One category at a time (owner, 16 Oct 2026), at /system/settings/<key>:
+ * the desktop menu nests the categories under Settings and the phone
+ * Settings tab lists them (SETTINGS_SECTIONS); each shows as label | control
+ * rows no wider than max-w-4xl.
+ *
  * Each section owns its own Save button and dirty state so one edit
- * never commits another section's half-finished change. There is no
+ * never commits another section's half-finished change. Drafts live in
+ * this page, so moving between categories keeps an unsaved edit. There is no
  * backend in dev, so a save is applied to a local overlay first and the
  * real PUT is attempted in a swallowed try/catch — the interaction is
  * always visible whether or not the endpoint answers.
  * ------------------------------------------------------------------ */
 
-type SectionKey = 'company' | 'locale' | 'operations' | 'report' | 'approvals' | 'security';
+// The agreement template has its own versioned store and screen (settings/AgreementTemplate.tsx), not these rows.
+type SectionKey = Exclude<SettingsSectionKey, 'agreement' | 'services'>;
 
 interface Settings {
   company: { legalName: string; companyNumber: string; address: string; supportPhone: string; supportEmail: string };
@@ -86,97 +97,68 @@ const ABSOLUTE = [
   { value: 720, label: '30 days' },
 ];
 
-/** The shared Select, with its label above and an optional help line, to sit beside Field inputs. */
-function SelectField({ label, value, onChange, help, options }: {
-  label: string; value: string | number; onChange: (v: string) => void; help?: string; options: SelectOption[];
-}) {
+/** Accessible switch. On-state is neutral ink, never a status tone. */
+function Switch({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
   return (
-    <div className="flex flex-col gap-1.5">
-      <Select label={label} showLabel size="md" value={String(value)} onChange={onChange} options={options} />
-      {help && <span className="text-meta text-muted-ink">{help}</span>}
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      onClick={() => onChange(!checked)}
+      className={cx(
+        'flex-none w-[42px] h-6 rounded-full border-none p-0.5 cursor-pointer flex items-center',
+        '[transition:background_var(--motion-fast)_var(--ease-out)]',
+        checked ? 'bg-ink justify-end' : 'bg-line-strong justify-start',
+      )}
+    >
+      <span className="w-5 h-5 rounded-full bg-white [box-shadow:0_1px_2px_rgba(21,21,21,0.25)]" />
+    </button>
+  );
+}
+
+/** One setting: what it is and what it affects on the left third, its control on the right two thirds.
+ *  Stacks when the panel is narrow (container query on the Card below). */
+function Row({ label, description, children }: { label: string; description?: ReactNode; children: ReactNode }) {
+  return (
+    <div className="grid gap-x-8 gap-y-2.5 px-5 py-4 @lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] [border-top:1px_solid_var(--color-line-soft)] first:[border-top:none]">
+      <div className="flex flex-col gap-0.5 min-w-0">
+        <span className="text-copy font-medium">{label}</span>
+        {description && <span className="text-meta text-muted-ink leading-[1.45]">{description}</span>}
+      </div>
+      <div className="min-w-0 flex flex-col justify-center">{children}</div>
     </div>
   );
 }
 
-/** Accessible switch. On-state is neutral ink, never a status tone. */
-function ToggleField({ label, description, checked, onChange }: {
-  label: string; description?: string; checked: boolean; onChange: (v: boolean) => void;
-}) {
-  return (
-    <label className="flex items-center justify-between gap-5 cursor-pointer">
-      <span className="flex flex-col gap-0.5 min-w-0">
-        <span className="text-copy font-medium">{label}</span>
-        {description && <span className="text-meta text-muted-ink leading-[1.45]">{description}</span>}
-      </span>
-      <button
-        type="button"
-        role="switch"
-        aria-checked={checked}
-        aria-label={label}
-        onClick={() => onChange(!checked)}
-        className={cx(
-          'flex-none w-[42px] h-6 rounded-full border-none p-0.5 cursor-pointer flex items-center',
-          '[transition:background_var(--motion-fast)_var(--ease-out)]',
-          checked ? 'bg-ink justify-end' : 'bg-line-strong justify-start',
-        )}
-      >
-        <span className="w-5 h-5 rounded-full bg-white [box-shadow:0_1px_2px_rgba(21,21,21,0.25)]" />
-      </button>
-    </label>
-  );
-}
-
-/** One saveable section. Owns its Save / Discard controls and dirty pill. */
-function SectionCard({ title, description, dirty, busy, onSave, onDiscard, saveLabel, children, readOnly }: {
-  title: string; description: string; dirty: boolean; busy: boolean; readOnly?: boolean;
+/** The chosen category's rows and its own Save / Discard. */
+function Panel({ dirty, busy, onSave, onDiscard, saveLabel, children, readOnly }: {
+  dirty: boolean; busy: boolean; readOnly?: boolean;
   onSave: () => void; onDiscard: () => void; saveLabel: string; children: ReactNode;
 }) {
   return (
-    <Card>
-      <div className="px-5 pt-5 pb-4 [border-bottom:1px_solid_var(--color-line-soft)] flex items-start justify-between gap-4 flex-wrap">
-        <div className="flex flex-col gap-1 min-w-0 flex-1">
-          <span className="text-[16px] font-semibold tracking-[-0.01em]">{title}</span>
-          <span className="text-meta text-muted-ink leading-[1.45]">{description}</span>
-        </div>
-        {readOnly ? <StatusBadge tone="neutral" label="Management changes these" size="sm" /> : <div className="flex items-center gap-2 flex-wrap">
-          {dirty && (
-            <StatusBadge tone="warning" label="Unsaved changes" size="sm" />
-          )}
-          {dirty && <Button variant="tertiary" size="sm" onClick={onDiscard} disabled={busy}>Discard</Button>}
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={onSave}
-            loading={busy}
-            disabled={!dirty}
-            disabledReason="No changes to save."
-          >
-            {saveLabel}
-          </Button>
-        </div>}
-      </div>
-      <fieldset disabled={readOnly} className="p-5 m-0 border-0 min-w-0 flex flex-col gap-4">
+    <Card className="@container">
+      <fieldset disabled={readOnly} className="m-0 p-0 border-0 min-w-0">
         {children}
       </fieldset>
+      {!readOnly && (
+        <div className="flex items-center justify-end gap-2 flex-wrap px-5 py-3 bg-muted [border-top:1px_solid_var(--color-line-soft)]">
+          {dirty && <StatusBadge tone="warning" label="Unsaved changes" size="sm" />}
+          {dirty && <Button variant="tertiary" size="sm" onClick={onDiscard} disabled={busy}>Discard</Button>}
+          <Button variant="primary" size="sm" onClick={onSave} loading={busy} disabled={!dirty} disabledReason="No changes to save.">
+            {saveLabel}
+          </Button>
+        </div>
+      )}
     </Card>
   );
 }
 
-/** Two-up responsive grid for the fields inside a section. */
-function Grid({ children }: { children: ReactNode }) {
-  return <div className="grid gap-4 grid-cols-[repeat(auto-fit,minmax(220px,1fr))]">{children}</div>;
-}
-
-/** A multi-line field, labelled like Field. */
-function TextArea({ label, value, help, onChange }: { label: string; value: string; help?: string; onChange: (v: string) => void }) {
-  const id = useId();
+/** A multi-line field; its label is the row's. */
+function TextArea({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
   return (
-    <div className="flex flex-col gap-[7px]">
-      <label htmlFor={id} className="text-[length:var(--text-small)] font-medium text-muted-ink">{label}</label>
-      <textarea id={id} value={value} rows={5} maxLength={4000} aria-describedby={help ? `${id}-help` : undefined} onChange={e => onChange(e.target.value)}
-        className="field-input h-auto! py-2.5 leading-[1.5] resize-y min-h-[110px]" />
-      {help && <span id={`${id}-help`} className="text-[length:var(--text-small)] text-muted-ink">{help}</span>}
-    </div>
+    <textarea aria-label={label} value={value} rows={5} maxLength={4000} onChange={e => onChange(e.target.value)}
+      className="field-input h-auto! py-2.5 leading-[1.5] resize-y min-h-[110px]" />
   );
 }
 
@@ -190,6 +172,11 @@ export default function SettingsPage() {
   const toast = useToast();
   // PUT /api/settings accepts management only; everyone else reads.
   const readOnly = useSession().user?.role !== 'management';
+  const navigate = useNavigate();
+  const { section } = useParams();
+  const phone = useDevice().cls === 'phone';
+  // With no category named, a phone goes back to the list on its Settings tab and a desk opens the first one.
+  const current = SETTINGS_SECTIONS.find(s => s.key === section);
 
   const base = data ?? FALLBACK;
   // Committed local state: the last-saved values overlaid on what the API returned.
@@ -282,255 +269,196 @@ export default function SettingsPage() {
     setBusy(null);
   }
 
+  const roleBoxes = (
+    <div className="grid gap-x-5 gap-y-1 grid-cols-[repeat(auto-fill,minmax(180px,1fr))]">
+      {TWO_STEP_ROLES.map(r => {
+        const on = draft.security.require2faRoles.split(',').includes(r);
+        return (
+          <label key={r} className={cx('flex items-center gap-2 min-h-8 text-copy', readOnly ? 'cursor-default text-muted-ink' : 'cursor-pointer')}>
+            <input type="checkbox" className="w-4 h-4" checked={on} disabled={readOnly}
+              onChange={() => {
+                const set = new Set(draft.security.require2faRoles.split(',').filter(Boolean));
+                if (on) set.delete(r); else set.add(r);
+                patch('security', { require2faRoles: TWO_STEP_ROLES.filter(x => set.has(x)).join(',') });
+              }} />
+            {ROLE_LABEL[r] ?? r}
+          </label>
+        );
+      })}
+    </div>
+  );
+
+  const ROWS: Record<SectionKey, { saveLabel: string; rows: ReactNode }> = {
+    company: { saveLabel: 'Save company', rows: <>
+      <Row label="Legal name">
+        <Field aria-label="Legal name" value={draft.company.legalName} error={errors['company.legalName']}
+          onChange={e => patch('company', { legalName: e.target.value }, 'company.legalName')} />
+      </Row>
+      <Row label="Company registration number" description="The SSM number, printed under the company name.">
+        <Field aria-label="Company registration number" value={draft.company.companyNumber} error={errors['company.companyNumber']}
+          onChange={e => patch('company', { companyNumber: e.target.value }, 'company.companyNumber')} />
+      </Row>
+      <Row label="Registered address" description="Printed on every letterhead line by line, as typed here.">
+        <TextArea label="Registered address" value={draft.company.address} onChange={v => patch('company', { address: v })} />
+      </Row>
+      <Row label="Support phone">
+        <PhoneInput aria-label="Support phone" value={draft.company.supportPhone} error={errors['company.supportPhone']}
+          onChange={v => patch('company', { supportPhone: v }, 'company.supportPhone')} />
+      </Row>
+      <Row label="Support email">
+        <Field aria-label="Support email" type="email" value={draft.company.supportEmail} error={errors['company.supportEmail']}
+          onChange={e => patch('company', { supportEmail: e.target.value }, 'company.supportEmail')} />
+      </Row>
+    </> },
+
+    operations: { saveLabel: 'Save times', rows: <>
+      <Row label="Standard check-in" description="Used for a reservation with no time of its own, and to flag early check-ins.">
+        <div className="max-w-[240px]">
+          <TimeField aria-label="Standard check-in" required value={draft.operations.checkIn} error={errors['operations.checkIn']}
+            onChange={v => patch('operations', { checkIn: v }, 'operations.checkIn')} />
+        </div>
+      </Row>
+      <Row label="Standard checkout" description="Used for a reservation with no time of its own, and to flag late checkouts.">
+        <div className="max-w-[240px]">
+          <TimeField aria-label="Standard checkout" required value={draft.operations.checkOut} error={errors['operations.checkOut']}
+            onChange={v => patch('operations', { checkOut: v }, 'operations.checkOut')} />
+        </div>
+      </Row>
+    </> },
+
+    locale: { saveLabel: 'Save share', rows: <>
+      <Row label="Default operator share" description="Used when a statement is generated for a unit with no share on its contract.">
+        <div className="max-w-[240px]">
+          <PercentInput aria-label="Default operator share" value={draft.locale.managementFeePct} error={errors['locale.managementFeePct']}
+            onChange={v => patch('locale', { managementFeePct: held(v) }, 'locale.managementFeePct')} />
+        </div>
+      </Row>
+    </> },
+
+    report: { saveLabel: 'Save wording', rows: <>
+      <Row label="Payment terms" description="Printed as TERMS on the monthly page.">
+        <Field aria-label="Payment terms" value={draft.report.paymentTerms} error={errors['report.paymentTerms']}
+          onChange={e => patch('report', { paymentTerms: e.target.value }, 'report.paymentTerms')} />
+      </Row>
+      <Row label="Miscellaneous charge a month (RM)" description="Deducted each month from units whose contract has miscellaneous charges.">
+        <div className="max-w-[240px]">
+          <MoneyInput aria-label="Miscellaneous charge a month (RM)" valueSen={draft.report.miscChargeMonthly} error={errors['report.miscChargeMonthly']}
+            onChangeSen={v => patch('report', { miscChargeMonthly: held(v) }, 'report.miscChargeMonthly')} />
+        </div>
+      </Row>
+      <Row label="Monthly statement terms" description="One term per line. Printed, numbered, under the monthly page.">
+        <TextArea label="Monthly statement terms" value={draft.report.monthlyTerms} onChange={v => patch('report', { monthlyTerms: v })} />
+      </Row>
+      <Row label="Year-to-date terms" description="One term per line. Printed under the year-to-date page.">
+        <TextArea label="Year-to-date terms" value={draft.report.yearTerms} onChange={v => patch('report', { yearTerms: v })} />
+      </Row>
+    </> },
+
+    approvals: { saveLabel: 'Save approvals', rows: <>
+      <Row label="Require a second person to approve money going out"
+        description={draft.approvals.enabled
+          ? 'Guest refunds, owner payouts, owner adjustments, debt write-offs and expenses above the amount below wait on the Approvals page. Nobody approves their own request, except the only management user, with a written reason.'
+          : 'Off. Refunds, owner payouts, owner adjustments, write-offs and expenses happen as soon as they are entered, recorded under the name of the person who did it.'}>
+        <Switch label="Require a second person to approve money going out" checked={draft.approvals.enabled}
+          onChange={v => patch('approvals', { enabled: v })} />
+      </Row>
+      {draft.approvals.enabled && <>
+        <Row label="Expenses need approval above (RM)" description="An expense of this amount or less is recorded at once.">
+          <div className="max-w-[240px]">
+            <MoneyInput aria-label="Expenses need approval above (RM)" valueSen={draft.approvals.expenseThreshold} error={errors['approvals.expenseThreshold']}
+              onChangeSen={v => patch('approvals', { expenseThreshold: held(v) }, 'approvals.expenseThreshold')} />
+          </div>
+        </Row>
+        <Row label="Finance admins approve below (RM)" description="From this amount up, only management can approve. Management approves any amount.">
+          <div className="max-w-[240px]">
+            <MoneyInput aria-label="Finance admins approve below (RM)" valueSen={draft.approvals.financeAdminLimit} error={errors['approvals.financeAdminLimit']}
+              onChangeSen={v => patch('approvals', { financeAdminLimit: held(v) }, 'approvals.financeAdminLimit')} />
+          </div>
+        </Row>
+      </>}
+    </> },
+
+    security: { saveLabel: 'Save security', rows: <>
+      <Row label="Staff inactivity timeout" description="A staff account is signed out after this long with no activity.">
+        <div className="max-w-[240px]">
+          <Select label="Staff inactivity timeout" size="md" value={String(draft.security.staffInactivityTimeoutMins)}
+            onChange={v => patch('security', { staffInactivityTimeoutMins: Number(v) })} options={INACTIVITY_OPTIONS} />
+        </div>
+      </Row>
+      <Row label="Owner inactivity timeout" description="An owner-portal account is signed out after this long with no activity. Owners only check in briefly, so it is usually shorter.">
+        <div className="max-w-[240px]">
+          <Select label="Owner inactivity timeout" size="md" value={String(draft.security.ownerInactivityTimeoutMins)}
+            onChange={v => patch('security', { ownerInactivityTimeoutMins: Number(v) })} options={INACTIVITY_OPTIONS} />
+        </div>
+      </Row>
+      <Row label="Absolute session timeout" description="Maximum session length before a fresh sign-in is required, however active.">
+        <div className="max-w-[240px]">
+          <Select label="Absolute session timeout" size="md" value={String(draft.security.absoluteTimeoutHours)}
+            onChange={v => patch('security', { absoluteTimeoutHours: Number(v) })} options={ABSOLUTE.map(o => ({ value: String(o.value), label: o.label }))} />
+        </div>
+      </Row>
+      <Row label="Lock account after failed attempts" description={`The account locks for ${draft.security.lockoutMinutes ?? '-'} minutes after this many failed sign-ins.`}>
+        <div className="max-w-[240px]">
+          <NumberInput aria-label="Lock account after failed attempts" min={3} max={10} value={draft.security.lockoutAttempts} error={errors['security.lockoutAttempts']}
+            onChange={v => patch('security', { lockoutAttempts: held(v) }, 'security.lockoutAttempts')} />
+        </div>
+      </Row>
+      <Row label="Lockout length (minutes)" description="How long a locked account stays locked before it can try again.">
+        <div className="max-w-[240px]">
+          <NumberInput aria-label="Lockout length (minutes)" min={1} max={120} value={draft.security.lockoutMinutes} error={errors['security.lockoutMinutes']}
+            onChange={v => patch('security', { lockoutMinutes: held(v) }, 'security.lockoutMinutes')} />
+        </div>
+      </Row>
+      <Row label="Require two-step sign-in for"
+        description="People in a ticked role who have not set it up are asked to at their next click, and can do nothing else until they have. Each person sets it up on My account; management can reset it for a lost phone from Users and roles.">
+        {roleBoxes}
+      </Row>
+    </> },
+  };
+
+  if (!current) return <Navigate to={phone ? '/settings' : `/system/settings/${SETTINGS_SECTIONS[0].key}`} replace />;
+  const loadingNow = (loading || !data) && !(import.meta.env.DEV && data);
+  if (current.key === 'agreement') {
+    return (
+      <>
+        <PageHeader title={current.label} sub={current.description}
+          back={phone ? { label: 'Settings', onClick: () => navigate('/settings') } : undefined}
+          badge={readOnly ? <StatusBadge tone="neutral" label="Management changes these" size="sm" /> : undefined} />
+        <div className="max-w-6xl"><AgreementTemplateSettings readOnly={readOnly} /></div>
+      </>
+    );
+  }
+  if (current.key === 'services') {
+    return (
+      <>
+        <PageHeader title={current.label} sub={current.description}
+          back={phone ? { label: 'Settings', onClick: () => navigate('/settings') } : undefined} />
+        <ServicePrices />
+      </>
+    );
+  }
+  const key: SectionKey = current.key;
+
   return (
     <>
-      <PageHeader title="Settings" sub="Organisation-wide defaults. Every change is audited." />
-
-      <SystemStats loading={loading && !data} stats={[
-        { label: 'Operator share', value: data ? `${data.locale.managementFeePct}%` : undefined, hint: 'Default when a contract has none' },
-        { label: 'Check-in · out', value: data ? `${data.operations.checkIn} · ${data.operations.checkOut}` : undefined, hint: 'Cleaning board times' },
-        { label: 'Sign-in lockout', value: data ? `${data.security.lockoutAttempts} tries` : undefined, hint: data ? `Locked for ${data.security.lockoutMinutes} min` : undefined },
-        { label: 'Approvals', value: data ? (data.approvals.enabled ? 'On' : 'Off') : undefined, hint: 'Maker-checker on expenses' },
-      ]} />
+      <PageHeader title={current.label} sub={current.description}
+        back={phone ? { label: 'Settings', onClick: () => navigate('/settings') } : undefined}
+        badge={readOnly ? <StatusBadge tone="neutral" label="Management changes these" size="sm" /> : undefined} />
 
       {error && <StaleBanner message={`Showing the last settings we have. ${error}`} onRetry={reload} />}
 
-      {(loading || !data) && !(import.meta.env.DEV && data) ? (
-        <Card><TableSkeleton rows={5} cols={2} /></Card>
-      ) : (
-        <div className="flex flex-col gap-5">
-
-          {/* --------------------------- Company --------------------------- */}
-          <SectionCard
-            title="Company"
-            description="Legal identity and support contacts, printed on the letterhead of every owner statement, guest invoice and official receipt."
-            readOnly={readOnly} dirty={dirty('company')} busy={busy === 'company'} saveLabel="Save company"
-            onSave={() => save('company')} onDiscard={() => discard('company')}
+      <div className="max-w-4xl">
+        {loadingNow ? (
+          <Card><TableSkeleton rows={5} cols={2} /></Card>
+        ) : (
+          <Panel
+            readOnly={readOnly} dirty={dirty(key)} busy={busy === key} saveLabel={ROWS[key].saveLabel}
+            onSave={() => save(key)} onDiscard={() => discard(key)}
           >
-            <Grid>
-              <Field
-                label="Legal name"
-                value={draft.company.legalName}
-                error={errors['company.legalName']}
-                onChange={e => patch('company', { legalName: e.target.value }, 'company.legalName')}
-              />
-              <Field
-                label="Company registration number"
-                value={draft.company.companyNumber}
-                error={errors['company.companyNumber']}
-                onChange={e => patch('company', { companyNumber: e.target.value }, 'company.companyNumber')}
-              />
-            </Grid>
-            <TextArea
-              label="Registered address"
-              value={draft.company.address}
-              help="Printed on every letterhead line by line, as typed here."
-              onChange={v => patch('company', { address: v })}
-            />
-            <Grid>
-              <PhoneInput
-                label="Support phone"
-                value={draft.company.supportPhone}
-                error={errors['company.supportPhone']}
-                onChange={v => patch('company', { supportPhone: v }, 'company.supportPhone')}
-              />
-              <Field
-                label="Support email"
-                type="email"
-                value={draft.company.supportEmail}
-                error={errors['company.supportEmail']}
-                onChange={e => patch('company', { supportEmail: e.target.value }, 'company.supportEmail')}
-              />
-            </Grid>
-          </SectionCard>
-
-          {/* ------------------------ Operator share ------------------------ */}
-          <SectionCard
-            title="Operator share"
-            description="The share owner statements take for a unit whose contract does not set its own."
-            readOnly={readOnly} dirty={dirty('locale')} busy={busy === 'locale'} saveLabel="Save share"
-            onSave={() => save('locale')} onDiscard={() => discard('locale')}
-          >
-            <div className="max-w-[340px]">
-              <PercentInput
-                label="Default operator share"
-                value={draft.locale.managementFeePct}
-                error={errors['locale.managementFeePct']}
-                help="Used when a statement is generated for a unit with no share on its contract."
-                onChange={v => patch('locale', { managementFeePct: held(v) }, 'locale.managementFeePct')}
-              />
-            </div>
-          </SectionCard>
-
-          {/* --------------------- Operations defaults --------------------- */}
-          <SectionCard
-            title="Operations defaults"
-            description="Standard check-in and checkout times. The cleaning board uses them for a reservation with no time of its own, and to flag early check-ins and late checkouts."
-            readOnly={readOnly} dirty={dirty('operations')} busy={busy === 'operations'} saveLabel="Save operations"
-            onSave={() => save('operations')} onDiscard={() => discard('operations')}
-          >
-            <Grid>
-              <TimeField
-                label="Standard check-in"
-                required
-                value={draft.operations.checkIn}
-                error={errors['operations.checkIn']}
-                onChange={v => patch('operations', { checkIn: v }, 'operations.checkIn')}
-              />
-              <TimeField
-                label="Standard checkout"
-                required
-                value={draft.operations.checkOut}
-                error={errors['operations.checkOut']}
-                onChange={v => patch('operations', { checkOut: v }, 'operations.checkOut')}
-              />
-            </Grid>
-          </SectionCard>
-
-          {/* ------------------------- Owner report ------------------------- */}
-          <SectionCard
-            title="Owner statement wording"
-            description="Wording on the Owner Income Report, and the monthly miscellaneous charge for contracts that carry it."
-            readOnly={readOnly} dirty={dirty('report')} busy={busy === 'report'} saveLabel="Save wording"
-            onSave={() => save('report')} onDiscard={() => discard('report')}
-          >
-            <Grid>
-              <Field
-                label="Payment terms"
-                value={draft.report.paymentTerms}
-                error={errors['report.paymentTerms']}
-                help="Printed as TERMS on the monthly page."
-                onChange={e => patch('report', { paymentTerms: e.target.value }, 'report.paymentTerms')}
-              />
-              <MoneyInput
-                label="Miscellaneous charge a month (RM)"
-                valueSen={draft.report.miscChargeMonthly}
-                error={errors['report.miscChargeMonthly']}
-                help="Deducted each month from units whose contract has miscellaneous charges."
-                onChangeSen={v => patch('report', { miscChargeMonthly: held(v) }, 'report.miscChargeMonthly')}
-              />
-            </Grid>
-            <TextArea
-              label="Monthly statement terms"
-              value={draft.report.monthlyTerms}
-              help="One term per line. Printed, numbered, under the monthly page."
-              onChange={v => patch('report', { monthlyTerms: v })}
-            />
-            <TextArea
-              label="Year-to-date terms"
-              value={draft.report.yearTerms}
-              help="One term per line. Printed under the year-to-date page."
-              onChange={v => patch('report', { yearTerms: v })}
-            />
-          </SectionCard>
-
-          {/* --------------------------- Approvals -------------------------- */}
-          <SectionCard
-            title="Approvals"
-            description="Whether money going out waits for someone else to approve it. Off: refunds, owner payouts, owner adjustments, write-offs and expenses happen as soon as they are entered."
-            readOnly={readOnly} dirty={dirty('approvals')} busy={busy === 'approvals'} saveLabel="Save approvals"
-            onSave={() => save('approvals')} onDiscard={() => discard('approvals')}
-          >
-            <ToggleField
-              label="Require a second person to approve money going out"
-              description={draft.approvals.enabled
-                ? 'Guest refunds, owner payouts, owner adjustments, debt write-offs and expenses above the amount below wait on the Approvals page. Nobody approves their own request, except the only management user, with a written reason.'
-                : 'Off. Each action is recorded at once under the name of the person who did it.'}
-              checked={draft.approvals.enabled}
-              onChange={v => patch('approvals', { enabled: v })}
-            />
-            {draft.approvals.enabled && <div className="[border-top:1px_solid_var(--color-line-soft)] pt-4"><Grid>
-              <MoneyInput
-                label="Expenses need approval above (RM)"
-                valueSen={draft.approvals.expenseThreshold}
-                error={errors['approvals.expenseThreshold']}
-                help="An expense of this amount or less is recorded at once."
-                onChangeSen={v => patch('approvals', { expenseThreshold: held(v) }, 'approvals.expenseThreshold')}
-              />
-              <MoneyInput
-                label="Finance admins approve below (RM)"
-                valueSen={draft.approvals.financeAdminLimit}
-                error={errors['approvals.financeAdminLimit']}
-                help="From this amount up, only management can approve. Management approves any amount."
-                onChangeSen={v => patch('approvals', { financeAdminLimit: held(v) }, 'approvals.financeAdminLimit')}
-              />
-            </Grid></div>}
-          </SectionCard>
-
-          {/* --------------------------- Security --------------------------- */}
-          <SectionCard
-            title="Security"
-            description="Session lifetimes, the account lockout threshold and who must use two-step sign-in. Staff and owners are timed out separately — the owner portal is a brief, occasional check-in, so it defaults much shorter."
-            readOnly={readOnly} dirty={dirty('security')} busy={busy === 'security'} saveLabel="Save security"
-            onSave={() => save('security')} onDiscard={() => discard('security')}
-          >
-            <Grid>
-              <SelectField
-                label="Staff inactivity timeout"
-                value={draft.security.staffInactivityTimeoutMins}
-                help="A staff account is signed out after this long with no activity."
-                onChange={v => patch('security', { staffInactivityTimeoutMins: Number(v) })}
-                options={INACTIVITY_OPTIONS}
-              />
-              <SelectField
-                label="Owner inactivity timeout"
-                value={draft.security.ownerInactivityTimeoutMins}
-                help="An owner-portal account is signed out after this long with no activity."
-                onChange={v => patch('security', { ownerInactivityTimeoutMins: Number(v) })}
-                options={INACTIVITY_OPTIONS}
-              />
-              <SelectField
-                label="Absolute session timeout"
-                value={draft.security.absoluteTimeoutHours}
-                help="Maximum session length before a fresh sign-in is required, however active."
-                onChange={v => patch('security', { absoluteTimeoutHours: Number(v) })}
-                options={ABSOLUTE.map(o => ({ value: String(o.value), label: o.label }))}
-              />
-              <NumberInput
-                label="Lock account after failed attempts"
-                min={3}
-                max={10}
-                value={draft.security.lockoutAttempts}
-                error={errors['security.lockoutAttempts']}
-                help={`The account locks for ${draft.security.lockoutMinutes ?? '-'} minutes after this many failed sign-ins.`}
-                onChange={v => patch('security', { lockoutAttempts: held(v) }, 'security.lockoutAttempts')}
-              />
-              <NumberInput
-                label="Lockout length (minutes)"
-                min={1}
-                max={120}
-                value={draft.security.lockoutMinutes}
-                error={errors['security.lockoutMinutes']}
-                help="How long a locked account stays locked before it can try again."
-                onChange={v => patch('security', { lockoutMinutes: held(v) }, 'security.lockoutMinutes')}
-              />
-            </Grid>
-            <fieldset className="m-0 mt-5 p-0 border-none flex flex-col gap-2.5">
-              <legend className="p-0 mb-2.5 text-meta font-medium text-muted-ink">Require two-step sign-in for</legend>
-              <div className="flex flex-wrap gap-x-5 gap-y-2">
-                {TWO_STEP_ROLES.map(r => {
-                  const on = draft.security.require2faRoles.split(',').includes(r);
-                  return (
-                    <label key={r} className={cx('flex items-center gap-2 min-h-8 text-copy', readOnly ? 'cursor-default text-muted-ink' : 'cursor-pointer')}>
-                      <input type="checkbox" className="w-4 h-4" checked={on} disabled={readOnly}
-                        onChange={() => {
-                          const set = new Set(draft.security.require2faRoles.split(',').filter(Boolean));
-                          if (on) set.delete(r); else set.add(r);
-                          patch('security', { require2faRoles: TWO_STEP_ROLES.filter(x => set.has(x)).join(',') });
-                        }} />
-                      {ROLE_LABEL[r] ?? r}
-                    </label>
-                  );
-                })}
-              </div>
-              <span className="text-meta text-muted-ink leading-[1.5]">
-                People in a ticked role who have not set it up are asked to at their next click, and can do nothing else until they have. Each person sets it up on My account; management can reset it for a lost phone from Users and roles.
-              </span>
-            </fieldset>
-          </SectionCard>
-
-        </div>
-      )}
+            {ROWS[key].rows}
+          </Panel>
+        )}
+      </div>
     </>
   );
 }

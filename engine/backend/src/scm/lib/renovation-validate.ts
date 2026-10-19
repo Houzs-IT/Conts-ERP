@@ -4,7 +4,7 @@
    of plain-English problems, and only then does anything touch the database. */
 
 import { z } from 'zod';
-import { isUom, UOMS } from '../shared/renovation-catalog';
+import { isUom, UOMS, type UomDef } from '../shared/renovation-catalog';
 import { isStageKey } from '../shared/renovation-stages';
 import { instalmentPctError, parseMeasureMilli, type RenoLineKind } from '../shared/renovation-money';
 
@@ -114,11 +114,12 @@ export interface NormInstalment {
 export type Normalised<T> = { ok: true; value: T } | { ok: false; problems: string[] };
 
 const newId = () => crypto.randomUUID();
-const measureUoms = UOMS.filter((u) => u.measure).map((u) => u.code);
 
 /** Sections and lines of an editable document. `mode` 'vo' allows OMIT lines and
-    refuses lump-sum sections; every other mode refuses VO fields. */
-export function normaliseSections(input: unknown, mode: 'doc' | 'vo' = 'doc'): Normalised<NormSection[]> {
+    refuses lump-sum sections; every other mode refuses VO fields. `uoms` is the
+    saved unit list, hidden units included: a line saved with one stays valid. */
+export function normaliseSections(input: unknown, mode: 'doc' | 'vo' = 'doc', uoms: readonly UomDef[] = UOMS): Normalised<NormSection[]> {
+  const measureUoms = uoms.filter((u) => u.measure).map((u) => u.code);
   const parsed = z.array(sectionSchema).max(100).safeParse(input ?? []);
   if (!parsed.success) {
     return { ok: false, problems: parsed.error.issues.map((i) => `${i.path.join('.') || 'body'}: ${i.message}`) };
@@ -143,7 +144,7 @@ export function normaliseSections(input: unknown, mode: 'doc' | 'vo' = 'doc'): N
       const measureUom = measureMilli === null ? null : String(l.measureUom ?? 'FT').toUpperCase();
       if (measureUom !== null && !measureUoms.includes(measureUom)) problems.push(`${at}: measure unit must be one of ${measureUoms.join(', ')}.`);
       const uom = l.uom ? String(l.uom).toUpperCase() : null;
-      if (uom !== null && !isUom(uom)) problems.push(`${at}: unknown unit ${uom}.`);
+      if (uom !== null && !isUom(uom, uoms)) problems.push(`${at}: unknown unit ${uom}.`);
       const itemCode = l.itemCode ? l.itemCode.trim().toUpperCase() : null;
       if (itemCode && (RESERVED_ITEM_CODES as readonly string[]).includes(itemCode)) problems.push(`${at}: ${itemCode} is written by the system and cannot be picked.`);
       if (l.stageCode && !isStageKey(l.stageCode)) problems.push(`${at}: unknown stage ${l.stageCode}.`);

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { ChevronLeft, ChevronRight, X, FileText, Download } from "lucide-react";
 import { api } from "../api/client";
@@ -24,6 +24,7 @@ export function MediaLightbox({
   onClose,
   baseUrl,
   badge,
+  footer,
 }: {
   items: MediaItem[];
   index: number;
@@ -33,6 +34,8 @@ export function MediaLightbox({
   baseUrl: string;
   /** Optional small label rendered at top-left (e.g. "Setup"). */
   badge?: string;
+  /** Optional panel under the item in place of the plain caption (document attachments: caption, who/when, remove). */
+  footer?: (index: number) => ReactNode;
 }) {
   // Both images and videos participate in prev/next navigation —
   // documents (PDF/xlsx/docx) are dead-ends visually so they stay out.
@@ -256,7 +259,11 @@ export function MediaLightbox({
         )}
       </div>
 
-      {item.caption && (isImage || isVideo) && (
+      {footer ? (
+        <div className="absolute inset-x-0 bottom-0" onClick={(e) => e.stopPropagation()}>
+          {footer(index)}
+        </div>
+      ) : item.caption && (isImage || isVideo) && (
         <div
           className="absolute inset-x-0 bottom-0 px-4 py-3 text-center text-[11px] text-white/70 sm:py-4"
           onClick={(e) => e.stopPropagation()}

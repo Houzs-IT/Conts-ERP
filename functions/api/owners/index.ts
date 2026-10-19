@@ -3,12 +3,13 @@ import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/d
 import { requireSession } from '../../_lib/auth';
 import { MASTER_ROLES } from '../../_lib/properties';
 import { todayMyt } from '../../_lib/ops';
-import { loadInputs, computeMonth, statementSettings, type Query, type UnitRow } from '../../_lib/ownerStatement';
+import { loadInputs, withYearToDate, computeMonth, statementSettings, type Query, type UnitRow } from '../../_lib/ownerStatement';
 import { contractView } from '../../_lib/unitContract';
 import { DEDUCTION_WORDS } from '../../_lib/unitCosts';
 import { monthEndExclusive } from '../../_lib/revenue';
 import { checkPhone } from '../../_lib/validate';
 import { addressOf, altContactOf, ownerDetailsReady } from '../../_lib/ownerDetails';
+import { purposeReady, codeOf, type ContractCode } from '../../_lib/unitPurpose';
 
 const READ_ROLES = [...MASTER_ROLES, 'operations_staff'];
 /** Last four characters, ignoring spaces and dashes ("680606-08-5101" -> "5101"). */
@@ -32,7 +33,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     ? await all<any>(env, 'SELECT * FROM owners WHERE id = ?', id)
     : await all<any>(env, 'SELECT * FROM owners ORDER BY display_name');
   const q: Query = (sql, ...args) => all(env, sql, ...args);
-  const [settings, inputs, contracts, statements, detailsReady] = await Promise.all([
+  const [settings, inputs, contracts, statements, detailsReady, portalOf] = await Promise.all([
     statementSettings(q),
     loadInputs(q, `${month}-01`, monthEndExclusive(month), id ? { ownerIds: [id] } : {}),
     all<any>(env, `SELECT * FROM owner_contracts ${id ? 'WHERE owner_id = ?' : ''} ORDER BY starts_on DESC`, ...(id ? [id] : [])),
@@ -40,11 +41,14 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     all<any>(env, `SELECT s.id, s.owner_id, s.state, EXISTS (SELECT 1 FROM statement_units su WHERE su.statement_id = s.id) AS has_units
       FROM owner_statements s WHERE s.period_start = ? ${id ? 'AND s.owner_id = ?' : ''}`, `${month}-01`, ...(id ? [id] : [])),
     ownerDetailsReady(env),
+    portalStates(env, owners),
   ]);
-  const months = new Map(computeMonth(month, inputs, settings, 'dated').map(m => [m.unitId, m]));
+  const months = new Map(computeMonth(month, await withYearToDate(q, inputs, month, settings), settings, 'dated').map(m => [m.unitId, m]));
   const statementOf = new Map(statements.map(s => [s.owner_id, s]));
   const unitsOf = new Map<string, UnitRow[]>();
   for (const u of inputs.units) { const l = unitsOf.get(u.owner_id); if (l) l.push(u); else unitsOf.set(u.owner_id, [u]); }
+  // The staff's contract codes (0125); MANAGE and PS share a model, so the stored code is read when there is one.
+  const codeById = new Map((await purposeReady(env)) ? (await all<{ id: string; contract_code: string | null }>(env, 'SELECT id, contract_code FROM owner_contracts WHERE contract_code IS NOT NULL')).map(r => [r.id, r.contract_code]) : []);
   const propertyOf = new Map((await all<any>(env, `SELECT id, property_id FROM units ${id ? 'WHERE owner_id = ?' : ''}`, ...(id ? [id] : []))).map(r => [r.id, r.property_id]));
 
   return json({
@@ -64,8 +68,11 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         ic: null, bankAccount: null,
         icLast4: banking && o.ic_number ? tail(o.ic_number) : null,
         bankAccountLast4: banking ? (o.bank_account_last4 ?? (o.bank_account_number ? tail(o.bank_account_number) : null)) : null,
+        // For the list's filter: whether payout details are on file (never the numbers themselves).
+        hasBankDetails: !!(o.bank_name && (o.bank_account_number || o.bank_account_last4)),
         bankName: banking ? o.bank_name : null, accountHolder: banking ? (o.bank_account_holder ?? o.display_name) : null,
         portalInvited: !!o.user_id,
+        portal: portalOf.get(o.id) ?? { state: 'none', invitedAt: null, lastLoginAt: null },
         defaultManagementFeePct: ownerDefault,
         contract: mine ? { feePct: Number(mine.management_fee_pct), startedOn: mine.starts_on, renewsOn: mine.renews_on, endsOn: mine.ends_on ?? null } : null,
         statement: st ? { id: st.id, state: st.state, hasUnits: !!st.has_units } : null,
@@ -78,6 +85,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
             unitId: u.id, unitLabel: `${u.property_name} ${u.unit_number}`, buildingId: propertyOf.get(u.id),
             // model: the two-way split older screens filter on; revenueModel: the five models.
             model: m.terms.model === 'grr' ? 'grr' : 'management', revenueModel: m.terms.model, termsLabel: view.termsLabel,
+            contractCode: u.contract_id ? codeOf(m.terms.model, codeById.get(u.contract_id)) as ContractCode : null,
             ...(fixed ? { grrAmount: m.terms.fixedRent } : { feePct: 100 - (m.ownerPct ?? 0) }),
             feeSource: unitPct != null ? 'unit' : ownerDefault != null ? 'owner-default' : 'fallback',
             occupancy: Math.min(100, Math.round(m.occupancy * 100)), adr: m.nights ? Math.round(m.gross / m.nights) : 0,
@@ -95,6 +103,25 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     }),
   });
 };
+
+/** Where each owner's portal login stands: none yet, invited and never signed in (on its temporary password),
+ *  in use, or switched off; and when the newest invitation went out (owner.invite / owner.resend_invite). */
+async function portalStates(env: Env, owners: any[]) {
+  const ids = owners.filter(o => o.user_id).map(o => o.id);
+  const out = new Map<string, { state: 'none' | 'invited' | 'active' | 'off'; invitedAt: string | null; lastLoginAt: string | null }>();
+  if (!ids.length) return out;
+  const rows = await all<any>(env, `
+    SELECT o.id, u.must_change_password, u.last_login_at, u.is_active, u.created_at,
+      (SELECT max(a.occurred_at) FROM audit_log a WHERE a.entity_table = 'owners' AND a.entity_id = o.id
+         AND a.action IN ('owner.invite', 'owner.resend_invite')) AS invited_at
+    FROM owners o JOIN users u ON u.id = o.user_id
+    WHERE o.id IN (${ids.map(() => '?').join(', ')})`, ...ids);
+  for (const r of rows) {
+    const state = !r.is_active ? 'off' : r.must_change_password && !r.last_login_at ? 'invited' : 'active';
+    out.set(r.id, { state, invitedAt: r.invited_at ?? r.created_at, lastLoginAt: r.last_login_at ?? null });
+  }
+  return out;
+}
 
 /** POST /api/owners { displayName, email, phone, ic, bankName, bankAccount, accountHolder } */
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {

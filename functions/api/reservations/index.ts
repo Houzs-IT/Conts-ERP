@@ -1,5 +1,7 @@
+import { ensureTurnovers } from '../../_lib/cleaning';
 import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/db';
-import { requireSession, isFieldRole } from '../../_lib/auth';
+import { purposeOf } from '../../_lib/unitPurpose';
+import { requireSession, isFieldRole, hasColumn } from '../../_lib/auth';
 import { findClash, clashResponseBody, upsertGuest, nextBookingRef, holdOnChannels, withUnitLock } from '../../_lib/reservations';
 import { VIEWS, TODOS, FACETS, fromSql, columnsSql, parseListQuery, viewWhere, todoWhere, toRow } from '../../_lib/bookingList';
 import { countryName } from '../../_lib/guestCountry';
@@ -15,7 +17,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if (!session) return response!;
   if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Reservations are not available to cleaners and technicians.', 403);
 
-  const q = parseListQuery(new URL(request.url));
+  const q = parseListQuery(new URL(request.url), { cancelledAt: await hasColumn(env, 'reservations', 'cancelled_at') });
   const schema = await moneySchema(env);
   const m = moneySql(schema);
   const todo = q.todo ? todoWhere(q.todo, q.today, schema) : 'TRUE';
@@ -95,6 +97,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const channel = b.channel ?? 'direct';
   if (!CHANNELS.includes(channel)) return fail('VALIDATION', 'Unknown channel.', 422, { channel: 'Pick a channel.' });
   if (!(await one(env, 'SELECT 1 AS x FROM units WHERE id = ?', b.unitId))) return fail('NOT_FOUND', 'That unit does not exist.', 404);
+  // A showroom or warehouse takes no reservations, so it never gets a turnover clean or a channel hold (0125).
+  if ((await purposeOf(env, b.unitId)) !== 'rental') return fail('NOT_RENTAL', 'Showroom and warehouse units take no reservations.', 409, { unitId: 'Pick a rental unit.' });
   for (const k of ['checkInTime', 'checkOutTime'] as const) if (b[k] != null && !TIME.test(String(b[k]))) return fail('VALIDATION', 'Times are HH:MM.', 422, { [k]: 'Use HH:MM, e.g. 15:00.' });
 
   const id = crypto.randomUUID(), now = nowIso();
@@ -119,5 +123,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'reservation.create', entityTable: 'reservations', entityId: id, after: { unitId: b.unitId, checkIn: b.checkIn, checkOut: b.checkOut, channel, externalRef: ref } });
   const sync = await holdOnChannels(env, b.unitId, b.checkIn, b.checkOut, false, id);
   await bookingNotice(env, id, 'created', session.userId);
+  await ensureTurnovers(env, { reservationIds: [id] });
   return json({ id, externalRef: ref, effects: { channel: sync } }, 201);
 };

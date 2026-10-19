@@ -58,6 +58,7 @@ import { Badge } from "../../components/Badge";
 import { Button } from "../../components/Button";
 import { DataTable, type Column } from "../../components/DataTable";
 import { DATA_TABLE_LAYOUT_FAMILIES } from "../../components/dataTableLayoutFamilies";
+import { DocAttachments, LineFilesButton } from "../../components/doc-attachments/DocAttachments";
 import {
   DetailGrid,
   DetailMain,
@@ -1026,13 +1027,16 @@ export function SalesInvoiceDetailV2() {
           variant: buildVariantSummary(l.item_group ?? "others", l.variants) || (l.description2 ?? ""),
         });
         return (
-          <div className="min-w-0">
-            <div className="text-[13px] font-semibold text-ink">{primary}</div>
-            {secondary && (
-              <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[11px] text-ink-muted">
-                <span className="truncate text-ink-secondary">{secondary}</span>
-              </div>
-            )}
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <div className="text-[13px] font-semibold text-ink">{primary}</div>
+              {secondary && (
+                <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[11px] text-ink-muted">
+                  <span className="truncate text-ink-secondary">{secondary}</span>
+                </div>
+              )}
+            </div>
+            <LineFilesButton docType="sales_invoice" docId={salesInvoice?.id} lineId={l.id} canEdit={canWriteSi && (salesInvoice?.status || "").toUpperCase() !== "CANCELLED"} />
           </div>
         );
       },
@@ -1643,6 +1647,8 @@ export function SalesInvoiceDetailV2() {
               />
               {addLine.panel}
             </Section>
+
+            <DocAttachments docType="sales_invoice" docId={salesInvoice.id} canEdit={canWriteSi && !isCancelled} />
 
             {/* Owner 2026-07-17: Totals·Margin (Revenue/Cost/Margin/Margin%)
                 card removed from the SI document view for EVERYONE — costing

@@ -3,6 +3,7 @@ import { requireSession, isFieldRole } from '../../../../_lib/auth';
 import { channexPropertyGroupId, channexCreateHotelChannelRooms, channexAddHotelRooms, channexActivateChannel, channexLoadFutureReservations, channexDeleteChannel, type HotelOta, type HotelRoomMap } from '../../../../_lib/channex';
 import { channexRefused, buildingFor, OTA_LABEL, type ChannexBuilding } from '../../../../_lib/channexChannels';
 import { ensureOtaRatePlans } from '../../../../_lib/channexSync';
+import { rentalOnly } from '../../../../_lib/unitPurpose';
 
 interface BuildingUnit { id: string; unit_number: string; listing_name: string | null; max_guests: number; channex_property_id: string | null }
 
@@ -14,7 +15,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
   if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Your account cannot see channel connections.', 403);
   const b = await one<ChannexBuilding>(env, 'SELECT id, name, channex_property_id FROM properties WHERE id = ?', String(params.id));
   if (!b) return fail('NOT_FOUND', 'That building does not exist.', 404);
-  const units = await all<BuildingUnit>(env, 'SELECT id, unit_number, listing_name, max_guests, channex_property_id FROM units WHERE property_id = ? ORDER BY unit_number', b.id);
+  // A showroom or warehouse unit is never on the channels (migration 0125), so it is not offered for a room.
+  const units = await all<BuildingUnit>(env, `SELECT id, unit_number, listing_name, max_guests, channex_property_id FROM units u WHERE property_id = ?${await rentalOnly(env)} ORDER BY unit_number`, b.id);
   const conns = await all<{ unit_id: string; ota: string; external_id: string; external_room: string | null; external_rate: string | null }>(env, `
     SELECT c.unit_id, c.ota, c.external_id, c.external_room, c.external_rate FROM channex_channels c JOIN units u ON u.id = c.unit_id
     WHERE u.property_id = ? AND c.ota IN ('booking_com','agoda')`, b.id);
@@ -22,7 +24,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
     channexListing: !!b.channex_property_id,
     units: units.map(u => ({
       id: u.id, unitNumber: u.unit_number, title: u.listing_name?.trim() || `${b.name} ${u.unit_number}`,
-      // A unit set up before migration 0119 has a Channex property of its own and cannot share a hotel with the others.
+      // A unit set up before migration 0128 has a Channex property of its own and cannot share a hotel with the others.
       setUp: !!u.channex_property_id && u.channex_property_id === b.channex_property_id,
       ownListing: !!u.channex_property_id && u.channex_property_id !== b.channex_property_id,
       connections: conns.filter(c => c.unit_id === u.id).map(c => ({ ota: c.ota, hotelId: c.external_id, room: c.external_room, rate: c.external_rate })),
@@ -53,9 +55,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   // vocab-ok: Booking.com and Agoda call what a unit is sold as a room; these name both sides of the pairing
   if (new Set(picks.map(p => `${p.roomId}/${p.rateId}`)).size !== picks.length) return fail('VALIDATION', 'Each room can be one unit only.', 422);
 
-  const units = await all<BuildingUnit>(env, `SELECT id, unit_number, listing_name, max_guests, channex_property_id FROM units WHERE property_id = ? AND id IN (SELECT jsonb_array_elements_text(?::text::jsonb))`,
+  const units = await all<BuildingUnit>(env, `SELECT id, unit_number, listing_name, max_guests, channex_property_id FROM units u WHERE property_id = ?${await rentalOnly(env)} AND id IN (SELECT jsonb_array_elements_text(?::text::jsonb))`,
     building.id, JSON.stringify(picks.map(p => p.unitId)));
-  if (units.length !== picks.length) return fail('VALIDATION', 'One of the units is not in this building.', 422);
+  if (units.length !== picks.length) return fail('VALIDATION', 'One of the units is not a rental unit of this building.', 422);
   const notReady = units.filter(u => u.channex_property_id !== building.channex_property_id);
   if (notReady.length) return fail('NOT_LINKED', `Set ${notReady.map(u => u.unit_number).join(', ')} up in Channex first (each unit's Channels card). A unit set up before building listings has a listing of its own and cannot share a hotel yet.`, 409);
   const already = await all<{ unit_number: string }>(env, `SELECT u.unit_number FROM channex_channels c JOIN units u ON u.id = c.unit_id

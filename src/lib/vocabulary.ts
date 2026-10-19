@@ -47,7 +47,7 @@ export const TONE: Record<Tone, { bg: string; fg: string; line: string }> = {
 /** Role names as people read them. Never print the raw code ("operations_staff"). */
 export const ROLE_LABEL: Record<string, string> = {
   management: 'Management', operations_manager: 'Operations manager', operations_staff: 'Operations staff',
-  finance_admin: 'Finance admin', housekeeper: 'Cleaner', technician: 'Technician', owner: 'Owner',
+  finance_admin: 'Finance admin', housekeeper: 'Cleaner', technician: 'Maintenance technician', owner: 'Owner',
 };
 
 /** Malaysian bank codes as imported (SWIFT-style) -> the name people know. Unknown codes print as given. */

@@ -5,6 +5,8 @@
 //   rooms, a new revision copies them) -> converted contract SO (address, building, unit, property, room list,
 //   line rooms) -> Raise POs: 3 POs in 2 categories, one category each, a mixed line refused (project, room, category)
 //   -> GR against a PO (project, room, category) -> the project lists every document, POs under their category
+//   -> Procurement details reads each item line as ordered / received / delivered with its GRs and DOs (15 Oct); a
+//   sub-category is Ready only when all its lines are delivered, stock lines included (owner ruling, 15 Oct)
 //   -> progress-billing SI (phone, email, address, project, building, unit)
 //   and a renovation-mode standard SO (lines in rooms) -> DO from the SO (project, building, unit, rooms, phone,
 //   address) -> SI from the DO (the same) -> the document pages' GET /:id/renovation-info.
@@ -253,6 +255,59 @@ check('the goods receipt is listed against its PO', pd?.goodsReceipts?.some((g) 
 check('and the delivery order and both sales invoices (progress billing, from the DO)', pd?.deliveryOrders?.length === 1 && pd?.salesInvoices?.length === 2, show(r));
 check('the DO hangs under its SO, the DO invoice under the DO, the progress invoice under the contract',
   pd?.deliveryOrders?.[0]?.soDocNo === soNo && pd?.salesInvoices?.some((s) => s.deliveryOrderId === pd.deliveryOrders[0].id) && pd?.salesInvoices?.some((s) => s.soDocNo === contract && !s.deliveryOrderId), show(r));
+
+/* ---------- Procurement details: each item line ordered -> received -> delivered (owner, 15 Oct 2026) ---------- */
+/* Ready (owner ruling, 15 Oct 2026, option B) is counted by the card's own model: every item line delivered, stock lines
+   included, and every line that went through a PO also received. */
+const { stageOf, categoryStage } = await import(new URL('../../engine/frontend/src/pages/projects/renovation/procurementStatusModel.ts', import.meta.url).href);
+const readStatus = async () => {
+  const res = await call('GET', `${R}/${projectId}/procurement-status`);
+  const lines = res.json?.lines ?? [];
+  return { res, lines, elec: lines.filter((l) => l.categoryGroup === 'WORKS' && l.subCategory === 'ELECTRICAL') };
+};
+let { res: rs, lines: st, elec } = await readStatus();
+check('the hub reads 5 item lines (3 contract lines, 2 renovation-mode SO lines; no RENO- system rows)', rs.json?.ready === true && st.length === 5, show(rs));
+check('Works / Electrical: the power points are ordered 2 and received 2 by the GR, not yet delivered',
+  elec.some((l) => l.qty === 2 && l.orderedQty === 2 && l.receivedQty === 2 && l.deliveredQty === 0 && l.grs.some((g) => g.id === grnId && g.no)), show(rs));
+let onDo = elec.filter((l) => l.dos.some((d) => d.id === doId));
+check('the two renovation-mode SO lines are on the DO, not ordered (they come from stock) and not yet delivered',
+  onDo.length === 2 && onDo.every((l) => l.orderedQty === 0 && l.deliveredQty === 0 && l.dos[0].delivered === false), show(rs));
+check('Electrical is not Ready: nothing is delivered yet', stageOf(elec).ready === false, JSON.stringify(stageOf(elec)));
+
+/* deliver the power points (the PO line) from the contract; the stock lines still wait on their DO */
+r = await call('GET', `${SO}/${encodeURIComponent(contract)}`);
+const powerLine = (r.json?.items ?? r.json?.lines ?? []).find((it) => it.item_code === works.code && Number(it.qty) === 2);
+r = await call('POST', '/api/scm/delivery-orders-mfg/from-sos', { picks: powerLine ? [{ soItemId: powerLine.id, qty: 2 }] : [], confirmShortStock: true, dropShip: true });
+const powerDoId = r.json?.id ?? r.json?.deliveryOrder?.id ?? r.json?.header?.id ?? r.json?.created?.[0]?.id;
+if (check('a delivery order for the power points from the contract', !!powerLine && (r.status === 201 || r.status === 200) && !!powerDoId, show(r))) {
+  const a = await call('PATCH', `/api/scm/delivery-orders-mfg/${powerDoId}/status`, { status: 'DISPATCHED' });
+  const b = await call('PATCH', `/api/scm/delivery-orders-mfg/${powerDoId}/status`, { status: 'DELIVERED' });
+  check('it is dispatched, then delivered', a.status === 200 && b.status === 200, `${show(a)} ${show(b)}`);
+}
+({ res: rs, lines: st, elec } = await readStatus());
+check('the power points now read delivered 2', elec.some((l) => l.qty === 2 && l.orderedQty === 2 && l.receivedQty === 2 && l.deliveredQty === 2), show(rs));
+let es = stageOf(elec);
+check('Electrical reads Ordered 1/3, Received 1/1, Delivered 1/3', es.items === 3 && es.ordered === 1 && es.toReceive === 1 && es.received === 1 && es.delivered === 1, JSON.stringify(es));
+check('and is NOT Ready: its two stock lines are not delivered (before 15 Oct this read Ready)', es.ready === false, JSON.stringify(es));
+
+/* deliver the stock lines' DO */
+r = await call('PATCH', `/api/scm/delivery-orders-mfg/${doId}/status`, { status: 'DISPATCHED' });
+const dispatched = r.status;
+r = await call('PATCH', `/api/scm/delivery-orders-mfg/${doId}/status`, { status: 'DELIVERED' });
+check('the stock lines DO is dispatched, then delivered', dispatched === 200 && r.status === 200, `${dispatched} ${show(r)}`);
+({ res: rs, lines: st, elec } = await readStatus());
+onDo = elec.filter((l) => l.dos.some((d) => d.id === doId));
+check('the two stock lines are delivered by it (still not ordered)',
+  onDo.length === 2 && onDo.every((l) => l.deliveredQty === 1 && l.orderedQty === 0 && l.dos.find((d) => d.id === doId)?.delivered === true), show(rs));
+es = stageOf(elec);
+check('Electrical is now Ready: Delivered 3/3, its one PO line received', es.ready === true && es.delivered === 3 && es.received === 1, JSON.stringify(es));
+const otherWorks = st.filter((l) => l.categoryGroup === 'WORKS' && l.subCategory !== 'ELECTRICAL');
+check('Works as a whole is not Ready: its second sub-category is ordered and not received',
+  categoryStage([es, stageOf(otherWorks)]).ready === false, JSON.stringify(stageOf(otherWorks)));
+check('the Service line is ordered and not yet received', st.some((l) => l.categoryGroup === 'SERVICE' && l.orderedQty === 1 && l.receivedQty === 0), show(rs));
+check('the second Works line (other supplier) is ordered and not received', otherWorks.some((l) => l.orderedQty === 1 && l.receivedQty === 0), show(rs));
+r = await call('GET', `${R}/999999/procurement-status`);
+check('another project is not found (404)', r.status === 404, show(r));
 
 /* ---------- a bad id is refused, not a crash ---------- */
 r = await call('GET', '/api/scm/delivery-orders-mfg/not-a-uuid/renovation-info');

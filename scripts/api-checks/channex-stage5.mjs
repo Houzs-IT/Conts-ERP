@@ -15,7 +15,7 @@ const tag = Date.now().toString().slice(-6);
 
 let r = await call('POST', '/api/properties', { name: `Channex Test ${tag}`, state: 'Kuala Lumpur', city: 'Kuala Lumpur' });
 const BID = r.json?.id;
-r = await call('POST', '/api/units', { buildingId: BID, unitCode: `CX-${tag}`, unitNumber: `CX-${tag}`, listingName: `Channex Test Studio ${tag}` });
+r = await call('POST', '/api/units', { buildingId: BID, ownerId: (await call('GET', '/api/owners')).json.data[0].id, unitCode: `CX-${tag}`, unitNumber: `CX-${tag}`, listingName: `Channex Test Studio ${tag}` });
 const UID = r.json?.id;
 check('test unit created', !!UID, r.text);
 

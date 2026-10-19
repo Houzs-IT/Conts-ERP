@@ -12,7 +12,7 @@ import { Select, SearchSelect } from '../../components/Select';
 import { cx } from '../../lib/design-tokens';
 import { Eyebrow, Figure } from '../../components/Metric';
 import type { StatementState } from '../../lib/types';
-import type { RevenueModel } from '../../lib/revenueModel';
+import type { RevenueModel, ContractCode } from '../../lib/revenueModel';
 
 /**
  * Shared owner-side building blocks. Extracted verbatim from OwnersPage so the
@@ -36,6 +36,8 @@ export interface UnitLine {
   occupancy: number; adr: number; gross: number; net: number;
   /** The five revenue models (0093) and short terms; figures are the statement engine's for the month (money roles). */
   revenueModel?: RevenueModel; termsLabel?: string; figures?: UnitFigures;
+  /** The staff's contract code (PS, PS GRR, WH, ...), null with no contract record (0125). */
+  contractCode?: ContractCode | null;
 }
 export interface Owner {
   id: string; displayName: string; email: string; phone: string | null; ic: string | null;
@@ -43,6 +45,10 @@ export interface Owner {
   /** The API sends only the last four characters; the full number needs an audited reveal. */
   icLast4?: string | null; bankAccountLast4?: string | null;
   portalInvited: boolean;
+  /** Whether a bank and account number are on file (for the list's filter). */
+  hasBankDetails?: boolean;
+  /** The portal login's state and when the newest invitation went out (owners GET, portalStates). */
+  portal?: PortalLogin;
   /** Owner-level default management fee, applied to units with no per-unit override. Null = none set. */
   defaultManagementFeePct: number | null;
   contract: { feePct: number; startedOn: string; renewsOn: string | null; endsOn?: string | null } | null;
@@ -53,6 +59,7 @@ export interface Owner {
   statement?: { id: string; state: StatementState; hasUnits?: boolean } | null;
   units: UnitLine[];
 }
+export interface PortalLogin { state: 'none' | 'invited' | 'active' | 'off'; invitedAt: string | null; lastLoginAt: string | null }
 export interface OwnerAddress { lines: string | null; postcode: string | null; city: string | null; state: string | null; country: string | null }
 /** False until migration 0110 is applied on this database: the address and alternate contact are then hidden. */
 export interface Payload { data: Owner[]; generatedAt: string; month?: string; detailsReady?: boolean }

@@ -5,6 +5,9 @@
 // fields (and neither asks for a venue or a fair) -> a complete SO saves, carries its own copy of the fields and writes
 // them back to the project -> editing the project refreshes that still-open SO -> once the SO is proceeded a project
 // edit leaves it as printed -> the edit form's PUT saves the order information and writes back again.
+// Start / End date (owner, 15 Oct 2026; migration 0117): a new project starts on the day it is created, moving it to
+// Closed sets the end to that day on the project, its SO and the board, moving it back clears it, the project PATCH
+// cannot change either, and an SO with no project has none.
 //
 // Runs against a local engine (wrangler dev on :8790 in engine/backend) with its CONTS_SSO_SECRET from
 // engine/backend/.dev.vars, like renovation-project.mjs. It WRITES one project and one or two sales orders named
@@ -190,6 +193,8 @@ r = await call('POST', SO, { debtorName: `TEST CP Loose ${run}`, phone: '+601222
   renovation: { projectId: null, building: 'TEST Loose Tower', unitNo: 'L-3-3', propertyType: 'Landed', layoutLabel: '2 bed 2 bath', bedrooms: '2', bathrooms: '2', builtUpSqft: '1500' }, noFair: true });
 const loose = r.json?.docNo;
 check('an SO with no project yet saves', r.status === 201 && !!loose, show(r));
+r = await call('GET', `${SI}/so/${encodeURIComponent(loose)}`);
+check('an SO with no project has no project dates (the form shows a dash)', r.status === 200 && r.json?.project === null, show(r));
 r = await call('GET', `${R}/linkable-sos?q=${encodeURIComponent(loose)}`);
 check("the project's Link existing SO lists it", r.json?.data?.some((x) => x.doc_no === loose && x.building === 'TEST Loose Tower'), show(r));
 r = await call('POST', `${R}/link-so`, { projectId: linkProjectId, docNo: loose });
@@ -258,6 +263,39 @@ if (process.env.DATABASE_URL) {
   await sql.end();
 } else {
   console.log('skip the proceeded-SO check (set DATABASE_URL to the same local database to run it)');
+}
+
+/* ---------- Start / End date fill themselves (migration 0117) ---------- */
+{
+  const today = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);
+  const dates = async () => {
+    const pj = (await call('GET', `${R}/${projectId}/customer-info`)).json?.project;
+    const so = (await call('GET', `${SI}/so/${encodeURIComponent(docNo)}`)).json?.project;
+    const row = (await call('GET', `${R}/board-rows`)).json?.data?.find((x) => x.id === projectId);
+    return { pj: [pj?.startDate, pj?.endDate], so: [so?.startDate, so?.endDate], board: [row?.startDate, row?.endDate, row?.step?.key] };
+  };
+  let d = await dates();
+  check('create sets the start date to the day it was created (Malaysia), no end date', JSON.stringify(d.pj) === JSON.stringify([today, null]), JSON.stringify(d));
+  check('the SO shows the same project dates', JSON.stringify(d.so) === JSON.stringify([today, null]), JSON.stringify(d));
+  r = await call('POST', `${R}/${projectId}/step`, { step: 'closed', reason: 'TEST dates: handed over and paid' });
+  check('Move step to Closed', r.status === 200, show(r));
+  d = await dates();
+  check('moving to Closed sets the end date to today on the project', JSON.stringify(d.pj) === JSON.stringify([today, today]), JSON.stringify(d));
+  check('and on its SO', JSON.stringify(d.so) === JSON.stringify([today, today]), JSON.stringify(d));
+  check('and on the board / list row', JSON.stringify(d.board) === JSON.stringify([today, today, 'closed']), JSON.stringify(d));
+  r = await call('PATCH', `/api/projects/${projectId}`, { start_date: '2020-01-01', end_date: '2020-01-02' });
+  d = await dates();
+  check('the project PATCH cannot type over either date', JSON.stringify(d.pj) === JSON.stringify([today, today]), `${show(r)} ${JSON.stringify(d)}`);
+  const cal = await call('GET', `/api/projects/calendar/events?from=${today}&to=${today}`);
+  const bars = (cal.json?.projects ?? []).filter((x) => x.id === projectId);
+  check('the calendar shows the project once, from its start date to its end date', bars.length === 1 && bars[0].start_date === today && bars[0].end_date === today && bars[0].end_basis === 'completed', `${cal.status} ${JSON.stringify(bars)}`);
+  r = await call('POST', `${R}/${projectId}/step`, { step: 'handover', reason: 'TEST dates: one more snag' });
+  check('Move step back to Handover', r.status === 200, show(r));
+  d = await dates();
+  check('moving back out of Closed clears the end date everywhere', JSON.stringify(d.pj) === JSON.stringify([today, null]) && JSON.stringify(d.so) === JSON.stringify([today, null]) && d.board[1] === null && d.board[2] === 'handover', JSON.stringify(d));
+  r = await call('POST', `${R}/${projectId}/step/follow-data`);
+  d = await dates();
+  check('Follow the data (back to Design) keeps the start, no end', r.status === 200 && JSON.stringify(d.pj) === JSON.stringify([today, null]) && d.board[2] === 'design', JSON.stringify(d));
 }
 
 console.log(`\nSO ${docNo}, project ${projectId}\n${fails} failed`);

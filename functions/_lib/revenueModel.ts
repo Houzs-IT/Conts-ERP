@@ -3,13 +3,14 @@ import { checkDate } from './validate';
 /** How an owner is paid for a unit: one revenue model per contract (migration 0093). The model decides how the
  *  monthly statement is worked out (ownerStatement.ts); the Units screen's Contract tab shows only its fields. */
 
-export const REVENUE_MODELS = ['management', 'management_guarantee', 'grr', 'master_lease', 'long_term'] as const;
+export const REVENUE_MODELS = ['management', 'management_guarantee', 'management_yearly_guarantee', 'grr', 'master_lease', 'long_term'] as const;
 export type RevenueModel = typeof REVENUE_MODELS[number];
 export const isRevenueModel = (v: unknown): v is RevenueModel => typeof v === 'string' && (REVENUE_MODELS as readonly string[]).includes(v);
 
 export const MODEL_LABEL: Record<RevenueModel, string> = {
   management: 'Income split',
   management_guarantee: 'Split with minimum guarantee',
+  management_yearly_guarantee: 'Split with yearly guarantee',
   grr: 'Guaranteed rent (GRR)',
   master_lease: 'Master lease',
   long_term: 'Long-term let',
@@ -42,6 +43,7 @@ export function termsLabel(model: RevenueModel, t: { ownerPct: number | null; ag
   switch (model) {
     case 'management': return `Share ${split()}`.trim();
     case 'management_guarantee': return `Share ${split()}, min. ${rm(t.guarantee ?? 0)}`;
+    case 'management_yearly_guarantee': return `Share ${split()}, min. ${rm(t.guarantee ?? 0)}/yr`;
     case 'grr': return `GRR ${rm(t.rent ?? 0)}/mo`;
     case 'master_lease': return `Master lease ${rm(t.rent ?? 0)}/mo`;
     case 'long_term': return `Long-term ${rm(t.rent ?? 0)}/mo`;
@@ -51,9 +53,16 @@ export function termsLabel(model: RevenueModel, t: { ownerPct: number | null; ag
 export interface ContractDraft {
   revenueModel?: string; ownerPct?: number; managementPct?: number; agentPct?: number; agentName?: string | null;
   minimumGuarantee?: number; guaranteeStartsOn?: string | null; guaranteeEndsOn?: string | null;
+  /** PS YGRR: the guarantee for each contract year, sen (owner_contracts.minimum_guarantee_annual). */
+  yearlyGuarantee?: number;
+  /** The staff's code (0125); its model must match revenueModel. */
+  contractCode?: string;
   monthlyRent?: number; deposit?: number | null; tenantName?: string | null;
   startsOn?: string; endsOn?: string | null; renewsOn?: string | null; miscCharges?: boolean;
 }
+
+/** A profit share: the owner gets a percentage of the net (with or without a guarantee). */
+export const isShare = (m: RevenueModel) => m === 'management' || m === 'management_guarantee' || m === 'management_yearly_guarantee';
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const sen = (v: unknown) => Number.isInteger(v) && (v as number) >= 0;
@@ -67,10 +76,11 @@ export function invalidDraft(d: ContractDraft): Record<string, string> {
   if (!d.startsOn || !DATE.test(d.startsOn)) f.startsOn = 'Enter the start date.';
   if (d.endsOn && (!DATE.test(d.endsOn) || (d.startsOn && d.endsOn < d.startsOn))) f.endsOn = 'The end date must be on or after the start date.';
   if (d.renewsOn && (!DATE.test(d.renewsOn) || (d.startsOn && d.renewsOn <= d.startsOn))) f.renewsOn = 'Renewal must be after the start date.';
-  if (m === 'management' || m === 'management_guarantee') {
+  if (isShare(m)) {
     const o = Number(d.ownerPct), g = Number(d.managementPct), a = Number(d.agentPct ?? 0);
     for (const [k, v] of [['ownerPct', o], ['managementPct', g], ['agentPct', a]] as const) if (!Number.isFinite(v) || v < 0 || v > 100) f[k] = 'Enter 0 to 100.';
     if (!f.ownerPct && !f.managementPct && !f.agentPct && Math.abs(o + g + a - 100) > 0.001) f.ownerPct = `Owner, management and agent must add up to 100% (now ${Number((o + g + a).toFixed(2))}%).`;
+    if (m === 'management_yearly_guarantee' && (!sen(d.yearlyGuarantee) || !d.yearlyGuarantee)) f.yearlyGuarantee = 'Enter the guarantee for each contract year.';
     if (m === 'management_guarantee') {
       if (!sen(d.minimumGuarantee) || !d.minimumGuarantee) f.minimumGuarantee = 'Enter the monthly minimum.';
       if (d.guaranteeStartsOn && !DATE.test(d.guaranteeStartsOn)) f.guaranteeStartsOn = 'Enter a date.';
@@ -94,7 +104,7 @@ export function invalidDraft(d: ContractDraft): Record<string, string> {
  *  model never leaves an old guarantee or rent behind for the statement to pick up. */
 export function draftColumns(d: ContractDraft) {
   const m = d.revenueModel as RevenueModel;
-  const share = m === 'management' || m === 'management_guarantee';
+  const share = isShare(m);
   const operator = share ? 100 - Number(d.ownerPct) : m === 'long_term' ? Number(d.managementPct ?? 0) : 0;
   return {
     revenue_model: m,
@@ -103,6 +113,8 @@ export function draftColumns(d: ContractDraft) {
     agent_fee_pct: share && Number(d.agentPct ?? 0) > 0 ? Number(d.agentPct) : null,
     agent_name: share ? (d.agentName?.trim() || null) : null,
     minimum_guarantee: m === 'management_guarantee' ? Number(d.minimumGuarantee) : 0,
+    // Only PS YGRR reads the yearly figure; on other models the imported one (informational) is left alone.
+    ...(m === 'management_yearly_guarantee' ? { minimum_guarantee_annual: Number(d.yearlyGuarantee) } : {}),
     guarantee_starts_on: m === 'management_guarantee' ? (d.guaranteeStartsOn || null) : null,
     guarantee_ends_on: m === 'management_guarantee' ? (d.guaranteeEndsOn || null) : null,
     grr_amount: share ? 0 : Number(d.monthlyRent),

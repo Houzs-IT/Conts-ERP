@@ -104,9 +104,12 @@ const offAdj = (await q(`SELECT amount, state, created_by FROM owner_adjustments
 check('off: an owner charge is added at once (201), open, -RM 110.00', r.status === 201 && Number(offAdj?.amount) === -11000 && offAdj?.state === 'open' && offAdj?.created_by === 'dev-admin', r.text);
 check('off: the charge is audited under the person who added it', (await auditFor('owner_adjustments', r.json?.id, 'owner_adjustment.create', 'dev-admin')).length === 1);
 
+// An owner-paid bill needs its receipt (src/lib/receipts.ts): a receipt document for each expense below.
+const rcpt = async () => (await q(`INSERT INTO documents (id, kind, file_name, mime_type, byte_size, storage_key, uploaded_by, captured_at, created_at)
+  VALUES (gen_random_uuid()::text, 'receipt', 'check.pdf', 'application/pdf', 10, 'check/receipt.pdf', 'dev-admin', $1, $1) RETURNING id`, new Date().toISOString()))[0].id;
 // An expense above the (unused) threshold is recorded at once, and so is raising one.
 const [offUnit] = await q(`SELECT u.id FROM units u WHERE NOT EXISTS (SELECT 1 FROM owner_statements s WHERE s.owner_id = u.owner_id AND s.state IN ('finalised','sent','paid') AND s.period_end >= $1) ORDER BY u.id LIMIT 1`, today);
-r = await fin('POST', '/api/expenses', { unitId: offUnit.id, category: 'maintenance', amount: 80000, incurredOn: today, description: 'Check off: water heater' });
+r = await fin('POST', '/api/expenses', { unitId: offUnit.id, category: 'maintenance', amount: 80000, incurredOn: today, description: 'Check off: water heater', receiptDocumentId: await rcpt() });
 check('off: an RM 800 expense is recorded at once (201)', r.status === 201 && r.json?.id, r.text);
 const offExp = r.json?.id;
 check('off: the expense is audited under the finance admin', (await auditFor('expenses', offExp, 'expense.create', 'chk-finance')).length === 1);
@@ -232,10 +235,10 @@ await mgmt('POST', `/api/approvals/${finSelf.id}`, { decision: 'reject', note: '
 
 // 8. Expenses: at or below the threshold recorded at once; above it staged.
 const [unit] = await q(`SELECT u.id FROM units u WHERE NOT EXISTS (SELECT 1 FROM owner_statements s WHERE s.owner_id = u.owner_id AND s.state IN ('finalised','sent','paid') AND s.period_end >= $1) ORDER BY u.id LIMIT 1`, now.slice(0, 10));
-r = await fin('POST', '/api/expenses', { unitId: unit.id, category: 'maintenance', amount: 50000, incurredOn: now.slice(0, 10), description: 'Check: tap washer', chargeTo: 'owner' });
+r = await fin('POST', '/api/expenses', { unitId: unit.id, category: 'maintenance', amount: 50000, incurredOn: now.slice(0, 10), description: 'Check: tap washer', chargeTo: 'owner', receiptDocumentId: await rcpt() });
 check('an expense of exactly RM 500 is recorded at once (201)', r.status === 201 && r.json?.id, r.text);
 const smallId = r.json?.id;
-r = await fin('POST', '/api/expenses', { unitId: unit.id, category: 'maintenance', amount: 80000, incurredOn: now.slice(0, 10), description: 'Check: water heater' });
+r = await fin('POST', '/api/expenses', { unitId: unit.id, category: 'maintenance', amount: 80000, incurredOn: now.slice(0, 10), description: 'Check: water heater', receiptDocumentId: await rcpt() });
 const exp = r.json?.pendingApproval;
 check('an expense of RM 800 is staged (202)', r.status === 202 && exp?.kind === 'expense', r.text);
 r = await mgmt('POST', `/api/approvals/${exp.id}`, { decision: 'approve' });
@@ -246,7 +249,7 @@ check('raising an expense above the threshold is staged (202), amount unchanged'
 await mgmt('POST', `/api/approvals/${r.json.pendingApproval.id}`, { decision: 'approve' });
 check('...and applied when approved', Number((await q(`SELECT amount FROM expenses WHERE id = $1`, smallId))[0].amount) === 90000);
 await q(`INSERT INTO settings (key, value, updated_at) VALUES ('approvals.expenseThreshold', '100000', $1) ON CONFLICT (key) DO UPDATE SET value = excluded.value`, now);
-r = await fin('POST', '/api/expenses', { unitId: unit.id, category: 'maintenance', amount: 80000, incurredOn: now.slice(0, 10), description: 'Check: threshold from Settings' });
+r = await fin('POST', '/api/expenses', { unitId: unit.id, category: 'maintenance', amount: 80000, incurredOn: now.slice(0, 10), description: 'Check: threshold from Settings', receiptDocumentId: await rcpt() });
 check('the threshold is read from Settings (RM 1,000 now: RM 800 recorded at once)', r.status === 201, r.text);
 await q(`DELETE FROM settings WHERE key = 'approvals.expenseThreshold'`);
 

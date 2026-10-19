@@ -1,6 +1,7 @@
 import { mayWork } from '../../_lib/access';
-import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/db';
+import { type Env, all, one, run, json, fail, audit, nowIso, mytToday } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
+import { hasServicePrices, serviceBook, setPriceToday } from '../../_lib/servicePrices';
 
 const CATEGORIES = ['plumbing', 'electrical', 'aircon', 'furniture', 'appliance', 'cleaning', 'general', 'other'];
 const UNIT_LABELS = ['job', 'unit', 'hour'];
@@ -19,6 +20,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const where: string[] = ['1 = 1'];
   const args: unknown[] = [];
   if (activeOnly) where.push('active = 1');
+  // Since Service prices (0127) the list holds cleaning items too; this is the maintenance part, priced from there.
+  const service = await hasServicePrices(env);
+  if (service) where.push("domain = 'maintenance'");
   if (q) { where.push('(name ILIKE ? OR code ILIKE ?)'); args.push(`%${q}%`, `%${q}%`); }
 
   const rows = await all<any>(env, `
@@ -27,13 +31,16 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     ORDER BY active DESC, code`, ...args);
 
   const money = session.manage || mayWork(session, WRITE_ROLES);
+  const book = service ? await serviceBook(env, []) : null;
+  const today = mytToday();
   return json({
     generatedAt: nowIso(),
     data: rows.map(r => ({
       id: r.id, code: r.code, name: r.name, category: r.category, unitLabel: r.unit_label,
       // The preset price is operational (it seeds a quote), so it is shown to the ops roles
       // that raise jobs, not only to finance.
-      defaultPrice: money ? r.default_price : null,
+      defaultPrice: money ? (book ? book.amounts(r.id, null, 'all', today).owner : r.default_price) : null,
+      internalCost: money && book ? book.amounts(r.id, null, 'all', today).internal : null,
       trackStock: !!r.track_stock, stockOnHand: Number(r.stock_on_hand ?? 0),
       active: !!r.active, notes: r.notes ?? '',
     })),
@@ -65,6 +72,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`,
     id, code, b.name.trim().slice(0, 120), b.category ?? 'general', b.unitLabel ?? 'job',
     b.defaultPrice ?? 0, track, track ? (b.stockOnHand ?? 0) : 0, String(b.notes ?? '').slice(0, 500) || null, now, now);
+  if (b.defaultPrice != null && await hasServicePrices(env)) await setPriceToday(env, id, b.defaultPrice, session.userId);
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'maintenance_sku.create', entityTable: 'maintenance_skus', entityId: id, after: { code, name: b.name, defaultPrice: b.defaultPrice ?? 0 } });
   return json({ id }, 201);
 };
+

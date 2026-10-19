@@ -1045,6 +1045,12 @@ const SoLineCardInner = ({
             <Trash2 {...SM_ICON} />
           </button>
         ) : <span />}
+
+        {/* Conts: labels for the stacked layout on a narrow card; hidden on the single row (SoLineCard.module.css). */}
+        <span className={styles.cellLabel}>Qty</span>
+        <span className={styles.cellLabel}>Unit price</span>
+        <span className={styles.cellLabel}>Discount</span>
+        <span className={styles.cellLabel}>Delivery date</span>
       </div>
 
       {/* ── Two-column body (Commander 2026-05-27 redesign) ──────────

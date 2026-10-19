@@ -15,15 +15,17 @@ import { useApi } from '../lib/useApi';
 import { refreshNavCounts } from '../lib/navBadges';
 import { api, ApiFailure, errorMessage } from '../lib/api';
 import { useSession } from '../lib/session';
-import { useUnitRoster } from '../lib/useUnitRoster';
+import { useUnitRoster, type RosterUnit } from '../lib/useUnitRoster';
 import { cx } from '../lib/design-tokens';
 import { rm, plural, dateShort, date, monthLabel } from '../lib/format';
 import { runEach, skippedNote } from '../lib/bulk';
 import {
-  PillTabs, Segmented, OpsModal, FormRow, INPUT, CloseButton, uploadTo, CATEGORY, stamp, hm, mytDay, type MediaItem, MaintenanceJobForm } from '../components/ops/OpsUi';
+  PillTabs, Segmented, OpsModal, FormRow, INPUT, CloseButton, uploadTo, CATEGORY, stamp, hm, mytDay, type MediaItem, MaintenanceJobForm, AssigneePicker, useTechnicians, KIND_WORD } from '../components/ops/OpsUi';
 import type { AnyTone } from '../lib/status';
 import { StatusBadge } from '../components/StatusBadge';
 import { CatalogPanel, ExchangeModal, type Sku, type SkuPayload, type CatalogInput } from './MaintenanceCatalog';
+import { ServicePrices } from './ServicePrices';
+import { JobMoneyPanel, JobProfitView } from '../components/ops/JobMoney';
 import { HistoryDisclosure } from '../components/RecordHistory';
 
 /* ---------- the API's shape (functions/api/maintenance/issues.ts) ---------- */
@@ -37,22 +39,32 @@ interface Issue {
   vendorName: string | null; assigneeKind: 'in_house' | 'contractor' | null; reportedAt: string; resolvedAt: string | null;
   blocksUnit: boolean; ownerApprovalRequired: boolean; ownerApprovedAt: string | null; chargeTo: ChargeTo; reporter: string | null;
   startedAt: string | null; endedAt: string | null; photoCount: number; documentCount: number; windows: RepairWin[];
-  quotedAmount: number | null; finalAmount: number | null; expensed: number | null; expensedOn: string | null; skuName: string | null;
+  quotedAmount: number | null; finalAmount: number | null; expensed: number | null; expensedOn: string | null; skuId: string | null; skuName: string | null; skuCode: string | null;
   ownerHasLogin: boolean; billingDate: string | null; collectedAt: string | null; contractorAmount: number | null; contractorPaidAt: string | null;
+  /** Migration 0126: job type, severity, parts and due date; approvalStatus is Needs owner approval / Approved / Not needed. */
+  jobType?: JobType; severity?: 'minor' | 'major'; dueOn?: string | null; needsParts?: boolean; partsArrivedAt?: string | null;
+  approvalStatus?: 'needed' | 'approved' | 'not_needed';
 }
+type JobType = 'urgent' | 'pass_key' | 'normal';
+const JOB_TYPE: Record<JobType, string> = { urgent: 'Urgent', pass_key: 'Pass key', normal: 'Normal' };
+const JOB_ORDER: Record<JobType, number> = { urgent: 0, pass_key: 1, normal: 2 };
+const APPROVAL: Record<string, { label: string; tone: AnyTone }> = {
+  needed: { label: 'Needs owner approval', tone: 'warning' }, approved: { label: 'Approved', tone: 'success' }, not_needed: { label: 'Not needed', tone: 'neutral' },
+};
+const typeOf = (i: Issue): JobType => i.jobType ?? (i.urgency === 'urgent' ? 'urgent' : 'normal');
+/** Approved, but the parts it waits for have not come: still hidden from the technicians. */
+const waitingParts = (i: Issue) => i.state !== 'resolved' && i.approvalStatus === 'approved' && !!i.needsParts && !i.partsArrivedAt;
 /** `billing` is false until migration 0108 is applied; billing date, collected and contractor payment are then hidden. */
-interface Payload { billing?: boolean; data: Issue[] }
-interface Technician { name: string; kind: 'in_house' | 'contractor'; role: string | null }
+interface Payload { billing?: boolean; jobTypes?: boolean; data: Issue[] }
 interface FileItem extends MediaItem { stage: 'before' | 'after' | null; uploadedAt: string; byteSize?: number }
 
-type Tab = 'open' | 'approval' | 'done' | 'history' | 'catalog';
+type Tab = 'open' | 'approval' | 'done' | 'history' | 'catalog' | 'rules' | 'profit';
 const PAYER: Record<ChargeTo, string> = { owner: 'Owner (on the statement)', the_conts: 'Company', guest_deposit: 'Guest (from the deposit)', warranty: 'Warranty' };
 const PAYER_SHORT: Record<ChargeTo, string> = { owner: 'owner pays', the_conts: 'company pays', guest_deposit: 'guest pays', warranty: 'warranty' };
 const SOURCE: Record<string, string> = { guest: 'Guest', cleaner: 'Cleaner', inspection: 'Inspection', staff: 'Office' };
 const MONEY_ROLES = ['management', 'finance_admin', 'operations_manager'];
-// The parts catalog (SKU list) is hidden until the owner sets it up (11 Oct 2026); the code stays.
-const SHOW_CATALOG = false;
-const KIND_WORD: Record<'in_house' | 'contractor', string> = { in_house: 'In-house', contractor: 'Contractor' };
+// The item catalog: staff pick an item (or Other) on a job; management and operations keep the list (request M3).
+const SHOW_CATALOG = true;
 const DOC_KIND: Record<string, string> = { claim: 'Claim from the technician or contractor', invoice: 'Invoice to the payer', receipt: 'Receipt', pod: 'Proof of work', other: 'File' };
 /** Who the money is collected from; the company and a warranty pay their own share, so nothing is collected. */
 const COLLECT_FROM: Partial<Record<ChargeTo, string>> = { owner: 'the owner', guest_deposit: "the guest's deposit" };
@@ -62,6 +74,7 @@ const awaitingOwner = (i: Issue) => i.state !== 'resolved' && i.ownerApprovalReq
 function statusOf(i: Issue): { label: string; tone: AnyTone } {
   if (i.state === 'resolved') return { label: i.finalAmount ? `Done · ${PAYER_SHORT[i.chargeTo]}` : 'Done', tone: 'success' };
   if (awaitingOwner(i)) return { label: 'Awaiting owner approval', tone: 'warning' };
+  if (waitingParts(i)) return { label: 'Waiting for parts', tone: 'warning' };
   if (i.state === 'in_progress' || i.startedAt) return { label: i.endedAt ? 'Repair finished' : 'In progress', tone: 'info' };
   if (i.vendorName) return { label: 'Assigned', tone: 'neutral' };
   return { label: 'New', tone: 'neutral' };
@@ -89,30 +102,38 @@ export default function MaintenancePage() {
   // A link from a clean (?id=) opens the right tab.
   useEffect(() => {
     const it = issues.find(i => i.id === selected);
-    if (it && tab !== 'history' && tab !== 'catalog') setTab(it.state === 'resolved' ? 'done' : awaitingOwner(it) ? 'approval' : 'open');
+    if (it && tab !== 'history' && tab !== 'catalog' && tab !== 'rules' && tab !== 'profit') setTab(it.state === 'resolved' ? 'done' : awaitingOwner(it) ? 'approval' : 'open');
   }, [data]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const monthStart = mytDay(0).slice(0, 7);
   const open = issues.filter(i => i.state !== 'resolved');
   const approval = open.filter(awaitingOwner);
   const recentDone = issues.filter(i => i.state === 'resolved' && i.resolvedAt && Date.parse(i.resolvedAt) > Date.now() - 30 * 864e5);
-  const urgent = open.filter(i => i.urgency === 'urgent').length;
+  // The header counts what the tabs count: a job waiting for its owner sits under that tab, not under Open.
+  const openTab = open.filter(i => !awaitingOwner(i));
+  const urgent = openTab.filter(i => typeOf(i) === 'urgent').length;
   const monthCost = issues.filter(i => i.state === 'resolved' && (i.resolvedAt ?? '').slice(0, 7) === monthStart).reduce((s, i) => s + (i.finalAmount ?? 0), 0);
 
-  const base = tab === 'open' ? open.filter(i => !awaitingOwner(i)) : tab === 'approval' ? approval : tab === 'done' ? recentDone : issues;
+  const base = tab === 'open' ? openTab : tab === 'approval' ? approval : tab === 'done' ? recentDone : issues;
   const ql = q.trim().toLowerCase();
   const rows = base.filter(i => (!category || i.category === category) && (!building || i.buildingId === building)
     && (!ql || `${i.unitNumber} ${i.propertyName} ${i.title} ${i.vendorName ?? ''}`.toLowerCase().includes(ql)))
-    .sort((a, b) => tab === 'open' ? (a.urgency === b.urgency ? b.reportedAt.localeCompare(a.reportedAt) : a.urgency === 'urgent' ? -1 : 1) : b.reportedAt.localeCompare(a.reportedAt));
+    // Open jobs in the order they are worked: Urgent, Pass key, then Normal one by one by due date (the day reported when none).
+    .sort((a, b) => tab === 'open'
+      ? JOB_ORDER[typeOf(a)] - JOB_ORDER[typeOf(b)] || (a.dueOn ?? a.reportedAt.slice(0, 10)).localeCompare(b.dueOn ?? b.reportedAt.slice(0, 10)) || a.reportedAt.localeCompare(b.reportedAt)
+      : b.reportedAt.localeCompare(a.reportedAt));
+  // Every building with units, not only those with a job loaded (request M1): a filter that lists a building with no
+  // jobs simply shows none.
+  const roster = useUnitRoster();
   const buildingOptions: SelectOption[] = useMemo(() => {
-    const m = new Map(issues.map(i => [i.buildingId, i.propertyName]));
-    return [...m.entries()].sort((a, b) => a[1].localeCompare(b[1])).map(([value, label]) => ({ value, label }));
-  }, [issues]);
+    const m = new Map<string, string>([...roster.filter(u => u.propertyId).map(u => [u.propertyId!, u.propertyName] as [string, string]), ...issues.map(i => [i.buildingId, i.propertyName] as [string, string])]);
+    return [...m.entries()].sort((a, b) => a[1].localeCompare(b[1], 'en', { numeric: true })).map(([value, label]) => ({ value, label }));
+  }, [issues, roster]);
   const sel = issues.find(i => i.id === selected) ?? null;
   const historySpend = tab === 'history' ? rows.reduce((s, i) => s + (i.finalAmount ?? 0), 0) : 0;
 
   const sub = data
-    ? `${open.length} open · ${urgent} urgent · ${approval.length} awaiting owner approval${money ? ` · this month ${rm(monthCost, { cents: false })}` : ''}`
+    ? `${openTab.length} open · ${urgent} urgent · ${approval.length} awaiting owner approval${money ? ` · this month ${rm(monthCost, { cents: false })}` : ''}`
     : 'Maintenance jobs on every unit';
 
   async function createSku(input: CatalogInput) {
@@ -141,16 +162,20 @@ export default function MaintenancePage() {
   return (
     <div className="flex flex-col gap-4 flex-1 min-h-0">
       <PageHeader title="Maintenance" sub={sub}
-        actions={SHOW_CATALOG ? <Button size="sm" variant={tab === 'catalog' ? 'primary' : 'secondary'} icon={<Icon name="Package" size="sm" />} onClick={() => setTab(tab === 'catalog' ? 'open' : 'catalog')}>Parts catalog</Button> : undefined}
+        actions={<>
+          {data?.jobTypes && <Button size="sm" variant={tab === 'rules' ? 'primary' : 'secondary'} icon={<Icon name="ShieldCheck" size="sm" />} onClick={() => setTab(tab === 'rules' ? 'open' : 'rules')}>Approval rules</Button>}
+          {money && <Button size="sm" variant={tab === 'profit' ? 'primary' : 'secondary'} icon={<Icon name="TrendingUp" size="sm" />} onClick={() => setTab(tab === 'profit' ? 'open' : 'profit')}>Profit by job</Button>}
+          {SHOW_CATALOG && <Button size="sm" variant={tab === 'catalog' ? 'primary' : 'secondary'} icon={<Icon name="Package" size="sm" />} onClick={() => setTab(tab === 'catalog' ? 'open' : 'catalog')}>Item catalog</Button>}
+        </>}
         primary={<Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setCreating(true)}>Add maintenance job</Button>} />
 
-      {tab === 'catalog' ? (
-        <CatalogPanel skus={sku.data?.data ?? []} loading={sku.loading} canWrite={['management', 'operations_manager', 'operations_staff'].includes(user!.role)} onCreate={createSku} onUpdate={updateSku} />
+      {tab === 'rules' ? <ApprovalRulesPanel /> : tab === 'profit' ? <div className="flex-1 min-h-0 overflow-y-auto"><JobProfitView kind="maintenance" onOpen={id => { setTab('history'); setSelected(id); }} /></div> : tab === 'catalog' ? (
+        <MaintenanceItems fallback={<CatalogPanel skus={sku.data?.data ?? []} loading={sku.loading} canWrite={['management', 'operations_manager', 'operations_staff'].includes(user!.role)} onCreate={createSku} onUpdate={updateSku} />} onChanged={sku.reload} />
       ) : (
         <>
           <div className="flex items-center gap-2 flex-wrap">
             <PillTabs value={tab} onChange={t => { setTab(t); setSelected(null); }} tabs={[
-              { value: 'open', label: 'Open', count: data ? open.length - approval.length : undefined },
+              { value: 'open', label: 'Open', count: data ? openTab.length : undefined },
               { value: 'approval', label: 'Awaiting owner approval', count: data ? approval.length : undefined },
               { value: 'done', label: 'Done' },
               { value: 'history', label: 'History' },
@@ -167,7 +192,7 @@ export default function MaintenancePage() {
         </>
       )}
 
-      {creating && <NewJobModal onClose={() => setCreating(false)} onDone={id => { setCreating(false); reload(); setTab('open'); setSelected(id); }} />}
+      {creating && <NewJobModal units={roster} onClose={() => setCreating(false)} onDone={id => { setCreating(false); reload(); setTab('open'); setSelected(id); }} />}
     </div>
   );
 }
@@ -216,19 +241,22 @@ function IssueTable({ tab, rows, loading, error, onRetry, selected, onSelect, mo
   const columns = useMemo<Column<Issue>[]>(() => [
     { key: 'unit', label: 'Unit', value: i => i.unitNumber, text: i => `${i.unitNumber} ${i.propertyName}`, sub: i => i.propertyName, hideable: false, width: 120,
       render: i => <b className="text-ink">{i.unitNumber}</b> },
-    { key: 'issue', label: 'Problem', value: i => i.title, width: 280,
+    { key: 'issue', label: 'Problem', value: i => i.title, width: 240,
       sub: i => <>From {SOURCE[i.source] ?? i.source}{i.reporter ? ` (${i.reporter})` : ''} · {stamp(i.reportedAt)}{i.windows.length > 0 && ` · window ${stamp(i.windows[0].startsAt)}`}{i.blocksUnit && ' · unit blocked'}</>,
       render: i => <span className="block whitespace-normal text-ink">{i.title}</span> },
-    { key: 'category', label: 'Category', value: i => i.category, text: i => CATEGORY[i.category] ?? i.category, width: 120, filter: false },
-    { key: 'urgency', label: 'Urgency', type: 'status', value: i => i.urgency,
-      status: i => (i.urgency === 'urgent' ? { label: 'Urgent', tone: 'critical' } : { label: 'Normal', tone: 'neutral' }), width: 110, phone: 'meta' },
+    { key: 'category', label: 'Category', value: i => i.category, text: i => CATEGORY[i.category] ?? i.category, width: 120, filter: false, hidden: true },
+    { key: 'urgency', label: 'Type', type: 'status', value: i => typeOf(i),
+      status: i => ({ label: JOB_TYPE[typeOf(i)], tone: typeOf(i) === 'urgent' ? 'critical' : typeOf(i) === 'pass_key' ? 'info' : 'neutral' }), width: 110, phone: 'meta' },
+    { key: 'due', label: 'Due', type: 'date', value: i => i.dueOn ?? null, width: 110, hidden: true },
+    { key: 'approval', label: 'Owner approval', type: 'status', value: i => i.approvalStatus ?? 'not_needed',
+      status: i => { const a = APPROVAL[i.approvalStatus ?? 'not_needed']; return { label: a.label, tone: a.tone === 'gold' ? 'neutral' : a.tone }; }, width: 150 },
     { key: 'assignee', label: 'Assigned to', value: i => i.vendorName, text: i => (i.vendorName ? `${i.vendorName} ${i.assigneeKind === 'in_house' ? '(in-house)' : '(contractor)'}` : 'Unassigned'), width: 180,
       render: i => (i.vendorName
         ? <span className="block truncate">{i.vendorName}<span className="text-muted-ink"> {i.assigneeKind === 'in_house' ? '(in-house)' : '(contractor)'}</span></span>
         : <span className="text-danger">Unassigned</span>) },
     ...(money ? [{ key: 'cost', label: 'Cost', type: 'money' as const, value: (i: Issue) => i.finalAmount ?? i.quotedAmount, width: 120, title: 'The final cost, or the quote while the job is open.',
       render: (i: Issue) => { const c = i.finalAmount ?? i.quotedAmount; return c == null ? <span className="text-faint">—</span> : <span className="tabular-nums whitespace-nowrap">{rm(c, { cents: false })}{i.finalAmount == null && <span className="text-muted-ink text-meta"> quote</span>}</span>; } }] : []),
-    { key: 'status', label: 'Status', type: 'status', value: i => statusOf(i).label, status: i => { const s = statusOf(i); return { label: s.label, tone: s.tone === 'gold' ? 'neutral' : s.tone }; }, width: 170 },
+    { key: 'status', label: 'Status', type: 'status', value: i => statusOf(i).label, status: i => { const s = statusOf(i); return { label: s.label, tone: s.tone === 'gold' ? 'neutral' : s.tone }; }, width: 160 },
     ...(money ? [
       { key: 'billing', label: 'Billing date', type: 'date' as const, value: (i: Issue) => i.billingDate, hidden: true, width: 130 },
       { key: 'collected', label: 'Collected', value: (i: Issue) => i.collectedAt, hidden: true, width: 130, title: 'When the money from the payer came in.',
@@ -282,39 +310,12 @@ function JobCard({ i, money }: { i: Issue; money: boolean }) {
         {CATEGORY[i.category] ?? i.category} · {i.vendorName ? i.vendorName : <span className="text-danger">Unassigned</span>}
       </span>
       <span className="flex gap-1.5 flex-wrap pt-0.5">
-        {i.urgency === 'urgent' && <StatusBadge tone="critical">Urgent</StatusBadge>}
+        {typeOf(i) !== 'normal' && <StatusBadge tone={typeOf(i) === 'urgent' ? 'critical' : 'info'}>{JOB_TYPE[typeOf(i)]}</StatusBadge>}
+        {i.dueOn && typeOf(i) === 'normal' && i.state !== 'resolved' && <StatusBadge tone="neutral">Due {dateShort(i.dueOn)}</StatusBadge>}
         <StatusBadge tone={s.tone === 'gold' ? 'neutral' : s.tone}>{s.label}</StatusBadge>
+        {i.approvalStatus === 'needed' && !awaitingOwner(i) ? null : i.approvalStatus === 'approved' && <StatusBadge tone="success">Owner approved</StatusBadge>}
       </span>
     </span>
-  );
-}
-
-/** Who can be given a job: the company's own people and every contractor used before (GET /maintenance/technicians).
- *  The kind (in-house or contractor) follows from who is picked; a contractor not on the list is typed once. */
-function useTechnicians() {
-  const r = useApi<{ data: Technician[] }>('/maintenance/technicians');
-  return r.data?.data ?? [];
-}
-
-function AssigneePicker({ value, onChange, techs, autoFocus }: { value: string; onChange: (name: string) => void; techs: Technician[]; autoFocus?: boolean }) {
-  const known = techs.some(t => t.name === value);
-  const [typing, setTyping] = useState(!!value && !known && techs.length > 0);
-  const kind = techs.find(t => t.name.toLowerCase() === value.trim().toLowerCase())?.kind ?? (value.trim() ? 'contractor' : null);
-  return (
-    <div className="flex flex-col gap-1.5 min-w-0">
-      {typing ? (
-        <input className={INPUT} value={value} onChange={e => onChange(e.target.value)} placeholder="Contractor or company name" aria-label="New contractor name" maxLength={80} autoFocus={autoFocus} />
-      ) : (
-        <SearchSelect label="Technician or contractor" value={known ? value : ''} onChange={onChange} size="md" placeholder="Search technicians and contractors"
-          options={techs.map(t => ({ value: t.name, label: t.name, group: t.kind === 'in_house' ? 'In-house' : 'Contractors' }))} />
-      )}
-      <span className="text-meta text-muted-ink flex gap-1.5 flex-wrap items-center">
-        {kind && <span>{KIND_WORD[kind]}{kind === 'in_house' ? ', a staff account' : ''}.</span>}
-        <button type="button" className="text-accent cursor-pointer font-medium" onClick={() => { setTyping(!typing); onChange(''); }}>
-          {typing ? 'Pick from the list' : 'New contractor'}
-        </button>
-      </span>
-    </div>
   );
 }
 
@@ -355,6 +356,7 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
   const techs = useTechnicians();
   const [busy, setBusy] = useState<string | null>(null);
   const [assignee, setAssignee] = useState(i.vendorName ?? '');
+  const [item, setItem] = useState(i.skuId ?? 'other');
   const [quoteSen, setQuoteSen] = useState<number | null>(i.quotedAmount);
   const [billingDate, setBillingDate] = useState(i.billingDate ?? '');
   const [payer, setPayer] = useState<ChargeTo>(i.chargeTo);
@@ -423,7 +425,8 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
         <span className="[&_button]:text-white [&_button]:border-charcoal [&_button]:bg-transparent"><CloseButton onClick={onClose} /></span>
       </div>
       <div className="flex gap-1.5 flex-wrap">
-        {i.urgency === 'urgent' && <StatusBadge tone="critical">Urgent</StatusBadge>}
+        <StatusBadge tone={typeOf(i) === 'urgent' ? 'critical' : typeOf(i) === 'pass_key' ? 'info' : 'neutral'}>{JOB_TYPE[typeOf(i)]}</StatusBadge>
+        {i.approvalStatus && <StatusBadge tone={APPROVAL[i.approvalStatus].tone}>Owner approval: {APPROVAL[i.approvalStatus].label}</StatusBadge>}
         <StatusBadge tone="neutral">{CATEGORY[i.category] ?? i.category}</StatusBadge>
         <StatusBadge tone={statusOf(i).tone}>{statusOf(i).label}</StatusBadge>
         {i.blocksUnit && <StatusBadge tone="critical">Unit blocked</StatusBadge>}
@@ -460,6 +463,9 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
         </div>
       )}
 
+      {!done && i.jobType && <JobPlan i={i} busy={busy} act={act} />}
+      {waitingParts(i) && <div className="rounded-control bg-warning-bg text-warning p-3">The owner approved. The technicians see this job once the parts are ticked as arrived.</div>}
+
       {!done && (
         <section className="flex flex-col gap-2">
           <h3 className="m-0 text-copy font-semibold">Assigned to</h3>
@@ -468,6 +474,24 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
             loading={busy === 'assign'} onClick={() => void act('assign', () => api.patch(`/maintenance/issues/${i.id}`, { assigneeName: assignee.trim() }), 'Job assigned.')}>Save</Button>
         </section>
       )}
+      <section className="flex flex-col gap-2 rounded-card border border-solid border-line p-3.5">
+        <h3 className="m-0 text-copy font-semibold">Items, cost and profit</h3>
+        <JobMoneyPanel kind="maintenance" jobId={i.id} unitId={i.unitId} catalog={skus} onChanged={onChanged}
+          itemsLocked={done ? 'The job is finished; reopen it to change its items.' : i.ownerApprovedAt && i.chargeTo === 'owner' ? 'The owner approved this quote, so its items stay as they are.' : null}
+          fallback={<>
+      {!done && (
+          <section className="flex flex-col gap-2">
+            <h3 className="m-0 text-copy font-semibold">Item</h3>
+            <SearchSelect label="Item" size="md" value={item} onChange={setItem} placeholder="Search items by name or code"
+              options={[...skus.filter(s => s.active || s.id === i.skuId).map(s => ({ value: s.id, label: s.name, hint: s.code, group: CATEGORY[s.category] ?? 'Other' })), { value: 'other', label: 'Other (not on the list)', group: 'Not in the catalog' }]} />
+            <Button size="sm" variant="secondary" className="self-start" disabled={item === (i.skuId ?? 'other')} disabledReason="Pick a different item."
+              loading={busy === 'item'} onClick={() => void act('item', () => api.patch(`/maintenance/issues/${i.id}`, { skuId: item === 'other' ? null : item }), 'Item saved.')}>Save</Button>
+          </section>
+        )}
+        {done && <p className="m-0 text-muted-ink">Item: {i.skuName ? `${i.skuName}${i.skuCode ? ` (${i.skuCode})` : ''}` : 'Other (not on the list)'}.</p>}
+              {done && <p className="m-0 text-muted-ink">Item: {i.skuName ? `${i.skuName}${i.skuCode ? ` (${i.skuCode})` : ''}` : 'Other (not on the list)'}.</p>}
+          </>} />
+      </section>
       {done && i.vendorName && <p className="m-0 text-muted-ink">Done by {i.vendorName}{i.assigneeKind ? ` (${KIND_WORD[i.assigneeKind].toLowerCase()})` : ''}.</p>}
 
       {money ? (
@@ -666,8 +690,7 @@ function footer(onClose: () => void, busy: boolean, label: string, onSave: () =>
 const errText = (e: unknown) => errorMessage(e, 'Not saved. Try again.');
 
 /** Same form as "Report damage" from a clean (components/ops/OpsUi MaintenanceJobForm), with a unit picker. */
-function NewJobModal({ onClose, onDone }: { onClose: () => void; onDone: (id: string) => void }) {
-  const units = useUnitRoster();
+function NewJobModal({ units, onClose, onDone }: { units: RosterUnit[]; onClose: () => void; onDone: (id: string) => void }) {
   return <MaintenanceJobForm units={units} onClose={onClose} onDone={onDone} />;
 }
 
@@ -723,15 +746,16 @@ function CompleteModal({ issue, billing, onClose, onDone }: { issue: Issue; bill
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   async function save() {
-    const sen = amountSen ?? 0;
-    if (sen < 0) { setError('Enter the final cost.'); return; }
+    // Every job closes with its amount (staff comment sheet, 16 Oct 2026): RM 0 has to be typed, never assumed.
+    if (amountSen == null || amountSen < 0) { setError('Enter the final cost. Type 0 if the job cost nothing.'); return; }
+    const sen = amountSen;
     setBusy(true); setError(null);
     try { await api.post(`/maintenance/issues/${issue.id}/complete`, { finalAmount: sen, chargeTo: payer, ...(billing && billingDate ? { billingDate } : {}) }); onDone(); }
     catch (e) { setError(errText(e)); setBusy(false); }
   }
   return (
     <OpsModal title="Mark job done" sub={`${issue.propertyName} ${issue.unitNumber} · ${issue.title}`} onClose={onClose} busy={busy} footer={footer(onClose, busy, 'Mark done', () => void save())}>
-      <FormRow label="Final cost, RM" error={error} hint="Recorded as a maintenance expense on the unit. RM 0 records nothing.">
+      <FormRow label="Final cost, RM (required)" error={error} hint="Recorded as a maintenance expense on the unit. RM 0 records nothing.">
         <MoneyInput className={INPUT} valueSen={amountSen} onChangeSen={setAmountSen} aria-label="Final cost in RM" />
       </FormRow>
       {billing && <FormRow label="Billing date" hint={billingDate ? `The cost goes on the unit's costs for ${monthLabel(billingDate)}.` : undefined}>
@@ -743,4 +767,113 @@ function CompleteModal({ issue, billing, onClose, onDone }: { issue: Issue; bill
       {issue.blocksUnit && <span className="text-meta text-muted-ink">The unit goes back to ready, and the nights blocked for this repair become available again.</span>}
     </OpsModal>
   );
+}
+
+/** The job's plan, saved as it is picked: its type, how serious it is (management's approval rules can look at it), the
+ *  due date Normal jobs are worked in, and the parts it waits for. */
+function JobPlan({ i, busy, act }: { i: Issue; busy: string | null; act: (key: string, fn: () => Promise<unknown>, ok: string, body?: string) => Promise<boolean> }) {
+  const patch = (key: string, body: Record<string, unknown>, ok: string, note?: string) => void act(key, () => api.patch(`/maintenance/issues/${i.id}`, body), ok, note);
+  return (
+    <section className="flex flex-col gap-2.5 rounded-card border border-solid border-line p-3.5">
+      <h3 className="m-0 text-copy font-semibold">Job</h3>
+      <div className="grid grid-cols-2 gap-3">
+        <FormRow label="Type">
+          <select className={INPUT} value={typeOf(i)} disabled={busy === 'type'} onChange={e => patch('type', { jobType: e.target.value }, 'Job type saved.')}>
+            {(Object.keys(JOB_TYPE) as JobType[]).map(t => <option key={t} value={t}>{JOB_TYPE[t]}</option>)}
+          </select>
+        </FormRow>
+        <FormRow label="Severity">
+          <select className={INPUT} value={i.severity ?? 'minor'} disabled={busy === 'severity'} onChange={e => patch('severity', { severity: e.target.value }, 'Severity saved.')}>
+            <option value="minor">Minor</option><option value="major">Major</option>
+          </select>
+        </FormRow>
+        <FormRow label="Due" hint={typeOf(i) === 'normal' ? 'Normal jobs are worked one by one in this order.' : undefined}>
+          <DateField aria-label="Due date" className={INPUT} value={i.dueOn ?? ''} onChange={v => patch('due', { dueOn: v || null }, v ? 'Due date saved.' : 'Due date cleared.')} />
+        </FormRow>
+        <FormRow label="Owner approval">
+          <span className="h-10 flex items-center"><StatusBadge tone={APPROVAL[i.approvalStatus ?? 'not_needed'].tone}>{APPROVAL[i.approvalStatus ?? 'not_needed'].label}</StatusBadge></span>
+        </FormRow>
+      </div>
+      <div className="flex flex-col gap-1.5 pt-2 [border-top:1px_solid_var(--color-line-soft)]">
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input type="checkbox" className="w-4 h-4 accent-black" checked={!!i.needsParts} disabled={busy === 'parts'}
+            onChange={e => patch('parts', { needsParts: e.target.checked }, e.target.checked ? 'Marked as waiting for parts.' : 'No parts needed.')} />
+          Needs parts or stock
+        </label>
+        {i.needsParts && (
+          <label className="flex items-center gap-2 cursor-pointer pl-6">
+            <input type="checkbox" className="w-4 h-4 accent-black" checked={!!i.partsArrivedAt} disabled={busy === 'arrived'}
+              onChange={e => patch('arrived', { partsArrived: e.target.checked }, e.target.checked ? 'Parts arrived.' : 'Parts not arrived.',
+                e.target.checked && i.approvalStatus === 'approved' ? 'The technicians can see the job now.' : undefined)} />
+            Parts arrived{i.partsArrivedAt ? <span className="text-muted-ink"> · {stamp(i.partsArrivedAt)}</span> : null}
+          </label>
+        )}
+        {i.approvalStatus === 'needed' && <span className="text-meta text-muted-ink">The technicians do not see this job until the owner approves{i.needsParts ? ' and the parts arrive' : ''}.</span>}
+      </div>
+    </section>
+  );
+}
+
+type RuleMode = 'never' | 'always' | 'major' | 'over';
+const RULE_LABEL: Record<RuleMode, string> = { never: 'Not needed', always: 'Always', major: 'Major jobs only', over: 'When the quote is over' };
+
+/** Maintenance > Approval rules: for each kind of problem, when the owner must approve before work starts. Management sets
+ *  them; a job they hold stays away from the technicians until the owner approves (and its parts arrive). */
+function ApprovalRulesPanel() {
+  const toast = useToast();
+  const { data, error, reload } = useApi<{ rules: Record<string, { mode: RuleMode; amount?: number }>; mayEdit: boolean }>('/maintenance/approval-rules');
+  const [draft, setDraft] = useState<Record<string, { mode: RuleMode; amount?: number }> | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { if (data) setDraft(data.rules); }, [data]);
+  const changed = !!data && !!draft && JSON.stringify(draft) !== JSON.stringify(data.rules);
+  async function save() {
+    if (!draft) return;
+    setBusy(true);
+    try { await api.put('/maintenance/approval-rules', { rules: draft }); toast({ tone: 'success', title: 'Approval rules saved.', body: 'They apply to jobs added or changed from now on.' }); reload(); }
+    catch (e) { toast({ tone: 'critical', title: 'Not saved.', body: errorMessage(e, 'Try again in a moment.') }); }
+    finally { setBusy(false); }
+  }
+  return (
+    <section className="bg-card rounded-card border border-solid border-line p-4 flex flex-col gap-3 max-w-[720px]">
+      <div>
+        <h2 className="m-0 text-heading font-semibold">When the owner must approve</h2>
+        <p className="m-0 text-meta text-muted-ink">A job that needs approval is kept from the technicians until the owner approves it, and until its parts arrive when it needs parts. Jobs that do not need it go straight to the technician. Only jobs the owner pays for are held.</p>
+      </div>
+      {error && <StaleBanner message={error} onRetry={reload} />}
+      {!draft ? <Skeleton height={200} /> : (
+        <div className="flex flex-col">
+          {Object.entries(CATEGORY).map(([cat, label]) => {
+            const r = draft[cat] ?? { mode: 'never' as RuleMode };
+            return (
+              <div key={cat} className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_minmax(0,1fr)] gap-2 items-center py-2 [border-top:1px_solid_var(--color-line-soft)]">
+                <b>{label}</b>
+                <select className={INPUT} value={r.mode} disabled={!data?.mayEdit} aria-label={`${label} approval rule`}
+                  onChange={e => setDraft(d => ({ ...d!, [cat]: e.target.value === 'over' ? { mode: 'over', amount: r.amount ?? 50000 } : { mode: e.target.value as RuleMode } }))}>
+                  {(Object.keys(RULE_LABEL) as RuleMode[]).map(m => <option key={m} value={m}>{RULE_LABEL[m]}</option>)}
+                </select>
+                {r.mode === 'over'
+                  ? <MoneyInput prefix className={INPUT} valueSen={r.amount ?? null} disabled={!data?.mayEdit} onChangeSen={v => setDraft(d => ({ ...d!, [cat]: { mode: 'over', amount: v ?? 0 } }))} aria-label={`${label} amount`} />
+                  : <span className="text-meta text-muted-ink max-sm:hidden">{r.mode === 'major' ? 'Set Major on the job.' : ''}</span>}
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {data?.mayEdit ? (
+        <div className="flex justify-end gap-2">
+          {changed && <Button size="sm" variant="secondary" disabled={busy} onClick={() => setDraft(data.rules)}>Discard</Button>}
+          <Button size="sm" variant="primary" loading={busy} disabled={!changed} disabledReason="Change a rule first." onClick={() => void save()}>Save rules</Button>
+        </div>
+      ) : <span className="text-meta text-muted-ink">Only management changes these rules.</span>}
+    </section>
+  );
+}
+
+/** Item catalog: the maintenance part of Service prices (0127); before that update, the old catalog. */
+function MaintenanceItems({ fallback, onChanged }: { fallback: ReactNode; onChanged: () => void }) {
+  const service = useApi<{ ready: boolean }>('/operations/service-prices?domain=maintenance');
+  if (!service.data) return <Skeleton height={240} />;
+  if (!service.data.ready) return <>{fallback}</>;
+  return <ServicePrices domain="maintenance" onChanged={onChanged}
+    above={<p className="m-0 text-meta text-muted-ink">Picking an item on a job fills its owner price (the quote) and its internal cost; both stay editable on the job. The whole list, cleaning too, is under Settings, Service prices.</p>} />;
 }

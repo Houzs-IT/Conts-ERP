@@ -24,6 +24,7 @@ const LIST = { month: null, receipts: [
   { kind: 'DEBTOR', id: 'dr1', number: 'HC-ODR-2609-001', date: '2026-09-02', payer: 'AHMAD BIN ALI', moneyAccount: '310-0010', totalSen: 20000, status: 'POSTED', debtorId: 'd1' },
   { kind: 'CUSTOMER', id: 'p1', number: 'HC-SO-2609-004', date: '2026-09-01', payer: 'Customer deposit', moneyAccount: 'EDC', totalSen: 350000, status: 'RECEIVED' },
 ] };
+vi.mock('../../components/doc-attachments/DocAttachments', () => ({ DocAttachments: () => null, LineFilesButton: () => null })); // has its own tests and API check
 vi.mock('../../vendor/scm/lib/accounting-queries', async (importOriginal) => ({
   /* The real pure helpers stay (postableAccounts — docs/bugs/0693); only the hooks are stubbed. */
   ...(await importOriginal<typeof import('../../vendor/scm/lib/accounting-queries')>()),

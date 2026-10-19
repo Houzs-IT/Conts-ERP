@@ -38,6 +38,7 @@ import {
 } from '../../vendor/scm/lib/payment-voucher-queries';
 import { isRefundPurpose, pvTypeLabel, pvTypeOf } from '../../vendor/scm/lib/pv-type-label';
 import { DocFilesCard } from '../../vendor/scm/components/DocFilesCard';
+import { LineFilesButton } from '../../components/doc-attachments/DocAttachments';
 import { PrintPreviewModal, useOpenPrintPreviewFromUrl, usePrintPreview } from '../../components/scm-v2/PrintPreviewModal';
 import type { PdfAction } from '../../vendor/scm/lib/pdf-common';
 import { useAccounts, useAccountRoles, postableAccounts, type Account } from '../../vendor/scm/lib/accounting-queries';
@@ -759,7 +760,12 @@ export const PaymentVoucherDetail = () => {
                           is for rides beside the account, as the party does in the
                           journal (owner 2026-09-08: 看不到是谁 → 可以). */}
                       <td style={{ padding: '6px 8px' }}>{accountLabel(l.debit_account_code)}{isRefundPv && pv.payee_name ? ` · ${pv.payee_name}` : ''}</td>
-                      <td style={{ padding: '6px 8px' }}>{l.description || '—'}</td>
+                      <td style={{ padding: '6px 8px' }}>
+                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                          <span style={{ flex: 1, minWidth: 0 }}>{l.description || '—'}</span>
+                          <LineFilesButton docType="payment_voucher" docId={String(pv.id)} lineId={String(l.id)} canEdit={pv.status !== 'CANCELLED'} />
+                        </div>
+                      </td>
                       <td style={{ padding: '6px 8px', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{fmtRm(Number(l.amount_sen ?? 0), currency)}</td>
                     </tr>
                   ))}

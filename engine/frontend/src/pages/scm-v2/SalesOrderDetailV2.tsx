@@ -104,8 +104,9 @@ import { ADD_LINE_LABEL, addLineHref } from "../../vendor/scm/lib/add-line-hando
 import { fairLabel } from "../../vendor/scm/lib/fair-options-queries";
 import { linkedEvent, type LinkedFair } from "../../components/fairPick";
 import { useSoInfoLists, useSoRooms } from "../projects/renovation/customerPropertyApi";
+import { projectDatesText } from "../projects/renovation/customerPropertyModel";
 import { RenovationSoOrderInfo } from "./RenovationSoOrderInfo";
-import { RenovationSoAttachments } from "./RenovationSoAttachments";
+import { DocAttachments, LineFilesButton } from "../../components/doc-attachments/DocAttachments";
 import { roomOrdered } from "../../vendor/scm/lib/so-print-rooms";
 // ─── Row types (subset — see MfgSalesOrdersList.tsx for the full SoRow) ────
 
@@ -602,6 +603,12 @@ function SalesOrderDetailV2ReadOnly() {
   const renoRooms = useSoRooms(docNo, renoMode).data ?? null;
   const printRooms = renoMode && renoRooms && renoRooms.roomSections.length > 0
     ? { order: renoRooms.roomSections, byItem: renoRooms.itemRooms } : undefined;
+  /* The printed Start / End date are the linked project's (owner, 15 Oct 2026), from the same read as the rooms
+     and the Order information section, so the page and the print never disagree. */
+  const renoDates = renoMode && renoRooms ? projectDatesText(renoRooms.project, "so") : null;
+  /* The PDF's standard font has no em dash (it prints blank), so the print says "-" where the page says "—". */
+  const pdfText = (t: string) => t.replace(/—/g, "-");
+  const printProjectDates = renoDates ? { start: pdfText(renoDates.start), end: pdfText(renoDates.end) } : undefined;
   const requestCancel = useCancelRequestAction("so");
   const { nameOf: salespersonNameOf } = useStaffLookup();
   const staffRoster = useStaff();
@@ -830,7 +837,7 @@ function SalesOrderDetailV2ReadOnly() {
           payments as never,
           action,
           pwpCodes,
-          printRooms ? { rooms: printRooms } : undefined
+          printRooms || printProjectDates ? { rooms: printRooms, projectDates: printProjectDates } : undefined
         )
       )
       .catch((e) =>
@@ -1000,12 +1007,15 @@ function SalesOrderDetailV2ReadOnly() {
       width: "110px",
       getValue: (l) => (l.photo_urls ?? []).length,
       render: (l) => (
-        <SoLinePhotoStrip
-          source="so"
-          docId={docNo ?? ""}
-          itemId={l.id}
-          photoKeys={l.photo_urls ?? []}
-        />
+        <div className="flex items-center gap-1.5">
+          <SoLinePhotoStrip
+            source="so"
+            docId={docNo ?? ""}
+            itemId={l.id}
+            photoKeys={l.photo_urls ?? []}
+          />
+          <LineFilesButton docType="sales_order" docId={salesOrder?.doc_no} lineId={l.id} canEdit={salesOrder?.status.toLowerCase() !== "cancelled"} />
+        </div>
       ),
     },
     /* Stock + Incoming PO (owner 2026-08-01) — the SAME per-line readiness +
@@ -1367,12 +1377,6 @@ function SalesOrderDetailV2ReadOnly() {
                 />
               </Section>
             )}
-            {/* Files on the whole order (mig 0115); each line keeps its own photos. */}
-            {renoMode && (
-              <Section title="Attachments">
-                <RenovationSoAttachments docNo={salesOrder.doc_no} canEdit={salesOrder.status !== "CANCELLED"} />
-              </Section>
-            )}
             {/* Order info + optional amber Note callout */}
             {!renoMode && (
             <Section title="Order info">
@@ -1518,6 +1522,8 @@ function SalesOrderDetailV2ReadOnly() {
                 emptyLabel="No line items"
               />
             </Section>
+
+            <DocAttachments docType="sales_order" docId={salesOrder.doc_no} canEdit={salesOrder.status.toLowerCase() !== "cancelled"} />
 
             {/* Payments — the SAME PaymentsTable the editor renders (Task #105
                 one-source rule), mounted here since 2026-08-09 so "Collect

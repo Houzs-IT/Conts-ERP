@@ -1625,6 +1625,32 @@ describe("DataTable row colours are not overpainted by the zebra", () => {
   });
 });
 
+describe("phone card labels on top, badge and subtitle", () => {
+  it("lifts the badge and subtitle out of the cells and stacks each label above its value", () => {
+    setViewport(375);
+    const cols: Column<Row>[] = [
+      ...columns,
+      { key: "code", label: "Product Code", render: (row) => `C-${row.id}`, getValue: (row) => row.id },
+      { key: "kind", label: "Kind", render: () => "Built-in", getValue: () => "Built-in" },
+    ];
+    const { container } = render(
+      <DataTable
+        tableId="card-labels-top"
+        rows={rows.slice(0, 1)}
+        columns={cols}
+        getRowKey={(row) => row.id}
+        mobileCard={{ primary: "name", cells: ["code", "kind", "status"], labels: "top", badge: "status", subtitle: "code" }}
+      />,
+    );
+    const card = container.querySelector<HTMLElement>("[data-mobile-card]")!;
+    expect(card.textContent).toContain("C-1");
+    expect(card.textContent).toContain("Closed");
+    const labels = Array.from(card.querySelectorAll("dt")).map((dt) => dt.textContent);
+    expect(labels).toEqual(["Kind"]);
+    expect(card.querySelector("dt")!.nextElementSibling!.textContent).toBe("Built-in");
+  });
+});
+
 /* Document line tables (owner 2026-09-15: "我看到的东西，我要去 edit 的时候，突然它
    位置不见了"). A line table's layout is shared by every document of its kind,
    and so were its sort and funnels: a header clicked on one Sales Order re-sorted

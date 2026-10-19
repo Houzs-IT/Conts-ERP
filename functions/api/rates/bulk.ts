@@ -1,4 +1,5 @@
 import { type Env, all, run, json, fail, audit, nowIso } from '../../_lib/db';
+import { rentalOnly } from '../../_lib/unitPurpose';
 import { requireSession } from '../../_lib/auth';
 import { checkDate, invalid, type Fields } from '../../_lib/validate';
 import { enqueueRestrictionsMany } from '../../_lib/channexQueue';
@@ -103,11 +104,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
   const idsJson = JSON.stringify(unitIds);
   const [units, savedUplifts, connected] = await Promise.all([
-    all<{ id: string; base_rate: number; weekend_rate: number | null }>(env, 'SELECT id, base_rate, weekend_rate FROM units WHERE id IN (SELECT jsonb_array_elements_text(?::text::jsonb))', idsJson),
+    all<{ id: string; base_rate: number; weekend_rate: number | null }>(env, `SELECT id, base_rate, weekend_rate FROM units WHERE id IN (SELECT jsonb_array_elements_text(?::text::jsonb))${await rentalOnly(env, 'units')}`, idsJson),
     all<{ unit_id: string; channel: string; uplift: number }>(env, 'SELECT unit_id, channel, uplift FROM channel_uplifts WHERE unit_id IN (SELECT jsonb_array_elements_text(?::text::jsonb))', idsJson),
     all<{ unit_id: string; ota: string }>(env, 'SELECT unit_id, ota FROM channex_channels WHERE unit_id IN (SELECT jsonb_array_elements_text(?::text::jsonb))', idsJson),
   ]);
-  if (units.length !== unitIds.length) return fail('NOT_FOUND', 'One of those units does not exist.', 404);
+  if (units.length !== unitIds.length) return fail('NOT_FOUND', 'One of those units does not exist, or is a showroom or warehouse (not priced).', 404);
   const anyPrice = lines.some(l => (l.baseRate ?? l.adjustPct) != null);
   const allNights = nightsOf.flat().sort();
   // The nights' own prices: a percentage moves the current web price, which may be one set by hand for that night,

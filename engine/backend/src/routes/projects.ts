@@ -73,7 +73,7 @@ import { activeCompanyId, activeCompanySql, requireActiveCompanyId } from "../sc
 import { refuseForeignChild, refuseForeignProject } from "./lib/project-company-gate";
 import { isStageKey } from "../scm/shared/renovation-stages";
 import { renovationCalendarRows } from "../services/renovation/calendarSpan";
-import { renovationCalendarItems } from "../services/renovation/calendarItems";
+import { calendarMePersonIds, renovationCalendarItems } from "../services/renovation/calendarItems";
 import type { Db as RenoDb } from "../services/renovation/load";
 import { listScopeQuery, loadListScopeRows, renovationListScope } from "../services/renovation/listScope";
 
@@ -5000,6 +5000,7 @@ app.get("/calendar/events", requirePageAccess("projects.calendar"), async (c) =>
        LEFT JOIN project_event_types et ON et.id = p.event_type_id
       WHERE p.archived_at IS NULL
         AND p.start_date IS NOT NULL
+        AND coalesce(to_jsonb(p)->>'project_kind', 'exhibition') <> 'renovation'
         AND substr(p.start_date, 1, 10) <= substr(?, 1, 10)
         AND substr(COALESCE(p.end_date, p.start_date), 1, 10) >= substr(?, 1, 10)${scopeWhere}${coSql}`
   )
@@ -5028,11 +5029,14 @@ app.get("/calendar/events", requirePageAccess("projects.calendar"), async (c) =>
     .bind(todayMyt(), from, to, ...scopeBinds)
     .all();
 
-  // Renovation projects carry no start / end date: their bars are computed here (owner, 14 Oct 2026).
+  // Renovation projects: their bars are computed here, Start date to End date or planned handover (owner, 14 / 15 Oct 2026).
   const reno = await renovationCalendarRows(c.env.DB as unknown as RenoDb, from, to, scopeWhere, scopeBinds, coSql);
-  // Renovation Week view (owner, 15 Oct 2026): dated items per day instead of project bars, only when asked for.
-  const renoItems = c.req.query("items") === "1" ? await renovationCalendarItems(c.env.DB as unknown as RenoDb, from, to, scopeWhere, scopeBinds, coSql) : undefined;
-  return c.json({ projects: [...(projects.results ?? []), ...reno], tasks: tasks.results ?? [], ...(renoItems ? { renoItems } : {}) });
+  // Renovation calendar cards (owner, 15 / 16 Oct 2026): dated items instead of project bars, only when asked for,
+  // with the people the signed-in user is (project_people ids) for "My tasks".
+  const wantItems = c.req.query("items") === "1";
+  const renoItems = wantItems ? await renovationCalendarItems(c.env.DB as unknown as RenoDb, from, to, scopeWhere, scopeBinds, coSql) : undefined;
+  const renoMe = wantItems ? await calendarMePersonIds(c.env.DB as unknown as RenoDb, user?.id, user?.email) : undefined;
+  return c.json({ projects: [...(projects.results ?? []), ...reno], tasks: tasks.results ?? [], ...(renoItems ? { renoItems, renoMe } : {}) });
 });
 
 // ── CSV import ───────────────────────────────────────────────

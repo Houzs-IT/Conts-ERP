@@ -17,7 +17,7 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 - Four seeded staff accounts exist on production (management@, finance@, aina@, nurul@theconts.com); owner to confirm whether they are used or switch them off.
 - Scheduled worker theconts-cron (Channex outbox retry, email/WhatsApp retry, overdue sweep, 08:00 digest, repair-block release): published by the "Deploy scheduled jobs" workflow on merge or by hand (.github/workflows/deploy-cron.yml); needs repository secret CHANNEX_API_KEY (live key). Local check: node scripts/cron-dry-run.mjs.
 - Watch: one listing must never be controlled by both the old connection and Channex; plan the import of existing bookings.
-- Building listings (feat/channex-buildings, migration 0119): a unit set up in Channex becomes a room type inside its building's Channex property; Booking.com / Agoda are connected per building with each room paired to a unit, and Disconnect on one unit keeps the others connected. Units set up before 0119 (the live pilot unit) keep a listing of their own and cannot share a hotel until moved. Tested on the Channex sandbox with hotel 4372137: scripts/api-checks/channex-buildings.mjs. Needs 0119 on staging, then production, before merge.
+- Building listings (feat/channex-buildings, migration 0128): a unit set up in Channex becomes a room type inside its building's Channex property; Booking.com / Agoda are connected per building with each room paired to a unit, and Disconnect on one unit keeps the others connected. Units set up before 0128 (the live pilot unit) keep a listing of their own and cannot share a hotel until moved. Tested on the Channex sandbox with hotel 4372137: scripts/api-checks/channex-buildings.mjs. Needs 0128 on staging, then production, before merge.
 
 ## Supply Chain as a copy of Houzs (decision: option B, resumed 7 Oct)
 - Plan: copy Houzs's supply chain screens and server code into Conts, re-coloured gold and black, instead of re-drawing each screen. Rental side untouched. Houzs's code is on this machine at C:\dev\Houzs-ERP (reference only).
@@ -48,7 +48,9 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 - Done (feat/s3-history-notify): closing a repair job gives back its calendar block at once (cancelled if not started, ends today if under way), also for blocks made before migration 0095 (matched by the note); the scheduled job sweeps any left.
 - Videos are capped at 50 MB per file (Workers request memory); longer clips need direct-to-R2 upload.
 - Done (feat/cleaning-pod-audit, no migration): cleaning checklist removed from the board and the phone (owner, 11 Oct; its table and endpoint stay, unused); cleaner and type at the top of the job; board refreshes every 30 s so a clean finished on the phone shows as "Done HH:MM" without a reload; History in the Houzs ERP layout everywhere (one entry per action, coloured initials, "via Field app", changes folded); cleaning jobs now record their creation (checkout, prepare, plan) and show the checkout of the reservation they follow. Tested: scripts/api-checks/cleaning-pod-audit.mjs.
-- Owner asked for several cleaners on one job (11 Oct, earlier list); one cleaner per job today. Needs a task_cleaners table (migration) and phone access for each cleaner; not built.
+- Several cleaners per cleaning job (feat/finish-cleaning-calendar, migration 0122 task_cleaners): picked on the job, in Add cleaning job, Assign whole building and the bulk Assign; every listed cleaner sees and works the job on the phone. tasks.cleaner_id / assignee_id stay the first cleaner. Open: migration 0122 not applied to staging or production (until then a job keeps one cleaner, no errors); (unit Jobs tab and the work-list cleaner filter: done in fix/oct11-leftovers). Tested: scripts/api-checks/cleaning-multi-cleaner.mjs.
+- Overdue cleaning jobs (fix/cleaning-overdue, no migration): own collapsible section on the board; management closes them in bulk (Mark done: no photo, note 'closed in bulk', charged on the job's own day; Cancel job: reason, never charged). Tasks have no Cancelled state, so a cancelled job is removed and lives on only in the audit trail (task.cancel on the job, cleaning.cancel on its stay); a Cancelled state needs a migration if History should list them. Tested: scripts/api-checks/cleaning-overdue.mjs.
+- Cleaning board Layout column reads units.layout_type, which the units work adds (migration 0123); it shows a dash until that is applied and filled.
 - Cleaning jobs imported from HostPlatform have no creation entry; their History starts with "Cleaning job created" from the job's own date.
 - Done (fix/deep-clean-price-and-uploads): owner workbooks untracked and ignored (uploads/*.xlsx); copies kept outside the repo in C:/Users/User/Desktop/Conts-ERP-private. They stay in git history (private repo); purging history is a separate, owner-approved step. The plaintext logins on the workbook sheet 用户管理 must be changed by the owner.
 - Done: a unit has a deep clean price (unit_expenses category cleaning_deep, unit Costs panel) that cleanPrice() charges for a deep clean. Tested: scripts/api-checks/deep-clean-price.mjs.
@@ -65,7 +67,7 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 - scripts/api-checks/maintenance.mjs "unit with another open blocker stays off sale" fails on a fresh demo database: the demo data has no other open blocking job on #2207. Test-data issue, not code; fix the check's setup.
 - No Who pays choice in the create form any more: a new job defaults to the owner paying, changed in the job's panel.
 - No owner approval threshold any more (owner, 11 Oct): a quote goes to the owner only through "Send to owner for approval". The old setting operations.maintenanceApprovalThreshold may still be in the settings table and still saves through /api/settings; nothing reads it. Remove it from settings/index.ts when convenient.
-- Parts catalog (the SKU list) is hidden from the Maintenance header until the owner sets it up: flip SHOW_CATALOG in src/pages/MaintenancePage.tsx; "Draw a part" still appears on a job only when stocked items exist.
+- Done (feat/finish-units-maintenance): the Item catalog is back on the Maintenance header; the new-job form and a job's detail pick an item or "Other (not on the list)" (PATCH skuId, null = Other). The catalog is empty on staging and production until the office adds items. "Draw a part" still appears on a job only when stocked items exist.
 - Photos of the problem picked in Add maintenance job and Report damage go up after the job is saved, as Before photos; a failed photo is named in a warning and does not undo the job. A cleaner may add photos to a job they reported. Report damage with photos was checked through the API only (no clean on the demo board to open it in the browser).
 
 ## Money moved into owners (feat/money-into-owners, 11 Oct 2026)
@@ -85,7 +87,10 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 - Office phone controls: buttons and inputs are 44px on touch screens under 768px (tokens.css), OpsModal is full screen on phones. Only Maintenance and Cleaning were checked at 390px; other office pages get the same sizes untested.
 - scripts/api-checks/maintenance.mjs "field tasks" can fail on a random uuid containing "fee" (the check greps the JSON for revenue|fee|payout). Test issue; match keys instead.
 - scripts/api-checks/maintenance-billing.mjs "operations staff cannot record money" fails locally: the demo data has no operations staff user (11111111-...-000000000004). Seed one.
-- Next (owner priority 3): owner portal on the phone. Seen at 390px: no horizontal scroll, but Unit health lists every job ever (dozens on a busy unit, no grouping or "show more"), the header cuts the owner's name ("Lim Chee ..."), the Documents list is one long column of statements (no year grouping).
+- Done (feat/finish-units-maintenance): owner portal on the phone: the owner's name wraps to two lines, Unit health shows open jobs and the latest 3 finished ones ("Show N more"), Documents are grouped by year (latest open), Download is an icon on a phone. Checked at 375 and 1440 on demo data only.
+- Done (feat/finish-units-maintenance, migration 0123 units.layout_type, not applied to staging or production): unit Layout section (layout type pre-filled from bedrooms, bedrooms, bathrooms, size); owner picked from owner profiles with IC/bank read-only, and the unit endpoints refuse owner name/IC/bank (422); Reservations and Jobs tabs filter by dates and status chips with Export, every job not the latest 12; Financials for any month with every statement line, GRR units with the full company P&L; shared UnitPicker (src/components/UnitPicker.tsx); new maintenance job takes assignee and a repair window; Maintenance building filter lists every building. Tested: scripts/api-checks/properties.mjs, units-maintenance-finish.mjs.
+- Done (fix/oct11-leftovers): a unit stays off sale until its last blocking repair job closes; starting or finishing a clean no longer puts a blocked unit back to Cleaning / Ready. Unit Jobs tab and the work-list cleaner filter (tasks/facets.ts) show every cleaner on a job; the unit Costs card follows the Financials month picker; Overview counts every open maintenance job. Tested: maintenance.mjs, oct11-leftovers.mjs.
+- Open: scripts/api-checks/properties.mjs "last revealed recorded" and the housekeeper access check fail on the local demo data (not checked on main). maintenance.mjs is fixed (fix/oct11-leftovers).
 - Next (owner priority 4): management read-only on the phone. Seen at 390px: Dashboard, Operations Today and Bookings fit with no horizontal scroll; not checked for every desktop field being visible on the phone cards.
 
 ## Performance (audit 11 Oct 2026, docs/audits/performance-from-sister-erps.md)
@@ -105,17 +110,43 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 - Done: Calendar Week view in renovation mode shows dated items per day (onsite, 3D / 2D submissions, PO and delivery dates, site tasks, planned handover) instead of project bars (GET /api/projects/calendar/events?items=1). Month view keeps the bars. Exhibition mode unchanged.
 - Owner to confirm: "At risk" window of 14 days (AT_RISK_DAYS in engine/frontend/src/pages/projects/renovation/renovationListModel.ts).
 
+## Renovation Calendar like Notion (feat/reno-calendar-notion, no migration, 16 Oct 2026)
+- Done: in renovation mode Projects > Calendar is a Sunday-first Month / Week of task cards (tick + heading, people, project, status, department), multi-day site tasks as one wide card, "+N more" opens the day, a card opens the item with Open project; coloured by department from project_people.roles (designer Design, sales Sales, reno_pic Renovation, admin / boss Management, site_crew Site crew; else the kind of work); filters Department, Person, My tasks, project search, Open / Done, all in the URL; phone: list by day, filters in a sheet. Feed: GET /api/projects/calendar/events?items=1 now adds 3D / 2D amendments, people, department and spans, plus renoMe. Project bars no longer show in renovation mode.
+- Open: meetings and briefings have no table of their own; they show when added as site task categories (Project Maintenance, stage Design) with dates and people. "My tasks" needs the person linked to the login (project_people.user_id or the same email in Property OS).
+
 ## Renovation project screens, round 2 (feat/reno-project-ux-2, migration 0114, 14 Oct 2026)
 - OPEN, before merge: apply migration 0114 on staging, then production (lead). It adds several PICs per Onsite entry and per design version, Onsite photos / files, and closes 2D amendment requests by the version that answers them (existing 2D notes are closed by the next 2D version after them).
 - Person pickers still read project_people through PersonSelect; feat/people-from-users switches them to user accounts. The position after a name comes from personPosition() in PersonSelect.tsx (roles today).
 - Customer info block on the right column waits for feat/reno-customer-info (migration 0112).
 
 ## QA sweep (fix/qa-sweep, 15 Oct 2026, docs/qa/2026-10-15-qa-sweep.md)
-- OWNER: Dashboard "12 months" strip adds every owner statement (workbook months too) beside a guest total from reservations only, so payout reads larger than guest total (finding 6).
-- OWNER: Create reservation silently files a matching phone under the existing guest's name and drops the typed name (finding 7).
+- Decided (owner, 15 Oct): leave as is. Dashboard "12 months" strip keeps adding every owner statement beside the reservation-only guest total (finding 6).
+- Decided (owner, 15 Oct): leave as is. Create reservation keeps filing a matching phone under the existing guest (finding 7).
 - Done (fix/engine-polish): Fit-out register and Guest documents screens retired (owner, 14 Oct); their addresses show "This page does not exist". Their server endpoints and data stay; guest invoices and receipts are still issued from a reservation (finding 8).
 - Done (fix/engine-polish): engine table messages stay in the visible part of wide tables; list summary cards say "Couldn't load" with Retry; inside Property OS the engine draws no top bar of its own (tab strip, search, refresh, bell) and the phone Calendar has no second search; Settings drops the AutoCount Sync tab and its /api/sync/status call; the phone project list has New project (findings 12-16). Renovation PO: a line of another category is named before Save, and the database refusal shows inline. Phone Calendar Week in renovation mode lists dated items like the desktop.
 - Supply chain data screens could not be checked locally (engine reads through Supabase REST); check them on the staging preview (finding 17).
+
+## Renovation project screens fix (fix/reno-projects-ui, migrations 0120-0121, 16 Oct 2026)
+- Before merge: apply migrations 0120 (imported projects' real start date) and 0121 (SLA per step) to staging, then production; the engine reads 0121 only once it is there (SLA hidden before).
+- SLA defaults are blank until someone fills Project Maintenance > SLA; until then no project shows Overdue.
+- Data: 91 of 97 projects have PIC "Alex", an imported name not linked to the ALEX GOH account, so pickers show "Alex (no longer listed)"; owner to decide whether to move them to the account.
+- Data: production has the Notion import note on 70 of 96 imported projects (chunk 04c_activity looks unapplied); 12 imported projects keep the import day as start because Notion gave no earlier date.
+- Imported Closed projects without a handover show the import day as their closed day (Notion did not export when they closed).
+- Duplicate migration number on main: 0118_project_timeline_notes.sql and 0118_renovation_units.sql (both applied; numbering only).
+- The board loads at most 200 filtered projects (the list endpoint's largest page); it says so above the board when there are more.
+
+## Staff sheet UNIT: purpose, contracts, Agent to let (feat/staff-units-contracts, migration 0125, 17 Oct 2026)
+- Migration 0125 to apply on production (lead) before merging; until then the new parts stay hidden or answer "needs the latest database update".
+- Settings > Agreement template holds a neutral placeholder: the company pastes its real agreement wording there.
+- PS YGRR true-up uses the earlier months as this engine works them out today, not the figures on statements already final.
+- Showroom and warehouse units: the office Maintenance job screen does not show access or car park; the cleaning drawer and field app do.
+- Contracts page Add / Edit (owner-level) still offer only operator share and GRR; per-unit contract types are set on the unit's Contract tab.
+
+## QC polish 2 (fix/qc-polish-2, no migration, 18 Oct 2026)
+- Arriving soon = check-in today or tomorrow (docs/VOCABULARY.md, the calendar and units/stays.ts). The lead's production note said "within 2 days"; kept at today/tomorrow until the owner picks one.
+- Turnover jobs are now made automatically (ensureTurnovers): on create, import, duplicate, channel sync and on the Cleaning board for the next 60 days. First board load on production backfills every upcoming checkout; check the count against "checkouts with no cleaning job" after deploy.
+- Dashboard operator share and owner payout now come from the statement engine (whole months, estimate). Not checked against production's 4,152 reservations: no real-size data on this machine.
+- api-checks nav-badges, operations (housekeeper web access refused by the field-app middleware) and owners (owner phone validation) fail on local demo data in code this branch does not touch.
 
 ## Later
 - Packages (8 Oct, chore/update-packages): Property OS has 0 flagged packages (wrangler 4.148, source-map-js, and an override pinning sharp to 0.35.5 inside wrangler's local emulator; all build/dev tools, none ran in production). Engine: the non-breaking fixes are in (hono on the server, dompurify on the screens, and build tools). Left in engine/, each needing a breaking upgrade of Houzs's code or tools: react-router 6 (moderate), wrangler's sharp and undici, esbuild, vitest, braces. Take them with the next Houzs copy.
@@ -359,6 +390,14 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - The statement and the panel both count rollup headers (parent_expense_id) with their line items; /api/finance/expenses does not. No rollups exist today; if they appear, decide which is right.
 - scripts/api-checks/unit-costs.mjs runs in CI (rbac job). Locally on PGlite use STATEMENTS=lib: POST /api/statements/generate opens a second connection for its transaction and PGlite serves one, so it hangs there.
 
+## Utility bills findable (feat/staff-utilities, no migration, 17 Oct 2026)
+- Staff could not find where utilities go. Now: Finance > Utility bills (the monthly bills by account number, every unit), "Utility bills" and "Add utility bill" on Accounts payable, "Add utility bill" on the unit Financials tab. All reuse Add a bill / Utility bills, all units; no second store.
+- Owner statement lines (staff page and owner portal) link each bill's receipt; an owner may open a receipt only once that statement is final.
+- Done (fix/bills-receipt-portal-net, no migration): a bill the owner pays needs its receipt (sensible default for the owner's open question): every utility bill and additional deduction charged to the owner, on Add a bill, Add utility bill, AP Add expense and the monthly screen; server-enforced (src/lib/receipts.ts, 422 RECEIPT_REQUIRED). Company / tenant / guest bills and cleaning need none. Older owner bills without one stay valid and show "No receipt" with "Add receipt" (owner page, unit Financials, AP list); attaching a receipt is allowed on a final month (it changes no figure, audited as expense.receipt). Check: scripts/api-checks/bills-receipts.mjs.
+- Done (same PR): the monthly utility bills screen also lists units with no account number on file ("No account on file", Add account: POST /api/expenses/utility-accounts). Re-entering a month keeps the receipt already on that bill.
+- Done (same PR): owner portal per-unit net on a negative month now equals the staff statement (the operator's share was taken as an absolute value; it is negative on a loss month). The hero's gross-to-net lines had the same sign error. Check: scripts/api-checks/portal-negative-net.mjs.
+- Imported owner bills (HostPlatform workbook) have no receipts, so after the import most utility lines will read "No receipt" until finance attaches them.
+
 ## Owner details (feat/owner-details, migration 0110)
 - Done (12 Oct): migration 0110 applied on staging and production; the address fields are live.
 - Production: 116 owners, none with phone or email yet (the source workbooks had none); they are entered on each owner's page (Owner details, Edit).
@@ -366,11 +405,11 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 
 ## Layout and logo sweep (fix/ui-oct11, 11 Oct)
 - Owner to send the original logo file (vector or large PNG): mark-gold.png is 117x136 and logo-gold.png 195x162, so the login hero (112px tall) is upscaled on 2x screens and soft. Rerun scripts/brand/make-logo-variants.py with it; the optical-centre nudge (MARK_OPTICAL in Logo.tsx) may need re-measuring.
-- Calendar: the grid box has a fixed md:max-h-[74vh], so at 1366x768 and 1920x1040 the page scrolls 50-120px as well as the grid (two scrollbars). Swap it for useFillHeight in CalendarPage.tsx line ~489 once feat/calendar-bulk has merged (left alone to avoid a conflict).
-- Guests: the list box is a fixed calc(100dvh - 420px) beside a profile that can be thousands of px tall (a repeat guest lists every stay), so the list scrolls out of view; make the left column sticky with useFillHeight({ column: true }) and cap the stay list. Owner to say whether a guest's stay list should page after ~20.
+- Guests (feat/finish-reservations-guests, 16 Oct): the list and the profile are two panes that each scroll inside the window (the page itself no longer scrolls), the profile's name bar stays on top. Still the owner's call: whether a guest's stay list should page after ~20.
+- Done (fix/oct11-leftovers, migration 0124 reservations.cancelled_at, not applied to staging or production): "Cancelled this month" means cancelled during this month (cancelledFrom/cancelledTo on the list). A trigger stamps cancelled_at on every path that cancels (drawer, Channex, HostPlatform re-import, repair-block release) and clears it on reinstate; old cancellations backfilled from audit_log, else empty and counted by stay dates; the seeded view moved only where unedited. Open: the list does not show the cancellation date as a column. Tested: scripts/api-checks/oct11-leftovers.mjs.
 - Owner decision: at 1366x768 Reservations has room for only ~5 rows under the to-do cards, so the table takes a full screen and the page scrolls first (two scrollers by design, useFillHeight). Option: fold the four to-do cards into one row of chips on short screens.
 - Two-step sign-in prompt (feat/two-step-prompt, owner 12 Oct): after each password-only sign-in a centred dialog asks the person to turn on two-step sign-in (Set up now opens My account; Later closes it until the next sign-in). Shows only where it can be set up (TOTP_ENC_KEY present, migration 0098) and the person has not got it. src/components/TwoStepPrompt.tsx, flag in src/lib/twoStepPrompt.ts raised by login() in session.tsx. Checked in the browser on a local server. scripts/add-two-step-key.mjs adds the key to live and staging (owner runs it once).
-- IT Support (feat/it-support, owner 12 Oct): desk roles report a problem to the Houzs IT Hub from System > IT Support, or Support > IT Support in the supply chain workspace (same screen and requests, 13 Oct), and follow it there; a new request carries the screen the person was on before IT Support; requests live in the hub (system code CONTS), not in Conts. Open: set IT_HUB_URL and IT_HUB_API_KEY on production after the owner has seen it on staging; housekeepers and technicians have no IT Support in the field app yet (owner to decide); no api-checks suite yet (it needs a stand-in hub), the flow was run by hand against a local hub.
+- IT Support (feat/it-support, owner 12 Oct): desk roles report a problem to the Houzs IT Hub from System > IT Support, or Support > IT Support in the supply chain workspace (same screen and requests, 13 Oct), and follow it there; a new request carries the screen the person was on before IT Support; requests live in the hub (system code CONTS), not in Conts. Open: set IT_HUB_URL and IT_HUB_API_KEY on production after the owner has seen it on staging; housekeepers and technicians have no IT Support in the field app yet (owner to decide); no api-checks suite yet (it needs a stand-in hub), the flow was run by hand against a local hub. 15 Oct (feat/it-support-standard): same layout and words as Hookka and Houzs Century (owner's boss: every system's IT Support alike) - All / Active / Resolved, a table with search, sort and an Urgency column, the request re-read every 30 s, when the problem happened sent to IT, a picture opens over the screen. 15 Oct: a Submitted column (staff asked for the date a request was sent), the same in the other three systems.
 - Done (12 Oct): migrations 0100, 0103-0108 and 0110 applied on staging and production through the Supabase connector (one transaction each, recorded in pos_migrations with migrate-pg checksums).
 
 ## Renovation SO customer + property (feat/reno-customer-info, migration 0112, 14 Oct)
@@ -403,3 +442,39 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Field-by-field list: docs/superpowers/plans/2026-10-14-reno-doc-flow-fields.md. Check: scripts/api-checks/reno-doc-flow.mjs (needs a local Postgres + PostgREST behind the engine's SUPABASE_URL).
 - Sub-category settings: prints (PO, GR, DO, SI) still use the built-in sub-category names; a renamed one prints its old name, an added one prints its code in words. Send the label from renovation-doc-flow.ts to fix.
 - Sub-category settings: a Service sub-category added in settings gets no generic RN-* SKU (migration 0064 seeded those once), so quotation lines for it need a real SKU.
+- Unit settings: a unit added under SKU Master > Units prints only the number in a document's Qty column (like PCS), not "3 BOX"; qtyLabel in shared/renovation-money.ts special-cases only LOT, FULL and SET.
+
+## Automatic project Start / End date (feat/reno-auto-dates, migration 0117, 15 Oct 2026)
+- OPEN, before merge: apply migration 0117 on staging, then production. It adds the insert trigger that stamps a new renovation project's start date and backfills existing ones (start = created day; end = day it entered Closed per step history, else closed_at, else last updated, for projects SQL can tell are Closed; cleared where nothing could have closed it). The engine works without it: the first read of a project fills its start from the created day.
+- Start = created day (Malaysia); End = the day the step reached Closed (Move step or the data), cleared when it leaves Closed. Read-only everywhere; the project PATCH ignores both for renovation projects. Written where the step is computed (services/renovation/projectDates.ts): board, project page, step routes, contract hooks, Customer info and the SO's Order information reads.
+- A project closed by its data alone (handed over + fully paid, no closed_at) before 0117 gets today as its end date the first time it is read, not the day the last payment came in (payments carry no date in the project facts).
+- Check: scripts/api-checks/reno-customer-property.mjs (71 checks, local engine + PostgREST).
+
+## Service case looks up the project (feat/reno-service-project, no migration, 15 Oct 2026)
+- Renovation mode: the desktop New Service Case form picks a PROJECT (code, name, building / unit, customer, phone), fills the customer, phone, email and site address from it, stores project_id (migration 0081) and the project's newest SO as doc_no without asking; no Ref No; Product category is the renovation Category / Sub-category. List, detail header and side panel show the project as a link. Houzs mode unchanged.
+- OPEN: the phone app's new-case screen (mobile/MobileServiceCase.tsx, MobileAssrSoField.tsx) still searches SOs; give it the same project picker (GET /api/assr/renovation/projects).
+- OPEN: the Service Cases list search does not match the project code or name yet (services/assr.ts listAssrCases); search by customer or phone meanwhile.
+- Check: scripts/api-checks/reno-service-project.mjs (34 checks, local engine + PostgREST).
+- Procurement details second version (feat/reno-sku-hub, 15 Oct): per sub-category Ordered -> Received -> Delivered with GR / DO links, Ready and LATE; no item, PO or SO rows. No migration. Check: scripts/api-checks/reno-doc-flow.mjs (65 checks).
+
+## Project Timeline (feat/reno-timeline, migration 0118, 15 Oct 2026)
+- DONE 15 Oct: migration 0118 applied on staging and production. It adds public.project_timeline_notes (the hand-written notes). Until it is applied the Timeline still shows every System entry and hides "+ Add note".
+- System entries are read, not copied: project_activity, project_flow_log (step and hold), key moves, Onsite visits, 3D / 2D submissions, 2D amendment requests and 3D notes, the project's POs / GRs / DOs (same sets as Procurement details), created / handed over / completed (end_date). services/renovation/timeline.ts.
+- Not on the Timeline yet: Procurement-date edits do not refresh the card until Refresh (they have no page-level save callback); a step reached by the data alone (not Move step) has no history row, so only Project completed marks Closed.
+- Note types (Customer, Design, Supplier, Site, Sales) are renamed in renovationTimelineModel.ts CATEGORY_LABEL; the stored keys stay. No photo/file on a note: the service case note has none either.
+- Check: scripts/api-checks/reno-timeline.mjs (41 checks, local engine with migration 0118).
+
+## Photos and documents on every flow document (feat/reno-doc-attachments, migration 0128, 16 Oct 2026)
+- Apply migration 0128 to staging, then production (node scripts/migrate-pg.mjs --env-file=<file>, dry-run first). Until then every document page says "Attachments are not switched on yet".
+- Receipts, credit/debit notes and AP invoices rewrite their lines on each save, so a line's files then show on the whole document ("from a line since changed"). Fix by updating lines in place on save.
+- A renovation quotation's new revision has new line ids: line files of an earlier revision show on the whole quotation, not on the new revision's lines.
+- The phone app's delivery order detail (MobileModuleDetail) has no files panel; the driver's Proof of Delivery screen has one.
+- Payment vouchers and AP invoices keep their supplier bills in their own Files panel (print bundle, posting lock); the shared panel shows them read-only and adds line files.
+- Renovation site-receipt photos (goods received at the unit) stay in their own panel and are not in the project's Documents roll-up yet.
+- tests-pg/renovationProject.pg.test.ts fails 2 of 10 on main (PGlite, 15 Oct 2026): "skip rules ... hardware gate refuses start" (expects 409, gets 200) and "with phase 2's real tables ... gate opens" (gate stays closed). Not from the 2D rule change.
+
+## Staff operations (comment sheet OPERATION / Sheet3, PR feat/staff-operations)
+- Migration 0126 to apply on staging, then production (lead): job type, severity, parts, due date, cleaning prices, external cleaning jobs.
+- Owner to give the real cleaning prices (Cleaning > Prices): until then every price is "not set" and cleans are charged at the old rate.
+- Confirm with YJ: external cleaning jobs count in the cleaner's pay at the job's full amount, split equally between the cleaners on it.
+- Maintenance amount: keep finalAmount on POST /api/maintenance/issues/:id/complete as the field a future integration fills.

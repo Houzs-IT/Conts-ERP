@@ -8,10 +8,16 @@ import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, LayoutGrid, Plus, Search
 import { formatRm, lineAmounts, parseMeasureMilli, type RenoLineKind } from '../../vendor/shared/renovation-money';
 import { RENO_STAGES, STAGE_LABEL } from '../../vendor/shared/renovation-stages';
 import { useSuppliers } from '../../vendor/scm/lib/suppliers-queries';
+import { useRenovationCatalog } from '../../vendor/scm/lib/renovation-catalog-queries';
 import { searchProducts, type DocLine, type DocSection, type ProductPick } from '../../lib/renovation/api';
 import { cn } from '../../lib/utils';
 import { cellBaseCls, cellInputCls, inputCls, MoneyInput, PercentInput, rm } from './shared';
 import { insertRoomSections } from './roomSections';
+import { LineFilesButton } from '../../components/doc-attachments/DocAttachments';
+import type { DocType } from '../../components/doc-attachments/docAttachmentsApi';
+
+/** Where a line's files live; omitted (templates) means no file buttons. */
+export interface LineFilesTarget { docType: DocType; docId: string; canEdit: boolean }
 
 export const BAND_COLOURS: Array<{ value: string | null; label: string }> = [
   { value: null, label: 'None' },
@@ -23,8 +29,6 @@ export const BAND_COLOURS: Array<{ value: string | null; label: string }> = [
   { value: '#d9d9d9', label: 'Grey' },
 ];
 
-const MEASURE_UOMS = ['FT', 'SQFT'];
-const UOMS = ['UNIT', 'PCS', 'SET', 'LOT', 'POINT', 'FULL'];
 
 export function blankLine(kind: RenoLineKind): DocLine {
   return {
@@ -107,7 +111,10 @@ export function ProductPicker({ value, onPick, disabled }: { value: string | nul
   );
 }
 
+/* Units come from SKU Master > Units: measured ones (FT, SQFT, ...) for the
+   measure, the rest for the line's unit. A hidden unit stays on the line that has it. */
 function MeasureInput({ line, onChange, disabled }: { line: DocLine; onChange: (p: Partial<DocLine>) => void; disabled?: boolean }) {
+  const measureUnits = useRenovationCatalog().pickableUoms(line.measureUom).filter((u) => u.measure);
   const bad = line.measure ? Number.isNaN(parseMeasureMilli(line.measure)) : false;
   return (
     <div className="flex gap-1">
@@ -119,7 +126,7 @@ function MeasureInput({ line, onChange, disabled }: { line: DocLine; onChange: (
       />
       {line.measure && (
         <select aria-label="Measure unit" disabled={disabled} className={cn(cellBaseCls, 'w-[60px] px-0')} value={line.measureUom ?? 'FT'} onChange={(e) => onChange({ measureUom: e.target.value })}>
-          {MEASURE_UOMS.map((u) => <option key={u}>{u}</option>)}
+          {measureUnits.map((u) => <option key={u.code} value={u.code}>{u.printLabel}</option>)}
         </select>
       )}
     </div>
@@ -136,10 +143,12 @@ interface LineProps {
   onMove: (d: -1 | 1) => void;
   onDelete: () => void;
   suppliers: Array<{ id: string; code: string; name: string }>;
+  files?: LineFilesTarget;
 }
 
 function LineExtras({ line, disabled, showCost, onChange, suppliers }: Pick<LineProps, 'line' | 'disabled' | 'showCost' | 'onChange' | 'suppliers'>) {
   const priced = line.kind === 'ITEM' || line.kind === 'CHILD';
+  const units = useRenovationCatalog().pickableUoms(line.uom).filter((u) => !u.measure);
   return (
     <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
       <label className="flex flex-col gap-0.5 text-[11px] text-ink-muted">Room
@@ -148,7 +157,7 @@ function LineExtras({ line, disabled, showCost, onChange, suppliers }: Pick<Line
       {priced && (
         <label className="flex flex-col gap-0.5 text-[11px] text-ink-muted">Unit
           <select className={inputCls} disabled={disabled} value={line.uom ?? 'UNIT'} onChange={(e) => onChange({ uom: e.target.value })}>
-            {UOMS.map((u) => <option key={u} value={u}>{u === 'LOT' ? 'LS (lump sum)' : u === 'FULL' ? 'FULL UNIT' : u}</option>)}
+            {units.map((u) => <option key={u.code} value={u.code}>{u.printLabel.toLowerCase() === u.label.toLowerCase() ? u.printLabel : `${u.printLabel} (${u.label})`}</option>)}
           </select>
         </label>
       )}
@@ -223,6 +232,7 @@ function LineRow(p: LineProps) {
             <input aria-label="Description" className={cn(cellInputCls, line.kind === 'ITEM' && 'font-semibold')} disabled={disabled} value={line.description}
               placeholder={line.kind === 'DETAIL' ? 'W : 8.2 FT X D : 2 FT X H : 9.5 FT' : line.kind === 'TEXT' ? 'Text line' : 'Description'}
               onChange={(e) => p.onChange({ description: e.target.value })} />
+            {priced && p.files && line.id && <LineFilesButton docType={p.files.docType} docId={p.files.docId} lineId={line.id} canEdit={p.files.canEdit} />}
           </div>
         </td>
         <td className="w-[112px] py-1">{priced && <ProductPicker value={line.itemCode} onPick={pick} disabled={disabled} />}</td>
@@ -266,7 +276,8 @@ function LineCard(p: LineProps) {
     <div className={cn('rounded-lg border border-border-subtle p-2.5', line.kind !== 'ITEM' && line.kind !== 'TEXT' && 'ml-4', line.highlight === 'PINK' && 'bg-[#fbe1d6]/60')}>
       <div className="flex items-center justify-between gap-2">
         <span className="text-[11px] font-semibold uppercase text-ink-muted">{p.no ? `${p.no} · ` : ''}{KIND_LABEL[line.kind]}</span>
-        <div className="flex gap-0.5 text-ink-muted">
+        <div className="flex items-center gap-0.5 text-ink-muted">
+          {priced && p.files && line.id && <LineFilesButton docType={p.files.docType} docId={p.files.docId} lineId={line.id} canEdit={p.files.canEdit} />}
           {!disabled && <button type="button" aria-label="Move up" onClick={() => p.onMove(-1)} className="rounded p-1"><ArrowUp size={14} /></button>}
           {!disabled && <button type="button" aria-label="Move down" onClick={() => p.onMove(1)} className="rounded p-1"><ArrowDown size={14} /></button>}
           {!disabled && <button type="button" aria-label="Delete line" onClick={p.onDelete} className="rounded p-1"><Trash2 size={14} /></button>}
@@ -309,8 +320,8 @@ export function numberLines(section: DocSection): string[] {
   return section.lines.map((l) => (l.kind === 'ITEM' || (lump && l.kind === 'DETAIL' && !l.parentId) ? String(++n) : ''));
 }
 
-export function SectionCard({ section, index, count, disabled, showCost, onChange, onMove, onDelete, suppliers, allowLumpSum = true }: {
-  section: DocSection; index: number; count: number; disabled?: boolean; showCost: boolean; allowLumpSum?: boolean;
+export function SectionCard({ section, index, count, disabled, showCost, onChange, onMove, onDelete, suppliers, allowLumpSum = true, files }: {
+  section: DocSection; index: number; count: number; disabled?: boolean; showCost: boolean; allowLumpSum?: boolean; files?: LineFilesTarget;
   onChange: (s: DocSection) => void; onMove: (d: -1 | 1) => void; onDelete: () => void; suppliers: Array<{ id: string; code: string; name: string }>;
 }) {
   const nos = useMemo(() => numberLines(section), [section]);
@@ -356,7 +367,7 @@ export function SectionCard({ section, index, count, disabled, showCost, onChang
           </thead>
           <tbody>
             {section.lines.map((l, i) => (
-              <LineRow key={i} line={l} no={nos[i]} disabled={disabled} showCost={showCost} inLumpSum={lump} suppliers={suppliers}
+              <LineRow key={i} line={l} no={nos[i]} disabled={disabled} showCost={showCost} inLumpSum={lump} suppliers={suppliers} files={files}
                 onChange={(p) => setLine(i, p)} onMove={(d) => onChange({ ...section, lines: move(section.lines, i, d) })}
                 onDelete={() => onChange({ ...section, lines: section.lines.filter((_, j) => j !== i) })} />
             ))}
@@ -365,7 +376,7 @@ export function SectionCard({ section, index, count, disabled, showCost, onChang
       </div>
       <div className="space-y-2 p-2 md:hidden">
         {section.lines.map((l, i) => (
-          <LineCard key={i} line={l} no={nos[i]} disabled={disabled} showCost={showCost} inLumpSum={lump} suppliers={suppliers}
+          <LineCard key={i} line={l} no={nos[i]} disabled={disabled} showCost={showCost} inLumpSum={lump} suppliers={suppliers} files={files}
             onChange={(p) => setLine(i, p)} onMove={(d) => onChange({ ...section, lines: move(section.lines, i, d) })}
             onDelete={() => onChange({ ...section, lines: section.lines.filter((_, j) => j !== i) })} />
         ))}
@@ -386,8 +397,10 @@ export function SectionCard({ section, index, count, disabled, showCost, onChang
 /** "Generate rooms from layout": the document's layout, or why there is none. */
 export type RoomLayout = { label: string; bedrooms: number; bathrooms: number } | { missing: string };
 
-export function DocEditor({ sections, onChange, disabled, showCost = true, allowLumpSum = true, roomLayout }: {
+export function DocEditor({ sections, onChange, disabled, showCost = true, allowLumpSum = true, roomLayout, files }: {
   sections: DocSection[]; onChange: (s: DocSection[]) => void; disabled?: boolean; showCost?: boolean; allowLumpSum?: boolean;
+  /** Paperclip on each saved ITEM / add-on line. */
+  files?: LineFilesTarget;
   /** Omitted: no button (templates, VOs). Given: the button, disabled with the hint when there is no layout. */
   roomLayout?: RoomLayout;
 }) {
@@ -416,7 +429,7 @@ export function DocEditor({ sections, onChange, disabled, showCost = true, allow
       )}
       {sections.length === 0 && <div className="rounded-xl border border-dashed border-border p-6 text-center text-[13px] text-ink-muted">No sections yet.</div>}
       {sections.map((s, i) => (
-        <SectionCard key={i} section={s} index={i} count={sections.length} disabled={disabled} showCost={showCost} suppliers={suppliers} allowLumpSum={allowLumpSum}
+        <SectionCard key={i} section={s} index={i} count={sections.length} disabled={disabled} showCost={showCost} suppliers={suppliers} allowLumpSum={allowLumpSum} files={files}
           onChange={(ns) => onChange(sections.map((x, j) => (j === i ? ns : x)))}
           onMove={(d) => onChange(move(sections, i, d))}
           onDelete={() => onChange(sections.filter((_, j) => j !== i))} />

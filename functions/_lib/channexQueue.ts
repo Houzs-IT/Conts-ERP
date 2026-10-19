@@ -2,6 +2,7 @@ import { type Env, one, all, run, audit, nowIso } from './db';
 import { channexConfigured, channexSendAri } from './channex';
 import { channexMappingFor } from './channexSync';
 import { standardRate, type SalesChannel } from './channelPrice';
+import { rentalOnly } from './unitPurpose';
 
 /**
  * The Channex outbox. Save handlers never call Channex: they enqueue the change here (enqueue*),
@@ -132,6 +133,9 @@ export async function flushChannexQueue(env: Env, opts: { fullSync?: boolean } =
   await run(env, `DELETE FROM channex_outbox WHERE status = 'sent' AND sent_at < ?`, inMs(-SENT_KEPT_MS)).catch(() => {});
   await run(env, `DELETE FROM channex_calls WHERE called_at < ?`, inMs(-CALLS_KEPT_MS)).catch(() => {});
 
+  // Anything still queued for a showroom or warehouse unit is dropped, never sent (owner, 17 Oct 2026).
+  const rental = await rentalOnly(env, 'u');
+  if (rental) await run(env, `DELETE FROM channex_outbox o USING units u WHERE u.id = o.unit_id AND u.purpose <> 'rental' AND o.status IN ('queued','sending','failed')`).catch(() => {});
   for (const kind of ['availability', 'restrictions'] as const) {
     const rows = await all<OutboxRow & { created_at: string }>(env, `
       UPDATE channex_outbox SET status = 'sending', next_attempt_at = ?
@@ -230,9 +234,10 @@ function runs<T>(dates: string[], valueOf: (d: string) => T, same: (a: T, b: T) 
  */
 export async function queueFullSync(env: Env, unitIds?: string[], opts: { pricesOnly?: boolean } = {}): Promise<{ units: number }> {
   if (!channexConfigured(env)) return { units: 0 };
+  const rental = await rentalOnly(env, 'units');
   const units = await all<{ id: string; base_rate: number; weekend_rate: number | null; channex_property_id: string; channex_room_type_id: string; channex_rate_plan_id: string; channex_rate_plan_airbnb: string | null; channex_rate_plan_booking_com: string | null; channex_rate_plan_agoda: string | null }>(env, `
     SELECT id, base_rate, weekend_rate, channex_property_id, channex_room_type_id, channex_rate_plan_id, channex_rate_plan_airbnb, channex_rate_plan_booking_com, channex_rate_plan_agoda FROM units
-    WHERE channex_property_id IS NOT NULL AND channex_room_type_id IS NOT NULL AND channex_rate_plan_id IS NOT NULL
+    WHERE channex_property_id IS NOT NULL AND channex_room_type_id IS NOT NULL AND channex_rate_plan_id IS NOT NULL${rental}
       ${unitIds ? 'AND id IN (SELECT jsonb_array_elements_text(?::text::jsonb))' : ''}`, ...(unitIds ? [JSON.stringify(unitIds)] : []));
   if (!units.length) return { units: 0 };
 

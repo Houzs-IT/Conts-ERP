@@ -84,6 +84,7 @@ const ApprovalsPage = lazy(() => import('./pages/ApprovalsPage'));
 const OwnersPage = lazy(() => import('./pages/OwnersPage'));
 const OwnerProfilePage = lazy(() => import('./pages/OwnerProfilePage'));
 const ContractsPage = lazy(() => import('./pages/ContractsPage'));
+const LettingsPage = lazy(() => import('./pages/LettingsPage'));
 const PricingPage = lazy(() => import('./pages/PricingPage'));
 const ReviewsPage = lazy(() => import('./pages/ReviewsPage'));
 const InboxPage = lazy(() => import('./pages/InboxPage'));
@@ -127,7 +128,8 @@ function AppLayout() {
       {closed ? <NoAccess />
         : viaEngine ? <SupplyChainEngine enginePath={enginePath} />
         : enginePath && !engine.data && engine.loading ? <Fallback />
-        : <CrashScreen inline key={location.pathname}><Suspense fallback={<Fallback />}><PageShown /><Outlet /></Suspense></CrashScreen>}
+        // Settings categories share one page, so an unsaved edit in one survives a visit to another.
+        : <CrashScreen inline key={location.pathname.replace(/^\/system\/settings\/.*/, '/system/settings')}><Suspense fallback={<Fallback />}><PageShown /><Outlet /></Suspense></CrashScreen>}
     </AppShell>
   );
 }
@@ -300,6 +302,7 @@ function Routed() {
         <Route path="/performance" element={<Navigate to="/performance/analytics" replace />} />
         {/* Owner statements and owner payouts moved onto the owner; Expenses is Accounts payable (owner, 11 Oct 2026). */}
         <Route path="/finance/payables" element={<ExpensesPage />} />
+        <Route path="/finance/utility-bills" element={<ExpensesPage utilities />} />
         <Route path="/finance/expenses" element={<Moved to="/finance/payables" />} />
         <Route path="/finance/statements" element={<Moved to="/owners" add={{ view: 'statements' }} />} />
         <Route path="/finance/statements/:id" element={<MovedStatement />} />
@@ -308,6 +311,7 @@ function Routed() {
         <Route path="/owners" element={<OwnersPage />} />
         <Route path="/owners/:id" element={<OwnerProfileRoute />} />
         <Route path="/owners/contracts" element={<ContractsPage />} />
+        <Route path="/properties/agent-to-let" element={<LettingsPage />} />
         <Route path="/owners/statements" element={<Moved to="/owners" add={{ view: 'statements' }} />} />
         <Route path="/owners/statements/:id" element={<StatementDetailPage />} />
         <Route path="/performance/analytics" element={<AnalyticsPage />} />
@@ -321,7 +325,7 @@ function Routed() {
         <Route path="/system/integrations" element={<IntegrationsPage />} />
         <Route path="/system/integrations/hostplatform" element={<HostPlatformImportPage />} />
         <Route path="/settings" element={<SettingsHome />} />
-        <Route path="/system/settings" element={<SettingsPage />} />
+        <Route path="/system/settings/:section?" element={<SettingsPage />} />
         <Route path="/system/audit" element={<Navigate to="/system/health" replace />} />
         <Route path="/system/health" element={<SystemHealthPage />} />
         <Route path="/system/it-support" element={<ItSupportPage />} />

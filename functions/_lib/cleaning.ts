@@ -1,6 +1,9 @@
 import { type Env, all, one, run, audit, nowIso } from './db';
 import type { Session } from './auth';
 import { isPeriodLocked } from './expenses';
+import { hasCleanPrices, cleanAmounts } from './cleaningPrices';
+import { hasJobInvoices } from './jobProfit';
+import { rentalOnly } from './unitPurpose';
 
 export const CLEAN_KINDS = ['turnover', 'deep_clean', 'light_clean'] as const;
 export const CLEAN_KINDS_SQL = `('turnover','deep_clean','light_clean')`;
@@ -65,11 +68,25 @@ export async function cleanPrice(env: Env, unitId: string, kind: string): Promis
 export async function chargeClean(env: Env, session: Session, task: { id: string; unit_id: string; kind: string; title: string }, day = mytToday()):
   Promise<{ amount: number; created: boolean; reason: string | null }> {
   try {
+    // The clean's own amount (typed on the job) or the price table's, kept on the job as charged; none set: the old pricing.
+    let set: { amount: number; source: 'job' | 'unit' | 'table' } | null = null;
+    if (await hasCleanPrices(env)) {
+      // Priced on the clean's own day, so a price change dated later never reaches it.
+      const own = await one<{ amount: number | null; cleaner_pay: number | null; day_at: string | null }>(env,
+        'SELECT amount, cleaner_pay, COALESCE(scheduled_for, due_at, created_at) AS day_at FROM tasks WHERE id = ?', task.id);
+      const p = await cleanAmounts(env, task.unit_id, task.kind, own?.day_at);
+      const amount = own?.amount ?? p.external, pay = own?.cleaner_pay ?? p.internal;
+      if (p.itemId !== undefined) await run(env, 'UPDATE tasks SET amount = ?, cleaner_pay = ?, service_item_id = COALESCE(service_item_id, ?) WHERE id = ?', amount, pay, p.itemId, task.id);
+      else await run(env, 'UPDATE tasks SET amount = ?, cleaner_pay = ? WHERE id = ?', amount, pay, task.id);
+      if (amount != null) set = { amount: Number(amount), source: own?.amount != null ? 'job' : p.source ?? 'table' };
+    }
     const existing = await one<{ amount: number }>(env, `SELECT amount FROM expenses WHERE task_id = ? LIMIT 1`, task.id);
     if (existing) return { amount: Number(existing.amount), created: false, reason: 'already charged' };
-    const sameDay = await one<{ amount: number }>(env, `SELECT amount FROM expenses WHERE unit_id = ? AND category = 'cleaning' AND incurred_on = ? LIMIT 1`, task.unit_id, day);
+    // A cleaner's or vendor's invoice (0127) is The Conts' cost, not a charge to the unit, so it never stands in for one.
+    const invoices = (await hasJobInvoices(env)) ? ' AND invoice_task_id IS NULL AND invoice_maintenance_id IS NULL' : '';
+    const sameDay = await one<{ amount: number }>(env, `SELECT amount FROM expenses WHERE unit_id = ? AND category = 'cleaning' AND incurred_on = ?${invoices} LIMIT 1`, task.unit_id, day);
     if (sameDay) return { amount: Number(sameDay.amount), created: false, reason: 'a clean is already charged on this unit today' };
-    const price = await cleanPrice(env, task.unit_id, task.kind);
+    const price = set ?? await cleanPrice(env, task.unit_id, task.kind);
     if (await isPeriodLocked(env, task.unit_id, day)) return { amount: price.amount, created: false, reason: "this month's owner statement is already final" };
     if (price.amount <= 0) return { amount: 0, created: false, reason: 'no price' };
     const id = crypto.randomUUID();
@@ -148,3 +165,111 @@ export async function windowsOnDay(env: Env, day: string) {
 /** Malaysian calendar day today. */
 export const mytToday = () => new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);
 export const isDay = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
+
+/** Nobody tapped "Guest left": from the checkout time on, the guest counts as out (owner, 17 Oct 2026; early leavers are
+ *  still tapped by staff). There is no scheduled worker, so whichever screen first reads the clean after that time stamps
+ *  it, once, at the checkout time itself, and writes the history row ("Automatic, at checkout 11:00"). Rows are changed
+ *  in place (guest_left_at, guest_left_auto). The stamp is the checkout instant in +08:00 form, which a tap (an ISO 'Z'
+ *  instant) never is, so later reads still know it was automatic. Never throws: a screen read must not fail over it. */
+export async function autoGuestLeft(env: Env, rows: any[], stdOut: string): Promise<void> {
+  const now = Date.now();
+  const due: { id: string; at: string; time: string; unit: string | null }[] = [];
+  for (const r of rows) {
+    if (r.guest_left_at || !r.prev_id || r.prev_state === 'checked_out' || r.state === 'resolved' || !r.day) continue;
+    const time = r.prev_time && /^\d{2}:\d{2}$/.test(r.prev_time) ? r.prev_time : stdOut;
+    const at = `${r.day}T${time}:00+08:00`;
+    if (Date.parse(at) > now) continue;
+    r.guest_left_at = at; r.guest_left_auto = true;
+    due.push({ id: r.id, at, time, unit: r.unit_id ?? null });
+  }
+  if (!due.length) return;
+  try {
+    const stamp = nowIso();
+    // Only the rows this read stamped get a history line: two screens reading at once write it once.
+    const set = await all<{ id: string }>(env, `
+      UPDATE tasks t SET guest_left_at = x.at, updated_at = ?
+      FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, at text)
+      WHERE t.id = x.id AND t.guest_left_at IS NULL RETURNING t.id`, stamp, JSON.stringify(due));
+    const done = due.filter(d => set.some(s => s.id === d.id));
+    if (!done.length) return;
+    await run(env, `UPDATE units SET readiness = 'dirty', updated_at = ? WHERE id IN (SELECT jsonb_array_elements_text(?::text::jsonb)) AND readiness IN ('occupied','ready')`,
+      stamp, JSON.stringify(done.map(d => d.unit).filter(Boolean)));
+    await run(env, `
+      INSERT INTO audit_log (actor_id, actor_label, action, entity_table, entity_id, before_state, after_state, source, occurred_at)
+      SELECT NULL, 'Automatic', 'task.guest_left', 'tasks', x.id, NULL, x.after, 'system', ?
+      FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, after text)`,
+      stamp, JSON.stringify(done.map(d => ({ id: d.id, after: JSON.stringify({ guestLeftAt: d.at, auto: true, reason: `Automatic, at checkout ${d.time}` }) }))));
+  } catch { /* the next read tries again */ }
+}
+
+/**
+ * Every live checkout of a rental unit gets its turnover cleaning job without anyone pressing Plan (lead, 18 Oct 2026):
+ * imported and channel reservations never passed through a screen that made one, so the board showed dozens of
+ * "checkouts with no cleaning job". Same job as POST /housekeeping/plan makes. Idempotent: a stay that already has a
+ * clean, or a unit with a clean on that day, is skipped. Never for a checkout before today. Owner stays and blocks
+ * get none (the board does not list them either). At most `limit` jobs per call, soonest checkout first, so a backlog
+ * clears over a few calls without one request doing it all. Returns how many jobs it made; failures never reach the caller.
+ */
+export async function ensureTurnovers(env: Env, scope: { from: string; to: string } | { reservationIds: string[] }, limit = 200): Promise<number> {
+  try {
+    const today = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);
+    const ids = 'reservationIds' in scope ? scope.reservationIds.filter(Boolean) : null;
+    if (ids && !ids.length) return 0;
+    const from = ids ? today : (scope as { from: string }).from < today ? today : (scope as { from: string }).from;
+    const to = ids ? '9999-12-31' : (scope as { to: string }).to;
+    if (to < from) return 0;
+    const rental = await rentalOnly(env, 'u');
+    const day = `to_char((COALESCE(t.scheduled_for, t.due_at, t.created_at))::timestamptz AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM-DD')`;
+    const now = nowIso();
+    const created = await all<{ id: string; reservation_id: string }>(env, `
+      INSERT INTO tasks (id, unit_id, reservation_id, kind, state, title, scheduled_for, due_at, next_guest_at, requires_photo, created_at, updated_at)
+      SELECT gen_random_uuid()::text, r.unit_id, r.id, 'turnover', 'open', 'Turnover after check-out',
+             r.check_out || 'T' || COALESCE(NULLIF(r.check_out_time, ''), '11:00') || ':00+08:00',
+             CASE WHEN n.check_in_time IS NOT NULL THEN r.check_out || 'T' || n.check_in_time || ':00+08:00' END,
+             CASE WHEN n.check_in_time IS NOT NULL THEN r.check_out || 'T' || n.check_in_time || ':00+08:00' END,
+             1, ?, ?
+      FROM reservations r
+      JOIN units u ON u.id = r.unit_id
+      LEFT JOIN LATERAL (
+        SELECT x.check_in_time FROM reservations x WHERE x.unit_id = r.unit_id AND x.check_in = r.check_out AND x.id != r.id AND ${LIVE_STAY_SQL('x')} LIMIT 1
+      ) n ON TRUE
+      WHERE r.check_out >= ? AND r.check_out <= ? ${ids ? 'AND r.id IN (SELECT jsonb_array_elements_text(?::text::jsonb))' : ''}
+        AND ${LIVE_STAY_SQL('r')} AND r.channel != 'owner_stay'${rental}
+        AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.reservation_id = r.id AND t.kind IN ${CLEAN_KINDS_SQL})
+        AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.unit_id = r.unit_id AND t.kind IN ${CLEAN_KINDS_SQL} AND ${day} = r.check_out)
+      ORDER BY r.check_out, r.id
+      LIMIT ${Math.max(1, Math.min(500, Math.floor(limit)))}
+      RETURNING id, reservation_id`, now, now, from, to, ...(ids ? [JSON.stringify(ids)] : []));
+    if (created.length) {
+      await run(env, `
+        INSERT INTO audit_log (actor_id, actor_label, action, entity_table, entity_id, after_state, source, occurred_at)
+        SELECT NULL, 'System', 'housekeeping.plan', 'tasks', x->>'taskId', jsonb_build_object('reservationId', x->>'reservationId', 'via', 'auto')::text, 'system', ?
+        FROM jsonb_array_elements(?::text::jsonb) x`,
+        now, JSON.stringify(created.map(c => ({ taskId: c.id, reservationId: c.reservation_id }))));
+    }
+    return created.length;
+  } catch (e) {
+    console.error('ensureTurnovers failed', e);
+    return 0;
+  }
+}
+
+/**
+ * A stay whose dates moved or that was cancelled no longer leaves on the day its automatic turnover job was made for:
+ * that job is removed when nobody has touched it (still open, no cleaner, not started, no photo), and a moved stay gets
+ * one on its new checkout day. A job someone is already on is kept for the office to sort out. Never throws.
+ */
+export async function replanTurnover(env: Env, reservationId: string, live: boolean): Promise<void> {
+  try {
+    const gone = await all<{ id: string }>(env, `
+      DELETE FROM tasks t WHERE t.reservation_id = ? AND t.kind = 'turnover' AND t.state = 'open'
+        AND t.assignee_id IS NULL AND t.cleaner_id IS NULL AND t.started_at IS NULL
+        AND NOT EXISTS (SELECT 1 FROM documents d WHERE d.task_id = t.id)
+        AND NOT EXISTS (SELECT 1 FROM task_cleaners c WHERE c.task_id = t.id)
+      RETURNING t.id`, reservationId);
+    if (gone.length) await audit(env, { actorId: null, actorLabel: 'System', action: 'task.remove', entityTable: 'reservations', entityId: reservationId, after: { removed: gone.map(g => g.id), reason: live ? 'dates moved' : 'reservation cancelled' } });
+    if (live) await ensureTurnovers(env, { reservationIds: [reservationId] });
+  } catch (e) {
+    console.error('replanTurnover failed', e);
+  }
+}

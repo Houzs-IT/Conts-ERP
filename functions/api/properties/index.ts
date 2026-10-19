@@ -3,6 +3,7 @@ import { requireSession } from '../../_lib/auth';
 import { masked } from '../../_lib/properties';
 import { statementSettings } from '../../_lib/ownerStatement';
 import { contractView } from '../../_lib/unitContract';
+import { extrasFor, purposeReady, bedsLabel, baysLabel } from '../../_lib/unitPurpose';
 
 const area = (city: string, postcode: string | null) => (postcode ? `${city}, ${postcode}` : city);
 
@@ -15,11 +16,12 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const banking = session.manage;
 
   const buildings = await all<any>(env, 'SELECT id, name, city, state, postcode FROM properties ORDER BY state, name');
+  const ready = await purposeReady(env);
   const units = await all<any>(env, `
-    SELECT u.id, u.property_id, u.parent_unit_id, u.unit_number, u.bedrooms, u.base_rate, u.listing_name, u.unit_code, u.address, u.package, u.term, u.split_kind, u.split_value, u.guarantee_period,
+    SELECT u.id, u.property_id, u.parent_unit_id, u.unit_number, u.bedrooms, u.bathrooms, u.size_sqft, u.layout_type, u.owner_id, u.base_rate, u.listing_name, u.unit_code, u.address, u.package, u.term, u.split_kind, u.split_value, u.guarantee_period,
            p.state, p.address_line, o.display_name AS owner_name, o.ic_number, o.bank_name, o.bank_account_number, o.bank_account_holder,
            c.management_fee_pct, c.starts_on, c.renews_on, c.minimum_guarantee, c.minimum_guarantee_annual, c.guarantee_starts_on, c.guarantee_ends_on,
-           c.id AS c_id, c.revenue_model, c.model, c.grr_amount, c.agent_fee_pct, u.misc_charges,
+           c.id AS c_id, c.revenue_model, c.model, c.grr_amount, c.agent_fee_pct, c.minimum_guarantee_annual AS c_annual, u.misc_charges,${ready ? ' c.contract_code,' : ''}
            -- The standard cleaning price cleanPrice() uses (functions/_lib/cleaning.ts): the unit's first 'cleaning' monthly cost.
            (SELECT e.amount FROM unit_expenses e WHERE e.unit_id = u.id AND e.category = 'cleaning' AND e.amount > 0 ORDER BY e.sort_order LIMIT 1) AS cleaning_price,
            (SELECT e.amount FROM unit_expenses e WHERE e.unit_id = u.id AND e.category = 'cleaning_deep' AND e.amount > 0 ORDER BY e.sort_order LIMIT 1) AS deep_cleaning_price,
@@ -30,6 +32,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const expenses = await all<any>(env, 'SELECT id, unit_id, category, amount, note FROM unit_expenses ORDER BY unit_id, sort_order');
   const docs = await all<any>(env, `SELECT id, unit_id, file_name FROM documents WHERE kind = 'contract' AND unit_id IS NOT NULL ORDER BY created_at`);
   const { defaultFeePct } = await statementSettings((sql, ...args) => all(env, sql, ...args));
+  const extras = await extrasFor(env, null);
 
   return json({
     generatedAt: nowIso(),
@@ -38,14 +41,16 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       id: u.id, buildingId: u.property_id, parentUnitId: u.parent_unit_id ?? null,
       listingName: u.listing_name ?? '', unitCode: u.unit_code ?? u.unit_number, state: u.state,
       address: u.address ?? `${u.unit_number}, ${u.address_line}`,
-      ownerName: u.owner_name,
+      ownerId: u.owner_id, ownerName: u.owner_name,
       // Last four only, as on the owner profile; the full numbers are revealed there (audited), not here.
       ic: banking ? masked(u.ic_number) : '', bankName: banking ? (u.bank_name ?? '') : '',
       bankAccount: banking ? masked(u.bank_account_number) : '', accountHolder: banking ? (u.bank_account_holder ?? u.owner_name) : '',
       pkg: u.package, term: u.term, split: u.split_kind, splitValue: u.split_value, guaranteePeriod: u.guarantee_period ?? 'month',
       // The revenue model and its short terms ("Share 75/20/5", "GRR RM 3,000/mo"); the figures only for roles that see money.
-      ...(() => { const v = contractView(u.c_id ? { ...u, id: u.c_id } : null, u, defaultFeePct); return { revenueModel: v.revenueModel, termsLabel: banking ? v.termsLabel : null }; })(),
-      bedrooms: u.bedrooms, ...(banking ? { baseRate: Number(u.base_rate), cleaningPrice: u.cleaning_price == null ? null : Number(u.cleaning_price), deepCleaningPrice: u.deep_cleaning_price == null ? null : Number(u.deep_cleaning_price) } : {}),
+      ...(() => { const v = contractView(u.c_id ? { ...u, id: u.c_id, minimum_guarantee_annual: u.c_annual } : null, u, defaultFeePct); return { revenueModel: v.revenueModel, contractCode: u.c_id ? v.contractCode : null, termsLabel: banking ? v.termsLabel : null }; })(),
+      // Migration 0125: what the unit is for, its beds and its car park bays.
+      ...(() => { const x = extras.get(u.id); return { purpose: x?.purpose ?? 'rental', usedBy: x?.usedBy ?? null, beds: x?.beds ?? [], bedsLabel: bedsLabel(x?.beds ?? []), parkingBays: x?.parkingBays ?? [], parkingLabel: baysLabel(x?.parkingBays ?? []) }; })(),
+      bedrooms: u.bedrooms, bathrooms: u.bathrooms, sizeSqft: u.size_sqft ?? null, layoutType: u.layout_type ?? null, ...(banking ? { baseRate: Number(u.base_rate), cleaningPrice: u.cleaning_price == null ? null : Number(u.cleaning_price), deepCleaningPrice: u.deep_cleaning_price == null ? null : Number(u.deep_cleaning_price) } : {}),
       expenses: expenses.filter(e => e.unit_id === u.id).map(e => ({ id: e.id, category: e.category, amount: Number(e.amount), note: e.note })),
       contract: {
         feePct: u.management_fee_pct ?? 25, startedOn: u.starts_on ?? '', renewsOn: u.renews_on ?? '',

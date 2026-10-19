@@ -5,7 +5,7 @@ import PageHeader from '../components/PageHeader';
 import { StatusBadge } from '../components/StatusBadge';
 import { BookingDrawer, MessageGuestModal, CentreModal, ModalActions } from '../components/booking/BookingDrawer';
 import { UnitPicker } from '../components/booking/UnitPicker';
-import { channelNote, STATUS } from '../lib/bookingStatus';
+import { channelNote, stayPhase, stayWho } from '../lib/bookingStatus';
 import { Button } from '../components/Button';
 import Icon from '../components/Icon';
 import ChannelMark from '../components/ChannelMark';
@@ -26,7 +26,7 @@ import { api, notifyFailure, downloadFile, ApiFailure, errorMessage } from '../l
 import { rm, date, dateRange, nights as fmtNights, guests as fmtGuests, todayMyt, plural, count as countLabel } from '../lib/format';
 import { CHANNEL_META, cx } from '../lib/design-tokens';
 import type { BookingChannel, ReservationState } from '../lib/types';
-import { statusOptions } from '../lib/status';
+import { statusOptions, statusLabel } from '../lib/status';
 
 interface Row {
   id: string; externalRef: string | null; guestName: string; guestsCount: number;
@@ -81,7 +81,7 @@ const FALLBACK: Payload = {
 
 /** Searches the server reads. The column searches are kept for links from global search (?ref=, ?guest=). */
 const SEARCH_PARAMS = ['q', 'ref', 'guest', 'unit', 'channel', 'stay', 'gross', 'status'];
-const FILTER_PARAMS = ['ch', 'building', 'country', 'from', 'to', 'grossMin', 'grossMax'];
+const FILTER_PARAMS = ['ch', 'building', 'country', 'from', 'to', 'cancelledFrom', 'cancelledTo', 'grossMin', 'grossMax', 'nightsMin', 'nightsMax'];
 /** URL parameters the server reads. The drawer's `open` stays out so opening a booking does not refetch the list. */
 const API_PARAMS = ['view', 'todo', 'sort', 'page', 'size', ...SEARCH_PARAMS, ...FILTER_PARAMS];
 const CHANNEL_CHOICES: BookingChannel[] = ['airbnb', 'booking_com', 'agoda', 'direct'];
@@ -300,12 +300,14 @@ export default function BookingsPage() {
       render: b => (
         <span className="flex items-center gap-[9px] min-w-0">
           <ChannelMark ch={b.channel} size={20} />
-          <span className="font-mono text-meta whitespace-nowrap overflow-hidden text-ellipsis" title={`${CHANNEL_META[b.channel].label} · ${b.externalRef ?? ''}`}>{b.externalRef ?? '—'}</span>
+          {b.externalRef
+            ? <span className="font-mono text-meta whitespace-nowrap overflow-hidden text-ellipsis" title={`${CHANNEL_META[b.channel].label} · ${b.externalRef}`}>{b.externalRef}</span>
+            : <span className="text-meta text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{CHANNEL_META[b.channel].label} · no reference</span>}
         </span>
       ) },
     { key: 'guest', label: 'Guest', value: r => r.guestName, sortKey: 'guest', width: 170, filter: { kind: 'text', param: 'guest' },
-      render: b => <span className="font-medium whitespace-nowrap overflow-hidden text-ellipsis block" title={b.guestName}>{b.guestName || '—'}</span>,
-      sub: b => [b.guestsCount > 0 ? fmtGuests(b.guestsCount) : null, countryOf(b)].filter(Boolean).join(' · ') || '—' },
+      render: b => { const w = stayWho(b); return <span className={cx('font-medium whitespace-nowrap overflow-hidden text-ellipsis block', w.missing && 'text-muted-ink')} title={w.name}>{w.name}</span>; },
+      sub: b => [stayWho(b).missing ? 'No guest name' : null, b.guestsCount > 0 ? fmtGuests(b.guestsCount) : null, countryOf(b)].filter(Boolean).join(' · ') || null },
     { key: 'unit', label: 'Unit', value: r => r.unitNumber, text: r => `${r.unitNumber} ${r.propertyName}`, sortKey: 'unit', width: 140,
       filter: { kind: 'text', param: 'unit' }, exportValue: r => r.unitNumber, sub: b => b.propertyName },
     { key: 'building', label: 'Building', value: r => r.propertyName, hidden: true, width: 150, filter: false },
@@ -317,7 +319,8 @@ export default function BookingsPage() {
       exportKind: 'text', exportValue: r => `${r.checkIn} to ${r.checkOut}` },
     { key: 'checkIn', label: 'Check-in', type: 'date', value: r => r.checkIn, hidden: true, filter: false, sortKey: 'stay' },
     { key: 'checkOut', label: 'Checkout', type: 'date', value: r => r.checkOut, hidden: true, filter: false },
-    { key: 'nights', label: 'Nights', type: 'number', value: r => r.nights, hidden: true, sortKey: 'nights', filter: false, width: 80 },
+    { key: 'nights', label: 'Nights', type: 'number', value: r => r.nights, hidden: true, sortKey: 'nights', width: 80,
+      filter: { kind: 'number', params: ['nightsMin', 'nightsMax'], hint: 'Reservations of this many nights' } },
     { key: 'guests', label: 'Guests', type: 'number', value: r => r.guestsCount, hidden: true, sortKey: 'guests', filter: false, width: 80 },
     { key: 'phone', label: 'Phone', type: 'phone', value: r => r.guestPhone, hidden: true, filter: false, width: 140 },
     { key: 'country', label: 'Country', value: r => countryOf(r), hidden: true, sortKey: 'country', filter: false, width: 130 },
@@ -330,9 +333,9 @@ export default function BookingsPage() {
     { key: 'expected', label: 'Expected to receive', type: 'money', value: r => r.expectedPayout, hidden: true, filter: false },
     { key: 'received', label: 'Received', type: 'money', value: r => r.received, hidden: true, filter: false },
     { key: 'outstanding', label: 'Outstanding', type: 'money', value: r => (['cancelled', 'no_show'].includes(r.state) ? 0 : r.outstanding), hidden: true, filter: false },
-    { key: 'status', label: 'Status', type: 'status', value: r => r.state, text: r => STATUS[r.state]?.label ?? r.state, sortKey: 'status', width: 130,
-      filter: { kind: 'select', param: 'status', multi: false, options: statusOptions('booking').map(o => ({ value: o.label, label: o.label })) },
-      render: b => <StatusBadge entity="booking" value={b.state} size="sm" /> },
+    { key: 'status', label: 'Status', type: 'status', value: r => stayPhase(r), text: r => statusLabel('stay', stayPhase(r)), sortKey: 'status', width: 130,
+      filter: { kind: 'select', param: 'status', multi: false, options: statusOptions('stay').map(o => ({ value: o.label, label: o.label })) },
+      render: b => <StatusBadge entity="stay" value={stayPhase(b)} size="sm" /> },
     { key: 'created', label: 'Booked on', type: 'datetime', value: r => r.createdAt, hidden: true, sortKey: 'created', filter: false },
     { key: 'chat', label: 'Chat', width: 56, align: 'center', noExport: true, sortable: false, filter: false,
       render: b => (
@@ -382,7 +385,7 @@ export default function BookingsPage() {
         id="bookings" columns={columns} rows={data ? rows : null} rowKey={r => r.id}
         loading={loading} error={error} onRetry={reload} onRowClick={b => setOpenId(b.id)}
         server={{ total, page: data?.page ?? 1, pageSize: data?.pageSize ?? 50, sizes: [25, 50, 100, 200], defaultPageSize: 50, fetchAll }}
-        viewParams={['view', 'todo', 'building', 'q']} filtered={searching || !!todo} onClearFilters={clearAll}
+        viewParams={['view', 'todo', 'building', 'country', 'q', 'cancelledFrom', 'cancelledTo']} filtered={searching || !!todo} onClearFilters={clearAll}
         noun={['reservation', 'reservations']} exportName="bookings" selectionKey={`${view}|${todo ?? ''}`}
         empty={{ title: todoMeta?.empty ?? viewMeta.empty, icon: 'CalendarDays' }}
         selectable={(canMoney || canOps) && !phone}
@@ -403,6 +406,12 @@ export default function BookingsPage() {
               <Select label="Building" value={params.get('building') ?? ''} onChange={v => setParam('building', v)} className="w-[170px] max-md:w-full max-md:order-last"
                 options={[{ value: '', label: 'All buildings' }, ...(data?.buildings ?? []).map(b => ({ value: b.id, label: b.name }))]} />
               <CountryFilter value={params.get('country') ?? ''} onChange={v => setParam('country', v)} facets={data?.facets?.country} />
+              {(params.get('cancelledFrom') || params.get('cancelledTo')) && (
+                <Button size="sm" variant="secondary" icon={<Icon name="X" size="sm" />} aria-label={`Remove filter: ${cancelledLabel(params.get('cancelledFrom') ?? '', params.get('cancelledTo') ?? '')}`}
+                  onClick={() => updateParams(p => { p.delete('cancelledFrom'); p.delete('cancelledTo'); p.delete('page'); })}>
+                  {cancelledLabel(params.get('cancelledFrom') ?? '', params.get('cancelledTo') ?? '')}
+                </Button>
+              )}
               <DateFilter from={params.get('from') ?? ''} to={params.get('to') ?? ''}
                 onChange={(f, t) => updateParams(p => { if (f) p.set('from', f); else p.delete('from'); if (t) p.set('to', t); else p.delete('to'); p.delete('page'); })} />
             </div>
@@ -434,13 +443,13 @@ export default function BookingsPage() {
             <ChannelMark ch={b.channel} size={22} />
             <span className="flex flex-col gap-[3px] min-w-0 flex-1">
               <span className="flex items-center justify-between gap-2">
-                <span className="text-copy font-semibold whitespace-nowrap overflow-hidden text-ellipsis">{b.guestName || '—'}</span>
+                <span className={cx('text-copy font-semibold whitespace-nowrap overflow-hidden text-ellipsis', stayWho(b).missing && 'text-muted-ink')}>{stayWho(b).name}</span>
                 <span className="text-copy font-medium [font-variant-numeric:tabular-nums] whitespace-nowrap">{b.grossBookingValue > 0 ? rm(b.grossBookingValue, { cents: false }) : '—'}</span>
               </span>
-              <span className="text-meta text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{b.externalRef ?? '—'} · {b.unitNumber} · {b.propertyName}</span>
+              <span className="text-meta text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{b.externalRef ?? (stayWho(b).missing ? 'No guest name, no reference' : 'No reference')} · {b.unitNumber} · {b.propertyName}</span>
               <span className="flex items-center justify-between gap-2 pt-[2px]">
                 <span className="text-meta min-w-0 flex flex-col leading-tight"><span className="whitespace-nowrap">{dateRange(b.checkIn, b.checkOut)}</span><span className="text-muted-ink">{fmtNights(b.nights)}</span></span>
-                <StatusBadge entity="booking" value={b.state} size="sm" />
+                <StatusBadge entity="stay" value={stayPhase(b)} size="sm" />
               </span>
               {todoMeta?.money && b.outstanding > 0 && <span className="text-meta text-warning">{rm(b.outstanding)} owed</span>}
             </span>
@@ -537,6 +546,10 @@ function CountryFilter({ value, onChange, facets }: { value: string; onChange: (
 const shift = (iso: string, days: number) => new Date(Date.parse(iso) + days * 864e5).toISOString().slice(0, 10);
 const monthStart = (iso: string, add = 0) => { const d = new Date(Date.parse(iso.slice(0, 7) + '-01T00:00:00Z')); d.setUTCMonth(d.getUTCMonth() + add); return d.toISOString().slice(0, 10); };
 
+/** The chip of a "Cancelled this month" style filter: when the reservations were cancelled. */
+const cancelledLabel = (from: string, to: string) =>
+  `Cancelled ${from && to ? dateRange(from, to) : from ? `from ${date(from)}` : `until ${date(to)}`}`;
+
 function DateFilter({ from, to, onChange }: { from: string; to: string; onChange: (from: string, to: string) => void }) {
   const today = todayMyt();
   const presets: { label: string; from: string; to: string }[] = [
@@ -606,7 +619,7 @@ function BulkPayoutModal({ rows: ticked, onClose, onDone }: { rows: Row[]; onClo
         <div className="max-h-[180px] overflow-y-auto border border-solid border-line rounded-control">
           {rows.map(r => (
             <div key={r.id} className="flex justify-between gap-3 px-3 py-2 text-meta [border-bottom:1px_solid_var(--color-line-soft)] last:border-b-0">
-              <span className="min-w-0 truncate"><span className="font-mono">{r.externalRef}</span> · {r.guestName || '—'}</span>
+              <span className="min-w-0 truncate"><span className="font-mono">{r.externalRef ?? 'No reference'}</span> · {stayWho(r).name}</span>
               <span className="[font-variant-numeric:tabular-nums] whitespace-nowrap">{rm(r.outstanding)}</span>
             </div>
           ))}

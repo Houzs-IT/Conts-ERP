@@ -430,6 +430,17 @@ export async function patchProject(
   body: Record<string, any>,
   userId: number
 ): Promise<{ ok: boolean; shifted_tasks: number; delta_days: number }> {
+  /* Conts renovation (migration 0117): a renovation project's start / end dates are filled by the app (created
+     date, the day it reached Closed) and are not editable, so a PATCH naming them leaves them as they are. */
+  if ("start_date" in body || "end_date" in body) {
+    const kind = await env.DB.prepare(`SELECT to_jsonb(p)->>'project_kind' AS kind FROM projects p WHERE id = ?`)
+      .bind(id).first<{ kind: string | null }>();
+    if (kind?.kind === "renovation") {
+      body = { ...body };
+      delete body.start_date;
+      delete body.end_date;
+    }
+  }
   // Capture current stage + start_date in one read so we can both log the
   // stage transition and shift checklist due_dates by the start_date delta
   // without a second SELECT.

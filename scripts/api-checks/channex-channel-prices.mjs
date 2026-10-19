@@ -22,7 +22,7 @@ const tag = Date.now().toString().slice(-6);
 
 let r = await call('POST', '/api/properties', { name: `Channex Prices ${tag}`, state: 'Kuala Lumpur', city: 'Kuala Lumpur' });
 const BID = r.json?.id;
-r = await call('POST', '/api/units', { buildingId: BID, unitCode: `CP-${tag}`, unitNumber: `CP-${tag}`, listingName: `Channex Prices Studio ${tag}` });
+r = await call('POST', '/api/units', { buildingId: BID, ownerId: (await call('GET', '/api/owners')).json.data[0].id, unitCode: `CP-${tag}`, unitNumber: `CP-${tag}`, listingName: `Channex Prices Studio ${tag}` });
 const UID = r.json?.id;
 
 r = await call('POST', `/api/units/${UID}/channex-setup`, {});

@@ -1,8 +1,24 @@
 import type { ReservationState, Tone } from './types';
 import { statusOptions } from './status';
+import { CHANNEL } from './vocabulary';
 
 /** One label and one look per booking status, from src/lib/status.ts (shared by Bookings, the drawer and Calendar). */
 export const STATUS = Object.fromEntries(statusOptions('booking').map(o => [o.value, { label: o.label, tone: (o.tone === 'danger' ? 'critical' : o.tone === 'accent' ? 'neutral' : o.tone) as Tone, outline: o.outline }])) as Record<ReservationState, { label: string; tone: Tone; outline?: boolean }>;
+
+export { stayPhase, STAY_LABEL, type StayPhase } from './stayPhase';
+
+/**
+ * Who a row is for, never a bare dash: an owner stay or a block says so ("Owner stay", "Blocked: repair"), a guest
+ * reservation without a name reads like the calendar bar ("Airbnb guest") with `missing` set so the row can add
+ * "No guest name".
+ */
+export function stayWho(r: { channel: string; guestName?: string | null; blockReason?: string | null }): { name: string; missing: boolean; hold: boolean } {
+  if (r.channel === 'owner_stay') return { name: r.guestName ? `Owner stay: ${r.guestName}` : 'Owner stay', missing: false, hold: true };
+  if (r.channel === 'maintenance_block') return { name: !r.blockReason || r.blockReason === 'maintenance' ? 'Blocked: repair' : 'Blocked', missing: false, hold: true };
+  if (r.guestName) return { name: r.guestName, missing: false, hold: false };
+  const label = CHANNEL[r.channel as keyof typeof CHANNEL]?.label ?? 'Channel';
+  return { name: `${label} guest`, missing: true, hold: false };
+}
 
 /** What the server did on the booking sites, as returned in `effects.channel`. */
 export type ChannelSync = 'queued' | 'not_linked' | 'failed' | null | undefined;

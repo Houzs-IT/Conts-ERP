@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode, type MutableRefObject } from 'react';
 import { Button } from '../components/Button';
 import { EmptyState } from '../components/States';
 import { usePhone } from './finance/listKit';
@@ -24,6 +24,7 @@ import { BarContent, BarHoverCard, barStyle, displayName, holdName, phaseOf, PHA
 import { CalendarRangeControl, addDaysIso, daysBetween, isDay, LEAD_DAYS, MAX_WINDOW } from '../components/calendar/DatePicker';
 import { type CalendarBlock as Block, type CalendarUnit as Unit } from '../components/calendar/types';
 import UnitMonthCalendar from '../components/calendar/UnitMonthCalendar';
+import { useFillHeight } from '../lib/useFillHeight';
 
 /** Width of one night column, px (narrower on phones, so a thumb's swipe covers a week). The unit column width is the
  *  CSS variable --unit-col. */
@@ -187,6 +188,9 @@ function CalendarBoard() {
   const gridRef = useRef<HTMLDivElement>(null);
   // A new window starts at its first night; a reload of the same window keeps the scroll where it was.
   useEffect(() => { gridRef.current?.scrollTo({ left: 0 }); }, [from]);
+  // The grid is the page's one scroller: it runs to the bottom of the window whatever the window's height, so the page
+  // itself never scrolls as well (owner request G1). A fixed 74vh left the page scrolling 80-120px on a laptop.
+  const fillGrid = useFillHeight({ fallback: '74vh', min: 320 });
   const [unitOpen, setUnitOpen] = useState<Record<string, boolean>>({});
   // Prices set on the board before the reload brings them back, keyed `${unitId}:${channel}:${date}`: by date, not
   // by column, so they stay on their night when the board pages to another 30 days.
@@ -513,8 +517,8 @@ function CalendarBoard() {
         </div>
 
         {/* Grid: scrolls inside the card both ways; the date header and unit column stay put. */}
-        <div ref={gridRef} tabIndex={0} aria-label="Reservation calendar. Arrow keys scroll."
-          className="max-h-[calc(100dvh-230px)] md:max-h-[74vh] min-h-[320px] overflow-auto overscroll-contain rounded-none md:rounded-b-card [scrollbar-width:thin] outline-none focus-visible:[box-shadow:inset_0_0_0_2px_var(--color-gold)] [--unit-col:104px] md:[--unit-col:256px]">
+        <div ref={el => { (gridRef as MutableRefObject<HTMLDivElement | null>).current = el; fillGrid(el); }} tabIndex={0} aria-label="Reservation calendar. Arrow keys scroll."
+          className="min-h-[320px] overflow-auto overscroll-contain rounded-none md:rounded-b-card [scrollbar-width:thin] outline-none focus-visible:[box-shadow:inset_0_0_0_2px_var(--color-gold)] [--unit-col:104px] md:[--unit-col:256px]">
           <div style={{ minWidth: `calc(var(--unit-col) + ${span * COL}px)` }} aria-busy={loading}
             className={`transition-opacity duration-150 ${loading && data ? 'opacity-70' : ''}`}>
             <div className="sticky top-0 z-20 flex bg-muted [border-bottom:1px_solid_var(--color-line)]">
@@ -747,30 +751,29 @@ function CalendarBoard() {
     
                       {rowOpen && (
                         <>
-                          {/* Availability, with the night's restriction folded in: a "2n" marker for a minimum stay above
-                              one night, "Closed" for stop sell. Only nights that have one show anything extra, so the
-                              grid keeps one row here. Clicking a night opens Rate update for it to change either. */}
-                          <SubRow label="Availability">
+                          {/* Every listing here is one unit, so "1 left" / "Sold" only repeated what the bars show. The row
+                              comes back only when a night in view has a restriction: a "2n" marker for a minimum stay
+                              above one night, "Closed" for stop sell. Clicking a night opens Rate update to change it. */}
+                          {days.some((_, i) => { const rs = data?.restrictions?.[`${u.id}:${dayIso(i)}`]; return !!rs && (rs.stopSell || rs.minStay > 1); }) && (
+                          <SubRow label="Restrictions">
                             {days.map((_, i) => {
-                              const left = cells[i] ? 0 : 1;
                               const rs = data?.restrictions?.[`${u.id}:${dayIso(i)}`];
                               const minStay = rs && rs.minStay > 1 ? rs.minStay : 0;
-                              const restriction = rs?.stopSell ? 'Blocked' : minStay ? `Minimum ${minStay} nights` : 'No minimum nights, available';
+                              const restriction = rs?.stopSell ? 'Closed to new reservations' : minStay ? `Minimum ${minStay} nights` : 'No restriction';
                               return (
                                 <button key={i} type="button" disabled={!canSetRates} onClick={() => setRateUpdate({ unitIds: [u.id], from: dayIso(i), to: dayIso(i) })}
-                                  title={`${left ? '1 of 1 unit available' : 'Sold'} · ${restriction}${canSetRates ? ' · click to change' : ''}`}
+                                  title={`${date(dayIso(i))} · ${restriction}${canSetRates ? ' · click to change' : ''}`}
+                                  aria-label={`${date(dayIso(i))}: ${restriction}`}
                                   style={{ width: COL }}
-                                  className={`flex-none box-border h-10 md:h-8 p-0 pl-1 border-none bg-transparent enabled:hover:bg-sunken/80 enabled:cursor-pointer disabled:cursor-default font-sans text-meta whitespace-nowrap flex items-center justify-end gap-0.5 [font-variant-numeric:tabular-nums] ${minStay && !rs?.stopSell ? 'pr-1.5' : 'pr-2'} ${left ? 'text-ink-2' : 'text-faint'}`}>
+                                  className="flex-none box-border h-10 md:h-8 p-0 pr-2 border-none bg-transparent enabled:hover:bg-sunken/80 enabled:cursor-pointer disabled:cursor-default font-sans text-meta whitespace-nowrap flex items-center justify-end">
                                   {rs?.stopSell
-                                    ? <span className="px-1 rounded-[4px] text-caption font-semibold leading-[16px]" style={{ background: TONE.critical.bg, color: TONE.critical.fg }}>Blocked</span>
-                                    : <>
-                                        {minStay > 0 && <span className="mr-auto px-[3px] rounded-[4px] text-caption font-semibold leading-[16px] bg-muted text-ink">{minStay}n</span>}
-                                        {left ? '1 left' : 'Sold'}
-                                      </>}
+                                    ? <span className="px-1 rounded-[4px] text-caption font-semibold leading-[16px]" style={{ background: TONE.critical.bg, color: TONE.critical.fg }}>Closed</span>
+                                    : minStay > 0 ? <span className="px-[3px] rounded-[4px] text-caption font-semibold leading-[16px] bg-muted text-ink">{minStay}n</span> : null}
                                 </button>
                               );
                             })}
                           </SubRow>
+                          )}
                           {rateRowsFor(u).map(r => {
                             // A booking site the unit is not connected to gets no price from us, so none is shown.
                             const unlinked = r.key !== 'web' && !!u.linked && !u.linked.includes(r.key as BookingChannel);
@@ -902,8 +905,8 @@ function CalendarBoard() {
   );
 }
 
-/** A building's row on the board: fold toggle on the left, and on each night the number of its units still free, in
- *  green, only where there is one. A full night stays blank: the eye goes to the free nights, which is the question
+/** A building's row on the board: fold toggle on the left, and on each night the number of its units still free, as a
+ *  quiet grey number, only where there is one. A full night stays blank: the eye goes to the free nights, which is the question
  *  (where can I still sell?), and a folded building still answers it. */
 function BuildingRowHeader({ name, units, folded, showToggle, onToggle, picked, onPick, days, byUnit, dayIso, col, showFree }: {
   name: string; units: Unit[]; folded: boolean; showToggle: boolean; onToggle: () => void;
@@ -937,7 +940,7 @@ function BuildingRowHeader({ name, units, folded, showToggle, onToggle, picked, 
         return (
           <div key={i} style={{ width: col }} title={`${name} · ${date(dayIso(i))} · ${free ? `${free} of ${plural(n, 'unit')} free` : 'every unit booked'}`}
             className="flex-none box-border min-h-8 pr-2 flex items-center justify-end text-caption whitespace-nowrap [font-variant-numeric:tabular-nums]">
-            {free > 0 && <span className="font-semibold" style={{ color: TONE.success.fg }}>{free}<span className="hidden md:inline font-medium"> free</span></span>}
+            {free > 0 && <span className="font-medium text-muted-ink">{free}</span>}
           </div>
         );
       })}

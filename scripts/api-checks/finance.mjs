@@ -1,4 +1,4 @@
-import { call, check, done } from './harness.mjs';
+import { call, check, done, receiptFor } from './harness.mjs';
 let r = await call('GET', '/api/analytics?range=12m'); check('analytics 12m shape', r.status === 200 && r.json.points.length === 12 && r.json.deltas.revenue && r.json.deltas.occupancy.unit === 'points' && Array.isArray(r.json.channelMix) && r.json.units.every(u => 'rating' in u), r.text.slice(0, 300));
 r = await call('GET', '/api/analytics?range=3m'); check('analytics 3m', r.status === 200 && r.json.points.length === 3, r.text.slice(0, 200));
 r = await call('GET', '/api/analytics?range=ytd'); check('analytics ytd', r.status === 200 && r.json.points.length === 9, r.text.slice(0, 200));
@@ -7,7 +7,7 @@ r = await call('GET', '/api/analytics?range=3m', undefined, 'housekeeper'); chec
 // expenses
 r = await call('GET', '/api/finance/expenses'); check('expenses list has locked + sentPeriods', r.status === 200 && r.json.data.every(e => 'locked' in e && e.unitNumber) && Array.isArray(r.json.sentPeriods), r.text.slice(0, 250));
 const before = r.json.data.length;
-r = await call('POST', '/api/expenses', { unitId: '#B-08-11', propertyName: 'Arcoris', category: 'internet', amount: 12900, incurredOn: '2026-09-10', description: 'Internet Sep', reference: 'INV-1' }); check('expense create (unit number)', r.status === 201, r.text); const eid = r.json?.id;
+r = await call('POST', '/api/expenses', { unitId: '#B-08-11', propertyName: 'Arcoris', category: 'internet', amount: 12900, incurredOn: '2026-09-10', description: 'Internet Sep', reference: 'INV-1', receiptDocumentId: await receiptFor() }); check('expense create (unit number)', r.status === 201, r.text); const eid = r.json?.id;
 r = await call('POST', '/api/expenses', { unitId: '#B-08-11', category: 'bogus', amount: 1, incurredOn: '2026-09-10' }); check('bad category 422', r.status === 422 && r.json.error.fields.category, r.text);
 r = await call('POST', '/api/expenses', { unitId: '#B-08-11', category: 'water', amount: 12.5, incurredOn: '2026-09-10' }); check('non-integer amount 422', r.status === 422, r.text);
 r = await call('POST', '/api/expenses', { unitId: '#B-08-11', category: 'water', amount: 4500, incurredOn: '2026-09-10' }, 'housekeeper'); check('field role 403', r.status === 403, r.text);

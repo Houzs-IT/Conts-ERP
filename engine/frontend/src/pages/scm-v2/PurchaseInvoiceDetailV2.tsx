@@ -56,6 +56,7 @@ import { FocAmount } from "../../vendor/scm/components/FocAmount";
 import { LinePoRefLink } from "../../vendor/scm/components/LinePoRefLink";
 import { PoPriceReference } from "../../vendor/scm/components/PoPriceReference";
 import { ADD_LINE_LABEL, addLineHref } from "../../vendor/scm/lib/add-line-handoff";
+import { DocAttachments, LineFilesButton } from "../../components/doc-attachments/DocAttachments";
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 type PiStatus =
@@ -518,15 +519,23 @@ function PurchaseInvoiceDetailV2ReadOnly() {
           variant: buildVariantSummary(l.item_group ?? "others", l.variants) || (l.description2 ?? ""),
         });
         return (
-          <div className="min-w-0">
-            <div className="truncate text-[13px] font-semibold text-ink">
-              {primary || "—"}
-            </div>
-            {secondary && (
-              <div className="mt-0.5 flex flex-wrap items-center gap-2 font-mono text-[11px] text-ink-muted">
-                <span className="truncate text-ink-secondary">{secondary}</span>
+          <div className="flex min-w-0 items-start gap-2">
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-[13px] font-semibold text-ink">
+                {primary || "—"}
               </div>
-            )}
+              {secondary && (
+                <div className="mt-0.5 flex flex-wrap items-center gap-2 font-mono text-[11px] text-ink-muted">
+                  <span className="truncate text-ink-secondary">{secondary}</span>
+                </div>
+              )}
+            </div>
+            <LineFilesButton
+              docType="purchase_invoice"
+              docId={purchaseInvoice?.id}
+              lineId={l.id}
+              canEdit={(purchaseInvoice?.status || "").toUpperCase() !== "CANCELLED"}
+            />
           </div>
         );
       },
@@ -902,6 +911,7 @@ function PurchaseInvoiceDetailV2ReadOnly() {
                 emptyLabel="No line items"
               />
             </Section>
+            <DocAttachments docType="purchase_invoice" docId={purchaseInvoice.id} canEdit={!isCancelled} />
           </DetailMain>
 
           <DetailAside>

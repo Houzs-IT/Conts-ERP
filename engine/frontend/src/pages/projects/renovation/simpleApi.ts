@@ -6,6 +6,7 @@ import { api } from "../../../api/client";
 import type { ProjectDetail, SupplyCondition, TaskView } from "./renovationApi";
 import type { FlowStepKey, HoldFlag, PersonRole } from "../../../vendor/shared/renovation-stages";
 import type { ProjectDocuments } from "./projectDocsModel";
+import type { StatusLine } from "./procurementStatusModel";
 
 export type { FlowStepKey, HoldFlag, PersonRole };
 
@@ -28,8 +29,17 @@ export interface AttendingPerson { id: number; name: string; active: boolean; ph
 
 export type TaskViewV2 = TaskView & { category_code?: string | null; occurrence?: number; assignees?: Assignee[]; actual_start: string | null };
 
+/** The current step against its SLA (owner, 16 Oct 2026; engine services/renovation/stepSla.ts). */
+export interface StepSlaStep { key: FlowStepKey; label: string; days: number | null; source: "default" | "project" | "maintenance"; defaultDays: number | null }
+export interface StepSlaView {
+  stepKey: FlowStepKey; enteredOn: string | null; daysIn: number | null; days: number | null; overdueBy: number | null;
+  steps: StepSlaStep[]; totalDays: number | null;
+}
+
 export interface ProjectDetailV2 extends Omit<ProjectDetail, "tasks"> {
   flow: FlowView;
+  /** null before migration 0121 (or from an older engine) */
+  stepSla?: StepSlaView | null;
   hold: Hold | null;
   money: Money;
   keyHolder: KeyHolder | null;
@@ -63,6 +73,12 @@ export interface BoardRowV2 {
   vo: { has: boolean; count: number; approved: number } | null;
   handoverDate: string | null;
   plannedHandoverDate: string | null;
+  /** The day the project was created, and the day it reached Closed (null until then); filled by the system
+      (migration 0117). Optional: an engine older than 15 Oct 2026 does not send them. */
+  startDate?: string | null;
+  endDate?: string | null;
+  /** The current step against its SLA (owner, 16 Oct 2026); null in Closed or before migration 0121. */
+  sla?: { days: number | null; daysIn: number | null; overdueBy: number | null } | null;
   redFlagCount: number;
   /** Optional: an engine older than 15 Oct 2026 sends only the count. */
   redFlags?: Array<{ code: string; text: string }>;
@@ -89,7 +105,12 @@ export interface Person {
   crew?: boolean;
 }
 
-export interface FlowStepRow { step_key: FlowStepKey; label: string; sort_order: number; active: boolean }
+export interface FlowStepRow { step_key: FlowStepKey; label: string; sort_order: number; active: boolean; sla_days?: number | null }
+/** One site task a person is crew on (GET /crew-assignments). */
+export interface CrewAssignment {
+  person_id: number; task_id: number; label: string; state: string; planned_start: string | null; planned_end: string | null;
+  project_id: number; project_code: string | null; project_name: string;
+}
 export interface TaskCategoryRow { code: string; label: string; stage_key: string; trade_code: string | null; internal_key: string | null; sort_order: number; active: boolean; notion: boolean }
 
 export interface StepInfo extends FlowView {
@@ -136,7 +157,13 @@ export const simpleApi = {
   createPerson: (b: { name: string; roles: PersonRole[]; phone?: string | null; notes?: string | null }) => api.post<{ id: number }>(`${R}/people`, b),
   patchPerson: (id: number, b: Partial<{ name: string; roles: PersonRole[]; active: boolean; phone: string | null; notes: string | null }>) =>
     api.patch<{ ok: true }>(`${R}/people/${id}`, b),
-  flowSteps: () => api.get<{ data: FlowStepRow[] }>(`${R}/flow-steps`),
+  flowSteps: () => api.get<{ data: FlowStepRow[]; slaReady?: boolean }>(`${R}/flow-steps`),
+  /** The default days a project may stay in a step; null = no SLA. */
+  setFlowStepSla: (key: FlowStepKey, days: number | null) => api.put<{ ok: true; days: number | null }>(`${R}/flow-steps/${key}/sla`, { days }),
+  /** A project's own days for one of its steps; useDefault puts it back on the default. */
+  setStepSla: (id: number, key: FlowStepKey, b: { days: number | null } | { useDefault: true }) => api.put<{ ok: true; days: number | null }>(`${R}/${id}/step-sla/${key}`, b),
+  setPlannedHandover: (id: number, date: string | null) => api.patch<{ ok: true }>(`${R}/${id}`, { plannedHandoverDate: date }),
+  crewAssignments: () => api.get<{ data: CrewAssignment[] }>(`${R}/crew-assignments`),
   patchFlowStep: (key: FlowStepKey, b: Partial<{ label: string; sortOrder: number; active: boolean }>) => api.patch<{ ok: true }>(`${R}/flow-steps/${key}`, b),
   taskCategories: () => api.get<{ data: TaskCategoryRow[] }>(`${R}/task-categories`),
   patchTaskCategory: (code: string, b: Partial<{ label: string; sortOrder: number; active: boolean }>) => api.patch<{ ok: true }>(`${R}/task-categories/${code}`, b),
@@ -175,6 +202,9 @@ export const simpleApi = {
   procurement: (id: number) => api.get<{ projectId: number; groups: ProcGroup[] }>(`${R}/${id}/procurement`),
   /** Every transaction document of the project (mig 0116); ready: false before it is applied. */
   documents: (id: number) => api.get<ProjectDocuments>(`${R}/${id}/documents`),
+  /** Every item line of the project: ordered, received, delivered, with its GRs and DOs (Procurement details). */
+  /** soCount: the project's sales orders (not cancelled); absent from an engine older than 16 Oct 2026. */
+  procurementStatus: (id: number) => api.get<{ ready: boolean; projectId: number; soCount?: number; lines: StatusLine[] }>(`${R}/${id}/procurement-status`),
   setCategoryDates: (id: number, group: string, b: ProcDates) =>
     api.put<{ ok: true; groups: ProcGroup[] }>(`${R}/${id}/procurement/${encodeURIComponent(group)}`, b),
   setSubDates: (id: number, group: string, sub: string, b: { mode: ProcMode } & Partial<ProcDates>) =>

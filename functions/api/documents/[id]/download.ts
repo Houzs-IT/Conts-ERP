@@ -1,19 +1,25 @@
 import { type Env, one, fail } from '../../../_lib/db';
+import { isOnTask } from '../../../_lib/taskCleaners';
 import { requireSession, isFieldRole } from '../../../_lib/auth';
 import { levelsFor } from '../../../_lib/access';
 import { isAssignee, UNASSIGNED_SQL } from '../../../_lib/maintenance';
+import { VISIBLE } from '../../../_lib/ownerScope';
 
 const INLINE_TYPES = /^(?:image\/(?:png|jpe?g|gif|webp|heic|heif|avif)|video\/(?:mp4|quicktime|webm)|application\/pdf)$/;
 
 interface Doc { storage_key: string; mime_type: string; file_name: string; unit_id: string | null; owner_id: string | null; task_id: string | null; maintenance_id: string | null; visible_to_owner: number | boolean; uploaded_by: string | null }
 
 /** Whether this person may open the file: the file's own record decides, not knowing its id. An owner gets only
- *  files staff marked visible to them; a housekeeper or technician only files on their own jobs (and a technician the photos of a repair nobody has yet); desk roles need
+ *  files staff marked visible to them and the receipts of bills on their own final statements; a housekeeper or technician only files on their own jobs (and a technician the photos of a repair nobody has yet); desk roles need
  *  access to the area the file belongs to (a unit's or a job's files: Properties or Operations; an owner's own
  *  papers and receipts: Owners or Finance). */
-async function mayOpen(env: Env, s: { userId: string; role: string }, d: Doc): Promise<boolean> {
+async function mayOpen(env: Env, s: { userId: string; role: string }, d: Doc, id: string): Promise<boolean> {
   if (s.role === 'management') return true;
   if (s.role === 'owner') {
+    // The receipt of a bill deducted on one of the owner's own statements that is no longer provisional.
+    if (await one(env, `
+      SELECT 1 AS x FROM statement_lines l JOIN expenses e ON e.id = l.expense_id JOIN owner_statements st ON st.id = l.statement_id JOIN owners o ON o.id = st.owner_id
+      WHERE e.receipt_document_id = ? AND o.user_id = ? AND st.state IN ${VISIBLE} LIMIT 1`, id, s.userId)) return true;
     if (!d.owner_id || !d.visible_to_owner) return false;
     return !!(await one(env, 'SELECT 1 AS x FROM owners WHERE id = ? AND user_id = ?', d.owner_id, s.userId));
   }
@@ -22,7 +28,7 @@ async function mayOpen(env: Env, s: { userId: string; role: string }, d: Doc): P
     if (d.task_id) {
       return !!(await one(env, `
         SELECT 1 AS x FROM tasks t LEFT JOIN cleaners c ON c.id = t.cleaner_id
-        WHERE t.id = ? AND (t.assignee_id = ? OR t.completed_by = ? OR c.user_id = ?)`, d.task_id, s.userId, s.userId, s.userId));
+        WHERE t.id = ? AND (t.assignee_id = ? OR t.completed_by = ? OR c.user_id = ?)`, d.task_id, s.userId, s.userId, s.userId)) || await isOnTask(env, d.task_id, s.userId);
     }
     if (d.maintenance_id) {
       // The person who reported the repair, the one doing it, and (to look before picking it up) any technician while nobody has it.
@@ -48,7 +54,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
   const doc = await one<Doc>(env,
     'SELECT storage_key, mime_type, file_name, unit_id, owner_id, task_id, maintenance_id, visible_to_owner, uploaded_by FROM documents WHERE id = ?', id);
   // Refused and missing answer alike, so an id cannot be used to learn that a file exists.
-  if (!doc || !(await mayOpen(env, session, doc))) return fail('NOT_FOUND', 'That file no longer exists.', 404);
+  if (!doc || !(await mayOpen(env, session, doc, id))) return fail('NOT_FOUND', 'That file no longer exists.', 404);
   if (!env.MEDIA) return fail('NOT_CONFIGURED', 'File download is not set up yet. Ask an administrator to enable media storage.', 501);
 
   const object = await env.MEDIA.get(doc.storage_key);

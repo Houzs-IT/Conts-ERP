@@ -3,9 +3,10 @@ import { requireSession } from '../../../_lib/auth';
 import { channexConfigured, channexCreateProperty, channexCreateRoomType, channexCreateRatePlan, channexDeleteProperty, channexDeleteRoomType } from '../../../_lib/channex';
 import { queueFullSync, flushChannexQueue } from '../../../_lib/channexQueue';
 import { ensureOtaRatePlans } from '../../../_lib/channexSync';
+import { purposeOf, NOT_ON_CHANNELS } from '../../../_lib/unitPurpose';
 
 /** POST /api/units/:id/channex-setup — sets the unit up in Channex as a room type (with its rate plan) inside its
- *  building's Channex property, creating that property with the building's first unit (migration 0119: Booking.com
+ *  building's Channex property, creating that property with the building's first unit (migration 0128: Booking.com
  *  sells a building as one property whose room types are the units). Then runs a full sync (500 days of availability,
  *  prices and restrictions). If Channex refuses a step, what this request created is deleted again, so no half-built
  *  listing is left behind. */
@@ -22,6 +23,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
     FROM units u JOIN properties p ON p.id = u.property_id WHERE u.id = ?`, id);
   if (!u) return fail('NOT_FOUND', 'That unit does not exist.', 404);
   if (u.channex_property_id) return fail('CONFLICT', 'This unit is already set up in Channex.', 409);
+  if ((await purposeOf(env, id)) !== 'rental') return fail('NOT_RENTAL', NOT_ON_CHANNELS, 409);
   // Nights without their own price go to Channex at the base price, and Channex discards a zero price.
   if (!(Number(u.base_rate) > 0)) return fail('NO_BASE_PRICE', "Set this unit's nightly price first (Performance, then Pricing). Channex needs a price for every night.", 409);
 

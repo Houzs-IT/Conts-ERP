@@ -48,7 +48,7 @@ describe("renovation Week view items (owner, 15 Oct 2026)", () => {
     expect(daysWithin(null, "2026-10-13", "2026-10-12", "2026-10-18")).toEqual(["2026-10-13"]);
     expect(daysWithin("2026-10-20", "2026-10-22", "2026-10-12", "2026-10-18")).toEqual([]);
   });
-  test("one chip per dated item, sorted by day then kind", () => {
+  test("one card per dated item, sorted by first day then kind; a site task is one card over its range", () => {
     const items = buildCalendarItems({
       onsite: [{ ...P, id: 1, done_on: "2026-10-13" }],
       design: [{ ...P, id: 2, kind: "3d", version: 2, on_day: "2026-10-14" }, { ...P, id: 3, kind: "other", version: 1, on_day: "2026-10-14" }],
@@ -66,8 +66,8 @@ describe("renovation Week view items (owner, 15 Oct 2026)", () => {
       "2026-10-15 task Skyline A-12-3 · Plumbing work",
       "2026-10-16 handover Skyline A-12-3 · Planned handover",
       "2026-10-16 delivery Skyline A-12-3 · Delivery · Furniture / Sofa",
-      "2026-10-16 task Skyline A-12-3 · Plumbing work",
     ]);
+    expect(items.find((i) => i.kind === "task")).toMatchObject({ date: "2026-10-15", end: "2026-10-16", title: "PLUMBING WORK" });
     expect(new Set(items.map((i) => i.key)).size).toBe(items.length);
     expect(items.every((i) => i.projectId === 7)).toBe(true);
   });

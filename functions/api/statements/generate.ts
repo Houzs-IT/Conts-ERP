@@ -1,7 +1,7 @@
 import { type Env, all, one, run, json, fail, audit, nowIso, transaction } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { PLACEHOLDER_OWNER } from '../../_lib/hostplatformImport';
-import { loadInputs, computeMonth, statementSettings, hasActivity, type UnitMonth, type Query } from '../../_lib/ownerStatement';
+import { loadInputs, computeMonth, statementSettings, hasActivity, withYearToDate, type UnitMonth, type Query } from '../../_lib/ownerStatement';
 import { monthEndExclusive } from '../../_lib/revenue';
 import { auditMany } from '../../_lib/history';
 import { notifyUsers } from '../../_lib/notify';
@@ -41,7 +41,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const existingOf = new Map(existing.map(s => [s.owner_id, s]));
 
     const q: Query = (sql, ...args) => all(tx, sql, ...args);
-    const [settings, inputs] = await Promise.all([statementSettings(q), loadInputs(q, start, endEx, ownerIds ? { ownerIds } : {})]);
+    const [settings, loaded] = await Promise.all([statementSettings(q), loadInputs(q, start, endEx, ownerIds ? { ownerIds } : {})]);
+    const inputs = await withYearToDate(q, loaded, period, settings);
     // A unit still waiting for its owner's name has nobody to send a statement to.
     const units = inputs.units.filter(u => u.owner_name.toLowerCase() !== PLACEHOLDER_OWNER.toLowerCase());
     const ids = new Map<string, string>();

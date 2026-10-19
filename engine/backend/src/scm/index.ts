@@ -355,6 +355,7 @@ scm.route("/mfg-purchase-orders", purchaseOrderExports);
 // PATCH /:id/cancel is mounted above, ahead of the area guard.
 // routes/document-cancel-routes.ts — the PO router itself is not edited.
 scm.route("/mfg-purchase-orders", poCancelRequests);
+scm.route("/mfg-purchase-orders", purchaseOrderAttachments); // photos and documents (mig 0119)
 scm.route("/mfg-purchase-orders", renovationPoInfo); // renovation mode (mig 0116): GET /:id/renovation-info
 scm.route("/mfg-purchase-orders", mfgPurchaseOrders);
 // Per-line photo WRITES (upload / delete PO-owned keys) — separate file because
@@ -374,6 +375,7 @@ scm.route("/grns", grnsListEnrichment);
 // The list's two exports (every page the filters match) — static /export/...
 // paths, so also BEFORE the main router's `/:id`.
 scm.route("/grns", grnExports);
+scm.route("/grns", goodsReceivedAttachments); // photos and documents (mig 0119)
 scm.route("/grns", renovationGrInfo); // renovation mode (mig 0116): GET /:id/renovation-info
 scm.route("/grns", grns);
 scm.use("/purchase-invoices/*", scmAreaGuard("scm.procurement.pi"));
@@ -381,6 +383,7 @@ scm.use("/purchase-invoices/*", scmAreaGuard("scm.procurement.pi"));
 // Delivered) the list no longer computes on its critical path. Mounted BEFORE
 // the main router so its static `/list-mrp-enrichment` path resolves ahead of
 // `/:id`. Shares the guard above via the path prefix.
+scm.route("/purchase-invoices", purchaseInvoiceAttachments); // photos and documents (mig 0119)
 scm.route("/purchase-invoices", purchaseInvoicesListEnrichment);
 // The list's two exports — static /export/... paths, BEFORE the main router.
 scm.route("/purchase-invoices", purchaseInvoiceExports);
@@ -414,6 +417,7 @@ scm.use("/mfg-sales-orders/*", migratedSoReadonly());
 // computes on its critical path (READY source-PO chips + readiness/planning
 // verdicts). Mounted BEFORE the main router so its static `/list-mrp-enrichment`
 // path resolves ahead of `/:docNo`. Shares the guard above via the path prefix.
+scm.route("/mfg-sales-orders", salesOrderAttachments); // photos and documents (mig 0119)
 scm.route("/mfg-sales-orders", mfgSalesOrdersListEnrichment);
 // The list's line export (every page the filters match) — a static /export/...
 // path, so also BEFORE the main router's `/:docNo`.
@@ -517,6 +521,7 @@ scm.route("/delivery-orders-mfg", deliveryOrderItemPhotos);
 // path, so also BEFORE the main router's `/:id`.
 scm.route("/delivery-orders-mfg", deliveryOrderExports);
 // Renovation mode (mig 0116): GET /:id/renovation-info, before the main router.
+scm.route("/delivery-orders-mfg", deliveryOrderAttachments); // photos and documents (mig 0119)
 scm.route("/delivery-orders-mfg", renovationDoInfo);
 scm.route("/delivery-orders-mfg", deliveryOrdersMfg);
 // Ported 2026-06-20 — SI backend (skipped in the earlier sync; the vendored SI
@@ -530,14 +535,17 @@ scm.route("/delivery-orders-mfg", deliveryOrdersMfg);
 scm.use("/sales-invoices/*", scmAreaGuard("scm.sales.invoices", { readInheritsFrom: "scm.sales.orders" }));
 // The list's two exports — static /export/... paths, BEFORE the main router.
 scm.route("/sales-invoices", salesInvoiceExports);
+scm.route("/sales-invoices", salesInvoiceAttachments); // photos and documents (mig 0119)
 scm.route("/sales-invoices", renovationSiInfo); // renovation mode (mig 0116): GET /:id/renovation-info
 scm.route("/sales-invoices", salesInvoices);
 scm.use("/delivery-returns/*", scmAreaGuard("scm.sales.returns"));
 // The list's ONE export (every return the filters match) — a static
 // /export/rows path, so BEFORE the main router's `/:id`; same area guard.
+scm.route("/delivery-returns", deliveryReturnAttachments); // photos and documents (mig 0119)
 scm.route("/delivery-returns", deliveryReturnExports);
 scm.route("/delivery-returns", deliveryReturns);
 scm.use("/purchase-returns/*", scmAreaGuard("scm.procurement.pr"));
+scm.route("/purchase-returns", purchaseReturnAttachments); // photos and documents (mig 0119)
 scm.route("/purchase-returns", purchaseReturnExports);
 scm.route("/purchase-returns", purchaseReturns);
 // ── Consignment (scm.consignment.*) ─────────────────────────────────────────
@@ -599,12 +607,14 @@ scm.use("/stock-takes/*", scmAreaGuard("scm.warehouse.stock_take"));
 scm.route("/stock-takes", stockTakes);
 // ── SCM Finance (scm.finance.accounting) ────────────────────────────────────
 scm.use("/accounting/*", scmAreaGuard("scm.finance.accounting"));
+scm.route("/accounting", officialReceiptAttachments); // photos and documents (mig 0119)
 scm.route("/accounting", accounting);
 // Payment Vouchers — standalone AP cash-out doc (port of 2990 0189/0202, Phase
 // 1-B MYR). A finance document that posts a JE to the GL + can settle PIs, so it
 // rides the same L2 area guard as Accounting (GET=view, POST/PATCH=edit); the
 // finer scm.payment_voucher.* gates layer on inside the handlers.
 scm.use("/payment-vouchers/*", scmAreaGuard("scm.finance.accounting"));
+scm.route("/payment-vouchers", paymentVoucherAttachments); // photos and documents (mig 0119)
 scm.route("/payment-vouchers", paymentVouchers);
 // Other Debtors (owner 2026-09-03) — registry + debtor bills + receipts; the
 // same area and the same PV permission family gate the handlers inside.
@@ -613,20 +623,24 @@ scm.route("/other-debtors", otherDebtors);
 // Receipts (owner 2026-09-03, later the same day) — the unified money-in list
 // plus general receipts that post directly; same area, same key family.
 scm.use("/receipts/*", scmAreaGuard("scm.finance.accounting"));
+scm.route("/receipts", receiptAttachments); // photos and documents (mig 0119)
 scm.route("/receipts", receipts);
 // AP Invoices (owner 2026-09-06) — the non-stock supplier bill beside the
 // purchase invoices it is paid alongside; same area, same PV key family.
 scm.use("/ap-invoices/*", scmAreaGuard("scm.finance.accounting"));
+scm.route("/ap-invoices", apInvoiceAttachments); // photos and documents (mig 0119)
 scm.route("/ap-invoices", apInvoices);
 // Credit and debit notes (owner 2026-09-12; docs/bugs/0827) — the customer's
 // CN / DN and the supplier's SCN, raised by Finance; same area, same PV key
 // family as the AP invoice beside it.
 scm.use("/credit-notes/*", scmAreaGuard("scm.finance.accounting"));
+scm.route("/credit-notes", creditNoteAttachments); // photos and documents (mig 0119)
 scm.route("/credit-notes", creditNotes);
 // Deposit invoices (owner 2026-09-12; docs/bugs/0828) — born with a customer
 // payment when the company's switch is on; Finance reads, cancels, re-posts,
 // and holds the switch. Same area as the notes and receipts beside it.
 scm.use("/deposit-invoices/*", scmAreaGuard("scm.finance.accounting"));
+scm.route("/deposit-invoices", depositInvoiceAttachments); // photos and documents (mig 0119)
 scm.route("/deposit-invoices", depositInvoices);
 // Payment Audit Log — Finance's payment TRAIL (port of 2990's /admin/audit-log):
 // one row per mfg_sales_order_payments entry + its SO header context. Read-only.
@@ -967,6 +981,8 @@ scm.route("/site-receipts", siteReceipts);
 // scm.renovation.* key inside routes/renovation.ts.
 import { renovation } from "./routes/renovation";
 scm.use("/renovation/*", scmAreaGuard("scm.sales.orders", { writeLevel: "view" }));
+scm.route("/renovation", quotationAttachments); // photos and documents (mig 0119)
+scm.route("/renovation", variationOrderAttachments); // photos and documents (mig 0119)
 scm.route("/renovation", renovation);
 
 // ── Renovation mode: a sales order's "Order information" (project, property; mig 0112) ──
@@ -974,7 +990,17 @@ scm.route("/renovation", renovation);
 // Sales Orders edit, like the header it sits in.
 import { renovationSoInfo } from "./routes/renovation-so-info";
 // Renovation document flow (mig 0116): each DO / SI / PO / GR answers GET /:id/renovation-info on its own prefix (mounted above).
+import {
+  deliveryOrderAttachments, deliveryReturnAttachments, docAttachmentsImport, goodsReceivedAttachments, purchaseInvoiceAttachments,
+  purchaseOrderAttachments, purchaseReturnAttachments, quotationAttachments, receiptAttachments, salesInvoiceAttachments,
+  salesOrderAttachments, variationOrderAttachments, creditNoteAttachments, officialReceiptAttachments, depositInvoiceAttachments,
+  paymentVoucherAttachments, apInvoiceAttachments,
+} from "./routes/doc-attachments";
 import { renovationDoInfo, renovationGrInfo, renovationPoInfo, renovationSiInfo } from "./routes/renovation-doc-flow";
+// Import document files (mig 0119): the check that turns document numbers into documents. Reads only; each upload
+// then goes through its document's own prefix and guard.
+scm.use("/doc-attachments/*", scmAreaGuard("scm.sales.orders", { writeLevel: "view" }));
+scm.route("/doc-attachments", docAttachmentsImport);
 scm.use("/renovation-so-info/*", scmAreaGuard("scm.sales.orders"));
 scm.route("/renovation-so-info", renovationSoInfo);
 

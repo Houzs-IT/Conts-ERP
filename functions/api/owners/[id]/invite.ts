@@ -24,10 +24,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   await run(env, 'UPDATE owners SET user_id = ?, updated_at = ? WHERE id = ?', userId, now, id);
 
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'owner.invite', entityTable: 'owners', entityId: id, after: { userId } });
-  await notify(env, {
+  const delivery = await notify(env, {
     template: 'account.invited', recipient: owner.email, channel: 'email', subject: 'Your Conts owner portal',
     body: `${session.fullName} created your owner portal account.\n\nEmail: ${owner.email}\nTemporary password: ${temp}\n\nYou will be asked to choose a new password when you first sign in.`,
     entityTable: 'users', entityId: userId,
+    urgent: true, // transactional, like the staff invite: it must not wait for quiet hours to end at 08:00
   });
-  return json({ ok: true, userId }, 201);
+  return json({ ok: true, userId, delivery: delivery.state, reason: delivery.reason }, 201);
 };

@@ -1,3 +1,4 @@
+import { replanTurnover, ensureTurnovers } from './cleaning';
 import { type Env, one, all, run, audit, nowIso } from './db';
 import type { Session } from './auth';
 import { findClash, clashResponseBody, withUnitLock } from './reservations';
@@ -220,7 +221,10 @@ export async function applyMove(env: Env, session: Session & { manage?: boolean 
       // vocab-ok: stored task title, matched by title in SQL
       const r = await removeUntouchedTasks(env, session, id, 'Prepare for arrival');
       effects.tasksRemoved = r.removed; effects.tasksKept = r.kept;
+      // The automatic turnover job (ensureTurnovers) goes too when nobody is on it yet.
+      await replanTurnover(env, id, false);
     }
+    if (target === 'confirmed' && (cur.state === 'cancelled' || cur.state === 'no_show')) await ensureTurnovers(env, { reservationIds: [id] });
   } catch (e) {
     await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'reservation.side_effect_failed', entityTable: 'reservations', entityId: id, after: { to: target, error: e instanceof Error ? e.message : String(e) } }).catch(() => {});
   }

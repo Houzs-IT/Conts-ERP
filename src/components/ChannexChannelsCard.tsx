@@ -32,7 +32,7 @@ export default function ChannexChannelsCard({ unitId, linked, canManage, onChang
   const conns = useApi<{ data: Connection[] }>(linked ? `/units/${unitId}/channels` : null);
   const connected = conns.data?.data ?? [];
   const has = (o: Ota) => connected.some(c => c.ota === o);
-  // Since migration 0119 a unit is set up inside its building's Channex listing, and Booking.com / Agoda are connected
+  // Since migration 0128 a unit is set up inside its building's Channex listing, and Booking.com / Agoda are connected
   // for the building (one hotel, each unit one of its rooms). A unit set up before that keeps its own listing and the
   // one-unit connection below.
   const building = useApi<{ channexListing: boolean; units: BuildingChannelUnit[] }>(linked && buildingId ? `/properties/${buildingId}/channels` : null);

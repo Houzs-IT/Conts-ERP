@@ -1,5 +1,6 @@
 import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
+import { seedCompanyViews } from '../../_lib/tableLayoutSeeds';
 import { TABLE_KEY, cleanLayout, cleanName, mayShare, mayUseViews, toView, type ViewRow } from '../../_lib/tableLayouts';
 
 const COLS = 'id, table_key, user_id, name, is_default, layout, created_by, updated_at';
@@ -12,6 +13,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if (!mayUseViews(session.role)) return fail('FORBIDDEN', 'Saved views are not available on this account.', 403);
   const table = new URL(request.url).searchParams.get('table') ?? '';
   if (!TABLE_KEY.test(table)) return fail('VALIDATION', 'Say which table.', 422);
+  // A missing seed must never stop someone's own views from loading.
+  await seedCompanyViews(env, table).catch(() => {});
   const rows = await all<ViewRow>(env, `SELECT ${COLS} FROM table_layouts WHERE table_key = ? AND (user_id = ? OR user_id IS NULL)
     ORDER BY is_default DESC, lower(name)`, table, session.userId);
   const views = rows.map(r => toView(r, session.userId));

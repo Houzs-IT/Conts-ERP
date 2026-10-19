@@ -27,6 +27,22 @@ export interface NavGroup { label: string; workspace: Workspace; items: NavItem[
  */
 const SUPPLY_SUPPORT = 'SUPPORT';
 
+export type SettingsSectionKey = 'company' | 'operations' | 'locale' | 'report' | 'agreement' | 'approvals' | 'services' | 'security';
+
+/** The Settings page's categories, one screen each (/system/settings/<key>). The desktop menu nests them under
+ *  Settings and the phone Settings tab lists them under these headers, so both name and order them the same. */
+export const SETTINGS_SECTIONS: { key: SettingsSectionKey; group: string; label: string; icon: string; description: string }[] = [
+  { key: 'company', group: 'ORGANISATION', label: 'Company details', icon: 'Building2', description: 'Printed on the letterhead of every owner statement, guest invoice and receipt.' },
+  { key: 'operations', group: 'ORGANISATION', label: 'Check-in and checkout', icon: 'Clock', description: 'Standard times the cleaning board uses when a reservation has none of its own.' },
+  { key: 'locale', group: 'OWNERS AND MONEY', label: 'Operator share', icon: 'Percent', description: 'The share owner statements take when a unit\'s contract does not set one.' },
+  { key: 'report', group: 'OWNERS AND MONEY', label: 'Owner statements', icon: 'FileText', description: 'Wording on the Owner Income Report, and its monthly miscellaneous charge.' },
+  { key: 'agreement', group: 'OWNERS AND MONEY', label: 'Agreement template', icon: 'FileSignature', description: 'The management agreement that Generate agreement fills in from the unit, owner and contract.' },
+  // Not "Approvals": the Finance menu already has an Approvals entry (the queue itself).
+  { key: 'approvals', group: 'OWNERS AND MONEY', label: 'Approval rules', icon: 'Stamp', description: 'Whether money going out waits for a second person to approve it.' },
+  { key: 'services', group: 'OWNERS AND MONEY', label: 'Service prices', icon: 'Tag', description: 'Cleaning and maintenance items: what the owner is charged, what each costs us, and from when.' },
+  { key: 'security', group: 'SECURITY', label: 'Sign-in and sessions', icon: 'Lock', description: 'How long people stay signed in, when accounts lock, and who needs two-step sign-in.' },
+];
+
 export const NAV: NavGroup[] = [
   { label: 'HOME', workspace: 'rental', items: [
     { key: 'dashboard', label: 'Dashboard', icon: 'layout-dashboard', path: '/', area: 'dashboard' },
@@ -51,6 +67,8 @@ export const NAV: NavGroup[] = [
   { label: 'UNITS', workspace: 'rental', items: [
     // Buildings, the unit record and access codes are one Units screen (owner, 8 Oct).
     { key: 'units', label: 'Units', icon: 'building-2', path: '/properties/units', area: 'properties' },
+    // Units we find a long-term tenant for, for the owner (staff sheet UNIT, 17 Oct 2026).
+    { key: 'agentToLet', label: 'Agent to let', icon: 'key-round', path: '/properties/agent-to-let', area: 'properties' },
     // Owner statements and owner payouts live on the owner (owner, 11 Oct 2026): each owner's page, and the Owners
     // list's Statements and Payouts tabs for a whole month. Their old addresses redirect (App.tsx).
     { key: 'ownerList', label: 'Owners', icon: 'user-round', path: '/owners', area: 'owners', badge: 'statements' },
@@ -59,6 +77,8 @@ export const NAV: NavGroup[] = [
   // Finance's desk work. Not on the phone (owner, 11 Oct 2026: money is not needed on the phone).
   { label: 'FINANCE', workspace: 'rental', phone: false, items: [
     { key: 'payables', label: 'Accounts payable', icon: 'wallet', path: '/finance/payables', area: 'finance' },
+    // Staff could not find where utilities go (comment sheet, Oct 2026): the month's bills of every unit, on Accounts payable.
+    { key: 'utilityBills', label: 'Utility bills', icon: 'zap', path: '/finance/utility-bills', area: 'finance' },
     { key: 'approvals', label: 'Approvals', icon: 'stamp', path: '/finance/approvals', area: 'finance', badge: 'approvals' },
   ] },
   { label: 'GROWTH', workspace: 'rental', items: [
@@ -69,7 +89,12 @@ export const NAV: NavGroup[] = [
   { label: 'SYSTEM', workspace: 'rental', items: [
     { key: 'users', label: 'Users and roles', icon: 'shield-check', path: '/system/users', area: 'users' },
     { key: 'integrations', label: 'Integrations', icon: 'plug', path: '/system/integrations', area: 'integrations' },
-    { key: 'settings', label: 'Settings', icon: 'settings', path: '/system/settings', area: 'settings' },
+    // My account and Notifications are every person's own, so they carry an area no role is ever denied.
+    { key: 'settings', label: 'Settings', icon: 'settings', area: 'settings', children: [
+      ...SETTINGS_SECTIONS.map(s => ({ key: `settings_${s.key}`, label: s.label, path: `/system/settings/${s.key}` })),
+      { key: 'myAccount', label: 'My account', path: '/account', area: 'account' },
+      { key: 'notifications', label: 'Notifications', path: '/notifications', area: 'account' },
+    ] },
     { key: 'health', label: 'System health', icon: 'activity', path: '/system/health', area: 'health' },
     // Every desk role: report a problem with the system to IT and follow it. No permission area, since a person
     // only ever reads their own requests (functions/_lib/itHub.ts). Its count comes from lib/itSupport.ts.
