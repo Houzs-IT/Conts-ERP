@@ -18,7 +18,6 @@ export default function SplitPane(props: {
   open: boolean;
   onClose: () => void;
   width?: number;
-  /** The list turns into narrow cards while the detail is open, so the detail keeps its width on smaller screens too. */
   compactList?: boolean;
 }) {
   const { list, detail, open, onClose } = props;

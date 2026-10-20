@@ -184,7 +184,6 @@ export function ComboInput({ value, onChange, options, label, placeholder, maxLe
           <Icon name="ChevronDown" size="sm" />
         </button>
       </div>
-      {/* Drawn over the page, not inside the dialog, so the dialog's scroll box and footer cannot cut it off. */}
       <Floating anchor={field} open={open && shown.length > 0} onClose={() => setOpen(false)} label={label}
         width={field.current?.offsetWidth} maxHeight={260}>
         <div id={listId} role="listbox" aria-label={label} className="py-1">

@@ -173,23 +173,22 @@ export const isDay = (v: unknown): v is string => typeof v === 'string' && /^\d{
  *  instant) never is, so later reads still know it was automatic. Never throws: a screen read must not fail over it. */
 export async function autoGuestLeft(env: Env, rows: any[], stdOut: string): Promise<void> {
   const now = Date.now();
-  let due: { r: any; id: string; at: string; time: string; unit: string | null }[] = [];
+  let due: { row: any; id: string; at: string; time: string; unit: string | null }[] = [];
   for (const r of rows) {
     if (r.guest_left_at || !r.prev_id || r.prev_state === 'checked_out' || r.state === 'resolved' || !r.day) continue;
     const time = r.prev_time && /^\d{2}:\d{2}$/.test(r.prev_time) ? r.prev_time : stdOut;
     const at = `${r.day}T${time}:00+08:00`;
     if (Date.parse(at) > now) continue;
-    due.push({ r, id: r.id, at, time, unit: r.unit_id ?? null });
+    due.push({ row: r, id: r.id, at, time, unit: r.unit_id ?? null });
   }
   if (!due.length) return;
   try {
-    // Someone took the mark back ("guest still in"): the clean waits for a tap, or it would be marked again on the next read.
-    const undone = await all<{ id: string }>(env, `
+    const unmarkedByStaff = await all<{ id: string }>(env, `
       SELECT DISTINCT l.entity_id AS id FROM audit_log l
       WHERE l.entity_table = 'tasks' AND l.action = 'task.guest_left_undo' AND l.entity_id IN (SELECT jsonb_array_elements_text(?::text::jsonb))`,
       JSON.stringify(due.map(d => d.id)));
-    due = due.filter(d => !undone.some(u => u.id === d.id));
-    for (const d of due) { d.r.guest_left_at = d.at; d.r.guest_left_auto = true; }
+    due = due.filter(d => !unmarkedByStaff.some(u => u.id === d.id));
+    for (const d of due) { d.row.guest_left_at = d.at; d.row.guest_left_auto = true; }
     if (!due.length) return;
     const stamp = nowIso();
     // Only the rows this read stamped get a history line: two screens reading at once write it once.

@@ -250,7 +250,6 @@ function IssueTable({ tab, rows, loading, error, onRetry, selected, onSelect, mo
     { key: 'category', label: 'Category', value: i => i.category, text: i => CATEGORY[i.category] ?? i.category, width: 120, filter: false, hidden: true },
     { key: 'urgency', label: 'Type', type: 'status', value: i => typeOf(i),
       status: i => ({ label: JOB_TYPE[typeOf(i)], tone: typeOf(i) === 'urgent' ? 'critical' : typeOf(i) === 'pass_key' ? 'info' : 'neutral' }), width: 110, phone: 'meta' },
-    // Status sits early: with the detail panel open the table scrolls sideways and the right-hand columns are hidden.
     { key: 'status', label: 'Status', type: 'status', value: i => statusOf(i).label, status: i => { const s = statusOf(i); return { label: s.label, tone: s.tone === 'gold' ? 'neutral' : s.tone }; }, width: 160 },
     { key: 'assignee', label: 'Assigned to', value: i => i.vendorName, text: i => (i.vendorName ? `${i.vendorName} ${i.assigneeKind === 'in_house' ? '(in-house)' : '(contractor)'}` : 'Unassigned'), width: 160,
       render: i => (i.vendorName
@@ -277,7 +276,7 @@ function IssueTable({ tab, rows, loading, error, onRetry, selected, onSelect, mo
     <>
       <DataTable<Issue>
         id="maintenance.jobs" columns={columns} rows={rows} rowKey={i => i.id} loading={loading} error={error} onRetry={onRetry}
-        renderCard={i => <JobCard i={i} money={money} />} compact={!!selected}
+        renderCard={i => <JobCard i={i} money={money} />} cardsOnly={!!selected}
         onRowClick={i => onSelect(i.id)} rowTone={i => (i.id === selected ? 'gold' : i.state === 'resolved' ? 'muted' : null)}
         noun={['job', 'jobs']} exportName="maintenance-jobs" selectionKey={tab} above={above}
         filtered={filtered} onClearFilters={onClearFilters}
@@ -450,7 +449,6 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
       </div>
       <div className="flex gap-1.5 flex-wrap">
         <StatusBadge tone={typeOf(i) === 'urgent' ? 'critical' : typeOf(i) === 'pass_key' ? 'info' : 'neutral'}>{JOB_TYPE[typeOf(i)]}</StatusBadge>
-        {/* "Needed" is already the status badge and "Not needed" is noise; only a yes adds anything here. */}
         {i.approvalStatus === 'approved' && <StatusBadge tone="success">Owner approved</StatusBadge>}
         <StatusBadge tone="neutral">{CATEGORY[i.category] ?? i.category}</StatusBadge>
         <StatusBadge tone={statusOf(i).tone}>{statusOf(i).label}</StatusBadge>
@@ -662,9 +660,7 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
               )}
             </section>
           )}
-          {/* Phones have no hover, so the reason a button is off is written out. The bar sticks to the bottom of a long sheet on phones.
-              It goes last there (after History), or scrolling to the end leaves it mid-sheet with content under it; and it is a flat
-              strip, not one of the sheet's cards (devices.css), whose border and padding the "!" overrides. */}
+          {/* Phones have no hover, so the reason a button is off is written out. The bar sticks to the bottom of a long sheet on phones. */}
           {(!started(i) || money) && <section className="flex flex-col gap-2 pt-4 [border-top:1px_solid_var(--color-line-soft)] max-sm:order-last max-sm:sticky max-sm:bottom-0 max-sm:z-[2] max-sm:-mx-5 max-sm:-mb-5 max-sm:px-5! max-sm:pb-4! max-sm:rounded-none! max-sm:border-x-0! max-sm:border-b-0! max-sm:bg-card max-sm:shadow-[0_-6px_12px_-8px_rgba(0,0,0,0.25)]">
             <div className="flex gap-2">
               {!started(i) && <Button variant="secondary" className="flex-1" loading={busy === 'start'} disabled={awaitingOwner(i)} disabledReason="Waiting for the owner's approval."

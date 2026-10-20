@@ -32,8 +32,7 @@ export interface Env {
   /** Encrypts each person's two-step sign-in secret at rest (functions/_lib/twoFactor.ts). Without it, setting up
    *  two-step sign-in is refused with a plain message; signing in with a password still works. */
   TOTP_ENC_KEY?: string;
-  /** Local dev only (.dev.vars), e.g. "pos": for a connection as a role other than pos_app, whose search_path is not
-   *  pos. Local Hyperdrive drops every query parameter but sslmode from the connection string, so it cannot go there. */
+  /** Local dev only (.dev.vars): local Hyperdrive drops search_path from the connection string. */
   DB_SEARCH_PATH?: string;
   /** Set only on the copy of env that transaction() hands its callback: every query through that copy runs on the
    *  transaction's one connection. Never set in wrangler. */
