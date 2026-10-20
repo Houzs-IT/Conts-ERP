@@ -53,7 +53,7 @@ const trackings = H.fabric_trackings.filter((r) => r.is_active);
 const addons = H.special_addons;
 const newCompartments = H.compartment_library; // existing Conts ids are kept by on conflict do nothing
 
-const CO = `(select id from public.companies where code = 'CONTS')`;
+const CO = `(select id from public.companies where code = 'HOUZS')`;
 const chunk = (rows, n = 200) => Array.from({ length: Math.ceil(rows.length / n) }, (_, i) => rows.slice(i * n, i * n + n));
 
 const out = [];
@@ -89,7 +89,7 @@ select 'mch-houzs-20261020', 'master',
   'Houzs Century bedframe / sofa maintenance copied in (owner, 20 Oct 2026). Source: Houzs snapshot 16 Oct 2026, config ${H.config.id}.',
   c.id
 from public.companies c
-where c.code = 'CONTS' and not exists (select 1 from scm.maintenance_config_history where id = 'mch-houzs-20261020');
+where c.code = 'HOUZS' and not exists (select 1 from scm.maintenance_config_history where id = 'mch-houzs-20261020');
 `);
 
 out.push(`-- 2. Special add-ons (Bedframe / Sofa Specials). cost_price_sen is the RM cost the Maintenance screen edits.

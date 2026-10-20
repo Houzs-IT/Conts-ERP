@@ -1,5 +1,5 @@
 -- REVERSAL: delete from scm.maintenance_config_history where id = 'mch-houzs-20261020'; delete from scm.special_addons_history where id = 'sah-houzs-20261020';
---   delete from scm.special_addons s where s.code in (<codes below>) and s.created_by is null and s.company_id = (select id from public.companies where code = 'CONTS');
+--   delete from scm.special_addons s where s.code in (<codes below>) and s.created_by is null and s.company_id = (select id from public.companies where code = 'HOUZS');
 --   delete from scm.fabric_trackings / fabric_colours / fabric_library rows whose ids are listed below, when no document line names them.
 -- Houzs Century's furniture product maintenance, copied for The Conts (owner, 20 Oct 2026; CLAUDE.md engine section):
 -- bedframe and sofa variant pools, Products maintenance pools (bedframe / mattress sizes, sofa compartments,
@@ -29,11 +29,11 @@ select 'mch-houzs-20261020', 'master',
   'Houzs Century bedframe / sofa maintenance copied in (owner, 20 Oct 2026). Source: Houzs snapshot 16 Oct 2026, config mch-d3d9a66ff6d4.',
   c.id
 from public.companies c
-where c.code = 'CONTS' and not exists (select 1 from scm.maintenance_config_history where id = 'mch-houzs-20261020');
+where c.code = 'HOUZS' and not exists (select 1 from scm.maintenance_config_history where id = 'mch-houzs-20261020');
 
 -- 2. Special add-ons (Bedframe / Sofa Specials). cost_price_sen is the RM cost the Maintenance screen edits.
 insert into scm.special_addons (code, label, so_description, categories, selling_price_sen, cost_price_sen, option_groups, active, sort_order, company_id)
-select v.*, (select id from public.companies where code = 'CONTS') from (values
+select v.*, (select id from public.companies where code = 'HOUZS') from (values
   ('1 Piece Divan', '1 Piece Divan', '', array['BEDFRAME']::text[], 0, 25000, '[]'::jsonb, true, 0),
   ('5537 Backrest', '5537 Backrest', '', array['SOFA']::text[], 0, 0, '[]'::jsonb, false, 0),
   ('5540 Backrest', '5540 Backrest', '', array['SOFA']::text[], 0, 5000, '[]'::jsonb, true, 0),
@@ -78,12 +78,12 @@ on conflict (company_id, code) do nothing;
 
 insert into scm.special_addons_history (id, addons, effective_from, notes, company_id)
 select 'sah-houzs-20261020', '[{"code":"1 Piece Divan","label":"1 Piece Divan","soDescription":"","categories":["BEDFRAME"],"sellingPriceSen":0,"costPriceSen":25000,"optionGroups":[],"active":true,"sortOrder":0},{"code":"5537 Backrest","label":"5537 Backrest","soDescription":"","categories":["SOFA"],"sellingPriceSen":0,"costPriceSen":0,"optionGroups":[],"active":false,"sortOrder":0},{"code":"5540 Backrest","label":"5540 Backrest","soDescription":"","categories":["SOFA"],"sellingPriceSen":0,"costPriceSen":5000,"optionGroups":[],"active":true,"sortOrder":0},{"code":"Backcushion Firmer","label":"Backcushion Firmer","soDescription":"","categories":["SOFA"],"sellingPriceSen":0,"costPriceSen":0,"optionGroups":[],"active":true,"sortOrder":0},{"code":"Change 8030 Backcushion","label":"Change 8030 Backcushion","soDescription":"","categories":["SOFA"],"sellingPriceSen":0,"costPriceSen":0,"optionGroups":[],"active":true,"sortOrder":0},{"code":"change to 5535 back cushion","label":"change to 5535 back cushion","soDescription":"","categories":["SOFA"],"sellingPriceSen":0,"costPriceSen":0,"optionGroups":[],"active":true,"sortOrder":0},{"code":"change to 9028 back cushion","label":"change to 9028 back cushion","soDescription":"","categories":["SOFA"],"sellingPriceSen":0,"costPriceSen":0,"optionGroups":[],"active":true,"sortOrder":0},{"code":"change to 9050 back cushion","label":"change to 9050 back cushion","soDescription":"","categories":["SOFA"],"sellingPriceSen":0,"costPriceSen":0,"optionGroups":[],"active":true,"sortOrder":0},{"code":"change to 9058 back cushion","label":"change to 9058 back cushion","soDescription":"","categories":["SOFA"],"sellingPriceSen":0,"costPriceSen":0,"optionGroups":[],"active":true,"sortOrder":0},{"code":"Divan A11","label":"Divan A11","soDescription":"","categories":["BEDFRAME"],"sellingPriceSen":0,"costPriceSen":0,"optionGroups":[],"active":false,"sortOrder":0},{"code":"Divan Curve","label":"Divan Curve","soDescription":"","categories":["BEDFRAME"],"sellingPriceSen":0,"costPriceSen":5000,"optionGroups":[],"active":true,"sortOrder":0},{"code":"Divan Full Cover","label":"Divan Full Cover","soDescription":"","categories":["BEDFRAME"],"sellingPriceSen":0,"costPriceSen":8000,"optionGroups":[],"active":true,"sortOrder":0},{"code":"Divan Top Fully Cover","label":"Divan Top Fully Cover","soDescription":"","categories":["BEDFRAME"],"sellingPriceSen":0,"costPriceSen":5000,"optionGroups":[],"active":true,"sortOrder":0},{"code":"Divan Top(W)","label":"Divan Top(W)","soDescription":"","categories":["BEDFRAME"],"sellingPriceSen":0,"costPriceSen":0,"optionGroups":[],"active":true,"sortOrder":0},{"code":"Front Drawer","label":"Front Drawer","soDescription":"","categories":["BEDFRAME"],"sellingPriceSen":0,"costPriceSen":13000,"optionGroups":[],"active":true,"sortOrder":0},{"code":"HB Fully Cover","label":"HB Fully Cover","soDescription":"","categories":["BEDFRAME"],"sellingPriceSen":0,"costPriceSen":5000,"optionGroups":[],"active":true,"sortOrder":0},{"code":"HB Straight","label":"HB Straight","soDescription":"","categories":["BEDFRAME"],"sellingPriceSen":0,"costPriceSen":0,"optionGroups":[],"active":true,"sortOrder":0},{"code":"Headboard Only","label":"Headboard Only","soDescription":"","categories":["BEDFRAME"],"sellingPriceSen":0,"costPriceSen":0,"optionGroups":[],"active":true,"sortOrder":0},{"code":"Left Drawer","label":"Left Drawer","soDescription":"","categories":["BEDFRAME"],"sellingPriceSen":0,"costPriceSen":16000,"optionGroups":[],"active":true,"sortOrder":0},{"code":"No bracket","label":"No bracket","soDescription":"","categories":["SOFA"],"sellingPriceSen":0,"costPriceSen":0,"optionGroups":[],"active":true,"sortOrder":0},{"code":"No notch on Seat Cushion","label":"No notch on Seat Cushion","soDescription":"","categories":["SOFA"],"sellingPriceSen":0,"costPriceSen":0,"optionGroups":[],"active":true,"sortOrder":0},{"code":"No Side Panel","label":"No Side Panel","soDescription":"","categories":["BEDFRAME"],"sellingPriceSen":0,"costPriceSen":-4000,"optionGroups":[],"active":true,"sortOrder":0},{"code":"Nylon Fabric","label":"Nylon Fabric","soDescription":"","categories":["SOFA"],"sellingPriceSen":0,"costPriceSen":0,"optionGroups":[],"active":true,"sortOrder":0},{"code":"Right Drawer","label":"Right Drawer","soDescription":"","categories":["BEDFRAME"],"sellingPriceSen":0,"costPriceSen":16000,"optionGroups":[],"active":true,"sortOrder":0},{"code":"Seat Add 1ft","label":"Seat Add 1ft","soDescription":"","categories":["SOFA"],"sellingPriceSen":0,"costPriceSen":0,"optionGroups":[],"active":true,"sortOrder":0},{"code":"Seat and Backcushion Firmer","label":"Seat and Backcushion Firmer","soDescription":"","categories":["SOFA"],"sellingPriceSen":0,"costPriceSen":0,"optionGroups":[],"active":true,"sortOrder":0},{"code":"Seat Base Fully Cover with no Leg","label":"Seat Base Fully Cover with no Leg","soDescription":"","categories":["SOFA"],"sellingPriceSen":0,"costPriceSen":0,"optionGroups":[],"active":true,"sortOrder":0},{"code":"Seat Behind Extend 4\"","label":"Seat Behind Extend 4\"","soDescription":"","categories":["SOFA"],"sellingPriceSen":0,"costPriceSen":0,"optionGroups":[],"active":true,"sortOrder":0},{"code":"Seat Behind Extend 5\"","label":"Seat Behind Extend 5\"","soDescription":"","categories":["SOFA"],"sellingPriceSen":0,"costPriceSen":50000,"optionGroups":[],"active":true,"sortOrder":0},{"code":"Seat Cushion No Notch and Plain","label":"Seat Cushion No Notch and Plain","soDescription":"","categories":["SOFA"],"sellingPriceSen":0,"costPriceSen":0,"optionGroups":[],"active":true,"sortOrder":0},{"code":"Seat Firmer","label":"Seat Firmer","soDescription":"","categories":["SOFA"],"sellingPriceSen":0,"costPriceSen":0,"optionGroups":[],"active":true,"sortOrder":0},{"code":"Separate Backrest Packing","label":"Separate Backrest Packing","soDescription":"","categories":["SOFA"],"sellingPriceSen":0,"costPriceSen":0,"optionGroups":[],"active":true,"sortOrder":0},{"code":"Short Backrest","label":"Short Backrest","soDescription":"","categories":["SOFA"],"sellingPriceSen":0,"costPriceSen":0,"optionGroups":[],"active":true,"sortOrder":0},{"code":"Wooden Arm","label":"Wooden Arm","soDescription":"","categories":["SOFA"],"sellingPriceSen":0,"costPriceSen":0,"optionGroups":[],"active":true,"sortOrder":0},{"code":"Hydraulic","label":"Hydraulic","soDescription":"Hydraulic","categories":["BEDFRAME"],"sellingPriceSen":0,"costPriceSen":0,"optionGroups":[],"active":false,"sortOrder":1},{"code":"HYDRAULIC","label":"HYDRAULIC","soDescription":"HYDRAULIC","categories":["BEDFRAME"],"sellingPriceSen":0,"costPriceSen":0,"optionGroups":[],"active":true,"sortOrder":1},{"code":"SIDE PANEL","label":"SIDE PANEL","soDescription":"","categories":["BEDFRAME"],"sellingPriceSen":0,"costPriceSen":0,"optionGroups":[],"active":true,"sortOrder":14},{"code":"PULL OUT LEFT","label":"PULL OUT LEFT","soDescription":"","categories":["BEDFRAME"],"sellingPriceSen":0,"costPriceSen":0,"optionGroups":[],"active":true,"sortOrder":15},{"code":"PULL OUT RIGHT","label":"PULL OUT RIGHT","soDescription":"","categories":["BEDFRAME"],"sellingPriceSen":0,"costPriceSen":0,"optionGroups":[],"active":true,"sortOrder":16}]'::jsonb,
-  date '2026-10-20', 'Houzs Century special add-ons copied in (owner, 20 Oct 2026).', (select id from public.companies where code = 'CONTS')
+  date '2026-10-20', 'Houzs Century special add-ons copied in (owner, 20 Oct 2026).', (select id from public.companies where code = 'HOUZS')
 where not exists (select 1 from scm.special_addons_history where id = 'sah-houzs-20261020');
 
 -- 3. Sofa compartment catalogue rows Conts does not have yet (POS module art + default price).
 insert into scm.compartment_library (id, comp_group, label, width_cm, depth_cm, cushions, default_price, art_filename, is_accessory, sort_order, company_id)
-select v.id, v.comp_group::scm.comp_group, v.label, v.width_cm, v.depth_cm, v.cushions, v.default_price, v.art_filename, v.is_accessory, v.sort_order, (select id from public.companies where code = 'CONTS') from (values
+select v.id, v.comp_group::scm.comp_group, v.label, v.width_cm, v.depth_cm, v.cushions, v.default_price, v.art_filename, v.is_accessory, v.sort_order, (select id from public.companies where code = 'HOUZS') from (values
   ('1A(LHF)', '1-seater', '1A - Left hand facing', 95, 95, 1, 1490, '1A(LHF).png', false, 1),
   ('1A(RHF)', '1-seater', '1A - Right hand facing', 95, 95, 1, 1490, '1A(RHF).png', false, 2),
   ('1B(LHF)', '1-seater', '1B - Left hand facing (wide arm)', 105, 95, 1, 1490, '1B(LHF).png', false, 3),
@@ -107,12 +107,12 @@ on conflict (id) do nothing;
 
 -- 4. Fabric tier add-on (selling delta per fabric tier). Houzs's is all zero; one row so the editor has it.
 insert into scm.fabric_tier_addon_config (id, sofa_tier2_delta, sofa_tier3_delta, bedframe_tier2_delta, bedframe_tier3_delta, company_id)
-select 1, 0, 0, 0, 0, (select id from public.companies where code = 'CONTS')
+select 1, 0, 0, 0, 0, (select id from public.companies where code = 'HOUZS')
 on conflict (id) do nothing;
 
 -- 5. Fabric library (series): 109 active series.
 insert into scm.fabric_library (id, label, tier, default_surcharge, active, sort_order, sofa_tier, bedframe_tier, fabric_code, company_id)
-select v.*, (select id from public.companies where code = 'CONTS') from (values
+select v.*, (select id from public.companies where code = 'HOUZS') from (values
   ('311', '311', 'standard', 0, true, 0, null, null, null),
   ('A201', 'A201', 'standard', 0, true, 0, null, null, null),
   ('AH', 'AH', 'standard', 0, true, 0, null, null, null),
@@ -227,7 +227,7 @@ on conflict (id) do nothing;
 
 -- 6. Fabric colours: 862 active colours of those series (the picker on a sales order line).
 insert into scm.fabric_colours (fabric_id, colour_id, label, swatch_hex, active, sort_order, company_id)
-select v.*, (select id from public.companies where code = 'CONTS') from (values
+select v.*, (select id from public.companies where code = 'HOUZS') from (values
   ('311', '311-01', '311-01 WHITE', null, true, 0),
   ('311', '311-02', '311-02 LIGHT GREY', null, true, 0),
   ('311', '311-03', '311-03 ASH GREY', null, true, 0),
@@ -432,7 +432,7 @@ select v.*, (select id from public.companies where code = 'CONTS') from (values
 on conflict (fabric_id, colour_id) do nothing;
 
 insert into scm.fabric_colours (fabric_id, colour_id, label, swatch_hex, active, sort_order, company_id)
-select v.*, (select id from public.companies where code = 'CONTS') from (values
+select v.*, (select id from public.companies where code = 'HOUZS') from (values
   ('DE', 'DE16', 'DE16', null, true, 160),
   ('DE', 'DE17', 'DE17', null, true, 170),
   ('DE', 'DE18', 'DE18', null, true, 180),
@@ -637,7 +637,7 @@ select v.*, (select id from public.companies where code = 'CONTS') from (values
 on conflict (fabric_id, colour_id) do nothing;
 
 insert into scm.fabric_colours (fabric_id, colour_id, label, swatch_hex, active, sort_order, company_id)
-select v.*, (select id from public.companies where code = 'CONTS') from (values
+select v.*, (select id from public.companies where code = 'HOUZS') from (values
   ('JD11985', 'JD11985-11', 'JD11985-11 DESERTSTORM', null, true, 0),
   ('JD12377', 'JD12377-01', 'JD12377-01 TOASRED ALMOND', null, true, 0),
   ('JD12377', 'JD12377-02', 'JD12377-02 SAND DUNE', null, true, 0),
@@ -842,7 +842,7 @@ select v.*, (select id from public.companies where code = 'CONTS') from (values
 on conflict (fabric_id, colour_id) do nothing;
 
 insert into scm.fabric_colours (fabric_id, colour_id, label, swatch_hex, active, sort_order, company_id)
-select v.*, (select id from public.companies where code = 'CONTS') from (values
+select v.*, (select id from public.companies where code = 'HOUZS') from (values
   ('NX', 'NX015', 'NX015 FERN', null, true, 150),
   ('OMI', 'OMI-01', 'OMI-01', null, true, 0),
   ('OMI', 'OMI-02', 'OMI-02', null, true, 0),
@@ -1047,7 +1047,7 @@ select v.*, (select id from public.companies where code = 'CONTS') from (values
 on conflict (fabric_id, colour_id) do nothing;
 
 insert into scm.fabric_colours (fabric_id, colour_id, label, swatch_hex, active, sort_order, company_id)
-select v.*, (select id from public.companies where code = 'CONTS') from (values
+select v.*, (select id from public.companies where code = 'HOUZS') from (values
   ('TEXTURA 003', 'TEXTURA-003-20', 'TEXTURA-003-20 IVORY', null, true, 0),
   ('TEXTURA 003', 'TEXTURA-003-21', 'TEXTURA-003-21 BEIGE', null, true, 0),
   ('TEXTURA 003', 'TEXTURA-003-22', 'TEXTURA-003-22 DOVE', null, true, 0),
@@ -1117,7 +1117,7 @@ on conflict (fabric_id, colour_id) do nothing;
 insert into scm.fabric_trackings (id, fabric_code, fabric_description, fabric_category, price_tier, sofa_price_tier, bedframe_price_tier, price_sen, supplier, supplier_code, lead_time_days, series, is_active, company_id)
 select v.id, v.fabric_code, v.fabric_description, v.fabric_category::scm.fabric_category, v.price_tier::scm.fabric_price_tier,
        v.sofa_price_tier::scm.fabric_price_tier, v.bedframe_price_tier::scm.fabric_price_tier, v.price_sen, v.supplier, v.supplier_code,
-       v.lead_time_days, v.series, v.is_active, (select id from public.companies where code = 'CONTS')
+       v.lead_time_days, v.series, v.is_active, (select id from public.companies where code = 'HOUZS')
 from (values
   ('311-01-_WHITE', '311-01', '311-01 WHITE', null, null, 'PRICE_2', 'PRICE_2', 0, null, null, 0, '311', true),
   ('311-02-LIGHT_GREY', '311-02', '311-02 LIGHT GREY', null, null, 'PRICE_2', 'PRICE_2', 0, null, null, 0, '311', true),
@@ -1325,7 +1325,7 @@ on conflict (company_id, id) do nothing;
 insert into scm.fabric_trackings (id, fabric_code, fabric_description, fabric_category, price_tier, sofa_price_tier, bedframe_price_tier, price_sen, supplier, supplier_code, lead_time_days, series, is_active, company_id)
 select v.id, v.fabric_code, v.fabric_description, v.fabric_category::scm.fabric_category, v.price_tier::scm.fabric_price_tier,
        v.sofa_price_tier::scm.fabric_price_tier, v.bedframe_price_tier::scm.fabric_price_tier, v.price_sen, v.supplier, v.supplier_code,
-       v.lead_time_days, v.series, v.is_active, (select id from public.companies where code = 'CONTS')
+       v.lead_time_days, v.series, v.is_active, (select id from public.companies where code = 'HOUZS')
 from (values
   ('DC_3150-4', 'DC3150-04', 'DC3150-04', null, null, 'PRICE_2', 'PRICE_2', 0, null, null, 0, 'DC3150', true),
   ('DC_3150-5', 'DC3150-05', 'DC3150-05', null, null, 'PRICE_2', 'PRICE_2', 0, null, null, 0, 'DC3150', true),
@@ -1533,7 +1533,7 @@ on conflict (company_id, id) do nothing;
 insert into scm.fabric_trackings (id, fabric_code, fabric_description, fabric_category, price_tier, sofa_price_tier, bedframe_price_tier, price_sen, supplier, supplier_code, lead_time_days, series, is_active, company_id)
 select v.id, v.fabric_code, v.fabric_description, v.fabric_category::scm.fabric_category, v.price_tier::scm.fabric_price_tier,
        v.sofa_price_tier::scm.fabric_price_tier, v.bedframe_price_tier::scm.fabric_price_tier, v.price_sen, v.supplier, v.supplier_code,
-       v.lead_time_days, v.series, v.is_active, (select id from public.companies where code = 'CONTS')
+       v.lead_time_days, v.series, v.is_active, (select id from public.companies where code = 'HOUZS')
 from (values
   ('HR924-04', 'HR924-04', 'HR924-04', null, null, null, null, 0, null, null, 0, 'HR924', true),
   ('HR924-05', 'HR924-05', 'HR924-05', null, null, null, null, 0, null, null, 0, 'HR924', true),
@@ -1741,7 +1741,7 @@ on conflict (company_id, id) do nothing;
 insert into scm.fabric_trackings (id, fabric_code, fabric_description, fabric_category, price_tier, sofa_price_tier, bedframe_price_tier, price_sen, supplier, supplier_code, lead_time_days, series, is_active, company_id)
 select v.id, v.fabric_code, v.fabric_description, v.fabric_category::scm.fabric_category, v.price_tier::scm.fabric_price_tier,
        v.sofa_price_tier::scm.fabric_price_tier, v.bedframe_price_tier::scm.fabric_price_tier, v.price_sen, v.supplier, v.supplier_code,
-       v.lead_time_days, v.series, v.is_active, (select id from public.companies where code = 'CONTS')
+       v.lead_time_days, v.series, v.is_active, (select id from public.companies where code = 'HOUZS')
 from (values
   ('NX014', 'NX014', 'NX014 SMOKE', null, null, null, null, 0, null, null, 0, 'NX014', true),
   ('NX015', 'NX015', 'NX015 FERN', null, null, null, null, 0, null, null, 0, 'NX015', true),
@@ -1949,7 +1949,7 @@ on conflict (company_id, id) do nothing;
 insert into scm.fabric_trackings (id, fabric_code, fabric_description, fabric_category, price_tier, sofa_price_tier, bedframe_price_tier, price_sen, supplier, supplier_code, lead_time_days, series, is_active, company_id)
 select v.id, v.fabric_code, v.fabric_description, v.fabric_category::scm.fabric_category, v.price_tier::scm.fabric_price_tier,
        v.sofa_price_tier::scm.fabric_price_tier, v.bedframe_price_tier::scm.fabric_price_tier, v.price_sen, v.supplier, v.supplier_code,
-       v.lead_time_days, v.series, v.is_active, (select id from public.companies where code = 'CONTS')
+       v.lead_time_days, v.series, v.is_active, (select id from public.companies where code = 'HOUZS')
 from (values
   ('TARONI-05', 'TARONI-05', 'TARONI-05 LIGHT BLUE', null, null, null, null, 0, null, null, 0, 'TARONI', true),
   ('TARONI-06', 'TARONI-06', 'TARONI-06 STEEL BLUE', null, null, null, null, 0, null, null, 0, 'TARONI', true),
