@@ -24,14 +24,16 @@ export async function ownerMonths(env: Env, months: string[]): Promise<Map<strin
   if (!months.length) return out;
   const q: Query = (sql, ...args) => all(env, sql, ...args);
   const sorted = [...months].sort();
-  const settings = await statementSettings(q);
-  const inputs = await loadInputs(q, `${sorted[0]}-01`, monthEndExclusive(sorted[sorted.length - 1]));
-  for (const month of sorted) {
-    const rows = computeMonth(month, await withYearToDate(q, inputs, month, settings), settings, 'dated');
+  const [settings, inputs] = await Promise.all([
+    statementSettings(q), loadInputs(q, `${sorted[0]}-01`, monthEndExclusive(sorted[sorted.length - 1])),
+  ]);
+  const inputsByMonth = await Promise.all(sorted.map(month => withYearToDate(q, inputs, month, settings)));
+  sorted.forEach((month, i) => {
+    const rows = computeMonth(month, inputsByMonth[i], settings, 'dated');
     out.set(month, rows.reduce((t, m) => ({
       income: t.income + m.gross, ownerCosts: t.ownerCosts + m.deductions,
       operatorShare: t.operatorShare + m.operatorShare, netPayout: t.netPayout + m.netPayout,
     }), { income: 0, ownerCosts: 0, operatorShare: 0, netPayout: 0 }));
-  }
+  });
   return out;
 }

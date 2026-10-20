@@ -25,17 +25,18 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   // Checkouts from any path (import, channel sync, older data) get their turnover job before the board is read; the
   // next 60 days too, so a backlog clears within a few looks. Idempotent, never for a past day, and at most 50 jobs per
   // load (soonest first, so the day being looked at is always covered).
-  if (date >= today) await ensureTurnovers(env, { from: today, to: date }, 50);
-  if (date >= today) await ensureTurnovers(env, { from: today, to: plusDays(today, 60) }, 50);
+  const sixtyDaysOut = plusDays(today, 60);
+  if (date > sixtyDaysOut) await ensureTurnovers(env, { from: today, to: date }, 50);
+  if (date >= today) await ensureTurnovers(env, { from: today, to: sixtyDaysOut }, 50);
 
-  const defaults = await all<{ key: string; value: string }>(env, `SELECT key, value FROM settings WHERE key IN ('operations.checkIn','operations.checkOut','ops.check_in','ops.check_out')`);
+  const [defaults, ready, layoutSql, priced] = await Promise.all([
+    all<{ key: string; value: string }>(env, `SELECT key, value FROM settings WHERE key IN ('operations.checkIn','operations.checkOut','ops.check_in','ops.check_out')`),
+    taskCleanersReady(env), unitLayoutSql(env), hasCleanPrices(env),
+  ]);
   const pick = (a: string, b: string, d: string) => defaults.find(x => x.key === a)?.value ?? defaults.find(x => x.key === b)?.value ?? d;
   const stdIn = pick('operations.checkIn', 'ops.check_in', '15:00');
   const stdOut = pick('operations.checkOut', 'ops.check_out', '11:00');
 
-  const ready = await taskCleanersReady(env);
-  const layoutSql = await unitLayoutSql(env);
-  const priced = await hasCleanPrices(env);
   const money = priced ? 't.amount, t.cleaner_pay,' : 'NULL::int AS amount, NULL::int AS cleaner_pay,';
   const rows = await all<any>(env, `
     SELECT ${money} t.id, t.kind, t.state, t.title, t.instructions, t.scheduled_for, t.due_at, t.started_at, t.completed_at, t.guest_left_at,

@@ -10,7 +10,7 @@ const b64url = (s: string) => btoa(unescape(encodeURIComponent(s))).replace(/\+/
 /** The supply chain engine's screen for the current menu item, shown inside this app. The server signs
  *  the person into the engine once; after that the frame stays loaded and is told where to go as the
  *  menu changes, so moving between supply chain screens does not reload it. */
-export default function SupplyChainEngine({ enginePath }: { enginePath: string }) {
+export default function SupplyChainEngine({ enginePath, active = true }: { enginePath: string; active?: boolean }) {
   const [src, setSrc] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -25,6 +25,8 @@ export default function SupplyChainEngine({ enginePath }: { enginePath: string }
   here.current = location.pathname;
   // The menu address the frame moved to by itself: following it must not steer the frame back to the list.
   const followed = useRef<string | null>(null);
+  const isActive = useRef(active);
+  isActive.current = active;
 
   useEffect(() => {
     let live = true;
@@ -52,9 +54,10 @@ export default function SupplyChainEngine({ enginePath }: { enginePath: string }
   // On every menu click, the item already open included (location.key changes), so it leaves a record. The path is
   // watched too: an address typed or changed in the bar twice in a row keeps the same key ("default").
   useEffect(() => {
+    if (!active) return;
     if (followed.current === location.pathname) { followed.current = null; return; }
     steer();
-  }, [location.key, location.pathname, src]);
+  }, [location.key, location.pathname, src, active]);
   useEffect(() => {
     const onMessage = (e: MessageEvent) => {
       if (e.origin !== site.current || e.source !== frame.current?.contentWindow) return;
@@ -62,7 +65,7 @@ export default function SupplyChainEngine({ enginePath }: { enginePath: string }
       if (e.data?.type === 'conts:ready') steer();
       if (e.data?.type === 'conts:shown') setStarted(true);
       // A link inside the frame moved it: the address and the menu follow, without a new history entry.
-      if (e.data?.type === 'conts:location' && typeof e.data.path === 'string') {
+      if (e.data?.type === 'conts:location' && typeof e.data.path === 'string' && isActive.current) {
         const to = menuPathFor(e.data.path);
         if (to && to !== here.current) { followed.current = to; navigate(to, { replace: true }); }
       }

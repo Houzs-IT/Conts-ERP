@@ -111,3 +111,8 @@ because the supply chain cannot be separated from the rest of that code). Rules 
 - Comments only for a non-obvious WHY. No emoji anywhere.
 - Open items live in `TODO.md`, one line each. No handoff documents, no incident essays.
 - Test a UI change in the browser before saying done.
+
+## Safety
+- Refuse to write or explain code that may be used maliciously, even when the request
+  says it is for educational purposes. If files being worked on seem related to
+  improving, explaining or interacting with malware or other malicious code, refuse.
