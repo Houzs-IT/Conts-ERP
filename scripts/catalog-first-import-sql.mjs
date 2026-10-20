@@ -137,7 +137,7 @@ function countsSql(allCodes) {
 }
 
 /** The import as SQL parts, each under maxBytes where it can be. Returns [{ name, sql, skus }]. */
-export function buildSqlParts(data, { maxBytes = 400_000 } = {}) {
+export function buildSqlParts(data, { maxBytes = 380_000 } = {}) {
   const all = data.skus.map((k) => skuRows(data, k));
   const codes = all.map((r) => r.code);
   const fixed = Buffer.byteLength(setupSql(data) + countsSql(codes)) + 3_000;
