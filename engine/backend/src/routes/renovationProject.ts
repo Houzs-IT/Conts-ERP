@@ -26,7 +26,7 @@ import { computeProjectView } from "../services/renovation/view";
 import { boardRowOf } from "../services/renovation/boardRow";
 import {
   cleanAttending, cleanDesignFilePatch, cleanDesignKind, cleanDesignLink, cleanDesignNote, cleanHold, cleanKeyMove, cleanManualStep, cleanPerson, cleanSiteMeasure,
-  DESIGN_FILE_MAX, DESIGN_FILE_TYPES,
+  DESIGN_FILE_MAX, DESIGN_FILE_TYPES, designAttachRefusal,
 } from "../services/renovation/records";
 import { buildProcurementView, cleanCategoryDates, cleanSubDates, type GroupDefRow, type ProcRow, type SubDefRow } from "../services/renovation/procurement";
 import { createProjectFromSo, linkSoToProject, unlinkSoFromProject } from "../services/renovation/soLink";
@@ -789,6 +789,39 @@ app.patch("/design-files/:fileId", requirePermission("projects.write"), async (c
   }
   await db(c).batch!(stmts);
   return c.json({ ok: true });
+});
+
+/* Attach the file to a design version that so far is only a link (an imported Notion PDF): raw body, streamed to R2.
+   Only a version without a file; the version number, date and people stay. */
+app.put("/design-files/:fileId/file", requirePermission("projects.write"), async (c) => {
+  const fileId = parseId(c.req.param("fileId"));
+  if (!fileId) return c.json({ error: "invalid_id" }, 400);
+  const f = await db(c).prepare(
+    `SELECT f.id::int AS id, f.project_id::int AS project_id, p.company_id::int AS company_id, f.kind, f.version, f.r2_key
+       FROM project_design_files f JOIN projects p ON p.id = f.project_id WHERE f.id = ?${coSql(c, "p.company_id")}`,
+  ).bind(fileId).first<{ id: number; project_id: number; company_id: number; kind: string; version: number; r2_key: string | null }>();
+  if (!f) return c.json({ error: "not_found" }, 404);
+  if (f.r2_key) return c.json({ error: "has_file", message: "This version already has its file; upload a new version instead." }, 409);
+  const refusal = designAttachRefusal(c.req.header("content-type"), c.req.header("content-length"));
+  if (refusal) return c.json({ error: refusal.error, message: refusal.message }, refusal.status);
+  const body = c.req.raw.body;
+  if (!body) return c.json({ error: "empty", message: "The file is empty." }, 400);
+  const type = c.req.header("content-type")!.split(";")[0]!.trim().toLowerCase();
+  const size = Number(c.req.header("content-length"));
+  const key = `renovation/${f.project_id}/design-${f.kind}-${Date.now()}-${crypto.randomUUID().slice(0, 8)}.${DESIGN_FILE_TYPES[type]}`;
+  await c.env.POD_BUCKET.put(key, body, { httpMetadata: { contentType: type } });
+  const row = await db(c).prepare(
+    `UPDATE project_design_files SET r2_key = ?, content_type = ?, size_bytes = ?, external_url = NULL
+      WHERE id = ? AND r2_key IS NULL RETURNING id::int AS id`,
+  ).bind(key, type, size, fileId).first<{ id: number }>();
+  if (!row) {
+    // another upload got there first: keep its file, drop ours
+    await c.env.POD_BUCKET.delete(key);
+    return c.json({ error: "has_file", message: "This version already has its file." }, 409);
+  }
+  await db(c).prepare(`INSERT INTO project_activity (project_id, action, to_value, user_id, company_id) VALUES (?, 'design_file_attached', ?, ?, ?)`)
+    .bind(f.project_id, `${f.kind} v${f.version}`, userId(c), f.company_id).run();
+  return c.json({ id: fileId, key }, 201);
 });
 
 /* Edit an Onsite entry: date, PICs and remark. */

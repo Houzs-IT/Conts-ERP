@@ -97,6 +97,7 @@ export function activityText(a: Row): { title: string; body: string | null } {
     case "key_move_edited": return { title: "Key pass edited", body: arrow(from, to) };
     case "key_move_deleted": return { title: "Key pass deleted", body: from };
     case "design_version_edited": return { title: `Design ${(to ?? "").toUpperCase()} edited`.trim(), body: null };
+    case "design_file_attached": return { title: `Design ${(to ?? "").toUpperCase()} file uploaded`.trim(), body: null };
     case "onsite_edited": return { title: "Onsite visit edited", body: to ? `Date ${to}` : null };
     case "procurement_dates": return { title: `Procurement dates changed${note ? ` (${note})` : ""}`, body: to };
     case "task_added": return { title: "Site task added", body: to };
