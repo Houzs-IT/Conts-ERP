@@ -10,8 +10,8 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 /** POST /api/housekeeping/guest-left { taskId } | { reservationId } | { taskId, undo: true }
  *  The departing guest has gone: the clean shows "Guest out, ready to clean" at once. A booking still Checked in
  *  moves to Checked out (as the booking screen's Check out does; its clean already exists, so none is added).
- *  Given a departing booking with no clean yet, the turnover clean is created here. Undo only clears the mark
- *  on the clean; it does not reopen the booking. Field staff may do this on their own jobs. */
+ *  Given a departing booking with no clean yet, the turnover clean is created here. Undo clears the mark and, when
+ *  this tap is what checked the booking out, puts it back to Checked in. Field staff may do this on their own jobs. */
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
@@ -42,9 +42,28 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (b?.undo === true) {
     if (!task) return fail('VALIDATION', 'Say which cleaning job.', 422);
     if (field) return fail('FORBIDDEN', 'Ask the office to undo this.', 403);
+    // The board counts a Checked out booking as out, so the mark alone cannot be taken back while the booking stays out.
+    // The tap's own checkout is reversed; one done on the booking screen (or imported that way) is left to that screen.
+    const booking = task.reservation_id
+      ? await one<any>(env, 'SELECT id, state FROM reservations WHERE id = ?', task.reservation_id)
+      : await one<any>(env, `SELECT r.id, r.state FROM reservations r WHERE r.unit_id = ? AND r.check_out = ? AND ${LIVE_STAY_SQL('r')} ORDER BY r.check_out_time DESC LIMIT 1`, task.unit_id, task.day);
+    let reopened = false;
+    if (booking?.state === 'checked_out') {
+      const last = await one<{ after_state: string | null }>(env, `
+        SELECT l.after_state FROM audit_log l WHERE l.entity_table = 'reservations' AND l.entity_id = ? AND l.action = 'reservation.status'
+        ORDER BY l.occurred_at DESC LIMIT 1`, booking.id);
+      if (!last?.after_state?.includes('cleaning.guest_left')) {
+        return fail('CONFLICT', 'This booking is checked out on the booking screen. Undo the checkout there.', 409);
+      }
+      reopened = !!(await one(env, `UPDATE reservations SET state = 'checked_in', updated_at = ? WHERE id = ? AND state = 'checked_out' RETURNING id`, now, booking.id));
+      if (reopened) {
+        await run(env, `UPDATE units SET readiness = 'occupied', updated_at = ? WHERE id = ? AND readiness = 'dirty'`, now, task.unit_id);
+        await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'reservation.status', entityTable: 'reservations', entityId: booking.id, before: { state: 'checked_out' }, after: { state: 'checked_in', via: 'cleaning.guest_left_undo' } });
+      }
+    }
     await run(env, 'UPDATE tasks SET guest_left_at = NULL, updated_at = ? WHERE id = ?', now, task.id);
-    await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'task.guest_left_undo', entityTable: 'tasks', entityId: task.id, before: { guestLeftAt: task.guest_left_at } });
-    return json({ ok: true, taskId: task.id, guestLeftAt: null });
+    await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'task.guest_left_undo', entityTable: 'tasks', entityId: task.id, before: { guestLeftAt: task.guest_left_at }, after: { bookingReopened: reopened } });
+    return json({ ok: true, taskId: task.id, guestLeftAt: null, bookingReopened: reopened });
   }
 
   // The clean for a booking: its own, else the clean on that unit that day, else a new turnover.

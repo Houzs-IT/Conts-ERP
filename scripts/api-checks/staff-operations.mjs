@@ -153,6 +153,33 @@ let row = board.rows.find(x => x.unitId === res.unitId && x.previous?.reservatio
 check('auto guest-left: nobody tapped it, the guest counts out at checkout 11:00', !!row && row.guestOut && row.guestLeftAuto && row.guestLeftAt === `${day}T11:00:00+08:00`, JSON.stringify(row).slice(0, 300));
 r = await call('GET', `/api/audit?entity=tasks&id=${row.id}`);
 check('auto guest-left: written once to the history as Automatic', r.status === 200 && JSON.stringify(r.json).includes('Automatic, at checkout 11:00'), r.text.slice(0, 300));
+// Untick: the mark stays off, the next read must not stamp it again.
+r = await call('POST', '/api/housekeeping/guest-left', { taskId: row.id, undo: true });
+let again = (await call('GET', `/api/housekeeping/board?date=${day}`)).json.rows.find(x => x.id === row.id);
+check('untick auto guest-left: stays unmarked on the next read', r.status === 200 && again && !again.guestOut, `${r.text} ${JSON.stringify(again).slice(0, 200)}`);
+// A tap on a Checked in booking checks it out; untick puts it back to Checked in. Needs a stay leaving today.
+const myt = d => new Date(Date.now() + 8 * 3600e3 + d * 864e5).toISOString().slice(0, 10);
+let stay = null;
+for (const u of units) {
+  r = await call('POST', '/api/reservations', { unitId: u.id, checkIn: myt(-1), checkOut: myt(1), checkOutTime: '23:59', guest: { fullName: `Leaver ${tag}` } });
+  if (r.status === 201 || r.status === 200) { stay = r.json.id; break; }
+}
+// Checked in while the stay still runs, then cut short to today (check-in is refused on the checkout day).
+r = stay ? await call('PATCH', `/api/reservations/${stay}`, { state: 'checked_in' }) : r;
+if (r.status === 200) r = await call('PATCH', `/api/reservations/${stay}/dates`, { checkIn: myt(-1), checkOut: myt(0), confirm: true });
+check('a checked-in stay leaving today', r.status === 200, r.text);
+if (r.status === 200) {
+  r = await call('POST', '/api/housekeeping/guest-left', { reservationId: stay });
+  const leftTask = r.json?.taskId;
+  check('tap: booking checked out', r.status === 200 && r.json.bookingCheckedOut === true, r.text);
+  r = await call('POST', '/api/housekeeping/guest-left', { taskId: leftTask, undo: true });
+  again = (await call('GET', `/api/housekeeping/board?date=${myt(0)}`)).json.rows.find(x => x.id === leftTask);
+  check('untick after a tap: booking back to Checked in, guest not out', r.status === 200 && r.json.bookingReopened === true && !again?.guestOut && again?.previous?.state === 'checked_in', `${r.text} ${JSON.stringify(again).slice(0, 200)}`);
+  // Checked out on the booking screen: untick refuses and says where to undo it.
+  r = await call('PATCH', `/api/reservations/${stay}`, { state: 'checked_out' });
+  r = await call('POST', '/api/housekeeping/guest-left', { taskId: leftTask, undo: true });
+  check('untick when the booking screen checked it out: refused (409)', r.status === 409 && /booking screen/.test(r.json?.error?.message), r.text);
+}
 const expectAmount = res.unitId === priced.unitId ? 9000 : null;
 if (expectAmount) check('the clean carries the price amount', row.amount === 9000 && row.cleanerPay === 4500 && row.priceSource === 'unit', JSON.stringify(row).slice(0, 300));
 else check('a unit with no price shows Price not set (null)', row.amount === null || typeof row.amount === 'number', JSON.stringify(row).slice(0, 200));
