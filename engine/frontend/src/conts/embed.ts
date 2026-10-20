@@ -41,17 +41,49 @@ export function consumeContsSignIn(): void {
   }
 }
 
-/** Follows Property OS's menu: { type: "conts:navigate", path } moves this app without reloading it. */
+/** The Property OS page holding the frame, once known: the only page told where the frame is, since the
+ *  address can name a record. */
+let parentOrigin = (() => {
+  try {
+    const o = document.referrer ? new URL(document.referrer).origin : "";
+    return trusted(o) ? o : "";
+  } catch { return ""; }
+})();
+const here = () => window.location.pathname + window.location.search;
+const tellLocation = () => {
+  if (!parentOrigin) return;
+  try { window.parent.postMessage({ type: "conts:location", path: here() }, parentOrigin); } catch { /* no parent */ }
+};
+
+/** Follows Property OS's menu: { type: "conts:navigate", path } moves this app without reloading it.
+ *  Tells Property OS where it is after every move ({ type: "conts:location", path }), so its menu follows links
+ *  inside these screens. */
 export function listenForContsNavigation(): void {
   if (!CONTS_EMBEDDED) return;
   window.addEventListener("message", (e: MessageEvent) => {
     if (!trusted(e.origin)) return;
+    parentOrigin = e.origin;
     const d = e.data as { type?: string; path?: string } | null;
     if (d?.type !== "conts:navigate" || typeof d.path !== "string" || !d.path.startsWith("/") || d.path.startsWith("//")) return;
-    if (d.path === window.location.pathname + window.location.search) return;
-    window.history.pushState(null, "", d.path);
+    if (d.path !== here()) window.history.pushState(null, "", d.path);
+    // Also on the same address: the phone screens keep the open record out of the address, so this takes them
+    // back to the menu item's own screen.
     window.dispatchEvent(new PopStateEvent("popstate"));
   });
+  // The router moves with pushState / replaceState, which raise no event of their own.
+  for (const k of ["pushState", "replaceState"] as const) {
+    const move = window.history[k].bind(window.history);
+    window.history[k] = (...args: Parameters<History["pushState"]>) => { move(...args); tellLocation(); };
+  }
+  window.addEventListener("popstate", tellLocation);
   // Lets Property OS know the frame is ready to be steered, and when the session has ended.
   try { window.parent.postMessage({ type: "conts:ready" }, "*"); } catch { /* no parent */ }
+  // And when a screen is on view: until then the frame is blank while it signs in and loads, so Property OS keeps
+  // its own loading message up.
+  const shown = window.setInterval(() => {
+    const main = document.querySelector("main");
+    if (!main || (main.textContent ?? "").trim().length < 20) return;
+    window.clearInterval(shown);
+    try { window.parent.postMessage({ type: "conts:shown" }, "*"); } catch { /* no parent */ }
+  }, 150);
 }

@@ -61,9 +61,20 @@ interface Payload { data: Row[]; generatedAt: string; jobFields?: boolean }
 
 // Department and position are free text (migration 0113): the renovation pickers show them after the name, so
 // picking "Alex · Project PIC · Renovation" says what the person does. These are suggestions, not a fixed list;
-// values already used on other accounts are suggested too, so spellings stay consistent.
-const DEPARTMENT_SUGGESTIONS = ['Management', 'Sales', 'Design', 'Renovation', 'Operations', 'Finance', 'Admin'];
-const POSITION_SUGGESTIONS = ['Director', 'Sales Executive', 'Interior Designer', '3D Designer', '2D Drafter', 'Project PIC', 'Site Supervisor', 'Admin'];
+// values already used on other accounts are suggested too, so spellings stay consistent. Once a department is
+// picked, only the positions that belong to it are suggested (plus ones other accounts in it already use).
+const POSITIONS_BY_DEPARTMENT: Record<string, string[]> = {
+  Management: ['Director'],
+  Sales: ['Sales Executive'],
+  Design: ['Interior Designer', '3D Designer', '2D Drafter'],
+  Renovation: ['Project PIC', 'Site Supervisor'],
+  Operations: [],
+  Finance: [],
+  Admin: ['Admin'],
+};
+const DEPARTMENT_SUGGESTIONS = Object.keys(POSITIONS_BY_DEPARTMENT);
+const POSITION_SUGGESTIONS = Object.values(POSITIONS_BY_DEPARTMENT).flat();
+const sameText = (a: string | null | undefined, b: string | null | undefined) => (a ?? '').trim().toLowerCase() === (b ?? '').trim().toLowerCase();
 const suggestionsFrom = (base: string[], used: Array<string | null | undefined>) =>
   [...new Set([...base, ...used.map(v => (v ?? '').trim()).filter(Boolean)])].sort((a, b) => a.localeCompare(b));
 /** "Position · Department", skipping what is not set. */
@@ -95,6 +106,12 @@ function status(u: Row): { label: string; tone: Tone } {
 }
 
 const isInvited = (u: Row) => status(u).label === 'Invited';
+/** "7 active, 7 invited, 2 switched off": the same states as the table's Status column, so the numbers add up. */
+function accountsBreakdown(rows: Row[]) {
+  const by = (label: string) => rows.filter(r => status(r).label === label).length;
+  return ([['Active', 'active'], ['Invited', 'invited'], ['Locked', 'locked'], ['Inactive', 'switched off'], ['Portal only', 'owner logins']] as const)
+    .map(([label, word]) => [by(label), word] as const).filter(([n]) => n > 0).map(([n, word]) => `${count(n)} ${word}`).join(', ');
+}
 const NO_MAIL_INVITE = 'To get them in now, use Reset password in their row menu and pass the temporary password on yourself.';
 
 /** When the newest invitation went out, and a Resend button for management. */
@@ -105,6 +122,19 @@ function InviteCell({ u, onResend }: { u: Row; onResend?: () => void }) {
       {onResend && <Button size="sm" variant="secondary" icon={<Icon name="Send" size="sm" />} onClick={onResend} aria-label={`Resend invitation to ${u.fullName}`}>Resend</Button>}
     </span>
   );
+}
+
+/** "Reports to" choices: active staff only, with the email after any name that appears twice so
+ *  two people both called "New Staff" can be told apart. `keep` stays listed even if switched off, so an
+ *  existing manager still shows as selected instead of the form silently reading "No manager". */
+function managerOptions(staff: Row[], exclude?: string, keep?: string | null) {
+  const list = staff.filter(s => s.id !== exclude && (s.isActive || s.id === keep));
+  const seen = new Map<string, number>();
+  for (const s of list) seen.set(s.fullName, (seen.get(s.fullName) ?? 0) + 1);
+  return list.map(s => ({
+    value: s.id,
+    label: `${s.fullName}${(seen.get(s.fullName) ?? 0) > 1 ? ` (${s.email})` : ''}${s.isActive ? '' : ' (switched off)'}`,
+  }));
 }
 
 const initials = (name: string) => name.split(' ').map(n => n[0]).slice(0, 2).join('');
@@ -165,7 +195,16 @@ export default function UsersPage() {
   const staff = rows.filter(r => r.role !== 'owner');
   const jobFields = data?.jobFields === true;
   const departmentOptions = useMemo(() => suggestionsFrom(DEPARTMENT_SUGGESTIONS, rows.map(r => r.department)), [rows]);
-  const positionOptions = useMemo(() => suggestionsFrom(POSITION_SUGGESTIONS, rows.map(r => r.position)), [rows]);
+  const positionsFor = useMemo(() => {
+    const all = suggestionsFrom(POSITION_SUGGESTIONS, rows.map(r => r.position));
+    // Unknown or empty department, or one with nothing to suggest yet: offer every position.
+    return (dept: string) => {
+      if (!dept.trim()) return all;
+      const base = Object.entries(POSITIONS_BY_DEPARTMENT).find(([k]) => sameText(k, dept))?.[1] ?? [];
+      const own = suggestionsFrom(base, rows.filter(r => sameText(r.department, dept)).map(r => r.position));
+      return own.length ? own : all;
+    };
+  }, [rows]);
 
   const columns = useMemo<Column<Row>[]>(() => [
     { key: 'name', label: 'Name', value: u => u.fullName, hideable: false, width: 220,
@@ -527,7 +566,7 @@ export default function UsersPage() {
       />
 
       <SystemStats loading={loading && rows.length === 0} stats={[
-        { label: 'Accounts', value: data ? count(rows.length) : undefined, hint: `${count(rows.filter(r => r.isActive).length)} active` },
+        { label: 'Accounts', value: data ? count(rows.length) : undefined, hint: accountsBreakdown(rows) },
         { label: 'Invited', value: data ? count(invitedCount) : undefined, hint: 'Not signed in yet', warn: invitedCount > 0 },
         { label: 'Two-step on', value: data ? count(rows.filter(r => r.twoStep).length) : undefined, hint: 'Sign-in with a code' },
         { label: 'Locked', value: data ? count(rows.filter(r => r.isLocked).length) : undefined, hint: 'Too many wrong passwords', warn: rows.some(r => r.isLocked) },
@@ -602,7 +641,7 @@ export default function UsersPage() {
               </span>
               <Button variant="secondary" size="sm" onClick={openOrg}>Edit structure</Button>
             </div>
-            <OrgChart staff={staff} nameById={nameById} />
+            <OrgChart staff={staff.filter(s => s.isActive)} nameById={nameById} />
           </div>
         </Card>
       )}
@@ -624,12 +663,12 @@ export default function UsersPage() {
             <Field label="Full name" value={fullName} onChange={e => setFullName(e.target.value)} placeholder="Jane Tan" error={fieldErrors.fullName} />
             <Field label="Work email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="jane@theconts.com" error={fieldErrors.email} />
             {jobFields && <JobFields department={department} position={position} onDepartment={setDepartment} onPosition={setPosition}
-              errors={fieldErrors} departments={departmentOptions} positions={positionOptions} />}
+              errors={fieldErrors} departments={departmentOptions} positions={positionsFor(department)} />}
             <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-4">
               <Select label="Role" showLabel size="md" value={role} onChange={v => setRole(v as UserRole)} options={STAFF_ROLE_OPTIONS} />
               {role !== 'owner' && (
                 <Select label="Reports to" showLabel size="md" value={managerId} onChange={setManagerId} placeholder="No manager"
-                  options={staff.map(s => ({ value: s.id, label: s.fullName }))} />
+                  options={managerOptions(staff)} />
               )}
             </div>
             <div className="text-meta text-muted-ink leading-[1.5]">
@@ -663,7 +702,7 @@ export default function UsersPage() {
             <Field label="Email" type="email" value={editEmail} onChange={e => setEditEmail(e.target.value)} error={editErrors.email} />
             <PhoneInput label="Phone" value={editPhone} onChange={setEditPhone} error={editErrors.phone} />
             {jobFields && <JobFields department={editDepartment} position={editPosition} onDepartment={setEditDepartment} onPosition={setEditPosition}
-              errors={editErrors} departments={departmentOptions} positions={positionOptions} />}
+              errors={editErrors} departments={departmentOptions} positions={positionsFor(editDepartment)} />}
             <div className="flex flex-col gap-1.5">
               <Select label="Role" showLabel size="md" value={editRole} onChange={v => setEditRole(v as UserRole)}
                 options={editing.role === 'owner' ? ROLE_OPTIONS.filter(o => o.value === 'owner') : STAFF_ROLE_OPTIONS} disabled={editing.role === 'owner'} />
@@ -675,7 +714,7 @@ export default function UsersPage() {
             </div>
             <div className="flex flex-col gap-1.5">
               <Select label="Reports to" showLabel size="md" value={editManager} onChange={setEditManager} placeholder="No manager"
-                options={staff.filter(s => s.id !== editing.id).map(s => ({ value: s.id, label: s.fullName }))} />
+                options={managerOptions(staff, editing.id, editing.managerId)} />
               <span className="text-meta text-muted-ink">Reporting line only. It does not grant or remove any access.</span>
             </div>
             <label htmlFor="ed-active" className="flex items-center gap-2 cursor-pointer">
@@ -768,7 +807,8 @@ export default function UsersPage() {
 }
 
 /* ------------------------------ row actions ------------------------------ */
-/** Position and department: type anything, or pick a suggestion. Shown after the person's name in renovation pickers. */
+/** Department, then position: type anything, or pick a suggestion. The position suggestions follow the department.
+ *  Shown after the person's name in renovation pickers. */
 function JobFields({ department, position, onDepartment, onPosition, errors, departments, positions }: {
   department: string; position: string; onDepartment: (v: string) => void; onPosition: (v: string) => void;
   errors: { department?: string; position?: string }; departments: string[]; positions: string[];
@@ -776,10 +816,10 @@ function JobFields({ department, position, onDepartment, onPosition, errors, dep
   return (
     <>
       <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-4">
-        <Field label="Position" value={position} onChange={e => onPosition(e.target.value)} placeholder="Sales Executive" maxLength={80}
-          list="user-position-options" autoComplete="off" error={errors.position} />
         <Field label="Department" value={department} onChange={e => onDepartment(e.target.value)} placeholder="Sales" maxLength={80}
           list="user-department-options" autoComplete="off" error={errors.department} />
+        <Field label="Position" value={position} onChange={e => onPosition(e.target.value)} placeholder="Sales Executive" maxLength={80}
+          list="user-position-options" autoComplete="off" error={errors.position} />
       </div>
       <datalist id="user-position-options">{positions.map(v => <option key={v} value={v} />)}</datalist>
       <datalist id="user-department-options">{departments.map(v => <option key={v} value={v} />)}</datalist>
@@ -789,19 +829,10 @@ function JobFields({ department, position, onDepartment, onPosition, errors, dep
 
 /* --------------------------- org chart render --------------------------- */
 function OrgChart({ staff, nameById }: { staff: Row[]; nameById: Record<string, string> }) {
-  // Depth by walking the manager chain (capped against accidental cycles).
-  const depthOf = (u: Row): number => {
-    let d = 0; let cur: Row | undefined = u; const seen = new Set<string>();
-    while (cur && cur.managerId && !seen.has(cur.id)) {
-      seen.add(cur.id);
-      const next = staff.find(s => s.id === cur!.managerId);
-      if (!next) break;
-      cur = next; d++;
-      if (d > 6) break;
-    }
-    return d;
-  };
+  // Grouped by each person's place in the reporting line, not by how deep they sit: someone with no
+  // manager set is not leadership unless people report to them. `staff` is active accounts only.
   const directReports = (id: string) => staff.filter(s => s.managerId === id).length;
+  const hasManager = (u: Row) => !!u.managerId && staff.some(s => s.id === u.managerId);
 
   const levels: { label: string; people: Row[] }[] = [
     { label: 'Leadership', people: [] },
@@ -809,8 +840,7 @@ function OrgChart({ staff, nameById }: { staff: Row[]; nameById: Record<string, 
     { label: 'Team', people: [] },
   ];
   for (const u of staff) {
-    const d = Math.min(depthOf(u), 2);
-    levels[d].people.push(u);
+    levels[directReports(u.id) === 0 ? 2 : hasManager(u) ? 1 : 0].people.push(u);
   }
 
   return (
@@ -827,7 +857,7 @@ function OrgChart({ staff, nameById }: { staff: Row[]; nameById: Record<string, 
               const manager = p.managerId ? nameById[p.managerId] : null;
               const meta = reports > 0
                 ? plural(reports, 'direct report')
-                : manager ? `Reports to ${manager}` : null;
+                : manager ? `Reports to ${manager}` : 'No manager set';
               return (
                 <div key={p.id} className={cx('min-w-[188px] py-3 px-4 rounded-card border border-solid border-line bg-card flex flex-col gap-2', ORG_ACCENT[roleTone[p.role]])}>
                   <div className="flex items-center gap-2.5">

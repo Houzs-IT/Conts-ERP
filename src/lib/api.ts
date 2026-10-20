@@ -124,6 +124,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (!res.ok) {
     const e = (body ?? {}) as ApiError;
     const code = e.error?.code ?? (res.status >= 500 ? 'INTERNAL' : 'UNKNOWN');
+    // The account is on a temporary password: the session re-reads itself and the app shows "Set a new password".
+    if (code === 'PASSWORD_CHANGE_REQUIRED') window.dispatchEvent(new Event('conts:password-change-required'));
     throw new ApiFailure(res.status, code, friendlyMessage(res.status, code, e.error?.message), e.error?.fields, body);
   }
   if (text && body === null) throw new ApiFailure(res.status, 'INTERNAL', 'The server sent an answer this screen could not read. Refresh the page and try again.');

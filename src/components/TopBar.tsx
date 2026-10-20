@@ -54,6 +54,9 @@ export default function TopBar({
   /** Phone: only the controls, as 40px squares, for the shell's mobile header row. */
   compact?: boolean }) {
   const nav = findNav(path);
+  // The browser tab names the page, so tabs, history and screen readers can tell pages apart.
+  const pageName = nav ? (nav.page ?? nav.label) : path === '/account' ? 'My account' : path === '/notifications' ? 'Notifications' : null;
+  useEffect(() => { document.title = pageName ? `${pageName} · The Conts` : 'The Conts Property OS'; }, [pageName]);
   const ctl = compact ? 40 : shell.controlSm;
   const go = (p: string) => navigate?.(p);
 

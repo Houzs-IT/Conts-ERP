@@ -59,7 +59,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  useEffect(() => { void refresh(); }, []);
+  useEffect(() => {
+    void refresh();
+    const again = () => { void refresh(); };
+    window.addEventListener('conts:password-change-required', again);
+    return () => window.removeEventListener('conts:password-change-required', again);
+  }, []);
 
   type SignInAnswer = { user: SessionUser; home: string; twoStep?: undefined } | { twoStep: true; challenge: string; backupOnly: boolean };
   const finish = (res: SignInAnswer): SignedIn => {

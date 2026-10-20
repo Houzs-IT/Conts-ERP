@@ -65,7 +65,8 @@ export function contsPermissions(a: ContsAccess): string[] {
   const ladder = (level: ContsLevel, view: string[], edit: string[], full: string[]) =>
     [...(rank(level) >= 1 ? view : []), ...(rank(level) >= 2 ? edit : []), ...(rank(level) >= 3 ? full : [])];
   keys.push(...ladder(a.serviceCases, ["service_cases.read"], ["service_cases.create", "service_cases.write"], ["service_cases.manage", "service_cases.approve"]));
-  keys.push(...ladder(a.projects, ["projects.read"], ["projects.write", "projects.chat"], ["projects.manage", "projects.approve"]));
+  // Full on Projects opens the Finances view, which Property OS's menu offers at Full (owner, 16 Oct 2026).
+  keys.push(...ladder(a.projects, ["projects.read"], ["projects.write", "projects.chat"], ["projects.manage", "projects.approve", "projects.finance.view"]));
   // Renovation sales documents: quoting with Sales at edit, approving VOs and terms at full; POs with
   // Procurement at edit; billing with Invoices at edit.
   keys.push(...ladder(a.scSales, [], ["scm.renovation.quote"], ["scm.renovation.vo.apply", "scm.renovation.terms"]));

@@ -23,6 +23,8 @@ export const NOTICES_CHANGED = 'conts:notifications-changed';
 export const announceNoticesChanged = () => window.dispatchEvent(new Event(NOTICES_CHANGED));
 
 const POLL_MS = 60_000;
+const PANEL_W = 380;
+const PANEL_GAP = 16;
 const TONE_DOT = { critical: 'var(--color-critical-line)', warning: 'var(--color-warning-line)', info: 'var(--color-info-line)' } as const;
 
 /** Icon by what the notice is about. */
@@ -87,6 +89,8 @@ export function FieldNotificationBell() {
 
 function Bell({ navigate, size, alerts, dark = false }: { navigate: (p: string) => void; size: number; alerts: Alert[]; dark?: boolean }) {
   const [open, setOpen] = useState(false);
+  // How far the panel slides right of the bell so it stays on screen: in the field header the bell is not the last icon.
+  const [shift, setShift] = useState(0);
   const { unread, setUnread, refresh } = useUnreadNotices();
   const [list, setList] = useState<Notice[] | null>(null);
   const [loadError, setLoadError] = useState(false);
@@ -123,7 +127,11 @@ function Bell({ navigate, size, alerts, dark = false }: { navigate: (p: string) 
 
   return (
     <div style={{ position: 'relative', flex: 'none' }}>
-      <button aria-label={label} aria-expanded={open} onClick={() => setOpen(v => !v)}
+      <button aria-label={label} aria-expanded={open} onClick={e => {
+        const r = e.currentTarget.getBoundingClientRect();
+        setShift(Math.max(0, PANEL_GAP + Math.min(PANEL_W, window.innerWidth - 2 * PANEL_GAP) - r.right));
+        setOpen(v => !v);
+      }}
         style={{ position: 'relative', width: size, height: size, flex: 'none', display: 'grid', placeItems: 'center', border: dark ? '1px solid rgba(255,255,255,0.14)' : `1px solid ${color.border}`, borderRadius: radius.control, background: dark ? 'transparent' : color.card, color: dark ? color.onDark : color.ink, cursor: 'pointer' }}>
         <Icon name="Bell" size="nav" />
         {unread > 0
@@ -134,11 +142,11 @@ function Bell({ navigate, size, alerts, dark = false }: { navigate: (p: string) 
       {open && (
         <>
           <div onClick={() => setOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 40 }} />
-          <div role="dialog" aria-label="Notifications" style={{ position: 'absolute', top: 'calc(100% + 8px)', right: 0, zIndex: 41, width: 380, maxWidth: 'calc(100vw - 32px)', background: color.card, border: `1px solid ${color.border}`, borderRadius: radius.card, boxShadow: shadow.overlay, overflow: 'hidden', display: 'flex', flexDirection: 'column', whiteSpace: 'normal' }}>
+          <div role="dialog" aria-label="Notifications" style={{ position: 'absolute', top: 'calc(100% + 8px)', right: -shift, zIndex: 41, width: PANEL_W, maxWidth: `calc(100vw - ${2 * PANEL_GAP}px)`, background: color.card, border: `1px solid ${color.border}`, borderRadius: radius.card, boxShadow: shadow.overlay, overflow: 'hidden', display: 'flex', flexDirection: 'column', whiteSpace: 'normal' }}>
             <div style={{ padding: '12px 16px', borderBottom: `1px solid ${color.borderMuted}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
               <span style={{ fontSize: text.copy, fontWeight: 600, color: color.ink }}>Notifications{unread ? ` (${unread})` : ''}</span>
               <button type="button" onClick={markAll} disabled={unread === 0} title={unread === 0 ? 'Nothing unread' : undefined}
-                style={{ font: 'inherit', fontSize: text.small, color: unread === 0 ? color.faint : color.inkSecondary, background: 'none', border: 'none', cursor: unread === 0 ? 'default' : 'pointer', padding: 0 }}>
+                style={{ font: 'inherit', fontSize: text.small, color: unread === 0 ? color.faint : color.inkSecondary, background: 'none', border: 'none', cursor: unread === 0 ? 'default' : 'pointer', padding: '14px 0', margin: '-14px 0' }}>
                 Mark all read
               </button>
             </div>

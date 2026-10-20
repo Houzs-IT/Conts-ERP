@@ -108,10 +108,10 @@ export default function CleaningPage() {
   return tab === 'history' ? <HistoryView onTab={setTab} /> : <BoardView onTab={setTab} />;
 }
 
-function TabSwitch({ tab, onTab }: { tab: Tab; onTab: (t: Tab) => void }) {
+function TabSwitch({ tab, onTab, className }: { tab: Tab; onTab: (t: Tab) => void; className?: string }) {
   const { user } = useSession();
   const profit = !!user && ['management', 'operations_manager', 'finance_admin'].includes(user.role);
-  return <Segmented label="View" value={tab} onChange={onTab} options={[{ value: 'board', label: 'Board' }, { value: 'history', label: 'History' }, { value: 'prices', label: 'Prices' }, { value: 'pay', label: 'Pay' },
+  return <Segmented label="View" value={tab} onChange={onTab} className={className} options={[{ value: 'board', label: 'Board' }, { value: 'history', label: 'History' }, { value: 'prices', label: 'Prices' }, { value: 'pay', label: 'Pay' },
     ...(profit ? [{ value: 'profit' as const, label: 'Profit' }] : [])]} />;
 }
 
@@ -126,6 +126,7 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
   const date = pick === 'today' ? mytDay(0) : pick === 'tomorrow' ? mytDay(1) : picked;
   const [cleaner, setCleaner] = useState('');
   const [building, setBuilding] = useState('');
+  const [filtersOpen, setFiltersOpen] = useState(false);
   // Status switch: All (the default, ready units on top), To do (not started, incl. checkouts with no job), In progress, Done.
   const [phase, setPhase] = useState<'all' | 'todo' | 'doing' | 'done'>('all');
   const [selected, setSelected] = useState<string | null>(null);
@@ -314,13 +315,16 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
     <div className="flex flex-col gap-4 flex-1 min-h-0">
       <PageHeader title="Cleaning" sub={subtitle}
         actions={<>
-          <TabSwitch tab="board" onTab={onTab} />
-          {/* Phones: Cleaners sits behind one "..." so the header is View + Add (owner, Oct 2026). No auto-assign: cleans are
-              given by building or one by one (staff comment sheet, 16 Oct 2026). */}
+          {/* Phones: Cleaners sits behind one "..." so the header is View + Add (owner, Oct 2026), and the "..." shares the
+              tabs' row instead of wrapping to one of its own; the tabs scroll sideways if they run out of room. No auto-assign:
+              cleans are given by building or one by one (staff comment sheet, 16 Oct 2026). */}
+          <span className="flex items-center gap-2 min-w-0 max-md:w-full">
+            <TabSwitch tab="board" onTab={onTab} className="max-md:flex-initial max-md:min-w-0" />
+            <CleaningMore onCleaners={() => navigate('/operations/cleaners')} />
+          </span>
           <span className="contents max-md:hidden">
             <Button size="sm" variant="secondary" icon={<Icon name="Users" size="sm" />} onClick={() => navigate('/operations/cleaners')}>Cleaners</Button>
           </span>
-          <CleaningMore onCleaners={() => navigate('/operations/cleaners')} />
         </>}
         primary={<Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setCreating(true)}>Add cleaning job</Button>} />
 
@@ -334,9 +338,15 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
       <div className="flex items-end gap-2 flex-wrap">
         <Segmented label="Day" value={pick} onChange={setPick}
           options={[{ value: 'today', label: 'Today' }, { value: 'tomorrow', label: 'Tomorrow' }, { value: 'pick', label: 'Pick date' }]} />
+        {/* Phones: the two dropdowns fold behind one button so the first jobs show on the first screen. */}
+        <span className="md:hidden">
+          <Button size="sm" variant="secondary" icon={<Icon name="ListFilter" size="sm" />} onClick={() => setFiltersOpen(v => !v)} aria-expanded={filtersOpen}>
+            Filter{cleaner || building ? ` · ${[cleaner, building].filter(Boolean).length}` : ''}
+          </Button>
+        </span>
         {pick === 'pick' && <DateField aria-label="Day" value={picked} onChange={v => v && setPicked(v)} className={cx(INPUT, 'h-9 w-auto')} />}
-        <Select label="Cleaner" value={cleaner} onChange={setCleaner} options={cleanerOptions} placeholder="All cleaners" className="flex-1 min-w-[140px] md:flex-none md:w-[160px]" />
-        <Select label="Building" value={building} onChange={setBuilding} options={buildingOptions} placeholder="All buildings" className="flex-1 min-w-[140px] md:flex-none md:w-[180px]" />
+        <Select label="Cleaner" value={cleaner} onChange={setCleaner} options={cleanerOptions} placeholder="All cleaners" className={cx('flex-1 min-w-[140px] md:flex-none md:w-[160px]', !filtersOpen && 'max-md:hidden')} />
+        <Select label="Building" value={building} onChange={setBuilding} options={buildingOptions} placeholder="All buildings" className={cx('flex-1 min-w-[140px] md:flex-none md:w-[180px]', !filtersOpen && 'max-md:hidden')} />
         {visibleDepartures.length > 0 && (
           <Button size="sm" variant="brand" loading={busy === 'plan-all'} onClick={() => void planAll()} className="ml-auto max-md:ml-0 max-md:w-full">
             Plan cleaning for {visibleDepartures.length} {visibleDepartures.length === 1 ? 'checkout' : 'checkouts'}
@@ -433,7 +443,6 @@ function BuildingCard({ group, now, future, selected, busy, onSelect, onGuestLef
   onCheckIn: (reservationId: string, time: string, unit: string) => void; onPlan: (d: Departure) => void; onAssign?: () => void; picks?: Picks;
 }) {
   const external = group.id === 'external';
-  const count = group.rows.length + group.departures.length;
   const doneN = group.rows.filter(r => r.status === 'done').length;
   const open = group.rows.filter(r => r.status !== 'done');
   const unassigned = open.filter(r => !r.cleanerId && !r.assigneeId && !r.assigneeName).length;
@@ -454,7 +463,7 @@ function BuildingCard({ group, now, future, selected, busy, onSelect, onGuestLef
           className="min-w-0 flex items-center gap-2 flex-wrap bg-transparent border-none p-0 cursor-pointer text-left text-ink [font-family:inherit]">
           <Icon name={shut ? 'ChevronRight' : 'ChevronDown'} size="sm" color="var(--color-muted-ink)" />
           <span className="text-[15px] font-semibold tracking-[-0.005em]">{group.name}</span>
-          <span className="text-meta text-muted-ink tabular-nums">{count} {count === 1 ? 'unit' : 'units'} · {doneN} done</span>
+          <span className="text-meta text-muted-ink tabular-nums">{plural(group.rows.length, 'job')} · {doneN} done</span>
           {group.departures.length > 0 && <StatusBadge tone="critical">{group.departures.length} to plan</StatusBadge>}
         </button>
         <div className={cx('flex items-center gap-2 text-copy flex-wrap', picks && 'ml-auto')}>
@@ -645,6 +654,8 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft }: { row: Row; 
     try { const r = await api.get<{ secret: string }>(`/access-credentials/${id}?reveal=true`); setRevealed(x => ({ ...x, [id]: r.secret || '(no code set)' })); }
     catch (e) { toast({ tone: 'critical', title: 'Code not shown.', body: errorMessage(e, 'Try again.') }); }
   }
+  // Show again fetches again, so every look at the code stays in the audit log.
+  const hide = (id: string) => setRevealed(({ [id]: _, ...rest }) => rest);
 
   const done = row.state === 'resolved';
   const st = statusOf('cleaning', row.status);
@@ -672,7 +683,7 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft }: { row: Row; 
             {row.startedAt && <span className="text-meta text-on-dark">Started {hm(row.startedAt)}{used != null ? ` · ${done ? 'took' : 'so far'} ${minutesLabel(used)}` : ''}</span>}
           </div>
         </div>
-        <span className="[&_button]:text-white [&_button]:border-charcoal [&_button]:bg-transparent"><CloseButton onClick={onClose} /></span>
+        <span className="[&_button]:text-white [&_button]:border-charcoal [&_button]:bg-transparent"><CloseButton onClick={onClose} className="max-md:w-11 max-md:h-11" /></span>
       </div>
       {error && <StaleBanner message={error} onRetry={reload} />}
 
@@ -732,8 +743,10 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft }: { row: Row; 
         )}
       </section>
 
+      {/* Phones: the main action is pinned to the bottom of the sheet (the last item, stuck there), since the sheet
+          runs well past one screen. */}
       {!done && (
-        <div className="flex gap-2">
+        <div className="flex gap-2 max-md:order-last max-md:sticky max-md:bottom-0 max-md:z-[2] max-md:-mx-5 max-md:-mb-5 max-md:px-5 max-md:pt-3 max-md:pb-[calc(12px+env(safe-area-inset-bottom))] max-md:bg-card max-md:[border-top:1px_solid_var(--color-line)]">
           {row.state !== 'in_progress' && (
             <Button variant="secondary" className="flex-1" loading={busy === 'start'} onClick={() => void act('start', () => api.post(`/housekeeping/tasks/${row.id}/start`, {}), 'Cleaning job started.')}>Start</Button>
           )}
@@ -761,12 +774,12 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft }: { row: Row; 
             <div key={a.id} className="rounded-control bg-muted p-2.5 flex flex-col gap-1">
               <div className="flex items-center gap-2">
                 <span className="flex-1 font-medium">{a.label}</span>
-                {a.hasCode && (revealed[a.id]
-                  ? <span className="font-mono text-heading">{revealed[a.id]}</span>
-                  : <>{a.masked && <span className="font-mono text-muted-ink">{a.masked}</span>}
-                    {data.mayReveal && <button type="button" onClick={() => void reveal(a.id)} className="text-gold-ink font-medium cursor-pointer underline-offset-2 hover:underline">Show</button>}</>)}
+                {a.hasCode && (revealed[a.id] ? <span className="font-mono text-heading">{revealed[a.id]}</span> : a.masked && <span className="font-mono text-muted-ink">{a.masked}</span>)}
+                {a.hasCode && data.mayReveal && <button type="button" onClick={() => revealed[a.id] ? hide(a.id) : void reveal(a.id)} className="text-gold-ink font-medium cursor-pointer underline-offset-2 hover:underline bg-transparent border-0 p-0 max-md:min-h-11 max-md:min-w-11 max-md:-my-2.5 [font-family:inherit]">{revealed[a.id] ? 'Hide' : 'Show'}</button>}
               </div>
-              <span className="text-meta text-muted-ink">{a.instruction}</span>
+              {/* The note is free text and often repeats the code, so it stays behind Show with it. Without the right to
+                  reveal it shows as before: the server sends it to every role, cleaners included, as their way in. */}
+              {(!a.hasCode || !data.mayReveal || revealed[a.id]) && <span className="text-meta text-muted-ink">{a.instruction}</span>}
             </div>
           ))}
         {data && !data.mayReveal && data.access.some(a => a.hasCode) && <span className="text-meta text-muted-ink">Codes are shown to operations managers and management only.</span>}
@@ -816,7 +829,7 @@ function CleanAmount({ taskId, cost, external, done, kindName, onSaved }: {
     <section className="rounded-control border border-solid border-line p-3 flex flex-col gap-1.5">
       <div className="flex items-baseline gap-2">
         <span className="flex-1 font-semibold">Amount</span>
-        {!done && !cost.charged && !editing && <button type="button" onClick={() => { setSen(notSet ? null : cost.amount); setEditing(true); }} className="text-gold-ink font-medium cursor-pointer bg-transparent border-0 p-0 [font-family:inherit]">Change</button>}
+        {!done && !cost.charged && !editing && <button type="button" onClick={() => { setSen(notSet ? null : cost.amount); setEditing(true); }} className="text-gold-ink font-medium cursor-pointer bg-transparent border-0 p-0 max-md:min-h-11 max-md:min-w-11 max-md:-my-2.5 [font-family:inherit]">Change</button>}
       </div>
       {editing ? (
         <div className="flex items-center gap-2">
@@ -842,9 +855,9 @@ function CleanAmount({ taskId, cost, external, done, kindName, onSaved }: {
 
 function NewCleanModal({ date, onClose, onDone }: { date: string; onClose: () => void; onDone: () => void }) {
   const units = useUnitRoster();
-  const { cleaners } = useCleaners(true);
   const [unitId, setUnitId] = useState('');
   const [day, setDay] = useState(date);
+  const { cleaners } = useCleaners(true, day);
   const [kind, setKind] = useState('turnover');
   const [cleanerIds, setCleanerIds] = useState<string[]>([]);
   const [notes, setNotes] = useState('');
@@ -945,7 +958,7 @@ function NewCleanModal({ date, onClose, onDone }: { date: string; onClose: () =>
         </FormRow>
       </div>
       <div className="flex flex-col gap-1.5 min-w-0">
-        <CleanerChecklist cleaners={cleaners} value={cleanerIds} onChange={setCleanerIds} label="Cleaners (optional)" />
+        <CleanerChecklist cleaners={cleaners} value={cleanerIds} onChange={setCleanerIds} label="Cleaners (optional)" day={day} />
         {!cleanerIds.length && <span className="text-meta text-muted-ink">Leave empty to assign later. Tick more than one for a team.</span>}
       </div>
       <FormRow label="Notes for the cleaner (optional)"><textarea className={TEXTAREA} value={notes} onChange={e => setNotes(e.target.value)} maxLength={1000} /></FormRow>
@@ -959,7 +972,7 @@ const LAYOUT_NAME: Record<string, string> = { studio: 'Studio', '1_bedroom': '1 
 const EXTERNAL_CHOICE = { id: EXTERNAL, label: 'External (not one of our units)' };
 
 function AssignBuildingModal({ building, date, onClose, onDone }: { building: { buildingId: string; name: string }; date: string; onClose: () => void; onDone: (n: number, who: string) => void }) {
-  const { cleaners } = useCleaners(true);
+  const { cleaners } = useCleaners(true, date);
   const [cleanerIds, setCleanerIds] = useState<string[]>([]);
   const [onlyUnassigned, setOnlyUnassigned] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -975,7 +988,7 @@ function AssignBuildingModal({ building, date, onClose, onDone }: { building: { 
   return (
     <OpsModal title={`Assign ${building.name}`} sub={`Every unfinished cleaning job in this building on ${dayLabel(date)} goes to the cleaners you tick. Tick two or more to send a team to every unit.`} onClose={onClose} busy={busy}
       footer={<><Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" variant="primary" loading={busy} onClick={() => void save()}>Assign</Button></>}>
-      <CleanerChecklist cleaners={cleaners} value={cleanerIds} onChange={ids => { setCleanerIds(ids); setError(null); }} error={error} />
+      <CleanerChecklist cleaners={cleaners} value={cleanerIds} onChange={ids => { setCleanerIds(ids); setError(null); }} error={error} day={date} />
       <label className="flex items-center gap-2 text-copy cursor-pointer">
         <input type="checkbox" checked={onlyUnassigned} onChange={e => setOnlyUnassigned(e.target.checked)} className="w-4 h-4 accent-black" />
         Only cleaning jobs with no cleaner yet

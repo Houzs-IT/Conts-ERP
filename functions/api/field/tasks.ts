@@ -6,7 +6,7 @@ import { taskCleanersReady, mineSql, mineArgs, cleanerListSql, parseCleaners } f
 import { LIVE_STAY_SQL, mytToday, isDay, standardItems, autoGuestLeft } from '../../_lib/cleaning';
 import { hasCleanPrices } from '../../_lib/cleaningPrices';
 
-/** GET /api/field/tasks?date=today — the signed-in person's own jobs for the day (plus anything left over from earlier),
+/** GET /api/field/tasks?date=today — the signed-in person's own jobs for the day (plus, for today, anything left over from earlier),
  *  with the guest leaving and the guest arriving on each unit, so a cleaner on the phone sees what the office sees.
  *  Never carries revenue, fees or payout figures. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
@@ -16,6 +16,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const today = mytToday();
   const asked = new URL(request.url).searchParams.get('date');
   const date = isDay(asked) ? asked : today;
+  // Unfinished jobs from earlier days show on today only, so Tomorrow lists tomorrow's own jobs.
+  const carry = date === today;
   const when = MYT_DATE('COALESCE(t.scheduled_for, t.due_at, t.created_at)');
   const ready = await taskCleanersReady(env);
   const layoutSql = await unitLayoutSql(env);
@@ -44,8 +46,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     ) nxt ON TRUE
     LEFT JOIN guests ng ON ng.id = nxt.guest_id
     WHERE ${mineSql(ready)}
-      AND (${when} = ? OR (t.state != 'resolved' AND ${when} < ?))
-    ORDER BY p.name NULLS LAST, u.unit_number`, ...mineArgs(ready, session.userId), date, date);
+      AND (${when} = ?${carry ? ` OR (t.state != 'resolved' AND ${when} < ?)` : ''})
+    ORDER BY p.name NULLS LAST, u.unit_number`, ...mineArgs(ready, session.userId), date, ...(carry ? [date] : []));
   const defaultOut = (await all<{ value: string }>(env, `SELECT value FROM settings WHERE key IN ('operations.checkOut','ops.check_out') ORDER BY key = 'operations.checkOut' DESC LIMIT 1`))[0]?.value ?? '11:00';
   await autoGuestLeft(env, rows, defaultOut);
 

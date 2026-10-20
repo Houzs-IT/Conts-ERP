@@ -9,15 +9,18 @@ const isEmployment = (v: unknown): v is Employment => EMPLOYMENT.includes(v as E
 
 const MANAGE = ['management', 'operations_manager', 'operations_staff'];
 
-/** GET /api/housekeeping/cleaners?active=1 — the cleaner roster the operator
- *  maintains: internal staff vs outsourced third parties, each with today's open
- *  job load so the assign picker can spread work. */
+/** GET /api/housekeeping/cleaners?active=1&date=YYYY-MM-DD — the cleaner roster the operator
+ *  maintains: internal staff vs outsourced third parties, each with the open job load on
+ *  `date` (default today) so the assign picker can spread work. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
   if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Cleaners and technicians cannot see the roster.', 403);
 
-  const activeOnly = new URL(request.url).searchParams.get('active') === '1';
+  const q = new URL(request.url).searchParams;
+  const activeOnly = q.get('active') === '1';
+  const date = q.get('date') ?? '';
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : null;
   // The roster was seeded from the housekeeper logins once (migration 0008); a cleaner login made after that was in
   // no picker until someone added it here by hand. Add each active one that no roster entry links to or is named
   // after, the same way the seed did. A cleaner taken off the roster stays as an inactive entry, so is never re-added.
@@ -42,10 +45,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
               WHERE (t.cleaner_id = c.id OR (c.user_id IS NOT NULL AND t.assignee_id = c.user_id)${ready ? ' OR EXISTS (SELECT 1 FROM task_cleaners tc WHERE tc.task_id = t.id AND tc.cleaner_id = c.id)' : ''})
                 AND t.state NOT IN ('resolved')
                 AND to_char((COALESCE(t.scheduled_for, t.due_at, t.created_at))::timestamptz AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM-DD')
-                    = to_char(now() AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM-DD')) AS busy
+                    = COALESCE(?, to_char(now() AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM-DD'))) AS busy
     FROM cleaners c
     ${activeOnly ? 'WHERE c.is_active = 1' : ''}
-    ORDER BY c.is_active DESC, c.employment_type, c.full_name`);
+    ORDER BY c.is_active DESC, c.employment_type, c.full_name`, day);
 
   return json({
     data: rows.map(r => ({

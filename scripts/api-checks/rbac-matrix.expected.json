@@ -23,6 +23,7 @@
  "DELETE /api/sales-orders/[id]": "AAFAFFFU",
  "DELETE /api/suppliers/[id]": "AAFAFFFU",
  "DELETE /api/table-layouts/[id]": "AAAAFFFU",
+ "DELETE /api/tasks/[id]/photos/[docId]": "AAAFAAFU",
  "DELETE /api/threepl-companies/[id]": "AAFAFFFU",
  "DELETE /api/units/[id]": "AAFAFFFU",
  "DELETE /api/units/[id]/channels/[rowId]": "AAFAFFFU",

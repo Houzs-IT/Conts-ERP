@@ -5,6 +5,7 @@ import { StaleBanner } from '../components/DataState';
 import { EmptyState, Skeleton } from '../components/States';
 import { AttachmentLabel, MediaGallery } from '../components/Attachments';
 import { useToast } from '../components/Toast';
+import { useConfirm } from '../components/ConfirmDialog';
 import { useApi } from '../lib/useApi';
 import { useNow } from '../lib/useMedia';
 import { api, errorMessage } from '../lib/api';
@@ -14,6 +15,12 @@ import {
 } from '../components/ops/OpsUi';
 import { StatusBadge } from '../components/StatusBadge';
 import { sizeLine } from '../lib/unitSize';
+import { plural } from '../lib/format';
+
+/** Days a job is past its day, 0 when it is today's or later. */
+const daysLate = (day: string) => Math.max(0, Math.round((Date.parse(mytDay(0)) - Date.parse(day)) / 864e5));
+/** Google Maps search for an address, for the drive there. */
+const mapsLink = (address: string) => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
 
 /* GET /api/field/tasks (functions/api/field/tasks.ts) */
 interface Job {
@@ -38,8 +45,8 @@ export default function FieldTodayPage() {
   const groups = useMemo(() => {
     const m = new Map<string, { name: string; jobs: Job[] }>();
     for (const j of jobs) { const g = m.get(j.buildingId) ?? { name: j.unit.propertyName, jobs: [] }; g.jobs.push(j); m.set(j.buildingId, g); }
-    // In each building: what is still to do first, the one the next guest reaches soonest at the top.
-    const by = (j: Job) => `${j.done ? 1 : 0}${j.next?.checkInAt ?? '9'}${j.unit.unitNumber}`;
+    // In each building: what is still to do first, late jobs at the top, then the one the next guest reaches soonest.
+    const by = (j: Job) => `${j.done ? 1 : 0}${daysLate(j.day) ? 0 : 1}${j.next?.checkInAt ?? '9'}${j.unit.unitNumber}`;
     for (const g of m.values()) g.jobs.sort((a, b) => by(a).localeCompare(by(b)));
     return [...m.entries()].sort((a, b) => (a[0] === 'external' ? 1 : 0) - (b[0] === 'external' ? 1 : 0) || a[1].name.localeCompare(b[1].name));
   }, [jobs]);
@@ -52,7 +59,7 @@ export default function FieldTodayPage() {
           <h1 className="m-0 text-title font-semibold">My jobs</h1>
           <div className="text-copy text-muted-ink">{dayLabel(date)} · {data ? `${left} to do, ${jobs.length - left} done` : 'Loading'}</div>
         </div>
-        <Segmented label="Day" value={pick} onChange={setPick} options={[{ value: 'today', label: 'Today' }, { value: 'tomorrow', label: 'Tomorrow' }]} />
+        <Segmented label="Day" className="[&>button]:h-11" value={pick} onChange={setPick} options={[{ value: 'today', label: 'Today' }, { value: 'tomorrow', label: 'Tomorrow' }]} />
       </div>
       {error && <StaleBanner message={error} onRetry={reload} />}
       {loading && !data ? <><Skeleton height={140} /><Skeleton height={140} /></>
@@ -63,6 +70,8 @@ export default function FieldTodayPage() {
             {g.jobs.map(j => <JobCard key={j.id} job={j} now={now} open={open === j.id} onToggle={() => setOpen(open === j.id ? null : j.id)} onChanged={reload} />)}
           </section>
         ))}
+      {/* Room under the last card for the pinned job button. */}
+      {jobs.some(j => j.id === open && !j.done) && <div aria-hidden className="h-24 flex-none" />}
     </>
   );
 }
@@ -72,8 +81,11 @@ function JobCard({ job: j, now, open, onToggle, onChanged }: { job: Job; now: nu
   const [busy, setBusy] = useState<string | null>(null);
   const [damage, setDamage] = useState(false);
   const detail = useApi<Detail>(open ? `/housekeeping/tasks/${j.id}` : null);
+  const [confirm, ask] = useConfirm();
   const files = detail.data?.media.length ?? j.photoCount;
   const isClean = ['turnover', 'deep_clean', 'light_clean'].includes(j.kind);
+  // Not started, started without proof, started with proof, finished. The server's state and photo count decide it.
+  const phase = j.done ? 'done' : j.state !== 'in_progress' ? 'todo' : files > 0 ? 'proof' : 'started';
 
   async function act(key: string, fn: () => Promise<unknown>, ok: string) {
     setBusy(key);
@@ -81,7 +93,12 @@ function JobCard({ job: j, now, open, onToggle, onChanged }: { job: Job; now: nu
     catch (e) { toast({ tone: 'critical', title: 'Not saved.', body: errorMessage(e, 'Check your signal and try again.') }); }
     finally { setBusy(null); }
   }
-  const status = j.done ? <StatusBadge tone="success">Done</StatusBadge> : j.state === 'in_progress' ? <StatusBadge tone="info">Cleaning</StatusBadge>
+  async function remove(m: MediaItem) {
+    const ok = await ask({ title: `Remove this ${m.kind === 'video' ? 'video' : 'photo'}?`, body: 'It is deleted from the job. You can take another one.', confirmLabel: 'Remove', danger: true });
+    if (ok === null) return;
+    void act('remove', () => api.del(`/tasks/${j.id}/photos/${m.id}`), m.kind === 'video' ? 'Video removed.' : 'Photo removed.');
+  }
+  const status = j.done ? <StatusBadge tone="success">Done</StatusBadge> : j.state === 'in_progress' ? <StatusBadge tone="info">In progress</StatusBadge>
     : j.guestOut ? <StatusBadge tone="gold">Guest out, ready to clean</StatusBadge> : j.previous ? <StatusBadge tone="neutral">Guest still in</StatusBadge> : <StatusBadge tone="warning">To do</StatusBadge>;
 
   return (
@@ -110,7 +127,7 @@ function JobCard({ job: j, now, open, onToggle, onChanged }: { job: Job; now: nu
           <div className="flex items-center gap-2 flex-wrap text-copy">
             {j.next ? <><span>Finish by <b className="tabular-nums">{j.next.checkInTime}</b></span><span className="text-muted-ink">·</span><span><TimeLeft at={j.next.checkInAt} now={now} />{Date.parse(j.next.checkInAt) > now ? ' left' : ''}</span></>
               : <span className="text-muted-ink">No guest arriving after this clean.</span>}
-            {j.day < mytDay(0) && <StatusBadge tone="warning">From {dayLabel(j.day)}</StatusBadge>}
+            {daysLate(j.day) > 0 && <StatusBadge tone="critical">Overdue · {plural(daysLate(j.day), 'day')} late</StatusBadge>}
           </div>
         )}
         {j.instructions && <div className="text-copy rounded-control bg-warning-bg text-ink px-2.5 py-2"><span className="block text-meta text-muted-ink">From the office</span>{j.instructions}</div>}
@@ -122,31 +139,64 @@ function JobCard({ job: j, now, open, onToggle, onChanged }: { job: Job; now: nu
             <div key={a.id} className="rounded-control bg-muted p-2.5 text-copy"><b>{a.label}</b><div className="text-muted-ink">{a.instruction}</div></div>
           ))}
           {detail.data?.parking && <div className="rounded-control bg-muted p-2.5 text-copy"><b>Car park</b><div className="text-muted-ink">{detail.data.parking}</div></div>}
-          {j.addressLine && <div className="text-meta text-muted-ink">{j.addressLine}</div>}
+          {j.addressLine && (
+            <a href={mapsLink(j.addressLine)} target="_blank" rel="noopener noreferrer" className="min-h-11 flex items-center gap-2 text-copy text-ink">
+              <Icon name="MapPin" size="sm" /><span className="flex-1 min-w-0 underline underline-offset-2 [overflow-wrap:anywhere]">{j.addressLine}</span><span className="text-meta text-muted-ink">Open map</span>
+            </a>
+          )}
 
-          {!j.done && (
-            <div className="grid grid-cols-2 gap-2">
-              {j.previous && !j.guestOut && <Button size="touch" variant="secondary" loading={busy === 'left'} onClick={() => void act('left', () => api.post('/housekeeping/guest-left', { taskId: j.id }), 'Guest out. Ready to clean.')}>Guest left</Button>}
-              {j.state !== 'in_progress' && <Button size="touch" variant="secondary" loading={busy === 'start'} onClick={() => void act('start', () => api.post(`/housekeeping/tasks/${j.id}/start`, {}), 'Started.')}>Start</Button>}
+          {!j.done && j.previous && !j.guestOut && (
+            <Button size="touch" variant="secondary" loading={busy === 'left'} onClick={() => void act('left', () => api.post('/housekeeping/guest-left', { taskId: j.id }), 'Guest out. Ready to clean.')}>Guest left</Button>
+          )}
+
+          {phase === 'done' && (
+            <div role="status" className="rounded-control bg-success-bg p-3 flex items-start gap-2.5 text-copy">
+              <Icon name="CircleCheck" size="base" color="var(--color-success-line)" />
+              <span><b>Job complete{j.completedAt ? ` at ${hm(j.completedAt)}` : ''}.</b>{j.startedAt ? ` Started ${hm(j.startedAt)}.` : ''}
+                <span className="block text-meta text-muted-ink">Proof of work is locked. Ask the office if something needs changing.</span></span>
             </div>
           )}
 
-          <section className="flex flex-col gap-2">
-            <AttachmentLabel title="Proof of work" count={files} hint={!j.done && files === 0 ? 'At least 1 photo or video to complete' : undefined} />
-            {detail.data ? <MediaGallery items={detail.data.media} upload={j.done ? undefined : uploadTo(`/tasks/${j.id}/photos`)} onDone={() => { detail.reload(); onChanged(); }} addLabel="Take or add photo" emptyText="No photos were added." />
-              : <Skeleton height={84} />}
-          </section>
+          {/* Proof only once the job is started: photos taken before the start would not prove the finished work. */}
+          {phase !== 'todo' && (
+            <section className="flex flex-col gap-2">
+              {j.startedAt && phase !== 'done' && <span className="text-meta text-muted-ink">Started {hm(j.startedAt)}</span>}
+              <AttachmentLabel title="Proof of work" count={files} hint={
+                phase === 'started' ? <StatusBadge tone="warning">1 photo or video required</StatusBadge>
+                  : phase === 'proof' ? <StatusBadge tone="success"><span className="inline-flex items-center gap-1">Proof attached<Icon name="Check" size="sm" style={{ width: 13, height: 13 }} /></span></StatusBadge>
+                  : undefined} />
+              {detail.data ? <MediaGallery items={detail.data.media} upload={j.done ? undefined : uploadTo(`/tasks/${j.id}/photos`)} onDone={() => { detail.reload(); onChanged(); }}
+                onRemove={j.done ? undefined : m => void remove(m)} addLabel="Take or add photo" emptyText="No photos were added." />
+                : <Skeleton height={84} />}
+            </section>
+          )}
 
           {!j.external && <Button size="touch" variant="secondary" icon={<Icon name="TriangleAlert" size="sm" />} onClick={() => setDamage(true)}>Report damage</Button>}
-          {!j.done && (
-            <Button size="touch" variant="primary" loading={busy === 'done'} disabled={files === 0} disabledReason="Add at least one photo or video first."
-              onClick={() => void act('done', () => api.post(`/tasks/${j.id}/complete`, { photoIds: [] }), `${j.unit.unitNumber} done. Thank you.`)}>
-              Mark complete
-            </Button>
-          )}
-          {j.done && <span className="text-copy text-success">Finished{j.completedAt ? ` at ${hm(j.completedAt)}` : ''}{j.startedAt ? ` (started ${hm(j.startedAt)})` : ''}.</span>}
         </div>
       )}
+
+      {/* One action at a time, pinned above the phone's home bar. data-action-bar lifts the staging View as switch above it (ViewAs.tsx). */}
+      {open && phase !== 'done' && (
+        <div data-action-bar className="fixed inset-x-0 bottom-0 z-50 bg-card [border-top:1px_solid_var(--color-line)] px-4 pt-3 pb-[max(12px,env(safe-area-inset-bottom))]">
+          <div className="max-w-[528px] mx-auto flex flex-col gap-1.5">
+            {phase === 'todo' ? (
+              <Button size="touch" variant="primary" loading={busy === 'start'}
+                onClick={() => void act('start', () => api.post(`/housekeeping/tasks/${j.id}/start`, {}), `Started at ${hm(new Date().toISOString())}.`)}>
+                Start job
+              </Button>
+            ) : (
+              <Button size="touch" variant="primary" loading={busy === 'done'} disabled={phase === 'started' || busy === 'remove'}
+                onClick={() => void act('done', () => api.post(`/tasks/${j.id}/complete`, { photoIds: detail.data?.media.map(m => m.id) ?? [] }), `${j.unit.unitNumber} done. Thank you.`)}>
+                {phase === 'started' ? 'Upload photo to complete' : 'Mark complete'}
+              </Button>
+            )}
+            <span className="text-meta text-muted-ink text-center" aria-live="polite">
+              <b className="text-ink">{j.unit.unitNumber}</b> · {phase === 'todo' ? 'Not started yet' : phase === 'started' ? 'Upload proof of work to complete' : 'Proof attached, ready to finish'}
+            </span>
+          </div>
+        </div>
+      )}
+      {confirm}
       {damage && <ReportDamageModal unitId={j.unitId} unitLabel={`${j.unit.propertyName} ${j.unit.unitNumber}`} taskId={j.id} onClose={() => setDamage(false)}
         onDone={() => { setDamage(false); toast({ tone: 'success', title: 'Damage reported.', body: 'The office has it as a maintenance job.' }); }} />}
     </article>

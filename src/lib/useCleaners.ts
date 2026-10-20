@@ -24,10 +24,12 @@ export const CLEANER_FALLBACK: { data: Cleaner[] } = {
   ],
 };
 
-/** The cleaner roster. `activeOnly` (default) is what the assign pickers use. */
-export function useCleaners(activeOnly = true): { cleaners: Cleaner[]; ready: boolean; loading: boolean; error: string | null; reload: () => void } {
+/** The cleaner roster. `activeOnly` (default) is what the assign pickers use; `date` counts each cleaner's open jobs
+ *  on that day instead of today. */
+export function useCleaners(activeOnly = true, date?: string): { cleaners: Cleaner[]; ready: boolean; loading: boolean; error: string | null; reload: () => void } {
+  const q = new URLSearchParams({ ...(activeOnly && { active: '1' }), ...(date && { date }) }).toString();
   const { data, loading, error, reload } = useApi<{ data: Cleaner[] }>(
-    `/housekeeping/cleaners${activeOnly ? '?active=1' : ''}`,
+    `/housekeeping/cleaners${q ? `?${q}` : ''}`,
     activeOnly ? { data: CLEANER_FALLBACK.data.filter(c => c.isActive) } : CLEANER_FALLBACK,
   );
   return { cleaners: data?.data ?? [], ready: data != null, loading, error, reload };
