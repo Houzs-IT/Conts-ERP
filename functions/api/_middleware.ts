@@ -72,6 +72,10 @@ const PUBLIC = new Set([
   'GET /api/auth/reset-password', 'POST /api/auth/reset-password', 'GET /api/settings/public',
 ]);
 
+/** What someone still on a temporary password (an invite, or management's Reset password) can reach: replacing it,
+ *  and signing out. Not the staging account switcher: an invited management account could switch away with it. */
+const TEMP_PASSWORD_ALLOWED = /^(GET \/api\/auth\/session|POST \/api\/auth\/(logout|change-password))$/;
+
 /** What someone who must still set up two-step sign-in can reach. */
 const SETUP_ALLOWED = /^(GET \/api\/auth\/session|POST \/api\/auth\/(logout|change-password)|GET \/api\/account|POST \/api\/account\/.+)$/;
 
@@ -102,6 +106,12 @@ const handle: PagesFunction<Env> = async ({ request, env, next, waitUntil }) => 
     const headers = new Headers(request.headers);
     headers.set('cookie', (request.headers.get('cookie') ?? '').replace(/tc_session=[^;]+/, `tc_session=${token}`));
     forward = new Request(request, { headers }) as typeof request;
+  }
+
+  // A temporary password travels by email, so until it is replaced it opens nothing but the "Set a new password" step.
+  // Read from users on every request (above), so an old cookie cannot skip it and the change takes effect at once.
+  if (live.user.mustChangePassword && !TEMP_PASSWORD_ALLOWED.test(route)) {
+    return fail('PASSWORD_CHANGE_REQUIRED', 'Set a new password first.', 403);
   }
 
   // Management requires two-step sign-in for this role and this person has not set it up: until they do,

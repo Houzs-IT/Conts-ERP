@@ -80,14 +80,15 @@ export async function endSession(env: Env, sid: string | undefined, userId: stri
   return true;
 }
 
-/** The security settings and the signed-in user's current role and active flag, in one query (one
- *  connection), for the session middleware. The cookie only says who signed in; what they may do is read
- *  from users on every request, so deactivating someone or changing their role takes effect at once.
+/** The security settings and the signed-in user's current role, active flag and whether they are still on a
+ *  temporary password, in one query (one connection), for the session middleware.
+ *  The cookie only says who signed in; what they may do is read from users on every request, so deactivating
+ *  someone or changing their role takes effect at once.
  *  `sid` (a cookie issued once migration 0106 is in) is looked up in the same query: `sessionLive` is false
  *  once that browser has signed out. */
 export async function sessionState(env: Env, userId: string, sid?: string): Promise<{
   settings: SecuritySettings;
-  user: { role: string; active: boolean; fullName: string; revokedAt: number; twoFactorOn: boolean; sessionLive: boolean } | null;
+  user: { role: string; active: boolean; fullName: string; revokedAt: number; twoFactorOn: boolean; sessionLive: boolean; mustChangePassword: boolean } | null;
 }> {
   const [revokedCol, totpCol, sessions] = await Promise.all([
     hasColumn(env, 'users', 'sessions_revoked_at'), hasColumn(env, 'users', 'totp_enabled_at'), sid ? sessionTable(env) : false,
@@ -98,12 +99,12 @@ export async function sessionState(env: Env, userId: string, sid?: string): Prom
     SELECT '~user', role || '|' || is_active::text || '|' || ${revokedCol ? "COALESCE(sessions_revoked_at, '')" : "''"}
       || '|' || ${totpCol ? "(totp_enabled_at IS NOT NULL)::int::text" : "'0'"}
       || '|' || ${sessions ? '(SELECT count(*) FROM user_sessions s WHERE s.id = ? AND s.user_id = users.id)::text' : "'1'"}
-      || '|' || full_name FROM users WHERE id = ?`, ...(sessions ? [sid, userId] : [userId]));
+      || '|' || must_change_password::text || '|' || full_name FROM users WHERE id = ?`, ...(sessions ? [sid, userId] : [userId]));
   const u = rows.find(r => r.key === '~user');
-  const [role, active, revoked, totp, live, ...name] = (u?.value ?? '').split('|');
+  const [role, active, revoked, totp, live, mustChange, ...name] = (u?.value ?? '').split('|');
   return {
     settings: parseSecurity(rows.filter(r => r.key !== '~user')),
-    user: u ? { role, active: active === '1', fullName: name.join('|'), revokedAt: revoked ? Date.parse(revoked) : 0, twoFactorOn: totp === '1', sessionLive: live !== '0' } : null,
+    user: u ? { role, active: active === '1', fullName: name.join('|'), revokedAt: revoked ? Date.parse(revoked) : 0, twoFactorOn: totp === '1', sessionLive: live !== '0', mustChangePassword: mustChange !== '0' } : null,
   };
 }
 
