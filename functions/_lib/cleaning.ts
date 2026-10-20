@@ -173,23 +173,29 @@ export const isDay = (v: unknown): v is string => typeof v === 'string' && /^\d{
  *  instant) never is, so later reads still know it was automatic. Never throws: a screen read must not fail over it. */
 export async function autoGuestLeft(env: Env, rows: any[], stdOut: string): Promise<void> {
   const now = Date.now();
-  const due: { id: string; at: string; time: string; unit: string | null }[] = [];
+  let due: { row: any; id: string; at: string; time: string; unit: string | null }[] = [];
   for (const r of rows) {
     if (r.guest_left_at || !r.prev_id || r.prev_state === 'checked_out' || r.state === 'resolved' || !r.day) continue;
     const time = r.prev_time && /^\d{2}:\d{2}$/.test(r.prev_time) ? r.prev_time : stdOut;
     const at = `${r.day}T${time}:00+08:00`;
     if (Date.parse(at) > now) continue;
-    r.guest_left_at = at; r.guest_left_auto = true;
-    due.push({ id: r.id, at, time, unit: r.unit_id ?? null });
+    due.push({ row: r, id: r.id, at, time, unit: r.unit_id ?? null });
   }
   if (!due.length) return;
   try {
+    const unmarkedByStaff = await all<{ id: string }>(env, `
+      SELECT DISTINCT l.entity_id AS id FROM audit_log l
+      WHERE l.entity_table = 'tasks' AND l.action = 'task.guest_left_undo' AND l.entity_id IN (SELECT jsonb_array_elements_text(?::text::jsonb))`,
+      JSON.stringify(due.map(d => d.id)));
+    due = due.filter(d => !unmarkedByStaff.some(u => u.id === d.id));
+    for (const d of due) { d.row.guest_left_at = d.at; d.row.guest_left_auto = true; }
+    if (!due.length) return;
     const stamp = nowIso();
     // Only the rows this read stamped get a history line: two screens reading at once write it once.
     const set = await all<{ id: string }>(env, `
       UPDATE tasks t SET guest_left_at = x.at, updated_at = ?
       FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, at text)
-      WHERE t.id = x.id AND t.guest_left_at IS NULL RETURNING t.id`, stamp, JSON.stringify(due));
+      WHERE t.id = x.id AND t.guest_left_at IS NULL RETURNING t.id`, stamp, JSON.stringify(due.map(d => ({ id: d.id, at: d.at }))));
     const done = due.filter(d => set.some(s => s.id === d.id));
     if (!done.length) return;
     await run(env, `UPDATE units SET readiness = 'dirty', updated_at = ? WHERE id IN (SELECT jsonb_array_elements_text(?::text::jsonb)) AND readiness IN ('occupied','ready')`,

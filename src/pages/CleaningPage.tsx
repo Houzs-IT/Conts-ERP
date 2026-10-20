@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
@@ -354,7 +354,7 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
         )}
       </div>
 
-      <SplitPane list={list} open={!!sel} onClose={() => setSelected(null)}
+      <SplitPane list={list} open={!!sel} onClose={() => setSelected(null)} width={580} compactList
         empty={<div className="text-center text-copy text-muted-ink p-6 max-w-[260px]"><Icon name="MousePointerClick" size="lg" /><p className="mt-2">Pick a unit to see its cleaner, door code and proof photos.</p></div>}
         detail={sel ? <CleanDetail key={sel.id} row={sel} now={now} onClose={() => setSelected(null)} onChanged={reload} onGuestLeft={() => void guestLeft({ taskId: sel.id }, sel.unitNumber)} /> : null} />
 
@@ -432,7 +432,10 @@ function BulkCloseModal({ action, jobs, onClose, onDone }: { action: 'done' | 'c
 /* ---------- one building ---------- */
 
 // Columns follow the card's own width, not the window's: with the detail panel open the list is narrow on a laptop.
-const COLS = '@2xl:grid @2xl:grid-cols-[minmax(0,1.05fr)_minmax(0,1.15fr)_minmax(0,1.05fr)_minmax(0,0.6fr)_minmax(0,0.55fr)_minmax(0,0.8fr)_minmax(0,0.6fr)_minmax(0,0.85fr)_minmax(0,1.2fr)] @2xl:items-center @2xl:gap-2.5';
+const COLS = '@2xl:grid @2xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.35fr)_minmax(0,1.25fr)_minmax(0,0.7fr)_minmax(0,0.7fr)_minmax(0,0.85fr)_minmax(0,1.2fr)] @6xl:grid-cols-[minmax(0,1.05fr)_minmax(0,1.15fr)_minmax(0,1.05fr)_minmax(0,0.6fr)_minmax(0,0.55fr)_minmax(0,0.8fr)_minmax(0,0.6fr)_minmax(0,0.85fr)_minmax(0,1.2fr)] @2xl:items-center @2xl:gap-2.5';
+const HIDDEN_IN_NARROW_TABLE = '@2xl:@max-6xl:hidden';
+const STACKED_LABEL = '@2xl:hidden flex-none w-[60px] text-meta text-muted-ink';
+const LABELLED_CELL = 'min-w-0 items-baseline gap-2';
 
 /** Ticks for the overdue bulk close: only passed in the Overdue section, and only for management. */
 interface Picks { has: (id: string) => boolean; toggle: (ids: string[], on: boolean) => void }
@@ -460,7 +463,7 @@ function BuildingCard({ group, now, future, selected, busy, onSelect, onGuestLef
             aria-label={`Select every overdue job in ${group.name}`} className="flex-none w-4 h-4 m-0 -mr-1 accent-[var(--color-brand-black)] cursor-pointer" />
         )}
         <button type="button" onClick={() => setShut(v => !v)} aria-expanded={!shut}
-          className="min-w-0 flex items-center gap-2 flex-wrap bg-transparent border-none p-0 cursor-pointer text-left text-ink [font-family:inherit]">
+          className="min-w-0 mr-auto flex items-center gap-2 flex-wrap bg-transparent border-none p-0 cursor-pointer text-left text-ink [font-family:inherit]">
           <Icon name={shut ? 'ChevronRight' : 'ChevronDown'} size="sm" color="var(--color-muted-ink)" />
           <span className="text-[15px] font-semibold tracking-[-0.005em]">{group.name}</span>
           <span className="text-meta text-muted-ink tabular-nums">{plural(group.rows.length, 'job')} · {doneN} done</span>
@@ -475,23 +478,23 @@ function BuildingCard({ group, now, future, selected, busy, onSelect, onGuestLef
       </header>
       {!shut && <>
       <div className={cx('hidden text-meta font-semibold text-muted-ink px-5 py-2 [border-top:1px_solid_var(--color-line-soft)]', COLS)}>
-        <div>{external ? 'Address' : 'Unit'}</div><div>{external ? 'Client' : 'Checkout (leaving)'}</div><div>{external ? '' : 'Check-in (arriving)'}</div><div>Time left</div><div>Type</div><div>Layout</div><div>Amount</div><div>Cleaner</div><div>Status</div>
+        <div>{external ? 'Address' : 'Unit'}</div><div>{external ? 'Client' : 'Checkout (leaving)'}</div><div>{external ? '' : 'Check-in (arriving)'}</div><div>Time left</div><div className={HIDDEN_IN_NARROW_TABLE}>Type</div><div className={HIDDEN_IN_NARROW_TABLE}>Layout</div><div>Amount</div><div>Cleaner</div><div>Status</div>
       </div>
       {group.rows.map(r => <CleanRow key={r.id} r={r} now={now} active={r.id === selected} busy={busy === `left-${r.id}`} savingIn={!!r.next?.reservationId && busy === `in-${r.next.reservationId}`}
         picked={picks ? picks.has(r.id) : undefined} onPick={picks ? on => picks.toggle([r.id], on) : undefined}
         onSelect={() => onSelect(r.id)} onGuestLeft={() => onGuestLeft({ taskId: r.id }, r.unitNumber)} onUndoLeft={() => onUndoLeft(r.id, r.unitNumber)}
         onCheckIn={t => r.next?.reservationId && onCheckIn(r.next.reservationId, t, r.unitNumber)} />)}
       {group.departures.map(d => (
-        <div key={d.reservationId} className={cx('px-4 @2xl:px-5 py-3 [border-top:1px_solid_var(--color-line-soft)] text-copy flex flex-wrap items-baseline gap-x-4 gap-y-1', COLS)}>
-          <div className="basis-full @2xl:basis-auto flex items-center gap-x-2 flex-wrap min-w-0"><span className="min-w-0"><b>{d.unitNumber}</b>{d.unit?.size && <span className="ml-1.5 @2xl:hidden text-meta text-muted-ink">{d.unit.size}</span>}</span><span className="@2xl:hidden"><StatusBadge tone="critical">No cleaning job planned</StatusBadge></span></div>
+        <div key={d.reservationId} className={cx('px-4 @2xl:px-5 py-3 [border-top:1px_solid_var(--color-line-soft)] text-copy grid grid-cols-1 @sm:grid-cols-2 items-baseline gap-x-4 gap-y-1.5', COLS)}>
+          <div className="col-span-full @2xl:col-auto flex items-center gap-x-2 flex-wrap min-w-0"><span className="min-w-0"><b>{d.unitNumber}</b>{d.unit?.size && <span className="ml-1.5 @2xl:hidden text-meta text-muted-ink">{d.unit.size}</span>}</span><span className="@2xl:hidden"><StatusBadge tone="critical">No cleaning job planned</StatusBadge></span></div>
           <div><b className="[font-variant-numeric:tabular-nums]">{d.checkOutTime}</b> · {d.guestName}{d.lateCheckOut && <StatusBadge tone="warning" className="ml-1">Late checkout</StatusBadge>}{d.state === 'checked_out' && <StatusBadge tone="gold" className="ml-1">Out</StatusBadge>}</div>
           <div>{d.next ? <><CheckInTime time={d.next.checkInTime} saving={!!d.next.reservationId && busy === `in-${d.next.reservationId}`} onSave={d.next.reservationId ? t => onCheckIn(d.next!.reservationId!, t, d.unitNumber) : undefined} /> · {d.next.guestName}</> : <span className="text-muted-ink">No check-in</span>}</div>
           <div><span className="@2xl:hidden text-muted-ink">Time left </span><TimeLeft at={d.next?.checkInAt} now={now} /></div>
+          <div className="hidden @6xl:block text-muted-ink">—</div>
+          <div className="hidden @6xl:block min-w-0">{d.unit?.layout ?? d.unit?.size ?? <span className="text-muted-ink">—</span>}</div>
           <div className="hidden @2xl:block text-muted-ink">—</div>
-          <div className="hidden @2xl:block min-w-0">{d.unit?.layout ?? d.unit?.size ?? <span className="text-muted-ink">—</span>}</div>
           <div className="hidden @2xl:block text-muted-ink">—</div>
-          <div className="hidden @2xl:block text-muted-ink">—</div>
-          <div className="basis-full @2xl:basis-auto flex items-center gap-2 flex-wrap justify-end @2xl:justify-start pt-1 @2xl:pt-0">
+          <div className="col-span-full @2xl:col-auto flex items-center gap-2 flex-wrap justify-end @2xl:justify-start pt-1 @2xl:pt-0">
             <span className="hidden @2xl:inline"><StatusBadge tone="critical">No cleaning job</StatusBadge></span>
             <Button size="sm" variant="primary" loading={busy === `plan-${d.reservationId}`} onClick={() => onPlan(d)}>Plan cleaning</Button>
             {d.state !== 'checked_out' && !future && <Button size="sm" variant="secondary" loading={busy === `left-${d.reservationId}`} onClick={() => onGuestLeft({ reservationId: d.reservationId }, d.unitNumber)}>Guest left</Button>}
@@ -525,42 +528,40 @@ function CleanRow({ r, now, active, busy, savingIn, onSelect, onGuestLeft, onUnd
   const label = r.status === 'done' ? 'Ready to check in' : st.label;
   return (
     <div role="button" tabIndex={0} aria-pressed={active} onClick={onSelect} onKeyDown={e => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onSelect(); } }}
-      className={cx('px-4 @2xl:px-5 py-3 [border-top:1px_solid_var(--color-line-soft)] text-copy cursor-pointer flex flex-wrap items-baseline gap-x-4 gap-y-1 outline-none focus-visible:[box-shadow:inset_0_0_0_2px_var(--color-gold)]', COLS,
+      className={cx('px-4 @2xl:px-5 py-3 [border-top:1px_solid_var(--color-line-soft)] text-copy cursor-pointer grid grid-cols-1 @sm:grid-cols-2 items-baseline gap-x-4 gap-y-1.5 outline-none focus-visible:[box-shadow:inset_0_0_0_2px_var(--color-gold)]', COLS,
         active ? 'bg-gold-tint [box-shadow:inset_3px_0_0_var(--color-gold)]' : 'hover:bg-page')}>
-      <div className="basis-full @2xl:basis-auto flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0">
+      <div className="col-span-full @2xl:col-auto flex flex-wrap @max-2xl:flex-nowrap items-center gap-x-2 gap-y-1 min-w-0">
         {onPick && (
           <input type="checkbox" checked={!!picked} onChange={e => onPick(e.target.checked)} onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}
             aria-label={`Select ${r.unitNumber}, ${dayLabel(r.day)}`} className="flex-none w-4 h-4 m-0 accent-[var(--color-brand-black)] cursor-pointer" />
         )}
-        <span className="min-w-0">
+        <span className="min-w-0 truncate">
           <b className="text-ink whitespace-nowrap">{r.unitNumber}</b>
-          {r.unit?.size && <span className="ml-1.5 @2xl:hidden text-meta text-muted-ink">{r.unit.size}</span>}
         </span>
         {r.carriedOver && <span className="flex-none"><StatusBadge tone="warning" title={`Carried over from ${dayLabel(r.day)}`}>{dayLabel(r.day).replace(/^\w+\s/, '')}</StatusBadge></span>}
         <span className="@2xl:hidden ml-auto flex-none"><StatusBadge tone={st.tone}>{label}</StatusBadge></span>
       </div>
       <div className="min-w-0 flex items-start gap-2">
+        {!r.external && <span className={cx(STACKED_LABEL, 'self-baseline')}>Out</span>}
         {mayTick && <GuestOutTick out={r.guestOut} busy={busy} onTick={r.guestOut ? onUndoLeft : onGuestLeft} />}
-        <div className="min-w-0">
+        <div className="min-w-0 self-baseline">
           {r.external ? <>{r.external.clientName ?? <span className="text-muted-ink">No client name</span>}{r.external.clientPhone && <div className="text-meta text-muted-ink">{r.external.clientPhone}</div>}</>
-            : <><span className="@2xl:hidden text-muted-ink">Out </span>
-              {r.previous ? <><b className="[font-variant-numeric:tabular-nums]">{r.previous.checkOutTime}</b> · {r.previous.guestName}</> : <span className="text-muted-ink">No departing guest</span>}
+            : <>{r.previous ? <GuestLine time={<b className="[font-variant-numeric:tabular-nums]">{r.previous.checkOutTime}</b>} name={r.previous.guestName} /> : <span className="text-muted-ink">No departing guest</span>}
               {r.previous?.lateCheckOut && <StatusBadge tone="warning" className="ml-1">Late checkout</StatusBadge>}
               {r.guestOut && r.guestLeftAt && <div className="text-meta text-gold-ink">{r.guestLeftAuto ? `Out at checkout ${hm(r.guestLeftAt)} (automatic)` : `Left at ${hm(r.guestLeftAt)}`}</div>}</>}
         </div>
       </div>
-      <div className={cx('min-w-0', r.external && 'hidden @2xl:block')}>
-        {!r.external && <><span className="@2xl:hidden text-muted-ink">In </span>
-          {r.next ? <><CheckInTime time={r.next.checkInTime} saving={savingIn} onSave={r.next.reservationId && r.status !== 'done' ? onCheckIn : undefined} /> · {r.next.guestName}</> : <span className="text-muted-ink">No check-in</span>}
-          {r.next?.earlyCheckIn && <StatusBadge tone="warning" className="ml-1">Early check-in</StatusBadge>}</>}
+      <div className={cx(LABELLED_CELL, r.external ? 'hidden @2xl:flex' : 'flex')}>
+        {!r.external && <><span className={STACKED_LABEL}>In</span><span className="min-w-0">
+          {r.next ? <GuestLine time={<CheckInTime time={r.next.checkInTime} saving={savingIn} onSave={r.next.reservationId && r.status !== 'done' ? onCheckIn : undefined} />} name={r.next.guestName} /> : <span className="text-muted-ink">No check-in</span>}
+          {r.next?.earlyCheckIn && <StatusBadge tone="warning" className="ml-1">Early check-in</StatusBadge>}</span></>}
       </div>
-      <div className={cx(!r.next && 'hidden @2xl:block')}><span className="@2xl:hidden text-muted-ink">Time left </span><TimeLeft at={r.next?.checkInAt} now={now} done={r.status === 'done'} /></div>
-      <div><span className="@2xl:hidden text-muted-ink">Type </span>{KIND_LABEL[r.kind] ?? r.kind}</div>
-      {/* Desktop: the layout type, else the size ("Studio · 1 bath"); the phone card already shows the size under the unit. */}
-      <div className={cx('min-w-0', !r.unit?.layout && '@max-2xl:hidden')}><span className="@2xl:hidden text-muted-ink">Layout </span>{r.unit?.layout ?? r.unit?.size ?? <span className="text-muted-ink">—</span>}</div>
-      <div className="whitespace-nowrap"><span className="@2xl:hidden text-muted-ink">Amount </span>{r.amount != null ? <span className="tabular-nums">{rm(r.amount, { cents: false })}</span> : <span className="text-warning" title="Set it in Cleaning > Prices">Price not set</span>}</div>
+      <div className={cx(LABELLED_CELL, r.next ? 'flex' : 'hidden @2xl:flex')}><span className={STACKED_LABEL}>Time left</span><TimeLeft at={r.next?.checkInAt} now={now} done={r.status === 'done'} /></div>
+      <div className={cx(LABELLED_CELL, 'flex', HIDDEN_IN_NARROW_TABLE)}><span className={STACKED_LABEL}>Type</span>{KIND_LABEL[r.kind] ?? r.kind}</div>
+      <div className={cx(LABELLED_CELL, 'flex', HIDDEN_IN_NARROW_TABLE, !r.unit?.layout && !r.unit?.size && '@max-2xl:hidden')}><span className={STACKED_LABEL}>Layout</span><span className="min-w-0">{r.unit?.layout ?? r.unit?.size ?? <span className="text-muted-ink">—</span>}</span></div>
+      <div className={cx(LABELLED_CELL, 'flex whitespace-nowrap')}><span className={STACKED_LABEL}>Amount</span>{r.amount != null ? <span className="tabular-nums">{rm(r.amount, { cents: false })}</span> : <span className="text-muted-ink" title="Set it in Cleaning > Prices">Price not set</span>}</div>
       <CleanerCell r={r} />
-      <div className="flex items-center gap-1.5 flex-wrap">
+      <div className="hidden @2xl:flex items-center gap-1.5 flex-wrap">
         <span className="hidden @2xl:inline"><StatusBadge tone={st.tone} className="whitespace-nowrap">{label}</StatusBadge></span>
         {r.status === 'done' && <span className="hidden @2xl:inline text-meta text-muted-ink whitespace-nowrap">{r.completedAt ? `Done ${hm(r.completedAt)}` : 'Done'}{files > 0 ? ` · ${files} ${files === 1 ? 'photo' : 'photos'}` : ''}</span>}
       </div>
@@ -578,6 +579,14 @@ function GuestOutTick({ out, busy, onTick }: { out: boolean; busy: boolean; onTi
         out ? 'bg-black border-black text-white' : 'bg-card border-line text-transparent hover:border-ink hover:text-muted-ink')}>
       <Icon name="Check" size="sm" />
     </button>
+  );
+}
+
+function GuestLine({ time, name }: { time: ReactNode; name: string }) {
+  return (
+    <span className="inline-flex items-baseline gap-1 max-w-full min-w-0 align-baseline">
+      <span className="flex-none">{time}</span><span className="flex-none">·</span><span className="truncate" title={name}>{name}</span>
+    </span>
   );
 }
 
@@ -608,8 +617,9 @@ function CheckInTime({ time, saving, onSave }: { time: string; saving: boolean; 
 function CleanerCell({ r }: { r: Row }) {
   const names = r.cleaners.length ? r.cleaners.map(c => c.name) : r.assigneeName ? [r.assigneeName] : [];
   return (
-    <div className={cx('min-w-0 flex items-baseline gap-1', !names.length && 'text-danger')} title={names.length > 1 ? names.join(', ') : undefined}>
-      <span className="@2xl:hidden text-muted-ink flex-none">{names.length > 1 ? 'Cleaners' : 'Cleaner'} </span>
+    // Unassigned stays grey on the row: the building header already counts it in red.
+    <div className={cx(LABELLED_CELL, 'flex', !names.length && 'text-muted-ink')} title={names.length > 1 ? names.join(', ') : undefined}>
+      <span className={STACKED_LABEL}>{names.length > 1 ? 'Cleaners' : 'Cleaner'}</span>
       {/* Phones have the room to list everyone; the desk column shows the first and how many more. */}
       <span className="truncate @2xl:hidden">{names.length ? names.join(', ') : 'Unassigned'}</span>
       <span className="truncate hidden @2xl:inline">{names[0] ?? 'Unassigned'}</span>

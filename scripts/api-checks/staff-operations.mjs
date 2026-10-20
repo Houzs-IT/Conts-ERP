@@ -153,6 +153,30 @@ let row = board.rows.find(x => x.unitId === res.unitId && x.previous?.reservatio
 check('auto guest-left: nobody tapped it, the guest counts out at checkout 11:00', !!row && row.guestOut && row.guestLeftAuto && row.guestLeftAt === `${day}T11:00:00+08:00`, JSON.stringify(row).slice(0, 300));
 r = await call('GET', `/api/audit?entity=tasks&id=${row.id}`);
 check('auto guest-left: written once to the history as Automatic', r.status === 200 && JSON.stringify(r.json).includes('Automatic, at checkout 11:00'), r.text.slice(0, 300));
+r = await call('POST', '/api/housekeeping/guest-left', { taskId: row.id, undo: true });
+let boardRow = (await call('GET', `/api/housekeeping/board?date=${day}`)).json.rows.find(x => x.id === row.id);
+check('untick auto guest-left: stays unmarked on the next read', r.status === 200 && boardRow && !boardRow.guestOut, `${r.text} ${JSON.stringify(boardRow).slice(0, 200)}`);
+const malaysiaDay = offsetDays => new Date(Date.now() + 8 * 3600e3 + offsetDays * 864e5).toISOString().slice(0, 10);
+let stayId = null;
+for (const u of units) {
+  r = await call('POST', '/api/reservations', { unitId: u.id, checkIn: malaysiaDay(-1), checkOut: malaysiaDay(1), checkOutTime: '23:59', guest: { fullName: `Leaver ${tag}` } });
+  if (r.status === 201 || r.status === 200) { stayId = r.json.id; break; }
+}
+// Check-in is refused on the checkout day: check in first, then cut the stay to today.
+r = stayId ? await call('PATCH', `/api/reservations/${stayId}`, { state: 'checked_in' }) : r;
+if (r.status === 200) r = await call('PATCH', `/api/reservations/${stayId}/dates`, { checkIn: malaysiaDay(-1), checkOut: malaysiaDay(0), confirm: true });
+check('a checked-in stay leaving today', r.status === 200, r.text);
+if (r.status === 200) {
+  r = await call('POST', '/api/housekeeping/guest-left', { reservationId: stayId });
+  const tappedTaskId = r.json?.taskId;
+  check('tap: booking checked out', r.status === 200 && r.json.bookingCheckedOut === true, r.text);
+  r = await call('POST', '/api/housekeeping/guest-left', { taskId: tappedTaskId, undo: true });
+  boardRow = (await call('GET', `/api/housekeeping/board?date=${malaysiaDay(0)}`)).json.rows.find(x => x.id === tappedTaskId);
+  check('untick after a tap: booking back to Checked in, guest not out', r.status === 200 && r.json.bookingReopened === true && !boardRow?.guestOut && boardRow?.previous?.state === 'checked_in', `${r.text} ${JSON.stringify(boardRow).slice(0, 200)}`);
+  r = await call('PATCH', `/api/reservations/${stayId}`, { state: 'checked_out' });
+  r = await call('POST', '/api/housekeeping/guest-left', { taskId: tappedTaskId, undo: true });
+  check('untick when the reservation screen checked it out: refused (409)', r.status === 409 && /reservation screen/.test(r.json?.error?.message), r.text);
+}
 const expectAmount = res.unitId === priced.unitId ? 9000 : null;
 if (expectAmount) check('the clean carries the price amount', row.amount === 9000 && row.cleanerPay === 4500 && row.priceSource === 'unit', JSON.stringify(row).slice(0, 300));
 else check('a unit with no price shows Price not set (null)', row.amount === null || typeof row.amount === 'number', JSON.stringify(row).slice(0, 200));

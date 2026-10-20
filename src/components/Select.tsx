@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import Icon from './Icon';
+import { Floating } from './DataTableParts';
 import { cx } from '../lib/design-tokens';
 
 export interface SelectOption { value: string; label: string; group?: string; hint?: string; disabled?: boolean }
@@ -140,7 +141,7 @@ export function ComboInput({ value, onChange, options, label, placeholder, maxLe
   // The list filters only once the person types; opening it on a filled field shows every option.
   const [typed, setTyped] = useState(false);
   const [active, setActive] = useState(-1);
-  const box = useRef<HTMLDivElement>(null);
+  const field = useRef<HTMLDivElement>(null);
   const id = useId();
   const listId = `${id}-list`;
 
@@ -150,13 +151,8 @@ export function ComboInput({ value, onChange, options, label, placeholder, maxLe
     return t ? sorted.filter(o => `${o.group ?? ''} ${o.label}`.toLowerCase().includes(t)) : sorted;
   }, [options, value, typed]);
 
-  useEffect(() => {
-    if (!open) return;
-    const onDoc = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node)) setOpen(false); };
-    document.addEventListener('mousedown', onDoc);
-    return () => document.removeEventListener('mousedown', onDoc);
-  }, [open]);
   useEffect(() => { setActive(-1); }, [value]);
+  useEffect(() => { if (active >= 0) document.getElementById(`${listId}-${active}`)?.scrollIntoView({ block: 'nearest' }); }, [active, listId]);
 
   const show = () => { setTyped(false); setActive(-1); setOpen(true); };
   const pick = (o: SelectOption) => { onChange(o.value); setOpen(false); };
@@ -172,9 +168,9 @@ export function ComboInput({ value, onChange, options, label, placeholder, maxLe
 
   let lastGroup: string | undefined;
   return (
-    <div ref={box} className="relative flex flex-col gap-1.5 min-w-0">
+    <div className="flex flex-col gap-1.5 min-w-0">
       <label htmlFor={id} className="text-meta font-medium text-muted-ink">{label}</label>
-      <div className="relative flex items-center min-w-0">
+      <div ref={field} className="relative flex items-center min-w-0">
         <input id={id} value={value} placeholder={placeholder} maxLength={maxLength} autoComplete="off"
           role="combobox" aria-autocomplete="list" aria-expanded={open} aria-controls={listId}
           aria-activedescendant={open && active >= 0 ? `${listId}-${active}` : undefined}
@@ -188,9 +184,9 @@ export function ComboInput({ value, onChange, options, label, placeholder, maxLe
           <Icon name="ChevronDown" size="sm" />
         </button>
       </div>
-      {open && shown.length > 0 && (
-        <div id={listId} role="listbox" aria-label={label}
-          className="absolute z-30 top-[calc(100%+4px)] left-0 w-full max-h-[260px] overflow-y-auto overscroll-contain py-1 bg-card border border-solid border-line rounded-card shadow-[var(--shadow-overlay)]">
+      <Floating anchor={field} open={open && shown.length > 0} onClose={() => setOpen(false)} label={label}
+        width={field.current?.offsetWidth} maxHeight={260}>
+        <div id={listId} role="listbox" aria-label={label} className="py-1">
           {shown.map((o, i) => {
             const head = o.group && o.group !== lastGroup ? o.group : null;
             lastGroup = o.group;
@@ -207,7 +203,7 @@ export function ComboInput({ value, onChange, options, label, placeholder, maxLe
             );
           })}
         </div>
-      )}
+      </Floating>
       {error && <span id={`${id}-error`} className="text-meta text-danger">{error}</span>}
     </div>
   );

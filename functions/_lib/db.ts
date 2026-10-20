@@ -32,6 +32,8 @@ export interface Env {
   /** Encrypts each person's two-step sign-in secret at rest (functions/_lib/twoFactor.ts). Without it, setting up
    *  two-step sign-in is refused with a plain message; signing in with a password still works. */
   TOTP_ENC_KEY?: string;
+  /** Local dev only (.dev.vars): local Hyperdrive drops search_path from the connection string. */
+  DB_SEARCH_PATH?: string;
   /** Set only on the copy of env that transaction() hands its callback: every query through that copy runs on the
    *  transaction's one connection. Never set in wrangler. */
   TX?: postgres.TransactionSql;
@@ -55,7 +57,8 @@ const numbered = (sql: string) => { let i = 0; return sql.replace(/\?/g, () => `
 const PER_REQUEST = 1;
 
 const open = (env: Env, max: number) =>
-  postgres(env.HYPERDRIVE.connectionString, { max, prepare: false, fetch_types: false, types });
+  postgres(env.HYPERDRIVE.connectionString, { max, prepare: false, fetch_types: false, types,
+    connection: env.DB_SEARCH_PATH ? { options: `-c search_path=${env.DB_SEARCH_PATH}` } : {} });
 
 /** The pooler refuses a connection that would exceed its client limit before any statement is sent, so retrying
  *  that refusal cannot run anything twice. Any other error is thrown as it is. */
