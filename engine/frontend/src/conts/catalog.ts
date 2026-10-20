@@ -6,17 +6,15 @@
 /** The switch. Off restores the Houzs Products page exactly. */
 export const CONTS_RENOVATION_CATALOG = true as boolean;
 
-/** Products page tabs hidden in this instance (owner decision: Modular, Fabric Converter and
- *  the old Categories tab). Combo Pricing, Variants and Maintenance stay (owner default Q11). */
+/** Products page tabs hidden in this instance (owner decision: Modular and the old Categories
+ *  tab). Combo Pricing, Variants and Maintenance stay (owner default Q11); the Fabric Converter
+ *  came back with Houzs's fabrics (owner, 20 Oct 2026). */
 export const CONTS_HIDDEN_PRODUCT_TABS: ReadonlySet<string> = new Set(
-  CONTS_RENOVATION_CATALOG ? ["modular", "fabric", "categories"] : [],
+  CONTS_RENOVATION_CATALOG ? ["modular", "categories"] : [],
 );
 
-/** Maintenance lists hidden in this instance: fabric price tiers belong to the hidden
- *  Fabric Converter. */
-export const CONTS_HIDDEN_MAINTENANCE_KEYS: ReadonlySet<string> = new Set(
-  CONTS_RENOVATION_CATALOG ? ["fabrics"] : [],
-);
+/** Maintenance lists hidden in this instance. None since the fabrics came back (20 Oct 2026). */
+export const CONTS_HIDDEN_MAINTENANCE_KEYS: ReadonlySet<string> = new Set<string>();
 
 export function visibleProductTabs<T extends { value: string }>(tabs: readonly T[]): T[] {
   return tabs.filter((t) => !CONTS_HIDDEN_PRODUCT_TABS.has(t.value));
