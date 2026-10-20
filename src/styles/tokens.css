@@ -196,14 +196,17 @@ body:has([aria-modal="true"]:not([data-side-drawer])) .app-main { overflow: hidd
   background: currentColor; opacity: 0; transition: opacity var(--motion-fast) var(--ease-out);
 }
 .ui-btn > * { position: relative; }
-.ui-btn:not(:disabled):hover::after { opacity: 0.07; }
+/* Hover only where a pointer can hover: on a phone :hover sticks after a tap and the button looks still pressed. */
+@media (hover: hover) {
+  .ui-btn:not(:disabled):hover::after { opacity: 0.07; }
+  .ui-btn[data-variant='primary']:not(:disabled):hover::after,
+  .ui-btn[data-variant='danger']:not(:disabled):hover::after { opacity: 0.12; }
+  .ui-btn[data-variant='secondary']:not(:disabled):hover { border-color: var(--color-border-strong) !important; }
+  .ui-btn[data-variant='brand']:not(:disabled):hover { box-shadow: 0 0 0 3px rgba(200,164,106,0.16); }
+}
 .ui-btn:not(:disabled):active::after { opacity: 0.13; }
 .ui-btn:not(:disabled):active { transform: translateY(0.5px); }
-.ui-btn[data-variant='primary']:not(:disabled):hover::after,
-.ui-btn[data-variant='danger']:not(:disabled):hover::after { opacity: 0.12; }
 .ui-btn[data-variant='primary'] { box-shadow: 0 1px 2px rgba(21,21,21,0.18), inset 0 1px 0 rgba(255,255,255,0.08); }
-.ui-btn[data-variant='secondary']:not(:disabled):hover { border-color: var(--color-border-strong) !important; }
-.ui-btn[data-variant='brand']:not(:disabled):hover { box-shadow: 0 0 0 3px rgba(200,164,106,0.16); }
 .ui-btn:focus-visible { outline: 2px solid var(--color-border-focus); outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) { .ui-btn:active { transform: none; } }
 

@@ -126,9 +126,10 @@ function TaskCard({ job: j, onOpen }: { job: Job; onOpen: () => void }) {
           <span className="block text-[20px] leading-tight font-bold tracking-[-0.01em] text-ink [overflow-wrap:anywhere]">{j.unit.unitNumber}</span>
           <span className="block text-copy text-muted-ink">{subtitle(j)}</span>
         </button>
-        <span className="flex items-center gap-1.5 flex-wrap justify-end"><JobStatus job={j} /></span>
         <Icon name="ChevronRight" size="sm" color="var(--color-muted-ink)" style={{ marginTop: 3, flex: 'none' }} />
       </div>
+      {/* Badges get their own row: beside the title they took most of a phone's width and broke the unit number. */}
+      <span className="flex items-center gap-1.5 flex-wrap"><JobStatus job={j} /></span>
       {!j.external && j.accessInstruction && (
         <div className={row}><Icon name="KeyRound" size="sm" color="var(--color-muted-ink)" style={{ marginTop: 3 }} /><span className="min-w-0 line-clamp-2">{j.accessInstruction}</span></div>
       )}
