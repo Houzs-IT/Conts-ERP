@@ -27,7 +27,7 @@ import { StatusBadge } from '../components/StatusBadge';
 import { CatalogPanel, ExchangeModal, type Sku, type SkuPayload, type CatalogInput } from './MaintenanceCatalog';
 import { ServicePrices } from './ServicePrices';
 import { JobMoneyPanel, JobProfitView } from '../components/ops/JobMoney';
-import { HistoryDisclosure } from '../components/RecordHistory';
+import { HistoryDisclosure, PhoneHistory, RecordHistory } from '../components/RecordHistory';
 
 /* ---------- the API's shape (functions/api/maintenance/issues.ts) ---------- */
 
@@ -673,7 +673,9 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
         </>
       )}
 
-      <HistoryDisclosure entity="maintenance_issues" id={i.id} refreshKey={i} />
+      <PhoneHistory phone={<div className="rounded-card border border-solid border-line overflow-hidden bg-card"><RecordHistory entity="maintenance_issues" id={i.id} refreshKey={i} bare pageSize={10} /></div>}>
+        <HistoryDisclosure entity="maintenance_issues" id={i.id} refreshKey={i} />
+      </PhoneHistory>
 
       {windowOpen && <WindowModal issue={i} onClose={() => setWindowOpen(false)} onDone={(n) => { setWindowOpen(false); toast({ tone: n ? 'warning' : 'success', title: 'Repair window added.', body: n ? `It overlaps ${n} ${n === 1 ? 'reservation' : 'reservations'}. Make sure the guest agreed.` : 'No guest is in the unit then.' }); refresh(); }} />}
       {blockOpen && <BlockModal issue={i} onClose={() => setBlockOpen(false)} onDone={() => { setBlockOpen(false); toast({ tone: 'success', title: 'Unit blocked.', body: 'The nights are blocked on the calendar until the repair is done.' }); refresh(); }} />}
