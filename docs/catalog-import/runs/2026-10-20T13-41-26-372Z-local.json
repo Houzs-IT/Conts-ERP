@@ -1,0 +1,73 @@
+{
+ "tag": "catalog-first-import 2026-10",
+ "at": "2026-10-20T13:41:26.372Z",
+ "target": "local database (postgres://***@127.0.0.1:55433/cfi_a)",
+ "dryRun": false,
+ "company": {
+  "id": 1,
+  "name": "The Conts"
+ },
+ "data": ".\\docs\\catalog-import\\catalog-data.json",
+ "counts": {
+  "unitsAdded": 3,
+  "subCategoriesAdded": 1,
+  "suppliersCreated": 7,
+  "skusCreated": 819,
+  "skusSkipped": 0,
+  "linksAdded": 819,
+  "costRows": 423
+ },
+ "unitsAdded": [
+  "BOX",
+  "BAG",
+  "ROLL"
+ ],
+ "subCategoriesAdded": [
+  "TRACK_LIGHT"
+ ],
+ "suppliers": [
+  {
+   "code": "UNILOC",
+   "name": "CRAFTED FLOORS SDN BHD",
+   "action": "created"
+  },
+  {
+   "code": "DHI",
+   "name": "DHI FLOOR",
+   "action": "created"
+  },
+  {
+   "code": "LITTLEBUILDER",
+   "name": "LITTLE BUILDER CONSTRUCTION SUPPLIES (M) SDN BHD",
+   "action": "created"
+  },
+  {
+   "code": "HOOKKA",
+   "name": "HOOKKA INDUSTRIES SDN BHD",
+   "action": "created"
+  },
+  {
+   "code": "LOTWIN",
+   "name": "LOT WIN LED LIGHTINGS (PUCHONG) SDN BHD",
+   "action": "created"
+  },
+  {
+   "code": "WORLDONE",
+   "name": "WORLD ONE LIGHTING SDN BHD",
+   "action": "created"
+  },
+  {
+   "code": "KKGYPSUM",
+   "name": "K & K GYPSUM MARKETING SDN BHD",
+   "action": "created"
+  }
+ ],
+ "skusSkipped": [],
+ "nameWarnings": [],
+ "after": {
+  "skus": 819,
+  "links": 819,
+  "priced_links": 423,
+  "cost_rows": 423
+ }
+}

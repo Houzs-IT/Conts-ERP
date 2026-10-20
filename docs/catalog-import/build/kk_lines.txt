@@ -1,0 +1,462 @@
+--- p1 table 0 bbox (51, 70, 247, 516)
+Partition
+Item Unit RM
+Indogyps Gypsum Board
+Indogyps Ceiling 2x4 9mm pcs 7.20
+pcs
+Indogyps Gypsum Board 4x6 9mm 13.20
+Indogyps Gypsum Board 4x8 9mm pcs 17.40
+Indogyps Gypsum Board 4x8 12mm pcs 24.70
+Indogyps Moisture Resistant 4x8 9mm pcs 30.50
+Indogyps PVC Ceiling 2' X 4' X 9MM (101,201) pcs 10.80
+Indogyps PVC Ceiling 4' X 8' X 9MM (101,201) pcs 42.50
+Indogyps PVC Ceiling 4' X 9' X 9MM (101,201) pcs 46.50
+AGP Gypsum Board
+Ceiling Unitone 2x4 7.5mm pcs 7.60
+Ceiling Unitone 2x4 9mm pcs 8.20
+AGP Ceiling PVC 2x4 9mm pcs 13.40
+AGP Uni8 4x6 8mm pcs 14.40
+AGP Partition Board 4x6 9.5mm pcs 14.60
+AGP Partition Board 4x8 9.5mm pcs 19.80
+AGP Partition Board 4x8 12.5mm pcs 27.20
+AGP Moisture Resistant 4x8 9mm pcs 33.80
+Gyproc Gypsum Board
+Gyproc Topline 4x6 9mm pcs 18.50
+Gyproc Topline 4x8 9mm pcs 24.00
+Gyproc Green Board 4x8 12mm pcs 32.50
+Gyproc Wetstop 4x8 9mm pcs 38.50
+P/Wallpaper 4x8 12.5mm (101/102) PCS 59.30
+Knauf Gypsum Board
+Knauf Mini8 4x6 8mm pcs 18.10
+Knauf Mini 9 4X6 9MM pcs 15.00
+Knauf Mini 9 4X8 9MM pcs 19.30
+Knauf Unispan 4x8 9.5mm pcs 25.80
+Knauf Basic 4x8 12mm pcs 26.80
+Knauf Sheetrock Wetstop 4x8 9.5mm pcs 41.50
+Stud / Ceiling Tee
+Metal stud 1 5/8" x 8f pcs 2.50
+Metal stud 1 7/8" x 8f pcs 2.60
+Partition Channel 2" x 8f pcs 2.80
+Partition Channel 3" x 8f pcs 4.30
+Main Tee 12' HKS pcs 6.80
+Cross Tee 2' HKS pcs 1.50
+Cross Tee 4' HKS pcs 2.20
+Wall Angle HKS pcs 3.90
+--- p1 table 1 bbox (254, 70, 429, 533)
+Ceiling
+Item Unit RM
+Plaster Ceiling Board 4x6 9mm (Sirim) pcs 13.70
+Ceilng Kapur 4x6 9mm pcs 12.80
+Plaster Ceiling Water Resistant 9mm pcs 17.80
+Plaster Ceiling Board 4x6 12mm pcs 18.20
+Plaster Ceiling Tee 8ft (white) pcs 1.40
+Plaster Ceiling Tee 10ft (white) pcs 1.60
+Plaster Ceiling Tee 12ft (Brown) pcs 1.70
+Plaster Ceiling Tee 12ft (white) pcs 1.90
+Plaster Ceiling Tee 12ft (32mm) pcs 2.30
+Plaster Ceiling Tee 12ft (34mm) pcs 2.40
+L Box 2" x 6" pcs 9.00
+L Box 3" x 6" pcs 9.30
+L Box 4" x 6" pcs 9.50
+L Box 4" x 8" pcs 11.40
+L Box 4" x 12" pcs 13.00
+L Box 6" x 8" pcs 13.20
+L Box 6" x 12" pcs 16.60
+L Box 3" x 18" x 8' pcs 30.00
+L Box 4" x 18" x 8' pcs 30.00
+L Box Partition 2" x 6" pcs 9.60
+L Box Partition 3" x 6" pcs 9.70
+L Box Partition 4" x 6" pcs 10.10
+L Box Partition 4" x 8" pcs 11.10
+L Box Partition 4" x 12" pcs 12.80
+L Box Partition 6" x 8" pcs 13.60
+L Box 2"x 6" A Corner R-300mm pcs 34.00
+L Box 3"x 6" A Corner R-300mm pcs 34.00
+L Box 4"x 6" A Corner R-300mm pcs 34.00
+Manhole 8" x 8" set 12.00
+Manhole 12" x 12" set 12.50
+Manhole 18" x 18" set 14.50
+Manhole 24" x 24" set 18.00
+Manhole 8" x 8" (Aluminium) set 25.00
+Manhole 12" x 12" (Aluminium) set 27.50
+Manhole 18" x 18" (Aluminium) set 31.00
+Manhole 24" x 24" (Aluminium) set 38.00
+Partition Manhole 12" x 12"(A)-new type set 25.50
+Partition Manhole 18" x 18"(A)-new type set 31.00
+Partition Manhole 24" x 24"(A)-new type set 39.50
+Partition Manhole 12" x 12"(A)-old type set 28.80
+Partition Manhole 18" x 18"(A)-old type set 34.00
+Partition Manhole 24" x 24"(A)-old type set 41.00
+--- p1 table 2 bbox (434, 70, 605, 333)
+Doors
+Item Unit RM
+Plywood Normall Full Door no 93.00
+Plywood Half Glass Door no 104.00
+Shellac Plywood Full Door no 158.30
+Shellac Half Glass Plywood Door no 168.30
+Aluminium Glass Door -W/B no 480.00
+Aluminium Glass Door Design -W/B no 520.00
+Laminated H/C Door KHD-81/89 no 380.00
+Laminated H/C Door KM8350 no 480.00
+Laminated H/C Door KM8335 no 550.00
+Clear glass for door 2x4x4mm pcs 40.80
+Wood door frame no 136.00
+Door Jamb 17'-6" pcs 56.90
+Door Jamb White 17'-6" pcs 101.00
+Door Jamb MB Color 17'-6" pcs 75.00
+Swing Door Jamb (White) pcs 150.00
+Door Hinges (2pcs) set 4.50
+Door Lock set 14.00
+Door Lock (Canter) set 49.00
+Stuguchi Door Closer nos 54.00
+Rubber Gasket 2750 153m roll 55.00
+Rubber Gasket 2750 153m ft 0.20
+Rubber Gasket 2750 153m (White) roll 60.00
+Rubber Gasket 2750 153m (White) ft 0.30
+--- p1 table 3 bbox (611, 70, 790, 409)
+Others
+Item Unit RM
+Cement Board
+Primaflex Ceiling 2x4 3.2mm pcs 8.60
+Kalsi Superflex 603mm X 1213mm X
+3.2mm (Painted White) pcs 9.50
+SCG cement boral 4x8 6mm pcs 45.50
+SCG cement board 4x8 9mm pcs 68.60
+SCG cement board 4x8 12mm pcs 93.50
+Aluminium
+Ceiling Mould 20' (NA) pcs 54.00
+Ceiling Mould 20' (White) pcs 61.00
+Glass Mould 20' (NA) pcs 57.90
+Glass Mould 20' (White) pcs 71.00
+Glass panel 20' (NA) pcs 33.00
+Aluminium Angle 20' (NA) pcs 24.30
+Skirting 20' (NA) pcs 29.60
+Trimming 20' (NA) pcs 19.90
+Shadowline 10' pcs 5.90
+Long Line Stopping Angle pcs 5.30
+Corner Bead pcs 4.80
+PVC Corner Bead Skimcoat (A1) pcs 2.20
+PVC Corner Bead Plaster (A3) pcs 2.50
+Rockwool
+Rockwool 40mmX40kg (8pcs) bag 83.00
+Rockwool 50mmX40kg (8pcs) bag 95.80
+Rockwool 75mmX40kg (4pcs) bag 81.80
+Rockwool 75mmX60kg (4pcs) bag 133.50
+Rockwool 50mmX60kg (6pcs) bag 120.00
+Rockwool 50mmX80kg (6pcs) bag 162.40
+Rockwool 50mmX100kg (6pcs) bag 210.00
+Cool "N" Comfort RL920 (40kg/m3)
+roll 136.00
+Size : 1200mm X 5000mm X 50mm
+--- p1 table 4 bbox (434, 354, 605, 486)
+Glass Window
+Item Unit RM
+Clear Glass Window 4x4x5mm pcs 67.20
+Clear Glass Window 68"x45"x5mm pcs 100.80
+U-Channel 25mm (1") (NA) pcs 40.70
+U-Channel 19mm (6/8") (NA) pcs 31.30
+U-Channel 12mm (4/8") (NA) pcs 24.00
+U-Channel 9.53mm (3/8") (MB) pcs 32.00
+U-Channel 9.53mm (3/8") (NA) pcs 20.00
+Rubber Gasket 2090 153m roll 180.00
+Rubber Gasket 2090 153m ft 0.60
+Rubber Gasket 2090 153m (White) roll 220.00
+Rubber Gasket 2090 153m (White) ft 0.70
+--- p1 table 5 bbox (611, 431, 790, 507)
+Stopping / Fiber / Casting
+Item Unit RM
+KK 98 Stopping Compound bag 20.00
+S11 Bonding Cornice Adhesive 2in1 bag 21.00
+Flaxi 2in1 Stopping (bag) bag 23.00
+Fiber 1kg bag 9.50
+Fiber 5kg bag 45.00
+Casting (25KG/bag) bag 19.50
+--- p2 table 0 bbox (51, 58, 247, 285)
+Cornices
+Item Unit RM
+Cornice C213 pcs 9.50
+cornice C222 pcs 9.50
+Cornice C233 pcs 10.50
+Cornice C255 pcs 8.50
+Cornice C313 pcs 9.00
+Cornice C314 pcs 8.50
+Cornice C330 pcs 8.50
+Cornice C331 pcs 9.00
+Cornice C400 pcs 9.50
+Cornice C412 pcs 10.50
+Cornice C414 pcs 8.50
+Cornice C820 pcs 8.50
+cornice C825 pcs 10.00
+BEADING
+pcs
+Beading BL10 Small 10.00
+Beading BL11 Medium pcs 12.00
+Beading BL12 Big pcs 15.00
+--- p2 table 1 bbox (254, 58, 429, 202)
+Center Roses
+Item Unit RM
+Center Roses CR 2 pcs 60.00
+Center Roses CR 3 pcs 50.00
+Center Roses CR 4 pcs 30.00
+Center Roses CR 7 pcs 60.00
+Center Roses CR 8 pcs 60.00
+Center Roses CR 11 pcs 60.00
+Center Roses CR 19 pcs 50.00
+Center Roses CR 23 pcs 50.00
+Center Roses CR 23 (S) pcs 50.00
+Center Roses CR 30 pcs 38.00
+Center Roses CR 50 pcs 58.00
+--- p2 table 2 bbox (434, 58, 605, 341)
+light Throughs / L Box
+Item Unit RM
+Curve Board 300mm (R200)7' - IN / OUT pcs 58.00
+Curve Board 300mm(R500)(IN)Corner pcs 75.00
+Curve Board 300mm(R500)(OUT)Corner pcs 85.00
+Curve Board 200mm (R100)7' - IN pcs 39.00
+Curve Board 200mm (R100)8' - OUT pcs 39.00
+Curve Board (R100)(IN)Corner pcs 40.00
+KK002 ROUND EDGE CURVE BOARD
+pcs 35.00
+70MM X 40MM X 7FT (R35)
+L Box Curve LT LBC3 8' pcs 32.00
+L Box Curve LT LBC4 7' pcs 32.00
+L Box Curve LT LBC6 8' pcs 35.00
+L Box Curve LT LBC6 A-Corner pcs 43.00
+L Box Curve LTLBC4 A-Corner pcs 50.00
+L Box Curve LTLBC3 A-Corner pcs 40.00
+LT 3X6 pcs 18.00
+19.00
+LT 4X6 pcs
+LT 6X6 pcs 21.00
+LT 3X6, 4X6(corner) pcs 38.00
+LT 6X6(corner) pcs 45.00
+C405 (R-100) 6FT pcs 17.60
+C407 (R-150) 6FT pcs 18.80
+C408 (R-200) 6FT pcs 22.00
+S Mould 400mm x 200mm x R100 x
+pcs 95.00
+R100 x 2150mm Long
+--- p2 table 3 bbox (611, 58, 790, 322)
+Tempered Glass 玻璃
+Item Unit RM
+5mm clear tempered sq ft 8.00
+6mm clear tempered sq ft 9.00
+8mm clear tempered sq ft 10.00
+10mm clear tempered sq ft 11.00
+12mm clear tempered sq ft 12.00
+* door & 1slant will add on RM2.00 per sqft
+Clear Mirror Without Polish
+5mm clear mirror sq ft 8.00
+6mm clear mirror sq ft 9.10
+bevel 2/8", 1/2", 6/8", 1" ft
+* price for 4mm-6mm glass only
+Clear Glass (cut size)
+5mm clear glass sq ft 7.20
+6mm clear glass sq ft 7.60
+8mm clear glass sq ft 8.40
+Clear Glass (standard size)
+5mm clear glass sq ft
+spray white/black sq ft 10.00
+--- p2 table 4 bbox (254, 226, 429, 334)
+Round L Box
+Item Unit RM
+Topi Box 1' pcs 60.00
+Topi Box 2' pcs 70.00
+L Box Bulat 2' (in)/(out) set 70.00
+L Box Bulat 3' (in)/(out) set 80.00
+L Box Bulat 4' (in)/(out) set 100.00
+L Box Bulat 5' (in)/(out) set 120.00
+L Box Bulat 6' (in)/(out) set 140.00
+L Box Bulat 8' (in)/(out) set 180.00
+L Box Bulat 10' (in) set 240.00
+--- p2 table 5 bbox (51, 313, 247, 472)
+ItemServices Unit RM
+Transport Charge trip 60.00
+Hardware Unload Material Service - upstair trip 70.00
+Unload Material Service - downstair trip 30.00
+Unload Material Service - upstair trip 60.00
+Clear Material Charge trip 90.00
+Night/Weekend Shift trip 150.00
+Clear MaterialNight/Weekend Shift trip 180.00
+Timber 2" x 1" x 8' pcs 9.50
+Scalffolding 5F (lend deposit) set 60.00
+Scalffolding 3F (lend deposit) set 60.00
+pcs
+Scalffolding board (lend deposit) 40.00
+pcs
+Timber 2" x 4" (lend deposit) 15.00
+Chair (lend deposit) pcs 30.00
+--- p2 table 6 bbox (254, 359, 429, 460)
+FloorI tSepmring & Patch FittinUgnit RM
+BPG floor spring 20nm with patch fitting
+set 220.00
+& lock FOC 2FT H handle
+BPG floor spring 20nm with patch fitting
+set 210.00
+& lock FOC 1FT C handle
+BPG floor spring 25nm with patch fitting
+set 245.00
+& lock
+BPG floor spring 20nm with patch fitting
+set 195.00
+& lock
+--- p2 table 7 bbox (611, 368, 790, 427)
+Silicon
+Item Unit RM
+Silicon X'traseal MC-800 (white) no 5.30
+Silicon X'traseal SN501 (clear) no 9.10
+Silicone V-Tech VT-230 no 8.60
+Medium Duty Caulking Gun no 7.50
+--- p2 table 8 bbox (434, 380, 605, 481)
+TeImtepmered Glass HandUlneit RM
+H:113 -C Handle 1' set 24.00
+CKS-633 H HANDLE 2' set 78.00
+BPG H HANDLE 2FT (POLISH) set 60.00
+BPG H HANDLE 2FT (MB) set 70.00
+TECA patch fitting PF40 set 88.00
+TOYO GLASS CUTTER set 60.00
+GLASS HAND GLOVE set 6.50
+--- p3 table 0 bbox (22, 56, 333, 588)
+迷你小五金
+Mini Hardware
+Item RM
+Fiber Tape 1.5'' Partition 网 1.5" 4.50
+Fan Hock U (♎) 风扇勾 (♎) 2.10
+FAN HOCK 2"x5" U (B&N)(廿) 风扇勾 (廿) 3.40
+FAN HOCK 2"X4"(WOOD) (几) 风扇勾 (几) 2.20
+S/Steel Scraper 4'' 白钢油灰刀 6.00
+5"Arrow"S/Steel Scraper 白钢油灰刀 6.50
+Trowel 318 (Carbon Steel) 补灰刀 80.00
+"Stanley" Measuring Tape 电白壳拉尺 37.00
+"Stanley" Measuring Tape 包胶拉尺 30.00
+NIETZ 529-13-101 CUTTER 刀片 5.50
+Spare Utility Cutter Blades 净刀片 2.50
+Aviation Snips(Straight) 直咀白星剪 15.00
+Maxsteel Aviation Snips 直嘴航空剪 44.00
+T702 Tiger Flower Scissors 剪刀 14.00
+Wall Board Saw 板锯 8.00
+CITZ Fiber Claw Hammer 菲巴羊角锤 9.50
+Sand Paper 280 砂纸 1.00
+"Hitz" Carpenter Pencil 工作笔 1.00
+Nylon Twine(Brown) 木工线 1.80
+KIN'S Ink Liquid 黑墨汁 1.90
+Big Plastic Ink Pot 墨斗 3.00
+34MM (1.5") Masking Tape 粘纸 2.00
+46MM (2") Masking Tape 粘纸 2.50
+LTI Foam Tape (Black) 粘纸 6.50
+(Canvas) 30FT 篷布 17.00
+(Canvas) 300FT 篷布 130.00
+Double Sided A Ladder 7FT 米良梯（双边） 154.00
+Galvanized Wire 16G/kg 2x4 铁线 (kg) 10.00
+Galvanized Wire 16G/kg 2x4 铁线 (40kg/Roll) 360.00
+J Hook (10pcs/pack) 2x4 clips 片 4.50
+J Hook (250pcs/Bag) 2x4 clips 片 68.00
+--- p3 table 1 bbox (347, 56, 581, 269)
+油漆
+Painting
+Item Unit RM
+Maxilite 18L (White) 白色漆 94.00
+Matex 18L (White) 白色漆 97.00
+Nippon Weatherbond 5L 1001 / 145 158.20
+Nippon Easywash 5L 1001 / 145 110.00
+All Nippon Paint brand
+Aluminium Extension Hole 油漆木 14.00
+1" Nippon Paint Brush 漆扫 1" 8.00
+1.5" Nippon Paint Brush 漆扫 1.5" 10.00
+2" Nippon Paint Brush 漆扫 2" 12.00
+2.5" Nippon Paint Brush 漆扫 2.5" 13.00
+3" Nippon Paint Brush 漆扫 3" 16.00
+--- p3 table 2 bbox (347, 301, 581, 412)
+Aluminium Profile & LED Light
+Item RM
+A/L Profile MT-921 30.00
+A/L Profile MT-733 45.00
+A/L Profile MT-163 15.00
+A/L Profile MT-1707F 45.00
+Dujia COB 24V(3000k/4000k/6500k) 55.00
+Led Driver 24V (100W) 36.00
+--- p3 table 3 bbox (347, 445, 581, 620)
+Machine & Laser
+Item RM
+MYD Machine 50N 160.00
+MYD Machine 70N Battery 2.0 210.00
+Total Cordless Drill 20NM 230.00
+Total Brushless Cordless Drill 390.00
+RV-1239 'RIVOZ' Laser Level 300.00
+RV-569 'RIVOZ' Laser (Green) 250.00
+Laser L Bracket 13.00
+Wall Plug Machine Drill 3in1 220.00
+Ceiling Artifact 9000-S 210.00
+Ceiling Artifact 9000-LH 320.00
+--- p3 table 4 bbox (22, 604, 333, 635)
+
+--- p3 table 5 bbox (347, 635, 581, 794)
+Item Unit RM
+Screw (box) 螺丝 10.50
+Screw (ctn) 螺丝 200.00
+Concrete Nail 钢钉 8.30
+Self Drilling Screw 1 1/2" (2刀的螺丝 (包 2.50
+Self Drilling Screw 1/2" (20刀的螺丝 (包 2.00
+Wire Nail 2" (1kg) 铁钉2" 6.00
+Steel Nail 8.5mm x 32mm 枪钉 36.00
+Steel Nail 7.3mm x 27mm 枪钉 37.00
+Hook Nail 8.5mm x M8 枪钉 28.00
+Hook Nail 8.5mm x M6 枪钉 37.00
+--- p3 table 6 bbox (22, 664, 333, 794)
+Wall Plug & Screw
+Item Unit RM
+Wall Plug Plastic (pcs) Wall Plug 塑胶 (1排) 1.00
+Wall Plug Plastic (20pcs/bag) Wall Plug 塑胶 (1包) 10.50
+W/Plug Screw 10mm 1 2/8" (box)W/Plug 螺丝 10mm 1 2/ 30.50
+Wall Plug Drill Bit 6mm wall plug电钻的钻嘴 3.30
+Wall Plug Drill Bit 10mm wall plug电钻的钻嘴 4.50
+Wall Plug Drill Bit 12mm wall plug电钻的钻嘴 5.00
+Plus Star Bull Point Chisel 打墙电钻的钻嘴 5.50
+Cold Flat Chisel 打墙电钻的钻嘴 6.00
+--- p4 table 0 bbox (23, 65, 277, 255)
+Pasir & Batu 沙石
+Item RM
+PASIR KASAR (BAG) 粗沙 (包） 6.00
+PASIR KASAR HALF SCOPE 粗沙 半斗 105.00
+PASIR KASAR 1 BIG SCOPE 粗沙 一斗 135.00
+PASIR KASAR 2 BIG SCOPE 粗沙 两斗 260.00
+PASIR KASAR 3.5 BIG SCOPE 粗沙 三斗半 450.00
+PASIR HALUS (BAG) 幼沙 (包） 6.00
+PASIR HALUS HALF SCOPE 幼沙 半斗 105.00
+PASIR HALUS 1 BIG SCOPE 幼沙 一斗 140.00
+PASIR HALUS 2 BIG SCOPE 幼沙 两斗 255.00
+PASIR HALUS 3.5 BIG SCOPE 幼沙 三斗半 430.00
+AGGREGATE - BATU 3/4" (BAG) 小石 (包） 8.50
+AGGREGATE - BATU 3/4" HALF SCOPE 小石 半斗 105.00
+AGGREGATE - BATU 3/4" 1 SCOPE 小石 一斗 150.00
+AGGREGATE - BATU 3/4" 2 SCOPE 小石 两斗 275.00
+AGGREGATE - BATU 3/4" 3.5 SCOPE 小石 三斗半 430.00
+--- p4 table 1 bbox (287, 65, 581, 121)
+Bricks 砖
+Item Unit RM
+CLAY BRICKS 红砖 0.70
+SAND BRICKS 砂砖 0.55
+AAC BLOCK STARKEN 轻砖(防火砖） 5.00
+--- p4 table 2 bbox (287, 143, 581, 221)
+Cement & Susu灰&牛奶水
+Item Unit RM
+YTL PORTLAND CEMENT 红毛灰 27.00
+SIKA 88 CEMENT GUM 胶灰 20.00
+OBARPROOF SBR LATEX 777 5L 牛奶水 5L 31.50
+OBARPROOF SBR LATEX 777 20L 牛奶水 20L 76.00
+SIKA TOP SEAL 107 W/P A(20KG) + B (5 KG)防水涂料 117.00
+--- p4 table 3 bbox (287, 243, 581, 310)
+Plywood三夹板
+Item Unit RM
+PLYWOOD 4X8X3MM (+-) 三夹板 3MM (+-) 24.50
+PLYWOOD 4X8X5.2MM (+-) 三夹板 5.2MM (+-) 33.00
+PLYWOOD 4X8X9MM (+-) 三夹板 9MM (+-) 50.50
+PLYWOOD 4X8X12MM (+-) 三夹板 12MM (+-) 60.50
+--- p4 table 4 bbox (23, 299, 277, 377)
+Besi 铁支&花铁
+Item Unit RM
+R6(CQ) - 40FT 花铁(CQ)不足 13.00
+Y10(CQ) - 40FT 铁支(CQ)不足 40FT 21.00
+Y12(CQ) - 40FT 铁支(CQ)不足 40FT 29.00
+Y10(BS) - 40FT 铁支(BS)足 40FT 33.80
+Y12(BS) - 40FT 铁支(BS)足 40FT 43.00
