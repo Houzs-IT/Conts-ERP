@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useEffect, useRef } from 'react';
 import { readDevice } from './lib/deviceClass';
 import { CrashScreen } from './components/CrashScreen';
 import { Routes, Route, Outlet, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
@@ -28,7 +28,7 @@ const OperationsTodayPage = lazy(() => import('./pages/OperationsTodayPage'));
 const CleaningPage = lazy(() => import('./pages/CleaningPage'));
 const CleanersPage = lazy(() => import('./pages/CleanersPage')); // added: housekeeping cleaner roster
 const MaintenancePage = lazy(() => import('./pages/MaintenancePage'));
-import SupplyChainEngine from './components/SupplyChainEngine';
+import SupplyChainEngine, { signInToEngineEarly } from './components/SupplyChainEngine';
 import { ENGINE_PATH } from './lib/scmEngine';
 import { useApi } from './lib/useApi';
 const UnitsPage = lazy(() => import('./pages/UnitsPage'));
@@ -119,14 +119,23 @@ function AppLayout() {
   const enginePath = ENGINE_PATH[location.pathname];
   const engine = useApi<{ enabled: boolean }>('/supply-chain/engine');
   const viaEngine = !!enginePath && !!engine.data?.enabled;
+  const lastEnginePath = useRef<string | null>(null);
+  if (viaEngine) lastEnginePath.current = enginePath;
   // A screen whose area is closed to this role (Users and roles > Permissions) is not shown even by its address.
   const { user } = useSession();
   const closed = screenClosed(location.pathname, user?.access);
+  useEffect(() => { if (engine.data?.enabled && user) signInToEngineEarly(user.id); }, [engine.data?.enabled, user?.id]);
   if (switchedOff(location.pathname)) return <Navigate to={user ? HOME[user.role] : '/'} replace />;
+  const engineShown = viaEngine && !closed;
   return (
     <AppShell path={location.pathname} navigate={(p: string) => navigate(p)} flush={viaEngine}>
+      {lastEnginePath.current && (
+        <div style={{ display: engineShown ? 'flex' : 'none', flex: 1, minHeight: 0, flexDirection: 'column' }}>
+          <SupplyChainEngine enginePath={lastEnginePath.current} active={engineShown} />
+        </div>
+      )}
       {closed ? <NoAccess />
-        : viaEngine ? <SupplyChainEngine enginePath={enginePath} />
+        : viaEngine ? null
         : enginePath && !engine.data && engine.loading ? <Fallback />
         // Settings categories share one page, so an unsaved edit in one survives a visit to another.
         : <CrashScreen inline key={location.pathname.replace(/^\/system\/settings\/.*/, '/system/settings')}><Suspense fallback={<Fallback />}><PageShown /><Outlet /></Suspense></CrashScreen>}

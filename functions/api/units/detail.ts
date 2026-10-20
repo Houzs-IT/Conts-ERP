@@ -104,8 +104,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
     all<any>(env, `
       SELECT actor_label, action, before_state, after_state, source, occurred_at
-      FROM audit_log WHERE entity_id = ? OR entity_table = 'units' AND entity_id = ?
-      ORDER BY occurred_at DESC LIMIT 20`, unitId, unitId),
+      FROM audit_log WHERE entity_id = ?
+      ORDER BY occurred_at DESC LIMIT 20`, unitId),
 
     stayMonths(env, `${month}-01`, monthEndEx, { unitId }),
 

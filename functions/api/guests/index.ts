@@ -49,9 +49,15 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { today, tomorrow } = todayAndTomorrow();
   const cte = statsCte(today, tomorrow);
 
-  const counts = await one<Record<GuestFilter, number>>(env, `${cte}
+  const [counts, facetRows] = await Promise.all([
+    one<Record<GuestFilter, number>>(env, `${cte}
     SELECT ${FILTERS.map(f => `COUNT(*) FILTER (WHERE ${filterWhere(f, cols)}) AS "${f}"`).join(', ')}
-    FROM guests g LEFT JOIN s ON s.guest_id = g.id ${GC} WHERE ${where}`, ...args);
+    FROM guests g LEFT JOIN s ON s.guest_id = g.id ${GC} WHERE ${where}`, ...args),
+    // The Country filter's choices with their counts, under the search and chip on screen (not the country picked).
+    all<{ v: string | null; n: number }>(env, `${cte}
+    SELECT gc.iso AS v, COUNT(*) AS n FROM guests g LEFT JOIN s ON s.guest_id = g.id ${GC}
+    WHERE ${baseWhere} AND ${filterWhere(filter, cols)} GROUP BY 1 ORDER BY 2 DESC LIMIT 300`, ...baseArgs),
+  ]);
   const total = Number(counts?.[filter] ?? 0);
   const page = Math.min(Math.max(1, Math.floor(Number(sp.get('page')) || 1)), Math.max(1, Math.ceil(total / pageSize)));
 
@@ -64,10 +70,6 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     WHERE ${where} AND ${filterWhere(filter, cols)}
     ORDER BY ${sort.sql} LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}`, ...args) : [];
 
-  // The Country filter's choices with their counts, under the search and chip on screen (not the country picked).
-  const facetRows = await all<{ v: string | null; n: number }>(env, `${cte}
-    SELECT gc.iso AS v, COUNT(*) AS n FROM guests g LEFT JOIN s ON s.guest_id = g.id ${GC}
-    WHERE ${baseWhere} AND ${filterWhere(filter, cols)} GROUP BY 1 ORDER BY 2 DESC LIMIT 300`, ...baseArgs);
   const facets = { country: facetRows.map(r => ({ value: r.v ?? 'none', label: r.v ? countryName(r.v) ?? r.v : 'Not known', count: Number(r.n) })) };
 
   return json({

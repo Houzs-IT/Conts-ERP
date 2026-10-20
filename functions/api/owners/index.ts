@@ -29,27 +29,31 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const month = url.searchParams.get('month') || todayMyt().slice(0, 7);
   if (!/^\d{4}-\d{2}$/.test(month)) return fail('VALIDATION', 'Month must look like 2026-08.', 422);
   const id = url.searchParams.get('id');
-  const owners = id
-    ? await all<any>(env, 'SELECT * FROM owners WHERE id = ?', id)
-    : await all<any>(env, 'SELECT * FROM owners ORDER BY display_name');
+  const ownersRead = id
+    ? all<any>(env, 'SELECT * FROM owners WHERE id = ?', id)
+    : all<any>(env, 'SELECT * FROM owners ORDER BY display_name');
   const q: Query = (sql, ...args) => all(env, sql, ...args);
-  const [settings, inputs, contracts, statements, detailsReady, portalOf] = await Promise.all([
-    statementSettings(q),
-    loadInputs(q, `${month}-01`, monthEndExclusive(month), id ? { ownerIds: [id] } : {}),
+  const settingsRead = statementSettings(q);
+  const inputsRead = loadInputs(q, `${month}-01`, monthEndExclusive(month), id ? { ownerIds: [id] } : {});
+  const [owners, settings, inputs, monthInputs, contracts, statements, detailsReady, portalOf, contractCodes, unitProperties] = await Promise.all([
+    ownersRead, settingsRead, inputsRead,
+    Promise.all([inputsRead, settingsRead]).then(([i, st]) => withYearToDate(q, i, month, st)),
     all<any>(env, `SELECT * FROM owner_contracts ${id ? 'WHERE owner_id = ?' : ''} ORDER BY starts_on DESC`, ...(id ? [id] : [])),
     // hasUnits: built by the workbook rules, so it has an Owner Income Report; months paid before Property OS carry only the payout.
     all<any>(env, `SELECT s.id, s.owner_id, s.state, EXISTS (SELECT 1 FROM statement_units su WHERE su.statement_id = s.id) AS has_units
       FROM owner_statements s WHERE s.period_start = ? ${id ? 'AND s.owner_id = ?' : ''}`, `${month}-01`, ...(id ? [id] : [])),
     ownerDetailsReady(env),
-    portalStates(env, owners),
+    ownersRead.then(o => portalStates(env, o)),
+    purposeReady(env).then(ready => ready ? all<{ id: string; contract_code: string | null }>(env, 'SELECT id, contract_code FROM owner_contracts WHERE contract_code IS NOT NULL') : []),
+    all<any>(env, `SELECT id, property_id FROM units ${id ? 'WHERE owner_id = ?' : ''}`, ...(id ? [id] : [])),
   ]);
-  const months = new Map(computeMonth(month, await withYearToDate(q, inputs, month, settings), settings, 'dated').map(m => [m.unitId, m]));
+  const months = new Map(computeMonth(month, monthInputs, settings, 'dated').map(m => [m.unitId, m]));
   const statementOf = new Map(statements.map(s => [s.owner_id, s]));
   const unitsOf = new Map<string, UnitRow[]>();
   for (const u of inputs.units) { const l = unitsOf.get(u.owner_id); if (l) l.push(u); else unitsOf.set(u.owner_id, [u]); }
   // The staff's contract codes (0125); MANAGE and PS share a model, so the stored code is read when there is one.
-  const codeById = new Map((await purposeReady(env)) ? (await all<{ id: string; contract_code: string | null }>(env, 'SELECT id, contract_code FROM owner_contracts WHERE contract_code IS NOT NULL')).map(r => [r.id, r.contract_code]) : []);
-  const propertyOf = new Map((await all<any>(env, `SELECT id, property_id FROM units ${id ? 'WHERE owner_id = ?' : ''}`, ...(id ? [id] : []))).map(r => [r.id, r.property_id]));
+  const codeById = new Map(contractCodes.map(r => [r.id, r.contract_code]));
+  const propertyOf = new Map(unitProperties.map(r => [r.id, r.property_id]));
 
   return json({
     generatedAt: nowIso(), month,

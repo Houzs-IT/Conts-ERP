@@ -15,9 +15,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   // Owner identity and bank numbers are shown only to roles that manage them.
   const banking = session.manage;
 
-  const buildings = await all<any>(env, 'SELECT id, name, city, state, postcode FROM properties ORDER BY state, name');
-  const ready = await purposeReady(env);
-  const units = await all<any>(env, `
+  const [buildings, units, expenses, docs, { defaultFeePct }, extras] = await Promise.all([
+    all<any>(env, 'SELECT id, name, city, state, postcode FROM properties ORDER BY state, name'),
+    purposeReady(env).then(ready => all<any>(env, `
     SELECT u.id, u.property_id, u.parent_unit_id, u.unit_number, u.bedrooms, u.bathrooms, u.size_sqft, u.layout_type, u.owner_id, u.base_rate, u.listing_name, u.unit_code, u.address, u.package, u.term, u.split_kind, u.split_value, u.guarantee_period,
            p.state, p.address_line, o.display_name AS owner_name, o.ic_number, o.bank_name, o.bank_account_number, o.bank_account_holder,
            c.management_fee_pct, c.starts_on, c.renews_on, c.minimum_guarantee, c.minimum_guarantee_annual, c.guarantee_starts_on, c.guarantee_ends_on,
@@ -28,11 +28,12 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
            (SELECT COUNT(*) FROM documents d WHERE d.unit_id = u.id AND d.kind = 'contract') AS contract_docs
     FROM units u JOIN properties p ON p.id = u.property_id JOIN owners o ON o.id = u.owner_id
     LEFT JOIN owner_contracts c ON c.id = u.contract_id
-    ORDER BY p.name, u.unit_number`);
-  const expenses = await all<any>(env, 'SELECT id, unit_id, category, amount, note FROM unit_expenses ORDER BY unit_id, sort_order');
-  const docs = await all<any>(env, `SELECT id, unit_id, file_name FROM documents WHERE kind = 'contract' AND unit_id IS NOT NULL ORDER BY created_at`);
-  const { defaultFeePct } = await statementSettings((sql, ...args) => all(env, sql, ...args));
-  const extras = await extrasFor(env, null);
+    ORDER BY p.name, u.unit_number`)),
+    all<any>(env, 'SELECT id, unit_id, category, amount, note FROM unit_expenses ORDER BY unit_id, sort_order'),
+    all<any>(env, `SELECT id, unit_id, file_name FROM documents WHERE kind = 'contract' AND unit_id IS NOT NULL ORDER BY created_at`),
+    statementSettings((sql, ...args) => all(env, sql, ...args)),
+    extrasFor(env, null),
+  ]);
 
   return json({
     generatedAt: nowIso(),

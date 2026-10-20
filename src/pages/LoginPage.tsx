@@ -123,10 +123,10 @@ export default function LoginPage({ forceChangePassword = false, resetToken = nu
       className="conts-login flex-1 min-h-[100dvh] lg:h-[100dvh] grid grid-cols-1 lg:grid-cols-[minmax(0,1.55fr)_minmax(420px,0.62fr)]"
     >
       {/* Hero. Photograph and light are decorative and clipped to this panel only.
-          Drop a photograph at public/brand/login-hero.jpg; without one the blueprint
+          Drop a photograph at public/brand/login-hero.webp; without one the blueprint
           grid carries the panel, so a clean install never shows a broken image. */}
       <div className="login-hero bg-blueprint relative overflow-hidden h-[236px] sm:h-[288px] lg:h-auto">
-        <div aria-hidden className="login-photo absolute inset-[-3%] bg-[url(/brand/login-hero.jpg)] bg-cover bg-center" />
+        <div aria-hidden className="login-photo absolute inset-[-3%] bg-[url(/brand/login-hero.webp)] bg-cover bg-center" />
         <div aria-hidden className="login-light absolute inset-[-20%] pointer-events-none" />
         <div aria-hidden className="login-scrim absolute inset-0 pointer-events-none" />
         <div aria-hidden className="hidden lg:block absolute inset-[26px] border border-solid border-[rgba(200,164,106,0.24)] pointer-events-none" />

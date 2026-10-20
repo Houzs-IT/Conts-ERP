@@ -16,13 +16,17 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   // month in progress stops at today). Occupancy, ADR and RevPAR are over listed units (the nights that could be
   // sold); revenue counts every unit.
   const { toExclusive, days } = toDate(`${period}-01`, monthEndExclusive(period), mytToday());
-  const rows = await stayMonths(env, `${period}-01`, toExclusive);
-  const listedIds = new Set((await all<{ id: string }>(env, `SELECT id FROM units WHERE is_listed = 1${await rentalOnly(env, 'units')}`)).map(u => u.id));
+  const [rows, listedUnits, ownerByMonth] = await Promise.all([
+    stayMonths(env, `${period}-01`, toExclusive),
+    rentalOnly(env, 'units').then(r => all<{ id: string }>(env, `SELECT id FROM units WHERE is_listed = 1${r}`)),
+    session.manage ? ownerMonths(env, [period]) : Promise.resolve(undefined),
+  ]);
+  const listedIds = new Set(listedUnits.map(u => u.id));
   const listed = metrics(rows.filter(r => listedIds.has(r.unit_id)), listedIds.size * days);
   const everything = metrics(rows, 0);
   // The owners' payout for the whole month by the statement engine, the same estimate as the Owners page's "To pay
   // owners" (stored statements only exist once a month is generated, so they read RM 0 for the month in progress).
-  const owners = session.manage ? (await ownerMonths(env, [period])).get(period) : undefined;
+  const owners = ownerByMonth?.get(period);
 
   const kpis = [
     { key: 'occupancy', value: listed.occupancy.toFixed(1), unit: 'percent' },

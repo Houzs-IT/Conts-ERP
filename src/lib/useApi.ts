@@ -12,6 +12,16 @@ function holdRefreshing() {
   return () => { refreshing--; listeners.forEach(l => l()); };
 }
 
+const pendingReads = new Map<string, Promise<unknown>>();
+function sharedGet<T>(path: string): Promise<T> {
+  let pending = pendingReads.get(path);
+  if (!pending) {
+    pending = api.get<T>(path).finally(() => pendingReads.delete(path));
+    pendingReads.set(path, pending);
+  }
+  return pending as Promise<T>;
+}
+
 export interface Query<T> {
   data: T | null;
   loading: boolean;
@@ -43,7 +53,8 @@ export function useApi<T>(path: string | null, fallback?: T): Query<T> {
     // A page revisited (or a range switched back) shows its last answer straight away; the read below refreshes it.
     const seen = readCache.get(path) as T | undefined;
     if (seen !== undefined) setData(seen);
-    api.get<T>(path)
+    // A reload after a save must not join a read sent before the save.
+    (nonce ? api.get<T>(path) : sharedGet<T>(path))
       .then(r => { remember(path, r); if (live) { setData(r); setError(null); } })
       .catch((e: unknown) => {
         if (!live) return;

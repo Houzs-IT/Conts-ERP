@@ -30,7 +30,10 @@ export default function ViewAs() {
   const userId = useSession().user?.id;
 
   // Asked again on sign-in and sign-out, so it appears without a page refresh.
-  useEffect(() => { api.get<State>('/auth/view-as').then(setState).catch(() => setState(null)); }, [userId]);
+  useEffect(() => {
+    if (!userId) { setState(null); return; }
+    api.get<State>('/auth/view-as').then(setState).catch(() => setState(null));
+  }, [userId]);
   if (!state?.enabled || !state.me) return null;
 
   const minimise = (on: boolean) => {
