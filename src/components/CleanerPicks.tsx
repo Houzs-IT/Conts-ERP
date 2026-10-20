@@ -48,11 +48,11 @@ export function CleanerChips({ cleaners, value, names, onChange, disabled, requi
   return (
     <div className="flex flex-wrap items-center gap-1.5 min-w-0">
       {value.map((id, i) => (
-        <span key={id} className="inline-flex items-center gap-1 h-8 pl-2.5 pr-1 rounded-full border border-solid border-line bg-card text-copy max-w-full">
+        <span key={id} className="inline-flex items-center gap-1 max-md:gap-2 h-8 max-md:h-11 pl-2.5 max-md:pl-3.5 pr-1 max-md:pr-0 rounded-full border border-solid border-line bg-card text-copy max-w-full">
           <span className="truncate">{names[id] ?? cleaners.find(c => c.id === id)?.name ?? 'Cleaner'}</span>
           {i === 0 && value.length > 1 && <span className="text-caption text-gold-ink">Main</span>}
           <button type="button" disabled={disabled} onClick={() => onChange(value.filter(v => v !== id))} aria-label={`Take ${names[id] ?? 'this cleaner'} off the job`}
-            title="Take off this job" className="w-6 h-6 grid place-items-center rounded-full border-0 bg-transparent text-muted-ink hover:bg-muted cursor-pointer disabled:cursor-default">
+            title="Take off this job" className="w-6 h-6 max-md:w-11 max-md:h-11 max-md:rounded-l-none max-md:[border-left:1px_solid_var(--color-line)] grid place-items-center rounded-full border-0 bg-transparent text-muted-ink hover:bg-muted cursor-pointer disabled:cursor-default">
             <Icon name="X" size="sm" />
           </button>
         </span>
@@ -60,7 +60,7 @@ export function CleanerChips({ cleaners, value, names, onChange, disabled, requi
       {others.length > 0 && (
         <select aria-label={value.length ? 'Add another cleaner' : 'Pick a cleaner'} disabled={disabled} value=""
           onChange={e => { const v = e.target.value; if (v) onChange([...value, v]); }}
-          className={cx('h-8 rounded-full border border-solid px-2.5 bg-card text-copy text-ink cursor-pointer max-w-[200px]', value.length ? 'border-dashed border-line' : required ? 'border-danger' : 'border-line')}>
+          className={cx('h-8 max-md:h-11 rounded-full border border-solid px-2.5 bg-card text-copy text-ink cursor-pointer max-w-[200px]', value.length ? 'border-dashed border-line' : required ? 'border-danger' : 'border-line')}>
           <option value="">{value.length ? '+ Add cleaner' : 'Pick a cleaner'}</option>
           {others.map(c => <option key={c.id} value={c.id}>{c.name}{c.employmentType === 'outsourced' ? ' (outsourced)' : ''}</option>)}
         </select>
