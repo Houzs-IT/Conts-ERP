@@ -27,6 +27,8 @@ r = await call('POST', '/api/statements/generate', { period: '2026-09' }); r = a
 await call('POST', '/api/statements/finalise', { statementIds: ids }); await call('POST', '/api/statements/send', { statementIds: ids });
 r = await call('POST', `/api/owners/${LIM}/invite`, {}); const limUser = r.json?.userId; check('invite Lim', !!limUser, r.text);
 const lim = { userId: limUser, email: 'limck@example.com', role: 'owner', fullName: 'Lim Chee Keong' };
+// An invited owner is on a temporary password: the portal opens only once it is replaced (temp-password-gate.mjs).
+r = await callAsUser(lim, 'POST', '/api/auth/change-password', { password: 'OwnerPortal1' }); check('invited owner sets a password', r.status === 200, r.text);
 r = await callAsUser(lim, 'GET', '/api/owner/summary'); check('owner summary', r.status === 200 && r.json.isFinal && r.json.grossToNet.at(-1).type === 'net' && r.json.grossToNet[0].type === 'gross' && r.json.units.length >= 1 && r.json.payout.state, r.text.slice(0, 400));
 const g = r.json.grossToNet; const sum = g.filter(x => x.type !== 'net').reduce((n, x) => n + x.amount, 0); check('gross-to-net ties out', sum === g.at(-1).amount, `${sum} vs ${g.at(-1).amount}`);
 r = await callAsUser(lim, 'GET', '/api/owner/trend?months=8'); check('owner trend', r.status === 200 && r.json.points.length >= 1 && 'netPayout' in r.json.points[0], r.text.slice(0, 200));
