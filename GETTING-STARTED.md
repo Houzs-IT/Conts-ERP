@@ -27,7 +27,18 @@ deployed. Do not touch them.
    `CLAUDE.md`, "Working fast", explains pointing local dev at the staging database and minting a test
    session.
 4. The engine has its own `npm install` in `engine/backend` and in `engine/frontend`. You need those
-   only if you work on supply chain, service cases or projects.
+   only if you work on supply chain, service cases or projects. To run it locally inside the rental app:
+   - `engine/backend/.dev.vars` (see its `.dev.vars.example`): the same staging connection line as the root
+     `.dev.vars` (one database, the engine uses the `scm` and `public` schemas), the staging Supabase URL and
+     service role key, and a random `CONTS_SSO_SECRET`.
+   - The root `.dev.vars` gets the three `SCM_ENGINE_*` lines from `.dev.vars.example`, the secret matching
+     `CONTS_SSO_SECRET`. `.dev.vars` overrides the `wrangler.toml` addresses only when the server is restarted.
+   - `engine/frontend/.env.local`: `VITE_API_URL=http://localhost:5173` and
+     `VITE_DEV_API_PROXY_TARGET=http://localhost:8787`. Without `VITE_API_URL` the dev screens call a placeholder address.
+   - Start all three (`.claude/launch.json` has them): `npm run dev` (8788); in `engine/backend`,
+     `node --env-file=.dev.vars node_modules/wrangler/bin/wrangler.js dev --port 8787` (its own `npm run dev`
+     does not pass the database line to wrangler); `npm --prefix engine/frontend run dev -- --port 5173`.
+     Supply chain menus in the rental app then open the local engine, signed in.
 
 ## Environments
 

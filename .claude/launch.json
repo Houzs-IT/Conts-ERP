@@ -1,0 +1,23 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "rental",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "port": 8788
+    },
+    {
+      "name": "engine-api",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["--env-file=engine/backend/.dev.vars", "engine/backend/node_modules/wrangler/bin/wrangler.js", "dev", "--config", "engine/backend/wrangler.toml", "--port", "8787"],
+      "port": 8787
+    },
+    {
+      "name": "engine-web",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "engine/frontend", "run", "dev", "--", "--port", "5173", "--strictPort"],
+      "port": 5173
+    }
+  ]
+}

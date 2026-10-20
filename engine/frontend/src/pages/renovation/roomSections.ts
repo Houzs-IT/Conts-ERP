@@ -13,10 +13,12 @@ export function insertRoomSections<T extends { heading: string }>(
   bedrooms: number,
   bathrooms: number,
   make: (heading: string) => T,
+  commonFirst = false,
 ): { sections: T[]; added: string[] } {
   const out = [...sections];
   const added: string[] = [];
-  const rooms = roomSectionHeadings(bedrooms, bathrooms);
+  const layoutRooms = roomSectionHeadings(bedrooms, bathrooms);
+  const rooms = commonFirst ? [DEFAULT_ROOM, ...layoutRooms.filter((h) => key(h) !== key(DEFAULT_ROOM))] : layoutRooms;
   const indexOf = (h: string) => out.findIndex((s) => key(s.heading) === key(h));
   let last = -1;
   rooms.forEach((h, i) => {
@@ -37,9 +39,10 @@ export function insertRoomSections<T extends { heading: string }>(
 
 /* ── Rooms on a renovation-mode sales order (a list of names; each line names its room) ── */
 
-/** Rooms after "Generate rooms from layout": the missing ones inserted where they belong. */
+/** Rooms after "Generate rooms from layout": the missing ones inserted where they belong. On a sales order
+    Common area comes first, then the layout's rooms (owner, 20 Oct 2026); quotations keep it last. */
 export function generateRooms(rooms: readonly string[], bedrooms: number, bathrooms: number): { rooms: string[]; added: string[] } {
-  const r = insertRoomSections(rooms.map((heading) => ({ heading })), bedrooms, bathrooms, (heading) => ({ heading }));
+  const r = insertRoomSections(rooms.map((heading) => ({ heading })), bedrooms, bathrooms, (heading) => ({ heading }), true);
   return { rooms: r.sections.map((s) => s.heading), added: r.added };
 }
 
@@ -97,7 +100,7 @@ export function autoRoomsPlan(
 export const DEFAULT_ROOM = 'Common area';
 
 /** Every line belongs to a room (owner, 14 Oct 2026): with no rooms yet the order has one, Common area; a line
-    whose room is blank or no longer listed shows (and is saved) under Common area, added at the end when the
+    whose room is blank or no longer listed shows (and is saved) under Common area, added first when the
     order has no room of that name. The saved data changes only when the order is saved. */
 export function placeRows<T extends { key: string; room: string }>(rooms: readonly string[], rows: readonly T[]): { rooms: string[]; roomOf: Record<string, string> } {
   const list = rooms.length > 0 ? [...rooms] : [DEFAULT_ROOM];
@@ -107,7 +110,7 @@ export function placeRows<T extends { key: string; room: string }>(rooms: readon
     const hit = row.room.trim() ? find(row.room) : undefined;
     if (hit) { roomOf[row.key] = hit; continue; }
     let common = find(DEFAULT_ROOM);
-    if (!common) { list.push(DEFAULT_ROOM); common = DEFAULT_ROOM; }
+    if (!common) { list.unshift(DEFAULT_ROOM); common = DEFAULT_ROOM; }
     roomOf[row.key] = common;
   }
   return { rooms: list, roomOf };
