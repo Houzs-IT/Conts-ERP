@@ -61,9 +61,20 @@ interface Payload { data: Row[]; generatedAt: string; jobFields?: boolean }
 
 // Department and position are free text (migration 0113): the renovation pickers show them after the name, so
 // picking "Alex · Project PIC · Renovation" says what the person does. These are suggestions, not a fixed list;
-// values already used on other accounts are suggested too, so spellings stay consistent.
-const DEPARTMENT_SUGGESTIONS = ['Management', 'Sales', 'Design', 'Renovation', 'Operations', 'Finance', 'Admin'];
-const POSITION_SUGGESTIONS = ['Director', 'Sales Executive', 'Interior Designer', '3D Designer', '2D Drafter', 'Project PIC', 'Site Supervisor', 'Admin'];
+// values already used on other accounts are suggested too, so spellings stay consistent. Once a department is
+// picked, only the positions that belong to it are suggested (plus ones other accounts in it already use).
+const POSITIONS_BY_DEPARTMENT: Record<string, string[]> = {
+  Management: ['Director'],
+  Sales: ['Sales Executive'],
+  Design: ['Interior Designer', '3D Designer', '2D Drafter'],
+  Renovation: ['Project PIC', 'Site Supervisor'],
+  Operations: [],
+  Finance: [],
+  Admin: ['Admin'],
+};
+const DEPARTMENT_SUGGESTIONS = Object.keys(POSITIONS_BY_DEPARTMENT);
+const POSITION_SUGGESTIONS = Object.values(POSITIONS_BY_DEPARTMENT).flat();
+const sameText = (a: string | null | undefined, b: string | null | undefined) => (a ?? '').trim().toLowerCase() === (b ?? '').trim().toLowerCase();
 const suggestionsFrom = (base: string[], used: Array<string | null | undefined>) =>
   [...new Set([...base, ...used.map(v => (v ?? '').trim()).filter(Boolean)])].sort((a, b) => a.localeCompare(b));
 /** "Position · Department", skipping what is not set. */
@@ -165,7 +176,16 @@ export default function UsersPage() {
   const staff = rows.filter(r => r.role !== 'owner');
   const jobFields = data?.jobFields === true;
   const departmentOptions = useMemo(() => suggestionsFrom(DEPARTMENT_SUGGESTIONS, rows.map(r => r.department)), [rows]);
-  const positionOptions = useMemo(() => suggestionsFrom(POSITION_SUGGESTIONS, rows.map(r => r.position)), [rows]);
+  const positionsFor = useMemo(() => {
+    const all = suggestionsFrom(POSITION_SUGGESTIONS, rows.map(r => r.position));
+    // Unknown or empty department, or one with nothing to suggest yet: offer every position.
+    return (dept: string) => {
+      if (!dept.trim()) return all;
+      const base = Object.entries(POSITIONS_BY_DEPARTMENT).find(([k]) => sameText(k, dept))?.[1] ?? [];
+      const own = suggestionsFrom(base, rows.filter(r => sameText(r.department, dept)).map(r => r.position));
+      return own.length ? own : all;
+    };
+  }, [rows]);
 
   const columns = useMemo<Column<Row>[]>(() => [
     { key: 'name', label: 'Name', value: u => u.fullName, hideable: false, width: 220,
@@ -624,7 +644,7 @@ export default function UsersPage() {
             <Field label="Full name" value={fullName} onChange={e => setFullName(e.target.value)} placeholder="Jane Tan" error={fieldErrors.fullName} />
             <Field label="Work email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="jane@theconts.com" error={fieldErrors.email} />
             {jobFields && <JobFields department={department} position={position} onDepartment={setDepartment} onPosition={setPosition}
-              errors={fieldErrors} departments={departmentOptions} positions={positionOptions} />}
+              errors={fieldErrors} departments={departmentOptions} positions={positionsFor(department)} />}
             <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-4">
               <Select label="Role" showLabel size="md" value={role} onChange={v => setRole(v as UserRole)} options={STAFF_ROLE_OPTIONS} />
               {role !== 'owner' && (
@@ -663,7 +683,7 @@ export default function UsersPage() {
             <Field label="Email" type="email" value={editEmail} onChange={e => setEditEmail(e.target.value)} error={editErrors.email} />
             <PhoneInput label="Phone" value={editPhone} onChange={setEditPhone} error={editErrors.phone} />
             {jobFields && <JobFields department={editDepartment} position={editPosition} onDepartment={setEditDepartment} onPosition={setEditPosition}
-              errors={editErrors} departments={departmentOptions} positions={positionOptions} />}
+              errors={editErrors} departments={departmentOptions} positions={positionsFor(editDepartment)} />}
             <div className="flex flex-col gap-1.5">
               <Select label="Role" showLabel size="md" value={editRole} onChange={v => setEditRole(v as UserRole)}
                 options={editing.role === 'owner' ? ROLE_OPTIONS.filter(o => o.value === 'owner') : STAFF_ROLE_OPTIONS} disabled={editing.role === 'owner'} />
@@ -768,7 +788,8 @@ export default function UsersPage() {
 }
 
 /* ------------------------------ row actions ------------------------------ */
-/** Position and department: type anything, or pick a suggestion. Shown after the person's name in renovation pickers. */
+/** Department, then position: type anything, or pick a suggestion. The position suggestions follow the department.
+ *  Shown after the person's name in renovation pickers. */
 function JobFields({ department, position, onDepartment, onPosition, errors, departments, positions }: {
   department: string; position: string; onDepartment: (v: string) => void; onPosition: (v: string) => void;
   errors: { department?: string; position?: string }; departments: string[]; positions: string[];
@@ -776,10 +797,10 @@ function JobFields({ department, position, onDepartment, onPosition, errors, dep
   return (
     <>
       <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-4">
-        <Field label="Position" value={position} onChange={e => onPosition(e.target.value)} placeholder="Sales Executive" maxLength={80}
-          list="user-position-options" autoComplete="off" error={errors.position} />
         <Field label="Department" value={department} onChange={e => onDepartment(e.target.value)} placeholder="Sales" maxLength={80}
           list="user-department-options" autoComplete="off" error={errors.department} />
+        <Field label="Position" value={position} onChange={e => onPosition(e.target.value)} placeholder="Sales Executive" maxLength={80}
+          list="user-position-options" autoComplete="off" error={errors.position} />
       </div>
       <datalist id="user-position-options">{positions.map(v => <option key={v} value={v} />)}</datalist>
       <datalist id="user-department-options">{departments.map(v => <option key={v} value={v} />)}</datalist>
