@@ -143,7 +143,7 @@ export function MediaGallery({ items, upload, onDone, addLabel = 'Add photo', ca
             {onRemove && (
               <button type="button" onClick={() => onRemove(m)} aria-label={`Remove ${m.fileName}`}
                 className="absolute top-0 right-0 w-11 h-11 grid place-items-center border-0 bg-transparent p-0 cursor-pointer outline-none group/x">
-                <span className="w-8 h-8 grid place-items-center rounded-full bg-card text-ink shadow-[var(--shadow-raised)] group-hover/x:bg-danger-bg group-hover/x:text-danger group-focus-visible/x:[box-shadow:var(--focus-ring)]">
+                <span className="w-8 h-8 grid place-items-center rounded-full cursor-pointer bg-card text-ink shadow-[var(--shadow-raised)] group-hover/x:bg-danger-bg group-hover/x:text-danger group-focus-visible/x:[box-shadow:var(--focus-ring)]">
                   <Icon name="X" size="sm" />
                 </span>
               </button>
