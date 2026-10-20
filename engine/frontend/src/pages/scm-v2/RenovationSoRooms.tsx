@@ -6,7 +6,9 @@
    there (placeRows). Rooms are made from the layout as soon as one is chosen;
    "Generate rooms from layout" adds the missing ones later, asking first. A line
    moves to another room from its small move button. Line numbers run in the order
-   shown. Totals, payments and the line cards themselves are Houzs's, unchanged. */
+   shown. Totals, payments and the line cards themselves are Houzs's, unchanged.
+   With `card` (New SO, owner 20 Oct 2026) each room is a card of its own in place of
+   the one "Line items" card: the rooms are the order's main sections. */
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ArrowDown, ArrowRightLeft, ArrowUp, LayoutGrid, Plus, Trash2 } from 'lucide-react';
@@ -17,11 +19,13 @@ import { generateRooms, moveRoom, nextRoomName, placeRows, renameRoom } from '..
 /** One line: its key, its saved room, and how to draw it given its number in the order shown (0-based). */
 export interface RoomRow { key: string; room: string; render: (displayIndex: number) => ReactNode }
 export interface RoomLayout { label: string; bedrooms: number; bathrooms: number }
+/** The page's own card classes, so a room looks like the page's other sections. */
+export interface RoomCard { section: string; header: string; title: string; body: string }
 
 const btn = 'inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-surface px-3 text-[12px] font-semibold text-ink-secondary hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:opacity-50';
 const iconBtn = 'rounded p-1 text-ink-secondary hover:bg-surface-dim hover:text-ink disabled:opacity-30';
 
-function RoomName({ name, disabled, onRename }: { name: string; disabled?: boolean; onRename: (to: string) => boolean }) {
+function RoomName({ name, disabled, inTitle, onRename }: { name: string; disabled?: boolean; inTitle?: boolean; onRename: (to: string) => boolean }) {
   const [draft, setDraft] = useState(name);
   const [bad, setBad] = useState(false);
   const [seen, setSeen] = useState(name);
@@ -35,7 +39,9 @@ function RoomName({ name, disabled, onRename }: { name: string; disabled?: boole
     <input
       aria-label="Room name"
       title={bad ? 'That name is blank or another room has it' : undefined}
-      className={cn('h-8 min-w-0 flex-1 rounded-md border bg-transparent px-2 text-[13px] font-bold uppercase tracking-wide text-ink focus:bg-surface',
+      className={cn('min-w-0 flex-1 rounded-md border bg-transparent focus:bg-surface',
+        /* Inputs do not inherit the font, so in a card title it is passed down to match the other cards. */
+        inTitle ? '-my-1 h-[22px] w-full px-1.5 [font:inherit] [letter-spacing:inherit] [text-transform:inherit] text-inherit' : 'h-8 px-2 text-[13px] font-bold uppercase tracking-wide text-ink',
         bad ? 'border-err' : 'border-transparent hover:border-border focus:border-primary')}
       value={draft}
       disabled={disabled}
@@ -78,7 +84,7 @@ function MoveLine({ rooms, current, onMove }: { rooms: string[]; current: string
   );
 }
 
-export function RenovationSoRooms({ rooms, onRoomsChange, rows, onRowRoom, onAddLine, layout, disabled }: {
+export function RenovationSoRooms({ rooms, onRoomsChange, rows, onRowRoom, onAddLine, layout, disabled, card }: {
   rooms: string[];
   /** `rename` is set when one room was renamed, so the parent moves its lines too. */
   onRoomsChange: (next: string[], rename?: { from: string; to: string }) => void;
@@ -87,6 +93,8 @@ export function RenovationSoRooms({ rooms, onRoomsChange, rows, onRowRoom, onAdd
   onAddLine: (room: string) => void;
   layout: RoomLayout | null;
   disabled?: boolean;
+  /** Each room as its own card (the page's classes) instead of rows inside one card. */
+  card?: RoomCard;
 }) {
   const [note, setNote] = useState<string | null>(null);
   const confirm = useConfirm();
@@ -111,61 +119,98 @@ export function RenovationSoRooms({ rooms, onRoomsChange, rows, onRowRoom, onAdd
     onRoomsChange(r.rooms);
   };
 
-  return (
-    <div className="flex flex-col">
-      <div className="mb-2 flex flex-wrap items-center justify-end gap-2">
-        {note && <span role="status" className="text-[12px] text-ink-secondary">{note}</span>}
-        {!layout && <span className="text-[12px] text-ink-muted">Choose the layout under Order information to make the rooms.</span>}
+  const toolbar = (
+    <div className={cn('flex flex-wrap items-center justify-end gap-2', !card && 'mb-2')}>
+      {note && <span role="status" className="text-[12px] text-ink-secondary">{note}</span>}
+      {!layout && <span className="text-[12px] text-ink-muted">Choose the layout under Order information to make the rooms.</span>}
+      {!disabled && (
+        <button type="button" className={btn} onClick={() => onRoomsChange([...shown, nextRoomName(shown)])}>
+          <Plus size={14} /> Add room
+        </button>
+      )}
+      <button type="button" className={btn} onClick={() => { void generate(); }} disabled={disabled || !layout}
+        title={layout ? `${layout.label}: Living hall, ${layout.bedrooms} bedroom(s), ${layout.bathrooms} bathroom(s), Common area` : undefined}>
+        <LayoutGrid size={14} /> Generate rooms from layout
+      </button>
+    </div>
+  );
+
+  const roomParts = (g: { room: string; rows: RoomRow[] }, i: number) => ({
+    name: (
+      <RoomName name={g.room} disabled={disabled} inTitle={!!card} onRename={(to) => {
+        const next = renameRoom(shown, g.room, to);
+        if (!next) return false;
+        onRoomsChange(next, { from: g.room, to: next[i]! });
+        /* Lines shown here without a saved room (Common area by default) follow the new name too. */
+        for (const row of g.rows) if (row.room !== next[i]) onRowRoom(row.key, next[i]!);
+        return true;
+      }} />
+    ),
+    controls: (
+      <>
+        <span className="whitespace-nowrap px-1 text-[11px] text-ink-secondary">{g.rows.length} line{g.rows.length === 1 ? '' : 's'}</span>
         {!disabled && (
-          <button type="button" className={btn} onClick={() => onRoomsChange([...shown, nextRoomName(shown)])}>
-            <Plus size={14} /> Add room
+          <>
+            <button type="button" aria-label={`Move ${g.room} up`} className={iconBtn} disabled={i === 0} onClick={() => onRoomsChange(moveRoom(shown, i, -1))}><ArrowUp size={15} /></button>
+            <button type="button" aria-label={`Move ${g.room} down`} className={iconBtn} disabled={i === groups.length - 1} onClick={() => onRoomsChange(moveRoom(shown, i, 1))}><ArrowDown size={15} /></button>
+            <button type="button" aria-label={`Delete ${g.room}`} className={iconBtn} disabled={g.rows.length > 0 || shown.length === 1}
+              title={g.rows.length > 0 ? 'Move or remove its lines first' : shown.length === 1 ? 'An order keeps at least one room' : 'Delete this room'}
+              onClick={() => onRoomsChange(shown.filter((r) => r !== g.room))}><Trash2 size={15} /></button>
+          </>
+        )}
+      </>
+    ),
+    lines: (
+      <div className="flex flex-col gap-3">
+        {g.rows.map((row) => (
+          <div key={row.key} className="relative">
+            {!disabled && <MoveLine rooms={shown} current={g.room} onMove={(room) => onRowRoom(row.key, room)} />}
+            {row.render(numberOf.get(row.key) ?? 0)}
+          </div>
+        ))}
+        {g.rows.length === 0 && disabled && <p className="px-2 text-[12px] text-ink-muted">No lines in this room.</p>}
+        {!disabled && (
+          <button type="button" onClick={() => onAddLine(g.room)}
+            className="inline-flex items-center gap-1.5 self-start rounded-md px-2 py-1 text-[12.5px] font-semibold text-primary hover:bg-primary-soft">
+            <Plus size={14} /> Add line to {g.room}
           </button>
         )}
-        <button type="button" className={btn} onClick={() => { void generate(); }} disabled={disabled || !layout}
-          title={layout ? `${layout.label}: Living hall, ${layout.bedrooms} bedroom(s), ${layout.bathrooms} bathroom(s), Common area` : undefined}>
-          <LayoutGrid size={14} /> Generate rooms from layout
-        </button>
       </div>
+    ),
+  });
 
-      {groups.map((g, i) => (
-        <section key={g.room} className="border-t border-border pt-2 pb-3 first-of-type:border-t-0">
-          <header className="mb-2 flex items-center gap-1">
-            <RoomName name={g.room} disabled={disabled} onRename={(to) => {
-              const next = renameRoom(shown, g.room, to);
-              if (!next) return false;
-              onRoomsChange(next, { from: g.room, to: next[i]! });
-              /* Lines shown here without a saved room (Common area by default) follow the new name too. */
-              for (const row of g.rows) if (row.room !== next[i]) onRowRoom(row.key, next[i]!);
-              return true;
-            }} />
-            <span className="whitespace-nowrap px-1 text-[11px] text-ink-secondary">{g.rows.length} line{g.rows.length === 1 ? '' : 's'}</span>
-            {!disabled && (
-              <>
-                <button type="button" aria-label={`Move ${g.room} up`} className={iconBtn} disabled={i === 0} onClick={() => onRoomsChange(moveRoom(shown, i, -1))}><ArrowUp size={15} /></button>
-                <button type="button" aria-label={`Move ${g.room} down`} className={iconBtn} disabled={i === groups.length - 1} onClick={() => onRoomsChange(moveRoom(shown, i, 1))}><ArrowDown size={15} /></button>
-                <button type="button" aria-label={`Delete ${g.room}`} className={iconBtn} disabled={g.rows.length > 0 || shown.length === 1}
-                  title={g.rows.length > 0 ? 'Move or remove its lines first' : shown.length === 1 ? 'An order keeps at least one room' : 'Delete this room'}
-                  onClick={() => onRoomsChange(shown.filter((r) => r !== g.room))}><Trash2 size={15} /></button>
-              </>
-            )}
-          </header>
-          <div className="flex flex-col gap-3">
-            {g.rows.map((row) => (
-              <div key={row.key} className="relative">
-                {!disabled && <MoveLine rooms={shown} current={g.room} onMove={(room) => onRowRoom(row.key, room)} />}
-                {row.render(numberOf.get(row.key) ?? 0)}
-              </div>
-            ))}
-            {g.rows.length === 0 && disabled && <p className="px-2 text-[12px] text-ink-muted">No lines in this room.</p>}
-            {!disabled && (
-              <button type="button" onClick={() => onAddLine(g.room)}
-                className="inline-flex items-center gap-1.5 self-start rounded-md px-2 py-1 text-[12.5px] font-semibold text-primary hover:bg-primary-soft">
-                <Plus size={14} /> Add line to {g.room}
-              </button>
-            )}
-          </div>
-        </section>
-      ))}
+  if (card) {
+    return (
+      <>
+        {toolbar}
+        {groups.map((g, i) => {
+          const p = roomParts(g, i);
+          return (
+            <section key={g.room} aria-label={g.room} className={card.section}>
+              <header className={card.header}>
+                <h2 className={cn(card.title, 'min-w-0 flex-1')}>{p.name}</h2>
+                <div className="flex flex-none items-center gap-1">{p.controls}</div>
+              </header>
+              <div className={card.body}>{p.lines}</div>
+            </section>
+          );
+        })}
+      </>
+    );
+  }
+
+  return (
+    <div className="flex flex-col">
+      {toolbar}
+      {groups.map((g, i) => {
+        const p = roomParts(g, i);
+        return (
+          <section key={g.room} className="border-t border-border pt-2 pb-3 first-of-type:border-t-0">
+            <header className="mb-2 flex items-center gap-1">{p.name}{p.controls}</header>
+            {p.lines}
+          </section>
+        );
+      })}
     </div>
   );
 }
