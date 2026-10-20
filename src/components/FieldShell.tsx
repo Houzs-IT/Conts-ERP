@@ -29,10 +29,11 @@ export default function FieldShell({ children }: { children: ReactNode }) {
           style={{ width: 44, height: 44, flex: 'none', display: 'grid', placeItems: 'center', borderRadius: radius.control, border: '1px solid rgba(255,255,255,0.14)', color: color.onDark }}>
           <Icon name={atAccount ? 'House' : 'ShieldCheck'} size="nav" />
         </a>
-        <button onClick={logout} aria-label="Log out"
-          style={{ width: 44, height: 44, flex: 'none', display: 'grid', placeItems: 'center', borderRadius: radius.control, background: 'transparent', border: '1px solid rgba(255,255,255,0.14)', color: color.onDark, cursor: 'pointer' }}>
-          <Icon name="LogOut" size="nav" />
-        </button>
+        {/* Log out lives on My account only, so it is never one mis-tap from the bell on the jobs screen. */}
+        {atAccount && <button onClick={logout}
+          style={{ height: 44, padding: '0 12px', flex: 'none', display: 'flex', alignItems: 'center', gap: 6, borderRadius: radius.control, background: 'transparent', border: '1px solid rgba(255,255,255,0.14)', color: color.onDark, cursor: 'pointer', font: 'inherit', fontSize: text.copy }}>
+          <Icon name="LogOut" size="sm" />Log out
+        </button>}
       </header>
 
       <main style={{ flex: 1, padding: '16px 16px 32px', display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 560, width: '100%', boxSizing: 'border-box', margin: '0 auto' }}>

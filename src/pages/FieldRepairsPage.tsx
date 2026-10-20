@@ -64,7 +64,7 @@ export default function FieldRepairsPage({ above }: { above?: ReactNode }) {
           <div className="text-copy text-muted-ink">{data ? `${plural(todo.length, 'job')} to do${data.mayPick ? `, ${pool.length} open to pick up` : ''}` : 'Loading'}</div>
         </div>
         {data?.mayPick && (
-          <Segmented label="Which jobs" value={tab} onChange={setTab} options={[
+          <Segmented label="Which jobs" className="[&>button]:h-11" value={tab} onChange={setTab} options={[
             { value: 'mine', label: <>Mine <span className="text-muted-ink tabular-nums">{todo.length}</span></> },
             { value: 'open', label: <>Open <span className="text-muted-ink tabular-nums">{pool.length}</span></> },
           ]} />
@@ -221,7 +221,9 @@ function RepairSheet({ id, onClose, onChanged, onPicked }: { id: string; onClose
               </section>
 
               <InfoRow icon="MapPin" label="Where">
-                <b>{j.propertyName} {j.unitNumber}</b>{j.addressLine && <span className="block text-muted-ink">{j.addressLine}</span>}
+                <b>{j.propertyName} {j.unitNumber}</b>
+                {j.addressLine && <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(j.addressLine)}`} target="_blank" rel="noopener noreferrer"
+                  className="min-h-11 flex items-center gap-2 text-ink"><span className="flex-1 min-w-0 underline underline-offset-2">{j.addressLine}</span><span className="text-meta text-muted-ink">Open map</span></a>}
               </InfoRow>
               {mine ? (
                 d.data!.access.length ? d.data!.access.map(a => (
@@ -242,7 +244,7 @@ function RepairSheet({ id, onClose, onChanged, onPicked }: { id: string; onClose
 
               <section className="flex flex-col gap-2.5">
                 <AttachmentLabel title="Photos and videos" count={media.length} hint={working && j.startedAt && counts.after === 0 ? 'At least 1 After to finish' : undefined} />
-                <Segmented label="Before or after the repair" value={stage} onChange={setStage} options={[
+                <Segmented label="Before or after the repair" className="[&>button]:h-11" value={stage} onChange={setStage} options={[
                   { value: 'before', label: <>Before <span className="text-muted-ink tabular-nums">{counts.before}</span></> },
                   { value: 'after', label: <>After <span className="text-muted-ink tabular-nums">{counts.after}</span></> },
                 ]} />

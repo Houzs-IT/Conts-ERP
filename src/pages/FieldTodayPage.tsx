@@ -14,6 +14,12 @@ import {
 } from '../components/ops/OpsUi';
 import { StatusBadge } from '../components/StatusBadge';
 import { sizeLine } from '../lib/unitSize';
+import { plural } from '../lib/format';
+
+/** Days a job is past its day, 0 when it is today's or later. */
+const daysLate = (day: string) => Math.max(0, Math.round((Date.parse(mytDay(0)) - Date.parse(day)) / 864e5));
+/** Google Maps search for an address, for the drive there. */
+const mapsLink = (address: string) => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
 
 /* GET /api/field/tasks (functions/api/field/tasks.ts) */
 interface Job {
@@ -38,8 +44,8 @@ export default function FieldTodayPage() {
   const groups = useMemo(() => {
     const m = new Map<string, { name: string; jobs: Job[] }>();
     for (const j of jobs) { const g = m.get(j.buildingId) ?? { name: j.unit.propertyName, jobs: [] }; g.jobs.push(j); m.set(j.buildingId, g); }
-    // In each building: what is still to do first, the one the next guest reaches soonest at the top.
-    const by = (j: Job) => `${j.done ? 1 : 0}${j.next?.checkInAt ?? '9'}${j.unit.unitNumber}`;
+    // In each building: what is still to do first, late jobs at the top, then the one the next guest reaches soonest.
+    const by = (j: Job) => `${j.done ? 1 : 0}${daysLate(j.day) ? 0 : 1}${j.next?.checkInAt ?? '9'}${j.unit.unitNumber}`;
     for (const g of m.values()) g.jobs.sort((a, b) => by(a).localeCompare(by(b)));
     return [...m.entries()].sort((a, b) => (a[0] === 'external' ? 1 : 0) - (b[0] === 'external' ? 1 : 0) || a[1].name.localeCompare(b[1].name));
   }, [jobs]);
@@ -52,7 +58,7 @@ export default function FieldTodayPage() {
           <h1 className="m-0 text-title font-semibold">My jobs</h1>
           <div className="text-copy text-muted-ink">{dayLabel(date)} · {data ? `${left} to do, ${jobs.length - left} done` : 'Loading'}</div>
         </div>
-        <Segmented label="Day" value={pick} onChange={setPick} options={[{ value: 'today', label: 'Today' }, { value: 'tomorrow', label: 'Tomorrow' }]} />
+        <Segmented label="Day" className="[&>button]:h-11" value={pick} onChange={setPick} options={[{ value: 'today', label: 'Today' }, { value: 'tomorrow', label: 'Tomorrow' }]} />
       </div>
       {error && <StaleBanner message={error} onRetry={reload} />}
       {loading && !data ? <><Skeleton height={140} /><Skeleton height={140} /></>
@@ -110,7 +116,7 @@ function JobCard({ job: j, now, open, onToggle, onChanged }: { job: Job; now: nu
           <div className="flex items-center gap-2 flex-wrap text-copy">
             {j.next ? <><span>Finish by <b className="tabular-nums">{j.next.checkInTime}</b></span><span className="text-muted-ink">·</span><span><TimeLeft at={j.next.checkInAt} now={now} />{Date.parse(j.next.checkInAt) > now ? ' left' : ''}</span></>
               : <span className="text-muted-ink">No guest arriving after this clean.</span>}
-            {j.day < mytDay(0) && <StatusBadge tone="warning">From {dayLabel(j.day)}</StatusBadge>}
+            {daysLate(j.day) > 0 && <StatusBadge tone="critical">Overdue · {plural(daysLate(j.day), 'day')} late</StatusBadge>}
           </div>
         )}
         {j.instructions && <div className="text-copy rounded-control bg-warning-bg text-ink px-2.5 py-2"><span className="block text-meta text-muted-ink">From the office</span>{j.instructions}</div>}
@@ -122,7 +128,11 @@ function JobCard({ job: j, now, open, onToggle, onChanged }: { job: Job; now: nu
             <div key={a.id} className="rounded-control bg-muted p-2.5 text-copy"><b>{a.label}</b><div className="text-muted-ink">{a.instruction}</div></div>
           ))}
           {detail.data?.parking && <div className="rounded-control bg-muted p-2.5 text-copy"><b>Car park</b><div className="text-muted-ink">{detail.data.parking}</div></div>}
-          {j.addressLine && <div className="text-meta text-muted-ink">{j.addressLine}</div>}
+          {j.addressLine && (
+            <a href={mapsLink(j.addressLine)} target="_blank" rel="noopener noreferrer" className="min-h-11 flex items-center gap-2 text-copy text-ink">
+              <Icon name="MapPin" size="sm" /><span className="flex-1 min-w-0 underline underline-offset-2 [overflow-wrap:anywhere]">{j.addressLine}</span><span className="text-meta text-muted-ink">Open map</span>
+            </a>
+          )}
 
           {!j.done && (
             <div className="grid grid-cols-2 gap-2">
