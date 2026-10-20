@@ -189,7 +189,8 @@ try {
   if (DRY) { console.log('\nDry run: nothing was written.'); await sql.end(); process.exit(0); }
 
   if (!local) {
-    const typed = await readLine(`\nThis writes to ${targetLabel}. Type the project ref to continue: `, false);
+    // --confirm-ref=<ref> stands in for typing it, for the one-off GitHub workflow (no terminal there).
+    const typed = arg('confirm-ref') ?? await readLine(`\nThis writes to ${targetLabel}. Type the project ref to continue: `, false);
     if (typed !== ref) { console.error('That is not the project ref. Nothing was written.'); await sql.end(); process.exit(1); }
   }
 
