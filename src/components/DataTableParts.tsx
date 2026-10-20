@@ -14,14 +14,14 @@ import type { AnyTone } from '../lib/status';
 
 /** A panel under its trigger, drawn on top of the page so a scrolling table cannot clip it. Closes on an outside
  *  click or Escape. */
-export function Floating({ anchor, fallback, open, onClose, width = 260, align = 'left', children, label }: {
-  anchor: RefObject<HTMLElement>; open: boolean; onClose: () => void; width?: number; align?: 'left' | 'right';
+export function Floating({ anchor, fallback, open, onClose, width = 260, maxHeight, align = 'left', children, label }: {
+  anchor: RefObject<HTMLElement>; open: boolean; onClose: () => void; width?: number; maxHeight?: number; align?: 'left' | 'right';
   /** Where to open when the anchor is hidden (the toolbar folded it into "More table tools"). */
   fallback?: RefObject<HTMLElement>;
   children: ReactNode; label: string;
 }) {
   const panel = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState<{ top: number; left: number; w: number; maxH: number } | null>(null);
+  const [pos, setPos] = useState<{ top?: number; bottom?: number; left: number; w: number; maxH: number } | null>(null);
   useLayoutEffect(() => {
     if (!open) { setPos(null); return; }
     const place = () => {
@@ -33,14 +33,15 @@ export function Floating({ anchor, fallback, open, onClose, width = 260, align =
       left = Math.max(8, Math.min(left, window.innerWidth - w - 8));
       const below = window.innerHeight - r.bottom - 12;
       // Opens upwards only when there is clearly more room above (a trigger near the bottom of a phone screen).
-      if (below < 220 && r.top > below + 80) setPos({ top: Math.max(8, r.top - 4 - Math.min(r.top - 12, 480)), left, w, maxH: Math.min(r.top - 12, 480) });
-      else setPos({ top: r.bottom + 4, left, w, maxH: Math.max(160, below) });
+      // Pinned by its bottom edge so a short list still sits right above the trigger.
+      if (below < 220 && r.top > below + 80) setPos({ bottom: window.innerHeight - r.top + 4, left, w, maxH: Math.min(r.top - 12, maxHeight ?? 480) });
+      else setPos({ top: r.bottom + 4, left, w, maxH: Math.min(maxHeight ?? Infinity, Math.max(160, below)) });
     };
     place();
     window.addEventListener('resize', place);
     window.addEventListener('scroll', place, true);
     return () => { window.removeEventListener('resize', place); window.removeEventListener('scroll', place, true); };
-  }, [open, anchor, fallback, width, align]);
+  }, [open, anchor, fallback, width, maxHeight, align]);
   useEffect(() => {
     if (!open) return;
     const onDoc = (e: MouseEvent) => {
@@ -56,7 +57,7 @@ export function Floating({ anchor, fallback, open, onClose, width = 260, align =
   if (!open || !pos) return null;
   return createPortal(
     <div ref={panel} role="dialog" aria-label={label}
-      style={{ position: 'fixed', top: pos.top, left: pos.left, width: pos.w, maxHeight: pos.maxH, zIndex: 70 }}
+      style={{ position: 'fixed', top: pos.top, bottom: pos.bottom, left: pos.left, width: pos.w, maxHeight: pos.maxH, zIndex: 70 }}
       className="overflow-auto bg-card border border-solid border-line rounded-card shadow-[var(--shadow-overlay)] text-ink font-sans">
       {children}
     </div>,
