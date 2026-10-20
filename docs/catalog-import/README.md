@@ -21,14 +21,23 @@ localhost. It needs the admin connection string (the `postgres` user), like `scr
 
 ```
 node scripts/catalog-first-import.mjs --prompt --dry-run     # reads only; prints every SKU, link and cost it would write
-node scripts/catalog-first-import.mjs --prompt               # writes, in one transaction, after the project ref is typed back
+node scripts/catalog-first-import.mjs --prompt               # writes, after the project ref is typed back
+node scripts/catalog-first-import.mjs --emit-sql=docs/catalog-import/sql/catalog-first-import.sql   # no database needed
 ```
+
+Without a connection string: apply `sql/catalog-first-import.part-01-of-02.sql` then `part-02-of-02.sql` (Supabase SQL
+editor or connector). Each part is one transaction (begin/commit), under 400 KB, repeats the small setup (units,
+sub-category, suppliers) and carries its own SKUs, so each is safe to run alone, in order, and again. The last
+statement of each part returns the counts for the whole catalog: after both parts, 819 SKUs, 819 supplier links,
+423 priced links, 423 cost rows. The script's real run executes exactly these parts
+(`scripts/catalog-first-import-sql.mjs`), so the two ways cannot give different rows. Each part also leaves an import
+note in `scm.app_config` (key `note:catalog-first-import-2026-10:part-N`).
 
 What one run does, for the company whose internal code is `HOUZS` (the Conts company, migration 0046):
 
 1. Adds units BOX, BAG, ROLL to `scm.product_uoms` and sub-category Lighting > Track light to `scm.product_sub_categories`.
 2. Creates the 7 suppliers in `scm.suppliers` (matched first by code, then by name; an existing one is used as it is).
-3. Creates each SKU in `scm.mfg_products` with its own model in `scm.product_models` (as the API does), category,
+3. Creates each SKU in `scm.mfg_products` (id `mfg-` + 12 hex of sha256 of the SKU code, the same everywhere) with its own model in `scm.product_models` (as the API does), category,
    sub-category, unit, description (the spec), branding (supplier name) and `cost_price_sen`. Works SKUs are Active;
    Built-in / Furniture / Lighting / Soft SKUs are Inactive until a photo is added (migration 0062 enforces it).
    No selling price is set: no document gives one.
@@ -46,9 +55,12 @@ SKU, cost rows only where none exists for that supplier, SKU and date.
 
 ### Verified locally (20 Oct 2026)
 
-On a fresh Postgres 17 built by `scripts/ci-api-db.mjs` (every migration): dry run listed 3 units, 1 sub-category,
-7 suppliers, 819 SKUs (423 with cost, 396 price needed), 819 links, 423 cost rows; the real run created exactly that
-(`runs/2026-10-20T13-24-54-962Z-local.json`); a second run created nothing (`runs/2026-10-20T13-24-55-417Z-local.json`).
+On fresh Postgres 17 databases built by `scripts/ci-api-db.mjs` (every migration): dry run listed 3 units, 1 sub-category,
+7 suppliers, 819 SKUs (423 with cost, 396 price needed), 819 links, 423 cost rows; the script's run created exactly that
+(`runs/2026-10-20T13-41-26-372Z-local.json`) and a second run created nothing. The emitted SQL applied with psql on a
+second fresh database gave row-for-row the same units, sub-category, suppliers, SKUs, models, links, cost rows and notes
+(3,001 rows compared, ids and timestamps aside); applying both parts again changed nothing; on a third database part 2
+alone, then part 1, gave the same rows again.
 With the engine (`wrangler dev`) and its screens (`vite`) on that database through a local PostgREST: SKU Master shows
 844 SKUs (819 + 25 seeded generic ones) with Main Supplier and Main Cost (e.g. DOR-KNK-001 K & K RM 93.00); Suppliers
 shows the 7 suppliers; World One's SKU Pricing tab lists its 4 fans at RM 130.00, main. Five CSV rows (one per group)

@@ -8,8 +8,10 @@
 //   node scripts/catalog-first-import.mjs --prompt                            apply, after the project ref is typed back
 //   DATABASE_URL=postgres://pos_app:local@127.0.0.1:55441/postgres node scripts/catalog-first-import.mjs   local PGlite
 //
-// --dry-run reads only and prints every row it would create, link or price. A real run writes in ONE transaction and
-// leaves a note of what it did in docs/catalog-import/runs/.
+// --dry-run reads only and prints every row it would create, link or price. A real run executes the SQL parts that
+// --emit-sql=<file> writes (scripts/catalog-first-import-sql.mjs; each part one transaction, safe to run again) and
+// leaves a note of what it did in docs/catalog-import/runs/ (and one scm.app_config row per part).
+//   node scripts/catalog-first-import.mjs --emit-sql=docs/catalog-import/sql/catalog-first-import.sql   no database needed
 // RE-RUN: safe. Units, sub-categories, suppliers and SKUs are matched on their code and never changed once they exist;
 // a supplier link is added only where that supplier has none for the SKU; a cost history row only where none exists for
 // that supplier, SKU and date. An existing SKU keeps its cost and supplier link - the run lists them instead.
@@ -17,7 +19,7 @@
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createHash } from 'node:crypto';
+import { buildSqlParts, RUN_TAG } from './catalog-first-import-sql.mjs';
 import postgres from 'postgres';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -26,7 +28,6 @@ const DRY = process.argv.includes('--dry-run');
 const PROMPT = process.argv.includes('--prompt');
 const QUIET = process.argv.includes('--quiet');
 const dataFile = arg('data') ?? join(root, 'docs/catalog-import/catalog-data.json');
-const RUN_TAG = 'catalog-first-import 2026-10';
 // The Conts Supabase projects (CLAUDE.md). The engine shares them with Property OS (schemas scm/public).
 const CONTS_REFS = { cweomoenhsjvsxfsmiiw: 'PRODUCTION', ecgyrmblqfxvbfjlqkdq: 'staging' };
 
@@ -57,6 +58,20 @@ async function readLine(question, hidden) {
   });
 }
 
+const EMIT = arg('emit-sql');
+if (EMIT) {
+  // No database needed: write the import as SQL parts for whoever applies it (Supabase SQL editor / connector).
+  const data = JSON.parse(readFileSync(dataFile, 'utf8'));
+  const parts = buildSqlParts(data);
+  const base = EMIT.replace(/\.sql$/i, '');
+  const files = parts.length === 1 ? [`${base}.sql`] : parts.map((p) => `${base}.${p.name}`);
+  mkdirSync(dirname(files[0]), { recursive: true });
+  parts.forEach((p, i) => writeFileSync(files[i], p.sql));
+  for (const [i, f] of files.entries()) console.log(`${f}  ${(Buffer.byteLength(parts[i].sql) / 1024).toFixed(0)} KB  ${parts[i].skus} SKUs`);
+  console.log(`${parts.length} part(s), ${data.skus.length} SKUs. Run them in order; each is one transaction and safe to run again.`);
+  process.exit(0);
+}
+
 let url;
 if (PROMPT) url = await readLine('Paste the database connection string (nothing will show), then press Enter: ', true);
 else {
@@ -75,7 +90,6 @@ const targetLabel = local ? `local database (${url.replace(/\/\/[^@]*@/, '//***@
 console.log(`Target: ${targetLabel}${DRY ? '  (dry run - nothing is written)' : ''}`);
 
 const data = JSON.parse(readFileSync(dataFile, 'utf8'));
-const sen = (rm) => (rm == null ? null : Math.round(Number(rm) * 100));
 const sql = postgres(url, { max: 1, prepare: false, onnotice: () => {}, connection: { application_name: 'catalog-first-import' } });
 
 try {
@@ -179,80 +193,12 @@ try {
     if (typed !== ref) { console.error('That is not the project ref. Nothing was written.'); await sql.end(); process.exit(1); }
   }
 
-  const ids = {};
-  await sql.begin(async (tx) => {
-    for (const u of newUoms) {
-      await tx`insert into scm.product_uoms (code, label, print_label, measure, builtin, sort_order)
-               values (${u.code}, ${u.label}, ${u.print_label}, ${u.measure}, false, 200) on conflict (code) do nothing`;
-    }
-    for (const s of newSubs) {
-      await tx`insert into scm.product_sub_categories (group_code, code, label, sort_order)
-               values (${s.group}, ${s.code}, ${s.label}, 200) on conflict do nothing`;
-    }
-    for (const s of supplierPlan) {
-      if (s.existing) { ids[s.key] = s.existing.id; continue; }
-      const [row] = await tx`insert into scm.suppliers (company_id, code, name, registration_no, tin_number, address1, address2, phone, email, notes, status)
-        values (${company.id}, ${s.code}, ${s.name}, ${s.registration_no ?? null}, ${s.tin_number ?? null}, ${s.address1 ?? null}, ${s.address2 ?? null},
-                ${s.phone ?? null}, ${s.email ?? null}, ${`${s.note} Created by ${RUN_TAG} from ${s.src}.`}, 'ACTIVE')
-        on conflict (company_id, code) do update set code = excluded.code returning id`;
-      ids[s.key] = row.id;
-    }
-    // id like the API's ('mfg-' + 12 hex), derived from the code so a re-run computes the same one.
-    const rows = skuNew.map((k) => ({
-      id: `mfg-${createHash('sha256').update(`${company.id}|${k.code}`).digest('hex').slice(0, 12)}`,
-      code: k.code, name: k.name, category: k.category, sub_category: k.sub_category, uom: k.uom, description: k.description || null,
-      branding: data.suppliers[k.supplier].name, cost: sen(k.cost_rm) ?? 0,
-      // Works and Service need no photo; the other groups are held Inactive by the photo rule (migration 0062) anyway.
-      status: ['WORKS', 'SERVICE'].includes(k.category) ? 'ACTIVE' : 'INACTIVE',
-    }));
-    if (rows.length) {
-      const j = JSON.stringify(rows);
-      // Every SKU belongs to a model of its own (model_code = SKU code), as the API's create paths do.
-      await tx`insert into scm.product_models (company_id, model_code, name, category, branding)
-        select ${company.id}, x.code, x.name, x.category::scm.mfg_product_category, x.branding
-          from jsonb_to_recordset(${j}::text::jsonb) as x(code text, name text, category text, branding text)
-        on conflict (company_id, model_code, category) do nothing`;
-      await tx`insert into scm.mfg_products (id, company_id, code, name, category, sub_category, uom, status, cost_price_sen, description, branding, model_id)
-        select x.id, ${company.id}, x.code, x.name, x.category::scm.mfg_product_category, x.sub_category, x.uom, x.status::scm.mfg_product_status,
-               x.cost, x.description, x.branding, m.id
-          from jsonb_to_recordset(${j}::text::jsonb) as x(id text, code text, name text, category text, sub_category text, uom text, status text,
-                                                    cost integer, description text, branding text)
-          left join scm.product_models m on m.company_id = ${company.id} and m.model_code = x.code and m.category::text = x.category
-        on conflict (company_id, code) do nothing`;
-    }
-    const links = linkPlan.map((k) => ({
-      supplier_id: ids[k.supplier], item_code: k.code, material_name: k.name, supplier_sku: k.supplier_item_code || '',
-      price: sen(k.cost_rm) ?? 0, valid_from: k.cost_rm != null ? k.price_date : null,
-      notes: k.cost_rm != null
-        ? `${RUN_TAG}: ${k.price_type}, ${k.price_source}`
-        : `${RUN_TAG}: PRICE NEEDED - no price in ${k.item_source}`,
-    }));
-    if (links.length) {
-      const j = JSON.stringify(links);
-      // At most one main supplier per SKU (uq_smb_one_main): main only where the SKU has none yet.
-      await tx`insert into scm.supplier_material_bindings
-          (company_id, supplier_id, material_kind, item_code, material_name, supplier_sku, unit_price_sen, price_valid_from, is_main_supplier, notes)
-        select ${company.id}, x.supplier_id, 'mfg_product', x.item_code, x.material_name, x.supplier_sku, x.price, x.valid_from,
-               not exists (select 1 from scm.supplier_material_bindings b where b.company_id = ${company.id} and b.material_kind = 'mfg_product'
-                                                                            and b.item_code = x.item_code and b.is_main_supplier),
-               x.notes
-          from jsonb_to_recordset(${j}::text::jsonb) as x(supplier_id uuid, item_code text, material_name text, supplier_sku text, price integer, valid_from date, notes text)
-         where not exists (select 1 from scm.supplier_material_bindings b where b.company_id = ${company.id} and b.material_kind = 'mfg_product'
-                                                                           and b.item_code = x.item_code and b.supplier_id = x.supplier_id)`;
-      const priced = links.filter((l) => l.valid_from);
-      if (priced.length) {
-        await tx`insert into scm.supplier_binding_price_history
-            (company_id, supplier_id, material_kind, item_code, unit_price_sen, is_main_supplier, effective_from, notes, created_by, applied_at)
-          select ${company.id}, x.supplier_id, 'mfg_product', x.item_code, x.price, b.is_main_supplier, x.valid_from, x.notes, ${RUN_TAG}, now()
-            from jsonb_to_recordset(${JSON.stringify(priced)}::text::jsonb) as x(supplier_id uuid, item_code text, price integer, valid_from date, notes text)
-            join scm.supplier_material_bindings b on b.company_id = ${company.id} and b.material_kind = 'mfg_product'
-                                                 and b.item_code = x.item_code and b.supplier_id = x.supplier_id
-           where not exists (select 1 from scm.supplier_binding_price_history h where h.company_id = ${company.id} and h.supplier_id = x.supplier_id
-                                                                                 and h.material_kind = 'mfg_product' and h.item_code = x.item_code
-                                                                                 and h.effective_from = x.valid_from)`;
-      }
-    }
-  });
+  // The writes are the same SQL that --emit-sql writes (scripts/catalog-first-import-sql.mjs), one transaction per part.
+  const parts = buildSqlParts(data);
+  for (const p of parts) {
+    await sql.unsafe(p.sql);
+    console.log(`  applied ${p.name} (${p.skus} SKUs)`);
+  }
 
   const [after] = await sql`select
       (select count(*)::int from scm.mfg_products p where p.company_id = ${company.id} and p.code in ${sql(codes)}) as skus,
@@ -267,7 +213,7 @@ try {
   writeFileSync(file, JSON.stringify(note, null, 1));
   console.log(`Import note: ${file.replace(root + '\\', '').replace(root + '/', '')}`);
 } catch (e) {
-  console.error(`Stopped: ${e.message}. Nothing was written (the run is one transaction).`);
+  console.error(`Stopped: ${e.message}. Each part is one transaction: a part that stopped wrote nothing, parts before it stay, and running again continues safely.`);
   process.exitCode = 1;
 } finally {
   await sql.end();

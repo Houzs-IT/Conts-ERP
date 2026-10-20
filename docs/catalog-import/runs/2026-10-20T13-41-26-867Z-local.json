@@ -1,7 +1,7 @@
 {
  "tag": "catalog-first-import 2026-10",
- "at": "2026-10-20T13:24:55.417Z",
- "target": "local database (postgres://***@127.0.0.1:55433/catalog_ci)",
+ "at": "2026-10-20T13:41:26.867Z",
+ "target": "local database (postgres://***@127.0.0.1:55433/cfi_a)",
  "dryRun": false,
  "company": {
   "id": 1,
