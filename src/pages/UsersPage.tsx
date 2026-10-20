@@ -9,7 +9,7 @@ import { Button } from '../components/Button';
 import { ConfirmDialog, type ConfirmSpec } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
 import { PhoneInput, phoneProblem } from '../components/inputs';
-import { Select } from '../components/Select';
+import { Select, SearchSelect } from '../components/Select';
 import { StaleBanner } from '../components/DataState';
 import { DataTable, type Column } from '../components/DataTable';
 import { useToast } from '../components/Toast';
@@ -157,7 +157,8 @@ function Modal({ title, sub, onClose, children, footer, width = 460 }: {
   title: string; sub?: string; onClose: () => void; children: ReactNode; footer: ReactNode; width?: number;
 }) {
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    // An open dropdown inside (Department, Position) takes the first Escape; the dialog closes on the next.
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !e.defaultPrevented) onClose(); };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
@@ -204,6 +205,13 @@ export default function UsersPage() {
       const own = suggestionsFrom(base, rows.filter(r => sameText(r.department, dept)).map(r => r.position));
       return own.length ? own : all;
     };
+  }, [rows]);
+  // Which department a position belongs to: the built-in list first, then what other accounts use.
+  const departmentOf = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const r of rows) if (r.position?.trim() && r.department?.trim()) m.set(r.position.trim().toLowerCase(), r.department.trim());
+    for (const [d, ps] of Object.entries(POSITIONS_BY_DEPARTMENT)) for (const p of ps) m.set(p.toLowerCase(), d);
+    return (pos: string) => m.get(pos.trim().toLowerCase()) ?? null;
   }, [rows]);
 
   const columns = useMemo<Column<Row>[]>(() => [
@@ -663,7 +671,7 @@ export default function UsersPage() {
             <Field label="Full name" value={fullName} onChange={e => setFullName(e.target.value)} placeholder="Jane Tan" error={fieldErrors.fullName} />
             <Field label="Work email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="jane@theconts.com" error={fieldErrors.email} />
             {jobFields && <JobFields department={department} position={position} onDepartment={setDepartment} onPosition={setPosition}
-              errors={fieldErrors} departments={departmentOptions} positions={positionsFor(department)} />}
+              errors={fieldErrors} departments={departmentOptions} positions={positionsFor(department)} departmentOf={departmentOf} />}
             <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-4">
               <Select label="Role" showLabel size="md" value={role} onChange={v => setRole(v as UserRole)} options={STAFF_ROLE_OPTIONS} />
               {role !== 'owner' && (
@@ -702,7 +710,7 @@ export default function UsersPage() {
             <Field label="Email" type="email" value={editEmail} onChange={e => setEditEmail(e.target.value)} error={editErrors.email} />
             <PhoneInput label="Phone" value={editPhone} onChange={setEditPhone} error={editErrors.phone} />
             {jobFields && <JobFields department={editDepartment} position={editPosition} onDepartment={setEditDepartment} onPosition={setEditPosition}
-              errors={editErrors} departments={departmentOptions} positions={positionsFor(editDepartment)} />}
+              errors={editErrors} departments={departmentOptions} positions={positionsFor(editDepartment)} departmentOf={departmentOf} />}
             <div className="flex flex-col gap-1.5">
               <Select label="Role" showLabel size="md" value={editRole} onChange={v => setEditRole(v as UserRole)}
                 options={editing.role === 'owner' ? ROLE_OPTIONS.filter(o => o.value === 'owner') : STAFF_ROLE_OPTIONS} disabled={editing.role === 'owner'} />
@@ -807,23 +815,28 @@ export default function UsersPage() {
 }
 
 /* ------------------------------ row actions ------------------------------ */
-/** Department, then position: type anything, or pick a suggestion. The position suggestions follow the department.
- *  Shown after the person's name in renovation pickers. */
-function JobFields({ department, position, onDepartment, onPosition, errors, departments, positions }: {
+/** Department, then position: pick a suggestion or type a new one, in the same dropdown as Role and Reports to.
+ *  The position list follows the department; with no department yet it lists every position under its department,
+ *  and picking one fills the department in ("3D Designer" means Design). Shown after the person's name in renovation pickers. */
+function JobFields({ department, position, onDepartment, onPosition, errors, departments, positions, departmentOf }: {
   department: string; position: string; onDepartment: (v: string) => void; onPosition: (v: string) => void;
   errors: { department?: string; position?: string }; departments: string[]; positions: string[];
+  departmentOf: (position: string) => string | null;
 }) {
+  const pickPosition = (v: string) => {
+    onPosition(v);
+    const d = departmentOf(v);
+    // A department someone typed that is not on any list stays as they wrote it.
+    if (d && !sameText(d, department) && (!department.trim() || departments.some(x => sameText(x, department)))) onDepartment(d);
+  };
   return (
-    <>
-      <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-4">
-        <Field label="Department" value={department} onChange={e => onDepartment(e.target.value)} placeholder="Sales" maxLength={80}
-          list="user-department-options" autoComplete="off" error={errors.department} />
-        <Field label="Position" value={position} onChange={e => onPosition(e.target.value)} placeholder="Sales Executive" maxLength={80}
-          list="user-position-options" autoComplete="off" error={errors.position} />
-      </div>
-      <datalist id="user-position-options">{positions.map(v => <option key={v} value={v} />)}</datalist>
-      <datalist id="user-department-options">{departments.map(v => <option key={v} value={v} />)}</datalist>
-    </>
+    <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-4">
+      <SearchSelect label="Department" showLabel size="md" allowNew allLabel="Not set" value={department} onChange={onDepartment}
+        options={departments.map(v => ({ value: v, label: v }))} placeholder="Search or type a department" error={errors.department} />
+      <SearchSelect label="Position" showLabel size="md" allowNew allLabel="Not set" value={position} onChange={pickPosition}
+        options={positions.map(v => ({ value: v, label: v, group: department.trim() ? undefined : departmentOf(v) ?? 'Other' }))}
+        placeholder="Search or type a position" error={errors.position} />
+    </div>
   );
 }
 

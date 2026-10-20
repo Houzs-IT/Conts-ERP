@@ -41,13 +41,15 @@ export function Select({ value, onChange, options, label, showLabel, placeholder
 /**
  * A searchable picker for long lists (139 units): type to filter, options grouped (by building) and
  * sorted A to Z, arrow keys and Enter to choose, Escape to close. `allLabel` adds a first "All ..." row.
+ * `allowNew` turns it into a free-text field with suggestions: what was typed can be used as it is.
  */
-export function SearchSelect({ value, onChange, options, label, showLabel, allLabel, placeholder = 'Search', className, renderOption, size = 'sm' }: {
+export function SearchSelect({ value, onChange, options, label, showLabel, allLabel, placeholder = 'Search', className, renderOption, size = 'sm', allowNew, maxLength = 80, error }: {
   value: string; onChange: (v: string) => void; options: SelectOption[]; label: string;
   showLabel?: boolean; allLabel?: string; placeholder?: string; className?: string;
   renderOption?: (o: SelectOption) => ReactNode;
   /** md = 40px, the height of the text fields in a dialog form; sm = 36px for filter bars. */
   size?: 'sm' | 'md';
+  allowNew?: boolean; maxLength?: number; error?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
@@ -55,15 +57,18 @@ export function SearchSelect({ value, onChange, options, label, showLabel, allLa
   const box = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLInputElement>(null);
   const listId = useId();
+  const errorId = useId();
 
   const sorted = useMemo(() => [...options].sort((a, b) =>
     (a.group ?? '').localeCompare(b.group ?? '', 'en', { numeric: true }) || a.label.localeCompare(b.label, 'en', { numeric: true })), [options]);
   const shown = useMemo(() => {
     const t = q.trim().toLowerCase();
     const hits = t ? sorted.filter(o => `${o.group ?? ''} ${o.label} ${o.hint ?? ''}`.toLowerCase().includes(t)) : sorted;
-    return allLabel && !t ? [{ value: '', label: allLabel }, ...hits] : hits;
-  }, [sorted, q, allLabel]);
-  const current = options.find(o => o.value === value);
+    const typed = q.trim().slice(0, maxLength);
+    const extra = allowNew && typed && !options.some(o => o.label.toLowerCase() === typed.toLowerCase()) ? [{ value: typed, label: `Use "${typed}"`, hint: 'New' } as SelectOption] : [];
+    return allLabel && !t ? [{ value: '', label: allLabel }, ...hits] : [...hits, ...extra];
+  }, [sorted, q, allLabel, allowNew, maxLength, options]);
+  const current = options.find(o => o.value === value) ?? (allowNew && value ? { value, label: value } : undefined);
 
   useEffect(() => {
     if (!open) return;
@@ -88,13 +93,14 @@ export function SearchSelect({ value, onChange, options, label, showLabel, allLa
     <div ref={box} className={cx('relative flex flex-col gap-1.5 min-w-0', className)}>
       <span className={showLabel ? 'text-meta font-medium text-muted-ink' : 'absolute w-px h-px overflow-hidden [clip:rect(0_0_0_0)]'}>{label}</span>
       <button type="button" aria-haspopup="listbox" aria-expanded={open} aria-label={`${label}: ${current?.label ?? allLabel ?? 'none'}`}
+        aria-describedby={error ? errorId : undefined}
         onClick={() => setOpen(v => !v)}
-        className={cx(CONTROL, 'w-full flex items-center gap-2 pl-3 pr-2 text-left', size === 'md' && 'h-10')}>
+        className={cx(CONTROL, 'w-full flex items-center gap-2 pl-3 pr-2 text-left', size === 'md' && 'h-10', error && 'border-[var(--color-critical-line)]')}>
         <span className={cx('flex-1 min-w-0 truncate', !current && !/^All/.test(allLabel ?? '') && 'text-muted-ink')}>{current ? (current.group ? `${current.label}` : current.label) : (allLabel ?? 'Choose')}</span>
         <Icon name="ChevronDown" size="sm" color="var(--color-muted-ink)" />
       </button>
       {open && (
-        <div className="absolute z-30 top-[calc(100%+4px)] left-0 w-full min-w-[260px] max-w-[calc(100vw-32px)] bg-card border border-solid border-line rounded-card shadow-[var(--shadow-overlay)] overflow-hidden">
+        <div className={cx('absolute z-30 top-[calc(100%+4px)] left-0 w-full max-w-[calc(100vw-32px)]', size === 'md' ? 'min-w-0' : 'min-w-[260px]', 'bg-card border border-solid border-line rounded-card shadow-[var(--shadow-overlay)] overflow-hidden')}>
           <div className="flex items-center gap-2 px-3 h-10 [border-bottom:1px_solid_var(--color-line-soft)]">
             <Icon name="Search" size="sm" color="var(--color-muted-ink)" />
             <input ref={input} value={q} onChange={e => setQ(e.target.value)} onKeyDown={onKey} placeholder={placeholder}
@@ -102,7 +108,7 @@ export function SearchSelect({ value, onChange, options, label, showLabel, allLa
               className="flex-1 min-w-0 border-none outline-none bg-transparent font-sans text-copy text-ink" />
           </div>
           <div id={listId} role="listbox" aria-label={label} className="max-h-[300px] overflow-y-auto py-1">
-            {shown.length === 0 && <div className="px-3 py-3 text-meta text-muted-ink">No match for "{q.trim()}".</div>}
+            {shown.length === 0 && <div className="px-3 py-3 text-meta text-muted-ink">{allowNew ? 'Type a name to add it.' : `No match for "${q.trim()}".`}</div>}
             {shown.map((o, i) => {
               const head = o.group && o.group !== lastGroup ? o.group : null;
               lastGroup = o.group;
@@ -123,6 +129,7 @@ export function SearchSelect({ value, onChange, options, label, showLabel, allLa
           </div>
         </div>
       )}
+      {error && <span id={errorId} className="text-meta text-[var(--color-critical-fg)]">{error}</span>}
     </div>
   );
 }
