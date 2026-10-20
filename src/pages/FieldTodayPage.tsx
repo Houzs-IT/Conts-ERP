@@ -59,9 +59,9 @@ export default function FieldTodayPage({ linkTask, onLinked }: { linkTask?: stri
   const groups = useMemo(() => {
     const m = new Map<string, { name: string; jobs: Job[] }>();
     for (const j of jobs) { const g = m.get(j.buildingId) ?? { name: j.unit.propertyName, jobs: [] }; g.jobs.push(j); m.set(j.buildingId, g); }
-    // In each building: what is still to do first, late jobs at the top, then the one the next guest reaches soonest.
-    const by = (j: Job) => `${j.done ? 1 : 0}${daysLate(j.day) ? 0 : 1}${j.next?.checkInAt ?? '9'}${j.unit.unitNumber}`;
-    for (const g of m.values()) g.jobs.sort((a, b) => by(a).localeCompare(by(b)));
+    // In each building: unfinished first, then by block, floor and unit (B-08-11, B-10-02, B-12-05) as the walk through
+    // the building goes. Late jobs keep their Overdue badge and red border instead of jumping the queue.
+    for (const g of m.values()) g.jobs.sort((a, b) => Number(a.done) - Number(b.done) || a.unit.unitNumber.localeCompare(b.unit.unitNumber, undefined, { numeric: true }));
     return [...m.entries()].sort((a, b) => (a[0] === 'external' ? 1 : 0) - (b[0] === 'external' ? 1 : 0) || a[1].name.localeCompare(b[1].name));
   }, [jobs]);
   const left = jobs.filter(j => !j.done).length;
@@ -81,7 +81,7 @@ export default function FieldTodayPage({ linkTask, onLinked }: { linkTask?: stri
         : groups.map(([id, g]) => (
           <section key={id} className="flex flex-col gap-2">
             <h2 className="m-0 text-[16px] font-semibold tracking-[-0.01em] flex items-baseline gap-2">{g.name}<span className="text-meta text-muted-ink font-normal tabular-nums">{g.jobs.filter(j => j.done).length} of {g.jobs.length} done</span></h2>
-            {g.jobs.map(j => <TaskCard key={j.id} job={j} onOpen={() => setOpen(j.id)} />)}
+            {g.jobs.map(j => <TaskCard key={j.id} job={j} onOpen={() => setOpen(j.id)} onChanged={reload} />)}
           </section>
         ))}
       {/* The list stays mounted under the sheet, so closing it lands back at the same scroll position. */}
@@ -97,7 +97,7 @@ const subtitle = (j: Job) => [cleanName(j), sizeLine(j.unit.size, j.unit.layout)
 
 function JobStatus({ job: j }: { job: Job }) {
   return <>
-    {!j.done && daysLate(j.day) > 0 && <StatusBadge tone="critical" title={`${plural(daysLate(j.day), 'day')} late`}>Overdue</StatusBadge>}
+    {!j.done && daysLate(j.day) > 0 && <StatusBadge tone="critical">Overdue · {plural(daysLate(j.day), 'day')}</StatusBadge>}
     {j.done ? <StatusBadge tone="success">Done</StatusBadge> : j.state === 'in_progress' ? <StatusBadge tone="info">In progress</StatusBadge>
       : j.guestOut ? <StatusBadge tone="gold">Guest out, ready to clean</StatusBadge> : j.previous ? <StatusBadge tone="neutral">Guest still in</StatusBadge> : <StatusBadge tone="warning">To do</StatusBadge>}
   </>;
@@ -112,30 +112,48 @@ function MapLink({ address, className }: { address: string; className?: string }
   );
 }
 
-/** The list card: just enough to pick the next unit. Access, notes and every action are one tap away in TaskDetail.
- *  The unit's button stretches over the whole card; the map link sits above it, so the two never nest. */
-function TaskCard({ job: j, onOpen }: { job: Job; onOpen: () => void }) {
-  const address = j.external?.address ?? j.addressLine;
+/** The list card: what a cleaner needs at the door (unit, size, access, the office's note, guests) and the next step.
+ *  The building and its address are on the section header and in TaskDetail, not repeated on every card.
+ *  The unit's button stretches over the whole card; the action button sits above it, so the two never nest. */
+function TaskCard({ job: j, onOpen, onChanged }: { job: Job; onOpen: () => void; onChanged: () => void }) {
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+  const late = !j.done && daysLate(j.day) > 0;
+  async function start() {
+    setBusy(true);
+    try { await api.post(`/housekeeping/tasks/${j.id}/start`, {}); toast({ tone: 'success', title: `Started at ${hm(new Date().toISOString())}.` }); onChanged(); onOpen(); }
+    catch (e) { toast({ tone: 'critical', title: 'Not saved.', body: errorMessage(e, 'Check your signal and try again.') }); }
+    finally { setBusy(false); }
+  }
+  const row = 'flex items-start gap-2 text-copy';
   return (
-    <article className={cx('relative bg-card rounded-card border border-solid border-line px-4 pt-3.5 pb-1 flex flex-col gap-1 has-[button:active]:bg-page', j.done && 'text-muted-ink')}>
+    <article className={cx('relative bg-card rounded-card border border-solid px-4 py-3.5 flex flex-col gap-2 has-[button:active]:bg-page', late ? 'border-danger-line' : 'border-line', j.done && 'text-muted-ink')}>
       <div className="flex items-start gap-2">
-        <button type="button" onClick={onOpen} className="flex-1 min-w-0 text-left text-heading font-bold cursor-pointer after:absolute after:inset-0 after:rounded-card">
-          {j.unit.unitNumber}<span className="text-copy text-muted-ink font-normal"> · {j.unit.propertyName}</span>
+        <button type="button" onClick={onOpen} className="flex-1 min-w-0 text-left cursor-pointer after:absolute after:inset-0 after:rounded-card">
+          <span className="block text-[20px] leading-tight font-bold tracking-[-0.01em] text-ink [overflow-wrap:anywhere]">{j.unit.unitNumber}</span>
+          <span className="block text-copy text-muted-ink">{subtitle(j)}</span>
         </button>
         <span className="flex items-center gap-1.5 flex-wrap justify-end"><JobStatus job={j} /></span>
       </div>
-      <div className="text-copy">{subtitle(j)}</div>
+      {!j.external && j.accessInstruction && (
+        <div className={row}><Icon name="KeyRound" size="sm" color="var(--color-muted-ink)" style={{ marginTop: 3 }} /><span className="min-w-0 line-clamp-2">{j.accessInstruction}</span></div>
+      )}
+      {j.instructions && (
+        <div className={cx(row, 'rounded-control bg-warning-bg text-ink px-2.5 py-2')}><Icon name="TriangleAlert" size="sm" color="var(--color-warning-fg)" style={{ marginTop: 3 }} /><span className="min-w-0 line-clamp-2">{j.instructions}</span></div>
+      )}
       {!j.external && (
-        <div className="text-copy text-muted-ink">
-          Leaving: <span className="text-ink">{j.previous ? `${j.previous.checkOutTime} ${j.previous.guestName}` : 'No guest'}</span>
-          <span className="mx-1.5">|</span>
-          Arriving: <span className="text-ink">{j.next ? `${j.next.checkInTime} ${j.next.guestName}` : 'No check-in'}</span>
+        <div className={cx(row, 'text-muted-ink')}>
+          <Icon name="DoorOpen" size="sm" style={{ marginTop: 3 }} />
+          <span className="min-w-0">Out: <b className="text-ink font-medium">{j.previous ? `${j.previous.checkOutTime} ${j.previous.guestName}` : 'None'}</b>
+            <span className="mx-1.5">|</span>In: <b className="text-ink font-medium">{j.next ? `${j.next.checkInTime} ${j.next.guestName}` : 'None'}</b></span>
         </div>
       )}
-      <div className="flex items-center gap-2 text-meta">
-        {address ? <MapLink address={address} className="flex-1 min-w-0" /> : <span className="flex-1 min-h-11" />}
-        <Icon name="ChevronRight" size="sm" color="var(--color-muted-ink)" />
-      </div>
+      {!j.done && (
+        <Button size="touch" variant={j.state === 'in_progress' ? 'secondary' : 'primary'} className="relative z-[1] w-full" loading={busy}
+          onClick={() => (j.state === 'in_progress' ? onOpen() : void start())}>
+          {j.state === 'in_progress' ? 'Continue job' : 'Start job'}
+        </Button>
+      )}
     </article>
   );
 }
