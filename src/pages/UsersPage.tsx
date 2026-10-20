@@ -95,6 +95,12 @@ function status(u: Row): { label: string; tone: Tone } {
 }
 
 const isInvited = (u: Row) => status(u).label === 'Invited';
+/** "7 active, 7 invited, 2 switched off": the same states as the table's Status column, so the numbers add up. */
+function accountsBreakdown(rows: Row[]) {
+  const by = (label: string) => rows.filter(r => status(r).label === label).length;
+  return ([['Active', 'active'], ['Invited', 'invited'], ['Locked', 'locked'], ['Inactive', 'switched off'], ['Portal only', 'owner logins']] as const)
+    .map(([label, word]) => [by(label), word] as const).filter(([n]) => n > 0).map(([n, word]) => `${count(n)} ${word}`).join(', ');
+}
 const NO_MAIL_INVITE = 'To get them in now, use Reset password in their row menu and pass the temporary password on yourself.';
 
 /** When the newest invitation went out, and a Resend button for management. */
@@ -105,6 +111,19 @@ function InviteCell({ u, onResend }: { u: Row; onResend?: () => void }) {
       {onResend && <Button size="sm" variant="secondary" icon={<Icon name="Send" size="sm" />} onClick={onResend} aria-label={`Resend invitation to ${u.fullName}`}>Resend</Button>}
     </span>
   );
+}
+
+/** "Reports to" choices: active staff only, with the email after any name that appears twice so
+ *  two people both called "New Staff" can be told apart. `keep` stays listed even if switched off, so an
+ *  existing manager still shows as selected instead of the form silently reading "No manager". */
+function managerOptions(staff: Row[], exclude?: string, keep?: string | null) {
+  const list = staff.filter(s => s.id !== exclude && (s.isActive || s.id === keep));
+  const seen = new Map<string, number>();
+  for (const s of list) seen.set(s.fullName, (seen.get(s.fullName) ?? 0) + 1);
+  return list.map(s => ({
+    value: s.id,
+    label: `${s.fullName}${(seen.get(s.fullName) ?? 0) > 1 ? ` (${s.email})` : ''}${s.isActive ? '' : ' (switched off)'}`,
+  }));
 }
 
 const initials = (name: string) => name.split(' ').map(n => n[0]).slice(0, 2).join('');
@@ -527,7 +546,7 @@ export default function UsersPage() {
       />
 
       <SystemStats loading={loading && rows.length === 0} stats={[
-        { label: 'Accounts', value: data ? count(rows.length) : undefined, hint: `${count(rows.filter(r => r.isActive).length)} active` },
+        { label: 'Accounts', value: data ? count(rows.length) : undefined, hint: accountsBreakdown(rows) },
         { label: 'Invited', value: data ? count(invitedCount) : undefined, hint: 'Not signed in yet', warn: invitedCount > 0 },
         { label: 'Two-step on', value: data ? count(rows.filter(r => r.twoStep).length) : undefined, hint: 'Sign-in with a code' },
         { label: 'Locked', value: data ? count(rows.filter(r => r.isLocked).length) : undefined, hint: 'Too many wrong passwords', warn: rows.some(r => r.isLocked) },
@@ -602,7 +621,7 @@ export default function UsersPage() {
               </span>
               <Button variant="secondary" size="sm" onClick={openOrg}>Edit structure</Button>
             </div>
-            <OrgChart staff={staff} nameById={nameById} />
+            <OrgChart staff={staff.filter(s => s.isActive)} nameById={nameById} />
           </div>
         </Card>
       )}
@@ -629,7 +648,7 @@ export default function UsersPage() {
               <Select label="Role" showLabel size="md" value={role} onChange={v => setRole(v as UserRole)} options={STAFF_ROLE_OPTIONS} />
               {role !== 'owner' && (
                 <Select label="Reports to" showLabel size="md" value={managerId} onChange={setManagerId} placeholder="No manager"
-                  options={staff.map(s => ({ value: s.id, label: s.fullName }))} />
+                  options={managerOptions(staff)} />
               )}
             </div>
             <div className="text-meta text-muted-ink leading-[1.5]">
@@ -675,7 +694,7 @@ export default function UsersPage() {
             </div>
             <div className="flex flex-col gap-1.5">
               <Select label="Reports to" showLabel size="md" value={editManager} onChange={setEditManager} placeholder="No manager"
-                options={staff.filter(s => s.id !== editing.id).map(s => ({ value: s.id, label: s.fullName }))} />
+                options={managerOptions(staff, editing.id, editing.managerId)} />
               <span className="text-meta text-muted-ink">Reporting line only. It does not grant or remove any access.</span>
             </div>
             <label htmlFor="ed-active" className="flex items-center gap-2 cursor-pointer">
@@ -789,19 +808,10 @@ function JobFields({ department, position, onDepartment, onPosition, errors, dep
 
 /* --------------------------- org chart render --------------------------- */
 function OrgChart({ staff, nameById }: { staff: Row[]; nameById: Record<string, string> }) {
-  // Depth by walking the manager chain (capped against accidental cycles).
-  const depthOf = (u: Row): number => {
-    let d = 0; let cur: Row | undefined = u; const seen = new Set<string>();
-    while (cur && cur.managerId && !seen.has(cur.id)) {
-      seen.add(cur.id);
-      const next = staff.find(s => s.id === cur!.managerId);
-      if (!next) break;
-      cur = next; d++;
-      if (d > 6) break;
-    }
-    return d;
-  };
+  // Grouped by each person's place in the reporting line, not by how deep they sit: someone with no
+  // manager set is not leadership unless people report to them. `staff` is active accounts only.
   const directReports = (id: string) => staff.filter(s => s.managerId === id).length;
+  const hasManager = (u: Row) => !!u.managerId && staff.some(s => s.id === u.managerId);
 
   const levels: { label: string; people: Row[] }[] = [
     { label: 'Leadership', people: [] },
@@ -809,8 +819,7 @@ function OrgChart({ staff, nameById }: { staff: Row[]; nameById: Record<string, 
     { label: 'Team', people: [] },
   ];
   for (const u of staff) {
-    const d = Math.min(depthOf(u), 2);
-    levels[d].people.push(u);
+    levels[directReports(u.id) === 0 ? 2 : hasManager(u) ? 1 : 0].people.push(u);
   }
 
   return (
@@ -827,7 +836,7 @@ function OrgChart({ staff, nameById }: { staff: Row[]; nameById: Record<string, 
               const manager = p.managerId ? nameById[p.managerId] : null;
               const meta = reports > 0
                 ? plural(reports, 'direct report')
-                : manager ? `Reports to ${manager}` : null;
+                : manager ? `Reports to ${manager}` : 'No manager set';
               return (
                 <div key={p.id} className={cx('min-w-[188px] py-3 px-4 rounded-card border border-solid border-line bg-card flex flex-col gap-2', ORG_ACCENT[roleTone[p.role]])}>
                   <div className="flex items-center gap-2.5">
