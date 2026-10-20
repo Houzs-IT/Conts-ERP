@@ -5,7 +5,6 @@ import {
   SUB_CATEGORIES,
   categoryGroupOf,
   defaultStageOf,
-  isPhotoRequiredCategory,
   legacySubOf,
   subCategoriesOf,
   uomPrintLabel,
@@ -43,12 +42,6 @@ describe("renovation catalog", () => {
     expect(validateCategoryPair("WORKS", "SOFA")).toEqual({ ok: false, error: "sub_category_mismatch" });
     expect(validateCategoryPair("SOFA", null)).toEqual({ ok: true });
     expect(validateCategoryPair("XYZ", null)).toEqual({ ok: false, error: "invalid_category" });
-  });
-
-  test("photo rule applies to new photo groups only", () => {
-    expect(isPhotoRequiredCategory("BUILTIN")).toBe(true);
-    expect(isPhotoRequiredCategory("WORKS")).toBe(false);
-    expect(isPhotoRequiredCategory("SOFA")).toBe(false);
   });
 
   test("group stages are real stage keys", () => {

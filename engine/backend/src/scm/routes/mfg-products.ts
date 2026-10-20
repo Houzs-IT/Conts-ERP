@@ -39,10 +39,10 @@ import { PRODUCT_CODE_CASCADE } from '../lib/product-code-rename';
 import { moveModelCategory, planModelCategoryMoves, type ImportModelMove } from '../lib/model-category-move';
 import { ensureModelForSku, modelCodeForSku } from '../lib/ensure-model-for-sku';
 import { MFG_PRODUCT_CATEGORIES, MFG_CATEGORY_LABELS, mfgCategoryLabel, parseMfgCategory } from '../shared/product-categories';
-import { isPhotoRequiredCategory, isUom, parseSubCategory, parseUom, validateCategoryPair } from '../shared/renovation-catalog';
+import { isUom, parseSubCategory, parseUom, validateCategoryPair } from '../shared/renovation-catalog';
 import {
   deleteMfgProductPhotoHandler, listMfgProductPhotosHandler, patchMfgProductPhotoHandler,
-  photoCountFor, photoKeysFor, primaryPhotosFor, uploadMfgProductPhotoHandler,
+  photoKeysFor, primaryPhotosFor, uploadMfgProductPhotoHandler,
 } from './mfg-product-photos';
 import { loadSubCategories, loadUoms } from './renovation-catalog-settings';
 import { resolveDefaultParty, type BindingForParty } from '../lib/default-supply-party';
@@ -394,9 +394,6 @@ export const createMfgProductHandler = async (c: AppContext) => {
     // A hidden unit cannot be picked for a new SKU.
     if (!isUom(uom, uoms.filter((u) => u.active !== false))) return c.json({ error: 'invalid_uom' }, 400);
   }
-  // A SKU in a photo group cannot be ACTIVE before its first photo (the database
-  // trigger from migration 0062 enforces the same on every other path).
-  const needsPhoto = isPhotoRequiredCategory(category);
 
   // Company is the only scope boundary (service role bypasses RLS), and
   // ensureModelForSku needs it — require it up front.
@@ -416,7 +413,7 @@ export const createMfgProductHandler = async (c: AppContext) => {
     code,
     name,
     category,
-    status: needsPhoto ? 'INACTIVE' : 'ACTIVE',
+    status: 'ACTIVE',
     description: (body.description as string) ?? null,
     base_model: (body.baseModel as string) ?? null,
     size_code: (body.sizeCode as string) ?? null,
@@ -462,7 +459,7 @@ export const createMfgProductHandler = async (c: AppContext) => {
     if (error.code === '42501') return c.json({ error: 'forbidden', reason: error.message }, 403);
     return c.json({ error: 'insert_failed', reason: error.message }, 500);
   }
-  return c.json({ ...(data as Record<string, unknown>), status: row.status, needsPhoto }, 201);
+  return c.json({ ...(data as Record<string, unknown>), status: row.status }, 201);
 };
 mfgProducts.post('/', createMfgProductHandler);
 
@@ -601,18 +598,6 @@ export const batchImportMfgProductsHandler = async (c: AppContext) => {
         continue;
       }
     }
-    /* Photo rule: a new SKU in a photo group starts INACTIVE; an existing one is
-       activated only when it already has a photo (a read error refuses). */
-    const needsPhoto = isPhotoRequiredCategory(finalCategory);
-    const wantsActive = statusCell === 'ACTIVE';
-    if (needsPhoto && existing && wantsActive && prev?.status !== 'ACTIVE') {
-      const photos = await photoCountFor(supabase, String((existing as { id: string }).id), co.companyId);
-      if (!photos.ok || photos.count === 0) {
-        failures.push({ code, reason: photos.ok ? 'add a photo before making this SKU active.' : `could not check its photos, so it was not activated (${photos.reason}).` });
-        continue;
-      }
-    }
-
     const row: Record<string, unknown> = { code };
     /* Present-and-non-empty only, exactly like every other column. On a create
        the guard above has already proved both are there. */
@@ -624,7 +609,6 @@ export const batchImportMfgProductsHandler = async (c: AppContext) => {
 
     // String fields — include only when the cell actually has a value.
     if (statusCell)            row.status = statusCell;
-    if (needsPhoto && !existing) row.status = 'INACTIVE';
     if (hasVal(r.description)) row.description = String(r.description);
     if (hasVal(r.base_model))  row.base_model = String(r.base_model);
     if (hasVal(r.size_label))  row.size_label = String(r.size_label);
@@ -1062,21 +1046,6 @@ export const patchMfgProductHandler = async (c: AppContext) => {
       if (!isUom(uom, pickable)) return c.json({ error: 'invalid_uom' }, 400);
       updates.uom = uom;
     }
-    /* Photo rule: a SKU in a photo group is ACTIVE only with a photo. Checked
-       whenever the write would leave it ACTIVE in such a group and either the
-       status or the category is changing. A read that fails refuses (503): it
-       must never read as "has a photo". */
-    const finalStatus = String(updates.status ?? current.status ?? '');
-    const statusChanged = updates.status !== undefined && updates.status !== current.status;
-    if (finalStatus === 'ACTIVE' && isPhotoRequiredCategory(finalCategory) && (statusChanged || categoryChanged)) {
-      const photos = await photoCountFor(supabase, String(id), co.companyId);
-      if (!photos.ok) {
-        return c.json({ error: 'photo_check_failed', reason: `Could not check this SKU's photos, so it stays as it is — try again (${photos.reason}).` }, 503);
-      }
-      if (photos.count === 0) {
-        return c.json({ error: 'photo_required', reason: 'Add a photo first: SKUs in this group need one before they can be active.' }, 409);
-      }
-    }
   }
   // D5 — selling-only POS catalog visibility. Independent of status (cost/PO).
   if (typeof body.posActive === 'boolean') {
@@ -1261,10 +1230,6 @@ export const patchMfgProductHandler = async (c: AppContext) => {
   if (updErr) {
     if (updErr.code === '42501' || /permission denied/i.test(updErr.message)) {
       return c.json({ error: 'forbidden', reason: updErr.message }, 403);
-    }
-    // Migration 0062 backstop: the database refused an ACTIVE photo-group SKU with no photo.
-    if (/photo_required/.test(updErr.message)) {
-      return c.json({ error: 'photo_required', reason: 'Add a photo first: SKUs in this group need one before they can be active.' }, 409);
     }
     if (updErr.code === '23505') {
       // PR #89 — only the `code` column has a UNIQUE constraint that the

@@ -30,17 +30,16 @@ export interface GroupDef {
   code: CatalogGroup;
   label: string;
   stage: StageKey;
-  photoRequired: boolean;
 }
 
 export const RENOVATION_GROUPS: readonly GroupDef[] = [
-  { code: 'WORKS', label: 'Works', stage: 'hardware', photoRequired: false },
-  { code: 'BUILTIN', label: 'Built-in', stage: 'furniture', photoRequired: true },
-  { code: 'FURNITURE', label: 'Furniture', stage: 'furniture', photoRequired: true },
-  { code: 'LIGHTING', label: 'Lighting', stage: 'hardware', photoRequired: true },
-  { code: 'APPLIANCE', label: 'Appliances', stage: 'appliances', photoRequired: true },
-  { code: 'SOFT', label: 'Soft furnishing', stage: 'soft_furnishing', photoRequired: true },
-  { code: 'SERVICE', label: 'Service', stage: 'soft_furnishing', photoRequired: false },
+  { code: 'WORKS', label: 'Works', stage: 'hardware' },
+  { code: 'BUILTIN', label: 'Built-in', stage: 'furniture' },
+  { code: 'FURNITURE', label: 'Furniture', stage: 'furniture' },
+  { code: 'LIGHTING', label: 'Lighting', stage: 'hardware' },
+  { code: 'APPLIANCE', label: 'Appliances', stage: 'appliances' },
+  { code: 'SOFT', label: 'Soft furnishing', stage: 'soft_furnishing' },
+  { code: 'SERVICE', label: 'Service', stage: 'soft_furnishing' },
 ];
 
 export interface SubCategoryDef {
@@ -164,13 +163,6 @@ export function subCategoriesOf(group: CatalogGroup, list: readonly SubCategoryD
 export function legacySubOf(category: string | null | undefined): string | null {
   const c = String(category ?? '').toUpperCase();
   return SUB_CATEGORIES.find((s) => s.legacy?.includes(c))?.code ?? null;
-}
-
-/** Photo rule keys on the STORED category, so legacy Houzs categories stay exempt. */
-export function isPhotoRequiredCategory(category: string | null | undefined): boolean {
-  const c = String(category ?? '').toUpperCase();
-  if (!NEW_GROUPS.has(c)) return false;
-  return groupDef(c as CatalogGroup).photoRequired;
 }
 
 export type CategoryPairResult =

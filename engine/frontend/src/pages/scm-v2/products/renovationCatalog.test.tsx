@@ -59,7 +59,7 @@ import { RenovationNewSku } from './RenovationNewSku';
 import { RenovationSkuMaster } from './RenovationSkuMaster';
 import { RenovationUomSettings } from './RenovationUomSettings';
 import { ConfirmProvider } from '../../../vendor/scm/components/ConfirmDialog';
-import { SkuStatusBadge, skuNeedsPhoto } from './renovationSkuColumns';
+import { SkuStatusBadge } from './renovationSkuColumns';
 import { AddSupplierBinding } from '../AddSupplierBinding';
 import { PhotoGallery } from '../../../components/scm-v2/PhotoGallery';
 import { badgeFor } from '../../../vendor/scm/lib/category-badges';
@@ -108,9 +108,9 @@ describe('CatalogCategoryPicker', () => {
     fireEvent.change(screen.getByLabelText('Group *'), { target: { value: 'BUILTIN' } });
     expect(onChange).toHaveBeenCalledWith({ group: 'BUILTIN', sub: null });
   });
-  test('names the photo rule for a photo group', () => {
+  test('says nothing about photos: they are optional', () => {
     wrap(<CatalogCategoryPicker group="APPLIANCE" sub={null} onChange={() => {}} />);
-    expect(screen.getByText(/need a photo before they can be active/)).toBeTruthy();
+    expect(screen.queryByText(/photo/i)).toBeNull();
   });
   test('offers the saved list: an added sub-category shows, a hidden one only on the SKU that has it', async () => {
     h.catalog = {
@@ -154,29 +154,30 @@ describe('RenovationNewSku', () => {
 });
 
 describe('status badge', () => {
-  test('a photo-group SKU with no photo reads Needs photo; Works never does', () => {
-    const builtin = sku({ category: 'BUILTIN', status: 'INACTIVE', photoCount: 0 });
-    expect(skuNeedsPhoto(builtin)).toBe(true);
-    render(<SkuStatusBadge row={builtin} />);
-    expect(screen.getByText('Needs photo')).toBeTruthy();
-    expect(skuNeedsPhoto(sku({ category: 'WORKS', photoCount: 0 }))).toBe(false);
-    expect(skuNeedsPhoto(sku({ category: 'SOFA', photoCount: 0 }))).toBe(false);
+  test('a SKU with no photo reads Active or Inactive, never Needs photo', () => {
+    const a = render(<SkuStatusBadge row={sku({ category: 'BUILTIN', status: 'INACTIVE', photoCount: 0 })} />);
+    expect(screen.getByText('Inactive')).toBeTruthy();
+    expect(screen.queryByText('Needs photo')).toBeNull();
+    a.unmount();
+    render(<SkuStatusBadge row={sku({ category: 'FURNITURE', status: 'ACTIVE', photoCount: 0 })} />);
+    expect(screen.getByText('Active')).toBeTruthy();
   });
 });
 
 describe('RenovationSkuMaster', () => {
-  test('lists SKUs, counts those needing a photo, and the drawer activates through PATCH', () => {
+  test('lists SKUs with no photo warning, and the drawer activates through PATCH', () => {
     h.rows = [
       sku({ id: 'a', code: 'HK-1', name: 'Hacking', category: 'WORKS', category_group: 'WORKS', sub_category: 'HACKING', uom: 'LOT', mainSupplierName: 'Ah Seng Renovation', supplierCount: 1 }),
       sku({ id: 'b', code: 'WR-1', name: 'Wardrobe', category: 'BUILTIN', category_group: 'BUILTIN', sub_category: 'WARDROBE', status: 'INACTIVE', photoCount: 0 }),
     ];
     wrap(<RenovationSkuMaster onImport={() => {}} onOpenSuppliers={() => {}} />);
     expect(screen.getByText(/2 SKUs/)).toBeTruthy();
-    expect(screen.getByText(/1 need a photo/)).toBeTruthy();
+    expect(screen.queryByText(/need a photo/)).toBeNull();
+    expect(screen.queryByText('Needs photo')).toBeNull();
     expect(screen.getAllByText('Ah Seng Renovation').length).toBeGreaterThan(0);
     fireEvent.click(screen.getAllByText('WR-1')[0]);
     const drawer = screen.getByRole('dialog', { name: 'SKU WR-1' });
-    expect(within(drawer).getByText(/Add a photo to make this SKU active/)).toBeTruthy();
+    expect(within(drawer).queryByText(/Add a photo to make this SKU active/)).toBeNull();
     fireEvent.click(within(drawer).getByText('Make active'));
     expect(h.patch.mock.calls[0][0]).toEqual({ id: 'b', status: 'ACTIVE' });
   });

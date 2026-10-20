@@ -29,7 +29,7 @@ import { RenovationSubCategorySettings } from './RenovationSubCategorySettings';
 import { RenovationUomSettings } from './RenovationUomSettings';
 import { SkuPhotoSection } from './SkuPhotoSection';
 import { UomSelect } from './UomSelect';
-import { SkuStatusBadge, SkuThumb, renovationSkuColumns, skuNeedsPhoto } from './renovationSkuColumns';
+import { SkuStatusBadge, SkuThumb, renovationSkuColumns } from './renovationSkuColumns';
 import styles from '../Products.module.css';
 
 export function RenovationSkuMaster({
@@ -53,7 +53,6 @@ export function RenovationSkuMaster({
   const showCost = useMemo(() => (rows ?? []).some((r) => 'mainCostSen' in r), [rows]);
   const { label: subLabel, uomPrint } = useRenovationCatalog();
   const columns = useMemo(() => renovationSkuColumns({ showCost, subLabel, uomPrint }), [showCost, subLabel, uomPrint]);
-  const needPhoto = useMemo(() => (rows ?? []).filter((r) => r.status !== 'ACTIVE' && skuNeedsPhoto(r)).length, [rows]);
   const openRow = openId ? (rows ?? []).find((r) => r.id === openId) ?? null : null;
   const count = rows ? `${rows.length} SKU${rows.length === 1 ? '' : 's'}` : 'Loading…';
 
@@ -73,11 +72,8 @@ export function RenovationSkuMaster({
             className="w-full rounded-md border border-border bg-surface py-1.5 pl-8 pr-2 text-[13px] outline-none focus:border-primary"
           />
         </label>
-        {/* The table below already counts the rows on a phone; only the photo warning stays there. */}
-        <span className={`text-[12px] text-ink-secondary ${needPhoto > 0 ? '' : 'max-sm:hidden'}`} aria-live="polite">
-          <span className="max-sm:hidden">{count}</span>
-          {needPhoto > 0 && <span className="text-amber-700"><span className="max-sm:hidden"> · </span>{needPhoto} need a photo</span>}
-        </span>
+        {/* The table below already counts the rows on a phone. */}
+        <span className="text-[12px] text-ink-secondary max-sm:hidden" aria-live="polite">{count}</span>
         {/* Phone: search, New SKU and a menu share one row, so the list starts higher. */}
         <div className="ml-auto flex flex-wrap items-center gap-2 whitespace-nowrap">
           <Button variant="secondary" className="max-sm:hidden" onClick={() => setSettingsOpen(true)}><Settings2 size={14} strokeWidth={1.75} /> Sub-categories</Button>
@@ -199,7 +195,7 @@ export function RenovationSkuDrawer({ row, onClose, onOpenSuppliers }: { row: Mf
 
           <section className="space-y-2">
             <h3 className="text-[11px] font-bold uppercase tracking-wider text-ink-secondary">Photos</h3>
-            <SkuPhotoSection productId={row.id} productName={row.name} category={row.category} photoCount={row.photoCount ?? 0} />
+            <SkuPhotoSection productId={row.id} productName={row.name} category={row.category} />
           </section>
 
           <section className="space-y-2">

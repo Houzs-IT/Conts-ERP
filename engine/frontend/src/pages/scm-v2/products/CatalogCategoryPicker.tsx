@@ -3,7 +3,7 @@
    A legacy Houzs category (SOFA, ...) is shown as its group with its implied
    sub-category, and is only rewritten if the user picks something else.
    A hidden sub-category is offered only to the SKU that already has it. */
-import { RENOVATION_GROUPS, isPhotoRequiredCategory, type CatalogGroup } from '../../../vendor/shared/renovation-catalog';
+import { RENOVATION_GROUPS, type CatalogGroup } from '../../../vendor/shared/renovation-catalog';
 import { useRenovationCatalog } from '../../../vendor/scm/lib/renovation-catalog-queries';
 import styles from '../Products.module.css';
 
@@ -53,11 +53,6 @@ export function CatalogCategoryPicker({
           ))}
         </select>
       </label>
-      {isPhotoRequiredCategory(group) && (
-        <p className={`${styles.formGridFull} text-[12px] text-ink-secondary`}>
-          {RENOVATION_GROUPS.find((g) => g.code === group)?.label} SKUs need a photo before they can be active.
-        </p>
-      )}
     </>
   );
 }
