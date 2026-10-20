@@ -307,7 +307,7 @@ test("mapExport + buildSql: dated key passes from the Unit Key Record list", () 
   const f = fixture();
   const proj = `ALTRIS C13-3A (${url("ALTRIS-C13-3A", PID)})`;
   f.keyRecords = [
-    { Name: "ALTRIS C13-3A  @August 10, 2026 ", "Pass Person": "Michell Lo Siaw Maan", "Receive Person": "JIA XIN, YI XUAN", "Project 🔥": proj, "Created time": "August 11, 2026 9:00 AM" },
+    { Name: "ALTRIS C13-3A  @August 10, 2026 ", "Pass Person": "Michell Lo Siaw Maan", "Receive Person": "JIA XIN, YI XUAN", "Project 🔥": proj, "Created time": "August 10, 2026 6:38 PM" },
     { Name: "ALTRIS C13-3A", "Pass Person": "", "Receive Person": "Alex", "Project 🔥": proj, "Created time": "August 12, 2026 9:00 AM" },
     { Name: "NOBODY", "Pass Person": "Someone", "Receive Person": "Else", "Project 🔥": proj, "Created time": "August 12, 2026 9:00 AM" },
     { Name: "ORPHAN", "Pass Person": "Alex", "Receive Person": "JIA XIN", "Project 🔥": "", "Created time": "" },
@@ -329,6 +329,8 @@ test("mapExport + buildSql: dated key passes from the Unit Key Record list", () 
   g.keyRecords = [f.keyRecords[0], second];
   const refs = mapExport(g).keyHistory.map((k) => k.ref);
   assert.equal(new Set(refs).size, 2);
+  // the title says 10 Aug, but the record was made on 21 Aug: the pass is dated 21 Aug
+  assert.equal(mapExport(g).keyHistory[1].movedOn, "2026-08-21");
   g.keyRecords = [second, f.keyRecords[0]];
   assert.deepEqual(mapExport(g).keyHistory.map((k) => k.ref).sort(), [...refs].sort());
   // the same pass written twice in Notion is kept once

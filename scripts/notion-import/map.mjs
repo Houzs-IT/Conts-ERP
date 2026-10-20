@@ -423,7 +423,9 @@ export function mapExport({ projects, renoTasks, idTasks, keyRecords = [], expor
     const brief = { row: rowNo, name: name || "(untitled)" };
     if (!project) { report.skipped.keyRecords.push({ ...brief, reason: "no project linked in Notion" }); return; }
     const created = parseCreatedTime(col(r, "Created time"));
-    const movedOn = keyMoveDate(name) ?? created?.slice(0, 10) ?? null;
+    // every title in the Notion list carries the date of its template (10 Aug 2026), so a record created later
+    // is dated by when it was made
+    const movedOn = [keyMoveDate(name), created?.slice(0, 10)].filter(Boolean).sort().pop() ?? null;
     if (!movedOn) { report.skipped.keyRecords.push({ ...brief, project: project.name, reason: "no date in the title or Created time" }); return; }
     const who = (cell, where) => {
       const n = splitList(col(r, cell))[0];
