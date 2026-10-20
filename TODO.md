@@ -156,6 +156,10 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 - 396 SKUs have no cost yet: get DHI, LB (Little Builder) and HOOKKA price lists, then add the prices on each supplier's SKU Pricing tab.
 - 308 Built-in/Furniture/Lighting/Soft SKUs stay Inactive until a photo is added; the catalogues hold the photos.
 
+## Catalog fix (fix/catalog-sizes-uom, migration 0132, 21 Oct 2026, docs/catalog-import/catalog-fix-review.xlsx)
+- Lead: apply 0132 through "Apply migrations to production" (dry-run first); expect 160 new SKUs, 52 removed, 99 unit changes.
+- Owner to answer the "Owner to decide" sheet: HOOKKA's full sofa compartment and bedframe size lists (the catalogue cuts them short), units for LB stone, DHI and 34 K & K lines.
+
 ## Later
 - Packages (8 Oct, chore/update-packages): Property OS has 0 flagged packages (wrangler 4.148, source-map-js, and an override pinning sharp to 0.35.5 inside wrangler's local emulator; all build/dev tools, none ran in production). Engine: the non-breaking fixes are in (hono on the server, dompurify on the screens, and build tools). Left in engine/, each needing a breaking upgrade of Houzs's code or tools: react-router 6 (moderate), wrangler's sharp and undici, esbuild, vitest, braces. Take them with the next Houzs copy.
 - Email delivery: needs MAIL_API_KEY on the preview environment too; production has it.
