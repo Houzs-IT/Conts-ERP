@@ -1,14 +1,17 @@
 import type { Cleaner } from '../lib/useCleaners';
 import Icon from './Icon';
 import { cx } from '../lib/design-tokens';
+import { dayLabel, mytDay } from './ops/OpsUi';
 
-/** Hint shown beside a cleaner in a picker: the outsourced company, or today's load. */
-export const cleanerHint = (c: Cleaner) => (c.employmentType === 'outsourced' ? (c.vendorName ?? 'Outsourced') : `${c.busy} open today`);
+/** Hint shown beside a cleaner in a picker: the outsourced company, or the load on `day` (the roster must be
+ *  fetched for that same day: useCleaners' `date`). */
+export const cleanerHint = (c: Cleaner, day?: string) => (c.employmentType === 'outsourced' ? (c.vendorName ?? 'Outsourced')
+  : `${c.busy} open ${!day || day === mytDay(0) ? 'today' : `on ${dayLabel(day)}`}`);
 
 /** Tick one or more cleaners (owner, 11 Oct 2026: a big unit can take two or three people). The order they are
  *  ticked in is kept: the first one is the job's main cleaner. */
-export function CleanerChecklist({ cleaners, value, onChange, label = 'Cleaners', error }: {
-  cleaners: Cleaner[]; value: string[]; onChange: (ids: string[]) => void; label?: string; error?: string | null;
+export function CleanerChecklist({ cleaners, value, onChange, label = 'Cleaners', error, day }: {
+  cleaners: Cleaner[]; value: string[]; onChange: (ids: string[]) => void; label?: string; error?: string | null; day?: string;
 }) {
   const toggle = (id: string, on: boolean) => onChange(on ? [...value.filter(v => v !== id), id] : value.filter(v => v !== id));
   return (
@@ -24,7 +27,7 @@ export function CleanerChecklist({ cleaners, value, onChange, label = 'Cleaners'
               <input type="checkbox" checked={on} onChange={e => toggle(c.id, e.target.checked)} className="w-4 h-4 m-0 flex-none accent-[var(--color-brand-black)]" />
               <span className="flex-1 min-w-0 truncate font-medium text-ink">{c.name}</span>
               {on && value.length > 1 && n === 1 && <span className="text-caption text-gold-ink whitespace-nowrap">Main</span>}
-              <span className="text-meta text-muted-ink whitespace-nowrap">{cleanerHint(c)}</span>
+              <span className="text-meta text-muted-ink whitespace-nowrap">{cleanerHint(c, day)}</span>
             </label>
           );
         })}

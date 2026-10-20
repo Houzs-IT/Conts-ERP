@@ -433,7 +433,6 @@ function BuildingCard({ group, now, future, selected, busy, onSelect, onGuestLef
   onCheckIn: (reservationId: string, time: string, unit: string) => void; onPlan: (d: Departure) => void; onAssign?: () => void; picks?: Picks;
 }) {
   const external = group.id === 'external';
-  const count = group.rows.length + group.departures.length;
   const doneN = group.rows.filter(r => r.status === 'done').length;
   const open = group.rows.filter(r => r.status !== 'done');
   const unassigned = open.filter(r => !r.cleanerId && !r.assigneeId && !r.assigneeName).length;
@@ -454,7 +453,7 @@ function BuildingCard({ group, now, future, selected, busy, onSelect, onGuestLef
           className="min-w-0 flex items-center gap-2 flex-wrap bg-transparent border-none p-0 cursor-pointer text-left text-ink [font-family:inherit]">
           <Icon name={shut ? 'ChevronRight' : 'ChevronDown'} size="sm" color="var(--color-muted-ink)" />
           <span className="text-[15px] font-semibold tracking-[-0.005em]">{group.name}</span>
-          <span className="text-meta text-muted-ink tabular-nums">{count} {count === 1 ? 'unit' : 'units'} · {doneN} done</span>
+          <span className="text-meta text-muted-ink tabular-nums">{plural(group.rows.length, 'job')} · {doneN} done</span>
           {group.departures.length > 0 && <StatusBadge tone="critical">{group.departures.length} to plan</StatusBadge>}
         </button>
         <div className={cx('flex items-center gap-2 text-copy flex-wrap', picks && 'ml-auto')}>
@@ -645,6 +644,8 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft }: { row: Row; 
     try { const r = await api.get<{ secret: string }>(`/access-credentials/${id}?reveal=true`); setRevealed(x => ({ ...x, [id]: r.secret || '(no code set)' })); }
     catch (e) { toast({ tone: 'critical', title: 'Code not shown.', body: errorMessage(e, 'Try again.') }); }
   }
+  // Show again fetches again, so every look at the code stays in the audit log.
+  const hide = (id: string) => setRevealed(({ [id]: _, ...rest }) => rest);
 
   const done = row.state === 'resolved';
   const st = statusOf('cleaning', row.status);
@@ -761,12 +762,12 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft }: { row: Row; 
             <div key={a.id} className="rounded-control bg-muted p-2.5 flex flex-col gap-1">
               <div className="flex items-center gap-2">
                 <span className="flex-1 font-medium">{a.label}</span>
-                {a.hasCode && (revealed[a.id]
-                  ? <span className="font-mono text-heading">{revealed[a.id]}</span>
-                  : <>{a.masked && <span className="font-mono text-muted-ink">{a.masked}</span>}
-                    {data.mayReveal && <button type="button" onClick={() => void reveal(a.id)} className="text-gold-ink font-medium cursor-pointer underline-offset-2 hover:underline">Show</button>}</>)}
+                {a.hasCode && (revealed[a.id] ? <span className="font-mono text-heading">{revealed[a.id]}</span> : a.masked && <span className="font-mono text-muted-ink">{a.masked}</span>)}
+                {a.hasCode && data.mayReveal && <button type="button" onClick={() => revealed[a.id] ? hide(a.id) : void reveal(a.id)} className="text-gold-ink font-medium cursor-pointer underline-offset-2 hover:underline">{revealed[a.id] ? 'Hide' : 'Show'}</button>}
               </div>
-              <span className="text-meta text-muted-ink">{a.instruction}</span>
+              {/* The note is free text and often repeats the code, so it stays behind Show with it. Without the right to
+                  reveal it shows as before: the server sends it to every role, cleaners included, as their way in. */}
+              {(!a.hasCode || !data.mayReveal || revealed[a.id]) && <span className="text-meta text-muted-ink">{a.instruction}</span>}
             </div>
           ))}
         {data && !data.mayReveal && data.access.some(a => a.hasCode) && <span className="text-meta text-muted-ink">Codes are shown to operations managers and management only.</span>}
@@ -842,9 +843,9 @@ function CleanAmount({ taskId, cost, external, done, kindName, onSaved }: {
 
 function NewCleanModal({ date, onClose, onDone }: { date: string; onClose: () => void; onDone: () => void }) {
   const units = useUnitRoster();
-  const { cleaners } = useCleaners(true);
   const [unitId, setUnitId] = useState('');
   const [day, setDay] = useState(date);
+  const { cleaners } = useCleaners(true, day);
   const [kind, setKind] = useState('turnover');
   const [cleanerIds, setCleanerIds] = useState<string[]>([]);
   const [notes, setNotes] = useState('');
@@ -945,7 +946,7 @@ function NewCleanModal({ date, onClose, onDone }: { date: string; onClose: () =>
         </FormRow>
       </div>
       <div className="flex flex-col gap-1.5 min-w-0">
-        <CleanerChecklist cleaners={cleaners} value={cleanerIds} onChange={setCleanerIds} label="Cleaners (optional)" />
+        <CleanerChecklist cleaners={cleaners} value={cleanerIds} onChange={setCleanerIds} label="Cleaners (optional)" day={day} />
         {!cleanerIds.length && <span className="text-meta text-muted-ink">Leave empty to assign later. Tick more than one for a team.</span>}
       </div>
       <FormRow label="Notes for the cleaner (optional)"><textarea className={TEXTAREA} value={notes} onChange={e => setNotes(e.target.value)} maxLength={1000} /></FormRow>
@@ -959,7 +960,7 @@ const LAYOUT_NAME: Record<string, string> = { studio: 'Studio', '1_bedroom': '1 
 const EXTERNAL_CHOICE = { id: EXTERNAL, label: 'External (not one of our units)' };
 
 function AssignBuildingModal({ building, date, onClose, onDone }: { building: { buildingId: string; name: string }; date: string; onClose: () => void; onDone: (n: number, who: string) => void }) {
-  const { cleaners } = useCleaners(true);
+  const { cleaners } = useCleaners(true, date);
   const [cleanerIds, setCleanerIds] = useState<string[]>([]);
   const [onlyUnassigned, setOnlyUnassigned] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -975,7 +976,7 @@ function AssignBuildingModal({ building, date, onClose, onDone }: { building: { 
   return (
     <OpsModal title={`Assign ${building.name}`} sub={`Every unfinished cleaning job in this building on ${dayLabel(date)} goes to the cleaners you tick. Tick two or more to send a team to every unit.`} onClose={onClose} busy={busy}
       footer={<><Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" variant="primary" loading={busy} onClick={() => void save()}>Assign</Button></>}>
-      <CleanerChecklist cleaners={cleaners} value={cleanerIds} onChange={ids => { setCleanerIds(ids); setError(null); }} error={error} />
+      <CleanerChecklist cleaners={cleaners} value={cleanerIds} onChange={ids => { setCleanerIds(ids); setError(null); }} error={error} day={date} />
       <label className="flex items-center gap-2 text-copy cursor-pointer">
         <input type="checkbox" checked={onlyUnassigned} onChange={e => setOnlyUnassigned(e.target.checked)} className="w-4 h-4 accent-black" />
         Only cleaning jobs with no cleaner yet
