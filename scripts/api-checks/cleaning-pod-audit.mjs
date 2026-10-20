@@ -32,13 +32,32 @@ check('the phone cannot finish without a photo', early.status === 422, early.tex
 // A 1x1 PNG as the proof photo, uploaded the way the phone does (multipart, field "file").
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=', 'base64');
 const { cookieFor } = await import('./harness.mjs');
-const form = new FormData();
-form.append('file', new Blob([png], { type: 'image/png' }), 'proof.png');
-const up = await fetch(`${process.env.API_BASE ?? 'http://localhost:8788'}/api/tasks/${id}/photos`, { method: 'POST', headers: { cookie: cookieFor('housekeeper') }, body: form });
-check('the phone uploads a proof photo', up.status < 300, await up.text());
+async function upload() {
+  const form = new FormData();
+  form.append('file', new Blob([png], { type: 'image/png' }), 'proof.png');
+  const r = await fetch(`${process.env.API_BASE ?? 'http://localhost:8788'}/api/tasks/${id}/photos`, { method: 'POST', headers: { cookie: cookieFor('housekeeper') }, body: form });
+  const text = await r.text();
+  return { status: r.status, text, docId: JSON.parse(text || '{}').documentId };
+}
+const first = await upload();
+check('the phone uploads a proof photo', first.status < 300, first.text);
 
-const fin = await call('POST', `/api/tasks/${id}/complete`, { photoIds: [] }, 'housekeeper');
+// The [X] on a thumbnail: only the job's own cleaner, only before the job is complete.
+let rm = await call('DELETE', `/api/tasks/${id}/photos/${first.docId}`, undefined, 'technician');
+check('another field account cannot remove it', rm.status === 403, rm.text);
+rm = await call('DELETE', `/api/tasks/${id}/photos/${first.docId}`, undefined, 'housekeeper');
+check('the cleaner removes their photo', rm.status === 200, rm.text);
+rm = await call('DELETE', `/api/tasks/${id}/photos/${first.docId}`, undefined, 'housekeeper');
+check('removing it twice says it is gone', rm.status === 404, rm.text);
+const bare = await call('POST', `/api/tasks/${id}/complete`, { photoIds: [] }, 'housekeeper');
+check('with the photo removed the job cannot finish', bare.status === 422, bare.text);
+
+const proof = await upload();
+check('the phone uploads a new proof photo', proof.status < 300, proof.text);
+const fin = await call('POST', `/api/tasks/${id}/complete`, { photoIds: [proof.docId] }, 'housekeeper');
 check('the phone marks it complete', fin.status === 200, fin.text);
+rm = await call('DELETE', `/api/tasks/${id}/photos/${proof.docId}`, undefined, 'housekeeper');
+check('proof of a finished job is locked', rm.status === 409, rm.text);
 
 const board = await call('GET', `/api/housekeeping/board?date=${today}`);
 const row = (board.json?.rows ?? []).find(r => r.id === id);
@@ -52,7 +71,7 @@ check('the detail no longer carries a checklist', !('checklist' in (detail.json 
 
 const hist = await call('GET', `/api/audit?entityTable=tasks&entityId=${id}&pageSize=50`);
 const actions = (hist.json?.data ?? []).map(e => e.action);
-for (const a of ['housekeeping.create', 'task.assign_cleaner', 'task.photo', 'task.complete']) {
+for (const a of ['housekeeping.create', 'task.assign_cleaner', 'task.photo', 'task.photo_remove', 'task.complete']) {
   check(`History has ${a}`, actions.includes(a), actions.join(', '));
 }
 const who = (hist.json?.data ?? []).find(e => e.action === 'task.complete');

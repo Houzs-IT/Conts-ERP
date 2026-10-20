@@ -54,6 +54,7 @@ const FIELD_ALLOWED: [string, RegExp][] = [
   ['POST', /^\/api\/housekeeping\/tasks\/[^/]+\/(checklist|start)$/],
   ['POST', /^\/api\/housekeeping\/guest-left$/],
   ['POST', /^\/api\/tasks\/[^/]+\/(complete|photos)$/],
+  ['DELETE', /^\/api\/tasks\/[^/]+\/photos\/[^/]+$/],
   ['POST', /^\/api\/maintenance\/issues$/],
   ['POST', /^\/api\/maintenance\/issues\/[^/]+\/(photos|documents|start|end)$/],
   ['GET', /^\/api\/documents\/[^/]+\/download$/],
