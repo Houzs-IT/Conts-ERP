@@ -4,6 +4,7 @@ import PageHeader from '../components/PageHeader';
 import { Card, CardHeader } from '../components/Card';
 import { StatusBadge } from '../components/StatusBadge';
 import { Button } from '../components/Button';
+import Icon from '../components/Icon';
 import { PasswordField } from '../components/Field';
 import { CodeInput } from '../components/inputs';
 import { ConfirmDialog, type ConfirmSpec } from '../components/ConfirmDialog';
@@ -135,6 +136,7 @@ export default function AccountPage({ gate = false }: { gate?: boolean }) {
           </div>
         )}
       </Card>
+      <Button variant="secondary" size="touch" icon={<Icon name="LogOut" size="sm" />} onClick={logout} className="w-full">Log out</Button>
       <ConfirmDialog spec={confirm} busy={busy} onClose={() => setConfirm(null)} />
     </div>
   );

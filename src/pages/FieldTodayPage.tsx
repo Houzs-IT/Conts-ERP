@@ -1,9 +1,10 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Button } from '../components/Button';
 import Icon from '../components/Icon';
 import { StaleBanner } from '../components/DataState';
 import { EmptyState, Skeleton } from '../components/States';
 import { AttachmentLabel, MediaGallery } from '../components/Attachments';
+import { Drawer } from '../components/Dialog';
 import { useToast } from '../components/Toast';
 import { useConfirm } from '../components/ConfirmDialog';
 import { useApi } from '../lib/useApi';
@@ -33,8 +34,8 @@ interface Job {
 }
 interface Detail { media: MediaItem[]; access: { id: string; label: string; instruction: string }[]; parking?: string | null }
 
-/** The cleaner's phone: today's jobs grouped by building, each with the guest leaving and arriving, the time left,
- *  and the steps: guest left, start, photos and videos, complete. One column, 44px targets. */
+/** The cleaner's phone: today's jobs grouped by building as short cards to scan. Tapping one opens TaskDetail with the
+ *  access, the office's notes and the steps: guest left, start, photos and videos, complete. One column, 44px targets. */
 export default function FieldTodayPage() {
   const now = useNow(30000);
   const [pick, setPick] = useState<'today' | 'tomorrow'>('today');
@@ -42,6 +43,8 @@ export default function FieldTodayPage() {
   const { data, loading, error, reload } = useApi<{ rows: Job[] }>(`/field/tasks?date=${date}`);
   const [open, setOpen] = useState<string | null>(null);
   const jobs = data?.rows ?? [];
+  const openJob = jobs.find(j => j.id === open) ?? null;
+  useEffect(() => { if (open && data && !openJob) setOpen(null); }, [data]); // eslint-disable-line react-hooks/exhaustive-deps
   const groups = useMemo(() => {
     const m = new Map<string, { name: string; jobs: Job[] }>();
     for (const j of jobs) { const g = m.get(j.buildingId) ?? { name: j.unit.propertyName, jobs: [] }; g.jobs.push(j); m.set(j.buildingId, g); }
@@ -67,23 +70,72 @@ export default function FieldTodayPage() {
         : groups.map(([id, g]) => (
           <section key={id} className="flex flex-col gap-2">
             <h2 className="m-0 text-[16px] font-semibold tracking-[-0.01em] flex items-baseline gap-2">{g.name}<span className="text-meta text-muted-ink font-normal tabular-nums">{g.jobs.filter(j => j.done).length} of {g.jobs.length} done</span></h2>
-            {g.jobs.map(j => <JobCard key={j.id} job={j} now={now} open={open === j.id} onToggle={() => setOpen(open === j.id ? null : j.id)} onChanged={reload} />)}
+            {g.jobs.map(j => <TaskCard key={j.id} job={j} onOpen={() => setOpen(j.id)} />)}
           </section>
         ))}
-      {/* Room under the last card for the pinned job button. */}
-      {jobs.some(j => j.id === open && !j.done) && <div aria-hidden className="h-24 flex-none" />}
+      {/* The list stays mounted under the sheet, so closing it lands back at the same scroll position. */}
+      <Drawer open={!!openJob} onClose={() => setOpen(null)}>
+        {openJob && <TaskDetail key={openJob.id} job={openJob} now={now} onClose={() => setOpen(null)} onChanged={reload} />}
+      </Drawer>
     </>
   );
 }
 
-function JobCard({ job: j, now, open, onToggle, onChanged }: { job: Job; now: number; open: boolean; onToggle: () => void; onChanged: () => void }) {
+const cleanName = (j: Job) => (['turnover', 'deep_clean', 'light_clean'].includes(j.kind) ? `${KIND_LABEL[j.kind] ?? j.kind} clean` : j.work);
+const subtitle = (j: Job) => [cleanName(j), sizeLine(j.unit.size, j.unit.layout)].filter(Boolean).join(' · ');
+
+function JobStatus({ job: j }: { job: Job }) {
+  return <>
+    {!j.done && daysLate(j.day) > 0 && <StatusBadge tone="critical" title={`${plural(daysLate(j.day), 'day')} late`}>Overdue</StatusBadge>}
+    {j.done ? <StatusBadge tone="success">Done</StatusBadge> : j.state === 'in_progress' ? <StatusBadge tone="info">In progress</StatusBadge>
+      : j.guestOut ? <StatusBadge tone="gold">Guest out, ready to clean</StatusBadge> : j.previous ? <StatusBadge tone="neutral">Guest still in</StatusBadge> : <StatusBadge tone="warning">To do</StatusBadge>}
+  </>;
+}
+
+function MapLink({ address, className }: { address: string; className?: string }) {
+  return (
+    <a href={mapsLink(address)} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}
+      className={cx('min-h-11 inline-flex items-center gap-1.5 text-ink', className)}>
+      <Icon name="MapPin" size="sm" /><span className="min-w-0 underline underline-offset-2 [overflow-wrap:anywhere]">{address}</span>
+    </a>
+  );
+}
+
+/** The list card: just enough to pick the next unit. Access, notes and every action are one tap away in TaskDetail. */
+function TaskCard({ job: j, onOpen }: { job: Job; onOpen: () => void }) {
+  const address = j.external?.address ?? j.addressLine;
+  return (
+    <article role="button" tabIndex={0} onClick={onOpen}
+      onKeyDown={e => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onOpen(); } }}
+      className={cx('bg-card rounded-card border border-solid border-line px-4 pt-3.5 pb-1 flex flex-col gap-1 cursor-pointer outline-none focus-visible:border-gold active:bg-page', j.done && 'text-muted-ink')}>
+      <div className="flex items-start gap-2">
+        <b className="text-heading flex-1 min-w-0">{j.unit.unitNumber}<span className="text-copy text-muted-ink font-normal"> · {j.unit.propertyName}</span></b>
+        <span className="flex items-center gap-1.5 flex-wrap justify-end"><JobStatus job={j} /></span>
+      </div>
+      <div className="text-copy">{subtitle(j)}</div>
+      {!j.external && (
+        <div className="text-copy text-muted-ink">
+          Leaving: <span className="text-ink">{j.previous ? `${j.previous.checkOutTime} ${j.previous.guestName}` : 'No guest'}</span>
+          <span className="mx-1.5">|</span>
+          Arriving: <span className="text-ink">{j.next ? `${j.next.checkInTime} ${j.next.guestName}` : 'No check-in'}</span>
+        </div>
+      )}
+      <div className="flex items-center gap-2 text-meta">
+        {address ? <MapLink address={address} className="flex-1 min-w-0" /> : <span className="flex-1 min-h-11" />}
+        <Icon name="ChevronRight" size="sm" color="var(--color-muted-ink)" />
+      </div>
+    </article>
+  );
+}
+
+/** One job in full, in a sheet over the list: unit, access, the office's notes, guests, proof, and the actions pinned at the bottom. */
+function TaskDetail({ job: j, now, onClose, onChanged }: { job: Job; now: number; onClose: () => void; onChanged: () => void }) {
   const toast = useToast();
   const [busy, setBusy] = useState<string | null>(null);
   const [damage, setDamage] = useState(false);
-  const detail = useApi<Detail>(open ? `/housekeeping/tasks/${j.id}` : null);
+  const detail = useApi<Detail>(`/housekeeping/tasks/${j.id}`);
   const [confirm, ask] = useConfirm();
   const files = detail.data?.media.length ?? j.photoCount;
-  const isClean = ['turnover', 'deep_clean', 'light_clean'].includes(j.kind);
   // Not started, started without proof, started with proof, finished. The server's state and photo count decide it.
   const phase = j.done ? 'done' : j.state !== 'in_progress' ? 'todo' : files > 0 ? 'proof' : 'started';
 
@@ -98,107 +150,111 @@ function JobCard({ job: j, now, open, onToggle, onChanged }: { job: Job; now: nu
     if (ok === null) return;
     void act('remove', () => api.del(`/tasks/${j.id}/photos/${m.id}`), m.kind === 'video' ? 'Video removed.' : 'Photo removed.');
   }
-  const status = j.done ? <StatusBadge tone="success">Done</StatusBadge> : j.state === 'in_progress' ? <StatusBadge tone="info">In progress</StatusBadge>
-    : j.guestOut ? <StatusBadge tone="gold">Guest out, ready to clean</StatusBadge> : j.previous ? <StatusBadge tone="neutral">Guest still in</StatusBadge> : <StatusBadge tone="warning">To do</StatusBadge>;
+  // Door codes stay with the office (housekeeping/tasks/[id].ts never sends them to field staff): only the instructions show.
+  const access = detail.data?.access.length ? detail.data.access : j.accessInstruction ? [{ id: 'a', label: 'Access', instruction: j.accessInstruction }] : [];
+  const address = j.external?.address ?? j.addressLine;
+  const h3 = 'm-0 text-meta font-semibold uppercase tracking-[0.08em] text-muted-ink';
 
   return (
-    <article className={cx('bg-card rounded-card border border-solid overflow-hidden', open ? 'border-gold' : 'border-line')}>
-      <button type="button" onClick={onToggle} aria-expanded={open} className="w-full text-left p-4 flex flex-col gap-2 cursor-pointer">
-        <div className="flex items-center gap-2">
-          <b className="text-heading flex-1">{j.unit.unitNumber}<span className="text-copy text-muted-ink font-normal"> · {isClean ? `${KIND_LABEL[j.kind] ?? j.kind} clean` : j.work}</span></b>
-          {status}
+    <>
+      <div className="sticky top-0 z-[2] bg-black text-white px-2 py-2 flex items-center gap-2">
+        <button type="button" onClick={onClose} aria-label="Back to my jobs"
+          className="w-11 h-11 flex-none grid place-items-center rounded-control bg-transparent border-none text-white cursor-pointer"><Icon name="ArrowLeft" size="nav" /></button>
+        <div className="flex-1 min-w-0">
+          <div className="text-[17px] font-semibold leading-tight truncate">{j.unit.unitNumber}</div>
+          <div className="text-meta text-on-dark truncate">{j.unit.propertyName}</div>
         </div>
-        {(j.unit.size || j.unit.layout || (j.team && j.team.length > 0)) && (
-          <div className="text-meta text-muted-ink flex flex-wrap gap-x-2">
-            {(j.unit.size || j.unit.layout) && <span>{sizeLine(j.unit.size, j.unit.layout)}</span>}
-            {j.team && j.team.length > 0 && <span className="text-ink">With {j.team.join(', ')}</span>}
-          </div>
-        )}
-        {j.external ? (
-          <div className="rounded-control bg-muted px-2.5 py-2 text-copy"><span className="block text-meta text-muted-ink">External job</span><b>{j.external.address}</b>{j.external.clientName ? ` · ${j.external.clientName}` : ''}</div>
-        ) : (
-        <div className="grid grid-cols-2 gap-2 text-copy">
-          <div className="rounded-control bg-muted px-2.5 py-2"><span className="block text-meta text-muted-ink">Leaving</span>{j.previous ? <><b>{j.previous.checkOutTime}</b> {j.previous.guestName}</> : <span className="text-muted-ink">No departing guest</span>}
-            {j.guestOut && j.guestLeftAuto && <span className="block text-meta text-gold-ink">Out at checkout time</span>}</div>
-          <div className="rounded-control bg-gold-tint px-2.5 py-2"><span className="block text-meta text-muted-ink">Arriving</span>{j.next ? <><b>{j.next.checkInTime}</b> {j.next.guestName}</> : <span className="text-muted-ink">No check-in</span>}</div>
-        </div>
-        )}
-        {!j.done && (
-          <div className="flex items-center gap-2 flex-wrap text-copy">
-            {j.next ? <><span>Finish by <b className="tabular-nums">{j.next.checkInTime}</b></span><span className="text-muted-ink">·</span><span><TimeLeft at={j.next.checkInAt} now={now} />{Date.parse(j.next.checkInAt) > now ? ' left' : ''}</span></>
-              : <span className="text-muted-ink">No guest arriving after this clean.</span>}
-            {daysLate(j.day) > 0 && <StatusBadge tone="critical">Overdue · {plural(daysLate(j.day), 'day')} late</StatusBadge>}
-          </div>
-        )}
-        {j.instructions && <div className="text-copy rounded-control bg-warning-bg text-ink px-2.5 py-2"><span className="block text-meta text-muted-ink">From the office</span>{j.instructions}</div>}
-      </button>
+        <span className="flex items-center gap-1.5 flex-wrap justify-end pr-2"><JobStatus job={j} /></span>
+      </div>
 
-      {open && (
-        <div className="px-4 pb-4 flex flex-col gap-4 [border-top:1px_solid_var(--color-line-soft)] pt-3">
-          {(detail.data?.access.length ? detail.data.access : j.accessInstruction ? [{ id: 'a', label: 'Access', instruction: j.accessInstruction }] : []).map(a => (
-            <div key={a.id} className="rounded-control bg-muted p-2.5 text-copy"><b>{a.label}</b><div className="text-muted-ink">{a.instruction}</div></div>
-          ))}
-          {detail.data?.parking && <div className="rounded-control bg-muted p-2.5 text-copy"><b>Car park</b><div className="text-muted-ink">{detail.data.parking}</div></div>}
-          {j.addressLine && (
-            <a href={mapsLink(j.addressLine)} target="_blank" rel="noopener noreferrer" className="min-h-11 flex items-center gap-2 text-copy text-ink">
-              <Icon name="MapPin" size="sm" /><span className="flex-1 min-w-0 underline underline-offset-2 [overflow-wrap:anywhere]">{j.addressLine}</span><span className="text-meta text-muted-ink">Open map</span>
-            </a>
-          )}
+      <div className="flex-1 p-4 flex flex-col gap-5 text-copy">
+        <section className="flex flex-col gap-1">
+          <h3 className={h3}>Unit</h3>
+          <b className="text-heading">{j.unit.unitNumber} · {j.unit.propertyName}</b>
+          <span>{subtitle(j)}</span>
+          {j.team && j.team.length > 0 && <span>With {j.team.join(', ')}</span>}
+          {j.external?.clientName && <span>{j.external.clientName}{j.external.clientPhone ? ` · ${j.external.clientPhone}` : ''}</span>}
+          {address && <MapLink address={address} className="self-start" />}
+        </section>
 
-          {!j.done && j.previous && !j.guestOut && (
-            <Button size="touch" variant="secondary" loading={busy === 'left'} onClick={() => void act('left', () => api.post('/housekeeping/guest-left', { taskId: j.id }), 'Guest out. Ready to clean.')}>Guest left</Button>
-          )}
+        {!j.external && (
+          <section className="flex flex-col gap-2">
+            <h3 className={h3}>Access</h3>
+            {!detail.data && !access.length ? <Skeleton height={44} />
+              : access.length === 0 ? <span className="text-muted-ink">No access details on this unit. Ask the office.</span>
+              : access.map(a => <div key={a.id} className="rounded-control bg-muted p-3"><b>{a.label}</b><div className="text-muted-ink">{a.instruction}</div></div>)}
+            {detail.data?.parking && <div className="rounded-control bg-muted p-3"><b>Car park</b><div className="text-muted-ink">{detail.data.parking}</div></div>}
+          </section>
+        )}
 
-          {phase === 'done' && (
-            <div role="status" className="rounded-control bg-success-bg p-3 flex items-start gap-2.5 text-copy">
-              <Icon name="CircleCheck" size="base" color="var(--color-success-line)" />
-              <span><b>Job complete{j.completedAt ? ` at ${hm(j.completedAt)}` : ''}.</b>{j.startedAt ? ` Started ${hm(j.startedAt)}.` : ''}
-                <span className="block text-meta text-muted-ink">Proof of work is locked. Ask the office if something needs changing.</span></span>
+        {j.instructions && (
+          <section className="flex flex-col gap-2">
+            <h3 className={h3}>From the office</h3>
+            <div className="rounded-control bg-warning-bg text-ink p-3 whitespace-pre-line">{j.instructions}</div>
+          </section>
+        )}
+
+        {!j.external && (
+          <section className="flex flex-col gap-2">
+            <h3 className={h3}>Guests</h3>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="rounded-control bg-muted px-2.5 py-2"><span className="block text-meta text-muted-ink">Leaving</span>{j.previous ? <><b>{j.previous.checkOutTime}</b> {j.previous.guestName}</> : <span className="text-muted-ink">No departing guest</span>}
+                {j.guestOut && <span className="block text-meta text-gold-ink">{j.guestLeftAuto ? 'Out at checkout time' : 'Guest out'}</span>}</div>
+              <div className="rounded-control bg-gold-tint px-2.5 py-2"><span className="block text-meta text-muted-ink">Arriving</span>{j.next ? <><b>{j.next.checkInTime}</b> {j.next.guestName}</> : <span className="text-muted-ink">No check-in</span>}</div>
             </div>
-          )}
-
-          {/* Proof only once the job is started: photos taken before the start would not prove the finished work. */}
-          {phase !== 'todo' && (
-            <section className="flex flex-col gap-2">
-              {j.startedAt && phase !== 'done' && <span className="text-meta text-muted-ink">Started {hm(j.startedAt)}</span>}
-              <AttachmentLabel title="Proof of work" count={files} hint={
-                phase === 'started' ? <StatusBadge tone="warning">1 photo or video required</StatusBadge>
-                  : phase === 'proof' ? <StatusBadge tone="success"><span className="inline-flex items-center gap-1">Proof attached<Icon name="Check" size="sm" style={{ width: 13, height: 13 }} /></span></StatusBadge>
-                  : undefined} />
-              {detail.data ? <MediaGallery items={detail.data.media} upload={j.done ? undefined : uploadTo(`/tasks/${j.id}/photos`)} onDone={() => { detail.reload(); onChanged(); }}
-                onRemove={j.done ? undefined : m => void remove(m)} addLabel="Take or add photo" emptyText="No photos were added." />
-                : <Skeleton height={84} />}
-            </section>
-          )}
-
-          {!j.external && <Button size="touch" variant="secondary" icon={<Icon name="TriangleAlert" size="sm" />} onClick={() => setDamage(true)}>Report damage</Button>}
-        </div>
-      )}
-
-      {/* One action at a time, pinned above the phone's home bar. data-action-bar lifts the staging View as switch above it (ViewAs.tsx). */}
-      {open && phase !== 'done' && (
-        <div data-action-bar className="fixed inset-x-0 bottom-0 z-50 bg-card [border-top:1px_solid_var(--color-line)] px-4 pt-3 pb-[max(12px,env(safe-area-inset-bottom))]">
-          <div className="max-w-[528px] mx-auto flex flex-col gap-1.5">
-            {phase === 'todo' ? (
-              <Button size="touch" variant="primary" loading={busy === 'start'}
-                onClick={() => void act('start', () => api.post(`/housekeeping/tasks/${j.id}/start`, {}), `Started at ${hm(new Date().toISOString())}.`)}>
-                Start job
-              </Button>
-            ) : (
-              <Button size="touch" variant="primary" loading={busy === 'done'} disabled={phase === 'started' || busy === 'remove'}
-                onClick={() => void act('done', () => api.post(`/tasks/${j.id}/complete`, { photoIds: detail.data?.media.map(m => m.id) ?? [] }), `${j.unit.unitNumber} done. Thank you.`)}>
-                {phase === 'started' ? 'Upload photo to complete' : 'Mark complete'}
-              </Button>
+            {!j.done && (j.next
+              ? <span>Finish by <b className="tabular-nums">{j.next.checkInTime}</b> · <TimeLeft at={j.next.checkInAt} now={now} />{Date.parse(j.next.checkInAt) > now ? ' left' : ''}</span>
+              : <span className="text-muted-ink">No guest arriving after this clean.</span>)}
+            {!j.done && daysLate(j.day) > 0 && <span className="text-danger">Overdue · {plural(daysLate(j.day), 'day')} late (from {dayLabel(j.day)}).</span>}
+            {!j.done && j.previous && !j.guestOut && (
+              <Button size="touch" variant="secondary" loading={busy === 'left'} onClick={() => void act('left', () => api.post('/housekeeping/guest-left', { taskId: j.id }), 'Guest out. Ready to clean.')}>Guest left</Button>
             )}
-            <span className="text-meta text-muted-ink text-center" aria-live="polite">
-              <b className="text-ink">{j.unit.unitNumber}</b> · {phase === 'todo' ? 'Not started yet' : phase === 'started' ? 'Upload proof of work to complete' : 'Proof attached, ready to finish'}
-            </span>
+          </section>
+        )}
+
+        {phase === 'done' && (
+          <div role="status" className="rounded-control bg-success-bg p-3 flex items-start gap-2.5">
+            <Icon name="CircleCheck" size="base" color="var(--color-success-line)" />
+            <span><b>Job complete{j.completedAt ? ` at ${hm(j.completedAt)}` : ''}.</b>{j.startedAt ? ` Started ${hm(j.startedAt)}.` : ''}
+              <span className="block text-meta text-muted-ink">Proof of work is locked. Ask the office if something needs changing.</span></span>
           </div>
+        )}
+
+        {/* Proof only once the job is started: photos taken before the start would not prove the finished work. */}
+        {phase !== 'todo' && (
+          <section className="flex flex-col gap-2">
+            {j.startedAt && phase !== 'done' && <span className="text-meta text-muted-ink">Started {hm(j.startedAt)}</span>}
+            <AttachmentLabel title="Proof of work" count={files} hint={
+              phase === 'started' ? <StatusBadge tone="warning">1 photo or video required</StatusBadge>
+                : phase === 'proof' ? <StatusBadge tone="success"><span className="inline-flex items-center gap-1">Proof attached<Icon name="Check" size="sm" style={{ width: 13, height: 13 }} /></span></StatusBadge>
+                : undefined} />
+            {detail.data ? <MediaGallery items={detail.data.media} upload={j.done ? undefined : uploadTo(`/tasks/${j.id}/photos`)} onDone={() => { detail.reload(); onChanged(); }}
+              onRemove={j.done ? undefined : m => void remove(m)} addLabel="Take or add photo" emptyText="No photos were added." />
+              : <Skeleton height={84} />}
+          </section>
+        )}
+      </div>
+
+      {/* Pinned above the phone's home bar. data-action-bar lifts the staging View as switch above it (ViewAs.tsx). */}
+      {(phase !== 'done' || !j.external) && (
+        <div data-action-bar className="sticky bottom-0 z-[2] bg-card [border-top:1px_solid_var(--color-line)] px-4 pt-3 pb-[max(12px,env(safe-area-inset-bottom))] flex flex-col gap-2">
+          {phase === 'todo' ? (
+            <Button size="touch" variant="primary" className="w-full" loading={busy === 'start'}
+              onClick={() => void act('start', () => api.post(`/housekeeping/tasks/${j.id}/start`, {}), `Started at ${hm(new Date().toISOString())}.`)}>
+              Start job
+            </Button>
+          ) : phase !== 'done' && (
+            <Button size="touch" variant="primary" className="w-full" loading={busy === 'done'} disabled={phase === 'started' || busy === 'remove'}
+              onClick={() => void act('done', () => api.post(`/tasks/${j.id}/complete`, { photoIds: detail.data?.media.map(m => m.id) ?? [] }), `${j.unit.unitNumber} done. Thank you.`)}>
+              {phase === 'started' ? 'Upload photo to complete' : 'Mark complete'}
+            </Button>
+          )}
+          {!j.external && <Button size="touch" variant="secondary" className="w-full" icon={<Icon name="TriangleAlert" size="sm" />} onClick={() => setDamage(true)}>Report damage</Button>}
         </div>
       )}
       {confirm}
       {damage && <ReportDamageModal unitId={j.unitId} unitLabel={`${j.unit.propertyName} ${j.unit.unitNumber}`} taskId={j.id} onClose={() => setDamage(false)}
         onDone={() => { setDamage(false); toast({ tone: 'success', title: 'Damage reported.', body: 'The office has it as a maintenance job.' }); }} />}
-    </article>
+    </>
   );
 }
