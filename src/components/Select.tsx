@@ -41,15 +41,13 @@ export function Select({ value, onChange, options, label, showLabel, placeholder
 /**
  * A searchable picker for long lists (139 units): type to filter, options grouped (by building) and
  * sorted A to Z, arrow keys and Enter to choose, Escape to close. `allLabel` adds a first "All ..." row.
- * `allowNew` turns it into a free-text field with suggestions: what was typed can be used as it is.
  */
-export function SearchSelect({ value, onChange, options, label, showLabel, allLabel, placeholder = 'Search', className, renderOption, size = 'sm', allowNew, maxLength = 80, error }: {
+export function SearchSelect({ value, onChange, options, label, showLabel, allLabel, placeholder = 'Search', className, renderOption, size = 'sm' }: {
   value: string; onChange: (v: string) => void; options: SelectOption[]; label: string;
   showLabel?: boolean; allLabel?: string; placeholder?: string; className?: string;
   renderOption?: (o: SelectOption) => ReactNode;
   /** md = 40px, the height of the text fields in a dialog form; sm = 36px for filter bars. */
   size?: 'sm' | 'md';
-  allowNew?: boolean; maxLength?: number; error?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
@@ -57,18 +55,15 @@ export function SearchSelect({ value, onChange, options, label, showLabel, allLa
   const box = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLInputElement>(null);
   const listId = useId();
-  const errorId = useId();
 
   const sorted = useMemo(() => [...options].sort((a, b) =>
     (a.group ?? '').localeCompare(b.group ?? '', 'en', { numeric: true }) || a.label.localeCompare(b.label, 'en', { numeric: true })), [options]);
   const shown = useMemo(() => {
     const t = q.trim().toLowerCase();
     const hits = t ? sorted.filter(o => `${o.group ?? ''} ${o.label} ${o.hint ?? ''}`.toLowerCase().includes(t)) : sorted;
-    const typed = q.trim().slice(0, maxLength);
-    const extra = allowNew && typed && !options.some(o => o.label.toLowerCase() === typed.toLowerCase()) ? [{ value: typed, label: `Use "${typed}"`, hint: 'New' } as SelectOption] : [];
-    return allLabel && !t ? [{ value: '', label: allLabel }, ...hits] : [...hits, ...extra];
-  }, [sorted, q, allLabel, allowNew, maxLength, options]);
-  const current = options.find(o => o.value === value) ?? (allowNew && value ? { value, label: value } : undefined);
+    return allLabel && !t ? [{ value: '', label: allLabel }, ...hits] : hits;
+  }, [sorted, q, allLabel]);
+  const current = options.find(o => o.value === value);
 
   useEffect(() => {
     if (!open) return;
@@ -93,9 +88,8 @@ export function SearchSelect({ value, onChange, options, label, showLabel, allLa
     <div ref={box} className={cx('relative flex flex-col gap-1.5 min-w-0', className)}>
       <span className={showLabel ? 'text-meta font-medium text-muted-ink' : 'absolute w-px h-px overflow-hidden [clip:rect(0_0_0_0)]'}>{label}</span>
       <button type="button" aria-haspopup="listbox" aria-expanded={open} aria-label={`${label}: ${current?.label ?? allLabel ?? 'none'}`}
-        aria-describedby={error ? errorId : undefined}
         onClick={() => setOpen(v => !v)}
-        className={cx(CONTROL, 'w-full flex items-center gap-2 pl-3 pr-2 text-left', size === 'md' && 'h-10', error && 'border-danger-line')}>
+        className={cx(CONTROL, 'w-full flex items-center gap-2 pl-3 pr-2 text-left', size === 'md' && 'h-10')}>
         <span className={cx('flex-1 min-w-0 truncate', !current && !/^All/.test(allLabel ?? '') && 'text-muted-ink')}>{current ? (current.group ? `${current.label}` : current.label) : (allLabel ?? 'Choose')}</span>
         <Icon name="ChevronDown" size="sm" color="var(--color-muted-ink)" />
       </button>
@@ -108,7 +102,7 @@ export function SearchSelect({ value, onChange, options, label, showLabel, allLa
               className="flex-1 min-w-0 border-none outline-none bg-transparent font-sans text-copy text-ink" />
           </div>
           <div id={listId} role="listbox" aria-label={label} className="max-h-[300px] overflow-y-auto py-1">
-            {shown.length === 0 && <div className="px-3 py-3 text-meta text-muted-ink">{allowNew ? 'Type a name to add it.' : `No match for "${q.trim()}".`}</div>}
+            {shown.length === 0 && <div className="px-3 py-3 text-meta text-muted-ink">No match for "{q.trim()}".</div>}
             {shown.map((o, i) => {
               const head = o.group && o.group !== lastGroup ? o.group : null;
               lastGroup = o.group;
@@ -129,7 +123,92 @@ export function SearchSelect({ value, onChange, options, label, showLabel, allLa
           </div>
         </div>
       )}
-      {error && <span id={errorId} className="text-meta text-danger">{error}</span>}
+    </div>
+  );
+}
+
+/**
+ * A text field with suggestions underneath, for free-text values that should stay consistent (a department, a job title).
+ * Typing filters the list as you go; arrow keys and Enter pick, Escape closes the list. Whatever is typed is the value,
+ * so a new name needs no extra step. Looks like the dialog-size Select beside it.
+ */
+export function ComboInput({ value, onChange, options, label, placeholder, maxLength = 80, error }: {
+  value: string; onChange: (v: string) => void; options: SelectOption[]; label: string;
+  placeholder?: string; maxLength?: number; error?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  // The list filters only once the person types; opening it on a filled field shows every option.
+  const [typed, setTyped] = useState(false);
+  const [active, setActive] = useState(-1);
+  const box = useRef<HTMLDivElement>(null);
+  const id = useId();
+  const listId = `${id}-list`;
+
+  const shown = useMemo(() => {
+    const t = typed ? value.trim().toLowerCase() : '';
+    const sorted = [...options].sort((a, b) => (a.group ?? '').localeCompare(b.group ?? '') || a.label.localeCompare(b.label));
+    return t ? sorted.filter(o => `${o.group ?? ''} ${o.label}`.toLowerCase().includes(t)) : sorted;
+  }, [options, value, typed]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [open]);
+  useEffect(() => { setActive(-1); }, [value]);
+
+  const show = () => { setTyped(false); setActive(-1); setOpen(true); };
+  const pick = (o: SelectOption) => { onChange(o.value); setOpen(false); };
+  const onKey = (e: React.KeyboardEvent) => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); if (!open) { setOpen(true); setActive(0); } else setActive(a => Math.min(a + 1, shown.length - 1)); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setActive(a => Math.max(a - 1, 0)); }
+    // Enter in an open list picks the highlighted row, or just closes the list: it never sends the form behind it.
+    else if (e.key === 'Enter' && open) { e.preventDefault(); if (shown[active]) pick(shown[active]); else setOpen(false); }
+    // Only an open list takes Escape; with it closed, the dialog around the field closes as usual.
+    else if (e.key === 'Escape' && open) { e.preventDefault(); setOpen(false); }
+    else if (e.key === 'Tab') setOpen(false);
+  };
+
+  let lastGroup: string | undefined;
+  return (
+    <div ref={box} className="relative flex flex-col gap-1.5 min-w-0">
+      <label htmlFor={id} className="text-meta font-medium text-muted-ink">{label}</label>
+      <div className="relative flex items-center min-w-0">
+        <input id={id} value={value} placeholder={placeholder} maxLength={maxLength} autoComplete="off"
+          role="combobox" aria-autocomplete="list" aria-expanded={open} aria-controls={listId}
+          aria-activedescendant={open && active >= 0 ? `${listId}-${active}` : undefined}
+          aria-invalid={!!error || undefined} aria-describedby={error ? `${id}-error` : undefined}
+          onChange={e => { onChange(e.target.value); setTyped(true); setOpen(true); }}
+          onClick={() => { if (!open) show(); }} onKeyDown={onKey}
+          className="field-input" style={{ paddingRight: 36 }} />
+        <button type="button" tabIndex={-1} aria-label={`Show ${label.toLowerCase()} suggestions`} onMouseDown={e => e.preventDefault()}
+          onClick={() => (open ? setOpen(false) : show())}
+          className="absolute right-1 w-8 h-8 grid place-items-center bg-transparent border-none cursor-pointer text-muted-ink">
+          <Icon name="ChevronDown" size="sm" />
+        </button>
+      </div>
+      {open && shown.length > 0 && (
+        <div id={listId} role="listbox" aria-label={label}
+          className="absolute z-30 top-[calc(100%+4px)] left-0 w-full max-h-[260px] overflow-y-auto overscroll-contain py-1 bg-card border border-solid border-line rounded-card shadow-[var(--shadow-overlay)]">
+          {shown.map((o, i) => {
+            const head = o.group && o.group !== lastGroup ? o.group : null;
+            lastGroup = o.group;
+            return (
+              <Fragment key={`${o.value}-${i}`}>
+                {head && <div className="px-3 pt-2 pb-1 text-caption font-semibold uppercase tracking-[0.06em] text-muted-ink">{head}</div>}
+                <div id={`${listId}-${i}`} role="option" aria-selected={o.value === value}
+                  onMouseEnter={() => setActive(i)} onMouseDown={e => { e.preventDefault(); pick(o); }}
+                  className={cx('mx-1 px-2.5 py-[7px] rounded-control flex items-center gap-2 text-copy cursor-pointer', i === active && 'bg-muted', o.value === value && 'font-semibold')}>
+                  <span className="flex-1 min-w-0 truncate">{o.label}</span>
+                  {o.value === value && <Icon name="Check" size="sm" />}
+                </div>
+              </Fragment>
+            );
+          })}
+        </div>
+      )}
+      {error && <span id={`${id}-error`} className="text-meta text-danger">{error}</span>}
     </div>
   );
 }

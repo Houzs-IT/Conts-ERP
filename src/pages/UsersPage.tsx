@@ -9,7 +9,7 @@ import { Button } from '../components/Button';
 import { ConfirmDialog, type ConfirmSpec } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
 import { PhoneInput, phoneProblem } from '../components/inputs';
-import { Select, SearchSelect } from '../components/Select';
+import { Select, ComboInput } from '../components/Select';
 import { StaleBanner } from '../components/DataState';
 import { DataTable, type Column } from '../components/DataTable';
 import { useToast } from '../components/Toast';
@@ -815,9 +815,9 @@ export default function UsersPage() {
 }
 
 /* ------------------------------ row actions ------------------------------ */
-/** Department, then position: pick a suggestion or type a new one, in the same dropdown as Role and Reports to.
+/** Department, then position: type to filter the suggestions under the field, or type a new name.
  *  The position list follows the department; with no department yet it lists every position under its department,
- *  and picking one fills the department in ("3D Designer" means Design). Shown after the person's name in renovation pickers. */
+ *  and a known position fills the department in ("3D Designer" means Design). Shown after the person's name in renovation pickers. */
 function JobFields({ department, position, onDepartment, onPosition, errors, departments, positions, departmentOf }: {
   department: string; position: string; onDepartment: (v: string) => void; onPosition: (v: string) => void;
   errors: { department?: string; position?: string }; departments: string[]; positions: string[];
@@ -831,11 +831,11 @@ function JobFields({ department, position, onDepartment, onPosition, errors, dep
   };
   return (
     <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-4">
-      <SearchSelect label="Department" showLabel size="md" allowNew allLabel="Not set" value={department} onChange={onDepartment}
-        options={departments.map(v => ({ value: v, label: v }))} placeholder="Search or type a department" error={errors.department} />
-      <SearchSelect label="Position" showLabel size="md" allowNew allLabel="Not set" value={position} onChange={pickPosition}
+      <ComboInput label="Department" value={department} onChange={onDepartment} placeholder="Sales"
+        options={departments.map(v => ({ value: v, label: v }))} error={errors.department} />
+      <ComboInput label="Position" value={position} onChange={pickPosition} placeholder="Sales Executive"
         options={positions.map(v => ({ value: v, label: v, group: department.trim() ? undefined : departmentOf(v) ?? 'Other' }))}
-        placeholder="Search or type a position" error={errors.position} />
+        error={errors.position} />
     </div>
   );
 }
