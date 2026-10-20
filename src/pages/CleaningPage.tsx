@@ -20,14 +20,14 @@ import { api, errorMessage } from '../lib/api';
 import { useCleaners } from '../lib/useCleaners';
 import { useUnitRoster } from '../lib/useUnitRoster';
 import { UnitPicker } from '../components/UnitPicker';
-import { useNow } from '../lib/useMedia';
+import { useMedia, useNow } from '../lib/useMedia';
 import { useSession } from '../lib/session';
 import { runEach, skippedNote } from '../lib/bulk';
 import { fetchAllPages } from '../lib/export';
 import { cx } from '../lib/design-tokens';
 import { rm, plural, count } from '../lib/format';
 import type { Tone } from '../lib/types';
-import { RecordHistory } from '../components/RecordHistory';
+import { PhoneHistory, RecordHistory } from '../components/RecordHistory';
 import { PricesView, PayView } from './CleaningSetup';
 import { JobMoneyPanel, JobProfitView } from '../components/ops/JobMoney';
 import {
@@ -276,7 +276,7 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
               )}
             </header>
             {mayBulk && overdueOpen && picks.size > 0 && (
-              <div role="toolbar" aria-label="Close the selected overdue jobs" className="sticky top-0 z-[1] mx-3 mb-3 px-3 py-2 rounded-control bg-card border border-solid border-line flex items-center gap-2 flex-wrap shadow-[var(--shadow-overlay)]">
+              <div role="toolbar" aria-label="Close the selected overdue jobs" className="sticky top-0 z-[1] mx-3 mb-3 px-3 py-2 rounded-control bg-card border border-solid border-line flex items-center gap-2 flex-wrap shadow-[var(--shadow-overlay)] max-md:fixed max-md:top-auto max-md:inset-x-3 max-md:bottom-[calc(88px+env(safe-area-inset-bottom))] max-md:z-30 max-md:m-0">
                 <span className="text-copy font-medium">{picks.size} selected</span>
                 <Button size="sm" variant="tertiary" onClick={() => setPicks(new Set())} className="mr-auto">Clear</Button>
                 <span className="flex gap-2 max-md:w-full">
@@ -307,6 +307,8 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
             onSelect={id => setSelected(id)} onGuestLeft={guestLeft} onUndoLeft={undoLeft} onCheckIn={setCheckIn} onPlan={plan}
             onAssign={() => setAssignFor({ buildingId: g.id, name: g.name })} />
         ))}
+        {/* Room under the last job for the bar pinned to the bottom of a phone. */}
+        {mayBulk && overdueOpen && picks.size > 0 && <div aria-hidden className="md:hidden h-20 flex-none" />}
       </>}
     </>
   );
@@ -356,7 +358,8 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
 
       <SplitPane list={list} open={!!sel} onClose={() => setSelected(null)} width={580} compactList
         empty={<div className="text-center text-copy text-muted-ink p-6 max-w-[260px]"><Icon name="MousePointerClick" size="lg" /><p className="mt-2">Pick a unit to see its cleaner, door code and proof photos.</p></div>}
-        detail={sel ? <CleanDetail key={sel.id} row={sel} now={now} onClose={() => setSelected(null)} onChanged={reload} onGuestLeft={() => void guestLeft({ taskId: sel.id }, sel.unitNumber)} /> : null} />
+        detail={sel ? <CleanDetail key={sel.id} row={sel} now={now} onClose={() => setSelected(null)} onChanged={reload} onGuestLeft={() => void guestLeft({ taskId: sel.id }, sel.unitNumber)}
+          onCheckIn={t => sel.next?.reservationId && void setCheckIn(sel.next.reservationId, t, sel.unitNumber)} savingIn={!!sel.next?.reservationId && busy === `in-${sel.next.reservationId}`} /> : null} />
 
       {bulk && (
         <BulkCloseModal action={bulk} jobs={overdueRows.filter(r => picks.has(r.id))} onClose={() => setBulk(null)}
@@ -455,6 +458,69 @@ function BuildingCard({ group, now, future, selected, busy, onSelect, onGuestLef
   const ids = group.rows.map(r => r.id);
   const allPicked = !!picks && ids.length > 0 && ids.every(id => picks.has(id));
   const somePicked = !!picks && ids.some(id => picks.has(id));
+  // Phones get one compact card per job so four or five fit a screen (owner, 20 Oct 2026); tablet and up keep the table.
+  const phone = useMedia('(max-width: 767.98px)');
+  if (phone) {
+    return (
+      <section className="bg-card rounded-card border border-solid border-line overflow-hidden flex-none">
+        <header className="flex items-center gap-2 pl-3 pr-2 py-1.5 min-h-11">
+          {picks && (
+            <input type="checkbox" checked={allPicked} ref={el => { if (el) el.indeterminate = somePicked && !allPicked; }} onChange={e => picks.toggle(ids, e.target.checked)}
+              aria-label={`Select every overdue job in ${group.name}`} className="flex-none w-4 h-4 m-0 accent-[var(--color-brand-black)] cursor-pointer" />
+          )}
+          <button type="button" onClick={() => setShut(v => !v)} aria-expanded={!shut}
+            className="min-w-0 flex-1 flex items-center gap-1.5 bg-transparent border-none p-0 min-h-9 cursor-pointer text-left text-ink [font-family:inherit]">
+            <Icon name={shut ? 'ChevronRight' : 'ChevronDown'} size="sm" color="var(--color-muted-ink)" />
+            <span className="min-w-0 truncate text-copy font-semibold">{group.name}</span>
+            <span className="flex-none text-meta text-muted-ink tabular-nums">{group.rows.length} · {doneN} done</span>
+          </button>
+          {group.departures.length > 0 && <span className="flex-none"><StatusBadge tone="critical" size="sm">{group.departures.length} to plan</StatusBadge></span>}
+          {unassigned > 0 && <span className="flex-none text-meta text-danger font-medium tabular-nums">{unassigned} unassigned</span>}
+          {open.length > 0 && onAssign && (
+            <button type="button" onClick={onAssign} aria-label={external ? 'Assign external jobs' : 'Assign whole building'} title={external ? 'Assign external jobs' : 'Assign whole building'}
+              className="flex-none h-9 min-w-9 px-2 sm:px-3 inline-flex items-center justify-center gap-1.5 rounded-control border-0 bg-black text-white cursor-pointer text-meta font-medium [font-family:inherit]">
+              <Icon name="Users" size="sm" /><span className="max-sm:hidden">{external ? 'Assign external jobs' : 'Assign whole building'}</span>
+            </button>
+          )}
+        </header>
+        {!shut && <>
+          {group.rows.map(r => <PhoneCleanCard key={r.id} r={r} now={now} active={r.id === selected} busy={busy === `left-${r.id}`}
+            picked={picks ? picks.has(r.id) : undefined} onPick={picks ? on => picks.toggle([r.id], on) : undefined}
+            onSelect={() => onSelect(r.id)} onGuestLeft={() => onGuestLeft({ taskId: r.id }, r.unitNumber)} onUndoLeft={() => onUndoLeft(r.id, r.unitNumber)} />)}
+          {group.departures.map(d => (
+            <div key={d.reservationId} className="px-3 py-2.5 [border-top:1px_solid_var(--color-line-soft)] text-copy flex flex-col gap-1">
+              <div className="flex items-center flex-wrap gap-x-2 gap-y-1 min-w-0">
+                <b className="flex-none whitespace-nowrap text-ink">{d.unitNumber}</b>
+                <span className="ml-auto min-w-0 flex justify-end"><StatusBadge tone="critical" size="sm">No cleaning job</StatusBadge></span>
+              </div>
+              <div className="flex items-center gap-x-1.5 min-w-0">
+                <span className="min-w-0 flex items-center gap-1"><span className="flex-none text-muted-ink">Out</span><b className="flex-none tabular-nums">{d.checkOutTime}</b><span className="min-w-0 truncate">{d.guestName}</span></span>
+                {d.state === 'checked_out' && <span className="flex-none"><StatusBadge tone="gold" size="sm">Out</StatusBadge></span>}
+                <span className="flex-none text-faint">·</span>
+                <span className="flex-none whitespace-nowrap">{d.next ? <><span className="text-muted-ink">In </span><b className="tabular-nums">{d.next.checkInTime}</b></> : <span className="text-muted-ink">No check-in</span>}</span>
+                {d.next && <span className="flex-none ml-auto pl-1 text-meta whitespace-nowrap"><TimeLeft at={d.next.checkInAt} now={now} /></span>}
+              </div>
+              <div className="flex items-center justify-end gap-2 pt-0.5">
+                {d.state !== 'checked_out' && !future && <Button size="sm" variant="secondary" loading={busy === `left-${d.reservationId}`} onClick={() => onGuestLeft({ reservationId: d.reservationId }, d.unitNumber)}>Guest left</Button>}
+                <Button size="sm" variant="primary" loading={busy === `plan-${d.reservationId}`} onClick={() => onPlan(d)}>Plan cleaning</Button>
+              </div>
+            </div>
+          ))}
+          {group.repairs.length > 0 && (
+            <div className="px-3 py-2 [border-top:1px_solid_var(--color-line-soft)] bg-page flex flex-col gap-1">
+              {group.repairs.map(w => (
+                <div key={w.id} className="flex items-center gap-2 text-meta min-w-0">
+                  <Icon name="Wrench" size="sm" color="var(--color-gold-ink)" />
+                  <span className="min-w-0 truncate"><b>{w.unitNumber}</b> repair {hm(w.startsAt)}–{hm(w.endsAt)}: {w.title}</span>
+                  {w.overlaps.length > 0 && <span className="flex-none"><StatusBadge tone="critical" size="sm">Overlaps</StatusBadge></span>}
+                </div>
+              ))}
+            </div>
+          )}
+        </>}
+      </section>
+    );
+  }
   return (
     <section className="@container bg-card rounded-card border border-solid border-line overflow-hidden flex-none">
       <header className="flex items-center justify-between gap-3 flex-wrap px-4 @2xl:px-5 py-3">
@@ -569,13 +635,77 @@ function CleanRow({ r, now, active, busy, savingIn, onSelect, onGuestLeft, onUnd
   );
 }
 
+/** Phone status words: the tick on the card already says the guest is out. */
+const PHONE_STATUS: Record<string, string> = { ready: 'Ready to clean', done: 'Done' };
+
+const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]!.toUpperCase()).join('');
+
+/** One job on a phone, in three short lines: unit and status; who leaves and arrives; layout, type, amount, cleaner. */
+function PhoneCleanCard({ r, now, active, busy, onSelect, onGuestLeft, onUndoLeft, picked, onPick }: {
+  r: Row; now: number; active: boolean; busy: boolean; onSelect: () => void; onGuestLeft: () => void; onUndoLeft: () => void;
+  picked?: boolean; onPick?: (on: boolean) => void;
+}) {
+  const st = statusOf('cleaning', r.status);
+  const mayTick = !!r.previous && r.status !== 'done' && r.status !== 'cleaning' && r.day <= mytDay(0);
+  const names = r.cleaners.length ? r.cleaners.map(c => c.name) : r.assigneeName ? [r.assigneeName] : [];
+  const meta = [r.unit?.layout ?? r.unit?.size, KIND_LABEL[r.kind] ?? r.kind].filter(Boolean).join(' · ');
+  return (
+    <div role="button" tabIndex={0} aria-pressed={active} onClick={onSelect} onKeyDown={e => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onSelect(); } }}
+      className={cx('px-3 py-2.5 [border-top:1px_solid_var(--color-line-soft)] text-copy cursor-pointer flex flex-col gap-1 outline-none focus-visible:[box-shadow:inset_0_0_0_2px_var(--color-gold)]',
+        active ? 'bg-gold-tint [box-shadow:inset_3px_0_0_var(--color-gold)]' : 'active:bg-page')}>
+      {/* Wraps rather than cutting the unit code short (it read "C." on a phone). */}
+      <div className="flex items-center flex-wrap gap-x-2 gap-y-1 min-w-0">
+        {onPick && (
+          <input type="checkbox" checked={!!picked} onChange={e => onPick(e.target.checked)} onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}
+            aria-label={`Select ${r.unitNumber}, ${dayLabel(r.day)}`} className="flex-none w-4 h-4 m-0 accent-[var(--color-brand-black)] cursor-pointer" />
+        )}
+        {r.external ? <b className="min-w-0 truncate text-ink">{r.external.address}</b> : <b className="flex-none whitespace-nowrap text-ink">{r.unitNumber}</b>}
+        {r.carriedOver && <span className="min-w-0 flex"><StatusBadge tone="warning" size="sm" title={`Carried over from ${dayLabel(r.day)}`}>{dayLabel(r.day).replace(/^\w+\s/, '')}</StatusBadge></span>}
+        <span className="ml-auto min-w-0 flex justify-end"><StatusBadge tone={st.tone} size="sm">{PHONE_STATUS[r.status] ?? st.label}</StatusBadge></span>
+      </div>
+      {r.external ? (
+        <div className="min-w-0 truncate">{r.external.clientName ?? <span className="text-muted-ink">No client name</span>}{r.external.clientPhone && <span className="text-muted-ink"> · {r.external.clientPhone}</span>}</div>
+      ) : (
+        <div className="flex items-center gap-x-1.5 min-w-0 min-h-6">
+          {r.previous ? (
+            <span className="min-w-0 flex items-center gap-1">
+              <span className="flex-none text-muted-ink">Out</span><b className="flex-none tabular-nums">{r.previous.checkOutTime}</b>
+              <span className="min-w-0 truncate" title={r.previous.guestName}>{r.previous.guestName}</span>
+              {mayTick ? <GuestOutTick out={r.guestOut} busy={busy} onTick={r.guestOut ? onUndoLeft : onGuestLeft} small />
+                : r.guestOut && <span className="flex-none text-gold-ink" title="Guest is out"><Icon name="Check" size="sm" /></span>}
+            </span>
+          ) : <span className="min-w-0 truncate text-muted-ink">No guest leaving</span>}
+          <span className="flex-none text-faint">·</span>
+          <span className="flex-none whitespace-nowrap">{r.next ? <><span className="text-muted-ink">In </span><b className="tabular-nums">{r.next.checkInTime}</b></> : <span className="text-muted-ink">No check-in</span>}</span>
+          {r.next && r.status !== 'done' && <span className="flex-none ml-auto pl-1 text-meta whitespace-nowrap"><TimeLeft at={r.next.checkInAt} now={now} /></span>}
+        </div>
+      )}
+      <div className="flex items-center gap-2 min-w-0 text-meta text-muted-ink">
+        <span className="min-w-0 truncate">
+          {meta}{meta && ' · '}{r.amount != null ? <span className="tabular-nums">{rm(r.amount, { cents: false })}</span> : <span className="text-warning font-medium">Price not set</span>}
+        </span>
+        <span className="flex-none ml-auto flex items-center" title={names.join(', ') || undefined}>
+          {names.length ? <>
+            {names.slice(0, 2).map((n, i) => (
+              <span key={i} aria-hidden className={cx('w-6 h-6 rounded-full grid place-items-center bg-muted text-ink text-[10px] font-semibold border-2 border-solid border-card', i > 0 && '-ml-1.5')}>{initials(n)}</span>
+            ))}
+            {names.length > 2 && <span aria-hidden className="ml-1 font-semibold">+{names.length - 2}</span>}
+            {names.length === 1 && <span aria-hidden className="ml-1.5 max-w-[96px] truncate text-ink">{names[0]!.split(/\s+/)[0]}</span>}
+            <span className="sr-only">{names.join(', ')}</span>
+          </> : <span className="text-danger font-medium">Unassigned</span>}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 /** The "guest has checked out" tick: one tap marks them out, a second tap takes it back (until the clean starts). */
-function GuestOutTick({ out, busy, onTick }: { out: boolean; busy: boolean; onTick: () => void }) {
+function GuestOutTick({ out, busy, onTick, small }: { out: boolean; busy: boolean; onTick: () => void; small?: boolean }) {
   return (
     <button type="button" role="checkbox" aria-checked={out} aria-label={out ? 'Guest is out. Tap to undo.' : 'Mark the guest as checked out'} disabled={busy}
       title={out ? 'Guest is out. Tap to undo.' : 'Guest has checked out'}
       onClick={e => { e.stopPropagation(); onTick(); }} onKeyDown={e => e.stopPropagation()}
-      className={cx('flex-none w-7 h-7 -my-1 grid place-items-center rounded-control border border-solid cursor-pointer disabled:opacity-50',
+      className={cx('flex-none grid place-items-center', small ? 'w-6 h-6 -my-0.5 ml-0.5' : 'w-7 h-7 -my-1', 'rounded-control border border-solid cursor-pointer disabled:opacity-50',
         out ? 'bg-black border-black text-white' : 'bg-card border-line text-transparent hover:border-ink hover:text-muted-ink')}>
       <Icon name="Check" size="sm" />
     </button>
@@ -630,7 +760,9 @@ function CleanerCell({ r }: { r: Row }) {
 
 /* ---------- the detail panel ---------- */
 
-function CleanDetail({ row, now, onClose, onChanged, onGuestLeft }: { row: Row; now: number; onClose: () => void; onChanged: () => void; onGuestLeft: () => void }) {
+function CleanDetail({ row, now, onClose, onChanged, onGuestLeft, onCheckIn, savingIn }: {
+  row: Row; now: number; onClose: () => void; onChanged: () => void; onGuestLeft: () => void; onCheckIn: (time: string) => void; savingIn: boolean;
+}) {
   const toast = useToast();
   const { data, reload, error } = useApi<Detail>(`/housekeeping/tasks/${row.id}`);
   const { cleaners } = useCleaners(true);
@@ -736,7 +868,7 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft }: { row: Row; 
         </div>
         <div className="rounded-control bg-gold-tint p-2.5 flex flex-col gap-0.5">
           <span className="text-meta text-muted-ink">Arriving</span>
-          {row.next ? <><span><b>{row.next.checkInTime}</b> {row.next.guestName}{row.next.guests ? ` · ${row.next.guests} ${row.next.guests === 1 ? 'guest' : 'guests'}` : ''}</span>
+          {row.next ? <><span><CheckInTime time={row.next.checkInTime} saving={savingIn} onSave={row.next.reservationId && !done ? onCheckIn : undefined} /> {row.next.guestName}{row.next.guests ? ` · ${row.next.guests} ${row.next.guests === 1 ? 'guest' : 'guests'}` : ''}</span>
             {row.next.earlyCheckIn && <span className="text-meta text-warning">Early check-in</span>}
             <span className="text-meta">Time left <TimeLeft at={row.next.checkInAt} now={now} done={done} /></span></>
             : <span className="text-muted-ink">No check-in</span>}
@@ -804,11 +936,13 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft }: { row: Row; 
       )}
       {!row.external && <Button variant="secondary" icon={<Icon name="TriangleAlert" size="sm" />} onClick={() => setDamage(true)}>Report damage</Button>}
 
-      <section className="rounded-card border border-solid border-line overflow-hidden">
-        <div className="py-2.5 px-4 [border-bottom:1px_solid_var(--color-line-soft)] flex items-center gap-2 text-copy font-semibold"><Icon name="History" size="sm" />History</div>
-        <RecordHistory entity="tasks" id={row.id} also={data?.reservationId ? [['reservations', data.reservationId]] : undefined} alsoActions={['reservation.status']}
-          bare pageSize={10} refreshKey={data} origin={origin} />
-      </section>
+      <PhoneHistory>
+        <section className="rounded-card border border-solid border-line overflow-hidden">
+          <div className="py-2.5 px-4 [border-bottom:1px_solid_var(--color-line-soft)] flex items-center gap-2 text-copy font-semibold"><Icon name="History" size="sm" />History</div>
+          <RecordHistory entity="tasks" id={row.id} also={data?.reservationId ? [['reservations', data.reservationId]] : undefined} alsoActions={['reservation.status']}
+            bare pageSize={10} refreshKey={data} origin={origin} />
+        </section>
+      </PhoneHistory>
 
       {damage && row.unitId && (
         <ReportDamageModal unitId={row.unitId} unitLabel={unitLabel} taskId={row.id} onClose={() => setDamage(false)}

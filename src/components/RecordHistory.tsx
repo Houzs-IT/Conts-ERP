@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { api, errorMessage } from '../lib/api';
 import { rm, date, dateTime, humanize, titleCase, monthLabel, count, plural } from '../lib/format';
 import { ROLE_LABEL, CHANNEL } from '../lib/vocabulary';
@@ -9,6 +9,7 @@ import { CATEGORY as REPAIR_CATEGORY } from './ops/OpsUi';
 import { PAYER_LABEL, CATEGORY_LABEL, MODEL } from '../lib/revenueModel';
 import { statusLabel, type StatusEntity } from '../lib/status';
 import { CloseButton } from './CloseButton';
+import { useMedia } from '../lib/useMedia';
 
 /* ------------------------------------------------------------------ *
  * The History panel on every detail view: who changed what and when, field by field,
@@ -357,6 +358,25 @@ export function HistoryDisclosure({ entity, id, also, refreshKey, label = 'Histo
       </summary>
       {open && <div className="[border-top:1px_solid_var(--color-line-soft)]"><RecordHistory entity={entity} id={id} also={also} refreshKey={refreshKey} bare pageSize={10} title={label} /></div>}
     </details>
+  );
+}
+
+/**
+ * A detail sheet's History on a phone: folded to a small "View history" link, since the audit trail filled the sheet
+ * there (owner, 20 Oct 2026). Tablet and up show `children` as before. `phone` is what opens on a phone, when that
+ * differs from the desktop form.
+ */
+export function PhoneHistory({ children, phone }: { children: ReactNode; phone?: ReactNode }) {
+  const narrow = useMedia('(max-width: 767.98px)');
+  const [open, setOpen] = useState(false);
+  if (!narrow) return <>{children}</>;
+  const link = 'self-start min-h-11 inline-flex items-center gap-1.5 bg-transparent border-0 p-0 cursor-pointer text-meta font-medium text-gold-ink underline-offset-2 hover:underline [font-family:inherit]';
+  if (!open) return <button type="button" onClick={() => setOpen(true)} aria-expanded={false} className={link}><Icon name="History" size="sm" />View history</button>;
+  return (
+    <div className="flex flex-col gap-1">
+      <button type="button" onClick={() => setOpen(false)} aria-expanded className={link}><Icon name="History" size="sm" />Hide history</button>
+      {phone ?? children}
+    </div>
   );
 }
 

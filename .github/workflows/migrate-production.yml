@@ -1,0 +1,53 @@
+# Apply migrations-pg/*.sql to PRODUCTION (scripts/migrate-pg.mjs), run by hand from the Actions tab.
+# The production database is reachable only through the PROD_DB_URL secret (Session pooler string, see
+# docs/DR-RUNBOOK.md). "dry-run" prints the target and what is pending; "apply" also needs the production project
+# ref typed into confirm_ref, and can be limited to some files with "only" (e.g. 0129 or 0129,0130).
+# Already-applied files are checksummed and skipped; a changed applied file stops the run.
+name: Apply migrations to production
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: dry-run or apply
+        required: true
+        default: dry-run
+        type: choice
+        options: [dry-run, apply]
+      only:
+        description: optional, comma-separated migration numbers to apply (others stay pending)
+        required: false
+        default: ''
+      confirm_ref:
+        description: production project ref, required for apply
+        required: false
+        default: ''
+permissions:
+  contents: read
+concurrency: migrate-production
+jobs:
+  migrate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --no-audit --no-fund
+      - name: Migrate
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DB_URL }}
+          MODE: ${{ inputs.mode }}
+          ONLY: ${{ inputs.only }}
+          CONFIRM_REF: ${{ inputs.confirm_ref }}
+        run: |
+          [ -n "$DATABASE_URL" ] || { echo "::error::PROD_DB_URL secret is not set"; exit 1; }
+          args=""
+          [ -n "$ONLY" ] && args="--only=$ONLY"
+          if [ "$MODE" = "apply" ]; then
+            if [ "$CONFIRM_REF" != "cweomoenhsjvsxfsmiiw" ]; then echo "::error::confirm_ref must be the production project ref"; exit 1; fi
+            case "$DATABASE_URL" in *cweomoenhsjvsxfsmiiw*) ;; *) echo "::error::PROD_DB_URL is not the production project"; exit 1;; esac
+            node scripts/migrate-pg.mjs $args
+          else
+            node scripts/migrate-pg.mjs --dry-run $args
+          fi

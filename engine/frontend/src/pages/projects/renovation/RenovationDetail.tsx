@@ -88,9 +88,10 @@ export function RenovationDetail({ id, canWrite, embedded = false }: { id: numbe
         <aside className="space-y-4 min-w-0">
           <CustomerInfoCard d={d} canWrite={canWrite} onDone={done} onError={failed} />
           <PeopleCard d={d} canWrite={canWrite} onDone={done} onError={failed} />
-          <RenovationTimeline projectId={id} canWrite={canWrite} refreshKey={saved} />
           <KeyCard d={d} canWrite={canWrite} onDone={done} onError={failed} />
           <ContractCard d={d} canWrite={canWrite} onDone={done} onError={failed} />
+          {/* Timeline sits under the sales order (owner, 20 Oct 2026). */}
+          <RenovationTimeline projectId={id} canWrite={canWrite} refreshKey={saved} />
           {!docsReady && <LinkedDocuments d={d} />}
           {d.redFlags.length > 0 && (
             <section className="rounded-lg border border-err/30 bg-err-bg p-3">

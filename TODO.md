@@ -150,6 +150,12 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 - Dashboard operator share and owner payout now come from the statement engine (whole months, estimate). Not checked against production's 4,152 reservations: no real-size data on this machine.
 - api-checks nav-badges, operations (housekeeper web access refused by the field-app middleware) and owners (owner phone validation) fail on local demo data in code this branch does not touch.
 
+## Renovation catalog first import (feat/catalog-first-import, no migration, 20 Oct 2026, docs/catalog-import/)
+- Owner to answer the Questions sheet of docs/catalog-import/catalog-review.xlsx (units BOX/BAG/ROLL, Track light, mark-up, stone unit, 2990 sofas, tools left out).
+- Lead: dry-run scripts/catalog-first-import.mjs against production, check the read-only SQL in docs/catalog-import/README.md, then apply.
+- 396 SKUs have no cost yet: get DHI, LB (Little Builder) and HOOKKA price lists, then add the prices on each supplier's SKU Pricing tab.
+- 308 Built-in/Furniture/Lighting/Soft SKUs stay Inactive until a photo is added; the catalogues hold the photos.
+
 ## Later
 - Packages (8 Oct, chore/update-packages): Property OS has 0 flagged packages (wrangler 4.148, source-map-js, and an override pinning sharp to 0.35.5 inside wrangler's local emulator; all build/dev tools, none ran in production). Engine: the non-breaking fixes are in (hono on the server, dompurify on the screens, and build tools). Left in engine/, each needing a breaking upgrade of Houzs's code or tools: react-router 6 (moderate), wrangler's sharp and undici, esbuild, vitest, braces. Take them with the next Houzs copy.
 - Email delivery: needs MAIL_API_KEY on the preview environment too; production has it.

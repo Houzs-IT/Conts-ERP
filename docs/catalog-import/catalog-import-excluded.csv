@@ -1,0 +1,125 @@
+﻿code,name,reason
+FLR-UNI-MAPEI-NOVOPLAN21,MAPEI Novoplan 21 25kg,unit BAG is not in the engine's unit list yet (the import script adds it; the screen import cannot)
+FLR-UNI-PE1-50,PE foam underlay 1.0mm,unit ROLL is not in the engine's unit list yet (the import script adds it; the screen import cannot)
+FLR-UNI-PE1-100,PE foam underlay 1.0mm,unit ROLL is not in the engine's unit list yet (the import script adds it; the screen import cannot)
+FLR-UNI-PE1-300,PE foam underlay 1.0mm,unit ROLL is not in the engine's unit list yet (the import script adds it; the screen import cannot)
+FLR-UNI-PE2-50,PE foam underlay 2.0mm,unit ROLL is not in the engine's unit list yet (the import script adds it; the screen import cannot)
+FLR-UNI-PE2-150,PE foam underlay 2.0mm,unit ROLL is not in the engine's unit list yet (the import script adds it; the screen import cannot)
+FLR-UNI-LAMIPE1-100,LAMI PE foam underlay 1.0mm,unit ROLL is not in the engine's unit list yet (the import script adds it; the screen import cannot)
+FLR-UNI-LAMIPE1-300,LAMI PE foam underlay 1.0mm,unit ROLL is not in the engine's unit list yet (the import script adds it; the screen import cannot)
+FLR-UNI-EVA1,EVA foam rubber underlay 1.0mm,unit ROLL is not in the engine's unit list yet (the import script adds it; the screen import cannot)
+FLR-UNI-EVA2,EVA foam rubber underlay 2.0mm,unit ROLL is not in the engine's unit list yet (the import script adds it; the screen import cannot)
+FLR-UNI-PROTECT1,UNILOC OPP floor protection mat 1mm,unit ROLL is not in the engine's unit list yet (the import script adds it; the screen import cannot)
+FLR-UNI-PROTECT2,UNILOC OPP floor protection mat 2mm,unit ROLL is not in the engine's unit list yet (the import script adds it; the screen import cannot)
+FLR-UNI-PROTECT3,UNILOC OPP floor protection mat 3mm,unit ROLL is not in the engine's unit list yet (the import script adds it; the screen import cannot)
+FLR-UNI-PLASTIC012,Plastic sheet underlay 0.12mm (double layer),unit ROLL is not in the engine's unit list yet (the import script adds it; the screen import cannot)
+TRK-LTW-LP-1M-TRACK-WH,Track LP 1M TRACK WH,sub-category TRACK_LIGHT does not exist yet (the import script adds it)
+TRK-LTW-IMI-TR16-12W-WH-4K,Track light IMI TR16/12W WH 4K,sub-category TRACK_LIGHT does not exist yet (the import script adds it)
+TRK-LTW-ZS-QL-POWER-TRACK-1000MM-WH,Power track ZS QL POWER TRACK 1000MM WH,sub-category TRACK_LIGHT does not exist yet (the import script adds it)
+TRK-LTW-ZS-QL-POWER-PLUG-13AMP-WH,Power track plug ZS QL POWER PLUG 13AMP WH,sub-category TRACK_LIGHT does not exist yet (the import script adds it)
+DOR-KNK-020,Rubber Gasket 2750 153m (per roll),unit ROLL is not in the engine's unit list yet (the import script adds it; the screen import cannot)
+DOR-KNK-022,Rubber Gasket 2750 153m (White) (per roll),unit ROLL is not in the engine's unit list yet (the import script adds it; the screen import cannot)
+PLC-KNK-061,Rockwool 40mmX40kg (8pcs),unit BAG is not in the engine's unit list yet (the import script adds it; the screen import cannot)
+PLC-KNK-062,Rockwool 50mmX40kg (8pcs),unit BAG is not in the engine's unit list yet (the import script adds it; the screen import cannot)
+PLC-KNK-063,Rockwool 75mmX40kg (4pcs),unit BAG is not in the engine's unit list yet (the import script adds it; the screen import cannot)
+PLC-KNK-064,Rockwool 75mmX60kg (4pcs),unit BAG is not in the engine's unit list yet (the import script adds it; the screen import cannot)
+PLC-KNK-065,Rockwool 50mmX60kg (6pcs),unit BAG is not in the engine's unit list yet (the import script adds it; the screen import cannot)
+PLC-KNK-066,Rockwool 50mmX80kg (6pcs),unit BAG is not in the engine's unit list yet (the import script adds it; the screen import cannot)
+PLC-KNK-067,Rockwool 50mmX100kg (6pcs),unit BAG is not in the engine's unit list yet (the import script adds it; the screen import cannot)
+PLC-KNK-068,"Cool ""N"" Comfort RL920 (40kg/m3) 1200mm X 5000mm X 50mm",unit ROLL is not in the engine's unit list yet (the import script adds it; the screen import cannot)
+GLS-KNK-008,Rubber Gasket 2090 153m (per roll),unit ROLL is not in the engine's unit list yet (the import script adds it; the screen import cannot)
+GLS-KNK-010,Rubber Gasket 2090 153m (White) (per roll),unit ROLL is not in the engine's unit list yet (the import script adds it; the screen import cannot)
+PLC-KNK-069,KK 98 Stopping Compound,unit BAG is not in the engine's unit list yet (the import script adds it; the screen import cannot)
+PLC-KNK-070,S11 Bonding Cornice Adhesive 2in1,unit BAG is not in the engine's unit list yet (the import script adds it; the screen import cannot)
+PLC-KNK-071,Flaxi 2in1 Stopping (bag),unit BAG is not in the engine's unit list yet (the import script adds it; the screen import cannot)
+PLC-KNK-072,Fiber 1kg,unit BAG is not in the engine's unit list yet (the import script adds it; the screen import cannot)
+PLC-KNK-073,Fiber 5kg,unit BAG is not in the engine's unit list yet (the import script adds it; the screen import cannot)
+PLC-KNK-074,Casting (25KG/bag),unit BAG is not in the engine's unit list yet (the import script adds it; the screen import cannot)
+SVC-KNK-001,Transport Charge,"Service / deposit charge, not a product"
+SVC-KNK-002,Hardware unload material service - upstair,"Service / deposit charge, not a product"
+SVC-KNK-003,Unload Material Service - downstair,"Service / deposit charge, not a product"
+SVC-KNK-004,Unload Material Service - upstair,"Service / deposit charge, not a product"
+SVC-KNK-005,Clear Material Charge,"Service / deposit charge, not a product"
+SVC-KNK-006,Night/Weekend Shift,"Service / deposit charge, not a product"
+SVC-KNK-007,Clear MaterialNight/Weekend Shift,"Service / deposit charge, not a product"
+SVC-KNK-008,"Timber 2"" x 1"" x 8'","Service / deposit charge, not a product"
+SVC-KNK-009,Scalffolding 5F (lend deposit),"Service / deposit charge, not a product"
+SVC-KNK-010,Scalffolding 3F (lend deposit),"Service / deposit charge, not a product"
+SVC-KNK-011,Scalffolding board (lend deposit),"Service / deposit charge, not a product"
+SVC-KNK-012,"Timber 2"" x 4"" (lend deposit)","Service / deposit charge, not a product"
+SVC-KNK-013,Chair (lend deposit),"Service / deposit charge, not a product"
+GLS-KNK-032,Medium Duty Caulking Gun,"Contractor tool, not a product"
+GLS-KNK-038,TOYO GLASS CUTTER,"Contractor tool, not a product"
+GLS-KNK-039,GLASS HAND GLOVE,"Contractor tool, not a product"
+TLS-KNK-001,Fan Hock U (♎),Contractor tool or fixing consumable
+TLS-KNK-002,"FAN HOCK 2""x5"" U (B&N)",Contractor tool or fixing consumable
+TLS-KNK-003,"FAN HOCK 2""X4""(WOOD)",Contractor tool or fixing consumable
+TLS-KNK-004,S/Steel Scraper 4'',Contractor tool or fixing consumable
+TLS-KNK-005,"5""Arrow""S/Steel Scraper",Contractor tool or fixing consumable
+TLS-KNK-006,Trowel 318 (Carbon Steel),Contractor tool or fixing consumable
+TLS-KNK-007,"""Stanley"" Measuring Tape",Contractor tool or fixing consumable
+TLS-KNK-008,"""Stanley"" Measuring Tape",Contractor tool or fixing consumable
+TLS-KNK-009,NIETZ 529-13-101 CUTTER,Contractor tool or fixing consumable
+TLS-KNK-010,Spare Utility Cutter Blades,Contractor tool or fixing consumable
+TLS-KNK-011,Aviation Snips(Straight),Contractor tool or fixing consumable
+TLS-KNK-012,Maxsteel Aviation Snips,Contractor tool or fixing consumable
+TLS-KNK-013,T702 Tiger Flower Scissors,Contractor tool or fixing consumable
+TLS-KNK-014,Wall Board Saw,Contractor tool or fixing consumable
+TLS-KNK-015,CITZ Fiber Claw Hammer,Contractor tool or fixing consumable
+TLS-KNK-016,Sand Paper 280,Contractor tool or fixing consumable
+TLS-KNK-017,"""Hitz"" Carpenter Pencil",Contractor tool or fixing consumable
+TLS-KNK-018,Nylon Twine(Brown),Contractor tool or fixing consumable
+TLS-KNK-019,KIN'S Ink Liquid,Contractor tool or fixing consumable
+TLS-KNK-020,Big Plastic Ink Pot,Contractor tool or fixing consumable
+TLS-KNK-021,"34MM (1.5"") Masking Tape",Contractor tool or fixing consumable
+TLS-KNK-022,"46MM (2"") Masking Tape",Contractor tool or fixing consumable
+TLS-KNK-023,LTI Foam Tape (Black),Contractor tool or fixing consumable
+TLS-KNK-024,(Canvas) 30FT,Contractor tool or fixing consumable
+TLS-KNK-025,(Canvas) 300FT,Contractor tool or fixing consumable
+TLS-KNK-026,Double Sided A Ladder 7FT,Contractor tool or fixing consumable
+TLS-KNK-027,Galvanized Wire 16G/kg,Contractor tool or fixing consumable
+TLS-KNK-028,Galvanized Wire 16G/kg,Contractor tool or fixing consumable
+TLS-KNK-029,J Hook (10pcs/pack),Contractor tool or fixing consumable
+TLS-KNK-030,J Hook (250pcs/Bag),Contractor tool or fixing consumable
+PNT-KNK-005,Aluminium Extension Hole,"Contractor tool, not a product"
+PNT-KNK-006,"1"" Nippon Paint Brush","Contractor tool, not a product"
+PNT-KNK-007,"1.5"" Nippon Paint Brush","Contractor tool, not a product"
+PNT-KNK-008,"2"" Nippon Paint Brush","Contractor tool, not a product"
+PNT-KNK-009,"2.5"" Nippon Paint Brush","Contractor tool, not a product"
+PNT-KNK-010,"3"" Nippon Paint Brush","Contractor tool, not a product"
+TLS-KNK-031,MYD Machine 50N,Contractor tool or fixing consumable
+TLS-KNK-032,MYD Machine 70N Battery 2.0,Contractor tool or fixing consumable
+TLS-KNK-033,Total Cordless Drill 20NM,Contractor tool or fixing consumable
+TLS-KNK-034,Total Brushless Cordless Drill,Contractor tool or fixing consumable
+TLS-KNK-035,RV-1239 'RIVOZ' Laser Level,Contractor tool or fixing consumable
+TLS-KNK-036,RV-569 'RIVOZ' Laser (Green),Contractor tool or fixing consumable
+TLS-KNK-037,Laser L Bracket,Contractor tool or fixing consumable
+TLS-KNK-038,Wall Plug Machine Drill 3in1,Contractor tool or fixing consumable
+TLS-KNK-039,Ceiling Artifact 9000-S,Contractor tool or fixing consumable
+TLS-KNK-040,Ceiling Artifact 9000-LH,Contractor tool or fixing consumable
+PLC-KNK-134,Screw (box),unit BOX is not in the engine's unit list yet (the import script adds it; the screen import cannot)
+TLS-KNK-041,Screw (ctn),Contractor tool or fixing consumable
+TLS-KNK-042,Concrete Nail,Contractor tool or fixing consumable
+TLS-KNK-043,"Self Drilling Screw 1 1/2""",Contractor tool or fixing consumable
+TLS-KNK-044,"Self Drilling Screw 1/2""",Contractor tool or fixing consumable
+TLS-KNK-045,"Wire Nail 2"" (1kg)",Contractor tool or fixing consumable
+TLS-KNK-046,Steel Nail 8.5mm x 32mm,Contractor tool or fixing consumable
+TLS-KNK-047,Steel Nail 7.3mm x 27mm,Contractor tool or fixing consumable
+TLS-KNK-048,Hook Nail 8.5mm x M8,Contractor tool or fixing consumable
+TLS-KNK-049,Hook Nail 8.5mm x M6,Contractor tool or fixing consumable
+TLS-KNK-050,Wall Plug Plastic (pcs),Contractor tool or fixing consumable
+TLS-KNK-051,Wall Plug Plastic (20pcs/bag),Contractor tool or fixing consumable
+TLS-KNK-052,"W/Plug Screw 10mm 1 2/8"" (box)",Contractor tool or fixing consumable
+TLS-KNK-053,Wall Plug Drill Bit 6mm,Contractor tool or fixing consumable
+TLS-KNK-054,Wall Plug Drill Bit 10mm,Contractor tool or fixing consumable
+TLS-KNK-055,Wall Plug Drill Bit 12mm,Contractor tool or fixing consumable
+TLS-KNK-056,Plus Star Bull Point Chisel,Contractor tool or fixing consumable
+TLS-KNK-057,Cold Flat Chisel,Contractor tool or fixing consumable
+MSN-KNK-001,PASIR KASAR (BAG),unit BAG is not in the engine's unit list yet (the import script adds it; the screen import cannot)
+MSN-KNK-006,PASIR HALUS (BAG),unit BAG is not in the engine's unit list yet (the import script adds it; the screen import cannot)
+MSN-KNK-011,"AGGREGATE - BATU 3/4"" (BAG)",unit BAG is not in the engine's unit list yet (the import script adds it; the screen import cannot)
+MSN-KNK-019,YTL PORTLAND CEMENT,unit BAG is not in the engine's unit list yet (the import script adds it; the screen import cannot)
+PLY-KNK-001,PLYWOOD 4X8X3MM (+-),Raw carpentry board - no matching sub-category
+PLY-KNK-002,PLYWOOD 4X8X5.2MM (+-),Raw carpentry board - no matching sub-category
+PLY-KNK-003,PLYWOOD 4X8X9MM (+-),Raw carpentry board - no matching sub-category
+PLY-KNK-004,PLYWOOD 4X8X12MM (+-),Raw carpentry board - no matching sub-category
