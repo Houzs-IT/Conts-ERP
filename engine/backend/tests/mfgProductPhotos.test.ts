@@ -110,13 +110,12 @@ describe('SKU photo routes', () => {
     expect((await upload('p-other')).status).toBe(404);
   });
 
-  test('the only photo of an ACTIVE photo-group SKU cannot be deleted', async () => {
+  test('the only photo of an ACTIVE SKU can be deleted: photos are optional', async () => {
     const { req, t, bucket } = harness();
     const res = await req('/mfg-products/p-tv/photos/ph-1', { method: 'DELETE' });
-    expect(res.status).toBe(409);
-    expect(((await res.json()) as { error: string }).error).toBe('last_photo');
-    expect(t.mfg_product_photos.rows).toHaveLength(1);
-    expect(bucket.objects.size).toBe(1);
+    expect(res.status).toBe(200);
+    expect(t.mfg_product_photos.rows).toHaveLength(0);
+    expect(bucket.objects.size).toBe(0);
   });
 
   test('deleting the primary promotes the next photo and removes the R2 object', async () => {

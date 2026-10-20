@@ -15,10 +15,11 @@ const tuples = (sql: string, re: RegExp) => [...sql.matchAll(re)].map((m) => m.s
 describe("migration 0061 seeds the same tree as renovation-catalog.ts", () => {
   const sql = read("0061_renovation_category_tree.sql");
 
-  test("groups: code, label, lower-case stage key, photo rule", () => {
-    const rows = tuples(sql, /^\s+\('([A-Z]+)', '([^']+)', '([a-z_]+)', (true|false), (\d+)\)[,;]$/gm);
-    expect(rows.map(([code, label, stage, photo]) => ({ code, label, stage, photo: photo === "true" }))).toEqual(
-      RENOVATION_GROUPS.map((g) => ({ code: g.code, label: g.label, stage: g.stage, photo: g.photoRequired })),
+  // 0061 also seeds a photo flag; migration 0130 switched it off (photos are optional).
+  test("groups: code, label, lower-case stage key", () => {
+    const rows = tuples(sql, /^\s+\('([A-Z]+)', '([^']+)', '([a-z_]+)', (?:true|false), \d+\)[,;]$/gm);
+    expect(rows.map(([code, label, stage]) => ({ code, label, stage }))).toEqual(
+      RENOVATION_GROUPS.map((g) => ({ code: g.code, label: g.label, stage: g.stage })),
     );
     for (const [, , stage] of rows) expect(RENO_STAGES as readonly string[]).toContain(stage);
   });

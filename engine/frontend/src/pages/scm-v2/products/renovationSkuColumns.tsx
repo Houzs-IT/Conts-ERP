@@ -1,16 +1,11 @@
 /* Columns and small cells of the renovation SKU Master: photo, code, name,
    group, sub-category, unit, main supplier (the default PO party) and status.
-   A photo-group SKU that is INACTIVE with no photo reads "Needs photo", which
-   is the one thing standing between it and ACTIVE. */
+   Photos are optional (owner, 20 Oct 2026): a SKU with none shows a blank thumb. */
 import { ImageOff } from 'lucide-react';
 import type { Column } from '../../../components/DataTable';
 import { resolveApiAssetUrl } from '../../../components/scm-v2/PhotoGallery';
 import type { MfgProductRow } from '../../../vendor/scm/lib/mfg-products-queries';
-import {
-  RENOVATION_GROUPS,
-  categoryGroupOf,
-  isPhotoRequiredCategory,
-} from '../../../vendor/shared/renovation-catalog';
+import { RENOVATION_GROUPS, categoryGroupOf } from '../../../vendor/shared/renovation-catalog';
 import { fmtSen } from '../../../vendor/shared/format';
 
 export const groupLabel = (row: Pick<MfgProductRow, 'category' | 'category_group'>): string => {
@@ -18,16 +13,9 @@ export const groupLabel = (row: Pick<MfgProductRow, 'category' | 'category_group
   return RENOVATION_GROUPS.find((d) => d.code === g)?.label ?? String((row.category as string | null | undefined) ?? '');
 };
 
-/** A SKU that cannot be activated yet because its group needs a photo it lacks. */
-export const skuNeedsPhoto = (row: Pick<MfgProductRow, 'category' | 'photoCount'>): boolean =>
-  isPhotoRequiredCategory(row.category) && (row.photoCount ?? 0) === 0;
-
 export function SkuStatusBadge({ row }: { row: MfgProductRow }) {
   if (row.status === 'ACTIVE') {
     return <span className="inline-flex rounded-full bg-primary-soft px-2 py-0.5 text-[11px] font-semibold text-primary">Active</span>;
-  }
-  if (skuNeedsPhoto(row)) {
-    return <span className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">Needs photo</span>;
   }
   return <span className="inline-flex rounded-full bg-surface-2 px-2 py-0.5 text-[11px] font-semibold text-ink-secondary">Inactive</span>;
 }
@@ -36,12 +24,11 @@ export function SkuThumb({ row, size = 40 }: { row: MfgProductRow; size?: number
   const src = row.primaryThumbUrl ?? row.primaryPhotoUrl;
   const box = { width: size, height: size };
   if (!src) {
-    const needed = isPhotoRequiredCategory(row.category);
     return (
       <span
         style={box}
-        title={needed ? 'No photo yet' : 'Photos are not used for this group'}
-        className={`inline-flex items-center justify-center rounded border ${needed ? 'border-amber-300 bg-amber-50 text-amber-700' : 'border-border bg-surface-2 text-ink-muted'}`}
+        title="No photo"
+        className="inline-flex items-center justify-center rounded border border-border bg-surface-2 text-ink-muted"
       >
         <ImageOff size={14} strokeWidth={1.75} />
       </span>
@@ -99,7 +86,7 @@ export function renovationSkuColumns(opts: {
     exportLabel: 'status',
     exportValue: (r) => r.status,
     width: '110px',
-    getValue: (r) => (r.status === 'ACTIVE' ? 'Active' : skuNeedsPhoto(r) ? 'Needs photo' : 'Inactive'),
+    getValue: (r) => (r.status === 'ACTIVE' ? 'Active' : 'Inactive'),
     render: (r) => <SkuStatusBadge row={r} />,
   });
   return cols;

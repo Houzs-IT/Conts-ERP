@@ -95,11 +95,11 @@ describe('POST /mfg-products/batch-import — renovation columns', () => {
     expect(sku('EL-1')!.status).not.toBe('INACTIVE');
   });
 
-  test('a new Built-in SKU is created INACTIVE even when the sheet says ACTIVE', async () => {
+  test('a new Built-in SKU with no photo is created ACTIVE when the sheet says ACTIVE', async () => {
     const { run, sku } = harness();
     const out = await run([{ code: 'KC-1', name: 'Kitchen 10ft', category: 'BUILTIN', subCategory: 'KITCHEN_CABINET', status: 'ACTIVE' }]);
     expect(out.upserted).toBe(1);
-    expect(sku('KC-1')!.status).toBe('INACTIVE');
+    expect(sku('KC-1')!.status).toBe('ACTIVE');
   });
 
   test('a new-group SKU without a sub-category is reported, not created', async () => {
@@ -141,12 +141,11 @@ describe('POST /mfg-products/batch-import — renovation columns', () => {
     expect(sku('SV-B')).toMatchObject({ category: 'WORKS', sub_category: 'CLEANING' });
   });
 
-  test('activating a photo-group SKU with no photo is reported', async () => {
+  test('activating a Built-in SKU with no photo is accepted', async () => {
     const { run, sku } = harness();
     const out = await run([{ code: 'WR-1', status: 'ACTIVE' }]);
-    expect(out.upserted).toBe(0);
-    expect(out.failures[0].reason).toMatch(/photo/i);
-    expect(sku('WR-1')!.status).toBe('INACTIVE');
+    expect(out.failures).toEqual([]);
+    expect(sku('WR-1')!.status).toBe('ACTIVE');
   });
 
   test('the page export goes back in unchanged, even on a hidden unit', async () => {
@@ -165,7 +164,7 @@ describe('POST /mfg-products/batch-import — renovation columns', () => {
 
   test('a status other than Active or Inactive is reported', async () => {
     const { run, sku } = harness();
-    const out = await run([{ code: 'HK-1', status: 'Needs photo' }]);
+    const out = await run([{ code: 'HK-1', status: 'Pending' }]);
     expect(out.failures[0].reason).toMatch(/Active or Inactive/);
     expect(sku('HK-1')!.status).toBe('ACTIVE');
   });
