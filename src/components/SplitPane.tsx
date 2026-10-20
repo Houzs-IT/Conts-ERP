@@ -18,6 +18,8 @@ export default function SplitPane(props: {
   open: boolean;
   onClose: () => void;
   width?: number;
+  /** The list turns into narrow cards while the detail is open, so the detail keeps its width on smaller screens too. */
+  compactList?: boolean;
 }) {
   const { list, detail, open, onClose } = props;
   const width = props.width ?? 420;
@@ -36,7 +38,7 @@ export default function SplitPane(props: {
     <div className="flex gap-[18px] flex-1 min-h-[440px]">
       <div className="ops-scroll flex-1 min-w-0 overflow-y-auto overflow-x-auto overscroll-contain flex flex-col gap-3.5 pr-1 -mr-1">{list}</div>
       {show && (
-        <aside style={{ width: xwide ? width + 60 : Math.min(width, 380), animation: 'split-in 220ms cubic-bezier(.2,.7,.2,1) both' }}
+        <aside style={{ width: xwide ? width + 60 : props.compactList ? width - 60 : Math.min(width, 380), animation: 'split-in 220ms cubic-bezier(.2,.7,.2,1) both' }}
           className="ops-scroll flex-none overflow-y-auto overscroll-contain bg-card rounded-card border border-solid border-line shadow-[var(--shadow-raised)]">
           {detail}
         </aside>

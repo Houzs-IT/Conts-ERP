@@ -187,7 +187,7 @@ export default function MaintenancePage() {
               <Select label="Building" value={building} onChange={setBuilding} options={buildingOptions} placeholder="All buildings" className="w-[170px] max-md:flex-1" />
             </div>
           </div>
-          <SplitPane list={list} open={!!sel} onClose={() => setSelected(null)} width={440}
+          <SplitPane list={list} open={!!sel} onClose={() => setSelected(null)} width={580} compactList
             empty={<div className="text-center text-copy text-muted-ink p-6 max-w-[260px]"><Icon name="MousePointerClick" size="lg" /><p className="mt-2">Pick a job to see its timeline, repair windows, photos and cost.</p></div>}
             detail={sel ? <IssueDetail key={sel.id} issue={sel} billing={!!data!.billing} money={money} skus={sku.data?.data ?? []} onClose={() => setSelected(null)} onChanged={reload} /> : null} />
         </>
@@ -250,16 +250,17 @@ function IssueTable({ tab, rows, loading, error, onRetry, selected, onSelect, mo
     { key: 'category', label: 'Category', value: i => i.category, text: i => CATEGORY[i.category] ?? i.category, width: 120, filter: false, hidden: true },
     { key: 'urgency', label: 'Type', type: 'status', value: i => typeOf(i),
       status: i => ({ label: JOB_TYPE[typeOf(i)], tone: typeOf(i) === 'urgent' ? 'critical' : typeOf(i) === 'pass_key' ? 'info' : 'neutral' }), width: 110, phone: 'meta' },
-    { key: 'due', label: 'Due', type: 'date', value: i => i.dueOn ?? null, width: 110, hidden: true },
-    { key: 'approval', label: 'Owner approval', type: 'status', value: i => i.approvalStatus ?? 'not_needed',
-      status: i => { const a = APPROVAL[i.approvalStatus ?? 'not_needed']; return { label: a.label, tone: a.tone === 'gold' ? 'neutral' : a.tone }; }, width: 150 },
-    { key: 'assignee', label: 'Assigned to', value: i => i.vendorName, text: i => (i.vendorName ? `${i.vendorName} ${i.assigneeKind === 'in_house' ? '(in-house)' : '(contractor)'}` : 'Unassigned'), width: 180,
+    // Status sits early: with the detail panel open the table scrolls sideways and the right-hand columns are hidden.
+    { key: 'status', label: 'Status', type: 'status', value: i => statusOf(i).label, status: i => { const s = statusOf(i); return { label: s.label, tone: s.tone === 'gold' ? 'neutral' : s.tone }; }, width: 160 },
+    { key: 'assignee', label: 'Assigned to', value: i => i.vendorName, text: i => (i.vendorName ? `${i.vendorName} ${i.assigneeKind === 'in_house' ? '(in-house)' : '(contractor)'}` : 'Unassigned'), width: 160,
       render: i => (i.vendorName
         ? <span className="block truncate">{i.vendorName}<span className="text-muted-ink"> {i.assigneeKind === 'in_house' ? '(in-house)' : '(contractor)'}</span></span>
         : <span className="text-danger">Unassigned</span>) },
-    ...(money ? [{ key: 'cost', label: 'Cost', type: 'money' as const, value: (i: Issue) => i.finalAmount ?? i.quotedAmount, width: 120, title: 'The final cost, or the quote while the job is open.',
+    { key: 'due', label: 'Due', type: 'date', value: i => i.dueOn ?? null, width: 110, hidden: true },
+    { key: 'approval', label: 'Owner approval', type: 'status', value: i => i.approvalStatus ?? 'not_needed',
+      status: i => { const a = APPROVAL[i.approvalStatus ?? 'not_needed']; return { label: a.label, tone: a.tone === 'gold' ? 'neutral' : a.tone }; }, width: 150 },
+    ...(money ? [{ key: 'cost', label: 'Cost', type: 'money' as const, value: (i: Issue) => i.finalAmount ?? i.quotedAmount, width: 110, title: 'The final cost, or the quote while the job is open.',
       render: (i: Issue) => { const c = i.finalAmount ?? i.quotedAmount; return c == null ? <span className="text-faint">—</span> : <span className="tabular-nums whitespace-nowrap">{rm(c, { cents: false })}{i.finalAmount == null && <span className="text-muted-ink text-meta"> quote</span>}</span>; } }] : []),
-    { key: 'status', label: 'Status', type: 'status', value: i => statusOf(i).label, status: i => { const s = statusOf(i); return { label: s.label, tone: s.tone === 'gold' ? 'neutral' : s.tone }; }, width: 160 },
     ...(money ? [
       { key: 'billing', label: 'Billing date', type: 'date' as const, value: (i: Issue) => i.billingDate, hidden: true, width: 130 },
       { key: 'collected', label: 'Collected', value: (i: Issue) => i.collectedAt, hidden: true, width: 130, title: 'When the money from the payer came in.',
@@ -276,7 +277,7 @@ function IssueTable({ tab, rows, loading, error, onRetry, selected, onSelect, mo
     <>
       <DataTable<Issue>
         id="maintenance.jobs" columns={columns} rows={rows} rowKey={i => i.id} loading={loading} error={error} onRetry={onRetry}
-        renderCard={i => <JobCard i={i} money={money} />}
+        renderCard={i => <JobCard i={i} money={money} />} compact={!!selected}
         onRowClick={i => onSelect(i.id)} rowTone={i => (i.id === selected ? 'gold' : i.state === 'resolved' ? 'muted' : null)}
         noun={['job', 'jobs']} exportName="maintenance-jobs" selectionKey={tab} above={above}
         filtered={filtered} onClearFilters={onClearFilters}
@@ -423,7 +424,7 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
     { label: 'Reported', at: i.reportedAt, on: true, note: `${SOURCE[i.source] ?? i.source}${i.reporter ? `, ${i.reporter}` : ''}` },
     { label: 'Assigned', at: null, on: !!i.vendorName, note: i.vendorName ? `${i.vendorName}${i.assigneeKind ? ` (${KIND_WORD[i.assigneeKind].toLowerCase()})` : ''}` : undefined },
     { label: 'Quote', at: null, on: i.quotedAmount != null, note: money && i.quotedAmount != null ? `${rm(i.quotedAmount)}${i.billingDate ? `, billed ${date(i.billingDate)}` : ''}` : undefined },
-    { label: i.ownerApprovalRequired ? 'Owner approved' : 'Approval', at: i.ownerApprovedAt, on: !!i.ownerApprovedAt || (i.quotedAmount != null && !awaitingOwner(i)), note: awaitingOwner(i) ? 'Waiting for the owner' : !i.ownerApprovalRequired && i.quotedAmount != null ? 'Not needed' : undefined },
+    { label: i.ownerApprovalRequired ? (i.ownerApprovedAt ? 'Owner approved' : 'Owner approval') : 'Approval', at: i.ownerApprovedAt, on: !!i.ownerApprovedAt || (i.quotedAmount != null && !awaitingOwner(i)), note: awaitingOwner(i) ? 'Waiting for the owner' : !i.ownerApprovalRequired && i.quotedAmount != null ? 'Not needed' : undefined },
     { label: 'In progress', at: i.startedAt, on: started(i) },
     { label: 'Done', at: i.resolvedAt, on: done, note: done && money && i.finalAmount != null ? `${rm(i.finalAmount)}, ${PAYER_SHORT[i.chargeTo]}` : undefined },
   ];
@@ -449,7 +450,8 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
       </div>
       <div className="flex gap-1.5 flex-wrap">
         <StatusBadge tone={typeOf(i) === 'urgent' ? 'critical' : typeOf(i) === 'pass_key' ? 'info' : 'neutral'}>{JOB_TYPE[typeOf(i)]}</StatusBadge>
-        {i.approvalStatus && <StatusBadge tone={APPROVAL[i.approvalStatus].tone}>Owner approval: {APPROVAL[i.approvalStatus].label}</StatusBadge>}
+        {/* "Needed" is already the status badge and "Not needed" is noise; only a yes adds anything here. */}
+        {i.approvalStatus === 'approved' && <StatusBadge tone="success">Owner approved</StatusBadge>}
         <StatusBadge tone="neutral">{CATEGORY[i.category] ?? i.category}</StatusBadge>
         <StatusBadge tone={statusOf(i).tone}>{statusOf(i).label}</StatusBadge>
         {i.blocksUnit && <StatusBadge tone="critical">Unit blocked</StatusBadge>}
@@ -660,8 +662,10 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
               )}
             </section>
           )}
-          {/* Phones have no hover, so the reason a button is off is written out. The bar sticks to the bottom of a long sheet on phones. */}
-          {(!started(i) || money) && <section className="flex flex-col gap-2 pt-4 [border-top:1px_solid_var(--color-line-soft)] max-sm:sticky max-sm:bottom-0 max-sm:z-[2] max-sm:-mx-5 max-sm:px-5 max-sm:pb-4 max-sm:bg-card max-sm:shadow-[0_-6px_12px_-8px_rgba(0,0,0,0.25)]">
+          {/* Phones have no hover, so the reason a button is off is written out. The bar sticks to the bottom of a long sheet on phones.
+              It goes last there (after History), or scrolling to the end leaves it mid-sheet with content under it; and it is a flat
+              strip, not one of the sheet's cards (devices.css), whose border and padding the "!" overrides. */}
+          {(!started(i) || money) && <section className="flex flex-col gap-2 pt-4 [border-top:1px_solid_var(--color-line-soft)] max-sm:order-last max-sm:sticky max-sm:bottom-0 max-sm:z-[2] max-sm:-mx-5 max-sm:-mb-5 max-sm:px-5! max-sm:pb-4! max-sm:rounded-none! max-sm:border-x-0! max-sm:border-b-0! max-sm:bg-card max-sm:shadow-[0_-6px_12px_-8px_rgba(0,0,0,0.25)]">
             <div className="flex gap-2">
               {!started(i) && <Button variant="secondary" className="flex-1" loading={busy === 'start'} disabled={awaitingOwner(i)} disabledReason="Waiting for the owner's approval."
                 onClick={() => void act('start', () => api.post(`/maintenance/issues/${i.id}/start`, {}), 'Repair started.')}>Start repair</Button>}

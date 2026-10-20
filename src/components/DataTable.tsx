@@ -150,6 +150,8 @@ export interface DataTableProps<R> {
   noun?: [string, string];
   /** Phone card override. */
   renderCard?: (r: R) => ReactNode;
+  /** The phone cards at every width, for a list squeezed beside a detail panel. */
+  compact?: boolean;
   /** Height cap of the scroll box (the header sticks inside it). Default fills the window below the toolbar. */
   maxHeight?: string;
   /** No card frame, for a table inside a card that already has one. */
@@ -293,7 +295,7 @@ export function DataTable<R>(props: DataTableProps<R>) {
   const {
     id, columns, rows, rowKey, loading, error, onRetry, onRowClick, rowTone, urlPrefix = '', pageSize: clientSize = 50,
     server, header, toolbar, actions, above, viewParams = [], filtered, onClearFilters, empty, selectable, bulkActions, selectionKey,
-    exportName, noun = ['row', 'rows'], renderCard, maxHeight, bare, noToolbar, noViews, noColumns, footer, defaultSort, phoneSort = true,
+    exportName, noun = ['row', 'rows'], renderCard, compact, maxHeight, bare, noToolbar, noViews, noColumns, footer, defaultSort, phoneSort = true,
   } = props;
   const toast = useToast();
   const [params, setParams] = useSearchParams();
@@ -549,7 +551,7 @@ export function DataTable<R>(props: DataTableProps<R>) {
           <div className={cx('flex items-center gap-2 flex-wrap max-md:flex-[1_1_auto] max-md:justify-end', 'ml-auto')}>
             {actions}
             {phoneSort && sortChoices.length > 0 && (
-              <label className="md:hidden relative flex items-center flex-[1_1_96px] min-w-0">
+              <label className={cx(!compact && 'md:hidden', 'relative flex items-center flex-[1_1_96px] min-w-0')}>
                 <span className="absolute w-px h-px overflow-hidden [clip:rect(0_0_0_0)]">Sort</span>
                 <select value={sortCol ? `${sortCol}:${sortDir === 'desc' ? 'desc' : 'asc'}` : ''} aria-label="Sort"
                   onChange={e => setParams(prev => { const next = new URLSearchParams(prev); if (e.target.value) next.set(SORT, e.target.value); else next.delete(SORT); next.delete(PAGE); return next; }, { replace: true })}
@@ -620,7 +622,7 @@ export function DataTable<R>(props: DataTableProps<R>) {
       {error && !firstLoad && <div className="px-[22px] pt-3 max-md:px-4"><StaleBanner message={`Showing the last list we have. ${error}`} onRetry={onRetry ?? (() => {})} /></div>}
 
       {/* Wide screens: the table. Its own scroll box keeps the header in view and scrolls sideways when narrow. */}
-      <div className="max-md:hidden relative">
+      <div className={cx(compact ? 'hidden' : 'max-md:hidden', 'relative')}>
         <BusyLine on={refreshing} />
         <div ref={scrollBox} data-keep-scroll={id} className="overflow-auto" style={{ minHeight: firstLoad || shown.length > 6 ? 240 : undefined }} aria-busy={!!loading}>
           {firstLoad && !error ? <RowsSkeleton rows={8} cols={Math.min(7, visible.length || 5)} /> : errorView ?? (
@@ -709,7 +711,7 @@ export function DataTable<R>(props: DataTableProps<R>) {
       </div>
 
       {/* Phones: one card per row. */}
-      <div className="md:hidden relative" aria-busy={!!loading}>
+      <div className={cx(!compact && 'md:hidden', 'relative')} aria-busy={!!loading}>
         <BusyLine on={refreshing} />
         {firstLoad && !error ? <CardRowsSkeleton rows={6} /> : errorView ?? (shown.length === 0 ? emptyView : (
           <ul className={cx('list-none m-0 p-0 transition-opacity duration-150', refreshing && 'opacity-55')}>
