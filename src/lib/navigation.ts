@@ -106,14 +106,14 @@ export const NAV: NavGroup[] = [
   { label: 'SERVICE CASES', workspace: 'supply', items: [
     { key: 'serviceCaseList', label: 'Service cases', icon: 'zap', path: '/service/cases', area: 'serviceCases' },
     { key: 'serviceMetrics', label: 'Quality metrics', icon: 'trending-up', path: '/service/metrics', area: 'serviceCases' },
-    { key: 'serviceMaintenance', label: 'Case settings', icon: 'settings', path: '/service/maintenance', area: 'serviceCases' },
+    { key: 'serviceMaintenance', label: 'Case settings', icon: 'settings', path: '/service/maintenance', area: 'serviceCases', full: true },
     { key: 'myCases', label: 'My cases', icon: 'inbox', path: '/service/my-cases', area: 'serviceCases' },
   ] },
   { label: 'PROJECTS', workspace: 'supply', items: [
     { key: 'projectList', label: 'Project list', icon: 'folder-kanban', path: '/projects/list', area: 'projects' },
     { key: 'projectCalendar', label: 'Schedule', icon: 'calendar-days', path: '/projects/calendar', area: 'projects' },
-    { key: 'projectFinances', label: 'Finances', icon: 'wallet', path: '/projects/finances', area: 'projects' },
-    { key: 'projectMaintenance', label: 'Project settings', icon: 'settings', path: '/projects/maintenance', area: 'projects' },
+    { key: 'projectFinances', label: 'Finances', icon: 'wallet', path: '/projects/finances', area: 'projects', full: true },
+    { key: 'projectMaintenance', label: 'Project settings', icon: 'settings', path: '/projects/maintenance', area: 'projects', full: true },
   ] },
   { label: 'SUPPLY CHAIN', workspace: 'supply', items: [
     { key: 'scSales', label: 'Sales order', icon: 'shopping-cart', area: 'scSales', children: [
@@ -241,10 +241,12 @@ function navGroups(role: UserRole, engine: boolean, access?: Record<string, Acce
   if (deny.includes('*')) return [];
   const open = (key: string, area: string) => !deny.includes(key) && !deny.includes(area);
   const enough = (i: NavItem) => !i.full || !access || FIXED_ROLES.includes(role) || access[areaOfItem(i)] === 'full';
+  // A parent closed to this role still shows the children with an open area of their own (Sales invoices under
+  // Sales order); a child without its own area follows its parent.
   return NAV
     .map(g => ({ ...g, items: g.items
-      .filter(i => open(i.key, areaOfItem(i)) && enough(i))
-      .map(i => i.children ? { ...i, children: i.children.filter(c => open(c.key, areaOfChild(i, c))) } : i)
+      .filter(i => (i.children || open(i.key, areaOfItem(i))) && enough(i))
+      .map(i => i.children ? { ...i, children: i.children.filter(c => open(c.key, areaOfChild(i, c)) && (!!c.area || open(i.key, areaOfItem(i)))) } : i)
       .filter(i => !i.children || i.children.length > 0) }))
     .filter(g => g.items.length > 0);
 }

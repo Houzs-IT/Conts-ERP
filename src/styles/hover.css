@@ -11,24 +11,12 @@
  */
 
 @media (hover: hover) {
-  /* Sidebar: L1 group headers, L2 items, L3 children, collapse, workspace switch, profile. */
-  .nav-scroll button:not([aria-current="page"]):not(:disabled),
-  [aria-label="Collapse navigation"],
-  [aria-label="Expand navigation"],
-  [role="tab"][aria-selected="false"] {
-    transition: background-image var(--motion-fast, 120ms) ease-out;
-  }
-  .nav-scroll button:not([aria-current="page"]):not(:disabled):hover,
-  [aria-label="Collapse navigation"]:hover,
-  [aria-label="Expand navigation"]:hover,
-  [role="tab"][aria-selected="false"]:hover {
+  /* Every sidebar button on the dark shell (the account menu is a light card, below). */
+  [data-sidebar] button:not([aria-current="page"]):not([aria-selected="true"]):not(:disabled):not(.menu-sheet button):hover {
     background-image: linear-gradient(rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.06)) !important;
   }
 
-  /* Phone menu rows (MobileTabBar's More sheet): a light card, so a dark wash; white on the dark theme. */
-  .menu-sheet button:not([aria-current="page"]) {
-    transition: background-image var(--motion-fast, 120ms) ease-out;
-  }
+  /* Light menus (the phone More sheet, the sidebar account menu): a dark wash; white on the dark theme. */
   .menu-sheet button:not([aria-current="page"]):hover {
     background-image: linear-gradient(rgba(21, 21, 21, 0.04), rgba(21, 21, 21, 0.04)) !important;
   }
@@ -37,9 +25,6 @@
   }
 
   /* Notification bell, light and dark top bars. */
-  button[aria-label^="Notifications"] {
-    transition: background-image var(--motion-fast, 120ms) ease-out;
-  }
   button[aria-label^="Notifications"]:hover {
     background-image: linear-gradient(rgba(21, 21, 21, 0.05), rgba(21, 21, 21, 0.05)) !important;
   }
@@ -49,14 +34,15 @@
 }
 
 /* Press feedback everywhere these apply, mouse and touch alike. */
-.nav-scroll button:not(:disabled):active,
+[data-sidebar] button:not(:disabled):active,
 .menu-sheet button:active,
 button[aria-label^="Notifications"]:active {
   background-image: linear-gradient(rgba(0, 0, 0, 0.10), rgba(0, 0, 0, 0.10)) !important;
 }
 
-/* Keyboard focus stays visible on the dark shell. */
-.nav-scroll button:focus-visible,
+/* Keyboard focus: one gold ring on every dark-shell button (gold is under 3:1 on the light account menu,
+   which keeps the browser's own ring). */
+[data-sidebar] button:not(.menu-sheet button):focus-visible,
 button[aria-label^="Notifications"]:focus-visible {
   outline: none;
   box-shadow: 0 0 0 2px var(--color-gold, #C8A46A) !important;
