@@ -95,7 +95,7 @@ export function SearchSelect({ value, onChange, options, label, showLabel, allLa
       <button type="button" aria-haspopup="listbox" aria-expanded={open} aria-label={`${label}: ${current?.label ?? allLabel ?? 'none'}`}
         aria-describedby={error ? errorId : undefined}
         onClick={() => setOpen(v => !v)}
-        className={cx(CONTROL, 'w-full flex items-center gap-2 pl-3 pr-2 text-left', size === 'md' && 'h-10', error && 'border-[var(--color-critical-line)]')}>
+        className={cx(CONTROL, 'w-full flex items-center gap-2 pl-3 pr-2 text-left', size === 'md' && 'h-10', error && 'border-danger-line')}>
         <span className={cx('flex-1 min-w-0 truncate', !current && !/^All/.test(allLabel ?? '') && 'text-muted-ink')}>{current ? (current.group ? `${current.label}` : current.label) : (allLabel ?? 'Choose')}</span>
         <Icon name="ChevronDown" size="sm" color="var(--color-muted-ink)" />
       </button>
@@ -129,7 +129,7 @@ export function SearchSelect({ value, onChange, options, label, showLabel, allLa
           </div>
         </div>
       )}
-      {error && <span id={errorId} className="text-meta text-[var(--color-critical-fg)]">{error}</span>}
+      {error && <span id={errorId} className="text-meta text-danger">{error}</span>}
     </div>
   );
 }
