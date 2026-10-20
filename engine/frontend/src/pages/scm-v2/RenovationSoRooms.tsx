@@ -41,7 +41,7 @@ function RoomName({ name, disabled, inTitle, onRename }: { name: string; disable
       title={bad ? 'That name is blank or another room has it' : undefined}
       className={cn('min-w-0 flex-1 rounded-md border bg-transparent focus:bg-surface',
         /* Inputs do not inherit the font, so in a card title it is passed down to match the other cards. */
-        inTitle ? '-my-1 h-7 w-full px-1.5 [font:inherit] [letter-spacing:inherit] [text-transform:inherit] text-inherit' : 'h-8 px-2 text-[13px] font-bold uppercase tracking-wide text-ink',
+        inTitle ? '-my-1 h-[22px] w-full px-1.5 [font:inherit] [letter-spacing:inherit] [text-transform:inherit] text-inherit' : 'h-8 px-2 text-[13px] font-bold uppercase tracking-wide text-ink',
         bad ? 'border-err' : 'border-transparent hover:border-border focus:border-primary')}
       value={draft}
       disabled={disabled}
