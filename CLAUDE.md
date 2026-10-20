@@ -20,7 +20,10 @@ because the supply chain cannot be separated from the rest of that code). Rules 
   Conts-specific settings live in `engine/backend/wrangler.toml` and env files;
   `wrangler.houzs.toml` files are Houzs's settings kept for reference and must never be used.
 - No scheduled jobs and no AutoCount in the engine: both act on Houzs's systems.
-- Houzs business data never comes across: `engine/backend/scripts/data` was removed.
+- Houzs business data never comes across: `engine/backend/scripts/data` was removed. One exception (owner,
+  20 Oct 2026): Houzs's bedframe/sofa product maintenance, variants, special add-ons, fabric library and colours
+  and fabric converter were copied (migration 0129, built by `scripts/houzs-product-maintenance.mjs`); nothing else
+  (no brandings, no sofa combo pricing, no SKUs, models or documents).
 - Its tables live in schemas `scm` and `public` (migrations 0044, 0045); the rental side
   stays in `pos`. Instructions inside `engine/` are Houzs's, not this project's.
 - Production: `engine/backend/wrangler.production.toml` (worker `conts-scm-engine`, in the Conts ERP

@@ -31,22 +31,21 @@ const open = (url: string) =>
   );
 
 describe('Products page, Conts renovation catalog', () => {
-  test('shows only SKU Master, Maintenance, Combo Pricing and Variants', () => {
+  test('shows SKU Master, Maintenance, Combo Pricing, Variants and Fabric Converter', () => {
     open('/scm/products');
-    expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual(['SKU Master', 'Maintenance', 'Combo Pricing', 'Variants']);
+    expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual(['SKU Master', 'Maintenance', 'Combo Pricing', 'Variants', 'Fabric Converter']);
   });
 
   test('a hidden tab in the URL opens the renovation SKU Master', () => {
-    open('/scm/products?tab=fabric');
+    open('/scm/products?tab=modular');
     expect(screen.getByRole('tab', { name: 'SKU Master' }).getAttribute('data-active')).toBe('true');
     expect(screen.getByRole('group', { name: 'Category group' })).toBeTruthy();
     expect(screen.getByText('New SKU')).toBeTruthy();
   });
 
-  test('the Fabrics maintenance list is hidden', () => {
+  test('the Fabrics maintenance list is shown', () => {
     open('/scm/products?tab=maintenance');
-    expect(screen.queryByText('Fabrics')).toBeNull();
-    expect(screen.queryByText('Common')).toBeNull();
+    expect(screen.getAllByText('Fabrics').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Brandings').length).toBeGreaterThan(0);
   });
 });
