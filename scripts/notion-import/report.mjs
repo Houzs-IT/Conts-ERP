@@ -10,17 +10,18 @@ export function reportText(r, chunks = []) {
   kv("Projects", r.input.projects);
   kv("Renovation tasks", r.input.renoTasks);
   kv("ID tasks", r.input.idTasks);
+  kv("Unit key records", r.input.keyRecords ?? 0);
   lines.push("", "Will write (before upsert)");
   kv("People", o.people);
   kv("Projects", `${o.projects} (${o.projectsWithPageId} with a Notion page id, the rest keyed by title)`);
   kv("  step", Object.entries(o.steps).map(([k, v]) => `${k} ${v}`).join(", "));
   kv("  In defect flag", o.inDefect);
-  kv("Site tasks", `${o.tasks} (${o.tasksDone} done)`);
+  kv("Site tasks", `${o.tasks} (${o.tasksDone} done; ${o.splitTasks ?? 0} Notion tasks split in two)`);
   kv("Task crew assignments", o.taskAssignees);
   kv("Site measures", o.siteMeasures);
   kv("Design files / links", `${o.designFiles} (${o.designFilesPendingUpload} PDFs pending upload, linked to their Notion page)`);
   kv("Order-list notes (in activity)", o.orderListNotes);
-  kv("Unit key moves", o.keyMoves);
+  kv("Unit key moves", `${o.keyMoves} holders at export, ${o.keyHistory ?? 0} dated passes`);
   kv("Step / hold history rows", o.flowLog);
   kv("Activity notes", o.activityNotes);
   kv("Rows keyed by hash (no page id)", r.taskRefFallbacks);
@@ -29,6 +30,7 @@ export function reportText(r, chunks = []) {
     for (const x of xs) lines.push(`  - ${f(x)}`);
   };
   list("Renovation task rows not imported", r.skipped.renoTasks, (x) => `row ${x.row}: ${x.reason}${x.project ? ` [${x.project}]` : ""}${x.category ? ` category ${x.category}` : ""}${x.date ? ` date ${x.date}` : ""}${x.contractor ? ` contractor ${x.contractor}` : ""}`);
+  list("Unit key records not imported", r.skipped.keyRecords ?? [], (x) => `row ${x.row}: ${x.reason} (${x.name})${x.project ? ` [${x.project}]` : ""}`);
   list("ID task rows not imported", r.skipped.idTasks, (x) => `row ${x.row}: ${x.reason} (${x.task})${x.project ? ` [${x.project}]` : ""}`);
   list("Parse failures", r.parseFailures, (x) => `${x.entity}${x.row ? ` row ${x.row}` : ""}${x.name ? ` ${x.name}` : ""}: ${x.field} = ${x.value}`);
   list("Names not on the people list", Object.entries(r.unmappedNames), ([k, n]) => `${k} (${n})`);

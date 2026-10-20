@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 import {
   parseCsv, parseRelation, parseDate, parseDateRange, parseCreatedTime, parseMoneySen, parseTitle, splitFiles, col, pageIdOf,
 } from "./parse.mjs";
-import { TASK_CATEGORIES, taskCodeOf, stepOf, mapExport, personOf } from "./map.mjs";
+import { TASK_CATEGORIES, taskCodeOf, stepOf, mapExport, personOf, keyMoveDate } from "./map.mjs";
 import { buildSql } from "./sql.mjs";
 import { listZip, readZipEntry } from "./zip.mjs";
 
@@ -91,6 +91,7 @@ test("stepOf: owner's mapping", () => {
   assert.equal(stepOf({ projectDone: false, handoverDate: null, reno: "In Progress" }), "renovation");
   assert.equal(stepOf({ projectDone: false, handoverDate: null, reno: "IN DEFECT" }), "design");
   assert.equal(stepOf({ projectDone: false, handoverDate: null, reno: "" }), "design");
+  assert.equal(stepOf({ projectDone: false, handoverDate: null, reno: "Done" }), "handover");
 });
 
 test("people aliases", () => {
@@ -267,4 +268,92 @@ test("task notes rebuilt by the SQL from their parts equal the mapped notes", ()
   assert.match(sql, /' Contractor \(Notion\): ' \|\| x\.x \|\| '\.'/);
   assert.match(sql, /' Marked done because the project is closed in Notion\.'/);
   assert.match(sql, /' Notion text: ' \|\| x\.n/);
+});
+
+test("parseRelation: links to pages inside a newer export", () => {
+  const r = parseRelation("HILLPARK D52-08 MR TERENCE (KRIS) (HILLPARK%20D52-08%20MR%20TERENCE%20(KRIS)%202a07ce8e74e180fda3a4d5fb3825ec8f.md), "
+    + `Order List - X ✅ (${url("Order-List-X", "3".repeat(32))})`);
+  assert.deepEqual(r, [{ title: "HILLPARK D52-08 MR TERENCE (KRIS)", id: "2a07ce8e74e180fda3a4d5fb3825ec8f" }, { title: "Order List - X ✅", id: "3".repeat(32) }]);
+});
+
+test("keyMoveDate: the date at the end of a key record title", () => {
+  assert.equal(keyMoveDate("THE HENGE E18-01 MR JAY  @August 10, 2026 "), "2026-08-10");
+  assert.equal(keyMoveDate("CURVO A11-12 10/08/2026"), "2026-08-10");
+  assert.equal(keyMoveDate("CURVO A11-12 MS EIRENE"), null);
+});
+
+test("mapExport: PLASTER CEILING & PARTITION becomes two tasks; plain tasks keep their refs and occurrence", () => {
+  const f = fixture();
+  const proj = `ALTRIS C13-3A (${url("ALTRIS-C13-3A", PID)})`;
+  f.projects[0]["Renovation Timeline 🔥"] += `, PARTITION - @ALTRIS C13-3A (${url("PARTITION", "f".repeat(32))}), PLASTER CEILING & PARTITION - @ALTRIS C13-3A (${url("PCP", "9".repeat(32))})`;
+  f.renoTasks.push(
+    { Task: "x", Category: "PARTITION", Contractor: "", Date: "15/10/2025", Done: "No", "Project 🔥": proj, Text: "" },
+    { Task: "x", Category: "PLASTER CEILING & PARTITION", Contractor: "OUTSOURCE", Date: "09/10/2025 → 12/10/2025", Done: "No", "Project 🔥": proj, Text: "" },
+  );
+  const m = mapExport(f);
+  assert.equal(m.report.output.splitTasks, 1);
+  const split = m.tasks.filter((t) => t.splitFrom);
+  assert.deepEqual(split.map((t) => t.cat.code).sort(), ["PARTITION", "PLASTER_CEILING"]);
+  assert.deepEqual(split.map((t) => t.ref).sort(), [`notion:${"9".repeat(32)}`, `notion:${"9".repeat(32)}:PARTITION`], "the first part keeps the plain page ref an earlier import used");
+  assert.ok(split.every((t) => t.plannedStart === "2025-10-09" && t.plannedEnd === "2025-10-12"));
+  const plain = m.tasks.find((t) => t.cat.code === "PARTITION" && !t.splitFrom);
+  assert.equal(plain.ref, `notion:${"f".repeat(32)}`, "the plain PARTITION task keeps its page ref");
+  assert.equal(plain.occurrence, 1, "an earlier split task does not take the plain task's occurrence");
+  assert.equal(split.find((t) => t.cat.code === "PARTITION").occurrence, 2);
+  assert.ok(!m.report.skipped.renoTasks.some((s) => /PLASTER CEILING & PARTITION/.test(s.reason)));
+});
+
+test("mapExport + buildSql: dated key passes from the Unit Key Record list", () => {
+  const f = fixture();
+  const proj = `ALTRIS C13-3A (${url("ALTRIS-C13-3A", PID)})`;
+  f.keyRecords = [
+    { Name: "ALTRIS C13-3A  @August 10, 2026 ", "Pass Person": "Michell Lo Siaw Maan", "Receive Person": "JIA XIN, YI XUAN", "Project 🔥": proj, "Created time": "August 10, 2026 6:38 PM" },
+    { Name: "ALTRIS C13-3A", "Pass Person": "", "Receive Person": "Alex", "Project 🔥": proj, "Created time": "August 12, 2026 9:00 AM" },
+    { Name: "NOBODY", "Pass Person": "Someone", "Receive Person": "Else", "Project 🔥": proj, "Created time": "August 12, 2026 9:00 AM" },
+    { Name: "ORPHAN", "Pass Person": "Alex", "Receive Person": "JIA XIN", "Project 🔥": "", "Created time": "" },
+  ];
+  const m = mapExport(f);
+  assert.equal(m.keyHistory.length, 2);
+  const [a, b] = m.keyHistory;
+  assert.match(a.ref, /^notion:h:[0-9a-f]{16}$/);
+  assert.equal(a.movedOn, "2026-08-10");
+  assert.equal(a.fromRef, "notion:person:michell-lo");
+  assert.equal(a.toRef, "notion:person:jia-xin");
+  assert.match(a.note, /Received by: JIA XIN, YI XUAN\./);
+  assert.match(b.ref, /^notion:h:[0-9a-f]{16}$/);
+  assert.equal(b.movedOn, "2026-08-12", "no date in the title: the day it was created");
+  assert.equal(m.report.skipped.keyRecords.length, 2);
+  // two passes with the same title (same unit and day): two refs, the same ones whatever order the rows come in
+  const g = fixture();
+  const second = { ...f.keyRecords[0], "Pass Person": "JIA XIN", "Receive Person": "Alex", "Created time": "August 21, 2026 7:00 PM" };
+  g.keyRecords = [f.keyRecords[0], second];
+  const refs = mapExport(g).keyHistory.map((k) => k.ref);
+  assert.equal(new Set(refs).size, 2);
+  // the title says 10 Aug, but the record was made on 21 Aug: the pass is dated 21 Aug
+  assert.equal(mapExport(g).keyHistory[1].movedOn, "2026-08-21");
+  g.keyRecords = [second, f.keyRecords[0]];
+  assert.deepEqual(mapExport(g).keyHistory.map((k) => k.ref).sort(), [...refs].sort());
+  // the same pass written twice in Notion is kept once
+  g.keyRecords = [f.keyRecords[0], { ...f.keyRecords[0] }];
+  assert.equal(mapExport(g).keyHistory.length, 1);
+  // a holder line only when the key log does not already end with that person
+  assert.match(buildSql(m)[0].sql, /d\.key_holder_id is distinct from \(select k\.to_person_id from project_key_moves k/);
+  const chunks = buildSql(m);
+  const kh = chunks.find((c) => c.name === "05_key_history.sql");
+  assert.ok(kh, "a key history chunk when there are key records");
+  assert.match(kh.sql, /k\.source = 'app'/);
+  assert.match(kh.sql, /on conflict do nothing/);
+  assert.ok(!buildSql(mapExport(fixture())).some((c) => c.name === "05_key_history.sql"), "no chunk without key records");
+});
+
+test("activity notes: a re-run with only a new export date adds no note", () => {
+  const sql = buildSql(mapExport(fixture())).find((c) => c.name === "04a_activity.sql").sql;
+  assert.match(sql, /substring\(x\.n from position\(chr\(10\) in x\.n\)\) is distinct from/);
+});
+
+test("upload-files: export file names match the names in the design rows", async () => {
+  const { fileKey } = await import("./upload-files.mjs");
+  assert.equal(fileKey("Damansara Foresta - D-19-05 __ 23JULY2026 __ Final.pdf"), fileKey("Damansara_Foresta_-_D-19-05___23JULY2026___Final.pdf"));
+  assert.equal(fileKey("folder/ALTAR_SUBANG.pdf"), "altar_subang.pdf");
+  assert.equal(fileKey("SKYLINE_PUDU%EF%BC%88SHOWROOM)%201.pdf"), fileKey("SKYLINE_PUDU（SHOWROOM) 1.pdf"));
 });

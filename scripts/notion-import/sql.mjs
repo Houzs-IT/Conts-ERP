@@ -224,12 +224,15 @@ with upd as (
   returning 1)
 insert into _stats select 'projects_updated', count(*) from upd;
 
--- Unit key: the holder named in the Notion "Unit Key" column, one move per project.
+-- Unit key: the holder named in the Notion "Unit Key" column, one move per project, and only when the key log does
+-- not already end with that person.
 with ins as (
   insert into project_key_moves (project_id, company_id, moved_on, from_person_id, to_person_id, note, source, source_ref)
   select p.id, ${co}, ${sqlText(exportDate)}::date, null, d.key_holder_id, ${sqlText(keyNote)}, 'import', 'notion:key:' || d.ref
     from _pd d join projects p on p.company_id = ${co} and p.source_ref = d.ref
    where d.key_holder_id is not null
+     and d.key_holder_id is distinct from (select k.to_person_id from project_key_moves k where k.project_id = p.id
+                                            order by k.moved_on desc, k.id desc limit 1)
   on conflict do nothing
   returning 1)
 insert into _stats select 'key_moves_inserted', count(*) from ins;
@@ -387,6 +390,36 @@ ${statsTail(label)}
 `;
 }
 
+/* Dated key passes from the Notion "Unit Key Record" list. A pass someone already logged in the app (same project,
+   day and receiver) is not added again. The import's own "holder at export" move stays: it is the latest line. */
+function chunkKeyHistory(m, co, label) {
+  const rows = m.keyHistory.map((k) => ({ r: short(k.ref), p: short(k.project.ref), d: k.movedOn, f: short(k.fromRef), t: short(k.toRef), n: k.note }));
+  return `-- Notion import ${label}: unit key passes (company ${co})
+begin;
+set local search_path = public, extensions;
+${statsHead}
+${peopleMap(m.people, co)}
+
+with x as (
+  select p.id as project_id, x.d::date as d, ${personId("x.f")} as f, ${personId("x.t")} as t, x.n, ${fullRef("x.r")} as ref
+    from jsonb_to_recordset(${jsonLiteral(rows)}) as x(r text, p text, d text, f text, t text, n text)
+    join projects p on p.company_id = ${co} and p.source_ref = ${fullRef("x.p")}
+), ins as (
+  insert into project_key_moves (project_id, company_id, moved_on, from_person_id, to_person_id, note, source, source_ref)
+  select x.project_id, ${co}, x.d, x.f, x.t, x.n, 'import', x.ref
+    from x
+   where (x.f is not null or x.t is not null)
+     and not exists (select 1 from project_key_moves k where k.project_id = x.project_id and k.source = 'app'
+                        and k.moved_on = x.d and k.to_person_id is not distinct from x.t)
+  on conflict do nothing
+  returning 1)
+insert into _stats select 'key_history_inserted', count(*) from ins;
+insert into _stats select 'key_history_present', count(*) from project_key_moves
+ where company_id = ${co} and source = 'import' and source_ref not like 'notion:key:%';
+${statsTail(label)}
+`;
+}
+
 function chunkActivity(m, co, activity, label) {
   // lines as a JSON array, joined in SQL: a note carries no \n escapes
   const rows = activity.map((a) => ({ p: short(a.project.ref), l: a.note.split(String.fromCharCode(10)) }));
@@ -401,8 +434,10 @@ with ins as (
     from (select r.p, array_to_string(array(select jsonb_array_elements_text(r.l)), chr(10)) as n
             from jsonb_to_recordset(${jsonLiteral(rows)}) as r(p text, l jsonb)) as x
     join projects p on p.company_id = ${co} and p.source_ref = ${fullRef("x.p")}
-   where x.n is distinct from (select a.note from project_activity a where a.project_id = p.id and a.action = 'notion_import'
-                                order by a.id desc limit 1)
+   -- compared without the first line, which only names the export date
+   where substring(x.n from position(chr(10) in x.n)) is distinct from
+         (select substring(a.note from position(chr(10) in a.note)) from project_activity a
+           where a.project_id = p.id and a.action = 'notion_import' order by a.id desc limit 1)
   returning 1)
 insert into _stats select 'activity_notes_inserted', count(*) from ins;
 ${startDatesSql(co)}
@@ -459,5 +494,6 @@ export function buildSql(m, { companyId = 1, maxTasks = 200, maxFiles = 100, max
   groupsOf(m.activity, maxNotes).forEach((g, i) => {
     out.push({ name: `04${letter(i)}_activity.sql`, sql: withPayloads(() => chunkActivity(m, co, g, `4${letter(i)} activity`)) });
   });
+  if (m.keyHistory?.length) out.push({ name: "05_key_history.sql", sql: withPayloads(() => chunkKeyHistory(m, co, "5 key history")) });
   return out;
 }

@@ -478,3 +478,9 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Owner to give the real cleaning prices (Cleaning > Prices): until then every price is "not set" and cleans are charged at the old rate.
 - Confirm with YJ: external cleaning jobs count in the cleaner's pay at the job's full amount, split equally between the cleaners on it.
 - Maintenance amount: keep finalAmount on POST /api/maintenance/issues/:id/complete as the field a future integration fills.
+## Notion import: key history, PLASTER CEILING & PARTITION split, PDF upload (feat/notion-import-gaps, 20 Oct 2026)
+- Done 20 Oct 2026 on staging and production from the 20 Oct export: 1 new project (Mr Tyger), 50 site tasks, 12 design links, 55 dated key passes, 77 design PDFs in the app; production's missing 11 Oct activity notes (27) and start dates (20) filled in. A second run writes nothing.
+- PDFs: 77 of 94 design PDFs uploaded through the ERP's own file upload (POST /api/renovation/:id/files, 10 MB cap) under a staging login, then linked; no Cloudflare login needed. 17 stay as Notion links: 4 between 10 and 25 MB, 5 over 25 MB, 6 renamed in Notion since the export, 2 not in the export.
+- Upload path used: the app's own file upload under a signed-in session, then the design rows pointed at the keys; upload-files.mjs (wrangler) only works with Conts Cloudflare access.
+- Legacy OUG shows two 2D v1 entries: Notion replaced the file between the 11 Oct and 20 Oct exports and the import numbers versions per export.
+- Not imported: the Notion "Site Visit" calendar (477 entries May to Oct 2026, incl. 104 design amendments and 50 dated site measurements).

@@ -38,15 +38,16 @@ export function col(row, name) {
 
 /** Notion page ids are 32 hex characters at the end of the page URL slug. */
 export function pageIdOf(url) {
-  const m = /([0-9a-f]{32})(?:[?#)]|$)/.exec(String(url ?? ""));
+  const m = /([0-9a-f]{32})(?:\.md|[?#)]|$)/.exec(String(url ?? ""));
   return m ? m[1] : null;
 }
 
-/** A relation cell: "Title (https://app.notion.com/p/Slug-<id>?pvs=21), Title 2 (...)" -> [{ title, id }]. */
+/** A relation cell: "Title (https://app.notion.com/p/Slug-<id>?pvs=21), Title 2 (...)" -> [{ title, id }].
+    Newer exports link a page inside the export instead: "Title (Title%20<id>.md)". */
 export function parseRelation(cell) {
   const s = String(cell ?? "");
   const out = [];
-  const re = /\s*(.*?)\s*\((https?:\/\/[^\s)]*notion[^\s)]*)\)\s*(?:,|$)/gy;
+  const re = /\s*(.*?)\s*\((https?:\/\/[^\s)]*notion[^\s)]*|[^\s]*?[0-9a-f]{32}\.md)\)\s*(?:,|$)/gy;
   let i = 0;
   while (i < s.length) {
     re.lastIndex = i;
