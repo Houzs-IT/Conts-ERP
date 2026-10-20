@@ -201,12 +201,14 @@ export default function MaintenancePage() {
 /* ---------- the list ---------- */
 
 const jobLabel = (i: Issue) => `${i.propertyName} ${i.unitNumber}`;
+// Some rows are in progress without a start time (set before Start repair recorded one), so the state counts too.
+const started = (i: Issue) => !!i.startedAt || i.state === 'in_progress';
 type Move = 'start' | 'end' | 'reopen';
 /** Why a ticked job is left alone by a move, or null when the move applies. */
 function moveSkip(i: Issue, move: Move): string | null {
   if (move === 'reopen') return i.state === 'resolved' ? null : 'Not finished';
   if (i.state === 'resolved') return 'Already finished';
-  if (move === 'start') return i.startedAt ? 'Already started' : awaitingOwner(i) ? "Waiting for the owner's approval" : null;
+  if (move === 'start') return started(i) ? 'Already started' : awaitingOwner(i) ? "Waiting for the owner's approval" : null;
   return !i.startedAt ? 'Not started' : i.endedAt ? 'Repair already finished' : null;
 }
 const collectedText = (i: Issue) => (i.collectedAt ? `Collected ${dateShort(i.collectedAt)}` : COLLECT_FROM[i.chargeTo] && (i.finalAmount ?? i.quotedAmount) ? 'Not yet' : '');
@@ -308,10 +310,11 @@ function JobCard({ i, money }: { i: Issue; money: boolean }) {
       </span>
       <span className="text-copy text-ink [overflow-wrap:anywhere]">{i.title}</span>
       <span className="text-meta text-muted-ink">
-        {CATEGORY[i.category] ?? i.category} · {i.vendorName ? i.vendorName : <span className="text-danger">Unassigned</span>}
+        {CATEGORY[i.category] ?? i.category} · {i.vendorName ? i.vendorName : <span className="text-danger">Unassigned</span>} · reported {dateShort(i.reportedAt)}
       </span>
       <span className="flex gap-1.5 flex-wrap pt-0.5">
         {typeOf(i) !== 'normal' && <StatusBadge tone={typeOf(i) === 'urgent' ? 'critical' : 'info'}>{JOB_TYPE[typeOf(i)]}</StatusBadge>}
+        {i.blocksUnit && i.state !== 'resolved' && <StatusBadge tone="critical">Unit blocked</StatusBadge>}
         {i.dueOn && typeOf(i) === 'normal' && i.state !== 'resolved' && <StatusBadge tone="neutral">Due {dateShort(i.dueOn)}</StatusBadge>}
         <StatusBadge tone={s.tone === 'gold' ? 'neutral' : s.tone}>{s.label}</StatusBadge>
         {i.approvalStatus === 'needed' && !awaitingOwner(i) ? null : i.approvalStatus === 'approved' && <StatusBadge tone="success">Owner approved</StatusBadge>}
@@ -376,6 +379,7 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
   const counts = { before: media.filter(m => (m.stage ?? 'before') === 'before').length, after: media.filter(m => m.stage === 'after').length };
   const charge = i.finalAmount ?? i.quotedAmount;
   const collectFrom = COLLECT_FROM[i.chargeTo];
+  const doneWhy = awaitingOwner(i) ? "Waiting for the owner's approval." : counts.after === 0 ? 'Add a photo of the fixed job first (Photos, Fixed).' : null;
 
   const refresh = useCallback(() => { files.reload(); onChanged(); }, [files, onChanged]);
   async function act(key: string, fn: () => Promise<unknown>, ok: string, body?: string) {
@@ -420,7 +424,7 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
     { label: 'Assigned', at: null, on: !!i.vendorName, note: i.vendorName ? `${i.vendorName}${i.assigneeKind ? ` (${KIND_WORD[i.assigneeKind].toLowerCase()})` : ''}` : undefined },
     { label: 'Quote', at: null, on: i.quotedAmount != null, note: money && i.quotedAmount != null ? `${rm(i.quotedAmount)}${i.billingDate ? `, billed ${date(i.billingDate)}` : ''}` : undefined },
     { label: i.ownerApprovalRequired ? 'Owner approved' : 'Approval', at: i.ownerApprovedAt, on: !!i.ownerApprovedAt || (i.quotedAmount != null && !awaitingOwner(i)), note: awaitingOwner(i) ? 'Waiting for the owner' : !i.ownerApprovalRequired && i.quotedAmount != null ? 'Not needed' : undefined },
-    { label: 'In progress', at: i.startedAt, on: !!i.startedAt },
+    { label: 'In progress', at: i.startedAt, on: started(i) },
     { label: 'Done', at: i.resolvedAt, on: done, note: done && money && i.finalAmount != null ? `${rm(i.finalAmount)}, ${PAYER_SHORT[i.chargeTo]}` : undefined },
   ];
   // "Next" is the first step not done AFTER the furthest one that is done, so a skipped step (no assignee, no quote) never shows as next.
@@ -488,7 +492,7 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
       {!done && (
         <section className="flex flex-col gap-2">
           <h3 className="m-0 text-copy font-semibold">Assigned to</h3>
-          <AssigneePicker value={assignee} onChange={setAssignee} techs={techs} />
+          <div className="max-sm:[&>div>span:last-child>button]:min-h-11"><AssigneePicker value={assignee} onChange={setAssignee} techs={techs} /></div>
           <Button size="sm" variant="secondary" className="self-start" disabled={!assignee.trim() || assignee.trim() === (i.vendorName ?? '')} disabledReason="Pick a different person."
             loading={busy === 'assign'} onClick={() => void act('assign', () => api.patch(`/maintenance/issues/${i.id}`, { assigneeName: assignee.trim() }), 'Job assigned.')}>Save</Button>
         </section>
@@ -656,12 +660,15 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
               )}
             </section>
           )}
-          {(!i.startedAt || money) && <section className="flex gap-2 pt-4 [border-top:1px_solid_var(--color-line-soft)]">
-            {!i.startedAt && <Button variant="secondary" className="flex-1" loading={busy === 'start'} disabled={awaitingOwner(i)} disabledReason="Waiting for the owner's approval."
-              onClick={() => void act('start', () => api.post(`/maintenance/issues/${i.id}/start`, {}), 'Repair started.')}>Start repair</Button>}
-            {money && <Button variant="primary" className="flex-1" disabled={awaitingOwner(i) || counts.after === 0}
-          disabledReason={awaitingOwner(i) ? "Waiting for the owner's approval." : 'Add a photo of the fixed job first (Photos, Fixed).'}
-          onClick={() => setCompleteOpen(true)}>Mark done</Button>}
+          {/* Phones have no hover, so the reason a button is off is written out. The bar sticks to the bottom of a long sheet on phones. */}
+          {(!started(i) || money) && <section className="flex flex-col gap-2 pt-4 [border-top:1px_solid_var(--color-line-soft)] max-sm:sticky max-sm:bottom-0 max-sm:z-[2] max-sm:-mx-5 max-sm:px-5 max-sm:pb-4 max-sm:bg-card max-sm:shadow-[0_-6px_12px_-8px_rgba(0,0,0,0.25)]">
+            <div className="flex gap-2">
+              {!started(i) && <Button variant="secondary" className="flex-1" loading={busy === 'start'} disabled={awaitingOwner(i)} disabledReason="Waiting for the owner's approval."
+                onClick={() => void act('start', () => api.post(`/maintenance/issues/${i.id}/start`, {}), 'Repair started.')}>Start repair</Button>}
+              {money && <Button variant="primary" className="flex-1" disabled={!!doneWhy} disabledReason={doneWhy ?? undefined}
+                onClick={() => setCompleteOpen(true)}>Mark done</Button>}
+            </div>
+            {doneWhy && (money || awaitingOwner(i)) && <span className="text-meta text-muted-ink">{doneWhy}</span>}
           </section>}
         </>
       )}
