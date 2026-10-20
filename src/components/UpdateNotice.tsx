@@ -40,7 +40,7 @@ export default function UpdateNotice() {
   if (!stale || dismissed) return null;
   return (
     <div role="status" aria-live="polite"
-      className="fixed left-1/2 -translate-x-1/2 bottom-5 z-[90] flex items-center gap-3 w-[min(560px,calc(100vw-24px))] py-2.5 pl-4 pr-2.5 rounded-card bg-black text-white shadow-[var(--shadow-overlay)] text-[13.5px] max-md:left-3 max-md:right-3 max-md:w-auto max-md:translate-x-0 max-md:bottom-[calc(76px+env(safe-area-inset-bottom))]">
+      className="fixed left-1/2 -translate-x-1/2 bottom-5 z-[90] flex items-center gap-3 w-[min(560px,calc(100vw-24px))] py-2.5 pl-4 pr-2.5 rounded-card bg-black text-white shadow-[var(--shadow-overlay)] text-[13.5px] max-md:left-3 max-md:right-3 max-md:w-auto max-md:translate-x-0 max-md:bottom-[calc(76px+env(safe-area-inset-bottom))] [body:has([data-action-bar])_&]:bottom-[calc(104px+env(safe-area-inset-bottom))]">
       <span className="flex-1 min-w-0 leading-snug">A new version of The Conts is ready. Reloading keeps you signed in.</span>
       <button type="button" onClick={() => window.location.reload()}
         className="h-8 px-3 rounded-control border-none cursor-pointer font-sans text-[13px] font-semibold bg-gold text-black whitespace-nowrap">Reload</button>

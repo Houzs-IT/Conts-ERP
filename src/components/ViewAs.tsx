@@ -62,8 +62,9 @@ export default function ViewAs() {
 
   return (
     // z-[45]: above the phone tab bar (40) and the page, under every dialog and drawer (50 and up), so it never
-    // sits on a dialog's buttons. On phones (under 600px, deviceClass.ts) it sits above the 64px bottom tab bar.
-    <div className="fixed right-3 bottom-3 max-[600px]:bottom-[calc(76px+env(safe-area-inset-bottom))] z-[45] flex flex-col items-end [font-family:inherit] text-meta">
+    // sits on a dialog's buttons. On phones (under 600px, deviceClass.ts) it sits above the 64px bottom tab bar, and
+    // above a pinned action bar (data-action-bar, the field app's job button) wherever one is showing.
+    <div className="fixed right-3 bottom-3 max-[600px]:bottom-[calc(76px+env(safe-area-inset-bottom))] [body:has([data-action-bar])_&]:bottom-[calc(104px+env(safe-area-inset-bottom))] z-[45] flex flex-col items-end [font-family:inherit] text-meta">
       {open && !min && (
         <div className="mb-2 w-[300px] max-w-[calc(100vw-24px)] max-h-[60vh] overflow-y-auto bg-card rounded-card border border-solid border-line [box-shadow:var(--shadow-overlay)]">
           <div className="px-3 py-2 text-[11px] text-muted-ink [border-bottom:1px_solid_var(--color-line-soft)]">

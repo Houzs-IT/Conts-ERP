@@ -53,9 +53,11 @@ interface Pending { key: string; name: string; preview: string | null; video: bo
 /** Thumbnails of the photos and videos already attached, then an "Add photo" tile. With `upload`, files picked or
  *  dropped go up one at a time (the caller's `upload` sends one file) and show on the grid while they do; refused
  *  files stay as a red tile saying why. Without `upload` the grid is read-only. */
-export function MediaGallery({ items, upload, onDone, addLabel = 'Add photo', capture, emptyText, showStage }: {
+export function MediaGallery({ items, upload, onDone, addLabel = 'Add photo', capture, emptyText, showStage, onRemove }: {
   items: MediaItem[]; upload?: (file: File) => Promise<unknown>; onDone?: () => void; addLabel?: string;
   capture?: boolean; emptyText?: string; showStage?: boolean;
+  /** Puts an X on each saved tile. The caller confirms and deletes. */
+  onRemove?: (item: MediaItem) => void;
 }) {
   const [view, setView] = useState<MediaItem | null>(null);
   const [pending, setPending] = useState<Pending[]>([]);
@@ -118,22 +120,35 @@ export function MediaGallery({ items, upload, onDone, addLabel = 'Add photo', ca
     <div className="flex flex-col gap-2 min-w-0" {...drop.handlers}>
       <div className={GRID}>
         {items.map(m => (
-          <button key={m.id} type="button" onClick={() => setView(m)} title={m.fileName} aria-label={`Open ${m.fileName}`}
-            className="group relative aspect-square rounded-control overflow-hidden bg-sunken border-0 p-0 cursor-pointer outline-none focus-visible:[box-shadow:0_0_0_2px_var(--color-card),0_0_0_4px_var(--color-gold)]">
-            {m.kind === 'video'
-              ? <video src={`${m.url}#t=0.1`} preload="metadata" muted playsInline className="w-full h-full object-cover block bg-charcoal" />
-              : <img src={m.url} alt={m.fileName} loading="lazy" className="w-full h-full object-cover block transition-transform duration-[var(--motion-standard)] group-hover:scale-[1.03]" />}
-            <span aria-hidden className="absolute inset-0 rounded-control [box-shadow:inset_0_0_0_1px_var(--color-line-soft)]" />
-            {m.kind === 'video' && (
-              <span className="absolute left-1.5 bottom-1.5 inline-flex items-center gap-1 h-5 pl-1 pr-1.5 rounded-pill bg-[var(--color-surface-scrim)] text-white text-caption font-medium">
-                <Icon name="Play" size="sm" style={{ width: 12, height: 12 }} />Video
-              </span>
+          <div key={m.id} className="relative">
+            <button type="button" onClick={() => setView(m)} title={m.fileName} aria-label={`Open ${m.fileName}`}
+              className="group relative block w-full aspect-square rounded-control overflow-hidden bg-sunken border-0 p-0 cursor-pointer outline-none focus-visible:[box-shadow:0_0_0_2px_var(--color-card),0_0_0_4px_var(--color-gold)]">
+              {m.kind === 'video'
+                ? <video src={`${m.url}#t=0.1`} preload="metadata" muted playsInline className="w-full h-full object-cover block bg-charcoal" />
+                : <img src={m.url} alt={m.fileName} loading="lazy" className="w-full h-full object-cover block transition-transform duration-[var(--motion-standard)] group-hover:scale-[1.03]" />}
+              <span aria-hidden className="absolute inset-0 rounded-control [box-shadow:inset_0_0_0_1px_var(--color-line-soft)]" />
+              {m.kind === 'video' && (
+                <span className="absolute left-1.5 bottom-1.5 inline-flex items-center gap-1 h-5 pl-1 pr-1.5 rounded-pill bg-[var(--color-surface-scrim)] text-white text-caption font-medium">
+                  <Icon name="Play" size="sm" style={{ width: 12, height: 12 }} />Video
+                </span>
+              )}
+              {showStage && m.stage && <span className="absolute top-1.5 left-1.5 px-1.5 rounded-pill text-caption bg-[var(--color-surface-scrim)] text-white">{m.stage.charAt(0).toUpperCase() + m.stage.slice(1)}</span>}
+              {!onRemove && (
+                <span aria-hidden className="absolute top-1.5 right-1.5 w-6 h-6 grid place-items-center rounded-full bg-card text-ink shadow-[var(--shadow-raised)] opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity duration-[var(--motion-fast)]">
+                  <Icon name="Maximize2" size="sm" style={{ width: 13, height: 13 }} />
+                </span>
+              )}
+            </button>
+            {/* 32px dot inside a 44px tap area, so a gloved thumb hits it without opening the photo. */}
+            {onRemove && (
+              <button type="button" onClick={() => onRemove(m)} aria-label={`Remove ${m.fileName}`}
+                className="absolute top-0 right-0 w-11 h-11 grid place-items-center border-0 bg-transparent p-0 cursor-pointer outline-none group/x">
+                <span className="w-8 h-8 grid place-items-center rounded-full bg-card text-ink shadow-[var(--shadow-raised)] group-hover/x:bg-danger-bg group-hover/x:text-danger group-focus-visible/x:[box-shadow:var(--focus-ring)]">
+                  <Icon name="X" size="sm" />
+                </span>
+              </button>
             )}
-            {showStage && m.stage && <span className="absolute top-1.5 left-1.5 px-1.5 rounded-pill text-caption bg-[var(--color-surface-scrim)] text-white">{m.stage.charAt(0).toUpperCase() + m.stage.slice(1)}</span>}
-            <span aria-hidden className="absolute top-1.5 right-1.5 w-6 h-6 grid place-items-center rounded-full bg-card text-ink shadow-[var(--shadow-raised)] opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity duration-[var(--motion-fast)]">
-              <Icon name="Maximize2" size="sm" style={{ width: 13, height: 13 }} />
-            </span>
-          </button>
+          </div>
         ))}
 
         {pending.map(p => (
