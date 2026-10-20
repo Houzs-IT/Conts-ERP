@@ -5,7 +5,7 @@ import { useSession } from '../lib/session';
 import { useToast } from './Toast';
 import Icon from './Icon';
 
-interface Account { id: string; fullName: string; email: string; role: string; hasUnit?: boolean }
+interface Account { id: string; fullName: string; email: string; role: string; hasUnit?: boolean; notSetUp?: boolean }
 interface State { enabled: boolean; me?: { id: string; fullName: string }; viewing?: Account | null; users?: Account[]; roles?: string[] }
 
 const roleName = (role: string) => ROLE_LABEL[role] ?? role.replace(/_/g, ' ');
@@ -20,7 +20,12 @@ export default function ViewAs() {
   const [state, setState] = useState<State | null>(null);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [min, setMin] = useState(() => { try { return localStorage.getItem(MIN_KEY) === '1'; } catch { return false; } });
+  // On phones it starts as the small icon: the field app has no tab bar, so the full pill would sit on its buttons.
+  const [min, setMin] = useState(() => {
+    let saved: string | null = null;
+    try { saved = localStorage.getItem(MIN_KEY); } catch { /* fall back to the screen size */ }
+    return saved ? saved === '1' : window.matchMedia('(max-width: 600px)').matches;
+  });
   const toast = useToast();
   const userId = useSession().user?.id;
 
@@ -48,7 +53,7 @@ export default function ViewAs() {
   const viewing = state.viewing;
   const label = viewing ? `Viewing as: ${roleName(viewing.role)} (${viewing.fullName})` : 'View as: Me';
   const people = (state.users ?? []).filter(u => u.id !== state.me!.id && !isTest(u));
-  const owners = people.filter(u => u.role === 'owner' && u.hasUnit);
+  const owners = people.filter(u => u.role === 'owner' && u.hasUnit && !u.notSetUp);
   const roles = [...new Set(people.map(u => u.role))];
   const pill = 'inline-flex items-center gap-1.5 h-8 rounded-full border border-solid cursor-pointer [font-family:inherit] text-[12px] font-semibold [box-shadow:var(--shadow-overlay)]';
   const warn = { background: 'var(--color-warning)', color: 'var(--color-warning-fg)', borderColor: 'var(--color-warning-line)' };
@@ -81,7 +86,7 @@ export default function ViewAs() {
               {u.fullName}
             </button>
           )) : (
-            <div className="px-3 pl-6 pb-1.5 text-[11px] text-muted-ink">No owner on staging has a portal login and a unit yet. Invite one from Owners.</div>
+            <div className="px-3 pl-6 pb-1.5 text-[11px] text-muted-ink">No owner on staging has a set-up portal login and a unit yet. Invite one from Owners and let them choose a password.</div>
           )}
 
           <div className={`${heading} mt-1 [border-top:1px_solid_var(--color-line-soft)]`}>By person</div>
@@ -89,9 +94,11 @@ export default function ViewAs() {
             <div key={role}>
               <div className="px-3 pt-1.5 pb-0.5 text-[11px] font-semibold text-muted-ink">{roleName(role)}</div>
               {people.filter(u => u.role === role).map(u => (
-                <button key={u.id} type="button" disabled={busy || viewing?.id === u.id} onClick={() => go({ userId: u.id })} className={row}>
+                <button key={u.id} type="button" disabled={busy || viewing?.id === u.id || u.notSetUp} onClick={() => go({ userId: u.id })} className={row}>
                   <span className="font-medium">{u.fullName}</span>
-                  <span className="block text-[11px] text-muted-ink overflow-hidden text-ellipsis whitespace-nowrap">{u.email}</span>
+                  <span className="block text-[11px] text-muted-ink overflow-hidden text-ellipsis whitespace-nowrap">
+                    {u.notSetUp ? 'Not set up yet: has not chosen a password' : u.email}
+                  </span>
                 </button>
               ))}
             </div>

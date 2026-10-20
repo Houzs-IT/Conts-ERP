@@ -1,5 +1,5 @@
 import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/db';
-import { readSession, readCookie, signSession, cookie, clearCookie, sessionLimits, securitySettings, startSession, type Session } from '../../_lib/auth';
+import { readSession, readCookie, signSession, cookie, clearCookie, sessionLimits, securitySettings, type Session } from '../../_lib/auth';
 import { doorFor, HOME } from '../../_lib/door';
 import { ROLES } from '../../_lib/roles';
 import { ROLE_LABEL } from '../../../src/lib/vocabulary';
@@ -65,15 +65,15 @@ function reply(data: unknown, cookies: string[]) {
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const w = await who(request, env);
   if (!w) return json({ enabled: false });
-  const users = await all<Account & { has_unit: boolean }>(env, `
-    SELECT id, full_name, email, role,
+  const users = await all<Account & { has_unit: boolean; must_change_password: number }>(env, `
+    SELECT id, full_name, email, role, must_change_password,
       EXISTS (SELECT 1 FROM owners o JOIN units un ON un.owner_id = o.id WHERE o.user_id = users.id) AS has_unit
     FROM users WHERE is_active = 1 ORDER BY role, full_name`);
   return json({
     enabled: true,
     me: { id: w.origin.userId, fullName: w.origin.fullName },
     viewing: w.current.userId === w.origin.userId ? null : { id: w.current.userId, fullName: w.current.fullName, role: w.current.role },
-    users: users.map(u => ({ id: u.id, fullName: u.full_name, email: u.email, role: u.role, hasUnit: !!u.has_unit })),
+    users: users.map(u => ({ id: u.id, fullName: u.full_name, email: u.email, role: u.role, hasUnit: !!u.has_unit, notSetUp: !!u.must_change_password })),
     roles: TEST_ROLES,
   });
 };
@@ -85,14 +85,21 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const body = await request.json().catch(() => null) as { userId?: string; role?: string } | null;
   const user = body?.role
     ? (TEST_ROLES.includes(body.role) ? await testAccount(env, w, body.role) : null)
-    : body?.userId ? await one<Account>(env, 'SELECT id, full_name, email, role FROM users WHERE id = ? AND is_active = 1', body.userId) : null;
+    : body?.userId ? await one<Account & { must_change_password: number }>(env,
+      'SELECT id, full_name, email, role, must_change_password FROM users WHERE id = ? AND is_active = 1', body.userId) : null;
   if (!user) return fail('VALIDATION', 'That account does not exist or is switched off.', 400);
+  const back = user.id === w.origin.userId;
+  // Until that person chooses a password, the system shows them only "Set a new password", so there is nothing to look at.
+  if (!back && 'must_change_password' in user && user.must_change_password) {
+    return fail('NOT_SET_UP', 'That account has not been set up yet: the person has not chosen a password. Use the role list instead.', 400);
+  }
 
   const settings = await securitySettings(env);
   const mine = sessionLimits(settings, w.origin.role);
   const theirs = sessionLimits(settings, user.role);
-  const back = user.id === w.origin.userId;
-  const sid = await startSession(env, request, user.id, theirs.absoluteDays);
+  // No signed-in browser row for the account being viewed, so View as never shows up in that person's device list.
+  // Going back reuses the real person's own row, so switching back and forth adds none for them either.
+  const sid = back ? w.origin.sid : undefined;
   const session = await signSession(env.SESSION_SECRET,
     { userId: user.id, email: user.email, role: user.role, fullName: user.full_name, sid }, theirs.ttlHours, theirs.absoluteDays);
   const origin = await signSession(env.SESSION_SECRET,

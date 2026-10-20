@@ -92,12 +92,23 @@ r = await b('POST', '/api/auth/view-as', { role: 'housekeeper' });
 check('the same role again reuses its test account', (await whoAmI(b))?.id === madeIds.housekeeper);
 r = await b('GET', '/api/auth/view-as');
 check('...and the switcher says which role is being viewed', r.json?.viewing?.role === 'housekeeper' && r.json.viewing.fullName === 'Test: Cleaner' && r.json.me.id === MGMT.userId, r.text.slice(0, 200));
+r = await b('GET', '/api/account');
+check('viewing adds no signed-in device to the viewed account', Array.isArray(r.json?.devices) && r.json.devices.length === 0, JSON.stringify(r.json?.devices));
 r = await b('POST', '/api/auth/view-as', { role: 'owner' });
 check('owner is not a test-account role (400)', r.status === 400, `${r.status} ${r.text}`);
 r = await b('POST', '/api/auth/view-as', { role: 'superuser' });
 check('an unknown role is refused (400)', r.status === 400, `${r.status} ${r.text}`);
 const login = await fetch(BASE + '/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'role-housekeeper@staging.invalid', password: '!' }) });
 check('a test account cannot be signed in to with a password', login.status >= 400 && !login.headers.getSetCookie().some(c => /^tc_session=[^;]+/.test(c) && !/Max-Age=0/.test(c)), `${login.status}`);
+
+// An invited account that has not chosen a password yet only ever shows "Set a new password": refused, and marked in the list.
+const mgmt = browser(MGMT);
+const invited = await mgmt('POST', '/api/users', { email: `invited-${Date.now()}@example.com`, fullName: 'Invited Not Set Up', role: 'technician' });
+const invitedId = invited.json?.id ?? invited.json?.userId ?? invited.json?.data?.id;
+r = await mgmt('GET', '/api/auth/view-as');
+check('an invited account not set up yet is marked as such', r.json?.users?.find(u => u.id === invitedId)?.notSetUp === true, `${invited.status} ${invited.text.slice(0, 200)}`);
+r = await mgmt('POST', '/api/auth/view-as', { userId: invitedId });
+check('...and viewing it is refused (400)', r.status === 400 && r.json?.error?.code === 'NOT_SET_UP', `${r.status} ${r.text}`);
 
 r = await b('POST', '/api/auth/view-as', { userId: 'no-such-account' });
 check('an unknown account is refused (400)', r.status === 400, `${r.status} ${r.text}`);
