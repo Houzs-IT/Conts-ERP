@@ -550,7 +550,7 @@ export function DataTable<R>(props: DataTableProps<R>) {
           <div className={cx('flex items-center gap-2 flex-wrap max-md:flex-[1_1_auto] max-md:justify-end', 'ml-auto')}>
             {actions}
             {phoneSort && sortChoices.length > 0 && (
-              <label className={cx(!cardsOnly && 'md:hidden', 'relative flex items-center flex-[1_1_96px] min-w-0')}>
+              <label className={cx(!cardsOnly && '@3xl/dt:hidden', 'relative flex items-center flex-[1_1_96px] min-w-0')}>
                 <span className="absolute w-px h-px overflow-hidden [clip:rect(0_0_0_0)]">Sort</span>
                 <select value={sortCol ? `${sortCol}:${sortDir === 'desc' ? 'desc' : 'asc'}` : ''} aria-label="Sort"
                   onChange={e => setParams(prev => { const next = new URLSearchParams(prev); if (e.target.value) next.set(SORT, e.target.value); else next.delete(SORT); next.delete(PAGE); return next; }, { replace: true })}
@@ -620,8 +620,8 @@ export function DataTable<R>(props: DataTableProps<R>) {
 
       {error && !firstLoad && <div className="px-[22px] pt-3 max-md:px-4"><StaleBanner message={`Showing the last list we have. ${error}`} onRetry={onRetry ?? (() => {})} /></div>}
 
-      {/* Wide screens: the table. Its own scroll box keeps the header in view and scrolls sideways when narrow. */}
-      <div className={cx(cardsOnly ? 'hidden' : 'max-md:hidden', 'relative')}>
+      {/* A wide box (the list's own width, not the window's): the table. Its own scroll box keeps the header in view and scrolls sideways when narrow. */}
+      <div className={cx(cardsOnly ? 'hidden' : '@max-3xl/dt:hidden', 'relative')}>
         <BusyLine on={refreshing} />
         <div ref={scrollBox} data-keep-scroll={id} className="overflow-auto" style={{ minHeight: firstLoad || shown.length > 6 ? 240 : undefined }} aria-busy={!!loading}>
           {firstLoad && !error ? <RowsSkeleton rows={8} cols={Math.min(7, visible.length || 5)} /> : errorView ?? (
@@ -709,8 +709,8 @@ export function DataTable<R>(props: DataTableProps<R>) {
         {!firstLoad && !errorView && shown.length === 0 && <div className={cx('transition-opacity duration-150', refreshing && 'opacity-55')}>{emptyView}</div>}
       </div>
 
-      {/* Phones: one card per row. */}
-      <div className={cx(!cardsOnly && 'md:hidden', 'relative')} aria-busy={!!loading}>
+      {/* A narrow box (a phone, or a squeezed pane on a desk): one card per row. */}
+      <div className={cx(!cardsOnly && '@3xl/dt:hidden', 'relative')} aria-busy={!!loading}>
         <BusyLine on={refreshing} />
         {firstLoad && !error ? <CardRowsSkeleton rows={6} /> : errorView ?? (shown.length === 0 ? emptyView : (
           <ul className={cx('list-none m-0 p-0 transition-opacity duration-150', refreshing && 'opacity-55')}>
@@ -826,8 +826,8 @@ export function DataTable<R>(props: DataTableProps<R>) {
     </>
   );
 
-  if (bare) return <div className="relative">{body}</div>;
-  return <div className="relative bg-card border border-solid border-line rounded-card [overflow:clip] shrink-0">{body}</div>;
+  if (bare) return <div className="@container/dt relative">{body}</div>;
+  return <div className="@container/dt relative bg-card border border-solid border-line rounded-card [overflow:clip] shrink-0">{body}</div>;
 }
 
 /** A phone card from the columns: title and amount on the first line, the rest as one muted line, status last. */
