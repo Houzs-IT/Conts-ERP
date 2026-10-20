@@ -81,7 +81,7 @@ export default function FieldTodayPage({ linkTask, onLinked }: { linkTask?: stri
         : groups.map(([id, g]) => (
           <section key={id} className="flex flex-col gap-2">
             <h2 className="m-0 text-[16px] font-semibold tracking-[-0.01em] flex items-baseline gap-2">{g.name}<span className="text-meta text-muted-ink font-normal tabular-nums">{g.jobs.filter(j => j.done).length} of {g.jobs.length} done</span></h2>
-            {g.jobs.map(j => <TaskCard key={j.id} job={j} onOpen={() => setOpen(j.id)} onChanged={reload} />)}
+            {g.jobs.map(j => <TaskCard key={j.id} job={j} onOpen={() => setOpen(j.id)} />)}
           </section>
         ))}
       {/* The list stays mounted under the sheet, so closing it lands back at the same scroll position. */}
@@ -114,17 +114,10 @@ function MapLink({ address, className }: { address: string; className?: string }
 
 /** The list card: what a cleaner needs at the door (unit, size, access, the office's note, guests) and the next step.
  *  The building and its address are on the section header and in TaskDetail, not repeated on every card.
- *  The unit's button stretches over the whole card; the action button sits above it, so the two never nest. */
-function TaskCard({ job: j, onOpen, onChanged }: { job: Job; onOpen: () => void; onChanged: () => void }) {
-  const toast = useToast();
-  const [busy, setBusy] = useState(false);
+ *  The unit's button stretches over the whole card and only opens TaskDetail. Start job lives there, not here,
+ *  so a tap while scrolling the list can never start a job by mistake. */
+function TaskCard({ job: j, onOpen }: { job: Job; onOpen: () => void }) {
   const late = !j.done && daysLate(j.day) > 0;
-  async function start() {
-    setBusy(true);
-    try { await api.post(`/housekeeping/tasks/${j.id}/start`, {}); toast({ tone: 'success', title: `Started at ${hm(new Date().toISOString())}.` }); onChanged(); onOpen(); }
-    catch (e) { toast({ tone: 'critical', title: 'Not saved.', body: errorMessage(e, 'Check your signal and try again.') }); }
-    finally { setBusy(false); }
-  }
   const row = 'flex items-start gap-2 text-copy';
   return (
     <article className={cx('relative bg-card rounded-card border border-solid px-4 py-3.5 flex flex-col gap-2 has-[button:active]:bg-page', late ? 'border-danger-line' : 'border-line', j.done && 'text-muted-ink')}>
@@ -134,6 +127,7 @@ function TaskCard({ job: j, onOpen, onChanged }: { job: Job; onOpen: () => void;
           <span className="block text-copy text-muted-ink">{subtitle(j)}</span>
         </button>
         <span className="flex items-center gap-1.5 flex-wrap justify-end"><JobStatus job={j} /></span>
+        <Icon name="ChevronRight" size="sm" color="var(--color-muted-ink)" style={{ marginTop: 3, flex: 'none' }} />
       </div>
       {!j.external && j.accessInstruction && (
         <div className={row}><Icon name="KeyRound" size="sm" color="var(--color-muted-ink)" style={{ marginTop: 3 }} /><span className="min-w-0 line-clamp-2">{j.accessInstruction}</span></div>
@@ -147,12 +141,6 @@ function TaskCard({ job: j, onOpen, onChanged }: { job: Job; onOpen: () => void;
           <span className="min-w-0">Out: <b className="text-ink font-medium">{j.previous ? `${j.previous.checkOutTime} ${j.previous.guestName}` : 'None'}</b>
             <span className="mx-1.5">|</span>In: <b className="text-ink font-medium">{j.next ? `${j.next.checkInTime} ${j.next.guestName}` : 'None'}</b></span>
         </div>
-      )}
-      {!j.done && (
-        <Button size="touch" variant={j.state === 'in_progress' ? 'secondary' : 'primary'} className="relative z-[1] w-full" loading={busy}
-          onClick={() => (j.state === 'in_progress' ? onOpen() : void start())}>
-          {j.state === 'in_progress' ? 'Continue job' : 'Start job'}
-        </Button>
       )}
     </article>
   );
