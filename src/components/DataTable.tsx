@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import Icon from './Icon';
 import { Button } from './Button';
@@ -505,7 +505,7 @@ export function DataTable<R>(props: DataTableProps<R>) {
   const [panel, setPanel] = useState<null | 'columns' | 'views' | 'export' | 'filters' | 'bulkExport' | `col:${string}`>(null);
   const closePanel = useCallback(() => setPanel(null), []);
   const colsBtn = useRef<HTMLButtonElement>(null), viewsBtn = useRef<HTMLButtonElement>(null), exportBtn = useRef<HTMLButtonElement>(null);
-  const filtersBtn = useRef<HTMLButtonElement>(null), bulkExportBtn = useRef<HTMLButtonElement>(null);
+  const filtersBtn = useRef<HTMLButtonElement>(null), bulkExportBtn = useRef<HTMLButtonElement>(null), moreBtn = useRef<HTMLButtonElement>(null);
   const headAnchor = useRef<HTMLElement | null>(null);
   // With no height given, the table's scroll box runs to the bottom of the screen (see useFillHeight).
   const scrollBox = useFillHeight({ enabled: maxHeight === undefined, fallback: maxHeight ?? 'calc(100dvh - 300px)' });
@@ -576,7 +576,7 @@ export function DataTable<R>(props: DataTableProps<R>) {
             <ToolButton icon={exporting ? 'Loader' : 'Download'} label={exporting ? `Exporting ${exporting}` : 'Export'} btnRef={exportBtn} active={panel === 'export'}
               onClick={() => { if (!exporting) setPanel(p => (p === 'export' ? null : 'export')); }} />
             </span>
-            {!(noViews && noColumns) && <PhoneMoreMenu items={[
+            {!(noViews && noColumns) && <PhoneMoreMenu btnRef={moreBtn} items={[
               ...(!noViews ? [{ icon: 'Bookmark', label: active ? `View: ${active.name}` : 'Saved views', go: () => setPanel('views') }] : []),
               ...(!noColumns ? [{ icon: 'Columns3', label: 'Columns', go: () => setPanel('columns') }] : []),
               { icon: 'Download', label: exporting ? `Exporting ${exporting}` : 'Export', go: () => { if (!exporting) setPanel('export'); } },
@@ -673,9 +673,7 @@ export function DataTable<R>(props: DataTableProps<R>) {
                 </tr>
               </thead>
               <tbody className={cx('transition-opacity duration-150', refreshing && 'opacity-55')}>
-                {shown.length === 0 ? (
-                  <tr><td colSpan={visible.length + (pickCol ? 1 : 0)} className="p-0">{emptyView}</td></tr>
-                ) : shown.map(r => {
+                {shown.map(r => {
                   const k = rowKey(r);
                   const on = picked.has(k);
                   return (
@@ -706,6 +704,8 @@ export function DataTable<R>(props: DataTableProps<R>) {
             </table>
           )}
         </div>
+        {/* Under the scroll box, not in it, so a wide table that scrolls sideways cannot push the message out of view. */}
+        {!firstLoad && !errorView && shown.length === 0 && <div className={cx('transition-opacity duration-150', refreshing && 'opacity-55')}>{emptyView}</div>}
       </div>
 
       {/* Phones: one card per row. */}
@@ -781,11 +781,11 @@ export function DataTable<R>(props: DataTableProps<R>) {
         );
       })()}
 
-      <Floating anchor={colsBtn} open={panel === 'columns'} onClose={closePanel} width={300} align="right" label="Columns">
+      <Floating anchor={colsBtn} fallback={moreBtn} open={panel === 'columns'} onClose={closePanel} width={300} align="right" label="Columns">
         <ColumnsPanel defs={byKey} layout={layoutCols} onChange={setCols} onReset={() => setCols(mergeColumns(columns, null))} />
       </Floating>
 
-      <Floating anchor={exportBtn} open={panel === 'export'} onClose={closePanel} width={300} align="right" label="Export">
+      <Floating anchor={exportBtn} fallback={moreBtn} open={panel === 'export'} onClose={closePanel} width={300} align="right" label="Export">
         <div className="py-1">
           <PanelHeading>{server ? `All ${fmtCount(total)} matching ${noun[1]}` : `${fmtCount(processed.length)} ${processed.length === 1 ? noun[0] : noun[1]}`} · {plural(exportCols.length, 'column')}</PanelHeading>
           <PanelItem icon="FileSpreadsheet" label="Excel (.xlsx)" hint="Money as numbers in RM, dates as dates." onClick={() => { closePanel(); void doExport('xlsx'); }}
@@ -803,7 +803,7 @@ export function DataTable<R>(props: DataTableProps<R>) {
       </Floating>
 
       {!noViews && (
-        <Floating anchor={viewsBtn} open={panel === 'views'} onClose={closePanel} width={320} align="right" label="Saved views">
+        <Floating anchor={viewsBtn} fallback={moreBtn} open={panel === 'views'} onClose={closePanel} width={320} align="right" label="Saved views">
           <ViewsPanel views={views} activeId={activeView} onApply={v => { setActiveView(v.id); applyLayout(v.layout); closePanel(); }}
             onSaveNew={() => { closePanel(); setSaving({ name: '', scope: 'mine', isDefault: false }); }}
             onUpdate={async v => {
@@ -1117,11 +1117,11 @@ function SaveViewDialog({ initial, canShare, onClose, onSave }: {
 }
 
 /** Phones only: one button opening the less-used table tools in a bottom sheet. */
-function PhoneMoreMenu({ items }: { items: { icon: string; label: string; go: () => void }[] }) {
+function PhoneMoreMenu({ items, btnRef }: { items: { icon: string; label: string; go: () => void }[]; btnRef: RefObject<HTMLButtonElement> }) {
   const [open, setOpen] = useState(false);
   return (
     <span className="md:hidden @max-3xl/tb:inline">
-      <button type="button" onClick={() => setOpen(true)} aria-label="More table tools" aria-haspopup="menu"
+      <button ref={btnRef} type="button" onClick={() => setOpen(true)} aria-label="More table tools" aria-haspopup="menu"
         className="h-9 w-9 grid place-items-center rounded-control border border-solid border-line bg-card text-ink cursor-pointer">
         <Icon name="Ellipsis" size="sm" />
       </button>
