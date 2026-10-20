@@ -11,6 +11,7 @@ import { AttachmentLabel, MediaGallery, FileList, FileDropRow } from '../compone
 import { DataTable, type Column } from '../components/DataTable';
 import SplitPane from '../components/SplitPane';
 import { useToast } from '../components/Toast';
+import { useConfirm } from '../components/ConfirmDialog';
 import { useApi } from '../lib/useApi';
 import { refreshNavCounts } from '../lib/navBadges';
 import { api, ApiFailure, errorMessage } from '../lib/api';
@@ -354,6 +355,7 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
   const toast = useToast();
   const files = useApi<{ data: FileItem[] }>(`/maintenance/issues/${i.id}/documents`);
   const techs = useTechnicians();
+  const [confirmUi, ask] = useConfirm();
   const [busy, setBusy] = useState<string | null>(null);
   const [assignee, setAssignee] = useState(i.vendorName ?? '');
   const [item, setItem] = useState(i.skuId ?? 'other');
@@ -381,6 +383,22 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
     try { await fn(); toast({ tone: 'success', title: ok, body }); refresh(); return true; }
     catch (e) { toast({ tone: 'critical', title: 'Not saved.', body: errorMessage(e, 'Try again in a moment.') }); return false; }
     finally { setBusy(null); }
+  }
+  // Approval and collection are money decisions, so each asks once with the unit, job and amount in view.
+  async function recordApproval() {
+    const ok = await ask({ title: "Record the owner's approval?", confirmLabel: 'Record approval',
+      body: 'Only do this once the owner has said yes. The job can then go ahead.',
+      meta: <>{i.propertyName} {i.unitNumber} · {i.title}<br />Quote: {i.quotedAmount != null ? rm(i.quotedAmount) : 'no amount yet'}</> });
+    if (ok === null) return;
+    void act('approve', () => api.post(`/maintenance/issues/${i.id}/approve`, { approved: true, quotedAmount: i.quotedAmount }), 'Approval recorded.', 'The job can go ahead.');
+  }
+  async function markCollected(day: string | null) {
+    if (day) {
+      const ok = await ask({ title: `Mark collected from ${collectFrom}?`, confirmLabel: 'Mark collected',
+        meta: <>{i.propertyName} {i.unitNumber} · {i.title}<br />{charge != null ? rm(charge) : '—'}, collected {date(day)}</> });
+      if (ok === null) return;
+    }
+    void act('collected', () => api.patch(`/maintenance/issues/${i.id}`, { collectedAt: day }), day ? 'Marked collected.' : 'Marked not collected.');
   }
   async function uploadDocs(list: FileList) {
     const picked = Array.from(list);
@@ -411,6 +429,7 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
 
   return (
     <div className="ops-detail flex flex-col gap-4 p-5 text-copy">
+      {confirmUi}
       <div className="sticky top-0 z-[2] -mx-5 -mt-5 px-5 pt-4 pb-4 bg-black text-white flex items-start gap-3">
         <div className="flex-1 min-w-0 flex flex-col gap-1">
           <div className="text-[11px] font-semibold tracking-[0.12em] uppercase text-gold">{i.propertyName} · {i.unitNumber}</div>
@@ -456,7 +475,7 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
           <span className="text-meta">{i.ownerHasLogin ? 'The owner has been told and can approve it on the owner portal.' : 'This owner has no owner portal login, so they cannot approve it there. Ask them, then record their answer here.'}</span>
           {money && <div className="flex gap-2 flex-wrap">
             <Button size="sm" variant="secondary" loading={busy === 'approve'}
-              onClick={() => void act('approve', () => api.post(`/maintenance/issues/${i.id}/approve`, { approved: true, quotedAmount: i.quotedAmount }), 'Approval recorded.', 'The job can go ahead.')}>Record owner's approval</Button>
+              onClick={() => void recordApproval()}>Record owner's approval</Button>
             {i.ownerHasLogin && <Button size="sm" variant="tertiary" loading={busy === 'resend'}
               onClick={() => void act('resend', () => api.post(`/maintenance/issues/${i.id}/request-approval`, {}), 'Sent to the owner again.')}>Send again</Button>}
           </div>}
@@ -534,7 +553,7 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
               {collectFrom ? (
                 <DateMark label={`Collected from ${collectFrom}`} amount={charge} at={i.collectedAt} busy={busy === 'collected'} markLabel="Mark collected"
                   note={charge == null ? 'Add the quote first.' : i.chargeTo === 'owner' ? 'Taken off the owner statement for the billing month, or paid by the owner directly.' : undefined}
-                  onSet={day => void act('collected', () => api.patch(`/maintenance/issues/${i.id}`, { collectedAt: day }), day ? 'Marked collected.' : 'Marked not collected.')} />
+                  onSet={day => void markCollected(day)} />
               ) : <span className="text-meta text-muted-ink">{PAYER[i.chargeTo]} pays: nothing to collect.</span>}
               <div className="flex flex-col gap-1.5">
                 <span className="font-medium">Owed to {i.vendorName ?? 'the technician or contractor'}</span>
@@ -665,8 +684,8 @@ function DateMark({ label, amount, at, busy, markLabel, note, onSet }: {
   const [day, setDay] = useState(mytDay(0));
   return (
     // One compact line: label + amount, then a status chip. The date picker only appears once there is an amount to mark.
-    <div className="flex items-center gap-2 py-2 [&+&]:[border-top:1px_solid_var(--color-line-soft)]">
-      <span className="flex-1 min-w-0 flex flex-col leading-tight">
+    <div className="flex items-center flex-wrap gap-2 py-2 [&+&]:[border-top:1px_solid_var(--color-line-soft)]">
+      <span className="flex-1 min-w-[160px] flex flex-col leading-tight">
         <span className="text-meta font-medium truncate">{label}</span>
         <span className="text-[12px] text-muted-ink tabular-nums">{amount != null ? rm(amount) : note ?? '—'}</span>
       </span>
@@ -676,7 +695,7 @@ function DateMark({ label, amount, at, busy, markLabel, note, onSet }: {
           ? <span className="text-[12px] text-muted-ink whitespace-nowrap">Not yet</span>
           : <span className="flex gap-1.5 items-center flex-none">
               <DateField aria-label={`${markLabel}: day`} className={cx(INPUT, 'h-8 w-[128px] text-meta')} value={day} max={mytDay(0)} onChange={v => v && setDay(v)} />
-              <Button size="sm" variant="secondary" loading={busy} onClick={() => onSet(day)}>{markLabel.replace(/^Mark /, '')}</Button>
+              <Button size="sm" variant="secondary" loading={busy} onClick={() => onSet(day)}>{markLabel}</Button>
             </span>}
     </div>
   );
