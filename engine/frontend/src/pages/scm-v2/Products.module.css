@@ -314,7 +314,8 @@
 
 .maintLayout {
   display: grid;
-  grid-template-columns: 280px 1fr;
+  /* minmax(0, 1fr): the Fabrics list holds a wide grid that otherwise pushes the panel past the page edge. */
+  grid-template-columns: 280px minmax(0, 1fr);
   gap: var(--space-5);
   align-items: start;
 }
@@ -421,6 +422,7 @@
 }
 
 .maintPanel {
+  min-width: 0;
   background: #fff;
   border: 1px solid #d6d9d2;
   border-radius: var(--radius-lg);
