@@ -11,11 +11,15 @@
 //   fabric_tier_addon_config, compartment_library }.
 // <conts-master-config.json>: the Conts production master maintenance config as read on 20 Oct 2026 (the 2990
 //   baseline). Pool entries Conts has and Houzs does not are kept; entries both have take Houzs's price, and every
-//   such difference is printed so the PR can list it.
+//   such difference is printed so the PR can list it, and written into the new version's note.
+// <conts-seed-trackings.json>: the Conts production converter rows ({id, supplier_code}) as read on 20 Oct 2026 (the 2990
+//   seed CG- / EZ- / BF-). A seed row whose supplier code IS a Houzs fabric code (zero-padding aside) is the same fabric
+//   twice; the lead decided (20 Oct 2026) to keep the Houzs row and deactivate, never delete, the seed row.
 import { readFileSync, writeFileSync } from 'node:fs';
 
-const [houzsPath, contsPath] = process.argv.slice(2);
-if (!houzsPath || !contsPath) { console.error('usage: node scripts/houzs-product-maintenance.mjs <houzs.json> <conts-master-config.json>'); process.exit(1); }
+const [houzsPath, contsPath, seedPath] = process.argv.slice(2);
+if (!houzsPath || !contsPath || !seedPath) { console.error('usage: node scripts/houzs-product-maintenance.mjs <houzs.json> <conts-master-config.json> <conts-seed-trackings.json>'); process.exit(1); }
+const contsSeed = JSON.parse(readFileSync(seedPath, 'utf8'));
 const H = JSON.parse(readFileSync(houzsPath, 'utf8'));
 const contsConfig = JSON.parse(readFileSync(contsPath, 'utf8'));
 
@@ -39,7 +43,7 @@ for (const [k, contsPool] of Object.entries(contsConfig)) {
   for (const e of contsPool) {
     const h = have.get(keyOf(e));
     if (!h) { pool.push(e); report.keptContsOnly.push(`${k}: ${keyOf(e)}`); continue; }
-    if (priceOf(h) !== priceOf(e)) report.priceTakenFromHouzs.push(`${k} ${keyOf(e)}: Conts ${priceOf(e)} -> Houzs ${priceOf(h)} sen`);
+    if (priceOf(h) !== priceOf(e)) report.priceTakenFromHouzs.push(`${k} ${keyOf(e)}: ${priceOf(e)} -> ${priceOf(h)}`);
   }
   houzs[k] = pool;
 }
@@ -51,6 +55,9 @@ const libIds = new Set(lib.map((r) => r.id));
 const colours = H.fabric_colours.filter((r) => r.active && libIds.has(r.fabric_id));
 const trackings = H.fabric_trackings.filter((r) => r.is_active);
 const addons = H.special_addons;
+const unpad = (c) => String(c ?? '').trim().toUpperCase().replace(/-0*(\d+)$/, '-$1');
+const houzsByCode = new Map(trackings.map((r) => [unpad(r.fabric_code), r.fabric_code]));
+const duplicateSeed = contsSeed.filter((r) => houzsByCode.has(unpad(r.supplier_code))).map((r) => ({ ...r, houzs: houzsByCode.get(unpad(r.supplier_code)) }));
 const newCompartments = H.compartment_library; // existing Conts ids are kept by on conflict do nothing
 
 const CO = `(select id from public.companies where code = 'HOUZS')`;
@@ -86,7 +93,7 @@ select 'mch-houzs-20261020', 'master',
              order by m.effective_from desc, m.created_at desc limit 1), '{}'::jsonb)
   || ${json(houzs)},
   date '${EFFECTIVE}',
-  'Houzs Century bedframe / sofa maintenance copied in (owner, 20 Oct 2026). Source: Houzs snapshot 16 Oct 2026, config ${H.config.id}.',
+  ${lit(`Houzs Century bedframe / sofa maintenance copied in (owner, 20 Oct 2026). Source: Houzs snapshot 16 Oct 2026, config ${H.config.id}. Houzs price taken where Conts had another, sen, Conts -> Houzs: ${report.priceTakenFromHouzs.join('; ')}.`)},
   c.id
 from public.companies c
 where c.code = 'HOUZS' and not exists (select 1 from scm.maintenance_config_history where id = 'mch-houzs-20261020');
@@ -152,6 +159,17 @@ on conflict (company_id, id) do nothing;
 `);
 }
 
+out.push(`-- 8. The same fabric twice: ${duplicateSeed.length} Conts seed rows whose supplier code is a Houzs fabric code. The Houzs row stays;
+--    the seed row is deactivated, not deleted (lead, 20 Oct 2026), and only while it still names that supplier code and the
+--    Houzs row is active, so a later edit by staff is never overridden. The other ${contsSeed.length - duplicateSeed.length} seed rows are left as they are.
+update scm.fabric_trackings s set is_active = false
+from (values
+${duplicateSeed.map((r) => `  (${lit(r.id)}, ${lit(r.supplier_code)}, ${lit(r.houzs)})`).join(',\n')}
+) d(seed_id, supplier_code, houzs_code)
+where s.company_id = ${CO} and s.id = d.seed_id and s.supplier_code = d.supplier_code and s.is_active
+  and exists (select 1 from scm.fabric_trackings h where h.company_id = s.company_id and h.fabric_code = d.houzs_code and h.is_active);
+`);
+
 writeFileSync(new URL('../migrations-pg/0129_engine_houzs_product_maintenance.sql', import.meta.url), out.join('\n'));
 const counts = {
   configPools: Object.fromEntries(Object.entries(houzs).map(([k, v]) => [k, Array.isArray(v) ? v.length : Object.keys(v).length])),
@@ -159,4 +177,4 @@ const counts = {
   fabric_colours: colours.length, fabric_trackings: trackings.length,
   converter_rows_with_supplier_code: trackings.filter((r) => r.supplier_code).length,
 };
-console.log(JSON.stringify({ counts, ...report }, null, 1));
+console.log(JSON.stringify({ counts, ...report, duplicateSeedDeactivated: duplicateSeed.map((r) => `${r.id} (${r.supplier_code}) -> ${r.houzs}`) }, null, 1));

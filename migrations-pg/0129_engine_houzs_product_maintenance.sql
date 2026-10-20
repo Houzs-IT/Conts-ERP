@@ -26,7 +26,7 @@ select 'mch-houzs-20261020', 'master',
              order by m.effective_from desc, m.created_at desc limit 1), '{}'::jsonb)
   || '{"gaps":["4\"","5\"","6\"","7\"","8\"","9\"","10\"","11\"","12\"","13\"","14\"","15\"","16\"","17\"","18\"","19\"","20\"","21\"","D\""],"specials":[{"value":"HB Fully Cover","priceSen":5000},{"value":"Divan Top Fully Cover","priceSen":5000},{"value":"Divan Full Cover","priceSen":8000},{"value":"Left Drawer","priceSen":16000},{"value":"Right Drawer","priceSen":16000},{"value":"Front Drawer","priceSen":13000},{"value":"HB Straight","priceSen":0},{"value":"Divan Top(W)","priceSen":0},{"value":"1 Piece Divan","priceSen":25000},{"value":"Divan Curve","priceSen":5000},{"value":"No Side Panel","priceSen":-4000},{"value":"Headboard Only","priceSen":0},{"value":"Nylon Fabric","priceSen":0},{"value":"5537 Backrest","priceSen":0},{"value":"Add 1\" Infront L","priceSen":0},{"value":"Separate Backrest Packing","priceSen":0},{"value":"Divan A11","priceSen":0},{"value":"Seat Add On 4\"","priceSen":0}],"sofaSizes":["24","26","28","30","32","35","DEFAULT","25\"","27\"","29\""],"legHeights":[{"value":"No Leg","priceSen":0},{"value":"1\"","priceSen":0},{"value":"2\"","priceSen":0,"packSeparately":false},{"value":"4\"","priceSen":0,"packSeparately":false},{"value":"6\"","priceSen":0,"packSeparately":true},{"value":"7\"","priceSen":16000,"packSeparately":true},{"value":"5\"","priceSen":16000,"packSeparately":true}],"sizeLabels":{"SK":{"label":"200X200CM"},"SP":{"label":"CUSTOM"}},"divanHeights":[{"value":"4\"","priceSen":0},{"value":"5\"","priceSen":0},{"value":"6\"","priceSen":0},{"value":"8\"","priceSen":0},{"value":"10\"","priceSen":5500},{"value":"11\"","priceSen":13000},{"value":"12\"","priceSen":13000},{"value":"13\"","priceSen":15000},{"value":"14\"","priceSen":15000},{"value":"16\"","priceSen":16000},{"value":"D\"","priceSen":0}],"sofaSpecials":[{"value":"Nylon Fabric","priceSen":0},{"value":"5537 Backrest","priceSen":5000},{"value":"Separate Backrest Packing","priceSen":0},{"value":"Extend 5\"","priceSen":50000},{"value":"Short Backrest","priceSen":0},{"value":"Seat Add 1ft","priceSen":0},{"value":"No bracket","priceSen":0},{"value":"5540 Backrest","priceSen":5000}],"totalHeights":[{"value":"10\"","priceSen":30000},{"value":"12\"","priceSen":26000},{"value":"14\"","priceSen":22000},{"value":"16\"","priceSen":18000},{"value":"17\"","priceSen":12000},{"value":"18\"","priceSen":8000},{"value":"19\"","priceSen":4000},{"value":"20\"","priceSen":0},{"value":"21\"","priceSen":0},{"value":"22\"","priceSen":0},{"value":"23\"","priceSen":0},{"value":"24\"","priceSen":0},{"value":"25\"","priceSen":4000},{"value":"26\"","priceSen":8000},{"value":"27\"","priceSen":12000},{"value":"28\"","priceSen":16000}],"bedframeSizes":["K","Q","S","SS","SK","SP"],"mattressSizes":["K","Q","S","SS","SK","SP"],"sofaLegHeights":[{"value":"No Leg","priceSen":0},{"value":"4\"","priceSen":0,"packSeparately":true},{"value":"6\"","priceSen":0,"packSeparately":true},{"value":"1\"","priceSen":0},{"value":"5\"","priceSen":0,"packSeparately":true},{"value":"Default","priceSen":0},{"price":0,"value":"Altay Leg"},{"value":"2\"","priceSen":0}],"sofaCompartments":["1A(LHF)","1A(RHF)","1B(LHF)","1B(RHF)","1NA","1S","2A(LHF)","2A(RHF)","2B(LHF)","2B(RHF)","2NA","2S","CNR","L(LHF)","L(RHF)","STOOL","Console Fabric","1A(P)(LHF)","1A(P)(RHF)","1A(R)(LHF)","1A(R)(RHF)","1NA(R)","1NA(P)","3S","1S(P)","1S(R)","1ABOX(LHF)","1ABOX(RHF)","Daybed","4FT","5FT","6FT","7FT","Console Wooden"],"supplierCategories":["Sofa","Bedframe","Mattress","Accessory","Service","Sofa Accessory"],"sofaCompartmentMeta":{"1S":{"description":"1 seat, arms on BOTH sides","defaultPriceCenti":0},"2S":{"description":"2 seats, arms on BOTH sides","defaultPriceCenti":0},"3S":{"description":"3 seats, arms on BOTH sides","defaultPriceCenti":0},"1NA":{"description":"1 seat, NO arms","defaultPriceCenti":0},"2NA":{"description":"2 seats, NO arms","defaultPriceCenti":0},"CNR":{"description":"Corner piece - 90 degree L-shape connector","defaultPriceCenti":0},"CSL":{"description":"Chaise longue","defaultPriceCenti":0},"1S(P)":{"description":"1 seat - arms on BOTH sides, Power Recliner (electric)","defaultPriceCenti":0},"1S(R)":{"description":"1 seat - arms on BOTH sides, Manual Recliner","defaultPriceCenti":0},"STOOL":{"description":"Ottoman / stool","defaultPriceCenti":0},"1NA(P)":{"description":"1 seat, NO arms - Power Recliner (electric)","defaultPriceCenti":0},"1NA(R)":{"description":"1 seat, NO arms - Manual Recliner","defaultPriceCenti":0},"L(LHF)":{"description":"L - Left hand facing chaise","defaultPriceCenti":0},"L(RHF)":{"description":"L - Right hand facing chaise","defaultPriceCenti":0},"1A(LHF)":{"description":"1 seat, ONE arm (left)","defaultPriceCenti":0},"1A(RHF)":{"description":"1 seat, ONE arm (right)","defaultPriceCenti":0},"1B(LHF)":{"description":"1 seat - LEFT is Seat Cushion (bench), no arm on the right","defaultPriceCenti":0},"1B(RHF)":{"description":"1 seat - RIGHT is Seat Cushion (bench), no arm on the left","defaultPriceCenti":0},"2A(LHF)":{"description":"2 seats, ONE arm (left)","defaultPriceCenti":0},"2A(RHF)":{"description":"2 seats, ONE arm (right)","defaultPriceCenti":0},"2B(LHF)":{"description":"2 seats - LEFT is Seat Cushion (bench), no arm on the right","defaultPriceCenti":0},"2B(RHF)":{"description":"2 seats - RIGHT is Seat Cushion (bench), no arm on the left","defaultPriceCenti":0},"1A(P)(LHF)":{"description":"1 seat + ONE arm (left) - Power Recliner (electric)","defaultPriceCenti":0},"1A(P)(RHF)":{"description":"1 seat + ONE arm (right) - Power Recliner (electric)","defaultPriceCenti":0},"1A(R)(LHF)":{"description":"1 seat + ONE arm (left) - Manual Recliner","defaultPriceCenti":0},"1A(R)(RHF)":{"description":"1 seat + ONE arm (right) - Manual Recliner","defaultPriceCenti":0},"Console Fabric":{"description":"Console - fabric-wrapped console with cup holders. Cup holders at the BACK by default; cup holders at the front need a Special Remark.","defaultPriceCenti":0},"Console Wooden":{"description":"Console - fabric body, wooden top with a lid that opens (storage), cup holders. Cup holders at the BACK by default; cup holders at the front need a Special Remark."}}}'::jsonb,
   date '2026-10-20',
-  'Houzs Century bedframe / sofa maintenance copied in (owner, 20 Oct 2026). Source: Houzs snapshot 16 Oct 2026, config mch-d3d9a66ff6d4.',
+  'Houzs Century bedframe / sofa maintenance copied in (owner, 20 Oct 2026). Source: Houzs snapshot 16 Oct 2026, config mch-d3d9a66ff6d4. Houzs price taken where Conts had another, sen, Conts -> Houzs: specials Left Drawer: 15000 -> 16000; specials Right Drawer: 15000 -> 16000; specials Front Drawer: 12000 -> 13000; specials No Side Panel: 4000 -> -4000; divanHeights 10": 5000 -> 5500; divanHeights 11": 12000 -> 13000; divanHeights 12": 12000 -> 13000; divanHeights 13": 14000 -> 15000; divanHeights 14": 14000 -> 15000; divanHeights 16": 15000 -> 16000; sofaSpecials 5537 Backrest: 0 -> 5000; totalHeights 10": 0 -> 30000; totalHeights 12": 0 -> 26000; totalHeights 14": 0 -> 22000; totalHeights 16": 5000 -> 18000; totalHeights 18": 5000 -> 8000; totalHeights 20": 10000 -> 0; totalHeights 22": 12000 -> 0; totalHeights 24": 14000 -> 0; totalHeights 26": 15000 -> 8000.',
   c.id
 from public.companies c
 where c.code = 'HOUZS' and not exists (select 1 from scm.maintenance_config_history where id = 'mch-houzs-20261020');
@@ -2045,3 +2045,51 @@ from (values
   ('ZL-3', 'ZL-03', 'ZL-03 CHAMPAGNE', null, null, 'PRICE_1', 'PRICE_1', 0, null, null, 0, 'ZL', true)
 ) v(id, fabric_code, fabric_description, fabric_category, price_tier, sofa_price_tier, bedframe_price_tier, price_sen, supplier, supplier_code, lead_time_days, series, is_active)
 on conflict (company_id, id) do nothing;
+
+-- 8. The same fabric twice: 39 Conts seed rows whose supplier code is a Houzs fabric code. The Houzs row stays;
+--    the seed row is deactivated, not deleted (lead, 20 Oct 2026), and only while it still names that supplier code and the
+--    Houzs row is active, so a later edit by staff is never overridden. The other 7 seed rows are left as they are.
+update scm.fabric_trackings s set is_active = false
+from (values
+  ('CG-001', 'KN390-1', 'KN390-01'),
+  ('CG-002', 'KN390-2', 'KN390-02'),
+  ('CG-003', 'KN390-3', 'KN390-03'),
+  ('CG-004', 'KN390-4', 'KN390-04'),
+  ('CG-005', 'KN390-13', 'KN390-13'),
+  ('CG-006', 'KN390-14', 'KN390-14'),
+  ('CG-007', 'KN390-15', 'KN390-15'),
+  ('CG-009', 'KN390-5', 'KN390-05'),
+  ('CG-015', 'KN390-11', 'KN390-11'),
+  ('EZ-001', 'M2402-1', 'M2402-01'),
+  ('EZ-002', 'M2402-4', 'M2402-04'),
+  ('EZ-003', 'M2402-5', 'M2402-05'),
+  ('EZ-004', 'M2402-6', 'M2402-06'),
+  ('EZ-005', 'M2402-7', 'M2402-07'),
+  ('EZ-006', 'M2402-8', 'M2402-08'),
+  ('EZ-007', 'M2402-9', 'M2402-09'),
+  ('EZ-008', 'M2402-13', 'M2402-13'),
+  ('EZ-009', 'M2402-15', 'M2402-15'),
+  ('EZ-010', 'M2402-17', 'M2402-17'),
+  ('EZ-011', 'M2402-18', 'M2402-18'),
+  ('EZ-012', 'M2402-19', 'M2402-19'),
+  ('BF-01', 'PC151-01', 'PC151-01'),
+  ('BF-02', 'PC151-02', 'PC151-02'),
+  ('BF-03', 'PC151-03', 'PC151-03'),
+  ('BF-04', 'PC151-04', 'PC151-04'),
+  ('BF-05', 'PC151-05', 'PC151-05'),
+  ('BF-06', 'PC151-06', 'PC151-06'),
+  ('BF-07', 'PC151-07', 'PC151-07'),
+  ('BF-08', 'PC151-08', 'PC151-08'),
+  ('BF-09', 'PC151-09', 'PC151-09'),
+  ('BF-10', 'PC151-10', 'PC151-10'),
+  ('BF-11', 'PC151-11', 'PC151-11'),
+  ('BF-12', 'PC151-12', 'PC151-12'),
+  ('BF-13', 'PC151-13', 'PC151-13'),
+  ('BF-14', 'PC151-14', 'PC151-14'),
+  ('BF-15', 'PC151-15', 'PC151-15'),
+  ('BF-16', 'PC151-16', 'PC151-16'),
+  ('BF-17', 'PC151-17', 'PC151-17'),
+  ('BF-18', 'PC151-18', 'PC151-18')
+) d(seed_id, supplier_code, houzs_code)
+where s.company_id = (select id from public.companies where code = 'HOUZS') and s.id = d.seed_id and s.supplier_code = d.supplier_code and s.is_active
+  and exists (select 1 from scm.fabric_trackings h where h.company_id = s.company_id and h.fabric_code = d.houzs_code and h.is_active);
