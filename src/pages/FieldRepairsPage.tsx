@@ -43,10 +43,12 @@ function progress(r: Repair): string {
 
 /** A technician's phone: the repair jobs that are theirs, the open ones nobody has (pick one up), and a way to report a
  *  new problem. One column, 44px targets; a job opens full screen with its action pinned at the bottom. */
-export default function FieldRepairsPage({ above }: { above?: ReactNode }) {
+export default function FieldRepairsPage({ above, linkRepair, onLinked }: { above?: ReactNode; linkRepair?: string | null; onLinked?: () => void }) {
   const { data, loading, error, reload } = useApi<ListPayload>('/field/repairs');
   const [tab, setTab] = useState<'mine' | 'open'>('mine');
   const [open, setOpen] = useState<string | null>(null);
+  // A notice tapped in the bell: open that repair (the sheet loads it by id and says so if it is not theirs).
+  useEffect(() => { if (linkRepair) { setTab('mine'); setOpen(linkRepair); onLinked?.(); } }, [linkRepair]); // eslint-disable-line react-hooks/exhaustive-deps
   const [reporting, setReporting] = useState(false);
   const toast = useToast();
   const mine = data?.mine ?? [];

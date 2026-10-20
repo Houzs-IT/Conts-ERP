@@ -11,7 +11,7 @@ import { humanize } from '../lib/format';
 /** Housekeepers and technicians work on a phone, in a car park, one-handed.
  *  One column, 44px targets, and the whole page scrolls normally. */
 export default function FieldShell({ children }: { children: ReactNode }) {
-  const { user, logout } = useSession();
+  const { user } = useSession();
   const atAccount = useLocation().pathname === '/account';
   return (
     <div style={{ flex: 1, minHeight: '100vh', display: 'flex', flexDirection: 'column', background: color.page }}>
@@ -25,15 +25,11 @@ export default function FieldShell({ children }: { children: ReactNode }) {
           <span style={{ fontSize: text.caption, color: color.dim }}>{ROLE_LABEL[user!.role] ?? humanize(user!.role)}</span>
         </div>
         <FieldNotificationBell />
-        <a href={atAccount ? '#/' : '#/account'} aria-label={atAccount ? 'Back to today' : 'My account'} title={atAccount ? 'Back to today' : 'My account'}
+        <a href={atAccount ? '#/' : '#/account'} aria-label={atAccount ? 'Back to today' : 'Settings'} title={atAccount ? 'Back to today' : 'Settings'}
           style={{ width: 44, height: 44, flex: 'none', display: 'grid', placeItems: 'center', borderRadius: radius.control, border: '1px solid rgba(255,255,255,0.14)', color: color.onDark }}>
-          <Icon name={atAccount ? 'House' : 'ShieldCheck'} size="nav" />
+          <Icon name={atAccount ? 'House' : 'Settings'} size="nav" />
         </a>
-        {/* Log out lives on My account only, so it is never one mis-tap from the bell on the jobs screen. */}
-        {atAccount && <button onClick={logout}
-          style={{ height: 44, padding: '0 12px', flex: 'none', display: 'flex', alignItems: 'center', gap: 6, borderRadius: radius.control, background: 'transparent', border: '1px solid rgba(255,255,255,0.14)', color: color.onDark, cursor: 'pointer', font: 'inherit', fontSize: text.copy }}>
-          <Icon name="LogOut" size="sm" />Log out
-        </button>}
+        {/* Log out sits at the bottom of Settings (AccountPage), never one mis-tap from the bell (owner, Oct 2026). */}
       </header>
 
       <main style={{ flex: 1, padding: '16px 16px 32px', display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 560, width: '100%', boxSizing: 'border-box', margin: '0 auto' }}>

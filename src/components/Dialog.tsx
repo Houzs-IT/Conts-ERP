@@ -22,16 +22,31 @@ function scrollUnder(e: WheelEvent<HTMLDivElement>) {
 }
 
 /** Confirmations live in ConfirmDialog.tsx; this file keeps the side drawer. */
-export function Drawer({ open, onClose, children, width = 480 }: { open: boolean; onClose: () => void; children: ReactNode; width?: number }) {
+export function Drawer({ open, onClose, children, width = 480, labelledBy }: { open: boolean; onClose: () => void; children: ReactNode; width?: number; labelledBy?: string }) {
   const panel = useRef<HTMLDivElement>(null);
+  // Focus goes into the drawer when it opens (unless a field inside already took it) and back to what opened it on close,
+  // so a keyboard user is never left on the list hidden behind it.
+  useEffect(() => {
+    if (!open) return;
+    const returnTo = document.activeElement as HTMLElement | null;
+    if (!panel.current?.contains(document.activeElement)) panel.current?.focus();
+    return () => { if (returnTo?.isConnected) returnTo.focus(); };
+  }, [open]);
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      if ((e.key !== 'Escape' && e.key !== 'Tab') || e.defaultPrevented) return;
       // A dialog opened over the drawer (record payment, a confirmation) closes first; the drawer only on the next Escape.
       const dialogs = [...document.querySelectorAll('[role=dialog], [role=alertdialog]')];
       if (dialogs.length && dialogs[dialogs.length - 1] !== panel.current) return;
-      onClose();
+      if (e.key === 'Escape') { onClose(); return; }
+      // Tab wraps inside the drawer: the list behind it is covered, so focus there would be invisible.
+      const items = [...panel.current!.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')]
+        .filter(el => el.offsetParent !== null);
+      if (!items.length) return;
+      const first = items[0], last = items[items.length - 1], at = document.activeElement;
+      if (e.shiftKey && (at === first || at === panel.current)) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && at === last) { e.preventDefault(); first.focus(); }
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
@@ -47,9 +62,11 @@ export function Drawer({ open, onClose, children, width = 480 }: { open: boolean
         ref={panel}
         role="dialog"
         aria-modal="true"
+        aria-labelledby={labelledBy}
+        tabIndex={-1}
         data-side-drawer
         style={{
-          width: `min(${width}px, 100%)`, height: '100%', overflowY: 'auto',
+          width: `min(${width}px, 100%)`, height: '100%', overflowY: 'auto', overscrollBehavior: 'contain', outline: 'none',
           background: 'var(--color-surface-card)', boxShadow: '-12px 0 40px rgba(21,21,21,0.18)',
           display: 'flex', flexDirection: 'column', animation: 'rise var(--motion-slow) var(--ease-out) both',
         }}
