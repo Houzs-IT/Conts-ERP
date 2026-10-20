@@ -87,6 +87,22 @@ export const DESIGN_FILE_TYPES: Readonly<Record<string, string>> = {
 };
 export const DESIGN_FILE_MAX = 25 * 1024 * 1024;
 
+/* Attaching the file to a design version that so far is only a link (imported 3D renders run to 55 MB). The body is
+   streamed to R2, never buffered, so the limit is the upload size, not the Worker's memory. */
+export const DESIGN_ATTACH_MAX = 60 * 1024 * 1024;
+
+/** Why an attach upload is refused, from its declared type and length; null when it may go ahead. */
+export function designAttachRefusal(contentType: string | null | undefined, contentLength: string | null | undefined):
+  { error: string; message: string; status: 400 | 411 | 413 | 415 } | null {
+  const type = String(contentType ?? "").split(";")[0]!.trim().toLowerCase();
+  if (!DESIGN_FILE_TYPES[type]) return { error: "unsupported_type", message: "PDF, image, DWG or ZIP files only.", status: 415 };
+  if (contentLength == null || !/^\d+$/.test(String(contentLength).trim())) return { error: "length_required", message: "The upload must say its size.", status: 411 };
+  const n = Number(contentLength);
+  if (n <= 0) return { error: "empty", message: "The file is empty.", status: 400 };
+  if (n > DESIGN_ATTACH_MAX) return { error: "too_large", message: "A design file can be up to 60 MB here.", status: 413 };
+  return null;
+}
+
 export function cleanDesignKind(x: unknown): "2d" | "3d" | "other" | null {
   const k = String(x ?? "").toLowerCase();
   return k === "2d" || k === "3d" || k === "other" ? k : null;
