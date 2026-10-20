@@ -2,9 +2,8 @@
 //
 // - A new-group SKU needs a sub-category of that group; a legacy category does not.
 // - uom is one of the eight units.
-// - A SKU in a photo group (Built-in, Furniture, Lighting, Appliances, Soft) starts
-//   INACTIVE and cannot be switched ACTIVE until it has a photo; Works / Service
-//   SKUs are ACTIVE at once. A photo read that fails refuses (fails closed).
+// - Photos are optional (owner, 20 Oct 2026; migration 0130): every new SKU is
+//   ACTIVE at once and can be activated or moved between groups with no photo.
 //
 // Harness: a bare Hono app mounting the exported handlers with a fake scm client,
 // like skuCategoryChangeAndImport.test.ts.
@@ -100,13 +99,13 @@ describe('POST /mfg-products — renovation categories', () => {
     expect(sku('EL-PT')).toMatchObject({ category: 'WORKS', sub_category: 'ELECTRICAL', uom: 'POINT', status: 'ACTIVE' });
   });
 
-  test('a Built-in SKU starts INACTIVE until it has a photo', async () => {
+  test('a Built-in SKU with no photo is created ACTIVE', async () => {
     const { send, sku } = harness();
     const r = await send('POST', '/mfg-products', { code: 'KC-1', name: 'Kitchen cabinet 10ft', category: 'BUILTIN', subCategory: 'KITCHEN_CABINET' });
     expect(r.status).toBe(201);
-    expect(r.body.status).toBe('INACTIVE');
-    expect(r.body.needsPhoto).toBe(true);
-    expect(sku('KC-1').status).toBe('INACTIVE');
+    expect(r.body.status).toBe('ACTIVE');
+    expect(r.body.needsPhoto).toBeUndefined();
+    expect(sku('KC-1').status).toBe('ACTIVE');
   });
 
   test('a new group without a sub-category, or with another group\'s, is refused', async () => {
@@ -137,12 +136,11 @@ describe('POST /mfg-products — renovation categories', () => {
 });
 
 describe('PATCH /mfg-products/:id — renovation fields', () => {
-  test('activating a photo-group SKU with no photo is refused with photo_required', async () => {
+  test('activating a Built-in SKU with no photo works', async () => {
     const { send, sku } = harness();
     const r = await send('PATCH', '/mfg-products/p-ward', { status: 'ACTIVE' });
-    expect(r.status).toBe(409);
-    expect(r.body.error).toBe('photo_required');
-    expect(sku('WR-1').status).toBe('INACTIVE');
+    expect(r.status).toBe(200);
+    expect(sku('WR-1').status).toBe('ACTIVE');
   });
 
   test('activating a photo-group SKU that has a photo works', async () => {
@@ -152,12 +150,11 @@ describe('PATCH /mfg-products/:id — renovation fields', () => {
     expect(sku('TV-55').status).toBe('ACTIVE');
   });
 
-  test('a photo read that fails refuses the activation (503), it never reads as "has a photo"', async () => {
+  test('activation does not read photos, so a failing photo read cannot block it', async () => {
     const { send, sku } = harness({ failPhotoRead: true });
     const r = await send('PATCH', '/mfg-products/p-tv', { status: 'ACTIVE' });
-    expect(r.status).toBe(503);
-    expect(r.body.error).toBe('photo_check_failed');
-    expect(sku('TV-55').status).toBe('INACTIVE');
+    expect(r.status).toBe(200);
+    expect(sku('TV-55').status).toBe('ACTIVE');
   });
 
   test('sub-category and unit change; a sub from another group is refused', async () => {
@@ -179,12 +176,11 @@ describe('PATCH /mfg-products/:id — renovation fields', () => {
     expect(sku('HK-1').category).toBe('WORKS');
   });
 
-  test('moving an ACTIVE Works SKU into a photo group without a photo is refused', async () => {
+  test('moving an ACTIVE Works SKU into Lighting without a photo works and stays ACTIVE', async () => {
     const { send, sku } = harness();
     const r = await send('PATCH', '/mfg-products/p-hack', { category: 'LIGHTING', subCategory: 'DOWNLIGHT' });
-    expect(r.status).toBe(409);
-    expect(r.body.error).toBe('photo_required');
-    expect(sku('HK-1').category).toBe('WORKS');
+    expect(r.status).toBe(200);
+    expect(sku('HK-1')).toMatchObject({ category: 'LIGHTING', status: 'ACTIVE' });
   });
 
   test('a legacy SKU still moves between legacy categories without a sub-category', async () => {

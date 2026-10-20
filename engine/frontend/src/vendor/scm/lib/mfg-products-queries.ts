@@ -294,8 +294,7 @@ export function useRenovationSkus(opts: { group?: string | null; sub?: string | 
 }
 
 /* Catalog fields of one SKU: group / sub-category / unit / status / name.
-   The server refuses ACTIVE for a photo-group SKU with no photo (409
-   photo_required); the message rides the thrown error. */
+   A refusal's message rides the thrown error. */
 export type MfgProductCatalogPatch = {
   category?: MfgCategory;
   subCategory?: string | null;
@@ -789,7 +788,7 @@ export function useCreateMfgProduct() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (body: NewMfgProductInput) =>
-      authedFetch<{ id: string; code: string; status?: 'ACTIVE' | 'INACTIVE'; needsPhoto?: boolean }>(`/mfg-products`, {
+      authedFetch<{ id: string; code: string; status?: 'ACTIVE' | 'INACTIVE' }>(`/mfg-products`, {
         method: 'POST', body: JSON.stringify(body),
       }),
     onSuccess: () => {

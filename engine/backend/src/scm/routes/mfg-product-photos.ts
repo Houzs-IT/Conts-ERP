@@ -14,14 +14,13 @@
    bare <img src> works (no Authorization header rides an <img>):
      GET    /api/scm/mfg-products/:id/photo/:key
 
-   A SKU in a photo group (renovation-catalog.ts isPhotoRequiredCategory) that
-   is ACTIVE cannot lose its last photo: deactivate it first. */
+   Photos are optional (owner, 20 Oct 2026; migration 0130): any photo can be
+   removed, including the last one. */
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type { Context } from 'hono';
 import { canWriteScmConfig } from '../lib/houzs-perms';
 import { NOT_THIS_COMPANY, requireActiveCompanyId, scopeToCompanyId } from '../lib/companyScope';
 import { baseKeyOf, deleteThumbFor, putOptionalThumb } from '../../services/photoThumbs';
-import { isPhotoRequiredCategory } from '../shared/renovation-catalog';
 import type { Env, Variables } from '../env';
 
 type AppContext = Context<{ Bindings: Env; Variables: Variables }>;
@@ -52,21 +51,6 @@ export function photoToWire(productId: string, p: PhotoCols) {
     is_primary: p.is_primary,
     order: p.sort_order,
   };
-}
-
-/** How many photos a SKU has, in one company. Fails closed: a read error is
- *  reported, never turned into a count. */
-export async function photoCountFor(
-  sb: SupabaseClient,
-  productId: string,
-  companyId: number,
-): Promise<{ ok: true; count: number } | { ok: false; reason: string }> {
-  const { count, error } = await scopeToCompanyId(
-    sb.from('mfg_product_photos').select('id', { count: 'exact', head: true }).eq('product_id', productId),
-    companyId,
-  );
-  if (error) return { ok: false, reason: error.message };
-  return { ok: true, count: count ?? 0 };
 }
 
 /** The primary (else first) photo url and the photo count per SKU, for list
@@ -206,19 +190,6 @@ export const deleteMfgProductPhotoHandler = async (c: AppContext) => {
   if (rowErr) return c.json({ error: 'load_failed', reason: rowErr.message }, 500);
   if (!row) return c.json(NOT_THIS_COMPANY, 404);
   const target = row as { id: string; r2_key: string; is_primary: boolean };
-
-  // The last photo of an ACTIVE photo-group SKU stays: the SKU would be active
-  // with no photo. Both reads fail closed.
-  const { data: product, error: pErr } = await loadProduct(sb, id, co.companyId);
-  if (pErr || !product) return c.json({ error: 'load_failed', reason: pErr?.message ?? 'product not found' }, 500);
-  const p = product as { category: string; status: string };
-  if (p.status === 'ACTIVE' && isPhotoRequiredCategory(p.category)) {
-    const n = await photoCountFor(sb, id, co.companyId);
-    if (!n.ok) return c.json({ error: 'photo_check_failed', reason: n.reason }, 503);
-    if (n.count <= 1) {
-      return c.json({ error: 'last_photo', reason: 'This is the only photo of an active SKU that needs one. Add another photo or make the SKU inactive first.' }, 409);
-    }
-  }
 
   const { error: delErr } = await scopeToCompanyId(sb.from('mfg_product_photos').delete().eq('id', photoId), co.companyId);
   if (delErr) return c.json({ error: 'db_delete_failed', reason: delErr.message }, 500);

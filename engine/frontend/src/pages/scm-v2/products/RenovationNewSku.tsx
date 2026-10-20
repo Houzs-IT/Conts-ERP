@@ -8,7 +8,7 @@ import { X } from 'lucide-react';
 import { Button } from '../../../components/Button';
 import { useNotify } from '../../../vendor/scm/components/NotifyDialog';
 import { useCreateMfgProduct, type MfgCategory } from '../../../vendor/scm/lib/mfg-products-queries';
-import { genericSkus, isPhotoRequiredCategory, type CatalogGroup } from '../../../vendor/shared/renovation-catalog';
+import { genericSkus, type CatalogGroup } from '../../../vendor/shared/renovation-catalog';
 import { useRenovationCatalog } from '../../../vendor/scm/lib/renovation-catalog-queries';
 import { CatalogCategoryPicker } from './CatalogCategoryPicker';
 import { UomSelect } from './UomSelect';
@@ -25,7 +25,7 @@ export function RenovationNewSku({
   initialGroup: CatalogGroup | null;
   initialSub: string | null;
   onClose: () => void;
-  onCreated: (created: { id: string; code: string; needsPhoto: boolean }) => void;
+  onCreated: (created: { id: string; code: string }) => void;
 }) {
   const create = useCreateMfgProduct();
   const notify = useNotify();
@@ -57,11 +57,8 @@ export function RenovationNewSku({
       },
       {
         onSuccess: (res) => {
-          const needsPhoto = res.needsPhoto ?? isPhotoRequiredCategory(group);
-          void notify({
-            title: needsPhoto ? `${res.code} created. Add a photo to make it active.` : `${res.code} created and active.`,
-          });
-          onCreated({ id: res.id, code: res.code, needsPhoto });
+          void notify({ title: `${res.code} created and active.` });
+          onCreated({ id: res.id, code: res.code });
         },
         onError: (e) => setError(e instanceof Error ? e.message : 'Could not create the SKU.'),
       },
