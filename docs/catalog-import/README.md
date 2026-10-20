@@ -11,6 +11,10 @@ turned into one list of SKUs, for review and then for a one-off import into the 
 | `catalog-import-excluded.csv` | Rows not in that CSV, and why |
 | `build/` | The extraction scripts and their intermediate files (rerun: see below) |
 | `runs/` | One note per real run of the script (target, counts, what was skipped) |
+| `catalog-fix-review.xlsx` | The fix of 21 Oct 2026 (migration 0132): Unit changes, Owner to decide, Bedframe sizes, Sofa compartments, Models, Deleted, Units |
+| `catalog-fix-data.json` | The same fix as data (unit changes, models, new SKUs, deleted codes); `build/fix.py` writes it, the xlsx and the migration |
+| `SKU-listing-after-fix.xlsx` | Every SKU after the fix, read from a local database built the way production was (`build/listing.mjs` + `build/listing.py`) |
+| `screens/` | The engine's Products page with the size / compartment SKUs, at 1440 and 375 wide |
 
 ## Import script
 
@@ -98,3 +102,26 @@ intermediate files already in `build/`; `build/build.py <dir with lb.json, kk_au
 the rows and `build/excel.py rows.json <out dir>` writes the xlsx, both CSVs and `catalog-data.json`. Run Python with
 `-I`. The Lot Win scans and the image-only DHI pages were read by eye; their rows are typed into `build.py`.
 LB quartz page 9 carries a hidden text layer (KPQ007-012 at 3200 x 1600) under the visible cards; it is not used.
+
+## Catalog fix, 21 Oct 2026 (migration 0132)
+
+Owner feedback on the first import, applied by `migrations-pg/0132_catalog_fix_sizes_compartments_units.sql` (built by
+`build/fix.py`; edit the script, not the migration):
+
+- HOOKKA bedframes and sofas follow the engine's own model / variant shape (`product-models.ts` generate-skus): each model
+  becomes a BEDFRAME or SOFA model with `allowed_options.sizes` / `.compartments`, and one SKU per size
+  (`BED-HKA-1003-(K)`, size code K / Q / SS / S / SK, SP for a cm size) or per compartment (`SOF-HKA-5530-1A(LHF)`),
+  with `base_model`, `size_code`, `size_label`, linked to HOOKKA as main supplier (cost 0, price needed). The engine's
+  code pattern is kept so its Generate SKUs button finds them instead of making duplicates. HOOKA.pdf cuts most lists
+  short, so only the printed sizes / compartments exist (95 bedframe, 65 sofa SKUs); the rest waits for HOOKKA's list.
+- The 13 "2990 list" sofas and the 39 single SKUs replaced above are deleted with their supplier links and models when
+  no document, stock or price row names them (else deactivated); each is written to `scm.entity_audit_log`.
+- Units: each SKU takes the unit its supplier writes ("RM/Unit" -> UNIT, "RM/FT²" -> SQFT, K & K "no" -> NOS, ...);
+  where a document writes none the SKU keeps its unit and is listed for the owner. Labels made clearer (FT = "Foot run").
+- The migration does nothing where the first import never ran, so on a fresh local database run the import script and
+  then this migration's body if you need the fixed catalog (or build it the way `SKU-listing-after-fix.xlsx` was).
+
+Verified locally (21 Oct 2026, Postgres 17): migrations to 0131, the import (819 SKUs), 0130's activation as production
+had it, then 0132: 844 -> 952 SKUs, 819 -> 927 supplier links, cost rows unchanged (423), no link or cost row left without
+its SKU, 52 audit rows; running 0132's body again changed nothing; with a price-history row planted on two SKUs those two
+were deactivated, not deleted. Engine Products page (wrangler dev + vite + local PostgREST) lists the new SKUs: `screens/`.
