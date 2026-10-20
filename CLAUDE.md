@@ -87,6 +87,8 @@ because the supply chain cannot be separated from the rest of that code). Rules 
   and check the printed target database/project ref, especially for production.
 - Applying to production is not automatic — it's a deliberate, separate step per
   environment (local, then staging, then production), each confirmed working before the next.
+  For production the "Apply migrations to production" workflow (manual, Actions tab) runs migrate-pg.mjs with the
+  PROD_DB_URL secret: dry-run first, then apply with the project ref typed in (owner, 20 Oct 2026).
 - A destructive action (delete, drop, irreversible write) needs the same shape as owner
   deletion (`functions/api/owners/[id].ts`): check every dependency is at zero first,
   cascade only what exists solely to support the thing being deleted, and audit-log it.
