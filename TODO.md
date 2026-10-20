@@ -478,3 +478,8 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Owner to give the real cleaning prices (Cleaning > Prices): until then every price is "not set" and cleans are charged at the old rate.
 - Confirm with YJ: external cleaning jobs count in the cleaner's pay at the job's full amount, split equally between the cleaners on it.
 - Maintenance amount: keep finalAmount on POST /api/maintenance/issues/:id/complete as the field a future integration fills.
+## Notion import: key history, PLASTER CEILING & PARTITION split, PDF upload (feat/notion-import-gaps, 20 Oct 2026)
+- Staging: re-run applied from the 20 Oct export (1 new project, 50 site tasks, 12 design links, 55 dated key passes); owner to check it on staging before production.
+- PDF upload blocked: wrangler on this machine is signed in to Houzs's Cloudflare account; sign in to the Conts account, then run upload-files.mjs on staging (87 of 94 PDFs ready; 5 over 25 MB, 2 not in the export).
+- Production: run the same chunks and upload after the owner's go-ahead; production's 04c_activity chunk from 11 Oct may still be unapplied (see the calendar section).
+- Not imported: the Notion "Site Visit" calendar (477 entries May to Oct 2026, incl. 104 design amendments and 50 dated site measurements).

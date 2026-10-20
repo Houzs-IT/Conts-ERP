@@ -7,6 +7,9 @@
 //   node scripts/notion-import/run.mjs --export <dir with project.zip, reno_tasks.zip, id_tasks.zip> \
 //        [--out <dir>] [--company 1] [--export-date YYYY-MM-DD]
 //
+// key_records.zip (the "Unit Key Record" list) is optional and adds the dated key passes. The design PDFs in the
+// zips are uploaded afterwards by upload-files.mjs.
+//
 // --out defaults to <export>/sql. The export date (default: the export folder's name when it is a date)
 // stamps the unit-key moves ("holder at export") and the activity notes.
 import fs from "node:fs";
@@ -62,9 +65,11 @@ function main() {
   const project = readExportZip(path.join(exportDir, "project.zip"));
   const reno = readExportZip(path.join(exportDir, "reno_tasks.zip"));
   const id = readExportZip(path.join(exportDir, "id_tasks.zip"));
+  const keysZip = path.join(exportDir, "key_records.zip");
+  const keys = fs.existsSync(keysZip) ? readExportZip(keysZip) : { rows: [] };
   const zipFiles = new Map([...project.files, ...id.files]);
 
-  const mapped = mapExport({ projects: project.rows, renoTasks: reno.rows, idTasks: id.rows, exportDate, zipFiles });
+  const mapped = mapExport({ projects: project.rows, renoTasks: reno.rows, idTasks: id.rows, keyRecords: keys.rows, exportDate, zipFiles });
   const chunks = buildSql(mapped, { companyId: a.company ?? 1 });
 
   fs.mkdirSync(outDir, { recursive: true });

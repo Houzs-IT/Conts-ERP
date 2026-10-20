@@ -56,6 +56,12 @@ export function taskCodeOf(cat) {
 
 const CATEGORY_BY_LABEL = new Map(TASK_CATEGORIES.map((c) => [normTitle(c.label), c]));
 
+/* Notion categories that cover two app categories: one Notion task becomes one site task per category,
+   same dates, crew and state (owner, 20 Oct 2026). */
+export const SPLIT_CATEGORIES = new Map([
+  [normTitle("PLASTER CEILING & PARTITION"), ["PLASTER CEILING", "PARTITION"]],
+].map(([k, labels]) => [k, labels.map((l) => CATEGORY_BY_LABEL.get(normTitle(l)))]));
+
 /* The owner's people list (11 Oct 2026). `aliases` are the spellings seen in the Notion cells. */
 export const PEOPLE = [
   { key: "chai-mengkeat", name: "Chai Mengkeat", roles: ["sales", "boss"], aliases: ["Chai Mengkeat"] },
@@ -88,7 +94,8 @@ export const STEP_LABEL = { design: "Design", renovation: "Renovation", handover
 /** Notion status -> step of the 6-step flow (owner rule 11 Oct 2026). */
 export function stepOf({ projectDone, handoverDate, reno }) {
   if (projectDone) return "closed";
-  if (handoverDate) return "handover";
+  // works finished in Notion but no handover date yet: waiting for handover, not back at design (20 Oct 2026)
+  if (handoverDate || reno === "Done") return "handover";
   if (reno === "In Progress") return "renovation";
   return "design";
 }
@@ -113,15 +120,23 @@ function linkLabel(url) {
 
 const notionUrl = (id) => (id ? `https://app.notion.com/p/${id}` : null);
 
+/** A key pass date from its Notion title ("BARON B30-05 MS MICHELL @August 10, 2026" or "... 10/08/2026"). */
+export function keyMoveDate(title) {
+  const m = /(\d{1,2}\/\d{1,2}\/\d{4}|[A-Za-z]+\s+\d{1,2},\s*\d{4})\s*$/.exec(String(title ?? "").trim());
+  return m ? parseDate(m[1]) : null;
+}
+
 /**
- * @param {{ projects: object[], renoTasks: object[], idTasks: object[], exportDate: string, zipFiles?: Map<string, number> }} input
+ * @param {{ projects: object[], renoTasks: object[], idTasks: object[], keyRecords?: object[], exportDate: string, zipFiles?: Map<string, number> }} input
+ *   keyRecords: rows of the "Unit Key Record" export (optional: older exports have none).
  *   zipFiles: file name -> size in bytes of the PDFs inside the exports (for design file sizes).
  */
-export function mapExport({ projects, renoTasks, idTasks, exportDate, zipFiles = new Map() }) {
+export function mapExport({ projects, renoTasks, idTasks, keyRecords = [], exportDate, zipFiles = new Map() }) {
   const report = {
     exportDate,
-    input: { projects: projects.length, renoTasks: renoTasks.length, idTasks: idTasks.length },
-    skipped: { renoTasks: [], idTasks: [] },
+    input: { projects: projects.length, renoTasks: renoTasks.length, idTasks: idTasks.length, keyRecords: keyRecords.length },
+    skipped: { renoTasks: [], idTasks: [], keyRecords: [] },
+    splitTasks: 0,
     parseFailures: [],
     unmappedNames: {},
     conflicts: [],
@@ -239,8 +254,10 @@ export function mapExport({ projects, renoTasks, idTasks, exportDate, zipFiles =
     const contractors = splitList(col(r, "Contractor"));
     const brief = { row: rowNo, category: catRaw || null, date: dateRaw || null, contractor: contractors.join(", ") || null, done: col(r, "Done") || null };
     if (!project) { report.skipped.renoTasks.push({ ...brief, reason: parseRelation(col(r, "Project 🔥")).length ? "project not in the Project export" : "no project linked in Notion" }); return; }
-    const cat = CATEGORY_BY_LABEL.get(normTitle(catRaw));
-    if (!cat) { report.skipped.renoTasks.push({ ...brief, project: project.name, reason: catRaw ? `unknown category "${catRaw}"` : "no category in Notion" }); return; }
+    const single = CATEGORY_BY_LABEL.get(normTitle(catRaw));
+    const cats = single ? [single] : SPLIT_CATEGORIES.get(normTitle(catRaw)) ?? [];
+    if (!cats.length) { report.skipped.renoTasks.push({ ...brief, project: project.name, reason: catRaw ? `unknown category "${catRaw}"` : "no category in Notion" }); return; }
+    if (!single) report.splitTasks++;
     const range = parseDateRange(dateRaw);
     if (!range.ok) report.parseFailures.push({ entity: "renovation task", row: rowNo, field: "Date", value: dateRaw });
     const crew = [];
@@ -251,8 +268,6 @@ export function mapExport({ projects, renoTasks, idTasks, exportDate, zipFiles =
       else if (isSub(c)) { subs.push(c); report.subcontractorUse[c] = (report.subcontractorUse[c] ?? 0) + 1; }
       else { subs.push(c); unmapped("Contractor", c); }
     }
-    const code = taskCodeOf(cat);
-    const fulfilment = code.startsWith("INTERNAL:") || crew.length || !subs.length ? "internal" : "po";
     const done = yesNo(col(r, "Done")) || project.step === "closed";
     const text = col(r, "Text").trim();
     const notes = [
@@ -261,35 +276,49 @@ export function mapExport({ projects, renoTasks, idTasks, exportDate, zipFiles =
       done && !yesNo(col(r, "Done")) ? "Marked done because the project is closed in Notion." : null,
       text ? `Notion text: ${text}` : null,
     ].filter(Boolean).join(" ");
-    tasks.push({
-      rowNo, project, cat, code, fix: cat.fix, fulfilment,
-      state: done ? "done" : "open",
-      plannedStart: range.start, plannedEnd: range.end,
-      notes,
-      // the parts of notes, so the SQL can rebuild the same text from a short payload
-      noteParts: { subs: subs.join(", ") || null, markedDone: done && !yesNo(col(r, "Done")), text: text || null },
-      assigneeRefs: [...new Set(crew.map((p) => p.ref))],
-      ref: null,
+    cats.forEach((cat, part) => {
+      const code = taskCodeOf(cat);
+      tasks.push({
+        rowNo, project, cat, code, fix: cat.fix,
+        fulfilment: code.startsWith("INTERNAL:") || crew.length || !subs.length ? "internal" : "po",
+        state: done ? "done" : "open",
+        plannedStart: range.start, plannedEnd: range.end,
+        notes,
+        // the parts of notes, so the SQL can rebuild the same text from a short payload
+        noteParts: { subs: subs.join(", ") || null, markedDone: done && !yesNo(col(r, "Done")), text: text || null },
+        assigneeRefs: [...new Set(crew.map((p) => p.ref))],
+        splitFrom: single ? null : normTitle(catRaw),
+        // the first part is the task an earlier export knew under that category alone: it keeps the plain page ref
+        splitPart: single ? 0 : part,
+        ref: null,
+      });
     });
     if (range.start && (!project.firstTaskDate || range.start < project.firstTaskDate)) project.firstTaskDate = range.start;
   });
 
   // Own page id of a task: its entry in the project's "Renovation Timeline" relation ("CATEGORY - @Project").
+  // A split task is keyed by its Notion category, so the plain tasks of the same category keep the refs they had.
   const byProjectCat = new Map();
   for (const t of tasks) {
-    const k = `${t.project.ref}|${t.cat.code}`;
+    const k = t.splitFrom ? `${t.project.ref}|split|${t.splitFrom}|${t.cat.code}` : `${t.project.ref}|${t.cat.code}`;
     if (!byProjectCat.has(k)) byProjectCat.set(k, []);
     byProjectCat.get(k).push(t);
   }
   for (const [k, list] of byProjectCat) {
     const project = list[0].project;
+    const split = list[0].splitFrom;
+    const headOf = (x) => normTitle(x.title.split(/\s+-\s+@?/)[0]);
     const ids = project.renoRelation
-      .filter((x) => x.id && CATEGORY_BY_LABEL.get(normTitle(x.title.split(/\s+-\s+@?/)[0]))?.code === list[0].cat.code)
+      .filter((x) => x.id && (split ? headOf(x) === split : CATEGORY_BY_LABEL.get(headOf(x))?.code === list[0].cat.code))
       .map((x) => x.id);
-    if (list.length === 1 && ids.length === 1) list[0].ref = `notion:${ids[0]}`;
+    // a split task's later parts are the Notion page plus the app category they became
+    const suffix = split && list[0].splitPart > 0 ? `:${list[0].cat.code}` : "";
+    if (list.length === 1 && ids.length === 1) list[0].ref = `notion:${ids[0]}${suffix}`;
     else {
       list.forEach((t, n) => {
-        t.ref = `notion:h:${stableHash("reno-task", project.ref, t.cat.code, t.plannedStart, t.plannedEnd, n)}`;
+        t.ref = split
+          ? `notion:h:${stableHash("reno-split", project.ref, split, t.cat.code, t.plannedStart, t.plannedEnd, n)}`
+          : `notion:h:${stableHash("reno-task", project.ref, t.cat.code, t.plannedStart, t.plannedEnd, n)}`;
         report.taskRefFallbacks++;
       });
     }
@@ -298,6 +327,7 @@ export function mapExport({ projects, renoTasks, idTasks, exportDate, zipFiles =
 
   // Occurrence: per project and task code (trade + fix phase), the same rule as manualTaskRow in the app, so
   // the unique index (project_id, trade_code, fix_phase, occurrence) holds; ordered by planned start, then CSV row.
+  // The later parts of split tasks count after the others, so tasks an earlier import wrote keep their occurrence numbers.
   const byCode = new Map();
   for (const t of tasks) {
     const k = `${t.project.ref}|${t.code}|${t.fix}`;
@@ -305,7 +335,8 @@ export function mapExport({ projects, renoTasks, idTasks, exportDate, zipFiles =
     byCode.get(k).push(t);
   }
   for (const list of byCode.values()) {
-    list.sort((a, b) => (a.plannedStart ?? "9999") .localeCompare(b.plannedStart ?? "9999") || a.rowNo - b.rowNo);
+    list.sort((a, b) => Number(a.splitPart > 0) - Number(b.splitPart > 0)
+      || (a.plannedStart ?? "9999").localeCompare(b.plannedStart ?? "9999") || a.rowNo - b.rowNo);
     list.forEach((t, n) => { t.occurrence = n + 1; t.seq = t.cat.sort * 10 + t.occurrence; });
     const cats = new Set(list.map((t) => t.cat.code));
     if (cats.size > 1) report.occurrenceSharedTrade.push({ project: list[0].project.name, taskCode: list[0].code, categories: [...cats] });
@@ -382,6 +413,42 @@ export function mapExport({ projects, renoTasks, idTasks, exportDate, zipFiles =
     p.designerPersonRef = best?.ref ?? null;
   }
 
+  /* ---- Unit Key Record rows -> dated key passes (the history behind the "Unit Key" holder) ---- */
+  const keyHistory = [];
+  const keySeen = new Set();
+  keyRecords.forEach((r, i) => {
+    const rowNo = i + 2;
+    const name = String(col(r, "Name")).replace(/\s+/g, " ").trim();
+    const project = projectOfRow(col(r, "Project 🔥"));
+    const brief = { row: rowNo, name: name || "(untitled)" };
+    if (!project) { report.skipped.keyRecords.push({ ...brief, reason: "no project linked in Notion" }); return; }
+    const created = parseCreatedTime(col(r, "Created time"));
+    const movedOn = keyMoveDate(name) ?? created?.slice(0, 10) ?? null;
+    if (!movedOn) { report.skipped.keyRecords.push({ ...brief, project: project.name, reason: "no date in the title or Created time" }); return; }
+    const who = (cell, where) => {
+      const n = splitList(col(r, cell))[0];
+      if (!n) return null;
+      const p = personOf(n);
+      if (!p) unmapped(where, n);
+      return p;
+    };
+    const from = who("Pass Person", "Key Pass Person");
+    const to = who("Receive Person", "Key Receive Person");
+    // the app records one receiver; any others stay in the note
+    const receivers = splitList(col(r, "Receive Person"));
+    if (!from && !to) { report.skipped.keyRecords.push({ ...brief, project: project.name, reason: "neither person is in the people list" }); return; }
+    // Notion holds some passes twice (same day, giver and receivers): keep one
+    const same = `${project.ref}|${movedOn}|${col(r, "Pass Person")}|${col(r, "Receive Person")}`;
+    if (keySeen.has(same)) { report.skipped.keyRecords.push({ ...brief, project: project.name, reason: "same pass as an earlier row" }); return; }
+    keySeen.add(same);
+    keyHistory.push({
+      // keyed by the pass itself, not by page id: several passes share one title, so a title cannot tell their pages apart
+      ref: `notion:h:${stableHash("key-record", project.ref, normTitle(name), col(r, "Created time"), col(r, "Pass Person"), col(r, "Receive Person"))}`,
+      project, movedOn, fromRef: from?.ref ?? null, toRef: to?.ref ?? null,
+      note: `Imported from Notion (Unit Key Record: ${name}).${receivers.length > 1 ? ` Received by: ${receivers.join(", ")}.` : ""}`,
+    });
+  });
+
   /* ---- codes: RN-YYMM-NNN like create.ts; YYMM from the SO date (else first site task, else the export date) ---- */
   for (const p of outProjects) p.yymm = yymmOf(p.soDate ?? p.firstTaskDate ?? exportDate);
   outProjects.sort((a, b) => a.yymm.localeCompare(b.yymm) || (a.soDate ?? "").localeCompare(b.soDate ?? "") || a.nt.localeCompare(b.nt));
@@ -413,10 +480,12 @@ export function mapExport({ projects, renoTasks, idTasks, exportDate, zipFiles =
     designFilesPendingUpload: designFiles.filter((f) => !/^https?:\/\/(?!app\.notion\.com)/.test(f.externalUrl)).length,
     orderListNotes: outProjects.reduce((n, p) => n + p.orderLists.length, 0),
     keyMoves: keyMoves.length,
+    keyHistory: keyHistory.length,
+    splitTasks: report.splitTasks,
     flowLog: flowLog.length,
     activityNotes: activity.length,
   };
-  return { people: PEOPLE, projects: outProjects, tasks, siteMeasures, designFiles, keyMoves, flowLog, activity, report };
+  return { people: PEOPLE, projects: outProjects, tasks, siteMeasures, designFiles, keyMoves, keyHistory, flowLog, activity, report };
 }
 
 function countBy(list, f) {
