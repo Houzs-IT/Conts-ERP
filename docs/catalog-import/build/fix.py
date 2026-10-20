@@ -165,13 +165,15 @@ for page, mc, line in HKA_LINES:
     old = by_code[old_code]
     nick = old['name'].split(mc, 1)[1].strip()  # "Xammar" etc. (2990 list name), or ''
     seen = f'{len(names)} named of {count}' + (' (list cut off in the catalogue)' if cut else '')
+    # Names follow the engine's generate-skus templates without a branding prefix ("SOFA 5530 1A(LHF)",
+    # "1003 BEDFRAME (6FT)"): with "HOOKKA" in front the phone list cuts the size / compartment off.
     variants, skipped = [], []
     for n in names:
         if sofa:
             if n not in COMPARTMENTS:
                 skipped.append(n); continue
             variants.append(dict(code=f'{old_code}-{n}', comp=n, size_code=None, size_label=None, printed=n,
-                                 name=f'HOOKKA SOFA {mc}{" " + nick.upper() if nick else ""} {n}'))
+                                 name=f'SOFA {mc} {n}'))
         else:
             u = n.upper().replace(' ', '')
             if u in STD:
@@ -181,7 +183,7 @@ for page, mc, line in HKA_LINES:
                 assert mm, n
                 sc = 'SP'; lbl = f'{mm.group(1)}X{mm.group(2)}CM'; suffix = f'{mm.group(1)}X{mm.group(2)}'
             variants.append(dict(code=f'{old_code}-({suffix})', comp=None, size_code=sc, size_label=lbl, printed=n,
-                                 name=f'HOOKKA BEDFRAME {mc} ({lbl})'))
+                                 name=f'{mc} BEDFRAME ({lbl})'))
     key = (lambda v: (COMP_ORDER.index(v['comp']),)) if sofa else (lambda v: (SIZE_ORDER.index(v['size_code']), v['size_label']))
     variants.sort(key=key)
     allowed = {'compartments': [v['comp'] for v in variants]} if sofa else {'sizes': sorted({v['size_code'] for v in variants}, key=SIZE_ORDER.index)}
@@ -193,7 +195,7 @@ for page, mc, line in HKA_LINES:
             id=sku_id(v['code']), code=v['code'], name=v['name'], category='SOFA' if sofa else 'BEDFRAME', base_model=old_code,
             size_code=v['size_code'], size_label=v['size_label'], old_code=old_code, page=page, printed=v['printed'],
             supplier_sku=f'{mc} {v["printed"]}',
-            description=f'HOOKKA model {mc}, {what}. HOOKA.pdf p{page}: "{line}" ({seen}).',
+            description=f'HOOKKA model {mc}{" (" + nick + " on the 2990 list)" if nick else ""}, {what}. HOOKA.pdf p{page}: "{line}" ({seen}).',
             notes=f'{TAG}: PRICE NEEDED - no price in {HKA_FILE} p{page}; supplier model {mc}, {what}. Replaces {old_code}.'))
 
 DELETE_2990 = ['SOF-HKA-5080', 'SOF-HKA-5095', 'SOF-HKA-5119', 'SOF-HKA-8019', 'SOF-HKA-8020', 'SOF-HKA-8027', 'SOF-HKA-9036',
