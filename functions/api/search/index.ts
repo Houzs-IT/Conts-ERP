@@ -28,25 +28,36 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const lv = await levelsFor(env, session.role);
   const sees = (area: string) => session.role === 'management' || lv[area] !== 'none';
 
-  const units = !sees('properties') ? [] : await all<any>(env, `
+  const unitsRead = !sees('properties') ? [] : all<any>(env, `
     SELECT u.id, u.unit_number, u.bedrooms, u.readiness, p.name AS property_name
     FROM units u JOIN properties p ON p.id = u.property_id
     WHERE ? = '' OR (${words.map(() => `lower(p.name || ' ' || u.unit_number || ' ' || COALESCE(u.listing_name, '')) LIKE ?`).join(' AND ') || 'FALSE'})
     ORDER BY p.name, u.unit_number LIMIT 6`, q, ...words);
-  for (const u of units) {
-    out.push({ id: u.id, kind: 'unit', label: `${u.property_name} ${u.unit_number}`, sub: `${u.bedrooms} bedroom${Number(u.bedrooms) === 1 ? '' : 's'}`, state: u.readiness, target: `/properties/units/${encodeURIComponent(u.id)}` });
-  }
-  if (!q) return json(out);
 
   // A pasted booking reference is the most common search, so exact reference matches come first. The words are read
   // the way the Reservations search box reads them: a name in any order, any reference, a phone in any format.
   const rq = quickSearch(q, false);
-  const bookings = !sees('reservations') ? [] : await all<any>(env, `
+  const bookingsRead = !q || !sees('reservations') ? [] : all<any>(env, `
     SELECT r.id, r.external_ref, r.channel, r.check_in, r.check_out, r.state, u.unit_number, p.name AS property_name, g.full_name
     FROM reservations r JOIN units u ON u.id = r.unit_id JOIN properties p ON p.id = u.property_id LEFT JOIN guests g ON g.id = r.guest_id
     WHERE r.channel NOT IN ('maintenance_block', 'owner_stay') AND ${rq.map(c => c.sql).join(' AND ') || 'FALSE'}
     ORDER BY (lower(COALESCE(r.external_ref, '')) = ?) DESC, (r.state IN ('cancelled', 'no_show')) ASC, r.check_in DESC LIMIT 6`,
     ...rq.flatMap(c => c.args), q);
+
+  const gq = guestSearch(q, true);
+  const guestsRead = !q || !sees('reservations') ? [] : all<any>(env, `
+    SELECT g.id, g.full_name, g.email, g.phone FROM guests g
+    WHERE ${gq.sql}
+    ORDER BY g.full_name LIMIT 4`, ...gq.args);
+
+  const ownersRead = !q || !sees('owners') ? [] : all<any>(env, `
+    SELECT o.id, o.display_name, o.email, (SELECT count(*)::int FROM units u WHERE u.owner_id = o.id) AS units
+    FROM owners o WHERE lower(o.display_name || ' ' || COALESCE(o.email, '')) LIKE ? ORDER BY o.display_name LIMIT 4`, like);
+
+  const [units, bookings, guests, owners] = await Promise.all([unitsRead, bookingsRead, guestsRead, ownersRead]);
+  for (const u of units) {
+    out.push({ id: u.id, kind: 'unit', label: `${u.property_name} ${u.unit_number}`, sub: `${u.bedrooms} bedroom${Number(u.bedrooms) === 1 ? '' : 's'}`, state: u.readiness, target: `/properties/units/${encodeURIComponent(u.id)}` });
+  }
   for (const r of bookings) {
     const ref = r.external_ref as string | null;
     out.push({
@@ -57,18 +68,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     });
   }
 
-  const gq = guestSearch(q, true);
-  const guests = !sees('reservations') ? [] : await all<any>(env, `
-    SELECT g.id, g.full_name, g.email, g.phone FROM guests g
-    WHERE ${gq.sql}
-    ORDER BY g.full_name LIMIT 4`, ...gq.args);
   for (const g of guests) out.push({ id: g.id, kind: 'guest', label: g.full_name, sub: g.email || g.phone || 'No contact details', target: `/reservations/guests?g=${encodeURIComponent(g.id)}` });
-
-  if (sees('owners')) {
-    const owners = await all<any>(env, `
-      SELECT o.id, o.display_name, o.email, (SELECT count(*)::int FROM units u WHERE u.owner_id = o.id) AS units
-      FROM owners o WHERE lower(o.display_name || ' ' || COALESCE(o.email, '')) LIKE ? ORDER BY o.display_name LIMIT 4`, like);
-    for (const o of owners) out.push({ id: o.id, kind: 'owner', label: o.display_name, sub: `${o.units} unit${Number(o.units) === 1 ? '' : 's'}${o.email ? ` · ${o.email}` : ''}`, target: `/owners/${encodeURIComponent(o.id)}` });
-  }
+  for (const o of owners) out.push({ id: o.id, kind: 'owner', label: o.display_name, sub: `${o.units} unit${Number(o.units) === 1 ? '' : 's'}${o.email ? ` · ${o.email}` : ''}`, target: `/owners/${encodeURIComponent(o.id)}` });
   return json(out);
 };

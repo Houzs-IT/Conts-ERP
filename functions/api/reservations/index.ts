@@ -22,22 +22,6 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const m = moneySql(schema);
   const todo = q.todo ? todoWhere(q.todo, q.today, schema) : 'TRUE';
   const current = `${viewWhere(q.view, q.today)} AND ${todo}`;
-  const sums = await one<Record<string, number>>(env, `
-    SELECT ${VIEWS.map(v => `COUNT(*) FILTER (WHERE ${viewWhere(v, q.today)} AND ${todo}) AS "v_${v}"`).join(',\n           ')},
-           ${TODOS.map(t => `COUNT(*) FILTER (WHERE ${todoWhere(t, q.today, schema)}) AS "t_${t}", COALESCE(SUM(${m.outstanding}) FILTER (WHERE ${todoWhere(t, q.today, schema)}), 0) AS "o_${t}"`).join(',\n           ')},
-           COUNT(*) FILTER (WHERE ${current}) AS n,
-           COALESCE(SUM(r.check_out::date - r.check_in::date) FILTER (WHERE ${current}), 0) AS nights,
-           COALESCE(SUM(r.gross_booking_value) FILTER (WHERE ${current}), 0) AS gross,
-           COALESCE(SUM(r.channel_fee) FILTER (WHERE ${current}), 0) AS fees,
-           COALESCE(SUM(${m.outstanding}) FILTER (WHERE ${current} AND r.state NOT IN ('cancelled','no_show')), 0) AS outstanding
-    ${fromSql(schema)} WHERE ${q.where}`, ...q.args);
-
-  const total = Number(sums?.n ?? 0);
-  const page = Math.min(q.page, Math.max(1, Math.ceil(total / q.pageSize)));
-  const rows = total ? await all<any>(env, `
-    SELECT ${columnsSql(schema)} ${fromSql(schema)} WHERE ${q.where} AND ${current}
-    ORDER BY ${q.orderBy} LIMIT ${q.pageSize} OFFSET ${(page - 1) * q.pageSize}`, ...q.args) : [];
-
   // What each filter can pick from, with how many bookings each choice would show under everything else on screen
   // (the tab, the card, the search and the other filters), so the Filter panel offers the data's own values.
   const FACET_SQL: Record<typeof FACETS[number], string> = { ch: 'r.channel', building: 'u.property_id', st: 'r.state', country: 'gc.iso' };
@@ -51,15 +35,36 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     groups.set(k, { w, keys: [...(groups.get(k)?.keys ?? []), f] });
   }
   const facetMap = Object.fromEntries(FACETS.map(f => [f, [] as { value: string; count: number; label?: string }[]]));
-  await Promise.all([...groups.values()].map(async ({ w, keys }) => {
+  const facetsRead = Promise.all([...groups.values()].map(async ({ w, keys }) => {
     const rows = await all<Record<string, unknown>>(env, `SELECT ${keys.map(k => `${FACET_SQL[k]} AS "v_${k}", GROUPING(${FACET_SQL[k]}) AS "g_${k}"`).join(', ')}, COUNT(*) AS n
       ${fromSql(schema, needsMoney)} WHERE ${w.where} AND ${current}
       GROUP BY GROUPING SETS (${keys.map(k => `(${FACET_SQL[k]})`).join(', ')})`, ...w.args);
     for (const r of rows) for (const k of keys) if (Number(r[`g_${k}`]) === 0) facetMap[k].push({ value: (r[`v_${k}`] as string | null) ?? 'none', count: Number(r.n) });
   }));
+  const pageRows = (page: number) => all<any>(env, `
+    SELECT ${columnsSql(schema)} ${fromSql(schema)} WHERE ${q.where} AND ${current}
+    ORDER BY ${q.orderBy} LIMIT ${q.pageSize} OFFSET ${(page - 1) * q.pageSize}`, ...q.args);
+  const [sums, requestedRows, , buildings] = await Promise.all([
+    one<Record<string, number>>(env, `
+    SELECT ${VIEWS.map(v => `COUNT(*) FILTER (WHERE ${viewWhere(v, q.today)} AND ${todo}) AS "v_${v}"`).join(',\n           ')},
+           ${TODOS.map(t => `COUNT(*) FILTER (WHERE ${todoWhere(t, q.today, schema)}) AS "t_${t}", COALESCE(SUM(${m.outstanding}) FILTER (WHERE ${todoWhere(t, q.today, schema)}), 0) AS "o_${t}"`).join(',\n           ')},
+           COUNT(*) FILTER (WHERE ${current}) AS n,
+           COALESCE(SUM(r.check_out::date - r.check_in::date) FILTER (WHERE ${current}), 0) AS nights,
+           COALESCE(SUM(r.gross_booking_value) FILTER (WHERE ${current}), 0) AS gross,
+           COALESCE(SUM(r.channel_fee) FILTER (WHERE ${current}), 0) AS fees,
+           COALESCE(SUM(${m.outstanding}) FILTER (WHERE ${current} AND r.state NOT IN ('cancelled','no_show')), 0) AS outstanding
+    ${fromSql(schema)} WHERE ${q.where}`, ...q.args),
+    pageRows(q.page), facetsRead,
+    all<{ id: string; name: string }>(env, 'SELECT id, name FROM properties ORDER BY name'),
+  ]);
+
+  const total = Number(sums?.n ?? 0);
+  const page = Math.min(q.page, Math.max(1, Math.ceil(total / q.pageSize)));
+  // The requested page is read alongside the totals; only a page past the end is read again as the last one.
+  const rows = !total ? [] : page === q.page ? requestedRows : await pageRows(page);
+
   const facets = Object.fromEntries(FACETS.map(f => [f, facetMap[f].sort((a, b) => b.count - a.count).slice(0, 300)]));
   facets.country = facets.country.map(c => ({ ...c, label: c.value === 'none' ? 'Not known' : countryName(c.value) ?? c.value }));
-  const buildings = await all<{ id: string; name: string }>(env, 'SELECT id, name FROM properties ORDER BY name');
   return json({
     generatedAt: nowIso(), today: q.today, view: q.view, todo: q.todo, filters: q.filters, page, pageSize: q.pageSize, total,
     counts: Object.fromEntries(VIEWS.map(v => [v, Number(sums?.[`v_${v}`] ?? 0)])),

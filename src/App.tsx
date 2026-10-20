@@ -1,4 +1,4 @@
-import { lazy, Suspense, useRef } from 'react';
+import { lazy, Suspense, useEffect, useRef } from 'react';
 import { readDevice } from './lib/deviceClass';
 import { CrashScreen } from './components/CrashScreen';
 import { Routes, Route, Outlet, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
@@ -28,7 +28,7 @@ const OperationsTodayPage = lazy(() => import('./pages/OperationsTodayPage'));
 const CleaningPage = lazy(() => import('./pages/CleaningPage'));
 const CleanersPage = lazy(() => import('./pages/CleanersPage')); // added: housekeeping cleaner roster
 const MaintenancePage = lazy(() => import('./pages/MaintenancePage'));
-import SupplyChainEngine from './components/SupplyChainEngine';
+import SupplyChainEngine, { signInToEngineEarly } from './components/SupplyChainEngine';
 import { ENGINE_PATH } from './lib/scmEngine';
 import { useApi } from './lib/useApi';
 const UnitsPage = lazy(() => import('./pages/UnitsPage'));
@@ -124,6 +124,7 @@ function AppLayout() {
   // A screen whose area is closed to this role (Users and roles > Permissions) is not shown even by its address.
   const { user } = useSession();
   const closed = screenClosed(location.pathname, user?.access);
+  useEffect(() => { if (engine.data?.enabled && user) signInToEngineEarly(user.id); }, [engine.data?.enabled, user?.id]);
   if (switchedOff(location.pathname)) return <Navigate to={user ? HOME[user.role] : '/'} replace />;
   const engineShown = viaEngine && !closed;
   return (
