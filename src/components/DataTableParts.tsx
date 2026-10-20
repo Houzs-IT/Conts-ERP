@@ -14,8 +14,10 @@ import type { AnyTone } from '../lib/status';
 
 /** A panel under its trigger, drawn on top of the page so a scrolling table cannot clip it. Closes on an outside
  *  click or Escape. */
-export function Floating({ anchor, open, onClose, width = 260, align = 'left', children, label }: {
+export function Floating({ anchor, fallback, open, onClose, width = 260, align = 'left', children, label }: {
   anchor: RefObject<HTMLElement>; open: boolean; onClose: () => void; width?: number; align?: 'left' | 'right';
+  /** Where to open when the anchor is hidden (the toolbar folded it into "More table tools"). */
+  fallback?: RefObject<HTMLElement>;
   children: ReactNode; label: string;
 }) {
   const panel = useRef<HTMLDivElement>(null);
@@ -23,7 +25,7 @@ export function Floating({ anchor, open, onClose, width = 260, align = 'left', c
   useLayoutEffect(() => {
     if (!open) { setPos(null); return; }
     const place = () => {
-      const a = anchor.current;
+      const a = anchor.current?.offsetParent ? anchor.current : fallback?.current ?? anchor.current;
       if (!a) return;
       const r = a.getBoundingClientRect();
       const w = Math.min(width, window.innerWidth - 16);
@@ -38,7 +40,7 @@ export function Floating({ anchor, open, onClose, width = 260, align = 'left', c
     window.addEventListener('resize', place);
     window.addEventListener('scroll', place, true);
     return () => { window.removeEventListener('resize', place); window.removeEventListener('scroll', place, true); };
-  }, [open, anchor, width, align]);
+  }, [open, anchor, fallback, width, align]);
   useEffect(() => {
     if (!open) return;
     const onDoc = (e: MouseEvent) => {
