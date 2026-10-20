@@ -1,0 +1,8 @@
+# Copy to .dev.vars for local development. Never commit .dev.vars.
+# The staging database, the same line as the root .dev.vars (the admin role: the engine's tables have row level security).
+CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE=
+# Must equal SCM_ENGINE_SSO_SECRET in the root .dev.vars.
+CONTS_SSO_SECRET=
+SUPABASE_URL=https://ecgyrmblqfxvbfjlqkdq.supabase.co
+# Supabase > project ecgyrmblqfxvbfjlqkdq > Settings > API > service_role.
+SUPABASE_SERVICE_ROLE_KEY=
