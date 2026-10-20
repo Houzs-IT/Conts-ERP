@@ -36,8 +36,9 @@ interface Detail { media: MediaItem[]; access: { id: string; label: string; inst
 
 /** The cleaner's phone: today's jobs grouped by building as short cards to scan. Tapping one opens TaskDetail with the
  *  access, the office's notes and the steps: guest left, start, photos and videos, complete. One column, 44px targets. */
-export default function FieldTodayPage() {
+export default function FieldTodayPage({ linkTask, onLinked }: { linkTask?: string | null; onLinked?: () => void }) {
   const now = useNow(30000);
+  const toast = useToast();
   const [pick, setPick] = useState<'today' | 'tomorrow'>('today');
   const date = pick === 'today' ? mytDay(0) : mytDay(1);
   const { data, loading, error, reload } = useApi<{ rows: Job[] }>(`/field/tasks?date=${date}`);
@@ -45,6 +46,16 @@ export default function FieldTodayPage() {
   const jobs = data?.rows ?? [];
   const openJob = jobs.find(j => j.id === open) ?? null;
   useEffect(() => { if (open && data && !openJob) setOpen(null); }, [data]); // eslint-disable-line react-hooks/exhaustive-deps
+  // A notice tapped in the bell: open that job on its own day.
+  useEffect(() => {
+    if (!linkTask) return;
+    let live = true;
+    api.get<{ day?: string | null }>(`/housekeeping/tasks/${encodeURIComponent(linkTask)}`)
+      .then(t => { if (!live) return; setPick(t.day === mytDay(1) ? 'tomorrow' : 'today'); setOpen(linkTask); })
+      .catch(() => { if (live) toast({ tone: 'info', title: 'That job is no longer on your list.' }); })
+      .finally(() => { if (live) onLinked?.(); });
+    return () => { live = false; };
+  }, [linkTask]); // eslint-disable-line react-hooks/exhaustive-deps
   const groups = useMemo(() => {
     const m = new Map<string, { name: string; jobs: Job[] }>();
     for (const j of jobs) { const g = m.get(j.buildingId) ?? { name: j.unit.propertyName, jobs: [] }; g.jobs.push(j); m.set(j.buildingId, g); }
@@ -74,7 +85,7 @@ export default function FieldTodayPage() {
           </section>
         ))}
       {/* The list stays mounted under the sheet, so closing it lands back at the same scroll position. */}
-      <Drawer open={!!openJob} onClose={() => setOpen(null)}>
+      <Drawer open={!!openJob} onClose={() => setOpen(null)} labelledBy={openJob ? `task-title-${openJob.id}` : undefined}>
         {openJob && <TaskDetail key={openJob.id} job={openJob} now={now} onClose={() => setOpen(null)} onChanged={reload} />}
       </Drawer>
     </>
@@ -94,22 +105,23 @@ function JobStatus({ job: j }: { job: Job }) {
 
 function MapLink({ address, className }: { address: string; className?: string }) {
   return (
-    <a href={mapsLink(address)} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}
-      className={cx('min-h-11 inline-flex items-center gap-1.5 text-ink', className)}>
+    <a href={mapsLink(address)} target="_blank" rel="noopener noreferrer"
+      className={cx('relative z-[1] min-h-11 inline-flex items-center gap-1.5 text-ink', className)}>
       <Icon name="MapPin" size="sm" /><span className="min-w-0 underline underline-offset-2 [overflow-wrap:anywhere]">{address}</span>
     </a>
   );
 }
 
-/** The list card: just enough to pick the next unit. Access, notes and every action are one tap away in TaskDetail. */
+/** The list card: just enough to pick the next unit. Access, notes and every action are one tap away in TaskDetail.
+ *  The unit's button stretches over the whole card; the map link sits above it, so the two never nest. */
 function TaskCard({ job: j, onOpen }: { job: Job; onOpen: () => void }) {
   const address = j.external?.address ?? j.addressLine;
   return (
-    <article role="button" tabIndex={0} onClick={onOpen}
-      onKeyDown={e => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onOpen(); } }}
-      className={cx('bg-card rounded-card border border-solid border-line px-4 pt-3.5 pb-1 flex flex-col gap-1 cursor-pointer outline-none focus-visible:border-gold active:bg-page', j.done && 'text-muted-ink')}>
+    <article className={cx('relative bg-card rounded-card border border-solid border-line px-4 pt-3.5 pb-1 flex flex-col gap-1 has-[button:active]:bg-page', j.done && 'text-muted-ink')}>
       <div className="flex items-start gap-2">
-        <b className="text-heading flex-1 min-w-0">{j.unit.unitNumber}<span className="text-copy text-muted-ink font-normal"> · {j.unit.propertyName}</span></b>
+        <button type="button" onClick={onOpen} className="flex-1 min-w-0 text-left text-heading font-bold cursor-pointer after:absolute after:inset-0 after:rounded-card">
+          {j.unit.unitNumber}<span className="text-copy text-muted-ink font-normal"> · {j.unit.propertyName}</span>
+        </button>
         <span className="flex items-center gap-1.5 flex-wrap justify-end"><JobStatus job={j} /></span>
       </div>
       <div className="text-copy">{subtitle(j)}</div>
@@ -157,17 +169,20 @@ function TaskDetail({ job: j, now, onClose, onChanged }: { job: Job; now: number
 
   return (
     <>
-      <div className="sticky top-0 z-[2] bg-black text-white px-2 py-2 flex items-center gap-2">
+      {/* Header and action bar sit outside the scrolling middle, so nothing scrolled into view can hide under them. */}
+      <div className="flex-none bg-black text-white px-2 py-2 flex items-start gap-2">
         <button type="button" onClick={onClose} aria-label="Back to my jobs"
           className="w-11 h-11 flex-none grid place-items-center rounded-control bg-transparent border-none text-white cursor-pointer"><Icon name="ArrowLeft" size="nav" /></button>
-        <div className="flex-1 min-w-0">
-          <div className="text-[17px] font-semibold leading-tight truncate">{j.unit.unitNumber}</div>
-          <div className="text-meta text-on-dark truncate">{j.unit.propertyName}</div>
+        <div className="flex-1 min-w-0 py-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 pr-2">
+          <div className="min-w-0 mr-auto">
+            <div id={`task-title-${j.id}`} className="text-[17px] font-semibold leading-tight [overflow-wrap:anywhere]">{j.unit.unitNumber}</div>
+            <div className="text-meta text-on-dark">{j.unit.propertyName}</div>
+          </div>
+          <span className="flex items-center gap-1.5 flex-wrap"><JobStatus job={j} /></span>
         </div>
-        <span className="flex items-center gap-1.5 flex-wrap justify-end pr-2"><JobStatus job={j} /></span>
       </div>
 
-      <div className="flex-1 p-4 flex flex-col gap-5 text-copy">
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 flex flex-col gap-5 text-copy">
         <section className="flex flex-col gap-1">
           <h3 className={h3}>Unit</h3>
           <b className="text-heading">{j.unit.unitNumber} · {j.unit.propertyName}</b>
@@ -198,7 +213,7 @@ function TaskDetail({ job: j, now, onClose, onChanged }: { job: Job; now: number
           <section className="flex flex-col gap-2">
             <h3 className={h3}>Guests</h3>
             <div className="grid grid-cols-2 gap-2">
-              <div className="rounded-control bg-muted px-2.5 py-2"><span className="block text-meta text-muted-ink">Leaving</span>{j.previous ? <><b>{j.previous.checkOutTime}</b> {j.previous.guestName}</> : <span className="text-muted-ink">No departing guest</span>}
+              <div className="rounded-control bg-muted px-2.5 py-2"><span className="block text-meta text-muted-ink">Leaving</span>{j.previous ? <><b>{j.previous.checkOutTime}</b> {j.previous.guestName}</> : <span className="text-muted-ink">No guest</span>}
                 {j.guestOut && <span className="block text-meta text-gold-ink">{j.guestLeftAuto ? 'Out at checkout time' : 'Guest out'}</span>}</div>
               <div className="rounded-control bg-gold-tint px-2.5 py-2"><span className="block text-meta text-muted-ink">Arriving</span>{j.next ? <><b>{j.next.checkInTime}</b> {j.next.guestName}</> : <span className="text-muted-ink">No check-in</span>}</div>
             </div>
@@ -237,7 +252,7 @@ function TaskDetail({ job: j, now, onClose, onChanged }: { job: Job; now: number
 
       {/* Pinned above the phone's home bar. data-action-bar lifts the staging View as switch above it (ViewAs.tsx). */}
       {(phase !== 'done' || !j.external) && (
-        <div data-action-bar className="sticky bottom-0 z-[2] bg-card [border-top:1px_solid_var(--color-line)] px-4 pt-3 pb-[max(12px,env(safe-area-inset-bottom))] flex flex-col gap-2">
+        <div data-action-bar className="flex-none bg-card [border-top:1px_solid_var(--color-line)] px-4 pt-3 pb-[max(12px,env(safe-area-inset-bottom))] flex flex-col gap-2">
           {phase === 'todo' ? (
             <Button size="touch" variant="primary" className="w-full" loading={busy === 'start'}
               onClick={() => void act('start', () => api.post(`/housekeeping/tasks/${j.id}/start`, {}), `Started at ${hm(new Date().toISOString())}.`)}>

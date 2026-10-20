@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { color, radius, text, shadow } from '../theme';
 import { api } from '../lib/api';
 import { relative, dateTime } from '../lib/format';
 import { useNavCounts } from '../lib/navBadges';
+import { useSession } from '../lib/session';
 import Icon from './Icon';
 
 /* ------------------------------------------------------------------ *
@@ -84,10 +86,17 @@ export default function NotificationBell({ path, navigate, size }: { path: strin
 
 /** The field app's bell (dark header): the person's own notices only; their app has one screen, so no "See all". */
 export function FieldNotificationBell() {
-  return <Bell navigate={() => {}} size={44} alerts={[]} dark />;
+  const { user } = useSession();
+  const navigate = useNavigate();
+  const field = user?.role === 'housekeeper' || user?.role === 'technician';
+  // The field app is one screen, so a notice opens its job there (FieldHome reads ?task / ?repair), not the office page in its link.
+  const target = (n: Notice) => !field || !n.entityId ? null
+    : n.entityTable === 'tasks' ? `/?task=${encodeURIComponent(n.entityId)}`
+    : n.entityTable === 'maintenance_issues' ? `/?repair=${encodeURIComponent(n.entityId)}` : null;
+  return <Bell navigate={navigate} target={target} size={44} alerts={[]} dark />;
 }
 
-function Bell({ navigate, size, alerts, dark = false }: { navigate: (p: string) => void; size: number; alerts: Alert[]; dark?: boolean }) {
+function Bell({ navigate, target, size, alerts, dark = false }: { navigate: (p: string) => void; target?: (n: Notice) => string | null; size: number; alerts: Alert[]; dark?: boolean }) {
   const [open, setOpen] = useState(false);
   // How far the panel slides right of the bell so it stays on screen: in the field header the bell is not the last icon.
   const [shift, setShift] = useState(0);
@@ -114,7 +123,8 @@ function Bell({ navigate, size, alerts, dark = false }: { navigate: (p: string) 
       setUnread(u => Math.max(0, u - 1));
       api.patch<{ unread: number }>('/notifications', { ids: [n.id] }).then(r => setUnread(r.unread)).catch(refresh);
     }
-    if (n.link && !dark) go(n.link);
+    const to = target ? target(n) : dark ? null : n.link;
+    if (to) go(to);
   };
   const markAll = () => {
     setList(l => l?.map(x => ({ ...x, readAt: x.readAt ?? new Date().toISOString() })) ?? null);
