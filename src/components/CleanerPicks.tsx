@@ -1,14 +1,17 @@
 import type { Cleaner } from '../lib/useCleaners';
 import Icon from './Icon';
 import { cx } from '../lib/design-tokens';
+import { dayLabel, mytDay } from './ops/OpsUi';
 
-/** Hint shown beside a cleaner in a picker: the outsourced company, or today's load. */
-export const cleanerHint = (c: Cleaner) => (c.employmentType === 'outsourced' ? (c.vendorName ?? 'Outsourced') : `${c.busy} open today`);
+/** Hint shown beside a cleaner in a picker: the outsourced company, or the load on `day` (the roster must be
+ *  fetched for that same day: useCleaners' `date`). */
+export const cleanerHint = (c: Cleaner, day?: string) => (c.employmentType === 'outsourced' ? (c.vendorName ?? 'Outsourced')
+  : `${c.busy} open ${!day || day === mytDay(0) ? 'today' : `on ${dayLabel(day)}`}`);
 
 /** Tick one or more cleaners (owner, 11 Oct 2026: a big unit can take two or three people). The order they are
  *  ticked in is kept: the first one is the job's main cleaner. */
-export function CleanerChecklist({ cleaners, value, onChange, label = 'Cleaners', error }: {
-  cleaners: Cleaner[]; value: string[]; onChange: (ids: string[]) => void; label?: string; error?: string | null;
+export function CleanerChecklist({ cleaners, value, onChange, label = 'Cleaners', error, day }: {
+  cleaners: Cleaner[]; value: string[]; onChange: (ids: string[]) => void; label?: string; error?: string | null; day?: string;
 }) {
   const toggle = (id: string, on: boolean) => onChange(on ? [...value.filter(v => v !== id), id] : value.filter(v => v !== id));
   return (
@@ -24,7 +27,7 @@ export function CleanerChecklist({ cleaners, value, onChange, label = 'Cleaners'
               <input type="checkbox" checked={on} onChange={e => toggle(c.id, e.target.checked)} className="w-4 h-4 m-0 flex-none accent-[var(--color-brand-black)]" />
               <span className="flex-1 min-w-0 truncate font-medium text-ink">{c.name}</span>
               {on && value.length > 1 && n === 1 && <span className="text-caption text-gold-ink whitespace-nowrap">Main</span>}
-              <span className="text-meta text-muted-ink whitespace-nowrap">{cleanerHint(c)}</span>
+              <span className="text-meta text-muted-ink whitespace-nowrap">{cleanerHint(c, day)}</span>
             </label>
           );
         })}
@@ -45,11 +48,11 @@ export function CleanerChips({ cleaners, value, names, onChange, disabled, requi
   return (
     <div className="flex flex-wrap items-center gap-1.5 min-w-0">
       {value.map((id, i) => (
-        <span key={id} className="inline-flex items-center gap-1 h-8 pl-2.5 pr-1 rounded-full border border-solid border-line bg-card text-copy max-w-full">
+        <span key={id} className="inline-flex items-center gap-1 max-md:gap-2 h-8 max-md:h-11 pl-2.5 max-md:pl-3.5 pr-1 max-md:pr-0 rounded-full border border-solid border-line bg-card text-copy max-w-full">
           <span className="truncate">{names[id] ?? cleaners.find(c => c.id === id)?.name ?? 'Cleaner'}</span>
           {i === 0 && value.length > 1 && <span className="text-caption text-gold-ink">Main</span>}
           <button type="button" disabled={disabled} onClick={() => onChange(value.filter(v => v !== id))} aria-label={`Take ${names[id] ?? 'this cleaner'} off the job`}
-            title="Take off this job" className="w-6 h-6 grid place-items-center rounded-full border-0 bg-transparent text-muted-ink hover:bg-muted cursor-pointer disabled:cursor-default">
+            title="Take off this job" className="w-6 h-6 max-md:w-11 max-md:h-11 max-md:rounded-l-none max-md:[border-left:1px_solid_var(--color-line)] grid place-items-center rounded-full border-0 bg-transparent text-muted-ink hover:bg-muted cursor-pointer disabled:cursor-default">
             <Icon name="X" size="sm" />
           </button>
         </span>
@@ -57,7 +60,7 @@ export function CleanerChips({ cleaners, value, names, onChange, disabled, requi
       {others.length > 0 && (
         <select aria-label={value.length ? 'Add another cleaner' : 'Pick a cleaner'} disabled={disabled} value=""
           onChange={e => { const v = e.target.value; if (v) onChange([...value, v]); }}
-          className={cx('h-8 rounded-full border border-solid px-2.5 bg-card text-copy text-ink cursor-pointer max-w-[200px]', value.length ? 'border-dashed border-line' : required ? 'border-danger' : 'border-line')}>
+          className={cx('h-8 max-md:h-11 rounded-full border border-solid px-2.5 bg-card text-copy text-ink cursor-pointer max-w-[200px]', value.length ? 'border-dashed border-line' : required ? 'border-danger' : 'border-line')}>
           <option value="">{value.length ? '+ Add cleaner' : 'Pick a cleaner'}</option>
           {others.map(c => <option key={c.id} value={c.id}>{c.name}{c.employmentType === 'outsourced' ? ' (outsourced)' : ''}</option>)}
         </select>
