@@ -6,6 +6,8 @@ import { menuPathFor } from '../lib/scmEngine';
 import { color } from '../theme';
 
 const b64url = (s: string) => btoa(unescape(encodeURIComponent(s))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+// Well inside the engine's 7-day session (engine/backend/src/services/auth.ts), so a tab left open never shows its sign-in.
+const ENGINE_SIGN_IN_MAX_AGE_MS = 24 * 3600e3;
 
 /** The supply chain engine's screen for the current menu item, shown inside this app. The server signs
  *  the person into the engine once; after that the frame stays loaded and is told where to go as the
@@ -27,6 +29,7 @@ export default function SupplyChainEngine({ enginePath, active = true }: { engin
   const followed = useRef<string | null>(null);
   const isActive = useRef(active);
   isActive.current = active;
+  const signedInAt = useRef(0);
 
   useEffect(() => {
     let live = true;
@@ -36,12 +39,17 @@ export default function SupplyChainEngine({ enginePath, active = true }: { engin
       .then(r => {
         if (!live) return;
         site.current = r.site;
+        signedInAt.current = Date.now();
         // In the fragment: never sent to a server, and the engine removes it as soon as it has read it.
         setSrc(`${r.site}/#conts=${b64url(JSON.stringify({ t: r.token, sp: r.sessionPass ?? undefined, p: wanted.current }))}`);
       })
       .catch(e => { if (live) setError(errorMessage(e, 'The supply chain screens could not be opened.')); });
     return () => { live = false; };
   }, [attempt]);
+
+  useEffect(() => {
+    if (active && signedInAt.current && Date.now() - signedInAt.current > ENGINE_SIGN_IN_MAX_AGE_MS) setAttempt(n => n + 1);
+  }, [active]);
 
   // Never a loading message for good: an engine that does not say it is showing (an older build) is revealed anyway.
   useEffect(() => {
