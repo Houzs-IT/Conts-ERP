@@ -155,6 +155,15 @@ const newLine = (deliveryDate: string | null = null): DraftLine => ({
 
 const fmtRm = (centi: number, currency = 'MYR'): string => fmtMoneySen(centi, currency);
 
+const subtotalStyle = {
+  display: 'flex',
+  justifyContent: 'flex-end',
+  fontFamily: 'var(--font-mark)',
+  fontSize: 'var(--fs-20)',
+  fontWeight: 800,
+  color: 'var(--c-burnt)',
+} as const;
+
 export const SalesOrderNew = () => {
   const navigate = useNavigate();
   const notify = useNotify();
@@ -2393,51 +2402,50 @@ export const SalesOrderNew = () => {
           Same SoLineCard component Edit SO uses inline. Each line on
           New SO is already in inline-edit mode (no saved row exists
           yet), and "+ Add Line Item" appends a fresh card. Card header
-          mirrors Detail — "Line Items ({n})" with no subtitle. */}
+          mirrors Detail — "Line Items ({n})" with no subtitle.
+          Renovation mode: each room is a card of its own in place of this one. */}
+      {reno ? (
+        <>
+          <RenovationSoRooms
+            card={{ section: styles.card, header: styles.cardHeader, title: styles.cardTitle, body: styles.cardBody }}
+            rooms={renoRooms}
+            onRoomsChange={(next, rename) => {
+              setRenoRooms(next);
+              if (rename) setRenoLineRoom((m) => Object.fromEntries(Object.entries(m).map(([k, r]) => [k, r === rename.from ? rename.to : r])));
+            }}
+            rows={lines.map((line) => ({ key: line.rid, room: renoLineRoom[line.rid] ?? '', render: (n: number) => renderNewLine(line, n) }))}
+            onRowRoom={(rid, room) => setRenoLineRoom((m) => ({ ...m, [rid]: room }))}
+            onAddLine={(room) => {
+              const l = newLine(deliveryDate || null);
+              setLines((prev) => [...prev, l]);
+              if (room) setRenoLineRoom((m) => ({ ...m, [l.rid]: room }));
+            }}
+            layout={roomLayoutOf(renoInfo)}
+          />
+          <section className={styles.card}>
+            <div className={styles.cardBody} style={{ ...subtotalStyle, flexDirection: 'row' }}>Subtotal: {fmtRm(subtotalSen)}</div>
+          </section>
+        </>
+      ) : (
       <section className={styles.card}>
         <header className={styles.cardHeader}>
           <h2 className={styles.cardTitle}>Line Items ({lines.length})</h2>
         </header>
         <div className={styles.cardBody} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-          {reno ? (
-            /* Renovation mode: the lines grouped into rooms (RenovationSoRooms). */
-            <RenovationSoRooms
-              rooms={renoRooms}
-              onRoomsChange={(next, rename) => {
-                setRenoRooms(next);
-                if (rename) setRenoLineRoom((m) => Object.fromEntries(Object.entries(m).map(([k, r]) => [k, r === rename.from ? rename.to : r])));
-              }}
-              rows={lines.map((line) => ({ key: line.rid, room: renoLineRoom[line.rid] ?? '', render: (n: number) => renderNewLine(line, n) }))}
-              onRowRoom={(rid, room) => setRenoLineRoom((m) => ({ ...m, [rid]: room }))}
-              onAddLine={(room) => {
-                const l = newLine(deliveryDate || null);
-                setLines((prev) => [...prev, l]);
-                if (room) setRenoLineRoom((m) => ({ ...m, [l.rid]: room }));
-              }}
-              layout={roomLayoutOf(renoInfo)}
-            />
-          ) : (
-            <>
-              {lines.map((line, idx) => renderNewLine(line, idx))}
-              <AddLineButton variant="block" onClick={addLine} />
-            </>
-          )}
+          {lines.map((line, idx) => renderNewLine(line, idx))}
+          <AddLineButton variant="block" onClick={addLine} />
 
           <div style={{
-            display: 'flex',
-            justifyContent: 'flex-end',
+            ...subtotalStyle,
             marginTop: 'var(--space-2)',
             paddingTop: 'var(--space-3)',
             borderTop: '1px solid var(--line)',
-            fontFamily: 'var(--font-mark)',
-            fontSize: 'var(--fs-20)',
-            fontWeight: 800,
-            color: 'var(--c-burnt)',
           }}>
             Subtotal: {fmtRm(subtotalSen)}
           </div>
         </div>
       </section>
+      )}
 
       </>)}
 
