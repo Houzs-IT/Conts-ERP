@@ -17,7 +17,7 @@ export default function FieldHome() {
   const other = tech ? (cleans.data?.rows.length ?? 0) : (repairs.data?.mine.filter(r => r.state !== 'resolved').length ?? 0);
   const both = other > 0;
   const toggle = both ? (
-    <Segmented label="Show" value={view} onChange={setView} className="self-start" options={[
+    <Segmented label="Show" value={view} onChange={setView} className="self-start [&>button]:h-11" options={[
       { value: 'cleaning', label: <>Cleaning{tech && <span className="text-muted-ink tabular-nums"> {other}</span>}</> },
       { value: 'repairs', label: <>Repairs{!tech && <span className="text-muted-ink tabular-nums"> {other}</span>}</> },
     ]} />
