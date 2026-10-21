@@ -236,9 +236,19 @@ export type AccountBalance = {
   total_credit_sen: number;
   balance_sen: number;
 };
-/* Conts: one department's balances when one is given (finance phase 1, spec 3.5); none is the whole company. */
-export const useAccountBalances = (department: Department | '' = '') => baseQuery<{ balances: AccountBalance[] }>(
-  ['account-balances', department], `/accounting/balances${department ? `?department=${department}` : ''}`,
+/* Conts (finance phase 1): one department's balances (spec 3.5), as at a date or for a period (spec 3.7); with
+   nothing given, the whole company to date. */
+export type BalancesQuery = { department?: Department | ''; from?: string; to?: string };
+export const balancesPath = (q: BalancesQuery = {}): string => {
+  const p = new URLSearchParams();
+  if (q.department) p.set('department', q.department);
+  if (q.from) p.set('from', q.from);
+  if (q.to) p.set('to', q.to);
+  const qs = p.toString();
+  return `/accounting/balances${qs ? `?${qs}` : ''}`;
+};
+export const useAccountBalances = (q: BalancesQuery = {}) => baseQuery<{ balances: AccountBalance[] }>(
+  ['account-balances', q.department ?? '', q.from ?? '', q.to ?? ''], balancesPath(q),
 );
 
 export type ArAgingRow = {

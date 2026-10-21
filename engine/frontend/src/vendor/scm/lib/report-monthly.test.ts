@@ -114,12 +114,14 @@ describe('each report as lines', () => {
   test('the balance sheet: three blocks, earnings, the balanced line — every % of that column\'s total assets', () => {
     const r = {
       layout: { baseSen: 101_000, assets: [cat('sec:CURRENT ASSETS', 'CURRENT ASSETS', [acc('310-0010', 91_000, 90.1), acc('330-0000', 10_000, 9.9)], 100)], liabilities: [acc('400-0000', 60_000, 59.4)], equity: [] },
-      totals: { assetsSen: 101_000, liabilitiesSen: 60_000, equitySen: 0, earningsSen: 41_000, checkSen: 0 },
+      totals: { assetsSen: 101_000, liabilitiesSen: 60_000, equitySen: 0, earningsSen: 41_000, retainedEarningsSen: 30_000, currentYearEarningsSen: 11_000, checkSen: 0 },
     };
     const lines = balanceSheetLines(r);
-    expect(lines.map((l) => l.id)).toEqual(['blk:assets', 'sec:CURRENT ASSETS', 'acc:310-0010', 'acc:330-0000', 'tot:assets', 'blk:liabilities', 'acc:400-0000', 'tot:liabilities', 'blk:equity', 'tot:equity', 'row:earnings', 'net:check']);
+    /* Earnings split at the fiscal year (spec 3.7): retained, then this year's. */
+    expect(lines.map((l) => l.id)).toEqual(['blk:assets', 'sec:CURRENT ASSETS', 'acc:310-0010', 'acc:330-0000', 'tot:assets', 'blk:liabilities', 'acc:400-0000', 'tot:liabilities', 'blk:equity', 'tot:equity', 'row:retained', 'row:earnings', 'net:check']);
+    expect(lines.find((l) => l.id === 'row:retained')).toMatchObject({ label: 'Retained earnings', amountSen: 30_000, pct: 29.7 });
     expect(lines.find((l) => l.id === 'tot:liabilities')).toMatchObject({ amountSen: 60_000, pct: 59.4 });
-    expect(lines.find((l) => l.id === 'row:earnings')).toMatchObject({ amountSen: 41_000, pct: 40.6 });
+    expect(lines.find((l) => l.id === 'row:earnings')).toMatchObject({ label: 'Profit this year', amountSen: 11_000, pct: 10.9 });
     expect(lines.find((l) => l.id === 'net:check')).toMatchObject({ label: 'BALANCED', amountSen: 101_000, pct: 100 });
     const out = balanceSheetLines({ ...r, totals: { ...r.totals, checkSen: 500 } }).find((l) => l.id === 'net:check')!;
     expect(out).toMatchObject({ label: 'OUT OF BALANCE', amountSen: 500, pct: null });

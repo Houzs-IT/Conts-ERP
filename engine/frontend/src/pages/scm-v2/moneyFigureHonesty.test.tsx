@@ -88,9 +88,25 @@ describe('Trial Balance by department', () => {
   it('reads every department by default, and the chosen one after a pick', () => {
     useAccountBalances.mockReturnValue({ data: { balances: [] }, isLoading: false, isPending: false, isError: false, isSuccess: true, error: null, status: 'success' as const });
     render(wrap(<TrialBalanceTab />));
-    expect(useAccountBalances).toHaveBeenLastCalledWith('');
+    expect(useAccountBalances).toHaveBeenLastCalledWith({ department: '', from: '', to: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/) });
     fireEvent.change(screen.getByLabelText('Trial balance department'), { target: { value: 'shared' } });
-    expect(useAccountBalances).toHaveBeenLastCalledWith('shared');
+    expect(useAccountBalances).toHaveBeenLastCalledWith(expect.objectContaining({ department: 'shared' }));
+  });
+
+  /* As at a date (spec 3.7): today by default; a From date turns it into one period's movements. */
+  it('reads as at the chosen date, and a period when From is set', () => {
+    useAccountBalances.mockReturnValue({ data: { balances: [] }, isLoading: false, isPending: false, isError: false, isSuccess: true, error: null, status: 'success' as const });
+    render(wrap(<TrialBalanceTab />));
+    const asAt = screen.getByLabelText('Trial balance as at') as HTMLInputElement;
+    fireEvent.focus(asAt);
+    fireEvent.change(asAt, { target: { value: '20261201' } });
+    fireEvent.blur(asAt);
+    expect(useAccountBalances).toHaveBeenLastCalledWith({ department: '', from: '', to: '2026-12-01' });
+    const from = screen.getByLabelText('Trial balance from') as HTMLInputElement;
+    fireEvent.focus(from);
+    fireEvent.change(from, { target: { value: '20261101' } });
+    fireEvent.blur(from);
+    expect(useAccountBalances).toHaveBeenLastCalledWith({ department: '', from: '2026-11-01', to: '2026-12-01' });
   });
 
   /* A journal may move an amount from one department to another (Shared costs shared out to Rental): one

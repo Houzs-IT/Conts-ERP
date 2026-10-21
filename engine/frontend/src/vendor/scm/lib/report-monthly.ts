@@ -158,7 +158,7 @@ export const pnlLines = (r: PnlLike): FlatLine[] => {
 
 type BsLike = {
   layout: { baseSen: number | null; assets: LaidNode[]; liabilities: LaidNode[]; equity: LaidNode[] };
-  totals: { assetsSen: number; liabilitiesSen: number; equitySen: number; earningsSen: number; checkSen: number };
+  totals: { assetsSen: number; liabilitiesSen: number; equitySen: number; earningsSen: number; retainedEarningsSen?: number; currentYearEarningsSen?: number; checkSen: number };
 };
 
 /** The balance sheet as the screen prints it — every % of that column's total assets. */
@@ -174,7 +174,9 @@ export const balanceSheetLines = (r: BsLike): FlatLine[] => {
     ...block('assets', 'Assets', r.layout.assets, 'Total assets', t.assetsSen),
     ...block('liabilities', 'Liabilities', r.layout.liabilities, 'Total liabilities', t.liabilitiesSen),
     ...block('equity', 'Equity', r.layout.equity, 'Total equity', t.equitySen),
-    fixedLine('row:earnings', 'Current period earnings', 'row', t.earningsSen, pctOfBase(t.earningsSen, b)),
+    /* Earnings split at the fiscal year (spec 3.7): what earlier years kept, and this year's profit. */
+    fixedLine('row:retained', 'Retained earnings', 'row', t.retainedEarningsSen ?? 0, pctOfBase(t.retainedEarningsSen ?? 0, b)),
+    fixedLine('row:earnings', 'Profit this year', 'row', t.currentYearEarningsSen ?? t.earningsSen, pctOfBase(t.currentYearEarningsSen ?? t.earningsSen, b)),
     fixedLine('net:check', t.checkSen === 0 ? 'BALANCED' : 'OUT OF BALANCE', 'net', t.checkSen === 0 ? t.assetsSen : t.checkSen, t.checkSen === 0 ? pctOfBase(t.assetsSen, b) : null),
   ];
 };

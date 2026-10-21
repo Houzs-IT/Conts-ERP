@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, test } from 'vitest';
 import { fakeSb } from '../scm/lib/fake-postgrest';
-import { isBeforeLedgerStart, LEDGER_DEFAULTS, ledgerEditSide, loadLedgerSettings, saveLedgerSettings } from './ledger-settings';
+import { fiscalYearStart, isBeforeLedgerStart, LEDGER_DEFAULTS, ledgerEditSide, loadLedgerSettings, saveLedgerSettings } from './ledger-settings';
 
 describe('ledger settings', () => {
   it('returns defaults when the company has no settings row', async () => {
@@ -68,5 +68,16 @@ describe('ledgerEditSide', () => {
   it('fails closed when the read fails', async () => {
     const broken = fakeSb({ acc_company_settings: [] }, { acc_company_settings: ['ledger_start_date'] });
     expect((await ledgerEditSide(broken, 1, '2026-12-01', '2026-12-02')).ok).toBe(false);
+  });
+});
+
+/* The fiscal year (spec 3.7): Conts ends in August, so its year runs 1 September to 31 August. */
+describe('fiscalYearStart', () => {
+  test('the first day of the fiscal year a date falls in', () => {
+    expect(fiscalYearStart('2026-12-15', 8)).toBe('2026-09-01');
+    expect(fiscalYearStart('2026-08-31', 8)).toBe('2025-09-01');
+    expect(fiscalYearStart('2026-09-01', 8)).toBe('2026-09-01');
+    expect(fiscalYearStart('2026-03-10', 12)).toBe('2026-01-01');
+    expect(fiscalYearStart('2026-12-31', 12)).toBe('2026-01-01');
   });
 });

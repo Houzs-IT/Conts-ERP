@@ -58,3 +58,41 @@ describe('the trial balance by department', () => {
     expect((await app.request('/balances?department=hq')).status).toBe(400);
   });
 });
+
+/* The trial balance for a date (finance phase 1, spec 3.7): ?to= is "as at" that day — every posted line up to it;
+   ?from= as well reads only that period's movements. Either way debits equal credits. */
+describe('the trial balance by date', () => {
+  const dated = () => {
+    const app = new Hono();
+    const sb = fakeSb({
+      accounts: ACCOUNTS.map((r) => ({ ...r })),
+      v_gl_entries: [
+        gl('590-0000', 'INCOME', 0, 10_000, 'rental', { entry_date: '2026-11-30' }), gl('310-0010', 'ASSET', 10_000, 0, 'rental', { entry_date: '2026-11-30' }),
+        gl('590-0000', 'INCOME', 0, 5_000, 'rental', { entry_date: '2026-12-02' }), gl('310-0010', 'ASSET', 5_000, 0, 'rental', { entry_date: '2026-12-02' }),
+      ],
+      v_account_balances: [],
+    });
+    app.use('*', async (c, next) => { c.set('supabase' as never, sb as never); c.set('companyId' as never, CO as never); c.set('allowedCompanyIds' as never, [CO] as never); await next(); });
+    app.get('/balances', balancesHandler as never);
+    return app;
+  };
+  const totals = (rows: Bal[]) => [rows.reduce((s, r) => s + r.total_debit_sen, 0), rows.reduce((s, r) => s + r.total_credit_sen, 0)];
+
+  test('the trial balance stops at the chosen date', async () => {
+    const rows = await get(dated(), '?to=2026-12-01');
+    expect(rows.find((r) => r.account_code === '310-0010')!.balance_sen).toBe(10_000);
+    expect(totals(rows)).toEqual([10_000, 10_000]);
+  });
+
+  test('a period reads only its own movements', async () => {
+    const rows = await get(dated(), '?from=2026-12-01&to=2026-12-31');
+    expect(rows.find((r) => r.account_code === '590-0000')!.balance_sen).toBe(5_000);
+    expect(totals(rows)).toEqual([5_000, 5_000]);
+  });
+
+  test('a bad date or a from after the to is a 400', async () => {
+    const app = dated();
+    expect((await app.request('/balances?to=2026-13-40')).status).toBe(400);
+    expect((await app.request('/balances?from=2026-12-31&to=2026-12-01')).status).toBe(400);
+  });
+});

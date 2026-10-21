@@ -15,6 +15,7 @@
 // ----------------------------------------------------------------------------
 
 import { useEffect, useMemo, useState } from 'react';
+import { todayMyt } from '../../vendor/scm/lib/dates';
 import { DepartmentSelect, type Department } from '../../conts/department';
 import { Link, useSearchParams } from 'react-router-dom';
 import { ACCOUNTING_TAB_TITLES, accountingTabFromSearch, type AccountingTab } from './accounting-tabs';
@@ -230,7 +231,10 @@ const GlTab = () => <GeneralLedger />;
 
 export const TrialBalanceTab = () => {
   const [department, setDepartment] = useState<Department | ''>('');
-  const q = useAccountBalances(department);
+  /* As at a day (spec 3.7): every posted line up to it — today by default; a From date reads one period's movements. */
+  const [to, setTo] = useState(() => todayMyt());
+  const [from, setFrom] = useState('');
+  const q = useAccountBalances({ department, from, to });
   // Pre-sort into the canonical statement order — DataTable's groupBy buckets
   // in first-seen row order, so this IS the group order until the user sorts.
   const rows = useMemo(() => {
@@ -267,7 +271,13 @@ export const TrialBalanceTab = () => {
   const bad = !department && totals.diff !== 0;
   return (
     <div className="space-y-3">
-      <DepartmentSelect label="Trial balance department" blank="All departments" value={department} onChange={setDepartment} />
+      <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', flexWrap: 'wrap' }}>
+        <span className={styles.subtitle}>As at</span>
+        <DateField value={to} onChange={(v) => setTo(v || todayMyt())} aria-label="Trial balance as at" />
+        <span className={styles.subtitle}>From (optional — one period's movements)</span>
+        <DateField value={from} onChange={setFrom} aria-label="Trial balance from" />
+        <DepartmentSelect label="Trial balance department" blank="All departments" value={department} onChange={setDepartment} />
+      </div>
       {q.isError && (
         <div style={{
           padding: 'var(--space-3) var(--space-4)',

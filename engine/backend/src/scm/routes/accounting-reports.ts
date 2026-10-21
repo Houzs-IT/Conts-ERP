@@ -73,6 +73,7 @@ import { allowedIds, resolveLayout, type ResolvedLayout } from './accounting-rep
 import { BAD_DEPARTMENT, departmentQuery, resolveRoles, STOCK_BUCKET_ROLES, type AccountRole, type Department } from '../../acc/rules';
 import { stockValueByBucketAsOf } from '../../acc/stock-close';
 import { STOCK_BUCKETS, type StockBucket } from '../lib/stock-bucket';
+import { fiscalYearStart, loadLedgerSettings, type LedgerSettings } from '../../acc/ledger-settings';
 
 const requirePerm = (c: any): boolean => hasHouzsPerm(c, 'scm.payment_voucher.post');
 const NO_PERM = { error: "You don't have permission to read the financial statements." };
@@ -169,6 +170,8 @@ export type ReportSources = {
   /** Whether the ledger carries an active STOCKADJ closing entry for the month ending on `monthEnd`. */
   closingBooked: (monthEnd: string) => Promise<{ ok: true; booked: boolean } | Fail>;
   layout: (report: ReportKey) => Promise<({ ok: true } & ResolvedLayout) | Fail>;
+  /** The ledger settings — the fiscal year end month the balance sheet splits earnings at (spec 3.7). */
+  ledger: () => Promise<{ ok: true; settings: LedgerSettings } | Fail>;
 };
 
 /** The database, as the routes read it. */
@@ -189,6 +192,10 @@ export const dbSources = (sb: Sb, companyId: number, layoutIds: number[], depart
     return { ok: true, booked: ((data ?? []) as Array<{ reversed: boolean | null }>).some((j) => !j.reversed) };
   },
   layout: (report) => resolveLayout(sb, layoutIds, report),
+  ledger: async () => {
+    const r = await loadLedgerSettings(sb, companyId);
+    return r.ok ? r : { ok: false, reason: 'The ledger settings could not be read.' };
+  },
 });
 
 /* ── The stock lines, from the engine ─────────────────────────────────────── */
@@ -355,23 +362,32 @@ export type BalanceSheetReport = {
   assets: ReportLine[]; liabilities: ReportLine[]; equity: ReportLine[];
   stock: { closingProvisional: boolean; asOf: string };
   layout: { stored: boolean; baseSen: number | null; assets: LaidNode[]; liabilities: LaidNode[]; equity: LaidNode[] };
-  totals: { assetsSen: number; liabilitiesSen: number; equitySen: number; earningsSen: number; checkSen: number };
+  /** earningsSen = retainedEarningsSen (before this fiscal year) + currentYearEarningsSen (spec 3.7). */
+  totals: { assetsSen: number; liabilitiesSen: number; equitySen: number; earningsSen: number; retainedEarningsSen: number; currentYearEarningsSen: number; checkSen: number };
 };
 
 /** The balance sheet as at `asOf` — the route's figures, and the Dashboard's;
     `stockTotalSen` is the engine's stock on that date, for a caller that
     wants it apart from the asset lines. */
 export async function buildBalanceSheet(src: ReportSources, companyId: number, asOf: string): Promise<{ ok: true; report: BalanceSheetReport; stockTotalSen: number } | Fail> {
-  const [sums, accs, laid, stockR] = await Promise.all([
+  const ledger = await src.ledger();
+  if (!ledger.ok) return { ok: false, reason: ledger.reason };
+  /* The fiscal year (spec 3.7): earnings before its first day are retained, the rest is this year's. */
+  const priorEnd = dayBefore(fiscalYearStart(asOf, ledger.settings.fiscalYearEndMonth));
+  const [sums, accs, laid, stockR, priorSums, priorStock] = await Promise.all([
     src.sums(null, asOf),
     src.accounts(),
     src.layout('balance_sheet'),
     loadStockLines(src, null, asOf),
+    src.sums(null, priorEnd),
+    src.stockByBucket(priorEnd),
   ]);
   if (!sums.ok) return { ok: false, reason: sums.reason };
   if (!accs.ok) return { ok: false, reason: accs.reason };
   if (!laid.ok) return { ok: false, reason: laid.reason };
   if (!stockR.ok) return { ok: false, reason: stockR.reason };
+  if (!priorSums.ok) return { ok: false, reason: priorSums.reason };
+  if (!priorStock.ok) return { ok: false, reason: `retained stock: ${priorStock.reason}` };
   const stock = stockR.stock;
   const secOf = sectionResolver(accs.accounts);
   const names = new Map(accs.accounts.map((a) => [a.account_code, a.account_name ?? a.account_code]));
@@ -392,6 +408,12 @@ export async function buildBalanceSheet(src: ReportSources, companyId: number, a
     - inSections(rows, sectionsOfType('EXPENSE')).reduce((s, x) => s + debit(x.r), 0)
     /* The engine's closing stock is the stock effect on earnings to this date — the GL's pair was taken out of `rows` above. */
     + stock.closingTotalSen;
+  /* Retained: the same sum to the day before the fiscal year, with the stock as it stood that day. */
+  const priorRows: Sectioned[] = priorSums.sums.filter((r) => !stock.codes.has(r.code)).map((r) => ({ r, section: secOf(r) }));
+  const retainedEarningsSen = inSections(priorRows, sectionsOfType('INCOME')).reduce((s, x) => s + credit(x.r), 0)
+    - inSections(priorRows, sectionsOfType('EXPENSE')).reduce((s, x) => s + debit(x.r), 0)
+    + priorStock.totalSen;
+  const currentYearEarningsSen = earningsSen - retainedEarningsSen;
 
   const assetsSen = total(assets);
   const liabilitiesSen = total(liabilities);
@@ -416,7 +438,7 @@ export async function buildBalanceSheet(src: ReportSources, companyId: number, a
         equity: onTree('equity', equity),
       },
       totals: {
-        assetsSen, liabilitiesSen, equitySen, earningsSen,
+        assetsSen, liabilitiesSen, equitySen, earningsSen, retainedEarningsSen, currentYearEarningsSen,
         /* 0 or the ledger is broken — shown, never absorbed. */
         checkSen: assetsSen - liabilitiesSen - equitySen - earningsSen,
       },

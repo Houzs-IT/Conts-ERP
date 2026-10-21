@@ -989,7 +989,13 @@ export const balancesHandler = async (c: any) => {
   const sb = c.get('supabase');
   const department = departmentQuery(c.req.query('department'));
   if (department === false) return c.json(BAD_DEPARTMENT, 400);
-  if (department) return departmentBalances(c, sb, department);
+  /* A date (spec 3.7): ?to= is "as at" that day; ?from= as well reads only that period's movements. */
+  const from = String(c.req.query('from') ?? '').trim() || null;
+  const to = String(c.req.query('to') ?? '').trim() || null;
+  if ((from && !isIsoDay(from)) || (to && !isIsoDay(to)) || (from && to && from > to)) {
+    return c.json({ error: 'bad_range', message: 'from and to must be real dates (YYYY-MM-DD), from no later than to.' }, 400);
+  }
+  if (department || from || to) return rangeBalances(c, sb, { department, from, to });
   // PostgREST's 1000-row cap silently truncated the balance list — page through
   // so every account balance is returned, not just the first 1000.
   const { data, error } = await paginateAll((from, to) => scopeToCompany(sb
@@ -1001,12 +1007,17 @@ export const balancesHandler = async (c: any) => {
 };
 accounting.get('/balances', balancesHandler);
 
-/** One department's trial balance (Conts, spec 3.5), in v_account_balances's own shape: every account of the
-    chart, the department's posted lines summed (a reversal pair in neither, as the view leaves them out). */
-async function departmentBalances(c: any, sb: any, department: Department): Promise<Response> {
+/** A real calendar day, YYYY-MM-DD. */
+const isIsoDay = (v: string): boolean => /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(`${v}T00:00:00Z`))
+  && new Date(`${v}T00:00:00Z`).toISOString().slice(0, 10) === v;
+
+/** The trial balance for a department and/or a date (Conts, spec 3.5 and 3.7), in v_account_balances's own shape:
+    every account of the chart, the posted lines in range summed (a reversal pair in neither, as the view leaves
+    them out). */
+async function rangeBalances(c: any, sb: any, q: { department: Department | null; from: string | null; to: string | null }): Promise<Response> {
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
-  const [accs, sums] = await Promise.all([loadAccounts(sb, co.companyId), loadSums(sb, co.companyId, null, null, department)]);
+  const [accs, sums] = await Promise.all([loadAccounts(sb, co.companyId), loadSums(sb, co.companyId, q.from, q.to, q.department)]);
   if (!accs.ok) return c.json({ error: 'load_failed', reason: accs.reason }, 500);
   if (!sums.ok) return c.json({ error: 'load_failed', reason: sums.reason }, 500);
   const byCode = new Map(sums.sums.map((r) => [r.code, r]));

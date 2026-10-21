@@ -30,6 +30,8 @@
 // ----------------------------------------------------------------------------
 
 import type { Context } from 'hono';
+import { ledgerSettingsOf, type LedgerSettings, type LedgerSettingsRow } from '../../acc/ledger-settings';
+import { performanceSettingsOf, type PerformanceSettingsRow } from '../../acc/performance-pnl';
 import type { Env, Variables } from '../env';
 import { hasHouzsPerm } from '../lib/houzs-perms';
 import { requireActiveCompanyId } from '../lib/companyScope';
@@ -136,6 +138,8 @@ type Preload = {
   roles: Record<AccountRole, string>;
   /** 'YYYY-MM' → the ledger carries an active STOCKADJ closing for that month. */
   closingBooked: Map<string, boolean>;
+  /** The ledger settings — the fiscal year the balance sheet splits earnings at (spec 3.7). */
+  ledger: LedgerSettings;
   layouts: Partial<Record<ReportKey, { ok: true } & ResolvedLayout>>;
   forecast: { grid: ForecastGrid; accounts: ForecastAccount[] };
   /** The purchase accounts bound to each cost group's item groups — one account counts once, where it was first bound. */
@@ -188,7 +192,7 @@ async function preload(sb: Sb, companyId: number, layoutIds: number[], windowSta
   };
 
   /* Wave 1 — the window's tables. */
-  const [gl, moves, wh, accs, roles, closings, laidPnl, laidBs, laidPerf, laidRp, fAccounts, bindings, settings, orders, money, acquirers] = await Promise.all([
+  const [gl, moves, wh, accs, roles, closings, laidPnl, laidBs, laidPerf, laidRp, fAccounts, bindings, settingsRow, orders, money, acquirers] = await Promise.all([
     paginateAll<GlRow>((f, t) => sb.from('v_gl_entries').select(GL_COLS).eq('company_id', companyId).lte('entry_date', windowEnd).order('line_id').range(f, t)),
     loadOwnedMovementsUpTo(sb, companyId, windowEnd),
     bucketByWarehouse(sb, companyId),
@@ -201,7 +205,10 @@ async function preload(sb: Sb, companyId: number, layoutIds: number[], windowSta
     resolveLayout(sb, layoutIds, 'rp'),
     loadForecastAccounts(sb, companyId),
     readBindings(),
-    perfDb.settings(),
+    /* One read of the company's settings row: the performance rate and the fiscal year both live on it. */
+    sb.from('acc_company_settings')
+      .select('performance_opex_rate_bp, performance_opex_account, ledger_start_date, fiscal_year_end_month')
+      .eq('company_id', companyId).maybeSingle(),
     perfDb.orders(windowStart, windowEnd),
     rpDb.moneyAccounts(),
     rpDb.acquirerTransits(),
@@ -217,7 +224,10 @@ async function preload(sb: Sb, companyId: number, layoutIds: number[], windowSta
   if (!laidRp.ok) return { ok: false, reason: laidRp.reason };
   if (!fAccounts.ok) return { ok: false, reason: `forecast accounts: ${fAccounts.reason}` };
   if (!bindings.ok) return bindings;
-  if (!settings.ok) return { ok: false, reason: `performance settings: ${settings.reason}` };
+  if (settingsRow.error) return { ok: false, reason: `company settings: ${failed(settingsRow.error)}` };
+  const row = (settingsRow.data ?? null) as (PerformanceSettingsRow & LedgerSettingsRow) | null;
+  const settings = { settings: performanceSettingsOf(row) };
+  const ledger = { settings: ledgerSettingsOf(row) };
   if (!orders.ok) return { ok: false, reason: `orders: ${orders.reason}` };
   if (!money.ok) return { ok: false, reason: `money accounts: ${money.reason}` };
   if (!acquirers.ok) return { ok: false, reason: `acquirers: ${acquirers.reason}` };
@@ -251,7 +261,7 @@ async function preload(sb: Sb, companyId: number, layoutIds: number[], windowSta
     ok: true,
     pre: {
       gl: glRows,
-      moves: moves.rows, bucketOf: wh.of, accounts: accs.accounts, roles, closingBooked: closings.closingBooked, layouts,
+      moves: moves.rows, bucketOf: wh.of, accounts: accs.accounts, roles, closingBooked: closings.closingBooked, ledger: ledger.settings, layouts,
       forecast: { grid, accounts: fAccounts.accounts }, purchaseAccountsOf: bindings.purchaseAccountsOf, categoryOfItem, compareAccounts: bindings.compareAccounts,
       perf: { settings: settings.settings, orders: orders.orders, lines: lines.lines, rateAccount: rateAccount.account },
       rp: { moneyAccounts: money.accounts, splits: splits.byPv, acquirerTransits: acquirers.codes },
@@ -272,6 +282,7 @@ function sourcesOf(pre: Preload): { report: ReportSources; rp: RpSources; perf: 
     roles: async () => pre.roles,
     stockByBucket: async (date) => ({ ok: true as const, ...foldStockByBucket(pre.moves, pre.bucketOf, date) }),
     closingBooked: async (monthEnd) => ({ ok: true as const, booked: pre.closingBooked.get(monthEnd.slice(0, 7)) === true }),
+    ledger: async () => ({ ok: true as const, settings: pre.ledger }),
   };
   const rp: RpSources = {
     lines: async (moneyCodes, clearingCodes, from, to) => {
