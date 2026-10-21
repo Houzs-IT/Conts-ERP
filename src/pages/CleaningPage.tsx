@@ -901,11 +901,11 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft, onCheckIn, sav
       {/* Phones: the main action is pinned to the bottom of the sheet (the last item, stuck there), since the sheet
           runs well past one screen. */}
       {!done && (
-        <div className="flex gap-2 max-md:order-last max-md:sticky max-md:bottom-0 max-md:z-[2] max-md:-mx-5 max-md:-mb-5 max-md:px-5 max-md:pt-3 max-md:pb-[calc(12px+env(safe-area-inset-bottom))] max-md:bg-card max-md:[border-top:1px_solid_var(--color-line)]">
+        <div className="grid grid-flow-col auto-cols-fr gap-3 max-md:order-last max-md:sticky max-md:bottom-0 max-md:z-[2] max-md:-mx-5 max-md:-mb-5 max-md:px-5 max-md:pt-3 max-md:pb-[calc(12px+env(safe-area-inset-bottom))] max-md:bg-card max-md:[border-top:1px_solid_var(--color-line)]">
           {row.state !== 'in_progress' && (
-            <Button variant="secondary" className="flex-1" loading={busy === 'start'} onClick={() => void act('start', () => api.post(`/housekeeping/tasks/${row.id}/start`, {}), 'Cleaning job started.')}>Start</Button>
+            <Button variant="outline" icon={<Icon name="Play" size="sm" />} loading={busy === 'start'} onClick={() => void act('start', () => api.post(`/housekeeping/tasks/${row.id}/start`, {}), 'Cleaning job started.')}>Start</Button>
           )}
-          <Button variant="primary" className="flex-1" loading={busy === 'complete'} disabled={files === 0} disabledReason="Add at least one photo or video first."
+          <Button variant="primary" icon={<Icon name="Check" size="sm" />} loading={busy === 'complete'} disabled={files === 0} disabledReason="Add at least one photo or video first."
             onClick={() => void act('complete', async () => {
               const r = await api.post<{ cost: { amount: number; created: boolean; reason: string | null } | null }>(`/tasks/${row.id}/complete`, { photoIds: [] });
               if (r.cost && !r.cost.created && r.cost.reason && r.cost.reason !== 'already charged') toast({ tone: 'info', title: 'Cost not added.', body: `Not charged to the unit: ${r.cost.reason}.` });
@@ -947,7 +947,7 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft, onCheckIn, sav
           {data.damage.map(d => <a key={d.id} href={`#/operations/maintenance?id=${d.id}`} className="text-gold-ink">{d.title} · {stamp(d.reportedAt)}</a>)}
         </section>
       )}
-      {!row.external && <Button variant="secondary" icon={<Icon name="TriangleAlert" size="sm" />} onClick={() => setDamage(true)}>Report damage</Button>}
+      {!row.external && <Button variant="outline" icon={<Icon name="TriangleAlert" size="sm" />} onClick={() => setDamage(true)}>Report damage</Button>}
 
       <PhoneHistory>
         <section className="rounded-card border border-solid border-line overflow-hidden">
