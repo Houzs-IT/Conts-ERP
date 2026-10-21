@@ -8,11 +8,12 @@ import { measureHealth } from '../../../_lib/systemHealth';
  *  website is the one holding the mail key and the Channex secret the checks look for, and the address the
  *  Channex callback is registered against. Answers what happened; never throws. */
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
+  // The key is checked before anything about this site is said, so a caller without it learns nothing.
   const key = (env.IT_HUB_API_KEY ?? '').trim();
-  const base = (env.IT_HUB_URL ?? '').trim().replace(/\/+$/, '');
-  if (!key || !base) return fail('NOT_CONFIGURED', 'IT Support is not connected on this system.', 501);
   const given = (request.headers.get('authorization') ?? '').replace(/^Bearer\s+/i, '').trim();
-  if (!given || !timingSafeEqualStr(given, key)) return fail('UNAUTHENTICATED', 'Not allowed.', 401);
+  if (!key || !given || !timingSafeEqualStr(given, key)) return fail('UNAUTHENTICATED', 'Not allowed.', 401);
+  const base = (env.IT_HUB_URL ?? '').trim().replace(/\/+$/, '');
+  if (!base) return fail('NOT_CONFIGURED', 'IT Support is not connected on this system.', 501);
 
   try {
     const report = await measureHealth(env, new URL(request.url).origin);
