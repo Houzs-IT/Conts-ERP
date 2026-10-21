@@ -2,7 +2,7 @@
    names Rental, Supply chain or Shared; the money side (the bank) is split the same way, so each department's books
    balance on their own and a trial balance per department adds up. One department, one bank line, as before. */
 import { describe, expect, test } from 'vitest';
-import { pvLines, splitByDepartment } from './rules';
+import { pvLines, settlementDepartments, splitByDepartment } from './rules';
 import { buildLines } from '../scm/routes/payment-vouchers';
 
 const PV = { pv_number: '2990-MPV-2612-001', payee_name: 'TNB', credit_account_code: '310-0010' };
@@ -55,5 +55,28 @@ describe('buildLines keeps the department', () => {
 
   test('refuses an unknown department', () => {
     expect(buildLines([{ debitAccountCode: '905-0000', amountSen: 100, department: 'hq' }])).toEqual({ error: 'department_invalid' });
+  });
+});
+
+/* Settling a bill keeps the bill's departments (Conts, spec 3.5): a supplier payment or a debtor receipt books its
+   control and money side in the departments of the bills it settles, in proportion and in whole sen; what it pays
+   beyond its bills (an advance, a stock purchase invoice) is Supply chain. */
+describe('settlementDepartments', () => {
+  test('a settled bill keeps its departments; the rest is Supply chain', () => {
+    expect(settlementDepartments(500_000, [
+      { sen: 400_000, lines: [{ department: 'rental', sen: 300_000 }, { department: 'shared', sen: 100_000 }] },
+    ])).toEqual([{ department: 'rental', sen: 300_000 }, { department: 'shared', sen: 100_000 }, { department: 'supply', sen: 100_000 }]);
+  });
+
+  test('a part payment is spread in proportion, in whole sen that add up exactly', () => {
+    const parts = settlementDepartments(10_000, [
+      { sen: 10_000, lines: [{ department: 'rental', sen: 1 }, { department: 'shared', sen: 1 }, { department: 'rental', sen: 1 }] },
+    ]);
+    expect(parts.reduce((s, p) => s + p.sen, 0)).toBe(10_000);
+    expect(parts).toEqual([{ department: 'rental', sen: 6_667 }, { department: 'shared', sen: 3_333 }]);
+  });
+
+  test('no bills: all Supply chain', () => {
+    expect(settlementDepartments(1_000, [])).toEqual([{ department: 'supply', sen: 1_000 }]);
   });
 });

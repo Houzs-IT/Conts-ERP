@@ -34,7 +34,7 @@ import { docMonthTag, mintMonthlyDocNo } from '../lib/doc-no';
 import { todayMyt } from '../lib/my-time';
 import { postJournal, reverseJournal } from '../../acc/engine';
 import { dateOrNull } from '../lib/date-coerce';
-import { DEFAULT_DEPARTMENT, isDepartment, resolveRoles, splitByDepartment, type Department, type RuleLine } from '../../acc/rules';
+import { DEFAULT_DEPARTMENT, isDepartment, resolveRoles, settlementDepartments, splitByDepartment, type Department, type RuleLine } from '../../acc/rules';
 import { requireLeafAccount } from './accounting-chart';
 import { fmtSen } from '../shared/format';
 
@@ -643,6 +643,28 @@ export const approveDebtorReceiptHandler = async (c: any): Promise<Response> => 
   return c.json({ ok: true, jeNo: posted.jeNo });
 };
 
+/** The departments a debtor receipt falls in: its allocations spread over the settled bills' money lines. */
+async function receiptDepartments(sb: Parameters<typeof postJournal>[0], coId: number, r: Row): Promise<{ departments: Array<{ department: Department; sen: number }> } | { resp: string }> {
+  const { data: allocs, error: aErr } = await sb.from('acc_debtor_receipt_allocations')
+    .select('bill_id, amount_sen').eq('company_id', coId).eq('receipt_id', r.id);
+  if (aErr) return { resp: aErr.message };
+  const billIds = [...new Set(((allocs ?? []) as Row[]).map((a) => String(a.bill_id)))];
+  const linesByBill = new Map<string, Array<{ department: Department; sen: number }>>();
+  if (billIds.length > 0) {
+    const { data: rows, error: lErr } = await sb.from('acc_debtor_bill_lines')
+      .select('bill_id, credit_account_code, amount_sen, department').eq('company_id', coId).in('bill_id', billIds);
+    if (lErr) return { resp: lErr.message };
+    for (const l of (rows ?? []) as Row[]) {
+      if (!l.credit_account_code) continue;
+      const at = linesByBill.get(String(l.bill_id)) ?? [];
+      at.push({ department: isDepartment(l.department) ? l.department : DEFAULT_DEPARTMENT, sen: Number(l.amount_sen ?? 0) });
+      linesByBill.set(String(l.bill_id), at);
+    }
+  }
+  const bills = ((allocs ?? []) as Row[]).map((a) => ({ sen: Number(a.amount_sen ?? 0), lines: linesByBill.get(String(a.bill_id)) ?? [] }));
+  return { departments: settlementDepartments(Number(r.total_sen ?? 0), bills) };
+}
+
 /* The posting itself — Dr bank / Cr AR_OTHER (source ODR), then the ticked
    bills knocked off — shared by the fourth layer's Approve and by the
    Receipts page's post-now door, so both book the identical entry. */
@@ -650,17 +672,21 @@ const postDebtorReceipt = async (c: any, sb: any, coId: number, r: Row): Promise
   const { data: debtor, error: dErr } = await sb.from('acc_debtors').select('name').eq('company_id', coId).eq('id', r.debtor_id).maybeSingle();
   if (dErr) return { resp: c.json({ error: 'load_failed', reason: dErr.message }, 500) };
   const roles = await resolveRoles(sb, coId);
+  /* Conts (spec 3.5): the money and the control are booked in the departments of the bills this receipt settles,
+     so each bill's department nets to nothing once it is paid. */
+  const parts = await receiptDepartments(sb, coId, r);
+  if ('resp' in parts) return { resp: c.json({ error: 'load_failed', reason: parts.resp }, 500) };
   const lines: RuleLine[] = [
-    {
-      accountCode: r.bank_account_code, debitSen: Number(r.total_sen ?? 0), creditSen: 0,
+    ...parts.departments.map((p) => ({
+      accountCode: r.bank_account_code, debitSen: p.sen, creditSen: 0,
       partyType: null, partyCode: null, partyName: null,
-      notes: `Receipt ${r.receipt_number}`,
-    },
-    {
-      accountCode: roles.AR_OTHER, debitSen: 0, creditSen: Number(r.total_sen ?? 0),
+      notes: `Receipt ${r.receipt_number}`, department: p.department,
+    })),
+    ...parts.departments.map((p) => ({
+      accountCode: roles.AR_OTHER, debitSen: 0, creditSen: p.sen,
       partyType: 'ODEBTOR', partyCode: null, partyName: (debtor as Row | null)?.name ?? null,
-      notes: `Other debtor settlement — ${r.receipt_number}`,
-    },
+      notes: `Other debtor settlement — ${r.receipt_number}`, department: p.department,
+    })),
   ];
   const post = await postJournal(sb, {
     companyId: coId,

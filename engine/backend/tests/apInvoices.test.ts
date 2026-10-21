@@ -300,6 +300,47 @@ describe('an AP Payment allocation may name an AP invoice', () => {
     expect(cancel.status).toBe(200);
     expect(tables.ap_invoices[0]).toMatchObject({ paid_sen: 0, status: 'POSTED' });
   });
+
+  /* Paying a Rental bill is Rental money (Conts, spec 3.5): the AP control and the bank are booked in the
+     departments of the AP invoices the payment settles; what it pays beyond them stays Supply chain. */
+  test('the payment keeps the departments of the AP invoice it settles', async () => {
+    const tables: Record<string, Row[]> = {
+      payment_vouchers: [{
+        id: 'pv-1', pv_number: 'HC-PV-2609-001', company_id: 1, status: 'DRAFT',
+        voucher_date: '2026-09-06', payee_name: 'HOUZS VENTURE', supplier_id: 'sup-h',
+        credit_account_code: '310-0010', currency: 'MYR', exchange_rate: 1,
+        purpose: 'SUPPLIER_PAYMENT', total_sen: 500_000,
+        /* As the route's supplier:suppliers(code, name) join hands it back (this fake does not join). */
+        supplier: { code: '405-H001', name: 'HOUZS VENTURE HOLDING SDN BHD' },
+        submitted_at: '2026-09-06T01:00:00Z', submitted_by: 'Tester',
+        approved_at: '2026-09-06T02:00:00Z', approved_by: 'Tester',
+      }],
+      payment_voucher_lines: [{ id: 'pvl-1', pv_id: 'pv-1', line_no: 1, description: 'Settle rent', debit_account_code: '405-0000', amount_sen: 500_000 }],
+      pv_allocations: [{ id: 'alloc-1', pv_id: 'pv-1', pi_id: null, ap_invoice_id: 'api-1', amount_sen: 420_000, applied_sen: 0, from_advance: false }],
+      ap_invoices: [{ id: 'api-1', company_id: 1, invoice_number: 'API-2609-001', status: 'POSTED', total_sen: 420_000, paid_sen: 0 }],
+      ap_invoice_lines: [
+        { id: 'al-1', company_id: 1, invoice_id: 'api-1', line_no: 1, debit_account_code: '900-A001', amount_sen: 400_000, department: 'rental' },
+        { id: 'al-2', company_id: 1, invoice_id: 'api-1', line_no: 2, debit_account_code: '900-A002', amount_sen: 20_000, department: 'shared' },
+      ],
+      accounts: [
+        { company_id: 1, account_code: '405-0000', account_name: 'OTHER CREDITORS', account_type: 'LIABILITY', parent_code: null, is_active: true },
+        { company_id: 1, account_code: '310-0010', account_name: 'MAYBANK', account_type: 'ASSET', parent_code: null, is_active: true, acc_money: true },
+      ],
+      acc_account_roles: [],
+      purchase_invoices: [], acc_supplier_advances: [],
+      journal_entries: [], journal_entry_lines: [], entity_audit_log: [],
+      suppliers: [{ id: 'sup-h', company_id: 1, code: '405-H001', name: 'HOUZS VENTURE HOLDING SDN BHD' }],
+    };
+    const app = pvHarness(tables);
+    const res = await app.request('/payment-vouchers/pv-1/post', { method: 'POST' });
+    expect(res.status, await res.clone().text()).toBe(200);
+    const je = tables.journal_entries.find((j) => j.source_type === 'PV')!;
+    const lines = tables.journal_entry_lines.filter((l) => l.journal_entry_id === je.id);
+    expect(lines.map((l) => [l.account_code, Number(l.debit_sen), Number(l.credit_sen), l.department])).toEqual([
+      ['405-0000', 400_000, 0, 'rental'], ['405-0000', 20_000, 0, 'shared'], ['405-0000', 80_000, 0, 'supply'],
+      ['310-0010', 0, 400_000, 'rental'], ['310-0010', 0, 20_000, 'shared'], ['310-0010', 0, 80_000, 'supply'],
+    ]);
+  });
 });
 
 describe('the number follows the document date (owner 2026-09-07: 要根据文件日期)', () => {
