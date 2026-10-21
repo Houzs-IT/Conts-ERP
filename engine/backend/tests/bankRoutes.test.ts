@@ -104,7 +104,7 @@ const ACQ: Row = {
   date_tolerance_days: 3, is_active: true, column_map: {},
 };
 
-function harness(tables: Record<string, Row[]> = {}, perms: readonly string[] = [GL_PERM]) {
+function harness(tables: Record<string, Row[]> = {}, perms: readonly string[] = [GL_PERM], maxRows: number | null = null) {
   const sb = fakeSb(
     {
       accounts: CHART, acc_account_roles: [],
@@ -129,6 +129,7 @@ function harness(tables: Record<string, Row[]> = {}, perms: readonly string[] = 
        bug layer 3 hit on this same rig. */
     ['acc_bank_statements', 'acc_bank_statement_lines', 'acc_bank_statement_matches', 'acc_bank_month_balances',
       'acc_settlement_batches', 'acc_settlement_rows', 'acc_settlement_matches', 'acc_settlement_receipts'],
+    maxRows,
   );
   const app = new Hono();
   app.use('*', async (c, next) => {
@@ -1245,6 +1246,22 @@ describe('uploading overlapping exports of the same account', () => {
     expect(open).toEqual([['2026-08-03', 171000], ['2026-08-15', 50000]]);
     const dup = lines.find((l: Row) => l.state === 'IGNORED') as Row;
     expect(String(dup.note)).toMatch(/already recorded — statement \d+ \(still open there\)/);
+  });
+
+  /* A busy account has more earlier lines than PostgREST hands back in one response (gap G13): the repeats past
+     the first 1,000 must still be found, or an overlapping export brings them in twice. */
+  test('finds the repeats past the first 1,000 earlier lines', async () => {
+    const filler: Row[] = Array.from({ length: 1000 }, (_, i) => ({
+      id: i + 1, company_id: CO, statement_id: 900, booked_on: '2026-07-01', description: `FILLER ${i}`, reference: null,
+      amount_sen: 100 + i, state: 'POSTED', posted_je_no: `JE-F${i}`,
+    }));
+    const { app } = harness({
+      acc_bank_statements: [{ id: 900, company_id: CO, account_code: '330-0000', file_hash: 'july', period_from: '2026-07-01', period_to: '2026-07-31' }],
+      acc_bank_statement_lines: filler,
+    }, [GL_PERM], 1000);
+    expect((await upload(app)).status).toBe(200);
+    const body = await (await upload(app, { fileName: 'aug-longer.csv', content: LONGER })).json() as any;
+    expect(body.alreadyRecorded).toBe(4);
   });
 });
 

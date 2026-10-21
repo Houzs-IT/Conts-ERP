@@ -3,7 +3,7 @@
    that lost its oldest movements from the reconciliation. Pinned against fakeSb's own ceiling. */
 import { describe, expect, test } from 'vitest';
 import { fakeSb, type Row } from '../scm/lib/fake-postgrest';
-import { loadAccountLedger } from './bank';
+import { loadAccountLedger, loadClaimedElsewhere } from './bank';
 
 const CO = 2;
 
@@ -22,5 +22,25 @@ describe('loadAccountLedger', () => {
     if (!res.ok) return;
     expect(res.movements).toHaveLength(2500);
     expect(new Set(res.movements.map((m) => m.jeNo)).size).toBe(2500);
+  });
+});
+
+/* What earlier statements already reconciled: a busy account passes 1,000 statement lines within months, and an
+   entry dropped here comes back as "still waiting" on the next statement. */
+describe('loadClaimedElsewhere', () => {
+  test('reads every reconciled line and match past 1,000', async () => {
+    const statementLines = Array.from({ length: 1500 }, (_, i) => ({
+      id: i + 1, company_id: CO, statement_id: 1, state: 'POSTED', posted_je_no: `JE-P${i + 1}`,
+    }));
+    const matches = Array.from({ length: 1500 }, (_, i) => ({ company_id: CO, bank_line_id: i + 1, je_no: `JE-M${i + 1}` }));
+    const sb = fakeSb({
+      acc_bank_statements: [{ id: 1, company_id: CO, account_code: '310-0010', period_from: '2026-01-01' }],
+      acc_bank_statement_lines: statementLines,
+      acc_bank_statement_matches: matches,
+    }, {}, [], [], 1000);
+    const res = await loadClaimedElsewhere(sb, CO, '310-0010', null);
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.claimed.size).toBe(3000);
   });
 });

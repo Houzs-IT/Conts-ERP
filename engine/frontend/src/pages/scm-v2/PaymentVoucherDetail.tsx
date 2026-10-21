@@ -514,7 +514,7 @@ export const PaymentVoucherDetail = () => {
     }
   };
   const onPostNow = async () => {
-    if (!(await askConfirm({ title: `Post ${pv.pv_number} now?`, body: 'Prepare, check, approve and post this voucher now? Each step is recorded under your name, and the journal entry goes to the General Ledger.', confirmLabel: 'Post now' }))) return;
+    if (!(await askConfirm({ title: `Post ${pv.pv_number} now?`, body: 'Prepare, check, approve and post this voucher now? Each step still done is recorded under your name, and the journal entry goes to the General Ledger.', confirmLabel: 'Post now' }))) return;
     try { await postNow.mutateAsync(id); } catch (err) {
       void notify({ title: 'Post now failed', body: err instanceof Error ? err.message : 'Something went wrong.', tone: 'error' });
     }
@@ -590,9 +590,11 @@ export const PaymentVoucherDetail = () => {
                     <CheckCircle2 {...ICON} /> Post now
                   </Button>
                 )}
-                {isDraft && canApprove && isChecked && !isApprovedPv && rejectNote === null && (
+                {/* An approved voucher still in draft is a post that failed halfway; approving again finishes it
+                    without restamping (approvePaymentVoucherHandler). */}
+                {isDraft && canApprove && isChecked && rejectNote === null && (
                   <Button variant="primary" size="md" onClick={() => void onApprove()} disabled={busy}>
-                    <CheckCircle2 {...ICON} /> Approve & post
+                    <CheckCircle2 {...ICON} /> {isApprovedPv ? 'Finish posting' : 'Approve & post'}
                   </Button>
                 )}
                 {/* Reject opens to EITHER key, at either layer — back to raw

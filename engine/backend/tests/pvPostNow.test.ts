@@ -88,13 +88,50 @@ describe('Post now', () => {
     expect(sb.tables.entity_audit_log.map((r) => r.action)).not.toContain('CHECK');
   });
 
-  test('stops when the bank has no letter', async () => {
+  /* A refusal that can be known before the first step changes nothing: no stamp, no formal number used, nothing
+     reserved on Daily Bank, no approval in the history that never posted. */
+  const UNTOUCHED = { status: 'DRAFT', pv_number: '2990-Draft-2612-001', submitted_at: null, checked_at: null, approved_at: null };
+  const untouched = (sb: ReturnType<typeof harness>['sb']) => {
+    expect(sb.tables.payment_vouchers[0]).toMatchObject(UNTOUCHED);
+    expect(sb.tables.journal_entries).toHaveLength(0);
+    expect(sb.tables.entity_audit_log).toHaveLength(0);
+  };
+
+  test('stops when the bank has no letter, before stamping anything', async () => {
     const { app, sb } = harness({ acc_bank_letters: [] });
     const res = await postNow(app);
     expect(res.status).toBe(409);
     expect(((await res.json()) as { error: string }).error).toBe('bank_letter_missing');
+    untouched(sb);
+  });
+
+  test('stops when the voucher is dated before the books start, before stamping anything', async () => {
+    const { app, sb } = harness({ payment_vouchers: [{ ...DRAFT, voucher_date: '2026-11-28', pv_number: '2990-Draft-2612-001' }] });
+    const res = await postNow(app);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: 'This date is before the books start on 2026-12-01.' });
+    untouched(sb);
+  });
+
+  test('stops when the voucher has no lines, before stamping anything', async () => {
+    const { app, sb } = harness({ payment_voucher_lines: [] });
+    const res = await postNow(app);
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toBe('no_lines');
+    untouched(sb);
+  });
+
+  test("another company's voucher is not found, and nothing is stamped", async () => {
+    const { app, sb } = harness({ payment_vouchers: [{ ...DRAFT, company_id: 9 }] });
+    const res = await postNow(app);
+    expect(res.status).toBe(404);
+    expect(sb.tables.payment_vouchers[0]).toMatchObject({ submitted_at: null, checked_at: null });
+  });
+
+  test('a posted voucher is refused as it is', async () => {
+    const { app, sb } = harness({ payment_vouchers: [{ ...DRAFT, status: 'POSTED' }] });
+    expect((await postNow(app)).status).toBe(409);
     expect(sb.tables.journal_entries).toHaveLength(0);
-    expect(sb.tables.payment_vouchers[0]).toMatchObject({ status: 'DRAFT', checked_at: null, approved_at: null });
   });
 
   test.each([
