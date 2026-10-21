@@ -34,6 +34,7 @@ vi.mock('./accounting-phase1-queries', async (importOriginal) => ({
 }));
 
 vi.mock('../../vendor/scm/lib/accounting-queries', () => ({
+  useAccountRoles: () => ({ data: { roles: { AR: '300-0000', AR_OTHER: '305-0000', AP: '400-0000', AP_OTHER: '405-0000' }, overridden: {} } }),
   useAccounts: () => ({
     data: {
       sections: [
@@ -171,6 +172,16 @@ describe('which accounts a binding offers', () => {
     expect(codes(accountsForBinding('RENOVATION', 'sales_account', chart))).toEqual(['500-0000', '404-0000']);
     expect(codes(accountsForBinding('renovation', 'sales_return_account', chart))).toEqual(['500-0000', '404-0000']);
     expect(codes(accountsForBinding('RENOVATION', 'purchase_account', chart))).toEqual(['601-0000']);
+  });
+
+  test('the advance never offers a control account or a header', () => {
+    const more = [
+      ...chart,
+      { account_code: '400-0000', account_name: 'ACCOUNT PAYABLE', account_type: 'LIABILITY', is_active: true },
+      { account_code: '450-0000', account_name: 'ACCRUALS', account_type: 'LIABILITY', is_active: true },
+      { account_code: '450-0001', account_name: 'ACCRUED RENT', account_type: 'LIABILITY', is_active: true, parent_code: '450-0000' },
+    ];
+    expect(codes(accountsForBinding('RENOVATION', 'sales_account', more, new Set(['400-0000'])))).toEqual(['500-0000', '404-0000', '450-0001']);
   });
 
   test('other groups still list income accounts only', () => {

@@ -199,3 +199,24 @@ describe('PATCH /accounting/item-groups/:code', () => {
     expect((await patch(app, '/accounting/item-groups/NOPE', { name: 'X' })).status).toBe(404);
   });
 });
+
+/* Conts (finance phase 1, PR 7): RENOVATION's sales may point at a liability (the advance), so the server keeps the two
+   kinds that are never right for a binding — a control account (AR / AP and the other debtors / creditors: the
+   documents maintain them) and a header (posting refuses one). */
+describe('a binding is never a control account or a header', () => {
+  const chart = [
+    ...CHART,
+    { company_id: 2, account_code: '400-0000', account_name: 'ACCOUNT PAYABLE', account_type: 'LIABILITY', is_active: true },
+    { company_id: 2, account_code: '404-0000', account_name: 'ADVANCE BILLING', account_type: 'LIABILITY', is_active: true },
+    { company_id: 2, account_code: '500-0000', account_name: 'SALES', account_type: 'INCOME', is_active: true },
+    { company_id: 2, account_code: '500-0001', account_name: 'SALES - X', account_type: 'INCOME', is_active: true, parent_code: '500-0000' },
+  ];
+  test('the AP control is refused, a header is refused, the advance is taken', async () => {
+    const { app } = harness({ accounts: chart.map((r) => ({ ...r })) });
+    const ap = await put(app, '/accounting/item-groups/BEDLINES/accounts', { companyId: 2, accounts: { ...GOOD_ACCOUNTS, sales: '400-0000' } });
+    expect(ap.status).toBe(400);
+    expect(((await ap.json()) as { message: string }).message).toContain('400-0000');
+    expect((await put(app, '/accounting/item-groups/BEDLINES/accounts', { companyId: 2, accounts: { ...GOOD_ACCOUNTS, sales: '500-0000' } })).status).toBe(400);
+    expect((await put(app, '/accounting/item-groups/BEDLINES/accounts', { companyId: 2, accounts: { ...GOOD_ACCOUNTS, sales: '404-0000' } })).status).toBe(200);
+  });
+});

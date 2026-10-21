@@ -16,7 +16,7 @@ import { useMemo, useState } from 'react';
 import { getActiveCompanyId } from '../../lib/activeCompany';
 import { PiBackfillCard } from './PiBackfill';
 import { SearchCombo, type ComboOption } from '../../vendor/scm/components/SearchCombo';
-import { useAccounts } from '../../vendor/scm/lib/accounting-queries';
+import { useAccountRoles, useAccounts } from '../../vendor/scm/lib/accounting-queries';
 import {
   useItemGroups, useCreateItemGroup, useBindItemGroup, usePatchItemGroup,
   type ItemGroupBinding,
@@ -40,10 +40,15 @@ const isSalesColumn = (column: BindingColumn): boolean => column === 'sales_acco
 /** Whether this binding may point at the advance (a liability): RENOVATION's sales side only. */
 export const offersAdvance = (group: string, column: BindingColumn): boolean =>
   isSalesColumn(column) && group.trim().toUpperCase() === 'RENOVATION';
-export function accountsForBinding<A extends { account_type: string; is_active?: boolean | null }>(group: string, column: BindingColumn, accounts: readonly A[]): A[] {
+/** `controls`: the AR / AP control accounts (from the posting rules) — the advance is never one of them, nor a header. */
+export function accountsForBinding<A extends { account_code: string; account_type: string; is_active?: boolean | null; parent_code?: string | null }>(
+  group: string, column: BindingColumn, accounts: readonly A[], controls: ReadonlySet<string> = new Set(),
+): A[] {
   const side = isSalesColumn(column) ? 'INCOME' : 'EXPENSE';
   const advance = offersAdvance(group, column);
-  return accounts.filter((a) => a.is_active !== false && (a.account_type === side || (advance && a.account_type === 'LIABILITY')));
+  const parents = new Set(accounts.map((a) => a.parent_code).filter(Boolean));
+  const advanceOk = (a: A) => advance && a.account_type === 'LIABILITY' && !controls.has(a.account_code) && !parents.has(a.account_code);
+  return accounts.filter((a) => a.is_active !== false && (a.account_type === side || advanceOk(a)));
 }
 const COLUMN_OF: Record<keyof ItemGroupBinding, BindingColumn> = {
   purchase: 'purchase_account', sales: 'sales_account', salesReturn: 'sales_return_account', purchaseReturn: 'purchase_return_account',
@@ -120,13 +125,19 @@ export const ItemGroupsTab = () => {
      slot sees only EXPENSE accounts (Cost of goods sold first, then
      Expenses), a sales slot only INCOME (Sales / Sales adjustments / Other
      incomes). 397 accounts collapse to the relevant page. */
+  /* The control accounts (AR / AP and the other debtors / creditors) — never a renovation advance (the server refuses them too). */
+  const rolesQ = useAccountRoles();
+  const controls = useMemo(() => {
+    const r = rolesQ.data?.roles as Record<string, string> | undefined;
+    return new Set(r ? [r.AR, r.AR_OTHER, r.AP, r.AP_OTHER].filter(Boolean) : []);
+  }, [rolesQ.data]);
   const optionsByWants = useMemo(() => {
     const order = (accountsQ.data?.sections ?? []).map((s) => s.section);
     const rank = (section: string): number => {
       const i = order.indexOf(section);
       return i < 0 ? order.length : i;
     };
-    const build = (group: string, column: BindingColumn): ComboOption[] => accountsForBinding(group, column, accountsQ.data?.accounts ?? [])
+    const build = (group: string, column: BindingColumn): ComboOption[] => accountsForBinding(group, column, accountsQ.data?.accounts ?? [], controls)
       .map((a) => ({
         value: a.account_code,
         label: `${a.account_code} — ${a.account_name}`,
@@ -138,7 +149,7 @@ export const ItemGroupsTab = () => {
       /* RENOVATION's sales side: income and liability accounts (the advance). */
       RENOVATION_SALES: build('RENOVATION', 'sales_account'),
     };
-  }, [accountsQ.data]);
+  }, [accountsQ.data, controls]);
   const optionsFor = (group: string, slot: (typeof SLOTS)[number]): ComboOption[] =>
     (offersAdvance(group, COLUMN_OF[slot.key]) ? optionsByWants.RENOVATION_SALES : optionsByWants[slot.wants]);
 

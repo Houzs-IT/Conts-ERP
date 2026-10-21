@@ -43,10 +43,12 @@ export const useSaveLedgerSettings = () => {
 };
 
 /* ── Is the ledger ready to go live? (spec 3.4) — GET /accounting/setup-status ─────────────────────────────── */
-export type RoleProblem = "missing_account" | "inactive" | "header" | "not_money";
+export type RoleProblem = "missing_account" | "inactive" | "header" | "not_money" | "not_clearing";
+/** What kind of account a rule takes: a bank or the drawer, a 326- / 327- clearing (not money), or any account. */
+export type RoleKind = "money" | "clearing" | "any";
 export type LedgerSetupStatus = {
   ready: boolean;
-  roles: { role: string; accountCode: string; problem: null | RoleProblem }[];
+  roles: { role: string; accountCode: string; kind: RoleKind; problem: null | RoleProblem }[];
   itemGroups: { group: string; missing: string[] }[];
   banksWithoutLetter: string[];
   ledgerStartDate: string | null;
@@ -62,8 +64,9 @@ export const useSetupStatus = () => useQuery({
 export const useSetRole = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ role, accountCode }: { role: string; accountCode: string }) =>
-      authedFetch<{ ok: true }>(`/accounting/roles/${encodeURIComponent(role)}`, { method: "PUT", body: JSON.stringify({ accountCode }) }),
+    /* confirm: the move of a rule whose account already carries postings, agreed to (the server asks first). */
+    mutationFn: ({ role, accountCode, confirm }: { role: string; accountCode: string; confirm?: boolean }) =>
+      authedFetch<{ ok: true }>(`/accounting/roles/${encodeURIComponent(role)}`, { method: "PUT", body: JSON.stringify(confirm ? { accountCode, confirm } : { accountCode }) }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["ledger-setup-status"] });
       void qc.invalidateQueries({ queryKey: ["account-roles"] });
@@ -88,4 +91,5 @@ export const PROBLEM_TEXT: Record<RoleProblem, string> = {
   inactive: "inactive",
   header: "has accounts under it — choose one of those",
   not_money: "must be a bank or cash account",
+  not_clearing: "must be a 326- / 327- clearing account, not a bank",
 };

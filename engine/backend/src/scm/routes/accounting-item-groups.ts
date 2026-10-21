@@ -26,6 +26,7 @@
 // ----------------------------------------------------------------------------
 
 import { hasHouzsPerm } from '../lib/houzs-perms';
+import { CONTROL_ROLES, resolveRoles } from '../../acc/rules';
 
 const requirePerm = (c: any): boolean => hasHouzsPerm(c, 'scm.payment_voucher.post');
 const NO_PERM = { error: "You don't have permission to manage the chart of accounts." };
@@ -75,12 +76,17 @@ async function verifyBinding(
   binding: GroupBinding,
 ): Promise<{ ok: true } | { ok: false; message: string }> {
   const codes = [...new Set(Object.values(binding))];
-  const { data, error } = await sb
-    .from('accounts')
-    .select('account_code, is_active')
-    .eq('company_id', companyId)
-    .in('account_code', codes);
+  const [{ data, error }, children, roles] = await Promise.all([
+    sb.from('accounts').select('account_code, is_active').eq('company_id', companyId).in('account_code', codes),
+    sb.from('accounts').select('parent_code').eq('company_id', companyId).in('parent_code', codes),
+    resolveRoles(sb, companyId),
+  ]);
   if (error) return { ok: false, message: error.message };
+  if (children.error) return { ok: false, message: children.error.message };
+  /* Conts (finance phase 1): RENOVATION's sales may point at a liability (the advance), so the two kinds that are
+     never right are refused here — a control account (the documents maintain it) and a header (posting refuses it). */
+  const controls = new Set(CONTROL_ROLES.map((r) => roles[r]));
+  const headers = new Set(((children.data ?? []) as Array<{ parent_code: string }>).map((r) => r.parent_code));
   const found = new Map(((data ?? []) as Array<{ account_code: string; is_active: boolean }>)
     .map((r) => [r.account_code, r.is_active]));
   for (const slot of Object.keys(SLOT_LABEL) as Array<keyof GroupBinding>) {
@@ -91,6 +97,12 @@ async function verifyBinding(
     }
     if (active !== true) {
       return { ok: false, message: `${SLOT_LABEL[slot]} account ${code} is switched off for this company — tick it on the chart first.` };
+    }
+    if (controls.has(code)) {
+      return { ok: false, message: `${SLOT_LABEL[slot]} account ${code} is a control account — the documents keep it; choose another.` };
+    }
+    if (headers.has(code)) {
+      return { ok: false, message: `${SLOT_LABEL[slot]} account ${code} has accounts under it — choose one of those.` };
     }
   }
   return { ok: true };

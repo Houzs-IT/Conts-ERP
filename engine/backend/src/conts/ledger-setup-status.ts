@@ -5,20 +5,38 @@
 // the right way until the books have a start date. One answer for the Ledger setup page: what is wrong, by name.
 import { DEFAULT_ROLE_CODES, resolveRoles, type AccountRole } from "../acc/rules";
 import { loadLedgerSettings } from "../acc/ledger-settings";
+import { isClearingCode } from "../scm/routes/accounting-settlement";
 
 type Db = Parameters<typeof loadLedgerSettings>[0];
 
-/** The rules that must point at money — a bank or the cash drawer. */
-export const MONEY_ROLES: readonly AccountRole[] = ["CASH", "BANK_DEFAULT", "TRANSIT_EDC", "TRANSIT_ONLINE"];
+/** What kind of account a rule must point at. Money: the cash drawer and the default bank. Clearing: the card machine
+    and the online payments — the 326- / 327- accounts the settlement layer owns, which are NOT money (the settlement
+    setup refuses money there, and Daily Bank shows them beside the banks). Any: every other rule. */
+export type RoleKind = "money" | "clearing" | "any";
+export const roleKind = (role: AccountRole): RoleKind =>
+  role === "CASH" || role === "BANK_DEFAULT" ? "money" : role === "TRANSIT_EDC" || role === "TRANSIT_ONLINE" ? "clearing" : "any";
+
+/** Rules nothing posts on any more, so they are not part of being ready: SALES was the template's (sales post by item
+    group), INVENTORY and CLOSING_STOCK the one-account stock the three stock buckets replaced (2026-09-21). */
+export const RETIRED_ROLES: readonly AccountRole[] = ["SALES", "INVENTORY", "CLOSING_STOCK"];
+
+/** Rules whose account holds open balances — what customers and suppliers owe, money waiting in a clearing, deposits,
+    stock. Moving one leaves those balances on the old account while new postings go to the new one, so the move is
+    confirmed first. The default bank and the drawer are not here: each bank keeps its own money, and moving the
+    default only changes where new vouchers start. */
+export const OPEN_BALANCE_ROLES: readonly AccountRole[] = [
+  "AR", "AR_OTHER", "AP", "AP_OTHER", "TRANSIT_EDC", "TRANSIT_ONLINE", "CUSTOMER_DEPOSITS",
+  "INVENTORY_CUSTOMER", "INVENTORY_DISPLAY", "INVENTORY_SERVICE",
+];
 
 export const BINDING_COLUMNS = ["sales_account", "sales_return_account", "purchase_account", "purchase_return_account"] as const;
 export type BindingColumn = (typeof BINDING_COLUMNS)[number];
 
-export type RoleProblem = "missing_account" | "inactive" | "header" | "not_money";
+export type RoleProblem = "missing_account" | "inactive" | "header" | "not_money" | "not_clearing";
 
 export interface LedgerSetupStatus {
   ready: boolean;
-  roles: { role: string; accountCode: string; problem: null | RoleProblem }[];
+  roles: { role: string; accountCode: string; kind: RoleKind; problem: null | RoleProblem }[];
   itemGroups: { group: string; missing: BindingColumn[] }[];
   banksWithoutLetter: string[];
   ledgerStartDate: string | null;
@@ -26,14 +44,16 @@ export interface LedgerSetupStatus {
 
 type ChartRow = { account_code: string; is_active: boolean | null; acc_money: boolean | null; parent_code: string | null };
 
-/** What a rule's account must be: in the chart, active, not a header (posting refuses one), and money where the rule
-    moves money. Null when it is fine. Shared by the status and by PUT /roles/:role. */
+/** What a rule's account must be: in the chart, active, not a header (posting refuses one), and of the rule's kind.
+    Null when it is fine. Shared by the status and by PUT /roles/:role. */
 export function roleProblem(role: AccountRole, code: string, chart: readonly ChartRow[]): RoleProblem | null {
   const acc = chart.find((a) => a.account_code === code);
   if (!acc) return "missing_account";
   if (acc.is_active !== true) return "inactive";
   if (chart.some((a) => a.parent_code === code)) return "header";
-  if (MONEY_ROLES.includes(role) && acc.acc_money !== true) return "not_money";
+  const kind = roleKind(role);
+  if (kind === "money" && acc.acc_money !== true) return "not_money";
+  if (kind === "clearing" && (acc.acc_money === true || !isClearingCode(code))) return "not_clearing";
   return null;
 }
 
@@ -50,9 +70,9 @@ export async function ledgerSetupStatus(sb: Db, companyId: number): Promise<Ledg
   if (!settings.ok) throw new Error("The ledger settings could not be read.");
   const chart = (chartRes.data ?? []) as ChartRow[];
 
-  const roleRows = (Object.keys(DEFAULT_ROLE_CODES) as AccountRole[]).map((role) => ({
-    role, accountCode: roles[role], problem: roleProblem(role, roles[role], chart),
-  }));
+  const roleRows = (Object.keys(DEFAULT_ROLE_CODES) as AccountRole[])
+    .filter((role) => !RETIRED_ROLES.includes(role))
+    .map((role) => ({ role, accountCode: roles[role], kind: roleKind(role), problem: roleProblem(role, roles[role], chart) }));
 
   const binds = new Map(((bindsRes.data ?? []) as Array<Record<string, unknown>>).map((b) => [String(b.group_code), b]));
   const itemGroups = ((groupsRes.data ?? []) as Array<{ code: string; is_active: boolean | null }>)

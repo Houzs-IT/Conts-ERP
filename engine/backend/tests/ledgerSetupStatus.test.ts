@@ -17,8 +17,8 @@ const CO = 2;
 const acct = (code: string, over: Row = {}): Row => ({
   company_id: CO, account_code: code, account_name: `ACC ${code}`, account_type: 'ASSET', parent_code: null, is_active: true, acc_money: false, ...over,
 });
-/* A chart that has every default rule's account, the money ones marked money. */
-const MONEY = new Set([DEFAULT_ROLE_CODES.CASH, DEFAULT_ROLE_CODES.BANK_DEFAULT, DEFAULT_ROLE_CODES.TRANSIT_EDC, DEFAULT_ROLE_CODES.TRANSIT_ONLINE]);
+/* A chart that has every default rule's account; the drawer and the bank are money, the 326 / 327 clearings are not. */
+const MONEY = new Set([DEFAULT_ROLE_CODES.CASH, DEFAULT_ROLE_CODES.BANK_DEFAULT]);
 const fullChart = (): Row[] => [...new Set(Object.values(DEFAULT_ROLE_CODES))].map((code) => acct(code, { acc_money: MONEY.has(code) }));
 const BOUND: Row = { company_id: CO, group_code: 'SOFA', sales_account: '500-0000', sales_return_account: '510-0000', purchase_account: '601-0001', purchase_return_account: '612-0000' };
 
@@ -28,8 +28,8 @@ function world(over: Record<string, Row[]> = {}) {
     acc_account_roles: [],
     acc_item_groups: [{ code: 'SOFA', name: 'Sofa', is_active: true }, { code: 'OLD', name: 'Old', is_active: false }],
     acc_item_group_accounts: [{ ...BOUND }],
-    /* Every money account except the cash drawer needs a letter: the bank and the two clearings here. */
-    acc_bank_letters: [...MONEY].filter((c) => c !== DEFAULT_ROLE_CODES.CASH).map((code, i) => ({ company_id: CO, account_code: code, letter: 'MNO'[i] })),
+    /* Every money account except the cash drawer needs a letter: the bank here. */
+    acc_bank_letters: [{ company_id: CO, account_code: DEFAULT_ROLE_CODES.BANK_DEFAULT, letter: 'M' }],
     acc_company_settings: [{ company_id: CO, ledger_start_date: '2026-12-01', fiscal_year_end_month: 8 }],
     ...over,
   });
@@ -47,7 +47,7 @@ describe('ledgerSetupStatus', () => {
 
   test('a role pointing at a code that is not in the chart is a problem', async () => {
     const s = await ledgerSetupStatus(world({ accounts: fullChart().filter((a) => a.account_code !== DEFAULT_ROLE_CODES.AR) }), CO);
-    expect(s.roles.find((r) => r.role === 'AR')).toEqual({ role: 'AR', accountCode: DEFAULT_ROLE_CODES.AR, problem: 'missing_account' });
+    expect(s.roles.find((r) => r.role === 'AR')).toMatchObject({ role: 'AR', accountCode: DEFAULT_ROLE_CODES.AR, problem: 'missing_account' });
     expect(s.ready).toBe(false);
   });
 
@@ -63,7 +63,7 @@ describe('ledgerSetupStatus', () => {
 
   test('an override is what is checked, not the default', async () => {
     const s = await ledgerSetupStatus(world({ acc_account_roles: [{ company_id: CO, role: 'AR', account_code: '399-9999' }] }), CO);
-    expect(s.roles.find((r) => r.role === 'AR')).toEqual({ role: 'AR', accountCode: '399-9999', problem: 'missing_account' });
+    expect(s.roles.find((r) => r.role === 'AR')).toMatchObject({ role: 'AR', accountCode: '399-9999', problem: 'missing_account' });
   });
 
   test('an active item group missing a binding, a bank without a letter, no start date: each named', async () => {
@@ -77,7 +77,7 @@ describe('ledgerSetupStatus', () => {
       { group: 'BED', missing: ['sales_account', 'sales_return_account', 'purchase_account', 'purchase_return_account'] },
       { group: 'SOFA', missing: ['sales_return_account'] },
     ]);
-    expect(s.banksWithoutLetter).toEqual([DEFAULT_ROLE_CODES.BANK_DEFAULT, DEFAULT_ROLE_CODES.TRANSIT_EDC, DEFAULT_ROLE_CODES.TRANSIT_ONLINE].sort());
+    expect(s.banksWithoutLetter).toEqual([DEFAULT_ROLE_CODES.BANK_DEFAULT]);
     expect(s.ledgerStartDate).toBeNull();
     expect(s.ready).toBe(false);
   });
@@ -121,5 +121,89 @@ describe('the routes', () => {
     const res = await app(world()).request('/setup-status');
     expect(res.status).toBe(200);
     expect((await res.json() as { ready: boolean }).ready).toBe(true);
+  });
+});
+
+/* Review of PR 7. The card and online clearings are NOT money (the settlement setup refuses money there; Daily Bank
+   shows them beside the banks), and they live at 326- / 327-. The rules nothing posts on any more (SALES, INVENTORY,
+   CLOSING_STOCK — the stock buckets replaced the last two) are not part of being ready. */
+describe('the clearing rules and the retired rules', () => {
+  const realChart = (): Row[] => fullChart().map((a) => (
+    a.account_code === DEFAULT_ROLE_CODES.TRANSIT_EDC || a.account_code === DEFAULT_ROLE_CODES.TRANSIT_ONLINE ? { ...a, acc_money: false } : a
+  )).concat([acct('330-0009', { parent_code: DEFAULT_ROLE_CODES.INVENTORY }), acct('620-0009', { parent_code: DEFAULT_ROLE_CODES.CLOSING_STOCK }), acct('500-0009', { parent_code: DEFAULT_ROLE_CODES.SALES })]);
+  const lettersFor = (chart: Row[]) => chart.filter((a) => a.acc_money && a.account_code !== DEFAULT_ROLE_CODES.CASH)
+    .map((a, i) => ({ company_id: CO, account_code: a.account_code, letter: String.fromCharCode(65 + i) }));
+
+  test('a sensible chart is ready: clearings not money, the retired rules left out', async () => {
+    const chart = realChart();
+    const s = await ledgerSetupStatus(world({ accounts: chart, acc_bank_letters: lettersFor(chart) }), CO);
+    expect(s.roles.filter((r) => r.problem)).toEqual([]);
+    expect(s.roles.map((r) => r.role)).not.toContain('SALES');
+    expect(s.roles.map((r) => r.role)).not.toContain('INVENTORY');
+    expect(s.roles.map((r) => r.role)).not.toContain('CLOSING_STOCK');
+    expect(s.roles.find((r) => r.role === 'TRANSIT_EDC')!.kind).toBe('clearing');
+    expect(s.roles.find((r) => r.role === 'BANK_DEFAULT')!.kind).toBe('money');
+    expect(s.ready).toBe(true);
+  });
+
+  test('a clearing rule on a bank, or outside 326- / 327-, is a problem', async () => {
+    const chart = realChart();
+    const onBank = await ledgerSetupStatus(world({ accounts: chart, acc_bank_letters: lettersFor(chart), acc_account_roles: [{ company_id: CO, role: 'TRANSIT_EDC', account_code: DEFAULT_ROLE_CODES.BANK_DEFAULT }] }), CO);
+    expect(onBank.roles.find((r) => r.role === 'TRANSIT_EDC')!.problem).toBe('not_clearing');
+  });
+});
+
+describe('the routes, after review', () => {
+  const app = (sb: ReturnType<typeof world>) => {
+    const a = new Hono();
+    a.use('*', async (c, next) => {
+      c.set('supabase' as never, sb as never);
+      c.set('companyId' as never, CO as never);
+      c.set('houzsUser' as never, { name: 'Chew', permissions_set: ['scm.payment_voucher.post'] } as never);
+      await next();
+    });
+    a.put('/roles/:role', accountRolePut as never);
+    return a;
+  };
+  const put = (a: Hono, role: string, body: Record<string, unknown>) =>
+    a.request(`/roles/${role}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  const chart = () => fullChart().map((a) => (a.account_code === DEFAULT_ROLE_CODES.TRANSIT_EDC ? { ...a, acc_money: false } : a))
+    .concat([acct('326-0010'), acct('300-0100')]);
+
+  test('a clearing rule takes a 326- clearing account, never a bank', async () => {
+    const sb = world({ accounts: chart() });
+    expect((await put(app(sb), 'TRANSIT_EDC', { accountCode: '326-0010' })).status).toBe(200);
+    expect((await put(app(sb), 'TRANSIT_EDC', { accountCode: DEFAULT_ROLE_CODES.BANK_DEFAULT })).status).toBe(409);
+  });
+
+  test('moving a rule whose account already has postings asks for confirmation, with the balance', async () => {
+    const sb = world({ accounts: chart(), v_gl_entries: [
+      { company_id: CO, account_code: DEFAULT_ROLE_CODES.AR, debit_sen: 50_000, credit_sen: 10_000, posted: true, reversed: false, reversed_by_je: null, entry_date: '2026-10-01' },
+    ] });
+    const first = await put(app(sb), 'AR', { accountCode: '300-0100' });
+    expect(first.status).toBe(409);
+    expect(await first.json()).toMatchObject({ error: 'role_in_use', accountCode: DEFAULT_ROLE_CODES.AR, balanceSen: 40_000 });
+    expect(sb.tables.acc_account_roles).toEqual([]);
+    expect((await put(app(sb), 'AR', { accountCode: '300-0100', confirm: true })).status).toBe(200);
+  });
+
+  /* The default bank and the drawer hold their own money: moving the default only changes where new vouchers start,
+     and the Settlement setup page moves it with no confirm step — so no guard there. */
+  test('moving the default bank needs no confirmation, whatever the old bank carries', async () => {
+    const sb = world({ accounts: chart().concat([acct('310-0020', { acc_money: true })]), v_gl_entries: [
+      { company_id: CO, account_code: DEFAULT_ROLE_CODES.BANK_DEFAULT, debit_sen: 50_000, credit_sen: 0, posted: true, reversed: false, reversed_by_je: null, entry_date: '2026-10-01' },
+    ] });
+    expect((await put(app(sb), 'BANK_DEFAULT', { accountCode: '310-0020' })).status).toBe(200);
+  });
+
+  test('a prototype key is not a posting rule', async () => {
+    const sb = world({ accounts: chart() });
+    expect((await put(app(sb), 'constructor', { accountCode: '300-0100' })).status).toBe(400);
+    expect((await put(app(sb), 'toString', { accountCode: '300-0100' })).status).toBe(400);
+  });
+
+  test('a code with filter characters is simply not in the chart', async () => {
+    const sb = world({ accounts: chart() });
+    expect((await put(app(sb), 'AR', { accountCode: '300-0000,parent_code.eq.x' })).status).toBe(404);
   });
 });

@@ -311,7 +311,7 @@ export const useBindItemGroup = () => {
   return useMutation({
     mutationFn: ({ code, ...body }: { code: string; companyId: number; accounts: ItemGroupBinding }) =>
       authedFetch<{ ok: boolean }>(`/accounting/item-groups/${encodeURIComponent(code)}/accounts`, { method: 'PUT', body: JSON.stringify(body) }),
-    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['item-groups'] }); },
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['item-groups'] }); void qc.invalidateQueries({ queryKey: ['ledger-setup-status'] }); },
     onError: writeFailedAs('Binding not saved'),
   });
 };

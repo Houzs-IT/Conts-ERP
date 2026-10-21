@@ -15,8 +15,8 @@ import {
   MONTHS, PROBLEM_TEXT, ROLE_LABELS, useLedgerSettings, useSaveLedgerSettings, useSetRole, useSetupStatus, type LedgerSettings,
 } from "./ledgerSettings";
 
-/** The rules that move money, so their picker offers bank and cash accounts only (backend conts/ledger-setup-status.ts). */
-const MONEY_ROLES = new Set(["CASH", "BANK_DEFAULT", "TRANSIT_EDC", "TRANSIT_ONLINE"]);
+const isClearingCode = (code: string): boolean => /^32[67]-/.test(code);
+const rm = (sen: number): string => (sen / 100).toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export function LedgerSetup() {
   const q = useLedgerSettings();
@@ -105,14 +105,44 @@ function PostingRules({ canSave }: { canSave: boolean }) {
   const status = useSetupStatus();
   const accountsQ = useAccounts();
   const setRole = useSetRole();
+  const askConfirm = useConfirm();
   const [note, setNote] = useState<string | null>(null);
   const leaves = useMemo(() => leafAccounts(accountsQ.data?.accounts ?? []).filter((a) => a.is_active !== false), [accountsQ.data]);
-  const optionsAll = useMemo(() => leaves.map((a) => ({ value: a.account_code, label: `${a.account_code} — ${a.account_name}` })), [leaves]);
-  const optionsMoney = useMemo(() => leaves.filter((a) => a.acc_money === true).map((a) => ({ value: a.account_code, label: `${a.account_code} — ${a.account_name}` })), [leaves]);
+  /* Each rule's picker offers its kind only (the server says which): banks and the drawer, the 326- / 327- clearings
+     (not money), or every account. */
+  const optionsByKind = useMemo(() => {
+    const opt = (xs: typeof leaves) => xs.map((a) => ({ value: a.account_code, label: `${a.account_code} — ${a.account_name}` }));
+    return {
+      any: opt(leaves),
+      money: opt(leaves.filter((a) => a.acc_money === true)),
+      clearing: opt(leaves.filter((a) => a.acc_money !== true && isClearingCode(a.account_code))),
+    };
+  }, [leaves]);
 
-  const choose = async (role: string, accountCode: string) => {
+  /* Every change asks first (one stray Enter must not move a rule); a rule whose account already carries postings is
+     asked about again, with what stays behind on the old account. */
+  const choose = async (role: string, label: string, from: string, accountCode: string) => {
     setNote(null);
-    try { await setRole.mutateAsync({ role, accountCode }); } catch (err) { setNote(err instanceof Error ? err.message : "The rule could not be saved."); }
+    const picked = leaves.find((a) => a.account_code === accountCode);
+    if (!(await askConfirm({
+      title: `Point ${label} at ${accountCode}${picked ? ` ${picked.account_name}` : ""}?`,
+      body: `From now on this posting goes to ${accountCode} instead of ${from}.`,
+      confirmLabel: "Change it",
+    }))) return;
+    try {
+      await setRole.mutateAsync({ role, accountCode });
+    } catch (err) {
+      const e = err as Error & { status?: number; body?: string };
+      let inUse: { error?: string; accountCode?: string; balanceSen?: number; message?: string } | null = null;
+      try { inUse = e.status === 409 && e.body ? JSON.parse(e.body) : null; } catch { inUse = null; }
+      if (inUse?.error !== "role_in_use") { setNote(e instanceof Error ? e.message : "The rule could not be saved."); return; }
+      if (!(await askConfirm({
+        title: `${inUse.accountCode} already has postings`,
+        body: `${inUse.message ?? ""} Its balance is RM ${rm(inUse.balanceSen ?? 0)} and stays on ${inUse.accountCode}. Move it with a journal entry first, then change the rule.`,
+        confirmLabel: "Change it anyway",
+      }))) return;
+      try { await setRole.mutateAsync({ role, accountCode, confirm: true }); } catch (again) { setNote(again instanceof Error ? again.message : "The rule could not be saved."); }
+    }
   };
 
   if (!status.isSuccess) return null;
@@ -149,9 +179,9 @@ function PostingRules({ canSave }: { canSave: boolean }) {
                 style={{ borderTop: "1px solid var(--line)", background: r.problem ? "rgba(184, 51, 31, 0.08)" : undefined }}>
                 <td style={{ padding: "4px 8px" }}>{label}</td>
                 <td style={{ padding: "4px 8px" }}>
-                  <SearchCombo fill options={MONEY_ROLES.has(r.role) ? optionsMoney : optionsAll} value={r.accountCode}
-                    onChange={(code) => { if (code && code !== r.accountCode) void choose(r.role, code); }}
-                    aria-label={`${label} account`} placeholder="Type a code or a name…" disabled={!canSave || setRole.isPending} />
+                  <SearchCombo fill options={optionsByKind[r.kind]} value={r.accountCode}
+                    onChange={(code) => { if (code && code !== r.accountCode) void choose(r.role, label, r.accountCode, code); }}
+                    aria-label={`${label} account`} placeholder={r.accountCode || "Type a code or a name…"} disabled={!canSave || setRole.isPending} />
                 </td>
                 <td style={{ padding: "4px 8px", color: "var(--c-festive-b, #B8331F)" }}>{r.problem ? `${r.accountCode} ${PROBLEM_TEXT[r.problem]}` : ""}</td>
               </tr>
