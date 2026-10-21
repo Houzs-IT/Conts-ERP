@@ -356,8 +356,7 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
         )}
       </div>
 
-      <SplitPane list={list} open={!!sel} onClose={() => setSelected(null)} width={580} compactList
-        empty={<div className="text-center text-copy text-muted-ink p-6 max-w-[260px]"><Icon name="MousePointerClick" size="lg" /><p className="mt-2">Pick a unit to see its cleaner, door code and proof photos.</p></div>}
+      <SplitPane list={list} open={!!sel} onClose={() => setSelected(null)} width={580}
         detail={sel ? <CleanDetail key={sel.id} row={sel} now={now} onClose={() => setSelected(null)} onChanged={reload} onGuestLeft={() => void guestLeft({ taskId: sel.id }, sel.unitNumber)}
           onCheckIn={t => sel.next?.reservationId && void setCheckIn(sel.next.reservationId, t, sel.unitNumber)} savingIn={!!sel.next?.reservationId && busy === `in-${sel.next.reservationId}`} /> : null} />
 
