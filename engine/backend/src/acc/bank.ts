@@ -19,6 +19,7 @@ import type { BankRecognitionRule, PayableBatch, PayoutAdviceForMatch } from './
 import type { LedgerMovement } from './bank-reconcile';
 import { lockMonthOf, monthAsDate, monthFromDate, type MonthLock } from './bank-lock';
 import { isReversalPair } from './reversal-pairs';
+import { paginateAll } from '../scm/lib/paginate-all';
 
 export type BankStatementConfig = {
   id: number;
@@ -230,11 +231,15 @@ export async function loadPayoutAdvices(
 export async function loadAccountLedger(
   sb: any, companyId: number, accountCode: string, upTo: string,
 ): Promise<{ ok: true; movements: LedgerMovement[] } | Fail> {
-  const { data, error } = await sb.from('v_gl_entries')
+  /* Paged: a busy bank account passes PostgREST's per-response ceiling, which drops the rest without an error
+     (gap G13). Ordered by line_id so every page reads the same sequence. */
+  const { data, error } = await paginateAll((from, to) => sb.from('v_gl_entries')
     .select('je_no, entry_date, source_type, source_doc_no, debit_sen, credit_sen, notes, party_name, reversed, reversed_by_je')
     .eq('company_id', companyId)
     .eq('account_code', accountCode)
-    .lte('entry_date', upTo);
+    .lte('entry_date', upTo)
+    .order('line_id')
+    .range(from, to));
   if (error) return { ok: false, reason: error.message };
 
   /* One ENTRY per row, not one line: an entry can touch the bank account twice
