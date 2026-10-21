@@ -271,7 +271,7 @@ function TaskDetail({ job: j, now, onClose, onChanged }: { job: Job; now: number
               {phase === 'started' ? 'Upload photo to complete' : 'Mark complete'}
             </Button>
           )}
-          {!j.external && <Button size="touch" variant="secondary" className="w-full" icon={<Icon name="TriangleAlert" size="sm" />} onClick={() => setDamage(true)}>Report damage</Button>}
+          {!j.external && <Button size="touch" variant="danger" className="w-full" icon={<Icon name="TriangleAlert" size="sm" />} onClick={() => setDamage(true)}>Report damage</Button>}
         </div>
       )}
       {confirm}
