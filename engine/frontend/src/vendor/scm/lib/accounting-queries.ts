@@ -87,7 +87,7 @@ export const useSaveBankDefault = () => {
       `/accounting/roles/BANK_DEFAULT`,
       { method: 'PUT', body: JSON.stringify({ accountCode }) },
     ),
-    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['account-roles'] }); },
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['account-roles'] }); void qc.invalidateQueries({ queryKey: ['ledger-setup-status'] }); },
     onError: writeFailedAs('Default bank not saved'),
   });
 };

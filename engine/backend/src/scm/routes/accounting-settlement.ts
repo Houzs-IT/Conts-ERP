@@ -218,7 +218,7 @@ function maintenanceCompany(c: Ctx, asked: unknown): { ok: true; companyId: numb
    whether it banks with them. */
 /** A clearing account: the 326- (card machine) and 327- (online) codes — where
     money sits between the swipe and the payout. */
-const isClearingCode = (code: string): boolean => /^32[67]-/.test(code);
+export const isClearingCode = (code: string): boolean => /^32[67]-/.test(code);
 
 export const settlementMaintenance = guard(async (c) => {
   const sb = c.get('supabase');

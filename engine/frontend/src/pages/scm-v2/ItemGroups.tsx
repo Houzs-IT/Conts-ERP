@@ -16,7 +16,7 @@ import { useMemo, useState } from 'react';
 import { getActiveCompanyId } from '../../lib/activeCompany';
 import { PiBackfillCard } from './PiBackfill';
 import { SearchCombo, type ComboOption } from '../../vendor/scm/components/SearchCombo';
-import { useAccounts } from '../../vendor/scm/lib/accounting-queries';
+import { useAccountRoles, useAccounts } from '../../vendor/scm/lib/accounting-queries';
 import {
   useItemGroups, useCreateItemGroup, useBindItemGroup, usePatchItemGroup,
   type ItemGroupBinding,
@@ -31,6 +31,28 @@ const SLOTS: Array<{ key: keyof ItemGroupBinding; label: string; wants: 'EXPENSE
   { key: 'salesReturn', label: 'Sales Return', wants: 'INCOME' },
   { key: 'purchaseReturn', label: 'Purchase Return', wants: 'EXPENSE' },
 ];
+
+/** Which accounts one binding may pick: its ledger side, active. Conts (finance phase 1, spec 3.4; SOP 4.2.1 method B):
+    renovation billing books to the advance — a liability — until the work is done, so RENOVATION's sales and
+    sales-return slots offer liability accounts as well. */
+export type BindingColumn = 'sales_account' | 'sales_return_account' | 'purchase_account' | 'purchase_return_account';
+const isSalesColumn = (column: BindingColumn): boolean => column === 'sales_account' || column === 'sales_return_account';
+/** Whether this binding may point at the advance (a liability): RENOVATION's sales side only. */
+export const offersAdvance = (group: string, column: BindingColumn): boolean =>
+  isSalesColumn(column) && group.trim().toUpperCase() === 'RENOVATION';
+/** `controls`: the AR / AP control accounts (from the posting rules) — the advance is never one of them, nor a header. */
+export function accountsForBinding<A extends { account_code: string; account_type: string; is_active?: boolean | null; parent_code?: string | null }>(
+  group: string, column: BindingColumn, accounts: readonly A[], controls: ReadonlySet<string> = new Set(),
+): A[] {
+  const side = isSalesColumn(column) ? 'INCOME' : 'EXPENSE';
+  const advance = offersAdvance(group, column);
+  const parents = new Set(accounts.map((a) => a.parent_code).filter(Boolean));
+  const advanceOk = (a: A) => advance && a.account_type === 'LIABILITY' && !controls.has(a.account_code) && !parents.has(a.account_code);
+  return accounts.filter((a) => a.is_active !== false && (a.account_type === side || advanceOk(a)));
+}
+const COLUMN_OF: Record<keyof ItemGroupBinding, BindingColumn> = {
+  purchase: 'purchase_account', sales: 'sales_account', salesReturn: 'sales_return_account', purchaseReturn: 'purchase_return_account',
+};
 
 /* The picker's section headers are the CHART's sections (owner 2026-09-05:
    不能这样做一个header 分类吗; 2026-09-06: stored on the account, his to move
@@ -103,22 +125,33 @@ export const ItemGroupsTab = () => {
      slot sees only EXPENSE accounts (Cost of goods sold first, then
      Expenses), a sales slot only INCOME (Sales / Sales adjustments / Other
      incomes). 397 accounts collapse to the relevant page. */
+  /* The control accounts (AR / AP and the other debtors / creditors) — never a renovation advance (the server refuses them too). */
+  const rolesQ = useAccountRoles();
+  const controls = useMemo(() => {
+    const r = rolesQ.data?.roles as Record<string, string> | undefined;
+    return new Set(r ? [r.AR, r.AR_OTHER, r.AP, r.AP_OTHER].filter(Boolean) : []);
+  }, [rolesQ.data]);
   const optionsByWants = useMemo(() => {
     const order = (accountsQ.data?.sections ?? []).map((s) => s.section);
     const rank = (section: string): number => {
       const i = order.indexOf(section);
       return i < 0 ? order.length : i;
     };
-    const build = (wants: 'EXPENSE' | 'INCOME'): ComboOption[] => (accountsQ.data?.accounts ?? [])
-      .filter((a) => a.is_active !== false && a.account_type === wants)
+    const build = (group: string, column: BindingColumn): ComboOption[] => accountsForBinding(group, column, accountsQ.data?.accounts ?? [], controls)
       .map((a) => ({
         value: a.account_code,
         label: `${a.account_code} — ${a.account_name}`,
         group: a.section ?? UNSHELVED,
       }))
       .sort((x, y) => (rank(x.group) - rank(y.group)) || x.value.localeCompare(y.value));
-    return { EXPENSE: build('EXPENSE'), INCOME: build('INCOME') };
-  }, [accountsQ.data]);
+    return {
+      EXPENSE: build('', 'purchase_account'), INCOME: build('', 'sales_account'),
+      /* RENOVATION's sales side: income and liability accounts (the advance). */
+      RENOVATION_SALES: build('RENOVATION', 'sales_account'),
+    };
+  }, [accountsQ.data, controls]);
+  const optionsFor = (group: string, slot: (typeof SLOTS)[number]): ComboOption[] =>
+    (offersAdvance(group, COLUMN_OF[slot.key]) ? optionsByWants.RENOVATION_SALES : optionsByWants[slot.wants]);
 
   /* Unsaved edits per group. A group with no saved binding starts from the
      SUGGESTED defaults (marked as such) — the sign-off flow. */
@@ -177,7 +210,7 @@ export const ItemGroupsTab = () => {
                   {SLOTS.map((s) => (
                     <td key={s.key} style={{ padding: '6px 10px' }}>
                       <SearchCombo
-                        options={optionsByWants[s.wants]}
+                        options={optionsFor(g.code, s)}
                         value={draft[s.key]}
                         onChange={(v) => setSlot(g.code, saved, s.key, v)}
                         aria-label={`${g.code} ${s.label} account`}

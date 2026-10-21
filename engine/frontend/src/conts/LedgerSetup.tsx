@@ -1,14 +1,22 @@
 // Conts only (not part of Houzs's code): the Ledger setup page (finance phase 1, spec 3.7 and 3.8). Its first block,
 // Books, holds the two settings the whole ledger reads: the day the books start in the engine (nothing dated before
 // it posts — it is in the AutoCount opening balances) and the month the fiscal year ends.
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@2990s/design-system";
 import { PageHeader } from "../components/Layout";
 import { DateField } from "../vendor/scm/components/DateField";
 import styles from "../pages/scm-v2/SalesOrderDetail.module.css";
 import { useAuth } from "../auth/AuthContext";
 import { useConfirm } from "../vendor/scm/components/ConfirmDialog";
-import { MONTHS, useLedgerSettings, useSaveLedgerSettings, type LedgerSettings } from "./ledgerSettings";
+import { Link } from "react-router-dom";
+import { SearchCombo } from "../vendor/scm/components/SearchCombo";
+import { leafAccounts, useAccounts } from "../vendor/scm/lib/accounting-queries";
+import {
+  MONTHS, PROBLEM_TEXT, ROLE_LABELS, useLedgerSettings, useSaveLedgerSettings, useSetRole, useSetupStatus, type LedgerSettings,
+} from "./ledgerSettings";
+
+const isClearingCode = (code: string): boolean => /^32[67]-/.test(code);
+const rm = (sen: number): string => (sen / 100).toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export function LedgerSetup() {
   const q = useLedgerSettings();
@@ -86,6 +94,112 @@ export function LedgerSetup() {
           {!canSave && <span style={{ fontSize: "var(--fs-12)", color: "var(--fg-muted)" }}>Only someone who can post to the ledger may change these.</span>}
         </div>
       </section>
+      <PostingRules canSave={canSave} />
     </div>
+  );
+}
+
+/** Every automatic posting's account (spec 3.4): what each rule points at, what is wrong with it, and whether the
+    ledger is ready to go live — every rule sound, every item group bound, every bank lettered, a start date set. */
+function PostingRules({ canSave }: { canSave: boolean }) {
+  const status = useSetupStatus();
+  const accountsQ = useAccounts();
+  const setRole = useSetRole();
+  const askConfirm = useConfirm();
+  const [note, setNote] = useState<string | null>(null);
+  const leaves = useMemo(() => leafAccounts(accountsQ.data?.accounts ?? []).filter((a) => a.is_active !== false), [accountsQ.data]);
+  /* Each rule's picker offers its kind only (the server says which): banks and the drawer, the 326- / 327- clearings
+     (not money), or every account. */
+  const optionsByKind = useMemo(() => {
+    const opt = (xs: typeof leaves) => xs.map((a) => ({ value: a.account_code, label: `${a.account_code} — ${a.account_name}` }));
+    return {
+      any: opt(leaves),
+      money: opt(leaves.filter((a) => a.acc_money === true)),
+      clearing: opt(leaves.filter((a) => a.acc_money !== true && isClearingCode(a.account_code))),
+    };
+  }, [leaves]);
+
+  /* Every change asks first (one stray Enter must not move a rule); a rule whose account already carries postings is
+     asked about again, with what stays behind on the old account. */
+  const choose = async (role: string, label: string, from: string, accountCode: string) => {
+    setNote(null);
+    const picked = leaves.find((a) => a.account_code === accountCode);
+    if (!(await askConfirm({
+      title: `Point ${label} at ${accountCode}${picked ? ` ${picked.account_name}` : ""}?`,
+      body: `From now on this posting goes to ${accountCode} instead of ${from}.`,
+      confirmLabel: "Change it",
+    }))) return;
+    try {
+      await setRole.mutateAsync({ role, accountCode });
+    } catch (err) {
+      const e = err as Error & { status?: number; body?: string };
+      let inUse: { error?: string; accountCode?: string; balanceSen?: number; message?: string } | null = null;
+      try { inUse = e.status === 409 && e.body ? JSON.parse(e.body) : null; } catch { inUse = null; }
+      if (inUse?.error !== "role_in_use") { setNote(e instanceof Error ? e.message : "The rule could not be saved."); return; }
+      if (!(await askConfirm({
+        title: `${inUse.accountCode} already has postings`,
+        body: `${inUse.message ?? ""} Its balance is RM ${rm(inUse.balanceSen ?? 0)} and stays on ${inUse.accountCode}. Move it with a journal entry first, then change the rule.`,
+        confirmLabel: "Change it anyway",
+      }))) return;
+      try { await setRole.mutateAsync({ role, accountCode, confirm: true }); } catch (again) { setNote(again instanceof Error ? again.message : "The rule could not be saved."); }
+    }
+  };
+
+  if (!status.isSuccess) return null;
+  const s = status.data;
+  const badRoles = s.roles.filter((r) => r.problem).length;
+  const reasons = [
+    badRoles > 0 ? `${badRoles} posting rule${badRoles === 1 ? " needs an account" : "s need an account"}` : null,
+    s.itemGroups.length > 0 ? `${s.itemGroups.length} item group${s.itemGroups.length === 1 ? " is" : "s are"} missing an account` : null,
+    s.banksWithoutLetter.length > 0 ? `${s.banksWithoutLetter.length} bank${s.banksWithoutLetter.length === 1 ? " has" : "s have"} no voucher letter` : null,
+    s.ledgerStartDate ? null : "the books have no start date",
+  ].filter(Boolean);
+
+  return (
+    <section className={styles.card} style={{ padding: "var(--space-4)", display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
+      <h2 className={styles.cardTitle}>Posting rules</h2>
+      <div style={{ fontWeight: 700, color: s.ready ? "var(--c-secondary-a, #2F5D4F)" : "var(--c-festive-b, #B8331F)" }}>
+        {s.ready ? "Ready" : "Not ready"}
+        {!s.ready && <span style={{ fontWeight: 400, color: "var(--fg-muted)" }}> — {reasons.join("; ")}</span>}
+      </div>
+      {note && <p style={{ color: "var(--c-festive-b, #B8331F)", margin: 0 }}>{note}</p>}
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "var(--fs-13)" }}>
+        <thead>
+          <tr style={{ textAlign: "left", color: "var(--fg-muted)" }}>
+            <th style={{ padding: "4px 8px" }}>Rule</th>
+            <th style={{ padding: "4px 8px", width: "45%" }}>Account</th>
+            <th style={{ padding: "4px 8px" }}>Problem</th>
+          </tr>
+        </thead>
+        <tbody>
+          {s.roles.map((r) => {
+            const label = ROLE_LABELS[r.role] ?? r.role;
+            return (
+              <tr key={r.role} data-problem={r.problem ?? undefined}
+                style={{ borderTop: "1px solid var(--line)", background: r.problem ? "rgba(184, 51, 31, 0.08)" : undefined }}>
+                <td style={{ padding: "4px 8px" }}>{label}</td>
+                <td style={{ padding: "4px 8px" }}>
+                  <SearchCombo fill options={optionsByKind[r.kind]} value={r.accountCode}
+                    onChange={(code) => { if (code && code !== r.accountCode) void choose(r.role, label, r.accountCode, code); }}
+                    aria-label={`${label} account`} placeholder={r.accountCode || "Type a code or a name…"} disabled={!canSave || setRole.isPending} />
+                </td>
+                <td style={{ padding: "4px 8px", color: "var(--c-festive-b, #B8331F)" }}>{r.problem ? `${r.accountCode} ${PROBLEM_TEXT[r.problem]}` : ""}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      {s.itemGroups.length > 0 && (
+        <div>
+          <b>Item groups missing an account</b> — set them on <Link to="/scm/accounting?tab=groups">Item group accounts</Link>:
+          <ul style={{ margin: "4px 0 0 18px" }}>{s.itemGroups.map((g) => <li key={g.group}>{g.group}: {g.missing.join(", ")}</li>)}</ul>
+        </div>
+      )}
+      {s.banksWithoutLetter.length > 0 && (
+        <div>
+          <b>Banks without a voucher letter</b> — set it on <Link to="/scm/settlement-setup">Voucher numbering</Link>: {s.banksWithoutLetter.join(", ")}
+        </div>
+      )}
+    </section>
   );
 }

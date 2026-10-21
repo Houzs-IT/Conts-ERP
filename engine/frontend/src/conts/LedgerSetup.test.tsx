@@ -14,6 +14,29 @@ vi.mock("./ledgerSettings", async (importOriginal) => ({
     ? { data: undefined, isLoading: false, isError: true, isSuccess: false }
     : { data: settings, isLoading: false, isError: false, isSuccess: true }),
   useSaveLedgerSettings: () => ({ mutateAsync: saveAsync, isPending: false }),
+  useSetupStatus: () => ({ isSuccess: true, data: {
+    ready: false,
+    roles: [
+      { role: "AR", accountCode: "300-0000", kind: "any", problem: null },
+      { role: "BANK_DEFAULT", accountCode: "320-0000", kind: "money", problem: "not_money" },
+      { role: "TRANSIT_EDC", accountCode: "326-0000", kind: "clearing", problem: null },
+    ],
+    itemGroups: [{ group: "SOFA", missing: ["sales_return_account"] }],
+    banksWithoutLetter: ["310-0010"],
+    ledgerStartDate: null,
+  } }),
+  useSetRole: () => ({ mutateAsync: setRoleAsync, isPending: false }),
+}));
+const setRoleAsync = vi.fn(async (p: unknown) => p);
+vi.mock("../vendor/scm/lib/accounting-queries", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../vendor/scm/lib/accounting-queries")>()),
+  useAccounts: () => ({ data: { accounts: [
+    { account_code: "300-0000", account_name: "DEBTORS", account_type: "ASSET", parent_code: null, is_active: true, acc_money: false },
+    { account_code: "310-0020", account_name: "CIMB", account_type: "ASSET", parent_code: null, is_active: true, acc_money: true },
+    { account_code: "320-0000", account_name: "PETTY", account_type: "ASSET", parent_code: null, is_active: true, acc_money: false },
+    { account_code: "326-0000", account_name: "CARD CLEARING", account_type: "ASSET", parent_code: null, is_active: true, acc_money: false },
+    { account_code: "326-0010", account_name: "CARD CLEARING PBB", account_type: "ASSET", parent_code: null, is_active: true, acc_money: false },
+  ] } }),
 }));
 vi.mock("../auth/AuthContext", () => ({ useAuth: () => ({ can: () => canPost }) }));
 vi.mock("../vendor/scm/components/ConfirmDialog", () => ({ useConfirm: () => confirmFn }));
@@ -83,5 +106,53 @@ describe("Ledger setup — Books", () => {
     expect((screen.getByText("Save").closest("button") as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByText(/Only someone who can post to the ledger/)).toBeTruthy();
     canPost = true;
+  });
+});
+
+/* Posting rules (spec 3.4): every automatic posting's account, what is wrong with each, and whether the ledger is
+   ready to go live. */
+describe("Ledger setup — Posting rules", () => {
+  it("says Not ready and why; a rule with a problem is marked; choosing an account saves that rule", async () => {
+    setRoleAsync.mockClear();
+    render(<MemoryRouter><LedgerSetup /></MemoryRouter>);
+    expect(screen.getByText("Not ready")).toBeTruthy();
+    expect(screen.getByText(/1 posting rule needs an account/)).toBeTruthy();
+    expect(screen.getByText(/SOFA: sales_return_account/)).toBeTruthy();
+    expect(screen.getByText(/310-0010/)).toBeTruthy();
+    const bank = screen.getByText("Default bank").closest("tr")!;
+    expect(bank.getAttribute("data-problem")).toBe("not_money");
+    expect(bank.textContent).toContain("must be a bank or cash account");
+    confirmFn.mockClear();
+    fireEvent.focus(screen.getByLabelText("Default bank account"));
+    /* The money rule offers money only; the clearing rule offers the 326- / 327- clearings only. */
+    expect(screen.queryByText("300-0000 — DEBTORS")).toBeNull();
+    fireEvent.mouseDown(screen.getByText("310-0020 — CIMB"));
+    await waitFor(() => expect(setRoleAsync).toHaveBeenCalledWith({ role: "BANK_DEFAULT", accountCode: "310-0020" }));
+    /* Every change asks first — one stray Enter must not move a rule. */
+    expect(confirmFn).toHaveBeenCalledTimes(1);
+  });
+
+  it("a no to the question saves nothing", async () => {
+    setRoleAsync.mockClear(); confirmFn.mockClear();
+    confirmFn.mockResolvedValueOnce(false);
+    render(<MemoryRouter><LedgerSetup /></MemoryRouter>);
+    fireEvent.focus(screen.getByLabelText("Card machine clearing account"));
+    expect(screen.queryByText("310-0020 — CIMB")).toBeNull();
+    fireEvent.mouseDown(screen.getByText("326-0010 — CARD CLEARING PBB"));
+    await waitFor(() => expect(confirmFn).toHaveBeenCalledTimes(1));
+    expect(setRoleAsync).not.toHaveBeenCalled();
+  });
+
+  it("a rule whose account already carries postings asks again, with what stays behind, then saves", async () => {
+    setRoleAsync.mockClear(); confirmFn.mockClear();
+    const inUse = Object.assign(new Error("in use"), { status: 409, body: JSON.stringify({ error: "role_in_use", accountCode: "300-0000", balanceSen: 40000, message: "300-0000 already carries 3 posted lines." }) });
+    setRoleAsync.mockRejectedValueOnce(inUse);
+    render(<MemoryRouter><LedgerSetup /></MemoryRouter>);
+    fireEvent.focus(screen.getByLabelText("Trade debtors (customers) account"));
+    fireEvent.mouseDown(screen.getByText("310-0020 — CIMB"));
+    await waitFor(() => expect(setRoleAsync).toHaveBeenCalledTimes(2));
+    expect(confirmFn).toHaveBeenCalledTimes(2);
+    expect(JSON.stringify(confirmFn.mock.calls[1])).toContain("400.00");
+    expect(setRoleAsync).toHaveBeenLastCalledWith({ role: "AR", accountCode: "310-0020", confirm: true });
   });
 });

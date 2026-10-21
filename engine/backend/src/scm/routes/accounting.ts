@@ -32,7 +32,8 @@ import { beforeLedgerStartMessage, isBeforeLedgerStart, ledgerDatesRefusal, load
 import { backfillSoPayments, paymentEntryDisagreements, unbookedPayments } from '../../acc/payments';
 import { computeDailyBank } from '../../acc/daily-bank';
 import { systemTakings, postCashOverShort } from '../../acc/daily-close';
-import { resolveRoles, piLines, DEFAULT_ROLE_CODES, BAD_DEPARTMENT, departmentQuery, type Department } from '../../acc/rules';
+import { resolveRoles, piLines, DEFAULT_ROLE_CODES, BAD_DEPARTMENT, departmentQuery, type AccountRole, type Department } from '../../acc/rules';
+import { ledgerSetupStatus, OPEN_BALANCE_ROLES, roleProblem } from '../../conts/ledger-setup-status';
 import { splitByItemGroup } from '../../acc/item-group-split';
 import { classifyJournal } from '../../acc/journal-class';
 import { isReversalPair } from '../../acc/reversal-pairs';
@@ -307,36 +308,80 @@ export const accountRolesGet = async (c: any): Promise<Response> => {
 };
 accounting.get('/roles', accountRolesGet);
 
-export const accountRolesPutBankDefault = async (c: any): Promise<Response> => {
+/* Any posting rule (Conts, finance phase 1, spec 3.4): the default bank was the only one before; the rule's account
+   must be in the chart, active, not a header, and money where the rule moves money (conts/ledger-setup-status.ts). */
+export const accountRolePut = (c: any): Promise<Response> => putRole(c, String(c.req.param('role') ?? '') as AccountRole);
+/** The default bank's own door (accountRoles.test.ts mounts it on its fixed path). */
+export const accountRolesPutBankDefault = (c: any): Promise<Response> => putRole(c, 'BANK_DEFAULT');
+
+async function putRole(c: any, role: AccountRole): Promise<Response> {
   if (!requireGlPost(c)) return c.json({ error: "You don't have permission to manage account roles." }, 403);
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
+  if (!Object.hasOwn(DEFAULT_ROLE_CODES, role)) return c.json({ error: 'unknown_role', message: `${role} is not a posting rule.` }, 400);
   const sb = c.get('supabase');
   let body: any;
   try { body = await c.req.json(); } catch { return c.json({ error: 'invalid_json' }, 400); }
   const code = String(body.accountCode ?? '').trim();
   if (!code) return c.json({ error: 'account_required' }, 400);
 
-  /* The default bank must actually BE money — an expense account set here
-     would silently mis-book every transfer payment and daily-bank line. */
-  const { data: acct, error: aErr } = await scopeToCompanyId(
-    sb.from('accounts').select('account_code, account_name, acc_money, is_active').eq('account_code', code),
-    co.companyId,
-  ).maybeSingle();
-  if (aErr) return c.json({ error: 'load_failed', reason: aErr.message }, 500);
-  if (!acct) return c.json({ error: 'no_such_account', message: `${code} is not in this company's chart.` }, 404);
-  const a = acct as { account_name: string; acc_money: boolean | null; is_active: boolean };
-  if (!a.is_active) return c.json({ error: 'account_inactive', message: `${code} ${a.account_name} is inactive.` }, 409);
-  if (a.acc_money !== true) {
-    return c.json({ error: 'not_a_money_account', message: `${code} ${a.account_name} is not a bank / cash account. The default bank must be one of the money accounts Daily Bank shows.` }, 409);
+  /* The rule's account, and one child if it has any (a child makes it a header, which posting refuses). */
+  const COLS = 'account_code, account_name, acc_money, is_active, parent_code';
+  const [own, child] = await Promise.all([
+    scopeToCompanyId(sb.from('accounts').select(COLS).eq('account_code', code), co.companyId),
+    scopeToCompanyId(sb.from('accounts').select(COLS).eq('parent_code', code), co.companyId).limit(1),
+  ]);
+  if (own.error || child.error) return c.json({ error: 'load_failed', reason: (own.error ?? child.error)!.message }, 500);
+  const rows = [...(own.data ?? []), ...(child.data ?? [])] as Array<{ account_code: string; account_name: string; acc_money: boolean | null; is_active: boolean | null; parent_code: string | null }>;
+  const name = rows.find((a) => a.account_code === code)?.account_name ?? '';
+  const problem = roleProblem(role, code, rows);
+  if (problem === 'missing_account') return c.json({ error: 'no_such_account', message: `${code} is not in this company's chart.` }, 404);
+  if (problem === 'inactive') return c.json({ error: 'account_inactive', message: `${code} ${name} is inactive.` }, 409);
+  if (problem === 'header') return c.json({ error: 'account_is_header', message: `${code} ${name} has accounts under it — choose one of those.` }, 409);
+  if (problem === 'not_money') {
+    return c.json({ error: 'not_a_money_account', message: `${code} ${name} is not a bank / cash account. This rule moves money, so it must be one of the money accounts Daily Bank shows.` }, 409);
+  }
+  if (problem === 'not_clearing') {
+    return c.json({ error: 'not_a_clearing_account', message: `${code} ${name} is not a clearing account. Card and online payments wait on a 326- / 327- clearing account (not a bank) until the payout lands.` }, 409);
+  }
+
+  /* Moving a rule whose account already carries postings splits the books: what is posted stays on the old account,
+     what comes next lands on the new one. Said once, with the balance, before it happens (Conts, spec 3.4). */
+  const current = (await resolveRoles(sb, co.companyId))[role];
+  if (current !== code && body.confirm !== true && OPEN_BALANCE_ROLES.includes(role)) {
+    const { data: lines, error: lErr } = await paginateAll((from, to) => sb.from('v_gl_entries')
+      .select('debit_sen, credit_sen, reversed, reversed_by_je').eq('company_id', co.companyId).eq('account_code', current)
+      .order('line_id').range(from, to));
+    if (lErr) return c.json({ error: 'load_failed', reason: lErr.message }, 500);
+    const counted = ((lines ?? []) as Array<{ debit_sen: number; credit_sen: number; reversed?: boolean | null; reversed_by_je?: string | null }>)
+      .filter((l) => !isReversalPair(l));
+    if (counted.length > 0) {
+      const balanceSen = counted.reduce((sum, l) => sum + Number(l.debit_sen ?? 0) - Number(l.credit_sen ?? 0), 0);
+      return c.json({
+        error: 'role_in_use', accountCode: current, balanceSen, postings: counted.length,
+        message: `${current} already carries ${counted.length} posted line${counted.length === 1 ? '' : 's'}. What is posted stays on ${current}; only what posts next goes to ${code}. Move the balance with a journal entry first.`,
+      }, 409);
+    }
   }
 
   const { error: upErr } = await sb.from('acc_account_roles')
-    .upsert({ company_id: co.companyId, role: 'BANK_DEFAULT', account_code: code }, { onConflict: 'company_id,role' });
+    .upsert({ company_id: co.companyId, role, account_code: code }, { onConflict: 'company_id,role' });
   if (upErr) return c.json({ error: 'save_failed', reason: upErr.message }, 500);
-  return c.json({ ok: true, role: 'BANK_DEFAULT', accountCode: code });
+  return c.json({ ok: true, role, accountCode: code });
+}
+accounting.put('/roles/:role', accountRolePut);
+
+/* GET /accounting/setup-status — is the ledger ready to go live? (Conts, spec 3.4) */
+export const setupStatusHandler = async (c: any): Promise<Response> => {
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  try {
+    return c.json(await ledgerSetupStatus(c.get('supabase'), co.companyId));
+  } catch (e) {
+    return c.json({ error: 'load_failed', reason: e instanceof Error ? e.message : String(e) }, 500);
+  }
 };
-accounting.put('/roles/BANK_DEFAULT', accountRolesPutBankDefault);
+accounting.get('/setup-status', setupStatusHandler);
 
 /* ── Ledger settings — the day the books start, the fiscal year end (Conts) ── */
 export const ledgerSettingsGet = async (c: AccCtx): Promise<Response> => {

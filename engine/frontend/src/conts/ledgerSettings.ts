@@ -41,3 +41,55 @@ export const useSaveLedgerSettings = () => {
     },
   });
 };
+
+/* ── Is the ledger ready to go live? (spec 3.4) — GET /accounting/setup-status ─────────────────────────────── */
+export type RoleProblem = "missing_account" | "inactive" | "header" | "not_money" | "not_clearing";
+/** What kind of account a rule takes: a bank or the drawer, a 326- / 327- clearing (not money), or any account. */
+export type RoleKind = "money" | "clearing" | "any";
+export type LedgerSetupStatus = {
+  ready: boolean;
+  roles: { role: string; accountCode: string; kind: RoleKind; problem: null | RoleProblem }[];
+  itemGroups: { group: string; missing: string[] }[];
+  banksWithoutLetter: string[];
+  ledgerStartDate: string | null;
+};
+
+export const useSetupStatus = () => useQuery({
+  queryKey: ["ledger-setup-status"],
+  queryFn: () => authedFetch<LedgerSetupStatus>("/accounting/setup-status"),
+  staleTime: 30_000,
+});
+
+/** Point one posting rule at an account — PUT /accounting/roles/:role. */
+export const useSetRole = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    /* confirm: the move of a rule whose account already carries postings, agreed to (the server asks first). */
+    mutationFn: ({ role, accountCode, confirm }: { role: string; accountCode: string; confirm?: boolean }) =>
+      authedFetch<{ ok: true }>(`/accounting/roles/${encodeURIComponent(role)}`, { method: "PUT", body: JSON.stringify(confirm ? { accountCode, confirm } : { accountCode }) }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["ledger-setup-status"] });
+      void qc.invalidateQueries({ queryKey: ["account-roles"] });
+    },
+  });
+};
+
+/** Each posting rule in the words finance uses (backend/src/acc/rules.ts AccountRole). */
+export const ROLE_LABELS: Record<string, string> = {
+  AR: "Trade debtors (customers)", AR_OTHER: "Other debtors", SALES: "Sales (fallback)", INVENTORY: "Stock (fallback)",
+  AP: "Trade creditors (suppliers)", AP_OTHER: "Other creditors", CASH: "Cash in hand", BANK_DEFAULT: "Default bank",
+  TRANSIT_EDC: "Card machine clearing", TRANSIT_ONLINE: "Online payment clearing", CUSTOMER_DEPOSITS: "Customer deposits",
+  OVER_SHORT: "Cash over / short", CLOSING_STOCK: "Closing stock (one account)",
+  INVENTORY_CUSTOMER: "Stock — customer", INVENTORY_DISPLAY: "Stock — display", INVENTORY_SERVICE: "Stock — service",
+  OPENING_STOCK_CUSTOMER: "Opening stock — customer", OPENING_STOCK_DISPLAY: "Opening stock — display", OPENING_STOCK_SERVICE: "Opening stock — service",
+  CLOSING_STOCK_CUSTOMER: "Closing stock — customer", CLOSING_STOCK_DISPLAY: "Closing stock — display", CLOSING_STOCK_SERVICE: "Closing stock — service",
+  SALES_RETURNS: "Sales returns", PURCHASE_RETURNS: "Purchase returns", DEPOSIT_INCOME: "Deposit invoices (income)",
+};
+
+export const PROBLEM_TEXT: Record<RoleProblem, string> = {
+  missing_account: "not in the chart",
+  inactive: "inactive",
+  header: "has accounts under it — choose one of those",
+  not_money: "must be a bank or cash account",
+  not_clearing: "must be a 326- / 327- clearing account, not a bank",
+};
