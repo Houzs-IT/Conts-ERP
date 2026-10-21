@@ -171,6 +171,8 @@ export const PERMISSIONS: PermissionDef[] = [
   // Phase 3 (2026-08-28): money leaves only after a yes. Nobody holds this by
   // default except '*' — the owner grants it per position when he delegates.
   { key: "scm.payment_voucher.check", resource: "Supply Chain", verb: "manage", label: "Check payment voucher", description: "The first of the two yeses (owner 2026-09-02): check a prepared Payment Voucher — checking locks it and reserves it against Daily Bank's available money; a checker may also reject back to draft" },
+  // Conts (finance phase 1): the Ledger area. Every ledger route asks for it literally (conts/ledger-access.ts).
+  { key: "scm.ledger.use", resource: "Supply Chain", verb: "manage", label: "Use the ledger", description: "Accounts, payment vouchers, receipts and bank reconciliation. Never implied by *." },
   { key: "scm.payment_voucher.approve", resource: "Supply Chain", verb: "manage", label: "Approve payment voucher", description: "The second yes: approve a checked Payment Voucher — approval posts the GL entry in the same breath; an approver may also reject back to draft" },
 
   // Correcting a customer payment after the day it was keyed (owner +

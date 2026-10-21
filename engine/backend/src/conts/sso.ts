@@ -7,7 +7,8 @@
 import { Hono } from "hono";
 import type { Env } from "../types";
 import { createSession, mintSessionPass } from "../services/auth";
-import { type ContsAccess, parseContsAccess, isFullEverywhere, hasAnyAccess, contsPermissions, contsRoleName, saveContsRoleAccess } from "./access";
+import { type ContsAccess, LEDGER_AREA, parseContsAccess, isFullEverywhere, hasAnyAccess, contsPermissions, contsRoleName, saveContsRoleAccess } from "./access";
+import { ledgerPermissions } from "./ledger-access";
 
 type ContsEnv = Env & { CONTS_SSO_SECRET?: string };
 interface Assertion { email: string; name: string; role: string; exp: number; access?: unknown }
@@ -37,29 +38,47 @@ async function verify(secret: string, token: string): Promise<Assertion | null> 
  *  Property OS refuses them, and they are refused again below. */
 const OFFICE = new Set(["management", "finance_admin", "operations_manager", "operations_staff"]);
 
-async function roleIdFor(env: Env, contsRole: string, access: ContsAccess): Promise<number | null> {
-  if (!OFFICE.has(contsRole) || !hasAnyAccess(access)) return null;
-  if (isFullEverywhere(access)) {
-    const full = () => env.DB.prepare(`SELECT id FROM roles WHERE permissions LIKE '%"*"%' ORDER BY id LIMIT 1`).first<{ id: number }>();
-    const r = await full();
-    if (r) return r.id;
-    // A new instance has no roles at all (production's first sign-on was refused for this, 8 Oct 2026):
-    // the full-access role is made here, named as Houzs names it.
-    await env.DB.prepare(`INSERT INTO roles (name, description, permissions, is_system, scope_to_pic) VALUES (?, ?, ?, 1, 0)`)
-      .bind("Owner", "Full access, for accounts with Full in every area of Property OS", JSON.stringify(["*"])).run();
-    return (await full())?.id ?? null;
-  }
-  const name = contsRoleName(contsRole);
-  const permissions = JSON.stringify(contsPermissions(access));
+/** Writes a Conts role's permission keys, creating the role the first time. */
+async function upsertRole(env: Env, name: string, description: string, permissions: string): Promise<number | null> {
   const found = await env.DB.prepare(`SELECT id, permissions FROM roles WHERE name = ?`).bind(name).first<{ id: number; permissions: string }>();
   if (!found) {
     await env.DB.prepare(`INSERT INTO roles (name, description, permissions, is_system, scope_to_pic) VALUES (?, ?, ?, 0, 0)`)
-      .bind(name, "Set from the Permissions chart in Property OS", permissions).run();
+      .bind(name, description, permissions).run();
   } else if (found.permissions !== permissions) {
     await env.DB.prepare(`UPDATE roles SET permissions = ? WHERE id = ?`).bind(permissions, found.id).run();
   }
-  await saveContsRoleAccess(env, name, access);
   return found?.id ?? (await env.DB.prepare(`SELECT id FROM roles WHERE name = ?`).bind(name).first<{ id: number }>())?.id ?? null;
+}
+
+export async function roleIdFor(env: Env, contsRole: string, access: ContsAccess): Promise<number | null> {
+  if (!OFFICE.has(contsRole) || !hasAnyAccess(access)) return null;
+  if (isFullEverywhere(access)) {
+    // The Conts ledger roles below hold "*" too; the full-access role is the one that is not one of them.
+    const full = () => env.DB.prepare(`SELECT id FROM roles WHERE permissions LIKE '%"*"%' AND name NOT LIKE 'Conts: %' ORDER BY id LIMIT 1`).first<{ id: number }>();
+    let r = await full();
+    if (!r) {
+      // A new instance has no roles at all (production's first sign-on was refused for this, 8 Oct 2026):
+      // the full-access role is made here, named as Houzs names it.
+      await env.DB.prepare(`INSERT INTO roles (name, description, permissions, is_system, scope_to_pic) VALUES (?, ?, ?, 1, 0)`)
+        .bind("Owner", "Full access, for accounts with Full in every area of Property OS", JSON.stringify(["*"])).run();
+      r = await full();
+    }
+    const ledger = access[LEDGER_AREA] ?? "none";
+    if (!r || ledger === "none") return r?.id ?? null;
+    // Full everywhere with the Ledger: the full-access role's own keys plus the ledger's, one role per
+    // ledger level so two people at different levels never rewrite one shared role.
+    const base = await env.DB.prepare(`SELECT permissions FROM roles WHERE id = ?`).bind(r.id).first<{ permissions: string }>();
+    let keys: string[] = [];
+    try { keys = JSON.parse(base?.permissions ?? "[]") as string[]; } catch { keys = []; }
+    if (!keys.includes("*")) keys = ["*", ...keys];
+    const permissions = JSON.stringify([...new Set([...keys, ...ledgerPermissions(ledger)])]);
+    return upsertRole(env, contsRoleName(`full + ledger ${ledger}`), "Full access plus the ledger, set from the Permissions chart in Property OS", permissions);
+  }
+  const name = contsRoleName(contsRole);
+  const permissions = JSON.stringify(contsPermissions(access));
+  const id = await upsertRole(env, name, "Set from the Permissions chart in Property OS", permissions);
+  await saveContsRoleAccess(env, name, access);
+  return id;
 }
 
 const app = new Hono<{ Bindings: ContsEnv }>();

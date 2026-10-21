@@ -3,6 +3,7 @@ import { Routes, Route, Navigate, useParams, useLocation } from "react-router-do
 import { CONTS_HOME, CONTS_EXTRAS, isContsHiddenPath } from "./conts/navOnly";
 import { Layout } from "./components/Layout";
 import { useAuth } from "./auth/AuthContext";
+import { ContsLedgerGate } from "./conts/ContsLedgerGate";
 import { canUseAssistant } from "./auth/assistantAccess";
 import { isSalesStaff, isDirectorUser, isSalesDirectorUser, isSalesNonDirector, canViewFairReport, hasAnyScmPageAccess } from "./auth/salesAccess";
 import { capability, capabilitiesUnresolved } from "./auth/capabilities";
@@ -722,10 +723,10 @@ export default function App() {
         {/* Vendored 2990's MRP + read/list pages. Each wrapped in <Scm2990Shell>.
             product-models list precedes /:id so the literal segment matches first. */}
         <Route path="/scm/mrp" element={<ScmGuard area="scm.procurement.mrp"><Scm2990Shell><ScmMrpV2 /></Scm2990Shell></ScmGuard>} />
-        <Route path="/scm/accounting" element={<ScmGuard area="scm.finance.accounting"><Scm2990Shell><ScmAccountingV2 /></Scm2990Shell></ScmGuard>} />
-        <Route path="/scm/daily-bank" element={<ScmGuard area="scm.finance.accounting"><Scm2990Shell><ScmDailyBank /></Scm2990Shell></ScmGuard>} />
+        <Route path="/scm/accounting" element={<ContsLedgerGate><ScmGuard area="scm.finance.accounting"><Scm2990Shell><ScmAccountingV2 /></Scm2990Shell></ScmGuard></ContsLedgerGate>} />
+        <Route path="/scm/daily-bank" element={<ContsLedgerGate><ScmGuard area="scm.finance.accounting"><Scm2990Shell><ScmDailyBank /></Scm2990Shell></ScmGuard></ContsLedgerGate>} />
         <Route path="/scm/merchant-recon" element={<ScmGuard area="scm.finance.accounting"><Scm2990Shell><ScmMerchantRecon /></Scm2990Shell></ScmGuard>} />
-        <Route path="/scm/bank-recon" element={<ScmGuard area="scm.finance.accounting"><Scm2990Shell><ScmBankRecon /></Scm2990Shell></ScmGuard>} />
+        <Route path="/scm/bank-recon" element={<ContsLedgerGate><ScmGuard area="scm.finance.accounting"><Scm2990Shell><ScmBankRecon /></Scm2990Shell></ScmGuard></ContsLedgerGate>} />
         <Route path="/scm/settlement-setup" element={<ScmGuard area="scm.finance.accounting"><Scm2990Shell><ScmSettlementSetup /></Scm2990Shell></ScmGuard>} />
         <Route path="/scm/outstanding" element={<ScmGuard area="scm.finance.outstanding"><Scm2990Shell><ScmOutstandingV2 /></Scm2990Shell></ScmGuard>} />
         {/* Delivered-but-not-billed, aged. Same area key as Outstanding — it is the
@@ -756,12 +757,12 @@ export default function App() {
         <Route path="/scm/purchase-invoices/:id" element={<ScmGuard area="scm.procurement.pi"><Scm2990Shell><ScmPurchaseInvoiceDetailV2 /></Scm2990Shell></ScmGuard>} />
         {/* Payment Vouchers — standalone AP cash-out doc (port of 2990 0189/0202,
             Phase 1-B MYR). Gated on the finance area; /new precedes /:id. */}
-        <Route path="/scm/payment-vouchers" element={<ScmGuard area="scm.finance.accounting"><Scm2990Shell><ScmPaymentVouchersV2 /></Scm2990Shell></ScmGuard>} />
-        <Route path="/scm/payment-vouchers/new" element={<ScmGuard area="scm.finance.accounting"><Scm2990Shell><ScmPaymentVoucherNewV2 /></Scm2990Shell></ScmGuard>} />
-        <Route path="/scm/payment-vouchers/scan" element={<ScmGuard area="scm.finance.accounting"><Scm2990Shell><ScmPaymentVoucherScanV2 /></Scm2990Shell></ScmGuard>} />
-        <Route path="/scm/chart-of-accounts" element={<ScmGuard area="scm.finance.accounting"><Scm2990Shell><ScmChartOfAccountsV2 /></Scm2990Shell></ScmGuard>} />
+        <Route path="/scm/payment-vouchers" element={<ContsLedgerGate><ScmGuard area="scm.finance.accounting"><Scm2990Shell><ScmPaymentVouchersV2 /></Scm2990Shell></ScmGuard></ContsLedgerGate>} />
+        <Route path="/scm/payment-vouchers/new" element={<ContsLedgerGate><ScmGuard area="scm.finance.accounting"><Scm2990Shell><ScmPaymentVoucherNewV2 /></Scm2990Shell></ScmGuard></ContsLedgerGate>} />
+        <Route path="/scm/payment-vouchers/scan" element={<ContsLedgerGate><ScmGuard area="scm.finance.accounting"><Scm2990Shell><ScmPaymentVoucherScanV2 /></Scm2990Shell></ScmGuard></ContsLedgerGate>} />
+        <Route path="/scm/chart-of-accounts" element={<ContsLedgerGate><ScmGuard area="scm.finance.accounting"><Scm2990Shell><ScmChartOfAccountsV2 /></Scm2990Shell></ScmGuard></ContsLedgerGate>} />
         <Route path="/scm/other-debtors" element={<ScmGuard area="scm.finance.accounting"><Scm2990Shell><ScmOtherDebtorsV2 /></Scm2990Shell></ScmGuard>} />
-        <Route path="/scm/receipts" element={<ScmGuard area="scm.finance.accounting"><Scm2990Shell><ScmReceiptsV2 /></Scm2990Shell></ScmGuard>} />
+        <Route path="/scm/receipts" element={<ContsLedgerGate><ScmGuard area="scm.finance.accounting"><Scm2990Shell><ScmReceiptsV2 /></Scm2990Shell></ScmGuard></ContsLedgerGate>} />
         <Route path="/scm/official-receipts" element={<ScmGuard area="scm.finance.accounting"><Scm2990Shell><ScmOfficialReceiptsV2 /></Scm2990Shell></ScmGuard>} />
         <Route path="/scm/ap-invoices" element={<ScmGuard area="scm.finance.accounting"><Scm2990Shell><ScmApInvoicesV2 /></Scm2990Shell></ScmGuard>} />
         <Route path="/scm/ap-invoices/scan" element={<ScmGuard area="scm.finance.accounting"><Scm2990Shell><ScmPaymentVoucherScanV2 target="ap" /></Scm2990Shell></ScmGuard>} />
@@ -771,7 +772,7 @@ export default function App() {
         {/* The Forecast P&L (owner 2026-09-21): targets on the P&L's own tree; nothing posts. */}
         <Route path="/scm/forecast" element={<ScmGuard area="scm.finance.accounting"><Scm2990Shell><ScmForecastPnlV2 /></Scm2990Shell></ScmGuard>} />
         <Route path="/scm/finance-dashboard" element={<ScmGuard area="scm.finance.accounting"><Scm2990Shell><ScmFinanceDashboardV2 /></Scm2990Shell></ScmGuard>} />
-        <Route path="/scm/payment-vouchers/:id" element={<ScmGuard area="scm.finance.accounting"><Scm2990Shell><ScmPaymentVoucherDetailV2 /></Scm2990Shell></ScmGuard>} />
+        <Route path="/scm/payment-vouchers/:id" element={<ContsLedgerGate><ScmGuard area="scm.finance.accounting"><Scm2990Shell><ScmPaymentVoucherDetailV2 /></Scm2990Shell></ScmGuard></ContsLedgerGate>} />
         {/* TEMP — vendored 2990's stock-movement pages (wave 4: Adjustments /
             Transfers / Takes), parallel to the native /scm/* below. Each wrapped
             in <Scm2990Shell>. Literal /new precedes /:id so it matches first. */}
