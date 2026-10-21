@@ -1,6 +1,6 @@
 import { readDevice } from '../lib/deviceClass';
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
-import { useLocation, useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import { StatusBadge } from '../components/StatusBadge';
 import { BookingDrawer, MessageGuestModal, CentreModal, ModalActions } from '../components/booking/BookingDrawer';
@@ -112,6 +112,7 @@ export default function BookingsPage() {
   // URL-as-state (react-router, HashRouter): tab, card, filters, sort, page and search live in the query
   // string, so a link or a refresh shows the same list. The calendar deep-links with ?create=1.
   const [params, setParams] = useSearchParams();
+  const navigate = useNavigate();
   function updateParams(mut: (p: URLSearchParams) => void) {
     setParams(prev => { const next = new URLSearchParams(prev); mut(next); return next; }, { replace: true });
   }
@@ -357,6 +358,7 @@ export default function BookingsPage() {
   return (
     <>
       <PageHeader title="Reservations" sub={sub}
+        back={params.get('back') === 'today' ? { label: 'Back to Today', onClick: () => navigate('/operations/today') } : undefined}
         actions={<>
           <Button size="sm" variant="secondary" icon={<Icon name="Upload" size="sm" />} onClick={pickImportFile}>Import</Button>
           <Button size="sm" variant="secondary" icon={<Icon name="FileText" size="sm" />} onClick={exportCsv} loading={exporting}
