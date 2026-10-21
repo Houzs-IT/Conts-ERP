@@ -72,6 +72,20 @@ stays('/scm/payment-vouchers/abc', '/supply/finance/payment-vouchers', '/supply/
 stays('/scm/payment-vouchers/abc', '/finance/payment-vouchers', '/finance/payment-vouchers');
 stays('/scm/accounting?tab=tb', '/supply/finance/trial-balance', '/supply/finance/trial-balance');
 stays('/scm/sales-orders/1', '/finance/payment-vouchers', '/sales/orders');
+// Moving inside the engine between two ledger screens keeps the side too: the P&L's drill-down into the general
+// ledger (report-layout.ts), a receipt opened from a payment voucher.
+stays('/scm/accounting?tab=gl&accounts=310-0010&from=2026-08-01&to=2026-08-31', '/finance/profit-and-loss', '/finance/general-ledger');
+stays('/scm/receipts/abc', '/finance/payment-vouchers', '/finance/money-received');
+stays('/scm/accounting?tab=gl', '/supply/finance/trial-balance', '/supply/finance/general-ledger');
+stays('/scm/receipts/abc', '/sales/orders', '/supply/finance/money-received');
+
+// Approvals are off unless Settings turns them on (owner, 11 Oct 2026): hidden in both Finance groups.
+const offPaths = M.withoutOffItems ? paths(M.withoutOffItems(M.navFor('management', true), false)) : ['(withoutOffItems missing)'];
+check('switched-off Approvals is hidden in both sidebars', !offPaths.includes('/finance/approvals') && !offPaths.includes('/supply/finance/approvals'), offPaths.filter((p) => p.endsWith('approvals')).join(' '));
+check('switched-on Approvals shows in both sidebars', M.withoutOffItems
+  && ['/finance/approvals', '/supply/finance/approvals'].every((p) => paths(M.withoutOffItems(M.navFor('management', true), true)).includes(p)));
+check('the old Payment vouchers and Payables & receivables addresses are off the menu map',
+  M.areaOfPath('/procurement/payment-vouchers') === null && M.areaOfPath('/accounting') === null);
 
 // Consignment is switched off for Conts (owner, 11 Oct 2026): off every menu, its addresses open Home.
 const consignment = ['/consignment/order', '/sales/consignment-notes', '/consignment/return', '/procurement/consignment', '/consignment/purchase-receive', '/consignment/purchase-return'];

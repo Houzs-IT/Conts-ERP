@@ -72,18 +72,24 @@ export const ENGINE_PATH: Record<string, string> = {
   ...ledgerPaths('/supply/finance'),
 };
 
+/** Of the engine addresses above, only the Rental Finance group's sit in the rental sidebar. */
+const inRental = (menu: string) => menu.startsWith('/finance/');
+
 /** The menu destination an engine address sits under (its screen or a record on it), longest match first;
  *  null when none does. On a tie (one engine screen with a menu address in both sidebars) the address open now
- *  wins, so the sidebar does not jump; otherwise the later entry. */
+ *  wins, then the one on the same side as it, so the sidebar never jumps; otherwise the later entry. */
 export function menuPathFor(enginePath: string, current?: string | null): string | null {
-  let best: string | null = null;
+  let tied: string[] = [];
   let len = 0;
   for (const [menu, eng] of Object.entries(ENGINE_PATH)) {
     if (!enginePath.startsWith(eng) || eng.length < len) continue;
     const next = enginePath.charAt(eng.length);
     if (!(next === '' || (eng.includes('?') ? next === '&' : next === '/' || next === '?'))) continue;
-    if (eng.length === len && best === current) continue;
-    best = menu; len = eng.length;
+    if (eng.length > len) { tied = []; len = eng.length; }
+    tied.push(menu);
   }
-  return best;
+  if (tied.length === 0) return null;
+  if (current && tied.includes(current)) return current;
+  const sameSide = current ? tied.filter(m => inRental(m) === inRental(current)) : [];
+  return (sameSide.length ? sameSide : tied)[(sameSide.length ? sameSide : tied).length - 1];
 }

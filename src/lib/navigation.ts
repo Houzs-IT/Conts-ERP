@@ -192,7 +192,12 @@ export const NAV: NavGroup[] = [
   ] },
 ];
 
-export const WORKSPACE_LABEL: Record<Workspace, string> = { rental: 'Rental', supply: 'Supply chain' };
+/** Approvals are off unless Settings turns them on (owner, 11 Oct 2026); the page stays reachable by its address.
+ *  Both Finance groups carry it (keys approvals and approvalsSupply), so it is matched by its badge. */
+export const withoutOffItems = (groups: NavGroup[], approvalsOn: boolean) =>
+  groups.map(g => ({ ...g, items: g.items.filter(it => it.badge !== 'approvals' || approvalsOn) }));
+
+export const WORKSPACE_LABEL: Record<Workspace, string> ={ rental: 'Rental', supply: 'Supply chain' };
 
 /** Destinations a role cannot reach are removed, never disabled — routes.json permissionRules.
  *  Entries are permission areas (or single menu keys). System health matches MASTER_ROLES in
