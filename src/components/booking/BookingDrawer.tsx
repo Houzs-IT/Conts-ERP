@@ -776,7 +776,9 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
         </PhoneHistory>
       </div>
 
-      <div className="p-4 [border-top:1px_solid_var(--color-line)] bg-page flex flex-col gap-[9px] flex-none sticky bottom-0">
+      {/* Pinned to the bottom only when the window has room: in a short window (restored down, or half a screen) the pinned
+          buttons rose over the header and hid the whole reservation, and jumped about while the window was resized. */}
+      <div className="p-4 [border-top:1px_solid_var(--color-line)] bg-page flex flex-col gap-[9px] flex-none [@media(min-height:560px)]:sticky bottom-0">
         {block ? (
           <div className="flex gap-[9px]">
             <Button variant="secondary" style={{ flex: 1 }} onClick={() => setDatesOpen(true)} disabled={!d || !live}>Change dates</Button>

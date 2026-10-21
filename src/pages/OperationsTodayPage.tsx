@@ -199,7 +199,7 @@ function StayLine({ id, channel, time, done, unit, guest, sub, subTone, actions 
   return (
     <div className={cx(ROW, 'flex flex-wrap items-center gap-x-3 gap-y-2 text-copy')}>
       <Link to={reservationLink(id)} aria-label={`Open reservation: ${unit}, ${guest}`}
-        className="flex-1 min-w-[220px] flex items-center gap-3 text-ink no-underline rounded-control -m-1 p-1 hover:bg-page">
+        className="flex-1 min-w-[min(100%,24rem)] flex items-center gap-3 text-ink no-underline rounded-control -m-1 p-1 hover:bg-page">
         <span className="min-w-[52px] sm:w-[88px] flex-none flex flex-col whitespace-nowrap">
           <span className="font-semibold [font-variant-numeric:tabular-nums]">{time}</span>
           {done && <span className="text-meta text-success [font-variant-numeric:tabular-nums]">{done}</span>}
