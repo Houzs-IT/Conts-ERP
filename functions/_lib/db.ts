@@ -26,6 +26,9 @@ export interface Env {
    *  there, not here. With either unset the IT Support screen says it is not connected. */
   IT_HUB_URL?: string;
   IT_HUB_API_KEY?: string;
+  /** This site's own address, for the cron worker (it has no request to read it from): the Channex callback
+   *  the health report checks is registered against it. Set in wrangler.cron.toml. */
+  APP_ORIGIN?: string;
   /** "staging" on the preview environment only: lets management view the system as another account
    *  (functions/api/auth/view-as.ts). Never set on production. */
   VIEW_AS?: string;
