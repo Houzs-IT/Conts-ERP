@@ -6,11 +6,16 @@ import { Button } from "@2990s/design-system";
 import { PageHeader } from "../components/Layout";
 import { DateField } from "../vendor/scm/components/DateField";
 import styles from "../pages/scm-v2/SalesOrderDetail.module.css";
-import { MONTHS, useLedgerSettings, useSaveLedgerSettings } from "./ledgerSettings";
+import { useAuth } from "../auth/AuthContext";
+import { useConfirm } from "../vendor/scm/components/ConfirmDialog";
+import { MONTHS, useLedgerSettings, useSaveLedgerSettings, type LedgerSettings } from "./ledgerSettings";
 
 export function LedgerSetup() {
   const q = useLedgerSettings();
   const save = useSaveLedgerSettings();
+  const askConfirm = useConfirm();
+  // Saving needs the ledger's post key (PUT /accounting/settings/ledger); everyone with the Ledger may read.
+  const canSave = useAuth().can("scm.payment_voucher.post");
   const [start, setStart] = useState("");
   const [fyEnd, setFyEnd] = useState(8);
   const [note, setNote] = useState<string | null>(null);
@@ -24,8 +29,26 @@ export function LedgerSetup() {
 
   const onSave = async () => {
     setNote(null);
+    // Saves only from what was read: a form that failed to load is not a statement of the settings.
+    if (!q.isSuccess) return;
+    /* Only what changed is sent — the start date decides what posts (spec 3.8), so it is never resent by the way. */
+    const patch: Partial<LedgerSettings> = {};
+    const savedStart = q.data.ledgerStartDate ?? "";
+    if (start !== savedStart) patch.ledgerStartDate = start || null;
+    if (fyEnd !== q.data.fiscalYearEndMonth) patch.fiscalYearEndMonth = fyEnd;
+    if (Object.keys(patch).length === 0) { setNote("Nothing changed."); return; }
+    if (savedStart && patch.ledgerStartDate !== undefined) {
+      const ok = await askConfirm({
+        title: start ? `Move the start of the books to ${start}?` : "Clear the start of the books?",
+        body: start
+          ? "Documents dated before the new day stop posting; ones already posted stay in the books. Do this only when the opening balances are moved to match."
+          : "With no start date every document posts again, including edits of old ones that are already in the AutoCount opening balances.",
+        confirmLabel: start ? "Move it" : "Clear it",
+      });
+      if (!ok) return;
+    }
     try {
-      await save.mutateAsync({ ledgerStartDate: start || null, fiscalYearEndMonth: fyEnd });
+      await save.mutateAsync(patch);
       setNote("Saved.");
     } catch (err) {
       setNote(err instanceof Error ? err.message : "The settings could not be saved.");
@@ -58,8 +81,9 @@ export function LedgerSetup() {
           </span>
         </label>
         <div style={{ display: "flex", gap: "var(--space-3)", alignItems: "center" }}>
-          <Button variant="primary" size="sm" onClick={() => void onSave()} disabled={save.isPending || q.isLoading}>Save</Button>
+          <Button variant="primary" size="sm" onClick={() => void onSave()} disabled={save.isPending || !q.isSuccess || !canSave}>Save</Button>
           {note && <span style={{ fontSize: "var(--fs-13)" }}>{note}</span>}
+          {!canSave && <span style={{ fontSize: "var(--fs-12)", color: "var(--fg-muted)" }}>Only someone who can post to the ledger may change these.</span>}
         </div>
       </section>
     </div>

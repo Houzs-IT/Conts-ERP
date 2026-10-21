@@ -35,6 +35,9 @@ export const useSaveLedgerSettings = () => {
       // Every statement reads the fiscal year; posting reads the start date.
       void qc.invalidateQueries({ queryKey: ["report-bs"] });
       void qc.invalidateQueries({ queryKey: ["report-pnl"] });
+      void qc.invalidateQueries({ queryKey: ["report-monthly"] });
+      void qc.invalidateQueries({ queryKey: ["account-balances"] });
+      void qc.invalidateQueries({ queryKey: ["finance-dashboard"] });
     },
   });
 };
