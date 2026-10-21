@@ -92,6 +92,21 @@ describe('Trial Balance by department', () => {
     fireEvent.change(screen.getByLabelText('Trial balance department'), { target: { value: 'shared' } });
     expect(useAccountBalances).toHaveBeenLastCalledWith('shared');
   });
+
+  /* A journal may move an amount from one department to another (Shared costs shared out to Rental): one
+     department's debits and credits then differ, and that is not a fault in the books. */
+  it('a difference on one department is named as moved between departments, never as books that do not balance', () => {
+    useAccountBalances.mockReturnValue({
+      data: { balances: [
+        { account_code: '905-0000', account_name: 'RENT', account_type: 'EXPENSE', total_debit_sen: 10000, total_credit_sen: 0, balance_sen: 10000 },
+      ] },
+      isLoading: false, isPending: false, isError: false, isSuccess: true, error: null, status: 'success' as const,
+    });
+    render(wrap(<TrialBalanceTab />));
+    fireEvent.change(screen.getByLabelText('Trial balance department'), { target: { value: 'rental' } });
+    expect(screen.queryByText(/BOOKS DO NOT BALANCE/)).toBeNull();
+    expect(screen.getByText(/moved between departments/i)).toBeTruthy();
+  });
 });
 
 describe('Inventory > COGS', () => {

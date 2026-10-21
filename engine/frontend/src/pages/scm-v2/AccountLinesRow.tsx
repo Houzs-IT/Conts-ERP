@@ -3,6 +3,7 @@
 // never disagree; a link opens the full ledger page.
 
 import { Link } from 'react-router-dom';
+import type { Department } from '../../conts/department';
 import { fmtDate } from '../../vendor/shared/format';
 import { ledgerHref } from '../../vendor/scm/lib/report-layout';
 import { counterLabel, fmtLedger, fmtSide, useLedger } from '../../vendor/scm/lib/ledger-queries';
@@ -12,8 +13,8 @@ const th: React.CSSProperties = { padding: '3px 8px', fontSize: 'var(--fs-11)', 
 const td: React.CSSProperties = { padding: '2px 8px', verticalAlign: 'top', borderBottom: '1px solid var(--c-line, rgba(34,31,32,0.06))' };
 const num: React.CSSProperties = { ...td, textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' };
 
-export const AccountLinesRow = ({ code, from, to, colSpan }: { code: string; from: string; to: string; colSpan: number }) => {
-  const q = useLedger({ from, to, accounts: [code] });
+export const AccountLinesRow = ({ code, from, to, department = '', colSpan }: { code: string; from: string; to: string; department?: Department | ''; colSpan: number }) => {
+  const q = useLedger({ from, to, accounts: [code], department });
   const block = q.data?.blocks.find((b) => b.code === code) ?? null;
   const lines = block?.lines ?? [];
   return (
@@ -47,7 +48,7 @@ export const AccountLinesRow = ({ code, from, to, colSpan }: { code: string; fro
               <tr>
                 <td colSpan={5} style={{ ...td, borderBottom: 0, fontWeight: 600 }}>
                   共 {lines.length} 笔
-                  <Link to={ledgerHref([code], from, to)} style={{ marginLeft: 12, fontWeight: 400, color: 'var(--c-orange)' }}>在 GL 打开</Link>
+                  <Link to={ledgerHref([code], from, to, department)} style={{ marginLeft: 12, fontWeight: 400, color: 'var(--c-orange)' }}>在 GL 打开</Link>
                 </td>
                 <td style={{ ...num, borderBottom: 0, fontWeight: 700 }}>{fmtLedger(block?.debitSen ?? 0)}</td>
                 <td style={{ ...num, borderBottom: 0, fontWeight: 700 }}>{fmtLedger(block?.creditSen ?? 0)}</td>

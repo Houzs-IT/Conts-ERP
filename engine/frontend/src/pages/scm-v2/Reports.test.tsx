@@ -266,3 +266,13 @@ describe('the P&L by department', () => {
     expect(String((authedFetch as unknown as { mock: { calls: unknown[][] } }).mock.calls.at(-1)![0])).toContain('&department=rental');
   });
 });
+
+describe('a department P&L opens its own ledger', () => {
+  test('a figure clicked on the Rental P&L opens the General Ledger for Rental', () => {
+    navigateSpy.mockClear();
+    render(<PnLTab />);
+    fireEvent.change(screen.getByLabelText('P&L department'), { target: { value: 'rental' } });
+    fireEvent.click(screen.getByRole('button', { name: '501-0000 — SALES total' }));
+    expect(String(navigateSpy.mock.calls.at(-1)![0])).toMatch(/&department=rental$/);
+  });
+});

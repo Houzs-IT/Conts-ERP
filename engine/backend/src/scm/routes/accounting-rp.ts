@@ -97,6 +97,16 @@ const ADVANCE_KEY = 'ADV';
 /* Neither side of a reversal pair is a receipt or a payment (docs/bugs/0923). */
 const live = (l: GlLine) => countsInTheBooks(l);
 const sen = (l: GlLine) => Number(l.debit_sen ?? 0) - Number(l.credit_sen ?? 0);
+/** An entry's lines on the same account, as one line carrying their net. */
+const mergeByAccount = (lines: GlLine[]): GlLine[] => {
+  const at = new Map<string, GlLine>();
+  for (const l of lines) {
+    const prev = at.get(l.account_code);
+    const net = (prev ? sen(prev) : 0) + sen(l);
+    at.set(l.account_code, { ...(prev ?? l), debit_sen: Math.max(net, 0), credit_sen: Math.max(-net, 0) });
+  }
+  return [...at.values()];
+};
 
 type Fail = { ok: false; reason: string };
 /* The PostgREST client is untyped throughout the acc layer; borrow its type rather than write any. */
@@ -338,7 +348,9 @@ export async function buildReceiptsPayments(companyId: number, q: RpQuery, src: 
   };
 
   for (const [jeNo, lines] of byJe) {
-    const moneyLegs = lines.filter((l) => colSet.has(l.account_code));
+    /* One movement per money account per entry: a voucher or receipt across departments posts its bank side as one
+       line per department (Conts, spec 3.5), and sharing each of those out separately would round twice. */
+    const moneyLegs = mergeByAccount(lines.filter((l) => colSet.has(l.account_code)));
     if (moneyLegs.length === 0) continue;
     const first = lines[0]!;
     const meta = { jeNo, entryDate: first.entry_date, sourceType: first.source_type, sourceDocNo: first.source_doc_no, narration: first.notes, party: null as string | null };

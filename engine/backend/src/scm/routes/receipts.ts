@@ -29,7 +29,8 @@ import { DEFAULT_DEPARTMENT, isDepartment, splitByDepartment, type Department, t
 
 /** One receipt line as the form sends it; a refusal names the line. Conts: the department (spec 3.5), none is Supply chain. */
 type ReceiptLine = { description: string | null; code: string; amountSen: number; department: Department };
-function parseReceiptLine(l: any, i: number): ReceiptLine | { error: 'bad_line'; message: string } {
+function parseReceiptLine(raw: unknown, i: number): ReceiptLine | { error: 'bad_line'; message: string } {
+  const l = (raw ?? {}) as { creditAccountCode?: unknown; amountSen?: unknown; description?: unknown; department?: unknown };
   const code = String(l?.creditAccountCode ?? '').trim();
   const amount = Number(l?.amountSen);
   if (!code) return { error: 'bad_line', message: `Line ${i + 1} has no account.` };

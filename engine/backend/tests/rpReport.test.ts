@@ -240,3 +240,22 @@ describe('Receipts & Payments — columns per money account, rows in the owner\'
   });
 });
 type Laid = { kind: string; id: string; key?: string; label: string; flow?: string; totalLabel?: string; amountSen: number; pct: number | null; cells?: Record<string, number>; children: Laid[] };
+
+/* A voucher across two departments posts its bank side as one line per department (Conts, finance phase 1, spec
+   3.5). The report reads the bank side of an entry as ONE movement per account, so its figures stay exact. */
+describe('a voucher split across departments', () => {
+  test('pays exactly what it posted: RM 100.01 Rental + RM 100.01 Shared is RM 200.02, one row each', async () => {
+    const sb = world();
+    sb.tables.v_gl_entries.push(
+      gl('JE-D', '2026-07-20', 'PV', 'PV-D', '900-A001', 'RENTAL', 10001, 0, { department: 'rental' }),
+      gl('JE-D', '2026-07-20', 'PV', 'PV-D', '910-0000', 'UTILITIES', 10001, 0, { department: 'shared' }),
+      gl('JE-D', '2026-07-20', 'PV', 'PV-D', '310-0010', 'CASH AT BANK - MAYBANK', 0, 10001, { department: 'rental' }),
+      gl('JE-D', '2026-07-20', 'PV', 'PV-D', '310-0010', 'CASH AT BANK - MAYBANK', 0, 10001, { department: 'shared' }),
+    );
+    const without = await fetchReport(harness(world()), 'from=2026-07-01&to=2026-07-31');
+    const r = await fetchReport(harness(sb), 'from=2026-07-01&to=2026-07-31');
+    expect(r.totals.paymentsTotalSen - without.totals.paymentsTotalSen).toBe(20002);
+    expect(cell(r.payments, '900-A001', '310-0010') - cell(without.payments, '900-A001', '310-0010')).toBe(10001);
+    expect(cell(r.payments, '910-0000', '310-0010') - cell(without.payments, '910-0000', '310-0010')).toBe(10001);
+  });
+});

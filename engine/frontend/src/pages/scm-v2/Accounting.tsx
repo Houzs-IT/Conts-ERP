@@ -262,6 +262,9 @@ export const TrialBalanceTab = () => {
      the unknown marker and the failure is stated. */
   const unknown = q.isError || (!q.isSuccess && rows.length === 0);
   const NOT_KNOWN = '—';
+  /* One department's lines need not balance on their own: a journal may move an amount between departments
+     (Shared costs shared out to Rental). Its difference is that, not a fault in the books (Conts, spec 3.5). */
+  const bad = !department && totals.diff !== 0;
   return (
     <div className="space-y-3">
       <DepartmentSelect label="Trial balance department" blank="All departments" value={department} onChange={setDepartment} />
@@ -283,15 +286,17 @@ export const TrialBalanceTab = () => {
         <SummaryTile label="Σ Credit" value={unknown ? NOT_KNOWN : fmt(totals.cr)} />
         <div style={{
           padding: 'var(--space-3) var(--space-4)',
-          background: unknown ? 'var(--c-cream)' : totals.diff === 0 ? 'rgba(47, 93, 79, 0.10)' : 'rgba(184, 51, 31, 0.10)',
-          border: `1px solid ${unknown ? 'var(--c-line, rgba(34,31,32,0.08))' : totals.diff === 0 ? 'var(--c-secondary-a, #2F5D4F)' : 'var(--c-festive-b, #B8331F)'}`,
+          background: unknown || (department && totals.diff !== 0) ? 'var(--c-cream)' : bad ? 'rgba(184, 51, 31, 0.10)' : 'rgba(47, 93, 79, 0.10)',
+          border: `1px solid ${unknown || (department && totals.diff !== 0) ? 'var(--c-line, rgba(34,31,32,0.08))' : bad ? 'var(--c-festive-b, #B8331F)' : 'var(--c-secondary-a, #2F5D4F)'}`,
           borderRadius: 'var(--radius-md)',
         }}>
-          <div className={styles.subtitle} style={{ marginBottom: 2 }}>Difference (must be 0.00)</div>
-          <div style={{ fontSize: 'var(--fs-16)', fontWeight: 900, color: unknown ? 'var(--c-ink)' : totals.diff === 0 ? 'var(--c-secondary-a, #2F5D4F)' : 'var(--c-festive-b, #B8331F)' }}>
+          <div className={styles.subtitle} style={{ marginBottom: 2 }}>{department ? 'Difference (this department)' : 'Difference (must be 0.00)'}</div>
+          <div style={{ fontSize: 'var(--fs-16)', fontWeight: 900, color: unknown || (department && totals.diff !== 0) ? 'var(--c-ink)' : bad ? 'var(--c-festive-b, #B8331F)' : 'var(--c-secondary-a, #2F5D4F)' }}>
             {unknown
               ? `${NOT_KNOWN} — not checked`
-              : `${fmt(totals.diff)}${totals.diff === 0 ? ' — books balance' : ' — BOOKS DO NOT BALANCE'}`}
+              : department
+                ? `${fmt(totals.diff)}${totals.diff === 0 ? ' — this department balances' : ' — moved between departments by journals'}`
+                : `${fmt(totals.diff)}${totals.diff === 0 ? ' — books balance' : ' — BOOKS DO NOT BALANCE'}`}
           </div>
         </div>
       </section>

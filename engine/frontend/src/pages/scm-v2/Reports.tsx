@@ -81,11 +81,11 @@ const monthStart = (): string => `${myt().slice(0, 7)}-01`;
 
 /** 点开看明细其实就是看 general ledger (owner 2026-09-14): a figure opens the
     General Ledger on the node's accounts for the period (docs/bugs/0924). */
-const useOpenLedger = (from: () => string, to: () => string) => {
+const useOpenLedger = (from: () => string, to: () => string, department: () => Department | '' = () => '') => {
   const navigate = useNavigate();
   return (node: LaidNode) => {
     const codes = leafCodes(node);
-    if (codes.length > 0) navigate(ledgerHref(codes, from(), to()));
+    if (codes.length > 0) navigate(ledgerHref(codes, from(), to(), department()));
   };
 };
 
@@ -122,9 +122,9 @@ export const PnLTab = () => {
   const [department, setDepartment] = useState<Department | ''>('');
   const { can } = useAuth();
   const canArrange = can('scm.payment_voucher.post');
-  const openLedger = useOpenLedger(() => from, () => to);
+  const openLedger = useOpenLedger(() => from, () => to, () => department);
   const tree = useReportTree(level);
-  const drill = { from, to };
+  const drill = { from, to, department };
   const q = useQuery({
     queryKey: ['report-pnl', from, to, department],
     queryFn: () => fetchPnl(from, to, department),
@@ -162,7 +162,7 @@ export const PnLTab = () => {
         {!monthly && q.data && <ExportButtons sheet={sheet} fileBase={`pnl-${from}-to-${to}${department ? `-${department}` : ''}`} />}
       </div>
       {editing && <ReportLayoutEditor report="pnl" onClose={() => setEditing(false)} />}
-      {monthly && <MonthlyReport<PnlResponse> report="pnl" title="P&L" withCumulative fetchColumn={(col: MonthColumn) => fetchPnl(col.from, col.to, department)} keyParts={[department]} linesOf={pnlLines} fmt={fmtSenPlain} pctTitle="% of sales" />}
+      {monthly && <MonthlyReport<PnlResponse> report="pnl" title="P&L" withCumulative fetchColumn={(col: MonthColumn) => fetchPnl(col.from, col.to, department)} keyParts={[department]} department={department} linesOf={pnlLines} fmt={fmtSenPlain} pctTitle="% of sales" />}
       {!monthly && q.isLoading && <div style={soft}>Working the period out…</div>}
       {!monthly && q.isError && <div style={{ fontSize: 'var(--fs-13)', color: 'var(--c-danger, #a33)' }}>The statement did not load — adjust the dates to retry.</div>}
       {!monthly && q.data && lay && (

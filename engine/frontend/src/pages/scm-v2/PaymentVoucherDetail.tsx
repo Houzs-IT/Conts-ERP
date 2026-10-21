@@ -421,7 +421,7 @@ export const PaymentVoucherDetail = () => {
     if (apEdit && !apAccountCode) { void notify({ title: 'No AP control account', body: 'The AP / Other Creditor role has no account yet — set it on Accounting.', tone: 'error' }); return; }
     if (apEdit && editTotalSen <= 0) { void notify({ title: 'Nothing to pay yet', body: 'Tick an invoice, type a partial amount, or enter a prepay figure.', tone: 'error' }); return; }
     if (!isRefundPv && !apEdit && realLines.length === 0) { notify({ title: 'Add at least one line', body: 'Each line needs a debit account and an amount > 0.', tone: 'error' }); return; }
-    if (!isRefundPv && !apEdit && realLines.some((l) => !l.department)) { notify({ title: 'Choose each line’s department', body: 'Rental, Supply chain or Shared — the reports by department read it.', tone: 'error' }); return; }
+    if (!isRefundPv && !apEdit && realLines.some((l) => !l.department)) { void notify({ title: 'Choose each line’s department', body: 'Rental, Supply chain or Shared — the reports by department read it.', tone: 'error' }); return; }
     if (editOverAllocated) {
       notify({ title: 'Applied more than the voucher total', body: `You've applied ${fmtRm(editAllocatedSen)} to PIs but the voucher total is only ${fmtRm(editTotalSen)}.`, tone: 'error' });
       return;

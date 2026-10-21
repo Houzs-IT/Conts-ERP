@@ -6,9 +6,11 @@
 --    invoices and the rest) are Supply chain. Every existing line, and any line written without one, is Supply chain:
 --    until now the engine only booked the supply chain.
 --  * scm.v_gl_entries gains the column last; the rest of its definition is unchanged (create or replace keeps grants).
--- APPLY: by hand, staging first, then production (node scripts/migrate-pg.mjs --env-file=<file>, dry-run first).
+-- APPLY: by hand, to production before the code merges (no staging: finance, 21 Oct 2026); one transaction with its
+--   public.pos_migrations row, as scripts/migrate-pg.mjs writes it. Then check a REST read of the new column.
 
 set local search_path = scm, public, extensions;
+set local lock_timeout = '5s';
 
 alter table scm.journal_entry_lines
   add column if not exists department text not null default 'supply' check (department in ('rental', 'supply', 'shared'));
@@ -44,3 +46,6 @@ create or replace view scm.v_gl_entries as
      join scm.accounts a on a.account_code = l.account_code and a.company_id = j.company_id
   where j.posted = true
   order by j.entry_date desc, j.je_no desc, l.line_no;
+
+-- PostgREST reads the new column only after its schema cache reloads.
+notify pgrst, 'reload schema';
