@@ -607,6 +607,7 @@ scm.use("/stock-takes/*", scmAreaGuard("scm.warehouse.stock_take"));
 scm.route("/stock-takes", stockTakes);
 // ── SCM Finance (scm.finance.accounting) ────────────────────────────────────
 scm.use("/accounting/*", scmAreaGuard("scm.finance.accounting"));
+scm.use("/accounting/*", requireLedgerAccess({ except: ACCOUNTING_OPEN_PATHS })); // Conts: the Ledger area
 scm.route("/accounting", officialReceiptAttachments); // photos and documents (mig 0119)
 scm.route("/accounting", accounting);
 // Payment Vouchers — standalone AP cash-out doc (port of 2990 0189/0202, Phase
@@ -614,6 +615,7 @@ scm.route("/accounting", accounting);
 // rides the same L2 area guard as Accounting (GET=view, POST/PATCH=edit); the
 // finer scm.payment_voucher.* gates layer on inside the handlers.
 scm.use("/payment-vouchers/*", scmAreaGuard("scm.finance.accounting"));
+scm.use("/payment-vouchers/*", requireLedgerAccess());
 scm.route("/payment-vouchers", paymentVoucherAttachments); // photos and documents (mig 0119)
 scm.route("/payment-vouchers", paymentVouchers);
 // Other Debtors (owner 2026-09-03) — registry + debtor bills + receipts; the
@@ -623,6 +625,7 @@ scm.route("/other-debtors", otherDebtors);
 // Receipts (owner 2026-09-03, later the same day) — the unified money-in list
 // plus general receipts that post directly; same area, same key family.
 scm.use("/receipts/*", scmAreaGuard("scm.finance.accounting"));
+scm.use("/receipts/*", requireLedgerAccess());
 scm.route("/receipts", receiptAttachments); // photos and documents (mig 0119)
 scm.route("/receipts", receipts);
 // AP Invoices (owner 2026-09-06) — the non-stock supplier bill beside the
@@ -997,6 +1000,7 @@ import {
   paymentVoucherAttachments, apInvoiceAttachments,
 } from "./routes/doc-attachments";
 import { renovationDoInfo, renovationGrInfo, renovationPoInfo, renovationSiInfo } from "./routes/renovation-doc-flow";
+import { ACCOUNTING_OPEN_PATHS, requireLedgerAccess } from "../conts/ledger-access";
 // Import document files (mig 0119): the check that turns document numbers into documents. Reads only; each upload
 // then goes through its document's own prefix and guard.
 scm.use("/doc-attachments/*", scmAreaGuard("scm.sales.orders", { writeLevel: "view" }));

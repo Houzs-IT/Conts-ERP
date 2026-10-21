@@ -5,6 +5,7 @@
 // permission keys, and keeps them per role in app_settings so every request by that role follows them.
 import type { Env } from "../types";
 import { PAGES, type AccessLevel } from "../services/pageAccess";
+import { ledgerPermissions } from "./ledger-access";
 
 export type ContsLevel = "none" | "view" | "edit" | "full";
 const LEVELS: ContsLevel[] = ["none", "view", "edit", "full"];
@@ -29,6 +30,10 @@ const MONEY_PAGES: Record<string, string> = { "projects.finances": "projects", "
 
 export type ContsAccess = Record<string, ContsLevel>;
 
+/** The Ledger area (finance phase 1): not one of the eight above. It never counts towards Full
+ *  everywhere, and a sign-on without it (Property OS before the area existed) reads as none. */
+export const LEDGER_AREA = "ledger";
+
 /** Reads the levels out of a sign-on, refusing anything that is not a known area and level. */
 export function parseContsAccess(raw: unknown): ContsAccess | null {
   if (!raw || typeof raw !== "object") return null;
@@ -38,11 +43,15 @@ export function parseContsAccess(raw: unknown): ContsAccess | null {
     if (typeof level !== "string" || !LEVELS.includes(level as ContsLevel)) return null;
     out[area] = level as ContsLevel;
   }
+  const ledger = (raw as Record<string, unknown>)[LEDGER_AREA];
+  if (ledger !== undefined && (typeof ledger !== "string" || !LEVELS.includes(ledger as ContsLevel))) return null;
+  out[LEDGER_AREA] = (ledger as ContsLevel | undefined) ?? "none";
   return out;
 }
 
+const ledgerOf = (a: ContsAccess): ContsLevel => a[LEDGER_AREA] ?? "none";
 export const isFullEverywhere = (a: ContsAccess) => CONTS_AREAS.every((k) => a[k] === "full");
-export const hasAnyAccess = (a: ContsAccess) => CONTS_AREAS.some((k) => a[k] !== "none");
+export const hasAnyAccess = (a: ContsAccess) => CONTS_AREAS.some((k) => a[k] !== "none") || ledgerOf(a) !== "none";
 
 /** The engine's page access for those levels. Every page is stated, so nothing is left to inherit. */
 export function contsPageAccess(a: ContsAccess): Record<string, AccessLevel> {
@@ -52,6 +61,10 @@ export function contsPageAccess(a: ContsAccess): Record<string, AccessLevel> {
     for (const p of PAGES) if (p.key === page || p.key.startsWith(page + ".")) out[p.key] = a[area];
   }
   for (const key of INVOICE_PAGES) if (key in out) out[key] = a.scInvoices;
+  // The ledger screens sit on the accounting page: it opens at the higher of Invoices and Ledger.
+  if ("scm.finance.accounting" in out && rank(ledgerOf(a)) > rank(out["scm.finance.accounting"] as ContsLevel)) {
+    out["scm.finance.accounting"] = ledgerOf(a);
+  }
   for (const [key, area] of Object.entries(MONEY_PAGES)) if (key in out) out[key] = a[area] === "full" ? "full" : "none";
   // The supply chain umbrella only opens the menu group; each page under it keeps its own level.
   if ("scm" in out) out.scm = PAGES.some((p) => p.key.startsWith("scm.") && out[p.key] !== "none") ? "view" : "none";
@@ -72,6 +85,7 @@ export function contsPermissions(a: ContsAccess): string[] {
   keys.push(...ladder(a.scSales, [], ["scm.renovation.quote"], ["scm.renovation.vo.apply", "scm.renovation.terms"]));
   keys.push(...ladder(a.scProcurement, [], ["scm.renovation.po_split"], []));
   keys.push(...ladder(a.scInvoices, [], ["scm.renovation.bill"], []));
+  keys.push(...ledgerPermissions(ledgerOf(a)));
   return keys;
 }
 
