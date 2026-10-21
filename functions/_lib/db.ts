@@ -51,7 +51,10 @@ const numbered = (sql: string) => { let i = 0; return sql.replace(/\?/g, () => `
  *  which admits 15 clients in all (log: "EMAXCONNSESSION max clients reached in session mode - max clients are
  *  limited to pool_size: 15", 11 Oct 2026). Each statement used to open and close its own connection, about 20 for
  *  one unit page. One connection per request is enough: postgres.js sends a request's statements down it back to back
- *  without waiting for each answer. Measured against a 15-client Postgres with ten people opening unit pages at once,
+ *  without waiting for each answer, but only statements with no values: with prepare: false one that carries a value
+ *  (a `?`) is described first, which costs two waits, and holds back every statement after it until it is answered
+ *  (Oct 2026, about 30 ms each from the office to Supabase). Fewer such statements is what makes a page faster.
+ *  Measured against a 15-client Postgres with ten people opening unit pages at once,
  *  1 gave a 45 ms median and 60-95 ms slowest; 2 and 3 were no faster in the middle and ran over the limit, so their
  *  slowest pages waited 0.4-1.7 s on the retry below. */
 const PER_REQUEST = 1;

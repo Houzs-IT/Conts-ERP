@@ -123,7 +123,7 @@ counts.push([3, await counted(() => oldOwnerMonths(trend)), await counted(() => 
 
 console.log('Database queries for the Dashboard trend, 12 months (Nov 2025 to Oct 2026):');
 for (const [k, before, after] of counts) console.log(`  ${k} yearly-guarantee ${k === 1 ? 'unit' : 'units'}: before ${before}, after ${after}`);
-// After: the usual 7 (settings and one loadInputs), plus one loadInputs (6) when a contract year starts before the window.
+// After: the usual 2 (settings and one loadInputs), plus one more loadInputs when a contract year starts before the window.
 check('fewer queries after, never more than 13', counts.every(([, b, a]) => a < b && a <= 13), JSON.stringify(counts));
 
 /* ---------- Same figures, to the sen ---------- */
@@ -144,6 +144,62 @@ for (const count of [1, 3, 12]) {
 const twelve = await newRows(trend);
 check('12 months: unit 2 trues up in Aug 2026 and unit 3 (earlier contract) in May 2026',
   twelve.get('2026-08').find(r => r.unitId === U2)?.yearly?.trueUp === true && twelve.get('2026-05').find(r => r.unitId === U3)?.yearly?.trueUp === true);
+
+/* ---------- loadInputs in one statement, against the six it used to send (Oct 2026) ---------- */
+// Owner adjustments too (the demo has none): one with no unit, one held (left out), one before the window.
+for (const [i, [unit, kind, amount, on, state]] of [[U1, 'credit', 12345, '2026-03-15', 'open'], [null, 'charge', 6789, '2026-09-02', 'open'],
+  [U2, 'credit', 5000, '2026-08-20', 'held'], [U3, 'opening_debt', 40000, '2025-10-01', 'settled']].entries()) {
+  await sql`insert into owner_adjustments ${sql({ id: `chk-a-${i}`, owner_id: ownerOf[unit ?? U1], unit_id: unit, kind, amount, description: `Check ${i}`,
+    occurred_on: on, state, created_at: now, updated_at: now })}`;
+}
+// loadInputs as it was before: the units first, then four lists by their ids, then the payments by the stays' ids.
+async function sixQueries(from, toExclusive, scope = {}) {
+  const unitWhere = scope.unitId ? 'WHERE u.id = ?' : scope.unitIds ? 'WHERE u.id IN (SELECT jsonb_array_elements_text(?::text::jsonb))'
+    : scope.ownerIds ? 'WHERE u.owner_id IN (SELECT jsonb_array_elements_text(?::text::jsonb))' : '';
+  const unitArg = scope.unitId ? [scope.unitId] : scope.unitIds ? [JSON.stringify(scope.unitIds)] : scope.ownerIds ? [JSON.stringify(scope.ownerIds)] : [];
+  const units = await q(`${M.UNIT_SQL} ${unitWhere} ORDER BY p.name, u.unit_number`, ...unitArg);
+  const ids = JSON.stringify(units.map(u => u.id));
+  const list = '(SELECT jsonb_array_elements_text(?::text::jsonb))';
+  const stays = await q(`SELECT r.id, r.unit_id, r.check_in, r.check_out, r.collected_revenue, r.channel, r.external_ref, g.full_name AS guest_name
+    FROM reservations r LEFT JOIN guests g ON g.id = r.guest_id WHERE r.state IN ('confirmed','checked_in','checked_out')
+    AND r.channel NOT IN ('maintenance_block','owner_stay') AND r.check_in < ? AND r.check_out > ? AND r.unit_id IN ${list}`, toExclusive, from, ids);
+  const costs = await q(`SELECT e.id, e.unit_id, e.category, e.description, e.amount, e.incurred_on, e.reference, t.kind AS task_kind
+    FROM expenses e LEFT JOIN tasks t ON t.id = e.task_id WHERE e.charge_to = 'owner' AND e.incurred_on >= ? AND e.incurred_on < ? AND e.unit_id IN ${list}`, from, toExclusive, ids);
+  const adjustments = await q(`SELECT a.id, a.owner_id, a.unit_id, a.kind, a.amount, a.description, a.occurred_on, a.reference, a.state, a.statement_id
+    FROM owner_adjustments a WHERE a.state <> 'held' AND a.occurred_on < ? AND a.owner_id IN (SELECT DISTINCT owner_id FROM units WHERE id IN ${list})
+    ORDER BY a.occurred_on, a.id`, toExclusive, ids);
+  const history = await q(`SELECT c.id, c.unit_id, c.revenue_model, c.model, c.management_fee_pct, c.grr_amount, c.starts_on, c.ends_on, c.minimum_guarantee,
+    c.guarantee_starts_on, c.guarantee_ends_on, c.misc_charges, c.tenant_name, c.agent_fee_pct, c.minimum_guarantee_annual
+    FROM owner_contracts c WHERE c.unit_id IN ${list} ORDER BY c.starts_on DESC, c.created_at DESC`, ids);
+  const pieces = stays.length ? await q(`SELECT reservation_id, amount, status, kind, source, note FROM booking_payments WHERE reservation_id IN ${list}`, JSON.stringify(stays.map(s => s.id))) : [];
+  const of = (rows, key) => rows.reduce((m, r) => m.set(r[key], [...(m.get(r[key]) ?? []), { ...r }]), new Map());
+  const historyOf = of(history, 'unit_id'), piecesOf = of(pieces, 'reservation_id');
+  return {
+    units: units.map(u => (historyOf.get(u.id) ? { ...u, history: historyOf.get(u.id) } : { ...u })),
+    // The new statement lists stays by check-in, then id (the old one in whatever order the database read them).
+    stays: stays.map(s => {
+      const row = { ...s, check_in: s.check_in.slice(0, 10), check_out: s.check_out.slice(0, 10), collected_revenue: Number(s.collected_revenue) };
+      const parts = M.stayParts(row, piecesOf.get(s.id) ?? []);
+      return parts ? { ...row, parts } : row;
+    }).sort((a, b) => a.check_in.localeCompare(b.check_in) || (a.id < b.id ? -1 : 1)),
+    costs: costs.map(c => ({ ...c, incurred_on: c.incurred_on.slice(0, 10), amount: Number(c.amount) })),
+    adjustments: adjustments.map(a => ({ ...a, amount: Number(a.amount) })),
+  };
+}
+// Costs come in no set order, before or after.
+const costsById = i => ({ ...i, costs: [...i.costs].sort((a, b) => (a.id < b.id ? -1 : 1)) });
+for (const [label, scope] of [['every unit', {}], ['one owner', { ownerIds: [ownerOf[U2]] }], ['two units', { unitIds: [U1, U3] }], ['one unit', { unitId: U2 }]]) {
+  for (const [from, toEx] of [['2025-11-01', '2026-11-01'], ['2026-02-01', '2026-03-01']]) {
+    const before = await sixQueries(from, toEx, scope);
+    queries = 0;
+    const after = await M.loadInputs(q, from, toEx, scope);
+    const same = JSON.stringify(costsById(before)) === JSON.stringify(costsById(after));
+    check(`loadInputs ${label}, ${from} to ${toEx}: identical in ${queries} ${queries === 1 ? 'query' : 'queries'} (${after.units.length} units, ${after.stays.length} stays, ${after.stays.filter(s => s.parts).length} paid by instalments, ${after.costs.length} costs, ${after.adjustments.length} adjustments, ${after.units.filter(u => u.history).length} with contract history)`,
+      same && queries === 1 && after.stays.length > 0 && after.costs.length > 0);
+  }
+}
+check('loadInputs sees the instalment stay, the adjustments and the contract history', (await M.loadInputs(q, '2025-11-01', '2026-11-01')).stays.some(s => s.parts?.length === 2)
+  && (await M.loadInputs(q, '2025-11-01', '2026-11-01')).adjustments.length === 3 && (await M.loadInputs(q, '2025-11-01', '2026-11-01', { unitId: U3 })).units[0].history?.length === 3);
 
 await sql.end();
 db.kill();

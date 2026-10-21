@@ -403,41 +403,45 @@ export const UNIT_SQL = `
   FROM units u JOIN properties p ON p.id = u.property_id JOIN owners o ON o.id = u.owner_id
   LEFT JOIN owner_contracts c ON c.id = u.contract_id`;
 
-/** Everything needed for [from, toExclusive), for every unit, some owners' units, some units, or one unit. Six queries. */
+/** Everything needed for [from, toExclusive), for every unit, some owners' units, some units, or one unit. One query. */
 export async function loadInputs(q: Query, from: string, toExclusive: string, scope: { ownerIds?: string[]; unitIds?: string[]; unitId?: string } = {}): Promise<Inputs> {
   const unitWhere = scope.unitId ? 'WHERE u.id = ?'
     : scope.unitIds ? 'WHERE u.id IN (SELECT jsonb_array_elements_text(?::text::jsonb))'
     : scope.ownerIds ? 'WHERE u.owner_id IN (SELECT jsonb_array_elements_text(?::text::jsonb))' : '';
   const unitArg = scope.unitId ? [scope.unitId] : scope.unitIds ? [JSON.stringify(scope.unitIds)] : scope.ownerIds ? [JSON.stringify(scope.ownerIds)] : [];
-  const units = await q<UnitRow>(`${UNIT_SQL} ${unitWhere} ORDER BY p.name, u.unit_number`, ...unitArg);
-  const ids = JSON.stringify(units.map(u => u.id));
-  const [stays, costs, adjustments, history] = await Promise.all([
-    q<StayRow>(`
+  // One statement, each list as json (json, not jsonb, keeps the columns in order). With prepare: false (db.ts) the
+  // database library waits on every statement that carries a value twice and holds the next one back meanwhile, so the
+  // six lists this used to read one by one were twelve waits in a row; the Dashboard waits on this. Stays come in a
+  // fixed order, so two check-ins on the same day always list (and share out a rounding sen) the same way.
+  const [loaded] = await q<{ units: UnitRow[] | null; stays: StayRow[] | null; costs: CostRow[] | null; adjustments: AdjustmentRow[] | null; history: ContractRow[] | null; pieces: PaymentPiece[] | null }>(`
+    WITH su AS (SELECT u.id, u.owner_id FROM units u JOIN properties p ON p.id = u.property_id JOIN owners o ON o.id = u.owner_id ${unitWhere}),
+    st AS (
       SELECT r.id, r.unit_id, r.check_in, r.check_out, r.collected_revenue, r.channel, r.external_ref, g.full_name AS guest_name
       FROM reservations r LEFT JOIN guests g ON g.id = r.guest_id
       WHERE r.state IN ('confirmed','checked_in','checked_out') AND r.channel NOT IN ('maintenance_block','owner_stay')
-        AND r.check_in < ? AND r.check_out > ? AND r.unit_id IN (SELECT jsonb_array_elements_text(?::text::jsonb))`, toExclusive, from, ids),
-    q<CostRow>(`
-      SELECT e.id, e.unit_id, e.category, e.description, e.amount, e.incurred_on, e.reference, t.kind AS task_kind
-      FROM expenses e LEFT JOIN tasks t ON t.id = e.task_id
-      WHERE e.charge_to = 'owner' AND e.incurred_on >= ? AND e.incurred_on < ? AND e.unit_id IN (SELECT jsonb_array_elements_text(?::text::jsonb))`, from, toExclusive, ids),
-    q<AdjustmentRow>(`
-      SELECT a.id, a.owner_id, a.unit_id, a.kind, a.amount, a.description, a.occurred_on, a.reference, a.state, a.statement_id
-      FROM owner_adjustments a
-      WHERE a.state <> 'held' AND a.occurred_on < ? AND a.owner_id IN (SELECT DISTINCT owner_id FROM units WHERE id IN (SELECT jsonb_array_elements_text(?::text::jsonb)))
-      ORDER BY a.occurred_on, a.id`, toExclusive, ids),
-    q<ContractRow>(`
-      SELECT c.id, c.unit_id, c.revenue_model, c.model, c.management_fee_pct, c.grr_amount, c.starts_on, c.ends_on, c.minimum_guarantee,
-             c.guarantee_starts_on, c.guarantee_ends_on, c.misc_charges, c.tenant_name, c.agent_fee_pct, c.minimum_guarantee_annual
-      FROM owner_contracts c WHERE c.unit_id IN (SELECT jsonb_array_elements_text(?::text::jsonb))
-      ORDER BY c.starts_on DESC, c.created_at DESC`, ids),
-  ]);
+        AND r.check_in < ? AND r.check_out > ? AND r.unit_id IN (SELECT id FROM su))
+    SELECT
+      (SELECT json_agg(x ORDER BY x.property_name, x.unit_number) FROM (${UNIT_SQL} WHERE u.id IN (SELECT id FROM su)) x) AS units,
+      (SELECT json_agg(x ORDER BY x.check_in, x.id) FROM st x) AS stays,
+      (SELECT json_agg(x) FROM (
+        SELECT e.id, e.unit_id, e.category, e.description, e.amount, e.incurred_on, e.reference, t.kind AS task_kind
+        FROM expenses e LEFT JOIN tasks t ON t.id = e.task_id
+        WHERE e.charge_to = 'owner' AND e.incurred_on >= ? AND e.incurred_on < ? AND e.unit_id IN (SELECT id FROM su)) x) AS costs,
+      (SELECT json_agg(x ORDER BY x.occurred_on, x.id) FROM (
+        SELECT a.id, a.owner_id, a.unit_id, a.kind, a.amount, a.description, a.occurred_on, a.reference, a.state, a.statement_id
+        FROM owner_adjustments a
+        WHERE a.state <> 'held' AND a.occurred_on < ? AND a.owner_id IN (SELECT owner_id FROM su)) x) AS adjustments,
+      (SELECT json_agg(x ORDER BY c.starts_on DESC, c.created_at DESC) FROM owner_contracts c CROSS JOIN LATERAL (
+        SELECT c.id, c.unit_id, c.revenue_model, c.model, c.management_fee_pct, c.grr_amount, c.starts_on, c.ends_on, c.minimum_guarantee,
+               c.guarantee_starts_on, c.guarantee_ends_on, c.misc_charges, c.tenant_name, c.agent_fee_pct, c.minimum_guarantee_annual) x
+        WHERE c.unit_id IN (SELECT id FROM su)) AS history,
+      -- The payments recorded against these stays (migration 0091).
+      (SELECT json_agg(x) FROM (
+        SELECT bp.reservation_id, bp.amount, bp.status, bp.kind, bp.source, bp.note FROM booking_payments bp
+        WHERE bp.reservation_id IN (SELECT id FROM st)) x) AS pieces`, ...unitArg, toExclusive, from, from, toExclusive, toExclusive);
+  const [units, stays, costs, adjustments, history, pieces] = [loaded.units ?? [], loaded.stays ?? [], loaded.costs ?? [], loaded.adjustments ?? [], loaded.history ?? [], loaded.pieces ?? []];
   const historyOf = new Map<string, ContractRow[]>();
   for (const h of history) { const l = historyOf.get(h.unit_id); if (l) l.push(h); else historyOf.set(h.unit_id, [h]); }
-  // The payments recorded against these stays (migration 0091); a database without the table reads as none.
-  const pieces = stays.length ? await q<PaymentPiece>(`
-    SELECT reservation_id, amount, status, kind, source, note FROM booking_payments
-    WHERE reservation_id IN (SELECT jsonb_array_elements_text(?::text::jsonb))`, JSON.stringify(stays.map(s => s.id))).catch(() => [] as PaymentPiece[]) : [];
   const piecesOf = new Map<string, PaymentPiece[]>();
   for (const p of pieces) { const l = piecesOf.get(p.reservation_id); if (l) l.push(p); else piecesOf.set(p.reservation_id, [p]); }
   return {
