@@ -173,3 +173,33 @@ describe('what an edit refuses, and a draft', () => {
     expect(noKey.sb.tables.journal_entries).toHaveLength(1);
   });
 });
+
+describe('the ledger start date (Conts)', () => {
+  const START = '2026-07-01';
+  const REFUSAL = { error: `This date is before the books start on ${START}.` };
+  const started = () => {
+    const w = world();
+    w.sb.tables.acc_company_settings = [{ company_id: CO, ledger_start_date: START, fiscal_year_end_month: 8 }];
+    return w;
+  };
+
+  /* The review's double-post: a pre-start entry moved onto the start would be
+     re-posted while the old one could not be reversed. */
+  test('a posted pre-start entry cannot be edited onto a date after the start: refused, nothing written', async () => {
+    const { app, sb } = started();
+    const res = await put(app, 'je-163', { ...corrected, entryDate: '2026-07-05' });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual(REFUSAL);
+    expect(sb.tables.journal_entries).toHaveLength(1);
+    expect((sb.tables.journal_entries as Row[])[0].reversed).toBe(false);
+  });
+
+  test('a posted entry after the start cannot be moved before it', async () => {
+    const { app, sb } = started();
+    (sb.tables.journal_entries as Row[])[0].entry_date = '2026-07-10';
+    const res = await put(app, 'je-163', { ...corrected, entryDate: '2026-06-30' });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual(REFUSAL);
+    expect(sb.tables.journal_entries).toHaveLength(1);
+  });
+});

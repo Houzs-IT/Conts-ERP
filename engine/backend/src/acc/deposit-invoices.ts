@@ -42,6 +42,7 @@ import { CREDIT_NOTE_HEADER, cancelCreditNote, insertCreditNote, postCreditNote 
 import { refundedByInvoice } from './deposit-refunds';
 import { SO_NOT_AN_ORDER } from '../scm/shared/so-deliverable-states';
 import { fmtSen } from '../scm/shared/format';
+import { isBeforeLedgerStart, loadLedgerSettings } from './ledger-settings';
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- PostgREST client, untyped throughout the acc layer */
 type Db = any;
@@ -133,6 +134,10 @@ export async function depositInvoiceDue(
   if (!st.ok) return st;
   if (!st.settings.enabled) return { ok: true, due: false, why: 'switched_off' };
   if (st.settings.fromDate && date < st.settings.fromDate) return { ok: true, due: false, why: 'before_start' };
+  /* Nor before the ledger start (Conts): that payment is in the opening balances. */
+  const ls = await loadLedgerSettings(sb, p.companyId);
+  if (!ls.ok) return { ok: false, reason: 'The ledger settings could not be read.' };
+  if (isBeforeLedgerStart(date, ls.settings)) return { ok: true, due: false, why: 'before_start' };
   const { data, error } = await sb.from('sales_invoices')
     .select('id, status')
     .eq('so_doc_no', p.soDocNo)

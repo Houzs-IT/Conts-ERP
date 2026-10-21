@@ -334,3 +334,31 @@ describe('dry run — would this post, and if not, why?', () => {
     expect(sb.tables.journal_entries.filter((j) => j.source_type === 'SOPAY')).toHaveLength(2);
   });
 });
+
+describe('payments dated before the ledger start (Conts)', () => {
+  const started = (pays: Row[]) => {
+    const sb = world({ pays });
+    sb.tables.acc_company_settings = [{ company_id: 1, ledger_start_date: '2026-12-01', fiscal_year_end_month: 8 }];
+    return sb;
+  };
+
+  it('an order payment before the start is a skip, not a failure, and books nothing', async () => {
+    const sb = started([PAY({ paid_at: '2026-11-30T10:00:00+08:00' })]);
+    const out = await postSoPayment(sb, sb.tables.mfg_sales_order_payments[0] as never);
+    expect(out).toEqual({ ok: true, status: 'skipped_before_ledger_start' });
+    expect(sb.tables.journal_entries).toHaveLength(0);
+  });
+
+  it('an order payment on the start books', async () => {
+    const sb = started([PAY({ paid_at: '2026-12-01T10:00:00+08:00' })]);
+    const out = await postSoPayment(sb, sb.tables.mfg_sales_order_payments[0] as never);
+    expect(out).toMatchObject({ ok: true, status: 'posted' });
+  });
+
+  it('an invoice payment before the start is a skip', async () => {
+    const sb = started([]);
+    sb.tables.sales_invoices = [{ id: 'si-1', invoice_number: 'SI-1', company_id: 1, debtor_code: null, debtor_name: 'A' }];
+    const out = await postSiPayment(sb, { id: 'sp-1', sales_invoice_id: 'si-1', paid_at: '2026-11-02', method: 'cash', merchant_provider: null, amount_sen: 100, company_id: 1 });
+    expect(out).toEqual({ ok: true, status: 'skipped_before_ledger_start' });
+  });
+});

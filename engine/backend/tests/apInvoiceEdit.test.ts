@@ -143,3 +143,32 @@ describe('editing a posted bill re-posts', () => {
     expect(dead.status).toBe(409);
   });
 });
+
+describe('editing a posted bill around the ledger start (Conts)', () => {
+  test('moving it to before the start is refused before anything is saved', async () => {
+    const { app, sb } = harness();
+    const id = await raise(app);
+    expect((await json(app, `/ap-invoices/${id}/post`, 'POST')).status).toBe(200);
+    sb.tables.acc_company_settings = [{ company_id: CO, ledger_start_date: '2026-09-01', fiscal_year_end_month: 8 }];
+    const res = await json(app, `/ap-invoices/${id}`, 'PATCH', {
+      invoiceDate: '2026-08-31', lines: [{ description: 'Rent', debitAccountCode: '900-A002', amountSen: 1 }],
+    });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: 'This date is before the books start on 2026-09-01.' });
+    expect(sb.tables.ap_invoices[0]).toMatchObject({ invoice_date: '2026-09-01', total_sen: 400_000 });
+    expect(sb.tables.ap_invoice_lines.map((l) => l.debit_account_code)).toEqual(['900-A001']);
+    expect(sb.tables.journal_entries).toHaveLength(1);
+  });
+
+  test('a bill before the start may still be corrected; the books do not move', async () => {
+    const { app, sb } = harness();
+    const id = await raise(app);
+    expect((await json(app, `/ap-invoices/${id}/post`, 'POST')).status).toBe(200);
+    sb.tables.acc_company_settings = [{ company_id: CO, ledger_start_date: '2026-10-01', fiscal_year_end_month: 8 }];
+    const res = await json(app, `/ap-invoices/${id}`, 'PATCH', { notes: 'Rent September' });
+    expect(res.status, await res.clone().text()).toBe(200);
+    expect(await res.json()).toMatchObject({ ok: true, reposted: false });
+    expect(sb.tables.ap_invoices[0]).toMatchObject({ notes: 'Rent September' });
+    expect(sb.tables.journal_entries).toHaveLength(1);
+  });
+});

@@ -302,3 +302,38 @@ describe('edit and re-post (owner 2026-09-07: 收钱的日期错了 → 做 b)',
     expect((await afterVoid.json() as { error: string }).error).toBe('receipt_cancelled');
   });
 });
+
+describe('editing a receipt around the ledger start (Conts)', () => {
+  const patch = (app: Hono, path: string, body: Row) => app.request(path, {
+    method: 'PATCH', body: JSON.stringify(body), headers: { 'content-type': 'application/json' },
+  });
+  const make = async (app: Hono) => post(app, '/', {
+    payerName: 'ALLIANZ INSURANCE', receiptDate: '2026-02-10', bankAccountCode: '310-0010',
+    lines: [{ description: 'claim', creditAccountCode: '700-0000', amountSen: 88800 }],
+  });
+
+  test('moving a receipt to before the start is refused before anything is saved', async () => {
+    const tables = baseTables();
+    const app = harness(tables);
+    expect((await make(app)).status).toBe(201);
+    tables.acc_company_settings = [{ company_id: CO, ledger_start_date: '2026-02-01', fiscal_year_end_month: 8 }];
+    const res = await patch(app, `/${tables.acc_receipts[0]!.id}`, { receiptDate: '2026-01-20' });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: 'This date is before the books start on 2026-02-01.' });
+    expect(tables.acc_receipts[0]).toMatchObject({ receipt_date: '2026-02-10' });
+    expect(tables.journal_entries.filter((j) => j.source_type === 'RCT')).toHaveLength(1);
+    expect(tables.journal_entries.some((j) => j.reversed === true)).toBe(false);
+  });
+
+  test('a receipt before the start may still be corrected; the books do not move', async () => {
+    const tables = baseTables();
+    const app = harness(tables);
+    expect((await make(app)).status).toBe(201);
+    tables.acc_company_settings = [{ company_id: CO, ledger_start_date: '2026-03-01', fiscal_year_end_month: 8 }];
+    const res = await patch(app, `/${tables.acc_receipts[0]!.id}`, { receiptDate: '2026-02-11', payerName: 'ALLIANZ GENERAL' });
+    expect(res.status, await res.clone().text()).toBe(200);
+    expect(await res.json()).toMatchObject({ ok: true, reposted: false });
+    expect(tables.acc_receipts[0]).toMatchObject({ receipt_date: '2026-02-11', payer_name: 'ALLIANZ GENERAL' });
+    expect(tables.journal_entries).toHaveLength(1);
+  });
+});
