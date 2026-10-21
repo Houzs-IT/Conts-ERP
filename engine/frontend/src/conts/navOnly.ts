@@ -8,13 +8,14 @@
  *  administrator can add people and set the company details; each is still gated by its own permission. */
 const KEEP = new Set(["Sales Orders", "Service Cases", "Projects", "Supply Chain", "Finance", "Team", "Settings"]);
 
-/** Houzs modules Conts does not use (owner decision C7, 11 Oct 2026): the accounting ledger
- *  (journal, ledger, statements, chart of accounts, forecasting), consignment, HR commission and
- *  the AutoCount sync page. Switched off, not deleted: their menu entries are dropped and their
- *  addresses send you to CONTS_HOME (App.tsx). POS has no screen in this app; its endpoints are
- *  switched off in the backend. Each entry is a path prefix, matched on whole segments. */
+/** Houzs modules Conts does not use (owner decision C7, 11 Oct 2026): forecasting, the finance
+ *  dashboard, consignment, HR commission and the AutoCount sync page. Switched off, not deleted: their
+ *  menu entries are dropped and their addresses send you to CONTS_HOME (App.tsx). POS has no screen in
+ *  this app; its endpoints are switched off in the backend. Each entry is a path prefix, matched on
+ *  whole segments. The accounting ledger (journal, ledger, statements, chart of accounts) was switched
+ *  back on for finance phase 1 (owner, 21 Oct 2026); it opens only with the Ledger area (ContsLedgerGate). */
 export const CONTS_HIDDEN_PATHS: readonly string[] = [
-  "/scm/accounting", "/scm/chart-of-accounts", "/scm/forecast", "/scm/finance-dashboard",
+  "/scm/forecast", "/scm/finance-dashboard",
   "/scm/consignment", "/scm/consignment-orders", "/scm/consignment-notes", "/scm/consignment-returns",
   "/scm/purchase-consignment-orders", "/scm/purchase-consignment-receives", "/scm/purchase-consignment-returns",
   "/scm/hr",

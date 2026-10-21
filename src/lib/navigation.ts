@@ -1,4 +1,5 @@
 import type { UserRole, AccessLevel } from './types';
+import { LEDGER_SCREENS } from './scmEngine';
 
 /** `badge` names a live count from /api/nav/badges; shown only when above zero. */
 export type BadgeKey = 'today' | 'maintenance' | 'inbox' | 'statements' | 'approvals' | 'itSupport';
@@ -26,6 +27,7 @@ export interface NavGroup { label: string; workspace: Workspace; items: NavItem[
  *    so no two menu entries share a name.
  */
 const SUPPLY_SUPPORT = 'SUPPORT';
+const SUPPLY_FINANCE = 'FINANCE';
 
 export type SettingsSectionKey = 'company' | 'operations' | 'locale' | 'report' | 'agreement' | 'approvals' | 'services' | 'security';
 
@@ -42,6 +44,29 @@ export const SETTINGS_SECTIONS: { key: SettingsSectionKey; group: string; label:
   { key: 'services', group: 'OWNERS AND MONEY', label: 'Service prices', icon: 'Tag', description: 'Cleaning and maintenance items: what the owner is charged, what each costs us, and from when.' },
   { key: 'security', group: 'SECURITY', label: 'Sign-in and sessions', icon: 'Lock', description: 'How long people stay signed in, when accounts lock, and who needs two-step sign-in.' },
 ];
+
+/** Icons for the company ledger's screens (scmEngine.ts LEDGER_SCREENS), by slug. */
+const LEDGER_ICON: Record<string, string> = {
+  'payment-vouchers': 'banknote', 'money-received': 'hand-coins', 'bank-reconciliation': 'landmark',
+  'journal-entries': 'notebook-pen', 'general-ledger': 'book-open-text', 'trial-balance': 'scale',
+  'profit-and-loss': 'chart-line', 'balance-sheet': 'columns-2', 'debtor-ageing': 'user-round-check',
+  'creditor-ageing': 'truck', 'chart-of-accounts': 'list-tree', 'item-group-accounts': 'boxes',
+};
+
+/** The Finance group, in both sidebars: finance's own desk screens (area Finance) and the company ledger's screens
+ *  in the engine (area Ledger, finance phase 1). `prefix` is where the side keeps them; `keySuffix` keeps the menu
+ *  keys unique across the two sides. */
+export function financeItems(prefix: '/finance' | '/supply/finance', keySuffix: '' | 'Supply'): NavItem[] {
+  return [
+    { key: `payables${keySuffix}`, label: 'Accounts payable', icon: 'wallet', path: `${prefix}/payables`, area: 'finance' },
+    // Staff could not find where utilities go (comment sheet, Oct 2026): the month's bills of every unit, on Accounts payable.
+    { key: `utilityBills${keySuffix}`, label: 'Utility bills', icon: 'zap', path: `${prefix}/utility-bills`, area: 'finance' },
+    { key: `approvals${keySuffix}`, label: 'Approvals', icon: 'stamp', path: `${prefix}/approvals`, area: 'finance', badge: 'approvals' },
+    ...LEDGER_SCREENS.map(s => ({
+      key: `ledger_${s.slug}${keySuffix}`, label: s.label, icon: LEDGER_ICON[s.slug] ?? 'book-open', path: `${prefix}/${s.slug}`, area: 'ledger',
+    })),
+  ];
+}
 
 export const NAV: NavGroup[] = [
   { label: 'HOME', workspace: 'rental', items: [
@@ -75,12 +100,7 @@ export const NAV: NavGroup[] = [
     { key: 'contracts', label: 'Contracts', icon: 'file-signature', path: '/owners/contracts', area: 'owners' },
   ] },
   // Finance's desk work. Not on the phone (owner, 11 Oct 2026: money is not needed on the phone).
-  { label: 'FINANCE', workspace: 'rental', phone: false, items: [
-    { key: 'payables', label: 'Accounts payable', icon: 'wallet', path: '/finance/payables', area: 'finance' },
-    // Staff could not find where utilities go (comment sheet, Oct 2026): the month's bills of every unit, on Accounts payable.
-    { key: 'utilityBills', label: 'Utility bills', icon: 'zap', path: '/finance/utility-bills', area: 'finance' },
-    { key: 'approvals', label: 'Approvals', icon: 'stamp', path: '/finance/approvals', area: 'finance', badge: 'approvals' },
-  ] },
+  { label: 'FINANCE', workspace: 'rental', phone: false, items: financeItems('/finance', '') },
   { label: 'GROWTH', workspace: 'rental', items: [
     { key: 'pricing', label: 'Pricing', icon: 'tag', path: '/performance/pricing', area: 'performance', full: true },
     { key: 'reviews', label: 'Reviews', icon: 'star', path: '/performance/reviews', area: 'performance' },
@@ -162,6 +182,9 @@ export const NAV: NavGroup[] = [
     ] },
     // Houzs keeps credit / debit notes under Finance > Money in; finance roles only.
   ] },
+  // The same Finance as in Rental (finance phase 1): one set of company books for both sides, so the supply chain
+  // sidebar stays put while finance works.
+  { label: SUPPLY_FINANCE, workspace: 'supply', phone: false, items: financeItems('/supply/finance', 'Supply') },
   // The same IT Support screen as under System, at its own address so the supply chain sidebar stays put.
   // A Property OS screen, not an engine one: the engine must not call a Houzs address (CLAUDE.md).
   { label: SUPPLY_SUPPORT, workspace: 'supply', items: [
@@ -169,7 +192,12 @@ export const NAV: NavGroup[] = [
   ] },
 ];
 
-export const WORKSPACE_LABEL: Record<Workspace, string> = { rental: 'Rental', supply: 'Supply chain' };
+/** Approvals are off unless Settings turns them on (owner, 11 Oct 2026); the page stays reachable by its address.
+ *  Both Finance groups carry it (keys approvals and approvalsSupply), so it is matched by its badge. */
+export const withoutOffItems = (groups: NavGroup[], approvalsOn: boolean) =>
+  groups.map(g => ({ ...g, items: g.items.filter(it => it.badge !== 'approvals' || approvalsOn) }));
+
+export const WORKSPACE_LABEL: Record<Workspace, string> ={ rental: 'Rental', supply: 'Supply chain' };
 
 /** Destinations a role cannot reach are removed, never disabled — routes.json permissionRules.
  *  Entries are permission areas (or single menu keys). System health matches MASTER_ROLES in
@@ -192,7 +220,7 @@ export function switchedOff(path: string): boolean {
 }
 
 /** Menu areas (and single menu keys) whose screens exist only in the supply chain engine: hidden where it is not set up. */
-const ENGINE_ONLY_AREAS = ['serviceCases', 'projects', 'renoQuotations'];
+const ENGINE_ONLY_AREAS = ['serviceCases', 'projects', 'renoQuotations', 'ledger'];
 const FIXED_ROLES: UserRole[] = ['housekeeper', 'technician', 'owner'];
 
 /** Areas (and menu keys) closed to a role: from its permission levels where the session carries them, else the built-in list. */
@@ -232,9 +260,11 @@ export function screenClosed(path: string, access?: Record<string, AccessLevel>)
 
 export function navFor(role: UserRole, engine = false, access?: Record<string, AccessLevel>): NavGroup[] {
   const groups = navGroups(role, engine, access);
-  // IT Support alone must not open the supply chain workspace to someone with no supply chain screens.
-  const supplyWork = groups.some(g => g.workspace === 'supply' && g.label !== SUPPLY_SUPPORT);
-  return supplyWork ? groups : groups.filter(g => g.label !== SUPPLY_SUPPORT);
+  // IT Support and Finance are in the supply chain sidebar only so it stays put; alone they must not open the
+  // supply chain workspace to someone with no supply chain screens (Finance is then in Rental only).
+  const shared = (g: NavGroup) => g.workspace === 'supply' && (g.label === SUPPLY_SUPPORT || g.label === SUPPLY_FINANCE);
+  const supplyWork = groups.some(g => g.workspace === 'supply' && !shared(g));
+  return supplyWork ? groups : groups.filter(g => !shared(g));
 }
 
 function navGroups(role: UserRole, engine: boolean, access?: Record<string, AccessLevel>): NavGroup[] {
@@ -259,7 +289,6 @@ const SUPPLY_OFF_MENU: Record<string, [group: string, label: string, area: strin
   '/sales/unbilled': ['Sales order', 'Unbilled deliveries', 'scInvoices'],
   '/procurement/categories': ['Procurement', 'Categories', 'scProcurement'],
   '/procurement/product-models': ['Procurement', 'Product models', 'scProcurement'],
-  '/procurement/payment-vouchers': ['Procurement', 'Payment vouchers', 'scInvoices'],
   '/furniture/fabrics': ['Procurement', 'Fabric library', 'scProcurement'],
   '/transport/drivers': ['Transportation', 'Drivers', 'scTransportPlan'],
   '/transport/driver-leave': ['Transportation', 'Driver leave', 'scTransportPlan'],
@@ -270,8 +299,8 @@ const SUPPLY_OFF_MENU: Record<string, [group: string, label: string, area: strin
   '/transport/zones': ['Transportation', 'Delivery zones', 'scTransportPlan'],
   '/transport/residence-rules': ['Transportation', 'Residence rules', 'scTransportPlan'],
   '/transport/rate-cards': ['Transportation', 'Carriers & rates', 'scTransportPlan'],
-  // The server keeps these money screens to finance roles (MONEY_ONLY in functions/api/_middleware.ts).
-  '/accounting': ['Accounting', 'Payables & receivables', 'scInvoices'],
+  // The server keeps this money screen to finance roles (MONEY_ONLY in functions/api/_middleware.ts). The old
+  // Payment vouchers and Payables & receivables pages moved to Finance (finance phase 1; App.tsx).
   '/accounting/credit-notes': ['Accounting', 'Credit / debit notes', 'scInvoices'],
 };
 

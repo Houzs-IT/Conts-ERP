@@ -1,6 +1,6 @@
 import { type CSSProperties, useEffect, useMemo, useRef, useState } from 'react';
 import { color, shell, radius, motion, text } from '../theme';
-import { navFor, workspaceOf, WORKSPACE_LABEL, type BadgeKey, type NavGroup, type Workspace } from '../lib/navigation';
+import { navFor, withoutOffItems, workspaceOf, WORKSPACE_LABEL, type BadgeKey, type NavGroup, type Workspace } from '../lib/navigation';
 import { useApi } from '../lib/useApi';
 import { useSession } from '../lib/session';
 import { useNavCounts } from '../lib/navBadges';
@@ -38,10 +38,8 @@ export function activeKey(groups: NavGroup[], path: string) {
   return best?.key ?? null;
 }
 
-/** Approvals are off unless Settings turns them on (owner, 11 Oct 2026); the page stays reachable by its address.
- *  Shared with the phone menu so both menus hide the same things. */
-export const withoutOffItems = (groups: NavGroup[], approvalsOn: boolean) =>
-  groups.map(g => ({ ...g, items: g.items.filter(it => it.key !== 'approvals' || approvalsOn) }));
+/** Shared with the phone menu so both menus hide the same things (navigation.ts). */
+export { withoutOffItems };
 
 export default function Sidebar({ path, navigate, open, onToggle }: Props) {
   const { user, logout } = useSession();

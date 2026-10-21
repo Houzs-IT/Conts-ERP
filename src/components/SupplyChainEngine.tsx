@@ -98,7 +98,8 @@ export default function SupplyChainEngine({ enginePath, active = true }: { engin
       if (e.data?.type === 'conts:shown') setStarted(true);
       // A link inside the frame moved it: the address and the menu follow, without a new history entry.
       if (e.data?.type === 'conts:location' && typeof e.data.path === 'string' && isActive.current) {
-        const to = menuPathFor(e.data.path);
+        // A screen in both sidebars (Finance) resolves to the one open now, so the sidebar does not jump.
+        const to = menuPathFor(e.data.path, here.current);
         if (to && to !== here.current) { followed.current = to; navigate(to, { replace: true }); }
       }
     };

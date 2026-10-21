@@ -40,7 +40,6 @@ const WarehousesPage = lazy(() => import('./pages/WarehousesPage'));
 const PurchaseOrdersPage = lazy(() => import('./pages/PurchaseOrdersPage'));
 const GoodsReceiptsPage = lazy(() => import('./pages/GoodsReceiptsPage'));
 const PurchaseInvoicesPage = lazy(() => import('./pages/PurchaseInvoicesPage'));
-const PaymentVouchersPage = lazy(() => import('./pages/PaymentVouchersPage'));
 const PurchaseReturnsPage = lazy(() => import('./pages/PurchaseReturnsPage'));
 const PurchaseConsignmentPage = lazy(() => import('./pages/PurchaseConsignmentPage'));
 const StockPage = lazy(() => import('./pages/StockPage'));
@@ -70,7 +69,6 @@ const DeliveryTimeArrangementPage = lazy(() => import('./pages/DeliveryTimeArran
 const LastMileDeliveryPage = lazy(() => import('./pages/LastMileDeliveryPage'));
 const FabricsPage = lazy(() => import('./pages/FabricsPage'));
 const MrpPage = lazy(() => import('./pages/MrpPage'));
-const AccountingPage = lazy(() => import('./pages/AccountingPage'));
 const CreditNotesPage = lazy(() => import('./pages/CreditNotesPage'));
 const AirbnbReturnPage = lazy(() => import('./pages/AirbnbReturnPage'));
 const ConsignmentNotesPage = lazy(() => import('./pages/ConsignmentNotesPage'));
@@ -263,7 +261,8 @@ function Routed() {
         <Route path="/procurement/purchase-orders" element={<PurchaseOrdersPage />} />
         <Route path="/procurement/goods-received" element={<GoodsReceiptsPage />} />
         <Route path="/procurement/purchase-invoices" element={<PurchaseInvoicesPage />} />
-        <Route path="/procurement/payment-vouchers" element={<PaymentVouchersPage />} />
+        {/* Payment vouchers and Payables & receivables moved to Finance, in the engine (finance phase 1). */}
+        <Route path="/procurement/payment-vouchers" element={<Moved to="/finance/payment-vouchers" />} />
         <Route path="/procurement/purchase-returns" element={<PurchaseReturnsPage />} />
         <Route path="/procurement/consignment" element={<PurchaseConsignmentPage />} />
         <Route path="/procurement/stock" element={<StockPage />} />
@@ -300,7 +299,7 @@ function Routed() {
         <Route path="/transport/last-mile" element={<LastMileDeliveryPage />} />
         <Route path="/furniture/fabrics" element={<FabricsPage />} />
         <Route path="/procurement/mrp" element={<MrpPage />} />
-        <Route path="/accounting" element={<AccountingPage />} />
+        <Route path="/accounting" element={<Moved to="/finance/creditor-ageing" />} />
         <Route path="/accounting/credit-notes" element={<CreditNotesPage />} />
         <Route path="/channex/airbnb-return" element={<AirbnbReturnPage />} />
         <Route path="/sales/consignment-notes" element={<ConsignmentNotesPage />} />
@@ -317,6 +316,12 @@ function Routed() {
         <Route path="/finance/statements/:id" element={<MovedStatement />} />
         <Route path="/finance/payouts" element={<Moved to="/owners" add={{ view: 'payouts' }} />} />
         <Route path="/finance/approvals" element={<ApprovalsPage />} />
+        {/* The same screens in the supply chain Finance group, so that sidebar stays put (finance phase 1). */}
+        <Route path="/supply/finance/payables" element={<ExpensesPage />} />
+        <Route path="/supply/finance/utility-bills" element={<ExpensesPage utilities />} />
+        <Route path="/supply/finance/approvals" element={<ApprovalsPage />} />
+        {/* Project monitor was dropped (owner, 11 Oct 2026): old links open the Schedule. */}
+        <Route path="/projects/monitor" element={<Moved to="/projects/calendar" />} />
         <Route path="/owners" element={<OwnersPage />} />
         <Route path="/owners/:id" element={<OwnerProfileRoute />} />
         <Route path="/owners/contracts" element={<ContractsPage />} />
