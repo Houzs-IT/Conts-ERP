@@ -433,8 +433,9 @@ function BulkCloseModal({ action, jobs, onClose, onDone }: { action: 'done' | 'c
 
 /* ---------- one building ---------- */
 
-// Columns follow the card's own width, not the window's: with the detail panel open the list is narrow on a laptop.
-const COLS = '@4xl:grid @4xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.35fr)_minmax(0,1.25fr)_minmax(0,0.7fr)_minmax(0,0.7fr)_minmax(0,0.85fr)_minmax(0,1.2fr)] @6xl:grid-cols-[minmax(0,1.05fr)_minmax(0,1.15fr)_minmax(0,1.05fr)_minmax(0,0.6fr)_minmax(0,0.55fr)_minmax(0,0.8fr)_minmax(0,0.6fr)_minmax(0,0.85fr)_minmax(0,1.2fr)] @4xl:items-center @4xl:gap-2.5';
+// Columns follow the card's own width, not the window's. Checkout and check-in hold full guest names, so they get at
+// least 220px and the most share; amount and type are short and take the least.
+const COLS = '@4xl:grid @4xl:grid-cols-[minmax(0,0.7fr)_minmax(220px,1.6fr)_minmax(220px,1.6fr)_minmax(0,0.7fr)_minmax(0,0.55fr)_minmax(0,0.8fr)_minmax(0,1.1fr)] @6xl:grid-cols-[minmax(0,0.8fr)_minmax(220px,1.5fr)_minmax(220px,1.5fr)_minmax(0,0.6fr)_minmax(0,0.55fr)_minmax(0,0.7fr)_minmax(0,0.5fr)_minmax(0,0.85fr)_minmax(0,1.1fr)] @4xl:items-center @4xl:gap-2.5';
 const HIDDEN_IN_NARROW_TABLE = '@4xl:@max-6xl:hidden';
 const STACKED_LABEL = '@4xl:hidden flex-none w-[60px] text-meta text-muted-ink';
 const LABELLED_CELL = 'min-w-0 items-baseline gap-2';
@@ -492,12 +493,10 @@ function BuildingCard({ group, now, future, selected, busy, onSelect, onGuestLef
                 <b className="flex-none whitespace-nowrap text-ink">{d.unitNumber}</b>
                 <span className="ml-auto min-w-0 flex justify-end"><StatusBadge tone="critical" size="sm">No cleaning job</StatusBadge></span>
               </div>
-              <div className="flex items-center gap-x-1.5 min-w-0">
-                <span className="min-w-0 flex items-center gap-1"><span className="flex-none text-muted-ink">Out</span><b className="flex-none tabular-nums">{d.checkOutTime}</b><span className="min-w-0 truncate">{d.guestName}</span></span>
-                {d.state === 'checked_out' && <span className="flex-none"><StatusBadge tone="gold" size="sm">Out</StatusBadge></span>}
-                <span className="flex-none text-faint">·</span>
-                <span className="flex-none whitespace-nowrap">{d.next ? <><span className="text-muted-ink">In </span><b className="tabular-nums">{d.next.checkInTime}</b></> : <span className="text-muted-ink">No check-in</span>}</span>
-                {d.next && <span className="flex-none ml-auto pl-1 text-meta whitespace-nowrap"><TimeLeft at={d.next.checkInAt} now={now} /></span>}
+              <div className="flex flex-wrap gap-x-4 gap-y-1.5 min-w-0">
+                <PhoneStay label="Out" time={d.checkOutTime} name={d.guestName} aside={d.state === 'checked_out' && <StatusBadge tone="gold" size="sm">Out</StatusBadge>} />
+                {d.next ? <PhoneStay label="In" time={d.next.checkInTime} name={d.next.guestName} aside={<span className="ml-auto pl-1 text-meta whitespace-nowrap"><TimeLeft at={d.next.checkInAt} now={now} /></span>} />
+                  : <PhoneStay label="No check-in" />}
               </div>
               <div className="flex items-center justify-end gap-2 pt-0.5">
                 {d.state !== 'checked_out' && !future && <Button size="sm" variant="secondary" loading={busy === `left-${d.reservationId}`} onClick={() => onGuestLeft({ reservationId: d.reservationId }, d.unitNumber)}>Guest left</Button>}
@@ -552,8 +551,8 @@ function BuildingCard({ group, now, future, selected, busy, onSelect, onGuestLef
       {group.departures.map(d => (
         <div key={d.reservationId} className={cx('px-4 @4xl:px-5 py-3 [border-top:1px_solid_var(--color-line-soft)] text-copy grid grid-cols-1 @sm:grid-cols-2 items-baseline gap-x-4 gap-y-1.5', COLS)}>
           <div className="col-span-full @4xl:col-auto flex items-center gap-x-2 flex-wrap min-w-0"><span className="min-w-0"><b>{d.unitNumber}</b>{d.unit?.size && <span className="ml-1.5 @4xl:hidden text-meta text-muted-ink">{d.unit.size}</span>}</span><span className="@4xl:hidden"><StatusBadge tone="critical">No cleaning job planned</StatusBadge></span></div>
-          <div><b className="[font-variant-numeric:tabular-nums]">{d.checkOutTime}</b> · {d.guestName}{d.lateCheckOut && <StatusBadge tone="warning" className="ml-1">Late checkout</StatusBadge>}{d.state === 'checked_out' && <StatusBadge tone="gold" className="ml-1">Out</StatusBadge>}</div>
-          <div>{d.next ? <><CheckInTime time={d.next.checkInTime} saving={!!d.next.reservationId && busy === `in-${d.next.reservationId}`} onSave={d.next.reservationId ? t => onCheckIn(d.next!.reservationId!, t, d.unitNumber) : undefined} /> · {d.next.guestName}</> : <span className="text-muted-ink">No check-in</span>}</div>
+          <div className="min-w-0"><GuestLine time={<b className="[font-variant-numeric:tabular-nums]">{d.checkOutTime}</b>} name={d.guestName} />{d.lateCheckOut && <StatusBadge tone="warning" className="ml-1">Late checkout</StatusBadge>}{d.state === 'checked_out' && <StatusBadge tone="gold" className="ml-1">Out</StatusBadge>}</div>
+          <div className="min-w-0">{d.next ? <GuestLine time={<CheckInTime time={d.next.checkInTime} saving={!!d.next.reservationId && busy === `in-${d.next.reservationId}`} onSave={d.next.reservationId ? t => onCheckIn(d.next!.reservationId!, t, d.unitNumber) : undefined} />} name={d.next.guestName} /> : <span className="text-muted-ink">No check-in</span>}</div>
           <div><span className="@4xl:hidden text-muted-ink">Time left </span><TimeLeft at={d.next?.checkInAt} now={now} /></div>
           <div className="hidden @6xl:block text-muted-ink">—</div>
           <div className="hidden @6xl:block min-w-0">{d.unit?.layout ?? d.unit?.size ?? <span className="text-muted-ink">—</span>}</div>
@@ -639,7 +638,7 @@ const PHONE_STATUS: Record<string, string> = { ready: 'Ready to clean', done: 'D
 
 const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]!.toUpperCase()).join('');
 
-/** One job on a phone, in three short lines: unit and status; who leaves and arrives; layout, type, amount, cleaner. */
+/** One job on a phone: unit and status; who leaves and who arrives, each with the full name; layout, type, amount, cleaner. */
 function PhoneCleanCard({ r, now, active, busy, onSelect, onGuestLeft, onUndoLeft, picked, onPick }: {
   r: Row; now: number; active: boolean; busy: boolean; onSelect: () => void; onGuestLeft: () => void; onUndoLeft: () => void;
   picked?: boolean; onPick?: (on: boolean) => void;
@@ -665,18 +664,16 @@ function PhoneCleanCard({ r, now, active, busy, onSelect, onGuestLeft, onUndoLef
       {r.external ? (
         <div className="min-w-0 truncate">{r.external.clientName ?? <span className="text-muted-ink">No client name</span>}{r.external.clientPhone && <span className="text-muted-ink"> · {r.external.clientPhone}</span>}</div>
       ) : (
-        <div className="flex items-center gap-x-1.5 min-w-0 min-h-6">
+        <div className="flex flex-wrap gap-x-4 gap-y-1.5 min-w-0">
           {r.previous ? (
-            <span className="min-w-0 flex items-center gap-1">
-              <span className="flex-none text-muted-ink">Out</span><b className="flex-none tabular-nums">{r.previous.checkOutTime}</b>
-              <span className="min-w-0 truncate" title={r.previous.guestName}>{r.previous.guestName}</span>
-              {mayTick ? <GuestOutTick out={r.guestOut} busy={busy} onTick={r.guestOut ? onUndoLeft : onGuestLeft} small />
+            <PhoneStay label="Out" time={r.previous.checkOutTime} name={r.previous.guestName}
+              aside={mayTick ? <GuestOutTick out={r.guestOut} busy={busy} onTick={r.guestOut ? onUndoLeft : onGuestLeft} small />
                 : r.guestOut && <span className="flex-none text-gold-ink" title="Guest is out"><Icon name="Check" size="sm" /></span>}
-            </span>
-          ) : <span className="min-w-0 truncate text-muted-ink">No guest leaving</span>}
-          <span className="flex-none text-faint">·</span>
-          <span className="flex-none whitespace-nowrap">{r.next ? <><span className="text-muted-ink">In </span><b className="tabular-nums">{r.next.checkInTime}</b></> : <span className="text-muted-ink">No check-in</span>}</span>
-          {r.next && r.status !== 'done' && <span className="flex-none ml-auto pl-1 text-meta whitespace-nowrap"><TimeLeft at={r.next.checkInAt} now={now} /></span>}
+              note={r.guestOut && r.guestLeftAt ? (r.guestLeftAuto ? `Out at checkout ${hm(r.guestLeftAt)} (automatic)` : `Left at ${hm(r.guestLeftAt)}`) : undefined} />
+          ) : <PhoneStay label="No guest leaving" />}
+          {r.next ? <PhoneStay label="In" time={r.next.checkInTime} name={r.next.guestName}
+              aside={r.status !== 'done' && <span className="ml-auto pl-1 text-meta whitespace-nowrap"><TimeLeft at={r.next.checkInAt} now={now} /></span>} />
+            : <PhoneStay label="No check-in" />}
         </div>
       )}
       <div className="flex items-center gap-2 min-w-0 text-meta text-muted-ink">
@@ -698,6 +695,21 @@ function PhoneCleanCard({ r, now, active, busy, onSelect, onGuestLeft, onUndoLef
   );
 }
 
+/**
+ * One side of a phone card, top to bottom: label and time, the full guest name (wraps, never cut short), then a note.
+ * A side with a guest takes an equal share of the row and wraps under the other below 140px; an empty side ("No
+ * check-in") only takes its own width, so the other grows into the rest.
+ */
+function PhoneStay({ label, time, name, aside, note }: { label: string; time?: string; name?: string; aside?: ReactNode; note?: string }) {
+  return (
+    <div className={cx('min-w-0 flex flex-col', name ? 'flex-[1_1_140px]' : 'flex-none')}>
+      <span className="flex items-center gap-1.5 min-h-6"><span className="text-muted-ink">{label}</span>{time && <b className="tabular-nums">{time}</b>}{aside}</span>
+      {name && <span className="text-ink [overflow-wrap:anywhere]">{name}</span>}
+      {note && <span className="text-meta text-muted-ink">{note}</span>}
+    </div>
+  );
+}
+
 /** The "guest has checked out" tick: one tap marks them out, a second tap takes it back (until the clean starts). */
 function GuestOutTick({ out, busy, onTick, small }: { out: boolean; busy: boolean; onTick: () => void; small?: boolean }) {
   return (
@@ -711,10 +723,11 @@ function GuestOutTick({ out, busy, onTick, small }: { out: boolean; busy: boolea
   );
 }
 
+/** The time on its own line, then the full guest name, which wraps instead of being cut short. */
 function GuestLine({ time, name }: { time: ReactNode; name: string }) {
   return (
-    <span className="inline-flex items-baseline gap-1 max-w-full min-w-0 align-baseline">
-      <span className="flex-none">{time}</span><span className="flex-none">·</span><span className="truncate" title={name}>{name}</span>
+    <span className="flex flex-col min-w-0">
+      <span>{time}</span><span className="text-ink [overflow-wrap:anywhere]">{name}</span>
     </span>
   );
 }
@@ -747,7 +760,8 @@ function CleanerCell({ r }: { r: Row }) {
   const names = r.cleaners.length ? r.cleaners.map(c => c.name) : r.assigneeName ? [r.assigneeName] : [];
   return (
     // Unassigned stays grey on the row: the building header already counts it in red.
-    <div className={cx(LABELLED_CELL, 'flex', !names.length && 'text-muted-ink')} title={names.length > 1 ? names.join(', ') : undefined}>
+    // The tooltip carries the whole name when the narrow column cuts it short.
+    <div className={cx(LABELLED_CELL, 'flex', !names.length && 'text-muted-ink')} title={names.join(', ') || undefined}>
       <span className={STACKED_LABEL}>{names.length > 1 ? 'Cleaners' : 'Cleaner'}</span>
       {/* Phones have the room to list everyone; the desk column shows the first and how many more. */}
       <span className="truncate @4xl:hidden">{names.length ? names.join(', ') : 'Unassigned'}</span>
