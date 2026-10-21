@@ -91,8 +91,9 @@ const world = () => fakeSb({
   sales_invoices: [{ company_id: CO, invoice_number: '2990-SI-2608-001', so_doc_no: '2990-SO-2608-067', debtor_name: 'NG KAH YEE' }],
 });
 
-function harness(perms: string[] = ['scm.payment_voucher.post']) {
+function harness(perms: string[] = ['scm.payment_voucher.post'], edit?: (sb: ReturnType<typeof world>) => void) {
   const sb = world();
+  edit?.(sb);
   const app = new Hono();
   app.use('*', async (c, next) => {
     c.set('supabase' as never, sb as never);
@@ -189,5 +190,28 @@ describe('GET /accounting/gl/ledger — the ledger the AutoCount way', () => {
     expect((await harness().request('/accounting/gl/ledger?from=2026-08-31&to=2026-08-01')).status).toBe(400);
     expect((await harness().request('/accounting/gl/ledger?from=x&to=y')).status).toBe(400);
     expect((await harness([]).request('/accounting/gl/ledger?from=2026-08-01&to=2026-08-31')).status).toBe(403);
+  });
+});
+
+/* By department (Conts, finance phase 1, spec 3.5): the ledger prints only the chosen department's lines; the
+   other side of each entry is still named. Every line here is Supply chain except the advertising voucher. */
+describe('the general ledger by department', () => {
+  const tagged = (sb: ReturnType<typeof world>) => {
+    for (const l of sb.tables.v_gl_entries) l.department = l.je_no === '2990-JE-2608-0002' ? 'shared' : 'supply';
+  };
+
+  test('shared: only the advertising voucher, both of its lines, the bank brought forward only from shared lines', async () => {
+    const r = await fetchLedger(harness(undefined, tagged), 'from=2026-08-01&to=2026-08-31&department=shared');
+    expect(r.blocks.map((b) => b.code)).toEqual(['310-0010', '900-A001']);
+    expect(block(r, '310-0010')!.openingSen).toBe(0);
+    expect(block(r, '900-A001')!.lines.map((l) => l.debitSen)).toEqual([30_000]);
+  });
+
+  test('supply: everything else; an unknown department is a 400', async () => {
+    const app = harness(undefined, tagged);
+    const r = await fetchLedger(app, 'from=2026-08-01&to=2026-08-31&department=supply');
+    expect(r.blocks.map((b) => b.code)).not.toContain('900-A001');
+    expect(block(r, '310-0010')!.openingSen).toBe(100_000);
+    expect((await app.request('/accounting/gl/ledger?from=2026-08-01&to=2026-08-31&department=hq')).status).toBe(400);
   });
 });

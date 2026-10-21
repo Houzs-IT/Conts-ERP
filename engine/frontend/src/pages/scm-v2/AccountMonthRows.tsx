@@ -13,6 +13,7 @@
 // beside them.
 
 import { Link } from 'react-router-dom';
+import type { Department } from '../../conts/department';
 import { fmtDate } from '../../vendor/shared/format';
 import { ledgerHref } from '../../vendor/scm/lib/report-layout';
 import { useLedger } from '../../vendor/scm/lib/ledger-queries';
@@ -33,6 +34,8 @@ type Props = {
   columns: MonthColumn[];
   /** The whole range the columns cover — one read, whichever month is open. */
   from: string;
+  /** Conts: the statement's department (spec 3.5); empty = the whole company. */
+  department?: Department | '';
   to: string;
   /** A month key (YYYY-MM) to show alone, or null for every line of the range. */
   month: string | null;
@@ -46,8 +49,8 @@ type Props = {
 /** Whether a line dated `date` belongs under a column. */
 const inColumn = (c: MonthColumn, date: string): boolean => (c.cumulative ? date >= c.from && date <= c.to : date.slice(0, 7) === c.key);
 
-export const AccountMonthRows = ({ code, columns, from, to, month, rowSen, fmt, pctSlot }: Props) => {
-  const q = useLedger({ from, to, accounts: [code] });
+export const AccountMonthRows = ({ code, columns, from, to, department = '', month, rowSen, fmt, pctSlot }: Props) => {
+  const q = useLedger({ from, to, accounts: [code], department });
   const block = q.data?.blocks.find((b) => b.code === code) ?? null;
   const all = block?.lines ?? [];
   const lines = month ? all.filter((l) => l.date.slice(0, 7) === month) : all;
@@ -90,7 +93,7 @@ export const AccountMonthRows = ({ code, columns, from, to, month, rowSen, fmt, 
       <tr data-lines-foot={code} className={rowClass}>
         <td className={styles.name} style={{ ...name, fontWeight: 600 }}>
           共 {lines.length} 笔{month ? ` · ${month.slice(5, 7)}/${month.slice(0, 4)}` : ''}
-          <Link to={ledgerHref([code], from, to)} style={{ marginLeft: 12, fontWeight: 400, color: 'var(--c-orange)' }}>在 GL 打开</Link>
+          <Link to={ledgerHref([code], from, to, department)} style={{ marginLeft: 12, fontWeight: 400, color: 'var(--c-orange)' }}>在 GL 打开</Link>
         </td>
         {columns.map((c) => {
           const here = lines.filter((l) => inColumn(c, l.date));

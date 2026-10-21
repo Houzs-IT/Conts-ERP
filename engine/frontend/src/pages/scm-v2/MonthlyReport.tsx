@@ -20,6 +20,7 @@
 // ----------------------------------------------------------------------------
 
 import { Fragment, useEffect, useMemo, useState } from 'react';
+import type { Department } from '../../conts/department';
 import { useQueries } from '@tanstack/react-query';
 import { Download, Printer } from 'lucide-react';
 import { Button } from '@2990s/design-system';
@@ -73,6 +74,8 @@ export type MonthlyProps<T> = {
   pctTitle: string;
   /** Extra query-key parts (the R&P's accounts and party toggle). */
   keyParts?: string[];
+  /** Conts: the department the statement is for (spec 3.5); an account's lines open for it too. */
+  department?: Department | '';
 };
 
 const COUNTS = [3, 6, 12] as const;
@@ -82,7 +85,7 @@ export const ByMonthButton = ({ on, onToggle }: { on: boolean; onToggle: () => v
   <Button variant={on ? 'secondary' : 'ghost'} size="sm" onClick={onToggle} aria-pressed={on}>By month</Button>
 );
 
-export function MonthlyReport<T>({ report, title, withCumulative, fetchColumn, linesOf, fmt, pctTitle, keyParts = [] }: MonthlyProps<T>) {
+export function MonthlyReport<T>({ report, title, withCumulative, fetchColumn, linesOf, fmt, pctTitle, keyParts = [], department = '' }: MonthlyProps<T>) {
   const [latest, setLatest] = useState(myt());
   const [count, setCount] = useState<number>(6);
   const [showPct, setShowPct] = useState(false);
@@ -211,7 +214,7 @@ export function MonthlyReport<T>({ report, title, withCumulative, fetchColumn, l
                       })}
                     </tr>
                     {drilled && l.code && (
-                      <AccountMonthRows code={l.code} columns={columns} from={range.from} to={range.to} month={drillMonth[l.id] ?? null}
+                      <AccountMonthRows code={l.code} columns={columns} from={range.from} to={range.to} department={department} month={drillMonth[l.id] ?? null}
                         rowSen={l.cells.cumulative?.amountSen ?? Object.values(l.cells).reduce((sum, cell) => sum + (cell?.amountSen ?? 0), 0)} fmt={fmt} pctSlot={!showPct} />
                     )}
                   </Fragment>

@@ -28,7 +28,7 @@
 import { hasHouzsPerm } from '../lib/houzs-perms';
 import { requireActiveCompanyId } from '../lib/companyScope';
 import { paginateAll } from '../lib/paginate-all';
-import { resolveRoles } from '../../acc/rules';
+import { BAD_DEPARTMENT, departmentQuery, resolveRoles } from '../../acc/rules';
 import { classifyJournal, type JournalClass } from '../../acc/journal-class';
 import { resolveJournalRefs } from '../../acc/journal-refs';
 import { isReversalPair } from '../../acc/reversal-pairs';
@@ -136,6 +136,8 @@ export const ledgerReport = async (c: any): Promise<Response> => {
   const fromCode = String(c.req.query('fromAccount') ?? '').trim() || null;
   const toCode = String(c.req.query('toAccount') ?? '').trim() || null;
   const showReversed = ['1', 'true'].includes(String(c.req.query('showReversed') ?? ''));
+  const department = departmentQuery(c.req.query('department'));
+  if (department === false) return c.json(BAD_DEPARTMENT, 400);
   const sb = c.get('supabase');
 
   /* The chart: which accounts the ledger prints, in code order. */
@@ -164,6 +166,8 @@ export const ledgerReport = async (c: any): Promise<Response> => {
   const ledger = await paginateAll<GlLine>((f, t) => {
     let q = sb.from('v_gl_entries').select(SELECT).eq('company_id', co.companyId).lte('entry_date', to);
     if (!readAll) q = q.in('account_code', codes.length > 0 ? codes : ['—none—']);
+    // Conts (spec 3.5): only the chosen department's lines; the other side of each entry is read in full below.
+    if (department) q = q.eq('department', department);
     return q.order('line_id').range(f, t);
   });
   if (ledger.error) return c.json({ error: 'load_failed', reason: String((ledger.error as { message?: string }).message ?? ledger.error) }, 500);
@@ -177,7 +181,7 @@ export const ledgerReport = async (c: any): Promise<Response> => {
   const jeNos = [...jeNoSet];
   const entryLines = new Map<string, GlLine[]>();
   const remember = (l: GlLine) => { const at = entryLines.get(l.je_no) ?? []; at.push(l); entryLines.set(l.je_no, at); };
-  if (readAll) {
+  if (readAll && !department) {
     for (const l of ledger.data ?? []) if (jeNoSet.has(l.je_no)) remember(l);
   } else {
     for (const ns of chunks(jeNos)) {

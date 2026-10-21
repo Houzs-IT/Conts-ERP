@@ -18,6 +18,7 @@
 // ----------------------------------------------------------------------------
 
 import { useMemo, useState } from 'react';
+import { DEPARTMENT_OPTIONS, DepartmentSelect, nextLineDepartment, type Department } from '../../conts/department';
 import {
   useJournalEntryDetail, useCreateJournalEntry, usePostJournalEntry, useAccounts, leafAccounts,
   type JournalEntry, type JournalEntryLine, type JeLineIn,
@@ -73,11 +74,14 @@ export const senToRm = (sen: number): string => (sen > 0 ? (sen / 100).toFixed(2
 
 export type DraftLine = {
   accountCode: string; debit: string; credit: string; notes: string;
+  /* Conts: the line's department (spec 3.5), required before saving; a copy and an edit carry it. */
+  department: Department | '';
   /* Carried by an EDIT only — the form has no party boxes, and a copy drops
      the party on purpose; an edit must not lose it. */
   partyType?: string | null; partyCode?: string | null; partyName?: string | null;
 };
-const EMPTY_LINE: DraftLine = { accountCode: '', debit: '', credit: '', notes: '' };
+const EMPTY_LINE: DraftLine = { accountCode: '', debit: '', credit: '', notes: '', department: '' };
+const departmentOf = (d: string | null | undefined): Department | '' => (DEPARTMENT_OPTIONS.some((o) => o.value === d) ? (d as Department) : '');
 
 /** What a copy carries into the draft form: the narration and the lines,
     never the date (a copy is a new month's) nor the party (the person on a
@@ -86,7 +90,7 @@ export type DraftSeed = { narration: string; lines: DraftLine[] };
 
 export const seedFromEntry = (je: JournalEntry, lines: JournalEntryLine[]): DraftSeed => ({
   narration: je.narration ?? '',
-  lines: lines.map((l) => ({ accountCode: l.account_code, debit: senToRm(l.debit_sen), credit: senToRm(l.credit_sen), notes: l.notes ?? '' })),
+  lines: lines.map((l) => ({ accountCode: l.account_code, debit: senToRm(l.debit_sen), credit: senToRm(l.credit_sen), notes: l.notes ?? '', department: departmentOf(l.department) })),
 });
 
 /** What an EDIT opens the form with: the entry itself (its number decides the
@@ -103,6 +107,7 @@ export const editSeedFromEntry = (je: JournalEntry, lines: JournalEntryLine[]): 
   lines: lines.map((l) => ({
     accountCode: l.account_code, debit: senToRm(l.debit_sen), credit: senToRm(l.credit_sen), notes: l.notes ?? '',
     partyType: l.party_type, partyCode: l.party_code, partyName: l.party_name,
+    department: departmentOf(l.department),
   })),
 });
 
@@ -151,7 +156,8 @@ export const NewJournalForm = ({ onDone, initial, editing }: { onDone: () => voi
   }, [lines]);
 
   const canSave = !totals.bad && totals.dr === totals.cr && totals.dr > 0
-    && lines.every((l) => l.accountCode || (!l.debit && !l.credit));
+    && lines.every((l) => l.accountCode || (!l.debit && !l.credit))
+    && lines.every((l) => !l.accountCode || !!l.department);
 
   const setLine = (i: number, patch: Partial<DraftLine>) =>
     setLines((ls) => ls.map((l, j) => (j === i ? { ...l, ...patch } : l)));
@@ -168,6 +174,7 @@ export const NewJournalForm = ({ onDone, initial, editing }: { onDone: () => voi
           debitSen: rmToSen(l.debit) ?? 0,
           creditSen: rmToSen(l.credit) ?? 0,
           notes: l.notes.trim() || null,
+          department: l.department || null,
           ...(l.partyType || l.partyCode || l.partyName
             ? { partyType: l.partyType ?? null, partyCode: l.partyCode ?? null, partyName: l.partyName ?? null }
             : {}),
@@ -216,6 +223,8 @@ export const NewJournalForm = ({ onDone, initial, editing }: { onDone: () => voi
             value={l.credit} onChange={(e) => setLine(i, { credit: e.target.value, debit: e.target.value ? '' : l.debit })} />
           <input style={{ ...fieldStyle, flex: 1, minWidth: 160 }} placeholder="Line note" aria-label={`Line ${i + 1} note`}
             value={l.notes} onChange={(e) => setLine(i, { notes: e.target.value })} />
+          <DepartmentSelect style={{ ...fieldStyle, width: 140 }} label={`Line ${i + 1} department`} blank="Department…"
+            value={l.department} onChange={(d) => setLine(i, { department: d })} />
           {lines.length > 2 && (
             <button type="button" style={btnStyle()} onClick={() => setLines((ls) => ls.filter((_, j) => j !== i))}>Remove</button>
           )}
@@ -223,7 +232,7 @@ export const NewJournalForm = ({ onDone, initial, editing }: { onDone: () => voi
       ))}
 
       <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'center', flexWrap: 'wrap' }}>
-        <button type="button" style={btnStyle()} onClick={() => setLines((ls) => [...ls, { ...EMPTY_LINE }])}>Add line</button>
+        <button type="button" style={btnStyle()} onClick={() => setLines((ls) => [...ls, { ...EMPTY_LINE, department: nextLineDepartment(ls) }])}>Add line</button>
         <span style={{ fontSize: 'var(--fs-13)' }}>
           Dr {fmt(totals.dr)} · Cr {fmt(totals.cr)} ·{' '}
           {totals.dr === totals.cr && totals.dr > 0 && !totals.bad

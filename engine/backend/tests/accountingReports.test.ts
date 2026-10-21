@@ -277,3 +277,42 @@ describe('GET /accounting/reports/balance-sheet', () => {
     expect(b.layout.equity).toEqual([]);
   });
 });
+
+/* By department (Conts, finance phase 1, spec 3.5): the P&L reads only the chosen department's lines. Stock is the
+   supply chain's: a Rental or Shared P&L carries no stock lines. */
+describe('the P&L by department', () => {
+  const DEPT: Row[] = [
+    gl('501-0000', 'INCOME', 0, 100_000, { department: 'supply' }),
+    gl('310-0010', 'ASSET', 100_000, 0, { department: 'supply' }),
+    gl('590-0000', 'INCOME', 0, 150_000, { department: 'rental' }),
+    gl('310-0010', 'ASSET', 150_000, 0, { department: 'rental' }),
+    gl('900-A001', 'EXPENSE', 12_000, 0, { department: 'shared' }),
+    gl('310-0010', 'ASSET', 0, 12_000, { department: 'shared' }),
+  ];
+  type Pnl = { tradingIncome: Line[]; otherIncome: Line[]; costOfSales: Line[]; expenses: Line[]; totals: Record<string, number> };
+  const pnl = async (app: Hono, dep: string) =>
+    (await app.request(`/accounting/reports/pnl?from=2026-08-01&to=2026-08-31&department=${dep}`)).json() as Promise<Pnl>;
+
+  test('the profit and loss counts only the chosen department', async () => {
+    const { app } = harness(DEPT);
+    const rental = await pnl(app, 'rental');
+    expect(rental.otherIncome.map((l) => [l.code, l.amountSen])).toEqual([['590-0000', 150_000]]);
+    expect(rental.tradingIncome).toEqual([]);
+    expect(rental.expenses).toEqual([]);
+    expect(rental.costOfSales).toEqual([]);
+    expect(rental.totals.netProfitSen).toBe(150_000);
+    const shared = await pnl(app, 'shared');
+    expect(shared.expenses.map((l) => [l.code, l.amountSen])).toEqual([['900-A001', 12_000]]);
+    expect(shared.costOfSales).toEqual([]);
+    const supply = await pnl(app, 'supply');
+    expect(supply.tradingIncome.map((l) => [l.code, l.amountSen])).toEqual([['501-0000', 100_000]]);
+    expect(supply.costOfSales.map((l) => l.code)).toEqual(['620-0001']);   // the stock engine's closing stock stays with the supply chain
+  });
+
+  test('no department is the whole company, as before; an unknown one is a 400', async () => {
+    const { app } = harness(DEPT);
+    const all = await (await app.request('/accounting/reports/pnl?from=2026-08-01&to=2026-08-31')).json() as Pnl;
+    expect(all.totals.netProfitSen).toBe(100_000 + 150_000 - 12_000 + 10_000);
+    expect((await app.request('/accounting/reports/pnl?from=2026-08-01&to=2026-08-31&department=hq')).status).toBe(400);
+  });
+});

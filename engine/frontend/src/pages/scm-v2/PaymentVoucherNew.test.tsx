@@ -372,6 +372,7 @@ describe('the plain Payment Voucher (/new)', () => {
     expect(screen.getByText(/2 scanned file\(s\) will be attached/)).toBeTruthy();
     expect(screen.getByText(/tnb-page-1\.pdf, tnb-page-2\.jpg/)).toBeTruthy();
 
+    fireEvent.change(screen.getByLabelText('Line 1 department'), { target: { value: 'rental' } });
     fireEvent.click(screen.getByText('Create Voucher'));
     await waitFor(() => expect(uploadPvAsync).toHaveBeenCalledTimes(2));
     /* AFTER the create, onto ITS id, in scan order — sort_no is print order. */
@@ -429,6 +430,7 @@ describe('the plain Payment Voucher (/new)', () => {
       }]}><PaymentVoucherNew /></MemoryRouter>,
     );
     expect(screen.getByText('F3 saves')).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Line 1 department'), { target: { value: 'rental' } });
     const f3 = new KeyboardEvent('keydown', { key: 'F3', cancelable: true, bubbles: true });
     window.dispatchEvent(f3);
     expect(f3.defaultPrevented).toBe(true);
@@ -547,5 +549,54 @@ describe('the Customer Refund (?type=refund, §14)', () => {
     expect((screen.getByLabelText('Refund amount') as HTMLInputElement).disabled).toBe(true);
     expect((screen.getByText('Create Refund').closest('button') as HTMLButtonElement).disabled).toBe(true);
     refundSource = undefined;
+  });
+});
+
+/* The department on each line (Conts, finance phase 1, spec 3.5): an expense voucher waits for one on every line,
+   a line added takes the one above's, a copy carries them, and the save sends them. */
+describe('departments on a plain voucher', () => {
+  const scanned = () => render(
+    <MemoryRouter initialEntries={[{
+      pathname: '/scm/payment-vouchers/new',
+      state: { billPrefill: {
+        extraction: {
+          vendorName: 'TENAGA NASIONAL BERHAD', vendorRegNo: null, documentKind: 'bill' as const,
+          invoiceNumber: 'INV-77', invoiceDate: '2026-09-01', dueDate: null,
+          currency: 'MYR', totalSen: 15000, sstSen: null, lines: [],
+        },
+        memory: { payeeName: 'TNB', debitAccountCode: '900-A002', purpose: 'OTHER', timesSeen: 3 },
+      } },
+    }]}><PaymentVoucherNew /></MemoryRouter>,
+  );
+
+  test('Create Voucher waits for the department, and the save sends it', async () => {
+    mutateAsync.mockClear();
+    scanned();
+    const create = screen.getByText('Create Voucher').closest('button') as HTMLButtonElement;
+    expect(create.disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText('Line 1 department'), { target: { value: 'rental' } });
+    expect(create.disabled).toBe(false);
+    fireEvent.click(create);
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalled());
+    const payload = mutateAsync.mock.calls[0]![0] as { lines: Array<{ department?: string }> };
+    expect(payload.lines.map((l) => l.department)).toEqual(['rental']);
+  });
+
+  test('a copy carries each line\'s department', async () => {
+    copySourceDetail = {
+      paymentVoucher: {
+        id: 'pv-9', pv_number: 'PV-2608-009', payee_name: 'TNB', voucher_date: '2026-08-01',
+        credit_account_code: '320-1000', notes: null, currency: 'MYR', exchange_rate: 1, purpose: 'OTHER',
+      },
+      lines: [{ description: 'Electricity Aug', debit_account_code: '900-A002', amount_sen: 45000, department: 'shared' }],
+      allocations: [],
+    };
+    try {
+      draw('/scm/payment-vouchers/new?copyFrom=pv-9');
+      await waitFor(() => expect(screen.getByDisplayValue('Electricity Aug')).toBeTruthy());
+      expect((screen.getByLabelText('Line 1 department') as HTMLSelectElement).value).toBe('shared');
+    } finally {
+      copySourceDetail = undefined;
+    }
   });
 });

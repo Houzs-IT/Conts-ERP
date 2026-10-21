@@ -20,6 +20,7 @@
 // ----------------------------------------------------------------------------
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { DEPARTMENT_OPTIONS, DepartmentSelect, nextLineDepartment, type Department } from '../../conts/department';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { Save, Trash2, X } from 'lucide-react';
 import { Button } from '@2990s/design-system';
@@ -66,14 +67,18 @@ type DraftLine = {
   description:      string;
   debitAccountCode: string;
   amountSen:      number;
+  /* Conts: the line's department (spec 3.5), required on an expense line. */
+  department:       Department | '';
 };
 
-const newLine = (): DraftLine => ({
+const newLine = (department: Department | '' = ''): DraftLine => ({
   rid:              `l${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
   description:      '',
   debitAccountCode: '',
   amountSen:      0,
+  department,
 });
+const departmentOf = (d: unknown): Department | '' => (DEPARTMENT_OPTIONS.some((o) => o.value === d) ? (d as Department) : '');
 
 /* One outstanding-PI row in the "Apply to PI" picker, with the amount the
    operator chooses to apply (centi, MYR). */
@@ -322,6 +327,7 @@ export const PaymentVoucherNew = () => {
         description: String((l as Record<string, unknown>).description ?? ''),
         amountSen: Number((l as Record<string, unknown>).amount_sen ?? 0),
         debitAccountCode: String((l as Record<string, unknown>).debit_account_code ?? ''),
+        department: departmentOf((l as Record<string, unknown>).department),
       }));
     if (copied.length > 0) setLines(copied);
     setScanNote(`Copied from ${String(v.pv_number ?? 'voucher')} — new number, today's date, approvals restart; nothing is applied to bills yet.`);
@@ -356,7 +362,7 @@ export const PaymentVoucherNew = () => {
   const setLine  = (rid: string, patch: Partial<DraftLine>) =>
     setLines((prev) => prev.map((l) => (l.rid === rid ? { ...l, ...patch } : l)));
   const dropLine = (rid: string) => setLines((prev) => (prev.length <= 1 ? prev : prev.filter((l) => l.rid !== rid)));
-  const addLine  = () => setLines((prev) => [...prev, newLine()]);
+  const addLine  = () => setLines((prev) => [...prev, newLine(nextLineDepartment(prev))]);
   /* Insert adds a line and LANDS on its account (owner 2026-09-06: 按 Ins 直接
      加然后直接跳到那一行去输入资料 — the AP invoice's manners, here too);
      Enter on an amount hops to the next line's account, adding one when
@@ -368,7 +374,7 @@ export const PaymentVoucherNew = () => {
     setLandOn(null);
   }, [landOn, lines]);
   const addLineAndLand = () => {
-    const l = newLine();
+    const l = newLine(nextLineDepartment(lines));
     setLines((prev) => [...prev, l]);
     setLandOn(l.rid);
   };
@@ -521,7 +527,7 @@ export const PaymentVoucherNew = () => {
     ? !!payeeName.trim() && !!supplierId && !!creditAccountCode && totalSen > 0 && !!apAccountCode
     : isTransfer
       ? !!creditAccountCode && !!toAccountCode && toAccountCode !== creditAccountCode && transferSen > 0
-      : !!payeeName.trim() && !!creditAccountCode && realLines.length > 0;
+      : !!payeeName.trim() && !!creditAccountCode && realLines.length > 0 && realLines.every((l) => !!l.department);
 
   const transferMode = !isAp && isTransfer;
   const transferPayee = toAccount ? `Internal transfer to ${toAccount.account_code} ${toAccount.account_name}` : '';
@@ -543,6 +549,7 @@ export const PaymentVoucherNew = () => {
     if (isAp && !supplierId) { setDialog({ title: 'Pick a supplier', body: 'An AP Payment settles a supplier — choose whose invoices this pays.' }); return; }
     if (isAp && totalSen === 0) { setDialog({ title: 'Nothing to pay yet', body: 'Tick an invoice, type a partial amount, or enter a prepay figure.' }); return; }
     if (!isAp && realLines.length === 0) { setDialog({ title: 'Add at least one line', body: 'Each line needs a debit account and an amount > 0.' }); return; }
+    if (!isAp && realLines.some((l) => !l.department)) { setDialog({ title: 'Choose each line’s department', body: 'Rental, Supply chain or Shared — the reports by department read it.' }); return; }
     }
 
     /* AP Payment: the ONE GL line is written here — Dr the AP control account
@@ -564,6 +571,7 @@ export const PaymentVoucherNew = () => {
         description:      l.description || undefined,
         debitAccountCode: l.debitAccountCode,
         amountSen:      l.amountSen,
+        department:     l.department || undefined,
       }));
     const sendAllocations = applyToPi
       ? allocations.filter((a) => a.amountSen > 0).map((a) => (
@@ -946,6 +954,11 @@ export const PaymentVoucherNew = () => {
                     onCommit={(sen) => setLine(l.rid, { amountSen: sen ?? 0 })}
                     onKeyDown={(e) => { if (e.key === 'Enter') hopFrom(l.rid); }}
                     inputClassName={styles.fieldInput} selectOnFocus />
+                </label>
+                <label className={styles.field}>
+                  <span className={styles.fieldLabel}>Department *</span>
+                  <DepartmentSelect className={styles.fieldInput} label={`Line ${idx + 1} department`} blank="Choose…"
+                    value={l.department} onChange={(d) => setLine(l.rid, { department: d })} />
                 </label>
               </div>
             </div>

@@ -166,6 +166,32 @@ export async function resolveRoles(sb: any, companyId: number | null): Promise<R
 
 /* ── Line builders — the rules table above, as code ────────────────────────── */
 
+/** Conts (finance phase 1, spec 3.5): which side of the business a ledger line belongs to. A line that names none
+    is Supply chain, the side the engine's own postings come from (the column's default, migration 0134). */
+export const DEPARTMENTS = ['rental', 'supply', 'shared'] as const;
+export type Department = (typeof DEPARTMENTS)[number];
+export const DEFAULT_DEPARTMENT: Department = 'supply';
+export const isDepartment = (v: unknown): v is Department => (DEPARTMENTS as readonly unknown[]).includes(v);
+
+/** A report's ?department= (Conts, spec 3.5): a department, null when absent (the whole company), false when unknown. */
+export function departmentQuery(raw: string | undefined | null): Department | null | false {
+  const v = String(raw ?? '').trim();
+  if (!v) return null;
+  return isDepartment(v) ? v : false;
+}
+export const BAD_DEPARTMENT = { error: 'bad_department', message: 'The department must be rental, supply or shared.' };
+
+/** The money side of a voucher or receipt, split the way its other lines are: one amount per department, in the order
+    each first appears (a line naming none is Supply chain). Each department's books then balance on their own. */
+export function splitByDepartment(legs: ReadonlyArray<{ department?: Department | null; sen: number }>): Array<{ department: Department; sen: number }> {
+  const out = new Map<Department, number>();
+  for (const l of legs) {
+    const d = l.department ?? DEFAULT_DEPARTMENT;
+    out.set(d, (out.get(d) ?? 0) + l.sen);
+  }
+  return [...out].map(([department, sen]) => ({ department, sen }));
+}
+
 export type RuleLine = {
   accountCode: string;
   debitSen: number;
@@ -174,6 +200,7 @@ export type RuleLine = {
   partyCode?: string | null;
   partyName?: string | null;
   notes?: string | null;
+  department?: Department | null;
 };
 
 /** Sales invoice issued (docs/bugs/0829): Dr AR for the invoice total, the
@@ -356,7 +383,7 @@ export function piLines(
  */
 export function pvLines(
   pv: { pv_number: string; payee_name: string; credit_account_code: string },
-  debitLegs: Array<{ description: string | null; debit_account_code: string; myrSen: number }>,
+  debitLegs: Array<{ description: string | null; debit_account_code: string; myrSen: number; department?: Department | null }>,
   supplier: { code: string | null; name: string | null },
   /** The supplier's own AP control (a supplier payment): the Dr leg on it IS
       the supplier's sub-ledger, so it carries the party the way the invoice
@@ -364,7 +391,6 @@ export function pvLines(
       must read Dr 405-H001 / Cr bank. null (an expense voucher) stamps none. */
   apControlCode: string | null = null,
 ): RuleLine[] {
-  const totalSen = debitLegs.reduce((s, l) => s + l.myrSen, 0);
   const lines: RuleLine[] = debitLegs.map((l) => {
     const onControl = apControlCode != null && l.debit_account_code === apControlCode && !!supplier.code;
     return {
@@ -375,17 +401,22 @@ export function pvLines(
       partyCode: onControl ? supplier.code : null,
       partyName: onControl ? (supplier.name ?? pv.payee_name) : null,
       notes: `${l.description ?? 'Payment'} — ${pv.pv_number}`,
+      department: l.department ?? DEFAULT_DEPARTMENT,
     };
   });
-  lines.push({
-    accountCode: pv.credit_account_code,
-    debitSen: 0,
-    creditSen: totalSen,
-    partyType: supplier.code ? 'SUPPLIER' : null,
-    partyCode: supplier.code ?? null,
-    partyName: supplier.name ?? pv.payee_name,
-    notes: `Payment to ${pv.payee_name} — ${pv.pv_number}`,
-  });
+  // Conts: the bank is credited per department (one line when the voucher has one department, as before).
+  for (const part of splitByDepartment(debitLegs.map((l) => ({ department: l.department, sen: l.myrSen })))) {
+    lines.push({
+      accountCode: pv.credit_account_code,
+      debitSen: 0,
+      creditSen: part.sen,
+      partyType: supplier.code ? 'SUPPLIER' : null,
+      partyCode: supplier.code ?? null,
+      partyName: supplier.name ?? pv.payee_name,
+      notes: `Payment to ${pv.payee_name} — ${pv.pv_number}`,
+      department: part.department,
+    });
+  }
   return lines;
 }
 

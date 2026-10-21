@@ -60,7 +60,7 @@ describe('the tree', () => {
     const onPick = vi.fn();
     render(<Tree level="all" onPick={onPick} />);
     fireEvent.click(screen.getByRole('button', { name: 'Lines of 900-A001 — RENTAL' }));
-    expect(useLedger).toHaveBeenLastCalledWith({ from: '2026-08-01', to: '2026-08-31', accounts: ['900-A001'] });
+    expect(useLedger).toHaveBeenLastCalledWith({ from: '2026-08-01', to: '2026-08-31', accounts: ['900-A001'], department: '' });
     const drill = document.querySelector('tr[data-lines-of="900-A001"]') as HTMLElement;
     expect(drill).not.toBeNull();
     expect(within(drill).getByText('Rent August')).toBeTruthy();

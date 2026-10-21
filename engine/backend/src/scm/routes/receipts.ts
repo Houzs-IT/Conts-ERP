@@ -25,7 +25,43 @@ import { docMonthTag, mintMonthlyDocNo } from '../lib/doc-no';
 import { dateOrNull } from '../lib/date-coerce';
 import { todayMyt } from '../lib/my-time';
 import { postJournal, reverseJournal } from '../../acc/engine';
-import { type RuleLine } from '../../acc/rules';
+import { DEFAULT_DEPARTMENT, isDepartment, splitByDepartment, type Department, type RuleLine } from '../../acc/rules';
+
+/** One receipt line as the form sends it; a refusal names the line. Conts: the department (spec 3.5), none is Supply chain. */
+type ReceiptLine = { description: string | null; code: string; amountSen: number; department: Department };
+function parseReceiptLine(raw: unknown, i: number): ReceiptLine | { error: 'bad_line'; message: string } {
+  const l = (raw ?? {}) as { creditAccountCode?: unknown; amountSen?: unknown; description?: unknown; department?: unknown };
+  const code = String(l?.creditAccountCode ?? '').trim();
+  const amount = Number(l?.amountSen);
+  if (!code) return { error: 'bad_line', message: `Line ${i + 1} has no account.` };
+  if (!Number.isInteger(amount) || amount <= 0) {
+    return { error: 'bad_line', message: `Line ${i + 1}: amountSen must be a positive integer (got ${String(l?.amountSen)}).` };
+  }
+  if (l?.department != null && !isDepartment(l.department)) {
+    return { error: 'bad_line', message: `Line ${i + 1}: the department must be Rental, Supply chain or Shared.` };
+  }
+  return {
+    description: l?.description ? String(l.description).trim() : null, code, amountSen: amount,
+    department: isDepartment(l?.department) ? l.department : DEFAULT_DEPARTMENT,
+  };
+}
+
+/** Dr the bank, Cr each line. The bank is debited per department (one line when the receipt has one), so each
+    department's books balance on their own. */
+function receiptRuleLines(bank: string, payer: string, receiptNumber: string, lines: ReceiptLine[]): RuleLine[] {
+  return [
+    ...splitByDepartment(lines.map((l) => ({ department: l.department, sen: l.amountSen }))).map((part) => ({
+      accountCode: bank, debitSen: part.sen, creditSen: 0,
+      partyType: null, partyCode: null, partyName: payer,
+      notes: `Receipt ${receiptNumber} — ${payer}`, department: part.department,
+    })),
+    ...lines.map((l) => ({
+      accountCode: l.code, debitSen: 0, creditSen: l.amountSen,
+      partyType: null, partyCode: null, partyName: null,
+      notes: l.description ?? receiptNumber, department: l.department,
+    })),
+  ];
+}
 import { requireLeafAccount } from './accounting-chart';
 import { readSoRefs } from '../lib/so-ref-lookup';
 
@@ -132,15 +168,11 @@ export const createReceiptHandler = async (c: any): Promise<Response> => {
   if (rawLines.length === 0 || rawLines.length > 50) {
     return c.json({ error: 'lines_required', message: 'A receipt takes 1 to 50 lines.' }, 400);
   }
-  const lines: Array<{ description: string | null; code: string; amountSen: number }> = [];
+  const lines: ReceiptLine[] = [];
   for (const [i, l] of rawLines.entries()) {
-    const code = String(l?.creditAccountCode ?? '').trim();
-    const amount = Number(l?.amountSen);
-    if (!code) return c.json({ error: 'bad_line', message: `Line ${i + 1} has no account.` }, 400);
-    if (!Number.isInteger(amount) || amount <= 0) {
-      return c.json({ error: 'bad_line', message: `Line ${i + 1}: amountSen must be a positive integer (got ${String(l?.amountSen)}).` }, 400);
-    }
-    lines.push({ description: l?.description ? String(l.description).trim() : null, code, amountSen: amount });
+    const parsed = parseReceiptLine(l, i);
+    if ('error' in parsed) return c.json(parsed, 400);
+    lines.push(parsed);
   }
   /* Same doors as the Debtor Bill's lines: headers refuse (父户不记账),
      control accounts refuse (由模块过账). */
@@ -172,24 +204,14 @@ export const createReceiptHandler = async (c: any): Promise<Response> => {
     description: l.description,
     credit_account_code: l.code,
     amount_sen: l.amountSen,
+    department: l.department,
   })));
   if (lineErr) {
     await sb.from('acc_receipts').delete().eq('company_id', coId).eq('id', receipt.id);
     return c.json({ error: 'save_failed', reason: lineErr.message }, 500);
   }
 
-  const ruleLines: RuleLine[] = [
-    {
-      accountCode: bank, debitSen: totalSen, creditSen: 0,
-      partyType: null, partyCode: null, partyName: payer,
-      notes: `Receipt ${receipt.receipt_number} — ${payer}`,
-    },
-    ...lines.map((l) => ({
-      accountCode: l.code, debitSen: 0, creditSen: l.amountSen,
-      partyType: null, partyCode: null, partyName: null,
-      notes: l.description ?? receipt.receipt_number,
-    })),
-  ];
+  const ruleLines = receiptRuleLines(bank, payer, receipt.receipt_number, lines);
   const r = await postJournal(sb, {
     companyId: coId,
     entryDate: receiptDate,
@@ -242,7 +264,7 @@ export const getReceiptHandler = async (c: any): Promise<Response> => {
   if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
   if (!receipt) return c.json({ error: 'not_found' }, 404);
   const { data: lines, error: lErr } = await scopeToCompany(
-    sb.from('acc_receipt_lines').select('id, line_no, description, credit_account_code, amount_sen').eq('receipt_id', receipt.id), c,
+    sb.from('acc_receipt_lines').select('id, line_no, description, credit_account_code, amount_sen, department').eq('receipt_id', receipt.id), c,
   ).order('line_no');
   if (lErr) return c.json({ error: 'load_failed', reason: lErr.message }, 500);
   return c.json({ receipt, lines: lines ?? [] });
@@ -297,7 +319,7 @@ export const updateReceiptHandler = async (c: any): Promise<Response> => {
   const receiptDate = body.receiptDate !== undefined ? (dateOrNull(body.receiptDate) ?? oldDate) : oldDate;
   const notes = body.notes !== undefined ? (body.notes ? String(body.notes).trim() : null) : receipt.notes;
 
-  let lines: Array<{ description: string | null; code: string; amountSen: number }>;
+  let lines: ReceiptLine[];
   if (body.lines !== undefined) {
     const rawLines = Array.isArray(body.lines) ? body.lines : [];
     if (rawLines.length === 0 || rawLines.length > 50) {
@@ -305,13 +327,9 @@ export const updateReceiptHandler = async (c: any): Promise<Response> => {
     }
     lines = [];
     for (const [i, l] of rawLines.entries()) {
-      const code = String(l?.creditAccountCode ?? '').trim();
-      const amount = Number(l?.amountSen);
-      if (!code) return c.json({ error: 'bad_line', message: `Line ${i + 1} has no account.` }, 400);
-      if (!Number.isInteger(amount) || amount <= 0) {
-        return c.json({ error: 'bad_line', message: `Line ${i + 1}: amountSen must be a positive integer (got ${String(l?.amountSen)}).` }, 400);
-      }
-      lines.push({ description: l?.description ? String(l.description).trim() : null, code, amountSen: amount });
+      const parsed = parseReceiptLine(l, i);
+      if ('error' in parsed) return c.json(parsed, 400);
+      lines.push(parsed);
     }
     for (const code of [...new Set(lines.map((l) => l.code))]) {
       const leafErr = await requireLeafAccount(c, coId, code);
@@ -319,11 +337,14 @@ export const updateReceiptHandler = async (c: any): Promise<Response> => {
     }
   } else {
     const { data: old, error: oldErr } = await scopeToCompany(
-      sb.from('acc_receipt_lines').select('description, credit_account_code, amount_sen').eq('receipt_id', receipt.id), c,
+      sb.from('acc_receipt_lines').select('description, credit_account_code, amount_sen, department').eq('receipt_id', receipt.id), c,
     ).order('line_no');
     if (oldErr) return c.json({ error: 'load_failed', reason: oldErr.message }, 500);
-    lines = ((old ?? []) as Array<{ description: string | null; credit_account_code: string; amount_sen: number }>)
-      .map((l) => ({ description: l.description ?? null, code: l.credit_account_code, amountSen: Number(l.amount_sen) }));
+    lines = ((old ?? []) as Array<{ description: string | null; credit_account_code: string; amount_sen: number; department?: string | null }>)
+      .map((l) => ({
+        description: l.description ?? null, code: l.credit_account_code, amountSen: Number(l.amount_sen),
+        department: isDepartment(l.department) ? l.department : DEFAULT_DEPARTMENT,
+      }));
     if (lines.length === 0) return c.json({ error: 'lines_required', message: `${receipt.receipt_number} has no lines to re-post.` }, 409);
   }
   const totalSen = lines.reduce((s, l) => s + l.amountSen, 0);
@@ -342,7 +363,7 @@ export const updateReceiptHandler = async (c: any): Promise<Response> => {
     await sb.from('acc_receipt_lines').delete().eq('company_id', coId).eq('receipt_id', receipt.id);
     const { error: lineErr } = await sb.from('acc_receipt_lines').insert(lines.map((l, i) => ({
       company_id: coId, receipt_id: receipt.id, line_no: i + 1,
-      description: l.description, credit_account_code: l.code, amount_sen: l.amountSen,
+      description: l.description, credit_account_code: l.code, amount_sen: l.amountSen, department: l.department,
     })));
     if (lineErr) return c.json({ error: 'save_failed', reason: lineErr.message }, 500);
   }
@@ -363,10 +384,7 @@ export const updateReceiptHandler = async (c: any): Promise<Response> => {
     entryDate: oldDate,
   });
   if (!rev.ok) return c.json({ error: 'reverse_failed', status: rev.status, reason: (rev as { reason?: string }).reason ?? rev.status }, 500);
-  const ruleLines: RuleLine[] = [
-    { accountCode: bank, debitSen: totalSen, creditSen: 0, partyType: null, partyCode: null, partyName: payer, notes: `Receipt ${receipt.receipt_number} — ${payer}` },
-    ...lines.map((l) => ({ accountCode: l.code, debitSen: 0, creditSen: l.amountSen, partyType: null, partyCode: null, partyName: null, notes: l.description ?? receipt.receipt_number })),
-  ];
+  const ruleLines = receiptRuleLines(bank, payer, receipt.receipt_number, lines);
   const r = await postJournal(sb, {
     companyId: coId,
     entryDate: receiptDate,

@@ -93,9 +93,10 @@ export const leafKeys = (n: LaidNode): string[] =>
 export const leafCodes = (n: LaidNode): string[] =>
   n.kind === 'account' && n.code ? [n.code] : n.children.flatMap(leafCodes);
 
-/** Where the general ledger opens for these accounts and this period. */
-export const ledgerHref = (codes: string[], from: string, to: string): string =>
-  `/scm/accounting?tab=gl&accounts=${encodeURIComponent(codes.join(','))}&from=${from}&to=${to}`;
+/** Where the general ledger opens for these accounts and this period — and, on a department's statement, that
+    department (Conts, finance phase 1, spec 3.5). */
+export const ledgerHref = (codes: string[], from: string, to: string, department = ''): string =>
+  `/scm/accounting?tab=gl&accounts=${encodeURIComponent(codes.join(','))}&from=${from}&to=${to}${department ? `&department=${department}` : ''}`;
 
 /** A laid tree as a flat list with each node's depth — for a CSV, a PDF, or
     a screen that folds by level (a node prints while its depth ≤ the level). */

@@ -32,7 +32,7 @@ import { beforeLedgerStartMessage, isBeforeLedgerStart, ledgerDatesRefusal, load
 import { backfillSoPayments, paymentEntryDisagreements, unbookedPayments } from '../../acc/payments';
 import { computeDailyBank } from '../../acc/daily-bank';
 import { systemTakings, postCashOverShort } from '../../acc/daily-close';
-import { resolveRoles, piLines, DEFAULT_ROLE_CODES } from '../../acc/rules';
+import { resolveRoles, piLines, DEFAULT_ROLE_CODES, BAD_DEPARTMENT, departmentQuery, type Department } from '../../acc/rules';
 import { splitByItemGroup } from '../../acc/item-group-split';
 import { classifyJournal } from '../../acc/journal-class';
 import { isReversalPair } from '../../acc/reversal-pairs';
@@ -62,7 +62,7 @@ import {
 import { itemGroupsList, itemGroupCreate, itemGroupBind, itemGroupPatch } from './accounting-item-groups';
 import { piPeriodicBackfill } from './accounting-pi-backfill';
 import { stockCloseStatus, stockCloseRun } from './accounting-stock-close';
-import { pnlReport, balanceSheetReport } from './accounting-reports';
+import { pnlReport, balanceSheetReport, loadAccounts, loadSums } from './accounting-reports';
 import { journalEntryEdit } from './accounting-journal-edit';
 import { reportLayoutGet, reportLayoutPut, reportLayoutReset } from './accounting-report-layouts';
 import { receiptsPaymentsReport } from './accounting-rp';
@@ -259,6 +259,8 @@ type JeLineIn = {
   partyCode?: string | null;
   partyName?: string | null;
   notes?: string | null;
+  /** Conts: Rental, Supply chain or Shared (spec 3.5); the engine refuses one it does not know. */
+  department?: Department | null;
 };
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -528,6 +530,7 @@ export const journalEntryCreateHandler = async (c: AccCtx): Promise<Response> =>
       partyCode: l.partyCode ?? null,
       partyName: l.partyName ?? null,
       notes: l.notes ?? null,
+      department: l.department ?? null,
     })),
     postNow: false,
   });
@@ -981,8 +984,12 @@ accounting.get('/gl', glStreamHandler);
    accounting-ledger.ts. */
 accounting.get('/gl/ledger', ledgerReport);
 
-accounting.get('/balances', async (c) => {
+/* Exported for its test (balancesByDepartment.test.ts). */
+export const balancesHandler = async (c: any) => {
   const sb = c.get('supabase');
+  const department = departmentQuery(c.req.query('department'));
+  if (department === false) return c.json(BAD_DEPARTMENT, 400);
+  if (department) return departmentBalances(c, sb, department);
   // PostgREST's 1000-row cap silently truncated the balance list — page through
   // so every account balance is returned, not just the first 1000.
   const { data, error } = await paginateAll((from, to) => scopeToCompany(sb
@@ -991,7 +998,30 @@ accounting.get('/balances', async (c) => {
     .range(from, to));
   if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
   return c.json({ balances: data ?? [] });
-});
+};
+accounting.get('/balances', balancesHandler);
+
+/** One department's trial balance (Conts, spec 3.5), in v_account_balances's own shape: every account of the
+    chart, the department's posted lines summed (a reversal pair in neither, as the view leaves them out). */
+async function departmentBalances(c: any, sb: any, department: Department): Promise<Response> {
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  const [accs, sums] = await Promise.all([loadAccounts(sb, co.companyId), loadSums(sb, co.companyId, null, null, department)]);
+  if (!accs.ok) return c.json({ error: 'load_failed', reason: accs.reason }, 500);
+  if (!sums.ok) return c.json({ error: 'load_failed', reason: sums.reason }, 500);
+  const byCode = new Map(sums.sums.map((r) => [r.code, r]));
+  const balances = [...accs.accounts].sort((a, b) => a.account_code.localeCompare(b.account_code)).map((a) => {
+    const dr = byCode.get(a.account_code)?.drSen ?? 0;
+    const cr = byCode.get(a.account_code)?.crSen ?? 0;
+    return {
+      account_code: a.account_code, account_name: a.account_name ?? null, account_type: a.account_type,
+      total_debit_sen: dr, total_credit_sen: cr,
+      balance_sen: a.account_type === 'ASSET' || a.account_type === 'EXPENSE' ? dr - cr : cr - dr,
+      company_id: co.companyId,
+    };
+  });
+  return c.json({ balances });
+}
 
 accounting.get('/ar-aging', async (c) => {
   const sb = c.get('supabase');

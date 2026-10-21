@@ -53,8 +53,9 @@ const bsData = {
   totals: { assetsSen: 103_000, liabilitiesSen: 60_000, equitySen: 0, earningsSen: 43_000, checkSen: 0 },
 };
 
+const { seenQueries } = vi.hoisted(() => ({ seenQueries: [] as Array<{ queryKey: unknown[]; queryFn?: () => unknown }> }));
 vi.mock('@tanstack/react-query', () => ({
-  useQuery: (opts: { queryKey: string[] }) => ({
+  useQuery: (opts: { queryKey: string[]; queryFn?: () => unknown }) => (seenQueries.push(opts), {
     isLoading: false, isError: false,
     data: String(opts.queryKey[0]).includes('pnl') ? pnlData : bsData,
   }),
@@ -248,4 +249,30 @@ describe('the standard statements', () => {
     expect(bs.tables[0]!.rows.find((r) => r.label === 'BALANCED')).toMatchObject({ kind: 'net', cells: [103_000, 100] });
   });
 
+});
+
+/* By department (Conts, finance phase 1, spec 3.5): the P&L asks for the chosen department's figures. */
+describe('the P&L by department', () => {
+  test('All departments by default; choosing one keys the query on it and sends ?department=', async () => {
+    const { authedFetch } = await import('../../vendor/scm/lib/authed-fetch');
+    render(<PnLTab />);
+    const pick = screen.getByLabelText('P&L department') as HTMLSelectElement;
+    expect(pick.value).toBe('');
+    seenQueries.length = 0;
+    fireEvent.change(pick, { target: { value: 'rental' } });
+    const pnl = seenQueries.filter((o) => String(o.queryKey[0]) === 'report-pnl').at(-1)!;
+    expect(pnl.queryKey).toContain('rental');
+    void pnl.queryFn?.();
+    expect(String((authedFetch as unknown as { mock: { calls: unknown[][] } }).mock.calls.at(-1)![0])).toContain('&department=rental');
+  });
+});
+
+describe('a department P&L opens its own ledger', () => {
+  test('a figure clicked on the Rental P&L opens the General Ledger for Rental', () => {
+    navigateSpy.mockClear();
+    render(<PnLTab />);
+    fireEvent.change(screen.getByLabelText('P&L department'), { target: { value: 'rental' } });
+    fireEvent.click(screen.getByRole('button', { name: '501-0000 — SALES total' }));
+    expect(String(navigateSpy.mock.calls.at(-1)![0])).toMatch(/&department=rental$/);
+  });
 });

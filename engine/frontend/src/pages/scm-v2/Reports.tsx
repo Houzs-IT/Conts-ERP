@@ -34,6 +34,7 @@
 // ----------------------------------------------------------------------------
 
 import { useState } from 'react';
+import { DepartmentSelect, departmentLabel, type Department } from '../../conts/department';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Download, Printer } from 'lucide-react';
@@ -80,11 +81,11 @@ const monthStart = (): string => `${myt().slice(0, 7)}-01`;
 
 /** 点开看明细其实就是看 general ledger (owner 2026-09-14): a figure opens the
     General Ledger on the node's accounts for the period (docs/bugs/0924). */
-const useOpenLedger = (from: () => string, to: () => string) => {
+const useOpenLedger = (from: () => string, to: () => string, department: () => Department | '' = () => '') => {
   const navigate = useNavigate();
   return (node: LaidNode) => {
     const codes = leafCodes(node);
-    if (codes.length > 0) navigate(ledgerHref(codes, from(), to()));
+    if (codes.length > 0) navigate(ledgerHref(codes, from(), to(), department()));
   };
 };
 
@@ -108,8 +109,9 @@ type PnlResponse = {
     profitBeforeTaxSen?: number; taxationSen?: number; netProfitSen: number;
   };
 };
-const fetchPnl = (from: string, to: string) => authedFetch<PnlResponse>(`/accounting/reports/pnl?from=${from}&to=${to}`);
-const fetchPnlColumn = (col: MonthColumn) => fetchPnl(col.from, col.to);
+/* Conts: one department's P&L when one is chosen (finance phase 1, spec 3.5); none is the whole company. */
+const fetchPnl = (from: string, to: string, department: Department | '' = '') =>
+  authedFetch<PnlResponse>(`/accounting/reports/pnl?from=${from}&to=${to}${department ? `&department=${department}` : ''}`);
 
 export const PnLTab = () => {
   const [from, setFrom] = useState(monthStart());
@@ -117,14 +119,15 @@ export const PnLTab = () => {
   const [level, setLevel] = useState<Level>('all');
   const [editing, setEditing] = useState(false);
   const [monthly, setMonthly] = useState(false);
+  const [department, setDepartment] = useState<Department | ''>('');
   const { can } = useAuth();
   const canArrange = can('scm.payment_voucher.post');
-  const openLedger = useOpenLedger(() => from, () => to);
+  const openLedger = useOpenLedger(() => from, () => to, () => department);
   const tree = useReportTree(level);
-  const drill = { from, to };
+  const drill = { from, to, department };
   const q = useQuery({
-    queryKey: ['report-pnl', from, to],
-    queryFn: () => fetchPnl(from, to),
+    queryKey: ['report-pnl', from, to, department],
+    queryFn: () => fetchPnl(from, to, department),
     enabled: Boolean(from && to) && !monthly,
     staleTime: 30_000,
   });
@@ -136,8 +139,8 @@ export const PnLTab = () => {
   const period = `${fmtDate(from)} – ${fmtDate(to)}`;
   const sheet = (): ReportSheet | null => (q.data && lay ? {
     title: 'P&L',
-    subtitle: `${period} · % of sales · ${lay.stored ? 'on the saved layout' : "on the chart's own tree"}${level === 'all' ? '' : ` · level ${level}`}`,
-    meta: [{ label: 'Period', value: period }],
+    subtitle: `${period}${department ? ` · ${departmentLabel(department)}` : ''} · % of sales · ${lay.stored ? 'on the saved layout' : "on the chart's own tree"}${level === 'all' ? '' : ` · level ${level}`}`,
+    meta: [{ label: 'Period', value: period }, ...(department ? [{ label: 'Department', value: departmentLabel(department) }] : [])],
     tables: [statementTable(linesVisible(pnlLines(q.data), level, tree.open), '% of sales')],
   } : null);
 
@@ -151,14 +154,15 @@ export const PnLTab = () => {
             <LevelButtons depth={depth} level={level} onLevel={setLevel} />
           </>
         )}
+        <DepartmentSelect label="P&L department" blank="All departments" value={department} onChange={setDepartment} />
         <ByMonthButton on={monthly} onToggle={() => setMonthly((v) => !v)} />
         {canArrange && (
           <Button variant="ghost" size="sm" onClick={() => setEditing((v) => !v)} aria-pressed={editing}>Layout</Button>
         )}
-        {!monthly && q.data && <ExportButtons sheet={sheet} fileBase={`pnl-${from}-to-${to}`} />}
+        {!monthly && q.data && <ExportButtons sheet={sheet} fileBase={`pnl-${from}-to-${to}${department ? `-${department}` : ''}`} />}
       </div>
       {editing && <ReportLayoutEditor report="pnl" onClose={() => setEditing(false)} />}
-      {monthly && <MonthlyReport<PnlResponse> report="pnl" title="P&L" withCumulative fetchColumn={fetchPnlColumn} linesOf={pnlLines} fmt={fmtSenPlain} pctTitle="% of sales" />}
+      {monthly && <MonthlyReport<PnlResponse> report="pnl" title="P&L" withCumulative fetchColumn={(col: MonthColumn) => fetchPnl(col.from, col.to, department)} keyParts={[department]} department={department} linesOf={pnlLines} fmt={fmtSenPlain} pctTitle="% of sales" />}
       {!monthly && q.isLoading && <div style={soft}>Working the period out…</div>}
       {!monthly && q.isError && <div style={{ fontSize: 'var(--fs-13)', color: 'var(--c-danger, #a33)' }}>The statement did not load — adjust the dates to retry.</div>}
       {!monthly && q.data && lay && (

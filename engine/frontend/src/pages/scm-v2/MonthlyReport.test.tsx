@@ -153,7 +153,7 @@ describe('the monthly view', () => {
     /* The amount keeps its % under it on the opened rows too. */
     expect(within(screen.getByText('900-A001 — RENT').closest('tr')!).getAllByRole('cell').map(pctBeside)).toEqual(['', '10.0%', '10.0%', '10.0%', '10.0%']);
     fireEvent.click(screen.getByRole('button', { name: 'Lines of 900-A001 — RENT' }));
-    expect(useLedger).toHaveBeenLastCalledWith({ from: '2026-07-01', to: '2026-09-30', accounts: ['900-A001'] });
+    expect(useLedger).toHaveBeenLastCalledWith({ from: '2026-07-01', to: '2026-09-30', accounts: ['900-A001'], department: '' });
     /* Each line sits under its month (and under 累计), a dash elsewhere; the foot sums per column. */
     const lineRows = () => Array.from(document.querySelectorAll('tr[data-line-of="900-A001"]')) as HTMLElement[];
     expect(lineRows()).toHaveLength(2);

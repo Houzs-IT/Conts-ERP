@@ -203,3 +203,55 @@ describe('the ledger start date (Conts)', () => {
     expect(sb.tables.journal_entries).toHaveLength(1);
   });
 });
+
+/* The department on each manual journal line (Conts, finance phase 1, spec 3.5). */
+describe('departments on an edited manual journal', () => {
+  const withDepartments = {
+    ...corrected,
+    lines: [
+      { accountCode: '900-S100', debitSen: 1900000, creditSen: 0, notes: 'Gross', department: 'rental' },
+      { accountCode: '900-S500', debitSen: 20698, creditSen: 0, notes: 'Allowance', department: 'shared' },
+      { accountCode: '410-0010', debitSen: 0, creditSen: 1920698, notes: 'Net', department: 'shared' },
+    ],
+  };
+
+  test('a draft rewritten in place keeps each line\'s department', async () => {
+    const { app, sb } = world({ jes: [{ ...posted()[0]!, posted: false }] });
+    expect((await put(app, 'je-163', withDepartments)).status).toBe(200);
+    expect((sb.tables.journal_entry_lines as Row[]).map((l) => l.department)).toEqual(['rental', 'shared', 'shared']);
+  });
+
+  test('a posted entry: the corrected entry carries the new departments, the contra the old ones', async () => {
+    const { app, sb } = world({ lines: postedLines().map((l) => ({ ...l, department: 'supply' })) });
+    const res = await put(app, 'je-163', withDepartments);
+    expect(res.status).toBe(200);
+    const jes = sb.tables.journal_entries as Row[];
+    const contra = jes.find((j) => j.reversed_by_je === 'je-163')!;
+    const successor = jes.find((j) => j.id !== 'je-163' && j.id !== contra.id)!;
+    const deps = (id: string) => (sb.tables.journal_entry_lines as Row[]).filter((l) => l.journal_entry_id === id).map((l) => l.department);
+    expect(deps(contra.id)).toEqual(['supply', 'supply']);
+    expect(deps(successor.id)).toEqual(['rental', 'shared', 'shared']);
+  });
+
+  test('an unknown department is refused and nothing is written', async () => {
+    const { app, sb } = world();
+    const bad = { ...corrected, lines: corrected.lines.map((l) => ({ ...l, department: 'hq' })) };
+    expect((await put(app, 'je-163', bad)).status).toBe(400);
+    expect(sb.tables.journal_entries).toHaveLength(1);
+  });
+});
+
+describe('departments on a new manual journal', () => {
+  test('each line keeps its department; an unknown one is a 400 and nothing is written', async () => {
+    const { journalEntryCreateHandler } = await import('../src/scm/routes/accounting');
+    const { app, sb } = world({ jes: [], lines: [] });
+    app.post('/journal-entries', journalEntryCreateHandler as never);
+    const send = (body: unknown) => app.request('/journal-entries', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    const bad = await send({ ...corrected, lines: corrected.lines.map((l) => ({ ...l, department: 'hq' })) });
+    expect(bad.status).toBe(400);
+    expect(sb.tables.journal_entries).toHaveLength(0);
+    const ok = await send({ ...corrected, lines: corrected.lines.map((l, i) => ({ ...l, department: i === 0 ? 'rental' : 'shared' })) });
+    expect(ok.status, await ok.clone().text()).toBe(201);
+    expect((sb.tables.journal_entry_lines as Row[]).map((l) => l.department)).toEqual(['rental', 'shared', 'shared']);
+  });
+});

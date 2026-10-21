@@ -11,6 +11,7 @@
 // ----------------------------------------------------------------------------
 
 import { Fragment, useEffect, useState } from 'react';
+import type { Department } from '../../conts/department';
 import { fmtSenPlain } from '../../vendor/shared/format';
 import { fmtPct, pctOf, type LaidNode } from '../../vendor/scm/lib/report-layout';
 import { AccountLinesRow } from './AccountLinesRow';
@@ -41,7 +42,7 @@ export const useReportTree = (level: Level): ReportTree => {
 };
 
 /** The period an account's lines are read for when its row is opened. */
-export type DrillPeriod = { from: string; to: string };
+export type DrillPeriod = { from: string; to: string; department?: Department | '' };
 
 const chevronBtn: React.CSSProperties = { background: 'none', border: 'none', padding: '0 4px 0 0', cursor: 'pointer', font: 'inherit', color: 'var(--text-soft, #8a8578)', width: 18, display: 'inline-block', textAlign: 'left' };
 
@@ -113,7 +114,7 @@ export const LaidRows = ({ nodes, level, depth = 1, columns, fmt = fmtSenPlain, 
             <td style={{ ...right, ...weightOf(n.kind) }}>{figure(n.amountSen, null, n.kind === 'category')}</td>
             <td style={{ ...right, ...soft }}>{fmtPct(n.pct)}</td>
           </tr>
-          {drilledOpen && drill && n.code && <AccountLinesRow code={n.code} from={drill.from} to={drill.to} colSpan={3 + (columns?.length ?? 0)} />}
+          {drilledOpen && drill && n.code && <AccountLinesRow code={n.code} from={drill.from} to={drill.to} department={drill.department ?? ''} colSpan={3 + (columns?.length ?? 0)} />}
           {open && <LaidRows nodes={n.children} level={level} depth={depth + 1} columns={columns} fmt={fmt} onPick={onPick} activeId={activeId} tree={tree} drill={drill} />}
         </Fragment>
       );

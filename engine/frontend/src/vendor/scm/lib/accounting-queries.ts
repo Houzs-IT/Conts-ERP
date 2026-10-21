@@ -6,6 +6,7 @@
 // `baseQuery` factory is inlined (the source defines it once at module scope).
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { Department } from '../../../conts/department';
 import { authedFetch } from './authed-fetch';
 import { writeFailedAs } from './mutation-error';
 import { retryUnlessClientError } from '../../../lib/retryPolicy';
@@ -116,6 +117,8 @@ export type JournalEntryLine = {
   party_code: string | null;
   party_name: string | null;
   notes: string | null;
+  /** Conts: Rental, Supply chain or Shared (finance phase 1, migration 0134). */
+  department?: string | null;
 };
 export const useJournalEntries = (filters?: {
   sourceType?: string; sourceDocNo?: string; from?: string; to?: string; posted?: boolean;
@@ -147,6 +150,7 @@ export type JeLineIn = {
   partyCode?: string | null;
   partyName?: string | null;
   notes?: string | null;
+  department?: Department | null;
 };
 export const useCreateJournalEntry = () => {
   const qc = useQueryClient();
@@ -232,8 +236,9 @@ export type AccountBalance = {
   total_credit_sen: number;
   balance_sen: number;
 };
-export const useAccountBalances = () => baseQuery<{ balances: AccountBalance[] }>(
-  ['account-balances'], `/accounting/balances`,
+/* Conts: one department's balances when one is given (finance phase 1, spec 3.5); none is the whole company. */
+export const useAccountBalances = (department: Department | '' = '') => baseQuery<{ balances: AccountBalance[] }>(
+  ['account-balances', department], `/accounting/balances${department ? `?department=${department}` : ''}`,
 );
 
 export type ArAgingRow = {

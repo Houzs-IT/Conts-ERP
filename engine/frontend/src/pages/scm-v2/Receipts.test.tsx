@@ -15,7 +15,7 @@ const updateAsync = vi.fn(async (_b: unknown) => ({ ok: true, reposted: true, je
    render would re-fire the seeding effect forever. */
 const DETAIL_G1 = {
   receipt: { id: 'g1', receipt_number: 'HC-OR-2609-001', payer_name: 'ALLIANZ INSURANCE', receipt_date: '2026-09-03', bank_account_code: '310-0010', total_sen: 88800, status: 'POSTED', notes: null },
-  lines: [{ id: 'l1', line_no: 1, description: '车险赔偿', credit_account_code: '700-0000', amount_sen: 88800 }],
+  lines: [{ id: 'l1', line_no: 1, description: '车险赔偿', credit_account_code: '700-0000', amount_sen: 88800, department: 'shared' }],
 };
 /* Which month the page asked the list for — undefined = every month. */
 const receiptsAsked: Array<string | undefined> = [];
@@ -149,12 +149,15 @@ describe('the unified money-in list', () => {
     fireEvent.change(amount, { target: { value: '888' } });
     fireEvent.blur(amount);
     expect(amount.value).toBe('888.00');
+    /* Conts: each line's department (finance phase 1, spec 3.5) — Post waits for it. */
+    expect((screen.getByText('Post receipt').closest('button') as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText('Line 1 department'), { target: { value: 'rental' } });
     fireEvent.click(screen.getByText('Post receipt'));
     await waitFor(() => expect(createAsync).toHaveBeenCalledWith({
       payerName: 'ALLIANZ INSURANCE',
       receiptDate: '2026-09-02',
       bankAccountCode: '310-0010',
-      lines: [{ description: '车险赔偿', creditAccountCode: '700-0000', amountSen: 88800 }],
+      lines: [{ description: '车险赔偿', creditAccountCode: '700-0000', amountSen: 88800, department: 'rental' }],
     }));
   });
 
@@ -172,7 +175,7 @@ describe('the unified money-in list', () => {
       screen.getByPlaceholderText('Description'),
       screen.getByLabelText('line 1 amount'),
     ];
-    expect(dressed).toHaveLength(5);
+    expect(dressed).toHaveLength(6); // the line's department is a select: a combobox too
     for (const el of dressed) expect(el.className, el.outerHTML.slice(0, 80)).toMatch(/fieldInput/);
     expect(date.closest('span')!.className).toMatch(/fieldInput/);
   });
@@ -207,7 +210,7 @@ describe('edit a posted receipt and re-post (owner 2026-09-07: 收钱的日期�
       payerName: 'ALLIANZ INSURANCE',
       receiptDate: '2026-08-28',
       bankAccountCode: '310-0010',
-      lines: [{ description: '车险赔偿', creditAccountCode: '700-0000', amountSen: 88800 }],
+      lines: [{ description: '车险赔偿', creditAccountCode: '700-0000', amountSen: 88800, department: 'shared' }],
     }));
     /* The form closes and the next New starts clean. */
     await waitFor(() => expect(screen.queryByText(/改了会重新过账/)).toBeNull());
