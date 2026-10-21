@@ -515,12 +515,14 @@ export async function withYearToDate(q: Query, inputs: Inputs, month: string, se
   return { ...inputs, units };
 }
 
-/** computeMonth ('dated') with withYearToDate for several months at once (the Dashboard's months, sorted), same
+/** computeMonth ('dated') with withYearToDate for several months at once (the Dashboard's months), same
  *  figures as calling the two month by month. withYearToDate loads and works out a yearly-guarantee unit's earlier
  *  months again for every month that closes its contract year; here each unit's month is worked out once and the
  *  true-up adds up the owner's shares already worked out. Earlier months that are not among `months` (before the
  *  first one) come from one more loadInputs for all those units together. */
 export async function computeMonthsWithYearToDate(q: Query, inputs: Inputs, months: string[], settings: { defaultFeePct: number; miscMonthly: number }): Promise<Map<string, UnitMonth[]>> {
+  // In order, so a true-up only reads months already worked out.
+  months = [...months].sort();
   // The contract year a unit's statement for `month` closes, as withYearToDate reads it; null when it closes none.
   const closes = (u: UnitRow, month: string) => {
     const asOf = unitForMonth(u, month);
