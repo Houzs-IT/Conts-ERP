@@ -13,6 +13,7 @@
 // ----------------------------------------------------------------------------
 
 import { ACC_MASTERS_FALLBACK_COMPANY_ID } from './masters-company';
+import { dateOrNull } from '../scm/lib/date-coerce';
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- PostgREST client, untyped throughout the acc layer */
 type Db = any;
@@ -55,7 +56,7 @@ export async function saveLedgerSettings(
   actor: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const row: Record<string, unknown> = { company_id: companyId, updated_at: new Date().toISOString(), updated_by: actor };
-  if (patch.ledgerStartDate !== undefined) row.ledger_start_date = patch.ledgerStartDate;
+  if (patch.ledgerStartDate !== undefined) row.ledger_start_date = dateOrNull(patch.ledgerStartDate);
   if (patch.fiscalYearEndMonth !== undefined) row.fiscal_year_end_month = patch.fiscalYearEndMonth;
   const { error } = await sb.from('acc_company_settings').upsert(row, { onConflict: 'company_id' });
   if (error) return { ok: false, error: error.message };
@@ -65,3 +66,5 @@ export async function saveLedgerSettings(
 export function isBeforeLedgerStart(date: string, s: LedgerSettings): boolean {
   return s.ledgerStartDate != null && String(date).slice(0, 10) < s.ledgerStartDate;
 }
+
+export const beforeLedgerStartMessage = (start: string): string => `This date is before the books start on ${start}.`;

@@ -114,3 +114,19 @@ describe('postPiAccounting — the periodic shape', () => {
     expect(sb.tables.journal_entries).toHaveLength(0);
   });
 });
+
+describe('a purchase invoice dated before the ledger start (Conts)', () => {
+  const settings = (start: string) => [{ company_id: CO, ledger_start_date: start, fiscal_year_end_month: 8 }];
+
+  test('is a quiet skip, even with a group unbound, and writes nothing', async () => {
+    const sb = world({ acc_company_settings: settings('2026-09-02'), acc_item_group_accounts: [] });
+    const r = await postPiAccounting(sb, '2990-PI-2609-010');
+    expect(r).toEqual({ ok: true, status: 'before_ledger_start', ledgerStartDate: '2026-09-02' });
+    expect(sb.tables.journal_entries).toHaveLength(0);
+  });
+
+  test('on the start date it posts', async () => {
+    const sb = world({ acc_company_settings: settings('2026-09-01') });
+    expect(await postPiAccounting(sb, '2990-PI-2609-010')).toMatchObject({ ok: true, status: 'posted' });
+  });
+});

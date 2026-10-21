@@ -1077,6 +1077,7 @@ export const postPaymentVoucherHandler = async (c: any) => {
       : pvLines(pv, debitLegs, supplier, apControlCode),
   });
   if (!r.ok) {
+    if (r.status === 'before_ledger_start') return c.json({ error: r.reason }, 409);
     if (r.status === 'je_insert_failed') return c.json({ error: 'je_insert_failed', reason: r.reason }, 500);
     if (r.status === 'lines_insert_failed') return c.json({ error: 'lines_insert_failed', reason: r.reason }, 500);
     return c.json({ error: 'post_failed', reason: r.reason ?? r.status }, 500);

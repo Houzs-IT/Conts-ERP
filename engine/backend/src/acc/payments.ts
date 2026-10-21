@@ -45,7 +45,8 @@ export const CONVERT_SOURCE = 'SOCONV';
 
 export type PostPaymentResult =
   | { ok: true; status: 'posted' | 'already_posted'; jeNo: string; jeId: string }
-  | { ok: true; status: 'skipped_imported' | 'skipped_zero' }
+  /** skipped_before_ledger_start: dated before the books start (Conts) — in the opening balances. */
+  | { ok: true; status: 'skipped_imported' | 'skipped_zero' | 'skipped_before_ledger_start' }
   /** The dry run's answer: the gate would take it, with these lines (docs/bugs/0652). */
   | { ok: true; status: 'would_post'; entryDate: string; lines: RuleLine[] }
   | { ok: false; status: string; reason?: string };
@@ -159,6 +160,7 @@ export async function postSoPayment(sb: any, p: SoPaymentRow, opts: { dryRun?: b
     if (r.status === 'already_posted') return { ok: true, status: 'already_posted', jeNo: r.jeNo, jeId: r.jeId };
     return { ok: true, status: 'posted', jeNo: r.jeNo, jeId: r.jeId };
   }
+  if (r.status === 'before_ledger_start') return { ok: true, status: 'skipped_before_ledger_start' };
   return { ok: false, status: r.status, reason: r.reason };
 }
 
@@ -214,6 +216,7 @@ async function postConvertedPayment(sb: any, p: SoPaymentRow, opts: { dryRun?: b
     if (r.status === 'already_posted') return { ok: true, status: 'already_posted', jeNo: r.jeNo, jeId: r.jeId };
     return { ok: true, status: 'posted', jeNo: r.jeNo, jeId: r.jeId };
   }
+  if (r.status === 'before_ledger_start') return { ok: true, status: 'skipped_before_ledger_start' };
   return { ok: false, status: r.status, reason: r.reason };
 }
 
@@ -291,6 +294,7 @@ export async function postSiPayment(sb: any, p: SiPaymentRow): Promise<PostPayme
     if (r.status === 'already_posted') return { ok: true, status: 'already_posted', jeNo: r.jeNo, jeId: r.jeId };
     return { ok: true, status: 'posted', jeNo: r.jeNo, jeId: r.jeId };
   }
+  if (r.status === 'before_ledger_start') return { ok: true, status: 'skipped_before_ledger_start' };
   return { ok: false, status: r.status, reason: r.reason };
 }
 

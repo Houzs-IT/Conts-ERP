@@ -18,7 +18,7 @@
 // ERPNext-style chart hierarchy + cost centres are deferred.
 // ----------------------------------------------------------------------------
 
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { supabaseAuth } from '../middleware/auth';
 import type { Env, Variables } from '../env';
 import { postSiRevenue } from '../lib/post-si-revenue';
@@ -28,7 +28,7 @@ import { safeRate, toMyrSen } from '../lib/fx';
 import { todayMyt } from '../lib/my-time';
 import { hasHouzsPerm } from '../lib/houzs-perms';
 import { postJournal, reverseJournal } from '../../acc/engine';
-import { loadLedgerSettings, saveLedgerSettings } from '../../acc/ledger-settings';
+import { beforeLedgerStartMessage, isBeforeLedgerStart, loadLedgerSettings, saveLedgerSettings } from '../../acc/ledger-settings';
 import { backfillSoPayments, paymentEntryDisagreements, unbookedPayments } from '../../acc/payments';
 import { computeDailyBank } from '../../acc/daily-bank';
 import { systemTakings, postCashOverShort } from '../../acc/daily-close';
@@ -104,6 +104,7 @@ import {
   requireActiveCompanyId, scopeToCompanyId, NOT_THIS_COMPANY,
 } from '../lib/companyScope';
 
+type AccCtx = Context<{ Bindings: Env; Variables: Variables }>;
 export const accounting = new Hono<{ Bindings: Env; Variables: Variables }>();
 accounting.use('*', supabaseAuth);
 
@@ -336,7 +337,7 @@ export const accountRolesPutBankDefault = async (c: any): Promise<Response> => {
 accounting.put('/roles/BANK_DEFAULT', accountRolesPutBankDefault);
 
 /* ── Ledger settings — the day the books start, the fiscal year end (Conts) ── */
-export const ledgerSettingsGet = async (c: any): Promise<Response> => {
+export const ledgerSettingsGet = async (c: AccCtx): Promise<Response> => {
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
   const r = await loadLedgerSettings(c.get('supabase'), co.companyId);
@@ -345,7 +346,7 @@ export const ledgerSettingsGet = async (c: any): Promise<Response> => {
 };
 accounting.get('/settings/ledger', ledgerSettingsGet);
 
-export const ledgerSettingsPut = async (c: any): Promise<Response> => {
+export const ledgerSettingsPut = async (c: AccCtx): Promise<Response> => {
   if (!requireGlPost(c)) return c.json({ error: "You don't have permission to change the ledger settings." }, 403);
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
@@ -478,7 +479,7 @@ accounting.get('/journal-entries/:id', async (c) => {
   return c.json({ journalEntry: je, lines: lines ?? [] });
 });
 
-accounting.post('/journal-entries', async (c) => {
+export const journalEntryCreateHandler = async (c: AccCtx): Promise<Response> => {
   if (!requireGlPost(c)) return c.json({ error: "You don't have permission to write to the general ledger." }, 403);
   let body: any;
   try { body = await c.req.json(); } catch { return c.json({ error: 'invalid_json' }, 400); }
@@ -531,6 +532,7 @@ accounting.post('/journal-entries', async (c) => {
     postNow: false,
   });
   if (!r.ok) {
+    if (r.status === 'before_ledger_start') return c.json({ error: r.reason }, 409);
     if (r.status === 'account_invalid' || r.status === 'bad_line') return c.json({ error: r.status, reason: r.reason }, 400);
     if (r.status === 'lines_insert_failed') return c.json({ error: 'lines_insert_failed', reason: r.reason }, 500);
     return c.json({ error: 'insert_failed', reason: r.reason }, 500);
@@ -540,7 +542,8 @@ accounting.post('/journal-entries', async (c) => {
   // response body, never the outcome.
   if (jeReadErr) return c.json({ journalEntry: { id: r.jeId, je_no: r.jeNo }, lineCount: lines.length }, 201);
   return c.json({ journalEntry: je ?? { id: r.jeId, je_no: r.jeNo }, lineCount: lines.length }, 201);
-});
+};
+accounting.post('/journal-entries', journalEntryCreateHandler);
 
 /* POST /journal-entries/:id/post — mark a journal entry posted.
  *
@@ -570,11 +573,19 @@ export const postJournalEntryHandler = async (c: any) => {
   // Load within the company first. A miss means "not yours OR not there", and
   // both answer the same way — telling A that B's id exists is itself a leak.
   const { data: je, error: loadErr } = await scopeToCompanyId(
-    sb.from('journal_entries').select('id, je_no, posted, reversed').eq('id', id),
+    sb.from('journal_entries').select('id, je_no, posted, reversed, entry_date').eq('id', id),
     co.companyId,
   ).maybeSingle();
   if (loadErr) return c.json({ error: 'load_failed', reason: loadErr.message }, 500);
   if (!je) return c.json(NOT_THIS_COMPANY, 404);
+
+  /* A draft dated before the books start (saved before the start was set)
+     would otherwise reach the ledger here, past postJournal's check. */
+  const ls = await loadLedgerSettings(sb, co.companyId);
+  if (!ls.ok) return c.json({ error: 'load_failed', reason: 'The ledger settings could not be read.' }, 500);
+  if (isBeforeLedgerStart(String((je as { entry_date?: string }).entry_date ?? ''), ls.settings)) {
+    return c.json({ error: beforeLedgerStartMessage(ls.settings.ledgerStartDate as string) }, 409);
+  }
 
   // Status checks the blind update never made.
   if ((je as { posted?: boolean }).posted === true) {
@@ -611,9 +622,9 @@ accounting.put('/journal-entries/:id', journalEntryEdit);
    Auto-post helpers — SI / PI confirm
    ════════════════════════════════════════════════════════════════════════ */
 
-accounting.post('/post/si/:invoiceNumber', async (c) => {
+export const postSiHandler = async (c: AccCtx): Promise<Response> => {
   if (!requireGlPost(c)) return c.json({ error: "You don't have permission to post to the general ledger." }, 403);
-  const invoiceNumber = c.req.param('invoiceNumber');
+  const invoiceNumber = String(c.req.param('invoiceNumber'));
   const sb = c.get('supabase');
 
   /* LEAK GUARD (DRAFT, two-state — 2026-06-25 anchoring diff vs 2990) — a DRAFT SI
@@ -649,6 +660,7 @@ accounting.post('/post/si/:invoiceNumber', async (c) => {
     if (r.status === 'migrated_source') {
       return c.json({ ok: true, status: 'migrated_source', posted: false, message: MIGRATED_NO_GL_MESSAGE });
     }
+    if (r.status === 'before_ledger_start') return c.json({ error: beforeLedgerStartMessage(r.ledgerStartDate) }, 409);
     if (r.status === 'already_posted') {
       // Keep the historical 409 contract for the explicit re-post endpoint.
       return c.json({ error: 'already_posted', existingJe: { id: r.jeId, je_no: r.jeNo } }, 409);
@@ -658,7 +670,8 @@ accounting.post('/post/si/:invoiceNumber', async (c) => {
   if (r.status === 'invoice_not_found') return c.json({ error: 'invoice_not_found' }, 404);
   if (r.status === 'zero_total')        return c.json({ error: 'zero_total' }, 400);
   return c.json({ error: r.status, reason: r.reason }, 500);
-});
+};
+accounting.post('/post/si/:invoiceNumber', postSiHandler);
 
 /* ── postPiAccounting (extracted 2026-06-01) — idempotent PI → GL post ──────
    Writes Dr <each group's purchase account> / Cr AP for the PI total (the
@@ -675,6 +688,8 @@ export type PostPiResult =
      below. It is `ok: true` so the confirm handler does not write its
      "AP/GL post FAILED" audit row for a thing that was never meant to post. */
   | { ok: true; status: 'migrated_source' }
+  /* Dated before the ledger start (Conts): already in the opening balances. */
+  | { ok: true; status: 'before_ledger_start'; ledgerStartDate: string }
   | { ok: false; status: 'invoice_not_found' | 'zero_total' | 'je_insert_failed' | 'lines_insert_failed' | 'post_failed'
       /* The periodic-shape refusals (GL redesign item 2): fixable by the
          operator, mapped to 400 at the manual endpoint. */
@@ -711,6 +726,14 @@ export async function postPiAccounting(sb: any, invoiceNumber: string): Promise<
     company_id: number | null;
     suppliers: { code: string | null; name: string | null } | null;
   };
+
+  {
+    const ls = await loadLedgerSettings(sb, pi.company_id ?? null);
+    if (!ls.ok) return { ok: false, status: 'post_failed', reason: 'The ledger settings could not be read.' };
+    if (isBeforeLedgerStart(pi.invoice_date, ls.settings)) {
+      return { ok: true, status: 'before_ledger_start', ledgerStartDate: ls.settings.ledgerStartDate as string };
+    }
+  }
 
   /* Multi-currency AP (migration 0082) — the PI's total_sen is in the PI's OWN
      currency (RMB / USD / SGD / MYR). The GL must be MYR, so convert AT POST TIME:
@@ -779,9 +802,9 @@ export async function postPiAccounting(sb: any, invoiceNumber: string): Promise<
   return { ok: false, status: 'post_failed', reason: `${r.status}: ${r.reason ?? ''}` };
 }
 
-accounting.post('/post/pi/:invoiceNumber', async (c) => {
+export const postPiHandler = async (c: AccCtx): Promise<Response> => {
   if (!requireGlPost(c)) return c.json({ error: "You don't have permission to post to the general ledger." }, 403);
-  const invoiceNumber = c.req.param('invoiceNumber');
+  const invoiceNumber = String(c.req.param('invoiceNumber'));
   const sb = c.get('supabase');
 
   /* LEAK GUARD (DRAFT, PI two-state — 2026-06-25 anchoring diff vs 2990) — a DRAFT
@@ -810,6 +833,7 @@ accounting.post('/post/pi/:invoiceNumber', async (c) => {
   if (r.ok && r.status === 'migrated_source') {
     return c.json({ ok: true, status: 'migrated_source', posted: false, message: MIGRATED_NO_GL_MESSAGE });
   }
+  if (r.ok && r.status === 'before_ledger_start') return c.json({ error: beforeLedgerStartMessage(r.ledgerStartDate) }, 409);
   if (r.ok && r.status === 'already_posted') {
     return c.json({ error: 'already_posted', existingJe: { id: r.jeId, je_no: r.jeNo } }, 409);
   }
@@ -822,7 +846,8 @@ accounting.post('/post/pi/:invoiceNumber', async (c) => {
     return c.json({ error: r.status, message: r.reason }, 400);
   }
   return c.json({ error: r.status, reason: r.reason }, 500);
-});
+};
+accounting.post('/post/pi/:invoiceNumber', postPiHandler);
 
 /* ════════════════════════════════════════════════════════════════════════
    PI accounting reversal (bug #5) — mirror of reverseSiRevenue

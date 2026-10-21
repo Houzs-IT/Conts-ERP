@@ -21,6 +21,7 @@ import { resolveRoles, siLines, DEFAULT_ROLE_CODES } from '../../acc/rules';
 import { splitByItemGroup } from '../../acc/item-group-split';
 import { customerPartyCode } from '../../acc/payments';
 import { applyDepositInvoicesBestEffort } from '../../acc/deposit-invoices';
+import { isBeforeLedgerStart, loadLedgerSettings } from '../../acc/ledger-settings';
 
 export type PostSiResult =
   | { ok: true; status: 'posted'; jeNo: string; jeId: string; totalSen: number }
@@ -29,6 +30,8 @@ export type PostSiResult =
      postSiRevenue. `ok: true` so no caller records a failure for a thing that
      was never meant to post. */
   | { ok: true; status: 'migrated_source' }
+  /* Dated before the ledger start (Conts): already in the opening balances. */
+  | { ok: true; status: 'before_ledger_start'; ledgerStartDate: string }
   /* The lines could not be classified (docs/bugs/0829): a line with no
      product group, or a group with no sales account bound for this company.
      The invoice stays unposted, by name; bind the group (Accounting → Item
@@ -58,6 +61,14 @@ export async function postSiRevenue(sb: any, invoiceNumber: string): Promise<Pos
   }
   // Multi-company (mig 0061): the JE + lines belong to the SI's company.
   const companyId = (si as { company_id?: number | null }).company_id ?? null;
+
+  /* Checked here, ahead of the lines, so a pre-start invoice whose group is
+     unbound is a quiet skip and not a logged failure. postJournal checks again. */
+  const ls = await loadLedgerSettings(sb, companyId);
+  if (!ls.ok) return { ok: false, status: 'post_failed', reason: 'The ledger settings could not be read.' };
+  if (isBeforeLedgerStart(si.invoice_date, ls.settings)) {
+    return { ok: true, status: 'before_ledger_start', ledgerStartDate: ls.settings.ledgerStartDate as string };
+  }
 
   const totalSen = Number(si.total_sen);
   if (totalSen <= 0) return { ok: false, status: 'zero_total' };
@@ -141,7 +152,7 @@ export async function postSiRevenue(sb: any, invoiceNumber: string): Promise<Pos
    that did not answer is neither "reversed" nor "nothing to reverse". */
 export type ReverseSiResult =
   | { ok: true; status: 'reversed'; jeNo: string; jeId: string }
-  | { ok: true; status: 'already_reversed' | 'nothing_to_reverse' }
+  | { ok: true; status: 'already_reversed' | 'nothing_to_reverse' | 'before_ledger_start' }
   | { ok: false; status: 'reversal_insert_failed' | 'reversal_lines_failed' | 'reversal_read_failed'; reason?: string };
 
 /**
@@ -154,6 +165,21 @@ export type ReverseSiResult =
  * on the existence of a contra tied to it by `reversed_by_je`.
  */
 export async function reverseSiRevenue(sb: any, invoiceNumber: string): Promise<ReverseSiResult> {
+  /* The invoice's own date decides whether it belongs to the opening balances.
+     A read that does not answer reverses nothing; an invoice that is gone
+     reverses as before. */
+  const { data: si, error: siErr } = await sb.from('sales_invoices')
+    .select('invoice_date, company_id').eq('invoice_number', invoiceNumber).maybeSingle();
+  if (siErr) return { ok: false, status: 'reversal_read_failed', reason: `si: ${siErr.message}` };
+  const inv = si as { invoice_date?: string | null; company_id?: number | null } | null;
+  /* Checked here rather than through reverseJournal's sourceDate: that reads
+     the start of input.companyId, and passing the company would also scope the
+     lookup, missing older SI entries written without one. */
+  if (inv?.invoice_date) {
+    const ls = await loadLedgerSettings(sb, inv.company_id ?? null);
+    if (!ls.ok) return { ok: false, status: 'reversal_read_failed', reason: 'The ledger settings could not be read.' };
+    if (isBeforeLedgerStart(inv.invoice_date, ls.settings)) return { ok: true, status: 'before_ledger_start' };
+  }
   return reverseJournal(sb, {
     sourceType: 'SI',
     sourceDocNo: invoiceNumber,
@@ -167,7 +193,7 @@ export async function reverseSiRevenue(sb: any, invoiceNumber: string): Promise<
 }
 
 export type ResyncSiResult =
-  | { ok: true; status: 'unchanged' | 'not_posted' | 'resynced' | 'reversed_to_zero' | 'posted' }
+  | { ok: true; status: 'unchanged' | 'not_posted' | 'resynced' | 'reversed_to_zero' | 'posted' | 'before_ledger_start' }
   | { ok: false; status: string; reason?: string };
 
 /**
@@ -209,10 +235,15 @@ export async function resyncSiRevenue(sb: any, invoiceNumber: string): Promise<R
      gone and voiding its JE is the existing, intended behaviour. */
   const { data: si, error: siErr } = await sb
     .from('sales_invoices')
-    .select('total_sen, status')
+    .select('total_sen, status, invoice_date, company_id')
     .eq('invoice_number', invoiceNumber)
     .maybeSingle();
   if (siErr) return { ok: false, status: 'resync_read_failed', reason: `si: ${siErr.message}` };
+  if (si) {
+    const ls = await loadLedgerSettings(sb, (si as { company_id?: number | null }).company_id ?? null);
+    if (!ls.ok) return { ok: false, status: 'resync_read_failed', reason: 'The ledger settings could not be read.' };
+    if (isBeforeLedgerStart(String((si as { invoice_date?: string }).invoice_date ?? ''), ls.settings)) return { ok: true, status: 'before_ledger_start' };
+  }
   const newTotal = Number((si as { total_sen?: number } | null)?.total_sen ?? 0);
 
   /* A CANCELLED or DRAFT invoice must never (re)post revenue. CANCELLED: its JE

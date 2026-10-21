@@ -321,3 +321,98 @@ describe('rules — role resolution', () => {
     expect(lines[2]).toMatchObject({ accountCode: '500-0001', creditSen: 200, debitSen: 0 });
   });
 });
+
+describe('the ledger start date (Conts, finance 2026-10-21)', () => {
+  const settings = [{ company_id: 1, ledger_start_date: '2026-12-01', fiscal_year_end_month: 8 }];
+  const started = (missing: Record<string, string[]> = {}) => fakeSb(
+    { accounts: CHART_C1, journal_entries: [], journal_entry_lines: [], acc_account_roles: [], acc_company_settings: settings.map((s) => ({ ...s })) },
+    missing,
+  );
+
+  it('refuses a journal dated before the ledger start', async () => {
+    const sb = started();
+    const out = await postJournal(sb, { ...base, entryDate: '2026-11-30', lines: drCr(100, 100) });
+    expect(out).toMatchObject({ ok: false, status: 'before_ledger_start' });
+    expect(sb.tables.journal_entries).toHaveLength(0);
+  });
+
+  it('posts an OPENING journal dated before the ledger start', async () => {
+    const sb = started();
+    const out = await postJournal(sb, { ...base, sourceType: 'OPENING', sourceDocNo: 'OPENING', entryDate: '2026-11-30', lines: drCr(100, 100) });
+    expect(out).toMatchObject({ ok: true, status: 'posted' });
+  });
+
+  it('posts on the ledger start date', async () => {
+    const sb = started();
+    const out = await postJournal(sb, { ...base, entryDate: '2026-12-01', lines: drCr(100, 100) });
+    expect(out).toMatchObject({ ok: true, status: 'posted' });
+  });
+
+  it('fails closed when the settings read fails', async () => {
+    const sb = started({ acc_company_settings: ['ledger_start_date'] });
+    const out = await postJournal(sb, { ...base, entryDate: '2026-12-05', lines: drCr(100, 100) });
+    expect(out).toMatchObject({ ok: false, status: 'ledger_settings_failed' });
+    expect(sb.tables.journal_entries).toHaveLength(0);
+  });
+
+  it('writes no reversal for a pre-start document that was never posted', async () => {
+    const sb = started();
+    const out = await reverseJournal(sb, {
+      sourceType: 'SI', sourceDocNo: 'X', sourceDate: '2026-11-15', narration: () => 'r',
+      fallbackLines: (t) => drCr(t, t),
+    });
+    expect(out).toMatchObject({ ok: true, status: 'before_ledger_start' });
+    expect(sb.tables.journal_entries).toHaveLength(0);
+  });
+
+  /* Spec 3.8 point 5: voiding or editing an old document after the books start
+     writes no contra, even when the engine had booked it before the start was
+     set — that entry predates the books, and a contra dated today would take a
+     pre-start sale out of the new year. */
+  it('writes no reversal for a pre-start document that the engine had posted', async () => {
+    const sb = started();
+    sb.tables.journal_entries.push({ id: 'je-0', je_no: 'JE-2611-0001', entry_date: '2026-11-15', source_type: 'SI', source_doc_no: 'X', company_id: 1, posted: true, reversed: false, total_debit_sen: 100, total_credit_sen: 100 });
+    const out = await reverseJournal(sb, { sourceType: 'SI', sourceDocNo: 'X', sourceDate: '2026-11-15', narration: () => 'r' });
+    expect(out).toMatchObject({ ok: true, status: 'before_ledger_start' });
+    expect(sb.tables.journal_entries).toHaveLength(1);
+    expect(sb.tables.journal_entries[0].reversed).toBe(false);
+  });
+
+  it('writes no contra dated before the ledger start, whatever the caller', async () => {
+    const sb = started();
+    sb.tables.journal_entries.push({ id: 'je-0', je_no: 'JE-2611-0001', entry_date: '2026-11-15', source_type: 'MANUAL', source_doc_no: null, company_id: 1, posted: true, reversed: false, total_debit_sen: 100, total_credit_sen: 100 });
+    const out = await reverseJournal(sb, { sourceType: 'MANUAL', jeId: 'je-0', entryDate: '2026-11-15', narration: () => 'r' });
+    expect(out).toMatchObject({ ok: true, status: 'before_ledger_start' });
+    expect(sb.tables.journal_entries).toHaveLength(1);
+  });
+
+  it('writes no contra for an entry dated before the ledger start, even when the contra is dated after it', async () => {
+    const sb = started();
+    sb.tables.journal_entries.push({ id: 'je-0', je_no: 'JE-2611-0001', entry_date: '2026-11-15', source_type: 'SOPAY', source_doc_no: 'p-1', company_id: 1, posted: true, reversed: false, total_debit_sen: 100, total_credit_sen: 100 });
+    const out = await reverseJournal(sb, { sourceType: 'SOPAY', sourceDocNo: 'p-1', entryDate: '2026-12-05', narration: () => 'r' });
+    expect(out).toMatchObject({ ok: true, status: 'before_ledger_start' });
+    expect(sb.tables.journal_entries).toHaveLength(1);
+  });
+
+  it('the OPENING journal can still be reversed on its own day, to be redone', async () => {
+    const sb = started();
+    sb.tables.journal_entries.push({ id: 'je-o', je_no: 'JE-2611-0009', entry_date: '2026-11-30', source_type: 'OPENING', source_doc_no: 'OPENING', company_id: 1, posted: true, reversed: false, total_debit_sen: 100, total_credit_sen: 100 });
+    sb.tables.journal_entry_lines.push(
+      { journal_entry_id: 'je-o', line_no: 1, account_code: '300-0000', debit_sen: 100, credit_sen: 0 },
+      { journal_entry_id: 'je-o', line_no: 2, account_code: '500-0000', debit_sen: 0, credit_sen: 100 },
+    );
+    const out = await reverseJournal(sb, { sourceType: 'OPENING', sourceDocNo: 'OPENING', companyId: 1, entryDate: '2026-11-30', narration: () => 'r' });
+    expect(out).toMatchObject({ ok: true, status: 'reversed' });
+  });
+
+  it('reverses a document dated on or after the start as before', async () => {
+    const sb = started();
+    sb.tables.journal_entries.push({ id: 'je-0', je_no: 'JE-2612-0001', entry_date: '2026-12-02', source_type: 'SI', source_doc_no: 'X', company_id: 1, posted: true, reversed: false, total_debit_sen: 100, total_credit_sen: 100 });
+    sb.tables.journal_entry_lines.push(
+      { journal_entry_id: 'je-0', line_no: 1, account_code: '300-0000', debit_sen: 100, credit_sen: 0 },
+      { journal_entry_id: 'je-0', line_no: 2, account_code: '500-0000', debit_sen: 0, credit_sen: 100 },
+    );
+    const out = await reverseJournal(sb, { sourceType: 'SI', sourceDocNo: 'X', sourceDate: '2026-12-02', entryDate: '2026-12-03', narration: () => 'r' });
+    expect(out).toMatchObject({ ok: true, status: 'reversed' });
+  });
+});
