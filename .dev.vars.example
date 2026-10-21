@@ -1,7 +1,8 @@
-# Copy to .dev.vars for local development. Never commit .dev.vars.
+# Copy to .dev.vars for local development. Never commit .dev.vars. This is the only env file.
 SESSION_SECRET="replace-with-a-long-random-string"
 TOTP_ENC_KEY=
-# Local supply chain engine (GETTING-STARTED.md, step 4). Leave out to use the built-in screens.
-SCM_ENGINE_API=http://localhost:8787
-SCM_ENGINE_SITE=http://localhost:5173
-SCM_ENGINE_SSO_SECRET=
+
+# npm run dev:staging / npm run dev (scripts/dev.mjs) read these from the same file.
+
+SUPABASE_SERVICE_ROLE_KEY_STAGING=
+SUPABASE_SERVICE_ROLE_KEY_PRODUCTION=
