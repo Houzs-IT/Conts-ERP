@@ -187,8 +187,7 @@ export default function MaintenancePage() {
               <Select label="Building" value={building} onChange={setBuilding} options={buildingOptions} placeholder="All buildings" className="w-[170px] max-md:flex-1" />
             </div>
           </div>
-          <SplitPane list={list} open={!!sel} onClose={() => setSelected(null)} width={580} compactList
-            empty={<div className="text-center text-copy text-muted-ink p-6 max-w-[260px]"><Icon name="MousePointerClick" size="lg" /><p className="mt-2">Pick a job to see its timeline, repair windows, photos and cost.</p></div>}
+          <SplitPane list={list} open={!!sel} onClose={() => setSelected(null)} width={580}
             detail={sel ? <IssueDetail key={sel.id} issue={sel} billing={!!data!.billing} money={money} skus={sku.data?.data ?? []} onClose={() => setSelected(null)} onChanged={reload} /> : null} />
         </>
       )}
@@ -276,7 +275,7 @@ function IssueTable({ tab, rows, loading, error, onRetry, selected, onSelect, mo
     <>
       <DataTable<Issue>
         id="maintenance.jobs" columns={columns} rows={rows} rowKey={i => i.id} loading={loading} error={error} onRetry={onRetry}
-        renderCard={i => <JobCard i={i} money={money} />} cardsOnly={!!selected}
+        renderCard={i => <JobCard i={i} money={money} />}
         onRowClick={i => onSelect(i.id)} rowTone={i => (i.id === selected ? 'gold' : i.state === 'resolved' ? 'muted' : null)}
         noun={['job', 'jobs']} exportName="maintenance-jobs" selectionKey={tab} above={above}
         filtered={filtered} onClearFilters={onClearFilters}
@@ -662,10 +661,11 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
           )}
           {/* Phones have no hover, so the reason a button is off is written out. The bar sticks to the bottom of a long sheet on phones. */}
           {(!started(i) || money) && <section className="flex flex-col gap-2 pt-4 [border-top:1px_solid_var(--color-line-soft)] max-sm:order-last max-sm:sticky max-sm:bottom-0 max-sm:z-[2] max-sm:-mx-5 max-sm:-mb-5 max-sm:px-5! max-sm:pb-4! max-sm:rounded-none! max-sm:border-x-0! max-sm:border-b-0! max-sm:bg-card max-sm:shadow-[0_-6px_12px_-8px_rgba(0,0,0,0.25)]">
-            <div className="flex gap-2">
-              {!started(i) && <Button variant="secondary" className="flex-1" loading={busy === 'start'} disabled={awaitingOwner(i)} disabledReason="Waiting for the owner's approval."
+            <div className="grid grid-flow-col auto-cols-fr gap-3">
+              {/* One black button, the next step: Start repair until it is under way, then Mark done. */}
+              {!started(i) && <Button variant="primary" icon={<Icon name="Play" size="sm" />} loading={busy === 'start'} disabled={awaitingOwner(i)} disabledReason="Waiting for the owner's approval."
                 onClick={() => void act('start', () => api.post(`/maintenance/issues/${i.id}/start`, {}), 'Repair started.')}>Start repair</Button>}
-              {money && <Button variant="primary" className="flex-1" disabled={!!doneWhy} disabledReason={doneWhy ?? undefined}
+              {money && <Button variant={started(i) ? 'primary' : 'outline'} icon={<Icon name="Check" size="sm" />} disabled={!!doneWhy} disabledReason={doneWhy ?? undefined}
                 onClick={() => setCompleteOpen(true)}>Mark done</Button>}
             </div>
             {doneWhy && (money || awaitingOwner(i)) && <span className="text-meta text-muted-ink">{doneWhy}</span>}

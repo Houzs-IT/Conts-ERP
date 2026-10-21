@@ -1,6 +1,9 @@
 import type { CSSProperties, ButtonHTMLAttributes, ReactNode } from 'react';
 
-type Variant = 'primary' | 'secondary' | 'tertiary' | 'brand' | 'danger';
+/** `outline` is another name for `secondary` and `ghost` for `tertiary`: same look, for the primary / outline / ghost naming. */
+type Variant = 'primary' | 'secondary' | 'outline' | 'tertiary' | 'ghost' | 'brand' | 'danger';
+type Look = Exclude<Variant, 'outline' | 'ghost'>;
+const LOOK: Record<Variant, Look> = { primary: 'primary', secondary: 'secondary', outline: 'secondary', tertiary: 'tertiary', ghost: 'tertiary', brand: 'brand', danger: 'danger' };
 type Size = 'sm' | 'md' | 'touch';
 
 interface Props extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'children'> {
@@ -30,7 +33,7 @@ const sizes: Record<Size, CSSProperties> = {
   touch: { minHeight: 'var(--control-height-touch)', padding: '0 18px', fontSize: 15 },
 };
 
-const variants: Record<Variant, CSSProperties> = {
+const variants: Record<Look, CSSProperties> = {
   primary:   { background: 'var(--color-brand-black)', color: 'var(--color-text-inverse)' },
   secondary: { background: 'var(--color-surface-card)', color: 'var(--color-text-primary)', borderColor: 'var(--color-border-default)' },
   tertiary:  { background: 'transparent', color: 'var(--color-text-muted)' },
@@ -45,17 +48,18 @@ export function Button({
   // Busy keeps the button's own colours and label, with a spinner in front: the person sees which action is running.
   // Only a truly disabled button greys out.
   const busy = !!loading && !disabled;
+  const look = LOOK[variant];
   return (
     <button
       {...rest}
       className={['ui-btn', rest.className].filter(Boolean).join(' ')}
-      data-variant={variant}
+      data-variant={look}
       disabled={isDisabled}
       aria-busy={busy || undefined}
       title={disabled ? disabledReason : rest.title}
       aria-describedby={disabled && disabledReason ? undefined : rest['aria-describedby']}
       style={{
-        ...base, ...sizes[size], ...variants[variant],
+        ...base, ...sizes[size], ...variants[look],
         ...(busy
           ? { cursor: 'progress', opacity: 0.88 }
           : isDisabled

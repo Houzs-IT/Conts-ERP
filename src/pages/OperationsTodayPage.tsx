@@ -58,7 +58,8 @@ const FREE: Record<Free, { label: string; tone: AnyTone }> = {
 };
 const count = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`;
 const units = (n: number) => count(n, 'unit');
-const reservationLink = (id: string) => `/reservations/bookings?open=${encodeURIComponent(id)}`;
+// back=today puts a "Back to Today" link on Reservations, which has no other way back but the browser's.
+const reservationLink = (id: string) => `/reservations/bookings?open=${encodeURIComponent(id)}&back=today`;
 
 /** Today: the same day the Cleaning board shows, from the front desk's side. Who arrives and leaves (each opens its
  *  reservation), the maintenance to watch, and which units have nobody staying that night. */
