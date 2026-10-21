@@ -187,8 +187,7 @@ export default function MaintenancePage() {
               <Select label="Building" value={building} onChange={setBuilding} options={buildingOptions} placeholder="All buildings" className="w-[170px] max-md:flex-1" />
             </div>
           </div>
-          <SplitPane list={list} open={!!sel} onClose={() => setSelected(null)} width={580} compactList
-            empty={<div className="text-center text-copy text-muted-ink p-6 max-w-[260px]"><Icon name="MousePointerClick" size="lg" /><p className="mt-2">Pick a job to see its timeline, repair windows, photos and cost.</p></div>}
+          <SplitPane list={list} open={!!sel} onClose={() => setSelected(null)} width={580}
             detail={sel ? <IssueDetail key={sel.id} issue={sel} billing={!!data!.billing} money={money} skus={sku.data?.data ?? []} onClose={() => setSelected(null)} onChanged={reload} /> : null} />
         </>
       )}
@@ -276,7 +275,7 @@ function IssueTable({ tab, rows, loading, error, onRetry, selected, onSelect, mo
     <>
       <DataTable<Issue>
         id="maintenance.jobs" columns={columns} rows={rows} rowKey={i => i.id} loading={loading} error={error} onRetry={onRetry}
-        renderCard={i => <JobCard i={i} money={money} />} cardsOnly={!!selected}
+        renderCard={i => <JobCard i={i} money={money} />}
         onRowClick={i => onSelect(i.id)} rowTone={i => (i.id === selected ? 'gold' : i.state === 'resolved' ? 'muted' : null)}
         noun={['job', 'jobs']} exportName="maintenance-jobs" selectionKey={tab} above={above}
         filtered={filtered} onClearFilters={onClearFilters}
