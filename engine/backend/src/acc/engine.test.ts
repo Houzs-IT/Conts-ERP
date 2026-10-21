@@ -56,6 +56,34 @@ describe('postJournal — the one gate', () => {
     expect(sb.tables.journal_entry_lines[0]).toMatchObject({ account_code: '300-0000', debit_sen: 388800, line_no: 1 });
   });
 
+  /* The department (Conts, finance phase 1, spec 3.5): Rental, Supply chain or Shared, per line. */
+  it("keeps each line's department", async () => {
+    const sb = world();
+    const out = await postJournal(sb, { ...base, lines: [
+      { accountCode: '905-0000', debitSen: 300, creditSen: 0, department: 'rental' },
+      { accountCode: '300-0000', debitSen: 200, creditSen: 0, department: 'shared' },
+      { accountCode: '500-0000', debitSen: 0, creditSen: 500, department: 'supply' },
+    ] });
+    expect(out).toMatchObject({ ok: true, status: 'posted' });
+    expect(sb.tables.journal_entry_lines.map((l) => l.department)).toEqual(['rental', 'shared', 'supply']);
+  });
+
+  it('defaults to supply when a line has none', async () => {
+    const sb = world();
+    await postJournal(sb, { ...base, lines: drCr(100, 100) });
+    expect(sb.tables.journal_entry_lines.map((l) => l.department)).toEqual(['supply', 'supply']);
+  });
+
+  it('refuses an unknown department, before anything is written', async () => {
+    const sb = world();
+    const out = await postJournal(sb, { ...base, lines: [
+      { accountCode: '300-0000', debitSen: 100, creditSen: 0, department: 'hq' as never },
+      { accountCode: '500-0000', debitSen: 0, creditSen: 100 },
+    ] });
+    expect(out).toMatchObject({ ok: false, status: 'bad_line' });
+    expect(sb.tables.journal_entries).toHaveLength(0);
+  });
+
   it('numbers sequentially within a company month', async () => {
     const sb = world();
     await postJournal(sb, { ...base, lines: drCr(100, 100) });
@@ -236,6 +264,15 @@ describe('reverseJournal — voiding through the same gate', () => {
     const revLines = sb.tables.journal_entry_lines.filter((l) => l.journal_entry_id === rev.id);
     expect(revLines[0]).toMatchObject({ account_code: '300-0000', debit_sen: 0, credit_sen: 388800, party_code: 'C-1' });
     expect(sb.tables.journal_entries.find((j) => j.id === 'je-1')!.reversed).toBe(true);
+  });
+
+  it("the contra keeps each line's department, so a department's P&L nets to nothing", async () => {
+    const lines = [{ ...LIVE_LINES[0], department: 'rental' }, { ...LIVE_LINES[1], department: 'shared' }];
+    const sb = world({ jes: [{ ...LIVE }], jeLines: lines });
+    await reverseJournal(sb, revInput);
+    const rev = sb.tables.journal_entries.find((j) => j.source_type === 'SI_REVERSAL')!;
+    const revLines = sb.tables.journal_entry_lines.filter((l) => l.journal_entry_id === rev.id);
+    expect(revLines.map((l) => l.department)).toEqual(['rental', 'shared']);
   });
 
   it('nothing_to_reverse when no ACTIVE entry exists', async () => {

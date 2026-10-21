@@ -337,3 +337,63 @@ describe('editing a receipt around the ledger start (Conts)', () => {
     expect(tables.journal_entries).toHaveLength(1);
   });
 });
+
+/* The department on each line (Conts, finance phase 1, spec 3.5): kept on the receipt's lines and the journal's,
+   with the bank debited per department so each department balances. */
+describe('departments on a receipt', () => {
+  const patch = (app: Hono, path: string, body: Row) => app.request(path, {
+    method: 'PATCH', body: JSON.stringify(body), headers: { 'content-type': 'application/json' },
+  });
+  const linesOf = (tables: Record<string, Row[]>, receiptNumber: string) => {
+    const je = tables.journal_entries.find((j) => j.source_type === 'RCT' && j.source_doc_no === receiptNumber && !j.reversed)!;
+    return tables.journal_entry_lines.filter((l) => l.journal_entry_id === je.id).map((l) => [l.account_code, l.debit_sen, l.credit_sen, l.department]);
+  };
+
+  test('each line keeps its department, and the bank is debited per department', async () => {
+    const tables = baseTables();
+    const app = harness(tables);
+    const res = await post(app, '/', {
+      payerName: 'TENANT', receiptDate: `${thisMonth}-03`, bankAccountCode: '310-0010',
+      lines: [
+        { description: 'Rent', creditAccountCode: '700-0000', amountSen: 150000, department: 'rental' },
+        { description: 'Scrap', creditAccountCode: '700-0000', amountSen: 2000, department: 'supply' },
+      ],
+    });
+    expect(res.status, await res.clone().text()).toBe(201);
+    const made = (await res.json() as { receipt: { receiptNumber: string } }).receipt;
+    expect(tables.acc_receipt_lines.map((l) => l.department)).toEqual(['rental', 'supply']);
+    expect(linesOf(tables, made.receiptNumber)).toEqual([
+      ['310-0010', 150000, 0, 'rental'],
+      ['310-0010', 2000, 0, 'supply'],
+      ['700-0000', 0, 150000, 'rental'],
+      ['700-0000', 0, 2000, 'supply'],
+    ]);
+  });
+
+  test('a line without one is Supply chain; an unknown one is refused and nothing is saved', async () => {
+    const tables = baseTables();
+    const app = harness(tables);
+    const bad = await post(app, '/', {
+      payerName: 'X', bankAccountCode: '310-0010', lines: [{ creditAccountCode: '700-0000', amountSen: 100, department: 'hq' }],
+    });
+    expect(bad.status).toBe(400);
+    expect((await bad.json() as { error: string }).error).toBe('bad_line');
+    expect(tables.acc_receipts).toHaveLength(0);
+    const ok = await post(app, '/', { payerName: 'X', bankAccountCode: '310-0010', lines: [{ creditAccountCode: '700-0000', amountSen: 100 }] });
+    expect(ok.status).toBe(201);
+    expect(tables.acc_receipt_lines.map((l) => l.department)).toEqual(['supply']);
+  });
+
+  test('an edit carries the new departments into the re-posted journal', async () => {
+    const tables = baseTables();
+    const app = harness(tables);
+    const res = await post(app, '/', {
+      payerName: 'TENANT', receiptDate: `${thisMonth}-03`, bankAccountCode: '310-0010',
+      lines: [{ creditAccountCode: '700-0000', amountSen: 500, department: 'supply' }],
+    });
+    const made = (await res.json() as { receipt: { id: string; receiptNumber: string } }).receipt;
+    const ok = await patch(app, `/${made.id}`, { lines: [{ creditAccountCode: '700-0000', amountSen: 500, department: 'shared' }] });
+    expect(ok.status, await ok.clone().text()).toBe(200);
+    expect(linesOf(tables, made.receiptNumber)).toEqual([['310-0010', 500, 0, 'shared'], ['700-0000', 0, 500, 'shared']]);
+  });
+});

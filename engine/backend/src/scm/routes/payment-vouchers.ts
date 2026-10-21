@@ -51,7 +51,7 @@ import { docMonthTag, mintMonthlyDocNo, insertWithDocNoRetry } from '../lib/doc-
 import { isDocumentHeld } from '../lib/document-hold';
 import { dateOrNull } from '../lib/date-coerce';
 import { postJournal, reverseJournal } from '../../acc/engine';
-import { apControlRole, pvLines, customerRefundLines, resolveRoles } from '../../acc/rules';
+import { apControlRole, pvLines, customerRefundLines, resolveRoles, DEFAULT_DEPARTMENT, isDepartment, type Department } from '../../acc/rules';
 import { customerPartyCode } from '../../acc/payments';
 import { refundSourceHandler, refundCreateGuard, refundOwnControl, bookRefundCredit, refundHookInput } from '../lib/pv-refund';
 import { refundDepositInvoicesBestEffort, releaseRefundNotesBestEffort } from '../../acc/deposit-refunds';
@@ -95,7 +95,7 @@ const PV_AUDIT_FIELDS: Array<[string, string]> = [
 const HEADER =
   'id, pv_number, voucher_date, payee_name, supplier_id, credit_account_code, currency, exchange_rate, purpose, notes, total_sen, status, posted_at, created_at, created_by, updated_at, company_id, submitted_at, submitted_by, checked_at, checked_by, approved_at, approved_by, refund_source_type, refund_source_doc_no, customer_id, debtor_code';
 
-const LINE = 'id, pv_id, line_no, description, debit_account_code, amount_sen, created_at';
+const LINE = 'id, pv_id, line_no, description, debit_account_code, amount_sen, created_at, department';
 
 /* Migration 0202 — the PV purpose. Only SUPPLIER_PAYMENT settles AP (its
    allocations decrement the linked PIs' paid_sen); FREIGHT / OTHER post the GL
@@ -199,20 +199,23 @@ export function parseAmountSen(raw: unknown): number | null {
 /* ── Normalise + validate the incoming lines, recompute the header total ──── */
 export function buildLines(
   raw: unknown,
-): { rows: Array<{ line_no: number; description: string | null; debit_account_code: string; amount_sen: number }>; total: number } | { error: string } {
+): { rows: Array<{ line_no: number; description: string | null; debit_account_code: string; amount_sen: number; department: Department }>; total: number } | { error: string } {
   if (!Array.isArray(raw) || raw.length === 0) return { error: 'lines_required' };
-  const rows: Array<{ line_no: number; description: string | null; debit_account_code: string; amount_sen: number }> = [];
+  const rows: Array<{ line_no: number; description: string | null; debit_account_code: string; amount_sen: number; department: Department }> = [];
   let total = 0;
   for (let i = 0; i < raw.length; i += 1) {
     const line = raw[i] as Record<string, unknown>;
     const debit = (line.debitAccountCode as string | undefined)?.trim();
     const amount = parseAmountSen(line.amountSen);
     if (amount === null) return { error: 'line_amount_invalid' };
+    // Conts: the line's department (spec 3.5); none is Supply chain.
+    if (line.department != null && !isDepartment(line.department)) return { error: 'department_invalid' };
     rows.push({
       line_no: i + 1,
       description: (line.description as string | undefined)?.trim() || null,
       debit_account_code: debit ?? '',
       amount_sen: amount,
+      department: isDepartment(line.department) ? line.department : DEFAULT_DEPARTMENT,
     });
     total += amount;
   }
@@ -1031,8 +1034,8 @@ export const postPaymentVoucherHandler = async (c: any) => {
   if (!gate.ok) return c.json({ error: gate.error, message: gate.message }, 409);
 
   const { data: linesRaw } = await sb.from('payment_voucher_lines')
-    .select('line_no, description, debit_account_code, amount_sen').eq('pv_id', id).order('line_no');
-  const lines = (linesRaw ?? []) as Array<{ line_no: number; description: string | null; debit_account_code: string; amount_sen: number }>;
+    .select('line_no, description, debit_account_code, amount_sen, department').eq('pv_id', id).order('line_no');
+  const lines = (linesRaw ?? []) as Array<{ line_no: number; description: string | null; debit_account_code: string; amount_sen: number; department?: Department | null }>;
   if (lines.length === 0) return c.json({ error: 'no_lines', message: 'Voucher has no lines to post' }, 400);
 
   /* FX conversion AT POST TIME (MYR-only today → rate 1). Each Dr leg =

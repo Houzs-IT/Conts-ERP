@@ -32,6 +32,7 @@ import { requireActiveCompanyId, scopeToCompanyId, NOT_THIS_COMPANY } from '../l
 import { dateOrNull } from '../lib/date-coerce';
 import { postJournal, reverseJournal, validateJournal, type EngineLine } from '../../acc/engine';
 import { ledgerDatesRefusal } from '../../acc/ledger-settings';
+import { DEFAULT_DEPARTMENT, type Department } from '../../acc/rules';
 
 type Ctx = Context<{ Bindings: Env; Variables: Variables }>;
 
@@ -43,6 +44,7 @@ type LineIn = {
   partyCode?: unknown;
   partyName?: unknown;
   notes?: unknown;
+  department?: unknown;
 };
 
 type Header = {
@@ -69,6 +71,8 @@ const linesOf = (raw: unknown): EngineLine[] =>
     partyCode: text(l.partyCode),
     partyName: text(l.partyName),
     notes: text(l.notes),
+    // Conts: the line's department (spec 3.5); the engine refuses one it does not know.
+    department: text(l.department) as Department | null,
   }));
 
 /* The same key the create, post and reverse routes ask for (accounting.ts:
@@ -125,7 +129,7 @@ export const journalEntryEdit = async (c: Ctx) => {
   /* A draft has booked nothing: rewrite it in place, same number. */
   if (je.posted !== true) {
     const { data: oldLines, error: oldErr } = await sb.from('journal_entry_lines')
-      .select('journal_entry_id, line_no, account_code, debit_sen, credit_sen, party_type, party_code, party_name, notes, company_id')
+      .select('journal_entry_id, line_no, account_code, debit_sen, credit_sen, party_type, party_code, party_name, notes, company_id, department')
       .eq('journal_entry_id', je.id);
     if (oldErr) return c.json({ error: 'load_failed', reason: oldErr.message }, 500);
     const { error: headErr } = await scopeToCompanyId(
@@ -146,6 +150,7 @@ export const journalEntryEdit = async (c: Ctx) => {
       party_code: l.partyCode ?? null,
       party_name: l.partyName ?? null,
       notes: l.notes ?? null,
+      department: l.department ?? DEFAULT_DEPARTMENT,
     })));
     if (insErr) {
       /* The old lines go back so the draft is never a header alone. */

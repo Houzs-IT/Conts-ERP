@@ -31,7 +31,7 @@
 import { nextJeNo, jePrefixForCompany } from '../scm/lib/doc-no';
 import { todayMyt } from '../scm/lib/my-time';
 import { dateOrNull } from '../scm/lib/date-coerce';
-import { REVERSAL_SOURCE, CONTROL_ROLES, resolveRoles } from './rules';
+import { REVERSAL_SOURCE, CONTROL_ROLES, DEFAULT_DEPARTMENT, isDepartment, resolveRoles } from './rules';
 import { accMastersCompanyId } from './masters-company';
 import { beforeLedgerStartMessage, isBeforeLedgerStart, loadLedgerSettings } from './ledger-settings';
 import type { RuleLine } from './rules';
@@ -142,6 +142,9 @@ export async function validateJournal(sb: any, input: PostJournalInput): Promise
     }
     if ((l.debitSen ?? 0) > 0 && (l.creditSen ?? 0) > 0) {
       return { ok: false, status: 'bad_line', reason: `line on ${l.accountCode} carries both debit and credit` };
+    }
+    if (l.department != null && !isDepartment(l.department)) {
+      return { ok: false, status: 'bad_line', reason: `line on ${l.accountCode} names an unknown department` };
     }
     dr += l.debitSen ?? 0;
     cr += l.creditSen ?? 0;
@@ -296,6 +299,7 @@ export async function postJournal(sb: any, input: PostJournalInput): Promise<Pos
     party_code: l.partyCode ?? null,
     party_name: l.partyName ?? null,
     notes: l.notes ?? null,
+    department: l.department ?? DEFAULT_DEPARTMENT,
   }));
   const { error: linesErr } = await sb.from('journal_entry_lines').insert(lineRows);
   if (linesErr) {
@@ -420,7 +424,7 @@ export async function reverseJournal(sb: any, input: ReverseJournalInput): Promi
   // accounts instead of the real ones.
   const { data: origLines, error: origLinesErr } = await sb
     .from('journal_entry_lines')
-    .select('account_code, debit_sen, credit_sen, party_type, party_code, party_name, notes')
+    .select('account_code, debit_sen, credit_sen, party_type, party_code, party_name, notes, department')
     .eq('journal_entry_id', orig.id)
     .order('line_no');
   if (origLinesErr) return { ok: false, status: 'reversal_read_failed', reason: `origLines: ${origLinesErr.message}` };
@@ -432,6 +436,7 @@ export async function reverseJournal(sb: any, input: ReverseJournalInput): Promi
     party_code: string | null;
     party_name: string | null;
     notes: string | null;
+    department?: string | null;
   }>;
 
   const companyId = orig.company_id ?? null;
@@ -485,6 +490,8 @@ export async function reverseJournal(sb: any, input: ReverseJournalInput): Promi
           party_code: l.party_code ?? null,
           party_name: l.party_name ?? null,
           notes: `Reversal — ${l.notes ?? ''}`.trim(),
+          // The contra sits in the original's department, so that department nets to nothing.
+          department: isDepartment(l.department) ? l.department : DEFAULT_DEPARTMENT,
         }))
       : (input.fallbackLines ? input.fallbackLines(totalSen) : []).map((l, i) => ({
           ...companyCol,
@@ -497,6 +504,7 @@ export async function reverseJournal(sb: any, input: ReverseJournalInput): Promi
           party_code: l.partyCode ?? null,
           party_name: l.partyName ?? null,
           notes: l.notes ?? null,
+          department: l.department ?? DEFAULT_DEPARTMENT,
         }));
   if (swapped.length === 0) {
     await sb.from('journal_entries').delete().eq('id', revJe.id);

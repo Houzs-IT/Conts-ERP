@@ -32,7 +32,7 @@ import { beforeLedgerStartMessage, isBeforeLedgerStart, ledgerDatesRefusal, load
 import { backfillSoPayments, paymentEntryDisagreements, unbookedPayments } from '../../acc/payments';
 import { computeDailyBank } from '../../acc/daily-bank';
 import { systemTakings, postCashOverShort } from '../../acc/daily-close';
-import { resolveRoles, piLines, DEFAULT_ROLE_CODES } from '../../acc/rules';
+import { resolveRoles, piLines, DEFAULT_ROLE_CODES, type Department } from '../../acc/rules';
 import { splitByItemGroup } from '../../acc/item-group-split';
 import { classifyJournal } from '../../acc/journal-class';
 import { isReversalPair } from '../../acc/reversal-pairs';
@@ -259,6 +259,8 @@ type JeLineIn = {
   partyCode?: string | null;
   partyName?: string | null;
   notes?: string | null;
+  /** Conts: Rental, Supply chain or Shared (spec 3.5); the engine refuses one it does not know. */
+  department?: Department | null;
 };
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -528,6 +530,7 @@ export const journalEntryCreateHandler = async (c: AccCtx): Promise<Response> =>
       partyCode: l.partyCode ?? null,
       partyName: l.partyName ?? null,
       notes: l.notes ?? null,
+      department: l.department ?? null,
     })),
     postNow: false,
   });
