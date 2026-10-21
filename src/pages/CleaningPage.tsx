@@ -434,8 +434,9 @@ function BulkCloseModal({ action, jobs, onClose, onDone }: { action: 'done' | 'c
 /* ---------- one building ---------- */
 
 // Columns follow the card's own width, not the window's. Checkout and check-in hold full guest names, so they get at
-// least 220px and the most share; amount and type are short and take the least.
-const COLS = '@4xl:grid @4xl:grid-cols-[minmax(0,0.7fr)_minmax(220px,1.6fr)_minmax(220px,1.6fr)_minmax(0,0.7fr)_minmax(0,0.55fr)_minmax(0,0.8fr)_minmax(0,1.1fr)] @6xl:grid-cols-[minmax(0,0.8fr)_minmax(220px,1.5fr)_minmax(220px,1.5fr)_minmax(0,0.6fr)_minmax(0,0.55fr)_minmax(0,0.7fr)_minmax(0,0.5fr)_minmax(0,0.85fr)_minmax(0,1.1fr)] @4xl:items-center @4xl:gap-2.5';
+// least 220px and the most share. Amount must fit "Price not set" and status "Guest out, ready to clean", which
+// were cut off at the card edge on a laptop.
+const COLS = '@4xl:grid @4xl:grid-cols-[minmax(0,0.7fr)_minmax(220px,1.4fr)_minmax(220px,1.4fr)_minmax(0,0.7fr)_minmax(0,0.8fr)_minmax(0,0.8fr)_minmax(0,1.3fr)] @6xl:grid-cols-[minmax(0,0.7fr)_minmax(220px,1.4fr)_minmax(220px,1.4fr)_minmax(0,0.6fr)_minmax(0,0.55fr)_minmax(0,0.7fr)_minmax(0,0.75fr)_minmax(0,0.85fr)_minmax(0,1.4fr)] @4xl:items-center @4xl:gap-2.5';
 const HIDDEN_IN_NARROW_TABLE = '@4xl:@max-6xl:hidden';
 const STACKED_LABEL = '@4xl:hidden flex-none w-[60px] text-meta text-muted-ink';
 const LABELLED_CELL = 'min-w-0 items-baseline gap-2';
@@ -625,8 +626,9 @@ function CleanRow({ r, now, active, busy, savingIn, onSelect, onGuestLeft, onUnd
       <div className={cx(LABELLED_CELL, 'flex', HIDDEN_IN_NARROW_TABLE, !r.unit?.layout && !r.unit?.size && '@max-4xl:hidden')}><span className={STACKED_LABEL}>Layout</span><span className="min-w-0">{r.unit?.layout ?? r.unit?.size ?? <span className="text-muted-ink">—</span>}</span></div>
       <div className={cx(LABELLED_CELL, 'flex whitespace-nowrap')}><span className={STACKED_LABEL}>Amount</span>{r.amount != null ? <span className="tabular-nums truncate">{rm(r.amount, { cents: false })}</span> : <span className="text-muted-ink truncate" title="Set it in Cleaning > Prices">Price not set</span>}</div>
       <CleanerCell r={r} />
-      <div className="hidden @4xl:flex items-center gap-1.5 flex-wrap">
-        <span className="hidden @4xl:inline"><StatusBadge tone={st.tone} className="whitespace-nowrap">{label}</StatusBadge></span>
+      <div className="hidden @4xl:flex items-center gap-1.5 flex-wrap min-w-0">
+        {/* Wraps inside its column rather than spilling past the card edge, where it was cut off. */}
+        <span className="hidden @4xl:inline min-w-0"><StatusBadge tone={st.tone} className="whitespace-normal">{label}</StatusBadge></span>
         {r.status === 'done' && <span className="hidden @4xl:inline text-meta text-muted-ink whitespace-nowrap">{r.completedAt ? `Done ${hm(r.completedAt)}` : 'Done'}{files > 0 ? ` · ${files} ${files === 1 ? 'photo' : 'photos'}` : ''}</span>}
       </div>
     </div>
