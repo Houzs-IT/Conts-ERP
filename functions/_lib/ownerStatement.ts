@@ -403,10 +403,12 @@ export const UNIT_SQL = `
   FROM units u JOIN properties p ON p.id = u.property_id JOIN owners o ON o.id = u.owner_id
   LEFT JOIN owner_contracts c ON c.id = u.contract_id`;
 
-/** Everything needed for [from, toExclusive), for every unit, some owners' units, or one unit. Six queries. */
-export async function loadInputs(q: Query, from: string, toExclusive: string, scope: { ownerIds?: string[]; unitId?: string } = {}): Promise<Inputs> {
-  const unitWhere = scope.unitId ? 'WHERE u.id = ?' : scope.ownerIds ? 'WHERE u.owner_id IN (SELECT jsonb_array_elements_text(?::text::jsonb))' : '';
-  const unitArg = scope.unitId ? [scope.unitId] : scope.ownerIds ? [JSON.stringify(scope.ownerIds)] : [];
+/** Everything needed for [from, toExclusive), for every unit, some owners' units, some units, or one unit. Six queries. */
+export async function loadInputs(q: Query, from: string, toExclusive: string, scope: { ownerIds?: string[]; unitIds?: string[]; unitId?: string } = {}): Promise<Inputs> {
+  const unitWhere = scope.unitId ? 'WHERE u.id = ?'
+    : scope.unitIds ? 'WHERE u.id IN (SELECT jsonb_array_elements_text(?::text::jsonb))'
+    : scope.ownerIds ? 'WHERE u.owner_id IN (SELECT jsonb_array_elements_text(?::text::jsonb))' : '';
+  const unitArg = scope.unitId ? [scope.unitId] : scope.unitIds ? [JSON.stringify(scope.unitIds)] : scope.ownerIds ? [JSON.stringify(scope.ownerIds)] : [];
   const units = await q<UnitRow>(`${UNIT_SQL} ${unitWhere} ORDER BY p.name, u.unit_number`, ...unitArg);
   const ids = JSON.stringify(units.map(u => u.id));
   const [stays, costs, adjustments, history] = await Promise.all([
@@ -511,4 +513,53 @@ export async function withYearToDate(q: Query, inputs: Inputs, month: string, se
     return { ...u, year_shares_before: total };
   }));
   return { ...inputs, units };
+}
+
+/** computeMonth ('dated') with withYearToDate for several months at once (the Dashboard's months, sorted), same
+ *  figures as calling the two month by month. withYearToDate loads and works out a yearly-guarantee unit's earlier
+ *  months again for every month that closes its contract year; here each unit's month is worked out once and the
+ *  true-up adds up the owner's shares already worked out. Earlier months that are not among `months` (before the
+ *  first one) come from one more loadInputs for all those units together. */
+export async function computeMonthsWithYearToDate(q: Query, inputs: Inputs, months: string[], settings: { defaultFeePct: number; miscMonthly: number }): Promise<Map<string, UnitMonth[]>> {
+  // The contract year a unit's statement for `month` closes, as withYearToDate reads it; null when it closes none.
+  const closes = (u: UnitRow, month: string) => {
+    const asOf = unitForMonth(u, month);
+    const t = termsFor(asOf, settings.defaultFeePct);
+    if (t.model !== 'management_yearly_guarantee' || !t.yearlyGuarantee) return null;
+    const y = yearlyFor(month, t.activeFrom, t.activeTo, t.yearlyGuarantee);
+    return y?.trueUp ? { yearFrom: y.yearFrom, contractId: asOf.contract_id } : null;
+  };
+  const asked = new Set(months);
+  const shares = new Map<string, number>(); // `${unitId}|${month}`: the owner's share that month
+  const gaps: { u: UnitRow; m: string }[] = [];
+  for (const month of months) for (const u of inputs.units) {
+    const y = closes(u, month);
+    if (y) for (let m = y.yearFrom; m < month; m = addMonths(m, 1)) if (!asked.has(m)) gaps.push({ u, m });
+  }
+  if (gaps.length) {
+    const ms = gaps.map(g => g.m).sort();
+    const before = await loadInputs(q, `${ms[0]}-01`, monthEndExclusive(ms[ms.length - 1]), { unitIds: [...new Set(gaps.map(g => g.u.id))] });
+    for (const { u, m } of gaps) {
+      const key = `${u.id}|${m}`;
+      if (shares.has(key)) continue;
+      // The unit as given, as withYearToDate does, with the earlier months' stays and costs.
+      const r = computeMonth(m, { ...before, units: [{ ...u, year_shares_before: undefined }] }, settings, 'dated').find(x => x.unitId === u.id);
+      if (r) shares.set(key, r.ownerShare);
+    }
+  }
+  const out = new Map<string, UnitMonth[]>();
+  for (const month of months) {
+    const units = inputs.units.map(u => {
+      const y = closes(u, month);
+      if (!y) return u;
+      let total = 0;
+      for (let m = y.yearFrom; m < month; m = addMonths(m, 1)) if (unitForMonth(u, m).contract_id === y.contractId) total += shares.get(`${u.id}|${m}`) ?? 0;
+      return { ...u, year_shares_before: total };
+    });
+    const rows = computeMonth(month, { ...inputs, units }, settings, 'dated');
+    // The owner's share does not depend on year_shares_before, so a later month's true-up can add it up.
+    for (const r of rows) shares.set(`${r.unitId}|${month}`, r.ownerShare);
+    out.set(month, rows);
+  }
+  return out;
 }
