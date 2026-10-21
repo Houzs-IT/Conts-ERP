@@ -903,9 +903,10 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft, onCheckIn, sav
       {!done && (
         <div className="grid grid-flow-col auto-cols-fr gap-3 max-md:order-last max-md:sticky max-md:bottom-0 max-md:z-[2] max-md:-mx-5 max-md:-mb-5 max-md:px-5 max-md:pt-3 max-md:pb-[calc(12px+env(safe-area-inset-bottom))] max-md:bg-card max-md:[border-top:1px_solid_var(--color-line)]">
           {row.state !== 'in_progress' && (
-            <Button variant="outline" icon={<Icon name="Play" size="sm" />} loading={busy === 'start'} onClick={() => void act('start', () => api.post(`/housekeeping/tasks/${row.id}/start`, {}), 'Cleaning job started.')}>Start</Button>
+            // One black button, the next step: Start until the clean is under way, then Mark complete.
+            <Button variant="primary" icon={<Icon name="Play" size="sm" />} loading={busy === 'start'} onClick={() => void act('start', () => api.post(`/housekeeping/tasks/${row.id}/start`, {}), 'Cleaning job started.')}>Start</Button>
           )}
-          <Button variant="primary" icon={<Icon name="Check" size="sm" />} loading={busy === 'complete'} disabled={files === 0} disabledReason="Add at least one photo or video first."
+          <Button variant={row.state !== 'in_progress' ? 'outline' : 'primary'} icon={<Icon name="Check" size="sm" />} loading={busy === 'complete'} disabled={files === 0} disabledReason="Add at least one photo or video first."
             onClick={() => void act('complete', async () => {
               const r = await api.post<{ cost: { amount: number; created: boolean; reason: string | null } | null }>(`/tasks/${row.id}/complete`, { photoIds: [] });
               if (r.cost && !r.cost.created && r.cost.reason && r.cost.reason !== 'already charged') toast({ tone: 'info', title: 'Cost not added.', body: `Not charged to the unit: ${r.cost.reason}.` });

@@ -662,9 +662,10 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
           {/* Phones have no hover, so the reason a button is off is written out. The bar sticks to the bottom of a long sheet on phones. */}
           {(!started(i) || money) && <section className="flex flex-col gap-2 pt-4 [border-top:1px_solid_var(--color-line-soft)] max-sm:order-last max-sm:sticky max-sm:bottom-0 max-sm:z-[2] max-sm:-mx-5 max-sm:-mb-5 max-sm:px-5! max-sm:pb-4! max-sm:rounded-none! max-sm:border-x-0! max-sm:border-b-0! max-sm:bg-card max-sm:shadow-[0_-6px_12px_-8px_rgba(0,0,0,0.25)]">
             <div className="grid grid-flow-col auto-cols-fr gap-3">
-              {!started(i) && <Button variant="outline" icon={<Icon name="Play" size="sm" />} loading={busy === 'start'} disabled={awaitingOwner(i)} disabledReason="Waiting for the owner's approval."
+              {/* One black button, the next step: Start repair until it is under way, then Mark done. */}
+              {!started(i) && <Button variant="primary" icon={<Icon name="Play" size="sm" />} loading={busy === 'start'} disabled={awaitingOwner(i)} disabledReason="Waiting for the owner's approval."
                 onClick={() => void act('start', () => api.post(`/maintenance/issues/${i.id}/start`, {}), 'Repair started.')}>Start repair</Button>}
-              {money && <Button variant="primary" icon={<Icon name="Check" size="sm" />} disabled={!!doneWhy} disabledReason={doneWhy ?? undefined}
+              {money && <Button variant={started(i) ? 'primary' : 'outline'} icon={<Icon name="Check" size="sm" />} disabled={!!doneWhy} disabledReason={doneWhy ?? undefined}
                 onClick={() => setCompleteOpen(true)}>Mark done</Button>}
             </div>
             {doneWhy && (money || awaitingOwner(i)) && <span className="text-meta text-muted-ink">{doneWhy}</span>}
