@@ -3,8 +3,6 @@
  * transport and state; it only becomes a string at the edge, here.
  */
 
-import { parsePhone } from './phone';
-export { parsePhone } from './phone';
 
 const MYT = 'Asia/Kuala_Lumpur';
 
@@ -168,37 +166,6 @@ export const dateTimeShort = (iso: string) => `${dateShort(iso)} ${time(iso)}`;
 /** RM 1,250 for whole ringgit (calendar cells, rate chips); RM 1,250–1,400 for a range. */
 export const rmRange = (loSen: number, hiSen: number) =>
   loSen === hiSen ? rmShort(loSen) : `${rmShort(loSen)}–${count(Math.round(hiSen / 100))}`;
-
-/* ---------- Phone numbers ----------
- * Guests' phones arrive as bare digits with the country code (60189800069, from the booking sites and the
- * HostPlatform import), sometimes with + and spaces, sometimes as a Malaysian local number (0189800069).
- * They are stored as they came; this only changes how they read, for every country: +60 18-980 0069,
- * +44 7700 900123, +7 912 345-67-89. The reading rules live in phone.ts, shared with the server checks. */
-
-/** The digits a phone link dials, with the country code: "60189800069". Empty when there is no usable number. */
-export const phoneDigits = (raw: string | null | undefined) => {
-  const p = parsePhone(raw);
-  if (p?.possible) return p.digits;
-  const trimmed = (raw ?? '').trim();
-  const d = trimmed.replace(/\D/g, '');
-  if (!d) return '';
-  return trimmed.startsWith('00') ? d.slice(2) : d;
-};
-
-/** +60 18-980 0069 for any country; a number of the wrong length shows as +<digits>, and text with too few digits
- *  to be a phone shows as typed. */
-export const phone = (raw: string | null | undefined) => {
-  if (!raw) return '';
-  const p = parsePhone(raw);
-  if (p?.possible) return p.international;
-  const d = phoneDigits(raw);
-  return d.length < 7 ? raw.trim() : `+${d}`;
-};
-
-/** tel: link for a phone, or '' when there is no number. */
-export const phoneHref = (raw: string | null | undefined) => { const d = phoneDigits(raw); return d ? `tel:+${d}` : ''; };
-/** WhatsApp chat link for a phone, or '' when there is no number. */
-export const whatsappHref = (raw: string | null | undefined) => { const d = phoneDigits(raw); return d ? `https://wa.me/${d}` : ''; };
 
 /** 1,250.00 (or 1,250 with cents: false): the number alone, for cells under an "RM" heading and printed forms. */
 export const amount = (sen: number, opts?: { cents?: boolean }) => {

@@ -1,6 +1,6 @@
 import Icon from './Icon';
 import { cx } from '../lib/design-tokens';
-import { phone, phoneHref, whatsappHref } from '../lib/format';
+import { phone, phoneHref, whatsappHref } from '../lib/phone';
 
 /**
  * A phone number as people read it (+60 18-980 0069), tapping it calls, and the chat icon opens WhatsApp.
