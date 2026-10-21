@@ -33,6 +33,7 @@ import { todayMyt } from '../scm/lib/my-time';
 import { dateOrNull } from '../scm/lib/date-coerce';
 import { REVERSAL_SOURCE, CONTROL_ROLES, resolveRoles } from './rules';
 import { accMastersCompanyId } from './masters-company';
+import { beforeLedgerStartMessage, isBeforeLedgerStart, loadLedgerSettings } from './ledger-settings';
 import type { RuleLine } from './rules';
 
 export type EngineLine = RuleLine;
@@ -70,7 +71,9 @@ export type PostJournalErr = {
     | 'je_insert_failed'
     | 'lines_insert_failed'
     | 'je_prefix_failed'
-    | 'post_failed';
+    | 'post_failed'
+    | 'before_ledger_start'
+    | 'ledger_settings_failed';
   reason?: string;
 };
 export type PostJournalResult = PostJournalOk | PostJournalErr;
@@ -180,6 +183,17 @@ export async function postJournal(sb: any, input: PostJournalInput): Promise<Pos
   const entryDate = dateOrNull(input.entryDate) ?? todayMyt();
   const postNow = input.postNow !== false;
   const lines = input.lines ?? [];
+
+  // 0 — the ledger start (Conts): anything dated before it is already in the
+  // AutoCount opening balances. Only the OPENING journal may sit before it.
+  // A failed read refuses: "no start date" is exactly what lets one through.
+  if (sourceType !== 'OPENING') {
+    const ls = await loadLedgerSettings(sb, companyId ?? null);
+    if (!ls.ok) return { ok: false, status: 'ledger_settings_failed', reason: 'The ledger settings could not be read.' };
+    if (isBeforeLedgerStart(entryDate, ls.settings)) {
+      return { ok: false, status: 'before_ledger_start', reason: beforeLedgerStartMessage(ls.settings.ledgerStartDate as string) };
+    }
+  }
 
   // 1–3b — shape, balance, the chart, the control guard: the read-only half of
   // the gate, shared with validateJournal (the dry run asks exactly this).
@@ -317,6 +331,9 @@ export type ReverseJournalInput = {
   entryDate?: string;
   /** canonical 2-line fallback if the original somehow has no lines. */
   fallbackLines?: (totalSen: number) => EngineLine[];
+  /** The source document's own date. Before the ledger start nothing is
+      reversed (Conts): that document belongs to the opening balances. */
+  sourceDate?: string;
 };
 
 export type ReverseJournalResult =
@@ -324,7 +341,7 @@ export type ReverseJournalResult =
       mirror, the original itself); `originalJeNo` is always the entry that
       was voided — the number a reader recognises, which the contra's is not. */
   | { ok: true; status: 'reversed'; jeNo: string; jeId: string; originalJeNo: string }
-  | { ok: true; status: 'already_reversed' | 'nothing_to_reverse' }
+  | { ok: true; status: 'already_reversed' | 'nothing_to_reverse' | 'before_ledger_start' }
   | { ok: false; status: 'reversal_read_failed' | 'reversal_insert_failed' | 'reversal_lines_failed'; reason?: string };
 
 export async function reverseJournal(sb: any, input: ReverseJournalInput): Promise<ReverseJournalResult> {
@@ -332,6 +349,13 @@ export async function reverseJournal(sb: any, input: ReverseJournalInput): Promi
 
   if (!input.sourceDocNo && !input.jeId) {
     return { ok: false, status: 'reversal_read_failed', reason: 'reverseJournal needs sourceDocNo or jeId' };
+  }
+
+  const sourceDate = input.sourceType === 'OPENING' ? null : dateOrNull(input.sourceDate);
+  if (sourceDate) {
+    const ls = await loadLedgerSettings(sb, input.companyId ?? null);
+    if (!ls.ok) return { ok: false, status: 'reversal_read_failed', reason: 'The ledger settings could not be read.' };
+    if (isBeforeLedgerStart(sourceDate, ls.settings)) return { ok: true, status: 'before_ledger_start' };
   }
 
   // The ACTIVE original — a document may carry several historical entries
@@ -357,6 +381,16 @@ export async function reverseJournal(sb: any, input: ReverseJournalInput): Promi
     }>
   ).find((r) => !r.reversed);
   if (!orig) return { ok: true, status: 'nothing_to_reverse' };
+
+  // Nothing is written dated before the ledger start, a contra included (an
+  // edited manual journal reverses the old one on its own day); and an entry
+  // dated before it belongs to the opening balances, so it is never contra'd.
+  if (input.sourceType !== 'OPENING') {
+    const ls = await loadLedgerSettings(sb, orig.company_id ?? input.companyId ?? null);
+    if (!ls.ok) return { ok: false, status: 'reversal_read_failed', reason: 'The ledger settings could not be read.' };
+    if (isBeforeLedgerStart(dateOrNull(input.entryDate) ?? todayMyt(), ls.settings)) return { ok: true, status: 'before_ledger_start' };
+    if (isBeforeLedgerStart(orig.entry_date, ls.settings)) return { ok: true, status: 'before_ledger_start' };
+  }
 
   // A contra tied to THIS original already exists (the flag never stuck) —
   // make the flag stick and stop. Keyed on reversed_by_je, not "any reversal

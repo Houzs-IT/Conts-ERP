@@ -14,7 +14,7 @@
 // does NOT throw, so `?? []` folds "we could not ask" into "there is nothing
 // there", which does not degrade an idempotency guard, it DEFEATS it.
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { fakeSb, type Row } from './fake-postgrest';
 import { postSiRevenue, reverseSiRevenue, resyncSiRevenue } from './post-si-revenue';
 
@@ -277,5 +277,69 @@ describe('resyncSiRevenue — keeping the GL equal to the invoice', () => {
     expect(out.status).toBe('resync_read_failed');
     expect(siJes(sb).filter((j) => !j.reversed)).toHaveLength(1);
     expect(sb.tables.journal_entries.filter((j) => j.source_type === 'SI_REVERSAL')).toHaveLength(0);
+  });
+});
+
+describe('the ledger start date (Conts)', () => {
+  const started = (over: World = {}) => {
+    const sb = world(over);
+    sb.tables.acc_company_settings = [{ company_id: 1, ledger_start_date: '2026-12-01', fiscal_year_end_month: 8 }];
+    return sb;
+  };
+
+  it('skips a pre-start invoice without logging', async () => {
+    const sb = started();
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const out = await postSiRevenue(sb, INV);
+    expect(out).toMatchObject({ ok: true, status: 'before_ledger_start', ledgerStartDate: '2026-12-01' });
+    expect(siJes(sb)).toHaveLength(0);
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  it('skips a pre-start invoice even when its product group is unbound', async () => {
+    const sb = started({ binds: [] });
+    const out = await postSiRevenue(sb, INV);
+    expect(out).toMatchObject({ ok: true, status: 'before_ledger_start' });
+  });
+
+  it('cancelling a pre-start invoice writes no contra, even over an entry the engine booked', async () => {
+    const sb = started({
+      jes: [{ id: 'je-1', je_no: 'JE-2608-0001', entry_date: '2026-08-01', source_type: 'SI', source_doc_no: INV, company_id: 1, posted: true, reversed: false, total_debit_sen: 388800, total_credit_sen: 388800 }],
+    });
+    const out = await reverseSiRevenue(sb, INV);
+    expect(out).toMatchObject({ ok: true, status: 'before_ledger_start' });
+    expect(sb.tables.journal_entries).toHaveLength(1);
+  });
+
+  it('editing a pre-start invoice neither voids nor re-posts', async () => {
+    const sb = started({
+      jes: [{ id: 'je-1', je_no: 'JE-2608-0001', entry_date: '2026-08-01', source_type: 'SI', source_doc_no: INV, company_id: 1, posted: true, reversed: false, total_debit_sen: 100, total_credit_sen: 100 }],
+    });
+    const out = await resyncSiRevenue(sb, INV);
+    expect(out).toMatchObject({ ok: true, status: 'before_ledger_start' });
+    expect(sb.tables.journal_entries).toHaveLength(1);
+    expect(sb.tables.journal_entries[0].reversed).toBe(false);
+  });
+
+  it('cancelling a post-start invoice still finds an older entry written without a company', async () => {
+    // The contra is dated today, so the books must already have started.
+    const sb = started({
+      invoices: [{ id: 'si-1', invoice_number: INV, invoice_date: '2026-12-05', debtor_code: 'C-001', debtor_name: 'A', total_sen: 100, company_id: 1, status: 'ISSUED' }],
+      jes: [{ id: 'je-1', je_no: 'JE-2612-0001', entry_date: '2026-12-05', source_type: 'SI', source_doc_no: INV, company_id: null, posted: true, reversed: false, total_debit_sen: 100, total_credit_sen: 100 }],
+      jeLines: [
+        { journal_entry_id: 'je-1', line_no: 1, account_code: '300-0000', debit_sen: 100, credit_sen: 0 },
+        { journal_entry_id: 'je-1', line_no: 2, account_code: '500-0003', debit_sen: 0, credit_sen: 100 },
+      ],
+    });
+    sb.tables.acc_company_settings[0].ledger_start_date = '2026-01-01';
+    const out = await reverseSiRevenue(sb, INV);
+    expect(out).toMatchObject({ ok: true, status: 'reversed' });
+  });
+
+  it('posts an invoice dated on the start as before', async () => {
+    const sb = started({ invoices: [{ id: 'si-1', invoice_number: INV, invoice_date: '2026-12-01', debtor_code: 'C-001', debtor_name: 'A', total_sen: 388800, company_id: 1, status: 'ISSUED' }] });
+    const out = await postSiRevenue(sb, INV);
+    expect(out).toMatchObject({ ok: true, status: 'posted' });
   });
 });

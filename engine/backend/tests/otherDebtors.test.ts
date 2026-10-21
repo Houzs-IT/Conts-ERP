@@ -498,3 +498,37 @@ describe('numbers follow the document date (owner 2026-09-07: 要根据文件日
     expect(billRow.bill_number).toBe(bill.billNumber);
   });
 });
+
+describe('editing a bill around the ledger start (Conts)', () => {
+  const patchBill = (app: Hono, billId: string, body: Row) => app.request(`/bills/${billId}`, {
+    method: 'PATCH', body: JSON.stringify(body), headers: { 'content-type': 'application/json' },
+  });
+
+  test('moving a bill to before the start is refused before anything is saved', async () => {
+    const tables = baseTables();
+    const app = harness(tables);
+    const bill = await makeBill(app, tables); // 2026-09-03
+    const billRow = tables.acc_debtor_bills.find((b) => b.bill_number === bill.billNumber)!;
+    tables.acc_company_settings = [{ company_id: CO, ledger_start_date: '2026-09-01', fiscal_year_end_month: 8 }];
+    const res = await patchBill(app, billRow.id, { billDate: '2026-08-20', lines: [{ description: 'rent', creditAccountCode: '700-0000', amountSen: 65000 }] });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: 'This date is before the books start on 2026-09-01.' });
+    expect(billRow.bill_date).toBe('2026-09-03');
+    expect(tables.acc_debtor_bill_lines.filter((l) => l.bill_id === billRow.id)).toHaveLength(2);
+    expect(tables.journal_entries.some((j) => j.source_type === 'ODB_REVERSAL')).toBe(false);
+  });
+
+  test('a bill before the start may still be corrected; the books do not move', async () => {
+    const tables = baseTables();
+    const app = harness(tables);
+    const bill = await makeBill(app, tables);
+    const billRow = tables.acc_debtor_bills.find((b) => b.bill_number === bill.billNumber)!;
+    const jes = tables.journal_entries.length;
+    tables.acc_company_settings = [{ company_id: CO, ledger_start_date: '2026-10-01', fiscal_year_end_month: 8 }];
+    const res = await patchBill(app, billRow.id, { notes: 'fixed' });
+    expect(res.status, await res.clone().text()).toBe(200);
+    expect(await res.json()).toMatchObject({ ok: true, reposted: false });
+    expect(billRow.notes).toBe('fixed');
+    expect(tables.journal_entries).toHaveLength(jes);
+  });
+});

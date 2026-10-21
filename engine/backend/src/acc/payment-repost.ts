@@ -12,6 +12,7 @@
    answers belong beside the poster that made the original entry. */
 
 import { reverseJournal } from './engine';
+import { ledgerEditSide } from './ledger-settings';
 import { postSoPayment, type PostPaymentResult, type SoPaymentRow } from './payments';
 
 /* The untyped Supabase client this module is handed, borrowed from the poster
@@ -105,6 +106,15 @@ export async function repostSoPaymentEdit(
 ): Promise<RepostResult> {
   const moved = ledgerBearingChange(p.before, ledgerFactsOf(p.after));
   if (moved.length === 0) return { ok: true, status: 'unchanged', moved };
+
+  /* The ledger start (Conts): before it the books do not move; an edit that
+     carries the payment across it is not re-posted at all — reversing on one
+     side and refusing on the other would take the money out of the books. */
+  const newDay = dayOf(p.after.paid_at);
+  const side = await ledgerEditSide(sb, p.after.company_id ?? null, dayOf(p.before.paidOn) || newDay, newDay);
+  if (!side.ok) return { ok: false, status: 'reverse_failed', moved, reason: side.error };
+  if (side.side === 'across') return { ok: false, status: 'repost_failed', moved, reason: side.message };
+  if (side.side === 'before') return { ok: true, status: 'not_booked', moved, reason: 'before_ledger_start' };
 
   /* The live entry, read BEFORE anything is written — it supplies the date the
      contra must carry, and its absence is the "this payment never booked"

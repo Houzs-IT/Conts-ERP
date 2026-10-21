@@ -134,6 +134,13 @@ describe('the birth of a deposit invoice', () => {
     expect(dis(sb)).toHaveLength(1);
   });
 
+  test('a payment before the ledger start gets none, even with the switch on from earlier (Conts)', async () => {
+    const { sb } = harness({ settings: [{ ...ON, ledger_start_date: '2026-09-10', fiscal_year_end_month: 8 }] });
+    const early = await issueDepositInvoice(sb, { paymentId: 'p-old', soDocNo: '2990-SO-2609-001', paidAt: '2026-09-05', amountSen: 100_000 });
+    expect(early).toEqual({ ok: true, status: 'not_due', why: 'before_start' });
+    expect(dis(sb)).toHaveLength(0);
+  });
+
   test('a payment on a cancelled order earns no deposit invoice — at the hook and in the backlog (docs/bugs/0832)', async () => {
     const { app, sb } = harness({ settings: [ON], payments: [payment('p-1'), payment('p-x', { so_doc_no: '2990-SO-2609-009' })] });
     const refund = await issueDepositInvoice(sb, { paymentId: 'p-x', soDocNo: '2990-SO-2609-009', paidAt: '2026-09-05', amountSen: 100_000 });
