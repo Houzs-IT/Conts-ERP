@@ -20,6 +20,7 @@
 // ----------------------------------------------------------------------------
 
 import { useMemo, useState } from 'react';
+import { departmentOf } from '../../conts/department';
 import { Ban, CheckCircle2, Copy, Pencil, Plus, Printer, RotateCcw, Send, XCircle } from 'lucide-react';
 import { Button } from '@2990s/design-system';
 import {
@@ -83,7 +84,7 @@ const receiptStage = (r: DebtorReceipt): string => {
 const fromBill = (b: DebtorBill, copy: boolean): BillFormValues => ({
   billDate: copy ? myt() : b.bill_date,
   notes: b.notes ?? '',
-  lines: (b.lines ?? []).map((l, i) => ({ rid: i + 1, description: l.description ?? '', creditAccountCode: l.credit_account_code ?? '', amountSen: l.amount_sen })),
+  lines: (b.lines ?? []).map((l, i) => ({ rid: i + 1, description: l.description ?? '', creditAccountCode: l.credit_account_code ?? '', amountSen: l.amount_sen, department: l.credit_account_code ? departmentOf((l as { department?: unknown }).department) : '' as const })),
 });
 type BillFormState = { mode: BillFormMode; initial: BillFormValues; billId?: string; billNumber?: string; receivedSen?: number };
 

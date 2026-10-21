@@ -192,6 +192,31 @@ export function splitByDepartment(legs: ReadonlyArray<{ department?: Department 
   return [...out].map(([department, sen]) => ({ department, sen }));
 }
 
+/** The departments a settlement (a supplier payment, a debtor receipt) falls in: each settled bill's amount spread
+    over its lines' departments in proportion, in whole sen (the sen left over to the largest fractions, earliest
+    first), and whatever it pays beyond its bills — an advance, a stock purchase invoice — in Supply chain. Each
+    department's control then nets out as its bills are paid. */
+export function settlementDepartments(
+  totalSen: number,
+  bills: ReadonlyArray<{ sen: number; lines: ReadonlyArray<{ department?: Department | null; sen: number }> }>,
+): Array<{ department: Department; sen: number }> {
+  const parts: Array<{ department?: Department | null; sen: number }> = [];
+  let settled = 0;
+  for (const bill of bills) {
+    const lineTotal = bill.lines.reduce((s, l) => s + l.sen, 0);
+    settled += bill.sen;
+    if (lineTotal <= 0) { parts.push({ department: DEFAULT_DEPARTMENT, sen: bill.sen }); continue; }
+    const exact = bill.lines.map((l) => (bill.sen * l.sen) / lineTotal);
+    const shares = exact.map(Math.floor);
+    let left = bill.sen - shares.reduce((s, n) => s + n, 0);
+    const byFraction = exact.map((x, i) => ({ i, f: x - Math.floor(x) })).sort((a, b) => b.f - a.f || a.i - b.i);
+    for (const { i } of byFraction) { if (left <= 0) break; shares[i] += 1; left -= 1; }
+    bill.lines.forEach((l, i) => parts.push({ department: l.department, sen: shares[i] }));
+  }
+  if (totalSen - settled !== 0) parts.push({ department: DEFAULT_DEPARTMENT, sen: totalSen - settled });
+  return splitByDepartment(parts).filter((p) => p.sen !== 0);
+}
+
 export type RuleLine = {
   accountCode: string;
   debitSen: number;
@@ -322,9 +347,8 @@ export function apInvoiceLines(
   roles: RoleCodes,
   inv: { invoice_number: string },
   supplier: { code: string | null; name: string | null },
-  debits: Array<{ accountCode: string; myrSen: number; description: string | null }>,
+  debits: Array<{ accountCode: string; myrSen: number; description: string | null; department?: Department | null }>,
 ): RuleLine[] {
-  const totalSen = debits.reduce((s, d) => s + d.myrSen, 0);
   return [
     ...debits.map((d) => ({
       accountCode: d.accountCode,
@@ -334,16 +358,19 @@ export function apInvoiceLines(
       partyCode: null,
       partyName: null,
       notes: d.description ?? `AP invoice ${inv.invoice_number}`,
+      department: d.department ?? DEFAULT_DEPARTMENT,
     })),
-    {
+    // Conts: the supplier's AP is credited per department (one line when the bill has one), so each balances.
+    ...splitByDepartment(debits.map((d) => ({ department: d.department, sen: d.myrSen }))).map((part) => ({
       accountCode: roles[apControlRole(supplier.code)],
       debitSen: 0,
-      creditSen: totalSen,
+      creditSen: part.sen,
       partyType: 'SUPPLIER',
       partyCode: supplier.code,
       partyName: supplier.name,
       notes: `AP invoice ${inv.invoice_number}`,
-    },
+      department: part.department,
+    })),
   ];
 }
 

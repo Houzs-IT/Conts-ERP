@@ -11,6 +11,9 @@ export const DEPARTMENT_OPTIONS: ReadonlyArray<{ value: Department; label: strin
   { value: "shared", label: "Shared" },
 ];
 
+/** A stored department as the forms hold it; anything else is "not chosen". */
+export const departmentOf = (d: unknown): Department | "" => (DEPARTMENT_OPTIONS.some((o) => o.value === d) ? (d as Department) : "");
+
 export const departmentLabel = (d: string | null | undefined): string =>
   DEPARTMENT_OPTIONS.find((o) => o.value === d)?.label ?? "Supply chain";
 

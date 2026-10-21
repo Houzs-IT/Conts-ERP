@@ -34,7 +34,7 @@ import { docMonthTag, mintMonthlyDocNo } from '../lib/doc-no';
 import { todayMyt } from '../lib/my-time';
 import { postJournal, reverseJournal } from '../../acc/engine';
 import { dateOrNull } from '../lib/date-coerce';
-import { resolveRoles, type RuleLine } from '../../acc/rules';
+import { DEFAULT_DEPARTMENT, isDepartment, resolveRoles, settlementDepartments, splitByDepartment, type Department, type RuleLine } from '../../acc/rules';
 import { requireLeafAccount } from './accounting-chart';
 import { fmtSen } from '../shared/format';
 
@@ -169,7 +169,7 @@ export const debtorDetailHandler = async (c: any): Promise<Response> => {
   const byBill = new Map<string, Row[]>();
   if (billRows.length > 0) {
     const { data: lineRows, error: lErr } = await scopeToCompany(
-      sb.from('acc_debtor_bill_lines').select('id, bill_id, line_no, description, credit_account_code, amount_sen').in('bill_id', billRows.map((b) => b.id)), c,
+      sb.from('acc_debtor_bill_lines').select('id, bill_id, line_no, description, credit_account_code, amount_sen, department').in('bill_id', billRows.map((b) => b.id)), c,
     ).order('line_no');
     if (lErr) return c.json({ error: 'load_failed', reason: lErr.message }, 500);
     for (const l of (lineRows ?? []) as Row[]) {
@@ -184,7 +184,8 @@ export const debtorDetailHandler = async (c: any): Promise<Response> => {
 
 /** A MONEY line names a credit account and a positive sen; a TEXT line (code
     null, amount 0) carries a description alone — it prints, books nothing. */
-type BillLine = { description: string | null; code: string | null; amountSen: number };
+/* Conts: each line's department (finance phase 1, spec 3.5); none is Supply chain. */
+type BillLine = { description: string | null; code: string | null; amountSen: number; department: Department };
 const isMoneyLine = (l: BillLine): l is BillLine & { code: string } => l.code !== null;
 
 /** 1–50 lines: money lines (an account and a positive integer sen) and text
@@ -204,14 +205,17 @@ function buildBillLines(raw: unknown): { lines: BillLine[]; total: number } | { 
     const amount = blankAmount ? 0 : Number(l?.amountSen);
     if (!code && amount === 0) {
       if (!description) return { error: 'bad_line', message: `Line ${i + 1} is empty — a text line needs a description.` };
-      lines.push({ description, code: null, amountSen: 0 });
+      lines.push({ description, code: null, amountSen: 0, department: DEFAULT_DEPARTMENT });
       continue;
     }
     if (!code) return { error: 'bad_line', message: `Line ${i + 1} has no account.` };
     if (!Number.isInteger(amount) || amount <= 0) {
       return { error: 'bad_line', message: `Line ${i + 1}: amountSen must be a positive integer (got ${String(l?.amountSen)}).` };
     }
-    lines.push({ description: description || null, code, amountSen: amount });
+    if (l?.department != null && !isDepartment(l.department)) {
+      return { error: 'bad_line', message: `Line ${i + 1}: the department must be Rental, Supply chain or Shared.` };
+    }
+    lines.push({ description: description || null, code, amountSen: amount, department: isDepartment(l?.department) ? l.department : DEFAULT_DEPARTMENT });
   }
   if (!lines.some(isMoneyLine)) {
     return { error: 'lines_required', message: 'A bill needs at least one line with an account and an amount — text lines alone book nothing.' };
@@ -219,19 +223,21 @@ function buildBillLines(raw: unknown): { lines: BillLine[]; total: number } | { 
   return { lines, total: lines.reduce((s, l) => s + l.amountSen, 0) };
 }
 
-/** The ODB entry for a bill: Dr the other-debtor control for the total, Cr
-    each line its own account — the same shape on first post and on re-post. */
-function debtorBillRuleLines(roles: { AR_OTHER: string }, debtorName: string, billNumber: string, lines: BillLine[], totalSen: number): RuleLine[] {
+/** The ODB entry for a bill: Dr the other-debtor control, Cr each line its own account — the same shape on first
+    post and on re-post. Conts: the control is debited per department (one line when the bill has one), so each
+    department balances. */
+function debtorBillRuleLines(roles: { AR_OTHER: string }, debtorName: string, billNumber: string, lines: BillLine[]): RuleLine[] {
+  const money = lines.filter(isMoneyLine);
   return [
-    {
-      accountCode: roles.AR_OTHER, debitSen: totalSen, creditSen: 0,
+    ...splitByDepartment(money.map((l) => ({ department: l.department, sen: l.amountSen }))).map((part) => ({
+      accountCode: roles.AR_OTHER, debitSen: part.sen, creditSen: 0,
       partyType: 'ODEBTOR', partyCode: null, partyName: debtorName,
-      notes: `Other debtor ${debtorName} — ${billNumber}`,
-    },
-    ...lines.filter(isMoneyLine).map((l) => ({
+      notes: `Other debtor ${debtorName} — ${billNumber}`, department: part.department,
+    })),
+    ...money.map((l) => ({
       accountCode: l.code, debitSen: 0, creditSen: l.amountSen,
       partyType: null, partyCode: null, partyName: null,
-      notes: l.description ?? billNumber,
+      notes: l.description ?? billNumber, department: l.department,
     })),
   ];
 }
@@ -283,6 +289,7 @@ export const createDebtorBillHandler = async (c: any): Promise<Response> => {
     description: l.description,
     credit_account_code: l.code,
     amount_sen: l.amountSen,
+    department: l.department,
   })));
   if (lineErr) {
     await sb.from('acc_debtor_bills').delete().eq('company_id', coId).eq('id', bill.id);
@@ -290,7 +297,7 @@ export const createDebtorBillHandler = async (c: any): Promise<Response> => {
   }
 
   const roles = await resolveRoles(sb, coId);
-  const ruleLines = debtorBillRuleLines(roles, String(found.debtor.name), String(bill.bill_number), lines, totalSen);
+  const ruleLines = debtorBillRuleLines(roles, String(found.debtor.name), String(bill.bill_number), lines);
   const r = await postJournal(sb, {
     companyId: coId,
     entryDate: billDate,
@@ -365,7 +372,7 @@ export const updateDebtorBillHandler = async (c: any): Promise<Response> => {
     if (delErr) return c.json({ error: 'save_failed', reason: delErr.message }, 500);
     const { error: lineErr } = await sb.from('acc_debtor_bill_lines').insert(rebuilt.lines.map((l, i) => ({
       company_id: coId, bill_id: bill.id, line_no: i + 1,
-      description: l.description, credit_account_code: l.code, amount_sen: l.amountSen,
+      description: l.description, credit_account_code: l.code, amount_sen: l.amountSen, department: l.department,
     })));
     if (lineErr) return c.json({ error: 'save_failed', reason: lineErr.message }, 500);
   }
@@ -390,10 +397,13 @@ export const updateDebtorBillHandler = async (c: any): Promise<Response> => {
   if (rebuilt) lines = rebuilt.lines;
   else {
     const { data: rows, error: lErr } = await scopeToCompany(
-      sb.from('acc_debtor_bill_lines').select('line_no, description, credit_account_code, amount_sen').eq('bill_id', bill.id), c,
+      sb.from('acc_debtor_bill_lines').select('line_no, description, credit_account_code, amount_sen, department').eq('bill_id', bill.id), c,
     ).order('line_no');
     if (lErr) return c.json({ error: 'load_failed', reason: lErr.message }, 500);
-    lines = ((rows ?? []) as Row[]).map((l) => ({ description: l.description ?? null, code: l.credit_account_code ? String(l.credit_account_code) : null, amountSen: Number(l.amount_sen) }));
+    lines = ((rows ?? []) as Row[]).map((l) => ({
+      description: l.description ?? null, code: l.credit_account_code ? String(l.credit_account_code) : null, amountSen: Number(l.amount_sen),
+      department: isDepartment(l.department) ? l.department : DEFAULT_DEPARTMENT,
+    }));
   }
   const roles = await resolveRoles(sb, coId);
   const r = await postJournal(sb, {
@@ -402,7 +412,7 @@ export const updateDebtorBillHandler = async (c: any): Promise<Response> => {
     sourceType: 'ODB',
     sourceDocNo: billNumber,
     narration: `Debtor bill ${billNumber} — ${found.debtor.name} — edited`,
-    lines: debtorBillRuleLines(roles, String(found.debtor.name), billNumber, lines, totalSen),
+    lines: debtorBillRuleLines(roles, String(found.debtor.name), billNumber, lines),
   });
   if (!r.ok) return c.json({ error: 'post_failed', reason: (r as { reason?: string }).reason ?? r.status }, 500);
   return c.json({ ok: true, bill: { id: bill.id, billNumber, totalSen }, reposted: true, jeNo: r.jeNo });
@@ -633,6 +643,28 @@ export const approveDebtorReceiptHandler = async (c: any): Promise<Response> => 
   return c.json({ ok: true, jeNo: posted.jeNo });
 };
 
+/** The departments a debtor receipt falls in: its allocations spread over the settled bills' money lines. */
+async function receiptDepartments(sb: Parameters<typeof postJournal>[0], coId: number, r: Row): Promise<{ departments: Array<{ department: Department; sen: number }> } | { resp: string }> {
+  const { data: allocs, error: aErr } = await sb.from('acc_debtor_receipt_allocations')
+    .select('bill_id, amount_sen').eq('company_id', coId).eq('receipt_id', r.id);
+  if (aErr) return { resp: aErr.message };
+  const billIds = [...new Set(((allocs ?? []) as Row[]).map((a) => String(a.bill_id)))];
+  const linesByBill = new Map<string, Array<{ department: Department; sen: number }>>();
+  if (billIds.length > 0) {
+    const { data: rows, error: lErr } = await sb.from('acc_debtor_bill_lines')
+      .select('bill_id, credit_account_code, amount_sen, department').eq('company_id', coId).in('bill_id', billIds);
+    if (lErr) return { resp: lErr.message };
+    for (const l of (rows ?? []) as Row[]) {
+      if (!l.credit_account_code) continue;
+      const at = linesByBill.get(String(l.bill_id)) ?? [];
+      at.push({ department: isDepartment(l.department) ? l.department : DEFAULT_DEPARTMENT, sen: Number(l.amount_sen ?? 0) });
+      linesByBill.set(String(l.bill_id), at);
+    }
+  }
+  const bills = ((allocs ?? []) as Row[]).map((a) => ({ sen: Number(a.amount_sen ?? 0), lines: linesByBill.get(String(a.bill_id)) ?? [] }));
+  return { departments: settlementDepartments(Number(r.total_sen ?? 0), bills) };
+}
+
 /* The posting itself — Dr bank / Cr AR_OTHER (source ODR), then the ticked
    bills knocked off — shared by the fourth layer's Approve and by the
    Receipts page's post-now door, so both book the identical entry. */
@@ -640,17 +672,21 @@ const postDebtorReceipt = async (c: any, sb: any, coId: number, r: Row): Promise
   const { data: debtor, error: dErr } = await sb.from('acc_debtors').select('name').eq('company_id', coId).eq('id', r.debtor_id).maybeSingle();
   if (dErr) return { resp: c.json({ error: 'load_failed', reason: dErr.message }, 500) };
   const roles = await resolveRoles(sb, coId);
+  /* Conts (spec 3.5): the money and the control are booked in the departments of the bills this receipt settles,
+     so each bill's department nets to nothing once it is paid. */
+  const parts = await receiptDepartments(sb, coId, r);
+  if ('resp' in parts) return { resp: c.json({ error: 'load_failed', reason: parts.resp }, 500) };
   const lines: RuleLine[] = [
-    {
-      accountCode: r.bank_account_code, debitSen: Number(r.total_sen ?? 0), creditSen: 0,
+    ...parts.departments.map((p) => ({
+      accountCode: r.bank_account_code, debitSen: p.sen, creditSen: 0,
       partyType: null, partyCode: null, partyName: null,
-      notes: `Receipt ${r.receipt_number}`,
-    },
-    {
-      accountCode: roles.AR_OTHER, debitSen: 0, creditSen: Number(r.total_sen ?? 0),
+      notes: `Receipt ${r.receipt_number}`, department: p.department,
+    })),
+    ...parts.departments.map((p) => ({
+      accountCode: roles.AR_OTHER, debitSen: 0, creditSen: p.sen,
       partyType: 'ODEBTOR', partyCode: null, partyName: (debtor as Row | null)?.name ?? null,
-      notes: `Other debtor settlement — ${r.receipt_number}`,
-    },
+      notes: `Other debtor settlement — ${r.receipt_number}`, department: p.department,
+    })),
   ];
   const post = await postJournal(sb, {
     companyId: coId,

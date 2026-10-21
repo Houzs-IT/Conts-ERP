@@ -532,3 +532,63 @@ describe('editing a bill around the ledger start (Conts)', () => {
     expect(tables.journal_entries).toHaveLength(jes);
   });
 });
+
+/* The department on each line (Conts, finance phase 1, spec 3.5; finance 21 Oct: debtor bills too). The debtor
+   control is debited per department, so each balances. */
+describe('departments on a debtor bill', () => {
+  test('each money line keeps its department; the control is split by department', async () => {
+    const tables = baseTables();
+    const app = harness(tables);
+    const res = await post(app, '/d1/bills', { billDate: '2026-09-03', lines: [
+      { description: 'Repair A-12-3', creditAccountCode: '700-0000', amountSen: 40000, department: 'rental' },
+      { description: 'Water', creditAccountCode: '910-0000', amountSen: 10000, department: 'shared' },
+      { description: 'note only' },
+    ] });
+    expect(res.status, await res.clone().text()).toBe(201);
+    const bill = (await res.json() as { bill: { billNumber: string } }).bill;
+    expect(tables.acc_debtor_bill_lines.map((l) => l.department)).toEqual(['rental', 'shared', 'supply']);
+    const je = tables.journal_entries.find((j) => j.source_type === 'ODB' && j.source_doc_no === bill.billNumber)!;
+    const jl = tables.journal_entry_lines.filter((l) => l.journal_entry_id === je.id);
+    expect(jl.map((l) => [l.account_code, l.debit_sen, l.credit_sen, l.department])).toEqual([
+      ['305-0000', 40000, 0, 'rental'], ['305-0000', 10000, 0, 'shared'],
+      ['700-0000', 0, 40000, 'rental'], ['910-0000', 0, 10000, 'shared'],
+    ]);
+  });
+
+  test('an unknown department is refused and nothing is saved', async () => {
+    const tables = baseTables();
+    const app = harness(tables);
+    const res = await post(app, '/d1/bills', { lines: [{ creditAccountCode: '700-0000', amountSen: 100, department: 'hq' }] });
+    expect(res.status).toBe(400);
+    expect(tables.acc_debtor_bills).toHaveLength(0);
+  });
+});
+
+/* A receipt against a Rental bill is Rental money (Conts, spec 3.5): the bank and the control are booked in the
+   departments of the bills it settles, so the bill's department nets to nothing once paid. */
+describe('a receipt keeps the departments of the bills it settles', () => {
+  test('a Rental bill paid in full leaves the Rental control at zero', async () => {
+    const tables = baseTables();
+    const app = harness(tables);
+    const made = await post(app, '/d1/bills', { billDate: '2026-09-03', lines: [
+      { creditAccountCode: '700-0000', amountSen: 30000, department: 'rental' },
+      { creditAccountCode: '910-0000', amountSen: 10000, department: 'shared' },
+    ] });
+    expect(made.status).toBe(201);
+    const billRow = tables.acc_debtor_bills[0]!;
+    const res = await post(app, '/d1/receipts', { receiptDate: '2026-09-05', bankAccountCode: '310-0010', allocations: [{ billId: billRow.id, amountSen: 40000 }] });
+    const receipt = (await res.json() as { receipt: { id: string; receiptNumber: string } }).receipt;
+    await post(app, `/receipts/${receipt.id}/submit`);
+    await post(app, `/receipts/${receipt.id}/check`);
+    expect((await post(app, `/receipts/${receipt.id}/approve`)).status).toBe(200);
+    const je = tables.journal_entries.find((j) => j.source_type === 'ODR')!;
+    const jl = tables.journal_entry_lines.filter((l) => l.journal_entry_id === je.id);
+    expect(jl.map((l) => [l.account_code, l.debit_sen, l.credit_sen, l.department])).toEqual([
+      ['310-0010', 30000, 0, 'rental'], ['310-0010', 10000, 0, 'shared'],
+      ['305-0000', 0, 30000, 'rental'], ['305-0000', 0, 10000, 'shared'],
+    ]);
+    const net = (dep: string) => tables.journal_entry_lines.filter((l) => l.account_code === '305-0000' && l.department === dep)
+      .reduce((s, l) => s + Number(l.debit_sen) - Number(l.credit_sen), 0);
+    expect([net('rental'), net('shared'), net('supply')]).toEqual([0, 0, 0]);
+  });
+});

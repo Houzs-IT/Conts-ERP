@@ -51,7 +51,7 @@ import { docMonthTag, mintMonthlyDocNo, insertWithDocNoRetry } from '../lib/doc-
 import { isDocumentHeld } from '../lib/document-hold';
 import { dateOrNull } from '../lib/date-coerce';
 import { postJournal, reverseJournal } from '../../acc/engine';
-import { apControlRole, pvLines, customerRefundLines, resolveRoles, DEFAULT_DEPARTMENT, isDepartment, type Department } from '../../acc/rules';
+import { apControlRole, pvLines, customerRefundLines, resolveRoles, settlementDepartments, DEFAULT_DEPARTMENT, isDepartment, type Department } from '../../acc/rules';
 import { customerPartyCode } from '../../acc/payments';
 import { refundSourceHandler, refundCreateGuard, refundOwnControl, bookRefundCredit, refundHookInput } from '../lib/pv-refund';
 import { refundDepositInvoicesBestEffort, releaseRefundNotesBestEffort } from '../../acc/deposit-refunds';
@@ -194,6 +194,39 @@ export function parseAmountSen(raw: unknown): number | null {
   if (!Number.isInteger(n)) return null; // sen is integer; a decimal means RM
   if (n < 0) return null;                // a refund is a different document
   return n;
+}
+
+/** Conts (spec 3.5): a supplier payment's AP-control leg, split into the departments of the AP invoices it settles
+    (each allocation spread over its invoice's lines in proportion); what it pays beyond them — a purchase invoice,
+    an advance — stays Supply chain. pvLines then credits the bank the same way, so each department's AP nets out. */
+type DebitLeg = { description: string | null; debit_account_code: string; myrSen: number; department?: Department | null };
+async function settledDepartmentLegs<L extends DebitLeg>(
+  sb: Parameters<typeof postJournal>[0], companyId: number | null, pvId: string, legs: L[], apControlCode: string, rate: number,
+): Promise<DebitLeg[]> {
+  const onControl = legs.filter((l) => l.debit_account_code === apControlCode);
+  if (onControl.length === 0) return legs;
+  const { data: allocs } = await sb.from('pv_allocations').select('ap_invoice_id, amount_sen').eq('pv_id', pvId);
+  const apAllocs = ((allocs ?? []) as Array<{ ap_invoice_id: string | null; amount_sen: number }>).filter((a) => a.ap_invoice_id);
+  const ids = [...new Set(apAllocs.map((a) => String(a.ap_invoice_id)))];
+  const linesOf = new Map<string, Array<{ department: Department; sen: number }>>();
+  if (ids.length > 0) {
+    let q = sb.from('ap_invoice_lines').select('invoice_id, amount_sen, department').in('invoice_id', ids);
+    if (companyId != null) q = q.eq('company_id', companyId);
+    const { data: rows } = await q;
+    for (const l of (rows ?? []) as Array<{ invoice_id: string; amount_sen: number; department?: string | null }>) {
+      const at = linesOf.get(String(l.invoice_id)) ?? [];
+      at.push({ department: isDepartment(l.department) ? l.department : DEFAULT_DEPARTMENT, sen: Number(l.amount_sen ?? 0) });
+      linesOf.set(String(l.invoice_id), at);
+    }
+  }
+  const total = onControl.reduce((s, l) => s + l.myrSen, 0);
+  const bills = apAllocs.map((a) => ({ sen: Math.round(Number(a.amount_sen ?? 0) * rate), lines: linesOf.get(String(a.ap_invoice_id)) ?? [] }));
+  const parts = settlementDepartments(total, bills);
+  const first = onControl[0]!;
+  return [
+    ...parts.map((p) => ({ description: first.description, debit_account_code: apControlCode, myrSen: p.sen, department: p.department })),
+    ...legs.filter((l) => l.debit_account_code !== apControlCode),
+  ];
 }
 
 /* ── Normalise + validate the incoming lines, recompute the header total ──── */
@@ -1078,7 +1111,7 @@ export const postPaymentVoucherHandler = async (c: any) => {
     narration: isRefund(pv.purpose) ? `Customer refund ${pv.pv_number} — ${pv.payee_name} (${refundPv.refund_source_doc_no ?? '?'})` : `Payment voucher ${pv.pv_number} — ${pv.payee_name}`,
     lines: isRefund(pv.purpose)
       ? customerRefundLines({ ...pv, refund_source_doc_no: refundPv.refund_source_doc_no ?? null }, (await resolveRoles(sb, companyId)).AR, { code: customerPartyCode(refundPv.debtor_code, refundPv.customer_id), name: pv.payee_name }, totalSen)
-      : pvLines(pv, debitLegs, supplier, apControlCode),
+      : pvLines(pv, apControlCode ? await settledDepartmentLegs(sb, companyId, id, debitLegs, apControlCode, rate) : debitLegs, supplier, apControlCode),
   });
   if (!r.ok) {
     if (r.status === 'before_ledger_start') return c.json({ error: r.reason }, 409);

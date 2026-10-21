@@ -39,7 +39,7 @@ import { docMonthTag, mintMonthlyDocNo } from '../lib/doc-no';
 import { dateOrNull } from '../lib/date-coerce';
 import { todayMyt } from '../lib/my-time';
 import { postJournal, reverseJournal } from '../../acc/engine';
-import { apInvoiceLines, resolveRoles } from '../../acc/rules';
+import { apInvoiceLines, DEFAULT_DEPARTMENT, isDepartment, resolveRoles, type Department } from '../../acc/rules';
 import { requireLeafAccount } from './accounting-chart';
 import { learnVendorMemory } from './payment-vouchers';
 import {
@@ -53,9 +53,10 @@ type Row = Record<string, any>;
 const NO_PERM = (what: string) => ({ error: `You don't have permission to ${what}.` });
 
 const HEADER = 'id, company_id, invoice_number, supplier_id, supplier_invoice_ref, invoice_date, due_date, currency, exchange_rate, total_sen, paid_sen, status, notes, created_at, created_by, posted_at, posted_by, cancelled_at, cancelled_by';
-const LINE = 'id, line_no, description, debit_account_code, amount_sen';
+const LINE = 'id, line_no, description, debit_account_code, amount_sen, department';
 
-type CleanLine = { description: string | null; code: string; amountSen: number };
+/* Conts: each line's department (finance phase 1, spec 3.5); none is Supply chain. */
+type CleanLine = { description: string | null; code: string; amountSen: number; department: Department };
 
 /** 1–50 lines, each with a leaf account and a positive integer sen. */
 function buildLines(raw: unknown): { lines: CleanLine[]; total: number } | { error: string; message: string } {
@@ -69,7 +70,13 @@ function buildLines(raw: unknown): { lines: CleanLine[]; total: number } | { err
     if (!Number.isInteger(amount) || amount <= 0) {
       return { error: 'bad_line', message: `Line ${i + 1}: amountSen must be a positive integer (got ${String(l?.amountSen)}).` };
     }
-    lines.push({ description: l?.description ? String(l.description).trim() : null, code, amountSen: amount });
+    if (l?.department != null && !isDepartment(l.department)) {
+      return { error: 'bad_line', message: `Line ${i + 1}: the department must be Rental, Supply chain or Shared.` };
+    }
+    lines.push({
+      description: l?.description ? String(l.description).trim() : null, code, amountSen: amount,
+      department: isDepartment(l?.department) ? l.department : DEFAULT_DEPARTMENT,
+    });
   }
   return { lines, total: lines.reduce((s, l) => s + l.amountSen, 0) };
 }
@@ -218,6 +225,7 @@ export const createApInvoiceHandler = async (c: any): Promise<Response> => {
     description: l.description,
     debit_account_code: l.code,
     amount_sen: l.amountSen,
+    department: l.department,
   })));
   if (lineErr) {
     await sb.from('ap_invoices').delete().eq('company_id', co.companyId).eq('id', (inv as Row).id);
@@ -300,7 +308,7 @@ export const updateApInvoiceHandler = async (c: any): Promise<Response> => {
     await sb.from('ap_invoice_lines').delete().eq('company_id', co.companyId).eq('invoice_id', inv.id);
     const { error: lineErr } = await sb.from('ap_invoice_lines').insert(built.lines.map((l, i) => ({
       company_id: co.companyId, invoice_id: inv.id, line_no: i + 1,
-      description: l.description, debit_account_code: l.code, amount_sen: l.amountSen,
+      description: l.description, debit_account_code: l.code, amount_sen: l.amountSen, department: l.department,
     })));
     if (lineErr) return c.json({ error: 'save_failed', reason: lineErr.message }, 500);
     patch.total_sen = built.total;
@@ -331,7 +339,7 @@ export const updateApInvoiceHandler = async (c: any): Promise<Response> => {
   if ('resp' in sup) return sup.resp;
   const { data: lineRows, error: lErr } = await scopeToCompany(sb.from('ap_invoice_lines').select(LINE).eq('invoice_id', inv.id), c).order('line_no');
   if (lErr) return c.json({ error: 'load_failed', reason: lErr.message }, 500);
-  const lines = (lineRows ?? []) as Array<{ description: string | null; debit_account_code: string; amount_sen: number }>;
+  const lines = (lineRows ?? []) as Array<{ description: string | null; debit_account_code: string; amount_sen: number; department?: string | null }>;
   const roles = await resolveRoles(sb, co.companyId);
   const je = await postJournal(sb, {
     companyId: co.companyId,
@@ -340,7 +348,7 @@ export const updateApInvoiceHandler = async (c: any): Promise<Response> => {
     sourceDocNo: String(inv.invoice_number),
     narration: `AP invoice ${inv.invoice_number} — ${sup.supplier.name ?? sup.supplier.code ?? 'supplier'}${after.supplier_invoice_ref ? ` (${after.supplier_invoice_ref})` : ''} — edited`,
     lines: apInvoiceLines(roles, { invoice_number: String(inv.invoice_number) }, sup.supplier,
-      lines.map((l) => ({ accountCode: l.debit_account_code, myrSen: Number(l.amount_sen), description: l.description }))),
+      lines.map((l) => ({ accountCode: l.debit_account_code, myrSen: Number(l.amount_sen), description: l.description, department: isDepartment(l.department) ? l.department : DEFAULT_DEPARTMENT }))),
   });
   if (!je.ok) return c.json({ error: 'post_failed', status: je.status, reason: (je as { reason?: string }).reason ?? je.status }, 500);
   return c.json({ ok: true, invoice: after, reposted: true, jeNo: je.jeNo });
@@ -358,7 +366,7 @@ export const postApInvoiceHandler = async (c: any): Promise<Response> => {
   const sb = c.get('supabase');
   const { data: lineRows, error: lErr } = await scopeToCompany(sb.from('ap_invoice_lines').select(LINE).eq('invoice_id', inv.id), c).order('line_no');
   if (lErr) return c.json({ error: 'load_failed', reason: lErr.message }, 500);
-  const lines = (lineRows ?? []) as Array<{ description: string | null; debit_account_code: string; amount_sen: number }>;
+  const lines = (lineRows ?? []) as Array<{ description: string | null; debit_account_code: string; amount_sen: number; department?: string | null }>;
   if (lines.length === 0) return c.json({ error: 'lines_required', message: 'This bill has no lines to post.' }, 400);
   const sup = await loadSupplier(c, String(inv.supplier_id));
   if ('resp' in sup) return sup.resp;
@@ -371,7 +379,7 @@ export const postApInvoiceHandler = async (c: any): Promise<Response> => {
     sourceDocNo: String(inv.invoice_number),
     narration: `AP invoice ${inv.invoice_number} — ${sup.supplier.name ?? sup.supplier.code ?? 'supplier'}${inv.supplier_invoice_ref ? ` (${inv.supplier_invoice_ref})` : ''}`,
     lines: apInvoiceLines(roles, { invoice_number: String(inv.invoice_number) }, sup.supplier,
-      lines.map((l) => ({ accountCode: l.debit_account_code, myrSen: Number(l.amount_sen), description: l.description }))),
+      lines.map((l) => ({ accountCode: l.debit_account_code, myrSen: Number(l.amount_sen), description: l.description, department: isDepartment(l.department) ? l.department : DEFAULT_DEPARTMENT }))),
   });
   if (!je.ok) return c.json({ error: 'post_failed', status: je.status, reason: (je as { reason?: string }).reason ?? je.status }, 500);
 

@@ -56,6 +56,7 @@ import styles from './SalesOrderDetail.module.css';
 import { PageHeader } from '../../components/Layout';
 import { humaniseStatusKey } from '../../vendor/scm/lib/status-pill';
 import { DataTable, type Column } from '../../components/DataTable';
+import { departmentOf } from '../../conts/department';
 import { ApInvoiceForm, emptyApForm, formFromExtraction, scanNoteFor, type ApFormMode, type ApFormSubmit, type ApFormValues } from './ApInvoiceForm';
 
 const ICON = { size: 16, strokeWidth: 1.75 } as const;
@@ -95,7 +96,7 @@ const fromDetail = (d: Detail, copy: boolean): ApFormValues => ({
   invoiceDate: copy ? myt() : d.invoice.invoice_date,
   dueDate: copy ? '' : (d.invoice.due_date ?? ''),
   description: d.invoice.notes ?? '',
-  lines: d.lines.map((l, i) => ({ rid: i + 1, description: l.description ?? '', debitAccountCode: l.debit_account_code, amountSen: l.amount_sen })),
+  lines: d.lines.map((l, i) => ({ rid: i + 1, description: l.description ?? '', debitAccountCode: l.debit_account_code, amountSen: l.amount_sen, department: departmentOf((l as { department?: unknown }).department) })),
 });
 
 type FormState = {

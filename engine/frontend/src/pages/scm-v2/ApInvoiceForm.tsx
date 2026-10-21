@@ -11,6 +11,7 @@
 // ----------------------------------------------------------------------------
 
 import { useEffect, useRef, useState } from 'react';
+import { DepartmentSelect, nextLineDepartment, type Department } from '../../conts/department';
 import { X } from 'lucide-react';
 import { Button } from '@2990s/design-system';
 import { AddLineButton } from '../../vendor/scm/components/AddLineButton';
@@ -28,17 +29,18 @@ import { sortByText } from '../../vendor/scm/lib/sort-options';
 import { fmtSen } from '../../vendor/shared/format';
 import styles from './SalesOrderDetail.module.css';
 
-export type ApFormLine = { rid: number; description: string; debitAccountCode: string; amountSen: number };
+/* Conts: each line's department (finance phase 1, spec 3.5), required before saving. */
+export type ApFormLine = { rid: number; description: string; debitAccountCode: string; amountSen: number; department: Department | '' };
 export type ApFormValues = { supplierId: string; supplierRef: string; invoiceDate: string; dueDate: string; description: string; lines: ApFormLine[] };
 export type ApFormMode = 'new' | 'edit' | 'copy';
 /** What the routes take — POST / for new and copy, PATCH /:id for edit. */
 export type ApFormSubmit = {
   supplierId: string; supplierInvoiceRef?: string; invoiceDate: string; dueDate: string | null; notes?: string;
-  lines: Array<{ description?: string; debitAccountCode: string; amountSen: number }>;
+  lines: Array<{ description?: string; debitAccountCode: string; amountSen: number; department?: Department }>;
 };
 
 const myt = (): string => new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 10);
-export const emptyLine = (rid: number): ApFormLine => ({ rid, description: '', debitAccountCode: '', amountSen: 0 });
+export const emptyLine = (rid: number, department: Department | '' = ''): ApFormLine => ({ rid, description: '', debitAccountCode: '', amountSen: 0, department });
 export const emptyApForm = (): ApFormValues => ({ supplierId: '', supplierRef: '', invoiceDate: myt(), dueDate: '', description: '', lines: [emptyLine(1)] });
 
 export const toSubmit = (v: ApFormValues): ApFormSubmit => ({
@@ -49,7 +51,10 @@ export const toSubmit = (v: ApFormValues): ApFormSubmit => ({
   ...(v.description.trim() ? { notes: v.description.trim() } : {}),
   lines: v.lines
     .filter((l) => l.debitAccountCode && l.amountSen > 0)
-    .map((l) => ({ ...(l.description.trim() ? { description: l.description.trim() } : {}), debitAccountCode: l.debitAccountCode, amountSen: l.amountSen })),
+    .map((l) => ({
+      ...(l.description.trim() ? { description: l.description.trim() } : {}),
+      debitAccountCode: l.debitAccountCode, amountSen: l.amountSen, ...(l.department ? { department: l.department } : {}),
+    })),
 });
 
 /* The reader's answer as form values — the supplier from the server's match,
@@ -61,10 +66,10 @@ export const formFromExtraction = (ex: BillExtraction, match: { id: string } | n
   const account = memory?.debitAccountCode ?? '';
   const drafts: ApFormLine[] = ex.lines
     .filter((l): l is { description: string | null; amountSen: number } => l.amountSen != null && l.amountSen > 0)
-    .map((l, i) => ({ rid: i + 1, description: upperFill(l.description) ?? '', debitAccountCode: account, amountSen: l.amountSen }));
+    .map((l, i) => ({ rid: i + 1, description: upperFill(l.description) ?? '', debitAccountCode: account, amountSen: l.amountSen, department: '' as const }));
   /* A bill with no readable lines still carries its total — one line. */
   if (drafts.length === 0 && ex.totalSen != null && ex.totalSen > 0) {
-    drafts.push({ rid: 1, description: upperFill(ex.invoiceNumber ? `Bill ${ex.invoiceNumber}` : 'As per bill') ?? '', debitAccountCode: account, amountSen: ex.totalSen });
+    drafts.push({ rid: 1, description: upperFill(ex.invoiceNumber ? `Bill ${ex.invoiceNumber}` : 'As per bill') ?? '', debitAccountCode: account, amountSen: ex.totalSen, department: '' });
   }
   return {
     ...(match ? { supplierId: match.id } : {}),
@@ -138,7 +143,7 @@ export const ApInvoiceForm = ({
     setV((prev) => {
       const rid = nextRid(prev.lines);
       if (land) setLandOn(rid);
-      return { ...prev, lines: [...prev.lines, emptyLine(rid)] };
+      return { ...prev, lines: [...prev.lines, emptyLine(rid, nextLineDepartment(prev.lines))] };
     });
   };
   const removeLine = (rid: number) => setV((prev) => (prev.lines.length > 1 ? { ...prev, lines: prev.lines.filter((l) => l.rid !== rid) } : prev));
@@ -152,7 +157,7 @@ export const ApInvoiceForm = ({
   const belowPaid = posted && total < paidSen;
   const supplierLocked = posted && paidSen > 0;
   const ready = !!v.supplierId && !!v.invoiceDate && total > 0 && !belowPaid
-    && v.lines.filter((l) => l.amountSen > 0).every((l) => !!l.debitAccountCode);
+    && v.lines.filter((l) => l.amountSen > 0).every((l) => !!l.debitAccountCode && !!l.department);
 
   /* ── Scan bill (OCR) — the voucher's reader fills THIS form: the supplier
      from the server's match, the bill's own number, its dates and lines; the
@@ -264,6 +269,7 @@ export const ApInvoiceForm = ({
             <th style={{ ...th, width: '34%' }}>Account</th>
             <th style={th}>Description</th>
             <th style={{ ...th, textAlign: 'right', width: 150 }}>Amount (RM)</th>
+            <th style={{ ...th, width: 150 }}>Department</th>
             <th style={{ ...th, width: 36 }} />
           </tr>
         </thead>
@@ -285,6 +291,10 @@ export const ApInvoiceForm = ({
                   onKeyDown={(e) => { if (e.key === 'Enter') hopFrom(l.rid); }} />
               </td>
               <td style={td}>
+                <DepartmentSelect className={styles.fieldInput} style={{ width: '100%' }} label={`line ${l.rid} department`} blank="Choose…"
+                  value={l.department} onChange={(dep) => patchLine(l.rid, { department: dep })} />
+              </td>
+              <td style={td}>
                 {v.lines.length > 1 && (
                   <button type="button" aria-label={`remove line ${l.rid}`} onClick={() => removeLine(l.rid)} style={iconBtn}>
                     <X size={14} strokeWidth={1.75} />
@@ -301,6 +311,7 @@ export const ApInvoiceForm = ({
               <span style={{ ...soft, marginLeft: 'var(--space-3)' }}>Insert adds a line · Enter on an amount moves down</span>
             </td>
             <td style={{ ...td, ...right, fontWeight: 700, color: belowPaid ? 'var(--c-festive-b, #B8331F)' : undefined }}>Total {fmtSen(total)}</td>
+            <td />
             <td />
           </tr>
         </tfoot>
