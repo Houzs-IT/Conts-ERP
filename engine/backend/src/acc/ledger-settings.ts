@@ -68,3 +68,38 @@ export function isBeforeLedgerStart(date: string, s: LedgerSettings): boolean {
 }
 
 export const beforeLedgerStartMessage = (start: string): string => `This date is before the books start on ${start}.`;
+
+/** For the edit doors (Conts): an edit that would move a document across the
+    ledger start, or touch one dated before it, is refused before any write —
+    a reversal on one side and a re-post on the other would double-count it or
+    drop it from the books. `failed` = the settings could not be read. */
+export async function ledgerDatesRefusal(
+  sb: Db,
+  companyId: number | null,
+  dates: ReadonlyArray<string | null | undefined>,
+): Promise<null | { failed: boolean; error: string }> {
+  const ls = await loadLedgerSettings(sb, companyId);
+  if (!ls.ok) return { failed: true, error: 'The ledger settings could not be read.' };
+  const start = ls.settings.ledgerStartDate;
+  if (start == null) return null;
+  return dates.some((d) => d && isBeforeLedgerStart(d, ls.settings)) ? { failed: false, error: beforeLedgerStartMessage(start) } : null;
+}
+
+/** Which side of the ledger start an edit sits on (Conts). `before`: both
+    dates before it — the document may change, the books do not. `across`: the
+    edit moves it over the start, either way — refused, since the contra and the
+    re-post would land on different sides. `after`: as before the start existed. */
+export async function ledgerEditSide(
+  sb: Db,
+  companyId: number | null,
+  oldDate: string,
+  newDate: string,
+): Promise<{ ok: false; error: string } | { ok: true; side: 'after' | 'before' } | { ok: true; side: 'across'; message: string }> {
+  const ls = await loadLedgerSettings(sb, companyId);
+  if (!ls.ok) return { ok: false, error: 'The ledger settings could not be read.' };
+  const oldBefore = isBeforeLedgerStart(oldDate, ls.settings);
+  const newBefore = isBeforeLedgerStart(newDate, ls.settings);
+  if (oldBefore && newBefore) return { ok: true, side: 'before' };
+  if (oldBefore || newBefore) return { ok: true, side: 'across', message: beforeLedgerStartMessage(ls.settings.ledgerStartDate as string) };
+  return { ok: true, side: 'after' };
+}

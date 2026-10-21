@@ -249,3 +249,26 @@ describe('repostSoPaymentEdit — the entry follows the payment', () => {
     expect(active(sb)).toHaveLength(0);
   });
 });
+
+describe('repostSoPaymentEdit around the ledger start (Conts)', () => {
+  const start = (sb: ReturnType<typeof world>, d: string) => {
+    sb.tables.acc_company_settings = [{ company_id: 1, ledger_start_date: d, fiscal_year_end_month: 8 }];
+  };
+
+  it('a payment moved to before the start keeps its entry and says why — the money never silently leaves the books', async () => {
+    const sb = await booked();
+    start(sb, '2026-09-01');
+    const out = await repostSoPaymentEdit(sb, { before: facts(), after: PAY({ paid_at: '2026-08-30T10:00:00+08:00' }) as unknown as SoPaymentRow });
+    expect(out).toMatchObject({ ok: false, status: 'repost_failed', reason: 'This date is before the books start on 2026-09-01.' });
+    expect(active(sb)).toHaveLength(1);
+    expect(sb.tables.journal_entries).toHaveLength(1);
+  });
+
+  it('a payment before the start may change; the books do not move', async () => {
+    const sb = await booked();
+    start(sb, '2026-10-01');
+    const out = await repostSoPaymentEdit(sb, { before: facts(), after: PAY({ amount_sen: 199_100 }) as unknown as SoPaymentRow });
+    expect(out).toMatchObject({ ok: true, status: 'not_booked', reason: 'before_ledger_start' });
+    expect(sb.tables.journal_entries).toHaveLength(1);
+  });
+});

@@ -31,6 +31,7 @@ import { hasHouzsPerm } from '../lib/houzs-perms';
 import { requireActiveCompanyId, scopeToCompanyId, NOT_THIS_COMPANY } from '../lib/companyScope';
 import { dateOrNull } from '../lib/date-coerce';
 import { postJournal, reverseJournal, validateJournal, type EngineLine } from '../../acc/engine';
+import { ledgerDatesRefusal } from '../../acc/ledger-settings';
 
 type Ctx = Context<{ Bindings: Env; Variables: Variables }>;
 
@@ -111,6 +112,14 @@ export const journalEntryEdit = async (c: Ctx) => {
     const client = v.status === 'min_2_lines' || v.status === 'bad_line' || v.status === 'unbalanced'
       || v.status === 'zero_total' || v.status === 'account_invalid' || v.status === 'control_account_manual';
     return c.json({ error: v.status, reason: v.reason }, client ? 400 : 500);
+  }
+
+  /* A posted entry is neither moved across the ledger start nor edited when it
+     sits before it (Conts): the contra and the re-post would land on different
+     sides. A draft has booked nothing; posting it is checked on its own. */
+  if (je.posted === true) {
+    const refused = await ledgerDatesRefusal(sb, co.companyId, [String(je.entry_date).slice(0, 10), entryDate]);
+    if (refused) return c.json({ error: refused.error }, refused.failed ? 500 : 409);
   }
 
   /* A draft has booked nothing: rewrite it in place, same number. */

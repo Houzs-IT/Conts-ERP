@@ -26,6 +26,7 @@
 // ----------------------------------------------------------------------------
 
 import { Hono } from 'hono';
+import { ledgerEditSide } from '../../acc/ledger-settings';
 import { hasHouzsPerm } from '../lib/houzs-perms';
 import { supabaseAuth } from '../middleware/auth';
 import { activeCompanyId, companyDocPrefix, requireActiveCompanyId, scopeToCompany } from '../lib/companyScope';
@@ -354,6 +355,11 @@ export const updateDebtorBillHandler = async (c: any): Promise<Response> => {
   const billDate = dateOrNull(body.billDate) ?? oldDate;
   const notes = body.notes !== undefined ? (body.notes ? String(body.notes).trim() : null) : (bill.notes ?? null);
 
+  /* Not moved across the ledger start; before it, the books stay (Conts). */
+  const side = await ledgerEditSide(sb, coId, oldDate.slice(0, 10), billDate.slice(0, 10));
+  if (!side.ok) return c.json({ error: 'load_failed', reason: side.error }, 500);
+  if (side.side === 'across') return c.json({ error: side.message }, 409);
+
   if (rebuilt) {
     const { error: delErr } = await sb.from('acc_debtor_bill_lines').delete().eq('company_id', coId).eq('bill_id', bill.id);
     if (delErr) return c.json({ error: 'save_failed', reason: delErr.message }, 500);
@@ -368,6 +374,7 @@ export const updateDebtorBillHandler = async (c: any): Promise<Response> => {
     .update({ bill_date: billDate, notes, total_sen: totalSen })
     .eq('company_id', coId).eq('id', bill.id);
   if (upErr) return c.json({ error: 'save_failed', reason: upErr.message }, 500);
+  if (side.side === 'before') return c.json({ ok: true, bill: { id: bill.id, billNumber, totalSen }, reposted: false });
 
   /* The re-post: contra the entry the old bill wrote, then book the bill as
      it now reads — through the one gate. */

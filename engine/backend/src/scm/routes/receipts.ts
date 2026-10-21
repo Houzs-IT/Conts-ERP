@@ -17,6 +17,7 @@
 // ----------------------------------------------------------------------------
 
 import { Hono } from 'hono';
+import { ledgerEditSide } from '../../acc/ledger-settings';
 import { hasHouzsPerm } from '../lib/houzs-perms';
 import { supabaseAuth } from '../middleware/auth';
 import { companyDocPrefix, requireActiveCompanyId, scopeToCompany } from '../lib/companyScope';
@@ -327,6 +328,10 @@ export const updateReceiptHandler = async (c: any): Promise<Response> => {
   }
   const totalSen = lines.reduce((s, l) => s + l.amountSen, 0);
 
+  const side = await ledgerEditSide(sb, coId, oldDate, receiptDate);
+  if (!side.ok) return c.json({ error: 'load_failed', reason: side.error }, 500);
+  if (side.side === 'across') return c.json({ error: side.message }, 409);
+
   const { error: upErr } = await sb.from('acc_receipts').update({
     /* The coercion sits at the write (tests/dateWriteCoercion.test.ts): a
        missing or unreadable date keeps the receipt's own. */
@@ -340,6 +345,11 @@ export const updateReceiptHandler = async (c: any): Promise<Response> => {
       description: l.description, credit_account_code: l.code, amount_sen: l.amountSen,
     })));
     if (lineErr) return c.json({ error: 'save_failed', reason: lineErr.message }, 500);
+  }
+
+  /* Before the ledger start the books stay as they were (Conts). */
+  if (side.side === 'before') {
+    return c.json({ ok: true, reposted: false, receipt: { id: receipt.id, receiptNumber: receipt.receipt_number, totalSen, receiptDate } });
   }
 
   /* The re-post: contra the entry the old receipt wrote, then book it as it

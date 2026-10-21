@@ -28,7 +28,7 @@ import { safeRate, toMyrSen } from '../lib/fx';
 import { todayMyt } from '../lib/my-time';
 import { hasHouzsPerm } from '../lib/houzs-perms';
 import { postJournal, reverseJournal } from '../../acc/engine';
-import { beforeLedgerStartMessage, isBeforeLedgerStart, loadLedgerSettings, saveLedgerSettings } from '../../acc/ledger-settings';
+import { beforeLedgerStartMessage, isBeforeLedgerStart, ledgerDatesRefusal, loadLedgerSettings, saveLedgerSettings } from '../../acc/ledger-settings';
 import { backfillSoPayments, paymentEntryDisagreements, unbookedPayments } from '../../acc/payments';
 import { computeDailyBank } from '../../acc/daily-bank';
 import { systemTakings, postCashOverShort } from '../../acc/daily-close';
@@ -1151,7 +1151,7 @@ accounting.patch('/accounts/:code', async (c) => {
 /* POST /journal-entries/:id/reverse — void a MANUAL journal with a contra.
    Document-sourced entries are NOT reversible here: cancel the document and
    its own flow writes the contra (one lifecycle per document, brief 2.8). */
-accounting.post('/journal-entries/:id/reverse', async (c) => {
+export const journalEntryReverseHandler = async (c: AccCtx): Promise<Response> => {
   if (!requireGlPost(c)) return c.json({ error: "You don't have permission to post to the general ledger." }, 403);
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
@@ -1159,17 +1159,21 @@ accounting.post('/journal-entries/:id/reverse', async (c) => {
   const sb = c.get('supabase');
 
   const { data: je, error: jeLoadErr } = await scopeToCompanyId(
-    sb.from('journal_entries').select('id, je_no, source_type, posted, reversed').eq('id', id),
+    sb.from('journal_entries').select('id, je_no, source_type, posted, reversed, entry_date').eq('id', id),
     co.companyId,
   ).maybeSingle();
   if (jeLoadErr) return c.json({ error: 'load_failed', reason: jeLoadErr.message }, 500);
   if (!je) return c.json(NOT_THIS_COMPANY, 404);
-  const row = je as { je_no: string; source_type: string; posted?: boolean; reversed?: boolean };
+  const row = je as { je_no: string; source_type: string; posted?: boolean; reversed?: boolean; entry_date?: string };
   if (row.source_type !== 'MANUAL') {
     return c.json({ error: 'not_manual', message: 'Only manual journals reverse here - cancel the source document instead.' }, 409);
   }
   if (row.posted !== true) return c.json({ error: 'not_posted', message: 'A draft has booked nothing - post it first or leave it.' }, 409);
   if (row.reversed === true) return c.json({ error: 'already_reversed' }, 409);
+  /* The contra is dated today; neither it nor an entry before the books start
+     is written (Conts) — say so rather than answer done. */
+  const refused = await ledgerDatesRefusal(sb, co.companyId, [row.entry_date, todayMyt()]);
+  if (refused) return c.json({ error: refused.error }, refused.failed ? 500 : 409);
 
   const r = await reverseJournal(sb, {
     sourceType: 'MANUAL',
@@ -1179,7 +1183,8 @@ accounting.post('/journal-entries/:id/reverse', async (c) => {
   });
   if (!r.ok) return c.json({ error: r.status, reason: r.reason }, 500);
   return c.json({ ok: true, ...('jeNo' in r ? { jeNo: r.jeNo, jeId: r.jeId } : {}), status: r.status });
-});
+};
+accounting.post('/journal-entries/:id/reverse', journalEntryReverseHandler);
 
 /* GET /control-check — reconciliation layer 1 (brief 3.5): control account
    vs the documents that are supposed to explain it, named to the doc.

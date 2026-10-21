@@ -32,6 +32,7 @@
 // ----------------------------------------------------------------------------
 
 import { Hono } from 'hono';
+import { ledgerEditSide } from '../../acc/ledger-settings';
 import { hasHouzsPerm } from '../lib/houzs-perms';
 import { activeCompanyId, companyDocPrefix, requireActiveCompanyId, scopeToCompany } from '../lib/companyScope';
 import { docMonthTag, mintMonthlyDocNo } from '../lib/doc-no';
@@ -276,6 +277,15 @@ export const updateApInvoiceHandler = async (c: any): Promise<Response> => {
   if (body.invoiceDate !== undefined) patch.invoice_date = dateOrNull(body.invoiceDate) ?? inv.invoice_date;
   if (body.dueDate !== undefined) patch.due_date = dateOrNull(body.dueDate);
   if (body.notes !== undefined) patch.notes = body.notes ? String(body.notes).trim() : null;
+  /* A posted bill is not moved across the ledger start; before it, the books
+     stay as they were (Conts). Checked before the first write. */
+  let side: 'after' | 'before' = 'after';
+  if (posted) {
+    const s = await ledgerEditSide(sb, co.companyId, oldDate.slice(0, 10), String(patch.invoice_date ?? inv.invoice_date).slice(0, 10));
+    if (!s.ok) return c.json({ error: 'load_failed', reason: s.error }, 500);
+    if (s.side === 'across') return c.json({ error: s.message }, 409);
+    side = s.side;
+  }
   let rebuilt: { lines: CleanLine[]; total: number } | null = null;
   if (body.lines !== undefined) {
     const built = buildLines(body.lines);
@@ -303,6 +313,7 @@ export const updateApInvoiceHandler = async (c: any): Promise<Response> => {
   const { data, error } = await sb.from('ap_invoices').update(patch).eq('company_id', co.companyId).eq('id', inv.id).select(HEADER).maybeSingle();
   if (error) return c.json({ error: 'save_failed', reason: error.message }, 500);
   if (!posted) return c.json({ ok: true, invoice: data });
+  if (side === 'before') return c.json({ ok: true, invoice: data, reposted: false });
 
   /* The re-post: contra the entry the old bill wrote, then book the bill as
      it now reads — through the one gate, so numbering and the one-active-

@@ -11,7 +11,7 @@ import { Hono } from 'hono';
 import { describe, expect, test } from 'vitest';
 import { fakeSb, type Row } from '../src/scm/lib/fake-postgrest';
 import { postPaymentVoucherHandler } from '../src/scm/routes/payment-vouchers';
-import { journalEntryCreateHandler, postJournalEntryHandler, postPiHandler, postSiHandler } from '../src/scm/routes/accounting';
+import { journalEntryCreateHandler, journalEntryReverseHandler, postJournalEntryHandler, postPiHandler, postSiHandler } from '../src/scm/routes/accounting';
 
 const CO = 2;
 const START = '2026-12-01';
@@ -148,5 +148,18 @@ describe('re-posting a purchase invoice dated before the books start', () => {
     expect(res.status).toBe(409);
     expect(await res.json()).toEqual(REFUSAL);
     expect(sb.tables.journal_entries).toHaveLength(0);
+  });
+});
+
+describe('reversing a manual journal dated before the books start', () => {
+  test('is refused by name, not answered as done', async () => {
+    const { app, sb } = harness({
+      journal_entries: [{ id: 'je-m', je_no: '2990-JE-2611-0002', company_id: CO, entry_date: '2026-11-20', posted: true, reversed: false, source_type: 'MANUAL', total_debit_sen: 100, total_credit_sen: 100 }],
+    });
+    app.post('/journal-entries/:id/reverse', journalEntryReverseHandler as never);
+    const res = await app.request('/journal-entries/je-m/reverse', { method: 'POST' });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual(REFUSAL);
+    expect(sb.tables.journal_entries).toHaveLength(1);
   });
 });

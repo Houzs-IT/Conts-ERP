@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { fakeSb } from '../scm/lib/fake-postgrest';
-import { isBeforeLedgerStart, LEDGER_DEFAULTS, loadLedgerSettings, saveLedgerSettings } from './ledger-settings';
+import { isBeforeLedgerStart, LEDGER_DEFAULTS, ledgerEditSide, loadLedgerSettings, saveLedgerSettings } from './ledger-settings';
 
 describe('ledger settings', () => {
   it('returns defaults when the company has no settings row', async () => {
@@ -45,5 +45,28 @@ describe('ledger settings', () => {
     expect(isBeforeLedgerStart('2026-11-30', s)).toBe(true);
     expect(isBeforeLedgerStart('2026-12-01', s)).toBe(false);
     expect(isBeforeLedgerStart('2026-11-30', LEDGER_DEFAULTS)).toBe(false);
+  });
+});
+
+describe('ledgerEditSide', () => {
+  const sb = (start: string | null) => fakeSb({ acc_company_settings: start ? [{ company_id: 1, ledger_start_date: start, fiscal_year_end_month: 8 }] : [] });
+
+  it('is after when no start is set', async () => {
+    expect(await ledgerEditSide(sb(null), 1, '2020-01-01', '2020-01-02')).toEqual({ ok: true, side: 'after' });
+  });
+  it('is before when both dates are before the start', async () => {
+    expect(await ledgerEditSide(sb('2026-12-01'), 1, '2026-11-01', '2026-11-30')).toEqual({ ok: true, side: 'before' });
+  });
+  it('is across, with the sentence, when the edit moves the date over the start either way', async () => {
+    const across = { ok: true, side: 'across', message: 'This date is before the books start on 2026-12-01.' };
+    expect(await ledgerEditSide(sb('2026-12-01'), 1, '2026-12-05', '2026-11-30')).toEqual(across);
+    expect(await ledgerEditSide(sb('2026-12-01'), 1, '2026-11-30', '2026-12-01')).toEqual(across);
+  });
+  it('is after when both are on or after the start', async () => {
+    expect(await ledgerEditSide(sb('2026-12-01'), 1, '2026-12-01', '2026-12-09')).toEqual({ ok: true, side: 'after' });
+  });
+  it('fails closed when the read fails', async () => {
+    const broken = fakeSb({ acc_company_settings: [] }, { acc_company_settings: ['ledger_start_date'] });
+    expect((await ledgerEditSide(broken, 1, '2026-12-01', '2026-12-02')).ok).toBe(false);
   });
 });
