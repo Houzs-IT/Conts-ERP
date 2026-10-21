@@ -403,39 +403,45 @@ export const UNIT_SQL = `
   FROM units u JOIN properties p ON p.id = u.property_id JOIN owners o ON o.id = u.owner_id
   LEFT JOIN owner_contracts c ON c.id = u.contract_id`;
 
-/** Everything needed for [from, toExclusive), for every unit, some owners' units, or one unit. Six queries. */
-export async function loadInputs(q: Query, from: string, toExclusive: string, scope: { ownerIds?: string[]; unitId?: string } = {}): Promise<Inputs> {
-  const unitWhere = scope.unitId ? 'WHERE u.id = ?' : scope.ownerIds ? 'WHERE u.owner_id IN (SELECT jsonb_array_elements_text(?::text::jsonb))' : '';
-  const unitArg = scope.unitId ? [scope.unitId] : scope.ownerIds ? [JSON.stringify(scope.ownerIds)] : [];
-  const units = await q<UnitRow>(`${UNIT_SQL} ${unitWhere} ORDER BY p.name, u.unit_number`, ...unitArg);
-  const ids = JSON.stringify(units.map(u => u.id));
-  const [stays, costs, adjustments, history] = await Promise.all([
-    q<StayRow>(`
+/** Everything needed for [from, toExclusive), for every unit, some owners' units, some units, or one unit. One query. */
+export async function loadInputs(q: Query, from: string, toExclusive: string, scope: { ownerIds?: string[]; unitIds?: string[]; unitId?: string } = {}): Promise<Inputs> {
+  const unitWhere = scope.unitId ? 'WHERE u.id = ?'
+    : scope.unitIds ? 'WHERE u.id IN (SELECT jsonb_array_elements_text(?::text::jsonb))'
+    : scope.ownerIds ? 'WHERE u.owner_id IN (SELECT jsonb_array_elements_text(?::text::jsonb))' : '';
+  const unitArg = scope.unitId ? [scope.unitId] : scope.unitIds ? [JSON.stringify(scope.unitIds)] : scope.ownerIds ? [JSON.stringify(scope.ownerIds)] : [];
+  // One statement, each list as json (json, not jsonb, keeps the columns in order). With prepare: false (db.ts) the
+  // database library waits on every statement that carries a value twice and holds the next one back meanwhile, so the
+  // six lists this used to read one by one were twelve waits in a row; the Dashboard waits on this. Stays come in a
+  // fixed order, so two check-ins on the same day always list (and share out a rounding sen) the same way.
+  const [loaded] = await q<{ units: UnitRow[] | null; stays: StayRow[] | null; costs: CostRow[] | null; adjustments: AdjustmentRow[] | null; history: ContractRow[] | null; pieces: PaymentPiece[] | null }>(`
+    WITH su AS (SELECT u.id, u.owner_id FROM units u JOIN properties p ON p.id = u.property_id JOIN owners o ON o.id = u.owner_id ${unitWhere}),
+    st AS (
       SELECT r.id, r.unit_id, r.check_in, r.check_out, r.collected_revenue, r.channel, r.external_ref, g.full_name AS guest_name
       FROM reservations r LEFT JOIN guests g ON g.id = r.guest_id
       WHERE r.state IN ('confirmed','checked_in','checked_out') AND r.channel NOT IN ('maintenance_block','owner_stay')
-        AND r.check_in < ? AND r.check_out > ? AND r.unit_id IN (SELECT jsonb_array_elements_text(?::text::jsonb))`, toExclusive, from, ids),
-    q<CostRow>(`
-      SELECT e.id, e.unit_id, e.category, e.description, e.amount, e.incurred_on, e.reference, t.kind AS task_kind
-      FROM expenses e LEFT JOIN tasks t ON t.id = e.task_id
-      WHERE e.charge_to = 'owner' AND e.incurred_on >= ? AND e.incurred_on < ? AND e.unit_id IN (SELECT jsonb_array_elements_text(?::text::jsonb))`, from, toExclusive, ids),
-    q<AdjustmentRow>(`
-      SELECT a.id, a.owner_id, a.unit_id, a.kind, a.amount, a.description, a.occurred_on, a.reference, a.state, a.statement_id
-      FROM owner_adjustments a
-      WHERE a.state <> 'held' AND a.occurred_on < ? AND a.owner_id IN (SELECT DISTINCT owner_id FROM units WHERE id IN (SELECT jsonb_array_elements_text(?::text::jsonb)))
-      ORDER BY a.occurred_on, a.id`, toExclusive, ids),
-    q<ContractRow>(`
-      SELECT c.id, c.unit_id, c.revenue_model, c.model, c.management_fee_pct, c.grr_amount, c.starts_on, c.ends_on, c.minimum_guarantee,
-             c.guarantee_starts_on, c.guarantee_ends_on, c.misc_charges, c.tenant_name, c.agent_fee_pct, c.minimum_guarantee_annual
-      FROM owner_contracts c WHERE c.unit_id IN (SELECT jsonb_array_elements_text(?::text::jsonb))
-      ORDER BY c.starts_on DESC, c.created_at DESC`, ids),
-  ]);
+        AND r.check_in < ? AND r.check_out > ? AND r.unit_id IN (SELECT id FROM su))
+    SELECT
+      (SELECT json_agg(x ORDER BY x.property_name, x.unit_number) FROM (${UNIT_SQL} WHERE u.id IN (SELECT id FROM su)) x) AS units,
+      (SELECT json_agg(x ORDER BY x.check_in, x.id) FROM st x) AS stays,
+      (SELECT json_agg(x) FROM (
+        SELECT e.id, e.unit_id, e.category, e.description, e.amount, e.incurred_on, e.reference, t.kind AS task_kind
+        FROM expenses e LEFT JOIN tasks t ON t.id = e.task_id
+        WHERE e.charge_to = 'owner' AND e.incurred_on >= ? AND e.incurred_on < ? AND e.unit_id IN (SELECT id FROM su)) x) AS costs,
+      (SELECT json_agg(x ORDER BY x.occurred_on, x.id) FROM (
+        SELECT a.id, a.owner_id, a.unit_id, a.kind, a.amount, a.description, a.occurred_on, a.reference, a.state, a.statement_id
+        FROM owner_adjustments a
+        WHERE a.state <> 'held' AND a.occurred_on < ? AND a.owner_id IN (SELECT owner_id FROM su)) x) AS adjustments,
+      (SELECT json_agg(x ORDER BY c.starts_on DESC, c.created_at DESC) FROM owner_contracts c CROSS JOIN LATERAL (
+        SELECT c.id, c.unit_id, c.revenue_model, c.model, c.management_fee_pct, c.grr_amount, c.starts_on, c.ends_on, c.minimum_guarantee,
+               c.guarantee_starts_on, c.guarantee_ends_on, c.misc_charges, c.tenant_name, c.agent_fee_pct, c.minimum_guarantee_annual) x
+        WHERE c.unit_id IN (SELECT id FROM su)) AS history,
+      -- The payments recorded against these stays (migration 0091).
+      (SELECT json_agg(x) FROM (
+        SELECT bp.reservation_id, bp.amount, bp.status, bp.kind, bp.source, bp.note FROM booking_payments bp
+        WHERE bp.reservation_id IN (SELECT id FROM st)) x) AS pieces`, ...unitArg, toExclusive, from, from, toExclusive, toExclusive);
+  const [units, stays, costs, adjustments, history, pieces] = [loaded.units ?? [], loaded.stays ?? [], loaded.costs ?? [], loaded.adjustments ?? [], loaded.history ?? [], loaded.pieces ?? []];
   const historyOf = new Map<string, ContractRow[]>();
   for (const h of history) { const l = historyOf.get(h.unit_id); if (l) l.push(h); else historyOf.set(h.unit_id, [h]); }
-  // The payments recorded against these stays (migration 0091); a database without the table reads as none.
-  const pieces = stays.length ? await q<PaymentPiece>(`
-    SELECT reservation_id, amount, status, kind, source, note FROM booking_payments
-    WHERE reservation_id IN (SELECT jsonb_array_elements_text(?::text::jsonb))`, JSON.stringify(stays.map(s => s.id))).catch(() => [] as PaymentPiece[]) : [];
   const piecesOf = new Map<string, PaymentPiece[]>();
   for (const p of pieces) { const l = piecesOf.get(p.reservation_id); if (l) l.push(p); else piecesOf.set(p.reservation_id, [p]); }
   return {
@@ -511,4 +517,55 @@ export async function withYearToDate(q: Query, inputs: Inputs, month: string, se
     return { ...u, year_shares_before: total };
   }));
   return { ...inputs, units };
+}
+
+/** computeMonth ('dated') with withYearToDate for several months at once (the Dashboard's months), same
+ *  figures as calling the two month by month. withYearToDate loads and works out a yearly-guarantee unit's earlier
+ *  months again for every month that closes its contract year; here each unit's month is worked out once and the
+ *  true-up adds up the owner's shares already worked out. Earlier months that are not among `months` (before the
+ *  first one) come from one more loadInputs for all those units together. */
+export async function computeMonthsWithYearToDate(q: Query, inputs: Inputs, months: string[], settings: { defaultFeePct: number; miscMonthly: number }): Promise<Map<string, UnitMonth[]>> {
+  // In order, so a true-up only reads months already worked out.
+  months = [...months].sort();
+  // The contract year a unit's statement for `month` closes, as withYearToDate reads it; null when it closes none.
+  const closes = (u: UnitRow, month: string) => {
+    const asOf = unitForMonth(u, month);
+    const t = termsFor(asOf, settings.defaultFeePct);
+    if (t.model !== 'management_yearly_guarantee' || !t.yearlyGuarantee) return null;
+    const y = yearlyFor(month, t.activeFrom, t.activeTo, t.yearlyGuarantee);
+    return y?.trueUp ? { yearFrom: y.yearFrom, contractId: asOf.contract_id } : null;
+  };
+  const asked = new Set(months);
+  const shares = new Map<string, number>(); // `${unitId}|${month}`: the owner's share that month
+  const gaps: { u: UnitRow; m: string }[] = [];
+  for (const month of months) for (const u of inputs.units) {
+    const y = closes(u, month);
+    if (y) for (let m = y.yearFrom; m < month; m = addMonths(m, 1)) if (!asked.has(m)) gaps.push({ u, m });
+  }
+  if (gaps.length) {
+    const ms = gaps.map(g => g.m).sort();
+    const before = await loadInputs(q, `${ms[0]}-01`, monthEndExclusive(ms[ms.length - 1]), { unitIds: [...new Set(gaps.map(g => g.u.id))] });
+    for (const { u, m } of gaps) {
+      const key = `${u.id}|${m}`;
+      if (shares.has(key)) continue;
+      // The unit as given, as withYearToDate does, with the earlier months' stays and costs.
+      const r = computeMonth(m, { ...before, units: [{ ...u, year_shares_before: undefined }] }, settings, 'dated').find(x => x.unitId === u.id);
+      if (r) shares.set(key, r.ownerShare);
+    }
+  }
+  const out = new Map<string, UnitMonth[]>();
+  for (const month of months) {
+    const units = inputs.units.map(u => {
+      const y = closes(u, month);
+      if (!y) return u;
+      let total = 0;
+      for (let m = y.yearFrom; m < month; m = addMonths(m, 1)) if (unitForMonth(u, m).contract_id === y.contractId) total += shares.get(`${u.id}|${m}`) ?? 0;
+      return { ...u, year_shares_before: total };
+    });
+    const rows = computeMonth(month, { ...inputs, units }, settings, 'dated');
+    // The owner's share does not depend on year_shares_before, so a later month's true-up can add it up.
+    for (const r of rows) shares.set(`${r.unitId}|${month}`, r.ownerShare);
+    out.set(month, rows);
+  }
+  return out;
 }

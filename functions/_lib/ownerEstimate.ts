@@ -1,5 +1,5 @@
 import { type Env, all } from './db';
-import { loadInputs, withYearToDate, computeMonth, statementSettings, type Query } from './ownerStatement';
+import { loadInputs, computeMonthsWithYearToDate, statementSettings, type Query } from './ownerStatement';
 import { monthEndExclusive } from './revenue';
 
 export interface OwnerMonthTotals {
@@ -20,20 +20,22 @@ export interface OwnerMonthTotals {
  * payout before Owner Adjustments and minimum top-ups.
  */
 export async function ownerMonths(env: Env, months: string[]): Promise<Map<string, OwnerMonthTotals>> {
+  return ownerMonthsFor((sql, ...args) => all(env, sql, ...args), months);
+}
+
+/** ownerMonths on any query function (scripts/api-checks/owner-months.mjs counts its queries). */
+export async function ownerMonthsFor(q: Query, months: string[]): Promise<Map<string, OwnerMonthTotals>> {
   const out = new Map<string, OwnerMonthTotals>();
   if (!months.length) return out;
-  const q: Query = (sql, ...args) => all(env, sql, ...args);
   const sorted = [...months].sort();
   const [settings, inputs] = await Promise.all([
     statementSettings(q), loadInputs(q, `${sorted[0]}-01`, monthEndExclusive(sorted[sorted.length - 1])),
   ]);
-  const inputsByMonth = await Promise.all(sorted.map(month => withYearToDate(q, inputs, month, settings)));
-  sorted.forEach((month, i) => {
-    const rows = computeMonth(month, inputsByMonth[i], settings, 'dated');
+  for (const [month, rows] of await computeMonthsWithYearToDate(q, inputs, sorted, settings)) {
     out.set(month, rows.reduce((t, m) => ({
       income: t.income + m.gross, ownerCosts: t.ownerCosts + m.deductions,
       operatorShare: t.operatorShare + m.operatorShare, netPayout: t.netPayout + m.netPayout,
     }), { income: 0, ownerCosts: 0, operatorShare: 0, netPayout: 0 }));
-  });
+  }
   return out;
 }
