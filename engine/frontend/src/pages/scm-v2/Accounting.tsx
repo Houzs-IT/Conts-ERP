@@ -15,6 +15,7 @@
 // ----------------------------------------------------------------------------
 
 import { useEffect, useMemo, useState } from 'react';
+import { DepartmentSelect, type Department } from '../../conts/department';
 import { Link, useSearchParams } from 'react-router-dom';
 import { ACCOUNTING_TAB_TITLES, accountingTabFromSearch, type AccountingTab } from './accounting-tabs';
 import {
@@ -228,7 +229,8 @@ const GlTab = () => <GeneralLedger />;
 /* ── Trial Balance ───────────────────────────────────────────────────── */
 
 export const TrialBalanceTab = () => {
-  const q = useAccountBalances();
+  const [department, setDepartment] = useState<Department | ''>('');
+  const q = useAccountBalances(department);
   // Pre-sort into the canonical statement order — DataTable's groupBy buckets
   // in first-seen row order, so this IS the group order until the user sorts.
   const rows = useMemo(() => {
@@ -262,6 +264,7 @@ export const TrialBalanceTab = () => {
   const NOT_KNOWN = '—';
   return (
     <div className="space-y-3">
+      <DepartmentSelect label="Trial balance department" blank="All departments" value={department} onChange={setDepartment} />
       {q.isError && (
         <div style={{
           padding: 'var(--space-3) var(--space-4)',

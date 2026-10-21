@@ -19,7 +19,7 @@
 //
 // These tests assert the CONTRACT: on a failed read the screen does not print a
 // number, and it says the read failed. They fail on the pre-fix tree.
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -80,6 +80,17 @@ describe('Trial Balance', () => {
     });
     render(wrap(<TrialBalanceTab />));
     expect(screen.getByText(/books balance/i)).toBeTruthy();
+  });
+});
+
+/* Conts (finance phase 1, spec 3.5): the trial balance of one department when one is chosen. */
+describe('Trial Balance by department', () => {
+  it('reads every department by default, and the chosen one after a pick', () => {
+    useAccountBalances.mockReturnValue({ data: { balances: [] }, isLoading: false, isPending: false, isError: false, isSuccess: true, error: null, status: 'success' as const });
+    render(wrap(<TrialBalanceTab />));
+    expect(useAccountBalances).toHaveBeenLastCalledWith('');
+    fireEvent.change(screen.getByLabelText('Trial balance department'), { target: { value: 'shared' } });
+    expect(useAccountBalances).toHaveBeenLastCalledWith('shared');
   });
 });
 

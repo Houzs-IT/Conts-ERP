@@ -173,6 +173,14 @@ export type Department = (typeof DEPARTMENTS)[number];
 export const DEFAULT_DEPARTMENT: Department = 'supply';
 export const isDepartment = (v: unknown): v is Department => (DEPARTMENTS as readonly unknown[]).includes(v);
 
+/** A report's ?department= (Conts, spec 3.5): a department, null when absent (the whole company), false when unknown. */
+export function departmentQuery(raw: string | undefined | null): Department | null | false {
+  const v = String(raw ?? '').trim();
+  if (!v) return null;
+  return isDepartment(v) ? v : false;
+}
+export const BAD_DEPARTMENT = { error: 'bad_department', message: 'The department must be rental, supply or shared.' };
+
 /** The money side of a voucher or receipt, split the way its other lines are: one amount per department, in the order
     each first appears (a line naming none is Supply chain). Each department's books then balance on their own. */
 export function splitByDepartment(legs: ReadonlyArray<{ department?: Department | null; sen: number }>): Array<{ department: Department; sen: number }> {

@@ -70,7 +70,7 @@ import { ACCOUNT_SECTIONS, defaultSectionFor } from '../lib/account-sections';
 import { layOutBlock, type LaidNode, type ReportKey } from '../../acc/report-layout';
 import { countsInTheBooks } from '../../acc/reversal-pairs';
 import { allowedIds, resolveLayout, type ResolvedLayout } from './accounting-report-layouts';
-import { resolveRoles, STOCK_BUCKET_ROLES, type AccountRole } from '../../acc/rules';
+import { BAD_DEPARTMENT, departmentQuery, resolveRoles, STOCK_BUCKET_ROLES, type AccountRole, type Department } from '../../acc/rules';
 import { stockValueByBucketAsOf } from '../../acc/stock-close';
 import { STOCK_BUCKETS, type StockBucket } from '../lib/stock-bucket';
 
@@ -90,6 +90,8 @@ export async function loadSums(
   companyId: number,
   from: string | null,
   to: string | null,
+  /** Conts (spec 3.5): only this department's lines; null = the whole company. */
+  department: Department | null = null,
 ): Promise<{ ok: true; sums: SumRow[] } | { ok: false; reason: string }> {
   const { data, error } = await paginateAll((f, t) => {
     let q = sb.from('v_gl_entries')
@@ -97,6 +99,7 @@ export async function loadSums(
       .eq('company_id', companyId);
     if (from) q = q.gte('entry_date', from);
     if (to) q = q.lte('entry_date', to);
+    if (department) q = q.eq('department', department);
     return q.range(f, t);
   });
   if (error) return { ok: false, reason: (error as { message?: string }).message ?? String(error) };
@@ -169,12 +172,16 @@ export type ReportSources = {
 };
 
 /** The database, as the routes read it. */
-export const dbSources = (sb: Sb, companyId: number, layoutIds: number[]): ReportSources => ({
-  sums: (from, to) => loadSums(sb, companyId, from, to),
+export const dbSources = (sb: Sb, companyId: number, layoutIds: number[], department: Department | null = null): ReportSources => ({
+  sums: (from, to) => loadSums(sb, companyId, from, to, department),
   accounts: () => loadAccounts(sb, companyId),
   roles: () => resolveRoles(sb, companyId),
-  stockByBucket: (date) => stockValueByBucketAsOf(sb, companyId, date),
+  /* Stock is the supply chain's (Conts, spec 3.5): Rental and Shared hold none, and their closing is never provisional. */
+  stockByBucket: (date) => (department && department !== 'supply'
+    ? Promise.resolve({ ok: true as const, buckets: { customer: 0, display: 0, service: 0 }, totalSen: 0 })
+    : stockValueByBucketAsOf(sb, companyId, date)),
   closingBooked: async (monthEnd) => {
+    if (department && department !== 'supply') return { ok: true, booked: true };
     const { data, error } = await sb.from('journal_entries')
       .select('id, reversed')
       .eq('company_id', companyId).eq('source_type', 'STOCKADJ').eq('source_doc_no', `STOCKADJ-${companyId}-${monthEnd.slice(0, 7)}`);
@@ -333,8 +340,10 @@ export const pnlReport = async (c: any): Promise<Response> => {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) {
     return c.json({ error: 'bad_range', message: 'from and to must be YYYY-MM-DD.' }, 400);
   }
+  const department = departmentQuery(c.req.query('department'));
+  if (department === false) return c.json(BAD_DEPARTMENT, 400);
   const sb = c.get('supabase');
-  const r = await buildPnl(dbSources(sb, co.companyId, allowedIds(c)), co.companyId, from, to);
+  const r = await buildPnl(dbSources(sb, co.companyId, allowedIds(c), department), co.companyId, from, to);
   if (!r.ok) return c.json({ error: 'load_failed', reason: r.reason }, 500);
   return c.json(r.report);
 };

@@ -15,6 +15,7 @@
 // ----------------------------------------------------------------------------
 
 import { useMemo, useState } from 'react';
+import { DEPARTMENT_OPTIONS, DepartmentSelect } from '../../conts/department';
 import { useSearchParams } from 'react-router-dom';
 import { Button } from '@2990s/design-system';
 import { Download, Printer } from 'lucide-react';
@@ -56,6 +57,7 @@ export const ledgerParamsFromSearch = (params: URLSearchParams): LedgerParams =>
     fromAccount: params.get('fromAccount') ?? '',
     toAccount: params.get('toAccount') ?? '',
     showReversed: ['1', 'true'].includes(params.get('showReversed') ?? ''),
+    department: DEPARTMENT_OPTIONS.find((o) => o.value === params.get('department'))?.value ?? '',
   };
 };
 
@@ -120,6 +122,7 @@ export const GeneralLedger = () => {
     if (next.fromAccount) q.set('fromAccount', next.fromAccount); else q.delete('fromAccount');
     if (next.toAccount) q.set('toAccount', next.toAccount); else q.delete('toAccount');
     if (next.showReversed) q.set('showReversed', '1'); else q.delete('showReversed');
+    if (next.department) q.set('department', next.department); else q.delete('department');
     setParams(q, { replace: true });
   };
 
@@ -141,6 +144,7 @@ export const GeneralLedger = () => {
           <SearchCombo options={options} value={adding} placeholder="Add an account — type a code or a name…" aria-label="Add an account"
             onChange={(code) => { setAdding(''); if (code && !picked.includes(code)) update({ accounts: [...picked, code], fromAccount: '', toAccount: '' }); }} />
         </span>
+        <DepartmentSelect label="Ledger department" blank="All departments" value={p.department ?? ''} onChange={(d) => update({ department: d })} />
         <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 'var(--fs-13)', cursor: 'pointer' }}>
           <input type="checkbox" checked={Boolean(p.showReversed)} onChange={(e) => update({ showReversed: e.target.checked })} aria-label="Show reversed entries" />
           Show reversed entries

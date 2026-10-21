@@ -19,8 +19,8 @@ const JE: JournalEntry = {
   narration: "Salary - Jun'26", total_debit_sen: 2428465, total_credit_sen: 2428465, posted: true, posted_at: '2026-07-01T00:00:00Z', reversed: false, created_at: '',
 };
 const LINES: JournalEntryLine[] = [
-  { id: 'l1', journal_entry_id: 'je-163', line_no: 1, account_code: '900-S100', debit_sen: 1920698, credit_sen: 0, party_type: null, party_code: null, party_name: null, notes: "Gross Salary - Jun'26" },
-  { id: 'l2', journal_entry_id: 'je-163', line_no: 2, account_code: '410-0010', debit_sen: 0, credit_sen: 1920698, party_type: null, party_code: null, party_name: null, notes: "Net Salary - Jun'26" },
+  { id: 'l1', journal_entry_id: 'je-163', line_no: 1, account_code: '900-S100', debit_sen: 1920698, credit_sen: 0, party_type: null, party_code: null, party_name: null, notes: "Gross Salary - Jun'26", department: 'supply' },
+  { id: 'l2', journal_entry_id: 'je-163', line_no: 2, account_code: '410-0010', debit_sen: 0, credit_sen: 1920698, party_type: null, party_code: null, party_name: null, notes: "Net Salary - Jun'26", department: 'shared' },
 ];
 const ACCOUNTS = [
   { account_code: '900-S100', account_name: 'GROSS SALARY', account_type: 'EXPENSE', parent_code: null, is_active: true, acc_money: false, special_type: null },
@@ -69,8 +69,8 @@ describe('an entry opened', () => {
     expect(seed).toEqual({
       narration: "Salary - Jun'26",
       lines: [
-        { accountCode: '900-S100', debit: '19206.98', credit: '', notes: "Gross Salary - Jun'26" },
-        { accountCode: '410-0010', debit: '', credit: '19206.98', notes: "Net Salary - Jun'26" },
+        { accountCode: '900-S100', debit: '19206.98', credit: '', notes: "Gross Salary - Jun'26", department: 'supply' },
+        { accountCode: '410-0010', debit: '', credit: '19206.98', notes: "Net Salary - Jun'26", department: 'shared' },
       ],
     });
     expect(seedFromEntry(JE, LINES)).toEqual(seed);
@@ -99,13 +99,13 @@ describe('an entry edited', () => {
     expect(seed).toEqual({
       id: 'je-163', jeNo: '2990-JE-2606-0163', posted: true, entryDate: '2026-06-30', narration: "Salary - Jun'26",
       lines: [
-        { accountCode: '900-S100', debit: '19206.98', credit: '', notes: "Gross Salary - Jun'26", partyType: 'STAFF', partyCode: 'S-07', partyName: 'Aina' },
-        { accountCode: '410-0010', debit: '', credit: '19206.98', notes: "Net Salary - Jun'26", partyType: null, partyCode: null, partyName: null },
+        { accountCode: '900-S100', debit: '19206.98', credit: '', notes: "Gross Salary - Jun'26", partyType: 'STAFF', partyCode: 'S-07', partyName: 'Aina', department: 'supply' },
+        { accountCode: '410-0010', debit: '', credit: '19206.98', notes: "Net Salary - Jun'26", partyType: null, partyCode: null, partyName: null, department: 'shared' },
       ],
     });
     expect(editSeedFromEntry(JE, PARTY_LINES)).toEqual(seed);
     /* Copy still drops the party — a new month's salary line names a new person. */
-    expect(seedFromEntry(JE, PARTY_LINES).lines[0]).toEqual({ accountCode: '900-S100', debit: '19206.98', credit: '', notes: "Gross Salary - Jun'26" });
+    expect(seedFromEntry(JE, PARTY_LINES).lines[0]).toEqual({ accountCode: '900-S100', debit: '19206.98', credit: '', notes: "Gross Salary - Jun'26", department: 'supply' });
 
     detail = { journalEntry: { ...JE, id: 'je-9', source_type: 'SOPAY' }, lines: LINES };
     render(<JeDetailCard id="je-9" onClose={() => {}} onEdit={onEdit} />);
@@ -135,8 +135,8 @@ describe('an entry edited', () => {
     expect(body.entryDate).toBe('2026-06-30');
     expect(body.narration).toBe("Salary - Jun'26");
     expect(body.lines).toEqual([
-      { accountCode: '900-S100', debitSen: 1900000, creditSen: 0, notes: "Gross Salary - Jun'26", partyType: 'STAFF', partyCode: 'S-07', partyName: 'Aina' },
-      { accountCode: '410-0010', debitSen: 0, creditSen: 1900000, notes: "Net Salary - Jun'26" },
+      { accountCode: '900-S100', debitSen: 1900000, creditSen: 0, notes: "Gross Salary - Jun'26", department: 'supply', partyType: 'STAFF', partyCode: 'S-07', partyName: 'Aina' },
+      { accountCode: '410-0010', debitSen: 0, creditSen: 1900000, notes: "Net Salary - Jun'26", department: 'shared' },
     ]);
   });
 
@@ -168,8 +168,8 @@ describe('a manual journal drafted', () => {
     const body = createMutate.mock.calls[0]![0] as { narration: string | null; lines: Array<{ accountCode: string; debitSen: number; creditSen: number; notes: string | null }> };
     expect(body.narration).toBe("Salary - Jun'26");
     expect(body.lines).toEqual([
-      { accountCode: '900-S100', debitSen: 1920698, creditSen: 0, notes: "Gross Salary - Jun'26" },
-      { accountCode: '410-0010', debitSen: 0, creditSen: 1920698, notes: "Net Salary - Jun'26" },
+      { accountCode: '900-S100', debitSen: 1920698, creditSen: 0, notes: "Gross Salary - Jun'26", department: 'supply' },
+      { accountCode: '410-0010', debitSen: 0, creditSen: 1920698, notes: "Net Salary - Jun'26", department: 'shared' },
     ]);
   });
 
@@ -184,5 +184,27 @@ describe('a manual journal drafted', () => {
     expect(box.value).toBe('900-S500 — STAFF ALLOWANCE');
     fireEvent.change(screen.getByLabelText('Line 2 account'), { target: { value: '410 sal' } });
     expect(screen.getByRole('option', { name: /410-0010 — SALARY PAYABLE/ })).toBeTruthy();
+  });
+});
+
+/* The department on each line (Conts, finance phase 1, spec 3.5): required on a manual journal, and a line added
+   starts with the department of the line above it. */
+describe('departments on a manual journal', () => {
+  test('a new journal waits for a department on every line; Add line copies the one above; Save sends them', () => {
+    createMutate.mockClear();
+    render(<NewJournalForm onDone={() => {}} initial={{ narration: 'Rent', lines: [
+      { accountCode: '900-S100', debit: '10.00', credit: '', notes: '', department: '' },
+      { accountCode: '410-0010', debit: '', credit: '10.00', notes: '', department: '' },
+    ] }} />);
+    expect((screen.getByText('Save draft') as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText('Line 1 department'), { target: { value: 'rental' } });
+    expect((screen.getByText('Save draft') as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText('Line 2 department'), { target: { value: 'shared' } });
+    expect((screen.getByText('Save draft') as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(screen.getByText('Add line'));
+    expect((screen.getByLabelText('Line 3 department') as HTMLSelectElement).value).toBe('shared');
+    fireEvent.click(screen.getByText('Save draft'));
+    const body = createMutate.mock.calls[0]![0] as { lines: Array<{ department: string }> };
+    expect(body.lines.map((l) => l.department)).toEqual(['rental', 'shared']);
   });
 });

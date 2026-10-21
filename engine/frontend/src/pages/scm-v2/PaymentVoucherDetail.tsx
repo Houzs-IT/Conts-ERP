@@ -50,6 +50,7 @@ import { useSuppliers, useSupplierDetail } from '../../vendor/scm/lib/suppliers-
 import { sortByText } from '../../vendor/scm/lib/sort-options';
 import { useAuth as useHouzsAuth } from '../../auth/AuthContext';
 import { canUseLedger } from '../../conts/ledger';
+import { DEPARTMENT_OPTIONS, DepartmentSelect, departmentLabel, nextLineDepartment, type Department } from '../../conts/department';
 import { MoneyInput } from '../../vendor/scm/components/MoneyInput';
 import { DateField } from '../../vendor/scm/components/DateField';
 import { AccountSelect } from '../../vendor/scm/components/AccountSelect';
@@ -93,14 +94,18 @@ type EditLine = {
   description:      string;
   debitAccountCode: string;
   amountSen:      number;
+  /* Conts: the line's department (spec 3.5), required on an expense line. */
+  department:       Department | '';
 };
 
-const newLine = (): EditLine => ({
+const newLine = (department: Department | '' = ''): EditLine => ({
   rid:              `l${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
   description:      '',
   debitAccountCode: '',
   amountSen:      0,
+  department,
 });
+const departmentOf = (d: unknown): Department | '' => (DEPARTMENT_OPTIONS.some((o) => o.value === d) ? (d as Department) : '');
 
 function InfoCell({ label, value }: { label: string; value: string | null | undefined }) {
   return (
@@ -280,6 +285,7 @@ export const PaymentVoucherDetail = () => {
             description:      l.description ?? '',
             debitAccountCode: l.debit_account_code ?? '',
             amountSen:      Number(l.amount_sen ?? 0),
+            department:     departmentOf(l.department),
           }))
         : [newLine()],
     );
@@ -289,7 +295,7 @@ export const PaymentVoucherDetail = () => {
   const setLine  = (rid: string, patch: Partial<EditLine>) =>
     setEditLines((prev) => prev.map((l) => (l.rid === rid ? { ...l, ...patch } : l)));
   const dropLine = (rid: string) => setEditLines((prev) => (prev.length <= 1 ? prev : prev.filter((l) => l.rid !== rid)));
-  const addLine  = () => setEditLines((prev) => [...prev, newLine()]);
+  const addLine  = () => setEditLines((prev) => [...prev, newLine(nextLineDepartment(prev))]);
 
   const editLinesTotalSen = useMemo(() => editLines.reduce((s, l) => s + l.amountSen, 0), [editLines]);
   const viewTotalSen = Number(pv?.total_sen ?? 0);
@@ -415,6 +421,7 @@ export const PaymentVoucherDetail = () => {
     if (apEdit && !apAccountCode) { void notify({ title: 'No AP control account', body: 'The AP / Other Creditor role has no account yet — set it on Accounting.', tone: 'error' }); return; }
     if (apEdit && editTotalSen <= 0) { void notify({ title: 'Nothing to pay yet', body: 'Tick an invoice, type a partial amount, or enter a prepay figure.', tone: 'error' }); return; }
     if (!isRefundPv && !apEdit && realLines.length === 0) { notify({ title: 'Add at least one line', body: 'Each line needs a debit account and an amount > 0.', tone: 'error' }); return; }
+    if (!isRefundPv && !apEdit && realLines.some((l) => !l.department)) { notify({ title: 'Choose each line’s department', body: 'Rental, Supply chain or Shared — the reports by department read it.', tone: 'error' }); return; }
     if (editOverAllocated) {
       notify({ title: 'Applied more than the voucher total', body: `You've applied ${fmtRm(editAllocatedSen)} to PIs but the voucher total is only ${fmtRm(editTotalSen)}.`, tone: 'error' });
       return;
@@ -463,6 +470,7 @@ export const PaymentVoucherDetail = () => {
               description:      l.description || undefined,
               debitAccountCode: l.debitAccountCode,
               amountSen:      l.amountSen,
+              department:     l.department || undefined,
             })) }),
         // Always send allocations for a SUPPLIER_PAYMENT edit (empty clears
         // them); FREIGHT/OTHER omit the key so the server leaves them untouched.
@@ -768,6 +776,7 @@ export const PaymentVoucherDetail = () => {
                     <th style={{ padding: '6px 8px' }}>#</th>
                     <th style={{ padding: '6px 8px' }}>Account (Debit)</th>
                     <th style={{ padding: '6px 8px' }}>Description</th>
+                    <th style={{ padding: '6px 8px' }}>Department</th>
                     <th style={{ padding: '6px 8px', textAlign: 'right' }}>Amount</th>
                   </tr>
                 </thead>
@@ -785,6 +794,7 @@ export const PaymentVoucherDetail = () => {
                           <LineFilesButton docType="payment_voucher" docId={String(pv.id)} lineId={String(l.id)} canEdit={pv.status !== 'CANCELLED'} />
                         </div>
                       </td>
+                      <td style={{ padding: '6px 8px' }}>{departmentLabel(l.department as string | null | undefined)}</td>
                       <td style={{ padding: '6px 8px', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{fmtRm(Number(l.amount_sen ?? 0), currency)}</td>
                     </tr>
                   ))}
@@ -829,6 +839,11 @@ export const PaymentVoucherDetail = () => {
                       <MoneyInput bare valueSen={l.amountSen}
                         onCommit={(sen) => setLine(l.rid, { amountSen: sen ?? 0 })}
                         inputClassName={styles.fieldInput} selectOnFocus />
+                    </label>
+                    <label className={styles.field}>
+                      <span className={styles.fieldLabel}>Department *</span>
+                      <DepartmentSelect className={styles.fieldInput} label={`Line ${idx + 1} department`} blank="Choose…"
+                        value={l.department} onChange={(d) => setLine(l.rid, { department: d })} />
                     </label>
                   </div>
                 </div>

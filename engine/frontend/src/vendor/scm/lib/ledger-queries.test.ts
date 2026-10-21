@@ -28,6 +28,14 @@ describe('ledgerQuery', () => {
   });
 });
 
+/* Conts (finance phase 1, spec 3.5): one department's ledger when one is chosen. */
+describe('ledgerQuery by department', () => {
+  test('the department rides along when chosen, and only then', () => {
+    expect(ledgerQuery({ from: '2026-08-01', to: '2026-08-31', department: 'rental' })).toBe('from=2026-08-01&to=2026-08-31&department=rental');
+    expect(ledgerQuery({ from: '2026-08-01', to: '2026-08-31', department: '' })).toBe('from=2026-08-01&to=2026-08-31');
+  });
+});
+
 describe('the dress', () => {
   test('brackets a contrary balance, blanks an empty side, names the other side and the journal', () => {
     expect(fmtLedger(123_456)).toBe('1,234.56');

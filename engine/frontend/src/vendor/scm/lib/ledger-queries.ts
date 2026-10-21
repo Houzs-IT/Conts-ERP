@@ -5,6 +5,7 @@
 // ----------------------------------------------------------------------------
 
 import { useQuery } from '@tanstack/react-query';
+import type { Department } from '../../../conts/department';
 import { authedFetch } from './authed-fetch';
 import { fmtDate } from '../../shared/format';
 import { triggerDownload } from './fabric-csv';
@@ -55,6 +56,8 @@ export type LedgerParams = {
   fromAccount?: string;
   toAccount?: string;
   showReversed?: boolean;
+  /** Conts (finance phase 1, spec 3.5): one department's lines; empty = the whole company. */
+  department?: Department | '';
 };
 
 /** The query string the ledger is asked with — one place, so the screen's
@@ -69,6 +72,7 @@ export const ledgerQuery = (p: LedgerParams): string => {
     if (p.toAccount) q.set('toAccount', p.toAccount);
   }
   if (p.showReversed) q.set('showReversed', '1');
+  if (p.department) q.set('department', p.department);
   return q.toString();
 };
 
