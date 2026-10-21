@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { Button } from '../Button';
 import Icon from '../Icon';
 import { MediaSourceSheet } from '../Attachments';
@@ -94,7 +95,8 @@ export function OpsModal({ title, sub, children, footer, onClose, busy, width = 
     document.addEventListener('keydown', onKey);
     return () => { document.removeEventListener('keydown', onKey); back?.focus?.(); };
   }, [busy, onClose]);
-  return (
+  // Portaled: opened from inside a drawer, a transformed ancestor would otherwise pin "fixed" to the drawer, not the screen.
+  return createPortal(
     <div role="dialog" aria-modal="true" aria-label={title} className="fixed inset-0 z-[60] grid place-items-center p-4 bg-[var(--color-surface-scrim)]">
       <div className="absolute inset-0" onClick={busy ? undefined : onClose} />
       <div ref={ref} style={{ maxWidth: width }} className="relative w-full max-h-[calc(100dvh-32px)] flex flex-col bg-card rounded-card overflow-hidden shadow-[var(--shadow-overlay)]">
@@ -105,7 +107,8 @@ export function OpsModal({ title, sub, children, footer, onClose, busy, width = 
         <div className="px-[22px] pb-4 overflow-y-auto flex flex-col gap-3.5">{children}</div>
         <div className="px-[22px] py-3.5 [border-top:1px_solid_var(--color-line)] bg-page flex items-center justify-end gap-2 flex-wrap">{footer}</div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
