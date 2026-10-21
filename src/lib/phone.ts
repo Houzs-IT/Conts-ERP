@@ -114,3 +114,35 @@ export function countryForCallingCode(callingCode: string): CountryCode | undefi
   const main: Record<string, CountryCode> = { '1': 'US', '7': 'RU', '44': 'GB', '61': 'AU', '47': 'NO', '358': 'FI', '262': 'RE', '590': 'GP', '599': 'CW', '212': 'MA', '290': 'SH' };
   return main[callingCode] ?? getCountries().find(c => getCountryCallingCode(c) === callingCode);
 }
+
+/* ---------- Phone numbers ----------
+ * Guests' phones arrive as bare digits with the country code (60189800069, from the booking sites and the
+ * HostPlatform import), sometimes with + and spaces, sometimes as a Malaysian local number (0189800069).
+ * They are stored as they came; this only changes how they read, for every country: +60 18-980 0069,
+ * +44 7700 900123, +7 912 345-67-89. Kept here, not in format.ts, so
+ * libphonenumber loads only with the screens that show a phone, not on every page. */
+
+/** The digits a phone link dials, with the country code: "60189800069". Empty when there is no usable number. */
+export const phoneDigits = (raw: string | null | undefined) => {
+  const p = parsePhone(raw);
+  if (p?.possible) return p.digits;
+  const trimmed = (raw ?? '').trim();
+  const d = trimmed.replace(/\D/g, '');
+  if (!d) return '';
+  return trimmed.startsWith('00') ? d.slice(2) : d;
+};
+
+/** +60 18-980 0069 for any country; a number of the wrong length shows as +<digits>, and text with too few digits
+ *  to be a phone shows as typed. */
+export const phone = (raw: string | null | undefined) => {
+  if (!raw) return '';
+  const p = parsePhone(raw);
+  if (p?.possible) return p.international;
+  const d = phoneDigits(raw);
+  return d.length < 7 ? raw.trim() : `+${d}`;
+};
+
+/** tel: link for a phone, or '' when there is no number. */
+export const phoneHref = (raw: string | null | undefined) => { const d = phoneDigits(raw); return d ? `tel:+${d}` : ''; };
+/** WhatsApp chat link for a phone, or '' when there is no number. */
+export const whatsappHref = (raw: string | null | undefined) => { const d = phoneDigits(raw); return d ? `https://wa.me/${d}` : ''; };

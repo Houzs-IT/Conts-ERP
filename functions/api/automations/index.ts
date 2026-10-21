@@ -3,7 +3,7 @@ import { type Env, all, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
 import { CATALOG, QUIET_HOURS, RUNNING, needsToRun } from '../../_lib/automationCatalog';
 import { companyDetails } from '../../_lib/letterhead';
-import { phone } from '../../../src/lib/format';
+import { phone } from '../../../src/lib/phone';
 
 const MANAGE = ['management', 'operations_manager'];
 

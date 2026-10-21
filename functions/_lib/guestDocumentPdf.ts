@@ -1,8 +1,7 @@
 /** The printed Invoice and Official Receipt, from the document's frozen snapshot, on the shared letterhead. */
 import { printPage, esc, ringgit, longDate } from './letterhead';
 import type { Snapshot } from './guestDocuments';
-import { parsePhone } from '../../src/lib/phone';
-import { phone } from '../../src/lib/format';
+import { parsePhone, phone } from '../../src/lib/phone';
 
 const ONES = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
 const TENS = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];

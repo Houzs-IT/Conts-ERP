@@ -3,7 +3,7 @@
 //
 // Run: 1. BIGDATA_PORT=55437 node scripts/api-checks/hostplatform-import.mjs <data folder> --serve   (leave it running)
 //      2. DB=postgres://postgres:local@127.0.0.1:55437/postgres node scripts/api-checks/phone-shapes.mjs [path/to/other/format.ts]
-// The optional path compares another phone() (e.g. an older copy of src/lib/format.ts) on the same rows.
+// The optional path compares another phone() (e.g. an older copy of src/lib/phone.ts, or src/lib/format.ts before it moved) on the same rows.
 import postgres from 'postgres';
 import { pathToFileURL } from 'node:url';
 import { build } from 'esbuild';
@@ -52,5 +52,5 @@ async function report(label, file) {
 
 const extra = process.argv[2];
 if (extra) await report(`other (${extra})`, resolve(extra));
-const now = await report('this tree', join(root, 'src/lib/format.ts'));
+const now = await report('this tree', join(root, 'src/lib/phone.ts'));
 process.exit(now >= rows.length * 0.98 ? 0 : 1);
