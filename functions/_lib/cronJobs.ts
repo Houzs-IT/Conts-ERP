@@ -4,7 +4,6 @@ import { flushWhenQuiet } from './channexQueue';
 import { channexConfigured } from './channex';
 import { cleaningNotice, repairNotice } from './notices';
 import { releaseRepairBlocks } from './repairBlocks';
-import { measureHealth } from './systemHealth';
 
 /**
  * The scheduled jobs, shared by the cron worker (worker/scheduled.ts) and the local dry run
@@ -30,32 +29,30 @@ export async function channexOutbox(env: Env, o: RunOptions = {}): Promise<JobRe
   return { job: 'channex-outbox', summary: due.length ? `Sent or rescheduled ${plural(due.reduce((n, d) => n + d.n, 0), 'due row')}.` : 'Nothing due.', items };
 }
 
-/** Every 5 minutes (from the every-minute trigger): send the Houzs IT Hub the same health report the System
- *  health page shows, with Conts's IT Hub key, so IT see it without signing in here. A report that cannot be
- *  measured or sent is only logged: it must never fail the Channex job beside it, and the hub already shows a
+/** Every 5 minutes (from the every-minute trigger): ask the website to send the Houzs IT Hub the same health
+ *  report its System health page shows (POST /api/system/health/hub-report). The website measures it, since
+ *  it holds the mail key and Channex secret the checks look for; this worker only knocks, with Conts's IT Hub
+ *  key. A failure is only logged: it must never fail the Channex job beside it, and the hub already shows a
  *  report that stops arriving. */
 export async function hubHealthReport(env: Env, o: RunOptions = {}): Promise<JobReport> {
   const now = o.now ?? new Date();
   if (!o.dryRun && now.getUTCMinutes() % 5 !== 0) return { job: 'hub-health-report', summary: 'Not this minute (every 5 minutes).' };
-  const base = (env.IT_HUB_URL ?? '').trim().replace(/\/+$/, '');
   const key = (env.IT_HUB_API_KEY ?? '').trim();
   const origin = (env.APP_ORIGIN ?? '').trim().replace(/\/+$/, '');
-  if (!base || !key || !origin) return { job: 'hub-health-report', summary: 'Not connected here (IT_HUB_URL, IT_HUB_API_KEY or APP_ORIGIN not set): nothing sent.' };
+  if (!key || !origin) return { job: 'hub-health-report', summary: 'Not connected here (IT_HUB_API_KEY or APP_ORIGIN not set): nothing sent.' };
+  if (o.dryRun) return { job: 'hub-health-report', summary: `Would ask ${origin} to send its health report to the IT Hub.` };
   try {
-    const report = await measureHealth(env, origin);
-    const summary = `${report.ok ? 'All OK' : 'Needs attention'}: ${report.checks.map(c => `${c.label} ${c.status}`).join(', ')}`;
-    if (o.dryRun) return { job: 'hub-health-report', summary: `Would send the health report to ${base}.`, items: [summary] };
-    const res = await fetch(`${base}/api/v1/sys/health`, {
+    const res = await fetch(`${origin}/api/system/health/hub-report`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(report),
-      signal: AbortSignal.timeout(15_000),
+      headers: { Authorization: `Bearer ${key}` },
+      signal: AbortSignal.timeout(25_000),
     });
-    if (!res.ok) {
-      console.error('IT Hub refused the health report', res.status);
-      return { job: 'hub-health-report', summary: `The IT Hub refused the report (${res.status}).` };
+    const body = await res.json().catch(() => null) as { sent?: boolean; ok?: boolean; checks?: string[] } | null;
+    if (!res.ok || !body?.sent) {
+      console.error('Health report not sent', res.status);
+      return { job: 'hub-health-report', summary: `Health report not sent (${res.status}).` };
     }
-    return { job: 'hub-health-report', summary: 'Health report sent to the IT Hub.', items: [summary] };
+    return { job: 'hub-health-report', summary: 'Health report sent to the IT Hub.', items: [`${body.ok ? 'All OK' : 'Needs attention'}: ${(body.checks ?? []).join(', ')}`] };
   } catch (e) {
     const error = e instanceof Error ? e.message : String(e);
     console.error('Health report not sent', error);
