@@ -615,7 +615,7 @@ scm.route("/accounting", accounting);
 // rides the same L2 area guard as Accounting (GET=view, POST/PATCH=edit); the
 // finer scm.payment_voucher.* gates layer on inside the handlers.
 scm.use("/payment-vouchers/*", scmAreaGuard("scm.finance.accounting"));
-scm.use("/payment-vouchers/*", requireLedgerAccess());
+scm.use("/payment-vouchers/*", requireLedgerAccess({ except: PAYMENT_VOUCHER_OPEN_PATHS }));
 scm.route("/payment-vouchers", paymentVoucherAttachments); // photos and documents (mig 0119)
 scm.route("/payment-vouchers", paymentVouchers);
 // Other Debtors (owner 2026-09-03) — registry + debtor bills + receipts; the
@@ -1000,7 +1000,7 @@ import {
   paymentVoucherAttachments, apInvoiceAttachments,
 } from "./routes/doc-attachments";
 import { renovationDoInfo, renovationGrInfo, renovationPoInfo, renovationSiInfo } from "./routes/renovation-doc-flow";
-import { ACCOUNTING_OPEN_PATHS, requireLedgerAccess } from "../conts/ledger-access";
+import { ACCOUNTING_OPEN_PATHS, PAYMENT_VOUCHER_OPEN_PATHS, requireLedgerAccess } from "../conts/ledger-access";
 // Import document files (mig 0119): the check that turns document numbers into documents. Reads only; each upload
 // then goes through its document's own prefix and guard.
 scm.use("/doc-attachments/*", scmAreaGuard("scm.sales.orders", { writeLevel: "view" }));

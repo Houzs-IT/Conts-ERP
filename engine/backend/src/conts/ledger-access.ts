@@ -25,11 +25,21 @@ export const ledgerPermissions = (level: ContsLevel): string[] => [...LADDER[lev
 export interface OpenPath { method?: string; path: RegExp }
 
 /** Under /accounting, what other screens use without the Ledger: the official receipts (the sales
- *  payment panel issues them, their files ride on /receipts/:id/files) and the account list the
- *  credit notes screen picks from. Each still has its own checks. */
+ *  payment panel issues them, their files ride on /accounting/receipts/:id/attachments), the account
+ *  list the credit notes screen picks from, and merchant recon with its settlement setup (not ledger
+ *  screens; they read the account roles). Each still has its own checks. */
 export const ACCOUNTING_OPEN_PATHS: readonly OpenPath[] = [
   { path: /\/accounting\/receipts(\/|$)/ },
   { method: "GET", path: /\/accounting\/accounts$/ },
+  { path: /\/accounting\/settlement(\/|$)/ },
+  { method: "GET", path: /\/accounting\/roles$/ },
+];
+
+/** Under /payment-vouchers, what other screens use without the Ledger: the AP invoice bill scan
+ *  (reads a bill, writes nothing) and the refund line on the sales order payment panel. */
+export const PAYMENT_VOUCHER_OPEN_PATHS: readonly OpenPath[] = [
+  { method: "POST", path: /\/payment-vouchers\/extract$/ },
+  { method: "GET", path: /\/payment-vouchers\/refund-source$/ },
 ];
 
 type GuardUser = { permissions?: readonly string[]; permissions_set?: ReadonlySet<string> } | undefined;

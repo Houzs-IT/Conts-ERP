@@ -8,12 +8,16 @@
      · Full everywhere with the ledger gets that role's permissions plus the
        ledger keys, one role per ledger level;
      · the ledger guard refuses `*` alone, lets the key through, and leaves the
-       official receipts and the shared account list open. */
+       official receipts, the shared account list and the screens that are not
+       ledger screens (merchant recon, AP invoice bill scan, the sales refund
+       line) open, exactly as before. */
 
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { Hono } from 'hono';
 import { describe, expect, test } from 'vitest';
 import { contsPageAccess, contsPermissions, parseContsAccess, type ContsAccess } from '../src/conts/access';
-import { ACCOUNTING_OPEN_PATHS, LEDGER_KEY, ledgerPermissions, requireLedgerAccess } from '../src/conts/ledger-access';
+import { ACCOUNTING_OPEN_PATHS, LEDGER_KEY, PAYMENT_VOUCHER_OPEN_PATHS, ledgerPermissions, requireLedgerAccess } from '../src/conts/ledger-access';
 import { roleIdFor } from '../src/conts/sso';
 
 const EIGHT = ['scSales', 'scInvoices', 'scConsignment', 'scProcurement', 'scTransportPlan', 'scWarehouse', 'serviceCases', 'projects'];
@@ -146,7 +150,7 @@ describe('the ledger guard', () => {
     const a = new Hono();
     a.use('*', async (c, next) => { c.set('user' as never, { permissions: perms, permissions_set: new Set(perms) } as never); await next(); });
     a.use('/api/scm/accounting/*', requireLedgerAccess({ except: ACCOUNTING_OPEN_PATHS }) as never);
-    a.use('/api/scm/payment-vouchers/*', requireLedgerAccess() as never);
+    a.use('/api/scm/payment-vouchers/*', requireLedgerAccess({ except: PAYMENT_VOUCHER_OPEN_PATHS }) as never);
     a.all('*', (c) => c.json({ ok: true }));
     return a;
   };
@@ -168,7 +172,7 @@ describe('the ledger guard', () => {
     expect((await a.request('/api/scm/accounting/receipts')).status).toBe(200);
     expect((await a.request('/api/scm/accounting/receipts/ensure', { method: 'POST' })).status).toBe(200);
     expect((await a.request('/api/scm/accounting/receipts/r-1/formalise', { method: 'POST' })).status).toBe(200);
-    expect((await a.request('/api/scm/accounting/receipts/r-1/files')).status).toBe(200);
+    expect((await a.request('/api/scm/accounting/receipts/r-1/attachments')).status).toBe(200);
   });
 
   test('the account list stays readable for the credit notes screen, but not writable', async () => {
@@ -176,5 +180,38 @@ describe('the ledger guard', () => {
     expect((await a.request('/api/scm/accounting/accounts')).status).toBe(200);
     expect((await a.request('/api/scm/accounting/accounts', { method: 'POST' })).status).toBe(403);
     expect((await a.request('/api/scm/accounting/receipts-payments')).status).toBe(403);
+  });
+
+  test('merchant recon and settlement setup keep working without the ledger', async () => {
+    const a = app(['*']);
+    expect((await a.request('/api/scm/accounting/settlement/setup')).status).toBe(200);
+    expect((await a.request('/api/scm/accounting/settlement/batches', { method: 'POST' })).status).toBe(200);
+    expect((await a.request('/api/scm/accounting/settlement/rows/7/confirm', { method: 'POST' })).status).toBe(200);
+    expect((await a.request('/api/scm/accounting/roles')).status).toBe(200);
+    expect((await a.request('/api/scm/accounting/roles/BANK_DEFAULT', { method: 'PUT' })).status).toBe(403);
+  });
+
+  test('the AP invoice bill scan and the sales refund line keep working without the ledger', async () => {
+    const a = app(['*']);
+    expect((await a.request('/api/scm/payment-vouchers/extract', { method: 'POST' })).status).toBe(200);
+    expect((await a.request('/api/scm/payment-vouchers/refund-source?so=1')).status).toBe(200);
+    expect((await a.request('/api/scm/payment-vouchers/extract')).status).toBe(403);
+    expect((await a.request('/api/scm/payment-vouchers/new', { method: 'POST' })).status).toBe(403);
+  });
+});
+
+describe('the real mounts', () => {
+  const src = readFileSync(fileURLToPath(new URL('../src/scm/index.ts', import.meta.url)), 'utf8');
+  test.each([
+    ['/accounting', 'requireLedgerAccess({ except: ACCOUNTING_OPEN_PATHS })'],
+    ['/payment-vouchers', 'requireLedgerAccess({ except: PAYMENT_VOUCHER_OPEN_PATHS })'],
+    ['/receipts', 'requireLedgerAccess()'],
+  ])('%s asks for the ledger right after its area guard, before its routes', (prefix, guard) => {
+    const area = src.indexOf(`scm.use("${prefix}/*", scmAreaGuard(`);
+    const ledger = src.indexOf(`scm.use("${prefix}/*", ${guard})`);
+    const route = src.indexOf(`scm.route("${prefix}",`);
+    expect(area).toBeGreaterThan(-1);
+    expect(ledger).toBeGreaterThan(area);
+    expect(route).toBeGreaterThan(ledger);
   });
 });
