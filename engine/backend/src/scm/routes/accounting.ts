@@ -28,6 +28,7 @@ import { safeRate, toMyrSen } from '../lib/fx';
 import { todayMyt } from '../lib/my-time';
 import { hasHouzsPerm } from '../lib/houzs-perms';
 import { postJournal, reverseJournal } from '../../acc/engine';
+import { loadLedgerSettings, saveLedgerSettings } from '../../acc/ledger-settings';
 import { backfillSoPayments, paymentEntryDisagreements, unbookedPayments } from '../../acc/payments';
 import { computeDailyBank } from '../../acc/daily-bank';
 import { systemTakings, postCashOverShort } from '../../acc/daily-close';
@@ -333,6 +334,44 @@ export const accountRolesPutBankDefault = async (c: any): Promise<Response> => {
   return c.json({ ok: true, role: 'BANK_DEFAULT', accountCode: code });
 };
 accounting.put('/roles/BANK_DEFAULT', accountRolesPutBankDefault);
+
+/* ── Ledger settings — the day the books start, the fiscal year end (Conts) ── */
+export const ledgerSettingsGet = async (c: any): Promise<Response> => {
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  const r = await loadLedgerSettings(c.get('supabase'), co.companyId);
+  if (!r.ok) return c.json({ error: 'load_failed' }, 500);
+  return c.json(r.settings);
+};
+accounting.get('/settings/ledger', ledgerSettingsGet);
+
+export const ledgerSettingsPut = async (c: any): Promise<Response> => {
+  if (!requireGlPost(c)) return c.json({ error: "You don't have permission to change the ledger settings." }, 403);
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  let body: any;
+  try { body = await c.req.json(); } catch { return c.json({ error: 'invalid_json' }, 400); }
+  const patch: { ledgerStartDate?: string | null; fiscalYearEndMonth?: number } = {};
+  if (body?.ledgerStartDate !== undefined) {
+    const d = body.ledgerStartDate;
+    if (d !== null && !(typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(d)))) {
+      return c.json({ error: 'Enter a date like 2026-12-01.' }, 400);
+    }
+    patch.ledgerStartDate = d;
+  }
+  if (body?.fiscalYearEndMonth !== undefined) {
+    const m = body.fiscalYearEndMonth;
+    if (!Number.isInteger(m) || m < 1 || m > 12) return c.json({ error: 'Choose a month from 1 to 12.' }, 400);
+    patch.fiscalYearEndMonth = m;
+  }
+  const who = String((c.get('houzsUser') as { name?: string } | undefined)?.name ?? (c.get('user') as { id?: string } | undefined)?.id ?? '');
+  const saved = await saveLedgerSettings(c.get('supabase'), co.companyId, patch, who);
+  if (!saved.ok) return c.json({ error: 'save_failed', reason: saved.error }, 500);
+  const r = await loadLedgerSettings(c.get('supabase'), co.companyId);
+  if (!r.ok) return c.json({ error: 'load_failed' }, 500);
+  return c.json(r.settings);
+};
+accounting.put('/settings/ledger', ledgerSettingsPut);
 
 /* ════════════════════════════════════════════════════════════════════════
    Journal Entries
