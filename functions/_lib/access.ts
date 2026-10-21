@@ -42,6 +42,8 @@ export const AREAS: Area[] = [
   // 'owner': the owner portal's endpoints, which finance and management also open as an owner (?ownerId=).
   { key: 'finance', label: 'Finance', group: 'Finance', api: ['finance', 'expenses', 'statements', 'payouts', 'approvals', 'owner'], managed: true, strictRead: true, defaults: OPS_NONE },
   { key: 'owners', label: 'Owners', group: 'Finance', api: ['owners', 'contracts'], defaults: OPS_NONE },
+  // The company ledger in the engine (finance phase 1): no Property OS routes, sent to the engine at sign-on.
+  { key: 'ledger', label: 'Ledger', group: 'Finance', api: [], managed: true, strictRead: true, defaults: { operations_manager: 'none', operations_staff: 'none' } },
   { key: 'performance', label: 'Performance', group: 'Growth', api: ['analytics', 'pricing', 'rates', 'reviews'] },
   { key: 'comms', label: 'Communication', group: 'Growth', api: ['messages', 'automations'], defaults: { finance_admin: 'none' } },
   // The user list is read by management and operations managers only (functions/api/users), so finance admins start at none.

@@ -176,7 +176,8 @@ export const WORKSPACE_LABEL: Record<Workspace, string> = { rental: 'Rental', su
  *  functions/api/system/health (management, finance, operations managers): keep the two in sync. */
 const DENY: Partial<Record<UserRole, string[]>> = {
   // scInvoices matches MONEY_ONLY in functions/api/_middleware.ts.
-  operations_staff: ['finance', 'owners', 'users', 'integrations', 'settings', 'portfolio', 'health', 'scInvoices'],
+  operations_staff: ['finance', 'owners', 'users', 'integrations', 'settings', 'portfolio', 'health', 'scInvoices', 'ledger'],
+  operations_manager: ['ledger'],
   finance_admin: ['operations', 'comms'],
   housekeeper: ['*'],
   technician: ['*'],
