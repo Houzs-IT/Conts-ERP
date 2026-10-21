@@ -50,7 +50,7 @@ const LEDGER_ICON: Record<string, string> = {
   'payment-vouchers': 'banknote', 'money-received': 'hand-coins', 'bank-reconciliation': 'landmark',
   'journal-entries': 'notebook-pen', 'general-ledger': 'book-open-text', 'trial-balance': 'scale',
   'profit-and-loss': 'chart-line', 'balance-sheet': 'columns-2', 'debtor-ageing': 'user-round-check',
-  'creditor-ageing': 'truck', 'chart-of-accounts': 'list-tree', 'item-group-accounts': 'boxes',
+  'creditor-ageing': 'truck', 'chart-of-accounts': 'list-tree', 'item-group-accounts': 'boxes', 'ledger-setup': 'settings',
 };
 
 /** The Finance group, in both sidebars: finance's own desk screens (area Finance) and the company ledger's screens

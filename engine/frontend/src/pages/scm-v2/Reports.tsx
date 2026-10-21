@@ -34,6 +34,7 @@
 // ----------------------------------------------------------------------------
 
 import { useState } from 'react';
+import { fiscalYearStart, useLedgerSettings } from '../../conts/ledgerSettings';
 import { DepartmentSelect, departmentLabel, type Department } from '../../conts/department';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -114,7 +115,11 @@ const fetchPnl = (from: string, to: string, department: Department | '' = '') =>
   authedFetch<PnlResponse>(`/accounting/reports/pnl?from=${from}&to=${to}${department ? `&department=${department}` : ''}`);
 
 export const PnLTab = () => {
-  const [from, setFrom] = useState(monthStart());
+  /* This fiscal year to date by default (spec 3.7); the year-end month comes from the ledger settings. */
+  const ledger = useLedgerSettings();
+  const fyEnd = ledger.data?.fiscalYearEndMonth ?? 8;
+  const [fromPicked, setFrom] = useState<string | null>(null);
+  const from = fromPicked ?? fiscalYearStart(myt(), fyEnd);
   const [to, setTo] = useState(myt());
   const [level, setLevel] = useState<Level>('all');
   const [editing, setEditing] = useState(false);
@@ -217,7 +222,8 @@ type BsResponse = {
   assets: Line[]; liabilities: Line[]; equity: Line[];
   /** The same figures on the report's layout. */
   layout: BsLayout;
-  totals: { assetsSen: number; liabilitiesSen: number; equitySen: number; earningsSen: number; checkSen: number };
+  /** earningsSen = retainedEarningsSen (before this fiscal year) + currentYearEarningsSen (spec 3.7). */
+  totals: { assetsSen: number; liabilitiesSen: number; equitySen: number; earningsSen: number; retainedEarningsSen?: number; currentYearEarningsSen?: number; checkSen: number };
 };
 const fetchBalanceSheet = (asOf: string) => authedFetch<BsResponse>(`/accounting/reports/balance-sheet?asOf=${asOf}`);
 /** A month's column is the balance as at that month's END. */
@@ -284,11 +290,17 @@ export const BalanceSheetTab = () => {
               <LaidBlock title="Assets" nodes={lay.assets} level={level} totalLabel="Total assets" totalSen={q.data.totals.assetsSen} baseSen={base} onPick={openLedger} tree={tree} drill={drill} />
               <LaidBlock title="Liabilities" nodes={lay.liabilities} level={level} totalLabel="Total liabilities" totalSen={q.data.totals.liabilitiesSen} baseSen={base} onPick={openLedger} tree={tree} drill={drill} />
               <LaidBlock title="Equity" nodes={lay.equity} level={level} totalLabel="Total equity" totalSen={q.data.totals.equitySen} baseSen={base} onPick={openLedger} tree={tree} drill={drill} />
-              <tr>
-                <td style={{ padding: '4px 10px' }}>Current period earnings</td>
-                <td style={{ padding: '4px 10px', textAlign: 'right', whiteSpace: 'nowrap' }}>{fmtSenPlain(q.data.totals.earningsSen)}</td>
-                <td style={{ padding: '4px 10px', textAlign: 'right', whiteSpace: 'nowrap', ...soft }}>{fmtPct(pctOf(q.data.totals.earningsSen, base))}</td>
-              </tr>
+              {/* Earnings split at the fiscal year (spec 3.7): what earlier years kept, and this year's profit. */}
+              {[
+                ['Retained earnings', q.data.totals.retainedEarningsSen ?? 0],
+                ['Profit this year', q.data.totals.currentYearEarningsSen ?? q.data.totals.earningsSen],
+              ].map(([label, sen]) => (
+                <tr key={label as string}>
+                  <td style={{ padding: '4px 10px' }}>{label}</td>
+                  <td style={{ padding: '4px 10px', textAlign: 'right', whiteSpace: 'nowrap' }}>{fmtSenPlain(sen as number)}</td>
+                  <td style={{ padding: '4px 10px', textAlign: 'right', whiteSpace: 'nowrap', ...soft }}>{fmtPct(pctOf(sen as number, base))}</td>
+                </tr>
+              ))}
               <tr style={{ borderTop: '2px solid var(--c-ink, #221f20)' }}>
                 <td style={{ padding: '8px 10px', fontWeight: 700 }}>
                   {q.data.totals.checkSen === 0 ? 'BALANCED' : 'OUT OF BALANCE'}

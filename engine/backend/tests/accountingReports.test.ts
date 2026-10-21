@@ -316,3 +316,30 @@ describe('the P&L by department', () => {
     expect((await app.request('/accounting/reports/pnl?from=2026-08-01&to=2026-08-31&department=hq')).status).toBe(400);
   });
 });
+
+/* The fiscal year on the balance sheet (spec 3.7): earnings split at the start of the fiscal year the date falls
+   in — retained earnings before it, profit this year from it — and the two add up to the earnings, so the
+   self-check still reads zero. Conts ends its year in August (the default). */
+describe('the balance sheet splits earnings at the fiscal year start', () => {
+  test('August income is retained, September income is this year', async () => {
+    const { app } = harness([
+      gl('590-0000', 'INCOME', 0, 10_000, { entry_date: '2026-08-15' }), gl('310-0010', 'ASSET', 10_000, 0, { entry_date: '2026-08-15' }),
+      gl('590-0000', 'INCOME', 0, 5_000, { entry_date: '2026-09-15' }), gl('310-0010', 'ASSET', 5_000, 0, { entry_date: '2026-09-15' }),
+    ], []);
+    const bs = await (await app.request('/accounting/reports/balance-sheet?asOf=2026-12-31')).json() as { totals: Record<string, number> };
+    expect(bs.totals.retainedEarningsSen).toBe(10_000);
+    expect(bs.totals.currentYearEarningsSen).toBe(5_000);
+    expect(bs.totals.earningsSen).toBe(15_000);
+    expect(bs.totals.checkSen).toBe(0);
+  });
+
+  test('the fiscal year end month comes from the ledger settings', async () => {
+    const { app, sb } = harness([
+      gl('590-0000', 'INCOME', 0, 10_000, { entry_date: '2026-08-15' }), gl('310-0010', 'ASSET', 10_000, 0, { entry_date: '2026-08-15' }),
+    ], []);
+    sb.tables.acc_company_settings = [{ company_id: CO, ledger_start_date: null, fiscal_year_end_month: 12 }];
+    const bs = await (await app.request('/accounting/reports/balance-sheet?asOf=2026-12-31')).json() as { totals: Record<string, number> };
+    expect(bs.totals.retainedEarningsSen).toBe(0);
+    expect(bs.totals.currentYearEarningsSen).toBe(10_000);
+  });
+});

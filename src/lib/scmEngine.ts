@@ -1,7 +1,6 @@
 /** The company ledger's screens in the engine (finance phase 1), in the Finance group of both sidebars at
  *  /finance/<slug> and /supply/finance/<slug>, under the Ledger permission area. */
 export interface LedgerScreen { slug: string; label: string; enginePath: string }
-// Ledger setup joins when its engine page exists (plan Task 12).
 export const LEDGER_SCREENS: readonly LedgerScreen[] = [
   { slug: 'payment-vouchers', label: 'Payment vouchers', enginePath: '/scm/payment-vouchers' },
   { slug: 'money-received', label: 'Money received', enginePath: '/scm/receipts' },
@@ -15,6 +14,8 @@ export const LEDGER_SCREENS: readonly LedgerScreen[] = [
   { slug: 'creditor-ageing', label: 'Creditor ageing', enginePath: '/scm/accounting?tab=ap' },
   { slug: 'chart-of-accounts', label: 'Chart of accounts', enginePath: '/scm/chart-of-accounts' },
   { slug: 'item-group-accounts', label: 'Item group accounts', enginePath: '/scm/accounting?tab=groups' },
+  // The day the books start and the fiscal year end (finance phase 1, PR 6).
+  { slug: 'ledger-setup', label: 'Ledger setup', enginePath: '/scm/ledger-setup' },
 ];
 
 function ledgerPaths(prefix: string): Record<string, string> {

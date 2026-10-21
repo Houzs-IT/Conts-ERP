@@ -50,7 +50,7 @@ const bsData = {
     liabilities: [{ kind: 'category' as const, id: 'sec:CURRENT LIABILITIES', label: 'CURRENT LIABILITIES', amountSen: 58_000, pct: 56.3, children: [acc('400-0000', 'AP', 60_000, 58.3), acc('410-0010', 'ACCRUAL - SALARIES', -2_000, -1.9)] }],
     equity: [],
   },
-  totals: { assetsSen: 103_000, liabilitiesSen: 60_000, equitySen: 0, earningsSen: 43_000, checkSen: 0 },
+  totals: { assetsSen: 103_000, liabilitiesSen: 60_000, equitySen: 0, earningsSen: 43_000, retainedEarningsSen: 30_000, currentYearEarningsSen: 13_000, checkSen: 0 },
 };
 
 const { seenQueries } = vi.hoisted(() => ({ seenQueries: [] as Array<{ queryKey: unknown[]; queryFn?: () => unknown }> }));
@@ -186,7 +186,9 @@ describe('the standard statements', () => {
 
   test('Balance sheet: earnings inside equity and BALANCED at zero check', () => {
     render(<BalanceSheetTab />);
-    expect(screen.getByText('Current period earnings').closest('tr')!.textContent).toContain('430.00');
+    /* Earnings split at the fiscal year (spec 3.7): retained before it, this year's from it. */
+    expect(screen.getByText('Retained earnings').closest('tr')!.textContent).toContain('300.00');
+    expect(screen.getByText('Profit this year').closest('tr')!.textContent).toContain('130.00');
     const check = screen.getByText('BALANCED').closest('tr')!;
     expect(check.textContent).toContain('1,030.00');
     /* A credit-side balance on the wrong side prints in parentheses, never a minus. */
@@ -208,7 +210,8 @@ describe('the standard statements', () => {
     /* A liability's % is of total assets. */
     expect(screen.getByText(/400-0000/).closest('tr')!.textContent).toContain('58.3%');
     expect(screen.getByText('Total liabilities').closest('tr')!.textContent).toContain('58.3%');
-    expect(screen.getByText('Current period earnings').closest('tr')!.textContent).toContain('41.7%');
+    expect(screen.getByText('Retained earnings').closest('tr')!.textContent).toContain('29.1%');
+    expect(screen.getByText('Profit this year').closest('tr')!.textContent).toContain('12.6%');
     expect(screen.getByText('BALANCED').closest('tr')!.textContent).toContain('100.0%');
     fireEvent.click(screen.getByRole('button', { name: 'L1' }));
     expect(screen.queryByText(/330-0000/)).toBeNull();
@@ -274,5 +277,15 @@ describe('a department P&L opens its own ledger', () => {
     fireEvent.change(screen.getByLabelText('P&L department'), { target: { value: 'rental' } });
     fireEvent.click(screen.getByRole('button', { name: '501-0000 — SALES total' }));
     expect(String(navigateSpy.mock.calls.at(-1)![0])).toMatch(/&department=rental$/);
+  });
+});
+
+/* The fiscal year (spec 3.7): the P&L opens on this fiscal year to date — Conts ends its year in August. */
+describe('the P&L opens on this fiscal year', () => {
+  test('From is the first day of this fiscal year', async () => {
+    const { fiscalYearStart } = await import('../../conts/ledgerSettings');
+    const today = new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 10);
+    render(<PnLTab />);
+    expect((screen.getByLabelText('P&L from') as HTMLInputElement).value).toBe(fiscalYearStart(today, 8).replace(/-/g, '/'));
   });
 });

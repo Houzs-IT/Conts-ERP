@@ -46,14 +46,16 @@ export async function loadPerformanceSettings(sb: Db, companyId: number): Promis
     .eq('company_id', companyId)
     .maybeSingle();
   if (error) return { ok: false, reason: error.message };
-  const row = (data ?? null) as { performance_opex_rate_bp?: number | null; performance_opex_account?: string | null } | null;
+  return { ok: true, settings: performanceSettingsOf((data ?? null) as PerformanceSettingsRow | null) };
+}
+
+/** The company's settings row, as the performance P&L reads it (a caller holding the row already parses it here). */
+export type PerformanceSettingsRow = { performance_opex_rate_bp?: number | null; performance_opex_account?: string | null };
+export function performanceSettingsOf(row: PerformanceSettingsRow | null): PerformanceSettings {
   const rate = Number(row?.performance_opex_rate_bp);
   return {
-    ok: true,
-    settings: {
-      rateBp: row?.performance_opex_rate_bp != null && Number.isFinite(rate) ? rate : DEFAULT_PERFORMANCE_SETTINGS.rateBp,
-      account: String(row?.performance_opex_account ?? '').trim() || DEFAULT_PERFORMANCE_SETTINGS.account,
-    },
+    rateBp: row?.performance_opex_rate_bp != null && Number.isFinite(rate) ? rate : DEFAULT_PERFORMANCE_SETTINGS.rateBp,
+    account: String(row?.performance_opex_account ?? '').trim() || DEFAULT_PERFORMANCE_SETTINGS.account,
   };
 }
 

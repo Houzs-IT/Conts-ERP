@@ -38,14 +38,16 @@ export async function loadLedgerSettings(
     .eq('company_id', companyId ?? ACC_MASTERS_FALLBACK_COMPANY_ID)
     .maybeSingle();
   if (error) return { ok: false };
-  const row = data as { ledger_start_date?: string | null; fiscal_year_end_month?: number | null } | null;
+  return { ok: true, settings: ledgerSettingsOf(data as LedgerSettingsRow | null) };
+}
+
+/** The company's settings row, as the ledger reads it (a caller holding the row already parses it here). */
+export type LedgerSettingsRow = { ledger_start_date?: string | null; fiscal_year_end_month?: number | null };
+export function ledgerSettingsOf(row: LedgerSettingsRow | null): LedgerSettings {
   const month = Number(row?.fiscal_year_end_month);
   return {
-    ok: true,
-    settings: {
-      ledgerStartDate: dayOf(row?.ledger_start_date),
-      fiscalYearEndMonth: Number.isInteger(month) && month >= 1 && month <= 12 ? month : LEDGER_DEFAULTS.fiscalYearEndMonth,
-    },
+    ledgerStartDate: dayOf(row?.ledger_start_date),
+    fiscalYearEndMonth: Number.isInteger(month) && month >= 1 && month <= 12 ? month : LEDGER_DEFAULTS.fiscalYearEndMonth,
   };
 }
 
@@ -65,6 +67,16 @@ export async function saveLedgerSettings(
 
 export function isBeforeLedgerStart(date: string, s: LedgerSettings): boolean {
   return s.ledgerStartDate != null && String(date).slice(0, 10) < s.ledgerStartDate;
+}
+
+/** The first day of the fiscal year a date falls in (spec 3.7): the day after the year-end month closes. Conts ends
+    in August, so its year runs 1 September to 31 August. */
+export function fiscalYearStart(asOf: string, fyEndMonth: number): string {
+  const year = Number(asOf.slice(0, 4));
+  const month = Number(asOf.slice(5, 7));
+  const startMonth = (fyEndMonth % 12) + 1;
+  const startYear = month >= startMonth ? year : year - 1;
+  return `${startYear}-${String(startMonth).padStart(2, '0')}-01`;
 }
 
 export const beforeLedgerStartMessage = (start: string): string => `This date is before the books start on ${start}.`;

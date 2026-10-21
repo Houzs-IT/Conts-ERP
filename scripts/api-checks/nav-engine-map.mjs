@@ -44,6 +44,7 @@ check('Project monitor is not an engine address', !('/projects/monitor' in M.ENG
 const rentalPaths = (groups) => paths(groups.filter((g) => g.workspace === 'rental'));
 const supplyPaths = (groups) => paths(groups.filter((g) => g.workspace === 'supply'));
 check('there are ledger screens', Array.isArray(M.LEDGER_SCREENS) && M.LEDGER_SCREENS.length >= 12);
+check('Ledger setup is one of them, opening its engine page (finance phase 1, PR 6)', M.LEDGER_SCREENS?.some((x) => x.slug === 'ledger-setup' && x.enginePath === '/scm/ledger-setup'));
 for (const s of M.LEDGER_SCREENS ?? []) {
   for (const [menu, side] of [[`/finance/${s.slug}`, 'rental'], [`/supply/finance/${s.slug}`, 'supply']]) {
     check(`${s.label} is in the ${side} Finance menu, under the Ledger area, opening ${s.enginePath}`,
