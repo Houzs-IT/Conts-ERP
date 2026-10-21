@@ -4,7 +4,8 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite build && node --env-file-if-exists=.dev.vars node_modules/wrangler/bin/wrangler.js pages dev --port 8788",
+    "dev": "node scripts/dev.mjs production",
+    "dev:staging": "node scripts/dev.mjs staging",
     "dev:vite": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",

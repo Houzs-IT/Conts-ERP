@@ -29,3 +29,6 @@ uploads/*.csv
 DESIGN.md
 PRODUCT.md
 .impeccable/
+
+# Local assistant instructions stay on each machine
+CLAUDE.md
