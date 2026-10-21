@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
@@ -781,6 +781,7 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft, onCheckIn, sav
   const { cleaners } = useCleaners(true);
   const [revealed, setRevealed] = useState<Record<string, string>>({});
   const [damage, setDamage] = useState(false);
+  const openAdd = useRef<(() => void) | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
   const refresh = useCallback(() => { reload(); onChanged(); }, [reload, onChanged]);
@@ -891,7 +892,7 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft, onCheckIn, sav
 
       <section className="flex flex-col gap-2">
         <AttachmentLabel title="Proof of work" count={files} hint={!done && files === 0 ? 'At least 1 photo or video to complete' : undefined} />
-        {data ? <MediaGallery items={data.media} upload={done ? undefined : uploadTo(`/tasks/${row.id}/photos`)} onDone={refresh} addLabel="Add photos or videos" emptyText="No photos were added." />
+        {data ? <MediaGallery items={data.media} upload={done ? undefined : uploadTo(`/tasks/${row.id}/photos`)} onDone={refresh} addLabel="Add photos or videos" emptyText="No photos were added." openAddRef={openAdd} />
           : <Skeleton height={84} />}
         {done && row.completedAt && (
           <span className="text-meta text-muted-ink">Marked complete {stamp(row.completedAt)}{data?.completedBy ? ` by ${data.completedBy}` : ''}.</span>
@@ -903,10 +904,13 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft, onCheckIn, sav
       {!done && (
         <div className="grid grid-flow-col auto-cols-fr gap-3 max-md:order-last max-md:sticky max-md:bottom-0 max-md:z-[2] max-md:-mx-5 max-md:-mb-5 max-md:px-5 max-md:pt-3 max-md:pb-[calc(12px+env(safe-area-inset-bottom))] max-md:bg-card max-md:[border-top:1px_solid_var(--color-line)]">
           {row.state !== 'in_progress' && (
-            // One black button, the next step: Start until the clean is under way, then Mark complete.
+            // One black button, the next step: Start until the clean is under way, then a photo, then Mark complete.
             <Button variant="primary" icon={<Icon name="Play" size="sm" />} loading={busy === 'start'} onClick={() => void act('start', () => api.post(`/housekeeping/tasks/${row.id}/start`, {}), 'Cleaning job started.')}>Start</Button>
           )}
-          <Button variant={row.state !== 'in_progress' ? 'outline' : 'primary'} icon={<Icon name="Check" size="sm" />} loading={busy === 'complete'} disabled={files === 0} disabledReason="Add at least one photo or video first."
+          {row.state === 'in_progress' && files === 0 && (
+            <Button variant="primary" icon={<Icon name="ImagePlus" size="sm" />} onClick={() => openAdd.current?.()}>Add photos or videos</Button>
+          )}
+          <Button variant={row.state === 'in_progress' && files > 0 ? 'primary' : 'outline'} icon={<Icon name="Check" size="sm" />} loading={busy === 'complete'} disabled={files === 0} disabledReason="Add at least one photo or video first."
             onClick={() => void act('complete', async () => {
               const r = await api.post<{ cost: { amount: number; created: boolean; reason: string | null } | null }>(`/tasks/${row.id}/complete`, { photoIds: [] });
               if (r.cost && !r.cost.created && r.cost.reason && r.cost.reason !== 'already charged') toast({ tone: 'info', title: 'Cost not added.', body: `Not charged to the unit: ${r.cost.reason}.` });

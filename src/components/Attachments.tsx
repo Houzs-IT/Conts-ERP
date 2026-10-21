@@ -53,11 +53,13 @@ interface Pending { key: string; name: string; preview: string | null; video: bo
 /** Thumbnails of the photos and videos already attached, then an "Add photo" tile. With `upload`, files picked or
  *  dropped go up one at a time (the caller's `upload` sends one file) and show on the grid while they do; refused
  *  files stay as a red tile saying why. Without `upload` the grid is read-only. */
-export function MediaGallery({ items, upload, onDone, addLabel = 'Add photo', capture, emptyText, showStage, onRemove }: {
+export function MediaGallery({ items, upload, onDone, addLabel = 'Add photo', capture, emptyText, showStage, onRemove, openAddRef }: {
   items: MediaItem[]; upload?: (file: File) => Promise<unknown>; onDone?: () => void; addLabel?: string;
   capture?: boolean; emptyText?: string; showStage?: boolean;
   /** Puts an X on each saved tile. The caller confirms and deletes. */
   onRemove?: (item: MediaItem) => void;
+  /** Filled with the add tile's action, so a button elsewhere on the page can open the same picker. */
+  openAddRef?: { current: (() => void) | null };
 }) {
   const [view, setView] = useState<MediaItem | null>(null);
   const [pending, setPending] = useState<Pending[]>([]);
@@ -73,6 +75,7 @@ export function MediaGallery({ items, upload, onDone, addLabel = 'Add photo', ca
   const [lastKind, setLastKind] = useState<'photo' | 'video'>('photo');
   const isTouch = typeof window !== 'undefined' && 'matchMedia' in window && window.matchMedia('(pointer: coarse)').matches;
   const openAdd = () => { if (isTouch) setSource('choose'); else input.current?.click(); };
+  if (openAddRef) openAddRef.current = upload ? openAdd : null;
   const busy = pending.some(p => p.state === 'queued' || p.state === 'uploading');
 
   // An uploaded tile stays until the reloaded list carries the file, so the grid does not blink.
