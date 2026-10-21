@@ -310,3 +310,32 @@ describe('the number follows the document date (owner 2026-09-07: 要根据文�
     expect(((await res.json()) as { invoice: Row }).invoice.invoice_number).toBe('2990-API-2603-001');
   });
 });
+
+/* The department on each line (Conts, finance phase 1, spec 3.5; finance 21 Oct: AP invoices too). Each line keeps
+   its department on the bill and in the journal; the supplier's AP is credited per department, so each balances. */
+describe('departments on an AP invoice', () => {
+  test('each line keeps its department; the AP side is split by department', async () => {
+    const { app, sb } = harness();
+    const created = await (await json(app, '/ap-invoices', 'POST', { ...BILL, lines: [
+      { description: 'Rent Sept', debitAccountCode: '900-A001', amountSen: 400_000, department: 'rental' },
+      { description: 'Cleaning', debitAccountCode: '900-A002', amountSen: 20_000, department: 'shared' },
+    ] })).json() as { invoice: Row };
+    expect(sb.tables.ap_invoice_lines.map((l) => l.department)).toEqual(['rental', 'shared']);
+    expect((await json(app, `/ap-invoices/${created.invoice.id}/post`, 'POST')).status).toBe(200);
+    const je = sb.tables.journal_entries.find((j) => j.source_type === 'API')!;
+    const lines = sb.tables.journal_entry_lines.filter((l) => l.journal_entry_id === je.id);
+    expect(lines.map((l) => [l.account_code, Number(l.debit_sen), Number(l.credit_sen), l.department])).toEqual([
+      ['900-A001', 400_000, 0, 'rental'], ['900-A002', 20_000, 0, 'shared'],
+      ['405-0000', 0, 400_000, 'rental'], ['405-0000', 0, 20_000, 'shared'],
+    ]);
+  });
+
+  test('a line without one is Supply chain; an unknown one is refused', async () => {
+    const { app, sb } = harness();
+    const bad = await json(app, '/ap-invoices', 'POST', { ...BILL, lines: [{ debitAccountCode: '900-A001', amountSen: 100, department: 'hq' }] });
+    expect(bad.status).toBe(400);
+    expect(sb.tables.ap_invoices).toHaveLength(0);
+    expect((await json(app, '/ap-invoices', 'POST', BILL)).status).toBe(201);
+    expect(sb.tables.ap_invoice_lines.map((l) => l.department)).toEqual(['supply', 'supply']);
+  });
+});

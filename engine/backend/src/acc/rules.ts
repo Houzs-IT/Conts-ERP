@@ -322,9 +322,8 @@ export function apInvoiceLines(
   roles: RoleCodes,
   inv: { invoice_number: string },
   supplier: { code: string | null; name: string | null },
-  debits: Array<{ accountCode: string; myrSen: number; description: string | null }>,
+  debits: Array<{ accountCode: string; myrSen: number; description: string | null; department?: Department | null }>,
 ): RuleLine[] {
-  const totalSen = debits.reduce((s, d) => s + d.myrSen, 0);
   return [
     ...debits.map((d) => ({
       accountCode: d.accountCode,
@@ -334,16 +333,19 @@ export function apInvoiceLines(
       partyCode: null,
       partyName: null,
       notes: d.description ?? `AP invoice ${inv.invoice_number}`,
+      department: d.department ?? DEFAULT_DEPARTMENT,
     })),
-    {
+    // Conts: the supplier's AP is credited per department (one line when the bill has one), so each balances.
+    ...splitByDepartment(debits.map((d) => ({ department: d.department, sen: d.myrSen }))).map((part) => ({
       accountCode: roles[apControlRole(supplier.code)],
       debitSen: 0,
-      creditSen: totalSen,
+      creditSen: part.sen,
       partyType: 'SUPPLIER',
       partyCode: supplier.code,
       partyName: supplier.name,
       notes: `AP invoice ${inv.invoice_number}`,
-    },
+      department: part.department,
+    })),
   ];
 }
 

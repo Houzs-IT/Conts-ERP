@@ -66,7 +66,7 @@ const baseDetail = () => ({
   bills: [
     {
       id: 'b1', bill_number: 'HC-ODB-2609-001', bill_date: '2026-09-03', total_sen: 50000, received_sen: 20000, status: 'POSTED', notes: '转租九月',
-      lines: [{ id: 'l1', line_no: 1, description: '转租', credit_account_code: '700-0000', amount_sen: 50000 }],
+      lines: [{ id: 'l1', line_no: 1, description: '转租', credit_account_code: '700-0000', amount_sen: 50000, department: 'rental' }],
     },
   ],
   receipts: [] as Array<Record<string, unknown>>,
@@ -147,16 +147,19 @@ describe('the Debtor Bill — a pop-out form whose lines pick their own account'
     const d = dialog();
     expect(within(d).getByText(/New bill — AHMAD BIN ALI/)).toBeTruthy();
     fireEvent.change(within(d).getByPlaceholderText('Description'), { target: { value: '转租九月' } });
-    fireEvent.focus(within(d).getByRole('combobox'));
+    fireEvent.focus(within(d).getAllByRole('combobox')[0]!);
     fireEvent.mouseDown(screen.getByText('700-0000 · Other Income'));
     setAmount(d, 'line 1 amount', '450');
     await waitFor(() => expect((within(d).getByLabelText('line 1 amount') as HTMLInputElement).value).toBe('450.00'));
+    /* Conts: each money line's department (finance phase 1, spec 3.5) — Post waits for it. */
+    expect((within(d).getByText('Post bill').closest('button') as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(within(d).getByLabelText('line 1 department'), { target: { value: 'rental' } });
     fireEvent.click(within(d).getByText('Post bill'));
     await waitFor(() => expect(createBillAsync).toHaveBeenCalledTimes(1));
     const sent = createBillAsync.mock.calls[0]![0] as { debtorId: string; billDate: string; lines: unknown[] };
     expect(sent.debtorId).toBe('d1');
     expect(sent.billDate).toMatch(ISO_DATE);
-    expect(sent.lines).toEqual([{ description: '转租九月', creditAccountCode: '700-0000', amountSen: 45000 }]);
+    expect(sent.lines).toEqual([{ description: '转租九月', creditAccountCode: '700-0000', amountSen: 45000, department: 'rental' }]);
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 
@@ -174,11 +177,12 @@ describe('the Debtor Bill — a pop-out form whose lines pick their own account'
     fireEvent.keyDown(within(d).getByLabelText('line 1 amount'), { key: 'Insert' });
     fireEvent.change(within(d).getByLabelText('line 2 description'), { target: { value: 'Unit 3A, ground floor' } });
     expect(within(d).getByText(/a description alone is a text line/)).toBeTruthy();
+    fireEvent.change(within(d).getByLabelText('line 1 department'), { target: { value: 'rental' } });
     fireEvent.click(within(d).getByText('Post bill'));
     await waitFor(() => expect(createBillAsync).toHaveBeenCalledTimes(1));
     const sent = createBillAsync.mock.calls[0]![0] as { lines: unknown[] };
     expect(sent.lines).toEqual([
-      { description: 'Rental September', creditAccountCode: '700-0000', amountSen: 45000 },
+      { description: 'Rental September', creditAccountCode: '700-0000', amountSen: 45000, department: 'rental' },
       { description: 'Unit 3A, ground floor', amountSen: 0 },
     ]);
   });
@@ -190,7 +194,7 @@ describe('the Debtor Bill — a pop-out form whose lines pick their own account'
     fireEvent.click(screen.getByText('New bill'));
     const d = dialog();
     const amountHead = within(d).getByText('Amount (RM)');
-    expect([...amountHead.parentElement!.children].map((c) => c.textContent)).toEqual(['Account (credit)', 'Description', 'Amount (RM)', '']);
+    expect([...amountHead.parentElement!.children].map((c) => c.textContent)).toEqual(['Account (credit)', 'Description', 'Amount (RM)', 'Department', '']);
 
     fireEvent.keyDown(within(d).getByLabelText('line 1 amount'), { key: 'Insert' });
     expect(within(d).getByLabelText('line 2 amount')).toBeTruthy();
@@ -216,7 +220,7 @@ describe('the Debtor Bill — a pop-out form whose lines pick their own account'
     expect(within(d).getByText(/Edit HC-ODB-2609-001/)).toBeTruthy();
     expect(within(d).getByText(/saving re-posts it/)).toBeTruthy();
     expect(within(d).getByText(/is already received against it/)).toBeTruthy();
-    expect((within(d).getByRole('combobox') as HTMLInputElement).value).toBe('700-0000 · Other Income');
+    expect((within(d).getAllByRole('combobox')[0]! as HTMLInputElement).value).toBe('700-0000 · Other Income');
     expect((within(d).getByLabelText('line 1 description') as HTMLInputElement).value).toBe('转租');
     expect((within(d).getByLabelText('line 1 amount') as HTMLInputElement).value).toBe('500.00');
     expect((within(d).getByLabelText('Bill description') as HTMLInputElement).value).toBe('转租九月');
@@ -232,7 +236,7 @@ describe('the Debtor Bill — a pop-out form whose lines pick their own account'
     fireEvent.click(within(d).getByText('Save & re-post'));
     await waitFor(() => expect(updateBillAsync).toHaveBeenCalledWith({
       billId: 'b1',
-      body: { billDate: '2026-09-03', notes: '转租九月', lines: [{ description: '转租', creditAccountCode: '700-0000', amountSen: 65000 }] },
+      body: { billDate: '2026-09-03', notes: '转租九月', lines: [{ description: '转租', creditAccountCode: '700-0000', amountSen: 65000, department: 'rental' }] },
     }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
@@ -246,7 +250,7 @@ describe('the Debtor Bill — a pop-out form whose lines pick their own account'
     const d = dialog();
     expect(within(d).getByText(/copied from HC-ODB-2609-001/)).toBeTruthy();
     expect(within(d).queryByText(/saving re-posts it/)).toBeNull();
-    expect((within(d).getByRole('combobox') as HTMLInputElement).value).toBe('700-0000 · Other Income');
+    expect((within(d).getAllByRole('combobox')[0]! as HTMLInputElement).value).toBe('700-0000 · Other Income');
     expect((within(d).getByLabelText('line 1 amount') as HTMLInputElement).value).toBe('500.00');
     expect((within(d).getByLabelText('Bill date') as HTMLInputElement).value).not.toBe('2026/09/03');
     fireEvent.click(within(d).getByText('Post bill'));
@@ -255,7 +259,7 @@ describe('the Debtor Bill — a pop-out form whose lines pick their own account'
     expect(sent.debtorId).toBe('d1');
     expect(sent.billDate).not.toBe('2026-09-03');
     expect(sent.notes).toBe('转租九月');
-    expect(sent.lines).toEqual([{ description: '转租', creditAccountCode: '700-0000', amountSen: 50000 }]);
+    expect(sent.lines).toEqual([{ description: '转租', creditAccountCode: '700-0000', amountSen: 50000, department: 'rental' }]);
   });
 });
 

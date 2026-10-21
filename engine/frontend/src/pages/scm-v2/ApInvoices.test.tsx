@@ -44,7 +44,7 @@ vi.mock('../../vendor/scm/lib/ap-invoice-queries', () => ({
   useApInvoices: () => ({ data: { rows: ROWS }, isLoading: false, isError: false, error: null }),
   useApInvoiceDetail: (id: string | null) => ({ data: id ? {
     invoice: { id: 'api-1', invoice_number: '2990-API-2609-001', supplier_id: 'sup-h', supplier_invoice_ref: 'HVH-0912', invoice_date: '2026-09-01', due_date: null, currency: 'MYR', total_sen: 420_000, paid_sen: 0, status: detailStatus, notes: 'Rent September', posted_at: null, posted_by: null },
-    lines: [{ id: 'l1', line_no: 1, description: 'Rent Sept', debit_account_code: '900-A001', amount_sen: 400_000 }, { id: 'l2', line_no: 2, description: null, debit_account_code: '900-A002', amount_sen: 20_000 }],
+    lines: [{ id: 'l1', line_no: 1, description: 'Rent Sept', debit_account_code: '900-A001', amount_sen: 400_000, department: 'rental' }, { id: 'l2', line_no: 2, description: null, debit_account_code: '900-A002', amount_sen: 20_000, department: 'shared' }],
     supplier: { id: 'sup-h', code: '405-H001', name: 'HOUZS VENTURE HOLDING SDN BHD' },
   } : undefined, isLoading: false }),
   useCreateApInvoice: () => ({ mutateAsync: createAsync, isPending: false }),
@@ -153,11 +153,14 @@ describe('raising an AP invoice', () => {
     fireEvent.mouseDown(screen.getByText('900-A001 · RENTAL'));
     setAmount('line 1 amount', '420');
     expect((within(d).getByLabelText('line 1 amount') as HTMLInputElement).value).toBe('420.00');
+    /* Conts: each line's department (finance phase 1, spec 3.5) — Save waits for it. */
+    expect((within(d).getByText('Save as draft').closest('button') as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(within(d).getByLabelText('line 1 department'), { target: { value: 'rental' } });
     fireEvent.click(within(d).getByText('Save as draft'));
     await waitFor(() => expect(createAsync).toHaveBeenCalled());
     expect(createAsync.mock.calls[0]![0]).toMatchObject({
       supplierId: 'sup-h', supplierInvoiceRef: 'HVH-1001', notes: 'Rent October',
-      lines: [{ description: 'Rent Oct', debitAccountCode: '900-A001', amountSen: 42_000 }],
+      lines: [{ description: 'Rent Oct', debitAccountCode: '900-A001', amountSen: 42_000, department: 'rental' }],
     });
   });
 
@@ -166,7 +169,7 @@ describe('raising an AP invoice', () => {
     fireEvent.click(screen.getByText('New AP invoice'));
     const d = dialog();
     const amountHead = within(d).getByText('Amount (RM)');
-    expect([...amountHead.parentElement!.children].map((c) => c.textContent)).toEqual(['Account', 'Description', 'Amount (RM)', '']);
+    expect([...amountHead.parentElement!.children].map((c) => c.textContent)).toEqual(['Account', 'Description', 'Amount (RM)', 'Department', '']);
 
     fireEvent.keyDown(within(d).getByLabelText('line 1 amount'), { key: 'Insert' });
     expect(within(d).getByLabelText('line 2 amount')).toBeTruthy();
@@ -199,12 +202,13 @@ describe('the scanned bill (OCR) and its files', () => {
     expect(within(d).getByText(/Account 900-A001 filled/)).toBeTruthy();
     expect(within(d).getByText(/1 scanned file\(s\) will be attached/)).toBeTruthy();
 
+    fireEvent.change(within(d).getByLabelText('line 1 department'), { target: { value: 'shared' } });
     fireEvent.click(within(d).getByText('Save as draft'));
     await waitFor(() => expect(createAsync).toHaveBeenCalled());
     expect(createAsync.mock.calls[0]![0]).toMatchObject({
       supplierId: 'sup-h', supplierInvoiceRef: 'HVH-0912', invoiceDate: '2026-09-01', dueDate: '2026-09-30',
       /* What the reader fills is upper case (owner 2026-09-08: 帮我 fill data 时默认全部大写). */
-      lines: [{ description: 'RENT SEPT', debitAccountCode: '900-A001', amountSen: 400_000 }],
+      lines: [{ description: 'RENT SEPT', debitAccountCode: '900-A001', amountSen: 400_000, department: 'shared' }],
     });
     await waitFor(() => expect(uploadAsync).toHaveBeenCalledWith({ invoiceId: 'api-2', file: { name: 'rent.pdf', mime: 'application/pdf', dataBase64: 'b64:rent.pdf' } }));
   });
@@ -258,11 +262,12 @@ describe('the bill pile hands one bill over as one AP invoice', () => {
     expect((within(d).getByLabelText('Supplier invoice ref') as HTMLInputElement).value).toBe('HVH-0913');
     expect((within(d).getByLabelText('line 1 description') as HTMLInputElement).value).toBe('RENT OCT');
     expect(within(d).getByText(/1 scanned file\(s\) will be attached/)).toBeTruthy();
+    fireEvent.change(within(d).getByLabelText('line 1 department'), { target: { value: 'rental' } });
     fireEvent.click(within(d).getByText('Save as draft'));
     await waitFor(() => expect(createAsync).toHaveBeenCalled());
     expect(createAsync.mock.calls[0]![0]).toMatchObject({
       supplierId: 'sup-h', supplierInvoiceRef: 'HVH-0913', invoiceDate: '2026-09-02',
-      lines: [{ description: 'RENT OCT', debitAccountCode: '900-A001', amountSen: 150_000 }],
+      lines: [{ description: 'RENT OCT', debitAccountCode: '900-A001', amountSen: 150_000, department: 'rental' }],
     });
     await waitFor(() => expect(uploadAsync).toHaveBeenCalledWith({ invoiceId: 'api-2', file: { name: 'rent.pdf', mime: 'application/pdf', dataBase64: 'b64:rent.pdf' } }));
   });
@@ -303,7 +308,7 @@ describe('editing and copying a bill (round 3)', () => {
     expect(updateAsync.mock.calls[0]![0]).toMatchObject({
       id: 'api-1',
       body: { supplierId: 'sup-h', supplierInvoiceRef: 'HVH-0912', invoiceDate: '2026-09-01', notes: 'Rent Sept revised',
-        lines: [{ description: 'Rent Sept', debitAccountCode: '900-A001', amountSen: 400_000 }, { debitAccountCode: '900-A002', amountSen: 20_000 }] },
+        lines: [{ description: 'Rent Sept', debitAccountCode: '900-A001', amountSen: 400_000, department: 'rental' }, { debitAccountCode: '900-A002', amountSen: 20_000, department: 'shared' }] },
     });
     first.unmount();
 

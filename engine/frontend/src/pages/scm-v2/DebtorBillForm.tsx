@@ -11,6 +11,7 @@
 // ----------------------------------------------------------------------------
 
 import { useEffect, useRef, useState } from 'react';
+import { DepartmentSelect, nextLineDepartment, type Department } from '../../conts/department';
 import { X } from 'lucide-react';
 import { Button } from '@2990s/design-system';
 import { AddLineButton } from '../../vendor/scm/components/AddLineButton';
@@ -22,13 +23,14 @@ import { MoneyInput } from '../../vendor/scm/components/MoneyInput';
 import { fmtSen } from '../../vendor/shared/format';
 import styles from './SalesOrderDetail.module.css';
 
-export type BillFormLine = { rid: number; description: string; creditAccountCode: string; amountSen: number };
+/* Conts: each money line's department (finance phase 1, spec 3.5), required before saving; a text line has none. */
+export type BillFormLine = { rid: number; description: string; creditAccountCode: string; amountSen: number; department: Department | '' };
 export type BillFormValues = { billDate: string; notes: string; lines: BillFormLine[] };
 export type BillFormMode = 'new' | 'edit' | 'copy';
-export type BillFormSubmit = { billDate: string; notes?: string; lines: Array<{ description?: string; creditAccountCode?: string; amountSen: number }> };
+export type BillFormSubmit = { billDate: string; notes?: string; lines: Array<{ description?: string; creditAccountCode?: string; amountSen: number; department?: Department }> };
 
 const myt = (): string => new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 10);
-export const emptyBillLine = (rid: number): BillFormLine => ({ rid, description: '', creditAccountCode: '', amountSen: 0 });
+export const emptyBillLine = (rid: number, department: Department | '' = ''): BillFormLine => ({ rid, description: '', creditAccountCode: '', amountSen: 0, department });
 export const emptyBillForm = (): BillFormValues => ({ billDate: myt(), notes: '', lines: [emptyBillLine(1)] });
 
 /** A description with neither account nor amount: text on the paper, nothing in the books. */
@@ -41,7 +43,10 @@ export const toBillSubmit = (v: BillFormValues): BillFormSubmit => ({
     .filter((l) => (l.creditAccountCode && l.amountSen > 0) || isTextLine(l))
     .map((l) => (isTextLine(l)
       ? { description: l.description.trim(), amountSen: 0 }
-      : { ...(l.description.trim() ? { description: l.description.trim() } : {}), creditAccountCode: l.creditAccountCode, amountSen: l.amountSen })),
+      : {
+        ...(l.description.trim() ? { description: l.description.trim() } : {}),
+        creditAccountCode: l.creditAccountCode, amountSen: l.amountSen, ...(l.department ? { department: l.department } : {}),
+      })),
 });
 
 const soft: React.CSSProperties = { fontSize: 'var(--fs-12)', color: 'var(--fg-muted)' };
@@ -79,7 +84,7 @@ export const DebtorBillForm = ({ mode, initial, accounts, receivedSen = 0, savin
     setV((prev) => {
       const rid = Math.max(0, ...prev.lines.map((x) => x.rid)) + 1;
       if (land) setLandOn(rid);
-      return { ...prev, lines: [...prev.lines, emptyBillLine(rid)] };
+      return { ...prev, lines: [...prev.lines, emptyBillLine(rid, nextLineDepartment(prev.lines))] };
     });
   };
   const removeLine = (rid: number) => setV((prev) => (prev.lines.length > 1 ? { ...prev, lines: prev.lines.filter((l) => l.rid !== rid) } : prev));
@@ -90,7 +95,7 @@ export const DebtorBillForm = ({ mode, initial, accounts, receivedSen = 0, savin
 
   const total = v.lines.reduce((s, l) => s + (l.amountSen > 0 ? l.amountSen : 0), 0);
   const belowReceived = mode === 'edit' && total < receivedSen;
-  const ready = !!v.billDate && total > 0 && !belowReceived && v.lines.filter((l) => l.amountSen > 0).every((l) => !!l.creditAccountCode);
+  const ready = !!v.billDate && total > 0 && !belowReceived && v.lines.filter((l) => l.amountSen > 0).every((l) => !!l.creditAccountCode && !!l.department);
   const saveLabel = mode === 'edit' ? 'Save & re-post' : 'Post bill';
   /* F3 / Ctrl+S = the save button (owner 2026-09-08: 像 autocount 按 f3);
      a form that is not ready ignores it, as the button would. */
@@ -123,6 +128,7 @@ export const DebtorBillForm = ({ mode, initial, accounts, receivedSen = 0, savin
             <th style={{ ...th, width: '34%' }}>Account (credit)</th>
             <th style={th}>Description</th>
             <th style={{ ...th, textAlign: 'right', width: 150 }}>Amount (RM)</th>
+            <th style={{ ...th, width: 150 }}>Department</th>
             <th style={{ ...th, width: 36 }} />
           </tr>
         </thead>
@@ -144,6 +150,10 @@ export const DebtorBillForm = ({ mode, initial, accounts, receivedSen = 0, savin
                   onKeyDown={(e) => { if (e.key === 'Enter') hopFrom(l.rid); }} />
               </td>
               <td style={td}>
+                <DepartmentSelect className={styles.fieldInput} style={{ width: '100%' }} label={`line ${l.rid} department`} blank="Choose…"
+                  value={l.department} onChange={(dep) => patchLine(l.rid, { department: dep })} />
+              </td>
+              <td style={td}>
                 {v.lines.length > 1 && (
                   <button type="button" aria-label={`remove line ${l.rid}`} onClick={() => removeLine(l.rid)} style={iconBtn}>
                     <X size={14} strokeWidth={1.75} />
@@ -160,6 +170,7 @@ export const DebtorBillForm = ({ mode, initial, accounts, receivedSen = 0, savin
               <span style={{ ...soft, marginLeft: 'var(--space-3)' }}>Insert adds a line · Enter on an amount moves down · a description alone is a text line: it prints, books nothing</span>
             </td>
             <td style={{ ...td, ...right, fontWeight: 700, color: belowReceived ? 'var(--c-festive-b, #B8331F)' : undefined }}>Total {fmtSen(total)}</td>
+            <td />
             <td />
           </tr>
         </tfoot>
