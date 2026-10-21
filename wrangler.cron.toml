@@ -9,8 +9,8 @@
 #   CHANNEX_API_KEY      needed for the Channex outbox; without it that job reports "not configured"
 #   MAIL_API_KEY         optional: email copies and owner emails
 #   WHATSAPP_TOKEN, WHATSAPP_PHONE_ID   optional: WhatsApp copies
-#   IT_HUB_API_KEY       optional: the same key the Pages project uses for IT Support; with it, the health
-#                        report is sent to the Houzs IT Hub every 5 minutes
+#   IT_HUB_API_KEY       optional: the same key the Pages project uses for IT Support; with it, the worker asks
+#                        the website to send its health report to the Houzs IT Hub every 5 minutes
 
 name = "theconts-cron"
 main = "worker/scheduled.ts"
@@ -21,11 +21,6 @@ workers_dev = false
 [[hyperdrive]]
 binding = "HYPERDRIVE"
 id = "e0781ccdee9046919161c28cb95694c0"
-
-# Read only by the health report, to check file storage answers (same bucket as wrangler.toml).
-[[r2_buckets]]
-binding = "MEDIA"
-bucket_name = "theconts-media"
 
 [triggers]
 crons = [
@@ -40,6 +35,6 @@ TIMEZONE = "Asia/Kuala_Lumpur"
 QUIET_HOURS_START = "22"
 QUIET_HOURS_END = "8"
 CHANNEX_BASE_URL = "https://app.channex.io"
-# For the health report sent to the Houzs IT Hub (hubHealthReport in functions/_lib/cronJobs.ts).
-APP_ORIGIN = "https://theconts-os.pages.dev"
-IT_HUB_URL = "https://support.houzscentury.com"
+# The website the worker asks to send its health report to the Houzs IT Hub (hubHealthReport in
+# functions/_lib/cronJobs.ts): the address staff use, which the Channex callback is registered against.
+APP_ORIGIN = "https://erp.theconts.com"

@@ -386,6 +386,7 @@
  "POST /api/stock-transfers": "AAFAFFFU",
  "POST /api/suppliers": "AAFAFFFU",
  "POST /api/supply-chain/engine-session": "EEEEFFFU",
+ "POST /api/system/health/hub-report": "UUFUFFFU",
  "POST /api/table-layouts": "AAAAFFFU",
  "POST /api/tasks/[id]/complete": "AAAFAAFU",
  "POST /api/tasks/[id]/photos": "AAAFAAFU",
