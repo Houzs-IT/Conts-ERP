@@ -31,6 +31,7 @@ import {
   useWithdrawPaymentVoucher,
   useCheckPaymentVoucher,
   useApprovePaymentVoucher,
+  usePostNowPaymentVoucher,
   useRejectPaymentVoucher,
   useSupplierAdvances, useApplyAdvance,
   usePvFiles, useUploadPvFile, useDeletePvFile, fetchPvFileBlobUrl,
@@ -48,6 +49,7 @@ import { useApInvoices } from '../../vendor/scm/lib/ap-invoice-queries';
 import { useSuppliers, useSupplierDetail } from '../../vendor/scm/lib/suppliers-queries';
 import { sortByText } from '../../vendor/scm/lib/sort-options';
 import { useAuth as useHouzsAuth } from '../../auth/AuthContext';
+import { canUseLedger } from '../../conts/ledger';
 import { MoneyInput } from '../../vendor/scm/components/MoneyInput';
 import { DateField } from '../../vendor/scm/components/DateField';
 import { AccountSelect } from '../../vendor/scm/components/AccountSelect';
@@ -114,7 +116,7 @@ export const PaymentVoucherDetail = () => {
   const [searchParams] = useSearchParams();
   const askConfirm = useConfirm();
   const notify = useNotify();
-  const { can } = useHouzsAuth();
+  const { can, user } = useHouzsAuth();
 
   /* History drawer. Stable close handler so the memoized panel does not
      re-render on every keystroke in the edit form. */
@@ -134,14 +136,17 @@ export const PaymentVoucherDetail = () => {
   const withdraw = useWithdrawPaymentVoucher();
   const check    = useCheckPaymentVoucher();
   const approve  = useApprovePaymentVoucher();
+  const postNow  = usePostNowPaymentVoucher();
   const reject   = useRejectPaymentVoucher();
   const busy   = update.isPending || cancel.isPending
-    || submit.isPending || withdraw.isPending || check.isPending || approve.isPending || reject.isPending;
+    || submit.isPending || withdraw.isPending || check.isPending || approve.isPending || postNow.isPending || reject.isPending;
 
   const canWrite   = can('scm.payment_voucher.write');
   const canCancel  = can('scm.payment_voucher.cancel');
   const canCheck   = can('scm.payment_voucher.check');
   const canApprove = can('scm.payment_voucher.approve');
+  // Conts: all four layers in one step, for someone holding every key and the Ledger (spec 3.6).
+  const canPostNow = canWrite && canCheck && canApprove && canUseLedger(user?.permissions);
 
   /* The owner's four layers (2026-09-02) — where this voucher stands. No
      marks: raw Draft. Prepared: declared ready, STILL editable. Checked:
@@ -508,6 +513,12 @@ export const PaymentVoucherDetail = () => {
       void notify({ title: 'Approve failed', body: err instanceof Error ? err.message : 'Something went wrong.', tone: 'error' });
     }
   };
+  const onPostNow = async () => {
+    if (!(await askConfirm({ title: `Post ${pv.pv_number} now?`, body: 'Prepare, check, approve and post this voucher now? Each step still done is recorded under your name, and the journal entry goes to the General Ledger.', confirmLabel: 'Post now' }))) return;
+    try { await postNow.mutateAsync(id); } catch (err) {
+      void notify({ title: 'Post now failed', body: err instanceof Error ? err.message : 'Something went wrong.', tone: 'error' });
+    }
+  };
   const onRejectConfirm = async () => {
     try {
       await reject.mutateAsync({ id, note: rejectNote ?? '' });
@@ -573,9 +584,17 @@ export const PaymentVoucherDetail = () => {
                     <CheckCircle2 {...ICON} /> Check
                   </Button>
                 )}
-                {isDraft && canApprove && isChecked && !isApprovedPv && rejectNote === null && (
+                {isDraft && canPostNow && !isChecked && rejectNote === null && (
+                  <Button variant="primary" size="md" onClick={() => void onPostNow()} disabled={busy}
+                    title="Prepare, check, approve and post in one step">
+                    <CheckCircle2 {...ICON} /> Post now
+                  </Button>
+                )}
+                {/* An approved voucher still in draft is a post that failed halfway; approving again finishes it
+                    without restamping (approvePaymentVoucherHandler). */}
+                {isDraft && canApprove && isChecked && rejectNote === null && (
                   <Button variant="primary" size="md" onClick={() => void onApprove()} disabled={busy}>
-                    <CheckCircle2 {...ICON} /> Approve & post
+                    <CheckCircle2 {...ICON} /> {isApprovedPv ? 'Finish posting' : 'Approve & post'}
                   </Button>
                 )}
                 {/* Reject opens to EITHER key, at either layer — back to raw

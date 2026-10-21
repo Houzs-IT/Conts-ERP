@@ -37,6 +37,7 @@ import { lockedRefusal, lockMonthOf } from '../../acc/bank-lock';
 import { postBatchReceipt, undoBatchReceipt } from '../../acc/settlement';
 import { withJournalRefs } from '../../acc/journal-refs';
 import { fmtSen } from '../shared/format';
+import { chunkIn } from '../lib/paginate-all';
 
 type Ctx = Context<{ Bindings: Env; Variables: Variables }>;
 
@@ -314,9 +315,12 @@ export const bankUpload = guard(async (c) => {
     if (mErr) return c.json({ error: 'load_failed', reason: mErr.message }, 500);
     const ids = ((mine ?? []) as Array<{ id: number }>).map((s) => Number(s.id));
     if (ids.length > 0) {
-      const { data, error: seenErr } = await sb.from('acc_bank_statement_lines')
+      /* Chunked and paged (gap G13): an account's earlier lines pass PostgREST's per-response ceiling, and a
+         repeat missed here is brought in twice. */
+      const { data, error: seenErr } = await chunkIn(ids, (batch, from, to) => sb.from('acc_bank_statement_lines')
         .select('booked_on, description, reference, amount_sen, state, posted_je_no, statement_id')
-        .eq('company_id', co.companyId).in('statement_id', ids);
+        .eq('company_id', co.companyId).in('statement_id', batch)
+        .order('id').range(from, to));
       if (seenErr) return c.json({ error: 'load_failed', reason: seenErr.message }, 500);
       for (const r of (data ?? []) as Array<Record<string, any>>) {
         const key = movementFingerprint({

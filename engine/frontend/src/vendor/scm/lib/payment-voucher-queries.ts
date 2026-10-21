@@ -180,7 +180,7 @@ export const useCancelPaymentVoucher = () => {
 /* ── Phase 3: the approval cycle. Each mutation refreshes the list, the
    detail, and the Daily Bank board — a voucher entering or leaving the queue
    moves the board's "available" figure. */
-const approvalMutation = (path: 'submit' | 'withdraw' | 'check' | 'approve') => () => {
+const approvalMutation = (path: 'submit' | 'withdraw' | 'check' | 'approve' | 'post-now') => () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => authedFetch(`/payment-vouchers/${id}/${path}`, { method: 'POST' }),
@@ -196,6 +196,8 @@ export const useWithdrawPaymentVoucher = approvalMutation('withdraw');
 export const useCheckPaymentVoucher = approvalMutation('check');
 /* Approve posts the GL in the same request — the response is the post's. */
 export const useApprovePaymentVoucher = approvalMutation('approve');
+/* Conts: prepare, check, approve and post in one request (backend conts/pv-post-now.ts). */
+export const usePostNowPaymentVoucher = approvalMutation('post-now');
 
 export const useRejectPaymentVoucher = () => {
   const qc = useQueryClient();

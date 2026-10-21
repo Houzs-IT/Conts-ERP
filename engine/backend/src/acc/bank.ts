@@ -19,6 +19,7 @@ import type { BankRecognitionRule, PayableBatch, PayoutAdviceForMatch } from './
 import type { LedgerMovement } from './bank-reconcile';
 import { lockMonthOf, monthAsDate, monthFromDate, type MonthLock } from './bank-lock';
 import { isReversalPair } from './reversal-pairs';
+import { chunkIn, paginateAll } from '../scm/lib/paginate-all';
 
 export type BankStatementConfig = {
   id: number;
@@ -230,11 +231,15 @@ export async function loadPayoutAdvices(
 export async function loadAccountLedger(
   sb: any, companyId: number, accountCode: string, upTo: string,
 ): Promise<{ ok: true; movements: LedgerMovement[] } | Fail> {
-  const { data, error } = await sb.from('v_gl_entries')
+  /* Paged: a busy bank account passes PostgREST's per-response ceiling, which drops the rest without an error
+     (gap G13). Ordered by line_id so every page reads the same sequence. */
+  const { data, error } = await paginateAll((from, to) => sb.from('v_gl_entries')
     .select('je_no, entry_date, source_type, source_doc_no, debit_sen, credit_sen, notes, party_name, reversed, reversed_by_je')
     .eq('company_id', companyId)
     .eq('account_code', accountCode)
-    .lte('entry_date', upTo);
+    .lte('entry_date', upTo)
+    .order('line_id')
+    .range(from, to));
   if (error) return { ok: false, reason: error.message };
 
   /* One ENTRY per row, not one line: an entry can touch the bank account twice
@@ -297,16 +302,20 @@ export async function loadClaimedElsewhere(
   const claimed = new Set<string>();
   if (ids.length === 0) return { ok: true, claimed, firstPeriodFrom };
 
-  const { data: lines, error: lErr } = await sb.from('acc_bank_statement_lines')
-    .select('id, posted_je_no, state').eq('company_id', companyId).in('statement_id', ids).eq('state', 'POSTED');
+  /* Chunked and paged (gap G13): an account's reconciled lines pass PostgREST's per-response ceiling within
+     months, and one id per line soon outgrows a URL. */
+  const { data: lines, error: lErr } = await chunkIn(ids, (batch, from, to) => sb.from('acc_bank_statement_lines')
+    .select('id, posted_je_no, state').eq('company_id', companyId).in('statement_id', batch).eq('state', 'POSTED')
+    .order('id').range(from, to));
   if (lErr) return { ok: false, reason: lErr.message };
   const posted = (lines ?? []) as Array<{ id: number; posted_je_no: string | null }>;
   for (const l of posted) for (const je of jeNosOf(l.posted_je_no)) claimed.add(je);
 
   const postedIds = posted.map((l) => Number(l.id));
   if (postedIds.length > 0) {
-    const { data: matches, error: mErr } = await sb.from('acc_bank_statement_matches')
-      .select('bank_line_id, je_no').eq('company_id', companyId).in('bank_line_id', postedIds);
+    const { data: matches, error: mErr } = await chunkIn(postedIds, (batch, from, to) => sb.from('acc_bank_statement_matches')
+      .select('bank_line_id, je_no').eq('company_id', companyId).in('bank_line_id', batch)
+      .order('bank_line_id').range(from, to));
     if (mErr) return { ok: false, reason: mErr.message };
     for (const m of (matches ?? []) as Array<{ je_no: string }>) claimed.add(String(m.je_no));
   }

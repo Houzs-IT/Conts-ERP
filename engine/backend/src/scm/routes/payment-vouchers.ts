@@ -63,6 +63,7 @@ import { uploadPvFileHandler, listPvFilesHandler, streamPvFileHandler, deletePvF
 import { scopeToCompany, activeCompanyId, stampCompany, companyDocPrefix,
   requireActiveCompanyId, scopeToCompanyId, NOT_THIS_COMPANY } from '../lib/companyScope';
 import { hasHouzsPerm } from '../lib/houzs-perms';
+import { postNowHandler } from '../../conts/pv-post-now';
 import { normalizeCurrency, normalizeExchangeRate, masterRateForCurrency } from '../lib/fx';
 import { todayMyt } from '../lib/my-time';
 import { recordEntityAudit, diffFields, compactChanges, fieldChange, statusChange, assertAuditWritable, auditUnavailableBody } from '../lib/entity-audit';
@@ -1516,6 +1517,8 @@ export const approvePaymentVoucherHandler = async (c: any) => {
   return postPaymentVoucherHandler(c);
 };
 paymentVouchers.post('/:id/approve', approvePaymentVoucherHandler);
+// Conts: prepare, check, approve and post in one request for a person holding all three keys (conts/pv-post-now.ts).
+paymentVouchers.post('/:id/post-now', postNowHandler);
 
 /* REJECT — at EITHER checking layer, by either key; everything comes off
    and the voucher is a raw draft again (owner: 一律退回 Draft), the why on
