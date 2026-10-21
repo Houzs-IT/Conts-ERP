@@ -12,7 +12,11 @@ export default function UpdateNotice() {
 
   useEffect(() => {
     let live = true;
+    let last = 0;
     async function check() {
+      // Coming back to the tab fires both focus and visibilitychange: one request is enough.
+      if (Date.now() - last < 10_000) return;
+      last = Date.now();
       try {
         const r = await fetch(`/version.json?t=${Date.now()}`, { cache: 'no-store' });
         if (!r.ok) return;

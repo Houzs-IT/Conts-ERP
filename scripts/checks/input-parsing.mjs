@@ -1,17 +1,6 @@
 // What the shared inputs make of typed text: node scripts/checks/input-parsing.mjs (Node 22.6+ strips the TS types).
 import { cleanNumberText, parseScaled, formatScaled, caretAfterClean } from '../../src/components/inputs/numberText.ts';
-import { parsePhone, formatLocalAsTyped, readInternationalAsTyped } from '../../src/lib/phone.ts';
-import { build } from 'esbuild';
-import { writeFileSync, mkdtempSync } from 'node:fs';
-import { join, dirname } from 'node:path';
-import { tmpdir } from 'node:os';
-import { fileURLToPath, pathToFileURL } from 'node:url';
-
-// format.ts imports without file extensions, as the app does; bundle it so Node can load it.
-const fmtOut = await build({ entryPoints: [join(dirname(fileURLToPath(import.meta.url)), '../../src/lib/format.ts')], bundle: true, format: 'esm', platform: 'node', write: false, logLevel: 'error' });
-const fmtDir = mkdtempSync(join(tmpdir(), 'fmt-'));
-writeFileSync(join(fmtDir, 'format.mjs'), fmtOut.outputFiles[0].text);
-const { phone, phoneDigits, phoneHref } = await import(pathToFileURL(join(fmtDir, 'format.mjs')).href);
+import { parsePhone, formatLocalAsTyped, readInternationalAsTyped, phone, phoneDigits, phoneHref } from '../../src/lib/phone.ts';
 
 let pass = 0, failed = 0;
 const eq = (name, got, want) => {

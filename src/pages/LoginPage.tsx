@@ -1,12 +1,11 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useSession, type TwoStep } from '../lib/session';
 import { ApiFailure, api } from '../lib/api';
-import { phone } from '../lib/format';
 import Icon from '../components/Icon';
 import { Logo } from '../components/Logo';
 import { Button } from '../components/Button';
 import { Field, PasswordField } from '../components/Field';
-import { CodeInput } from '../components/inputs';
+import { CodeInput } from '../components/inputs/CodeInput';
 import '../styles/login.css';
 
 type Screen = 'signin' | 'forgot' | 'change' | 'reset' | 'code';
@@ -258,7 +257,7 @@ export default function LoginPage({ forceChangePassword = false, resetToken = nu
 
         <div className="flex items-center justify-between gap-4 flex-wrap text-caption text-faint">
           <span>The Conts Sdn Bhd · 202301027399</span>
-          <span>{phone(supportPhone) || supportPhone}</span>
+          <span>{supportPhone}</span>
         </div>
       </div>
     </div>

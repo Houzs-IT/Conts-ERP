@@ -7,7 +7,8 @@ import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { useToast } from '../components/Toast';
 import { api, errorMessage } from '../lib/api';
-import { rmShort, monthLabel, todayMyt, titleCase, plural, phone as formatPhone } from '../lib/format';
+import { rmShort, monthLabel, todayMyt, titleCase, plural } from '../lib/format';
+import { phone as formatPhone } from '../lib/phone';
 import { MoneyText } from '../components/MoneyText';
 import { Select } from '../components/Select';
 import {

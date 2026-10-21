@@ -1,6 +1,6 @@
 /** The automation rules the product ships with. Only on/off is stored (table automations, keyed by id); everything else is fixed here.
  *  Copy and triggers come from notifications.md. */
-import { phone } from '../../src/lib/format';
+import { phone } from '../../src/lib/phone';
 export interface CatalogRule {
   id: string; name: string; template: string; group: string; trigger: string; timing: string; channels: string[];
   needs: string; preview: string; delivery: 'transactional' | 'opt_out'; quietHours: 'queue' | 'override' | 'always'; isActive: boolean;
