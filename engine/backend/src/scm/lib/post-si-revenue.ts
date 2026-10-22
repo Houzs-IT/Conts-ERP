@@ -30,6 +30,8 @@ export type PostSiResult =
      postSiRevenue. `ok: true` so no caller records a failure for a thing that
      was never meant to post. */
   | { ok: true; status: 'migrated_source' }
+  /* An opening balance (Conts, migration 0136): its money is in the OPENING journal already. */
+  | { ok: true; status: 'opening_document' }
   /* Dated before the ledger start (Conts): already in the opening balances. */
   | { ok: true; status: 'before_ledger_start'; ledgerStartDate: string }
   /* The lines could not be classified (docs/bugs/0829): a line with no
@@ -45,7 +47,7 @@ export type PostSiResult =
 export async function postSiRevenue(sb: any, invoiceNumber: string): Promise<PostSiResult> {
   const { data: si, error } = await sb
     .from('sales_invoices')
-    .select('id, invoice_number, invoice_date, debtor_code, debtor_name, total_sen, company_id, migrated_no_stock, so_doc_no')
+    .select('id, invoice_number, invoice_date, debtor_code, debtor_name, total_sen, company_id, migrated_no_stock, opening_balance, so_doc_no')
     .eq('invoice_number', invoiceNumber)
     .single();
   if (error || !si) return { ok: false, status: 'invoice_not_found' };
@@ -58,6 +60,12 @@ export async function postSiRevenue(sb: any, invoiceNumber: string): Promise<Pos
      every path is covered by construction. */
   if ((si as { migrated_no_stock?: boolean | null }).migrated_no_stock === true) {
     return { ok: true, status: 'migrated_source' };
+  }
+  /* OPENING BALANCES POST NOTHING THEMSELVES (Conts, migration 0136). What a customer still owed on the day before
+     the books start is in the OPENING journal's Dr AR already; the invoice is here so the debtor ageing shows it and a
+     payment can settle it (that payment posts as usual). */
+  if ((si as { opening_balance?: boolean | null }).opening_balance === true) {
+    return { ok: true, status: 'opening_document' };
   }
   // Multi-company (mig 0061): the JE + lines belong to the SI's company.
   const companyId = (si as { company_id?: number | null }).company_id ?? null;

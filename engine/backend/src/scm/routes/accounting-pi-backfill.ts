@@ -32,6 +32,8 @@ const requirePerm = (c: any): boolean => hasHouzsPerm(c, 'scm.payment_voucher.po
 type PiRow = {
   id: string; invoice_number: string; status: string; total_sen: number | null;
   migrated_no_stock: boolean | null;
+  /* An opening bill (migration 0136): its payable is in the OPENING journal, so there is nothing to backfill. */
+  opening_balance?: boolean | null;
 };
 type JeRow = { id: string; source_doc_no: string; reversed: boolean | null; entry_date: string | null };
 type JeLineRow = { journal_entry_id: string; account_code: string; debit_sen: number | null };
@@ -53,12 +55,12 @@ export async function classifyPiBackfill(
 ): Promise<{ ok: true; items: BackfillItem[] } | { ok: false; reason: string }> {
   const { data: pisRaw, error: piErr } = await sb
     .from('purchase_invoices')
-    .select('id, invoice_number, status, total_sen, migrated_no_stock')
+    .select('id, invoice_number, status, total_sen, migrated_no_stock, opening_balance')
     .eq('company_id', companyId)
     .neq('status', 'DRAFT')
     .neq('status', 'CANCELLED');
   if (piErr) return { ok: false, reason: `PIs: ${piErr.message}` };
-  const pis = ((pisRaw ?? []) as PiRow[]).filter((p) => p.migrated_no_stock !== true);
+  const pis = ((pisRaw ?? []) as PiRow[]).filter((p) => p.migrated_no_stock !== true && p.opening_balance !== true);
 
   const { data: jesRaw, error: jeErr } = await sb
     .from('journal_entries')

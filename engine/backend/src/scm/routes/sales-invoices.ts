@@ -857,7 +857,7 @@ export const createSalesInvoiceHandler = async (c: Context<{ Bindings: Env; Vari
   if (post.ok) {
     /* 'migrated_source' carries no jeNo and needs none: AutoCount already booked
        the revenue, so the correct number of journal entries here is zero. */
-    revenue = post.status === 'migrated_source' || post.status === 'before_ledger_start'
+    revenue = post.status === 'migrated_source' || post.status === 'opening_document' || post.status === 'before_ledger_start'
       ? { posted: false, status: post.status }
       : { posted: post.status === 'posted', jeNo: post.jeNo, status: post.status };
   } else {
