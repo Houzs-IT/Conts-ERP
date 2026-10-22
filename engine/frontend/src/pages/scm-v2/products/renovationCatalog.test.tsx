@@ -58,6 +58,7 @@ import { CatalogCategoryPicker } from './CatalogCategoryPicker';
 import { RenovationNewSku } from './RenovationNewSku';
 import { RenovationSkuMaster } from './RenovationSkuMaster';
 import { RenovationUomSettings } from './RenovationUomSettings';
+import { RenovationSubCategorySettings } from './RenovationSubCategorySettings';
 import { ConfirmProvider } from '../../../vendor/scm/components/ConfirmDialog';
 import { SkuStatusBadge } from './renovationSkuColumns';
 import { AddSupplierBinding } from '../AddSupplierBinding';
@@ -98,6 +99,36 @@ describe('CatalogChips', () => {
     expect(screen.getByText('WORKS|ELECTRICAL')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Lighting' }));
     expect(screen.getByText('LIGHTING|null')).toBeTruthy();
+  });
+
+  test('aircon install, cleaning and project management sit under Service, not Works (owner, 22 Oct 2026)', () => {
+    wrap(<Harness />);
+    const subsOf = () => within(screen.getByRole('group', { name: 'Sub-category' })).getAllByRole('button').map((b) => b.textContent);
+    fireEvent.click(screen.getByRole('button', { name: 'Works' }));
+    expect(subsOf()).not.toEqual(expect.arrayContaining(['Aircon install']));
+    expect(subsOf()).not.toContain('Cleaning');
+    expect(subsOf()).not.toContain('Project management');
+    fireEvent.click(screen.getByRole('button', { name: 'Service' }));
+    expect(subsOf()).toEqual(['All service', 'Delivery', 'Styling', 'Photoshoot', 'Airbnb setup', 'Aircon install', 'Cleaning', 'Project management']);
+    fireEvent.click(screen.getByRole('button', { name: 'Aircon install' }));
+    expect(screen.getByText('SERVICE|AIRCON_INSTALL')).toBeTruthy();
+  });
+});
+
+describe('RenovationSubCategorySettings', () => {
+  test('under Service, the site-trade services are fixed while the other services stay editable', async () => {
+    h.catalog = { canEdit: true, subCategories: SUB_CATEGORIES.map((x) => ({ ...x, active: true })) };
+    wrap(<RenovationSubCategorySettings initialGroup="SERVICE" onClose={() => {}} />);
+    expect(await screen.findByLabelText('Name of Delivery')).toBeTruthy();
+    expect(screen.getByLabelText('Name of Airbnb setup')).toBeTruthy();
+    for (const label of ['Aircon install', 'Cleaning', 'Project management']) {
+      expect(screen.getByText(label)).toBeTruthy();
+      expect(screen.queryByLabelText(`Name of ${label}`)).toBeNull();
+      expect(screen.queryByLabelText(`Hide ${label}`)).toBeNull();
+    }
+    // Airbnb setup cannot swap places with a fixed row below it
+    expect((screen.getByLabelText('Move Airbnb setup down') as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByLabelText('Move Delivery down') as HTMLButtonElement).disabled).toBe(false);
   });
 });
 

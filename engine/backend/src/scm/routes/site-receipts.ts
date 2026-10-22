@@ -31,7 +31,7 @@ import { hasPermission } from "../../services/permissions";
 import { loadProjectRows, loadRenovationFacts, BOARD_CHECKLIST_KEYS, type Db } from "../../services/renovation/load";
 import { computeProjectView } from "../../services/renovation/view";
 import { GATE_REASON_TEXT } from "../../services/renovation/gate";
-import { categoryGroupOf, isCatalogGroup } from "../shared/renovation-catalog";
+import { categoryGroupOf, isCatalogGroup, siteGroupOf } from "../shared/renovation-catalog";
 
 type Ctx = Context<{ Bindings: Env; Variables: Variables }>;
 
@@ -71,6 +71,7 @@ export interface OpenLine {
   remaining: number;
   category: string | null;
   category_group: string | null;
+  sub_category?: string | null;
   room: string | null;
 }
 
@@ -121,9 +122,10 @@ export function photoRuleRefusal(photos: SiteReceiptBody["photos"], hasGoods: bo
   return null;
 }
 
-export function lineGroupOf(l: Pick<OpenLine, "category" | "category_group">) {
+/** The group a line works as on site: a site-trade service (aircon install, cleaning) is a trade, like WORKS. */
+export function lineGroupOf(l: Pick<OpenLine, "category" | "category_group" | "sub_category">) {
   const g = l.category_group ? l.category_group.toUpperCase() : null;
-  return isCatalogGroup(g) ? g : categoryGroupOf(l.category);
+  return siteGroupOf(isCatalogGroup(g) ? g : categoryGroupOf(l.category), l.sub_category);
 }
 
 const db = (c: Ctx) => c.env.DB as unknown as Db;
@@ -172,7 +174,7 @@ export async function loadOpenLines(d: Db, projectId: number): Promise<OpenLine[
             po.po_number, po.supplier_id::text AS supplier_id, sup.name AS supplier_name, poi.item_code, poi.material_name,
             coalesce(i.description, poi.description) AS description, poi.qty, poi.received_qty,
             GREATEST(poi.qty - poi.received_qty, 0) AS remaining,
-            p.category::text AS category, to_jsonb(p)->>'category_group' AS category_group, i.location AS room
+            p.category::text AS category, to_jsonb(p)->>'category_group' AS category_group, to_jsonb(p)->>'sub_category' AS sub_category, i.location AS room
        FROM scm.mfg_sales_orders so
        JOIN scm.mfg_sales_order_items i ON i.doc_no = so.doc_no AND i.cancelled = false
        JOIN scm.purchase_order_items poi ON poi.so_item_id = i.id

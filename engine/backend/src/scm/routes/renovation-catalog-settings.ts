@@ -7,7 +7,8 @@
 // group change is a migration. Sub-categories can be added, renamed, reordered
 // and hidden, never deleted: SKUs, PO/GRN lines and procurement dates store the
 // code. WORKS sub-categories are the site trades and stay fixed too
-// (FIXED_SUB_GROUPS). The list is shared by every company, like the table.
+// (FIXED_SUB_GROUPS), as do the site-trade services under SERVICE
+// (isFixedSub). The list is shared by every company, like the table.
 // Writes need the same permission as editing a SKU (canWriteScmConfig).
 //
 // Units (migration 0118) are edited here too. A unit's code is what prints and
@@ -25,6 +26,7 @@ import {
   CATALOG_GROUPS,
   FIXED_SUB_GROUPS,
   isCatalogGroup,
+  isFixedSub,
   subCategoryCodeOf,
   type CatalogGroup,
   type SubCategoryDef,
@@ -155,7 +157,7 @@ renovationCatalogSettings.patch('/sub-categories/:code', async (c) => {
   try { all = await loadSubCategories(sb); } catch (e) { return c.json({ error: 'load_failed', message: (e as Error).message }, 500); }
   const cur = all.find((s) => s.code === code);
   if (!cur) return refuse(c, 404, 'not_found', 'That sub-category does not exist.');
-  if (FIXED_SUB_GROUPS.includes(cur.group)) return refuse(c, 400, 'group_fixed', 'Works trades follow the site stage order and cannot be changed here.');
+  if (isFixedSub(cur.group, cur.code)) return refuse(c, 400, 'group_fixed', 'Works trades follow the site stage order and cannot be changed here.');
 
   const patch: Record<string, unknown> = {};
   if (b.label !== undefined) {

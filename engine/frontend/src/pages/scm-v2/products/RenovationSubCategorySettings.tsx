@@ -1,13 +1,15 @@
 /* Sub-category settings for the renovation SKU Master: add, rename, reorder and
    hide the sub-categories of a group. Groups are fixed (each sets a project stage
-   and photo rule), so are the Works trades (they follow the site stage order).
+   and photo rule), so are the Works trades (they follow the site stage order)
+   and the site-trade services filed under Service (aircon install, cleaning,
+   project management).
    Hide, not delete: SKUs and documents keep the code, and a hidden one still
    shows on the SKU that has it. Rules are checked server-side
    (backend scm/routes/renovation-catalog-settings.ts). */
 import { useState } from 'react';
 import { ArrowDown, ArrowUp, Eye, EyeOff, Plus, X } from 'lucide-react';
 import { Button } from '../../../components/Button';
-import { FIXED_SUB_GROUPS, RENOVATION_GROUPS, subCategoriesOf, type CatalogGroup, type SubCategoryDef } from '../../../vendor/shared/renovation-catalog';
+import { FIXED_SUB_GROUPS, RENOVATION_GROUPS, isFixedSub, subCategoriesOf, type CatalogGroup, type SubCategoryDef } from '../../../vendor/shared/renovation-catalog';
 import { useAddSubCategory, useRenovationCatalog, useUpdateSubCategory } from '../../../vendor/scm/lib/renovation-catalog-queries';
 import styles from '../Products.module.css';
 
@@ -91,9 +93,10 @@ export function RenovationSubCategorySettings({ initialGroup, onClose }: { initi
           <ul className="divide-y divide-border rounded-md border border-border" aria-label={`${RENOVATION_GROUPS.find((g) => g.code === group)?.label} sub-categories`}>
             {subs.map((s, i) => {
               const hidden = s.active === false;
+              const rowEditable = editable && !isFixedSub(group, s.code);
               return (
                 <li key={s.code} className={`flex items-center gap-2 px-3 py-2 ${hidden ? 'bg-surface-2' : ''}`}>
-                  {editable ? (
+                  {rowEditable ? (
                     <input
                       aria-label={`Name of ${s.label}`}
                       defaultValue={s.label}
@@ -107,12 +110,12 @@ export function RenovationSubCategorySettings({ initialGroup, onClose }: { initi
                     <span className={`min-w-0 flex-1 text-[13px] ${hidden ? 'text-ink-muted' : ''}`}>{s.label}</span>
                   )}
                   {hidden && <span className="rounded-full bg-surface px-2 py-0.5 text-[11px] font-semibold text-ink-secondary">Hidden</span>}
-                  {editable && (
+                  {rowEditable && (
                     <>
-                      <button type="button" className={styles.iconBtn} aria-label={`Move ${s.label} up`} disabled={busy || i === 0} onClick={() => void move(i, -1)}>
+                      <button type="button" className={styles.iconBtn} aria-label={`Move ${s.label} up`} disabled={busy || i === 0 || isFixedSub(group, subs[i - 1].code)} onClick={() => void move(i, -1)}>
                         <ArrowUp size={14} strokeWidth={1.75} />
                       </button>
-                      <button type="button" className={styles.iconBtn} aria-label={`Move ${s.label} down`} disabled={busy || i === subs.length - 1} onClick={() => void move(i, 1)}>
+                      <button type="button" className={styles.iconBtn} aria-label={`Move ${s.label} down`} disabled={busy || i === subs.length - 1 || isFixedSub(group, subs[i + 1].code)} onClick={() => void move(i, 1)}>
                         <ArrowDown size={14} strokeWidth={1.75} />
                       </button>
                       <button

@@ -14,7 +14,7 @@
    When that stage is skipped, the line moves to the next stage that is not
    skipped, so its proof of delivery and billing still have a home. */
 
-import { categoryGroupOf, defaultStageOf, type CatalogGroup } from "../../scm/shared/renovation-catalog";
+import { categoryGroupOf, defaultStageOf, siteGroupOf, type CatalogGroup } from "../../scm/shared/renovation-catalog";
 import {
   AUTO_SKIP_RULE,
   RENO_STAGES,
@@ -85,12 +85,15 @@ export interface DeriveStageInput {
   lines: readonly ContractLine[] | null;
 }
 
-export function lineGroup(line: Pick<ContractLine, "group" | "category">): CatalogGroup | null {
-  return line.group ?? categoryGroupOf(line.category);
+type GroupFacts = Pick<ContractLine, "group" | "category"> & { subCategory?: string | null };
+
+/** The group a line works as on site: a site-trade service (aircon install, cleaning, project management) counts as WORKS. */
+export function lineGroup(line: GroupFacts): CatalogGroup | null {
+  return siteGroupOf(line.group ?? categoryGroupOf(line.category), line.subCategory);
 }
 
 /** The stage a line belongs to before any skip moves it. */
-export function lineHomeStage(line: Pick<ContractLine, "group" | "category" | "stageOverride">): StageKey | null {
+export function lineHomeStage(line: GroupFacts & Pick<ContractLine, "stageOverride">): StageKey | null {
   if (isStageKey(line.stageOverride)) return line.stageOverride;
   const group = lineGroup(line);
   if (group) return defaultStageOf(group);

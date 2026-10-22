@@ -4,7 +4,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, test } from "vitest";
-import { SUB_CATEGORIES } from "../src/scm/shared/renovation-catalog";
+import { SITE_TRADE_SERVICES, SUB_CATEGORIES } from "../src/scm/shared/renovation-catalog";
 import {
   FLOW_STEP_DEFAULT_LABEL,
   FLOW_STEP_KEYS,
@@ -78,8 +78,8 @@ describe("task categories (Notion vocabulary)", () => {
     for (const c of TASK_CATEGORIES) expect(RENO_STAGES).toContain(c.stage);
   });
 
-  test("every trade maps to a WORKS sub-category and every template task to an INTERNAL_TASKS key", () => {
-    const works = new Set(SUB_CATEGORIES.filter((s) => s.group === "WORKS").map((s) => s.code));
+  test("every trade maps to a WORKS sub-category (or site-trade service) and every template task to an INTERNAL_TASKS key", () => {
+    const works = new Set(SUB_CATEGORIES.filter((s) => s.group === "WORKS" || SITE_TRADE_SERVICES.includes(s.code)).map((s) => s.code));
     const keys = new Set(INTERNAL_TASKS.map((t) => t.key));
     for (const c of TASK_CATEGORIES) {
       expect(c.trade === null || c.internalKey === null, c.code).toBe(true);
@@ -93,7 +93,7 @@ describe("task categories (Notion vocabulary)", () => {
     const seen = new Map<string, number>();
     for (const c of TASK_CATEGORIES.filter((x) => x.tradeDefault)) seen.set(`${c.trade}|${c.fix}`, (seen.get(`${c.trade}|${c.fix}`) ?? 0) + 1);
     for (const [k, n] of seen) expect(n, k).toBe(1);
-    for (const s of SUB_CATEGORIES.filter((x) => x.group === "WORKS" && !["CLEANING", "PROJECT_MGMT"].includes(x.code))) {
+    for (const s of SUB_CATEGORIES.filter((x) => (x.group === "WORKS" || SITE_TRADE_SERVICES.includes(x.code)) && !["CLEANING", "PROJECT_MGMT"].includes(x.code))) {
       expect(categoryOfTask(s.code, s.code === "ELECTRICAL" ? "first" : "single"), s.code).not.toBeNull();
     }
   });

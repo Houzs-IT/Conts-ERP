@@ -16,6 +16,7 @@ import { todayMyt } from "../../scm/lib/my-time";
 import { loadProjectRows, loadRenovationFacts, type Db, type ProjectFacts } from "./load";
 import { planTradeTasks, type WorksLine } from "./tradeTasks";
 import { computeProjectView } from "./view";
+import { lineGroup } from "./stages";
 import { syncProjectDates } from "./projectDates";
 
 /** Legacy `projects.stage` kept meaningful for the exhibition calendar and lists. */
@@ -37,17 +38,22 @@ export async function writeCachedStage(db: Db, projectId: number, facts: Project
 
 export interface SyncResult { created: number; refreshed: number; skipped: number; reopened: number }
 
-/** Create / refresh / auto-skip / re-open trade tasks from the contract's WORKS lines. Null when the lines cannot be read. */
-export async function syncTradeTasks(db: Db, projectId: number, f: ProjectFacts): Promise<SyncResult | null> {
-  if (f.allLines === null) return null;
+/** The contract lines that make trade tasks: WORKS lines and the site-trade services (aircon install, cleaning, project management). */
+export function contractWorksLines(f: Pick<ProjectFacts, "allLines" | "poLines">): WorksLine[] {
   const poBySoItem = new Map<string, (typeof f.poLines)[number]>();
   for (const pl of f.poLines) if (!poBySoItem.has(pl.so_item_id)) poBySoItem.set(pl.so_item_id, pl);
-  const works: WorksLine[] = f.allLines
-    .filter((l) => l.group === "WORKS")
+  return (f.allLines ?? [])
+    .filter((l) => lineGroup(l) === "WORKS")
     .map((l) => {
       const pl = poBySoItem.get(l.soItemId);
       return { soItemId: l.soItemId, trade: l.subCategory, omitted: l.omitted, poItemId: pl?.id ?? null, poId: pl?.purchase_order_id ?? null, supplierId: pl?.supplier_id ?? l.supplierId ?? null };
     });
+}
+
+/** Create / refresh / auto-skip / re-open trade tasks from the contract's WORKS lines (site-trade services included). Null when the lines cannot be read. */
+export async function syncTradeTasks(db: Db, projectId: number, f: ProjectFacts): Promise<SyncResult | null> {
+  if (f.allLines === null) return null;
+  const works = contractWorksLines(f);
   const typeKeys = f.type?.stage_keys ?? [...RENO_STAGES];
   const plan = planTradeTasks({ works, existing: f.tasks, typeStageKeys: typeKeys });
   const co = Number(f.project.company_id);

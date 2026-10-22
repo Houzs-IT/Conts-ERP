@@ -1,5 +1,5 @@
 /* Sub-category settings (Products > SKU Master > Sub-categories): what can be
- * added, renamed and hidden, and what stays fixed (the Works trades, the rows
+ * added, renamed and hidden, and what stays fixed (the Works trades and the site-trade services, the rows
  * old Houzs categories map through, the last shown one of a group). */
 import { describe, expect, it, vi } from 'vitest';
 import { Hono } from 'hono';
@@ -21,6 +21,8 @@ const T: Record<string, Record<string, unknown>[]> = {
     sub('FURNITURE', 'SOFA', 'Sofa', 10, ['SOFA']),
     sub('SERVICE', 'DELIVERY', 'Delivery', 10),
     sub('SERVICE', 'STYLING', 'Styling', 20),
+    sub('SERVICE', 'CLEANING', 'Cleaning', 60),
+    sub('LIGHTING', 'DOWNLIGHT', 'Downlight', 10),
   ],
   product_uoms: [
     uom('UNIT', 'Unit', 'UNIT', false, 20),
@@ -62,7 +64,7 @@ describe('sub-category settings', () => {
     expect(r.status).toBe(201);
     expect(await r.json()).toMatchObject({ code: 'CURTAIN_INSTALL' });
     const added = (await loadSubCategories(sb as never)).find((s) => s.code === 'CURTAIN_INSTALL');
-    expect(added).toMatchObject({ group: 'SERVICE', label: 'Curtain install', sort: 30, active: true });
+    expect(added).toMatchObject({ group: 'SERVICE', label: 'Curtain install', sort: 70, active: true });
   });
 
   it('the saved list is what a SKU save and an import check against', async () => {
@@ -79,6 +81,15 @@ describe('sub-category settings', () => {
     expect((await send('PATCH', '/sub-categories/HACKING', { label: 'Demolition' })).status).toBe(400);
   });
 
+  it('the site-trade services filed under Service (cleaning, aircon install, project management) stay fixed', async () => {
+    const rename = await send('PATCH', '/sub-categories/CLEANING', { label: 'Deep clean' });
+    expect(rename.status).toBe(400);
+    expect(await rename.json()).toMatchObject({ error: 'group_fixed' });
+    expect((await send('PATCH', '/sub-categories/CLEANING', { active: false })).status).toBe(400);
+    const list = (await (await app().request('/')).json()) as { subCategories: Array<{ code: string }> };
+    expect(list.subCategories.find((s) => s.code === 'CLEANING')).toMatchObject({ label: 'Cleaning', active: true });
+  });
+
   it('renames and hides; a hidden one can be shown again', async () => {
     expect((await send('PATCH', '/sub-categories/STYLING', { label: 'Interior styling' })).status).toBe(200);
     expect((await send('PATCH', '/sub-categories/STYLING', { active: false })).status).toBe(200);
@@ -93,7 +104,9 @@ describe('sub-category settings', () => {
     expect(await legacy.json()).toMatchObject({ error: 'legacy_mapped' });
     expect((await send('PATCH', '/sub-categories/STYLING', { active: false })).status).toBe(200);
     expect((await send('PATCH', '/sub-categories/CURTAIN_INSTALL', { active: false })).status).toBe(200);
-    const last = await send('PATCH', '/sub-categories/DELIVERY', { active: false });
+    /* Service keeps Cleaning (fixed, always shown), so Delivery may go; Lighting's only one may not. */
+    expect((await send('PATCH', '/sub-categories/DELIVERY', { active: false })).status).toBe(200);
+    const last = await send('PATCH', '/sub-categories/DOWNLIGHT', { active: false });
     expect(await last.json()).toMatchObject({ error: 'last_one' });
   });
 

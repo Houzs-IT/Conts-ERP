@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import {
   CATALOG_GROUPS,
   RENOVATION_GROUPS,
+  SITE_TRADE_SERVICES,
   SUB_CATEGORIES,
   categoryGroupOf,
   defaultStageOf,
@@ -70,8 +71,9 @@ describe("renovation stages", () => {
     expect(isSkippable("furniture")).toBe(true);
   });
 
-  test("every trade in the site order is a WORKS sub-category", () => {
-    const works = new Set(subCategoriesOf("WORKS").map((s) => s.code));
+  test("every trade in the site order is a WORKS sub-category or a site-trade service", () => {
+    const works = new Set([...subCategoriesOf("WORKS").map((s) => s.code), ...SITE_TRADE_SERVICES]);
+    for (const code of SITE_TRADE_SERVICES) expect(subCategoriesOf("SERVICE").some((s) => s.code === code), code).toBe(true);
     for (const step of TRADE_ORDER) expect(works.has(step.trade), step.trade).toBe(true);
   });
 
