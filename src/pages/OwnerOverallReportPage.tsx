@@ -28,6 +28,8 @@ type Key = Exclude<keyof OverallTotals, 'units' | 'losing'> | 'ownerPct';
 interface Col { key: Key; label: string; level: Level; group: Group; kind: Kind; phoneHide?: boolean }
 
 const GROUP_LABEL: Record<Group, string> = { inc: 'Income', ded: 'Deductions', pro: 'Profit', pay: 'Owner payout', res: 'Result' };
+/** Income reads green, deductions red, the owner's money blue (owner, Oct 2026); profit and result stay ink. */
+const GROUP_TONE: Partial<Record<Group, string>> = { inc: 'text-success', ded: 'text-danger', pay: 'text-info' };
 const COLS: Col[] = [
   { key: 'occupancy', label: 'Occupancy', level: 1, group: 'inc', kind: 'occ', phoneHide: true },
   { key: 'nights', label: 'Nights', level: 3, group: 'inc', kind: 'int' },
@@ -73,7 +75,7 @@ function monthOptions() {
   });
 }
 
-const CELL = 'px-2 sm:px-3 py-2 whitespace-nowrap';
+const CELL = 'px-2 sm:px-3 py-2 whitespace-nowrap align-middle';
 const DIVIDER = '[border-left:1px_solid_var(--color-line)]';
 const UNIT_EDGE = 'sticky left-0 z-[1] [border-right:1px_solid_var(--color-line)]';
 /** A selected row's tint over the card colour, so the sticky Unit cell stays solid in the dark theme too. */
@@ -86,17 +88,19 @@ const PANEL_ROOM = PANEL - 28 + 16;
 /** `cents: false` on a phone's L1, so the four columns fit its width. */
 function Value({ c, v, revenue, cents = true }: { c: Col; v: number; revenue?: number; cents?: boolean }) {
   const dash = <span className="text-faint">—</span>;
+  // A negative figure stays red whatever its group (an O2 charge, a loss-making GP).
+  const tone = v < 0 ? 'text-danger' : GROUP_TONE[c.group];
   switch (c.kind) {
     case 'gl': return <GainLoss sen={v} cents={cents} />;
     case 'occ': return v ? (
-      <span className="inline-flex items-center justify-end gap-2">
+      <span className="inline-flex items-center justify-center gap-2">
         <span aria-hidden className="h-1 w-10 rounded-full bg-muted overflow-hidden"><span className="block h-full bg-line-strong" style={{ width: `${Math.min(v, 100)}%` }} /></span>
-        <span className="tabular-nums">{percent(v)}</span>
+        <span className={cx('tabular-nums', tone)}>{percent(v)}</span>
       </span>) : dash;
-    case 'int': return v ? <span className="tabular-nums">{count(v)}</span> : dash;
-    case 'ownpct': return v ? <span className="tabular-nums">{v}%</span> : dash;
-    case 'pct': return revenue === 0 ? dash : <span className={cx('tabular-nums', v < 0 && 'text-danger')}>{percent(v)}</span>;
-    default: return v ? <span className={cx('tabular-nums', v < 0 && 'text-danger')}>{money(v, cents)}</span> : dash;
+    case 'int': return v ? <span className={cx('tabular-nums', tone)}>{count(v)}</span> : dash;
+    case 'ownpct': return v ? <span className={cx('tabular-nums', tone)}>{v}%</span> : dash;
+    case 'pct': return revenue === 0 ? dash : <span className={cx('tabular-nums', tone)}>{percent(v)}</span>;
+    default: return v ? <span className={cx('tabular-nums', tone)}>{money(v, cents)}</span> : dash;
   }
 }
 
@@ -193,12 +197,12 @@ export default function OwnerOverallReportPage() {
   }
   function reset() { setQ(''); setContract('all'); setLo(null); setHi(null); setQuick(null); setSort(null); }
 
-  const sortButton = (key: Key | 'code', label: string, right: boolean) => {
+  const sortButton = (key: Key | 'code', label: string) => {
     const on = sort?.key === key;
     return (
       <button type="button" onClick={() => toggleSort(key)} title={`Sort by ${label}`}
         className={cx('inline-flex items-center gap-1 bg-transparent border-none p-0 cursor-pointer font-sans text-meta font-semibold whitespace-nowrap max-sm:whitespace-normal',
-          right && 'flex-row-reverse', on ? 'text-ink' : 'text-muted-ink hover:text-ink')}>
+          on ? 'text-ink' : 'text-muted-ink hover:text-ink')}>
         {label}<span aria-hidden className="w-2 text-[9px]">{on ? (sort.dir === 1 ? '▲' : '▼') : ''}</span>
       </button>
     );
@@ -210,7 +214,7 @@ export default function OwnerOverallReportPage() {
       <td className={cx(CELL, UNIT_EDGE, 'text-caption font-semibold uppercase tracking-[0.09em] text-muted-ink max-sm:whitespace-normal',
         grand ? 'bg-muted [border-top:2px_solid_var(--color-line-strong)]' : 'bg-card [border-top:1px_solid_var(--color-line-strong)]')}>{label}</td>
       {cols.map((c, i) => (
-        <td key={c.key} className={cx(CELL, 'text-right font-semibold', fit, groupStart(i) && DIVIDER, hideOnPhone(c),
+        <td key={c.key} className={cx(CELL, 'text-center font-semibold', fit, groupStart(i) && DIVIDER, hideOnPhone(c),
           grand ? 'bg-muted [border-top:2px_solid_var(--color-line-strong)]' : 'bg-card [border-top:1px_solid_var(--color-line-strong)]')}>
           {c.key === 'ownerPct' ? null : <Value c={c} v={t[c.key]} revenue={t.revenue} cents={cents} />}
         </td>
@@ -248,10 +252,10 @@ export default function OwnerOverallReportPage() {
         {level > 1 && (
           <tr>
             <th scope="col" rowSpan={2} aria-sort={ariaSort('code')}
-              className={cx(CELL, UNIT_EDGE, 'z-[4] bg-muted text-left align-bottom [border-bottom:1px_solid_var(--color-line)]')}>{sortButton('code', 'Unit', false)}</th>
+              className={cx(CELL, UNIT_EDGE, 'z-[4] bg-muted text-left align-bottom [border-bottom:1px_solid_var(--color-line)]')}>{sortButton('code', 'Unit')}</th>
             {bands.map((b, i) => (
               <th key={b.group} scope="colgroup" colSpan={b.span}
-                className={cx('px-3 pt-2 pb-1 bg-muted text-left text-caption font-semibold uppercase tracking-[0.09em] text-muted-ink [border-bottom:1px_solid_var(--color-line-soft)]', i > 0 && DIVIDER)}>
+                className={cx('px-3 pt-2 pb-1 bg-muted text-center text-caption font-semibold uppercase tracking-[0.09em] [border-bottom:1px_solid_var(--color-line-soft)]', GROUP_TONE[b.group] ?? 'text-muted-ink', i > 0 && DIVIDER)}>
                 {GROUP_LABEL[b.group]}
               </th>
             ))}
@@ -259,12 +263,12 @@ export default function OwnerOverallReportPage() {
         )}
         <tr>
           {level === 1 && (
-            <th scope="col" aria-sort={ariaSort('code')} className={cx(CELL, UNIT_EDGE, 'z-[4] bg-muted text-left [border-bottom:1px_solid_var(--color-line)]')}>{sortButton('code', 'Unit', false)}</th>
+            <th scope="col" aria-sort={ariaSort('code')} className={cx(CELL, UNIT_EDGE, 'z-[4] bg-muted text-left [border-bottom:1px_solid_var(--color-line)]')}>{sortButton('code', 'Unit')}</th>
           )}
           {cols.map((c, i) => (
             <th key={c.key} scope="col" aria-sort={ariaSort(c.key)}
-              className={cx(CELL, 'bg-muted text-right [border-bottom:1px_solid_var(--color-line)]', fit, groupStart(i) && DIVIDER, hideOnPhone(c))}>
-              {sortButton(c.key, c.label, true)}
+              className={cx(CELL, 'bg-muted text-center [border-bottom:1px_solid_var(--color-line)]', fit, groupStart(i) && DIVIDER, hideOnPhone(c))}>
+              {sortButton(c.key, c.label)}
             </th>
           ))}
         </tr>
@@ -294,7 +298,7 @@ export default function OwnerOverallReportPage() {
                     </span>
                   </td>
                   {cols.map((c, i) => (
-                    <td key={c.key} className={cx(CELL, bg, 'text-right [border-top:1px_solid_var(--color-line-soft)]', fit, groupStart(i) && DIVIDER, hideOnPhone(c))}>
+                    <td key={c.key} className={cx(CELL, bg, 'text-center [border-top:1px_solid_var(--color-line-soft)]', fit, groupStart(i) && DIVIDER, hideOnPhone(c))}>
                       <Value c={c} v={r[c.key]} revenue={r.revenue} cents={cents} />
                     </td>
                   ))}
