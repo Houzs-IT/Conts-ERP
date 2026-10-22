@@ -8,17 +8,17 @@ import { Button } from '../components/Button';
 import Icon from '../components/Icon';
 import { overallTotals, type OverallFigures } from '../lib/ownerOverall';
 
-/** The overall owner report's unit drawer: L1 summary, L2 breakdown, L3 full detail. Every figure comes from
+/** The overall owner report's unit drawer: L1 breakdown, L2 full detail. Every figure comes from
  *  ownerOverall.ts; this file only lays them out. */
 
-export type Level = 1 | 2 | 3;
+export type Level = 1 | 2;
 export interface ReportRow extends OverallFigures { unitId: string; code: string; building: string; ownerName: string }
 
 export const LEVELS: { key: `${Level}`; label: string }[] = [
-  { key: '1', label: 'L1 Summary' }, { key: '2', label: 'L2 Breakdown' }, { key: '3', label: 'L3 Full detail' },
+  { key: '1', label: 'L1 Breakdown' }, { key: '2', label: 'L2 Full detail' },
 ];
 
-/** 1,234.56 with a real minus sign; `cents: false` gives 1,235 (the phone's summary table). */
+/** 1,234.56 with a real minus sign; `cents: false` gives 1,235. */
 export const money = (sen: number, cents = true) => (sen < 0 ? `−${amount(-sen, { cents })}` : amount(sen, { cents }));
 export const signed = (sen: number, cents = true) => (sen < 0 ? `−${amount(-sen, { cents })}` : `+${amount(sen, { cents })}`);
 export const contractName = (c: 'LT' | 'PS') => (c === 'LT' ? 'Long term' : 'Profit sharing');
@@ -74,7 +74,11 @@ export function OwnerOverallDetail({ row, all, level, onLevel, onClose, onStep, 
   onStep: (by: -1 | 1) => void; position: number; total: number;
 }) {
   const r = row, lt = r.contract === 'LT', st = unitStatus(r);
-  const deductionItems: [string, number][] = [['Cleaning', r.cleaning], ['Utilities', r.utilities], ['Additional deduction', r.additional], ['Misc. charges', r.misc]];
+  // Full detail splits utilities into its bills.
+  const utilityItems: [string, number][] = level === 2
+    ? [['Electricity', r.electricity], ['Water', r.water], ['Internet', r.internet], ['Indah Water', r.sewerage]]
+    : [['Utilities', r.utilities]];
+  const deductionItems: [string, number][] = [['Cleaning', r.cleaning], ...utilityItems, ['Additional deduction', r.additional], ['Misc. charges', r.misc]];
   const biggest = Math.max(1, ...deductionItems.map(([, v]) => v));
   // The split bar: what the deductions took, what the owner is owed, and what is left (nothing when losing).
   const scale = Math.max(r.revenue, r.deductions + r.ownerBase, 1);
@@ -134,39 +138,37 @@ export function OwnerOverallDetail({ row, all, level, onLevel, onClose, onStep, 
           </div>
         </div>
 
-        {level >= 2 && <>
-          <Section title="Revenue and profitability" level={2}>
-            <Line label="Total revenue" value={r.revenue ? money(r.revenue) : '—'} tone={r.revenue ? undefined : 'text-faint'} />
-            <Line label="Gross profit (GP)" value={money(r.gp)} note={r.revenue ? `${percent(r.margin)} margin` : undefined} tone={r.gp < 0 ? 'text-danger' : undefined} />
-            <Line label="Gain / Loss" value={signed(r.gainLoss)} tone={r.gainLoss < 0 ? 'text-danger' : 'text-success'} />
-          </Section>
-          <Section title="Itemized deductions" level={2}>
-            {deductionItems.map(([label, v]) => (
-              <div key={label} className="py-1.5">
-                <div className="flex items-baseline justify-between gap-3">
-                  <span className="text-muted-ink">{label}</span>
-                  <span className={cx('tabular-nums', v ? 'text-ink' : 'text-faint')}>{v ? money(v) : '—'}</span>
-                </div>
-                <div className="mt-1 h-1 rounded-full bg-muted overflow-hidden"><span className="block h-full bg-warning-line" style={{ width: `${(v / biggest) * 100}%` }} /></div>
+        <Section title="Revenue and profitability" level={1}>
+          <Line label="Total revenue" value={r.revenue ? money(r.revenue) : '—'} tone={r.revenue ? undefined : 'text-faint'} />
+          <Line label="Gross profit (GP)" value={money(r.gp)} tone={r.gp < 0 ? 'text-danger' : undefined} />
+          <Line label="Gain / Loss" value={signed(r.gainLoss)} tone={r.gainLoss < 0 ? 'text-danger' : 'text-success'} />
+        </Section>
+        <Section title="Itemized deductions" level={1}>
+          {deductionItems.map(([label, v]) => (
+            <div key={label} className="py-1.5">
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="text-muted-ink">{label}</span>
+                <span className={cx('tabular-nums', v ? 'text-ink' : 'text-faint')}>{v ? money(v) : '—'}</span>
               </div>
-            ))}
-            <div className="mt-2 flex items-baseline justify-between pt-2 font-semibold [border-top:1px_dashed_var(--color-line)]">
-              <span>Total deduction</span><span className="tabular-nums">{money(r.deductions)}</span>
+              <div className="mt-1 h-1 rounded-full bg-muted overflow-hidden"><span className="block h-full bg-warning-line" style={{ width: `${(v / biggest) * 100}%` }} /></div>
             </div>
-          </Section>
-          <Section title="Owner payout split" level={2}>
-            <Line label="Owner %" value={lt ? '—' : `${r.ownerPct}%`} note={lt ? 'not used on long term' : 'of GP'} tone={lt ? 'text-faint' : undefined} />
-            <Line label={lt ? 'LT (fixed rent)' : 'GRR (guaranteed minimum)'} value={r.ltGrr ? money(r.ltGrr) : '—'} tone={r.ltGrr ? undefined : 'text-faint'} />
-            <Line label="O1" value={r.o1 ? money(r.o1) : '—'} note={lt ? undefined : 'GP × owner %'} tone={r.o1 ? undefined : 'text-faint'} />
-            <Line label="O2" value={r.o2 ? money(r.o2) : '—'} note="adjustments" tone={r.o2 < 0 ? 'text-danger' : r.o2 ? undefined : 'text-faint'} />
-            <div className="mt-2 flex items-baseline justify-between rounded-control bg-muted px-3 py-2 font-semibold">
-              <span>Final owner payout</span><span className="tabular-nums text-heading">{money(r.payout)}</span>
-            </div>
-          </Section>
-        </>}
+          ))}
+          <div className="mt-2 flex items-baseline justify-between pt-2 font-semibold [border-top:1px_dashed_var(--color-line)]">
+            <span>Total deduction</span><span className="tabular-nums">{money(r.deductions)}</span>
+          </div>
+        </Section>
+        <Section title="Owner payout split" level={1}>
+          <Line label="Owner %" value={lt ? '—' : `${r.ownerPct}%`} note={lt ? 'not used on long term' : 'of GP'} tone={lt ? 'text-faint' : undefined} />
+          <Line label={lt ? 'LT (fixed rent)' : 'GRR (guaranteed minimum)'} value={r.ltGrr ? money(r.ltGrr) : '—'} tone={r.ltGrr ? undefined : 'text-faint'} />
+          <Line label="O1" value={r.o1 ? money(r.o1) : '—'} note={lt ? undefined : 'GP × owner %'} tone={r.o1 ? undefined : 'text-faint'} />
+          <Line label="O2" value={r.o2 ? money(r.o2) : '—'} note="adjustments" tone={r.o2 < 0 ? 'text-danger' : r.o2 ? undefined : 'text-faint'} />
+          <div className="mt-2 flex items-baseline justify-between rounded-control bg-muted px-3 py-2 font-semibold">
+            <span>Final owner payout</span><span className="tabular-nums text-heading">{money(r.payout)}</span>
+          </div>
+        </Section>
 
-        {level >= 3 && <>
-          <Section title="How the numbers are worked out" level={3}>
+        {level === 2 && <>
+          <Section title="How the numbers are worked out" level={2}>
             <Ledger rows={[
               ['', 'Total revenue', money(r.revenue)],
               ...deductionItems.map(([label, v]): LedgerRow => ['−', label, money(v)]),
@@ -180,15 +182,14 @@ export function OwnerOverallDetail({ row, all, level, onLevel, onClose, onStep, 
               O2 is passed to the owner and does not change gain / loss.
             </p>
           </Section>
-          <Section title="Nights and unit economics" level={3}>
+          <Section title="Nights and unit economics" level={2}>
             <Line label="Nights booked" value={`${r.nights} / ${r.days}`} note={percent(r.occupancy)} />
             <Line label="Revenue per booked night" value={r.nights ? money(r.revPerNight) : '—'} />
             <Line label="Cleaning per booked night" value={r.nights ? money(Math.round(r.cleaning / r.nights)) : '—'} />
             <Line label="Utilities per day" value={money(Math.round(r.utilities / r.days))} note={`all ${r.days} days`} />
             <Line label="Deductions / revenue" value={r.revenue ? percent((r.deductions / r.revenue) * 100) : '—'} />
-            <Line label="Break-even revenue" value={money(r.breakEven)} note={lt ? 'deductions + LT' : 'deductions + GRR'} />
           </Section>
-          <Section title="Compared with other units" level={3}>
+          <Section title="Compared with other units" level={2}>
             <p className="mb-1 text-meta text-muted-ink">Against the {plural(peers.length, `${contractName(r.contract).toLowerCase()} unit`)}</p>
             <Line label="Gain / Loss rank" value={`#${rank} of ${peers.length}`} />
             <div className="flex items-baseline justify-between gap-3 py-1.5">
@@ -208,11 +209,9 @@ export function OwnerOverallDetail({ row, all, level, onLevel, onClose, onStep, 
           </Section>
         </>}
 
-        {level < 3 && (
+        {level === 1 && (
           <div className="px-5 pb-5 pt-1">
-            <Button variant="secondary" size="sm" className="w-full" onClick={() => onLevel((level + 1) as Level)}>
-              Show {level === 1 ? 'breakdown (L2)' : 'full detail (L3)'}
-            </Button>
+            <Button variant="secondary" size="sm" className="w-full" onClick={() => onLevel(2)}>Show full detail (L2)</Button>
           </div>
         )}
       </div>
