@@ -24,33 +24,34 @@ interface ApiRow extends OverallInput { unitId: string; code: string; building: 
 interface Payload { month: string; excluded: number; rows: ApiRow[]; generatedAt: string }
 
 type Group = 'inc' | 'ded' | 'pro' | 'pay' | 'res';
-type Kind = 'money' | 'occ' | 'int' | 'pct' | 'ownpct' | 'gl';
+type Kind = 'money' | 'occ' | 'int' | 'ownpct' | 'gl';
 type Key = Exclude<keyof OverallTotals, 'units' | 'losing'> | 'ownerPct';
-interface Col { key: Key; label: string; level: Level; group: Group; kind: Kind; phoneHide?: boolean }
+interface Col { key: Key; label: string; level: Level; group: Group; kind: Kind }
 
 const GROUP_LABEL: Record<Group, string> = { inc: 'Income', ded: 'Deductions', pro: 'Profit', pay: 'Owner payout', res: 'Result' };
 /** Income reads green, deductions red, the owner's money blue (owner, Oct 2026); profit and result stay ink. */
 const GROUP_TONE: Partial<Record<Group, string>> = { inc: 'text-success', ded: 'text-danger', pay: 'text-info' };
 const COLS: Col[] = [
-  { key: 'occupancy', label: 'Occupancy', level: 1, group: 'inc', kind: 'occ', phoneHide: true },
-  { key: 'nights', label: 'Nights', level: 3, group: 'inc', kind: 'int' },
+  { key: 'occupancy', label: 'Occupancy', level: 1, group: 'inc', kind: 'occ' },
+  { key: 'nights', label: 'Nights', level: 2, group: 'inc', kind: 'int' },
   { key: 'revenue', label: 'Total revenue', level: 1, group: 'inc', kind: 'money' },
-  { key: 'revPerNight', label: 'Rev / night', level: 3, group: 'inc', kind: 'money' },
-  { key: 'cleaning', label: 'Cleaning', level: 2, group: 'ded', kind: 'money' },
-  { key: 'utilities', label: 'Utilities', level: 2, group: 'ded', kind: 'money' },
-  { key: 'additional', label: 'Add. ded.', level: 2, group: 'ded', kind: 'money' },
-  { key: 'misc', label: 'Misc', level: 2, group: 'ded', kind: 'money' },
-  { key: 'deductions', label: 'Total deduction', level: 1, group: 'ded', kind: 'money', phoneHide: true },
-  { key: 'gp', label: 'GP', level: 2, group: 'pro', kind: 'money' },
-  { key: 'margin', label: 'Margin', level: 3, group: 'pro', kind: 'pct' },
-  { key: 'ownerPct', label: 'Owner %', level: 2, group: 'pay', kind: 'ownpct' },
-  { key: 'ltGrr', label: 'LT / GRR', level: 2, group: 'pay', kind: 'money' },
-  { key: 'o1', label: 'O1', level: 2, group: 'pay', kind: 'money' },
-  { key: 'o2', label: 'O2', level: 2, group: 'pay', kind: 'money' },
-  { key: 'ownerBase', label: 'Owner base', level: 3, group: 'pay', kind: 'money' },
+  { key: 'revPerNight', label: 'Rev / night', level: 2, group: 'inc', kind: 'money' },
+  { key: 'cleaning', label: 'Cleaning', level: 1, group: 'ded', kind: 'money' },
+  { key: 'electricity', label: 'Electricity', level: 2, group: 'ded', kind: 'money' },
+  { key: 'water', label: 'Water', level: 2, group: 'ded', kind: 'money' },
+  { key: 'internet', label: 'Internet', level: 2, group: 'ded', kind: 'money' },
+  { key: 'sewerage', label: 'Indah Water', level: 2, group: 'ded', kind: 'money' },
+  { key: 'utilities', label: 'Utilities', level: 1, group: 'ded', kind: 'money' },
+  { key: 'additional', label: 'Add. ded.', level: 1, group: 'ded', kind: 'money' },
+  { key: 'misc', label: 'Misc', level: 1, group: 'ded', kind: 'money' },
+  { key: 'deductions', label: 'Total deduction', level: 1, group: 'ded', kind: 'money' },
+  { key: 'gp', label: 'GP', level: 1, group: 'pro', kind: 'money' },
+  { key: 'ownerPct', label: 'Owner %', level: 1, group: 'pay', kind: 'ownpct' },
+  { key: 'ltGrr', label: 'LT / GRR', level: 1, group: 'pay', kind: 'money' },
+  { key: 'o1', label: 'O1', level: 1, group: 'pay', kind: 'money' },
+  { key: 'o2', label: 'O2', level: 1, group: 'pay', kind: 'money' },
   { key: 'payout', label: 'Owner payout', level: 1, group: 'pay', kind: 'money' },
   { key: 'gainLoss', label: 'Gain / Loss', level: 1, group: 'res', kind: 'gl' },
-  { key: 'breakEven', label: 'Break-even', level: 3, group: 'res', kind: 'money' },
 ];
 const colOf = (key: string) => COLS.find(c => c.key === key) ?? COLS[0];
 /** Money is typed in ringgit; everything else as it is shown (percent, nights). */
@@ -62,7 +63,7 @@ type Sort = { key: Key | 'code'; dir: 1 | -1 } | null;
 
 const LEVEL_KEY = 'ownerOverall.level';
 function readLevel(): Level {
-  try { const v = Number(localStorage.getItem(LEVEL_KEY)); return v === 2 || v === 3 ? v : 1; } catch { return 1; }
+  try { return localStorage.getItem(LEVEL_KEY) === '2' ? 2 : 1; } catch { return 1; }
 }
 
 /** The last twelve months, newest first; last month (the latest complete one) is the default. */
@@ -90,13 +91,12 @@ const SELECTED_BG ='[background:linear-gradient(var(--color-gold-tint),var(--col
 const PANEL = 440;
 const PANEL_ROOM = PANEL - 28 + 16;
 
-/** `cents: false` on a phone's L1, so the four columns fit its width. */
-function Value({ c, v, revenue, cents = true }: { c: Col; v: number; revenue?: number; cents?: boolean }) {
+function Value({ c, v }: { c: Col; v: number }) {
   const dash = <span className="text-faint">—</span>;
   // A negative figure stays red whatever its group (an O2 charge, a loss-making GP).
   const tone = v < 0 ? 'text-danger' : GROUP_TONE[c.group];
   switch (c.kind) {
-    case 'gl': return <GainLoss sen={v} cents={cents} />;
+    case 'gl': return <GainLoss sen={v} />;
     case 'occ': return v ? (
       <span className="inline-flex items-center justify-center gap-2">
         <span aria-hidden className="h-1 w-10 rounded-full bg-muted overflow-hidden"><span className="block h-full bg-line-strong" style={{ width: `${Math.min(v, 100)}%` }} /></span>
@@ -104,8 +104,7 @@ function Value({ c, v, revenue, cents = true }: { c: Col; v: number; revenue?: n
       </span>) : dash;
     case 'int': return v ? <span className={cx('tabular-nums', tone)}>{count(v)}</span> : dash;
     case 'ownpct': return v ? <span className={cx('tabular-nums', tone)}>{v}%</span> : dash;
-    case 'pct': return revenue === 0 ? dash : <span className={cx('tabular-nums', tone)}>{percent(v)}</span>;
-    default: return v ? <span className={cx('tabular-nums', tone)}>{money(v, cents)}</span> : dash;
+    default: return v ? <span className={cx('tabular-nums', tone)}>{money(v)}</span> : dash;
   }
 }
 
@@ -129,7 +128,6 @@ export default function OwnerOverallReportPage() {
   // At 1440px a docked panel left the table three rows tall under the KPI strip and the filters.
   const wide = useMedia('(min-width: 1600px)');
   const phone = useMedia('(max-width: 639.98px)');
-  const xwide = useMedia('(min-width: 1536px)');
   const [panelTop, setPanelTop] = useState(0);
 
   const setLevel = useCallback((l: Level) => {
@@ -167,13 +165,7 @@ export default function OwnerOverallReportPage() {
   const row = at >= 0 ? order[at] : null;
   const totals = overallTotals(filtered);
   const cols = COLS.filter(c => c.level <= level);
-  const hideOnPhone = (c: Col) => level === 1 && c.phoneHide && 'max-sm:hidden';
-  const cents = !(phone && level === 1);
   const groupStart = (i: number) => i > 0 && cols[i - 1].group !== cols[i].group;
-  // L1 fills the width: the number columns fit their figures and the Unit column takes the rest. With room to spare
-  // (1536px or more and no panel beside the table) the columns breathe and the Unit column adds building and owner.
-  const roomy = level === 1 && xwide && !(wide && row);
-  const fit = level === 1 && cx('w-px', roomy && 'min-w-[136px]');
   // The band header: one cell per run of columns in the same group.
   const bands: { group: Group; span: number }[] = [];
   for (const c of cols) { const last = bands[bands.length - 1]; if (last?.group === c.group) last.span++; else bands.push({ group: c.group, span: 1 }); }
@@ -189,7 +181,7 @@ export default function OwnerOverallReportPage() {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
       if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey || t?.closest('input, textarea, select, [contenteditable="true"]')) return;
-      if (e.key === '1' || e.key === '2' || e.key === '3') { setLevel(Number(e.key) as Level); return; }
+      if (e.key === '1' || e.key === '2') { setLevel(Number(e.key) as Level); return; }
       if (!row) return;
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); step(e.key === 'ArrowDown' ? 1 : -1); }
       else if (e.key === 'Escape' && wide) setSelected(null);
@@ -222,9 +214,9 @@ export default function OwnerOverallReportPage() {
       <td className={cx(CELL, UNIT_EDGE, 'text-caption font-semibold uppercase tracking-[0.09em] text-muted-ink max-sm:whitespace-normal',
         grand ? 'bg-muted [border-top:2px_solid_var(--color-line-strong)]' : 'bg-card [border-top:1px_solid_var(--color-line-strong)]')}>{label}</td>
       {cols.map((c, i) => (
-        <td key={c.key} className={cx(CELL, 'text-center font-semibold', fit, groupStart(i) && DIVIDER, hideOnPhone(c),
+        <td key={c.key} className={cx(CELL, 'text-center font-semibold', groupStart(i) && DIVIDER,
           grand ? 'bg-muted [border-top:2px_solid_var(--color-line-strong)]' : 'bg-card [border-top:1px_solid_var(--color-line-strong)]')}>
-          {c.key === 'ownerPct' ? null : <Value c={c} v={t[c.key]} revenue={t.revenue} cents={cents} />}
+          {c.key === 'ownerPct' ? null : <Value c={c} v={t[c.key]} />}
         </td>
       ))}
     </tr>
@@ -255,27 +247,22 @@ export default function OwnerOverallReportPage() {
     body="Long-term and profit-sharing units appear here once they have reservations, costs or a fixed rent in the month." />;
   else if (!filtered.length) body = <EmptyState kind="filtered" title="No units match these filters." body="Widen the range or clear the search." action={{ label: 'Reset filters', onClick: reset }} />;
   else body = (
-    <table className={cx('border-separate border-spacing-0 text-copy', level === 1 ? 'w-full' : 'w-max min-w-full')}>
+    <table className="w-max min-w-full border-separate border-spacing-0 text-copy">
       <thead className="sticky top-0 z-[3]">
-        {level > 1 && (
-          <tr>
-            <th scope="col" rowSpan={2} aria-sort={ariaSort('code')}
-              className={cx(CELL, UNIT_EDGE, 'z-[4] bg-muted text-left align-bottom [border-bottom:1px_solid_var(--color-line)]')}>{sortButton('code', 'Unit')}</th>
-            {bands.map((b, i) => (
-              <th key={b.group} scope="colgroup" colSpan={b.span}
-                className={cx('px-3 pt-2 pb-1 bg-muted text-center text-caption font-semibold uppercase tracking-[0.09em] [border-bottom:1px_solid_var(--color-line-soft)]', GROUP_TONE[b.group] ?? 'text-muted-ink', i > 0 && DIVIDER)}>
-                {GROUP_LABEL[b.group]}
-              </th>
-            ))}
-          </tr>
-        )}
         <tr>
-          {level === 1 && (
-            <th scope="col" aria-sort={ariaSort('code')} className={cx(CELL, UNIT_EDGE, 'z-[4] bg-muted text-left [border-bottom:1px_solid_var(--color-line)]')}>{sortButton('code', 'Unit')}</th>
-          )}
+          <th scope="col" rowSpan={2} aria-sort={ariaSort('code')}
+            className={cx(CELL, UNIT_EDGE, 'z-[4] bg-muted text-left align-bottom [border-bottom:1px_solid_var(--color-line)]')}>{sortButton('code', 'Unit')}</th>
+          {bands.map((b, i) => (
+            <th key={b.group} scope="colgroup" colSpan={b.span}
+              className={cx('px-3 pt-2 pb-1 bg-muted text-center text-caption font-semibold uppercase tracking-[0.09em] [border-bottom:1px_solid_var(--color-line-soft)]', GROUP_TONE[b.group] ?? 'text-muted-ink', i > 0 && DIVIDER)}>
+              {GROUP_LABEL[b.group]}
+            </th>
+          ))}
+        </tr>
+        <tr>
           {cols.map((c, i) => (
             <th key={c.key} scope="col" aria-sort={ariaSort(c.key)}
-              className={cx(CELL, 'bg-muted text-center [border-bottom:1px_solid_var(--color-line)]', fit, groupStart(i) && DIVIDER, hideOnPhone(c))}>
+              className={cx(CELL, 'bg-muted text-center [border-bottom:1px_solid_var(--color-line)]', groupStart(i) && DIVIDER)}>
               {sortButton(c.key, c.label)}
             </th>
           ))}
@@ -298,17 +285,16 @@ export default function OwnerOverallReportPage() {
                 <tr key={r.unitId} data-unit-row={r.unitId} tabIndex={0} aria-selected={on} className="group cursor-pointer outline-none scroll-mt-16"
                   onClick={() => setSelected(r.unitId)} onKeyDown={e => { if (e.key === 'Enter' && e.target === e.currentTarget) setSelected(r.unitId); }}>
                   <td className={cx(CELL, UNIT_EDGE, bg, '[border-top:1px_solid_var(--color-line-soft)] max-sm:whitespace-normal', on && 'shadow-[inset_3px_0_0_var(--color-gold)]', FOCUS_FIRST)}>
-                    {/* A phone wraps the code at its hyphen (CONTINEW- / B1703A) so L1 fits without scrolling sideways. */}
-                    <span className={cx('flex items-center gap-2 min-w-0 max-sm:max-w-[92px]', level > 1 && 'sm:max-w-[200px]')}>
+                    {/* A phone wraps the code at its hyphen (CONTINEW- / B1703A) so the Unit column stays narrow. */}
+                    <span className="flex items-center gap-2 min-w-0 max-sm:max-w-[92px] sm:max-w-[200px]">
                       <span aria-hidden className={cx('h-1.5 w-1.5 shrink-0 rounded-full', st.tone === 'success' ? 'bg-success-line' : st.tone === 'critical' ? 'bg-danger-line' : 'bg-neutral-line')} />
                       <span className="font-medium sm:truncate max-sm:leading-tight" title={`${r.code} · ${r.building}`}>{r.code}</span>
-                      {roomy && <span className="inline-block max-w-[360px] truncate text-meta text-muted-ink">{r.building} · {r.ownerName}</span>}
                     </span>
                   </td>
                   {cols.map((c, i) => (
-                    <td key={c.key} className={cx(CELL, bg, 'text-center [border-top:1px_solid_var(--color-line-soft)]', fit, groupStart(i) && DIVIDER, hideOnPhone(c),
+                    <td key={c.key} className={cx(CELL, bg, 'text-center [border-top:1px_solid_var(--color-line-soft)]', groupStart(i) && DIVIDER,
                       i === cols.length - 1 ? FOCUS_LAST : FOCUS)}>
-                      <Value c={c} v={r[c.key]} revenue={r.revenue} cents={cents} />
+                      <Value c={c} v={r[c.key]} />
                     </td>
                   ))}
                 </tr>

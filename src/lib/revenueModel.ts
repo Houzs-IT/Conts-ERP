@@ -57,8 +57,8 @@ export type ContractCode = 'PS' | 'PS GRR' | 'PS YGRR' | 'LT' | 'RTR' | 'MANAGE'
 export const CODES: { code: ContractCode; pkg?: string; model: RevenueModel; label: string; blurb: string }[] = [
   { code: 'PS', pkg: '(Package A)', model: 'management', label: 'Airbnb profit sharing', blurb: 'We run it on the channels and split the profit' },
   { code: 'PS GRR', pkg: '(Package B)', model: 'management_guarantee', label: 'Profit sharing, monthly GRR', blurb: 'A split, with a minimum for the owner every month' },
-  { code: 'PS YGRR', pkg: '(Package C)', model: 'management_yearly_guarantee', label: 'Profit sharing, yearly GRR', blurb: 'A split, with a minimum for the owner each contract year' },
-  { code: 'LT', pkg: '(Package D)', model: 'long_term', label: 'Airbnb long term', blurb: 'Let to one tenant, not on the channels' },
+  { code: 'LT', pkg: '(Package C)', model: 'long_term', label: 'Airbnb long term', blurb: 'Let to one tenant, not on the channels' },
+  { code: 'PS YGRR', pkg: '(Package D)', model: 'management_yearly_guarantee', label: 'Profit sharing, yearly GRR', blurb: 'A split, with a minimum for the owner each contract year' },
   { code: 'RTR', pkg:'-', model: 'master_lease', label: 'Rent to rent', blurb: 'We rent the unit from the owner and run it' },
   { code: 'MANAGE', pkg:'-',model: 'management', label: 'Listing management', blurb: 'We manage the listing for a fee, no guarantee' },
   { code: 'WH', model: 'master_lease', label: 'Warehouse / showroom lease', blurb: 'Fixed monthly rent to the owner' },

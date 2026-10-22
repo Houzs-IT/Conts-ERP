@@ -11,6 +11,7 @@ import { AttachmentLabel, MediaGallery } from '../components/Attachments';
 import { DataTable, type Column } from '../components/DataTable';
 import { BulkAssignCleaner } from '../components/BulkAssignCleaner';
 import { CleanerChecklist, CleanerChips } from '../components/CleanerPicks';
+import { LateCheckoutBlock } from '../components/booking/BookingDrawer';
 import { sizeLine } from '../lib/unitSize';
 import SplitPane from '../components/SplitPane';
 import { useToast } from '../components/Toast';
@@ -891,6 +892,8 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft, onCheckIn, sav
         </div>
       </div>
       )}
+      {/* The departing guest asks to stay later: the request, its price and remark, then Guest paid moves the checkout. */}
+      {!row.external && row.previous && !done && <LateCheckoutBlock reservationId={row.previous.reservationId} onChanged={onChanged} />}
 
       <section className="flex flex-col gap-2">
         <AttachmentLabel title="Proof of work" count={files} hint={!done && files === 0 ? 'At least 1 photo or video to complete' : undefined} />

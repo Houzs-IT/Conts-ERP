@@ -76,6 +76,9 @@ function describe(a: { action: string; actor_label: string; before_state: string
     case 'document.issue': return { label: `${after.type === 'receipt' ? 'Official receipt' : 'Invoice'} ${after.docNo} issued`, detail: after.amount != null ? ringgit(after.amount) : undefined, actor: a.actor_label };
     case 'document.void': return { label: `${after.docNo} voided`, detail: after.reason ? `Reason: ${after.reason}` : undefined, actor: a.actor_label };
     case 'reservation.payment_removed': return { label: 'Payment removed', detail: before.amount != null ? ringgit(before.amount) : undefined, actor: a.actor_label };
+    case 'reservation.late_checkout': return { label: 'Late checkout requested', detail: `By ${after.checkoutTime} for ${ringgit(after.amount ?? 0)}${after.remark ? ` · ${after.remark}` : ''}`, actor: a.actor_label };
+    case 'reservation.late_checkout_paid': return { label: 'Late checkout paid', detail: `Checkout by ${after.checkOutTime} · ${ringgit(after.amount ?? 0)}${after.receivedOn ? ` on ${dayLabel(after.receivedOn)}` : ''}`, actor: a.actor_label };
+    case 'reservation.late_checkout_cancelled': return { label: 'Late checkout request cancelled', detail: before.checkoutTime ? `By ${before.checkoutTime} for ${ringgit(before.amount ?? 0)}` : undefined, actor: a.actor_label };
     case 'reservation.details': return { label: after.checkInTime || after.checkOutTime ? 'Check-in or checkout time changed' : 'Notes changed', detail: after.checkInTime || after.checkOutTime ? [after.checkInTime ? `Check-in from ${after.checkInTime}` : null, after.checkOutTime ? `Checkout by ${after.checkOutTime}` : null].filter(Boolean).join(' · ') : undefined, actor: a.actor_label };
     default: return null;
   }
