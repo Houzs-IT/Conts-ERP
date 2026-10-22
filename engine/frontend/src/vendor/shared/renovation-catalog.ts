@@ -53,7 +53,10 @@ export interface SubCategoryDef {
 }
 
 /* WORKS sort order is the site trade order (see renovation-stages.ts TRADE_ORDER).
-   PARTITION, DOOR and FEATURE_WALL came with the Notion task categories (migration 0085). */
+   PARTITION, DOOR and FEATURE_WALL came with the Notion task categories (migration 0085).
+   AIRCON_INSTALL, CLEANING and PROJECT_MGMT were WORKS until the owner filed them
+   under Service (22 Oct 2026, migration 0141); they still act as site trades
+   (SITE_TRADE_SERVICES below). */
 export const SUB_CATEGORIES: readonly SubCategoryDef[] = [
   { group: 'WORKS', code: 'PROTECTION', label: 'Protection', sort: 10 },
   { group: 'WORKS', code: 'HACKING', label: 'Hacking', sort: 20 },
@@ -70,9 +73,6 @@ export const SUB_CATEGORIES: readonly SubCategoryDef[] = [
   { group: 'WORKS', code: 'TEXTURED_PAINTING', label: 'Textured painting', sort: 95 },
   { group: 'WORKS', code: 'FEATURE_WALL', label: 'Feature wall', sort: 97 },
   { group: 'WORKS', code: 'FLOORING', label: 'Flooring', sort: 100 },
-  { group: 'WORKS', code: 'AIRCON_INSTALL', label: 'Aircon install', sort: 110 },
-  { group: 'WORKS', code: 'CLEANING', label: 'Cleaning', sort: 120 },
-  { group: 'WORKS', code: 'PROJECT_MGMT', label: 'Project management', sort: 130 },
 
   { group: 'BUILTIN', code: 'KITCHEN_CABINET', label: 'Kitchen cabinet', sort: 10 },
   { group: 'BUILTIN', code: 'WARDROBE', label: 'Wardrobe', sort: 20 },
@@ -113,6 +113,9 @@ export const SUB_CATEGORIES: readonly SubCategoryDef[] = [
   { group: 'SERVICE', code: 'STYLING', label: 'Styling', sort: 20 },
   { group: 'SERVICE', code: 'PHOTOSHOOT', label: 'Photoshoot', sort: 30 },
   { group: 'SERVICE', code: 'AIRBNB_SETUP', label: 'Airbnb setup', sort: 40 },
+  { group: 'SERVICE', code: 'AIRCON_INSTALL', label: 'Aircon install', sort: 50 },
+  { group: 'SERVICE', code: 'CLEANING', label: 'Cleaning', sort: 60 },
+  { group: 'SERVICE', code: 'PROJECT_MGMT', label: 'Project management', sort: 70 },
 ];
 
 /* Legacy Houzs category -> group. SERVICE maps to itself with no sub-category. */
@@ -154,6 +157,24 @@ export function categoryGroupOf(category: string | null | undefined): CatalogGro
    `list`; without one the seed is used. WORKS stays fixed: its sub-categories are
    the site trades (renovation-stages.ts TRADE_ORDER, generic RN-* SKUs). */
 export const FIXED_SUB_GROUPS: readonly CatalogGroup[] = ['WORKS'];
+
+/* SERVICE sub-categories that are still site trades (owner, 22 Oct 2026: filed
+   under Service, worked like Works). Everything that decides site work - trade
+   tasks, the hardware stage and its auto-skip, a line's home stage, the reno-item
+   condition, owner-supplied lines still getting a PO, the site-receipt photo rule -
+   treats them as WORKS through siteGroupOf. Like WORKS they are fixed in settings. */
+export const SITE_TRADE_SERVICES: readonly string[] = ['AIRCON_INSTALL', 'CLEANING', 'PROJECT_MGMT'];
+
+/** The group a line WORKS AS on site: WORKS for a site-trade service, else its own group. */
+export function siteGroupOf(group: CatalogGroup | null, sub: string | null | undefined): CatalogGroup | null {
+  if (group === 'SERVICE' && SITE_TRADE_SERVICES.includes(String(sub ?? '').toUpperCase())) return 'WORKS';
+  return group;
+}
+
+/** Whether a sub-category cannot be renamed, reordered or hidden in settings. */
+export function isFixedSub(group: CatalogGroup, code: string): boolean {
+  return FIXED_SUB_GROUPS.includes(group) || (group === 'SERVICE' && SITE_TRADE_SERVICES.includes(code.toUpperCase()));
+}
 
 export function subCategoriesOf(group: CatalogGroup, list: readonly SubCategoryDef[] = SUB_CATEGORIES): SubCategoryDef[] {
   return list.filter((s) => s.group === group).sort((a, b) => a.sort - b.sort);

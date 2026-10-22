@@ -488,7 +488,7 @@ export async function loadContractLines(db: Db, docNos: readonly string[]): Prom
         supplyByOwner: j.supply_by_owner === true || j.supply_by_owner === "true",
         needsPod: needsPurchaseOrder({
           itemCode: r.item_code, supplyByOwner: j.supply_by_owner === true || j.supply_by_owner === "true",
-          category: r.category, supplierId: s("supplier_id"), unitCostSen: Number(j.unit_cost_sen ?? 0),
+          category: r.category, subCategory: r.sub_category, supplierId: s("supplier_id"), unitCostSen: Number(j.unit_cost_sen ?? 0),
         }),
         qty: Number(r.qty ?? 0),
         room: s("room") ?? r.location,

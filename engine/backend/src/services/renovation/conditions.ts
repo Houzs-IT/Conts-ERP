@@ -1,7 +1,8 @@
 /* Board conditions derived from the purchase side (owner's Notion "Project" table):
 
    Furniture condition: lines in FURNITURE / BUILTIN / APPLIANCE / SOFT / LIGHTING.
-   Reno item condition: WORKS lines.
+   Reno item condition: WORKS lines, and the site-trade services filed under
+   SERVICE (aircon install, cleaning, project management; see lineGroup).
      pending_purchased  some live line has no live PO line (and no delivery from stock)
      pending_arrived    every line is ordered, some are not fully received
                         (GRN, site receipt, or delivered from our warehouse by DO)

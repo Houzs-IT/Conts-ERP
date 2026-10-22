@@ -5,12 +5,17 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, test } from "vitest";
-import { RENOVATION_GROUPS, SUB_CATEGORIES, UOMS, genericSkus } from "../src/scm/shared/renovation-catalog";
+import { RENOVATION_GROUPS, SITE_TRADE_SERVICES, SUB_CATEGORIES, UOMS, genericSkus } from "../src/scm/shared/renovation-catalog";
 import { RENO_STAGES } from "../src/scm/shared/renovation-stages";
 
 const MIG = resolve(__dirname, "../../../migrations-pg");
 const read = (f: string) => readFileSync(resolve(MIG, f), "utf8").replace(/\r\n/g, "\n");
 const tuples = (sql: string, re: RegExp) => [...sql.matchAll(re)].map((m) => m.slice(1));
+
+/* Migration 0141 moved three WORKS sub-categories under SERVICE (new sort, generic SKU renamed "Service - <label>"). */
+const MOVED_TO_SERVICE = new Map(
+  tuples(read("0141_service_site_trades.sql"), /^\s+\('([A-Z_]+)', (\d+), '([^']+)'\)[,;]$/gm).map(([code, sort, label]) => [code, { sort: Number(sort), label }]),
+);
 
 describe("migration 0061 seeds the same tree as renovation-catalog.ts", () => {
   const sql = read("0061_renovation_category_tree.sql");
@@ -35,7 +40,7 @@ describe("migration 0061 seeds the same tree as renovation-catalog.ts", () => {
     const rows = tuples(both, /^\s+\('([A-Z]+)', '([A-Z_]+)', '([^']+)', (\d+), (?:'\{\}'|array\[([^\]]*)\])::text\[\]\)[,;]?$/gm);
     expect(
       rows.map(([group, code, label, sort, legacy]) => ({
-        group, code, label, sort: Number(sort),
+        group: MOVED_TO_SERVICE.has(code) ? "SERVICE" : group, code, label, sort: MOVED_TO_SERVICE.get(code)?.sort ?? Number(sort),
         legacy: legacy ? legacy.split(",").map((s) => s.trim().replace(/'/g, "")) : [],
       })).sort(byCode),
     ).toEqual(SUB_CATEGORIES.map((s) => ({ group: s.group, code: s.code, label: s.label, sort: s.sort, legacy: [...(s.legacy ?? [])] })).sort(byCode));
@@ -71,12 +76,19 @@ describe("migrations 0064 and 0085 seed the generic SKUs", () => {
     const byCode = (a: { code: string }, b: { code: string }) => a.code.localeCompare(b.code);
     const sql = read("0064_renovation_generic_skus.sql") + "\n" + read("0085_renovation_works_subs_notion.sql");
     const rows = tuples(sql, /^\s+\('(RN-[A-Z_]+)', '([^']+)', '([A-Z]+)', '([A-Z_]+)', '([A-Z]+)'\)[,)]?$/gm);
-    expect(rows.map(([code, name, group, sub, uom]) => ({ code, name, group, sub, uom })).sort(byCode)).toEqual([...genericSkus()].sort(byCode));
+    const moved = (sub: string) => MOVED_TO_SERVICE.get(sub);
+    expect(rows.map(([code, name, group, sub, uom]) => ({
+      code, name: moved(sub) ? `Service - ${moved(sub)!.label}` : name, group: moved(sub) ? "SERVICE" : group, sub, uom,
+    })).sort(byCode)).toEqual([...genericSkus()].sort(byCode));
+  });
+
+  test("0141 moves exactly the three site-trade services", () => {
+    expect([...MOVED_TO_SERVICE.keys()].sort()).toEqual([...SITE_TRADE_SERVICES].sort());
   });
 
   test("every WORKS sub-category has its RN- SKU in 0064 or 0085", () => {
     const sql = read("0064_renovation_generic_skus.sql") + "\n" + read("0085_renovation_works_subs_notion.sql");
-    for (const s of SUB_CATEGORIES.filter((x) => x.group === "WORKS")) expect(sql, s.code).toContain(`'RN-${s.code}'`);
+    for (const s of SUB_CATEGORIES.filter((x) => x.group === "WORKS" || SITE_TRADE_SERVICES.includes(x.code))) expect(sql, s.code).toContain(`'RN-${s.code}'`);
   });
 });
 

@@ -135,10 +135,10 @@ describe('POST /mfg-products/batch-import — renovation columns', () => {
 
   test('moving a modelled SKU into a new group moves the model and every SKU with the given sub-category', async () => {
     const { run, sku } = harness();
-    const out = await run([{ code: 'SV-A', category: 'WORKS', sub_category: 'Cleaning' }]);
+    const out = await run([{ code: 'SV-A', category: 'WORKS', sub_category: 'Painting' }]);
     expect(out.failures).toEqual([]);
-    expect(sku('SV-A')).toMatchObject({ category: 'WORKS', sub_category: 'CLEANING' });
-    expect(sku('SV-B')).toMatchObject({ category: 'WORKS', sub_category: 'CLEANING' });
+    expect(sku('SV-A')).toMatchObject({ category: 'WORKS', sub_category: 'PAINTING' });
+    expect(sku('SV-B')).toMatchObject({ category: 'WORKS', sub_category: 'PAINTING' });
   });
 
   test('activating a Built-in SKU with no photo is accepted', async () => {
