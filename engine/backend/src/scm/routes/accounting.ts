@@ -428,13 +428,14 @@ accounting.put('/settings/ledger', ledgerSettingsPut);
 /* ── Opening balances (Conts, spec 3.8) — acc/opening.ts. Writing them needs the post key; the check is read by
    the same people (it shows control and bank balances). ── */
 const OPENING_MAX_ROWS = 5000;
-async function openingBody(c: AccCtx, key: 'lines' | 'rows'): Promise<{ ok: true; companyId: number; items: any[] } | { ok: false; res: Response }> {
+async function openingBody(c: AccCtx, key: 'lines' | 'rows'): Promise<{ ok: true; companyId: number; items: never[] } | { ok: false; res: Response }> {
   if (!requireGlPost(c)) return { ok: false, res: c.json({ error: "You don't have permission to post to the general ledger." }, 403) };
   const co = requireActiveCompanyId(c);
   if (!co.ok) return { ok: false, res: c.json(co.refusal, 409) };
-  let body: any;
+  let body: Record<string, unknown> | null;
   try { body = await c.req.json(); } catch { return { ok: false, res: c.json({ error: 'invalid_json' }, 400) }; }
-  const items = body?.[key];
+  /* Only the list is checked here; acc/opening.ts checks each row. */
+  const items = body?.[key] as never[] | undefined;
   if (!Array.isArray(items) || items.length === 0) return { ok: false, res: c.json({ error: 'The file has no rows.' }, 400) };
   if (items.length > OPENING_MAX_ROWS) return { ok: false, res: c.json({ error: `At most ${OPENING_MAX_ROWS} rows at a time.` }, 400) };
   return { ok: true, companyId: co.companyId, items };
