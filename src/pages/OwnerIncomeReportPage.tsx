@@ -14,14 +14,14 @@ import { parsePhone } from '../lib/phone';
 
 interface Row { key: string; label: string; quantity: number | null; uom: string | null; price: number | null; amount: number }
 interface YearRow { month: string; label: string; gross: number | null; deductions: number | null; operator: number | null; net: number | null; source: string }
-interface Unit {
+export interface Unit {
   unitId: string; code: string; refNo: string; address: string | null; propertyName: string; unitNumber: string; basis: 'share' | 'fixed_rent'; model: string | null;
   nights: number; days: number; occupancy: number; gross: number; deductions: Row[]; deductionsTotal: number; net: number; operatorPct: number | null;
   operatorShare: number; guarantee: number; topUp: number; fixedRent: number; payoutBeforeAdjustments: number;
   adjustments: { id: string; description: string; amount: number }[]; netPayout: number;
   year: YearRow[]; yearTotal: { gross: number; deductions: number; operator: number; net: number };
 }
-interface Report {
+export interface Report {
   statementId: string; period: string; periodEnd: string; state: string;
   settings: { company: { legalName: string; companyNumber: string; address: string; phone: string; email: string; logo: string }; paymentTerms: string; monthlyTerms: string[]; yearTerms: string[] };
   owner: { name: string; phone: string | null; email: string | null };
@@ -41,7 +41,7 @@ const dayMonYear = (iso: string) => `${iso.slice(8, 10)}-${MON_TITLE[Number(iso.
 /** "No. 2" never splits across lines (the letterhead's address wraps as on the owner's report). */
 const keepNumbers = (text: string) => text.replace(/\b(No\.?)\s+(?=\d)/gi, '$1\u00a0');
 /** As the owner's report prints a phone: a Malaysian number as dialled at home (011-6133 3289), any other with its code. */
-const printedPhone = (raw: string | null | undefined) => {
+export const printedPhone = (raw: string | null | undefined) => {
   const p = parsePhone(raw);
   if (!p?.possible) return (raw ?? '').trim();
   return p.callingCode === '60' ? `0${p.national}` : p.international;

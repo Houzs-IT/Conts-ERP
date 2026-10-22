@@ -80,7 +80,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       provisional: Number(p.provisional), finalised: Number(p.finalised), sent: Number(p.sent), paid: Number(p.paid),
     })),
     data: rows.map(r => ({
-      id: r.id, period: String(r.period_start).slice(0, 7), ownerName: r.display_name, unitsLabel: r.units_label,
+      id: r.id, period: String(r.period_start).slice(0, 7), ownerId: r.owner_id, ownerName: r.display_name, unitsLabel: r.units_label,
       periodStart: r.period_start, periodEnd: r.period_end, state: r.state,
       grossBookingValue: r.gross_booking_value, managementFee: r.management_fee,
       expensesTotal: r.expenses_total, netPayout: r.net_payout, currency: r.currency,

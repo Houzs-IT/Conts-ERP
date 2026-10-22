@@ -190,6 +190,7 @@ export const allow = {
   'scripts/checks/vocabulary.mjs': 'This check names the words it bans.',
   // The printed Owner Income Report copies the owner's own sample word for word (owner's rule), old words included.
   'src/pages/OwnerIncomeReportPage.tsx': 'The printed report copies the owner\'s sample word for word.',
+  'src/lib/statementPdf.ts': 'The same printed report, drawn as a PDF file, in the same words.',
   'functions/_lib/ownerReport.ts': 'The printed report\'s default terms copy the owner\'s sample word for word.',
   // The overall owner report keeps the owner workbook's own column names (revenue, GP, LT/GRR), as the owner asked (22 Oct 2026).
   'src/pages/OwnerOverallReportPage.tsx': 'The owner workbook\'s overall report sheet, in its own column names.',
