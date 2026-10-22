@@ -3,6 +3,7 @@ import Icon from '../../components/Icon';
 import { Card } from '../../components/Card';
 import { Button } from '../../components/Button';
 import { Field } from '../../components/Field';
+import { Select } from '../../components/Select';
 import { MoneyInput, PercentInput, DateField } from '../../components/inputs';
 import { MoneyText } from '../../components/MoneyText';
 import { useToast } from '../../components/Toast';
@@ -208,22 +209,25 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unit
           {current.sharedWith > 0 && mode === 'update' && <div className="py-[10px] px-[14px] rounded-control bg-muted text-meta text-muted-ink">This contract record also covers {current.sharedWith} other {current.sharedWith === 1 ? 'unit' : 'units'} of the owner. Saving here gives this unit its own copy; the others are not changed.</div>}
 
           {purpose !== 'rental' && <div className="py-[10px] px-[14px] rounded-control bg-muted text-meta text-muted-ink">A {PURPOSE_LABEL[purpose].toLowerCase()} unit is not run on the channels: it takes a WH lease (a fixed monthly rent to the owner) or a WH LT let (one tenant, such as Dream Crafter, rents it; the owner gets the rent less the operator share).</div>}
-          <div role="radiogroup" aria-label="Contract type" className={cx('grid grid-cols-2 gap-2 sm:gap-[10px]', offered.length > 3 && 'lg:grid-cols-3 2xl:grid-cols-6')}>
-            {offered.map(o => {
-              const on = o.code === d.contractCode;
-              return (
-                <label key={o.code} className={cx('flex flex-col gap-1 rounded-card p-3 cursor-pointer min-w-0', on ? '[border:1px_solid_var(--color-gold)] [box-shadow:inset_0_0_0_1px_var(--color-gold)] bg-gold-tint' : '[border:1px_solid_var(--color-line)] bg-card hover:bg-page')}>
-                  <span className="flex items-start gap-2">
-                    <input type="radio" aria-label={`${o.code}: ${o.label}`} name={`model-${unitId}`} checked={on} onChange={() => set({ contractCode: o.code, revenueModel: o.model })} className="accent-[var(--color-gold-ink)]" />
-                    <span className="text-copy font-semibold">{o.code}{o.pkg && <span className="block">{o.pkg}</span>}</span>
-                  </span>
-                  <span className="text-meta font-medium text-ink">{o.label}</span>
-                  <span className="max-sm:hidden text-meta text-muted-ink [text-wrap:pretty]">{o.blurb}</span>
-                </label>
-              );
-            })}
-          </div>
-          <p className="m-0 text-meta text-muted-ink">{MODEL[m].statement}</p>
+          <Select label="Income model" showLabel size="md" className="max-w-[560px]" value={d.contractCode}
+            options={offered.map(o => ({ value: o.code, label: `${o.code}${o.pkg && o.pkg !== '-' ? ` ${o.pkg}` : ''} - ${o.label}` }))}
+            onChange={v => { const o = CODE[v as ContractCode]; set({ contractCode: o.code, revenueModel: o.model }); }} />
+          {(() => {
+            const o = CODE[d.contractCode];
+            return (
+              <div aria-live="polite" className="flex flex-col gap-2 rounded-card [border:1px_solid_var(--color-line)] bg-page p-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-caption font-semibold uppercase tracking-[0.06em] text-muted-ink">Selected model</span>
+                  <ModelChip model={m} label={o.code} />
+                </div>
+                <dl className="m-0 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-copy">
+                  <dt className="text-muted-ink">Type</dt><dd className="m-0 font-medium text-ink">{o.label}{o.pkg && o.pkg !== '-' ? ` ${o.pkg}` : ''}</dd>
+                  <dt className="text-muted-ink">Terms</dt><dd className="m-0 text-ink [text-wrap:pretty]">{o.blurb}</dd>
+                  <dt className="text-muted-ink">Statement</dt><dd className="m-0 text-ink [text-wrap:pretty]">{MODEL[m].statement}</dd>
+                </dl>
+              </div>
+            );
+          })()}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
             {share && <>
