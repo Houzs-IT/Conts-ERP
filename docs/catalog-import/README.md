@@ -125,3 +125,25 @@ Verified locally (21 Oct 2026, Postgres 17): migrations to 0131, the import (819
 had it, then 0132: 844 -> 952 SKUs, 819 -> 927 supplier links, cost rows unchanged (423), no link or cost row left without
 its SKU, 52 audit rows; running 0132's body again changed nothing; with a price-history row planted on two SKUs those two
 were deactivated, not deleted. Engine Products page (wrangler dev + vite + local PostgREST) lists the new SKUs: `screens/`.
+
+## HOOKKA quotation 300-T, AKEMI mattresses, customer items, 22 Oct 2026 (migration 0142)
+
+HOOKKA's quotation to The Conts (customer 300-T, effective 22 Oct 2026) replaces the HOOKKA catalogue; the AKEMI rows of
+Houzs Century's mattress list are added; one "Customer <sub-category>" SKU per active sub-category (and one per group) is
+added on supplier CUSTOMER at cost 0. Built by `build/hookka_parse.py` (PDF -> `build/hookka_300t.json`) and
+`build/hookka.py` (-> `hookka-300t-data.json`, `hookka-300t-review.xlsx`, the migration); edit the scripts, not the migration.
+
+| File | What it is |
+| --- | --- |
+| `hookka-300t-review.xlsx` | Read me, Bedframes, Sofas (matrix), Accessories, Mattresses, Surcharges, Changes vs current system, Customer items, Questions |
+| `hookka-300t-data.json` | Every SKU / model / supplier price book the migration writes |
+| `SKU-listing-after-hookka.xlsx` | Every SKU after 0142, read from a local database built the way production is (`build/listing.mjs` + `build/listing.py`) |
+| `build/akemi_mattress.csv`, `build/subcategories-2026-10-22.json` | Inputs: the 231 AKEMI rows; the sub-categories the Customer items sheet lists |
+
+Cost follows the engine's own shape (`engine/backend/src/scm/lib/cost-anchor-sync.ts`): `base_price_sen` = Price 2 cost,
+`price1_sen` = Price 1 cost, sofa `seat_height_prices[].priceSen` per seat height and tier; the main supplier link carries
+the same as `price_matrix` plus a flat `unit_price_sen` and is the cost anchor. A renovation contract line has no seat
+height, so it takes the flat cost (sofa: P2 at the smallest quoted seat height); the renovation product lookup no longer
+offers a bedframe / sofa / mattress cost as a selling price. HOOKKA's surcharges are HOOKKA's supplier price book
+(maintenance scope `supplier:<HOOKKA id>`); the master maintenance is unchanged. A renovation contract raises no PO for a
+Customer item (`renovation-po-split.ts` isCustomerSupplied).

@@ -6,7 +6,8 @@ import postgres from 'postgres';
 const sql = postgres(process.env.DATABASE_URL, { max: 1 });
 const rows = await sql`
   select p.code, p.name, g.label as category, coalesce(s.label, p.sub_category) as sub_category, p.uom, u.label as unit,
-         p.base_model, p.size_label, p.status::text as status, sp.name as supplier, b.supplier_sku, b.unit_price_sen, p.cost_price_sen
+         p.base_model, p.size_label, p.status::text as status, sp.name as supplier, b.supplier_sku, b.unit_price_sen, p.cost_price_sen,
+         b.price_matrix, p.price1_sen, b.notes as link_note
     from scm.mfg_products p
     left join scm.product_category_groups g on g.code = p.category_group
     left join scm.product_sub_categories s on s.group_code = p.category_group and s.code = p.sub_category
