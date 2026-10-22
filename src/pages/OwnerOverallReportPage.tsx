@@ -369,10 +369,10 @@ export default function OwnerOverallReportPage() {
           <div className="flex flex-wrap items-center gap-1.5">
             <Select label="Column to filter" value={rangeKey} className="w-[160px]" onChange={v => { setRangeKey(v as Key); setLo(null); setHi(null); }}
               options={COLS.map(c => ({ value: c.key, label: c.label }))} />
-            <div className="w-[120px]"><NumberInput aria-label="Minimum" value={lo} onChange={setLo} decimals={2} allowNegative
+            <div className="w-[120px] [&_input]:h-[var(--control-height-sm)]!"><NumberInput aria-label="Minimum" value={lo} onChange={setLo} decimals={2} allowNegative
               placeholder={extent ? `${Number(extent.min.toFixed(2))}` : 'Min'} /></div>
             <span className="text-meta text-muted-ink">to</span>
-            <div className="w-[120px]"><NumberInput aria-label="Maximum" value={hi} onChange={setHi} decimals={2} allowNegative
+            <div className="w-[120px] [&_input]:h-[var(--control-height-sm)]!"><NumberInput aria-label="Maximum" value={hi} onChange={setHi} decimals={2} allowNegative
               placeholder={extent ? `${Number(extent.max.toFixed(2))}` : 'Max'} /></div>
           </div>
         </div>
