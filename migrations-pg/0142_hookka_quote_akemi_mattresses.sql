@@ -16,6 +16,8 @@
 --     one supplier_binding_price_history row per priced link. Unpriced rows (39 AKEMI) are linked with cost 0, "PRICE NEEDED".
 --  5. HOOKKA SKUs from 0132 / the first import that the quotation does not contain are deleted with their supplier link,
 --     cost history and model when nothing else names them, else deactivated; each written to scm.entity_audit_log.
+--  7. Customer-supplied placeholder SKUs ("Customer <sub-category>", one per active sub-category and one per group) on
+--     supplier CUSTOMER at cost 0; a renovation contract raises no PO for them.
 --  6. HOOKKA's own surcharges (divan / total / leg heights, specials, gaps) become HOOKKA's supplier price book
 --     (maintenance_config_history scope 'supplier:<HOOKKA id>'), read by the PO cost; the master config is not changed.
 -- Built by docs/catalog-import/build/hookka.py; edit that script, not this file. Safe to run again: it finds nothing to change.
@@ -210,14 +212,58 @@ select 'mch-hookka-300t-20261022', 'supplier:' || s.supplier_id,
  where s.key = 'HOOKKA' and s.supplier_id is not null and exists (select 1 from hq_sku)
 on conflict (id) do nothing;
 
+-- 7. Customer-supplied placeholders: supplier CUSTOMER, one "Customer <sub-category>" SKU per active sub-category and
+--    one per group, each linked to CUSTOMER as main supplier at cost 0. A renovation contract never raises a PO for them
+--    (engine/backend/src/scm/lib/renovation-po-split.ts isCustomerSupplied).
+insert into scm.suppliers (company_id, code, name, status, notes)
+select (select id from public.companies where code = 'HOUZS'), 'CUSTOMER', 'Customer', 'ACTIVE', 'customer-supplied items managed by The Conts'
+ where exists (select 1 from public.companies where code = 'HOUZS')
+   and not exists (select 1 from scm.suppliers s where s.company_id = (select id from public.companies where code = 'HOUZS') and s.code = 'CUSTOMER');
+
+create temp table hq_cus on commit drop as
+select 'CUS-' || s.code as code, 'Customer ' || s.label as name, s.group_code as category, s.code as sub_category
+  from scm.product_sub_categories s
+ where s.active and exists (select 1 from public.companies where code = 'HOUZS')
+union all
+select g.code, g.name, g.grp, coalesce(
+         (select s.code from scm.product_sub_categories s where s.group_code = g.grp and s.code = g.sub and s.active),
+         case when g.grp <> 'SERVICE' then (select s.code from scm.product_sub_categories s where s.group_code = g.grp and s.active
+                                             order by s.sort_order, s.code limit 1) end)
+  from jsonb_to_recordset($hq$[{"grp": "WORKS", "code": "CUS-WORKS", "name": "Customer Works", "sub": "PROTECTION"}, {"grp": "BUILTIN", "code": "CUS-BUILTIN", "name": "Customer Built-in", "sub": "SHELVING"}, {"grp": "FURNITURE", "code": "CUS-FURNITURE", "name": "Customer Furniture", "sub": "LOOSE_STORAGE"}, {"grp": "LIGHTING", "code": "CUS-LIGHTING", "name": "Customer Lighting", "sub": "DOWNLIGHT"}, {"grp": "APPLIANCE", "code": "CUS-APPLIANCE", "name": "Customer Appliance", "sub": "TV"}, {"grp": "SOFT", "code": "CUS-SOFT", "name": "Customer Soft furnishing", "sub": "DECORATION"}, {"grp": "SERVICE", "code": "CUS-SERVICE", "name": "Customer Service", "sub": null}]$hq$::jsonb) as g(grp text, code text, name text, sub text)
+ where exists (select 1 from public.companies where code = 'HOUZS')
+   and exists (select 1 from scm.product_category_groups x where x.code = g.grp);
+
+insert into scm.product_models (company_id, model_code, name, category)
+select (select id from public.companies where code = 'HOUZS'), c.code, c.name, c.category::scm.mfg_product_category from hq_cus c
+on conflict (company_id, model_code, category) do nothing;
+insert into scm.mfg_products (id, company_id, code, name, category, sub_category, uom, status, cost_price_sen, description, model_id)
+select 'mfg-' || left(encode(sha256(convert_to(c.code, 'UTF8')), 'hex'), 12), (select id from public.companies where code = 'HOUZS'), c.code, c.name, c.category::scm.mfg_product_category,
+       c.sub_category, 'UNIT', 'ACTIVE', 0, 'Customer-supplied: the customer orders / buys this item and The Conts manages it. Cost 0; no purchase order is raised.', m.id
+  from hq_cus c
+  left join scm.product_models m on m.company_id = (select id from public.companies where code = 'HOUZS') and m.model_code = c.code and m.category::text = c.category
+ where not exists (select 1 from scm.mfg_products p where p.company_id = (select id from public.companies where code = 'HOUZS') and p.code = c.code)
+on conflict do nothing;
+insert into scm.supplier_material_bindings
+    (company_id, supplier_id, material_kind, item_code, material_name, supplier_sku, unit_price_sen, price_valid_from, is_main_supplier, notes)
+select (select id from public.companies where code = 'HOUZS'), s.id, 'mfg_product', c.code, c.name, c.code, 0, date '2026-10-22',
+       not exists (select 1 from scm.supplier_material_bindings x where x.company_id = (select id from public.companies where code = 'HOUZS') and x.material_kind = 'mfg_product'
+                                                                  and x.item_code = c.code and x.is_main_supplier),
+       'customer-supplied 2026-10-22: the customer orders this item, The Conts manages it; cost 0 by design (not price needed)'
+  from hq_cus c
+  join scm.suppliers s on s.company_id = (select id from public.companies where code = 'HOUZS') and s.code = 'CUSTOMER'
+ where exists (select 1 from scm.mfg_products p where p.company_id = (select id from public.companies where code = 'HOUZS') and p.code = c.code)
+   and not exists (select 1 from scm.supplier_material_bindings b where b.company_id = (select id from public.companies where code = 'HOUZS') and b.material_kind = 'mfg_product'
+                                                                  and b.item_code = c.code and b.supplier_id = s.id);
+
 insert into scm.app_config (key, value, description, company_id)
 select 'note:hookka-300t-2026-10-22',
        json_build_object('tag', 'hookka-300t 2026-10-22', 'at', now(), 'skus', (select count(*) from hq_sku),
                          'priced', (select count(*) from hq_sku where priced),
+                         'customer_skus', (select count(*) from hq_cus),
                          'deleted', (select coalesce(array_agg(code order by code), '{}') from hq_retire where refs = 0),
                          'deactivated', (select coalesce(array_agg(code order by code), '{}') from hq_retire where refs > 0))::text,
        'Catalog note: HOOKKA quotation 300-T 22 Oct 2026 + AKEMI mattresses (migration 0142)', (select id from public.companies where code = 'HOUZS')
- where exists (select 1 from hq_sku)
+ where exists (select 1 from hq_sku) or exists (select 1 from hq_cus)
 on conflict (key) do nothing;
 
 notify pgrst, 'reload schema';

@@ -216,6 +216,19 @@ json.dump({'tag': TAG, 'effective': EFF, 'skus': skus, 'models': list(models.val
            'supplier_pools': supplier_pools}, open(os.path.join(DOCS, 'hookka-300t-data.json'), 'w', encoding='utf-8'),
           indent=1, ensure_ascii=False)
 
+# ---------------------------------------------------------------- customer-supplied placeholders (owner, 22 Oct 2026)
+# One "Customer <sub-category>" SKU per active sub-category (read from the database when the migration runs, so a
+# sub-category added on production is covered too) plus one per group, all on supplier CUSTOMER at cost 0. The group
+# SKU sits under the group's most general sub-category (every group but Service requires one).
+SUBCATS = json.load(open(os.path.join(BUILD, 'subcategories-2026-10-22.json'), encoding='utf-8'))
+CUS_GROUPS = [  # group, SKU code, name, sub-category it sits under
+    ('WORKS', 'CUS-WORKS', 'Customer Works', 'PROTECTION'), ('BUILTIN', 'CUS-BUILTIN', 'Customer Built-in', 'SHELVING'),
+    ('FURNITURE', 'CUS-FURNITURE', 'Customer Furniture', 'LOOSE_STORAGE'), ('LIGHTING', 'CUS-LIGHTING', 'Customer Lighting', 'DOWNLIGHT'),
+    ('APPLIANCE', 'CUS-APPLIANCE', 'Customer Appliance', 'TV'), ('SOFT', 'CUS-SOFT', 'Customer Soft furnishing', 'DECORATION'),
+    ('SERVICE', 'CUS-SERVICE', 'Customer Service', None)]
+CUS_NOTE = 'customer-supplied 2026-10-22: the customer orders this item, The Conts manages it; cost 0 by design (not price needed)'
+CUS_DESC = 'Customer-supplied: the customer orders / buys this item and The Conts manages it. Cost 0; no purchase order is raised.'
+
 # ---------------------------------------------------------------- migration
 def lit(obj):
     s = json.dumps(obj, ensure_ascii=False)
@@ -245,6 +258,8 @@ sql = f"""-- REVERSAL: none in SQL. Restore the HOOKKA SKUs from migration 0132 
 --     one supplier_binding_price_history row per priced link. Unpriced rows (39 AKEMI) are linked with cost 0, "PRICE NEEDED".
 --  5. HOOKKA SKUs from 0132 / the first import that the quotation does not contain are deleted with their supplier link,
 --     cost history and model when nothing else names them, else deactivated; each written to scm.entity_audit_log.
+--  7. Customer-supplied placeholder SKUs ("Customer <sub-category>", one per active sub-category and one per group) on
+--     supplier CUSTOMER at cost 0; a renovation contract raises no PO for them.
 --  6. HOOKKA's own surcharges (divan / total / leg heights, specials, gaps) become HOOKKA's supplier price book
 --     (maintenance_config_history scope 'supplier:<HOOKKA id>'), read by the PO cost; the master config is not changed.
 -- Built by docs/catalog-import/build/hookka.py; edit that script, not this file. Safe to run again: it finds nothing to change.
@@ -439,14 +454,58 @@ select 'mch-hookka-300t-20261022', 'supplier:' || s.supplier_id,
  where s.key = 'HOOKKA' and s.supplier_id is not null and exists (select 1 from hq_sku)
 on conflict (id) do nothing;
 
+-- 7. Customer-supplied placeholders: supplier CUSTOMER, one "Customer <sub-category>" SKU per active sub-category and
+--    one per group, each linked to CUSTOMER as main supplier at cost 0. A renovation contract never raises a PO for them
+--    (engine/backend/src/scm/lib/renovation-po-split.ts isCustomerSupplied).
+insert into scm.suppliers (company_id, code, name, status, notes)
+select {CO}, 'CUSTOMER', 'Customer', 'ACTIVE', 'customer-supplied items managed by The Conts'
+ where exists (select 1 from public.companies where code = 'HOUZS')
+   and not exists (select 1 from scm.suppliers s where s.company_id = {CO} and s.code = 'CUSTOMER');
+
+create temp table hq_cus on commit drop as
+select 'CUS-' || s.code as code, 'Customer ' || s.label as name, s.group_code as category, s.code as sub_category
+  from scm.product_sub_categories s
+ where s.active and exists (select 1 from public.companies where code = 'HOUZS')
+union all
+select g.code, g.name, g.grp, coalesce(
+         (select s.code from scm.product_sub_categories s where s.group_code = g.grp and s.code = g.sub and s.active),
+         case when g.grp <> 'SERVICE' then (select s.code from scm.product_sub_categories s where s.group_code = g.grp and s.active
+                                             order by s.sort_order, s.code limit 1) end)
+  from jsonb_to_recordset({lit([dict(grp=a, code=b, name=c, sub=d) for a, b, c, d in CUS_GROUPS])}::jsonb) as g(grp text, code text, name text, sub text)
+ where exists (select 1 from public.companies where code = 'HOUZS')
+   and exists (select 1 from scm.product_category_groups x where x.code = g.grp);
+
+insert into scm.product_models (company_id, model_code, name, category)
+select {CO}, c.code, c.name, c.category::scm.mfg_product_category from hq_cus c
+on conflict (company_id, model_code, category) do nothing;
+insert into scm.mfg_products (id, company_id, code, name, category, sub_category, uom, status, cost_price_sen, description, model_id)
+select 'mfg-' || left(encode(sha256(convert_to(c.code, 'UTF8')), 'hex'), 12), {CO}, c.code, c.name, c.category::scm.mfg_product_category,
+       c.sub_category, 'UNIT', 'ACTIVE', 0, '{CUS_DESC}', m.id
+  from hq_cus c
+  left join scm.product_models m on m.company_id = {CO} and m.model_code = c.code and m.category::text = c.category
+ where not exists (select 1 from scm.mfg_products p where p.company_id = {CO} and p.code = c.code)
+on conflict do nothing;
+insert into scm.supplier_material_bindings
+    (company_id, supplier_id, material_kind, item_code, material_name, supplier_sku, unit_price_sen, price_valid_from, is_main_supplier, notes)
+select {CO}, s.id, 'mfg_product', c.code, c.name, c.code, 0, date '{EFF}',
+       not exists (select 1 from scm.supplier_material_bindings x where x.company_id = {CO} and x.material_kind = 'mfg_product'
+                                                                  and x.item_code = c.code and x.is_main_supplier),
+       '{CUS_NOTE}'
+  from hq_cus c
+  join scm.suppliers s on s.company_id = {CO} and s.code = 'CUSTOMER'
+ where exists (select 1 from scm.mfg_products p where p.company_id = {CO} and p.code = c.code)
+   and not exists (select 1 from scm.supplier_material_bindings b where b.company_id = {CO} and b.material_kind = 'mfg_product'
+                                                                  and b.item_code = c.code and b.supplier_id = s.id);
+
 insert into scm.app_config (key, value, description, company_id)
 select 'note:{TAG.replace(' ', '-')}',
        json_build_object('tag', '{TAG}', 'at', now(), 'skus', (select count(*) from hq_sku),
                          'priced', (select count(*) from hq_sku where priced),
+                         'customer_skus', (select count(*) from hq_cus),
                          'deleted', (select coalesce(array_agg(code order by code), '{{}}') from hq_retire where refs = 0),
                          'deactivated', (select coalesce(array_agg(code order by code), '{{}}') from hq_retire where refs > 0))::text,
        'Catalog note: {HK_NOTE} + AKEMI mattresses (migration 0142)', {CO}
- where exists (select 1 from hq_sku)
+ where exists (select 1 from hq_sku) or exists (select 1 from hq_cus)
 on conflict (key) do nothing;
 
 notify pgrst, 'reload schema';
@@ -483,7 +542,7 @@ for line in [
     'Every SKU has ONE main supplier with its cost: picking the SKU on a purchase order fills the supplier and the cost.',
     'Bedframe cost: Price 2 (normal fabric) and Price 1 (cheaper fabric tier). Sofa cost: per seat height (24" ... 35") and fabric tier P2 / P3.',
     'A sofa line with no seat height (a renovation contract line) takes the P2 cost at the smallest quoted seat height (see Questions).',
-    'Sheets: Bedframes, Sofas (matrix), Mattresses, Surcharges, Changes vs current system, Questions.',
+    'Sheets: Bedframes, Sofas (matrix), Accessories, Mattresses, Surcharges, Changes vs current system, Customer items, Questions.',
     'Source data: docs/catalog-import/build/hookka_300t.json (read from the PDF by build/hookka_parse.py) and build/akemi_mattress.csv.']:
     rm_.append([line])
 rm_.column_dimensions['A'].width = 140
@@ -557,6 +616,23 @@ ws.append([])
 ws.append(['Surcharges: see the Surcharges sheet (rows marked DIFFERENT).'])
 ws.auto_filter.ref = f'A1:D{ws.max_row - 2}'
 
+ws = sheet('Customer items', ['SKU code', 'Name', 'Group', 'Sub-category', 'Unit', 'Supplier', 'Cost (RM)', 'Purchase order'],
+           [26, 36, 16, 26, 7, 12, 10, 44])
+for sc in SUBCATS:
+    ws.append(['CUS-' + sc['code'], 'Customer ' + sc['label'], sc['group_label'], sc['label'], 'UNIT', 'Customer', 0,
+               'never raised from a renovation contract'])
+labels = {sc['code']: sc['label'] for sc in SUBCATS}
+glabels = {sc['group_code']: sc['group_label'] for sc in SUBCATS}
+for grp, code, name, sub in CUS_GROUPS:
+    ws.append([code, name, glabels.get(grp, grp), (labels.get(sub, '') + ' (group item)').strip(), 'UNIT', 'Customer', 0,
+               'never raised from a renovation contract'])
+money(ws, [7])
+ws.append([])
+ws.append([f'{len(SUBCATS)} sub-categories on a database built from the migrations (production has 55 after 0141): the migration '
+           'reads the sub-categories when it runs, so every active one on production gets its Customer SKU.'])
+ws.append(['Meaning: the customer orders / handles this item; The Conts manages it on the project. Supplier CUSTOMER, cost RM 0.00 on purpose '
+           '(not "price needed"). A renovation contract line with a Customer SKU is skipped when purchase orders are raised.'])
+
 ws = sheet('Questions', ['#', 'Question for the owner', 'What the system does until answered'], [4, 100, 70])
 QS = [
     ('HOOKKA\'s section header says SOFA (209), and its per-model headers add up to 155, but the quotation prints 145 model x '
@@ -575,6 +651,9 @@ QS = [
     ('SQUARE PILLOW SP: description says 26"x26", size column says 16"x16" (RM 55 vs RM 25 for 16"x16").', 'Imported as RM 55.00, name kept.'),
     ('Compartments CSL (5536, 5540, 5543, 5545-5549) and SQCNR (5543) are not in the sofa builder\'s compartment library (no picture).',
      'SKUs created; the sofa builder shows them without a drawing.'),
+    ('Customer items per group sit under one sub-category each (Works > Protection, Built-in > Shelving, Furniture > Loose storage, '
+     'Lighting > Downlight, Appliances > TV, Soft furnishing > Decoration; Service needs none). The engine needs a sub-category for every '
+     'group but Service. Better homes for them?', 'As listed on the Customer items sheet.'),
     ('HOOKKA lists sofa seat sizes 44, 24" x 37" and 12 that no quoted price uses.', 'Not added to the sizes list.'),
     ('Surcharges that differ from Products > Maintenance (copied from Houzs): see the Surcharges sheet. Should the master take HOOKKA\'s values?',
      'HOOKKA purchase orders use HOOKKA\'s values; sales-order costing keeps the master values.'),
