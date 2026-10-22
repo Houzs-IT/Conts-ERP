@@ -6,7 +6,6 @@ import { WORKBOOK_MONEY_MARK } from '../../_lib/hostplatformImportDb';
 import { applyMove, isRefusal, movesFor, enteredOn, mytDay, dayLabel, type State } from '../../_lib/bookingLifecycle';
 import { documentsFor, invoiceRefusal } from '../../_lib/guestDocuments';
 import { pendingFor } from '../../_lib/approvals';
-import { openLateCheckout, paidLateFees, lateCheckoutReady } from '../../_lib/lateCheckout';
 
 /** Per-booking money columns added by migration 0052. Read only where they exist, so this works before and after it. */
 const OPTIONAL_MONEY = {
@@ -164,7 +163,6 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
   const [documents, approvals] = moneyRole
     ? await Promise.all([documentsFor(env, id), pendingFor(env, session, 'reservations', id).catch(() => [])])
     : [[], []];
-  const [lateCheckout, lateFees, lateReady] = await Promise.all([openLateCheckout(env, id), paidLateFees(env, id), lateCheckoutReady(env)]);
   const live =['inquiry', 'pending', 'confirmed', 'checked_in'].includes(row.state);
   return json({
     ...n,
@@ -175,12 +173,11 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
     notes: row.notes ?? null,
     staffNotes: hasStaffNotes ? row.staff_notes ?? null : null,
     money,
-    ledger: ledger({ ...money, channel: row.channel, state: row.state, nights: n.nights, fromWorkbook, lateFees }, payments, CHANNEL_LABEL[row.channel] ?? row.channel),
+    ledger: ledger({ ...money, channel: row.channel, state: row.state, nights: n.nights, fromWorkbook }, payments, CHANNEL_LABEL[row.channel] ?? row.channel),
     timeline,
     moves,
     documents,
     approvals,
-    lateCheckout,
     can: {
       issueDocuments: moneyRole,
       invoiceReason: invoiceRefusal({ channel: row.channel, state: row.state, gross_booking_value: Number(row.gross_booking_value) }, payments),
@@ -189,7 +186,6 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
       changeDatesReason: !live ? 'A past, cancelled or no-show reservation cannot move.' : ota ? `This is a ${CHANNEL_LABEL[row.channel]} reservation: its dates and price are set on ${CHANNEL_LABEL[row.channel]}. Change them there; the change comes back here by itself.` : null,
       recordPayment: schema.payments && MONEY_ROLES.includes(session.role) && row.channel !== 'maintenance_block' && row.channel !== 'owner_stay',
       editDetails: true,
-      lateCheckout: lateReady && live && row.channel !== 'maintenance_block' && row.channel !== 'owner_stay',
       paymentsReady: schema.payments,
     },
   });

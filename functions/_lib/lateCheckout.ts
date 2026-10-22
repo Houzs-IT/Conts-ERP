@@ -1,14 +1,14 @@
 import { type Env, one, fail } from './db';
 
 /** Paid late checkout (migration 0138): a request with a new time, a fee and a remark, which moves the booking's checkout
- *  time only once the guest has paid. */
+ *  time only once the guest has paid. The fee is company income: it never enters booking_payments or an owner statement. */
 
 export interface LateCheckout {
   id: string; checkoutTime: string; amount: number; remark: string | null;
   status: 'requested' | 'paid' | 'cancelled'; requestedBy: string | null; requestedAt: string;
 }
 
-/** Whether migration 0138 is applied. Remembered once it is, so opening a booking stops paying a catalogue query. */
+/** Whether migration 0138 is applied. Remembered once it is, so a panel stops paying a catalogue query. */
 let seen = false;
 export async function lateCheckoutReady(env: Env): Promise<boolean> {
   if (seen) return true;
@@ -26,16 +26,6 @@ export async function openLateCheckout(env: Env, reservationId: string): Promise
     FROM late_checkout_requests l LEFT JOIN users u ON u.id = l.requested_by
     WHERE l.reservation_id = ? AND l.status = 'requested'`, reservationId);
   return r ? { id: r.id, checkoutTime: r.checkout_time, amount: Number(r.amount), remark: r.remark, status: r.status, requestedBy: r.requested_by_name, requestedAt: r.requested_at } : null;
-}
-
-/** The payment note, so the fee reads as what it is in the booking's payments and on receipts. */
-export const lateCheckoutNote = (time: string, remark: string | null): string => `Late checkout to ${time}${remark ? `: ${remark}` : ''}`.slice(0, 500);
-
-/** The booking's paid late checkout fees, sen: added to what the booking is expected to bring in (bookingMoney.ledger). */
-export async function paidLateFees(env: Env, reservationId: string): Promise<number> {
-  if (!(await lateCheckoutReady(env))) return 0;
-  const r = await one<{ fees: number | null }>(env, `SELECT SUM(amount) AS fees FROM late_checkout_requests WHERE reservation_id = ? AND status = 'paid'`, reservationId);
-  return Number(r?.fees ?? 0);
 }
 
 const DONE = ['checked_out', 'cancelled', 'no_show'];

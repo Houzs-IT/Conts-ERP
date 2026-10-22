@@ -170,8 +170,7 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 
 ## Paid late checkout (feat/late-checkout, migration 0138, 22 Oct 2026)
 - Apply 0138 to staging, then production, before merging: without it the booking panel shows no late checkout option.
-- A direct booking's invoice leaves out a paid late checkout fee (guestDocuments snapshotFor builds the ledger without lateFees); the receipt for the fee is right.
-- Cleaning does not see a requested but unpaid late checkout; it sees the new time once paid.
+- The fee is company income kept on late_checkout_requests only: no receipt for it and no report listing the fees yet.
 
 ## Later
 - Packages (8 Oct, chore/update-packages): Property OS has 0 flagged packages (wrangler 4.148, source-map-js, and an override pinning sharp to 0.35.5 inside wrangler's local emulator; all build/dev tools, none ran in production). Engine: the non-breaking fixes are in (hono on the server, dompurify on the screens, and build tools). Left in engine/, each needing a breaking upgrade of Houzs's code or tools: react-router 6 (moderate), wrangler's sharp and undici, esbuild, vitest, braces. Take them with the next Houzs copy.

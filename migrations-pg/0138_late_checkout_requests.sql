@@ -1,15 +1,18 @@
 -- Paid late checkout (owner, 22 Oct 2026). Checkout is 11:00 by default; a guest may ask to stay later for a fee. Staff
--- record the request with the new time, the amount and a remark. The booking's checkout time changes only once the guest
--- has paid: marking it paid records the fee as a guest payment on the booking (so it counts as unit income on the owner
--- statement, owner's choice) and moves reservations.check_out_time, which Cleaning plans the turnover from.
+-- record the request (from the cleaning job or the reservation) with the new time, the fee and a remark. The booking's
+-- checkout time changes only once the guest has paid, which moves reservations.check_out_time (Cleaning plans the
+-- turnover from it).
+--
+-- The fee is the company's, not the unit's (owner, 22 Oct 2026): it is kept here and never written to booking_payments,
+-- so it stays out of the booking's money and the owner statement.
 --
 --   late_checkout_requests  one row per request. status: requested (waiting for the guest to pay), paid, cancelled.
---                           amount is sen. payment_id is the booking_payments row made when it was paid.
+--                           amount is sen. paid_on / method / reference describe the payment once paid.
 --                           At most one open (requested) request per booking.
 --
--- Optional: the code reads the table only when it exists, so a booking opens as before on a database without it.
+-- Optional: the code reads the table only when it exists, so the screens work as before on a database without it.
 --
--- REVERSAL: DROP TABLE late_checkout_requests;  (paid fees stay as booking_payments, times stay as set)
+-- REVERSAL: DROP TABLE late_checkout_requests;  (checkout times stay as set)
 set local search_path = pos;
 
 CREATE TABLE IF NOT EXISTS late_checkout_requests (
@@ -19,11 +22,14 @@ CREATE TABLE IF NOT EXISTS late_checkout_requests (
   amount         INTEGER NOT NULL CHECK (amount > 0),
   remark         TEXT,
   status         TEXT NOT NULL DEFAULT 'requested' CHECK (status IN ('requested','paid','cancelled')),
-  payment_id     TEXT REFERENCES booking_payments(id) ON DELETE SET NULL,
+  paid_on        TEXT CHECK (paid_on IS NULL OR paid_on ~ '^\d{4}-\d{2}-\d{2}$'),
+  method         TEXT,
+  reference      TEXT,
   requested_by   TEXT REFERENCES users(id) ON DELETE SET NULL,
   requested_at   TEXT NOT NULL,
   closed_by      TEXT REFERENCES users(id) ON DELETE SET NULL,
-  closed_at      TEXT
+  closed_at      TEXT,
+  CHECK (status <> 'paid' OR paid_on IS NOT NULL)
 );
 CREATE UNIQUE INDEX IF NOT EXISTS late_checkout_requests_one_open ON late_checkout_requests(reservation_id) WHERE status = 'requested';
 

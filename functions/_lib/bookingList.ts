@@ -1,4 +1,4 @@
-import { moneySql, type MoneySchema } from './bookingMoney';
+import { moneySql } from './bookingMoney';
 import { countryJoin, countryWhere, parseCountries, countryName, countryNameSql, countriesNamed } from './guestCountry';
 
 /** The Bookings list: one place that turns the screen's URL (tab, to-do card, filters, searches, sort)
@@ -50,7 +50,7 @@ const phaseLabelSql = (today: string) => {
 };
 export const STATES = ['inquiry', 'pending', 'confirmed', 'checked_in', 'checked_out', 'cancelled', 'no_show'] as const;
 
-export type Schema = MoneySchema;
+export interface Schema { payoutCols: boolean; payments: boolean }
 
 /** FROM with the money join (left out only for counts that read no money) and the guest's country. */
 export const fromSql = (s: Schema, money = true) => `FROM reservations r

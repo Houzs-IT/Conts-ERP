@@ -1,11 +1,30 @@
 import { type Env, one, run, json, fail, audit, nowIso } from '../../../../_lib/db';
 import { requireSession, isFieldRole } from '../../../../_lib/auth';
 import { clean } from '../../../../_lib/bookingPayments';
+import { MONEY_ROLES } from '../../../../_lib/bookingMoney';
 import { lateCheckoutReady, openLateCheckout, lateBooking, lateRefusal } from '../../../../_lib/lateCheckout';
 import { LIVE_STAY_SQL } from '../../../../_lib/cleaning';
 import { checkSen } from '../../../../_lib/validate';
 
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/** GET /api/reservations/:id/late-checkout — what the late checkout block on the cleaning job and the reservation shows:
+ *  the booking's checkout, its open request, and what this user may do. */
+export const onRequestGet: PagesFunction<Env> = async ({ request, env, params }) => {
+  const { session, response } = await requireSession(request, env);
+  if (!session) return response;
+  if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Cleaners and technicians cannot change reservations.', 403);
+  const id = String(params.id);
+  const r = await lateBooking(env, id);
+  if (!r) return fail('NOT_FOUND', 'That reservation does not exist.', 404);
+  const ready = await lateCheckoutReady(env);
+  return json({
+    checkOut: r.check_out, checkOutTime: r.check_out_time || '11:00',
+    open: await openLateCheckout(env, id),
+    canRequest: ready && !lateRefusal(r),
+    canPay: ready && MONEY_ROLES.includes(session.role),
+  });
+};
 
 /** POST /api/reservations/:id/late-checkout { checkoutTime, amount (sen), remark? }
  *  Records a guest's request to check out later for a fee. The booking's checkout time does not change yet: it changes
