@@ -134,6 +134,7 @@
  "GET /api/payment-vouchers": "AAFAFFFU",
  "GET /api/payment-vouchers/[id]": "AAFAFFFU",
  "GET /api/payouts": "AAFAFFFU",
+ "GET /api/payouts/export": "AAFAFFFU",
  "GET /api/portfolio/owner-report": "AAFAFFFU",
  "GET /api/portfolio/performance": "AAFAFFFU",
  "GET /api/pricing/rules": "AAFAFFFU",
