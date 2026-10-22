@@ -168,7 +168,7 @@ function crc32(b: Uint8Array): number {
   return (c ^ 0xFFFFFFFF) >>> 0;
 }
 
-function zipStore(files: [string, Uint8Array][]): Uint8Array {
+export function zipStore(files: [string, Uint8Array][]): Uint8Array {
   const enc = new TextEncoder();
   const d = new Date();
   const time = (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1);

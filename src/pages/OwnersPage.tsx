@@ -7,6 +7,8 @@ import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { useToast } from '../components/Toast';
 import { api, errorMessage } from '../lib/api';
+import { saveBlob, zipStore } from '../lib/export';
+import type { Report } from './OwnerIncomeReportPage';
 import { rmShort, monthLabel, todayMyt, titleCase, plural } from '../lib/format';
 import { phone as formatPhone } from '../lib/phone';
 import { MoneyText } from '../components/MoneyText';
@@ -175,6 +177,64 @@ function OwnerList({ tabs }: { tabs: ReactNode }) {
   const filtered = !!(q || building || model);
   const monthText = month === thisMonth ? 'this month' : monthLabel(month);
 
+  /** The month's owner statement of every owner the table shows, one PDF each, in one zip. Drawn in the browser:
+   *  the server has no PDF renderer. Four reports are fetched at a time. */
+  const finance = !!user && areaOpen(user.role, 'finance', user.access);
+  const [zipping, setZipping] = useState(false);
+  async function zipStatements() {
+    if (zipping) return;
+    setZipping(true);
+    try {
+      // period always given: left out, the endpoint answers the latest month that has statements instead.
+      const list = await api.get<{ data: { id: string; ownerId: string; ownerName: string }[] }>('/statements', { period: month, pageSize: 500 });
+      const shown = new Set(tableRows.map(o => o.id));
+      const picked = list.data.filter(s => shown.has(s.ownerId));
+      if (!picked.length) {
+        toast({ tone: 'warning', title: `No owner statements for ${monthLabel(month)} yet.`, body: 'Generate them on the Statements tab, then export again.' });
+        return;
+      }
+      toast({ tone: 'info', title: `Making ${plural(picked.length, 'owner statement')}...`, body: 'The zip downloads when it is ready. Keep this page open.' });
+      const [{ statementPdf }, { printedPhone }] = await Promise.all([import('../lib/statementPdf'), import('./OwnerIncomeReportPage')]);
+      let logo: Promise<Uint8Array | null> | null = null;
+      const logoOf = (src: string) => (logo ??= fetch(src).then(async r => (r.ok ? new Uint8Array(await r.arrayBuffer()) : null)).catch(() => null));
+      const made: { name: string; bytes: Uint8Array }[] = [];
+      const noReport: string[] = [], failed: string[] = [];
+      for (let i = 0; i < picked.length; i += 4) {
+        await Promise.all(picked.slice(i, i + 4).map(async s => {
+          try {
+            const { data: r } = await api.get<{ data: Report }>(`/statements/${encodeURIComponent(s.id)}/report`);
+            if (!r.units.length) { noReport.push(titleCase(s.ownerName)); return; }
+            made.push({ name: titleCase(s.ownerName), bytes: await statementPdf(r, { logo: await logoOf(r.settings.company.logo), phone: printedPhone }) });
+          } catch {
+            failed.push(titleCase(s.ownerName));
+          }
+        }));
+      }
+      if (made.length) {
+        const used = new Map<string, number>();
+        const files = made.sort((a, b) => a.name.localeCompare(b.name)).map(({ name, bytes }): [string, Uint8Array] => {
+          const stem = `${name.replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'Owner'} - ${monthLabel(month)}`;
+          const n = (used.get(stem) ?? 0) + 1;
+          used.set(stem, n);
+          return [`${stem}${n > 1 ? ` (${n})` : ''}.pdf`, bytes];
+        });
+        saveBlob(zipStore(files) as BlobPart, `owner-statements-${month}.zip`, 'application/zip');
+      }
+      const missing = tableRows.length - picked.length;
+      toast({
+        tone: failed.length || !made.length ? 'warning' : 'success',
+        title: made.length ? `${plural(made.length, 'owner statement')} in the zip.` : 'No statement could be made into a PDF.',
+        body: [
+          missing > 0 && `${plural(missing, 'owner')} had no statement for ${monthLabel(month)}.`,
+          noReport.length > 0 && `${plural(noReport.length, 'month')} paid before Property OS had no report to draw: ${noReport.join(', ')}.`,
+          failed.length > 0 && `Could not be made: ${failed.join(', ')}. Try again in a moment.`,
+        ].filter(Boolean).join(' ') || undefined,
+      });
+    } catch (e) {
+      toast({ tone: 'critical', title: 'Owner statements could not be gathered.', body: errorMessage(e, 'Try again in a moment.') });
+    } finally { setZipping(false); }
+  }
+
   const openProfile = (id: string) => navigate(`/owners/${encodeURIComponent(id)}`);
   const clearFilters = () => url.set({ q: null, building: null, model: null, page: null });
   const monthCol = month === thisMonth ? 'month' : monthLabel(month);
@@ -254,7 +314,14 @@ function OwnerList({ tabs }: { tabs: ReactNode }) {
       {/* The month's payout as the dark statement tile; the split and the gross beside it; the month stepper on top. */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <span className="text-[11px] font-semibold tracking-[0.12em] uppercase text-muted-ink">Owner payouts · {monthText} (estimate)</span>
-        <MonthStepper label={monthLabel(month)} onStep={by => url.set({ month: shiftMonth(month, by) === thisMonth ? null : shiftMonth(month, by) })} />
+        <span className="flex items-center gap-2 flex-wrap">
+          <MonthStepper label={monthLabel(month)} onStep={by => url.set({ month: shiftMonth(month, by) === thisMonth ? null : shiftMonth(month, by) })} />
+          {finance && (
+            <Button size="sm" variant="primary" icon={<Icon name="FileArchive" size="sm" />} loading={zipping} disabled={!tableRows.length}
+              disabledReason="No owners listed under these filters." title={`The ${monthLabel(month)} statement of each owner listed, one PDF per owner.`}
+              onClick={() => void zipStatements()}>Owner statements (.zip)</Button>
+          )}
+        </span>
       </div>
       <div className="grid grid-cols-2 lg:grid-cols-[minmax(0,1.4fr)_repeat(3,minmax(0,1fr))] gap-3 sm:gap-4">
         <div className="col-span-2 lg:col-span-1 relative rounded-card bg-black text-white p-5 flex flex-col gap-2 overflow-hidden">

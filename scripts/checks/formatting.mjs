@@ -11,6 +11,7 @@ const PATTERNS = [
 
 export const allow = {
   'src/lib/format.ts': 'The one place formatting lives.',
+  'src/lib/statementPdf.ts': 'Runs under node --test, which cannot import format.ts without an extension; same rule as amount().',
 };
 
 export const def = {
