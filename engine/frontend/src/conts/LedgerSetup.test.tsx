@@ -39,6 +39,15 @@ vi.mock("../vendor/scm/lib/accounting-queries", async (importOriginal) => ({
   ] } }),
 }));
 vi.mock("../auth/AuthContext", () => ({ useAuth: () => ({ can: () => canPost }) }));
+let openingCheck: Record<string, unknown> | undefined;
+vi.mock("./opening", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./opening")>()),
+  useOpeningCheck: (enabled: boolean) => (enabled && openingCheck
+    ? { isSuccess: true, isError: false, data: openingCheck }
+    : { isSuccess: false, isError: false, data: undefined }),
+  useImportOpening: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useReverseOpening: () => ({ mutateAsync: vi.fn(), isPending: false }),
+}));
 vi.mock("../vendor/scm/components/ConfirmDialog", () => ({ useConfirm: () => confirmFn }));
 
 import { LedgerSetup } from "./LedgerSetup";
@@ -154,5 +163,43 @@ describe("Ledger setup — Posting rules", () => {
     expect(confirmFn).toHaveBeenCalledTimes(2);
     expect(JSON.stringify(confirmFn.mock.calls[1])).toContain("400.00");
     expect(setRoleAsync).toHaveBeenLastCalledWith({ role: "AR", accountCode: "310-0020", confirm: true });
+  });
+});
+
+describe("Ledger setup — Opening balances", () => {
+  const CHECK = {
+    ok: true, openingDay: "2026-11-30", openingJeNo: "JE-2611-0001", trialDebitSen: 150000, trialCreditSen: 150000,
+    arControlSen: 50000, arDocumentsSen: 40000, apControlSen: 30000, apDocumentsSen: 30000,
+    banks: [{ accountCode: "310-0001", name: "MAYBANK", balanceSen: 100000 }], balanced: false,
+  };
+
+  it("asks for the start date before anything can be imported", () => {
+    settings = { ledgerStartDate: null, fiscalYearEndMonth: 8 };
+    render(<MemoryRouter><LedgerSetup /></MemoryRouter>);
+    expect(screen.getByText(/Set the day the books start first/)).toBeTruthy();
+  });
+
+  it("shows the check in red when AR does not match", () => {
+    settings = { ledgerStartDate: "2026-12-01", fiscalYearEndMonth: 8 };
+    openingCheck = CHECK;
+    render(<MemoryRouter><LedgerSetup /></MemoryRouter>);
+    expect(screen.getByTestId("opening-verdict").textContent).toMatch(/do not agree yet/);
+    const debtors = screen.getByText("Trade debtors").closest("tr") as HTMLElement;
+    expect(debtors.dataset.ok).toBe("false");
+    expect(debtors.textContent).toMatch(/Off by 100\.00/);
+    expect((screen.getByText("Trade creditors").closest("tr") as HTMLElement).dataset.ok).toBe("true");
+    expect(screen.getByText(/310-0001 MAYBANK/)).toBeTruthy();
+    openingCheck = undefined;
+    settings = { ledgerStartDate: null, fiscalYearEndMonth: 8 };
+  });
+
+  it("shows green when everything agrees", () => {
+    settings = { ledgerStartDate: "2026-12-01", fiscalYearEndMonth: 8 };
+    openingCheck = { ...CHECK, arDocumentsSen: 50000, balanced: true };
+    render(<MemoryRouter><LedgerSetup /></MemoryRouter>);
+    expect(screen.getByTestId("opening-verdict").textContent).toMatch(/agree/);
+    expect(screen.getByTestId("opening-verdict").textContent).not.toMatch(/not/);
+    openingCheck = undefined;
+    settings = { ledgerStartDate: null, fiscalYearEndMonth: 8 };
   });
 });
