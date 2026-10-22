@@ -325,7 +325,7 @@ export default function OwnerOverallReportPage() {
   return (
     <div className="flex flex-col gap-4 md:gap-5 md:flex-1 md:min-h-0 transition-[margin] duration-[var(--motion-standard)]" style={{ marginRight: panel ? PANEL_ROOM : 0 }}>
       <PageHeader
-        title="Overall owner report"
+        title="Overall unit report"
         sub={data ? <>
           {[plural(all.length, 'unit'), `${count(ltCount)} long term`, `${count(all.length - ltCount)} profit sharing`,
             ...(data.excluded ? [`${plural(data.excluded, 'long-term let or master lease', 'long-term lets and master leases')} not listed`] : []), 'amounts in RM']
