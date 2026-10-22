@@ -9,15 +9,15 @@ d = json.load(open(sys.argv[1], encoding='utf-8'))
 OUT = sys.argv[2]
 rows, SUP, NEW_SUBS, NEW_UOMS = d['rows'], d['suppliers'], d['new_subs'], d['new_uoms']
 GROUP_LABEL = {'WORKS': 'Works', 'BUILTIN': 'Built-in', 'FURNITURE': 'Furniture', 'LIGHTING': 'Lighting', 'APPLIANCE': 'Appliances', 'SOFT': 'Soft furnishing', 'SERVICE': 'Service'}
-EXISTING_SUBS = {  # seeded by migrations 0061 + 0085 (production may have more added in the app)
+EXISTING_SUBS = {  # seeded by migrations 0061 + 0085, regrouped by 0141 (production may have more added in the app)
  'WORKS': ['PROTECTION', 'HACKING', 'PLUMBING', 'WATERPROOFING', 'ELECTRICAL', 'MASONRY_TILING', 'PLASTER_CEILING', 'PARTITION', 'ALUMINIUM_GLASS', 'DOOR', 'GRILL',
-           'PAINTING', 'TEXTURED_PAINTING', 'FEATURE_WALL', 'FLOORING', 'AIRCON_INSTALL', 'CLEANING', 'PROJECT_MGMT'],
+           'PAINTING', 'TEXTURED_PAINTING', 'FEATURE_WALL', 'FLOORING'],
  'BUILTIN': ['KITCHEN_CABINET', 'WARDROBE', 'TV_CABINET', 'SHOE_CABINET', 'STUDY_TABLE', 'COUNTERTOP', 'SHELVING'],
  'FURNITURE': ['SOFA', 'BEDFRAME', 'MATTRESS', 'DINING', 'TABLES', 'LOOSE_STORAGE', 'ACCESSORY'],
  'LIGHTING': ['DOWNLIGHT', 'PENDANT', 'LED_STRIP', 'CEILING_FAN'],
  'APPLIANCE': ['TV', 'FRIDGE', 'WASHER', 'WATER_HEATER', 'HOOD_HOB', 'AIRCON_UNIT'],
  'SOFT': ['CURTAIN_BLINDS', 'BED_LINEN', 'AMENITIES', 'DECORATION', 'CARPET', 'DIFFUSER'],
- 'SERVICE': ['DELIVERY', 'STYLING', 'PHOTOSHOOT', 'AIRBNB_SETUP'],
+ 'SERVICE': ['DELIVERY', 'STYLING', 'PHOTOSHOOT', 'AIRBNB_SETUP', 'AIRCON_INSTALL', 'CLEANING', 'PROJECT_MGMT'],  # the last three moved from WORKS by 0141
 }
 EXISTING_UOMS = {'PCS', 'UNIT', 'SET', 'LOT', 'FT', 'SQFT', 'POINT', 'FULL'}
 new_sub_codes = {(g, c) for g, c, _ in NEW_SUBS}
