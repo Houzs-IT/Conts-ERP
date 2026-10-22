@@ -15,20 +15,24 @@
   --color-ink: #F2EFE9;
   --color-ink-2: #D6D1C8;
   --color-muted-ink: #A8A29A;
-  --color-faint: #8A8680;
+  /* Used for labels and counts, not only placeholders: #8A8680 fell to 4.4:1 on the muted surface. */
+  --color-faint: #9C978F;
   --color-line: #2E2B27;
   --color-line-soft: #24221F;
   --color-line-strong: #3D3934;
   --color-gold-ink: #D0B37E;
   --color-gold-tint: rgba(200, 164, 106, 0.14);
 
-  --color-success: #5FC79A;  --color-success-bg: rgba(22, 132, 91, 0.18);  --color-success-line: #2FA674;
-  --color-warning: #E3B25A;  --color-warning-bg: rgba(183, 121, 31, 0.20); --color-warning-line: #C99332;
-  --color-danger: #F08A84;   --color-danger-bg: rgba(194, 65, 59, 0.20);   --color-danger-line: #D9605A;
-  --color-critical: #F08A84; --color-critical-bg: rgba(194, 65, 59, 0.20); --color-critical-line: #D9605A;
-  --color-info: #7DB3E6;     --color-info-bg: rgba(46, 109, 164, 0.22);    --color-info-line: #5A95CE;
-  --color-neutral: #A8A29A;  --color-neutral-bg: #23211E;                  --color-neutral-line: #3D3934;
-  --color-accent: #D0B37E;   --color-accent-bg: rgba(200, 164, 106, 0.14); --color-accent-line: #C8A46A;
+  /* Same roles as root tokens.css: --color-{tone} is the TINT behind a badge, -fg its text, -line dots and borders.
+     These once held the text colour under the tint's name, so every badge read through status.ts drew a bright
+     pill with light-mode text on it (2.0-3.2:1). -bg is the Tailwind-side alias of the tint. */
+  --color-success: rgba(22, 132, 91, 0.18);  --color-success-bg: rgba(22, 132, 91, 0.18);  --color-success-fg: #5FC79A;  --color-success-line: #2FA674;
+  --color-warning: rgba(183, 121, 31, 0.20); --color-warning-bg: rgba(183, 121, 31, 0.20); --color-warning-fg: #E3B25A;  --color-warning-line: #C99332;
+  --color-critical: rgba(194, 65, 59, 0.20); --color-critical-bg: rgba(194, 65, 59, 0.20); --color-critical-fg: #F08A84; --color-critical-line: #D9605A;
+  --color-danger: rgba(194, 65, 59, 0.20);   --color-danger-bg: rgba(194, 65, 59, 0.20);   --color-danger-fg: #F08A84;   --color-danger-line: #D9605A;
+  --color-info: rgba(46, 109, 164, 0.22);    --color-info-bg: rgba(46, 109, 164, 0.22);    --color-info-fg: #7DB3E6;     --color-info-line: #5A95CE;
+  --color-neutral: #2A2723;                  --color-neutral-bg: #2A2723;                  --color-neutral-fg: #B5AFA6;  --color-neutral-line: #5A554D;
+  --color-accent: rgba(200, 164, 106, 0.14); --color-accent-bg: rgba(200, 164, 106, 0.14); --color-accent-fg: #D0B37E;   --color-accent-line: #C8A46A;
 
   --color-surface-page: #0F0F0E;
   --color-surface-card: #1A1917;
@@ -43,7 +47,7 @@
   --color-text-primary: #F2EFE9;
   --color-text-secondary: #D6D1C8;
   --color-text-muted: #A8A29A;
-  --color-text-faint: #8A8680;
+  --color-text-faint: #9C978F;
   --color-text-accent: #D0B37E;
   --color-text-link: #F2EFE9;
   --color-text-link-hover: #D0B37E;
@@ -74,9 +78,16 @@
 /* Fields and panels still written as `bg-white` in 11 files (textareas, inputs, the login panel). One rule here
  * instead of 11 file edits: in dark mode they take the card surface. Toggle knobs (rounded-full) and the 2-step QR
  * code (an svg, which must stay white to scan) keep their white. */
-[data-theme="dark"] .bg-white:not(.rounded-full):not(svg) {
+:root[data-theme="theconts-dark"] .bg-white:not(.rounded-full):not(svg) {
   background-color: var(--color-surface-card);
 }
+
+/* bg-black marks a selected chip, a sent message, a hero panel or a count badge. #151515 on the #1A1917 card hid all
+ * of them (the selected "All" chip looked unselected), so they lift to a warm charcoal and a selected border shows.
+ * Only these two classes: --color-black itself stays, since text-black is the dark ink on gold buttons and
+ * bg-black/30 scrims must stay dark. */
+:root[data-theme="theconts-dark"] .bg-black { background-color: #34302B; }
+:root[data-theme="theconts-dark"] .border-black { border-color: var(--color-muted-ink); }
 
 /* The sidebar is dark in both themes: keep its "inverse" text white so the active item, the Rental/Supply chain
    toggle and the name at the bottom stay readable. The profile pop-up inside it uses card/ink and is unaffected. */
@@ -85,13 +96,18 @@
 
 /* tokens.css inlines the status colours (@theme inline), so text-success, bg-success-bg and the rest kept their light
    values (dark green on near-black, pale tints under light text). Point them back at this theme's own values. */
-:root[data-theme="theconts-dark"] .text-success { color: var(--color-success); }
-:root[data-theme="theconts-dark"] .text-warning { color: var(--color-warning); }
+:root[data-theme="theconts-dark"] .text-success { color: var(--color-success-fg); }
+:root[data-theme="theconts-dark"] .text-warning { color: var(--color-warning-fg); }
 :root[data-theme="theconts-dark"] .text-danger,
-:root[data-theme="theconts-dark"] .text-critical { color: var(--color-danger); }
-:root[data-theme="theconts-dark"] .text-info { color: var(--color-info); }
+:root[data-theme="theconts-dark"] .text-critical { color: var(--color-critical-fg); }
+:root[data-theme="theconts-dark"] .text-info { color: var(--color-info-fg); }
+:root[data-theme="theconts-dark"] .text-neutral { color: var(--color-neutral-fg); }
+:root[data-theme="theconts-dark"] .text-accent { color: var(--color-accent-fg); }
 :root[data-theme="theconts-dark"] .bg-success-bg { background-color: var(--color-success-bg); }
 :root[data-theme="theconts-dark"] .bg-warning-bg { background-color: var(--color-warning-bg); }
 :root[data-theme="theconts-dark"] .bg-danger-bg,
 :root[data-theme="theconts-dark"] .bg-critical-bg { background-color: var(--color-danger-bg); }
 :root[data-theme="theconts-dark"] .bg-info-bg { background-color: var(--color-info-bg); }
+:root[data-theme="theconts-dark"] .bg-neutral-bg { background-color: var(--color-neutral-bg); }
+:root[data-theme="theconts-dark"] .bg-neutral-line { background-color: var(--color-neutral-line); }
+:root[data-theme="theconts-dark"] .border-neutral-line { border-color: var(--color-neutral-line); }

@@ -562,6 +562,144 @@ function NotesBox({ d, onSaved }: { d: Detail; onSaved: () => void }) {
 }
 
 /* ------------------------------------------------------------------ */
+/* Paid late checkout (functions/api/reservations/[id]/late-checkout)  */
+/* ------------------------------------------------------------------ */
+
+export interface LateCheckout { id: string; checkoutTime: string; amount: number; remark: string | null; status: 'requested'; requestedBy: string | null; requestedAt: string }
+export interface LateCheckoutState { checkOut: string; checkOutTime: string; open: LateCheckout | null; canRequest: boolean; canPay: boolean }
+
+/** A guest asks to check out later for a fee. Only the request is saved: the checkout time moves once they pay. */
+function LateCheckoutModal({ id, s, onClose, onSaved }: { id: string; s: LateCheckoutState; onClose: () => void; onSaved: (msg: string) => void }) {
+  const toast = useToast();
+  const now = s.checkOutTime;
+  const [time, setTime] = useState('');
+  const [sen, setSen] = useState<number | null>(null);
+  const [remark, setRemark] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const early = !!time && time <= now;
+  const valid = !!time && !early && sen != null && sen > 0;
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    if (!valid || sen == null) return;
+    setBusy(true); setErrors({});
+    try {
+      await api.post(`/reservations/${id}/late-checkout`, { checkoutTime: time, amount: sen, remark: remark.trim() || undefined });
+      onSaved(`Late checkout to ${time} requested for ${rm(sen)}. Checkout stays ${now} until the guest pays.`);
+    } catch (err) {
+      if (err instanceof ApiFailure && err.fields) setErrors(err.fields);
+      toast({ tone: 'critical', title: 'Late checkout not requested.', body: failMessage(err) });
+    }
+    setBusy(false);
+  }
+  return (
+    <CentreModal title="Request late checkout" sub={`Checkout is by ${now} on ${date(s.checkOut)}. The time changes only after the guest pays.`} onClose={() => { if (!busy) onClose(); }}>
+      <form onSubmit={submit} className="px-[22px] py-4 flex flex-col gap-[14px] overflow-y-auto min-h-0">
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3">
+          <TimeField label="New checkout time" value={time} onChange={setTime} required
+            error={early ? `Pick a time after ${now}.` : errors.checkoutTime} help={`Now ${now}`} />
+          <MoneyInput label="Price (RM)" valueSen={sen} onChangeSen={setSen} minSen={1} required error={errors.amount} />
+        </div>
+        <Field label="Remark (optional)" value={remark} onChange={e => setRemark(e.target.value)} maxLength={500}
+          placeholder="e.g. Asked by WhatsApp, flight at 18:00" />
+        <p className="m-0 text-meta text-muted-ink text-pretty">Company income: it is not added to the reservation's money or the owner statement.</p>
+        <ModalActions>
+          <Button type="button" size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
+          <Button type="submit" size="sm" variant="primary" loading={busy} disabled={!valid} disabledReason={`Pick a time after ${now} and enter the price.`}>Request late checkout</Button>
+        </ModalActions>
+      </form>
+    </CentreModal>
+  );
+}
+
+/** The guest paid for their late checkout: keeps the payment on the request and moves the checkout time, together. */
+function LateCheckoutPaidModal({ id, s, lc, onClose, onSaved }: { id: string; s: LateCheckoutState; lc: LateCheckout; onClose: () => void; onSaved: (msg: string) => void }) {
+  const toast = useToast();
+  const [receivedOn, setReceivedOn] = useState(todayIso());
+  // vocab-ok: stored payment method value from METHODS
+  const [method, setMethod] = useState('Cash');
+  const [reference, setReference] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    if (!receivedOn) return;
+    setBusy(true); setErrors({});
+    try {
+      await api.post(`/reservations/${id}/late-checkout/paid`, { receivedOn, method, reference: reference.trim() || undefined });
+      onSaved(`${rm(lc.amount)} recorded. Checkout is now by ${lc.checkoutTime}, and Cleaning plans with it.`);
+    } catch (err) {
+      if (err instanceof ApiFailure && err.fields) setErrors(err.fields);
+      toast({ tone: 'critical', title: 'Late checkout not saved.', body: failMessage(err) });
+    }
+    setBusy(false);
+  }
+  return (
+    <CentreModal title="Guest paid for late checkout" sub={`${rm(lc.amount)} for checkout by ${lc.checkoutTime} on ${date(s.checkOut)}. Company income, not on the owner statement.`} onClose={() => { if (!busy) onClose(); }}>
+      <form onSubmit={submit} className="px-[22px] py-4 flex flex-col gap-[14px] overflow-y-auto min-h-0">
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3">
+          <DateField label="Received on" value={receivedOn} max={todayIso()} onChange={setReceivedOn} required error={errors.receivedOn} />
+          <Select label="Method" showLabel size="md" value={method} onChange={setMethod} options={METHODS.filter(m => m !== 'Booking site payout').map(m => ({ value: m, label: m }))} />
+        </div>
+        <Field label="Reference (optional)" value={reference} onChange={e => setReference(e.target.value)} placeholder="Bank or receipt reference" />
+        <ModalActions>
+          <Button type="button" size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
+          <Button type="submit" size="sm" variant="primary" loading={busy} disabled={!receivedOn} disabledReason="Pick the date it was received.">Record and change checkout</Button>
+        </ModalActions>
+      </form>
+    </CentreModal>
+  );
+}
+
+/** Late checkout on one reservation, for the cleaning job's panel and the reservation's: a "Request late checkout" button,
+ *  or the open request with Guest paid and Cancel. Loads its own state; onChanged tells the host to reload its own. */
+export function LateCheckoutBlock({ reservationId, onChanged }: { reservationId: string; onChanged?: () => void }) {
+  const toast = useToast();
+  const { data: s, reload } = useApi<LateCheckoutState>(`/reservations/${reservationId}/late-checkout`);
+  const [step, setStep] = useState<'request' | 'paid' | 'cancel' | null>(null);
+  const [busy, setBusy] = useState(false);
+  const done = (msg: string) => { setStep(null); toast({ tone: 'success', title: msg }); reload(); onChanged?.(); };
+  async function cancel() {
+    setBusy(true);
+    try { await api.del(`/reservations/${reservationId}/late-checkout`); done('Late checkout request cancelled.'); }
+    catch (err) { toast({ tone: 'critical', title: 'Request not cancelled.', body: failMessage(err) }); }
+    setBusy(false);
+  }
+  if (!s || (!s.open && !s.canRequest)) return null;
+  const lc = s.open;
+  return (
+    <>
+      {lc ? (
+        <div className="rounded-card border border-solid border-line bg-gold-tint p-[13px] flex flex-col gap-2">
+          <div className="flex flex-col gap-0.5 min-w-0">
+            <span className="text-copy font-semibold">Late checkout to {lc.checkoutTime} · waiting for payment</span>
+            <span className="text-meta text-muted-ink">{rm(lc.amount)} · checkout stays {s.checkOutTime} until paid</span>
+          </div>
+          {lc.remark && <p className="m-0 text-meta text-ink [overflow-wrap:anywhere]">{lc.remark}</p>}
+          {lc.requestedBy && <span className="text-caption text-muted-ink">Requested by {lc.requestedBy} · {dateTime(lc.requestedAt)}</span>}
+          <div className="flex gap-2 flex-wrap">
+            <Button size="sm" variant="primary" onClick={() => setStep('paid')} disabled={!s.canPay}
+              disabledReason="Only management, finance and operations managers record payments.">Guest paid</Button>
+            <Button size="sm" variant="secondary" onClick={() => setStep('cancel')}>Cancel request</Button>
+          </div>
+        </div>
+      ) : (
+        <Button size="sm" variant="secondary" className="self-start" icon={<Icon name="Clock" size="sm" />} onClick={() => setStep('request')}>Request late checkout</Button>
+      )}
+      {step === 'request' && <LateCheckoutModal id={reservationId} s={s} onClose={() => setStep(null)} onSaved={done} />}
+      {step === 'paid' && lc && <LateCheckoutPaidModal id={reservationId} s={s} lc={lc} onClose={() => setStep(null)} onSaved={done} />}
+      <ConfirmDialog busy={busy} onClose={() => { if (!busy) setStep(null); }}
+        spec={step === 'cancel' && lc ? {
+          title: 'Cancel this late checkout request?',
+          body: `Late checkout to ${lc.checkoutTime} for ${rm(lc.amount)}. Checkout stays ${s.checkOutTime}. Nothing was charged, so nothing is refunded.`,
+          danger: true, cancelLabel: 'Keep it', confirmLabel: 'Cancel request', busyLabel: 'Cancelling…',
+          onConfirm: cancel,
+        } : null} />
+    </>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /* The drawer                                                          */
 /* ------------------------------------------------------------------ */
 
@@ -726,6 +864,7 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
           <button type="button" onClick={() => setTimesOpen(true)}
             className="self-start -mt-3 p-0 border-none bg-transparent [font-family:inherit] text-meta text-ink underline cursor-pointer">Change check-in or checkout time</button>
         )}
+        {d && live && !block && <LateCheckoutBlock reservationId={d.id} onChanged={() => { reload(); onChanged?.(id); }} />}
 
         {!block && d && (
           <div className="flex flex-col gap-1 text-copy">

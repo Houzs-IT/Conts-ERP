@@ -119,7 +119,7 @@ export default function TopBar({
           const crumbs = nav ? [nav.group, ...(nav.group !== nav.item ? [nav.item] : []), ...(nav.label !== nav.item ? [nav.label] : []), ...(nav.page ? [nav.page] : [])] : [path === '/account' ? 'My account' : path === '/notifications' ? 'Notifications' : 'Home'];
           return crumbs.map((c, i) => (
             <Fragment key={`${c}-${i}`}>
-              {i > 0 && <span aria-hidden style={{ fontSize: text.meta, color: color.borderStrong, flex: 'none' }}>/</span>}
+              {i > 0 && <span aria-hidden style={{ fontSize: text.meta, color: color.faint, flex: 'none' }}>/</span>}
               <span style={{ fontSize: text.meta, fontWeight: i === crumbs.length - 1 ? 600 : 400, color: i === crumbs.length - 1 ? color.ink : color.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c}</span>
             </Fragment>
           ));

@@ -82,6 +82,7 @@ export const ROUTE_AREAS: { method: string; path: RegExp; area: string | null; w
   // a channel payout and issuing a receipt are finance's own work, so those writes follow the Finance area.
   { method: 'POST', path: /^\/api\/reservations\/[^/]+\/payments$/, area: 'finance', why: 'Recording a guest payment on a reservation is money work.' },
   { method: 'DELETE', path: /^\/api\/reservations\/[^/]+\/payments\/[^/]+$/, area: 'finance', why: 'Removing a wrongly recorded guest payment is money work.' },
+  { method: 'POST', path: /^\/api\/reservations\/[^/]+\/late-checkout\/paid$/, area: 'finance', why: 'Marking a late checkout paid records a guest payment.' },
   { method: 'POST', path: /^\/api\/reservations\/mark-paid-out$/, area: 'finance', why: 'Recording a channel payout is money work.' },
   { method: 'POST', path: /^\/api\/guest-documents$/, area: 'finance', why: 'Issuing a guest receipt or invoice is money work.' },
   { method: 'POST', path: /^\/api\/guest-documents\/[^/]+\/void$/, area: 'finance', why: 'Voiding a guest receipt or invoice is money work.' },

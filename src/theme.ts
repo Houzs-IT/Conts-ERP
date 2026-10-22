@@ -2,8 +2,8 @@
  *  Components read from this object; nothing hard-codes a brand hex. */
 
 export const color = {
-  goldTint: '#FBF7F0', gold200: '#EADCBD', gold300: '#DDC597',
-  gold: '#C8A46A', goldInk: '#8A6A2F',
+  goldTint: 'var(--color-gold-tint, #FBF7F0)', gold200: '#EADCBD', gold300: '#DDC597',
+  gold: '#C8A46A', goldInk: 'var(--color-gold-ink, #8A6A2F)',
   black: '#151515', charcoal: '#242424', basalt700: '#1E1E1E',
   dim: '#8A8680', onDark: '#DEDAD3',
   page: 'var(--color-page, #FAF9F6)', card: 'var(--color-card, #FFFFFF)', muted: 'var(--color-muted, #F1F0ED)', sunken: 'var(--color-sunken, #EDEAE4)',

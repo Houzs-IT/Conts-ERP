@@ -34,7 +34,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       unitId: m.unitId, // The workbook's code (SKYLINE-C2701): the unit's own code field holds only its number (C27-01).
       code: unitCode(u.property_name, u.unit_number), building: u.property_name, ownerName: u.owner_name,
       contract: lt ? 'LT' : 'PS', revenue: m.gross,
-      cleaning: sum(c => c.startsWith('cleaning')), utilities: sum(c => UTILITIES.has(c)), additional: sum(c => c === 'additional'), misc: sum(c => c === 'misc'),
+      cleaning: sum(c => c.startsWith('cleaning')), utilities: sum(c => UTILITIES.has(c)),
+      electricity: sum(c => c === 'electricity'), water: sum(c => c === 'water'), internet: sum(c => c === 'internet'), sewerage: sum(c => c === 'sewerage'),
+      additional: sum(c => c === 'additional'), misc: sum(c => c === 'misc'),
       ownerPct: lt ? 0 : m.terms.ownerPct ?? 0,
       // A yearly guarantee is checked once a year (its true-up lands on the statement as a top-up), not month by month.
       ltGrr: lt ? m.fixedRent : m.terms.model === 'management_guarantee' ? m.guarantee : 0,

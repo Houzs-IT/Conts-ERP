@@ -14,6 +14,8 @@ export type Contract = 'LT' | 'PS';
 export interface OverallInput {
   contract: Contract;
   revenue: number; cleaning: number; utilities: number; additional: number; misc: number;
+  /** The utilities total split by bill; sewerage is Indah Water. */
+  electricity: number; water: number; internet: number; sewerage: number;
   /** PS only: the owner's percentage of GP (80 for 80%). */
   ownerPct: number;
   /** LT: the fixed monthly rent. PS: the monthly guaranteed minimum (GRR), 0 when there is none. */
@@ -53,7 +55,7 @@ export function overallFigures(i: OverallInput): OverallFigures {
 }
 
 /** The columns that add up across units. */
-export const SUMMED = ['revenue', 'cleaning', 'utilities', 'additional', 'misc', 'deductions', 'gp', 'ltGrr', 'o1', 'o2',
+export const SUMMED = ['revenue', 'cleaning', 'utilities', 'electricity', 'water', 'internet', 'sewerage', 'additional', 'misc', 'deductions', 'gp', 'ltGrr', 'o1', 'o2',
   'ownerBase', 'payout', 'gainLoss', 'breakEven', 'nights', 'days'] as const;
 export type Summed = typeof SUMMED[number];
 
