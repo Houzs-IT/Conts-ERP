@@ -34,7 +34,7 @@ interface Payload {
 }
 const PAGE_SIZE = 100;
 const SIZES = [50, 100, 200, 500];
-export interface BankRow { units: string; ownerName: string; bankName: string | null; accountNumber: string; amount: number }
+export interface BankRow { units: string; ownerName: string; bankName: string | null; accountNumber: string; amount: number; payouts: number }
 const BANK_COLS: ExportColumn[] = [
   { label: 'Units', kind: 'text' }, { label: 'Owner name', kind: 'text' }, { label: 'Bank', kind: 'text' },
   { label: 'Account number', kind: 'text' }, { label: 'Amount', kind: 'money' },
@@ -141,13 +141,18 @@ export default function PayoutsPage({ embedded = false }: { embedded?: boolean }
     });
   }
 
-  /** The bank sheet: one row per payout with the full account number, for making the transfers (owner, 22 Oct 2026).
-   *  Its own endpoint, because the list only ever carries the last four digits and every export is audited. */
+  /** The bank sheet: one row per owner, their payouts under the filter added up, with the full account number, for
+   *  making the transfers (owner, 22 Oct 2026). Its own endpoint, because the list only ever carries the last four
+   *  digits and every export is audited. */
   async function exportBank(only?: Payout[]) {
+    if (!only && !period) {
+      toast({ tone: 'warning', title: 'Pick a statement month first.', body: 'Or tick the payouts to export. All months together would add up payouts already made.' });
+      return;
+    }
     const params: Record<string, string> = only ? { ids: only.map(r => r.id).join(',') } : { ...(filter !== 'all' ? { state: filter } : {}), ...(period ? { period } : {}), ...(q ? { q } : {}) };
     const { data: list, capped } = await api.get<{ data: BankRow[]; capped: boolean }>(`/payouts/export?${new URLSearchParams(params)}`);
     downloadTable('xlsx', 'payouts', 'Payouts', BANK_COLS, list.map(r => [r.units, titleCase(r.ownerName), bankName(r.bankName) ?? '', r.accountNumber, r.amount]));
-    toast({ tone: capped ? 'warning' : 'success', title: `Excel file ready: ${plural(list.length, 'payout')}.`,
+    toast({ tone: capped ? 'warning' : 'success', title: `Excel file ready: ${plural(list.length, 'owner')}, ${plural(list.reduce((n, r) => n + r.payouts, 0), 'payout')}.`,
       body: capped ? 'Only the first 5,000 fit in one file. Narrow the filters to get the rest.' : 'Full account numbers are in this file. Keep it safe and delete it once the transfers are made.' });
   }
 
