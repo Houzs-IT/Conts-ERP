@@ -96,6 +96,15 @@ const costs = [cost('e1', 'electricity', 30000), cost('c1', 'cleaning', 8000), c
   check('long_term: tenancy from 16 Sep -> 15 of 30 days of rent', half.gross === 150000 && half.operatorShare === 15000, `income ${rm(half.gross)}`);
   check('long_term: no miscellaneous charge even if flagged', month({ ...u, contract_misc: 1 }, [], []).deductionGroups.find(g => g.category === 'misc').amount === 0);
 }
+{
+  // A showroom / warehouse let (WH LT, migration 0139) is worked out exactly as a long-term let.
+  const lt = month(unit({ revenue_model: 'long_term', grr_amount: 300000, management_fee_pct: 10, tenant_name: 'Dream Crafter' }), stays, costs);
+  const wh = month(unit({ revenue_model: 'wh_long_term', grr_amount: 300000, management_fee_pct: 10, tenant_name: 'Dream Crafter' }), stays, costs);
+  check('wh_long_term: same rent, costs, fee and payout as long_term; bookings ignored',
+    wh.terms.model === 'wh_long_term' && wh.gross === lt.gross && wh.nights === 0 && wh.deductions === lt.deductions && wh.operatorShare === lt.operatorShare && wh.payoutBeforeAdjustments === lt.payoutBeforeAdjustments && adds(wh),
+    `income ${rm(wh.gross)} fee ${rm(wh.operatorShare)} payout ${rm(wh.payoutBeforeAdjustments)}`);
+  check('wh_long_term: one rent line names the tenant', wh.lines.some(l => l.type === 'gross' && l.category === 'long_term_rent' && /Dream Crafter/.test(l.description)));
+}
 
 /* ---------- 4. Contract history ---------- */
 console.log('\n4. Contract history (unitForMonth)');
@@ -119,6 +128,12 @@ check('owner + management + agent must add to 100', !!M.invalidDraft({ revenueMo
 check('75/20/5 is valid', Object.keys(M.invalidDraft({ revenueModel: 'management', ownerPct: 75, managementPct: 20, agentPct: 5, startsOn: '2026-09-01' })).length === 0);
 check('a guarantee needs its monthly minimum', !!M.invalidDraft({ revenueModel: 'management_guarantee', ownerPct: 75, managementPct: 25, startsOn: '2026-09-01' }).minimumGuarantee);
 check('a long-term let needs its tenant', !!M.invalidDraft({ revenueModel: 'long_term', monthlyRent: 200000, startsOn: '2026-09-01' }).tenantName);
+check('a showroom / warehouse let needs its tenant', !!M.invalidDraft({ revenueModel: 'wh_long_term', monthlyRent: 200000, startsOn: '2026-09-01' }).tenantName);
+{
+  const c = M.draftColumns({ revenueModel: 'wh_long_term', monthlyRent: 400000, managementPct: 10, tenantName: ' Dream Crafter ', ownerPct: 75, deposit: 1000, startsOn: '2026-09-01' });
+  check('a showroom / warehouse let keeps the rent, the operator % and the tenant, nothing else',
+    c.revenue_model === 'wh_long_term' && c.model === 'management' && c.grr_amount === 400000 && c.management_fee_pct === 10 && c.tenant_name === 'Dream Crafter' && c.deposit_amount === null && c.minimum_guarantee === 0);
+}
 {
   const c = M.draftColumns({ revenueModel: 'grr', monthlyRent: 300000, ownerPct: 75, minimumGuarantee: 280000, startsOn: '2026-09-01' });
   check('switching to GRR clears the share and the guarantee', c.model === 'grr' && c.minimum_guarantee === 0 && c.management_fee_pct === 0 && c.grr_amount === 300000);

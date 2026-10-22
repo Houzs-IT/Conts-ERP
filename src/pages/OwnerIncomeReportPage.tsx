@@ -5,6 +5,7 @@ import { api } from '../lib/api';
 import { useSession } from '../lib/session';
 import { amount } from '../lib/format';
 import { parsePhone } from '../lib/phone';
+import { isTenancy } from '../lib/revenueModel';
 
 /** `#/finance/statements/:id/report[?unit=|?view=owner]` — the Owner Income Report, laid out as the owner's own report:
  *  page 1 the unit's month (OWNER INCOME REPORT), page 2 its year to date. `view=owner` puts the owner's whole
@@ -258,7 +259,7 @@ function MonthPage({ r, u }: { r: Report; u: Unit }) {
         <thead><tr><th>DESCRIPTION</th><th>QTY</th><th>UOM</th><th>PRICE (RM)</th><th>AMOUNT (RM)</th></tr></thead>
         <tbody>
           <tr><td><u><b>Gross Income</b></u></td><td /><td /><td /><td /></tr>
-          {share && u.model === 'long_term' ? (
+          {share && isTenancy(u.model ?? '') ? (
             <tr><td className="oir-in">Monthly Rent (long-term tenant)</td><td className="c">1</td><td className="c">months</td><td className="r">{money(u.gross)}</td><td className="r">{money(u.gross, { dash: false })}</td></tr>
           ) : share ? (
             <tr><td className="oir-in">Hospitality Income</td><td className="c">{u.nights}</td><td className="c">%</td><td className="r">{pct(u.occupancy * 100)}</td><td className="r">{money(u.gross, { dash: false })}</td></tr>
@@ -316,7 +317,7 @@ function YearPage({ r, u }: { r: Report; u: Unit }) {
 }
 
 const MODEL_NAME: Record<string, string> = {
-  management: 'Profit share', management_guarantee: 'Profit share, minimum guarantee', management_yearly_guarantee: 'Profit share, yearly guarantee', grr: 'Guaranteed rent', master_lease: 'Master lease', long_term: 'Long-term let',
+  management: 'Profit share', management_guarantee: 'Profit share, minimum guarantee', management_yearly_guarantee: 'Profit share, yearly guarantee', grr: 'Guaranteed rent', master_lease: 'Master lease', long_term: 'Long-term let', wh_long_term: 'Showroom / warehouse long-term let',
 };
 
 /** By owner, page 1: every unit of the statement on one page, with the owner's total. */

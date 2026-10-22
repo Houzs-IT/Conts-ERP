@@ -15,7 +15,7 @@ import { useUnitRoster } from '../lib/useUnitRoster';
 import { useToast } from '../components/Toast';
 import { api, ApiFailure, errorMessage } from '../lib/api';
 import { rm, monthLabel, todayMyt, titleCase, plural } from '../lib/format';
-import { MODEL, type RevenueModel } from '../lib/revenueModel';
+import { MODEL, isTenancy, type RevenueModel } from '../lib/revenueModel';
 import { PayoutDetails } from './owners/PayoutDetails';
 import { OwnerDetails } from './owners/OwnerDetails';
 import { OwnerCostsCard } from './owners/Costs';
@@ -378,13 +378,13 @@ function UnitCard({ u, reportHref }: { u: UnitLine; reportHref: string | null })
         {after(f.adjustments)}
         <Row label="Unit income (The Conts')" sen={f.income} muted />
       </> : <>
-        {model !== 'long_term' && f.nights === 0 && f.income === 0
+        {!isTenancy(model) && f.nights === 0 && f.income === 0
           ? <div className="text-meta text-muted-ink">No reservations this month.</div>
-          : <Row label={model === 'long_term' ? 'Gross Income (rent from tenant)' : `Gross Income (${f.nights} ${f.nights === 1 ? 'night' : 'nights'})`} sen={f.income} />}
+          : <Row label={isTenancy(model) ? 'Gross Income (rent from tenant)' : `Gross Income (${f.nights} ${f.nights === 1 ? 'night' : 'nights'})`} sen={f.income} />}
         {f.costLines.length === 0
           ? <Row label="Deductions" sen={0} muted />
           : f.costLines.map(c => <Row key={c.label} label={c.label} sen={-c.amount} indent />)}
-        <Row label={model === 'long_term' ? `${operatorPct ?? 0}% To Operator` : `${operatorPct != null ? `${Number(operatorPct.toFixed(2))}% ` : ''}To Operator`} sen={-f.operatorShare} />
+        <Row label={isTenancy(model) ? `${operatorPct ?? 0}% To Operator` : `${operatorPct != null ? `${Number(operatorPct.toFixed(2))}% ` : ''}To Operator`} sen={-f.operatorShare} />
         {f.guarantee > 0 && (f.topUp > 0
           ? <Row label={`Below the ${rm(f.guarantee)} minimum: top-up`} sen={f.topUp} sign />
           : <div className="text-meta text-muted-ink">Above the {rm(f.guarantee)} minimum</div>)}

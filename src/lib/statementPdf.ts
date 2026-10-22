@@ -1,5 +1,6 @@
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFImage, type PDFPage } from 'pdf-lib';
 import type { Report, Unit } from '../pages/OwnerIncomeReportPage';
+import { isTenancy } from './revenueModel';
 
 /**
  * One owner statement as a real PDF file, drawn page for page like the Owner Income Report on screen
@@ -24,7 +25,7 @@ const BLACK = rgb(0, 0, 0), HEAD_FILL = rgb(0xdc / 255, 0xe9 / 255, 0xf5 / 255),
 const MON = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
 const MON_TITLE = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const MODEL_NAME: Record<string, string> = {
-  management: 'Profit share', management_guarantee: 'Profit share, minimum guarantee', management_yearly_guarantee: 'Profit share, yearly guarantee', grr: 'Guaranteed rent', master_lease: 'Master lease', long_term: 'Long-term let',
+  management: 'Profit share', management_guarantee: 'Profit share, minimum guarantee', management_yearly_guarantee: 'Profit share, yearly guarantee', grr: 'Guaranteed rent', master_lease: 'Master lease', long_term: 'Long-term let', wh_long_term: 'Showroom / warehouse long-term let',
 };
 
 /** 4,998.81; a deduction in brackets (397.12); nothing as '-'. Same rules as the screen report. */
@@ -190,7 +191,7 @@ function monthPage(ctx: Ctx, u: Unit) {
   parties(s, ctx, ownerLeft(ctx, u), [['REF. NO.', u.refNo], null, ['DATE', dayMonYear(r.periodEnd)], ['MONTHS', MON[Number(r.period.slice(5, 7)) - 1]], ['TERMS', r.settings.paymentTerms]]);
   const share = u.basis === 'share';
   const rows: Row[] = [row(b('Gross Income', { u: true }))];
-  if (share && u.model === 'long_term') rows.push(row({ t: 'Monthly Rent (long-term tenant)', indent: true }, '1', 'months', money(u.gross), money(u.gross, { dash: false })));
+  if (share && isTenancy(u.model ?? '')) rows.push(row({ t: 'Monthly Rent (long-term tenant)', indent: true }, '1', 'months', money(u.gross), money(u.gross, { dash: false })));
   else if (share) rows.push(row({ t: 'Hospitality Income', indent: true }, String(u.nights), '%', pct(u.occupancy * 100), money(u.gross, { dash: false })));
   else rows.push(row({ t: 'Fixed Monthly Rent', indent: true }, '1', 'months', money(u.fixedRent), money(u.fixedRent)));
   if (share) {

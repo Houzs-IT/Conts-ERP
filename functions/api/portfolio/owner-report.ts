@@ -3,6 +3,7 @@ import { requireSession } from '../../_lib/auth';
 import { todayMyt } from '../../_lib/ops';
 import { loadInputs, withYearToDate, computeMonth, statementSettings, hasActivity, type Query } from '../../_lib/ownerStatement';
 import { unitCode } from '../../_lib/ownerReport';
+import { isTenancy } from '../../_lib/revenueModel';
 import { monthEndExclusive } from '../../_lib/revenue';
 
 const UTILITIES = new Set(['electricity', 'water', 'internet', 'sewerage']);
@@ -27,7 +28,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   let excluded = 0;
   const rows = months.flatMap(m => {
     const lt = m.terms.basis === 'fixed_rent';
-    if (!lt && (m.terms.basis !== 'share' || m.terms.model === 'long_term')) { excluded++; return []; }
+    if (!lt && (m.terms.basis !== 'share' || isTenancy(m.terms.model))) { excluded++; return []; }
     const u = unitOf.get(m.unitId)!;
     const sum = (pick: (category: string) => boolean) => m.deductionGroups.filter(g => pick(g.category)).reduce((n, g) => n + g.amount, 0);
     return [{

@@ -2,6 +2,7 @@ import { type Env, all } from './db';
 import { monthEndExclusive } from './revenue';
 import { loadInputs, withYearToDate, computeMonth, statementSettings, fmtPct, classifyCost, DEDUCTIONS, type Query } from './ownerStatement';
 import { unitExample } from './unitContract';
+import { isTenancy } from './revenueModel';
 import { DEDUCTION_WORDS } from './unitCosts';
 import { hasCleanPrices } from './cleaningPrices';
 import { cleaningMoney, maintenanceMoney } from './jobProfit';
@@ -72,12 +73,12 @@ export async function unitMonthPnl(env: Env, q: Query, unitId: string, month: st
     : m.terms.basis === 'fixed_rent'
     ? [{ label: 'Fixed monthly rent', amount: m.fixedRent, type: 'gross' }]
     : [
-      { label: m.terms.model === 'long_term' ? 'Gross Income (monthly rent from tenant)' : 'Gross Income (reservations)', amount: m.gross, type: 'gross',
-        items: m.terms.model === 'long_term' ? undefined : orNone(grossItems(m.lines)) },
+      { label: isTenancy(m.terms.model) ? 'Gross Income (monthly rent from tenant)' : 'Gross Income (reservations)', amount: m.gross, type: 'gross',
+        items: isTenancy(m.terms.model) ? undefined : orNone(grossItems(m.lines)) },
       // Every deduction the statement has, nil ones too, so the month reads the same shape every time.
       ...m.deductionGroups.map(g => ({ label: DEDUCTION_WORDS[g.category] ?? g.label, amount: neg(g.amount), type: 'expense',
         items: g.category === 'misc' ? undefined : expenseItems(g.category) })),
-      { label: m.terms.model === 'long_term' ? `${fmtPct(100 - (m.ownerPct ?? 0))} To Operator (of the rent)` : `${fmtPct(100 - (m.ownerPct ?? 0))} To Operator`, amount: neg(m.operatorShare), type: 'fee' },
+      { label: isTenancy(m.terms.model) ? `${fmtPct(100 - (m.ownerPct ?? 0))} To Operator (of the rent)` : `${fmtPct(100 - (m.ownerPct ?? 0))} To Operator`, amount: neg(m.operatorShare), type: 'fee' },
       ...(m.topUp ? [{ label: 'Minimum Guarantee Top-up', amount: m.topUp, type: 'adjustment' }] : []),
     ];
   // The owner's credits and charges come off after the split, as on every statement already sent.
@@ -125,7 +126,7 @@ export async function unitMonthPnl(env: Env, q: Query, unitId: string, month: st
       { label: 'Their actual cost (invoices, cleaner pay)', amount: neg(cost), type: 'expense', items: jobs.map(j => ({ label: `${j.label} · ${dm(j.day)}${j.estimated ? ' · estimated' : ''}`, amount: neg(j.internal) })) },
     ] : [];
     companyPnl = [
-      { label: m.terms.model === 'long_term' ? 'Operator share' : `${fmtPct(100 - (m.ownerPct ?? 0))} To Operator (management and agent)`, amount: m.operatorShare, type: 'gross' },
+      { label: isTenancy(m.terms.model) ? 'Operator share' : `${fmtPct(100 - (m.ownerPct ?? 0))} To Operator (management and agent)`, amount: m.operatorShare, type: 'gross' },
       ...(m.topUp ? [{ label: 'Minimum guarantee top-up paid', amount: -m.topUp, type: 'fee' }] : []),
       ...service,
       ...others,
