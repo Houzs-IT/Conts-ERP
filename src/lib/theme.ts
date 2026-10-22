@@ -33,6 +33,6 @@ export function initTheme(): void {
   requestAnimationFrame(() => requestAnimationFrame(() => document.documentElement.classList.add('theme-ready')));
 }
 
-/** Light / Dark stays hidden until dark mode is clean everywhere (sidebar active item, workspace switch and
- *  user name still vanish on dark, checked 12 Oct). Flip to true to show the switch on desktop and phone. */
+/** The desktop switch is in the top bar beside the bell (owner, 22 Oct 2026). This flag still hides the Light / Dark
+ *  choice in the profile menu and on the phone's settings screen; flip it to show those too. */
 export const DARK_MODE_READY = false;

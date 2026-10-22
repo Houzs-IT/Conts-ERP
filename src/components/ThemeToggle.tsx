@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { getThemePref, setThemePref, type ThemePref } from '../lib/theme';
+import { color, radius } from '../theme';
+import Icon from './Icon';
 
 const OPTIONS: { value: ThemePref; label: string }[] = [
   { value: 'light', label: 'Light' },
@@ -25,5 +27,18 @@ export function ThemeToggle({ onDark = false }: { onDark?: boolean }) {
         );
       })}
     </div>
+  );
+}
+
+/** The top bar's one-tap switch beside the bell: a moon in light mode, a sun in dark. */
+export function ThemeButton({ size }: { size: number }) {
+  const [pref, setPref] = useState<ThemePref>(getThemePref());
+  const next: ThemePref = pref === 'dark' ? 'light' : 'dark';
+  const label = next === 'dark' ? 'Switch to dark mode' : 'Switch to light mode';
+  return (
+    <button type="button" aria-label={label} title={label} onClick={() => { setPref(next); setThemePref(next); }}
+      style={{ width: size, height: size, flex: 'none', display: 'grid', placeItems: 'center', padding: 0, border: `1px solid ${color.border}`, borderRadius: radius.control, background: color.card, color: color.ink, cursor: 'pointer' }}>
+      <Icon name={pref === 'dark' ? 'Sun' : 'Moon'} size="nav" />
+    </button>
   );
 }
