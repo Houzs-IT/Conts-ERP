@@ -16,7 +16,7 @@ import { addressLines, type OwnerAddress, type Owner } from '../owners/shared';
 import { SearchSelect } from '../../components/Select';
 import { useApi } from '../../lib/useApi';
 import { masked as maskTail } from '../../lib/format';
-import { MODEL, CODE, PURPOSES, USED_BY } from '../../lib/revenueModel';
+import { MODEL, CODE, codeName, PURPOSES, USED_BY } from '../../lib/revenueModel';
 import { BedsEditor, BaysEditor, bedsText, baysText } from './UnitExtras';
 import {
   STATES, cap, LAYOUTS, layoutFromBedrooms,
@@ -172,7 +172,7 @@ export function DetailsForm({ u, owner, buildings, money, canEdit, onChange, onO
 
       <SectionHead>Income model</SectionHead>
       <div className="flex flex-wrap items-center gap-3 mb-[6px]">
-        <span className="text-copy">{u.contractCode ? `${u.contractCode} · ${CODE[u.contractCode].label}${u.termsLabel ? ` · ${u.termsLabel}` : ''}` : u.revenueModel ? (u.termsLabel ?? MODEL[u.revenueModel].label) : u.pkg}</span>
+        <span className="text-copy">{u.contractCode ? `${codeName(u.contractCode)} · ${CODE[u.contractCode].label}${u.termsLabel ? ` · ${u.termsLabel}` : ''}` : u.revenueModel ? (u.termsLabel ?? MODEL[u.revenueModel].label) : u.pkg}</span>
         {onOpenContract && <button type="button" onClick={onOpenContract} className="p-0 bg-transparent border-none cursor-pointer [font-family:inherit] text-meta font-semibold text-gold-ink">Change on the Contract tab</button>}
       </div>
       <details className="m-0 text-meta text-muted-ink [&>summary]:cursor-pointer"><summary className="w-fit list-none inline-flex items-center gap-1 text-muted-ink"><span aria-hidden className="inline-grid place-items-center w-4 h-4 rounded-full border border-solid border-line text-[10px] font-semibold">?</span> How this works</summary><p className="m-0 mt-1.5">One income model per contract decides how the owner statement is worked out. Package {u.pkg.replace('Package ', '')} is kept from the owner workbook for reference.</p></details>

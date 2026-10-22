@@ -10,7 +10,7 @@ import { useApi } from '../../lib/useApi';
 import { api, ApiFailure, errorMessage } from '../../lib/api';
 import { date, monthLabel, rm } from '../../lib/format';
 import { cx } from '../../lib/design-tokens';
-import { MODEL, MODEL_TONE, CODES, CODE, codeFromModel, PURPOSE_LABEL, type RevenueModel, type ContractCode, type UnitPurpose } from '../../lib/revenueModel';
+import { MODEL, MODEL_TONE, CODES, CODE, codeName, codeFromModel, PURPOSE_LABEL, type RevenueModel, type ContractCode, type UnitPurpose } from '../../lib/revenueModel';
 import { ExtendContractModal, GenerateAgreement } from './ContractExtras';
 import { CodeBadge } from './UnitExtras';
 import { DataTable, type Column } from '../../components/DataTable';
@@ -160,7 +160,7 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unit
     try {
       const r = await api.put<{ split: boolean }>(`/units/${encodeURIComponent(unitId)}/contract`, { ...bodyOf(d), mode });
       toast({ tone: 'success', title: mode === 'new' ? 'New contract started.' : 'Contract saved.',
-        body: `${d.contractCode}: ${CODE[d.contractCode].label}.${r.split ? ' This unit now has its own contract; the other units keep theirs.' : ''} Draft owner statements change when regenerated; final ones keep their figures.` });
+        body: `${codeName(d.contractCode)}: ${CODE[d.contractCode].label}.${r.split ? ' This unit now has its own contract; the other units keep theirs.' : ''} Draft owner statements change when regenerated; final ones keep their figures.` });
       setMode('update'); reload(); onSaved();
     } catch (e) {
       if (e instanceof ApiFailure && e.fields) setFields(e.fields);
@@ -212,10 +212,10 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unit
             {offered.map(o => {
               const on = o.code === d.contractCode;
               return (
-                <label key={o.code} className={cx('flex flex-col gap-1 rounded-card p-3 cursor-pointer min-w-0', on ? '[border:2px_solid_var(--color-gold)] bg-gold-tint' : '[border:1px_solid_var(--color-line)] bg-card hover:bg-page')}>
-                  <span className="flex items-center gap-2">
+                <label key={o.code} className={cx('flex flex-col gap-1 rounded-card p-3 cursor-pointer min-w-0', on ? '[border:1px_solid_var(--color-gold)] [box-shadow:inset_0_0_0_1px_var(--color-gold)] bg-gold-tint' : '[border:1px_solid_var(--color-line)] bg-card hover:bg-page')}>
+                  <span className="flex items-start gap-2">
                     <input type="radio" aria-label={`${o.code}: ${o.label}`} name={`model-${unitId}`} checked={on} onChange={() => set({ contractCode: o.code, revenueModel: o.model })} className="accent-[var(--color-gold-ink)]" />
-                    <span className="text-copy font-semibold">{o.code}</span>
+                    <span className="text-copy font-semibold">{o.code}{o.pkg && <span className="block">{o.pkg}</span>}</span>
                   </span>
                   <span className="text-meta font-medium text-ink">{o.label}</span>
                   <span className="max-sm:hidden text-meta text-muted-ink [text-wrap:pretty]">{o.blurb}</span>

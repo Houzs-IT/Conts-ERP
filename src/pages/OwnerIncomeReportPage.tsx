@@ -1,6 +1,7 @@
-import { useEffect, useState, type CSSProperties } from 'react';
+import { Fragment, useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useApi } from '../lib/useApi';
+import { api } from '../lib/api';
 import { useSession } from '../lib/session';
 import { amount } from '../lib/format';
 import { parsePhone } from '../lib/phone';
@@ -113,6 +114,83 @@ export default function OwnerIncomeReportPage() {
             ))}
           </div>
         )}
+    </div>
+  );
+}
+
+/** `#/finance/statements/print?ids=a,b,c` — several owner statements on one page (the Payouts list's "PDF statements"
+ *  export): each statement as the By owner view lays it out, then "Download PDF" prints them all as one file. Months
+ *  paid before Property OS have no unit figures and are listed instead, with their old statement link. */
+export function StatementsPrintPage() {
+  const [params] = useSearchParams();
+  const navigate = useNavigate();
+  const ids = useMemo(() => [...new Set((params.get('ids') ?? '').split(',').filter(Boolean))], [params]);
+  const [reports, setReports] = useState<Report[]>([]);
+  const [failed, setFailed] = useState<string[]>([]);
+  const [done, setDone] = useState(0);
+
+  useEffect(() => {
+    let live = true;
+    setReports([]); setFailed([]); setDone(0);
+    // Four at a time, in the order asked, so a long list does not fire a hundred requests at once.
+    void (async () => {
+      const out: (Report | null)[] = [];
+      for (let i = 0; i < ids.length && live; i += 4) {
+        const part = await Promise.all(ids.slice(i, i + 4).map(async id => {
+          try { return (await api.get<{ data: Report }>(`/statements/${encodeURIComponent(id)}/report`)).data; } catch { return null; }
+        }));
+        out.push(...part);
+        if (live) setDone(out.length);
+      }
+      if (!live) return;
+      setReports(out.filter((r): r is Report => !!r));
+      setFailed(ids.filter((_, i) => !out[i]));
+    })();
+    return () => { live = false; };
+  }, [ids]);
+
+  const loading = done < ids.length;
+  const printable = reports.filter(r => r.units.length);
+  const legacy = reports.filter(r => !r.units.length);
+
+  function download() {
+    const before = document.title;
+    document.title = `Owner statements ${printable[0]?.period ?? ''}`.trim();
+    window.print();
+    document.title = before;
+  }
+
+  return (
+    <div className="oir-root">
+      <style>{CSS}</style>
+      <div className="oir-bar">
+        <button onClick={() => navigate('/owners?view=payouts')}>Back to payouts</button>
+        <span>{loading ? `Loading ${done} of ${ids.length} statements...` : `${printable.length} of ${ids.length} statements ready to print`}</span>
+        <span className="oir-grow" />
+        {printable.some(r => r.state === 'provisional') && <span className="oir-flag">Some are drafts: figures can still change</span>}
+        <button className="oir-primary" onClick={download} disabled={loading || !printable.length}>Download PDF</button>
+      </div>
+
+      {!ids.length && <div className="oir-note">No statements were chosen. Go back to Payouts and export again.</div>}
+      {!loading && (legacy.length > 0 || failed.length > 0) && (
+        <div className="oir-note">
+          {legacy.length > 0 && <>
+            <p>{legacy.length} {legacy.length === 1 ? 'month was' : 'months were'} paid from the owner workbook before Property OS, so there is no Owner Income Report to print. Open each as it was paid:</p>
+            <ul>{legacy.map(r => <li key={r.statementId}><a href={`/api/statements/${encodeURIComponent(r.statementId)}/pdf?format=legacy`} target="_blank" rel="noreferrer">{r.owner.name}, {r.period}</a></li>)}</ul>
+          </>}
+          {failed.length > 0 && <p>{failed.length} {failed.length === 1 ? 'statement' : 'statements'} could not be opened. Reload the page to try again.</p>}
+        </div>
+      )}
+      {printable.length > 0 && (
+        <div className="oir-sheets">
+          {printable.map(r => (
+            <Fragment key={r.statementId}>
+              {r.units.length > 1 && <div><OwnerMonthPage r={r} /><OwnerYearPage r={r} /></div>}
+              {r.units.map(u => <div key={u.unitId}><MonthPage r={r} u={u} /><YearPage r={r} u={u} /></div>)}
+            </Fragment>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

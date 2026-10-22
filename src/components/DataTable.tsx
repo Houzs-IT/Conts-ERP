@@ -148,6 +148,8 @@ export interface DataTableProps<R> {
   selectionKey?: string;
   /** File and sheet name of exports. */
   exportName?: string;
+  /** More items in the Export menu, after Excel and CSV (e.g. the payouts' owner statements as PDF). */
+  extraExports?: { icon: string; label: string; hint: string; run: () => void }[];
   noun?: [string, string];
   /** Phone card override. */
   renderCard?: (r: R) => ReactNode;
@@ -295,7 +297,7 @@ export function DataTable<R>(props: DataTableProps<R>) {
   const {
     id, columns, rows, rowKey, loading, error, onRetry, onRowClick, rowTone, urlPrefix = '', pageSize: clientSize = 50,
     server, header, toolbar, actions, above, viewParams = [], filtered, onClearFilters, empty, selectable, bulkActions, selectionKey,
-    exportName, noun = ['row', 'rows'], renderCard, cardsOnly, maxHeight, bare, noToolbar, noViews, noColumns, footer, defaultSort, phoneSort = true,
+    exportName, extraExports, noun =['row', 'rows'], renderCard, cardsOnly, maxHeight, bare, noToolbar, noViews, noColumns, footer, defaultSort, phoneSort = true,
   } = props;
   const toast = useToast();
   const [params, setParams] = useSearchParams();
@@ -794,6 +796,10 @@ export function DataTable<R>(props: DataTableProps<R>) {
             disabledReason={total === 0 ? 'Nothing to export under these filters.' : undefined} />
           <PanelItem icon="FileText" label="CSV" hint="Opens in any spreadsheet. Money columns are in RM." onClick={() => { closePanel(); void doExport('csv'); }}
             disabledReason={total === 0 ? 'Nothing to export under these filters.' : undefined} />
+          {extraExports?.map(x => (
+            <PanelItem key={x.label} icon={x.icon} label={x.label} hint={x.hint} onClick={() => { closePanel(); x.run(); }}
+              disabledReason={total === 0 ? 'Nothing to export under these filters.' : undefined} />
+          ))}
         </div>
       </Floating>
 

@@ -5,7 +5,7 @@
 // Run: node scripts/api-checks/hostplatform-import.mjs <folder with listing.csv, res-*.csv, airbnb-orders.xlsx> [--map-only]
 //      ... --serve        import once, then keep this database running on 127.0.0.1:55433 (or BIGDATA_PORT) as a local backend
 //                         full of real-sized data: in another terminal,
-//                         WRANGLER_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE=postgres://postgres:local@127.0.0.1:55433/postgres npm run dev
+//                         WRANGLER_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE=postgres://postgres:local@127.0.0.1:55433/postgres npm run dev:os
 //                         and sign in as dev@local.test with DEV_PASSWORD (default LocalTest1). Local only.
 // The export files hold personal data: keep them outside the repository.
 import { readFileSync, readdirSync, writeFileSync, mkdtempSync } from 'node:fs';

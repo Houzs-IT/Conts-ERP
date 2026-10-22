@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card } from '../components/Card';
 import { StatusBadge } from '../components/StatusBadge';
 import { SectionHead, PayoutBadge, payoutDestination, payoutStatus, type PayoutRow } from './owners/OwnerMoney';
@@ -34,6 +35,8 @@ interface Payload {
 }
 const PAGE_SIZE = 100;
 const SIZES = [50, 100, 200, 500];
+/** Statements per print page: each is two A4 sheets per unit, all laid out by the browser at once. */
+const PRINT_MAX = 100;
 
 const FALLBACK: Payload = {
   generatedAt: '2026-09-20T02:00:00Z',
@@ -68,6 +71,7 @@ export default function PayoutsPage({ embedded = false }: { embedded?: boolean }
   // The header and the run button speak for every payout, not for the search or month being looked at.
   const overall = useApi<Payload>('/payouts?pageSize=1');
   const toast = useToast();
+  const navigate = useNavigate();
 
   const [confirm, setConfirm] = useState<{ payout: Payout; kind: 'retry' | 'paid' } | null>(null);
   const [bulkPaid, setBulkPaid] = useState<{ rows: Payout[]; clear: () => void } | null>(null);
@@ -143,6 +147,26 @@ export default function PayoutsPage({ embedded = false }: { embedded?: boolean }
       return { rows: p.data, total: p.total ?? p.data.length };
     }, { size: 500, onProgress });
     return r.rows;
+  }
+
+  /** Every matching payout's owner statement on one print page (browser Save as PDF; the server has no PDF renderer). */
+  const [gathering, setGathering] = useState(false);
+  async function printStatements() {
+    if (gathering) return;
+    setGathering(true);
+    try {
+      const list = await fetchAll(() => {});
+      const ids = [...new Set(list.map(r => r.statementId).filter((s): s is string => !!s))];
+      if (!ids.length) { toast({ tone: 'warning', title: 'No owner statements to print.', body: 'None of these payouts came from an owner statement.' }); return; }
+      const missing = list.filter(r => !r.statementId).length;
+      if (ids.length > PRINT_MAX || missing) {
+        toast({ tone: 'warning', title: `Printing ${plural(Math.min(ids.length, PRINT_MAX), 'statement')}.`,
+          body: [missing && `${plural(missing, 'payout')} had no owner statement.`, ids.length > PRINT_MAX && `Only the first ${PRINT_MAX} of ${ids.length} fit on one page. Narrow the filters to get the rest.`].filter(Boolean).join(' ') });
+      }
+      navigate(`/finance/statements/print?${new URLSearchParams({ ids: ids.slice(0, PRINT_MAX).join(',') })}`);
+    } catch (e) {
+      toast({ tone: 'critical', title: 'Statements could not be gathered.', body: errorMessage(e, 'Try again in a moment.') });
+    } finally { setGathering(false); }
   }
 
   const columns = useMemo<Column<Payout>[]>(() => [
@@ -236,6 +260,7 @@ export default function PayoutsPage({ embedded = false }: { embedded?: boolean }
         server={{ total, page: data?.page ?? page, pageSize: data?.pageSize ?? size, sizes: SIZES, defaultPageSize: PAGE_SIZE, fetchAll }}
         viewParams={['state', 'period', 'q']} filtered={filtered} onClearFilters={() => url.set({ state: null, period: null, q: null, page: null })}
         noun={['payout', 'payouts']} exportName="payouts"
+        extraExports={[{ icon: 'Printer', label: 'PDF statements', hint: "Opens every matching owner statement together. Download PDF there saves them as one file.", run: () => void printStatements() }]}
         empty={{ icon: 'Banknote', title: 'No owner payouts yet', body: 'An owner payout is created for each owner statement when it is sent. Send statements from the Statements tab, then start a payout run here.' }}
         selectable={canAct ? (r => r.state === 'processing') : false}
         bulkActions={canAct ? ((picked, clear) => (

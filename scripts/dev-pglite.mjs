@@ -3,7 +3,7 @@
 // a local port. Point the dev server at it:
 //
 //   node scripts/dev-pglite.mjs                       (leave it running; PORT defaults to 55441)
-//   WRANGLER_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE=postgres://pos_app:local@127.0.0.1:55441/postgres npm run dev
+//   WRANGLER_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE=postgres://pos_app:local@127.0.0.1:55441/postgres npm run dev:os
 //
 // Everything lives in memory and is gone when this process stops. One session (PGlite is single-user), shared by up to 20 connections.
 import { readFileSync, readdirSync } from 'node:fs';

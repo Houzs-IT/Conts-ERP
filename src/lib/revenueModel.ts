@@ -54,17 +54,18 @@ export const CATEGORY_LABEL: Record<string, string> = {
  *  A rental unit takes PS, PS GRR, PS YGRR, LT, RTR or MANAGE (GRR only if it already has it); a showroom or warehouse
  *  takes a WH lease or nothing. */
 export type ContractCode = 'PS' | 'PS GRR' | 'PS YGRR' | 'LT' | 'RTR' | 'MANAGE' | 'WH' | 'GRR';
-export const CODES: { code: ContractCode; model: RevenueModel; label: string; blurb: string }[] = [
-  { code: 'PS', model: 'management', label: 'Airbnb profit sharing', blurb: 'We run it on the channels and split the profit' },
-  { code: 'PS GRR', model: 'management_guarantee', label: 'Profit sharing, monthly GRR', blurb: 'A split, with a minimum for the owner every month' },
-  { code: 'PS YGRR', model: 'management_yearly_guarantee', label: 'Profit sharing, yearly GRR', blurb: 'A split, with a minimum for the owner each contract year' },
-  { code: 'LT', model: 'long_term', label: 'Airbnb long term', blurb: 'Let to one tenant, not on the channels' },
-  { code: 'RTR', model: 'master_lease', label: 'Rent to rent', blurb: 'We rent the unit from the owner and run it' },
-  { code: 'MANAGE', model: 'management', label: 'Listing management', blurb: 'We manage the listing for a fee, no guarantee' },
+export const CODES: { code: ContractCode; pkg?: string; model: RevenueModel; label: string; blurb: string }[] = [
+  { code: 'PS', pkg: '(Package A)', model: 'management', label: 'Airbnb profit sharing', blurb: 'We run it on the channels and split the profit' },
+  { code: 'PS GRR', pkg: '(Package B)', model: 'management_guarantee', label: 'Profit sharing, monthly GRR', blurb: 'A split, with a minimum for the owner every month' },
+  { code: 'PS YGRR', pkg: '(Package C)', model: 'management_yearly_guarantee', label: 'Profit sharing, yearly GRR', blurb: 'A split, with a minimum for the owner each contract year' },
+  { code: 'LT', pkg: '(Package D)', model: 'long_term', label: 'Airbnb long term', blurb: 'Let to one tenant, not on the channels' },
+  { code: 'RTR', pkg:'-', model: 'master_lease', label: 'Rent to rent', blurb: 'We rent the unit from the owner and run it' },
+  { code: 'MANAGE', pkg:'-',model: 'management', label: 'Listing management', blurb: 'We manage the listing for a fee, no guarantee' },
   { code: 'WH', model: 'master_lease', label: 'Warehouse / showroom lease', blurb: 'Fixed monthly rent to the owner' },
   { code: 'GRR', model: 'grr', label: 'Guaranteed rent', blurb: 'Fixed rent to the owner each month (older contracts)' },
 ];
 export const CODE: Record<ContractCode, typeof CODES[number]> = Object.fromEntries(CODES.map(c => [c.code, c])) as Record<ContractCode, typeof CODES[number]>;
+export const codeName = (c: ContractCode): string => CODE[c]?.pkg ? `${c} ${CODE[c].pkg}` : c;
 export const codeFromModel = (m: RevenueModel): ContractCode =>
   ({ management: 'PS', management_guarantee: 'PS GRR', management_yearly_guarantee: 'PS YGRR', grr: 'GRR', master_lease: 'RTR', long_term: 'LT' } as const)[m];
 

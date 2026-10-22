@@ -6,7 +6,7 @@ import { cx } from '../../lib/design-tokens';
 import type { UnitReadiness } from '../../lib/types';
 import { titleCase } from '../../lib/format';
 import type { Building, Unit } from './shared';
-import { MODEL } from '../../lib/revenueModel';
+import { MODEL, codeName } from '../../lib/revenueModel';
 import { statusLabel, statusOf, TONE_STYLE } from '../../lib/status';
 
 interface Props {
@@ -174,7 +174,7 @@ export default function UnitTree({ buildings, units, selectedId, readiness, canE
                               <span className={cx('block text-copy whitespace-nowrap overflow-hidden text-ellipsis', on ? 'font-semibold' : 'font-medium')}>{u.unitCode || 'New unit'}</span>
                               <span className="block text-caption text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{u.ownerName ? titleCase(u.ownerName) : 'No owner yet'}{kids.length ? ` · ${kids.length} sub-unit${kids.length > 1 ? 's' : ''}` : ''}</span>
                             </span>
-                            <span className="text-caption font-bold text-gold-ink flex-none" title={u.termsLabel ?? (u.revenueModel ? MODEL[u.revenueModel].label : u.pkg)}>{u.purpose && u.purpose !== 'rental' ? (u.purpose === 'warehouse' ? 'Warehouse' : 'Showroom') : u.contractCode ?? (u.revenueModel ? MODEL[u.revenueModel].short : u.pkg.replace('Package ', 'Pkg '))}</span>
+                            <span className="text-caption font-bold text-gold-ink flex-none" title={u.termsLabel ?? (u.revenueModel ? MODEL[u.revenueModel].label : u.pkg)}>{u.purpose && u.purpose !== 'rental' ? (u.purpose === 'warehouse' ? 'Warehouse' : 'Showroom') : (u.contractCode ? codeName(u.contractCode) : null) ?? (u.revenueModel ? MODEL[u.revenueModel].short : u.pkg.replace('Package ', 'Pkg '))}</span>
                           </button>
                           {canEdit && (
                             <button onClick={() => onAddSubUnit(b.id, u)} aria-label={`Add a sub-unit under ${u.unitCode || 'this unit'}`} title="Add sub-unit"

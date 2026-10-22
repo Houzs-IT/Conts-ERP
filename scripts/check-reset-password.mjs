@@ -1,5 +1,5 @@
 // Password reset flow regression checks against the LOCAL dev server.
-// Run: npm run dev (in another terminal), then DATABASE_URL=<local pos_app url> node scripts/check-reset-password.mjs
+// Run: npm run dev:os (in another terminal), then DATABASE_URL=<local pos_app url> node scripts/check-reset-password.mjs
 // Never point this at a live site — it creates and consumes test accounts/tokens.
 //
 // Exists because the flow looked right on inspection but had two real bugs only
