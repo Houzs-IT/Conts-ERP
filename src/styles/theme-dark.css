@@ -82,3 +82,16 @@
    toggle and the name at the bottom stay readable. The profile pop-up inside it uses card/ink and is unaffected. */
 :root[data-theme="theconts-dark"] [data-sidebar] { --color-text-inverse: #FFFFFF; }
 :root[data-theme="theconts-dark"] [data-sidebar] [role="tablist"] button[aria-selected="true"] { background: #2E2B27 !important; box-shadow: inset 0 0 0 1px #4A4339; }
+
+/* tokens.css inlines the status colours (@theme inline), so text-success, bg-success-bg and the rest kept their light
+   values (dark green on near-black, pale tints under light text). Point them back at this theme's own values. */
+:root[data-theme="theconts-dark"] .text-success { color: var(--color-success); }
+:root[data-theme="theconts-dark"] .text-warning { color: var(--color-warning); }
+:root[data-theme="theconts-dark"] .text-danger,
+:root[data-theme="theconts-dark"] .text-critical { color: var(--color-danger); }
+:root[data-theme="theconts-dark"] .text-info { color: var(--color-info); }
+:root[data-theme="theconts-dark"] .bg-success-bg { background-color: var(--color-success-bg); }
+:root[data-theme="theconts-dark"] .bg-warning-bg { background-color: var(--color-warning-bg); }
+:root[data-theme="theconts-dark"] .bg-danger-bg,
+:root[data-theme="theconts-dark"] .bg-critical-bg { background-color: var(--color-danger-bg); }
+:root[data-theme="theconts-dark"] .bg-info-bg { background-color: var(--color-info-bg); }

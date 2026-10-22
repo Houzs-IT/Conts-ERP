@@ -9,13 +9,15 @@ import type { BookingChannel } from '../lib/types';
 import Icon from './Icon';
 import ChannelMark from './ChannelMark';
 import NotificationBell from './NotificationBell';
+import { ThemeButton } from './ThemeToggle';
 
 /* ------------------------------------------------------------------ *
  * Application shell top bar (BUTTONS.md §2).
  *  - Breadcrumbs: group / menu entry / page.
  *  - Global search: `/` opens it; GET /api/search?q= finds units, bookings (by Airbnb, Booking.com or
  *    Agoda reference, guest name, phone or email), guests and owners, grouped by kind.
- *  - Bell (NotificationBell): the person's unread notices with a count, plus the live alerts from /api/nav/badges.
+ *  - Light / dark switch (ThemeButton), then the bell (NotificationBell): the person's unread notices with a count,
+ *    plus the live alerts from /api/nav/badges.
  * ------------------------------------------------------------------ */
 
 type SearchKind = 'unit' | 'guest' | 'reservation' | 'owner';
@@ -148,6 +150,7 @@ export default function TopBar({
           </a>
         )}
 
+        <ThemeButton size={ctl} />
         <NotificationBell path={path} navigate={go} size={ctl} />
 
         {action && (
