@@ -6,6 +6,7 @@ import { Select } from '../components/Select';
 import { NumberInput } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
 import { EmptyState } from '../components/States';
+import Icon from '../components/Icon';
 import { TableSkeleton } from '../components/DataState';
 import { SearchBox } from './finance/listKit';
 import { useApi } from '../lib/useApi';
@@ -79,7 +80,11 @@ const CELL = 'px-2 sm:px-3 py-2 whitespace-nowrap align-middle';
 const DIVIDER = '[border-left:1px_solid_var(--color-line)]';
 const UNIT_EDGE = 'sticky left-0 z-[1] [border-right:1px_solid_var(--color-line)]';
 /** A selected row's tint over the card colour, so the sticky Unit cell stays solid in the dark theme too. */
-const SELECTED_BG = '[background:linear-gradient(var(--color-gold-tint),var(--color-gold-tint)),var(--color-card)]';
+/** A row's keyboard focus, drawn on its cells: an outline on the row itself is painted under their backgrounds. */
+const FOCUS = 'group-focus-visible:shadow-[inset_0_2px_0_var(--color-gold),inset_0_-2px_0_var(--color-gold)]';
+const FOCUS_FIRST = 'group-focus-visible:shadow-[inset_2px_0_0_var(--color-gold),inset_0_2px_0_var(--color-gold),inset_0_-2px_0_var(--color-gold)]';
+const FOCUS_LAST = 'group-focus-visible:shadow-[inset_-2px_0_0_var(--color-gold),inset_0_2px_0_var(--color-gold),inset_0_-2px_0_var(--color-gold)]';
+const SELECTED_BG ='[background:linear-gradient(var(--color-gold-tint),var(--color-gold-tint)),var(--color-card)]';
 /** Wide screens: the unit panel runs the full height on the right and the page narrows beside it (panel width, less the
  *  main area's own 28px right padding, plus a 16px gap) instead of being covered. */
 const PANEL = 440;
@@ -121,7 +126,8 @@ export default function OwnerOverallReportPage() {
   const [selected, setSelected] = useState<string | null>(null);
 
   // Below this the app's own menu leaves too little room for the page beside the panel, so the panel slides over it.
-  const wide = useMedia('(min-width: 1440px)');
+  // At 1440px a docked panel left the table three rows tall under the KPI strip and the filters.
+  const wide = useMedia('(min-width: 1600px)');
   const phone = useMedia('(max-width: 639.98px)');
   const xwide = useMedia('(min-width: 1536px)');
   const [panelTop, setPanelTop] = useState(0);
@@ -203,7 +209,9 @@ export default function OwnerOverallReportPage() {
       <button type="button" onClick={() => toggleSort(key)} title={`Sort by ${label}`}
         className={cx('inline-flex items-center gap-1 bg-transparent border-none p-0 cursor-pointer font-sans text-meta font-semibold whitespace-nowrap max-sm:whitespace-normal',
           on ? 'text-ink' : 'text-muted-ink hover:text-ink')}>
-        {label}<span aria-hidden className="w-2 text-[9px]">{on ? (sort.dir === 1 ? '▲' : '▼') : ''}</span>
+        {label}<span aria-hidden className="inline-flex w-3">{on && (sort.dir === 1
+          ? <Icon name="ChevronUp" size="sm" style={{ width: 12, height: 12 }} />
+          : <Icon name="ChevronDown" size="sm" style={{ width: 12, height: 12 }} />)}</span>
       </button>
     );
   };
@@ -289,7 +297,7 @@ export default function OwnerOverallReportPage() {
               return (
                 <tr key={r.unitId} data-unit-row={r.unitId} tabIndex={0} aria-selected={on} className="group cursor-pointer outline-none scroll-mt-16"
                   onClick={() => setSelected(r.unitId)} onKeyDown={e => { if (e.key === 'Enter' && e.target === e.currentTarget) setSelected(r.unitId); }}>
-                  <td className={cx(CELL, UNIT_EDGE, bg, '[border-top:1px_solid_var(--color-line-soft)] max-sm:whitespace-normal', on && 'shadow-[inset_3px_0_0_var(--color-gold)]')}>
+                  <td className={cx(CELL, UNIT_EDGE, bg, '[border-top:1px_solid_var(--color-line-soft)] max-sm:whitespace-normal', on && 'shadow-[inset_3px_0_0_var(--color-gold)]', FOCUS_FIRST)}>
                     {/* A phone wraps the code at its hyphen (CONTINEW- / B1703A) so L1 fits without scrolling sideways. */}
                     <span className={cx('flex items-center gap-2 min-w-0 max-sm:max-w-[92px]', level > 1 && 'sm:max-w-[200px]')}>
                       <span aria-hidden className={cx('h-1.5 w-1.5 shrink-0 rounded-full', st.tone === 'success' ? 'bg-success-line' : st.tone === 'critical' ? 'bg-danger-line' : 'bg-neutral-line')} />
@@ -298,7 +306,8 @@ export default function OwnerOverallReportPage() {
                     </span>
                   </td>
                   {cols.map((c, i) => (
-                    <td key={c.key} className={cx(CELL, bg, 'text-center [border-top:1px_solid_var(--color-line-soft)]', fit, groupStart(i) && DIVIDER, hideOnPhone(c))}>
+                    <td key={c.key} className={cx(CELL, bg, 'text-center [border-top:1px_solid_var(--color-line-soft)]', fit, groupStart(i) && DIVIDER, hideOnPhone(c),
+                      i === cols.length - 1 ? FOCUS_LAST : FOCUS)}>
                       <Value c={c} v={r[c.key]} revenue={r.revenue} cents={cents} />
                     </td>
                   ))}
@@ -317,15 +326,20 @@ export default function OwnerOverallReportPage() {
     <div className="flex flex-col gap-4 md:gap-5 md:flex-1 md:min-h-0 transition-[margin] duration-[var(--motion-standard)]" style={{ marginRight: panel ? PANEL_ROOM : 0 }}>
       <PageHeader
         title="Overall owner report"
-        sub={data ? `${plural(all.length, 'unit')} · ${count(ltCount)} long term · ${count(all.length - ltCount)} profit sharing`
-          + `${data.excluded ? ` · ${plural(data.excluded, 'long-term let or master lease', 'long-term lets and master leases')} not listed` : ''}`
-          + ' · amounts in RM · Gain/Loss = GP − owner base (LT, or the higher of O1 and GRR), before O2' : 'Every unit\'s month, as on the owner statements'}
+        sub={data ? <>
+          {[plural(all.length, 'unit'), `${count(ltCount)} long term`, `${count(all.length - ltCount)} profit sharing`,
+            ...(data.excluded ? [`${plural(data.excluded, 'long-term let or master lease', 'long-term lets and master leases')} not listed`] : []), 'amounts in RM']
+            .map((part, n) => <span key={n}>{n > 0 && ' · '}<span className="inline-block">{part}</span></span>)}
+          {/* The definition gets its own line, so it never wraps into the counts. */}
+          <span className="block text-meta">Gain/Loss = GP − owner base (LT, or the higher of O1 and GRR), before O2</span>
+        </> : 'Every unit\'s month, as on the owner statements'}
         actions={<Select label="Month" value={month} options={MONTHS} className="w-[180px]"
           onChange={v => setParams(p => { const n = new URLSearchParams(p); if (v === MONTHS[1].value) n.delete('month'); else n.set('month', v); return n; }, { replace: true })} />}
       />
 
       <StatRow cols={5}>
-        <StatTile hero label="Total revenue" value={data ? rmShort(totals.revenue) : undefined} loading={loading && !data}
+        {/* Full width until the five tiles share one row, so the two-column grid has no tile left alone. */}
+        <StatTile hero className="col-span-2 xl:col-span-1" label="Total revenue" value={data ? rmShort(totals.revenue) : undefined} loading={loading && !data}
           hint={`${plural(totals.units, 'unit')} · ${percent(totals.occupancy)} occupancy`} />
         <StatTile label="Total deduction" value={data ? rmShort(totals.deductions) : undefined} loading={loading && !data}
           hint={totals.revenue ? `${percent((totals.deductions / totals.revenue) * 100)} of revenue` : '—'} />
