@@ -275,7 +275,7 @@ export function BarTrend({ bars, height = 200, lineLabel }: { bars: TrendBar[]; 
                 <div
                   className={cx(
                     'w-full max-w-[40px] rounded-t-[4px] origin-bottom [animation:grow_520ms_var(--ease-out)_both] transition-[filter,opacity] duration-[var(--motion-fast)]',
-                    b.current ? 'bg-gold' : 'bg-gradient-to-b from-charcoal to-black',
+                    b.current ? 'bg-gold' : 'trend-bar bg-gradient-to-b from-charcoal to-black',
                     'group-hover:brightness-125',
                   )}
                   style={{ height: `${h}%`, animationDelay: `${i * 28}ms` }} />
