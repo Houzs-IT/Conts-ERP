@@ -23,12 +23,12 @@ const CALLER = {
 
 const { ledgerSettingsGet, ledgerSettingsPut } = await import('./accounting');
 
-function app(perms: string[]) {
+function app(perms: string[], db: unknown = sb) {
   const a = new Hono<{ Bindings: Env; Variables: Variables }>();
   a.use('*', async (c, next) => {
     c.set('user', CALLER);
     c.set('companyId', CO);
-    c.set('supabase', sb as never);
+    c.set('supabase', db as never);
     c.set('houzsUser' as never, { id: 9, name: 'Acct', permissions_set: new Set(perms) } as never);
     await next();
   });
@@ -60,6 +60,36 @@ describe('the ledger settings route', () => {
     const res = await put({ ledgerStartDate: '1/12/2026' });
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ error: 'Enter a date like 2026-12-01.' });
+  });
+
+  /* The start date decides what posts: a day that does not exist is refused here, not by the database's 500. */
+  it('refuses a day that does not exist', async () => {
+    const res = await put({ ledgerStartDate: '2026-02-30' });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: 'Enter a date like 2026-12-01.' });
+  });
+
+  it('writes who changed the start date, from what to what, to the history', async () => {
+    tables.entity_audit_log = [];
+    await put({ ledgerStartDate: '2026-12-01' });
+    tables.entity_audit_log = [];
+    const res = await put({ ledgerStartDate: '2027-01-01', fiscalYearEndMonth: 8 });
+    expect(res.status).toBe(200);
+    expect(tables.entity_audit_log).toHaveLength(1);
+    expect(tables.entity_audit_log[0]).toMatchObject({
+      entity_type: 'LEDGER_SETTINGS', entity_id: String(CO), company_id: CO, action: 'UPDATE', actor_name_snapshot: 'Acct',
+      field_changes: [{ field: 'ledger_start_date', from: '2026-12-01', to: '2027-01-01' }],
+    });
+  });
+
+  it('saves nothing when the history cannot be written', async () => {
+    const t: Record<string, Record<string, unknown>[]> = { acc_company_settings: [{ company_id: CO, ledger_start_date: '2026-12-01' }], entity_audit_log: [] };
+    const broken = fakeSb(t, { entity_audit_log: ['id'] });
+    const res = await app(['*'], broken).request('/settings/ledger', {
+      method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ledgerStartDate: '2027-01-01' }),
+    });
+    expect(res.status).toBe(409);
+    expect(t.acc_company_settings[0].ledger_start_date).toBe('2026-12-01');
   });
 
   it('refuses a month outside 1 to 12', async () => {

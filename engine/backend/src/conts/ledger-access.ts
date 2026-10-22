@@ -44,13 +44,18 @@ export const PAYMENT_VOUCHER_OPEN_PATHS: readonly OpenPath[] = [
 
 type GuardUser = { permissions?: readonly string[]; permissions_set?: ReadonlySet<string> } | undefined;
 
+/** Does this caller hold the Ledger, literally? For a route that is open to everyone but has ledger records in it
+    (the change history: the ledger settings' entries). */
+export function holdsLedger(user: unknown): boolean {
+  const u = user as GuardUser;
+  return hasPermissionLiterally(u?.permissions_set ?? u?.permissions ?? [], LEDGER_KEY);
+}
+
 export function requireLedgerAccess(opts: { except?: readonly OpenPath[] } = {}): MiddlewareHandler {
   return async (c, next) => {
     const open = opts.except?.some((o) => (!o.method || o.method === c.req.method) && o.path.test(c.req.path));
     if (open) return next();
-    const user = c.get("user") as GuardUser;
-    const granted = user?.permissions_set ?? user?.permissions ?? [];
-    if (!hasPermissionLiterally(granted, LEDGER_KEY)) return c.json({ error: "Your role cannot open the accounts." }, 403);
+    if (!holdsLedger(c.get("user"))) return c.json({ error: "Your role cannot open the accounts." }, 403);
     await next();
   };
 }

@@ -43,6 +43,9 @@ export const ENTITY_TYPES = [
      does not carry it either), so the row exists for an investigator and for
      /inventory/reconcile, not for a tab. */
   'PURCHASE_RETURN',
+  /* Conts (finance phase 1): the company's ledger settings — the day the books start decides what posts, so who
+     moved it, from what to what, is kept. Write-only too; entity_id is the company id. */
+  'LEDGER_SETTINGS',
 ] as const;
 export type EntityType = (typeof ENTITY_TYPES)[number];
 

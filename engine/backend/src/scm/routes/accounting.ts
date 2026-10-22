@@ -68,6 +68,7 @@ import { piPeriodicBackfill } from './accounting-pi-backfill';
 import { stockCloseStatus, stockCloseRun } from './accounting-stock-close';
 import { pnlReport, balanceSheetReport, loadAccounts, loadSums } from './accounting-reports';
 import { importOpeningJournal, importOpeningPayables, importOpeningReceivables, openingCheck, reverseOpeningJournal } from '../../acc/opening';
+import { assertAuditWritable, auditUnavailableBody, compactChanges, fieldChange, recordEntityAudit, type AuditActor } from '../lib/entity-audit';
 import { journalEntryEdit } from './accounting-journal-edit';
 import { reportLayoutGet, reportLayoutPut, reportLayoutReset } from './accounting-report-layouts';
 import { receiptsPaymentsReport } from './accounting-rp';
@@ -406,7 +407,8 @@ export const ledgerSettingsPut = async (c: AccCtx): Promise<Response> => {
   const patch: { ledgerStartDate?: string | null; fiscalYearEndMonth?: number } = {};
   if (body?.ledgerStartDate !== undefined) {
     const d = body.ledgerStartDate;
-    if (d !== null && !(typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(d)))) {
+    // A real calendar day: 2026-02-30 passes a shape check and Date.parse, and the database then refuses it.
+    if (d !== null && !(typeof d === 'string' && isIsoDay(d))) {
       return c.json({ error: 'Enter a date like 2026-12-01.' }, 400);
     }
     patch.ledgerStartDate = d;
@@ -417,10 +419,24 @@ export const ledgerSettingsPut = async (c: AccCtx): Promise<Response> => {
     patch.fiscalYearEndMonth = m;
   }
   const who = String((c.get('houzsUser') as { name?: string } | undefined)?.name ?? (c.get('user') as { id?: string } | undefined)?.id ?? '');
-  const saved = await saveLedgerSettings(c.get('supabase'), co.companyId, patch, who);
+  const sb = c.get('supabase');
+  /* The history of who changed what (entity_audit_log): asked first, so a history that cannot be written means
+     nothing is saved — the start date decides what posts, and a silent move of it is the one thing not to allow. */
+  const before = await loadLedgerSettings(sb, co.companyId);
+  if (!before.ok) return c.json({ error: 'load_failed' }, 500);
+  const audit = { entityType: 'LEDGER_SETTINGS' as const, entityId: String(co.companyId), action: 'UPDATE' as const, companyId: co.companyId };
+  if (!(await assertAuditWritable(sb, audit)).ok) return c.json(auditUnavailableBody(), 409);
+  const saved = await saveLedgerSettings(sb, co.companyId, patch, who);
   if (!saved.ok) return c.json({ error: 'save_failed', reason: saved.error }, 500);
-  const r = await loadLedgerSettings(c.get('supabase'), co.companyId);
+  const r = await loadLedgerSettings(sb, co.companyId);
   if (!r.ok) return c.json({ error: 'load_failed' }, 500);
+  const changes = compactChanges([
+    fieldChange('ledger_start_date', before.settings.ledgerStartDate, r.settings.ledgerStartDate),
+    fieldChange('fiscal_year_end_month', before.settings.fiscalYearEndMonth, r.settings.fiscalYearEndMonth),
+  ]);
+  if (changes.length > 0) {
+    await recordEntityAudit(sb, { ...audit, actor: c.get('houzsUser') as AuditActor | undefined, fieldChanges: changes });
+  }
   return c.json(r.settings);
 };
 accounting.put('/settings/ledger', ledgerSettingsPut);
