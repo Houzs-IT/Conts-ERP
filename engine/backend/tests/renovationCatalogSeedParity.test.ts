@@ -34,9 +34,9 @@ describe("migration 0061 seeds the same tree as renovation-catalog.ts", () => {
     expect([...stages].sort()).toEqual(["appliances", "furniture", "hardware", "soft_furnishing"]);
   });
 
-  test("sub-categories: group, code, label, sort, legacy list (0061 plus the Notion trades of 0085)", () => {
+  test("sub-categories: group, code, label, sort, legacy list (0061, the Notion trades of 0085, Eye ball of 0141)", () => {
     const byCode = (a: { code: string }, b: { code: string }) => a.code.localeCompare(b.code);
-    const both = sql + "\n" + read("0085_renovation_works_subs_notion.sql");
+    const both = sql + "\n" + read("0085_renovation_works_subs_notion.sql") + "\n" + read("0141_service_site_trades.sql");
     const rows = tuples(both, /^\s+\('([A-Z]+)', '([A-Z_]+)', '([^']+)', (\d+), (?:'\{\}'|array\[([^\]]*)\])::text\[\]\)[,;]?$/gm);
     expect(
       rows.map(([group, code, label, sort, legacy]) => ({
@@ -74,7 +74,7 @@ describe("migration 0118 seeds the same eight units as UOMS", () => {
 describe("migrations 0064 and 0085 seed the generic SKUs", () => {
   test("RN-<SUB> rows match genericSkus()", () => {
     const byCode = (a: { code: string }, b: { code: string }) => a.code.localeCompare(b.code);
-    const sql = read("0064_renovation_generic_skus.sql") + "\n" + read("0085_renovation_works_subs_notion.sql");
+    const sql = read("0064_renovation_generic_skus.sql") + "\n" + read("0085_renovation_works_subs_notion.sql") + "\n" + read("0141_service_site_trades.sql");
     const rows = tuples(sql, /^\s+\('(RN-[A-Z_]+)', '([^']+)', '([A-Z]+)', '([A-Z_]+)', '([A-Z]+)'\)[,)]?$/gm);
     const moved = (sub: string) => MOVED_TO_SERVICE.get(sub);
     expect(rows.map(([code, name, group, sub, uom]) => ({
@@ -87,7 +87,7 @@ describe("migrations 0064 and 0085 seed the generic SKUs", () => {
   });
 
   test("every WORKS sub-category has its RN- SKU in 0064 or 0085", () => {
-    const sql = read("0064_renovation_generic_skus.sql") + "\n" + read("0085_renovation_works_subs_notion.sql");
+    const sql = read("0064_renovation_generic_skus.sql") + "\n" + read("0085_renovation_works_subs_notion.sql") + "\n" + read("0141_service_site_trades.sql");
     for (const s of SUB_CATEGORIES.filter((x) => x.group === "WORKS" || SITE_TRADE_SERVICES.includes(x.code))) expect(sql, s.code).toContain(`'RN-${s.code}'`);
   });
 });

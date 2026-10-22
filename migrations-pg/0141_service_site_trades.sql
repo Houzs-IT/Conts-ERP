@@ -1,5 +1,6 @@
--- REVERSAL: run the same steps back with WORKS for SERVICE: move scm.mfg_products / scm.product_models RN-AIRCON_INSTALL, RN-CLEANING, RN-PROJECT_MGMT (and any SKU of the three sub-categories) to category WORKS with their sub_category nulled, set scm.product_sub_categories group_code = 'WORKS' and sort_order 110/120/130 for AIRCON_INSTALL/CLEANING/PROJECT_MGMT, then put the sub_category back on those SKUs; rename the RN- SKUs and models 'Works - <label>'; move purchase_order_items / purchase_orders / grn_items of the three back to category_group 'WORKS'; move public.project_procurement_dates rows of the three back to group_code 'WORKS' (rows this migration inserted carry updated_by 'migration 0141' and can be deleted).
+-- REVERSAL: delete from scm.product_sub_categories where code = 'EYEBALL' (refused while a SKU uses it); run the same steps back with WORKS for SERVICE: move scm.mfg_products / scm.product_models RN-AIRCON_INSTALL, RN-CLEANING, RN-PROJECT_MGMT (and any SKU of the three sub-categories) to category WORKS with their sub_category nulled, set scm.product_sub_categories group_code = 'WORKS' and sort_order 110/120/130 for AIRCON_INSTALL/CLEANING/PROJECT_MGMT, then put the sub_category back on those SKUs; rename the RN- SKUs and models 'Works - <label>'; move purchase_order_items / purchase_orders / grn_items of the three back to category_group 'WORKS'; move public.project_procurement_dates rows of the three back to group_code 'WORKS' (rows this migration inserted carry updated_by 'migration 0141' and can be deleted).
 -- Aircon install, Cleaning and Project management belong under Service, not Works (owner, 22 Oct 2026).
+-- Same day: a new Lighting sub-category, Eye ball (EYEBALL), after Downlight (end of this file).
 --
 -- Only the filing moves. They still act as site trades (renovation-catalog.ts SITE_TRADE_SERVICES): an SO line
 -- of these sub-categories makes the same site task (aircon install in hardware, cleaning in handover, project
@@ -109,3 +110,8 @@ begin
   select count(*) into n from scm.mfg_products p join mig0141_skus k on k.id = p.id where p.sub_category is distinct from k.sub_category;
   if n > 0 then raise exception '% moved SKUs lost their sub-category', n; end if;
 end $$;
+
+-- Eye ball downlights, a Lighting sub-category of their own (owner, 22 Oct 2026), after Downlight.
+insert into scm.product_sub_categories (group_code, code, label, sort_order, legacy_categories) values
+  ('LIGHTING', 'EYEBALL', 'Eye ball', 15, '{}'::text[])
+on conflict do nothing;

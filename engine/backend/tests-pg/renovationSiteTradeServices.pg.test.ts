@@ -56,6 +56,8 @@ describePg("site-trade services filed under Service, on the real schema", () => 
     // the Products list filter (?group=SERVICE) reads category_group
     const service = await sql`select code from scm.mfg_products where company_id = ${CO} and category_group = 'SERVICE' and code like 'RN-%' order by code`;
     expect(service.map((r) => r.code)).toEqual(expect.arrayContaining(["RN-AIRCON_INSTALL", "RN-CLEANING", "RN-PROJECT_MGMT", "RN-DELIVERY"]));
+    const lighting = await sql`select code, label from scm.product_sub_categories where group_code = 'LIGHTING' order by sort_order limit 2`;
+    expect(lighting.map((r) => `${r.code}/${r.label}`)).toEqual(["DOWNLIGHT/Downlight", "EYEBALL/Eye ball"]);
     const works = await sql`select code from scm.mfg_products where company_id = ${CO} and category_group = 'WORKS' and sub_category in ('AIRCON_INSTALL', 'CLEANING', 'PROJECT_MGMT')`;
     expect(works).toHaveLength(0);
   });

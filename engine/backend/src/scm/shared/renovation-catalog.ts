@@ -91,6 +91,7 @@ export const SUB_CATEGORIES: readonly SubCategoryDef[] = [
   { group: 'FURNITURE', code: 'ACCESSORY', label: 'Accessory', sort: 70, legacy: ['ACCESSORY', 'FABRIC_ACCESSORY', 'OTHERS'] },
 
   { group: 'LIGHTING', code: 'DOWNLIGHT', label: 'Downlight', sort: 10 },
+  { group: 'LIGHTING', code: 'EYEBALL', label: 'Eye ball', sort: 15 },
   { group: 'LIGHTING', code: 'PENDANT', label: 'Pendant', sort: 20 },
   { group: 'LIGHTING', code: 'LED_STRIP', label: 'LED strip', sort: 30 },
   { group: 'LIGHTING', code: 'CEILING_FAN', label: 'Ceiling fan', sort: 40 },

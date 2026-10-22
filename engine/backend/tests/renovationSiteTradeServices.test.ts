@@ -36,6 +36,11 @@ describe("catalog: the three are filed under SERVICE", () => {
     expect(validateCategoryPair("WORKS", "CLEANING")).toEqual({ ok: false, error: "sub_category_mismatch" });
   });
 
+  test("Lighting has Eye ball right after Downlight (owner, 22 Oct 2026)", () => {
+    expect(subCategoriesOf("LIGHTING").map((s) => s.label).slice(0, 3)).toEqual(["Downlight", "Eye ball", "Pendant"]);
+    expect(validateCategoryPair("LIGHTING", "EYEBALL")).toEqual({ ok: true });
+  });
+
   test("siteGroupOf: the three work as WORKS, every other service stays SERVICE", () => {
     for (const c of SITE_TRADE_SERVICES) expect(siteGroupOf("SERVICE", c)).toBe("WORKS");
     expect(siteGroupOf("SERVICE", "aircon_install")).toBe("WORKS");
