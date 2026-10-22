@@ -215,3 +215,17 @@ describe('the real mounts', () => {
     expect(route).toBeGreaterThan(ledger);
   });
 });
+
+describe('the ledger settings history is the Ledger\'s', () => {
+  test('holdsLedger takes the key, never the wildcard', async () => {
+    const { holdsLedger } = await import('../src/conts/ledger-access');
+    expect(holdsLedger({ permissions_set: new Set(['*']) })).toBe(false);
+    expect(holdsLedger({ permissions_set: new Set([LEDGER_KEY]) })).toBe(true);
+    expect(holdsLedger(undefined)).toBe(false);
+  });
+
+  test('the change history route refuses LEDGER_SETTINGS to a caller without the Ledger', () => {
+    const src = readFileSync(fileURLToPath(new URL('../src/scm/routes/entity-audit-log.ts', import.meta.url)), 'utf8');
+    expect(src).toMatch(/entityType === 'LEDGER_SETTINGS' && !holdsLedger\(c\.get\('user'\)\)\) return c\.json\(\{[^}]*\}, 403\)/);
+  });
+});

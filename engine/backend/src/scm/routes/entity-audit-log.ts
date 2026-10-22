@@ -29,6 +29,7 @@ import { Hono } from 'hono';
 import { supabaseAuth } from '../middleware/auth';
 import type { Env, Variables } from '../env';
 import { isEntityType } from '../lib/entity-audit';
+import { holdsLedger } from '../../conts/ledger-access';
 import { scopeToCompany } from '../lib/companyScope';
 import { canViewScmFinance } from '../lib/houzs-perms';
 import { stripAuditFinance } from '../lib/finance-keys';
@@ -68,6 +69,8 @@ entityAuditLog.get('/:entityType/:entityId', async (c) => {
     return c.json({ error: 'unknown_entity_type', message: `No audit trail is kept for "${entityType}".` }, 400);
   }
   if (!entityId) return c.json({ error: 'entity_id_required' }, 400);
+  // Conts: the ledger settings' history is the Ledger's, like the settings themselves.
+  if (entityType === 'LEDGER_SETTINGS' && !holdsLedger(c.get('user'))) return c.json({ error: 'Your role cannot open the accounts.' }, 403);
 
   const rawLimit = Number(c.req.query('limit'));
   const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, MAX_LIMIT) : DEFAULT_LIMIT;
