@@ -264,12 +264,14 @@ export async function verifyGrnLinesNotOverInvoiced(
   return { over, error: null };
 }
 
+const OPENING_BILL_MESSAGE = 'An opening bill carries the amount AutoCount still owed on the opening day — cancel it and import the corrected list instead of editing it.';
+
 /* PI edit-lock guard: a PI with ANY payment recorded (paid_sen > 0) or that's
    CANCELLED is read-only. Returns the blocking JSON response, or null if the PI
    is editable. */
-async function piLocked(sb: any, piId: string): Promise<{ error: string; message: string } | null> {
+export async function piLocked(sb: any, piId: string): Promise<{ error: string; message: string } | null> {
   const { data, error } = await sb.from('purchase_invoices')
-    .select('paid_sen, status').eq('id', piId).maybeSingle();
+    .select('paid_sen, status, opening_balance').eq('id', piId).maybeSingle();
   /* The error is READ, not dropped. A dropped error made `data` null, `!data`
      read as "no such invoice", and the guard answered "not locked" — so a PAID
      or CANCELLED invoice became editable on a transient read failure. A failed
@@ -279,8 +281,11 @@ async function piLocked(sb: any, piId: string): Promise<{ error: string; message
     return { error: 'pi_lock_check_failed', message: `Could not check whether this invoice is locked, so it is treated as locked — try again (${error.message}).` };
   }
   if (!data) return null; // not found — let the handler's own load surface 404
-  const row = data as { paid_sen: number | null; status: string };
+  const row = data as { paid_sen: number | null; status: string; opening_balance?: boolean | null };
   if (row.status === 'CANCELLED') return { error: 'pi_cancelled', message: 'Invoice is cancelled' };
+  /* An opening bill (Conts, migration 0136) has no lines: its amount is AutoCount's outstanding balance, and a line
+     would re-total it to the lines. Cancel it and import the corrected list instead. */
+  if (row.opening_balance === true) return { error: 'pi_opening_balance', message: OPENING_BILL_MESSAGE };
   if ((row.paid_sen ?? 0) > 0) return { error: 'pi_locked', message: 'Invoice has a payment recorded — locked' };
   return null;
 }
@@ -1547,11 +1552,15 @@ purchaseInvoices.post('/from-grn', createPurchaseInvoiceFromGrnHandler);
 purchaseInvoices.patch('/:id', async (c) => {
   const id = c.req.param('id');
   // company-scope: the header write below keys on the caller's uuid alone.
-  const { data: own, error: ownErr } = await scopeToCompany(c.get('supabase').from('purchase_invoices').select('id').eq('id', id), c).maybeSingle();
+  const { data: own, error: ownErr } = await scopeToCompany(c.get('supabase').from('purchase_invoices').select('id, opening_balance').eq('id', id), c).maybeSingle();
   if (ownErr) return c.json({ error: 'lookup_failed', reason: ownErr.message }, 500);
   if (!own) return c.json({ error: 'not_found' }, 404);
   let body: Record<string, unknown>;
   try { body = (await c.req.json()) as Record<string, unknown>; } catch { return c.json({ error: 'invalid_json' }, 400); }
+  // An opening bill's amount is in ringgit, as AutoCount's list gave it (see piLocked).
+  if ((own as { opening_balance?: boolean | null }).opening_balance === true && (body.currency !== undefined || body.exchangeRate !== undefined)) {
+    return c.json({ error: 'pi_opening_balance', message: OPENING_BILL_MESSAGE }, 409);
+  }
   const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
   /* exchangeRate is in PI_AUDIT_FIELDS but NOT written here — it is derived from
      the currency below, so the loop skips it and the audit patch folds it in. */

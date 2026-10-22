@@ -7,7 +7,7 @@ import styles from "../pages/scm-v2/SalesOrderDetail.module.css";
 import { useConfirm } from "../vendor/scm/components/ConfirmDialog";
 import {
   OPENING_COLUMNS, downloadTemplate, parseJournalGrid, parsePayablesGrid, parseReceivablesGrid, readWorkbookGrid, useImportOpening,
-  useOpeningCheck, useReverseOpening, type OpeningCheck, type OpeningImportResult, type OpeningKind, type ParsedSheet,
+  useOpeningCheck, useReverseOpening, type ControlLine, type OpeningCheck, type OpeningImportResult, type OpeningKind, type ParsedSheet,
 } from "./opening";
 
 const GOOD = "var(--c-secondary-a, #2F5D4F)";
@@ -15,6 +15,7 @@ const BAD = "var(--c-festive-b, #B8331F)";
 const MUTED = "var(--fg-muted)";
 const num: React.CSSProperties = { textAlign: "right", fontVariantNumeric: "tabular-nums", padding: "4px 8px" };
 const cell: React.CSSProperties = { padding: "4px 8px" };
+const CONTROL_LABEL: Record<ControlLine["role"], string> = { AR: "Trade debtors", AP: "Trade creditors", AP_OTHER: "Other creditors" };
 const rm = (sen: number): string => (sen / 100).toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export function OpeningBalances({ canSave, ledgerStartDate }: { canSave: boolean; ledgerStartDate: string | null }) {
@@ -57,6 +58,7 @@ function CheckPanel({ check, canSave }: { check: OpeningCheck; canSave: boolean 
   const reverse = useReverseOpening();
   const askConfirm = useConfirm();
   const [note, setNote] = useState<string | null>(null);
+  const erpDocs = check.controls.reduce((t, c) => t + c.erpDocuments, 0);
   const onReverse = async () => {
     if (!check.openingJeNo) return;
     if (!(await askConfirm({
@@ -75,6 +77,16 @@ function CheckPanel({ check, canSave }: { check: OpeningCheck; canSave: boolean 
           {check.openingJeNo ? `, journal ${check.openingJeNo}` : ", no opening journal yet"}</span>
       </div>
       {note && <p style={{ margin: 0, color: BAD }}>{note}</p>}
+      {check.openingJeDate && check.openingJeDate !== check.openingDay && (
+        <p style={{ margin: 0, color: BAD }}>
+          The opening journal is dated {check.openingJeDate}, but the books now start the day after {check.openingDay}. Reverse it and import it again, or move the start date back.
+        </p>
+      )}
+      {erpDocs > 0 && (
+        <p style={{ margin: 0, fontSize: "var(--fs-12)", color: MUTED }}>
+          {erpDocs} invoice{erpDocs === 1 ? "" : "s"} or bill{erpDocs === 1 ? "" : "s"} raised in the ERP before the books started {erpDocs === 1 ? "is" : "are"} counted too, at what is still owed on them.
+        </p>
+      )}
       <div style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "var(--fs-13)" }}>
           <thead>
@@ -85,8 +97,10 @@ function CheckPanel({ check, canSave }: { check: OpeningCheck; canSave: boolean 
           </thead>
           <tbody>
             <Compare label="Trial balance" left={check.trialDebitSen} leftLabel="Dr" right={check.trialCreditSen} rightLabel="Cr" />
-            <Compare label="Trade debtors" left={check.arControlSen} leftLabel="control" right={check.arDocumentsSen} rightLabel="invoices" />
-            <Compare label="Trade creditors" left={check.apControlSen} leftLabel="control" right={check.apDocumentsSen} rightLabel="bills" />
+            {check.controls.map((c) => (
+              <Compare key={c.role} label={`${CONTROL_LABEL[c.role]} (${c.accountCode})`} left={c.controlSen} leftLabel="control"
+                right={c.documentsSen} rightLabel={c.role === "AR" ? "invoices" : "bills"} />
+            ))}
           </tbody>
         </table>
       </div>
@@ -165,7 +179,8 @@ function UploadPanel({ kind, title, hint, canSave }: { kind: OpeningKind; title:
 
   const cols = kind === "journal"
     ? [["accountCode", "Account"], ["debitSen", "Debit"], ["creditSen", "Credit"]]
-    : [["docNo", kind === "receivables" ? "Invoice no" : "Bill no"], [kind === "receivables" ? "debtorName" : "supplierCode", kind === "receivables" ? "Customer" : "Supplier code"],
+    : [["docNo", kind === "receivables" ? "Invoice no" : "Bill no"],
+      ...(kind === "receivables" ? [["debtorCode", "Customer code"], ["debtorName", "Customer"]] : [["supplierCode", "Supplier code"]]),
       ["invoiceDate", "Date"], ["dueDate", "Due"], ["outstandingSen", "Outstanding"]];
   const isMoney = (k: string) => k.endsWith("Sen");
 

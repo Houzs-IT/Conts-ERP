@@ -86,3 +86,48 @@ describe('the control self-check', () => {
     expect(REVERSAL_SOURCE.OPENING).toBe('OPENING_REVERSAL');
   });
 });
+
+describe('nothing about an opening document travels back to AutoCount', () => {
+  test('cancelling or editing an opening invoice or bill queues nothing to send', async () => {
+    const { enqueueCancel, enqueueEdit } = await import('../src/scm/lib/autocount-outbox');
+    const { resetWritebackFlagCache } = await import('../src/scm/lib/autocount-writeback-flag');
+    resetWritebackFlagCache();
+    const sb = fakeSb({
+      app_config: [{ key: 'scm.autocount_writeback', value: 'all' }], autocount_outbox: [],
+      sales_invoices: [{ ...OPENING_SI, linked_ac_docno: 'HC-SI-OPEN-001' }], sales_invoice_items: [],
+      purchase_invoices: [{ ...OPENING_PI, linked_ac_docno: 'HC-PI-OPEN-001' }], purchase_invoice_items: [],
+    });
+    expect(await enqueueCancel(sb as never, { companyId: CO, docType: 'IV', docNo: 'HC-SI-OPEN-001', docId: 'si-o1', self: { table: 'sales_invoices', keyCol: 'id', key: 'si-o1' } })).toBe(false);
+    expect(await enqueueCancel(sb as never, { companyId: CO, docType: 'PI', docNo: 'HC-PI-OPEN-001', docId: 'pi-o1', self: { table: 'purchase_invoices', keyCol: 'id', key: 'pi-o1' } })).toBe(false);
+    expect(await enqueueEdit(sb as never, { companyId: CO, docType: 'PI', docId: 'pi-o1' })).toBe(false);
+    const sendable = sb.tables.autocount_outbox.filter((r) => r.status !== 'skipped');
+    expect(sendable).toEqual([]);
+    resetWritebackFlagCache();
+  });
+});
+
+describe('an opening bill keeps its amount', () => {
+  test('its lines are locked: the outstanding amount is AutoCount\'s', async () => {
+    const { piLocked } = await import('../src/scm/routes/purchase-invoices');
+    const sb = fakeSb({ purchase_invoices: [{ ...OPENING_PI, paid_sen: 0 }] });
+    expect(await piLocked(sb, 'pi-o1')).toMatchObject({ error: 'pi_opening_balance' });
+  }, 30_000);
+});
+
+describe('the opening journal reverses more than once', () => {
+  test('each reversal carries its own source number, so the one-active-source index never refuses its post', async () => {
+    const { importOpeningJournal, reverseOpeningJournal } = await import('../src/acc/opening');
+    const lines = [{ accountCode: '300-0000', debitSen: 1_000, creditSen: 0 }, { accountCode: '400-0000', debitSen: 0, creditSen: 1_000 }];
+    const sb = fakeSb({
+      accounts: CHART, acc_account_roles: [], journal_entries: [], journal_entry_lines: [],
+      acc_company_settings: [{ company_id: CO, ledger_start_date: '2026-12-01', fiscal_year_end_month: 8 }],
+    });
+    for (let i = 0; i < 2; i += 1) {
+      expect((await importOpeningJournal(sb, CO, lines, 'T')).ok).toBe(true);
+      expect((await reverseOpeningJournal(sb, CO)).ok).toBe(true);
+    }
+    const contras = sb.tables.journal_entries.filter((j) => j.source_type === 'OPENING_REVERSAL');
+    expect(contras).toHaveLength(2);
+    expect(new Set(contras.map((j) => j.source_doc_no)).size).toBe(2);
+  });
+});

@@ -22,7 +22,7 @@ function world(over: Record<string, Row[]> = {}, start: string | null = '2026-12
     accounts: CHART.map((a) => ({ ...a })), acc_account_roles: [], journal_entries: [], journal_entry_lines: [],
     acc_company_settings: start ? [{ company_id: CO, ledger_start_date: start, fiscal_year_end_month: 8 }] : [],
     sales_invoices: [], purchase_invoices: [],
-    suppliers: [{ id: 'sup-1', code: '400-T001', name: 'TODERN', company_id: CO }],
+    suppliers: [{ id: 'sup-1', code: '400-T001', name: 'TODERN', company_id: CO }, { id: 'sup-2', code: '405-L001', name: 'LANDLORD', company_id: CO }],
     ...over,
   });
 }
@@ -84,7 +84,7 @@ describe('the opening journal', () => {
 });
 
 describe('opening receivables and payables', () => {
-  const AR_ROW = { docNo: 'IV-00123', debtorName: 'Ah Meng', invoiceDate: '2026-10-05', dueDate: '2026-11-04', outstandingSen: 50_000 };
+  const AR_ROW = { docNo: 'IV-00123', debtorName: 'Ah Meng', debtorCode: '300-A001', invoiceDate: '2026-10-05', dueDate: '2026-11-04', outstandingSen: 50_000 };
 
   test('imports receivables once and skips the same docNo the second time', async () => {
     const sb = world();
@@ -129,18 +129,20 @@ describe('the opening check', () => {
       ...l, company_id: CO, entry_date: je.entry_date, posted: true, reversed: false, reversed_by_je: null,
       account_name: l.account_code, account_type: CHART.find((a) => a.account_code === l.account_code)!.account_type,
     }));
-    await importOpeningReceivables(sb, CO, [{ docNo: 'IV-1', debtorName: 'A', invoiceDate: '2026-10-05', dueDate: '2026-11-04', outstandingSen: 50_000 }], ACTOR);
+    await importOpeningReceivables(sb, CO, [{ docNo: 'IV-1', debtorName: 'A', debtorCode: '300-A001', invoiceDate: '2026-10-05', dueDate: '2026-11-04', outstandingSen: 50_000 }], ACTOR);
     await importOpeningPayables(sb, CO, [{ docNo: 'PI-1', supplierCode: '400-T001', invoiceDate: '2026-10-01', dueDate: '2026-10-31', outstandingSen: 20_000 }], ACTOR);
 
     const r = await openingCheck(sb, CO);
-    expect(r).toMatchObject({
-      ok: true, openingDay: '2026-11-30', arControlSen: 50_000, arDocumentsSen: 50_000,
-      apControlSen: 30_000, apDocumentsSen: 20_000, trialDebitSen: 150_000, trialCreditSen: 150_000, balanced: false,
-    });
+    expect(r).toMatchObject({ ok: true, openingDay: '2026-11-30', trialDebitSen: 150_000, trialCreditSen: 150_000, balanced: false });
+    expect(r.ok && r.controls).toEqual([
+      { role: 'AR', accountCode: '300-0000', controlSen: 50_000, documentsSen: 50_000, erpDocuments: 0 },
+      { role: 'AP', accountCode: '400-0000', controlSen: 30_000, documentsSen: 20_000, erpDocuments: 0 },
+      { role: 'AP_OTHER', accountCode: '405-0000', controlSen: 0, documentsSen: 0, erpDocuments: 0 },
+    ]);
     expect(r.ok && r.banks).toEqual([{ accountCode: '310-0001', name: 'Acct 310-0001', balanceSen: 100_000 }]);
 
     await importOpeningPayables(sb, CO, [{ docNo: 'PI-2', supplierCode: '400-T001', invoiceDate: '2026-10-02', dueDate: '2026-11-01', outstandingSen: 10_000 }], ACTOR);
-    expect(await openingCheck(sb, CO)).toMatchObject({ apDocumentsSen: 30_000, balanced: true });
+    expect(await openingCheck(sb, CO)).toMatchObject({ balanced: true });
   });
 });
 
@@ -149,17 +151,19 @@ describe('the opening routes', () => {
     const { Hono } = await import('hono');
     const routes = await import('../scm/routes/accounting');
     const sb = world();
-    const app = new Hono();
+    type Ctx = Parameters<typeof routes.openingCheckHandler>[0];
+    const app = new Hono<{ Variables: { supabase: unknown; companyId: number; user: { id: string }; houzsUser: { name: string; permissions_set: string[] } } }>();
     app.use('*', async (c, next) => {
-      c.set('supabase' as never, sb as never);
-      c.set('companyId' as never, CO as never);
-      c.set('user' as never, { id: ACTOR } as never);
-      c.set('houzsUser' as never, { name: 'Finance', permissions_set: perms } as never);
+      c.set('supabase', sb);
+      c.set('companyId', CO);
+      c.set('user', { id: ACTOR });
+      c.set('houzsUser', { name: 'Finance', permissions_set: perms });
       await next();
     });
-    app.post('/opening/journal', routes.openingJournalHandler as never);
-    app.post('/opening/receivables', routes.openingReceivablesHandler as never);
-    app.get('/opening/check', routes.openingCheckHandler as never);
+    // The handlers are typed for the engine's full context; this app carries the four values they read.
+    app.post('/opening/journal', (c) => routes.openingJournalHandler(c as unknown as Ctx));
+    app.post('/opening/receivables', (c) => routes.openingReceivablesHandler(c as unknown as Ctx));
+    app.get('/opening/check', (c) => routes.openingCheckHandler(c as unknown as Ctx));
     const res = await app.request(path, body === undefined ? {} : { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } });
     return { status: res.status, body: await res.json() as Record<string, unknown>, sb };
   }
@@ -172,9 +176,75 @@ describe('the opening routes', () => {
 
   test('the receivables route records who imported them', async () => {
     const r = await call(['scm.payment_voucher.post'], '/opening/receivables', {
-      rows: [{ docNo: 'IV-9', debtorName: 'A', invoiceDate: '2026-10-05', dueDate: '2026-11-04', outstandingSen: 1_000 }],
+      rows: [{ docNo: 'IV-9', debtorName: 'A', debtorCode: '300-A001', invoiceDate: '2026-10-05', dueDate: '2026-11-04', outstandingSen: 1_000 }],
     });
     expect(r.body).toEqual({ created: 1, skipped: 0, errors: [] });
     expect(r.sb.tables.sales_invoices[0]).toMatchObject({ created_by: ACTOR });
+  });
+});
+
+describe('the opening check, other cases', () => {
+  function withGl(sb: ReturnType<typeof world>) {
+    const byId = new Map(sb.tables.journal_entries.map((j) => [j.id, j]));
+    sb.tables.v_gl_entries = sb.tables.journal_entry_lines.map((l) => {
+      const je = byId.get(l.journal_entry_id)!;
+      return {
+        ...l, company_id: CO, entry_date: je.entry_date, posted: je.posted ?? true, reversed: je.reversed ?? false, reversed_by_je: je.reversed_by_je ?? null,
+        account_name: l.account_code, account_type: 'ASSET',
+      };
+    });
+  }
+
+  test('a 405- supplier\'s bills are checked against the other creditors control', async () => {
+    const sb = world();
+    sb.tables.accounts.push({ ...CHART[2], account_code: '405-0000' });
+    await importOpeningJournal(sb, CO, [
+      { accountCode: '310-0001', debitSen: 10_000, creditSen: 0 }, { accountCode: '405-0000', debitSen: 0, creditSen: 10_000 },
+    ], 'T');
+    withGl(sb);
+    await importOpeningPayables(sb, CO, [{ docNo: 'L-1', supplierCode: '405-L001', invoiceDate: '2026-11-01', dueDate: '2026-11-30', outstandingSen: 10_000 }], ACTOR);
+    const r = await openingCheck(sb, CO);
+    expect(r.ok && r.controls.find((c) => c.role === 'AP_OTHER')).toMatchObject({ controlSen: 10_000, documentsSen: 10_000 });
+    expect(r.ok && r.controls.find((c) => c.role === 'AP')).toMatchObject({ controlSen: 0, documentsSen: 0 });
+    expect(r).toMatchObject({ balanced: true });
+  });
+
+  test('an invoice raised in the ERP before the start is not imported again, and counts in the check at what is still owed', async () => {
+    const sb = world({ sales_invoices: [{
+      id: 'si-erp', invoice_number: 'HC-SI-2611-0001', linked_ac_docno: 'IV-77', company_id: CO, status: 'SENT',
+      invoice_date: '2026-11-20', total_sen: 8_000, paid_sen: 3_000, opening_balance: false, migrated_no_stock: false,
+    }] });
+    const r = await importOpeningReceivables(sb, CO, [{ docNo: 'IV-77', debtorName: 'A', debtorCode: '300-A001', invoiceDate: '2026-11-20', dueDate: '2026-12-20', outstandingSen: 5_000 }], ACTOR);
+    expect(r.created).toBe(0);
+    expect(r.errors[0].error).toMatch(/HC-SI-2611-0001/);
+    const c = await openingCheck(sb, CO);
+    expect(c.ok && c.controls[0]).toMatchObject({ role: 'AR', documentsSen: 5_000, erpDocuments: 1 });
+  });
+
+  test('a customer code is required: payments name the customer by it', async () => {
+    const sb = world();
+    const r = await importOpeningReceivables(sb, CO, [{ docNo: 'IV-1', debtorName: 'A', invoiceDate: '2026-10-05', dueDate: '2026-11-04', outstandingSen: 1_000 }], ACTOR);
+    expect(r.errors[0].error).toMatch(/customer code/);
+  });
+
+  test('a start date moved after the import shows: the journal is not on the opening day', async () => {
+    const sb = world();
+    await importOpeningJournal(sb, CO, BALANCED, 'T');
+    sb.tables.acc_company_settings[0].ledger_start_date = '2027-01-01';
+    const r = await openingCheck(sb, CO);
+    expect(r).toMatchObject({ openingDay: '2026-12-31', openingJeDate: '2026-11-30', balanced: false });
+  });
+
+  test('every read pages past the row ceiling', async () => {
+    const sups = Array.from({ length: 1_005 }, (_, i) => ({ id: `s-${i}`, code: `400-S${String(i).padStart(4, '0')}`, name: 'S', company_id: CO }));
+    const tables = {
+      accounts: CHART.map((a) => ({ ...a })), acc_account_roles: [], journal_entries: [], journal_entry_lines: [],
+      acc_company_settings: [{ company_id: CO, ledger_start_date: '2026-12-01', fiscal_year_end_month: 8 }],
+      sales_invoices: [], purchase_invoices: [], suppliers: sups,
+    };
+    const { fakeSb: make } = await import('../scm/lib/fake-postgrest');
+    const sb = make(tables, {}, [], [], 1_000);
+    const r = await importOpeningPayables(sb, CO, [{ docNo: 'B-1', supplierCode: '400-S1004', invoiceDate: '2026-11-01', dueDate: '2026-11-30', outstandingSen: 100 }], ACTOR);
+    expect(r).toEqual({ created: 1, skipped: 0, errors: [] });
   });
 });

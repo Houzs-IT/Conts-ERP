@@ -1110,6 +1110,19 @@ async function grnLinkIsReallyAPo(sb: Sb, grnId: string): Promise<string | null>
   }
 }
 
+/* Conts, migration 0136: an opening invoice or bill is AutoCount's own outstanding document, carried in under its
+   AutoCount number after AutoCount's books for that month were closed. The account book holds the original; nothing
+   done to the ERP's copy travels back. A read that does not answer sends nothing either. */
+async function openingDocRefusal(sb: Sb, docType: AcDocType, docId: string | null | undefined): Promise<string | null> {
+  const table = docType === 'IV' ? 'sales_invoices' : docType === 'PI' ? 'purchase_invoices' : null;
+  if (!table || !docId) return null;
+  const { data, error } = await sb.from(table).select('opening_balance').eq('id', docId).maybeSingle();
+  if (error) return `could not check whether this is an opening balance (${error.message}), so nothing was sent`;
+  return (data as { opening_balance?: boolean | null } | null)?.opening_balance === true
+    ? 'an opening balance carried in from AutoCount: AutoCount holds the original, which the ERP does not change'
+    : null;
+}
+
 /**
  * Cancel.
  *
@@ -1133,6 +1146,14 @@ export async function enqueueCancel(
   try {
     if (opts.companyId == null) return false;
     if (!(await isWritebackEnabled(sb, opts.companyId))) return false;
+    const opening = await openingDocRefusal(sb, opts.docType, opts.docId);
+    if (opening) {
+      await enqueueAcOp(sb, {
+        companyId: opts.companyId, op: 'cancel', docType: opts.docType, docNo: opts.docNo, docId: opts.docId ?? null,
+        payload: { body: {} }, status: 'skipped', reason: `not cancelled in AutoCount: ${opening}`, createdBy: opts.createdBy ?? null,
+      });
+      return false;
+    }
     const pending = await findPendingOriginatingOp(sb, opts.companyId, opts.docType, opts.docNo, opts.docId ?? null);
     if (pending) {
       await sb.from('autocount_outbox')
@@ -1225,6 +1246,14 @@ export async function enqueueEdit(
   try {
     if (opts.companyId == null) return false;
     if (!(await isWritebackEnabled(sb, opts.companyId))) return false;
+    const opening = await openingDocRefusal(sb, opts.docType, opts.docId);
+    if (opening) {
+      await enqueueAcOp(sb, {
+        companyId: opts.companyId, op: 'edit', docType: opts.docType, docNo: String(opts.docNo ?? opts.docId), docId: opts.docId ?? null,
+        payload: { body: {} }, status: 'skipped', reason: `not edited in AutoCount: ${opening}`, createdBy: opts.createdBy ?? null,
+      });
+      return false;
+    }
 
     const retired = (opts.retire ?? []).filter((r) => Number.isFinite(Number(r.DtlKey)));
     const composed = opts.docType === 'SO'

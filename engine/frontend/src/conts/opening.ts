@@ -1,7 +1,7 @@
 // Conts only (not part of Houzs's code): the opening balances (finance phase 1, spec 3.8) — reading AutoCount's
 // three Excel lists and talking to /accounting/opening/* (backend/src/acc/opening.ts).
 //   · the trial balance on the day before the books start: Account / Debit / Credit (RM);
-//   · the invoices customers still owe: Invoice no / Customer / Invoice date / Due date / Outstanding;
+//   · the invoices customers still owe: Invoice no / Customer code / Customer / Invoice date / Due date / Outstanding;
 //   · the bills the company still owes: Bill no / Supplier code / Bill date / Due date / Outstanding.
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as XLSX from "xlsx";
@@ -11,12 +11,12 @@ export type OpeningKind = "journal" | "receivables" | "payables";
 
 export const OPENING_COLUMNS: Record<OpeningKind, readonly string[]> = {
   journal: ["Account", "Debit", "Credit"],
-  receivables: ["Invoice no", "Customer", "Invoice date", "Due date", "Outstanding"],
+  receivables: ["Invoice no", "Customer code", "Customer", "Invoice date", "Due date", "Outstanding"],
   payables: ["Bill no", "Supplier code", "Bill date", "Due date", "Outstanding"],
 };
 
 export type JournalRow = { accountCode: string; debitSen: number; creditSen: number };
-export type ArRow = { docNo: string; debtorName: string; invoiceDate: string; dueDate: string; outstandingSen: number };
+export type ArRow = { docNo: string; debtorCode: string; debtorName: string; invoiceDate: string; dueDate: string; outstandingSen: number };
 export type ApRow = { docNo: string; supplierCode: string; invoiceDate: string; dueDate: string; outstandingSen: number };
 /** One sheet row as read: what it says, and what is wrong with it (null when nothing). */
 export type Parsed<T> = { line: number; value: T; error: string | null };
@@ -93,10 +93,10 @@ export function parseReceivablesGrid(grid: unknown[][]): ParsedSheet<ArRow> {
   return parseDocs(grid, "receivables", (c) => {
     const sen = toSen(c.Outstanding);
     const value = {
-      docNo: String(c["Invoice no"] ?? "").trim(), debtorName: String(c.Customer ?? "").trim(),
+      docNo: String(c["Invoice no"] ?? "").trim(), debtorCode: String(c["Customer code"] ?? "").trim(), debtorName: String(c.Customer ?? "").trim(),
       invoiceDate: toDay(c["Invoice date"]) ?? "", dueDate: toDay(c["Due date"]) ?? "", outstandingSen: sen ?? 0,
     };
-    const problem = !value.docNo ? "No invoice number." : !value.debtorName ? "No customer."
+    const problem = !value.docNo ? "No invoice number." : !value.debtorCode ? "No customer code." : !value.debtorName ? "No customer."
       : !value.invoiceDate ? "The invoice date is not a date." : !value.dueDate ? "The due date is not a date."
       : !sen ? "The outstanding amount must be a plain RM figure above zero." : null;
     return { value, problem };
@@ -132,10 +132,12 @@ export function downloadTemplate(kind: OpeningKind): void {
 }
 
 /* ── The server ─────────────────────────────────────────────────────────────────────────────────────────────── */
+/** One control account against the documents that should explain it (backend/src/acc/opening.ts ControlLine). */
+export type ControlLine = { role: "AR" | "AP" | "AP_OTHER"; accountCode: string; controlSen: number; documentsSen: number; erpDocuments: number };
 export type OpeningCheck = {
-  ok: true; openingDay: string; openingJeNo: string | null;
+  ok: true; openingDay: string; openingJeNo: string | null; openingJeDate: string | null;
   trialDebitSen: number; trialCreditSen: number;
-  arControlSen: number; arDocumentsSen: number; apControlSen: number; apDocumentsSen: number;
+  controls: ControlLine[];
   banks: { accountCode: string; name: string; balanceSen: number }[];
   balanced: boolean;
 };
@@ -171,7 +173,8 @@ export const useReverseOpening = () => {
 };
 
 function invalidateOpening(qc: ReturnType<typeof useQueryClient>): void {
-  for (const key of [CHECK_KEY, ["account-balances"], ["report-bs"], ["report-pnl"], ["finance-dashboard"], ["ar-aging"], ["ap-aging"]]) {
+  for (const key of [CHECK_KEY, ["account-balances"], ["report-bs"], ["report-pnl"], ["finance-dashboard"], ["ar-aging"], ["ap-aging"],
+    ["control-check"], ["journal-entries"], ["gl-entries"], ["gl-ledger"], ["sales-invoices"], ["purchase-invoices"]]) {
     void qc.invalidateQueries({ queryKey: key });
   }
 }
