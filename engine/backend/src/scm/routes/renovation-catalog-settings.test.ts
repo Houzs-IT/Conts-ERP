@@ -86,7 +86,8 @@ describe('sub-category settings', () => {
     expect(rename.status).toBe(400);
     expect(await rename.json()).toMatchObject({ error: 'group_fixed' });
     expect((await send('PATCH', '/sub-categories/CLEANING', { active: false })).status).toBe(400);
-    expect((await loadSubCategories(sb as never)).find((s) => s.code === 'CLEANING')).toMatchObject({ label: 'Cleaning', active: true });
+    const list = (await (await app().request('/')).json()) as { subCategories: Array<{ code: string }> };
+    expect(list.subCategories.find((s) => s.code === 'CLEANING')).toMatchObject({ label: 'Cleaning', active: true });
   });
 
   it('renames and hides; a hidden one can be shown again', async () => {
