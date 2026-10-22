@@ -177,8 +177,8 @@ function OwnerList({ tabs }: { tabs: ReactNode }) {
   const filtered = !!(q || building || model);
   const monthText = month === thisMonth ? 'this month' : monthLabel(month);
 
-  /** The month's owner statement of every owner the table shows, one PDF each, in one zip. Drawn in the browser:
-   *  the server has no PDF renderer. Four reports are fetched at a time. */
+  /** The month's statement of every unit of the owners the table shows, one PDF per unit (its month and year to date),
+   *  in one zip (owner, 22 Oct 2026). Drawn in the browser: the server has no PDF renderer. Four reports are fetched at a time. */
   const finance = !!user && areaOpen(user.role, 'finance', user.access);
   const [zipping, setZipping] = useState(false);
   async function zipStatements() {
@@ -193,7 +193,7 @@ function OwnerList({ tabs }: { tabs: ReactNode }) {
         toast({ tone: 'warning', title: `No owner statements for ${monthLabel(month)} yet.`, body: 'Generate them on the Statements tab, then export again.' });
         return;
       }
-      toast({ tone: 'info', title: `Making ${plural(picked.length, 'owner statement')}...`, body: 'The zip downloads when it is ready. Keep this page open.' });
+      toast({ tone: 'info', title: `Making the unit statements of ${plural(picked.length, 'owner')}...`, body: 'The zip downloads when it is ready. Keep this page open.' });
       const [{ statementPdf }, { printedPhone }] = await Promise.all([import('../lib/statementPdf'), import('./OwnerIncomeReportPage')]);
       let logo: Promise<Uint8Array | null> | null = null;
       const logoOf = (src: string) => (logo ??= fetch(src).then(async r => (r.ok ? new Uint8Array(await r.arrayBuffer()) : null)).catch(() => null));
@@ -204,7 +204,8 @@ function OwnerList({ tabs }: { tabs: ReactNode }) {
           try {
             const { data: r } = await api.get<{ data: Report }>(`/statements/${encodeURIComponent(s.id)}/report`);
             if (!r.units.length) { noReport.push(titleCase(s.ownerName)); return; }
-            made.push({ name: titleCase(s.ownerName), bytes: await statementPdf(r, { logo: await logoOf(r.settings.company.logo), phone: printedPhone }) });
+            const opts = { logo: await logoOf(r.settings.company.logo), phone: printedPhone };
+            for (const u of r.units) made.push({ name: `${u.code} - ${titleCase(s.ownerName)}`, bytes: await statementPdf({ ...r, units: [u] }, opts) });
           } catch {
             failed.push(titleCase(s.ownerName));
           }
@@ -212,21 +213,21 @@ function OwnerList({ tabs }: { tabs: ReactNode }) {
       }
       if (made.length) {
         const used = new Map<string, number>();
-        const files = made.sort((a, b) => a.name.localeCompare(b.name)).map(({ name, bytes }): [string, Uint8Array] => {
-          const stem = `${name.replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'Owner'} - ${monthLabel(month)}`;
+        const files = made.sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true })).map(({ name, bytes }): [string, Uint8Array] => {
+          const stem = `${name.replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'Unit'} - ${monthLabel(month)}`;
           const n = (used.get(stem) ?? 0) + 1;
           used.set(stem, n);
           return [`${stem}${n > 1 ? ` (${n})` : ''}.pdf`, bytes];
         });
-        saveBlob(zipStore(files) as BlobPart, `owner-statements-${month}.zip`, 'application/zip');
+        saveBlob(zipStore(files) as BlobPart, `unit-statements-${month}.zip`, 'application/zip');
       }
       const missing = tableRows.length - picked.length;
       toast({
         tone: failed.length || !made.length ? 'warning' : 'success',
-        title: made.length ? `${plural(made.length, 'owner statement')} in the zip.` : 'No statement could be made into a PDF.',
+        title: made.length ? `${plural(made.length, 'unit statement')} in the zip.` : 'No statement could be made into a PDF.',
         body: [
           missing > 0 && `${plural(missing, 'owner')} had no statement for ${monthLabel(month)}.`,
-          noReport.length > 0 && `${plural(noReport.length, 'month')} paid before Property OS had no report to draw: ${noReport.join(', ')}.`,
+          noReport.length > 0 && `${plural(noReport.length, 'owner')} had a statement from before Property OS, with no report to draw: ${noReport.join(', ')}.`,
           failed.length > 0 && `Could not be made: ${failed.join(', ')}. Try again in a moment.`,
         ].filter(Boolean).join(' ') || undefined,
       });
@@ -318,8 +319,8 @@ function OwnerList({ tabs }: { tabs: ReactNode }) {
           <MonthStepper label={monthLabel(month)} onStep={by => url.set({ month: shiftMonth(month, by) === thisMonth ? null : shiftMonth(month, by) })} />
           {finance && (
             <Button size="sm" variant="primary" icon={<Icon name="FileArchive" size="sm" />} loading={zipping} disabled={!tableRows.length}
-              disabledReason="No owners listed under these filters." title={`The ${monthLabel(month)} statement of each owner listed, one PDF per owner.`}
-              onClick={() => void zipStatements()}>Owner statements (.zip)</Button>
+              disabledReason="No owners listed under these filters." title={`The ${monthLabel(month)} statement of each unit of the owners listed, one PDF per unit.`}
+              onClick={() => void zipStatements()}>Unit statements (.zip)</Button>
           )}
         </span>
       </div>

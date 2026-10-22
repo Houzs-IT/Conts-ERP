@@ -5,6 +5,7 @@ import { StatusBadge } from '../components/StatusBadge';
 import { Segmented } from '../components/Metric';
 import { CloseButton } from '../components/CloseButton';
 import { Button } from '../components/Button';
+import Icon from '../components/Icon';
 import { overallTotals, type OverallFigures } from '../lib/ownerOverall';
 
 /** The overall owner report's unit drawer: L1 summary, L2 breakdown, L3 full detail. Every figure comes from
@@ -25,7 +26,10 @@ export const contractName = (c: 'LT' | 'PS') => (c === 'LT' ? 'Long term' : 'Pro
 export function GainLoss({ sen, size = 'sm', cents = true }: { sen: number; size?: 'sm' | 'md'; cents?: boolean }) {
   return (
     <StatusBadge size={size} tone={sen < 0 ? 'critical' : 'success'}
-      label={<span className="tabular-nums whitespace-nowrap"><span aria-hidden className="text-[0.75em] mr-1">{sen < 0 ? '▼' : '▲'}</span>{signed(sen, cents)}</span>} />
+      label={<span className="inline-flex items-center gap-0.5 tabular-nums whitespace-nowrap">
+        {sen < 0 ? <Icon name="ArrowDown" size="sm" style={{ width: 12, height: 12 }} /> : <Icon name="ArrowUp" size="sm" style={{ width: 12, height: 12 }} />}
+        {signed(sen, cents)}
+      </span>} />
   );
 }
 
@@ -214,9 +218,9 @@ export function OwnerOverallDetail({ row, all, level, onLevel, onClose, onStep, 
       </div>
 
       <footer className="flex items-center justify-between gap-2 px-5 py-3 [border-top:1px_solid_var(--color-line)]">
-        <Button variant="secondary" size="sm" disabled={position <= 1} onClick={() => onStep(-1)}>↑ Previous</Button>
+        <Button variant="secondary" size="sm" icon={<Icon name="ArrowUp" size="sm" />} disabled={position <= 1} onClick={() => onStep(-1)}>Previous</Button>
         <span className="text-meta text-muted-ink tabular-nums">{position} / {total}</span>
-        <Button variant="secondary" size="sm" disabled={position >= total} onClick={() => onStep(1)}>Next ↓</Button>
+        <Button variant="secondary" size="sm" icon={<Icon name="ArrowDown" size="sm" />} disabled={position >= total} onClick={() => onStep(1)}>Next</Button>
       </footer>
     </div>
   );
