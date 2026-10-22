@@ -51,6 +51,9 @@ export type ProductForCheck = {
   category:    string;             // 'BEDFRAME' | 'SOFA' | 'MATTRESS' | 'ACCESSORY' | 'SERVICE'
   model_id:    string | null;
   size_code:   string | null;
+  /** Optional: the SKU's base model. Conts's supplier-prefixed sofa codes (SOF-HKA-5530-2S, base model
+   *  SOF-HKA-5530) carry dashes inside the model, so the compartment is the code after `<base_model>-`. */
+  base_model?: string | null;
 };
 
 /** Subset of product_models columns we read. */
@@ -261,7 +264,10 @@ export function checkAllowedOptions(
         }
       }
     } else {
-      const dashAt = product.code.indexOf('-');
+      const base = (product.base_model ?? '').trim();
+      const dashAt = base && product.code.toUpperCase().startsWith(`${base.toUpperCase()}-`)
+        ? base.length
+        : product.code.indexOf('-');
       const compartment = dashAt > 0 ? product.code.slice(dashAt + 1).trim() : '';
       if (compartment && !inPool(opts.compartments, compartment)) {
         return {
@@ -496,7 +502,7 @@ export async function loadProductsAndModels(
 
   let pq = pgrestIn(sb
     .from('mfg_products')
-    .select('code, category, model_id, size_code'), 'code', codes);
+    .select('code, category, model_id, size_code, base_model'), 'code', codes);
   if (companyId != null) pq = pq.eq('company_id', companyId);
   const { data: productRows, error: pErr } = await pq;
   if (pErr) return { byCode: out, lookupError: `mfg_products: ${pErr.message}` };

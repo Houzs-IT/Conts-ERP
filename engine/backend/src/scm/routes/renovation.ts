@@ -216,7 +216,11 @@ renovation.get('/lookups/products', handle(null, async (c, { sqlRead }) => {
   const q = (c.req.query('q') ?? '').trim();
   const rows = await sqlRead.q(
     `select p.code, p.name, p.category::text as category, to_jsonb(p) ->> 'sub_category' as sub_category, to_jsonb(p) ->> 'uom' as uom,
-            p.cost_price_sen, coalesce(p.sell_price_sen, p.base_price_sen, p.price1_sen, 0) as sell_price_sen,
+            p.cost_price_sen,
+            -- A bedframe / sofa / mattress keeps its supplier COST in base_price_sen / price1_sen (the engine's shape,
+            -- lib/cost-anchor-sync.ts), so only an explicit selling price may default the contract line's price.
+            case when p.category::text in ('BEDFRAME', 'SOFA', 'MATTRESS') then coalesce(p.sell_price_sen, 0)
+                 else coalesce(p.sell_price_sen, p.base_price_sen, p.price1_sen, 0) end as sell_price_sen,
             b.supplier_id, s.name as supplier_name, b.unit_price_sen as binding_cost_sen
        from scm.mfg_products p
        left join lateral (select supplier_id, unit_price_sen from scm.supplier_material_bindings smb

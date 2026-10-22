@@ -174,6 +174,19 @@ describe('PO split grouping', () => {
     }
   });
 
+  test('customer-supplied items (supplier CUSTOMER, cost 0) never raise a PO, not even a zero one (owner, 22 Oct 2026)', () => {
+    const rows = [
+      row({ description: 'cabinet' }),
+      row({ description: 'customer fridge', item_code: 'CUS-FRIDGE', unit_cost_sen: 0, supplier_id: 'sup-c', supplier_code: 'CUSTOMER', supplier_name: 'Customer' }),
+      row({ description: 'customer tv, re-sourced', item_code: 'CUS-TV', unit_cost_sen: 90000, supplier_id: 'sup-a', supplier_code: 'A' }),
+    ];
+    const r = groupForPo(rows);
+    expect(r.groups.map((g) => g.lines.map((l) => l.description))).toEqual([['cabinet', 'customer tv, re-sourced']]);
+    expect(r.skipped.map((l) => [l.description, l.reason])).toEqual([['customer fridge', 'Customer-supplied: the customer orders it, no purchase order']]);
+    expect(needsPurchaseOrder({ itemCode: 'CUS-FRIDGE', supplyByOwner: false, category: 'APPLIANCE', supplierId: 'sup-c', unitCostSen: 0 })).toBe(false);
+    expect(needsPurchaseOrder({ itemCode: 'CUS-TV', supplyByOwner: false, category: 'APPLIANCE', supplierId: 'sup-a', unitCostSen: 90000 })).toBe(true);
+  });
+
   test('one supplier, two category groups: two POs, never one mixed PO (owner, 14 Oct 2026)', () => {
     const r = groupForPo([
       row({ description: 'switch', category: 'WORKS' }),

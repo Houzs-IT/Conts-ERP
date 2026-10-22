@@ -160,6 +160,11 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 - Lead: apply 0132 through "Apply migrations to production" (dry-run first); expect 160 new SKUs, 52 removed, 99 unit changes.
 - Owner to answer the "Owner to decide" sheet: HOOKKA's full sofa compartment and bedframe size lists (the catalogue cuts them short), units for LB stone, DHI and 34 K & K lines.
 
+## HOOKKA quotation 300-T, AKEMI mattresses, customer items (feat/hookka-quote-300t, migration 0142, 22 Oct 2026, docs/catalog-import/hookka-300t-review.xlsx)
+- Lead: apply 0142 through "Apply migrations to production" before merging (it needs 0141); expect 591 HOOKKA/AKEMI SKUs, 41 old HOOKKA SKUs removed, one Customer SKU per active sub-category + 7 group ones.
+- Owner to answer the Questions sheet: likely typos (5536 CNR 30" RM 8,258; 5549 L(RHF) 26" RM 100), missing sofa compartments (HOOKKA says 209, prints 145), flat sofa cost without a seat height, 5535 combos, homes of the group-level Customer items.
+- Still no price: DHI (116), LB stone (223), 2 K & K, 39 AKEMI (all CUSTOM sizes, HS SOLACE 200x200, KORI IYASHI): linked to their supplier, "PRICE NEEDED".
+
 ## Finance phase 1: the engine ledger (live 21-22 Oct 2026, PRs #330, #332-#338 and #344, migrations 0133-0136)
 - Owner's decision (21 Oct): the engine's accounting ledger is switched on for Conts. Spec docs/superpowers/specs/2026-10-20-finance-phase1-ledger-design.md, plan docs/superpowers/plans/2026-10-21-finance-phase1-ledger.md, per-PR log and deferred minors in .superpowers/sdd/2026-10-21-finance-phase1-ledger/progress.md.
 - Access: the Ledger area (Finance group of the Permissions chart) sends the engine key `scm.ledger.use`, which counts only when held outright (the full-access `*` does not include it). Without it the accounting screens and routes are closed; merchant reconciliation, settlement setup, AP bill scanning and the refund line on a sales order stay open as before.

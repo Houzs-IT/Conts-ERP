@@ -229,9 +229,12 @@ export const PurchaseOrderNew = () => {
     if (supplierId) { setPendingItemPick(null); return; }
     if (itemSuppliersQuery.isLoading) return;
     const matches = itemSuppliersQuery.data?.bindings ?? [];
-    const b = matches[0];
-    if (matches.length === 1 && b) {
-      // Exactly one supplier binds this — adopt it + autofill the line.
+    // Conts (owner, 22 Oct 2026): picking a SKU must fill its supplier and cost, so with several suppliers the one
+    // marked main supplier is adopted; the banner stays only when none (or more than one) is main.
+    const mains = matches.filter((m) => m.is_main_supplier);
+    const b = matches.length === 1 ? matches[0] : mains.length === 1 ? mains[0] : undefined;
+    if (b) {
+      // One supplier (or one main supplier) binds this — adopt it + autofill the line.
       setSupplierId(b.supplier.id);
       setLines((prev) => prev.map((l) => (l.rid === pendingItemPick.rid ? {
         ...l,

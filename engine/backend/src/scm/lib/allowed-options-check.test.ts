@@ -317,3 +317,21 @@ describe('checkAllowedOptions — leg height: the zero-inch glyph is "No Leg"', 
     expect(checkAllowedOptions(product(), m, { legHeight: '0"' })?.field).toBe('leg_height');
   });
 });
+
+describe('checkAllowedOptions — sofa compartment of a supplier-prefixed code (Conts, 22 Oct 2026)', () => {
+  const sofaModel = model({ compartments: ['1S', '2S', '1A(LHF)', '1A(RHF)'] });
+  const sofa = (code: string, base: string | null) =>
+    ({ code, category: 'SOFA', model_id: 'model-demo', size_code: null, base_model: base }) as Parameters<typeof checkAllowedOptions>[0];
+
+  it('reads the compartment after the base model, not after the first dash', () => {
+    expect(checkAllowedOptions(sofa('SOF-HKA-5530-2S', 'SOF-HKA-5530'), sofaModel, null)).toBeNull();
+    expect(checkAllowedOptions(sofa('SOF-HKA-5530-1A(LHF)', 'SOF-HKA-5530'), sofaModel, null)).toBeNull();
+  });
+  it('still refuses a compartment the model does not offer', () => {
+    expect(checkAllowedOptions(sofa('SOF-HKA-5530-3S', 'SOF-HKA-5530'), sofaModel, null)).toMatchObject({ field: 'compartment', value: '3S' });
+  });
+  it('a single-token model code without base_model keeps the first-dash rule', () => {
+    expect(checkAllowedOptions(sofa('5530-2S', null), sofaModel, null)).toBeNull();
+    expect(checkAllowedOptions(sofa('5530-3S', null), sofaModel, null)).toMatchObject({ value: '3S' });
+  });
+});
