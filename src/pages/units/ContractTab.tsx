@@ -10,7 +10,7 @@ import { useApi } from '../../lib/useApi';
 import { api, ApiFailure, errorMessage } from '../../lib/api';
 import { date, monthLabel, rm } from '../../lib/format';
 import { cx } from '../../lib/design-tokens';
-import { MODEL, MODEL_TONE, CODES, CODE, codeName, codeFromModel, PURPOSE_LABEL, type RevenueModel, type ContractCode, type UnitPurpose } from '../../lib/revenueModel';
+import { MODEL, MODEL_TONE, CODES, CODE, codeName, codeFromModel, isTenancy, PURPOSE_LABEL, type RevenueModel, type ContractCode, type UnitPurpose } from '../../lib/revenueModel';
 import { ExtendContractModal, GenerateAgreement } from './ContractExtras';
 import { CodeBadge } from './UnitExtras';
 import { DataTable, type Column } from '../../components/DataTable';
@@ -57,10 +57,10 @@ const pctText = (n: number | null | undefined) => (n == null ? '' : String(Numbe
 function draftOf(c: ContractView): Draft {
   return {
     revenueModel: c.revenueModel, contractCode: c.contractCode ?? codeFromModel(c.revenueModel), yearlyGuarantee: senOrEmpty(c.yearlyGuarantee),
-    ownerPct: pctOf(c.ownerPct ?? 75), managementPct: pctOf(c.managementPct != null && c.revenueModel !== 'long_term' ? c.managementPct : c.ownerPct != null ? 100 - c.ownerPct - (c.agentPct ?? 0) : 25),
+    ownerPct: pctOf(c.ownerPct ?? 75), managementPct: pctOf(c.managementPct != null && !isTenancy(c.revenueModel) ? c.managementPct : c.ownerPct != null ? 100 - c.ownerPct - (c.agentPct ?? 0) : 25),
     agentPct: pctOf(c.agentPct ?? 0), agentName: c.agentName ?? '',
     minimumGuarantee: senOrEmpty(c.minimumGuarantee), guaranteeStartsOn: c.guaranteeStartsOn ?? '', guaranteeEndsOn: c.guaranteeEndsOn ?? '',
-    monthlyRent: senOrEmpty(c.monthlyRent), deposit: senOrEmpty(c.deposit), tenantName: c.tenantName ?? '', ltFeePct: pctOf(c.revenueModel === 'long_term' ? c.managementPct : 10),
+    monthlyRent: senOrEmpty(c.monthlyRent), deposit: senOrEmpty(c.deposit), tenantName: c.tenantName ?? '', ltFeePct: pctOf(isTenancy(c.revenueModel) ? c.managementPct : 10),
     startsOn: c.startsOn?.slice(0, 10) ?? '', endsOn: c.endsOn?.slice(0, 10) ?? '', renewsOn: c.renewsOn?.slice(0, 10) ?? '', miscCharges: c.miscCharges,
   };
 }
@@ -73,7 +73,7 @@ function bodyOf(d: Draft) {
     ...(m === 'management_guarantee' ? { minimumGuarantee: d.minimumGuarantee ?? 0, guaranteeStartsOn: d.guaranteeStartsOn || null, guaranteeEndsOn: d.guaranteeEndsOn || null } : {}),
     ...(!share ? { monthlyRent: d.monthlyRent ?? 0 } : {}),
     ...(m === 'master_lease' ? { deposit: d.deposit ?? null } : {}),
-    ...(m === 'long_term' ? { tenantName: d.tenantName, managementPct: d.ltFeePct ?? 0 } : {}),
+    ...(isTenancy(m) ? { tenantName: d.tenantName, managementPct: d.ltFeePct ?? 0 } : {}),
     startsOn: d.startsOn, endsOn: d.endsOn || null, renewsOn: d.renewsOn || null,
   };
 }
@@ -86,7 +86,7 @@ function problems(d: Draft): Record<string, string> {
     if (m === 'management_guarantee' && !((d.minimumGuarantee ?? 0) > 0)) f.minimumGuarantee = 'Enter the monthly minimum.';
     if (m === 'management_yearly_guarantee' && !((d.yearlyGuarantee ?? 0) > 0)) f.yearlyGuarantee = 'Enter the guarantee for each contract year.';
   } else if (!((d.monthlyRent ?? 0) > 0)) f.monthlyRent = 'Enter the monthly rent.';
-  if (m === 'long_term' && !d.tenantName.trim()) f.tenantName = 'Enter the tenant.';
+  if (isTenancy(m) && !d.tenantName.trim()) f.tenantName = 'Enter the tenant.';
   if (d.endsOn && d.startsOn && d.endsOn < d.startsOn) f.endsOn = 'The end date is before the start date.';
   if (m === 'management_guarantee' && d.guaranteeEndsOn && d.guaranteeStartsOn && d.guaranteeEndsOn < d.guaranteeStartsOn) f.guaranteeEndsOn = 'The guarantee ends before it starts.';
   return f;
@@ -151,7 +151,7 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unit
   const share = isShare(m);
   const purpose = data?.unit.purpose ?? 'rental';
   // The current code stays offered even if the list has moved on (an older GRR), so the form can show it.
-  const offered = CODES.filter(c => (data?.allowedCodes ?? CODES.filter(x => x.code !== 'WH' && x.code !== 'GRR').map(x => x.code)).includes(c.code) || c.code === d.contractCode);
+  const offered = CODES.filter(c => (data?.allowedCodes ?? CODES.filter(x => x.code !== 'WH' && x.code !== 'WH LT' && x.code !== 'GRR').map(x => x.code)).includes(c.code) || c.code === d.contractCode);
   const example = preview ?? data?.example ?? null;
 
   async function save() {
@@ -207,7 +207,7 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unit
           {mode === 'new' && <div className="py-[10px] px-[14px] rounded-control bg-gold-tint text-copy">A new contract from its start date. The current one ends the day before and stays in this unit's history; statements before the new start keep using it.</div>}
           {current.sharedWith > 0 && mode === 'update' && <div className="py-[10px] px-[14px] rounded-control bg-muted text-meta text-muted-ink">This contract record also covers {current.sharedWith} other {current.sharedWith === 1 ? 'unit' : 'units'} of the owner. Saving here gives this unit its own copy; the others are not changed.</div>}
 
-          {purpose !== 'rental' && <div className="py-[10px] px-[14px] rounded-control bg-muted text-meta text-muted-ink">A {PURPOSE_LABEL[purpose].toLowerCase()} unit is not run on the channels: its only contract is a WH lease, a fixed monthly rent to the owner.</div>}
+          {purpose !== 'rental' && <div className="py-[10px] px-[14px] rounded-control bg-muted text-meta text-muted-ink">A {PURPOSE_LABEL[purpose].toLowerCase()} unit is not run on the channels: it takes a WH lease (a fixed monthly rent to the owner) or a WH LT let (one tenant, such as Dream Crafter, rents it; the owner gets the rent less the operator share).</div>}
           <div role="radiogroup" aria-label="Contract type" className={cx('grid grid-cols-2 gap-2 sm:gap-[10px]', offered.length > 3 && 'lg:grid-cols-3 2xl:grid-cols-6')}>
             {offered.map(o => {
               const on = o.code === d.contractCode;
@@ -243,15 +243,15 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unit
               {money('monthlyRent', d.contractCode === 'WH' ? 'Monthly rent to the owner (RM)' : 'Monthly rent we pay (RM)', 'Recorded as a company cost; no owner statement.')}
               {money('deposit', 'Deposit (RM)')}
             </>}
-            {m === 'long_term' && <>
+            {isTenancy(m) && <>
               <Field label="Tenant" placeholder="Tenant's name" value={d.tenantName} onChange={e => set({ tenantName: e.target.value })} error={shown.tenantName} />
               {money('monthlyRent', 'Monthly rent from tenant (RM)')}
               {pct('ltFeePct', 'Operator share % of the rent')}
             </>}
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-            {day('startsOn', m === 'master_lease' ? 'Lease starts' : m === 'long_term' ? 'Tenancy starts' : 'Contract starts')}
-            {day('endsOn', m === 'master_lease' ? 'Lease ends' : m === 'long_term' ? 'Tenancy ends' : 'Contract ends')}
+            {day('startsOn', m === 'master_lease' ? 'Lease starts' : isTenancy(m) ? 'Tenancy starts' : 'Contract starts')}
+            {day('endsOn', m === 'master_lease' ? 'Lease ends' : isTenancy(m) ? 'Tenancy ends' : 'Contract ends')}
             {day('renewsOn', 'Renews on')}
             {share && (
               <label className="flex items-start gap-2 pt-[26px] text-copy cursor-pointer">
@@ -313,7 +313,7 @@ export function StatementExample({ example: x, month, draft, busy }: { example: 
             {x.adjustments !== 0 && <Row label="Owner Adjustments" sen={x.adjustments} />}
             <Row label="Net Payout to Owner" sen={x.netPayout} strong />
             {x.company && <p className="m-0 mt-2 text-meta text-muted-ink">The company's side: the unit earned {rm(x.company.income)} and cost {rm(x.company.costs)}; after the rent the company {x.company.result >= 0 ? 'keeps' : 'loses'} {rm(Math.abs(x.company.result))}.</p>}
-          </> : x.model === 'long_term' ? <>
+          </> : isTenancy(x.model) ? <>
             <Row label="Monthly rent from the tenant" sen={x.income} />
             {x.costs.map(c => <Row key={c.label} label={c.label} sen={-c.amount} sub />)}
             <Row label={`${pctText(100 - (x.ownerPct ?? 100))}% To Operator (of the rent)`} sen={-x.operatorShare} />

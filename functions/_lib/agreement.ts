@@ -7,7 +7,7 @@
 import { type Env, one, all } from './db';
 import { contractView } from './unitContract';
 import { statementSettings, type Query } from './ownerStatement';
-import { MODEL_LABEL, isShare } from './revenueModel';
+import { MODEL_LABEL, isShare, isTenancy } from './revenueModel';
 import { CODE_LABEL } from './unitPurpose';
 import { unitLayout } from './unitLayout';
 import { companyDetails, longDate, ringgit, esc } from './letterhead';
@@ -93,7 +93,7 @@ export async function agreementValues(env: Env, unitId: string, body: string): P
     unit_layout: [layout.size, layout.layout].filter(Boolean).join(', '),
     model_code: v ? v.contractCode : '', model_name: v ? CODE_LABEL[v.contractCode] ?? MODEL_LABEL[v.revenueModel] : '', terms: v ? v.termsLabel : '',
     owner_pct: v ? (share ? pct(v.ownerPct) : NOT_APPLICABLE) : '',
-    management_pct: v ? (share || v.revenueModel === 'long_term' ? pct(v.managementPct) : NOT_APPLICABLE) : '',
+    management_pct: v ? (share || isTenancy(v.revenueModel) ? pct(v.managementPct) : NOT_APPLICABLE) : '',
     agent_pct: v ? (share && v.agentPct ? pct(v.agentPct) : NOT_APPLICABLE) : '',
     guarantee: !v ? '' : v.revenueModel === 'management_guarantee' ? (v.minimumGuarantee ? `${ringgit(v.minimumGuarantee)} a month` : '')
       : v.revenueModel === 'management_yearly_guarantee' ? (v.yearlyGuarantee ? `${ringgit(v.yearlyGuarantee)} for each contract year` : '') : NOT_APPLICABLE,

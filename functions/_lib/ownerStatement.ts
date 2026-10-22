@@ -35,7 +35,7 @@
  *  share = net x OWNER%, rounded; the operator's share is the rest. Every line on the page can be checked by hand
  *  and the statement adds up to the sen. */
 import { prorate, nightsInWindow, daysInMonth, monthEndExclusive } from './revenue';
-import { modelOf, type RevenueModel } from './revenueModel';
+import { modelOf, isTenancy, type RevenueModel } from './revenueModel';
 import { DEDUCTION_TERMS } from '../../src/lib/statementTerms';
 
 export type Query = <T = any>(sql: string, ...args: unknown[]) => Promise<T[]>;
@@ -132,7 +132,7 @@ export function termsFor(u: UnitRow, defaultFeePct: number): Terms {
       const annual = Number(u.minimum_guarantee_annual ?? 0);
       return { ...base, model, agentPct, basis: 'share', source: 'contract', ownerPct: 100 - Number(u.management_fee_pct ?? defaultFeePct), fixedRent: 0, guarantee: 0, yearlyGuarantee: annual };
     }
-    if (model === 'long_term') return { ...base, model, basis: 'share', source: 'contract', ownerPct: 100 - Number(u.management_fee_pct ?? 0), fixedRent: Number(u.grr_amount ?? 0), guarantee: 0, miscCharges: false, tenantName: u.tenant_name ?? null };
+    if (isTenancy(model)) return { ...base, model, basis: 'share', source: 'contract', ownerPct: 100 - Number(u.management_fee_pct ?? 0), fixedRent: Number(u.grr_amount ?? 0), guarantee: 0, miscCharges: false, tenantName: u.tenant_name ?? null };
     // A management share never carries a guarantee; one with a guarantee is management_guarantee (modelOf reads a
     // contract with a minimum as that, so the figures are the ones the statement always gave).
     return { ...base, model, agentPct, basis: 'share', source: 'contract', ownerPct: 100 - Number(u.management_fee_pct ?? defaultFeePct), fixedRent: 0,
@@ -232,7 +232,7 @@ export function computeUnitMonth(month: string, unit: UnitRow, terms: Terms, sta
 
   // Income: each stay's nights in the month and that share of its payout. A long-term let or a master lease has no
   // stays that belong to the owner (the tenant's rent is the income; under a master lease all trading is the company's).
-  const ownTrading = terms.model !== 'long_term' && terms.model !== 'master_lease';
+  const ownTrading = !isTenancy(terms.model) && terms.model !== 'master_lease';
   const mine = stays.filter(s => s.unit_id === unit.id && ownTrading).map(s => {
     const n = nightsInWindow(ymd(s.check_in), ymd(s.check_out), start, endEx);
     // Each payment piece is split by night over the nights it covers, so a long stay paid in monthly instalments is
@@ -243,8 +243,8 @@ export function computeUnitMonth(month: string, unit: UnitRow, terms: Terms, sta
   }).filter(x => x.n > 0).sort((a, b) => a.s.check_in.localeCompare(b.s.check_in));
   const nights = mine.reduce((n, x) => n + x.n, 0);
   // Long-term let: the month's rent, for the days of the month the tenancy covers.
-  const tenancyDays = terms.model === 'long_term' ? daysCovered(month, terms.activeFrom, terms.activeTo) : 0;
-  const rentExact = terms.model === 'long_term' ? (terms.fixedRent * tenancyDays) / days : 0;
+  const tenancyDays = isTenancy(terms.model) ? daysCovered(month, terms.activeFrom, terms.activeTo) : 0;
+  const rentExact = isTenancy(terms.model) ? (terms.fixedRent * tenancyDays) / days : 0;
   const grossExact = mine.reduce((n, x) => n + x.exact, 0) + rentExact;
   const gross = roundSen(grossExact);
   // Each stay's line is rounded so that the lines add up to the rounded total (largest remainder).
@@ -288,7 +288,7 @@ export function computeUnitMonth(month: string, unit: UnitRow, terms: Terms, sta
   let yearly: UnitMonth['yearly'];
   if (terms.basis === 'none') {
     // Master lease: nothing earned or owed by the owner through a statement.
-  } else if (terms.model === 'long_term') {
+  } else if (isTenancy(terms.model)) {
     // The management fee is the operator's percentage of the rent; the owner gets the rest of the net.
     operatorShare = roundSen((gross * (100 - (terms.ownerPct ?? 100))) / 100);
     ownerShare = payoutBeforeAdjustments = net - operatorShare;
@@ -329,7 +329,7 @@ export function computeUnitMonth(month: string, unit: UnitRow, terms: Terms, sta
 
   // Lines, in the order the report shows them. A fixed-rent owner's statement carries the rent, not the unit's trading.
   const label = `${unit.property_name} ${unit.unit_number}`;
-  if (terms.model === 'long_term') {
+  if (isTenancy(terms.model)) {
     if (gross) lines.push({ type: 'gross', category: 'long_term_rent', unitId: unit.id, quantity: tenancyDays, amount: gross, occurredOn: start,
       description: `${label} · monthly rent${terms.tenantName ? ` from ${terms.tenantName}` : ''}${tenancyDays !== days ? ` (${tenancyDays} of ${days} days)` : ''}` });
     for (const c of myCosts) lines.push({
@@ -368,7 +368,7 @@ export function computeUnitMonth(month: string, unit: UnitRow, terms: Terms, sta
   const warnings: string[] = [];
   const unpaid = mine.filter(x => !(x.paid > 0));
   if (unpaid.length) warnings.push(`${unpaid.length} ${unpaid.length === 1 ? 'reservation has' : 'reservations have'} no host payout recorded (${unpaid.reduce((n, x) => n + x.n, 0)} nights counted at RM 0): ${unpaid.map(x => `${x.s.check_in} to ${x.s.check_out}`).join(', ')}.`);
-  if (terms.model === 'long_term' && !gross) warnings.push('Long-term let with no rent this month: check the tenancy dates on the contract.');
+  if (isTenancy(terms.model) && !gross) warnings.push('Long-term let with no rent this month: check the tenancy dates on the contract.');
   if (yearly?.trueUp && yearly.yearShares === null) warnings.push(`Yearly guarantee: this is the last month of the contract year (${yearly.yearFrom} to ${yearly.yearTo}), but the earlier months were not worked out here, so no top-up is shown.`);
   if (terms.source === 'default') warnings.push(`No contract or split on this unit: the default ${fmtPct(100 - (terms.ownerPct ?? 0))} operator share was used.`);
 

@@ -29,6 +29,8 @@ check('purpose defaults to rental', u.purpose === 'rental', u.purpose);
 const draft = { revenueModel: 'management', contractCode: 'PS', ownerPct: 75, managementPct: 25, agentPct: 0, startsOn: '2026-01-01', endsOn: '2026-12-31', mode: 'update' };
 r = await call('PUT', `/api/units/${id}/contract`, { ...draft, revenueModel: 'master_lease', contractCode: 'WH', monthlyRent: 200000 });
 check('a rental unit cannot take WH', r.status === 422 && r.json.error.fields?.contractCode, r.text);
+r = await call('PUT', `/api/units/${id}/contract`, { ...draft, revenueModel: 'wh_long_term', contractCode: 'WH LT', monthlyRent: 200000, tenantName: 'Dream Crafter', managementPct: 10 });
+check('a rental unit cannot take WH LT', r.status === 422 && r.json.error.fields?.contractCode, r.text);
 r = await call('PUT', `/api/units/${id}/contract`, draft);
 check('a rental unit takes PS', r.status === 200, r.text);
 r = await call('GET', `/api/units/${id}/contract`);
@@ -40,11 +42,19 @@ check('warehouse refused while on a PS contract (409 CONTRACT_MISMATCH)', r.stat
 r = await call('PATCH', `/api/units/${id}`, { purpose: 'warehouse', endContract: true, usedBy: 'inhouse_reno' });
 check('warehouse with "end the contract" saves', r.status === 200, r.text);
 r = await call('GET', `/api/units/${id}/contract`);
-check('the PS contract is in the history, no contract in force, only WH offered', r.json.current.id === null && r.json.history.length === 1 && r.json.allowedCodes.join() === 'WH', JSON.stringify({ c: r.json.current.id, h: r.json.history.length, a: r.json.allowedCodes }));
+check('the PS contract is in the history, no contract in force, only WH and WH LT offered', r.json.current.id === null && r.json.history.length === 1 && r.json.allowedCodes.join() === 'WH,WH LT', JSON.stringify({ c: r.json.current.id, h: r.json.history.length, a: r.json.allowedCodes }));
 r = await call('PUT', `/api/units/${id}/contract`, { ...draft, contractCode: 'PS', mode: 'new', startsOn: '2027-01-01' });
 check('a warehouse cannot take PS', r.status === 422, r.text);
 r = await call('PUT', `/api/units/${id}/contract`, { revenueModel: 'master_lease', contractCode: 'WH', monthlyRent: 250000, startsOn: '2027-01-01', endsOn: '2027-12-31', mode: 'update' });
 check('a warehouse takes a WH lease', r.status === 200, r.text);
+r = await call('PUT', `/api/units/${id}/contract`, { revenueModel: 'wh_long_term', contractCode: 'WH LT', monthlyRent: 400000, startsOn: '2027-01-01', endsOn: '2027-12-31', mode: 'update' });
+check('a WH LT let needs its tenant', r.status === 422 && r.json.error.fields?.tenantName, r.text);
+r = await call('PUT', `/api/units/${id}/contract`, { revenueModel: 'wh_long_term', contractCode: 'WH LT', monthlyRent: 400000, tenantName: 'Inhouse Reno', managementPct: 10, startsOn: '2027-01-01', endsOn: '2027-12-31', mode: 'update' });
+check('a warehouse takes a WH LT let', r.status === 200, r.text);
+r = await call('GET', `/api/units/${id}/contract`);
+check('WH LT reads back with its tenant, rent and operator %', r.json.current.contractCode === 'WH LT' && r.json.current.revenueModel === 'wh_long_term' && r.json.current.tenantName === 'Inhouse Reno' && r.json.current.monthlyRent === 400000 && r.json.current.managementPct === 10, JSON.stringify(r.json.current));
+r = await call('PUT', `/api/units/${id}/contract`, { revenueModel: 'master_lease', contractCode: 'WH', monthlyRent: 250000, startsOn: '2027-01-01', endsOn: '2027-12-31', mode: 'update' });
+check('and back to a WH lease', r.status === 200, r.text);
 
 // --- a warehouse is kept off the channels ---
 r = await call('PUT', '/api/rates', { unitId: id, baseRate: 20000 });

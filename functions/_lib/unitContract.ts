@@ -1,7 +1,7 @@
 /** A unit's contract as the Contract tab edits it (one revenue model, only that model's fields), its history, and
  *  the "how this month's statement works" example worked out by the statement engine on real figures. */
 import { loadInputs, withYearToDate, computeMonth, statementSettings, termsFor, unitForMonth, type Query, type UnitRow, type UnitMonth } from './ownerStatement';
-import { modelOf, termsLabel, draftColumns, isShare, type RevenueModel, type ContractDraft } from './revenueModel';
+import { modelOf, termsLabel, draftColumns, isShare, isTenancy, type RevenueModel, type ContractDraft } from './revenueModel';
 import { monthEndExclusive } from './revenue';
 import { shiftMonth } from './expenses';
 import { codeOf, type ContractCode } from './unitPurpose';
@@ -43,7 +43,7 @@ export function contractView(c: any | null, unit: { split_kind?: string | null; 
     id: c.id, revenueModel: model,
     // A WH lease is worked out as a master lease but is named as the staff name it.
     termsLabel: code === 'WH' ? `Lease RM ${(Number(c.grr_amount ?? 0) / 100).toLocaleString('en-MY', { maximumFractionDigits: 0 })}/mo` : termsLabel(model, { ownerPct, agentPct: agent, rent: Number(c.grr_amount ?? 0), guarantee: Number(model === 'management_yearly_guarantee' ? c.minimum_guarantee_annual ?? 0 : c.minimum_guarantee ?? 0) }),
-    ownerPct, managementPct: share ? fee - (agent ?? 0) : model === 'long_term' ? fee : null, agentPct: share ? agent : null, agentName: c.agent_name ?? null,
+    ownerPct, managementPct: share ? fee - (agent ?? 0) : isTenancy(model) ? fee : null, agentPct: share ? agent : null, agentName: c.agent_name ?? null,
     minimumGuarantee: model === 'management_guarantee' ? Number(c.minimum_guarantee ?? 0) : 0,
     yearlyGuarantee: model === 'management_yearly_guarantee' ? Number(c.minimum_guarantee_annual ?? 0) : 0,
     contractCode: codeOf(model, c.contract_code), agreementDocumentId: c.agreement_document_id ?? null,
@@ -100,7 +100,7 @@ export async function unitExample(q: Query, unitId: string, month: string, draft
     company = { income: trading.gross, costs: allCosts, rentToOwner: rent, result: trading.gross - allCosts - rent };
   }
   const agentPct = terms.agentPct ?? 0;
-  const agentShare = m.ownerPct != null && agentPct > 0 && terms.model !== 'long_term' ? Math.round((m.net * agentPct) / 100) : 0;
+  const agentShare = m.ownerPct != null && agentPct > 0 && !isTenancy(terms.model) ? Math.round((m.net * agentPct) / 100) : 0;
   return {
     month, model: terms.model, nights: m.nights, occupancy: m.occupancy,
     income: m.gross, costs: m.deductionGroups.filter(g => g.amount).map(g => ({ label: g.label, amount: g.amount })), costsTotal: m.deductions, net: m.net,
