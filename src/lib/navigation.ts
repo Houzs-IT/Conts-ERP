@@ -72,8 +72,7 @@ export const NAV: NavGroup[] = [
   { label: 'HOME', workspace: 'rental', items: [
     { key: 'dashboard', label: 'Dashboard', icon: 'layout-dashboard', path: '/', area: 'dashboard' },
     { key: 'portfolio', label: 'Portfolio', icon: 'layers', path: '/portfolio', area: 'portfolio' },
-    // vocab-ok: the owner named this screen after the workbook's overall report sheet
-    { key: 'ownerReport', label: 'Overall owner report', icon: 'file-spreadsheet', path: '/portfolio/owner-report', area: 'portfolio', full: true },
+    { key: 'unitReport', label: 'Overall unit report', icon: 'file-spreadsheet', path: '/portfolio/owner-report', area: 'portfolio', full: true },
     { key: 'analytics', label: 'Performance', icon: 'trending-up', path: '/performance/analytics', area: 'performance', full: true },
   ] },
   { label: 'RESERVATIONS', workspace: 'rental', items: [
