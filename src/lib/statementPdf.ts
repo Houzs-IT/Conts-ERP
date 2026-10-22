@@ -4,7 +4,7 @@ import type { Report, Unit } from '../pages/OwnerIncomeReportPage';
 /**
  * One owner statement as a real PDF file, drawn page for page like the Owner Income Report on screen
  * (src/pages/OwnerIncomeReportPage.tsx): the owner's all-units month and year to date when they have more than one
- * unit, then each unit's month and year to date. Used by the Owners list's "Owner statements (.zip)" export.
+ * unit, then each unit's month and year to date. Called once per unit by the Owners list's "Unit statements (.zip)" export.
  * Keep the two in step: a row added to the screen report has to be drawn here too.
  * No imports beyond pdf-lib and types, so `node --test src/lib/statementPdf.test.mjs` runs it as it is.
  */
