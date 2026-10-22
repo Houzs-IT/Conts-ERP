@@ -64,14 +64,18 @@ export default function PayoutsPage({ embedded = false }: { embedded?: boolean }
   const canAct = !!user && user.role !== 'owner';
   const filter: Filter = (GROUP_ORDER as string[]).includes(url.get('state')) ? url.get('state') as PayoutState : 'all';
   const setFilter = (f: Filter) => url.set({ state: f === 'all' ? null : f, page: null });
-  const period = url.get('period'), q = url.get('q');
+  // The header and the run button speak for every payout, not for the search or month being looked at.
+  const overall = useApi<Payload>('/payouts?pageSize=1');
+  // No month in the address opens on the newest statement month, so the list and the bank Excel start on one
+  // month (owner, 22 Oct 2026); "all" is the explicit pick of every month.
+  const periodParam = url.get('period'), q = url.get('q');
+  const period = periodParam === 'all' ? '' : periodParam || (overall.data?.periods?.[0] ?? '');
+  const waitForMonth = !periodParam && !overall.data && overall.loading;
   const page = Math.max(1, Number(url.get('page')) || 1);
   const size = SIZES.includes(Number(url.get('size'))) ? Number(url.get('size')) : PAGE_SIZE;
   const query = new URLSearchParams({ pageSize: String(size), ...(filter !== 'all' ? { state: filter } : {}), ...(period ? { period } : {}), ...(q ? { q } : {}), ...(page > 1 ? { page: String(page) } : {}) });
-  const { data, loading, error, reload } = useApi<Payload>(`/payouts?${query}`, FALLBACK);
+  const { data, loading, error, reload } = useApi<Payload>(waitForMonth ? null : `/payouts?${query}`, FALLBACK);
   const runs = useApi<{ data: Approval[] }>('/approvals?entity=payouts');
-  // The header and the run button speak for every payout, not for the search or month being looked at.
-  const overall = useApi<Payload>('/payouts?pageSize=1');
   const toast = useToast();
 
   const [confirm, setConfirm] = useState<{ payout: Payout; kind: 'retry' | 'paid' } | null>(null);
@@ -106,7 +110,7 @@ export default function PayoutsPage({ embedded = false }: { embedded?: boolean }
     return [...rows].sort((a, b) => RANK[a.state] - RANK[b.state]);
   }, [allRows, filter]);
   const total = data?.total ?? visible.length;
-  const filtered = filter !== 'all' || !!period || !!q;
+  const filtered = filter !== 'all' || !!periodParam || !!q;
 
   // The row changes only after the server has accepted the change.
   async function transition(p: Payout, kind: 'retry' | 'paid') {
@@ -255,7 +259,7 @@ export default function PayoutsPage({ embedded = false }: { embedded?: boolean }
         )) : undefined}
         toolbar={<>
           <SearchBox className="flex-[2_1_240px]" label="Search payouts" placeholder="Search owner" value={q} onChange={v => url.set({ q: v || null, page: null })} />
-          <FilterSelect className="flex-[1_1_180px]" label="Statement month" all="All statement months" value={period} onChange={v => url.set({ period: v || null, page: null })}
+          <FilterSelect className="flex-[1_1_180px]" label="Statement month" all="All statement months" value={period} onChange={v => url.set({ period: v || 'all', page: null })}
             options={(data?.periods ?? []).map(p => ({ value: p, label: monthLabel(p) }))} />
           <Select label="Filter by status" value={filter} onChange={v => setFilter(v as Filter)} className="flex-[1_1_180px]"
             options={[{ value: 'all', label: data ? `All statuses · ${allCount}` : 'All statuses' }, ...GROUP_ORDER.map(s => ({ value: s, label: data ? `${statusLabel('payout', s)} · ${counts[s]}` : statusLabel('payout', s) }))]} />
