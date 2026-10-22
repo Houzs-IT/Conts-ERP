@@ -21,6 +21,7 @@ import { BootScreen, PageShown, PageSkeleton } from './components/Loading';
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
 const NotificationsPage = lazy(() => import('./pages/NotificationsPage'));
 const PortfolioPage = lazy(() => import('./pages/PortfolioPage'));
+const OwnerOverallReportPage = lazy(() => import('./pages/OwnerOverallReportPage'));
 const CalendarPage = lazy(() => import('./pages/CalendarPage'));
 const BookingsPage = lazy(() => import('./pages/BookingsPage'));
 const GuestsPage = lazy(() => import('./pages/GuestsPage'));
@@ -237,6 +238,7 @@ function Routed() {
         <Route path="/" element={<DashboardPage />} />
         <Route path="/notifications" element={<NotificationsPage />} />
         <Route path="/portfolio" element={<PortfolioPage />} />
+        <Route path="/portfolio/owner-report" element={<OwnerOverallReportPage />} />
         <Route path="/reservations/calendar" element={<CalendarPage />} />
         <Route path="/reservations/bookings" element={<BookingsPage />} />
         <Route path="/reservations/guests" element={<GuestsPage />} />

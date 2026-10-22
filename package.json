@@ -10,6 +10,7 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
+    "test": "node --test src/lib/*.test.mjs",
     "check": "node scripts/checks/run.mjs && node scripts/checks/input-parsing.mjs",
     "db:migrate": "node scripts/migrate-pg.mjs",
     "db:migrate:dry": "node scripts/migrate-pg.mjs --dry-run",
