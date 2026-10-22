@@ -1,4 +1,4 @@
-// Owner portal safety checks against the LOCAL dev server (npm run dev, then
+// Owner portal safety checks against the LOCAL dev server (npm run dev:os, then
 // load scripts/seed-owner-demo.sql locally). Run: node scripts/check-owner-portal.mjs
 // Password: DEMO_PASSWORD (default LocalTest1, what scripts/local-demo-setup.mjs sets).
 // Never point this at a live site.

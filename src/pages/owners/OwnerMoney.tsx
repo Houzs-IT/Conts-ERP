@@ -39,7 +39,7 @@ export function SectionHead({ embedded, title, sub, right, primary }: { embedded
 /* ---------- owner payouts ---------- */
 
 export interface PayoutRow {
-  id: string; ref?: string; period?: string | null; ownerName: string; amount: number; state: PayoutState; method: string;
+  id: string; ref?: string; statementId?: string | null; period?: string | null; ownerName: string; amount: number; state: PayoutState; method: string;
   bankName: string | null; bankLast4: string | null; paidAt: string | null; failureReason: string | null;
 }
 

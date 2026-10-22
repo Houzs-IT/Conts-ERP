@@ -1,5 +1,5 @@
 // Read-only checks for the paged unit bookings, the building-scoped calendar and the portfolio/trend fields.
-// Works against any data set. Defaults match harness.mjs (npm run dev on :8788 with the smoke-test secret);
+// Works against any data set. Defaults match harness.mjs (npm run dev:os on :8788 with the smoke-test secret);
 // API_BASE and SESSION_SECRET point it at another local server, e.g. the real-sized import:
 //   API_BASE=http://127.0.0.1:8794 SESSION_SECRET=... node scripts/api-checks/units-calendar-scale.mjs
 import { createHmac } from 'node:crypto';

@@ -1,6 +1,6 @@
 // The session middleware reads each user's role and active flag from the database, so every session here
 // belongs to a seeded user (seed.sql); a signed cookie for an id that is not in users is refused (401).
-// Each check file expects a freshly reset database and a local server (npm run dev on :8788, SESSION_SECRET=smoke-test-secret-not-real-0123456789).
+// Each check file expects a freshly reset database and a local server (npm run dev:os on :8788, SESSION_SECRET=smoke-test-secret-not-real-0123456789).
 import { createHmac } from 'node:crypto';
 // SESSION_SECRET from the environment runs these against a server using a real .dev.vars secret (e.g. one reading staging).
 const SECRET = process.env.SESSION_SECRET ?? 'smoke-test-secret-not-real-0123456789';

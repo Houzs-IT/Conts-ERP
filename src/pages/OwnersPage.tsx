@@ -21,7 +21,7 @@ import { useUrlState, usePhone, SearchBox, MonthStepper, shiftMonth, useFinanceF
 import { MODELS, type RevenueModel } from '../lib/revenueModel';
 import { ModelChip } from './units/ContractTab';
 import { CodeBadge } from './units/UnitExtras';
-import { CODES } from '../lib/revenueModel';
+import { CODES, codeName } from '../lib/revenueModel';
 import { Segmented } from '../components/ops/OpsUi';
 import { RowsSkeleton } from '../components/Loading';
 import { useSession } from '../lib/session';
@@ -208,7 +208,7 @@ function OwnerList({ tabs }: { tabs: ReactNode }) {
     { key: 'units', label: 'Units', type: 'number', align: 'left', value: o => o.units.length, width: 140, filter: { kind: 'number', hint: 'Number of units' },
       render: o => <span className="text-copy text-muted-ink truncate block" title={o.units.map(u => u.unitLabel).join(', ')}>{unitsText(o)}</span> },
     { key: 'code', label: 'Contract', value: o => codeText(o), width: 110, title: 'The contract type: PS, PS GRR, PS YGRR, LT, RTR, MANAGE, WH. Mixed: units on different types.',
-      filter: { kind: 'select', options: [...CODES.map(c => ({ value: c.code, label: `${c.code} · ${c.label}` })), { value: 'Mixed', label: 'Mixed (units on different types)' }] },
+      filter: { kind: 'select', options: [...CODES.map(c => ({ value: c.code, label: `${codeName(c.code)} · ${c.label}` })), { value: 'Mixed', label: 'Mixed (units on different types)' }] },
       render: o => { const c = codeText(o); return !c ? <span className="text-muted-ink">—</span> : c === 'Mixed' ? <span className="text-meta text-muted-ink">Mixed</span> : <CodeBadge code={o.units.find(u => u.contractCode)?.contractCode} size="sm" />; } },
     { key: 'bank', label: 'Bank details', value: o => bankText(o), hidden: true, width: 120, filter: { kind: 'select', options: [{ value: 'On file', label: 'On file' }, { value: 'Missing', label: 'Missing' }] } },
     { key: 'building', label: 'Buildings', value: o => buildingsOf(o) || null, hidden: true, width: 200, filter: { kind: 'text', hint: 'Owners with a unit in a building whose name contains' } },

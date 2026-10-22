@@ -106,7 +106,7 @@ if (existsSync('.dev.vars')) {
 say(`
 \u001b[1mReady.\u001b[0m
 
-  npm run dev        \u2192  http://localhost:8788
+  npm run dev:staging \u2192  http://localhost:8788
   Sign in as         \u2192  ${email}
 
 Before deploying:

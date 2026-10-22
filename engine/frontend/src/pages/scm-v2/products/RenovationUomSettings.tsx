@@ -93,25 +93,27 @@ export function RenovationUomSettings({ onClose }: { onClose: () => void }) {
             {units.map((u, i) => {
               const hidden = u.active === false;
               return (
-                <li key={u.code} className={`flex items-center gap-2 px-3 py-2 ${hidden ? 'bg-surface-2' : ''}`}>
-                  <span className="w-[72px] shrink-0 font-money text-[12px] font-semibold" title="What prints on documents">{u.printLabel}</span>
+                <li key={u.code} className={`flex flex-wrap items-center gap-x-2 gap-y-1 px-3 py-2 ${hidden ? 'bg-surface-2' : ''}`}>
+                  <div className="flex w-[72px] shrink-0 flex-col items-start gap-1">
+                    <span className="font-money text-[12px] font-semibold" title="What prints on documents">{u.printLabel}</span>
+                    {u.measure && <span className="rounded-full bg-primary-soft px-2 py-0.5 text-[11px] font-semibold text-primary">Measured</span>}
+                    {hidden && <span className="rounded-full bg-surface px-2 py-0.5 text-[11px] font-semibold text-ink-secondary">Hidden</span>}
+                  </div>
                   {editable ? (
                     <input
                       aria-label={`Name of ${u.printLabel}`}
                       defaultValue={u.label}
                       key={u.label}
                       maxLength={60}
-                      className={`${styles.fieldInput} min-w-0 flex-1 ${hidden ? 'text-ink-muted' : ''}`}
+                      className={`${styles.fieldInput} min-w-0 flex-1 basis-28 ${hidden ? 'text-ink-muted' : ''}`}
                       onBlur={(e) => rename(u, e.target.value)}
                       onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
                     />
                   ) : (
                     <span className={`min-w-0 flex-1 text-[13px] ${hidden ? 'text-ink-muted' : ''}`}>{u.label}</span>
                   )}
-                  {u.measure && <span className="rounded-full bg-primary-soft px-2 py-0.5 text-[11px] font-semibold text-primary">Measured</span>}
-                  {hidden && <span className="rounded-full bg-surface px-2 py-0.5 text-[11px] font-semibold text-ink-secondary">Hidden</span>}
                   {editable && (
-                    <>
+                    <div className="ms-auto flex shrink-0 items-center gap-2">
                       <button type="button" className={styles.iconBtn} aria-label={`Move ${u.label} up`} disabled={busy || i === 0} onClick={() => void move(i, -1)}>
                         <ArrowUp size={14} strokeWidth={1.75} />
                       </button>
@@ -138,7 +140,7 @@ export function RenovationUomSettings({ onClose }: { onClose: () => void }) {
                       >
                         <Trash2 size={14} strokeWidth={1.75} />
                       </button>
-                    </>
+                    </div>
                   )}
                 </li>
               );

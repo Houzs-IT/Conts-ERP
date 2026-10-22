@@ -79,6 +79,7 @@ const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage'));
 const ExpensesPage = lazy(() => import('./pages/ExpensesPage'));
 const StatementDetailPage = lazy(() => import('./pages/StatementDetailPage'));
 const OwnerIncomeReportPage = lazy(() => import('./pages/OwnerIncomeReportPage'));
+const StatementsPrintPage = lazy(async () => ({ default: (await import('./pages/OwnerIncomeReportPage')).StatementsPrintPage }));
 const ApprovalsPage = lazy(() => import('./pages/ApprovalsPage'));
 const OwnersPage = lazy(() => import('./pages/OwnersPage'));
 const OwnerProfilePage = lazy(() => import('./pages/OwnerProfilePage'));
@@ -234,6 +235,7 @@ function Routed() {
     <Routes>
       {/* The Owner Income Report prints on its own: no app shell around it. */}
       <Route path="/finance/statements/:id/report" element={<Suspense fallback={<Fallback />}><OwnerIncomeReportPage /></Suspense>} />
+      <Route path="/finance/statements/print" element={<Suspense fallback={<Fallback />}><StatementsPrintPage /></Suspense>} />
       <Route element={<AppLayout />}>
         <Route path="/" element={<DashboardPage />} />
         <Route path="/notifications" element={<NotificationsPage />} />

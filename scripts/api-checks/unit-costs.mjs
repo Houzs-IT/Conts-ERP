@@ -9,7 +9,7 @@
 //   5. a bill without a date is refused; operations staff cannot charge cleans
 //
 // Run against a throwaway database (scripts/ci-api-db.mjs, or any local copy of it) and a local server:
-//   npm run dev  (SESSION_SECRET=smoke-test-secret-not-real-0123456789), then
+//   npm run dev:os  (SESSION_SECRET=smoke-test-secret-not-real-0123456789), then
 //   node scripts/api-checks/unit-costs.mjs                          (API only)
 //   DB_URL=postgres://postgres@127.0.0.1:5432/ci node scripts/api-checks/unit-costs.mjs   (also step 4)
 // STATEMENTS=lib (with DB_URL) builds the statement drafts with the generator's own code (functions/_lib/ownerStatement.ts
