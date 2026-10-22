@@ -133,6 +133,7 @@ export const REVERSAL_SOURCE: Record<string, string> = {
   SCN: 'SCN_REVERSAL',
   RCT: 'RCT_REVERSAL',
   DI: 'DI_REVERSAL',
+  OPENING: 'OPENING_REVERSAL',
 };
 
 export type RoleCodes = Record<AccountRole, string>;

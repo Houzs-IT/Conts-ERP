@@ -23,6 +23,9 @@ import { supabaseAuth } from '../middleware/auth';
 import type { Env, Variables } from '../env';
 import { postSiRevenue } from '../lib/post-si-revenue';
 import { MIGRATED_NO_GL_MESSAGE } from '../lib/migrated-chain';
+
+/* Conts, migration 0136: an opening invoice or bill posts nothing itself. */
+const OPENING_NO_GL_MESSAGE = 'An opening balance: its amount is in the opening journal already, so no journal entry was written. Payments against it post as usual.';
 import { paginateAll } from '../lib/paginate-all';
 import { safeRate, toMyrSen } from '../lib/fx';
 import { todayMyt } from '../lib/my-time';
@@ -64,6 +67,7 @@ import { itemGroupsList, itemGroupCreate, itemGroupBind, itemGroupPatch } from '
 import { piPeriodicBackfill } from './accounting-pi-backfill';
 import { stockCloseStatus, stockCloseRun } from './accounting-stock-close';
 import { pnlReport, balanceSheetReport, loadAccounts, loadSums } from './accounting-reports';
+import { importOpeningJournal, importOpeningPayables, importOpeningReceivables, openingCheck, reverseOpeningJournal } from '../../acc/opening';
 import { journalEntryEdit } from './accounting-journal-edit';
 import { reportLayoutGet, reportLayoutPut, reportLayoutReset } from './accounting-report-layouts';
 import { receiptsPaymentsReport } from './accounting-rp';
@@ -421,6 +425,65 @@ export const ledgerSettingsPut = async (c: AccCtx): Promise<Response> => {
 };
 accounting.put('/settings/ledger', ledgerSettingsPut);
 
+/* ── Opening balances (Conts, spec 3.8) — acc/opening.ts. Writing them needs the post key; the check is read by
+   the same people (it shows control and bank balances). ── */
+const OPENING_MAX_ROWS = 5000;
+async function openingBody(c: AccCtx, key: 'lines' | 'rows'): Promise<{ ok: true; companyId: number; items: never[] } | { ok: false; res: Response }> {
+  if (!requireGlPost(c)) return { ok: false, res: c.json({ error: "You don't have permission to post to the general ledger." }, 403) };
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return { ok: false, res: c.json(co.refusal, 409) };
+  let body: Record<string, unknown> | null;
+  try { body = await c.req.json(); } catch { return { ok: false, res: c.json({ error: 'invalid_json' }, 400) }; }
+  /* Only the list is checked here; acc/opening.ts checks each row. */
+  const items = body?.[key] as never[] | undefined;
+  if (!Array.isArray(items) || items.length === 0) return { ok: false, res: c.json({ error: 'The file has no rows.' }, 400) };
+  if (items.length > OPENING_MAX_ROWS) return { ok: false, res: c.json({ error: `At most ${OPENING_MAX_ROWS} rows at a time.` }, 400) };
+  return { ok: true, companyId: co.companyId, items };
+}
+const actorName = (c: AccCtx): string =>
+  String((c.get('houzsUser') as { name?: string } | undefined)?.name ?? (c.get('user') as { id?: string } | undefined)?.id ?? '');
+const actorId = (c: AccCtx): string => String((c.get('user') as { id?: string } | undefined)?.id ?? '');
+
+export const openingJournalHandler = async (c: AccCtx): Promise<Response> => {
+  const b = await openingBody(c, 'lines');
+  if (!b.ok) return b.res;
+  const r = await importOpeningJournal(c.get('supabase'), b.companyId, b.items, actorName(c));
+  return r.ok ? c.json(r) : c.json({ error: r.error }, 409);
+};
+accounting.post('/opening/journal', openingJournalHandler);
+
+export const openingJournalReverseHandler = async (c: AccCtx): Promise<Response> => {
+  if (!requireGlPost(c)) return c.json({ error: "You don't have permission to post to the general ledger." }, 403);
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  const r = await reverseOpeningJournal(c.get('supabase'), co.companyId);
+  return r.ok ? c.json(r) : c.json({ error: r.error }, 409);
+};
+accounting.post('/opening/journal/reverse', openingJournalReverseHandler);
+
+export const openingReceivablesHandler = async (c: AccCtx): Promise<Response> => {
+  const b = await openingBody(c, 'rows');
+  if (!b.ok) return b.res;
+  return c.json(await importOpeningReceivables(c.get('supabase'), b.companyId, b.items, actorId(c)));
+};
+accounting.post('/opening/receivables', openingReceivablesHandler);
+
+export const openingPayablesHandler = async (c: AccCtx): Promise<Response> => {
+  const b = await openingBody(c, 'rows');
+  if (!b.ok) return b.res;
+  return c.json(await importOpeningPayables(c.get('supabase'), b.companyId, b.items, actorId(c)));
+};
+accounting.post('/opening/payables', openingPayablesHandler);
+
+export const openingCheckHandler = async (c: AccCtx): Promise<Response> => {
+  if (!requireGlPost(c)) return c.json({ error: "You don't have permission to read the opening balances." }, 403);
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  const r = await openingCheck(c.get('supabase'), co.companyId);
+  return r.ok ? c.json(r) : c.json({ error: r.error }, 409);
+};
+accounting.get('/opening/check', openingCheckHandler);
+
 /* ════════════════════════════════════════════════════════════════════════
    Journal Entries
    ════════════════════════════════════════════════════════════════════════ */
@@ -708,6 +771,7 @@ export const postSiHandler = async (c: AccCtx): Promise<Response> => {
     if (r.status === 'migrated_source') {
       return c.json({ ok: true, status: 'migrated_source', posted: false, message: MIGRATED_NO_GL_MESSAGE });
     }
+    if (r.status === 'opening_document') return c.json({ ok: true, status: 'opening_document', posted: false, message: OPENING_NO_GL_MESSAGE });
     if (r.status === 'before_ledger_start') return c.json({ error: beforeLedgerStartMessage(r.ledgerStartDate) }, 409);
     if (r.status === 'already_posted') {
       // Keep the historical 409 contract for the explicit re-post endpoint.
@@ -736,6 +800,8 @@ export type PostPiResult =
      below. It is `ok: true` so the confirm handler does not write its
      "AP/GL post FAILED" audit row for a thing that was never meant to post. */
   | { ok: true; status: 'migrated_source' }
+  /* An opening balance (Conts, migration 0136): its money is in the OPENING journal already. */
+  | { ok: true; status: 'opening_document' }
   /* Dated before the ledger start (Conts): already in the opening balances. */
   | { ok: true; status: 'before_ledger_start'; ledgerStartDate: string }
   | { ok: false; status: 'invoice_not_found' | 'zero_total' | 'je_insert_failed' | 'lines_insert_failed' | 'post_failed'
@@ -746,7 +812,7 @@ export type PostPiResult =
 export async function postPiAccounting(sb: any, invoiceNumber: string): Promise<PostPiResult> {
   const { data: piRaw, error } = await sb
     .from('purchase_invoices')
-    .select('id, invoice_number, invoice_date, supplier_id, total_sen, currency, exchange_rate, company_id, migrated_no_stock, suppliers(code, name)')
+    .select('id, invoice_number, invoice_date, supplier_id, total_sen, currency, exchange_rate, company_id, migrated_no_stock, opening_balance, suppliers(code, name)')
     .eq('invoice_number', invoiceNumber)
     .single();
   if (error || !piRaw) return { ok: false, status: 'invoice_not_found' };
@@ -759,6 +825,11 @@ export async function postPiAccounting(sb: any, invoiceNumber: string): Promise<
      covered by construction. */
   if ((piRaw as unknown as { migrated_no_stock?: boolean | null }).migrated_no_stock === true) {
     return { ok: true, status: 'migrated_source' };
+  }
+  /* An opening bill (Conts, migration 0136): what the company still owed on the day before the books start is in the
+     OPENING journal's Cr AP already; the bill is here for the creditor ageing and the voucher that pays it. */
+  if ((piRaw as unknown as { opening_balance?: boolean | null }).opening_balance === true) {
+    return { ok: true, status: 'opening_document' };
   }
   // Cast through `unknown` — Supabase JS without generated types returns
   // `GenericStringError` from `.select(string).single()` even when data is
@@ -881,6 +952,7 @@ export const postPiHandler = async (c: AccCtx): Promise<Response> => {
   if (r.ok && r.status === 'migrated_source') {
     return c.json({ ok: true, status: 'migrated_source', posted: false, message: MIGRATED_NO_GL_MESSAGE });
   }
+  if (r.ok && r.status === 'opening_document') return c.json({ ok: true, status: 'opening_document', posted: false, message: OPENING_NO_GL_MESSAGE });
   if (r.ok && r.status === 'before_ledger_start') return c.json({ error: beforeLedgerStartMessage(r.ledgerStartDate) }, 409);
   if (r.ok && r.status === 'already_posted') {
     return c.json({ error: 'already_posted', existingJe: { id: r.jeId, je_no: r.jeNo } }, 409);
@@ -1321,14 +1393,15 @@ export const controlCheckHandler = async (c: any) => {
     const drift: Drift[] = [];
     if (role === 'AR') {
       const { data: docs, error } = await sb.from('sales_invoices')
-        .select('invoice_number, total_sen, status, migrated_no_stock')
+        .select('invoice_number, total_sen, status, migrated_no_stock, opening_balance')
         .eq('company_id', companyId);
       if (error) return { role, accountCode, error: error.message };
-      for (const d of (docs ?? []) as Array<{ invoice_number: string; total_sen: number; status: string | null; migrated_no_stock: boolean | null }>) {
+      for (const d of (docs ?? []) as Array<{ invoice_number: string; total_sen: number; status: string | null; migrated_no_stock: boolean | null; opening_balance?: boolean | null }>) {
         const s = (d.status ?? '').toUpperCase();
         const je = jeByDoc.get(d.invoice_number);
-        if (d.migrated_no_stock === true || s === 'DRAFT' || s === 'CANCELLED') {
-          if (je) drift.push({ docNo: d.invoice_number, docTotalSen: 0, jeTotalSen: je.jeTotal, diffSen: je.jeTotal, note: `journal active but document is ${d.migrated_no_stock ? 'migrated' : s}` });
+        /* An opening document (migration 0136) posts no journal of its own: its money is in the OPENING entry. */
+        if (d.migrated_no_stock === true || d.opening_balance === true || s === 'DRAFT' || s === 'CANCELLED') {
+          if (je) drift.push({ docNo: d.invoice_number, docTotalSen: 0, jeTotalSen: je.jeTotal, diffSen: je.jeTotal, note: `journal active but document is ${d.migrated_no_stock ? 'migrated' : d.opening_balance ? 'an opening balance' : s}` });
           jeByDoc.delete(d.invoice_number);
           continue;
         }
@@ -1342,14 +1415,15 @@ export const controlCheckHandler = async (c: any) => {
       }
     } else if (docDrift) {
       const { data: docs, error } = await sb.from('purchase_invoices')
-        .select('invoice_number, total_sen, exchange_rate, status, migrated_no_stock')
+        .select('invoice_number, total_sen, exchange_rate, status, migrated_no_stock, opening_balance')
         .eq('company_id', companyId);
       if (error) return { role, accountCode, error: error.message };
-      for (const d of (docs ?? []) as Array<{ invoice_number: string; total_sen: number; exchange_rate: string | number | null; status: string | null; migrated_no_stock: boolean | null }>) {
+      for (const d of (docs ?? []) as Array<{ invoice_number: string; total_sen: number; exchange_rate: string | number | null; status: string | null; migrated_no_stock: boolean | null; opening_balance?: boolean | null }>) {
         const s = (d.status ?? '').toUpperCase();
         const je = jeByDoc.get(d.invoice_number);
-        if (d.migrated_no_stock === true || s === 'DRAFT' || s === 'CANCELLED') {
-          if (je) drift.push({ docNo: d.invoice_number, docTotalSen: 0, jeTotalSen: je.jeTotal, diffSen: je.jeTotal, note: `journal active but document is ${d.migrated_no_stock ? 'migrated' : s}` });
+        /* An opening document (migration 0136) posts no journal of its own: its money is in the OPENING entry. */
+        if (d.migrated_no_stock === true || d.opening_balance === true || s === 'DRAFT' || s === 'CANCELLED') {
+          if (je) drift.push({ docNo: d.invoice_number, docTotalSen: 0, jeTotalSen: je.jeTotal, diffSen: je.jeTotal, note: `journal active but document is ${d.migrated_no_stock ? 'migrated' : d.opening_balance ? 'an opening balance' : s}` });
           jeByDoc.delete(d.invoice_number);
           continue;
         }
@@ -1432,15 +1506,17 @@ export const controlCheckHandler = async (c: any) => {
        and on the Customer Refund voucher itself (PV, Dr AR); AP moves on
        purchase invoices AND on the payment vouchers that settle them.
        Anything else on the account is the finding. */
+    /* OPENING (Conts, finance phase 1): the opening journal sets every control's balance on the day before the books
+       start, so it is native to all four. */
     const family = role === 'AR'
       ? new Set(['SI', 'SI_REVERSAL', 'SOPAY', 'SOPAY_REVERSAL', 'SIPAY', 'SIPAY_REVERSAL',
-        'DI', 'DI_REVERSAL', 'CN', 'CN_REVERSAL', 'PV', 'PV_REVERSAL'])
+        'DI', 'DI_REVERSAL', 'CN', 'CN_REVERSAL', 'PV', 'PV_REVERSAL', 'OPENING', 'OPENING_REVERSAL'])
       : role === 'AR_OTHER'
-        ? new Set(['ODB', 'ODB_REVERSAL', 'ODR', 'ODR_REVERSAL'])
+        ? new Set(['ODB', 'ODB_REVERSAL', 'ODR', 'ODR_REVERSAL', 'OPENING', 'OPENING_REVERSAL'])
         /* API = the AP invoice (docs/bugs/0654): it credits 400 or 405 by the
            supplier's code, exactly as a PI does, and its edit re-post writes
            the reversal. Both were read as foreign until this line. */
-        : new Set(['PI', 'PI_REVERSAL', 'PV', 'PV_REVERSAL', 'API', 'API_REVERSAL']);
+        : new Set(['PI', 'PI_REVERSAL', 'PV', 'PV_REVERSAL', 'API', 'API_REVERSAL', 'OPENING', 'OPENING_REVERSAL']);
     for (const l of (lines ?? []) as Array<{ je_no: string; source_type: string; debit_sen: number; credit_sen: number }>) {
       bal += Number(l.debit_sen ?? 0) - Number(l.credit_sen ?? 0);
       if (!family.has(l.source_type)) {

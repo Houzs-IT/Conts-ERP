@@ -14,6 +14,7 @@ import { leafAccounts, useAccounts } from "../vendor/scm/lib/accounting-queries"
 import {
   MONTHS, PROBLEM_TEXT, ROLE_LABELS, useLedgerSettings, useSaveLedgerSettings, useSetRole, useSetupStatus, type LedgerSettings,
 } from "./ledgerSettings";
+import { OpeningBalances } from "./OpeningBalances";
 
 const isClearingCode = (code: string): boolean => /^32[67]-/.test(code);
 const rm = (sen: number): string => (sen / 100).toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -95,6 +96,8 @@ export function LedgerSetup() {
         </div>
       </section>
       <PostingRules canSave={canSave} />
+      {/* The saved start date, not the one being typed: the opening day is the day before what is in force. */}
+      {q.isSuccess && <OpeningBalances canSave={canSave} ledgerStartDate={q.data.ledgerStartDate} />}
     </div>
   );
 }

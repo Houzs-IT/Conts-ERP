@@ -39,6 +39,15 @@ vi.mock("../vendor/scm/lib/accounting-queries", async (importOriginal) => ({
   ] } }),
 }));
 vi.mock("../auth/AuthContext", () => ({ useAuth: () => ({ can: () => canPost }) }));
+let openingCheck: Record<string, unknown> | undefined;
+vi.mock("./opening", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./opening")>()),
+  useOpeningCheck: (enabled: boolean) => (enabled && openingCheck
+    ? { isSuccess: true, isError: false, data: openingCheck }
+    : { isSuccess: false, isError: false, data: undefined }),
+  useImportOpening: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useReverseOpening: () => ({ mutateAsync: vi.fn(), isPending: false }),
+}));
 vi.mock("../vendor/scm/components/ConfirmDialog", () => ({ useConfirm: () => confirmFn }));
 
 import { LedgerSetup } from "./LedgerSetup";
@@ -154,5 +163,61 @@ describe("Ledger setup — Posting rules", () => {
     expect(confirmFn).toHaveBeenCalledTimes(2);
     expect(JSON.stringify(confirmFn.mock.calls[1])).toContain("400.00");
     expect(setRoleAsync).toHaveBeenLastCalledWith({ role: "AR", accountCode: "310-0020", confirm: true });
+  });
+});
+
+describe("Ledger setup — Opening balances", () => {
+  const CHECK = {
+    ok: true, openingDay: "2026-11-30", openingJeNo: "JE-2611-0001", openingJeDate: "2026-11-30", trialDebitSen: 150000, trialCreditSen: 150000,
+    controls: [
+      { role: "AR", accountCode: "300-0000", controlSen: 50000, documentsSen: 40000, erpDocuments: 0 },
+      { role: "AP", accountCode: "400-0000", controlSen: 30000, documentsSen: 30000, erpDocuments: 0 },
+      { role: "AP_OTHER", accountCode: "405-0000", controlSen: 0, documentsSen: 0, erpDocuments: 0 },
+    ],
+    banks: [{ accountCode: "310-0001", name: "MAYBANK", balanceSen: 100000 }], balanced: false,
+  };
+
+  it("asks for the start date before anything can be imported", () => {
+    settings = { ledgerStartDate: null, fiscalYearEndMonth: 8 };
+    render(<MemoryRouter><LedgerSetup /></MemoryRouter>);
+    expect(screen.getByText(/Set the day the books start first/)).toBeTruthy();
+  });
+
+  it("shows the check in red when AR does not match", () => {
+    settings = { ledgerStartDate: "2026-12-01", fiscalYearEndMonth: 8 };
+    openingCheck = CHECK;
+    render(<MemoryRouter><LedgerSetup /></MemoryRouter>);
+    expect(screen.getByTestId("opening-verdict").textContent).toMatch(/do not agree yet/);
+    const debtors = screen.getByText("Trade debtors (300-0000)").closest("tr") as HTMLElement;
+    expect(debtors.dataset.ok).toBe("false");
+    expect(debtors.textContent).toMatch(/Off by 100\.00/);
+    expect((screen.getByText("Trade creditors (400-0000)").closest("tr") as HTMLElement).dataset.ok).toBe("true");
+    expect(screen.getByText(/310-0001 MAYBANK/)).toBeTruthy();
+    openingCheck = undefined;
+    settings = { ledgerStartDate: null, fiscalYearEndMonth: 8 };
+  });
+
+  it("shows green when everything agrees", () => {
+    settings = { ledgerStartDate: "2026-12-01", fiscalYearEndMonth: 8 };
+    openingCheck = { ...CHECK, controls: CHECK.controls.map((c) => ({ ...c, documentsSen: c.controlSen })), balanced: true };
+    render(<MemoryRouter><LedgerSetup /></MemoryRouter>);
+    expect(screen.getByTestId("opening-verdict").textContent).toMatch(/agree/);
+    expect(screen.getByTestId("opening-verdict").textContent).not.toMatch(/not/);
+    openingCheck = undefined;
+    settings = { ledgerStartDate: null, fiscalYearEndMonth: 8 };
+  });
+});
+
+describe("Ledger setup — Opening balances, a moved start date", () => {
+  it("says so when the opening journal is not on the opening day", () => {
+    settings = { ledgerStartDate: "2027-01-01", fiscalYearEndMonth: 8 };
+    openingCheck = {
+      ok: true, openingDay: "2026-12-31", openingJeNo: "JE-2611-0001", openingJeDate: "2026-11-30", trialDebitSen: 0, trialCreditSen: 0,
+      controls: [], banks: [], balanced: false,
+    };
+    render(<MemoryRouter><LedgerSetup /></MemoryRouter>);
+    expect(screen.getByText(/The opening journal is dated 2026-11-30/)).toBeTruthy();
+    openingCheck = undefined;
+    settings = { ledgerStartDate: null, fiscalYearEndMonth: 8 };
   });
 });
