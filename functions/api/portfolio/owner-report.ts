@@ -31,7 +31,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     const u = unitOf.get(m.unitId)!;
     const sum = (pick: (category: string) => boolean) => m.deductionGroups.filter(g => pick(g.category)).reduce((n, g) => n + g.amount, 0);
     return [{
-      unitId: m.unitId, code: u.unit_code || unitCode(u.property_name, u.unit_number), building: u.property_name, ownerName: u.owner_name,
+      unitId: m.unitId, // The workbook's code (SKYLINE-C2701): the unit's own code field holds only its number (C27-01).
+      code: unitCode(u.property_name, u.unit_number), building: u.property_name, ownerName: u.owner_name,
       contract: lt ? 'LT' : 'PS', revenue: m.gross,
       cleaning: sum(c => c.startsWith('cleaning')), utilities: sum(c => UTILITIES.has(c)), additional: sum(c => c === 'additional'), misc: sum(c => c === 'misc'),
       ownerPct: lt ? 0 : m.terms.ownerPct ?? 0,

@@ -119,6 +119,7 @@ export default function OwnerOverallReportPage() {
   // Below this the app's own menu leaves too little room for the page beside the panel, so the panel slides over it.
   const wide = useMedia('(min-width: 1440px)');
   const phone = useMedia('(max-width: 639.98px)');
+  const xwide = useMedia('(min-width: 1536px)');
   const [panelTop, setPanelTop] = useState(0);
 
   const setLevel = useCallback((l: Level) => {
@@ -159,6 +160,10 @@ export default function OwnerOverallReportPage() {
   const hideOnPhone = (c: Col) => level === 1 && c.phoneHide && 'max-sm:hidden';
   const cents = !(phone && level === 1);
   const groupStart = (i: number) => i > 0 && cols[i - 1].group !== cols[i].group;
+  // L1 fills the width: the number columns fit their figures and the Unit column takes the rest. With room to spare
+  // (1536px or more and no panel beside the table) the columns breathe and the Unit column adds building and owner.
+  const roomy = level === 1 && xwide && !(wide && row);
+  const fit = level === 1 && cx('w-px', roomy && 'min-w-[136px]');
   // The band header: one cell per run of columns in the same group.
   const bands: { group: Group; span: number }[] = [];
   for (const c of cols) { const last = bands[bands.length - 1]; if (last?.group === c.group) last.span++; else bands.push({ group: c.group, span: 1 }); }
@@ -205,7 +210,7 @@ export default function OwnerOverallReportPage() {
       <td className={cx(CELL, UNIT_EDGE, 'text-caption font-semibold uppercase tracking-[0.09em] text-muted-ink max-sm:whitespace-normal',
         grand ? 'bg-muted [border-top:2px_solid_var(--color-line-strong)]' : 'bg-card [border-top:1px_solid_var(--color-line-strong)]')}>{label}</td>
       {cols.map((c, i) => (
-        <td key={c.key} className={cx(CELL, 'text-right font-semibold', groupStart(i) && DIVIDER, hideOnPhone(c),
+        <td key={c.key} className={cx(CELL, 'text-right font-semibold', fit, groupStart(i) && DIVIDER, hideOnPhone(c),
           grand ? 'bg-muted [border-top:2px_solid_var(--color-line-strong)]' : 'bg-card [border-top:1px_solid_var(--color-line-strong)]')}>
           {c.key === 'ownerPct' ? null : <Value c={c} v={t[c.key]} revenue={t.revenue} cents={cents} />}
         </td>
@@ -258,7 +263,7 @@ export default function OwnerOverallReportPage() {
           )}
           {cols.map((c, i) => (
             <th key={c.key} scope="col" aria-sort={ariaSort(c.key)}
-              className={cx(CELL, 'bg-muted text-right [border-bottom:1px_solid_var(--color-line)]', groupStart(i) && DIVIDER, hideOnPhone(c))}>
+              className={cx(CELL, 'bg-muted text-right [border-bottom:1px_solid_var(--color-line)]', fit, groupStart(i) && DIVIDER, hideOnPhone(c))}>
               {sortButton(c.key, c.label, true)}
             </th>
           ))}
@@ -282,13 +287,14 @@ export default function OwnerOverallReportPage() {
                   onClick={() => setSelected(r.unitId)} onKeyDown={e => { if (e.key === 'Enter' && e.target === e.currentTarget) setSelected(r.unitId); }}>
                   <td className={cx(CELL, UNIT_EDGE, bg, '[border-top:1px_solid_var(--color-line-soft)] max-sm:whitespace-normal', on && 'shadow-[inset_3px_0_0_var(--color-gold)]')}>
                     {/* A phone wraps the code at its hyphen (CONTINEW- / B1703A) so L1 fits without scrolling sideways. */}
-                    <span className="flex items-center gap-2 min-w-0 max-sm:max-w-[92px] sm:max-w-[200px]">
+                    <span className={cx('flex items-center gap-2 min-w-0 max-sm:max-w-[92px]', level > 1 && 'sm:max-w-[200px]')}>
                       <span aria-hidden className={cx('h-1.5 w-1.5 shrink-0 rounded-full', st.tone === 'success' ? 'bg-success-line' : st.tone === 'critical' ? 'bg-danger-line' : 'bg-neutral-line')} />
                       <span className="font-medium sm:truncate max-sm:leading-tight" title={`${r.code} · ${r.building}`}>{r.code}</span>
+                      {roomy && <span className="inline-block max-w-[360px] truncate text-meta text-muted-ink">{r.building} · {r.ownerName}</span>}
                     </span>
                   </td>
                   {cols.map((c, i) => (
-                    <td key={c.key} className={cx(CELL, bg, 'text-right [border-top:1px_solid_var(--color-line-soft)]', groupStart(i) && DIVIDER, hideOnPhone(c))}>
+                    <td key={c.key} className={cx(CELL, bg, 'text-right [border-top:1px_solid_var(--color-line-soft)]', fit, groupStart(i) && DIVIDER, hideOnPhone(c))}>
                       <Value c={c} v={r[c.key]} revenue={r.revenue} cents={cents} />
                     </td>
                   ))}
