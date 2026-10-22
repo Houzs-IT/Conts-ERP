@@ -10,7 +10,8 @@
    - priced contract lines (ITEM / CHILD) still live (not cancelled, not omitted);
    - not the system rows (RENO-*);
    - supply-by-owner: the goods are the owner's, so no goods PO; a WORKS line
-     (install labour) still gets its PO (owner default 7);
+     (install labour, or a site-trade service such as aircon install) still gets
+     its PO (owner default 7);
    - a line with no supplier and no cost is internal work and needs none;
    - a line with a cost but no supplier BLOCKS the raise until one is picked;
    - quantity already on a live PO line is not ordered twice. */
@@ -18,7 +19,7 @@
 import { mintDocNo, refuse, todayKl, yymmOf, type RenoDb } from './renovation-db';
 import { readContractHead, RENO_LIVE_STATUSES } from './renovation-so';
 import type { RenoActor } from './renovation-quotation';
-import { categoryGroupOf } from '../shared/renovation-catalog';
+import { categoryGroupOf, siteGroupOf } from '../shared/renovation-catalog';
 import { lineCostSen, poInstalmentAmounts, parseMeasureMilli } from '../shared/renovation-money';
 
 export interface SplitLine {
@@ -55,16 +56,16 @@ export interface SplitPreview {
 interface CandidateRow {
   line_id: string; so_item_id: string; kind: 'ITEM' | 'CHILD'; item_code: string; description: string; qty: number; measure: string | null;
   measure_uom: string | null; uom: string | null; unit_cost_sen: number; supply_by_owner: boolean; supplier_id: string | null;
-  supplier_code: string | null; supplier_name: string | null; category: string | null; item_description2: string | null; item_uom: string;
+  supplier_code: string | null; supplier_name: string | null; category: string | null; sub_category?: string | null; item_description2: string | null; item_uom: string;
   ordered_qty: number;
 }
 
 /** Whether a contract line is meant to get a PO at all (the same rules groupForPo applies, before quantity).
     A line with a cost but no supplier still needs one: the split blocks until a supplier is picked. Lines that
     never get one (system rows, owner-supplied goods, in-house work) also never get a proof of delivery. */
-export function needsPurchaseOrder(l: { itemCode: string | null; supplyByOwner: boolean; category: string | null; supplierId: string | null; unitCostSen: number }): boolean {
+export function needsPurchaseOrder(l: { itemCode: string | null; supplyByOwner: boolean; category: string | null; subCategory?: string | null; supplierId: string | null; unitCostSen: number }): boolean {
   if (String(l.itemCode ?? '').startsWith('RENO-')) return false;
-  if (l.supplyByOwner && categoryGroupOf(l.category) !== 'WORKS') return false;
+  if (l.supplyByOwner && siteGroupOf(categoryGroupOf(l.category), l.subCategory) !== 'WORKS') return false;
   if (!l.supplierId && Number(l.unitCostSen) === 0) return false;
   return true;
 }
@@ -89,7 +90,7 @@ export function groupForPo(rows: CandidateRow[]): SplitPreview {
       line.amountSen = line.qty * line.unitCostSen;
     }
     const group = categoryGroupOf(r.category);
-    if (r.supply_by_owner && group !== 'WORKS') { out.skipped.push({ ...line, reason: 'Supplied by the owner' }); continue; }
+    if (r.supply_by_owner && siteGroupOf(group, r.sub_category) !== 'WORKS') { out.skipped.push({ ...line, reason: 'Supplied by the owner' }); continue; }
     if (!r.supplier_id) {
       if (Number(r.unit_cost_sen) === 0) out.skipped.push({ ...line, reason: 'No supplier and no cost: done in house' });
       else out.blocked.push({ ...line, reason: 'Has a cost but no supplier' });
@@ -111,6 +112,7 @@ async function candidates(db: RenoDb, docNo: string, companyId: number): Promise
     `select l.id as line_id, l.so_item_id, l.kind, i.item_code, i.description, l.qty, l.measure::text as measure, l.measure_uom, l.uom,
             l.unit_cost_sen, l.supply_by_owner, l.supplier_id, sup.code as supplier_code, sup.name as supplier_name,
             (select p.category::text from scm.mfg_products p where p.code = i.item_code and p.company_id = $2 order by (p.status = 'ACTIVE') desc limit 1) as category,
+            (select p.sub_category from scm.mfg_products p where p.code = i.item_code and p.company_id = $2 order by (p.status = 'ACTIVE') desc limit 1) as sub_category,
             i.description2 as item_description2, i.uom as item_uom,
             coalesce((select sum(pi.qty) from scm.purchase_order_items pi join scm.purchase_orders po on po.id = pi.purchase_order_id
                        where pi.so_item_id = l.so_item_id and po.status::text <> 'CANCELLED'), 0)::int as ordered_qty

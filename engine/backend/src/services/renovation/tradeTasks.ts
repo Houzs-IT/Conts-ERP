@@ -7,7 +7,9 @@
 
    - One task per trade present on the contract; ELECTRICAL gets two (first fix
      piping before ceiling, second fix fittings after painting).
-   - CLEANING lands in handover; PROJECT_MGMT gets no task.
+   - CLEANING lands in handover; PROJECT_MGMT gets no task. Both, and
+     AIRCON_INSTALL, are filed under SERVICE but still come in as trades
+     (contractSync picks lines by stages.ts lineGroup).
    - A trade whose every line was omitted by a variation order is skipped
      automatically ('vo_omitted'); a VO that adds it back re-opens it.
    - Template tasks: INTERNAL_TASKS whose stage the project type runs, stored as
