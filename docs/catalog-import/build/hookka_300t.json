@@ -1,0 +1,4679 @@
+{
+ "source": "HOOKKA quotation to The Conts, customer 300-T, effective 22 Oct 2026",
+ "bedframes": [
+  {
+   "code": "1003-(K)",
+   "description": "HILTON BEDFRAME (6FT) (183X190CM)",
+   "size": "6FT",
+   "price2_sen": 74800,
+   "price1_sen": null,
+   "page": 1
+  },
+  {
+   "code": "1003-(Q)",
+   "description": "HILTON BEDFRAME (5FT) (152X190CM)",
+   "size": "5FT",
+   "price2_sen": 61600,
+   "price1_sen": null,
+   "page": 1
+  },
+  {
+   "code": "1003-(S)",
+   "description": "HILTON BEDFRAME (3FT) (90X190CM)",
+   "size": "3FT",
+   "price2_sen": 55000,
+   "price1_sen": null,
+   "page": 1
+  },
+  {
+   "code": "1003-(SS)",
+   "description": "HILTON BEDFRAME (3.5FT) (107X190CM)",
+   "size": "3.5FT",
+   "price2_sen": 58300,
+   "price1_sen": null,
+   "page": 1
+  },
+  {
+   "code": "1003(A)-(K)",
+   "description": "HILTON(A) BEDFRAME (6FT) (183X190CM)",
+   "size": "6FT",
+   "price2_sen": 74800,
+   "price1_sen": null,
+   "page": 1
+  },
+  {
+   "code": "1003(A)-(Q)",
+   "description": "HILTON(A) BEDFRAME (5FT) (152X190CM)",
+   "size": "5FT",
+   "price2_sen": 61600,
+   "price1_sen": null,
+   "page": 1
+  },
+  {
+   "code": "1003(A)-(S)",
+   "description": "HILTON(A) BEDFRAME (3FT) (90X190CM)",
+   "size": "3FT",
+   "price2_sen": 55000,
+   "price1_sen": null,
+   "page": 1
+  },
+  {
+   "code": "1003(A)-(SK)",
+   "description": "HILTON(A) BEDFRAME (200X200CM)",
+   "size": "200CMX200CM",
+   "price2_sen": 142000,
+   "price1_sen": null,
+   "page": 1
+  },
+  {
+   "code": "1003(A)-(SP)",
+   "description": "HILTON(A) BEDFRAME (220X220CM)",
+   "size": "220CMX220CM",
+   "price2_sen": 142000,
+   "price1_sen": null,
+   "page": 1
+  },
+  {
+   "code": "1003(A)-(SS)",
+   "description": "HILTON(A) BEDFRAME (3.5FT) (107X190CM)",
+   "size": "3.5FT",
+   "price2_sen": 58300,
+   "price1_sen": null,
+   "page": 1
+  },
+  {
+   "code": "1003(A)(HF)(W)-(K)",
+   "description": "HILTON(A) BEDFRAME (HF)(W) (6FT) (183X190CM)",
+   "size": "6FT",
+   "price2_sen": 74800,
+   "price1_sen": null,
+   "page": 1
+  },
+  {
+   "code": "1003(A)(HF)(W)-(Q)",
+   "description": "HILTON(A) BEDFRAME (HF)(W) (5FT) (152X190CM)",
+   "size": "5FT",
+   "price2_sen": 61600,
+   "price1_sen": null,
+   "page": 1
+  },
+  {
+   "code": "1003(A)(HF)(W)-(S)",
+   "description": "HILTON(A) BEDFRAME (HF)(W) (3FT) (90X190CM)",
+   "size": "3FT",
+   "price2_sen": 55000,
+   "price1_sen": null,
+   "page": 1
+  },
+  {
+   "code": "1003(A)(HF)(W)-(SS)",
+   "description": "HILTON(A) BEDFRAME (HF)(W) (3.5FT) (107X190CM)",
+   "size": "3.5FT",
+   "price2_sen": 58299,
+   "price1_sen": null,
+   "page": 1
+  },
+  {
+   "code": "1005-(K)",
+   "description": "FENRIR BEDFRAME (6FT) (183X190CM)",
+   "size": "6FT",
+   "price2_sen": 57200,
+   "price1_sen": 50600,
+   "page": 1
+  },
+  {
+   "code": "1005-(Q)",
+   "description": "FENRIR BEDFRAME (5FT) (152X190CM)",
+   "size": "5FT",
+   "price2_sen": 44000,
+   "price1_sen": 37400,
+   "page": 1
+  },
+  {
+   "code": "1005-(S)",
+   "description": "FENRIR BEDFRAME (3FT) (90X190CM)",
+   "size": "3FT",
+   "price2_sen": 41800,
+   "price1_sen": 35200,
+   "page": 1
+  },
+  {
+   "code": "1005-(SK)",
+   "description": "FENRIR BEDFRAME (200X200CM)",
+   "size": "200CMX200CM",
+   "price2_sen": 114400,
+   "price1_sen": null,
+   "page": 1
+  },
+  {
+   "code": "1005-(SS)",
+   "description": "FENRIR BEDFRAME (3.5FT) (107X190CM)",
+   "size": "3.5FT",
+   "price2_sen": 42900,
+   "price1_sen": 36300,
+   "page": 1
+  },
+  {
+   "code": "1007-(152X200)",
+   "description": "CODY BEDFRAME (152X200CM)",
+   "size": "152CMX200CM",
+   "price2_sen": 88000,
+   "price1_sen": null,
+   "page": 1
+  },
+  {
+   "code": "1007-(153X200)",
+   "description": "CODY BEDFRAME (153X200CM)",
+   "size": "153CMX200CM",
+   "price2_sen": 88000,
+   "price1_sen": null,
+   "page": 1
+  },
+  {
+   "code": "1007-(183X200)",
+   "description": "CODY BEDFRAME (183X200CM)",
+   "size": "183CMX200CM",
+   "price2_sen": 114400,
+   "price1_sen": null,
+   "page": 1
+  },
+  {
+   "code": "1007-(200X200)",
+   "description": "CODY BEDFRAME (200X200CM)",
+   "size": "200CMX200CM",
+   "price2_sen": 114400,
+   "price1_sen": null,
+   "page": 1
+  },
+  {
+   "code": "1007-(K)",
+   "description": "CODY BEDFRAME (6FT) (183X190CM)",
+   "size": "6FT",
+   "price2_sen": 57200,
+   "price1_sen": null,
+   "page": 1
+  },
+  {
+   "code": "1007-(Q)",
+   "description": "CODY BEDFRAME (5FT) (152X190CM)",
+   "size": "5FT",
+   "price2_sen": 44000,
+   "price1_sen": null,
+   "page": 1
+  },
+  {
+   "code": "1007-(S)",
+   "description": "CODY BEDFRAME (3FT) (90X190CM)",
+   "size": "3FT",
+   "price2_sen": 41800,
+   "price1_sen": null,
+   "page": 1
+  },
+  {
+   "code": "1007-(SS)",
+   "description": "CODY BEDFRAME (3.5FT) (107X190CM)",
+   "size": "3.5FT",
+   "price2_sen": 42900,
+   "price1_sen": null,
+   "page": 1
+  },
+  {
+   "code": "1007(HF)(W)-(K)",
+   "description": "CODY BEDFRAME (HF)(W) (6FT) (183X190CM)",
+   "size": "6FT",
+   "price2_sen": 57200,
+   "price1_sen": null,
+   "page": 2
+  },
+  {
+   "code": "1007(HF)(W)-(Q)",
+   "description": "CODY BEDFRAME (HF)(W) (5FT) (152X190CM)",
+   "size": "5FT",
+   "price2_sen": 44000,
+   "price1_sen": null,
+   "page": 2
+  },
+  {
+   "code": "1007(HF)(W)-(S)",
+   "description": "CODY BEDFRAME (HF)(W) (3FT) (90X190CM)",
+   "size": "3FT",
+   "price2_sen": 41800,
+   "price1_sen": null,
+   "page": 2
+  },
+  {
+   "code": "1007(HF)(W)-(SS)",
+   "description": "CODY BEDFRAME (HF)(W) (3.5FT) (107X190CM)",
+   "size": "3.5FT",
+   "price2_sen": 42900,
+   "price1_sen": null,
+   "page": 2
+  },
+  {
+   "code": "1008-(K)",
+   "description": "RICARDO BEDFRAME (6FT) (183X190CM)",
+   "size": "6FT",
+   "price2_sen": 57200,
+   "price1_sen": null,
+   "page": 2
+  },
+  {
+   "code": "1008-(Q)",
+   "description": "RICARDO BEDFRAME (5FT) (152X190CM)",
+   "size": "5FT",
+   "price2_sen": 44000,
+   "price1_sen": null,
+   "page": 2
+  },
+  {
+   "code": "1008-(S)",
+   "description": "RICARDO BEDFRAME (3FT) (90X190CM)",
+   "size": "3FT",
+   "price2_sen": 41800,
+   "price1_sen": null,
+   "page": 2
+  },
+  {
+   "code": "1008-(SS)",
+   "description": "RICARDO BEDFRAME (3.5FT) (107X190CM)",
+   "size": "3.5FT",
+   "price2_sen": 42900,
+   "price1_sen": null,
+   "page": 2
+  },
+  {
+   "code": "1009(A)-(K)",
+   "description": "VALKRIE(A) BEDFRAME (6FT) (183X190CM)",
+   "size": "6FT",
+   "price2_sen": 57200,
+   "price1_sen": null,
+   "page": 2
+  },
+  {
+   "code": "1009(A)-(Q)",
+   "description": "VALKRIE(A) BEDFRAME (5FT) (152X190CM)",
+   "size": "5FT",
+   "price2_sen": 44000,
+   "price1_sen": null,
+   "page": 2
+  },
+  {
+   "code": "1009(A)-(S)",
+   "description": "VALKRIE(A) BEDFRAME (3FT) (90X190CM)",
+   "size": "3FT",
+   "price2_sen": 41800,
+   "price1_sen": null,
+   "page": 2
+  },
+  {
+   "code": "1009(A)-(SS)",
+   "description": "VALKRIE(A) BEDFRAME (3.5FT) (107X190CM)",
+   "size": "3.5FT",
+   "price2_sen": 42900,
+   "price1_sen": null,
+   "page": 2
+  },
+  {
+   "code": "1013-(K)",
+   "description": "JAGER BEDFRAME (6FT) (183X190CM)",
+   "size": "6FT",
+   "price2_sen": 44000,
+   "price1_sen": 35200,
+   "page": 2
+  },
+  {
+   "code": "1013-(Q)",
+   "description": "JAGER BEDFRAME (5FT) (152X190CM)",
+   "size": "5FT",
+   "price2_sen": 30800,
+   "price1_sen": 22000,
+   "page": 2
+  },
+  {
+   "code": "1013-(S)",
+   "description": "JAGER BEDFRAME (3FT) (90X190CM)",
+   "size": "3FT",
+   "price2_sen": 28600,
+   "price1_sen": 19800,
+   "page": 2
+  },
+  {
+   "code": "1013-(SK)",
+   "description": "JAGER BEDFRAME (200X200CM)",
+   "size": "200CMX200CM",
+   "price2_sen": 88000,
+   "price1_sen": null,
+   "page": 2
+  },
+  {
+   "code": "1013-(SS)",
+   "description": "JAGER BEDFRAME (3.5FT) (107X190CM)",
+   "size": "3.5FT",
+   "price2_sen": 29700,
+   "price1_sen": 20900,
+   "page": 2
+  },
+  {
+   "code": "1019(A)-(K)",
+   "description": "ARIZONA BEDFRAME (6FT) (183X190CM)",
+   "size": "6FT",
+   "price2_sen": 70000,
+   "price1_sen": null,
+   "page": 2
+  },
+  {
+   "code": "1019(A)-(Q)",
+   "description": "ARIZONA BEDFRAME (5FT) (152X190CM)",
+   "size": "5FT",
+   "price2_sen": 57500,
+   "price1_sen": null,
+   "page": 2
+  },
+  {
+   "code": "1019(A)-(S)",
+   "description": "ARIZONA BEDFRAME (3FT) (90X190CM)",
+   "size": "3FT",
+   "price2_sen": 48500,
+   "price1_sen": null,
+   "page": 2
+  },
+  {
+   "code": "1019(A)-(SS)",
+   "description": "ARIZONA BEDFRAME (3.5FT) (107X190CM)",
+   "size": "3.5FT",
+   "price2_sen": 53750,
+   "price1_sen": null,
+   "page": 2
+  },
+  {
+   "code": "1019(A)(HF)(W)-(K)",
+   "description": "ARIZONA BEDFRAME (HF)(W) (6FT) (183X190CM)",
+   "size": "6FT",
+   "price2_sen": 70000,
+   "price1_sen": null,
+   "page": 2
+  },
+  {
+   "code": "1019(A)(HF)(W)-(Q)",
+   "description": "ARIZONA BEDFRAME (HF)(W) (5FT) (152X190CM)",
+   "size": "5FT",
+   "price2_sen": 57500,
+   "price1_sen": null,
+   "page": 2
+  },
+  {
+   "code": "1019(A)(HF)(W)-(S)",
+   "description": "ARIZONA BEDFRAME (HF)(W) (3FT) (90X190CM)",
+   "size": "3FT",
+   "price2_sen": 48500,
+   "price1_sen": null,
+   "page": 2
+  },
+  {
+   "code": "1019(A)(HF)(W)-(SS)",
+   "description": "ARIZONA BEDFRAME (HF)(W) (3.5FT) (107X190CM)",
+   "size": "3.5FT",
+   "price2_sen": 53750,
+   "price1_sen": null,
+   "page": 2
+  },
+  {
+   "code": "1023-(K)",
+   "description": "COTY BEDFRAME (6FT) (183X190CM)",
+   "size": "6FT",
+   "price2_sen": 55000,
+   "price1_sen": null,
+   "page": 2
+  },
+  {
+   "code": "1023-(Q)",
+   "description": "COTY BEDFRAME (5FT) (152X190CM)",
+   "size": "5FT",
+   "price2_sen": 42500,
+   "price1_sen": null,
+   "page": 2
+  },
+  {
+   "code": "1023-(S)",
+   "description": "COTY BEDFRAME (3FT) (90X190CM)",
+   "size": "3FT",
+   "price2_sen": 39500,
+   "price1_sen": null,
+   "page": 2
+  },
+  {
+   "code": "1023-(SS)",
+   "description": "COTY BEDFRAME (3.5FT) (107X190CM)",
+   "size": "3.5FT",
+   "price2_sen": 40750,
+   "price1_sen": null,
+   "page": 2
+  },
+  {
+   "code": "1023(HF)(W)-(K)",
+   "description": "COTY BEDFRAME (HF)(W) (6FT) (183X190CM)",
+   "size": "6FT",
+   "price2_sen": 55000,
+   "price1_sen": null,
+   "page": 2
+  },
+  {
+   "code": "1023(HF)(W)-(Q)",
+   "description": "COTY BEDFRAME (HF)(W) (5FT) (152X190CM)",
+   "size": "5FT",
+   "price2_sen": 42500,
+   "price1_sen": null,
+   "page": 2
+  },
+  {
+   "code": "1023(HF)(W)-(S)",
+   "description": "COTY BEDFRAME (HF)(W) (3FT) (90X190CM)",
+   "size": "3FT",
+   "price2_sen": 39500,
+   "price1_sen": null,
+   "page": 2
+  },
+  {
+   "code": "1023(HF)(W)-(SS)",
+   "description": "COTY BEDFRAME (HF)(W) (3.5FT) (107X190CM)",
+   "size": "3.5FT",
+   "price2_sen": 40750,
+   "price1_sen": null,
+   "page": 2
+  },
+  {
+   "code": "1030-(HF)(W)(SS)",
+   "description": "TIFANNY BEDFRAME (HF)(W) (3.5FT) (107X190CM)",
+   "size": "3.5FT",
+   "price2_sen": 40750,
+   "price1_sen": null,
+   "page": 2
+  },
+  {
+   "code": "1030-(K)",
+   "description": "TIFANNY BEDFRAME (6FT) (183X190CM)",
+   "size": "6FT",
+   "price2_sen": 55000,
+   "price1_sen": null,
+   "page": 2
+  },
+  {
+   "code": "1030-(Q)",
+   "description": "TIFANNY BEDFRAME (5FT) (152X190CM)",
+   "size": "5FT",
+   "price2_sen": 42500,
+   "price1_sen": null,
+   "page": 2
+  },
+  {
+   "code": "1030-(S)",
+   "description": "TIFANNY BEDFRAME (3FT) (90X190CM)",
+   "size": "3FT",
+   "price2_sen": 39500,
+   "price1_sen": null,
+   "page": 2
+  },
+  {
+   "code": "1030-(SP)",
+   "description": "TIFANNY BEDFRAME   (153X200CM)",
+   "size": "153x200cm",
+   "price2_sen": 85000,
+   "price1_sen": null,
+   "page": 3
+  },
+  {
+   "code": "1030-(SS)",
+   "description": "TIFANNY BEDFRAME (3.5FT) (107X190CM)",
+   "size": "3.5FT",
+   "price2_sen": 40750,
+   "price1_sen": null,
+   "page": 3
+  },
+  {
+   "code": "1030(HF)(W)-(K)",
+   "description": "TIFANNY BEDFRAME (HF)(W) (6FT) (183X190CM)",
+   "size": "6FT",
+   "price2_sen": 55000,
+   "price1_sen": null,
+   "page": 3
+  },
+  {
+   "code": "1030(HF)(W)-(Q)",
+   "description": "TIFANNY BEDFRAME (HF)(W) (5FT) (152X190CM)",
+   "size": "5FT",
+   "price2_sen": 42500,
+   "price1_sen": null,
+   "page": 3
+  },
+  {
+   "code": "1041-(K)",
+   "description": "VICTORIA BEDFRAME (6FT) (183X190CM)",
+   "size": "6FT",
+   "price2_sen": 52500,
+   "price1_sen": null,
+   "page": 3
+  },
+  {
+   "code": "1041-(Q)",
+   "description": "VICTORIA BEDFRAME (5FT) (152X190CM)",
+   "size": "5FT",
+   "price2_sen": 40000,
+   "price1_sen": null,
+   "page": 3
+  },
+  {
+   "code": "1041-(S)",
+   "description": "VICTORIA BEDFRAME (3FT) (90X190CM)",
+   "size": "3FT",
+   "price2_sen": 37000,
+   "price1_sen": null,
+   "page": 3
+  },
+  {
+   "code": "1041-(SP)",
+   "description": "VICTORIA BEDFRAME (107X200CM)",
+   "size": "107CMX200CM",
+   "price2_sen": 76000,
+   "price1_sen": null,
+   "page": 3
+  },
+  {
+   "code": "1041-(SS)",
+   "description": "VICTORIA BEDFRAME (3.5FT) (107X190CM)",
+   "size": "3.5FT",
+   "price2_sen": 38250,
+   "price1_sen": null,
+   "page": 3
+  },
+  {
+   "code": "1051-(K)",
+   "description": "STAR BEDFRAME (6FT) (183X190CM)",
+   "size": "6FT",
+   "price2_sen": 47999,
+   "price1_sen": null,
+   "page": 3
+  },
+  {
+   "code": "1052-(K)",
+   "description": "CASUAL BEDFRAME (6FT) (183X190CM)",
+   "size": "6FT",
+   "price2_sen": 48000,
+   "price1_sen": null,
+   "page": 3
+  },
+  {
+   "code": "1052-(Q)",
+   "description": "CASUAL BEDFRAME (5FT) (152X190CM)",
+   "size": "5FT",
+   "price2_sen": 35500,
+   "price1_sen": null,
+   "page": 3
+  },
+  {
+   "code": "1052-(SS)",
+   "description": "CASUAL BEDFRAME (3.5FT) (107X190CM)",
+   "size": "3.5FT",
+   "price2_sen": 33750,
+   "price1_sen": null,
+   "page": 3
+  },
+  {
+   "code": "2003-(K)",
+   "description": "ELEPHANE BEDFRAME (6FT) (183X190CM)",
+   "size": "6FT",
+   "price2_sen": 99000,
+   "price1_sen": null,
+   "page": 3
+  },
+  {
+   "code": "2003-(Q)",
+   "description": "ELEPHANE BEDFRAME (5FT) (152X190CM)",
+   "size": "5FT",
+   "price2_sen": 88000,
+   "price1_sen": null,
+   "page": 3
+  },
+  {
+   "code": "2003-(S)",
+   "description": "ELEPHANE BEDFRAME (3FT) (90X190CM)",
+   "size": "3FT",
+   "price2_sen": 79200,
+   "price1_sen": null,
+   "page": 3
+  },
+  {
+   "code": "2003-(SP)",
+   "description": "ELEPHANE BEDFRAME (183X200CM)",
+   "size": "183CMX200CM",
+   "price2_sen": 198000,
+   "price1_sen": null,
+   "page": 3
+  },
+  {
+   "code": "2003-(SS)",
+   "description": "ELEPHANE BEDFRAME (3.5FT) (107X190CM)",
+   "size": "3.5FT",
+   "price2_sen": 82500,
+   "price1_sen": null,
+   "page": 3
+  },
+  {
+   "code": "2006-(K)",
+   "description": "REGAL BEDFRAME (6FT) (183X190CM)",
+   "size": "6FT",
+   "price2_sen": 73700,
+   "price1_sen": 68200,
+   "page": 3
+  },
+  {
+   "code": "2006-(Q)",
+   "description": "REGAL BEDFRAME (5FT) (152X190CM)",
+   "size": "5FT",
+   "price2_sen": 60500,
+   "price1_sen": 55000,
+   "page": 3
+  },
+  {
+   "code": "2006-(S)",
+   "description": "REGAL BEDFRAME (3FT) (90X190CM)",
+   "size": "3FT",
+   "price2_sen": 51700,
+   "price1_sen": 46200,
+   "page": 3
+  },
+  {
+   "code": "2006-(SS)",
+   "description": "REGAL BEDFRAME (3.5FT) (107X190CM)",
+   "size": "3.5FT",
+   "price2_sen": 57200,
+   "price1_sen": 51699,
+   "page": 3
+  },
+  {
+   "code": "2006(A)-(K)",
+   "description": "REGAL(A) BEDFRAME (6FT) (183X190CM)",
+   "size": "6FT",
+   "price2_sen": 73700,
+   "price1_sen": 68200,
+   "page": 3
+  },
+  {
+   "code": "2006(A)-(Q)",
+   "description": "REGAL(A) BEDFRAME (5FT) (152X190CM)",
+   "size": "5FT",
+   "price2_sen": 60500,
+   "price1_sen": 55000,
+   "page": 3
+  },
+  {
+   "code": "2006(A)-(S)",
+   "description": "REGAL(A) BEDFRAME (3FT) (90X190CM)",
+   "size": "3FT",
+   "price2_sen": 51700,
+   "price1_sen": 46200,
+   "page": 3
+  },
+  {
+   "code": "2006(A)-(SK)",
+   "description": "REGAL(A) BEDFRAME (200X200CM)",
+   "size": "200CMX200CM",
+   "price2_sen": 147400,
+   "price1_sen": null,
+   "page": 3
+  },
+  {
+   "code": "2006(A)-(SP)",
+   "description": "REGAL(A) BEDFRAME (200X190CM)",
+   "size": "190CMX200CM",
+   "price2_sen": 147400,
+   "price1_sen": null,
+   "page": 3
+  },
+  {
+   "code": "2006(A)-(SS)",
+   "description": "REGAL(A) BEDFRAME (3.5FT) (107X190CM)",
+   "size": "3.5FT",
+   "price2_sen": 57200,
+   "price1_sen": 51700,
+   "page": 3
+  },
+  {
+   "code": "2008-(K)",
+   "description": "TRION (HB STRAIGHT) BEDFRAME (6FT) (183X190CM)",
+   "size": "6FT",
+   "price2_sen": 88000,
+   "price1_sen": null,
+   "page": 3
+  },
+  {
+   "code": "2008-(Q)",
+   "description": "TRION (HB STRAIGHT) BEDFRAME (5FT) (152X190CM)",
+   "size": "5FT",
+   "price2_sen": 77000,
+   "price1_sen": null,
+   "page": 3
+  },
+  {
+   "code": "2008-(S)",
+   "description": "TRION (HB STRAIGHT) BEDFRAME (3FT) (90X190CM)",
+   "size": "3FT",
+   "price2_sen": 70400,
+   "price1_sen": null,
+   "page": 3
+  },
+  {
+   "code": "2008-(SS)",
+   "description": "TRION (HB STRAIGHT) BEDFRAME (3.5FT) (107X190CM)",
+   "size": "3.5FT",
+   "price2_sen": 73700,
+   "price1_sen": null,
+   "page": 3
+  },
+  {
+   "code": "2008(A)-(152X200)",
+   "description": "TRION(A) (HB STRAIGHT) BEDFRAME (152X200CM)",
+   "size": "152CMX200CM",
+   "price2_sen": 154000,
+   "price1_sen": null,
+   "page": 3
+  },
+  {
+   "code": "2008(A)-(K)",
+   "description": "TRION(A) (HB STRAIGHT) BEDFRAME (6FT) (183X190CM)",
+   "size": "6FT",
+   "price2_sen": 88000,
+   "price1_sen": null,
+   "page": 3
+  },
+  {
+   "code": "2008(A)-(Q)",
+   "description": "TRION(A) (HB STRAIGHT) BEDFRAME (5FT) (152X190CM)",
+   "size": "5FT",
+   "price2_sen": 77000,
+   "price1_sen": null,
+   "page": 3
+  },
+  {
+   "code": "2008(A)-(S)",
+   "description": "TRION(A) (HB STRAIGHT) BEDFRAME (3FT) (90X190CM)",
+   "size": "3FT",
+   "price2_sen": 70400,
+   "price1_sen": null,
+   "page": 3
+  },
+  {
+   "code": "2008(A)-(SK)",
+   "description": "TRION(A) (HB STRAIGHT) BEDFRAME (200X200CM)",
+   "size": "200CMX200CM",
+   "price2_sen": 154000,
+   "price1_sen": null,
+   "page": 3
+  },
+  {
+   "code": "2008(A)-(SP)",
+   "description": "TRION(A) (HB STRAIGHT) BEDFRAME (183X200CM)",
+   "size": "183CMX200CM",
+   "price2_sen": 154000,
+   "price1_sen": null,
+   "page": 3
+  },
+  {
+   "code": "2008(A)-(SS)",
+   "description": "TRION(A) (HB STRAIGHT) BEDFRAME (3.5FT) (107X190CM)",
+   "size": "3.5FT",
+   "price2_sen": 73700,
+   "price1_sen": null,
+   "page": 3
+  },
+  {
+   "code": "2008(A)-SP (210X240CM)",
+   "description": "TRION(A) (HB STRAIGHT) BEDFRAME (210X240CM)",
+   "size": "210CMX240CM",
+   "price2_sen": 154000,
+   "price1_sen": null,
+   "page": 4
+  },
+  {
+   "code": "2009-(K)",
+   "description": "TRION BEDFRAME (6FT) (183X190CM)",
+   "size": "6FT",
+   "price2_sen": 88000,
+   "price1_sen": null,
+   "page": 4
+  },
+  {
+   "code": "2009-(Q)",
+   "description": "TRION BEDFRAME (5FT) (152X190CM)",
+   "size": "5FT",
+   "price2_sen": 77000,
+   "price1_sen": null,
+   "page": 4
+  },
+  {
+   "code": "2009-(S)",
+   "description": "TRION BEDFRAME (3FT) (90X190CM)",
+   "size": "3FT",
+   "price2_sen": 70400,
+   "price1_sen": null,
+   "page": 4
+  },
+  {
+   "code": "2009-(SS)",
+   "description": "TRION BEDFRAME (3.5FT) (107X190CM)",
+   "size": "3.5FT",
+   "price2_sen": 73700,
+   "price1_sen": null,
+   "page": 4
+  },
+  {
+   "code": "2009(A)-(152X200)",
+   "description": "TRION(A) BEDFRAME (152X200CM)",
+   "size": "152CMX200CM",
+   "price2_sen": 154000,
+   "price1_sen": null,
+   "page": 4
+  },
+  {
+   "code": "2009(A)-(K)",
+   "description": "TRION(A) BEDFRAME (6FT) (183X190CM)",
+   "size": "6FT",
+   "price2_sen": 88000,
+   "price1_sen": null,
+   "page": 4
+  },
+  {
+   "code": "2009(A)-(Q)",
+   "description": "TRION(A) BEDFRAME (5FT) (152X190CM)",
+   "size": "5FT",
+   "price2_sen": 77000,
+   "price1_sen": null,
+   "page": 4
+  },
+  {
+   "code": "2009(A)-(S)",
+   "description": "TRION(A) BEDFRAME (3FT) (90X190CM)",
+   "size": "3FT",
+   "price2_sen": 70400,
+   "price1_sen": null,
+   "page": 4
+  },
+  {
+   "code": "2009(A)-(SK)",
+   "description": "TRION(A) BEDFRAME (200X200CM)",
+   "size": "200CMX200CM",
+   "price2_sen": 154000,
+   "price1_sen": null,
+   "page": 4
+  },
+  {
+   "code": "2009(A)-(SP)",
+   "description": "TRION(A) BEDFRAME (210X210CM)",
+   "size": "210CMX210CM",
+   "price2_sen": 154000,
+   "price1_sen": null,
+   "page": 4
+  },
+  {
+   "code": "2009(A)-(SS)",
+   "description": "TRION(A) BEDFRAME (3.5FT) (107X190CM)",
+   "size": "3.5FT",
+   "price2_sen": 73699,
+   "price1_sen": null,
+   "page": 4
+  },
+  {
+   "code": "2010(A)-(K)",
+   "description": "TRION(A) WITHOUT PIPING BEDFRAME (6FT) (183X190CM)",
+   "size": "6FT",
+   "price2_sen": 88000,
+   "price1_sen": null,
+   "page": 4
+  },
+  {
+   "code": "2010(A)-(Q)",
+   "description": "TRION(A) WITHOUT PIPING BEDFRAME (5FT) (152X190CM)",
+   "size": "5FT",
+   "price2_sen": 77000,
+   "price1_sen": null,
+   "page": 4
+  },
+  {
+   "code": "2010(A)-(S)",
+   "description": "TRION(A) WITHOUT PIPING BEDFRAME (3FT) (90X190CM)",
+   "size": "3FT",
+   "price2_sen": 70400,
+   "price1_sen": null,
+   "page": 4
+  },
+  {
+   "code": "2010(A)-(SS)",
+   "description": "TRION(A) WITHOUT PIPING BEDFRAME (3.5FT) (107X190CM)",
+   "size": "3.5FT",
+   "price2_sen": 73700,
+   "price1_sen": null,
+   "page": 4
+  },
+  {
+   "code": "2011(A)-(K) (183X190CM)",
+   "description": "TRION(A) W/O PIPING (HB STRAIGHT) BEDFRAME (6FT)",
+   "size": "6FT",
+   "price2_sen": 88000,
+   "price1_sen": null,
+   "page": 4
+  },
+  {
+   "code": "2011(A)-(Q) (152X190CM)",
+   "description": "TRION(A) W/O PIPING (HB STRAIGHT) BEDFRAME (5FT)",
+   "size": "5FT",
+   "price2_sen": 77000,
+   "price1_sen": null,
+   "page": 4
+  },
+  {
+   "code": "2011(A)-(S) (90X190CM)",
+   "description": "TRION(A) W/O PIPING (HB STRAIGHT) BEDFRAME (3FT)",
+   "size": "3FT",
+   "price2_sen": 70400,
+   "price1_sen": null,
+   "page": 4
+  },
+  {
+   "code": "2011(A)-(SK)",
+   "description": "TRION(A) W/O PIPING (HB STRAIGHT) BEDFRAME (200X200CM)",
+   "size": "200CMX200CM",
+   "price2_sen": 154000,
+   "price1_sen": null,
+   "page": 4
+  },
+  {
+   "code": "2011(A)-(SS) (107X190CM)",
+   "description": "TRION(A) W/O PIPING (HB STRAIGHT) BEDFRAME (3.5FT)",
+   "size": "3.5FT",
+   "price2_sen": 73700,
+   "price1_sen": null,
+   "page": 4
+  },
+  {
+   "code": "2023-(K)",
+   "description": "ADJUSTABLE BEDFRAME (6FT)",
+   "size": "6FT",
+   "price2_sen": 77000,
+   "price1_sen": null,
+   "page": 4
+  },
+  {
+   "code": "2023-(S)",
+   "description": "ADJUSTABLE BEDFRAME (3FT)",
+   "size": "3FT",
+   "price2_sen": 61600,
+   "price1_sen": null,
+   "page": 4
+  },
+  {
+   "code": "2023(HF)(W)-(K)",
+   "description": "ADJUSTABLE BEDFRAME (HF)(W) (6FT)",
+   "size": "6FT",
+   "price2_sen": 77000,
+   "price1_sen": null,
+   "page": 4
+  },
+  {
+   "code": "2023(HF)(W)-(S)",
+   "description": "ADJUSTABLE BEDFRAME (HF)(W) (3FT)",
+   "size": "3FT",
+   "price2_sen": 61600,
+   "price1_sen": null,
+   "page": 4
+  },
+  {
+   "code": "2027-(K)",
+   "description": "NINA BEDFRAME (6FT) (183X190CM)",
+   "size": "6FT",
+   "price2_sen": 88000,
+   "price1_sen": null,
+   "page": 4
+  },
+  {
+   "code": "2027-(Q)",
+   "description": "NINA BEDFRAME (5FT) (152X190CM)",
+   "size": "5FT",
+   "price2_sen": 77000,
+   "price1_sen": null,
+   "page": 4
+  },
+  {
+   "code": "2027-(S)",
+   "description": "NINA BEDFRAME (3FT) (90X190CM)",
+   "size": "3FT",
+   "price2_sen": 70400,
+   "price1_sen": null,
+   "page": 4
+  },
+  {
+   "code": "2027-(SS)",
+   "description": "NINA BEDFRAME (3.5FT) (107X190CM)",
+   "size": "3.5FT",
+   "price2_sen": 73700,
+   "price1_sen": null,
+   "page": 4
+  },
+  {
+   "code": "2033-(K)",
+   "description": "JACOB BEDFRAME (6FT) (183X190CM)",
+   "size": "6FT",
+   "price2_sen": 85000,
+   "price1_sen": null,
+   "page": 4
+  },
+  {
+   "code": "2033-(Q)",
+   "description": "JACOB BEDFRAME (5FT) (152X190CM)",
+   "size": "5FT",
+   "price2_sen": 72500,
+   "price1_sen": null,
+   "page": 4
+  },
+  {
+   "code": "2033-(S)",
+   "description": "JACOB BEDFRAME (3FT) (90X190CM)",
+   "size": "3FT",
+   "price2_sen": 65500,
+   "price1_sen": null,
+   "page": 4
+  },
+  {
+   "code": "2033-(SS)",
+   "description": "JACOB BEDFRAME (3.5FT) (107X190CM)",
+   "size": "3.5FT",
+   "price2_sen": 68750,
+   "price1_sen": null,
+   "page": 4
+  },
+  {
+   "code": "2033(HF)(W)-(K)",
+   "description": "JACOB BEDFRAME (HF)(W) (6FT) (183X190CM)",
+   "size": "6FT",
+   "price2_sen": 85000,
+   "price1_sen": null,
+   "page": 4
+  },
+  {
+   "code": "2033(HF)(W)-(Q)",
+   "description": "JACOB BEDFRAME (HF)(W) (5FT) (152X190CM)",
+   "size": "5FT",
+   "price2_sen": 72500,
+   "price1_sen": null,
+   "page": 4
+  },
+  {
+   "code": "2033(HF)(W)-(S)",
+   "description": "JACOB BEDFRAME (HF)(W) (3FT) (90X190CM)",
+   "size": "3FT",
+   "price2_sen": 65500,
+   "price1_sen": null,
+   "page": 4
+  },
+  {
+   "code": "2033(HF)(W)-(SS)",
+   "description": "JACOB BEDFRAME (HF)(W) (3.5FT) (107X190CM)",
+   "size": "3.5FT",
+   "price2_sen": 68750,
+   "price1_sen": null,
+   "page": 4
+  },
+  {
+   "code": "2038(A)-(K)",
+   "description": "CELENE(A) BEDFRAME (6FT) (183X190CM)",
+   "size": "6FT",
+   "price2_sen": 71000,
+   "price1_sen": null,
+   "page": 5
+  },
+  {
+   "code": "2038(A)-(Q)",
+   "description": "CELENE(A) BEDFRAME (5FT) (152X190CM)",
+   "size": "5FT",
+   "price2_sen": 58500,
+   "price1_sen": null,
+   "page": 5
+  },
+  {
+   "code": "2038(A)-(S)",
+   "description": "CELENE(A) BEDFRAME (3FT) (90X190CM)",
+   "size": "3FT",
+   "price2_sen": 51500,
+   "price1_sen": null,
+   "page": 5
+  },
+  {
+   "code": "2038(A)-(SK)",
+   "description": "CELENE(A) BEDFRAME (SUPERKING) (200X200CM)",
+   "size": "SuperKing",
+   "price2_sen": 117000,
+   "price1_sen": null,
+   "page": 5
+  },
+  {
+   "code": "2038(A)-(SS)",
+   "description": "CELENE(A) BEDFRAME (3.5FT) (107X190CM)",
+   "size": "3.5FT",
+   "price2_sen": 54750,
+   "price1_sen": null,
+   "page": 5
+  },
+  {
+   "code": "2038(A)(HF)(W)-(K)",
+   "description": "CELENE(A) BEDFRAME (HF)(W) (6FT) (183X190CM)",
+   "size": "6FT",
+   "price2_sen": 71000,
+   "price1_sen": null,
+   "page": 5
+  },
+  {
+   "code": "2038(A)(HF)(W)-(Q)",
+   "description": "CELENE(A) BEDFRAME (HF)(W) (5FT) (152X190CM)",
+   "size": "5FT",
+   "price2_sen": 58500,
+   "price1_sen": null,
+   "page": 5
+  },
+  {
+   "code": "2041(A)-(K)",
+   "description": "ELEGANT(A) BEDFRAME (6FT) (183X190CM)",
+   "size": "6FT",
+   "price2_sen": 71000,
+   "price1_sen": null,
+   "page": 5
+  },
+  {
+   "code": "2041(A)-(Q)",
+   "description": "ELEGANT(A) BEDFRAME (5FT) (152X190CM)",
+   "size": "5FT",
+   "price2_sen": 58500,
+   "price1_sen": null,
+   "page": 5
+  },
+  {
+   "code": "2041(A)-(S)",
+   "description": "ELEGANT(A) BEDFRAME (3FT) (90X190CM)",
+   "size": "3FT",
+   "price2_sen": 51500,
+   "price1_sen": null,
+   "page": 5
+  },
+  {
+   "code": "2041(A)-(SS)",
+   "description": "ELEGANT(A) BEDFRAME (3.5FT) (107X190CM)",
+   "size": "3.5FT",
+   "price2_sen": 54750,
+   "price1_sen": null,
+   "page": 5
+  },
+  {
+   "code": "2049-(K)",
+   "description": "FENRIR ADJUSTABLE BEDFRAME (6FT)",
+   "size": "6FT",
+   "price2_sen": 73000,
+   "price1_sen": null,
+   "page": 5
+  },
+  {
+   "code": "DIVAN-(153)",
+   "description": "DIVAN ONLY (153X210CM)",
+   "size": "153CMX210CM",
+   "price2_sen": 62500,
+   "price1_sen": null,
+   "page": 5
+  },
+  {
+   "code": "DIVAN-(170)",
+   "description": "DIVAN ONLY (170X200CM)",
+   "size": "170CMX200CM",
+   "price2_sen": 74400,
+   "price1_sen": null,
+   "page": 5
+  },
+  {
+   "code": "DIVAN-(200)",
+   "description": "DIVAN ONLY (200X200CM)",
+   "size": "200CMX200CM",
+   "price2_sen": 65000,
+   "price1_sen": null,
+   "page": 5
+  },
+  {
+   "code": "DIVAN-(210)",
+   "description": "DIVAN ONLY (210X210CM)",
+   "size": "210CMX210CM",
+   "price2_sen": 65000,
+   "price1_sen": null,
+   "page": 5
+  },
+  {
+   "code": "DIVAN-(210X200)",
+   "description": "DIVAN ONLY (210X200CM)",
+   "size": "210CMX200CM",
+   "price2_sen": 65000,
+   "price1_sen": null,
+   "page": 5
+  },
+  {
+   "code": "DIVAN-(K)",
+   "description": "DIVAN ONLY (6FT) (183X190CM)",
+   "size": "6FT",
+   "price2_sen": 46200,
+   "price1_sen": null,
+   "page": 5
+  },
+  {
+   "code": "DIVAN-(Q)",
+   "description": "DIVAN ONLY (5FT) (152X190CM)",
+   "size": "5FT",
+   "price2_sen": 33000,
+   "price1_sen": null,
+   "page": 5
+  },
+  {
+   "code": "DIVAN-(S)",
+   "description": "DIVAN ONLY (3FT) (90X190CM)",
+   "size": "3FT",
+   "price2_sen": 30800,
+   "price1_sen": null,
+   "page": 5
+  },
+  {
+   "code": "DIVAN-(SS)",
+   "description": "DIVAN ONLY (3.5FT) (107X190CM)",
+   "size": "3.5FT",
+   "price2_sen": 31902,
+   "price1_sen": null,
+   "page": 5
+  }
+ ],
+ "sofa_rows": [
+  {
+   "model": "5530",
+   "compartment": "1S",
+   "tier": "P2",
+   "page": 6,
+   "prices": {
+    "24": 81000,
+    "28": 86000,
+    "30": 86000,
+    "32": 96600,
+    "35": 101200
+   }
+  },
+  {
+   "model": "5530",
+   "compartment": "1S",
+   "tier": "P3",
+   "page": 6,
+   "prices": {
+    "24": 85100,
+    "28": 92000,
+    "30": 96600,
+    "32": 101200,
+    "35": 105800
+   }
+  },
+  {
+   "model": "5530",
+   "compartment": "2S",
+   "tier": "P2",
+   "page": 6,
+   "prices": {
+    "24": 116200,
+    "28": 123400,
+    "30": 123400,
+    "32": 138600,
+    "35": 145200
+   }
+  },
+  {
+   "model": "5530",
+   "compartment": "2S",
+   "tier": "P3",
+   "page": 6,
+   "prices": {
+    "24": 122100,
+    "28": 132000,
+    "30": 138600,
+    "32": 145200,
+    "35": 151800
+   }
+  },
+  {
+   "model": "5530",
+   "compartment": "3S",
+   "tier": "P2",
+   "page": 6,
+   "prices": {
+    "24": 154000,
+    "28": 167200,
+    "30": 176000,
+    "32": 184800,
+    "35": 193600
+   }
+  },
+  {
+   "model": "5530",
+   "compartment": "3S",
+   "tier": "P3",
+   "page": 6,
+   "prices": {
+    "24": 170800,
+    "28": 184000,
+    "30": 192800,
+    "32": 201600,
+    "35": 210400
+   }
+  },
+  {
+   "model": "5530",
+   "compartment": "1A (LHF/RHF)",
+   "tier": "P2",
+   "page": 6,
+   "prices": {
+    "24": 55000,
+    "28": 66000,
+    "30": 66000,
+    "32": 75000,
+    "35": 86000
+   }
+  },
+  {
+   "model": "5530",
+   "compartment": "1A (LHF/RHF)",
+   "tier": "P3",
+   "page": 6,
+   "prices": {
+    "24": 70000,
+    "28": 74000,
+    "30": 75000,
+    "32": 80000,
+    "35": 91000
+   }
+  },
+  {
+   "model": "5530",
+   "compartment": "2A (LHF/RHF)",
+   "tier": "P2",
+   "page": 6,
+   "prices": {
+    "24": 104500,
+    "28": 110000,
+    "30": 110000,
+    "32": 135000,
+    "35": 157000
+   }
+  },
+  {
+   "model": "5530",
+   "compartment": "2A (LHF/RHF)",
+   "tier": "P3",
+   "page": 6,
+   "prices": {
+    "24": 124000,
+    "28": 134000,
+    "30": 134000,
+    "32": 144000,
+    "35": 166000
+   }
+  },
+  {
+   "model": "5530",
+   "compartment": "1NA",
+   "tier": "P2",
+   "page": 6,
+   "prices": {
+    "24": 49500,
+    "28": 55000,
+    "30": 55000,
+    "32": 60000,
+    "35": 71000
+   }
+  },
+  {
+   "model": "5530",
+   "compartment": "1NA",
+   "tier": "P3",
+   "page": 6,
+   "prices": {
+    "24": 54000,
+    "28": 59000,
+    "30": 59000,
+    "32": 64000,
+    "35": 75000
+   }
+  },
+  {
+   "model": "5530",
+   "compartment": "2NA",
+   "tier": "P2",
+   "page": 6,
+   "prices": {
+    "24": 99000,
+    "28": 104500,
+    "30": 104500,
+    "32": 120000,
+    "35": 142000
+   }
+  },
+  {
+   "model": "5530",
+   "compartment": "2NA",
+   "tier": "P3",
+   "page": 6,
+   "prices": {
+    "24": 108000,
+    "28": 118000,
+    "30": 118000,
+    "32": 128000,
+    "35": 150000
+   }
+  },
+  {
+   "model": "5530",
+   "compartment": "L (LHF/RHF)",
+   "tier": "P2",
+   "page": 6,
+   "prices": {
+    "24": 104500,
+    "28": 110000,
+    "30": 110000,
+    "32": 120000,
+    "35": 101000
+   }
+  },
+  {
+   "model": "5530",
+   "compartment": "L (LHF/RHF)",
+   "tier": "P3",
+   "page": 6,
+   "prices": {
+    "24": 110000,
+    "28": 115000,
+    "30": 121000,
+    "32": 125000,
+    "35": 106000
+   }
+  },
+  {
+   "model": "5530",
+   "compartment": "CNR",
+   "tier": "P2",
+   "page": 6,
+   "prices": {
+    "24": 88000,
+    "28": 88000,
+    "30": 88000,
+    "32": 90000,
+    "35": 90000
+   }
+  },
+  {
+   "model": "5530",
+   "compartment": "CNR",
+   "tier": "P3",
+   "page": 6,
+   "prices": {
+    "24": 96000,
+    "28": 96000,
+    "30": 96000,
+    "32": 96000,
+    "35": 96000
+   }
+  },
+  {
+   "model": "5530",
+   "compartment": "STOOL",
+   "tier": "P2",
+   "page": 6,
+   "prices": {
+    "24": 50000,
+    "28": 50000,
+    "30": 50000,
+    "32": 50000,
+    "35": 50000
+   }
+  },
+  {
+   "model": "5530",
+   "compartment": "STOOL",
+   "tier": "P3",
+   "page": 6,
+   "prices": {
+    "24": 52000,
+    "28": 52000,
+    "30": 52000,
+    "32": 52000,
+    "35": 52000
+   }
+  },
+  {
+   "model": "5531",
+   "compartment": "1S",
+   "tier": "P2",
+   "page": 6,
+   "prices": {
+    "24": 76500,
+    "28": 81300,
+    "30": 86900,
+    "32": 91300,
+    "35": 95600
+   }
+  },
+  {
+   "model": "5531",
+   "compartment": "1S",
+   "tier": "P3",
+   "page": 6,
+   "prices": {
+    "24": 80400,
+    "28": 86900,
+    "30": 91300,
+    "32": 95600,
+    "35": 100000
+   }
+  },
+  {
+   "model": "5531",
+   "compartment": "2S",
+   "tier": "P2",
+   "page": 6,
+   "prices": {
+    "24": 109800,
+    "28": 116600,
+    "30": 124700,
+    "32": 131000,
+    "35": 137200
+   }
+  },
+  {
+   "model": "5531",
+   "compartment": "2S",
+   "tier": "P3",
+   "page": 6,
+   "prices": {
+    "24": 115400,
+    "28": 124700,
+    "30": 131000,
+    "32": 137200,
+    "35": 143500
+   }
+  },
+  {
+   "model": "5531",
+   "compartment": "3S",
+   "tier": "P2",
+   "page": 6,
+   "prices": {
+    "24": 146400,
+    "28": 155500,
+    "30": 173900,
+    "32": 182200,
+    "35": 190500
+   }
+  },
+  {
+   "model": "5531",
+   "compartment": "3S",
+   "tier": "P3",
+   "page": 6,
+   "prices": {
+    "24": 161400,
+    "28": 173900,
+    "30": 182200,
+    "32": 190500,
+    "35": 198800
+   }
+  },
+  {
+   "model": "5531",
+   "compartment": "1A (LHF/RHF)",
+   "tier": "P2",
+   "page": 6,
+   "prices": {
+    "24": 61400,
+    "28": 66200,
+    "30": 66200,
+    "32": 70900,
+    "35": 81300
+   }
+  },
+  {
+   "model": "5531",
+   "compartment": "1A (LHF/RHF)",
+   "tier": "P3",
+   "page": 6,
+   "prices": {
+    "24": 66200,
+    "28": 69900,
+    "30": 70900,
+    "32": 75600,
+    "35": 86000
+   }
+  },
+  {
+   "model": "5531",
+   "compartment": "2A (LHF/RHF)",
+   "tier": "P2",
+   "page": 6,
+   "prices": {
+    "24": 102400,
+    "28": 109100,
+    "30": 118100,
+    "32": 127600,
+    "35": 148400
+   }
+  },
+  {
+   "model": "5531",
+   "compartment": "2A (LHF/RHF)",
+   "tier": "P3",
+   "page": 6,
+   "prices": {
+    "24": 117200,
+    "28": 126600,
+    "30": 126600,
+    "32": 136100,
+    "35": 156900
+   }
+  },
+  {
+   "model": "5531",
+   "compartment": "1NA",
+   "tier": "P2",
+   "page": 6,
+   "prices": {
+    "24": 47300,
+    "28": 52000,
+    "30": 52000,
+    "32": 56700,
+    "35": 67100
+   }
+  },
+  {
+   "model": "5531",
+   "compartment": "1NA",
+   "tier": "P3",
+   "page": 7,
+   "prices": {
+    "24": 51000,
+    "28": 55800,
+    "30": 55800,
+    "32": 60500,
+    "35": 70900
+   }
+  },
+  {
+   "model": "5531",
+   "compartment": "2NA",
+   "tier": "P2",
+   "page": 7,
+   "prices": {
+    "24": 93600,
+    "28": 93600,
+    "30": 104000,
+    "32": 113400,
+    "35": 134200
+   }
+  },
+  {
+   "model": "5531",
+   "compartment": "2NA",
+   "tier": "P3",
+   "page": 7,
+   "prices": {
+    "24": 102100,
+    "28": 111500,
+    "30": 111500,
+    "32": 121000,
+    "35": 141800
+   }
+  },
+  {
+   "model": "5531",
+   "compartment": "L (LHF/RHF)",
+   "tier": "P2",
+   "page": 7,
+   "prices": {
+    "24": 95100,
+    "28": 98800,
+    "30": 109600,
+    "32": 113400,
+    "35": 95400
+   }
+  },
+  {
+   "model": "5531",
+   "compartment": "L (LHF/RHF)",
+   "tier": "P3",
+   "page": 7,
+   "prices": {
+    "24": 104000,
+    "28": 108700,
+    "30": 114300,
+    "32": 118100,
+    "35": 100200
+   }
+  },
+  {
+   "model": "5531",
+   "compartment": "CNR",
+   "tier": "P2",
+   "page": 7,
+   "prices": {
+    "24": 83200,
+    "28": 83200,
+    "30": 85100,
+    "32": 85100,
+    "35": 85100
+   }
+  },
+  {
+   "model": "5531",
+   "compartment": "CNR",
+   "tier": "P3",
+   "page": 7,
+   "prices": {
+    "24": 90700,
+    "28": 90700,
+    "30": 90700,
+    "32": 90700,
+    "35": 90700
+   }
+  },
+  {
+   "model": "5531",
+   "compartment": "STOOL",
+   "tier": "P2",
+   "page": 7,
+   "prices": {
+    "24": 50000,
+    "28": 50000,
+    "30": 50000,
+    "32": 50000,
+    "35": 50000
+   }
+  },
+  {
+   "model": "5531",
+   "compartment": "STOOL",
+   "tier": "P3",
+   "page": 7,
+   "prices": {
+    "24": 52000,
+    "28": 52000,
+    "30": 52000,
+    "32": 52000,
+    "35": 52000
+   }
+  },
+  {
+   "model": "5535",
+   "compartment": "1S",
+   "tier": "P2",
+   "page": 7,
+   "prices": {
+    "24": 80500,
+    "28": 87400,
+    "30": 92000,
+    "32": 96600,
+    "35": 101200
+   }
+  },
+  {
+   "model": "5535",
+   "compartment": "1S",
+   "tier": "P3",
+   "page": 7,
+   "prices": {
+    "24": 85100,
+    "28": 92000,
+    "30": 96600,
+    "32": 101200,
+    "35": 105800
+   }
+  },
+  {
+   "model": "5535",
+   "compartment": "2S",
+   "tier": "P2",
+   "page": 7,
+   "prices": {
+    "24": 115500,
+    "28": 125400,
+    "30": 132000,
+    "32": 138600,
+    "35": 145200
+   }
+  },
+  {
+   "model": "5535",
+   "compartment": "2S",
+   "tier": "P3",
+   "page": 7,
+   "prices": {
+    "24": 122100,
+    "28": 132000,
+    "30": 138600,
+    "32": 145200,
+    "35": 151800
+   }
+  },
+  {
+   "model": "5535",
+   "compartment": "3S",
+   "tier": "P2",
+   "page": 7,
+   "prices": {
+    "24": 162000,
+    "28": 175200,
+    "30": 184000,
+    "32": 192800,
+    "35": 201600
+   }
+  },
+  {
+   "model": "5535",
+   "compartment": "3S",
+   "tier": "P3",
+   "page": 7,
+   "prices": {
+    "24": 170800,
+    "28": 184000,
+    "30": 192800,
+    "32": 201600,
+    "35": 210400
+   }
+  },
+  {
+   "model": "5535",
+   "compartment": "1A (LHF/RHF)",
+   "tier": "P2",
+   "page": 7,
+   "prices": {
+    "24": 65000,
+    "28": 70000,
+    "30": 70000,
+    "32": 75000,
+    "35": 86000
+   }
+  },
+  {
+   "model": "5535",
+   "compartment": "1A (LHF/RHF)",
+   "tier": "P3",
+   "page": 7,
+   "prices": {
+    "24": 70000,
+    "28": 74000,
+    "30": 75000,
+    "32": 80000,
+    "35": 91000
+   }
+  },
+  {
+   "model": "5535",
+   "compartment": "2A (LHF/RHF)",
+   "tier": "P2",
+   "page": 7,
+   "prices": {
+    "24": 115000,
+    "28": 125000,
+    "30": 125000,
+    "32": 135000,
+    "35": 157000
+   }
+  },
+  {
+   "model": "5535",
+   "compartment": "2A (LHF/RHF)",
+   "tier": "P3",
+   "page": 7,
+   "prices": {
+    "24": 124000,
+    "28": 134000,
+    "30": 134000,
+    "32": 144000,
+    "35": 166000
+   }
+  },
+  {
+   "model": "5535",
+   "compartment": "1NA",
+   "tier": "P2",
+   "page": 7,
+   "prices": {
+    "24": 50000,
+    "28": 55000,
+    "30": 55000,
+    "32": 60000,
+    "35": 71000
+   }
+  },
+  {
+   "model": "5535",
+   "compartment": "1NA",
+   "tier": "P3",
+   "page": 7,
+   "prices": {
+    "24": 54000,
+    "28": 59000,
+    "30": 59000,
+    "32": 64000,
+    "35": 75000
+   }
+  },
+  {
+   "model": "5535",
+   "compartment": "2NA",
+   "tier": "P2",
+   "page": 7,
+   "prices": {
+    "24": 100000,
+    "28": 110000,
+    "30": 110000,
+    "32": 120000,
+    "35": 142000
+   }
+  },
+  {
+   "model": "5535",
+   "compartment": "2NA",
+   "tier": "P3",
+   "page": 7,
+   "prices": {
+    "24": 108000,
+    "28": 118000,
+    "30": 118000,
+    "32": 128000,
+    "35": 150000
+   }
+  },
+  {
+   "model": "5535",
+   "compartment": "L (LHF/RHF)",
+   "tier": "P2",
+   "page": 7,
+   "prices": {
+    "24": 105000,
+    "28": 110000,
+    "30": 116000,
+    "32": 120000,
+    "35": 101000
+   }
+  },
+  {
+   "model": "5535",
+   "compartment": "L (LHF/RHF)",
+   "tier": "P3",
+   "page": 7,
+   "prices": {
+    "24": 110000,
+    "28": 115000,
+    "30": 121000,
+    "32": 125000,
+    "35": 106000
+   }
+  },
+  {
+   "model": "5535",
+   "compartment": "CNR",
+   "tier": "P2",
+   "page": 7,
+   "prices": {
+    "24": 90000,
+    "28": 90000,
+    "30": 90000,
+    "32": 90000,
+    "35": 90000
+   }
+  },
+  {
+   "model": "5535",
+   "compartment": "CNR",
+   "tier": "P3",
+   "page": 7,
+   "prices": {
+    "24": 96000,
+    "28": 96000,
+    "30": 96000,
+    "32": 96000,
+    "35": 96000
+   }
+  },
+  {
+   "model": "5535",
+   "compartment": "STOOL",
+   "tier": "P2",
+   "page": 7,
+   "prices": {
+    "24": 50000,
+    "28": 50000,
+    "30": 50000,
+    "32": 50000,
+    "35": 50000
+   }
+  },
+  {
+   "model": "5535",
+   "compartment": "STOOL",
+   "tier": "P3",
+   "page": 7,
+   "prices": {
+    "24": 52000,
+    "28": 52000,
+    "30": 52000,
+    "32": 52000,
+    "35": 52000
+   }
+  },
+  {
+   "model": "5536",
+   "compartment": "1S",
+   "tier": "P2",
+   "page": 7,
+   "prices": {
+    "24": 78400,
+    "28": 82800,
+    "30": 83500,
+    "32": 87400,
+    "35": 92000
+   }
+  },
+  {
+   "model": "5536",
+   "compartment": "1S",
+   "tier": "P3",
+   "page": 7,
+   "prices": {
+    "24": 82800,
+    "28": 87400,
+    "30": 87400,
+    "32": 114600,
+    "35": 114600
+   }
+  },
+  {
+   "model": "5536",
+   "compartment": "2S",
+   "tier": "P2",
+   "page": 7,
+   "prices": {
+    "24": 112500,
+    "28": 118800,
+    "30": 119800,
+    "32": 125400,
+    "35": 132000
+   }
+  },
+  {
+   "model": "5536",
+   "compartment": "2S",
+   "tier": "P3",
+   "page": 7,
+   "prices": {
+    "24": 118800,
+    "28": 125400,
+    "30": 125400,
+    "32": 161600,
+    "35": 161600
+   }
+  },
+  {
+   "model": "5536",
+   "compartment": "3S",
+   "tier": "P2",
+   "page": 8,
+   "prices": {
+    "24": 149600,
+    "28": 158400,
+    "30": 158400,
+    "32": 167200,
+    "35": 176000
+   }
+  },
+  {
+   "model": "5536",
+   "compartment": "3S",
+   "tier": "P3",
+   "page": 8,
+   "prices": {
+    "24": 166400,
+    "28": 175200,
+    "30": 175200,
+    "32": 221800,
+    "35": 221800
+   }
+  },
+  {
+   "model": "5536",
+   "compartment": "1A (LHF/RHF)",
+   "tier": "P2",
+   "page": 8,
+   "prices": {
+    "24": 58300,
+    "28": 70000,
+    "30": 60500,
+    "32": 62700,
+    "35": 86000
+   }
+  },
+  {
+   "model": "5536",
+   "compartment": "1A (LHF/RHF)",
+   "tier": "P3",
+   "page": 8,
+   "prices": {
+    "24": 75000,
+    "28": 75000,
+    "30": 75000,
+    "32": 91000,
+    "35": 91000
+   }
+  },
+  {
+   "model": "5536",
+   "compartment": "2A (LHF/RHF)",
+   "tier": "P2",
+   "page": 8,
+   "prices": {
+    "24": 104500,
+    "28": 125000,
+    "30": 110000,
+    "32": 107800,
+    "35": 157000
+   }
+  },
+  {
+   "model": "5536",
+   "compartment": "2A (LHF/RHF)",
+   "tier": "P3",
+   "page": 8,
+   "prices": {
+    "24": 134000,
+    "28": 134000,
+    "30": 134000,
+    "32": 166000,
+    "35": 166000
+   }
+  },
+  {
+   "model": "5536",
+   "compartment": "1NA",
+   "tier": "P2",
+   "page": 8,
+   "prices": {
+    "24": 47300,
+    "28": 55000,
+    "30": 49500,
+    "32": 55000,
+    "35": 55000
+   }
+  },
+  {
+   "model": "5536",
+   "compartment": "1NA",
+   "tier": "P3",
+   "page": 8,
+   "prices": {
+    "24": 59000,
+    "28": 59000,
+    "30": 59000,
+    "32": 59000,
+    "35": 59000
+   }
+  },
+  {
+   "model": "5536",
+   "compartment": "2NA",
+   "tier": "P2",
+   "page": 8,
+   "prices": {
+    "24": 94600,
+    "28": 110000,
+    "30": 99000,
+    "32": 107800,
+    "35": 142000
+   }
+  },
+  {
+   "model": "5536",
+   "compartment": "2NA",
+   "tier": "P3",
+   "page": 8,
+   "prices": {
+    "24": 118000,
+    "28": 118000,
+    "30": 118000,
+    "32": 150000,
+    "35": 150000
+   }
+  },
+  {
+   "model": "5536",
+   "compartment": "L (LHF/RHF)",
+   "tier": "P2",
+   "page": 8,
+   "prices": {
+    "24": 104500,
+    "28": 110000,
+    "30": 110000,
+    "32": 101000,
+    "35": 101000
+   }
+  },
+  {
+   "model": "5536",
+   "compartment": "L (LHF/RHF)",
+   "tier": "P3",
+   "page": 8,
+   "prices": {
+    "24": 110000,
+    "28": 115000,
+    "30": 115000,
+    "32": 106000,
+    "35": 106000
+   }
+  },
+  {
+   "model": "5536",
+   "compartment": "CNR",
+   "tier": "P2",
+   "page": 8,
+   "prices": {
+    "24": 82500,
+    "28": 90000,
+    "30": 825800,
+    "32": 90000,
+    "35": 90000
+   }
+  },
+  {
+   "model": "5536",
+   "compartment": "CNR",
+   "tier": "P3",
+   "page": 8,
+   "prices": {
+    "24": 96000,
+    "28": 96000,
+    "30": 96000,
+    "32": 96000,
+    "35": 96000
+   }
+  },
+  {
+   "model": "5536",
+   "compartment": "STOOL",
+   "tier": "P2",
+   "page": 8,
+   "prices": {
+    "24": 50000,
+    "28": 50000,
+    "30": 50000,
+    "32": 50000,
+    "35": 50000
+   }
+  },
+  {
+   "model": "5536",
+   "compartment": "STOOL",
+   "tier": "P3",
+   "page": 8,
+   "prices": {
+    "24": 52000,
+    "28": 52000,
+    "30": 52000,
+    "32": 52000,
+    "35": 52000
+   }
+  },
+  {
+   "model": "5536",
+   "compartment": "CSL",
+   "tier": "P2",
+   "page": 8,
+   "prices": {
+    "24": 36000,
+    "28": 36000,
+    "30": 36000,
+    "32": 36000,
+    "35": 36000
+   }
+  },
+  {
+   "model": "5536",
+   "compartment": "CSL",
+   "tier": "P3",
+   "page": 8,
+   "prices": {
+    "24": 38000,
+    "28": 38000,
+    "30": 38000,
+    "32": 38000,
+    "35": 38000
+   }
+  },
+  {
+   "model": "5537",
+   "compartment": "1S",
+   "tier": "P2",
+   "page": 8,
+   "prices": {
+    "24": 87400,
+    "28": 87400,
+    "30": 92000,
+    "32": 115000,
+    "35": 115000
+   }
+  },
+  {
+   "model": "5537",
+   "compartment": "1S",
+   "tier": "P3",
+   "page": 8,
+   "prices": {
+    "24": 92000,
+    "28": 92000,
+    "30": 96600,
+    "32": 119600,
+    "35": 119600
+   }
+  },
+  {
+   "model": "5537",
+   "compartment": "2S",
+   "tier": "P2",
+   "page": 8,
+   "prices": {
+    "24": 125400,
+    "28": 125400,
+    "30": 132000,
+    "32": 165000,
+    "35": 165000
+   }
+  },
+  {
+   "model": "5537",
+   "compartment": "2S",
+   "tier": "P3",
+   "page": 8,
+   "prices": {
+    "24": 132000,
+    "28": 132000,
+    "30": 138600,
+    "32": 171600,
+    "35": 171600
+   }
+  },
+  {
+   "model": "5537",
+   "compartment": "3S",
+   "tier": "P2",
+   "page": 8,
+   "prices": {
+    "24": 175200,
+    "28": 175200,
+    "30": 176000,
+    "32": 228000,
+    "35": 228000
+   }
+  },
+  {
+   "model": "5537",
+   "compartment": "3S",
+   "tier": "P3",
+   "page": 8,
+   "prices": {
+    "24": 184000,
+    "28": 184000,
+    "30": 184800,
+    "32": 236800,
+    "35": 236800
+   }
+  },
+  {
+   "model": "5537",
+   "compartment": "1A (LHF/RHF)",
+   "tier": "P2",
+   "page": 8,
+   "prices": {
+    "24": 70000,
+    "28": 70000,
+    "30": 70000,
+    "32": 91000,
+    "35": 91000
+   }
+  },
+  {
+   "model": "5537",
+   "compartment": "1A (LHF/RHF)",
+   "tier": "P3",
+   "page": 8,
+   "prices": {
+    "24": 75000,
+    "28": 75000,
+    "30": 75000,
+    "32": 96000,
+    "35": 96000
+   }
+  },
+  {
+   "model": "5537",
+   "compartment": "2A (LHF/RHF)",
+   "tier": "P2",
+   "page": 8,
+   "prices": {
+    "24": 125000,
+    "28": 125000,
+    "30": 125000,
+    "32": 167000,
+    "35": 167000
+   }
+  },
+  {
+   "model": "5537",
+   "compartment": "2A (LHF/RHF)",
+   "tier": "P3",
+   "page": 8,
+   "prices": {
+    "24": 134000,
+    "28": 134000,
+    "30": 134000,
+    "32": 176000,
+    "35": 176000
+   }
+  },
+  {
+   "model": "5537",
+   "compartment": "1NA",
+   "tier": "P2",
+   "page": 8,
+   "prices": {
+    "24": 55000,
+    "28": 55000,
+    "30": 55000,
+    "32": 76000,
+    "35": 76000
+   }
+  },
+  {
+   "model": "5537",
+   "compartment": "1NA",
+   "tier": "P3",
+   "page": 8,
+   "prices": {
+    "24": 59000,
+    "28": 59000,
+    "30": 59000,
+    "32": 80000,
+    "35": 80000
+   }
+  },
+  {
+   "model": "5537",
+   "compartment": "2NA",
+   "tier": "P2",
+   "page": 8,
+   "prices": {
+    "24": 110000,
+    "28": 110000,
+    "30": 110000,
+    "32": 152000,
+    "35": 152000
+   }
+  },
+  {
+   "model": "5537",
+   "compartment": "2NA",
+   "tier": "P3",
+   "page": 8,
+   "prices": {
+    "24": 118000,
+    "28": 118000,
+    "30": 118000,
+    "32": 160000,
+    "35": 160000
+   }
+  },
+  {
+   "model": "5537",
+   "compartment": "L (LHF/RHF)",
+   "tier": "P2",
+   "page": 8,
+   "prices": {
+    "24": 100000,
+    "28": 100000,
+    "30": 105000,
+    "32": 106000,
+    "35": 106000
+   }
+  },
+  {
+   "model": "5537",
+   "compartment": "L (LHF/RHF)",
+   "tier": "P3",
+   "page": 8,
+   "prices": {
+    "24": 105000,
+    "28": 105000,
+    "30": 110000,
+    "32": 111000,
+    "35": 111000
+   }
+  },
+  {
+   "model": "5537",
+   "compartment": "CNR",
+   "tier": "P2",
+   "page": 8,
+   "prices": {
+    "24": 95000,
+    "28": 95000,
+    "30": 95000,
+    "32": 95000,
+    "35": 95000
+   }
+  },
+  {
+   "model": "5537",
+   "compartment": "CNR",
+   "tier": "P3",
+   "page": 8,
+   "prices": {
+    "24": 101000,
+    "28": 101000,
+    "30": 101000,
+    "32": 101000,
+    "35": 101000
+   }
+  },
+  {
+   "model": "5537",
+   "compartment": "STOOL",
+   "tier": "P2",
+   "page": 9,
+   "prices": {
+    "24": 50000,
+    "28": 50000,
+    "30": 50000,
+    "32": 50000,
+    "35": 50000
+   }
+  },
+  {
+   "model": "5537",
+   "compartment": "STOOL",
+   "tier": "P3",
+   "page": 9,
+   "prices": {
+    "24": 52000,
+    "28": 52000,
+    "30": 52000,
+    "32": 52000,
+    "35": 52000
+   }
+  },
+  {
+   "model": "5539",
+   "compartment": "1S",
+   "tier": "P2",
+   "page": 9,
+   "prices": {
+    "24": 80500,
+    "26": 87400,
+    "28": 87400,
+    "30": 92000,
+    "32": 96600,
+    "35": 101200
+   }
+  },
+  {
+   "model": "5539",
+   "compartment": "1S",
+   "tier": "P3",
+   "page": 9,
+   "prices": {
+    "24": 85100,
+    "26": null,
+    "28": 92000,
+    "30": 96600,
+    "32": 101200,
+    "35": 105800
+   }
+  },
+  {
+   "model": "5539",
+   "compartment": "2S",
+   "tier": "P2",
+   "page": 9,
+   "prices": {
+    "24": 115500,
+    "26": 125400,
+    "28": 125400,
+    "30": 132000,
+    "32": 138600,
+    "35": 145200
+   }
+  },
+  {
+   "model": "5539",
+   "compartment": "2S",
+   "tier": "P3",
+   "page": 9,
+   "prices": {
+    "24": 122100,
+    "26": null,
+    "28": 132000,
+    "30": 138600,
+    "32": 145200,
+    "35": 151800
+   }
+  },
+  {
+   "model": "5539",
+   "compartment": "3S",
+   "tier": "P2",
+   "page": 9,
+   "prices": {
+    "24": 154000,
+    "26": 167200,
+    "28": 167200,
+    "30": 176000,
+    "32": 184800,
+    "35": 193600
+   }
+  },
+  {
+   "model": "5539",
+   "compartment": "3S",
+   "tier": "P3",
+   "page": 9,
+   "prices": {
+    "24": 170800,
+    "26": null,
+    "28": 184000,
+    "30": 192800,
+    "32": 201600,
+    "35": 210400
+   }
+  },
+  {
+   "model": "5539",
+   "compartment": "1A (LHF/RHF)",
+   "tier": "P2",
+   "page": 9,
+   "prices": {
+    "24": 61400,
+    "26": null,
+    "28": 66200,
+    "30": 66200,
+    "32": 70900,
+    "35": 81300
+   }
+  },
+  {
+   "model": "5539",
+   "compartment": "1A (LHF/RHF)",
+   "tier": "P3",
+   "page": 9,
+   "prices": {
+    "24": 66200,
+    "26": null,
+    "28": 69900,
+    "30": 70900,
+    "32": 75600,
+    "35": 86000
+   }
+  },
+  {
+   "model": "5539",
+   "compartment": "2A (LHF/RHF)",
+   "tier": "P2",
+   "page": 9,
+   "prices": {
+    "24": 108700,
+    "26": null,
+    "28": 118100,
+    "30": 118100,
+    "32": 127600,
+    "35": 148400
+   }
+  },
+  {
+   "model": "5539",
+   "compartment": "2A (LHF/RHF)",
+   "tier": "P3",
+   "page": 9,
+   "prices": {
+    "24": 117200,
+    "26": null,
+    "28": 126600,
+    "30": 126600,
+    "32": 136100,
+    "35": 156900
+   }
+  },
+  {
+   "model": "5539",
+   "compartment": "1B (LHF/RHF)",
+   "tier": "P2",
+   "page": 9,
+   "prices": {
+    "24": 80000,
+    "26": 85000,
+    "28": 85000,
+    "30": 85000,
+    "32": 90000,
+    "35": 95000
+   }
+  },
+  {
+   "model": "5539",
+   "compartment": "1B (LHF/RHF)",
+   "tier": "P3",
+   "page": 9,
+   "prices": {
+    "24": 70000,
+    "26": null,
+    "28": 74000,
+    "30": 75000,
+    "32": 80000,
+    "35": 91000
+   }
+  },
+  {
+   "model": "5539",
+   "compartment": "2B (LHF/RHF)",
+   "tier": "P2",
+   "page": 9,
+   "prices": {
+    "24": 130000,
+    "26": 140000,
+    "28": 140000,
+    "30": 140000,
+    "32": 150000,
+    "35": 160000
+   }
+  },
+  {
+   "model": "5539",
+   "compartment": "2B (LHF/RHF)",
+   "tier": "P3",
+   "page": 9,
+   "prices": {
+    "24": 124000,
+    "26": null,
+    "28": 134000,
+    "30": 134000,
+    "32": 144000,
+    "35": 166000
+   }
+  },
+  {
+   "model": "5539",
+   "compartment": "1NA",
+   "tier": "P2",
+   "page": 9,
+   "prices": {
+    "24": 47300,
+    "26": null,
+    "28": 52000,
+    "30": 52000,
+    "32": 56700,
+    "35": 67100
+   }
+  },
+  {
+   "model": "5539",
+   "compartment": "1NA",
+   "tier": "P3",
+   "page": 9,
+   "prices": {
+    "24": 51000,
+    "26": null,
+    "28": 55800,
+    "30": 55800,
+    "32": 60500,
+    "35": 70900
+   }
+  },
+  {
+   "model": "5539",
+   "compartment": "2NA",
+   "tier": "P2",
+   "page": 9,
+   "prices": {
+    "24": 100000,
+    "26": 110000,
+    "28": 110000,
+    "30": 110000,
+    "32": 120000,
+    "35": 130000
+   }
+  },
+  {
+   "model": "5539",
+   "compartment": "2NA",
+   "tier": "P3",
+   "page": 9,
+   "prices": {
+    "24": 102100,
+    "26": null,
+    "28": 111500,
+    "30": 111500,
+    "32": 121000,
+    "35": 141800
+   }
+  },
+  {
+   "model": "5539",
+   "compartment": "L (LHF/RHF)",
+   "tier": "P2",
+   "page": 9,
+   "prices": {
+    "24": 99200,
+    "26": null,
+    "28": 104000,
+    "30": 109600,
+    "32": 113400,
+    "35": 95400
+   }
+  },
+  {
+   "model": "5539",
+   "compartment": "L (LHF/RHF)",
+   "tier": "P3",
+   "page": 9,
+   "prices": {
+    "24": 104000,
+    "26": null,
+    "28": 108700,
+    "30": 114300,
+    "32": 118100,
+    "35": 100200
+   }
+  },
+  {
+   "model": "5539",
+   "compartment": "CNR",
+   "tier": "P2",
+   "page": 9,
+   "prices": {
+    "24": 85100,
+    "26": null,
+    "28": 85100,
+    "30": 85100,
+    "32": 85100,
+    "35": 85100
+   }
+  },
+  {
+   "model": "5539",
+   "compartment": "CNR",
+   "tier": "P3",
+   "page": 9,
+   "prices": {
+    "24": 90700,
+    "26": null,
+    "28": 90700,
+    "30": 90700,
+    "32": 90700,
+    "35": 90700
+   }
+  },
+  {
+   "model": "5539",
+   "compartment": "STOOL",
+   "tier": "P2",
+   "page": 9,
+   "prices": {
+    "24": 50000,
+    "26": 50000,
+    "28": 50000,
+    "30": 50000,
+    "32": 50000,
+    "35": 50000
+   }
+  },
+  {
+   "model": "5539",
+   "compartment": "STOOL",
+   "tier": "P3",
+   "page": 9,
+   "prices": {
+    "24": 52000,
+    "26": null,
+    "28": 52000,
+    "30": 52000,
+    "32": 52000,
+    "35": 52000
+   }
+  },
+  {
+   "model": "5540",
+   "compartment": "1S",
+   "tier": "P2",
+   "page": 9,
+   "prices": {
+    "24": 87400,
+    "26": null,
+    "28": 86600,
+    "30": 92000,
+    "32": 115000,
+    "35": 115200
+   }
+  },
+  {
+   "model": "5540",
+   "compartment": "1S",
+   "tier": "P3",
+   "page": 9,
+   "prices": {
+    "24": 92000,
+    "26": null,
+    "28": 92000,
+    "30": 96600,
+    "32": 119600,
+    "35": 119600
+   }
+  },
+  {
+   "model": "5540",
+   "compartment": "2S",
+   "tier": "P2",
+   "page": 9,
+   "prices": {
+    "24": 125400,
+    "26": null,
+    "28": 124200,
+    "30": 132000,
+    "32": 130700,
+    "35": 165200
+   }
+  },
+  {
+   "model": "5540",
+   "compartment": "2S",
+   "tier": "P3",
+   "page": 9,
+   "prices": {
+    "24": 132000,
+    "26": null,
+    "28": 132000,
+    "30": 138600,
+    "32": 171600,
+    "35": 171600
+   }
+  },
+  {
+   "model": "5540",
+   "compartment": "3S",
+   "tier": "P2",
+   "page": 9,
+   "prices": {
+    "24": 167200,
+    "26": null,
+    "28": 167200,
+    "30": 176000,
+    "32": 228000,
+    "35": 165600
+   }
+  },
+  {
+   "model": "5540",
+   "compartment": "3S",
+   "tier": "P3",
+   "page": 9,
+   "prices": {
+    "24": 184000,
+    "26": null,
+    "28": 184000,
+    "30": 184800,
+    "32": 236800,
+    "35": 236800
+   }
+  },
+  {
+   "model": "5540",
+   "compartment": "1A (LHF/RHF)",
+   "tier": "P2",
+   "page": 9,
+   "prices": {
+    "24": 70000,
+    "26": null,
+    "28": 75600,
+    "30": 70000,
+    "32": 91000,
+    "35": 104200
+   }
+  },
+  {
+   "model": "5540",
+   "compartment": "1A (LHF/RHF)",
+   "tier": "P3",
+   "page": 10,
+   "prices": {
+    "24": 75000,
+    "26": null,
+    "28": 75000,
+    "30": 75000,
+    "32": 96000,
+    "35": 96000
+   }
+  },
+  {
+   "model": "5540",
+   "compartment": "2A (LHF/RHF)",
+   "tier": "P2",
+   "page": 10,
+   "prices": {
+    "24": 125000,
+    "26": null,
+    "28": 113200,
+    "30": 125000,
+    "32": 167000,
+    "35": 154200
+   }
+  },
+  {
+   "model": "5540",
+   "compartment": "2A (LHF/RHF)",
+   "tier": "P3",
+   "page": 10,
+   "prices": {
+    "24": 134000,
+    "26": null,
+    "28": 134000,
+    "30": 134000,
+    "32": 176000,
+    "35": 176000
+   }
+  },
+  {
+   "model": "5540",
+   "compartment": "1NA",
+   "tier": "P2",
+   "page": 10,
+   "prices": {
+    "24": 55000,
+    "26": null,
+    "28": 55000,
+    "30": 55000,
+    "32": 76000,
+    "35": 75900
+   }
+  },
+  {
+   "model": "5540",
+   "compartment": "1NA",
+   "tier": "P3",
+   "page": 10,
+   "prices": {
+    "24": 59000,
+    "26": null,
+    "28": 59000,
+    "30": 59000,
+    "32": 80000,
+    "35": 80000
+   }
+  },
+  {
+   "model": "5540",
+   "compartment": "2NA",
+   "tier": "P2",
+   "page": 10,
+   "prices": {
+    "24": 110000,
+    "26": null,
+    "28": 110000,
+    "30": 110000,
+    "32": 152000,
+    "35": 165200
+   }
+  },
+  {
+   "model": "5540",
+   "compartment": "2NA",
+   "tier": "P3",
+   "page": 10,
+   "prices": {
+    "24": 118000,
+    "26": null,
+    "28": 118000,
+    "30": 118000,
+    "32": 160000,
+    "35": 160000
+   }
+  },
+  {
+   "model": "5540",
+   "compartment": "L (LHF/RHF)",
+   "tier": "P2",
+   "page": 10,
+   "prices": {
+    "24": 100000,
+    "26": null,
+    "28": 99200,
+    "30": 105000,
+    "32": 106000,
+    "35": 105600
+   }
+  },
+  {
+   "model": "5540",
+   "compartment": "L (LHF/RHF)",
+   "tier": "P3",
+   "page": 10,
+   "prices": {
+    "24": 105000,
+    "26": null,
+    "28": 105000,
+    "30": 110000,
+    "32": 111000,
+    "35": 111000
+   }
+  },
+  {
+   "model": "5540",
+   "compartment": "CNR",
+   "tier": "P2",
+   "page": 10,
+   "prices": {
+    "24": 102300,
+    "26": null,
+    "28": 102300,
+    "30": 102300,
+    "32": 102300,
+    "35": 102300
+   }
+  },
+  {
+   "model": "5540",
+   "compartment": "CNR",
+   "tier": "P3",
+   "page": 10,
+   "prices": {
+    "24": 101000,
+    "26": null,
+    "28": 101000,
+    "30": 101000,
+    "32": 101000,
+    "35": 101000
+   }
+  },
+  {
+   "model": "5540",
+   "compartment": "STOOL",
+   "tier": "P2",
+   "page": 10,
+   "prices": {
+    "24": 50000,
+    "26": null,
+    "28": 50000,
+    "30": 50000,
+    "32": 60000,
+    "35": 60000
+   }
+  },
+  {
+   "model": "5540",
+   "compartment": "STOOL",
+   "tier": "P3",
+   "page": 10,
+   "prices": {
+    "24": 52000,
+    "26": null,
+    "28": 52000,
+    "30": 52000,
+    "32": 62000,
+    "35": 62000
+   }
+  },
+  {
+   "model": "5540",
+   "compartment": "CSL",
+   "tier": "P2",
+   "page": 10,
+   "prices": {
+    "24": 36000,
+    "26": 36000,
+    "28": 36000,
+    "30": 36000,
+    "32": 36000,
+    "35": 36000
+   }
+  },
+  {
+   "model": "5540",
+   "compartment": "CSL",
+   "tier": "P3",
+   "page": 10,
+   "prices": {
+    "24": 38000,
+    "26": null,
+    "28": 38000,
+    "30": 38000,
+    "32": 38000,
+    "35": 38000
+   }
+  },
+  {
+   "model": "5543",
+   "compartment": "1S",
+   "tier": "P2",
+   "page": 10,
+   "prices": {
+    "24": 80500,
+    "26": 87400,
+    "28": 87400,
+    "30": 92000,
+    "32": 96600,
+    "35": 101200
+   }
+  },
+  {
+   "model": "5543",
+   "compartment": "1S",
+   "tier": "P3",
+   "page": 10,
+   "prices": {
+    "24": 85100,
+    "26": null,
+    "28": 92000,
+    "30": 96600,
+    "32": 101200,
+    "35": 105800
+   }
+  },
+  {
+   "model": "5543",
+   "compartment": "2A (LHF/RHF)",
+   "tier": "P2",
+   "page": 10,
+   "prices": {
+    "24": 115000,
+    "26": 125000,
+    "28": 125000,
+    "30": 125000,
+    "32": 135000,
+    "35": 157000
+   }
+  },
+  {
+   "model": "5543",
+   "compartment": "2A (LHF/RHF)",
+   "tier": "P3",
+   "page": 10,
+   "prices": {
+    "24": 124000,
+    "26": null,
+    "28": 134000,
+    "30": 134000,
+    "32": 144000,
+    "35": 166000
+   }
+  },
+  {
+   "model": "5543",
+   "compartment": "1B (LHF/RHF)",
+   "tier": "P2",
+   "page": 10,
+   "prices": {
+    "24": 65000,
+    "26": 70000,
+    "28": 70000,
+    "30": 70000,
+    "32": 75000,
+    "35": 86000
+   }
+  },
+  {
+   "model": "5543",
+   "compartment": "1B (LHF/RHF)",
+   "tier": "P3",
+   "page": 10,
+   "prices": {
+    "24": 70000,
+    "26": null,
+    "28": 74000,
+    "30": 75000,
+    "32": 80000,
+    "35": 91000
+   }
+  },
+  {
+   "model": "5543",
+   "compartment": "1NA",
+   "tier": "P2",
+   "page": 10,
+   "prices": {
+    "24": 50000,
+    "26": 55000,
+    "28": 55000,
+    "30": 55000,
+    "32": 60000,
+    "35": 71000
+   }
+  },
+  {
+   "model": "5543",
+   "compartment": "1NA",
+   "tier": "P3",
+   "page": 10,
+   "prices": {
+    "24": 54000,
+    "26": null,
+    "28": 59000,
+    "30": 59000,
+    "32": 64000,
+    "35": 75000
+   }
+  },
+  {
+   "model": "5543",
+   "compartment": "L (LHF/RHF)",
+   "tier": "P2",
+   "page": 10,
+   "prices": {
+    "24": 105000,
+    "26": 110000,
+    "28": 110000,
+    "30": 116000,
+    "32": 120000,
+    "35": 125000
+   }
+  },
+  {
+   "model": "5543",
+   "compartment": "L (LHF/RHF)",
+   "tier": "P3",
+   "page": 10,
+   "prices": {
+    "24": 110000,
+    "26": null,
+    "28": 115000,
+    "30": 121000,
+    "32": 125000,
+    "35": 106000
+   }
+  },
+  {
+   "model": "5543",
+   "compartment": "CNR",
+   "tier": "P2",
+   "page": 10,
+   "prices": {
+    "24": 90000,
+    "26": 90000,
+    "28": 90000,
+    "30": 90000,
+    "32": 90000,
+    "35": 90000
+   }
+  },
+  {
+   "model": "5543",
+   "compartment": "CNR",
+   "tier": "P3",
+   "page": 10,
+   "prices": {
+    "24": 96000,
+    "26": null,
+    "28": 96000,
+    "30": 96000,
+    "32": 96000,
+    "35": 96000
+   }
+  },
+  {
+   "model": "5543",
+   "compartment": "CSL",
+   "tier": "P2",
+   "page": 10,
+   "prices": {
+    "24": 36000,
+    "26": 36000,
+    "28": 36000,
+    "30": 36000,
+    "32": 36000,
+    "35": 36000
+   }
+  },
+  {
+   "model": "5543",
+   "compartment": "SQCNR",
+   "tier": "P2",
+   "page": 10,
+   "prices": {
+    "24": 90000,
+    "26": 90000,
+    "28": 90000,
+    "30": 90000,
+    "32": 90000,
+    "35": 90000
+   }
+  },
+  {
+   "model": "5543",
+   "compartment": "SQCNR",
+   "tier": "P3",
+   "page": 10,
+   "prices": {
+    "24": 96000,
+    "26": null,
+    "28": 96000,
+    "30": 96000,
+    "32": 96000,
+    "35": 96000
+   }
+  },
+  {
+   "model": "5545",
+   "compartment": "1S",
+   "tier": "P2",
+   "page": 10,
+   "prices": {
+    "24": 76000,
+    "26": 81000,
+    "28": 81000,
+    "30": 81000,
+    "32": 91000,
+    "35": 96000
+   }
+  },
+  {
+   "model": "5545",
+   "compartment": "2S",
+   "tier": "P2",
+   "page": 10,
+   "prices": {
+    "24": 126000,
+    "26": 136000,
+    "28": 136000,
+    "30": 136000,
+    "32": 146000,
+    "35": 156000
+   }
+  },
+  {
+   "model": "5545",
+   "compartment": "1A (LHF/RHF)",
+   "tier": "P2",
+   "page": 10,
+   "prices": {
+    "24": 65000,
+    "26": 70000,
+    "28": 70000,
+    "30": 70000,
+    "32": 75000,
+    "35": 80000
+   }
+  },
+  {
+   "model": "5545",
+   "compartment": "2A (LHF/RHF)",
+   "tier": "P2",
+   "page": 11,
+   "prices": {
+    "24": 115000,
+    "26": 125000,
+    "28": 125000,
+    "30": 125000,
+    "32": 135000,
+    "35": 145000
+   }
+  },
+  {
+   "model": "5545",
+   "compartment": "1B (LHF/RHF)",
+   "tier": "P2",
+   "page": 11,
+   "prices": {
+    "24": 84000,
+    "26": 89000,
+    "28": 89000,
+    "30": 89000,
+    "32": 94000,
+    "35": 99000
+   }
+  },
+  {
+   "model": "5545",
+   "compartment": "2B (LHF/RHF)",
+   "tier": "P2",
+   "page": 11,
+   "prices": {
+    "24": 130000,
+    "26": 140000,
+    "28": 140000,
+    "30": 140000,
+    "32": 150000,
+    "35": 160000
+   }
+  },
+  {
+   "model": "5545",
+   "compartment": "1NA",
+   "tier": "P2",
+   "page": 11,
+   "prices": {
+    "24": 50000,
+    "26": 55000,
+    "28": 55000,
+    "30": 55000,
+    "32": 60000,
+    "35": 65000
+   }
+  },
+  {
+   "model": "5545",
+   "compartment": "2NA",
+   "tier": "P2",
+   "page": 11,
+   "prices": {
+    "24": 100000,
+    "26": 110000,
+    "28": 110000,
+    "30": 110000,
+    "32": 120000,
+    "35": 130000
+   }
+  },
+  {
+   "model": "5545",
+   "compartment": "L (LHF/RHF)",
+   "tier": "P2",
+   "page": 11,
+   "prices": {
+    "24": 105000,
+    "26": 100000,
+    "28": 100000,
+    "30": 100000,
+    "32": 120000,
+    "35": 125000
+   }
+  },
+  {
+   "model": "5545",
+   "compartment": "CNR",
+   "tier": "P2",
+   "page": 11,
+   "prices": {
+    "24": 95000,
+    "26": 95000,
+    "28": 95000,
+    "30": 95000,
+    "32": 95000,
+    "35": 95000
+   }
+  },
+  {
+   "model": "5545",
+   "compartment": "STOOL",
+   "tier": "P2",
+   "page": 11,
+   "prices": {
+    "24": 55000,
+    "26": 55000,
+    "28": 55000,
+    "30": 55000,
+    "32": 60000,
+    "35": 65000
+   }
+  },
+  {
+   "model": "5545",
+   "compartment": "CSL",
+   "tier": "P2",
+   "page": 11,
+   "prices": {
+    "24": 38000,
+    "26": 38000,
+    "28": 38000,
+    "30": 38000,
+    "32": 38000,
+    "35": 38000
+   }
+  },
+  {
+   "model": "5546",
+   "compartment": "1S",
+   "tier": "P2",
+   "page": 11,
+   "prices": {
+    "24": 80500,
+    "26": 87400,
+    "28": 87400,
+    "30": 87400,
+    "32": 96600,
+    "35": 101200
+   }
+  },
+  {
+   "model": "5546",
+   "compartment": "2S",
+   "tier": "P2",
+   "page": 11,
+   "prices": {
+    "24": 126000,
+    "26": 136000,
+    "28": 136000,
+    "30": 136000,
+    "32": 146000,
+    "35": 156000
+   }
+  },
+  {
+   "model": "5546",
+   "compartment": "1A (LHF/RHF)",
+   "tier": "P2",
+   "page": 11,
+   "prices": {
+    "24": 50000,
+    "26": 55000,
+    "28": 55000,
+    "30": 55000,
+    "32": 60000,
+    "35": 71000
+   }
+  },
+  {
+   "model": "5546",
+   "compartment": "2A (LHF/RHF)",
+   "tier": "P2",
+   "page": 11,
+   "prices": {
+    "24": 115000,
+    "26": 125000,
+    "28": 125000,
+    "30": 125000,
+    "32": 135000,
+    "35": 157000
+   }
+  },
+  {
+   "model": "5546",
+   "compartment": "1B (LHF/RHF)",
+   "tier": "P2",
+   "page": 11,
+   "prices": {
+    "24": 65000,
+    "26": 70000,
+    "28": 70000,
+    "30": 70000,
+    "32": 75000,
+    "35": 86000
+   }
+  },
+  {
+   "model": "5546",
+   "compartment": "2B (LHF/RHF)",
+   "tier": "P2",
+   "page": 11,
+   "prices": {
+    "24": 130000,
+    "26": 140000,
+    "28": 140000,
+    "30": 140000,
+    "32": 150000,
+    "35": 172000
+   }
+  },
+  {
+   "model": "5546",
+   "compartment": "1NA",
+   "tier": "P2",
+   "page": 11,
+   "prices": {
+    "24": 50000,
+    "26": 55000,
+    "28": 55000,
+    "30": 55000,
+    "32": 60000,
+    "35": 71000
+   }
+  },
+  {
+   "model": "5546",
+   "compartment": "2NA",
+   "tier": "P2",
+   "page": 11,
+   "prices": {
+    "24": 100000,
+    "26": 110000,
+    "28": 110000,
+    "30": 110000,
+    "32": 120000,
+    "35": 142000
+   }
+  },
+  {
+   "model": "5546",
+   "compartment": "L (LHF/RHF)",
+   "tier": "P2",
+   "page": 11,
+   "prices": {
+    "24": 105000,
+    "26": 110000,
+    "28": 110000,
+    "30": 116000,
+    "32": 120000,
+    "35": 125000
+   }
+  },
+  {
+   "model": "5546",
+   "compartment": "CNR",
+   "tier": "P2",
+   "page": 11,
+   "prices": {
+    "24": 90000,
+    "26": 90000,
+    "28": 90000,
+    "30": 90000,
+    "32": 90000,
+    "35": 90000
+   }
+  },
+  {
+   "model": "5546",
+   "compartment": "STOOL",
+   "tier": "P2",
+   "page": 11,
+   "prices": {
+    "24": 55000,
+    "26": 55000,
+    "28": 55000,
+    "30": 55000,
+    "32": 60000,
+    "35": 65000
+   }
+  },
+  {
+   "model": "5546",
+   "compartment": "CSL",
+   "tier": "P2",
+   "page": 11,
+   "prices": {
+    "24": 36000,
+    "26": 36000,
+    "28": 36000,
+    "30": 36000,
+    "32": 36000,
+    "35": 36000
+   }
+  },
+  {
+   "model": "5547",
+   "compartment": "1S",
+   "tier": "P2",
+   "page": 11,
+   "prices": {
+    "24": 80500,
+    "26": 87400,
+    "28": 87400,
+    "30": 87400,
+    "32": 96600,
+    "35": 101200
+   }
+  },
+  {
+   "model": "5547",
+   "compartment": "2S",
+   "tier": "P2",
+   "page": 11,
+   "prices": {
+    "24": 126000,
+    "26": 136000,
+    "28": 136000,
+    "30": 136000,
+    "32": 146000,
+    "35": 156000
+   }
+  },
+  {
+   "model": "5547",
+   "compartment": "1A (LHF/RHF)",
+   "tier": "P2",
+   "page": 11,
+   "prices": {
+    "24": 50000,
+    "26": 55000,
+    "28": 55000,
+    "30": 55000,
+    "32": 60000,
+    "35": 71000
+   }
+  },
+  {
+   "model": "5547",
+   "compartment": "2A (LHF/RHF)",
+   "tier": "P2",
+   "page": 11,
+   "prices": {
+    "24": 115000,
+    "26": 125000,
+    "28": 125000,
+    "30": 125000,
+    "32": 135000,
+    "35": 157000
+   }
+  },
+  {
+   "model": "5547",
+   "compartment": "1B (LHF/RHF)",
+   "tier": "P2",
+   "page": 11,
+   "prices": {
+    "24": 65000,
+    "26": 70000,
+    "28": 70000,
+    "30": 70000,
+    "32": 75000,
+    "35": 86000
+   }
+  },
+  {
+   "model": "5547",
+   "compartment": "2B (LHF/RHF)",
+   "tier": "P2",
+   "page": 11,
+   "prices": {
+    "24": 130000,
+    "26": 140000,
+    "28": 140000,
+    "30": 140000,
+    "32": 150000,
+    "35": 172000
+   }
+  },
+  {
+   "model": "5547",
+   "compartment": "1NA",
+   "tier": "P2",
+   "page": 11,
+   "prices": {
+    "24": 50000,
+    "26": 55000,
+    "28": 55000,
+    "30": 55000,
+    "32": 60000,
+    "35": 71000
+   }
+  },
+  {
+   "model": "5547",
+   "compartment": "2NA",
+   "tier": "P2",
+   "page": 11,
+   "prices": {
+    "24": 100000,
+    "26": 110000,
+    "28": 110000,
+    "30": 110000,
+    "32": 120000,
+    "35": 142000
+   }
+  },
+  {
+   "model": "5547",
+   "compartment": "L (LHF/RHF)",
+   "tier": "P2",
+   "page": 11,
+   "prices": {
+    "24": 105000,
+    "26": 110000,
+    "28": 110000,
+    "30": 116000,
+    "32": 120000,
+    "35": 125000
+   }
+  },
+  {
+   "model": "5547",
+   "compartment": "CNR",
+   "tier": "P2",
+   "page": 11,
+   "prices": {
+    "24": 90000,
+    "26": 90000,
+    "28": 90000,
+    "30": 90000,
+    "32": 90000,
+    "35": 90000
+   }
+  },
+  {
+   "model": "5547",
+   "compartment": "STOOL",
+   "tier": "P2",
+   "page": 11,
+   "prices": {
+    "24": 55000,
+    "26": 55000,
+    "28": 55000,
+    "30": 55000,
+    "32": 60000,
+    "35": 65000
+   }
+  },
+  {
+   "model": "5547",
+   "compartment": "CSL",
+   "tier": "P2",
+   "page": 11,
+   "prices": {
+    "24": 36000,
+    "26": 36000,
+    "28": 36000,
+    "30": 36000,
+    "32": 36000,
+    "35": 36000
+   }
+  },
+  {
+   "model": "5548",
+   "compartment": "1S",
+   "tier": "P2",
+   "page": 12,
+   "prices": {
+    "24": 80500,
+    "26": 87400,
+    "28": 87400,
+    "30": 87400,
+    "32": 96600,
+    "35": 101200
+   }
+  },
+  {
+   "model": "5548",
+   "compartment": "2S",
+   "tier": "P2",
+   "page": 12,
+   "prices": {
+    "24": 126000,
+    "26": 136000,
+    "28": 136000,
+    "30": 136000,
+    "32": 146000,
+    "35": 156000
+   }
+  },
+  {
+   "model": "5548",
+   "compartment": "1A (LHF/RHF)",
+   "tier": "P2",
+   "page": 12,
+   "prices": {
+    "24": 50000,
+    "26": 55000,
+    "28": 55000,
+    "30": 55000,
+    "32": 60000,
+    "35": 71000
+   }
+  },
+  {
+   "model": "5548",
+   "compartment": "2A (LHF/RHF)",
+   "tier": "P2",
+   "page": 12,
+   "prices": {
+    "24": 115000,
+    "26": 125000,
+    "28": 125000,
+    "30": 125000,
+    "32": 135000,
+    "35": 157000
+   }
+  },
+  {
+   "model": "5548",
+   "compartment": "1B (LHF/RHF)",
+   "tier": "P2",
+   "page": 12,
+   "prices": {
+    "24": 65000,
+    "26": 70000,
+    "28": 70000,
+    "30": 70000,
+    "32": 75000,
+    "35": 86000
+   }
+  },
+  {
+   "model": "5548",
+   "compartment": "2B (LHF/RHF)",
+   "tier": "P2",
+   "page": 12,
+   "prices": {
+    "24": 130000,
+    "26": 140000,
+    "28": 140000,
+    "30": 140000,
+    "32": 150000,
+    "35": 172000
+   }
+  },
+  {
+   "model": "5548",
+   "compartment": "1NA",
+   "tier": "P2",
+   "page": 12,
+   "prices": {
+    "24": 50000,
+    "26": 55000,
+    "28": 55000,
+    "30": 55000,
+    "32": 60000,
+    "35": 71000
+   }
+  },
+  {
+   "model": "5548",
+   "compartment": "2NA",
+   "tier": "P2",
+   "page": 12,
+   "prices": {
+    "24": 100000,
+    "26": 110000,
+    "28": 110000,
+    "30": 110000,
+    "32": 120000,
+    "35": 142000
+   }
+  },
+  {
+   "model": "5548",
+   "compartment": "CNR",
+   "tier": "P2",
+   "page": 12,
+   "prices": {
+    "24": 90000,
+    "26": 90000,
+    "28": 90000,
+    "30": 90000,
+    "32": 90000,
+    "35": 90000
+   }
+  },
+  {
+   "model": "5548",
+   "compartment": "STOOL",
+   "tier": "P2",
+   "page": 12,
+   "prices": {
+    "24": 55000,
+    "26": 55000,
+    "28": 55000,
+    "30": 55000,
+    "32": 60000,
+    "35": 65000
+   }
+  },
+  {
+   "model": "5548",
+   "compartment": "CSL",
+   "tier": "P2",
+   "page": 12,
+   "prices": {
+    "24": 36000,
+    "26": 36000,
+    "28": 36000,
+    "30": 36000,
+    "32": 36000,
+    "35": 36000
+   }
+  },
+  {
+   "model": "5548",
+   "compartment": "L(LHF)",
+   "tier": "P2",
+   "page": 12,
+   "prices": {
+    "24": 105000,
+    "26": 110000,
+    "28": 110000,
+    "30": 116000,
+    "32": 120000,
+    "35": 125000
+   }
+  },
+  {
+   "model": "5548",
+   "compartment": "L(RHF)",
+   "tier": "P2",
+   "page": 12,
+   "prices": {
+    "24": 105000,
+    "26": 110000,
+    "28": 110000,
+    "30": 116000,
+    "32": 120000,
+    "35": 124999
+   }
+  },
+  {
+   "model": "5549",
+   "compartment": "1S",
+   "tier": "P2",
+   "page": 12,
+   "prices": {
+    "24": 76000,
+    "26": 81000,
+    "28": 81000,
+    "30": 81000,
+    "32": 91000,
+    "35": 96000
+   }
+  },
+  {
+   "model": "5549",
+   "compartment": "2S",
+   "tier": "P2",
+   "page": 12,
+   "prices": {
+    "24": 126000,
+    "26": 136000,
+    "28": 136000,
+    "30": 136000,
+    "32": 146000,
+    "35": 156000
+   }
+  },
+  {
+   "model": "5549",
+   "compartment": "1A (LHF/RHF)",
+   "tier": "P2",
+   "page": 12,
+   "prices": {
+    "24": 65000,
+    "26": 70000,
+    "28": 70000,
+    "30": 70000,
+    "32": 75000,
+    "35": 80000
+   }
+  },
+  {
+   "model": "5549",
+   "compartment": "2A (LHF/RHF)",
+   "tier": "P2",
+   "page": 12,
+   "prices": {
+    "24": 115000,
+    "26": 125000,
+    "28": 125000,
+    "30": 125000,
+    "32": 135000,
+    "35": 145000
+   }
+  },
+  {
+   "model": "5549",
+   "compartment": "1B (LHF/RHF)",
+   "tier": "P2",
+   "page": 12,
+   "prices": {
+    "24": 84000,
+    "26": 89000,
+    "28": 89000,
+    "30": 89000,
+    "32": 94000,
+    "35": 99000
+   }
+  },
+  {
+   "model": "5549",
+   "compartment": "2B (LHF/RHF)",
+   "tier": "P2",
+   "page": 12,
+   "prices": {
+    "24": 130000,
+    "26": 140000,
+    "28": 140000,
+    "30": 140000,
+    "32": 150000,
+    "35": 160000
+   }
+  },
+  {
+   "model": "5549",
+   "compartment": "1NA",
+   "tier": "P2",
+   "page": 12,
+   "prices": {
+    "24": 50000,
+    "26": 55000,
+    "28": 55000,
+    "30": 55000,
+    "32": 60000,
+    "35": 65000
+   }
+  },
+  {
+   "model": "5549",
+   "compartment": "2NA",
+   "tier": "P2",
+   "page": 12,
+   "prices": {
+    "24": 100000,
+    "26": 110000,
+    "28": 110000,
+    "30": 110000,
+    "32": 120000,
+    "35": 130000
+   }
+  },
+  {
+   "model": "5549",
+   "compartment": "CNR",
+   "tier": "P2",
+   "page": 12,
+   "prices": {
+    "24": 95000,
+    "26": 95000,
+    "28": 95000,
+    "30": 95000,
+    "32": 95000,
+    "35": 95000
+   }
+  },
+  {
+   "model": "5549",
+   "compartment": "STOOL",
+   "tier": "P2",
+   "page": 12,
+   "prices": {
+    "24": 55000,
+    "26": 55000,
+    "28": 55000,
+    "30": 55000,
+    "32": 60000,
+    "35": 65000
+   }
+  },
+  {
+   "model": "5549",
+   "compartment": "CSL",
+   "tier": "P2",
+   "page": 12,
+   "prices": {
+    "24": 38000,
+    "26": 38000,
+    "28": 38000,
+    "30": 38000,
+    "32": 38000,
+    "35": 38000
+   }
+  },
+  {
+   "model": "5549",
+   "compartment": "L(LHF)",
+   "tier": "P2",
+   "page": 12,
+   "prices": {
+    "24": 105000,
+    "26": 100000,
+    "28": 100000,
+    "30": 100000,
+    "32": 120000,
+    "35": 125000
+   }
+  },
+  {
+   "model": "5549",
+   "compartment": "L(RHF)",
+   "tier": "P2",
+   "page": 12,
+   "prices": {
+    "24": 105000,
+    "26": 10000,
+    "28": 100000,
+    "30": 100000,
+    "32": 120000,
+    "35": 125000
+   }
+  },
+  {
+   "model": "6112",
+   "compartment": "2S",
+   "tier": "P2",
+   "page": 12,
+   "prices": {
+    "30": 125000
+   }
+  }
+ ],
+ "accessories": [
+  {
+   "code": "5543-HDRST",
+   "description": "SOFA 5543 HEADREST",
+   "size": "HDRST",
+   "price_sen": 10000,
+   "page": 12
+  },
+  {
+   "code": "5543-LONG PILLOW",
+   "description": "SOFA 5543 LONG PILLOW (12\"X28\")",
+   "size": "12\" X 28\"",
+   "price_sen": 4000,
+   "page": 12
+  },
+  {
+   "code": "LONG PILLOW",
+   "description": "SOFA LONG PILLOW (12\"X28\")",
+   "size": "12\" X 28\"",
+   "price_sen": 4000,
+   "page": 13
+  },
+  {
+   "code": "SQUARE PILLOW",
+   "description": "SOFA SQUARE PILLOW (16\"X16\")",
+   "size": "16\" X 16\"",
+   "price_sen": 2500,
+   "page": 13
+  },
+  {
+   "code": "SQUARE PILLOW SP",
+   "description": "SOFA SQUARE PILLOW (26\"X26\")",
+   "size": "16\" X 16\"",
+   "price_sen": 5500,
+   "page": 13
+  }
+ ],
+ "combos_text": [
+  {
+   "page": 13,
+   "text": "5535  (3)"
+  },
+  {
+   "page": 13,
+   "text": "Components                               Tier        Scope                    24\"           26\"          28\"           30\"          32\"           35\""
+  },
+  {
+   "page": 13,
+   "text": "1A(LHF) / 1A(RHF) + 2A(LHF) /            P2          Master                          RM           RM            RM           RM            RM     RM"
+  },
+  {
+   "page": 13,
+   "text": "2A(RHF)                                                                        1,584.00      1,675.00     1,675.00      1,675.00     1,780.00     1,880.00"
+  },
+  {
+   "page": 13,
+   "text": "2A(LHF) / 2A(RHF) + L(LHF) /             P2          Master                          RM           RM            RM           RM            RM     RM"
+  },
+  {
+   "page": 13,
+   "text": "L(RHF)                                                                         2,100.00      2,200.00     2,200.00      2,200.00     2,400.00     2,500.00"
+  },
+  {
+   "page": 13,
+   "text": "1NA + 2A(LHF) / 2A(RHF) + L(LHF)         P2          Master                          RM           RM            RM           RM            RM     RM"
+  },
+  {
+   "page": 13,
+   "text": "/ L(RHF)                                                                       2,600.00      2,750.00     2,750.00      2,860.00     3,000.00     3,300.00"
+  }
+ ],
+ "surcharges": {
+  "Bedframe/Divan Heights": [
+   {
+    "item": "4\"",
+    "surcharge_sen": null
+   },
+   {
+    "item": "5\"",
+    "surcharge_sen": null
+   },
+   {
+    "item": "6\"",
+    "surcharge_sen": null
+   },
+   {
+    "item": "8\"",
+    "surcharge_sen": null
+   },
+   {
+    "item": "10\"",
+    "surcharge_sen": 5500
+   },
+   {
+    "item": "11\"",
+    "surcharge_sen": 13000
+   },
+   {
+    "item": "12\"",
+    "surcharge_sen": 13000
+   },
+   {
+    "item": "13\"",
+    "surcharge_sen": 15000
+   },
+   {
+    "item": "14\"",
+    "surcharge_sen": 15000
+   },
+   {
+    "item": "16\"",
+    "surcharge_sen": 16000
+   }
+  ],
+  "Bedframe/Total Heights": [
+   {
+    "item": "25\"",
+    "surcharge_sen": 4000
+   },
+   {
+    "item": "23\"",
+    "surcharge_sen": null
+   },
+   {
+    "item": "21\"",
+    "surcharge_sen": null
+   },
+   {
+    "item": "19\"",
+    "surcharge_sen": 4000
+   },
+   {
+    "item": "18\"",
+    "surcharge_sen": 8000
+   },
+   {
+    "item": "20\"",
+    "surcharge_sen": null
+   },
+   {
+    "item": "22\"",
+    "surcharge_sen": null
+   },
+   {
+    "item": "24\"",
+    "surcharge_sen": null
+   },
+   {
+    "item": "26\"",
+    "surcharge_sen": 8000
+   },
+   {
+    "item": "28\"",
+    "surcharge_sen": 16000
+   }
+  ],
+  "Bedframe/Leg Heights": [
+   {
+    "item": "No Leg",
+    "surcharge_sen": null
+   },
+   {
+    "item": "1\"",
+    "surcharge_sen": null
+   },
+   {
+    "item": "2\"",
+    "surcharge_sen": null
+   },
+   {
+    "item": "4\"",
+    "surcharge_sen": null
+   },
+   {
+    "item": "6\"",
+    "surcharge_sen": null
+   },
+   {
+    "item": "7\"",
+    "surcharge_sen": 16000
+   }
+  ],
+  "Bedframe/Specials": [
+   {
+    "item": "HB Fully Cover",
+    "surcharge_sen": 5000
+   },
+   {
+    "item": "Divan Top Fully Cover",
+    "surcharge_sen": 5000
+   },
+   {
+    "item": "Divan Full Cover",
+    "surcharge_sen": 8000
+   },
+   {
+    "item": "Left Drawer",
+    "surcharge_sen": 16000
+   },
+   {
+    "item": "Right Drawer",
+    "surcharge_sen": 16000
+   },
+   {
+    "item": "Front Drawer",
+    "surcharge_sen": 13000
+   },
+   {
+    "item": "HB Straight",
+    "surcharge_sen": null
+   },
+   {
+    "item": "Divan Top(W)",
+    "surcharge_sen": null
+   },
+   {
+    "item": "1 Piece Divan",
+    "surcharge_sen": 25000
+   },
+   {
+    "item": "Divan Curve",
+    "surcharge_sen": 5000
+   },
+   {
+    "item": "No Side Panel",
+    "surcharge_sen": null
+   },
+   {
+    "item": "Headboard Only",
+    "surcharge_sen": null
+   },
+   {
+    "item": "Nylon Fabric",
+    "surcharge_sen": null
+   },
+   {
+    "item": "5537 Backrest",
+    "surcharge_sen": null
+   },
+   {
+    "item": "Add 1\" Infront L",
+    "surcharge_sen": null
+   },
+   {
+    "item": "Separate Backrest Packing",
+    "surcharge_sen": null
+   },
+   {
+    "item": "Divan A11",
+    "surcharge_sen": null
+   },
+   {
+    "item": "Seat Add On 4\"",
+    "surcharge_sen": null
+   }
+  ],
+  "Bedframe/Gaps": [
+   "4\"",
+   "5\"",
+   "6\"",
+   "7\"",
+   "8\"",
+   "9\"",
+   "10\"",
+   "11\"",
+   "12\"",
+   "13\"",
+   "14\"",
+   "15\"",
+   "16\""
+  ],
+  "Sofa/Leg Heights": [
+   {
+    "item": "No Leg",
+    "surcharge_sen": null
+   },
+   {
+    "item": "4\"",
+    "surcharge_sen": null
+   },
+   {
+    "item": "6\"",
+    "surcharge_sen": null
+   },
+   {
+    "item": "1\"",
+    "surcharge_sen": null
+   }
+  ],
+  "Sofa/Specials": [
+   {
+    "item": "Nylon Fabric",
+    "surcharge_sen": null
+   },
+   {
+    "item": "5537 Backrest",
+    "surcharge_sen": 5000
+   },
+   {
+    "item": "Separate Backrest Packing",
+    "surcharge_sen": null
+   },
+   {
+    "item": "Extend 5\"",
+    "surcharge_sen": 50000
+   },
+   {
+    "item": "Short Backrest",
+    "surcharge_sen": null
+   },
+   {
+    "item": "Seat Add 1ft",
+    "surcharge_sen": null
+   }
+  ],
+  "Sofa/Sizes": [
+   "24",
+   "26",
+   "28",
+   "30",
+   "32",
+   "35",
+   "44",
+   "24\" x 37\"",
+   "12"
+  ]
+ }
+}
