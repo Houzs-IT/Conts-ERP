@@ -29,6 +29,8 @@ const ACTION: Record<string, string> = {
   'reservation.create': 'created this reservation', 'reservation.duplicate': 'created this reservation as a copy',
   'reservation.status': 'changed the status', 'reservation.cancel': 'cancelled the reservation', 'reservation.dates': 'changed the dates',
   'reservation.details': 'changed the details', 'reservation.prepare': 'prepared the check-in', 'reservation.payment': 'recorded a payment',
+  'reservation.late_checkout': 'requested a late checkout', 'reservation.late_checkout_paid': 'recorded a paid late checkout',
+  'reservation.late_checkout_cancelled': 'cancelled a late checkout request',
   'reservation.payment_removed': 'removed a payment', 'reservation.block_released': 'released the calendar block',
   'reservation.side_effect_failed': 'hit a problem finishing a status change',
   'reservation.block': 'held these dates', 'document.issue': 'issued a document', 'document.void': 'voided a document', 'message.send': 'sent a message',

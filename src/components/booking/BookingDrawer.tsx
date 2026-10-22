@@ -50,6 +50,8 @@ interface Payment {
   createdBy: string | null; createdAt: string;
 }
 interface LedgerLine { key: string; label: string; sub?: string; amount: number }
+/** An open paid late checkout: the new time waits for the guest's payment (functions/api/reservations/[id]/late-checkout.ts). */
+interface LateCheckout { id: string; checkoutTime: string; amount: number; remark: string | null; status: 'requested'; requestedBy: string | null; requestedAt: string }
 interface Ledger {
   guestLines: LedgerLine[]; guestTotal: number; otaTax: number | null;
   platformLines: LedgerLine[]; platformTotal: number;
@@ -62,8 +64,8 @@ interface Detail extends Required<Omit<BookingSummary, 'guestPhone'>> {
   country: { code: string; name: string; from: 'nationality' | 'phone' } | null;
   unitId: string; notes: string | null; staffNotes: string | null; createdAt: string;
   money: Money; ledger: Ledger; timeline: TimelineEvent[]; moves: Move[];
-  documents?: GuestDocument[]; approvals?: Approval[];
-  can: { changeDates: boolean; changeDatesReason: string | null; recordPayment: boolean; editDetails: boolean; paymentsReady: boolean; issueDocuments?: boolean; invoiceReason?: string | null };
+  documents?: GuestDocument[]; approvals?: Approval[]; lateCheckout?: LateCheckout | null;
+  can: { changeDates: boolean; changeDatesReason: string | null; recordPayment: boolean; editDetails: boolean; paymentsReady: boolean; issueDocuments?: boolean; invoiceReason?: string | null; lateCheckout?: boolean };
 }
 
 /** Airbnb, Booking.com and Agoda own their bookings' dates; a change is made there and arrives through Channex. */
@@ -561,6 +563,107 @@ function NotesBox({ d, onSaved }: { d: Detail; onSaved: () => void }) {
   );
 }
 
+/** A guest asks to check out later for a fee. Only the request is saved: the checkout time moves once they pay. */
+function LateCheckoutModal({ d, onClose, onSaved }: { d: Detail; onClose: () => void; onSaved: (msg: string) => void }) {
+  const toast = useToast();
+  const now = d.checkOutTime || '11:00';
+  const [time, setTime] = useState('');
+  const [sen, setSen] = useState<number | null>(null);
+  const [remark, setRemark] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const early = !!time && time <= now;
+  const valid = !!time && !early && sen != null && sen > 0;
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    if (!valid || sen == null) return;
+    setBusy(true); setErrors({});
+    try {
+      await api.post(`/reservations/${d.id}/late-checkout`, { checkoutTime: time, amount: sen, remark: remark.trim() || undefined });
+      onSaved(`Late checkout to ${time} requested for ${rm(sen)}. Checkout stays ${now} until the guest pays.`);
+    } catch (err) {
+      if (err instanceof ApiFailure && err.fields) setErrors(err.fields);
+      toast({ tone: 'critical', title: 'Late checkout not requested.', body: failMessage(err) });
+    }
+    setBusy(false);
+  }
+  return (
+    <CentreModal title="Request late checkout" sub={`Checkout is by ${now} on ${date(d.checkOut)}. The time changes only after the guest pays.`} onClose={() => { if (!busy) onClose(); }}>
+      <form onSubmit={submit} className="px-[22px] py-4 flex flex-col gap-[14px] overflow-y-auto min-h-0">
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3">
+          <TimeField label="New checkout time" value={time} onChange={setTime} required
+            error={early ? `Pick a time after ${now}.` : errors.checkoutTime} help={`Now ${now}`} />
+          <MoneyInput label="Fee (RM)" valueSen={sen} onChangeSen={setSen} minSen={1} required error={errors.amount} />
+        </div>
+        <Field label="Remark (optional)" value={remark} onChange={e => setRemark(e.target.value)} maxLength={500}
+          placeholder="e.g. Asked by WhatsApp, flight at 18:00" />
+        <ModalActions>
+          <Button type="button" size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
+          <Button type="submit" size="sm" variant="primary" loading={busy} disabled={!valid} disabledReason={`Pick a time after ${now} and enter the fee.`}>Request late checkout</Button>
+        </ModalActions>
+      </form>
+    </CentreModal>
+  );
+}
+
+/** The guest paid for their late checkout: records the fee as a guest payment and moves the checkout time, together. */
+function LateCheckoutPaidModal({ d, lc, onClose, onSaved }: { d: Detail; lc: LateCheckout; onClose: () => void; onSaved: (msg: string) => void }) {
+  const toast = useToast();
+  const [receivedOn, setReceivedOn] = useState(todayIso());
+  // vocab-ok: stored payment method value from METHODS
+  const [method, setMethod] = useState('Cash');
+  const [reference, setReference] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    if (!receivedOn) return;
+    setBusy(true); setErrors({});
+    try {
+      await api.post(`/reservations/${d.id}/late-checkout/paid`, { receivedOn, method, reference: reference.trim() || undefined });
+      onSaved(`${rm(lc.amount)} recorded. Checkout is now by ${lc.checkoutTime}, and Cleaning plans with it.`);
+    } catch (err) {
+      if (err instanceof ApiFailure && err.fields) setErrors(err.fields);
+      toast({ tone: 'critical', title: 'Late checkout not saved.', body: failMessage(err) });
+    }
+    setBusy(false);
+  }
+  return (
+    <CentreModal title="Guest paid for late checkout" sub={`${rm(lc.amount)} for checkout by ${lc.checkoutTime} on ${date(d.checkOut)}. Recorded as a payment from the guest.`} onClose={() => { if (!busy) onClose(); }}>
+      <form onSubmit={submit} className="px-[22px] py-4 flex flex-col gap-[14px] overflow-y-auto min-h-0">
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3">
+          <DateField label="Received on" value={receivedOn} max={todayIso()} onChange={setReceivedOn} required error={errors.receivedOn} />
+          <Select label="Method" showLabel size="md" value={method} onChange={setMethod} options={METHODS.filter(m => m !== 'Booking site payout').map(m => ({ value: m, label: m }))} />
+        </div>
+        <Field label="Reference (optional)" value={reference} onChange={e => setReference(e.target.value)} placeholder="Bank or receipt reference" />
+        <ModalActions>
+          <Button type="button" size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
+          <Button type="submit" size="sm" variant="primary" loading={busy} disabled={!receivedOn} disabledReason="Pick the date it was received.">Record and change checkout</Button>
+        </ModalActions>
+      </form>
+    </CentreModal>
+  );
+}
+
+/** The open late checkout on the booking: what was asked, and the next step. */
+function LateCheckoutCard({ lc, d, onPaid, onCancel }: { lc: LateCheckout; d: Detail; onPaid: () => void; onCancel: () => void }) {
+  return (
+    <div className="-mt-2 rounded-card border border-solid border-line bg-gold-tint p-[13px] flex flex-col gap-2">
+      <div className="flex flex-col gap-0.5 min-w-0">
+        <span className="text-copy font-semibold">Late checkout to {lc.checkoutTime} · waiting for payment</span>
+        <span className="text-meta text-muted-ink">{rm(lc.amount)} · checkout stays {d.checkOutTime || '11:00'} until paid</span>
+      </div>
+      {lc.remark && <p className="m-0 text-meta text-ink [overflow-wrap:anywhere]">{lc.remark}</p>}
+      {lc.requestedBy && <span className="text-caption text-muted-ink">Requested by {lc.requestedBy} · {dateTime(lc.requestedAt)}</span>}
+      <div className="flex gap-2 flex-wrap">
+        <Button size="sm" variant="primary" onClick={onPaid} disabled={!d.can.recordPayment}
+          disabledReason="Only management, finance and operations managers record payments.">Guest paid</Button>
+        <Button size="sm" variant="secondary" onClick={onCancel}>Cancel request</Button>
+      </div>
+    </div>
+  );
+}
+
 /* ------------------------------------------------------------------ */
 /* The drawer                                                          */
 /* ------------------------------------------------------------------ */
@@ -597,6 +700,7 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
   const [asking, setAsking] = useState<Move | 'remove_block' | null>(null);
   const [datesOpen, setDatesOpen] = useState(false);
   const [timesOpen, setTimesOpen] = useState(false);
+  const [lateOpen, setLateOpen] = useState<'request' | 'paid' | 'cancel' | null>(null);
   const [payOpen, setPayOpen] = useState(false);
   const [removing, setRemoving] = useState<Payment | null>(null);
   const [messageOpen, setMessageOpen] = useState(false);
@@ -648,6 +752,15 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
     } catch (err) {
       toast({ tone: 'critical', title: 'Block not removed.', body: failMessage(err) });
     }
+    setBusy(false);
+  }
+
+  async function cancelLate() {
+    setBusy(true);
+    try {
+      await api.del(`/reservations/${id}/late-checkout`);
+      setLateOpen(null); saved('Late checkout request cancelled.');
+    } catch (err) { toast({ tone: 'critical', title: 'Request not cancelled.', body: failMessage(err) }); }
     setBusy(false);
   }
 
@@ -723,9 +836,16 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
           ))}
         </div>
         {d && live && !block && (
-          <button type="button" onClick={() => setTimesOpen(true)}
-            className="self-start -mt-3 p-0 border-none bg-transparent [font-family:inherit] text-meta text-ink underline cursor-pointer">Change check-in or checkout time</button>
+          <div className="-mt-3 flex items-center gap-x-4 gap-y-1 flex-wrap">
+            <button type="button" onClick={() => setTimesOpen(true)}
+              className="p-0 border-none bg-transparent [font-family:inherit] text-meta text-ink underline cursor-pointer">Change check-in or checkout time</button>
+            {d.can.lateCheckout && !d.lateCheckout && (
+              <button type="button" onClick={() => setLateOpen('request')}
+                className="p-0 border-none bg-transparent [font-family:inherit] text-meta text-ink underline cursor-pointer">Request late checkout</button>
+            )}
+          </div>
         )}
+        {d?.lateCheckout && live && <LateCheckoutCard lc={d.lateCheckout} d={d} onPaid={() => setLateOpen('paid')} onCancel={() => setLateOpen('cancel')} />}
 
         {!block && d && (
           <div className="flex flex-col gap-1 text-copy">
@@ -832,6 +952,15 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
           }} />
       )}
       {timesOpen && d && <TimesModal d={d} onClose={() => setTimesOpen(false)} onSaved={msg => { setTimesOpen(false); saved(msg); }} />}
+      {lateOpen === 'request' && d && <LateCheckoutModal d={d} onClose={() => setLateOpen(null)} onSaved={msg => { setLateOpen(null); saved(msg); }} />}
+      {lateOpen === 'paid' && d?.lateCheckout && <LateCheckoutPaidModal d={d} lc={d.lateCheckout} onClose={() => setLateOpen(null)} onSaved={msg => { setLateOpen(null); saved(msg); }} />}
+      <ConfirmDialog busy={busy} onClose={() => { if (!busy) setLateOpen(null); }}
+        spec={lateOpen === 'cancel' && d?.lateCheckout ? {
+          title: 'Cancel this late checkout request?',
+          body: `Late checkout to ${d.lateCheckout.checkoutTime} for ${rm(d.lateCheckout.amount)}. Checkout stays ${d.checkOutTime || '11:00'}. Nothing was charged, so nothing is refunded.`,
+          danger: true, cancelLabel: 'Keep it', confirmLabel: 'Cancel request', busyLabel: 'Cancelling…',
+          onConfirm: cancelLate,
+        } : null} />
       {payOpen && d && <RecordPaymentModal d={d} onClose={() => setPayOpen(false)} onSaved={msg => { setPayOpen(false); if (msg) saved(msg); else { reload(); onChanged?.(id); } }} />}
       <ConfirmDialog busy={busy} onClose={() => { if (!busy) setRemoving(null); }}
         spec={removing ? {

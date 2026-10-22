@@ -168,6 +168,11 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 - Next, the go-live list (spec section 7), each step asked of finance first: choose the ledger start date (still EMPTY on production on purpose: nothing changes until it is set); import the chart of accounts and mark banks and cash as money accounts; set the posting rules, item group accounts and bank voucher letters until Ledger setup shows Ready; after AutoCount closes the last month, import the opening trial balance, outstanding invoices (with customer code) and bills, and check them on Ledger setup.
 - Each PR merged to production should be looked at once with a finance account (Ledger setup and the Finance menu open, nothing posted for the test).
 
+## Paid late checkout (feat/late-checkout, migration 0138, 22 Oct 2026)
+- Apply 0138 to staging, then production, before merging: without it the booking panel shows no late checkout option.
+- A direct booking's invoice leaves out a paid late checkout fee (guestDocuments snapshotFor builds the ledger without lateFees); the receipt for the fee is right.
+- Cleaning does not see a requested but unpaid late checkout; it sees the new time once paid.
+
 ## Later
 - Packages (8 Oct, chore/update-packages): Property OS has 0 flagged packages (wrangler 4.148, source-map-js, and an override pinning sharp to 0.35.5 inside wrangler's local emulator; all build/dev tools, none ran in production). Engine: the non-breaking fixes are in (hono on the server, dompurify on the screens, and build tools). Left in engine/, each needing a breaking upgrade of Houzs's code or tools: react-router 6 (moderate), wrangler's sharp and undici, esbuild, vitest, braces. Take them with the next Houzs copy.
 - Email delivery: needs MAIL_API_KEY on the preview environment too; production has it.

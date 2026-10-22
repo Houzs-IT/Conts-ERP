@@ -18,37 +18,44 @@ import { type Env, one } from './db';
 export const OTA_CHANNELS = ['airbnb', 'booking_com', 'agoda'];
 const TOLERANCE = 2; // sen: the exports round each part on its own
 
-/** Whether migration 0052's payout columns and 0091's booking_payments exist. Checked so the list keeps working
- *  on a database that has not had them applied yet. */
-let moneySchemaSeen: { payoutCols: boolean; payments: boolean } | null = null;
-export async function moneySchema(env: Env): Promise<{ payoutCols: boolean; payments: boolean }> {
+/** Whether migration 0052's payout columns, 0091's booking_payments and 0138's late_checkout_requests exist. Checked so
+ *  the list keeps working on a database that has not had them applied yet. */
+export interface MoneySchema { payoutCols: boolean; payments: boolean; lateFees?: boolean }
+let moneySchemaSeen: MoneySchema | null = null;
+export async function moneySchema(env: Env): Promise<MoneySchema> {
   // Once both are there they stay there: remembered for the life of the worker, so the booking list and every
   // booking stop paying a catalogue query (and a connection) on each request. A missing one is asked again.
   if (moneySchemaSeen) return moneySchemaSeen;
-  const r = await one<{ cols: number; payments: number }>(env, `
+  const r = await one<{ cols: number; payments: number; late: number }>(env, `
     SELECT (SELECT COUNT(*) FROM information_schema.columns WHERE table_name = 'reservations' AND table_schema = ANY(current_schemas(false))
               AND column_name IN ('payout_date', 'payout_amount', 'payment_processing_fee')) AS cols,
-           (SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'booking_payments' AND table_schema = ANY(current_schemas(false))) AS payments`);
-  const found = { payoutCols: Number(r?.cols ?? 0) === 3, payments: Number(r?.payments ?? 0) === 1 };
-  if (found.payoutCols && found.payments) moneySchemaSeen = found;
+           (SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'booking_payments' AND table_schema = ANY(current_schemas(false))) AS payments,
+           (SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'late_checkout_requests' AND table_schema = ANY(current_schemas(false))) AS late`);
+  const found = { payoutCols: Number(r?.cols ?? 0) === 3, payments: Number(r?.payments ?? 0) === 1, lateFees: Number(r?.late ?? 0) === 1 };
+  if (found.payoutCols && found.payments && found.lateFees) moneySchemaSeen = found;
   return found;
 }
 
-/** The join and the three expressions the list filters and sums on. `bp` is one row per booking. */
-export function moneySql(s: { payoutCols: boolean; payments: boolean }) {
+/** The join and the three expressions the list filters and sums on. `bp` and `lf` are one row per booking.
+ *  A paid late checkout's fee is money the booking brings in on top of its own total, so it adds to what is expected:
+ *  otherwise its payment would read as paying off the room. */
+export function moneySql(s: MoneySchema) {
   const join = s.payments ? `LEFT JOIN (
       SELECT reservation_id,
              SUM(CASE WHEN kind = 'refund' THEN -amount ELSE amount END) FILTER (WHERE status = 'received') AS paid,
              SUM(amount) FILTER (WHERE source = 'owner_workbook' AND kind = 'ota_payout') AS reported,
              bool_or(source = 'owner_workbook') AS imported
       FROM booking_payments GROUP BY reservation_id) bp ON bp.reservation_id = r.id` : '';
+  const lateJoin = s.lateFees ? `LEFT JOIN (
+      SELECT reservation_id, SUM(amount) AS fees FROM late_checkout_requests WHERE status = 'paid' GROUP BY reservation_id) lf ON lf.reservation_id = r.id` : '';
   const legacy = s.payoutCols ? 'GREATEST(r.collected_revenue, COALESCE(r.payout_amount, 0))' : 'r.collected_revenue';
   const received = s.payments ? `(COALESCE(bp.paid, 0) + CASE WHEN COALESCE(bp.imported, false) THEN 0 ELSE ${legacy} END)` : legacy;
   const computed = `(r.gross_booking_value - r.channel_fee${s.payoutCols ? ' - COALESCE(r.payment_processing_fee, 0)' : ''})`;
-  const expected = s.payoutCols
+  const base = s.payoutCols
     ? `COALESCE(${s.payments ? 'bp.reported, ' : ''}r.payout_amount, ${computed})`
     : computed;
-  return { join, received, expected, outstanding: `GREATEST(${expected} - ${received}, 0)` };
+  const expected = s.lateFees ? `(${base} + COALESCE(lf.fees, 0))` : base;
+  return { join: `${join}\n  ${lateJoin}`, received, expected, outstanding: `GREATEST(${expected} - ${received}, 0)` };
 }
 
 /* ------------------------------------------------------------------ */
@@ -66,6 +73,8 @@ export interface MoneyIn {
   roomRevenue: number | null; guestCleaningFee: number | null; extraFees: number | null; sstAmount: number | null;
   tourismTax: number | null; otaTax: number | null; paymentProcessingFee: number | null;
   payoutAmount: number | null; payoutDate: string | null; paymentMethod: string | null; fromWorkbook: boolean;
+  /** Paid late checkout fees (migration 0138): charged by us on top of the booking's own total. */
+  lateFees?: number;
 }
 export interface LedgerLine { key: string; label: string; sub?: string; amount: number }
 export interface SourceFigure { label: string; amount: number | null; from: string }
@@ -96,7 +105,8 @@ export function ledger(m: MoneyIn, payments: PaymentRow[], site: string): Ledger
   const v = (x: number | null) => (x == null ? 0 : x);
   const dead = m.state === 'cancelled' || m.state === 'no_show';
   const ota = OTA_CHANNELS.includes(m.channel);
-  const guestTotal = m.gross;
+  const late = m.lateFees ?? 0;
+  const guestTotal = m.gross + late;
   const notes: string[] = [];
   const sources: SourceFigure[] = [];
 
@@ -107,6 +117,7 @@ export function ledger(m: MoneyIn, payments: PaymentRow[], site: string): Ledger
   if (v(m.extraFees)) others.push({ key: 'extras', label: 'Other fees', sub: 'Extra guest, early or late, add-ons', amount: v(m.extraFees) });
   if (v(m.sstAmount)) others.push({ key: 'sst', label: 'SST', amount: v(m.sstAmount) });
   if (v(m.tourismTax)) others.push({ key: 'tourism', label: 'Tourism tax', amount: v(m.tourismTax) });
+  if (late) others.push({ key: 'late', label: 'Late checkout', sub: 'Charged by us, paid to us', amount: late });
   const otherSum = others.reduce((n, l) => n + l.amount, 0);
   const room = guestTotal - otherSum;
   let guestLines: LedgerLine[] = [];
@@ -124,9 +135,9 @@ export function ledger(m: MoneyIn, payments: PaymentRow[], site: string): Ledger
       }
     }
   }
-  sources.push({ label: 'Guest total', amount: guestTotal, from: m.fromWorkbook ? 'Owner workbook (Airbnb earnings report)' : ota ? `From ${site}` : 'This reservation' });
+  sources.push({ label: 'Guest total', amount: m.gross, from: m.fromWorkbook ? 'Owner workbook (Airbnb earnings report)' : ota ? `From ${site}` : 'This reservation' });
   if (m.roomRevenue != null) sources.push({ label: m.channel === 'airbnb' ? 'Host payout' : 'Accommodation charges', amount: m.roomRevenue, from: 'Imported reservation file' });
-  for (const l of others) sources.push({ label: l.label, amount: l.amount, from: l.key === 'cleaning' && m.fromWorkbook ? 'Owner workbook' : 'Imported reservation file' });
+  for (const l of others.filter(o => o.key !== 'late')) sources.push({ label: l.label, amount: l.amount, from: l.key === 'cleaning' && m.fromWorkbook ? 'Owner workbook' : 'Imported reservation file' });
 
   // (2)
   const platformLines: LedgerLine[] = [];
@@ -139,11 +150,12 @@ export function ledger(m: MoneyIn, payments: PaymentRow[], site: string): Ledger
   // (3)
   const imported = payments.filter(p => p.source === 'owner_workbook');
   const reported = imported.filter(p => p.kind === 'ota_payout').reduce((n, p) => n + p.amount, 0);
-  const computed = guestTotal - platformTotal;
-  const expected = imported.length ? reported : m.payoutAmount ?? computed;
-  if ((imported.length || m.payoutAmount != null) && Math.abs(expected - computed) > TOLERANCE && !dead) {
-    notes.push(`${site} reported a host payout of ${ringgit(expected)}; the guest total less the service fee is ${ringgit(computed)}. ${site}'s figure is used.`);
+  const computed = m.gross - platformTotal;
+  const payout = imported.length ? reported : m.payoutAmount ?? computed;
+  if ((imported.length || m.payoutAmount != null) && Math.abs(payout - computed) > TOLERANCE && !dead) {
+    notes.push(`${site} reported a host payout of ${ringgit(payout)}; the guest total less the service fee is ${ringgit(computed)}. ${site}'s figure is used.`);
   }
+  const expected = payout + late;
   if (imported.length) sources.push({ label: `${site} host payout lines (${imported.length})`, amount: reported, from: 'Owner workbook' });
   else if (m.payoutAmount != null) sources.push({ label: 'Host payout reported', amount: m.payoutAmount, from: m.fromWorkbook ? 'Owner workbook' : 'Imported reservation file' });
   sources.push({ label: 'Service fee', amount: m.channelFee, from: m.fromWorkbook ? 'Owner workbook' : ota ? `From ${site}` : 'This reservation' });
