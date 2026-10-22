@@ -1,5 +1,8 @@
+import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { Cleaner } from '../lib/useCleaners';
 import Icon from './Icon';
+import { Button } from './Button';
 import { cx } from '../lib/design-tokens';
 import { dayLabel, mytDay } from './ops/OpsUi';
 
@@ -58,13 +61,85 @@ export function CleanerChips({ cleaners, value, names, onChange, disabled, requi
         </span>
       ))}
       {others.length > 0 && (
-        <select aria-label={value.length ? 'Add another cleaner' : 'Pick a cleaner'} disabled={disabled} value=""
-          onChange={e => { const v = e.target.value; if (v) onChange([...value, v]); }}
-          className={cx('h-8 max-md:h-11 rounded-full border border-solid px-2.5 bg-card text-copy text-ink cursor-pointer max-w-[200px]', value.length ? 'border-dashed border-line' : required ? 'border-danger' : 'border-line')}>
-          <option value="">{value.length ? '+ Add cleaner' : 'Pick a cleaner'}</option>
-          {others.map(c => <option key={c.id} value={c.id}>{c.name}{c.employmentType === 'outsourced' ? ' (outsourced)' : ''}</option>)}
-        </select>
+        <AddCleaners others={others} disabled={disabled} label={value.length ? 'Add cleaner' : 'Pick cleaners'}
+          tone={value.length ? 'add' : required ? 'missing' : 'empty'} onAdd={ids => onChange([...value, ...ids])} />
       )}
     </div>
+  );
+}
+
+/** Ticks several cleaners and adds them in one save, so a team of three is one change, not three. The panel is
+ *  portalled to the body: the job drawer's slide-in transform would otherwise move a fixed panel and its scroll box clip it. Outside click or Escape drops the ticks. */
+function AddCleaners({ others, disabled, label, tone, onAdd }: {
+  others: Cleaner[]; disabled?: boolean; label: string; tone: 'add' | 'missing' | 'empty'; onAdd: (ids: string[]) => void;
+}) {
+  const [at, setAt] = useState<{ top: number; left: number; maxHeight: number } | null>(null);
+  const [picked, setPicked] = useState<string[]>([]);
+  const wrap = useRef<HTMLSpanElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
+  const shut = (refocus = false) => { setAt(null); setPicked([]); if (refocus) trigger.current?.focus(); };
+  useEffect(() => {
+    if (!at) return;
+    panel.current?.querySelector<HTMLInputElement>('input[type=checkbox]')?.focus();
+    const outside = (e: Event) => { if (!wrap.current?.contains(e.target as Node) && !panel.current?.contains(e.target as Node)) shut(); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); shut(true); } };
+    const away = () => shut();
+    document.addEventListener('mousedown', outside); document.addEventListener('keydown', onKey, true);
+    window.addEventListener('resize', away);
+    return () => {
+      document.removeEventListener('mousedown', outside); document.removeEventListener('keydown', onKey, true);
+      window.removeEventListener('resize', away);
+    };
+  }, [at]);
+  const open = () => {
+    if (!trigger.current) return;
+    const r = trigger.current.getBoundingClientRect();
+    const width = Math.min(280, window.innerWidth - 32);
+    const below = window.innerHeight - r.bottom - 16;
+    // Opens upward only when the space below would squeeze the list to less than about four rows.
+    const up = below < 260 && r.top > below;
+    const maxHeight = Math.min(380, up ? r.top - 16 : below);
+    setAt({ top: up ? r.top - 6 - maxHeight : r.bottom + 6, left: Math.max(16, Math.min(r.left, window.innerWidth - width - 16)), maxHeight });
+  };
+  const toggle = (id: string) => setPicked(p => (p.includes(id) ? p.filter(v => v !== id) : [...p, id]));
+  const add = () => { if (picked.length) onAdd(picked); shut(true); };
+  return (
+    <span ref={wrap} className="contents">
+      <button ref={trigger} type="button" disabled={disabled} aria-haspopup="dialog" aria-expanded={!!at} onClick={() => (at ? shut() : open())}
+        className={cx('inline-flex items-center gap-1.5 h-8 max-md:h-11 pl-2.5 pr-2 rounded-full border border-solid bg-card text-copy text-ink cursor-pointer [font-family:inherit] transition-colors duration-150 hover:bg-page disabled:cursor-default disabled:opacity-60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-brand-black)]',
+          tone === 'add' ? 'border-dashed border-line' : tone === 'missing' ? 'border-danger' : 'border-line', at && 'bg-page')}>
+        <Icon name="Plus" size="sm" />{label}
+        <span className={cx('grid transition-transform duration-150', at && 'rotate-180')}><Icon name="ChevronDown" size="sm" /></span>
+      </button>
+      {at && createPortal(
+        <div ref={panel} role="dialog" aria-label="Pick cleaners to add" style={{ top: at.top, left: at.left, maxHeight: at.maxHeight }}
+          className="fixed z-[90] w-[280px] max-w-[calc(100vw-32px)] flex flex-col bg-card border border-solid border-line rounded-card shadow-[var(--shadow-overlay)] overflow-hidden">
+          <div className="px-3 pt-2.5 pb-2 text-meta font-semibold text-muted-ink">
+            {picked.length ? `${picked.length} picked` : 'Tick one or more'}
+          </div>
+          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-1">
+            {others.map(c => {
+              const on = picked.includes(c.id);
+              return (
+                <label key={c.id} className={cx('min-h-11 flex items-center gap-2.5 px-2.5 py-2 rounded-[8px] cursor-pointer text-copy', on ? 'bg-gold-tint' : 'hover:bg-muted')}>
+                  <input type="checkbox" checked={on} onChange={() => toggle(c.id)}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); add(); } }}
+                    className="w-4 h-4 m-0 flex-none accent-[var(--color-brand-black)]" />
+                  <span className="flex-1 min-w-0 truncate font-medium text-ink">{c.name}</span>
+                  {c.employmentType === 'outsourced' && <span className="text-meta text-muted-ink whitespace-nowrap">{c.vendorName ?? 'Outsourced'}</span>}
+                </label>
+              );
+            })}
+          </div>
+          <div className="flex items-center justify-end gap-2 p-2 [border-top:1px_solid_var(--color-line-soft)]">
+            <Button type="button" variant="ghost" size="sm" onClick={() => shut(true)}>Cancel</Button>
+            <Button type="button" variant="primary" size="sm" disabled={!picked.length} disabledReason="Tick a cleaner first" onClick={add}>
+              {picked.length > 1 ? `Add ${picked.length}` : 'Add'}
+            </Button>
+          </div>
+        </div>, document.body,
+      )}
+    </span>
   );
 }
