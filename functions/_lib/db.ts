@@ -26,6 +26,8 @@ export interface Env {
    *  there, not here. With either unset the IT Support screen says it is not connected. */
   IT_HUB_URL?: string;
   IT_HUB_API_KEY?: string;
+  /** The site's own built files (Pages binds this itself); read for /version.json by the IT Hub health report. */
+  ASSETS?: Fetcher;
   /** The website's address, for the cron worker (it has no request to read it from): it asks the website there
    *  to send the IT Hub its health report. Set in wrangler.cron.toml. */
   APP_ORIGIN?: string;
