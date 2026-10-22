@@ -67,6 +67,7 @@ import { itemGroupsList, itemGroupCreate, itemGroupBind, itemGroupPatch } from '
 import { piPeriodicBackfill } from './accounting-pi-backfill';
 import { stockCloseStatus, stockCloseRun } from './accounting-stock-close';
 import { pnlReport, balanceSheetReport, loadAccounts, loadSums } from './accounting-reports';
+import { importOpeningJournal, importOpeningPayables, importOpeningReceivables, openingCheck, reverseOpeningJournal } from '../../acc/opening';
 import { journalEntryEdit } from './accounting-journal-edit';
 import { reportLayoutGet, reportLayoutPut, reportLayoutReset } from './accounting-report-layouts';
 import { receiptsPaymentsReport } from './accounting-rp';
@@ -423,6 +424,64 @@ export const ledgerSettingsPut = async (c: AccCtx): Promise<Response> => {
   return c.json(r.settings);
 };
 accounting.put('/settings/ledger', ledgerSettingsPut);
+
+/* ── Opening balances (Conts, spec 3.8) — acc/opening.ts. Writing them needs the post key; the check is read by
+   the same people (it shows control and bank balances). ── */
+const OPENING_MAX_ROWS = 5000;
+async function openingBody(c: AccCtx, key: 'lines' | 'rows'): Promise<{ ok: true; companyId: number; items: any[] } | { ok: false; res: Response }> {
+  if (!requireGlPost(c)) return { ok: false, res: c.json({ error: "You don't have permission to post to the general ledger." }, 403) };
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return { ok: false, res: c.json(co.refusal, 409) };
+  let body: any;
+  try { body = await c.req.json(); } catch { return { ok: false, res: c.json({ error: 'invalid_json' }, 400) }; }
+  const items = body?.[key];
+  if (!Array.isArray(items) || items.length === 0) return { ok: false, res: c.json({ error: 'The file has no rows.' }, 400) };
+  if (items.length > OPENING_MAX_ROWS) return { ok: false, res: c.json({ error: `At most ${OPENING_MAX_ROWS} rows at a time.` }, 400) };
+  return { ok: true, companyId: co.companyId, items };
+}
+const actorName = (c: AccCtx): string =>
+  String((c.get('houzsUser') as { name?: string } | undefined)?.name ?? (c.get('user') as { id?: string } | undefined)?.id ?? '');
+const actorId = (c: AccCtx): string => String((c.get('user') as { id?: string } | undefined)?.id ?? '');
+
+export const openingJournalHandler = async (c: AccCtx): Promise<Response> => {
+  const b = await openingBody(c, 'lines');
+  if (!b.ok) return b.res;
+  const r = await importOpeningJournal(c.get('supabase'), b.companyId, b.items, actorName(c));
+  return r.ok ? c.json(r) : c.json({ error: r.error }, 409);
+};
+accounting.post('/opening/journal', openingJournalHandler);
+
+export const openingJournalReverseHandler = async (c: AccCtx): Promise<Response> => {
+  if (!requireGlPost(c)) return c.json({ error: "You don't have permission to post to the general ledger." }, 403);
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  const r = await reverseOpeningJournal(c.get('supabase'), co.companyId);
+  return r.ok ? c.json(r) : c.json({ error: r.error }, 409);
+};
+accounting.post('/opening/journal/reverse', openingJournalReverseHandler);
+
+export const openingReceivablesHandler = async (c: AccCtx): Promise<Response> => {
+  const b = await openingBody(c, 'rows');
+  if (!b.ok) return b.res;
+  return c.json(await importOpeningReceivables(c.get('supabase'), b.companyId, b.items, actorId(c)));
+};
+accounting.post('/opening/receivables', openingReceivablesHandler);
+
+export const openingPayablesHandler = async (c: AccCtx): Promise<Response> => {
+  const b = await openingBody(c, 'rows');
+  if (!b.ok) return b.res;
+  return c.json(await importOpeningPayables(c.get('supabase'), b.companyId, b.items, actorId(c)));
+};
+accounting.post('/opening/payables', openingPayablesHandler);
+
+export const openingCheckHandler = async (c: AccCtx): Promise<Response> => {
+  if (!requireGlPost(c)) return c.json({ error: "You don't have permission to read the opening balances." }, 403);
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  const r = await openingCheck(c.get('supabase'), co.companyId);
+  return r.ok ? c.json(r) : c.json({ error: r.error }, 409);
+};
+accounting.get('/opening/check', openingCheckHandler);
 
 /* ════════════════════════════════════════════════════════════════════════
    Journal Entries
