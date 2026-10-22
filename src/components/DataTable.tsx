@@ -148,8 +148,8 @@ export interface DataTableProps<R> {
   selectionKey?: string;
   /** File and sheet name of exports. */
   exportName?: string;
-  /** More items in the Export menu, after Excel and CSV (e.g. the payouts' owner statements as PDF). */
-  extraExports?: { icon: string; label: string; hint: string; run: () => void }[];
+  /** The page writes its own Excel in place of the table's Excel and CSV (e.g. the payouts' bank sheet). Gets the ticked rows, or none for every row under the filters. */
+  onExport?: { hint: string; run: (only?: R[]) => Promise<void> };
   noun?: [string, string];
   /** Phone card override. */
   renderCard?: (r: R) => ReactNode;
@@ -297,7 +297,7 @@ export function DataTable<R>(props: DataTableProps<R>) {
   const {
     id, columns, rows, rowKey, loading, error, onRetry, onRowClick, rowTone, urlPrefix = '', pageSize: clientSize = 50,
     server, header, toolbar, actions, above, viewParams = [], filtered, onClearFilters, empty, selectable, bulkActions, selectionKey,
-    exportName, extraExports, noun =['row', 'rows'], renderCard, cardsOnly, maxHeight, bare, noToolbar, noViews, noColumns, footer, defaultSort, phoneSort = true,
+    exportName, onExport, noun = ['row', 'rows'], renderCard, cardsOnly, maxHeight, bare, noToolbar, noViews, noColumns, footer, defaultSort, phoneSort = true,
   } = props;
   const toast = useToast();
   const [params, setParams] = useSearchParams();
@@ -444,6 +444,12 @@ export function DataTable<R>(props: DataTableProps<R>) {
   const [exporting, setExporting] = useState<string | null>(null);
   const exportCols = visible.filter(c => !c.noExport);
   async function doExport(format: 'csv' | 'xlsx', only?: R[]) {
+    if (onExport) {
+      setExporting('Preparing');
+      try { await onExport.run(only); } catch (e) { toast({ tone: 'critical', title: 'Export failed.', body: errorMessage(e, 'Try again in a moment.') }); }
+      setExporting(null);
+      return;
+    }
     const stem = exportName ?? id.replace(/\./g, '-');
     try {
       let list: R[];
@@ -791,22 +797,18 @@ export function DataTable<R>(props: DataTableProps<R>) {
 
       <Floating anchor={exportBtn} fallback={moreBtn} open={panel === 'export'} onClose={closePanel} width={300} align="right" label="Export">
         <div className="py-1">
-          <PanelHeading>{server ? `All ${fmtCount(total)} matching ${noun[1]}` : `${fmtCount(processed.length)} ${processed.length === 1 ? noun[0] : noun[1]}`} · {plural(exportCols.length, 'column')}</PanelHeading>
-          <PanelItem icon="FileSpreadsheet" label="Excel (.xlsx)" hint="Money as numbers in RM, dates as dates." onClick={() => { closePanel(); void doExport('xlsx'); }}
+          <PanelHeading>{server ? `All ${fmtCount(total)} matching ${noun[1]}` : `${fmtCount(processed.length)} ${processed.length === 1 ? noun[0] : noun[1]}`}{onExport ? '' : ` · ${plural(exportCols.length, 'column')}`}</PanelHeading>
+          <PanelItem icon="FileSpreadsheet" label="Excel (.xlsx)" hint={onExport?.hint ?? 'Money as numbers in RM, dates as dates.'} onClick={() => { closePanel(); void doExport('xlsx'); }}
             disabledReason={total === 0 ? 'Nothing to export under these filters.' : undefined} />
-          <PanelItem icon="FileText" label="CSV" hint="Opens in any spreadsheet. Money columns are in RM." onClick={() => { closePanel(); void doExport('csv'); }}
-            disabledReason={total === 0 ? 'Nothing to export under these filters.' : undefined} />
-          {extraExports?.map(x => (
-            <PanelItem key={x.label} icon={x.icon} label={x.label} hint={x.hint} onClick={() => { closePanel(); x.run(); }}
-              disabledReason={total === 0 ? 'Nothing to export under these filters.' : undefined} />
-          ))}
+          {!onExport && <PanelItem icon="FileText" label="CSV" hint="Opens in any spreadsheet. Money columns are in RM." onClick={() => { closePanel(); void doExport('csv'); }}
+            disabledReason={total === 0 ? 'Nothing to export under these filters.' : undefined} />}
         </div>
       </Floating>
 
       <Floating anchor={bulkExportBtn} open={panel === 'bulkExport'} onClose={closePanel} width={260} align="right" label="Export ticked rows">
         <div className="py-1">
           <PanelItem icon="FileSpreadsheet" label="Excel (.xlsx)" onClick={() => { closePanel(); void doExport('xlsx', pickedRows); }} />
-          <PanelItem icon="FileText" label="CSV" onClick={() => { closePanel(); void doExport('csv', pickedRows); }} />
+          {!onExport && <PanelItem icon="FileText" label="CSV" onClick={() => { closePanel(); void doExport('csv', pickedRows); }} />}
         </div>
       </Floating>
 

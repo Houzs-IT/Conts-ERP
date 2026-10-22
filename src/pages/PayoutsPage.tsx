@@ -1,5 +1,4 @@
 import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { Card } from '../components/Card';
 import { StatusBadge } from '../components/StatusBadge';
 import { SectionHead, PayoutBadge, payoutDestination, payoutStatus, type PayoutRow } from './owners/OwnerMoney';
@@ -15,12 +14,12 @@ import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { useSession } from '../lib/session';
 import { api, errorMessage } from '../lib/api';
-import { fetchAllPages } from '../lib/export';
+import { downloadTable, type ExportColumn } from '../lib/export';
 import { runEach, skippedNote } from '../lib/bulk';
 import { refreshNavCounts } from '../lib/navBadges';
 import { monthLabel, plural, titleCase, count } from '../lib/format';
 import { cx } from '../lib/design-tokens';
-import { PAYOUT } from '../lib/vocabulary';
+import { PAYOUT, bankName } from '../lib/vocabulary';
 import type { PayoutState } from '../lib/types';
 import { useUrlState, SearchBox, FilterSelect } from './finance/listKit';
 import ApprovalBanner from '../components/ApprovalBanner';
@@ -35,8 +34,11 @@ interface Payload {
 }
 const PAGE_SIZE = 100;
 const SIZES = [50, 100, 200, 500];
-/** Statements per print page: each is two A4 sheets per unit, all laid out by the browser at once. */
-const PRINT_MAX = 100;
+export interface BankRow { units: string; ownerName: string; bankName: string | null; accountNumber: string; amount: number }
+const BANK_COLS: ExportColumn[] = [
+  { label: 'Units', kind: 'text' }, { label: 'Owner name', kind: 'text' }, { label: 'Bank', kind: 'text' },
+  { label: 'Account number', kind: 'text' }, { label: 'Amount', kind: 'money' },
+];
 
 const FALLBACK: Payload = {
   generatedAt: '2026-09-20T02:00:00Z',
@@ -71,7 +73,6 @@ export default function PayoutsPage({ embedded = false }: { embedded?: boolean }
   // The header and the run button speak for every payout, not for the search or month being looked at.
   const overall = useApi<Payload>('/payouts?pageSize=1');
   const toast = useToast();
-  const navigate = useNavigate();
 
   const [confirm, setConfirm] = useState<{ payout: Payout; kind: 'retry' | 'paid' } | null>(null);
   const [bulkPaid, setBulkPaid] = useState<{ rows: Payout[]; clear: () => void } | null>(null);
@@ -140,33 +141,14 @@ export default function PayoutsPage({ embedded = false }: { embedded?: boolean }
     });
   }
 
-  /** Every payout under the status, month and search, for the table's Export. The endpoint pages at up to 500. */
-  async function fetchAll(onProgress: (got: number, of: number) => void) {
-    const r = await fetchAllPages<Payout>(async (pg, sz) => {
-      const p = await api.get<Payload>(`/payouts?${new URLSearchParams({ pageSize: String(sz), page: String(pg), ...(filter !== 'all' ? { state: filter } : {}), ...(period ? { period } : {}), ...(q ? { q } : {}) })}`);
-      return { rows: p.data, total: p.total ?? p.data.length };
-    }, { size: 500, onProgress });
-    return r.rows;
-  }
-
-  /** Every matching payout's owner statement on one print page (browser Save as PDF; the server has no PDF renderer). */
-  const [gathering, setGathering] = useState(false);
-  async function printStatements() {
-    if (gathering) return;
-    setGathering(true);
-    try {
-      const list = await fetchAll(() => {});
-      const ids = [...new Set(list.map(r => r.statementId).filter((s): s is string => !!s))];
-      if (!ids.length) { toast({ tone: 'warning', title: 'No owner statements to print.', body: 'None of these payouts came from an owner statement.' }); return; }
-      const missing = list.filter(r => !r.statementId).length;
-      if (ids.length > PRINT_MAX || missing) {
-        toast({ tone: 'warning', title: `Printing ${plural(Math.min(ids.length, PRINT_MAX), 'statement')}.`,
-          body: [missing && `${plural(missing, 'payout')} had no owner statement.`, ids.length > PRINT_MAX && `Only the first ${PRINT_MAX} of ${ids.length} fit on one page. Narrow the filters to get the rest.`].filter(Boolean).join(' ') });
-      }
-      navigate(`/finance/statements/print?${new URLSearchParams({ ids: ids.slice(0, PRINT_MAX).join(',') })}`);
-    } catch (e) {
-      toast({ tone: 'critical', title: 'Statements could not be gathered.', body: errorMessage(e, 'Try again in a moment.') });
-    } finally { setGathering(false); }
+  /** The bank sheet: one row per payout with the full account number, for making the transfers (owner, 22 Oct 2026).
+   *  Its own endpoint, because the list only ever carries the last four digits and every export is audited. */
+  async function exportBank(only?: Payout[]) {
+    const params: Record<string, string> = only ? { ids: only.map(r => r.id).join(',') } : { ...(filter !== 'all' ? { state: filter } : {}), ...(period ? { period } : {}), ...(q ? { q } : {}) };
+    const { data: list, capped } = await api.get<{ data: BankRow[]; capped: boolean }>(`/payouts/export?${new URLSearchParams(params)}`);
+    downloadTable('xlsx', 'payouts', 'Payouts', BANK_COLS, list.map(r => [r.units, titleCase(r.ownerName), bankName(r.bankName) ?? '', r.accountNumber, r.amount]));
+    toast({ tone: capped ? 'warning' : 'success', title: `Excel file ready: ${plural(list.length, 'payout')}.`,
+      body: capped ? 'Only the first 5,000 fit in one file. Narrow the filters to get the rest.' : 'Full account numbers are in this file. Keep it safe and delete it once the transfers are made.' });
   }
 
   const columns = useMemo<Column<Payout>[]>(() => [
@@ -257,10 +239,10 @@ export default function PayoutsPage({ embedded = false }: { embedded?: boolean }
       <DataTable<Payout>
         id="payouts" columns={columns} rows={data ? visible : null} rowKey={r => r.id}
         loading={loading} error={error} onRetry={reload}
-        server={{ total, page: data?.page ?? page, pageSize: data?.pageSize ?? size, sizes: SIZES, defaultPageSize: PAGE_SIZE, fetchAll }}
+        server={{ total, page: data?.page ?? page, pageSize: data?.pageSize ?? size, sizes: SIZES, defaultPageSize: PAGE_SIZE }}
         viewParams={['state', 'period', 'q']} filtered={filtered} onClearFilters={() => url.set({ state: null, period: null, q: null, page: null })}
         noun={['payout', 'payouts']} exportName="payouts"
-        extraExports={[{ icon: 'Printer', label: 'PDF statements', hint: "Opens every matching owner statement together. Download PDF there saves them as one file.", run: () => void printStatements() }]}
+        onExport={{ hint: 'Units, owner, bank, full account number and amount in RM, for the bank transfers.', run: exportBank }}
         empty={{ icon: 'Banknote', title: 'No owner payouts yet', body: 'An owner payout is created for each owner statement when it is sent. Send statements from the Statements tab, then start a payout run here.' }}
         selectable={canAct ? (r => r.state === 'processing') : false}
         bulkActions={canAct ? ((picked, clear) => (
