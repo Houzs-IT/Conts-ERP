@@ -83,8 +83,11 @@ that case.
   (`docs/superpowers/specs/2026-10-09-renovation-flow-design.md`), so a newer Houzs copy can only be
   picked from file by file. Renovation code goes in files named `renovation*`; other Conts-only code
   lives in `engine/backend/src/conts/` and `engine/frontend/src/conts/`. Keep Houzs-only paths working.
-- **The live engine is deployed only through** `node scripts/engine-production.mjs <step>`, which checks
-  the target before it sends anything. The staging engine is `npx wrangler deploy` in `engine/backend`.
+- **The engine goes live when its change merges to `main`.** The "Deploy engine to production" workflow
+  (`.github/workflows/deploy-engine-production.yml`) runs `node scripts/engine-production.mjs deploy` and
+  `screens`, which check the target before sending anything; by hand, run the same steps. Staging follows
+  `staging` and `main` the same way ("Deploy engine to staging"). So a migration the engine reads goes to
+  the production database before the merge, never after.
 - **A third-party sync (Channex) must never fail the main action.** Wrap the whole operation and record
   failures in `audit_log`.
 - **Access.** Every handler starts with `requireSession`. What a role may do comes from the Permissions
@@ -99,9 +102,15 @@ that case.
 
 - **Staging is one shared slot.** Whoever publishes last overwrites the other. Say so in the group chat
   when you are using it.
-- **The Cloudflare account is on the free Workers plan.** In the engine, delivery orders, goods receipts
-  and delivery returns exceed the plan's 50 outside calls per request: they answer slowly and can skip
-  the stock deduction. Known and accepted for now (see `TODO.md`).
+- **The Cloudflare account is on Workers Paid** (billed since 17 Oct 2026, confirmed by finance on
+  21 Oct): 10,000 outside calls per request by default, so the free plan's 50-call limit on delivery
+  orders, goods receipts, bank reconciliation and statement sending no longer applies.
+- **The engine's accounting ledger is switched on for Conts** (owner's decision, 21 Oct 2026; finance
+  phase 1, `docs/superpowers/specs/2026-10-20-finance-phase1-ledger-design.md`). It sits under Finance,
+  and only people whose role has the Ledger area (Permissions chart, Finance group) get in: the engine
+  key `scm.ledger.use`, which counts only when held outright; the full-access `*` does not include it
+  (`engine/backend/src/conts/ledger-access.ts`). Its settings, posting rules and opening balances are on
+  Finance > Ledger setup. Nothing dated before the ledger start date posts.
 - **Engine list screens cache for about a minute.** A new record may need Refresh.
 - **The PriceLabs draft pull request** (#11) is on hold by the owner's decision. Leave it alone.
 
