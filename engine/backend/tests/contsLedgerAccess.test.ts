@@ -224,8 +224,28 @@ describe('the ledger settings history is the Ledger\'s', () => {
     expect(holdsLedger(undefined)).toBe(false);
   });
 
-  test('the change history route refuses LEDGER_SETTINGS to a caller without the Ledger', () => {
-    const src = readFileSync(fileURLToPath(new URL('../src/scm/routes/entity-audit-log.ts', import.meta.url)), 'utf8');
-    expect(src).toMatch(/entityType === 'LEDGER_SETTINGS' && !holdsLedger\(c\.get\('user'\)\)\) return c\.json\(\{[^}]*\}, 403\)/);
+  /* Through the real handler, the way supabaseAuth leaves the context: 'user' is the pinned system staff row with no
+     keys, the caller is houzsUser. */
+  test('the change history route gives LEDGER_SETTINGS to the Ledger only, reading the real caller', async () => {
+    const { entityAuditLogHandler } = await import('../src/scm/routes/entity-audit-log');
+    const { fakeSb } = await import('../src/scm/lib/fake-postgrest');
+    const sb = fakeSb({ entity_audit_log: [{ id: 1, entity_type: 'LEDGER_SETTINGS', entity_id: '1', company_id: 1, action: 'UPDATE', created_at: '2026-10-22' }] });
+    const call = async (perms: string[]) => {
+      const app = new Hono<{ Variables: { supabase: unknown; companyId: number; user: unknown; houzsUser: unknown } }>();
+      app.use('*', async (c, next) => {
+        c.set('supabase', sb);
+        c.set('companyId', 1);
+        c.set('user', { id: 'system-staff' });
+        c.set('houzsUser', { id: 9, name: 'Acct', permissions_set: new Set(perms) });
+        await next();
+      });
+      type Ctx = Parameters<typeof entityAuditLogHandler>[0];
+      app.get('/:entityType/:entityId', (c) => entityAuditLogHandler(c as unknown as Ctx));
+      return app.request('/LEDGER_SETTINGS/1');
+    };
+    expect((await call(['*'])).status).toBe(403);
+    const ok = await call([LEDGER_KEY]);
+    expect(ok.status).toBe(200);
+    expect(((await ok.json()) as { entries: unknown[] }).entries).toHaveLength(1);
   });
 });

@@ -25,7 +25,7 @@
 // audit trail anyone can write arbitrary rows into records nothing.
 // ----------------------------------------------------------------------------
 
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { supabaseAuth } from '../middleware/auth';
 import type { Env, Variables } from '../env';
 import { isEntityType } from '../lib/entity-audit';
@@ -57,7 +57,9 @@ const MAX_LIMIT = 500;
  *   actor_id, actor_name_snapshot, field_changes, status_snapshot, source,
  *   note, created_at }] }.
  */
-entityAuditLog.get('/:entityType/:entityId', async (c) => {
+/* Exported so a test can mount it on a bare app: the router carries supabaseAuth, which cannot run without Worker
+   bindings. */
+export const entityAuditLogHandler = async (c: Context<{ Bindings: Env; Variables: Variables }>): Promise<Response> => {
   const entityType = c.req.param('entityType');
   const entityId = c.req.param('entityId');
 
@@ -69,8 +71,9 @@ entityAuditLog.get('/:entityType/:entityId', async (c) => {
     return c.json({ error: 'unknown_entity_type', message: `No audit trail is kept for "${entityType}".` }, 400);
   }
   if (!entityId) return c.json({ error: 'entity_id_required' }, 400);
-  // Conts: the ledger settings' history is the Ledger's, like the settings themselves.
-  if (entityType === 'LEDGER_SETTINGS' && !holdsLedger(c.get('user'))) return c.json({ error: 'Your role cannot open the accounts.' }, 403);
+  /* Conts: the ledger settings' history is the Ledger's, like the settings themselves. The real caller is houzsUser:
+     supabaseAuth pins 'user' to the system staff row, which holds no keys. */
+  if (entityType === 'LEDGER_SETTINGS' && !holdsLedger(c.get('houzsUser'))) return c.json({ error: 'Your role cannot open the accounts.' }, 403);
 
   const rawLimit = Number(c.req.query('limit'));
   const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, MAX_LIMIT) : DEFAULT_LIMIT;
@@ -99,6 +102,7 @@ entityAuditLog.get('/:entityType/:entityId', async (c) => {
   const entries = (data ?? []) as unknown as Array<Record<string, unknown>>;
   if (!canViewScmFinance(c)) stripAuditFinance(entries);
   return c.json({ entries });
-});
+};
+entityAuditLog.get('/:entityType/:entityId', entityAuditLogHandler);
 
 export default entityAuditLog;
