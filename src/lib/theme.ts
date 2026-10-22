@@ -25,12 +25,14 @@ export function applyTheme(pref: ThemePref = getThemePref()): void {
 
 export function setThemePref(pref: ThemePref): void {
   writePref(pref);
-  applyTheme(pref);
+  // One snapshot crossfade instead of animating the colours of every element on the page, which froze long pages.
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (document.startViewTransition && !reduce) document.startViewTransition(() => applyTheme(pref));
+  else applyTheme(pref);
 }
 
 export function initTheme(): void {
   applyTheme();
-  requestAnimationFrame(() => requestAnimationFrame(() => document.documentElement.classList.add('theme-ready')));
 }
 
 /** The desktop switch is in the top bar beside the bell (owner, 22 Oct 2026). This flag still hides the Light / Dark

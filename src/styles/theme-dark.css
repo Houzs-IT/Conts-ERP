@@ -71,9 +71,11 @@
 }
 :root[data-theme="theconts-dark"] ::placeholder { color: var(--color-text-faint); }
 
-/* Smooth swap on a user switch, never on first paint. */
-:root.theme-ready, :root.theme-ready * { transition: background-color 200ms ease, border-color 200ms ease, color 200ms ease; }
-@media (prefers-reduced-motion: reduce) { :root.theme-ready, :root.theme-ready * { transition: none !important; } }
+/* The switch crossfades through document.startViewTransition (src/lib/theme.ts); keep it short. */
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: 160ms; }
+
+/* The dashboard's earnings card is black in both themes; on the near-black page its edge vanished. */
+:root[data-theme="theconts-dark"] .dash-hero { box-shadow: inset 0 0 0 1px var(--color-line-strong); }
 
 /* Fields and panels still written as `bg-white` in 11 files (textareas, inputs, the login panel). One rule here
  * instead of 11 file edits: in dark mode they take the card surface. Toggle knobs (rounded-full) and the 2-step QR

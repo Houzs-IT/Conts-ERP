@@ -19,6 +19,7 @@ import { Select } from '../components/Select';
 import { EmptyState } from '../components/States';
 import { TONE, cx } from '../lib/design-tokens';
 import type { Tone } from '../lib/types';
+import { tone } from '../theme';
 
 /* ------------------------------------------------------------------ KPIs -- */
 /* Kept as the existing read-only KPI row — see the brief: keep KPI row + chart. */
@@ -64,14 +65,14 @@ function RevenueHero({ label, value, period, points, delta, className }: {
   const area = xy.length ? `${line} L${W},${H} L0,${H} Z` : '';
   const last = xy[xy.length - 1];
   return (
-    <div className={cx('relative overflow-hidden rounded-card p-4 sm:p-5 flex flex-col gap-2 text-white', className)}
+    <div className={cx('dash-hero relative overflow-hidden rounded-card p-4 sm:p-5 flex flex-col gap-2 text-white', className)}
       style={{ background: 'radial-gradient(120% 140% at 100% 0%, color-mix(in srgb, var(--color-gold) 22%, var(--color-black)) 0%, var(--color-charcoal) 46%, var(--color-black) 100%)' }}>
       <span aria-hidden className="absolute left-4 sm:left-5 top-0 h-[2px] w-8 bg-gold" />
       <Eyebrow className="text-gold">{label}</Eyebrow>
       <Figure value={value} className="leading-none font-semibold tracking-[-0.02em] text-gold text-[30px] sm:text-[36px]" />
       <span className="text-meta text-on-dark">
         {delta.period && delta.against
-          ? <><span className="font-semibold" style={{ color: delta.tone === 'critical' ? 'var(--color-danger-bg)' : delta.tone === 'warning' ? 'var(--color-warning-bg)' : 'var(--color-success-bg)' }}>{ARROW[delta.direction]} {delta.value.toFixed(1)}%</span> {shortMonth(delta.period)} vs {shortMonth(delta.against)}</>
+          ? <><span className="font-semibold" style={{ color: tone[delta.tone === 'critical' || delta.tone === 'warning' ? delta.tone : 'success'].bg }}>{ARROW[delta.direction]} {delta.value.toFixed(1)}%</span> {shortMonth(delta.period)} vs {shortMonth(delta.against)}</>
           : period ? `${monthLabel(period)} to date` : null}
       </span>
       {xy.length > 1 && (
