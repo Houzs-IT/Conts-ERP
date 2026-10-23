@@ -50,8 +50,17 @@ describe("Beta board: range", () => {
 describe("Beta board: design body", () => {
   test("only the sent fields are present, empty clears", () => {
     expect(cleanBetaDesign({ start3dOn: "2026-11-02", person2dId: 5, poDoneOn: null, start2dOn: "" })).toEqual({
-      ok: true, value: { start3dOn: "2026-11-02", person2dId: 5, poDoneOn: null, start2dOn: null },
+      ok: true, value: { start3dOn: "2026-11-02", person2dIds: [5], poDoneOn: null, start2dOn: null },
     });
+  });
+  test("3D and 2D take several people, in order, duplicates dropped; the old single field still works", () => {
+    expect(cleanBetaDesign({ person3dIds: [4, 2, 4], person2dIds: [] })).toEqual({ ok: true, value: { person3dIds: [4, 2], person2dIds: [] } });
+    expect(cleanBetaDesign({ person3dId: null })).toEqual({ ok: true, value: { person3dIds: [] } });
+    // The list wins when both are sent.
+    expect(cleanBetaDesign({ person3dIds: [7], person3dId: 8 })).toEqual({ ok: true, value: { person3dIds: [7] } });
+    expect(cleanBetaDesign({ person3dIds: [1, "2"] })).toMatchObject({ ok: false, error: "person_invalid" });
+    expect(cleanBetaDesign({ person2dIds: 3 })).toMatchObject({ ok: false, error: "person_invalid" });
+    expect(cleanBetaDesign({ person2dIds: Array.from({ length: 11 }, (_, i) => i + 1) })).toMatchObject({ ok: false, error: "too_many_people" });
   });
   test("bad date, bad person or an empty body is refused", () => {
     expect(cleanBetaDesign({ start3dOn: "2026-02-30" })).toMatchObject({ ok: false, error: "date_invalid" });
@@ -61,9 +70,10 @@ describe("Beta board: design body", () => {
     expect(cleanBetaDesign({ unknown: 1 })).toMatchObject({ ok: false, error: "nothing_to_change" });
   });
   test("person ids and the activity note", () => {
-    const patch = { start3dOn: "2026-11-02", person2dId: 5, person3dId: null, poDoneOn: null };
-    expect(designPersonIds(patch)).toEqual([5]);
-    expect(designChangeNote(patch, new Map([[5, "Aisha"]]))).toBe("3D starts 2026-11-02 · 3D person cleared · 2D by Aisha · PO done cleared");
+    const patch = { start3dOn: "2026-11-02", person2dIds: [5, 6], person3dIds: [], poDoneOn: null };
+    expect(designPersonIds(patch)).toEqual([5, 6]);
+    expect(designPersonIds({ person3dIds: [5], person2dIds: [5, 7] })).toEqual([5, 7]);
+    expect(designChangeNote(patch, new Map([[5, "Aisha"], [6, "Ben"]]))).toBe("3D starts 2026-11-02 · 3D person cleared · 2D by Aisha, Ben · PO done cleared");
   });
 });
 
@@ -130,7 +140,7 @@ describe("Beta board: grouping", () => {
   test("a project row picks up only its own groups", () => {
     const row: BoardProjectRow = {
       id: 1, code: "P-1", name: "Unit A", building: "Skyline", unit_no: "A-1", customer_name: "Tan", sales_name: "Lim", created_at: "2026-10-01T00:00:00Z",
-      handover_on: "2026-12-01", lead_id: 3, lead_name: "Aisha", pic_id: null, pic_name: null, p3_id: 4, p3_name: "Ben", p2_id: null, p2_name: null,
+      handover_on: "2026-12-01", lead_id: 3, lead_name: "Aisha", pic_id: null, pic_name: null, p3_people: '[{"id":4,"name":"Ben"},{"id":6,"name":"Cik Siti"}]', p2_people: [],
       measured_on: "2026-10-05", start_3d_on: null, start_2d_on: null, po_done_on: null,
     };
     const sets = {
@@ -143,6 +153,7 @@ describe("Beta board: grouping", () => {
     expect(p).toMatchObject({
       id: 1, unitNo: "A-1", salesName: "Lim", createdOn: "2026-10-01", handoverOn: "2026-12-01",
       lead: { id: 3, name: "Aisha" }, person3d: { id: 4, name: "Ben" }, person2d: null, sitePic: null, measuredOn: "2026-10-05",
+      people3d: [{ id: 4, name: "Ben" }, { id: 6, name: "Cik Siti" }], people2d: [],
       files: [{ id: 10, kind: "3d", version: 1, submittedOn: "2026-10-12" }],
       notes: [{ id: 5, kind: "3d", notedOn: "2026-10-14", closedOn: null, days: null }],
       reviews: [{ fileId: 10, sentOn: "2026-10-12", approvedOn: null }],

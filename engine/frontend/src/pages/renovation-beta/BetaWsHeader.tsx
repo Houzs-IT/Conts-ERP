@@ -8,7 +8,7 @@ import { usePeople } from "../projects/renovation/PersonSelect";
 import type { ProjectDetailV2 } from "../projects/renovation/simpleApi";
 import type { BetaDialog } from "./BetaForms";
 import { WS, WsAvatar, WsBadge, WsCheck, btnStyle, TONE_WAIT } from "./BetaWsUi";
-import type { DesignProject } from "./renovationBetaBoard";
+import { personInfo, type BoardPerson, type DesignProject, type PersonRef } from "./renovationBetaBoard";
 import { dayMonthYear, initials, whatsappLink, type StepperItem } from "./renovationBetaModel";
 import { BETA } from "./renovationBetaTheme";
 
@@ -16,6 +16,8 @@ interface HeaderProps {
   d: ProjectDetailV2;
   /** The project as Home and Calendar see it: the people on the chips come from here. */
   p: DesignProject;
+  /** Every person of the company (board), for each chip's position and department. */
+  people?: readonly BoardPerson[];
   canWrite: boolean;
   today: string;
   openDialog: (dialog: BetaDialog) => void;
@@ -32,9 +34,19 @@ function leftText(planned: string | null, today: string): { text: string; late: 
   return n >= 0 ? { text: `(${word(n)} left)`, late: false } : { text: `(${word(-n)} late)`, late: true };
 }
 
-interface Chip { key: string; role: string; name: string | null; lead?: boolean }
+interface Chip { key: string; role: string; who: PersonRef[]; lead?: boolean }
 
-export function BetaWsHeader({ d, p: board, canWrite, today, openDialog }: HeaderProps): ReactElement {
+/** One person on a chip: name in bold, "Position · Department" under it when the account has them. */
+function ChipPerson({ x, info }: { x: PersonRef; info: string }): ReactElement {
+  return (
+    <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.2, minWidth: 0 }}>
+      <span style={{ fontSize: 14, fontWeight: 700, overflowWrap: "anywhere" }}>{x.name}</span>
+      {info && <span style={{ fontSize: 12, color: BETA.muted, overflowWrap: "anywhere" }}>{info}</span>}
+    </span>
+  );
+}
+
+export function BetaWsHeader({ d, p: board, people = [], canWrite, today, openDialog }: HeaderProps): ReactElement {
   const { project: p } = d;
   const peopleQ = usePeople();
   const handoverOn = p.handed_over_at ?? p.planned_handover_date;
@@ -42,11 +54,13 @@ export function BetaWsHeader({ d, p: board, canWrite, today, openDialog }: Heade
   // 3D and 2D fall back to the design lead, as the mockup's o3 and o2 do.
   const designer = board.lead?.name ?? null;
   const chips: Chip[] = [
-    { key: "lead", role: "Design lead", name: designer, lead: true },
-    { key: "3d", role: "3D", name: board.by["3"]?.name ?? null },
-    { key: "2d", role: "2D", name: board.by["2"]?.name ?? null },
-    { key: "site", role: "Site PIC · Handover lead", name: board.site?.name ?? null },
+    { key: "lead", role: "Design lead", who: board.lead ? [board.lead] : [], lead: true },
+    { key: "3d", role: "3D", who: board.team["3"] },
+    { key: "2d", role: "2D", who: board.team["2"] },
+    { key: "site", role: "Site PIC · Handover lead", who: board.site ? [board.site] : [] },
   ];
+  const byId = new Map(people.map((x) => [x.id, x] as const));
+  const infoOf = (id: number): string => personInfo(byId.get(id));
   const phone = (peopleQ.data?.data ?? []).find((x) => x.id === board.lead?.id)?.phone ?? null;
   // Project names usually already end with the customer ("... MR WAYNE"); add it only when missing.
   const customer = p.customer_name?.trim() ?? "";
@@ -70,12 +84,18 @@ export function BetaWsHeader({ d, p: board, canWrite, today, openDialog }: Heade
             {chips.map((c) => (
               <div
                 key={c.key}
-                style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px 6px 6px", borderRadius: 10, background: c.lead ? "#E4F1EF" : BETA.surface, border: `1px solid ${c.lead ? "#A9D2CC" : BETA.line}` }}
+                style={{ display: "flex", alignItems: "center", gap: 8, maxWidth: "100%", minWidth: 0, padding: "6px 10px 6px 6px", borderRadius: 10, background: c.lead ? "#E4F1EF" : BETA.surface, border: `1px solid ${c.lead ? "#A9D2CC" : BETA.line}` }}
               >
-                <WsAvatar text={initials(c.name)} />
-                <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.2 }}>
+                <span aria-hidden="true" style={{ display: "flex", flex: "none", alignSelf: c.who.length > 1 ? "flex-start" : undefined }}>
+                  {(c.who.length ? c.who : [null]).map((x, i) => (
+                    <span key={x?.id ?? "none"} style={{ marginLeft: i ? -8 : 0, borderRadius: 999, boxShadow: i ? `0 0 0 2px ${c.lead ? "#E4F1EF" : BETA.surface}` : undefined, display: "inline-flex" }}>
+                      <WsAvatar text={x ? initials(x.name) : "?"} bg={x ? BETA.ink : "#C3CCCA"} />
+                    </span>
+                  ))}
+                </span>
+                <span style={{ display: "flex", flexDirection: "column", gap: 4, lineHeight: 1.2, minWidth: 0 }}>
                   <span style={{ fontSize: 11, color: BETA.muted, fontWeight: 600, textTransform: "uppercase", letterSpacing: ".05em" }}>{c.role}</span>
-                  <span style={{ fontSize: 14, fontWeight: 700 }}>{c.name ?? "Not set"}</span>
+                  {c.who.length === 0 ? <span style={{ fontSize: 14, fontWeight: 700 }}>Not set</span> : c.who.map((x) => <ChipPerson key={x.id} x={x} info={infoOf(x.id)} />)}
                 </span>
                 {c.lead && designer && (
                   <a

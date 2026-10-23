@@ -16,6 +16,9 @@ export type Viewing = number | "All";
 
 export interface PersonRef { id: number; name: string }
 
+/** A person as the pickers and chips show them: the project page's label parts and whether they may be picked now. */
+export interface BoardPerson extends PersonRef { position: string | null; department: string | null; offered: boolean }
+
 export interface Amendment { id: number; s: string; days: number; done: string | null }
 
 export interface DesignTrack {
@@ -39,7 +42,10 @@ export interface DesignProject {
   name: string;
   tag: string;
   lead: PersonRef | null;
+  /** Who draws each kind, as one name for the rows that show one ("Ali, Siti"); the id is the first person's. */
   by: Record<Kind, PersonRef | null>;
+  /** Everyone drawing each kind, in the order picked; the design lead when nobody is picked. */
+  team: Record<Kind, PersonRef[]>;
   site: PersonRef | null;
   unassigned: boolean;
   handover: string | null;
@@ -72,7 +78,10 @@ export interface BoardModel {
   mePersonId: number | null;
   sop: Record<Kind, number>;
   amd: number;
+  /** The people offered for picking and for the calendar's person filter (the project page's rule). */
   people: PersonRef[];
+  /** Every person of the company, with label parts, for names on old records and the pickers' current picks. */
+  everyone: BoardPerson[];
   projects: DesignProject[];
   byId: ReadonlyMap<number, DesignProject>;
   events: CalEvent[];
@@ -115,6 +124,19 @@ export function initials(name: string): string {
 }
 
 export const mine = (who: Viewing, id: number | null | undefined): boolean => who === "All" || (id != null && id === who);
+
+/** Whether the viewer is one of these people (or the whole team is viewed). */
+export const mineAny = (who: Viewing, people: readonly PersonRef[]): boolean => who === "All" || people.some((x) => x.id === who);
+
+/** Several people as one reference: the names joined ("Ali, Siti"), the first person's id. */
+export function joinedRef(people: readonly PersonRef[]): PersonRef | null {
+  return people.length === 0 ? null : { id: people[0].id, name: people.map((x) => x.name).join(", ") };
+}
+
+/** "Position · Department" of a person, empty when neither is known. */
+export function personInfo(p: Pick<BoardPerson, "position" | "department"> | undefined): string {
+  return p ? [p.position, p.department].map((v) => (v ?? "").trim()).filter(Boolean).join(" · ") : "";
+}
 
 /* ---------- the mockup's labels ---------- */
 
@@ -192,6 +214,12 @@ export function toBoardProjects(board: BetaBoard): DesignProject[] {
     const title = [p.building, p.unitNo].filter((x): x is string => !!x && x.trim() !== "").join(" ") || p.name;
     const customer = p.customerName?.trim() || null;
     const lead = ref(p.lead);
+    const team = (list: BetaBoardRef[] | undefined, one: BetaBoardRef | null): PersonRef[] => {
+      const picked = list ?? (one ? [one] : []);
+      return picked.length ? picked.map((x) => ({ id: x.id, name: x.name })) : lead ? [lead] : [];
+    };
+    const t3 = team(p.people3d, p.person3d);
+    const t2 = team(p.people2d, p.person2d);
     const d3 = track(p, "3d", amd, null);
     const approval3d = (() => {
       const newest3 = p.files.filter((f) => f.kind === "3d").sort((a, b) => b.version - a.version)[0];
@@ -213,7 +241,8 @@ export function toBoardProjects(board: BetaBoard): DesignProject[] {
       name: customer ? `${title} · ${customer}` : title,
       tag: p.building?.trim() || buildingFromTitle(title),
       lead,
-      by: { "3": ref(p.person3d) ?? lead, "2": ref(p.person2d) ?? lead },
+      by: { "3": joinedRef(t3), "2": joinedRef(t2) },
+      team: { "3": t3, "2": t2 },
       site: ref(p.sitePic),
       unassigned: lead == null,
       handover: p.handoverOn,
@@ -229,8 +258,11 @@ export function toBoardProjects(board: BetaBoard): DesignProject[] {
 export function buildModel(board: BetaBoard): BoardModel {
   const projects = toBoardProjects(board);
   const byId = new Map(projects.map((p) => [p.id, p] as const));
-  const people = board.people.map((x) => ({ id: x.id, name: x.name }));
-  const person = new Map(people.map((x) => [x.id, x] as const));
+  const everyone: BoardPerson[] = board.people.map((x) => ({
+    id: x.id, name: x.name, position: x.position ?? null, department: x.department ?? null, offered: x.offered ?? true,
+  }));
+  const people = everyone.filter((x) => x.offered).map((x) => ({ id: x.id, name: x.name }));
+  const person = new Map(everyone.map((x) => [x.id, { id: x.id, name: x.name }] as const));
   const events: CalEvent[] = board.events.map((e) => ({
     id: `e${e.id}`, d: e.onDate, t: e.atTime?.slice(0, 5) ?? "", type: e.type, note: e.note ?? "",
     who: e.personId == null ? null : person.get(e.personId) ?? null, projectId: e.projectId, done: e.done, eventId: e.id, appt: null,
@@ -241,6 +273,7 @@ export function buildModel(board: BetaBoard): BoardModel {
     sop: { "3": board.settings.design3dDays, "2": board.settings.design2dDays },
     amd: board.settings.amendmentDays,
     people,
+    everyone,
     projects,
     byId,
     events,
@@ -341,7 +374,7 @@ export function items(m: BoardModel, who: Viewing): DueItem[] {
   for (const p of m.projects) {
     for (const k of ["3", "2"] as const) {
       const g = stage(m, p, k);
-      if (g.st !== "work" || !mine(who, p.by[k]?.id)) continue;
+      if (g.st !== "work" || !mineAny(who, p.team[k])) continue;
       out.push({
         type: "due", p, k, n: g.r.n, what: g.r.n ? `${k}D ${ord(g.r.n)} amendment` : `${k}D deadline`,
         due: g.due, from: g.r.s, days: g.r.days, by: p.by[k],
@@ -393,10 +426,10 @@ export function deadlineGroups(m: BoardModel, who: Viewing, canAssign: boolean):
   for (const p of m.projects) {
     for (const k of ["3", "2"] as const) {
       const s = stage(m, p, k);
-      if (s.st === "wait" && mine(who, p.by[k]?.id) && s.r.done) g.waiting.push({ p, k, n: s.r.n, sent: s.r.done });
+      if (s.st === "wait" && mineAny(who, p.team[k]) && s.r.done) g.waiting.push({ p, k, n: s.r.n, sent: s.r.done });
     }
-    if (!p.unassigned && !p.design["3"].s && measured(m, p) && mine(who, p.by["3"]?.id)) g.ready.push({ p, k: "3" });
-    else if (p.design["3"].ok && !p.design["2"].s && mine(who, p.by["2"]?.id)) g.ready.push({ p, k: "2" });
+    if (!p.unassigned && !p.design["3"].s && measured(m, p) && mineAny(who, p.team["3"])) g.ready.push({ p, k: "3" });
+    else if (p.design["3"].ok && !p.design["2"].s && mineAny(who, p.team["2"])) g.ready.push({ p, k: "2" });
   }
   for (const p of m.projects) {
     /* A project with no design lead yet is shown to the whole team and to anyone who can assign. */
@@ -523,7 +556,7 @@ export function homeRow(m: BoardModel, p: DesignProject, canAssign: boolean): Ho
 
 export function progressList(m: BoardModel, who: Viewing): DesignProject[] {
   return m.projects
-    .filter((p) => mine(who, p.lead?.id) || mine(who, p.by["3"]?.id) || mine(who, p.by["2"]?.id) || mine(who, p.site?.id))
+    .filter((p) => mine(who, p.lead?.id) || mineAny(who, p.team["3"]) || mineAny(who, p.team["2"]) || mine(who, p.site?.id))
     .sort((a, b) => currentStep(m, a) - currentStep(m, b));
 }
 

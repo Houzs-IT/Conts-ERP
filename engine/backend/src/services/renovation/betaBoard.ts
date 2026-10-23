@@ -64,13 +64,28 @@ export function cleanBoardRange(from: string | undefined, to: string | undefined
 
 // ── Writes ───────────────────────────────────────────────────────────────
 
-/** Only the fields the caller sent are present. null clears a date or a person. */
+/** Only the fields the caller sent are present. null clears a date; an empty list clears the people. The 3D and 2D
+    people are lists (migration 0148, owner 24 Oct 2026: several people may draw one project), in the order picked. */
 export interface BetaDesignPatch {
   start3dOn?: string | null; start2dOn?: string | null; poDoneOn?: string | null;
-  person3dId?: number | null; person2dId?: number | null;
+  person3dIds?: number[]; person2dIds?: number[];
 }
 export const DESIGN_DATE_FIELDS = ["start3dOn", "start2dOn", "poDoneOn"] as const;
-export const DESIGN_PERSON_FIELDS = ["person3dId", "person2dId"] as const;
+/** Each list and the single field older screens still send (person3dId: 5, or null to clear). */
+export const DESIGN_PERSON_FIELDS = [["person3dIds", "person3dId"], ["person2dIds", "person2dId"]] as const;
+export const BETA_DESIGN_PEOPLE_MAX = 10;
+
+/** A list of person ids, duplicates dropped in order; undefined when it is not one. */
+function idList(x: unknown): number[] | undefined {
+  if (!Array.isArray(x)) return undefined;
+  const out: number[] = [];
+  for (const v of x) {
+    const id = idOrNull(v);
+    if (id == null) return undefined;
+    if (!out.includes(id)) out.push(id);
+  }
+  return out;
+}
 
 export function cleanBetaDesign(b: Json): BetaRefusal<BetaDesignPatch> {
   const patch: BetaDesignPatch = {};
@@ -82,11 +97,16 @@ export function cleanBetaDesign(b: Json): BetaRefusal<BetaDesignPatch> {
     patch[k] = blank(v) ? null : (v as string);
     count++;
   }
-  for (const k of DESIGN_PERSON_FIELDS) {
-    if (!(k in b)) continue;
-    const id = idOrNull(b[k]);
-    if (id === undefined) return no("person_invalid", "Pick a person from the list, or leave it empty.");
-    patch[k] = id;
+  for (const [list, single] of DESIGN_PERSON_FIELDS) {
+    let ids: number[] | undefined;
+    if (list in b) ids = blank(b[list]) ? [] : idList(b[list]);
+    else if (single in b) {
+      const id = idOrNull(b[single]);
+      ids = id === undefined ? undefined : id == null ? [] : [id];
+    } else continue;
+    if (ids === undefined) return no("person_invalid", "Pick a person from the list, or leave it empty.");
+    if (ids.length > BETA_DESIGN_PEOPLE_MAX) return no("too_many_people", `Pick at most ${BETA_DESIGN_PEOPLE_MAX} people.`);
+    patch[list] = ids;
     count++;
   }
   if (count === 0) return no("nothing_to_change", "Send at least one thing to change.");
@@ -94,15 +114,15 @@ export function cleanBetaDesign(b: Json): BetaRefusal<BetaDesignPatch> {
 }
 
 export function designPersonIds(p: BetaDesignPatch): number[] {
-  return [p.person3dId, p.person2dId].filter((x): x is number => typeof x === "number");
+  return [...new Set([...(p.person3dIds ?? []), ...(p.person2dIds ?? [])])];
 }
 
-/** The activity note of a design change, e.g. "3D starts 2026-11-02 · 2D by Aisha". */
+/** The activity note of a design change, e.g. "3D starts 2026-11-02 · 2D by Aisha, Ben". */
 export function designChangeNote(p: BetaDesignPatch, nameOf: ReadonlyMap<number, string>): string {
   const day = (label: string, v: string | null | undefined): string | null => (v === undefined ? null : v ? `${label} ${v}` : `${label} cleared`);
-  const who = (label: string, v: number | null | undefined): string | null =>
-    v === undefined ? null : v == null ? `${label} person cleared` : `${label} by ${nameOf.get(v) ?? `person ${v}`}`;
-  return [day("3D starts", p.start3dOn), who("3D", p.person3dId), day("2D starts", p.start2dOn), who("2D", p.person2dId), day("PO done", p.poDoneOn)]
+  const who = (label: string, v: number[] | undefined): string | null =>
+    v === undefined ? null : v.length === 0 ? `${label} person cleared` : `${label} by ${v.map((id) => nameOf.get(id) ?? `person ${id}`).join(", ")}`;
+  return [day("3D starts", p.start3dOn), who("3D", p.person3dIds), day("2D starts", p.start2dOn), who("2D", p.person2dIds), day("PO done", p.poDoneOn)]
     .filter(Boolean).join(" · ");
 }
 
@@ -237,7 +257,8 @@ export interface BoardProjectRow {
   id: number; code: string | null; name: string; building: string | null; unit_no: string | null; customer_name: string | null;
   sales_name: string | null; created_at: string | null; handover_on: string | null;
   lead_id: number | null; lead_name: string | null; pic_id: number | null; pic_name: string | null;
-  p3_id: number | null; p3_name: string | null; p2_id: number | null; p2_name: string | null;
+  /** The 3D and 2D people in the order picked, as JSON text or parsed ([{ id, name }]). */
+  p3_people: unknown; p2_people: unknown;
   measured_on: string | null; start_3d_on: string | null; start_2d_on: string | null; po_done_on: string | null;
 }
 export interface BoardFileRow { id: number; project_id: number; kind: "3d" | "2d"; version: number; submitted_on: string }
@@ -258,7 +279,10 @@ export interface BoardSets {
 export interface BoardProject {
   id: number; code: string | null; name: string; building: string | null; unitNo: string | null;
   customerName: string | null; salesName: string | null; createdOn: string | null; handoverOn: string | null;
-  lead: BoardPersonRef | null; person3d: BoardPersonRef | null; person2d: BoardPersonRef | null; sitePic: BoardPersonRef | null;
+  lead: BoardPersonRef | null; sitePic: BoardPersonRef | null;
+  /** The first of people3d / people2d, for screens that show one name. */
+  person3d: BoardPersonRef | null; person2d: BoardPersonRef | null;
+  people3d: BoardPersonRef[]; people2d: BoardPersonRef[];
   measuredOn: string | null; start3dOn: string | null; start2dOn: string | null; poDoneOn: string | null;
   files: Array<{ id: number; kind: "3d" | "2d"; version: number; submittedOn: string }>;
   notes: Array<{ id: number; kind: "3d" | "2d"; notedOn: string; closedOn: string | null; days: number | null }>;
@@ -267,12 +291,26 @@ export interface BoardProject {
   payment: BoardPayment;
 }
 
+/** [{ id, name }] from the board query's JSON (text or already parsed); anything else reads as nobody. */
+export function peopleOf(x: unknown): BoardPersonRef[] {
+  let v = x;
+  if (typeof v === "string") {
+    try { v = JSON.parse(v); } catch { return []; }
+  }
+  if (!Array.isArray(v)) return [];
+  return v.flatMap((r) => (r && typeof r === "object" && Number.isInteger(Number((r as Json).id))
+    ? [{ id: Number((r as Json).id), name: String((r as Json).name ?? "") }] : []));
+}
+
 /** One project of the board from its own row and the grouped data sets. */
 export function buildBoardProject(p: BoardProjectRow, sets: BoardSets, payment: BoardPayment): BoardProject {
+  const people3d = peopleOf(p.p3_people);
+  const people2d = peopleOf(p.p2_people);
   return {
     id: p.id, code: p.code, name: p.name, building: p.building, unitNo: p.unit_no, customerName: p.customer_name, salesName: p.sales_name,
     createdOn: createdOnOf(p.created_at), handoverOn: p.handover_on,
-    lead: refOf(p.lead_id, p.lead_name), person3d: refOf(p.p3_id, p.p3_name), person2d: refOf(p.p2_id, p.p2_name), sitePic: refOf(p.pic_id, p.pic_name),
+    lead: refOf(p.lead_id, p.lead_name), sitePic: refOf(p.pic_id, p.pic_name),
+    person3d: people3d[0] ?? null, person2d: people2d[0] ?? null, people3d, people2d,
     measuredOn: p.measured_on, start3dOn: p.start_3d_on, start2dOn: p.start_2d_on, poDoneOn: p.po_done_on,
     files: (sets.files.get(p.id) ?? []).map((f) => ({ id: f.id, kind: f.kind, version: f.version, submittedOn: f.submitted_on })),
     notes: (sets.notes.get(p.id) ?? []).map((n) => ({ id: n.id, kind: n.kind, notedOn: n.noted_on, closedOn: n.closed_on, days: n.days })),
