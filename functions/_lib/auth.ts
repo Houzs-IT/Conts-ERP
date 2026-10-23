@@ -1,14 +1,18 @@
 import { type Env, all, one, run, fail, nowIso } from './db';
 import { accessFor, canManage, levelsFor, isSide, isKind, type DepartmentKind, type Level, type Side } from './access';
 import { notify } from './notify';
+import { legacyRolesIncludeOwners, parseList } from './twoStepLegacy';
 
 export interface SecuritySettings { staffTtlHours: number; ownerTtlHours: number; absoluteDays: number; maxAttempts: number; lockoutMinutes: number; require2faRoles: string[];
   /** Department ids that must use two-step sign-in; null until management has saved the new setting, when require2faRoles still answers. */
-  require2faDepartments: string[] | null }
+  require2faDepartments: string[] | null;
+  /** Whether owner logins must use two-step sign-in. Owners have no department, so they have their own switch; until it is
+   *  saved, the old role list answers (twoStepLegacy.ts). */
+  require2faOwners: boolean }
 
 /** Same defaults as the Settings > Security spec (functions/api/settings/index.ts) — used
  *  only for whatever a row is missing there, same as every other setting in that screen. */
-const SECURITY_DEFAULTS: SecuritySettings = { staffTtlHours: 168, ownerTtlHours: 8, absoluteDays: 30, maxAttempts: 5, lockoutMinutes: 15, require2faRoles: [], require2faDepartments: null };
+const SECURITY_DEFAULTS: SecuritySettings = { staffTtlHours: 168, ownerTtlHours: 8, absoluteDays: 30, maxAttempts: 5, lockoutMinutes: 15, require2faRoles: [], require2faDepartments: null, require2faOwners: false };
 
 /** The owner-configurable values from Settings > Security, read live so a change there takes
  *  effect on the very next request — including for someone already signed in, since the
@@ -20,7 +24,7 @@ export async function securitySettings(env: Env): Promise<SecuritySettings> {
 
 function parseSecurity(rows: { key: string; value: string }[]): SecuritySettings {
   const map = new Map(rows.map(r => [r.key, r.value]));
-  const list = (v: string | undefined): string[] => (v ?? '').split(',').map(r => r.trim()).filter(Boolean);
+  const list = parseList;
   const num = (key: string, def: number) => { const n = Number(map.get(key)); return map.has(key) && Number.isFinite(n) ? n : def; };
   return {
     staffTtlHours: num('security.staffInactivityTimeoutMins', SECURITY_DEFAULTS.staffTtlHours * 60) / 60,
@@ -30,6 +34,7 @@ function parseSecurity(rows: { key: string; value: string }[]): SecuritySettings
     lockoutMinutes: num('security.lockoutMinutes', SECURITY_DEFAULTS.lockoutMinutes),
     require2faRoles: list(map.get('security.require2faRoles')),
     require2faDepartments: map.has('security.require2faDepartments') ? list(map.get('security.require2faDepartments')) : null,
+    require2faOwners: map.has('security.require2faOwners') ? map.get('security.require2faOwners') === 'true' : legacyRolesIncludeOwners(list(map.get('security.require2faRoles'))),
   };
 }
 
@@ -84,9 +89,11 @@ export async function endSession(env: Env, sid: string | undefined, userId: stri
   return true;
 }
 
-/** Whether management requires two-step sign-in for this person: their department is on the list (the setting saved
- *  by department), or, until that setting exists, their role is on the old list. */
+/** Whether management requires two-step sign-in for this person: owners follow their own switch, everyone else their
+ *  department is on the list (the setting saved by department), or, until that setting exists, their role is on the old
+ *  list (which is what the department list is worked out from, see twoStepLegacy.ts). */
 export function twoStepRequired(settings: SecuritySettings, who: { role: string; departmentId?: string | null }): boolean {
+  if (who.role === 'owner') return settings.require2faOwners;
   if (settings.require2faDepartments) return !!who.departmentId && settings.require2faDepartments.includes(who.departmentId);
   return settings.require2faRoles.includes(who.role);
 }

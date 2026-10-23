@@ -1,7 +1,8 @@
 import { type Env, all, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
 import { checkPhone } from '../../_lib/validate';
-import { ROLES } from '../../_lib/roles';
+import { LEGACY_2FA_ROLES, departmentsForLegacyRoles, legacyRolesIncludeOwners, parseList, type DepartmentRef } from '../../_lib/twoStepLegacy';
+import { isKind } from '../../_lib/access';
 import { COMPANY_DEFAULTS } from '../../_lib/letterhead';
 import { DEFAULT_MONTHLY_TERMS, DEFAULT_YEAR_TERMS } from '../../_lib/ownerReport';
 
@@ -62,6 +63,8 @@ const SPEC: Record<string, Record<string, Field>> = {
     lockoutMinutes: { def: 15, kind: 'number', min: 1, max: 120, integer: true },
     // Comma-separated department ids that must use two-step sign-in (functions/_lib/auth.ts twoStepRequired).
     require2faDepartments: { def: '', kind: 'departments' },
+    // Owners have no department, so they are switched on here (functions/_lib/auth.ts twoStepRequired).
+    require2faOwners: { def: false, kind: 'bool' },
     // The setting from before departments: still read until require2faDepartments is saved once (migration 0146
     // copies it across). Nothing writes it any more.
     require2faRoles: { def: '', kind: 'roles' },
@@ -81,7 +84,7 @@ function problem(f: Field, v: unknown): string | null {
   if (f.kind === 'number') return typeof v === 'number' && Number.isFinite(v) && v >= (f.min ?? -Infinity) && v <= (f.max ?? Infinity) ? null : `Enter a number from ${f.min} to ${f.max}.`;
   if (f.kind === 'bool') return typeof v === 'boolean' ? null : 'Choose on or off.';
   if (f.kind === 'departments') return typeof v === 'string' && v.split(',').filter(Boolean).every(id => /^[0-9a-zA-Z-]{1,64}$/.test(id)) ? null : 'Pick departments from the list.';
-  if (f.kind === 'roles') return typeof v === 'string' && v.split(',').filter(Boolean).every(r => ROLES.includes(r) || r in LEGACY_2FA_DEPARTMENT) ? null : 'Pick roles from the list.';
+  if (f.kind === 'roles') return typeof v === 'string' && v.split(',').filter(Boolean).every(r => LEGACY_2FA_ROLES.includes(r)) ? null : 'Pick roles from the list.';
   if (typeof v !== 'string' || v.length > (f.kind === 'longtext' ? 4000 : 300)) return f.kind === 'longtext' ? 'Keep it under 4,000 characters.' : 'Enter text.';
   if (f.required && v.trim() === '') return 'This cannot be empty.';
   if (f.kind === 'choice') return f.options!.includes(v) ? null : 'Pick one of the options.';
@@ -91,13 +94,11 @@ function problem(f: Field, v: unknown): string | null {
   return null;
 }
 
-/** The departments the old two-step role list stands for: finance_admin was Finance, operations_manager Operations, management Management. */
-const LEGACY_2FA_DEPARTMENT: Record<string, string> = { finance_admin: 'Finance', operations_manager: 'Operations', management: 'Management' };
-async function legacyDepartments(env: Env, roles: string): Promise<string> {
-  const names = roles.split(',').map(r => LEGACY_2FA_DEPARTMENT[r.trim()]).filter((n): n is string => !!n);
-  if (!names.length) return '';
-  const rows = await all<{ id: string }>(env, 'SELECT id FROM departments WHERE name IN (SELECT jsonb_array_elements_text(?::text::jsonb)) ORDER BY sort', JSON.stringify(names));
-  return rows.map(r => r.id).join(',');
+/** The departments the old two-step role list stands for (the mapping lives in twoStepLegacy.ts). */
+async function legacyDepartments(env: Env, roles: string[]): Promise<string> {
+  const rows = await all<{ id: string; name: string; kind: string }>(env, 'SELECT id, name, kind FROM departments ORDER BY sort, lower(name)');
+  const departments: DepartmentRef[] = rows.flatMap(r => (isKind(r.kind) ? [{ id: r.id, name: r.name, kind: r.kind }] : []));
+  return departmentsForLegacyRoles(roles, departments).join(',');
 }
 
 /** GET /api/settings — the settings by section, with defaults for anything never saved. */
@@ -113,10 +114,11 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     out[section] = {};
     for (const [name, f] of Object.entries(fields)) out[section][name] = decode(f, map.get(`${section}.${name}`) ?? (f.legacy ? map.get(f.legacy) : undefined));
   }
-  // Until two-step is saved by department, show the departments the old role list stands for, as sign-in reads it.
-  if (!map.has('security.require2faDepartments') && map.get('security.require2faRoles')) {
-    out.security.require2faDepartments = await legacyDepartments(env, map.get('security.require2faRoles') ?? '');
-  }
+  // Until two-step is saved by department, show the departments and the owners switch the old role list stands for,
+  // as sign-in reads them.
+  const oldRoles = parseList(map.get('security.require2faRoles'));
+  if (!map.has('security.require2faDepartments') && oldRoles.length) out.security.require2faDepartments = await legacyDepartments(env, oldRoles);
+  if (!map.has('security.require2faOwners') && oldRoles.length) out.security.require2faOwners = legacyRolesIncludeOwners(oldRoles);
   return json({ generatedAt: nowIso(), ...out });
 };
 

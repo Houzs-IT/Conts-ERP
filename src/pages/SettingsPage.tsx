@@ -60,6 +60,8 @@ interface Settings {
     require2faRoles: string;
     /** Comma-separated department ids that must use two-step sign-in (the setting saved by department). */
     require2faDepartments?: string;
+    /** Owner logins have no department, so they are ticked on their own. */
+    require2faOwners?: boolean;
   };
   generatedAt: string;
 }
@@ -290,6 +292,11 @@ export default function SettingsPage() {
           </label>
         );
       })}
+      <label className={cx('flex items-center gap-2 min-h-8 text-copy', readOnly ? 'cursor-default text-muted-ink' : 'cursor-pointer')}>
+        <input type="checkbox" className="w-4 h-4" checked={draft.security.require2faOwners ?? false} disabled={readOnly}
+          onChange={e => patch('security', { require2faOwners: e.target.checked })} />
+        Owners (owner portal)
+      </label>
     </div>
   );
 
@@ -415,7 +422,7 @@ export default function SettingsPage() {
         </div>
       </Row>
       <Row label="Require two-step sign-in for"
-        description="People in a ticked department who have not set it up are asked to at their next click, and can do nothing else until they have. Each person sets it up on My account; management can reset it for a lost phone from Users and roles.">
+        description="People in a ticked department, or owners if that box is ticked, who have not set it up are asked to at their next click, and can do nothing else until they have. Each person sets it up on My account; management can reset it for a lost phone from Users and roles.">
         {roleBoxes}
       </Row>
     </> },
