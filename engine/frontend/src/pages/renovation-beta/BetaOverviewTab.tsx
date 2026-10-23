@@ -14,7 +14,7 @@ import { FileDialog, sendReminder, useGuarded, type BetaTabProps, type ViewedFil
 import { add, ds, designKind } from "./renovationBetaBoard";
 import { approveNewest, boardApi, markPoDone } from "./renovationBetaBoardApi";
 import {
-  approvedSet, dayMonth, dayMonthYear, emptyPaymentRows, nextStep, paymentCard, paymentStrip, todoList, designTodoRows, mergeTodo,
+  approvedSet, dayMonth, dayMonthYear, emptyPaymentRows, nextStep, paymentCard, paymentStrip, soConfirmed, todoList, designTodoRows, mergeTodo,
   type TodoAction, type TodoRow,
 } from "./renovationBetaModel";
 import { downloadAsPdf } from "./renovationBetaPdf";
@@ -217,7 +217,7 @@ function OrderCard({ p }: { p: BetaTabProps }): ReactElement {
     <WsCard
       title="Sales order"
       gap={12}
-      sub={d.so ? `${d.so.doc_no} · signed ${dayMonthYear(d.so.so_date)}` : "Not signed yet"}
+      sub={d.so ? (soConfirmed(d.so.status) ? `${d.so.doc_no} · signed ${dayMonthYear(d.so.so_date)}` : `${d.so.doc_no} · draft, not signed yet`) : "Not signed yet"}
       right={d.so ? <Link to={`/scm/sales-orders/${encodeURIComponent(d.so.doc_no)}`} style={{ ...btnStyle("outline", "sm"), color: BETA.ink }}>Open SO</Link> : undefined}
     >
       {rowsList.length > 0 && (

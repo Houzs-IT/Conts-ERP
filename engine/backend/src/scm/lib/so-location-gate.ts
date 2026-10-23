@@ -42,6 +42,9 @@
 // per-company rule here) — the bigint ids differ between staging and prod.
 // ----------------------------------------------------------------------------
 import type { SaveProblem } from '../shared/so-save-problems';
+import { activeCompanyId, scopeToCompany } from './companyScope';
+import { deriveSalesLocationFromState } from './sales-doc-derive';
+import { soWarehouseIdForDoc } from './so-warehouse';
 
 /**
  * The companies whose Sales Orders must resolve a stock location before they
@@ -133,4 +136,35 @@ export async function soLocationProblemForDoc(
     salesLocation: h.sales_location ?? null,
     customerState: h.customer_state ?? null,
   });
+}
+
+/**
+ * An order created before its State had a warehouse mapping carries a State but
+ * no `sales_location`, and the gate above then refused Confirm until someone
+ * re-saved the header (which re-derives it). Confirm derives it itself: when the
+ * location is blank and the State now maps, write the derived label and give
+ * every line without a warehouse that warehouse. Fail-soft: anything unreadable
+ * leaves the order as it was and the gate reports the real cause.
+ */
+export async function fillSoLocationFromState(
+  sb: any,
+  docNo: string,
+  c: any,
+): Promise<void> {
+  try {
+    const { data } = await scopeToCompany(sb.from('mfg_sales_orders')
+      .select('sales_location, customer_state').eq('doc_no', docNo), c).maybeSingle();
+    const h = (data ?? null) as { sales_location?: string | null; customer_state?: string | null } | null;
+    if (!h || String(h.sales_location ?? '').trim() !== '' || !String(h.customer_state ?? '').trim()) return;
+    const label = await deriveSalesLocationFromState(sb, h.customer_state, c);
+    if (!label) return;
+    const { error } = await scopeToCompany(sb.from('mfg_sales_orders').update({ sales_location: label }).eq('doc_no', docNo), c);
+    if (error) return;
+    const warehouseId = await soWarehouseIdForDoc(sb, docNo, activeCompanyId(c) ?? null);
+    if (warehouseId) {
+      await sb.from('mfg_sales_order_items').update({ warehouse_id: warehouseId }).eq('doc_no', docNo).is('warehouse_id', null);
+    }
+  } catch {
+    /* the location gate that runs next names the problem */
+  }
 }

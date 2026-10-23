@@ -104,6 +104,8 @@ export interface AmendmentLineRow {
   cur_qty: number | null;
   cur_total_sen: number | null;
   product_name: string | null;
+  /** The SO line's room (its renovation line's room, else its own location), when the line exists. */
+  cur_room?: string | null;
 }
 
 /** One SO amendment line as a VO line: what it adds or deducts, in quantity and money. */
@@ -118,7 +120,7 @@ export function amendmentLineChange(l: AmendmentLineRow): VoLine {
   const itemCode = l.new_item_code ?? oldCode ?? l.cur_item_code;
   const description = String(old.description ?? l.cur_description ?? l.product_name ?? "").trim() || (l.product_name ?? "");
   const goesTo: GoesTo = String(itemCode ?? "").startsWith("CUS-") ? "client" : "po";
-  const base = { itemCode, description, room: null, measure: null, goesTo, fromItemCode: null };
+  const base = { itemCode, description, room: l.cur_room ?? null, measure: null, goesTo, fromItemCode: null };
   if (type === "ADD") {
     const qty = num(l.new_qty) ?? num(l.cur_qty) ?? 0;
     const price = num(l.new_unit_price_sen);
@@ -223,6 +225,7 @@ async function amendmentVos(db: Db, projectId: number, companyId: number): Promi
   const lines = await rows<AmendmentLineRow & { amendment_id: string }>(db,
     `SELECT l.amendment_id::text AS amendment_id, l.change_type, l.new_item_code, l.new_qty, l.new_unit_price_sen, l.new_discount_sen::int AS new_discount_sen,
             l.old_snapshot, i.item_code AS cur_item_code, i.description AS cur_description, i.qty AS cur_qty, i.total_sen AS cur_total_sen,
+            coalesce(nullif(trim((SELECT rl.room FROM scm.reno_doc_lines rl WHERE rl.so_item_id = i.id LIMIT 1)), ''), nullif(trim(i.location), '')) AS cur_room,
             (SELECT p.name FROM scm.mfg_products p WHERE p.code = coalesce(l.new_item_code, i.item_code) AND p.company_id = so.company_id LIMIT 1) AS product_name
        FROM scm.so_amendment_lines l
        JOIN scm.so_amendments a ON a.id = l.amendment_id

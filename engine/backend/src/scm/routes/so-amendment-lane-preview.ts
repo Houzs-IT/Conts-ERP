@@ -25,6 +25,7 @@ import { resolveAmendmentLaneSplit, summarizeLaneSplit } from '../lib/amendment-
 import { dropNoopAmendmentLines, type NoopCheckLine } from '../lib/amendment-noop-lines';
 import { LINE_BUILD_ERRORS } from '../lib/amendment-lines';
 import { PRICE_LANE_COMPANY_CODES } from '../shared/amendment-lane';
+import { mergeLanesForVo, soVoLocked, voAppliesOnRaise } from '../lib/renovation-vo-rule';
 
 const AMENDABLE_HEADER_FIELDS: Record<string, string> = soAmendableHeaderFields();
 
@@ -85,5 +86,9 @@ soAmendmentLanePreview.post('/:docNo/amendments/lane-preview', async (c) => {
   const priceLaneEnabled = PRICE_LANE_COMPANY_CODES.has(c.get('companyCode') ?? '');
   const split = await resolveAmendmentLaneSplit(sb, docNo, activeCompanyId(c), headerChanges, noopSplit.kept, priceLaneEnabled);
   if (!split) return c.json(LINE_BUILD_ERRORS.unreadable, 500);
-  return c.json({ ...summarizeLaneSplit(split), droppedNoopLines: noopSplit.dropped.length });
+  /* Conts: a confirmed order's VO is one document that applies at once (lib/renovation-vo-rule.ts). */
+  const { data: soRow } = await sb.from('mfg_sales_orders').select('status').eq('doc_no', docNo).maybeSingle();
+  const contsVo = soVoLocked(soRow as { status?: string | null } | null);
+  const shown = contsVo ? mergeLanesForVo(split) : split;
+  return c.json({ ...summarizeLaneSplit(shown), droppedNoopLines: noopSplit.dropped.length, appliesNow: contsVo && voAppliesOnRaise() });
 });

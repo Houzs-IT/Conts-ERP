@@ -78,7 +78,7 @@ import {
 } from '../../vendor/scm/lib/so-amendment-header';
 import { diffHeaderPayload, hasHeaderChanges } from '../../vendor/scm/lib/so-header-diff';
 import { soSaveEndFields, soVersionAfter } from '../../vendor/scm/lib/so-save-lease';
-import { planAmendmentSubmit, amendmentSubmittedNotice, AMENDMENT_MODE_BANNER,
+import { planAmendmentSubmit, amendmentSubmittedNotice, AMENDMENT_MODE_BANNER, VO_MODE_BANNER,
   AMENDMENT_NOTHING_TO_SUBMIT } from '../../vendor/scm/lib/so-amendment-submit';
 import { useAmendmentSubmitDialog } from '../../vendor/scm/components/AmendmentSubmitDialog';
 import { todayMyt } from '../../vendor/scm/lib/dates';
@@ -331,6 +331,8 @@ type SoHeader = {
      only). Feeds soProcLockActive, which is why the line/State/Postcode freeze
      below fires with no processing date involved. */
   po_locked?: boolean;
+  vo_locked?: boolean;
+  vo_applies_on_raise?: boolean;
   has_children?: boolean; downstream_fully_frozen?: boolean; // a live DO/SI exists / every line is on one (shared/so-line-freeze.ts)
   has_open_amendment?: boolean;
   open_amendment?: { id: string; status: string; amendment_no: string; lane?: string | null } | null;
@@ -1260,7 +1262,7 @@ export const SalesOrderDetail = () => {
       /* Two-lane rework: the server classifies (and may SPLIT) the request —
          product changes go to Purchasing, delivery changes to Logistics, each
          applied by ONE signature. Tell the operator exactly what was raised. */
-      notify(amendmentSubmittedNotice(plan, createdRes));
+      notify(amendmentSubmittedNotice(plan, createdRes, { vo: Boolean(header.vo_locked) }));
     } catch (e) {
       setSavingOrder(false);
       // Same dead end as saveEdit: the amendment's direct-half header PATCH
@@ -2070,7 +2072,7 @@ export const SalesOrderDetail = () => {
                   <Button variant="primary"
                     onClick={() => { void submitAmendment(); }} disabled={migratedLocked || savingOrder || createAmendment.isPending}>
                     <Save {...ICON} />
-                    <span>{savingOrder || createAmendment.isPending ? 'Submitting…' : 'Submit VO'}</span>
+                    <span>{savingOrder || createAmendment.isPending ? 'Submitting…' : header.vo_locked ? 'Record VO' : 'Submit VO'}</span>
                   </Button>
                 ) : (
                   <Button variant="primary"
@@ -2228,7 +2230,7 @@ export const SalesOrderDetail = () => {
         }}>
           <Lock {...ICON} />
           {/* Shared copy — both surfaces were wrong about addresses. */}
-          <span>{AMENDMENT_MODE_BANNER}</span>
+          <span>{header.vo_locked ? VO_MODE_BANNER : AMENDMENT_MODE_BANNER}</span>
         </div>
       )}
 

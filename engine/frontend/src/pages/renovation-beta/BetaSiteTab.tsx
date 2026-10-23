@@ -14,7 +14,7 @@ import { TONE_DONE, TONE_QUIET, TONE_WAIT, WS, WsBadge, WsDialog, WsEmpty, WsFil
 import { FileDialog, type BetaTabProps, type ViewedFile } from "./betaShared";
 import { dayHeading, dayMonthYear, groupByDay, mytDay, mytTime, siteFeed, type FeedItem, type FeedSource } from "./renovationBetaModel";
 import { betaSiteApi, type SiteDelivery, type SitePhoto } from "./renovationBetaSiteApi";
-import { DELIVERY_LABEL, PHOTO_SOURCE, areaChips, filterDeliveries, photoCount } from "./renovationBetaSiteModel";
+import { DELIVERY_LABEL, PHOTO_SOURCE, areaChips, filterDeliveries } from "./renovationBetaSiteModel";
 import { BETA } from "./renovationBetaTheme";
 
 const SOURCE_LABEL: Record<FeedSource, string> = {
@@ -48,7 +48,8 @@ export function BetaSiteTab({ projectId, records, workspace, today }: BetaTabPro
   const shownDeliveries = filterDeliveries(deliveries, area);
   const shownFeed = area ? feed.filter((i) => sameArea(i.room, area)) : feed;
   const days = groupByDay(shownFeed, (i) => (i.at ? mytDay(i.at) : null));
-  const countFor = (a: string): number => (mode === "delivery" ? photoCount(filterDeliveries(deliveries, a)) : (a ? feed.filter((i) => sameArea(i.room, a)) : feed).length);
+  /* The chip counts what the list below shows: delivery cards by delivery, photos by day. */
+  const countFor = (a: string): number => (mode === "delivery" ? filterDeliveries(deliveries, a).length : (a ? feed.filter((i) => sameArea(i.room, a)) : feed).length);
 
   return (
     <>
@@ -121,8 +122,9 @@ function DeliveryCard({ d, area, onView }: { d: SiteDelivery; area: string; onVi
   const isDo = d.type === "delivery_order";
   const hasPod = d.photos.some((p) => p.source === "pod" || p.source === "site");
   const time = d.at ? mytTime(d.at) : null;
-  const arrived = !isDo || ["DELIVERED", "SIGNED", "INVOICED"].includes(d.status.toUpperCase());
-  const badge = hasPod ? { tone: TONE_DONE, text: "POD" } : arrived ? { tone: TONE_WAIT, text: "No POD photo" } : { tone: TONE_QUIET, text: "Not delivered yet" };
+  const arrived = ["DELIVERED", "SIGNED", "INVOICED"].includes(d.status.toUpperCase());
+  /* Only a delivery order has a proof of delivery; a goods receipt shows its own photos, or nothing. */
+  const badge = !isDo ? null : hasPod ? { tone: TONE_DONE, text: "POD" } : arrived ? { tone: TONE_WAIT, text: "No POD photo" } : { tone: TONE_QUIET, text: "Not delivered yet" };
   return (
     <li style={{ ...cardStyle, padding: 0, gap: 0, overflow: "hidden" }} aria-label={`${DELIVERY_LABEL[d.type]} ${d.no}`}>
       <div style={{ display: "flex", gap: 12, alignItems: "flex-start", padding: "14px 16px" }}>
@@ -138,7 +140,7 @@ function DeliveryCard({ d, area, onView }: { d: SiteDelivery; area: string; onVi
             {[d.at ? `${dayMonthYear(mytDay(d.at))}${time && time !== "00:00" ? ` ${time}` : ""}` : "No date", isDo ? (d.from ? `from ${d.from}` : null) : d.from, d.poNumber].filter(Boolean).join(" · ")}
           </div>
         </div>
-        <WsBadge tone={badge.tone}>{badge.text}</WsBadge>
+        {badge && <WsBadge tone={badge.tone}>{badge.text}</WsBadge>}
       </div>
       {d.areas.length > 0 && (
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6, padding: "0 16px 12px" }}>
@@ -147,9 +149,9 @@ function DeliveryCard({ d, area, onView }: { d: SiteDelivery; area: string; onVi
           ))}
         </div>
       )}
-      {d.photos.length === 0 ? (
+      {d.photos.length === 0 ? (!isDo ? null : (
         <p style={{ margin: "0 16px 16px", padding: "14px 12px", borderRadius: 10, border: `1.5px dashed ${WS.dash}`, fontSize: 13, color: BETA.muted, textAlign: "center" }}>No proof of delivery photo yet</p>
-      ) : (
+      )) : (
         <ul style={{ listStyle: "none", margin: 0, padding: "0 16px 16px", display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: 8 }}>
           {d.photos.map((p) => (
             <li key={p.id} title={p.name} style={{ position: "relative", aspectRatio: "1 / 1", borderRadius: 8, overflow: "hidden", background: WS.chip }}>

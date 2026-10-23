@@ -228,6 +228,8 @@ export type AmendmentLane = 'LINES' | 'DELIVERY' | 'PRICE';
 export type AmendmentLanePreview = {
   lanes: AmendmentLane[];
   perLane: Record<AmendmentLane, { lineCount: number; headerKeys: string[] }>;
+  /** Conts: the order is confirmed, so this is one VO that applies as soon as it is raised. */
+  appliesNow?: boolean;
 };
 export type AmendmentLanePreviewArgs = {
   docNo: string;

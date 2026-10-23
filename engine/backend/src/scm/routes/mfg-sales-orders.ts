@@ -20,7 +20,7 @@ import {
   resolveFabricTierOverride,
   type RuleLineInput,
   passesRefinementColumns,
-  LANE_LABEL, PRICE_LANE_COMPANY_CODES, type AmendmentLane,
+  LANE_LABEL, LANE_APPROVE_KEY, PRICE_LANE_COMPANY_CODES, type AmendmentLane,
   laneSelfApproves, SELF_APPROVE_KEY,
 } from '../shared';
 import { computeSoDeliveryFee, type SoDeliveryFeeResult } from '../shared/pricing';
@@ -138,6 +138,8 @@ import { tallyStatusRows, type StatusTally } from '../lib/status-counts';
 /* "A PO is already out for this SO" — the second road to the same soft lock
    (owner 2026-08-12, 2990 only). See lib/so-po-lock.ts. */
 import { soPoLocked } from '../lib/so-po-lock';
+/* Conts (owner 2026-10-24): a confirmed SO changes only through a VO. See lib/renovation-vo-rule.ts. */
+import { soVoLocked, SO_VO_LOCKED_RESPONSE, mergeLanesForVo, voAppliesOnRaise } from '../lib/renovation-vo-rule';
 import { monthBoundsMy, rangeBoundsMy, todayMyt, mytDateOf } from '../lib/my-time';
 // (canViewAllSales / isSelfScopedSales removed — replaced by flat permission
 // gates `scm.so.view_all` / `scm.so.attribute_other` against the REAL Houzs
@@ -260,7 +262,7 @@ import {
 import { collectSoConfirmProblems, soConfirmProblemsForDoc } from '../lib/so-confirm-gate';
 import { applyRenovationSoInfo, readRenovationBlock, renovationSoAvailable, renovationSoProblems, stampCreatedRooms } from './renovation-so-info';
 import type { Db as RenoInfoDb } from '../../services/renovation/load';
-import { companyRequiresStockLocation, soLocationProblem, soLocationProblemForDoc } from '../lib/so-location-gate';
+import { companyRequiresStockLocation, soLocationProblem, soLocationProblemForDoc, fillSoLocationFromState } from '../lib/so-location-gate';
 import { collectSoSubmitProblems, soPaymentSubFieldGap } from '../shared/so-submit-problems';
 import { soAgentToStamp, readStaffForStamp, followSalespersonToAgent } from '../lib/so-agent';
 import {
@@ -571,7 +573,18 @@ async function soEditLocked(
   docNo: string,
   header: { processing_date?: string | null; status: string | null } | null | undefined,
 ): Promise<boolean> {
-  return soProcessingLocked(header) || await soPoLocked(sb, docNo);
+  return soProcessingLocked(header) || soVoLocked(header) || await soPoLocked(sb, docNo);
+}
+
+/* The line write routes' lock: Houzs's processing-date / PO lock, then the Conts VO rule. */
+async function soLineLockBlocked(
+  sb: any,
+  docNo: string,
+): Promise<typeof SO_PROCESSING_LOCKED_RESPONSE | typeof SO_PO_LOCKED_RESPONSE | typeof SO_VO_LOCKED_RESPONSE | null> {
+  const lock = await soProcessingLockBlocked(sb, docNo);
+  if (lock) return lock;
+  const { data } = await sb.from('mfg_sales_orders').select('status').eq('doc_no', docNo).maybeSingle();
+  return soVoLocked(data as { status?: string | null } | null) ? SO_VO_LOCKED_RESPONSE : null;
 }
 
 /* The identity lock (which columns freeze once a DO / SI exists, and why
@@ -1706,7 +1719,8 @@ mfgSalesOrders.get('/:docNo', async (c) => {
      result is identical and this is a per-request round trip on the hottest SO
      read in the app. */
   const amendPoLocked = amendDateLocked ? false : await soPoLocked(sb, docNo);
-  const amendProcessingLocked = amendDateLocked || amendPoLocked;
+  const amendVoLocked = soVoLocked(h.data as { status?: string | null });
+  const amendProcessingLocked = amendDateLocked || amendPoLocked || amendVoLocked;
   const amendHardLocked = fullyFrozen; // a partly delivered order can still amend its unfrozen lines (owner 2026-09-15)
   const amendSoStatus = String((h.data as { status?: string | null }).status ?? '').toUpperCase();
   const amendTerminalStatus = ['SHIPPED', 'DELIVERED', 'INVOICED', 'CLOSED', 'CANCELLED'].includes(amendSoStatus);
@@ -1754,6 +1768,10 @@ mfgSalesOrders.get('/:docNo', async (c) => {
        amendment_eligible: that flag is already false for a hard-locked / terminal
        SO, and the editors must stay disabled in exactly those cases. */
     po_locked: amendPoLocked,
+    /* Conts: confirmed, so every line change is a VO (lib/renovation-vo-rule.ts). The
+       detail gates treat it like the PO lock; the VO it raises applies at once. */
+    vo_locked: amendVoLocked,
+    vo_applies_on_raise: amendVoLocked && voAppliesOnRaise(),
     has_open_amendment: openAmendment != null,
     open_amendment: openAmendment,
     open_amendments: openAmendments,
@@ -5112,6 +5130,7 @@ export const patchMfgSalesOrderStatusHandler = async (c: any) => {
      than refused by the account book. Condition mirrors that enqueue exactly:
      out of DRAFT, not a cancel (a cancelled draft queues no create). */
   if (fromNorm === 'DRAFT' && toStatus !== 'CANCELLED') {
+    await fillSoLocationFromState(sb, docNo, c);
     const locationProblem = await soLocationProblemForDoc(sb, docNo, c.get('companyCode') ?? null);
     if (locationProblem) return c.json(validationFailedBody([locationProblem]), 422);
   }
@@ -5509,7 +5528,7 @@ mfgSalesOrders.post('/:docNo/items/:itemId/override', async (c) => {
   /* Owner 2026-06-12 — processing-date lock: no price overrides once the
      processing day has passed (the locked order is already PO'd). */
   {
-    const procLock = await soProcessingLockBlocked(sb, docNo);
+    const procLock = await soLineLockBlocked(sb, docNo);
     if (procLock) return c.json(procLock, 409);
   }
   let body: { overridePriceSen?: number; reason?: string };
@@ -6954,6 +6973,9 @@ mfgSalesOrders.post('/:docNo/items', async (c) => {
   if (await soPoLocked(sb, docNo)) {
     return refuseWithoutWriting(c, SO_PO_LOCKED_RESPONSE, 409);
   }
+  if (soVoLocked(header as { status?: string | null })) {
+    return refuseWithoutWriting(c, SO_VO_LOCKED_RESPONSE, 409);
+  }
   /* Commander 2026-05-31 — a line added later inherits the SO state's warehouse
      by default (migration 0118). Explicit it.warehouseId override wins. */
   /* The line inherits the ORDER'S warehouse (resolveSoWarehouseId: recorded
@@ -7549,7 +7571,7 @@ mfgSalesOrders.patch('/:docNo/items/:itemId', async (c) => {
   /* Owner 2026-06-12 — processing-date lock: no line EDIT once the processing
      day has passed (the locked order is already PO'd to the supplier). */
   {
-    const procLock = await soProcessingLockBlocked(sb, docNo);
+    const procLock = await soLineLockBlocked(sb, docNo);
     if (procLock) return c.json(procLock, 409);
   }
 
@@ -7977,7 +7999,7 @@ mfgSalesOrders.delete('/:docNo/items/:itemId', async (c) => {
   /* Owner 2026-06-12 — processing-date lock: no line DELETE once the
      processing day has passed (the locked order is already PO'd). */
   {
-    const procLock = await soProcessingLockBlocked(sb, docNo);
+    const procLock = await soLineLockBlocked(sb, docNo);
     if (procLock) return c.json(procLock, 409);
   }
 
@@ -8128,7 +8150,7 @@ export async function tbcUpdateCommandHandler(c: any, sb: any): Promise<Response
   /* Owner 2026-06-12 — processing-date lock: a TBC fill-in is still a line
      EDIT (it changes what we PO to the supplier), so it locks too. */
   {
-    const procLock = await soProcessingLockBlocked(sb, docNo);
+    const procLock = await soLineLockBlocked(sb, docNo);
     if (procLock) return c.json(procLock, 409);
   }
 
@@ -8374,7 +8396,7 @@ export async function tbcSwapCommandHandler(c: any, sb: any): Promise<Response> 
   /* Owner 2026-06-12 — processing-date lock: a product swap is a line EDIT
      (it changes what we PO to the supplier), so it locks too. */
   {
-    const procLock = await soProcessingLockBlocked(sb, docNo);
+    const procLock = await soLineLockBlocked(sb, docNo);
     if (procLock) return c.json(procLock, 409);
   }
 
@@ -8960,7 +8982,7 @@ export async function tbcSwapSofaCommandHandler(c: any, sb: any): Promise<Respon
   const childLock = soLineWriteRefusal(freezeRead, soBuildLineIds(freezeRead, itemId));
   if (childLock) return c.json(childLock, 409);
   {
-    const procLock = await soProcessingLockBlocked(sb, docNo);
+    const procLock = await soLineLockBlocked(sb, docNo);
     if (procLock) return c.json(procLock, 409);
   }
   if (await selfScopedSalesBlocked(c, docNo)) return c.json({ error: 'not_found' }, 404);
@@ -11131,8 +11153,11 @@ mfgSalesOrders.post('/:docNo/amendments', async (c) => {
   // Price-lane carve-out is 2990's alone (owner 2026-09-21). Read the ACTIVE
   // company code, not the id — ids drift between environments.
   const priceLaneEnabled = PRICE_LANE_COMPANY_CODES.has(c.get('companyCode') ?? '');
-  const split = await resolveAmendmentLaneSplit(sb, docNo, activeCompanyId(c), headerChanges, submittedLines, priceLaneEnabled);
-  if (!split) return c.json(LINE_BUILD_ERRORS.unreadable, 500);
+  const laneSplit = await resolveAmendmentLaneSplit(sb, docNo, activeCompanyId(c), headerChanges, submittedLines, priceLaneEnabled);
+  if (!laneSplit) return c.json(LINE_BUILD_ERRORS.unreadable, 500);
+  /* Conts: a VO on a confirmed order is one document with no approver (lib/renovation-vo-rule.ts). */
+  const contsVo = soVoLocked(soRow as unknown as { status?: string | null });
+  const split = contsVo ? mergeLanesForVo(laneSplit) : laneSplit;
 
   // Guard 4b — per-lane openness: each lane admits ONE amendment awaiting its
   // approver. The other lanes stay free — that is the whole point of the split.
@@ -11241,7 +11266,10 @@ mfgSalesOrders.post('/:docNo/amendments', async (c) => {
       }
     }
 
-    if (laneSelfApproves(laneKey, { holdsLaneKey: holdsDeliveryKey, hasLineChanges: half.lines.length > 0 })) {
+    /* Conts: no approval step. The raiser applies it through the same approve route, which
+       re-checks that they hold the lane's key (Conts grants it with Sales at edit, conts/access.ts). */
+    if ((contsVo && voAppliesOnRaise() && hasHouzsPerm(c, LANE_APPROVE_KEY[laneKey]))
+      || laneSelfApproves(laneKey, { holdsLaneKey: holdsDeliveryKey, hasLineChanges: half.lines.length > 0 })) {
       selfApprovable.push(amendment.id);
     }
 

@@ -377,7 +377,12 @@ describe("stepperItems", () => {
     expect(at("signed").slice(0, 2).map((i) => [i.state, i.sub])).toEqual([["done", "Signed 10 Aug"], ["current", "In progress"]]);
     expect(at("ordering").slice(0, 3).map((i) => i.state)).toEqual(["done", "done", "current"]);
   });
-  it("says in progress when the site tasks have no dates", () => {
+  it("counts a confirmed sales order as signed, with its date, while the flow is still at design", () => {
+    expect(at("design", { soStatus: "CONFIRMED" })[0]).toMatchObject({ state: "done", sub: "Signed 10 Aug" });
+    expect(at("design", { soStatus: "DRAFT" })[0]).toMatchObject({ state: "later", sub: "Not signed yet" });
+    expect(at("design", { soStatus: "CANCELLED" })[0]).toMatchObject({ state: "later" });
+  });
+    it("says in progress when the site tasks have no dates", () => {
     const items = at("renovation", { soDate: null, handoverOn: null, tasks: [] });
     expect(items[3]?.sub).toBe("In progress");
     expect(items[0]?.sub).toBe("Signed");

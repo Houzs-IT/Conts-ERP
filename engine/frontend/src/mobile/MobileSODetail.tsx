@@ -171,6 +171,8 @@ type SoHeader = {
      only). Feeds soProcLockActive (line ~390), so the phone freezes the same
      fields the desktop does with no processing date involved. */
   po_locked: boolean | null;
+  /* Conts: confirmed, so every line change is a VO (backend lib/renovation-vo-rule.ts). */
+  vo_locked?: boolean | null;
   has_open_amendment: boolean | null;
   open_amendment: { id: string; status: string; amendment_no: string; lane?: string | null } | null;
   /* Scan-flow proof photos (migrations 0033 + 0034) — R2 keys for the

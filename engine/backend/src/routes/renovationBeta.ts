@@ -804,7 +804,7 @@ async function siteDeliveries(c: Ctx, projectId: number, companyId: number): Pro
                   WHERE i.doc_no IN (SELECT doc_no FROM scm.mfg_sales_orders WHERE project_id = ?1 AND company_id = ?2) AND NOT i.cancelled
                   ORDER BY i.doc_no, i.line_no NULLS LAST, i.created_at, i.id`)),
     rowsOf(c, q(`SELECT d.id::text AS id, d.do_number AS no, ${TS("coalesce(d.delivered_at, d.signed_at, d.dispatched_at)")} AS at,
-                        d.created_at::date::text AS made_on, d.status::text AS status, d.so_doc_no
+                        d.do_date::text AS made_on, d.status::text AS status, d.so_doc_no
                    FROM scm.delivery_orders d WHERE d.id IN (__DOS__) AND d.status::text <> 'CANCELLED'`)),
     rowsOf(c, q(`SELECT g.id::text AS id, g.grn_number AS no, ${TS("coalesce(g.site_received_at, (g.received_at::timestamp AT TIME ZONE 'Asia/Kuala_Lumpur'))")} AS at,
                         g.status::text AS status, sup.name AS supplier, po.po_number, g.purchase_order_id::text AS po_id,
