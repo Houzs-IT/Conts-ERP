@@ -1,6 +1,6 @@
 import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
-import { maySee } from '../../_lib/access';
+import { maySee, can } from '../../_lib/access';
 import { masked } from '../../_lib/properties';
 import { statementSettings } from '../../_lib/ownerStatement';
 import { contractView } from '../../_lib/unitContract';
@@ -14,7 +14,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if (!session) return response!;
   if (!maySee(session, ['management'])) return fail('FORBIDDEN', 'Unit records are visible to people with Units access.', 403);
   // Owner identity and bank numbers are shown only to roles that manage them.
-  const banking = session.manage;
+  const banking = session.manage || can(session, 'finance', 'view');
 
   const [buildings, units, expenses, docs, { defaultFeePct }, extras] = await Promise.all([
     all<any>(env, 'SELECT id, name, city, state, postcode FROM properties ORDER BY state, name'),

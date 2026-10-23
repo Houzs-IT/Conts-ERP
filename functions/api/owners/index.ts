@@ -1,4 +1,4 @@
-import { maySee } from '../../_lib/access';
+import { maySee, can } from '../../_lib/access';
 import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { todayMyt } from '../../_lib/ops';
@@ -22,7 +22,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
   if (!maySee(session, READ_ROLES)) return fail('FORBIDDEN', 'Owner records are visible to operations and finance roles.', 403);
-  const banking = session.manage;
+  const banking = session.manage || can(session, 'finance', 'view');
 
   const url = new URL(request.url);
   const month = url.searchParams.get('month') || todayMyt().slice(0, 7);

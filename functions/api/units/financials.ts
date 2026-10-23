@@ -1,5 +1,6 @@
 import { type Env, one, json, fail, mytToday } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
+import { can } from '../../_lib/access';
 import { unitMonthPnl, cachedQuery } from '../../_lib/unitPnl';
 
 /** GET /api/units/financials?unitId=&month=YYYY-MM — the unit's owner statement and The Conts' P and L for any month
@@ -7,7 +8,7 @@ import { unitMonthPnl, cachedQuery } from '../../_lib/unitPnl';
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!session.manage) return fail('FORBIDDEN', 'Unit money is visible to management, finance and operations managers.', 403);
+  if (!(session.manage || can(session, 'finance', 'view'))) return fail('FORBIDDEN', 'Unit money is visible to management, finance and operations managers.', 403);
 
   const url = new URL(request.url);
   const unitId = url.searchParams.get('unitId');

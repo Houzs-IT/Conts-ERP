@@ -1,6 +1,7 @@
 import { type Env, all, json, fail, mytToday } from '../../_lib/db';
 import { rentalOnly } from '../../_lib/unitPurpose';
 import { requireSession } from '../../_lib/auth';
+import { can } from '../../_lib/access';
 import { monthsBack, daysIn } from '../../_lib/ops';
 import { stayMonths, metrics, groupBy, monthEndExclusive } from '../../_lib/revenue';
 import { ownerMonths } from '../../_lib/ownerEstimate';
@@ -18,7 +19,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const count = range === '3m' ? 3 : range === '12m' ? 12 : Number(today.slice(5, 7));
   const periods = monthsBack(today, count);
 
-  const finance = session.manage;
+  const finance = session.manage || can(session, 'finance', 'view');
   // functions/_lib/revenue.ts: each stay's gross value and nights split by night into the months it covers.
   const [rows, listedUnits, ownerByMonth] = await Promise.all([
     stayMonths(env, `${periods[0]}-01`, monthEndExclusive(periods[periods.length - 1])),
