@@ -9,7 +9,7 @@ import { useQuery } from "../../hooks/useQuery";
 import { SoLinePhotoStrip } from "../../components/scm-v2/SoLinePhotoStrip";
 import { errorText } from "../projects/renovation/renovationModel";
 import { TONE_WAIT, WS, WsBadge, WsEmpty, WsFilterPill, WsPageHead, btnStyle } from "./BetaWsUi";
-import { WsTable, metaStyle, numStyle, tdStyle, thStyle } from "./BetaVoPoUi";
+import { WsNarrow, WsNarrowStyle, WsTable, metaStyle, narrowBandStyle, narrowItemStyle, numStyle, tdStyle, thStyle } from "./BetaVoPoUi";
 import type { BetaTabProps } from "./betaShared";
 import { downloadClientPdf } from "./renovationBetaClientPdf";
 import { whatsappLink } from "./renovationBetaModel";
@@ -67,6 +67,7 @@ export function BetaClientPoTab(p: BetaTabProps): ReactElement {
 
   return (
     <>
+      <WsNarrowStyle />
       <WsPageHead
         title="Client PO"
         sub={`What the client buys: ${items.length} item${items.length === 1 ? "" : "s"}. Lines with supplier "Customer" come here by themselves.`}
@@ -106,6 +107,38 @@ export function BetaClientPoTab(p: BetaTabProps): ReactElement {
             ])}
           </tbody>
         </WsTable>
+      )}
+      {items.length > 0 && (
+        <WsNarrow label="Client items">
+          {groups.map((g) => (
+            <li key={g.key}>
+              <div style={narrowBandStyle("cat")}>{g.label}</div>
+              {g.subs.map((s) => (
+                <div key={s.key}>
+                  {s.label && <div style={narrowBandStyle("sub")}>{s.label}</div>}
+                  <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+                    {s.items.map((i) => (
+                      <li key={i.key} style={narrowItemStyle}>
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                          <span style={{ fontWeight: 600 }}>{i.description || "-"}</span>
+                          <span style={{ whiteSpace: "nowrap" }}>{i.measure ?? `${i.qty}${i.uom ? ` ${i.uom}` : ""}`}</span>
+                        </div>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, ...metaStyle }}>
+                          <span style={{ fontFamily: "ui-monospace, monospace" }}>{i.itemCode ?? "-"}</span>
+                          <span>{view === "category" ? (i.area ?? "No area") : `${i.categoryLabel} · ${i.subLabel}`}</span>
+                          {i.pending && <span>Not confirmed yet</span>}
+                        </div>
+                        {i.soItemId && i.soDocNo && (i.photoKeys?.length ?? 0) > 0 && (
+                          <SoLinePhotoStrip source="so" docId={i.soDocNo} itemId={i.soItemId} photoKeys={i.photoKeys ?? []} edit={null} />
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </li>
+          ))}
+        </WsNarrow>
       )}
     </>
   );

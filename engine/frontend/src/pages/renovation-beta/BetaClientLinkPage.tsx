@@ -4,7 +4,7 @@
 
 import { useEffect, useMemo, useState, type ReactElement } from "react";
 import { WsFilterPill, WsStyle } from "./BetaWsUi";
-import { WsTable, metaStyle, numStyle, tdStyle, thStyle } from "./BetaVoPoUi";
+import { WsNarrow, WsNarrowStyle, WsTable, metaStyle, narrowBandStyle, narrowItemStyle, numStyle, tdStyle, thStyle } from "./BetaVoPoUi";
 import { BETA } from "./renovationBetaTheme";
 import { byArea, byCategory, type ClientPublicAnswer } from "./renovationBetaVoPo";
 
@@ -37,6 +37,7 @@ export function BetaClientLinkPage(): ReactElement {
   return (
     <div className="bws" style={{ minHeight: "100vh", background: BETA.bg }}>
       <WsStyle />
+      <WsNarrowStyle />
       <main style={{ maxWidth: 1100, margin: "0 auto", padding: "24px 16px 48px", display: "flex", flexDirection: "column", gap: 16 }}>
         {error ? <p role="alert" style={{ padding: 24, fontSize: 15 }}>{error}</p> : !data ? <p style={{ padding: 24, color: BETA.muted }}>Loading...</p> : (
           <>
@@ -76,6 +77,35 @@ export function BetaClientLinkPage(): ReactElement {
                   ])}
                 </tbody>
               </WsTable>
+            )}
+            {data.items.length > 0 && (
+        <WsNarrow label="Client items">
+          {groups.map((g) => (
+            <li key={g.key}>
+              <div style={narrowBandStyle("cat")}>{g.label}</div>
+              {g.subs.map((s) => (
+                <div key={s.key}>
+                  {s.label && <div style={narrowBandStyle("sub")}>{s.label}</div>}
+                  <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+                    {s.items.map((i) => (
+                      <li key={i.key} style={narrowItemStyle}>
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                          <span style={{ fontWeight: 600 }}>{i.description || "-"}</span>
+                          <span style={{ whiteSpace: "nowrap" }}>{i.measure ?? `${i.qty}${i.uom ? ` ${i.uom}` : ""}`}</span>
+                        </div>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, ...metaStyle }}>
+                          <span style={{ fontFamily: "ui-monospace, monospace" }}>{i.itemCode ?? "-"}</span>
+                          <span>{view === "category" ? (i.area ?? "No area") : `${i.categoryLabel} · ${i.subLabel}`}</span>
+                          {i.pending && <span>Not confirmed yet</span>}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </li>
+          ))}
+        </WsNarrow>
             )}
           </>
         )}

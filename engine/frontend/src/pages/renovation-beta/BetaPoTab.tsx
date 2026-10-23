@@ -8,7 +8,7 @@ import { Link } from "react-router-dom";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useQuery } from "../../hooks/useQuery";
 import { WS, WsBadge, WsEmpty, WsPageHead, TONE_ALERT, btnStyle } from "./BetaWsUi";
-import { WsMark, WsStat, WsStats, WsTable, metaStyle, numStyle, tdStyle, thStyle } from "./BetaVoPoUi";
+import { WsMark, WsNarrow, WsNarrowStyle, WsStat, WsStats, WsTable, metaStyle, narrowBandStyle, narrowItemStyle, numStyle, tdStyle, thStyle } from "./BetaVoPoUi";
 import type { BetaTabProps } from "./betaShared";
 import { dayMonthYear } from "./renovationBetaModel";
 import { BETA } from "./renovationBetaTheme";
@@ -34,6 +34,7 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
 
   return (
     <>
+      <WsNarrowStyle />
       <WsPageHead
         title="PO"
         sub="Every purchase order line for this project's sales order, by category."
@@ -82,6 +83,48 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
             })}
           </tbody>
         </WsTable>
+      )}
+      {tree.length > 0 && (
+        <WsNarrow label="Purchase order lines by category">
+          {tree.map((c) => (
+            <li key={c.key}>
+              <button type="button" aria-expanded={!closed.has(c.key)} onClick={() => toggle(c.key)}
+                style={{ ...narrowBandStyle("cat"), width: "100%", borderTop: 0, borderRight: 0, textAlign: "left", font: "inherit", fontWeight: 700, cursor: "pointer", display: "flex", gap: 6, alignItems: "center" }}>
+                {closed.has(c.key) ? <ChevronRight size={16} aria-hidden="true" /> : <ChevronDown size={16} aria-hidden="true" />}{c.label} ({c.count})
+              </button>
+              {!closed.has(c.key) && (
+                <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+                  {c.subs.map((s) => (
+                    <li key={s.key}>
+                      <div style={narrowBandStyle("sub")}>{s.label} ({s.items.length})</div>
+                      <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+                        {s.items.map((l) => (
+                          <li key={l.id} style={{ ...narrowItemStyle, opacity: l.poStatus === "CANCELLED" ? 0.6 : 1 }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                              <span style={{ fontWeight: 600 }}>{l.product}</span>
+                              <span style={{ whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{l.qty} {l.uom}</span>
+                            </div>
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, ...metaStyle }}>
+                              <span style={{ fontFamily: "ui-monospace, monospace" }}>{l.sku}</span>
+                              {l.area && <span>{l.area}</span>}
+                              <Link to={`/scm/purchase-orders/${l.poId}`} style={{ fontWeight: 600 }}>{l.poNumber}</Link>
+                              <span>{dayMonthYear(l.poDate)}</span>
+                              <span>Delivery {dayMonthYear(l.deliveryDate)}</span>
+                            </div>
+                            <div style={{ display: "flex", gap: 8, alignItems: "center", ...metaStyle }}>
+                              GR <WsMark state={l.gr} /> DO <WsMark state={l.delivered ? "yes" : "no"} />
+                              {l.poStatus === "CANCELLED" && <WsBadge tone={TONE_ALERT} size={11}>Cancelled</WsBadge>}
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </li>
+          ))}
+        </WsNarrow>
       )}
     </>
   );

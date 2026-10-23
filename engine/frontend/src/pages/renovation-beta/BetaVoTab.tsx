@@ -11,7 +11,7 @@ import { useQuery } from "../../hooks/useQuery";
 import { refusalOf, renoSend } from "../../lib/renovation/api";
 import { money } from "../projects/renovation/renovationModel";
 import { TONE_ACCENT, TONE_ALERT, TONE_DONE, TONE_QUIET, TONE_WAIT, WS, WsBadge, WsCard, WsEmpty, WsFilterPill, WsPageHead, btnStyle } from "./BetaWsUi";
-import { WsStat, WsStats, WsTable, metaStyle, numStyle, tdStyle, thStyle } from "./BetaVoPoUi";
+import { WsNarrow, WsNarrowStyle, WsStat, WsStats, WsTable, metaStyle, narrowItemStyle, numStyle, tdStyle, thStyle } from "./BetaVoPoUi";
 import type { BetaTabProps } from "./betaShared";
 import { dayMonthYear } from "./renovationBetaModel";
 import { BETA, type BetaTone } from "./renovationBetaTheme";
@@ -35,6 +35,7 @@ function VoBody({ p, d }: { p: BetaTabProps; d: VoAnswer }): ReactElement {
 
   return (
     <>
+      <WsNarrowStyle />
       <WsPageHead
         title="VO"
         sub="Changes after the sales order. Each line goes to PO (we buy it) or Client PO (the client buys it)."
@@ -162,6 +163,27 @@ function LineTable({ lines, finance, withVo = false }: { lines: Array<{ l: VoLin
           })}
         </tbody>
       </WsTable>
+      <WsNarrow label="VO lines">
+        {lines.map(({ l, vo }, i) => {
+          const tone = l.change === "add" ? WS.green : l.change === "deduct" ? WS.red : WS.text2;
+          return (
+            <li key={`${vo.key}:${i}`} style={narrowItemStyle}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "baseline" }}>
+                <span style={{ fontWeight: 600 }}>{l.description || l.itemCode || "-"}</span>
+                <span style={{ color: tone, fontWeight: 700, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{signedQty(l)}</span>
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", ...metaStyle }}>
+                {withVo && <span style={{ fontWeight: 700 }}>{vo.label}</span>}
+                <span style={{ fontFamily: "ui-monospace, monospace" }}>{l.itemCode ?? "-"}</span>
+                {l.room && <span>{l.room}</span>}
+                {finance && l.amountSen != null && <span style={{ color: tone, fontWeight: 600 }}>{money(l.amountSen)}</span>}
+                <WsBadge tone={l.goesTo === "client" ? TONE_ACCENT : l.change === "deduct" ? TONE_ALERT : TONE_QUIET} size={11}>{l.goesTo === "client" ? "Client PO" : "PO"}</WsBadge>
+              </div>
+              {l.fromItemCode && <div style={metaStyle}>Was {l.fromItemCode}</div>}
+            </li>
+          );
+        })}
+      </WsNarrow>
     </>
   );
 }

@@ -165,8 +165,8 @@ describe("Beta project workspace", () => {
     await screen.findByRole("heading", { name: "Payments" });
     fireEvent.click(screen.getByRole("button", { name: "VO" }));
     expect(await screen.findByRole("heading", { name: "VO-01 · Client change" })).toBeTruthy();
-    expect(screen.getByText("Kitchen cabinet")).toBeTruthy();
-    expect(screen.getByText("-2")).toBeTruthy();
+    expect(within(screen.getByRole("region", { name: "VO lines" })).getByText("Kitchen cabinet")).toBeTruthy();
+    expect(within(screen.getByRole("region", { name: "VO lines" })).getByText("-2")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Defects" }));
     expect(await screen.findByRole("heading", { name: "Defects" })).toBeTruthy();
     expect(screen.getByText("Contractor's turn")).toBeTruthy();

@@ -13,10 +13,33 @@ export const tdStyle: CSSProperties = { padding: "8px 10px", fontSize: 14, borde
 export const numStyle: CSSProperties = { ...tdStyle, textAlign: "right", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" };
 export const metaStyle: CSSProperties = { fontSize: 12, color: BETA.muted };
 
+/* Below 640px a table becomes a list of stacked rows (WsNarrow), so a phone sees every figure without scrolling sideways. */
+const NARROW_CSS = `.bws .bvo-wide{display:block}.bws .bvo-narrow{display:none}@media (max-width:640px){.bws .bvo-wide{display:none}.bws .bvo-narrow{display:flex}}`;
+
+export function WsNarrowStyle(): ReactElement {
+  return <style>{NARROW_CSS}</style>;
+}
+
+/** The phone layout of a table: one bordered list, one block per line. */
+export function WsNarrow({ label, children }: { label: string; children: ReactNode }): ReactElement {
+  return (
+    <ul className="bvo-narrow" aria-label={label} style={{ listStyle: "none", margin: 0, padding: 0, flexDirection: "column", border: `1px solid ${BETA.line}`, borderRadius: 10, overflow: "hidden" }}>
+      {children}
+    </ul>
+  );
+}
+
+export const narrowItemStyle: CSSProperties = { padding: "10px 12px", borderBottom: `1px solid ${WS.rowLine}`, display: "flex", flexDirection: "column", gap: 4, background: BETA.surface };
+export const narrowBandStyle = (level: "cat" | "sub"): CSSProperties => ({
+  padding: level === "cat" ? "8px 12px" : "6px 12px 6px 20px", background: level === "cat" ? "#E1F1EE" : "#F3F9F8",
+  borderLeft: `4px solid ${level === "cat" ? BETA.accent : "#A9CFCB"}`, color: level === "cat" ? BETA.accentInk : WS.text2, fontWeight: level === "cat" ? 700 : 600,
+  fontSize: level === "cat" ? 15 : 14, borderBottom: `1px solid ${BETA.line}`,
+});
+
 /** A table that keeps its columns and scrolls sideways inside its card when the screen is narrower than it. */
 export function WsTable({ minWidth, label, children }: { minWidth: number; label: string; children: ReactNode }): ReactElement {
   return (
-    <div role="region" aria-label={label} tabIndex={0} style={{ width: "100%", overflowX: "auto", border: `1px solid ${BETA.line}`, borderRadius: 10 }}>
+    <div className="bvo-wide" role="region" aria-label={label} tabIndex={0} style={{ width: "100%", overflowX: "auto", border: `1px solid ${BETA.line}`, borderRadius: 10 }}>
       <table style={{ width: "100%", minWidth, borderCollapse: "collapse" }}>{children}</table>
     </div>
   );
@@ -34,7 +57,7 @@ export function WsStat({ label, value, meta, tone }: { label: string; value: Rea
 }
 
 export function WsStats({ children }: { children: ReactNode }): ReactElement {
-  return <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 12 }}>{children}</div>;
+  return <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12 }}>{children}</div>;
 }
 
 /** Yes (green), part (amber), no (grey). */
