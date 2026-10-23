@@ -10,10 +10,13 @@ export const isSetting = (v: unknown): v is Setting => v === 'inherit' || isLeve
 
 /** Roles whose access management can change. Management is always full (nobody can lock the system);
  *  housekeepers, technicians and owners use their own apps and are fixed. */
+/** @deprecated role-based chart, removed once the department chart ships */
 export const EDITABLE_ROLES = ['operations_manager', 'operations_staff', 'finance_admin'];
+/** @deprecated role-based chart, removed once the department chart ships */
 const MASTER = ['management', 'operations_manager', 'finance_admin'];
 /** The highest level a role may be given anywhere. Operations staff are not an administrative role, so no
  *  category or module can be raised to Full for them, by the chart or by a stored row. */
+/** @deprecated role-based chart, removed once the department chart ships */
 export const ROLE_MAX: Record<string, Level> = { operations_staff: 'edit' };
 const capped = (role: string, l: Level): Level => {
   const max = ROLE_MAX[role];
@@ -46,13 +49,15 @@ const CLOSED_BY_SIDE: Record<Side, string[]> = {
   both: [],
 };
 /** Management always sees both sides, so nobody can lock the system out of one. */
-const offSide = (role: string, side: Side, area: Area) => role !== 'management' && CLOSED_BY_SIDE[side].includes(area.group);
+export const closedBySide = (kind: DepartmentKind, side: Side, group: string): boolean => kind !== 'management' && CLOSED_BY_SIDE[side].includes(group);
+const offSide = (kind: DepartmentKind, side: Side, area: Area): boolean => closedBySide(kind, side, area.group);
 
 /**
  * Built-in category baselines, level 1 of the chart (owner's RBAC table, 23 Oct 2026). Every module in a category
  * inherits its baseline unless the module has its own override (Area.defaults or a stored row). Growth and System
  * were not in that table and keep the levels they had before.
  */
+/** @deprecated role-based chart, removed once the department chart ships */
 export const GROUP_DEFAULTS: Record<string, Partial<Record<string, Level>>> = {
   Workspace: { operations_manager: 'full', operations_staff: 'none', finance_admin: 'view' },
   Operations: { operations_manager: 'full', operations_staff: 'edit', finance_admin: 'view' },
@@ -87,7 +92,7 @@ export const AREAS: Area[] = [
   { key: 'performance', label: 'Performance', group: 'Growth', api: ['analytics', 'pricing', 'rates', 'reviews'] },
   { key: 'comms', label: 'Communication', group: 'Growth', api: ['messages', 'automations'], defaults: { finance_admin: 'none' } },
   // The user list is read by management and operations managers only (functions/api/users), so finance admins start at none.
-  { key: 'users', label: 'Users and roles', group: 'System', api: ['users'], managed: true, defaults: { finance_admin: 'none' } },
+  { key: 'users', label: 'Users and roles', group: 'System', api: ['users', 'departments'], managed: true, defaults: { finance_admin: 'none' } },
   { key: 'integrations', label: 'Integrations', group: 'System', api: ['integrations'], managed: true },
   { key: 'settings', label: 'Settings', group: 'System', api: ['settings'], managed: true },
   { key: 'health', label: 'System health', group: 'System', api: ['system', 'audit'], managed: true },
@@ -103,6 +108,7 @@ const GROUP_KEYS = new Set(GROUPS.map(groupKey));
 /** A category's baseline for the role when management has not chosen one. Housekeepers, technicians and owners
  *  have their own apps and no desk areas: the session middleware lets them reach only the routes their apps call
  *  (FIELD_ALLOWED, OWNER_ALLOWED in functions/api/_middleware.ts). */
+/** @deprecated role-based chart, removed once the department chart ships */
 export function builtInGroup(role: string, group: string): Level {
   if (role === 'management') return 'full';
   if (!EDITABLE_ROLES.includes(role)) return 'none';
@@ -110,11 +116,14 @@ export function builtInGroup(role: string, group: string): Level {
 }
 
 /** A module's own setting for the role when management has not chosen one: inherit, unless Area.defaults overrides. */
+/** @deprecated role-based chart, removed once the department chart ships */
 export const builtInSetting = (role: string, area: Area): Setting =>
   (EDITABLE_ROLES.includes(role) ? area.defaults?.[role] : undefined) ?? 'inherit';
 
 /** `${role}:${areaKey}` -> module setting, `${role}:group:${group}` -> category baseline. Only what management chose. */
+/** @deprecated role-based chart, removed once the department chart ships */
 export type Chosen = Map<string, Setting>;
+/** @deprecated role-based chart, removed once the department chart ships */
 export interface Resolved { level: Level; setting: Setting; groupLevel: Level; chosen: boolean }
 
 /**
@@ -124,6 +133,7 @@ export interface Resolved { level: Level; setting: Setting; groupLevel: Level; c
  * `chosen` is true when the winning value came from management, which is what tells the handlers to follow the
  * level instead of their own role lists (mayWork / maySee / mayRun).
  */
+/** @deprecated role-based chart, removed once the department chart ships */
 export function resolve(rows: Chosen, role: string, area: Area): Resolved {
   if (!EDITABLE_ROLES.includes(role)) {
     const level = builtInGroup(role, area.group);
@@ -138,11 +148,12 @@ export function resolve(rows: Chosen, role: string, area: Area): Resolved {
 }
 
 /** What the role gets in an area when management has chosen nothing. */
+/** @deprecated role-based chart, removed once the department chart ships */
 export const builtIn = (role: string, area: Area): Level => resolve(new Map(), role, area).level;
 
 /**
- * Permissions by department, position and user (migration 0145, PLAN.md). Nothing calls this yet: accessFor and
- * levelsFor still follow the role. Rules are keyed by area key, or `group:<Category>` for a category baseline.
+ * Permissions by department, position and user (migration 0145, PLAN.md). accessFor and levelsFor follow these.
+ * Rules are keyed by area key, or `group:<Category>` for a category baseline.
  */
 export type PermissionLevel = Level;
 export type DepartmentKind = 'management' | 'staff' | 'cleaning' | 'maintenance';
@@ -242,8 +253,29 @@ function routeArea(method: string, path: string): Area | null {
 let cache: { at: number; rows: Chosen } | null = null;
 const CACHE_MS = 10_000;
 
-export function forgetAccess() { cache = null; }
+const rulesCache = new Map<string, { at: number; rules: Promise<Rules> }>();
+const RULES_CACHE_MAX = 500;
 
+/** Drops the cached rules, so a change to departments, positions or one person's overrides applies on the next
+ *  request instead of after CACHE_MS. The handlers that write access_rules, users or departments call this. */
+export function forgetRules(): void { rulesCache.clear(); }
+export function forgetAccess(): void { cache = null; rulesCache.clear(); }
+
+/** `rulesFor`, remembered for CACHE_MS per person (the same pattern chosen() uses), so the session middleware, the
+ *  handler's requireSession and every levelsFor in one request share a single read. */
+function rulesCached(env: Env, who: Who): Promise<Rules> {
+  const key = `${who.userId}|${who.departmentId}|${who.positionId}`;
+  const hit = rulesCache.get(key);
+  if (hit && Date.now() - hit.at < CACHE_MS) return hit.rules;
+  if (rulesCache.size >= RULES_CACHE_MAX) rulesCache.clear();
+  const rules = rulesFor(env, who);
+  rulesCache.set(key, { at: Date.now(), rules });
+  // A failed read must not be remembered.
+  rules.catch(() => { if (rulesCache.get(key)?.rules === rules) rulesCache.delete(key); });
+  return rules;
+}
+
+/** @deprecated role-based chart, removed once the department chart ships */
 async function chosen(env: Env): Promise<Chosen> {
   if (cache && Date.now() - cache.at < CACHE_MS) return cache.rows;
   let rows: Chosen = new Map();
@@ -265,41 +297,70 @@ export function areaForPath(path: string): Area | null {
   return seg ? BY_API.get(seg) ?? null : null;
 }
 
+/** What the access checks need to know about the person asking: the session, or anything shaped like it. A cookie
+ *  signed before the departments shipped has no department or kind; the role then stands in for the kind. */
+export interface Actor { userId: string; role: string; side?: Side; departmentId?: string | null; positionId?: string | null; kind?: DepartmentKind | null }
 
-export interface Access { area: Area | null; level: Level; chosen: boolean; role: string }
+/** The kind of the person's department. Owners are not staff and never have one. */
+export function kindOf(a: Pick<Actor, 'role' | 'kind'>): DepartmentKind {
+  if (a.kind) return a.kind;
+  return a.role === 'management' ? 'management' : a.role === 'housekeeper' ? 'cleaning' : a.role === 'technician' ? 'maintenance' : 'staff';
+}
+/** Whether the person's levels come from department, position and user rules: desk staff, not owners or field accounts. */
+const isStaff = (a: Actor): boolean => a.role !== 'owner' && kindOf(a) === 'staff';
+const whoOf = (a: Actor): Who => ({ userId: a.userId, departmentId: a.departmentId ?? null, positionId: a.positionId ?? null, kind: kindOf(a) });
 
-/** The role's level for the area a request belongs to: the level management chose, or the built-in one.
- *  `chosen` is true only where management set it; handlers with their own role lists follow a chosen level
- *  (mayWork / maySee / mayRun) and otherwise keep their lists. */
-export async function accessFor(env: Env, role: string, path: string, method = 'GET', side: Side = 'both'): Promise<Access> {
+export interface Access { area: Area | null; level: Level; chosen: boolean; role: string; staff: boolean }
+
+/** The person's level for the area a request belongs to. Desk staff always get the level their rules resolve to
+ *  (`chosen` is true), so the handlers' mayWork / maySee / mayRun follow it instead of their own role lists.
+ *  Management is full and owners and field accounts none, with `chosen` false: the session middleware limits those
+ *  to their apps' routes (FIELD_ALLOWED, OWNER_ALLOWED) and the handlers keep their lists. */
+export async function accessFor(env: Env, who: Actor, path: string, method = 'GET'): Promise<Access> {
+  const { role } = who;
+  const kind = kindOf(who);
+  const staff = isStaff(who);
   const area = routeArea(method, path);
-  if (!area) return { area: null, level: 'full', chosen: false, role };
+  if (!area) return { area: null, level: 'full', chosen: false, role, staff };
   // Closed by the account's side: treated as a chosen No access, so the handlers' own role lists give way too.
-  if (offSide(role, side, area)) return { area, level: 'none', chosen: true, role };
-  const r = resolve(EDITABLE_ROLES.includes(role) ? await chosen(env) : new Map(), role, area);
-  return { area, level: r.level, chosen: r.chosen, role };
+  if (offSide(kind, who.side ?? 'both', area)) return { area, level: 'none', chosen: true, role, staff };
+  if (!staff) return { area, level: kind === 'management' ? 'full' : 'none', chosen: false, role, staff };
+  return { area, level: resolveFor(await rulesCached(env, whoOf(who)), whoOf(who), area).level, chosen: true, role, staff };
 }
 
-/** Whether the management-only actions in the request's area are open to this role. */
+/** Whether the management-only actions in the request's area are open to this person. */
 export function canManage(role: string, a: Access): boolean {
-  if (!a.chosen || !a.area) return MASTER.includes(role);
+  if (!a.chosen || !a.area) return role === 'management';
   return a.level === 'full' || (!!a.area.managed && a.level !== 'none');
 }
 
-/** A refusal for the request, or null. For the three roles on the Permissions chart the level it shows is the
- *  level enforced, chosen or built in: No access refuses reads and writes, View refuses writes. Management is
- *  always full; field and owner accounts are limited to their apps' routes by the session middleware. */
+/** A refusal for the request, or null. For desk staff the level the Permissions screen shows is the level enforced:
+ *  No access refuses reads and writes, View refuses writes. Management is always full; field and owner accounts are
+ *  limited to their apps' routes by the session middleware. */
 export function refusalFor(a: Access, method: string): string | null {
-  if (!a.area || !EDITABLE_ROLES.includes(a.role)) return null;
+  if (!a.area || !a.staff) return null;
   const read = method === 'GET' || method === 'HEAD';
-  if (read) return a.level === 'none' ? `Your role does not have access to ${a.area.label}.` : null;
-  return RANK[a.level] < RANK.edit ? `Your role can ${a.level === 'view' ? 'view but not change' : 'not use'} ${a.area.label}.` : null;
+  if (read) return a.level === 'none' ? `Your access does not include ${a.area.label}.` : null;
+  return RANK[a.level] < RANK.edit ? `Your access to ${a.area.label} is ${a.level === 'view' ? 'view only' : 'closed'}.` : null;
 }
 
-/** Every area's level for one role and side: what its menu and screens follow. */
-export async function levelsFor(env: Env, role: string, side: Side = 'both'): Promise<Record<string, Level>> {
-  const rows: Chosen = EDITABLE_ROLES.includes(role) ? await chosen(env) : new Map();
-  return Object.fromEntries(AREAS.map(a => [a.key, offSide(role, side, a) ? 'none' : resolve(rows, role, a).level]));
+/** Every area's level for one person: what their menu and screens follow. */
+export async function levelsFor(env: Env, who: Actor): Promise<Record<string, Level>> {
+  const kind = kindOf(who);
+  const side = who.side ?? 'both';
+  const w = whoOf(who);
+  const rules = isStaff(who) ? await rulesCached(env, w) : noRules;
+  return Object.fromEntries(AREAS.map(a => [a.key, offSide(kind, side, a) || who.role === 'owner' ? 'none' : resolveFor(rules, w, a).level]));
+}
+
+/** One area's level for the person, for a handler whose action belongs to a different area than the request's path
+ *  (a payment recorded from a reservation is Finance work). Side closing applies, as in levelsFor. */
+export async function levelAt(env: Env, who: Actor, areaKey: string): Promise<Level> {
+  return (await levelsFor(env, who))[areaKey] ?? 'none';
+}
+/** Whether the person's level in an area reaches at least `min`. */
+export async function mayIn(env: Env, who: Actor, areaKey: string, min: Level): Promise<boolean> {
+  return RANK[await levelAt(env, who, areaKey)] >= RANK[min];
 }
 
 export interface GroupCell { level: Level; builtIn: Level; chosen: boolean }
@@ -308,6 +369,7 @@ export interface ChartGroup { group: string; roles: Record<string, GroupCell> }
 export interface ChartArea { key: string; label: string; group: string; managed: boolean; roles: Record<string, AreaCell> }
 
 /** The whole chart for the Permissions tab: each category's baseline per role, then each module's own setting. */
+/** @deprecated role-based chart, removed once the department chart ships */
 export async function chart(env: Env): Promise<{ groups: ChartGroup[]; areas: ChartArea[] }> {
   const rows = await chosen(env);
   const groups = GROUPS.map(group => ({

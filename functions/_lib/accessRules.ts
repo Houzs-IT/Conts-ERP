@@ -1,6 +1,6 @@
 import { type Env, all, one } from './db';
 import {
-  AREAS, GROUPS, LEVELS, groupKey, isKind, isLevel, isSetting, isSide, resolveFor, rulesFor,
+  AREAS, GROUPS, closedBySide, LEVELS, groupKey, isKind, isLevel, isSetting, isSide, resolveFor, rulesFor,
   type DepartmentKind, type Level, type Origin, type Rules, type Setting, type Side,
 } from './access';
 
@@ -111,10 +111,7 @@ export function parsePersonChanges(body: unknown): Parsed<PersonChanges> {
   return { ok: true, value: { resetAll: false, changes: [...out.values()] } };
 }
 
-/** Which categories the side closes (same table as access.ts, which keeps it private). Management always sees both. */
-// TODO(lead): use agent A's helper if access.ts exports one for the side rule.
-const CLOSED_BY_SIDE: Record<Side, string[]> = { conts: ['Dream Crafter'], dream_crafter: ['Workspace', 'Operations', 'Growth'], both: [] };
-export const closedBySide = (kind: DepartmentKind, side: Side, group: string): boolean => kind !== 'management' && CLOSED_BY_SIDE[side].includes(group);
+export { closedBySide } from './access';
 
 
 // ---- departments and positions ----

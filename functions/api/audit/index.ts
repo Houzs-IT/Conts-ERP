@@ -3,7 +3,6 @@ import { isOnTask } from '../../_lib/taskCleaners';
 import { requireSession, isFieldRole, hasColumn } from '../../_lib/auth';
 import { levelsFor } from '../../_lib/access';
 
-const AUDIT_ROLES = ['management', 'operations_manager', 'finance_admin'];
 
 /** The area (functions/_lib/access.ts) whose records each history belongs to: a role that cannot open the
  *  area cannot read the history of its records either. Tables not listed are management and finance only. */
@@ -75,13 +74,14 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if (isFieldRole(session.role)) {
     mayRead = (t, id) => fieldOwns(env, session.userId, t, id);
   } else {
-    const levels = await levelsFor(env, session.role, session.side);
-    mayRead = async t => { const area = ENTITY_AREA[t]; return area ? levels[area] !== 'none' : AUDIT_ROLES.includes(session.role); };
+    const levels = await levelsFor(env, session);
+    // The whole trail, and records that belong to no area, follow System health (management and the finance and operations manager rules).
+    mayRead = async t => { const area = ENTITY_AREA[t]; return levels[area ?? 'health'] !== 'none'; };
   }
   if (!main) {
-    if (!AUDIT_ROLES.includes(session.role)) return fail('FORBIDDEN', 'The full history is available to management and finance roles.', 403);
+    if ((await levelsFor(env, session)).health === 'none') return fail('FORBIDDEN', 'The full history is available to management and finance.', 403);
   } else if (!(await mayRead(main[0], main[1]))) {
-    return fail('FORBIDDEN', isFieldRole(session.role) ? 'You can see the history of your own cleaning and maintenance jobs only.' : 'Your role cannot see the history of this record.', 403);
+    return fail('FORBIDDEN', isFieldRole(session.role) ? 'You can see the history of your own cleaning and maintenance jobs only.' : 'Your access does not include the history of this record.', 403);
   }
   const entities: [string, string][] = main ? [main] : [];
   for (const e of extra) if (main && await mayRead(e[0], e[1])) entities.push(e);

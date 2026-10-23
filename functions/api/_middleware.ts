@@ -97,9 +97,12 @@ const handle: PagesFunction<Env> = async ({ request, env, next, waitUntil }) => 
     return new Response(JSON.stringify({ error: { code: 'UNAUTHENTICATED', message: 'This account has been switched off or changed. Sign in again, or ask management.' } }),
       { status: 401, headers: { 'content-type': 'application/json; charset=utf-8', 'set-cookie': clearCookie(request) } });
   }
-  // The side (migration 0143) is read the same way, so moving someone to The Conts or Dream Crafter applies at once.
-  const session = live.user.role === signed.role && live.user.fullName === signed.fullName && live.user.side === signed.side
-    ? signed : { ...signed, role: live.user.role, side: live.user.side, fullName: live.user.fullName };
+  // The side (migration 0143) and the department, position and kind (migration 0145) are read the same way, so moving
+  // someone to another department applies at once.
+  const { role, side, departmentId, positionId, kind, fullName } = live.user;
+  const same = role === signed.role && fullName === signed.fullName && side === signed.side && departmentId === (signed.departmentId ?? null)
+    && positionId === (signed.positionId ?? null) && kind === (signed.kind ?? null);
+  const session = same ? signed : { ...signed, role, side, departmentId, positionId, kind, fullName };
   const limits = sessionLimits(live.settings, session.role);
   // Endpoints read the session from the cookie themselves (requireSession), so they are handed a cookie
   // carrying the current role rather than the one signed at sign-in.
@@ -119,7 +122,7 @@ const handle: PagesFunction<Env> = async ({ request, env, next, waitUntil }) => 
 
   // Management requires two-step sign-in for this role and this person has not set it up: until they do,
   // only their own account screen answers.
-  if (!SETUP_ALLOWED.test(route) && await twoStepSetupDue(env, live.settings, session.role, live.user.twoFactorOn)) {
+  if (!SETUP_ALLOWED.test(route) && await twoStepSetupDue(env, live.settings, session, live.user.twoFactorOn)) {
     return fail('TWO_STEP_REQUIRED', 'Set up two-step sign-in on My account before using the rest of the system.', 403);
   }
 
@@ -139,7 +142,7 @@ const handle: PagesFunction<Env> = async ({ request, env, next, waitUntil }) => 
     return fail('FORBIDDEN', 'This is not available in the field app.', 403);
   }
   // The level on Users and roles > Permissions (chosen by management, or the built-in one it shows).
-  const access = await accessFor(env, session.role, path, request.method, session.side);
+  const access = await accessFor(env, session, path, request.method);
   const refused = refusalFor(access, request.method);
   if (refused) return fail('FORBIDDEN', refused, 403);
   if (MONEY_ONLY.test(path) && !(access.chosen ? access.level !== 'none' : canSeeFinance(session.role))) {
