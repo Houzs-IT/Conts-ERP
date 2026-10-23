@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSession, type TwoStep } from '../lib/session';
 import { ApiFailure, api } from '../lib/api';
@@ -8,7 +8,8 @@ import { Button } from '../components/Button';
 import { Field, PasswordField } from '../components/Field';
 import { CodeInput } from '../components/inputs/CodeInput';
 import { Segmented } from '../components/Metric';
-import { PIN_INPUT, digitsOnly, pinPolicy } from '../lib/pin';
+import { pinPolicy } from '../lib/pin';
+import { PinInput } from '../components/inputs/PinInput';
 import '../styles/login.css';
 import { go } from '../lib/go';
 
@@ -90,6 +91,7 @@ export default function LoginPage({ forceChangePassword = false, resetToken = nu
   // Office or Worker tab. The address follows it (/portal is the workers' door), so a refresh or a bookmark opens
   // the same tab, and the choice is remembered for the next sign-in on this device.
   const navigate = useNavigate();
+  const form = useRef<HTMLFormElement>(null);
   const pickDoor = (way: 'signin' | 'pin') => {
     setScreen(way); setError(''); setPassword(''); rememberSignIn(way);
     navigate(way === 'pin' ? '/portal' : '/', { replace: true });
@@ -130,6 +132,8 @@ export default function LoginPage({ forceChangePassword = false, resetToken = nu
     } catch (err: any) {
       // The five minutes between password and code ran out: start again from the password.
       if (err instanceof ApiFailure && err.code === 'CHALLENGE_EXPIRED') { setTwoStep(null); setScreen('signin'); setPassword(''); }
+      // A refused PIN empties the boxes, so the next try starts from the first digit instead of six backspaces.
+      if (screen === 'pin') setPassword('');
       setError(err?.message ?? 'Could not reach the server. Check your connection and try again.');
     } finally { setBusy(false); }
   }
@@ -200,11 +204,11 @@ export default function LoginPage({ forceChangePassword = false, resetToken = nu
           </span>
         </div>
 
-        <form onSubmit={submit} className="login-form login-in login-in-form w-full max-w-[344px] self-center flex flex-col gap-8">
+        <form ref={form} onSubmit={submit} className="login-form login-in login-in-form w-full max-w-[344px] self-center flex flex-col gap-8">
           {(screen === 'signin' || screen === 'pin') && !ownerDoor && (
             <Segmented label="Sign in as" value={screen} onChange={pickDoor}
               options={[{ key: 'signin', label: 'Office' }, { key: 'pin', label: 'Worker' }]}
-              className="w-full [&>button]:flex-1 [&>button]:justify-center [&>button]:h-10" />
+              className="w-full box-border [&>button]:flex-1 [&>button]:justify-center [&>button]:h-10" />
           )}
 
           <div className="flex flex-col gap-2.5">
@@ -249,12 +253,19 @@ export default function LoginPage({ forceChangePassword = false, resetToken = nu
               <div className="text-meta text-muted-ink">Checking your link…</div>
             )}
 
-            {screen !== 'forgot' && screen !== 'code' && (screen !== 'reset' || tokenState === 'valid') && (
-              <PasswordField label={pinEntry ? (newPin ? 'New PIN' : 'PIN') : newPassword ? 'New password' : 'Password'} required
+            {pinEntry ? (
+              // The sixth digit signs in when the employee ID is there, so a phone held in one hand needs no extra tap.
+              <PinInput label={newPin ? 'New PIN' : 'PIN'} required autoComplete={newPin ? 'new-password' : 'current-password'}
+                value={password}
+                onChange={pin => {
+                  setPassword(pin);
+                  if (screen === 'pin' && pin.length === 6 && empNo && !busy) requestAnimationFrame(() => form.current?.requestSubmit());
+                }} />
+            ) : screen !== 'forgot' && screen !== 'code' && (screen !== 'reset' || tokenState === 'valid') && (
+              <PasswordField label={newPassword ? 'New password' : 'Password'} required
                 autoComplete={newPassword ? 'new-password' : 'current-password'}
-                value={password} onChange={e => setPassword(pinEntry ? digitsOnly(e.target.value) : e.target.value)}
-                {...(pinEntry ? PIN_INPUT : {})}
-                placeholder={pinEntry ? '6 digits' : newPassword ? 'New password' : 'Enter password'} />
+                value={password} onChange={e => setPassword(e.target.value)}
+                placeholder={newPassword ? 'New password' : 'Enter password'} />
             )}
 
             {(screen === 'change' || (screen === 'reset' && tokenState === 'valid')) && (
