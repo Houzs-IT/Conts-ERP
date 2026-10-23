@@ -11153,11 +11153,11 @@ mfgSalesOrders.post('/:docNo/amendments', async (c) => {
   // Price-lane carve-out is 2990's alone (owner 2026-09-21). Read the ACTIVE
   // company code, not the id — ids drift between environments.
   const priceLaneEnabled = PRICE_LANE_COMPANY_CODES.has(c.get('companyCode') ?? '');
-  const laneSplit = await resolveAmendmentLaneSplit(sb, docNo, activeCompanyId(c), headerChanges, submittedLines, priceLaneEnabled);
-  if (!laneSplit) return c.json(LINE_BUILD_ERRORS.unreadable, 500);
+  const split = await resolveAmendmentLaneSplit(sb, docNo, activeCompanyId(c), headerChanges, submittedLines, priceLaneEnabled);
+  if (!split) return c.json(LINE_BUILD_ERRORS.unreadable, 500);
   /* Conts: a VO on a confirmed order is one document with no approver (lib/renovation-vo-rule.ts). */
   const contsVo = soVoLocked(soRow as unknown as { status?: string | null });
-  const split = contsVo ? mergeLanesForVo(laneSplit) : laneSplit;
+  if (contsVo) Object.assign(split, mergeLanesForVo(split));
 
   // Guard 4b — per-lane openness: each lane admits ONE amendment awaiting its
   // approver. The other lanes stay free — that is the whole point of the split.
