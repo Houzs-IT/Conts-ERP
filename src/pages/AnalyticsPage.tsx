@@ -171,7 +171,7 @@ const METRICS: Record<Metric, {
   revenue:   { label: 'Earnings',   pick: p => p.revenue,   full: v => rm(v, { cents: false }), bar: compactMoney },
   occupancy: { label: 'Occupancy', pick: p => p.occupancy, full: v => `${v.toFixed(1)}%`,      bar: v => `${v.toFixed(0)}%` },
   adr:       { label: 'Avg nightly price',       pick: p => p.adr,       full: v => rm(v, { cents: false }), bar: compactMoney },
-  revpar:    { label: 'Earnings per available night',    pick: p => p.revpar,    full: v => rm(v, { cents: false }), bar: compactMoney },
+  revpar:    { label: 'Earnings per night (all nights)',    pick: p => p.revpar,    full: v => rm(v, { cents: false }), bar: compactMoney },
 };
 
 const METRIC_ORDER: Metric[] = ['revenue', 'occupancy', 'adr', 'revpar'];
@@ -386,7 +386,7 @@ function UnitTable({ units, metric, loading, range }: { units: UnitRow[]; metric
     { key: 'nights', label: 'Booked nights', type: 'number', value: u => u.nights ?? null, hidden: true, width: 100 },
     { key: 'occupancy', label: 'Occupancy', type: 'number', value: u => u.occupancy, width: 100, render: u => <span className={NUM}>{u.occupancy.toFixed(1)}%</span> },
     { key: 'adr', label: 'Avg nightly price', type: 'money', value: u => u.adr, width: 100, render: u => <span className={NUM}>{rm(u.adr, { cents: false })}</span> },
-    { key: 'revpar', label: 'Earnings per available night', type: 'money', value: u => u.revpar, width: 100, render: u => <span className={NUM}>{rm(u.revpar, { cents: false })}</span> },
+    { key: 'revpar', label: 'Earnings per night (all nights)', type: 'money', value: u => u.revpar, width: 100, render: u => <span className={NUM}>{rm(u.revpar, { cents: false })}</span> },
     { key: 'rating', label: 'Rating', type: 'number', value: u => u.rating, width: 80,
       render: u => <span className="tabular-nums text-muted-ink">{u.rating === null ? '—' : u.rating.toFixed(2)}</span> },
   ], []);

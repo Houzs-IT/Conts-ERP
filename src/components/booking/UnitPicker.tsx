@@ -1,5 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import Icon from '../Icon';
+import { Floating } from '../DataTableParts';
 import { cx } from '../../lib/design-tokens';
 
 /** purpose (0125): a showroom or warehouse takes no reservations, so it is never offered here. */
@@ -16,7 +17,7 @@ export function UnitPicker({ units, value, onChange, label = 'Unit', placeholder
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
   const [active, setActive] = useState(0);
-  const wrap = useRef<HTMLDivElement>(null);
+  const box = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
   const selected = units.find(u => u.id === value) ?? null;
 
@@ -28,12 +29,6 @@ export function UnitPicker({ units, value, onChange, label = 'Unit', placeholder
       .sort((a, b) => byName(a.propertyName, b.propertyName) || byName(a.unitNumber, b.unitNumber));
   }, [units, q]);
 
-  useEffect(() => {
-    if (!open) return;
-    const onDoc = (e: MouseEvent) => { if (!wrap.current?.contains(e.target as Node)) setOpen(false); };
-    document.addEventListener('mousedown', onDoc);
-    return () => document.removeEventListener('mousedown', onDoc);
-  }, [open]);
   useEffect(() => { setActive(0); }, [q]);
   useEffect(() => {
     listRef.current?.querySelector<HTMLElement>(`[data-i="${active}"]`)?.scrollIntoView({ block: 'nearest' });
@@ -45,13 +40,14 @@ export function UnitPicker({ units, value, onChange, label = 'Unit', placeholder
     else if (e.key === 'ArrowUp') { e.preventDefault(); setActive(a => Math.max(0, a - 1)); }
     else if (e.key === 'Enter') { if (open && flat[active]) { e.preventDefault(); pick(flat[active]); } }
     else if (e.key === 'Escape') { if (open) { e.stopPropagation(); setOpen(false); } }
+    else if (e.key === 'Tab') setOpen(false);
   }
 
   let lastBuilding = '';
   return (
-    <div ref={wrap} className="relative flex flex-col gap-[7px]">
+    <div className="relative flex flex-col gap-[7px]">
       <label htmlFor={id} className="text-meta font-medium text-muted-ink">{label}</label>
-      <div className="relative">
+      <div ref={box} className="relative">
         <span className="absolute left-[10px] top-1/2 -translate-y-1/2 text-muted-ink grid pointer-events-none"><Icon name="Search" size="sm" /></span>
         <input id={id} role="combobox" aria-expanded={open} aria-controls={`${id}-list`} aria-autocomplete="list" autoComplete="off"
           value={open ? q : selected ? `${selected.propertyName} ${selected.unitNumber}` : ''}
@@ -62,9 +58,9 @@ export function UnitPicker({ units, value, onChange, label = 'Unit', placeholder
           className="h-10 w-full box-border rounded-control border border-solid border-line bg-white text-ink [font-family:inherit] text-copy pl-[32px] pr-8 py-0 outline-none focus:border-ink" />
         <span className="absolute right-[10px] top-1/2 -translate-y-1/2 text-muted-ink grid pointer-events-none"><Icon name="ChevronDown" size="sm" /></span>
       </div>
-      {open && (
-        <ul id={`${id}-list`} ref={listRef} role="listbox"
-          className="absolute z-[80] left-0 right-0 top-full mt-1 m-0 p-1 list-none max-h-[280px] overflow-y-auto bg-card border border-solid border-line rounded-control shadow-[var(--shadow-overlay)]">
+      {/* Drawn on top of the page, so the reservation dialog cannot cut the list off. */}
+      <Floating anchor={box} open={open} onClose={() => setOpen(false)} label={label} width={box.current?.offsetWidth ?? 280} maxHeight={280}>
+        <ul id={`${id}-list`} ref={listRef} role="listbox" className="m-0 p-1 list-none">
           {flat.length === 0 && <li className="px-3 py-2 text-meta text-muted-ink">No unit matches “{q}”.</li>}
           {flat.map((u, i) => {
             const head = u.propertyName !== lastBuilding;
@@ -83,7 +79,7 @@ export function UnitPicker({ units, value, onChange, label = 'Unit', placeholder
             );
           })}
         </ul>
-      )}
+      </Floating>
     </div>
   );
 }

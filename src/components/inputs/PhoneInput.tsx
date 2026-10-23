@@ -38,7 +38,9 @@ export function phoneProblem(value: string): string | undefined {
 }
 
 const COUNTRIES = phoneCountries();
-const OPTIONS = COUNTRIES.map(c => ({ value: c.code, label: `${c.code} +${c.callingCode}`, hint: c.name }));
+// Rows read "Malaysia  +60", sorted by name; the button shows only +60. Found by name, by +60 or 60, or by the
+// letter code (MY), which is never shown.
+const OPTIONS = COUNTRIES.map(c => ({ value: c.code, label: c.name, hint: `+${c.callingCode}`, keywords: c.code }));
 
 const digitsOf = (s: string) => s.replace(/\D/g, '');
 /** The caret position just after the n-th digit of `text` (0 = start). */
@@ -76,7 +78,7 @@ function bareInternational(d: string, country: CountryCode) {
   return c ? { country: c, draft: asIntl.national } : null;
 }
 
-/** Country picker (searchable, "MY +60") beside the number, formatted as it is typed in that country's grouping without
+/** Country picker (searchable, shows "+60") beside the number, formatted as it is typed in that country's grouping without
  *  moving the caret. Typing or pasting "+code ..." picks the country; so does a pasted number that is clearly another
  *  country's. The value handed back is the international form, +60 18-980 0069, which every screen reads. */
 export function PhoneInput({ value, onChange, label, help, error, placeholder, className, style, defaultCountry = HOME_COUNTRY, ...rest }: PhoneInputProps) {
@@ -179,7 +181,9 @@ export function PhoneInput({ value, onChange, label, help, error, placeholder, c
   const example = useMemo(() => placeholder ?? (country === 'MY' ? '12-345 6789' : ''), [placeholder, country]);
   return (
     <InputShell id={id} label={label} help={help} error={shown}>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, minWidth: 0 }}>
+      {/* One joined box: the code's right edge meets the number's left edge, both the number's height. The focused
+          half sits on top so its focus border is never hidden under its neighbour's. */}
+      <div style={{ display: 'flex', minWidth: 0 }}>
         <SearchSelect
           label={`Country code${label ? ` for ${label.toLowerCase()}` : ''}`}
           value={country}
@@ -187,7 +191,10 @@ export function PhoneInput({ value, onChange, label, help, error, placeholder, c
           options={OPTIONS}
           placeholder="Country or code"
           size="md"
-          className="flex-none w-[100px]"
+          className="flex-none w-[88px]"
+          buttonClassName={cx('h-auto flex-1 rounded-r-none relative focus-visible:z-[1]', shown && 'border-[color:var(--color-critical-line)]')}
+          menuWidth={300}
+          shortLabel={o => o.hint ?? o.label}
         />
         <input
           ref={ref}
@@ -204,8 +211,8 @@ export function PhoneInput({ value, onChange, label, help, error, placeholder, c
           aria-describedby={shown || help ? `${id}-help` : undefined}
           onChange={e => onInput(e.target.value, e.target.selectionStart ?? e.target.value.length, (e.nativeEvent as InputEvent).inputType ?? '')}
           onBlur={onBlur}
-          className={cx(className ?? 'field-input', PHONE_SIZING)}
-          style={{ flex: '1 1 96px', minWidth: 0, fontVariantNumeric: 'tabular-nums', ...(shown ? { borderColor: 'var(--color-critical-line)' } : {}), ...style }}
+          className={cx(className ?? 'field-input', PHONE_SIZING, 'relative focus:z-[1]')}
+          style={{ flex: '1 1 0', minWidth: 0, marginLeft: -1, borderTopLeftRadius: 0, borderBottomLeftRadius: 0, fontVariantNumeric: 'tabular-nums', ...(shown ? { borderColor: 'var(--color-critical-line)' } : {}), ...style }}
         />
       </div>
     </InputShell>

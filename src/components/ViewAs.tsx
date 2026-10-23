@@ -1,9 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api, errorMessage } from '../lib/api';
 import { ROLE_LABEL } from '../lib/vocabulary';
 import { useSession } from '../lib/session';
 import { useToast } from './Toast';
 import Icon from './Icon';
+import { Floating } from './DataTableParts';
+import { cx } from '../lib/design-tokens';
 
 interface Account { id: string; fullName: string; email: string; role: string; hasUnit?: boolean; notSetUp?: boolean }
 interface State { enabled: boolean; me?: { id: string; fullName: string }; viewing?: Account | null; users?: Account[]; roles?: string[] }
@@ -16,10 +18,11 @@ const MIN_KEY = 'tc.viewAs.min';
 /** Staging only: lets management look at the system as a role or as any other account. The server answers
  *  `enabled: false` everywhere else, and this then renders nothing (functions/api/auth/view-as.ts).
  *  It floats over every shell, so it is still there while viewing as an owner or a field account. */
-export default function ViewAs() {
+export default function ViewAs({ docked = false }: { docked?: boolean } = {}) {
   const [state, setState] = useState<State | null>(null);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const button = useRef<HTMLButtonElement>(null);
   // On phones it starts as the small icon: the field app has no tab bar, so the full pill would sit on its buttons.
   const [min, setMin] = useState(() => {
     let saved: string | null = null;
@@ -63,13 +66,8 @@ export default function ViewAs() {
   const row = 'block w-full text-left px-3 py-1.5 bg-transparent border-none cursor-pointer [font:inherit] disabled:opacity-50 disabled:cursor-default hover:bg-muted';
   const heading = 'px-3 pt-2 pb-1 text-caption font-semibold tracking-[0.08em] uppercase text-muted-ink';
 
-  return (
-    // z-[45]: above the phone tab bar (40) and the page, under every dialog and drawer (50 and up), so it never
-    // sits on a dialog's buttons. On phones (under 600px, deviceClass.ts) it sits above the 64px bottom tab bar, and
-    // above a pinned action bar (data-action-bar, the field app's job button) wherever one is showing.
-    <div className="fixed right-3 bottom-3 max-[600px]:bottom-[calc(76px+env(safe-area-inset-bottom))] [body:has([data-action-bar])_&]:bottom-[calc(104px+env(safe-area-inset-bottom))] z-[45] flex flex-col items-end [font-family:inherit] text-meta">
-      {open && !min && (
-        <div className="mb-2 w-[300px] max-w-[calc(100vw-24px)] max-h-[60vh] overflow-y-auto bg-card rounded-card border border-solid border-line [box-shadow:var(--shadow-overlay)]">
+  const menu = (
+        <div className={docked ? undefined : 'mb-2 w-[300px] max-w-[calc(100vw-24px)] max-h-[60vh] overflow-y-auto bg-card rounded-card border border-solid border-line [box-shadow:var(--shadow-overlay)]'}>
           <div className="px-3 py-2 text-[11px] text-muted-ink [border-bottom:1px_solid_var(--color-line-soft)]">
             Staging only. Opens the system exactly as that role or account sees it.
           </div>
@@ -108,7 +106,33 @@ export default function ViewAs() {
             </div>
           ))}
         </div>
-      )}
+  );
+
+  if (docked) {
+    // In the top bar on a computer screen, beside the theme switch and the bell, so it never sits on a page's own
+    // buttons (the supply chain screens keep their main action bottom right). Phones keep the floating one below.
+    return (
+      <div data-viewas-docked className="max-[600px]:hidden flex items-center gap-1.5 flex-none [font-family:inherit] text-meta">
+        {viewing && (
+          <button type="button" disabled={busy} onClick={() => go({ userId: state.me!.id })} className={cx(pill, 'px-3 bg-card text-ink border-line [box-shadow:none]')}>
+            Back to me
+          </button>
+        )}
+        <button ref={button} type="button" onClick={() => setOpen(o => !o)} aria-expanded={open} aria-haspopup="dialog"
+          className={cx(pill, 'px-3 max-w-[240px] [box-shadow:none]')} style={warn}>
+          <span className="overflow-hidden text-ellipsis whitespace-nowrap">{label}</span> {open ? '▴' : '▾'}
+        </button>
+        <Floating anchor={button} open={open} onClose={() => setOpen(false)} width={300} maxHeight={520} align="right" label="View as">{menu}</Floating>
+      </div>
+    );
+  }
+
+  return (
+    // z-[45]: above the phone tab bar (40) and the page, under every dialog and drawer (50 and up), so it never
+    // sits on a dialog's buttons. On phones (under 600px, deviceClass.ts) it sits above the 64px bottom tab bar, and
+    // above a pinned action bar (data-action-bar, the field app's job button) wherever one is showing.
+    <div className="min-[601px]:[body:has([data-viewas-docked])_&]:hidden fixed right-3 bottom-3 max-[600px]:bottom-[calc(76px+env(safe-area-inset-bottom))] [body:has([data-action-bar])_&]:bottom-[calc(104px+env(safe-area-inset-bottom))] z-[45] flex flex-col items-end [font-family:inherit] text-meta">
+      {open && !min && menu}
       {min ? (
         <button type="button" onClick={() => minimise(false)} title={label} aria-label={`${label}. Show the View as switch.`}
           className={`${pill} justify-center w-8 px-0`} style={warn}>

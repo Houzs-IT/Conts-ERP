@@ -9,6 +9,7 @@ import { EmptyState, Skeleton } from '../components/States';
 import { StaleBanner } from '../components/DataState';
 import { MoneyInput, NumberInput, DateField } from '../components/inputs';
 import { useToast } from '../components/Toast';
+import { useConfirm } from '../components/ConfirmDialog';
 import { useApi } from '../lib/useApi';
 import { api, errorMessage, downloadFile } from '../lib/api';
 import { cx } from '../lib/design-tokens';
@@ -305,6 +306,7 @@ function ItemDetails({ item, list, onSaved }: { item: Detail; list: ListPayload;
   const [trackStock, setTrackStock] = useState(item.trackStock);
   const [stock, setStock] = useState<number | null>(item.stockOnHand);
   const [busy, setBusy] = useState(false);
+  const [confirmDialog, ask] = useConfirm();
   const delta: Record<string, unknown> = {};
   if (name.trim() !== item.name) delta.name = name.trim();
   if (category !== item.category) delta.category = category;
@@ -327,8 +329,17 @@ function ItemDetails({ item, list, onSaved }: { item: Detail; list: ListPayload;
     } catch (e) { toast({ tone: 'critical', title: 'Not saved.', body: errorMessage(e) }); }
     finally { setBusy(false); }
   }
+  async function retireOrRestore() {
+    if (item.active && await ask({
+      title: `Retire ${item.name}?`,
+      body: 'It can no longer be picked for new jobs. Jobs that already use it keep their price. You can restore it later.',
+      confirmLabel: 'Retire', danger: true,
+    }) === null) return;
+    await save({ active: !item.active });
+  }
   return (
     <section className="flex flex-col gap-3">
+      {confirmDialog}
       <h3 className="m-0 text-copy font-semibold">Item details</h3>
       <LabeledField label="Name"><input className={INPUT_CX} value={name} onChange={e => setName(e.target.value)} maxLength={120} /></LabeledField>
       <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-3">
@@ -346,7 +357,7 @@ function ItemDetails({ item, list, onSaved }: { item: Detail; list: ListPayload;
       <LabeledField label="Notes"><textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} maxLength={500}
         className="block w-full box-border px-3 py-2.5 text-ink bg-white border border-solid border-line rounded-control font-sans text-copy resize-y" /></LabeledField>
       <div className="flex gap-2 flex-wrap">
-        <Button size="sm" variant="secondary" disabled={busy} onClick={() => void save({ active: !item.active })}>{item.active ? 'Retire' : 'Restore'}</Button>
+        <Button size="sm" variant="secondary" disabled={busy} onClick={() => void retireOrRestore()}>{item.active ? 'Retire' : 'Restore'}</Button>
         <div className="flex-1" />
         <Button size="sm" variant="primary" loading={busy} disabled={!dirty || !name.trim()} disabledReason={!name.trim() ? 'Enter the name.' : 'Change something first.'} onClick={() => void save()}>Save details</Button>
       </div>

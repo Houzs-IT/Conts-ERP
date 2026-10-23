@@ -10,6 +10,7 @@ import Icon from './Icon';
 import ChannelMark from './ChannelMark';
 import NotificationBell from './NotificationBell';
 import { ThemeButton } from './ThemeToggle';
+import ViewAs from './ViewAs';
 
 /* ------------------------------------------------------------------ *
  * Application shell top bar (BUTTONS.md §2).
@@ -150,6 +151,7 @@ export default function TopBar({
           </a>
         )}
 
+        <ViewAs docked />
         <ThemeButton size={ctl} />
         <NotificationBell path={path} navigate={go} size={ctl} />
 
