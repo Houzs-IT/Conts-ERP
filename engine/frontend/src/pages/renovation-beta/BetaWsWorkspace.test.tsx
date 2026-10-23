@@ -63,6 +63,28 @@ h.routes = {
     }],
   },
   "key-log": { data: [] },
+  "/api/beta/projects/7/defects": {
+    defects: [
+      { id: 11, phase: "snag", location: "Kitchen", description: "Cabinet door not aligned", trade: "carpenter", dueDate: day(-2), reportedAt: day(-5), reportedByName: "Alex",
+        photoKey: "renovation/7/defect-1.jpg", afterPhotoKey: null, fixedAt: null, fixedByName: null, closedAt: null, closedByName: null, redoCount: 0,
+        assigneeId: 3, assigneeName: "Alex", assigneePhone: null, lastRedoNote: null },
+      { id: 12, phase: "snag", location: "Master bedroom", description: "Paint drip", trade: "painter", dueDate: null, reportedAt: day(-4), reportedByName: "Alex",
+        photoKey: "renovation/7/defect-2.jpg", afterPhotoKey: "renovation/7/defect-3.jpg", fixedAt: `${day(-1)}T03:00:00Z`, fixedByName: "Alex", closedAt: null, closedByName: null,
+        redoCount: 1, assigneeId: null, assigneeName: null, assigneePhone: null, lastRedoNote: "Still a drip" },
+    ],
+  },
+  "/api/beta/projects/7/site": {
+    ready: true, areas: ["Kitchen", "Master bedroom"],
+    deliveries: [
+      { type: "goods_received", id: "g1", no: "GRN-001", at: `${day(-3)}T04:00:00Z`, status: "RECEIVED", from: "Kabinet Sdn Bhd", poNumber: "PO-001", poIds: ["po-1"], areas: ["Kitchen"],
+        photos: [
+          { id: "site-1", path: "/api/renovation/7/files?key=a.jpg", name: "Cabinet in place", image: true, area: "Kitchen", at: null, source: "site" },
+          { id: "site-2", path: "/api/renovation/7/files?key=b.jpg", name: "Cabinet top", image: true, area: "Kitchen", at: null, source: "site" },
+        ] },
+      { type: "delivery_order", id: "d1", no: "DO-001", at: `${day(-1)}T04:00:00Z`, status: "DELIVERED", from: "SO-001", poNumber: null, poIds: [], areas: ["Master bedroom"],
+        photos: [{ id: "pod-d1", path: "/api/renovation/7/document-files/delivery_order/d1/pod", name: "Proof of delivery", image: true, area: null, at: null, source: "pod" }] },
+    ],
+  },
   "/api/renovation/people": { data: [{ id: 1, name: "Jia Xin", roles: [], active: true, phone: "012-345 6789" }] },
   "/api/renovation/7": {
     project: { id: 7, code: "RN-2608-002", name: "Legacy OUG A26-03", customer_name: "Mr Wayne", customer_phone: "012-111 2222", building: "Legacy", unit_no: "A26-03", planned_handover_date: day(25), handed_over_at: null, notes: null, layout_label: null },
@@ -76,7 +98,7 @@ h.routes = {
     people: { sales: { id: 2, name: "Chai" }, designer: { id: 1, name: "Jia Xin" }, renoPic: { id: null, name: null }, pic: { id: 3, name: "Alex" }, attending: [] },
     tasks: [
       task(1, "done", "Hacking & demolition", day(-12), day(-10), { actual_end: day(-10) }),
-      task(2, "in_progress", "Electrical wiring & ceiling frame", day(-2), day(3), { actual_start: day(-2) }),
+      task(2, "in_progress", "Electrical wiring & ceiling frame", day(-2), day(3), { actual_start: day(-2), purchase_order_id: "po-1" }),
       task(3, "planned", "Plaster ceiling closed", day(4), day(6)),
     ],
     defects: [],
@@ -140,7 +162,10 @@ describe("Beta project workspace", () => {
     expect(screen.getByText("At handover")).toBeTruthy();
     const headings = screen.getAllByRole("heading", { level: 2 }).map((x) => x.textContent);
     expect(headings).toEqual(["Payments", "To do", "Site progress", "Unit key", "Design progress", "Sales order", "Final drawings", "Client & team"]);
-    expect(screen.getByText("Day 13 of 19 · updated as each step is done")).toBeTruthy();
+    expect(screen.getByText("Day 13 of 19 · 1 of 3 steps done")).toBeTruthy();
+    // The step at the hardware stage waits for the unpaid 2nd payment; its PO has two site photos.
+    expect(screen.getAllByText("Waits for 2nd payment").length).toBeGreaterThanOrEqual(1);
+    expect(await screen.findByRole("button", { name: "2 photos" })).toBeTruthy();
     expect(screen.getByText("Electrical wiring & ceiling frame")).toBeTruthy();
     expect(screen.getByText("Site measure")).toBeTruthy();
     expect(screen.getByText("B - Pending 3D design")).toBeTruthy();
@@ -213,8 +238,33 @@ describe("Beta project workspace", () => {
     expect(within(screen.getByRole("region", { name: "VO lines" })).getByText("-2")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Defects" }));
     expect(await screen.findByRole("heading", { name: "Defects" })).toBeTruthy();
-    expect(screen.getByText("Contractor's turn")).toBeTruthy();
+    expect(await screen.findByText("Contractor's turn")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Drawings" }));
     expect(await screen.findByRole("group", { name: "Drawing type" })).toBeTruthy();
+  });
+
+  it("shows the defect pipeline with overdue in red and opens a ticket", async () => {
+    open("/beta/projects/7?tab=defects");
+    const pipe = await screen.findByRole("region", { name: "Defect pipeline" });
+    expect(within(pipe).getByRole("region", { name: "To fix, 1" })).toBeTruthy();
+    expect(within(pipe).getByRole("region", { name: "Check, 1" })).toBeTruthy();
+    expect(within(pipe).getByRole("region", { name: "Done, 0" })).toBeTruthy();
+    expect(within(pipe).getByText(/^Overdue 2 days/)).toBeTruthy();
+    expect(within(pipe).getByText("Alex · Carpenter")).toBeTruthy();
+    expect(within(pipe).getByText("Painter")).toBeTruthy();
+    fireEvent.click(within(pipe).getByRole("button", { name: /Open defect: Kitchen/ }));
+    const dlg = await screen.findByRole("dialog", { name: "Cabinet door not aligned" });
+    expect(within(dlg).getByRole("button", { name: "Mark complete" }).hasAttribute("disabled")).toBe(true);
+    expect(within(dlg).getByText("Photo after the fix (required)")).toBeTruthy();
+  });
+
+  it("shows each delivery with its proof photos and filters by area", async () => {
+    open("/beta/projects/7?tab=site");
+    expect(await screen.findByRole("listitem", { name: "Goods receipt GRN-001" })).toBeTruthy();
+    expect(screen.getByRole("listitem", { name: "Delivery order DO-001" })).toBeTruthy();
+    const areas = screen.getByRole("group", { name: "Filter by area" });
+    fireEvent.click(within(areas).getByRole("button", { name: /^Master bedroom/ }));
+    expect(screen.queryByRole("listitem", { name: "Goods receipt GRN-001" })).toBeNull();
+    expect(screen.getByRole("listitem", { name: "Delivery order DO-001" })).toBeTruthy();
   });
 });

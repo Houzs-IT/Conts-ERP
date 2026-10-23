@@ -29,6 +29,14 @@ import {
 } from "../services/renovation/betaBoard";
 import { loadClientItems, loadProjectPoLines, loadProjectVos } from "../services/renovation/betaVoPo";
 import { LINK_DAYS, signClientLink } from "../services/renovation/betaClientLink";
+import {
+  betaCategory, cleanAssignee, cleanDefectPatch, defectPatchNote, isImageName, money, sortDeliveries, uniqueAreas,
+  type DefectPatch, type DeliveryType, type SiteDelivery, type SitePhoto,
+} from "../services/renovation/betaSite";
+import { projectDocSql } from "../services/renovation/documents";
+import { readProjectTimeline, sortTimeline, timelineNotesReady, type TimelineCategory, type TimelineEntry } from "../services/renovation/timeline";
+import { docFlowColumnsReady } from "../scm/routes/renovation-doc-flow";
+import { POD_FILE_ID, attachmentsReady, listFilesFor, podFile, type DocFile } from "../scm/lib/doc-attachments";
 
 type Ctx = Context<{ Bindings: Env }>;
 const app = new Hono<{ Bindings: Env }>();
@@ -202,22 +210,28 @@ app.post("/projects/:id/defects", requirePermission("projects.write"), async (c)
   if (!id) return c.json({ error: "invalid_id" }, 400);
   const co = await projectCompany(c, id);
   if (co == null) return c.json({ error: "not_found" }, 404);
-  const v = cleanDefectReport(await body(c), id);
+  const raw = await body(c);
+  const v = cleanDefectReport(raw, id);
   if (!v.ok) return c.json({ error: v.error, message: v.message }, 400);
   const { location, description, trade, dueDate, photoKey } = v.value;
+  const who = cleanAssignee(raw);
+  if (!who.ok) return c.json({ error: who.error, message: who.message }, 400);
+  const named = await companyPeople(c, co, who.value == null ? [] : [who.value]);
+  if (!named) return c.json(PERSON_REFUSAL, 400);
+  const reportNote = [location, trade, who.value == null ? null : `to fix: ${named.get(who.value) ?? "someone"}`].filter(Boolean).join(", ") || null;
   // Phase 'snag' so the handover rule (every snag closed first) counts it.
   // One statement: the defect and its activity row are written together or not at all.
   const row = await db(c).prepare(
     `WITH d AS (
        INSERT INTO project_defects (project_id, phase, reported_by_role, item_description, photo_r2_key, reported_by, reported_at,
-                                    resolved, stage_key, location, due_date, trade, company_id)
-       VALUES (?, 'snag', 'supervisor', ?, ?, ?, to_char(timezone('UTC', now()), 'YYYY-MM-DD"T"HH24:MI:SS"Z"'), 0, 'handover', ?, ?::date, ?, ?)
+                                    resolved, stage_key, location, due_date, trade, company_id, assignee_person_id)
+       VALUES (?, 'snag', 'supervisor', ?, ?, ?, to_char(timezone('UTC', now()), 'YYYY-MM-DD"T"HH24:MI:SS"Z"'), 0, 'handover', ?, ?::date, ?, ?, ?::bigint)
        RETURNING id, project_id, company_id, item_description),
      a AS (
        INSERT INTO project_activity (project_id, action, from_value, to_value, note, user_id, company_id)
        SELECT d.project_id, 'beta_defect_reported', NULL, d.item_description, ?::text, ?::bigint, d.company_id FROM d)
      SELECT id::int AS id FROM d`,
-  ).bind(id, description, photoKey, userId(c), location, dueDate, trade, co, [location, trade].filter(Boolean).join(", ") || null, userId(c))
+  ).bind(id, description, photoKey, userId(c), location, dueDate, trade, co, who.value, reportNote, userId(c))
     .first<{ id: number }>();
   if (!row) return c.json({ error: "defect_not_saved", message: "The problem could not be saved. Try again." }, 409);
   return c.json({ id: row.id }, 201);
@@ -767,6 +781,243 @@ app.post("/projects/:id/client-link", requirePermission("projects.write"), async
   const token = await signClientLink(secret, { projectId: id, companyId: co, expiresAt });
   await activityStmt(c, id, co, "beta_client_link", null, null, `Client PO link made, valid until ${new Date(expiresAt).toISOString().slice(0, 10)}`).run();
   return c.json({ token, expiresAt: new Date(expiresAt).toISOString() });
+});
+
+// ── Site & photos, Defects as repair tickets, Timeline (BRIEF-beta-oct24 sections 5 to 8) ──
+
+type Row = Record<string, unknown>;
+const str = (v: unknown): string | null => (v == null || v === "" ? null : String(v));
+
+async function rowsOf(c: Ctx, q: { text: string; args: unknown[] }): Promise<Row[]> {
+  return (await db(c).prepare(q.text).bind(...q.args).all<Row>()).results ?? [];
+}
+
+/* The room of a sales order line: the renovation line's room, else the item's own location. */
+const LINE_AREA = `coalesce(nullif(trim((SELECT to_jsonb(l)->>'room' FROM scm.reno_doc_lines l WHERE to_jsonb(l)->>'so_item_id' = i.id::text LIMIT 1)), ''), nullif(trim(i.location), ''))`;
+
+/** Every DO and goods receipt of the project (the same sets as its Procurement details), each with the rooms of the
+    lines it carries and every photo on it: the driver's POD, the site team's receipt photos and files added to it. */
+async function siteDeliveries(c: Ctx, projectId: number, companyId: number): Promise<{ areas: string[]; deliveries: SiteDelivery[] }> {
+  const q = (sql: string) => projectDocSql(sql, projectId, companyId);
+  const [soAreas, dos, grs, doAreas, grAreas, sitePhotos] = await Promise.all([
+    rowsOf(c, q(`SELECT ${LINE_AREA} AS area FROM scm.mfg_sales_order_items i
+                  WHERE i.doc_no IN (SELECT doc_no FROM scm.mfg_sales_orders WHERE project_id = ?1 AND company_id = ?2) AND NOT i.cancelled
+                  ORDER BY i.doc_no, i.line_no NULLS LAST, i.created_at, i.id`)),
+    rowsOf(c, q(`SELECT d.id::text AS id, d.do_number AS no, ${TS("coalesce(d.delivered_at, d.signed_at, d.dispatched_at)")} AS at,
+                        d.created_at::date::text AS made_on, d.status::text AS status, d.so_doc_no
+                   FROM scm.delivery_orders d WHERE d.id IN (__DOS__) AND d.status::text <> 'CANCELLED'`)),
+    rowsOf(c, q(`SELECT g.id::text AS id, g.grn_number AS no, ${TS("coalesce(g.site_received_at, (g.received_at::timestamp AT TIME ZONE 'Asia/Kuala_Lumpur'))")} AS at,
+                        g.status::text AS status, sup.name AS supplier, po.po_number, g.purchase_order_id::text AS po_id,
+                        (SELECT json_agg(DISTINCT x.purchase_order_id::text) FROM scm.grn_items gi JOIN scm.purchase_order_items x ON x.id = gi.purchase_order_item_id
+                          WHERE gi.grn_id = g.id) AS po_ids
+                   FROM scm.grns g LEFT JOIN scm.suppliers sup ON sup.id = g.supplier_id LEFT JOIN scm.purchase_orders po ON po.id = g.purchase_order_id
+                  WHERE g.id IN (__GRS__) AND g.status::text NOT IN ('CANCELLED', 'DRAFT')`)),
+    rowsOf(c, q(`SELECT x.delivery_order_id::text AS doc_id, ${LINE_AREA} AS area
+                   FROM scm.delivery_order_items x JOIN scm.mfg_sales_order_items i ON i.id = x.so_item_id
+                  WHERE x.delivery_order_id IN (__DOS__) ORDER BY x.line_no, x.id`)),
+    rowsOf(c, q(`SELECT gi.grn_id::text AS doc_id, ${LINE_AREA} AS area
+                   FROM scm.grn_items gi JOIN scm.purchase_order_items x ON x.id = gi.purchase_order_item_id
+                   JOIN scm.mfg_sales_order_items i ON i.id = x.so_item_id
+                  WHERE gi.grn_id IN (__GRS__) ORDER BY gi.created_at, gi.id`)),
+    rowsOf(c, { text: `SELECT ph.id::text AS id, ph.grn_id::text AS grn_id, ph.location, ph.r2_key, ph.caption, ph.kind, ${TS("coalesce(ph.taken_at, ph.created_at)")} AS at
+                         FROM scm.grn_site_photos ph WHERE ph.project_id = ? ORDER BY ph.created_at`, args: [projectId] }),
+  ]);
+  const ready = await attachmentsReady(db(c)).catch(() => false);
+  const docRefs = [
+    ...dos.map((d) => ({ type: "delivery_order" as const, id: String(d.id) })),
+    ...grs.map((g) => ({ type: "goods_received" as const, id: String(g.id) })),
+  ];
+  const attached = ready ? await listFilesFor(db(c), docRefs, companyId) : new Map<string, DocFile[]>();
+  const areasOf = (rows: Row[], id: string) => uniqueAreas(rows.filter((r) => r.doc_id === id).map((r) => str(r.area)));
+  const docPath = (type: DeliveryType, docId: string, fileId: string) =>
+    `/api/renovation/${projectId}/document-files/${type}/${encodeURIComponent(docId)}/${encodeURIComponent(fileId)}`;
+  const uploads = (type: DeliveryType, docId: string): SitePhoto[] => (attached.get(`${type}:${docId}`) ?? []).map((f) => ({
+    id: `${type}-${docId}-${f.id}`, path: docPath(type, docId, f.id), name: f.caption || f.name, image: f.kind === "image", area: null, at: f.at || null, source: "upload" as const,
+  }));
+
+  const out: SiteDelivery[] = [];
+  for (const d of dos) {
+    const id = String(d.id);
+    const photos: SitePhoto[] = [];
+    const pod = await podFile(db(c), id).catch(() => null);
+    if (pod) photos.push({ id: `pod-${id}`, path: docPath("delivery_order", id, POD_FILE_ID), name: "Proof of delivery", image: true, area: null, at: pod.at || null, source: "pod" });
+    photos.push(...uploads("delivery_order", id));
+    out.push({
+      type: "delivery_order", id, no: String(d.no), at: str(d.at) ?? str(d.made_on), status: String(d.status), from: str(d.so_doc_no), poNumber: null, poIds: [],
+      areas: areasOf(doAreas, id), photos,
+    });
+  }
+  for (const g of grs) {
+    const id = String(g.id);
+    const site: SitePhoto[] = sitePhotos.filter((p) => p.grn_id === id).map((p) => ({
+      id: `site-${String(p.id)}`, path: `/api/renovation/${projectId}/files?key=${encodeURIComponent(String(p.r2_key))}`,
+      name: str(p.caption) ?? (p.kind === "supplier_do" ? "Supplier delivery order" : "Site photo"), image: isImageName(String(p.r2_key)),
+      area: str(p.location), at: str(p.at), source: "site" as const,
+    }));
+    const poIds = uniqueAreas([str(g.po_id), ...(Array.isArray(g.po_ids) ? (g.po_ids as unknown[]).map(str) : [])]);
+    out.push({
+      type: "goods_received", id, no: String(g.no), at: str(g.at), status: String(g.status), from: str(g.supplier), poNumber: str(g.po_number), poIds,
+      areas: uniqueAreas([...areasOf(grAreas, id), ...site.map((p) => p.area)]), photos: [...site, ...uploads("goods_received", id)],
+    });
+  }
+  return { areas: uniqueAreas(soAreas.map((r) => str(r.area))), deliveries: sortDeliveries(out) };
+}
+
+app.get("/projects/:id/site", requirePageAccess("projects.list"), async (c) => {
+  const id = parseId(c.req.param("id"));
+  if (!id) return c.json({ error: "invalid_id" }, 400);
+  const co = await projectCompany(c, id);
+  if (co == null) return c.json({ error: "not_found" }, 404);
+  try {
+    if (!(await docFlowColumnsReady(db(c)).catch(() => false))) return c.json({ ready: false, areas: [], deliveries: [] });
+    return c.json({ ready: true, ...(await siteDeliveries(c, id, co)) });
+  } catch (e) {
+    console.error("[renovation-beta] site read failed", e);
+    return c.json({ error: "renovation_read_failed", message: "The deliveries and their photos could not be read. Try again." }, 409);
+  }
+});
+
+/* Defects as repair tickets: everything the board and the ticket show, with who fixes it. */
+app.get("/projects/:id/defects", requirePageAccess("projects.list"), async (c) => {
+  const id = parseId(c.req.param("id"));
+  if (!id) return c.json({ error: "invalid_id" }, 400);
+  const co = await projectCompany(c, id);
+  if (co == null) return c.json({ error: "not_found" }, 404);
+  try {
+    const rows = await db(c).prepare(
+      `SELECT d.id::int AS id, d.phase, d.location, d.item_description, d.trade, d.due_date::text AS due_date, d.reported_at, u.name AS reported_by_name,
+              d.photo_r2_key, d.after_photo_r2_key, ${TS("d.fixed_at")} AS fixed_at, fu.name AS fixed_by_name, ${TS("d.closed_at")} AS closed_at,
+              cu.name AS closed_by_name, d.redo_count::int AS redo_count, d.assignee_person_id::int AS assignee_id, ap.name AS assignee_name, ap.phone AS assignee_phone,
+              (SELECT a.note FROM project_activity a WHERE a.project_id = d.project_id AND a.action = 'beta_defect_redo' AND a.to_value = d.item_description
+                ORDER BY a.id DESC LIMIT 1) AS last_redo_note
+         FROM project_defects d
+         LEFT JOIN users u ON u.id = d.reported_by
+         LEFT JOIN users fu ON fu.id = d.fixed_by
+         LEFT JOIN users cu ON cu.id = d.closed_by
+         LEFT JOIN project_people ap ON ap.id = d.assignee_person_id
+        WHERE d.project_id = ? AND d.archived_at IS NULL ORDER BY d.id`,
+    ).bind(id).all<Row>();
+    return c.json({
+      defects: (rows.results ?? []).map((d) => ({
+        id: Number(d.id), phase: String(d.phase), location: str(d.location), description: str(d.item_description), trade: str(d.trade), dueDate: str(d.due_date),
+        reportedAt: str(d.reported_at), reportedByName: str(d.reported_by_name), photoKey: str(d.photo_r2_key), afterPhotoKey: str(d.after_photo_r2_key),
+        fixedAt: str(d.fixed_at), fixedByName: str(d.fixed_by_name), closedAt: str(d.closed_at), closedByName: str(d.closed_by_name), redoCount: Number(d.redo_count ?? 0),
+        assigneeId: d.assignee_id == null ? null : Number(d.assignee_id), assigneeName: str(d.assignee_name), assigneePhone: str(d.assignee_phone),
+        lastRedoNote: str(d.last_redo_note),
+      })),
+    });
+  } catch (e) {
+    console.error("[renovation-beta] defects read failed", e);
+    return c.json({ error: "renovation_read_failed", message: "The defects could not be read. Try again." }, 409);
+  }
+});
+
+const DEFECT_PATCH_COLUMNS = {
+  assigneePersonId: ["assignee_person_id", "?::bigint"], trade: ["trade", "?::text"], dueDate: ["due_date", "?::date"],
+  location: ["location", "?::text"], description: ["item_description", "?::text"],
+} as const satisfies Record<keyof DefectPatch, readonly [string, string]>;
+
+app.patch("/defects/:defectId", requirePermission("projects.write"), async (c) => {
+  const defectId = parseId(c.req.param("defectId"));
+  if (!defectId) return c.json({ error: "invalid_id" }, 400);
+  const d = await defectOf(c, defectId);
+  if (!d) return c.json({ error: "not_found" }, 404);
+  if (d.closed_at) return c.json({ error: "defect_closed", message: "This problem is already closed." }, 409);
+  const v = cleanDefectPatch(await body(c));
+  if (!v.ok) return c.json({ error: v.error, message: v.message }, 400);
+  const personId = v.value.assigneePersonId;
+  const people = await companyPeople(c, d.company_id, personId == null ? [] : [personId]);
+  if (!people) return c.json(PERSON_REFUSAL, 400);
+  const sent = (Object.keys(DEFECT_PATCH_COLUMNS) as Array<keyof DefectPatch>).filter((k) => k in v.value);
+  const note = defectPatchNote(v.value, personId == null ? null : people.get(personId) ?? null);
+  const row = await db(c).prepare(
+    `WITH u AS (UPDATE project_defects SET ${sent.map((k) => `${DEFECT_PATCH_COLUMNS[k][0]} = ${DEFECT_PATCH_COLUMNS[k][1]}`).join(", ")}
+                 WHERE id = ? AND closed_at IS NULL RETURNING id, item_description),
+          a AS (INSERT INTO project_activity (project_id, action, from_value, to_value, note, user_id, company_id)
+                SELECT ?::bigint, 'beta_defect_changed', NULL, u.item_description, ?::text, ?::bigint, ?::bigint FROM u)
+     SELECT id::int AS id FROM u`,
+  ).bind(...sent.map((k) => v.value[k] ?? null), defectId, d.project_id, note, userId(c), d.company_id).first<{ id: number }>();
+  if (!row) return c.json({ error: "defect_changed", message: "Someone else just changed this problem. Reload and look again." }, 409);
+  return c.json({ ok: true });
+});
+
+/** Beta's own Timeline: the engine's timeline, each entry filed under what it is about, plus the sales order,
+    payments received, variation orders, deliveries and site receipts. */
+async function betaTimelineExtras(c: Ctx, projectId: number, companyId: number): Promise<TimelineEntry[]> {
+  const q = (sql: string) => projectDocSql(sql, projectId, companyId);
+  const hidden = financeHiddenForUser(c.get("user"));
+  const safe = (p: Promise<Row[]>): Promise<Row[]> => p.catch((e: unknown) => { if (isMissingRelation(e)) return []; throw e; });
+  const [sos, pays, vos, dos, grs] = await Promise.all([
+    safe(rowsOf(c, q(`SELECT doc_no, so_date::text AS so_date, ${TS("created_at")} AS created_at, status::text AS status, local_total_sen::bigint AS total_sen
+                        FROM scm.mfg_sales_orders WHERE project_id = ?1 AND company_id = ?2`))),
+    hidden ? Promise.resolve([] as Row[]) : safe(rowsOf(c, q(
+      `SELECT p.id::text AS id, p.so_doc_no, p.paid_at::text AS paid_on, ${TS("p.created_at")} AS created_at, p.amount_sen::bigint AS amount_sen, p.method::text AS method
+         FROM scm.mfg_sales_order_payments p WHERE p.so_doc_no IN (SELECT doc_no FROM scm.mfg_sales_orders WHERE project_id = ?1 AND company_id = ?2)`))),
+    safe(rowsOf(c, q(`SELECT v.id::text AS id, v.vo_no, v.title, v.status, v.net_sen::bigint AS net_sen, ${TS("v.created_at")} AS created_at,
+                             ${TS("v.approved_at")} AS approved_at, v.approved_by, v.signed_name
+                        FROM scm.reno_variation_orders v
+                       WHERE v.company_id = ?2 AND v.so_doc_no IN (SELECT doc_no FROM scm.mfg_sales_orders WHERE project_id = ?1 AND company_id = ?2)`))),
+    safe(rowsOf(c, q(`SELECT d.id::text AS id, d.do_number, ${TS("d.delivered_at")} AS delivered_at, d.pod_r2_key IS NOT NULL AS has_pod,
+                             d.signature_data IS NOT NULL AS signed
+                        FROM scm.delivery_orders d WHERE d.id IN (__DOS__) AND d.delivered_at IS NOT NULL`))),
+    safe(rowsOf(c, q(`SELECT g.id::text AS id, g.grn_number, ${TS("g.site_received_at")} AS at, sup.name AS supplier, g.customer_signer_name,
+                             (SELECT count(*) FROM scm.grn_site_photos ph WHERE ph.grn_id = g.id)::int AS photos
+                        FROM scm.grns g LEFT JOIN scm.suppliers sup ON sup.id = g.supplier_id
+                       WHERE g.id IN (__GRS__) AND g.received_at_site AND g.site_received_at IS NOT NULL`))),
+  ]);
+  const out: TimelineEntry[] = [];
+  const day = (d: unknown, fallback: unknown): { at: string; dateOnly: boolean } | null => {
+    const s = str(d);
+    if (s && /^\d{4}-\d{2}-\d{2}$/.test(s)) return { at: `${s}T00:00:00Z`, dateOnly: true };
+    const f = str(fallback);
+    return f ? { at: f, dateOnly: false } : null;
+  };
+  const add = (id: string, when: { at: string; dateOnly: boolean } | null, category: TimelineCategory, title: string, body: string | null, by: string | null = null) => {
+    if (when) out.push({ id, at: when.at, dateOnly: when.dateOnly, category, title, body, by });
+  };
+  for (const s of sos) {
+    add(`so:${String(s.doc_no)}`, day(s.so_date, s.created_at), "sales", `Sales order ${String(s.doc_no)}`,
+      [hidden || s.total_sen == null ? null : money(Number(s.total_sen)), str(s.status)].filter(Boolean).join(" · ") || null);
+  }
+  for (const p of pays) {
+    add(`pay:${String(p.id)}`, day(p.paid_on, p.created_at), "sales", `Payment received ${money(Number(p.amount_sen ?? 0))}`,
+      [str(p.method), str(p.so_doc_no)].filter(Boolean).join(" · ") || null);
+  }
+  for (const v of vos) {
+    const label = `Variation order ${String(v.vo_no)}`;
+    add(`vo:${String(v.id)}`, day(null, v.created_at), "sales", `${label} drafted`,
+      [str(v.title), hidden ? null : money(Number(v.net_sen ?? 0))].filter(Boolean).join(" · ") || null);
+    if (v.approved_at) add(`vo:${String(v.id)}:approved`, day(null, v.approved_at), "sales", `${label} approved`, str(v.signed_name) ? `Signed by ${String(v.signed_name)}` : null, str(v.approved_by));
+  }
+  for (const d of dos) {
+    add(`deliv:${String(d.id)}`, day(null, d.delivered_at), "supplier", `Delivered: ${String(d.do_number)}`,
+      [d.has_pod === true ? "Proof of delivery photo" : null, d.signed === true ? "signed" : null].filter(Boolean).join(" · ") || "No proof of delivery yet");
+  }
+  for (const g of grs) {
+    const n = Number(g.photos ?? 0);
+    add(`grsite:${String(g.id)}`, day(null, g.at), "supplier", `Received on site: ${String(g.grn_number)}`,
+      [str(g.supplier), `${n} photo${n === 1 ? "" : "s"}`, str(g.customer_signer_name) ? `signed by ${String(g.customer_signer_name)}` : null].filter(Boolean).join(" · "));
+  }
+  return out;
+}
+
+app.get("/projects/:id/timeline", requirePageAccess("projects.list"), async (c) => {
+  const id = parseId(c.req.param("id"));
+  if (!id) return c.json({ error: "invalid_id" }, 400);
+  const co = await projectCompany(c, id);
+  if (co == null) return c.json({ error: "not_found" }, 404);
+  try {
+    const [notesReady, docsReady] = await Promise.all([timelineNotesReady(db(c)), docFlowColumnsReady(db(c)).catch(() => false)]);
+    const [base, extra] = await Promise.all([
+      readProjectTimeline(db(c), id, co, { docsReady, notesReady }),
+      docsReady ? betaTimelineExtras(c, id, co) : Promise.resolve([] as TimelineEntry[]),
+    ]);
+    const entries = sortTimeline([...base, ...extra]).map((e) => ({ ...e, category: betaCategory(e) }));
+    return c.json({ entries });
+  } catch (e) {
+    console.error("[renovation-beta] timeline read failed", e);
+    return c.json({ error: "renovation_read_failed", message: "The project's timeline could not be read. Try again." }, 409);
+  }
 });
 
 export default app;

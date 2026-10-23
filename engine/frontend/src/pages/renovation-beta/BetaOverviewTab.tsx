@@ -4,17 +4,18 @@
 import { useId, useState, type CSSProperties, type ReactElement, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { errorText, money } from "../projects/renovation/renovationModel";
+import { BetaSiteProgressCard } from "./BetaSiteProgressCard";
 import { BetaWsDesignCard } from "./BetaWsDesignCard";
 import { BetaWsKeyCard } from "./BetaWsKeyCard";
 import {
-  TONE_ALERT, TONE_PAID, TONE_QUIET, WS, WsBadge, WsBtn, WsCard, WsCheck, btnStyle, cardStyle, h2Style, subStyle, type WsBtnKind,
+  TONE_ALERT, TONE_PAID, TONE_QUIET, WS, WsBadge, WsBtn, WsCard, btnStyle, cardStyle, h2Style, subStyle, type WsBtnKind,
 } from "./BetaWsUi";
 import { FileDialog, sendReminder, useGuarded, type BetaTabProps, type ViewedFile } from "./betaShared";
 import { add, ds, designKind } from "./renovationBetaBoard";
 import { approveNewest, boardApi, markPoDone } from "./renovationBetaBoardApi";
 import {
-  approvedSet, dayMonth, dayMonthYear, emptyPaymentRows, nextStep, paymentCard, paymentStrip, renovationDays, siteTimeline, todoList, trimTimeline, designTodoRows, mergeTodo,
-  type SiteStep, type TodoAction, type TodoRow,
+  approvedSet, dayMonth, dayMonthYear, emptyPaymentRows, nextStep, paymentCard, paymentStrip, todoList, designTodoRows, mergeTodo,
+  type TodoAction, type TodoRow,
 } from "./renovationBetaModel";
 import { downloadAsPdf } from "./renovationBetaPdf";
 import { sheetSetAt, sheetsApi } from "./renovationBetaSheets";
@@ -42,7 +43,7 @@ export function BetaOverviewTab(p: BetaTabProps): ReactElement {
       <div style={{ display: "flex", flexWrap: "wrap", gap: 20, alignItems: "flex-start" }}>
         <div style={{ ...column, flex: "999 1 520px" }}>
           <TodoCard rows={todo} p={p} />
-          <SiteCard p={p} />
+          <BetaSiteProgressCard p={p} />
           <BetaWsKeyCard d={d} canWrite={p.canWrite} today={today} onDone={p.onDone} />
         </div>
         <aside style={{ ...column, flex: "1 1 320px" }}>
@@ -196,71 +197,6 @@ function TodoCard({ rows, p }: { rows: TodoRow[]; p: BetaTabProps }): ReactEleme
       )}
       {next && rest.length === 0 && <div style={{ height: 16 }} />}
     </section>
-  );
-}
-
-/* ---------- Site progress ---------- */
-
-function SiteCard({ p }: { p: BetaTabProps }): ReactElement {
-  const { detail: d, today } = p;
-  const [showAll, setShowAll] = useState(false);
-  const handoverOn = d.project.handed_over_at ?? d.project.planned_handover_date;
-  const all = siteTimeline(d.tasks, today, handoverOn);
-  const trimmed = trimTimeline(all, showAll);
-  const canTrim = trimTimeline(all, false).hiddenDone + trimTimeline(all, false).hiddenLater > 0;
-  const live = all.filter((s) => s.id !== "handover");
-  const done = live.filter((s) => s.state === "done").length;
-  const span = renovationDays(d.tasks, today);
-  const sub = live.length === 0 ? "No site tasks yet" : `${span && span.day > 0 ? `Day ${span.day} of ${span.total}` : `${done} of ${live.length} steps done`} · updated as each step is done`;
-  return (
-    <WsCard title="Site progress" sub={sub} right={<button type="button" className="link" onClick={() => p.openTab("site")}>Site photos →</button>}>
-      {live.length > 0 && (
-        <>
-          <ol style={{ listStyle: "none", margin: 0, padding: 0 }}>
-            {trimmed.steps.map((s, i) => <SiteRow key={s.id} s={s} last={i === trimmed.steps.length - 1} today={today} />)}
-          </ol>
-          {canTrim && (
-            <button type="button" className="link" style={{ alignSelf: "flex-start" }} onClick={() => setShowAll((x) => !x)}>
-              {showAll ? "Show fewer steps" : `Show all ${all.length} steps`}
-            </button>
-          )}
-        </>
-      )}
-    </WsCard>
-  );
-}
-
-function SiteRow({ s, last, today }: { s: SiteStep; last: boolean; today: string }): ReactElement {
-  const now = s.state === "current";
-  const done = s.state === "done";
-  const ring = s.state === "late" ? "2px solid #E8A5A2" : `2px solid ${BETA.border}`;
-  return (
-    <li aria-current={now ? "step" : undefined} style={{ display: "grid", gridTemplateColumns: "64px 24px 1fr", gap: 10 }}>
-      <div style={{ padding: last ? "2px 0 0" : "2px 0 14px", color: now ? BETA.accentInk : BETA.muted, fontSize: 13, fontWeight: now ? 700 : 400 }}>
-        {now ? <>Today<br />{dayMonth(today)}</> : dayMonth(s.date)}
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-        {done ? (
-          <span style={{ width: 18, height: 18, borderRadius: 9, background: BETA.accent, display: "flex", alignItems: "center", justifyContent: "center" }}><WsCheck size={10} stroke={3.5} /></span>
-        ) : now ? (
-          <span style={{ width: 18, height: 18, borderRadius: 9, background: BETA.surface, border: `3px solid ${BETA.accent}` }} />
-        ) : (
-          <span style={{ width: 18, height: 18, borderRadius: 9, background: BETA.surface, border: ring }} />
-        )}
-        {!last && (done ? <span style={{ flex: 1, width: 2, background: BETA.accent }} /> : <span style={{ flex: 1, width: 0, borderLeft: `2px dashed ${BETA.border}` }} />)}
-      </div>
-      {now ? (
-        <div style={{ marginBottom: last ? 0 : 14, padding: "10px 12px", borderRadius: 8, background: "#E4F1EF", minWidth: 0 }}>
-          <div style={{ fontWeight: 700, color: BETA.accentInk, overflowWrap: "anywhere" }}>{s.label}</div>
-          {s.sub && <div style={{ fontSize: 13, color: "#2B3533" }}>{s.sub}</div>}
-        </div>
-      ) : (
-        <div style={{ padding: last ? 0 : "0 0 14px", color: done ? BETA.ink : WS.text2, minWidth: 0 }}>
-          <div style={{ fontWeight: 600, overflowWrap: "anywhere" }}>{s.label}</div>
-          {s.sub && <div style={{ fontSize: 13, color: s.state === "late" ? WS.red : BETA.muted, fontWeight: s.state === "late" ? 600 : 400 }}>{s.sub}</div>}
-        </div>
-      )}
-    </li>
   );
 }
 

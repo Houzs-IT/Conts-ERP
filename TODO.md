@@ -521,6 +521,9 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Gap: a PIN account that also has a real email can be sent a password reset link, which sets an 8-character password the PIN box cannot type. Give a New PIN from Workers instead.
 - Tests: scripts/api-checks/field-pin-sign-in.mjs, workers-technicians.mjs, technician-list-fill.mjs (throwaway database only).
 
+## Beta Site & photos, Defects pipeline, Timeline, Site progress (feat/beta-site-defects, migration 0151, 24 Oct 2026)
+- Migration 0151 (project_defects.assignee_person_id) is applied on staging and production.
+- On a phone the engine opens its mobile shell, which has no /beta route, so Beta is reached only from a desktop browser (or ?mobile=0); route Beta in the mobile shell when the field team needs it.
 ## Beta Drawings uploads (feat/beta-uploads, migration 0149, 24 Oct 2026)
 - [ ] Apply migration 0149 (2D sheets) to staging, then production, before merging: without it Upload 2D set answers "not switched on yet" and Beta falls back to one-file 2D upload.
 - [ ] 2D sheets: no way yet to remove a sheet from the set or rename one after upload (only replace or add).
