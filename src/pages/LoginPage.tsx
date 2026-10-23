@@ -24,10 +24,11 @@ const COPY: Record<Screen, { eyebrow: string; heading: string; sub: string; subm
 
 const SUPPORT_PHONE = '+60 11-6133 3289';
 
-/** A phone that signed in with a PIN opens on the PIN form next time; #/field always does. */
+/** A phone that signed in with a PIN opens on the PIN form next time; /portal always does, and so do the old
+ *  /field and /worker links (main.tsx has already moved a #/field link to /field by now). */
 const SIGNIN_KEY = 'conts.signin';
 function startsOnPin(): boolean {
-  if (window.location.hash.startsWith('#/field')) return true;
+  if (/^\/(portal|field|worker)(\/|$)/.test(window.location.pathname)) return true;
   try { return localStorage.getItem(SIGNIN_KEY) === 'pin'; } catch { return false; }
 }
 function rememberSignIn(way: 'pin' | 'signin') {

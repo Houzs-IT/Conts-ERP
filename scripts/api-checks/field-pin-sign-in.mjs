@@ -86,7 +86,7 @@ check('an easy PIN is refused (422)', r.status === 422 && r.json.error?.fields?.
 r = await call(field, 'POST', '/api/auth/change-password', { password: '482913' });
 check('own PIN saved', r.status === 200, r);
 r = await call(null, 'POST', '/api/auth/login-pin', { employeeId: number, pin: '482913' });
-check('signs in with own PIN by the number alone, nothing to change', r.status === 200 && r.json.user?.mustChangePassword === false && r.json.home === '/field/today', r);
+check('signs in with own PIN by the number alone, nothing to change', r.status === 200 && r.json.user?.mustChangePassword === false && r.json.home === '/portal/today', r);
 field = r.cookie;
 r = await call(field, 'GET', '/api/field/tasks');
 check('field app jobs reachable (200)', r.status === 200, r);

@@ -326,8 +326,8 @@ export function workspaceOf(path: string): Workspace | null {
 /** role → landing path. The server returns this as `home`; kept here for the client guard. */
 export const HOME: Record<UserRole, string> = {
   management: '/', operations_manager: '/', operations_staff: '/operations/today',
-  finance_admin: '/owners?view=statements', housekeeper: '/worker/today',
-  technician: '/worker/today', owner: '/owner',
+  finance_admin: '/owners?view=statements', housekeeper: '/portal/today',
+  technician: '/portal/today', owner: '/owner',
 };
 
 /** Pages below a menu entry, for the third breadcrumb ("Units / Owners / Owner statement"). */

@@ -358,7 +358,7 @@ function AccessModal({ cfg, worker, given0, onClose, onDone }: {
               </span>
             </span>
             <span className="text-meta text-muted-ink text-pretty">
-              They open <span className="font-semibold text-ink">{window.location.origin}/#/field</span> on their phone, type the number
+              They open <span className="font-semibold text-ink">{window.location.origin}/portal</span> on their phone, type the number
               after EMP- and this PIN, and choose their own PIN the first time.
             </span>
           </div>

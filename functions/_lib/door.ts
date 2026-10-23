@@ -29,6 +29,6 @@ export function doorRefusal(door: Door, role: string): string | null {
  *  a fresh session and need to tell the client where to send the browser. */
 export const HOME: Record<string, string> = {
   management: '/', operations_manager: '/', operations_staff: '/operations/today',
-  finance_admin: '/owners?view=statements', housekeeper: '/worker/today',
-  technician: '/worker/today', owner: '/owner',
+  finance_admin: '/owners?view=statements', housekeeper: '/portal/today',
+  technician: '/portal/today', owner: '/owner',
 };

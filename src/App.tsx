@@ -216,8 +216,8 @@ function Routed() {
   const account = location.pathname === '/account';
   // Field roles: single-column 44px shell, not the desk nav.
   if (user.role === 'housekeeper' || user.role === 'technician') {
-    // Cleaners' and technicians' screens moved from /field to /worker; old bookmarks and links follow.
-    if (/^\/field(\/|$)/.test(location.pathname)) return <Navigate to={location.pathname.replace(/^\/field/, '/worker') + location.search} replace />;
+    // Cleaners' and technicians' screens moved from /field (then /worker) to /portal; old bookmarks and links follow.
+    if (/^\/(field|worker)(\/|$)/.test(location.pathname)) return <Navigate to={location.pathname.replace(/^\/(field|worker)/, '/portal') + location.search} replace />;
     return <FieldShell><Suspense fallback={<Fallback />}>{account ? <AccountPage /> : <FieldHome />}</Suspense></FieldShell>;
   }
   // Owners see only their own portal, whatever the address bar says.
@@ -231,6 +231,8 @@ function Routed() {
       </Routes>
     );
   }
+  // The cleaners' and technicians' portal (and its old /field and /worker links) has no desk screen: go home.
+  if (/^\/(portal|field|worker)(\/|$)/.test(location.pathname)) return <Navigate to={HOME[user.role]} replace />;
 
   return (
     <Routes>
