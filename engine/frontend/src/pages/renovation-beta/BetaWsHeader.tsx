@@ -88,7 +88,7 @@ export function BetaWsHeader({ d, p: board, people = [], canWrite, today, openDi
               >
                 <span aria-hidden="true" style={{ display: "flex", flex: "none", alignSelf: c.who.length > 1 ? "flex-start" : undefined }}>
                   {(c.who.length ? c.who : [null]).map((x, i) => (
-                    <span key={x?.id ?? "none"} style={{ marginLeft: i ? -8 : 0, borderRadius: 999, boxShadow: i ? `0 0 0 2px ${c.lead ? "#E4F1EF" : BETA.surface}` : undefined, display: "inline-flex" }}>
+                    <span key={x?.id ?? "none"} style={{ marginLeft: i ? -5 : 0, borderRadius: 999, boxShadow: i ? `0 0 0 2px ${c.lead ? "#E4F1EF" : BETA.surface}` : undefined, display: "inline-flex" }}>
                       <WsAvatar text={x ? initials(x.name) : "?"} bg={x ? BETA.ink : "#C3CCCA"} />
                     </span>
                   ))}
