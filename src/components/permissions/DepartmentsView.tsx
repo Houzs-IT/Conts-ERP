@@ -5,7 +5,7 @@ import { useToast } from '../Toast';
 import { api, errorMessage } from '../../lib/api';
 import { cx } from '../../lib/design-tokens';
 import type { AccessArea, AccessChange, AccessChart, AccessLevel, AccessSetting, Department } from '../../lib/types';
-import { LEVEL_COLOR, LEVEL_LABEL, LEVEL_NOTE, MUTED, SELECT, SIDE_OPTIONS, TAG, settingLabel, sideLabel } from './shared';
+import { LEVEL_COLOR, LEVEL_LABEL, LEVEL_NOTE, MUTED, SELECT, SIDE_OPTIONS, TAG, isFieldKind, settingLabel, sideLabel } from './shared';
 
 /** A pending change: what is picked but not yet saved. `level` null deletes the stored row. */
 interface Pending { scopeId: string; key: string; level: AccessSetting | null }
@@ -13,7 +13,6 @@ type SideFilter = 'all' | 'conts' | 'dream_crafter';
 
 const groupKey = (group: string) => `group:${group}`;
 const draftKey = (deptId: string, key: string) => `${deptId}\n${key}`;
-const FIELD_NOTE = 'Field app only';
 
 const FILTERS: { value: SideFilter; label: string }[] = [
   { value: 'conts', label: SIDE_OPTIONS[0].label }, { value: 'dream_crafter', label: SIDE_OPTIONS[1].label }, { value: 'all', label: 'All' },
@@ -43,7 +42,7 @@ export default function DepartmentsView({ onDirty }: { onDirty: (pending: number
   useEffect(() => { onDirty(pending); }, [pending, onDirty]);
 
   const columns = useMemo<Department[]>(
-    () => (data?.departments ?? []).filter(d => filter === 'all' || d.side === filter || d.side === 'both'),
+    () => (data?.departments ?? []).filter(d => !isFieldKind(d.kind) && (filter === 'all' || d.side === filter || d.side === 'both')),
     [data, filter],
   );
 
@@ -106,7 +105,6 @@ export default function DepartmentsView({ onDirty }: { onDirty: (pending: number
     }
   };
 
-  const fieldKind = (d: Department) => d.kind === 'cleaning' || d.kind === 'maintenance';
   const gridStyle = { gridTemplateColumns: `minmax(220px,1.4fr) repeat(${columns.length}, minmax(190px,1fr))` };
   const ROW = 'grid gap-2.5 items-center px-5';
   // The first column stays put while the rest scrolls sideways; it needs its own background to hide what slides under.
@@ -156,7 +154,6 @@ export default function DepartmentsView({ onDirty }: { onDirty: (pending: number
                     </button>
                     {columns.map(d => {
                       if (d.kind === 'management') return <div key={d.id} className="text-meta font-semibold" style={{ color: LEVEL_COLOR.full }}>Full</div>;
-                      if (fieldKind(d)) return <div key={d.id} className="text-meta text-muted-ink">{FIELD_NOTE}</div>;
                       const level = baseline(d, c.group);
                       const changed = draft[draftKey(d.id, groupKey(c.group))] !== undefined;
                       return (
@@ -177,7 +174,6 @@ export default function DepartmentsView({ onDirty }: { onDirty: (pending: number
                       <div className={cx(STICKY, 'bg-card pl-[26px] text-copy font-medium')}>{a.label}</div>
                       {columns.map(d => {
                         if (d.kind === 'management') return <div key={d.id} className="text-meta text-muted-ink">Full</div>;
-                        if (fieldKind(d)) return <div key={d.id} className="text-meta text-muted-ink">{FIELD_NOTE}</div>;
                         const s = setting(d, a);
                         const level = effective(d, a, c.group);
                         const inherited = s === 'inherit';

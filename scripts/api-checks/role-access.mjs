@@ -90,6 +90,27 @@ check('Edit on Units: the Finance department reaches the inventory form checks (
 r = await call('POST', '/api/users', {}, 'finance_admin');
 check('inviting users stays with management whatever the rules say (403)', r.status === 403, `${r.status}`);
 
+// Works on (owner, 23 Oct 2026): it must fit the department, a department on both sides leaves it to the person, and
+// cleaners and technicians are added on Workers, never through Users and roles.
+const cleaning = start.departments.find(d => d.kind === 'cleaning'), admin = dept('Admin');
+const adminPos = admin.positions[0];
+r = await call('POST', '/api/users', { fullName: 'Field Test', email: `field-${Date.now()}@example.com`, side: 'conts', departmentId: cleaning.id });
+check('a cleaner cannot be invited through Users (422)', r.status === 422 && /Workers/.test(r.text), r.text);
+r = await call('POST', '/api/users', { fullName: 'Side Test', email: `side-${Date.now()}@example.com`, side: 'dream_crafter', departmentId: ops.id });
+check('Works on must fit the department: Operations is The Conts only (422)', r.status === 422, r.text);
+r = await call('POST', '/api/users', { fullName: 'No Side', email: `noside-${Date.now()}@example.com`, departmentId: admin.id });
+check('Works on is required (422)', r.status === 422 && /side/.test(r.text), r.text);
+r = await call('GET', '/api/users');
+check('Users and roles lists no cleaners or technicians', r.status === 200 && !r.json.data.some(u => u.role === 'housekeeper' || u.role === 'technician'), r.text.slice(0, 160));
+r = await call('PATCH', `/api/users/${staff.userId}`, { side: 'dream_crafter', departmentId: admin.id, positionId: adminPos?.id ?? null });
+check('a person moves to Admin (on both sides) working on Dream Crafter only', r.status === 200, r.text);
+r = await callAsUser(staff, 'GET', '/api/reservations');
+check('...so The Conts screens close for them', r.status === 403, `${r.status}`);
+r = await callAsUser(staff, 'GET', '/api/sales-orders');
+check('...and the Dream Crafter ones open', r.status === 200, `${r.status} ${r.text.slice(0, 120)}`);
+r = await call('PATCH', `/api/users/${staff.userId}`, { side: 'conts', departmentId: ops.id, positionId: staffPos.id });
+check('back to Operations / Operations Staff', r.status === 200, r.text);
+
 // Back to how it was.
 r = await put(keep);
 check('putting the levels back succeeds', r.status === 200 && (r.json?.rules?.position?.[staffPos.id]?.finance ?? null) === stored('position', staffPos.id, 'finance'), r.text.slice(0, 200));

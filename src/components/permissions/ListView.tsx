@@ -9,7 +9,7 @@ import { useToast } from '../Toast';
 import { api, ApiFailure, errorMessage } from '../../lib/api';
 import { plural } from '../../lib/format';
 import type { Department, DepartmentKind, Position, UserSide } from '../../lib/types';
-import { KIND_NOTE, KIND_OPTIONS, SIDE_OPTIONS, sideLabel, useDepartments } from './shared';
+import { KIND_NOTE, KIND_OPTIONS, SIDE_OPTIONS, isFieldKind, sideLabel, useDepartments } from './shared';
 
 /** What a delete is waiting on: people are still in the department or position, and need somewhere to go. */
 interface MovePrompt { kind: 'department' | 'position'; id: string; name: string; departmentId: string; count: number }
@@ -46,7 +46,8 @@ export default function ListView({ onGoToDepartments }: { onGoToDepartments: () 
   if (error && !data) return <div className="p-5 text-copy text-muted-ink">{error}</div>;
   if (loading || !data) return <div className="p-5 text-copy text-muted-ink">Loading departments…</div>;
 
-  const { departments, canEdit } = data;
+  const { canEdit } = data;
+  const departments = data.departments.filter(d => !isFieldKind(d.kind));
   const usedName = (name: string) => departments.some(d => d.name.trim().toLowerCase() === name.trim().toLowerCase());
 
   /** Runs one change, then reloads the list. Returns false when it failed (a toast has said why). */
@@ -103,9 +104,7 @@ export default function ListView({ onGoToDepartments }: { onGoToDepartments: () 
     const people = plural(d.headCount, 'person', 'people');
     const effect = kind === 'management'
       ? `Management means Full access to everything. ${people} in ${d.name} will get it.`
-      : kind === 'staff'
-        ? `Staff get the access their department, position and own settings give. ${people} in ${d.name} will follow those rules instead of ${d.kind === 'management' ? 'Full access' : 'the field app'}.`
-        : `${kind === 'cleaning' ? 'Cleaning' : 'Maintenance'} people use the field app only, with no desk screens. ${people} in ${d.name} will lose their desk screens.`;
+      : `Staff get the access their department, position and own settings give. ${people} in ${d.name} will follow those rules instead of Full access.`;
     setConfirm({
       title: `Change ${d.name} to ${KIND_OPTIONS.find(o => o.value === kind)?.label ?? kind}?`,
       body: effect,

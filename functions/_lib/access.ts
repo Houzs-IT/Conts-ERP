@@ -25,6 +25,12 @@ export type Side = 'conts' | 'dream_crafter' | 'both';
 export const SIDES: Side[] = ['conts', 'dream_crafter', 'both'];
 export const isSide = (v: unknown): v is Side => typeof v === 'string' && (SIDES as string[]).includes(v);
 
+/** A department on one side puts everyone in it on that side; in a department on both sides the person's own
+ *  "Works on" choice (users.side) decides. SQL for one row of users `u` joined to its department `d`. */
+export const sideSql = (u: string, d: string) => `CASE WHEN ${d}.side IN ('conts', 'dream_crafter') THEN ${d}.side ELSE COALESCE(${u}.side, 'both') END`;
+/** Whether a person may be put on `side` in a department on `departmentSide`: only a Both department leaves the choice. */
+export const sideFits = (departmentSide: Side, side: Side) => departmentSide === 'both' || departmentSide === side;
+
 /** The area groups each side closes. Finance and System are on neither list, so they follow the role. */
 const CLOSED_BY_SIDE: Record<Side, string[]> = {
   conts: ['Dream Crafter'],
@@ -272,7 +278,7 @@ export async function peopleWithAccess(env: Env, areaKey: string, min: Level): P
   if (!area) return [];
   const [people, rows] = await Promise.all([
     all<{ id: string; role: string; side: string | null; department_id: string | null; position_id: string | null; kind: string | null }>(env,
-      `SELECT u.id, u.role, COALESCE(d.side, u.side) AS side, u.department_id, u.position_id, d.kind
+      `SELECT u.id, u.role, ${sideSql('u', 'd')} AS side, u.department_id, u.position_id, d.kind
          FROM users u LEFT JOIN departments d ON d.id = u.department_id WHERE u.is_active = 1 AND u.role <> 'owner'`),
     all<{ scope: string; scope_id: string; area: string; level: string }>(env, 'SELECT scope, scope_id, area, level FROM access_rules'),
   ]);

@@ -5,12 +5,14 @@ import { twoFactorTables } from '../../_lib/twoFactor';
 import { userJobReady } from '../../_lib/userJob';
 import { hasEmployeeIds } from '../../_lib/fieldPin';
 import { userSideReady } from '../../_lib/userSide';
-import { isSide, maySee, roleForKind } from '../../_lib/access';
+import { isSide, maySee, roleForKind, sideFits } from '../../_lib/access';
 import { isRecord, loadDepartment } from '../../_lib/accessRules';
 
 const MANAGE = ['management'];
 
-/** GET /api/users — every account, with who each reports to. Never the password hash or attempt counter; only whether a lock is on now. */
+/** GET /api/users — every office and owner account, with who each reports to. Cleaners and technicians are not here:
+ *  they are added, given app access and switched off on Workers. Never the password hash or attempt counter; only
+ *  whether a lock is on now. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
@@ -23,7 +25,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       COALESCE(locked_until::timestamptz > now(), false) AS is_locked, ${totp ? 'totp_enabled_at IS NOT NULL' : 'false'} AS two_step,
       (SELECT max(a.occurred_at) FROM audit_log a WHERE a.entity_table = 'users' AND a.entity_id = users.id
          AND a.action IN ('user.invite', 'user.resend_invite')) AS last_invited_at
-    FROM users ORDER BY role, full_name`);
+    FROM users WHERE role NOT IN ('housekeeper', 'technician') ORDER BY role, full_name`);
   return json({
     generatedAt: nowIso(),
     jobFields: job,
@@ -38,9 +40,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   });
 };
 
-/** POST /api/users { fullName, email, departmentId, positionId?, managerId?, phone? } — an invitation. The department
- *  decides the hidden role and the side; a role or side in the body is ignored. The temporary password is emailed and is
- *  never in the response. */
+/** POST /api/users { fullName, email, side, departmentId, positionId?, managerId?, phone? } — an invitation. The
+ *  department decides the hidden role; `side` (Works on) must fit it, and only a department on both sides leaves the
+ *  choice open (sideFits). Cleaners and technicians are added on Workers, not here. The temporary password is emailed
+ *  and is never in the response. */
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
@@ -49,6 +52,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const b: unknown = await request.json().catch(() => null);
   const body = isRecord(b) ? b : {};
   const { departmentId, positionId } = body;
+  const side = isSide(body.side) ? body.side : null;
   const fullName = typeof body.fullName === 'string' ? body.fullName.trim() : '';
   const email = typeof body.email === 'string' ? body.email.toLowerCase().trim() : '';
   const phone = typeof body.phone === 'string' ? body.phone : null;
@@ -57,11 +61,14 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!email.includes('@')) fields.email = 'Enter a valid work email address.';
   if (!fullName) fields.fullName = 'A name is required.';
   if (typeof departmentId !== 'string' || !departmentId) fields.departmentId = 'Choose a department.';
+  if (!side) fields.side = 'Choose The Conts, Dream Crafter or Both.';
   if (positionId !== undefined && positionId !== null && typeof positionId !== 'string') fields.positionId = 'Choose a position from the list.';
-  if (Object.keys(fields).length || typeof departmentId !== 'string') return fail('VALIDATION', 'Check the invitation details.', 422, fields);
+  if (Object.keys(fields).length || typeof departmentId !== 'string' || !side) return fail('VALIDATION', 'Check the invitation details.', 422, fields);
 
   const department = await loadDepartment(env, departmentId);
   if (!department) return fail('VALIDATION', 'That department does not exist.', 422, { departmentId: 'Choose a department from the list.' });
+  if (department.kind === 'cleaning' || department.kind === 'maintenance') return fail('VALIDATION', 'Cleaners and technicians are added on Workers.', 422, { departmentId: 'Add cleaners and technicians on Workers.' });
+  if (!sideFits(department.side, side)) return fail('VALIDATION', `${department.name} works on one side only.`, 422, { departmentId: `${department.name} is not on that side.` });
   const position = typeof positionId === 'string' && positionId ? department.positions.find(p => p.id === positionId) ?? null : null;
   if (typeof positionId === 'string' && positionId && !position) return fail('VALIDATION', 'That position is not in the department.', 422, { positionId: 'Choose a position of this department.' });
 
@@ -77,9 +84,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
                        department_id, position_id, department, position, side)
     VALUES (?, ?, ?, ?, ?, ?, ?, 1, 'en-MY', 1, ?, ?, ?, ?, ?, ?, ?)`,
     id, email, fullName, phone, await hashPassword(temp), role, managerId, now, now,
-    department.id, position?.id ?? null, department.name, position?.name ?? null, department.side);
+    department.id, position?.id ?? null, department.name, position?.name ?? null, side);
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'user.invite', entityTable: 'users', entityId: id,
-    after: { email, role, side: department.side, departmentId: department.id, positionId: position?.id ?? null, department: department.name, position: position?.name ?? null } });
+    after: { email, role, side, departmentId: department.id, positionId: position?.id ?? null, department: department.name, position: position?.name ?? null } });
 
   // The temporary password leaves the server here and nowhere else: never in the response, a log line or the audit entry.
   const delivery = await notify(env, {

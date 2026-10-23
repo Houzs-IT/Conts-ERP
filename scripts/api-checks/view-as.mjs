@@ -109,8 +109,8 @@ check('a test account cannot be signed in to with a password', /@staging\.invali
 
 // An invited account that has not chosen a password yet only ever shows "Set a new password": refused, and marked in the list.
 const mgmt = browser(MGMT);
-const maintenance = departments.find(d => d.kind === 'maintenance');
-const invited = await mgmt('POST', '/api/users', { email: `invited-${Date.now()}@example.com`, fullName: 'Invited Not Set Up', departmentId: maintenance.id, positionId: maintenance.positions[0]?.id ?? null });
+const admin = departments.find(d => d.name === 'Admin');
+const invited = await mgmt('POST', '/api/users', { email: `invited-${Date.now()}@example.com`, fullName: 'Invited Not Set Up', side: 'both', departmentId: admin.id, positionId: admin.positions[0]?.id ?? null });
 const invitedId = invited.json?.id ?? invited.json?.userId ?? invited.json?.data?.id;
 r = await mgmt('GET', '/api/auth/view-as');
 check('an invited account not set up yet is marked as such', r.json?.users?.find(u => u.id === invitedId)?.notSetUp === true, `${invited.status} ${invited.text.slice(0, 200)}`);

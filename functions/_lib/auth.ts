@@ -1,5 +1,5 @@
 import { type Env, all, one, run, fail, nowIso } from './db';
-import { accessFor, canManage, levelsFor, isSide, isKind, type DepartmentKind, type Level, type Side } from './access';
+import { accessFor, canManage, levelsFor, isSide, sideSql, isKind, type DepartmentKind, type Level, type Side } from './access';
 import { notify } from './notify';
 import { legacyRolesIncludeOwners, parseList } from './twoStepLegacy';
 
@@ -118,7 +118,7 @@ export async function sessionState(env: Env, userId: string, sid?: string): Prom
     SELECT '~user', users.role || '|' || users.is_active::text || '|' || ${revokedCol ? "COALESCE(users.sessions_revoked_at, '')" : "''"}
       || '|' || ${totpCol ? "(users.totp_enabled_at IS NOT NULL)::int::text" : "'0'"}
       || '|' || ${sessions ? '(SELECT count(*) FROM user_sessions s WHERE s.id = ? AND s.user_id = users.id)::text' : "'1'"}
-      || '|' || users.must_change_password::text || '|' || COALESCE(d.side, ${sideCol ? 'users.side' : "'both'"})
+      || '|' || users.must_change_password::text || '|' || ${sideCol ? sideSql('users', 'd') : "COALESCE(d.side, 'both')"}
       || '|' || COALESCE(users.department_id, '') || '|' || COALESCE(users.position_id, '') || '|' || COALESCE(d.kind, '')
       || '|' || users.full_name FROM users LEFT JOIN departments d ON d.id = users.department_id WHERE users.id = ?`, ...(sessions ? [sid, userId] : [userId]));
   const u = rows.find(r => r.key === '~user');

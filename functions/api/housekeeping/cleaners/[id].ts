@@ -1,6 +1,7 @@
 import { mayWork } from '../../../_lib/access';
 import { type Env, one, run, json, fail, audit, nowIso } from '../../../_lib/db';
 import { requireSession } from '../../../_lib/auth';
+import { followWorker } from '../../../_lib/fieldAccess';
 
 const EMPLOYMENT = ['internal', 'outsourced'];
 const MANAGE = ['management']; // everyone else follows the area's level (mayWork / maySee / mayRun)
@@ -15,7 +16,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
 
   const id = String(params.id);
   const b = await request.json<any>().catch(() => null);
-  const c = await one<any>(env, 'SELECT id, full_name, employment_type, vendor_name, phone, is_active FROM cleaners WHERE id = ?', id);
+  const c = await one<any>(env, 'SELECT id, full_name, employment_type, vendor_name, phone, is_active, user_id FROM cleaners WHERE id = ?', id);
   if (!c) return fail('NOT_FOUND', 'That cleaner is no longer on the roster.', 404);
 
   const sets: string[] = [];
@@ -55,6 +56,8 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   if (!sets.length) return fail('VALIDATION', 'Nothing to change.', 422);
 
   await run(env, `UPDATE cleaners SET ${sets.join(', ')}, updated_at = ? WHERE id = ?`, ...args, nowIso(), id);
+  const loginActive = b?.employmentType === 'outsourced' ? false : b?.isActive === true || b?.isActive === false ? b.isActive : null;
+  if (loginActive !== null && await followWorker(env, c.user_id, loginActive)) after.appLogin = loginActive ? 'on' : 'off';
   await audit(env, {
     actorId: session.userId, actorLabel: session.fullName, action: 'housekeeping.cleaner_update',
     entityTable: 'cleaners', entityId: id, before, after,

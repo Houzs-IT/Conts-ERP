@@ -2,6 +2,7 @@ import { mayWork } from '../../../_lib/access';
 import { type Env, one, run, json, fail, audit, nowIso } from '../../../_lib/db';
 import { requireSession } from '../../../_lib/auth';
 import { hasTechnicianList } from '../../../_lib/maintenance';
+import { followWorker } from '../../../_lib/fieldAccess';
 
 const EMPLOYMENT = ['internal', 'outsourced'];
 const MANAGE = ['management']; // everyone else follows the area's level (mayWork / maySee / mayRun)
@@ -17,8 +18,8 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
 
   const id = String(params.id);
   const b = await request.json<Record<string, unknown>>().catch(() => null);
-  const t = await one<{ full_name: string; employment_type: string; vendor_name: string | null; phone: string | null; is_active: number }>(env,
-    'SELECT full_name, employment_type, vendor_name, phone, is_active FROM technicians WHERE id = ?', id);
+  const t = await one<{ full_name: string; employment_type: string; vendor_name: string | null; phone: string | null; is_active: number; user_id: string | null }>(env,
+    'SELECT full_name, employment_type, vendor_name, phone, is_active, user_id FROM technicians WHERE id = ?', id);
   if (!t) return fail('NOT_FOUND', 'That technician is no longer on the list.', 404);
 
   const sets: string[] = [], args: unknown[] = [];
@@ -60,6 +61,8 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
 
   const now = nowIso();
   await run(env, `UPDATE technicians SET ${sets.join(', ')}, updated_at = ? WHERE id = ?`, ...args, now, id);
+  const loginActive = b?.employmentType === 'outsourced' ? false : b?.isActive === true || b?.isActive === false ? b.isActive : null;
+  if (loginActive !== null && await followWorker(env, t.user_id, loginActive)) after.appLogin = loginActive ? 'on' : 'off';
   if (rename) await run(env, `UPDATE maintenance_issues SET vendor_name = ?, updated_at = ? WHERE technician_id = ? AND state <> 'resolved'`, rename, now, id);
   // Moving to contractor drops the login, so their open jobs stop showing in that login's field app.
   if (b?.employmentType === 'outsourced') await run(env, `UPDATE maintenance_issues SET assignee_kind = 'contractor', assignee_user_id = NULL, updated_at = ? WHERE technician_id = ? AND state <> 'resolved'`, now, id);

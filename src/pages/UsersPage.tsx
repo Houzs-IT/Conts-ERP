@@ -12,7 +12,8 @@ import { PhoneInput, phoneProblem } from '../components/inputs';
 import { Select } from '../components/Select';
 import { Modal } from '../components/Modal';
 import UserAccess from '../components/permissions/UserAccess';
-import { KIND_NOTE, sideLabel, useDepartments } from '../components/permissions/shared';
+import { KIND_NOTE, SIDE_OPTIONS, isFieldKind, sideLabel, useDepartments } from '../components/permissions/shared';
+import { Segmented } from '../components/Metric';
 import { StaleBanner } from '../components/DataState';
 import { DataTable, type Column } from '../components/DataTable';
 import { useToast } from '../components/Toast';
@@ -21,7 +22,7 @@ import { useSession } from '../lib/session';
 import { api, ApiFailure, errorMessage } from '../lib/api';
 import { count, date, plural } from '../lib/format';
 import { TONE, cx } from '../lib/design-tokens';
-import type { Department, Tone, UserRole } from '../lib/types';
+import type { Department, Tone, UserRole, UserSide } from '../lib/types';
 import { HistoryDisclosure } from '../components/RecordHistory';
 import { RowActions, type RowAction } from '../components/RowActions';
 import { deliveryToast } from '../lib/emailDelivery';
@@ -53,7 +54,7 @@ function avatarTone(u: Pick<Row, 'department' | 'role'>): Tone {
 
 interface Row {
   id: string; fullName: string; email: string; employeeId?: string | null; phone: string | null; role: UserRole;
-  department?: string | null; position?: string | null; departmentId?: string | null; positionId?: string | null;
+  department?: string | null; position?: string | null; departmentId?: string | null; positionId?: string | null; side?: UserSide;
   managerId: string | null;
   isActive: boolean; mustChangePassword: boolean; isLocked?: boolean; twoStep?: boolean; lastLoginAt: string | null;
   /** When the newest invitation email went out (audit_log user.invite / user.resend_invite). */
@@ -62,12 +63,11 @@ interface Row {
 interface Payload { data: Row[]; generatedAt: string }
 
 /** The departments and positions come from the managed list (Permissions > Departments and positions), so nothing is typed
- *  here. The department's side is the person's side: the other side's screens stay closed for them. */
-const departmentNote = (d: Department | undefined): string | null => {
-  if (!d) return null;
-  const note = KIND_NOTE[d.kind];
-  return `Works on ${sideLabel(d.side)}.${note ? ` ${note}` : ''}`;
-};
+ *  here. Cleaners and technicians are not offered: they are added on Workers. */
+const departmentNote = (d: Department | undefined): string | null => (d ? KIND_NOTE[d.kind] ?? null : null);
+/** A department on one side puts everyone in it there; in one on both sides the person's own choice stands
+ *  (sideSql in functions/_lib/access.ts). */
+const sideFits = (d: Department, side: UserSide) => d.side === 'both' || d.side === side;
 
 /** "Position · Department", skipping what is not set. */
 const jobLine = (u: Pick<Row, 'department' | 'position'>) => [u.position, u.department].map(v => (v ?? '').trim()).filter(Boolean).join(' · ');
@@ -169,10 +169,11 @@ export default function UsersPage() {
   const departmentById = useMemo(() => new Map(departments.map(d => [d.id, d])), [departments]);
   // A row from before the managed list has only the text, so it is matched by name.
   const departmentOfRow = useMemo(() => (u: Row) => (u.departmentId ? departmentById.get(u.departmentId) : undefined) ?? departments.find(x => x.name === u.department), [departmentById, departments]);
-  const sideOf = useMemo(() => (u: Row) => {
+  const sideValueOf = useMemo(() => (u: Row): UserSide => {
     const d = departmentOfRow(u);
-    return d ? sideLabel(d.side) : null;
+    return d && d.side !== 'both' ? d.side : u.side ?? 'both';
   }, [departmentOfRow]);
+  const sideOf = useMemo(() => (u: Row) => (u.role === 'owner' ? null : sideLabel(sideValueOf(u))), [sideValueOf]);
 
   const columns = useMemo<Column<Row>[]>(() => [
     { key: 'name', label: 'Name', value: u => u.fullName, hideable: false, width: 220,
@@ -187,7 +188,7 @@ export default function UsersPage() {
           </span>
         </span>
       ) },
-    // The department's side shows under its name: a person's side is their department's side.
+    // The side they work on shows under the department's name.
     { key: 'department', label: 'Department', value: u => u.department || null, width: 160,
       render: u => {
         const side = u.role === 'owner' ? null : sideOf(u);
@@ -226,12 +227,13 @@ export default function UsersPage() {
   const [managerId, setManagerId] = useState<string>('');
   const [departmentId, setDepartmentId] = useState('');
   const [positionId, setPositionId] = useState('');
+  const [side, setSide] = useState<UserSide>('conts');
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [lastTempPassword, setLastTempPassword] = useState<{ name: string; password: string } | null>(null);
 
   function resetInvite() {
     setInviteOpen(false); setFullName(''); setEmail('');
-    setManagerId(''); setDepartmentId(''); setPositionId(''); setFieldErrors({}); setBusy(false);
+    setManagerId(''); setDepartmentId(''); setPositionId(''); setSide('conts'); setFieldErrors({}); setBusy(false);
   }
 
   async function submitInvite(e: FormEvent) {
@@ -247,7 +249,7 @@ export default function UsersPage() {
     setBusy(true); setFieldErrors({});
     try {
       const res = await api.post<{ id: string; delivery: string; reason?: string }>('/users', {
-        fullName: fullName.trim(), email: email.trim(), departmentId, positionId: positionId || null, managerId: managerId || null,
+        fullName: fullName.trim(), email: email.trim(), side, departmentId, positionId: positionId || null, managerId: managerId || null,
       });
       toast(res.delivery === 'sent'
         ? { tone: 'success', title: `Invitation sent to ${fullName.trim()}.`, body: 'A temporary password was emailed. They must change it on first sign-in.' }
@@ -270,13 +272,14 @@ export default function UsersPage() {
   const [editPhone, setEditPhone] = useState('');
   const [editDepartmentId, setEditDepartmentId] = useState('');
   const [editPositionId, setEditPositionId] = useState('');
-  const [editErrors, setEditErrors] = useState<{ fullName?: string; email?: string; phone?: string; departmentId?: string; positionId?: string }>({});
+  const [editSide, setEditSide] = useState<UserSide>('both');
+  const [editErrors, setEditErrors] = useState<{ fullName?: string; email?: string; phone?: string; side?: string; departmentId?: string; positionId?: string }>({});
 
   function openEdit(u: Row) {
     const d = departmentOfRow(u);
     const p = d?.positions.find(x => x.id === u.positionId) ?? d?.positions.find(x => x.name === u.position);
     setEditing(u); setEditManager(u.managerId ?? ''); setEditActive(u.isActive);
-    setEditName(u.fullName); setEditEmail(u.email); setEditPhone(u.phone ?? ''); setEditDepartmentId(d?.id ?? ''); setEditPositionId(p?.id ?? ''); setEditErrors({});
+    setEditName(u.fullName); setEditEmail(u.email); setEditPhone(u.phone ?? ''); setEditDepartmentId(d?.id ?? ''); setEditPositionId(p?.id ?? ''); setEditSide(sideValueOf(u)); setEditErrors({});
   }
   // Re-send the invitation to someone who was invited but never signed in — a fresh
   // temporary password, emailed immediately. See functions/api/users/[id]/resend-invite.ts.
@@ -437,7 +440,7 @@ export default function UsersPage() {
     return items;
   }
 
-  const editPlaceChanged = !!editing && (editDepartmentId !== (departmentOfRow(editing)?.id ?? '') || editPositionId !== (editing.positionId ?? ''));
+  const editPlaceChanged = !!editing && (editDepartmentId !== (departmentOfRow(editing)?.id ?? '') || editPositionId !== (editing.positionId ?? '') || editSide !== sideValueOf(editing));
   async function submitEdit(e: FormEvent) {
     e.preventDefault();
     if (!editing || busy) return;
@@ -455,17 +458,17 @@ export default function UsersPage() {
     setBusy(true); setEditErrors({});
     const editedDept = departmentById.get(editDepartmentId);
     const editedPosition = editedDept?.positions.find(p => p.id === editPositionId);
-    const placeChanged = !isOwner && (editDepartmentId !== (departmentOfRow(editing)?.id ?? '') || editPositionId !== (editing.positionId ?? ''));
+    const placeChanged = !isOwner && (editDepartmentId !== (departmentOfRow(editing)?.id ?? '') || editPositionId !== (editing.positionId ?? '') || editSide !== sideValueOf(editing));
     const patch = {
       managerId: editManager || null, isActive: editActive,
       fullName: editName.trim(), email: editEmail.trim().toLowerCase(),
-      ...(isOwner ? { phone: editPhone.trim() || null } : { departmentId: editDepartmentId, positionId: editPositionId || null }),
+      ...(isOwner ? { phone: editPhone.trim() || null } : { side: editSide, departmentId: editDepartmentId, positionId: editPositionId || null }),
     };
     try {
       await api.patch(`/users/${editing.id}`, patch);
       setEdits(m => ({ ...m, [editing.id]: {
         ...m[editing.id], managerId: patch.managerId, isActive: patch.isActive, fullName: patch.fullName, email: patch.email,
-        ...(isOwner ? { phone: editPhone.trim() || null } : { departmentId: editDepartmentId, positionId: editPositionId || null, department: editedDept?.name ?? null, position: editedPosition?.name ?? null }),
+        ...(isOwner ? { phone: editPhone.trim() || null } : { side: editSide, departmentId: editDepartmentId, positionId: editPositionId || null, department: editedDept?.name ?? null, position: editedPosition?.name ?? null }),
       } }));
       toast({
         tone: 'success',
@@ -647,13 +650,13 @@ export default function UsersPage() {
           <form id="invite-form" onSubmit={submitInvite} className="flex flex-col gap-4">
             <Field label="Full name" value={fullName} onChange={e => setFullName(e.target.value)} placeholder="Jane Tan" error={fieldErrors.fullName} />
             <Field label="Work email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="jane@theconts.com" error={fieldErrors.email} />
-            <PlaceFields departments={departments} departmentId={departmentId} positionId={positionId}
+            <PlaceFields departments={departments} side={side} onSide={setSide} departmentId={departmentId} positionId={positionId}
               onDepartment={v => { setDepartmentId(v); setPositionId(''); }} onPosition={setPositionId}
-              errors={{ departmentId: fieldErrors.departmentId, positionId: fieldErrors.positionId }} />
+              errors={{ side: fieldErrors.side, departmentId: fieldErrors.departmentId, positionId: fieldErrors.positionId }} />
             <Select label="Reports to" showLabel size="md" value={managerId} onChange={setManagerId} placeholder="No manager"
               options={managerOptions(staff)} />
             <div className="text-meta text-muted-ink leading-[1.5]">
-              The department and position set their permissions, and the department sets which side they work on. The reporting line is for escalation and rosters only. Owners are invited from their own record under Owners.
+              Works on closes the other side’s screens; the department and position set their permissions. The reporting line is for escalation and rosters only. Cleaners and technicians are added on Workers, and owners from their own record under Owners.
             </div>
           </form>
           {lastTempPassword && (
@@ -683,9 +686,9 @@ export default function UsersPage() {
             <Field label="Full name" value={editName} onChange={e => setEditName(e.target.value)} error={editErrors.fullName} />
             <Field label="Email" type="email" value={editEmail} onChange={e => setEditEmail(e.target.value)} error={editErrors.email} />
             {editing.role === 'owner' && <PhoneInput label="Phone" value={editPhone} onChange={setEditPhone} error={editErrors.phone} />}
-            {editing.role !== 'owner' && <PlaceFields departments={departments} departmentId={editDepartmentId} positionId={editPositionId}
+            {editing.role !== 'owner' && <PlaceFields departments={departments} side={editSide} onSide={setEditSide} departmentId={editDepartmentId} positionId={editPositionId}
               onDepartment={v => { setEditDepartmentId(v); setEditPositionId(''); }} onPosition={setEditPositionId}
-              errors={{ departmentId: editErrors.departmentId, positionId: editErrors.positionId }} />}
+              errors={{ side: editErrors.side, departmentId: editErrors.departmentId, positionId: editErrors.positionId }} />}
             {editing.role !== 'owner' && editPlaceChanged && (
               <span className={cx('text-meta', TONE.warning.text)}>
                 Changing the department or position changes this person’s permissions and menu on their next click.
@@ -789,21 +792,32 @@ export default function UsersPage() {
 }
 
 /* ------------------------------ forms ------------------------------ */
-/** Department (required), then position (optional), both from the managed list. The department's side shows beneath,
- *  because a person's side is their department's side. A position belongs to one department, so changing the
- *  department clears the position. */
-function PlaceFields({ departments, departmentId, positionId, onDepartment, onPosition, errors }: {
-  departments: Department[]; departmentId: string; positionId: string;
+/** Works on, then department (required), then position (optional), from the managed list. Only the departments on the
+ *  chosen side (or on both) are offered, so a department picked earlier is cleared when the side no longer fits it.
+ *  A position belongs to one department, so changing the department clears the position. */
+function PlaceFields({ departments, side, onSide, departmentId, positionId, onDepartment, onPosition, errors }: {
+  departments: Department[]; side: UserSide; onSide: (s: UserSide) => void; departmentId: string; positionId: string;
   onDepartment: (id: string) => void; onPosition: (id: string) => void;
-  errors: { departmentId?: string; positionId?: string };
+  errors: { side?: string; departmentId?: string; positionId?: string };
 }) {
-  const dept = departments.find(d => d.id === departmentId);
+  const offered = departments.filter(d => !isFieldKind(d.kind) && sideFits(d, side));
+  const dept = offered.find(d => d.id === departmentId);
+  const pickSide = (s: UserSide) => {
+    onSide(s);
+    const current = departments.find(d => d.id === departmentId);
+    if (current && !sideFits(current, s)) onDepartment('');
+  };
   return (
     <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-1.5">
+        <span className="text-meta font-medium text-ink">Works on</span>
+        <Segmented label="Works on" value={side} onChange={pickSide} options={SIDE_OPTIONS.map(o => ({ key: o.value, label: o.label }))} />
+        {errors.side && <span className={cx('text-meta', TONE.critical.text)}>{errors.side}</span>}
+      </div>
       <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-4">
         <div className="flex flex-col gap-1">
           <Select label="Department" showLabel size="md" value={departmentId} onChange={onDepartment} placeholder="Pick a department"
-            options={departments.map(d => ({ value: d.id, label: d.name }))} />
+            options={offered.map(d => ({ value: d.id, label: d.name }))} />
           {errors.departmentId && <span className={cx('text-meta', TONE.critical.text)}>{errors.departmentId}</span>}
         </div>
         <div className="flex flex-col gap-1">
@@ -813,7 +827,7 @@ function PlaceFields({ departments, departmentId, positionId, onDepartment, onPo
         </div>
       </div>
       {dept && <span className="text-meta text-muted-ink">{departmentNote(dept)}</span>}
-      {departments.length === 0 && <span className="text-meta text-muted-ink">No departments yet. Add them under the Permissions tab, under Departments and positions.</span>}
+      {offered.length === 0 && <span className="text-meta text-muted-ink">No department works on this side yet. Add one under the Permissions tab, under Departments and positions.</span>}
     </div>
   );
 }

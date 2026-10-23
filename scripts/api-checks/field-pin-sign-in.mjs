@@ -146,8 +146,16 @@ r = await call(mgmt, 'POST', `/api/users/${u.id}/security`, { action: 'temp_pass
 check('management reset gives a 6-digit temporary PIN', r.status === 200 && /^\d{6}$/.test(r.json.tempPassword), r);
 r = await call(mgmt, 'POST', `/api/users/${u.id}/resend-invite`, {});
 check('re-send invite refused for an account with no email (409)', r.status === 409 && r.json.error?.code === 'NO_EMAIL', r);
+// Cleaners and technicians live on Workers only (owner, 23 Oct 2026): not on Users and roles, and switching one off on
+// Workers switches their app login off with it.
 r = await call(mgmt, 'GET', '/api/users');
-check('Users and roles lists the employee ID', r.json.data?.find(x => x.id === u.id)?.employeeId === employeeId, r.json.data?.find(x => x.id === u.id));
+check('Users and roles does not list the cleaner', r.status === 200 && !r.json.data?.some(x => x.id === u.id), r.json.data?.find(x => x.id === u.id));
+r = await call(opsStaff, 'PATCH', `/api/housekeeping/cleaners/${cleanerId}`, { isActive: false });
+const [off] = await db('SELECT is_active FROM users WHERE id = $1', u.id);
+check('switching the cleaner off on Workers switches their login off', r.status === 200 && off.is_active === 0, { r, off });
+r = await call(opsStaff, 'PATCH', `/api/housekeeping/cleaners/${cleanerId}`, { isActive: true });
+const [on] = await db('SELECT is_active FROM users WHERE id = $1', u.id);
+check('...and back on, the login works again', r.status === 200 && on.is_active === 1, { r, on });
 
 console.log(fails ? `${fails} FAILED` : 'all passed');
 process.exit(fails ? 1 : 0);

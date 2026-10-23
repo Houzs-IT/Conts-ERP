@@ -35,11 +35,12 @@ const CLOSED_BY_SIDE: Record<UserSide, string[]> = {
 };
 export const closedBySide = (kind: DepartmentKind, side: UserSide, group: string): boolean => kind !== 'management' && CLOSED_BY_SIDE[side].includes(group);
 
+/** The Cleaning and Maintenance departments hold the cleaners' and technicians' logins, which are managed on Workers
+ *  only: Users and roles never lists, offers or changes them. */
+export const isFieldKind = (kind: DepartmentKind): boolean => kind === 'cleaning' || kind === 'maintenance';
 export const KIND_OPTIONS: { value: DepartmentKind; label: string }[] = [
   { value: 'staff', label: 'Staff (office work)' },
   { value: 'management', label: 'Management (full access)' },
-  { value: 'cleaning', label: 'Cleaning (field app only)' },
-  { value: 'maintenance', label: 'Maintenance (field app only)' },
 ];
 /** Short note for the kinds that are not set by rules. */
 export const KIND_NOTE: Partial<Record<DepartmentKind, string>> = {
