@@ -21,7 +21,7 @@ import { useSession } from '../lib/session';
 /* ------------------------------------------------------------------ *
  * Operations -> Workers: everyone who does the cleaning and the repairs,
  * one tab each. Each list has the company's own people (who can be
- * given app access: phone number and PIN) and outside companies (no
+ * given app access: employee ID and PIN) and outside companies (no
  * login). The assign pickers on Cleaning and Maintenance pick from here.
  * ------------------------------------------------------------------ */
 
@@ -65,7 +65,7 @@ const FIELD_ROLES = ['housekeeper', 'technician'];
 /** How an in-house worker gets into the app, if at all. An office login (an operations person who also does repairs)
  *  signs in with email on the desk screens and never gets a PIN. */
 function appAccess(w: Worker): { label: string; tone: 'success' | 'warning' | 'neutral' } {
-  if (w.loginPhone) return { label: 'Phone sign-in', tone: 'success' };
+  if (w.employeeId) return { label: w.employeeId, tone: 'success' };
   if (w.userId && w.loginRole && !FIELD_ROLES.includes(w.loginRole)) return { label: 'Office login', tone: 'neutral' };
   if (w.userId) return { label: 'Email sign-in', tone: 'success' };
   return { label: 'No app access', tone: 'warning' };
@@ -204,7 +204,7 @@ function WorkerSection({ list, side, cfg, workers, onAdd, onEdit, onToggle, onAc
       <span className="flex gap-[7px] items-center justify-end">
         {onAccess && mayGetPin(w) && (
           <Button size="sm" variant="tertiary" icon={<Icon name="KeyRound" size="sm" />} onClick={() => onAccess(w)}>
-            {w.loginPhone ? 'New PIN' : 'Give app access'}
+            {w.employeeId ? 'New PIN' : 'Give app access'}
           </Button>
         )}
         <Button size="sm" variant="tertiary" icon={<Icon name="Pencil" size="sm" />} onClick={() => onEdit(w)}>Edit</Button>
@@ -315,15 +315,13 @@ function FormModal({ cfg, creating, title, busy, draft, logins, takenUserIds, cu
   );
 }
 
-/** "Give app access" / "New PIN": the phone number the worker signs in with, then their first PIN, shown once. */
+/** "Give app access" / "New PIN": the worker's employee ID (made on first access) and their first PIN, shown once. */
 function AccessModal({ cfg, worker, onClose, onDone }: { cfg: ListConfig; worker: Worker; onClose: () => void; onDone: () => void }) {
-  const [phone, setPhone] = useState(worker.loginPhone ?? worker.phone ?? '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [given, setGiven] = useState<{ phone: string; pin: string } | null>(null);
-  const problem = phone.trim() ? phoneProblem(phone) : 'Enter the phone number they will sign in with.';
+  const [given, setGiven] = useState<{ employeeId: string; pin: string } | null>(null);
   const fresh = !worker.userId;
-  const title = given ? `PIN for ${worker.name}` : worker.loginPhone ? `New PIN for ${worker.name}` : `Give ${worker.name} app access`;
+  const title = given ? `Sign-in for ${worker.name}` : worker.employeeId ? `New PIN for ${worker.name}` : `Give ${worker.name} app access`;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !busy) onClose(); };
@@ -332,10 +330,10 @@ function AccessModal({ cfg, worker, onClose, onDone }: { cfg: ListConfig; worker
   }, [busy, onClose]);
 
   async function submit() {
-    if (busy || problem) return;
+    if (busy) return;
     setBusy(true); setError('');
     try {
-      const r = await api.post<{ phone: string; pin: string }>(`${cfg.api}/${worker.id}/access`, { phone });
+      const r = await api.post<{ employeeId: string; pin: string }>(`${cfg.api}/${worker.id}/access`, {});
       setGiven(r);
       onDone();
     } catch (e) {
@@ -354,22 +352,31 @@ function AccessModal({ cfg, worker, onClose, onDone }: { cfg: ListConfig; worker
         </div>
         {given ? (
           <div className="pt-4 px-5 pb-5 flex flex-col gap-4 text-copy">
-            <span>Give {worker.name} this PIN. It is shown only now.</span>
-            <span className="self-start py-3 px-4 rounded-control bg-page border border-solid border-line text-[28px] font-semibold tracking-[0.3em] tabular-nums">{given.pin}</span>
+            <span>Give {worker.name} these two. The PIN is shown only now.</span>
+            <span className="flex gap-3 flex-wrap">
+              <span className="flex flex-col gap-1">
+                <span className="text-meta text-muted-ink">Employee ID</span>
+                <span className="py-3 px-4 rounded-control bg-page border border-solid border-line text-[28px] font-semibold tabular-nums">{given.employeeId}</span>
+              </span>
+              <span className="flex flex-col gap-1">
+                <span className="text-meta text-muted-ink">First PIN</span>
+                <span className="py-3 px-4 rounded-control bg-page border border-solid border-line text-[28px] font-semibold tracking-[0.3em] tabular-nums">{given.pin}</span>
+              </span>
+            </span>
             <span className="text-meta text-muted-ink text-pretty">
-              They open <span className="font-semibold text-ink">{window.location.origin}/#/field</span> on their phone and sign in
-              with <span className="font-semibold text-ink">{given.phone}</span> and this PIN. They choose their own PIN the first time.
+              They open <span className="font-semibold text-ink">{window.location.origin}/#/field</span> on their phone, type the number
+              after EMP- and this PIN, and choose their own PIN the first time.
             </span>
           </div>
         ) : (
           <div className="pt-4 px-5 pb-1 flex flex-col gap-4">
             <span className="text-meta text-muted-ink text-pretty">
-              {fresh
-                ? `This makes a ${cfg.noun} login for ${worker.name}. They sign in to the field app with this phone number and a 6-digit PIN, and see only their own ${cfg.jobs}.`
-                : `${worker.name} will sign in with this phone number and a new 6-digit PIN. Their old PIN or password stops working and they are signed out on every phone.`}
+              {worker.employeeId
+                ? `${worker.name} keeps employee ID ${worker.employeeId} and gets a new 6-digit PIN. Their old PIN stops working and they are signed out on every phone.`
+                : fresh
+                  ? `This makes a ${cfg.noun} login for ${worker.name} with the next employee ID (EMP-...) and a 6-digit PIN. In the field app they see only their own ${cfg.jobs}.`
+                  : `${worker.name} gets the next employee ID (EMP-...) and a 6-digit PIN. Their old password stops working and they are signed out on every phone.`}
             </span>
-            <PhoneInput label="Phone number they sign in with" value={phone} onChange={setPhone} disabled={busy} required
-              error={phone.trim() ? problem : undefined} />
             {error && <div role="alert" className="[border-left:2px_solid_var(--color-critical-line)] bg-critical-bg py-3 px-3.5 text-meta text-danger">{error}</div>}
           </div>
         )}
@@ -378,8 +385,8 @@ function AccessModal({ cfg, worker, onClose, onDone }: { cfg: ListConfig; worker
             ? <Button size="sm" variant="primary" onClick={onClose}>Done</Button>
             : <>
                 <Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
-                <Button size="sm" variant="primary" loading={busy} disabled={!!problem} disabledReason={problem} onClick={submit}>
-                  {worker.loginPhone ? 'Give new PIN' : 'Give app access'}
+                <Button size="sm" variant="primary" loading={busy} onClick={submit}>
+                  {worker.employeeId ? 'Give new PIN' : 'Give app access'}
                 </Button>
               </>}
         </div>

@@ -6,7 +6,7 @@ import { StatusBadge } from '../components/StatusBadge';
 import { Button } from '../components/Button';
 import Icon from '../components/Icon';
 import { PasswordField } from '../components/Field';
-import { PIN_INPUT, digitsOnly, hasRealEmail, pinPolicy } from '../lib/pin';
+import { PIN_INPUT, digitsOnly, pinPolicy } from '../lib/pin';
 import { CodeInput } from '../components/inputs';
 import { ConfirmDialog, type ConfirmSpec } from '../components/ConfirmDialog';
 import { TableSkeleton } from '../components/DataState';
@@ -77,9 +77,9 @@ export default function AccountPage({ gate = false }: { gate?: boolean }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader title="My account" sub={user ? `${user.fullName} · ${hasRealEmail(user.email) ? user.email : 'signs in with phone number'}` : undefined} />
+      <PageHeader title="My account" sub={user ? `${user.fullName} · ${user.employeeId ? `Employee ID ${user.employeeId}` : user.email}` : undefined} />
       {twoStep}
-      <PasswordCard pin={!!user?.phoneSignIn} />
+      <PasswordCard pin={!!user?.employeeId} />
       {data?.devices && (
         <Card>
           <CardHeader title="Signed in now" />

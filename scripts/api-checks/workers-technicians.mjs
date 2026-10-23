@@ -67,22 +67,22 @@ r = await call(opsStaff, 'POST', '/api/maintenance/technicians', { name: `Kim Ai
 check('ops staff adds a contractor', r.status === 201, r);
 const kimId = r.json.id;
 
-r = await call(opsStaff, 'POST', `/api/maintenance/technicians/${faizId}/access`, { phone: `0168${stamp}11` });
+r = await call(opsStaff, 'POST', `/api/maintenance/technicians/${faizId}/access`, {});
 check('ops staff cannot give app access (403)', r.status === 403, r);
-r = await call(opsMgr, 'POST', `/api/maintenance/technicians/${kimId}/access`, { phone: '0123334444' });
+r = await call(opsMgr, 'POST', `/api/maintenance/technicians/${kimId}/access`, {});
 check('contractor gets no login (422)', r.status === 422, r);
 const aina = (await call(opsMgr, 'GET', '/api/maintenance/technicians?all=1')).json.data.find(t => t.name === 'Aina Zulkifli');
-r = await call(mgmt, 'POST', `/api/maintenance/technicians/${aina.id}/access`, { phone: '0125556666' });
+r = await call(mgmt, 'POST', `/api/maintenance/technicians/${aina.id}/access`, {});
 check('office login never gets a PIN (403)', r.status === 403, r);
-r = await call(opsMgr, 'POST', `/api/maintenance/technicians/${faizId}/access`, { phone: `0168${stamp}11` });
-check('ops manager gives a technician app access', r.status === 200 && /^\d{6}$/.test(r.json.pin), r);
-const pin = r.json.pin;
-const [faizUser] = await db(`SELECT u.id, u.role, u.login_phone FROM technicians t JOIN users u ON u.id = t.user_id WHERE t.id = $1`, faizId);
-check('new login is a technician with phone sign-in', faizUser?.role === 'technician' && !!faizUser.login_phone, faizUser);
+r = await call(opsMgr, 'POST', `/api/maintenance/technicians/${faizId}/access`, {});
+check('ops manager gives a technician app access', r.status === 200 && /^EMP-\d{3,}$/.test(r.json.employeeId) && /^\d{6}$/.test(r.json.pin), r);
+const { pin, employeeId } = r.json;
+const [faizUser] = await db(`SELECT u.id, u.role, u.employee_id FROM technicians t JOIN users u ON u.id = t.user_id WHERE t.id = $1`, faizId);
+check('new login is a technician with that employee ID', faizUser?.role === 'technician' && faizUser.employee_id === employeeId, faizUser);
 
-r = await call(null, 'POST', '/api/auth/login-pin', { phone: `0168${stamp}11`, pin });
+r = await call(null, 'POST', '/api/auth/login-pin', { employeeId, pin });
 let field = r.cookie;
-check('technician signs in with phone and PIN', r.status === 200 && r.json.user?.role === 'technician', r);
+check('technician signs in with employee ID and PIN', r.status === 200 && r.json.user?.role === 'technician', r);
 r = await call(field, 'POST', '/api/auth/change-password', { password: '804219' });
 check('technician chooses own PIN', r.status === 200, r);
 
@@ -121,8 +121,8 @@ check('a new job is linked to the list entry and login', r.status === 201 && m?.
 
 // Cleaners use the same shared code: still works.
 r = await call(opsStaff, 'POST', '/api/housekeeping/cleaners', { name: `Cleaner ${stamp}`, employmentType: 'internal' });
-r = await call(opsMgr, 'POST', `/api/housekeeping/cleaners/${r.json.id}/access`, { phone: `0179${stamp}22` });
-check('cleaner app access still works', r.status === 200 && /^\d{6}$/.test(r.json.pin), r);
+r = await call(opsMgr, 'POST', `/api/housekeeping/cleaners/${r.json.id}/access`, {});
+check('cleaners and technicians share one ID series', r.status === 200 && Number(r.json.employeeId.slice(4)) > Number(employeeId.slice(4)), r);
 
 console.log(fails ? `${fails} FAILED` : 'all passed');
 process.exit(fails ? 1 : 0);

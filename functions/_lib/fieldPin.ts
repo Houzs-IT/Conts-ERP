@@ -1,33 +1,36 @@
 import { type Env, one } from './db';
 import { hasColumn } from './auth';
 
-/** Phone sign-in for cleaners and technicians (migration 0143): the phone number in users.login_phone, the 6-digit
- *  PIN in users.password_hash. Only these two roles may have one. */
+/** Field sign-in for cleaners and technicians (migration 0145): an employee ID (EMP-001) in users.employee_id and a
+ *  6-digit PIN in users.password_hash. Only these two roles may have one. */
 export const PIN_ROLES = ['housekeeper', 'technician'];
 
-/** A phone-only account still needs a unique email; this one can never receive mail (.invalid is reserved). */
+/** A field account still needs a unique email; this one can never receive mail (.invalid is reserved). */
 export const NO_EMAIL_DOMAIN = '@no-email.invalid';
 export const hasRealEmail = (email: string | null | undefined): boolean => !!email && !email.toLowerCase().endsWith(NO_EMAIL_DOMAIN);
 
-/** A typed phone number as login_phone stores it: digits only, with the country code. */
-export function loginPhone(raw: unknown): string | null {
+/** EMP-001 for 1: three digits up to 999, then as many as it takes. */
+export const employeeIdFor = (n: number): string => `EMP-${String(n).padStart(3, '0')}`;
+
+/** A typed employee ID as stored: "1", "001", "emp001" and "EMP-001" are all EMP-001. */
+export function employeeIdOf(raw: unknown): string | null {
   if (typeof raw !== 'string') return null;
   const digits = raw.replace(/\D/g, '');
-  // ponytail: a number starting 0 is taken as Malaysian (60); needs a country choice once staff outside Malaysia sign in.
-  const full = digits.startsWith('0') ? `6${digits}` : digits;
-  return /^[0-9]{8,15}$/.test(full) ? full : null;
+  const n = Number(digits);
+  return digits && digits.length <= 7 && n > 0 ? employeeIdFor(n) : null;
 }
 
 export const isPin = (v: unknown): v is string => typeof v === 'string' && /^\d{6}$/.test(v);
 
-export const hasLoginPhone = (env: Env): Promise<boolean> => hasColumn(env, 'users', 'login_phone').catch(() => false);
+export const hasEmployeeIds = (env: Env): Promise<boolean> => hasColumn(env, 'users', 'employee_id').catch(() => false);
 
-/** Whether this account signs in with phone and PIN, so a new secret for it must be a PIN. */
-export async function signsInWithPin(env: Env, userId: string): Promise<boolean> {
-  if (!(await hasLoginPhone(env))) return false;
-  const row = await one<{ login_phone: string | null }>(env, 'SELECT login_phone FROM users WHERE id = ?', userId);
-  return !!row?.login_phone;
+/** The account's employee ID when it signs in with one (and a PIN), so a new secret for it must be a PIN. */
+export async function employeeIdOfUser(env: Env, userId: string): Promise<string | null> {
+  if (!(await hasEmployeeIds(env))) return null;
+  const row = await one<{ employee_id: string | null }>(env, 'SELECT employee_id FROM users WHERE id = ?', userId);
+  return row?.employee_id ?? null;
 }
+export const signsInWithPin = async (env: Env, userId: string): Promise<boolean> => !!(await employeeIdOfUser(env, userId));
 
 /** What is wrong with a new password (or PIN, for a phone account); null when it is fine. */
 export function secretProblem(secret: string, pin: boolean): string | null {

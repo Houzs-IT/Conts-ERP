@@ -1,7 +1,7 @@
 import { mayWork } from '../../_lib/access';
 import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
-import { hasLoginPhone } from '../../_lib/fieldPin';
+import { hasEmployeeIds } from '../../_lib/fieldPin';
 import { hasTechnicianList, TECH_LOGIN_ROLES } from '../../_lib/maintenance';
 
 const MANAGE = ['management', 'operations_manager', 'operations_staff'];
@@ -33,10 +33,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     return json({ data: await namesBeforeTheList(env) });
   }
 
-  const pins = await hasLoginPhone(env);
-  const rows = await all<{ id: string; full_name: string; employment_type: Employment; vendor_name: string | null; phone: string | null; user_id: string | null; is_active: number; role: string | null; login_phone: string | null; busy: number }>(env, `
+  const pins = await hasEmployeeIds(env);
+  const rows = await all<{ id: string; full_name: string; employment_type: Employment; vendor_name: string | null; phone: string | null; user_id: string | null; is_active: number; role: string | null; employee_id: string | null; busy: number }>(env, `
     SELECT t.id, t.full_name, t.employment_type, t.vendor_name, t.phone, t.user_id, t.is_active, u.role,
-           ${pins ? 'u.login_phone' : 'NULL AS login_phone'},
+           ${pins ? 'u.employee_id' : 'NULL AS employee_id'},
            (SELECT COUNT(*) FROM maintenance_issues m WHERE m.technician_id = t.id AND m.state <> 'resolved') AS busy
     FROM technicians t LEFT JOIN users u ON u.id = t.user_id AND u.is_active = 1
     ${q.get('all') === '1' ? '' : 'WHERE t.is_active = 1'}
@@ -46,7 +46,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     return json({
       data: rows.map(r => ({
         id: r.id, name: r.full_name, employmentType: r.employment_type, vendorName: r.vendor_name, phone: r.phone,
-        userId: r.role ? r.user_id : null, loginRole: r.role, loginPhone: r.login_phone ? `+${r.login_phone}` : null,
+        userId: r.role ? r.user_id : null, loginRole: r.role, employeeId: r.employee_id,
         isActive: !!r.is_active, busy: Number(r.busy),
       })),
     });

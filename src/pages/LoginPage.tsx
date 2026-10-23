@@ -13,7 +13,7 @@ type Screen = 'signin' | 'pin' | 'forgot' | 'change' | 'reset' | 'code';
 
 const COPY: Record<Screen, { eyebrow: string; heading: string; sub: string; submit: string }> = {
   signin: { eyebrow: 'CONTS ERP', heading: 'Sign in', sub: 'Use the work email your administrator invited.', submit: 'Sign in' },
-  pin: { eyebrow: 'FIELD APP', heading: 'Sign in', sub: 'Cleaners and technicians: your phone number and 6-digit PIN.', submit: 'Sign in' },
+  pin: { eyebrow: 'FIELD APP', heading: 'Sign in', sub: 'Cleaners and technicians: your employee ID and 6-digit PIN.', submit: 'Sign in' },
   forgot: { eyebrow: 'ACCOUNT RECOVERY', heading: 'Reset password', sub: 'We will email you a reset link.', submit: 'Send reset link' },
   change: { eyebrow: 'NEW PASSWORD', heading: 'Set a new password', sub: 'You signed in with a temporary password. Choose your own to continue.', submit: 'Save and continue' },
   reset: { eyebrow: 'ACCOUNT RECOVERY', heading: 'Set a new password', sub: 'Choose a new password for your account.', submit: 'Save and sign in' },
@@ -37,7 +37,8 @@ export default function LoginPage({ forceChangePassword = false, resetToken = nu
   const { user, login, loginPin, verifyCode, requestReset, changePassword, resetPassword, checkResetToken } = useSession();
   const [screen, setScreen] = useState<Screen>(forceChangePassword ? 'change' : resetToken ? 'reset' : startsOnPin() ? 'pin' : 'signin');
   const [email, setEmail] = useState('');
-  const [phone, setPhone] = useState('');
+  // The number after EMP-, which the box always shows.
+  const [empNo, setEmpNo] = useState('');
   const [password, setPassword] = useState('');
   const [remember, setRemember] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -83,7 +84,7 @@ export default function LoginPage({ forceChangePassword = false, resetToken = nu
   // owner.theconts.com is the owners' door; the server refuses staff there too.
   const ownerDoor = window.location.hostname.split('.')[0] === 'owner';
   // A cleaner or technician on the first PIN from the office picks their own PIN, not a password.
-  const newPin = screen === 'change' && !!user?.phoneSignIn;
+  const newPin = screen === 'change' && !!user?.employeeId;
   const pinEntry = screen === 'pin' || newPin;
   const c = ownerDoor && screen === 'signin'
     ? { ...COPY.signin, eyebrow: 'OWNER PORTAL', sub: 'Use the email The Conts registered for your unit.' }
@@ -109,7 +110,7 @@ export default function LoginPage({ forceChangePassword = false, resetToken = nu
       else if (screen === 'code') { await verifyCode(twoStep!.challenge, code); }
       else {
         const res = screen === 'reset' ? await resetPassword(resetToken!, password)
-          : screen === 'pin' ? await loginPin(phone, password) : await login(email, password, remember);
+          : screen === 'pin' ? await loginPin(`EMP-${empNo}`, password) : await login(email, password, remember);
         if (screen === 'pin' || screen === 'signin') rememberSignIn(screen);
         if (res.twoStep) {
           setTwoStep(res.twoStep); setUseBackup(res.twoStep.backupOnly); setCode(''); setScreen('code');
@@ -216,8 +217,10 @@ export default function LoginPage({ forceChangePassword = false, resetToken = nu
             )}
 
             {screen === 'pin' && (
-              <Field label="Phone number" type="tel" required autoComplete="tel" inputMode="tel" value={phone}
-                onChange={e => setPhone(e.target.value)} placeholder="012-345 6789" />
+              <Field label="Employee ID" required autoComplete="username" inputMode="numeric" value={`EMP-${empNo}`}
+                onChange={e => setEmpNo(e.target.value.replace(/^EMP-?/i, '').replace(/\D/g, '').slice(0, 7))}
+                onFocus={e => { const el = e.currentTarget; requestAnimationFrame(() => el.setSelectionRange(el.value.length, el.value.length)); }}
+                placeholder="EMP-001" style={{ letterSpacing: '0.04em', fontVariantNumeric: 'tabular-nums' }} />
             )}
 
             {screen !== 'change' && screen !== 'reset' && screen !== 'code' && screen !== 'pin' && (
