@@ -595,6 +595,8 @@ export interface StepperInput {
   currentKey: string;
   currentIndex: number;
   soDate: string | null;
+  /** The linked sales order's status: a confirmed order (not Draft, not Cancelled) is the signed contract. */
+  soStatus?: string | null;
   handoverOn: string | null;
   tasks: readonly TaskDates[];
   today: string;
@@ -604,6 +606,12 @@ export interface StepperInput {
 const FLOW_RANK: Readonly<Record<string, number>> = { design: 0, signed: 1, ordering: 2, renovation: 3, handover: 4, closed: 5 };
 const MOCKUP_ORDER = ["signed", "design", "ordering", "renovation", "handover", "closed"] as const;
 
+/** A sales order counts as signed once it is confirmed: anything past Draft that is not Cancelled. */
+export function soConfirmed(status: string | null | undefined): boolean {
+  const s = String(status ?? "").toUpperCase();
+  return s !== "" && s !== "DRAFT" && s !== "CANCELLED";
+}
+
 /** The mockup's six circles in its order. Flow at design: Sales order not signed, Design current. Flow at signed: Sales order done, Design current. Ordering or later: both done. */
 export function stepperItems(i: StepperInput): StepperItem[] {
   const days = renovationDays(i.tasks, i.today);
@@ -612,7 +620,7 @@ export function stepperItems(i: StepperInput): StepperItem[] {
   return MOCKUP_ORDER.filter((key) => i.steps.some((s) => s.key === key)).map((key): StepperItem => {
     const rank = FLOW_RANK[key] ?? 0;
     if (key === "signed") {
-      const done = cur >= 1;
+      const done = cur >= 1 || soConfirmed(i.soStatus);
       return { key, label: "Sales order", state: done ? "done" : "later", sub: done ? (i.soDate ? `Signed ${dayMonth(i.soDate)}` : "Signed") : "Not signed yet" };
     }
     const state: StepperItem["state"] = key === "design" ? (cur >= 2 ? "done" : "current") : rank < cur ? "done" : rank === cur ? "current" : "later";

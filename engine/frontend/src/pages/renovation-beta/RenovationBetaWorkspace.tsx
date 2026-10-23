@@ -77,7 +77,7 @@ export function RenovationBetaWorkspace(): ReactElement {
     ? { projectId: id, detail: d, workspace: ws.data, records: rec.data, canWrite: can("projects.write"), today, openTab, onDone, onError, board, openDialog: setDialog }
     : null;
   const items = stepperItems({
-    steps: d.flow.steps, currentKey: d.flow.current, currentIndex: d.flow.currentIndex, soDate: d.so?.so_date ?? null, handoverOn: p.handed_over_at ?? p.planned_handover_date, tasks: d.tasks, today,
+    steps: d.flow.steps, currentKey: d.flow.current, currentIndex: d.flow.currentIndex, soDate: (d.signedSo ?? d.so)?.so_date ?? null, soStatus: (d.signedSo ?? d.so)?.status ?? null, handoverOn: p.handed_over_at ?? p.planned_handover_date, tasks: d.tasks, today,
   });
   const hold = d.hold ? (d.hold.flag === "in_defect" ? "In defect" : "On hold") : null;
 

@@ -71,6 +71,19 @@ export function isCustomerSupplied(l: { itemCode: string | null; supplierCode?: 
   return String(l.itemCode ?? '').startsWith('CUS-') && Number(l.unitCostSen) === 0;
 }
 
+/** May the PO "Transfer from Sales Order" picker offer this SO line? (owner, 24 Oct 2026) Not a line whose SKU the
+    customer supplies (main supplier CUSTOMER, or a CUS-* placeholder with no supplier), and not a service or site
+    works line with no supplier to buy it from. A line with a real supplier is offered as before. */
+export function poPickerOffers(l: { itemCode: string | null; itemGroup: string | null; mainSupplierCode: string | null }): boolean {
+  const code = String(l.itemCode ?? '').toUpperCase();
+  if (l.mainSupplierCode === 'CUSTOMER') return false;
+  if (l.mainSupplierCode) return true;
+  if (code.startsWith('CUS-') || code.startsWith('RENO-') || code.startsWith('SVC-')) return false;
+  const group = categoryGroupOf(l.itemGroup);
+  if (group === 'WORKS' || group === 'SERVICE') return false;
+  return !String(l.itemGroup ?? '').toUpperCase().includes('SERVICE');
+}
+
 export function needsPurchaseOrder(l: { itemCode: string | null; supplyByOwner: boolean; category: string | null; subCategory?: string | null; supplierId: string | null; unitCostSen: number; supplierCode?: string | null }): boolean {
   if (String(l.itemCode ?? '').startsWith('RENO-')) return false;
   if (isCustomerSupplied(l)) return false;

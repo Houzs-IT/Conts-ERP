@@ -86,6 +86,8 @@ export const AMENDMENT_DIRECT_ONLY_SAVED_BODY =
 export function amendmentSubmittedNotice(
   plan: AmendmentSubmitPlan,
   createdRes: unknown,
+  /** Conts: the order is confirmed, so the change was recorded as a VO that applies on raise. */
+  opts: { vo?: boolean } = {},
 ): { title: string; body: string } {
   if (plan === 'DIRECT_ONLY') {
     return { title: AMENDMENT_DIRECT_ONLY_SAVED_TITLE, body: AMENDMENT_DIRECT_ONLY_SAVED_BODY };
@@ -102,6 +104,10 @@ export function amendmentSubmittedNotice(
      still with its desk) falls through to the split message below, which names
      both halves and is true of it. */
   const applied = res?.autoApplied ?? 0;
+  if (applied > 0 && applied === created.length && opts.vo) {
+    const nos = created.map((a) => a.amendment_no).filter(Boolean).join(', ');
+    return { title: 'VO recorded', body: `${nos ? `${nos} is` : 'The change is'} recorded as a VO and applied to the order straight away.` };
+  }
   if (applied > 0 && applied === created.length) {
     return {
       title: created.length > 1 ? 'Changes applied' : 'Change applied',
@@ -134,6 +140,11 @@ export function amendmentSubmittedNotice(
     banner kept promising they saved directly for three weeks (HC-SO-013497).
     The list of what saves straight away is the FREE set in so-field-policy —
     keep it in step with that table, not with memory. */
+/** Conts (owner 2026-10-24): a confirmed order changes only through a VO, recorded and applied at once. */
+export const VO_MODE_BANNER =
+  'This sales order is confirmed, so every change is recorded as a VO (VO-01, VO-02, ...). Edit the lines '
+  + 'as usual and press Record VO: the change applies straight away, no approval needed.';
+
 export const AMENDMENT_MODE_BANNER =
   'This order is already ordered from the supplier. Edit the lines, dates, delivery '
   + 'address or customer name, phone and email as usual — your request goes to the '

@@ -105,6 +105,7 @@ import { skuCategoryResolver, lineIdentityFields } from '../lib/sku-category';
 import { firstSoLinkCategoryMismatch, soLinkCategoryMismatch, hardBoundUnlinkRefusal, hardBoundSplitRefusal, editedLineGroup } from '../lib/hard-bound-po-line';
 import { pgrestIn } from '../lib/pgrest-in-list';
 import { withSoRefPoIds } from '../lib/so-ref-search';
+import { poPickerOffers } from '../lib/renovation-po-split';
 
 /* ── Supplier sofa-combo auto-pricing (Commander 2026-05-29) ─────────────────
    The supplier prices a sofa SET (a colour-matched bundle of modules) as a
@@ -589,6 +590,7 @@ mfgPurchaseOrders.get('/outstanding-so-items', async (c) => {
     .filter((r) => !isDocumentHeld(r.so)
       && r.so.status !== 'CANCELLED' && r.so.status !== 'DRAFT' && r.so.status !== 'ON_HOLD')
     .filter((r) => (pooledOk ? (shortageBySoItem.get(r.id) ?? 0) > 0 : r.qty - r.po_qty_picked > 0))
+    .filter((r) => poPickerOffers({ itemCode: r.item_code, itemGroup: r.item_group, mainSupplierCode: mainSupplierByCode.get(r.item_code)?.code ?? null }))
     .map((r) => {
       const remaining = pooledOk ? (shortageBySoItem.get(r.id) ?? 0) : (r.qty - r.po_qty_picked);
       return {

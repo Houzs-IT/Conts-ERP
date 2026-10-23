@@ -83,6 +83,9 @@ export function contsPermissions(a: ContsAccess): string[] {
   // Renovation sales documents: quoting with Sales at edit, approving VOs and terms at full; POs with
   // Procurement at edit; billing with Invoices at edit.
   keys.push(...ladder(a.scSales, [], ["scm.renovation.quote"], ["scm.renovation.vo.apply", "scm.renovation.terms"]));
+  // VOs on a confirmed sales order (owner, 24 Oct 2026): whoever may edit a sales order records the VO, and it
+  // applies at once, so the same person holds the engine's amendment keys (scm/lib/renovation-vo-rule.ts).
+  keys.push(...ladder(a.scSales, [], ["scm.amendment.create", "scm.amendment.approve_lines", "scm.amendment.approve_delivery", "scm.amendment.approve_price"], []));
   keys.push(...ladder(a.scProcurement, [], ["scm.renovation.po_split"], []));
   keys.push(...ladder(a.scInvoices, [], ["scm.renovation.bill"], []));
   keys.push(...ledgerPermissions(ledgerOf(a)));

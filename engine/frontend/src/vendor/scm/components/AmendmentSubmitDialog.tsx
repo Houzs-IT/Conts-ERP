@@ -125,14 +125,17 @@ export const AmendmentSubmitDialog = ({ ask, onConfirm, onCancel }: AmendmentSub
   };
 
   const lanes = preview.data ? describeLanePreview(preview.data) : [];
+  /* Conts (owner 2026-10-24): a confirmed order's change is a VO that applies at once, with no approver. */
+  const appliesNow = preview.data?.appliesNow === true;
 
   return (
     <div style={backdrop} onClick={onCancel} role="presentation">
       <div style={card} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="amend-submit-title">
-        <h2 id="amend-submit-title" style={titleStyle}>Submit amendment for {ask.docNo}?</h2>
+        <h2 id="amend-submit-title" style={titleStyle}>{appliesNow ? `Record a VO on ${ask.docNo}?` : `Submit amendment for ${ask.docNo}?`}</h2>
         <p style={bodyStyle}>
-          This Sales Order is already ordered from the supplier, so your changes go out as an
-          amendment request and are applied once approved.
+          {appliesNow
+            ? 'This sales order is confirmed, so the change is recorded as a VO and applied to the order straight away. No approval is needed.'
+            : 'This Sales Order is already ordered from the supplier, so your changes go out as an amendment request and are applied once approved.'}
         </p>
 
         <div style={laneBox} data-testid="lane-preview">
@@ -141,13 +144,14 @@ export const AmendmentSubmitDialog = ({ ask, onConfirm, onCancel }: AmendmentSub
             <span>Could not work out the approver yet — the request is still routed by the rule when you submit.</span>
           )}
           {preview.data && lanes.length === 0 && <span>Nothing here needs approval.</span>}
-          {lanes.map(({ lane, text }) => (
+          {appliesNow && lanes.map(({ lane, text }) => <span key={lane}>VO changes: {text}</span>)}
+          {!appliesNow && lanes.map(({ lane, text }) => (
             <span key={lane}>
               <span style={badge(lane)}>{AMENDMENT_APPROVER_LABEL[soAmendmentApprover(lane)]}</span>
               approves {text}
             </span>
           ))}
-          {lanes.length > 1 && (
+          {!appliesNow && lanes.length > 1 && (
             <span style={{ color: 'var(--c-ink-muted, #6b6f66)' }}>
               {lanes.length} desks are involved, so this is raised as {lanes.length} amendments, one per approver.
             </span>
@@ -167,7 +171,7 @@ export const AmendmentSubmitDialog = ({ ask, onConfirm, onCancel }: AmendmentSub
         {error && <p style={errStyle}>{error}</p>}
         <div style={actions}>
           <button type="button" style={ghostBtn} onClick={onCancel}>Cancel</button>
-          <button type="button" style={primaryBtn} onClick={submit}>Submit amendment</button>
+          <button type="button" style={primaryBtn} onClick={submit}>{appliesNow ? 'Record VO' : 'Submit amendment'}</button>
         </div>
       </div>
     </div>

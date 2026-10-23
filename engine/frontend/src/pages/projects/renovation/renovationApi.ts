@@ -128,6 +128,8 @@ export interface ProjectDetail {
   };
   type: { id: number; name: string; stage_keys: string[] } | null;
   so: { doc_no: string; status: string; so_date: string | null; agent: string | null } | null;
+  /** The first confirmed sales order linked to the project, of any kind: the signed contract. */
+  signedSo?: { doc_no: string; status: string; so_date: string | null } | null;
   linesUnavailable: string | null;
   lines: Array<{ soItemId: string; group: string | null; subCategory: string | null; qty: number; room: string | null; description: string | null; itemCode: string | null }> | null;
   stages: StageView[];

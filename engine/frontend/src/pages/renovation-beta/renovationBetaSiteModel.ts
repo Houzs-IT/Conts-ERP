@@ -46,10 +46,6 @@ export function photosByPo(deliveries: readonly SiteDelivery[]): Map<string, num
   return out;
 }
 
-export function photoCount(deliveries: readonly SiteDelivery[]): number {
-  return deliveries.reduce((n, d) => n + d.photos.length, 0);
-}
-
 export const DELIVERY_LABEL: Readonly<Record<SiteDelivery["type"], string>> = { delivery_order: "Delivery order", goods_received: "Goods receipt" };
 
 export const PHOTO_SOURCE: Readonly<Record<SitePhoto["source"], string>> = { pod: "POD", site: "Site", upload: "File" };

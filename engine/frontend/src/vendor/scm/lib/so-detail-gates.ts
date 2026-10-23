@@ -48,6 +48,8 @@ export type SoDetailGateHeader = {
      committed". Absent (Houzs, or a cached pre-deploy payload) reads as false,
      so the gate degrades to the date rule alone. */
   po_locked?: boolean | null;
+  /* Conts (owner 2026-10-24): confirmed, so every line change is a VO. Server-set (lib/renovation-vo-rule.ts). */
+  vo_locked?: boolean | null;
   amendment_eligible?: boolean | null;
   /* Server-computed: this order was carried across from AutoCount at the 2026-08
      cutover AND the migrated-order lock is currently on for this company
@@ -159,7 +161,7 @@ export function procLockActive(
      compile error rather than a comment. */
   header: SoDetailGateHeader & { status: string | null },
 ): boolean {
-  if (header.po_locked === true) return true;
+  if (header.po_locked === true || header.vo_locked === true) return true;
   const orig = (header.processing_date ?? '').slice(0, 10);
   if (orig === '' || !(orig < todayMyt())) return false;
   const status = (header.status ?? '').toUpperCase();
