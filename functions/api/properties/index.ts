@@ -1,5 +1,6 @@
 import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
+import { maySee } from '../../_lib/access';
 import { masked } from '../../_lib/properties';
 import { statementSettings } from '../../_lib/ownerStatement';
 import { contractView } from '../../_lib/unitContract';
@@ -11,7 +12,7 @@ const area = (city: string, postcode: string | null) => (postcode ? `${city}, ${
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!session.manage && session.role !== 'operations_staff') return fail('FORBIDDEN', 'Unit records are visible to operations and finance roles.', 403);
+  if (!maySee(session, ['management'])) return fail('FORBIDDEN', 'Unit records are visible to people with Units access.', 403);
   // Owner identity and bank numbers are shown only to roles that manage them.
   const banking = session.manage;
 

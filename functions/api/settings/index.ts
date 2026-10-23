@@ -81,7 +81,7 @@ function problem(f: Field, v: unknown): string | null {
   if (f.kind === 'number') return typeof v === 'number' && Number.isFinite(v) && v >= (f.min ?? -Infinity) && v <= (f.max ?? Infinity) ? null : `Enter a number from ${f.min} to ${f.max}.`;
   if (f.kind === 'bool') return typeof v === 'boolean' ? null : 'Choose on or off.';
   if (f.kind === 'departments') return typeof v === 'string' && v.split(',').filter(Boolean).every(id => /^[0-9a-zA-Z-]{1,64}$/.test(id)) ? null : 'Pick departments from the list.';
-  if (f.kind === 'roles') return typeof v === 'string' && v.split(',').filter(Boolean).every(r => ROLES.includes(r)) ? null : 'Pick roles from the list.';
+  if (f.kind === 'roles') return typeof v === 'string' && v.split(',').filter(Boolean).every(r => ROLES.includes(r) || r in LEGACY_2FA_DEPARTMENT) ? null : 'Pick roles from the list.';
   if (typeof v !== 'string' || v.length > (f.kind === 'longtext' ? 4000 : 300)) return f.kind === 'longtext' ? 'Keep it under 4,000 characters.' : 'Enter text.';
   if (f.required && v.trim() === '') return 'This cannot be empty.';
   if (f.kind === 'choice') return f.options!.includes(v) ? null : 'Pick one of the options.';
