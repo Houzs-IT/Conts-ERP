@@ -44,7 +44,8 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
   const cellOf = (ch: Awaited<ReturnType<typeof chart>>, c: Change) => {
     if (c.group !== undefined) {
       const g = ch.groups.find(x => x.group === c.group)!.roles[c.role];
-      return { value: g.level as Setting, chosen: g.chosen };
+      const value: Setting = g.level;
+      return { value, chosen: g.chosen };
     }
     const a = ch.areas.find(x => x.key === c.area)!.roles[c.role];
     return { value: a.setting, chosen: a.chosen };
