@@ -513,3 +513,8 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Upload path used: the app's own file upload under a signed-in session, then the design rows pointed at the keys; upload-files.mjs (wrangler) only works with Conts Cloudflare access.
 - Legacy OUG shows two 2D v1 entries: Notion replaced the file between the 11 Oct and 20 Oct exports and the import numbers versions per export.
 - Not imported: the Notion "Site Visit" calendar (477 entries May to Oct 2026, incl. 104 design amendments and 50 dated site measurements).
+
+## Phone and PIN sign-in for cleaners (feat/field-pin-sign-in, migration 0143, 23 Oct 2026, PR #364)
+- 0143 applied on staging alone (0132-0142 still pending there); apply it to production before merging #364.
+- Next PR: a technician list in Maintenance (in-house and contractors, with phone, deactivate), jobs linked to the list entry instead of a typed name, and the same Give app access button.
+- Gap: a PIN account that also has a real email can be sent a password reset link, which sets an 8-character password the PIN box cannot type. Give a New PIN from the Cleaners page instead.
