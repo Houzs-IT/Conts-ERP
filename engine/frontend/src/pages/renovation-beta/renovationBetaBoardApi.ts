@@ -1,0 +1,204 @@
+/* Calls for the Beta Home and Calendar screens (docs/superpowers/plans/2026-10-23-beta-project-workspace.md,
+   section 10). Shapes mirror the board routes in engine/backend/src/routes/renovationBeta.ts. */
+
+import type { QueryClient } from "@tanstack/react-query";
+import { api } from "../../api/client";
+import { buildQueryKey } from "../../hooks/useQuery";
+import { simpleApi } from "../projects/renovation/simpleApi";
+import { betaApi } from "./renovationBetaApi";
+
+export type DesignKind = "3d" | "2d";
+export type AppointmentKind = "site_measure" | "carpentry_measure" | "site_briefing";
+export type EventType = "client" | "measure" | "briefing" | "meeting" | "w3d" | "w2d" | "amend" | "po" | "update";
+
+export interface BetaBoardPerson { id: number; name: string; roles: string[] }
+export interface BetaBoardRef { id: number; name: string }
+
+export interface BetaBoardAppointment {
+  kind: AppointmentKind;
+  onDate: string;
+  atTime: string | null;
+  personId: number | null;
+  withText: string | null;
+  doneAt: string | null;
+}
+
+export type BetaBoardPayment = { state: "hidden" } | { state: "none" } | { state: "ok"; label: string };
+
+export interface BetaBoardProject {
+  id: number;
+  code: string | null;
+  name: string;
+  building: string | null;
+  unitNo: string | null;
+  customerName: string | null;
+  salesName: string | null;
+  createdOn: string | null;
+  handoverOn: string | null;
+  lead: BetaBoardRef | null;
+  person3d: BetaBoardRef | null;
+  person2d: BetaBoardRef | null;
+  sitePic: BetaBoardRef | null;
+  measuredOn: string | null;
+  start3dOn: string | null;
+  start2dOn: string | null;
+  poDoneOn: string | null;
+  files: Array<{ id: number; kind: DesignKind; version: number; submittedOn: string }>;
+  notes: Array<{ id: number; kind: DesignKind; notedOn: string; closedOn: string | null; days: number | null }>;
+  reviews: Array<{ fileId: number; sentOn: string | null; approvedOn: string | null }>;
+  appointments: BetaBoardAppointment[];
+  payment: BetaBoardPayment;
+}
+
+export interface BetaBoardEvent {
+  id: number;
+  projectId: number | null;
+  onDate: string;
+  atTime: string | null;
+  type: string;
+  note: string | null;
+  personId: number | null;
+  done: boolean;
+}
+
+export interface BetaBoard {
+  today: string;
+  mePersonId: number | null;
+  settings: { design3dDays: number; design2dDays: number; amendmentDays: number };
+  people: BetaBoardPerson[];
+  projects: BetaBoardProject[];
+  events: BetaBoardEvent[];
+}
+
+export interface BoardRange { from: string; to: string }
+
+export interface DesignPatch {
+  start3dOn?: string | null;
+  start2dOn?: string | null;
+  poDoneOn?: string | null;
+  person3dId?: number | null;
+  person2dId?: number | null;
+}
+
+export interface AppointmentBody { onDate: string; atTime: string | null; personId: number | null; withText: string | null }
+
+export interface EventBody {
+  projectId: number | null;
+  onDate: string;
+  atTime: string | null;
+  type: EventType;
+  note: string | null;
+  personId: number | null;
+}
+
+/** The one query key of the board. Home, Calendar and the workspace all use it, so one write refreshes them all. */
+export function boardKey(range?: BoardRange, projectId?: number): ReadonlyArray<string | number> {
+  return ["renovation-beta", "board", range?.from ?? "", range?.to ?? "", projectId ?? 0];
+}
+
+/** Refetch everything Beta shows (the board and the workspace queries) after a write. */
+export function invalidateBeta(queryClient: QueryClient): Promise<void> {
+  return queryClient.invalidateQueries({ queryKey: buildQueryKey(["renovation-beta"]) });
+}
+
+/** The browser remembers the last project opened in Beta, so the Projects menu entry can return to it. */
+export const LAST_PROJECT_KEY = "beta:lastProject";
+
+export function rememberLastProject(id: number): void {
+  try {
+    window.localStorage.setItem(LAST_PROJECT_KEY, String(id));
+  } catch {
+    /* storage can be blocked; the Projects entry then opens Home */
+  }
+}
+
+export function forgetLastProject(): void {
+  try {
+    window.localStorage.removeItem(LAST_PROJECT_KEY);
+  } catch {
+    /* nothing to forget when storage is blocked */
+  }
+}
+
+export function readLastProject(): number | null {
+  try {
+    const n = Number(window.localStorage.getItem(LAST_PROJECT_KEY));
+    return Number.isInteger(n) && n > 0 ? n : null;
+  } catch {
+    return null;
+  }
+}
+
+type Ok = Promise<{ ok: true }>;
+const B = "/api/beta";
+
+export const boardApi = {
+  /** The whole board, or with `projectId` just that project (the workspace). `range` limits the calendar events. */
+  board: (range?: BoardRange, projectId?: number): Promise<BetaBoard> => {
+    const qs = [range ? `from=${range.from}&to=${range.to}` : "", projectId ? `projectId=${projectId}` : ""].filter(Boolean).join("&");
+    return api.get<BetaBoard>(qs ? `${B}/board?${qs}` : `${B}/board`);
+  },
+  saveDesign: (projectId: number, b: DesignPatch): Ok => api.put<{ ok: true }>(`${B}/projects/${projectId}/design`, b),
+  saveNoteDays: (noteId: number, days: number): Ok => api.put<{ ok: true }>(`${B}/design-notes/${noteId}/days`, { days }),
+  saveAppointment: (projectId: number, kind: AppointmentKind, b: AppointmentBody): Ok =>
+    api.put<{ ok: true }>(`${B}/projects/${projectId}/appointments/${kind}`, b),
+  appointmentDone: (projectId: number, kind: AppointmentKind): Ok =>
+    api.post<{ ok: true }>(`${B}/projects/${projectId}/appointments/${kind}/done`, {}),
+  deleteAppointment: (projectId: number, kind: AppointmentKind): Ok =>
+    api.del<{ ok: true }>(`${B}/projects/${projectId}/appointments/${kind}`),
+  addEvent: (b: EventBody): Promise<{ id: number }> => api.post<{ id: number }>(`${B}/events`, b),
+  saveEvent: (id: number, b: Partial<EventBody> & { done?: boolean }): Ok => api.patch<{ ok: true }>(`${B}/events/${id}`, b),
+  deleteEvent: (id: number): Ok => api.del<{ ok: true }>(`${B}/events/${id}`),
+};
+
+/** "PO done": the PO date of the project's Beta design row, set to the given day. */
+export function markPoDone(projectId: number, today: string): Promise<{ ok: true }> {
+  return boardApi.saveDesign(projectId, { poDoneOn: today });
+}
+
+export interface AmendmentInput {
+  kind: DesignKind;
+  startOn: string;
+  days: number;
+  note: string;
+  /** The days the server falls back to when a round has no row. */
+  defaultDays: number;
+}
+
+/** "+ Amendment": the existing design note, then the round's length when it is not the default. */
+export async function addAmendment(projectId: number, a: AmendmentInput): Promise<void> {
+  const { id } = await simpleApi.addDesignNote(projectId, {
+    kind: a.kind, notedOn: a.startOn, requestedByPersonId: null, requestedByText: null, note: a.note,
+  });
+  if (a.days !== a.defaultDays) await boardApi.saveNoteDays(id, a.days);
+}
+
+export interface AssignInput {
+  /** Only sent when the project has no design lead yet. */
+  designerPersonId?: number;
+  /** Only sent when the site PIC changed. */
+  picPersonId?: number | null;
+  person3dId: number | null;
+  person2dId: number | null;
+}
+
+/** Assign: the design lead and site PIC on the project, the 3D and 2D people on the Beta design row. */
+export async function assignPeople(projectId: number, a: AssignInput): Promise<void> {
+  const { designerPersonId, picPersonId } = a;
+  if (designerPersonId !== undefined || picPersonId !== undefined) {
+    await simpleApi.setPeople(projectId, { ...(designerPersonId !== undefined ? { designerPersonId } : {}), ...(picPersonId !== undefined ? { picPersonId } : {}) });
+  }
+  await boardApi.saveDesign(projectId, { person3dId: a.person3dId, person2dId: a.person2dId });
+}
+
+/** "Client approved": the section 9 approval on the newest file of that kind. */
+export async function approveNewest(
+  project: BetaBoardProject,
+  kind: DesignKind,
+  approvedOn: string,
+  approvedByName: string,
+): Promise<void> {
+  const newest = project.files.filter((f) => f.kind === kind).sort((a, b) => b.version - a.version)[0];
+  if (!newest) throw new Error(`There is no ${kind.toUpperCase()} file yet. Upload it in Drawings first.`);
+  await betaApi.designApproval(newest.id, { approvedOn, approvedByName });
+}

@@ -140,7 +140,9 @@ export const NAV: NavGroup[] = [
   ] },
   // Engine screens being tried on staging (owner, 23 Oct 2026). Shown only where the engine answer says beta.
   { label: 'BETA', workspace: 'supply', items: [
-    { key: 'betaProjects', label: 'Project workspace', icon: 'flask-conical', path: '/beta/projects', area: 'projects' },
+    { key: 'betaHome', label: 'Home', icon: 'home', path: '/beta/home', area: 'projects' },
+    { key: 'betaProjects', label: 'Projects', icon: 'folder-open', path: '/beta/projects', area: 'projects' },
+    { key: 'betaCalendar', label: 'Calendar', icon: 'calendar-days', path: '/beta/calendar', area: 'projects' },
   ] },
   { label: 'SUPPLY CHAIN', workspace: 'supply', items: [
     { key: 'scSales', label: 'Sales order', icon: 'shopping-cart', area: 'scSales', children: [
@@ -229,7 +231,7 @@ export function switchedOff(path: string): boolean {
 /** Menu areas (and single menu keys) whose screens exist only in the supply chain engine: hidden where it is not set up. */
 const ENGINE_ONLY_AREAS = ['serviceCases', 'projects', 'renoQuotations', 'ledger'];
 /** Menu keys shown only where the engine's Beta screens are on (staging). */
-const BETA_ONLY_KEYS = ['betaProjects'];
+const BETA_ONLY_KEYS = ['betaHome', 'betaProjects', 'betaCalendar'];
 const FIXED_ROLES: UserRole[] = ['housekeeper', 'technician', 'owner'];
 
 /** Areas (and menu keys) closed to a role: from its permission levels where the session carries them, else the built-in list. */

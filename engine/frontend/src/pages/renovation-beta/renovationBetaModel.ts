@@ -3,9 +3,13 @@
 
 import { RENO_STAGES, STAGE_LABEL } from "../../vendor/shared/renovation-stages";
 import { CATEGORY_LABEL, type TimelineEntry } from "../projects/renovation/renovationTimelineModel";
-import { addDays, daysBetween, money, shortDate } from "../projects/renovation/renovationModel";
+import { daysBetween, money, shortDate } from "../projects/renovation/renovationModel";
 import type { DesignFile, SiteMeasure, TaskViewV2 } from "../projects/renovation/simpleApi";
-import type { BetaDefect, BetaInstalment, BetaPayments, BetaReview, BetaSettings, BetaWorkspace, ReminderKind } from "./renovationBetaApi";
+import type { BetaDefect, BetaInstalment, BetaPayments, BetaReview, BetaWorkspace, ReminderKind } from "./renovationBetaApi";
+import {
+  APPT_LABEL, apptLeftText, apptWithDefault, dayWord, deadlineGroups, diff, ds, leftText, ord, todoText,
+  type ApptKey, type BoardModel, type DesignProject, type Kind,
+} from "./renovationBetaBoard";
 import type { BetaTabKey } from "./renovationBetaTabs";
 
 const day = (iso: string): string => iso.slice(0, 10);
@@ -40,63 +44,9 @@ export function approvedSet(files: readonly DesignFile[], reviews: readonly Beta
   return { versions, approved, waiting: newest && newest !== approved ? newest : null };
 }
 
-export function firstMeasureDate(measures: readonly Pick<SiteMeasure, "done_on">[]): string | null {
-  const dates = measures.flatMap((m) => (m.done_on ? [day(m.done_on)] : [])).sort();
-  return dates.at(0) ?? null;
-}
-
-export interface DesignDeadlines { threeDDue: string | null; twoDDue: string | null }
-
-/** 3D is due design3dDays after the first site measure; 2D design2dDays after the 3D approval. null when the start is unknown. */
-export function designDeadlines(measures: readonly Pick<SiteMeasure, "done_on">[], threeD: ApprovedSet, settings: BetaSettings): DesignDeadlines {
-  const measured = firstMeasureDate(measures);
-  const approvedOn = threeD.approved?.review?.approvedOn ?? null;
-  return {
-    threeDDue: measured ? addDays(measured, settings.design3dDays) : null,
-    twoDDue: approvedOn ? addDays(day(approvedOn), settings.design2dDays) : null,
-  };
-}
-
 /** Days from today to a due date: positive = still to go, negative = late. */
 export function daysLeft(due: string | null, today: string): number | null {
   return due ? daysBetween(today, day(due)) : null;
-}
-
-export interface DesignRow {
-  kind: "onsite" | DesignKind;
-  label: string;
-  state: "done" | "waiting" | "open";
-  /** The measure date (onsite) or the approval date. */
-  doneOn: string | null;
-  due: string | null;
-  daysLeft: number | null;
-  version: string | null;
-}
-
-/** Overview: where design stands. waiting = a version went to the client and is not approved. */
-export function designProgress(files: readonly DesignFile[], measures: readonly SiteMeasure[], ws: Pick<BetaWorkspace, "reviews" | "settings">, today: string): DesignRow[] {
-  const threeD = approvedSet(files, ws.reviews, "3d");
-  const twoD = approvedSet(files, ws.reviews, "2d");
-  const { threeDDue, twoDDue } = designDeadlines(measures, threeD, ws.settings);
-  const measured = firstMeasureDate(measures);
-  const row = (kind: DesignKind, set: ApprovedSet, due: string | null): DesignRow => {
-    const state = set.approved ? "done" : set.waiting?.review?.sentOn ? "waiting" : "open";
-    const shown = set.approved ?? set.waiting;
-    return {
-      kind,
-      label: kind.toUpperCase(),
-      state,
-      doneOn: set.approved?.review?.approvedOn ? day(set.approved.review.approvedOn) : null,
-      due: state === "done" ? null : due,
-      daysLeft: state === "done" ? null : daysLeft(due, today),
-      version: shown ? versionLabel(kind, shown.file) : null,
-    };
-  };
-  return [
-    { kind: "onsite", label: "Onsite", state: measured ? "done" : "open", doneOn: measured, due: null, daysLeft: null, version: null },
-    row("3d", threeD, threeDDue),
-    row("2d", twoD, twoDDue),
-  ];
 }
 
 /* ---------- Defects ---------- */
@@ -200,70 +150,41 @@ export function siteProgress(tasks: readonly TaskViewV2[]): SiteProgress {
 
 /* ---------- To do ---------- */
 
+/** One step of design work the To do card can start: it opens a shared form or writes through the board routes. */
+export type DesignOp =
+  | { op: "book"; key: ApptKey }
+  | { op: "start"; k: Kind }
+  | { op: "approve"; k: Kind }
+  | { op: "amend"; k: Kind }
+  | { op: "dates" }
+  | { op: "assign" }
+  | { op: "po" };
+
 export type TodoAction =
   | { type: "remind"; label: string; kind: ReminderKind; text: string; phone: string | null }
-  | { type: "open"; label: string; tab: BetaTabKey };
+  | { type: "open"; label: string; tab: BetaTabKey }
+  | ({ type: "design"; label: string } & DesignOp);
 
-export interface TodoRow { id: string; tone: "err" | "warn" | "muted"; title: string; detail: string | null; action: TodoAction }
+/** group is the short word the "Next step" box shows after its label, for example "waiting for client".
+    more are the extra buttons a row has beside its first action (waiting for client: + Amendment, Client approved). */
+export interface TodoRow { id: string; tone: "err" | "warn" | "muted"; group: string; title: string; detail: string | null; action: TodoAction; more?: TodoAction[] }
 
 export interface TodoInput {
   today: string;
   projectName: string;
-  customerName: string | null;
-  customerPhone: string | null;
   /** The project's current stage key (ProjectDetail.currentStage). */
   currentStage: string;
-  files: readonly DesignFile[];
-  measures: readonly SiteMeasure[];
-  workspace: BetaWorkspace;
+  workspace: Pick<BetaWorkspace, "payments" | "defects">;
 }
 
 const lateText = (n: number): string => `${n} day${n === 1 ? "" : "s"} late`;
 
-/** One row per thing that needs a person, worst first. Each row has exactly one action. */
-export function todoList(input: TodoInput): TodoRow[] {
-  const { today, projectName, customerName, customerPhone, currentStage, files, measures, workspace } = input;
-  const rows: TodoRow[] = [];
-  const threeD = approvedSet(files, workspace.reviews, "3d");
-  const sets: Array<[DesignKind, ApprovedSet]> = [["3d", threeD], ["2d", approvedSet(files, workspace.reviews, "2d")]];
-  const { threeDDue, twoDDue } = designDeadlines(measures, threeD, workspace.settings);
+const RANK = { err: 0, warn: 1, muted: 2 } as const;
 
-  for (const [kind, set] of sets) {
-    const { waiting } = set;
-    const sentOn = waiting?.review?.sentOn ?? null;
-    if (waiting && sentOn) {
-      const label = versionLabel(kind, waiting.file);
-      const dueOn = waiting.review?.dueOn ?? null;
-      const left = daysLeft(dueOn, today);
-      const late = left != null && left < 0;
-      rows.push({
-        id: `approval-${waiting.file.id}`,
-        tone: late ? "err" : "muted",
-        title: `${label} sent ${shortDate(sentOn)}, waiting for the client`,
-        detail: dueOn ? `Answer due ${shortDate(dueOn)}${late ? ` (${lateText(-left)})` : ""}` : "No answer date set",
-        action: {
-          type: "remind",
-          label: "Remind client",
-          kind: "client_approval",
-          text: `Hi${customerName ? ` ${customerName}` : ""}, a gentle reminder about the ${label} drawing for ${projectName}, sent on ${shortDate(sentOn)}. Please let us know if you approve it${dueOn ? ` by ${shortDate(dueOn)}` : ""}. Thank you.`,
-          phone: customerPhone,
-        },
-      });
-    } else if (!set.approved) {
-      // The design team's own deadline matters only while nothing has gone to the client.
-      const due = kind === "3d" ? threeDDue : twoDDue;
-      const left = daysLeft(due, today);
-      if (due && left != null && left <= 3) {
-        rows.push({
-          id: `deadline-${kind}`,
-          tone: left < 0 ? "err" : "warn",
-          title: left < 0 ? `${kind.toUpperCase()} drawing is ${lateText(-left)}` : `${kind.toUpperCase()} drawing due ${shortDate(due)}`,
-          detail: left < 0 ? `It was due ${shortDate(due)}` : left === 0 ? "Due today" : `${left} day${left === 1 ? "" : "s"} left`,
-          action: { type: "open", label: "Open drawings", tab: "drawings" },
-        });
-      }
-    }
-  }
+/** The payment and defect rows. The design rows come from the board logic (designTodoRows), so they match Calendar. */
+export function todoList(input: TodoInput): TodoRow[] {
+  const { today, projectName, currentStage, workspace } = input;
+  const rows: TodoRow[] = [];
 
   const strip = paymentStrip(workspace.payments);
   const next = strip?.rows.find((r) => r.status !== "paid");
@@ -274,6 +195,7 @@ export function todoList(input: TodoInput): TodoRow[] {
       rows.push({
         id: `payment-${next.seq}`,
         tone: reach === "reached" ? "warn" : "muted",
+        group: "waiting for payment",
         title: `Instalment ${next.seq} (${next.label}) is ${next.status === "billed" ? "billed, not paid" : "not billed"}`,
         detail: `${money(next.amountSen)}. ${unlocks} is ${reach === "reached" ? "reached" : "the next step"}.`,
         action: {
@@ -294,6 +216,7 @@ export function todoList(input: TodoInput): TodoRow[] {
     rows.push({
       id: `defect-${d.id}`,
       tone: "err",
+      group: "defect late",
       title: `Defect at ${where} is ${lateText(late)}`,
       detail: d.description,
       action: {
@@ -306,8 +229,90 @@ export function todoList(input: TodoInput): TodoRow[] {
     });
   }
 
-  const rank = { err: 0, warn: 1, muted: 2 } as const;
-  return rows.sort((a, b) => rank[a.tone] - rank[b.tone]);
+  return rows.sort((a, b) => RANK[a.tone] - RANK[b.tone]);
+}
+
+/** This project's rows from the Deadlines logic Calendar uses (everything for who = "All", filtered to the project):
+    deadlines, booked appointments, waiting for client, ready to start and to book. The handover date is left out, the
+    header already shows it. Wording and buttons follow Calendar's Deadlines view. */
+export function designTodoRows(m: BoardModel, p: DesignProject, canAssign: boolean, customerPhone: string | null): TodoRow[] {
+  const g = deadlineGroups(m, "All", canAssign);
+  const rows: TodoRow[] = [];
+
+  for (const x of [...g.late, ...g.week, ...g.two, ...g.later]) {
+    if (x.p.id !== p.id) continue;
+    const l = diff(x.due, m.today);
+    if (x.type === "due") {
+      if (x.k === "h") continue;
+      const sub = x.from ? (x.n ? `Amendment started ${ds(x.from)} · ${x.days} ${dayWord(x.days ?? 0)}` : `Started ${ds(x.from)} · SOP ${m.sop[x.k]} days`) : null;
+      rows.push({
+        id: `due-${x.k}-${x.n}`,
+        tone: l < 0 ? "err" : l <= 2 ? "warn" : "muted",
+        group: "design deadline",
+        title: `${x.what} · ${ds(x.due)}`,
+        detail: [leftText(l), x.by ? `${x.k}D by ${x.by.name}` : null, sub].filter(Boolean).join(" · "),
+        action: { type: "open", label: "Open drawings", tab: "drawings" },
+      });
+    } else {
+      rows.push({
+        id: `appt-${x.ak}`,
+        tone: l < 0 ? "err" : "muted",
+        group: "appointment",
+        title: `${APPT_LABEL[x.ak]}${x.a.t ? ` · ${x.a.t}` : ""} · ${ds(x.due)}`,
+        detail: `${apptLeftText(l)} · with ${x.a.with || apptWithDefault(x.p, x.ak)}`,
+        action: canAssign ? { type: "design", label: "Edit", op: "book", key: x.ak } : { type: "open", label: "Open drawings", tab: "drawings" },
+      });
+    }
+  }
+
+  for (const x of g.waiting) {
+    if (x.p.id !== p.id) continue;
+    const ago = diff(m.today, x.sent);
+    const label = `${x.k}D${x.n ? ` ${ord(x.n)} amendment` : ""}`;
+    rows.push({
+      id: `approval-${x.k}-${x.n}`,
+      tone: "muted",
+      group: "waiting for client",
+      title: `${label} sent ${ds(x.sent)}${ago > 0 ? ` · ${ago} ${dayWord(ago)} ago` : ""}`,
+      detail: x.p.by[x.k] ? `${x.k}D by ${x.p.by[x.k]?.name}` : null,
+      action: {
+        type: "remind",
+        label: "Remind client",
+        kind: "client_approval",
+        text: `Hi${p.customer ? ` ${p.customer}` : ""}, a gentle reminder about the ${label} drawing for ${p.title}, sent on ${ds(x.sent)}. Please let us know if you approve it. Thank you.`,
+        phone: customerPhone,
+      },
+      more: [{ type: "design", label: "+ Amendment", op: "amend", k: x.k }, { type: "design", label: "Client approved", op: "approve", k: x.k }],
+    });
+  }
+
+  for (const x of g.ready) {
+    if (x.p.id !== p.id) continue;
+    rows.push({
+      id: `ready-${x.k}`,
+      tone: "muted",
+      group: "ready to start",
+      title: x.k === "3" ? "3D not started" : "3D approved · 2D not started",
+      detail: x.p.by[x.k] ? `${x.k}D by ${x.p.by[x.k]?.name}` : null,
+      action: { type: "design", label: `Start ${x.k}D today`, op: "start", k: x.k },
+      more: [{ type: "design", label: "Edit", op: "dates" }],
+    });
+  }
+
+  for (const x of g.todo) {
+    if (x.p.id !== p.id) continue;
+    const action: TodoAction = x.k === "as" ? { type: "design", label: "Assign", op: "assign" }
+      : x.k === "po" ? { type: "design", label: "PO done", op: "po" }
+      : { type: "design", label: "Book time", op: "book", key: x.k };
+    rows.push({ id: `todo-${x.k}`, tone: "warn", group: "to book", title: todoText(m, x), detail: null, action });
+  }
+
+  return rows;
+}
+
+/** The To do card's rows: design rows from the board logic, then payment and defect rows, worst first (stable inside a tone). */
+export function mergeTodo(design: readonly TodoRow[], other: readonly TodoRow[]): TodoRow[] {
+  return [...design, ...other].map((r, i) => ({ r, i })).sort((a, b) => RANK[a.r.tone] - RANK[b.r.tone] || a.i - b.i).map((x) => x.r);
 }
 
 /* ---------- Timeline ---------- */
@@ -403,4 +408,207 @@ export function feedRooms(items: readonly FeedItem[]): string[] {
 export function filterFeed(items: readonly FeedItem[], room: string): FeedItem[] {
   if (!room) return [...items];
   return items.filter((i) => (room === NO_ROOM ? !i.room : i.room === room));
+}
+
+/* ---------- Dates as the mockup prints them ---------- */
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
+
+function ymd(iso: string | null | undefined): [number, number, number] | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso ?? "");
+  return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null;
+}
+
+/** "14 Oct" (the mockup never prints the year on a card); "-" when there is no date. Fixed month names, not the browser's locale. */
+export function dayMonth(iso: string | null | undefined): string {
+  const p = ymd(iso);
+  return p ? `${p[2]} ${MONTHS[p[1] - 1] ?? ""}` : "-";
+}
+
+/** "15 Nov 2026"; "-" when there is no date. */
+export function dayMonthYear(iso: string | null | undefined): string {
+  const p = ymd(iso);
+  return p ? `${p[2]} ${MONTHS[p[1] - 1] ?? ""} ${p[0]}` : "-";
+}
+
+/** A day's heading: "14 Oct", with the year when it is not today's year. */
+export function dayHeading(dayValue: string, today: string): string {
+  return ymd(dayValue)?.[0] === ymd(today)?.[0] ? dayMonth(dayValue) : dayMonthYear(dayValue);
+}
+
+/** The Malaysia-time calendar day (YYYY-MM-DD) of a stored time; a date-only value is returned as it is. */
+export function mytDay(at: string): string {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(at)) return at;
+  const t = Date.parse(at);
+  return Number.isNaN(t) ? at.slice(0, 10) : new Date(t + 8 * 3600e3).toISOString().slice(0, 10);
+}
+
+/** "09:40" in Malaysia time; null for a date-only value or a value that is not a time. */
+export function mytTime(at: string): string | null {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(at)) return null;
+  const t = Date.parse(at);
+  return Number.isNaN(t) ? null : new Date(t + 8 * 3600e3).toISOString().slice(11, 16);
+}
+
+export interface DayGroup<T> { day: string | null; items: T[] }
+
+/** Groups by day in the order each day first appears (callers pass newest first); items without a day come last. */
+export function groupByDay<T>(items: readonly T[], dayOf: (item: T) => string | null): Array<DayGroup<T>> {
+  const dated = new Map<string, T[]>();
+  const undated: T[] = [];
+  for (const item of items) {
+    const d = dayOf(item);
+    if (!d) { undated.push(item); continue; }
+    const list = dated.get(d);
+    if (list) list.push(item); else dated.set(d, [item]);
+  }
+  const out: Array<DayGroup<T>> = [...dated].map(([d, list]) => ({ day: d, items: list }));
+  if (undated.length > 0) out.push({ day: null, items: undated });
+  return out;
+}
+
+/** Up to two capital letters for an avatar: "Jia Xin" gives "JX", "Alex" gives "A". */
+export function initials(name: string | null | undefined): string {
+  const words = (name ?? "").trim().split(/\s+/).filter(Boolean);
+  const first = words.at(0);
+  const last = words.at(-1);
+  if (!first || !last) return "?";
+  return (words.length === 1 ? first.slice(0, 1) : `${first.slice(0, 1)}${last.slice(0, 1)}`).toUpperCase();
+}
+
+/* ---------- Payment cards (Overview) ---------- */
+
+export interface PaymentCardView {
+  /** paid = green card; alert = red card (the payment a reached step is waiting for); quiet = grey card. */
+  look: "paid" | "alert" | "quiet";
+  badge: string;
+  note: string;
+}
+
+/** The mockup's three looks. There is no paid date in the data, so a paid card names only the step it unlocked. */
+export function paymentCard(r: Pick<PaymentRow, "status" | "stageCode" | "unlocks">, currentStage: string, handoverOn: string | null): PaymentCardView {
+  const { unlocks } = r;
+  if (r.status === "paid") return { look: "paid", badge: "Paid", note: unlocks ? `Paid · unlocked ${unlocks}` : "Paid" };
+  if (!r.stageCode) {
+    return r.status === "billed"
+      ? { look: "alert", badge: "Not confirmed", note: "Billed, waiting for payment" }
+      : { look: "quiet", badge: "Not billed", note: "Not tied to a step" };
+  }
+  if (stageReach(r.stageCode, currentStage) !== "later") return { look: "alert", badge: "Not confirmed", note: `Needed before ${unlocks ?? "its step"}` };
+  const atHandover = r.stageCode === "handover";
+  return { look: "quiet", badge: atHandover ? "At handover" : "Not due yet", note: `Unlocks ${unlocks ?? "its step"}${atHandover && handoverOn ? ` · ${dayMonth(handoverOn)}` : ""}` };
+}
+
+/* ---------- To do: the highlighted "Next step" ---------- */
+
+/** The next step is the design waiting for the client when there is one (as in the mockup), else the worst row. */
+export function nextStep(rows: readonly TodoRow[]): { next: TodoRow | null; rest: TodoRow[] } {
+  const next = rows.find((r) => r.id.startsWith("approval-")) ?? rows.at(0) ?? null;
+  return { next, rest: rows.filter((r) => r !== next) };
+}
+
+/* ---------- Site progress: the vertical timeline ---------- */
+
+export interface RenovationDays { day: number; total: number; start: string }
+
+type TaskDates = Pick<TaskViewV2, "status" | "planned_start" | "planned_end" | "actual_start" | "actual_end">;
+
+/** "Day N of M": from the earliest start to the latest end of the live site tasks. null when the tasks have no dates. day is 0 before the start. */
+export function renovationDays(tasks: readonly TaskDates[], today: string): RenovationDays | null {
+  const live = tasks.filter((t) => t.status !== "skipped");
+  const starts = live.flatMap((t) => { const d = t.actual_start ?? t.planned_start; return d ? [day(d)] : []; }).sort();
+  const ends = live.flatMap((t) => { const d = t.actual_end ?? t.planned_end; return d ? [day(d)] : []; }).sort();
+  const start = starts.at(0);
+  const end = ends.at(-1);
+  if (!start || !end) return null;
+  const total = daysBetween(start, end) + 1;
+  if (total < 1) return null;
+  return { day: Math.min(total, Math.max(0, daysBetween(start, today) + 1)), total, start };
+}
+
+export type SiteStepState = "done" | "current" | "late" | "later" | "handover";
+
+export interface SiteStep { id: string; state: SiteStepState; date: string | null; label: string; sub: string | null }
+
+const plural = (n: number, w: string): string => `${n} ${w}${n === 1 ? "" : "s"}`;
+
+function siteStepOf(t: TaskViewV2, today: string): SiteStep {
+  const state: SiteStepState = t.status === "done" ? "done" : t.status === "in_progress" ? "current" : t.status === "overdue" || t.status === "late_start" ? "late" : "later";
+  const raw = state === "done" ? (t.actual_end ?? t.planned_end ?? t.planned_start)
+    : state === "current" ? today
+    : state === "late" ? (t.planned_end ?? t.planned_start)
+    : (t.planned_start ?? t.planned_end);
+  let sub: string | null = null;
+  if (state === "done") sub = "Done";
+  else if (state === "current") sub = ["In progress", ...(t.assignees ?? []).map((a) => a.name)].join(" · ");
+  else if (state === "late") {
+    const due = t.status === "overdue" ? (t.planned_end ?? t.planned_start) : (t.planned_start ?? t.planned_end);
+    sub = due ? `${plural(Math.max(1, daysBetween(day(due), today)), "day")} late` : "Late";
+  }
+  return { id: `task-${t.id}`, state, date: raw ? day(raw) : null, label: t.label, sub };
+}
+
+/** Live (not skipped) site tasks in date order, then the handover. The current rows are the tasks in progress, dated today. */
+export function siteTimeline(tasks: readonly TaskViewV2[], today: string, handoverOn: string | null): SiteStep[] {
+  const rows = tasks
+    .filter((t) => t.status !== "skipped")
+    .map((t) => ({ t, step: siteStepOf(t, today) }))
+    .sort((a, b) => (a.step.date ?? "9999").localeCompare(b.step.date ?? "9999") || a.t.seq - b.t.seq || a.t.id - b.t.id)
+    .map((r) => r.step);
+  if (handoverOn) rows.push({ id: "handover", state: "handover", date: day(handoverOn), label: "Handover", sub: "Final payment · keys to client" });
+  return rows;
+}
+
+export interface TrimmedTimeline { steps: SiteStep[]; hiddenDone: number; hiddenLater: number }
+
+/** A long list shows the last few finished steps and the next few ahead; showAll keeps everything. The handover always stays. */
+export function trimTimeline(steps: readonly SiteStep[], showAll: boolean, keepDone = 3, keepLater = 8): TrimmedTimeline {
+  if (showAll) return { steps: [...steps], hiddenDone: 0, hiddenLater: 0 };
+  const done = steps.filter((s) => s.state === "done");
+  const dropDone = new Set(done.slice(0, Math.max(0, done.length - keepDone)));
+  const dropLater = new Set(steps.filter((s) => s.state === "later").slice(keepLater));
+  return { steps: steps.filter((s) => !dropDone.has(s) && !dropLater.has(s)), hiddenDone: dropDone.size, hiddenLater: dropLater.size };
+}
+
+/* ---------- The stage stepper (header) ---------- */
+
+export interface StepperItem { key: string; label: string; state: "done" | "current" | "later"; sub: string }
+
+export interface StepperInput {
+  /** The project's flow steps (ProjectDetailV2.flow), for their labels and for which steps exist. */
+  steps: ReadonlyArray<{ key: string; label: string }>;
+  /** The flow's current step key. */
+  currentKey: string;
+  currentIndex: number;
+  soDate: string | null;
+  handoverOn: string | null;
+  tasks: readonly TaskDates[];
+  today: string;
+}
+
+/** The engine's own order of the flow; the mockup draws Sales order before Design. */
+const FLOW_RANK: Readonly<Record<string, number>> = { design: 0, signed: 1, ordering: 2, renovation: 3, handover: 4, closed: 5 };
+const MOCKUP_ORDER = ["signed", "design", "ordering", "renovation", "handover", "closed"] as const;
+
+/** The mockup's six circles in its order. Flow at design: Sales order not signed, Design current. Flow at signed: Sales order done, Design current. Ordering or later: both done. */
+export function stepperItems(i: StepperInput): StepperItem[] {
+  const days = renovationDays(i.tasks, i.today);
+  const cur = FLOW_RANK[i.currentKey] ?? i.currentIndex;
+  const label = (key: string, fallback: string): string => i.steps.find((s) => s.key === key)?.label ?? fallback;
+  return MOCKUP_ORDER.filter((key) => i.steps.some((s) => s.key === key)).map((key): StepperItem => {
+    const rank = FLOW_RANK[key] ?? 0;
+    if (key === "signed") {
+      const done = cur >= 1;
+      return { key, label: "Sales order", state: done ? "done" : "later", sub: done ? (i.soDate ? `Signed ${dayMonth(i.soDate)}` : "Signed") : "Not signed yet" };
+    }
+    const state: StepperItem["state"] = key === "design" ? (cur >= 2 ? "done" : "current") : rank < cur ? "done" : rank === cur ? "current" : "later";
+    let sub = "-";
+    if (key === "design") sub = state === "done" ? "Design approved" : "In progress";
+    else if (key === "ordering") sub = state === "done" ? "Main items ordered" : state === "current" ? "In progress" : "-";
+    else if (key === "renovation") {
+      if (state === "current") sub = days && days.day > 0 ? `Day ${days.day} of ${days.total}` : days ? `Starts ${dayMonth(days.start)}` : "In progress";
+      else if (state === "done") sub = "Done";
+    } else if (key === "handover") sub = i.handoverOn ? dayMonth(i.handoverOn) : state === "done" ? "Done" : "-";
+    return { key, label: label(key, key), state, sub };
+  });
 }

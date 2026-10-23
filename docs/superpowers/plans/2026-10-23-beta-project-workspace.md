@@ -234,3 +234,106 @@ design deadline within 3 days or past. Each row has one action.
 
 WhatsApp: `https://wa.me/<digits>?text=<encoded>` with the customer's phone when known (Malaysian numbers starting
 with 0 become 60...), else `https://wa.me/?text=<encoded>`. Pressing Remind also calls POST `/reminders`.
+
+## 10. Home, Projects and Calendar in the mockup's own format (owner, 23 Oct 2026)
+
+The owner: "for beta do Home, Project and Calendar together" and "follow the format they made, don't make it
+yourself". The Beta screens copy the mockup's layout, wording, order and colours. The reference set (not committed)
+is in the scratchpad folder `mockup/`: `body.html` (the mockup's markup with its inline styles; the three areas are
+`id="homeArea"`, `id="projectArea"`, `id="calendarArea"`), `app.js` (its logic: `status`, `stage`, `rounds`,
+`items`, `apptItems`, `nextFor`, `renderHome`, `renderDeadlines`, `renderProg`, `renderCal`, the modal forms),
+`styles.css`, and screenshots `home.jpg`, `home-phone.jpg`, `project-overview.jpg`, `calendar-deadlines.jpg`,
+`calendar-progress.jpg`, `calendar-month.jpg`. Colours come from `renovationBetaTheme.ts` (the mockup's palette).
+Real data replaces the mockup's sample data; nothing the mockup shows is invented beyond it.
+
+### Menu
+- Engine sidebar Beta group and the Property OS BETA group: **Home** (`/beta/home`), **Projects** (`/beta/projects`),
+  **Calendar** (`/beta/calendar`), in that order, same switch as before.
+- Projects opens the last project opened in Beta (remembered in localStorage per browser); with none, it opens Home.
+  The step 1 list page is replaced by Home. A project still opens at `/beta/projects/:id`.
+
+### Migration `migrations-pg/0147_beta_home_calendar.sql`
+- `project_beta_design`: `project_id` pk (projects, cascade), `company_id`, `start_3d_on date`, `start_2d_on date`,
+  `person_3d_id`, `person_2d_id` (project_people, set null), `po_done_on date`, `updated_by`, `updated_at`.
+- `project_beta_note_days`: `note_id` pk (project_design_notes, cascade), `days integer not null check 1..60`.
+  An amendment round lasts `days`, 3 when there is no row (the mockup's default, editable per round).
+- `project_beta_appointments`: `id`, `project_id` (cascade), `company_id`, `kind` (`site_measure`,
+  `carpentry_measure`, `site_briefing`), `on_date date not null`, `at_time time`, `person_id` (people, set null),
+  `with_text text`, `done_at timestamptz`, `created_by`, `created_at`; unique (project_id, kind).
+- `project_beta_events`: `id`, `company_id`, `project_id` (null for internal work; cascade), `on_date date not null`,
+  `at_time time`, `type` (`client`, `measure`, `briefing`, `meeting`, `w3d`, `w2d`, `amend`, `po`, `update`),
+  `note text`, `person_id` (people, set null), `done boolean not null default false`, `created_by`, `created_at`,
+  `updated_at`; index (company_id, on_date).
+- Same conventions as 0146 (REVERSAL line, owner scm_engine, RLS on, revoke from anon / authenticated).
+
+### Server: added to `routes/renovationBeta.ts` (same switch, scoping, permissions, activity rows as section 9)
+| Method, path | Body | Answer |
+|---|---|---|
+| GET `/board?from=&to=` | dates; default today - 60 .. today + 180; at most 400 days | `BetaBoard` (below) |
+| PUT `/projects/:id/design` | any of `start3dOn`, `start2dOn`, `poDoneOn` (date or null), `person3dId`, `person2dId` (company person or null) | `{ ok: true }` |
+| PUT `/design-notes/:noteId/days` | `{ days }` 1..60 | `{ ok: true }` |
+| PUT `/projects/:id/appointments/:kind` | `{ onDate, atTime, personId, withText }` | upsert, `{ ok: true }` |
+| POST `/projects/:id/appointments/:kind/done` | | sets done_at, `{ ok: true }` |
+| DELETE `/projects/:id/appointments/:kind` | | `{ ok: true }` |
+| POST `/events` | `{ projectId, onDate, atTime, type, note, personId }` | `{ id }` 201 |
+| PATCH `/events/:id` | same fields plus `done`, all optional | `{ ok: true }` |
+| DELETE `/events/:id` | | `{ ok: true }` |
+Reused, not rebuilt: "+ Amendment" = existing POST `/api/renovation/:id/design-notes`; "Client approved" = section 9
+approval on the newest file of that kind (409 when there is no file); "Assign" = existing PATCH
+`/api/renovation/:id/people` (designer = design lead, pic = site PIC) plus PUT `/design` for the 3D and 2D people.
+
+```ts
+export interface BetaBoard {
+  today: string; mePersonId: number | null;                 // the person whose user_id is the signed-in user
+  settings: { design3dDays: number; design2dDays: number; amendmentDays: 3 };
+  people: Array<{ id: number; name: string; roles: string[] }>;          // active
+  projects: Array<{
+    id: number; code: string | null; name: string; building: string | null; unitNo: string | null;
+    customerName: string | null; salesName: string | null; createdOn: string | null; handoverOn: string | null;
+    lead: { id: number; name: string } | null;               // projects.designer_person_id
+    person3d: { id: number; name: string } | null; person2d: { id: number; name: string } | null;
+    sitePic: { id: number; name: string } | null;            // the project PIC, else the renovation PIC
+    measuredOn: string | null;                               // first site measure record
+    start3dOn: string | null; start2dOn: string | null; poDoneOn: string | null;
+    files: Array<{ id: number; kind: "3d" | "2d"; version: number; submittedOn: string }>;
+    notes: Array<{ id: number; kind: "3d" | "2d"; notedOn: string; closedOn: string | null; days: number | null }>;
+    reviews: Array<{ fileId: number; sentOn: string | null; approvedOn: string | null }>;
+    appointments: Array<{ kind: "site_measure" | "carpentry_measure" | "site_briefing"; onDate: string;
+                          atTime: string | null; personId: number | null; withText: string | null; doneAt: string | null }>;
+    payment: { state: "hidden" } | { state: "none" } | { state: "ok"; label: string };
+  }>;                                                         // renovation projects, not archived, active company
+  events: Array<{ id: number; projectId: number | null; onDate: string; atTime: string | null; type: string;
+                  note: string | null; personId: number | null; done: boolean }>;
+}
+```
+Payment label: the first instalment not paid: billed and not paid gives "Pending 2nd payment" (its ordinal), not
+billed gives "2nd payment"; every instalment paid gives "Fully paid"; no live SO gives state none ("No payment").
+Billing is read once for all projects (`billingViews` takes many SOs), never per project.
+
+### Mapping the mockup's project fields to the data (pure function `renovationBetaBoard.ts`, tested)
+- `who` (design lead) = lead; `unassigned` = no lead. `who3` = person3d or lead; `who2` = person2d or lead;
+  `site` = sitePic name; `handover` = handoverOn; `po` = poDoneOn; `msr` / `cm` / `sb` = the appointments.
+- `s3` = start3dOn, else (when a 3D file exists) measuredOn, else the first 3D file's day. `done3` = the first 3D
+  file's submittedOn. `ok3` = a 3D file with an approval. `am3` = 3D notes in date order:
+  `{ s: notedOn, days: days ?? 3, done: closedOn }`. Same for 2D, where `s2` falls back to the 3D approval day.
+- `measured` = measuredOn, or the site measure appointment done or past, or s3.
+- Everything else (`status` A to E with its words, `stage`, `rounds`, `items`, `apptItems`, `nextFor`, waiting for
+  client, ready to start, to book / to do, the six progress steps) follows `app.js` exactly. SOP days come from
+  settings (10 and 12), the amendment default is 3.
+- "Viewing" starts on the signed-in person (mePersonId), else All; the people list is `people`.
+- "Who can assign": users with projects.write (the mockup limits it to the design lead).
+- Left out on purpose (later bundles): the bell, the "Drawing updates" alert and site "Received" (they need bundle C's
+  page replacement), Customers / Procurement / Construction / Finance / Files / Settings menu items.
+
+### Screens
+- Home (`RenovationBetaHome.tsx`): exactly `renderHome`: title "All projects", counts, the five tabs with counts,
+  the table (Building tag, Project · customer, ID condition pill, Who now with Assign, Due, Payment) on desktop and
+  the cards under 720px, footer "N shown · tap a project to open it". A row opens `/beta/projects/:id`.
+- Calendar (`RenovationBetaCalendar.tsx`): title "Calendar", "Deadlines follow the ID SOP: 3D in 10 days, 2D in 12
+  days" (numbers from settings), Viewing select, the Deadlines / Progress / Calendar switch, and each view as
+  `renderDeadlines`, `renderProg`, `renderCal`, with their buttons and the forms (`workForm`, `assignForm`,
+  `bookForm`, `amendForm`) as dialogs. "+ Add project" opens the existing new project form.
+- Projects workspace: the existing tabs restyled to `projectArea`: header (name in capitals, code, scope, handover
+  with days left, the team chips with Design lead + WhatsApp, 3D, 2D, Site PIC and Assign), the stage stepper
+  (Sales order, Design, Ordering, Renovation with "Day N of M", Handover, Closed with their dates), the tab bar, and
+  each tab's cards as in the mockup. Data and actions stay as built in bundle A.

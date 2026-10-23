@@ -55,7 +55,9 @@ const MyCases = lazy(() => import("./pages/MyCases").then((m) => ({ default: m.M
 const MyCaseDetail = lazy(() => import("./pages/MyCases").then((m) => ({ default: m.MyCaseDetail })));
 const Projects = lazy(() => import("./pages/Projects").then((m) => ({ default: m.Projects })));
 const ProjectDetail = lazy(() => import("./pages/Projects").then((m) => ({ default: m.ProjectDetail })));
-const RenovationBetaProjects = lazy(() => import("./pages/renovation-beta/RenovationBetaProjects").then((m) => ({ default: m.RenovationBetaProjects })));
+const RenovationBetaHome = lazy(() => import("./pages/renovation-beta/RenovationBetaHome").then((m) => ({ default: m.RenovationBetaHome })));
+const RenovationBetaProjectsEntry = lazy(() => import("./pages/renovation-beta/RenovationBetaHome").then((m) => ({ default: m.RenovationBetaProjectsEntry })));
+const RenovationBetaCalendar = lazy(() => import("./pages/renovation-beta/RenovationBetaCalendar").then((m) => ({ default: m.RenovationBetaCalendar })));
 const RenovationBetaWorkspace = lazy(() => import("./pages/renovation-beta/RenovationBetaWorkspace").then((m) => ({ default: m.RenovationBetaWorkspace })));
 const FairReportFill = lazy(() => import("./pages/FairReportFill").then((m) => ({ default: m.FairReportFill })));
 const ScheduleReconcile = lazy(() => import("./pages/ScheduleReconcile").then((m) => ({ default: m.ScheduleReconcile })));
@@ -562,7 +564,9 @@ export default function App() {
             </PageGuard>
           }
         />
-        <Route path="/beta/projects" element={<BetaGuard><PageGuard page="projects.list"><RenovationBetaProjects /></PageGuard></BetaGuard>} />
+        <Route path="/beta/home" element={<BetaGuard><PageGuard page="projects.list"><RenovationBetaHome /></PageGuard></BetaGuard>} />
+        <Route path="/beta/projects" element={<BetaGuard><PageGuard page="projects.list"><RenovationBetaProjectsEntry /></PageGuard></BetaGuard>} />
+        <Route path="/beta/calendar" element={<BetaGuard><PageGuard page="projects.list"><RenovationBetaCalendar /></PageGuard></BetaGuard>} />
         <Route path="/beta/projects/:id" element={<BetaGuard><PageGuard page="projects.list"><RenovationBetaWorkspace /></PageGuard></BetaGuard>} />
         <Route
           path="/fair-report-fill"

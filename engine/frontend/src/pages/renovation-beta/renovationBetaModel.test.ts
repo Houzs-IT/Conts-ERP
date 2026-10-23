@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { TimelineEntry } from "../projects/renovation/renovationTimelineModel";
 import type { DesignFile, SiteMeasure, TaskViewV2 } from "../projects/renovation/simpleApi";
+import { buildModel } from "./renovationBetaBoard";
+import type { BetaBoard, BetaBoardProject } from "./renovationBetaBoardApi";
 import type { BetaDefect, BetaReview, BetaWorkspace } from "./renovationBetaApi";
 import {
-  approvedSet, defectColumn, defectDaysLate, designDeadlines, designProgress, feedRooms, filterFeed, firstMeasureDate, groupDefects,
+  dayHeading, dayMonth, dayMonthYear, groupByDay, initials, mytDay, mytTime, nextStep, paymentCard, renovationDays, siteTimeline, stepperItems, trimTimeline,
+  approvedSet, defectColumn, defectDaysLate, designTodoRows, feedRooms, filterFeed, groupDefects, mergeTodo,
   isRecordEntry, paymentStrip, searchEntries, siteFeed, siteProgress, snagProgress, stageReach, timelineCsv, todoList, versionLabel,
   whatsappLink, whatsappNumber, type TodoInput,
 } from "./renovationBetaModel";
@@ -25,10 +28,7 @@ const defect = (id: number, d: Partial<BetaDefect> = {}): BetaDefect => ({
 const workspace = (w: Partial<BetaWorkspace> = {}): BetaWorkspace => ({
   settings: { design3dDays: 10, design2dDays: 12 }, reviews: [], defects: [], payments: { state: "none" }, ...w,
 });
-const input = (i: Partial<TodoInput> = {}): TodoInput => ({
-  today: TODAY, projectName: "Unit 12-3", customerName: "Aisha", customerPhone: "012-345 6789", currentStage: "design",
-  files: [], measures: [], workspace: workspace(), ...i,
-});
+const input = (i: Partial<TodoInput> = {}): TodoInput => ({ today: TODAY, projectName: "Unit 12-3", currentStage: "design", workspace: workspace(), ...i });
 
 describe("approvedSet", () => {
   it("is empty with no files", () => {
@@ -57,35 +57,6 @@ describe("approvedSet", () => {
   });
   it("labels a version", () => {
     expect(versionLabel("2d", file(1, "2d", 3))).toBe("2D v3");
-  });
-});
-
-describe("design deadlines", () => {
-  const settings = { design3dDays: 10, design2dDays: 12 };
-  it("uses the first site measure for 3D and the 3D approval for 2D", () => {
-    const threeD = approvedSet([file(1, "3d", 1)], [review(1, { approvedOn: "2026-10-20" })], "3d");
-    const d = designDeadlines([measure(2, "2026-10-12"), measure(1, "2026-10-05")], threeD, settings);
-    expect(d).toEqual({ threeDDue: "2026-10-15", twoDDue: "2026-11-01" });
-  });
-  it("is null when the start is unknown", () => {
-    const d = designDeadlines([measure(1, null)], approvedSet([], [], "3d"), settings);
-    expect(d).toEqual({ threeDDue: null, twoDDue: null });
-    expect(firstMeasureDate([])).toBeNull();
-  });
-  it("does not start 2D from a 3D version that is only sent", () => {
-    const threeD = approvedSet([file(1, "3d", 1)], [review(1, { sentOn: "2026-10-20" })], "3d");
-    expect(designDeadlines([measure(1, "2026-10-01")], threeD, settings).twoDDue).toBeNull();
-  });
-  it("designProgress reports done, waiting and open with days left", () => {
-    const files = [file(1, "3d", 1), file(2, "2d", 1)];
-    const ws = workspace({ reviews: [review(1, { approvedOn: "2026-10-20" }), review(2, { sentOn: "2026-10-21" })] });
-    const rows = designProgress(files, [measure(1, "2026-10-01")], ws, TODAY);
-    expect(rows.map((r) => [r.kind, r.state])).toEqual([["onsite", "done"], ["3d", "done"], ["2d", "waiting"]]);
-    expect(rows[2]?.due).toBe("2026-11-01");
-    expect(rows[2]?.daysLeft).toBe(9);
-    expect(rows[1]?.daysLeft).toBeNull();
-    const none = designProgress([], [], workspace(), TODAY);
-    expect(none.every((r) => r.state === "open" && r.due === null && r.daysLeft === null)).toBe(true);
   });
 });
 
@@ -185,34 +156,6 @@ describe("todoList", () => {
   it("is empty when nothing needs anyone", () => {
     expect(todoList(input())).toEqual([]);
   });
-  it("asks for a reminder on a drawing sent and not approved, late first", () => {
-    const files = [file(1, "2d", 1), file(2, "2d", 2)];
-    const ws = workspace({ reviews: [review(1, { approvedOn: "2026-10-02" }), review(2, { sentOn: "2026-10-15", dueOn: "2026-10-20" })] });
-    const [row] = todoList(input({ files, workspace: ws }));
-    expect(row?.tone).toBe("err");
-    expect(row?.title).toContain("2D v2");
-    expect(row?.detail).toContain("3 days late");
-    expect(row?.action.type).toBe("remind");
-    if (row?.action.type === "remind") {
-      expect(row.action.kind).toBe("client_approval");
-      expect(row.action.phone).toBe("012-345 6789");
-      expect(row.action.text).toContain("2D v2");
-    }
-  });
-  it("does not nag about a version that was never sent, only its design deadline", () => {
-    const files = [file(1, "3d", 1)];
-    const rows = todoList(input({ files, measures: [measure(1, "2026-10-15")], workspace: workspace() }));
-    expect(rows.map((r) => r.id)).toEqual(["deadline-3d"]);
-    expect(rows[0]?.tone).toBe("warn");
-    expect(rows[0]?.detail).toBe("2 days left");
-    expect(rows[0]?.action).toEqual({ type: "open", label: "Open drawings", tab: "drawings" });
-  });
-  it("flags a past design deadline and ignores one more than 3 days away or already approved", () => {
-    expect(todoList(input({ measures: [measure(1, "2026-10-11")] }))[0]?.title).toBe("3D drawing is 2 days late");
-    expect(todoList(input({ measures: [measure(1, "2026-10-20")] }))).toEqual([]);
-    const approved = workspace({ reviews: [review(1, { approvedOn: "2026-10-10" })] });
-    expect(todoList(input({ files: [file(1, "3d", 1)], measures: [measure(1, "2026-10-01")], workspace: approved })).map((r) => r.id)).toEqual(["deadline-2d"]);
-  });
   it("lists the next unpaid instalment once its step is reached or next, never a later one", () => {
     const payments: BetaWorkspace["payments"] = {
       state: "ok", contractSen: 100000, receivedSen: 30000,
@@ -240,12 +183,9 @@ describe("todoList", () => {
     expect(rows.map((r) => r.id)).toEqual(["defect-1"]);
     expect(rows[0]?.title).toBe("Defect at Kitchen is 3 days late");
   });
-  it("puts late items before the rest", () => {
-    const ws = workspace({
-      reviews: [review(1, { sentOn: "2026-10-22", dueOn: "2026-10-30" })],
-      defects: [defect(9, { dueDate: "2026-10-22" })],
-    });
-    expect(todoList(input({ files: [file(1, "3d", 1)], workspace: ws })).map((r) => r.id)).toEqual(["defect-9", "approval-1"]);
+  it("puts the worst rows first and keeps the order inside a tone", () => {
+    const row = (id: string, tone: "err" | "warn" | "muted") => ({ id, tone, group: "g", title: id, detail: null, action: { type: "open" as const, label: "x", tab: "drawings" as const } });
+    expect(mergeTodo([row("a", "muted"), row("b", "err")], [row("c", "warn"), row("d", "muted"), row("e", "err")]).map((r) => r.id)).toEqual(["b", "e", "c", "a", "d"]);
   });
 });
 
@@ -324,5 +264,164 @@ describe("site feed", () => {
     expect(filterFeed(feed, "Kitchen").map((i) => i.id)).toEqual(["defect-1-after", "receipt-p1", "defect-1-before"]);
     expect(filterFeed(feed, "No room").map((i) => i.id)).toEqual(["onsite-5", "receipt-p2"]);
     expect(filterFeed(feed, "")).toHaveLength(5);
+  });
+});
+
+describe("dates as the mockup prints them", () => {
+  it("prints day and month, with the year only where asked", () => {
+    expect(dayMonth("2026-10-14")).toBe("14 Oct");
+    expect(dayMonth("2026-10-14T05:00:00Z")).toBe("14 Oct");
+    expect(dayMonth(null)).toBe("-");
+    expect(dayMonthYear("2026-11-15")).toBe("15 Nov 2026");
+    expect(dayHeading("2026-10-20", TODAY)).toBe("20 Oct");
+    expect(dayHeading("2025-12-30", TODAY)).toBe("30 Dec 2025");
+  });
+  it("reads a stored time as Malaysia time", () => {
+    expect(mytDay("2026-10-20T17:30:00Z")).toBe("2026-10-21");
+    expect(mytTime("2026-10-20T17:30:00Z")).toBe("01:30");
+    expect(mytDay("2026-10-20")).toBe("2026-10-20");
+    expect(mytTime("2026-10-20")).toBeNull();
+  });
+  it("groups by day in first-seen order with undated items last", () => {
+    const g = groupByDay([{ d: "b", n: 1 }, { d: null, n: 2 }, { d: "a", n: 3 }, { d: "b", n: 4 }], (x) => x.d);
+    expect(g.map((x) => [x.day, x.items.map((i) => i.n)])).toEqual([["b", [1, 4]], ["a", [3]], [null, [2]]]);
+    expect(groupByDay([], () => null)).toEqual([]);
+  });
+  it("makes initials", () => {
+    expect([initials("Jia Xin"), initials("Alex"), initials("  "), initials(null), initials("Ahmad bin Ali")]).toEqual(["JX", "A", "?", "?", "AA"]);
+  });
+});
+
+describe("paymentCard", () => {
+  const row = (status: "paid" | "billed" | "not_billed", stageCode: string | null) => ({ status, stageCode, unlocks: stageCode ? "Design" : null });
+  it("paid is green and names what it unlocked", () => {
+    expect(paymentCard(row("paid", "design"), "design", null)).toEqual({ look: "paid", badge: "Paid", note: "Paid · unlocked Design" });
+  });
+  it("an unpaid instalment whose step is reached is the red card", () => {
+    expect(paymentCard(row("billed", "design"), "design", null)).toMatchObject({ look: "alert", badge: "Not confirmed", note: "Needed before Design" });
+  });
+  it("a later step is the grey card, and the handover one says so", () => {
+    expect(paymentCard({ status: "not_billed", stageCode: "handover", unlocks: "Cleaning & handover" }, "design", "2026-11-15")).toEqual({
+      look: "quiet", badge: "At handover", note: "Unlocks Cleaning & handover · 15 Nov",
+    });
+    expect(paymentCard({ status: "not_billed", stageCode: "hardware", unlocks: "Hardware works" }, "design", null).badge).toBe("Not due yet");
+  });
+  it("an instalment without a step is red only when it is billed", () => {
+    expect(paymentCard(row("billed", null), "design", null).look).toBe("alert");
+    expect(paymentCard(row("not_billed", null), "design", null)).toMatchObject({ look: "quiet", badge: "Not billed" });
+  });
+});
+
+describe("nextStep", () => {
+  const r = (id: string): ReturnType<typeof todoList>[number] => ({ id, tone: "err", group: "g", title: id, detail: null, action: { type: "open", label: "x", tab: "drawings" } });
+  it("takes the design waiting for the client, else the first row", () => {
+    expect(nextStep([r("defect-1"), r("approval-3")])).toMatchObject({ next: { id: "approval-3" }, rest: [{ id: "defect-1" }] });
+    expect(nextStep([r("defect-1"), r("payment-2")]).next?.id).toBe("defect-1");
+    expect(nextStep([])).toEqual({ next: null, rest: [] });
+  });
+});
+
+describe("site timeline", () => {
+  const task = (id: number, status: TaskViewV2["status"], d: Partial<TaskViewV2> = {}): TaskViewV2 =>
+    ({ id, seq: id, status, label: `t${id}`, planned_start: null, planned_end: null, actual_start: null, actual_end: null, ...d }) as TaskViewV2;
+  const tasks = [
+    task(1, "done", { planned_start: "2026-10-12", planned_end: "2026-10-14", actual_end: "2026-10-15" }),
+    task(2, "in_progress", { planned_start: "2026-10-20", planned_end: "2026-10-25", actual_start: "2026-10-20" }),
+    task(3, "planned", { planned_start: "2026-10-30", planned_end: "2026-11-05" }),
+    task(4, "overdue", { planned_start: "2026-10-18", planned_end: "2026-10-21" }),
+    task(5, "skipped", { planned_start: "2026-10-01" }),
+  ];
+  it("counts the day of the renovation from the dates of the live tasks", () => {
+    expect(renovationDays(tasks, TODAY)).toEqual({ day: 12, total: 25, start: "2026-10-12" });
+    expect(renovationDays(tasks, "2026-10-01")).toMatchObject({ day: 0 });
+    expect(renovationDays(tasks, "2027-01-01")).toMatchObject({ day: 25, total: 25 });
+    expect(renovationDays([task(1, "planned")], TODAY)).toBeNull();
+    expect(renovationDays([], TODAY)).toBeNull();
+  });
+  it("lists live tasks by date, marks today and the late one, then the handover", () => {
+    const t = siteTimeline(tasks, TODAY, "2026-11-15T00:00:00Z");
+    expect(t.map((s) => [s.id, s.state, s.date])).toEqual([
+      ["task-1", "done", "2026-10-15"], ["task-4", "late", "2026-10-21"], ["task-2", "current", TODAY], ["task-3", "later", "2026-10-30"], ["handover", "handover", "2026-11-15"],
+    ]);
+    expect(t[1]?.sub).toBe("2 days late");
+    expect(t[2]?.sub).toBe("In progress");
+    expect(siteTimeline([], TODAY, null)).toEqual([]);
+  });
+  it("keeps the last finished steps and the next few ahead until asked for all", () => {
+    const many = [...Array.from({ length: 6 }, (_, i) => task(i + 1, "done", { actual_end: `2026-10-0${i + 1}` })), ...Array.from({ length: 10 }, (_, i) => task(i + 10, "planned", { planned_start: `2026-11-${10 + i}` }))];
+    const steps = siteTimeline(many, TODAY, "2026-12-01");
+    const t = trimTimeline(steps, false);
+    expect(t).toMatchObject({ hiddenDone: 3, hiddenLater: 2 });
+    expect(t.steps.at(-1)?.id).toBe("handover");
+    expect(trimTimeline(steps, true)).toMatchObject({ hiddenDone: 0, hiddenLater: 0 });
+  });
+});
+
+describe("stepperItems", () => {
+  const steps = [{ key: "design", label: "Design" }, { key: "signed", label: "Signed" }, { key: "ordering", label: "Ordering" }, { key: "renovation", label: "Renovation" }, { key: "handover", label: "Handover" }, { key: "closed", label: "Closed" }];
+  const tasks = [{ status: "in_progress", planned_start: "2026-10-12", planned_end: "2026-11-05", actual_start: null, actual_end: null }] as unknown as TaskViewV2[];
+  const at = (currentKey: string, over: Partial<Parameters<typeof stepperItems>[0]> = {}) =>
+    stepperItems({ steps, currentKey, currentIndex: steps.findIndex((s) => s.key === currentKey), soDate: "2026-08-10", handoverOn: "2026-11-15", tasks, today: TODAY, ...over });
+  it("draws the mockup's order and words each step as the mockup does", () => {
+    expect(at("renovation").map((i) => [i.label, i.state, i.sub])).toEqual([
+      ["Sales order", "done", "Signed 10 Aug"], ["Design", "done", "Design approved"], ["Ordering", "done", "Main items ordered"],
+      ["Renovation", "current", "Day 12 of 25"], ["Handover", "later", "15 Nov"], ["Closed", "later", "-"],
+    ]);
+  });
+  it("at design the Sales order is not signed and Design is current", () => {
+    expect(at("design").slice(0, 3).map((i) => [i.label, i.state, i.sub])).toEqual([
+      ["Sales order", "later", "Not signed yet"], ["Design", "current", "In progress"], ["Ordering", "later", "-"],
+    ]);
+  });
+  it("at signed the Sales order is done and Design is current; at ordering both are done", () => {
+    expect(at("signed").slice(0, 2).map((i) => [i.state, i.sub])).toEqual([["done", "Signed 10 Aug"], ["current", "In progress"]]);
+    expect(at("ordering").slice(0, 3).map((i) => i.state)).toEqual(["done", "done", "current"]);
+  });
+  it("says in progress when the site tasks have no dates", () => {
+    const items = at("renovation", { soDate: null, handoverOn: null, tasks: [] });
+    expect(items[3]?.sub).toBe("In progress");
+    expect(items[0]?.sub).toBe("Signed");
+  });
+});
+
+describe("designTodoRows (the board logic Calendar uses)", () => {
+  const project = (o: Partial<BetaBoardProject> = {}): BetaBoardProject => ({
+    id: 7, code: null, name: "Legacy", building: "Legacy", unitNo: "A1", customerName: "Mr Wayne", salesName: "Chai", createdOn: "2026-09-01", handoverOn: "2026-11-15",
+    lead: { id: 1, name: "Jia Xin" }, person3d: null, person2d: null, sitePic: { id: 3, name: "Alex" }, measuredOn: "2026-09-01", start3dOn: null, start2dOn: null, poDoneOn: null,
+    files: [], notes: [], reviews: [], appointments: [], payment: { state: "none" }, ...o,
+  });
+  const rowsFor = (projects: BetaBoardProject[], canAssign = true) => {
+    const board: BetaBoard = {
+      today: TODAY, mePersonId: 1, settings: { design3dDays: 10, design2dDays: 12, amendmentDays: 3 },
+      people: [{ id: 1, name: "Jia Xin", roles: [] }], events: [], projects,
+    };
+    const m = buildModel(board);
+    const p = m.byId.get(7);
+    if (!p) throw new Error("no project");
+    return designTodoRows(m, p, canAssign, "012-345 6789");
+  };
+  const f3 = { id: 1, kind: "3d" as const, version: 1, submittedOn: "2026-10-01" };
+
+  it("a 3D in progress is a deadline row with the Calendar's wording", () => {
+    const row = rowsFor([project({ start3dOn: "2026-10-10" })]).find((r) => r.id === "due-3-0");
+    expect(row).toMatchObject({ tone: "err", group: "design deadline", title: "3D deadline · 20 Oct" });
+    expect(row?.detail).toBe("3 days late · 3D by Jia Xin · Started 10 Oct · SOP 10 days");
+  });
+  it("a 3D sent and not approved is waiting for client, with Remind client, + Amendment and Client approved", () => {
+    const rows = rowsFor([project({ files: [f3], reviews: [{ fileId: 1, sentOn: "2026-10-20", approvedOn: null }] })]);
+    const w = rows.find((r) => r.id.startsWith("approval"));
+    expect(w?.title).toBe("3D sent 1 Oct · 22 days ago");
+    expect(w?.action).toMatchObject({ type: "remind", kind: "client_approval", label: "Remind client", phone: "012-345 6789" });
+    expect(w?.more?.map((a) => a.label)).toEqual(["+ Amendment", "Client approved"]);
+  });
+  it("a measured project with no 3D is ready to start, and one with no team is to be assigned", () => {
+    expect(rowsFor([project()]).find((r) => r.id === "ready-3")?.action).toMatchObject({ type: "design", op: "start", k: "3", label: "Start 3D today" });
+    const none = rowsFor([project({ lead: null })]);
+    expect(none.find((r) => r.id === "todo-as")?.action).toMatchObject({ type: "design", op: "assign" });
+  });
+  it("leaves the handover out and shows another project's rows nowhere", () => {
+    const rows = rowsFor([project({ start3dOn: "2026-10-10" }), project({ id: 8, start3dOn: "2026-10-01" })]);
+    expect(rows.some((r) => r.title.startsWith("Handover"))).toBe(false);
+    expect(rows.filter((r) => r.id.startsWith("due"))).toHaveLength(1);
   });
 });
