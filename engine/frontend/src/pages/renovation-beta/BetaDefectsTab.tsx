@@ -6,7 +6,6 @@
 
 import { useState, type FormEvent, type ReactElement, type ReactNode } from "react";
 import { CalendarDays, ChevronRight, MapPin, Plus, RotateCcw, User, Wrench } from "lucide-react";
-import { useDialog } from "../../hooks/useDialog";
 import { useQuery } from "../../hooks/useQuery";
 import { renovationApi } from "../projects/renovation/renovationApi";
 import { errorText } from "../projects/renovation/renovationModel";
@@ -26,8 +25,10 @@ const COLUMNS: ReadonlyArray<{ key: DefectColumn; title: string; caption: string
 ];
 
 const PIPE_CSS = `
+.bws .bdp-wrap{container:bdp / inline-size}
 .bws .bdp{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;align-items:start}
-@media (max-width:860px){.bws .bdp{grid-template-columns:repeat(3,minmax(82%,1fr));overflow-x:auto;scroll-snap-type:x mandatory;padding-bottom:6px;-webkit-overflow-scrolling:touch}.bws .bdp>section{scroll-snap-align:start}}
+@container bdp (max-width:700px){.bws .bdp{grid-template-columns:repeat(3,minmax(47%,1fr));overflow-x:auto;scroll-snap-type:x mandatory;padding-bottom:6px;-webkit-overflow-scrolling:touch}.bws .bdp>section{scroll-snap-align:start}}
+@container bdp (max-width:560px){.bws .bdp{grid-template-columns:repeat(3,minmax(86%,1fr))}}
 .bws .bdp-card{display:flex;flex-direction:column;width:100%;padding:0;border:1px solid ${BETA.line};border-radius:12px;background:${BETA.surface};text-align:left;font:inherit;color:inherit;cursor:pointer;overflow:hidden;box-shadow:0 1px 2px rgba(23,32,31,.04)}
 .bws .bdp-card:hover{border-color:${BETA.border};box-shadow:0 2px 8px rgba(23,32,31,.08)}
 `;
@@ -67,7 +68,7 @@ export function BetaDefectsTab(p: BetaTabProps): ReactElement {
       {q.loading && !q.data ? <p style={{ fontSize: 14, color: BETA.muted }}>Loading defects...</p>
         : q.error && !q.data ? <p role="alert" style={{ fontSize: 14, color: WS.red }}>The defects could not be loaded: {q.error}</p>
         : (
-          <div className="bdp" aria-label="Defect pipeline" role="region">
+          <div className="bdp-wrap"><div className="bdp" aria-label="Defect pipeline" role="region">
             {COLUMNS.map((c) => (
               <section key={c.key} aria-label={`${c.title}, ${cols[c.key].length}`} style={{ background: WS.panel, border: `1px solid ${BETA.line}`, borderRadius: 14, display: "flex", flexDirection: "column", minWidth: 0, overflow: "hidden" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", background: c.bg, borderTop: `4px solid ${c.bar}` }}>
@@ -82,7 +83,7 @@ export function BetaDefectsTab(p: BetaTabProps): ReactElement {
                 )}
               </section>
             ))}
-          </div>
+          </div></div>
         )}
 
       <section aria-label="Handover" style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "12px 20px", padding: "16px 18px", background: BETA.surface, border: `1px solid ${BETA.line}`, borderRadius: 12 }}>
@@ -123,7 +124,7 @@ function TicketCard({ t, p, onOpen }: { t: DefectTicket; p: BetaTabProps; onOpen
   return (
     <button type="button" className="bdp-card" onClick={onOpen} aria-label={`Open defect: ${whereOf(t)}, ${t.description ?? ""}`}>
       {key && (
-        <span style={{ position: "relative", display: "block", width: "100%", height: 132, overflow: "hidden" }}>
+        <span style={{ position: "relative", display: "block", width: "100%", height: "clamp(132px, 11vw, 220px)", overflow: "hidden" }}>
           <WsPhoto path={renovationApi.fileUrl(p.projectId, key)} alt="" />
           {col !== "to_fix" && t.afterPhotoKey && <span style={{ position: "absolute", left: 8, top: 8, padding: "2px 8px", borderRadius: 10, background: WS.green, color: "#FFFFFF", fontSize: 12, fontWeight: 600 }}>After</span>}
         </span>
@@ -233,7 +234,7 @@ function Fact({ label, children }: { label: string; children: ReactNode }): Reac
 
 /** The ticket: details and photos, who fixes it and by when, and the next move for its column. */
 function TicketDialog({ t, p, areas, onClose }: { t: DefectTicket; p: BetaTabProps; areas: readonly string[]; onClose: () => void }): ReactElement {
-  const dialog = useDialog();
+  const [confirming, setConfirming] = useState(false);
   const { busy, run } = useGuarded();
   const col = defectColumn(t);
   const editable = p.canWrite && col !== "done";
@@ -270,10 +271,8 @@ function TicketDialog({ t, p, areas, onClose }: { t: DefectTicket; p: BetaTabPro
       await betaApi.defectFixed(t.id, key);
     }, "Marked complete. It is now in Check.");
   }
-  async function closeIt(): Promise<void> {
-    const ok = await dialog.confirm({ title: "Close this defect?", message: `${whereOf(t)}: ${t.description ?? ""}`, confirmLabel: "Close it" });
-    if (ok) await act(() => betaApi.defectClose(t.id), "Defect closed. It is now in Done.");
-  }
+  // The confirm is asked inside the ticket: a second dialog would open behind this one.
+  const closeIt = (): Promise<void> => act(() => betaApi.defectClose(t.id), "Defect closed. It is now in Done.");
   function remind(): void {
     const text = `Defect to fix at ${whereOf(t)} (${p.detail.project.name}): ${t.description ?? "see the project"}.${t.dueDate ? ` Fix by ${dayMonthYear(t.dueDate)}${late > 0 ? `, now ${plural(late, "day")} late` : ""}.` : ""} Please fix it and send a photo when it is done.`;
     void run(() => sendReminder(p.projectId, { kind: "defect", text, phone: t.assigneePhone }, p.onDone, p.onError));
@@ -348,7 +347,13 @@ function TicketDialog({ t, p, areas, onClose }: { t: DefectTicket; p: BetaTabPro
         ) : (
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "flex-end" }}>
             <WsBtn disabled={busy} onClick={() => setRedoing(true)}><RotateCcw size={14} aria-hidden="true" />Redo</WsBtn>
-            <WsBtn kind="teal" disabled={busy} onClick={() => void closeIt()}>Close</WsBtn>
+            {confirming ? (
+              <>
+                <span style={{ alignSelf: "center", fontSize: 14, fontWeight: 600 }}>Checked on site and good?</span>
+                <WsBtn disabled={busy} onClick={() => setConfirming(false)}>Not yet</WsBtn>
+                <WsBtn kind="teal" disabled={busy} onClick={() => void closeIt()}>Yes, close it</WsBtn>
+              </>
+            ) : <WsBtn kind="teal" disabled={busy} onClick={() => setConfirming(true)}>Close defect</WsBtn>}
           </div>
         )
       )}

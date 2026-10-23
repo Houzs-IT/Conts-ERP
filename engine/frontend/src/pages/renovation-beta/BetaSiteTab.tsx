@@ -85,7 +85,7 @@ export function BetaSiteTab({ projectId, records, workspace, today }: BetaTabPro
           : shownDeliveries.length === 0 ? (
             <WsEmpty>{deliveries.length === 0 ? "No deliveries yet. Delivery orders and goods receipts from this project's sales order and POs show here with their proof of delivery." : `Nothing delivered for ${area} yet.`}</WsEmpty>
           ) : (
-            <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 360px), 1fr))", gap: 16, alignItems: "start" }}>
+            <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 340px), 1fr))", gap: 16, alignItems: "start" }}>
               {shownDeliveries.map((d) => <DeliveryCard key={`${d.type}-${d.id}`} d={d} area={area} onView={setViewing} />)}
             </ul>
           )
@@ -150,7 +150,7 @@ function DeliveryCard({ d, area, onView }: { d: SiteDelivery; area: string; onVi
       {d.photos.length === 0 ? (
         <p style={{ margin: "0 16px 16px", padding: "14px 12px", borderRadius: 10, border: `1.5px dashed ${WS.dash}`, fontSize: 13, color: BETA.muted, textAlign: "center" }}>No proof of delivery photo yet</p>
       ) : (
-        <ul style={{ listStyle: "none", margin: 0, padding: "0 16px 16px", display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(96px, 1fr))", gap: 8 }}>
+        <ul style={{ listStyle: "none", margin: 0, padding: "0 16px 16px", display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: 8 }}>
           {d.photos.map((p) => (
             <li key={p.id} title={p.name} style={{ position: "relative", aspectRatio: "1 / 1", borderRadius: 8, overflow: "hidden", background: WS.chip }}>
               {p.image ? <WsPhoto path={p.path} alt={`${d.no}: ${p.name}${p.area ? `, ${p.area}` : ""}`} onClick={() => onView(p)} /> : (

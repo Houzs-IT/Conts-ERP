@@ -114,6 +114,7 @@ export function activityText(a: Row): { title: string; body: string | null } {
     case "beta_defect_fixed": return { title: "Defect fixed, waiting for check", body: to };
     case "beta_defect_redo": return { title: "Defect sent back to fix", body: [to, note].filter(Boolean).join(" · ") || null };
     case "beta_defect_closed": return { title: "Defect closed", body: to };
+    case "beta_defect_changed": return { title: "Defect changed", body: [to, note].filter(Boolean).join(" · ") || null };
     case "beta_drawing_sent": return { title: `${to ?? "Drawing"} sent to the customer`, body: note };
     case "beta_drawing_approved": return { title: `${to ?? "Drawing"} approved${from ? ` by ${from}` : ""}`, body: note };
     case "beta_drawing_approval_removed": return { title: "Approval removed", body: to };

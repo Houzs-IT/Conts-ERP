@@ -520,3 +520,7 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - After 0144 is live: switch off duplicate contractors the fill-in copied from old typos (Workers > Technicians).
 - Gap: a PIN account that also has a real email can be sent a password reset link, which sets an 8-character password the PIN box cannot type. Give a New PIN from Workers instead.
 - Tests: scripts/api-checks/field-pin-sign-in.mjs, workers-technicians.mjs, technician-list-fill.mjs (throwaway database only).
+
+## Beta Site & photos, Defects pipeline, Timeline, Site progress (feat/beta-site-defects, migration 0151, 24 Oct 2026)
+- Apply migration 0151 (project_defects.assignee_person_id) to staging, then production, before merging: the Defects tab and "Report a problem" read and write that column.
+- On a phone the engine opens its mobile shell, which has no /beta route, so Beta is reached only from a desktop browser (or ?mobile=0); route Beta in the mobile shell when the field team needs it.
