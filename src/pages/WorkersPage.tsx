@@ -314,8 +314,23 @@ function AccessModal({ cfg, worker, given0, onClose, onDone }: {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [given, setGiven] = useState<{ employeeId: string; pin: string } | null>(given0 ?? null);
+  const toast = useToast();
   const fresh = !worker.userId;
   const title = given ? `Sign-in for ${worker.name}` : worker.employeeId ? `New PIN for ${worker.name}` : `Give ${worker.name} app access`;
+  const link = `${window.location.origin}/#/field`;
+
+  /** The sign-in as one message the manager pastes into WhatsApp or SMS. */
+  async function copyMessage(employeeId: string, pin: string): Promise<void> {
+    const text = `Hi ${worker.name}, this is your sign-in for The Conts app.\n\n`
+      + `1. On your phone, open ${link}\n2. Employee ID: ${employeeId}\n3. PIN: ${pin}\n\n`
+      + 'The first time, it asks you to choose your own PIN.';
+    try {
+      await navigator.clipboard.writeText(text);
+      toast({ tone: 'success', title: 'Copied.', body: `Paste it in a private message to ${worker.name}.` });
+    } catch {
+      toast({ tone: 'warning', title: 'Could not copy. Give them the ID and PIN by hand.' });
+    }
+  }
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !busy) onClose(); };
@@ -358,8 +373,8 @@ function AccessModal({ cfg, worker, given0, onClose, onDone }: {
               </span>
             </span>
             <span className="text-meta text-muted-ink text-pretty">
-              They open <span className="font-semibold text-ink">{window.location.origin}/#/field</span> on their phone, type the number
-              after EMP- and this PIN, and choose their own PIN the first time.
+              They open <span className="font-semibold text-ink">{link}</span> on their phone, type the number
+              after EMP- and this PIN, and choose their own PIN the first time. Copy message puts all of this in one text to send them.
             </span>
           </div>
         ) : (
@@ -376,7 +391,10 @@ function AccessModal({ cfg, worker, given0, onClose, onDone }: {
         )}
         <div className="py-[14px] px-5 mt-2 [border-top:1px_solid_var(--color-line)] bg-page flex items-center justify-end gap-[9px] flex-wrap sticky bottom-0">
           {given
-            ? <Button size="sm" variant="primary" onClick={onClose}>Done</Button>
+            ? <>
+                <Button size="sm" variant="secondary" onClick={() => copyMessage(given.employeeId, given.pin)}>Copy message</Button>
+                <Button size="sm" variant="primary" onClick={onClose}>Done</Button>
+              </>
             : <>
                 <Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
                 <Button size="sm" variant="primary" loading={busy} onClick={submit}>
