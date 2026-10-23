@@ -49,10 +49,16 @@ export function Floating({ anchor, fallback, open, onClose, width = 260, maxHeig
       if (panel.current?.contains(t) || anchor.current?.contains(t)) return;
       onClose();
     };
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    // Caught on the way down and stopped, so Escape closes only this panel, never the dialog it was opened from.
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.preventDefault(); e.stopPropagation();
+      onClose();
+      anchor.current?.focus();
+    };
     document.addEventListener('mousedown', onDoc);
-    document.addEventListener('keydown', onKey);
-    return () => { document.removeEventListener('mousedown', onDoc); document.removeEventListener('keydown', onKey); };
+    document.addEventListener('keydown', onKey, true);
+    return () => { document.removeEventListener('mousedown', onDoc); document.removeEventListener('keydown', onKey, true); };
   }, [open, onClose, anchor]);
   if (!open || !pos) return null;
   return createPortal(

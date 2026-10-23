@@ -38,7 +38,8 @@ export function phoneProblem(value: string): string | undefined {
 }
 
 const COUNTRIES = phoneCountries();
-const OPTIONS = COUNTRIES.map(c => ({ value: c.code, label: `${c.code} +${c.callingCode}`, hint: c.name }));
+// Rows read "Malaysia  +60", sorted by name and found by name or code; the button shows only the code.
+const OPTIONS = COUNTRIES.map(c => ({ value: c.code, label: c.name, hint: `+${c.callingCode}` }));
 
 const digitsOf = (s: string) => s.replace(/\D/g, '');
 /** The caret position just after the n-th digit of `text` (0 = start). */
@@ -76,7 +77,7 @@ function bareInternational(d: string, country: CountryCode) {
   return c ? { country: c, draft: asIntl.national } : null;
 }
 
-/** Country picker (searchable, "MY +60") beside the number, formatted as it is typed in that country's grouping without
+/** Country picker (searchable, shows "+60") beside the number, formatted as it is typed in that country's grouping without
  *  moving the caret. Typing or pasting "+code ..." picks the country; so does a pasted number that is clearly another
  *  country's. The value handed back is the international form, +60 18-980 0069, which every screen reads. */
 export function PhoneInput({ value, onChange, label, help, error, placeholder, className, style, defaultCountry = HOME_COUNTRY, ...rest }: PhoneInputProps) {
@@ -189,9 +190,10 @@ export function PhoneInput({ value, onChange, label, help, error, placeholder, c
           options={OPTIONS}
           placeholder="Country or code"
           size="md"
-          className="flex-none w-[96px]"
+          className="flex-none w-[88px]"
           buttonClassName="h-auto flex-1 rounded-r-none relative focus-visible:z-[1]"
           menuWidth={300}
+          shortLabel={o => o.hint ?? o.label}
         />
         <input
           ref={ref}

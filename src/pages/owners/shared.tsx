@@ -278,9 +278,11 @@ export function Modal({ title, sub, onClose, onSubmit, submitLabel, canSubmit, c
 export function AddOwnerModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: (o: Omit<Owner, 'id' | 'units' | 'portalInvited' | 'contract' | 'defaultManagementFeePct'>) => void }) {
   const [f, setF] = useState({ displayName: '', email: '', phone: '', ic: '', bankName: '', bankAccount: '', accountHolder: '' });
   const [holderIsOwner, setHolderIsOwner] = useState(true);
+  // A field's error shows once it has been typed in and left, never because the cursor merely passed through it.
   const [touched, setTouched] = useState<Record<string, boolean>>({});
-  const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF(s => ({ ...s, [k]: e.target.value }));
-  const blur = (k: string) => () => setTouched(t => ({ ...t, [k]: true }));
+  const [typed, setTyped] = useState<Record<string, boolean>>({});
+  const set = (k: keyof typeof f) => (e: { target: { value: string } }) => { setF(s => ({ ...s, [k]: e.target.value })); setTyped(t => ({ ...t, [k]: true })); };
+  const blur = (k: string) => () => setTouched(t => ({ ...t, [k]: !!typed[k] }));
   // Email is optional: an owner is often added before their email is known. If given, it must look like one.
   const emailBad = f.email.trim() !== '' && !/.+@.+\..+/.test(f.email);
   const accountBad = f.bankAccount.trim() !== '' && !/^\d{6,20}$/.test(f.bankAccount.replace(/[\s-]/g, ''));
