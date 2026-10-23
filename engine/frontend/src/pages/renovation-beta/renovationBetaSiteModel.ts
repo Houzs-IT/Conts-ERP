@@ -101,7 +101,7 @@ function unpaidFor(stage: string, payments: BetaPayments): string | null {
 export function siteStepsPlus(
   steps: readonly SiteStep[], tasks: readonly TaskViewV2[], payments: BetaPayments, photos: ReadonlyMap<string, number>,
 ): SiteStepPlus[] {
-  const byId = new Map(tasks.map((t) => [`task-${t.id}`, t] as const));
+  const byId = new Map<string, TaskViewV2>(tasks.map((t) => [`task-${t.id}`, t]));
   return steps.map((s) => {
     if (s.id === "handover") return { ...s, photos: 0, waitsFor: unpaidFor("handover", payments) };
     const t = byId.get(s.id);
