@@ -18,7 +18,7 @@ import { renoDbFromD1 } from "../services/renovation/dbBridge";
 import { writeCachedStage } from "../services/renovation/contractSync";
 import {
   BETA_DEFAULT_2D_DAYS, BETA_DEFAULT_3D_DAYS, cleanBetaReminder, cleanBetaSettings, cleanDefectFixed, cleanDefectRedo, cleanDefectReport,
-  cleanDesignApproval, cleanDesignSent, defectMoveRefusal, designLabel, paymentsOf, type BetaPayments, type DefectMove,
+  cleanDesignApproval, cleanDesignSent, defectMoveRefusal, designLabel, paymentsOf, type BetaPayments, type BetaReceipt, type DefectMove,
 } from "../services/renovation/beta";
 import {
   BETA_AMENDMENT_DAYS, buildBoardProject, cleanBetaAppointment, cleanBetaDesign, cleanBetaEvent, cleanBetaEventPatch, cleanBoardRange, cleanNoteDays,
@@ -82,18 +82,56 @@ async function designFileOf(c: Ctx, fileId: number): Promise<DesignFileRow | nul
 
 const TS = (col: string): string => `to_char(${col} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')`;
 
-/** Payments of the project's renovation SO (the non-cancelled one, as services/renovation/load.ts finds it). */
+interface ProjectSoRow { project_id: number; doc_no: string; kind: string | null; total_sen: number | null }
+interface ReceiptRow { so_doc_no: string; paid_on: string; amount_sen: number; method: string | null }
+
+/* The live sales order of each project: a renovation contract first, else the newest ordinary sales order linked to
+   the project (owner, 24 Oct 2026: "once I receive money, the project knows"). */
+const PROJECT_SO_SQL = (where: string): string =>
+  `SELECT DISTINCT ON (so.project_id) so.project_id::int AS project_id, so.doc_no, to_jsonb(so)->>'so_kind' AS kind, so.local_total_sen::bigint AS total_sen
+     FROM scm.mfg_sales_orders so JOIN projects p ON p.id = so.project_id
+    WHERE ${where} AND so.company_id = ? AND so.status::text <> 'CANCELLED'
+    ORDER BY so.project_id, (to_jsonb(so)->>'so_kind' = 'RENOVATION') DESC, so.so_date DESC NULLS LAST, so.doc_no DESC`;
+
+/** Payments recorded on these orders, oldest first, grouped by order. */
+async function receiptsOf(c: Ctx, docNos: readonly string[]): Promise<Map<string, BetaReceipt[]>> {
+  const out = new Map<string, BetaReceipt[]>();
+  if (docNos.length === 0) return out;
+  const rows = (await db(c).prepare(
+    `SELECT so_doc_no, to_char(paid_at, 'YYYY-MM-DD') AS paid_on, amount_sen::bigint AS amount_sen, method::text AS method
+       FROM scm.mfg_sales_order_payments
+      WHERE so_doc_no IN (SELECT jsonb_array_elements_text(?::text::jsonb)) AND paid_at IS NOT NULL
+      ORDER BY paid_at, id`,
+  ).bind(JSON.stringify(docNos)).all<ReceiptRow>()).results ?? [];
+  for (const r of rows) {
+    const list = out.get(r.so_doc_no) ?? [];
+    list.push({ paidOn: r.paid_on, amountSen: Number(r.amount_sen), method: r.method });
+    out.set(r.so_doc_no, list);
+  }
+  return out;
+}
+
+/** Payments per project from its live sales order: the renovation contract's instalments, or four plain payments. */
+async function projectPayments(c: Ctx, companyId: number, sos: readonly ProjectSoRow[]): Promise<Map<number, BetaPayments>> {
+  const out = new Map<number, BetaPayments>();
+  const reno = sos.filter((s) => s.kind === "RENOVATION").map((s) => s.doc_no);
+  const [views, receipts] = await Promise.all([
+    reno.length > 0 ? billingViews(renoDbFromD1(db(c)), reno, companyId) : Promise.resolve(new Map()),
+    receiptsOf(c, sos.map((s) => s.doc_no)),
+  ]);
+  for (const so of sos) {
+    const view = so.kind === "RENOVATION" ? views.get(so.doc_no) ?? null : null;
+    out.set(Number(so.project_id), paymentsOf(view, { docNo: so.doc_no, totalSen: Number(so.total_sen ?? 0), receipts: receipts.get(so.doc_no) ?? [] }));
+  }
+  return out;
+}
+
 async function paymentsFor(c: Ctx, projectId: number, companyId: number): Promise<BetaPayments> {
   if (financeHiddenForUser(c.get("user"))) return { state: "hidden" };
   try {
-    const so = await db(c).prepare(
-      `SELECT so.doc_no FROM scm.mfg_sales_orders so
-        WHERE so.project_id = ? AND so.company_id = ? AND so.status::text <> 'CANCELLED' AND to_jsonb(so)->>'so_kind' = 'RENOVATION'
-        ORDER BY so.so_date DESC NULLS LAST, so.doc_no DESC LIMIT 1`,
-    ).bind(projectId, companyId).first<{ doc_no: string }>();
+    const so = await db(c).prepare(PROJECT_SO_SQL("so.project_id = ?")).bind(projectId, companyId).first<ProjectSoRow>();
     if (!so) return { state: "none" };
-    const views = await billingViews(renoDbFromD1(db(c)), [so.doc_no], companyId);
-    return paymentsOf(views.get(so.doc_no) ?? null);
+    return (await projectPayments(c, companyId, [so])).get(projectId) ?? { state: "none" };
   } catch (e) {
     // Only an environment whose billing tables are not there yet reads as "no payments"; any other failure surfaces.
     if (isMissingRelation(e)) return { state: "none" };
@@ -335,20 +373,12 @@ async function companyPeople(c: Ctx, companyId: number, ids: readonly number[]):
 const PERSON_REFUSAL = { error: "person_invalid", message: "That person is not on this company's list." } as const;
 const KIND_REFUSAL = { error: "kind_invalid", message: "Pick the appointment from the list." } as const;
 
-interface SoDocRow { project_id: number; doc_no: string }
-
-/** Payment label per project: one query for the live renovation SO of every project, then one billingViews call. */
+/** Payment label per project, from the same sales order and payments the workspace reads. */
 async function boardPayments(c: Ctx, companyId: number, scope: string): Promise<Map<number, BoardPayment>> {
   const out = new Map<number, BoardPayment>();
   try {
-    const sos = (await db(c).prepare(
-      `SELECT DISTINCT ON (so.project_id) so.project_id::int AS project_id, so.doc_no
-         FROM scm.mfg_sales_orders so JOIN projects p ON p.id = so.project_id
-        WHERE ${scope} AND so.company_id = ? AND so.status::text <> 'CANCELLED' AND to_jsonb(so)->>'so_kind' = 'RENOVATION'
-        ORDER BY so.project_id, so.so_date DESC NULLS LAST, so.doc_no DESC`,
-    ).bind(companyId).all<SoDocRow>()).results ?? [];
-    const views = await billingViews(renoDbFromD1(db(c)), sos.map((r) => r.doc_no), companyId);
-    for (const so of sos) out.set(Number(so.project_id), paymentLabel(paymentsOf(views.get(so.doc_no) ?? null)));
+    const sos = (await db(c).prepare(PROJECT_SO_SQL(scope)).bind(companyId).all<ProjectSoRow>()).results ?? [];
+    for (const [id, p] of await projectPayments(c, companyId, sos)) out.set(id, paymentLabel(p));
   } catch (e) {
     // Same rule as the workspace: only billing tables that are not there yet read as "no payment"; anything else surfaces.
     if (!isMissingRelation(e)) throw e;

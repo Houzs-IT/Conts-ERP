@@ -13,7 +13,7 @@ import { FileDialog, sendReminder, useGuarded, type BetaTabProps, type ViewedFil
 import { add, ds, designKind } from "./renovationBetaBoard";
 import { approveNewest, boardApi, markPoDone } from "./renovationBetaBoardApi";
 import {
-  approvedSet, dayMonth, dayMonthYear, nextStep, paymentCard, paymentStrip, renovationDays, siteTimeline, todoList, trimTimeline, designTodoRows, mergeTodo,
+  approvedSet, dayMonth, dayMonthYear, emptyPaymentRows, nextStep, paymentCard, paymentStrip, renovationDays, siteTimeline, todoList, trimTimeline, designTodoRows, mergeTodo,
   type SiteStep, type TodoAction, type TodoRow,
 } from "./renovationBetaModel";
 import { BETA } from "./renovationBetaTheme";
@@ -66,22 +66,24 @@ function PaymentsCard({ p }: { p: BetaTabProps }): ReactElement {
   const { payments } = p.workspace;
   const { detail: d } = p;
   const strip = paymentStrip(payments);
+  // Before a sales order is linked the four payments still show, empty, so the card never changes shape.
+  const rows = strip ? strip.rows : payments.state === "none" ? emptyPaymentRows() : [];
   const handoverOn = d.project.handed_over_at ?? d.project.planned_handover_date;
-  const paid = strip?.rows.filter((r) => r.status === "paid").length ?? 0;
+  const paid = rows.filter((r) => r.status === "paid").length;
   const vo = d.vo && d.vo.count > 0 ? ` · VO ${d.vo.approved} of ${d.vo.count} approved` : "";
+  const soNo = payments.state === "ok" ? payments.docNo : undefined;
   return (
     <WsCard
       title="Payments"
       subInline
-      sub={strip && strip.rows.length > 0 ? `${paid} of ${strip.rows.length} paid · each payment unlocks the next step` : undefined}
-      right={strip ? <span style={subStyle}>Contract {money(strip.contractSen)}{vo}</span> : undefined}
+      sub={rows.length > 0 ? `${paid} of ${rows.length} received${soNo ? ` · from ${soNo}` : ""}` : undefined}
+      right={strip ? <span style={subStyle}>Contract {money(strip.contractSen)} · received {money(strip.receivedSen)}{vo}</span> : undefined}
     >
       {payments.state === "hidden" && <p style={{ fontSize: 14, color: BETA.muted }}>Payment figures are hidden for your role.</p>}
-      {payments.state === "none" && <p style={{ fontSize: 14, color: BETA.muted }}>No sales order yet, or billing is not available. Nothing to show.</p>}
-      {strip && strip.rows.length === 0 && <p style={{ fontSize: 14, color: BETA.muted }}>The sales order has no instalments.</p>}
-      {strip && strip.rows.length > 0 && (
-        <ol aria-label="Instalments" style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12 }}>
-          {strip.rows.map((r) => {
+      {payments.state === "none" && <p style={{ fontSize: 14, color: BETA.muted }}>No sales order is linked yet. Once one is, each payment recorded on it fills the next box here.</p>}
+      {rows.length > 0 && (
+        <ol aria-label="Payments" style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
+          {rows.map((r) => {
             const v = paymentCard(r, d.currentStage, handoverOn);
             const look = PAY_LOOK[v.look];
             return (
@@ -90,7 +92,7 @@ function PaymentsCard({ p }: { p: BetaTabProps }): ReactElement {
                   <span style={{ fontWeight: 700, overflowWrap: "anywhere" }}>{r.label}</span>
                   <WsBadge tone={look.tone}>{v.badge}</WsBadge>
                 </div>
-                <div style={{ fontSize: 20, fontWeight: 700 }}>{money(r.amountSen)}</div>
+                <div style={{ fontSize: 20, fontWeight: 700, color: r.amountSen > 0 ? undefined : BETA.muted }}>{r.amountSen > 0 ? money(r.amountSen) : "-"}</div>
                 <div style={{ fontSize: 12, color: WS.text2 }}>{v.note}{r.status === "billed" && r.paidSen > 0 && ` · paid so far ${money(r.paidSen)}`}</div>
               </li>
             );
@@ -277,7 +279,7 @@ function OrderCard({ p }: { p: BetaTabProps }): ReactElement {
       title="Sales order"
       gap={12}
       sub={d.so ? `${d.so.doc_no} · signed ${dayMonthYear(d.so.so_date)}` : "Not signed yet"}
-      right={d.so ? <Link to={`/scm/renovation/sales-orders/${encodeURIComponent(d.so.doc_no)}`} style={{ ...btnStyle("outline", "sm"), color: BETA.ink }}>Open SO</Link> : undefined}
+      right={d.so ? <Link to={`/scm/sales-orders/${encodeURIComponent(d.so.doc_no)}`} style={{ ...btnStyle("outline", "sm"), color: BETA.ink }}>Open SO</Link> : undefined}
     >
       {rowsList.length > 0 && (
         <dl style={{ margin: 0, display: "grid", gridTemplateColumns: "110px 1fr", gap: "8px 10px", fontSize: 13 }}>

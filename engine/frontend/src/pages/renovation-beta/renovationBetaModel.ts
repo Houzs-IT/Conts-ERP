@@ -187,7 +187,8 @@ export function todoList(input: TodoInput): TodoRow[] {
   const rows: TodoRow[] = [];
 
   const strip = paymentStrip(workspace.payments);
-  const next = strip?.rows.find((r) => r.status !== "paid");
+  // Plain sales order payments have no amount or step to chase yet, so only contract instalments become a to-do.
+  const next = strip?.rows.find((r) => r.status !== "paid" && !(r.trigger === "manual" && !r.stageCode));
   if (next) {
     const reach = stageReach(next.stageCode, currentStage);
     if (reach !== "later") {
@@ -486,8 +487,21 @@ export interface PaymentCardView {
 }
 
 /** The mockup's three looks. There is no paid date in the data, so a paid card names only the step it unlocked. */
-export function paymentCard(r: Pick<PaymentRow, "status" | "stageCode" | "unlocks">, currentStage: string, handoverOn: string | null): PaymentCardView {
+/** The four payments a project shows before any sales order is linked (owner, 24 Oct 2026). */
+export function emptyPaymentRows(): PaymentRow[] {
+  return ["1st", "2nd", "3rd", "4th"].map((o, i) => ({
+    seq: i + 1, label: `${o} payment`, amountSen: 0, paidSen: 0, status: "not_billed", stageCode: null, trigger: "manual", paidOn: null, method: null,
+    unlocks: null, statusLabel: STATUS_LABEL.not_billed,
+  }));
+}
+
+export function paymentCard(r: Pick<PaymentRow, "status" | "stageCode" | "unlocks"> & Partial<Pick<PaymentRow, "trigger" | "paidOn" | "method">>, currentStage: string, handoverOn: string | null): PaymentCardView {
   const { unlocks } = r;
+  // A plain sales order payment (no contract schedule): received or not, with the day and method it came in.
+  if (r.trigger === "manual" && !r.stageCode) {
+    if (r.status === "paid") return { look: "paid", badge: "Received", note: [r.paidOn ? `Received ${dayMonth(r.paidOn)}` : "Received", r.method].filter(Boolean).join(" · ") };
+    return { look: "quiet", badge: "Not received", note: "Fills in when the money is recorded on the SO" };
+  }
   if (r.status === "paid") return { look: "paid", badge: "Paid", note: unlocks ? `Paid · unlocked ${unlocks}` : "Paid" };
   if (!r.stageCode) {
     return r.status === "billed"
