@@ -387,7 +387,7 @@ describe("nav: Beta shows only where the server switched it on (owner, 23 Oct 20
     rep({ position_name: "Admin", department_name: "Operations", permissions: ["*"], ...over });
   const all = { "projects.list": "full" };
 
-  const BETA = ["/beta/home", "/beta/projects", "/beta/calendar"];
+  const BETA = ["/beta/projects", "/beta/calendar"];
 
   it("hides Beta on desktop and phone when beta_enabled is missing or false", () => {
     for (const u of [office(), office({ beta_enabled: false })]) {

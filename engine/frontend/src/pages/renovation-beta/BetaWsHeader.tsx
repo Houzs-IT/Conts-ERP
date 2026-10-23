@@ -57,7 +57,7 @@ export function BetaWsHeader({ d, p: board, canWrite, today, openDialog }: Heade
   return (
     <section style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "flex-start", gap: 16 }}>
       <div style={{ display: "flex", gap: 12, alignItems: "flex-start", minWidth: 0, flex: "1 1 320px" }}>
-        <Link to="/beta/home" aria-label="Back to Beta home" style={{ ...btnStyle("outline", "lg"), width: 44, padding: 0, flex: "none" }}>
+        <Link to="/beta/projects" aria-label="Back to the project list" style={{ ...btnStyle("outline", "lg"), width: 44, padding: 0, flex: "none" }}>
           <ArrowLeft size={18} aria-hidden="true" />
         </Link>
         <div style={{ minWidth: 0 }}>
