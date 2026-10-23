@@ -48,7 +48,10 @@ export function BetaWsHeader({ d, p: board, canWrite, today, openDialog }: Heade
     { key: "site", role: "Site PIC · Handover lead", name: board.site?.name ?? null },
   ];
   const phone = (peopleQ.data?.data ?? []).find((x) => x.id === board.lead?.id)?.phone ?? null;
-  const title = [p.name, p.customer_name].filter(Boolean).join(" · ").toUpperCase();
+  // Project names usually already end with the customer ("... MR WAYNE"); add it only when missing.
+  const customer = p.customer_name?.trim() ?? "";
+  const withCustomer = customer && !p.name.toUpperCase().includes(customer.toUpperCase());
+  const title = (withCustomer ? `${p.name} · ${customer}` : p.name).toUpperCase();
   const line = [p.code, d.type?.name, handoverOn ? `${p.handed_over_at ? "Handed over" : "Handover"} ${dayMonthYear(handoverOn)}` : "No handover date yet"].filter(Boolean).join(" · ");
 
   return (
