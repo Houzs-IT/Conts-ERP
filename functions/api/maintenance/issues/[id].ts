@@ -1,6 +1,6 @@
 import { type Env, one, run, json, fail, audit, nowIso, mytToday } from '../../../_lib/db';
+import { can } from '../../../_lib/access';
 import { requireSession, isFieldRole } from '../../../_lib/auth';
-import { MASTER_ROLES } from '../../../_lib/properties';
 import { CATEGORIES, URGENCIES, CHARGE_TO, DAY, JOB_TYPES, SEVERITIES, pickAssignee, hasBilling, hasJobType, urgencyOf, approvalRules, ruleNeedsApproval } from '../../../_lib/maintenance';
 import { isPeriodLocked } from '../../../_lib/expenses';
 import { repairNotice } from '../../../_lib/notices';
@@ -32,7 +32,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   const cur = await one<any>(env, 'SELECT * FROM maintenance_issues WHERE id = ?', id);
   if (!cur) return fail('NOT_FOUND', 'That job no longer exists.', 404);
   const now = nowIso();
-  const moneyRole = MASTER_ROLES.includes(session.role);
+  const moneyRole = can(session, 'finance', 'view');
 
   if (b?.state === 'reopened') {
     if (cur.state !== 'resolved') return fail('CONFLICT', 'Only a finished job can be reopened.', 409);

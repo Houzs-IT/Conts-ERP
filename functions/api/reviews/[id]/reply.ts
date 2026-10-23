@@ -10,7 +10,7 @@ import { pushReviewReplyIfLinked } from '../../../_lib/channexMessageSync';
 export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!mayWork(session, ['management', 'operations_manager', 'operations_staff'])) return fail('FORBIDDEN', 'Only operations and management can reply to reviews.', 403);
+  if (!mayWork(session, ['management'])) return fail('FORBIDDEN', 'Only operations and management can reply to reviews.', 403);
 
   const id = String(params.id);
   const b = await request.json<any>().catch(() => null);

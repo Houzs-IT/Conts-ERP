@@ -78,7 +78,7 @@ function open(url = "/beta/projects/7"): void {
         <MemoryRouter initialEntries={[url]}>
           <Routes>
             <Route path="/beta/projects/:id" element={<RenovationBetaWorkspace />} />
-            <Route path="/beta/home" element={<p>Home page</p>} />
+            <Route path="/beta/projects" element={<p>Project list</p>} />
           </Routes>
         </MemoryRouter>
       </DialogProvider>
@@ -112,7 +112,7 @@ describe("Beta project workspace", () => {
     const tabs = screen.getByRole("navigation", { name: "Project sections" });
     expect(within(tabs).getAllByRole("button").map((b) => b.textContent)).toEqual(["Overview", "Drawings", "VO", "PO", "Client PO", "Site & photos", "Defects", "Timeline"]);
     expect(within(tabs).getByRole("button", { name: "Overview" }).getAttribute("aria-current")).toBe("page");
-    expect(screen.getByRole("link", { name: "Back to Beta home" }).getAttribute("href")).toBe("/beta/home");
+    expect(screen.getByRole("link", { name: "Back to the project list" }).getAttribute("href")).toBe("/beta/projects");
     expect(localStorage.getItem("beta:lastProject")).toBe("7");
   });
 

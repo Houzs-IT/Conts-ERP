@@ -1,13 +1,13 @@
 import { type Env, one, json, fail } from '../../_lib/db';
+import { can } from '../../_lib/access';
 import { requireSession } from '../../_lib/auth';
-import { MASTER_ROLES } from '../../_lib/properties';
 import { VIEW_SQL, decideContext, toView, decide, type Decision } from '../../_lib/approvals';
 
 /** GET /api/approvals/:id — one request with what this person may do with it. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!MASTER_ROLES.includes(session.role)) return fail('FORBIDDEN', 'Approvals are for management, finance and operations managers.', 403);
+  if (!can(session, 'finance', 'view')) return fail('FORBIDDEN', 'Approvals are for people with Finance access.', 403);
   const row = await one<any>(env, `${VIEW_SQL} WHERE a.id = ?`, String(params.id));
   if (!row) return fail('NOT_FOUND', 'That request no longer exists.', 404);
   return json(toView(row, session, await decideContext(env)));
@@ -21,7 +21,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
 export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!MASTER_ROLES.includes(session.role)) return fail('FORBIDDEN', 'Approvals are for management, finance and operations managers.', 403);
+  if (!can(session, 'finance', 'view')) return fail('FORBIDDEN', 'Approvals are for people with Finance access.', 403);
   const b = await request.json<{ decision?: string; note?: string }>().catch(() => null);
   const decision = b?.decision;
   if (decision !== 'approve' && decision !== 'reject' && decision !== 'cancel') return fail('VALIDATION', 'Choose approve, reject or cancel.', 422);

@@ -1,9 +1,8 @@
 import { type Env, one, run, json, fail, audit, nowIso } from './db';
 import { type Session, hashPassword, revokeSessions } from './auth';
+import { can } from './access';
 import { NO_EMAIL_DOMAIN, PIN_ROLES, employeeIdFor, hasEmployeeIds, tempPin } from './fieldPin';
 
-/** Creating a login is a management decision; operations managers may make only field ones, and only from here. */
-export const GRANT_ACCESS = ['management', 'operations_manager'];
 
 /** The two worker lists on Workers: cleaners sign in as housekeepers, technicians as technicians. */
 const LISTS = {
@@ -21,7 +20,9 @@ export type WorkerList = keyof typeof LISTS;
  */
 export async function giveFieldAccess(env: Env, session: Session, list: WorkerList, id: string): Promise<Response> {
   const { role, noun, action } = LISTS[list];
-  if (!GRANT_ACCESS.includes(session.role)) return fail('FORBIDDEN', 'Only management and operations managers can give app access.', 403);
+  // Creating a login is a management decision; Full on Operations (the Operations Manager position) may make field
+  // ones too, and only from here.
+  if (!can(session, 'operations', 'full')) return fail('FORBIDDEN', 'Only management and operations managers can give app access.', 403);
   if (!(await hasEmployeeIds(env))) return fail('NOT_MIGRATED', 'Employee ID sign-in needs a database update (migration 0145) that has not been applied yet.', 503);
 
   const w = await one<{ id: string; full_name: string; employment_type: string; phone: string | null; user_id: string | null; is_active: number }>(env,
@@ -37,14 +38,14 @@ export async function giveFieldAccess(env: Env, session: Session, list: WorkerLi
   let userId = w.user_id;
   let employeeId: string;
   if (userId) {
-    const u = await one<{ role: string; is_active: number; employee_id: string | null }>(env, 'SELECT role, is_active, employee_id FROM users WHERE id = ?', userId);
+    const u = await one<{ role: string; employee_id: string | null }>(env, 'SELECT role, employee_id FROM users WHERE id = ?', userId);
     if (!u) return fail('NOT_FOUND', `The login linked to this ${noun} no longer exists.`, 404);
     // A list entry may link an office login (an operations person who also fixes things); phone sign-in is never
-    // put on one, so this button cannot reach an office account's password.
+    // put on one, so this button cannot reach an office account's password. A field login switched off with its
+    // entry (followWorker) is reopened here: the entry is in-house and on, checked above.
     if (!PIN_ROLES.includes(u.role)) return fail('FORBIDDEN', 'The linked login is an office account. It signs in with email; management manages it under Users and roles.', 403);
-    if (!u.is_active) return fail('VALIDATION', 'The linked login is switched off. Management can switch it back on under Users and roles.', 422);
     employeeId = u.employee_id ?? await nextId();
-    await run(env, 'UPDATE users SET employee_id = ?, password_hash = ?, must_change_password = 1, failed_attempts = 0, locked_until = NULL, updated_at = ? WHERE id = ?',
+    await run(env, 'UPDATE users SET employee_id = ?, password_hash = ?, must_change_password = 1, failed_attempts = 0, locked_until = NULL, is_active = 1, updated_at = ? WHERE id = ?',
       employeeId, hash, now, userId);
     await revokeSessions(env, userId);
   } else {
@@ -62,4 +63,17 @@ export async function giveFieldAccess(env: Env, session: Session, list: WorkerLi
     entityTable: list, entityId: id, after: { userId, employeeId },
   });
   return json({ userId, employeeId, pin }, 200, { 'cache-control': 'no-store' });
+}
+
+/** Cleaners and technicians are managed on Workers only, so a worker switched off there (or changed to an outside
+ *  company, which keeps the link) loses their field-app login at once, and switched back on gets it back. An office
+ *  login linked to a technician entry is never touched: only a cleaner or technician login follows its entry.
+ *  Answers whether the login changed, for the entry's audit row. */
+export async function followWorker(env: Env, userId: string | null, active: boolean): Promise<boolean> {
+  if (!userId) return false;
+  const u = await one<{ role: string; is_active: number }>(env, 'SELECT role, is_active FROM users WHERE id = ?', userId);
+  if (!u || !PIN_ROLES.includes(u.role) || !!u.is_active === active) return false;
+  await run(env, 'UPDATE users SET is_active = ?, updated_at = ? WHERE id = ?', active ? 1 : 0, nowIso(), userId);
+  if (!active) await revokeSessions(env, userId);
+  return true;
 }

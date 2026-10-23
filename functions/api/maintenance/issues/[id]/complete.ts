@@ -13,7 +13,7 @@ import { repairNotice } from '../../../../_lib/notices';
 export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!session.manage && session.role !== 'operations_manager') return fail('FORBIDDEN', 'Only operations managers, finance and management can close a job.', 403);
+  if (!session.manage) return fail('FORBIDDEN', 'Only people with Full Operations access can close a job.', 403);
 
   const id = String(params.id);
   const b = await request.json<any>().catch(() => null);

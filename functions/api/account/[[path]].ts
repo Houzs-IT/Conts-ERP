@@ -1,5 +1,5 @@
 import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/db';
-import { requireSession, securitySettings, verifyPassword, hashPassword, revokeSessions, signSession, cookie, sessionLimits, sessionTable, endSession } from '../../_lib/auth';
+import { requireSession, securitySettings, twoStepRequired, verifyPassword, hashPassword, revokeSessions, signSession, cookie, sessionLimits, sessionTable, endSession } from '../../_lib/auth';
 import { notify } from '../../_lib/notify';
 import { secretProblem, signsInWithPin } from '../../_lib/fieldPin';
 import {
@@ -47,7 +47,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
       backupCodesLeft: user?.totp_enabled_at ? await backupCodesLeft(env, session.userId) : 0,
       available: twoFactorAvailable(env) && tables,
       unavailableReason: !tables ? NOT_MIGRATED : !twoFactorAvailable(env) ? UNAVAILABLE : null,
-      requiredForRole: settings.require2faRoles.includes(session.role),
+      requiredForRole: twoStepRequired(settings, session),
     },
     recentSignIns: recent.map(r => ({ at: r.at, ip: r.ip, userAgent: r.user_agent, result: r.result, method: r.method })),
     devices: devices?.map(d => ({ id: d.id, since: d.created_at, ip: d.ip, userAgent: d.user_agent, current: d.id === session.sid })) ?? null,
@@ -140,8 +140,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   }
 
   if (path === '2fa/disable') {
-    if ((await securitySettings(env)).require2faRoles.includes(user.role)) {
-      return fail('REQUIRED', 'Your role must use two-step sign-in, so it cannot be turned off. To move it to a new phone, ask management to reset it.', 409);
+    if (twoStepRequired(await securitySettings(env), session)) {
+      return fail('REQUIRED', 'Your department must use two-step sign-in, so it cannot be turned off. To move it to a new phone, ask management to reset it.', 409);
     }
     await run(env, 'UPDATE users SET totp_secret = NULL, totp_enabled_at = NULL, totp_last_step = NULL, updated_at = ? WHERE id = ?', nowIso(), session.userId);
     await run(env, 'DELETE FROM user_backup_codes WHERE user_id = ?', session.userId);

@@ -1,5 +1,6 @@
 import { type Env, all, one, run, json, fail, audit, nowIso } from '../../../_lib/db';
 import { requireSession } from '../../../_lib/auth';
+import { can } from '../../../_lib/access';
 import { todayMyt } from '../../../_lib/ops';
 import { statementSettings, type Query } from '../../../_lib/ownerStatement';
 import { invalidDraft, draftColumns, modelOf, MODEL_LABEL, type ContractDraft } from '../../../_lib/revenueModel';
@@ -21,7 +22,7 @@ async function unitOf(env: Env, id: string) {
 export const onRequestGet: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!session.manage) return fail('FORBIDDEN', 'Contracts are visible to finance and management.', 403);
+  if (!(session.manage || can(session, 'finance', 'view'))) return fail('FORBIDDEN', 'Contracts are visible to finance and management.', 403);
   const id = String(params.id);
   const u = await unitOf(env, id);
   if (!u) return fail('NOT_FOUND', 'That unit no longer exists.', 404);

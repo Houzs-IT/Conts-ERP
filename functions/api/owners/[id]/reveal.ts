@@ -1,5 +1,6 @@
 import { type Env, one, json, fail, audit } from '../../../_lib/db';
 import { requireSession } from '../../../_lib/auth';
+import { can } from '../../../_lib/access';
 
 const FIELDS = { ic: 'ic_number', bank: 'bank_account_number' } as const;
 
@@ -9,7 +10,7 @@ const FIELDS = { ic: 'ic_number', bank: 'bank_account_number' } as const;
 export const onRequestGet: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!session.manage) return fail('FORBIDDEN', 'Only management and finance can see full identity and bank numbers.', 403);
+  if (!(session.manage || can(session, 'finance', 'view'))) return fail('FORBIDDEN', 'Only management and finance can see full identity and bank numbers.', 403);
 
   const field = new URL(request.url).searchParams.get('field') as keyof typeof FIELDS | null;
   if (!field || !(field in FIELDS)) return fail('VALIDATION', 'Say which number to show: ic or bank.', 422);

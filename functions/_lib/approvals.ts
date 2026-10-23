@@ -10,12 +10,13 @@
  *  it, and approving runs the staged action and records the decision in one transaction, audited. Rejecting or
  *  cancelling changes nothing but the request.
  *
- *  Who may decide: management, any amount; finance_admin, amounts below approvals.financeAdminLimit. Never the person
+ *  Who may decide: management, any amount; anyone with Full Finance access, amounts below approvals.financeAdminLimit. Never the person
  *  who asked, with one exception so a small team is not stuck: while there is exactly one active management user,
  *  that user may approve their own request with a written reason, and the approval is recorded and audited as
  *  self-approved. */
 import { type Env, all, one, run, audit, nowIso, transaction, json, fail } from './db';
 import type { Session } from './auth';
+import { can } from './access';
 import { insertPayment } from './bookingPayments';
 import { isPeriodLocked } from './expenses';
 import { notifyUsers } from './notify';
@@ -80,7 +81,7 @@ interface RequestLike { requested_by: string; amount: number; status: string }
 
 /** Null when this person may approve or reject the request, else the reason in words. `self` is true when it is
  *  the single-management self-approval, which needs a written note. */
-export function decisionRule(session: Pick<Session, 'userId' | 'role'>, r: RequestLike, ctx: DecideContext): { refusal: string | null; self: boolean } {
+export function decisionRule(session: Pick<Session, 'userId' | 'role' | 'levels'>, r: RequestLike, ctx: DecideContext): { refusal: string | null; self: boolean } {
   if (r.status !== 'pending') return { refusal: 'This request has already been decided.', self: false };
   if (!ctx.enabled) return { refusal: APPROVALS_OFF, self: false };
   const own = r.requested_by === session.userId;
@@ -90,12 +91,12 @@ export function decisionRule(session: Pick<Session, 'userId' | 'role'>, r: Reque
       ? { refusal: null, self: true }
       : { refusal: 'You asked for this, so someone else must approve it.', self: false };
   }
-  if (session.role === 'finance_admin') {
+  if (can(session, 'finance', 'full')) {
     if (own) return { refusal: 'You asked for this, so someone else must approve it.', self: false };
     if (Number(r.amount) < ctx.settings.financeAdminLimit) return { refusal: null, self: false };
-    return { refusal: `Finance admins approve amounts below RM ${(ctx.settings.financeAdminLimit / 100).toLocaleString('en-MY', { minimumFractionDigits: 2 })}. Management must approve this one.`, self: false };
+    return { refusal: `People with Full Finance access approve amounts below RM ${(ctx.settings.financeAdminLimit / 100).toLocaleString('en-MY', { minimumFractionDigits: 2 })}. Management must approve this one.`, self: false };
   }
-  return { refusal: 'Only management and finance admins approve money requests.', self: false };
+  return { refusal: 'Only management and people with Full Finance access approve money requests.', self: false };
 }
 
 /* ------------------------------------------------------------------ */
@@ -126,7 +127,7 @@ function linkFor(kind: ApprovalKind, entityId: string, payload: any): string | n
   }
 }
 
-export function toView(r: any, session: Pick<Session, 'userId' | 'role'>, ctx: DecideContext): ApprovalView {
+export function toView(r: any, session: Pick<Session, 'userId' | 'role' | 'levels'>, ctx: DecideContext): ApprovalView {
   const rule = decisionRule(session, r, ctx);
   const pending = r.status === 'pending';
   const payload = parse(r.payload) ?? {};
@@ -156,8 +157,8 @@ export async function pendingFor(env: Env, session: Session, entity: string, ent
 }
 
 /** How many pending requests this person may decide (the menu's Approvals count). */
-export async function waitingCount(env: Env, session: Pick<Session, 'userId' | 'role'>): Promise<number> {
-  if (session.role !== 'management' && session.role !== 'finance_admin') return 0;
+export async function waitingCount(env: Env, session: Pick<Session, 'userId' | 'role' | 'levels'>): Promise<number> {
+  if (session.role !== 'management' && !can(session, 'finance', 'full')) return 0;
   try {
     const [rows, ctx] = await Promise.all([
       all<RequestLike>(env, `SELECT requested_by, amount, status FROM approval_requests WHERE status = 'pending'`),
@@ -209,7 +210,7 @@ export async function submit(env: Env, session: Session, x: StageInput, done: (r
  *  never fail the request, so everything here is caught and recorded. */
 async function notifyApprovers(env: Env, r: { id: string; kind: ApprovalKind; amount: number; summary: string; requestedBy: string }) {
   try {
-    await notifyUsers(env, { roles: ['management', 'finance_admin'] }, {
+    await notifyUsers(env, { roles: ['finance'] }, {
       kind: 'approval.requested', title: `${KIND_LABEL[r.kind]} waiting for approval`, body: `${r.summary}. Asked by ${r.requestedBy}.`,
       link: '/finance/approvals', entityTable: 'approval_requests', entityId: r.id, dedupeKey: `approval-requested-${r.id}`,
     });

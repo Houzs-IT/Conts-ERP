@@ -9,6 +9,7 @@ import { DataTable, type Column } from '../components/DataTable';
 import { useToast } from '../components/Toast';
 import { useConfirm } from '../components/ConfirmDialog';
 import { useApi } from '../lib/useApi';
+import { mayRun } from '../lib/areaAccess';
 import { CLEANER_FALLBACK, type Cleaner, type Employment } from '../lib/useCleaners';
 import { api, notifyFailure } from '../lib/api';
 import { plural } from '../lib/format';
@@ -58,8 +59,6 @@ const isListKey = (v: string | null): v is ListKey => v === 'cleaners' || v === 
 const inputCls = 'block w-full box-border h-10 px-3 py-0 text-ink bg-white border border-solid border-line rounded-control outline-none [font-family:inherit] text-copy';
 const labelCls = 'text-meta font-medium text-muted-ink';
 
-/** Who may give a worker app access (functions/_lib/fieldAccess.ts). */
-const GRANT = ['management', 'operations_manager'];
 const FIELD_ROLES = ['housekeeper', 'technician'];
 
 /** How an in-house worker gets into the app, if at all. An office login (an operations person who also does repairs)
@@ -92,7 +91,8 @@ function WorkerList({ list, tabs }: { list: ListKey; tabs: ReactNode }) {
   const toast = useToast();
   const [confirmDialog, ask] = useConfirm();
   const { user } = useSession();
-  const mayGrant = GRANT.includes(user?.role ?? '');
+  // Same rule as functions/_lib/fieldAccess.ts: Full on Operations (management, the Operations Manager position).
+  const mayGrant = mayRun(user, 'operations');
 
   const [modal, setModal] = useState<{ mode: 'create' | 'edit'; id?: string; draft: Draft } | null>(null);
   const [access, setAccess] = useState<{ worker: Worker; given?: { employeeId: string; pin: string } } | null>(null);

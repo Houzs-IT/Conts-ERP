@@ -1,4 +1,4 @@
-import type { UserRole, UserSide, AccessLevel } from './types';
+import type { UserRole, AccessLevel, SessionUser } from './types';
 import { LEDGER_SCREENS } from './scmEngine';
 
 /** `badge` names a live count from /api/nav/badges; shown only when above zero. */
@@ -140,8 +140,7 @@ export const NAV: NavGroup[] = [
   ] },
   // Engine screens being tried on staging (owner, 23 Oct 2026). Shown only where the engine answer says beta.
   { label: 'BETA', workspace: 'supply', items: [
-    { key: 'betaHome', label: 'Home', icon: 'home', path: '/beta/home', area: 'projects' },
-    { key: 'betaProjects', label: 'Projects', icon: 'folder-open', path: '/beta/projects', area: 'projects' },
+    { key: 'betaProjects', label: 'Project list', icon: 'folder-open', path: '/beta/projects', area: 'projects' },
     { key: 'betaCalendar', label: 'Calendar', icon: 'calendar-days', path: '/beta/calendar', area: 'projects' },
   ] },
   { label: 'SUPPLY CHAIN', workspace: 'supply', items: [
@@ -214,8 +213,6 @@ export const WORKSPACE_LABEL: Record<Workspace, string> ={ rental: 'The Conts', 
 const DENY: Partial<Record<UserRole, string[]>> = {
   // scInvoices matches MONEY_ONLY in functions/api/_middleware.ts.
   operations_staff: ['finance', 'owners', 'users', 'integrations', 'settings', 'portfolio', 'health', 'scInvoices', 'ledger'],
-  operations_manager: ['ledger'],
-  finance_admin: ['operations', 'comms'],
   housekeeper: ['*'],
   technician: ['*'],
   owner: ['*'],
@@ -231,7 +228,7 @@ export function switchedOff(path: string): boolean {
 /** Menu areas (and single menu keys) whose screens exist only in the supply chain engine: hidden where it is not set up. */
 const ENGINE_ONLY_AREAS = ['serviceCases', 'projects', 'renoQuotations', 'ledger'];
 /** Menu keys shown only where the engine's Beta screens are on (staging). */
-const BETA_ONLY_KEYS = ['betaHome', 'betaProjects', 'betaCalendar'];
+const BETA_ONLY_KEYS = ['betaProjects', 'betaCalendar'];
 const FIXED_ROLES: UserRole[] = ['housekeeper', 'technician', 'owner'];
 
 /** Areas (and menu keys) closed to a role: from its permission levels where the session carries them, else the built-in list. */
@@ -327,14 +324,19 @@ export function workspaceOf(path: string): Workspace | null {
 
 /** role → landing path. The server returns this as `home`; kept here for the client guard. */
 export const HOME: Record<UserRole, string> = {
-  management: '/', operations_manager: '/', operations_staff: '/operations/today',
-  finance_admin: '/owners?view=statements', housekeeper: '/portal/today',
+  management: '/', operations_staff: '/operations/today', housekeeper: '/portal/today',
   technician: '/portal/today', owner: '/owner',
 };
 
-/** Landing path with the side taken into account. Keep in step with homeFor in functions/_lib/door.ts. */
-export const homeFor = (role: UserRole, side?: UserSide) =>
-  side === 'dream_crafter' && (role === 'operations_manager' || role === 'operations_staff') ? '/sales/orders' : HOME[role];
+/** Landing path from the role, side and department. Keep in step with homeFor in functions/_lib/door.ts: the Finance
+ *  department opens the owner statements, and an office account on Dream Crafter only starts on the sales orders. */
+export const homeFor = (who: Pick<SessionUser, 'role' | 'side' | 'department'>): string => {
+  // A cookie signed before the office roles were retired can still carry one: it lands like an office account.
+  const home: string | undefined = HOME[who.role];
+  if (home && who.role !== 'operations_staff') return home;
+  if (who.department?.trim().toLowerCase() === 'finance') return '/owners?view=statements';
+  return who.side === 'dream_crafter' ? '/sales/orders' : HOME.operations_staff;
+};
 
 /** Pages below a menu entry, for the third breadcrumb ("Units / Owners / Owner statement"). */
 const SUB_PAGES: [RegExp, string][] = [

@@ -1,4 +1,5 @@
 import { type Env, all, one, run, nowIso } from './db';
+import { peopleWithAccess, type Level } from './access';
 import { hasColumn } from './auth';
 import { hasRealEmail } from './fieldPin';
 
@@ -161,14 +162,22 @@ export async function deliver(env: Env, s: Send): Promise<string> {
  * signature is relied on by other modules (approvals), so keep it stable.
  * ------------------------------------------------------------------ */
 
-/** Named groups a handler can address instead of listing roles. */
-export const ROLE_GROUPS: Record<string, string[]> = {
-  ops: ['operations_manager', 'operations_staff'],
-  ops_managers: ['operations_manager'],
-  managers: ['management', 'operations_manager'],
-  finance: ['finance_admin', 'management'],
-  management: ['management'],
+/** Named groups a handler can address instead of listing roles. A group is whoever the access rules give that level in
+ *  that area (their department, position or own rules), so a person added to Finance starts getting the finance
+ *  notices without anything here changing. `staff` leaves management out unless the group says so. */
+const GROUPS: Record<string, { area: string; min: Level; staff: boolean; management: boolean }> = {
+  ops: { area: 'operations', min: 'edit', staff: true, management: false },
+  ops_managers: { area: 'operations', min: 'full', staff: true, management: false },
+  managers: { area: 'operations', min: 'full', staff: true, management: true },
+  finance: { area: 'finance', min: 'full', staff: true, management: true },
 };
+
+async function groupMembers(env: Env, group: string): Promise<string[] | null> {
+  const g = GROUPS[group];
+  if (!g) return null;
+  const people = await peopleWithAccess(env, g.area, g.min);
+  return people.filter(p => (p.kind === 'management' ? g.management : g.staff)).map(p => p.id);
+}
 
 /** A role name, a group name from ROLE_GROUPS, a list of user ids, or both kinds at once. */
 export type NotifyTarget = string | string[] | { roles?: string[]; userIds?: (string | null | undefined)[] };
@@ -190,13 +199,16 @@ export interface UserNotice {
   email?: boolean;
 }
 
-function resolveTarget(target: NotifyTarget): { roles: string[]; userIds: string[] } {
-  if (typeof target === 'string') return { roles: ROLE_GROUPS[target] ?? [target], userIds: [] };
+async function resolveTarget(env: Env, target: NotifyTarget): Promise<{ roles: string[]; userIds: string[] }> {
   if (Array.isArray(target)) return { roles: [], userIds: target.filter((x): x is string => !!x) };
-  return {
-    roles: (target.roles ?? []).flatMap(r => ROLE_GROUPS[r] ?? [r]),
-    userIds: (target.userIds ?? []).filter((x): x is string => !!x),
-  };
+  const names = typeof target === 'string' ? [target] : target.roles ?? [];
+  const userIds = typeof target === 'string' ? [] : (target.userIds ?? []).filter((x): x is string => !!x);
+  const roles: string[] = [];
+  for (const name of names) {
+    const members = await groupMembers(env, name);
+    if (members) userIds.push(...members); else roles.push(name);
+  }
+  return { roles, userIds };
 }
 
 /**
@@ -205,7 +217,7 @@ function resolveTarget(target: NotifyTarget): { roles: string[]; userIds: string
  */
 export async function notifyUsers(env: Env, target: NotifyTarget, n: UserNotice): Promise<{ created: number }> {
   try {
-    const { roles, userIds } = resolveTarget(target);
+    const { roles, userIds } = await resolveTarget(env, target);
     if (!roles.length && !userIds.length) return { created: 0 };
     // Lists go as JSON text: the driver runs with fetch_types off, so it cannot send arrays.
     const people = await all<{ id: string; email: string | null }>(env, `
@@ -263,7 +275,7 @@ export async function taskPeople(env: Env, taskId: string): Promise<string[]> {
 export async function technicianFor(env: Env, name: string | null | undefined): Promise<string[]> {
   if (!name?.trim()) return [];
   try {
-    const r = await all<{ id: string }>(env, `SELECT id FROM users WHERE is_active = 1 AND role IN ('technician','housekeeper','operations_staff','operations_manager') AND lower(full_name) = lower(?)`, name.trim());
+    const r = await all<{ id: string }>(env, `SELECT id FROM users WHERE is_active = 1 AND role IN ('technician','housekeeper','operations_staff') AND lower(full_name) = lower(?)`, name.trim());
     return r.map(x => x.id);
   } catch { return []; }
 }

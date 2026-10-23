@@ -1,3 +1,4 @@
+import { mayRun } from '../lib/areaAccess';
 import { useMemo, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
@@ -34,7 +35,7 @@ export default function DriversPage() {
   const { data, loading, error, reload } = useApi<Payload>('/drivers', FALLBACK);
   const toast = useToast();
   const { user } = useSession();
-  const canWrite = !!user && ['management', 'operations_manager', 'finance_admin'].includes(user.role);
+  const canWrite = mayRun(user, 'scTransportPlan');
   const [drawer, setDrawer] = useState<Draft | null>(null);
   const [added, setAdded] = useState<Driver[]>([]);
   const [edits, setEdits] = useState<Record<string, Partial<Driver>>>({});

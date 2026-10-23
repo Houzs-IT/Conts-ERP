@@ -1,5 +1,6 @@
 import { type Env, all, one, json, fail } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
+import { can } from '../../_lib/access';
 import { taskCleanersReady, cleanerListSql, parseCleaners, rosterIdSql } from '../../_lib/taskCleaners';
 
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
@@ -40,7 +41,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     const owned = await one<{ n: number }>(env, 'SELECT COUNT(*) AS n FROM owners WHERE id = ? AND user_id = ?', unit.owner_id, session.userId);
     if (!owned?.n) return fail('FORBIDDEN', 'This unit is not on your account.', 403);
   }
-  const money = session.manage;
+  const money = session.manage || can(session, 'finance', 'view');
   const myt = (col: string) => `to_char((${col})::timestamptz AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM-DD')`;
   const range = (col: string) => `${from ? ` AND ${myt(col)} >= ?` : ''}${to ? ` AND ${myt(col)} <= ?` : ''}`;
   const dates = [...(from ? [from] : []), ...(to ? [to] : [])];

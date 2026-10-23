@@ -1,6 +1,7 @@
 import { type Env, all, one, json, fail, nowIso } from '../../../../_lib/db';
 import { submit } from '../../../../_lib/approvals';
 import { requireSession } from '../../../../_lib/auth';
+import { can } from '../../../../_lib/access';
 import { isIsoDate } from '../../../../_lib/validate';
 import { mayChangeAdjustments as mayChange } from '../../../../_lib/ownerScope';
 
@@ -14,7 +15,7 @@ import { mayChangeAdjustments as mayChange } from '../../../../_lib/ownerScope';
 export const onRequestGet: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!session.manage) return fail('FORBIDDEN', 'Owner adjustments are visible to finance and management roles.', 403);
+  if (!(session.manage || can(session, 'finance', 'view'))) return fail('FORBIDDEN', 'Owner adjustments are visible to finance and management roles.', 403);
   const ownerId = String(params.id);
   if (!await one(env, 'SELECT 1 AS x FROM owners WHERE id = ?', ownerId)) return fail('NOT_FOUND', 'That owner no longer exists.', 404);
 

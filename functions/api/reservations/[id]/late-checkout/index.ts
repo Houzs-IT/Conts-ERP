@@ -1,7 +1,7 @@
 import { type Env, one, run, json, fail, audit, nowIso } from '../../../../_lib/db';
+import { can } from '../../../../_lib/access';
 import { requireSession, isFieldRole } from '../../../../_lib/auth';
 import { clean } from '../../../../_lib/bookingPayments';
-import { MONEY_ROLES } from '../../../../_lib/bookingMoney';
 import { lateCheckoutReady, openLateCheckout, lateBooking, lateRefusal } from '../../../../_lib/lateCheckout';
 import { LIVE_STAY_SQL } from '../../../../_lib/cleaning';
 import { checkSen } from '../../../../_lib/validate';
@@ -22,7 +22,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
     checkOut: r.check_out, checkOutTime: r.check_out_time || '11:00',
     open: await openLateCheckout(env, id),
     canRequest: ready && !lateRefusal(r),
-    canPay: ready && MONEY_ROLES.includes(session.role),
+    canPay: ready && can(session, 'finance', 'edit'),
   });
 };
 

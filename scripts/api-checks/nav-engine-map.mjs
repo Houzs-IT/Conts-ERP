@@ -55,7 +55,8 @@ for (const s of M.LEDGER_SCREENS ?? []) {
 }
 const ledgerMenus = (groups) => paths(groups).filter((p) => M.areaOfPath(p) === 'ledger');
 check('the ledger screens are hidden where the engine is not set up', ledgerMenus(M.navFor('management', false)).length === 0);
-check('an operations manager does not see the ledger screens', ledgerMenus(M.navFor('operations_manager', true)).length === 0);
+// The Operations Manager position is an operations_staff account with Ledger None (migration 0145).
+check('an operations manager does not see the ledger screens', ledgerMenus(M.navFor('operations_staff', true, { ledger: 'none', finance: 'view' })).length === 0);
 check('a role with Ledger None does not see them', ledgerMenus(M.navFor('finance_admin', true, { ledger: 'none' })).length === 0);
 const ledgerOnly = M.navFor('finance_admin', true, { finance: 'none', ledger: 'view' });
 check('a role with only the Ledger sees them without the rest of Finance',
@@ -111,17 +112,19 @@ check('with supply chain work, Finance is in both sidebars', supplyPaths(M.navFo
 
 // Beta (owner, 23 Oct 2026): Home, Projects and Calendar, on the menu only where the engine answer says beta (staging),
 // and each opens the engine's page of the same address.
-const BETA_PATHS = ['/beta/home', '/beta/projects', '/beta/calendar'];
+// No Home: Project list opens the list of all projects that Home showed (owner, 23 Oct 2026).
+const BETA_PATHS = ['/beta/projects', '/beta/calendar'];
 check('Beta is off the menu unless beta is on', BETA_PATHS.every((p) => !paths(M.navFor('management', true)).includes(p)));
 check('Beta needs the engine as well', BETA_PATHS.every((p) => !paths(M.navFor('management', false, undefined, true)).includes(p)));
-check('Beta shows Home, Projects and Calendar in that order with the engine and beta on',
+check('Beta shows Project list and Calendar in that order with the engine and beta on',
   paths(M.navFor('management', true, undefined, true)).filter((p) => BETA_PATHS.includes(p)).join(' ') === BETA_PATHS.join(' '),
   paths(M.navFor('management', true, undefined, true)).filter((p) => BETA_PATHS.includes(p)).join(' '));
 check('Beta follows the Projects area', BETA_PATHS.every((p) => !paths(M.navFor('operations_staff', true, { projects: 'none' }, true)).includes(p)));
 check('Beta opens the engine Beta pages', BETA_PATHS.every((p) => M.ENGINE_PATH[p] === p));
 check('an engine Beta workspace keeps Projects highlighted', M.menuPathFor('/beta/projects/12?tab=defects') === '/beta/projects', M.menuPathFor('/beta/projects/12?tab=defects'));
-check('the engine Beta Home and Calendar keep their own entry highlighted',
-  M.menuPathFor('/beta/home') === '/beta/home' && M.menuPathFor('/beta/calendar') === '/beta/calendar');
+check('the engine Beta Calendar keeps its own entry highlighted', M.menuPathFor('/beta/calendar') === '/beta/calendar');
+const betaItems = M.navFor('management', true, undefined, true).flatMap((g) => g.items).filter((i) => i.path?.startsWith('/beta/'));
+check('the Beta menu says Project list and has no Home', betaItems.map((i) => i.label).join(', ') === 'Project list, Calendar', betaItems.map((i) => i.label).join(', '));
 
 console.log(fails ? `\n${fails} failed` : '\nall passed');
 process.exit(fails ? 1 : 0);

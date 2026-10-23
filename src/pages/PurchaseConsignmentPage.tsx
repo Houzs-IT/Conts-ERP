@@ -1,3 +1,4 @@
+import { mayRun } from '../lib/areaAccess';
 import { useEffect, useMemo, useState } from 'react';
 import { Search, Plus, Trash2 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
@@ -48,7 +49,7 @@ export default function PurchaseConsignmentPage() {
   const warehouses = useApi<{ data: Opt[] }>('/warehouses', WH_FALLBACK).data?.data ?? [];
   const toast = useToast();
   const { user } = useSession();
-  const canWrite = !!user && ['management', 'operations_manager', 'finance_admin'].includes(user.role);
+  const canWrite = mayRun(user, 'scConsignment');
 
   const [statusFilter, setStatusFilter] = useState<Status | 'all'>('all');
   const [search, setSearch] = useState('');

@@ -25,7 +25,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   // Each kind of result follows the role's level for its area, like the screens it opens: a role with no access
   // to Reservations finds no bookings or guests here either. Field and owner accounts never reach this.
   if (isFieldRole(session.role)) return json(out);
-  const lv = await levelsFor(env, session.role, session.side);
+  const lv = await levelsFor(env, session);
   const sees = (area: string) => session.role === 'management' || lv[area] !== 'none';
 
   const unitsRead = !sees('properties') ? [] : all<any>(env, `

@@ -56,7 +56,6 @@ const MyCaseDetail = lazy(() => import("./pages/MyCases").then((m) => ({ default
 const Projects = lazy(() => import("./pages/Projects").then((m) => ({ default: m.Projects })));
 const ProjectDetail = lazy(() => import("./pages/Projects").then((m) => ({ default: m.ProjectDetail })));
 const RenovationBetaHome = lazy(() => import("./pages/renovation-beta/RenovationBetaHome").then((m) => ({ default: m.RenovationBetaHome })));
-const RenovationBetaProjectsEntry = lazy(() => import("./pages/renovation-beta/RenovationBetaHome").then((m) => ({ default: m.RenovationBetaProjectsEntry })));
 const RenovationBetaCalendar = lazy(() => import("./pages/renovation-beta/RenovationBetaCalendar").then((m) => ({ default: m.RenovationBetaCalendar })));
 const RenovationBetaWorkspace = lazy(() => import("./pages/renovation-beta/RenovationBetaWorkspace").then((m) => ({ default: m.RenovationBetaWorkspace })));
 const FairReportFill = lazy(() => import("./pages/FairReportFill").then((m) => ({ default: m.FairReportFill })));
@@ -564,8 +563,9 @@ export default function App() {
             </PageGuard>
           }
         />
-        <Route path="/beta/home" element={<BetaGuard><PageGuard page="projects.list"><RenovationBetaHome /></PageGuard></BetaGuard>} />
-        <Route path="/beta/projects" element={<BetaGuard><PageGuard page="projects.list"><RenovationBetaProjectsEntry /></PageGuard></BetaGuard>} />
+        {/* Beta Home became the Project list (owner, 23 Oct 2026); its old address still opens it. */}
+        <Route path="/beta/home" element={<Navigate to="/beta/projects" replace />} />
+        <Route path="/beta/projects" element={<BetaGuard><PageGuard page="projects.list"><RenovationBetaHome /></PageGuard></BetaGuard>} />
         <Route path="/beta/calendar" element={<BetaGuard><PageGuard page="projects.list"><RenovationBetaCalendar /></PageGuard></BetaGuard>} />
         <Route path="/beta/projects/:id" element={<BetaGuard><PageGuard page="projects.list"><RenovationBetaWorkspace /></PageGuard></BetaGuard>} />
         <Route

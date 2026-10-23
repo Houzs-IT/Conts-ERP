@@ -13,7 +13,7 @@ import { day } from '../../_lib/notices';
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!mayWork(session, ['management', 'operations_manager', 'operations_staff'])) return fail('FORBIDDEN', 'Only operations can assign cleaning.', 403);
+  if (!mayWork(session, ['management'])) return fail('FORBIDDEN', 'Only operations can assign cleaning.', 403);
 
   const b = await request.json<any>().catch(() => null);
   if (typeof b?.buildingId !== 'string' || !b.buildingId) return fail('VALIDATION', 'Say which building.', 422, { buildingId: 'Pick a building.' });

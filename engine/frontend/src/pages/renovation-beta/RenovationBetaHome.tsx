@@ -4,7 +4,7 @@
 
 import { useMemo, useState, type MouseEvent, type ReactElement } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Link, Navigate, useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../../auth/AuthContext";
 import { useQuery } from "../../hooks/useQuery";
 import { BETA, betaDueTone, betaTagTone } from "./renovationBetaTheme";
@@ -201,8 +201,3 @@ function PhoneCard({ r, onOpen }: { r: HomeRow; onOpen: () => void }): ReactElem
   );
 }
 
-/** The Projects menu entry: the last project opened in Beta, or Home when none is remembered. */
-export function RenovationBetaProjectsEntry(): ReactElement {
-  const id = readLastProject();
-  return <Navigate to={id ? `/beta/projects/${id}` : "/beta/home"} replace />;
-}

@@ -1,3 +1,4 @@
+import { mayRun } from '../lib/areaAccess';
 import { useMemo, useState } from 'react';
 import { Search, Plus, Trash2 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
@@ -53,7 +54,7 @@ export default function ProductModelsPage() {
   const { data, loading, error, reload } = useApi<Payload>('/product-models', FALLBACK);
   const toast = useToast();
   const { user } = useSession();
-  const canWrite = !!user && ['management', 'operations_manager', 'finance_admin'].includes(user.role);
+  const canWrite = mayRun(user, 'scProcurement');
 
   const [cat, setCat] = useState<'all' | Category>('all');
   const [search, setSearch] = useState('');

@@ -65,7 +65,7 @@ import {
   History,
   Wand2,
   CalendarOff,
-  type LucideIcon, Landmark, CreditCard, Banknote, Receipt, FlaskConical, Home, FolderOpen, CalendarDays } from "lucide-react";
+  type LucideIcon, Landmark, CreditCard, Banknote, Receipt, FlaskConical, FolderOpen, CalendarDays } from "lucide-react";
 import { cn } from "../lib/utils";
 import { booleanRecordPreference, useIdentityPreference } from "../hooks/useIdentityPreference";
 import { useAuth } from "../auth/AuthContext";
@@ -385,15 +385,8 @@ export const ALL_NAV_TABS: NavTab[] = [
     pageAccess: "projects.list",
     children: [
       {
-        to: "/beta/home",
-        label: "Home",
-        icon: Home,
-        requireBeta: true,
-        pageAccess: "projects.list",
-      },
-      {
         to: "/beta/projects",
-        label: "Projects",
+        label: "Project list",
         icon: FolderOpen,
         requireBeta: true,
         pageAccess: "projects.list",

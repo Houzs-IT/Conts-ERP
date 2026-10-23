@@ -12,7 +12,7 @@ import { date, titleCase, plural } from '../lib/format';
 import { cx, TONE } from '../lib/design-tokens';
 import { useUrlState, SearchBox } from './finance/listKit';
 import { LettingModal, LETTING_STATUS, leftText, type Letting, type LettingsPayload } from './units/LettingTab';
-import { MASTER_ROLES } from './units/shared';
+import { mayEditUnits } from './units/shared';
 
 /** Agent to let (staff sheet UNIT, 17 Oct 2026): every unit we are finding a long-term tenant for, on the owner's
  *  behalf. Rented ones whose agreement ends within 90 days come first, flagged, so they are let again for next year. */
@@ -23,7 +23,7 @@ export default function LettingsPage() {
   const { data, loading, error, reload } = useApi<LettingsPayload>('/lettings');
   const roster = useApi<{ data: { id: string; unitNumber: string; propertyName: string; ownerName: string }[] }>('/units');
   const { user } = useSession();
-  const canEdit = !!user && MASTER_ROLES.includes(user.role);
+  const canEdit = mayEditUnits(user);
   const money = canEdit;
   const navigate = useNavigate();
   const url = useUrlState();

@@ -3,7 +3,6 @@ import { requireSession, isFieldRole } from '../../_lib/auth';
 import { MYT_DATE } from '../../_lib/ops';
 import { waitingCount, approvalsEnabled } from '../../_lib/approvals';
 import { levelsFor } from '../../_lib/access';
-import { MASTER_ROLES } from '../../_lib/properties';
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString('en-MY')} ${n === 1 ? one : many}`;
 
@@ -34,13 +33,13 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     SELECT (SELECT count(DISTINCT unit_id)::int FROM channex_channels) AS units,
            (SELECT max(called_at) FROM channex_calls WHERE status BETWEEN 200 AND 299) AS last_sent,
            (SELECT count(*)::int FROM channex_outbox o WHERE o.status = 'failed' AND o.unit_id IN (SELECT unit_id FROM channex_channels)) AS failed`),
-    waitingCount(env, session), approvalsEnabled(env), levelsFor(env, session.role, session.side)]);
+    waitingCount(env, session), approvalsEnabled(env), levelsFor(env, session)]);
   const channels = { units: ch?.units ?? 0, lastSentAt: ch?.last_sent ?? null, failed: ch?.failed ?? 0 };
   const n = c!;
   // Each count and alert follows the role's level for the area it points into, so nobody is shown a count of
   // records they cannot open or an alert whose link answers "no access".
   const sees = (area: string) => session.role === 'management' || lv[area] !== 'none';
-  const money = MASTER_ROLES.includes(session.role) && sees('finance');
+  const money = sees('finance');
   const ops = sees('operations'), inbox = sees('comms') ? n.inbox : 0, sync = sees('integrations');
 
   type Alert = { key: string; title: string; body: string; target: string; tone: 'critical' | 'warning' | 'info'; count: number };

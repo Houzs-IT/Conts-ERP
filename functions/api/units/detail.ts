@@ -1,6 +1,7 @@
 import { type Env, all, one, json, fail, mytToday } from '../../_lib/db';
 import { purposeReady } from '../../_lib/unitPurpose';
 import { requireSession } from '../../_lib/auth';
+import { can } from '../../_lib/access';
 import { stampMyt } from '../../_lib/ops';
 import { stayMonths, metrics, monthEndExclusive, daysInMonth as daysInMonthOf } from '../../_lib/revenue';
 import { statementSettings } from '../../_lib/ownerStatement';
@@ -49,7 +50,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     if (!owned?.n) return fail('FORBIDDEN', 'This unit is not on your account.', 403);
   }
 
-  const money = session.manage;
+  const money = session.manage || can(session, 'finance', 'view');
   const month = mytToday().slice(0, 7);
 
   // Independent reads, so they go out together: each one is its own connection (db.ts).
@@ -149,10 +150,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       channels: channels.map(c => c.channel),
       owner: {
         id: unit.owner_id, name: unit.owner_name,
-        email: session.manage ? unit.owner_email : null,
+        email: money ? unit.owner_email : null,
         // Contact details for the roles that manage owners; edited on the owner's page only.
-        phone: session.manage ? unit.owner_phone ?? null : null,
-        address: session.manage ? addressOf(unit) : null,
+        phone: money ? unit.owner_phone ?? null : null,
+        address: money ? addressOf(unit) : null,
       },
       contract: unit.management_fee_pct != null ? {
         id: unit.c_id ?? null,

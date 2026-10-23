@@ -22,7 +22,7 @@ vi.mock("../../api/client", async (importOriginal) => {
 vi.mock("../../auth/AuthContext", () => ({ useAuth: () => ({ can: () => h.can }) }));
 
 import { RenovationBetaCalendar } from "./RenovationBetaCalendar";
-import { RenovationBetaHome, RenovationBetaProjectsEntry } from "./RenovationBetaHome";
+import { RenovationBetaHome } from "./RenovationBetaHome";
 
 const person = (id: number, name: string) => ({ id, name, roles: [] as string[] });
 const base = {
@@ -71,9 +71,8 @@ function renderAt(url: string): void {
     <QueryClientProvider client={qc}>
       <MemoryRouter initialEntries={[url]}>
         <Routes>
-          <Route path="/beta/home" element={<><RenovationBetaHome /><Spy /></>} />
+          <Route path="/beta/projects" element={<><RenovationBetaHome /><Spy /></>} />
           <Route path="/beta/calendar" element={<><RenovationBetaCalendar /><Spy /></>} />
-          <Route path="/beta/projects" element={<RenovationBetaProjectsEntry />} />
           <Route path="/beta/projects/:id" element={<Spy />} />
           <Route path="/projects" element={<Spy />} />
         </Routes>
@@ -84,7 +83,7 @@ function renderAt(url: string): void {
 
 describe("Beta Home", () => {
   it("shows the title, counts, tabs and rows as the mockup does", async () => {
-    renderAt("/beta/home");
+    renderAt("/beta/projects");
     expect(await screen.findByRole("heading", { name: "All projects" })).toBeTruthy();
     expect(screen.getByText("3 projects")).toBeTruthy();
     const tabs = within(screen.getByRole("tablist", { name: "Project groups" })).getAllByRole("tab");
@@ -97,7 +96,7 @@ describe("Beta Home", () => {
 
   it("opens a project from its row and remembers it", async () => {
     window.localStorage.removeItem("beta:lastProject");
-    renderAt("/beta/home");
+    renderAt("/beta/projects");
     fireEvent.click((await screen.findAllByText("Baron C-20-08"))[0]);
     expect(where).toBe("/beta/projects/4");
     expect(window.localStorage.getItem("beta:lastProject")).toBe("4");
@@ -105,17 +104,12 @@ describe("Beta Home", () => {
 
   it("shows cards instead of the table on a phone", async () => {
     phone = true;
-    renderAt("/beta/home");
+    renderAt("/beta/projects");
     expect(await screen.findByText("Needs team")).toBeTruthy();
     expect(screen.queryByRole("table")).toBeNull();
     expect(screen.getAllByText("Now: Jia Xin · 1st payment").length).toBeGreaterThan(0);
   });
 
-  it("sends the Projects entry to the last project, or to Home", () => {
-    window.localStorage.setItem("beta:lastProject", "4");
-    renderAt("/beta/projects");
-    expect(where).toBe("/beta/projects/4");
-  });
 });
 
 describe("Beta Calendar", () => {

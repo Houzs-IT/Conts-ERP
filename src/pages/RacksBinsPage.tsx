@@ -1,3 +1,4 @@
+import { mayRun } from '../lib/areaAccess';
 import { useMemo, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
@@ -35,7 +36,7 @@ export default function RacksBinsPage() {
   const warehouses = useApi<{ data: Wh[] }>('/warehouses', WH_FALLBACK).data?.data ?? [];
   const toast = useToast();
   const { user } = useSession();
-  const canWrite = !!user && ['management', 'operations_manager', 'finance_admin'].includes(user.role);
+  const canWrite = mayRun(user, 'scWarehouse');
   const [whFilter, setWhFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [drawer, setDrawer] = useState<{ draft: Rack; isNew: boolean } | null>(null);

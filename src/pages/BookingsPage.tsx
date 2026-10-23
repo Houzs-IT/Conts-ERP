@@ -1,3 +1,4 @@
+import { mayWork } from '../lib/areaAccess';
 import { readDevice } from '../lib/deviceClass';
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
@@ -85,8 +86,6 @@ const FILTER_PARAMS = ['ch', 'building', 'country', 'from', 'to', 'cancelledFrom
 /** URL parameters the server reads. The drawer's `open` stays out so opening a booking does not refetch the list. */
 const API_PARAMS = ['view', 'todo', 'sort', 'page', 'size', ...SEARCH_PARAMS, ...FILTER_PARAMS];
 const CHANNEL_CHOICES: BookingChannel[] = ['airbnb', 'booking_com', 'agoda', 'direct'];
-const MONEY_ROLES = ['management', 'finance_admin', 'operations_manager'];
-const OPS_ROLES = ['management', 'operations_manager', 'operations_staff'];
 
 const nightsBetween = (a: string, b: string) => Math.round((new Date(b).getTime() - new Date(a).getTime()) / 864e5);
 const num = (v: number) => countLabel(v);
@@ -104,8 +103,9 @@ export default function BookingsPage() {
   const UNITS = useUnitRoster();
   const toast = useToast();
   const { user } = useSession();
-  const canMoney = !!user && MONEY_ROLES.includes(user.role);
-  const canOps = !!user && OPS_ROLES.includes(user.role);
+  // Marking host payouts received records money: the server wants Edit on Finance (reservations/mark-paid-out.ts).
+  const canMoney = mayWork(user, 'finance');
+  const canOps = mayWork(user, 'reservations');
   // Phones list bookings as cards to open, not to tick: bulk actions stay on tablet and desktop.
   const phone = useMedia('(max-width: 767.98px)');
 

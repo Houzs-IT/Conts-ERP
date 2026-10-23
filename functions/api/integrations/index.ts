@@ -3,7 +3,7 @@ import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/d
 import { requireSession } from '../../_lib/auth';
 import { channexConfigured } from '../../_lib/channex';
 
-const MANAGE = ['management', 'operations_manager'];
+const MANAGE = ['management']; // everyone else follows the area's level (mayWork / maySee / mayRun)
 const OTA_PROVIDERS = ['airbnb', 'booking_com', 'agoda'];
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {

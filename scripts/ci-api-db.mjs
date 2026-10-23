@@ -29,6 +29,10 @@ await admin.unsafe(`insert into pos.users (id, email, full_name, password_hash, 
   select '11111111-1111-4111-8111-000000000004', 'weiwen@theconts.com', 'Chan Wei Wen', password_hash, 'operations_staff', 0, 'en-MY', 1, now(), now()
   from pos.users where id = '11111111-1111-4111-8111-000000000002'
   on conflict (id) do nothing`);
+// Access follows the department and position (migration 0145); the text columns stay equal to the names.
+await admin.unsafe(`update pos.users u set department_id = d.id, position_id = p.id, department = d.name, position = p.name, side = d.side
+  from pos.departments d join pos.positions p on p.department_id = d.id and p.name = 'Operations Staff'
+  where d.name = 'Operations' and u.id = '11111111-1111-4111-8111-000000000004'`);
 // rbac-matrix links two owners that have final statements to its own owner accounts; the demo owner logins hold them.
 await admin.unsafe(`update pos.owners set user_id = null
   where user_id in (select id from pos.users where role = 'owner' and email not like 'rbac.%')`);

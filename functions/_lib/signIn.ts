@@ -1,18 +1,18 @@
 import { type Env, json, run, nowIso } from './db';
 import { levelsFor } from './access';
-import { signSession, cookie, sessionLimits, startSession, type SecuritySettings } from './auth';
+import { signSession, cookie, sessionLimits, startSession, twoStepRequired, type SecuritySettings } from './auth';
 import { homeFor } from './door';
-import { sideOf } from './userSide';
+import { placeOf } from './userSide';
 import { logLogin, twoFactorAvailable, twoFactorTables, type LoginMethod } from './twoFactor';
 import { employeeIdOfUser } from './fieldPin';
 
 export interface SignInUser { id: string; email: string; full_name: string; role: string; must_change_password: number; totp_enabled_at?: string | null }
 
-/** True when management requires two-step sign-in for this role, this person has not set it up yet, and it
+/** True when management requires two-step sign-in for this person's department, they have not set it up yet, and it
  *  can be set up here (the server has its key and the database has migration 0098). Without the key nobody is
  *  held at the set-up screen, because they could never get past it. */
-export async function twoStepSetupDue(env: Env, settings: SecuritySettings, role: string, enabled: boolean) {
-  return !enabled && settings.require2faRoles.includes(role) && twoFactorAvailable(env) && await twoFactorTables(env);
+export async function twoStepSetupDue(env: Env, settings: SecuritySettings, who: { role: string; departmentId?: string | null }, enabled: boolean) {
+  return !enabled && twoStepRequired(settings, who) && twoFactorAvailable(env) && await twoFactorTables(env);
 }
 
 /** The last step of every successful sign-in (password only, or password then code): clears failed attempts,
@@ -22,19 +22,20 @@ export async function completeSignIn(env: Env, request: Request, user: SignInUse
   await logLogin(env, request, { userId: user.id, email: user.email, result: 'success', method });
 
   const { ttlHours, absoluteDays } = sessionLimits(settings, user.role);
-  const [sid, side] = await Promise.all([startSession(env, request, user.id, absoluteDays), sideOf(env, user.id)]);
+  const [sid, place] = await Promise.all([startSession(env, request, user.id, absoluteDays), placeOf(env, user.id)]);
+  const { side, departmentId, positionId, kind } = place;
   const token = await signSession(env.SESSION_SECRET, {
-    userId: user.id, email: user.email, role: user.role, side, fullName: user.full_name, sid,
+    userId: user.id, email: user.email, role: user.role, side, departmentId, positionId, kind, fullName: user.full_name, sid,
   }, ttlHours, absoluteDays);
 
   return json({
     user: {
       id: user.id, fullName: user.full_name, email: user.email, role: user.role, side,
       mustChangePassword: !!user.must_change_password, locale: 'en-MY', employeeId: await employeeIdOfUser(env, user.id),
-      twoStepSetupRequired: await twoStepSetupDue(env, settings, user.role, !!user.totp_enabled_at),
-      access: await levelsFor(env, user.role, side),
+      twoStepSetupRequired: await twoStepSetupDue(env, settings, { role: user.role, departmentId }, !!user.totp_enabled_at),
+      access: await levelsFor(env, { userId: user.id, role: user.role, side, departmentId, positionId, kind }),
     },
-    home: user.must_change_password ? '/change-password' : homeFor(user.role, side),
+    home: user.must_change_password ? '/change-password' : homeFor({ role: user.role, kind, side, department: place.department }),
   }, 200, { 'set-cookie': cookie(request, token, ttlHours * 3600) });
 }
 

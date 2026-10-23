@@ -1,6 +1,6 @@
 import { type Env, json, fail } from '../../../_lib/db';
+import { can } from '../../../_lib/access';
 import { requireSession } from '../../../_lib/auth';
-import { MONEY_ROLES } from '../../../_lib/bookingMoney';
 import { voidDoc, DocRefused } from '../../../_lib/guestDocuments';
 
 /** POST /api/guest-documents/:id/void { reason } — voids an invoice or receipt. The number stays taken and is shown
@@ -8,7 +8,7 @@ import { voidDoc, DocRefused } from '../../../_lib/guestDocuments';
 export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!MONEY_ROLES.includes(session.role)) return fail('FORBIDDEN', 'Only management, finance and operations managers void guest documents.', 403);
+  if (!can(session, 'finance', 'edit')) return fail('FORBIDDEN', 'Only people who can edit Finance void guest documents.', 403);
   const b = await request.json<{ reason?: string }>().catch(() => null);
   try {
     return json(await voidDoc(env, session, String(params.id), typeof b?.reason === 'string' ? b.reason : ''));

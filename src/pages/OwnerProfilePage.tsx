@@ -148,7 +148,7 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
     }
   }
   // Invite, resend the invitation or email a reset link, whichever fits the login's state (owners/portalAccess.ts).
-  const portal = mayInviteOwners(user?.role) ? portalAction(o, {
+  const portal = mayInviteOwners(user) ? portalAction(o, {
     toast, confirm: setDialog,
     onDone: state => { patch({ portalInvited: true, portal: { ...portalOf(o), state, invitedAt: state === 'invited' ? new Date().toISOString() : portalOf(o).invitedAt } }); reload(); },
   }) : null;

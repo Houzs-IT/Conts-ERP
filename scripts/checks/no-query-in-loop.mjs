@@ -36,6 +36,7 @@ export const allow = {
   'functions/api/housekeeping/rules.ts': `${BOUNDED}: a handful of fixed setting keys.`,
   'functions/api/settings/index.ts': `${BOUNDED}: the setting keys of one form.`,
   'functions/api/users/access.ts': `${BOUNDED}: the access changes of one person.`,
+  'functions/api/users/[id]/access.ts': `${BOUNDED}: the access changes of one person.`,
   'functions/api/users/org-chart.ts': `${BOUNDED}: the managers of one team.`,
   'functions/_lib/bookingLifecycle.ts': `${BOUNDED}: the cleaning tasks of one booking.`,
   'functions/_lib/channexSync.ts': `${BOUNDED}: at most three booking sites per unit.`,

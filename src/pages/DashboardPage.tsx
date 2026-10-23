@@ -361,7 +361,7 @@ export default function DashboardPage() {
 
   const today = useApi<TodayPayload>('/dashboard/today', TODAY_FALLBACK);
   const exc = useApi<ExceptionPayload>('/dashboard/exceptions', EXCEPTION_FALLBACK);
-  // Each part follows the role's levels (Users and roles > Permissions): a role with no access to Portfolio does
+  // Each part follows the person's levels (Users and roles > Permissions): someone with no access to Portfolio does
   // not load or see unit revenue, and an exception offers only the action the server will accept from it.
   const { user } = useSession();
   const level = (area: string) => user?.role === 'management' ? 'full' : user?.access?.[area] ?? 'none';
@@ -373,7 +373,8 @@ export default function DashboardPage() {
   const mayAct = (e: Exception) => {
     switch (e.action.label) {
       case 'Assign cleaner': return works('operations');
-      case 'Notify owner': return ['management', 'operations_manager', 'operations_staff'].includes(user?.role ?? '');
+      // POST /api/owners/:id/notify is checked against the Dashboard area (ROUTE_AREAS in functions/_lib/access.ts).
+      case 'Notify owner': return works('dashboard');
       case 'Review and send': return level('finance') !== 'none';
       case 'Open pricing': return level('performance') === 'full';
       default: return true;

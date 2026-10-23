@@ -48,7 +48,7 @@ function runsOf(days: string[]): string[][] {
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!session.manage && session.role !== 'operations_manager') return fail('FORBIDDEN', 'Only finance, operations managers and management can set rates.', 403);
+  if (!session.manage) return fail('FORBIDDEN', 'Only people with Full Performance access can set rates.', 403);
 
   const b = await request.json<any>().catch(() => null);
   if (!Array.isArray(b?.unitIds) || !b.unitIds.length || b.unitIds.some((u: unknown) => typeof u !== 'string' || !u)) return fail('VALIDATION', 'Pick at least one unit.', 422);

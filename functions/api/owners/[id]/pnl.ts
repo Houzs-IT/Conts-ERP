@@ -1,5 +1,6 @@
 import { type Env, all, one, json, fail, nowIso } from '../../../_lib/db';
 import { requireSession } from '../../../_lib/auth';
+import { can } from '../../../_lib/access';
 import { daysIn, todayMyt } from '../../../_lib/ops';
 
 const CATEGORY_LABEL: Record<string, string> = {
@@ -24,7 +25,7 @@ const label = (c: string) => CATEGORY_LABEL[c] ?? c.replace(/_/g, ' ').replace(/
 export const onRequestGet: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!session.manage) return fail('FORBIDDEN', 'Owner financials are visible to finance and management roles.', 403);
+  if (!(session.manage || can(session, 'finance', 'view'))) return fail('FORBIDDEN', 'Owner financials are visible to finance and management roles.', 403);
 
   const ownerId = String(params.id);
   const url = new URL(request.url);

@@ -142,7 +142,7 @@ function OwnerList({ tabs }: { tabs: ReactNode }) {
   const navigate = useNavigate();
   const [modal, setModal] = useState(false);
   const { user } = useSession();
-  const inviter = mayInviteOwners(user?.role);
+  const inviter = mayInviteOwners(user);
   const [dialog, setDialog] = useState<ConfirmSpec | null>(null);
   // Read through a ref: the memoised columns would otherwise hold a stale toast/dialog closure.
   const actionsRef = useRef<(o: Owner) => RowAction[]>(() => []);

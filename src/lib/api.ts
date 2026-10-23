@@ -158,7 +158,8 @@ export const api = {
     request<T>(path, { method: 'PATCH', body: JSON.stringify(body ?? {}) }),
   put: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: 'PUT', body: JSON.stringify(body ?? {}) }),
-  del: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
+  /** `body` is for the few deletes that need to say more, e.g. where to move people before a department goes. */
+  del: <T>(path: string, body?: unknown) => request<T>(path, body === undefined ? { method: 'DELETE' } : { method: 'DELETE', body: JSON.stringify(body) }),
 };
 
 /**

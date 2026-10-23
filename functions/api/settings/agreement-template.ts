@@ -8,7 +8,7 @@ import { PLACEHOLDERS, templatesReady, currentTemplate, usedKeys } from '../../_
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!maySee(session, ['management', 'finance_admin', 'operations_manager'])) return fail('FORBIDDEN', 'The agreement template is for management, finance and operations managers.', 403);
+  if (!maySee(session, ['management'])) return fail('FORBIDDEN', 'The agreement template is for management, finance and operations managers.', 403);
   if (!(await templatesReady(env))) return json({ ready: false, current: null, versions: [], placeholders: PLACEHOLDERS });
   const [current, versions] = await Promise.all([
     currentTemplate(env),

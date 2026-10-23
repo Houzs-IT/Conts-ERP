@@ -1,3 +1,4 @@
+import { mayRun } from '../lib/areaAccess';
 import { todayMyt } from '../lib/format';
 import { useMemo, useState } from 'react';
 import { Search, Plus } from 'lucide-react';
@@ -43,7 +44,7 @@ export default function StockPage() {
   const warehouses = useApi<{ data: Opt[] }>('/warehouses', WH_FALLBACK).data?.data ?? [];
   const toast = useToast();
   const { user } = useSession();
-  const canWrite = !!user && ['management', 'operations_manager', 'finance_admin'].includes(user.role);
+  const canWrite = mayRun(user, 'scWarehouse');
 
   const [tab, setTab] = useState<'onhand' | 'moves'>('onhand');
   const [whFilter, setWhFilter] = useState('all');

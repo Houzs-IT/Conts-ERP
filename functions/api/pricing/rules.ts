@@ -9,7 +9,7 @@ const CHANNELS = ['airbnb', 'booking_com', 'agoda'];
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!session.manage && session.role !== 'operations_manager') return fail('FORBIDDEN', 'Pricing is visible to finance, operations managers and management.', 403);
+  if (!session.manage) return fail('FORBIDDEN', 'Pricing is visible to people with Full Performance access.', 403);
 
   // Every unit, listed or not: a new unit starts unlisted with no base rate, and it needs one set here
   // before it can be sold anywhere (Channex setup refuses a unit without a base price).

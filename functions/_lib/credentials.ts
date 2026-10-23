@@ -4,7 +4,7 @@ import type { Session } from './auth';
 export const CREDENTIAL_KINDS = ['smart_lock', 'key_box', 'guard_desk', 'lift_card', 'wifi'];
 
 /** Who may see a code in the clear, and so who may set one: the same people. */
-export const CREDENTIAL_ROLES = ['management', 'operations_manager'];
+export const CREDENTIAL_ROLES = ['management']; // everyone else follows the area's level (mayWork / maySee / mayRun)
 export const mayEditCredentials = (s: Session) => mayRun(s, CREDENTIAL_ROLES);
 
 export interface CredentialInput {

@@ -1,6 +1,6 @@
 import { type Env, one, run, json, fail, audit } from '../../../../_lib/db';
+import { can } from '../../../../_lib/access';
 import { requireSession } from '../../../../_lib/auth';
-import { MONEY_ROLES } from '../../../../_lib/bookingMoney';
 
 /** DELETE /api/reservations/:id/payments/:paymentId — removes a payment typed in by mistake. A payout line that came
  *  from the owner workbook is refused: it is rewritten by the next import, so it is corrected in the workbook. Audited
@@ -8,7 +8,7 @@ import { MONEY_ROLES } from '../../../../_lib/bookingMoney';
 export const onRequestDelete: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!MONEY_ROLES.includes(session.role)) return fail('FORBIDDEN', 'Only management, finance and operations managers can remove payments.', 403);
+  if (!can(session, 'finance', 'edit')) return fail('FORBIDDEN', 'Only people who can edit Finance remove payments.', 403);
 
   const p = await one<any>(env, 'SELECT * FROM booking_payments WHERE id = ? AND reservation_id = ?', String(params.paymentId), String(params.id));
   if (!p) return fail('NOT_FOUND', 'That payment does not exist.', 404);

@@ -16,7 +16,7 @@ import { useDevice } from '../lib/deviceClass';
 import { SETTINGS_SECTIONS, type SettingsSectionKey } from '../lib/navigation';
 import { ServicePrices } from './ServicePrices';
 import { useSession } from '../lib/session';
-import { ROLE_LABEL } from '../lib/vocabulary';
+import { useDepartments } from '../components/permissions/shared';
 import { refreshNavCounts } from '../lib/navBadges';
 import AgreementTemplateSettings from './settings/AgreementTemplate';
 
@@ -56,8 +56,12 @@ interface Settings {
   security: {
     staffInactivityTimeoutMins: number; ownerInactivityTimeoutMins: number;
     absoluteTimeoutHours: number; lockoutAttempts: number; lockoutMinutes: number;
-    /** Comma-separated roles that must use two-step sign-in. */
+    /** Comma-separated roles that must use two-step sign-in. Read only: it applies until the departments below are saved. */
     require2faRoles: string;
+    /** Comma-separated department ids that must use two-step sign-in (the setting saved by department). */
+    require2faDepartments?: string;
+    /** Owner logins have no department, so they are ticked on their own. */
+    require2faOwners?: boolean;
   };
   generatedAt: string;
 }
@@ -79,7 +83,6 @@ const FALLBACK: Settings = {
 };
 
 /* -------------------------------- options -------------------------------- */
-const TWO_STEP_ROLES = ['management', 'finance_admin', 'operations_manager', 'operations_staff', 'housekeeper', 'technician', 'owner'];
 const INACTIVITY = [
   { value: 15, label: '15 minutes' },
   { value: 30, label: '30 minutes' },
@@ -170,6 +173,9 @@ const held = (v: number | null) => v as number;
 export default function SettingsPage() {
   const { data, loading, error, reload } = useApi<Settings>('/settings', FALLBACK);
   const toast = useToast();
+  // Two-step sign-in is required by department (the managed list under Users and roles > Permissions).
+  const { data: deptData } = useDepartments();
+  const departments = deptData?.departments ?? [];
   // PUT /api/settings accepts management only; everyone else reads.
   const readOnly = useSession().user?.role !== 'management';
   const navigate = useNavigate();
@@ -271,20 +277,26 @@ export default function SettingsPage() {
 
   const roleBoxes = (
     <div className="grid gap-x-5 gap-y-1 grid-cols-[repeat(auto-fill,minmax(180px,1fr))]">
-      {TWO_STEP_ROLES.map(r => {
-        const on = draft.security.require2faRoles.split(',').includes(r);
+      {departments.map(d => {
+        const ids = (draft.security.require2faDepartments ?? '').split(',').filter(Boolean);
+        const on = ids.includes(d.id);
         return (
-          <label key={r} className={cx('flex items-center gap-2 min-h-8 text-copy', readOnly ? 'cursor-default text-muted-ink' : 'cursor-pointer')}>
+          <label key={d.id} className={cx('flex items-center gap-2 min-h-8 text-copy', readOnly ? 'cursor-default text-muted-ink' : 'cursor-pointer')}>
             <input type="checkbox" className="w-4 h-4" checked={on} disabled={readOnly}
               onChange={() => {
-                const set = new Set(draft.security.require2faRoles.split(',').filter(Boolean));
-                if (on) set.delete(r); else set.add(r);
-                patch('security', { require2faRoles: TWO_STEP_ROLES.filter(x => set.has(x)).join(',') });
+                const set = new Set(ids);
+                if (on) set.delete(d.id); else set.add(d.id);
+                patch('security', { require2faDepartments: departments.filter(x => set.has(x.id)).map(x => x.id).join(',') });
               }} />
-            {ROLE_LABEL[r] ?? r}
+            {d.name}
           </label>
         );
       })}
+      <label className={cx('flex items-center gap-2 min-h-8 text-copy', readOnly ? 'cursor-default text-muted-ink' : 'cursor-pointer')}>
+        <input type="checkbox" className="w-4 h-4" checked={draft.security.require2faOwners ?? false} disabled={readOnly}
+          onChange={e => patch('security', { require2faOwners: e.target.checked })} />
+        Owners (owner portal)
+      </label>
     </div>
   );
 
@@ -410,7 +422,7 @@ export default function SettingsPage() {
         </div>
       </Row>
       <Row label="Require two-step sign-in for"
-        description="People in a ticked role who have not set it up are asked to at their next click, and can do nothing else until they have. Each person sets it up on My account; management can reset it for a lost phone from Users and roles.">
+        description="People in a ticked department, or owners if that box is ticked, who have not set it up are asked to at their next click, and can do nothing else until they have. Each person sets it up on My account; management can reset it for a lost phone from Users and roles.">
         {roleBoxes}
       </Row>
     </> },

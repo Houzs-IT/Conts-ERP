@@ -16,6 +16,9 @@
 //
 // Letters: A = reached the handler (2xx, 4xx other than 401/403), F = 403 refused, U = 401 signed out, E = 5xx.
 // Column order: management, operations_manager, operations_staff, finance_admin, housekeeper, technician, owner, signed out.
+// Since access follows department and position (migrations 0145, 0146), each staff column is a test account placed where
+// 0146 placed that old role: Management / Director, Operations / Operations Manager, Operations / Operations Staff,
+// Finance / Finance Admin, Cleaning / Cleaner, Maintenance / Technician.
 import { createHmac } from 'node:crypto';
 import { readFileSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
@@ -70,7 +73,16 @@ async function callOnce(u, method, path, body) {
 /* ---------- accounts: one per role, two owners linked to owner accounts ---------- */
 export const PERSONAS = ['management', 'operations_manager', 'operations_staff', 'finance_admin', 'housekeeper', 'technician', 'owner', 'anon'];
 const uid = n => `aaaaaaaa-0000-4000-8000-${String(n).padStart(12, '0')}`;
-export const USERS = Object.fromEntries(PERSONAS.slice(0, 6).map((role, i) => [role, { id: uid(i + 1), role, email: `rbac.${role}@local.test`, name: `RBAC ${role}` }]));
+/** column -> [the account's role, department, position]: what migration 0146 made of each old role. */
+const PLACE = {
+  management: ['management', 'Management', 'Director'],
+  operations_manager: ['operations_staff', 'Operations', 'Operations Manager'],
+  operations_staff: ['operations_staff', 'Operations', 'Operations Staff'],
+  finance_admin: ['operations_staff', 'Finance', 'Finance Admin'],
+  housekeeper: ['housekeeper', 'Cleaning', 'Cleaner'],
+  technician: ['technician', 'Maintenance', 'Technician'],
+};
+export const USERS = Object.fromEntries(PERSONAS.slice(0, 6).map((p, i) => [p, { id: uid(i + 1), role: PLACE[p][0], email: `rbac.${p}@local.test`, name: `RBAC ${p}` }]));
 USERS.owner = { id: uid(7), role: 'owner', email: 'rbac.owner-a@local.test', name: 'RBAC owner A' };
 USERS.ownerB = { id: uid(8), role: 'owner', email: 'rbac.owner-b@local.test', name: 'RBAC owner B' };
 USERS.anon = null;
@@ -81,6 +93,13 @@ export async function setup() {
       VALUES ($1, $2, $3, 'pbkdf2$100000$00$00', $4, 0, 'en-MY', 1, now(), now())
       ON CONFLICT (id) DO UPDATE SET role = EXCLUDED.role, is_active = 1, full_name = EXCLUDED.full_name`, u.id, u.email, u.name, u.role);
   }
+  for (const [p, [, dept, pos]] of Object.entries(PLACE)) {
+    const placed = await db(`UPDATE users u SET department_id = d.id, position_id = ps.id, department = d.name, position = ps.name,
+        side = CASE WHEN d.kind = 'management' THEN 'both' ELSE d.side END
+      FROM departments d JOIN positions ps ON ps.department_id = d.id AND ps.name = $3
+      WHERE d.name = $2 AND u.id = $1 RETURNING u.id`, USERS[p].id, dept, pos);
+    if (!placed.length) throw new Error(`No ${dept} / ${pos} on this database (migration 0145).`);
+  }
   // Two owners who each have statements an owner may see, so one can ask for the other's.
   const owners = await db(`SELECT o.id FROM owners o JOIN owner_statements s ON s.owner_id = o.id
     WHERE s.state IN ('finalised','sent','paid') AND (o.user_id IS NULL OR o.user_id IN ($1, $2))
@@ -89,9 +108,8 @@ export async function setup() {
   await db('UPDATE owners SET user_id = NULL WHERE user_id IN ($1, $2)', USERS.owner.id, USERS.ownerB.id);
   await db('UPDATE owners SET user_id = $1 WHERE id = $2', USERS.owner.id, owners[0].id);
   await db('UPDATE owners SET user_id = $1 WHERE id = $2', USERS.ownerB.id, owners[1].id);
-  // Built-in levels only: a level chosen on the Permissions chart would change the answers.
-  const chosen = await db('SELECT count(*)::int AS n FROM role_access').catch(() => [{ n: 0 }]);
-  if (chosen[0].n) throw new Error('role_access has chosen levels; the matrix is for the built-in rules. Clear them on a local database first.');
+  // The department and position rules only: a level chosen for one of these test accounts would change the answers.
+  await db(`DELETE FROM access_rules WHERE scope = 'user' AND scope_id = ANY($1)`, PERSONAS.slice(0, 6).map(p => USERS[p].id));
   return { ownerA: owners[0].id, ownerB: owners[1].id };
 }
 
@@ -223,7 +241,9 @@ async function scenarios(ownerA, ownerB, ids) {
   // Nobody can raise their own role or level.
   r = await call(USERS.operations_manager, 'PATCH', `/api/users/${USERS.operations_manager.id}`, { role: 'management' });
   check('an operations manager cannot make themselves management', r.status === 403, `${r.status}`);
-  r = await call(USERS.operations_manager, 'PUT', '/api/users/access', { changes: [{ role: 'operations_manager', area: 'users', level: 'full' }] });
+  const positionId = async name => (await db(`SELECT p.id FROM positions p JOIN departments d ON d.id = p.department_id WHERE d.name = 'Operations' AND p.name = $1`, name))[0].id;
+  const managerPos = await positionId('Operations Manager'), staffPos = await positionId('Operations Staff');
+  r = await call(USERS.operations_manager, 'PUT', '/api/users/access', { changes: [{ scope: 'position', scopeId: managerPos, key: 'users', level: 'full' }] });
   check('an operations manager cannot change the permissions chart', r.status === 403, `${r.status}`);
   r = await call(USERS.finance_admin, 'POST', '/api/users', { email: 'rbac.x@local.test', fullName: 'X', role: 'management' });
   check('finance cannot invite a management account', r.status === 403, `${r.status}`);
@@ -242,7 +262,7 @@ async function scenarios(ownerA, ownerB, ids) {
 
   // "No access" chosen on the chart refuses reads in that area everywhere, exports and search included,
   // while the shared unit list keeps the other screens working.
-  r = await call(M, 'PUT', '/api/users/access', { changes: [{ role: 'operations_staff', area: 'reservations', level: 'none' }] });
+  r = await call(M, 'PUT', '/api/users/access', { changes: [{ scope: 'position', scopeId: staffPos, key: 'reservations', level: 'none' }] });
   check('management sets operations staff to No access on Reservations', r.status === 200, r.text.slice(0, 160));
   await sleep(11_000);
   for (const p of ['/api/reservations', `/api/reservations/${ids.reservations}`, '/api/reservations/export', '/api/reservations/calendar', '/api/guests', `/api/guests/${ids.guests}`, '/api/guest-documents']) {
@@ -253,7 +273,7 @@ async function scenarios(ownerA, ownerB, ids) {
   check('No access on Reservations: search finds no bookings or guests', r.status === 200 && !r.json.some(h => h.kind === 'reservation' || h.kind === 'guest'), r.text.slice(0, 160));
   r = await call(S, 'GET', '/api/units');
   check('No access on Reservations: the shared unit list still answers', r.status === 200, `${r.status}`);
-  await call(M, 'PUT', '/api/users/access', { changes: [{ role: 'operations_staff', area: 'reservations', level: null }] });
+  await call(M, 'PUT', '/api/users/access', { changes: [{ scope: 'position', scopeId: staffPos, key: 'reservations', level: null }] });
   await sleep(11_000);
   r = await call(S, 'GET', '/api/reservations');
   check('putting the level back restores reading', r.status === 200, `${r.status}`);

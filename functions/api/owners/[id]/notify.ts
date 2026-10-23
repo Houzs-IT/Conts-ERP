@@ -7,7 +7,7 @@ import { notify } from '../../../_lib/notify';
 export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!mayWork(session, ['management', 'operations_manager', 'operations_staff'])) return fail('FORBIDDEN', 'Only operations can notify owners.', 403);
+  if (!mayWork(session, ['management'])) return fail('FORBIDDEN', 'Only operations can notify owners.', 403);
 
   const id = String(params.id);
   const owner = await one<{ display_name: string; email: string }>(env, 'SELECT display_name, email FROM owners WHERE id = ?', id);

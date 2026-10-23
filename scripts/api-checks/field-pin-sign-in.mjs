@@ -40,7 +40,10 @@ async function call(who, method, path, body) {
 await db(`INSERT INTO users (id, email, full_name, password_hash, role, must_change_password, is_active, created_at, updated_at)
   VALUES ('test-ops-staff', 'opsstaff@local.test', 'Ops Staff Test', 'x', 'operations_staff', 0, 1, now()::text, now()::text) ON CONFLICT DO NOTHING`);
 const byRole = async role => (await db(`SELECT id, email, full_name, role FROM users WHERE role = $1 AND is_active = 1 ORDER BY created_at LIMIT 1`, role))[0];
-const mgmt = await byRole('management'), opsMgr = await byRole('operations_manager'), opsStaff = await byRole('operations_staff');
+// Office people are found by department and position: the operations manager and finance admin roles are retired (0146).
+const byPlace = async (dept, pos) => (await db(`SELECT u.id, u.email, u.full_name, u.role FROM users u JOIN departments d ON d.id = u.department_id
+  JOIN positions p ON p.id = u.position_id WHERE d.name = $1 AND p.name = $2 AND u.is_active = 1 ORDER BY u.created_at LIMIT 1`, dept, pos))[0];
+const mgmt = await byRole('management'), opsMgr = await byPlace('Operations', 'Operations Manager'), opsStaff = await byPlace('Operations', 'Operations Staff');
 check('demo accounts exist', mgmt && opsMgr && opsStaff, { mgmt, opsMgr, opsStaff });
 
 const stamp = Date.now().toString().slice(-6);
@@ -143,8 +146,27 @@ r = await call(mgmt, 'POST', `/api/users/${u.id}/security`, { action: 'temp_pass
 check('management reset gives a 6-digit temporary PIN', r.status === 200 && /^\d{6}$/.test(r.json.tempPassword), r);
 r = await call(mgmt, 'POST', `/api/users/${u.id}/resend-invite`, {});
 check('re-send invite refused for an account with no email (409)', r.status === 409 && r.json.error?.code === 'NO_EMAIL', r);
+// Cleaners and technicians live on Workers only (owner, 23 Oct 2026): not on Users and roles, and switching one off on
+// Workers switches their app login off with it.
 r = await call(mgmt, 'GET', '/api/users');
-check('Users and roles lists the employee ID', r.json.data?.find(x => x.id === u.id)?.employeeId === employeeId, r.json.data?.find(x => x.id === u.id));
+check('Users and roles does not list the cleaner', r.status === 200 && !r.json.data?.some(x => x.id === u.id), r.json.data?.find(x => x.id === u.id));
+r = await call(opsStaff, 'PATCH', `/api/housekeeping/cleaners/${cleanerId}`, { isActive: false });
+const [off] = await db('SELECT is_active FROM users WHERE id = $1', u.id);
+check('switching the cleaner off on Workers switches their login off', r.status === 200 && off.is_active === 0, { r, off });
+r = await call(opsStaff, 'PATCH', `/api/housekeeping/cleaners/${cleanerId}`, { isActive: true });
+const [on] = await db('SELECT is_active FROM users WHERE id = $1', u.id);
+check('...and back on, the login works again', r.status === 200 && on.is_active === 1, { r, on });
+// Outside company and back: the link stays, the login is off meanwhile, and Give app access reopens the same login.
+r = await call(opsStaff, 'PATCH', `/api/housekeeping/cleaners/${cleanerId}`, { employmentType: 'outsourced', vendorName: 'Some Sdn Bhd' });
+const [out] = await db('SELECT c.user_id, u.is_active FROM cleaners c JOIN users u ON u.id = c.user_id WHERE c.id = $1', cleanerId);
+check('moved to an outside company: same login kept, switched off', r.status === 200 && out?.user_id === u.id && out.is_active === 0, { r, out });
+r = await call(opsStaff, 'PATCH', `/api/housekeeping/cleaners/${cleanerId}`, { isActive: true });
+const [stillOff] = await db('SELECT is_active FROM users WHERE id = $1', u.id);
+check('...switching an outside entry on does not reopen its login', r.status === 200 && stillOff.is_active === 0, { r, stillOff });
+r = await call(opsStaff, 'PATCH', `/api/housekeeping/cleaners/${cleanerId}`, { employmentType: 'internal' });
+r = await call(opsMgr, 'POST', `/api/housekeeping/cleaners/${cleanerId}/access`, {});
+const [back] = await db('SELECT id, employee_id, is_active FROM users WHERE id = $1', u.id);
+check('back in-house, Give app access reopens the same login and employee ID', r.status === 200 && r.json.userId === u.id && r.json.employeeId === employeeId && back.is_active === 1, { r, back });
 
 console.log(fails ? `${fails} FAILED` : 'all passed');
 process.exit(fails ? 1 : 0);

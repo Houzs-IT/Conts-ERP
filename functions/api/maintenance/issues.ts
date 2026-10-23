@@ -1,4 +1,5 @@
 import { type Env, all, one, run, json, fail, audit, nowIso, mytToday } from '../../_lib/db';
+import { can } from '../../_lib/access';
 import { requireSession, isFieldRole } from '../../_lib/auth';
 import { notify } from '../../_lib/notify';
 import { resolveUnit } from '../../_lib/ops';
@@ -41,7 +42,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     ORDER BY m.reported_at DESC`, ...args);
 
   const windows = await windowsFor(env, rows.map(r => r.id));
-  const money = session.manage || session.role === 'operations_manager';
+  const money = can(session, 'finance', 'view');
   const billing = await hasBilling(env);
   return json({
     generatedAt: nowIso(),
