@@ -3,11 +3,22 @@ import { type Env, all } from './db';
 export type Level = 'none' | 'view' | 'edit' | 'full';
 export const LEVELS: Level[] = ['none', 'view', 'edit', 'full'];
 const RANK: Record<Level, number> = { none: 0, view: 1, edit: 2, full: 3 };
+/** A module's own setting: 'inherit' follows its category's baseline, a level overrides it. */
+export type Setting = Level | 'inherit';
+export const isLevel = (v: unknown): v is Level => typeof v === 'string' && (LEVELS as string[]).includes(v);
+export const isSetting = (v: unknown): v is Setting => v === 'inherit' || isLevel(v);
 
 /** Roles whose access management can change. Management is always full (nobody can lock the system);
  *  housekeepers, technicians and owners use their own apps and are fixed. */
 export const EDITABLE_ROLES = ['operations_manager', 'operations_staff', 'finance_admin'];
 const MASTER = ['management', 'operations_manager', 'finance_admin'];
+/** The highest level a role may be given anywhere. Operations staff are not an administrative role, so no
+ *  category or module can be raised to Full for them, by the chart or by a stored row. */
+export const ROLE_MAX: Record<string, Level> = { operations_staff: 'edit' };
+const capped = (role: string, l: Level): Level => {
+  const max = ROLE_MAX[role];
+  return max && RANK[l] > RANK[max] ? max : l;
+};
 
 export interface Area {
   key: string; label: string; group: string;
@@ -18,7 +29,7 @@ export interface Area {
   /** Kept for the Permissions chart's wording. Reads are refused at "No access" in every area now; the few
    *  reads other screens share across areas are listed in SHARED_READS instead. */
   strictRead?: boolean;
-  /** Built-in level where it differs from the role's usual one. */
+  /** Built-in module override where it differs from its category's baseline (GROUP_DEFAULTS). */
   defaults?: Partial<Record<string, Level>>;
 }
 
@@ -37,49 +48,97 @@ const CLOSED_BY_SIDE: Record<Side, string[]> = {
 /** Management always sees both sides, so nobody can lock the system out of one. */
 const offSide = (role: string, side: Side, area: Area) => role !== 'management' && CLOSED_BY_SIDE[side].includes(area.group);
 
-const OPS_NONE = { operations_staff: 'none' as Level };
+/**
+ * Built-in category baselines, level 1 of the chart (owner's RBAC table, 23 Oct 2026). Every module in a category
+ * inherits its baseline unless the module has its own override (Area.defaults or a stored row). Growth and System
+ * were not in that table and keep the levels they had before.
+ */
+export const GROUP_DEFAULTS: Record<string, Partial<Record<string, Level>>> = {
+  Workspace: { operations_manager: 'full', operations_staff: 'none', finance_admin: 'view' },
+  Operations: { operations_manager: 'full', operations_staff: 'edit', finance_admin: 'view' },
+  'Dream Crafter': { operations_manager: 'full', operations_staff: 'edit', finance_admin: 'view' },
+  Finance: { operations_manager: 'view', operations_staff: 'none', finance_admin: 'full' },
+  Growth: { operations_manager: 'full', operations_staff: 'edit', finance_admin: 'full' },
+  System: { operations_manager: 'full', operations_staff: 'none', finance_admin: 'full' },
+};
 
 export const AREAS: Area[] = [
   { key: 'dashboard', label: 'Dashboard', group: 'Workspace', api: ['dashboard'] },
-  { key: 'portfolio', label: 'Portfolio', group: 'Workspace', api: ['portfolio'], managed: true, strictRead: true, defaults: OPS_NONE },
+  { key: 'portfolio', label: 'Portfolio', group: 'Workspace', api: ['portfolio'], managed: true, strictRead: true },
   // Reservations arrive from the channels through the API; finance reads them but does not create or change them (owner, 11 Oct 2026).
-  { key: 'reservations', label: 'Reservations', group: 'Operations', api: ['reservations', 'guests', 'blocks', 'guest-documents'], defaults: { finance_admin: 'view' } },
-  { key: 'operations', label: 'Operations', group: 'Operations', api: ['operations', 'housekeeping', 'maintenance', 'tasks'], defaults: { finance_admin: 'none' } },
+  { key: 'reservations', label: 'Reservations', group: 'Operations', api: ['reservations', 'guests', 'blocks', 'guest-documents'] },
+  { key: 'operations', label: 'Operations', group: 'Operations', api: ['operations', 'housekeeping', 'maintenance', 'tasks'] },
   { key: 'properties', label: 'Units', group: 'Operations', api: ['properties', 'units', 'inventory', 'access-credentials', 'residence-rules', 'lettings'] },
   { key: 'serviceCases', label: 'Service cases', group: 'Dream Crafter', api: [] },
-  { key: 'projects', label: 'Projects', group: 'Dream Crafter', api: [], defaults: { operations_staff: 'view' } },
+  { key: 'projects', label: 'Projects', group: 'Dream Crafter', api: [] },
   { key: 'scSales', label: 'Sales order', group: 'Dream Crafter', api: ['sales-orders', 'so-amendments', 'delivery-orders', 'sales-returns', 'customers'] },
-  { key: 'scInvoices', label: 'Invoices and payments', group: 'Dream Crafter', api: ['payment-vouchers', 'purchase-invoices', 'sales-invoices', 'unbilled-deliveries', 'credit-notes', 'accounting'], managed: true, strictRead: true, defaults: OPS_NONE },
+  { key: 'scInvoices', label: 'Invoices and payments', group: 'Dream Crafter', api: ['payment-vouchers', 'purchase-invoices', 'sales-invoices', 'unbilled-deliveries', 'credit-notes', 'accounting'], managed: true, strictRead: true,
+    defaults: { operations_manager: 'view', operations_staff: 'none', finance_admin: 'full' } },
   { key: 'scConsignment', label: 'Consignment', group: 'Dream Crafter', api: ['consignment-notes', 'purchase-consignment'] },
   { key: 'scProcurement', label: 'Procurement', group: 'Dream Crafter', api: ['products', 'product-models', 'categories', 'fabrics', 'suppliers', 'mrp', 'purchase-orders', 'goods-receipts', 'purchase-returns'] },
   { key: 'scTransportPlan', label: 'Transportation', group: 'Dream Crafter', api: ['delivery-schedule', 'delivery-zones', 'driver-leave', 'drivers', 'fleet-health', 'coverage-fleet', 'vehicles', 'threepl-companies', 'rate-cards'] },
   { key: 'scWarehouse', label: 'Warehouse', group: 'Dream Crafter', api: ['loading-list', 'warehouses', 'racks', 'stock', 'stock-takes', 'stock-transfers'] },
   // 'owner': the owner portal's endpoints, which finance and management also open as an owner (?ownerId=).
-  { key: 'finance', label: 'Finance', group: 'Finance', api: ['finance', 'expenses', 'statements', 'payouts', 'approvals', 'owner'], managed: true, strictRead: true, defaults: OPS_NONE },
-  { key: 'owners', label: 'Owners', group: 'Finance', api: ['owners', 'contracts'], defaults: OPS_NONE },
+  { key: 'finance', label: 'Finance', group: 'Finance', api: ['finance', 'expenses', 'statements', 'payouts', 'approvals', 'owner'], managed: true, strictRead: true },
+  { key: 'owners', label: 'Owners', group: 'Finance', api: ['owners', 'contracts'] },
   // The company ledger in the engine (finance phase 1): no Property OS routes, sent to the engine at sign-on.
-  { key: 'ledger', label: 'Ledger', group: 'Finance', api: [], managed: true, strictRead: true, defaults: { operations_manager: 'none', operations_staff: 'none' } },
+  // Operations managers read the rest of Finance but never the company books.
+  { key: 'ledger', label: 'Ledger', group: 'Finance', api: [], managed: true, strictRead: true, defaults: { operations_manager: 'none' } },
   { key: 'performance', label: 'Performance', group: 'Growth', api: ['analytics', 'pricing', 'rates', 'reviews'] },
   { key: 'comms', label: 'Communication', group: 'Growth', api: ['messages', 'automations'], defaults: { finance_admin: 'none' } },
   // The user list is read by management and operations managers only (functions/api/users), so finance admins start at none.
-  { key: 'users', label: 'Users and roles', group: 'System', api: ['users'], managed: true, defaults: { ...OPS_NONE, finance_admin: 'none' } },
-  { key: 'integrations', label: 'Integrations', group: 'System', api: ['integrations'], managed: true, defaults: OPS_NONE },
-  { key: 'settings', label: 'Settings', group: 'System', api: ['settings'], managed: true, defaults: OPS_NONE },
-  { key: 'health', label: 'System health', group: 'System', api: ['system', 'audit'], managed: true, defaults: OPS_NONE },
+  { key: 'users', label: 'Users and roles', group: 'System', api: ['users'], managed: true, defaults: { finance_admin: 'none' } },
+  { key: 'integrations', label: 'Integrations', group: 'System', api: ['integrations'], managed: true },
+  { key: 'settings', label: 'Settings', group: 'System', api: ['settings'], managed: true },
+  { key: 'health', label: 'System health', group: 'System', api: ['system', 'audit'], managed: true },
 ];
 
 const BY_KEY = new Map(AREAS.map(a => [a.key, a]));
 const BY_API = new Map(AREAS.flatMap(a => a.api.map(s => [s, a] as const)));
+/** The categories in chart order. A category baseline is stored in role_access under the area key `group:<name>`. */
+export const GROUPS: string[] = [...new Set(AREAS.map(a => a.group))];
+export const groupKey = (group: string): string => `group:${group}`;
+const GROUP_KEYS = new Set(GROUPS.map(groupKey));
 
-/** What the role gets in an area when management has not chosen: full for the three management-side
- *  roles, day-to-day editing for operations staff, less where `defaults` says so. */
-export function builtIn(role: string, area: Area): Level {
+/** A category's baseline for the role when management has not chosen one. Housekeepers, technicians and owners
+ *  have their own apps and no desk areas: the session middleware lets them reach only the routes their apps call
+ *  (FIELD_ALLOWED, OWNER_ALLOWED in functions/api/_middleware.ts). */
+export function builtInGroup(role: string, group: string): Level {
   if (role === 'management') return 'full';
-  // Housekeepers, technicians and owners have their own apps and no desk areas: the session middleware lets
-  // them reach only the routes their apps call (FIELD_ALLOWED, OWNER_ALLOWED in functions/api/_middleware.ts).
   if (!EDITABLE_ROLES.includes(role)) return 'none';
-  return area.defaults?.[role] ?? (MASTER.includes(role) ? 'full' : 'edit');
+  return capped(role, GROUP_DEFAULTS[group]?.[role] ?? (MASTER.includes(role) ? 'full' : 'edit'));
 }
+
+/** A module's own setting for the role when management has not chosen one: inherit, unless Area.defaults overrides. */
+export const builtInSetting = (role: string, area: Area): Setting =>
+  (EDITABLE_ROLES.includes(role) ? area.defaults?.[role] : undefined) ?? 'inherit';
+
+/** `${role}:${areaKey}` -> module setting, `${role}:group:${group}` -> category baseline. Only what management chose. */
+export type Chosen = Map<string, Setting>;
+export interface Resolved { level: Level; setting: Setting; groupLevel: Level; chosen: boolean }
+
+/**
+ * The two-tier rule. Level 1: the category baseline (chosen, else built in). Level 2: the module's setting (chosen,
+ * else built in); 'inherit' takes the baseline, anything else overrides it. Because a module stores 'inherit' rather
+ * than a copy of the baseline, changing a baseline moves every inheriting module at once and leaves overrides alone.
+ * `chosen` is true when the winning value came from management, which is what tells the handlers to follow the
+ * level instead of their own role lists (mayWork / maySee / mayRun).
+ */
+export function resolve(rows: Chosen, role: string, area: Area): Resolved {
+  if (!EDITABLE_ROLES.includes(role)) {
+    const level = builtInGroup(role, area.group);
+    return { level, setting: 'inherit', groupLevel: level, chosen: false };
+  }
+  const g = rows.get(`${role}:${groupKey(area.group)}`);
+  const groupLevel = isLevel(g) ? capped(role, g) : builtInGroup(role, area.group);
+  const m = rows.get(`${role}:${area.key}`);
+  const setting = m ?? builtInSetting(role, area);
+  const level = setting === 'inherit' ? groupLevel : capped(role, setting);
+  return { level, setting, groupLevel, chosen: m !== undefined || (setting === 'inherit' && isLevel(g)) };
+}
+
+/** What the role gets in an area when management has chosen nothing. */
+export const builtIn = (role: string, area: Area): Level => resolve(new Map(), role, area).level;
 
 /**
  * Endpoints that belong to a different area than their first path segment says, because a screen of that other
@@ -112,7 +171,6 @@ function routeArea(method: string, path: string): Area | null {
   return areaForPath(path);
 }
 
-type Chosen = Map<string, Level>; // `${role}:${area}`
 let cache: { at: number; rows: Chosen } | null = null;
 const CACHE_MS = 10_000;
 
@@ -122,8 +180,11 @@ async function chosen(env: Env): Promise<Chosen> {
   if (cache && Date.now() - cache.at < CACHE_MS) return cache.rows;
   let rows: Chosen = new Map();
   try {
-    const r = await all<{ role: string; area: string; level: Level }>(env, 'SELECT role, area, level FROM role_access');
-    rows = new Map(r.filter(x => BY_KEY.has(x.area) && LEVELS.includes(x.level)).map(x => [`${x.role}:${x.area}`, x.level]));
+    const r = await all<{ role: string; area: string; level: string }>(env, 'SELECT role, area, level FROM role_access');
+    // A category row holds a level; a module row a level or 'inherit' (migration 0144).
+    for (const x of r) {
+      if ((GROUP_KEYS.has(x.area) && isLevel(x.level)) || (BY_KEY.has(x.area) && isSetting(x.level))) rows.set(`${x.role}:${x.area}`, x.level);
+    }
   } catch {
     // The table arrives with migration 0049; until then nothing is chosen and the built-in rules stand.
   }
@@ -147,8 +208,8 @@ export async function accessFor(env: Env, role: string, path: string, method = '
   if (!area) return { area: null, level: 'full', chosen: false, role };
   // Closed by the account's side: treated as a chosen No access, so the handlers' own role lists give way too.
   if (offSide(role, side, area)) return { area, level: 'none', chosen: true, role };
-  const picked = EDITABLE_ROLES.includes(role) ? (await chosen(env)).get(`${role}:${area.key}`) : undefined;
-  return { area, level: picked ?? builtIn(role, area), chosen: picked !== undefined, role };
+  const r = resolve(EDITABLE_ROLES.includes(role) ? await chosen(env) : new Map(), role, area);
+  return { area, level: r.level, chosen: r.chosen, role };
 }
 
 /** Whether the management-only actions in the request's area are open to this role. */
@@ -169,20 +230,34 @@ export function refusalFor(a: Access, method: string): string | null {
 
 /** Every area's level for one role and side: what its menu and screens follow. */
 export async function levelsFor(env: Env, role: string, side: Side = 'both'): Promise<Record<string, Level>> {
-  const rows = EDITABLE_ROLES.includes(role) ? await chosen(env) : new Map<string, Level>();
-  return Object.fromEntries(AREAS.map(a => [a.key, offSide(role, side, a) ? 'none' : rows.get(`${role}:${a.key}`) ?? builtIn(role, a)]));
+  const rows: Chosen = EDITABLE_ROLES.includes(role) ? await chosen(env) : new Map();
+  return Object.fromEntries(AREAS.map(a => [a.key, offSide(role, side, a) ? 'none' : resolve(rows, role, a).level]));
 }
 
-/** The whole chart for the Permissions tab. */
-export async function chart(env: Env) {
+export interface GroupCell { level: Level; builtIn: Level; chosen: boolean }
+export interface AreaCell { setting: Setting; builtIn: Setting; chosen: boolean; level: Level }
+export interface ChartGroup { group: string; roles: Record<string, GroupCell> }
+export interface ChartArea { key: string; label: string; group: string; managed: boolean; roles: Record<string, AreaCell> }
+
+/** The whole chart for the Permissions tab: each category's baseline per role, then each module's own setting. */
+export async function chart(env: Env): Promise<{ groups: ChartGroup[]; areas: ChartArea[] }> {
   const rows = await chosen(env);
-  return AREAS.map(a => ({
-    key: a.key, label: a.label, group: a.group, managed: !!a.managed,
+  const groups = GROUPS.map(group => ({
+    group,
     roles: Object.fromEntries(EDITABLE_ROLES.map(r => {
-      const picked = rows.get(`${r}:${a.key}`);
-      return [r, { level: picked ?? builtIn(r, a), builtIn: builtIn(r, a), chosen: picked !== undefined }];
+      const picked = rows.get(`${r}:${groupKey(group)}`);
+      const builtIn = builtInGroup(r, group);
+      return [r, { level: isLevel(picked) ? capped(r, picked) : builtIn, builtIn, chosen: isLevel(picked) }];
     })),
   }));
+  const areas = AREAS.map(a => ({
+    key: a.key, label: a.label, group: a.group, managed: !!a.managed,
+    roles: Object.fromEntries(EDITABLE_ROLES.map(r => {
+      const { setting, level } = resolve(rows, r, a);
+      return [r, { setting, builtIn: builtInSetting(r, a), chosen: rows.has(`${r}:${a.key}`), level }];
+    })),
+  }));
+  return { groups, areas };
 }
 
 /** The three questions the handlers ask, for rules that name roles themselves. Where management chose a

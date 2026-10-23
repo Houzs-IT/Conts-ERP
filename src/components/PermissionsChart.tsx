@@ -1,14 +1,20 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Card } from './Card';
 import { Button } from './Button';
+import Icon from './Icon';
 import { useToast } from './Toast';
 import { useApi } from '../lib/useApi';
 import { api, errorMessage } from '../lib/api';
-import type { AccessLevel } from '../lib/types';
+import { cx } from '../lib/design-tokens';
+import type { AccessLevel, AccessSetting } from '../lib/types';
 
-interface Cell { level: AccessLevel; builtIn: AccessLevel; chosen: boolean }
-interface AreaRow { key: string; label: string; group: string; managed: boolean; roles: Record<string, Cell> }
-interface Chart { roles: string[]; levels: AccessLevel[]; areas: AreaRow[]; canEdit: boolean }
+interface GroupCell { level: AccessLevel; builtIn: AccessLevel; chosen: boolean }
+interface AreaCell { setting: AccessSetting; builtIn: AccessSetting; chosen: boolean; level: AccessLevel }
+interface GroupRow { group: string; roles: Record<string, GroupCell> }
+interface AreaRow { key: string; label: string; group: string; managed: boolean; roles: Record<string, AreaCell> }
+interface Chart { roles: string[]; levels: AccessLevel[]; roleMax: Record<string, AccessLevel>; groups: GroupRow[]; areas: AreaRow[]; canEdit: boolean }
+/** What a dropdown compares against: the saved value, the built-in one, and whether management chose it. */
+interface Saved { value: AccessSetting; builtIn: AccessSetting; chosen: boolean }
 
 const ROLE_LABEL: Record<string, string> = {
   operations_manager: 'Operations manager', operations_staff: 'Operations staff', finance_admin: 'Finance admin',
@@ -30,23 +36,28 @@ const FIXED_ROLES = [
   { name: 'Maintenance technician', note: 'the field app only: their own maintenance jobs, once any owner approval and parts are in.' },
   { name: 'Owner', note: 'the owner portal only: their own units, statements and documents.' },
 ];
-const GRID ='grid grid-cols-[minmax(190px,1.4fr)_110px_repeat(3,minmax(150px,1fr))] gap-2.5 items-center px-5';
+const GRID = 'grid grid-cols-[minmax(200px,1.4fr)_96px_repeat(3,minmax(180px,1fr))] gap-2.5 items-center px-5';
+const SELECT = 'h-8 w-full max-w-[200px] px-2 py-0 [font-family:inherit] text-copy bg-card border border-solid rounded-control outline-none';
 
-/** The editable permissions chart: one row per area, one column per role management can change. */
+const groupKey = (role: string, group: string) => `${role}:group:${group}`;
+const areaKey = (role: string, area: string) => `${role}:${area}`;
+
+/**
+ * The permissions chart, category first. Each category header sets a baseline per role; each module under it
+ * inherits that baseline unless it has its own override. Only management can change it.
+ */
 export default function PermissionsChart() {
   const { data, loading, error, reload } = useApi<Chart>('/users/access');
   const toast = useToast();
-  // key `${role}:${area}` -> the level picked but not yet saved; null puts the area back on its built-in rule
-  const [draft, setDraft] = useState<Record<string, AccessLevel | null>>({});
+  // `${role}:group:${group}` or `${role}:${area}` -> the value picked but not yet saved; null puts it back on its built-in rule
+  const [draft, setDraft] = useState<Record<string, AccessSetting | null>>({});
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
   useEffect(() => { setDraft({}); }, [data]);
 
-  const groups = useMemo(() => {
-    const out: { group: string; areas: AreaRow[] }[] = [];
-    for (const a of data?.areas ?? []) {
-      const g = out.find(x => x.group === a.group);
-      if (g) g.areas.push(a); else out.push({ group: a.group, areas: [a] });
-    }
+  const areasByGroup = useMemo(() => {
+    const out = new Map<string, AreaRow[]>();
+    for (const a of data?.areas ?? []) out.set(a.group, [...(out.get(a.group) ?? []), a]);
     return out;
   }, [data]);
 
@@ -54,28 +65,50 @@ export default function PermissionsChart() {
   if (loading || !data) return <Card><div className="p-5 text-copy text-muted-ink">Loading the permissions chart…</div></Card>;
 
   const pending = Object.keys(draft).length;
-  const shown = (a: AreaRow, role: string): AccessLevel => {
-    const d = draft[`${role}:${a.key}`];
-    return d === undefined ? a.roles[role].level : d ?? a.roles[role].builtIn;
+  const rank = (l: AccessLevel) => data.levels.indexOf(l);
+  // Operations staff are capped below Full (functions/_lib/access.ts ROLE_MAX), so Full is not offered to them.
+  const levelsFor = (role: string) => data.levels.filter(l => !data.roleMax[role] || rank(l) <= rank(data.roleMax[role]));
+
+  // A category header shows its draft when there is one (null = back to built in), else the saved baseline.
+  const baseline = (g: GroupRow, role: string): AccessLevel => {
+    const d = draft[groupKey(role, g.group)];
+    if (d === undefined || d === 'inherit') return g.roles[role].level;
+    return d ?? g.roles[role].builtIn;
   };
-  const pick = (a: AreaRow, role: string, level: AccessLevel) => {
-    const cell = a.roles[role];
+  const setting = (a: AreaRow, role: string): AccessSetting => {
+    const d = draft[areaKey(role, a.key)];
+    return d === undefined ? a.roles[role].setting : d ?? a.roles[role].builtIn;
+  };
+  // How a header change reaches its modules: nothing is copied down. A module set to 'inherit' works out its level
+  // here, at render, from the header's shown baseline, so changing the header re-labels every inheriting module at
+  // once. A module with its own override keeps its value because this never reads the baseline for it.
+  const effective = (a: AreaRow, g: GroupRow, role: string): AccessLevel => {
+    const s = setting(a, role);
+    return s === 'inherit' ? baseline(g, role) : s;
+  };
+
+  const pick = (key: string, saved: Saved, value: AccessSetting) => {
     setDraft(prev => {
       const next = { ...prev };
-      // Picking what is already saved clears the pending change; picking the built-in level removes the override.
-      if (level === cell.level && (cell.chosen || level !== cell.builtIn)) delete next[`${role}:${a.key}`];
-      else if (level === cell.builtIn && !cell.chosen) delete next[`${role}:${a.key}`];
-      else next[`${role}:${a.key}`] = level === cell.builtIn ? null : level;
+      // Picking what is already in force clears the pending change; picking the built-in value removes the stored one.
+      const inForce = saved.chosen ? saved.value : saved.builtIn;
+      if (value === inForce) delete next[key];
+      else next[key] = value === saved.builtIn ? null : value;
       return next;
     });
   };
+  const toggle = (group: string) => setCollapsed(prev => {
+    const next = new Set(prev);
+    if (next.has(group)) next.delete(group); else next.add(group);
+    return next;
+  });
 
   const save = async () => {
     setSaving(true);
     try {
       const changes = Object.entries(draft).map(([k, level]) => {
-        const [role, area] = k.split(':');
-        return { role, area, level };
+        const [role, kind, ...rest] = k.split(':');
+        return kind === 'group' ? { role, group: rest.join(':'), level } : { role, area: kind, level };
       });
       await api.put('/users/access', { changes });
       toast({ tone: 'success', title: `${changes.length} permission ${changes.length === 1 ? 'change' : 'changes'} saved.`, body: 'People in that role see it the next time they open or refresh the system.' });
@@ -90,8 +123,9 @@ export default function PermissionsChart() {
   return (
     <Card>
       <div className="py-[13px] px-5 [border-bottom:1px_solid_var(--color-line)] text-meta text-muted-ink leading-[1.5]">
-        What each role can do in each part of the system. {data.canEdit ? 'Pick a level, then save.' : 'Only management can change this.'} Management
-        always has full access; its column is shown for reference and cannot be changed, so nobody can be locked out. Cleaners, technicians and owners use their own apps and are fixed.
+        What each role can do in each part of the system. Set a level on a category and every area under it follows, unless the area has
+        its own override. {data.canEdit ? 'Pick a level, then save.' : 'Only management can change this.'} Management always has full
+        access and cannot be changed, so nobody can be locked out. Operations staff can go up to Edit, never Full.
       </div>
       <div className="flex gap-x-5 gap-y-1.5 flex-wrap py-[11px] px-5 [border-bottom:1px_solid_var(--color-line-soft)]">
         {data.levels.map(l => (
@@ -101,42 +135,83 @@ export default function PermissionsChart() {
         ))}
       </div>
       <div className="overflow-x-auto">
-        <div className="min-w-[820px]">
+        <div className="min-w-[880px]">
           <div className={`${GRID} py-2.5 bg-muted [border-bottom:1px_solid_var(--color-line)] text-caption font-semibold text-muted-ink`}>
-            <div>Area</div>
+            <div>Category and area</div>
             <div>Management</div>
             {data.roles.map(r => <div key={r}>{ROLE_LABEL[r] ?? r}</div>)}
           </div>
-          {groups.map(g => (
-            <div key={g.group}>
-              <div className="px-5 pt-3 pb-1.5 text-caption font-semibold tracking-[0.08em] uppercase text-muted-ink">{g.group}</div>
-              {g.areas.map(a => (
-                <div key={a.key} className={`${GRID} py-[7px] [border-bottom:1px_solid_var(--color-line-soft)]`}>
-                  <div className="text-copy font-medium">{a.label}</div>
+          {data.groups.map(g => {
+            const open = !collapsed.has(g.group);
+            const areas = areasByGroup.get(g.group) ?? [];
+            return (
+              <div key={g.group}>
+                {/* Category header: its dropdown is the baseline every inheriting area below follows. */}
+                <div className={`${GRID} py-2 bg-page [border-bottom:1px_solid_var(--color-line)]`}>
+                  <button type="button" onClick={() => toggle(g.group)} aria-expanded={open}
+                    className="flex items-center gap-1.5 min-w-0 p-0 border-none bg-transparent cursor-pointer text-left [font-family:inherit] text-copy font-semibold text-ink">
+                    <span className={cx('grid transition-transform duration-150 text-muted-ink', !open && '-rotate-90')}><Icon name="ChevronDown" size="sm" /></span>
+                    {g.group}
+                    <span className="text-caption font-normal text-muted-ink">{areas.length} {areas.length === 1 ? 'area' : 'areas'}</span>
+                  </button>
                   <div className="text-meta font-semibold" style={{ color: LEVEL_COLOR.full }}>Full</div>
                   {data.roles.map(r => {
-                    const level = shown(a, r);
-                    const changed = draft[`${r}:${a.key}`] !== undefined;
+                    const cell = g.roles[r];
+                    const level = baseline(g, r);
+                    const changed = draft[groupKey(r, g.group)] !== undefined;
                     return (
                       <div key={r}>
                         <select
-                          aria-label={`${ROLE_LABEL[r] ?? r} access to ${a.label}`}
+                          aria-label={`${ROLE_LABEL[r] ?? r} baseline for ${g.group}`}
                           value={level} disabled={!data.canEdit || saving}
-                          onChange={e => pick(a, r, e.target.value as AccessLevel)}
-                          className="h-8 w-full max-w-[150px] px-2 py-0 [font-family:inherit] text-copy font-semibold bg-card border border-solid rounded-control outline-none"
+                          onChange={e => pick(groupKey(r, g.group), { value: cell.level, builtIn: cell.builtIn, chosen: cell.chosen }, e.target.value as AccessLevel)}
+                          className={`${SELECT} font-semibold`}
                           style={{ color: LEVEL_COLOR[level], borderColor: changed ? 'var(--color-gold)' : 'var(--color-line)' }}
                         >
-                          {data.levels.map(l => (
-                            <option key={l} value={l}>{LEVEL_LABEL[l]}{l === a.roles[r].builtIn ? ' (standard)' : ''}</option>
-                          ))}
+                          {levelsFor(r).map(l => <option key={l} value={l}>{LEVEL_LABEL[l]}{l === cell.builtIn ? ' (standard)' : ''}</option>)}
                         </select>
                       </div>
                     );
                   })}
                 </div>
-              ))}
-            </div>
-          ))}
+                {open && areas.map(a => (
+                  <div key={a.key} className={`${GRID} py-[7px] [border-bottom:1px_solid_var(--color-line-soft)]`}>
+                    <div className="pl-[26px] text-copy font-medium">{a.label}</div>
+                    <div className="text-meta text-muted-ink">Full</div>
+                    {data.roles.map(r => {
+                      const cell = a.roles[r];
+                      const s = setting(a, r);
+                      const level = effective(a, g, r);
+                      const inherited = s === 'inherit';
+                      const changed = draft[areaKey(r, a.key)] !== undefined;
+                      return (
+                        <div key={r} className="flex items-center gap-1.5 min-w-0">
+                          <select
+                            aria-label={`${ROLE_LABEL[r] ?? r} access to ${a.label}`}
+                            value={s} disabled={!data.canEdit || saving}
+                            onChange={e => pick(areaKey(r, a.key), { value: cell.setting, builtIn: cell.builtIn, chosen: cell.chosen }, e.target.value as AccessSetting)}
+                            className={cx(SELECT, inherited ? 'font-normal' : 'font-semibold')}
+                            // Inherited: muted, so the eye goes to the overrides. Overridden: the level's own colour.
+                            style={{ color: inherited ? 'var(--color-text-muted)' : LEVEL_COLOR[level], borderColor: changed ? 'var(--color-gold)' : 'var(--color-line)' }}
+                          >
+                            <option value="inherit">Inherit from {g.group} ({LEVEL_LABEL[baseline(g, r)]}){cell.builtIn === 'inherit' ? ' (standard)' : ''}</option>
+                            {levelsFor(r).map(l => <option key={l} value={l}>{LEVEL_LABEL[l]}{l === cell.builtIn ? ' (standard)' : ''}</option>)}
+                          </select>
+                          {!inherited && (
+                            <span title={`Overrides the ${g.group} baseline`}
+                              className="flex-none text-[11px] leading-none font-semibold py-[3px] px-1.5 rounded-[4px] border border-solid"
+                              style={{ background: 'var(--color-info)', color: 'var(--color-info-fg)', borderColor: 'var(--color-info-line)' }}>
+                              Override
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
+            );
+          })}
         </div>
       </div>
       <div className="px-5 py-3 [border-top:1px_solid_var(--color-line)]">
@@ -148,7 +223,7 @@ export default function PermissionsChart() {
       {data.canEdit && (
         <div className="py-[13px] px-5 flex items-center justify-between gap-3 flex-wrap bg-page">
           <span className="text-meta text-muted-ink">
-            {pending === 0 ? 'No unsaved changes. “(standard)” marks the level a role has when nothing is chosen.' : `${pending} unsaved ${pending === 1 ? 'change' : 'changes'}.`}
+            {pending === 0 ? 'No unsaved changes. “(standard)” marks the value a role has when nothing is chosen.' : `${pending} unsaved ${pending === 1 ? 'change' : 'changes'}.`}
           </span>
           <span className="flex gap-2">
             <Button onClick={() => setDraft({})} disabled={pending === 0 || saving}>Discard</Button>

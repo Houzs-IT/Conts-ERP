@@ -44,6 +44,8 @@ export interface SessionUser {
 }
 
 export type AccessLevel = 'none' | 'view' | 'edit' | 'full';
+/** A module's own setting on the Permissions chart: 'inherit' follows its category's baseline. */
+export type AccessSetting = 'inherit' | AccessLevel;
 
 export interface Money {
   /** Integer sen. RM 12,450.00 === 1245000. Never a float. */
