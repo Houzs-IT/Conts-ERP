@@ -2,7 +2,7 @@ import { type Env, one, run, json, fail, audit, nowIso, transaction } from '../.
 import { requireSession } from '../../_lib/auth';
 import { checkPhone } from '../../_lib/validate';
 import { forgetRules, roleForKind } from '../../_lib/access';
-import { loadDepartment } from '../../_lib/accessRules';
+import { loadDepartment, otherManagers } from '../../_lib/accessRules';
 
 interface Before {
   role: string; is_active: number; manager_id: string | null; full_name: string; email: string; phone: string | null;
@@ -52,14 +52,14 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     const wanted = b.positionId !== undefined ? (typeof b.positionId === 'string' && b.positionId ? b.positionId : null) : (moved ? null : before.position_id);
     const position = wanted ? department.positions.find(p => p.id === wanted) ?? null : null;
     if (wanted && !position) return fail('VALIDATION', 'That position is not in the department.', 422, { positionId: 'Choose a position of this department.' });
-    // The hidden role only follows a change of department, so re-sending the same one leaves a legacy role alone.
-    job = { departmentId: department.id, positionId: position?.id ?? null, department: department.name, position: position?.name ?? null, side: department.side, role: moved ? roleForKind(department.kind) : before.role, moved };
+    // The hidden role is worked out from the department's kind on every save, so an old account cannot drift from it.
+    job = { departmentId: department.id, positionId: position?.id ?? null, department: department.name, position: position?.name ?? null, side: department.side, role: roleForKind(department.kind), moved };
   }
 
   const losesAdmin = before.role === 'management' && before.is_active === 1 && ((job !== null && job.role !== 'management') || b.isActive === false);
-  if (losesAdmin) {
-    const others = await one<{ n: number }>(env, `SELECT COUNT(*) AS n FROM users WHERE role = 'management' AND is_active = 1 AND id != ?`, id);
-    if (!others || Number(others.n) === 0) return fail('LAST_ADMIN', 'There must always be at least one active management account.', 409);
+  // A View as test account is not an administrator, so changing one never needs the check.
+  if (losesAdmin && !before.email.toLowerCase().endsWith('@staging.invalid')) {
+    if (await otherManagers(env, { userId: id }) === 0) return fail('LAST_ADMIN', 'There must always be at least one active management account.', 409);
   }
 
   await transaction(env, async tx => {

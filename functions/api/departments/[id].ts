@@ -1,7 +1,7 @@
 import { type Env, one, run, json, fail, audit, nowIso, transaction } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { isKind, isSide, roleForKind, forgetRules } from '../../_lib/access';
-import { type Department, type Position, cleanName, isRecord, isSort, isUniqueViolation, loadDepartment, parseDepartmentMove } from '../../_lib/accessRules';
+import { type Department, type Position, IN_DEPARTMENT, cleanName, isRecord, isSort, isUniqueViolation, loadDepartment, managersIn, otherManagers, parseDepartmentMove } from '../../_lib/accessRules';
 
 /** PATCH /api/departments/:id { name?, kind?, side?, sort? } -> { department }. Management only. A new name, kind or
  *  side is carried to every member in the same request: the text department, the hidden role, the side. */
@@ -28,11 +28,10 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   const cur = await loadDepartment(env, id);
   if (!cur) return fail('NOT_FOUND', 'That department no longer exists.', 404);
 
-  // Taking the kind away from a management department turns its people into staff: never the last management accounts.
-  if (kind !== undefined && kind !== cur.kind && cur.kind === 'management') {
-    const others = await one<{ n: number }>(env,
-      `SELECT count(*) AS n FROM users WHERE role = 'management' AND is_active = 1 AND department_id IS DISTINCT FROM ?`, id);
-    if (!others || Number(others.n) === 0) return fail('LAST_ADMIN', 'There must always be at least one active management account.', 409);
+  // The people in it get the role their department's kind gives, so a department that stops being management must not
+  // take the last management accounts with it.
+  if (roleForKind(kind ?? cur.kind) !== 'management' && await managersIn(env, id) > 0 && await otherManagers(env, { departmentId: id }) === 0) {
+    return fail('LAST_ADMIN', 'There must always be at least one active management account.', 409);
   }
 
   try {
@@ -40,7 +39,9 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
       await run(tx, `UPDATE departments SET name = COALESCE(?, name), kind = COALESCE(?, kind), side = COALESCE(?, side), sort = COALESCE(?, sort), updated_at = ? WHERE id = ?`,
         name ?? null, kind ?? null, side ?? null, sort ?? null, nowIso(), id);
       if (name && name !== cur.name) await run(tx, 'UPDATE users SET department = ? WHERE department_id = ?', name, id);
-      if (kind && kind !== cur.kind) await run(tx, 'UPDATE users SET role = ? WHERE department_id = ?', roleForKind(kind), id);
+      // Every save brings the members' hidden role back in line with the kind, so an old account cannot drift from it.
+      // Owners have no department and are never touched.
+      await run(tx, `UPDATE users SET role = ? WHERE department_id = ? AND role <> 'owner' AND role <> ?`, roleForKind(kind ?? cur.kind), id, roleForKind(kind ?? cur.kind));
       if (side && side !== cur.side) await run(tx, 'UPDATE users SET side = ? WHERE department_id = ?', side, id);
       await audit(tx, {
         actorId: session.userId, actorLabel: session.fullName, action: 'department.update', entityTable: 'departments', entityId: id,
@@ -74,8 +75,7 @@ export const onRequestDelete: PagesFunction<Env> = async ({ request, env, params
   if (!parsed.ok) return fail('VALIDATION', parsed.message, 400);
   const move = parsed.value;
 
-  // Anyone filed under one of its positions counts too, so no account is left pointing at a deleted row.
-  const inside = `(department_id = ? OR position_id IN (SELECT id FROM positions WHERE department_id = ?))`;
+  const inside = IN_DEPARTMENT;
   const people = await one<{ n: number }>(env, `SELECT count(*) AS n FROM users WHERE ${inside}`, id, id);
   const count = Number(people?.n ?? 0);
   if (count > 0 && !move) {
@@ -84,8 +84,15 @@ export const onRequestDelete: PagesFunction<Env> = async ({ request, env, params
 
   let target: Department | null = null;
   let targetPosition: Position | null = null;
-  if (count > 0 && move) {
+  if (move) {
     target = await loadDepartment(env, move.departmentId);
+    // Management means Full access everywhere, so nobody is moved in by a delete. It is a per-person choice on the user form.
+    if (target?.kind === 'management') {
+      return fail('VALIDATION', 'Moving people into Management gives them Full access. Do that for each person on the user form instead.', 400,
+        { moveTo: 'Choose a department other than Management.' });
+    }
+  }
+  if (count > 0 && move) {
     if (!target || target.id === id) return fail('VALIDATION', 'Pick another department to move people to.', 400);
     if (move.positionId) {
       targetPosition = target.positions.find(p => p.id === move.positionId) ?? null;
@@ -93,7 +100,11 @@ export const onRequestDelete: PagesFunction<Env> = async ({ request, env, params
     }
   }
 
-  const moveTarget = target;
+  const moveTarget = count > 0 ? target : null;
+  // The people leave this department, and a move gives them a staff role: never the last management accounts.
+  if (moveTarget && await managersIn(env, id) > 0 && await otherManagers(env, { departmentId: id }) === 0) {
+    return fail('LAST_ADMIN', 'There must always be at least one active management account.', 409);
+  }
   await transaction(env, async tx => {
     if (moveTarget) {
       await run(tx, `UPDATE users SET department_id = ?, position_id = ?, department = ?, position = ?, role = ?, side = ?, updated_at = ? WHERE ${inside}`,

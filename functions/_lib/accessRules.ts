@@ -151,6 +151,32 @@ export async function loadPosition(env: Env, id: string): Promise<{ department: 
   return null;
 }
 
+/** Anyone filed under the department, or under one of its positions, so no account is left pointing at a deleted row. */
+export const IN_DEPARTMENT = `(department_id = ? OR position_id IN (SELECT id FROM positions WHERE department_id = ?))`;
+
+/** View as makes one test login per department (functions/api/auth/view-as.ts). It cannot sign in, so it never counts
+ *  as an administrator in the last-management checks. */
+const NOT_TEST_ACCOUNT = `email NOT LIKE '%@staging.invalid'`;
+
+/** Active management accounts a department change would turn into staff. */
+export async function managersIn(env: Env, departmentId: string): Promise<number> {
+  const r = await one<{ n: number }>(env,
+    `SELECT count(*) AS n FROM users WHERE role = 'management' AND is_active = 1 AND ${NOT_TEST_ACCOUNT} AND ${IN_DEPARTMENT}`, departmentId, departmentId);
+  return Number(r?.n ?? 0);
+}
+
+/** Active management accounts left once `userId` or a whole department is out of the picture. Zero means the change
+ *  would lock management out. Test accounts of View as never count. */
+export async function otherManagers(env: Env, except: { userId?: string; departmentId?: string }): Promise<number> {
+  const conds = [`role = 'management'`, 'is_active = 1', NOT_TEST_ACCOUNT];
+  const args: string[] = [];
+  if (except.userId) { conds.push('id <> ?'); args.push(except.userId); }
+  // COALESCE: an account with no department or position is not in the department, so NULL must not drop it.
+  if (except.departmentId) { conds.push(`NOT COALESCE(${IN_DEPARTMENT}, false)`); args.push(except.departmentId, except.departmentId); }
+  const r = await one<{ n: number }>(env, `SELECT count(*) AS n FROM users WHERE ${conds.join(' AND ')}`, ...args);
+  return Number(r?.n ?? 0);
+}
+
 // ---- department and position rules ----
 
 export type RuleBook = { department: Record<string, Record<string, Setting>>; position: Record<string, Record<string, Setting>> };
