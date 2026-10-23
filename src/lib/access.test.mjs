@@ -8,7 +8,7 @@ import { register } from 'node:module';
 register('data:text/javascript,' + encodeURIComponent(`export async function resolve(s, c, next) {
   try { return await next(s, c); } catch (e) { if (s.startsWith('.') && !/\\.[a-z]+$/.test(s)) return next(s + '.ts', c); throw e; }
 }`));
-const { AREAS, resolveFor, builtIn } = await import('../../functions/_lib/access.ts');
+const { AREAS, resolveFor } = await import('../../functions/_lib/access.ts');
 
 const area = key => AREAS.find(a => a.key === key);
 const rules = ({ user = {}, position = {}, department = {} } = {}) => ({
@@ -71,8 +71,15 @@ test('cleaning and maintenance have no desk areas, whatever is stored', () => {
   }
 });
 
-// The rules migrations-pg/0145 seeds must give the same levels as today's role chart (builtIn).
-test('the seeded rules reproduce the role chart', () => {
+// The levels the rules migrations-pg/0145 seeds give, written out per area (they match the category chart the app had
+// before departments: Operations staff, Operations manager and Finance admin columns).
+const seeded = {
+  operations_staff: { dashboard: 'none', portfolio: 'none', reservations: 'edit', operations: 'edit', properties: 'edit', serviceCases: 'edit', projects: 'edit', scSales: 'edit', scInvoices: 'none', scConsignment: 'edit', scProcurement: 'edit', scTransportPlan: 'edit', scWarehouse: 'edit', finance: 'none', owners: 'none', ledger: 'none', performance: 'edit', comms: 'edit', users: 'none', integrations: 'none', settings: 'none', health: 'none' },
+  operations_manager: { dashboard: 'full', portfolio: 'full', reservations: 'full', operations: 'full', properties: 'full', serviceCases: 'full', projects: 'full', scSales: 'full', scInvoices: 'view', scConsignment: 'full', scProcurement: 'full', scTransportPlan: 'full', scWarehouse: 'full', finance: 'view', owners: 'view', ledger: 'none', performance: 'full', comms: 'full', users: 'full', integrations: 'full', settings: 'full', health: 'full' },
+  finance_admin: { dashboard: 'view', portfolio: 'view', reservations: 'view', operations: 'view', properties: 'view', serviceCases: 'view', projects: 'view', scSales: 'view', scInvoices: 'full', scConsignment: 'view', scProcurement: 'view', scTransportPlan: 'view', scWarehouse: 'view', finance: 'full', owners: 'full', ledger: 'full', performance: 'full', comms: 'none', users: 'none', integrations: 'full', settings: 'full', health: 'full' },
+};
+
+test('the seeded rules give the levels of the old role chart', () => {
   const staffDept = { 'group:Operations': 'edit', 'group:Dream Crafter': 'edit', 'group:Growth': 'edit', scInvoices: 'none' };
   const financeDept = {
     'group:Workspace': 'view', 'group:Operations': 'view', 'group:Dream Crafter': 'view', 'group:Finance': 'full',
@@ -82,12 +89,13 @@ test('the seeded rules reproduce the role chart', () => {
     'group:Workspace': 'full', 'group:Operations': 'full', 'group:Dream Crafter': 'full', 'group:Finance': 'view',
     'group:Growth': 'full', 'group:System': 'full', scInvoices: 'view', ledger: 'none',
   };
-  const people = [
-    ['operations_staff', rules({ department: staffDept })],
-    ['operations_manager', rules({ department: staffDept, position: managerPosition })],
-    ['finance_admin', rules({ department: financeDept })],
-  ];
-  for (const [role, r] of people) {
-    for (const a of AREAS) assert.equal(resolveFor(r, staff, a).level, builtIn(role, a), `${role} ${a.key}`);
+  const people = {
+    operations_staff: rules({ department: staffDept }),
+    operations_manager: rules({ department: staffDept, position: managerPosition }),
+    finance_admin: rules({ department: financeDept }),
+  };
+  for (const [role, r] of Object.entries(people)) {
+    assert.equal(Object.keys(seeded[role]).length, AREAS.length, `${role} lists every area`);
+    for (const a of AREAS) assert.equal(resolveFor(r, staff, a).level, seeded[role][a.key], `${role} ${a.key}`);
   }
 });
