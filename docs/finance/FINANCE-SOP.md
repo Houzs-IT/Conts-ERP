@@ -54,7 +54,7 @@
 ### 2.1 顾客（Debtor）和供应商（Creditor）（财务确认，2026-10-22）
 
 - **Control**：每个顾客挂在一个 debtor control 下面，以后可以再加 control。按顾客类型分：
-  - Rental 的顾客：自己的 control（例如 300-0000）；
+  - Rental 的顾客：新开 303-0000（AutoCount 科目表没有，导入后在 ERP 加）。300-0000 以前混了别的东西，不再放新的 rental 顾客；
   - 装修顾客：301-0000 RENOVATION CUSTOMER；
   - 自家装修（inhouse reno）顾客：302-0000 INHOUSE RENOVATION CUSTOMER。两种装修分开，因为毛利、销售员、买的货都不同。
   - 什么顾客挂哪个 control、系统怎么分辨一张单是哪一种装修：**财务整理中**（第 12 节）。
