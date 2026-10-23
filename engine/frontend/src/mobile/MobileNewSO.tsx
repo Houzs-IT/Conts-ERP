@@ -2022,7 +2022,7 @@ export function MobileNewSO({
             } catch (e) {
               setSubmitting(false);
               // authed-fetch already humanises the API error to one plain sentence.
-              setError(e instanceof Error ? e.message : "Couldn't submit the amendment. Please try again.");
+              setError(e instanceof Error ? e.message : "Couldn't submit the VO. Please try again.");
               return;
             }
           }
@@ -2422,7 +2422,7 @@ export function MobileNewSO({
                 </Field>
                 <div style={{ fontSize: 10, color: "#9aa093", marginTop: -3 }}>
                   {amendmentMode
-                    ? "Changing a date here submits an amendment request — it applies once approved."
+                    ? "Changing a date here submits a VO — it applies once approved."
                     : "Set both dates together, or leave both empty to keep this a draft."}
                 </div>
                 <Field label="Note" scanned={scanned("note", note)}>
@@ -2563,7 +2563,7 @@ export function MobileNewSO({
                         second amendment can't be raised yet). */}
                     <div style={{ fontSize: 10, color: "#9aa093", marginTop: 4 }}>
                       {hasOpenAmend
-                        ? "An amendment is already pending on this order — line items are locked until it is confirmed or rejected. View its status on the order detail screen."
+                        ? "A VO is already pending on this order — line items are locked until it is confirmed or rejected. View its status on the order detail screen."
                         : procLocked
                         ? "This order's processing date has passed — it is on order to the supplier, so line items can no longer be changed."
                         : "This order is shipped or has downstream documents — line items can no longer be changed."}

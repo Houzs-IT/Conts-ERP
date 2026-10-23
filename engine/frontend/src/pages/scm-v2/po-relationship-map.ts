@@ -231,7 +231,7 @@ export function usePoRelationshipMap(header: PoRelationshipHeader | null): {
   const amendments: AmendmentChip[] = useMemo(() => {
     const so = (flow.data?.amendments ?? []).map((a) => ({
       id: `so:${a.id}`,
-      label: `SO Amendment ${a.amendmentNo}`,
+      label: `VO ${a.amendmentNo}`,
       status: a.status,
     }));
     const po = (flow.data?.poAmendments ?? [])

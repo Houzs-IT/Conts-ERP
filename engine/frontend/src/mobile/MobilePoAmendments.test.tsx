@@ -78,11 +78,11 @@ describe('phone PO Amendments queue', () => {
   test('an SO-driven card says where it came from and who signs it', () => {
     seed();
     render(<MobilePoAmendments onBack={() => {}} onOpen={() => {}} onOpenSo={() => {}} />);
-    expect(cardFor('PO-s').textContent).toContain('From SO amendment · SO-s');
+    expect(cardFor('PO-s').textContent).toContain('From VO · SO-s');
     expect(cardFor('PO-s').textContent).toContain('Purchaser');
     expect(cardFor('PO-s').textContent).toContain('"qty 2 to 3"');
     expect(cardFor('PO-t').textContent).toContain('Legacy');
-    expect(cardFor('PO-p').textContent).not.toContain('From SO amendment');
+    expect(cardFor('PO-p').textContent).not.toContain('From VO');
   });
 
   test('tapping an SO-driven card opens its Sales Order; a direct card opens the PO amendment', () => {

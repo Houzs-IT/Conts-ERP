@@ -59,7 +59,7 @@ export function planAmendmentSubmit(input: AmendmentSubmitInput): AmendmentSubmi
 /** Shown only for 'NOTHING'. Names the things that need approval, because those
     are what the button raises — the FREE half never gets this far. */
 export const AMENDMENT_NOTHING_TO_SUBMIT =
-  'No changes to submit — edit a line, a date or the delivery address first, then submit the amendment.';
+  'No changes to submit — edit a line, a date or the delivery address first, then submit the VO.';
 
 /** The reason prompt's validation message, shared by both surfaces (owner
     2026-09-15: the reason is REQUIRED; the server refuses 400 reason_required
@@ -112,18 +112,18 @@ export function amendmentSubmittedNotice(
     (l === 'LINES' || l === 'DELIVERY' ? AMENDMENT_APPROVER_LABEL[soAmendmentApprover(l)] : '');
   if (created.length > 1) {
     return {
-      title: 'Amendment split into two approvals',
+      title: 'VO split into two approvals',
       body: `${created.map((a) => `${a.amendment_no ?? ''} → ${lane(a.lane)}`).join('; ')}`
         + '. Each applies as soon as its approver signs.',
     };
   }
   if (created[0]?.lane) {
     return {
-      title: 'Amendment submitted',
+      title: 'VO submitted',
       body: `Waiting for ${lane(created[0].lane)} — one signature applies it to the order.`,
     };
   }
-  return { title: 'Amendment submitted', body: 'It now needs approval before the order is revised.' };
+  return { title: 'VO submitted', body: 'It now needs approval before the order is revised.' };
 }
 
 /** The amendment-mode banner, in ONE place because it was wrong in two.

@@ -164,7 +164,7 @@ export const DeliveryFieldsDrawer = ({
           onSuccess: () => {
             notify({
               title: 'Saved — disposal change sent for approval',
-              body: 'The Replacement / Disposal change was raised as an SO Amendment. Review and approve it in Amendments (Logistics).',
+              body: 'The Replacement / Disposal change was raised as a VO. Review and approve it in VO (Logistics).',
             });
             onClose();
           },
@@ -230,7 +230,7 @@ export const DeliveryFieldsDrawer = ({
               <div style={{
                 marginTop: 4, fontSize: 'var(--fs-11)', color: 'var(--c-burnt)',
               }}>
-                Order is locked — saving a change here raises an SO Amendment for
+                Order is locked — saving a change here raises a VO for
                 Logistics to approve.
               </div>
             )}

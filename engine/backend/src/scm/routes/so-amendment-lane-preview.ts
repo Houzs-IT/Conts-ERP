@@ -58,7 +58,7 @@ soAmendmentLanePreview.post('/:docNo/amendments/lane-preview', async (c) => {
   if (raw && typeof raw === 'object') {
     for (const [k, v] of Object.entries(raw)) {
       if (!Object.prototype.hasOwnProperty.call(AMENDABLE_HEADER_FIELDS, k)) {
-        return c.json({ error: 'header_field_not_amendable', reason: `These fields cannot be changed by an amendment: ${k}.` }, 400);
+        return c.json({ error: 'header_field_not_amendable', reason: `These fields cannot be changed by a VO: ${k}.` }, 400);
       }
       if (v !== null && typeof v !== 'string') return c.json({ error: 'header_field_invalid' }, 400);
       headerChanges[k] = v;

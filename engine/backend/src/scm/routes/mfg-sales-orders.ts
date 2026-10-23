@@ -448,7 +448,7 @@ const SO_PROCESSING_LOCKED_RESPONSE = {
 /* See "THE PAIR RULE" in shared/so-processing-date.ts. */
 const SO_PO_LOCKED_RESPONSE = {
   error: 'so_locked_po_raised',
-  reason: 'A Purchase Order has already been raised for this order — submit an amendment so purchasing can re-send it to the supplier.',
+  reason: 'A Purchase Order has already been raised for this order — submit a VO so purchasing can re-send it to the supplier.',
 } as const;
 
 /* Optimistic-lock rejection (WO-8 / GO-LIVE charter item 3). `error` is a CODE
@@ -10882,7 +10882,7 @@ mfgSalesOrders.post('/:docNo/amendments', async (c) => {
   if (!hasHouzsPerm(c, 'scm.amendment.create') && !isSalesCaller(c) && !isLaneApprover) {
     return c.json({
       error: 'amendment_create_forbidden',
-      message: 'You do not have permission to raise a Sales Order amendment.',
+      message: 'You do not have permission to raise a VO.',
     }, 403);
   }
 
@@ -10908,7 +10908,7 @@ mfgSalesOrders.post('/:docNo/amendments', async (c) => {
   if (!body.reason) {
     return c.json({
       error: 'reason_required',
-      reason: 'Say why this amendment is needed — the approver reads the reason before the changes.',
+      reason: 'Say why this VO is needed — the approver reads the reason before the changes.',
     }, 400);
   }
 
@@ -10947,7 +10947,7 @@ mfgSalesOrders.post('/:docNo/amendments', async (c) => {
   if (!await soEditLocked(sb, docNo, soRow as unknown as { processing_date?: string | null; status: string | null })) {
     return c.json({
       error: 'not_locked_no_amendment_needed',
-      reason: 'This Sales Order is not processing-locked yet — edit it directly instead of raising an amendment.',
+      reason: 'This Sales Order is not processing-locked yet — edit it directly instead of raising a VO.',
     }, 409);
   }
 
@@ -10982,7 +10982,7 @@ mfgSalesOrders.post('/:docNo/amendments', async (c) => {
   if (legacyOpen) {
     return c.json({
       error: 'amendment_already_open',
-      reason: 'An amendment is already open on this Sales Order — resolve it before raising another.',
+      reason: 'A VO is already open on this Sales Order — resolve it before raising another.',
     }, 409);
   }
 
@@ -11006,7 +11006,7 @@ mfgSalesOrders.post('/:docNo/amendments', async (c) => {
     if (unknownKeys.length > 0) {
       return c.json({
         error: 'header_field_not_amendable',
-        reason: `These fields cannot be changed by an amendment: ${unknownKeys.join(', ')}.`,
+        reason: `These fields cannot be changed by a VO: ${unknownKeys.join(', ')}.`,
       }, 400);
     }
     for (const [k, v] of Object.entries(rawHeaderChanges)) {
@@ -11036,7 +11036,7 @@ mfgSalesOrders.post('/:docNo/amendments', async (c) => {
   if (!hasHeaderChanges && submittedLines.length === 0) {
     return c.json({
       error: 'amendment_empty',
-      reason: 'There are no changes to request — edit a line, a date or the delivery location first, then submit the amendment.',
+      reason: 'There are no changes to request — edit a line, a date or the delivery location first, then submit the VO.',
     }, 400);
   }
 
@@ -11143,7 +11143,7 @@ mfgSalesOrders.post('/:docNo/amendments', async (c) => {
   if (blockedLanes.length > 0) {
     return c.json({
       error: 'amendment_already_open',
-      reason: `An amendment for ${blockedLanes.map((l) => LANE_LABEL[l]).join(' and ')} is already awaiting approval on this Sales Order — resolve it before requesting another change of that kind.`,
+      reason: `A VO for ${blockedLanes.map((l) => LANE_LABEL[l]).join(' and ')} is already awaiting approval on this Sales Order — resolve it before requesting another change of that kind.`,
       lanes: blockedLanes,
     }, 409);
   }
@@ -11213,7 +11213,7 @@ mfgSalesOrders.post('/:docNo/amendments', async (c) => {
       if (/uq_so_amendment_open|duplicate key/i.test(insErr.message)) {
         return c.json({
           error: 'amendment_already_open',
-          reason: 'An amendment is already open for this kind of change — reload and try again.',
+          reason: 'A VO is already open for this kind of change — reload and try again.',
         }, 409);
       }
       return c.json({ error: 'create_failed', reason: insErr.message }, 500);

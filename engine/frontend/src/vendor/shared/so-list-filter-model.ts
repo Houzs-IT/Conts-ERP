@@ -125,10 +125,10 @@ export const SO_FILTER_FIELDS: readonly SoFilterFieldDef[] = [
   { key: 'itemCategory', label: 'Item category', group: 'order', kind: 'choice', ops: ['is'],
     choices: SO_CATEGORY_CHOICES,
     hint: 'Orders with at least one line of this kind' },
-  { key: 'pendingAmendment', label: 'Pending amendment', group: 'order', kind: 'choice', ops: ['is'],
+  { key: 'pendingAmendment', label: 'Pending VO', group: 'order', kind: 'choice', ops: ['is'],
     choices: [
-      { value: 'yes', label: 'Has a pending amendment' },
-      { value: 'no', label: 'No pending amendment' },
+      { value: 'yes', label: 'Has a pending VO' },
+      { value: 'no', label: 'No pending VO' },
     ] },
   { key: 'customerType', label: 'Customer type', group: 'order', kind: 'text', ops: TEXT_OPS },
   { key: 'buildingType', label: 'Building type', group: 'order', kind: 'text', ops: TEXT_OPS },

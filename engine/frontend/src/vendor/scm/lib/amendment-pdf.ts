@@ -81,7 +81,7 @@ const GREEN_INK: [number, number, number] = [22, 101, 52];
 const MUTED_INK: [number, number, number] = [120, 120, 120];
 
 const titleFor = (kind: 'SO' | 'PO'): string =>
-  kind === 'SO' ? 'Sales order amendment' : 'Purchase order amendment';
+  kind === 'SO' ? 'VO' : 'Purchase order amendment';
 
 export async function generateAmendmentPdf(
   input: AmendmentPdfInput,
@@ -105,7 +105,7 @@ export async function generateAmendmentPdf(
   let y = drawHeader(doc, {
     docTitle: titleFor(input.kind).toUpperCase(),
     rightMeta: [
-      { label: 'Amendment No', value: input.amendmentNo || '—' },
+      { label: input.kind === 'SO' ? 'VO No' : 'Amendment No', value: input.amendmentNo || '—' },
       { label: 'Issue Date', value: fmtDocDate(input.issueDate) },
       { label: 'Status', value: input.status || '—' },
     ],

@@ -559,7 +559,7 @@ export function MobileSODetail({ docNo, onBack, onEdit, onAddLine, flowNav, onCo
         + "Say what is wrong so the person who raised it knows what to fix — they will see this.",
       placeholder: "e.g. supplier cannot supply PC151-01 in this fabric",
       multiline: true,
-      confirmLabel: "Reject amendment",
+      confirmLabel: "Reject VO",
       validate: (v) =>
         v.trim().length < 5
           ? "Give a reason the requester can act on — at least a few words."
@@ -569,12 +569,12 @@ export function MobileSODetail({ docNo, onBack, onEdit, onAddLine, flowNav, onCo
     try {
       await rejectAmendment.mutateAsync({ id: openAmendment.id, reason: reason.trim() });
       void notifyTop({
-        title: "Amendment rejected",
+        title: "VO rejected",
         body: "The person who raised it can see your reason and raise a corrected request.",
       });
     } catch (e) {
       void notifyTop({
-        title: "Could not reject this amendment",
+        title: "Could not reject this VO",
         body: `${e instanceof Error ? e.message : String(e)} Nothing was changed — please try again.`,
         tone: "error",
       });
@@ -589,7 +589,7 @@ export function MobileSODetail({ docNo, onBack, onEdit, onAddLine, flowNav, onCo
     if (!(await confirm({
       title: `Withdraw amendment ${openAmendment.amendment_no || ""}?`.trim(),
       body: "This closes the request without changing the Sales Order. It cannot be reopened — "
-        + "but withdrawing frees the order so you can raise a corrected amendment straight away.",
+        + "but withdrawing frees the order so you can raise a corrected VO straight away.",
       confirmLabel: "Withdraw request",
       danger: true,
     }))) return;
@@ -604,12 +604,12 @@ export function MobileSODetail({ docNo, onBack, onEdit, onAddLine, flowNav, onCo
     try {
       await withdrawAmendment.mutateAsync({ id: openAmendment.id, reason: reason.trim() || undefined });
       void notifyTop({
-        title: "Amendment withdrawn",
-        body: "This Sales Order is free again — open it and submit a corrected amendment when you are ready.",
+        title: "VO withdrawn",
+        body: "This Sales Order is free again — open it and submit a corrected VO when you are ready.",
       });
     } catch (e) {
       void notifyTop({
-        title: "Could not withdraw this amendment",
+        title: "Could not withdraw this VO",
         body: `${e instanceof Error ? e.message : String(e)} It is still open — please try again.`,
         tone: "error",
       });
@@ -684,7 +684,7 @@ export function MobileSODetail({ docNo, onBack, onEdit, onAddLine, flowNav, onCo
         void notifyTop({
           title: "Cannot approve — quantity already received",
           body: `One PO line would be revised down to ${revised}, but ${received} have already been received. `
-            + "Raise a Purchase Return for the excess first, then approve the amendment again.",
+            + "Raise a Purchase Return for the excess first, then approve the VO again.",
           tone: "error",
         });
         return;
@@ -701,12 +701,12 @@ export function MobileSODetail({ docNo, onBack, onEdit, onAddLine, flowNav, onCo
     if (!openAmendment || sendAmendment.isPending) return;
     if (!(await confirm({
       title: `Mark amendment ${openAmendment.amendment_no || ""} as sent?`.trim(),
-      body: "This marks the amendment SENT. There is no automatic email — open the bound PO on desktop to download the Revised PO and send it to the supplier yourself (print / WhatsApp).",
+      body: "This marks the VO SENT. There is no automatic email — open the bound PO on desktop to download the Revised PO and send it to the supplier yourself (print / WhatsApp).",
       confirmLabel: "Mark sent",
     }))) return;
     try {
       await sendAmendment.mutateAsync({ id: openAmendment.id });
-      void notifyTop({ title: "Amendment marked sent" });
+      void notifyTop({ title: "VO marked sent" });
     } catch (e) {
       void notifyTop({ title: "Could not mark sent", body: e instanceof Error ? e.message : "Something went wrong.", tone: "error" });
     }
@@ -851,8 +851,8 @@ export function MobileSODetail({ docNo, onBack, onEdit, onAddLine, flowNav, onCo
               <div style={{ display: "flex", alignItems: "flex-start", gap: 8, background: "rgba(232,107,58,0.08)", border: "1px solid var(--c-orange, #e86b3a)", borderRadius: 10, padding: "9px 11px", marginBottom: 12, fontSize: 11, color: "#8a4a24", lineHeight: 1.45 }}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#c66a34" strokeWidth="2" strokeLinecap="round" style={{ flexShrink: 0, marginTop: 1 }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" /><path d="m10.5 13-2.5 2.5 2.5 2.5" /><path d="m13.5 13 2.5 2.5-2.5 2.5" /></svg>
                 {hasOpenAmendment
-                  ? "On order to the supplier — an amendment is pending (see below). Line changes are locked until it's confirmed or rejected."
-                  : "On order to the supplier. Tap Edit to request a line-item amendment — the coordinator and supplier confirm it before the order is revised."}
+                  ? "On order to the supplier — a VO is pending (see below). Line changes are locked until it's confirmed or rejected."
+                  : "On order to the supplier. Tap Edit to request a VO — the coordinator and supplier confirm it before the order is revised."}
               </div>
             ) : (
               <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#eef1ec", border: "1px solid #e3e6e0", borderRadius: 10, padding: "9px 11px", marginBottom: 12, fontSize: 11, color: "#5c6156" }}>
@@ -983,7 +983,7 @@ export function MobileSODetail({ docNo, onBack, onEdit, onAddLine, flowNav, onCo
                     className="money"
                     style={{ border: "1px solid #e0bcbc", background: "#f8eaea", color: "#b23a3a", fontFamily: "inherit", fontSize: 12, fontWeight: 700, borderRadius: 9, padding: "9px 11px", cursor: "pointer", opacity: rejectAmendment.isPending ? 0.5 : 1 }}
                   >
-                    {rejectAmendment.isPending ? "Rejecting…" : "Reject amendment"}
+                    {rejectAmendment.isPending ? "Rejecting…" : "Reject VO"}
                   </button>
                 )}
                 {/* Withdraw — the requester's own way out, so a mistaken request
@@ -1948,7 +1948,7 @@ function AmendmentDiffSheet({ amendmentId, onClose }: { amendmentId: string; onC
             <div style={{ fontSize: 11.5, color: "var(--mut2)", padding: "8px 0", lineHeight: 1.45 }}>
               {allLines.length > 0
                 ? "No line changes recorded — every line matches the order exactly. This request predates order-detail tracking, so what was asked for is in the Reason below."
-                : "This amendment has no changes recorded."}
+                : "This VO has no changes recorded."}
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
@@ -2093,7 +2093,7 @@ function AmendmentDiffSheet({ amendmentId, onClose }: { amendmentId: string; onC
           <PrintPreviewModal
             open={amendmentPrint.open}
             onClose={amendmentPrint.close}
-            docTitle="Sales Order Amendment"
+            docTitle="VO"
             docNo={amNo || "Amendment"}
             rows={[
               { label: "Against SO", value: soDocNo || "—" },

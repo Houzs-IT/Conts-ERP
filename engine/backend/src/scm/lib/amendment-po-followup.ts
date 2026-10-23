@@ -364,7 +364,7 @@ export async function raisePoFollowUps(
       po_number:    po.po_number,
       amendment_no: amendmentNo,
       status:       'REQUESTED',
-      reason:       `Auto-raised from SO amendment ${args.soAmendmentNo}${args.reason ? ` — ${args.reason}` : ''}. Confirming applies the revised Sales Order to this PO.`,
+      reason:       `Auto-raised from VO ${args.soAmendmentNo}${args.reason ? ` — ${args.reason}` : ''}. Confirming applies the revised Sales Order to this PO.`,
       requested_by: args.requesterStaffId,
       company_id:   activeCompanyId(c),
       source_so_amendment_id: args.soAmendmentId,

@@ -585,7 +585,7 @@ export function PoAmendmentDetailV2() {
                 to the SO amendment that already applied. */}
             {isFollowUp && (
               <div className="rounded-lg border border-accent/40 bg-accent/10 px-3.5 py-3 text-[12px] leading-relaxed text-ink">
-                Auto-raised from SO amendment{" "}
+                Auto-raised from VO{" "}
                 <button
                   type="button"
                   onClick={() => sourceSoAmendmentId && navigate(`/scm/amendments/${sourceSoAmendmentId}`)}
