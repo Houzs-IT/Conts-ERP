@@ -194,7 +194,7 @@ export default function PermissionsChart() {
                             // Inherited: muted, so the eye goes to the overrides. Overridden: the level's own colour.
                             style={{ color: inherited ? 'var(--color-text-muted)' : LEVEL_COLOR[level], borderColor: changed ? 'var(--color-gold)' : 'var(--color-line)' }}
                           >
-                            <option value="inherit">Inherit from {g.group} ({LEVEL_LABEL[baseline(g, r)]}){cell.builtIn === 'inherit' ? ' (standard)' : ''}</option>
+                            <option value="inherit" title={`Inherit from ${g.group}`}>Inherit ({LEVEL_LABEL[baseline(g, r)]})</option>
                             {levelsFor(r).map(l => <option key={l} value={l}>{LEVEL_LABEL[l]}{l === cell.builtIn ? ' (standard)' : ''}</option>)}
                           </select>
                           {!inherited && (
