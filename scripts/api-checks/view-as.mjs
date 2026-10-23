@@ -1,7 +1,7 @@
 // The staging account switcher (functions/api/auth/view-as.ts). Run twice against a local server:
 //   node scripts/api-checks/view-as.mjs off   server started without VIEW_AS (as production is)
 //   node scripts/api-checks/view-as.mjs on    server started with --binding VIEW_AS=staging
-// "on" writes one audit row per switch, and makes the staging test account for each role it switches to.
+// "on" writes one audit row per switch, and makes the staging test account for each department it switches to.
 import { createHmac } from 'node:crypto';
 import { check, done } from './harness.mjs';
 
@@ -48,21 +48,21 @@ let b = browser(OPS_MGR);
 let r = await b('GET', '/api/auth/view-as');
 check('an operations manager is not offered the switcher', r.json?.enabled === false, r.text.slice(0, 200));
 r = await b('POST', '/api/auth/view-as', { userId: MGMT.userId });
-check('...and cannot switch into management (404)', r.status === 404 && (await whoAmI(b))?.role === 'operations_manager', `${r.status}`);
+check('...and cannot switch into management (404)', r.status === 404 && (await whoAmI(b))?.id === OPS_MGR.userId, `${r.status}`);
 r = await b('POST', '/api/auth/view-as', { role: 'management' });
-check('...nor into a role (404)', r.status === 404 && (await whoAmI(b))?.role === 'operations_manager', `${r.status}`);
+check('...nor into a department (404)', r.status === 404 && (await whoAmI(b))?.id === OPS_MGR.userId, `${r.status}`);
 
 b = browser(MGMT);
 r = await b('GET', '/api/auth/view-as');
 const users = r.json?.users ?? [];
-check('management gets the list of active accounts', r.json?.enabled === true && users.length > 1 && r.json.viewing === null && r.json.me.id === MGMT.userId, r.text.slice(0, 200));
-const pick = role => users.find(u => u.role === role);
-const finance = pick('finance_admin'), owner = pick('owner'), field = pick('housekeeper') ?? pick('technician');
+const departments = r.json?.departments ?? [];
+check('management gets the list of active accounts and departments', r.json?.enabled === true && users.length > 1 && departments.length > 1 && r.json.viewing === null && r.json.me.id === MGMT.userId, r.text.slice(0, 200));
+const finance = users.find(u => u.department === 'Finance'), owner = users.find(u => u.role === 'owner'), field = users.find(u => u.role === 'housekeeper' || u.role === 'technician');
 
 r = await b('POST', '/api/auth/view-as', { userId: finance.id });
-check('switch to a finance admin: sent to their landing screen', r.status === 200 && r.json?.home === '/owners?view=statements', r.text);
+check('switch to a Finance person: sent to their landing screen', r.status === 200 && r.json?.home === '/owners?view=statements', r.text);
 let me = await whoAmI(b);
-check('now signed in as that finance admin, with their access levels', me?.id === finance.id && me.role === 'finance_admin' && me.access?.operations === 'none', JSON.stringify(me));
+check('now signed in as that person, with their department’s levels', me?.id === finance.id && me.department === 'Finance' && me.access?.finance === 'full', JSON.stringify(me));
 r = await b('GET', '/api/auth/view-as');
 check('the switcher is still offered while viewing as them, and says who', r.json?.enabled === true && r.json.viewing?.id === finance.id && r.json.me.id === MGMT.userId, r.text.slice(0, 200));
 
@@ -78,32 +78,39 @@ if (field) {
   r = await b('POST', '/api/auth/view-as', { userId: field.id });
   check('switch to a field account', r.status === 200 && r.json?.home === '/portal/today' && (await whoAmI(b))?.id === field.id, r.text);
 }
-// By role: each staff role lands on its own test account and its own home screen, twice in a row on the same account.
-const HOMES = { management: '/', operations_manager: '/', operations_staff: '/operations/today', finance_admin: '/owners?view=statements', housekeeper: '/portal/today', technician: '/portal/today' };
-check('every staff role is offered by role, and owner is not', JSON.stringify([...(await b('GET', '/api/auth/view-as')).json?.roles ?? []].sort()) === JSON.stringify(Object.keys(HOMES).sort()));
+// By department: each one lands on its own test account (with its first position) and its own home screen.
+const homeOf = d => d.kind === 'management' ? '/' : d.kind === 'cleaning' || d.kind === 'maintenance' ? '/portal/today'
+  : d.name === 'Finance' ? '/owners?view=statements' : d.side === 'dream_crafter' ? '/sales/orders' : '/operations/today';
 const madeIds = {};
-for (const [role, home] of Object.entries(HOMES)) {
-  r = await b('POST', '/api/auth/view-as', { role });
+for (const d of departments) {
+  const pos = d.positions[0] ?? null;
+  r = await b('POST', '/api/auth/view-as', { departmentId: d.id, positionId: pos?.id ?? null });
   me = await whoAmI(b);
-  madeIds[role] = me?.id;
-  check(`by role ${role}: on the test account, at ${home}`, r.status === 200 && r.json?.home === home && me?.role === role && me.email === `role-${role.replace(/_/g, '-')}@staging.invalid` && me.fullName.startsWith('Test: '), `${r.text} ${JSON.stringify(me)}`);
+  madeIds[d.id] = me?.id;
+  const name = `Test: ${d.name}${pos ? ` / ${pos.name}` : ''}`;
+  check(`by department ${d.name}: on the test account, at ${homeOf(d)}`, r.status === 200 && r.json?.home === homeOf(d) && me?.department === d.name && /@staging\.invalid$/.test(me.email) && me.fullName === name, `${r.text} ${JSON.stringify(me)}`);
 }
-r = await b('POST', '/api/auth/view-as', { role: 'housekeeper' });
-check('the same role again reuses its test account', (await whoAmI(b))?.id === madeIds.housekeeper);
+const cleaning = departments.find(d => d.kind === 'cleaning');
+r = await b('POST', '/api/auth/view-as', { departmentId: cleaning.id, positionId: cleaning.positions[0]?.id ?? null });
+check('the same department again reuses its test account', (await whoAmI(b))?.id === madeIds[cleaning.id]);
 r = await b('GET', '/api/auth/view-as');
-check('...and the switcher says which role is being viewed', r.json?.viewing?.role === 'housekeeper' && r.json.viewing.fullName === 'Test: Cleaner' && r.json.me.id === MGMT.userId, r.text.slice(0, 200));
+check('...and the switcher says who is being viewed', r.json?.viewing?.role === 'housekeeper' && r.json.viewing.fullName.startsWith(`Test: ${cleaning.name}`) && r.json.me.id === MGMT.userId, r.text.slice(0, 200));
 r = await b('GET', '/api/account');
 check('viewing adds no signed-in device to the viewed account', Array.isArray(r.json?.devices) && r.json.devices.length === 0, JSON.stringify(r.json?.devices));
+r = await b('POST', '/api/auth/view-as', { role: 'housekeeper' });
+check('the old { role } still opens the first department of that kind', r.status === 200 && (await whoAmI(b))?.role === 'housekeeper', `${r.status} ${r.text}`);
 r = await b('POST', '/api/auth/view-as', { role: 'owner' });
 check('owner is not a test-account role (400)', r.status === 400, `${r.status} ${r.text}`);
 r = await b('POST', '/api/auth/view-as', { role: 'superuser' });
 check('an unknown role is refused (400)', r.status === 400, `${r.status} ${r.text}`);
-const login = await fetch(BASE + '/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'role-housekeeper@staging.invalid', password: '!' }) });
-check('a test account cannot be signed in to with a password', login.status >= 400 && !login.headers.getSetCookie().some(c => /^tc_session=[^;]+/.test(c) && !/Max-Age=0/.test(c)), `${login.status}`);
+const testEmail = (await whoAmI(b))?.email ?? '';
+const login = await fetch(BASE + '/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: testEmail, password: '!' }) });
+check('a test account cannot be signed in to with a password', /@staging\.invalid$/.test(testEmail) && login.status >= 400 && !login.headers.getSetCookie().some(c => /^tc_session=[^;]+/.test(c) && !/Max-Age=0/.test(c)), `${testEmail} ${login.status}`);
 
 // An invited account that has not chosen a password yet only ever shows "Set a new password": refused, and marked in the list.
 const mgmt = browser(MGMT);
-const invited = await mgmt('POST', '/api/users', { email: `invited-${Date.now()}@example.com`, fullName: 'Invited Not Set Up', role: 'technician' });
+const maintenance = departments.find(d => d.kind === 'maintenance');
+const invited = await mgmt('POST', '/api/users', { email: `invited-${Date.now()}@example.com`, fullName: 'Invited Not Set Up', departmentId: maintenance.id, positionId: maintenance.positions[0]?.id ?? null });
 const invitedId = invited.json?.id ?? invited.json?.userId ?? invited.json?.data?.id;
 r = await mgmt('GET', '/api/auth/view-as');
 check('an invited account not set up yet is marked as such', r.json?.users?.find(u => u.id === invitedId)?.notSetUp === true, `${invited.status} ${invited.text.slice(0, 200)}`);
@@ -122,5 +129,6 @@ check('...and the second cookie is gone', !r.jar.has('tc_origin'), [...r.jar.key
 r = await b('GET', '/api/system/health/audit-feed?range=24h&sensitive=1');
 check('each switch is in the audit feed under the real person', (r.json?.data ?? []).some(e => e.action === 'user.view_as' && e.after?.viewedAs === finance.fullName), JSON.stringify((r.json?.data ?? []).find(e => e.action === 'user.view_as')));
 const made = (r.json?.data ?? []).filter(e => e.action === 'user.view_as_test_account');
-check('each test account was made once, logged under the real person', made.length === 6 && made.every(e => e.actor_id === MGMT.userId), JSON.stringify(made[0]));
+// One per department switched to, plus the department-only account the old { role } switch opened.
+check('each test account was made once, logged under the real person', made.length === departments.length + 1 && made.every(e => e.actor_id === MGMT.userId), `${made.length} of ${departments.length + 1} ${JSON.stringify(made[0])}`);
 done();

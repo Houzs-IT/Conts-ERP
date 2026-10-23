@@ -55,7 +55,8 @@ for (const s of M.LEDGER_SCREENS ?? []) {
 }
 const ledgerMenus = (groups) => paths(groups).filter((p) => M.areaOfPath(p) === 'ledger');
 check('the ledger screens are hidden where the engine is not set up', ledgerMenus(M.navFor('management', false)).length === 0);
-check('an operations manager does not see the ledger screens', ledgerMenus(M.navFor('operations_manager', true)).length === 0);
+// The Operations Manager position is an operations_staff account with Ledger None (migration 0145).
+check('an operations manager does not see the ledger screens', ledgerMenus(M.navFor('operations_staff', true, { ledger: 'none', finance: 'view' })).length === 0);
 check('a role with Ledger None does not see them', ledgerMenus(M.navFor('finance_admin', true, { ledger: 'none' })).length === 0);
 const ledgerOnly = M.navFor('finance_admin', true, { finance: 'none', ledger: 'view' });
 check('a role with only the Ledger sees them without the rest of Finance',

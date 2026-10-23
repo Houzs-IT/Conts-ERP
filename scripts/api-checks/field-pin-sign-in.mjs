@@ -40,7 +40,10 @@ async function call(who, method, path, body) {
 await db(`INSERT INTO users (id, email, full_name, password_hash, role, must_change_password, is_active, created_at, updated_at)
   VALUES ('test-ops-staff', 'opsstaff@local.test', 'Ops Staff Test', 'x', 'operations_staff', 0, 1, now()::text, now()::text) ON CONFLICT DO NOTHING`);
 const byRole = async role => (await db(`SELECT id, email, full_name, role FROM users WHERE role = $1 AND is_active = 1 ORDER BY created_at LIMIT 1`, role))[0];
-const mgmt = await byRole('management'), opsMgr = await byRole('operations_manager'), opsStaff = await byRole('operations_staff');
+// Office people are found by department and position: the operations manager and finance admin roles are retired (0146).
+const byPlace = async (dept, pos) => (await db(`SELECT u.id, u.email, u.full_name, u.role FROM users u JOIN departments d ON d.id = u.department_id
+  JOIN positions p ON p.id = u.position_id WHERE d.name = $1 AND p.name = $2 AND u.is_active = 1 ORDER BY u.created_at LIMIT 1`, dept, pos))[0];
+const mgmt = await byRole('management'), opsMgr = await byPlace('Operations', 'Operations Manager'), opsStaff = await byPlace('Operations', 'Operations Staff');
 check('demo accounts exist', mgmt && opsMgr && opsStaff, { mgmt, opsMgr, opsStaff });
 
 const stamp = Date.now().toString().slice(-6);

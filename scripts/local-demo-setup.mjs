@@ -36,6 +36,9 @@ await sql.unsafe(readFileSync('scripts/seed-owner-demo.sql', 'utf8').replaceAll(
 await sql`insert into users (id, email, full_name, phone, password_hash, role, must_change_password, created_at, updated_at)
   values ('11111111-1111-4111-8111-000000000006', 'hafiz@theconts.com', 'Hafiz Rahman', '+60123456706', ${hash}, 'technician', 0, '2026-09-01T00:00:00Z', '2026-09-01T00:00:00Z')
   on conflict (id) do nothing`;
+// The demo accounts arrive after every migration ran, so 0146 never placed them: run it again (each step only touches
+// accounts with no department, or roles not yet retired) to give them a department and position.
+await sql.begin(tx => tx.unsafe(readFileSync('migrations-pg/0146_retire_office_roles.sql', 'utf8')));
 await sql`update users set password_hash = ${hash}`;
 console.log(`demo logins ready, password: ${PW}`);
 await sql.end();

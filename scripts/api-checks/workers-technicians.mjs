@@ -39,7 +39,10 @@ async function call(who, method, path, body) {
 await db(`INSERT INTO users (id, email, full_name, password_hash, role, must_change_password, is_active, created_at, updated_at)
   VALUES ('test-ops-staff', 'opsstaff@local.test', 'Ops Staff Test', 'x', 'operations_staff', 0, 1, now()::text, now()::text) ON CONFLICT DO NOTHING`);
 const byRole = async role => (await db(`SELECT id, email, full_name, role FROM users WHERE role = $1 AND is_active = 1 ORDER BY created_at LIMIT 1`, role))[0];
-const mgmt = await byRole('management'), opsMgr = await byRole('operations_manager'), opsStaff = await byRole('operations_staff'), finance = await byRole('finance_admin');
+// Office people are found by department and position: the operations manager and finance admin roles are retired (0146).
+const byPlace = async (dept, pos) => (await db(`SELECT u.id, u.email, u.full_name, u.role FROM users u JOIN departments d ON d.id = u.department_id
+  JOIN positions p ON p.id = u.position_id WHERE d.name = $1 AND p.name = $2 AND u.is_active = 1 ORDER BY u.created_at LIMIT 1`, dept, pos))[0];
+const mgmt = await byRole('management'), opsMgr = await byPlace('Operations', 'Operations Manager'), opsStaff = await byPlace('Operations', 'Operations Staff'), finance = await byPlace('Finance', 'Finance Admin');
 const HAFIZ = '11111111-1111-4111-8111-000000000006';
 const [unit0] = await db(`SELECT id FROM units ORDER BY id LIMIT 1`);
 // A fresh job with no owner approval: one waiting for the owner is kept out of the phone app on purpose.
@@ -50,9 +53,12 @@ let r = await call(opsMgr, 'GET', '/api/maintenance/technicians');
 const hafiz = r.json.data?.find(t => t.userId === HAFIZ);
 check('picker: list entries with id, kind and login', r.status === 200 && hafiz?.kind === 'in_house' && hafiz.id && r.json.data.some(t => t.kind === 'contractor' && t.name === 'Ah Seng Plumbing'), r.json);
 r = await call(opsMgr, 'GET', '/api/maintenance/technicians?all=1');
-check('whole list: office link shows its role', r.status === 200 && r.json.data.some(t => t.name === 'Aina Zulkifli' && t.loginRole === 'operations_manager'), r.json);
+check('whole list: office link shows its role', r.status === 200 && r.json.data.some(t => t.name === 'Aina Zulkifli' && t.loginRole === 'operations_staff'), r.json);
+// The Finance department has View on Operations (migration 0145): it reads the list but cannot change it.
 r = await call(finance, 'GET', '/api/maintenance/technicians?all=1');
-check('finance cannot open the list (403)', r.status === 403, r);
+check('finance reads the list (View on Operations)', r.status === 200, r);
+r = await call(finance, 'POST', '/api/maintenance/technicians', { name: 'Finance should not add this', employmentType: 'outsourced' });
+check('finance cannot add to the list (403)', r.status === 403, r);
 
 const stamp = Date.now().toString().slice(-5);
 const faizName = `Faiz Test ${stamp}`;
