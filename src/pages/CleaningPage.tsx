@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { DateField, MoneyInput, TimeField } from '../components/inputs';
@@ -323,10 +323,10 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
               cleans are given by building or one by one (staff comment sheet, 16 Oct 2026). */}
           <span className="flex items-center gap-2 min-w-0 max-md:w-full">
             <TabSwitch tab="board" onTab={onTab} className="max-md:flex-initial max-md:min-w-0" />
-            <CleaningMore onCleaners={() => navigate('/operations/cleaners')} />
+            <CleaningMore onCleaners={() => navigate('/operations/workers')} />
           </span>
           <span className="contents max-md:hidden">
-            <Button size="sm" variant="secondary" icon={<Icon name="Users" size="sm" />} onClick={() => navigate('/operations/cleaners')}>Cleaners</Button>
+            <Button size="sm" variant="secondary" icon={<Icon name="Users" size="sm" />} onClick={() => navigate('/operations/workers')}>Cleaners</Button>
           </span>
         </>}
         primary={<Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setCreating(true)}>Add cleaning job</Button>} />
@@ -954,7 +954,7 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft, onCheckIn, sav
       {data && data.damage.length > 0 && (
         <section className="flex flex-col gap-1">
           <h3 className="m-0 text-copy font-semibold">Damage reported</h3>
-          {data.damage.map(d => <a key={d.id} href={`#/operations/maintenance?id=${d.id}`} className="text-gold-ink">{d.title} · {stamp(d.reportedAt)}</a>)}
+          {data.damage.map(d => <Link key={d.id} to={`/operations/maintenance?id=${d.id}`} className="text-gold-ink">{d.title} · {stamp(d.reportedAt)}</Link>)}
         </section>
       )}
       {!row.external && <Button variant="danger" icon={<Icon name="TriangleAlert" size="sm" />} onClick={() => setDamage(true)}>Report damage</Button>}

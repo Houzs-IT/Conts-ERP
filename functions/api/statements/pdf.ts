@@ -42,7 +42,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   // months paid before Property OS (only a payout line) have no report and stay here.
   const url = new URL(request.url);
   if (url.searchParams.get('format') !== 'legacy' && await one(env, 'SELECT 1 AS x FROM statement_units WHERE statement_id = ? LIMIT 1', id)) {
-    return new Response(null, { status: 302, headers: { location: `${url.origin}/#/finance/statements/${encodeURIComponent(id)}/report`, 'cache-control': 'no-store' } });
+    return new Response(null, { status: 302, headers: { location: `${url.origin}/finance/statements/${encodeURIComponent(id)}/report`, 'cache-control': 'no-store' } });
   }
 
   const lines = await all<any>(env, `

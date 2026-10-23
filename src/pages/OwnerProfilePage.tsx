@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { EmptyState } from '../components/States';
@@ -36,9 +36,10 @@ import { OwnerPayouts, StatementSteps } from './owners/OwnerMoney';
 import { useSession } from '../lib/session';
 import { areaOpen } from '../lib/navigation';
 import { mayInviteOwners, portalAction, portalBadge, portalOf } from './owners/portalAccess';
+import { go } from '../lib/go';
 
 /**
- * The OWNER PROFILE (`#/owners/:id`): one card per unit with its revenue model and the month's Unit P&L (Gross Income,
+ * The OWNER PROFILE (`/owners/:id`): one card per unit with its revenue model and the month's Unit P&L (Gross Income,
  * each deduction, To Operator, what comes off after the split, Net Payout to Owner), worked out by the statement
  * engine (GET /api/owners?id=&month=), the month's totals, and the Owner Income Report by owner (all units combined)
  * or by unit, generated here when the month has no owner statement yet. Below: expenses by unit (Cleaning,
@@ -93,7 +94,7 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
   const sum = (k: 'income' | 'costs' | 'operatorShare' | 'adjustments') => figures.reduce((n, { fixed, f }) => n + (k === 'adjustments' ? f[k] : fixed ? (k === 'income' ? f.fixedRent : 0) : f[k]), 0);
   const total = o.units.reduce((n, u) => n + (u.figures?.netPayout ?? u.net), 0);
   const st = o.statement ?? null;
-  const reportHref = st?.hasUnits ? `#/finance/statements/${encodeURIComponent(st.id)}/report${view === 'owner' ? '?view=owner' : ''}` : null;
+  const reportHref = st?.hasUnits ? `/finance/statements/${encodeURIComponent(st.id)}/report${view === 'owner' ? '?view=owner' : ''}` : null;
   const unitChoices = o.units.map(u => ({ id: u.unitId, label: u.unitLabel }));
   // What the report button does for the month: open the report; for a month paid before Property OS (no unit figures),
   // the statement as it was paid; otherwise build this owner's statement first (a draft, or a draft rebuilt).
@@ -101,7 +102,7 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
 
   async function ownerReport() {
     if (!o) return;
-    if (reportAction === 'open' && reportHref) { window.location.hash = reportHref.slice(1); return; }
+    if (reportAction === 'open' && reportHref) { go(reportHref); return; }
     if (reportAction === 'legacy' && st) { window.open(`/api/statements/${encodeURIComponent(st.id)}/pdf?format=legacy`, '_blank', 'noopener'); return; }
     setBusy(true);
     try {
@@ -112,7 +113,7 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
         return;
       }
       toast({ tone: 'success', title: `Owner statement for ${monthLabel(month)} generated as a draft.`, body: 'Opening the Owner Income Report. Check it, then mark it final and send it from this page.' });
-      window.location.hash = `#/finance/statements/${encodeURIComponent(made.id)}/report${view === 'owner' ? '?view=owner' : ''}`;
+      go(`/finance/statements/${encodeURIComponent(made.id)}/report${view === 'owner' ? '?view=owner' : ''}`);
     } catch (e) {
       const locked = e instanceof ApiFailure && e.status === 409;
       toast({ tone: locked ? 'warning' : 'critical', title: locked ? 'That month is already sent.' : 'The owner statement was not generated.', body: errorMessage(e, 'Try again in a moment.') });
@@ -198,7 +199,7 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
         <div className="flex flex-wrap items-center gap-3 py-3 px-4 max-md:flex-col max-md:items-stretch">
           <MonthStepper label={monthLabel(month)} onStep={by => setParam('month', shiftMonth(month, by) === shiftMonth(thisMonth, -1) ? null : shiftMonth(month, by))} />
           <span className="text-meta text-muted-ink">Owner statement: {st ? statusLabel('statement', st.state) : 'not generated yet'}
-            {st && <> · <a href={`#/owners/statements/${encodeURIComponent(st.id)}`} className="text-gold-ink no-underline font-medium">Open</a></>}
+            {st && <> · <Link to={`/owners/statements/${encodeURIComponent(st.id)}`} className="text-gold-ink no-underline font-medium">Open</Link></>}
           </span>
           {st && money && <span className="flex flex-wrap items-center gap-2"><StatementSteps key={st.id} statementId={st.id} unitsLabel={o.units.map(u => u.unitLabel).join(', ')} onChanged={reload} /></span>}
           <span className="flex-1 max-md:hidden" />
@@ -232,7 +233,7 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
       ) : (
         view === 'owner' ? <OwnerCombined o={o} month={month} /> : (
         <div className="grid grid-cols-[repeat(auto-fill,minmax(min(300px,100%),1fr))] gap-4">
-          {o.units.map(u => <UnitCard key={u.unitId} u={u} reportHref={st?.hasUnits ? `#/finance/statements/${encodeURIComponent(st.id)}/report?unit=${encodeURIComponent(u.unitId)}` : null} />)}
+          {o.units.map(u => <UnitCard key={u.unitId} u={u} reportHref={st?.hasUnits ? `/finance/statements/${encodeURIComponent(st.id)}/report?unit=${encodeURIComponent(u.unitId)}` : null} />)}
         </div>
         )
       )}
@@ -340,7 +341,7 @@ function OwnerCombined({ o, month }: { o: Owner; month: string }) {
           return (
             <div key={u.unitId} className="flex items-baseline justify-between gap-3 py-2 [border-bottom:1px_solid_var(--color-line-soft)] last:border-b-0">
               <span className="flex flex-col min-w-0">
-                <a href={`#/properties/units/${encodeURIComponent(u.unitId)}?tab=financials`} className="text-copy text-ink no-underline [overflow-wrap:anywhere]">{titleCase(u.unitLabel)}</a>
+                <Link to={`/properties/units/${encodeURIComponent(u.unitId)}?tab=financials`} className="text-copy text-ink no-underline [overflow-wrap:anywhere]">{titleCase(u.unitLabel)}</Link>
                 <span className="text-meta text-muted-ink">{terms(u)}{none ? ' · No reservations this month' : fixed.includes(u) ? '' : ` · ${TERMS.grossIncome} ${rm(f.income)}`}</span>
               </span>
               <MoneyText sen={f.netPayout} mode="exact" className="text-copy whitespace-nowrap" />
@@ -367,7 +368,7 @@ function UnitCard({ u, reportHref }: { u: UnitLine; reportHref: string | null })
   return (
     <section className="bg-card border border-solid border-line rounded-card p-4 flex flex-col gap-2 min-w-0">
       <div className="flex items-start justify-between gap-2">
-        <a href={`#/properties/units/${encodeURIComponent(u.unitId)}?tab=contract`} className="text-[16px] font-semibold tracking-[-0.01em] text-ink! no-underline min-w-0 [overflow-wrap:anywhere]">{titleCase(u.unitLabel)}</a>
+        <Link to={`/properties/units/${encodeURIComponent(u.unitId)}?tab=contract`} className="text-[16px] font-semibold tracking-[-0.01em] text-ink! no-underline min-w-0 [overflow-wrap:anywhere]">{titleCase(u.unitLabel)}</Link>
         <span className="inline-flex flex-wrap items-center justify-end gap-1.5"><CodeBadge code={u.contractCode} /><ModelChip model={model} label={terms(u)} /></span>
       </div>
       {!f ? <div className="text-meta text-muted-ink">Figures are visible to finance and management.</div> : model === 'master_lease' ? <>
@@ -395,8 +396,8 @@ function UnitCard({ u, reportHref }: { u: UnitLine; reportHref: string | null })
         <MoneyText sen={f?.netPayout ?? u.net} mode="exact" strong className="text-copy" />
       </div>
       <div className="flex gap-3 text-meta">
-        <a href={`#/properties/units/${encodeURIComponent(u.unitId)}?tab=financials`} className="text-gold-ink no-underline">Unit P&amp;L</a>
-        {reportHref && <a href={reportHref} className="text-gold-ink no-underline">Unit report</a>}
+        <Link to={`/properties/units/${encodeURIComponent(u.unitId)}?tab=financials`} className="text-gold-ink no-underline">Unit P&amp;L</Link>
+        {reportHref && <Link to={reportHref} className="text-gold-ink no-underline">Unit report</Link>}
       </div>
     </section>
   );

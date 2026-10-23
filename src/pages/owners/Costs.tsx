@@ -25,6 +25,7 @@ import { UtilitiesModal, type UnitChoice } from './ExpenseEntry';
 import { AdjustmentActions, ADJUSTMENT_KIND, ADJUSTMENT_STATE } from './Adjustments';
 import { ReceiptCell } from '../../components/ReceiptCell';
 import { receiptRequired, missingReceipt } from '../../lib/receipts';
+import { Link } from 'react-router-dom';
 
 /** A month's costs the way the owner reads them (GET /api/expenses/breakdown, functions/_lib/unitCosts.ts):
  *  Cleaning fees, Maintenance repair, Utilities (water, electricity, Wi-Fi, IndahWater), Maintenance fee (condo) and
@@ -276,7 +277,7 @@ function PaidOnBehalfList({ items, adjustments, ownerId, showUnit, canChange, ca
               {[ADJUSTMENT_KIND[a.kind] ?? a.kind, fmtDate(a.occurredOn), showUnit ? titleCase(a.unitLabel) : null, a.source === 'owner_workbook' ? 'from the owner workbook' : null].filter(Boolean).join(' · ')}
             </span>
             {a.placedOnFirstUnit && <span className="text-caption text-muted-ink">Recorded for the owner, not a unit: the statement puts it on this unit.</span>}
-            {a.statement && <a href={`#/owners/statements/${encodeURIComponent(a.statement.id)}`} className="text-meta text-ink underline underline-offset-2 self-start">On the {monthLabel(a.statement.period)} owner statement</a>}
+            {a.statement && <Link to={`/owners/statements/${encodeURIComponent(a.statement.id)}`} className="text-meta text-ink underline underline-offset-2 self-start">On the {monthLabel(a.statement.period)} owner statement</Link>}
             {canChange && <span className="pt-0.5"><AdjustmentActions ownerId={ownerId} a={a} onChanged={onChanged} /></span>}
           </span>
           <span className="flex flex-col items-end gap-1 shrink-0">
@@ -588,7 +589,7 @@ export function OwnerCostsCard({ ownerId, ownerName, month, units, canEdit, onCh
               {data.units.map(u => (
                 <section key={u.unitId} className="border border-solid border-line rounded-card p-4 flex flex-col gap-2 min-w-0">
                   <div className="flex items-baseline justify-between gap-2">
-                    <a href={`#/properties/units/${encodeURIComponent(u.unitId)}?tab=financials`} className="text-[15px] font-semibold text-ink! no-underline min-w-0 [overflow-wrap:anywhere]">{titleCase(u.unitLabel)}</a>
+                    <Link to={`/properties/units/${encodeURIComponent(u.unitId)}?tab=financials`} className="text-[15px] font-semibold text-ink! no-underline min-w-0 [overflow-wrap:anywhere]">{titleCase(u.unitLabel)}</Link>
                     <MoneyText sen={u.totals.deducted} mode="exact" strong className="text-copy whitespace-nowrap" />
                   </div>
                   <KindBreakdown b={u} deducts={u.deductsFromOwner} />

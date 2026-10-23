@@ -76,10 +76,10 @@ if (owner) {
 }
 if (field) {
   r = await b('POST', '/api/auth/view-as', { userId: field.id });
-  check('switch to a field account', r.status === 200 && r.json?.home === '/field/today' && (await whoAmI(b))?.id === field.id, r.text);
+  check('switch to a field account', r.status === 200 && r.json?.home === '/portal/today' && (await whoAmI(b))?.id === field.id, r.text);
 }
 // By role: each staff role lands on its own test account and its own home screen, twice in a row on the same account.
-const HOMES = { management: '/', operations_manager: '/', operations_staff: '/operations/today', finance_admin: '/owners?view=statements', housekeeper: '/field/today', technician: '/field/today' };
+const HOMES = { management: '/', operations_manager: '/', operations_staff: '/operations/today', finance_admin: '/owners?view=statements', housekeeper: '/portal/today', technician: '/portal/today' };
 check('every staff role is offered by role, and owner is not', JSON.stringify([...(await b('GET', '/api/auth/view-as')).json?.roles ?? []].sort()) === JSON.stringify(Object.keys(HOMES).sort()));
 const madeIds = {};
 for (const [role, home] of Object.entries(HOMES)) {

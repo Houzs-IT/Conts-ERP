@@ -175,7 +175,7 @@ export async function readChallenge(env: Env, token: unknown): Promise<string | 
 /* ------------------------------ sign-in record ------------------------------ */
 
 export type LoginResult = 'success' | 'wrong_password' | 'locked' | '2fa_failed' | 'inactive';
-export type LoginMethod = 'password' | 'totp' | 'backup_code' | 'reset_link';
+export type LoginMethod = 'password' | 'totp' | 'backup_code' | 'reset_link' | 'pin';
 
 const clientIp = (request: Request) =>
   request.headers.get('cf-connecting-ip') ?? request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null;

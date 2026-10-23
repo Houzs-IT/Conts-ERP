@@ -18,6 +18,7 @@ import { useApi } from '../../lib/useApi';
 import { masked as maskTail } from '../../lib/format';
 import { MODEL, CODE, codeName, PURPOSES, USED_BY } from '../../lib/revenueModel';
 import { BedsEditor, BaysEditor, bedsText, baysText } from './UnitExtras';
+import { Link } from 'react-router-dom';
 import {
   STATES, cap, LAYOUTS, layoutFromBedrooms,
   SectionHead, Grid3, Labeled, Select, ReadOnly, CentreModal,
@@ -158,7 +159,7 @@ export function DetailsForm({ u, owner, buildings, money, canEdit, onChange, onO
         </Labeled>
       </Grid3>
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 -mt-3 mb-[6px]">
-        <a href={`#/owners/${encodeURIComponent(ownerId)}`} className="text-meta font-semibold text-gold-ink no-underline">Edit on owner profile</a>
+        <Link to={`/owners/${encodeURIComponent(ownerId)}`} className="text-meta font-semibold text-gold-ink no-underline">Edit on owner profile</Link>
         <span className="text-meta text-muted-ink">IC, bank and contact details are kept on the owner, for every unit they own.</span>
       </div>
       {!moved && (owner.phone || owner.email || owner.address) && (

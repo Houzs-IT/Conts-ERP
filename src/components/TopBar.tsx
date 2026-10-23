@@ -11,6 +11,7 @@ import ChannelMark from './ChannelMark';
 import NotificationBell from './NotificationBell';
 import { ThemeButton } from './ThemeToggle';
 import ViewAs from './ViewAs';
+import { Link } from 'react-router-dom';
 
 /* ------------------------------------------------------------------ *
  * Application shell top bar (BUTTONS.md §2).
@@ -139,7 +140,7 @@ export default function TopBar({
 
         {/* Shown only when units are really connected to a booking site; never a fixed figure. */}
         {channelSync && channelSync.units > 0 && (
-          <a href="#/system/integrations" title={channelSync.failed ? 'Channel updates need attention' : 'Channels connected · open Integrations'}
+          <Link to="/system/integrations" title={channelSync.failed ? 'Channel updates need attention' : 'Channels connected · open Integrations'}
             aria-label={compact ? (channelSync.failed ? 'Channel updates need attention' : 'Channels connected') : undefined}
             style={compact
               ? { width: ctl, height: ctl, flex: 'none', display: 'grid', placeItems: 'center', boxSizing: 'border-box', border: `1px solid ${color.border}`, borderRadius: radius.control }
@@ -148,7 +149,7 @@ export default function TopBar({
             {!compact && <span>{channelSync.failed
               ? 'Channel updates need attention'
               : channelSync.lastSentAt ? `Sent to channels ${relative(channelSync.lastSentAt)}` : 'Channels connected'}</span>}
-          </a>
+          </Link>
         )}
 
         <ViewAs docked />

@@ -65,7 +65,7 @@ import {
   History,
   Wand2,
   CalendarOff,
-  type LucideIcon, Landmark, CreditCard, Banknote, Receipt } from "lucide-react";
+  type LucideIcon, Landmark, CreditCard, Banknote, Receipt, FlaskConical, Home, FolderOpen, CalendarDays } from "lucide-react";
 import { cn } from "../lib/utils";
 import { booleanRecordPreference, useIdentityPreference } from "../hooks/useIdentityPreference";
 import { useAuth } from "../auth/AuthContext";
@@ -205,6 +205,8 @@ export interface NavTab {
    *  tap that 403s. Preferred over a position-name list: the answer is decided
    *  once, server-side, and cannot drift from the gate it describes. */
   requireCapability?: CapabilityKey;
+  /** Hide unless /auth/me said beta_enabled (staging only). A hard gate: no show-flag re-opens it. */
+  requireBeta?: boolean;
   /** Sales-access model: show this entry ONLY to a NON-director Sales user and
    *  hide it from everyone else (office/director). Bypasses the permission
    *  gates. Used for the single rep-facing "Sales Orders" leaf mounted directly
@@ -368,6 +370,40 @@ export const ALL_NAV_TABS: NavTab[] = [
         label: "Project Maintenance",
         icon: Wrench,
         pageAccessFull: "projects.maintenance",
+      },
+    ],
+  },
+
+  // ── Beta — work being tried on staging (owner, 23 Oct 2026). Shown only where the server says
+  //    beta_enabled (BETA_ENABLED in the worker's settings), never on production.
+  {
+    section: "operations",
+    label: "Beta",
+    icon: FlaskConical,
+    groupId: "beta",
+    requireBeta: true,
+    pageAccess: "projects.list",
+    children: [
+      {
+        to: "/beta/home",
+        label: "Home",
+        icon: Home,
+        requireBeta: true,
+        pageAccess: "projects.list",
+      },
+      {
+        to: "/beta/projects",
+        label: "Projects",
+        icon: FolderOpen,
+        requireBeta: true,
+        pageAccess: "projects.list",
+      },
+      {
+        to: "/beta/calendar",
+        label: "Calendar",
+        icon: CalendarDays,
+        requireBeta: true,
+        pageAccess: "projects.list",
       },
     ],
   },

@@ -9,6 +9,7 @@ export const allow = {
   'functions/api/[[path]].ts': 'Catch-all 404 for unknown /api paths; it returns no data.',
   'functions/api/auth/login.ts': 'Signing in is how a session is made.',
   'functions/api/auth/login-2fa.ts': 'Second sign-in step; the short-lived challenge from login is the credential.',
+  'functions/api/auth/login-pin.ts': 'Signing in with phone number and PIN is how a field session is made.',
   'functions/api/auth/forgot-password.ts': 'Asked for by someone who cannot sign in; answers the same whether or not the email exists.',
   'functions/api/auth/reset-password.ts': 'Used from the emailed one-time link by someone who cannot sign in; the token is the credential.',
   'functions/api/auth/logout.ts': 'Only clears the cookie; works even when the session has already expired.',

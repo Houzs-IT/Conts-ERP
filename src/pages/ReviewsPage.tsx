@@ -16,6 +16,7 @@ import type { BookingChannel } from '../lib/types';
 import { FilterBar } from '../components/FilterBar';
 import { TONE, cx } from '../lib/design-tokens';
 import { PageControls } from '../components/PageControls';
+import { go } from '../lib/go';
 
 /** A guest review pulled in from a channel. `reply`/`repliedAt` are set once the
  *  host has responded; a null `reply` is the "needs reply" state. */
@@ -192,7 +193,7 @@ export default function ReviewsPage() {
           ? <EmptyState kind="filtered" title="No reviews match these filters." action={{ label: 'Clear filters', onClick: clearFilters }} />
           : <EmptyState icon="Star" title="No reviews yet"
               body="Reviews arrive from Airbnb and Booking.com once units are connected through Channex. Connect a unit from its Channels card, or see Integrations."
-              action={{ label: 'Open Integrations', onClick: () => { window.location.hash = '#/system/integrations'; } }} />
+              action={{ label: 'Open Integrations', onClick: () => { go('/system/integrations'); } }} />
       ) : (
         visible.map(r => {
           const replied = r.reply != null;

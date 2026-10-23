@@ -3,6 +3,7 @@ import { levelsFor } from './access';
 import { signSession, cookie, sessionLimits, startSession, type SecuritySettings } from './auth';
 import { HOME } from './door';
 import { logLogin, twoFactorAvailable, twoFactorTables, type LoginMethod } from './twoFactor';
+import { employeeIdOfUser } from './fieldPin';
 
 export interface SignInUser { id: string; email: string; full_name: string; role: string; must_change_password: number; totp_enabled_at?: string | null }
 
@@ -28,7 +29,7 @@ export async function completeSignIn(env: Env, request: Request, user: SignInUse
   return json({
     user: {
       id: user.id, fullName: user.full_name, email: user.email, role: user.role,
-      mustChangePassword: !!user.must_change_password, locale: 'en-MY',
+      mustChangePassword: !!user.must_change_password, locale: 'en-MY', employeeId: await employeeIdOfUser(env, user.id),
       twoStepSetupRequired: await twoStepSetupDue(env, settings, user.role, !!user.totp_enabled_at),
       access: await levelsFor(env, user.role),
     },

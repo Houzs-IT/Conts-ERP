@@ -12,12 +12,12 @@ import UpdateNotice from './components/UpdateNotice';
 import OwnerShell from './components/OwnerShell';
 import LoginPage from './pages/LoginPage';
 import { HOME, screenClosed, switchedOff } from './lib/navigation';
+import { setNavigate } from './lib/go';
 import { BootScreen, PageShown, PageSkeleton } from './components/Loading';
 
 /** react-router (ERP convention) with route-level code splitting — every page is
- *  lazy-loaded so the initial bundle stays small. HashRouter (see main.tsx) keeps
- *  the app a static Cloudflare Pages build with no server rewrites, and existing
- *  `#/...` links keep working. */
+ *  lazy-loaded so the initial bundle stays small. Plain addresses (/owners/5); main.tsx moves old
+ *  `#/...` links to them, and Cloudflare Pages answers any unknown address with index.html. */
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
 const NotificationsPage = lazy(() => import('./pages/NotificationsPage'));
 const PortfolioPage = lazy(() => import('./pages/PortfolioPage'));
@@ -27,7 +27,7 @@ const BookingsPage = lazy(() => import('./pages/BookingsPage'));
 const GuestsPage = lazy(() => import('./pages/GuestsPage'));
 const OperationsTodayPage = lazy(() => import('./pages/OperationsTodayPage'));
 const CleaningPage = lazy(() => import('./pages/CleaningPage'));
-const CleanersPage = lazy(() => import('./pages/CleanersPage')); // added: housekeeping cleaner roster
+const WorkersPage = lazy(() => import('./pages/WorkersPage'));
 const MaintenancePage = lazy(() => import('./pages/MaintenancePage'));
 import SupplyChainEngine, { signInToEngineEarly } from './components/SupplyChainEngine';
 import { ENGINE_PATH } from './lib/scmEngine';
@@ -202,7 +202,7 @@ function Routed() {
   }
   if (!user) return <LoginPage />;
   // A temporary password (invite, or management's Reset password) must be replaced before anything else. Sign-in
-  // sends the browser to #/change-password, which has no screen of its own, so this holds on every address.
+  // sends the browser to /change-password, which has no screen of its own, so this holds on every address.
   if (user.mustChangePassword) {
     return <LoginPage key="change-password" forceChangePassword />;
   }
@@ -217,6 +217,8 @@ function Routed() {
   const account = location.pathname === '/account';
   // Field roles: single-column 44px shell, not the desk nav.
   if (user.role === 'housekeeper' || user.role === 'technician') {
+    // Cleaners' and technicians' screens moved from /field (then /worker) to /portal; old bookmarks and links follow.
+    if (/^\/(field|worker)(\/|$)/.test(location.pathname)) return <Navigate to={location.pathname.replace(/^\/(field|worker)/, '/portal') + location.search} replace />;
     return <FieldShell><Suspense fallback={<Fallback />}>{account ? <AccountPage /> : <FieldHome />}</Suspense></FieldShell>;
   }
   // Owners see only their own portal, whatever the address bar says.
@@ -230,6 +232,8 @@ function Routed() {
       </Routes>
     );
   }
+  // The cleaners' and technicians' portal (and its old /field and /worker links) has no desk screen: go home.
+  if (/^\/(portal|field|worker)(\/|$)/.test(location.pathname)) return <Navigate to={HOME[user.role]} replace />;
 
   return (
     <Routes>
@@ -246,7 +250,8 @@ function Routed() {
         <Route path="/reservations/guests" element={<GuestsPage />} />
         <Route path="/operations/today" element={<OperationsTodayPage />} />
         <Route path="/operations/cleaning" element={<CleaningPage />} />
-        <Route path="/operations/cleaners" element={<CleanersPage />} />
+        <Route path="/operations/workers" element={<WorkersPage />} />
+        <Route path="/operations/cleaners" element={<Navigate replace to="/operations/workers" />} />
         <Route path="/operations/maintenance" element={<MaintenancePage />} />
         {/* Housekeeping is Cleaning; Inspections is gone; All tasks is the History tab (owner, 10 Oct). */}
         <Route path="/operations/housekeeping" element={<Navigate to="/operations/cleaning" replace />} />
@@ -355,6 +360,10 @@ function Routed() {
 }
 
 export default function App() {
+  // BrowserRouter, not createBrowserRouter: the data router adds 17 KB gzipped to the entry script for features
+  // nothing here uses. go.ts gets navigate from here instead.
+  const navigate = useNavigate();
+  useEffect(() => setNavigate(navigate), [navigate]);
   return (
     <SessionProvider>
       <ToastProvider>

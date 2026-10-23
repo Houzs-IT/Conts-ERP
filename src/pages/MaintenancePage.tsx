@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { DateField, DateTimeField, MoneyInput } from '../components/inputs';
@@ -86,6 +86,7 @@ export default function MaintenancePage() {
   const { user } = useSession();
   const money = MONEY_ROLES.includes(user!.role);
   const [params, setParams] = useSearchParams();
+  const navigate = useNavigate();
   const [tab, setTab] = useState<Tab>('open');
   const [category, setCategory] = useState('');
   const [building, setBuilding] = useState('');
@@ -164,6 +165,7 @@ export default function MaintenancePage() {
     <div className="flex flex-col gap-4 flex-1 min-h-0">
       <PageHeader title="Maintenance" sub={sub}
         actions={<>
+          <Button size="sm" variant="secondary" icon={<Icon name="Users" size="sm" />} onClick={() => navigate('/operations/workers?tab=technicians')}>Technicians</Button>
           {data?.jobTypes && <Button size="sm" variant={tab === 'rules' ? 'primary' : 'secondary'} icon={<Icon name="ShieldCheck" size="sm" />} onClick={() => setTab(tab === 'rules' ? 'open' : 'rules')}>Approval rules</Button>}
           {money && <Button size="sm" variant={tab === 'profit' ? 'primary' : 'secondary'} icon={<Icon name="TrendingUp" size="sm" />} onClick={() => setTab(tab === 'profit' ? 'open' : 'profit')}>Profit by job</Button>}
           {SHOW_CATALOG && <Button size="sm" variant={tab === 'catalog' ? 'primary' : 'secondary'} icon={<Icon name="Package" size="sm" />} onClick={() => setTab(tab === 'catalog' ? 'open' : 'catalog')}>Item catalog</Button>}

@@ -1,6 +1,7 @@
 import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession, securitySettings, verifyPassword, hashPassword, revokeSessions, signSession, cookie, sessionLimits, sessionTable, endSession } from '../../_lib/auth';
 import { notify } from '../../_lib/notify';
+import { secretProblem, signsInWithPin } from '../../_lib/fieldPin';
 import {
   backupCodesLeft, decryptSecret, encryptSecret, issueBackupCodes, matchTotp, newSecret, otpauthUri,
   twoFactorAvailable, twoFactorTables,
@@ -66,8 +67,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
       return fail('VALIDATION', 'Your current password is not right.', 422, { current: 'Not your current password' });
     }
     const password = String(body.password ?? '');
-    const problem = password.length < 8 ? 'At least 8 characters' : !/[A-Z]/.test(password) ? 'At least 1 uppercase letter' : !/[0-9]/.test(password) ? 'At least 1 digit' : null;
-    if (problem) return fail('VALIDATION', 'Password does not meet the requirements.', 422, { password: problem });
+    const pin = await signsInWithPin(env, session.userId);
+    const problem = secretProblem(password, pin);
+    if (problem) return fail('VALIDATION', pin ? 'The PIN does not meet the rules.' : 'Password does not meet the requirements.', 422, { password: problem });
     if (password === String(body.current ?? '')) {
       return fail('VALIDATION', 'The new password is the same as your current one. Choose a different password.', 422, { password: 'Same as your current password' });
     }

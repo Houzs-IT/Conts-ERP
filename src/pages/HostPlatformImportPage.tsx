@@ -10,6 +10,7 @@ import { api, errorMessage } from '../lib/api';
 import { csvObjects, readXlsx, sheetObjects, type SheetRow } from '../lib/sheets';
 import { count as n, dateRange, plural } from '../lib/format';
 import { moneyString } from '../components/MoneyText';
+import { go } from '../lib/go';
 import {
   type Row, type RowError, type KnownUnit, type ImportKind,
   LISTING_COLUMNS, RESERVATION_COLUMNS, WORKBOOK_SHEETS, WORKBOOK_KEY, WORKBOOK_COLUMNS, WORKBOOK_HEADER_ROW,
@@ -144,7 +145,7 @@ export default function HostPlatformImportPage() {
       <PageHeader
         title="Import from HostPlatform"
         sub="9 steps · units, reservations, the owner workbook and two clean-ups"
-        back={{ label: 'Integrations', onClick: () => { window.location.hash = '#/system/integrations'; } }}
+        back={{ label: 'Integrations', onClick: () => { go('/system/integrations'); } }}
       />
 
       {existing.error && <StaleBanner message={`Could not read the units already in Property OS, so every unit is counted as new in the previews below. ${existing.error}`} onRetry={existing.reload} />}

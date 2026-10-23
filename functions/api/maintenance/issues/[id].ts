@@ -1,7 +1,7 @@
 import { type Env, one, run, json, fail, audit, nowIso, mytToday } from '../../../_lib/db';
 import { requireSession, isFieldRole } from '../../../_lib/auth';
 import { MASTER_ROLES } from '../../../_lib/properties';
-import { CATEGORIES, URGENCIES, CHARGE_TO, DAY, JOB_TYPES, SEVERITIES, assigneeUserId, assigneeKindFor, hasBilling, hasJobType, urgencyOf, approvalRules, ruleNeedsApproval } from '../../../_lib/maintenance';
+import { CATEGORIES, URGENCIES, CHARGE_TO, DAY, JOB_TYPES, SEVERITIES, pickAssignee, hasBilling, hasJobType, urgencyOf, approvalRules, ruleNeedsApproval } from '../../../_lib/maintenance';
 import { isPeriodLocked } from '../../../_lib/expenses';
 import { repairNotice } from '../../../_lib/notices';
 import { hasServicePrices, serviceBook } from '../../../_lib/servicePrices';
@@ -50,11 +50,12 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   const name = typeof b?.assigneeName === 'string' ? b.assigneeName : typeof b?.assigneeId === 'string' ? b.assigneeId : undefined;
   if (name !== undefined) {
     if (!name.trim()) return fail('VALIDATION', 'Pick the technician or contractor.', 422, { assigneeName: 'Pick who does the job.' });
-    const picked = name.trim().slice(0, 80);
-    put('vendor_name', 'assignee', picked);
-    put('assignee_kind', 'assigneeKind', await assigneeKindFor(env, picked));
-    const userId = await assigneeUserId(env, picked);
-    if (userId !== undefined) put('assignee_user_id', 'assigneeUserId', userId);
+    const who = await pickAssignee(env, session, name);
+    if (typeof who === 'string') return fail('VALIDATION', who, 422, { assigneeName: who });
+    put('vendor_name', 'assignee', who.name);
+    put('assignee_kind', 'assigneeKind', who.kind);
+    if (who.userId !== undefined) put('assignee_user_id', 'assigneeUserId', who.userId);
+    if (who.technicianId !== undefined) put('technician_id', 'technicianId', who.technicianId);
   }
   if (b?.category !== undefined) {
     if (!CATEGORIES.includes(b.category)) return fail('VALIDATION', 'Pick a category.', 422, { category: 'Pick a category.' });

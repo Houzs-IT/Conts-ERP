@@ -28,6 +28,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
     hash, id, expiresAt, nowIso());
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'user.reset_link', entityTable: 'users', entityId: id, after: { expiresAt } });
 
-  const link = `${new URL(request.url).origin}/#/reset-password?token=${token}`;
+  const link = `${new URL(request.url).origin}/reset-password?token=${token}`;
   return json({ link, expiresAt, email: user.email });
 };

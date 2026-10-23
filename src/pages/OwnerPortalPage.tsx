@@ -15,6 +15,7 @@ import { Eyebrow, StatRow, StatTile } from '../components/Metric';
 import { MoneyText, moneyString } from '../components/MoneyText';
 import Icon from '../components/Icon';
 import { useToast } from '../components/Toast';
+import { Link } from 'react-router-dom';
 
 /**
  * Owner portal `/owner`. The owner sees ONLY their own data — every endpoint
@@ -229,7 +230,7 @@ export default function OwnerPortalPage() {
           ? st.units.map((u, i) => (
               <span key={u.id}>
                 {i > 0 && ' · '}
-                <a href={`#/properties/units/${encodeURIComponent(u.id)}`} className="no-underline text-inherit!">{u.label}</a>
+                <Link to={`/properties/units/${encodeURIComponent(u.id)}`} className="no-underline text-inherit!">{u.label}</Link>
               </span>
             ))
           : 'No units are on your account yet.'}

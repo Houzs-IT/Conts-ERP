@@ -381,3 +381,38 @@ describe("nav — every sub-group hub groupId still resolves", () => {
     expect(g!.children?.length ?? 0).toBeGreaterThan(0);
   });
 });
+
+describe("nav: Beta shows only where the server switched it on (owner, 23 Oct 2026)", () => {
+  const office = (over: Partial<AuthUser> = {}) =>
+    rep({ position_name: "Admin", department_name: "Operations", permissions: ["*"], ...over });
+  const all = { "projects.list": "full" };
+
+  const BETA = ["/beta/home", "/beta/projects", "/beta/calendar"];
+
+  it("hides Beta on desktop and phone when beta_enabled is missing or false", () => {
+    for (const u of [office(), office({ beta_enabled: false })]) {
+      for (const p of BETA) {
+        expect(desktopPaths(ctxFor(u, all))).not.toContain(p);
+        expect(phoneAllows(ctxFor(u, all), p)).toBe(false);
+      }
+    }
+  });
+
+  it("shows Beta on desktop and phone when beta_enabled is true", () => {
+    const u = office({ beta_enabled: true });
+    for (const p of BETA) {
+      expect(desktopPaths(ctxFor(u, all))).toContain(p);
+      expect(phoneAllows(ctxFor(u, all), p)).toBe(true);
+    }
+  });
+
+  it("lists Home, Projects and Calendar in that order", () => {
+    const u = office({ beta_enabled: true });
+    expect(desktopPaths(ctxFor(u, all)).filter((p) => BETA.includes(p))).toEqual(BETA);
+  });
+
+  it("still needs project list access", () => {
+    const u = office({ beta_enabled: true, permissions: [] });
+    for (const p of BETA) expect(desktopPaths(ctxFor(u, {}))).not.toContain(p);
+  });
+});
