@@ -2,9 +2,9 @@
 
 import { useEffect, useRef, useState, type ReactElement } from "react";
 import { api } from "../../api/client";
-import { AuthImage, Dialog } from "../projects/renovation/renovationUi";
 import { errorText } from "../projects/renovation/renovationModel";
 import { simpleApi, type ProjectDetailV2 } from "../projects/renovation/simpleApi";
+import { WS, WsDialog, WsPhoto } from "./BetaWsUi";
 import { betaApi, type BetaTrade, type BetaWorkspace, type DesignRecords, type ReminderKind } from "./renovationBetaApi";
 import { whatsappLink } from "./renovationBetaModel";
 import type { BetaTabKey } from "./renovationBetaTabs";
@@ -76,12 +76,12 @@ export function FileDialog({ projectId, file, onClose }: { projectId: number; fi
     return () => { live = false; if (made) URL.revokeObjectURL(made); };
   }, [path, isImage, file.key]);
   return (
-    <Dialog title={file.name} onClose={onClose} wide>
-      {isImage ? <AuthImage path={path} alt={file.name} className="w-full rounded" />
-        : error ? <p role="alert" className="text-sm text-err">The file could not be loaded: {error}</p>
-        : !blobUrl ? <p className="text-sm text-ink-secondary">Loading the file...</p>
-        : <p className="text-sm"><a className="text-primary" href={blobUrl} target="_blank" rel="noopener" download={file.name}>Open the file</a></p>}
-    </Dialog>
+    <WsDialog title={file.name} onClose={onClose} wide>
+      {isImage ? <div style={{ maxHeight: "70vh", overflow: "auto" }}><WsPhoto path={path} alt={file.name} style={{ height: "auto", objectFit: "contain" }} /></div>
+        : error ? <p role="alert" style={{ fontSize: 14, color: WS.red }}>The file could not be loaded: {error}</p>
+        : !blobUrl ? <p style={{ fontSize: 14, color: "#55605E" }}>Loading the file...</p>
+        : <p style={{ fontSize: 14 }}><a href={blobUrl} target="_blank" rel="noopener" download={file.name}>Open the file</a></p>}
+    </WsDialog>
   );
 }
 

@@ -1,29 +1,52 @@
-/* Beta workspace > Timeline: the project's existing timeline entries with a search box, a RECORD tag on approvals,
-   key passes and the handover, and a CSV export of what is on screen. */
+/* Beta workspace > Timeline, laid out as the mockup's Timeline view: a search box, Export, filter chips, and one card
+   per day with a round icon per entry, a RECORD tag on approvals, key passes and the handover, and a CSV export of what
+   is on screen. The engine's categories take the mockup's icons and colours. */
 
-import { useState, type ReactElement } from "react";
-import { Clock, Download } from "lucide-react";
-import { Button } from "../../components/Button";
+import { useState, type ReactElement, type ReactNode } from "react";
 import { useQuery } from "../../hooks/useQuery";
-import { cn, formatDate, formatDateTime } from "../../lib/utils";
-import { Card } from "../projects/renovation/ProjectRecords";
 import {
-  CATEGORY_LABEL, CHIP_CLASS, FILTERS, RING_CLASS, countByCategory, filterEntries, timelineApi, type TimelineFilter,
+  CATEGORY_LABEL, FILTERS, countByCategory, filterEntries, timelineApi, type TimelineCategory, type TimelineEntry,
 } from "../projects/renovation/renovationTimelineModel";
-import { inputClass, smallBtn } from "../projects/renovation/renovationUi";
+import { WS, WsEmpty, WsFilterPill, WsPageHead, WsTag, btnStyle, cardStyle } from "./BetaWsUi";
 import type { BetaTabProps } from "./betaShared";
-import { isRecordEntry, searchEntries, timelineCsv } from "./renovationBetaModel";
+import { dayHeading, groupByDay, isRecordEntry, mytDay, mytTime, searchEntries, timelineCsv } from "./renovationBetaModel";
+import { BETA, type BetaTone } from "./renovationBetaTheme";
+import type { BetaTabKey } from "./renovationBetaTabs";
 
-export function BetaTimelineTab({ projectId, onDone, onError }: BetaTabProps): ReactElement {
+const TONE: Readonly<Record<TimelineCategory, BetaTone>> = {
+  site: ["#1A6B66", "#E4F1EF"],
+  design: ["#3B5BA9", "#E9EEF9"],
+  customer: ["#1F4E8C", "#E8F0FB"],
+  supplier: ["#8A4A00", "#FDF1E2"],
+  sales: ["#1E6B3A", "#E5F3EA"],
+  system: ["#3F4947", "#EEF2F1"],
+};
+
+const OPENS: Readonly<Partial<Record<TimelineCategory, BetaTabKey>>> = { design: "drawings", site: "site" };
+
+function Icon({ category }: { category: TimelineCategory }): ReactElement {
+  const paths: Record<TimelineCategory, ReactNode> = {
+    site: <><path d="M3 21h18M5 21V10l7-5 7 5v11" /><path d="M10 21v-6h4v6" /></>,
+    design: <><rect x="4" y="3" width="16" height="18" rx="2" /><path d="M8 8h8M8 12h8M8 16h5" /></>,
+    customer: <><circle cx="12" cy="8" r="4" /><path d="M4 21c.6-4.5 4-7 8-7s7.4 2.5 8 7" /></>,
+    supplier: <><path d="M3 4h3l2.5 11h10L21 7H7" /><circle cx="10" cy="19" r="1.4" /><circle cx="17" cy="19" r="1.4" /></>,
+    sales: <><rect x="3" y="6" width="18" height="12" rx="2" /><path d="M3 10h18" /></>,
+    system: <><circle cx="8" cy="15" r="4" /><path d="M11 12l9-9M17 6l3 3" /></>,
+  };
+  return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">{paths[category]}</svg>;
+}
+
+export function BetaTimelineTab({ projectId, today, onDone, onError, openTab }: BetaTabProps): ReactElement {
   // Always ask again on opening the tab, so what was just saved on another tab shows.
   const q = useQuery(["renovation-beta", "timeline", projectId], () => timelineApi.list(projectId), [projectId], { refetchOnMount: "always", staleTime: 0 });
-  const [filter, setFilter] = useState<TimelineFilter>("all");
+  const [filter, setFilter] = useState<(typeof FILTERS)[number]>("all");
   const [search, setSearch] = useState("");
   const entries = q.data?.entries ?? [];
   const counts = countByCategory(entries);
   const shown = searchEntries(filterEntries(entries, filter), search);
+  const days = groupByDay(shown, (e) => mytDay(e.at));
 
-  function exportCsv() {
+  function exportCsv(): void {
     try {
       // The byte order mark lets Excel read the accents and names as UTF-8.
       const blob = new Blob(["﻿", timelineCsv(shown)], { type: "text/csv;charset=utf-8" });
@@ -42,47 +65,69 @@ export function BetaTimelineTab({ projectId, onDone, onError }: BetaTabProps): R
   }
 
   return (
-    <Card
-      title="Timeline"
-      icon={<Clock size={14} />}
-      actions={<Button variant="secondary" className={smallBtn} icon={<Download size={12} />} disabled={shown.length === 0} onClick={exportCsv}>Export CSV</Button>}
-    >
-      <div className="mb-3 space-y-2">
-        <label className="block text-xs text-ink-secondary">
-          <span className="mb-1 block">Search the timeline</span>
-          <input type="search" className={inputClass} value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Words from the title, text or person" />
-        </label>
-        <div className="flex flex-wrap gap-1.5">
-          {FILTERS.map((f) => (
-            <button key={f} type="button" aria-pressed={filter === f} onClick={() => setFilter(f)}
-              className={cn("rounded-md px-2.5 py-1 text-xs font-semibold", filter === f ? "bg-primary text-white" : "border border-border bg-surface text-ink-secondary hover:text-ink")}>
-              {f === "all" ? "All" : CATEGORY_LABEL[f]}{counts[f] > 0 && <span className="ml-1 tabular-nums">{counts[f]}</span>}
-            </button>
-          ))}
-        </div>
+    <>
+      <WsPageHead
+        title="Timeline"
+        sub={<>Everything on this project, newest first · filled in automatically · <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><WsTag>RECORD</WsTag></span> = approvals, key passes and the handover kept as proof</>}
+        right={
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, minHeight: 40, padding: "0 12px", border: `1px solid ${BETA.border}`, borderRadius: 8, background: BETA.surface, minWidth: 0 }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={BETA.muted} strokeWidth="2" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="M20 20l-4-4" /></svg>
+              <span className="sr">Search timeline</span>
+              <input type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search, e.g. sink" style={{ border: 0, outline: "none", font: "inherit", width: 160, maxWidth: "100%", background: "transparent", color: BETA.ink }} />
+            </label>
+            <button type="button" disabled={shown.length === 0} onClick={exportCsv} title="Download what is on screen as a CSV file" style={btnStyle("outline", "md")}>Export record</button>
+          </div>
+        }
+      />
+
+      <div role="group" aria-label="Filter timeline" style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+        {FILTERS.map((f) => (
+          <WsFilterPill key={f} on={filter === f} onClick={() => setFilter(f)}>
+            {f === "all" ? "All" : CATEGORY_LABEL[f]}{counts[f] > 0 && <> <span style={{ opacity: 0.7 }}>{counts[f]}</span></>}
+          </WsFilterPill>
+        ))}
       </div>
 
-      {q.loading && !q.data ? <p className="text-sm text-ink-secondary">Loading the timeline...</p>
-        : q.error && !q.data ? <p role="alert" className="text-sm text-err">The timeline could not be loaded: {q.error}</p>
-        : shown.length === 0 ? <p className="text-sm text-ink-secondary">{entries.length === 0 ? "No activity yet." : "No entries match."}</p>
+      {q.loading && !q.data ? <p style={{ fontSize: 14, color: BETA.muted }}>Loading the timeline...</p>
+        : q.error && !q.data ? <p role="alert" style={{ fontSize: 14, color: WS.red }}>The timeline could not be loaded: {q.error}</p>
+        : shown.length === 0 ? <WsEmpty>{entries.length === 0 ? "No activity yet." : "Nothing matches. Try another word or filter."}</WsEmpty>
         : (
-          <ol className="relative space-y-3 pl-5">
-            <span aria-hidden className="pointer-events-none absolute bottom-1.5 left-[7px] top-1.5 w-px bg-border" />
-            {shown.map((e) => (
-              <li key={e.id} className="relative">
-                <span aria-hidden className={cn("absolute -left-5 top-1 h-3.5 w-3.5 rounded-full border-2 bg-surface", RING_CLASS[e.category])} />
-                <div className="text-xs text-ink-secondary">{e.dateOnly ? formatDate(e.at) : formatDateTime(e.at)}</div>
-                {e.title && <div className="text-sm font-semibold text-ink [overflow-wrap:anywhere]">{e.title}</div>}
-                <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-ink-secondary">
-                  <span className={cn("rounded px-1.5 py-px text-[10px] font-bold uppercase tracking-wider", CHIP_CLASS[e.category])}>{CATEGORY_LABEL[e.category]}</span>
-                  {isRecordEntry(e) && <span className="rounded border border-primary/40 bg-primary/10 px-1.5 py-px text-[10px] font-bold uppercase tracking-wider text-primary">Record</span>}
-                  {e.by && <span>by {e.by}</span>}
-                </div>
-                {e.body && <div className="mt-1 whitespace-pre-line text-sm text-ink-secondary [overflow-wrap:anywhere]">{e.body}</div>}
-              </li>
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            {days.map((g) => (
+              <section key={g.day ?? "undated"} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <h3 style={{ margin: 0, fontSize: 13, fontWeight: 700, color: BETA.muted, textTransform: "uppercase", letterSpacing: ".06em" }}>
+                  {g.day === today ? `Today · ${dayHeading(g.day, today)}` : g.day ? dayHeading(g.day, today) : "No date"}
+                </h3>
+                <ol style={{ ...cardStyle, listStyle: "none", margin: 0, padding: 0, gap: 0, overflow: "hidden" }}>
+                  {g.items.map((e, i) => <EntryRow key={e.id} e={e} first={i === 0} openTab={openTab} />)}
+                </ol>
+              </section>
             ))}
-          </ol>
+          </div>
         )}
-    </Card>
+    </>
+  );
+}
+
+function EntryRow({ e, first, openTab }: { e: TimelineEntry; first: boolean; openTab: (tab: BetaTabKey) => void }): ReactElement {
+  const [ink, bg] = TONE[e.category];
+  const time = e.dateOnly ? null : mytTime(e.at);
+  const target = OPENS[e.category];
+  return (
+    <li style={{ display: "flex", gap: 14, alignItems: "flex-start", padding: "14px 16px", borderTop: first ? undefined : `1px solid ${WS.rowLine}` }}>
+      <span style={{ flex: "none", width: 36, height: 36, borderRadius: 18, background: bg, color: ink, display: "flex", alignItems: "center", justifyContent: "center" }}><Icon category={e.category} /></span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "6px 8px" }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: ink }}>{CATEGORY_LABEL[e.category]}</span>
+          {isRecordEntry(e) && <WsTag>RECORD</WsTag>}
+          {time && <span style={{ fontSize: 12, color: BETA.muted, fontVariantNumeric: "tabular-nums" }}>{time}</span>}
+        </div>
+        {e.title && <div style={{ marginTop: 2, fontWeight: 600, overflowWrap: "anywhere" }}>{e.title}</div>}
+        {e.by && <div style={{ fontSize: 13, color: BETA.muted }}>{e.by}</div>}
+        {e.body && <div style={{ marginTop: 4, whiteSpace: "pre-line", fontSize: 13, color: WS.text2, overflowWrap: "anywhere" }}>{e.body}</div>}
+      </div>
+      {target && <button type="button" className="link" style={{ flex: "none", alignSelf: "center", textDecoration: "none" }} onClick={() => openTab(target)}>Open →<span className="sr"> {target === "drawings" ? "Drawings" : "Site and photos"}</span></button>}
+    </li>
   );
 }

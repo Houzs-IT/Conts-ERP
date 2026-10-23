@@ -13,19 +13,28 @@ describe("Beta routes: the switch", () => {
   app.route("/api/beta", renovationBeta);
   const routes = renovationBeta.routes.filter((r) => r.method !== "ALL");
 
-  test("the router has the bundle A routes", () => {
+  test("the router has the bundle A and section 10 routes", () => {
     // Hono lists each middleware of a route as its own entry, so the names are de-duplicated.
     const names = [...new Set(routes.map((r) => `${r.method} ${r.path}`))].sort();
     expect(names).toEqual([
       "DELETE /design-files/:fileId/approval",
+      "DELETE /events/:id",
+      "DELETE /projects/:id/appointments/:kind",
+      "GET /board",
       "GET /projects/:id/workspace",
+      "PATCH /events/:id",
       "POST /defects/:defectId/close",
       "POST /defects/:defectId/fixed",
       "POST /defects/:defectId/redo",
       "POST /design-files/:fileId/approval",
       "POST /design-files/:fileId/sent",
+      "POST /events",
+      "POST /projects/:id/appointments/:kind/done",
       "POST /projects/:id/defects",
       "POST /projects/:id/reminders",
+      "PUT /design-notes/:noteId/days",
+      "PUT /projects/:id/appointments/:kind",
+      "PUT /projects/:id/design",
       "PUT /settings",
     ]);
   });
@@ -33,7 +42,7 @@ describe("Beta routes: the switch", () => {
   test("every route answers 404 before auth or any query when BETA_ENABLED is not true", async () => {
     for (const env of [{}, { BETA_ENABLED: "false" }, { BETA_ENABLED: "" }, { BETA_ENABLED: "yes" }]) {
       for (const r of routes) {
-        const path = `/api/beta${r.path.replace(":id", "1").replace(":defectId", "1").replace(":fileId", "1")}`;
+        const path = `/api/beta${r.path.replace(":id", "1").replace(":defectId", "1").replace(":fileId", "1").replace(":noteId", "1").replace(":kind", "site_measure")}`;
         const res = await app.request(path, { method: r.method, headers: { "content-type": "application/json" }, body: r.method === "GET" ? undefined : "{}" }, env);
         expect(res.status, `${r.method} ${path} with ${JSON.stringify(env)}`).toBe(404);
         expect(await res.json()).toEqual({ error: "not_found" });

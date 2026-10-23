@@ -1,53 +1,228 @@
-/* Beta workspace > Drawings: for 3D and 2D, the approved set, a newer version waiting for the client, and every version
-   with its notes. Sending to the client and recording or removing an approval write through /api/beta. */
+/* Beta workspace > Drawings, laid out as the mockup's Drawings view: three cards (Site measurement, 3D, 2D), and under
+   them the one that was picked: the new version waiting for the client with its three steps, the approved set, or the
+   history. Sending to the client and recording or removing an approval write through /api/beta. Uploading a file is not
+   a Beta action yet, so the upload boxes lead to the current project page. */
 
-import { useState, type ReactElement } from "react";
+import { useState, type CSSProperties, type ReactElement, type ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { Ruler } from "lucide-react";
-import { Button } from "../../components/Button";
 import { useDialog } from "../../hooks/useDialog";
-import { cn } from "../../lib/utils";
-import { Card } from "../projects/renovation/ProjectRecords";
-import { addDays, errorText, shortDate } from "../projects/renovation/renovationModel";
-import { Dialog, Field, Pill, inputClass, smallBtn } from "../projects/renovation/renovationUi";
-import type { DesignFile, DesignNote } from "../projects/renovation/simpleApi";
+import { addDays, errorText } from "../projects/renovation/renovationModel";
+import { simpleApi, type DesignFile, type DesignNote, type SiteMeasure } from "../projects/renovation/simpleApi";
+import {
+  TONE_DONE, TONE_QUIET, TONE_WAIT, WS, WsBadge, WsBtn, WsCheck, WsDialog, WsField, WsPdfTile, WsPhoto, btnStyle, cardStyle, inputStyle, textareaStyle
+} from "./BetaWsUi";
 import { FileDialog, sendReminder, useGuarded, type BetaTabProps, type ViewedFile } from "./betaShared";
 import { betaApi } from "./renovationBetaApi";
-import { approvedSet, daysLeft, versionLabel, whatsappLink, type DesignKind, type VersionInfo } from "./renovationBetaModel";
+import { approvedSet, dayMonth, dayMonthYear, daysLeft, versionLabel, whatsappLink, type ApprovedSet, type DesignKind, type VersionInfo } from "./renovationBetaModel";
+import { BETA } from "./renovationBetaTheme";
 
+type DrawPick = "m" | DesignKind;
+type View = "waiting" | "approved" | "history";
 type Editing = { type: "send" | "approve"; kind: DesignKind; v: VersionInfo };
 
 const submittedOf = (f: DesignFile): string => f.submitted_on ?? f.uploaded_at;
-const picNames = (f: DesignFile): string => (f.people?.length ? f.people.map((x) => x.name).join(", ") : f.person_name ?? "-");
+const picNames = (f: DesignFile): string => (f.people?.length ? f.people.map((x) => x.name).join(", ") : f.person_name ?? f.uploaded_by_name ?? "-");
+const IMAGE = /\.(png|jpe?g|webp|gif|heic)$/i;
+const plural = (n: number, w: string): string => `${n} ${w}${n === 1 ? "" : "s"}`;
 
 export function BetaDrawingsTab(p: BetaTabProps): ReactElement {
+  const { records, workspace } = p;
+  const sets = { "3d": approvedSet(records.files, workspace.reviews, "3d"), "2d": approvedSet(records.files, workspace.reviews, "2d") };
+  const [pick, setPick] = useState<DrawPick>(() => (sets["2d"].waiting ? "2d" : sets["3d"].waiting ? "3d" : sets["2d"].versions.length > 0 ? "2d" : sets["3d"].versions.length > 0 ? "3d" : "m"));
   const [editing, setEditing] = useState<Editing | null>(null);
   const [viewing, setViewing] = useState<ViewedFile | null>(null);
-  const openFile = (f: DesignFile) => {
+  const openFile = (f: DesignFile): void => {
     if (f.external_url) window.open(f.external_url, "_blank", "noopener");
     else if (f.r2_key) setViewing({ key: f.r2_key, name: f.file_name });
   };
+  const measureDone = records.measures.filter((m) => m.done_on).sort((a, b) => (a.done_on ?? "").localeCompare(b.done_on ?? ""));
+  const measureFiles = records.measures.reduce((n, m) => n + (m.files?.length ?? 0), 0);
+  const upload = p.canWrite ? `/projects/${p.projectId}` : null;
+
   return (
-    <div className="space-y-4">
-      {(["3d", "2d"] as const).map((kind) => (
-        <KindCard key={kind} kind={kind} p={p} onEdit={(type, v) => setEditing({ type, kind, v })} onOpen={openFile} />
-      ))}
+    <>
+      <div role="group" aria-label="Drawing type" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 14 }}>
+        <TypeCard
+          on={pick === "m"} onPick={() => setPick("m")} icon="m" title="Site measurement"
+          badge={measureDone.length > 0 ? <WsBadge tone={TONE_DONE}>Done</WsBadge> : <WsBadge tone={TONE_QUIET}>Not measured</WsBadge>}
+          sub={measureDone.length > 0 ? `Measured ${dayMonth(measureDone[0]?.done_on)} · ${plural(measureFiles, "file")}` : "No site measure recorded yet"}
+          uploads={upload ? [{ label: "Upload PDF / photos", to: upload }] : []}
+        />
+        {(["3d", "2d"] as const).map((kind) => (
+          <TypeCard
+            key={kind} on={pick === kind} onPick={() => setPick(kind)} icon={kind} title={`${kind.toUpperCase()} drawings`}
+            badge={kindBadge(sets[kind])} sub={kindSub(kind, sets[kind])}
+            uploads={upload ? (kind === "3d" ? [{ label: "Upload 3D PDF", to: upload }, { label: "Add 3D link", to: upload }] : [{ label: "Upload 2D PDF", to: upload }]) : []}
+          />
+        ))}
+      </div>
+
+      {pick === "m" ? <MeasureDetail measures={records.measures} projectId={p.projectId} onView={setViewing} uploadTo={upload} />
+        : <KindDetail key={pick} kind={pick} p={p} set={sets[pick]} onEdit={(type, v) => setEditing({ type, kind: pick, v })} onOpen={openFile} />}
+
       {editing?.type === "send" && <SendDialog p={p} editing={editing} onClose={() => setEditing(null)} />}
       {editing?.type === "approve" && <ApproveDialog p={p} editing={editing} onClose={() => setEditing(null)} />}
       {viewing && <FileDialog projectId={p.projectId} file={viewing} onClose={() => setViewing(null)} />}
+    </>
+  );
+}
+
+/* ---------- The three cards ---------- */
+
+function kindBadge(set: ApprovedSet): ReactElement {
+  if (set.waiting) return <WsBadge tone={TONE_WAIT}>{set.waiting.review?.sentOn ? "Waiting client" : "Not sent"}</WsBadge>;
+  if (set.approved) return <WsBadge tone={TONE_DONE}>Approved</WsBadge>;
+  return <WsBadge tone={TONE_QUIET}>No version</WsBadge>;
+}
+
+function kindSub(kind: DesignKind, set: ApprovedSet): string {
+  if (set.versions.length === 0) return `No ${kind.toUpperCase()} version uploaded yet`;
+  const parts: string[] = [];
+  if (set.waiting) {
+    const sentOn = set.waiting.review?.sentOn;
+    parts.push(sentOn ? `${versionLabel(kind, set.waiting.file)} sent ${dayMonth(sentOn)}` : `${versionLabel(kind, set.waiting.file)} uploaded ${dayMonth(submittedOf(set.waiting.file))}`);
+  }
+  if (set.approved) parts.push(`${set.waiting ? "site uses" : "Approved"} ${versionLabel(kind, set.approved.file)} (${dayMonth(set.approved.review?.approvedOn)})`);
+  return parts.join(" · ");
+}
+
+interface UploadLink { label: string; to: string }
+
+function TypeCard({ on, onPick, icon, title, badge, sub, uploads }: { on: boolean; onPick: () => void; icon: DrawPick; title: string; badge: ReactElement; sub: string; uploads: UploadLink[] }): ReactElement {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <button
+        type="button"
+        aria-pressed={on}
+        onClick={onPick}
+        style={{ display: "flex", flexDirection: "column", gap: 8, padding: on ? 15 : 16, borderRadius: 12, border: on ? `2px solid ${BETA.accent}` : `1px solid ${BETA.line}`, background: on ? WS.tealSoft : BETA.surface, font: "inherit", textAlign: "left", cursor: "pointer", color: BETA.ink, flex: 1 }}
+      >
+        <span style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, width: "100%" }}>
+          <span style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+            <span style={{ flex: "none", width: 38, height: 38, borderRadius: 8, background: WS.chip, display: "flex", alignItems: "center", justifyContent: "center" }}><TypeIcon kind={icon} /></span>
+            <span style={{ fontSize: 17, fontWeight: 700 }}>{title}</span>
+          </span>
+          {badge}
+        </span>
+        <span style={{ fontSize: 13, color: BETA.muted }}>{sub}</span>
+      </button>
+      {uploads.length > 0 && (
+        <div style={{ display: "flex", gap: 8 }}>
+          {uploads.map((u) => (
+            <Link
+              key={u.label}
+              to={u.to}
+              title="Opens the current project page, where files are uploaded"
+              style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, minHeight: 44, padding: "0 14px", borderRadius: 10, border: "1.5px dashed #7FB3AD", background: WS.tealSoft, color: BETA.accentInk, fontWeight: 600, fontSize: 14, flex: 1, textDecoration: "none" }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M12 16V4" /><path d="M7 9l5-5 5 5" /><path d="M4 20h16" /></svg>
+              {u.label}
+            </Link>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
-function KindCard({ kind, p, onEdit, onOpen }: { kind: DesignKind; p: BetaTabProps; onEdit: (type: "send" | "approve", v: VersionInfo) => void; onOpen: (f: DesignFile) => void }) {
+function TypeIcon({ kind }: { kind: DrawPick }): ReactElement {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={BETA.ink} strokeWidth="1.8" aria-hidden="true">
+      {kind === "m" ? <><path d="M3 17L17 3l4 4L7 21H3z" /><path d="M14 6l2 2M11 9l2 2M8 12l2 2" /></>
+        : kind === "3d" ? <><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z" /><path d="M12 12l8-4.5M12 12v9M12 12L4 7.5" /></>
+        : <><rect x="3" y="3" width="18" height="18" rx="1" /><path d="M3 10h8v11M11 14h10" /></>}
+    </svg>
+  );
+}
+
+/* ---------- Site measurement ---------- */
+
+const sectionStyle: CSSProperties = { ...cardStyle, gap: 18 };
+const eyebrow: CSSProperties = { fontSize: 12, color: BETA.muted, fontWeight: 600, textTransform: "uppercase", letterSpacing: ".05em" };
+const boxStyle: CSSProperties = { border: `1px solid ${BETA.line}`, borderRadius: 10, overflow: "hidden" };
+
+function MeasureDetail({ measures, projectId, onView, uploadTo }: { measures: SiteMeasure[]; projectId: number; onView: (f: ViewedFile) => void; uploadTo: string | null }): ReactElement {
+  const list = [...measures].sort((a, b) => (b.done_on ?? "").localeCompare(a.done_on ?? "") || b.id - a.id);
+  if (list.length === 0) {
+    return (
+      <section style={sectionStyle}>
+        <div style={eyebrow}>Site measurement</div>
+        <p style={{ fontSize: 14, color: BETA.muted }}>No site measure has been recorded yet.</p>
+        {uploadTo && <Link to={uploadTo}>Record it on the current project page</Link>}
+      </section>
+    );
+  }
+  return (
+    <>
+      {list.map((m) => {
+        const files = m.files ?? [];
+        const photos = files.filter((f) => IMAGE.test(f.r2_key) || (f.content_type ?? "").startsWith("image/"));
+        const names = m.people?.length ? m.people.map((x) => x.name).join(", ") : m.person_name;
+        return (
+          <section key={m.id} aria-label={`Site measurement ${dayMonthYear(m.done_on)}`} style={sectionStyle}>
+            <div>
+              <div style={eyebrow}>Site measurement</div>
+              <h2 style={{ margin: "2px 0 0", fontSize: 22, fontWeight: 700 }}>
+                {m.done_on ? dayMonthYear(m.done_on) : "Not dated"} <span style={{ fontSize: 15, fontWeight: 600, color: m.done_on ? WS.green : WS.amber }}>· {m.done_on ? "done" : "not done yet"}</span>
+              </h2>
+              <div style={{ color: BETA.muted }}>{names ? `Measured by ${names} · ` : ""}{plural(files.length, "file")}</div>
+            </div>
+            {files.length > 0 && (
+              <div style={boxStyle}>
+                <div style={{ padding: "12px 16px", background: WS.head, fontWeight: 600 }}>Measurement files</div>
+                <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+                  {files.map((f) => (
+                    <li key={f.id} style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, padding: "12px 16px", borderTop: `1px solid ${WS.rowLine}` }}>
+                      <WsPdfTile />
+                      <div style={{ flex: "1 1 200px", minWidth: 0 }}>
+                        <div style={{ fontWeight: 600, overflowWrap: "anywhere" }}>{f.file_name}</div>
+                        <div style={{ fontSize: 12, color: BETA.muted }}>{f.content_type ?? "File"}</div>
+                      </div>
+                      <WsBtn kind="teal" size="sm" onClick={() => onView({ key: f.r2_key, name: f.file_name })}>Open<span className="sr"> {f.file_name}</span></WsBtn>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {photos.length > 0 && (
+              <div>
+                <div style={{ fontSize: 12, color: BETA.muted, fontWeight: 600, marginBottom: 8 }}>Site photos</div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 10 }}>
+                  {photos.map((f) => (
+                    <div key={f.id} style={{ aspectRatio: "4 / 3", borderRadius: 8, overflow: "hidden", position: "relative" }}>
+                      <WsPhoto path={simpleApi.fileUrl(projectId, f.r2_key)} alt={`Site measure photo ${f.file_name}`} onClick={() => onView({ key: f.r2_key, name: f.file_name })} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {m.note && (
+              <div style={{ background: WS.panel, borderRadius: 10, padding: "14px 16px" }}>
+                <div style={{ fontSize: 12, color: BETA.muted, fontWeight: 600, marginBottom: 4 }}>Site notes</div>
+                <div style={{ whiteSpace: "pre-line", overflowWrap: "anywhere" }}>{m.note}</div>
+              </div>
+            )}
+          </section>
+        );
+      })}
+    </>
+  );
+}
+
+/* ---------- 3D and 2D ---------- */
+
+function KindDetail({ kind, p, set, onEdit, onOpen }: { kind: DesignKind; p: BetaTabProps; set: ApprovedSet; onEdit: (type: "send" | "approve", v: VersionInfo) => void; onOpen: (f: DesignFile) => void }): ReactElement {
   const dialog = useDialog();
   const { busy, run } = useGuarded();
-  const { workspace, records, canWrite, today, projectId, detail } = p;
-  const set = approvedSet(records.files, workspace.reviews, kind);
-  const notes = records.notes.filter((n) => n.kind === kind).sort((a, b) => b.noted_on.localeCompare(a.noted_on) || b.id - a.id);
+  const { records, canWrite, today, projectId, detail } = p;
   const { approved, waiting } = set;
+  const [picked, setView] = useState<View>(waiting ? "waiting" : approved ? "approved" : "history");
+  // After a save the picked view can be gone (the waiting version was just approved), so fall back to what exists.
+  const view: View = picked === "waiting" && !waiting ? (approved ? "approved" : "history") : picked === "approved" && !approved ? (waiting ? "waiting" : "history") : picked;
+  const notes = records.notes.filter((n) => n.kind === kind).sort((a, b) => b.noted_on.localeCompare(a.noted_on) || b.id - a.id);
+  const K = kind.toUpperCase();
 
-  async function removeApproval(v: VersionInfo) {
+  async function removeApproval(v: VersionInfo): Promise<void> {
     const label = versionLabel(kind, v.file);
     const ok = await dialog.confirm({ title: `Remove the approval of ${label}?`, message: "The version goes back to waiting for the client. The checklist item stays as it is.", confirmLabel: "Remove approval", danger: true });
     if (!ok) return;
@@ -59,85 +234,83 @@ function KindCard({ kind, p, onEdit, onOpen }: { kind: DesignKind; p: BetaTabPro
     }
   }
 
+  if (set.versions.length === 0) {
+    return (
+      <section style={sectionStyle}>
+        <div style={eyebrow}>{K} drawings</div>
+        <p style={{ fontSize: 14, color: BETA.muted }}>No {K} version has been uploaded yet.</p>
+        <Link to={`/projects/${projectId}`}>Upload it on the current project page.</Link>
+      </section>
+    );
+  }
+
+  const shown = view === "waiting" && waiting ? waiting : view === "approved" && approved ? approved : null;
+  const head = view === "history" || !shown ? "All versions" : view === "waiting" ? "New version" : "Approved set";
   const sentOn = waiting?.review?.sentOn ?? null;
-  const dueOn = waiting?.review?.dueOn ?? null;
-  const left = daysLeft(dueOn, today);
-  const waitingLabel = waiting ? versionLabel(kind, waiting.file) : "";
+  const suffix = view === "waiting" ? (sentOn ? "· waiting for client" : "· not sent yet") : view === "approved" ? `· client approved ${dayMonth(approved?.review?.approvedOn)}` : "";
+  const suffixColor = view === "waiting" ? WS.amber : WS.green;
 
   return (
-    <Card title={`${kind.toUpperCase()} drawings`} icon={<Ruler size={14} />}>
-      {set.versions.length === 0 ? (
-        <p className="text-sm text-ink-secondary">
-          No {kind.toUpperCase()} version has been uploaded yet.{" "}
-          <Link className="text-primary" to={`/projects/${projectId}`}>Upload it on the current project page.</Link>
-        </p>
-      ) : (
-        <div className="grid gap-3 md:grid-cols-2">
-          <section aria-label={`Approved ${kind.toUpperCase()}`} className="rounded-md border border-border p-3">
-            <h4 className="text-xs font-medium uppercase tracking-wide text-ink-secondary">Approved set</h4>
-            {approved ? (
-              <div className="mt-1 space-y-1 text-sm">
-                <div className="flex flex-wrap items-center gap-2"><span className="font-medium text-ink">{versionLabel(kind, approved.file)}</span><Pill tone="ok">Approved</Pill></div>
-                <div className="text-ink-secondary">
-                  {shortDate(approved.review?.approvedOn)}{approved.review?.approvedByName && <> by {approved.review.approvedByName}</>}
-                </div>
-                {approved.review?.approvalNote && <p className="text-ink [overflow-wrap:anywhere]">{approved.review.approvalNote}</p>}
-                <div className="flex flex-wrap gap-2 pt-1">
-                  <Button variant="secondary" className={smallBtn} onClick={() => onOpen(approved.file)}>Open</Button>
-                  {canWrite && <Button variant="danger" className={smallBtn} disabled={busy} onClick={() => void run(() => removeApproval(approved))}>Remove approval</Button>}
-                </div>
-              </div>
-            ) : <p className="mt-1 text-sm text-ink-secondary">Nothing approved yet.</p>}
-          </section>
+    <section aria-label={`${K} drawings`} style={sectionStyle}>
+      <div>
+        <div style={eyebrow}>{kind === "3d" ? "3D design" : "2D drawings"}</div>
+        <h2 style={{ margin: "2px 0 0", fontSize: 22, fontWeight: 700 }}>{head} {suffix && <span style={{ fontSize: 15, fontWeight: 600, color: suffixColor }}>{suffix}</span>}</h2>
+        {shown && <div style={{ color: BETA.muted }}>{versionLabel(kind, shown.file)} · uploaded {dayMonthYear(submittedOf(shown.file))} by {picNames(shown.file)}</div>}
+        {!shown && <div style={{ color: BETA.muted }}>{plural(set.versions.length, "version")}</div>}
+      </div>
 
-          <section aria-label={`Waiting ${kind.toUpperCase()}`} className="rounded-md border border-border p-3">
-            <h4 className="text-xs font-medium uppercase tracking-wide text-ink-secondary">Waiting for the client</h4>
-            {waiting ? (
-              <div className="mt-1 space-y-1 text-sm">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-medium text-ink">{waitingLabel}</span>
-                  <Pill tone={sentOn ? (left != null && left < 0 ? "err" : "warn") : "muted"}>{sentOn ? "Sent" : "Not sent yet"}</Pill>
-                </div>
-                {sentOn ? (
-                  <div className={cn("text-ink-secondary", left != null && left < 0 && "text-err")}>
-                    Sent {shortDate(sentOn)}{dueOn && <> · answer due {shortDate(dueOn)}{left != null && left < 0 && ` (${-left} day${left === -1 ? "" : "s"} late)`}</>}
-                  </div>
-                ) : <div className="text-ink-secondary">Uploaded {shortDate(submittedOf(waiting.file))}. Not sent to the client.</div>}
-                <div className="flex flex-wrap gap-2 pt-1">
-                  <Button variant="secondary" className={smallBtn} onClick={() => onOpen(waiting.file)}>Open</Button>
-                  {canWrite && <Button className={smallBtn} disabled={busy} onClick={() => onEdit("send", waiting)}>{sentOn ? "Send again" : "Send to client"}</Button>}
-                  {canWrite && <Button variant="secondary" className={smallBtn} disabled={busy} onClick={() => onEdit("approve", waiting)}>Record approval</Button>}
-                  {canWrite && sentOn && (
-                    <Button variant="secondary" className={smallBtn} disabled={busy} onClick={() => void run(() => sendReminder(projectId, {
-                      kind: "client_approval",
-                      phone: detail.project.customer_phone,
-                      text: `Hi${detail.project.customer_name ? ` ${detail.project.customer_name}` : ""}, a gentle reminder about the ${waitingLabel} drawing for ${detail.project.name}, sent on ${shortDate(sentOn)}. Please let us know if you approve it${dueOn ? ` by ${shortDate(dueOn)}` : ""}. Thank you.`,
-                    }, p.onDone, p.onError))}>Remind client</Button>
-                  )}
-                </div>
-              </div>
-            ) : <p className="mt-1 text-sm text-ink-secondary">No newer version is waiting.</p>}
-          </section>
-        </div>
+      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, fontSize: 13 }}>
+        <span style={{ color: BETA.muted }}>Show:</span>
+        {waiting && <ShowPill on={view === "waiting"} onClick={() => setView("waiting")}>{`New version · ${sentOn ? "waiting client" : "not sent"}`}</ShowPill>}
+        {approved && <ShowPill on={view === "approved"} onClick={() => setView("approved")}>{kind === "2d" ? "Approved set · site uses this" : "Approved set"}</ShowPill>}
+        <ShowPill on={view === "history"} onClick={() => setView("history")} quiet>History</ShowPill>
+      </div>
+
+      {view === "waiting" && waiting && (
+        <WaitingView kind={kind} v={waiting} p={p} busy={busy} onEdit={onEdit}
+          onRemind={() => void run(() => sendReminder(projectId, {
+            kind: "client_approval",
+            phone: detail.project.customer_phone,
+            text: `Hi${detail.project.customer_name ? ` ${detail.project.customer_name}` : ""}, a gentle reminder about the ${versionLabel(kind, waiting.file)} drawing for ${detail.project.name}, sent on ${dayMonthYear(sentOn)}. Please let us know if you approve it${waiting.review?.dueOn ? ` by ${dayMonthYear(waiting.review.dueOn)}` : ""}. Thank you.`,
+          }, p.onDone, p.onError))}
+          onOpen={onOpen} />
       )}
 
-      {set.versions.length > 0 && (
-        <div className="mt-4">
-          <h4 className="text-xs font-medium uppercase tracking-wide text-ink-secondary">All versions</h4>
-          <ul className="mt-1 divide-y divide-border">
+      {view === "approved" && approved && (
+        <>
+          <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, padding: "12px 14px", borderRadius: 10, background: WS.tealSoft, border: `1.5px solid ${WS.tealLine}` }}>
+            <span style={{ padding: "4px 10px", borderRadius: 6, background: BETA.accent, color: "#FFFFFF", fontSize: 12, fontWeight: 600 }}>{kind === "2d" ? "For site" : "Approved"}</span>
+            <div style={{ flex: "1 1 260px", minWidth: 0 }}>
+              <div style={{ fontWeight: 700, overflowWrap: "anywhere" }}>{approved.file.file_name}</div>
+              <div style={{ fontSize: 13, color: WS.text2 }}>{kind === "2d" ? "Site is using this set now · " : ""}client signed {dayMonthYear(approved.review?.approvedOn)}</div>
+            </div>
+            <WsBtn onClick={() => onOpen(approved.file)}>{approved.file.external_url ? "Open link" : "Open"}<span className="sr"> {versionLabel(kind, approved.file)}</span></WsBtn>
+          </div>
+          <div style={{ border: "1.5px solid #B7DCC3", background: "#F1F8F3", borderRadius: 10, padding: "14px 16px", display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontWeight: 700, color: WS.green }}>Client approved · {dayMonth(approved.review?.approvedOn)}</div>
+              <div style={{ fontSize: 13, color: WS.text2 }}>{approved.review?.approvedByName ? `Approved by ${approved.review.approvedByName}` : "Approval recorded"}</div>
+              {approved.review?.approvalNote && <div style={{ fontSize: 13, overflowWrap: "anywhere" }}>{approved.review.approvalNote}</div>}
+            </div>
+            {canWrite && <WsBtn kind="danger" size="sm" disabled={busy} onClick={() => void run(() => removeApproval(approved))}>Remove approval<span className="sr"> of {versionLabel(kind, approved.file)}</span></WsBtn>}
+          </div>
+        </>
+      )}
+
+      {view === "history" && (
+        <div style={boxStyle}>
+          <div style={{ padding: "12px 16px", background: WS.head, fontWeight: 600 }}>All versions</div>
+          <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
             {set.versions.map((v) => {
               const state = v === approved ? "Approved" : v === waiting ? (v.review?.sentOn ? "Sent, waiting" : "Not sent") : "Older";
               return (
-                <li key={v.file.id} className="flex flex-wrap items-center justify-between gap-2 py-1.5 text-sm">
-                  <span className="min-w-0 flex-1">
-                    <span className="font-medium text-ink">{versionLabel(kind, v.file)}</span>
-                    <span className="text-ink-secondary"> · {shortDate(submittedOf(v.file))} · {picNames(v.file)}</span>
-                    {v.file.note && <span className="block text-xs text-ink-secondary [overflow-wrap:anywhere]">{v.file.note}</span>}
-                  </span>
-                  <span className="flex items-center gap-2">
-                    <Pill tone={v === approved ? "ok" : v === waiting ? "warn" : "muted"}>{state}</Pill>
-                    <button type="button" className="text-xs text-primary hover:underline" onClick={() => onOpen(v.file)}>Open</button>
-                  </span>
+                <li key={v.file.id} style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, padding: "12px 16px", borderTop: `1px solid ${WS.rowLine}` }}>
+                  <div style={{ flex: "1 1 220px", minWidth: 0 }}>
+                    <div style={{ fontWeight: 600 }}>{versionLabel(kind, v.file)} <span style={{ fontWeight: 400, color: BETA.muted }}>· {dayMonth(submittedOf(v.file))} · {picNames(v.file)}</span></div>
+                    {v.file.note && <div style={{ fontSize: 12, color: BETA.muted, overflowWrap: "anywhere" }}>{v.file.note}</div>}
+                  </div>
+                  <WsBadge tone={v === approved ? TONE_DONE : v === waiting ? TONE_WAIT : TONE_QUIET}>{state}</WsBadge>
+                  <WsBtn size="sm" onClick={() => onOpen(v.file)}>Open<span className="sr"> {versionLabel(kind, v.file)}</span></WsBtn>
                 </li>
               );
             })}
@@ -146,25 +319,114 @@ function KindCard({ kind, p, onEdit, onOpen }: { kind: DesignKind; p: BetaTabPro
       )}
 
       {notes.length > 0 && <NotesList kind={kind} notes={notes} files={records.files} />}
-    </Card>
+    </section>
   );
 }
 
-function NotesList({ kind, notes, files }: { kind: DesignKind; notes: DesignNote[]; files: DesignFile[] }) {
+function ShowPill({ on, onClick, quiet = false, children }: { on: boolean; onClick: () => void; quiet?: boolean; children: ReactNode }): ReactElement {
+  const style: CSSProperties = on
+    ? { padding: "6px 10px", borderRadius: 6, border: `2px solid ${BETA.accent}`, background: WS.tealSoft, color: BETA.accentInk, fontWeight: 700 }
+    : quiet ? { padding: "6px 10px", border: "2px solid transparent", background: "transparent", color: BETA.muted }
+    : { padding: "6px 10px", borderRadius: 6, border: `1px solid ${BETA.line}`, background: BETA.surface, color: BETA.ink };
+  return <button type="button" aria-pressed={on} onClick={onClick} style={{ ...style, font: "inherit", fontSize: 13, cursor: "pointer" }}>{children}</button>;
+}
+
+function WaitingView({ kind, v, p, busy, onEdit, onRemind, onOpen }: {
+  kind: DesignKind; v: VersionInfo; p: BetaTabProps; busy: boolean; onEdit: (type: "send" | "approve", v: VersionInfo) => void; onRemind: () => void; onOpen: (f: DesignFile) => void;
+}): ReactElement {
+  const { canWrite, today, detail } = p;
+  const sentOn = v.review?.sentOn ?? null;
+  const dueOn = v.review?.dueOn ?? null;
+  const left = daysLeft(dueOn, today);
+  const late = left != null && left < 0;
+  const label = versionLabel(kind, v.file);
+  const card = (border: string, bg: string, pad: number): CSSProperties => ({ position: "relative", border, background: bg, borderRadius: 10, padding: pad, display: "flex", flexDirection: "column", gap: 8 });
+  const dot = (bg: string, children: ReactNode, ring?: string): ReactElement => (
+    <span style={{ width: 24, height: 24, borderRadius: 12, background: bg, border: ring, color: "#FFFFFF", fontSize: 13, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", flex: "none" }}>{children}</span>
+  );
   return (
-    <div className="mt-4">
-      <h4 className="text-xs font-medium uppercase tracking-wide text-ink-secondary">{kind.toUpperCase()} notes</h4>
-      <ul className="mt-1 space-y-2">
+    <>
+      <ol aria-label={`How a ${kind.toUpperCase()} version works`} style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
+        <li style={card("1px solid #CFE3D6", "#F3F9F5", 14)}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>{dot(WS.green, <WsCheck size={12} />)}<span style={{ fontWeight: 700 }}>1. Uploaded</span></div>
+          <div style={{ fontSize: 13, color: WS.text2 }}>{dayMonth(submittedOf(v.file))} · {label}</div>
+        </li>
+        <li aria-current="step" style={card("2px solid #E0A955", "#FFF6EA", 13)}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            {dot(WS.amberBtn, "2")}<span style={{ fontWeight: 700 }}>Client approves</span>
+            <span style={{ marginLeft: "auto" }}><WsBadge tone={[WS.amber, "#FBE3C2"]}>Now</WsBadge></span>
+          </div>
+          <div style={{ fontSize: 13, color: late ? WS.red : WS.text2, fontWeight: late ? 600 : 400 }}>
+            {sentOn
+              ? `Sent to ${detail.project.customer_name ?? "the client"} ${dayMonth(sentOn)}${dueOn ? ` · due ${dayMonth(dueOn)}` : ""}${late ? ` (${plural(-left, "day")} late)` : ""}`
+              : `Uploaded ${dayMonth(submittedOf(v.file))}. Not sent to the client yet.`}
+          </div>
+          {canWrite && (
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {sentOn ? (
+                <>
+                  <WsBtn size="sm" disabled={busy} onClick={onRemind}>Remind client</WsBtn>
+                  <WsBtn size="sm" disabled={busy} onClick={() => onEdit("send", v)}>Send again</WsBtn>
+                  <WsBtn kind="amber" size="sm" disabled={busy} onClick={() => onEdit("approve", v)}>Record approval</WsBtn>
+                </>
+              ) : (
+                <>
+                  <WsBtn kind="amber" size="sm" disabled={busy} onClick={() => onEdit("send", v)}>Send to client</WsBtn>
+                  <WsBtn size="sm" disabled={busy} onClick={() => onEdit("approve", v)}>Record approval</WsBtn>
+                </>
+              )}
+            </div>
+          )}
+        </li>
+        <li style={card(`1px solid ${BETA.line}`, "#FAFBFB", 14)}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>{dot("transparent", "3", `2px solid ${BETA.border}`)}<span style={{ fontWeight: 700, color: WS.text2 }}>{kind === "2d" ? "Becomes the site set" : "Becomes the approved set"}</span></div>
+          <div style={{ fontSize: 13, color: BETA.muted }}>{kind === "2d" ? "When the client approves, the site works from this version." : "When the client approves, this version is the approved 3D set."}</div>
+        </li>
+      </ol>
+      {v.file.note && (
+        <div style={{ background: WS.panel, borderRadius: 10, padding: "14px 16px" }}>
+          <div style={{ fontSize: 12, color: BETA.muted, fontWeight: 600, marginBottom: 4 }}>What changed in this revision</div>
+          <div style={{ whiteSpace: "pre-line", overflowWrap: "anywhere" }}>{v.file.note}</div>
+        </div>
+      )}
+      <div style={boxStyle}>
+        <div style={{ padding: "12px 16px", background: WS.head, fontWeight: 600 }}>{kind === "3d" ? "3D file" : "2D file"}</div>
+        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, padding: "12px 16px", borderTop: `1px solid ${WS.rowLine}` }}>
+          {v.file.external_url ? <LinkTile /> : <WsPdfTile />}
+          <div style={{ flex: "1 1 200px", minWidth: 0 }}>
+            <div style={{ fontWeight: 600, overflowWrap: "anywhere" }}>{v.file.file_name}</div>
+            <div style={{ fontSize: 12, color: BETA.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{v.file.external_url ?? `Uploaded ${dayMonthYear(submittedOf(v.file))} by ${picNames(v.file)}`}</div>
+          </div>
+          <WsBtn kind="teal" size="sm" onClick={() => onOpen(v.file)}>Open<span className="sr"> {label}</span></WsBtn>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function LinkTile(): ReactElement {
+  return (
+    <span aria-hidden="true" style={{ flex: "none", width: 36, height: 44, borderRadius: 4, background: "#E8F0FB", border: "1px solid #C9DAF2", color: WS.blue, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10 14a4 4 0 005.7 0l3-3a4 4 0 00-5.7-5.7l-1 1" /><path d="M14 10a4 4 0 00-5.7 0l-3 3a4 4 0 005.7 5.7l1-1" /></svg>
+    </span>
+  );
+}
+
+function NotesList({ kind, notes, files }: { kind: DesignKind; notes: DesignNote[]; files: DesignFile[] }): ReactElement {
+  return (
+    <div>
+      <div style={{ fontSize: 12, color: BETA.muted, fontWeight: 600, marginBottom: 8 }}>{kind.toUpperCase()} notes</div>
+      <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 8 }}>
         {notes.map((n) => {
           const answeredBy = files.find((f) => f.id === n.closed_by_file_id);
           return (
-            <li key={n.id} className="rounded-md bg-surface-dim p-2 text-sm">
-              <div className="flex flex-wrap items-center gap-x-2 text-xs text-ink-secondary">
-                <span>{shortDate(n.noted_on)}</span>
+            <li key={n.id} style={{ background: WS.panel, borderRadius: 10, padding: "10px 14px" }}>
+              <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "4px 8px", fontSize: 12, color: BETA.muted }}>
+                <span>{dayMonth(n.noted_on)}</span>
                 {(n.requested_by_person_name ?? n.requested_by_text) && <span>from {n.requested_by_person_name ?? n.requested_by_text}</span>}
-                <Pill tone={answeredBy ? "ok" : "warn"}>{answeredBy ? `Answered in ${versionLabel(kind, answeredBy)}` : "Open"}</Pill>
+                <WsBadge tone={answeredBy ? TONE_DONE : TONE_WAIT}>{answeredBy ? `Answered in ${versionLabel(kind, answeredBy)}` : "Open"}</WsBadge>
               </div>
-              <p className="mt-0.5 text-ink [overflow-wrap:anywhere]">{n.note}</p>
+              <p style={{ marginTop: 2, overflowWrap: "anywhere" }}>{n.note}</p>
             </li>
           );
         })}
@@ -173,7 +435,9 @@ function NotesList({ kind, notes, files }: { kind: DesignKind; notes: DesignNote
   );
 }
 
-function SendDialog({ p, editing, onClose }: { p: BetaTabProps; editing: Editing; onClose: () => void }) {
+/* ---------- Dialogs ---------- */
+
+function SendDialog({ p, editing, onClose }: { p: BetaTabProps; editing: Editing; onClose: () => void }): ReactElement {
   const { kind, v } = editing;
   const label = versionLabel(kind, v.file);
   const [sentOn, setSentOn] = useState(v.review?.sentOn ?? p.today);
@@ -182,9 +446,9 @@ function SendDialog({ p, editing, onClose }: { p: BetaTabProps; editing: Editing
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const customer = p.detail.project.customer_name;
-  const text = `Hi${customer ? ` ${customer}` : ""}, we have sent you the ${label} drawing for ${p.detail.project.name}. Please review it and let us know if you approve${dueOn ? ` by ${shortDate(dueOn)}` : ""}. Thank you.`;
+  const text = `Hi${customer ? ` ${customer}` : ""}, we have sent you the ${label} drawing for ${p.detail.project.name}. Please review it and let us know if you approve${dueOn ? ` by ${dayMonthYear(dueOn)}` : ""}. Thank you.`;
 
-  async function save() {
+  async function save(): Promise<void> {
     if (!sentOn || !dueOn) { setError("Give both the sent date and the answer date."); return; }
     if (dueOn < sentOn) { setError("The answer date is before the sent date."); return; }
     setBusy(true);
@@ -201,38 +465,38 @@ function SendDialog({ p, editing, onClose }: { p: BetaTabProps; editing: Editing
   }
 
   return (
-    <Dialog
+    <WsDialog
       title={`Send ${label} to the client`}
+      sub={p.detail.project.name}
       onClose={onClose}
-      footer={saved ? <Button onClick={onClose}>Done</Button> : (
+      footer={saved ? <WsBtn kind="teal" onClick={onClose}>Done</WsBtn> : (
         <>
-          <Button variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
-          <Button onClick={() => void save()} disabled={busy}>{busy ? "Saving..." : "Record as sent"}</Button>
+          <WsBtn onClick={onClose} disabled={busy}>Cancel</WsBtn>
+          <WsBtn kind="teal" onClick={() => void save()} disabled={busy}>{busy ? "Saving..." : "Record as sent"}</WsBtn>
         </>
       )}
     >
       {saved ? (
-        <div className="space-y-3 text-sm">
-          <p className="text-ink">Saved. The sent and answer dates are recorded.</p>
-          <p className="text-ink-secondary">Now send the drawing to the customer. This opens WhatsApp with a message ready to send.</p>
-          <a className="inline-flex h-9 items-center rounded-md border border-border bg-surface px-4 text-[13px] font-semibold text-primary hover:bg-surface-dim"
-            href={whatsappLink(p.detail.project.customer_phone, text)} target="_blank" rel="noopener">
+        <>
+          <p style={{ fontSize: 14 }}>Saved. The sent and answer dates are recorded.</p>
+          <p style={{ fontSize: 14, color: BETA.muted }}>Now send the drawing to the customer. This opens WhatsApp with a message ready to send.</p>
+          <a style={{ ...btnStyle("outline", "md"), alignSelf: "flex-start", color: BETA.accent }} href={whatsappLink(p.detail.project.customer_phone, text)} target="_blank" rel="noopener noreferrer">
             Open WhatsApp{p.detail.project.customer_phone ? "" : " (no phone on file, pick the contact)"}
           </a>
-        </div>
+        </>
       ) : (
-        <div className="space-y-3">
-          <p className="text-sm text-ink-secondary">Record when the drawing went to the customer and the date you expect an answer by.</p>
-          <Field label="Sent on"><input type="date" className={inputClass} value={sentOn} onChange={(e) => setSentOn(e.target.value)} /></Field>
-          <Field label="Answer due on"><input type="date" className={inputClass} value={dueOn} min={sentOn} onChange={(e) => setDueOn(e.target.value)} /></Field>
-          {error && <p role="alert" className="text-sm text-err">{error}</p>}
-        </div>
+        <>
+          <p style={{ fontSize: 14, color: BETA.muted }}>Record when the drawing went to the customer and the date you expect an answer by.</p>
+          <WsField label="Sent on"><input type="date" style={inputStyle} value={sentOn} onChange={(e) => setSentOn(e.target.value)} /></WsField>
+          <WsField label="Answer due on"><input type="date" style={inputStyle} value={dueOn} min={sentOn} onChange={(e) => setDueOn(e.target.value)} /></WsField>
+          {error && <p role="alert" style={{ fontSize: 13, color: WS.red }}>{error}</p>}
+        </>
       )}
-    </Dialog>
+    </WsDialog>
   );
 }
 
-function ApproveDialog({ p, editing, onClose }: { p: BetaTabProps; editing: Editing; onClose: () => void }) {
+function ApproveDialog({ p, editing, onClose }: { p: BetaTabProps; editing: Editing; onClose: () => void }): ReactElement {
   const { kind, v } = editing;
   const label = versionLabel(kind, v.file);
   const [approvedOn, setApprovedOn] = useState(p.today);
@@ -241,7 +505,7 @@ function ApproveDialog({ p, editing, onClose }: { p: BetaTabProps; editing: Edit
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function save() {
+  async function save(): Promise<void> {
     if (!approvedOn) { setError("Give the date of the approval."); return; }
     if (!name.trim()) { setError("Give the name of the person who approved."); return; }
     setBusy(true);
@@ -257,23 +521,22 @@ function ApproveDialog({ p, editing, onClose }: { p: BetaTabProps; editing: Edit
   }
 
   return (
-    <Dialog
+    <WsDialog
       title={`Record approval of ${label}`}
+      sub={p.detail.project.name}
       onClose={onClose}
       footer={
         <>
-          <Button variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
-          <Button onClick={() => void save()} disabled={busy}>{busy ? "Saving..." : "Record approval"}</Button>
+          <WsBtn onClick={onClose} disabled={busy}>Cancel</WsBtn>
+          <WsBtn kind="teal" onClick={() => void save()} disabled={busy}>{busy ? "Saving..." : "Record approval"}</WsBtn>
         </>
       }
     >
-      <div className="space-y-3">
-        {kind === "2d" && <p className="text-sm text-ink-secondary">Approving a 2D version also ticks "shop drawings signed" on the project checklist.</p>}
-        <Field label="Approved on"><input type="date" className={inputClass} value={approvedOn} max={p.today} onChange={(e) => setApprovedOn(e.target.value)} /></Field>
-        <Field label="Approved by"><input className={inputClass} value={name} maxLength={120} onChange={(e) => setName(e.target.value)} /></Field>
-        <Field label="Note (optional)"><textarea className={inputClass} rows={2} maxLength={500} value={note} onChange={(e) => setNote(e.target.value)} /></Field>
-        {error && <p role="alert" className="text-sm text-err">{error}</p>}
-      </div>
-    </Dialog>
+      {kind === "2d" && <p style={{ fontSize: 14, color: BETA.muted }}>Approving a 2D version also ticks "shop drawings signed" on the project checklist.</p>}
+      <WsField label="Approved on"><input type="date" style={inputStyle} value={approvedOn} max={p.today} onChange={(e) => setApprovedOn(e.target.value)} /></WsField>
+      <WsField label="Approved by"><input style={inputStyle} value={name} maxLength={120} onChange={(e) => setName(e.target.value)} /></WsField>
+      <WsField label="Note (optional)"><textarea style={textareaStyle} rows={2} maxLength={500} value={note} onChange={(e) => setNote(e.target.value)} /></WsField>
+      {error && <p role="alert" style={{ fontSize: 13, color: WS.red }}>{error}</p>}
+    </WsDialog>
   );
 }

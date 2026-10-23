@@ -3,6 +3,7 @@ import type { TimelineEntry } from "../projects/renovation/renovationTimelineMod
 import type { DesignFile, SiteMeasure, TaskViewV2 } from "../projects/renovation/simpleApi";
 import type { BetaDefect, BetaReview, BetaWorkspace } from "./renovationBetaApi";
 import {
+  dayHeading, dayMonth, dayMonthYear, groupByDay, initials, mytDay, mytTime, nextStep, paymentCard, renovationDays, siteTimeline, stepperItems, trimTimeline,
   approvedSet, defectColumn, defectDaysLate, designDeadlines, designProgress, feedRooms, filterFeed, firstMeasureDate, groupDefects,
   isRecordEntry, paymentStrip, searchEntries, siteFeed, siteProgress, snagProgress, stageReach, timelineCsv, todoList, versionLabel,
   whatsappLink, whatsappNumber, type TodoInput,
@@ -324,5 +325,112 @@ describe("site feed", () => {
     expect(filterFeed(feed, "Kitchen").map((i) => i.id)).toEqual(["defect-1-after", "receipt-p1", "defect-1-before"]);
     expect(filterFeed(feed, "No room").map((i) => i.id)).toEqual(["onsite-5", "receipt-p2"]);
     expect(filterFeed(feed, "")).toHaveLength(5);
+  });
+});
+
+describe("dates as the mockup prints them", () => {
+  it("prints day and month, with the year only where asked", () => {
+    expect(dayMonth("2026-10-14")).toBe("14 Oct");
+    expect(dayMonth("2026-10-14T05:00:00Z")).toBe("14 Oct");
+    expect(dayMonth(null)).toBe("-");
+    expect(dayMonthYear("2026-11-15")).toBe("15 Nov 2026");
+    expect(dayHeading("2026-10-20", TODAY)).toBe("20 Oct");
+    expect(dayHeading("2025-12-30", TODAY)).toBe("30 Dec 2025");
+  });
+  it("reads a stored time as Malaysia time", () => {
+    expect(mytDay("2026-10-20T17:30:00Z")).toBe("2026-10-21");
+    expect(mytTime("2026-10-20T17:30:00Z")).toBe("01:30");
+    expect(mytDay("2026-10-20")).toBe("2026-10-20");
+    expect(mytTime("2026-10-20")).toBeNull();
+  });
+  it("groups by day in first-seen order with undated items last", () => {
+    const g = groupByDay([{ d: "b", n: 1 }, { d: null, n: 2 }, { d: "a", n: 3 }, { d: "b", n: 4 }], (x) => x.d);
+    expect(g.map((x) => [x.day, x.items.map((i) => i.n)])).toEqual([["b", [1, 4]], ["a", [3]], [null, [2]]]);
+    expect(groupByDay([], () => null)).toEqual([]);
+  });
+  it("makes initials", () => {
+    expect([initials("Jia Xin"), initials("Alex"), initials("  "), initials(null), initials("Ahmad bin Ali")]).toEqual(["JX", "A", "?", "?", "AA"]);
+  });
+});
+
+describe("paymentCard", () => {
+  const row = (status: "paid" | "billed" | "not_billed", stageCode: string | null) => ({ status, stageCode, unlocks: stageCode ? "Design" : null });
+  it("paid is green and names what it unlocked", () => {
+    expect(paymentCard(row("paid", "design"), "design", null)).toEqual({ look: "paid", badge: "Paid", note: "Paid · unlocked Design" });
+  });
+  it("an unpaid instalment whose step is reached is the red card", () => {
+    expect(paymentCard(row("billed", "design"), "design", null)).toMatchObject({ look: "alert", badge: "Not confirmed", note: "Needed before Design" });
+  });
+  it("a later step is the grey card, and the handover one says so", () => {
+    expect(paymentCard({ status: "not_billed", stageCode: "handover", unlocks: "Cleaning & handover" }, "design", "2026-11-15")).toEqual({
+      look: "quiet", badge: "At handover", note: "Unlocks Cleaning & handover · 15 Nov",
+    });
+    expect(paymentCard({ status: "not_billed", stageCode: "hardware", unlocks: "Hardware works" }, "design", null).badge).toBe("Not due yet");
+  });
+  it("an instalment without a step is red only when it is billed", () => {
+    expect(paymentCard(row("billed", null), "design", null).look).toBe("alert");
+    expect(paymentCard(row("not_billed", null), "design", null)).toMatchObject({ look: "quiet", badge: "Not billed" });
+  });
+});
+
+describe("nextStep", () => {
+  const r = (id: string): ReturnType<typeof todoList>[number] => ({ id, tone: "err", group: "g", title: id, detail: null, action: { type: "open", label: "x", tab: "drawings" } });
+  it("takes the design waiting for the client, else the first row", () => {
+    expect(nextStep([r("defect-1"), r("approval-3")])).toMatchObject({ next: { id: "approval-3" }, rest: [{ id: "defect-1" }] });
+    expect(nextStep([r("defect-1"), r("payment-2")]).next?.id).toBe("defect-1");
+    expect(nextStep([])).toEqual({ next: null, rest: [] });
+  });
+});
+
+describe("site timeline", () => {
+  const task = (id: number, status: TaskViewV2["status"], d: Partial<TaskViewV2> = {}): TaskViewV2 =>
+    ({ id, seq: id, status, label: `t${id}`, planned_start: null, planned_end: null, actual_start: null, actual_end: null, ...d }) as TaskViewV2;
+  const tasks = [
+    task(1, "done", { planned_start: "2026-10-12", planned_end: "2026-10-14", actual_end: "2026-10-15" }),
+    task(2, "in_progress", { planned_start: "2026-10-20", planned_end: "2026-10-25", actual_start: "2026-10-20" }),
+    task(3, "planned", { planned_start: "2026-10-30", planned_end: "2026-11-05" }),
+    task(4, "overdue", { planned_start: "2026-10-18", planned_end: "2026-10-21" }),
+    task(5, "skipped", { planned_start: "2026-10-01" }),
+  ];
+  it("counts the day of the renovation from the dates of the live tasks", () => {
+    expect(renovationDays(tasks, TODAY)).toEqual({ day: 12, total: 25, start: "2026-10-12" });
+    expect(renovationDays(tasks, "2026-10-01")).toMatchObject({ day: 0 });
+    expect(renovationDays(tasks, "2027-01-01")).toMatchObject({ day: 25, total: 25 });
+    expect(renovationDays([task(1, "planned")], TODAY)).toBeNull();
+    expect(renovationDays([], TODAY)).toBeNull();
+  });
+  it("lists live tasks by date, marks today and the late one, then the handover", () => {
+    const t = siteTimeline(tasks, TODAY, "2026-11-15T00:00:00Z");
+    expect(t.map((s) => [s.id, s.state, s.date])).toEqual([
+      ["task-1", "done", "2026-10-15"], ["task-4", "late", "2026-10-21"], ["task-2", "current", TODAY], ["task-3", "later", "2026-10-30"], ["handover", "handover", "2026-11-15"],
+    ]);
+    expect(t[1]?.sub).toBe("2 days late");
+    expect(t[2]?.sub).toBe("In progress");
+    expect(siteTimeline([], TODAY, null)).toEqual([]);
+  });
+  it("keeps the last finished steps and the next few ahead until asked for all", () => {
+    const many = [...Array.from({ length: 6 }, (_, i) => task(i + 1, "done", { actual_end: `2026-10-0${i + 1}` })), ...Array.from({ length: 10 }, (_, i) => task(i + 10, "planned", { planned_start: `2026-11-${10 + i}` }))];
+    const steps = siteTimeline(many, TODAY, "2026-12-01");
+    const t = trimTimeline(steps, false);
+    expect(t).toMatchObject({ hiddenDone: 3, hiddenLater: 2 });
+    expect(t.steps.at(-1)?.id).toBe("handover");
+    expect(trimTimeline(steps, true)).toMatchObject({ hiddenDone: 0, hiddenLater: 0 });
+  });
+});
+
+describe("stepperItems", () => {
+  const steps = [{ key: "design", label: "Design" }, { key: "signed", label: "Signed" }, { key: "ordering", label: "Ordering" }, { key: "renovation", label: "Renovation" }, { key: "handover", label: "Handover" }, { key: "closed", label: "Closed" }];
+  const tasks = [{ status: "in_progress", planned_start: "2026-10-12", planned_end: "2026-11-05", actual_start: null, actual_end: null }] as unknown as TaskViewV2[];
+  it("follows the flow order and words each step as the mockup does", () => {
+    const items = stepperItems({ steps, currentIndex: 3, soDate: "2026-08-10", handoverOn: "2026-11-15", tasks, today: TODAY });
+    expect(items.map((i) => [i.label, i.state, i.sub])).toEqual([
+      ["Design", "done", "Design approved"], ["Sales order", "done", "Signed 10 Aug"], ["Ordering", "done", "Main items ordered"],
+      ["Renovation", "current", "Day 12 of 25"], ["Handover", "later", "15 Nov"], ["Closed", "later", "-"],
+    ]);
+  });
+  it("says in progress when the site tasks have no dates", () => {
+    const items = stepperItems({ steps, currentIndex: 3, soDate: null, handoverOn: null, tasks: [], today: TODAY });
+    expect(items[3]?.sub).toBe("In progress");
+    expect(items[1]?.sub).toBe("-");
   });
 });

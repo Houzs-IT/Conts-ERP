@@ -1,35 +1,37 @@
-/* Beta > Project workspace for one renovation project (owner, 23 Oct 2026; mockup "Renovation Project
-   Workspace"): the header, the six steps and the tabs. Bundle A fills Overview, Drawings, Site & photos, Defects
-   and Timeline; VO, PO and Client PO say so until bundle B (docs/superpowers/plans/2026-10-23-beta-project-workspace.md).
+/* Beta > Project workspace for one renovation project (owner, 23 Oct 2026). It copies the owner's mockup
+   ("Renovation Project Workspace", project page): the header, the stage stepper and the tabs. Bundle A fills
+   Overview, Drawings, Site & photos, Defects and Timeline; VO, PO and Client PO say so until bundle B
+   (docs/superpowers/plans/2026-10-23-beta-project-workspace.md).
    The project, the workspace and the design records are loaded here once and handed to the tabs; every write
    shows a notice and reloads all three. */
 
-import { useState, type ReactElement } from "react";
-import { Link, useParams, useSearchParams } from "react-router-dom";
+import { useEffect, useState, type ReactElement } from "react";
+import { useParams, useSearchParams } from "react-router-dom";
 import { useAuth } from "../../auth/AuthContext";
-import { PageHeader } from "../../components/Layout";
 import { useQuery } from "../../hooks/useQuery";
-import { cn } from "../../lib/utils";
-import { todayMyt } from "../projects/renovation/ProjectRecords";
-import { simpleApi, type ProjectDetailV2 } from "../projects/renovation/simpleApi";
-import { shortDate } from "../projects/renovation/renovationModel";
-import { Pill } from "../projects/renovation/renovationUi";
+import { simpleApi } from "../projects/renovation/simpleApi";
 import { BetaDefectsTab } from "./BetaDefectsTab";
 import { BetaDrawingsTab } from "./BetaDrawingsTab";
 import { BetaOverviewTab } from "./BetaOverviewTab";
 import { BetaSiteTab } from "./BetaSiteTab";
 import { BetaTimelineTab } from "./BetaTimelineTab";
+import { BetaWsHeader, BetaWsStepper } from "./BetaWsHeader";
+import { WS, WsCard, WsNotice, WsStyle } from "./BetaWsUi";
 import type { BetaTabProps } from "./betaShared";
 import { betaApi } from "./renovationBetaApi";
+import { mytDay, stepperItems } from "./renovationBetaModel";
+import { BETA } from "./renovationBetaTheme";
 import { BETA_TABS, tabFromParam, type BetaTabKey } from "./renovationBetaTabs";
 
-const DAY_MS = 86_400_000;
+/** The Beta "Projects" menu entry opens the project last opened here. */
+export const LAST_PROJECT_KEY = "beta:lastProject";
 
-function daysLeft(iso: string | null): number | null {
-  if (!iso) return null;
-  const today = new Date(new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10));
-  return Math.round((new Date(iso.slice(0, 10)).getTime() - today.getTime()) / DAY_MS);
-}
+/** What the mockup's three later tabs say; the sub line is the mockup's own wording where it has one. */
+const LATER_TABS: Readonly<Record<string, { title: string; sub?: string }>> = {
+  vo: { title: "Variation orders", sub: "Changes after the SO. When a VO is approved, its items go to PO or Client PO automatically." },
+  po: { title: "PO · what we buy", sub: "Items come from the VOs · plaster and paint litres are automatic · you fill the yellow fields" },
+  "client-po": { title: "Client PO · what the client buys" },
+};
 
 export function RenovationBetaWorkspace(): ReactElement {
   const id = Number(useParams().id);
@@ -43,122 +45,74 @@ export function RenovationBetaWorkspace(): ReactElement {
   const [notice, setNotice] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
   const d = q.data;
 
-  if (!valid) return <p role="alert" className="py-6 text-sm text-err">This project address is not valid.</p>;
-  if (q.loading && !d) return <p className="py-10 text-center text-sm text-ink-secondary">Loading project...</p>;
-  if (q.error || !d) return <p role="alert" className="py-6 text-sm text-err">The project could not be loaded: {q.error ?? "not found"}</p>;
+  useEffect(() => {
+    if (!valid) return;
+    try {
+      localStorage.setItem(LAST_PROJECT_KEY, String(id));
+    } catch {
+      // Storage can be blocked (private window); the workspace still opens, the menu just has nothing to remember.
+    }
+  }, [valid, id]);
 
-  const p = d.project;
-  const handover = p.handed_over_at ?? p.planned_handover_date;
-  const left = p.handed_over_at ? null : daysLeft(p.planned_handover_date);
+  if (!valid) return <p role="alert" style={{ padding: "24px 0", fontSize: 14, color: WS.red }}>This project address is not valid.</p>;
+  if (q.loading && !d) return <p style={{ padding: "40px 0", textAlign: "center", fontSize: 14, color: BETA.muted }}>Loading project...</p>;
+  if (q.error || !d) return <p role="alert" style={{ padding: "24px 0", fontSize: 14, color: WS.red }}>The project could not be loaded: {q.error ?? "not found"}</p>;
+
+  const today = mytDay(new Date().toISOString());
+  const { project: p } = d;
   const current = BETA_TABS.find((t) => t.key === tab) ?? BETA_TABS[0];
-  const reloadAll = () => { q.reload(); ws.reload(); rec.reload(); };
-  const openTab = (key: BetaTabKey) => setParams((prev) => { const next = new URLSearchParams(prev); next.set("tab", key); return next; }, { replace: true });
+  const reloadAll = (): void => { q.reload(); ws.reload(); rec.reload(); };
+  const openTab = (key: BetaTabKey): void => setParams((prev) => { const next = new URLSearchParams(prev); next.set("tab", key); return next; }, { replace: true });
+  const onDone = (text: string): void => { setNotice({ tone: "ok", text }); reloadAll(); };
+  const onError = (text: string): void => setNotice({ tone: "err", text });
   const props: BetaTabProps | null = ws.data && rec.data
-    ? {
-        projectId: id, detail: d, workspace: ws.data, records: rec.data, canWrite: can("projects.write"), today: todayMyt(), openTab,
-        onDone: (text) => { setNotice({ tone: "ok", text }); reloadAll(); },
-        onError: (text) => setNotice({ tone: "err", text }),
-      }
+    ? { projectId: id, detail: d, workspace: ws.data, records: rec.data, canWrite: can("projects.write"), today, openTab, onDone, onError }
     : null;
+  const items = stepperItems({
+    steps: d.flow.steps, currentIndex: d.flow.currentIndex, soDate: d.so?.so_date ?? null, handoverOn: p.handed_over_at ?? p.planned_handover_date, tasks: d.tasks, today,
+  });
+  const hold = d.hold ? (d.hold.flag === "in_defect" ? "In defect" : "On hold") : null;
+  const later = LATER_TABS[current.key];
 
   return (
-    <div className="pb-10">
-      <PageHeader
-        back="/beta/projects"
-        eyebrow={`Beta · ${[p.code, [p.building, p.unit_no].filter(Boolean).join(" ")].filter(Boolean).join(" · ")}`}
-        title={p.name}
-        description={[
-          p.customer_name,
-          d.type?.name,
-          handover ? `Handover ${shortDate(handover)}${left == null ? "" : left >= 0 ? ` (${left} days left)` : ` (${-left} days late)`}` : "No handover date yet",
-        ].filter(Boolean).join(" · ")}
-        actions={<Link to={`/projects/${id}`} className="text-sm text-primary underline-offset-2 hover:underline">Open the current project page</Link>}
-      />
+    <div className="bws" style={{ display: "flex", flexDirection: "column", gap: 20, maxWidth: 1240, width: "100%", paddingBottom: 40 }}>
+      <WsStyle />
+      <BetaWsHeader d={d} canWrite={can("projects.write")} today={today} onDone={onDone} onError={onError} />
+      <BetaWsStepper items={items} hold={hold} />
 
-      <TeamLine d={d} />
-      <StepStrip d={d} />
-
-      <nav aria-label="Workspace sections" className="mb-4 flex gap-1 overflow-x-auto border-b border-border">
+      <nav aria-label="Project sections" className="tabs">
         {BETA_TABS.map((t) => (
           <button
             key={t.key}
             type="button"
+            className="tab"
             aria-current={t.key === tab ? "page" : undefined}
             onClick={() => { setNotice(null); openTab(t.key); }}
-            className={cn(
-              "shrink-0 border-b-2 px-3 py-2 text-sm",
-              t.key === tab ? "border-primary font-medium text-ink" : "border-transparent text-ink-secondary hover:text-ink",
-            )}
           >
             {t.label}
           </button>
         ))}
       </nav>
 
-      <div aria-live="polite">
-        {notice && (
-          <div role={notice.tone === "err" ? "alert" : "status"} className={cn("mb-3 rounded-md border px-3 py-2 text-sm", notice.tone === "err" ? "border-err/30 bg-err-bg text-err" : "border-synced/30 bg-synced-bg text-synced")}>
-            {notice.text}
-          </div>
-        )}
-      </div>
+      <div aria-live="polite">{notice && <WsNotice tone={notice.tone}>{notice.text}</WsNotice>}</div>
 
       {current.bundle !== "A" ? (
-        <section aria-label={current.label} className="rounded-lg border border-dashed border-border bg-surface px-4 py-10 text-center">
-          <h2 className="text-sm font-medium text-ink">{current.label}</h2>
-          <p className="mt-1 text-sm text-ink-secondary">This section is being built (part {current.bundle} of the Beta plan).</p>
-        </section>
+        <WsCard title={later?.title ?? current.label} sub={later?.sub}>
+          <p style={{ fontSize: 14, color: BETA.muted }}>This section is being built (part {current.bundle} of the Beta plan).</p>
+        </WsCard>
       ) : ws.error || rec.error ? (
-        <p role="alert" className="py-6 text-sm text-err">This section could not be loaded: {ws.error ?? rec.error}</p>
+        <p role="alert" style={{ padding: "24px 0", fontSize: 14, color: WS.red }}>This section could not be loaded: {ws.error ?? rec.error}</p>
       ) : !props ? (
-        <p className="py-10 text-center text-sm text-ink-secondary">Loading {current.label.toLowerCase()}...</p>
+        <p style={{ padding: "40px 0", textAlign: "center", fontSize: 14, color: BETA.muted }}>Loading {current.label.toLowerCase()}...</p>
       ) : (
-        <section aria-label={current.label}>
+        <div className="fade" style={{ display: "flex", flexDirection: "column", gap: 20 }} aria-label={current.label} role="region">
           {tab === "overview" && <BetaOverviewTab {...props} />}
           {tab === "drawings" && <BetaDrawingsTab {...props} />}
           {tab === "site" && <BetaSiteTab {...props} />}
           {tab === "defects" && <BetaDefectsTab {...props} />}
           {tab === "timeline" && <BetaTimelineTab {...props} />}
-        </section>
+        </div>
       )}
     </div>
-  );
-}
-
-function TeamLine({ d }: { d: ProjectDetailV2 }) {
-  const team: Array<[string, string | null]> = [
-    ["Designer", d.people.designer.name],
-    ["Sales", d.people.sales.name],
-    ["Project PIC", d.people.pic.name ?? d.people.renoPic.name],
-    ["Key with", d.keyHolder?.name ?? null],
-  ];
-  return (
-    <dl className="mb-3 flex flex-wrap gap-x-5 gap-y-1 text-xs">
-      {team.map(([label, name]) => (
-        <div key={label} className="flex items-center gap-1.5"><dt className="text-ink-secondary">{label}</dt><dd className="font-medium text-ink">{name ?? "-"}</dd></div>
-      ))}
-    </dl>
-  );
-}
-
-function StepStrip({ d }: { d: ProjectDetailV2 }) {
-  const { steps, currentIndex } = d.flow;
-  return (
-    <ol aria-label="Project steps" className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-      {steps.map((s, i) => (
-        <li
-          key={s.key}
-          aria-current={i === currentIndex ? "step" : undefined}
-          className={cn(
-            "rounded-md border px-3 py-2 text-xs",
-            i === currentIndex ? "border-primary bg-primary/10 text-ink" : i < currentIndex ? "border-border bg-surface text-ink-secondary" : "border-border bg-surface-dim text-ink-secondary",
-          )}
-        >
-          <div className="font-medium">{s.label}</div>
-          <div>{i < currentIndex ? "Done" : i === currentIndex ? "Now" : "Later"}</div>
-          {i === currentIndex && d.hold && <div className="mt-1"><Pill tone="warn">{d.hold.flag === "in_defect" ? "In defect" : "On hold"}</Pill></div>}
-        </li>
-      ))}
-    </ol>
   );
 }

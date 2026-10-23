@@ -387,21 +387,32 @@ describe("nav: Beta shows only where the server switched it on (owner, 23 Oct 20
     rep({ position_name: "Admin", department_name: "Operations", permissions: ["*"], ...over });
   const all = { "projects.list": "full" };
 
+  const BETA = ["/beta/home", "/beta/projects", "/beta/calendar"];
+
   it("hides Beta on desktop and phone when beta_enabled is missing or false", () => {
     for (const u of [office(), office({ beta_enabled: false })]) {
-      expect(desktopPaths(ctxFor(u, all))).not.toContain("/beta/projects");
-      expect(phoneAllows(ctxFor(u, all), "/beta/projects")).toBe(false);
+      for (const p of BETA) {
+        expect(desktopPaths(ctxFor(u, all))).not.toContain(p);
+        expect(phoneAllows(ctxFor(u, all), p)).toBe(false);
+      }
     }
   });
 
   it("shows Beta on desktop and phone when beta_enabled is true", () => {
     const u = office({ beta_enabled: true });
-    expect(desktopPaths(ctxFor(u, all))).toContain("/beta/projects");
-    expect(phoneAllows(ctxFor(u, all), "/beta/projects")).toBe(true);
+    for (const p of BETA) {
+      expect(desktopPaths(ctxFor(u, all))).toContain(p);
+      expect(phoneAllows(ctxFor(u, all), p)).toBe(true);
+    }
+  });
+
+  it("lists Home, Projects and Calendar in that order", () => {
+    const u = office({ beta_enabled: true });
+    expect(desktopPaths(ctxFor(u, all)).filter((p) => BETA.includes(p))).toEqual(BETA);
   });
 
   it("still needs project list access", () => {
     const u = office({ beta_enabled: true, permissions: [] });
-    expect(desktopPaths(ctxFor(u, {}))).not.toContain("/beta/projects");
+    for (const p of BETA) expect(desktopPaths(ctxFor(u, {}))).not.toContain(p);
   });
 });

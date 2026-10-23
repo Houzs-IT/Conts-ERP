@@ -204,7 +204,8 @@ export type TodoAction =
   | { type: "remind"; label: string; kind: ReminderKind; text: string; phone: string | null }
   | { type: "open"; label: string; tab: BetaTabKey };
 
-export interface TodoRow { id: string; tone: "err" | "warn" | "muted"; title: string; detail: string | null; action: TodoAction }
+/** group is the short word the "Next step" box shows after its label, for example "waiting for client". */
+export interface TodoRow { id: string; tone: "err" | "warn" | "muted"; group: string; title: string; detail: string | null; action: TodoAction }
 
 export interface TodoInput {
   today: string;
@@ -239,6 +240,7 @@ export function todoList(input: TodoInput): TodoRow[] {
       rows.push({
         id: `approval-${waiting.file.id}`,
         tone: late ? "err" : "muted",
+        group: "waiting for client",
         title: `${label} sent ${shortDate(sentOn)}, waiting for the client`,
         detail: dueOn ? `Answer due ${shortDate(dueOn)}${late ? ` (${lateText(-left)})` : ""}` : "No answer date set",
         action: {
@@ -257,6 +259,7 @@ export function todoList(input: TodoInput): TodoRow[] {
         rows.push({
           id: `deadline-${kind}`,
           tone: left < 0 ? "err" : "warn",
+          group: "design deadline",
           title: left < 0 ? `${kind.toUpperCase()} drawing is ${lateText(-left)}` : `${kind.toUpperCase()} drawing due ${shortDate(due)}`,
           detail: left < 0 ? `It was due ${shortDate(due)}` : left === 0 ? "Due today" : `${left} day${left === 1 ? "" : "s"} left`,
           action: { type: "open", label: "Open drawings", tab: "drawings" },
@@ -274,6 +277,7 @@ export function todoList(input: TodoInput): TodoRow[] {
       rows.push({
         id: `payment-${next.seq}`,
         tone: reach === "reached" ? "warn" : "muted",
+        group: "waiting for payment",
         title: `Instalment ${next.seq} (${next.label}) is ${next.status === "billed" ? "billed, not paid" : "not billed"}`,
         detail: `${money(next.amountSen)}. ${unlocks} is ${reach === "reached" ? "reached" : "the next step"}.`,
         action: {
@@ -294,6 +298,7 @@ export function todoList(input: TodoInput): TodoRow[] {
     rows.push({
       id: `defect-${d.id}`,
       tone: "err",
+      group: "defect late",
       title: `Defect at ${where} is ${lateText(late)}`,
       detail: d.description,
       action: {
@@ -403,4 +408,196 @@ export function feedRooms(items: readonly FeedItem[]): string[] {
 export function filterFeed(items: readonly FeedItem[], room: string): FeedItem[] {
   if (!room) return [...items];
   return items.filter((i) => (room === NO_ROOM ? !i.room : i.room === room));
+}
+
+/* ---------- Dates as the mockup prints them ---------- */
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
+
+function ymd(iso: string | null | undefined): [number, number, number] | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso ?? "");
+  return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null;
+}
+
+/** "14 Oct" (the mockup never prints the year on a card); "-" when there is no date. Fixed month names, not the browser's locale. */
+export function dayMonth(iso: string | null | undefined): string {
+  const p = ymd(iso);
+  return p ? `${p[2]} ${MONTHS[p[1] - 1] ?? ""}` : "-";
+}
+
+/** "15 Nov 2026"; "-" when there is no date. */
+export function dayMonthYear(iso: string | null | undefined): string {
+  const p = ymd(iso);
+  return p ? `${p[2]} ${MONTHS[p[1] - 1] ?? ""} ${p[0]}` : "-";
+}
+
+/** A day's heading: "14 Oct", with the year when it is not today's year. */
+export function dayHeading(dayValue: string, today: string): string {
+  return ymd(dayValue)?.[0] === ymd(today)?.[0] ? dayMonth(dayValue) : dayMonthYear(dayValue);
+}
+
+/** The Malaysia-time calendar day (YYYY-MM-DD) of a stored time; a date-only value is returned as it is. */
+export function mytDay(at: string): string {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(at)) return at;
+  const t = Date.parse(at);
+  return Number.isNaN(t) ? at.slice(0, 10) : new Date(t + 8 * 3600e3).toISOString().slice(0, 10);
+}
+
+/** "09:40" in Malaysia time; null for a date-only value or a value that is not a time. */
+export function mytTime(at: string): string | null {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(at)) return null;
+  const t = Date.parse(at);
+  return Number.isNaN(t) ? null : new Date(t + 8 * 3600e3).toISOString().slice(11, 16);
+}
+
+export interface DayGroup<T> { day: string | null; items: T[] }
+
+/** Groups by day in the order each day first appears (callers pass newest first); items without a day come last. */
+export function groupByDay<T>(items: readonly T[], dayOf: (item: T) => string | null): Array<DayGroup<T>> {
+  const dated = new Map<string, T[]>();
+  const undated: T[] = [];
+  for (const item of items) {
+    const d = dayOf(item);
+    if (!d) { undated.push(item); continue; }
+    const list = dated.get(d);
+    if (list) list.push(item); else dated.set(d, [item]);
+  }
+  const out: Array<DayGroup<T>> = [...dated].map(([d, list]) => ({ day: d, items: list }));
+  if (undated.length > 0) out.push({ day: null, items: undated });
+  return out;
+}
+
+/** Up to two capital letters for an avatar: "Jia Xin" gives "JX", "Alex" gives "A". */
+export function initials(name: string | null | undefined): string {
+  const words = (name ?? "").trim().split(/\s+/).filter(Boolean);
+  const first = words.at(0);
+  const last = words.at(-1);
+  if (!first || !last) return "?";
+  return (words.length === 1 ? first.slice(0, 1) : `${first.slice(0, 1)}${last.slice(0, 1)}`).toUpperCase();
+}
+
+/* ---------- Payment cards (Overview) ---------- */
+
+export interface PaymentCardView {
+  /** paid = green card; alert = red card (the payment a reached step is waiting for); quiet = grey card. */
+  look: "paid" | "alert" | "quiet";
+  badge: string;
+  note: string;
+}
+
+/** The mockup's three looks. There is no paid date in the data, so a paid card names only the step it unlocked. */
+export function paymentCard(r: Pick<PaymentRow, "status" | "stageCode" | "unlocks">, currentStage: string, handoverOn: string | null): PaymentCardView {
+  const { unlocks } = r;
+  if (r.status === "paid") return { look: "paid", badge: "Paid", note: unlocks ? `Paid · unlocked ${unlocks}` : "Paid" };
+  if (!r.stageCode) {
+    return r.status === "billed"
+      ? { look: "alert", badge: "Not confirmed", note: "Billed, waiting for payment" }
+      : { look: "quiet", badge: "Not billed", note: "Not tied to a step" };
+  }
+  if (stageReach(r.stageCode, currentStage) !== "later") return { look: "alert", badge: "Not confirmed", note: `Needed before ${unlocks ?? "its step"}` };
+  const atHandover = r.stageCode === "handover";
+  return { look: "quiet", badge: atHandover ? "At handover" : "Not due yet", note: `Unlocks ${unlocks ?? "its step"}${atHandover && handoverOn ? ` · ${dayMonth(handoverOn)}` : ""}` };
+}
+
+/* ---------- To do: the highlighted "Next step" ---------- */
+
+/** The next step is the design waiting for the client when there is one (as in the mockup), else the worst row. */
+export function nextStep(rows: readonly TodoRow[]): { next: TodoRow | null; rest: TodoRow[] } {
+  const next = rows.find((r) => r.id.startsWith("approval-")) ?? rows.at(0) ?? null;
+  return { next, rest: rows.filter((r) => r !== next) };
+}
+
+/* ---------- Site progress: the vertical timeline ---------- */
+
+export interface RenovationDays { day: number; total: number; start: string }
+
+type TaskDates = Pick<TaskViewV2, "status" | "planned_start" | "planned_end" | "actual_start" | "actual_end">;
+
+/** "Day N of M": from the earliest start to the latest end of the live site tasks. null when the tasks have no dates. day is 0 before the start. */
+export function renovationDays(tasks: readonly TaskDates[], today: string): RenovationDays | null {
+  const live = tasks.filter((t) => t.status !== "skipped");
+  const starts = live.flatMap((t) => { const d = t.actual_start ?? t.planned_start; return d ? [day(d)] : []; }).sort();
+  const ends = live.flatMap((t) => { const d = t.actual_end ?? t.planned_end; return d ? [day(d)] : []; }).sort();
+  const start = starts.at(0);
+  const end = ends.at(-1);
+  if (!start || !end) return null;
+  const total = daysBetween(start, end) + 1;
+  if (total < 1) return null;
+  return { day: Math.min(total, Math.max(0, daysBetween(start, today) + 1)), total, start };
+}
+
+export type SiteStepState = "done" | "current" | "late" | "later" | "handover";
+
+export interface SiteStep { id: string; state: SiteStepState; date: string | null; label: string; sub: string | null }
+
+const plural = (n: number, w: string): string => `${n} ${w}${n === 1 ? "" : "s"}`;
+
+function siteStepOf(t: TaskViewV2, today: string): SiteStep {
+  const state: SiteStepState = t.status === "done" ? "done" : t.status === "in_progress" ? "current" : t.status === "overdue" || t.status === "late_start" ? "late" : "later";
+  const raw = state === "done" ? (t.actual_end ?? t.planned_end ?? t.planned_start)
+    : state === "current" ? today
+    : state === "late" ? (t.planned_end ?? t.planned_start)
+    : (t.planned_start ?? t.planned_end);
+  let sub: string | null = null;
+  if (state === "done") sub = "Done";
+  else if (state === "current") sub = ["In progress", ...(t.assignees ?? []).map((a) => a.name)].join(" · ");
+  else if (state === "late") {
+    const due = t.status === "overdue" ? (t.planned_end ?? t.planned_start) : (t.planned_start ?? t.planned_end);
+    sub = due ? `${plural(Math.max(1, daysBetween(day(due), today)), "day")} late` : "Late";
+  }
+  return { id: `task-${t.id}`, state, date: raw ? day(raw) : null, label: t.label, sub };
+}
+
+/** Live (not skipped) site tasks in date order, then the handover. The current rows are the tasks in progress, dated today. */
+export function siteTimeline(tasks: readonly TaskViewV2[], today: string, handoverOn: string | null): SiteStep[] {
+  const rows = tasks
+    .filter((t) => t.status !== "skipped")
+    .map((t) => ({ t, step: siteStepOf(t, today) }))
+    .sort((a, b) => (a.step.date ?? "9999").localeCompare(b.step.date ?? "9999") || a.t.seq - b.t.seq || a.t.id - b.t.id)
+    .map((r) => r.step);
+  if (handoverOn) rows.push({ id: "handover", state: "handover", date: day(handoverOn), label: "Handover", sub: "Final payment · keys to client" });
+  return rows;
+}
+
+export interface TrimmedTimeline { steps: SiteStep[]; hiddenDone: number; hiddenLater: number }
+
+/** A long list shows the last few finished steps and the next few ahead; showAll keeps everything. The handover always stays. */
+export function trimTimeline(steps: readonly SiteStep[], showAll: boolean, keepDone = 3, keepLater = 8): TrimmedTimeline {
+  if (showAll) return { steps: [...steps], hiddenDone: 0, hiddenLater: 0 };
+  const done = steps.filter((s) => s.state === "done");
+  const dropDone = new Set(done.slice(0, Math.max(0, done.length - keepDone)));
+  const dropLater = new Set(steps.filter((s) => s.state === "later").slice(keepLater));
+  return { steps: steps.filter((s) => !dropDone.has(s) && !dropLater.has(s)), hiddenDone: dropDone.size, hiddenLater: dropLater.size };
+}
+
+/* ---------- The stage stepper (header) ---------- */
+
+export interface StepperItem { key: string; label: string; state: "done" | "current" | "later"; sub: string }
+
+export interface StepperInput {
+  /** The project's flow steps in their real order (ProjectDetailV2.flow). */
+  steps: ReadonlyArray<{ key: string; label: string }>;
+  currentIndex: number;
+  soDate: string | null;
+  handoverOn: string | null;
+  tasks: readonly TaskDates[];
+  today: string;
+}
+
+/** The mockup's six circles. The order is the flow's own (Design comes before Signed in this engine), so done and current stay true. */
+export function stepperItems(i: StepperInput): StepperItem[] {
+  const days = renovationDays(i.tasks, i.today);
+  return i.steps.map((s, idx) => {
+    const state = idx < i.currentIndex ? "done" : idx === i.currentIndex ? "current" : "later";
+    const label = s.key === "signed" ? "Sales order" : s.label;
+    let sub = "-";
+    if (s.key === "signed") sub = i.soDate && state !== "later" ? `Signed ${dayMonth(i.soDate)}` : state === "current" ? "In progress" : "-";
+    else if (s.key === "design") sub = state === "done" ? "Design approved" : state === "current" ? "In progress" : "-";
+    else if (s.key === "ordering") sub = state === "done" ? "Main items ordered" : state === "current" ? "In progress" : "-";
+    else if (s.key === "renovation") {
+      if (state === "current") sub = days && days.day > 0 ? `Day ${days.day} of ${days.total}` : days ? `Starts ${dayMonth(days.start)}` : "In progress";
+      else if (state === "done") sub = "Done";
+    } else if (s.key === "handover") sub = i.handoverOn ? dayMonth(i.handoverOn) : state === "done" ? "Done" : "-";
+    return { key: s.key, label, state, sub };
+  });
 }

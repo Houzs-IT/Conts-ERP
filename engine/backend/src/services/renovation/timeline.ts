@@ -118,6 +118,14 @@ export function activityText(a: Row): { title: string; body: string | null } {
     case "beta_drawing_approved": return { title: `${to ?? "Drawing"} approved${from ? ` by ${from}` : ""}`, body: note };
     case "beta_drawing_approval_removed": return { title: "Approval removed", body: to };
     case "beta_reminder": return { title: "Reminder sent", body: [to ? humanize(to) : null, note].filter(Boolean).join(": ") || null };
+    case "beta_design_changed": return { title: "Design dates changed", body: note };
+    case "beta_note_days": return { title: "Amendment time changed", body: to ? `${from ? `${from}: ` : ""}${to} days` : null };
+    case "beta_appointment_booked": return { title: `${humanize(to ?? "appointment")} booked`, body: note };
+    case "beta_appointment_done": return { title: `${humanize(to ?? "appointment")} done`, body: note };
+    case "beta_appointment_removed": return { title: `${humanize(to ?? "appointment")} removed`, body: note };
+    case "beta_event_added": return { title: "Calendar entry added", body: [to ? humanize(to) : null, note].filter(Boolean).join(" · ") || null };
+    case "beta_event_changed": return { title: "Calendar entry changed", body: [to ? humanize(to) : null, note].filter(Boolean).join(" · ") || null };
+    case "beta_event_removed": return { title: "Calendar entry removed", body: [to ? humanize(to) : null, note].filter(Boolean).join(" · ") || null };
     case "sla_changed": return { title: `${note ?? "SLA"} changed`, body: arrow(from, to) };
   }
   if (TEAM[action]) return { title: `${TEAM[action]} changed`, body: arrow(from, to) };
