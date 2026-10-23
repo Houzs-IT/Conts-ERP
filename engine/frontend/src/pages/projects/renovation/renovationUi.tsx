@@ -204,3 +204,25 @@ export function AuthImage({ path, alt, className, onClick }: { path: string; alt
     ? <button type="button" onClick={onClick} className="block"><img src={url} alt={alt} className={cn("object-cover", className)} /></button>
     : <img src={url} alt={alt} className={cn("object-cover", className)} />;
 }
+
+/* A plain link to the file route cannot work: the engine takes only the Authorization header. The file is fetched
+   first, then offered as a link the person clicks, so the new tab is never stopped as a pop-up. */
+export function AuthFileLink({ path, fileName }: { path: string; fileName: string }) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    let made: string | null = null;
+    setUrl(null);
+    setError(null);
+    // R2 keeps some files without a content type; a PDF typed as octet-stream would download instead of opening.
+    const typeHint = /\.pdf$/i.test(fileName) ? "application/pdf" : null;
+    api.fetchBlobUrl(path, typeHint)
+      .then((u) => { made = u; if (live) setUrl(u); else URL.revokeObjectURL(u); })
+      .catch((e: unknown) => { if (live) setError(e instanceof Error ? e.message : String(e)); });
+    return () => { live = false; if (made) URL.revokeObjectURL(made); };
+  }, [path, fileName]);
+  if (error) return <p role="alert" className="text-sm text-err">The file could not be loaded: {error}</p>;
+  if (!url) return <p className="text-sm text-ink-secondary">Loading the file...</p>;
+  return <p className="text-sm"><a className="text-primary" href={url} target="_blank" rel="noopener" download={/\.pdf$/i.test(fileName) ? undefined : fileName}>Open the file</a></p>;
+}
