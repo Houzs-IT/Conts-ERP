@@ -459,12 +459,6 @@ function ContsModuleGate({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-/** Beta pages open only where the server runs with BETA_ENABLED (staging); elsewhere the address goes home. */
-function BetaGuard({ children }: { children: React.ReactNode }) {
-  const { user } = useAuth();
-  if (!user?.beta_enabled) return <Navigate to={CONTS_HOME} replace />;
-  return <>{children}</>;
-}
 
 export default function App() {
   return (
@@ -565,9 +559,9 @@ export default function App() {
         />
         {/* Beta Home became the Project list (owner, 23 Oct 2026); its old address still opens it. */}
         <Route path="/beta/home" element={<Navigate to="/beta/projects" replace />} />
-        <Route path="/beta/projects" element={<BetaGuard><PageGuard page="projects.list"><RenovationBetaHome /></PageGuard></BetaGuard>} />
-        <Route path="/beta/calendar" element={<BetaGuard><PageGuard page="projects.list"><RenovationBetaCalendar /></PageGuard></BetaGuard>} />
-        <Route path="/beta/projects/:id" element={<BetaGuard><PageGuard page="projects.list"><RenovationBetaWorkspace /></PageGuard></BetaGuard>} />
+        <Route path="/beta/projects" element={<PageGuard page="projects.list"><RenovationBetaHome /></PageGuard>} />
+        <Route path="/beta/calendar" element={<PageGuard page="projects.list"><RenovationBetaCalendar /></PageGuard>} />
+        <Route path="/beta/projects/:id" element={<PageGuard page="projects.list"><RenovationBetaWorkspace /></PageGuard>} />
         <Route
           path="/fair-report-fill"
           element={

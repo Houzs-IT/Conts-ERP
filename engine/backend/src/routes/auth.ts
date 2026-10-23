@@ -18,7 +18,6 @@ import { isFinanceViewer, isProductCostViewer } from "../services/pmsAccess";
 import { userCanWriteScmConfig } from "../services/positionPolicy";
 import { resolveCapabilities } from "../services/capabilities";
 import { isCostingDisplayEnabled } from "../scm/lib/costing-enabled";
-import { isBetaEnabled } from "../scm/lib/renovation-beta-enabled";
 import { sendEmail, publicUrl, resetEmailHtml, inviteEmailHtml, erpProductName } from "../services/email";
 import { getBrandingForCompany } from "../services/branding";
 import { defaultCompanyCodeForHost } from "../middleware/companyContext";
@@ -690,7 +689,6 @@ app.get("/me", async (c) => {
       // the API would have accepted their edits. Third flag on this response for
       // the third time the FE and BE drifted by exactly one rule.
       scm_config_writer: userCanWriteScmConfig(user),
-      beta_enabled: isBetaEnabled(c.env),
       // costingDisplayEnabled: the GLOBAL cost/margin DISPLAY switch (env
       // COSTING_DISPLAY_ENABLED). Passed here so scm.finance.view is dropped for
       // EVERYONE when display is off — the FE reads that capability and hides the

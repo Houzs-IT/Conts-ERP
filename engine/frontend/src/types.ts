@@ -532,8 +532,6 @@ export interface AuthUser {
    *  Older backends omit it → treated as false by the helper, which then falls
    *  back to the flat key, i.e. exactly today's behaviour. */
   scm_config_writer?: boolean;
-  /** True where the server runs with BETA_ENABLED (staging). Older backends omit it, which hides Beta. */
-  beta_enabled?: boolean;
   /**
    * The RESOLVED capability set — the server's answers to "what may this user
    * do", computed once per /auth/me by backend services/capabilities.ts and

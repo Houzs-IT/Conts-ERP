@@ -1,7 +1,6 @@
 /* Beta renovation project workspace, bundle A (owner, 23 Oct 2026; plan
    docs/superpowers/plans/2026-10-23-beta-project-workspace.md section 9). Mounted at /api/beta after the auth gate.
-   The global auth gate runs first; inside this router the switch comes first on every route: where BETA_ENABLED is
-   not "true" (production) this answers 404 before any permission check or query. Every project, defect and design-file route is scoped to the active company (404 otherwise), and
+   The global auth gate runs first. Every project, defect and design-file route is scoped to the active company (404 otherwise), and
    every write adds a project_activity row (action beta_*) that the existing timeline reads. Section 10 of the plan
    (Home, Projects and Calendar) adds the board read and the design, appointment and calendar entry writes at the end. */
 
@@ -9,7 +8,6 @@ import { Hono, type Context } from "hono";
 import type { Env } from "../types";
 import { requirePageAccess, requirePermission } from "../middleware/auth";
 import { activeCompanySql, requireActiveCompanyId } from "../scm/lib/companyScope";
-import { isBetaEnabled } from "../scm/lib/renovation-beta-enabled";
 import { billingViews } from "../scm/lib/renovation-billing";
 import { todayMyt } from "../scm/lib/my-time";
 import { financeHiddenForUser } from "../services/pmsAccess";
@@ -42,11 +40,6 @@ function parseId(x: string | undefined | null): number | null {
   return Number.isInteger(n) && n > 0 ? n : null;
 }
 
-// The first middleware of this router: before any permission check or query here, so a switched-off worker reads nothing.
-app.use("*", async (c, next) => {
-  if (!isBetaEnabled(c.env)) return c.json({ error: "not_found" }, 404);
-  await next();
-});
 
 async function projectCompany(c: Ctx, id: number): Promise<number | null> {
   const r = await db(c).prepare(`SELECT company_id::int AS company_id FROM projects WHERE id = ? AND project_kind = 'renovation'${coSql(c)}`).bind(id).first<{ company_id: number }>();
