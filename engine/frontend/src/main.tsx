@@ -71,6 +71,7 @@ const ResetPassword = lazy(() => import("./pages/ResetPassword").then((m) => ({ 
 const AcceptInviteScreen = lazy(() => import("./auth/AuthScreens").then((m) => ({ default: m.AcceptInviteScreen })));
 const PrivacyPolicy = lazy(() => import("./pages/PrivacyPolicy").then((m) => ({ default: m.PrivacyPolicy })));
 const ContractorCalendar = lazy(() => import("./pages/ContractorCalendar").then((m) => ({ default: m.ContractorCalendar })));
+const BetaClientLinkPage = lazy(() => import("./pages/renovation-beta/BetaClientLinkPage").then((m) => ({ default: m.BetaClientLinkPage })));
 const BrandCalendar = lazy(() => import("./pages/ContractorCalendar").then((m) => ({ default: m.BrandCalendar })));
 
 function PublicFallback() {
@@ -220,6 +221,14 @@ function RootApp() {
     return (
       <LazySlot resetKey={`public:${surface}`} fallback={<PublicFallback />}>
         <BrandCalendar />
+      </LazySlot>
+    );
+  }
+  if (surface === "clientpo") {
+    /* A renovation client's read-only Client PO list, outside AuthGate: the client has no account. */
+    return (
+      <LazySlot resetKey={`public:${surface}`} fallback={<PublicFallback />}>
+        <BetaClientLinkPage />
       </LazySlot>
     );
   }

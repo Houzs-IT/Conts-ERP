@@ -27,6 +27,19 @@ const task = (id: number, status: string, label: string, planned_start: string, 
 });
 
 h.routes = {
+  "/api/beta/projects/7/vo": {
+    so: { docNo: "SO-2610-001", renovation: false }, finance: true, counts: { pending: 0, approved: 1, closed: 0 },
+    totals: { addedSen: 50_000, deductedSen: -20_000, netSen: 30_000, pendingNetSen: 0 },
+    vos: [{
+      key: "a:1", label: "VO-01", source: "amendment", no: "A1", soDocNo: "SO-2610-001", title: "Client change", status: "SENT", statusLabel: "Approved",
+      bucket: "approved", date: "2026-10-20T02:00:00Z", raisedBy: "Ali", approvedBy: "Ali", approvedAt: "2026-10-21T02:00:00Z", netSen: 30_000,
+      href: "/scm/amendments/1",
+      lines: [
+        { itemCode: "CAB-1", description: "Kitchen cabinet", room: "Kitchen", qty: 1, measure: null, amountSen: 50_000, change: "add", goesTo: "po", fromItemCode: null },
+        { itemCode: "LT-9", description: "Downlight", room: "Hall", qty: -2, measure: null, amountSen: -20_000, change: "deduct", goesTo: "po", fromItemCode: null },
+      ],
+    }],
+  },
   "design-records": { measures: [{ id: 1, done_on: day(-20), person_name: "Alex", note: "Beam near the DB box", files: [] }], files: [], notes: [] },
   "/api/beta/projects/7/workspace": {
     settings: { design3dDays: 10, design2dDays: 12 }, reviews: [], defects: [],
@@ -151,7 +164,9 @@ describe("Beta project workspace", () => {
     open();
     await screen.findByRole("heading", { name: "Payments" });
     fireEvent.click(screen.getByRole("button", { name: "VO" }));
-    expect(screen.getByRole("heading", { name: "Variation orders" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "VO-01 · Client change" })).toBeTruthy();
+    expect(screen.getByText("Kitchen cabinet")).toBeTruthy();
+    expect(screen.getByText("-2")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Defects" }));
     expect(await screen.findByRole("heading", { name: "Defects" })).toBeTruthy();
     expect(screen.getByText("Contractor's turn")).toBeTruthy();
