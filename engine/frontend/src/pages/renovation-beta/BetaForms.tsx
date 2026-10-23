@@ -5,14 +5,15 @@
 
 import { useEffect, useId, useRef, useState, type CSSProperties, type FormEvent, type KeyboardEvent, type ReactElement, type ReactNode } from "react";
 import { errorText } from "../projects/renovation/renovationModel";
+import { peopleOptions, personLabel, usePeople } from "../projects/renovation/PersonSelect";
+import type { Person } from "../projects/renovation/simpleApi";
 import {
-  add, amendDue, APPT_LABEL, apptKindOf, apptWho, apptWithDefault, bookIssue, dateHints, designKind, ds, EVENT_TYPES, isEventType, ord,
-  type ApptKey, type BoardModel, type CalEvent, type DesignProject, type Kind, type Viewing,
+  add, amendDue, APPT_LABEL, apptKindOf, apptWho, apptWithDefault, bookIssue, dateHints, designKind, ds, EVENT_TYPES, initials, isEventType, ord,
+  personInfo, type ApptKey, type BoardModel, type CalEvent, type DesignProject, type Kind, type Viewing,
 } from "./renovationBetaBoard";
 import {
   addAmendment, assignPeople, boardApi, type EventBody,
 } from "./renovationBetaBoardApi";
-import { Badge } from "./BetaCalParts";
 import { BETA } from "./renovationBetaTheme";
 
 export type BetaDialog =
@@ -136,14 +137,104 @@ function useSave(env: FormEnv): { busy: boolean; error: string | null; setError:
   return { busy, error, setError, run };
 }
 
-function PersonOptions({ m, blank }: { m: BoardModel; blank?: string }): ReactElement {
+/* Every person picker here uses the project page's people rule (projects/renovation/PersonSelect.tsx): people linked to
+   an active user account, labelled "Name · Position · Department", and the current pick kept even when it is no longer
+   offered. Until that list arrives the board's own copy of it stands in. */
+function useFormPeople(m: BoardModel): Person[] {
+  const q = usePeople();
+  if (q.data?.data) return q.data.data;
+  return m.everyone.map((x) => ({
+    id: x.id, name: x.name, roles: [], active: true, user_id: null, phone: null, notes: null, source: "board",
+    position: x.position, department: x.department, offered: x.offered,
+  }));
+}
+
+const noLongerListed = (p: Person): string => (p.offered === false || !p.active ? " (no longer listed)" : "");
+
+function PersonOptions({ all, current, blank, skip = [] }: { all: readonly Person[]; current: readonly number[]; blank?: string; skip?: readonly number[] }): ReactElement {
   return (
     <>
       {blank != null && <option value="">{blank}</option>}
-      {m.people.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+      {peopleOptions(all, undefined, current).filter((x) => !skip.includes(x.id)).map((x) => (
+        <option key={x.id} value={x.id}>{personLabel(x)}{noLongerListed(x)}</option>
+      ))}
     </>
   );
 }
+
+const AVATAR = (size: number): CSSProperties => ({
+  flex: "none", width: size, height: size, borderRadius: size / 2, background: BETA.ink, color: "#FFFFFF", fontSize: size > 28 ? 12 : 10, fontWeight: 700,
+  display: "inline-flex", alignItems: "center", justifyContent: "center",
+});
+const LIST: CSSProperties = { listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 6 };
+const ROLE: CSSProperties = { fontSize: 11, color: BETA.muted, fontWeight: 600, textTransform: "uppercase", letterSpacing: ".05em" };
+
+/** One picked person: initials circle, name, and "Position · Department" from the account. */
+function PersonCard({ person, name, role, tint, onRemove }: {
+  person: Pick<Person, "position" | "department" | "offered" | "active"> | undefined; name: string; role?: string; tint?: boolean; onRemove?: () => void;
+}): ReactElement {
+  const info = personInfo(person ? { position: person.position ?? null, department: person.department ?? null } : undefined);
+  return (
+    <li style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 6px 6px 8px", minHeight: 48, borderRadius: 10, border: `1px solid ${tint ? "#A9D2CC" : BETA.line}`, background: tint ? "#E4F1EF" : BETA.surface, minWidth: 0 }}>
+      <span aria-hidden="true" style={AVATAR(32)}>{initials(name)}</span>
+      <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.25, minWidth: 0, flex: 1 }}>
+        {role && <span style={ROLE}>{role}</span>}
+        <span style={{ fontSize: 14, fontWeight: 700, color: BETA.ink, overflowWrap: "anywhere" }}>{name}{person && (person.offered === false || !person.active) ? " (no longer listed)" : ""}</span>
+        {info && <span style={{ fontSize: 12, color: BETA.muted, overflowWrap: "anywhere" }}>{info}</span>}
+      </span>
+      {onRemove && (
+        <button type="button" onClick={onRemove} aria-label={`Remove ${name}`}
+          style={{ flex: "none", width: 36, height: 36, border: 0, borderRadius: 8, background: "transparent", color: BETA.muted, fontSize: 20, lineHeight: 1, cursor: "pointer" }}>
+          ×
+        </button>
+      )}
+    </li>
+  );
+}
+
+/** One person: a select of the offered people, and the pick shown as a card under it. */
+function PersonPick({ label, name, all, value, onChange, blank, required }: {
+  label: string; name: string; all: readonly Person[]; value: number | null; onChange: (id: number | null) => void; blank: string; required?: boolean;
+}): ReactElement {
+  const picked = value == null ? undefined : all.find((x) => x.id === value);
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
+      <Field label={label}>
+        <select name={name} required={required} value={value ?? ""} onChange={(e) => onChange(num(e.target.value))} style={IN}>
+          <PersonOptions all={all} current={value == null ? [] : [value]} blank={blank} />
+        </select>
+      </Field>
+      {value != null && <ul style={LIST}><PersonCard person={picked} name={picked?.name ?? `Person ${value}`} /></ul>}
+    </div>
+  );
+}
+
+/** Several people: an "Add a person" select, then a card with a remove button for each pick, in the order picked. */
+function PeoplePick({ label, name, all, value, onChange, known }: {
+  label: string; name: string; all: readonly Person[]; value: number[]; onChange: (ids: number[]) => void; known: ReadonlyMap<number, string>;
+}): ReactElement {
+  const byId = new Map(all.map((x) => [x.id, x] as const));
+  return (
+    <div role="group" aria-label={label} style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
+      <Field label={label}>
+        <select name={name} value="" onChange={(e) => { const id = num(e.target.value); if (id != null && !value.includes(id)) onChange([...value, id]); }} style={IN}>
+          <PersonOptions all={all} current={value} skip={value} blank={value.length ? "Add another person..." : "Add a person..."} />
+        </select>
+      </Field>
+      {value.length > 0 ? (
+        <ul aria-label={`${label} picked`} style={LIST}>
+          {value.map((id) => {
+            const who = byId.get(id)?.name ?? known.get(id) ?? `Person ${id}`;
+            return <PersonCard key={id} person={byId.get(id)} name={who} onRemove={() => onChange(value.filter((x) => x !== id))} />;
+          })}
+        </ul>
+      ) : <div style={{ fontSize: 13, color: BETA.muted }}>Nobody yet.</div>}
+    </div>
+  );
+}
+
+/** Two columns that fall to one on a phone. */
+const PICK_GRID: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12, alignItems: "start" };
 
 const num = (v: string): number | null => (v === "" ? null : Number(v));
 
@@ -151,6 +242,7 @@ const num = (v: string): number | null => (v === "" ? null : Number(v));
 
 function WorkForm({ env, ev, day }: { env: FormEnv; ev: CalEvent | null; day: string }): ReactElement {
   const { m, who } = env;
+  const all = useFormPeople(m);
   const isNew = !ev;
   const [type, setType] = useState<string>(ev?.type ?? "client");
   const [note, setNote] = useState(ev?.note ?? "");
@@ -196,7 +288,7 @@ function WorkForm({ env, ev, day }: { env: FormEnv; ev: CalEvent | null; day: st
       </div>
       <div style={TWO}>
         <Field label="Who">
-          <select name="who" value={person} onChange={(e) => setPerson(e.target.value)} style={IN}><PersonOptions m={m} blank="Nobody" /></select>
+          <select name="who" value={person} onChange={(e) => setPerson(e.target.value)} style={IN}><PersonOptions all={all} current={person ? [Number(person)] : []} blank="Nobody" /></select>
         </Field>
         <Field label="Project">
           <select name="p" value={project} onChange={(e) => setProject(e.target.value)} style={IN}>
@@ -219,48 +311,44 @@ function WorkForm({ env, ev, day }: { env: FormEnv; ev: CalEvent | null; day: st
 
 function AssignForm({ env, p }: { env: FormEnv; p: DesignProject }): ReactElement {
   const { m } = env;
-  const [lead, setLead] = useState<string>(String(p.lead?.id ?? m.mePersonId ?? ""));
-  const [w3, setW3] = useState<string>(String(p.by["3"]?.id ?? p.lead?.id ?? ""));
-  const [w2, setW2] = useState<string>(String(p.by["2"]?.id ?? p.lead?.id ?? ""));
-  const [site, setSite] = useState<string>(String(p.site?.id ?? ""));
+  const all = useFormPeople(m);
+  const [lead, setLead] = useState<number | null>(p.lead?.id ?? m.mePersonId ?? null);
+  const [w3, setW3] = useState<number[]>(p.team["3"].map((x) => x.id));
+  const [w2, setW2] = useState<number[]>(p.team["2"].map((x) => x.id));
+  const [site, setSite] = useState<number | null>(p.site?.id ?? null);
   const save = useSave(env);
+  // Names already on the project, so a person no longer listed keeps theirs.
+  const known = new Map([...m.everyone, ...p.team["3"], ...p.team["2"]].map((x) => [x.id, x.name] as const));
+  const leadInfo = m.everyone.find((x) => x.id === p.lead?.id);
 
   async function submit(): Promise<void> {
     await save.run(async () => {
-      const leadId = num(lead);
-      if (leadId == null) throw new Error("Choose the design lead.");
-      if (num(w3) == null || num(w2) == null) throw new Error("Choose who does the 3D and who does the 2D.");
-      const siteId = num(site);
+      if (lead == null) throw new Error("Choose the design lead.");
+      if (w3.length === 0 || w2.length === 0) throw new Error("Choose who does the 3D and who does the 2D.");
       await assignPeople(p.id, {
-        ...(p.lead ? {} : { designerPersonId: leadId }),
-        ...(siteId !== (p.site?.id ?? null) ? { picPersonId: siteId } : {}),
-        person3dId: num(w3),
-        person2dId: num(w2),
+        ...(p.lead ? {} : { designerPersonId: lead }),
+        ...(site !== (p.site?.id ?? null) ? { picPersonId: site } : {}),
+        person3dIds: w3,
+        person2dIds: w2,
       });
-      const name = (v: string): string => m.people.find((x) => String(x.id) === v)?.name ?? "";
-      return { text: `Assigned · 3D ${name(w3)} · 2D ${name(w2)}${site ? ` · Site ${name(site)}` : ""}` };
+      const names = (ids: readonly number[]): string => ids.map((id) => all.find((x) => x.id === id)?.name ?? known.get(id) ?? "").filter(Boolean).join(", ");
+      return { text: `Assigned · 3D ${names(w3)} · 2D ${names(w2)}${site != null ? ` · Site ${names([site])}` : ""}` };
     });
   }
 
   return (
     <BetaModal title="Assign" sub={p.name} onClose={env.onClose} onSubmit={submit} error={save.error} busy={save.busy}>
       {p.lead ? (
-        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderRadius: 8, background: "#E4F1EF", fontSize: 14 }}>
-          <Badge name={p.lead.name} /><b>Design lead · {p.lead.name}</b><span style={{ color: BETA.muted, fontSize: 12 }}>(fixed)</span>
-        </div>
+        <ul style={LIST}><PersonCard person={leadInfo ? { ...leadInfo, active: true } : undefined} name={p.lead.name} role="Design lead (fixed)" tint /></ul>
       ) : (
-        <Field label="Design lead (3D and 2D)">
-          <select name="lead" required value={lead} onChange={(e) => setLead(e.target.value)} style={IN}><PersonOptions m={m} blank="Choose..." /></select>
-        </Field>
+        <PersonPick label="Design lead (3D and 2D)" name="lead" all={all} value={lead} onChange={setLead} blank="Choose..." required />
       )}
-      <div style={TWO}>
-        <Field label="3D by"><select name="who3" required value={w3} onChange={(e) => setW3(e.target.value)} style={IN}><PersonOptions m={m} blank="Choose..." /></select></Field>
-        <Field label="2D by"><select name="who2" required value={w2} onChange={(e) => setW2(e.target.value)} style={IN}><PersonOptions m={m} blank="Choose..." /></select></Field>
+      <div style={PICK_GRID}>
+        <PeoplePick label="3D by" name="who3" all={all} value={w3} onChange={setW3} known={known} />
+        <PeoplePick label="2D by" name="who2" all={all} value={w2} onChange={setW2} known={known} />
       </div>
-      <Field label="Site PIC (handover lead)">
-        <select name="site" value={site} onChange={(e) => setSite(e.target.value)} style={IN}><PersonOptions m={m} blank="Not chosen" /></select>
-      </Field>
-      <div style={NOTE}>They see it in their own Calendar right away. Only people who can edit projects can change this.</div>
+      <PersonPick label="Site PIC (handover lead)" name="site" all={all} value={site} onChange={setSite} blank="Not chosen" />
+      <div style={NOTE}>Pick one or more people for the 3D and for the 2D. They see it in their own Calendar right away. Only people who can edit projects can change this.</div>
     </BetaModal>
   );
 }
@@ -269,6 +357,7 @@ function AssignForm({ env, p }: { env: FormEnv; p: DesignProject }): ReactElemen
 
 function BookForm({ env, p, k }: { env: FormEnv; p: DesignProject; k: ApptKey }): ReactElement {
   const { m } = env;
+  const all = useFormPeople(m);
   const a = p.appts[k];
   const isNew = !a?.d;
   const [d, setD] = useState(a?.d ?? "");
@@ -313,7 +402,7 @@ function BookForm({ env, p, k }: { env: FormEnv; p: DesignProject; k: ApptKey })
         <Field label="Time"><input type="time" name="bt" value={t} onChange={(e) => setT(e.target.value)} style={IN} /></Field>
       </div>
       <div style={TWO}>
-        <Field label="ID going"><select name="who" value={person} onChange={(e) => setPerson(e.target.value)} style={IN}><PersonOptions m={m} blank="Nobody" /></select></Field>
+        <Field label="ID going"><select name="who" value={person} onChange={(e) => setPerson(e.target.value)} style={IN}><PersonOptions all={all} current={person ? [Number(person)] : []} blank="Nobody" /></select></Field>
         <Field label="With"><input name="bw" value={withText} onChange={(e) => setWithText(e.target.value)} maxLength={120} style={IN} /></Field>
       </div>
       {isNew ? (

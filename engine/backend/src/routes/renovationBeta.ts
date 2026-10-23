@@ -13,6 +13,7 @@ import { todayMyt } from "../scm/lib/my-time";
 import { financeHiddenForUser } from "../services/pmsAccess";
 import { setChecklistStatus } from "../services/projects";
 import { calendarMePersonIds } from "../services/renovation/calendarItems";
+import { syncPeopleFromUsers } from "../services/renovation/peopleSync";
 import { isMissingRelation, loadProjectRows, loadRenovationFacts, type Db, type DbStmt } from "../services/renovation/load";
 import { renoDbFromD1 } from "../services/renovation/dbBridge";
 import { writeCachedStage } from "../services/renovation/contractSync";
@@ -369,6 +370,41 @@ async function companyPeople(c: Ctx, companyId: number, ids: readonly number[]):
 }
 
 const PERSON_REFUSAL = { error: "person_invalid", message: "That person is not on this company's list." } as const;
+
+interface BoardPersonRow { id: number; name: string; roles: unknown; position: string | null; department: string | null; offered: boolean }
+
+/* The board's people follow the project page's people list (routes/renovationProject.ts GET /people; owner,
+   14 Oct 2026): the list is brought in line with the user accounts first, and `offered` is true only for people
+   linked to an active account, labelled with the account's position and department. Every person of the company
+   is sent, so names on old records still read; the screens offer and filter by `offered` only. Before migration
+   0113 (no staff view) every active person is offered, as on the project page. */
+async function boardPeople(c: Ctx, companyId: number): Promise<BoardPersonRow[]> {
+  let fromUsers = false;
+  try {
+    fromUsers = await syncPeopleFromUsers(db(c), companyId);
+  } catch (e) {
+    console.error("[renovation-beta] people sync failed", e);
+  }
+  const res = await db(c).prepare(
+    fromUsers
+      ? `SELECT pp.id::int AS id, pp.name, to_json(pp.roles) AS roles, s.position, s.department, (pp.pos_user_id IS NOT NULL AND pp.active) AS offered
+           FROM project_people pp LEFT JOIN conts_staff s ON s.id = pp.pos_user_id
+          WHERE pp.company_id = ? ORDER BY lower(pp.name), pp.id`
+      : `SELECT id::int AS id, name, to_json(roles) AS roles, NULL AS position, NULL AS department, active AS offered
+           FROM project_people WHERE company_id = ? ORDER BY lower(name), id`,
+  ).bind(companyId).all<BoardPersonRow>();
+  return res.results ?? [];
+}
+
+/** The 3D or 2D people of the board row `bd`, in the order picked, as JSON [{ id, name }]. A row written only to the
+    single column (before migration 0148) still reads as that one person. */
+function designPeopleSql(kind: "3d" | "2d"): string {
+  const k = kind === "3d" ? "3d" : "2d";
+  return `(SELECT coalesce(json_agg(json_build_object('id', x.id::int, 'name', pp.name) ORDER BY x.n), '[]'::json)
+             FROM unnest(CASE WHEN cardinality(bd.person_${k}_ids) > 0 THEN bd.person_${k}_ids
+                              WHEN bd.person_${k}_id IS NOT NULL THEN ARRAY[bd.person_${k}_id] ELSE '{}'::bigint[] END) WITH ORDINALITY AS x(id, n)
+             JOIN project_people pp ON pp.id = x.id)`;
+}
 const KIND_REFUSAL = { error: "kind_invalid", message: "Pick the appointment from the list." } as const;
 
 /** Payment label per project, from the same sales order and payments the workspace reads. */
@@ -408,13 +444,12 @@ app.get("/board", requirePageAccess("projects.list"), async (c) => {
     const [settings, people, projects, files, notes, reviews, appointments, events, payments, meIds] = await Promise.all([
       db(c).prepare(`SELECT design_3d_days::int AS d3, design_2d_days::int AS d2 FROM project_beta_settings WHERE company_id = ?`)
         .bind(companyId).first<{ d3: number; d2: number }>(),
-      db(c).prepare(`SELECT id::int AS id, name, to_json(roles) AS roles FROM project_people WHERE company_id = ? AND active ORDER BY lower(name), id`)
-        .bind(companyId).all<{ id: number; name: string; roles: unknown }>(),
+      boardPeople(c, companyId),
       db(c).prepare(
         `SELECT p.id::int AS id, p.code, p.name, p.building, p.unit_no, p.customer_name, coalesce(sp.name, p.salesperson_name) AS sales_name, p.created_at,
                 p.planned_handover_date::text AS handover_on,
                 p.designer_person_id::int AS lead_id, dp.name AS lead_name, p.reno_pic_person_id::int AS pic_id, rp.name AS pic_name,
-                bd.person_3d_id::int AS p3_id, p3.name AS p3_name, bd.person_2d_id::int AS p2_id, p2.name AS p2_name,
+                ${designPeopleSql("3d")} AS p3_people, ${designPeopleSql("2d")} AS p2_people,
                 (SELECT min(r.done_on) FROM project_design_records r WHERE r.project_id = p.id AND r.kind = 'site_measure')::text AS measured_on,
                 bd.start_3d_on::text AS start_3d_on, bd.start_2d_on::text AS start_2d_on, bd.po_done_on::text AS po_done_on
            FROM projects p
@@ -422,8 +457,6 @@ app.get("/board", requirePageAccess("projects.list"), async (c) => {
            LEFT JOIN project_people dp ON dp.id = p.designer_person_id
            LEFT JOIN project_people rp ON rp.id = p.reno_pic_person_id
            LEFT JOIN project_beta_design bd ON bd.project_id = p.id
-           LEFT JOIN project_people p3 ON p3.id = bd.person_3d_id
-           LEFT JOIN project_people p2 ON p2.id = bd.person_2d_id
           WHERE ${scope} ORDER BY p.id DESC`,
       ).bind().all<BoardProjectRow>(),
       db(c).prepare(
@@ -467,12 +500,14 @@ app.get("/board", requirePageAccess("projects.list"), async (c) => {
       files: groupByProject(files.results ?? []), notes: groupByProject(notes.results ?? []),
       reviews: groupByProject(reviews.results ?? []), appointments: groupByProject(appointments.results ?? []),
     };
-    const peopleList = (people.results ?? []).map((p) => ({ id: Number(p.id), name: p.name, roles: rolesOf(p.roles) }));
+    const peopleList = people.map((p) => ({
+      id: Number(p.id), name: p.name, roles: rolesOf(p.roles), position: p.position ?? null, department: p.department ?? null, offered: !!p.offered,
+    }));
     const mine = new Set(meIds);
     const paymentOf = (projectId: number): BoardPayment => (hidden ? { state: "hidden" } : payments.get(projectId) ?? { state: "none" });
     return c.json({
       today,
-      mePersonId: peopleList.find((p) => mine.has(p.id))?.id ?? null,
+      mePersonId: peopleList.find((p) => p.offered && mine.has(p.id))?.id ?? peopleList.find((p) => mine.has(p.id))?.id ?? null,
       settings: { design3dDays: settings?.d3 ?? BETA_DEFAULT_3D_DAYS, design2dDays: settings?.d2 ?? BETA_DEFAULT_2D_DAYS, amendmentDays: BETA_AMENDMENT_DAYS },
       people: peopleList,
       projects: (projects.results ?? []).map((p) => buildBoardProject(p, sets, paymentOf(Number(p.id)))),
@@ -488,10 +523,24 @@ app.get("/board", requirePageAccess("projects.list"), async (c) => {
 
 // ── Design dates and people ──────────────────────────────────────────────
 
-const DESIGN_COLUMNS = {
-  start3dOn: ["start_3d_on", "?::date"], start2dOn: ["start_2d_on", "?::date"], poDoneOn: ["po_done_on", "?::date"],
-  person3dId: ["person_3d_id", "?::bigint"], person2dId: ["person_2d_id", "?::bigint"],
-} as const satisfies Record<keyof BetaDesignPatch, readonly [string, string]>;
+const DESIGN_DATE_COLUMNS = { start3dOn: "start_3d_on", start2dOn: "start_2d_on", poDoneOn: "po_done_on" } as const;
+const DESIGN_PEOPLE_COLUMNS = { person3dIds: "person_3d", person2dIds: "person_2d" } as const;
+
+/** [column, placeholder, value] for each field sent. A people list writes its array and, for older code, the single
+    column as the first pick (migration 0148). */
+function designColumns(p: BetaDesignPatch): Array<readonly [string, string, unknown]> {
+  const out: Array<readonly [string, string, unknown]> = [];
+  for (const k of Object.keys(DESIGN_DATE_COLUMNS) as Array<keyof typeof DESIGN_DATE_COLUMNS>) {
+    if (k in p) out.push([DESIGN_DATE_COLUMNS[k], "?::date", p[k] ?? null]);
+  }
+  for (const k of Object.keys(DESIGN_PEOPLE_COLUMNS) as Array<keyof typeof DESIGN_PEOPLE_COLUMNS>) {
+    const ids = p[k];
+    if (ids === undefined) continue;
+    out.push([`${DESIGN_PEOPLE_COLUMNS[k]}_ids`, "?::text::bigint[]", `{${ids.join(",")}}`]);
+    out.push([`${DESIGN_PEOPLE_COLUMNS[k]}_id`, "?::bigint", ids[0] ?? null]);
+  }
+  return out;
+}
 
 app.put("/projects/:id/design", requirePermission("projects.write"), async (c) => {
   const id = parseId(c.req.param("id"));
@@ -502,14 +551,13 @@ app.put("/projects/:id/design", requirePermission("projects.write"), async (c) =
   if (!v.ok) return c.json({ error: v.error, message: v.message }, 400);
   const people = await companyPeople(c, co, designPersonIds(v.value));
   if (!people) return c.json(PERSON_REFUSAL, 400);
-  const sent = (Object.keys(DESIGN_COLUMNS) as Array<keyof BetaDesignPatch>).filter((k) => k in v.value);
-  const cols = sent.map((k) => DESIGN_COLUMNS[k]);
+  const cols = designColumns(v.value);
   await db(c).batch!([
     db(c).prepare(
       `INSERT INTO project_beta_design (project_id, company_id, ${cols.map(([col]) => col).join(", ")}, updated_by, updated_at)
        VALUES (?, ?, ${cols.map(([, cast]) => cast).join(", ")}, ?, now())
        ON CONFLICT (project_id) DO UPDATE SET ${cols.map(([col]) => `${col} = excluded.${col}`).join(", ")}, updated_by = excluded.updated_by, updated_at = now()`,
-    ).bind(id, co, ...sent.map((k) => v.value[k] ?? null), userId(c)),
+    ).bind(id, co, ...cols.map(([, , value]) => value), userId(c)),
     activityStmt(c, id, co, "beta_design_changed", null, null, designChangeNote(v.value, people)),
   ]);
   return c.json({ ok: true });

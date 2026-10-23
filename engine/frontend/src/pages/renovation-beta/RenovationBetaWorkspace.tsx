@@ -89,7 +89,7 @@ export function RenovationBetaWorkspace(): ReactElement {
   return (
     <div className="bws" style={{ display: "flex", flexDirection: "column", gap: 20, width: "100%", minWidth: 0, paddingBottom: 40 }}>
       <WsStyle />
-      <BetaWsHeader d={d} p={board.p} canWrite={can("projects.write")} today={today} openDialog={setDialog} />
+      <BetaWsHeader d={d} p={board.p} people={board.m.everyone} canWrite={can("projects.write")} today={today} openDialog={setDialog} />
       <BetaWsStepper items={items} hold={hold} />
 
       <nav aria-label="Project sections" className="tabs">

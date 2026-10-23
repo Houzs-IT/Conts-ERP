@@ -68,8 +68,9 @@ function dueRow(m: BoardModel, who: Viewing, x: DueItem): ReactElement {
   const sub = x.from ? (x.n ? `Amendment started ${ds(x.from)} · ${x.days} ${dayWord(x.days ?? 0)}` : `Started ${ds(x.from)} · SOP ${m.sop[x.k === "2" ? "2" : "3"]} days`) : "";
   const byName = x.by?.name ?? "No site PIC";
   let byTxt = `${x.k === "h" ? "Handover lead " : `${x.k}D by `}${byName}`;
-  if (x.k !== "h" && x.by && x.p.lead && x.by.id !== x.p.lead.id) byTxt += ` · lead ${x.p.lead.name}`;
-  const own = who !== "All" && x.by != null && x.by.id === who && x.by.id === x.p.lead?.id;
+  if (x.k !== "h" && x.p.lead && !x.p.team[x.k].some((t) => t.id === x.p.lead?.id)) byTxt += ` · lead ${x.p.lead.name}`;
+  const solo = x.k === "h" ? x.by != null : x.p.team[x.k].length === 1;
+  const own = who !== "All" && solo && x.by != null && x.by.id === who && x.by.id === x.p.lead?.id;
   return (
     <li key={`${x.p.id}-${x.k}-${x.due}`} style={LI}>
       <DateBox due={x.due} />

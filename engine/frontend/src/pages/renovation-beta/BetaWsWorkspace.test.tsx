@@ -4,7 +4,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
-const h = vi.hoisted(() => ({ routes: {} as Record<string, unknown> }));
+const h = vi.hoisted(() => ({ routes: {} as Record<string, unknown>, puts: [] as Array<[string, unknown]> }));
 
 vi.mock("../../api/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../api/client")>();
@@ -13,7 +13,8 @@ vi.mock("../../api/client", async (importOriginal) => {
     if (!hit) throw new Error(`no mock for ${path}`);
     return hit[1];
   };
-  return { ...actual, api: { ...actual.api, get, fetchBlobUrl: async () => "blob:x" } };
+  const put = async (path: string, body: unknown): Promise<unknown> => { h.puts.push([path, body]); return { ok: true }; };
+  return { ...actual, api: { ...actual.api, get, put, fetchBlobUrl: async () => "blob:x" } };
 });
 vi.mock("../../auth/AuthContext", () => ({ useAuth: () => ({ can: () => true }) }));
 
@@ -145,6 +146,49 @@ describe("Beta project workspace", () => {
     await screen.findByRole("heading", { name: "Payments" });
     fireEvent.click(screen.getByRole("button", { name: "Assign" }));
     expect(await screen.findByRole("dialog", { name: "Assign" })).toBeTruthy();
+  });
+
+  it("shows every 3D and 2D person with their position, and saves several from Assign", async () => {
+    const saved = { ...h.routes };
+    const b = h.routes["/api/beta/board"] as { people: unknown[]; projects: Array<Record<string, unknown>> };
+    h.routes["/api/beta/board"] = {
+      ...b,
+      people: [
+        { id: 1, name: "Jia Xin", roles: [], position: "Interior designer", department: "Design", offered: true },
+        { id: 2, name: "Yi Xuan", roles: [], position: "3D artist", department: "Design", offered: true },
+        { id: 3, name: "Alex", roles: [], position: "Site supervisor", department: "Projects", offered: true },
+        { id: 4, name: "Old Name", roles: [], offered: false },
+      ],
+      projects: [{ ...b.projects[0], person3d: { id: 2, name: "Yi Xuan" }, people3d: [{ id: 2, name: "Yi Xuan" }, { id: 3, name: "Alex" }], people2d: [{ id: 2, name: "Yi Xuan" }] }],
+    };
+    h.routes["/api/renovation/people"] = { data: [
+      { id: 1, name: "Jia Xin", roles: [], active: true, phone: "012-345 6789", position: "Interior designer", department: "Design", offered: true },
+      { id: 2, name: "Yi Xuan", roles: [], active: true, position: "3D artist", department: "Design", offered: true },
+      { id: 3, name: "Alex", roles: [], active: true, position: "Site supervisor", department: "Projects", offered: true },
+      { id: 4, name: "Old Name", roles: [], active: true, offered: false },
+    ] };
+    h.puts = [];
+    try {
+      open();
+      const team = await screen.findByRole("group", { name: "Project team" });
+      expect(within(team).getAllByText("Yi Xuan").length).toBe(2);
+      expect(within(team).getAllByText("3D artist · Design").length).toBe(2);
+      expect(within(team).getAllByText("Site supervisor · Projects").length).toBe(2);
+      fireEvent.click(within(team).getByRole("button", { name: "Assign" }));
+      const dialog = await screen.findByRole("dialog", { name: "Assign" });
+      const two = within(dialog).getByRole("group", { name: "2D by" });
+      // Only people linked to an active account are offered, labelled as on the project page.
+      await waitFor(() => expect(within(two).getByRole("option", { name: "Alex · Site supervisor · Projects" })).toBeTruthy());
+      expect(within(two).queryByRole("option", { name: /Old Name/ })).toBeNull();
+      fireEvent.change(within(two).getByRole("combobox"), { target: { value: "3" } });
+      expect(within(within(two).getByRole("list", { name: "2D by picked" })).getAllByRole("listitem").length).toBe(2);
+      const three = within(dialog).getByRole("group", { name: "3D by" });
+      fireEvent.click(within(three).getByRole("button", { name: "Remove Alex" }));
+      fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+      await waitFor(() => expect(h.puts.find(([path]) => path.endsWith("/projects/7/design"))?.[1]).toEqual({ person3dIds: [2], person2dIds: [2, 3] }));
+    } finally {
+      Object.assign(h.routes, saved);
+    }
   });
 
   it("opens the other tabs from the tab bar", async () => {
