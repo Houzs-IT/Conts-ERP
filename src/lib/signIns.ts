@@ -14,6 +14,7 @@ export const SIGN_IN_METHOD: Record<string, string> = {
   totp: 'Password and app code',
   backup_code: 'Password and backup code',
   reset_link: 'Reset link',
+  pin: 'Phone and PIN',
 };
 
 /** "Chrome on Windows" from a user agent; good enough to recognise your own devices, not a fingerprint. */

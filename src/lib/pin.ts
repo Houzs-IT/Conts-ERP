@@ -11,6 +11,7 @@ export const pinPolicy = (p: string): { label: string; ok: boolean }[] => [
   { label: 'Not easy to guess, like 111111 or 123456', ok: /^\d{6}$/.test(p) && !easyPin(p) },
 ];
 
-/** Props that turn a PasswordField into a 6-digit PIN box with a number pad on phones. */
-export const PIN_INPUT = { inputMode: 'numeric', maxLength: 6, style: { letterSpacing: '0.3em', fontVariantNumeric: 'tabular-nums' } } as const;
+/** Props that turn a PasswordField into a PIN box with a number pad on phones. No maxLength: digitsOnly keeps six
+ *  digits, and a browser limit would count a stray letter before it is filtered out and drop the last digit. */
+export const PIN_INPUT = { inputMode: 'numeric', style: { letterSpacing: '0.3em', fontVariantNumeric: 'tabular-nums' } } as const;
 export const digitsOnly = (v: string): string => v.replace(/\D/g, '').slice(0, 6);
