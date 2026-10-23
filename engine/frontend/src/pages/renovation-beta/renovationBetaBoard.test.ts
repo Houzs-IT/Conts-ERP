@@ -219,3 +219,45 @@ describe("form checks", () => {
     expect(bookIssue(get(11), "cm", "2026-10-01")).toBeNull();
   });
 });
+
+describe("several 3D and 2D people", () => {
+  const SI = { id: 5, name: "Siti Aminah" };
+  const shared = project({
+    id: 20, building: "Mont Kiara", unitNo: "M-3-1", customerName: "Ms Ong", start3dOn: "2026-10-15",
+    person3d: YX, people3d: [YX, SI], person2d: AL, people2d: [AL, YT],
+  });
+  const b = board([shared]);
+  b.people = [
+    { ...JX, roles: [], position: "Interior designer", department: "Design", offered: true },
+    { ...YT, roles: [], offered: true }, { ...YX, roles: [], offered: true }, { ...AL, roles: [], offered: true },
+    { ...SI, roles: [], position: "3D artist", department: "Design", offered: true },
+    { id: 9, name: "Old Notion name", roles: [], offered: false },
+  ];
+  const mm = buildModel(b);
+  const p = mm.byId.get(20)!;
+
+  it("keeps everyone, in order, and shows them as one name", () => {
+    expect(p.team["3"].map((x) => x.name)).toEqual(["Yi Xuan", "Siti Aminah"]);
+    expect(p.by["3"]).toEqual({ id: 3, name: "Yi Xuan, Siti Aminah" });
+    expect(p.by["2"]?.name).toBe("Alex, Ying Tzy");
+  });
+
+  it("puts the project in each picked person's own calendar", () => {
+    expect(items(mm, 5).map((x) => [x.p.id, x.k])).toEqual([[20, "3"]]);
+    expect(items(mm, 3).map((x) => [x.p.id, x.k])).toEqual([[20, "3"]]);
+    expect(progressList(mm, 2).map((x) => x.id)).toEqual([20]);
+    expect(items(mm, 1)).toEqual([]);
+  });
+
+  it("offers only people linked to an active account, but still names everyone", () => {
+    expect(mm.people.map((x) => x.id)).toEqual([1, 2, 3, 4, 5]);
+    expect(mm.everyone.find((x) => x.id === 9)?.offered).toBe(false);
+    expect(mm.everyone.find((x) => x.id === 1)).toMatchObject({ position: "Interior designer", department: "Design" });
+  });
+
+  it("reads an older board with only the single person", () => {
+    const old = buildModel(board([project({ id: 21, building: "X", unitNo: "1", customerName: "Y", person3d: SI })])).byId.get(21)!;
+    expect(old.team["3"]).toEqual([SI]);
+    expect(old.team["2"]).toEqual([JX]);
+  });
+});

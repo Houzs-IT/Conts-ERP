@@ -173,8 +173,8 @@ describe("MobileSoFilterSheet", () => {
     await user.click(screen.getByRole("button", { name: /^Item category/ }));
     await user.click(screen.getByRole("button", { name: "Sofa" }));
     await user.click(screen.getByRole("button", { name: "+ Add filter" }));
-    await user.click(screen.getByRole("button", { name: /^Pending amendment/ }));
-    await user.click(screen.getByRole("button", { name: "Has a pending amendment" }));
+    await user.click(screen.getByRole("button", { name: /^Pending VO/ }));
+    await user.click(screen.getByRole("button", { name: "Has a pending VO" }));
     await user.click(screen.getByRole("button", { name: /^Apply/ }));
     expect(props.onApply).toHaveBeenCalledWith({ status: "all", filters: [
       { field: "itemCategory", op: "is", value: "sofa" },

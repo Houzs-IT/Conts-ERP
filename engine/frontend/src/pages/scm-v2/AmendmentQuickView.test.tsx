@@ -92,7 +92,7 @@ describe('AmendmentQuickView — a Sales Order amendment', () => {
     soQ = { data: soData(), isLoading: false, error: null };
     mount({ kind: 'so', id: 'amd-1', label: 'HC-SO-012757/A1' });
     expect(screen.getByRole('dialog', { name: 'Amendment HC-SO-012757/A1' })).toBeTruthy();
-    expect(screen.getByText('Sales Order amendment')).toBeTruthy();
+    expect(screen.getByText('VO')).toBeTruthy();
     expect(screen.getByText('HC-SO-012757')).toBeTruthy();
     expect(screen.getByText('Logistic')).toBeTruthy();
     expect(screen.getByText('Syasya')).toBeTruthy();

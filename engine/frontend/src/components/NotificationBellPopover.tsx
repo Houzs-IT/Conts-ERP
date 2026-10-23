@@ -19,6 +19,7 @@ function systemTag(source: string | null | undefined): string {
     case "service_case":
       return "Service case";
     case "so_amendment":
+      return "VO";
     case "po_amendment":
       return "Amendment";
     case "ack_escalation":

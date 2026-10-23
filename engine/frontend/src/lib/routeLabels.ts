@@ -57,7 +57,7 @@ const SCM_SEGMENT_LABELS: Record<string, [string, string]> = {
   // workspace strip stays scannable ("SO Amdt." / "PO Amdt."), and the two
   // sides are distinguishable at a glance. Detail pages push their own
   // breadcrumbs, so the descriptive titles live on-page, not here.
-  "amendments": ["SO Amdt.", "SO Amdt."],
+  "amendments": ["VO", "VO"],
   // Procurement chain
   "purchase-orders": ["Purchase Orders", "Purchase Order"],
   "po-amendments": ["PO Amdt.", "PO Amdt."],

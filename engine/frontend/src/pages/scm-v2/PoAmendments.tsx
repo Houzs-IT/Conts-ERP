@@ -183,7 +183,7 @@ export const PoAmendments = () => {
         description={
           isLoading
             ? 'Loading amendments…'
-            : `${rows.length} purchase order revision${rows.length === 1 ? '' : 's'} — raised from a PO or flowing from a Sales Order amendment`
+            : `${rows.length} purchase order revision${rows.length === 1 ? '' : 's'} — raised from a PO or flowing from a VO`
         }
       />
 

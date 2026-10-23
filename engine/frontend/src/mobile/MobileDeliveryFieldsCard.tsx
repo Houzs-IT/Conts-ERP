@@ -353,7 +353,7 @@ export function DeliveryFieldsCard({
                   color: "#8a3d15",
                 }}
               >
-                Order is locked — saving a change here raises an SO Amendment for
+                Order is locked — saving a change here raises a VO for
                 Logistics to approve.
               </span>
             )}

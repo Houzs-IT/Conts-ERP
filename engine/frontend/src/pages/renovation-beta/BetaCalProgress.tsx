@@ -21,10 +21,10 @@ export function BetaCalProgress({ m, who, viewingName }: { m: BoardModel; who: V
         {list.map((p) => {
           const st = status(m, p);
           const cur = currentStep(m, p);
-          const chips: Array<[string, string | undefined, number | undefined]> = [
-            ["3D", p.by["3"]?.name, p.by["3"]?.id],
-            ["2D", p.by["2"]?.name, p.by["2"]?.id],
-            ["Handover", p.site?.name, p.site?.id],
+          const chips: Array<[string, string | undefined, number[]]> = [
+            ["3D", p.by["3"]?.name, p.team["3"].map((x) => x.id)],
+            ["2D", p.by["2"]?.name, p.team["2"].map((x) => x.id)],
+            ["Handover", p.site?.name, p.site ? [p.site.id] : []],
           ];
           return (
             <li key={p.id} style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "14px 20px", padding: "14px 0", borderTop: `1px solid ${BETA.lineSoft}` }}>
@@ -35,7 +35,7 @@ export function BetaCalProgress({ m, who, viewingName }: { m: BoardModel; who: V
                 <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, marginTop: 4, fontSize: 12 }}>
                   <CondPill text={`${st[0]} - ${st[1]}`} words={st[1]} />
                   {chips.map(([label, name, id]) => {
-                    const me = who !== "All" && id === who;
+                    const me = who !== "All" && id.includes(who);
                     return (
                       <span key={label} style={{ padding: "2px 8px", borderRadius: 6, ...(me ? { background: BETA.accent, color: "#FFFFFF", fontWeight: 700 } : { background: "#F2F5F4", color: "#3F4947", fontWeight: 500 }) }}>
                         {label} · {name ?? "Not chosen"}

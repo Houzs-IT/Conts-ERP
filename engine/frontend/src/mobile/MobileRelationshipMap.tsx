@@ -233,13 +233,13 @@ export function MobileRelationshipMap({ type, id, label, onClose, nav }: {
 
             {(amendments.length > 0 || poAmendments.length > 0) && (
               <div style={{ marginBottom: 16 }}>
-                <div style={eyebrowStyle}>Amendments</div>
+                <div style={eyebrowStyle}>VO and amendments</div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                   {/* Display-only on the phone (the amendment job cards are
                       desktop pages / their own list screens). */}
                   {amendments.map((a) => (
                     <span key={`soa-${a.id}`} style={mutedChip}>
-                      {String(a.amendmentNo ?? "").trim() || `Amendment ${a.soDocNo}`}
+                      {String(a.amendmentNo ?? "").trim() || `VO ${a.soDocNo}`}
                       {a.status ? ` · ${humaniseStatusKey(a.status)}` : ""}
                     </span>
                   ))}

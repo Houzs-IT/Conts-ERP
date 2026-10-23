@@ -1,6 +1,6 @@
 /* Beta > Project workspace for one renovation project (owner, 23 Oct 2026). It copies the owner's mockup
    ("Renovation Project Workspace", project page): the header, the stage stepper and the tabs. Bundle A fills
-   Overview, Drawings, Site & photos, Defects and Timeline; VO, PO and Client PO say so until bundle B
+   Overview, Drawings, Site & photos, Defects and Timeline; bundle B fills VO, PO and Client PO
    (docs/superpowers/plans/2026-10-23-beta-project-workspace.md).
    The project, the workspace and the design records are loaded here once and handed to the tabs; every write
    shows a notice and reloads all three. */
@@ -11,14 +11,17 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../../auth/AuthContext";
 import { useQuery } from "../../hooks/useQuery";
 import { simpleApi } from "../projects/renovation/simpleApi";
+import { BetaClientPoTab } from "./BetaClientPoTab";
 import { BetaDefectsTab } from "./BetaDefectsTab";
 import { BetaDrawingsTab } from "./BetaDrawingsTab";
 import { BetaOverviewTab } from "./BetaOverviewTab";
+import { BetaPoTab } from "./BetaPoTab";
 import { BetaSiteTab } from "./BetaSiteTab";
 import { BetaTimelineTab } from "./BetaTimelineTab";
+import { BetaVoTab } from "./BetaVoTab";
 import { BetaDialogs, type BetaDialog } from "./BetaForms";
 import { BetaWsHeader, BetaWsStepper } from "./BetaWsHeader";
-import { WS, WsCard, WsNotice, WsStyle } from "./BetaWsUi";
+import { WS, WsNotice, WsStyle } from "./BetaWsUi";
 import type { BetaTabProps, BoardView } from "./betaShared";
 import { betaApi } from "./renovationBetaApi";
 import { projectView } from "./renovationBetaBoard";
@@ -31,13 +34,6 @@ import { BETA_TABS, tabFromParam, type BetaTabKey } from "./renovationBetaTabs";
 function isNotFound(e: unknown): boolean {
   return typeof e === "object" && e !== null && "status" in e && (e as { status?: unknown }).status === 404;
 }
-
-/** What the mockup's three later tabs say; the sub line is the mockup's own wording where it has one. */
-const LATER_TABS: Readonly<Record<string, { title: string; sub?: string }>> = {
-  vo: { title: "Variation orders", sub: "Changes after the SO. When a VO is approved, its items go to PO or Client PO automatically." },
-  po: { title: "PO · what we buy", sub: "Items come from the VOs · plaster and paint litres are automatic · you fill the yellow fields" },
-  "client-po": { title: "Client PO · what the client buys" },
-};
 
 export function RenovationBetaWorkspace(): ReactElement {
   const id = Number(useParams().id);
@@ -84,12 +80,11 @@ export function RenovationBetaWorkspace(): ReactElement {
     steps: d.flow.steps, currentKey: d.flow.current, currentIndex: d.flow.currentIndex, soDate: d.so?.so_date ?? null, handoverOn: p.handed_over_at ?? p.planned_handover_date, tasks: d.tasks, today,
   });
   const hold = d.hold ? (d.hold.flag === "in_defect" ? "In defect" : "On hold") : null;
-  const later = LATER_TABS[current.key];
 
   return (
     <div className="bws" style={{ display: "flex", flexDirection: "column", gap: 20, width: "100%", minWidth: 0, paddingBottom: 40 }}>
       <WsStyle />
-      <BetaWsHeader d={d} p={board.p} canWrite={can("projects.write")} today={today} openDialog={setDialog} />
+      <BetaWsHeader d={d} p={board.p} people={board.m.everyone} canWrite={can("projects.write")} today={today} openDialog={setDialog} />
       <BetaWsStepper items={items} hold={hold} />
 
       <nav aria-label="Project sections" className="tabs">
@@ -108,11 +103,7 @@ export function RenovationBetaWorkspace(): ReactElement {
 
       <div aria-live="polite">{notice && <WsNotice tone={notice.tone}>{notice.text}</WsNotice>}</div>
 
-      {current.bundle !== "A" ? (
-        <WsCard title={later?.title ?? current.label} sub={later?.sub}>
-          <p style={{ fontSize: 14, color: BETA.muted }}>This section is being built (part {current.bundle} of the Beta plan).</p>
-        </WsCard>
-      ) : ws.error || rec.error ? (
+      {ws.error || rec.error ? (
         <p role="alert" style={{ padding: "24px 0", fontSize: 14, color: WS.red }}>This section could not be loaded: {ws.error ?? rec.error}</p>
       ) : !props ? (
         <p style={{ padding: "40px 0", textAlign: "center", fontSize: 14, color: BETA.muted }}>Loading {current.label.toLowerCase()}...</p>
@@ -123,6 +114,9 @@ export function RenovationBetaWorkspace(): ReactElement {
           {tab === "site" && <BetaSiteTab {...props} />}
           {tab === "defects" && <BetaDefectsTab {...props} />}
           {tab === "timeline" && <BetaTimelineTab {...props} />}
+          {tab === "vo" && <BetaVoTab {...props} />}
+          {tab === "po" && <BetaPoTab {...props} />}
+          {tab === "client-po" && <BetaClientPoTab {...props} />}
         </div>
       )}
 

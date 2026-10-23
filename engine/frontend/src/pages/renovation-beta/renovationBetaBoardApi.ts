@@ -11,7 +11,10 @@ export type DesignKind = "3d" | "2d";
 export type AppointmentKind = "site_measure" | "carpentry_measure" | "site_briefing";
 export type EventType = "client" | "measure" | "briefing" | "meeting" | "w3d" | "w2d" | "amend" | "po" | "update";
 
-export interface BetaBoardPerson { id: number; name: string; roles: string[] }
+/** Every person of the company. `offered` (the project page's rule, routes/renovationProject.ts GET /people) is true
+    only for people linked to an active user account; position and department come from that account. Older servers
+    send neither, and then every person is offered. */
+export interface BetaBoardPerson { id: number; name: string; roles: string[]; position?: string | null; department?: string | null; offered?: boolean }
 export interface BetaBoardRef { id: number; name: string }
 
 export interface BetaBoardAppointment {
@@ -36,8 +39,12 @@ export interface BetaBoardProject {
   createdOn: string | null;
   handoverOn: string | null;
   lead: BetaBoardRef | null;
+  /** The first of people3d / people2d. */
   person3d: BetaBoardRef | null;
   person2d: BetaBoardRef | null;
+  /** Everyone drawing the 3D / the 2D, in the order picked (migration 0148). Older servers send only person3d/person2d. */
+  people3d?: BetaBoardRef[];
+  people2d?: BetaBoardRef[];
   sitePic: BetaBoardRef | null;
   measuredOn: string | null;
   start3dOn: string | null;
@@ -76,8 +83,9 @@ export interface DesignPatch {
   start3dOn?: string | null;
   start2dOn?: string | null;
   poDoneOn?: string | null;
-  person3dId?: number | null;
-  person2dId?: number | null;
+  /** Everyone drawing the 3D / the 2D, in order; an empty list clears it. */
+  person3dIds?: number[];
+  person2dIds?: number[];
 }
 
 export interface AppointmentBody { onDate: string; atTime: string | null; personId: number | null; withText: string | null }
@@ -178,8 +186,8 @@ export interface AssignInput {
   designerPersonId?: number;
   /** Only sent when the site PIC changed. */
   picPersonId?: number | null;
-  person3dId: number | null;
-  person2dId: number | null;
+  person3dIds: number[];
+  person2dIds: number[];
 }
 
 /** Assign: the design lead and site PIC on the project, the 3D and 2D people on the Beta design row. */
@@ -188,7 +196,7 @@ export async function assignPeople(projectId: number, a: AssignInput): Promise<v
   if (designerPersonId !== undefined || picPersonId !== undefined) {
     await simpleApi.setPeople(projectId, { ...(designerPersonId !== undefined ? { designerPersonId } : {}), ...(picPersonId !== undefined ? { picPersonId } : {}) });
   }
-  await boardApi.saveDesign(projectId, { person3dId: a.person3dId, person2dId: a.person2dId });
+  await boardApi.saveDesign(projectId, { person3dIds: a.person3dIds, person2dIds: a.person2dIds });
 }
 
 /** "Client approved": the section 9 approval on the newest file of that kind. */

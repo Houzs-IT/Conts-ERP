@@ -1439,10 +1439,10 @@ export const SalesOrderDetail = () => {
         onRemove: async () => {
           if (await askConfirm({
             title: removeViaAmendment
-              ? `Remove ${it.item_code} in this amendment?`
+              ? `Remove ${it.item_code} in this VO?`
               : `Remove ${it.item_code} from this SO?`,
             body: removeViaAmendment
-              ? 'The line stays until the amendment is approved — Submit the amendment to request its removal.'
+              ? 'The line stays until the VO is approved — submit the VO to request its removal.'
               : undefined,
             confirmLabel: 'Remove',
             danger: true,
@@ -2070,7 +2070,7 @@ export const SalesOrderDetail = () => {
                   <Button variant="primary"
                     onClick={() => { void submitAmendment(); }} disabled={migratedLocked || savingOrder || createAmendment.isPending}>
                     <Save {...ICON} />
-                    <span>{savingOrder || createAmendment.isPending ? 'Submitting…' : 'Submit amendment request'}</span>
+                    <span>{savingOrder || createAmendment.isPending ? 'Submitting…' : 'Submit VO'}</span>
                   </Button>
                 ) : (
                   <Button variant="primary"
@@ -4307,7 +4307,7 @@ const AmendmentDiffModal = ({
             <p className={styles.muted}>
               {allLines.length > 0
                 ? 'No line changes recorded — every line matches the order exactly. This request predates order-detail tracking, so what was asked for is in the Reason below.'
-                : 'This amendment has no changes recorded.'}
+                : 'This VO has no changes recorded.'}
             </p>
           ) : (
             <table className={styles.table}>
