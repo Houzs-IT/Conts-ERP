@@ -141,6 +141,69 @@ export function resolve(rows: Chosen, role: string, area: Area): Resolved {
 export const builtIn = (role: string, area: Area): Level => resolve(new Map(), role, area).level;
 
 /**
+ * Permissions by department, position and user (migration 0145, PLAN.md). Nothing calls this yet: accessFor and
+ * levelsFor still follow the role. Rules are keyed by area key, or `group:<Category>` for a category baseline.
+ */
+export type PermissionLevel = Level;
+export type DepartmentKind = 'management' | 'staff' | 'cleaning' | 'maintenance';
+/** Where a person's level in an area comes from. 'fixed': management, always Full. 'none': nothing sets it. */
+export type Origin = 'department' | 'position' | 'user' | 'fixed' | 'none';
+export type RuleMap = ReadonlyMap<string, Setting>;
+export interface DepartmentRules { rules: RuleMap }
+export interface PositionRules { rules: RuleMap }
+export interface UserOverrides { rules: RuleMap }
+export interface Rules { department: DepartmentRules; position: PositionRules; user: UserOverrides }
+export interface Who { userId: string; departmentId: string | null; positionId: string | null; kind: DepartmentKind }
+export interface Resolution { level: PermissionLevel; origin: Origin }
+
+const noRules: Rules = { department: { rules: new Map() }, position: { rules: new Map() }, user: { rules: new Map() } };
+const levelIn = (rules: RuleMap, key: string): PermissionLevel | null => {
+  const v = rules.get(key);
+  return isLevel(v) ? v : null;
+};
+
+/**
+ * One person's level in one area. Management is Full and cannot be changed; cleaning and maintenance have no desk
+ * areas. Everyone else: the area's own setting at user, then position, then department; then the category baseline at
+ * position, then department; then No access. An area setting at any tier beats every baseline, so a door a department
+ * closes explicitly stays closed. 'inherit' counts as not set. The side closing the other side's categories is not
+ * part of this.
+ */
+export function resolveFor(rules: Rules, who: Pick<Who, 'kind'>, area: Area): Resolution {
+  if (who.kind === 'management') return { level: 'full', origin: 'fixed' };
+  if (who.kind !== 'staff') return { level: 'none', origin: 'none' };
+  const group = groupKey(area.group);
+  const steps: [Origin, RuleMap, string][] = [
+    ['user', rules.user.rules, area.key],
+    ['position', rules.position.rules, area.key],
+    ['department', rules.department.rules, area.key],
+    ['position', rules.position.rules, group],
+    ['department', rules.department.rules, group],
+  ];
+  for (const [origin, map, key] of steps) {
+    const level = levelIn(map, key);
+    if (level) return { level, origin };
+  }
+  return { level: 'none', origin: 'none' };
+}
+
+/** The stored rules that apply to this person, read in one query. Management and field accounts have none to read. */
+export async function rulesFor(env: Env, who: Who): Promise<Rules> {
+  if (who.kind !== 'staff') return noRules;
+  const rows = await all<{ scope: string; area: string; level: string }>(env,
+    `SELECT scope, area, level FROM access_rules
+      WHERE (scope = 'user' AND scope_id = ?) OR (scope = 'position' AND scope_id = ?) OR (scope = 'department' AND scope_id = ?)`,
+    who.userId, who.positionId, who.departmentId);
+  const maps = { department: new Map<string, Setting>(), position: new Map<string, Setting>(), user: new Map<string, Setting>() };
+  for (const r of rows) {
+    if (r.scope !== 'department' && r.scope !== 'position' && r.scope !== 'user') continue;
+    // A category row holds a level; an area row a level or 'inherit', as in role_access.
+    if ((GROUP_KEYS.has(r.area) && isLevel(r.level)) || (BY_KEY.has(r.area) && isSetting(r.level))) maps[r.scope].set(r.area, r.level);
+  }
+  return { department: { rules: maps.department }, position: { rules: maps.position }, user: { rules: maps.user } };
+}
+
+/**
  * Endpoints that belong to a different area than their first path segment says, because a screen of that other
  * area is the one that calls them. Matched before the segment. area null: a read every desk role needs whatever
  * its levels (a picker's reference list); the handler's own checks still apply.
