@@ -10,6 +10,8 @@ import { StatusBadge } from '../../components/StatusBadge';
 import Icon from '../../components/Icon';
 import { Select, SearchSelect } from '../../components/Select';
 import { cx } from '../../lib/design-tokens';
+import { bankName } from '../../lib/vocabulary';
+import { BANKS } from '../units/shared';
 import { Eyebrow, Figure } from '../../components/Metric';
 import type { StatementState } from '../../lib/types';
 import type { RevenueModel, ContractCode } from '../../lib/revenueModel';
@@ -263,7 +265,8 @@ export function Modal({ title, sub, onClose, onSubmit, submitLabel, canSubmit, c
             {sub && <p className="m-0 text-copy text-muted-ink">{sub}</p>}
           </div>
           <div className="py-4 px-[22px] flex flex-col gap-[14px]">{children}</div>
-          <div className="py-[14px] px-[22px] [border-top:1px_solid_var(--color-line)] bg-page flex justify-end gap-[9px]">
+          {/* Pinned to the bottom so Cancel and the action stay in view when the form is taller than a phone screen. */}
+          <div className="sticky bottom-0 py-[14px] px-[22px] [border-top:1px_solid_var(--color-line)] bg-page flex justify-end gap-[9px]">
             <Button size="sm" variant="secondary" type="button" onClick={onClose}>Cancel</Button>
             <Button size="sm" variant="primary" type="submit" disabled={!canSubmit} disabledReason="Fill the required fields first">{submitLabel}</Button>
           </div>
@@ -275,23 +278,46 @@ export function Modal({ title, sub, onClose, onSubmit, submitLabel, canSubmit, c
 
 export function AddOwnerModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: (o: Omit<Owner, 'id' | 'units' | 'portalInvited' | 'contract' | 'defaultManagementFeePct'>) => void }) {
   const [f, setF] = useState({ displayName: '', email: '', phone: '', ic: '', bankName: '', bankAccount: '', accountHolder: '' });
-  const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF(s => ({ ...s, [k]: e.target.value }));
+  const [holderIsOwner, setHolderIsOwner] = useState(true);
+  // A field's error shows once it has been typed in and left, never because the cursor merely passed through it.
+  const [touched, setTouched] = useState<Record<string, boolean>>({});
+  const [typed, setTyped] = useState<Record<string, boolean>>({});
+  const set = (k: keyof typeof f) => (e: { target: { value: string } }) => { setF(s => ({ ...s, [k]: e.target.value })); setTyped(t => ({ ...t, [k]: true })); };
+  const blur = (k: string) => () => setTouched(t => ({ ...t, [k]: !!typed[k] }));
   // Email is optional: an owner is often added before their email is known. If given, it must look like one.
-  const canSubmit = f.displayName.trim() !== '' && (f.email.trim() === '' || /.+@.+\..+/.test(f.email)) && !phoneProblem(f.phone);
+  const emailBad = f.email.trim() !== '' && !/.+@.+\..+/.test(f.email);
+  const accountBad = f.bankAccount.trim() !== '' && !/^\d{6,20}$/.test(f.bankAccount.replace(/[\s-]/g, ''));
+  const holder = holderIsOwner ? f.displayName.trim() : f.accountHolder.trim();
+  const canSubmit = f.displayName.trim() !== '' && !emailBad && !phoneProblem(f.phone) && !accountBad && (holderIsOwner || holder !== '');
   return (
     <Modal title="Add owner" sub="Create the owner, then link units and preset the fee or GRR." onClose={onClose} submitLabel="Add owner" canSubmit={canSubmit}
-      onSubmit={() => onSubmit({ displayName: f.displayName.trim(), email: f.email.trim(), phone: f.phone.trim() || null, ic: f.ic.trim() || null, bankName: f.bankName.trim() || null, bankAccount: f.bankAccount.trim() || null, accountHolder: f.accountHolder.trim() || f.displayName.trim() })}>
-      <Field label="Owner name" placeholder="e.g. Lim Chee Keong" value={f.displayName} onChange={set('displayName')} />
+      onSubmit={() => onSubmit({ displayName: f.displayName.trim(), email: f.email.trim(), phone: f.phone.trim() || null, ic: f.ic.trim() || null, bankName: f.bankName || null, bankAccount: f.bankAccount.replace(/[\s-]/g, '') || null, accountHolder: holder || f.displayName.trim() })}>
+      <p className="m-0 -mt-2 text-meta text-muted-ink"><span aria-hidden className="text-danger">*</span> Required. Everything else can be added later.</p>
+      <Field label={<>Owner name <span aria-hidden className="text-danger">*</span></>} required autoComplete="off" placeholder="e.g. Lim Chee Keong"
+        value={f.displayName} onChange={set('displayName')} onBlur={blur('displayName')}
+        error={touched.displayName && !f.displayName.trim() ? 'Enter the owner\'s name as on their IC or passport.' : undefined} />
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <Field label="Email" type="email" placeholder="owner@email.com" value={f.email} onChange={set('email')} />
+        <Field label="Email" type="email" autoComplete="off" placeholder="e.g. chee.keong@gmail.com" value={f.email} onChange={set('email')} onBlur={blur('email')}
+          error={touched.email && emailBad ? 'That does not look like an email address, e.g. name@gmail.com.' : undefined} />
         <PhoneInput label="Phone" value={f.phone} onChange={v => setF(s => ({ ...s, phone: v }))} />
       </div>
-      <Field label="IC / passport" placeholder="Accepts both formats" value={f.ic} onChange={set('ic')} />
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Bank" placeholder="e.g. PBBB" value={f.bankName} onChange={set('bankName')} />
-        <Field label="Bank account" placeholder="Account number" value={f.bankAccount} onChange={set('bankAccount')} />
+      <Field label="IC / passport number" autoComplete="off" placeholder="e.g. 900101-14-1234" help="Malaysian IC or a passport number." value={f.ic} onChange={set('ic')} />
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <Select showLabel size="md" label="Bank" value={f.bankName} onChange={v => setF(s => ({ ...s, bankName: v }))} placeholder="Choose the bank"
+          options={BANKS.map(c => ({ value: c, label: bankName(c) ?? c }))} />
+        <Field label="Account number" inputMode="numeric" autoComplete="off" maxLength={30} placeholder="e.g. 5140 1234 5678" value={f.bankAccount}
+          onChange={set('bankAccount')} onBlur={blur('bankAccount')}
+          error={touched.bankAccount && accountBad ? 'Digits only, 6 to 20 of them. Spaces and dashes are fine.' : undefined} />
       </div>
-      <Field label="Account holder" placeholder="If different from owner name" value={f.accountHolder} onChange={set('accountHolder')} />
+      <label className="flex items-center gap-2 text-copy text-ink cursor-pointer">
+        <input type="checkbox" checked={holderIsOwner} onChange={e => setHolderIsOwner(e.target.checked)} />
+        The account is in the owner's name
+      </label>
+      {!holderIsOwner && (
+        <Field label={<>Account holder <span aria-hidden className="text-danger">*</span></>} required autoComplete="off" maxLength={120} placeholder="e.g. Lim Holdings Sdn Bhd"
+          help="The name printed on the bank account." value={f.accountHolder} onChange={set('accountHolder')} onBlur={blur('accountHolder')}
+          error={touched.accountHolder && !f.accountHolder.trim() ? 'Enter the name on the account, or tick the box above.' : undefined} />
+      )}
     </Modal>
   );
 }

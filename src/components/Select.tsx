@@ -3,7 +3,11 @@ import Icon from './Icon';
 import { Floating } from './DataTableParts';
 import { cx } from '../lib/design-tokens';
 
-export interface SelectOption { value: string; label: string; group?: string; hint?: string; disabled?: boolean }
+export interface SelectOption {
+  value: string; label: string; group?: string; hint?: string; disabled?: boolean;
+  /** Extra words the search matches but the row never shows, e.g. a country's letter code (MY). */
+  keywords?: string;
+}
 
 const CONTROL = 'h-9 rounded-control border border-solid border-line bg-card text-ink font-sans text-copy cursor-pointer';
 
@@ -43,9 +47,15 @@ export function Select({ value, onChange, options, label, showLabel, placeholder
  * A searchable picker for long lists (139 units): type to filter, options grouped (by building) and
  * sorted A to Z, arrow keys and Enter to choose, Escape to close. `allLabel` adds a first "All ..." row.
  */
-export function SearchSelect({ value, onChange, options, label, showLabel, allLabel, placeholder = 'Search', className, renderOption, size = 'sm' }: {
+export function SearchSelect({ value, onChange, options, label, showLabel, allLabel, placeholder = 'Search', className, buttonClassName, menuWidth, renderOption, shortLabel, size = 'sm' }: {
   value: string; onChange: (v: string) => void; options: SelectOption[]; label: string;
   showLabel?: boolean; allLabel?: string; placeholder?: string; className?: string;
+  /** The open list's least width in px, for a button narrower than its options need (the phone country code). */
+  menuWidth?: number;
+  /** Extra classes for the button itself, e.g. to join it to the field beside it (the phone country code). */
+  buttonClassName?: string;
+  /** What the closed button shows for the chosen option, when that should be shorter than its row ("+60", not "Malaysia"). */
+  shortLabel?: (o: SelectOption) => string;
   renderOption?: (o: SelectOption) => ReactNode;
   /** md = 40px, the height of the text fields in a dialog form; sm = 36px for filter bars. */
   size?: 'sm' | 'md';
@@ -53,52 +63,55 @@ export function SearchSelect({ value, onChange, options, label, showLabel, allLa
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
   const [active, setActive] = useState(0);
-  const box = useRef<HTMLDivElement>(null);
-  const input = useRef<HTMLInputElement>(null);
+  const button = useRef<HTMLButtonElement>(null);
   const listId = useId();
 
   const sorted = useMemo(() => [...options].sort((a, b) =>
     (a.group ?? '').localeCompare(b.group ?? '', 'en', { numeric: true }) || a.label.localeCompare(b.label, 'en', { numeric: true })), [options]);
   const shown = useMemo(() => {
     const t = q.trim().toLowerCase();
-    const hits = t ? sorted.filter(o => `${o.group ?? ''} ${o.label} ${o.hint ?? ''}`.toLowerCase().includes(t)) : sorted;
+    const hits = t ? sorted.filter(o => `${o.group ?? ''} ${o.label} ${o.hint ?? ''} ${o.keywords ?? ''}`.toLowerCase().includes(t)) : sorted;
+    // A search that is exactly a row's code (MY, 65 or +65) puts that row first, ahead of names that merely contain it.
+    const bare = t.replace(/^\+/, '');
+    const exact = (o: SelectOption) => o.keywords?.toLowerCase() === bare || o.hint?.toLowerCase().replace(/^\+/, '') === bare;
+    if (t) hits.sort((a, b) => Number(exact(b)) - Number(exact(a)));
     return allLabel && !t ? [{ value: '', label: allLabel }, ...hits] : hits;
   }, [sorted, q, allLabel]);
   const current = options.find(o => o.value === value);
 
   useEffect(() => {
-    if (!open) return;
-    setActive(Math.max(0, shown.findIndex(o => o.value === value)));
-    input.current?.focus();
-    const onDoc = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node)) setOpen(false); };
-    document.addEventListener('mousedown', onDoc);
-    return () => document.removeEventListener('mousedown', onDoc);
+    if (open) setActive(Math.max(0, shown.findIndex(o => o.value === value)));
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { setActive(0); }, [q]);
 
-  const choose = (o?: SelectOption) => { if (!o || o.disabled) return; onChange(o.value); setOpen(false); setQ(''); };
+  const close = () => { setOpen(false); setQ(''); };
+  const choose = (o?: SelectOption) => { if (!o || o.disabled) return; onChange(o.value); close(); };
   const onKey = (e: React.KeyboardEvent) => {
-    if (e.key === 'Escape') { e.preventDefault(); setOpen(false); setQ(''); }
+    if (e.key === 'Escape') { e.preventDefault(); close(); button.current?.focus(); }
     else if (e.key === 'ArrowDown') { e.preventDefault(); setActive(a => Math.min(a + 1, shown.length - 1)); }
     else if (e.key === 'ArrowUp') { e.preventDefault(); setActive(a => Math.max(a - 1, 0)); }
     else if (e.key === 'Enter') { e.preventDefault(); choose(shown[active]); }
+    // The list sits at the end of the page, so Tab from it would leave the form: hand focus back to the button
+    // first and let Tab carry on from there to the next field.
+    else if (e.key === 'Tab') { close(); button.current?.focus(); }
   };
 
   let lastGroup: string | undefined;
   return (
-    <div ref={box} className={cx('relative flex flex-col gap-1.5 min-w-0', className)}>
+    <div className={cx('relative flex flex-col gap-1.5 min-w-0', className)}>
       <span className={showLabel ? 'text-meta font-medium text-muted-ink' : 'absolute w-px h-px overflow-hidden [clip:rect(0_0_0_0)]'}>{label}</span>
-      <button type="button" aria-haspopup="listbox" aria-expanded={open} aria-label={`${label}: ${current?.label ?? allLabel ?? 'none'}`}
+      <button ref={button} type="button" aria-haspopup="listbox" aria-expanded={open} aria-label={`${label}: ${current?.label ?? allLabel ?? 'none'}`}
         onClick={() => setOpen(v => !v)}
-        className={cx(CONTROL, 'w-full flex items-center gap-2 pl-3 pr-2 text-left', size === 'md' && 'h-10')}>
-        <span className={cx('flex-1 min-w-0 truncate', !current && !/^All/.test(allLabel ?? '') && 'text-muted-ink')}>{current ? (current.group ? `${current.label}` : current.label) : (allLabel ?? 'Choose')}</span>
+        className={cx(CONTROL, 'w-full flex items-center gap-2 pl-3 pr-2 text-left', size === 'md' && 'h-10', buttonClassName)}>
+        <span className={cx('flex-1 min-w-0 truncate', !current && !/^All/.test(allLabel ?? '') && 'text-muted-ink')}>{current ? (shortLabel?.(current) ?? current.label) : (allLabel ?? 'Choose')}</span>
         <Icon name="ChevronDown" size="sm" color="var(--color-muted-ink)" />
       </button>
-      {open && (
-        <div className={cx('absolute z-30 top-[calc(100%+4px)] left-0 w-full max-w-[calc(100vw-32px)]', size === 'md' ? 'min-w-0' : 'min-w-[260px]', 'bg-card border border-solid border-line rounded-card shadow-[var(--shadow-overlay)] overflow-hidden')}>
+      {/* Drawn on top of the page, so a dialog or a scrolling table cannot cut the list off. */}
+      <Floating anchor={button} open={open} onClose={close} label={label}
+        width={Math.max(button.current?.offsetWidth ?? 0, menuWidth ?? (size === 'md' ? 0 : 260))}>
           <div className="flex items-center gap-2 px-3 h-10 [border-bottom:1px_solid_var(--color-line-soft)]">
             <Icon name="Search" size="sm" color="var(--color-muted-ink)" />
-            <input ref={input} value={q} onChange={e => setQ(e.target.value)} onKeyDown={onKey} placeholder={placeholder}
+            <input autoFocus value={q} onChange={e => setQ(e.target.value)} onKeyDown={onKey} placeholder={placeholder}
               role="combobox" aria-controls={listId} aria-expanded aria-activedescendant={shown[active] ? `${listId}-${active}` : undefined}
               className="flex-1 min-w-0 border-none outline-none bg-transparent font-sans text-copy text-ink" />
           </div>
@@ -122,8 +135,7 @@ export function SearchSelect({ value, onChange, options, label, showLabel, allLa
               );
             })}
           </div>
-        </div>
-      )}
+      </Floating>
     </div>
   );
 }
@@ -218,24 +230,16 @@ export interface MenuItem { key: string; label: string; hint?: string; icon?: st
  */
 export function Menu({ trigger, items, label, align = 'right' }: { trigger: ReactNode; items: MenuItem[]; label: string; align?: 'left' | 'right' }) {
   const [open, setOpen] = useState(false);
-  const box = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const onDoc = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node)) setOpen(false); };
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
-    document.addEventListener('mousedown', onDoc);
-    document.addEventListener('keydown', onKey);
-    return () => { document.removeEventListener('mousedown', onDoc); document.removeEventListener('keydown', onKey); };
-  }, [open]);
+  const button = useRef<HTMLButtonElement>(null);
   return (
-    <div ref={box} className="relative inline-flex">
-      <button type="button" aria-haspopup="menu" aria-expanded={open} aria-label={label} onClick={() => setOpen(v => !v)}
+    <div className="relative inline-flex">
+      <button ref={button} type="button" aria-haspopup="menu" aria-expanded={open} aria-label={label} onClick={() => setOpen(v => !v)}
         className="inline-flex items-center gap-1 p-0 bg-transparent border-none cursor-pointer font-sans">
         {trigger}
       </button>
-      {open && (
-        <div role="menu" aria-label={label}
-          className={cx('absolute z-30 top-[calc(100%+6px)] min-w-[240px] max-w-[calc(100vw-32px)] bg-card border border-solid border-line rounded-card shadow-[var(--shadow-overlay)] py-1', align === 'right' ? 'right-0' : 'left-0')}>
+      <Floating anchor={button} open={open} onClose={() => setOpen(false)} label={label} width={280} align={align}>
+        <div role="menu" aria-label={label} className="py-1"
+          onKeyDown={e => { if (e.key === 'Tab') { setOpen(false); button.current?.focus(); } }}>
           {items.map((it, i) => {
             const off = !!it.disabledReason;
             return (
@@ -255,7 +259,7 @@ export function Menu({ trigger, items, label, align = 'right' }: { trigger: Reac
             );
           })}
         </div>
-      )}
+      </Floating>
     </div>
   );
 }

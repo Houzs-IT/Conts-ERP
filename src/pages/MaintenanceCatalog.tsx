@@ -2,6 +2,7 @@ import { useMemo, useState, type ReactNode } from 'react';
 import { cx } from '../lib/design-tokens';
 import { StatusBadge } from '../components/StatusBadge';
 import { Button } from '../components/Button';
+import { ConfirmButton } from '../components/ConfirmDialog';
 import { DataTable, type Column } from '../components/DataTable';
 import { Select } from '../components/Select';
 import { MoneyInput, NumberInput } from '../components/inputs';
@@ -155,9 +156,10 @@ function SkuModal({ sku, onClose, onSave, onToggleActive }: {
       sub="A repair item with a preset selling price. Picking it on a job fills the quote — still editable."
       onClose={onClose} width={520}
       footer={<>
-        {sku && onToggleActive && (
-          <Button size="sm" variant="secondary" onClick={onToggleActive}>{sku.active ? 'Retire' : 'Restore'}</Button>
-        )}
+        {sku && onToggleActive && (sku.active
+          ? <ConfirmButton variant="secondary" onConfirm={onToggleActive} confirm={{ title: `Retire ${sku.name}?`,
+              body: 'It can no longer be picked for new jobs. Jobs that already use it keep their price. You can restore it later.', confirmLabel: 'Retire' }}>Retire</ConfirmButton>
+          : <Button size="sm" variant="secondary" onClick={onToggleActive}>Restore</Button>)}
         <div className="flex-1" />
         <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
         <Button size="sm" variant="primary" onClick={() => void submit()} loading={busy} disabled={!valid} disabledReason={stockOk ? 'Add a code, name and price first.' : 'Enter how many are on hand.'}>
