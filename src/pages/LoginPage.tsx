@@ -10,6 +10,8 @@ import { CodeInput } from '../components/inputs/CodeInput';
 import { Segmented } from '../components/Metric';
 import { pinPolicy } from '../lib/pin';
 import { PinInput } from '../components/inputs/PinInput';
+import { EmployeeIdInput } from '../components/inputs/EmployeeIdInput';
+import { PinHelpSheet } from '../components/PinHelpSheet';
 import '../styles/login.css';
 import { go } from '../lib/go';
 
@@ -48,6 +50,7 @@ export default function LoginPage({ forceChangePassword = false, resetToken = nu
   const [remember, setRemember] = useState(true);
   const [busy, setBusy] = useState(false);
   const [supportPhone, setSupportPhone] = useState(SUPPORT_PHONE);
+  const [pinHelp, setPinHelp] = useState(false);
   const [error, setError] = useState('');
   const [sent, setSent] = useState(false);
   // Set once the password is right on an account with two-step sign-in; the code is asked for next.
@@ -238,10 +241,7 @@ export default function LoginPage({ forceChangePassword = false, resetToken = nu
             )}
 
             {screen === 'pin' && (
-              <Field label="Employee ID" required autoComplete="username" inputMode="numeric" value={`EMP-${empNo}`}
-                onChange={e => setEmpNo(e.target.value.replace(/^EMP-?/i, '').replace(/\D/g, '').slice(0, 7))}
-                onFocus={e => { const el = e.currentTarget; requestAnimationFrame(() => el.setSelectionRange(el.value.length, el.value.length)); }}
-                placeholder="EMP-001" style={{ letterSpacing: '0.04em', fontVariantNumeric: 'tabular-nums' }} />
+              <EmployeeIdInput required value={empNo} onChange={setEmpNo} />
             )}
 
             {screen !== 'change' && screen !== 'reset' && screen !== 'code' && screen !== 'pin' && (
@@ -305,7 +305,10 @@ export default function LoginPage({ forceChangePassword = false, resetToken = nu
           ) : null}
 
           {screen === 'pin' && (
-            <span className="text-meta text-muted-ink text-center text-pretty">Forgot your PIN? Ask the office for a new one.</span>
+            <Button type="button" variant="tertiary" size="touch" className="self-center" icon={<Icon name="CircleHelp" size="sm" />}
+              aria-haspopup="dialog" onClick={() => setPinHelp(true)}>
+              Forgot your PIN?
+            </Button>
           )}
 
           {screen !== 'signin' && screen !== 'pin' && !forceChangePassword && (
@@ -315,6 +318,7 @@ export default function LoginPage({ forceChangePassword = false, resetToken = nu
             </Button>
           )}
         </form>
+        <PinHelpSheet open={pinHelp} onClose={() => setPinHelp(false)} supportPhone={supportPhone} employeeNo={empNo} />
 
         <div className="flex items-center justify-between gap-4 flex-wrap text-caption text-faint">
           <span>The Conts Sdn Bhd · 202301027399</span>

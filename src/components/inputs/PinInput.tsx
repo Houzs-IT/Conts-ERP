@@ -37,16 +37,19 @@ export function PinInput({ value, onChange, length = 6, label = 'PIN', autoCompl
         <div className="relative flex-1 min-w-0 grid gap-2" style={{ gridTemplateColumns: `repeat(${length}, minmax(0, 1fr))` }}>
           {Array.from({ length }, (_, i) => {
             const digit = value[i];
+            const active = focused && i === next;
             return (
               <div key={i} aria-hidden
                 className={cx(
                   'h-12 grid place-items-center rounded-control border border-solid bg-card text-[20px] font-semibold tabular-nums text-ink transition-[border-color,box-shadow] duration-[var(--motion-fast)]',
                   error ? 'border-danger-line'
-                    : focused && i === next ? 'border-[var(--color-border-focus)] [box-shadow:0_0_0_2px_color-mix(in_srgb,var(--color-border-focus)_35%,transparent)]'
-                    : digit ? 'border-[var(--color-text-muted)]' : 'border-line',
+                    : active ? 'border-[var(--color-border-focus)] [box-shadow:0_0_0_3px_color-mix(in_srgb,var(--color-border-focus)_45%,transparent)]'
+                    : digit ? 'border-ink' : 'border-[var(--color-line-input)]',
                   rest.disabled && 'opacity-50',
                 )}>
-                {digit && (show ? digit : <span className="w-2.5 h-2.5 rounded-full bg-ink" />)}
+                {digit ? (show ? digit : <span className="w-2.5 h-2.5 rounded-full bg-ink" />)
+                  // The real caret is hidden with the input, so the box where the next digit goes draws one.
+                  : active && <span className="w-0.5 h-6 rounded-full bg-ink motion-safe:animate-pulse" />}
               </div>
             );
           })}
