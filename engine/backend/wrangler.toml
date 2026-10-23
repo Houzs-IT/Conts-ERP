@@ -11,6 +11,8 @@ compatibility_flags = ["nodejs_compat"]
 AUTOCOUNT_API_URL = "https://autocount.invalid/"
 AUTOCOUNT_SYNC_DISABLED = "true"
 COSTING_DISPLAY_ENABLED = "true"
+# Beta menu and routes: staging only. wrangler.production.toml must never set this.
+BETA_ENABLED = "true"
 SESSION_FALLBACK_ENABLED = "false"
 SESSION_FALLBACK_TTL_MS = "60000"
 HOUZS_OWNS_2990 = "true"

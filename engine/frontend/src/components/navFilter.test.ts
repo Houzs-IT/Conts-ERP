@@ -381,3 +381,27 @@ describe("nav — every sub-group hub groupId still resolves", () => {
     expect(g!.children?.length ?? 0).toBeGreaterThan(0);
   });
 });
+
+describe("nav: Beta shows only where the server switched it on (owner, 23 Oct 2026)", () => {
+  const office = (over: Partial<AuthUser> = {}) =>
+    rep({ position_name: "Admin", department_name: "Operations", permissions: ["*"], ...over });
+  const all = { "projects.list": "full" };
+
+  it("hides Beta on desktop and phone when beta_enabled is missing or false", () => {
+    for (const u of [office(), office({ beta_enabled: false })]) {
+      expect(desktopPaths(ctxFor(u, all))).not.toContain("/beta/projects");
+      expect(phoneAllows(ctxFor(u, all), "/beta/projects")).toBe(false);
+    }
+  });
+
+  it("shows Beta on desktop and phone when beta_enabled is true", () => {
+    const u = office({ beta_enabled: true });
+    expect(desktopPaths(ctxFor(u, all))).toContain("/beta/projects");
+    expect(phoneAllows(ctxFor(u, all), "/beta/projects")).toBe(true);
+  });
+
+  it("still needs project list access", () => {
+    const u = office({ beta_enabled: true, permissions: [] });
+    expect(desktopPaths(ctxFor(u, {}))).not.toContain("/beta/projects");
+  });
+});

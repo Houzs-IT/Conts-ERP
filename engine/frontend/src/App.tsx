@@ -55,6 +55,8 @@ const MyCases = lazy(() => import("./pages/MyCases").then((m) => ({ default: m.M
 const MyCaseDetail = lazy(() => import("./pages/MyCases").then((m) => ({ default: m.MyCaseDetail })));
 const Projects = lazy(() => import("./pages/Projects").then((m) => ({ default: m.Projects })));
 const ProjectDetail = lazy(() => import("./pages/Projects").then((m) => ({ default: m.ProjectDetail })));
+const RenovationBetaProjects = lazy(() => import("./pages/renovation-beta/RenovationBetaProjects").then((m) => ({ default: m.RenovationBetaProjects })));
+const RenovationBetaWorkspace = lazy(() => import("./pages/renovation-beta/RenovationBetaWorkspace").then((m) => ({ default: m.RenovationBetaWorkspace })));
 const FairReportFill = lazy(() => import("./pages/FairReportFill").then((m) => ({ default: m.FairReportFill })));
 const ScheduleReconcile = lazy(() => import("./pages/ScheduleReconcile").then((m) => ({ default: m.ScheduleReconcile })));
 const SetupInvoiceFill = lazy(() => import("./pages/SetupInvoiceFill").then((m) => ({ default: m.SetupInvoiceFill })));
@@ -456,6 +458,13 @@ function ContsModuleGate({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+/** Beta pages open only where the server runs with BETA_ENABLED (staging); elsewhere the address goes home. */
+function BetaGuard({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth();
+  if (!user?.beta_enabled) return <Navigate to={CONTS_HOME} replace />;
+  return <>{children}</>;
+}
+
 export default function App() {
   return (
     <GlobalSearchProvider>
@@ -553,6 +562,8 @@ export default function App() {
             </PageGuard>
           }
         />
+        <Route path="/beta/projects" element={<BetaGuard><PageGuard page="projects.list"><RenovationBetaProjects /></PageGuard></BetaGuard>} />
+        <Route path="/beta/projects/:id" element={<BetaGuard><PageGuard page="projects.list"><RenovationBetaWorkspace /></PageGuard></BetaGuard>} />
         <Route
           path="/fair-report-fill"
           element={
