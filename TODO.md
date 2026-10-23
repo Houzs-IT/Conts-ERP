@@ -514,7 +514,9 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Legacy OUG shows two 2D v1 entries: Notion replaced the file between the 11 Oct and 20 Oct exports and the import numbers versions per export.
 - Not imported: the Notion "Site Visit" calendar (477 entries May to Oct 2026, incl. 104 design amendments and 50 dated site measurements).
 
-## Phone and PIN sign-in for cleaners (feat/field-pin-sign-in, migration 0143, 23 Oct 2026, PR #364)
-- 0143 applied on staging alone (0132-0142 still pending there); apply it to production before merging #364.
-- Next PR: a technician list in Maintenance (in-house and contractors, with phone, deactivate), jobs linked to the list entry instead of a typed name, and the same Give app access button.
-- Gap: a PIN account that also has a real email can be sent a password reset link, which sets an 8-character password the PIN box cannot type. Give a New PIN from the Cleaners page instead.
+## Workers: phone and PIN sign-in, technician list (PR #364 migration 0143, PR #365 migration 0144, 23 Oct 2026)
+- 0143 and 0144 applied on staging alone (0132-0142 still pending there). Apply 0143 to production before merging #364, 0144 before #365.
+- #365 is stacked on #364: merge #364 first, then point #365 at main if GitHub does not do it.
+- After 0144 is live: switch off duplicate contractors the fill-in copied from old typos (Workers > Technicians).
+- Gap: a PIN account that also has a real email can be sent a password reset link, which sets an 8-character password the PIN box cannot type. Give a New PIN from Workers instead.
+- Tests: scripts/api-checks/field-pin-sign-in.mjs, workers-technicians.mjs, technician-list-fill.mjs (throwaway database only).
