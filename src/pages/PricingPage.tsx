@@ -89,15 +89,9 @@ const DEFAULT_TO = () => todayMyt(13);
 // as independent longhand inherits so tabular-nums is not reset by a font shorthand.
 const INPUT_CLASS = 'box-border h-[34px] px-[10px] py-0 text-ink bg-card border border-solid rounded-control outline-none [font-family:inherit] [font-size:inherit] [font-variant-numeric:tabular-nums]';
 
-/** Read `?unitId=` from the hash first (hash router) then the querystring. */
+/** Read `?unitId=` from the address. */
 function readUnitId(): string | null {
-  try {
-    const h = window.location.hash || '';
-    const q = h.includes('?') ? h.slice(h.indexOf('?') + 1) : '';
-    const fromHash = new URLSearchParams(q).get('unitId');
-    if (fromHash) return fromHash;
-    return new URLSearchParams(window.location.search).get('unitId');
-  } catch { return null; }
+  return new URLSearchParams(window.location.search).get('unitId');
 }
 
 /** Click-to-edit money value. Commits on Enter or blur, discards on Escape.

@@ -17,6 +17,7 @@ import { bankName } from '../../lib/vocabulary';
 import { statusOf } from '../../lib/status';
 import type { PayoutState, StatementState } from '../../lib/types';
 import { Section } from './shared';
+import { Link } from 'react-router-dom';
 
 /**
  * Owner statements and owner payouts on the owner (owner, 11 Oct 2026: "owner payout is basically the same as owner;
@@ -92,7 +93,7 @@ export function OwnerPayouts({ ownerId, onChanged }: { ownerId: string; onChange
   };
 
   return (
-    <Section title="Owner payouts" action={<a href="#/owners?view=payouts" className="text-meta text-gold-ink no-underline font-medium">All owners</a>}>
+    <Section title="Owner payouts" action={<Link to="/owners?view=payouts" className="text-meta text-gold-ink no-underline font-medium">All owners</Link>}>
       <div className="border border-solid border-line rounded-card overflow-hidden">
         {error && !data ? <div className="p-4 text-copy text-critical">{error}</div>
           : loading && !data ? <div className="p-4"><div className="skeleton h-12" /></div>

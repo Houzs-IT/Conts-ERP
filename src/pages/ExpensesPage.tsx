@@ -111,8 +111,8 @@ function qs(base: Record<string, string>, extra: Record<string, string | number>
   return p.toString();
 }
 
-/** Accounts payable (owner, 11 Oct 2026: "expenses I treat as AP, done by finance"), `#/finance/payables`; the old
- *  `#/finance/expenses` redirects here. Two tabs: Bills, the expenses entered against units (the same rows unit
+/** Accounts payable (owner, 11 Oct 2026: "expenses I treat as AP, done by finance"), `/finance/payables`; the old
+ *  `/finance/expenses` redirects here. Two tabs: Bills, the expenses entered against units (the same rows unit
  *  costs and owner statements read, unchanged), and Contractor claims, what maintenance jobs owe their technician or
  *  contractor, paid or not. */
 type ApTab = 'bills' | 'claims';

@@ -1,5 +1,5 @@
 import { type ReactNode } from 'react';
-import { useLocation } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { color, radius, text } from '../theme';
 import { useSession } from '../lib/session';
 import { Logo } from './Logo';
@@ -25,10 +25,10 @@ export default function FieldShell({ children }: { children: ReactNode }) {
           <span style={{ fontSize: text.caption, color: color.dim }}>{ROLE_LABEL[user!.role] ?? humanize(user!.role)}</span>
         </div>
         <FieldNotificationBell />
-        <a href={atAccount ? '#/' : '#/account'} aria-label={atAccount ? 'Back to today' : 'Settings'} title={atAccount ? 'Back to today' : 'Settings'}
+        <Link to={atAccount ? '/worker/today' : '/account'} aria-label={atAccount ? 'Back to today' : 'Settings'} title={atAccount ? 'Back to today' : 'Settings'}
           style={{ width: 44, height: 44, flex: 'none', display: 'grid', placeItems: 'center', borderRadius: radius.control, border: '1px solid rgba(255,255,255,0.14)', color: color.onDark }}>
           <Icon name={atAccount ? 'House' : 'Settings'} size="nav" />
-        </a>
+        </Link>
         {/* Log out sits at the bottom of Settings (AccountPage), never one mis-tap from the bell (owner, Oct 2026). */}
       </header>
 

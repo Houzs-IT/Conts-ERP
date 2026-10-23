@@ -18,6 +18,7 @@ import { count, date, plural, timeWithZone, masked } from '../lib/format';
 import { INTEGRATION } from '../lib/vocabulary';
 import type { IntegrationState, Tone } from '../lib/types';
 import { CloseButton } from '../components/CloseButton';
+import { go } from '../lib/go';
 
 /**
  * Integrations · /system/integrations (BUTTONS §14, api.md §10).
@@ -171,7 +172,7 @@ export default function IntegrationsPage() {
   return (
     <>
       <PageHeader title="Integrations" sub={data ? `${count(connected)} connected · ${count(notConnected)} not connected · ${count(problems)} needing attention` : 'Loading connections…'}
-        actions={<Button size="sm" variant="secondary" icon={<Icon name="FileUp" size="sm" />} onClick={() => { window.location.hash = '#/system/integrations/hostplatform'; }}>Import from HostPlatform</Button>} />
+        actions={<Button size="sm" variant="secondary" icon={<Icon name="FileUp" size="sm" />} onClick={() => { go('/system/integrations/hostplatform'); }}>Import from HostPlatform</Button>} />
 
       <SystemStats loading={loading && rows.length === 0} stats={[
         { label: 'Connected', value: data ? count(connected) : undefined, hint: `of ${count(connected + notConnected + problems)}` },
@@ -231,7 +232,7 @@ export default function IntegrationsPage() {
                     </Button>
                   )}
                   {row.viaChannex
-                    ? <Button size="sm" variant="tertiary" icon={<Icon name="Building2" size="sm" />} onClick={() => { window.location.hash = '#/properties/units'; }}>Open units</Button>
+                    ? <Button size="sm" variant="tertiary" icon={<Icon name="Building2" size="sm" />} onClick={() => { go('/properties/units'); }}>Open units</Button>
                     : row.provider === 'utilities' && (
                       <Button size="sm" variant="tertiary" icon={<Icon name="SlidersHorizontal" size="sm" />} onClick={() => setManageId(row.id)}>
                         Manage

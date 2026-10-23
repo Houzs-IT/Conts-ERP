@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { StatusBadge } from '../components/StatusBadge';
@@ -17,8 +17,9 @@ import type { StatementState } from '../lib/types';
 import { RecordHistory } from '../components/RecordHistory';
 import { StatRow, StatTile } from '../components/Metric';
 import { TERMS, DEDUCTION_TERMS, deductionTerm, lineTerm, lineDetail, isSourceReference } from '../lib/statementTerms';
+import { go } from '../lib/go';
 
-/** `#/owners/statements/:id` (the old `#/finance/statements/:id` redirects here) — one owner's statement on screen: each unit's month the way the Owner Income
+/** `/owners/statements/:id` (the old `/finance/statements/:id` redirects here) — one owner's statement on screen: each unit's month the way the Owner Income
  *  Report prints it (income, deductions, split, owner adjustments, payout), every line behind it with a link to
  *  its booking or expense, what to check before finalising, and the next step the statement's state allows. */
 
@@ -85,7 +86,7 @@ export default function StatementDetailPage() {
     : s.state === 'sent' && s.payout && s.payout.state !== 'paid' ? { label: 'Mark paid', run: () => setConfirm('paid') }
     : null;
   const warnings = s.units.flatMap(u => u.warnings.map(w => `${u.label}: ${w}`));
-  const reportHref = (unitId?: string) => `#/finance/statements/${encodeURIComponent(s.id)}/report${unitId ? `?unit=${encodeURIComponent(unitId)}` : ''}`;
+  const reportHref = (unitId?: string) => `/finance/statements/${encodeURIComponent(s.id)}/report${unitId ? `?unit=${encodeURIComponent(unitId)}` : ''}`;
 
   return (
     <>
@@ -97,7 +98,7 @@ export default function StatementDetailPage() {
             <StatusBadge entity="statement" value={s.state} />
             <Button size="sm" variant="secondary" icon={<Icon name="ArrowLeft" size="sm" />} onClick={() => navigate(`/owners/${encodeURIComponent(s.owner.id)}?month=${s.period}`)}>Owner</Button>
             {s.units.length > 0 && (
-              <Button size="sm" variant="secondary" icon={<Icon name="FileText" size="sm" />} onClick={() => { window.location.hash = reportHref().slice(1); }}>Owner Income Report</Button>
+              <Button size="sm" variant="secondary" icon={<Icon name="FileText" size="sm" />} onClick={() => { go(reportHref()); }}>Owner Income Report</Button>
             )}
             {next && <Button size="sm" variant="primary" loading={busy} onClick={next.run}>{next.label}</Button>}
           </div>
@@ -145,7 +146,7 @@ export default function StatementDetailPage() {
                   {u.package ? ` · ${u.package}` : ''}{u.termsSource !== 'contract' ? ` · split from the ${u.termsSource === 'unit' ? "unit's own record" : 'default fee'}` : ''}
                 </span>
               </div>
-              <a href={reportHref(u.unitId)} className="text-[12.5px] font-medium text-ink underline underline-offset-2">Report for this unit</a>
+              <Link to={reportHref(u.unitId)} className="text-[12.5px] font-medium text-ink underline underline-offset-2">Report for this unit</Link>
             </div>
             <div className="px-5 py-3 text-copy">
               {u.basis === 'share' ? (
@@ -231,8 +232,8 @@ function LineList({ id, lines }: { id: string; lines: Line[] }) {
     { key: 'line', label: 'Line', value: l => lineText(l), text: l => (refOf(l) && !l.booking ? `${lineText(l)} · ${refOf(l)}` : lineText(l)), hideable: false, width: 300,
       render: l => (
         <span className="block truncate" title={lineText(l)}>
-          {l.booking?.ref ? <a href={`#/reservations/bookings?q=${encodeURIComponent(l.booking.ref)}`} className="text-ink underline underline-offset-2">{lineText(l)}</a>
-            : l.expenseId ? <a href="#/finance/payables" className="text-ink underline underline-offset-2">{lineText(l)}</a>
+          {l.booking?.ref ? <Link to={`/reservations/bookings?q=${encodeURIComponent(l.booking.ref)}`} className="text-ink underline underline-offset-2">{lineText(l)}</Link>
+            : l.expenseId ? <Link to="/finance/payables" className="text-ink underline underline-offset-2">{lineText(l)}</Link>
             : lineText(l)}
           {refOf(l) && !l.booking && <span className="text-muted-ink"> · {refOf(l)}</span>}
           {l.receipt && <> · <a href={`/api/documents/${encodeURIComponent(l.receipt.id)}/download`} target="_blank" rel="noopener" title={l.receipt.name} className="text-ink underline underline-offset-2">Receipt</a></>}

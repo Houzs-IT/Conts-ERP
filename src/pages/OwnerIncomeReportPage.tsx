@@ -7,7 +7,7 @@ import { amount } from '../lib/format';
 import { parsePhone } from '../lib/phone';
 import { isTenancy } from '../lib/revenueModel';
 
-/** `#/finance/statements/:id/report[?unit=|?view=owner]` — the Owner Income Report, laid out as the owner's own report:
+/** `/finance/statements/:id/report[?unit=|?view=owner]` — the Owner Income Report, laid out as the owner's own report:
  *  page 1 the unit's month (OWNER INCOME REPORT), page 2 its year to date. `view=owner` puts the owner's whole
  *  account first: every unit of the statement on one month page and one year-to-date page, then each unit. A4, printed by the browser:
  *  "Download PDF" opens the print dialog with Save as PDF. Rendered outside the app shell so nothing else prints.
@@ -119,7 +119,7 @@ export default function OwnerIncomeReportPage() {
   );
 }
 
-/** `#/finance/statements/print?ids=a,b,c` — several owner statements on one page (the Payouts list's "PDF statements"
+/** `/finance/statements/print?ids=a,b,c` — several owner statements on one page (the Payouts list's "PDF statements"
  *  export): each statement as the By owner view lays it out, then "Download PDF" prints them all as one file. Months
  *  paid before Property OS have no unit figures and are listed instead, with their old statement link. */
 export function StatementsPrintPage() {

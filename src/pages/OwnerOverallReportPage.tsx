@@ -16,7 +16,7 @@ import { count, monthLabel, percent, plural, rmShort, todayMyt } from '../lib/fo
 import { overallFigures, overallTotals, type OverallInput, type OverallTotals } from '../lib/ownerOverall';
 import { GainLoss, LEVELS, OwnerOverallDetail, contractName, money, unitStatus, type Level, type ReportRow } from './OwnerOverallDetail';
 
-/** #/portfolio/owner-report — the overall owner report (the owner workbook's overall report sheet) for one month: every LT and PS
+/** /portfolio/owner-report — the overall owner report (the owner workbook's overall report sheet) for one month: every LT and PS
  *  unit's revenue, deductions, owner payout and the company's gain or loss on it, from GET /api/portfolio/owner-report.
  *  The whole month is about a row per unit, so search, filters and sorting happen here. */
 

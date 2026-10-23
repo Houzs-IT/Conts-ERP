@@ -23,7 +23,7 @@ export default function UpdateNotice() {
         const { version } = (await r.json()) as { version?: string };
         if (!(live && version && version !== __BUILD_ID__)) return;
         // Nothing can be lost on the sign-in screen, so take the new version straight away.
-        if (window.location.hash.startsWith('#/login') || window.location.pathname.endsWith('/login')) { window.location.reload(); return; }
+        if (window.location.pathname.endsWith('/login')) { window.location.reload(); return; }
         setStale(true);
       } catch { /* offline or mid-deploy: try again at the next check */ }
     }

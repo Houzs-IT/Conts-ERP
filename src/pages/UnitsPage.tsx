@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { color, channel as CH } from '../theme';
 import { cx } from '../lib/design-tokens';
 import { Card } from '../components/Card';
@@ -466,7 +466,7 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
           {/* Owner names run long (several co-owners, company names); they wrap instead of running off a phone. */}
           <div className="flex flex-col gap-1 min-w-0 max-w-full sm:max-w-[45%] items-start">
             <Eyebrow>Owner</Eyebrow>
-            <a href={`#/owners/${encodeURIComponent(u.owner.id)}`} className="text-heading font-semibold no-underline text-ink! [overflow-wrap:anywhere]">{titleCase(u.owner.name)}</a>
+            <Link to={`/owners/${encodeURIComponent(u.owner.id)}`} className="text-heading font-semibold no-underline text-ink! [overflow-wrap:anywhere]">{titleCase(u.owner.name)}</Link>
             {u.contract && <span className="text-meta text-muted-ink">{u.termsLabel ?? `${u.contract.managementFeePct}%`} · {u.contract.renewsOn ? `renews ${date(u.contract.renewsOn)}` : 'No renewal date'}</span>}
           </div>
         </div>

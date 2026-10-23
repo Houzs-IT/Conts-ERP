@@ -15,9 +15,8 @@ import { HOME, screenClosed, switchedOff } from './lib/navigation';
 import { BootScreen, PageShown, PageSkeleton } from './components/Loading';
 
 /** react-router (ERP convention) with route-level code splitting — every page is
- *  lazy-loaded so the initial bundle stays small. HashRouter (see main.tsx) keeps
- *  the app a static Cloudflare Pages build with no server rewrites, and existing
- *  `#/...` links keep working. */
+ *  lazy-loaded so the initial bundle stays small. Plain addresses (/owners/5); main.tsx moves old
+ *  `#/...` links to them, and Cloudflare Pages answers any unknown address with index.html. */
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
 const NotificationsPage = lazy(() => import('./pages/NotificationsPage'));
 const PortfolioPage = lazy(() => import('./pages/PortfolioPage'));
@@ -202,7 +201,7 @@ function Routed() {
   }
   if (!user) return <LoginPage />;
   // A temporary password (invite, or management's Reset password) must be replaced before anything else. Sign-in
-  // sends the browser to #/change-password, which has no screen of its own, so this holds on every address.
+  // sends the browser to /change-password, which has no screen of its own, so this holds on every address.
   if (user.mustChangePassword) {
     return <LoginPage key="change-password" forceChangePassword />;
   }
@@ -217,6 +216,8 @@ function Routed() {
   const account = location.pathname === '/account';
   // Field roles: single-column 44px shell, not the desk nav.
   if (user.role === 'housekeeper' || user.role === 'technician') {
+    // Cleaners' and technicians' screens moved from /field to /worker; old bookmarks and links follow.
+    if (/^\/field(\/|$)/.test(location.pathname)) return <Navigate to={location.pathname.replace(/^\/field/, '/worker') + location.search} replace />;
     return <FieldShell><Suspense fallback={<Fallback />}>{account ? <AccountPage /> : <FieldHome />}</Suspense></FieldShell>;
   }
   // Owners see only their own portal, whatever the address bar says.
