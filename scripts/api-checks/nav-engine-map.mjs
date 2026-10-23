@@ -109,5 +109,13 @@ check('Finance alone does not open the supply chain workspace, and stays in Rent
   supplyPaths(M.navFor('finance_admin', true, noSupply)).join(' '));
 check('with supply chain work, Finance is in both sidebars', supplyPaths(M.navFor('management', true)).includes('/supply/finance/general-ledger'));
 
+// Beta (owner, 23 Oct 2026): on the menu only where the engine answer says beta (staging), and it opens the engine's page.
+check('Beta is off the menu unless beta is on', !paths(M.navFor('management', true)).includes('/beta/projects'));
+check('Beta needs the engine as well', !paths(M.navFor('management', false, undefined, true)).includes('/beta/projects'));
+check('Beta is on the menu with the engine and beta on', paths(M.navFor('management', true, undefined, true)).includes('/beta/projects'));
+check('Beta follows the Projects area', !paths(M.navFor('operations_staff', true, { projects: 'none' }, true)).includes('/beta/projects'));
+check('Beta opens the engine Beta list', M.ENGINE_PATH['/beta/projects'] === '/beta/projects');
+check('an engine Beta workspace keeps Beta highlighted', M.menuPathFor('/beta/projects/12?tab=defects') === '/beta/projects', M.menuPathFor('/beta/projects/12?tab=defects'));
+
 console.log(fails ? `\n${fails} failed` : '\nall passed');
 process.exit(fails ? 1 : 0);

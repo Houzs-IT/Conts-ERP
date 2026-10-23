@@ -79,7 +79,7 @@ type MenuSection = { key: string; label: string; rows: MenuRow[] };
  *  each of its screens is a row with its own icon. System pages live under Settings. */
 function MoreSheet({ path, navigate, onClose }: { path: string; navigate: (p: string) => void; onClose: () => void }) {
   const { user } = useSession();
-  const engine = useApi<{ enabled: boolean }>('/supply-chain/engine');
+  const engine = useApi<{ enabled: boolean; beta?: boolean }>('/supply-chain/engine');
   const counts = useNavCounts(path);
   const [q, setQ] = useState('');
   useEffect(() => {
@@ -93,10 +93,10 @@ function MoreSheet({ path, navigate, onClose }: { path: string; navigate: (p: st
   // System pages live under Settings, except IT Support, which every desk role needs: on the rental side it gets
   // the same SUPPORT card as on the supply chain side.
   // Groups marked phone: false (Finance, owner 11 Oct 2026) stay off the phone; switched-off items stay off as on the desk.
-  const all = useMemo(() => withoutOffItems(navFor(user!.role, !!engine.data?.enabled, user!.access), counts?.approvalsOn === true)
+  const all = useMemo(() => withoutOffItems(navFor(user!.role, !!engine.data?.enabled, user!.access, !!engine.data?.beta), counts?.approvalsOn === true)
     .filter(g => g.phone !== false)
     .map(g => g.label === 'SYSTEM' ? { ...g, label: 'SUPPORT', items: g.items.filter(it => it.key === 'itSupport') } : g),
-  [user, engine.data?.enabled, counts?.approvalsOn]);
+  [user, engine.data?.enabled, engine.data?.beta, counts?.approvalsOn]);
   // Highlights the row a record or sub-page belongs to, the same rule as the desk sidebar.
   const current = useMemo(() => activeKey(all, path), [all, path]);
   const hasSupply = all.some(g => g.workspace === 'supply');
