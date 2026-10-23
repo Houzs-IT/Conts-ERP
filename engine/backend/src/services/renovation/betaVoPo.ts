@@ -11,7 +11,7 @@
    CUS-* placeholders; isCustomerSupplied in renovation-po-split.ts). */
 
 import { readVo } from "../../scm/lib/renovation-vo";
-import { isCustomerSupplied } from "../../scm/lib/renovation-po-split";
+import { isCustomerSupplied, poPickerOffers, voGoesTo } from "../../scm/lib/renovation-po-split";
 import { renoDbFromD1 } from "./dbBridge";
 import type { Db } from "./load";
 
@@ -26,7 +26,8 @@ const TS = (col: string): string => `to_char(${col} AT TIME ZONE 'UTC', 'YYYY-MM
 const PROJECT_SO = `so.project_id = ? AND so.company_id = ? AND so.status::text <> 'CANCELLED'`;
 
 export type VoBucket = "pending" | "approved" | "closed";
-export type GoesTo = "po" | "client";
+/** po: we buy it; client: the client buys it (Client PO); works: our own works or service, nothing is bought. */
+export type GoesTo = "po" | "client" | "works";
 
 export interface VoLine {
   itemCode: string | null;
@@ -39,6 +40,8 @@ export interface VoLine {
   /** null when finance figures are hidden, or the record does not hold the before value. */
   amountSen: number | null;
   change: "add" | "deduct" | "change";
+  /** The line's quantity after the VO, shown when the VO changes only its price (qty is then 0). */
+  lineQty: number | null;
   goesTo: GoesTo;
   /** A spec change: the item code it replaced. */
   fromItemCode: string | null;
@@ -59,6 +62,8 @@ export interface VoRow {
   raisedBy: string | null;
   approvedBy: string | null;
   approvedAt: string | null;
+  /** A sales order VO, recorded and applied at once (no approver): read "Recorded <date> by <raisedBy>". */
+  recorded: boolean;
   netSen: number | null;
   /** The engine screen that shows this VO in full. */
   href: string;
@@ -104,8 +109,12 @@ export interface AmendmentLineRow {
   cur_qty: number | null;
   cur_total_sen: number | null;
   product_name: string | null;
-  /** The SO line's room (its renovation line's room, else its own location), when the line exists. */
+  /** The SO line's room (its renovation line's room, else its own room / location), when the line exists. */
   cur_room?: string | null;
+  cur_item_group?: string | null;
+  /** The SKU's catalog category and main supplier code, for where the line goes. */
+  product_category?: string | null;
+  main_supplier?: string | null;
 }
 
 /** One SO amendment line as a VO line: what it adds or deducts, in quantity and money. */
@@ -119,18 +128,23 @@ export function amendmentLineChange(l: AmendmentLineRow): VoLine {
   const oldTotal = num(old.total_sen) ?? (oldQty !== null && oldPrice !== null ? oldQty * oldPrice - oldDisc : null);
   const itemCode = l.new_item_code ?? oldCode ?? l.cur_item_code;
   const description = String(old.description ?? l.cur_description ?? l.product_name ?? "").trim() || (l.product_name ?? "");
-  const goesTo: GoesTo = String(itemCode ?? "").startsWith("CUS-") ? "client" : "po";
-  const base = { itemCode, description, room: l.cur_room ?? null, measure: null, goesTo, fromItemCode: null };
+  const goesTo: GoesTo = voGoesTo({
+    itemCode, itemGroup: l.cur_item_group ?? ((old.itemGroup ?? old.item_group ?? null) as string | null) ?? l.product_category ?? null,
+    mainSupplierCode: l.main_supplier ?? null,
+  });
+  /* An added line has no SO line to read a room from; the VO carries the room it was added in (old_snapshot.room). */
+  const room = l.cur_room ?? (typeof old.room === "string" && old.room.trim() ? old.room.trim() : null);
+  const base = { itemCode, description, room, measure: null, goesTo, fromItemCode: null };
   if (type === "ADD") {
     const qty = num(l.new_qty) ?? num(l.cur_qty) ?? 0;
     const price = num(l.new_unit_price_sen);
     const amount = price !== null ? qty * price - (num(l.new_discount_sen) ?? 0) : num(l.cur_total_sen);
-    return { ...base, qty, amountSen: amount, change: "add" };
+    return { ...base, qty, lineQty: qty, amountSen: amount, change: "add" };
   }
   if (type === "REMOVE") {
     const qty = oldQty ?? num(l.cur_qty) ?? 0;
     const total = oldTotal ?? num(l.cur_total_sen);
-    return { ...base, itemCode: oldCode ?? l.cur_item_code, qty: -qty, amountSen: total === null ? null : -total, change: "deduct" };
+    return { ...base, itemCode: oldCode ?? l.cur_item_code, qty: -qty, lineQty: 0, amountSen: total === null ? null : -total, change: "deduct" };
   }
   const newQty = num(l.new_qty);
   const qty = newQty !== null && oldQty !== null ? newQty - oldQty : 0;
@@ -143,15 +157,16 @@ export function amendmentLineChange(l: AmendmentLineRow): VoLine {
   }
   const fromItemCode = l.new_item_code && oldCode && l.new_item_code !== oldCode ? oldCode : null;
   const change = qty > 0 ? "add" : qty < 0 ? "deduct" : amount !== null && amount > 0 ? "add" : amount !== null && amount < 0 ? "deduct" : "change";
-  return { ...base, qty, amountSen: amount, change, fromItemCode };
+  return { ...base, qty, lineQty: newQty ?? oldQty ?? num(l.cur_qty), amountSen: amount, change, fromItemCode };
 }
 
 const AMENDMENT_STATUS: Readonly<Record<string, [string, VoBucket]>> = {
   REQUESTED: ["Requested", "pending"],
   SUPPLIER_PENDING: ["Waiting for supplier", "pending"],
-  SO_APPROVED: ["Approved", "approved"],
-  PO_APPROVED: ["Approved", "approved"],
-  SENT: ["Approved", "approved"],
+  /* Conts (owner, 24 Oct 2026): a sales order VO has no approval step; it is recorded and applied in one go. */
+  SO_APPROVED: ["Recorded", "approved"],
+  PO_APPROVED: ["Recorded", "approved"],
+  SENT: ["Recorded", "approved"],
   REJECTED: ["Rejected", "closed"],
 };
 
@@ -225,7 +240,12 @@ async function amendmentVos(db: Db, projectId: number, companyId: number): Promi
   const lines = await rows<AmendmentLineRow & { amendment_id: string }>(db,
     `SELECT l.amendment_id::text AS amendment_id, l.change_type, l.new_item_code, l.new_qty, l.new_unit_price_sen, l.new_discount_sen::int AS new_discount_sen,
             l.old_snapshot, i.item_code AS cur_item_code, i.description AS cur_description, i.qty AS cur_qty, i.total_sen AS cur_total_sen,
-            coalesce(nullif(trim((SELECT rl.room FROM scm.reno_doc_lines rl WHERE rl.so_item_id = i.id LIMIT 1)), ''), nullif(trim(i.location), '')) AS cur_room,
+            coalesce(nullif(trim((SELECT rl.room FROM scm.reno_doc_lines rl WHERE rl.so_item_id = i.id LIMIT 1)), ''), nullif(trim(to_jsonb(i)->>'room'), ''), nullif(trim(i.location), '')) AS cur_room,
+            i.item_group AS cur_item_group,
+            (SELECT p.category::text FROM scm.mfg_products p WHERE p.code = coalesce(l.new_item_code, i.item_code) AND p.company_id = so.company_id LIMIT 1) AS product_category,
+            (SELECT s.code FROM scm.supplier_material_bindings b JOIN scm.suppliers s ON s.id = b.supplier_id
+              WHERE b.material_kind = 'mfg_product' AND b.item_code = coalesce(l.new_item_code, i.item_code) AND b.company_id = so.company_id
+              ORDER BY b.is_main_supplier DESC LIMIT 1) AS main_supplier,
             (SELECT p.name FROM scm.mfg_products p WHERE p.code = coalesce(l.new_item_code, i.item_code) AND p.company_id = so.company_id LIMIT 1) AS product_name
        FROM scm.so_amendment_lines l
        JOIN scm.so_amendments a ON a.id = l.amendment_id
@@ -246,7 +266,7 @@ async function amendmentVos(db: Db, projectId: number, companyId: number): Promi
     const ls = byId.get(h.id) ?? [];
     return {
       key: `a:${h.id}`, label: "", source: "amendment", no: h.amendment_no, soDocNo: h.so_doc_no, title: h.reason, status: h.status, statusLabel, bucket,
-      date: h.created_at, raisedBy: h.raised_by, approvedBy: bucket === "approved" ? h.approved_by : null, approvedAt: bucket === "approved" ? h.approved_at : null,
+      date: h.created_at, raisedBy: h.raised_by, approvedBy: null, approvedAt: null, recorded: bucket === "approved",
       netSen: ls.reduce((s, l) => s + (l.amountSen ?? 0), 0), href: `/scm/amendments/${h.id}`, lines: ls,
     };
   });
@@ -276,13 +296,15 @@ async function renovationVos(db: Db, projectId: number, companyId: number, custo
           itemCode: l.itemCode, description: l.description, room: l.room || null,
           qty: measured ? (omit ? -1 : 1) : omit ? -l.qty : l.qty,
           measure: measured ? `${Number(l.measure)} ${l.measureUom ?? ""}`.trim() : null,
-          amountSen: l.netSen, change: omit ? "deduct" : "add", goesTo: client ? "client" : "po", fromItemCode: null,
+          lineQty: omit ? 0 : measured ? 1 : l.qty,
+          amountSen: l.netSen, change: omit ? "deduct" : "add", fromItemCode: null,
+          goesTo: client ? "client" : !l.supplierId && !poPickerOffers({ itemCode: l.itemCode, itemGroup: null, mainSupplierCode: null }) ? "works" : "po",
         });
       }
     }
     out.push({
       key: `v:${v.id}`, label: "", source: "renovation", no: v.voNo, soDocNo: v.soDocNo, title: v.title || null, status: v.status, statusLabel, bucket,
-      date: v.docDate, raisedBy: h.created_by, approvedBy: bucket === "approved" ? v.approvedBy : null, approvedAt: bucket === "approved" ? v.approvedAt : null,
+      date: v.docDate, raisedBy: h.created_by, recorded: false, approvedBy: bucket === "approved" ? v.approvedBy : null, approvedAt: bucket === "approved" ? v.approvedAt : null,
       netSen: v.totals.netSen, href: `/scm/renovation/variation-orders/${v.id}`, lines,
     });
   }

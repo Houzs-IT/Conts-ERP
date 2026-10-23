@@ -84,6 +84,13 @@ export function poPickerOffers(l: { itemCode: string | null; itemGroup: string |
   return !String(l.itemGroup ?? '').toUpperCase().includes('SERVICE');
 }
 
+/** Where a VO line goes (owner, 24 Oct 2026): the client buys it (Client PO), we buy it (PO), or it is our own works /
+    service with no supplier to buy it from. Same rule as poPickerOffers. */
+export function voGoesTo(l: { itemCode: string | null; itemGroup: string | null; mainSupplierCode: string | null }): 'po' | 'client' | 'works' {
+  if (l.mainSupplierCode === 'CUSTOMER' || (!l.mainSupplierCode && String(l.itemCode ?? '').toUpperCase().startsWith('CUS-'))) return 'client';
+  return poPickerOffers(l) ? 'po' : 'works';
+}
+
 export function needsPurchaseOrder(l: { itemCode: string | null; supplyByOwner: boolean; category: string | null; subCategory?: string | null; supplierId: string | null; unitCostSen: number; supplierCode?: string | null }): boolean {
   if (String(l.itemCode ?? '').startsWith('RENO-')) return false;
   if (isCustomerSupplied(l)) return false;

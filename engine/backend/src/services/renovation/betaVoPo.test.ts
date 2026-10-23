@@ -23,6 +23,17 @@ describe("amendmentLineChange", () => {
   it("a customer SKU goes to Client PO", () => {
     expect(amendmentLineChange(line({ new_item_code: "CUS-TV", new_qty: 1, new_unit_price_sen: 0 })).goesTo).toBe("client");
   });
+  it("a price-only change keeps the line's quantity beside the money", () => {
+    const v = amendmentLineChange(line({ change_type: "SPEC", new_item_code: "RN-ELECTRICAL", new_qty: 1, new_unit_price_sen: 120000,
+      old_snapshot: { itemCode: "RN-ELECTRICAL", qty: 1, unitPriceSen: 150000, itemGroup: "works" }, cur_room: "Living hall", cur_item_group: "works" }));
+    expect(v).toMatchObject({ qty: 0, lineQty: 1, amountSen: -30000, change: "deduct", room: "Living hall", goesTo: "works" });
+  });
+  it("an added line reads the room it was added in, and a supplier decides where it goes", () => {
+    expect(amendmentLineChange(line({ new_item_code: "RN-GRILL", new_qty: 1, new_unit_price_sen: 95000, old_snapshot: { itemGroup: "works", room: "Bedroom 1" } })))
+      .toMatchObject({ room: "Bedroom 1", goesTo: "works" });
+    expect(amendmentLineChange(line({ new_item_code: "RN-GRILL", new_qty: 1, new_unit_price_sen: 95000, main_supplier: "GRILLCO", old_snapshot: { itemGroup: "works" } })).goesTo).toBe("po");
+    expect(amendmentLineChange(line({ new_item_code: "TILE-1", new_qty: 1, new_unit_price_sen: 0, main_supplier: "CUSTOMER" })).goesTo).toBe("client");
+  });
   it("a change without a before value has no amount", () => {
     expect(amendmentLineChange(line({ change_type: "SPEC", new_item_code: "B" })).amountSen).toBeNull();
   });
@@ -31,8 +42,8 @@ describe("amendmentLineChange", () => {
 describe("VO numbering and totals", () => {
   const vo = (no: string, date: string, bucket: VoRow["bucket"], amounts: number[]): VoRow => ({
     key: no, label: "", source: "amendment", no, soDocNo: "SO-1", title: null, status: "", statusLabel: "", bucket, date, raisedBy: null, approvedBy: null,
-    approvedAt: null, netSen: amounts.reduce((s, a) => s + a, 0), href: "", lines: amounts.map((a) => ({
-      itemCode: null, description: "", room: null, qty: 1, measure: null, amountSen: a, change: a < 0 ? "deduct" : "add", goesTo: "po", fromItemCode: null,
+    approvedAt: null, recorded: bucket === "approved", netSen: amounts.reduce((s, a) => s + a, 0), href: "", lines: amounts.map((a) => ({
+      itemCode: null, description: "", room: null, qty: 1, lineQty: 1, measure: null, amountSen: a, change: a < 0 ? "deduct" : "add", goesTo: "po", fromItemCode: null,
     })),
   });
   it("numbers VOs oldest first", () => {
@@ -44,7 +55,7 @@ describe("VO numbering and totals", () => {
   });
   it("labels a withdrawn request", () => {
     expect(amendmentStatus("REJECTED", "WITHDRAWN")).toEqual(["Withdrawn", "closed"]);
-    expect(amendmentStatus("SENT", null)).toEqual(["Approved", "approved"]);
+    expect(amendmentStatus("SENT", null)).toEqual(["Recorded", "approved"]);
   });
 });
 

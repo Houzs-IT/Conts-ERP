@@ -16,8 +16,8 @@ describe("Site & photos", () => {
     delivery({ id: "d1", type: "delivery_order", areas: ["Master bedroom"], photos: [photo("p", null)] }),
   ];
 
-  it("offers the sales order's areas first, then rooms only a delivery names", () => {
-    expect(areaChips(["Kitchen", "Master bedroom"], list)).toEqual(["Kitchen", "Master bedroom", "Living"]);
+  it("offers only rooms a delivery carries, in the sales order's order, then rooms only a delivery names", () => {
+    expect(areaChips(["Bathroom 1", "Kitchen", "Master bedroom"], list)).toEqual(["Kitchen", "Master bedroom", "Living"]);
   });
 
   it("keeps the deliveries for an area with that area's photos and the untagged ones", () => {

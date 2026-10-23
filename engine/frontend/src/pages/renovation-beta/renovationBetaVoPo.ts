@@ -4,7 +4,8 @@
 import { api } from "../../api/client";
 
 export type VoBucket = "pending" | "approved" | "closed";
-export type GoesTo = "po" | "client";
+/** po: we buy it; client: the client buys it; works: our own works or service, nothing is bought. */
+export type GoesTo = "po" | "client" | "works";
 
 export interface VoLine {
   itemCode: string | null;
@@ -14,6 +15,8 @@ export interface VoLine {
   measure: string | null;
   amountSen: number | null;
   change: "add" | "deduct" | "change";
+  /** The line's quantity after the VO; shown when the VO changes only the price. */
+  lineQty?: number | null;
   goesTo: GoesTo;
   fromItemCode: string | null;
 }
@@ -32,6 +35,8 @@ export interface VoRow {
   raisedBy: string | null;
   approvedBy: string | null;
   approvedAt: string | null;
+  /** Recorded and applied at once, no approver (a sales order VO). */
+  recorded?: boolean;
   netSen: number | null;
   href: string;
   lines: VoLine[];
@@ -151,8 +156,9 @@ export function byArea<T extends { area: string | null }>(items: readonly T[]): 
 }
 
 /** The quantity a VO line moves, signed: "+2", "-1", "+12.5 sqft". */
-export function signedQty(l: Pick<VoLine, "qty" | "measure" | "change">): string {
+export function signedQty(l: Pick<VoLine, "qty" | "measure" | "change"> & { lineQty?: number | null }): string {
   if (l.measure) return `${l.change === "deduct" ? "-" : "+"}${l.measure}`;
-  if (l.qty === 0) return "0";
+  /* A price-only change moves no quantity: show the line's quantity, the amount column carries the change. */
+  if (l.qty === 0) return l.lineQty != null && l.lineQty !== 0 ? String(l.lineQty) : "0";
   return l.qty > 0 ? `+${l.qty}` : String(l.qty);
 }

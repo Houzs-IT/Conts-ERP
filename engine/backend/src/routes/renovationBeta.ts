@@ -792,8 +792,8 @@ async function rowsOf(c: Ctx, q: { text: string; args: unknown[] }): Promise<Row
   return (await db(c).prepare(q.text).bind(...q.args).all<Row>()).results ?? [];
 }
 
-/* The room of a sales order line: the renovation line's room, else the item's own location. */
-const LINE_AREA = `coalesce(nullif(trim((SELECT to_jsonb(l)->>'room' FROM scm.reno_doc_lines l WHERE to_jsonb(l)->>'so_item_id' = i.id::text LIMIT 1)), ''), nullif(trim(i.location), ''))`;
+/* The room of a sales order line: the renovation line's room, else the line's own room (Conts rooms, mig 0112), else its location. */
+const LINE_AREA = `coalesce(nullif(trim((SELECT to_jsonb(l)->>'room' FROM scm.reno_doc_lines l WHERE to_jsonb(l)->>'so_item_id' = i.id::text LIMIT 1)), ''), nullif(trim(to_jsonb(i)->>'room'), ''), nullif(trim(i.location), ''))`;
 
 /** Every DO and goods receipt of the project (the same sets as its Procurement details), each with the rooms of the
     lines it carries and every photo on it: the driver's POD, the site team's receipt photos and files added to it. */

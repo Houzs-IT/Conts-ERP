@@ -614,8 +614,19 @@ export async function applySoAmendment(
       // Multi-company (mig 0083/0091): company_id is NOT NULL with a HOUZS
       // DEFAULT — an unstamped insert silently books the line to HOUZS, so the
       // ADD line explicitly inherits the SO header's company.
+      /* The added line continues the order's numbering and keeps the room it was added in (Conts rooms, mig 0112,
+         carried on the VO line's old_snapshot.room). Without these it landed last with no room: the Beta VO tab and
+         Site & photos then read "-" for its area (owner, 24 Oct 2026). A pre-0165 order (no numbers) stays unnumbered. */
+      const addRoomRaw = ((diff.old_snapshot ?? {}) as Record<string, unknown>).room;
+      const addRoom = typeof addRoomRaw === 'string' && addRoomRaw.trim() ? addRoomRaw.trim() : null;
+      const { data: maxNoRow, error: maxNoErr } = await sb.from('mfg_sales_order_items')
+        .select('line_no').eq('doc_no', docNo).order('line_no', { ascending: false, nullsFirst: false }).limit(1).maybeSingle();
+      if (maxNoErr) throw new Error(`applySoAmendment: line number read failed: ${maxNoErr.message}`);
+      const maxNo = (maxNoRow as { line_no?: number | null } | null)?.line_no;
       const { data: insRow, error: insErr } = await sb.from('mfg_sales_order_items').insert({
         ...(soCompanyId != null ? { company_id: soCompanyId } : {}),
+        ...(typeof maxNo === 'number' ? { line_no: maxNo + 1 } : {}),
+        ...(addRoom ? { room: addRoom } : {}),
         doc_no:                  docNo,
         line_date:              todayMyt(),
         item_group:             itemGroup,

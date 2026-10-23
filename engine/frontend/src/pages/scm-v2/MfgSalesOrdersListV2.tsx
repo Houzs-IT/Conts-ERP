@@ -21,8 +21,8 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { shippedProgressColumn, ShippedProgressPill } from "./so-list-shipped-column";
-import { SO_STATUS_TABS, statusFor, type StatusTab } from "./so-list-status";
-import { SoListStatusCell } from "./SoListStatusCell";
+import { SO_STATUS_TABS, type StatusTab } from "./so-list-status";
+import { SoListStatusCell, soRowStatusOf } from "./SoListStatusCell";
 import { SoListFilterBar } from "./SoListFilterBar";
 import { useSoListFilters } from "../../vendor/scm/lib/so-list-filter-state";
 import { salesOrderRowMenu } from "./row-menus";
@@ -389,7 +389,7 @@ function CardsGrid({ rows, onOpen }: { rows: SoRow[]; onOpen: (r: SoRow) => void
   return (
     <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
       {rows.map((r) => {
-        const st = statusFor(r.status);
+        const st = soRowStatusOf(r);
         const brand = brandOf(r);
         return (
           <button
@@ -489,7 +489,7 @@ function DetailDrawer({
   );
 
   const open = !!row;
-  const st = row ? statusFor(row.status) : null;
+  const st = row ? soRowStatusOf(row) : null;
 
   // Totals from live line items when the detail query has resolved; fall back
   // to header totals otherwise so the drawer still reads immediately.
