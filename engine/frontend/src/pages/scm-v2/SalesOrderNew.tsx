@@ -633,6 +633,14 @@ export const SalesOrderNew = () => {
 
   // ── Payments draft state (Task #105: the Detail's PaymentsTable in DRAFT mode; the rows batch to /:docNo/payments after create) ──
   const [paymentDrafts, setPaymentDrafts] = useState<PaymentDraft[]>([]);
+  /* A renovation sale is paid in four payments (owner, 24 Oct 2026): the four rows are set out, empty, from the start.
+     An empty row (RM 0) is never saved, so the ones not received yet simply stay open. */
+  const fourPaymentsSet = useRef(false);
+  useEffect(() => {
+    if (!reno || fourPaymentsSet.current || searchParams.get('convert')) return;
+    fourPaymentsSet.current = true;
+    setPaymentDrafts((cur) => (cur.length > 0 ? cur : Array.from({ length: 4 }, () => newPaymentDraft())));
+  }, [reno, searchParams]);
   /* This customer's orders with money to give — what a "Convert from another SO" row may draw on (docs/bugs/0931; live orders too since 2026-09-16). */
   const cancelledForCustomer = useOrdersWithMoney(phone.trim() || null, phone.trim().length >= 6);
   const [createdDocNo, setCreatedDocNo] = useState<string | null>(null);

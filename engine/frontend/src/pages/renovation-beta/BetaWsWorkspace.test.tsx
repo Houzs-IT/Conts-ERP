@@ -119,8 +119,8 @@ describe("Beta project workspace", () => {
   it("draws the Overview cards in the mockup's order and wording", async () => {
     open();
     await screen.findByRole("heading", { name: "Payments" });
-    expect(screen.getByText("1 of 3 paid · each payment unlocks the next step")).toBeTruthy();
-    expect(screen.getByText(/Contract RM 50,000.00 · VO 1 of 2 approved/)).toBeTruthy();
+    expect(screen.getByText("1 of 3 received")).toBeTruthy();
+    expect(screen.getByText(/Contract RM 50,000.00 · received .* · VO 1 of 2 approved/)).toBeTruthy();
     expect(screen.getByText("Paid · unlocked Design")).toBeTruthy();
     expect(screen.getByText("Not confirmed")).toBeTruthy();
     expect(screen.getByText("At handover")).toBeTruthy();

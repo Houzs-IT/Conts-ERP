@@ -181,7 +181,7 @@ function track(p: BetaBoardProject, k: DesignKind, defaultDays: number, approval
 
 function paymentText(p: BetaBoardProject): string | null {
   if (p.payment.state === "hidden") return null;
-  return p.payment.state === "none" ? "No payment" : p.payment.label;
+  return p.payment.state === "none" ? "No SO yet" : p.payment.label;
 }
 
 /** The mockup's shape for every project, with real people ids. `site` can be null: it is then shown as "Site PIC" with no name. */

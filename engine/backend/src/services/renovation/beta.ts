@@ -157,29 +157,80 @@ export function instalmentStatus(bill: { amountSen: number; paidSen: number } | 
 
 export interface BetaInstalment {
   seq: number; label: string; amountSen: number; paidSen: number; status: InstalmentStatus; stageCode: string | null; trigger: string;
+  /** The day the money for this payment was recorded on the sales order; null when not received yet. */
+  paidOn?: string | null;
+  method?: string | null;
 }
+/** One payment recorded on the sales order (scm.mfg_sales_order_payments), oldest first. */
+export interface BetaReceipt { paidOn: string; amountSen: number; method: string | null }
 export type BetaPayments =
   | { state: "hidden" }
   | { state: "none" }
-  | { state: "ok"; contractSen: number; receivedSen: number; instalments: BetaInstalment[] };
+  | { state: "ok"; docNo?: string; contractSen: number; receivedSen: number; instalments: BetaInstalment[] };
 
-/** The payments strip from phase 2's billing view (null = no live SO, so nothing to show). */
-export function paymentsOf(view: BillingView | null): BetaPayments {
-  if (!view) return { state: "none" };
+/** A sales order is set up with four payments (owner, 24 Oct 2026); more appear when more money is recorded. */
+export const PAYMENT_SLOTS = 4;
+
+const ORD = ["1st", "2nd", "3rd", "4th"];
+const slotLabel = (seq: number): string => `${ORD[seq - 1] ?? `${seq}th`} payment`;
+
+/** The payments strip of a project's sales order. A renovation contract has its instalment schedule (billingView), and
+    the money recorded on the order fills those instalments in order. Any other sales order is four payments, each
+    filled by one recorded payment, oldest first. null so = no live sales order. */
+export function paymentsOf(view: BillingView | null, so?: { docNo: string; totalSen: number; receipts: readonly BetaReceipt[] } | null): BetaPayments {
+  if (!view && !so) return { state: "none" };
+  const receipts = (so?.receipts ?? []).filter((r) => r.amountSen > 0);
+  const recordedSen = receipts.reduce((s, r) => s + r.amountSen, 0);
+  const docNo = so ? { docNo: so.docNo } : {};
+  if (!view) {
+    const n = Math.max(PAYMENT_SLOTS, receipts.length);
+    return {
+      state: "ok", ...docNo, contractSen: so?.totalSen ?? 0, receivedSen: recordedSen,
+      instalments: Array.from({ length: n }, (_, i): BetaInstalment => {
+        const r = receipts[i];
+        return {
+          seq: i + 1, label: slotLabel(i + 1), amountSen: r?.amountSen ?? 0, paidSen: r?.amountSen ?? 0, status: r ? "paid" : "not_billed",
+          stageCode: null, trigger: "manual", paidOn: r?.paidOn ?? null, method: r?.method ?? null,
+        };
+      }),
+    };
+  }
+  // Money recorded on the order but not yet put against a bill still counts: it fills the instalments in order.
+  let pool = Math.max(0, recordedSen - view.receivedSen);
+  let seen = 0;
   return {
-    state: "ok",
+    state: "ok", ...docNo,
     contractSen: view.revisedContractSen,
-    receivedSen: view.receivedSen,
+    receivedSen: Math.max(view.receivedSen, recordedSen),
     instalments: view.instalments.map((i): BetaInstalment => {
       const bill = i.bill ? { amountSen: i.bill.amountSen, paidSen: i.bill.kind === "INVOICE" ? i.bill.paidSen : 0 } : null;
+      const amountSen = bill ? bill.amountSen : i.amountSen;
+      let paidSen = bill?.paidSen ?? 0;
+      let status = instalmentStatus(bill);
+      if (status !== "paid" && pool > 0 && amountSen > 0) {
+        const take = Math.min(pool, amountSen - paidSen);
+        pool -= take;
+        paidSen += take;
+        if (paidSen >= amountSen) status = "paid";
+      }
+      // The receipt that completed this instalment gives its date: the first one whose running total covers it.
+      let paidOn: string | null = null;
+      let method: string | null = null;
+      if (status === "paid" && amountSen > 0) {
+        seen += amountSen;
+        let run = 0;
+        for (const r of receipts) { run += r.amountSen; if (run >= seen) { paidOn = r.paidOn; method = r.method; break; } }
+      }
       return {
         seq: i.seq,
         label: i.label || `Instalment ${i.seq}`,
-        amountSen: bill ? bill.amountSen : i.amountSen,
-        paidSen: bill?.paidSen ?? 0,
-        status: instalmentStatus(bill),
+        amountSen,
+        paidSen,
+        status,
         stageCode: i.stageCode,
         trigger: normTrigger(i.trigger),
+        paidOn,
+        method,
       };
     }),
   };
