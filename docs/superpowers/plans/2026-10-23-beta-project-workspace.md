@@ -150,3 +150,87 @@ Changed: `backend/src/index.ts` (mount 2 routers), `routes/auth.ts` (flag), `wra
   approval is for the 2D, so staff enter it once. The alternative is to keep them apart and enter it twice.
 - Starter quantity rules: the board 24 sqft and spare 5% come from the mockup. The tee and paint coverage numbers are
   placeholders until the owner gives real ones.
+
+## 9. Bundle A contract (23 Oct 2026)
+
+Changes from section 3, agreed while building: the migration is numbered 0146 (0143 to 0145 are taken by the
+workers work on staging). `project_beta_reminders` and `project_design_sent` are dropped: every Beta action writes a
+`project_activity` row (actions `beta_*`), which the existing timeline already reads, and the sent / due / approval
+dates live in one table, `project_design_file_reviews`.
+
+### Migration `migrations-pg/0146_beta_workspace_a.sql`
+- `project_defects` gains `trade text` (null, or one of carpenter, electrician, plumber, painter, plaster, hacking,
+  aircon, tiler, other), `fixed_at timestamptz`, `fixed_by bigint`, `after_photo_r2_key text`, `redo_count integer not null default 0`.
+- `project_design_file_reviews`: `file_id bigint primary key references project_design_files(id) on delete cascade`,
+  `project_id bigint not null references projects(id) on delete cascade`, `company_id bigint not null`, `sent_on date`,
+  `due_on date`, `sent_by bigint`, `approved_on date`, `approved_by_name text`, `approval_note text`,
+  `approval_recorded_by bigint`, `updated_at timestamptz not null default now()`; index on project_id.
+- `project_beta_settings`: `company_id bigint primary key references companies(id)`, `design_3d_days integer not null
+  default 10 check (between 1 and 365)`, `design_2d_days integer not null default 12 check (between 1 and 365)`,
+  `updated_by bigint`, `updated_at timestamptz not null default now()`.
+- Each new table: `owner to scm_engine` and `enable row level security`, as in 0121. First line `-- REVERSAL: ...`.
+
+### Server: `engine/backend/src/routes/renovationBeta.ts`, mounted at `/api/beta` after the auth gate
+First middleware on every route: `if (!isBetaEnabled(c.env)) return c.json({ error: "not_found" }, 404)`.
+Every project-scoped route checks the project belongs to the active company the same way `POST /:id/key-moves` in
+`routes/renovationProject.ts` does (404 otherwise); defect and design-file routes look up their project first and do
+the same. Reads: `requirePageAccess("projects.list")`. Writes: `requirePermission("projects.write")`. Settings write:
+`requirePermission("projects.manage")`. Every write also inserts a `project_activity` row (same columns as
+`logActivity` in `routes/renovation.ts`).
+
+| Method, path | Body | Answer | Activity action |
+|---|---|---|---|
+| GET `/projects/:id/workspace` | | `BetaWorkspace` (below) | |
+| PUT `/settings` | `{ design3dDays, design2dDays }` (whole days 1..365) | `{ ok: true }` | none |
+| POST `/projects/:id/defects` | `{ location, description, trade, dueDate, photoKey }`; description and photoKey required; photoKey must start with `renovation/<id>/`; trade from the list or null; dueDate YYYY-MM-DD or null | `{ id }` 201 | `beta_defect_reported` (to_value = description) |
+| POST `/defects/:defectId/fixed` | `{ afterPhotoKey? }` (same prefix rule) | `{ ok: true }`; 409 if closed or already fixed | `beta_defect_fixed` |
+| POST `/defects/:defectId/redo` | `{ note? }` | clears fixed_at, fixed_by and the after photo, redo_count + 1; 409 unless fixed and open | `beta_defect_redo` |
+| POST `/defects/:defectId/close` | | sets closed_at, closed_by, resolved = 1 (as the existing snag close); 409 if closed | `beta_defect_closed` |
+| POST `/design-files/:fileId/sent` | `{ sentOn, dueOn }` (dates; dueOn not before sentOn) | upsert review; `{ ok: true }` | `beta_drawing_sent` (to_value e.g. "2D v3") |
+| POST `/design-files/:fileId/approval` | `{ approvedOn, approvedByName, note? }` | upsert review; when the file is 2D, also mark the project's checklist item `shop_drawings_signed` done, the same write as the existing checklist status route | `beta_drawing_approved` |
+| DELETE `/design-files/:fileId/approval` | | clears the approval fields (the checklist item is left as it is) | `beta_drawing_approval_removed` |
+| POST `/projects/:id/reminders` | `{ kind, text }`: kind one of client_approval, client_answer, defect, payment; text 1 to 1000 chars | `{ ok: true }` | `beta_reminder` (to_value = kind, note = text) |
+
+New defects use phase `snag`, so the existing handover rule (every snag closed before handover) counts them.
+
+```ts
+export interface BetaWorkspace {
+  settings: { design3dDays: number; design2dDays: number };          // defaults when no row
+  reviews: Array<{ fileId: number; sentOn: string | null; dueOn: string | null; approvedOn: string | null;
+                   approvedByName: string | null; approvalNote: string | null }>;
+  defects: Array<{ id: number; phase: string; location: string | null; description: string | null;
+                   trade: string | null; dueDate: string | null; reportedAt: string | null; reportedByName: string | null;
+                   photoKey: string | null; afterPhotoKey: string | null; fixedAt: string | null; closedAt: string | null;
+                   redoCount: number }>;                               // not archived, oldest first
+  payments:
+    | { state: "hidden" }                                              // financeHiddenForUser
+    | { state: "none" }                                                // no live SO, or billing unavailable
+    | { state: "ok"; contractSen: number; receivedSen: number;
+        instalments: Array<{ seq: number; label: string; amountSen: number; paidSen: number;
+                             status: "paid" | "billed" | "not_billed"; stageCode: string | null; trigger: string }> };
+}
+```
+Payments come from `billingViews` (`scm/lib/renovation-billing.ts`) for the project's live renovation SO.
+`paid` = bill exists and paidSen covers the bill amount; `billed` = bill exists, not fully paid; `not_billed` = no bill.
+
+`services/renovation/timeline.ts` `activityText` gains readable titles for the `beta_*` actions.
+
+### Screens: `engine/frontend/src/pages/renovation-beta/`
+Existing calls are reused, not copied: `simpleApi.detail`, `simpleApi.designRecords`, `simpleApi.keyLog` /
+`addKeyMove`, `renovationApi.pod` (site receipt photos), `renovationApi.upload` / `fileUrl` and `AuthImage` (photos),
+`timelineApi` (timeline). New: `renovationBetaApi.ts` (the routes above), `renovationBetaModel.ts` (pure logic, tested).
+
+| Tab | Shows |
+|---|---|
+| Overview | Payments strip (each instalment, paid / billed / not billed, the step it unlocks), To do card, site progress (site tasks from the detail), design progress with deadlines (3D due = first site measure + design3dDays; 2D due = 3D approval + design2dDays), key holder with "Key passed" (existing key move), the SO and team. |
+| Drawings | 3D and 2D: approved set (newest version with an approval), a newer version waiting for the client (sent and due dates), Send to client (records sent and due, offers WhatsApp to the customer), Record approval, Remove approval, all versions with their notes. |
+| Site & photos | One feed newest first: site receipt photos (pod), onsite visit files, defect photos (before and after). Filter by room where known (defect location). |
+| Defects | Report a problem (photo required, area, what is wrong, who fixes it, fix by), three columns To fix / Check it / Done, late days, Fixed (with optional after photo), Redo, OK close, Remind (WhatsApp text plus a reminder record), "N of M closed" for handover. |
+| Timeline | The existing timeline entries with a search box, a RECORD tag on approvals, key passes and handover, and Export (CSV download). |
+
+To do (pure function, tested): a 2D or 3D version sent and not approved (due date, Remind client); the next
+not-paid instalment whose step is reached or next (Ask Sales via WhatsApp, no phone); defects past their fix-by date;
+design deadline within 3 days or past. Each row has one action.
+
+WhatsApp: `https://wa.me/<digits>?text=<encoded>` with the customer's phone when known (Malaysian numbers starting
+with 0 become 60...), else `https://wa.me/?text=<encoded>`. Pressing Remind also calls POST `/reminders`.
