@@ -1,7 +1,7 @@
 import { type Env, one, fail } from '../../../_lib/db';
 import { isOnTask } from '../../../_lib/taskCleaners';
 import { requireSession, isFieldRole } from '../../../_lib/auth';
-import { levelsFor } from '../../../_lib/access';
+import { levelsFor, type Side } from '../../../_lib/access';
 import { isAssignee, UNASSIGNED_SQL } from '../../../_lib/maintenance';
 import { VISIBLE } from '../../../_lib/ownerScope';
 
@@ -13,7 +13,7 @@ interface Doc { storage_key: string; mime_type: string; file_name: string; unit_
  *  files staff marked visible to them and the receipts of bills on their own final statements; a housekeeper or technician only files on their own jobs (and a technician the photos of a repair nobody has yet); desk roles need
  *  access to the area the file belongs to (a unit's or a job's files: Properties or Operations; an owner's own
  *  papers and receipts: Owners or Finance). */
-async function mayOpen(env: Env, s: { userId: string; role: string }, d: Doc, id: string): Promise<boolean> {
+async function mayOpen(env: Env, s: { userId: string; role: string; side?: Side }, d: Doc, id: string): Promise<boolean> {
   if (s.role === 'management') return true;
   if (s.role === 'owner') {
     // The receipt of a bill deducted on one of the owner's own statements that is no longer provisional.
@@ -38,7 +38,7 @@ async function mayOpen(env: Env, s: { userId: string; role: string }, d: Doc, id
     }
     return false;
   }
-  const lv = await levelsFor(env, s.role);
+  const lv = await levelsFor(env, s.role, s.side);
   if (d.unit_id || d.task_id || d.maintenance_id) return lv.properties !== 'none' || lv.operations !== 'none';
   return lv.owners !== 'none' || lv.finance !== 'none';
 }

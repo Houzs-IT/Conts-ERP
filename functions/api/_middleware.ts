@@ -97,7 +97,9 @@ const handle: PagesFunction<Env> = async ({ request, env, next, waitUntil }) => 
     return new Response(JSON.stringify({ error: { code: 'UNAUTHENTICATED', message: 'This account has been switched off or changed. Sign in again, or ask management.' } }),
       { status: 401, headers: { 'content-type': 'application/json; charset=utf-8', 'set-cookie': clearCookie(request) } });
   }
-  const session = live.user.role === signed.role && live.user.fullName === signed.fullName ? signed : { ...signed, role: live.user.role, fullName: live.user.fullName };
+  // The side (migration 0143) is read the same way, so moving someone to The Conts or Dream Crafter applies at once.
+  const session = live.user.role === signed.role && live.user.fullName === signed.fullName && live.user.side === signed.side
+    ? signed : { ...signed, role: live.user.role, side: live.user.side, fullName: live.user.fullName };
   const limits = sessionLimits(live.settings, session.role);
   // Endpoints read the session from the cookie themselves (requireSession), so they are handed a cookie
   // carrying the current role rather than the one signed at sign-in.
@@ -137,7 +139,7 @@ const handle: PagesFunction<Env> = async ({ request, env, next, waitUntil }) => 
     return fail('FORBIDDEN', 'This is not available in the field app.', 403);
   }
   // The level on Users and roles > Permissions (chosen by management, or the built-in one it shows).
-  const access = await accessFor(env, session.role, path, request.method);
+  const access = await accessFor(env, session.role, path, request.method, session.side);
   const refused = refusalFor(access, request.method);
   if (refused) return fail('FORBIDDEN', refused, 403);
   if (MONEY_ONLY.test(path) && !(access.chosen ? access.level !== 'none' : canSeeFinance(session.role))) {

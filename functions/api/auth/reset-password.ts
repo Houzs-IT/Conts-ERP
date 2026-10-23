@@ -1,7 +1,8 @@
 import { type Env, one, run, json, fail, nowIso, audit } from '../../_lib/db';
 import { signSession, cookie, hashPassword, sessionLimits, securitySettings, revokeSessions, startSession } from '../../_lib/auth';
 import { logLogin, signChallenge, twoFactorAvailable, twoFactorTables } from '../../_lib/twoFactor';
-import { doorFor, doorRefusal, HOME } from '../../_lib/door';
+import { doorFor, doorRefusal, homeFor } from '../../_lib/door';
+import { sideOf } from '../../_lib/userSide';
 import { notify } from '../../_lib/notify';
 
 async function hashToken(token: string) {
@@ -106,13 +107,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   }
   await logLogin(env, request, { userId: user.id, email: user.email, result: 'success', method: 'reset_link' });
   const { ttlHours, absoluteDays } = sessionLimits(await securitySettings(env), user.role);
-  const sid = await startSession(env, request, user.id, absoluteDays);
+  const [sid, side] = await Promise.all([startSession(env, request, user.id, absoluteDays), sideOf(env, user.id)]);
   const sessionToken = await signSession(env.SESSION_SECRET, {
-    userId: user.id, email: user.email, role: user.role, fullName: user.full_name, sid,
+    userId: user.id, email: user.email, role: user.role, side, fullName: user.full_name, sid,
   }, ttlHours, absoluteDays);
 
   return json({
     user: { id: user.id, fullName: user.full_name, email: user.email, role: user.role, mustChangePassword: false, locale: 'en-MY' },
-    home: HOME[user.role] ?? '/',
+    home: homeFor(user.role, side),
   }, 200, { 'set-cookie': cookie(request, sessionToken, ttlHours * 3600) });
 };

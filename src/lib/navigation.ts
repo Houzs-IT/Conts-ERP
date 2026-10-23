@@ -1,4 +1,4 @@
-import type { UserRole, AccessLevel } from './types';
+import type { UserRole, UserSide, AccessLevel } from './types';
 import { LEDGER_SCREENS } from './scmEngine';
 
 /** `badge` names a live count from /api/nav/badges; shown only when above zero. */
@@ -321,6 +321,10 @@ export const HOME: Record<UserRole, string> = {
   finance_admin: '/owners?view=statements', housekeeper: '/worker/today',
   technician: '/worker/today', owner: '/owner',
 };
+
+/** Landing path with the side taken into account. Keep in step with homeFor in functions/_lib/door.ts. */
+export const homeFor = (role: UserRole, side?: UserSide) =>
+  side === 'dream_crafter' && (role === 'operations_manager' || role === 'operations_staff') ? '/sales/orders' : HOME[role];
 
 /** Pages below a menu entry, for the third breadcrumb ("Units / Owners / Owner statement"). */
 const SUB_PAGES: [RegExp, string][] = [

@@ -11,7 +11,7 @@ import FieldShell from './components/FieldShell';
 import UpdateNotice from './components/UpdateNotice';
 import OwnerShell from './components/OwnerShell';
 import LoginPage from './pages/LoginPage';
-import { HOME, screenClosed, switchedOff } from './lib/navigation';
+import { HOME, homeFor, screenClosed, switchedOff } from './lib/navigation';
 import { BootScreen, PageShown, PageSkeleton } from './components/Loading';
 
 /** react-router (ERP convention) with route-level code splitting — every page is
@@ -124,7 +124,7 @@ function AppLayout() {
   const { user } = useSession();
   const closed = screenClosed(location.pathname, user?.access);
   useEffect(() => { if (engine.data?.enabled && user) signInToEngineEarly(user.id); }, [engine.data?.enabled, user?.id]);
-  if (switchedOff(location.pathname)) return <Navigate to={user ? HOME[user.role] : '/'} replace />;
+  if (switchedOff(location.pathname)) return <Navigate to={user ? homeFor(user.role, user.side) : '/'} replace />;
   const engineShown = viaEngine && !closed;
   return (
     <AppShell path={location.pathname} navigate={(p: string) => navigate(p)} flush={viaEngine}>

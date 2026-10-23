@@ -1,5 +1,5 @@
 import { type Env, all, one, run, fail, nowIso } from './db';
-import { accessFor, canManage, type Level } from './access';
+import { accessFor, canManage, isSide, type Level, type Side } from './access';
 import { notify } from './notify';
 
 export interface SecuritySettings { staffTtlHours: number; ownerTtlHours: number; absoluteDays: number; maxAttempts: number; lockoutMinutes: number; require2faRoles: string[] }
@@ -88,10 +88,11 @@ export async function endSession(env: Env, sid: string | undefined, userId: stri
  *  once that browser has signed out. */
 export async function sessionState(env: Env, userId: string, sid?: string): Promise<{
   settings: SecuritySettings;
-  user: { role: string; active: boolean; fullName: string; revokedAt: number; twoFactorOn: boolean; sessionLive: boolean; mustChangePassword: boolean } | null;
+  user: { role: string; side: Side; active: boolean; fullName: string; revokedAt: number; twoFactorOn: boolean; sessionLive: boolean; mustChangePassword: boolean } | null;
 }> {
-  const [revokedCol, totpCol, sessions] = await Promise.all([
+  const [revokedCol, totpCol, sessions, sideCol] = await Promise.all([
     hasColumn(env, 'users', 'sessions_revoked_at'), hasColumn(env, 'users', 'totp_enabled_at'), sid ? sessionTable(env) : false,
+    hasColumn(env, 'users', 'side'),
   ]);
   const rows = await all<{ key: string; value: string }>(env, `
     SELECT key, value FROM settings WHERE key LIKE 'security.%'
@@ -99,12 +100,12 @@ export async function sessionState(env: Env, userId: string, sid?: string): Prom
     SELECT '~user', role || '|' || is_active::text || '|' || ${revokedCol ? "COALESCE(sessions_revoked_at, '')" : "''"}
       || '|' || ${totpCol ? "(totp_enabled_at IS NOT NULL)::int::text" : "'0'"}
       || '|' || ${sessions ? '(SELECT count(*) FROM user_sessions s WHERE s.id = ? AND s.user_id = users.id)::text' : "'1'"}
-      || '|' || must_change_password::text || '|' || full_name FROM users WHERE id = ?`, ...(sessions ? [sid, userId] : [userId]));
+      || '|' || must_change_password::text || '|' || ${sideCol ? 'side' : "'both'"} || '|' || full_name FROM users WHERE id = ?`, ...(sessions ? [sid, userId] : [userId]));
   const u = rows.find(r => r.key === '~user');
-  const [role, active, revoked, totp, live, mustChange, ...name] = (u?.value ?? '').split('|');
+  const [role, active, revoked, totp, live, mustChange, side, ...name] = (u?.value ?? '').split('|');
   return {
     settings: parseSecurity(rows.filter(r => r.key !== '~user')),
-    user: u ? { role, active: active === '1', fullName: name.join('|'), revokedAt: revoked ? Date.parse(revoked) : 0, twoFactorOn: totp === '1', sessionLive: live !== '0', mustChangePassword: mustChange !== '0' } : null,
+    user: u ? { role, side: isSide(side) ? side : 'both', active: active === '1', fullName: name.join('|'), revokedAt: revoked ? Date.parse(revoked) : 0, twoFactorOn: totp === '1', sessionLive: live !== '0', mustChangePassword: mustChange !== '0' } : null,
   };
 }
 
@@ -153,7 +154,9 @@ export function sessionLimits(settings: SecuritySettings, role: string) {
  *  extended on every request but never past `iat + SESSION_ABSOLUTE_DAYS` — see signSession. */
 /** `manage`: whether the management-only actions in the area this request belongs to are open to the role
  *  (Users and roles > Permissions; functions/_lib/access.ts). Set by requireSession, not stored in the cookie. */
-export interface Session { userId: string; email: string; role: string; fullName: string; iat: number; sid?: string; manage?: boolean; picked?: Level | null }
+/** `side`: which side of the business the account works on (migration 0143); absent on a cookie signed before it,
+ *  which the session middleware re-signs with the live value on the next request. */
+export interface Session { userId: string; email: string; role: string; side?: Side; fullName: string; iat: number; sid?: string; manage?: boolean; picked?: Level | null }
 
 const ENC = new TextEncoder();
 
@@ -167,7 +170,7 @@ async function hmac(secret: string, data: string) {
  *  `iat` back in when it slides an existing session's idle deadline forward, so the
  *  absolute cap always counts from first login, never from the latest request. */
 export async function signSession(
-  secret: string, s: { userId: string; email: string; role: string; fullName: string; sid?: string },
+  secret: string, s: { userId: string; email: string; role: string; side?: Side; fullName: string; sid?: string },
   ttlHours: number, absoluteDays: number, iat = Date.now(),
 ) {
   const exp = Math.min(Date.now() + ttlHours * 36e5, iat + absoluteDays * 864e5);
@@ -194,7 +197,7 @@ export async function readSession(secret: string, token: string | null): Promise
   try {
     const p = JSON.parse(atob(body));
     if (!p.exp || p.exp < Date.now()) return null;
-    return { userId: p.userId, email: p.email, role: p.role, fullName: p.fullName, iat: p.iat ?? Date.now(), ...(typeof p.sid === 'string' ? { sid: p.sid } : {}) };
+    return { userId: p.userId, email: p.email, role: p.role, fullName: p.fullName, iat: p.iat ?? Date.now(), ...(typeof p.sid === 'string' ? { sid: p.sid } : {}), ...(isSide(p.side) ? { side: p.side } : {}) };
   } catch { return null; }
 }
 
@@ -246,7 +249,7 @@ export async function verifyPassword(password: string, stored: string) {
 export async function requireSession(req: Request, env: Env) {
   const s = await readSession(env.SESSION_SECRET, readCookie(req));
   if (!s) return { session: null, response: fail('UNAUTHENTICATED', 'Your session expired. Sign in to continue.', 401) };
-  const access = await accessFor(env, s.role, new URL(req.url).pathname.replace(/\/+$/, ''), req.method);
+  const access = await accessFor(env, s.role, new URL(req.url).pathname.replace(/\/+$/, ''), req.method, s.side);
   const session = { ...s, manage: canManage(s.role, access), picked: access.chosen ? access.level : null };
   return { session: session as Session & { manage: boolean }, response: null };
 }

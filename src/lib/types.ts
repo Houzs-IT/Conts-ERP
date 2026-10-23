@@ -21,6 +21,9 @@ export type UserRole =
   | 'management' | 'operations_manager' | 'operations_staff'
   | 'finance_admin' | 'housekeeper' | 'technician' | 'owner';
 
+/** Which side of the business an account works on (migration 0143): The Conts is rental, Dream Crafter the supply chain. */
+export type UserSide = 'conts' | 'dream_crafter' | 'both';
+
 /** The five semantic tones. Gold is never a tone — see tokens.json. */
 export type Tone = 'success' | 'warning' | 'critical' | 'info' | 'neutral';
 
@@ -29,6 +32,8 @@ export interface SessionUser {
   fullName: string;
   email: string;
   role: UserRole;
+  /** Absent on an older session, which reads as both. */
+  side?: UserSide;
   mustChangePassword: boolean;
   locale: string;
   permissions: string[];

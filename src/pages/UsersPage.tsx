@@ -19,7 +19,7 @@ import { api, ApiFailure, errorMessage } from '../lib/api';
 import { count, date, plural } from '../lib/format';
 import { ROLE_LABEL } from '../lib/vocabulary';
 import { TONE, cx } from '../lib/design-tokens';
-import type { Tone, UserRole } from '../lib/types';
+import type { Tone, UserRole, UserSide } from '../lib/types';
 import { HistoryDisclosure } from '../components/RecordHistory';
 import { RowActions, type RowAction } from '../components/RowActions';
 import { deliveryToast } from '../lib/emailDelivery';
@@ -51,13 +51,13 @@ const roleTone: Record<UserRole, Tone> = {
 
 interface Row {
   id: string; fullName: string; email: string; phone: string | null; role: UserRole;
-  department?: string | null; position?: string | null;
+  department?: string | null; position?: string | null; side?: UserSide;
   managerId: string | null;
   isActive: boolean; mustChangePassword: boolean; isLocked?: boolean; twoStep?: boolean; lastLoginAt: string | null;
   /** When the newest invitation email went out (audit_log user.invite / user.resend_invite). */
   lastInvitedAt?: string | null;
 }
-interface Payload { data: Row[]; generatedAt: string; jobFields?: boolean }
+interface Payload { data: Row[]; generatedAt: string; jobFields?: boolean; sideField?: boolean }
 
 // Department and position are free text (migration 0113): the renovation pickers show them after the name, so
 // picking "Alex · Project PIC · Renovation" says what the person does. These are suggestions, not a fixed list;
@@ -77,6 +77,18 @@ const POSITION_SUGGESTIONS = Object.values(POSITIONS_BY_DEPARTMENT).flat();
 const sameText = (a: string | null | undefined, b: string | null | undefined) => (a ?? '').trim().toLowerCase() === (b ?? '').trim().toLowerCase();
 const suggestionsFrom = (base: string[], used: Array<string | null | undefined>) =>
   [...new Set([...base, ...used.map(v => (v ?? '').trim()).filter(Boolean)])].sort((a, b) => a.localeCompare(b));
+/** The role a new account starts on, from its department. Only a suggestion: picking a role by hand keeps it. */
+const roleForDepartment = (dept: string): UserRole => (sameText(dept, 'Finance') ? 'finance_admin' : 'operations_staff');
+
+// Which side of the business the account works on (migration 0143). It only closes the other side's screens;
+// the role still decides what is open on its own side. functions/_lib/access.ts enforces it.
+const SIDE_OPTIONS: { value: UserSide; label: string }[] = [
+  { value: 'conts', label: 'The Conts' },
+  { value: 'dream_crafter', label: 'Dream Crafter' },
+  { value: 'both', label: 'Both' },
+];
+const sideLabel = (s: UserSide | undefined) => SIDE_OPTIONS.find(o => o.value === (s ?? 'both'))?.label ?? 'Both';
+
 /** "Position · Department", skipping what is not set. */
 const jobLine = (u: Pick<Row, 'department' | 'position'>) => [u.position, u.department].map(v => (v ?? '').trim()).filter(Boolean).join(' · ');
 
@@ -195,6 +207,7 @@ export default function UsersPage() {
 
   const staff = rows.filter(r => r.role !== 'owner');
   const jobFields = data?.jobFields === true;
+  const sideField = data?.sideField === true;
   const departmentOptions = useMemo(() => suggestionsFrom(DEPARTMENT_SUGGESTIONS, rows.map(r => r.department)), [rows]);
   const positionsFor = useMemo(() => {
     const all = suggestionsFrom(POSITION_SUGGESTIONS, rows.map(r => r.position));
@@ -233,6 +246,7 @@ export default function UsersPage() {
     ] : []),
     { key: 'email', label: 'Email', value: u => u.email, width: 210 },
     { key: 'phone', label: 'Phone', type: 'phone', value: u => u.phone || null, hidden: true, width: 140 },
+    ...(sideField ? [{ key: 'side', label: 'Side', value: (u: Row) => (u.role === 'owner' ? null : sideLabel(u.side)), width: 120 }] : []),
     { key: 'role', label: 'Role', type: 'status', value: u => u.role, status: u => ({ label: roleLabel(u.role), tone: roleTone[u.role] }), width: 150 },
     { key: 'manager', label: 'Reports to', type: 'person', value: u => (u.managerId ? nameById[u.managerId] ?? null : null), width: 150 },
     // An invited person has no sign-in yet, so this cell says when the newest invitation went out, with Resend beside it.
@@ -244,7 +258,7 @@ export default function UsersPage() {
     // The menu is read through a ref: its actions depend on state the memoised columns would otherwise hold stale.
     { key: 'actions', label: '', width: 52, align: 'right', noExport: true, sortable: false, filter: false, hideable: false,
       render: u => <RowActions name={u.fullName} items={actionsRef.current(u)} /> },
-  ], [nameById, jobFields]);
+  ], [nameById, jobFields, sideField]);
   const invitedRows = rows.filter(isInvited);
   const invitedCount = invitedRows.length;
   const actionsRef = useRef<(u: Row) => RowAction[]>(() => []);
@@ -256,7 +270,9 @@ export default function UsersPage() {
   const [busy, setBusy] = useState(false);
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
+  const [side, setSide] = useState<UserSide>('both');
   const [role, setRole] = useState<UserRole>('operations_staff');
+  const [roleTouched, setRoleTouched] = useState(false);
   const [managerId, setManagerId] = useState<string>('');
   const [department, setDepartment] = useState('');
   const [position, setPosition] = useState('');
@@ -264,7 +280,7 @@ export default function UsersPage() {
   const [lastTempPassword, setLastTempPassword] = useState<{ name: string; password: string } | null>(null);
 
   function resetInvite() {
-    setInviteOpen(false); setFullName(''); setEmail(''); setRole('operations_staff');
+    setInviteOpen(false); setFullName(''); setEmail(''); setSide('both'); setRole('operations_staff'); setRoleTouched(false);
     setManagerId(''); setDepartment(''); setPosition(''); setFieldErrors({}); setBusy(false);
   }
 
@@ -280,7 +296,8 @@ export default function UsersPage() {
     setBusy(true); setFieldErrors({});
     try {
       const res = await api.post<{ id: string; delivery: string; reason?: string }>('/users', { fullName: fullName.trim(), email: email.trim(), role, managerId: role === 'owner' ? null : managerId || null,
-        ...(jobFields ? { department: department.trim() || null, position: position.trim() || null } : {}) });
+        ...(jobFields ? { department: department.trim() || null, position: position.trim() || null } : {}),
+        ...(sideField ? { side } : {}) });
       toast(res.delivery === 'sent'
         ? { tone: 'success', title: `Invitation sent to ${fullName.trim()}.`, body: 'A temporary password was emailed. They must change it on first sign-in.' }
         : { tone: 'warning', title: `${fullName.trim()}'s account was created, but the email was not delivered.`, body: res.reason ?? 'The email service is not connected, so the invitation is queued. Ask them to use Forgot password once email works.' });
@@ -303,11 +320,12 @@ export default function UsersPage() {
   const [editPhone, setEditPhone] = useState('');
   const [editDepartment, setEditDepartment] = useState('');
   const [editPosition, setEditPosition] = useState('');
-  const [editErrors, setEditErrors] = useState<{ fullName?: string; email?: string; phone?: string; department?: string; position?: string }>({});
+  const [editSide, setEditSide] = useState<UserSide>('both');
+  const [editErrors, setEditErrors] = useState<{ fullName?: string; email?: string; phone?: string; department?: string; position?: string; side?: string }>({});
 
   function openEdit(u: Row) {
     setEditing(u); setEditRole(u.role); setEditManager(u.managerId ?? ''); setEditActive(u.isActive);
-    setEditName(u.fullName); setEditEmail(u.email); setEditPhone(u.phone ?? ''); setEditDepartment(u.department ?? ''); setEditPosition(u.position ?? ''); setEditErrors({});
+    setEditName(u.fullName); setEditEmail(u.email); setEditPhone(u.phone ?? ''); setEditDepartment(u.department ?? ''); setEditPosition(u.position ?? ''); setEditSide(u.side ?? 'both'); setEditErrors({});
   }
   // Re-send the invitation to someone who was invited but never signed in — a fresh
   // temporary password, emailed immediately. See functions/api/users/[id]/resend-invite.ts.
@@ -486,6 +504,7 @@ export default function UsersPage() {
       ...(roleChanged ? { role: editRole } : {}), managerId: editManager || null, isActive: editActive,
       fullName: editName.trim(), email: editEmail.trim().toLowerCase(), phone: editPhone.trim() || null,
       ...(jobFields ? { department: editDepartment.trim() || null, position: editPosition.trim() || null } : {}),
+      ...(sideField && editing.role !== 'owner' ? { side: editSide } : {}),
     };
     try {
       await api.patch(`/users/${editing.id}`, patch);
@@ -668,19 +687,17 @@ export default function UsersPage() {
           }
         >
           <form id="invite-form" onSubmit={submitInvite} className="flex flex-col gap-4">
+            {sideField && <SidePicker id="inv-side" value={side} onChange={setSide} role={role} error={fieldErrors.side} />}
             <Field label="Full name" value={fullName} onChange={e => setFullName(e.target.value)} placeholder="Jane Tan" error={fieldErrors.fullName} />
             <Field label="Work email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="jane@theconts.com" error={fieldErrors.email} />
-            {jobFields && <JobFields department={department} position={position} onDepartment={setDepartment} onPosition={setPosition}
+            {jobFields && <JobFields department={department} position={position} onPosition={setPosition}
+              onDepartment={v => { setDepartment(v); if (!roleTouched) setRole(roleForDepartment(v)); }}
               errors={fieldErrors} departments={departmentOptions} positions={positionsFor(department)} departmentOf={departmentOf} />}
-            <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-4">
-              <Select label="Role" showLabel size="md" value={role} onChange={v => setRole(v as UserRole)} options={STAFF_ROLE_OPTIONS} />
-              {role !== 'owner' && (
-                <Select label="Reports to" showLabel size="md" value={managerId} onChange={setManagerId} placeholder="No manager"
-                  options={managerOptions(staff)} />
-              )}
-            </div>
+            <Select label="Role" showLabel size="md" value={role} onChange={v => { setRole(v as UserRole); setRoleTouched(true); }} options={STAFF_ROLE_OPTIONS} />
+            <Select label="Reports to" showLabel size="md" value={managerId} onChange={setManagerId} placeholder="No manager"
+              options={managerOptions(staff)} />
             <div className="text-meta text-muted-ink leading-[1.5]">
-              The role sets their permissions and landing screen. The reporting line is for escalation and rosters only. Owners are invited from their own record under Owners.
+              The role sets their permissions and landing screen, and is suggested from the department. The reporting line is for escalation and rosters only. Owners are invited from their own record under Owners.
             </div>
           </form>
           {lastTempPassword && (
@@ -696,7 +713,7 @@ export default function UsersPage() {
       {editing && (
         <Modal
           title={`Edit ${editing.fullName}`}
-          sub="Change the role, reporting line or status."
+          sub="Change the side, role, reporting line or status."
           onClose={() => setEditing(null)}
           footer={
             <>
@@ -706,6 +723,7 @@ export default function UsersPage() {
           }
         >
           <form id="edit-form" onSubmit={submitEdit} className="flex flex-col gap-4">
+            {sideField && editing.role !== 'owner' && <SidePicker id="ed-side" value={editSide} onChange={setEditSide} role={editRole} error={editErrors.side} />}
             <Field label="Full name" value={editName} onChange={e => setEditName(e.target.value)} error={editErrors.fullName} />
             <Field label="Email" type="email" value={editEmail} onChange={e => setEditEmail(e.target.value)} error={editErrors.email} />
             <PhoneInput label="Phone" value={editPhone} onChange={setEditPhone} error={editErrors.phone} />
@@ -815,6 +833,28 @@ export default function UsersPage() {
 }
 
 /* ------------------------------ row actions ------------------------------ */
+/** The Conts, Dream Crafter or both: the first choice on the invite and edit forms. */
+function SidePicker({ id, value, onChange, role, error }: { id: string; value: UserSide; onChange: (v: UserSide) => void; role: UserRole; error?: string }) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span id={id} className="text-meta font-medium text-ink">Works on</span>
+      <div role="radiogroup" aria-labelledby={id} className="grid grid-cols-3 gap-1 p-1 rounded-control bg-muted">
+        {SIDE_OPTIONS.map(o => (
+          <button key={o.value} type="button" role="radio" aria-checked={value === o.value} onClick={() => onChange(o.value)}
+            className={cx('h-9 rounded-[8px] border-none [font-family:inherit] text-meta cursor-pointer', value === o.value ? 'bg-card font-semibold text-ink shadow-sm' : 'bg-transparent text-muted-ink')}>
+            {o.label}
+          </button>
+        ))}
+      </div>
+      <span className={cx('text-meta', error ? TONE.critical.text : 'text-muted-ink')}>
+        {error ?? (role === 'management'
+          ? 'Management always sees both sides, whatever is picked here.'
+          : 'The other side’s screens stay closed. The role still decides what they can do on their side.')}
+      </span>
+    </div>
+  );
+}
+
 /** Department, then position: type to filter the suggestions under the field, or type a new name.
  *  The position list follows the department; with no department yet it lists every position under its department,
  *  and a known position fills the department in ("3D Designer" means Design). Shown after the person's name in renovation pickers. */

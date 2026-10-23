@@ -15,10 +15,11 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   return json({
     user: {
-      id: user.id, fullName: user.full_name, email: user.email, role: user.role,
+      id: user.id, fullName: user.full_name, email: user.email, role: user.role, side: s.side ?? 'both',
       mustChangePassword: !!user.must_change_password, locale: user.locale,
       twoStepSetupRequired: await twoStepSetupDue(env, await securitySettings(env), user.role, !!user.totp_enabled_at),
-      access: await levelsFor(env, user.role),
+      // The session middleware re-signs the cookie with the live side before this runs, so `s.side` is current.
+      access: await levelsFor(env, user.role, s.side),
     },
   });
 };
