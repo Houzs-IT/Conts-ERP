@@ -322,7 +322,9 @@ export const HOME: Record<UserRole, string> = {
 /** Landing path from the role, side and department. Keep in step with homeFor in functions/_lib/door.ts: the Finance
  *  department opens the owner statements, and an office account on Dream Crafter only starts on the sales orders. */
 export const homeFor = (who: Pick<SessionUser, 'role' | 'side' | 'department'>): string => {
-  if (who.role !== 'operations_staff') return HOME[who.role];
+  // A cookie signed before the office roles were retired can still carry one: it lands like an office account.
+  const home: string | undefined = HOME[who.role];
+  if (home && who.role !== 'operations_staff') return home;
   if (who.department?.trim().toLowerCase() === 'finance') return '/owners?view=statements';
   return who.side === 'dream_crafter' ? '/sales/orders' : HOME.operations_staff;
 };
