@@ -7,7 +7,7 @@ import { channel } from '../theme';
 import PageHeader from '../components/PageHeader';
 import { StatusBadge } from '../components/StatusBadge';
 import { Button } from '../components/Button';
-import { ConfirmDialog } from '../components/ConfirmDialog';
+import { ConfirmDialog, useConfirm } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
 import { DateField, PhoneInput } from '../components/inputs';
 import { useToast } from '../components/Toast';
@@ -22,7 +22,7 @@ import { useApi } from '../lib/useApi';
 import { api, ApiFailure, errorMessage } from '../lib/api';
 import { useSession } from '../lib/session';
 import { deliveryToast, stayPhase } from '../lib/bookingStatus';
-import { rm, dateRange, time, date as fmtDate, nights as fmtNights, guests as fmtGuests, plural, count as fmtCount, todayMyt, greetName } from '../lib/format';
+import { rm, dateRange, time, date as fmtDate, nights as fmtNights, guests as fmtGuests, plural, count as fmtCount, todayMyt, greetName, titleCase } from '../lib/format';
 import { phone, phoneCountries } from '../lib/phone';
 import { Select, Menu } from '../components/Select';
 import { FilterBar, FilterMenu } from '../components/FilterBar';
@@ -708,12 +708,21 @@ function NotesAndTags({ g, onSaved }: { g: Guest; onSaved: () => void }) {
     catch (e) { toast({ tone: 'critical', title: 'Not saved.', body: failMessage(e) }); }
     setBusy(false);
   }
-  const toggle = (t: string) => {
-    const next = g.manualTags.includes(t) ? g.manualTags.filter(x => x !== t) : [...g.manualTags, t];
-    void save({ tags: next }, g.manualTags.includes(t) ? `${t === 'vip' ? 'VIP' : 'Blacklist'} tag removed.` : `Tagged ${t === 'vip' ? 'VIP' : 'Blacklist'}.`);
+  const [confirmDialog, ask] = useConfirm();
+  const toggle = async (t: string) => {
+    const had = g.manualTags.includes(t);
+    const label = t === 'vip' ? 'VIP' : 'Blacklist';
+    const name = titleCase(g.fullName);
+    const ok = await ask(had
+      ? { title: `Remove the ${label} tag from ${name}?`, confirmLabel: `Remove ${label}`, danger: false }
+      : { title: `Tag ${name} as ${label}?`, body: 'The tag shows on this guest everywhere until someone removes it.', confirmLabel: `Tag ${label}`, danger: t === 'blacklist' });
+    if (ok === null) return;
+    const next = had ? g.manualTags.filter(x => x !== t) : [...g.manualTags, t];
+    void save({ tags: next }, had ? `${label} tag removed.` : `Tagged ${label}.`);
   };
   return (
     <div className="bg-card border border-solid border-line rounded-card p-5 flex flex-col gap-3">
+      {confirmDialog}
       <span className="text-[16px] font-semibold tracking-[-0.01em]">Internal notes and tags</span>
       <div className="flex gap-2 flex-wrap items-center">
         {g.tags.filter(t => t.key !== 'vip' && t.key !== 'blacklist').map(t => <StatusBadge key={t.key} tone={t.tone} label={t.label} size="sm" />)}

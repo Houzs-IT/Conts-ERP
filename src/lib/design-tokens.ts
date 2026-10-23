@@ -5,6 +5,7 @@
  * to Tailwind stay 1:1 with the design. Never hard-code status shades in a page;
  * route them through here.
  */
+import { extendTailwindMerge } from 'tailwind-merge';
 import type { Tone, BookingChannel } from './types';
 
 export interface SemanticStyle { text: string; bg: string; border: string; dot: string; hex: string }
@@ -28,5 +29,12 @@ export const CHANNEL_META: Record<BookingChannel, { label: string; hex: string; 
   owner_stay:        { label: 'Owner stay',  hex: '#706D67', tint: '#FAF9F6', ink: '#5C5952' },
 };
 
-/** clsx-lite: join truthy class parts. */
-export const cx = (...parts: Array<string | false | null | undefined>): string => parts.filter(Boolean).join(' ');
+// Our type scale and radii from tokens.css. Without them tailwind-merge reads text-copy as a colour and drops it
+// next to text-ink.
+const merge = extendTailwindMerge({
+  extend: { theme: { text: ['caption', 'copy', 'meta', 'title', 'heading', 'headline'], radius: ['card', 'control', 'pill'] } },
+});
+
+/** Join truthy class parts; a later class wins over an earlier one of the same kind, so cx(INPUT, 'w-[220px]') is
+ *  220px wide even though INPUT says w-full. */
+export const cx = (...parts: Array<string | false | null | undefined>): string => merge(...parts);
