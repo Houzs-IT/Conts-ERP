@@ -1,6 +1,6 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import { createBrowserRouter, RouterProvider } from 'react-router-dom';
+import { BrowserRouter } from 'react-router-dom';
 import App from './App';
 import { CrashScreen } from './components/CrashScreen';
 import './styles/tokens.css';
@@ -8,7 +8,6 @@ import './styles/devices.css';
 import './styles/theme-dark.css';
 import './styles/hover.css';
 import { initTheme } from './lib/theme';
-import { setNavigate } from './lib/go';
 
 initTheme();
 
@@ -41,9 +40,6 @@ window.addEventListener('unhandledrejection', e => healChunkError(e.reason));
 // bookmarks still do, so they are moved to the plain address before the app reads it.
 if (window.location.hash.startsWith('#/')) window.history.replaceState(null, '', window.location.hash.slice(1));
 
-const router = createBrowserRouter([{ path: '*', element: <App /> }]);
-setNavigate(router.navigate);
-
 createRoot(document.getElementById('root')!).render(
-  <React.StrictMode><CrashScreen><RouterProvider router={router} /></CrashScreen></React.StrictMode>
+  <React.StrictMode><CrashScreen><BrowserRouter><App /></BrowserRouter></CrashScreen></React.StrictMode>
 );

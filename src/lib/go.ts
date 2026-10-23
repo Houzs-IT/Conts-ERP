@@ -1,4 +1,4 @@
-/** Moves to another screen without reloading the page. main.tsx hands over the router's navigate once it
+/** Moves to another screen without reloading the page. App hands over the router's navigate once it
  *  exists, so this also works outside components (sign-in, sign-out). */
 let navigate: ((to: string) => unknown) | null = null;
 

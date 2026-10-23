@@ -12,6 +12,7 @@ import UpdateNotice from './components/UpdateNotice';
 import OwnerShell from './components/OwnerShell';
 import LoginPage from './pages/LoginPage';
 import { HOME, screenClosed, switchedOff } from './lib/navigation';
+import { setNavigate } from './lib/go';
 import { BootScreen, PageShown, PageSkeleton } from './components/Loading';
 
 /** react-router (ERP convention) with route-level code splitting — every page is
@@ -359,6 +360,10 @@ function Routed() {
 }
 
 export default function App() {
+  // BrowserRouter, not createBrowserRouter: the data router adds 17 KB gzipped to the entry script for features
+  // nothing here uses. go.ts gets navigate from here instead.
+  const navigate = useNavigate();
+  useEffect(() => setNavigate(navigate), [navigate]);
   return (
     <SessionProvider>
       <ToastProvider>
