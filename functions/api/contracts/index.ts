@@ -6,7 +6,7 @@ import { modelOf } from '../../_lib/revenueModel';
 import { codeOf } from '../../_lib/unitPurpose';
 import { contractView } from '../../_lib/unitContract';
 
-const READ_ROLES = ['management', 'operations_manager', 'operations_staff', 'finance_admin'];
+const READ_ROLES = ['management']; // everyone else follows the area's level (mayWork / maySee / mayRun)
 
 /** GET /api/contracts — every owner agreement. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {

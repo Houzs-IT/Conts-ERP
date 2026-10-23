@@ -7,7 +7,7 @@ import { notify } from '../../../_lib/notify';
 export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!mayRun(session, ['management', 'operations_manager'])) return fail('FORBIDDEN', 'Only management and operations managers can invite owners.', 403);
+  if (!mayRun(session, ['management'])) return fail('FORBIDDEN', 'Only management and operations managers can invite owners.', 403);
 
   const id = String(params.id);
   const owner = await one<any>(env, 'SELECT id, display_name, email, phone, user_id FROM owners WHERE id = ?', id);

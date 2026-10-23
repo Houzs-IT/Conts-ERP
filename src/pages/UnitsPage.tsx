@@ -36,7 +36,7 @@ import ContractTab, { ModelChip } from './units/ContractTab';
 import { PROPERTIES_FALLBACK, DETAIL_FALLBACK, mkUnit } from './units/fallback';
 import { RecordHistory } from '../components/RecordHistory';
 import {
-  MASTER_ROLES, STATES, layoutFromBedrooms,
+  mayEditUnits, STATES, layoutFromBedrooms,
   type Unit, type Building, type PropertiesPayload, type UnitDetail, type RosterRow,
 } from './units/shared';
 import { statusLabel } from '../lib/status';
@@ -87,7 +87,7 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
   const [params, setParams] = useSearchParams();
   const toast = useToast();
   const { user } = useSession();
-  const canEdit = !!user && MASTER_ROLES.includes(user.role);
+  const canEdit = mayEditUnits(user);
   const wide = useWide();
 
   const props = useApi<PropertiesPayload>('/properties', PROPERTIES_FALLBACK);
@@ -370,8 +370,8 @@ interface RecordProps {
 function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canEdit, dirty, saving, onSave, onDelete, onChange, reload, reloadDetail, readiness, setReadiness }: RecordProps) {
   const toast = useToast();
   const { user } = useSession();
-  // Matches MASTER_ROLES on the server's channex-setup / channex-connect.
-  const canManageChannels = !!user && MASTER_ROLES.includes(user.role);
+  // Same people as edit the unit's master data (the server's channex-setup / channex-connect).
+  const canManageChannels = mayEditUnits(user);
   const wideRecord = useSmUp();
   const [fmonth, setFmonth] = useFinancialMonth();
   const [utilityBill, setUtilityBill] = useState(false);

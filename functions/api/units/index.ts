@@ -1,5 +1,6 @@
 import { type Env, all, one, run, json, fail, nowIso } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
+import { can } from '../../_lib/access';
 import { invalidUnit, ownerFieldIn, saveExpenses, saveContract, auditUnit, type UnitInput } from '../../_lib/properties';
 import { purposeReady, saveBays } from '../../_lib/unitPurpose';
 
@@ -42,7 +43,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       bedrooms: r.bedrooms, bathrooms: r.bathrooms, maxGuests: r.max_guests, sizeSqft: r.size_sqft ?? null, layoutType: r.layout_type ?? null,
       isListed: !!r.is_listed, purpose: r.purpose ?? 'rental',
       // baseRate is integer sen. Field roles never receive money at all.
-      ...(session.manage ? { baseRate: r.base_rate } : {}),
+      ...(session.manage || can(session, 'finance', 'view') ? { baseRate: r.base_rate } : {}),
     })),
   });
 };

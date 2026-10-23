@@ -1,7 +1,7 @@
 import { type Env, all, json, fail } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
-import { mayWork } from '../../_lib/access';
-import { maintenanceMoney, cleaningMoney, PROFIT_ROLES } from '../../_lib/jobProfit';
+import { can } from '../../_lib/access';
+import { maintenanceMoney, cleaningMoney } from '../../_lib/jobProfit';
 import { MYT_DATE, SHEET_CLEANER } from '../../_lib/ops';
 
 /** GET /api/operations/job-profit?kind=maintenance|cleaning&month=YYYY-MM — Profit by job: every job finished in the month
@@ -11,7 +11,7 @@ import { MYT_DATE, SHEET_CLEANER } from '../../_lib/ops';
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!session.manage && !mayWork(session, PROFIT_ROLES)) return fail('FORBIDDEN', 'Only managers and finance see profit by job.', 403);
+  if (!session.manage && !can(session, 'finance', 'view')) return fail('FORBIDDEN', 'Only managers and finance see profit by job.', 403);
   const url = new URL(request.url);
   const kind = url.searchParams.get('kind') === 'cleaning' ? 'cleaning' : 'maintenance';
   const month = url.searchParams.get('month') ?? new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 7);

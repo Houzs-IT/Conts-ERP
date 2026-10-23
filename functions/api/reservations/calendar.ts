@@ -79,8 +79,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const upliftOf = new Map(uplifts.map(x => [`${x.unit_id}:${x.channel}`, x.uplift]));
   // Whether this person may change prices: the same rule PUT /rates and POST /rates/bulk apply, so the board can
   // hide Change price and Rate update instead of offering a button that answers 403.
-  const ratesAccess = await accessFor(env, session.role, '/api/rates', 'GET', session.side);
-  const canSetRates = (canManage(session.role, ratesAccess) || session.role === 'operations_manager') && !refusalFor(ratesAccess, 'POST');
+  const ratesAccess = await accessFor(env, session, '/api/rates', 'GET');
+  const canSetRates = canManage(session.role, ratesAccess) && !refusalFor(ratesAccess, 'POST');
   const weekendOf = (u: any) => (u.weekend_rate == null ? null : Number(u.weekend_rate));
 
   return json({

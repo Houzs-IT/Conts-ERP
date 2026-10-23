@@ -1,3 +1,4 @@
+import { mayWork } from '../lib/areaAccess';
 import { readDevice } from '../lib/deviceClass';
 import { useMedia } from '../lib/useMedia';
 import { useFillHeight } from '../lib/useFillHeight';
@@ -26,7 +27,7 @@ import { rm, dateRange, time, date as fmtDate, nights as fmtNights, guests as fm
 import { phone, phoneCountries } from '../lib/phone';
 import { Select, Menu } from '../components/Select';
 import { FilterBar, FilterMenu } from '../components/FilterBar';
-import type { BookingChannel, ReservationState, UnitReadiness, UserRole, Tone } from '../lib/types';
+import type { BookingChannel, ReservationState, UnitReadiness, Tone } from '../lib/types';
 import { RecordHistory } from '../components/RecordHistory';
 import { Eyebrow, Figure } from '../components/Metric';
 import { moneyStatus, isOtaChannel } from '../lib/payoutStatus';
@@ -118,7 +119,6 @@ const SORTS = [
   { key: 'stays', label: 'Most reservations', dir: 'desc' },
 ] as const;
 
-const OPS_ROLES: UserRole[] = ['management', 'operations_manager', 'operations_staff'];
 const TWO_HOURS = 2 * 60 * 60 * 1000;
 const initials = (name: string) => name.split(/\s+/).filter(Boolean).map(n => n[0]).slice(0, 2).join('').toUpperCase();
 const threadName = (ch: BookingChannel) => (ch === 'direct' ? 'WhatsApp' : channel[ch].label);
@@ -149,7 +149,7 @@ function accessGuard(m: GuestMovement): string | null {
 
 export default function GuestsPage() {
   const { user } = useSession();
-  const canSeeContact = user ? OPS_ROLES.includes(user.role) : false;
+  const canSeeContact = mayWork(user, 'reservations');
   const navigate = useNavigate();
   const toast = useToast();
 

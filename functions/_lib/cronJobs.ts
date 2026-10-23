@@ -1,4 +1,5 @@
 import { type Env, all, one, run, nowIso } from './db';
+import { peopleWithAccess } from './access';
 import { deliver, notifyUsers, retryAt, MAX_SEND_ATTEMPTS, hasSendLease, sendLeaseUntil } from './notify';
 import { flushWhenQuiet } from './channexQueue';
 import { channexConfigured } from './channex';
@@ -188,10 +189,10 @@ export async function dailyDigest(env: Env, o: RunOptions = {}): Promise<JobRepo
     `${plural(x.repairs, 'maintenance job')} open${x.urgent ? ` (${x.urgent} urgent)` : ''}${x.visits ? `, ${plural(x.visits, 'visit')} today` : ''}.`,
     x.blocked ? `${plural(x.blocked, 'unit')} blocked for repairs.` : null,
   ].filter(Boolean).join(' ');
-  const recipients = await all<{ n: number }>(env, `SELECT count(*)::int AS n FROM users WHERE is_active = 1 AND role IN ('management','operations_manager','operations_staff')`);
-  const items = [`To ${plural(recipients[0]?.n ?? 0, 'person', 'people')} (management and operations): ${body}`];
+  const recipients = (await peopleWithAccess(env, 'operations', 'edit')).length;
+  const items = [`To ${plural(recipients, 'person', 'people')} (management and operations): ${body}`];
   if (o.dryRun) return { job: 'daily-digest', summary: `Would send the ${day} digest.`, items };
-  const r = await notifyUsers(env, { roles: ['management', 'ops'] }, {
+  const r = await notifyUsers(env, { userIds: (await peopleWithAccess(env, 'operations', 'edit')).map(p => p.id) }, {
     kind: 'digest.today', title: `Today, ${Number(day.slice(8, 10))} ${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][Number(day.slice(5, 7)) - 1]}`,
     body, link: '/operations/today', entityTable: 'digest', entityId: day, dedupeKey: `digest-${day}`,
   });

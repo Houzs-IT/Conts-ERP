@@ -2,6 +2,7 @@ import { type Env, all, json, fail, mytToday } from '../../_lib/db';
 import { rentalOnly } from '../../_lib/unitPurpose';
 import { stayMonths, metrics, monthEndExclusive, toDate } from '../../_lib/revenue';
 import { requireSession } from '../../_lib/auth';
+import { can } from '../../_lib/access';
 import { ownerMonths } from '../../_lib/ownerEstimate';
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
@@ -19,7 +20,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const [rows, listedUnits, ownerByMonth] = await Promise.all([
     stayMonths(env, `${period}-01`, toExclusive),
     rentalOnly(env, 'units').then(r => all<{ id: string }>(env, `SELECT id FROM units WHERE is_listed = 1${r}`)),
-    session.manage ? ownerMonths(env, [period]) : Promise.resolve(undefined),
+    (session.manage || can(session, 'finance', 'view')) ? ownerMonths(env, [period]) : Promise.resolve(undefined),
   ]);
   const listedIds = new Set(listedUnits.map(u => u.id));
   const listed = metrics(rows.filter(r => listedIds.has(r.unit_id)), listedIds.size * days);
@@ -30,7 +31,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   const kpis = [
     { key: 'occupancy', value: listed.occupancy.toFixed(1), unit: 'percent' },
-    ...(session.manage ? [
+    ...(session.manage || can(session, 'finance', 'view') ? [
       { key: 'accommodation_revenue', value: everything.gross, currency: 'MYR' },
       { key: 'adr', value: listed.adr, currency: 'MYR' },
       { key: 'revpar', value: listed.revpar, currency: 'MYR' },

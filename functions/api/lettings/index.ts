@@ -1,9 +1,9 @@
 import { type Env, all, one, run, json, fail, audit, nowIso, mytToday } from '../../_lib/db';
 import { requireSession, hasColumn } from '../../_lib/auth';
-import { maySee } from '../../_lib/access';
+import { maySee, can } from '../../_lib/access';
 import { invalidLetting, REMIND_DAYS, type LettingInput } from '../../_lib/lettings';
 
-const READ = ['management', 'operations_manager', 'finance_admin', 'operations_staff'];
+const READ = ['management']; // everyone else follows the area's level (mayWork / maySee / mayRun)
 const ready = (env: Env) => hasColumn(env, 'unit_lettings', 'id').catch(() => false);
 
 /** GET /api/lettings[?unitId=] — every Agent-to-let record (or one unit's), latest change first, with the unit and
@@ -21,7 +21,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     ORDER BY l.updated_at DESC`, ...(unitId ? [unitId] : []));
   const today = mytToday();
   const days = (d: string | null) => (d ? Math.round((Date.parse(`${String(d).slice(0, 10)}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / 864e5) : null);
-  const money = session.manage;
+  const money = session.manage || can(session, 'finance', 'view');
   return json({
     ready: true, remindDays: REMIND_DAYS,
     data: rows.map(r => {

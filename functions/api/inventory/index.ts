@@ -1,4 +1,4 @@
-import { mayWork } from '../../_lib/access';
+import { mayWork, can } from '../../_lib/access';
 import { type Env, all, one, run, json, fail, audit, nowIso, mytToday } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
 import { resolveUnit } from '../../_lib/ops';
@@ -6,7 +6,7 @@ import { checkSen, checkDate, invalid, type Fields } from '../../_lib/validate';
 
 const CONDITIONS = ['good', 'fair', 'replace_soon', 'damaged'];
 const CATEGORIES = ['furniture', 'appliance', 'electronics', 'linen', 'kitchenware', 'fittings'];
-const WRITE_ROLES = ['management', 'operations_manager', 'operations_staff'];
+const WRITE_ROLES = ['management']; // everyone else follows the area's level (mayWork / maySee / mayRun)
 
 /** GET /api/inventory?unitId= — every item, with what it cost (finance roles only). */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
@@ -23,7 +23,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     WHERE 1 = 1 ${unitId ? 'AND i.unit_id = ?' : ''}
     ORDER BY p.name, u.unit_number, i.name`, ...(unitId ? [unitId] : []));
 
-  const money = session.manage;
+  const money = session.manage || can(session, 'finance', 'view');
   return json({
     generatedAt: nowIso(),
     data: rows.map(r => ({

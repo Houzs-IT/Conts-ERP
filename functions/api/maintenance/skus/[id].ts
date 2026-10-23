@@ -5,7 +5,7 @@ import { hasServicePrices, setPriceToday } from '../../../_lib/servicePrices';
 
 const CATEGORIES = ['plumbing', 'electrical', 'aircon', 'furniture', 'appliance', 'cleaning', 'general', 'other'];
 const UNIT_LABELS = ['job', 'unit', 'hour'];
-const WRITE_ROLES = ['management', 'operations_manager', 'operations_staff'];
+const WRITE_ROLES = ['management']; // everyone else follows the area's level (mayWork / maySee / mayRun)
 
 /** PATCH /api/maintenance/skus/:id { name?, category?, unitLabel?, defaultPrice?, active?, notes? }
  *  Edit a catalog item or retire it (active:false). Retiring keeps the history on past jobs. */

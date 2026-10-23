@@ -1,6 +1,7 @@
 import { type Env, all, one, json, fail, audit } from '../../../_lib/db';
+import { can } from '../../../_lib/access';
 import { requireSession } from '../../../_lib/auth';
-import { moneySchema, moneySql, toPayment, MONEY_ROLES, OTA_CHANNELS } from '../../../_lib/bookingMoney';
+import { moneySchema, moneySql, toPayment, OTA_CHANNELS } from '../../../_lib/bookingMoney';
 import { validatePayment, insertPayment, clean } from '../../../_lib/bookingPayments';
 import { approvalsEnabled, submit } from '../../../_lib/approvals';
 
@@ -8,7 +9,7 @@ import { approvalsEnabled, submit } from '../../../_lib/approvals';
 export const onRequestGet: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!MONEY_ROLES.includes(session.role)) return fail('FORBIDDEN', 'Only management, finance and operations managers can see payments.', 403);
+  if (!can(session, 'finance', 'view')) return fail('FORBIDDEN', 'Payments are for people with Finance access.', 403);
   if (!(await moneySchema(env)).payments) return fail('NOT_READY', 'Payments are not set up on this database yet (migration 0091).', 503);
   const rows = await all<any>(env, `
     SELECT bp.*, u.full_name AS created_by_name FROM booking_payments bp LEFT JOIN users u ON u.id = bp.created_by
@@ -22,7 +23,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
 export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!MONEY_ROLES.includes(session.role)) return fail('FORBIDDEN', 'Only management, finance and operations managers can record payments.', 403);
+  if (!can(session, 'finance', 'edit')) return fail('FORBIDDEN', 'Only people who can edit Finance record payments.', 403);
   const schema = await moneySchema(env);
   if (!schema.payments) return fail('NOT_READY', 'Payments are not set up on this database yet (migration 0091).', 503);
 

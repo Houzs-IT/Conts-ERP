@@ -1,12 +1,18 @@
 import { type Env, all, one, run, fail, nowIso } from './db';
-import { accessFor, canManage, isSide, type Level, type Side } from './access';
+import { accessFor, canManage, levelsFor, isSide, isKind, type DepartmentKind, type Level, type Side } from './access';
 import { notify } from './notify';
+import { legacyRolesIncludeOwners, parseList } from './twoStepLegacy';
 
-export interface SecuritySettings { staffTtlHours: number; ownerTtlHours: number; absoluteDays: number; maxAttempts: number; lockoutMinutes: number; require2faRoles: string[] }
+export interface SecuritySettings { staffTtlHours: number; ownerTtlHours: number; absoluteDays: number; maxAttempts: number; lockoutMinutes: number; require2faRoles: string[];
+  /** Department ids that must use two-step sign-in; null until management has saved the new setting, when require2faRoles still answers. */
+  require2faDepartments: string[] | null;
+  /** Whether owner logins must use two-step sign-in. Owners have no department, so they have their own switch; until it is
+   *  saved, the old role list answers (twoStepLegacy.ts). */
+  require2faOwners: boolean }
 
 /** Same defaults as the Settings > Security spec (functions/api/settings/index.ts) — used
  *  only for whatever a row is missing there, same as every other setting in that screen. */
-const SECURITY_DEFAULTS: SecuritySettings = { staffTtlHours: 168, ownerTtlHours: 8, absoluteDays: 30, maxAttempts: 5, lockoutMinutes: 15, require2faRoles: [] };
+const SECURITY_DEFAULTS: SecuritySettings = { staffTtlHours: 168, ownerTtlHours: 8, absoluteDays: 30, maxAttempts: 5, lockoutMinutes: 15, require2faRoles: [], require2faDepartments: null, require2faOwners: false };
 
 /** The owner-configurable values from Settings > Security, read live so a change there takes
  *  effect on the very next request — including for someone already signed in, since the
@@ -18,6 +24,7 @@ export async function securitySettings(env: Env): Promise<SecuritySettings> {
 
 function parseSecurity(rows: { key: string; value: string }[]): SecuritySettings {
   const map = new Map(rows.map(r => [r.key, r.value]));
+  const list = parseList;
   const num = (key: string, def: number) => { const n = Number(map.get(key)); return map.has(key) && Number.isFinite(n) ? n : def; };
   return {
     staffTtlHours: num('security.staffInactivityTimeoutMins', SECURITY_DEFAULTS.staffTtlHours * 60) / 60,
@@ -25,7 +32,9 @@ function parseSecurity(rows: { key: string; value: string }[]): SecuritySettings
     absoluteDays: num('security.absoluteTimeoutHours', SECURITY_DEFAULTS.absoluteDays * 24) / 24,
     maxAttempts: num('security.lockoutAttempts', SECURITY_DEFAULTS.maxAttempts),
     lockoutMinutes: num('security.lockoutMinutes', SECURITY_DEFAULTS.lockoutMinutes),
-    require2faRoles: (map.get('security.require2faRoles') ?? '').split(',').map(r => r.trim()).filter(Boolean),
+    require2faRoles: list(map.get('security.require2faRoles')),
+    require2faDepartments: map.has('security.require2faDepartments') ? list(map.get('security.require2faDepartments')) : null,
+    require2faOwners: map.has('security.require2faOwners') ? map.get('security.require2faOwners') === 'true' : legacyRolesIncludeOwners(list(map.get('security.require2faRoles'))),
   };
 }
 
@@ -80,7 +89,16 @@ export async function endSession(env: Env, sid: string | undefined, userId: stri
   return true;
 }
 
-/** The security settings and the signed-in user's current role, active flag and whether they are still on a
+/** Whether management requires two-step sign-in for this person: owners follow their own switch, everyone else their
+ *  department is on the list (the setting saved by department), or, until that setting exists, their role is on the old
+ *  list (which is what the department list is worked out from, see twoStepLegacy.ts). */
+export function twoStepRequired(settings: SecuritySettings, who: { role: string; departmentId?: string | null }): boolean {
+  if (who.role === 'owner') return settings.require2faOwners;
+  if (settings.require2faDepartments) return !!who.departmentId && settings.require2faDepartments.includes(who.departmentId);
+  return settings.require2faRoles.includes(who.role);
+}
+
+/** The security settings and the signed-in user's current role, department, position, active flag and whether they are still on a
  *  temporary password, in one query (one connection), for the session middleware.
  *  The cookie only says who signed in; what they may do is read from users on every request, so deactivating
  *  someone or changing their role takes effect at once.
@@ -88,7 +106,7 @@ export async function endSession(env: Env, sid: string | undefined, userId: stri
  *  once that browser has signed out. */
 export async function sessionState(env: Env, userId: string, sid?: string): Promise<{
   settings: SecuritySettings;
-  user: { role: string; side: Side; active: boolean; fullName: string; revokedAt: number; twoFactorOn: boolean; sessionLive: boolean; mustChangePassword: boolean } | null;
+  user: { role: string; side: Side; departmentId: string | null; positionId: string | null; kind: DepartmentKind | null; active: boolean; fullName: string; revokedAt: number; twoFactorOn: boolean; sessionLive: boolean; mustChangePassword: boolean } | null;
 }> {
   const [revokedCol, totpCol, sessions, sideCol] = await Promise.all([
     hasColumn(env, 'users', 'sessions_revoked_at'), hasColumn(env, 'users', 'totp_enabled_at'), sid ? sessionTable(env) : false,
@@ -97,15 +115,17 @@ export async function sessionState(env: Env, userId: string, sid?: string): Prom
   const rows = await all<{ key: string; value: string }>(env, `
     SELECT key, value FROM settings WHERE key LIKE 'security.%'
     UNION ALL
-    SELECT '~user', role || '|' || is_active::text || '|' || ${revokedCol ? "COALESCE(sessions_revoked_at, '')" : "''"}
-      || '|' || ${totpCol ? "(totp_enabled_at IS NOT NULL)::int::text" : "'0'"}
+    SELECT '~user', users.role || '|' || users.is_active::text || '|' || ${revokedCol ? "COALESCE(users.sessions_revoked_at, '')" : "''"}
+      || '|' || ${totpCol ? "(users.totp_enabled_at IS NOT NULL)::int::text" : "'0'"}
       || '|' || ${sessions ? '(SELECT count(*) FROM user_sessions s WHERE s.id = ? AND s.user_id = users.id)::text' : "'1'"}
-      || '|' || must_change_password::text || '|' || ${sideCol ? 'side' : "'both'"} || '|' || full_name FROM users WHERE id = ?`, ...(sessions ? [sid, userId] : [userId]));
+      || '|' || users.must_change_password::text || '|' || COALESCE(d.side, ${sideCol ? 'users.side' : "'both'"})
+      || '|' || COALESCE(users.department_id, '') || '|' || COALESCE(users.position_id, '') || '|' || COALESCE(d.kind, '')
+      || '|' || users.full_name FROM users LEFT JOIN departments d ON d.id = users.department_id WHERE users.id = ?`, ...(sessions ? [sid, userId] : [userId]));
   const u = rows.find(r => r.key === '~user');
-  const [role, active, revoked, totp, live, mustChange, side, ...name] = (u?.value ?? '').split('|');
+  const [role, active, revoked, totp, live, mustChange, side, departmentId, positionId, kind, ...name] = (u?.value ?? '').split('|');
   return {
     settings: parseSecurity(rows.filter(r => r.key !== '~user')),
-    user: u ? { role, side: isSide(side) ? side : 'both', active: active === '1', fullName: name.join('|'), revokedAt: revoked ? Date.parse(revoked) : 0, twoFactorOn: totp === '1', sessionLive: live !== '0', mustChangePassword: mustChange !== '0' } : null,
+    user: u ? { role, side: isSide(side) ? side : 'both', departmentId: departmentId || null, positionId: positionId || null, kind: isKind(kind) ? kind : null, active: active === '1', fullName: name.join('|'), revokedAt: revoked ? Date.parse(revoked) : 0, twoFactorOn: totp === '1', sessionLive: live !== '0', mustChangePassword: mustChange !== '0' } : null,
   };
 }
 
@@ -156,7 +176,12 @@ export function sessionLimits(settings: SecuritySettings, role: string) {
  *  (Users and roles > Permissions; functions/_lib/access.ts). Set by requireSession, not stored in the cookie. */
 /** `side`: which side of the business the account works on (migration 0143); absent on a cookie signed before it,
  *  which the session middleware re-signs with the live value on the next request. */
-export interface Session { userId: string; email: string; role: string; side?: Side; fullName: string; iat: number; sid?: string; manage?: boolean; picked?: Level | null }
+/** `departmentId`, `positionId`, `kind`: where the account sits (migration 0145) and its department's kind, which decides the
+ *  hidden role. Read live like the role and side, so moving someone applies on their next request; absent on a cookie
+ *  signed before the departments shipped, or on an owner, who has no department. */
+export interface Session { userId: string; email: string; role: string; side?: Side; departmentId?: string | null; positionId?: string | null; kind?: DepartmentKind | null; fullName: string; iat: number; sid?: string; manage?: boolean; picked?: Level | null;
+  /** Every area's level for this person (levelsFor), set by requireSession and never stored in the cookie. */
+  levels?: Record<string, Level> }
 
 const ENC = new TextEncoder();
 
@@ -170,7 +195,7 @@ async function hmac(secret: string, data: string) {
  *  `iat` back in when it slides an existing session's idle deadline forward, so the
  *  absolute cap always counts from first login, never from the latest request. */
 export async function signSession(
-  secret: string, s: { userId: string; email: string; role: string; side?: Side; fullName: string; sid?: string },
+  secret: string, s: { userId: string; email: string; role: string; side?: Side; departmentId?: string | null; positionId?: string | null; kind?: DepartmentKind | null; fullName: string; sid?: string },
   ttlHours: number, absoluteDays: number, iat = Date.now(),
 ) {
   const exp = Math.min(Date.now() + ttlHours * 36e5, iat + absoluteDays * 864e5);
@@ -197,7 +222,8 @@ export async function readSession(secret: string, token: string | null): Promise
   try {
     const p = JSON.parse(atob(body));
     if (!p.exp || p.exp < Date.now()) return null;
-    return { userId: p.userId, email: p.email, role: p.role, fullName: p.fullName, iat: p.iat ?? Date.now(), ...(typeof p.sid === 'string' ? { sid: p.sid } : {}), ...(isSide(p.side) ? { side: p.side } : {}) };
+    return { userId: p.userId, email: p.email, role: p.role, fullName: p.fullName, iat: p.iat ?? Date.now(), ...(typeof p.sid === 'string' ? { sid: p.sid } : {}), ...(isSide(p.side) ? { side: p.side } : {}),
+      ...(typeof p.departmentId === 'string' ? { departmentId: p.departmentId } : {}), ...(typeof p.positionId === 'string' ? { positionId: p.positionId } : {}), ...(isKind(p.kind) ? { kind: p.kind } : {}) };
   } catch { return null; }
 }
 
@@ -249,15 +275,13 @@ export async function verifyPassword(password: string, stored: string) {
 export async function requireSession(req: Request, env: Env) {
   const s = await readSession(env.SESSION_SECRET, readCookie(req));
   if (!s) return { session: null, response: fail('UNAUTHENTICATED', 'Your session expired. Sign in to continue.', 401) };
-  const access = await accessFor(env, s.role, new URL(req.url).pathname.replace(/\/+$/, ''), req.method, s.side);
-  const session = { ...s, manage: canManage(s.role, access), picked: access.chosen ? access.level : null };
+  const access = await accessFor(env, s, new URL(req.url).pathname.replace(/\/+$/, ''), req.method);
+  const session = { ...s, manage: canManage(s.role, access), picked: access.chosen ? access.level : null, levels: await levelsFor(env, s) };
   return { session: session as Session & { manage: boolean }, response: null };
 }
 
-const FINANCE = ['management', 'finance_admin', 'operations_manager'];
 const FIELD = ['housekeeper', 'technician'];
 
-export function canSeeFinance(role: string) { return FINANCE.includes(role); }
 export function isFieldRole(role: string) { return FIELD.includes(role); }
 
 export { fail, nowIso, one, run };

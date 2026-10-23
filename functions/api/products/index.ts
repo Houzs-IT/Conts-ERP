@@ -1,5 +1,6 @@
 import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
+import { can } from '../../_lib/access';
 import { invalidProduct, isCategory, toProductPayload, strOrNull, intOrNull, type ProductRow } from '../../_lib/products';
 import { checkSen, checkInt, invalid as invalidFields, type Fields } from '../../_lib/validate';
 
@@ -28,7 +29,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   }
 
   const rows = await all<ProductRow>(env, `${SELECT} WHERE ${where.join(' AND ')} ORDER BY category, code`, ...args);
-  const canCost = session.manage;
+  const canCost = session.manage || can(session, 'finance', 'view');
   return json({ generatedAt: nowIso(), data: rows.map(r => toProductPayload(r, canCost)) });
 };
 

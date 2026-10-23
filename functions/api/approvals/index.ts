@@ -1,6 +1,6 @@
 import { type Env, all, json, fail, nowIso } from '../../_lib/db';
+import { can } from '../../_lib/access';
 import { requireSession } from '../../_lib/auth';
-import { MASTER_ROLES } from '../../_lib/properties';
 import { VIEW_SQL, APPROVAL_KINDS, KIND_LABEL, decideContext, toView, pendingFor } from '../../_lib/approvals';
 
 const STATUSES = ['pending', 'approved', 'rejected', 'cancelled'];
@@ -12,7 +12,7 @@ const STATUSES = ['pending', 'approved', 'rejected', 'cancelled'];
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!MASTER_ROLES.includes(session.role)) return fail('FORBIDDEN', 'Approvals are for management, finance and operations managers.', 403);
+  if (!can(session, 'finance', 'view')) return fail('FORBIDDEN', 'Approvals are for people with Finance access.', 403);
 
   const url = new URL(request.url);
   const entity = url.searchParams.get('entity');
@@ -60,7 +60,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     kinds: APPROVAL_KINDS.map(k => ({ value: k, label: KIND_LABEL[k], count: Number(kinds.find(x => x.kind === k)?.n ?? 0) })),
     rules: {
       enabled: ctx.enabled, financeAdminLimit: ctx.settings.financeAdminLimit, expenseThreshold: ctx.settings.expenseThreshold, managementCount: ctx.managementCount,
-      you: session.role === 'management' ? 'any' : session.role === 'finance_admin' ? 'below_limit' : 'none',
+      you: session.role === 'management' ? 'any' : can(session, 'finance', 'full') ? 'below_limit' : 'none',
     },
     data: rows.map(r => toView(r, session, ctx)),
   });

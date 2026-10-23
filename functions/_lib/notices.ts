@@ -1,4 +1,5 @@
-import { type Env, one, all } from './db';
+import { type Env, one } from './db';
+import { peopleWithAccess } from './access';
 import { notifyUsers, taskPeople, technicianFor } from './notify';
 import { fieldVisibleSql, hasJobType } from './maintenance';
 
@@ -153,5 +154,5 @@ export async function repairNotice(env: Env, id: string, event: RepairEvent, by:
 
 /** Every active operations person, for the scheduled digest. */
 export async function opsPeople(env: Env): Promise<{ id: string }[]> {
-  return all<{ id: string }>(env, `SELECT id FROM users WHERE is_active = 1 AND role IN ('operations_manager','operations_staff','management')`);
+  return (await peopleWithAccess(env, 'operations', 'edit')).map(({ id }) => ({ id }));
 }

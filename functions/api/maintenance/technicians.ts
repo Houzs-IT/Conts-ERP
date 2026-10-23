@@ -4,7 +4,7 @@ import { requireSession, isFieldRole } from '../../_lib/auth';
 import { hasEmployeeIds } from '../../_lib/fieldPin';
 import { hasTechnicianList, TECH_LOGIN_ROLES } from '../../_lib/maintenance';
 
-const MANAGE = ['management', 'operations_manager', 'operations_staff'];
+const MANAGE = ['management']; // everyone else follows the area's level (mayWork / maySee / mayRun)
 const EMPLOYMENT = ['internal', 'outsourced'] as const;
 type Employment = (typeof EMPLOYMENT)[number];
 const isEmployment = (v: unknown): v is Employment => EMPLOYMENT.includes(v as Employment);
@@ -57,7 +57,7 @@ async function namesBeforeTheList(env: Env) {
   const [staff, contractors] = await Promise.all([
     all<{ id: string; full_name: string; role: string }>(env, `
       SELECT id, full_name, role FROM users
-      WHERE is_active = 1 AND role IN ('technician','housekeeper','operations_staff','operations_manager')
+      WHERE is_active = 1 AND role IN ('technician','housekeeper','operations_staff')
       ORDER BY (role = 'technician') DESC, full_name`),
     all<{ name: string; jobs: number }>(env, `
       SELECT min(vendor_name) AS name, COUNT(*)::int AS jobs FROM maintenance_issues

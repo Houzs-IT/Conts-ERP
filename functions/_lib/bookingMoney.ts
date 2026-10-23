@@ -169,7 +169,6 @@ export const PAYMENT_KINDS = ['guest_payment', 'ota_payout', 'refund'] as const;
 // vocab-ok: stored payment method values, validated and kept on old rows
 export const PAYMENT_METHODS = ['Bank transfer', 'Cash', 'Card', 'DuitNow / QR', 'Booking site payout', 'Other'] as const;
 /** Who may record or remove money received: management, finance and operations managers. */
-export const MONEY_ROLES = ['management', 'finance_admin', 'operations_manager'];
 
 export function toPayment(p: any): PaymentRow {
   return {

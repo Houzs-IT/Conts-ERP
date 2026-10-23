@@ -1,6 +1,6 @@
 import { type Env, one, fail, json } from './db';
+import { can } from './access';
 import { requireSession, isFieldRole, type Session } from './auth';
-import { MASTER_ROLES } from './properties';
 import { channexConfigured, channexTestConnection, channexMappingDetails, type HotelOta } from './channex';
 import { purposeOf, NOT_ON_CHANNELS } from './unitPurpose';
 
@@ -15,7 +15,7 @@ export interface LinkedUnit { id: string; unitNumber: string; title: string; pro
 export async function linkedUnitFor(request: Request, env: Env, unitId: string): Promise<{ session: Session; unit: LinkedUnit } | { response: Response }> {
   const { session, response } = await requireSession(request, env);
   if (!session) return { response: response! };
-  if (!MASTER_ROLES.includes(session.role)) return { response: fail('FORBIDDEN', 'Only management, finance and operations managers can change channel connections.', 403) };
+  if (!can(session, 'properties', 'full')) return { response: fail('FORBIDDEN', 'Only people with Full Units access can change channel connections.', 403) };
   if (!channexConfigured(env)) return { response: fail('NOT_CONFIGURED', 'Channex is not connected on this environment yet.', 501) };
   const u = await one<{ id: string; unit_number: string; listing_name: string | null; property_name: string; max_guests: number; channex_property_id: string | null; channex_rate_plan_id: string | null }>(env, `
     SELECT u.id, u.unit_number, u.listing_name, u.max_guests, u.channex_property_id, u.channex_rate_plan_id, p.name AS property_name
@@ -67,7 +67,7 @@ export interface ChannexBuilding { id: string; name: string; channex_property_id
 export async function buildingFor(request: Request, env: Env, id: string): Promise<{ session: Session; building: ChannexBuilding } | { response: Response }> {
   const { session, response } = await requireSession(request, env);
   if (!session) return { response: response! };
-  if (!MASTER_ROLES.includes(session.role) || isFieldRole(session.role)) return { response: fail('FORBIDDEN', 'Only management, finance and operations managers can change channel connections.', 403) };
+  if (!can(session, 'properties', 'full') || isFieldRole(session.role)) return { response: fail('FORBIDDEN', 'Only people with Full Units access can change channel connections.', 403) };
   if (!channexConfigured(env)) return { response: fail('NOT_CONFIGURED', 'Channex is not connected on this environment yet.', 501) };
   const building = await one<ChannexBuilding>(env, 'SELECT id, name, channex_property_id FROM properties WHERE id = ?', id);
   if (!building) return { response: fail('NOT_FOUND', 'That building does not exist.', 404) };

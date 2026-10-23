@@ -1,3 +1,4 @@
+import { kindOf, type DepartmentKind } from './access';
 /**
  * One app, several doors. The host a request arrives on decides which roles may
  * sign in there: owner.theconts.com is for owners only, erp.theconts.com (staff
@@ -25,17 +26,17 @@ export function doorRefusal(door: Door, role: string): string | null {
   return null;
 }
 
-/** role -> landing path. Shared by login and password-reset, both of which issue
- *  a fresh session and need to tell the client where to send the browser. */
-export const HOME: Record<string, string> = {
-  management: '/', operations_manager: '/', operations_staff: '/operations/today',
-  finance_admin: '/owners?view=statements', housekeeper: '/portal/today',
-  technician: '/portal/today', owner: '/owner',
-};
-
-/** Where a person lands after signing in. A Dream Crafter-only operations account would land on a rental screen
- *  its side closes (access.ts), so it starts on the sales orders instead. Every other role keeps its home. */
-export function homeFor(role: string, side?: string): string {
-  if (side === 'dream_crafter' && (role === 'operations_manager' || role === 'operations_staff')) return '/sales/orders';
-  return HOME[role] ?? '/';
+/** Where a person lands after signing in, from their department's kind and name (PLAN.md). Login, password reset and
+ *  View as all issue a fresh session and tell the client where to send the browser. Management opens the dashboard,
+ *  the Finance department the owner statements, every other staff account the day's operations, field accounts their
+ *  app, owners their portal. A Dream Crafter-only account would land on a rental screen its side closes (access.ts),
+ *  so it starts on the sales orders instead. */
+export function homeFor(who: { role: string; kind?: DepartmentKind | null; side?: string; department?: string | null }): string {
+  const { role, side, department } = who;
+  if (role === 'owner') return '/owner';
+  const kind = kindOf({ role, kind: who.kind });
+  if (kind === 'management') return '/';
+  if (kind === 'cleaning' || kind === 'maintenance') return '/portal/today';
+  if (department?.trim().toLowerCase() === 'finance') return '/owners?view=statements';
+  return side === 'dream_crafter' ? '/sales/orders' : '/operations/today';
 }

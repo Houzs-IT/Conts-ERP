@@ -1,6 +1,6 @@
 import { type Env, all, one, run, json, fail, audit, nowIso, transaction } from '../../../../_lib/db';
+import { can } from '../../../../_lib/access';
 import { requireSession } from '../../../../_lib/auth';
-import { MONEY_ROLES } from '../../../../_lib/bookingMoney';
 import { validatePayment, clean } from '../../../../_lib/bookingPayments';
 import { lateCheckoutReady, openLateCheckout, lateBooking, lateRefusal } from '../../../../_lib/lateCheckout';
 
@@ -14,7 +14,7 @@ const rm = (sen: number) => `RM ${(sen / 100).toLocaleString('en-MY', { minimumF
 export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response;
-  if (!MONEY_ROLES.includes(session.role)) return fail('FORBIDDEN', 'Only management, finance and operations managers can record payments.', 403);
+  if (!can(session, 'finance', 'edit')) return fail('FORBIDDEN', 'Only people who can edit Finance record payments.', 403);
   if (!(await lateCheckoutReady(env))) return fail('NOT_READY', 'Late checkout is not set up on this database yet (migration 0138).', 503);
 
   const id = String(params.id);

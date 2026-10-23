@@ -8,7 +8,7 @@ const EMPLOYMENT = ['internal', 'outsourced'] as const;
 type Employment = (typeof EMPLOYMENT)[number];
 const isEmployment = (v: unknown): v is Employment => EMPLOYMENT.includes(v as Employment);
 
-const MANAGE = ['management', 'operations_manager', 'operations_staff'];
+const MANAGE = ['management']; // everyone else follows the area's level (mayWork / maySee / mayRun)
 
 /** GET /api/housekeeping/cleaners?active=1&date=YYYY-MM-DD — the cleaner roster the operator
  *  maintains: internal staff vs outsourced third parties, each with the open job load on

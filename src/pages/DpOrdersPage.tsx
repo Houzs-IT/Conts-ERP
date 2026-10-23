@@ -1,3 +1,4 @@
+import { mayRun } from '../lib/areaAccess';
 import { useMemo, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { Segmented } from '../components/Metric';
@@ -33,7 +34,7 @@ export default function DpOrdersPage() {
   const openSos = (useApi('/sales-orders', SO_FALLBACK).data?.data ?? []).filter((s: { status: string }) => !['CANCELLED', 'CLOSED', 'DELIVERED', 'INVOICED'].includes(s.status));
   const toast = useToast();
   const { user } = useSession();
-  const canWrite = !!user && ['management', 'operations_manager', 'finance_admin'].includes(user.role);
+  const canWrite = mayRun(user, 'scTransportPlan');
   const [statusFilter, setStatusFilter] = useState<SchedStatus | 'all'>('all');
   const [search, setSearch] = useState('');
   const [drawer, setDrawer] = useState<{ mode: 'new' } | { mode: 'edit'; row: Sched } | null>(null);

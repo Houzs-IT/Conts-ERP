@@ -5,7 +5,7 @@ import { CATALOG, QUIET_HOURS, RUNNING, needsToRun } from '../../_lib/automation
 import { companyDetails } from '../../_lib/letterhead';
 import { phone } from '../../../src/lib/phone';
 
-const MANAGE = ['management', 'operations_manager'];
+const MANAGE = ['management']; // everyone else follows the area's level (mayWork / maySee / mayRun)
 
 /** GET /api/automations — the fixed rule catalog, with each rule's on/off state from the database. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {

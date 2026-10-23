@@ -20,7 +20,7 @@ const b64url = (bytes: ArrayBuffer | Uint8Array) =>
 export async function scmEngineAssertion(env: Env, session: Session): Promise<string> {
   const enc = new TextEncoder();
   // The role's level in each engine area travels with the sign-on, so the engine enforces the same chart.
-  const levels = await levelsFor(env, session.role, session.side);
+  const levels = await levelsFor(env, session);
   const access = Object.fromEntries(ENGINE_AREAS.map(k => [k, levels[k]]));
   const body = b64url(enc.encode(JSON.stringify({ email: session.email, name: session.fullName, role: session.role, access, exp: Date.now() + 45_000 })));
   const key = await crypto.subtle.importKey('raw', enc.encode(env.SCM_ENGINE_SSO_SECRET!), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);

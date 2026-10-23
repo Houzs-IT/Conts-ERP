@@ -6,7 +6,7 @@ import { technicianFor } from './notify';
 export const hasTechnicianList = (env: Env): Promise<boolean> => hasColumn(env, 'maintenance_issues', 'technician_id').catch(() => false);
 
 /** The logins an in-house entry on the technician list may be linked to. */
-export const TECH_LOGIN_ROLES = ['technician', 'housekeeper', 'operations_staff', 'operations_manager'];
+export const TECH_LOGIN_ROLES = ['technician', 'housekeeper', 'operations_staff'];
 
 /** Who a job is given to, as the job row keeps it. technicianId is undefined on a database without the list. */
 export interface Assignee { name: string; kind: 'in_house' | 'contractor'; userId: string | null | undefined; technicianId: string | null | undefined }

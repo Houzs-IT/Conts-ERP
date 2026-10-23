@@ -1,3 +1,4 @@
+import { mayRun } from '../lib/areaAccess';
 import { useEffect, useMemo, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
@@ -35,7 +36,7 @@ export default function StockTakesPage() {
   const warehouses = useApi<{ data: Opt[] }>('/warehouses', WH_FALLBACK).data?.data ?? [];
   const toast = useToast();
   const { user } = useSession();
-  const canWrite = !!user && ['management', 'operations_manager', 'finance_admin'].includes(user.role);
+  const canWrite = mayRun(user, 'scWarehouse');
   const [drawer, setDrawer] = useState<{ mode: 'new' } | { mode: 'view'; k: Take } | null>(null);
   const [added, setAdded] = useState<Take[]>([]);
   const [edits, setEdits] = useState<Record<string, Partial<Take>>>({});

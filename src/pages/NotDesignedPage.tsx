@@ -5,7 +5,7 @@ import { homeFor } from '../lib/navigation';
  *  never a dead end. */
 export default function NotDesignedPage() {
   const { user } = useSession();
-  const home = user ? homeFor(user.role, user.side) : '/';
+  const home = user ? homeFor(user) : '/';
   return (
     <div className="max-w-[460px] bg-card border border-solid border-line rounded-card p-7 flex flex-col gap-[11px]">
       <div className="text-[16px] font-semibold">This page does not exist</div>

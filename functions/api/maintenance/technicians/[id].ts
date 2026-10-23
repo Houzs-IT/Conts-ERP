@@ -4,7 +4,7 @@ import { requireSession } from '../../../_lib/auth';
 import { hasTechnicianList } from '../../../_lib/maintenance';
 
 const EMPLOYMENT = ['internal', 'outsourced'];
-const MANAGE = ['management', 'operations_manager', 'operations_staff'];
+const MANAGE = ['management']; // everyone else follows the area's level (mayWork / maySee / mayRun)
 
 /** PATCH /api/maintenance/technicians/:id — edit an entry on the technician list. Any subset of
  *  { name, employmentType, vendorName, phone, isActive }. Switching someone off keeps their jobs but takes them off

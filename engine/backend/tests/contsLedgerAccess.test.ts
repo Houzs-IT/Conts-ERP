@@ -18,7 +18,7 @@ import { Hono } from 'hono';
 import { describe, expect, test } from 'vitest';
 import { contsPageAccess, contsPermissions, parseContsAccess, type ContsAccess } from '../src/conts/access';
 import { ACCOUNTING_OPEN_PATHS, LEDGER_KEY, PAYMENT_VOUCHER_OPEN_PATHS, ledgerPermissions, requireLedgerAccess } from '../src/conts/ledger-access';
-import { roleIdFor } from '../src/conts/sso';
+import { accessFingerprint, roleIdFor } from '../src/conts/sso';
 
 const EIGHT = ['scSales', 'scInvoices', 'scConsignment', 'scProcurement', 'scTransportPlan', 'scWarehouse', 'serviceCases', 'projects'];
 const levels = (level: string, ledger?: string) => ({
@@ -135,6 +135,29 @@ describe('the engine role at sign-on', () => {
     const env = fakeDb([{ ...OWNER }]);
     await roleIdFor(env as never, 'management', parseContsAccess(levels('full', 'full'))!);
     expect(await roleIdFor(env as never, 'operations_manager', parseContsAccess(levels('full'))!)).toBe(1);
+  });
+
+  test('equal access shares one role whatever the Conts role, different access never does', async () => {
+    const env = fakeDb([{ ...OWNER }]);
+    const a = await roleIdFor(env as never, 'operations_staff', parseContsAccess(levels('edit'))!);
+    const b = await roleIdFor(env as never, 'operations_manager', parseContsAccess(levels('edit'))!);
+    const c = await roleIdFor(env as never, 'operations_staff', parseContsAccess({ ...levels('edit'), scSales: 'view' })!);
+    expect(a).toBe(b);
+    expect(c).not.toBe(a);
+    // Same levels, areas arriving in another order: still the same role.
+    const shuffled = Object.fromEntries(Object.entries(levels('edit')).reverse());
+    expect(await accessFingerprint(parseContsAccess(shuffled)!)).toBe(await accessFingerprint(parseContsAccess(levels('edit'))!));
+    expect(env.roles.map((r) => r.name).filter((n) => n.startsWith('Conts: staff ')).length).toBe(2);
+  });
+
+  test('the role is named after the fingerprint and its page access is saved under that name', async () => {
+    const env = fakeDb([{ ...OWNER }]);
+    const access = parseContsAccess(levels('edit'))!;
+    const id = await roleIdFor(env as never, 'operations_staff', access);
+    const name = env.roles.find((r) => r.id === id)!.name;
+    expect(name).toBe(`Conts: staff ${await accessFingerprint(access)}`);
+    expect(name).toMatch(/^Conts: staff [0-9a-f]{8}$/);
+    expect(JSON.parse(env.settings.get(`conts_access:${name}`)!)).toEqual(access);
   });
 
   test('a role with only the ledger can still sign in', async () => {

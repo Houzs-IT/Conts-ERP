@@ -1,3 +1,4 @@
+import { mayWork } from '../lib/areaAccess';
 import { useMemo, useState } from 'react';
 import { Search, Plus } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
@@ -48,7 +49,7 @@ export default function SalesInvoicesPage() {
   const openDos = (useApi<{ data: OpenDo[] }>('/delivery-orders', DO_FALLBACK).data?.data ?? []).filter(d => !['CANCELLED', 'INVOICED'].includes(d.status));
   const toast = useToast();
   const { user } = useSession();
-  const canWrite = !!user && ['management', 'operations_manager', 'finance_admin'].includes(user.role);
+  const canWrite = mayWork(user, 'scInvoices');
 
   const [statusFilter, setStatusFilter] = useState<Status | 'all'>('all');
   const [search, setSearch] = useState('');

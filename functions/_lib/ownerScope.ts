@@ -1,6 +1,6 @@
 import { type Env, one, fail } from './db';
-import { type Session, canSeeFinance } from './auth';
-import { MASTER_ROLES } from './properties';
+import { can, type Level } from './access';
+import type { Session } from './auth';
 
 export interface OwnerRow { id: string; display_name: string; bank_name: string | null; bank_account_last4: string | null }
 
@@ -12,7 +12,7 @@ export async function ownerFor(env: Env, session: Session, url: URL): Promise<Ow
     return o ?? fail('NOT_LINKED', 'Your account is not linked to a unit yet. Contact The Conts.', 404);
   }
   const asOwner = url.searchParams.get('ownerId');
-  if (canSeeFinance(session.role) && asOwner) {
+  if (can(session, 'finance', 'view') && asOwner) {
     const o = await one<OwnerRow>(env, 'SELECT id, display_name, bank_name, bank_account_last4 FROM owners WHERE id = ?', asOwner);
     return o ?? fail('NOT_FOUND', 'That owner no longer exists.', 404);
   }
@@ -22,5 +22,5 @@ export async function ownerFor(env: Env, session: Session, url: URL): Promise<Ow
 /** Provisional figures are never shown to owners. */
 export const VISIBLE = `('finalised','sent','paid')`;
 
-/** Who may add, release, hold or settle an owner adjustment: a master role with manage access. */
-export const mayChangeAdjustments = (s: { role: string; manage?: boolean }) => !!s.manage && MASTER_ROLES.includes(s.role);
+/** Who may add, release, hold or settle an owner adjustment: manage access in Finance and the right to edit it. */
+export const mayChangeAdjustments = (s: { manage?: boolean; levels?: Record<string, Level> }): boolean => !!s.manage && can(s, 'finance', 'edit');

@@ -77,7 +77,7 @@ export async function setPriceToday(env: Env, itemId: string, ownerPrice: number
 }
 
 /** Who adds and edits items (not prices): the same set that kept the maintenance catalog. Prices are management's. */
-export const ITEM_WRITERS = ['management', 'operations_manager', 'operations_staff'];
+export const ITEM_WRITERS = ['management']; // everyone else follows the area's level (mayWork / maySee / mayRun)
 
 /** Every dated price row by item, newest first. */
 export async function loadPrices(env: Env): Promise<Map<string, (PriceRow & { note: string | null; created_at: string; created_by_name: string | null })[]>> {

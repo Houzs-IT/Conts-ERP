@@ -1,13 +1,12 @@
 import { mayWork } from '../../../_lib/access';
 import { type Env, one, run, json, fail, audit, nowIso } from '../../../_lib/db';
 import { requireSession } from '../../../_lib/auth';
-import { MASTER_ROLES } from '../../../_lib/properties';
 
 /** The unit lifecycle states the operator sets by hand. Mirrors the unit_readiness check in the schema. */
 export const READINESS = ['occupied', 'dirty', 'cleaning', 'inspection', 'ready', 'maintenance', 'blocked'] as const;
 
 /** Roles that manage a unit's state: the master roles plus front-line operations staff. */
-const CAN_SET = [...MASTER_ROLES, 'operations_staff'];
+const CAN_SET = ['management']; // everyone else follows the area's level (mayWork / maySee / mayRun)
 
 /** PATCH /api/units/:id/readiness { readiness } — move the unit to a state the operator picked. */
 export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params }) => {

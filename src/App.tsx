@@ -121,11 +121,11 @@ function AppLayout() {
   const viaEngine = !!enginePath && !!engine.data?.enabled;
   const lastEnginePath = useRef<string | null>(null);
   if (viaEngine) lastEnginePath.current = enginePath;
-  // A screen whose area is closed to this role (Users and roles > Permissions) is not shown even by its address.
+  // A screen whose area is closed to this person (Users and roles > Permissions) is not shown even by its address.
   const { user } = useSession();
   const closed = screenClosed(location.pathname, user?.access);
   useEffect(() => { if (engine.data?.enabled && user) signInToEngineEarly(user.id); }, [engine.data?.enabled, user?.id]);
-  if (switchedOff(location.pathname)) return <Navigate to={user ? homeFor(user.role, user.side) : '/'} replace />;
+  if (switchedOff(location.pathname)) return <Navigate to={user ? homeFor(user) : '/'} replace />;
   const engineShown = viaEngine && !closed;
   return (
     <AppShell path={location.pathname} navigate={(p: string) => navigate(p)} flush={viaEngine}>
@@ -147,7 +147,7 @@ function NoAccess() {
   return (
     <div className="p-10 text-center">
       <h1 className="m-0 text-[18px] font-semibold">Your role does not have access to this screen</h1>
-      <p className="mt-2 text-[13px] text-muted-ink">Management sets what each role can open, under Users and roles.</p>
+      <p className="mt-2 text-[13px] text-muted-ink">Management sets what each department and position can open, under Users and roles.</p>
     </div>
   );
 }

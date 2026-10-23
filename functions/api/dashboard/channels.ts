@@ -1,6 +1,7 @@
 import { type Env, json, fail, mytToday } from '../../_lib/db';
 import { stayMonths, monthEndExclusive, toDate } from '../../_lib/revenue';
 import { requireSession } from '../../_lib/auth';
+import { can } from '../../_lib/access';
 import { CHANNEL_LABEL } from '../../_lib/hostplatformImport';
 
 /** Where the month's reservations come from: each channel's share of gross value, split by night into the month to
@@ -9,7 +10,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
   // Money by channel is management's, like the money KPI tiles; others get the card empty rather than an error.
-  if (!session.manage) return json({ generatedAt: new Date().toISOString(), channels: [] });
+  if (!(session.manage || can(session, 'finance', 'view'))) return json({ generatedAt: new Date().toISOString(), channels: [] });
 
   const url = new URL(request.url);
   const period = url.searchParams.get('period') ?? mytToday().slice(0, 7);

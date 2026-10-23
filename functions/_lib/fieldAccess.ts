@@ -1,9 +1,8 @@
 import { type Env, one, run, json, fail, audit, nowIso } from './db';
 import { type Session, hashPassword, revokeSessions } from './auth';
+import { can } from './access';
 import { NO_EMAIL_DOMAIN, PIN_ROLES, employeeIdFor, hasEmployeeIds, tempPin } from './fieldPin';
 
-/** Creating a login is a management decision; operations managers may make only field ones, and only from here. */
-export const GRANT_ACCESS = ['management', 'operations_manager'];
 
 /** The two worker lists on Workers: cleaners sign in as housekeepers, technicians as technicians. */
 const LISTS = {
@@ -21,7 +20,9 @@ export type WorkerList = keyof typeof LISTS;
  */
 export async function giveFieldAccess(env: Env, session: Session, list: WorkerList, id: string): Promise<Response> {
   const { role, noun, action } = LISTS[list];
-  if (!GRANT_ACCESS.includes(session.role)) return fail('FORBIDDEN', 'Only management and operations managers can give app access.', 403);
+  // Creating a login is a management decision; Full on Operations (the Operations Manager position) may make field
+  // ones too, and only from here.
+  if (!can(session, 'operations', 'full')) return fail('FORBIDDEN', 'Only management and operations managers can give app access.', 403);
   if (!(await hasEmployeeIds(env))) return fail('NOT_MIGRATED', 'Employee ID sign-in needs a database update (migration 0145) that has not been applied yet.', 503);
 
   const w = await one<{ id: string; full_name: string; employment_type: string; phone: string | null; user_id: string | null; is_active: number }>(env,

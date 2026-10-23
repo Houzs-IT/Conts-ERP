@@ -19,7 +19,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     ORDER BY is_default DESC, lower(name)`, table, session.userId);
   const views = rows.map(r => toView(r, session.userId));
   return json({
-    table, canShare: mayShare(session.role),
+    table, canShare: mayShare(session),
     mine: views.filter(v => v.scope === 'mine'), company: views.filter(v => v.scope === 'company'),
   });
 };
@@ -38,7 +38,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const layout = cleanLayout(b?.layout);
   if (typeof layout === 'string') return fail('VALIDATION', layout, 422);
   const company = b?.scope === 'company';
-  if (company && !mayShare(session.role)) return fail('FORBIDDEN', 'Only management can save views for the whole company.', 403);
+  if (company && !mayShare(session)) return fail('FORBIDDEN', 'Only management can save views for the whole company.', 403);
   const owner = company ? null : session.userId;
   const isDefault = !!b?.isDefault;
 

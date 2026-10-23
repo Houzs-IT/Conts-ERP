@@ -1,5 +1,6 @@
 import { type Env, all, one, json, fail } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
+import { can } from '../../_lib/access';
 
 const WHEN = ['all', 'upcoming', 'arriving', 'hosting', 'checking_out', 'past', 'cancelled'] as const;
 type When = typeof WHEN[number];
@@ -43,7 +44,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     const owned = await one<{ n: number }>(env, 'SELECT COUNT(*) AS n FROM owners WHERE id = ? AND user_id = ?', unit.owner_id, session.userId);
     if (!owned?.n) return fail('FORBIDDEN', 'This unit is not on your account.', 403);
   }
-  const money = session.manage;
+  const money = session.manage || can(session, 'finance', 'view');
   const today = (await one<{ d: string; t: string }>(env, `SELECT to_char(now() AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM-DD') AS d,
     to_char(now() AT TIME ZONE 'Asia/Kuala_Lumpur' + interval '1 day', 'YYYY-MM-DD') AS t`))!;
 

@@ -1,3 +1,4 @@
+import { mayRun } from '../lib/areaAccess';
 import { useMemo, useState, type ReactNode } from 'react';
 import { Search, Plus, Trash2 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
@@ -48,7 +49,7 @@ export default function CustomersPage() {
   const { data, loading, error, reload } = useApi<Payload>('/customers', FALLBACK);
   const toast = useToast();
   const { user } = useSession();
-  const canWrite = !!user && ['management', 'operations_manager', 'finance_admin'].includes(user.role);
+  const canWrite = mayRun(user, 'scSales');
   const [statusFilter, setStatusFilter] = useState<'all' | Status>('all');
   const [search, setSearch] = useState('');
   const [drawer, setDrawer] = useState<{ draft: Draft; isNew: boolean } | null>(null);
