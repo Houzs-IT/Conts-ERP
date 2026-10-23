@@ -1,4 +1,4 @@
-import { mayWork } from '../lib/areaAccess';
+import { mayRun } from '../lib/areaAccess';
 import { useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, Plus, Download, Upload, Pencil, Trash2 } from 'lucide-react';
@@ -113,7 +113,7 @@ export default function ProductsPage() {
   const toast = useToast();
   const navigate = useNavigate();
   const { user } = useSession();
-  const canWrite = mayWork(user, 'scProcurement');
+  const canWrite = mayRun(user, 'scProcurement');
 
   const [tab, setTab] = useState('sku');
   const [cat, setCat] = useState<'all' | Category>('all');

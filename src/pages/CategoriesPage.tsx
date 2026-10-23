@@ -1,4 +1,4 @@
-import { mayWork } from '../lib/areaAccess';
+import { mayRun } from '../lib/areaAccess';
 import { useMemo, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
@@ -39,7 +39,7 @@ export default function CategoriesPage() {
   const { data, loading, error, reload } = useApi<Payload>('/categories', FALLBACK);
   const toast = useToast();
   const { user } = useSession();
-  const canWrite = mayWork(user, 'scProcurement');
+  const canWrite = mayRun(user, 'scProcurement');
 
   const [drawer, setDrawer] = useState<Draft | null>(null);
   const [added, setAdded] = useState<Category[]>([]);

@@ -1,4 +1,4 @@
-import { mayWork } from '../lib/areaAccess';
+import { mayRun } from '../lib/areaAccess';
 import { useMemo, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
@@ -44,7 +44,7 @@ export default function DriverLeavePage() {
   const drivers = useApi<{ data: Driver[] }>('/drivers', DRIVERS_FALLBACK).data?.data ?? [];
   const toast = useToast();
   const { user } = useSession();
-  const canWrite = mayWork(user, 'scTransportPlan');
+  const canWrite = mayRun(user, 'scTransportPlan');
   const [driverFilter, setDriverFilter] = useState('all');
   const [drawer, setDrawer] = useState(false);
   const [added, setAdded] = useState<Leave[]>([]);

@@ -1,4 +1,4 @@
-import { mayWork } from '../lib/areaAccess';
+import { mayRun } from '../lib/areaAccess';
 import { todayMyt } from '../lib/format';
 import { useMemo, useState } from 'react';
 import PageHeader from '../components/PageHeader';
@@ -24,7 +24,7 @@ export default function DeliveryPlanningPage() {
   const drivers = useApi('/drivers', DRIVERS_FALLBACK).data?.data ?? [];
   const vehicles = useApi('/vehicles', VEHICLES_FALLBACK).data?.data ?? [];
   const { user } = useSession();
-  const canWrite = mayWork(user, 'scTransportPlan');
+  const canWrite = mayRun(user, 'scTransportPlan');
   const [edits, setEdits] = useState<Record<string, Partial<Sched>>>({});
   useResetOnReload(data, () => { setEdits({}); });
   const [day, setDay] = useState<string>('');

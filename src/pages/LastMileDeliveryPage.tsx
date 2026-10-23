@@ -1,4 +1,4 @@
-import { mayWork } from '../lib/areaAccess';
+import { mayRun } from '../lib/areaAccess';
 import { useMemo, useState } from 'react';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
@@ -26,7 +26,7 @@ export default function LastMileDeliveryPage() {
   const { data, loading, error, reload } = useApi<SchedPayload>('/delivery-schedule', FALLBACK);
   const toast = useToast();
   const { user } = useSession();
-  const canWrite = mayWork(user, 'scTransportPlan');
+  const canWrite = mayRun(user, 'scTransportPlan');
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>('active');
   const [edits, setEdits] = useState<Record<string, SchedStatus>>({});
   useResetOnReload(data, () => { setEdits({}); });

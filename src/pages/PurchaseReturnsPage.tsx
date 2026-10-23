@@ -1,4 +1,4 @@
-import { mayWork } from '../lib/areaAccess';
+import { mayRun } from '../lib/areaAccess';
 import { useMemo, useState } from 'react';
 import { Search, Plus } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
@@ -52,7 +52,7 @@ export default function PurchaseReturnsPage() {
   const openGrns = (useApi<{ data: OpenGrn[] }>('/goods-receipts?status=POSTED', GRN_FALLBACK).data?.data ?? []).filter(g => g.status === 'POSTED');
   const toast = useToast();
   const { user } = useSession();
-  const canWrite = mayWork(user, 'scProcurement');
+  const canWrite = mayRun(user, 'scProcurement');
 
   const [statusFilter, setStatusFilter] = useState<Status | 'all'>('all');
   const [search, setSearch] = useState('');

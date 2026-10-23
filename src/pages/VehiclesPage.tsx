@@ -1,4 +1,4 @@
-import { mayWork } from '../lib/areaAccess';
+import { mayRun } from '../lib/areaAccess';
 import { useMemo, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
@@ -35,7 +35,7 @@ export default function VehiclesPage() {
   const { data, loading, error, reload } = useApi<Payload>('/vehicles', FALLBACK);
   const toast = useToast();
   const { user } = useSession();
-  const canWrite = mayWork(user, 'scTransportPlan');
+  const canWrite = mayRun(user, 'scTransportPlan');
   const [drawer, setDrawer] = useState<Draft | null>(null);
   const [added, setAdded] = useState<Vehicle[]>([]);
   const [edits, setEdits] = useState<Record<string, Partial<Vehicle>>>({});

@@ -1,4 +1,4 @@
-import { maySee, mayWork } from '../lib/areaAccess';
+import { mayWork } from '../lib/areaAccess';
 import { readDevice } from '../lib/deviceClass';
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
@@ -103,7 +103,8 @@ export default function BookingsPage() {
   const UNITS = useUnitRoster();
   const toast = useToast();
   const { user } = useSession();
-  const canMoney = maySee(user, 'finance');
+  // Marking host payouts received records money: the server wants Edit on Finance (reservations/mark-paid-out.ts).
+  const canMoney = mayWork(user, 'finance');
   const canOps = mayWork(user, 'reservations');
   // Phones list bookings as cards to open, not to tick: bulk actions stay on tablet and desktop.
   const phone = useMedia('(max-width: 767.98px)');

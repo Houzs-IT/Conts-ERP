@@ -1,4 +1,4 @@
-import { mayWork } from '../lib/areaAccess';
+import { mayRun } from '../lib/areaAccess';
 import { useMemo, useState } from 'react';
 import { DateField } from '../components/inputs';
 import PageHeader from '../components/PageHeader';
@@ -23,7 +23,7 @@ export default function DeliveryDateArrangementPage() {
   const { data, loading, error, reload } = useApi<SchedPayload>('/delivery-schedule', FALLBACK);
   const toast = useToast();
   const { user } = useSession();
-  const canWrite = mayWork(user, 'scTransportPlan');
+  const canWrite = mayRun(user, 'scTransportPlan');
   const [edits, setEdits] = useState<Record<string, string>>({});
   useResetOnReload(data, () => { setEdits({}); });
   const [onlyUndated, setOnlyUndated] = useState(true);

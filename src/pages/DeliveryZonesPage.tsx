@@ -1,4 +1,4 @@
-import { mayWork } from '../lib/areaAccess';
+import { mayRun } from '../lib/areaAccess';
 import { useMemo, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
@@ -39,7 +39,7 @@ export default function DeliveryZonesPage() {
   const { data, loading, error, reload } = useApi<Payload>('/delivery-zones', FALLBACK);
   const toast = useToast();
   const { user } = useSession();
-  const canWrite = mayWork(user, 'scTransportPlan');
+  const canWrite = mayRun(user, 'scTransportPlan');
   const [drawer, setDrawer] = useState<{ draft: Zone; isNew: boolean } | null>(null);
   const [added, setAdded] = useState<Zone[]>([]);
   const [edits, setEdits] = useState<Record<string, Partial<Zone>>>({});

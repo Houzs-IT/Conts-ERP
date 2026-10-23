@@ -1,4 +1,4 @@
-import { mayWork } from '../lib/areaAccess';
+import { mayRun } from '../lib/areaAccess';
 import { useMemo, useState } from 'react';
 import { Plus, Trash2, Check } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
@@ -38,7 +38,7 @@ export default function DeliveryResidenceRulesPage() {
   const { data, loading, error, reload } = useApi<Payload>('/residence-rules', FALLBACK);
   const toast = useToast();
   const { user } = useSession();
-  const canWrite = mayWork(user, 'scTransportPlan');
+  const canWrite = mayRun(user, 'properties');
   const [search, setSearch] = useState('');
   const [drawer, setDrawer] = useState<{ draft: Rule; isNew: boolean } | null>(null);
   const [added, setAdded] = useState<Rule[]>([]);

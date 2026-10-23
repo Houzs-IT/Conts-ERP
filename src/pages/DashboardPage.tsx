@@ -373,7 +373,8 @@ export default function DashboardPage() {
   const mayAct = (e: Exception) => {
     switch (e.action.label) {
       case 'Assign cleaner': return works('operations');
-      case 'Notify owner': return works('operations');
+      // POST /api/owners/:id/notify is checked against the Dashboard area (ROUTE_AREAS in functions/_lib/access.ts).
+      case 'Notify owner': return works('dashboard');
       case 'Review and send': return level('finance') !== 'none';
       case 'Open pricing': return level('performance') === 'full';
       default: return true;

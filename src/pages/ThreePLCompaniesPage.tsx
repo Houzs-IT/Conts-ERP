@@ -1,4 +1,4 @@
-import { mayWork } from '../lib/areaAccess';
+import { mayRun } from '../lib/areaAccess';
 import { useMemo, useState, type ReactNode } from 'react';
 import { Search, Plus, Trash2 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
@@ -39,7 +39,7 @@ export default function ThreePLCompaniesPage() {
   const { data, loading, error, reload } = useApi<Payload>('/threepl-companies', FALLBACK);
   const toast = useToast();
   const { user } = useSession();
-  const canWrite = mayWork(user, 'scTransportPlan');
+  const canWrite = mayRun(user, 'scTransportPlan');
   const [filter, setFilter] = useState<'all' | 'active' | 'inactive'>('all');
   const [search, setSearch] = useState('');
   const [drawer, setDrawer] = useState<{ draft: ThreePl; isNew: boolean } | null>(null);

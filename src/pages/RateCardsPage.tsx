@@ -1,4 +1,4 @@
-import { mayWork } from '../lib/areaAccess';
+import { mayRun } from '../lib/areaAccess';
 import { useMemo, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
@@ -53,7 +53,7 @@ export default function RateCardsPage() {
   const carriers = useApi<{ data: Carrier[] }>('/threepl-companies?active=1', CARRIERS_FALLBACK).data?.data ?? [];
   const toast = useToast();
   const { user } = useSession();
-  const canWrite = mayWork(user, 'scTransportPlan');
+  const canWrite = mayRun(user, 'scTransportPlan');
   const [search, setSearch] = useState('');
   const [drawer, setDrawer] = useState<{ card: RateCard; isNew: boolean } | null>(null);
   const [added, setAdded] = useState<RateCard[]>([]);

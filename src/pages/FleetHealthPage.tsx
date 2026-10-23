@@ -1,4 +1,4 @@
-import { mayWork } from '../lib/areaAccess';
+import { mayRun } from '../lib/areaAccess';
 import { useMemo, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
@@ -44,7 +44,7 @@ export default function FleetHealthPage() {
   const vehicles = useApi<{ data: Vehicle[] }>('/vehicles', VEH_FALLBACK).data?.data ?? [];
   const toast = useToast();
   const { user } = useSession();
-  const canWrite = mayWork(user, 'scTransportPlan');
+  const canWrite = mayRun(user, 'scTransportPlan');
   const [vehFilter, setVehFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [drawer, setDrawer] = useState<{ draft: Rec; isNew: boolean } | null>(null);

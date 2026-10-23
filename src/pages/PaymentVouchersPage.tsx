@@ -51,7 +51,7 @@ export default function PaymentVouchersPage() {
   const invoices = (useApi<{ data: Pi[] }>('/purchase-invoices', PI_FALLBACK).data?.data ?? []).filter(p => p.status === 'POSTED' || p.status === 'PARTIALLY_PAID');
   const toast = useToast();
   const { user } = useSession();
-  const canWrite = mayWork(user, 'ledger');
+  const canWrite = mayWork(user, 'scInvoices');
 
   const [statusFilter, setStatusFilter] = useState<'all' | 'POSTED' | 'CANCELLED'>('all');
   const [search, setSearch] = useState('');

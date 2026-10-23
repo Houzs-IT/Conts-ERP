@@ -1,4 +1,4 @@
-import { mayWork } from '../../lib/areaAccess';
+import { mayRun } from '../../lib/areaAccess';
 import type { SessionUser } from '../../lib/types';
 import { useEffect, useRef, type ReactNode } from 'react';
 import { cx } from '../../lib/design-tokens';
@@ -14,8 +14,9 @@ export const PACKAGES = ['Package A', 'Package B', 'Package C', 'Package D'];
 export const TERMS = ['Long term', 'Short term'];
 export const SPLITS = ['Not set', 'Profit share', 'GRR — guaranteed rent'];
 
-/** Who may edit unit master data: Edit or Full on Units (functions/_lib/properties.ts). */
-export const mayEditUnits = (user: SessionUser | null | undefined): boolean => mayWork(user, 'properties');
+/** Who may edit unit master data, contracts, lettings and channels: Full on Units. Those handlers gate on session.manage,
+ *  which for a desk person in Units (not a management-only area) means Full. */
+export const mayEditUnits = (user: SessionUser | null | undefined): boolean => mayRun(user, 'properties');
 
 export const LAYOUTS = [
   ['studio', 'Studio'], ['1_bedroom', '1 bedroom'], ['2_bedroom', '2 bedroom'], ['3_bedroom', '3 bedroom'], ['4_plus_bedroom', '4+ bedroom'],

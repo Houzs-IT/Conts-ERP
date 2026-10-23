@@ -1,4 +1,4 @@
-import { mayWork } from '../lib/areaAccess';
+import { mayRun } from '../lib/areaAccess';
 import { useMemo, useState, type ReactNode } from 'react';
 import { Search, Plus, Trash2 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
@@ -61,7 +61,7 @@ export default function SuppliersPage() {
   const { data, loading, error, reload } = useApi<Payload>('/suppliers', FALLBACK);
   const toast = useToast();
   const { user } = useSession();
-  const canWrite = mayWork(user, 'scProcurement');
+  const canWrite = mayRun(user, 'scProcurement');
 
   const [statusFilter, setStatusFilter] = useState<'all' | Status>('all');
   const [search, setSearch] = useState('');

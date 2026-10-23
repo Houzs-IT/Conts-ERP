@@ -1,4 +1,4 @@
-import { mayWork } from '../lib/areaAccess';
+import { mayRun } from '../lib/areaAccess';
 import { useMemo, useState } from 'react';
 import { Search, Plus } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
@@ -57,7 +57,7 @@ export default function DeliveryOrdersPage() {
   const openSos = (useApi<{ data: OpenSo[] }>('/sales-orders', SO_FALLBACK).data?.data ?? []).filter(s => !['CANCELLED', 'CLOSED', 'DELIVERED', 'INVOICED'].includes(s.status));
   const toast = useToast();
   const { user } = useSession();
-  const canWrite = mayWork(user, 'scSales');
+  const canWrite = mayRun(user, 'scSales');
 
   const [statusFilter, setStatusFilter] = useState<Status | 'all'>('all');
   const [search, setSearch] = useState('');
