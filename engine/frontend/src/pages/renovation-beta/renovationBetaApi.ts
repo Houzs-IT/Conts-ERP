@@ -65,18 +65,19 @@ export interface DesignRecords { measures: SiteMeasure[]; files: DesignFile[]; n
 export interface NewDefect { location: string | null; description: string; trade: BetaTrade | null; dueDate: string | null; photoKey: string }
 
 const B = "/api/beta";
+type Ok = Promise<{ ok: true }>;
 
 export const betaApi = {
-  workspace: (projectId: number) => api.get<BetaWorkspace>(`${B}/projects/${projectId}/workspace`),
-  saveSettings: (b: BetaSettings) => api.put<{ ok: true }>(`${B}/settings`, b),
-  reportDefect: (projectId: number, b: NewDefect) => api.post<{ id: number }>(`${B}/projects/${projectId}/defects`, b),
-  defectFixed: (defectId: number, afterPhotoKey: string | null) =>
+  workspace: (projectId: number): Promise<BetaWorkspace> => api.get<BetaWorkspace>(`${B}/projects/${projectId}/workspace`),
+  saveSettings: (b: BetaSettings): Ok => api.put<{ ok: true }>(`${B}/settings`, b),
+  reportDefect: (projectId: number, b: NewDefect): Promise<{ id: number }> => api.post<{ id: number }>(`${B}/projects/${projectId}/defects`, b),
+  defectFixed: (defectId: number, afterPhotoKey: string | null): Ok =>
     api.post<{ ok: true }>(`${B}/defects/${defectId}/fixed`, afterPhotoKey ? { afterPhotoKey } : {}),
-  defectRedo: (defectId: number, note: string | null) => api.post<{ ok: true }>(`${B}/defects/${defectId}/redo`, note ? { note } : {}),
-  defectClose: (defectId: number) => api.post<{ ok: true }>(`${B}/defects/${defectId}/close`, {}),
-  designSent: (fileId: number, b: { sentOn: string; dueOn: string }) => api.post<{ ok: true }>(`${B}/design-files/${fileId}/sent`, b),
-  designApproval: (fileId: number, b: { approvedOn: string; approvedByName: string; note?: string }) =>
+  defectRedo: (defectId: number, note: string | null): Ok => api.post<{ ok: true }>(`${B}/defects/${defectId}/redo`, note ? { note } : {}),
+  defectClose: (defectId: number): Ok => api.post<{ ok: true }>(`${B}/defects/${defectId}/close`, {}),
+  designSent: (fileId: number, b: { sentOn: string; dueOn: string }): Ok => api.post<{ ok: true }>(`${B}/design-files/${fileId}/sent`, b),
+  designApproval: (fileId: number, b: { approvedOn: string; approvedByName: string; note?: string }): Ok =>
     api.post<{ ok: true }>(`${B}/design-files/${fileId}/approval`, b),
-  removeApproval: (fileId: number) => api.del<{ ok: true }>(`${B}/design-files/${fileId}/approval`),
-  remind: (projectId: number, b: { kind: ReminderKind; text: string }) => api.post<{ ok: true }>(`${B}/projects/${projectId}/reminders`, b),
+  removeApproval: (fileId: number): Ok => api.del<{ ok: true }>(`${B}/design-files/${fileId}/approval`),
+  remind: (projectId: number, b: { kind: ReminderKind; text: string }): Ok => api.post<{ ok: true }>(`${B}/projects/${projectId}/reminders`, b),
 };

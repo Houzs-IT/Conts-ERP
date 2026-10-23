@@ -4,7 +4,7 @@
    The project, the workspace and the design records are loaded here once and handed to the tabs; every write
    shows a notice and reloads all three. */
 
-import { useState } from "react";
+import { useState, type ReactElement } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useAuth } from "../../auth/AuthContext";
 import { PageHeader } from "../../components/Layout";
@@ -31,7 +31,7 @@ function daysLeft(iso: string | null): number | null {
   return Math.round((new Date(iso.slice(0, 10)).getTime() - today.getTime()) / DAY_MS);
 }
 
-export function RenovationBetaWorkspace() {
+export function RenovationBetaWorkspace(): ReactElement {
   const id = Number(useParams().id);
   const [params, setParams] = useSearchParams();
   const tab = tabFromParam(params.get("tab"));

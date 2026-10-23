@@ -7,13 +7,14 @@ import { cn } from "../../lib/utils";
 import { Card, KeyCard } from "../projects/renovation/ProjectRecords";
 import { TASK_STATUS_LABEL, money, shortDate, taskTone, type Tone } from "../projects/renovation/renovationModel";
 import { Pill, smallBtn } from "../projects/renovation/renovationUi";
-import { sendReminder, type BetaTabProps } from "./betaShared";
+import type { ReactElement } from "react";
+import { sendReminder, useGuarded, type BetaTabProps } from "./betaShared";
 import type { BetaInstalment } from "./renovationBetaApi";
 import { designProgress, paymentStrip, siteProgress, todoList, type DesignRow, type TodoRow } from "./renovationBetaModel";
 
 const PAY_TONE: Record<BetaInstalment["status"], Tone> = { paid: "ok", billed: "warn", not_billed: "muted" };
 
-export function BetaOverviewTab(p: BetaTabProps) {
+export function BetaOverviewTab(p: BetaTabProps): ReactElement {
   const { detail: d, workspace, records, today } = p;
   const todo = todoList({
     today,
@@ -75,6 +76,7 @@ function PaymentsCard({ payments }: { payments: BetaTabProps["workspace"]["payme
 }
 
 function TodoCard({ rows, p }: { rows: TodoRow[]; p: BetaTabProps }) {
+  const { busy, run } = useGuarded();
   return (
     <Card title="To do" icon={<ListChecks size={14} />}>
       {rows.length === 0 ? <p className="text-sm text-ink-secondary">Nothing needs attention right now.</p> : (
@@ -90,7 +92,7 @@ function TodoCard({ rows, p }: { rows: TodoRow[]; p: BetaTabProps }) {
               {action.type === "open" ? (
                 <Button variant="secondary" className={smallBtn} onClick={() => p.openTab(action.tab)}>{action.label}</Button>
               ) : p.canWrite && (
-                <Button variant="secondary" className={smallBtn} onClick={() => void sendReminder(p.projectId, action, p.onDone, p.onError)}>
+                <Button variant="secondary" className={smallBtn} disabled={busy} onClick={() => void run(() => sendReminder(p.projectId, action, p.onDone, p.onError))}>
                   {action.label}
                   <span className="sr-only">: {r.title}</span>
                 </Button>

@@ -104,8 +104,10 @@ export function defectMoveRefusal(move: DefectMove, flags: DefectFlags): { error
 
 export interface DesignSentInput { sentOn: string; dueOn: string }
 
-export function cleanDesignSent(b: Json): BetaRefusal<DesignSentInput> {
+/** `today` is the Malaysian day (todayMyt): a record cannot be dated after it. */
+export function cleanDesignSent(b: Json, today: string): BetaRefusal<DesignSentInput> {
   if (!isIsoDay(b.sentOn)) return no("date_invalid", "Give the day it was sent as YYYY-MM-DD.");
+  if (b.sentOn > today) return no("date_in_future", "The sent day cannot be in the future.");
   if (!isIsoDay(b.dueOn)) return no("date_invalid", "Give the day the answer is due as YYYY-MM-DD.");
   if (b.dueOn < b.sentOn) return no("due_before_sent", "The answer cannot be due before the day it was sent.");
   return { ok: true, value: { sentOn: b.sentOn, dueOn: b.dueOn } };
@@ -113,8 +115,9 @@ export function cleanDesignSent(b: Json): BetaRefusal<DesignSentInput> {
 
 export interface DesignApprovalInput { approvedOn: string; approvedByName: string; note: string | null }
 
-export function cleanDesignApproval(b: Json): BetaRefusal<DesignApprovalInput> {
+export function cleanDesignApproval(b: Json, today: string): BetaRefusal<DesignApprovalInput> {
   if (!isIsoDay(b.approvedOn)) return no("date_invalid", "Give the approval day as YYYY-MM-DD.");
+  if (b.approvedOn > today) return no("date_in_future", "The approval day cannot be in the future.");
   const approvedByName = text(b.approvedByName, 120);
   if (!approvedByName) return no("name_required", "Say who approved it.");
   if (b.note != null && typeof b.note !== "string") return no("note_invalid", "The note must be text.");

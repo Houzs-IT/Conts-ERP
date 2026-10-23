@@ -1,7 +1,7 @@
 /* Beta workspace > Site & photos: one feed, newest first, of site receipt photos, onsite visit files and defect
    photos (before and after), with a filter by room where the room is known. */
 
-import { useState } from "react";
+import { useState, type ReactElement } from "react";
 import { Camera, FileText } from "lucide-react";
 import { useQuery } from "../../hooks/useQuery";
 import { Card } from "../projects/renovation/ProjectRecords";
@@ -18,7 +18,7 @@ const SOURCE_LABEL: Record<FeedSource, string> = {
   defect_after: "Defect, after fix",
 };
 
-export function BetaSiteTab({ projectId, records, workspace }: BetaTabProps) {
+export function BetaSiteTab({ projectId, records, workspace }: BetaTabProps): ReactElement {
   const pod = useQuery(["renovation-beta", "pod", projectId], () => renovationApi.pod(projectId), [projectId]);
   const [room, setRoom] = useState("");
   const [viewing, setViewing] = useState<ViewedFile | null>(null);

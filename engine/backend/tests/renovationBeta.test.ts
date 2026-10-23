@@ -121,6 +121,7 @@ describe("Beta defects: the repair loop", () => {
 });
 
 describe("Beta input: drawings, settings, reminders", () => {
+  const TODAY = "2026-10-23";
   test("isIsoDay is a real calendar day", () => {
     expect(isIsoDay("2026-10-23")).toBe(true);
     expect(isIsoDay("2028-02-29")).toBe(true);
@@ -130,19 +131,26 @@ describe("Beta input: drawings, settings, reminders", () => {
     expect(isIsoDay(20261023)).toBe(false);
   });
   test("sent: both days, due not before sent", () => {
-    expect(cleanDesignSent({ sentOn: "2026-10-20", dueOn: "2026-10-27" })).toEqual({ ok: true, value: { sentOn: "2026-10-20", dueOn: "2026-10-27" } });
-    expect(cleanDesignSent({ sentOn: "2026-10-20", dueOn: "2026-10-20" }).ok).toBe(true);
-    expect(cleanDesignSent({ sentOn: "2026-10-20", dueOn: "2026-10-19" })).toMatchObject({ ok: false, error: "due_before_sent" });
-    expect(cleanDesignSent({ sentOn: "2026-10-20" })).toMatchObject({ ok: false, error: "date_invalid" });
-    expect(cleanDesignSent({ dueOn: "2026-10-20" })).toMatchObject({ ok: false, error: "date_invalid" });
+    expect(cleanDesignSent({ sentOn: "2026-10-20", dueOn: "2026-10-27" }, TODAY)).toEqual({ ok: true, value: { sentOn: "2026-10-20", dueOn: "2026-10-27" } });
+    expect(cleanDesignSent({ sentOn: "2026-10-20", dueOn: "2026-10-20" }, TODAY).ok).toBe(true);
+    expect(cleanDesignSent({ sentOn: "2026-10-20", dueOn: "2026-10-19" }, TODAY)).toMatchObject({ ok: false, error: "due_before_sent" });
+    expect(cleanDesignSent({ sentOn: "2026-10-20" }, TODAY)).toMatchObject({ ok: false, error: "date_invalid" });
+    expect(cleanDesignSent({ dueOn: "2026-10-20" }, TODAY)).toMatchObject({ ok: false, error: "date_invalid" });
   });
   test("approval: day and name required, note optional", () => {
-    expect(cleanDesignApproval({ approvedOn: "2026-10-22", approvedByName: " Ms Lim ", note: " ok " })).toEqual({
+    expect(cleanDesignApproval({ approvedOn: "2026-10-22", approvedByName: " Ms Lim ", note: " ok " }, TODAY)).toEqual({
       ok: true, value: { approvedOn: "2026-10-22", approvedByName: "Ms Lim", note: "ok" },
     });
-    expect(cleanDesignApproval({ approvedOn: "2026-10-22", approvedByName: "Ms Lim" })).toMatchObject({ ok: true, value: { note: null } });
-    expect(cleanDesignApproval({ approvedOn: "soon", approvedByName: "Ms Lim" })).toMatchObject({ ok: false, error: "date_invalid" });
-    expect(cleanDesignApproval({ approvedOn: "2026-10-22", approvedByName: "  " })).toMatchObject({ ok: false, error: "name_required" });
+    expect(cleanDesignApproval({ approvedOn: "2026-10-22", approvedByName: "Ms Lim" }, TODAY)).toMatchObject({ ok: true, value: { note: null } });
+    expect(cleanDesignApproval({ approvedOn: "soon", approvedByName: "Ms Lim" }, TODAY)).toMatchObject({ ok: false, error: "date_invalid" });
+    expect(cleanDesignApproval({ approvedOn: "2026-10-22", approvedByName: "  " }, TODAY)).toMatchObject({ ok: false, error: "name_required" });
+  });
+  test("a sent or approval day after today (Malaysia) is refused, today and earlier pass", () => {
+    expect(cleanDesignSent({ sentOn: "2026-10-24", dueOn: "2026-10-30" }, TODAY)).toMatchObject({ ok: false, error: "date_in_future" });
+    expect(cleanDesignSent({ sentOn: "2026-10-23", dueOn: "2026-10-30" }, TODAY).ok).toBe(true);
+    expect(cleanDesignApproval({ approvedOn: "2026-10-24", approvedByName: "Ms Lim" }, TODAY)).toMatchObject({ ok: false, error: "date_in_future" });
+    expect(cleanDesignApproval({ approvedOn: "2026-10-23", approvedByName: "Ms Lim" }, TODAY).ok).toBe(true);
+    expect(cleanDesignApproval({ approvedOn: "2026-10-01", approvedByName: "Ms Lim" }, TODAY).ok).toBe(true);
   });
   test("settings: whole days 1 to 365", () => {
     expect(cleanBetaSettings({ design3dDays: 10, design2dDays: 12 })).toEqual({ ok: true, value: { design3dDays: 10, design2dDays: 12 } });

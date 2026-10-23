@@ -1,7 +1,7 @@
 /* Beta workspace > Drawings: for 3D and 2D, the approved set, a newer version waiting for the client, and every version
    with its notes. Sending to the client and recording or removing an approval write through /api/beta. */
 
-import { useState } from "react";
+import { useState, type ReactElement } from "react";
 import { Link } from "react-router-dom";
 import { Ruler } from "lucide-react";
 import { Button } from "../../components/Button";
@@ -11,7 +11,7 @@ import { Card } from "../projects/renovation/ProjectRecords";
 import { addDays, errorText, shortDate } from "../projects/renovation/renovationModel";
 import { Dialog, Field, Pill, inputClass, smallBtn } from "../projects/renovation/renovationUi";
 import type { DesignFile, DesignNote } from "../projects/renovation/simpleApi";
-import { FileDialog, sendReminder, type BetaTabProps, type ViewedFile } from "./betaShared";
+import { FileDialog, sendReminder, useGuarded, type BetaTabProps, type ViewedFile } from "./betaShared";
 import { betaApi } from "./renovationBetaApi";
 import { approvedSet, daysLeft, versionLabel, whatsappLink, type DesignKind, type VersionInfo } from "./renovationBetaModel";
 
@@ -20,7 +20,7 @@ type Editing = { type: "send" | "approve"; kind: DesignKind; v: VersionInfo };
 const submittedOf = (f: DesignFile): string => f.submitted_on ?? f.uploaded_at;
 const picNames = (f: DesignFile): string => (f.people?.length ? f.people.map((x) => x.name).join(", ") : f.person_name ?? "-");
 
-export function BetaDrawingsTab(p: BetaTabProps) {
+export function BetaDrawingsTab(p: BetaTabProps): ReactElement {
   const [editing, setEditing] = useState<Editing | null>(null);
   const [viewing, setViewing] = useState<ViewedFile | null>(null);
   const openFile = (f: DesignFile) => {
@@ -41,6 +41,7 @@ export function BetaDrawingsTab(p: BetaTabProps) {
 
 function KindCard({ kind, p, onEdit, onOpen }: { kind: DesignKind; p: BetaTabProps; onEdit: (type: "send" | "approve", v: VersionInfo) => void; onOpen: (f: DesignFile) => void }) {
   const dialog = useDialog();
+  const { busy, run } = useGuarded();
   const { workspace, records, canWrite, today, projectId, detail } = p;
   const set = approvedSet(records.files, workspace.reviews, kind);
   const notes = records.notes.filter((n) => n.kind === kind).sort((a, b) => b.noted_on.localeCompare(a.noted_on) || b.id - a.id);
@@ -83,7 +84,7 @@ function KindCard({ kind, p, onEdit, onOpen }: { kind: DesignKind; p: BetaTabPro
                 {approved.review?.approvalNote && <p className="text-ink [overflow-wrap:anywhere]">{approved.review.approvalNote}</p>}
                 <div className="flex flex-wrap gap-2 pt-1">
                   <Button variant="secondary" className={smallBtn} onClick={() => onOpen(approved.file)}>Open</Button>
-                  {canWrite && <Button variant="danger" className={smallBtn} onClick={() => void removeApproval(approved)}>Remove approval</Button>}
+                  {canWrite && <Button variant="danger" className={smallBtn} disabled={busy} onClick={() => void run(() => removeApproval(approved))}>Remove approval</Button>}
                 </div>
               </div>
             ) : <p className="mt-1 text-sm text-ink-secondary">Nothing approved yet.</p>}
@@ -104,14 +105,14 @@ function KindCard({ kind, p, onEdit, onOpen }: { kind: DesignKind; p: BetaTabPro
                 ) : <div className="text-ink-secondary">Uploaded {shortDate(submittedOf(waiting.file))}. Not sent to the client.</div>}
                 <div className="flex flex-wrap gap-2 pt-1">
                   <Button variant="secondary" className={smallBtn} onClick={() => onOpen(waiting.file)}>Open</Button>
-                  {canWrite && <Button className={smallBtn} onClick={() => onEdit("send", waiting)}>{sentOn ? "Send again" : "Send to client"}</Button>}
-                  {canWrite && <Button variant="secondary" className={smallBtn} onClick={() => onEdit("approve", waiting)}>Record approval</Button>}
+                  {canWrite && <Button className={smallBtn} disabled={busy} onClick={() => onEdit("send", waiting)}>{sentOn ? "Send again" : "Send to client"}</Button>}
+                  {canWrite && <Button variant="secondary" className={smallBtn} disabled={busy} onClick={() => onEdit("approve", waiting)}>Record approval</Button>}
                   {canWrite && sentOn && (
-                    <Button variant="secondary" className={smallBtn} onClick={() => void sendReminder(projectId, {
+                    <Button variant="secondary" className={smallBtn} disabled={busy} onClick={() => void run(() => sendReminder(projectId, {
                       kind: "client_approval",
                       phone: detail.project.customer_phone,
                       text: `Hi${detail.project.customer_name ? ` ${detail.project.customer_name}` : ""}, a gentle reminder about the ${waitingLabel} drawing for ${detail.project.name}, sent on ${shortDate(sentOn)}. Please let us know if you approve it${dueOn ? ` by ${shortDate(dueOn)}` : ""}. Thank you.`,
-                    }, p.onDone, p.onError)}>Remind client</Button>
+                    }, p.onDone, p.onError))}>Remind client</Button>
                   )}
                 </div>
               </div>

@@ -458,6 +458,7 @@ app.route("/api/brand-share", brandShare);
 app.use("/api/renovation/*", inboxBustAfterWrite);
 app.route("/api/renovation", renovation);
 // Beta workspace (owner, 23 Oct 2026): behind the auth gate, switched off in production by renovationBeta's first middleware.
+app.use("/api/beta/*", inboxBustAfterWrite);
 app.route("/api/beta", renovationBeta);
 app.route("/api/sales", sales);
 app.route("/api/finance", finance);

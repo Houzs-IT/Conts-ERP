@@ -1,7 +1,7 @@
 /* Beta workspace > Timeline: the project's existing timeline entries with a search box, a RECORD tag on approvals,
    key passes and the handover, and a CSV export of what is on screen. */
 
-import { useState } from "react";
+import { useState, type ReactElement } from "react";
 import { Clock, Download } from "lucide-react";
 import { Button } from "../../components/Button";
 import { useQuery } from "../../hooks/useQuery";
@@ -14,7 +14,7 @@ import { inputClass, smallBtn } from "../projects/renovation/renovationUi";
 import type { BetaTabProps } from "./betaShared";
 import { isRecordEntry, searchEntries, timelineCsv } from "./renovationBetaModel";
 
-export function BetaTimelineTab({ projectId, onDone, onError }: BetaTabProps) {
+export function BetaTimelineTab({ projectId, onDone, onError }: BetaTabProps): ReactElement {
   // Always ask again on opening the tab, so what was just saved on another tab shows.
   const q = useQuery(["renovation-beta", "timeline", projectId], () => timelineApi.list(projectId), [projectId], { refetchOnMount: "always", staleTime: 0 });
   const [filter, setFilter] = useState<TimelineFilter>("all");

@@ -1,7 +1,7 @@
 /* Beta workspace > Defects: report a problem with a photo, then follow each one across To fix, Check it and Done.
    Photos go up through the existing project file upload; the key is sent with the defect. */
 
-import { useState, type FormEvent } from "react";
+import { useState, type FormEvent, type ReactElement } from "react";
 import { AlertTriangle, Plus } from "lucide-react";
 import { Button } from "../../components/Button";
 import { useDialog } from "../../hooks/useDialog";
@@ -10,7 +10,7 @@ import { Card } from "../projects/renovation/ProjectRecords";
 import { renovationApi } from "../projects/renovation/renovationApi";
 import { errorText, shortDate } from "../projects/renovation/renovationModel";
 import { AuthImage, Dialog, Field, Pill, inputClass, smallBtn } from "../projects/renovation/renovationUi";
-import { sendReminder, tradeLabel, TRADE_LABEL, type BetaTabProps } from "./betaShared";
+import { sendReminder, tradeLabel, useGuarded, TRADE_LABEL, type BetaTabProps } from "./betaShared";
 import { BETA_TRADES, betaApi, type BetaDefect, type BetaTrade } from "./renovationBetaApi";
 import { defectDaysLate, groupDefects, snagProgress, type DefectColumn } from "./renovationBetaModel";
 
@@ -22,18 +22,19 @@ const COLUMNS: ReadonlyArray<{ key: DefectColumn; title: string; empty: string }
 
 type Step = { type: "fixed" | "redo"; defect: BetaDefect };
 
-export function BetaDefectsTab(p: BetaTabProps) {
+export function BetaDefectsTab(p: BetaTabProps): ReactElement {
   const dialog = useDialog();
   const { workspace, canWrite, projectId, today } = p;
   const [reporting, setReporting] = useState(false);
   const [step, setStep] = useState<Step | null>(null);
-  const [busy, setBusy] = useState(false);
+  const { busy, run } = useGuarded();
   const groups = groupDefects(workspace.defects);
   const { closed, total } = snagProgress(workspace.defects);
 
   async function act(fn: () => Promise<unknown>, ok: string) {
-    setBusy(true);
-    try { await fn(); p.onDone(ok); } catch (e) { p.onError(errorText(e)); } finally { setBusy(false); }
+    await run(async () => {
+      try { await fn(); p.onDone(ok); } catch (e) { p.onError(errorText(e)); }
+    });
   }
   async function close(d: BetaDefect) {
     const ok = await dialog.confirm({ title: "Close this defect?", message: `${d.location ?? "Defect"}: ${d.description ?? ""}`, confirmLabel: "OK, close" });
@@ -43,7 +44,7 @@ export function BetaDefectsTab(p: BetaTabProps) {
     const late = defectDaysLate(d, today);
     const where = d.location ?? "the unit";
     const text = `Defect to fix at ${where} (${p.detail.project.name}): ${d.description ?? "see the project"}.${d.dueDate ? ` Fix by ${shortDate(d.dueDate)}${late > 0 ? `, now ${late} day${late === 1 ? "" : "s"} late` : ""}.` : ""} Please fix it and tell us when it is done.`;
-    void sendReminder(projectId, { kind: "defect", text, phone: null }, p.onDone, p.onError);
+    void run(() => sendReminder(projectId, { kind: "defect", text, phone: null }, p.onDone, p.onError));
   }
 
   return (

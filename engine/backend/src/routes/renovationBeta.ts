@@ -1,7 +1,7 @@
 /* Beta renovation project workspace, bundle A (owner, 23 Oct 2026; plan
    docs/superpowers/plans/2026-10-23-beta-project-workspace.md section 9). Mounted at /api/beta after the auth gate.
-   The switch comes first on every route: where BETA_ENABLED is not "true" (production) this answers 404 before it
-   reads anything. Every project, defect and design-file route is scoped to the active company (404 otherwise), and
+   The global auth gate runs first; inside this router the switch comes first on every route: where BETA_ENABLED is
+   not "true" (production) this answers 404 before any permission check or query. Every project, defect and design-file route is scoped to the active company (404 otherwise), and
    every write adds a project_activity row (action beta_*) that the existing timeline reads. */
 
 import { Hono, type Context } from "hono";
@@ -10,9 +10,10 @@ import { requirePageAccess, requirePermission } from "../middleware/auth";
 import { activeCompanySql, requireActiveCompanyId } from "../scm/lib/companyScope";
 import { isBetaEnabled } from "../scm/lib/renovation-beta-enabled";
 import { billingViews } from "../scm/lib/renovation-billing";
+import { todayMyt } from "../scm/lib/my-time";
 import { financeHiddenForUser } from "../services/pmsAccess";
 import { setChecklistStatus } from "../services/projects";
-import { isMissingRelation, loadProjectRows, loadRenovationFacts, type Db } from "../services/renovation/load";
+import { isMissingRelation, loadProjectRows, loadRenovationFacts, type Db, type DbStmt } from "../services/renovation/load";
 import { renoDbFromD1 } from "../services/renovation/dbBridge";
 import { writeCachedStage } from "../services/renovation/contractSync";
 import {
@@ -33,13 +34,7 @@ function parseId(x: string | undefined | null): number | null {
   return Number.isInteger(n) && n > 0 ? n : null;
 }
 
-/** Rows a write touched (the D1 result shape the other renovation routes read). */
-function changed(res: unknown): number {
-  const meta = (res as { meta?: { changes?: unknown } } | null)?.meta;
-  return typeof meta?.changes === "number" ? meta.changes : 0;
-}
-
-// The switch runs before auth, permissions and any query, so a switched-off worker never reads anything.
+// The first middleware of this router: before any permission check or query here, so a switched-off worker reads nothing.
 app.use("*", async (c, next) => {
   if (!isBetaEnabled(c.env)) return c.json({ error: "not_found" }, 404);
   await next();
@@ -50,9 +45,10 @@ async function projectCompany(c: Ctx, id: number): Promise<number | null> {
   return r ? Number(r.company_id) : null;
 }
 
-async function logActivity(c: Ctx, projectId: number, companyId: number, action: string, from: string | null, to: string | null, note: string | null): Promise<void> {
-  await db(c).prepare(`INSERT INTO project_activity (project_id, action, from_value, to_value, note, user_id, company_id) VALUES (?, ?, ?, ?, ?, ?, ?)`)
-    .bind(projectId, action, from, to, note, userId(c), companyId).run();
+/** The project_activity insert of `logActivity` in routes/renovation.ts, as a statement (to run alone or inside a batch). */
+function activityStmt(c: Ctx, projectId: number, companyId: number, action: string, from: string | null, to: string | null, note: string | null): DbStmt {
+  return db(c).prepare(`INSERT INTO project_activity (project_id, action, from_value, to_value, note, user_id, company_id) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+    .bind(projectId, action, from, to, note, userId(c), companyId);
 }
 
 interface DefectRow {
@@ -168,51 +164,61 @@ app.post("/projects/:id/defects", requirePermission("projects.write"), async (c)
   if (!v.ok) return c.json({ error: v.error, message: v.message }, 400);
   const { location, description, trade, dueDate, photoKey } = v.value;
   // Phase 'snag' so the handover rule (every snag closed first) counts it.
+  // One statement: the defect and its activity row are written together or not at all.
   const row = await db(c).prepare(
-    `INSERT INTO project_defects (project_id, phase, reported_by_role, item_description, photo_r2_key, reported_by, reported_at,
-                                  resolved, stage_key, location, due_date, trade, company_id)
-     VALUES (?, 'snag', 'supervisor', ?, ?, ?, to_char(timezone('UTC', now()), 'YYYY-MM-DD"T"HH24:MI:SS"Z"'), 0, 'handover', ?, ?::date, ?, ?)
-     RETURNING id::int AS id`,
-  ).bind(id, description, photoKey, userId(c), location, dueDate, trade, co).first<{ id: number }>();
-  await logActivity(c, id, co, "beta_defect_reported", null, description, [location, trade].filter(Boolean).join(", ") || null);
-  return c.json({ id: row?.id }, 201);
+    `WITH d AS (
+       INSERT INTO project_defects (project_id, phase, reported_by_role, item_description, photo_r2_key, reported_by, reported_at,
+                                    resolved, stage_key, location, due_date, trade, company_id)
+       VALUES (?, 'snag', 'supervisor', ?, ?, ?, to_char(timezone('UTC', now()), 'YYYY-MM-DD"T"HH24:MI:SS"Z"'), 0, 'handover', ?, ?::date, ?, ?)
+       RETURNING id, project_id, company_id, item_description),
+     a AS (
+       INSERT INTO project_activity (project_id, action, from_value, to_value, note, user_id, company_id)
+       SELECT d.project_id, 'beta_defect_reported', NULL, d.item_description, ?::text, ?::bigint, d.company_id FROM d)
+     SELECT id::int AS id FROM d`,
+  ).bind(id, description, photoKey, userId(c), location, dueDate, trade, co, [location, trade].filter(Boolean).join(", ") || null, userId(c))
+    .first<{ id: number }>();
+  if (!row) return c.json({ error: "defect_not_saved", message: "The problem could not be saved. Try again." }, 409);
+  return c.json({ id: row.id }, 201);
 });
 
-/** The three moves of the repair loop share one shape: look the defect up, check the move, run a guarded update, log. */
+/** The three moves of the repair loop share one shape: look the defect up, check the move, then one statement that
+    runs the guarded update and writes its activity row together. */
 async function moveDefect(c: Ctx, move: DefectMove): Promise<Response> {
   const defectId = parseId(c.req.param("defectId"));
   if (!defectId) return c.json({ error: "invalid_id" }, 400);
   const d = await defectOf(c, defectId);
   if (!d) return c.json({ error: "not_found" }, 404);
-  const flags = { fixedAt: d.fixed_at, closedAt: d.closed_at };
-  const refused = defectMoveRefusal(move, flags);
+  const refused = defectMoveRefusal(move, { fixedAt: d.fixed_at, closedAt: d.closed_at });
   if (refused) return c.json(refused, 409);
   const raw = await body(c);
-  let res: unknown;
+  const action = move === "fixed" ? "beta_defect_fixed" : move === "redo" ? "beta_defect_redo" : "beta_defect_closed";
+  let update: string;
+  let args: unknown[];
   let note: string | null = null;
   if (move === "fixed") {
     const v = cleanDefectFixed(raw, d.project_id);
     if (!v.ok) return c.json({ error: v.error, message: v.message }, 400);
-    res = await db(c).prepare(
-      `UPDATE project_defects SET fixed_at = now(), fixed_by = ?, after_photo_r2_key = ? WHERE id = ? AND fixed_at IS NULL AND closed_at IS NULL`,
-    ).bind(userId(c), v.value.afterPhotoKey, defectId).run();
+    update = `UPDATE project_defects SET fixed_at = now(), fixed_by = ?, after_photo_r2_key = ? WHERE id = ? AND fixed_at IS NULL AND closed_at IS NULL`;
+    args = [userId(c), v.value.afterPhotoKey, defectId];
   } else if (move === "redo") {
     const v = cleanDefectRedo(raw);
     if (!v.ok) return c.json({ error: v.error, message: v.message }, 400);
     note = v.value.note;
-    res = await db(c).prepare(
-      `UPDATE project_defects SET fixed_at = NULL, fixed_by = NULL, after_photo_r2_key = NULL, redo_count = redo_count + 1
-        WHERE id = ? AND fixed_at IS NOT NULL AND closed_at IS NULL`,
-    ).bind(defectId).run();
+    update = `UPDATE project_defects SET fixed_at = NULL, fixed_by = NULL, after_photo_r2_key = NULL, redo_count = redo_count + 1
+               WHERE id = ? AND fixed_at IS NOT NULL AND closed_at IS NULL`;
+    args = [defectId];
   } else {
-    res = await db(c).prepare(
-      `UPDATE project_defects SET closed_at = now(), closed_by = ?, resolved = 1 WHERE id = ? AND closed_at IS NULL`,
-    ).bind(userId(c), defectId).run();
+    update = `UPDATE project_defects SET closed_at = now(), closed_by = ?, resolved = 1 WHERE id = ? AND closed_at IS NULL`;
+    args = [userId(c), defectId];
   }
-  // Someone else moved it between the read and the write: the same 409 the up-front check gives.
-  if (!changed(res)) return c.json({ error: "defect_changed", message: "Someone else just changed this problem. Reload and look again." }, 409);
-  const action = move === "fixed" ? "beta_defect_fixed" : move === "redo" ? "beta_defect_redo" : "beta_defect_closed";
-  await logActivity(c, d.project_id, d.company_id, action, null, d.item_description, note);
+  // The activity row is written from the rows the update really changed, so a lost race writes nothing and answers 409.
+  const row = await db(c).prepare(
+    `WITH u AS (${update} RETURNING id, item_description),
+          a AS (INSERT INTO project_activity (project_id, action, from_value, to_value, note, user_id, company_id)
+                SELECT ?::bigint, ?::text, NULL, u.item_description, ?::text, ?::bigint, ?::bigint FROM u)
+     SELECT id::int AS id FROM u`,
+  ).bind(...args, d.project_id, action, note, userId(c), d.company_id).first<{ id: number }>();
+  if (!row) return c.json({ error: "defect_changed", message: "Someone else just changed this problem. Reload and look again." }, 409);
   return c.json({ ok: true });
 }
 
@@ -227,13 +233,15 @@ app.post("/design-files/:fileId/sent", requirePermission("projects.write"), asyn
   if (!fileId) return c.json({ error: "invalid_id" }, 400);
   const f = await designFileOf(c, fileId);
   if (!f) return c.json({ error: "not_found" }, 404);
-  const v = cleanDesignSent(await body(c));
+  const v = cleanDesignSent(await body(c), todayMyt());
   if (!v.ok) return c.json({ error: v.error, message: v.message }, 400);
-  await db(c).prepare(
-    `INSERT INTO project_design_file_reviews (file_id, project_id, company_id, sent_on, due_on, sent_by, updated_at) VALUES (?, ?, ?, ?::date, ?::date, ?, now())
-     ON CONFLICT (file_id) DO UPDATE SET sent_on = excluded.sent_on, due_on = excluded.due_on, sent_by = excluded.sent_by, updated_at = now()`,
-  ).bind(fileId, f.project_id, f.company_id, v.value.sentOn, v.value.dueOn, userId(c)).run();
-  await logActivity(c, f.project_id, f.company_id, "beta_drawing_sent", null, designLabel(f.kind, f.version), `Sent ${v.value.sentOn}, answer due ${v.value.dueOn}`);
+  await db(c).batch!([
+    db(c).prepare(
+      `INSERT INTO project_design_file_reviews (file_id, project_id, company_id, sent_on, due_on, sent_by, updated_at) VALUES (?, ?, ?, ?::date, ?::date, ?, now())
+       ON CONFLICT (file_id) DO UPDATE SET sent_on = excluded.sent_on, due_on = excluded.due_on, sent_by = excluded.sent_by, updated_at = now()`,
+    ).bind(fileId, f.project_id, f.company_id, v.value.sentOn, v.value.dueOn, userId(c)),
+    activityStmt(c, f.project_id, f.company_id, "beta_drawing_sent", null, designLabel(f.kind, f.version), `Sent ${v.value.sentOn}, answer due ${v.value.dueOn}`),
+  ]);
   return c.json({ ok: true });
 });
 
@@ -247,7 +255,9 @@ async function tickShopDrawings(c: Ctx, projectId: number): Promise<void> {
   if (!item || item.status === "done") return;
   await setChecklistStatus(c.env, item.id, "done", userId(c));
   const rows = await loadProjectRows(db(c), "", { projectId, includeArchived: true });
-  if (rows.length) await writeCachedStage(db(c), projectId, (await loadRenovationFacts(db(c), rows)).get(projectId)!);
+  if (rows.length === 0) return;
+  const facts = (await loadRenovationFacts(db(c), rows)).get(projectId);
+  if (facts) await writeCachedStage(db(c), projectId, facts);
 }
 
 app.post("/design-files/:fileId/approval", requirePermission("projects.write"), async (c) => {
@@ -255,17 +265,21 @@ app.post("/design-files/:fileId/approval", requirePermission("projects.write"), 
   if (!fileId) return c.json({ error: "invalid_id" }, 400);
   const f = await designFileOf(c, fileId);
   if (!f) return c.json({ error: "not_found" }, 404);
-  const v = cleanDesignApproval(await body(c));
+  const v = cleanDesignApproval(await body(c), todayMyt());
   if (!v.ok) return c.json({ error: v.error, message: v.message }, 400);
   const { approvedOn, approvedByName, note } = v.value;
-  await db(c).prepare(
-    `INSERT INTO project_design_file_reviews (file_id, project_id, company_id, approved_on, approved_by_name, approval_note, approval_recorded_by, updated_at)
-     VALUES (?, ?, ?, ?::date, ?, ?, ?, now())
-     ON CONFLICT (file_id) DO UPDATE SET approved_on = excluded.approved_on, approved_by_name = excluded.approved_by_name,
-                                         approval_note = excluded.approval_note, approval_recorded_by = excluded.approval_recorded_by, updated_at = now()`,
-  ).bind(fileId, f.project_id, f.company_id, approvedOn, approvedByName, note, userId(c)).run();
+  // The tick goes first and can be repeated safely (it does nothing when the item is already done), so a failure here
+  // leaves no approval behind; the record and its activity row are then written together.
   if (f.kind === "2d") await tickShopDrawings(c, f.project_id);
-  await logActivity(c, f.project_id, f.company_id, "beta_drawing_approved", approvedByName, designLabel(f.kind, f.version), [`On ${approvedOn}`, note].filter(Boolean).join(" · "));
+  await db(c).batch!([
+    db(c).prepare(
+      `INSERT INTO project_design_file_reviews (file_id, project_id, company_id, approved_on, approved_by_name, approval_note, approval_recorded_by, updated_at)
+       VALUES (?, ?, ?, ?::date, ?, ?, ?, now())
+       ON CONFLICT (file_id) DO UPDATE SET approved_on = excluded.approved_on, approved_by_name = excluded.approved_by_name,
+                                           approval_note = excluded.approval_note, approval_recorded_by = excluded.approval_recorded_by, updated_at = now()`,
+    ).bind(fileId, f.project_id, f.company_id, approvedOn, approvedByName, note, userId(c)),
+    activityStmt(c, f.project_id, f.company_id, "beta_drawing_approved", approvedByName, designLabel(f.kind, f.version), [`On ${approvedOn}`, note].filter(Boolean).join(" · ")),
+  ]);
   return c.json({ ok: true });
 });
 
@@ -275,12 +289,14 @@ app.delete("/design-files/:fileId/approval", requirePermission("projects.write")
   const f = await designFileOf(c, fileId);
   if (!f) return c.json({ error: "not_found" }, 404);
   // The checklist item stays as it is: taking back a record does not un-sign the shop drawings.
-  const res = await db(c).prepare(
-    `UPDATE project_design_file_reviews SET approved_on = NULL, approved_by_name = NULL, approval_note = NULL, approval_recorded_by = NULL, updated_at = now()
-      WHERE file_id = ? AND approved_on IS NOT NULL`,
-  ).bind(fileId).run();
-  if (!changed(res)) return c.json({ error: "not_approved", message: "This version has no approval to remove." }, 409);
-  await logActivity(c, f.project_id, f.company_id, "beta_drawing_approval_removed", null, designLabel(f.kind, f.version), null);
+  const row = await db(c).prepare(
+    `WITH u AS (UPDATE project_design_file_reviews SET approved_on = NULL, approved_by_name = NULL, approval_note = NULL, approval_recorded_by = NULL, updated_at = now()
+                 WHERE file_id = ? AND approved_on IS NOT NULL RETURNING file_id),
+          a AS (INSERT INTO project_activity (project_id, action, from_value, to_value, note, user_id, company_id)
+                SELECT ?::bigint, 'beta_drawing_approval_removed', NULL, ?::text, NULL, ?::bigint, ?::bigint FROM u)
+     SELECT file_id::int AS file_id FROM u`,
+  ).bind(fileId, f.project_id, designLabel(f.kind, f.version), userId(c), f.company_id).first<{ file_id: number }>();
+  if (!row) return c.json({ error: "not_approved", message: "This version has no approval to remove." }, 409);
   return c.json({ ok: true });
 });
 
@@ -293,7 +309,7 @@ app.post("/projects/:id/reminders", requirePermission("projects.write"), async (
   if (co == null) return c.json({ error: "not_found" }, 404);
   const v = cleanBetaReminder(await body(c));
   if (!v.ok) return c.json({ error: v.error, message: v.message }, 400);
-  await logActivity(c, id, co, "beta_reminder", null, v.value.kind, v.value.text);
+  await activityStmt(c, id, co, "beta_reminder", null, v.value.kind, v.value.text).run();
   return c.json({ ok: true });
 });
 
