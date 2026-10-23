@@ -36,14 +36,17 @@ export function BetaDrawingsTab(p: BetaTabProps): ReactElement {
   const [viewing, setViewing] = useState<ViewedFile | null>(null);
   const [uploading, setUploading] = useState<UploadDialog | null>(null);
   const sheetsQ = useQuery(["renovation-beta", "sheets", p.projectId], () => sheetsApi.list(p.projectId), [p.projectId]);
-  const sheetsReady = sheetsQ.data?.ready ?? false;
+  // Only a server that says so falls back to one-file 2D; while the list loads the 2D set upload is offered, or a click
+  // in that moment opened the one-file form and kept just the first of several sheets.
+  const sheetsReady = sheetsQ.data?.ready ?? true;
   const sheets = sheetsQ.data?.sheets ?? [];
   const openFile = (f: DesignFile): void => {
     if (f.external_url) window.open(f.external_url, "_blank", "noopener");
     else if (f.r2_key) setViewing({ key: f.r2_key, name: f.file_name });
   };
-  const measureDone = records.measures.filter((m) => m.done_on).sort((a, b) => (a.done_on ?? "").localeCompare(b.done_on ?? ""));
-  const measureFiles = records.measures.reduce((n, m) => n + (m.files?.length ?? 0), 0);
+  // The card speaks for the newest measure, the same one shown first below.
+  const measureDone = records.measures.filter((m) => m.done_on).sort((a, b) => (b.done_on ?? "").localeCompare(a.done_on ?? "") || b.id - a.id);
+  const measureFiles = measureDone[0]?.files?.length ?? 0;
   const upload = p.canWrite ? setUploading : null;
   const uploaded = (text: string, failed?: string): void => {
     const d = uploading;
@@ -182,7 +185,9 @@ function MeasureDetail({ measures, projectId, onView, onUpload, onError }: {
     <>
       {list.map((m) => {
         const files = m.files ?? [];
-        const photos = files.filter((f) => IMAGE.test(f.r2_key) || (f.content_type ?? "").startsWith("image/"));
+        const isPhoto = (f: (typeof files)[number]): boolean => IMAGE.test(f.r2_key) || (f.content_type ?? "").startsWith("image/");
+        const photos = files.filter(isPhoto);
+        const docs = files.filter((f) => !isPhoto(f));
         const names = m.people?.length ? m.people.map((x) => x.name).join(", ") : m.person_name;
         return (
           <section key={m.id} aria-label={`Site measurement ${dayMonthYear(m.done_on)}`} style={sectionStyle}>
@@ -202,11 +207,11 @@ function MeasureDetail({ measures, projectId, onView, onUpload, onError }: {
                 {onUpload && <WsBtn size="sm" onClick={() => onUpload({ t: "measure-files", measure: m })}>Add files<span className="sr"> to the site measure of {dayMonthYear(m.done_on)}</span></WsBtn>}
               </div>
             </div>
-            {files.length > 0 && (
+            {docs.length > 0 && (
               <div style={boxStyle}>
                 <div style={{ padding: "12px 16px", background: WS.head, fontWeight: 600 }}>Measurement files</div>
                 <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
-                  {files.map((f) => (
+                  {docs.map((f) => (
                     <li key={f.id} style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, padding: "12px 16px", borderTop: `1px solid ${WS.rowLine}` }}>
                       <WsPdfTile />
                       <div style={{ flex: "1 1 200px", minWidth: 0 }}>
