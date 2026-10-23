@@ -15,7 +15,7 @@ import { useQuery } from "../../../hooks/useQuery";
 import { cn } from "../../../lib/utils";
 import { simpleApi, type DesignFile, type DesignNote, type NamedRef, type SiteMeasure } from "./simpleApi";
 import { errorText, shortDate } from "./renovationModel";
-import { AuthImage, Dialog, Pill, smallBtn, smallInput } from "./renovationUi";
+import { AuthFileLink, AuthImage, Dialog, Pill, smallBtn, smallInput } from "./renovationUi";
 import { PersonMultiSelect, PersonSelect } from "./PersonSelect";
 import { Card, todayMyt } from "./ProjectRecords";
 import { currentDesignStep, designStatus, twoDTimeline, type DesignStepKey } from "./designModel";
@@ -93,7 +93,7 @@ export function DesignTaskCard({ projectId, canWrite, onDone, onError }: {
         <Dialog title={view.file_name} onClose={() => setView(null)}>
           {/\.(png|jpe?g|webp)$/i.test(view.r2_key)
             ? <AuthImage path={simpleApi.fileUrl(projectId, view.r2_key)} alt={view.file_name} className="w-full rounded" />
-            : <p className="text-sm"><a className="text-primary" href={simpleApi.fileUrl(projectId, view.r2_key)} target="_blank" rel="noopener">Open the file</a></p>}
+            : <AuthFileLink path={simpleApi.fileUrl(projectId, view.r2_key)} fileName={view.file_name} />}
         </Dialog>
       )}
     </Card>
