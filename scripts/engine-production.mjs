@@ -57,6 +57,7 @@ function checkConfig({ needIds = true } = {}) {
   for (const b of t.matchAll(/bucket_name = "([^"]+)"/g)) if (b[1] !== BUCKET) bad.push(`storage bucket ${b[1]} is not ${BUCKET}`);
   if (/^\s*(route|routes|workers_dev\s*=\s*false|\[triggers\]|\[\[queues|\[\[services|\[\[d1_databases|\[\[analytics_engine|\[\[durable_objects|account_id)/m.test(t)) bad.push('it has routes, scheduled jobs, queues or another account, which this instance must not have');
   if (!/AUTOCOUNT_SYNC_DISABLED = "true"/.test(t) || !/AUTOCOUNT_API_URL = "https:\/\/autocount\.invalid\/"/.test(t)) bad.push('AutoCount is not switched off');
+  if (/^\s*BETA_ENABLED\s*=/m.test(t)) bad.push('it switches Beta on, which is for staging only');
   if (/houzs(?!_OWNS_2990)/i.test(t.replace(/HOUZS_OWNS_2990/g, ''))) bad.push('it mentions Houzs');
   if (needIds && /FILL_/.test(t)) bad.push('the storage step has not filled in the ids yet (run: storage)');
   if (bad.length) stop(`engine/backend/wrangler.production.toml is not safe to use: ${bad.join('; ')}.`);

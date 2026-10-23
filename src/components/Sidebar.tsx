@@ -47,11 +47,11 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
   const [profileOpen, setProfileOpen] = useState(false);
   const profileRef = useRef<HTMLDivElement>(null);
-  const engine = useApi<{ enabled: boolean }>('/supply-chain/engine');
+  const engine = useApi<{ enabled: boolean; beta?: boolean }>('/supply-chain/engine');
   const counts = useNavCounts(path);
   const approvalsOn = counts?.approvalsOn === true;
-  const all = useMemo(() => withoutOffItems(navFor(user!.role, !!engine.data?.enabled, user!.access), approvalsOn),
-    [user, engine.data?.enabled, approvalsOn]);
+  const all = useMemo(() => withoutOffItems(navFor(user!.role, !!engine.data?.enabled, user!.access, !!engine.data?.beta), approvalsOn),
+    [user, engine.data?.enabled, engine.data?.beta, approvalsOn]);
 
   // The account menu closes the usual ways: Escape, a click anywhere else, or moving to another page.
   useEffect(() => setProfileOpen(false), [path]);

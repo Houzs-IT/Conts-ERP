@@ -110,6 +110,14 @@ export function activityText(a: Row): { title: string; body: string | null } {
     case "note": return { title: "Note", body: note };
     /* The importer writes from_value 'notion' as its source, not a value that changed ("notion to -" on screen). */
     case "notion_import": return { title: "Notion import", body: note };
+    case "beta_defect_reported": return { title: "Defect reported", body: [to, note].filter(Boolean).join(" · ") || null };
+    case "beta_defect_fixed": return { title: "Defect fixed, waiting for check", body: to };
+    case "beta_defect_redo": return { title: "Defect sent back to fix", body: [to, note].filter(Boolean).join(" · ") || null };
+    case "beta_defect_closed": return { title: "Defect closed", body: to };
+    case "beta_drawing_sent": return { title: `${to ?? "Drawing"} sent to the customer`, body: note };
+    case "beta_drawing_approved": return { title: `${to ?? "Drawing"} approved${from ? ` by ${from}` : ""}`, body: note };
+    case "beta_drawing_approval_removed": return { title: "Approval removed", body: to };
+    case "beta_reminder": return { title: "Reminder sent", body: [to ? humanize(to) : null, note].filter(Boolean).join(": ") || null };
     case "sla_changed": return { title: `${note ?? "SLA"} changed`, body: arrow(from, to) };
   }
   if (TEAM[action]) return { title: `${TEAM[action]} changed`, body: arrow(from, to) };

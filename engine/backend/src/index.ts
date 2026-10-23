@@ -126,6 +126,8 @@ import { publicBrandCalendar } from "./routes/publicBrandCalendar";
 import { brandShare } from "./routes/brandShare";
 // Renovation projects (Conts renovation flow, phase 3). Own router: routes/projects.ts is at its size ceiling.
 import renovation from "./routes/renovation";
+// Beta project workspace (staging only): its own switch answers 404 on every route where BETA_ENABLED is not "true".
+import renovationBeta from "./routes/renovationBeta";
 import { drainEmailOutbox } from "./services/email";
 import { runClientErrorDigest } from "./services/clientErrors";
 import { runSlaEscalation } from "./services/assrEscalation";
@@ -455,6 +457,9 @@ app.route("/api/brand-share", brandShare);
 // Renovation projects: board, detail, stages, checklist skips, site tasks, calendar, handover, POD.
 app.use("/api/renovation/*", inboxBustAfterWrite);
 app.route("/api/renovation", renovation);
+// Beta workspace (owner, 23 Oct 2026): behind the auth gate, switched off in production by renovationBeta's first middleware.
+app.use("/api/beta/*", inboxBustAfterWrite);
+app.route("/api/beta", renovationBeta);
 app.route("/api/sales", sales);
 app.route("/api/finance", finance);
 app.route("/api/stockitems", stockItems);
