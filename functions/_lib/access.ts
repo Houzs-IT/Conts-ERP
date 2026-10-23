@@ -146,6 +146,11 @@ export const builtIn = (role: string, area: Area): Level => resolve(new Map(), r
  */
 export type PermissionLevel = Level;
 export type DepartmentKind = 'management' | 'staff' | 'cleaning' | 'maintenance';
+/** The hidden role a department's kind gives its people (PLAN.md). The role stays on the session because the field
+ *  app, the owner portal and the management guards still branch on it; nobody picks it any more. */
+export const roleForKind = (kind: DepartmentKind): string =>
+  kind === 'management' ? 'management' : kind === 'cleaning' ? 'housekeeper' : kind === 'maintenance' ? 'technician' : 'operations_staff';
+export const isKind = (v: unknown): v is DepartmentKind => v === 'management' || v === 'staff' || v === 'cleaning' || v === 'maintenance';
 /** Where a person's level in an area comes from. 'fixed': management, always Full. 'none': nothing sets it. */
 export type Origin = 'department' | 'position' | 'user' | 'fixed' | 'none';
 export type RuleMap = ReadonlyMap<string, Setting>;
