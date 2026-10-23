@@ -34,7 +34,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     SELECT (SELECT count(DISTINCT unit_id)::int FROM channex_channels) AS units,
            (SELECT max(called_at) FROM channex_calls WHERE status BETWEEN 200 AND 299) AS last_sent,
            (SELECT count(*)::int FROM channex_outbox o WHERE o.status = 'failed' AND o.unit_id IN (SELECT unit_id FROM channex_channels)) AS failed`),
-    waitingCount(env, session), approvalsEnabled(env), levelsFor(env, session.role)]);
+    waitingCount(env, session), approvalsEnabled(env), levelsFor(env, session.role, session.side)]);
   const channels = { units: ch?.units ?? 0, lastSentAt: ch?.last_sent ?? null, failed: ch?.failed ?? 0 };
   const n = c!;
   // Each count and alert follows the role's level for the area it points into, so nobody is shown a count of

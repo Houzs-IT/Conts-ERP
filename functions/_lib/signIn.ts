@@ -1,7 +1,8 @@
 import { type Env, json, run, nowIso } from './db';
 import { levelsFor } from './access';
 import { signSession, cookie, sessionLimits, startSession, type SecuritySettings } from './auth';
-import { HOME } from './door';
+import { homeFor } from './door';
+import { sideOf } from './userSide';
 import { logLogin, twoFactorAvailable, twoFactorTables, type LoginMethod } from './twoFactor';
 import { employeeIdOfUser } from './fieldPin';
 
@@ -21,19 +22,19 @@ export async function completeSignIn(env: Env, request: Request, user: SignInUse
   await logLogin(env, request, { userId: user.id, email: user.email, result: 'success', method });
 
   const { ttlHours, absoluteDays } = sessionLimits(settings, user.role);
-  const sid = await startSession(env, request, user.id, absoluteDays);
+  const [sid, side] = await Promise.all([startSession(env, request, user.id, absoluteDays), sideOf(env, user.id)]);
   const token = await signSession(env.SESSION_SECRET, {
-    userId: user.id, email: user.email, role: user.role, fullName: user.full_name, sid,
+    userId: user.id, email: user.email, role: user.role, side, fullName: user.full_name, sid,
   }, ttlHours, absoluteDays);
 
   return json({
     user: {
-      id: user.id, fullName: user.full_name, email: user.email, role: user.role,
+      id: user.id, fullName: user.full_name, email: user.email, role: user.role, side,
       mustChangePassword: !!user.must_change_password, locale: 'en-MY', employeeId: await employeeIdOfUser(env, user.id),
       twoStepSetupRequired: await twoStepSetupDue(env, settings, user.role, !!user.totp_enabled_at),
-      access: await levelsFor(env, user.role),
+      access: await levelsFor(env, user.role, side),
     },
-    home: user.must_change_password ? '/change-password' : (HOME[user.role] ?? '/'),
+    home: user.must_change_password ? '/change-password' : homeFor(user.role, side),
   }, 200, { 'set-cookie': cookie(request, token, ttlHours * 3600) });
 }
 

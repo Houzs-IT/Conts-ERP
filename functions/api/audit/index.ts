@@ -75,7 +75,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if (isFieldRole(session.role)) {
     mayRead = (t, id) => fieldOwns(env, session.userId, t, id);
   } else {
-    const levels = await levelsFor(env, session.role);
+    const levels = await levelsFor(env, session.role, session.side);
     mayRead = async t => { const area = ENTITY_AREA[t]; return area ? levels[area] !== 'none' : AUDIT_ROLES.includes(session.role); };
   }
   if (!main) {

@@ -1,9 +1,9 @@
-import type { UserRole, AccessLevel } from './types';
+import type { UserRole, UserSide, AccessLevel } from './types';
 import { LEDGER_SCREENS } from './scmEngine';
 
 /** `badge` names a live count from /api/nav/badges; shown only when above zero. */
 export type BadgeKey = 'today' | 'maintenance' | 'inbox' | 'statements' | 'approvals' | 'itSupport';
-/** The sidebar shows one workspace at a time. Rental is the daily work; supply chain sits behind the switch. */
+/** The sidebar shows one workspace at a time. Rental (The Conts) is the daily work; supply chain (Dream Crafter) sits behind the switch. */
 export type Workspace = 'rental' | 'supply';
 /** `area` is the permission area (functions/_lib/access.ts AREAS) the screen belongs to. */
 /** `icon`: drawn only in the phone menu, where each screen is its own row; the desktop shows its category's icon. */
@@ -206,7 +206,7 @@ export const NAV: NavGroup[] = [
 export const withoutOffItems = (groups: NavGroup[], approvalsOn: boolean) =>
   groups.map(g => ({ ...g, items: g.items.filter(it => it.badge !== 'approvals' || approvalsOn) }));
 
-export const WORKSPACE_LABEL: Record<Workspace, string> ={ rental: 'Rental', supply: 'Supply chain' };
+export const WORKSPACE_LABEL: Record<Workspace, string> ={ rental: 'The Conts', supply: 'Dream Crafter' };
 
 /** Destinations a role cannot reach are removed, never disabled — routes.json permissionRules.
  *  Entries are permission areas (or single menu keys). System health matches MASTER_ROLES in
@@ -331,6 +331,10 @@ export const HOME: Record<UserRole, string> = {
   finance_admin: '/owners?view=statements', housekeeper: '/portal/today',
   technician: '/portal/today', owner: '/owner',
 };
+
+/** Landing path with the side taken into account. Keep in step with homeFor in functions/_lib/door.ts. */
+export const homeFor = (role: UserRole, side?: UserSide) =>
+  side === 'dream_crafter' && (role === 'operations_manager' || role === 'operations_staff') ? '/sales/orders' : HOME[role];
 
 /** Pages below a menu entry, for the third breadcrumb ("Units / Owners / Owner statement"). */
 const SUB_PAGES: [RegExp, string][] = [

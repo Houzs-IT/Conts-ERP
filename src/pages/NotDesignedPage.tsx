@@ -1,11 +1,11 @@
 import { useSession } from '../lib/session';
-import { HOME } from '../lib/navigation';
+import { homeFor } from '../lib/navigation';
 
 /** Any address the app has no screen for (a mistyped or old link): say so plainly and offer the way home,
  *  never a dead end. */
 export default function NotDesignedPage() {
   const { user } = useSession();
-  const home = user ? HOME[user.role] : '/';
+  const home = user ? homeFor(user.role, user.side) : '/';
   return (
     <div className="max-w-[460px] bg-card border border-solid border-line rounded-card p-7 flex flex-col gap-[11px]">
       <div className="text-[16px] font-semibold">This page does not exist</div>

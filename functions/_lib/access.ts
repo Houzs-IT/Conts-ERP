@@ -22,6 +22,21 @@ export interface Area {
   defaults?: Partial<Record<string, Level>>;
 }
 
+/** Which side of the business an account works on (migration 0143): The Conts is rental, Dream Crafter the supply
+ *  chain. A side only closes the other side's areas; it never opens what the role does not allow. */
+export type Side = 'conts' | 'dream_crafter' | 'both';
+export const SIDES: Side[] = ['conts', 'dream_crafter', 'both'];
+export const isSide = (v: unknown): v is Side => typeof v === 'string' && (SIDES as string[]).includes(v);
+
+/** The area groups each side closes. Finance and System are on neither list, so they follow the role. */
+const CLOSED_BY_SIDE: Record<Side, string[]> = {
+  conts: ['Dream Crafter'],
+  dream_crafter: ['Workspace', 'Operations', 'Growth'],
+  both: [],
+};
+/** Management always sees both sides, so nobody can lock the system out of one. */
+const offSide = (role: string, side: Side, area: Area) => role !== 'management' && CLOSED_BY_SIDE[side].includes(area.group);
+
 const OPS_NONE = { operations_staff: 'none' as Level };
 
 export const AREAS: Area[] = [
@@ -31,14 +46,14 @@ export const AREAS: Area[] = [
   { key: 'reservations', label: 'Reservations', group: 'Operations', api: ['reservations', 'guests', 'blocks', 'guest-documents'], defaults: { finance_admin: 'view' } },
   { key: 'operations', label: 'Operations', group: 'Operations', api: ['operations', 'housekeeping', 'maintenance', 'tasks'], defaults: { finance_admin: 'none' } },
   { key: 'properties', label: 'Units', group: 'Operations', api: ['properties', 'units', 'inventory', 'access-credentials', 'residence-rules', 'lettings'] },
-  { key: 'serviceCases', label: 'Service cases', group: 'Operations', api: [] },
-  { key: 'projects', label: 'Projects', group: 'Operations', api: [], defaults: { operations_staff: 'view' } },
-  { key: 'scSales', label: 'Sales order', group: 'Supply chain', api: ['sales-orders', 'so-amendments', 'delivery-orders', 'sales-returns', 'customers'] },
-  { key: 'scInvoices', label: 'Invoices and payments', group: 'Supply chain', api: ['payment-vouchers', 'purchase-invoices', 'sales-invoices', 'unbilled-deliveries', 'credit-notes', 'accounting'], managed: true, strictRead: true, defaults: OPS_NONE },
-  { key: 'scConsignment', label: 'Consignment', group: 'Supply chain', api: ['consignment-notes', 'purchase-consignment'] },
-  { key: 'scProcurement', label: 'Procurement', group: 'Supply chain', api: ['products', 'product-models', 'categories', 'fabrics', 'suppliers', 'mrp', 'purchase-orders', 'goods-receipts', 'purchase-returns'] },
-  { key: 'scTransportPlan', label: 'Transportation', group: 'Supply chain', api: ['delivery-schedule', 'delivery-zones', 'driver-leave', 'drivers', 'fleet-health', 'coverage-fleet', 'vehicles', 'threepl-companies', 'rate-cards'] },
-  { key: 'scWarehouse', label: 'Warehouse', group: 'Supply chain', api: ['loading-list', 'warehouses', 'racks', 'stock', 'stock-takes', 'stock-transfers'] },
+  { key: 'serviceCases', label: 'Service cases', group: 'Dream Crafter', api: [] },
+  { key: 'projects', label: 'Projects', group: 'Dream Crafter', api: [], defaults: { operations_staff: 'view' } },
+  { key: 'scSales', label: 'Sales order', group: 'Dream Crafter', api: ['sales-orders', 'so-amendments', 'delivery-orders', 'sales-returns', 'customers'] },
+  { key: 'scInvoices', label: 'Invoices and payments', group: 'Dream Crafter', api: ['payment-vouchers', 'purchase-invoices', 'sales-invoices', 'unbilled-deliveries', 'credit-notes', 'accounting'], managed: true, strictRead: true, defaults: OPS_NONE },
+  { key: 'scConsignment', label: 'Consignment', group: 'Dream Crafter', api: ['consignment-notes', 'purchase-consignment'] },
+  { key: 'scProcurement', label: 'Procurement', group: 'Dream Crafter', api: ['products', 'product-models', 'categories', 'fabrics', 'suppliers', 'mrp', 'purchase-orders', 'goods-receipts', 'purchase-returns'] },
+  { key: 'scTransportPlan', label: 'Transportation', group: 'Dream Crafter', api: ['delivery-schedule', 'delivery-zones', 'driver-leave', 'drivers', 'fleet-health', 'coverage-fleet', 'vehicles', 'threepl-companies', 'rate-cards'] },
+  { key: 'scWarehouse', label: 'Warehouse', group: 'Dream Crafter', api: ['loading-list', 'warehouses', 'racks', 'stock', 'stock-takes', 'stock-transfers'] },
   // 'owner': the owner portal's endpoints, which finance and management also open as an owner (?ownerId=).
   { key: 'finance', label: 'Finance', group: 'Finance', api: ['finance', 'expenses', 'statements', 'payouts', 'approvals', 'owner'], managed: true, strictRead: true, defaults: OPS_NONE },
   { key: 'owners', label: 'Owners', group: 'Finance', api: ['owners', 'contracts'], defaults: OPS_NONE },
@@ -127,9 +142,11 @@ export interface Access { area: Area | null; level: Level; chosen: boolean; role
 /** The role's level for the area a request belongs to: the level management chose, or the built-in one.
  *  `chosen` is true only where management set it; handlers with their own role lists follow a chosen level
  *  (mayWork / maySee / mayRun) and otherwise keep their lists. */
-export async function accessFor(env: Env, role: string, path: string, method = 'GET'): Promise<Access> {
+export async function accessFor(env: Env, role: string, path: string, method = 'GET', side: Side = 'both'): Promise<Access> {
   const area = routeArea(method, path);
   if (!area) return { area: null, level: 'full', chosen: false, role };
+  // Closed by the account's side: treated as a chosen No access, so the handlers' own role lists give way too.
+  if (offSide(role, side, area)) return { area, level: 'none', chosen: true, role };
   const picked = EDITABLE_ROLES.includes(role) ? (await chosen(env)).get(`${role}:${area.key}`) : undefined;
   return { area, level: picked ?? builtIn(role, area), chosen: picked !== undefined, role };
 }
@@ -150,10 +167,10 @@ export function refusalFor(a: Access, method: string): string | null {
   return RANK[a.level] < RANK.edit ? `Your role can ${a.level === 'view' ? 'view but not change' : 'not use'} ${a.area.label}.` : null;
 }
 
-/** Every area's level for one role: what its menu and screens follow. */
-export async function levelsFor(env: Env, role: string): Promise<Record<string, Level>> {
+/** Every area's level for one role and side: what its menu and screens follow. */
+export async function levelsFor(env: Env, role: string, side: Side = 'both'): Promise<Record<string, Level>> {
   const rows = EDITABLE_ROLES.includes(role) ? await chosen(env) : new Map<string, Level>();
-  return Object.fromEntries(AREAS.map(a => [a.key, rows.get(`${role}:${a.key}`) ?? builtIn(role, a)]));
+  return Object.fromEntries(AREAS.map(a => [a.key, offSide(role, side, a) ? 'none' : rows.get(`${role}:${a.key}`) ?? builtIn(role, a)]));
 }
 
 /** The whole chart for the Permissions tab. */

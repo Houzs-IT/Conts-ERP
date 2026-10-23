@@ -23,7 +23,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   // A unit's files come from the Units screen (Properties) or an expense receipt (Owners, Finance); an owner's
   // papers from Owners or Finance. Housekeepers, technicians and owners never reach this (session middleware).
   if (session.role !== 'management') {
-    const lv = await levelsFor(env, session.role);
+    const lv = await levelsFor(env, session.role, session.side);
     const can = (...areas: string[]) => areas.some(a => lv[a] === 'edit' || lv[a] === 'full');
     if (!(unitId ? can('properties', 'owners', 'finance') : ownerId ? can('owners', 'finance') : false)) {
       return fail('FORBIDDEN', 'Your role cannot add files here.', 403);

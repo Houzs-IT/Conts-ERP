@@ -32,3 +32,10 @@ export const HOME: Record<string, string> = {
   finance_admin: '/owners?view=statements', housekeeper: '/portal/today',
   technician: '/portal/today', owner: '/owner',
 };
+
+/** Where a person lands after signing in. A Dream Crafter-only operations account would land on a rental screen
+ *  its side closes (access.ts), so it starts on the sales orders instead. Every other role keeps its home. */
+export function homeFor(role: string, side?: string): string {
+  if (side === 'dream_crafter' && (role === 'operations_manager' || role === 'operations_staff')) return '/sales/orders';
+  return HOME[role] ?? '/';
+}
