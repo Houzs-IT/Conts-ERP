@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useSession, type TwoStep } from '../lib/session';
 import { ApiFailure, api } from '../lib/api';
 import Icon from '../components/Icon';
@@ -6,6 +7,7 @@ import { Logo } from '../components/Logo';
 import { Button } from '../components/Button';
 import { Field, PasswordField } from '../components/Field';
 import { CodeInput } from '../components/inputs/CodeInput';
+import { Segmented } from '../components/Metric';
 import { PIN_INPUT, digitsOnly, pinPolicy } from '../lib/pin';
 import '../styles/login.css';
 import { go } from '../lib/go';
@@ -85,6 +87,13 @@ export default function LoginPage({ forceChangePassword = false, resetToken = nu
   }, [resetToken]);
   // owner.theconts.com is the owners' door; the server refuses staff there too.
   const ownerDoor = window.location.hostname.split('.')[0] === 'owner';
+  // Office or Worker tab. The address follows it (/portal is the workers' door), so a refresh or a bookmark opens
+  // the same tab, and the choice is remembered for the next sign-in on this device.
+  const navigate = useNavigate();
+  const pickDoor = (way: 'signin' | 'pin') => {
+    setScreen(way); setError(''); setPassword(''); rememberSignIn(way);
+    navigate(way === 'pin' ? '/portal' : '/', { replace: true });
+  };
   // A cleaner or technician on the first PIN from the office picks their own PIN, not a password.
   const newPin = screen === 'change' && !!user?.employeeId;
   const pinEntry = screen === 'pin' || newPin;
@@ -192,6 +201,12 @@ export default function LoginPage({ forceChangePassword = false, resetToken = nu
         </div>
 
         <form onSubmit={submit} className="login-form login-in login-in-form w-full max-w-[344px] self-center flex flex-col gap-8">
+          {(screen === 'signin' || screen === 'pin') && !ownerDoor && (
+            <Segmented label="Sign in as" value={screen} onChange={pickDoor}
+              options={[{ key: 'signin', label: 'Office' }, { key: 'pin', label: 'Worker' }]}
+              className="w-full [&>button]:flex-1 [&>button]:justify-center [&>button]:h-10" />
+          )}
+
           <div className="flex flex-col gap-2.5">
             <span className={`${labelCaps} text-gold-ink`}>{c.eyebrow}</span>
             <h1 className="login-display m-0 text-[36px] leading-[1.1]">{c.heading}</h1>
@@ -280,13 +295,6 @@ export default function LoginPage({ forceChangePassword = false, resetToken = nu
 
           {screen === 'pin' && (
             <span className="text-meta text-muted-ink text-center text-pretty">Forgot your PIN? Ask the office for a new one.</span>
-          )}
-
-          {(screen === 'signin' || screen === 'pin') && !ownerDoor && (
-            <Button type="button" variant="tertiary" size="md" className="self-center"
-              onClick={() => { setScreen(screen === 'pin' ? 'signin' : 'pin'); setError(''); setPassword(''); }}>
-              {screen === 'pin' ? 'Office staff: sign in with email' : 'Cleaner or technician? Sign in with your phone'}
-            </Button>
           )}
 
           {screen !== 'signin' && screen !== 'pin' && !forceChangePassword && (
