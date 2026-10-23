@@ -57,7 +57,8 @@ export function Floating({ anchor, fallback, open, onClose, width = 260, maxHeig
   if (!open || !pos) return null;
   return createPortal(
     <div ref={panel} role="dialog" aria-label={label}
-      style={{ position: 'fixed', top: pos.top, bottom: pos.bottom, left: pos.left, width: pos.w, maxHeight: pos.maxH, zIndex: 70 }}
+      // Above every dialog (z 50 to 70) so a list opened inside one is never behind it; below ConfirmDialog (80).
+      style={{ position: 'fixed', top: pos.top, bottom: pos.bottom, left: pos.left, width: pos.w, maxHeight: pos.maxH, zIndex: 75 }}
       className="overflow-auto bg-card border border-solid border-line rounded-card shadow-[var(--shadow-overlay)] text-ink font-sans">
       {children}
     </div>,

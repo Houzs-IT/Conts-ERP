@@ -1,6 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { cx } from '../lib/design-tokens';
 import Icon from './Icon';
+import { Floating } from './DataTableParts';
 import type { RosterUnit } from '../lib/useUnitRoster';
 
 const RECENT_KEY = 'unitPicker.recent';
@@ -42,8 +43,6 @@ export function UnitPicker({ units, value, onChange, label = 'Unit', placeholder
   const [q, setQ] = useState('');
   const [active, setActive] = useState(0);
   const [recent, setRecent] = useState<string[]>(readRecent);
-  const box = useRef<HTMLDivElement>(null);
-  const input = useRef<HTMLInputElement>(null);
   const list = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const listId = useId();
@@ -68,10 +67,6 @@ export function UnitPicker({ units, value, onChange, label = 'Unit', placeholder
   useEffect(() => {
     if (!open) return;
     setActive(Math.max(0, rows.findIndex(r => r.u.id === value)));
-    input.current?.focus();
-    const onDoc = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node)) setOpen(false); };
-    document.addEventListener('mousedown', onDoc);
-    return () => document.removeEventListener('mousedown', onDoc);
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { setActive(0); }, [q]);
   // Keep the highlighted unit in view below the sticky heading.
@@ -105,7 +100,7 @@ export function UnitPicker({ units, value, onChange, label = 'Unit', placeholder
   });
 
   return (
-    <div ref={box} className="relative min-w-0">
+    <div className="relative min-w-0">
       <button ref={trigger} type="button" aria-haspopup="listbox" aria-expanded={open} aria-label={`${label}: ${current ? unitLine(current) : pinnedOn ? pinned!.label : 'none picked'}`}
         disabled={disabled} autoFocus={autoFocus}
         onClick={() => setOpen(v => !v)}
@@ -122,11 +117,12 @@ export function UnitPicker({ units, value, onChange, label = 'Unit', placeholder
           : <span className="flex-1 min-w-0 truncate text-muted-ink">Pick the unit</span>}
         <Icon name="ChevronDown" size="sm" color="var(--color-muted-ink)" />
       </button>
-      {open && (
-        <div className="absolute z-40 top-[calc(100%+4px)] left-0 w-full min-w-[280px] max-w-[calc(100vw-32px)] bg-card border border-solid border-line rounded-card shadow-[var(--shadow-overlay)] overflow-hidden">
+      {/* Drawn on top of the page, so the dialog it sits in cannot cut the list off. */}
+      <Floating anchor={trigger} open={open} onClose={() => { setOpen(false); setQ(''); }} label={label}
+        width={Math.max(trigger.current?.offsetWidth ?? 0, 280)}>
           <div className="flex items-center gap-2 px-3 h-11 [border-bottom:1px_solid_var(--color-line-soft)]">
             <Icon name="Search" size="sm" color="var(--color-muted-ink)" />
-            <input ref={input} value={q} onChange={e => setQ(e.target.value)} onKeyDown={onKey} placeholder={placeholder}
+            <input autoFocus value={q} onChange={e => setQ(e.target.value)} onKeyDown={onKey} placeholder={placeholder}
               role="combobox" aria-controls={listId} aria-expanded aria-autocomplete="list" aria-label={`Search ${label.toLowerCase()}`}
               aria-activedescendant={rows[active] ? `${listId}-${active}` : undefined}
               className="flex-1 min-w-0 border-none outline-none bg-transparent font-sans text-copy text-ink" />
@@ -154,8 +150,7 @@ export function UnitPicker({ units, value, onChange, label = 'Unit', placeholder
               </div>
             ))}
           </div>
-        </div>
-      )}
+      </Floating>
     </div>
   );
 }

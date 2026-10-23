@@ -188,7 +188,7 @@ export function PhoneInput({ value, onChange, label, help, error, placeholder, c
           placeholder="Country or code"
           size="md"
           className="flex-none w-[100px]"
-          menuClassName="min-w-[300px]"
+          menuWidth={300}
         />
         <input
           ref={ref}
