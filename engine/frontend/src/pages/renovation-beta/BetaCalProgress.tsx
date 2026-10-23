@@ -5,7 +5,8 @@ import type { ReactElement } from "react";
 import { Link } from "react-router-dom";
 import { BETA } from "./renovationBetaTheme";
 import { currentStep, progressList, status, STEPS, stepDone, type BoardModel, type Viewing } from "./renovationBetaBoard";
-import { CondPill, MUTED, rememberProject } from "./BetaCalParts";
+import { rememberLastProject } from "./renovationBetaBoardApi";
+import { CondPill, MUTED } from "./BetaCalParts";
 
 export function BetaCalProgress({ m, who, viewingName }: { m: BoardModel; who: Viewing; viewingName: string | null }): ReactElement {
   const list = progressList(m, who);
@@ -29,7 +30,7 @@ export function BetaCalProgress({ m, who, viewingName }: { m: BoardModel; who: V
             <li key={p.id} style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "14px 20px", padding: "14px 0", borderTop: `1px solid ${BETA.lineSoft}` }}>
               <div style={{ flex: "1 1 240px", minWidth: 0 }}>
                 <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  <Link to={`/beta/projects/${p.id}`} onClick={() => rememberProject(p.id)} style={{ color: BETA.ink, fontWeight: 600, textDecoration: "none" }}>{p.name}</Link>
+                  <Link to={`/beta/projects/${p.id}`} onClick={() => rememberLastProject(p.id)} style={{ color: BETA.ink, fontWeight: 600, textDecoration: "none" }}>{p.name}</Link>
                 </div>
                 <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, marginTop: 4, fontSize: 12 }}>
                   <CondPill text={`${st[0]} - ${st[1]}`} words={st[1]} />

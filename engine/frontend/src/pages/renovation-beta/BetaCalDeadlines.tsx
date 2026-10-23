@@ -8,7 +8,8 @@ import {
   APPT_LABEL, apptLeftText, apptWithDefault, dayWord, deadlineGroups, diff, ds, leftText, MONTHS, ord, todoText,
   type ApptItem, type BoardModel, type DesignProject, type DueItem, type Kind, type ApptKey, type PersonRef, type TodoItem, type Viewing,
 } from "./renovationBetaBoard";
-import { Badge, BTN, BTN_FILL, BTN_MAIN, EmptyBox, INK_SOFT, MUTED, rememberProject } from "./BetaCalParts";
+import { rememberLastProject } from "./renovationBetaBoardApi";
+import { Badge, BTN, BTN_FILL, BTN_MAIN, EmptyBox, INK_SOFT, MUTED, PoDoneButton } from "./BetaCalParts";
 
 const LI: CSSProperties = { display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, padding: "12px 0", borderTop: `1px solid ${BETA.lineSoft}` };
 const LIST: CSSProperties = { listStyle: "none", margin: 0, padding: 0 };
@@ -25,6 +26,8 @@ export interface DeadlineActions {
   onApprove: (p: DesignProject, k: Kind) => void;
   onStart: (p: DesignProject, k: Kind) => void;
   onEdit: (projectId: number) => void;
+  onNotice: (text: string) => void;
+  onError: (text: string) => void;
 }
 
 interface Props extends DeadlineActions {
@@ -38,7 +41,7 @@ interface Props extends DeadlineActions {
 function NameLink({ p }: { p: DesignProject }): ReactElement {
   return (
     <div style={{ ...CLIP }}>
-      <Link to={`/beta/projects/${p.id}`} onClick={() => rememberProject(p.id)} style={{ color: BETA.ink, fontWeight: 600, textDecoration: "none" }}>{p.name}</Link>
+      <Link to={`/beta/projects/${p.id}`} onClick={() => rememberLastProject(p.id)} style={{ color: BETA.ink, fontWeight: 600, textDecoration: "none" }}>{p.name}</Link>
     </div>
   );
 }
@@ -148,10 +151,12 @@ export function BetaCalDeadlines({ m, who, canAssign, viewingName, ...act }: Pro
                             </div>
                           )}
                         </div>
-                        <div style={{ flex: "none", display: "flex", gap: 6, flexWrap: "wrap" }}>
-                          <button type="button" disabled={act.busy} onClick={() => act.onAmend(x.p.id, x.k)} style={BTN}>+ Amendment</button>
-                          <button type="button" disabled={act.busy} onClick={() => act.onApprove(x.p, x.k)} style={BTN_MAIN}>Client approved</button>
-                        </div>
+                        {canAssign && (
+                          <div style={{ flex: "none", display: "flex", gap: 6, flexWrap: "wrap" }}>
+                            <button type="button" disabled={act.busy} onClick={() => act.onAmend(x.p.id, x.k)} style={BTN}>+ Amendment</button>
+                            <button type="button" disabled={act.busy} onClick={() => act.onApprove(x.p, x.k)} style={BTN_MAIN}>Client approved</button>
+                          </div>
+                        )}
                       </li>
                     );
                   })}
@@ -168,8 +173,8 @@ export function BetaCalDeadlines({ m, who, canAssign, viewingName, ...act }: Pro
                           </div>
                         )}
                       </div>
-                      <button type="button" disabled={act.busy} onClick={() => act.onStart(x.p, x.k)} style={BTN_MAIN}>Start {x.k}D today</button>
-                      <button type="button" onClick={() => act.onEdit(x.p.id)} style={BTN}>Edit</button>
+                      {canAssign && <button type="button" disabled={act.busy} onClick={() => act.onStart(x.p, x.k)} style={BTN_MAIN}>Start {x.k}D today</button>}
+                      {canAssign && <button type="button" onClick={() => act.onEdit(x.p.id)} style={BTN}>Edit</button>}
                     </li>
                   ))}
                 </Section>
@@ -220,7 +225,12 @@ function TodoRow({ m, who, x, canAssign, act }: { m: BoardModel; who: Viewing; x
           </div>
         )}
       </div>
-      {isPo ? <span style={{ flex: "none", fontSize: 12, color: MUTED }}>Auto</span> : <button type="button" onClick={() => act.onBook(p.id, k)} style={BTN_MAIN}>Book time</button>}
+      {isPo ? (
+        <>
+          <span style={{ flex: "none", fontSize: 12, color: MUTED }}>Auto</span>
+          {canAssign && <PoDoneButton projectId={p.id} today={m.today} onDone={act.onNotice} onError={act.onError} />}
+        </>
+      ) : canAssign && <button type="button" onClick={() => act.onBook(p.id, k)} style={BTN_MAIN}>Book time</button>}
     </li>
   );
 }

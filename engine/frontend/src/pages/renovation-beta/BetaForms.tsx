@@ -220,8 +220,8 @@ function WorkForm({ env, ev, day }: { env: FormEnv; ev: CalEvent | null; day: st
 function AssignForm({ env, p }: { env: FormEnv; p: DesignProject }): ReactElement {
   const { m } = env;
   const [lead, setLead] = useState<string>(String(p.lead?.id ?? m.mePersonId ?? ""));
-  const [w3, setW3] = useState<string>(String(p.by["3"]?.id ?? p.lead?.id ?? m.mePersonId ?? ""));
-  const [w2, setW2] = useState<string>(String(p.by["2"]?.id ?? p.lead?.id ?? m.mePersonId ?? ""));
+  const [w3, setW3] = useState<string>(String(p.by["3"]?.id ?? p.lead?.id ?? ""));
+  const [w2, setW2] = useState<string>(String(p.by["2"]?.id ?? p.lead?.id ?? ""));
   const [site, setSite] = useState<string>(String(p.site?.id ?? ""));
   const save = useSave(env);
 
@@ -229,6 +229,7 @@ function AssignForm({ env, p }: { env: FormEnv; p: DesignProject }): ReactElemen
     await save.run(async () => {
       const leadId = num(lead);
       if (leadId == null) throw new Error("Choose the design lead.");
+      if (num(w3) == null || num(w2) == null) throw new Error("Choose who does the 3D and who does the 2D.");
       const siteId = num(site);
       await assignPeople(p.id, {
         ...(p.lead ? {} : { designerPersonId: leadId }),
@@ -253,8 +254,8 @@ function AssignForm({ env, p }: { env: FormEnv; p: DesignProject }): ReactElemen
         </Field>
       )}
       <div style={TWO}>
-        <Field label="3D by"><select name="who3" value={w3} onChange={(e) => setW3(e.target.value)} style={IN}><PersonOptions m={m} /></select></Field>
-        <Field label="2D by"><select name="who2" value={w2} onChange={(e) => setW2(e.target.value)} style={IN}><PersonOptions m={m} /></select></Field>
+        <Field label="3D by"><select name="who3" required value={w3} onChange={(e) => setW3(e.target.value)} style={IN}><PersonOptions m={m} blank="Choose..." /></select></Field>
+        <Field label="2D by"><select name="who2" required value={w2} onChange={(e) => setW2(e.target.value)} style={IN}><PersonOptions m={m} blank="Choose..." /></select></Field>
       </div>
       <Field label="Site PIC (handover lead)">
         <select name="site" value={site} onChange={(e) => setSite(e.target.value)} style={IN}><PersonOptions m={m} blank="Not chosen" /></select>
@@ -372,6 +373,7 @@ function DatesForm({ env, p }: { env: FormEnv; p: DesignProject }): ReactElement
   const save = useSave(env);
 
   async function submit(): Promise<void> {
+    if (s3 === first.s3 && s2 === first.s2) { env.onClose(); return; }
     await save.run(async () => {
       await boardApi.saveDesign(p.id, {
         ...(s3 !== first.s3 ? { start3dOn: s3 || null } : {}),

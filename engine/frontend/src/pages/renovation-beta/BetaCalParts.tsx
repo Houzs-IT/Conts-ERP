@@ -2,7 +2,10 @@
    condPill, the toast, the 720px phone switch). */
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactElement, type ReactNode } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { errorText } from "../projects/renovation/renovationModel";
 import { BETA, betaConditionTone } from "./renovationBetaTheme";
+import { invalidateBeta, markPoDone } from "./renovationBetaBoardApi";
 import { initials } from "./renovationBetaBoard";
 
 /** The mockup's button: white, 1px border, 8px corners. */
@@ -100,22 +103,21 @@ export function ErrorBanner({ text, onRetry }: { text: string; onRetry?: () => v
   );
 }
 
-/** Remember the last project opened in Beta, so the Projects menu entry can return to it. */
-export const LAST_PROJECT_KEY = "beta:lastProject";
-
-export function rememberProject(id: number): void {
-  try {
-    window.localStorage.setItem(LAST_PROJECT_KEY, String(id));
-  } catch {
-    /* storage can be blocked; the Projects entry then opens Home */
+/** The mockup's "PO done" button. Shown only to people who may write; it sets the PO date to today and refreshes Beta. */
+export function PoDoneButton({ projectId, today, onDone, onError }: { projectId: number; today: string; onDone: (text: string) => void; onError: (text: string) => void }): ReactElement {
+  const queryClient = useQueryClient();
+  const [busy, setBusy] = useState(false);
+  async function click(): Promise<void> {
+    setBusy(true);
+    try {
+      await markPoDone(projectId, today);
+      await invalidateBeta(queryClient);
+      onDone("PO done");
+    } catch (e) {
+      onError(errorText(e));
+    } finally {
+      setBusy(false);
+    }
   }
-}
-
-export function lastProject(): number | null {
-  try {
-    const n = Number(window.localStorage.getItem(LAST_PROJECT_KEY));
-    return Number.isInteger(n) && n > 0 ? n : null;
-  } catch {
-    return null;
-  }
+  return <button type="button" disabled={busy} onClick={() => void click()} style={BTN_MAIN}>PO done</button>;
 }

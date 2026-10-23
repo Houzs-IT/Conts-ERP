@@ -3,13 +3,14 @@
    Plan: docs/superpowers/plans/2026-10-23-beta-project-workspace.md, section 10. */
 
 import { useMemo, useState, type MouseEvent, type ReactElement } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Link, Navigate, useNavigate } from "react-router-dom";
 import { useAuth } from "../../auth/AuthContext";
 import { useQuery } from "../../hooks/useQuery";
 import { BETA, betaDueTone, betaTagTone } from "./renovationBetaTheme";
 import { buildModel, HOME_TABS, homeCounts, homeList, homeRow, shortLeft, type HomeRow, type HomeTab } from "./renovationBetaBoard";
-import { boardApi } from "./renovationBetaBoardApi";
-import { BTN_FILL, CARD, CondPill, ErrorBanner, INK_SOFT, MUTED, lastProject, rememberProject, useIsPhone, useToast } from "./BetaCalParts";
+import { boardApi, boardKey, invalidateBeta, readLastProject, rememberLastProject } from "./renovationBetaBoardApi";
+import { BTN_FILL, CARD, CondPill, ErrorBanner, INK_SOFT, MUTED, useIsPhone, useToast } from "./BetaCalParts";
 import { BetaDialogs, type BetaDialog } from "./BetaForms";
 
 const TH = { padding: "10px 10px", textAlign: "left", fontSize: 12, fontWeight: 600, color: MUTED, borderBottom: `1px solid ${BETA.line}`, whiteSpace: "nowrap" } as const;
@@ -38,12 +39,13 @@ export function RenovationBetaHome(): ReactElement {
   const navigate = useNavigate();
   const { can } = useAuth();
   const canAssign = can("projects.write");
-  const q = useQuery(["renovation-beta", "board"], () => boardApi.board(), []);
+  const queryClient = useQueryClient();
+  const q = useQuery(boardKey(), () => boardApi.board(), []);
   const phone = useIsPhone();
   const [tab, setTab] = useState<HomeTab>("all");
   const [dialog, setDialog] = useState<BetaDialog | null>(null);
   const { toast, show } = useToast();
-  const last = lastProject();
+  const last = readLastProject();
   const m = useMemo(() => (q.data ? buildModel(q.data) : null), [q.data]);
 
   if (q.error && !m) return <ErrorBanner text={`The projects could not be loaded: ${q.error}`} onRetry={q.reload} />;
@@ -55,13 +57,13 @@ export function RenovationBetaHome(): ReactElement {
   const showPay = m.projects.some((p) => p.payment != null);
 
   function open(id: number): void {
-    rememberProject(id);
+    rememberLastProject(id);
     navigate(`/beta/projects/${id}`);
   }
 
   /* A click anywhere on the row opens the project; the link and the Assign button keep their own action. */
   function rowClick(e: MouseEvent<HTMLElement>, id: number): void {
-    if ((e.target as HTMLElement).closest("a, button")) return;
+    if (e.target instanceof Element && e.target.closest("a, button")) return;
     open(id);
   }
 
@@ -108,7 +110,7 @@ export function RenovationBetaHome(): ReactElement {
       {phone ? (
         <ol style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 10 }}>
           {rows.length === 0 && <li style={{ color: MUTED }}>No projects here.</li>}
-          {rows.map((r) => <PhoneCard key={r.p.id} r={r} onOpen={() => rememberProject(r.p.id)} />)}
+          {rows.map((r) => <PhoneCard key={r.p.id} r={r} onOpen={() => rememberLastProject(r.p.id)} />)}
         </ol>
       ) : (
         <div style={{ ...CARD, overflowX: "auto" }}>
@@ -135,7 +137,7 @@ export function RenovationBetaHome(): ReactElement {
                       </span>
                     </td>
                     <td style={{ ...TD, fontWeight: 600, minWidth: 190 }}>
-                      <Link to={`/beta/projects/${r.p.id}`} onClick={() => rememberProject(r.p.id)} style={{ color: BETA.ink, textDecoration: "none" }}>{r.p.title}</Link>
+                      <Link to={`/beta/projects/${r.p.id}`} onClick={() => rememberLastProject(r.p.id)} style={{ color: BETA.ink, textDecoration: "none" }}>{r.p.title}</Link>
                       {r.p.customer && <span style={{ color: MUTED, fontWeight: 500 }}> · {r.p.customer}</span>}
                     </td>
                     <td style={TD}><CondPill text={r.cond} words={r.tone} /></td>
@@ -157,7 +159,7 @@ export function RenovationBetaHome(): ReactElement {
         env={{
           m, who: "All",
           onClose: () => setDialog(null),
-          onSaved: (text) => { setDialog(null); q.reload(); show(text); },
+          onSaved: (text) => { setDialog(null); void invalidateBeta(queryClient); show(text); },
         }}
       />
       {toast}
@@ -201,6 +203,6 @@ function PhoneCard({ r, onOpen }: { r: HomeRow; onOpen: () => void }): ReactElem
 
 /** The Projects menu entry: the last project opened in Beta, or Home when none is remembered. */
 export function RenovationBetaProjectsEntry(): ReactElement {
-  const id = lastProject();
+  const id = readLastProject();
   return <Navigate to={id ? `/beta/projects/${id}` : "/beta/home"} replace />;
 }

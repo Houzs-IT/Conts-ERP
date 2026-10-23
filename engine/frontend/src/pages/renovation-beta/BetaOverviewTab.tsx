@@ -3,36 +3,32 @@
 
 import { useId, useState, type CSSProperties, type ReactElement, type ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { daysBetween, money } from "../projects/renovation/renovationModel";
-import { AssignDialog } from "./BetaWsHeader";
+import { errorText, money } from "../projects/renovation/renovationModel";
+import { BetaWsDesignCard } from "./BetaWsDesignCard";
 import { BetaWsKeyCard } from "./BetaWsKeyCard";
 import {
-  TONE_ALERT, TONE_PAID, TONE_QUIET, WS, WsBadge, WsBtn, WsCard, WsCheck, btnStyle, cardStyle, h2Style, subStyle,
+  TONE_ALERT, TONE_PAID, TONE_QUIET, WS, WsBadge, WsBtn, WsCard, WsCheck, btnStyle, cardStyle, h2Style, subStyle, type WsBtnKind,
 } from "./BetaWsUi";
 import { FileDialog, sendReminder, useGuarded, type BetaTabProps, type ViewedFile } from "./betaShared";
+import { add, ds, designKind } from "./renovationBetaBoard";
+import { approveNewest, boardApi, markPoDone } from "./renovationBetaBoardApi";
 import {
-  approvedSet, dayMonth, dayMonthYear, designProgress, nextStep, paymentCard, paymentStrip, renovationDays, siteTimeline, todoList, trimTimeline,
-  type DesignRow, type SiteStep, type TodoRow,
+  approvedSet, dayMonth, dayMonthYear, nextStep, paymentCard, paymentStrip, renovationDays, siteTimeline, todoList, trimTimeline, designTodoRows, mergeTodo,
+  type SiteStep, type TodoAction, type TodoRow,
 } from "./renovationBetaModel";
-import { BETA, betaDueTone } from "./renovationBetaTheme";
+import { BETA } from "./renovationBetaTheme";
 import type { DesignFile } from "../projects/renovation/simpleApi";
 
 const column: CSSProperties = { minWidth: 0, display: "flex", flexDirection: "column", gap: 20 };
 
 export function BetaOverviewTab(p: BetaTabProps): ReactElement {
-  const { detail: d, workspace, records, today } = p;
+  const { detail: d, workspace, today } = p;
   const [viewing, setViewing] = useState<ViewedFile | null>(null);
-  const [assigning, setAssigning] = useState(false);
-  const todo = todoList({
-    today,
-    projectName: d.project.name,
-    customerName: d.project.customer_name,
-    customerPhone: d.project.customer_phone,
-    currentStage: d.currentStage,
-    files: records.files,
-    measures: records.measures,
-    workspace,
-  });
+  // Design rows come from the board logic Calendar uses; payment and defect rows from the workspace.
+  const todo = mergeTodo(
+    designTodoRows(p.board.m, p.board.p, p.canWrite, d.project.customer_phone),
+    todoList({ today, projectName: d.project.name, currentStage: d.currentStage, workspace }),
+  );
   const openFile = (f: DesignFile): void => {
     if (f.external_url) window.open(f.external_url, "_blank", "noopener");
     else if (f.r2_key) setViewing({ key: f.r2_key, name: f.file_name });
@@ -47,14 +43,13 @@ export function BetaOverviewTab(p: BetaTabProps): ReactElement {
           <BetaWsKeyCard d={d} canWrite={p.canWrite} today={today} onDone={p.onDone} />
         </div>
         <aside style={{ ...column, flex: "1 1 320px" }}>
-          <DesignCard rows={designProgress(records.files, records.measures, workspace, today)} p={p} />
+          <BetaWsDesignCard board={p.board} canWrite={p.canWrite} openDialog={p.openDialog} onDone={p.onDone} onError={p.onError} />
           <OrderCard p={p} />
           <FinalDrawingsCard p={p} onOpen={openFile} />
-          <TeamCard p={p} onEdit={() => setAssigning(true)} />
+          <TeamCard p={p} onEdit={() => p.openDialog({ t: "assign", projectId: p.projectId })} />
         </aside>
       </div>
       {viewing && <FileDialog projectId={p.projectId} file={viewing} onClose={() => setViewing(null)} />}
-      {assigning && <AssignDialog d={d} onClose={() => setAssigning(false)} onDone={p.onDone} onError={p.onError} />}
     </>
   );
 }
@@ -114,16 +109,56 @@ function TodoCard({ rows, p }: { rows: TodoRow[]; p: BetaTabProps }): ReactEleme
   const { busy, run } = useGuarded();
   const id = useId();
   const { next, rest } = nextStep(rows);
-  const act = (r: TodoRow, kind: "amber" | "dark", size: "sm" | "lg"): ReactNode => {
-    const { action } = r;
-    if (action.type === "open") return <WsBtn kind={kind} size={size} onClick={() => p.openTab(action.tab)}>{action.label}</WsBtn>;
+  const { m, raw } = p.board;
+
+  // One design write from a row button, the same calls Calendar makes.
+  async function design(action: Extract<TodoAction, { type: "design" }>): Promise<void> {
+    try {
+      switch (action.op) {
+        case "book": p.openDialog({ t: "book", projectId: p.projectId, key: action.key }); return;
+        case "amend": p.openDialog({ t: "amend", projectId: p.projectId, k: action.k }); return;
+        case "dates": p.openDialog({ t: "dates", projectId: p.projectId }); return;
+        case "assign": p.openDialog({ t: "assign", projectId: p.projectId }); return;
+        case "start":
+          await boardApi.saveDesign(p.projectId, action.k === "3" ? { start3dOn: m.today } : { start2dOn: m.today });
+          p.onDone(`${action.k}D started · due ${ds(add(m.today, m.sop[action.k]))}`);
+          return;
+        case "approve":
+          await approveNewest(raw, designKind(action.k), m.today, p.board.p.customer ?? "Client");
+          p.onDone(action.k === "3" ? "3D approved · 2D is ready to start" : "2D approved · now PO, carpentry measure and site briefing");
+          return;
+        case "po":
+          await markPoDone(p.projectId, m.today);
+          p.onDone("PO done");
+          return;
+      }
+    } catch (e) {
+      p.onError(errorText(e));
+    }
+  }
+
+  const button = (r: TodoRow, action: TodoAction, kind: WsBtnKind, size: "sm" | "lg"): ReactNode => {
+    if (action.type === "open") return <WsBtn key={action.label} kind={kind} size={size} onClick={() => p.openTab(action.tab)}>{action.label}</WsBtn>;
     if (!p.canWrite) return null;
     return (
-      <WsBtn kind={kind} size={size} disabled={busy} onClick={() => void run(() => sendReminder(p.projectId, action, p.onDone, p.onError))}>
+      <WsBtn
+        key={action.label}
+        kind={kind}
+        size={size}
+        disabled={busy}
+        onClick={() => void run(() => (action.type === "remind" ? sendReminder(p.projectId, action, p.onDone, p.onError) : design(action)))}
+      >
         {action.label}<span className="sr">: {r.title}</span>
       </WsBtn>
     );
   };
+  // The first action is the row's main button; the others sit beside it as plain outline buttons.
+  const act = (r: TodoRow, kind: "amber" | "dark", size: "sm" | "lg"): ReactNode => (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+      {button(r, r.action, kind, size)}
+      {(r.more ?? []).map((a) => button(r, a, "outline", size))}
+    </div>
+  );
   return (
     <section aria-labelledby={id} style={{ ...cardStyle, padding: 0, gap: 0, overflow: "hidden" }}>
       <div style={{ padding: "16px 20px 0" }}><h2 id={id} style={h2Style}>To do</h2></div>
@@ -224,58 +259,6 @@ function SiteRow({ s, last, today }: { s: SiteStep; last: boolean; today: string
   );
 }
 
-/* ---------- Design progress ---------- */
-
-function DesignCard({ rows, p }: { rows: DesignRow[]; p: BetaTabProps }): ReactElement {
-  const { detail: d, today, records, workspace } = p;
-  const designer = d.people.designer.name ?? "not set";
-  const approved3d = approvedSet(records.files, workspace.reviews, "3d").approved != null;
-  const handoverOn = d.project.handed_over_at ?? d.project.planned_handover_date;
-  const green = (t: string): ReactElement => <span style={{ color: WS.green, fontWeight: 700 }}>{t}</span>;
-  const muted = (t: string): ReactElement => <span style={{ color: BETA.muted }}>{t}</span>;
-  const status = (r: DesignRow): ReactElement => {
-    if (r.kind === "onsite") return r.state === "done" ? <>{green("Done")}{muted(` · ${dayMonth(r.doneOn)}`)}</> : muted("Not measured");
-    if (r.state === "done") return <>{green("Approved")}{muted(` · ${dayMonth(r.doneOn)}`)}</>;
-    if (r.state === "waiting") {
-      const sentOn = approvedSet(records.files, workspace.reviews, r.kind).waiting?.review?.sentOn ?? null;
-      return <span style={{ color: WS.blue, fontWeight: 600 }}>{sentOn ? `Sent ${dayMonth(sentOn)} · ` : ""}waiting client</span>;
-    }
-    if (r.due && r.daysLeft != null) {
-      const [ink] = betaDueTone(r.daysLeft);
-      return <span style={{ color: ink, fontWeight: 700 }}>due {dayMonth(r.due)} ({r.daysLeft < 0 ? `${-r.daysLeft}d late` : `${r.daysLeft}d left`})</span>;
-    }
-    return muted(r.kind === "2d" && !approved3d ? "After 3D" : "Not started");
-  };
-  const left = handoverOn ? daysBetween(today, handoverOn.slice(0, 10)) : null;
-  const lines: Array<{ key: string; label: string; body: ReactElement }> = rows.map((r) => ({
-    key: r.kind,
-    label: r.kind === "onsite" ? "Site measure" : `${r.label} · by ${designer}`,
-    body: status(r),
-  }));
-  if (handoverOn) {
-    lines.push({
-      key: "handover",
-      label: `Handover · ${d.people.pic.name ?? d.people.renoPic.name ?? "Site PIC not set"}`,
-      body: muted(`${dayMonth(handoverOn)}${left == null ? "" : left >= 0 ? ` · ${left} days left` : ` · ${-left} days ago`}`),
-    });
-  }
-  return (
-    <WsCard title="Design progress" gap={10} right={<Link to="/beta/calendar" style={{ fontSize: 13, fontWeight: 600 }}>Calendar →</Link>}>
-      <div>
-        {lines.map((l) => (
-          <div key={l.key} style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "6px 10px", padding: "9px 0", borderTop: `1px solid ${BETA.lineSoft}` }}>
-            <div style={{ flex: "1 1 160px", minWidth: 0 }}>
-              <div style={{ fontWeight: 600, fontSize: 14 }}>{l.label}</div>
-              <div style={{ fontSize: 12 }}>{l.body}</div>
-            </div>
-          </div>
-        ))}
-      </div>
-      {rows.every((r) => r.due == null) && <p style={{ fontSize: 12, color: BETA.muted }}>Deadlines start counting once the first site measure is recorded.</p>}
-    </WsCard>
-  );
-}
-
 /* ---------- Sales order ---------- */
 
 function OrderCard({ p }: { p: BetaTabProps }): ReactElement {
@@ -361,9 +344,9 @@ function TeamCard({ p, onEdit }: { p: BetaTabProps; onEdit: () => void }): React
   const attending = d.people.attending.map((a) => a.name).join(", ");
   const rowsList: Array<[string, string]> = [
     ["Client", [d.project.customer_name, d.project.customer_phone].filter(Boolean).join(" · ") || "-"],
-    ["Designer", d.people.designer.name ?? "-"],
+    ["Designer", p.board.p.lead?.name ?? "-"],
     ["Sales", d.people.sales.name ?? "-"],
-    ["Site PIC", d.people.pic.name ?? d.people.renoPic.name ?? "-"],
+    ["Site PIC", p.board.p.site?.name ?? "-"],
   ];
   if (attending) rowsList.push(["Attending", attending]);
   return (

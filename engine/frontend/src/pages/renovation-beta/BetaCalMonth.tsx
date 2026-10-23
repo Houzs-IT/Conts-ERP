@@ -21,6 +21,7 @@ interface Props {
   onNext: () => void;
   onToday: () => void;
   onPick: (day: string) => void;
+  canWrite: boolean;
   onAddWork: () => void;
   onEditEvent: (e: CalEvent) => void;
 }
@@ -46,7 +47,7 @@ function EventChip({ e, who }: { e: CalEvent; who: Viewing }): ReactElement {
   );
 }
 
-export function BetaCalMonth({ m, who, view, selDay, onPrev, onNext, onToday, onPick, onAddWork, onEditEvent }: Props): ReactElement {
+export function BetaCalMonth({ m, who, view, selDay, onPrev, onNext, onToday, onPick, canWrite, onAddWork, onEditEvent }: Props): ReactElement {
   const cells = monthCells(view.y, view.m);
   const list = listFor(m, who, selDay);
   const monthName = MONTHS[view.m];
@@ -114,7 +115,7 @@ export function BetaCalMonth({ m, who, view, selDay, onPrev, onNext, onToday, on
       </section>
 
       <aside style={{ flex: "1 1 260px", maxWidth: "100%", minWidth: 0, display: "flex", flexDirection: "column", gap: 16 }}>
-        <button type="button" onClick={onAddWork} style={{ minHeight: 46, border: 0, borderRadius: 10, background: BETA.accent, color: "#FFFFFF", font: "inherit", fontWeight: 600, cursor: "pointer" }}>+ Add work</button>
+        {canWrite && <button type="button" onClick={onAddWork} style={{ minHeight: 46, border: 0, borderRadius: 10, background: BETA.accent, color: "#FFFFFF", font: "inherit", fontWeight: 600, cursor: "pointer" }}>+ Add work</button>}
         <section aria-labelledby="betaCalListTitle" style={{ background: BETA.surface, border: `1px solid ${BETA.line}`, borderRadius: 12, padding: 18, display: "flex", flexDirection: "column", gap: 6 }}>
           <h2 id="betaCalListTitle" style={{ margin: 0, fontSize: 17, fontWeight: 700 }}>{list.title}</h2>
           <ol style={{ listStyle: "none", margin: 0, padding: 0 }}>
@@ -130,22 +131,22 @@ export function BetaCalMonth({ m, who, view, selDay, onPrev, onNext, onToday, on
             {list.events.map((e) => {
               const [ink] = BETA_CHIP[groupOf(e.type)];
               const proj = projectTitle(m, e.projectId);
+              const body = (
+                <>
+                  <span aria-hidden="true" style={{ flex: "none", width: 10, height: 10, marginTop: 5, borderRadius: 3, background: ink }} />
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ display: "block", fontWeight: 600 }}>{e.note || typeLabel(e.type)}{e.done ? " · done" : ""}</span>
+                    <span style={{ display: "block", fontSize: 12, color: MUTED }}>
+                      {who === "All" && e.who && <><b style={{ color: BETA.ink }}>{e.who.name}</b> · </>}{ds(e.d)}{e.t ? ` · ${e.t}` : ""}{proj ? ` · ${proj}` : ""}
+                    </span>
+                  </span>
+                  {canWrite && <span style={{ fontSize: 12, color: BETA.accent, fontWeight: 600 }}>Edit</span>}
+                </>
+              );
+              const row: CSSProperties = { width: "100%", display: "flex", gap: 10, alignItems: "flex-start", padding: "10px 0", border: 0, background: "transparent", textAlign: "left", font: "inherit", opacity: e.done ? 0.55 : 1, color: BETA.ink };
               return (
                 <li key={e.id} style={{ borderTop: "1px solid #E8EDEC" }}>
-                  <button
-                    type="button"
-                    onClick={() => onEditEvent(e)}
-                    style={{ width: "100%", display: "flex", gap: 10, alignItems: "flex-start", padding: "10px 0", border: 0, background: "transparent", textAlign: "left", font: "inherit", cursor: "pointer", opacity: e.done ? 0.55 : 1, color: BETA.ink }}
-                  >
-                    <span aria-hidden="true" style={{ flex: "none", width: 10, height: 10, marginTop: 5, borderRadius: 3, background: ink }} />
-                    <span style={{ flex: 1, minWidth: 0 }}>
-                      <span style={{ display: "block", fontWeight: 600 }}>{e.note || typeLabel(e.type)}{e.done ? " · done" : ""}</span>
-                      <span style={{ display: "block", fontSize: 12, color: MUTED }}>
-                        {who === "All" && e.who && <><b style={{ color: BETA.ink }}>{e.who.name}</b> · </>}{ds(e.d)}{e.t ? ` · ${e.t}` : ""}{proj ? ` · ${proj}` : ""}
-                      </span>
-                    </span>
-                    <span style={{ fontSize: 12, color: BETA.accent, fontWeight: 600 }}>Edit</span>
-                  </button>
+                  {canWrite ? <button type="button" onClick={() => onEditEvent(e)} style={{ ...row, cursor: "pointer" }}>{body}</button> : <div style={row}>{body}</div>}
                 </li>
               );
             })}

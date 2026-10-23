@@ -1,7 +1,9 @@
 /* Calls for the Beta Home and Calendar screens (docs/superpowers/plans/2026-10-23-beta-project-workspace.md,
    section 10). Shapes mirror the board routes in engine/backend/src/routes/renovationBeta.ts. */
 
+import type { QueryClient } from "@tanstack/react-query";
 import { api } from "../../api/client";
+import { buildQueryKey } from "../../hooks/useQuery";
 import { simpleApi } from "../projects/renovation/simpleApi";
 import { betaApi } from "./renovationBetaApi";
 
@@ -89,12 +91,53 @@ export interface EventBody {
   personId: number | null;
 }
 
+/** The one query key of the board. Home, Calendar and the workspace all use it, so one write refreshes them all. */
+export function boardKey(range?: BoardRange, projectId?: number): ReadonlyArray<string | number> {
+  return ["renovation-beta", "board", range?.from ?? "", range?.to ?? "", projectId ?? 0];
+}
+
+/** Refetch everything Beta shows (the board and the workspace queries) after a write. */
+export function invalidateBeta(queryClient: QueryClient): Promise<void> {
+  return queryClient.invalidateQueries({ queryKey: buildQueryKey(["renovation-beta"]) });
+}
+
+/** The browser remembers the last project opened in Beta, so the Projects menu entry can return to it. */
+export const LAST_PROJECT_KEY = "beta:lastProject";
+
+export function rememberLastProject(id: number): void {
+  try {
+    window.localStorage.setItem(LAST_PROJECT_KEY, String(id));
+  } catch {
+    /* storage can be blocked; the Projects entry then opens Home */
+  }
+}
+
+export function forgetLastProject(): void {
+  try {
+    window.localStorage.removeItem(LAST_PROJECT_KEY);
+  } catch {
+    /* nothing to forget when storage is blocked */
+  }
+}
+
+export function readLastProject(): number | null {
+  try {
+    const n = Number(window.localStorage.getItem(LAST_PROJECT_KEY));
+    return Number.isInteger(n) && n > 0 ? n : null;
+  } catch {
+    return null;
+  }
+}
+
 type Ok = Promise<{ ok: true }>;
 const B = "/api/beta";
 
 export const boardApi = {
-  board: (range?: BoardRange): Promise<BetaBoard> =>
-    api.get<BetaBoard>(range ? `${B}/board?from=${range.from}&to=${range.to}` : `${B}/board`),
+  /** The whole board, or with `projectId` just that project (the workspace). `range` limits the calendar events. */
+  board: (range?: BoardRange, projectId?: number): Promise<BetaBoard> => {
+    const qs = [range ? `from=${range.from}&to=${range.to}` : "", projectId ? `projectId=${projectId}` : ""].filter(Boolean).join("&");
+    return api.get<BetaBoard>(qs ? `${B}/board?${qs}` : `${B}/board`);
+  },
   saveDesign: (projectId: number, b: DesignPatch): Ok => api.put<{ ok: true }>(`${B}/projects/${projectId}/design`, b),
   saveNoteDays: (noteId: number, days: number): Ok => api.put<{ ok: true }>(`${B}/design-notes/${noteId}/days`, { days }),
   saveAppointment: (projectId: number, kind: AppointmentKind, b: AppointmentBody): Ok =>
@@ -107,6 +150,11 @@ export const boardApi = {
   saveEvent: (id: number, b: Partial<EventBody> & { done?: boolean }): Ok => api.patch<{ ok: true }>(`${B}/events/${id}`, b),
   deleteEvent: (id: number): Ok => api.del<{ ok: true }>(`${B}/events/${id}`),
 };
+
+/** "PO done": the PO date of the project's Beta design row, set to the given day. */
+export function markPoDone(projectId: number, today: string): Promise<{ ok: true }> {
+  return boardApi.saveDesign(projectId, { poDoneOn: today });
+}
 
 export interface AmendmentInput {
   kind: DesignKind;

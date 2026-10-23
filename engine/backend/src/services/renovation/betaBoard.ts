@@ -51,7 +51,8 @@ export function addDays(iso: string, n: number): string {
 
 export interface BoardRange { from: string; to: string }
 
-/** The Calendar window: today - 60 to today + 180 by default, at most 400 days, `from` not after `to`. */
+/** The Calendar window: today - 60 to today + 180 by default. Counting both end days, at most 400 days are allowed (the client
+    checks days between from and to, plus 1, at most 400); `from` must not be after `to`. */
 export function cleanBoardRange(from: string | undefined, to: string | undefined, today: string): BetaRefusal<BoardRange> {
   const f = from || addDays(today, -BETA_BOARD_DAYS_BEFORE);
   const t = to || addDays(today, BETA_BOARD_DAYS_AFTER);

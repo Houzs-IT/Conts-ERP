@@ -39,6 +39,15 @@ h.routes = {
       ],
     },
   },
+  "/api/beta/board": {
+    today: day(0), mePersonId: 1, settings: { design3dDays: 10, design2dDays: 12, amendmentDays: 3 },
+    people: [{ id: 1, name: "Jia Xin", roles: [] }, { id: 2, name: "Yi Xuan", roles: [] }, { id: 3, name: "Alex", roles: [] }], events: [],
+    projects: [{
+      id: 7, code: "RN-2608-002", name: "Legacy OUG A26-03", building: "Legacy", unitNo: "A26-03", customerName: "Mr Wayne", salesName: "Chai", createdOn: day(-60), handoverOn: day(25),
+      lead: { id: 1, name: "Jia Xin" }, person3d: null, person2d: { id: 2, name: "Yi Xuan" }, sitePic: { id: 3, name: "Alex" }, measuredOn: day(-20), start3dOn: null, start2dOn: null, poDoneOn: null,
+      files: [], notes: [], reviews: [], appointments: [], payment: { state: "none" },
+    }],
+  },
   "key-log": { data: [] },
   "/api/renovation/people": { data: [{ id: 1, name: "Jia Xin", roles: [], active: true, phone: "012-345 6789" }] },
   "/api/renovation/7": {
@@ -87,6 +96,10 @@ describe("Beta project workspace", () => {
     expect(screen.getByText("(25 days left)")).toBeTruthy();
     const team = screen.getByRole("group", { name: "Project team" });
     expect(within(team).getByText("Design lead")).toBeTruthy();
+    // 3D falls back to the design lead; 2D has its own person on the board.
+    expect(within(team).getByText("Yi Xuan")).toBeTruthy();
+    expect(within(team).getAllByText("Jia Xin").length).toBeGreaterThanOrEqual(2);
+    expect(within(team).getByText("Alex")).toBeTruthy();
     expect(within(team).getByText("Site PIC · Handover lead")).toBeTruthy();
     // The phone comes from the people list, which loads after the page.
     await waitFor(() => expect(within(team).getByRole("link", { name: /WhatsApp/ }).getAttribute("href")).toContain("wa.me/60123456789"));
@@ -116,7 +129,22 @@ describe("Beta project workspace", () => {
     expect(screen.getByText("Day 13 of 19 · updated as each step is done")).toBeTruthy();
     expect(screen.getByText("Electrical wiring & ceiling frame")).toBeTruthy();
     expect(screen.getByText("Site measure")).toBeTruthy();
+    expect(screen.getByText("B - Pending 3D design")).toBeTruthy();
+    expect(screen.getByText("2D · by Yi Xuan")).toBeTruthy();
+    expect(screen.getByText("Site briefing · Alex")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Start 3D today" })).toBeTruthy();
+    // To do uses the same board logic as Calendar's Deadlines.
+    expect(screen.getByText("Next step · waiting for payment")).toBeTruthy();
+    expect(screen.getByText("3D not started")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Start 3D today\s*: 3D not started/ })).toBeTruthy();
     expect(screen.getByText("SO-001 · signed 10 Aug 2026")).toBeTruthy();
+  });
+
+  it("opens the shared assign form from the header", async () => {
+    open();
+    await screen.findByRole("heading", { name: "Payments" });
+    fireEvent.click(screen.getByRole("button", { name: "Assign" }));
+    expect(await screen.findByRole("dialog", { name: "Assign" })).toBeTruthy();
   });
 
   it("opens the other tabs from the tab bar", async () => {

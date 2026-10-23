@@ -3,13 +3,14 @@
    the forms are in BetaForms. Plan: docs/superpowers/plans/2026-10-23-beta-project-workspace.md, section 10. */
 
 import { useMemo, useState, type CSSProperties, type ReactElement } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../auth/AuthContext";
 import { useQuery } from "../../hooks/useQuery";
 import { errorText } from "../projects/renovation/renovationModel";
 import { BETA } from "./renovationBetaTheme";
 import { add, buildModel, ds, rangeFor, SOP_LABEL, shiftMonth, type CalEvent, type Kind, type Viewing } from "./renovationBetaBoard";
-import { approveNewest, boardApi, type BetaBoardProject, type BoardRange } from "./renovationBetaBoardApi";
+import { approveNewest, boardApi, boardKey, invalidateBeta, type BetaBoardProject, type BoardRange } from "./renovationBetaBoardApi";
 import { ErrorBanner, MUTED, useToast } from "./BetaCalParts";
 import { BetaCalDeadlines } from "./BetaCalDeadlines";
 import { BetaCalProgress } from "./BetaCalProgress";
@@ -27,7 +28,8 @@ export function RenovationBetaCalendar(): ReactElement {
   const { can } = useAuth();
   const canWrite = can("projects.write");
   const [range, setRange] = useState<BoardRange | undefined>(undefined);
-  const q = useQuery(["renovation-beta", "board", range?.from ?? "", range?.to ?? ""], () => boardApi.board(range), [], { keepPreviousData: true });
+  const queryClient = useQueryClient();
+  const q = useQuery(boardKey(range), () => boardApi.board(range), [], { keepPreviousData: true });
   const { toast, show } = useToast();
   const [tab, setTab] = useState<CalTab>("design");
   const [pick, setPick] = useState<Viewing | null>(null);
@@ -57,7 +59,7 @@ export function RenovationBetaCalendar(): ReactElement {
     setActionError(null);
     try {
       await fn();
-      q.reload();
+      await invalidateBeta(queryClient);
       show(okText);
     } catch (e) {
       setActionError(errorText(e));
@@ -112,6 +114,8 @@ export function RenovationBetaCalendar(): ReactElement {
           canAssign={canWrite}
           viewingName={viewingName}
           busy={busy}
+          onNotice={show}
+          onError={setActionError}
           onAddProject={() => navigate(ADD_PROJECT_PATH)}
           onAssign={(id) => setDialog({ t: "assign", projectId: id })}
           onBook={(id, key) => setDialog({ t: "book", projectId: id, key })}
@@ -144,6 +148,7 @@ export function RenovationBetaCalendar(): ReactElement {
           onNext={() => { const n = shiftMonth(shown.y, shown.m, 1); goMonth(n.y, n.m); }}
           onToday={() => { goMonth(Number(today.slice(0, 4)), Number(today.slice(5, 7)) - 1); setSelDay(today); }}
           onPick={(day) => setSelDay((cur) => (cur === day ? null : day))}
+          canWrite={canWrite}
           onAddWork={() => setDialog({ t: "work", ev: null, day: selDay ?? today })}
           onEditEvent={(e: CalEvent) => setDialog(e.appt ? { t: "book", projectId: e.appt.projectId, key: e.appt.key } : { t: "work", ev: e, day: e.d })}
         />
@@ -160,7 +165,7 @@ export function RenovationBetaCalendar(): ReactElement {
               goMonth(Number(jumpTo.slice(0, 4)), Number(jumpTo.slice(5, 7)) - 1);
               setSelDay(jumpTo);
             }
-            q.reload();
+            void invalidateBeta(queryClient);
             show(text);
           },
         }}

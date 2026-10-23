@@ -165,14 +165,18 @@ function track(p: BetaBoardProject, k: DesignKind, defaultDays: number, approval
   /* A 3D file with nothing recorded starts at the site measure; a 2D one at the 3D approval. */
   const fallback = k === "3d" ? p.measuredOn : approval3d;
   const s = explicit ?? (first ? fallback ?? first.submittedOn : null);
-  /* Approved means the newest version is approved and no amendment is still open; a new amendment re-opens the stage. */
-  const ok = !!newest && reviewOf(newest.id) != null && notes.every((n) => n.closedOn != null);
-  return {
-    s,
-    done: first ? first.submittedOn : null,
-    ok,
-    am: notes.map((n) => ({ id: n.id, s: n.notedOn, days: n.days ?? defaultDays, done: n.closedOn })),
-  };
+  /* The server closes only 2D notes. A round is answered when its note is closed, or when a later version was submitted
+     on or after the note's day; each later version answers one round, in order. */
+  const later = files.slice(1);
+  const used = new Set<number>();
+  const am: Amendment[] = notes.map((n) => {
+    const answer = n.closedOn == null ? later.find((f) => !used.has(f.id) && f.submittedOn >= n.notedOn) : undefined;
+    if (answer) used.add(answer.id);
+    return { id: n.id, s: n.notedOn, days: n.days ?? defaultDays, done: n.closedOn ?? answer?.submittedOn ?? null };
+  });
+  /* Approved means the newest version is approved and every amendment is answered; a new amendment re-opens the stage. */
+  const ok = !!newest && reviewOf(newest.id) != null && am.every((a) => a.done != null);
+  return { s, done: first ? first.submittedOn : null, ok, am };
 }
 
 function paymentText(p: BetaBoardProject): string | null {
@@ -481,7 +485,8 @@ export function homeCounts(m: BoardModel): { late: number; week: number; tabs: R
     if (l < 0) late++;
     else if (l <= 7) week++;
   }
-  const tabs = Object.fromEntries(HOME_TABS.map(([t]) => [t, m.projects.filter((p) => inTab(m, p, t)).length])) as Record<HomeTab, number>;
+  const tabs: Record<HomeTab, number> = { all: 0, A: 0, BC: 0, D: 0, E: 0 };
+  for (const [t] of HOME_TABS) tabs[t] = m.projects.filter((p) => inTab(m, p, t)).length;
   return { late, week, tabs };
 }
 
@@ -604,7 +609,7 @@ export function rangeFor(today: string, year: number, month0: number): BoardRang
   const to = add(today, DEFAULT_AHEAD);
   if (first >= from && last <= to) return undefined;
   const wide: BoardRange = { from: first < from ? first : from, to: last > to ? last : to };
-  return diff(wide.to, wide.from) <= MAX_SPAN ? wide : { from: first, to: last };
+  return diff(wide.to, wide.from) + 1 <= MAX_SPAN ? wide : { from: first, to: last };
 }
 
 /* ---------- form defaults and checks ---------- */
@@ -632,3 +637,10 @@ export function bookIssue(p: DesignProject, key: ApptKey, onDate: string): strin
 
 /** The kind the server expects for a stage. */
 export const designKind = (k: Kind): DesignKind => (k === "3" ? "3d" : "2d");
+
+/** One project as the mockup sees it, from a board answer (the workspace asks the board for just its project). */
+export function projectView(board: BetaBoard, projectId: number): { m: BoardModel; p: DesignProject } | null {
+  const m = buildModel(board);
+  const p = m.byId.get(projectId);
+  return p ? { m, p } : null;
+}

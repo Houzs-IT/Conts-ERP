@@ -6,8 +6,14 @@ import { errorText } from "../projects/renovation/renovationModel";
 import { simpleApi, type ProjectDetailV2 } from "../projects/renovation/simpleApi";
 import { WS, WsDialog, WsPhoto } from "./BetaWsUi";
 import { betaApi, type BetaTrade, type BetaWorkspace, type DesignRecords, type ReminderKind } from "./renovationBetaApi";
+import type { BetaDialog } from "./BetaForms";
+import type { BoardModel, DesignProject } from "./renovationBetaBoard";
+import type { BetaBoardProject } from "./renovationBetaBoardApi";
 import { whatsappLink } from "./renovationBetaModel";
 import type { BetaTabKey } from "./renovationBetaTabs";
+
+/** The project as Home and Calendar see it (the board's logic), so the workspace shows the same dates and conditions. */
+export interface BoardView { m: BoardModel; p: DesignProject; raw: BetaBoardProject }
 
 export interface BetaTabProps {
   projectId: number;
@@ -21,6 +27,9 @@ export interface BetaTabProps {
   onDone: (text: string) => void;
   onError: (text: string) => void;
   openTab: (tab: BetaTabKey) => void;
+  board: BoardView;
+  /** Opens one of the shared Home and Calendar forms (assign, book, amend). */
+  openDialog: (dialog: BetaDialog) => void;
 }
 
 export const TRADE_LABEL: Readonly<Record<BetaTrade, string>> = {

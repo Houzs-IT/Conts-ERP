@@ -326,12 +326,12 @@ app.post("/projects/:id/reminders", requirePermission("projects.write"), async (
 const MYT = "Asia/Kuala_Lumpur";
 const idList = (xs: ReadonlyArray<number>): string => JSON.stringify(xs.map(String));
 
-/** The names of these people when every one of them belongs to the company, else null. */
+/** The names of these people when every one of them is an active person of the company, else null. */
 async function companyPeople(c: Ctx, companyId: number, ids: readonly number[]): Promise<Map<number, string> | null> {
   const wanted = [...new Set(ids)];
   if (wanted.length === 0) return new Map();
   const res = await db(c).prepare(
-    `SELECT id::int AS id, name FROM project_people WHERE company_id = ? AND id IN (SELECT (jsonb_array_elements_text(?::text::jsonb))::bigint)`,
+    `SELECT id::int AS id, name FROM project_people WHERE company_id = ? AND active AND id IN (SELECT (jsonb_array_elements_text(?::text::jsonb))::bigint)`,
   ).bind(companyId, idList(wanted)).all<{ id: number; name: string }>();
   const found = new Map((res.results ?? []).map((r) => [Number(r.id), r.name] as const));
   return wanted.every((id) => found.has(id)) ? found : null;
@@ -372,7 +372,12 @@ app.get("/board", requirePageAccess("projects.list"), async (c) => {
   const range = cleanBoardRange(c.req.query("from"), c.req.query("to"), today);
   if (!range.ok) return c.json({ error: range.error, message: range.message }, 400);
   const companyId = co.companyId;
-  const scope = `p.project_kind = 'renovation' AND p.archived_at IS NULL${coSql(c, "p.company_id")}`;
+  // With projectId the same answer is cut down to that one project (and its events), for the project workspace.
+  const only = c.req.query("projectId");
+  const projectId = only === undefined ? null : parseId(only);
+  if (only !== undefined && projectId == null) return c.json({ error: "invalid_id" }, 400);
+  const scope = `p.project_kind = 'renovation' AND p.archived_at IS NULL${coSql(c, "p.company_id")}${projectId == null ? "" : ` AND p.id = ${projectId}`}`;
+  const eventScope = projectId == null ? "" : ` AND e.project_id = ${projectId}`;
   const user = c.get("user");
   const hidden = financeHiddenForUser(user);
   try {
@@ -428,12 +433,13 @@ app.get("/board", requirePageAccess("projects.list"), async (c) => {
                 e.person_id::int AS person_id, e.done
            FROM project_beta_events e LEFT JOIN projects p ON p.id = e.project_id
           WHERE e.company_id = ? AND e.on_date BETWEEN ?::date AND ?::date
-            AND (e.project_id IS NULL OR (p.project_kind = 'renovation' AND p.archived_at IS NULL))
+            AND (e.project_id IS NULL OR (p.project_kind = 'renovation' AND p.archived_at IS NULL))${eventScope}
           ORDER BY e.on_date, e.at_time NULLS LAST, e.id`,
       ).bind(companyId, range.value.from, range.value.to).all<EventRow>(),
       hidden ? Promise.resolve(new Map<number, BoardPayment>()) : boardPayments(c, companyId, scope),
       calendarMePersonIds(db(c), user?.id, user?.email),
     ]);
+    if (projectId != null && (projects.results ?? []).length === 0) return c.json({ error: "not_found" }, 404);
     const sets = {
       files: groupByProject(files.results ?? []), notes: groupByProject(notes.results ?? []),
       reviews: groupByProject(reviews.results ?? []), appointments: groupByProject(appointments.results ?? []),
@@ -520,13 +526,14 @@ app.put("/projects/:id/appointments/:kind", requirePermission("projects.write"),
   const people = await companyPeople(c, co, personId == null ? [] : [personId]);
   if (!people) return c.json(PERSON_REFUSAL, 400);
   const who = personId == null ? null : `by ${people.get(personId) ?? "someone"}`;
-  // Booking again moves the date, so it is not "done" any more.
+  // Booking again with the same day keeps it done; a moved day is a new appointment, so it is not done any more.
   await db(c).batch!([
     db(c).prepare(
       `INSERT INTO project_beta_appointments (project_id, company_id, kind, on_date, at_time, person_id, with_text, created_by)
        VALUES (?, ?, ?, ?::date, ?::time, ?::bigint, ?, ?)
        ON CONFLICT (project_id, kind) DO UPDATE SET on_date = excluded.on_date, at_time = excluded.at_time, person_id = excluded.person_id,
-                                                    with_text = excluded.with_text, done_at = NULL`,
+                                                    with_text = excluded.with_text,
+                                                    done_at = CASE WHEN project_beta_appointments.on_date = excluded.on_date THEN project_beta_appointments.done_at END`,
     ).bind(id, co, kind, onDate, atTime, personId, withText, userId(c)),
     activityStmt(c, id, co, "beta_appointment_booked", null, kind, [`On ${onDate}`, atTime, who, withText].filter(Boolean).join(" · ")),
   ]);

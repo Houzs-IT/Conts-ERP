@@ -1,22 +1,24 @@
 /* Beta workspace header, as the mockup's project page opens: the name in capitals, the code line, the team chips
    with WhatsApp and Assign, and the stage stepper. */
 
-import { useState, type ReactElement } from "react";
+import type { ReactElement } from "react";
 import { Link } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
-import { errorText } from "../projects/renovation/renovationModel";
-import { PersonSelect, usePeople } from "../projects/renovation/PersonSelect";
-import { simpleApi, type ProjectDetailV2 } from "../projects/renovation/simpleApi";
-import { WS, WsAvatar, WsBadge, WsBtn, WsCheck, WsDialog, WsField, btnStyle, TONE_WAIT } from "./BetaWsUi";
+import { usePeople } from "../projects/renovation/PersonSelect";
+import type { ProjectDetailV2 } from "../projects/renovation/simpleApi";
+import type { BetaDialog } from "./BetaForms";
+import { WS, WsAvatar, WsBadge, WsCheck, btnStyle, TONE_WAIT } from "./BetaWsUi";
+import type { DesignProject } from "./renovationBetaBoard";
 import { dayMonthYear, initials, whatsappLink, type StepperItem } from "./renovationBetaModel";
 import { BETA } from "./renovationBetaTheme";
 
 interface HeaderProps {
   d: ProjectDetailV2;
+  /** The project as Home and Calendar see it: the people on the chips come from here. */
+  p: DesignProject;
   canWrite: boolean;
   today: string;
-  onDone: (text: string) => void;
-  onError: (text: string) => void;
+  openDialog: (dialog: BetaDialog) => void;
 }
 
 const DAY_MS = 86_400_000;
@@ -30,22 +32,22 @@ function leftText(planned: string | null, today: string): { text: string; late: 
   return n >= 0 ? { text: `(${word(n)} left)`, late: false } : { text: `(${word(-n)} late)`, late: true };
 }
 
-interface Chip { key: string; role: string; name: string | null; lead?: boolean; id?: number | null }
+interface Chip { key: string; role: string; name: string | null; lead?: boolean }
 
-export function BetaWsHeader({ d, canWrite, today, onDone, onError }: HeaderProps): ReactElement {
-  const { project: p, people } = d;
-  const [assigning, setAssigning] = useState(false);
+export function BetaWsHeader({ d, p: board, canWrite, today, openDialog }: HeaderProps): ReactElement {
+  const { project: p } = d;
   const peopleQ = usePeople();
   const handoverOn = p.handed_over_at ?? p.planned_handover_date;
   const left = p.handed_over_at ? null : leftText(p.planned_handover_date, today);
-  const designer = people.designer.name;
+  // 3D and 2D fall back to the design lead, as the mockup's o3 and o2 do.
+  const designer = board.lead?.name ?? null;
   const chips: Chip[] = [
-    { key: "lead", role: "Design lead", name: designer, lead: true, id: people.designer.id },
-    { key: "3d", role: "3D", name: designer },
-    { key: "2d", role: "2D", name: designer },
-    { key: "site", role: "Site PIC · Handover lead", name: people.pic.name ?? people.renoPic.name },
+    { key: "lead", role: "Design lead", name: designer, lead: true },
+    { key: "3d", role: "3D", name: board.by["3"]?.name ?? null },
+    { key: "2d", role: "2D", name: board.by["2"]?.name ?? null },
+    { key: "site", role: "Site PIC · Handover lead", name: board.site?.name ?? null },
   ];
-  const phone = (peopleQ.data?.data ?? []).find((x) => x.id === people.designer.id)?.phone ?? null;
+  const phone = (peopleQ.data?.data ?? []).find((x) => x.id === board.lead?.id)?.phone ?? null;
   const title = [p.name, p.customer_name].filter(Boolean).join(" · ").toUpperCase();
   const line = [p.code, d.type?.name, handoverOn ? `${p.handed_over_at ? "Handed over" : "Handover"} ${dayMonthYear(handoverOn)}` : "No handover date yet"].filter(Boolean).join(" · ");
 
@@ -85,64 +87,14 @@ export function BetaWsHeader({ d, canWrite, today, onDone, onError }: HeaderProp
               </div>
             ))}
             {canWrite && (
-              <button type="button" onClick={() => setAssigning(true)} style={{ minHeight: 44, padding: "0 14px", border: `1.5px dashed ${BETA.accent}`, borderRadius: 10, background: BETA.surface, color: BETA.accentInk, font: "inherit", fontWeight: 700, cursor: "pointer" }}>
+              <button type="button" onClick={() => openDialog({ t: "assign", projectId: p.id })} style={{ minHeight: 44, padding: "0 14px", border: `1.5px dashed ${BETA.accent}`, borderRadius: 10, background: BETA.surface, color: BETA.accentInk, font: "inherit", fontWeight: 700, cursor: "pointer" }}>
                 Assign
               </button>
             )}
           </div>
         </div>
       </div>
-      {assigning && <AssignDialog d={d} onClose={() => setAssigning(false)} onDone={onDone} onError={onError} />}
     </section>
-  );
-}
-
-/** Assign opens the three people the project page already lets staff change; only the ones that changed are sent. */
-export function AssignDialog({ d, onClose, onDone, onError }: { d: ProjectDetailV2; onClose: () => void; onDone: (t: string) => void; onError: (t: string) => void }): ReactElement {
-  const { people } = d;
-  const [designer, setDesigner] = useState<number | null>(people.designer.id);
-  const [sales, setSales] = useState<number | null>(people.sales.id);
-  const [pic, setPic] = useState<number | null>(people.pic.id);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function save(): Promise<void> {
-    const body: Parameters<typeof simpleApi.setPeople>[1] = {};
-    if (designer !== people.designer.id) body.designerPersonId = designer;
-    if (sales !== people.sales.id) body.salesPersonId = sales;
-    if (pic !== people.pic.id) body.picPersonId = pic;
-    if (Object.keys(body).length === 0) { onClose(); return; }
-    setBusy(true);
-    setError(null);
-    try {
-      await simpleApi.setPeople(d.project.id, body);
-      onDone("Team saved.");
-      onClose();
-    } catch (e) {
-      const text = errorText(e);
-      setError(text);
-      onError(text);
-      setBusy(false);
-    }
-  }
-
-  return (
-    <WsDialog
-      title="Assign"
-      sub={d.project.name}
-      onClose={onClose}
-      footer={
-        <>
-          <WsBtn onClick={onClose} disabled={busy}>Cancel</WsBtn>
-          <WsBtn kind="teal" onClick={() => void save()} disabled={busy}>{busy ? "Saving..." : "Save"}</WsBtn>
-        </>
-      }
-    >
-      <WsField label="Design lead (3D and 2D)"><PersonSelect label="Design lead" role="designer" value={designer} onChange={setDesigner} placeholder="Not set" className="ws-input" /></WsField>
-      <WsField label="Sales"><PersonSelect label="Sales" role="sales" value={sales} onChange={setSales} placeholder="Not set" className="ws-input" /></WsField>
-      <WsField label="Site PIC (handover lead)"><PersonSelect label="Site PIC" value={pic} onChange={setPic} placeholder="Not set" className="ws-input" /></WsField>
-      {error && <p role="alert" style={{ fontSize: 13, color: WS.red }}>{error}</p>}
-    </WsDialog>
   );
 }
 

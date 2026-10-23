@@ -6,13 +6,20 @@ import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { BetaBoard } from "./renovationBetaBoardApi";
 
-const h = vi.hoisted(() => ({ board: null as unknown }));
+const h = vi.hoisted(() => ({ board: null as unknown, can: true, puts: [] as Array<{ path: string; body: unknown }> }));
 
 vi.mock("../../api/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../api/client")>();
-  return { ...actual, api: { ...actual.api, get: async () => h.board } };
+  return {
+    ...actual,
+    api: {
+      ...actual.api,
+      get: async () => h.board,
+      put: async (path: string, body: unknown) => { h.puts.push({ path, body }); return { ok: true }; },
+    },
+  };
 });
-vi.mock("../../auth/AuthContext", () => ({ useAuth: () => ({ can: () => true }) }));
+vi.mock("../../auth/AuthContext", () => ({ useAuth: () => ({ can: () => h.can }) }));
 
 import { RenovationBetaCalendar } from "./RenovationBetaCalendar";
 import { RenovationBetaHome, RenovationBetaProjectsEntry } from "./RenovationBetaHome";
@@ -27,6 +34,15 @@ h.board = {
   people: [person(1, "Jia Xin"), person(2, "Ying Tzy")],
   projects: [
     { ...base, id: 13, name: "Bukit Jalil The Park 2", building: "Bukit Jalil The Park 2", unitNo: null, customerName: "Ms Tan", lead: null, measuredOn: null },
+    {
+      ...base, id: 7, name: "Seri Riana C-12-03", building: "Seri Riana", unitNo: "C-12-03", customerName: "Ms Lim", lead: { id: 1, name: "Jia Xin" },
+      files: [{ id: 71, kind: "3d", version: 1, submittedOn: "2026-09-03" }, { id: 72, kind: "2d", version: 1, submittedOn: "2026-09-20" }],
+      reviews: [{ fileId: 71, sentOn: null, approvedOn: "2026-09-05" }, { fileId: 72, sentOn: null, approvedOn: "2026-09-22" }],
+      appointments: [
+        { kind: "carpentry_measure", onDate: "2026-10-01", atTime: null, personId: 1, withText: null, doneAt: null },
+        { kind: "site_briefing", onDate: "2026-10-05", atTime: null, personId: 1, withText: null, doneAt: null },
+      ],
+    },
     { ...base, id: 4, name: "Baron C-20-08", building: "Baron", unitNo: "C-20-08", customerName: "Mr Albert", lead: { id: 1, name: "Jia Xin" }, start3dOn: "2026-10-20" },
   ],
   events: [{ id: 9, projectId: 4, onDate: "2026-10-27", atTime: "11:30:00", type: "client", note: "Client meeting @ 11:30am", personId: 1, done: false }],
@@ -35,6 +51,8 @@ h.board = {
 let phone = false;
 beforeEach(() => {
   phone = false;
+  h.can = true;
+  h.puts = [];
   window.matchMedia = ((query: string) => ({
     matches: phone && query.includes("719px"), media: query, addEventListener: () => undefined, removeEventListener: () => undefined,
   })) as unknown as typeof window.matchMedia;
@@ -68,13 +86,13 @@ describe("Beta Home", () => {
   it("shows the title, counts, tabs and rows as the mockup does", async () => {
     renderAt("/beta/home");
     expect(await screen.findByRole("heading", { name: "All projects" })).toBeTruthy();
-    expect(screen.getByText("2 projects")).toBeTruthy();
+    expect(screen.getByText("3 projects")).toBeTruthy();
     const tabs = within(screen.getByRole("tablist", { name: "Project groups" })).getAllByRole("tab");
-    expect(tabs.map((t) => t.textContent)).toEqual(["All projects2", "Site Measure1", "Design1", "Carpentry · Site · PO0", "Done Design0"]);
+    expect(tabs.map((t) => t.textContent)).toEqual(["All projects3", "Site Measure1", "Design1", "Carpentry · Site · PO1", "Done Design0"]);
     expect(screen.getByText("A - New · team not assigned")).toBeTruthy();
     expect(screen.getByRole("button", { name: /Assign/ })).toBeTruthy();
     expect(screen.getByText("B - 3D in progress")).toBeTruthy();
-    expect(screen.getByText("2 shown · tap a project to open it")).toBeTruthy();
+    expect(screen.getByText("3 shown · tap a project to open it")).toBeTruthy();
   });
 
   it("opens a project from its row and remembers it", async () => {
@@ -90,7 +108,7 @@ describe("Beta Home", () => {
     renderAt("/beta/home");
     expect(await screen.findByText("Needs team")).toBeTruthy();
     expect(screen.queryByRole("table")).toBeNull();
-    expect(screen.getByText("Now: Jia Xin · 1st payment")).toBeTruthy();
+    expect(screen.getAllByText("Now: Jia Xin · 1st payment").length).toBeGreaterThan(0);
   });
 
   it("sends the Projects entry to the last project, or to Home", () => {
@@ -109,6 +127,22 @@ describe("Beta Calendar", () => {
     expect(screen.getByText("Next 7 days · 1")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "+ Add project" }));
     expect(where).toBe("/projects?view=list&new=1");
+  });
+
+  it("hides the write buttons from people without projects.write", async () => {
+    h.can = false;
+    renderAt("/beta/calendar");
+    expect(await screen.findByRole("heading", { name: "Calendar" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "+ Add project" })).toBeNull();
+    fireEvent.click(screen.getByRole("tab", { name: "Calendar" }));
+    expect(screen.queryByRole("button", { name: "+ Add work" })).toBeNull();
+  });
+
+  it("marks the PO done from the to-do box", async () => {
+    renderAt("/beta/calendar");
+    fireEvent.click(await screen.findByRole("button", { name: "PO done" }));
+    await screen.findByText("PO done", { selector: "[role=status]" });
+    expect(h.puts).toEqual([{ path: "/api/beta/projects/7/design", body: { poDoneOn: "2026-10-23" } }]);
   });
 
   it("switches to Progress and to the month with its coming-up list", async () => {

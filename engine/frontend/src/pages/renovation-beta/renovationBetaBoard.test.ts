@@ -39,11 +39,13 @@ function board(projects: BetaBoardProject[]): BetaBoard {
 }
 
 /* Rows rebuilt from the mockup's sample projects. */
+/* The server closes only 2D notes, so the 3D rounds here are answered by later versions, never by closedOn. */
 const f4 = file("3d", 1, "2026-10-08");
+const f4b = file("3d", 2, "2026-10-16");
 const baron = project({
-  id: 4, building: "Baron", unitNo: "C-20-08", customerName: "Mr Albert", start3dOn: "2026-09-28", files: [f4], reviews: [approved(f4, "2026-10-09")],
+  id: 4, building: "Baron", unitNo: "C-20-08", customerName: "Mr Albert", start3dOn: "2026-09-28", files: [f4, f4b], reviews: [approved(f4, "2026-10-09")],
   notes: [
-    { id: 41, kind: "3d", notedOn: "2026-10-13", closedOn: "2026-10-16", days: null },
+    { id: 41, kind: "3d", notedOn: "2026-10-13", closedOn: null, days: null },
     { id: 42, kind: "3d", notedOn: "2026-10-20", closedOn: null, days: null },
   ],
 });
@@ -109,8 +111,19 @@ describe("status words", () => {
   });
   it("re-opens the stage when an amendment is open after approval", () => {
     expect(stage(m, get(4), "3").st).toBe("work");
-    const closed = buildModel(board([{ ...baron, notes: baron.notes.map((n) => ({ ...n, closedOn: "2026-10-21" })) }]));
-    expect(stage(closed, closed.projects[0], "3").st).toBe("ok");
+    expect(m.byId.get(4)?.design["3"].am.map((a) => a.done)).toEqual(["2026-10-16", null]);
+  });
+  it("answers a 3D amendment with the next version, then needs that version approved", () => {
+    const v1 = file("3d", 1, "2026-10-08");
+    const v2 = file("3d", 2, "2026-10-16");
+    const note = { id: 91, kind: "3d" as const, notedOn: "2026-10-13", closedOn: null, days: null };
+    const sent = buildModel(board([project({ id: 9, building: "Aster", unitNo: "A1", customerName: "X", start3dOn: "2026-09-28", files: [v1, v2], notes: [note], reviews: [approved(v1, "2026-10-10")] })]));
+    expect(stage(sent, sent.projects[0], "3").st).toBe("wait");
+    expect(status(sent, sent.projects[0])[1]).toBe("3D sent · waiting client");
+    const ok = buildModel(board([project({ id: 9, building: "Aster", unitNo: "A1", customerName: "X", start3dOn: "2026-09-28", files: [v1, v2], notes: [note], reviews: [approved(v1, "2026-10-10"), approved(v2, "2026-10-18")] })]));
+    expect(stage(ok, ok.projects[0], "3").st).toBe("ok");
+    const open = buildModel(board([project({ id: 9, building: "Aster", unitNo: "A1", customerName: "X", start3dOn: "2026-09-28", files: [v1], notes: [note], reviews: [approved(v1, "2026-10-10")] })]));
+    expect(stage(open, open.projects[0], "3").st).toBe("work");
   });
   it("counts the first 3D file as the stage start when no start date is saved", () => {
     const g = buildModel(board([{ ...aster, start3dOn: null, measuredOn: "2026-10-05" }]));
