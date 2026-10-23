@@ -179,7 +179,9 @@ export function PhoneInput({ value, onChange, label, help, error, placeholder, c
   const example = useMemo(() => placeholder ?? (country === 'MY' ? '12-345 6789' : ''), [placeholder, country]);
   return (
     <InputShell id={id} label={label} help={help} error={shown}>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, minWidth: 0 }}>
+      {/* One joined box: the code's right edge meets the number's left edge, both the number's height. The focused
+          half sits on top so its focus border is never hidden under its neighbour's. */}
+      <div style={{ display: 'flex', minWidth: 0 }}>
         <SearchSelect
           label={`Country code${label ? ` for ${label.toLowerCase()}` : ''}`}
           value={country}
@@ -187,7 +189,8 @@ export function PhoneInput({ value, onChange, label, help, error, placeholder, c
           options={OPTIONS}
           placeholder="Country or code"
           size="md"
-          className="flex-none w-[100px]"
+          className="flex-none w-[96px]"
+          buttonClassName="h-auto flex-1 rounded-r-none relative focus-visible:z-[1]"
           menuWidth={300}
         />
         <input
@@ -205,8 +208,8 @@ export function PhoneInput({ value, onChange, label, help, error, placeholder, c
           aria-describedby={shown || help ? `${id}-help` : undefined}
           onChange={e => onInput(e.target.value, e.target.selectionStart ?? e.target.value.length, (e.nativeEvent as InputEvent).inputType ?? '')}
           onBlur={onBlur}
-          className={cx(className ?? 'field-input', PHONE_SIZING)}
-          style={{ flex: '1 1 96px', minWidth: 0, fontVariantNumeric: 'tabular-nums', ...(shown ? { borderColor: 'var(--color-critical-line)' } : {}), ...style }}
+          className={cx(className ?? 'field-input', PHONE_SIZING, 'relative focus:z-[1]')}
+          style={{ flex: '1 1 0', minWidth: 0, marginLeft: -1, borderTopLeftRadius: 0, borderBottomLeftRadius: 0, fontVariantNumeric: 'tabular-nums', ...(shown ? { borderColor: 'var(--color-critical-line)' } : {}), ...style }}
         />
       </div>
     </InputShell>

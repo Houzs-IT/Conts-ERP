@@ -43,11 +43,13 @@ export function Select({ value, onChange, options, label, showLabel, placeholder
  * A searchable picker for long lists (139 units): type to filter, options grouped (by building) and
  * sorted A to Z, arrow keys and Enter to choose, Escape to close. `allLabel` adds a first "All ..." row.
  */
-export function SearchSelect({ value, onChange, options, label, showLabel, allLabel, placeholder = 'Search', className, menuWidth, renderOption, size = 'sm' }: {
+export function SearchSelect({ value, onChange, options, label, showLabel, allLabel, placeholder = 'Search', className, buttonClassName, menuWidth, renderOption, size = 'sm' }: {
   value: string; onChange: (v: string) => void; options: SelectOption[]; label: string;
   showLabel?: boolean; allLabel?: string; placeholder?: string; className?: string;
   /** The open list's least width in px, for a button narrower than its options need (the phone country code). */
   menuWidth?: number;
+  /** Extra classes for the button itself, e.g. to join it to the field beside it (the phone country code). */
+  buttonClassName?: string;
   renderOption?: (o: SelectOption) => ReactNode;
   /** md = 40px, the height of the text fields in a dialog form; sm = 36px for filter bars. */
   size?: 'sm' | 'md';
@@ -87,7 +89,7 @@ export function SearchSelect({ value, onChange, options, label, showLabel, allLa
       <span className={showLabel ? 'text-meta font-medium text-muted-ink' : 'absolute w-px h-px overflow-hidden [clip:rect(0_0_0_0)]'}>{label}</span>
       <button ref={button} type="button" aria-haspopup="listbox" aria-expanded={open} aria-label={`${label}: ${current?.label ?? allLabel ?? 'none'}`}
         onClick={() => setOpen(v => !v)}
-        className={cx(CONTROL, 'w-full flex items-center gap-2 pl-3 pr-2 text-left', size === 'md' && 'h-10')}>
+        className={cx(CONTROL, 'w-full flex items-center gap-2 pl-3 pr-2 text-left', size === 'md' && 'h-10', buttonClassName)}>
         <span className={cx('flex-1 min-w-0 truncate', !current && !/^All/.test(allLabel ?? '') && 'text-muted-ink')}>{current ? (current.group ? `${current.label}` : current.label) : (allLabel ?? 'Choose')}</span>
         <Icon name="ChevronDown" size="sm" color="var(--color-muted-ink)" />
       </button>
