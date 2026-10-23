@@ -32,11 +32,21 @@ async function verify(secret: string, token: string): Promise<Assertion | null> 
   } catch { return null; }
 }
 
-/** The engine role for a Property OS role. Full in every area gets the full-access role, as before the
- *  Permissions chart existed; anything less gets that role's own engine role, whose permission keys and
- *  page access are rewritten from the chart at every sign-on. Field roles and owners never reach here:
- *  Property OS refuses them, and they are refused again below. */
+/** The engine role for a Property OS account. Full in every area gets the full-access role, as before the
+ *  Permissions chart existed; anything less gets an engine role named after a fingerprint of its access levels
+ *  ("Conts: staff 3f9a1b2c"), so people with the same access share a role and people with different access never
+ *  do. Access is per department, position and person now, so a role named after the Conts role alone would have
+ *  its keys rewritten by whoever signed on last. Field roles and owners never reach here: Property OS refuses
+ *  them, and they are refused again below. */
 const OFFICE = new Set(["management", "finance_admin", "operations_manager", "operations_staff"]);
+
+/** The first 8 hex characters of a SHA-256 over the levels, area names sorted so the order they arrive in
+ *  never matters. */
+export async function accessFingerprint(access: ContsAccess): Promise<string> {
+  const text = JSON.stringify(Object.keys(access).sort().map((k) => [k, access[k]]));
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return [...new Uint8Array(digest).slice(0, 4)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
 
 /** Writes a Conts role's permission keys, creating the role the first time. */
 async function upsertRole(env: Env, name: string, description: string, permissions: string): Promise<number | null> {
@@ -74,7 +84,7 @@ export async function roleIdFor(env: Env, contsRole: string, access: ContsAccess
     const permissions = JSON.stringify([...new Set([...keys, ...ledgerPermissions(ledger)])]);
     return upsertRole(env, contsRoleName(`full + ledger ${ledger}`), "Full access plus the ledger, set from the Permissions chart in Property OS", permissions);
   }
-  const name = contsRoleName(contsRole);
+  const name = contsRoleName(`staff ${await accessFingerprint(access)}`);
   const permissions = JSON.stringify(contsPermissions(access));
   const id = await upsertRole(env, name, "Set from the Permissions chart in Property OS", permissions);
   await saveContsRoleAccess(env, name, access);
