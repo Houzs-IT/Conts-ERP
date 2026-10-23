@@ -143,7 +143,7 @@ export function MobileAmendments({
         )}
         {(amdNo || r.reason) && (
           <div className="amdno">
-            {amdNo ? <span className="tnum">Amendment #{amdNo}</span> : null}
+            {amdNo ? <span className="tnum">VO #{amdNo}</span> : null}
             {r.kind === "CANCEL" ? <strong>Cancellation requested</strong> : null}
             {(amdNo || r.kind === "CANCEL") && r.reason ? " · " : ""}
             {r.reason ? `"${r.reason}"` : ""}
@@ -204,7 +204,7 @@ export function MobileAmendments({
           <span className="eyebrow">SO Revision Inbox</span>
         </div>
         <div className="hdr-row" style={{ marginTop: 2 }}>
-          <div className="scr-title">Amendments</div>
+          <div className="scr-title">VO</div>
           {openCount > 0 && <span className="badge b-amber">{openCount} to action</span>}
         </div>
 
@@ -223,7 +223,7 @@ export function MobileAmendments({
         )}
         {error && !isLoading && (
           <div style={{ textAlign: "center", color: "var(--red)", fontSize: 12, padding: "26px 0" }}>
-            Couldn't load amendments. Pull to retry.
+            Couldn't load VOs. Pull to retry.
           </div>
         )}
 
@@ -241,7 +241,7 @@ export function MobileAmendments({
             {rows.length === 0 && (
               <div className="empty">
                 <div className="empty-t">
-                  {chip === "all" ? "No amendments yet." : `No ${amendmentBucketLabel(chip).toLowerCase()} amendments.`}
+                  {chip === "all" ? "No VOs yet." : `No ${amendmentBucketLabel(chip).toLowerCase()} VOs.`}
                 </div>
                 <div className="empty-s">Raise one from a processing-locked Sales Order.</div>
               </div>

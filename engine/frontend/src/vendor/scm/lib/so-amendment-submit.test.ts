@@ -78,7 +78,7 @@ describe('amendmentSubmittedNotice', () => {
         { amendment_no: 'A2', lane: 'DELIVERY' },
       ],
     });
-    expect(n.title).toBe('Amendment split into two approvals');
+    expect(n.title).toBe('VO split into two approvals');
     expect(n.body).toContain('A1 → Purchaser');
     expect(n.body).toContain('A2 → Logistic');
   });
@@ -118,7 +118,7 @@ describe('amendmentSubmittedNotice', () => {
       ],
       autoApplied: 1,
     });
-    expect(n.title).toBe('Amendment split into two approvals');
+    expect(n.title).toBe('VO split into two approvals');
     expect(n.body).toContain('A1 → Purchaser');
   });
 
@@ -131,8 +131,8 @@ describe('amendmentSubmittedNotice', () => {
   });
 
   it('survives a response shaped nothing like the contract', () => {
-    expect(amendmentSubmittedNotice('AMENDMENT', undefined).title).toBe('Amendment submitted');
-    expect(amendmentSubmittedNotice('AMENDMENT', { amendments: [] }).title).toBe('Amendment submitted');
+    expect(amendmentSubmittedNotice('AMENDMENT', undefined).title).toBe('VO submitted');
+    expect(amendmentSubmittedNotice('AMENDMENT', { amendments: [] }).title).toBe('VO submitted');
   });
 });
 

@@ -1753,7 +1753,7 @@ function StopDetail({
               }
               await notify({
                 title: "Saved — disposal change sent for approval",
-                body: "The Replacement / Disposal change was raised as an SO Amendment. Logistics reviews and approves it.",
+                body: "The Replacement / Disposal change was raised as a VO. Logistics reviews and approves it.",
               });
             }
             setEditingFields(false);

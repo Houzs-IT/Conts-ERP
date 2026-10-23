@@ -76,7 +76,7 @@ export async function judgeLaneMove(
     const sibling = siblings[0];
     return {
       ok: false, status: 409, error: 'target_lane_busy',
-      reason: `The ${DESK[toLane]} desk already has an open amendment on this order (${sibling.amendment_no ?? 'pending'}). `
+      reason: `The ${DESK[toLane]} desk already has an open VO on this order (${sibling.amendment_no ?? 'pending'}). `
         + 'That one has to be approved or rejected first.',
     };
   }

@@ -13,7 +13,7 @@ describe("Beta routes: the switch", () => {
   app.route("/api/beta", renovationBeta);
   const routes = renovationBeta.routes.filter((r) => r.method !== "ALL");
 
-  test("the router has the bundle A and section 10 routes", () => {
+  test("the router has the bundle A, B and section 10 routes", () => {
     // Hono lists each middleware of a route as its own entry, so the names are de-duplicated.
     const names = [...new Set(routes.map((r) => `${r.method} ${r.path}`))].sort();
     expect(names).toEqual([
@@ -21,9 +21,12 @@ describe("Beta routes: the switch", () => {
       "DELETE /events/:id",
       "DELETE /projects/:id/appointments/:kind",
       "GET /board",
+      "GET /projects/:id/client-po",
       "GET /projects/:id/defects",
+      "GET /projects/:id/po",
       "GET /projects/:id/site",
       "GET /projects/:id/timeline",
+      "GET /projects/:id/vo",
       "GET /projects/:id/workspace",
       "PATCH /defects/:defectId",
       "PATCH /events/:id",
@@ -34,6 +37,7 @@ describe("Beta routes: the switch", () => {
       "POST /design-files/:fileId/sent",
       "POST /events",
       "POST /projects/:id/appointments/:kind/done",
+      "POST /projects/:id/client-link",
       "POST /projects/:id/defects",
       "POST /projects/:id/reminders",
       "PUT /design-notes/:noteId/days",

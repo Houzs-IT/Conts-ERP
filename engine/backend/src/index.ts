@@ -123,11 +123,13 @@ import { companyContext } from "./middleware/companyContext";
 import { publicDoScan } from "./routes/publicDoScan";
 import { publicContractorCalendar } from "./routes/publicContractorCalendar";
 import { publicBrandCalendar } from "./routes/publicBrandCalendar";
+import { renovationBetaClientPublic } from "./routes/renovationBetaClientPublic";
 import { brandShare } from "./routes/brandShare";
 // Renovation projects (Conts renovation flow, phase 3). Own router: routes/projects.ts is at its size ceiling.
 import renovation from "./routes/renovation";
 // Beta project workspace.
 import renovationBeta from "./routes/renovationBeta";
+import renovationBetaSheets from "./routes/renovationBetaSheets";
 import { drainEmailOutbox } from "./services/email";
 import { runClientErrorDigest } from "./services/clientErrors";
 import { runSlaEscalation } from "./services/assrEscalation";
@@ -387,6 +389,8 @@ app.route("/api/public/contractor-calendar", publicContractorCalendar);
 // own confirmed events, its display floorplan, its own size and total sales,
 // scoped by the token's brand on every read. See routes/publicBrandCalendar.ts.
 app.route("/api/public/brand-calendar", publicBrandCalendar);
+// PUBLIC no-login Beta Client PO list: the signed token names the one project. See routes/renovationBetaClientPublic.ts.
+app.route("/api/public/beta-client", renovationBetaClientPublic);
 
 app.use("/api/*", auth);
 
@@ -460,6 +464,7 @@ app.route("/api/renovation", renovation);
 // Beta workspace (owner, 23 Oct 2026): behind the auth gate, switched off in production by renovationBeta's first middleware.
 app.use("/api/beta/*", inboxBustAfterWrite);
 app.route("/api/beta", renovationBeta);
+app.route("/api/beta", renovationBetaSheets);
 app.route("/api/sales", sales);
 app.route("/api/finance", finance);
 app.route("/api/stockitems", stockItems);

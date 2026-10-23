@@ -44,7 +44,7 @@ export function RenovationBetaCalendar(): ReactElement {
   if (!m) return <p style={{ padding: "40px 0", textAlign: "center", color: MUTED, fontSize: 14 }}>Loading calendar...</p>;
 
   const who: Viewing = pick ?? m.mePersonId ?? "All";
-  const viewingName = who === "All" ? null : m.people.find((x) => x.id === who)?.name ?? null;
+  const viewingName = who === "All" ? null : m.everyone.find((x) => x.id === who)?.name ?? null;
   const shown = month ?? { y: Number(m.today.slice(0, 4)), m: Number(m.today.slice(5, 7)) - 1 };
 
   function goMonth(y: number, mo: number): void {
@@ -94,6 +94,7 @@ export function RenovationBetaCalendar(): ReactElement {
             >
               <option value="All">Whole team</option>
               {m.people.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+              {who !== "All" && !m.people.some((x) => x.id === who) && viewingName && <option value={who}>{viewingName}</option>}
             </select>
           </label>
           <div role="tablist" aria-label="Calendar views" style={{ display: "flex", gap: 4, padding: 4, borderRadius: 10, background: "#E8EDEC" }}>

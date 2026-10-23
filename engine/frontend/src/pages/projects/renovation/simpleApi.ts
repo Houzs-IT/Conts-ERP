@@ -192,7 +192,7 @@ export const simpleApi = {
     if (note) p.set("note", note);
     return api.postBinary<{ id: number; version: number }>(`${R}/${id}/design-files?${p.toString()}`, file, file.type || "application/octet-stream");
   },
-  addDesignLink: (id: number, b: { kind: "2d" | "3d"; url: string; submittedOn: string; personIds: number[]; nextPersonId?: number | null; note?: string | null }) =>
+  addDesignLink: (id: number, b: { kind: "2d" | "3d"; url: string; name?: string | null; submittedOn: string; personIds: number[]; nextPersonId?: number | null; note?: string | null }) =>
     api.post<{ id: number; version: number }>(`${R}/${id}/design-links`, b),
   editDesignFile: (fileId: number, b: Partial<{ personIds: number[]; nextPersonId: number | null; submittedOn: string; url: string; note: string | null }>) =>
     api.patch<{ ok: true }>(`${R}/design-files/${fileId}`, b),

@@ -137,7 +137,7 @@ const buildAmendmentColumns = (
       sortFn: (a, b) => a.kindLabel.localeCompare(b.kindLabel),
     },
     {
-      key: 'amendment_no', label: 'Amendment No.', width: 140, sortable: true,
+      key: 'amendment_no', label: 'VO No.', width: 140, sortable: true,
       accessor: (r) => <span style={{ fontWeight: 700, color: 'var(--c-burnt)', fontVariantNumeric: 'tabular-nums' }}>{r.numberLabel}</span>,
       searchValue: (r) => r.numberLabel,
       exportValue: (r) => r.numberLabel,
@@ -290,18 +290,18 @@ export const Amendments = () => {
     <div className={quick ? 'md:pr-[540px]' : undefined}>
       <PageHeader
         eyebrow="Revision inbox"
-        title="Amendments"
+        title="VO"
         description={
           isLoading
-            ? 'Loading amendments…'
-            : `${rows.length} amendment${rows.length === 1 ? '' : 's'} and cancellation request${rows.length === 1 ? '' : 's'} across all Sales Orders`
+            ? 'Loading VOs…'
+            : `${rows.length} VO${rows.length === 1 ? '' : 's'} and cancellation request${rows.length === 1 ? '' : 's'} across all Sales Orders`
         }
       />
 
       <div className="space-y-4">
         {error && !isLoading && (
           <div className="rounded-lg border border-err/40 bg-err/10 px-4 py-2.5 text-[12.5px] text-err">
-            <strong className="font-semibold">Failed to load amendments.</strong>{' '}
+            <strong className="font-semibold">Failed to load VOs.</strong>{' '}
             {/* authedFetch already ran this through humanApiError, so `message`
                 is a plain sentence; the fallback covers a non-Error throw. */}
             {error instanceof Error ? error.message : 'Something went wrong.'}
@@ -328,9 +328,9 @@ export const Amendments = () => {
           rows={rows}
           columns={columns}
           storageKey={AMENDMENT_LIST_STORAGE_KEY}
-          exportName="Amendments"
+          exportName="VO"
           rowKey={(r) => r.key}
-          searchPlaceholder="Search SO no, reference, amendment no, requested by, reason…"
+          searchPlaceholder="Search SO no, reference, VO no, requested by, reason…"
           loadedSearchLimit={500}
           groupBanner={false}
           defaultSort={OPEN_ORDER}
@@ -346,7 +346,7 @@ export const Amendments = () => {
              revision now reads as Approved, not closed. */
           rowStyle={(r) => (r.bucket === 'REJECTED' ? { opacity: 0.6, filter: 'grayscale(0.4)' } : undefined)}
           isLoading={isLoading}
-          emptyMessage="No amendments yet — raise one from a processing-locked Sales Order."
+          emptyMessage="No VOs yet — raise one from a processing-locked Sales Order."
         />
       </div>
       <AmendmentQuickView target={quick} onClose={() => setQuick(null)} />

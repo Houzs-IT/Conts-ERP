@@ -107,7 +107,7 @@ describe('PO Amendments queue', () => {
     soRows = [soRow('s', { bound_pos: [{ id: 'po-9', po_number: 'PO-9', status: 'SUBMITTED' }] })];
     const { container } = mount(<PoAmendments />);
     fireEvent.click(rowOf(container, 'SO-s/A1'));
-    expect(within(screen.getByRole('dialog', { name: 'Amendment SO-s/A1' })).getByText('Sales Order amendment')).toBeTruthy();
+    expect(within(screen.getByRole('dialog', { name: 'Amendment SO-s/A1' })).getByText('VO')).toBeTruthy();
     expect(soDetailIds).toContain('s');
     fireEvent.doubleClick(rowOf(container, 'SO-s/A1'));
     expect(screen.getByText('SO job card')).toBeTruthy();

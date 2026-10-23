@@ -117,7 +117,7 @@ export function BetaCalMonth({ m, who, view, selDay, onPrev, onNext, onToday, on
       <aside style={{ flex: "1 1 260px", maxWidth: "100%", minWidth: 0, display: "flex", flexDirection: "column", gap: 16 }}>
         {canWrite && <button type="button" onClick={onAddWork} style={{ minHeight: 46, border: 0, borderRadius: 10, background: BETA.accent, color: "#FFFFFF", font: "inherit", fontWeight: 600, cursor: "pointer" }}>+ Add work</button>}
         <section aria-labelledby="betaCalListTitle" style={{ background: BETA.surface, border: `1px solid ${BETA.line}`, borderRadius: 12, padding: 18, display: "flex", flexDirection: "column", gap: 6 }}>
-          <h2 id="betaCalListTitle" style={{ margin: 0, fontSize: 17, fontWeight: 700 }}>{list.title}</h2>
+          <h2 id="betaCalListTitle" style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>{list.title}</h2>
           <ol style={{ listStyle: "none", margin: 0, padding: 0 }}>
             {list.due.map((x) => (
               <li key={`${x.p.id}${x.k}`} style={{ display: "flex", gap: 10, alignItems: "center", padding: "10px 0", borderTop: "1px solid #E8EDEC" }}>

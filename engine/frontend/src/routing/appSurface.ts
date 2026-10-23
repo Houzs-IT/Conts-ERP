@@ -10,6 +10,7 @@ export type AppSurface =
   | "privacy"
   | "contractor"
   | "brand"
+  | "clientpo"
   | "staff";
 
 /**
@@ -45,6 +46,8 @@ export function appSurfaceForPath(pathname: string): AppSurface {
   // The per-brand calendar share link — the same no-login token rule, a brand's
   // own events with display floorplan, size and total sales.
   if (pathname.startsWith("/b/")) return "brand";
+  // The Beta Client PO list a renovation client opens from WhatsApp: the signed token in the path is the credential.
+  if (pathname.startsWith("/cpo/")) return "clientpo";
   if (pathname.startsWith("/reset/")) return "reset";
   if (pathname.startsWith("/invite/")) return "invite";
   // The App Store's privacy-policy URL. A static file cannot survive the

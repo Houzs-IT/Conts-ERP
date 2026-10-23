@@ -227,7 +227,7 @@ function RevisionHero({
           <div className="font-semibold">
             {resolution === "WITHDRAWN"
               ? "This request was withdrawn by the person who raised it."
-              : "This amendment was rejected — the Sales Order keeps its prior revision."}
+              : "This VO was rejected — the Sales Order keeps its prior revision."}
           </div>
           {/* The reason is the whole point of a refusal: without it the requester
               can only guess and resubmit, which is what produced competing
@@ -538,8 +538,8 @@ export function AmendmentDetailV2() {
     amendment?.amendment_no != null ? String(amendment.amendment_no) : null;
 
   useSetBreadcrumbs([
-    { label: "Amendments", to: "/scm/amendments" },
-    { label: amendmentNo ?? "Amendment" },
+    { label: "VO", to: "/scm/amendments" },
+    { label: amendmentNo ?? "VO" },
   ]);
 
   /* The approve / reject decision trail (owner 2026-07-18). Read the SO audit log
@@ -623,12 +623,12 @@ export function AmendmentDetailV2() {
        not say why leaves the requester guessing and resubmitting, which is the
        competing-documents problem this whole change exists to end. */
     const reason = await askPrompt({
-      title: `Reject amendment ${amendmentNo ?? ""}?`.trim(),
+      title: `Reject VO ${amendmentNo ?? ""}?`.trim(),
       body: "The Sales Order keeps its current revision and nothing is changed. "
         + "Say what is wrong so the person who raised it knows what to fix — they will see this.",
       placeholder: "e.g. supplier cannot supply PC151-01 in this fabric",
       multiline: true,
-      confirmLabel: "Reject amendment",
+      confirmLabel: "Reject VO",
       validate: (v) =>
         v.trim().length < 5
           ? "Give a reason the requester can act on — at least a few words."
@@ -638,12 +638,12 @@ export function AmendmentDetailV2() {
     try {
       await rejectAmendment.mutateAsync({ id, reason: reason.trim() });
       notify({
-        title: "Amendment rejected",
+        title: "VO rejected",
         body: "The person who raised it can see your reason and raise a corrected request.",
       });
     } catch (e) {
       notify({
-        title: "Could not reject this amendment",
+        title: "Could not reject this VO",
         body: `${plainError(e)} Nothing was changed — please try again.`,
         tone: "error",
       });
@@ -654,9 +654,9 @@ export function AmendmentDetailV2() {
     if (!id || !amendment) return;
     if (
       !(await askConfirm({
-        title: `Withdraw amendment ${amendmentNo ?? ""}?`.trim(),
+        title: `Withdraw VO ${amendmentNo ?? ""}?`.trim(),
         body: "This closes the request without changing the Sales Order. It cannot be reopened — "
-          + "but withdrawing frees the order so you can raise a corrected amendment straight away.",
+          + "but withdrawing frees the order so you can raise a corrected VO straight away.",
         confirmLabel: "Withdraw request",
         danger: true,
       }))
@@ -673,12 +673,12 @@ export function AmendmentDetailV2() {
     try {
       await withdrawAmendment.mutateAsync({ id, reason: reason.trim() || undefined });
       notify({
-        title: "Amendment withdrawn",
-        body: "This Sales Order is free again — open it and submit a corrected amendment when you are ready.",
+        title: "VO withdrawn",
+        body: "This Sales Order is free again — open it and submit a corrected VO when you are ready.",
       });
     } catch (e) {
       notify({
-        title: "Could not withdraw this amendment",
+        title: "Could not withdraw this VO",
         body: `${plainError(e)} It is still open — please try again.`,
         tone: "error",
       });
@@ -689,7 +689,7 @@ export function AmendmentDetailV2() {
     if (!id || !amendment) return;
     if (
       !(await askConfirm({
-        title: `Approve ${lane ? "amendment" : "SO revision"} for ${soDocNo}?`,
+        title: `Approve ${lane ? "VO" : "SO revision"} for ${soDocNo}?`,
         body: lane === "LINES"
           ? "Check with the supplier BEFORE approving — your signature records that the change "
             + "is workable. The Sales Order is revised at once (the current version is snapshotted "
@@ -714,7 +714,7 @@ export function AmendmentDetailV2() {
           const followUps = ((res as { poFollowUps?: Array<{ amendmentNo?: string; poNumber?: string }> } | undefined)?.poFollowUps ?? []);
           const warnings = ((res as { warnings?: string[] } | undefined)?.warnings ?? []);
           notify({
-            title: lane ? "Amendment applied" : "SO revision approved",
+            title: lane ? "VO applied" : "SO revision approved",
             body: [
               followUps.length
                 ? `Follow-up PO amendment${followUps.length === 1 ? "" : "s"} raised: ${followUps.map((f) => `${f.amendmentNo ?? ""} (${f.poNumber ?? ""})`).join("; ")} — confirm ${followUps.length === 1 ? "it" : "them"} in PO Amendments.`
@@ -725,7 +725,7 @@ export function AmendmentDetailV2() {
         },
         onError: (e) =>
           notify({
-            title: lane ? "Could not apply this amendment" : "Could not approve the revision",
+            title: lane ? "Could not apply this VO" : "Could not approve the revision",
             body: `${plainError(e)} The Sales Order was NOT changed — please try again.`,
             tone: "error",
           }),
@@ -775,7 +775,7 @@ export function AmendmentDetailV2() {
 
   // isPending covers pending-but-not-fetching (disabled / offline-paused), which
   // isLoading reports as false — letting those states fall through to the error
-  // branch and paint "Couldn't load this amendment" before any fetch had run.
+  // branch and paint "Couldn't load this VO" before any fetch had run.
   if (isPending) {
     return (
       <div className="animate-fade-in p-8 text-center text-[13px] text-ink-muted">
@@ -787,10 +787,10 @@ export function AmendmentDetailV2() {
     return (
       <div className="mx-auto max-w-lg px-4 py-16 text-center">
         <div className="mb-2 font-display text-[18px] font-extrabold text-err">
-          Couldn't load this amendment
+          Couldn't load this VO
         </div>
         <p className="text-[13px] text-ink-muted">
-          {(error as Error | undefined)?.message ?? "The amendment was not found."}
+          {(error as Error | undefined)?.message ?? "The VO was not found."}
         </p>
         <div className="mt-4">
           <Button variant="secondary" onClick={goBack} icon={<ArrowLeft size={14} />}>
@@ -814,7 +814,7 @@ export function AmendmentDetailV2() {
             <button
               type="button"
               onClick={goBack}
-              aria-label="Back to Amendments"
+              aria-label="Back to VO"
               className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border bg-surface text-ink-secondary hover:border-primary/50 hover:text-primary"
             >
               <ArrowLeft size={16} />
@@ -822,7 +822,7 @@ export function AmendmentDetailV2() {
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2.5">
                 <h1 className="font-display text-[22px] font-extrabold leading-tight tracking-tight text-ink">
-                  Amendment{amendmentNo ? ` ${amendmentNo}` : ""}
+                  VO{amendmentNo ? ` ${amendmentNo}` : ""}
                 </h1>
                 <StatusPill docType={lane ? "soAmendmentLane" : "soAmendment"} status={status} />
                 {lane && (
@@ -913,7 +913,7 @@ export function AmendmentDetailV2() {
               {lines.length === 0 ? (
                 <div className="text-[12px] text-ink-muted">
                   {headerDiffs.length > 0
-                    ? "No line changes — this amendment only changes the order details above."
+                    ? "No line changes — this VO only changes the order details above."
                     : recordedLineCount > 0
                       /* Every recorded line matches the order exactly, and there
                          is no header delta either — a legacy amendment raised
@@ -922,7 +922,7 @@ export function AmendmentDetailV2() {
                          so and point at the Reason, which is the only place the
                          ask survives. */
                       ? "No line changes recorded — every line matches the order exactly. This request predates order-detail tracking, so what was asked for is in the Reason below."
-                      : "This amendment has no line changes recorded."}
+                      : "This VO has no line changes recorded."}
                 </div>
               ) : (
                 <div className="space-y-2.5">
@@ -999,7 +999,7 @@ export function AmendmentDetailV2() {
                 <p className="mt-3 border-t border-border-subtle pt-2 text-[11px] leading-relaxed text-ink-muted">
                   {lane
                     ? "This request was auto-routed at submission: product-line changes go to Purchasing, delivery changes to Logistics. One signature from this lane's approver applies it; who approved and when is recorded on the Sales Order history."
-                    : "Advisory routing — it shows who is responsible for what. Any authorized approver applies the whole amendment in one signature; who approved and when is recorded on the Sales Order history."}
+                    : "Advisory routing — it shows who is responsible for what. Any authorized approver applies the whole VO in one signature; who approved and when is recorded on the Sales Order history."}
                 </p>
               </AsideCard>
             )}
@@ -1106,7 +1106,7 @@ export function AmendmentDetailV2() {
                       onClick={() => void handleReject()}
                       disabled={rejectAmendment.isPending}
                     >
-                      {rejectAmendment.isPending ? "Rejecting…" : "Reject amendment"}
+                      {rejectAmendment.isPending ? "Rejecting…" : "Reject VO"}
                     </Button>
                   )}
                   {canWithdraw && (
@@ -1206,7 +1206,7 @@ export function AmendmentDetailV2() {
                       onClick={() => void handleReject()}
                       disabled={rejectAmendment.isPending}
                     >
-                      {rejectAmendment.isPending ? "Rejecting…" : "Reject amendment"}
+                      {rejectAmendment.isPending ? "Rejecting…" : "Reject VO"}
                     </Button>
                   )}
                   {/* Withdraw — the requester's own way out, so a mistaken request
@@ -1242,8 +1242,8 @@ export function AmendmentDetailV2() {
       <PrintPreviewModal
         open={print.open}
         onClose={print.close}
-        docTitle="Sales Order Amendment"
-        docNo={amendmentNo ?? "Amendment"}
+        docTitle="VO"
+        docNo={amendmentNo ?? "VO"}
         rows={[
           { label: "Against SO", value: soDocNo || "—" },
           { label: "Status", value: amendmentPrintedStatus(status) },
