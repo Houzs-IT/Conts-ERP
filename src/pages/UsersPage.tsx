@@ -11,6 +11,7 @@ import { Field } from '../components/Field';
 import { PhoneInput, phoneProblem } from '../components/inputs';
 import { Select } from '../components/Select';
 import { Modal } from '../components/Modal';
+import UserAccess from '../components/permissions/UserAccess';
 import { KIND_NOTE, sideLabel, useDepartments } from '../components/permissions/shared';
 import { StaleBanner } from '../components/DataState';
 import { DataTable, type Column } from '../components/DataTable';
@@ -664,7 +665,7 @@ export default function UsersPage() {
       {/* ------------------------------- Edit modal ------------------------------- */}
       {editing && (
         <Modal
-          width={460}
+          width={editing.role === 'owner' ? 460 : 640}
           title={`Edit ${editing.fullName}`}
           sub="Change the department, position, reporting line or status."
           onClose={() => setEditing(null)}
@@ -697,7 +698,10 @@ export default function UsersPage() {
               <span className="text-copy">Account is active</span>
             </label>
           </form>
-          <div className="mt-4"><HistoryDisclosure entity="users" id={editing.id} /></div>
+          <div className="mt-4 flex flex-col gap-3">
+            {editing.role !== 'owner' && <UserAccess key={editing.id} userId={editing.id} />}
+            <HistoryDisclosure entity="users" id={editing.id} />
+          </div>
         </Modal>
       )}
 
