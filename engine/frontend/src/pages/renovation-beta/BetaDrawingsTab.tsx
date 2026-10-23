@@ -1,19 +1,22 @@
 /* Beta workspace > Drawings, laid out as the mockup's Drawings view: three cards (Site measurement, 3D, 2D), and under
    them the one that was picked: the new version waiting for the client with its three steps, the approved set, or the
-   history. Sending to the client and recording or removing an approval write through /api/beta. Uploading a file is not
-   a Beta action yet, so the upload boxes lead to the current project page. */
+   history. Sending to the client and recording or removing an approval write through /api/beta; the upload boxes open
+   the dialogs in BetaDrawingUploads.tsx, which save through the same routes as the current project page. */
 
 import { useState, type CSSProperties, type ReactElement, type ReactNode } from "react";
-import { Link } from "react-router-dom";
 import { useDialog } from "../../hooks/useDialog";
+import { useQuery } from "../../hooks/useQuery";
 import { addDays, errorText } from "../projects/renovation/renovationModel";
 import { simpleApi, type DesignFile, type DesignNote, type SiteMeasure } from "../projects/renovation/simpleApi";
 import {
   TONE_DONE, TONE_QUIET, TONE_WAIT, WS, WsBadge, WsBtn, WsCheck, WsDialog, WsField, WsPdfTile, WsPhoto, btnStyle, cardStyle, inputStyle, textareaStyle
 } from "./BetaWsUi";
+import { BetaUploadDialog, type UploadDialog } from "./BetaDrawingUploads";
 import { FileDialog, sendReminder, useGuarded, type BetaTabProps, type ViewedFile } from "./betaShared";
 import { betaApi } from "./renovationBetaApi";
 import { approvedSet, dayMonth, dayMonthYear, daysLeft, versionLabel, whatsappLink, type ApprovedSet, type DesignKind, type VersionInfo } from "./renovationBetaModel";
+import { downloadAsPdf, type PdfPart } from "./renovationBetaPdf";
+import { sheetSetAt, sheetsApi, type BetaSheet, type SetSheet } from "./renovationBetaSheets";
 import { BETA } from "./renovationBetaTheme";
 
 type DrawPick = "m" | DesignKind;
@@ -31,13 +34,25 @@ export function BetaDrawingsTab(p: BetaTabProps): ReactElement {
   const [pick, setPick] = useState<DrawPick>(() => (sets["2d"].waiting ? "2d" : sets["3d"].waiting ? "3d" : sets["2d"].versions.length > 0 ? "2d" : sets["3d"].versions.length > 0 ? "3d" : "m"));
   const [editing, setEditing] = useState<Editing | null>(null);
   const [viewing, setViewing] = useState<ViewedFile | null>(null);
+  const [uploading, setUploading] = useState<UploadDialog | null>(null);
+  const sheetsQ = useQuery(["renovation-beta", "sheets", p.projectId], () => sheetsApi.list(p.projectId), [p.projectId]);
+  const sheetsReady = sheetsQ.data?.ready ?? false;
+  const sheets = sheetsQ.data?.sheets ?? [];
   const openFile = (f: DesignFile): void => {
     if (f.external_url) window.open(f.external_url, "_blank", "noopener");
     else if (f.r2_key) setViewing({ key: f.r2_key, name: f.file_name });
   };
   const measureDone = records.measures.filter((m) => m.done_on).sort((a, b) => (a.done_on ?? "").localeCompare(b.done_on ?? ""));
   const measureFiles = records.measures.reduce((n, m) => n + (m.files?.length ?? 0), 0);
-  const upload = p.canWrite ? `/projects/${p.projectId}` : null;
+  const upload = p.canWrite ? setUploading : null;
+  const uploaded = (text: string, failed?: string): void => {
+    const d = uploading;
+    setUploading(null);
+    setPick(d?.t === "file" ? d.kind : d?.t === "link" ? "3d" : d?.t === "sheets" ? "2d" : "m");
+    sheetsQ.reload();
+    p.onDone(text);
+    if (failed) p.onError(`${text} ${failed}`);
+  };
 
   return (
     <>
@@ -46,23 +61,30 @@ export function BetaDrawingsTab(p: BetaTabProps): ReactElement {
           on={pick === "m"} onPick={() => setPick("m")} icon="m" title="Site measurement"
           badge={measureDone.length > 0 ? <WsBadge tone={TONE_DONE}>Done</WsBadge> : <WsBadge tone={TONE_QUIET}>Not measured</WsBadge>}
           sub={measureDone.length > 0 ? `Measured ${dayMonth(measureDone[0]?.done_on)} · ${plural(measureFiles, "file")}` : "No site measure recorded yet"}
-          uploads={upload ? [{ label: "Upload PDF / photos", to: upload }] : []}
+          uploads={upload ? [{ label: "Upload PDF / photos", onClick: () => upload({ t: "measure" }) }] : []}
         />
         {(["3d", "2d"] as const).map((kind) => (
           <TypeCard
             key={kind} on={pick === kind} onPick={() => setPick(kind)} icon={kind} title={`${kind.toUpperCase()} drawings`}
             badge={kindBadge(sets[kind])} sub={kindSub(kind, sets[kind])}
-            uploads={upload ? (kind === "3d" ? [{ label: "Upload 3D PDF", to: upload }, { label: "Add 3D link", to: upload }] : [{ label: "Upload 2D PDF", to: upload }]) : []}
+            uploads={upload ? (kind === "3d"
+              ? [{ label: "Add 3D link", onClick: () => upload({ t: "link" }) }, { label: "Upload 3D PDF", onClick: () => upload({ t: "file", kind }) }]
+              : sheetsReady
+                ? [{ label: sets["2d"].versions.length > 0 ? "Update 2D sheets" : "Upload 2D set", onClick: () => upload({ t: "sheets" }) }]
+                : [{ label: "Upload 2D PDF", onClick: () => upload({ t: "file", kind }) }]) : []}
           />
         ))}
       </div>
 
-      {pick === "m" ? <MeasureDetail measures={records.measures} projectId={p.projectId} onView={setViewing} uploadTo={upload} />
-        : <KindDetail key={pick} kind={pick} p={p} set={sets[pick]} onEdit={(type, v) => setEditing({ type, kind: pick, v })} onOpen={openFile} />}
+      {pick === "m" ? <MeasureDetail measures={records.measures} projectId={p.projectId} onView={setViewing} onUpload={upload} onError={p.onError} />
+        // Keyed on the version count too, so a new upload opens on its own "New version" view.
+        : <KindDetail key={`${pick}-${sets[pick].versions.length}`} kind={pick} p={p} set={sets[pick]} onEdit={(type, v) => setEditing({ type, kind: pick, v })} onOpen={openFile} onUpload={upload}
+          sheets={sheets} sheetsReady={sheetsReady} onView={setViewing} />}
 
       {editing?.type === "send" && <SendDialog p={p} editing={editing} onClose={() => setEditing(null)} />}
       {editing?.type === "approve" && <ApproveDialog p={p} editing={editing} onClose={() => setEditing(null)} />}
       {viewing && <FileDialog projectId={p.projectId} file={viewing} onClose={() => setViewing(null)} />}
+      {uploading && <BetaUploadDialog p={p} dialog={uploading} sheets={sheets} onClose={() => setUploading(null)} onSaved={uploaded} />}
     </>
   );
 }
@@ -86,7 +108,7 @@ function kindSub(kind: DesignKind, set: ApprovedSet): string {
   return parts.join(" · ");
 }
 
-interface UploadLink { label: string; to: string }
+interface UploadLink { label: string; onClick: () => void }
 
 function TypeCard({ on, onPick, icon, title, badge, sub, uploads }: { on: boolean; onPick: () => void; icon: DrawPick; title: string; badge: ReactElement; sub: string; uploads: UploadLink[] }): ReactElement {
   return (
@@ -107,17 +129,19 @@ function TypeCard({ on, onPick, icon, title, badge, sub, uploads }: { on: boolea
         <span style={{ fontSize: 13, color: BETA.muted }}>{sub}</span>
       </button>
       {uploads.length > 0 && (
-        <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
           {uploads.map((u) => (
-            <Link
+            <button
               key={u.label}
-              to={u.to}
-              title="Opens the current project page, where files are uploaded"
-              style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, minHeight: 44, padding: "0 14px", borderRadius: 10, border: "1.5px dashed #7FB3AD", background: WS.tealSoft, color: BETA.accentInk, fontWeight: 600, fontSize: 14, flex: 1, textDecoration: "none" }}
+              type="button"
+              onClick={u.onClick}
+              style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, minHeight: 44, padding: "0 12px", borderRadius: 10, border: `1.5px dashed ${BETA.focus}`, background: WS.tealSoft, color: BETA.accentInk, font: "inherit", fontWeight: 600, fontSize: 14, flex: "1 1 130px", cursor: "pointer" }}
             >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M12 16V4" /><path d="M7 9l5-5 5 5" /><path d="M4 20h16" /></svg>
+              {/link/i.test(u.label)
+                ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M10 14a4 4 0 005.7 0l3-3a4 4 0 00-5.7-5.7l-1 1" /><path d="M14 10a4 4 0 00-5.7 0l-3 3a4 4 0 005.7 5.7l1-1" /></svg>
+                : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M12 16V4" /><path d="M7 9l5-5 5 5" /><path d="M4 20h16" /></svg>}
               {u.label}
-            </Link>
+            </button>
           ))}
         </div>
       )}
@@ -141,14 +165,16 @@ const sectionStyle: CSSProperties = { ...cardStyle, gap: 18 };
 const eyebrow: CSSProperties = { fontSize: 12, color: BETA.muted, fontWeight: 600, textTransform: "uppercase", letterSpacing: ".05em" };
 const boxStyle: CSSProperties = { border: `1px solid ${BETA.line}`, borderRadius: 10, overflow: "hidden" };
 
-function MeasureDetail({ measures, projectId, onView, uploadTo }: { measures: SiteMeasure[]; projectId: number; onView: (f: ViewedFile) => void; uploadTo: string | null }): ReactElement {
+function MeasureDetail({ measures, projectId, onView, onUpload, onError }: {
+  measures: SiteMeasure[]; projectId: number; onView: (f: ViewedFile) => void; onUpload: ((d: UploadDialog) => void) | null; onError: (t: string) => void;
+}): ReactElement {
   const list = [...measures].sort((a, b) => (b.done_on ?? "").localeCompare(a.done_on ?? "") || b.id - a.id);
   if (list.length === 0) {
     return (
       <section style={sectionStyle}>
         <div style={eyebrow}>Site measurement</div>
         <p style={{ fontSize: 14, color: BETA.muted }}>No site measure has been recorded yet.</p>
-        {uploadTo && <Link to={uploadTo}>Record it on the current project page</Link>}
+        {onUpload && <WsBtn kind="teal" style={{ alignSelf: "flex-start" }} onClick={() => onUpload({ t: "measure" })}>Record site measure</WsBtn>}
       </section>
     );
   }
@@ -160,12 +186,21 @@ function MeasureDetail({ measures, projectId, onView, uploadTo }: { measures: Si
         const names = m.people?.length ? m.people.map((x) => x.name).join(", ") : m.person_name;
         return (
           <section key={m.id} aria-label={`Site measurement ${dayMonthYear(m.done_on)}`} style={sectionStyle}>
-            <div>
-              <div style={eyebrow}>Site measurement</div>
-              <h2 style={{ margin: "2px 0 0", fontSize: 22, fontWeight: 700 }}>
-                {m.done_on ? dayMonthYear(m.done_on) : "Not dated"} <span style={{ fontSize: 15, fontWeight: 600, color: m.done_on ? WS.green : WS.amber }}>· {m.done_on ? "done" : "not done yet"}</span>
-              </h2>
-              <div style={{ color: BETA.muted }}>{names ? `Measured by ${names} · ` : ""}{plural(files.length, "file")}</div>
+            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={eyebrow}>Site measurement</div>
+                <h2 style={{ margin: "2px 0 0", fontSize: 20, fontWeight: 700 }}>
+                  {m.done_on ? dayMonthYear(m.done_on) : "Not dated"} <span style={{ fontSize: 14, fontWeight: 600, color: m.done_on ? WS.green : WS.amber }}>· {m.done_on ? "done" : "not done yet"}</span>
+                </h2>
+                <div style={{ color: BETA.muted, fontSize: 14 }}>{names ? `Measured by ${names} · ` : ""}{plural(files.length, "file")}</div>
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                {files.length > 0 && (
+                  <PdfButton projectId={projectId} onError={onError} outName={`Site measure ${m.done_on ?? m.id}.pdf`} label="Download all"
+                    parts={files.map((f) => ({ key: f.r2_key, fileName: f.file_name }))} />
+                )}
+                {onUpload && <WsBtn size="sm" onClick={() => onUpload({ t: "measure-files", measure: m })}>Add files<span className="sr"> to the site measure of {dayMonthYear(m.done_on)}</span></WsBtn>}
+              </div>
             </div>
             {files.length > 0 && (
               <div style={boxStyle}>
@@ -211,7 +246,10 @@ function MeasureDetail({ measures, projectId, onView, uploadTo }: { measures: Si
 
 /* ---------- 3D and 2D ---------- */
 
-function KindDetail({ kind, p, set, onEdit, onOpen }: { kind: DesignKind; p: BetaTabProps; set: ApprovedSet; onEdit: (type: "send" | "approve", v: VersionInfo) => void; onOpen: (f: DesignFile) => void }): ReactElement {
+function KindDetail({ kind, p, set, onEdit, onOpen, onUpload, sheets, sheetsReady, onView }: {
+  kind: DesignKind; p: BetaTabProps; set: ApprovedSet; onEdit: (type: "send" | "approve", v: VersionInfo) => void; onOpen: (f: DesignFile) => void; onUpload: ((d: UploadDialog) => void) | null;
+  sheets: readonly BetaSheet[]; sheetsReady: boolean; onView: (f: ViewedFile) => void;
+}): ReactElement {
   const dialog = useDialog();
   const { busy, run } = useGuarded();
   const { records, canWrite, today, projectId, detail } = p;
@@ -221,6 +259,10 @@ function KindDetail({ kind, p, set, onEdit, onOpen }: { kind: DesignKind; p: Bet
   const view: View = picked === "waiting" && !waiting ? (approved ? "approved" : "history") : picked === "approved" && !approved ? (waiting ? "waiting" : "history") : picked;
   const notes = records.notes.filter((n) => n.kind === kind).sort((a, b) => b.noted_on.localeCompare(a.noted_on) || b.id - a.id);
   const K = kind.toUpperCase();
+  const sheetBox = (v: VersionInfo): ReactElement => (
+    <SheetBox projectId={projectId} version={v.file.version} sheets={sheetSetAt(records.files, sheets, v.file.version)} onView={onView} onError={p.onError}
+      outName={`${detail.project.name} 2D V${v.file.version}.pdf`} />
+  );
 
   async function removeApproval(v: VersionInfo): Promise<void> {
     const label = versionLabel(kind, v.file);
@@ -239,7 +281,14 @@ function KindDetail({ kind, p, set, onEdit, onOpen }: { kind: DesignKind; p: Bet
       <section style={sectionStyle}>
         <div style={eyebrow}>{K} drawings</div>
         <p style={{ fontSize: 14, color: BETA.muted }}>No {K} version has been uploaded yet.</p>
-        <Link to={`/projects/${projectId}`}>Upload it on the current project page.</Link>
+        {onUpload && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+            {kind === "3d" && <WsBtn kind="teal" onClick={() => onUpload({ t: "link" })}>Add 3D link</WsBtn>}
+            {kind === "2d" && sheetsReady
+              ? <WsBtn kind="teal" onClick={() => onUpload({ t: "sheets" })}>Upload 2D set</WsBtn>
+              : <WsBtn kind={kind === "3d" ? "outline" : "teal"} onClick={() => onUpload({ t: "file", kind })}>Upload {K} PDF</WsBtn>}
+          </div>
+        )}
       </section>
     );
   }
@@ -267,7 +316,7 @@ function KindDetail({ kind, p, set, onEdit, onOpen }: { kind: DesignKind; p: Bet
       </div>
 
       {view === "waiting" && waiting && (
-        <WaitingView kind={kind} v={waiting} p={p} busy={busy} onEdit={onEdit}
+        <WaitingView kind={kind} v={waiting} p={p} busy={busy} onEdit={onEdit} fileBox={kind === "2d" ? sheetBox(waiting) : undefined}
           onRemind={() => void run(() => sendReminder(projectId, {
             kind: "client_approval",
             phone: detail.project.customer_phone,
@@ -294,6 +343,7 @@ function KindDetail({ kind, p, set, onEdit, onOpen }: { kind: DesignKind; p: Bet
             </div>
             {canWrite && <WsBtn kind="danger" size="sm" disabled={busy} onClick={() => void run(() => removeApproval(approved))}>Remove approval<span className="sr"> of {versionLabel(kind, approved.file)}</span></WsBtn>}
           </div>
+          {kind === "2d" && sheetBox(approved)}
         </>
       )}
 
@@ -318,6 +368,7 @@ function KindDetail({ kind, p, set, onEdit, onOpen }: { kind: DesignKind; p: Bet
         </div>
       )}
 
+      {kind === "3d" && <LinksBox versions={set.versions} onOpen={onOpen} />}
       {notes.length > 0 && <NotesList kind={kind} notes={notes} files={records.files} />}
     </section>
   );
@@ -331,8 +382,9 @@ function ShowPill({ on, onClick, quiet = false, children }: { on: boolean; onCli
   return <button type="button" aria-pressed={on} onClick={onClick} style={{ ...style, font: "inherit", fontSize: 13, cursor: "pointer" }}>{children}</button>;
 }
 
-function WaitingView({ kind, v, p, busy, onEdit, onRemind, onOpen }: {
+function WaitingView({ kind, v, p, busy, onEdit, onRemind, onOpen, fileBox }: {
   kind: DesignKind; v: VersionInfo; p: BetaTabProps; busy: boolean; onEdit: (type: "send" | "approve", v: VersionInfo) => void; onRemind: () => void; onOpen: (f: DesignFile) => void;
+  fileBox?: ReactElement;
 }): ReactElement {
   const { canWrite, today, detail } = p;
   const sentOn = v.review?.sentOn ?? null;
@@ -389,7 +441,7 @@ function WaitingView({ kind, v, p, busy, onEdit, onRemind, onOpen }: {
           <div style={{ whiteSpace: "pre-line", overflowWrap: "anywhere" }}>{v.file.note}</div>
         </div>
       )}
-      <div style={boxStyle}>
+      {fileBox ?? <div style={boxStyle}>
         <div style={{ padding: "12px 16px", background: WS.head, fontWeight: 600 }}>{kind === "3d" ? "3D file" : "2D file"}</div>
         <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, padding: "12px 16px", borderTop: `1px solid ${WS.rowLine}` }}>
           {v.file.external_url ? <LinkTile /> : <WsPdfTile />}
@@ -399,7 +451,7 @@ function WaitingView({ kind, v, p, busy, onEdit, onRemind, onOpen }: {
           </div>
           <WsBtn kind="teal" size="sm" onClick={() => onOpen(v.file)}>Open<span className="sr"> {label}</span></WsBtn>
         </div>
-      </div>
+      </div>}
     </>
   );
 }
@@ -409,6 +461,107 @@ function LinkTile(): ReactElement {
     <span aria-hidden="true" style={{ flex: "none", width: 36, height: 44, borderRadius: 4, background: "#E8F0FB", border: "1px solid #C9DAF2", color: WS.blue, display: "flex", alignItems: "center", justifyContent: "center" }}>
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10 14a4 4 0 005.7 0l3-3a4 4 0 00-5.7-5.7l-1 1" /><path d="M14 10a4 4 0 00-5.7 0l-3 3a4 4 0 005.7 5.7l1-1" /></svg>
     </span>
+  );
+}
+
+/** The sheets of a 2D set as of one version: the newest file of each sheet, its older files under History. */
+function SheetBox({ projectId, version, sheets, onView, onError, outName }: {
+  projectId: number; version: number; sheets: SetSheet[]; onView: (f: ViewedFile) => void; onError: (t: string) => void; outName: string;
+}): ReactElement {
+  const [open, setOpen] = useState<string | null>(null);
+  const openSheet = (x: { key: string | null; url: string | null; fileName: string }): void => {
+    if (x.url) window.open(x.url, "_blank", "noopener");
+    else if (x.key) onView({ key: x.key, name: x.fileName });
+  };
+  const parts: PdfPart[] = sheets.filter((x) => x.key).map((x) => ({ key: x.key ?? "", fileName: x.fileName }));
+  return (
+    <div style={boxStyle}>
+      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "10px 16px", background: WS.head }}>
+        <span style={{ fontWeight: 600 }}>2D set · {plural(sheets.length, "sheet")}</span>
+        {parts.length > 0 && <PdfButton projectId={projectId} parts={parts} outName={outName} label="Download set as PDF" onError={onError} />}
+      </div>
+      <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+        {sheets.map((x) => (
+          <li key={x.name} style={{ borderTop: `1px solid ${WS.rowLine}`, padding: "10px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
+            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 10 }}>
+              {x.url ? <LinkTile /> : <WsPdfTile />}
+              <div style={{ flex: "1 1 180px", minWidth: 0 }}>
+                <div style={{ fontWeight: 600, overflowWrap: "anywhere" }}>{x.name}</div>
+                <div style={{ fontSize: 12, color: BETA.muted, overflowWrap: "anywhere" }}>{x.fileName}</div>
+              </div>
+              <WsBadge tone={x.version === version ? TONE_WAIT : TONE_QUIET}>{x.version === version ? `New in V${x.version}` : `From V${x.version}`}</WsBadge>
+              {x.history.length > 1 && (
+                <button type="button" className="link" aria-expanded={open === x.name} onClick={() => setOpen(open === x.name ? null : x.name)}>
+                  History ({x.history.length - 1})<span className="sr"> of {x.name}</span>
+                </button>
+              )}
+              <WsBtn kind="teal" size="sm" onClick={() => openSheet(x)}>Open<span className="sr"> {x.name}</span></WsBtn>
+            </div>
+            {open === x.name && (
+              <ul style={{ listStyle: "none", margin: 0, padding: "0 0 0 46px", display: "flex", flexDirection: "column", gap: 4 }}>
+                {x.history.slice(1).map((h) => (
+                  <li key={`${h.version}-${h.key ?? h.url}`} style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, fontSize: 13, color: WS.text2 }}>
+                    <span style={{ flex: "1 1 160px", minWidth: 0, overflowWrap: "anywhere" }}>V{h.version} · {h.fileName}</span>
+                    <button type="button" className="link" onClick={() => openSheet(h)}>Open<span className="sr"> V{h.version} of {x.name}</span></button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** One PDF of several files (2D set, site measure), built in the browser. */
+function PdfButton({ projectId, parts, outName, label, onError }: { projectId: number; parts: PdfPart[]; outName: string; label: string; onError: (t: string) => void }): ReactElement {
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  async function go(): Promise<void> {
+    setBusy(true);
+    setNote(null);
+    try {
+      const r = await downloadAsPdf(projectId, parts, outName.replace(/[\\/:*?"<>|]+/g, " "));
+      if (r.skipped.length) setNote(`Not in the PDF (not a PDF or photo): ${r.skipped.join(", ")}`);
+    } catch (e) {
+      onError(`The PDF could not be made: ${errorText(e)}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <span style={{ display: "inline-flex", flexDirection: "column", gap: 4 }}>
+      <WsBtn size="sm" disabled={busy} onClick={() => void go()}>{busy ? "Making PDF..." : label}</WsBtn>
+      {note && <span role="status" style={{ fontSize: 12, color: WS.amber, maxWidth: 260 }}>{note}</span>}
+    </span>
+  );
+}
+
+/** Every 3D submission, newest first: links open in a new tab, and Copy puts the link on the clipboard to send the client. */
+function LinksBox({ versions, onOpen }: { versions: VersionInfo[]; onOpen: (f: DesignFile) => void }): ReactElement {
+  const [copied, setCopied] = useState<number | null>(null);
+  async function copy(f: DesignFile): Promise<void> {
+    if (!f.external_url) return;
+    try { await navigator.clipboard.writeText(f.external_url); setCopied(f.id); } catch { window.prompt("Copy the link:", f.external_url); }
+  }
+  return (
+    <div style={boxStyle}>
+      <div style={{ padding: "10px 16px", background: WS.head, fontWeight: 600 }}>3D links and files</div>
+      <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+        {versions.map(({ file: f }) => (
+          <li key={f.id} style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 10, padding: "10px 16px", borderTop: `1px solid ${WS.rowLine}` }}>
+            {f.external_url ? <LinkTile /> : <WsPdfTile />}
+            <div style={{ flex: "1 1 200px", minWidth: 0 }}>
+              <div style={{ fontWeight: 600, overflowWrap: "anywhere" }}>{f.file_name} <span style={{ fontWeight: 400, color: BETA.muted }}>· v{f.version} · {dayMonth(submittedOf(f))}</span></div>
+              {f.external_url && <div style={{ fontSize: 12, color: BETA.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.external_url}</div>}
+            </div>
+            <WsBtn kind="teal" size="sm" onClick={() => onOpen(f)}>Open<span className="sr"> {f.file_name}</span></WsBtn>
+            {f.external_url && <WsBtn size="sm" onClick={() => void copy(f)}>{copied === f.id ? "Copied" : "Copy for client"}<span className="sr"> {f.file_name}</span></WsBtn>}
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 

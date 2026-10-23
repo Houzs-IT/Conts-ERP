@@ -128,6 +128,7 @@ import { brandShare } from "./routes/brandShare";
 import renovation from "./routes/renovation";
 // Beta project workspace.
 import renovationBeta from "./routes/renovationBeta";
+import renovationBetaSheets from "./routes/renovationBetaSheets";
 import { drainEmailOutbox } from "./services/email";
 import { runClientErrorDigest } from "./services/clientErrors";
 import { runSlaEscalation } from "./services/assrEscalation";
@@ -460,6 +461,7 @@ app.route("/api/renovation", renovation);
 // Beta workspace (owner, 23 Oct 2026): behind the auth gate, switched off in production by renovationBeta's first middleware.
 app.use("/api/beta/*", inboxBustAfterWrite);
 app.route("/api/beta", renovationBeta);
+app.route("/api/beta", renovationBetaSheets);
 app.route("/api/sales", sales);
 app.route("/api/finance", finance);
 app.route("/api/stockitems", stockItems);
