@@ -6,6 +6,7 @@ import { PageControls } from './PageControls';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
 import { useToast } from './Toast';
+import { useConfirm } from './ConfirmDialog';
 import { date, timeWithZone } from '../lib/format';
 import { useSession } from '../lib/session';
 import { cx } from '../lib/design-tokens';
@@ -26,6 +27,7 @@ export default function ChannexSyncPanel({ onState }: { onState?: (state: Channe
   const canRun = !!user && ['management', 'operations_manager', 'finance_admin'].includes(user.role);
   const [busy, setBusy] = useState(false);
   const [hookBusy, setHookBusy] = useState(false);
+  const [confirmDialog, ask] = useConfirm();
   const state: ChannexState | null = !data || data.restricted ? null : !data.configured ? 'not_connected' : data.failed ? 'attention' : 'connected';
   useEffect(() => { onState?.(state); }, [state, onState]);
   if (!data || data.restricted) return null;
@@ -34,6 +36,13 @@ export default function ChannexSyncPanel({ onState }: { onState?: (state: Channe
   const callsTotal = data.callsTotal ?? data.recentCalls.length;
 
   async function fullSync() {
+    const ok = await ask({
+      title: 'Send everything to the booking sites again?',
+      body: 'Prices and open nights for the next 500 days are resent to Airbnb, Booking.com and every other channel, for every unit set up in Channex.',
+      meta: `${data?.linkedUnits ?? 0} ${data?.linkedUnits === 1 ? 'unit' : 'units'} set up in Channex`,
+      confirmLabel: 'Send everything', danger: false,
+    });
+    if (ok === null) return;
     setBusy(true);
     try {
       const r = await api.post<{ units: number; sent: { availability?: { status: number }; restrictions?: { status: number } } }>('/integrations/channex/full-sync', {});
@@ -57,6 +66,7 @@ export default function ChannexSyncPanel({ onState }: { onState?: (state: Channe
 
   return (
     <Card>
+      {confirmDialog}
       <div className="pt-[18px] px-[22px] pb-[14px] flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-3">
           <span className="text-title font-semibold">Channex updates</span>

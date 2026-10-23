@@ -409,7 +409,7 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
     const prev = readiness;
     setReadiness(u.id, next);
     api.patch(`/units/${u.id}/readiness`, { readiness: next })
-      .then(() => { toast({ tone: 'success', title: 'Unit state updated.', body: `${unitLabel} is now ${statusLabel('readiness', next)}.` }); reload(); })
+      .then(() => { toast({ tone: 'success', title: 'Status updated.', body: `${unitLabel} is now ${statusLabel('readiness', next)}.` }); reload(); })
       .catch(err => { setReadiness(u.id, prev === u.readiness ? null : prev); notifyFailure(err); });
   }
   function takeFile(file: File) {
@@ -448,7 +448,7 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
               {/* One control for the state; the dot keeps its colour. A native select, so the list is never clipped by the card. */}
               <span className="inline-flex items-center gap-2" title="Change the unit state">
                 <StatusDot entity="readiness" value={readiness} />
-                <Select label="Unit state" className="w-[150px]" value={readiness} onChange={v => changeReadiness(v as UnitReadiness)}
+                <Select label="Status" className="w-[150px]" value={readiness} onChange={v => changeReadiness(v as UnitReadiness)}
                   options={READINESS_OPTIONS.map(r => ({ value: r, label: statusLabel('readiness', r) }))} />
               </span>
               {form?.parentUnitId && <StatusBadge tone="warning" label="Sub-unit" />}
@@ -473,7 +473,7 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
 
         <div className="grid grid-cols-3 sm:grid-cols-[repeat(auto-fit,minmax(96px,1fr))] gap-x-4 gap-y-5 pt-5 px-5 sm:px-6 pb-5 [border-top:1px_solid_var(--color-line-soft)]">
           {(rental ? [
-            ['Occupancy', `${p.occupancy}%`], ['Avg nightly price', rm(p.adr, { cents: false })], ['Earnings per available night', rm(p.revpar, { cents: false })],
+            ['Occupancy', `${p.occupancy}%`], ['Avg nightly price', rm(p.adr, { cents: false })], ['Earnings per night (all nights)', rm(p.revpar, { cents: false })],
             ['Rating', p.rating != null ? p.rating.toFixed(2) : '—'], ['Open maintenance jobs', String(openIssues)],
           ] : [['Purpose', u.purpose === 'warehouse' ? 'Warehouse' : 'Showroom'], ['Car park bays', form?.parkingBays?.length ? String(form.parkingBays.length) : '—'], ['Open maintenance jobs', String(openIssues)]]).map(([label, value]) => (
             <div key={label} className="flex flex-col gap-2 min-w-0">

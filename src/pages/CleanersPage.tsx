@@ -6,6 +6,7 @@ import Icon from '../components/Icon';
 import { StaleBanner } from '../components/DataState';
 import { DataTable, type Column } from '../components/DataTable';
 import { useToast } from '../components/Toast';
+import { useConfirm } from '../components/ConfirmDialog';
 import { useApi } from '../lib/useApi';
 import { useCleaners, type Cleaner, type Employment } from '../lib/useCleaners';
 import { api, notifyFailure } from '../lib/api';
@@ -42,6 +43,7 @@ export default function CleanersPage() {
   const [edits, setEdits] = useState<Record<string, Partial<Cleaner>>>({});
   const [modal, setModal] = useState<{ mode: 'create' | 'edit'; id?: string; draft: Draft } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [confirmDialog, ask] = useConfirm();
 
   const roster = [...added, ...cleaners].map(c => ({ ...c, ...edits[c.id] }));
   const patch = (id: string, p: Partial<Cleaner>) => setEdits(e => ({ ...e, [id]: { ...e[id], ...p } }));
@@ -85,9 +87,16 @@ export default function CleanersPage() {
   }
 
   async function toggleActive(c: Cleaner) {
+    if (c.isActive && await ask({
+      title: `Deactivate ${c.name}?`,
+      body: 'They come off the assign picker, so no new cleaning jobs can go to them. Jobs already assigned stay as they are. You can reactivate them at any time.',
+      confirmLabel: 'Deactivate', danger: true,
+    }) === null) return;
     patch(c.id, { isActive: !c.isActive });
-    toast({ tone: c.isActive ? 'warning' : 'success', title: c.isActive ? 'Cleaner deactivated.' : 'Cleaner reactivated.', body: `${c.name}${c.isActive ? ' is off the assign picker.' : ' is back on the roster.'}` });
-    try { await api.patch(`/housekeeping/cleaners/${c.id}`, { isActive: !c.isActive }); } catch (e) { notifyFailure(e); }
+    try {
+      await api.patch(`/housekeeping/cleaners/${c.id}`, { isActive: !c.isActive });
+      toast({ tone: c.isActive ? 'warning' : 'success', title: c.isActive ? 'Cleaner deactivated.' : 'Cleaner reactivated.', body: `${c.name}${c.isActive ? ' is off the assign picker.' : ' is back on the roster.'}` });
+    } catch (e) { patch(c.id, { isActive: c.isActive }); notifyFailure(e); }
   }
 
   function openEdit(c: Cleaner) {
@@ -96,6 +105,7 @@ export default function CleanersPage() {
 
   return (
     <>
+      {confirmDialog}
       <PageHeader
         title="Cleaners"
         sub={ready ? `${plural(roster.length, 'cleaner')} on the roster · ${activeCount} active · ${internal.length} internal, ${outsourced.length} outsourced` : 'Loading the roster…'}

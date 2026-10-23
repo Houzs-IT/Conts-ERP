@@ -165,7 +165,7 @@ export default function PortfolioPage() {
       render: r => <span className={NUM}>{percent(r.occupancy)}</span> },
     ...(money ? [
       { key: 'adr', label: 'Avg nightly price', type: 'money', value: r => r.adr, width: 100, render: r => <span className={NUM}>{rm(r.adr, { cents: false })}</span> },
-      { key: 'revpar', label: 'Earnings per available night', type: 'money', value: r => r.revpar, width: 100, render: r => <span className={NUM}>{rm(r.revpar, { cents: false })}</span> },
+      { key: 'revpar', label: 'Earnings per night (all nights)', type: 'money', value: r => r.revpar, width: 100, render: r => <span className={NUM}>{rm(r.revpar, { cents: false })}</span> },
       { key: 'revenue', label: 'Earnings', type: 'money', value: r => r.revenue, width: 120, phone: 'right',
         render: r => <span className={`${NUM} font-medium`}>{rm(r.revenue, { cents: false })}</span> },
     ] as Column<PortfolioRow>[] : []),
@@ -246,7 +246,7 @@ export default function PortfolioPage() {
             <span><span className="text-muted-ink">Occupancy </span><span className="font-semibold tabular-nums">{percent(occ)}</span></span>
             {money && <>
               <span><span className="text-muted-ink">Avg nightly price </span><span className="font-semibold tabular-nums">{rm(adr, { cents: false })}</span></span>
-              <span><span className="text-muted-ink">Earnings per available night </span><span className="font-semibold tabular-nums">{rm(revpar, { cents: false })}</span></span>
+              <span><span className="text-muted-ink">Earnings per night (all nights) </span><span className="font-semibold tabular-nums">{rm(revpar, { cents: false })}</span></span>
               <span><span className="text-muted-ink">Earnings </span><span className="font-semibold tabular-nums">{rm(revenue, { cents: false })}</span></span>
             </>}
           </div>

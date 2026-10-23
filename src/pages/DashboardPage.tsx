@@ -29,7 +29,7 @@ interface KpiPayload { kpis: Kpi[]; period: string; generatedAt: string }
 
 const KPI_LABEL: Record<string, string> = {
   accommodation_revenue: 'Earnings', occupancy: 'Occupancy', adr: 'Avg nightly price',
-  revpar: 'Earnings per available night', net_owner_payout: 'Net Payout to Owner',
+  revpar: 'Earnings per night (all nights)', net_owner_payout: 'Net Payout to Owner',
 };
 
 const KPI_FALLBACK: KpiPayload = {
@@ -329,7 +329,7 @@ const TOP_COLUMNS: Column<PortfolioRow>[] = [
     render: u => <span className="font-medium whitespace-nowrap overflow-hidden text-ellipsis block">{u.unitNumber}</span> },
   { key: 'occupancy', label: 'Occupancy', type: 'number', value: u => u.occupancy, width: 90, render: u => <span className={NUM}>{u.occupancy.toFixed(1)}%</span> },
   { key: 'adr', label: 'Avg nightly price', type: 'money', value: u => u.adr, width: 90, render: u => <span className={NUM}>{rm(u.adr, { cents: false })}</span> },
-  { key: 'revpar', label: 'Earnings per available night', type: 'money', value: u => u.revpar, width: 90, render: u => <span className={NUM}>{rm(u.revpar, { cents: false })}</span> },
+  { key: 'revpar', label: 'Earnings per night (all nights)', type: 'money', value: u => u.revpar, width: 90, render: u => <span className={NUM}>{rm(u.revpar, { cents: false })}</span> },
   { key: 'revenue', label: 'Earnings', type: 'money', value: u => u.revenue, width: 100, render: u => <span className={`${NUM} font-medium`}>{rm(u.revenue, { cents: false })}</span> },
   { key: 'exception', label: 'Exception', type: 'status', value: u => u.exception?.label ?? null, status: u => u.exception, width: 130, align: 'right',
     render: u => (u.exception ? <StatusBadge tone={u.exception.tone} label={u.exception.label} size="sm" /> : <span className="text-meta text-faint">None</span>) },
@@ -452,7 +452,7 @@ export default function DashboardPage() {
         sub={[period ? `${monthLabel(period)} to date` : '', lastUpdated ? `Last updated ${lastUpdated}` : ''].filter(Boolean).join(' · ')
           // Holds the subtitle's line while the figures load, so the page does not shift down when it arrives.
           || (kpi.loading ? <span aria-hidden className="skeleton inline-block align-middle h-[11px] w-[200px]" /> : undefined)}
-        actions={<Button variant="secondary" size="sm" onClick={() => go('#/properties/units')}>Add unit</Button>}
+        actions={<Button variant="secondary" size="sm" onClick={() => go('#/properties/units')}>Manage units</Button>}
         primary={<Button variant="primary" size="sm" icon={<Icon name="Plus" size="sm" />} onClick={() => go('#/reservations/bookings?create=1')}>Create reservation</Button>}
       />
 
