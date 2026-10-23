@@ -97,6 +97,22 @@ export default function ListView({ onGoToDepartments }: { onGoToDepartments: () 
       return false;
     } finally { setBusy(false); }
   }
+  /** Changing a kind changes what every person in the department can reach, so it asks first. */
+  const askKindChange = (d: Department, kind: DepartmentKind) => {
+    if (kind === d.kind) return;
+    const people = plural(d.headCount, 'person', 'people');
+    const effect = kind === 'management'
+      ? `Management means Full access to everything. ${people} in ${d.name} will get it.`
+      : kind === 'staff'
+        ? `Staff get the access their department, position and own settings give. ${people} in ${d.name} will follow those rules instead of ${d.kind === 'management' ? 'Full access' : 'the field app'}.`
+        : `${kind === 'cleaning' ? 'Cleaning' : 'Maintenance'} people use the field app only, with no desk screens. ${people} in ${d.name} will lose their desk screens.`;
+    setConfirm({
+      title: `Change ${d.name} to ${KIND_OPTIONS.find(o => o.value === kind)?.label ?? kind}?`,
+      body: effect,
+      confirmLabel: 'Change kind', busyLabel: 'Changing…', danger: kind === 'management',
+      onConfirm: async () => { setConfirm(null); await run(() => api.patch(`/departments/${d.id}`, { kind }), 'The kind was not changed.'); },
+    });
+  };
   const askDelete = (kind: MovePrompt['kind'], id: string, name: string, departmentId: string) => setConfirm({
     title: `Delete ${name}?`,
     body: kind === 'department'
@@ -140,6 +156,7 @@ export default function ListView({ onGoToDepartments }: { onGoToDepartments: () 
                 canUp={departments.indexOf(d) > 0} canDown={departments.indexOf(d) < departments.length - 1}
                 onMove={delta => moveDepartment(d.id, delta)}
                 onPatch={(patch, fail) => run(() => api.patch(`/departments/${d.id}`, patch), fail)}
+                onKindChange={kind => askKindChange(d, kind)}
                 onDelete={() => askDelete('department', d.id, d.name, d.id)}
                 onAddPosition={name => run(() => api.post(`/departments/${d.id}/positions`, { name }), 'The position was not added.')}
                 onRenamePosition={(p, name) => run(() => api.patch(`/departments/positions/${p.id}`, { name }), 'The position was not renamed.')}
@@ -158,10 +175,11 @@ export default function ListView({ onGoToDepartments }: { onGoToDepartments: () 
   );
 }
 
-function DepartmentCard({ d, canEdit, busy, canUp, canDown, onMove, onPatch, onDelete, onAddPosition, onRenamePosition, onMovePosition, onDeletePosition }: {
+function DepartmentCard({ d, canEdit, busy, canUp, canDown, onMove, onPatch, onKindChange, onDelete, onAddPosition, onRenamePosition, onMovePosition, onDeletePosition }: {
   d: Department; canEdit: boolean; busy: boolean; canUp: boolean; canDown: boolean;
   onMove: (delta: -1 | 1) => void;
-  onPatch: (patch: { name?: string; kind?: DepartmentKind; side?: UserSide }, failTitle: string) => Promise<boolean>;
+  onPatch: (patch: { name?: string; side?: UserSide }, failTitle: string) => Promise<boolean>;
+  onKindChange: (kind: DepartmentKind) => void;
   onDelete: () => void;
   onAddPosition: (name: string) => Promise<boolean>;
   onRenamePosition: (p: Position, name: string) => Promise<boolean>;
@@ -178,7 +196,7 @@ function DepartmentCard({ d, canEdit, busy, canUp, canDown, onMove, onPatch, onD
         <span className="flex-1" />
         {canEdit ? (
           <>
-            <Select label={`Kind of ${d.name}`} value={d.kind} onChange={v => void onPatch({ kind: v as DepartmentKind }, 'The kind was not changed.')} options={KIND_OPTIONS} disabled={busy} />
+            <Select label={`Kind of ${d.name}`} value={d.kind} onChange={v => onKindChange(v as DepartmentKind)} options={KIND_OPTIONS} disabled={busy} />
             <Select label={`Side of ${d.name}`} value={d.side} onChange={v => void onPatch({ side: v as UserSide }, 'The side was not changed.')} options={SIDE_OPTIONS} disabled={busy} />
             {d.kind === 'management'
               ? <span className="text-caption text-muted-ink w-[72px]">Cannot be deleted</span>
@@ -251,8 +269,9 @@ function MoveDialog({ prompt, departments, busy, onClose, onMove }: {
   prompt: MovePrompt; departments: Department[]; busy: boolean; onClose: () => void; onMove: (moveTo: unknown) => Promise<boolean>;
 }) {
   const isDept = prompt.kind === 'department';
-  const targets = departments.filter(d => !isDept || d.id !== prompt.id);
-  const [deptId, setDeptId] = useState(isDept ? targets[0]?.id ?? '' : prompt.departmentId);
+  // Management is left out: it gives Full access, which is chosen for each person on the user form, never by a delete.
+  const targets = departments.filter(d => d.id !== prompt.id && d.kind !== 'management');
+  const [deptId, setDeptId] = useState(isDept ? '' : prompt.departmentId);
   const positions = departments.find(d => d.id === deptId)?.positions.filter(p => isDept || p.id !== prompt.id) ?? [];
   const [positionId, setPositionId] = useState('');
   const submit = (e: FormEvent) => {
@@ -269,10 +288,12 @@ function MoveDialog({ prompt, departments, busy, onClose, onMove }: {
       </>}>
       <form id="move-form" onSubmit={submit} className="flex flex-col gap-4">
         {isDept && <Select label="Move them to department" showLabel size="md" value={deptId}
-          onChange={v => { setDeptId(v); setPositionId(''); }} options={targets.map(d => ({ value: d.id, label: d.name }))} />}
+          onChange={v => { setDeptId(v); setPositionId(''); }} placeholder="Choose a department" options={targets.map(d => ({ value: d.id, label: d.name }))} />}
         <Select label={isDept ? 'Position' : 'Move them to position'} showLabel size="md" value={positionId} onChange={setPositionId}
           placeholder="No position" options={positions.map(p => ({ value: p.id, label: p.name }))} />
-        <span className="text-meta text-muted-ink">Their access follows the new department and position straight away.</span>
+        <span className="text-meta text-muted-ink">
+          Their access follows the new department and position straight away.{isDept ? ' Management is not offered: that gives Full access, so set it for each person on the user form.' : ''}
+        </span>
       </form>
     </Modal>
   );
