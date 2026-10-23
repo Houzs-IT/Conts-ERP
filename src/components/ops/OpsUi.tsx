@@ -187,7 +187,7 @@ export function Checklist({ taskId, items, readOnly, onChange }: { taskId: strin
 
 /* ---------- who does a repair ---------- */
 
-export interface Technician { name: string; kind: 'in_house' | 'contractor'; role: string | null }
+export interface Technician { name: string; kind: 'in_house' | 'contractor'; role: string | null; userId?: string | null }
 export const KIND_WORD: Record<'in_house' | 'contractor', string> = { in_house: 'In-house', contractor: 'Contractor' };
 
 /** Who can be given a job: the company's own people and every contractor used before (GET /maintenance/technicians).
@@ -200,7 +200,8 @@ export function useTechnicians(on = true) {
 export function AssigneePicker({ value, onChange, techs, autoFocus }: { value: string; onChange: (name: string) => void; techs: Technician[]; autoFocus?: boolean }) {
   const known = techs.some(t => t.name === value);
   const [typing, setTyping] = useState(!!value && !known && techs.length > 0);
-  const kind = techs.find(t => t.name.toLowerCase() === value.trim().toLowerCase())?.kind ?? (value.trim() ? 'contractor' : null);
+  const picked = techs.find(t => t.name.toLowerCase() === value.trim().toLowerCase());
+  const kind = picked?.kind ?? (value.trim() ? 'contractor' : null);
   return (
     <div className="flex flex-col gap-1.5 min-w-0">
       {typing ? (
@@ -210,7 +211,9 @@ export function AssigneePicker({ value, onChange, techs, autoFocus }: { value: s
           options={techs.map(t => ({ value: t.name, label: t.name, group: t.kind === 'in_house' ? 'In-house' : 'Contractors' }))} />
       )}
       <span className="text-meta text-muted-ink flex gap-1.5 flex-wrap items-center">
-        {kind && <span>{KIND_WORD[kind]}{kind === 'in_house' ? ', a staff account' : ''}.</span>}
+        {kind && <span>{KIND_WORD[kind]}{kind === 'in_house' && picked?.userId ? ', a staff account' : ''}.</span>}
+        {kind === 'in_house' && picked && !picked.userId && <span className="text-warning">No app access: they will not see this job on a phone. Give it under Workers.</span>}
+        {kind === 'contractor' && value.trim() && <span>No app: tell them about the job yourself.</span>}
         <button type="button" className="text-accent cursor-pointer font-medium" onClick={() => { setTyping(!typing); onChange(''); }}>
           {typing ? 'Pick from the list' : 'New contractor'}
         </button>

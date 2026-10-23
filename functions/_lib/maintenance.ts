@@ -1,6 +1,41 @@
-import { type Env, one } from './db';
-import { hasColumn } from './auth';
+import { type Env, all, one, run, audit, nowIso } from './db';
+import { type Session, hasColumn } from './auth';
 import { technicianFor } from './notify';
+
+/** Migration 0144: the technician list (Workers > Technicians) and each job's link to it. */
+export const hasTechnicianList = (env: Env): Promise<boolean> => hasColumn(env, 'maintenance_issues', 'technician_id').catch(() => false);
+
+/** The logins an in-house entry on the technician list may be linked to. */
+export const TECH_LOGIN_ROLES = ['technician', 'housekeeper', 'operations_staff', 'operations_manager'];
+
+/** Who a job is given to, as the job row keeps it. technicianId is undefined on a database without the list. */
+export interface Assignee { name: string; kind: 'in_house' | 'contractor'; userId: string | null | undefined; technicianId: string | null | undefined }
+
+/**
+ * The person a picked name stands for. With the technician list: the active entry of that name, and a name typed
+ * for the first time is added to the list as a contractor. A switched-off entry is refused, not silently reused.
+ * Without the list: matched against staff accounts by name, as before. Returns a message when it cannot be used.
+ */
+export async function pickAssignee(env: Env, session: Session, raw: string): Promise<Assignee | string> {
+  const name = raw.trim().slice(0, 80);
+  if (!(await hasTechnicianList(env))) {
+    return { name, kind: await assigneeKindFor(env, name), userId: await assigneeUserId(env, name), technicianId: undefined };
+  }
+  const found = await all<{ id: string; full_name: string; employment_type: string; user_id: string | null; is_active: number; active_login: string | null }>(env, `
+    SELECT t.id, t.full_name, t.employment_type, t.user_id, t.is_active, u.id AS active_login
+    FROM technicians t LEFT JOIN users u ON u.id = t.user_id AND u.is_active = 1
+    WHERE lower(trim(t.full_name)) = lower(?) ORDER BY t.is_active DESC`, name);
+  const active = found.filter(t => t.is_active);
+  if (active.length > 1) return `Two people on the technician list are called ${name}. Rename one under Workers > Technicians.`;
+  const [t] = active;
+  if (t) return { name: t.full_name, kind: t.employment_type === 'internal' ? 'in_house' : 'contractor', userId: t.active_login, technicianId: t.id };
+  if (found.length) return `${found[0]?.full_name ?? name} is switched off under Workers > Technicians. Switch them back on to give them jobs.`;
+
+  const id = crypto.randomUUID(), now = nowIso();
+  await run(env, `INSERT INTO technicians (id, full_name, employment_type, is_active, created_at, updated_at) VALUES (?, ?, 'outsourced', 1, ?, ?)`, id, name, now, now);
+  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'maintenance.technician_create', entityTable: 'technicians', entityId: id, after: { name, employment: 'outsourced', reason: 'new contractor typed on a job' } });
+  return { name, kind: 'contractor', userId: null, technicianId: id };
+}
 
 /** The staff account a typed technician name stands for (migration 0105, maintenance_issues.assignee_user_id): the one
  *  active account with that name, or null for a contractor or a name two accounts share. Undefined when the column is
