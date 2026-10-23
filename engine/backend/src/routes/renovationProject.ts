@@ -742,7 +742,7 @@ app.post("/:id/design-links", requirePermission("projects.write"), async (c) => 
   if (!v.ok) return c.json(v, 400);
   const d = v.value;
   if (await peopleRefusal(c, co, [...d.personIds, d.nextPersonId])) return c.json({ error: "person_not_found", message: "Pick the people from the list." }, 400);
-  const name = d.url.replace(/^https?:\/\//i, "").slice(0, 200);
+  const name = d.name ?? d.url.replace(/^https?:\/\//i, "").slice(0, 200);
   const row = await db(c).prepare(
     `INSERT INTO project_design_files (project_id, company_id, kind, version, file_name, external_url, person_id, uploaded_by, note, submitted_on, next_person_id)
      SELECT ?, ?, ?, coalesce(max(version), 0) + 1, ?, ?, ?, ?, ?, ?::date, ? FROM project_design_files WHERE project_id = ? AND kind = ?

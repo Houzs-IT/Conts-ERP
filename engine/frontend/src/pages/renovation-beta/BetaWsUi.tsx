@@ -45,9 +45,10 @@ const CSS = `
 .bws .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 .bws .ws-input{min-height:40px;width:100%;border:1px solid ${BETA.border};border-radius:8px;padding:0 8px;font:inherit;font-size:14px;background:${BETA.surface};color:${BETA.ink}}
 .bws .ws-input-sm{min-height:38px;width:100%;min-width:0;border:1px solid ${BETA.border};border-radius:8px;padding:0 8px;font:inherit;font-size:14px;background:${BETA.surface};color:${BETA.ink}}
-@media (max-width:720px){.bws .h1{font-size:22px!important}}
-.bws .tabs{display:flex;flex-wrap:wrap;gap:4px;border-bottom:1px solid ${BETA.line}}
-.bws .tab{display:flex;align-items:center;min-height:44px;padding:0 16px;border:0;border-bottom:3px solid transparent;background:transparent;font:inherit;color:${WS.text2};font-weight:500;cursor:pointer}
+@media (max-width:720px){.bws .h1{font-size:22px!important}.bws .tab{padding:0 12px}.bws .chips{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))}.bws .chips>*{min-width:0}}
+.bws .tabs{display:flex;flex-wrap:nowrap;gap:4px;border-bottom:1px solid ${BETA.line};overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.bws .tabs::-webkit-scrollbar{display:none}
+.bws .tab{display:flex;flex:none;white-space:nowrap;align-items:center;min-height:44px;padding:0 16px;border:0;border-bottom:3px solid transparent;background:transparent;font:inherit;color:${WS.text2};font-weight:500;cursor:pointer}
 .bws .tab[aria-current="page"]{border-bottom-color:${BETA.accent};color:${BETA.accentInk};font-weight:700}
 .bws .tab:hover{color:${BETA.accentInk}}
 .bws .link{padding:0;border:0;background:transparent;font:inherit;font-size:13px;font-weight:600;color:${BETA.accent};cursor:pointer;text-decoration:underline}
@@ -65,7 +66,7 @@ export const cardStyle: CSSProperties = {
   background: BETA.surface, border: `1px solid ${BETA.line}`, borderRadius: 12, padding: 20, display: "flex", flexDirection: "column", gap: 14,
 };
 
-export const h2Style: CSSProperties = { margin: 0, fontSize: 17, fontWeight: 700 };
+export const h2Style: CSSProperties = { margin: 0, fontSize: 18, fontWeight: 700 };
 export const subStyle: CSSProperties = { fontSize: 13, color: BETA.muted };
 
 interface WsCardProps {

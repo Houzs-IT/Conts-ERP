@@ -520,3 +520,9 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - After 0144 is live: switch off duplicate contractors the fill-in copied from old typos (Workers > Technicians).
 - Gap: a PIN account that also has a real email can be sent a password reset link, which sets an 8-character password the PIN box cannot type. Give a New PIN from Workers instead.
 - Tests: scripts/api-checks/field-pin-sign-in.mjs, workers-technicians.mjs, technician-list-fill.mjs (throwaway database only).
+
+## Beta Drawings uploads (feat/beta-uploads, migration 0149, 24 Oct 2026)
+- [ ] Apply migration 0149 (2D sheets) to staging, then production, before merging: without it Upload 2D set answers "not switched on yet" and Beta falls back to one-file 2D upload.
+- [ ] 2D sheets: no way yet to remove a sheet from the set or rename one after upload (only replace or add).
+- [ ] Beta is not reachable on a phone browser (the mobile shell has no /beta route); the 375px layout was checked in a desktop frame.
+- [ ] Owner mockup (artifact 1vwc4QNboJAH4MN7eRF5Rk) could not be read by the agent; compare Drawings against it by eye.

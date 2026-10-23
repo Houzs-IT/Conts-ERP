@@ -138,9 +138,10 @@ const pastDate = (x: unknown, today: string): Refusal<string> => {
   return { ok: true, value: s };
 };
 
-export interface DesignLinkInput { kind: "2d" | "3d" | "other"; url: string; submittedOn: string; personId: number | null; personIds: number[]; nextPersonId: number | null; note: string | null }
+export interface DesignLinkInput { kind: "2d" | "3d" | "other"; url: string; name: string | null; submittedOn: string; personId: number | null; personIds: number[]; nextPersonId: number | null; note: string | null }
 
-/** A design submission given as a link (3D is always a link). nextPersonId (the 2D PIC) applies to 3D only. */
+/** A design submission given as a link (3D is always a link). nextPersonId (the 2D PIC) applies to 3D only; name is what
+    the screens show for it (Beta), the link itself when not given. */
 export function cleanDesignLink(b: Record<string, unknown>, today: string): Refusal<DesignLinkInput> {
   const kind = cleanDesignKind(b.kind);
   if (!kind) return no("kind_invalid", "Say whether this is a 2D, 3D or other submission.");
@@ -151,7 +152,7 @@ export function cleanDesignLink(b: Record<string, unknown>, today: string): Refu
   const people = cleanPeopleList(b);
   const next = optPerson(b.nextPersonId);
   if (!people.ok || next === false) return no("person_invalid", "Pick the people from the list.");
-  return { ok: true, value: { kind, url, submittedOn: on.value, ...people.value, nextPersonId: kind === "3d" ? next : null, note: text(b.note) } };
+  return { ok: true, value: { kind, url, name: text(b.name, 200), submittedOn: on.value, ...people.value, nextPersonId: kind === "3d" ? next : null, note: text(b.note) } };
 }
 
 export interface DesignNoteInput { kind: "2d" | "3d"; notedOn: string; requestedByPersonId: number | null; requestedByText: string | null; note: string }
