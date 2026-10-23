@@ -122,7 +122,7 @@ function TypeCard({ on, onPick, icon, title, badge, sub, uploads }: { on: boolea
         <span style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, width: "100%" }}>
           <span style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
             <span style={{ flex: "none", width: 38, height: 38, borderRadius: 8, background: WS.chip, display: "flex", alignItems: "center", justifyContent: "center" }}><TypeIcon kind={icon} /></span>
-            <span style={{ fontSize: 17, fontWeight: 700 }}>{title}</span>
+            <span style={{ fontSize: 18, fontWeight: 700 }}>{title}</span>
           </span>
           {badge}
         </span>
@@ -189,7 +189,7 @@ function MeasureDetail({ measures, projectId, onView, onUpload, onError }: {
             <div style={{ display: "flex", flexWrap: "wrap", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
               <div style={{ minWidth: 0 }}>
                 <div style={eyebrow}>Site measurement</div>
-                <h2 style={{ margin: "2px 0 0", fontSize: 20, fontWeight: 700 }}>
+                <h2 style={{ margin: "2px 0 0", fontSize: 18, fontWeight: 700 }}>
                   {m.done_on ? dayMonthYear(m.done_on) : "Not dated"} <span style={{ fontSize: 14, fontWeight: 600, color: m.done_on ? WS.green : WS.amber }}>· {m.done_on ? "done" : "not done yet"}</span>
                 </h2>
                 <div style={{ color: BETA.muted, fontSize: 14 }}>{names ? `Measured by ${names} · ` : ""}{plural(files.length, "file")}</div>
@@ -303,7 +303,7 @@ function KindDetail({ kind, p, set, onEdit, onOpen, onUpload, sheets, sheetsRead
     <section aria-label={`${K} drawings`} style={sectionStyle}>
       <div>
         <div style={eyebrow}>{kind === "3d" ? "3D design" : "2D drawings"}</div>
-        <h2 style={{ margin: "2px 0 0", fontSize: 22, fontWeight: 700 }}>{head} {suffix && <span style={{ fontSize: 15, fontWeight: 600, color: suffixColor }}>{suffix}</span>}</h2>
+        <h2 style={{ margin: "2px 0 0", fontSize: 18, fontWeight: 700 }}>{head} {suffix && <span style={{ fontSize: 14, fontWeight: 600, color: suffixColor }}>{suffix}</span>}</h2>
         {shown && <div style={{ color: BETA.muted }}>{versionLabel(kind, shown.file)} · uploaded {dayMonthYear(submittedOf(shown.file))} by {picNames(shown.file)}</div>}
         {!shown && <div style={{ color: BETA.muted }}>{plural(set.versions.length, "version")}</div>}
       </div>
@@ -543,7 +543,7 @@ function LinksBox({ versions, onOpen }: { versions: VersionInfo[]; onOpen: (f: D
   const [copied, setCopied] = useState<number | null>(null);
   async function copy(f: DesignFile): Promise<void> {
     if (!f.external_url) return;
-    try { await navigator.clipboard.writeText(f.external_url); setCopied(f.id); } catch { window.prompt("Copy the link:", f.external_url); }
+    try { await navigator.clipboard.writeText(f.external_url); setCopied(f.id); } catch { setCopied(-f.id); }
   }
   return (
     <div style={boxStyle}>
@@ -557,7 +557,7 @@ function LinksBox({ versions, onOpen }: { versions: VersionInfo[]; onOpen: (f: D
               {f.external_url && <div style={{ fontSize: 12, color: BETA.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.external_url}</div>}
             </div>
             <WsBtn kind="teal" size="sm" onClick={() => onOpen(f)}>Open<span className="sr"> {f.file_name}</span></WsBtn>
-            {f.external_url && <WsBtn size="sm" onClick={() => void copy(f)}>{copied === f.id ? "Copied" : "Copy for client"}<span className="sr"> {f.file_name}</span></WsBtn>}
+            {f.external_url && <WsBtn size="sm" onClick={() => void copy(f)}>{copied === f.id ? "Copied" : copied === -f.id ? "Copy failed, select the link" : "Copy for client"}<span className="sr"> {f.file_name}</span></WsBtn>}
           </li>
         ))}
       </ul>

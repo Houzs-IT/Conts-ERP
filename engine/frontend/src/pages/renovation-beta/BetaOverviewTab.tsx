@@ -16,7 +16,10 @@ import {
   approvedSet, dayMonth, dayMonthYear, emptyPaymentRows, nextStep, paymentCard, paymentStrip, renovationDays, siteTimeline, todoList, trimTimeline, designTodoRows, mergeTodo,
   type SiteStep, type TodoAction, type TodoRow,
 } from "./renovationBetaModel";
+import { downloadAsPdf } from "./renovationBetaPdf";
+import { sheetSetAt, sheetsApi } from "./renovationBetaSheets";
 import { BETA } from "./renovationBetaTheme";
+import { useQuery } from "../../hooks/useQuery";
 import type { DesignFile } from "../projects/renovation/simpleApi";
 
 const column: CSSProperties = { minWidth: 0, display: "flex", flexDirection: "column", gap: 20 };
@@ -308,6 +311,23 @@ function FinalDrawingsCard({ p, onOpen }: { p: BetaTabProps; onOpen: (f: DesignF
   const two = approvedSet(records.files, workspace.reviews, "2d").approved;
   const three = approvedSet(records.files, workspace.reviews, "3d").approved;
   const outline: CSSProperties = { ...btnStyle("outline", "sm"), minHeight: 38, flex: 1 };
+  const sheetsQ = useQuery(["renovation-beta", "sheets", p.projectId], () => sheetsApi.list(p.projectId), [p.projectId]);
+  const sheets = sheetsQ.data?.sheets ?? [];
+  const [making, setMaking] = useState(false);
+  // A 2D version made of sheets downloads as one PDF of its whole set, not only its first sheet.
+  async function download2d(f: DesignFile): Promise<void> {
+    if (!sheets.length) { onOpen(f); return; }
+    const parts = sheetSetAt(records.files, sheets, f.version).filter((x) => x.key).map((x) => ({ key: x.key ?? "", fileName: x.fileName }));
+    setMaking(true);
+    try {
+      const r = await downloadAsPdf(p.projectId, parts, `${p.detail.project.name} 2D V${f.version}.pdf`.replace(/[\/:*?"<>|]+/g, " "));
+      if (r.skipped.length) p.onError(`Not in the PDF (not a PDF or photo): ${r.skipped.join(", ")}`);
+    } catch (e) {
+      p.onError(`The PDF could not be made: ${errorText(e)}`);
+    } finally {
+      setMaking(false);
+    }
+  }
   return (
     <WsCard title="Final drawings" gap={10} right={<button type="button" className="link" onClick={() => p.openTab("drawings")}>All versions →</button>}>
       <div style={{ border: `1px solid ${two ? WS.tealLine : BETA.line}`, background: two ? WS.tealSoft : BETA.surface, borderRadius: 10, padding: 12, display: "flex", flexDirection: "column", gap: 8 }}>
@@ -318,7 +338,7 @@ function FinalDrawingsCard({ p, onOpen }: { p: BetaTabProps; onOpen: (f: DesignF
           </div>
           {two && <span style={{ padding: "3px 8px", borderRadius: 6, background: BETA.accent, color: "#FFFFFF", fontSize: 11, fontWeight: 600 }}>For site</span>}
         </div>
-        {two && <button type="button" style={outline} onClick={() => onOpen(two.file)}>{two.file.external_url ? "Open 2D link" : "Download 2D PDF"}</button>}
+        {two && <button type="button" style={outline} disabled={making} onClick={() => void (two.file.external_url ? onOpen(two.file) : download2d(two.file))}>{two.file.external_url ? "Open 2D link" : making ? "Making PDF..." : "Download 2D PDF"}</button>}
       </div>
       <div style={{ border: `1px solid ${BETA.line}`, borderRadius: 10, padding: 12, display: "flex", flexDirection: "column", gap: 8 }}>
         <div>
@@ -326,7 +346,7 @@ function FinalDrawingsCard({ p, onOpen }: { p: BetaTabProps; onOpen: (f: DesignF
           <div style={{ fontSize: 12, color: BETA.muted }}>{three ? `Client approved ${dayMonth(three.review?.approvedOn)}` : "Not approved yet"}</div>
         </div>
         {three && (
-          <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
             {three.file.r2_key && <button type="button" style={outline} onClick={() => onOpen(three.file)}>3D PDF</button>}
             {three.file.external_url && (
               <a href={three.file.external_url} target="_blank" rel="noopener noreferrer" style={{ ...btnStyle("teal", "sm"), minHeight: 38, flex: 1 }}>3D link</a>

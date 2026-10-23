@@ -51,9 +51,6 @@ export function sheetSetAt(files: readonly DesignFile[], sheets: readonly BetaSh
   return [...set.values()];
 }
 
-/** True when the version holds sheets (rather than being one file). */
-export const hasSheets = (fileId: number, sheets: readonly BetaSheet[]): boolean => sheets.some((s) => s.fileId === fileId);
-
 /** A sheet's name from its file name: no extension, separators read as spaces. */
 export function sheetNameOf(fileName: string): string {
   return fileName.replace(/\.[A-Za-z0-9]{1,5}$/, "").replace(/[_]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 120) || "Sheet";

@@ -82,7 +82,7 @@ function useForm(): { busy: boolean; error: string | null; setError: (t: string 
 /* ---------- Site measure ---------- */
 
 function MeasureForm({ p, onClose, onSaved }: FormProps): ReactElement {
-  const last = [...p.records.measures].sort((a, b) => (b.done_on ?? "").localeCompare(a.done_on ?? "") || b.id - a.id)[0];
+  const last = [...p.records.measures].sort((a, b) => (b.done_on ?? "").localeCompare(a.done_on ?? "") || b.id - a.id).at(0);
   const [on, setOn] = useState(p.today);
   const [people, setPeople] = useState<number[]>(() => idsOf(last?.people, null));
   const [note, setNote] = useState("");
@@ -138,7 +138,7 @@ function MeasureFilesForm({ p, measure, onClose, onSaved }: FormProps & { measur
 
 function DesignForm({ p, kind, link, onClose, onSaved }: FormProps & { kind: DesignKind; link: boolean }): ReactElement {
   const K = kind.toUpperCase();
-  const last: DesignFile | undefined = p.records.files.filter((x) => x.kind === kind).sort((a, b) => b.version - a.version)[0];
+  const last: DesignFile | undefined = p.records.files.filter((x) => x.kind === kind).sort((a, b) => b.version - a.version).at(0);
   const nextVersion = (last?.version ?? 0) + 1;
   const [file, setFile] = useState<File[]>([]);
   const [url, setUrl] = useState("");
@@ -164,7 +164,7 @@ function DesignForm({ p, kind, link, onClose, onSaved }: FormProps & { kind: Des
           onSaved(`${K} v${r.version} added.`);
           return;
         }
-        const picked = file[0];
+        const picked = file.at(0);
         if (!picked) { f.setError(`Choose the ${K} file.`); return; }
         const ready = await readyFiles([picked]);
         if ("error" in ready) { f.setError(ready.error); return; }
@@ -198,7 +198,7 @@ interface SheetRow { id: number; file: File; name: string; replaces: boolean }
 /** The first 2D set (several sheets at once), or a new version that replaces some sheets and may add new ones. */
 function SheetsForm({ p, sheets, onClose, onSaved }: FormProps & { sheets: readonly BetaSheet[] }): ReactElement {
   const twoD = p.records.files.filter((x) => x.kind === "2d").sort((a, b) => b.version - a.version);
-  const last = twoD[0];
+  const last = twoD.at(0);
   const nextVersion = (last?.version ?? 0) + 1;
   const current = last ? sheetSetAt(p.records.files, sheets, last.version) : [];
   const [rows, setRows] = useState<SheetRow[]>([]);

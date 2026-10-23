@@ -62,18 +62,18 @@ export function BetaWsHeader({ d, p: board, canWrite, today, openDialog }: Heade
         </Link>
         <div style={{ minWidth: 0 }}>
           <h1 className="h1" style={{ margin: 0, fontSize: 28, fontWeight: 700, letterSpacing: "-.01em", overflowWrap: "anywhere" }}>{title}</h1>
-          <div style={{ marginTop: 4, color: BETA.muted, fontSize: 15 }}>
+          <div style={{ marginTop: 4, color: BETA.muted, fontSize: 14 }}>
             {line}
             {left && <> <span style={{ color: left.late ? WS.red : WS.green, fontWeight: 600 }}>{left.text}</span></>}
           </div>
-          <div role="group" aria-label="Project team" style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, marginTop: 12 }}>
+          <div role="group" aria-label="Project team" className="chips" style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, marginTop: 12 }}>
             {chips.map((c) => (
               <div
                 key={c.key}
                 style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px 6px 6px", borderRadius: 10, background: c.lead ? "#E4F1EF" : BETA.surface, border: `1px solid ${c.lead ? "#A9D2CC" : BETA.line}` }}
               >
                 <WsAvatar text={initials(c.name)} />
-                <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.2 }}>
+                <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.2, minWidth: 0, overflowWrap: "anywhere" }}>
                   <span style={{ fontSize: 11, color: BETA.muted, fontWeight: 600, textTransform: "uppercase", letterSpacing: ".05em" }}>{c.role}</span>
                   <span style={{ fontSize: 14, fontWeight: 700 }}>{c.name ?? "Not set"}</span>
                 </span>
@@ -103,16 +103,24 @@ export function BetaWsHeader({ d, p: board, canWrite, today, openDialog }: Heade
 
 /* ---------- The stepper ---------- */
 
+/** On a narrow screen the stepper scrolls sideways; start it at the current step rather than at Sales order. */
+function scrollIntoRow(el: HTMLLIElement | null): void {
+  const box = el?.parentElement?.parentElement;
+  if (!el || !box || box.scrollWidth <= box.clientWidth) return;
+  const at = el.getBoundingClientRect().left - box.getBoundingClientRect().left + box.scrollLeft;
+  box.scrollLeft = Math.max(0, at - (box.clientWidth - el.offsetWidth) / 2);
+}
+
 export function BetaWsStepper({ items, hold }: { items: StepperItem[]; hold: string | null }): ReactElement {
   return (
     <div style={{ overflowX: "auto", background: BETA.surface, border: `1px solid ${BETA.line}`, borderRadius: 12, padding: "20px 8px 16px" }}>
-      <ol aria-label="Project stages" style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", minWidth: 680 }}>
+      <ol aria-label="Project stages" style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", minWidth: 560 }}>
         {items.map((s, i) => {
           const last = i === items.length - 1;
           const done = s.state === "done";
           const now = s.state === "current";
           return (
-            <li key={s.key} aria-current={now ? "step" : undefined} style={{ flex: 1, position: "relative", display: "flex", flexDirection: "column", alignItems: "center", gap: 4, textAlign: "center" }}>
+            <li key={s.key} ref={now ? scrollIntoRow : undefined} aria-current={now ? "step" : undefined} style={{ flex: 1, position: "relative", display: "flex", flexDirection: "column", alignItems: "center", gap: 4, textAlign: "center" }}>
               {!last && <div aria-hidden="true" style={{ position: "absolute", top: 13, left: "50%", width: "100%", height: done ? 2 : 0, background: done ? BETA.accent : undefined, borderTop: done ? undefined : "2px dashed #C3CCCA" }} />}
               {done ? (
                 <div style={{ position: "relative", width: 28, height: 28, borderRadius: 14, background: BETA.accent, display: "flex", alignItems: "center", justifyContent: "center" }}><WsCheck /></div>
