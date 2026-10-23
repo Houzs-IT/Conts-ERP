@@ -201,9 +201,9 @@ describe("Beta payments: instalment status", () => {
       contractSen: 1000000,
       receivedSen: 300000,
       instalments: [
-        { seq: 1, label: "Payment 1", amountSen: 300000, paidSen: 300000, status: "paid", stageCode: "hacking", trigger: "stage_start" },
-        { seq: 2, label: "Payment 2", amountSen: 300000, paidSen: 0, status: "billed", stageCode: null, trigger: "stage_start" },
-        { seq: 3, label: "Payment 3", amountSen: 400000, paidSen: 0, status: "not_billed", stageCode: null, trigger: "stage_start" },
+        { seq: 1, label: "Payment 1", amountSen: 300000, paidSen: 300000, status: "paid", stageCode: "hacking", trigger: "stage_start", paidOn: null, method: null },
+        { seq: 2, label: "Payment 2", amountSen: 300000, paidSen: 0, status: "billed", stageCode: null, trigger: "stage_start", paidOn: null, method: null },
+        { seq: 3, label: "Payment 3", amountSen: 400000, paidSen: 0, status: "not_billed", stageCode: null, trigger: "stage_start", paidOn: null, method: null },
       ],
     });
   });
@@ -211,6 +211,32 @@ describe("Beta payments: instalment status", () => {
     const v: BillingView = { ...view, instalments: [inst(1, bill(1, -50000, 0, "CREDIT_NOTE"), 0), inst(2, bill(2, 0, 0, "ZERO"), 0)] };
     const p = paymentsOf(v);
     expect(p.state === "ok" && p.instalments.map((i) => i.status)).toEqual(["paid", "paid"]);
+  });
+  test("an ordinary sales order is four payments, filled by the money recorded on it, oldest first", () => {
+    const p = paymentsOf(null, { docNo: "SO-1", totalSen: 900000, receipts: [
+      { paidOn: "2026-10-01", amountSen: 300000, method: "Cash" },
+      { paidOn: "2026-10-09", amountSen: 0, method: "Cash" },
+      { paidOn: "2026-10-20", amountSen: 200000, method: "Online" },
+    ] });
+    expect(p.state).toBe("ok");
+    if (p.state !== "ok") return;
+    expect(p.docNo).toBe("SO-1");
+    expect(p.receivedSen).toBe(500000);
+    expect(p.instalments.map((i) => [i.label, i.status, i.amountSen, i.paidOn])).toEqual([
+      ["1st payment", "paid", 300000, "2026-10-01"],
+      ["2nd payment", "paid", 200000, "2026-10-20"],
+      ["3rd payment", "not_billed", 0, null],
+      ["4th payment", "not_billed", 0, null],
+    ]);
+  });
+  test("a sales order with no money yet still shows four empty payments", () => {
+    const p = paymentsOf(null, { docNo: "SO-2", totalSen: 0, receipts: [] });
+    expect(p.state === "ok" && p.instalments.map((i) => i.status)).toEqual(["not_billed", "not_billed", "not_billed", "not_billed"]);
+  });
+  test("money recorded on a contract fills its instalments in order", () => {
+    const v: BillingView = { ...view, receivedSen: 0, instalments: [inst(1, null, 300000), inst(2, null, 300000)] };
+    const p = paymentsOf(v, { docNo: "RN-1", totalSen: 600000, receipts: [{ paidOn: "2026-10-05", amountSen: 400000, method: "Online" }] });
+    expect(p.state === "ok" && p.instalments.map((i) => [i.status, i.paidSen, i.paidOn])).toEqual([["paid", 300000, "2026-10-05"], ["not_billed", 100000, null]]);
   });
 });
 
