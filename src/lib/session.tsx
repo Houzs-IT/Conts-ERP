@@ -12,6 +12,7 @@ interface SessionCtx {
   user: SessionUser | null;
   loading: boolean;
   login: (email: string, password: string, remember: boolean) => Promise<SignedIn>;
+  loginPin: (phone: string, pin: string) => Promise<SignedIn>;
   verifyCode: (challenge: string, code: string) => Promise<SignedIn>;
   logout: () => Promise<void>;
   requestReset: (email: string) => Promise<void>;
@@ -81,6 +82,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     return done;
   };
 
+  /** Cleaners and technicians given app access on the Cleaners page: phone number and 6-digit PIN. */
+  const loginPin = async (phone: string, pin: string) => finish(await api.post<SignInAnswer>('/auth/login-pin', { phone, pin }));
+
   /** The second step: a code from the authenticator app or a backup code. */
   const verifyCode = async (challenge: string, code: string) =>
     finish(await api.post<SignInAnswer>('/auth/login-2fa', { challenge, code }));
@@ -127,7 +131,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <Ctx.Provider value={{ user, loading, login, verifyCode, logout, requestReset, changePassword, resetPassword, checkResetToken, can, refresh }}>
+    <Ctx.Provider value={{ user, loading, login, loginPin, verifyCode, logout, requestReset, changePassword, resetPassword, checkResetToken, can, refresh }}>
       {children}
     </Ctx.Provider>
   );

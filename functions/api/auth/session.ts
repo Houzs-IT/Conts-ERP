@@ -3,6 +3,7 @@ import { readSession, readCookie, securitySettings } from '../../_lib/auth';
 import { twoFactorTables } from '../../_lib/twoFactor';
 import { twoStepSetupDue } from '../../_lib/signIn';
 import { levelsFor } from '../../_lib/access';
+import { signsInWithPin } from '../../_lib/fieldPin';
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const s = await readSession(env.SESSION_SECRET, readCookie(request));
@@ -16,7 +17,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   return json({
     user: {
       id: user.id, fullName: user.full_name, email: user.email, role: user.role,
-      mustChangePassword: !!user.must_change_password, locale: user.locale,
+      mustChangePassword: !!user.must_change_password, locale: user.locale, phoneSignIn: await signsInWithPin(env, user.id),
       twoStepSetupRequired: await twoStepSetupDue(env, await securitySettings(env), user.role, !!user.totp_enabled_at),
       access: await levelsFor(env, user.role),
     },

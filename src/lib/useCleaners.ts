@@ -9,6 +9,8 @@ export interface Cleaner {
   vendorName: string | null;
   phone: string | null;
   userId: string | null;
+  /** The number the linked login signs in with (phone and PIN), when it has phone sign-in. */
+  loginPhone?: string | null;
   isActive: boolean;
   busy: number;
 }

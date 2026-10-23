@@ -24,6 +24,7 @@ import { HistoryDisclosure } from '../components/RecordHistory';
 import { RowActions, type RowAction } from '../components/RowActions';
 import { deliveryToast } from '../lib/emailDelivery';
 import Icon from '../components/Icon';
+import { hasRealEmail } from '../lib/pin';
 
 /* ------------------------------------------------------------------ *
  * Users and roles — three tabs (routes.json → SYSTEM → UsersPage):
@@ -231,7 +232,7 @@ export default function UsersPage() {
       { key: 'position', label: 'Position', value: (u: Row) => u.position || null, width: 160 },
       { key: 'department', label: 'Department', value: (u: Row) => u.department || null, width: 140 },
     ] : []),
-    { key: 'email', label: 'Email', value: u => u.email, width: 210 },
+    { key: 'email', label: 'Email', value: u => (hasRealEmail(u.email) ? u.email : 'Phone sign-in'), width: 210 },
     { key: 'phone', label: 'Phone', type: 'phone', value: u => u.phone || null, hidden: true, width: 140 },
     { key: 'role', label: 'Role', type: 'status', value: u => u.role, status: u => ({ label: roleLabel(u.role), tone: roleTone[u.role] }), width: 150 },
     { key: 'manager', label: 'Reports to', type: 'person', value: u => (u.managerId ? nameById[u.managerId] ?? null : null), width: 150 },
@@ -622,7 +623,7 @@ export default function UsersPage() {
                 <span className="flex flex-col gap-1 min-w-0 flex-1">
                   <span className="text-copy font-medium truncate" title={u.fullName}>{u.fullName}</span>
                   {jobLine(u) && <span className="text-meta text-ink truncate" title={jobLine(u)}>{jobLine(u)}</span>}
-                  <span className="text-meta text-muted-ink truncate" title={u.email}>{u.email}</span>
+                  <span className="text-meta text-muted-ink truncate" title={u.email}>{hasRealEmail(u.email) ? u.email : 'Phone sign-in'}</span>
                   <span className="flex items-center gap-1.5 flex-wrap"><StatusBadge tone={roleTone[u.role]} label={roleLabel(u.role)} size="sm" /><StatusBadge tone={s.tone} label={s.label} size="sm" /></span>
                   {isInvited(u) && <InviteCell u={u} onResend={canManage ? () => confirmResend(u) : undefined} />}
                 </span>
@@ -771,7 +772,7 @@ export default function UsersPage() {
         >
           <div className="flex flex-col gap-3">
             <div className="py-3 px-3.5 rounded-control bg-page border border-solid border-line">
-              <div className="text-meta text-muted-ink">Sign in as {tempShown.email} with</div>
+              <div className="text-meta text-muted-ink">Sign in as {hasRealEmail(tempShown.email) ? tempShown.email : 'their phone number'} with</div>
               <div className="text-heading font-semibold font-mono mt-1 select-all break-all">{tempShown.password}</div>
             </div>
             <span className="text-meta text-muted-ink leading-[1.5]">

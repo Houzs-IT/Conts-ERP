@@ -36,6 +36,8 @@ export interface SessionUser {
   access?: Record<string, AccessLevel>;
   /** Management requires two-step sign-in for this role and it is not set up yet: only My account opens until it is. */
   twoStepSetupRequired?: boolean;
+  /** Signs in with phone number and PIN (a cleaner or technician given app access): new secrets are 6-digit PINs. */
+  phoneSignIn?: boolean;
 }
 
 export type AccessLevel = 'none' | 'view' | 'edit' | 'full';
