@@ -5,8 +5,7 @@ import { useSession } from '../lib/session';
 import { Logo } from './Logo';
 import Icon from './Icon';
 import { FieldNotificationBell } from './NotificationBell';
-import { ROLE_LABEL } from '../lib/vocabulary';
-import { humanize } from '../lib/format';
+import { jobTitle } from '../lib/vocabulary';
 
 /** Housekeepers and technicians work on a phone, in a car park, one-handed.
  *  One column, 44px targets, and the whole page scrolls normally. */
@@ -22,7 +21,7 @@ export default function FieldShell({ children }: { children: ReactNode }) {
         <Logo variant="mark" size="sm" onDark />
         <div style={{ display: 'flex', flexDirection: 'column', gap: 1, flex: 1, minWidth: 0 }}>
           <span style={{ fontSize: text.copy, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{user!.fullName}</span>
-          <span style={{ fontSize: text.caption, color: color.dim }}>{ROLE_LABEL[user!.role] ?? humanize(user!.role)}</span>
+          <span style={{ fontSize: text.caption, color: color.dim }}>{jobTitle(user!)}</span>
         </div>
         <FieldNotificationBell />
         <Link to={atAccount ? '/worker/today' : '/account'} aria-label={atAccount ? 'Back to today' : 'Settings'} title={atAccount ? 'Back to today' : 'Settings'}

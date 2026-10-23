@@ -17,9 +17,10 @@ export type PayoutState = 'pending' | 'processing' | 'paid' | 'failed';
 export type IntegrationState = 'connected' | 'expired' | 'degraded' | 'failed';
 export type SyncState = 'queued' | 'synced' | 'failed';
 
-export type UserRole =
-  | 'management' | 'operations_manager' | 'operations_staff'
-  | 'finance_admin' | 'housekeeper' | 'technician' | 'owner';
+/** The hidden role the server works out from the department's kind (management, staff, cleaning, maintenance), plus owner.
+ *  No screen shows or picks it. The two older office roles (operations manager and finance admin) are retired: what set them apart now lives in
+ *  the position and department rules. */
+export type UserRole = 'management' | 'operations_staff' | 'housekeeper' | 'technician' | 'owner';
 
 /** Which side of the business an account works on (migration 0143): The Conts is rental, Dream Crafter the supply chain. */
 export type UserSide = 'conts' | 'dream_crafter' | 'both';
@@ -34,10 +35,16 @@ export interface SessionUser {
   role: UserRole;
   /** Absent on an older session, which reads as both. */
   side?: UserSide;
+  /** Where the account sits (the managed list under Permissions). Absent on an owner and on an older session. */
+  departmentId?: string | null;
+  department?: string | null;
+  positionId?: string | null;
+  /** The department's kind, which decides the hidden role. */
+  kind?: DepartmentKind | null;
   mustChangePassword: boolean;
   locale: string;
   permissions: string[];
-  /** Each area's level for this person's role (Users and roles > Permissions). Absent on an older session. */
+  /** Each area's level for this person: their own settings, then position, then department (Users and roles > Permissions). Absent on an older session. */
   access?: Record<string, AccessLevel>;
   /** Management requires two-step sign-in for this role and it is not set up yet: only My account opens until it is. */
   twoStepSetupRequired?: boolean;

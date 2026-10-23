@@ -1,3 +1,4 @@
+import { maySee, mayWork } from '../lib/areaAccess';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
@@ -63,7 +64,6 @@ type Tab = 'open' | 'approval' | 'done' | 'history' | 'catalog' | 'rules' | 'pro
 const PAYER: Record<ChargeTo, string> = { owner: 'Owner (on the statement)', the_conts: 'Company', guest_deposit: 'Guest (from the deposit)', warranty: 'Warranty' };
 const PAYER_SHORT: Record<ChargeTo, string> = { owner: 'owner pays', the_conts: 'company pays', guest_deposit: 'guest pays', warranty: 'warranty' };
 const SOURCE: Record<string, string> = { guest: 'Guest', cleaner: 'Cleaner', inspection: 'Inspection', staff: 'Office' };
-const MONEY_ROLES = ['management', 'finance_admin', 'operations_manager'];
 // The item catalog: staff pick an item (or Other) on a job; management and operations keep the list (request M3).
 const SHOW_CATALOG = true;
 const DOC_KIND: Record<string, string> = { claim: 'Claim from the technician or contractor', invoice: 'Invoice to the payer', receipt: 'Receipt', pod: 'Proof of work', other: 'File' };
@@ -84,7 +84,7 @@ function statusOf(i: Issue): { label: string; tone: AnyTone } {
 export default function MaintenancePage() {
   const toast = useToast();
   const { user } = useSession();
-  const money = MONEY_ROLES.includes(user!.role);
+  const money = maySee(user, 'finance');
   const [params, setParams] = useSearchParams();
   const [tab, setTab] = useState<Tab>('open');
   const [category, setCategory] = useState('');
@@ -171,7 +171,7 @@ export default function MaintenancePage() {
         primary={<Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setCreating(true)}>Add maintenance job</Button>} />
 
       {tab === 'rules' ? <ApprovalRulesPanel /> : tab === 'profit' ? <div className="flex-1 min-h-0 overflow-y-auto"><JobProfitView kind="maintenance" onOpen={id => { setTab('history'); setSelected(id); }} /></div> : tab === 'catalog' ? (
-        <MaintenanceItems fallback={<CatalogPanel skus={sku.data?.data ?? []} loading={sku.loading} canWrite={['management', 'operations_manager', 'operations_staff'].includes(user!.role)} onCreate={createSku} onUpdate={updateSku} />} onChanged={sku.reload} />
+        <MaintenanceItems fallback={<CatalogPanel skus={sku.data?.data ?? []} loading={sku.loading} canWrite={mayWork(user, 'operations')} onCreate={createSku} onUpdate={updateSku} />} onChanged={sku.reload} />
       ) : (
         <>
           <div className="flex items-center gap-2 flex-wrap">

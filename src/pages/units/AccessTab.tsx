@@ -1,3 +1,4 @@
+import { mayRun } from '../../lib/areaAccess';
 import { useState } from 'react';
 import { color } from '../../theme';
 import { Card } from '../../components/Card';
@@ -29,8 +30,7 @@ const KIND_LABEL: Record<string, string> = {
   smart_lock: 'Smart lock', key_box: 'Key box', guard_desk: 'Guard desk', lift_card: 'Lift card', wifi: 'Wi-Fi',
 };
 const KINDS = Object.entries(KIND_LABEL).map(([value, label]) => ({ value, label }));
-/** Who may reveal, and so add, change or remove, a code: CREDENTIAL_ROLES in functions/_lib/credentials.ts. */
-const EDIT_ROLES = ['management', 'operations_manager'];
+/** Who may reveal, and so add, change or remove, a code: Full on Units (functions/_lib/credentials.ts). */
 
 const mask = (clear: string) => clear ? '•'.repeat(Math.max(2, clear.length - 3)) + clear.slice(-3) : '';
 const FALLBACK: Payload = {
@@ -61,7 +61,7 @@ export default function AccessTab({ unitId, unitLabel, parking }: { unitId: stri
   const { data, loading, error, reload } = useApi<Payload>(`/access-credentials?unitId=${encodeURIComponent(unitId)}`, FALLBACK);
   const { user } = useSession();
   const toast = useToast();
-  const canEdit = !!user && EDIT_ROLES.includes(user.role);
+  const canEdit = mayRun(user, 'properties');
 
   const [revealed, setRevealed] = useState<Record<string, string>>({});
   const [localReveal, setLocalReveal] = useState<Record<string, { by: string; at: string }>>({});

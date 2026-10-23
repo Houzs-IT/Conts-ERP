@@ -1,3 +1,5 @@
+import { mayWork } from '../../lib/areaAccess';
+import type { SessionUser } from '../../lib/types';
 import { useEffect, useRef, type ReactNode } from 'react';
 import { cx } from '../../lib/design-tokens';
 import { Select as UiSelect } from '../../components/Select';
@@ -12,8 +14,8 @@ export const PACKAGES = ['Package A', 'Package B', 'Package C', 'Package D'];
 export const TERMS = ['Long term', 'Short term'];
 export const SPLITS = ['Not set', 'Profit share', 'GRR — guaranteed rent'];
 
-/** Roles that may edit unit master data: MASTER_ROLES in functions/_lib/properties.ts. */
-export const MASTER_ROLES = ['management', 'operations_manager', 'finance_admin'];
+/** Who may edit unit master data: Edit or Full on Units (functions/_lib/properties.ts). */
+export const mayEditUnits = (user: SessionUser | null | undefined): boolean => mayWork(user, 'properties');
 
 export const LAYOUTS = [
   ['studio', 'Studio'], ['1_bedroom', '1 bedroom'], ['2_bedroom', '2 bedroom'], ['3_bedroom', '3 bedroom'], ['4_plus_bedroom', '4+ bedroom'],

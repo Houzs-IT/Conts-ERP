@@ -1,3 +1,4 @@
+import { mayWork } from '../lib/areaAccess';
 import { useEffect, useMemo, useState } from 'react';
 import { Search, Plus, Trash2 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
@@ -43,7 +44,7 @@ export default function ConsignmentNotesPage() {
   const { data, loading, error, reload } = useApi<Payload>('/consignment-notes', FALLBACK);
   const toast = useToast();
   const { user } = useSession();
-  const canWrite = !!user && ['management', 'operations_manager', 'finance_admin'].includes(user.role);
+  const canWrite = mayWork(user, 'scConsignment');
   const [statusFilter, setStatusFilter] = useState<Status | 'all'>('all');
   const [search, setSearch] = useState('');
   const [drawer, setDrawer] = useState<{ mode: 'new' } | { mode: 'view'; cn: Cn } | null>(null);

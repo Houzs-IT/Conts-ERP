@@ -1,3 +1,4 @@
+import { mayWork } from '../lib/areaAccess';
 import { useEffect, useState } from 'react';
 import { Card } from './Card';
 import { Button } from './Button';
@@ -24,7 +25,7 @@ export default function ChannexSyncPanel({ onState }: { onState?: (state: Channe
   const { data, reload } = useApi<Status>(`/integrations/channex/status?page=${page}&pageSize=${pageSize}`);
   const toast = useToast();
   const { user } = useSession();
-  const canRun = !!user && ['management', 'operations_manager', 'finance_admin'].includes(user.role);
+  const canRun = mayWork(user, 'integrations');
   const [busy, setBusy] = useState(false);
   const [hookBusy, setHookBusy] = useState(false);
   const [confirmDialog, ask] = useConfirm();

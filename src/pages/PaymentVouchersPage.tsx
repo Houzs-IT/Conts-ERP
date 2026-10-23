@@ -1,3 +1,4 @@
+import { mayWork } from '../lib/areaAccess';
 import { useMemo, useState } from 'react';
 import { Search, Plus } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
@@ -50,7 +51,7 @@ export default function PaymentVouchersPage() {
   const invoices = (useApi<{ data: Pi[] }>('/purchase-invoices', PI_FALLBACK).data?.data ?? []).filter(p => p.status === 'POSTED' || p.status === 'PARTIALLY_PAID');
   const toast = useToast();
   const { user } = useSession();
-  const canWrite = !!user && ['management', 'operations_manager', 'finance_admin'].includes(user.role);
+  const canWrite = mayWork(user, 'ledger');
 
   const [statusFilter, setStatusFilter] = useState<'all' | 'POSTED' | 'CANCELLED'>('all');
   const [search, setSearch] = useState('');

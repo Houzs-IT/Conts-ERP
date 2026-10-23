@@ -1,3 +1,4 @@
+import { mayWork } from '../lib/areaAccess';
 import { useMemo, useState } from 'react';
 import { Search, Plus, Trash2 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
@@ -54,7 +55,7 @@ export default function CreditNotesPage() {
   const purchaseInvoices = (useApi<{ data: Pi[] }>('/purchase-invoices').data?.data ?? []).filter(p => p.status !== 'CANCELLED');
   const toast = useToast();
   const { user } = useSession();
-  const canWrite = !!user && ['management', 'operations_manager', 'finance_admin'].includes(user.role);
+  const canWrite = mayWork(user, 'scInvoices');
 
   const [kindFilter, setKindFilter] = useState<Kind | 'all'>('all');
   const [statusFilter, setStatusFilter] = useState<Status | 'all'>('all');

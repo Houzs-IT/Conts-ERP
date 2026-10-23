@@ -1,3 +1,5 @@
+import { mayRun } from '../../lib/areaAccess';
+import type { SessionUser } from '../../lib/types';
 import { api, errorMessage } from '../../lib/api';
 import { date, titleCase } from '../../lib/format';
 import { deliveryToast, type Delivery } from '../../lib/emailDelivery';
@@ -18,8 +20,8 @@ export function portalBadge(o: Owner, short = false): { label: string; tone: Ton
   return { label: 'Not invited', tone: 'neutral' };
 }
 
-/** Roles the invite endpoints accept (owners/[id]/invite.ts, resend-invite.ts, reset-email.ts). */
-export const mayInviteOwners = (role?: string) => role === 'management' || role === 'operations_manager';
+/** Who the invite endpoints accept (owners/[id]/invite.ts, resend-invite.ts, reset-email.ts): Full on Owners. */
+export const mayInviteOwners = (user: SessionUser | null | undefined): boolean => mayRun(user, 'owners');
 
 const NO_MAIL_INVITE = 'To get them in now, open Users and roles, find their portal login and use Reset password to get a temporary password to pass on yourself.';
 const NO_MAIL_RESET = 'To get them in now, open Users and roles, find their portal login and use Get a reset link to pass on.';

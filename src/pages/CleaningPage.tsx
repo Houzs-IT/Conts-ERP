@@ -1,3 +1,4 @@
+import { maySee, mayRun } from '../lib/areaAccess';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
@@ -111,7 +112,7 @@ export default function CleaningPage() {
 
 function TabSwitch({ tab, onTab, className }: { tab: Tab; onTab: (t: Tab) => void; className?: string }) {
   const { user } = useSession();
-  const profit = !!user && ['management', 'operations_manager', 'finance_admin'].includes(user.role);
+  const profit = maySee(user, 'finance');
   return <Segmented label="View" value={tab} onChange={onTab} className={className} options={[{ value: 'board', label: 'Board' }, { value: 'history', label: 'History' }, { value: 'prices', label: 'Prices' }, { value: 'pay', label: 'Pay' },
     ...(profit ? [{ value: 'profit' as const, label: 'Profit' }] : [])]} />;
 }
@@ -136,7 +137,7 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
   const [busy, setBusy] = useState<string | null>(null);
   const { user } = useSession();
   // Closing overdue jobs in bulk is management's (functions/api/housekeeping/overdue.ts); cleaners never see it.
-  const mayBulk = !!user && ['management', 'operations_manager', 'finance_admin'].includes(user.role);
+  const mayBulk = mayRun(user, 'operations');
   const [overdueOpen, setOverdueOpen] = useState(() => { try { return localStorage.getItem('cleaning.overdueOpen') === '1'; } catch { return false; } });
   const toggleOverdue = () => setOverdueOpen(v => { try { localStorage.setItem('cleaning.overdueOpen', v ? '0' : '1'); } catch { /* private window */ } return !v; });
   const [picks, setPicks] = useState<Set<string>>(new Set());

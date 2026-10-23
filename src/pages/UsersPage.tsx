@@ -409,7 +409,7 @@ export default function UsersPage() {
     }) });
     if (u.twoStep && !self) items.push({ key: '2fa', label: 'Reset two-step sign-in', icon: 'ShieldOff', run: () => setConfirm({
       title: `Reset ${u.fullName}'s two-step sign-in?`,
-      body: 'Use this when they lost their phone. Their authenticator code and backup codes stop working, and they sign in with their password alone. If their role requires two-step sign-in, they are asked to set it up again straight after signing in.',
+      body: 'Use this when they lost their phone. Their authenticator code and backup codes stop working, and they sign in with their password alone. If their department requires two-step sign-in, they are asked to set it up again straight after signing in.',
       confirmLabel: 'Reset two-step sign-in', busyLabel: 'Resetting…', danger: true,
       onConfirm: () => act(u, security(u, 'reset_2fa'), `${u.fullName}'s two-step sign-in was reset.`),
     }) });

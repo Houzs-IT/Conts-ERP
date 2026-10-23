@@ -1,17 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, errorMessage } from '../lib/api';
-import { ROLE_LABEL } from '../lib/vocabulary';
 import { useSession } from '../lib/session';
 import { useToast } from './Toast';
 import Icon from './Icon';
 import { Floating } from './DataTableParts';
 import { cx } from '../lib/design-tokens';
 
-interface Account { id: string; fullName: string; email: string; role: string; hasUnit?: boolean; notSetUp?: boolean }
-interface State { enabled: boolean; me?: { id: string; fullName: string }; viewing?: Account | null; users?: Account[]; roles?: string[] }
+interface Account { id: string; fullName: string; email: string; role: string; department?: string | null; hasUnit?: boolean; notSetUp?: boolean }
+interface DepartmentOption { id: string; name: string; positions: { id: string; name: string }[] }
+interface State { enabled: boolean; me?: { id: string; fullName: string }; viewing?: Account | null; users?: Account[]; departments?: DepartmentOption[] }
 
-const roleName = (role: string) => ROLE_LABEL[role] ?? role.replace(/_/g, ' ');
-// Each role's test account (functions/api/auth/view-as.ts) is reached from "By role", so it is left out of "By person".
+// Each department's (and position's) test account (functions/api/auth/view-as.ts) is reached from "By department", so it is left out of "By person".
 const isTest = (u: Account) => u.email.endsWith('@staging.invalid');
 const MIN_KEY = 'tc.viewAs.min';
 
@@ -43,7 +42,7 @@ export default function ViewAs({ docked = false }: { docked?: boolean } = {}) {
     setMin(on); setOpen(false);
     try { localStorage.setItem(MIN_KEY, on ? '1' : '0'); } catch { /* the choice just is not remembered */ }
   };
-  const go = async (to: { userId: string } | { role: string }) => {
+  const go = async (to: { userId: string } | { departmentId: string; positionId?: string }) => {
     setBusy(true);
     try {
       const res = await api.post<{ home: string }>('/auth/view-as', to);
@@ -56,10 +55,11 @@ export default function ViewAs({ docked = false }: { docked?: boolean } = {}) {
   };
 
   const viewing = state.viewing;
-  const label = viewing ? `Viewing as: ${roleName(viewing.role)} (${viewing.fullName})` : 'View as: Me';
+  const label = viewing ? `Viewing as: ${viewing.fullName}` : 'View as: Me';
   const people = (state.users ?? []).filter(u => u.id !== state.me!.id && !isTest(u));
   const owners = people.filter(u => u.role === 'owner' && u.hasUnit && !u.notSetUp);
-  const roles = [...new Set(people.map(u => u.role))];
+  const placeOf = (u: Account) => (u.role === 'owner' ? 'Owner' : u.department?.trim() || 'No department');
+  const places = [...new Set(people.map(placeOf))];
   const pill = 'inline-flex items-center gap-1.5 h-8 rounded-full border border-solid cursor-pointer [font-family:inherit] text-[12px] font-semibold [box-shadow:var(--shadow-overlay)]';
   const warn = { background: 'var(--color-warning)', color: 'var(--color-warning-fg)', borderColor: 'var(--color-warning-line)' };
   const row = 'block w-full text-left px-3 py-1.5 bg-transparent border-none cursor-pointer [font:inherit] disabled:opacity-50 disabled:cursor-default hover:bg-muted';
@@ -68,18 +68,25 @@ export default function ViewAs({ docked = false }: { docked?: boolean } = {}) {
   const menu = (
         <div className={docked ? undefined : 'mb-2 w-[300px] max-w-[calc(100vw-24px)] max-h-[60vh] overflow-y-auto bg-card rounded-card border border-solid border-line [box-shadow:var(--shadow-overlay)]'}>
           <div className="px-3 py-2 text-[11px] text-muted-ink [border-bottom:1px_solid_var(--color-line-soft)]">
-            Staging only. Opens the system exactly as that role or account sees it.
+            Staging only. Opens the system exactly as that department, position or account sees it.
           </div>
           <button type="button" disabled={busy || !viewing} onClick={() => go({ userId: state.me!.id })} className={`${row} py-2 font-semibold`}>
             Me, {state.me.fullName}
           </button>
 
-          <div className={heading}>By role</div>
-          {(state.roles ?? []).map(role => (
-            <button key={role} type="button" disabled={busy} onClick={() => go({ role })} className={row}>
-              <span className="font-medium">{roleName(role)}</span>
-              <span className="block text-[11px] text-muted-ink">Test account, not a real person</span>
-            </button>
+          <div className={heading}>By department</div>
+          {(state.departments ?? []).map(d => (
+            <div key={d.id}>
+              <button type="button" disabled={busy} onClick={() => go({ departmentId: d.id })} className={row}>
+                <span className="font-medium">{d.name}</span>
+                <span className="block text-[11px] text-muted-ink">Test account, not a real person</span>
+              </button>
+              {d.positions.map(p => (
+                <button key={p.id} type="button" disabled={busy} onClick={() => go({ departmentId: d.id, positionId: p.id })} className={`${row} pl-6`}>
+                  {p.name}
+                </button>
+              ))}
+            </div>
           ))}
           <div className="px-3 pt-1.5 pb-1 font-medium">Owner <span className="text-[11px] font-normal text-muted-ink">(pick an owner)</span></div>
           {owners.length ? owners.map(u => (
@@ -91,10 +98,10 @@ export default function ViewAs({ docked = false }: { docked?: boolean } = {}) {
           )}
 
           <div className={`${heading} mt-1 [border-top:1px_solid_var(--color-line-soft)]`}>By person</div>
-          {roles.map(role => (
-            <div key={role}>
-              <div className="px-3 pt-1.5 pb-0.5 text-[11px] font-semibold text-muted-ink">{roleName(role)}</div>
-              {people.filter(u => u.role === role).map(u => (
+          {places.map(place => (
+            <div key={place}>
+              <div className="px-3 pt-1.5 pb-0.5 text-[11px] font-semibold text-muted-ink">{place}</div>
+              {people.filter(u => placeOf(u) === place).map(u => (
                 <button key={u.id} type="button" disabled={busy || viewing?.id === u.id || u.notSetUp} onClick={() => go({ userId: u.id })} className={row}>
                   <span className="font-medium">{u.fullName}</span>
                   <span className="block text-[11px] text-muted-ink overflow-hidden text-ellipsis whitespace-nowrap">

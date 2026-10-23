@@ -45,9 +45,17 @@ export const TONE: Record<Tone, { bg: string; fg: string; line: string }> = {
 };
 
 /** Role names as people read them. Never print the raw code ("operations_staff"). */
+/** The hidden role, for the few places that still name one (the field app header, an old audit row). A role no longer
+ *  tells what an office person does: that is their department and position, see `jobTitle`. */
 export const ROLE_LABEL: Record<string, string> = {
-  management: 'Management', operations_manager: 'Operations manager', operations_staff: 'Operations staff',
-  finance_admin: 'Finance admin', housekeeper: 'Cleaner', technician: 'Maintenance technician', owner: 'Owner',
+  management: 'Management', operations_staff: 'Office staff',
+  housekeeper: 'Cleaner', technician: 'Maintenance technician', owner: 'Owner',
+};
+
+/** What to print under a person's name: their department for office accounts, the field or owner label otherwise. */
+export const jobTitle = (u: { role: string; department?: string | null }): string => {
+  if (u.role === 'housekeeper' || u.role === 'technician' || u.role === 'owner') return ROLE_LABEL[u.role];
+  return u.department?.trim() || ROLE_LABEL[u.role] || u.role;
 };
 
 /** Malaysian bank codes as imported (SWIFT-style) -> the name people know. Unknown codes print as given. */

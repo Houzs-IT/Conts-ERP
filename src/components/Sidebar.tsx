@@ -5,7 +5,7 @@ import { useApi } from '../lib/useApi';
 import { useSession } from '../lib/session';
 import { useNavCounts } from '../lib/navBadges';
 import { rememberPage, useItUnread } from '../lib/itSupport';
-import { ROLE_LABEL } from '../lib/vocabulary';
+import { jobTitle } from '../lib/vocabulary';
 import Icon, { toPascal } from './Icon';
 import { Logo } from './Logo';
 import { ThemeToggle } from './ThemeToggle';
@@ -292,7 +292,7 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
           {open && (
             <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 }}>
               <span style={{ fontSize: text.copy, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{user!.fullName}</span>
-              <span style={{ fontSize: text.micro, color: color.dim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{ROLE_LABEL[user!.role] ?? user!.role}</span>
+              <span style={{ fontSize: text.micro, color: color.dim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{jobTitle(user!)}</span>
             </span>
           )}
           {open && <Icon name="ChevronUp" size="sm" color={color.dim} />}

@@ -1,3 +1,4 @@
+import { mayWork } from '../lib/areaAccess';
 import { useMemo, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
@@ -32,7 +33,7 @@ export default function StockTransfersPage() {
   const warehouses = useApi<{ data: Opt[] }>('/warehouses', WH_FALLBACK).data?.data ?? [];
   const toast = useToast();
   const { user } = useSession();
-  const canWrite = !!user && ['management', 'operations_manager', 'finance_admin'].includes(user.role);
+  const canWrite = mayWork(user, 'scWarehouse');
   const [drawer, setDrawer] = useState<{ mode: 'new' } | { mode: 'view'; t: Transfer } | null>(null);
   const [added, setAdded] = useState<Transfer[]>([]);
   const [edits, setEdits] = useState<Record<string, Partial<Transfer>>>({});

@@ -3,7 +3,7 @@ import { DARK_MODE_READY } from '../lib/theme';
 import { color, radius } from '../theme';
 import { SETTINGS_SECTIONS, screenClosed } from '../lib/navigation';
 import { useSession } from '../lib/session';
-import { ROLE_LABEL } from '../lib/vocabulary';
+import { jobTitle } from '../lib/vocabulary';
 import { getThemePref, setThemePref, type ThemePref } from '../lib/theme';
 import Icon from './Icon';
 
@@ -52,7 +52,7 @@ export default function MobileSettingsHub({ navigate }: { navigate: (p: string) 
         <span style={{ width: 52, height: 52, flex: 'none', borderRadius: radius.pill, background: color.black, color: color.gold, display: 'grid', placeItems: 'center', fontSize: 17, fontWeight: 600 }}>{initials}</span>
         <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
           <span style={{ fontSize: 17, fontWeight: 600 }}>{user.fullName}</span>
-          <span style={{ fontSize: 13, color: color.textMuted }}>{ROLE_LABEL[user.role] ?? user.role}</span>
+          <span style={{ fontSize: 13, color: color.textMuted }}>{jobTitle(user)}</span>
         </span>
         <Icon name="ChevronRight" size="sm" color={color.faint} />
       </button>
