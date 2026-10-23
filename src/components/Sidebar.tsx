@@ -76,6 +76,8 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
     if (target && workspaceOf(path) !== w) navigate(target);
   };
   const groups = all.filter(g => g.workspace === (hasSupply ? ws : 'rental'));
+  // The supply chain workspace is Dream Crafter's side of the business, so its logo heads the menu there.
+  const brand = hasSupply && ws === 'supply' ? 'dreamCrafter' : 'theConts';
   const activeParent = parentOf(groups, path);
   const selected = activeKey(groups, path);
 
@@ -125,7 +127,7 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
         alignItems: 'center', gap: open ? 8 : 10, borderBottom: `1px solid ${color.charcoal}`,
       }}>
         <div style={{ flex: open ? 1 : 'none', minWidth: 0, overflow: 'hidden' }}>
-          {open ? <Logo variant="full" size="sm" onDark product /> : <Logo variant="mark" size="sm" onDark />}
+          {open ? <Logo variant="full" size="sm" onDark product brand={brand} /> : <Logo variant="mark" size="sm" onDark brand={brand} />}
         </div>
         <button onClick={onToggle} aria-label={open ? 'Collapse navigation' : 'Expand navigation'} title={open ? 'Collapse navigation' : 'Expand navigation'}
           style={{ width: 30, height: 30, flex: 'none', display: 'grid', placeItems: 'center', borderRadius: radius.sm, color: color.onDark, background: open ? 'none' : 'rgba(255,255,255,0.06)', border: 'none', cursor: 'pointer' }}>
