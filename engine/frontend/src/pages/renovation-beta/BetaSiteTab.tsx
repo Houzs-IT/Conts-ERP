@@ -43,8 +43,9 @@ export function BetaSiteTab({ projectId, records, workspace, today }: BetaTabPro
 
   const deliveries = site.data?.deliveries ?? [];
   const feed = siteFeed({ rooms: pod.data?.rooms ?? [], measures: records.measures, defects: workspace.defects });
-  const chips = areaChips(site.data?.areas ?? [], deliveries);
-  for (const i of feed) if (i.room && !chips.some((c) => sameArea(c, i.room as string))) chips.push(i.room);
+  /* Chips follow what the list shows: rooms of the delivered / received lines by delivery, the photos' rooms by day. */
+  const chips = mode === "delivery" ? areaChips(site.data?.areas ?? [], deliveries) : [];
+  if (mode === "day") for (const i of feed) if (i.room && !chips.some((c) => sameArea(c, i.room as string))) chips.push(i.room);
   const shownDeliveries = filterDeliveries(deliveries, area);
   const shownFeed = area ? feed.filter((i) => sameArea(i.room, area)) : feed;
   const days = groupByDay(shownFeed, (i) => (i.at ? mytDay(i.at) : null));
@@ -59,7 +60,7 @@ export function BetaSiteTab({ projectId, records, workspace, today }: BetaTabPro
         right={
           <div role="group" aria-label="Show photos" style={{ display: "inline-flex", border: `1px solid ${BETA.border}`, borderRadius: 10, overflow: "hidden", background: BETA.surface }}>
             {(["delivery", "day"] as const).map((m) => (
-              <button key={m} type="button" aria-pressed={mode === m} onClick={() => setMode(m)}
+              <button key={m} type="button" aria-pressed={mode === m} onClick={() => { setMode(m); setArea(""); }}
                 style={{ minHeight: 40, padding: "0 16px", border: 0, background: mode === m ? BETA.ink : "transparent", color: mode === m ? "#FFFFFF" : BETA.ink, font: "inherit", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
                 {m === "delivery" ? "By delivery" : "By day"}
               </button>

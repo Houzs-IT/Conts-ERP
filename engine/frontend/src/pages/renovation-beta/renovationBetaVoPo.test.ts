@@ -25,6 +25,8 @@ describe("signedQty", () => {
     expect(signedQty({ qty: 2, measure: null, change: "add" })).toBe("+2");
     expect(signedQty({ qty: -3, measure: null, change: "deduct" })).toBe("-3");
     expect(signedQty({ qty: -1, measure: "12.5 sqft", change: "deduct" })).toBe("-12.5 sqft");
+    expect(signedQty({ qty: 0, lineQty: 1, measure: null, change: "deduct" })).toBe("1");
+    expect(signedQty({ qty: 0, measure: null, change: "change" })).toBe("0");
   });
 });
 

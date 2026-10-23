@@ -17,6 +17,10 @@ import { dayMonthYear, mytDay } from "./renovationBetaModel";
 import { BETA, type BetaTone } from "./renovationBetaTheme";
 import { signedQty, voPoApi, type VoAnswer, type VoLine, type VoRow } from "./renovationBetaVoPo";
 
+/* Where a line goes: we buy it (PO), the client buys it (Client PO), or it is our own works with no supplier. */
+const GOES_TO_LABEL: Record<VoLine["goesTo"], string> = { po: "PO", client: "Client PO", works: "Our works" };
+const goesToTone = (l: VoLine): BetaTone => (l.goesTo === "client" ? TONE_ACCENT : l.goesTo === "po" && l.change === "deduct" ? TONE_ALERT : TONE_QUIET);
+
 const bucketTone = (v: VoRow): BetaTone => (v.bucket === "approved" ? TONE_DONE : v.bucket === "closed" ? TONE_QUIET : TONE_WAIT);
 
 export function BetaVoTab(p: BetaTabProps): ReactElement {
@@ -38,19 +42,19 @@ function VoBody({ p, d }: { p: BetaTabProps; d: VoAnswer }): ReactElement {
       <WsNarrowStyle />
       <WsPageHead
         title="VO"
-        sub="Changes after the sales order. Each line goes to PO (we buy it) or Client PO (the client buys it)."
+        sub="Changes after the sales order. Each line goes to PO (we buy it), Client PO (the client buys it) or is our own works."
         right={<NewVo p={p} so={d.so} />}
       />
 
       <WsStats>
         {d.totals ? (
           <>
-            <WsStat label="Added" value={money(d.totals.addedSen)} tone={WS.green} meta="Approved VOs" />
-            <WsStat label="Deducted" value={money(d.totals.deductedSen)} tone={WS.red} meta="Approved VOs" />
+            <WsStat label="Added" value={money(d.totals.addedSen)} tone={WS.green} meta="Recorded and approved VOs" />
+            <WsStat label="Deducted" value={money(d.totals.deductedSen)} tone={WS.red} meta="Recorded and approved VOs" />
             <WsStat label="Net change" value={money(d.totals.netSen)} meta={d.counts.pending ? `Pending VOs: ${money(d.totals.pendingNetSen)}` : "Nothing pending"} />
           </>
         ) : null}
-        <WsStat label="VOs" value={d.vos.length} meta={`${d.counts.approved} approved · ${d.counts.pending} pending${d.counts.closed ? ` · ${d.counts.closed} closed` : ""}`} />
+        <WsStat label="VOs" value={d.vos.length} meta={`${d.counts.approved} in force · ${d.counts.pending} pending${d.counts.closed ? ` · ${d.counts.closed} closed` : ""}`} />
       </WsStats>
 
       {d.vos.length === 0 ? (
@@ -102,7 +106,7 @@ function NewVo({ p, so }: { p: BetaTabProps; so: VoAnswer["so"] }): ReactElement
 
 function VoCard({ v, finance }: { v: VoRow; finance: boolean }): ReactElement {
   const facts = [
-    v.date && `Raised ${dayMonthYear(mytDay(v.date))}${v.raisedBy ? ` by ${v.raisedBy}` : ""}`,
+    v.date && `${v.recorded ? "Recorded" : "Raised"} ${dayMonthYear(mytDay(v.date))}${v.raisedBy ? ` by ${v.raisedBy}` : ""}`,
     v.approvedAt && `Approved ${dayMonthYear(mytDay(v.approvedAt))}${v.approvedBy ? ` by ${v.approvedBy}` : ""}`,
     `${v.soDocNo}`,
   ].filter(Boolean).join(" · ");
@@ -157,7 +161,7 @@ function LineTable({ lines, finance, withVo = false }: { lines: Array<{ l: VoLin
                 <td style={tdStyle}>{l.room ?? "-"}</td>
                 <td style={{ ...numStyle, color: tone, fontWeight: 700 }}>{signedQty(l)}</td>
                 {finance && <td style={{ ...numStyle, color: tone }}>{l.amountSen == null ? "-" : money(l.amountSen)}</td>}
-                <td style={tdStyle}><WsBadge tone={l.goesTo === "client" ? TONE_ACCENT : l.change === "deduct" ? TONE_ALERT : TONE_QUIET}>{l.goesTo === "client" ? "Client PO" : "PO"}</WsBadge></td>
+                <td style={tdStyle}><WsBadge tone={goesToTone(l)}>{GOES_TO_LABEL[l.goesTo]}</WsBadge></td>
               </tr>
             );
           })}
@@ -177,7 +181,7 @@ function LineTable({ lines, finance, withVo = false }: { lines: Array<{ l: VoLin
                 <span style={{ fontFamily: "ui-monospace, monospace" }}>{l.itemCode ?? "-"}</span>
                 {l.room && <span>{l.room}</span>}
                 {finance && l.amountSen != null && <span style={{ color: tone, fontWeight: 600 }}>{money(l.amountSen)}</span>}
-                <WsBadge tone={l.goesTo === "client" ? TONE_ACCENT : l.change === "deduct" ? TONE_ALERT : TONE_QUIET} size={11}>{l.goesTo === "client" ? "Client PO" : "PO"}</WsBadge>
+                <WsBadge tone={goesToTone(l)} size={11}>{GOES_TO_LABEL[l.goesTo]}</WsBadge>
               </div>
               {l.fromItemCode && <div style={metaStyle}>Was {l.fromItemCode}</div>}
             </li>

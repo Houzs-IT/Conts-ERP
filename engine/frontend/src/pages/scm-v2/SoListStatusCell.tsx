@@ -15,6 +15,9 @@ import { StatusWithHold, type HoldFields } from "../../vendor/scm/components/Hol
 import { soStatusDisplay } from "../../vendor/scm/lib/so-status";
 import { soRowStatus, type SoRowStatusFields } from "./so-list-status";
 
+/** The same answer for the list's cards and quick view (owner, 24 Oct 2026: they said Submitted while the editor said Partially Delivered). */
+export const soRowStatusOf = (row: SoRowStatusFields) => soRowStatus(row, soStatusDisplay);
+
 export function SoListStatusCell({ row }: { row: SoRowStatusFields & HoldFields }) {
   const st = soRowStatus(row, soStatusDisplay);
   /* mig 0324 — the Hold marker sits BESIDE the real status pill. */

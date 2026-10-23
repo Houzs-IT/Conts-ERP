@@ -108,6 +108,8 @@ import { projectDatesText } from "../projects/renovation/customerPropertyModel";
 import { RenovationSoOrderInfo } from "./RenovationSoOrderInfo";
 import { DocAttachments, LineFilesButton } from "../../components/doc-attachments/DocAttachments";
 import { roomOrdered } from "../../vendor/scm/lib/so-print-rooms";
+import { soStatusDisplay } from "../../vendor/scm/lib/so-status";
+import { soRowStatus } from "./so-list-status";
 // ─── Row types (subset — see MfgSalesOrdersList.tsx for the full SoRow) ────
 
 type SoHeader = {
@@ -302,6 +304,19 @@ const statusFor = (
     blurb: s || "—",
   };
 
+/* The order's status as every other SO surface reads it (list cell, quick view, editor): the stored status, moved on
+   by its delivery orders and invoices (soStatusDisplay). Reading the stored column alone said Submitted here while the
+   editor said Partially Delivered for the same order (owner, 24 Oct 2026). */
+const displayStatusFor = (h: { status: string; delivery_state?: unknown; lifecycle_state?: unknown }) => {
+  const base = statusFor(h.status);
+  const d = soRowStatus({
+    status: h.status,
+    delivery_state: h.delivery_state as "none" | "partial" | "full" | null | undefined,
+    lifecycle_state: h.lifecycle_state as "none" | "delivered" | "invoiced" | "returned" | null | undefined,
+  }, soStatusDisplay);
+  return d.label === base.label ? base : { tone: d.tone, label: d.label, blurb: d.label };
+};
+
 const initialsOf = (name: string | null | undefined): string => {
   if (!name) return "—";
   return (
@@ -459,7 +474,7 @@ function OrderTotalCard({
      rather than read from a header field so the row is exactly the gap the
      reader is staring at, whatever fee components the server folds in. */
   const feeSen = totalSen - (subtotalSen - discountSen);
-  const st = statusFor(header.status);
+  const st = displayStatusFor(header);
   return (
     <div className="rounded-lg bg-sidebar px-5 py-5 text-sidebar-ink shadow-stone">
       <div className="font-mono text-[10px] font-semibold uppercase tracking-brand text-sidebar-ink-muted">
@@ -648,7 +663,7 @@ function SalesOrderDetailV2ReadOnly() {
     [detail.data, coverage.data]
   );
 
-  const st = salesOrder ? statusFor(salesOrder.status) : null;
+  const st = salesOrder ? displayStatusFor(salesOrder) : null;
 
   // Totals — subtotal from live items; discount from header (aggregate); total
   // = header.local_total_sen if the API stamped it, else recomputed.

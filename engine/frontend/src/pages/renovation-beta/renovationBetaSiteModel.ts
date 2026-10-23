@@ -11,15 +11,17 @@ const same = (a: string, b: string): boolean => a.trim().toLowerCase() === b.tri
 
 /* ---------- Site & photos ---------- */
 
-/** The area chips: the sales order's rooms in line order, then any room only a delivery or photo names. */
+/** The area chips for the deliveries: only rooms a delivered or received line (or one of its photos) is in, in the
+    sales order's room order, then any other. A room nothing was delivered to has no chip (owner, 24 Oct 2026). */
 export function areaChips(soAreas: readonly string[], deliveries: readonly SiteDelivery[]): string[] {
-  const out = [...soAreas];
+  const named: string[] = [];
   for (const d of deliveries) {
     for (const a of [...d.areas, ...d.photos.map((p) => p.area)]) {
-      if (a && !out.some((x) => same(x, a))) out.push(a);
+      if (a && !named.some((x) => same(x, a))) named.push(a);
     }
   }
-  return out;
+  const ordered = soAreas.filter((a) => named.some((x) => same(x, a)));
+  return [...ordered.filter((a, i) => ordered.findIndex((x) => same(x, a)) === i), ...named.filter((a) => !soAreas.some((x) => same(x, a)))];
 }
 
 /** The deliveries that carry something for this area, each with the photos that belong to it: photos tagged with the

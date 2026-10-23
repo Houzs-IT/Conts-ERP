@@ -1145,9 +1145,12 @@ export const SalesOrderDetail = () => {
        nothing and applySoAmendment (scm/lib/so-revision.ts:383) inserts them in
        a per-diff loop; this used to emit at most one, so on a processing-locked
        SO the second new line vanished at submit. */
-    for (const { draft } of namedStagedAdds(addingDrafts)) {
+    for (const { key, draft } of namedStagedAdds(addingDrafts)) {
+      /* Conts rooms: an added line keeps the room it was added in; the apply writes it to the new line. */
+      const room = (renoRowRoom[key] ?? '').trim();
       out.push({
         changeType: 'ADD',
+        ...(room ? { oldSnapshot: { room } } : {}),
         newItemCode: draft.itemCode,
         newVariants: draft.variants ?? undefined,
         newQty: draft.qty,
