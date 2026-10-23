@@ -13,7 +13,7 @@ import { money } from "../projects/renovation/renovationModel";
 import { TONE_ACCENT, TONE_ALERT, TONE_DONE, TONE_QUIET, TONE_WAIT, WS, WsBadge, WsCard, WsEmpty, WsFilterPill, WsPageHead, btnStyle } from "./BetaWsUi";
 import { WsNarrow, WsNarrowStyle, WsStat, WsStats, WsTable, metaStyle, narrowItemStyle, numStyle, tdStyle, thStyle } from "./BetaVoPoUi";
 import type { BetaTabProps } from "./betaShared";
-import { dayMonthYear } from "./renovationBetaModel";
+import { dayMonthYear, mytDay } from "./renovationBetaModel";
 import { BETA, type BetaTone } from "./renovationBetaTheme";
 import { signedQty, voPoApi, type VoAnswer, type VoLine, type VoRow } from "./renovationBetaVoPo";
 
@@ -102,8 +102,8 @@ function NewVo({ p, so }: { p: BetaTabProps; so: VoAnswer["so"] }): ReactElement
 
 function VoCard({ v, finance }: { v: VoRow; finance: boolean }): ReactElement {
   const facts = [
-    v.date && `Raised ${dayMonthYear(v.date)}${v.raisedBy ? ` by ${v.raisedBy}` : ""}`,
-    v.approvedAt && `Approved ${dayMonthYear(v.approvedAt)}${v.approvedBy ? ` by ${v.approvedBy}` : ""}`,
+    v.date && `Raised ${dayMonthYear(mytDay(v.date))}${v.raisedBy ? ` by ${v.raisedBy}` : ""}`,
+    v.approvedAt && `Approved ${dayMonthYear(mytDay(v.approvedAt))}${v.approvedBy ? ` by ${v.approvedBy}` : ""}`,
     `${v.soDocNo}`,
   ].filter(Boolean).join(" · ");
   return (

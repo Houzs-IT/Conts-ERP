@@ -206,6 +206,9 @@ export interface ProjectFacts {
   stored: StoredStage[];
   checklist: ChecklistRow[];
   so: SoRow | null;
+  /** The first confirmed sales order linked to the project, of any kind (owner, 24 Oct 2026: a confirmed SO is the
+      signed contract, whether it came from a renovation quotation or the sales order form). */
+  signedSo?: SoRow | null;
   /** live lines (not omitted); null when there is no renovation SO or lines cannot be read */
   lines: ContractLine[] | null;
   /** every ITEM/CHILD line including VO-omitted ones (trade tasks need omissions) */
@@ -385,6 +388,9 @@ export async function loadRenovationFacts(db: Db, projects: readonly ProjectRow[
   const typeById = new Map(types.map((t) => [Number(t.id), t]));
   for (const project of projects) {
     const so = soByProject.get(project.id) ?? null;
+    const signedSo = sos
+      .filter((s) => Number(s.project_id) === project.id && String(s.status).toUpperCase() !== "DRAFT")
+      .sort((a, b) => String(a.so_date ?? "9999").localeCompare(String(b.so_date ?? "9999")) || a.doc_no.localeCompare(b.doc_no))[0] ?? null;
     const all = so && lineRes.lines ? lineRes.lines.filter((l) => l.soDocNo === so.doc_no) : null;
     const soItemIds = new Set(all?.map((l) => l.soItemId) ?? []);
     out.set(project.id, {
@@ -393,6 +399,7 @@ export async function loadRenovationFacts(db: Db, projects: readonly ProjectRow[
       stored: stages.filter((s) => Number(s.project_id) === project.id),
       checklist: checklist.filter((c) => Number(c.project_id) === project.id),
       so,
+      signedSo,
       allLines: all,
       lines: all ? all.filter((l) => !l.omitted) : null,
       linesUnavailable: !so ? "no_so" : lineRes.lines ? null : "table_missing",

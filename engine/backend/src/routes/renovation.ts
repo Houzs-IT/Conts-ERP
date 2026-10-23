@@ -464,6 +464,7 @@ app.get("/:id", requirePageAccess("projects.list"), failClosed(async (c) => {
     project: f.project,
     type: f.type,
     so: f.so,
+    signedSo: f.signedSo ?? null,
     linesUnavailable: f.linesUnavailable,
     lines: f.lines,
     stages: v.stages,

@@ -217,8 +217,8 @@ function OrderCard({ p }: { p: BetaTabProps }): ReactElement {
     <WsCard
       title="Sales order"
       gap={12}
-      sub={d.so ? (soConfirmed(d.so.status) ? `${d.so.doc_no} · signed ${dayMonthYear(d.so.so_date)}` : `${d.so.doc_no} · draft, not signed yet`) : "Not signed yet"}
-      right={d.so ? <Link to={`/scm/sales-orders/${encodeURIComponent(d.so.doc_no)}`} style={{ ...btnStyle("outline", "sm"), color: BETA.ink }}>Open SO</Link> : undefined}
+      sub={d.signedSo ? `${d.signedSo.doc_no} · signed ${dayMonthYear(d.signedSo.so_date)}` : d.so ? (soConfirmed(d.so.status) ? `${d.so.doc_no} · signed ${dayMonthYear(d.so.so_date)}` : `${d.so.doc_no} · draft, not signed yet`) : "Not signed yet"}
+      right={(d.so ?? d.signedSo) ? <Link to={`/scm/sales-orders/${encodeURIComponent((d.so ?? d.signedSo)!.doc_no)}`} style={{ ...btnStyle("outline", "sm"), color: BETA.ink }}>Open SO</Link> : undefined}
     >
       {rowsList.length > 0 && (
         <dl style={{ margin: 0, display: "grid", gridTemplateColumns: "110px 1fr", gap: "8px 10px", fontSize: 13 }}>
