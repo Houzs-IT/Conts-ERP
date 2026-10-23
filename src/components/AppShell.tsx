@@ -8,6 +8,7 @@ import { RefreshLine } from './Loading';
 import MobileTabBar, { TAB_BAR_HEIGHT } from './MobileTabBar';
 import { PagePrimaryScope } from './States';
 import { color } from '../theme';
+import { workspaceOf } from '../lib/navigation';
 
 /** Persisted so the collapse choice survives a reload (BUTTONS §2, Writes = localStorage).
  *  Storage can throw (private mode, blocked cookies), so every access is guarded. */
@@ -53,6 +54,8 @@ export default function AppShell({
   // and takes the keyboard (PageUp/PageDown, arrows, Space) without a click first.
   const mainRef = useRef<HTMLElement>(null);
   useScrollMemory(mainRef, path);
+  // A supply chain screen is Dream Crafter's side: the phone header shows its logo there, as the sidebar does.
+  const dc = workspaceOf(path) === 'supply';
 
   return (
     <div data-print-root data-device={device.cls} data-fold={device.fold} style={{ flex: 1, minWidth: 0, height: '100dvh', display: 'flex', overflow: 'hidden' }}>
@@ -67,8 +70,8 @@ export default function AppShell({
           // Installed on an iPhone the page draws under the clock and battery; the top padding clears them.
           <div data-print-hide style={{ flex: 'none', display: 'flex', alignItems: 'center', gap: 10, padding: 'calc(8px + env(safe-area-inset-top)) 16px 8px', background: color.card, borderBottom: `1px solid ${color.border}` }}>
             {/* Phones navigate from the bottom tab bar. */}
-            <Logo variant="mark" size="sm" />
-            <span style={{ flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12, fontWeight: 600, letterSpacing: '0.18em', color: color.ink }}>THE CONTS</span>
+            <Logo variant="mark" size="sm" brand={dc ? 'dreamCrafter' : 'theConts'} />
+            <span style={{ flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12, fontWeight: 600, letterSpacing: dc ? '0.08em' : '0.18em', color: color.ink }}>{dc ? 'DREAM CRAFTER' : 'THE CONTS'}</span>
             <TopBar path={path} navigate={navigate} action={action} compact />
           </div>
         )}

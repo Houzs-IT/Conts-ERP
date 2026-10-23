@@ -164,7 +164,8 @@ export default function OwnerOverallReportPage() {
   const at = order.findIndex(r => r.unitId === selected);
   const row = at >= 0 ? order[at] : null;
   const totals = overallTotals(filtered);
-  const cols = COLS.filter(c => c.level <= level);
+  // Full detail shows the four bills, so their Utilities total would only repeat them.
+  const cols = COLS.filter(c => c.level <= level && (level === 1 || c.key !== 'utilities'));
   const groupStart = (i: number) => i > 0 && cols[i - 1].group !== cols[i].group;
   // The band header: one cell per run of columns in the same group.
   const bands: { group: Group; span: number }[] = [];
@@ -199,9 +200,10 @@ export default function OwnerOverallReportPage() {
     const on = sort?.key === key;
     return (
       <button type="button" onClick={() => toggleSort(key)} title={`Sort by ${label}`}
-        className={cx('inline-flex items-center gap-1 bg-transparent border-none p-0 cursor-pointer font-sans text-meta font-semibold whitespace-nowrap max-sm:whitespace-normal',
+        className={cx('relative inline-flex items-center bg-transparent border-none p-0 cursor-pointer font-sans text-meta font-semibold whitespace-nowrap max-sm:whitespace-normal',
           on ? 'text-ink' : 'text-muted-ink hover:text-ink')}>
-        {label}<span aria-hidden className="inline-flex w-3">{on && (sort.dir === 1
+        {/* The arrow hangs outside the label so the label itself sits centred over its column. */}
+        {label}<span aria-hidden className="absolute left-full top-1/2 -translate-y-1/2 ml-0.5 inline-flex">{on && (sort.dir === 1
           ? <Icon name="ChevronUp" size="sm" style={{ width: 12, height: 12 }} />
           : <Icon name="ChevronDown" size="sm" style={{ width: 12, height: 12 }} />)}</span>
       </button>

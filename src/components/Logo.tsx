@@ -9,6 +9,12 @@ import { color } from '../theme';
 
 export const MARK = { src: '/brand/mark-gold.png', w: 117, h: 136 };
 const LOCKUP = { src: '/brand/logo-gold.png', w: 195, h: 162 };
+/** Dream Crafter's building and bear, white with its gold bars (supply chain workspace), from the same script. */
+const DC_MARK = { src: '/brand/dc-mark.png', w: 138, h: 160 };
+
+/** Whose logo: The Conts (rental) or Dream Crafter (the supply chain workspace). */
+export type LogoBrand = 'theConts' | 'dreamCrafter';
+const BRAND_NAME: Record<LogoBrand, string> = { theConts: 'THE CONTS', dreamCrafter: 'DREAM CRAFTER' };
 
 /** The towers' weight sits right of and below their bounding box (thin lines on the left, the block on the right),
  *  so a box-centred mark reads as off-centre in its tile. This nudge, as a share of the mark's own width and height,
@@ -19,24 +25,28 @@ export const markNudge = (h: number) => {
   return `translate(${(MARK_OPTICAL.x * w).toFixed(2)}px, ${(MARK_OPTICAL.y * h).toFixed(2)}px)`;
 };
 
-export function Logo({ variant = 'full', size = 'md', onDark = false, product = false }: {
+export function Logo({ variant = 'full', size = 'md', onDark = false, product = false, brand = 'theConts' }: {
   variant?: 'full' | 'mark' | 'wordmark';
   size?: 'sm' | 'md' | 'lg';
   onDark?: boolean;
   /** The app's own lockup (sidebar): "Property OS" under the wordmark, as in the desktop design. */
   product?: boolean;
+  brand?: LogoBrand;
 }) {
+  const dc = brand === 'dreamCrafter';
   const height = { sm: 28, md: 40, lg: 50 }[size];
   const ink = onDark ? '#FFFFFF' : color.ink;
   const muted = onDark ? color.dim : color.textMuted;
 
   // The large lockup on dark (the login hero) is the company's artwork itself.
-  if (variant === 'full' && size === 'lg' && onDark && !product) {
+  if (variant === 'full' && size === 'lg' && onDark && !product && !dc) {
     const h = 112;
     return <img src={LOCKUP.src} alt="The Conts" width={Math.round(LOCKUP.w * h / LOCKUP.h)} height={h} style={{ display: 'block' }} />;
   }
 
-  const towers = (h: number) => (
+  const towers = (h: number) => dc
+    ? <img src={DC_MARK.src} alt="" aria-hidden width={Math.round(DC_MARK.w * h / DC_MARK.h)} height={h} style={{ display: 'block', flex: 'none' }} />
+    : (
     <img src={MARK.src} alt="" aria-hidden width={Math.round(MARK.w * h / MARK.h)} height={h} style={{ display: 'block', flex: 'none', transform: markNudge(h) }} />
   );
   // On dark there is no tile; the towers keep a little air inside their square so the lockup is not cramped.
@@ -48,14 +58,15 @@ export function Logo({ variant = 'full', size = 'md', onDark = false, product = 
       </div>
     );
 
-  if (variant === 'mark') return <span role="img" aria-label="The Conts" style={{ display: 'inline-flex' }}>{mark}</span>;
+  if (variant === 'mark') return <span role="img" aria-label={dc ? 'Dream Crafter' : 'The Conts'} style={{ display: 'inline-flex' }}>{mark}</span>;
 
   const wordmark = (
     <div style={{ display: 'flex', flexDirection: 'column', gap: size === 'sm' ? 2 : 4 }}>
       <span style={{
         fontSize: size === 'sm' ? 12 : size === 'lg' ? 16 : 14,
-        fontWeight: 600, letterSpacing: '0.18em', color: onDark ? '#FFFFFF' : ink,
-      }}>THE CONTS</span>
+        // DREAM CRAFTER is four letters longer, so it spaces tighter to fit the same sidebar width.
+        fontWeight: 600, letterSpacing: dc ? '0.08em' : '0.18em', whiteSpace: 'nowrap', color: onDark ? '#FFFFFF' : ink,
+      }}>{BRAND_NAME[brand]}</span>
       {product
         // The sidebar lockup has to fit beside the collapse button (about 136px); the design names the
         // product there instead of squeezing the tagline below the 11px minimum.

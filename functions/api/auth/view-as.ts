@@ -1,6 +1,7 @@
 import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { readSession, readCookie, signSession, cookie, clearCookie, sessionLimits, securitySettings, type Session } from '../../_lib/auth';
-import { doorFor, HOME } from '../../_lib/door';
+import { doorFor, homeFor } from '../../_lib/door';
+import { sideOf } from '../../_lib/userSide';
 import { ROLES } from '../../_lib/roles';
 import { ROLE_LABEL } from '../../../src/lib/vocabulary';
 
@@ -100,8 +101,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   // No signed-in browser row for the account being viewed, so View as never shows up in that person's device list.
   // Going back reuses the real person's own row, so switching back and forth adds none for them either.
   const sid = back ? w.origin.sid : undefined;
+  const side = await sideOf(env, user.id);
   const session = await signSession(env.SESSION_SECRET,
-    { userId: user.id, email: user.email, role: user.role, fullName: user.full_name, sid }, theirs.ttlHours, theirs.absoluteDays);
+    { userId: user.id, email: user.email, role: user.role, side, fullName: user.full_name, sid }, theirs.ttlHours, theirs.absoluteDays);
   const origin = await signSession(env.SESSION_SECRET,
     { userId: w.origin.userId, email: w.origin.email, role: w.origin.role, fullName: w.origin.fullName, sid: w.origin.sid }, mine.ttlHours, mine.absoluteDays, w.origin.iat);
 
@@ -109,7 +111,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     actorId: w.origin.userId, actorLabel: w.origin.fullName, action: 'user.view_as',
     entityTable: 'users', entityId: user.id, after: { viewedAs: user.full_name, role: user.role },
   });
-  return reply({ home: HOME[user.role] ?? '/' }, [
+  return reply({ home: homeFor(user.role, side) }, [
     cookie(request, session, theirs.ttlHours * 3600),
     back ? clearOrigin(request) : originCookie(request, origin, mine.ttlHours * 3600),
   ]);

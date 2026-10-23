@@ -51,6 +51,21 @@ def tile(size, radius):
     return big.resize((size, size), Image.LANCZOS)
 
 
+# Dream Crafter (the supply chain workspace): public/brand/dream-crafter-logo.png is the brand's stacked lockup,
+# black building and bear with gold bars. Rows 0-2671 hold the mark, the rest DREAM CRAFTER. For the dark sidebar
+# the black turns white and the gold bars keep their own colour.
+dc = Image.open(BRAND / 'dream-crafter-logo.png').convert('RGBA')
+dc = dc.crop((0, 0, dc.width, 2672))
+dc = dc.crop(dc.getchannel('A').getbbox())
+px = dc.load()
+for y in range(dc.height):
+    for x in range(dc.width):
+        r, g, b, a = px[x, y]
+        if a and max(r, g, b) < 100:
+            px[x, y] = (255, 255, 255, a)
+dc.thumbnail((dc.width, 160), Image.LANCZOS)
+dc.save(BRAND / 'dc-mark.png', optimize=True)
+
 tile(64, 14).save(BRAND / 'favicon-64.png', optimize=True)
 tile(180, 0).save(BRAND / 'apple-touch-icon.png', optimize=True)
 print('wrote', ', '.join(p.name for p in sorted(BRAND.glob('*.png'))))
