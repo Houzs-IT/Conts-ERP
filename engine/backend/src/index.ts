@@ -123,6 +123,7 @@ import { companyContext } from "./middleware/companyContext";
 import { publicDoScan } from "./routes/publicDoScan";
 import { publicContractorCalendar } from "./routes/publicContractorCalendar";
 import { publicBrandCalendar } from "./routes/publicBrandCalendar";
+import { renovationBetaClientPublic } from "./routes/renovationBetaClientPublic";
 import { brandShare } from "./routes/brandShare";
 // Renovation projects (Conts renovation flow, phase 3). Own router: routes/projects.ts is at its size ceiling.
 import renovation from "./routes/renovation";
@@ -387,6 +388,8 @@ app.route("/api/public/contractor-calendar", publicContractorCalendar);
 // own confirmed events, its display floorplan, its own size and total sales,
 // scoped by the token's brand on every read. See routes/publicBrandCalendar.ts.
 app.route("/api/public/brand-calendar", publicBrandCalendar);
+// PUBLIC no-login Beta Client PO list: the signed token names the one project. See routes/renovationBetaClientPublic.ts.
+app.route("/api/public/beta-client", renovationBetaClientPublic);
 
 app.use("/api/*", auth);
 
