@@ -358,6 +358,39 @@ export async function levelsFor(env: Env, who: Actor): Promise<Record<string, Le
 export async function levelAt(env: Env, who: Actor, areaKey: string): Promise<Level> {
   return (await levelsFor(env, who))[areaKey] ?? 'none';
 }
+/** Whether the signed-in person's level in an area reaches at least `min`, read from `levels` that requireSession
+ *  puts on the session. The synchronous form of mayIn, for the handlers that replaced a role list (management,
+ *  finance, operations manager) with the level the Permissions screen shows. Management is full everywhere. */
+export const can = (s: { levels?: Record<string, Level> }, areaKey: string, min: Level): boolean =>
+  RANK[s.levels?.[areaKey] ?? 'none'] >= RANK[min];
+
+/** Every active desk account whose level in an area reaches `min`, side closing included: the people a notice for
+ *  that area goes to ("people whose department or position grants it"). Read in two queries however many people. */
+export async function peopleWithAccess(env: Env, areaKey: string, min: Level): Promise<{ id: string; kind: DepartmentKind }[]> {
+  const area = BY_KEY.get(areaKey);
+  if (!area) return [];
+  const [people, rows] = await Promise.all([
+    all<{ id: string; role: string; side: string | null; department_id: string | null; position_id: string | null; kind: string | null }>(env,
+      `SELECT u.id, u.role, COALESCE(d.side, u.side) AS side, u.department_id, u.position_id, d.kind
+         FROM users u LEFT JOIN departments d ON d.id = u.department_id WHERE u.is_active = 1 AND u.role <> 'owner'`),
+    all<{ scope: string; scope_id: string; area: string; level: string }>(env, 'SELECT scope, scope_id, area, level FROM access_rules'),
+  ]);
+  const mapFor = (scope: string, id: string | null): Map<string, Setting> => {
+    const m = new Map<string, Setting>();
+    if (id) for (const r of rows) if (r.scope === scope && r.scope_id === id && isSetting(r.level)) m.set(r.area, r.level);
+    return m;
+  };
+  const out: { id: string; kind: DepartmentKind }[] = [];
+  for (const p of people) {
+    const kind = kindOf({ role: p.role, kind: isKind(p.kind) ? p.kind : null });
+    if (kind !== 'management' && kind !== 'staff') continue;
+    if (offSide(kind, isSide(p.side) ? p.side : 'both', area)) continue;
+    const rules: Rules = { department: { rules: mapFor('department', p.department_id) }, position: { rules: mapFor('position', p.position_id) }, user: { rules: mapFor('user', p.id) } };
+    if (RANK[resolveFor(rules, { kind }, area).level] >= RANK[min]) out.push({ id: p.id, kind });
+  }
+  return out;
+}
+
 /** Whether the person's level in an area reaches at least `min`. */
 export async function mayIn(env: Env, who: Actor, areaKey: string, min: Level): Promise<boolean> {
   return RANK[await levelAt(env, who, areaKey)] >= RANK[min];

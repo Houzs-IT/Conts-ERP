@@ -1,6 +1,6 @@
 import { type Env, all, run, json, fail, audit, nowIso } from '../../_lib/db';
-import { requireSession, isFieldRole } from '../../_lib/auth';
-import { MASTER_ROLES } from '../../_lib/properties';
+import { can } from '../../_lib/access';
+import { requireSession, isFieldRole, type Session } from '../../_lib/auth';
 import {
   type Row, type ImportKind, IMPORT_KINDS, MAX_ROWS_PER_REQUEST, todayInKL,
   mapListing, mapReservations, mapWorkbookUnits, mapAirbnbEarnings, mapCleaning, mapWorkbookExpenses, mapPayoutHistory,
@@ -17,7 +17,7 @@ import {
  * Channex. Guest details never go into the audit log: one audit row per request, counts only.
  */
 
-const allowed = (role: string) => MASTER_ROLES.includes(role) && !isFieldRole(role);
+const allowed = (s: Session) => can(s, 'finance', 'view') && !isFieldRole(s.role);
 const dbFor = (env: Env): Db => ({
   all: (sql, ...args) => all(env, sql, ...args) as never,
   run: (sql, ...args) => run(env, sql, ...args),
@@ -26,7 +26,7 @@ const dbFor = (env: Env): Db => ({
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!allowed(session.role)) return fail('FORBIDDEN', 'Only management, finance and operations managers can import data.', 403);
+  if (!allowed(session)) return fail('FORBIDDEN', 'Only people with Finance access can import data.', 403);
   const units = await all<{ id: string; unit_number: string; property_id: string; property_name: string }>(env, `
     SELECT u.id, u.unit_number, u.property_id, p.name AS property_name FROM units u JOIN properties p ON p.id = u.property_id`);
   const properties = await all<{ id: string; name: string }>(env, 'SELECT id, name FROM properties');
@@ -40,7 +40,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!allowed(session.role)) return fail('FORBIDDEN', 'Only management, finance and operations managers can import data.', 403);
+  if (!allowed(session)) return fail('FORBIDDEN', 'Only people with Finance access can import data.', 403);
 
   const b = await request.json<{ kind?: string; rows?: unknown; extra?: Record<string, unknown> }>().catch(() => null);
   if (!b || !IMPORT_KINDS.includes(b.kind as ImportKind)) return fail('VALIDATION', 'Unknown import kind.', 422);

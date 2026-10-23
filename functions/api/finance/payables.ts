@@ -1,6 +1,5 @@
 import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
-import { MASTER_ROLES } from '../../_lib/properties';
 import { hasBilling, DAY } from '../../_lib/maintenance';
 
 /** Accounts payable (owner, 11 Oct 2026: "expenses I treat as AP, done by finance"): what the company owes outside
@@ -69,7 +68,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!session.manage || !MASTER_ROLES.includes(session.role)) return fail('FORBIDDEN', 'Only finance and management can record a payment.', 403);
+  if (!session.manage) return fail('FORBIDDEN', 'Only finance and management can record a payment.', 403);
   if (!(await hasBilling(env))) return fail('NOT_CONFIGURED', 'Contractor payments need a database update (migration 0108) that is not applied yet.', 501);
 
   const b = await request.json<any>().catch(() => null);

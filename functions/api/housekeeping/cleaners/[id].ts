@@ -3,7 +3,7 @@ import { type Env, one, run, json, fail, audit, nowIso } from '../../../_lib/db'
 import { requireSession } from '../../../_lib/auth';
 
 const EMPLOYMENT = ['internal', 'outsourced'];
-const MANAGE = ['management', 'operations_manager', 'operations_staff'];
+const MANAGE = ['management']; // everyone else follows the area's level (mayWork / maySee / mayRun)
 
 /** PATCH /api/housekeeping/cleaners/:id — edit a roster entry. Any subset of
  *  { name, employmentType, vendorName, phone, isActive }. Deactivating keeps the

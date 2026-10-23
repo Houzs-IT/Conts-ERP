@@ -1,6 +1,5 @@
 import { type Env, one, json, fail, audit } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
-import { MASTER_ROLES } from '../../_lib/properties';
 import { chargeClean } from '../../_lib/cleaning';
 import { unitCosts } from '../../_lib/unitCosts';
 
@@ -12,7 +11,7 @@ import { unitCosts } from '../../_lib/unitCosts';
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (isFieldRole(session.role) || !session.manage || !MASTER_ROLES.includes(session.role)) {
+  if (isFieldRole(session.role) || !session.manage) {
     return fail('FORBIDDEN', 'Only finance and management can charge cleaning jobs to a unit.', 403);
   }
   const b = await request.json<any>().catch(() => null);

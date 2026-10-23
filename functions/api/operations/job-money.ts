@@ -1,7 +1,7 @@
 import { type Env, json, fail } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
-import { maintenanceMoney, cleaningMoney, hasJobInvoices, PROFIT_ROLES } from '../../_lib/jobProfit';
-import { mayWork } from '../../_lib/access';
+import { maintenanceMoney, cleaningMoney, hasJobInvoices } from '../../_lib/jobProfit';
+import { can } from '../../_lib/access';
 
 /** GET /api/operations/job-money?kind=maintenance|cleaning&id= — one job's billing, its items (maintenance), the invoices
  *  submitted against it, the actual cost (invoices, else the estimate) and the profit. Office only; the amounts only for
@@ -16,6 +16,6 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const ready = await hasJobInvoices(env);
   const m = (await (kind === 'maintenance' ? maintenanceMoney(env, [id]) : cleaningMoney(env, [id]))).get(id);
   if (!m) return fail('NOT_FOUND', 'That job no longer exists.', 404);
-  const money = !!session.manage || mayWork(session, PROFIT_ROLES);
+  const money = !!session.manage || can(session, 'finance', 'view');
   return json({ ready, money, ...m, ...(money ? {} : { billed: null, actual: null, estimate: null, profit: null, lines: m.lines?.map(l => ({ ...l, internalCost: null })) }) });
 };

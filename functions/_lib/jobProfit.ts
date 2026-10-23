@@ -9,7 +9,6 @@ import { priceBook, layoutKey } from './cleaningPrices';
  *  until one is submitted, an estimate: the items' internal cost (maintenance) or the cleaner's pay (cleaning). The
  *  actual cost is The Conts' figure; nothing here is shown to an owner. */
 /** Who sees a job's actual cost and profit: the roles that see repair amounts today. */
-export const PROFIT_ROLES = ['management', 'operations_manager', 'finance_admin'];
 
 export const hasJobInvoices = (env: Env) => hasColumn(env, 'expenses', 'invoice_task_id').catch(() => false);
 

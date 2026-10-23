@@ -21,7 +21,7 @@ const whole = (v: unknown) => Number.isInteger(v) && (v as number) >= 0;
 export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!session.manage && session.role !== 'operations_manager') return fail('FORBIDDEN', 'Only finance, operations managers and management can set rates.', 403);
+  if (!session.manage) return fail('FORBIDDEN', 'Only people with Full Performance access can set rates.', 403);
 
   const b = await request.json<any>().catch(() => null);
   if (!b?.unitId) return fail('VALIDATION', 'Say which unit.', 422);

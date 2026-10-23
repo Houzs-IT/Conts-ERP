@@ -13,7 +13,7 @@ const CHANNEX_PROVIDERS = ['airbnb', 'booking_com', 'agoda'];
 export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!mayWork(session, ['management', 'operations_manager', 'operations_staff'])) return fail('FORBIDDEN', 'You cannot check the channels for new reservations.', 403);
+  if (!mayWork(session, ['management'])) return fail('FORBIDDEN', 'You cannot check the channels for new reservations.', 403);
 
   const provider = String(params.provider);
   const row = await one<{ id: string }>(env, 'SELECT id FROM integrations WHERE provider = ?', provider);

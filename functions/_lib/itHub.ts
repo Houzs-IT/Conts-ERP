@@ -19,8 +19,7 @@ export const MAX_FILE_BYTES = 10 * 1024 * 1024;
 const FILE_KINDS = /^(image\/|video\/mp4$|video\/quicktime$|application\/pdf$)/;
 
 const ROLE_NAME: Record<string, string> = {
-  management: 'Management', operations_manager: 'Operations manager', operations_staff: 'Operations staff',
-  finance_admin: 'Finance admin',
+  management: 'Management', operations_staff: 'Operations staff',
 };
 
 export interface Hub { base: string; key: string; reporterId: string }

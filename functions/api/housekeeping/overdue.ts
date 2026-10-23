@@ -1,6 +1,5 @@
 import { type Env, all, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
-import { MASTER_ROLES } from '../../_lib/properties';
 import { MYT_DATE } from '../../_lib/ops';
 import { CLEAN_KINDS_SQL, chargeClean, mytToday } from '../../_lib/cleaning';
 import { noOpenBlockerSql } from '../../_lib/maintenance';
@@ -18,7 +17,7 @@ const NOTE = 'closed in bulk';
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (isFieldRole(session.role) || !MASTER_ROLES.includes(session.role)) return fail('FORBIDDEN', 'Only management can close overdue cleaning jobs in bulk.', 403);
+  if (isFieldRole(session.role) || !session.manage) return fail('FORBIDDEN', 'Only people with Full Operations access can close overdue cleaning jobs in bulk.', 403);
 
   const b = await request.json<any>().catch(() => null);
   const action = b?.action;

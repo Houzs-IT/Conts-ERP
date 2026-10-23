@@ -6,7 +6,7 @@ import { hasServicePrices, serviceBook, setPriceToday } from '../../_lib/service
 const CATEGORIES = ['plumbing', 'electrical', 'aircon', 'furniture', 'appliance', 'cleaning', 'general', 'other'];
 const UNIT_LABELS = ['job', 'unit', 'hour'];
 // Who may maintain the catalog. Same set as inventory master data.
-const WRITE_ROLES = ['management', 'operations_manager', 'operations_staff'];
+const WRITE_ROLES = ['management']; // everyone else follows the area's level (mayWork / maySee / mayRun)
 
 /** GET /api/maintenance/skus?q=&active= — the repair-item catalog with its preset selling price. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {

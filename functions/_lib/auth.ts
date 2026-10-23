@@ -1,5 +1,5 @@
 import { type Env, all, one, run, fail, nowIso } from './db';
-import { accessFor, canManage, isSide, isKind, type DepartmentKind, type Level, type Side } from './access';
+import { accessFor, canManage, levelsFor, isSide, isKind, type DepartmentKind, type Level, type Side } from './access';
 import { notify } from './notify';
 
 export interface SecuritySettings { staffTtlHours: number; ownerTtlHours: number; absoluteDays: number; maxAttempts: number; lockoutMinutes: number; require2faRoles: string[];
@@ -172,7 +172,9 @@ export function sessionLimits(settings: SecuritySettings, role: string) {
 /** `departmentId`, `positionId`, `kind`: where the account sits (migration 0145) and its department's kind, which decides the
  *  hidden role. Read live like the role and side, so moving someone applies on their next request; absent on a cookie
  *  signed before the departments shipped, or on an owner, who has no department. */
-export interface Session { userId: string; email: string; role: string; side?: Side; departmentId?: string | null; positionId?: string | null; kind?: DepartmentKind | null; fullName: string; iat: number; sid?: string; manage?: boolean; picked?: Level | null }
+export interface Session { userId: string; email: string; role: string; side?: Side; departmentId?: string | null; positionId?: string | null; kind?: DepartmentKind | null; fullName: string; iat: number; sid?: string; manage?: boolean; picked?: Level | null;
+  /** Every area's level for this person (levelsFor), set by requireSession and never stored in the cookie. */
+  levels?: Record<string, Level> }
 
 const ENC = new TextEncoder();
 
@@ -267,14 +269,12 @@ export async function requireSession(req: Request, env: Env) {
   const s = await readSession(env.SESSION_SECRET, readCookie(req));
   if (!s) return { session: null, response: fail('UNAUTHENTICATED', 'Your session expired. Sign in to continue.', 401) };
   const access = await accessFor(env, s, new URL(req.url).pathname.replace(/\/+$/, ''), req.method);
-  const session = { ...s, manage: canManage(s.role, access), picked: access.chosen ? access.level : null };
+  const session = { ...s, manage: canManage(s.role, access), picked: access.chosen ? access.level : null, levels: await levelsFor(env, s) };
   return { session: session as Session & { manage: boolean }, response: null };
 }
 
-const FINANCE = ['management', 'finance_admin', 'operations_manager'];
 const FIELD = ['housekeeper', 'technician'];
 
-export function canSeeFinance(role: string) { return FINANCE.includes(role); }
 export function isFieldRole(role: string) { return FIELD.includes(role); }
 
 export { fail, nowIso, one, run };

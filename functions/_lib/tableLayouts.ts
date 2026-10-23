@@ -1,8 +1,8 @@
-import { MASTER_ROLES } from './properties';
+import { can, type Level } from './access';
 import { isFieldRole } from './auth';
 
 /** Saved table views (migration 0094, src/components/DataTable.tsx). A view belongs to one person, or to the
- *  whole company when user_id is NULL; only management roles write company views. */
+ *  whole company when user_id is NULL; only people with Finance access (management, finance, operations managers) write company views. */
 
 export const TABLE_KEY = /^[a-z0-9][a-z0-9._-]{0,79}$/;
 const PARAM_KEY = /^[A-Za-z0-9_.:-]{1,60}$/;
@@ -17,7 +17,7 @@ export interface Layout {
 
 /** Who may keep views at all: everyone on the desk app. Owners and field roles have no tables. */
 export const mayUseViews = (role: string) => role !== 'owner' && !isFieldRole(role);
-export const mayShare = (role: string) => MASTER_ROLES.includes(role);
+export const mayShare = (s: { levels?: Record<string, Level> }): boolean => can(s, 'finance', 'view');
 
 /** The layout as stored, or the reason it is refused. Unknown keys are dropped. */
 export function cleanLayout(v: unknown): Layout | string {

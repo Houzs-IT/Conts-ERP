@@ -1,14 +1,14 @@
 import { type Env, one, run, json, fail, audit, nowIso } from '../../_lib/db';
-import { requireSession } from '../../_lib/auth';
+import { requireSession, type Session } from '../../_lib/auth';
 import { cleanLayout, cleanName, mayShare, mayUseViews, toView, type ViewRow } from '../../_lib/tableLayouts';
 
 const COLS = 'id, table_key, user_id, name, is_default, layout, created_by, updated_at';
 
 /** A person changes only their own views; company views need a management role. */
-async function load(env: Env, id: string, userId: string, role: string): Promise<ViewRow | Response> {
+async function load(env: Env, id: string, userId: string, who: Session): Promise<ViewRow | Response> {
   const row = await one<ViewRow>(env, `SELECT ${COLS} FROM table_layouts WHERE id = ?`, id);
   if (!row || (row.user_id && row.user_id !== userId)) return fail('NOT_FOUND', 'That view no longer exists.', 404);
-  if (!row.user_id && !mayShare(role)) return fail('FORBIDDEN', 'Only management can change company views.', 403);
+  if (!row.user_id && !mayShare(who)) return fail('FORBIDDEN', 'Only management can change company views.', 403);
   return row;
 }
 
@@ -17,7 +17,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
   if (!mayUseViews(session.role)) return fail('FORBIDDEN', 'Saved views are not available on this account.', 403);
-  const row = await load(env, String(params.id), session.userId, session.role);
+  const row = await load(env, String(params.id), session.userId, session);
   if (row instanceof Response) return row;
   const b = await request.json<any>().catch(() => null);
   if (!b || typeof b !== 'object') return fail('VALIDATION', 'Nothing to change.', 422);
@@ -59,7 +59,7 @@ export const onRequestDelete: PagesFunction<Env> = async ({ request, env, params
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
   if (!mayUseViews(session.role)) return fail('FORBIDDEN', 'Saved views are not available on this account.', 403);
-  const row = await load(env, String(params.id), session.userId, session.role);
+  const row = await load(env, String(params.id), session.userId, session);
   if (row instanceof Response) return row;
   await run(env, 'DELETE FROM table_layouts WHERE id = ?', row.id);
   await audit(env, {

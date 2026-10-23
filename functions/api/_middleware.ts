@@ -1,5 +1,5 @@
 import { type Env, fail, withRequestDb } from '../_lib/db';
-import { readSession, readCookie, signSession, cookie, clearCookie, sessionLimits, sessionState, isFieldRole, canSeeFinance } from '../_lib/auth';
+import { readSession, readCookie, signSession, cookie, clearCookie, sessionLimits, sessionState, isFieldRole } from '../_lib/auth';
 import { doorFor, doorRefusal } from '../_lib/door';
 import { accessFor, refusalFor } from '../_lib/access';
 import { flushWhenQuiet, FLUSH_DELAY_MS } from '../_lib/channexQueue';
@@ -145,7 +145,7 @@ const handle: PagesFunction<Env> = async ({ request, env, next, waitUntil }) => 
   const access = await accessFor(env, session, path, request.method);
   const refused = refusalFor(access, request.method);
   if (refused) return fail('FORBIDDEN', refused, 403);
-  if (MONEY_ONLY.test(path) && !(access.chosen ? access.level !== 'none' : canSeeFinance(session.role))) {
+  if (MONEY_ONLY.test(path) && access.level === 'none') {
     return fail('FORBIDDEN', 'Only finance and management can see invoices and payments.', 403);
   }
 

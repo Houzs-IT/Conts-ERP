@@ -1,7 +1,8 @@
 import { type Env, all, json, fail, transaction } from '../../_lib/db';
+import { can } from '../../_lib/access';
 import { auditMany } from '../../_lib/history';
 import { requireSession } from '../../_lib/auth';
-import { moneySchema, moneySql, MONEY_ROLES } from '../../_lib/bookingMoney';
+import { moneySchema, moneySql } from '../../_lib/bookingMoney';
 import { insertPayments, clean } from '../../_lib/bookingPayments';
 import { checkDate, invalid, type Fields } from '../../_lib/validate';
 
@@ -14,7 +15,7 @@ const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!MONEY_ROLES.includes(session.role)) return fail('FORBIDDEN', 'Only management, finance and operations managers can record host payouts.', 403);
+  if (!can(session, 'finance', 'edit')) return fail('FORBIDDEN', 'Only people who can edit Finance record host payouts.', 403);
   const schema = await moneySchema(env);
   if (!schema.payments) return fail('NOT_READY', 'Payments are not set up on this database yet (migration 0091).', 503);
 

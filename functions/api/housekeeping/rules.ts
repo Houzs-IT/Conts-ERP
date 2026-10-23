@@ -32,7 +32,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!mayRun(session, ['management', 'operations_manager'])) return fail('FORBIDDEN', 'Only operations managers and management can change the rules.', 403);
+  if (!mayRun(session, ['management'])) return fail('FORBIDDEN', 'Only operations managers and management can change the rules.', 403);
 
   const b = await request.json<any>().catch(() => null);
   const writes: [string, string][] = [];

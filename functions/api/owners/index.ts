@@ -1,7 +1,6 @@
 import { maySee } from '../../_lib/access';
 import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
-import { MASTER_ROLES } from '../../_lib/properties';
 import { todayMyt } from '../../_lib/ops';
 import { loadInputs, withYearToDate, computeMonth, statementSettings, type Query, type UnitRow } from '../../_lib/ownerStatement';
 import { contractView } from '../../_lib/unitContract';
@@ -11,7 +10,7 @@ import { checkPhone } from '../../_lib/validate';
 import { addressOf, altContactOf, ownerDetailsReady } from '../../_lib/ownerDetails';
 import { purposeReady, codeOf, type ContractCode } from '../../_lib/unitPurpose';
 
-const READ_ROLES = [...MASTER_ROLES, 'operations_staff'];
+const READ_ROLES = ['management']; // everyone else follows the area's level (mayWork / maySee / mayRun)
 /** Last four characters, ignoring spaces and dashes ("680606-08-5101" -> "5101"). */
 const tail = (v: unknown) => String(v).replace(/[\s-]/g, '').slice(-4);
 

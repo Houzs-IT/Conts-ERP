@@ -4,7 +4,7 @@ import { like, phoneCore, phoneCoreSql } from './bookingList';
 /** The guest directory list: lifetime figures and today/tomorrow movement computed in SQL, so the
  *  screen can page and search thousands of guests without loading every stay. */
 
-export const CONTACT_ROLES = ['management', 'operations_manager', 'operations_staff'];
+export const CONTACT_ROLES = ['management']; // everyone else follows the area's level (mayWork / maySee / mayRun)
 
 export const FILTERS = ['all', 'arriving_today', 'departing_today', 'tomorrow', 'missing_id', 'repeat', 'vip', 'blacklist'] as const;
 export type GuestFilter = typeof FILTERS[number];

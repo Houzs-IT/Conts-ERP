@@ -3,7 +3,7 @@ import { requireSession, hasColumn } from '../../_lib/auth';
 import { maySee } from '../../_lib/access';
 import { invalidLetting, REMIND_DAYS, type LettingInput } from '../../_lib/lettings';
 
-const READ = ['management', 'operations_manager', 'finance_admin', 'operations_staff'];
+const READ = ['management']; // everyone else follows the area's level (mayWork / maySee / mayRun)
 const ready = (env: Env) => hasColumn(env, 'unit_lettings', 'id').catch(() => false);
 
 /** GET /api/lettings[?unitId=] — every Agent-to-let record (or one unit's), latest change first, with the unit and
