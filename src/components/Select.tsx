@@ -71,6 +71,10 @@ export function SearchSelect({ value, onChange, options, label, showLabel, allLa
   const shown = useMemo(() => {
     const t = q.trim().toLowerCase();
     const hits = t ? sorted.filter(o => `${o.group ?? ''} ${o.label} ${o.hint ?? ''} ${o.keywords ?? ''}`.toLowerCase().includes(t)) : sorted;
+    // A search that is exactly a row's code (MY, 65 or +65) puts that row first, ahead of names that merely contain it.
+    const bare = t.replace(/^\+/, '');
+    const exact = (o: SelectOption) => o.keywords?.toLowerCase() === bare || o.hint?.toLowerCase().replace(/^\+/, '') === bare;
+    if (t) hits.sort((a, b) => Number(exact(b)) - Number(exact(a)));
     return allLabel && !t ? [{ value: '', label: allLabel }, ...hits] : hits;
   }, [sorted, q, allLabel]);
   const current = options.find(o => o.value === value);
