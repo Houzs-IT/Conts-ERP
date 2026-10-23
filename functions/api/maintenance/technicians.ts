@@ -14,7 +14,6 @@ const isEmployment = (v: unknown): v is Employment => EMPLOYMENT.includes(v as E
  *   list (Workers > Technicians, migration 0144), in-house people first, then contractors. Without the list: the
  *   company's own people and every contractor name already used on a job, as before.
  * GET ?all=1     the whole list for Workers > Technicians, switched-off entries too, with each one's open jobs.
- * GET ?logins=1  the logins an in-house entry may be linked to (field and operations accounts).
  */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
@@ -22,12 +21,6 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if (isFieldRole(session.role) || session.role === 'owner') return fail('FORBIDDEN', 'Only the office assigns maintenance jobs.', 403);
 
   const q = new URL(request.url).searchParams;
-  if (q.get('logins') === '1') {
-    const rows = await all<{ id: string; full_name: string; role: string }>(env,
-      `SELECT id, full_name, role FROM users WHERE is_active = 1 AND role IN (${TECH_LOGIN_ROLES.map(() => '?').join(',')}) ORDER BY full_name`, ...TECH_LOGIN_ROLES);
-    return json({ data: rows.map(r => ({ id: r.id, name: r.full_name, role: r.role })) });
-  }
-
   if (!(await hasTechnicianList(env))) {
     if (q.get('all') === '1') return fail('NOT_MIGRATED', 'The technician list needs a database update (migration 0144) that has not been applied yet.', 503);
     return json({ data: await namesBeforeTheList(env) });

@@ -32,24 +32,24 @@ type Worker = Cleaner & { loginRole?: string | null };
 
 interface ListSide { title: string; hint: string; add: string; empty: string; word: string; namePh: string }
 interface ListConfig {
-  label: string; noun: string; Noun: string; jobs: string; listUrl: string; api: string; loginsUrl: string;
+  label: string; noun: string; Noun: string; jobs: string; listUrl: string; api: string;
   inside: ListSide; outside: ListSide; busyLabel: string; busyToday: boolean;
-  vendorLabel: string; vendorPh: string; linkLabel: string; offBody: string;
+  vendorLabel: string; vendorPh: string; offBody: string;
 }
 
 const LISTS: Record<ListKey, ListConfig> = {
   cleaners: {
-    label: 'Cleaners', noun: 'cleaner', Noun: 'Cleaner', jobs: 'cleaning jobs', listUrl: '/housekeeping/cleaners', api: '/housekeeping/cleaners', loginsUrl: '/housekeeping/crew?scope=housekeeping',
+    label: 'Cleaners', noun: 'cleaner', Noun: 'Cleaner', jobs: 'cleaning jobs', listUrl: '/housekeeping/cleaners', api: '/housekeeping/cleaners',
     inside: { title: 'Internal staff', hint: 'Your own cleaners. With app access they sign in and get jobs on their phone.', add: 'Add internal cleaner', empty: 'No internal cleaners yet.', word: 'Internal staff', namePh: 'Nurul Huda' },
     outside: { title: 'Outsourced / third-party', hint: 'Outside cleaning companies you assign by hand or by rule. No login.', add: 'Add outsourced', empty: 'No outsourced cleaners yet.', word: 'Outsourced', namePh: 'BrightNest Crew' },
-    busyLabel: 'Open jobs today', busyToday: true, vendorLabel: 'Vendor / company', vendorPh: 'SparkleClean Services', linkLabel: 'Link to a cleaner login (optional)',
+    busyLabel: 'Open jobs today', busyToday: true, vendorLabel: 'Vendor / company', vendorPh: 'SparkleClean Services',
     offBody: 'They come off the assign picker, so no new cleaning jobs can go to them. Jobs already assigned stay as they are. You can reactivate them at any time.',
   },
   technicians: {
-    label: 'Technicians', noun: 'technician', Noun: 'Technician', jobs: 'repair jobs', listUrl: '/maintenance/technicians?all=1', api: '/maintenance/technicians', loginsUrl: '/maintenance/technicians?logins=1',
+    label: 'Technicians', noun: 'technician', Noun: 'Technician', jobs: 'repair jobs', listUrl: '/maintenance/technicians?all=1', api: '/maintenance/technicians',
     inside: { title: 'In-house', hint: 'Your own technicians. With app access they sign in and get repair jobs on their phone.', add: 'Add in-house technician', empty: 'No in-house technicians yet.', word: 'In-house', namePh: 'Ahmad Faiz' },
     outside: { title: 'Contractors', hint: 'Outside companies you give repair jobs to. No login: tell them about the job yourself.', add: 'Add contractor', empty: 'No contractors yet.', word: 'Contractors', namePh: 'Ah Seng Plumbing' },
-    busyLabel: 'Open jobs', busyToday: false, vendorLabel: 'Company', vendorPh: 'Ah Seng Plumbing Sdn Bhd', linkLabel: 'Link to a login (optional)',
+    busyLabel: 'Open jobs', busyToday: false, vendorLabel: 'Company', vendorPh: 'Ah Seng Plumbing Sdn Bhd',
     offBody: 'They come off "who fixes it", so no new repair jobs can go to them. Jobs already given to them stay as they are. You can reactivate them at any time.',
   },
 };
@@ -72,9 +72,8 @@ function appAccess(w: Worker): { label: string; tone: 'success' | 'warning' | 'n
 }
 const mayGetPin = (w: Worker) => w.employmentType === 'internal' && w.isActive && !(w.userId && w.loginRole && !FIELD_ROLES.includes(w.loginRole));
 
-interface Login { id: string; name: string }
-interface Draft { name: string; employmentType: Employment; vendorName: string; phone: string; userId: string }
-const emptyDraft = (employmentType: Employment): Draft => ({ name: '', employmentType, vendorName: '', phone: '', userId: '' });
+interface Draft { name: string; employmentType: Employment; vendorName: string; phone: string }
+const emptyDraft = (employmentType: Employment): Draft => ({ name: '', employmentType, vendorName: '', phone: '' });
 
 export default function WorkersPage() {
   const [params, setParams] = useSearchParams();
@@ -90,14 +89,13 @@ export default function WorkersPage() {
 function WorkerList({ list, tabs }: { list: ListKey; tabs: ReactNode }) {
   const cfg = LISTS[list];
   const { data, loading, error, reload } = useApi<{ data: Worker[] }>(cfg.listUrl, list === 'cleaners' ? CLEANER_FALLBACK : undefined);
-  const { data: loginData } = useApi<{ data: Login[] }>(cfg.loginsUrl, { data: [] });
   const toast = useToast();
   const [confirmDialog, ask] = useConfirm();
   const { user } = useSession();
   const mayGrant = GRANT.includes(user?.role ?? '');
 
   const [modal, setModal] = useState<{ mode: 'create' | 'edit'; id?: string; draft: Draft } | null>(null);
-  const [access, setAccess] = useState<Worker | null>(null);
+  const [access, setAccess] = useState<{ worker: Worker; given?: { employeeId: string; pin: string } } | null>(null);
   const [busy, setBusy] = useState(false);
 
   const roster = data?.data ?? [];
@@ -113,8 +111,17 @@ function WorkerList({ list, tabs }: { list: ListKey; tabs: ReactNode }) {
     const vendorName = d.employmentType === 'outsourced' ? d.vendorName.trim() : '';
     try {
       if (modal.mode === 'create') {
-        await api.post(cfg.api, { name: d.name.trim(), employmentType: d.employmentType, vendorName: vendorName || null, phone: d.phone.trim() || null, userId: d.employmentType === 'internal' ? d.userId || null : null });
-        toast({ tone: 'success', title: `${cfg.Noun} added.`, body: `${d.name.trim()} · ${d.employmentType === 'internal' ? cfg.inside.word : cfg.outside.word}.` });
+        const { id } = await api.post<{ id: string }>(cfg.api, { name: d.name.trim(), employmentType: d.employmentType, vendorName: vendorName || null, phone: d.phone.trim() || null });
+        if (d.employmentType === 'internal' && mayGrant) {
+          // An in-house worker gets app access straight away: their employee ID and first PIN are shown next.
+          setModal(null);
+          reload();
+          const given = await api.post<{ employeeId: string; pin: string; userId: string }>(`${cfg.api}/${id}/access`, {});
+          setAccess({ worker: { id, name: d.name.trim(), employmentType: 'internal', vendorName: null, phone: d.phone.trim() || null, userId: given.userId, employeeId: given.employeeId, isActive: true, busy: 0 }, given });
+          reload();
+          return;
+        }
+        toast({ tone: 'success', title: `${cfg.Noun} added.`, body: d.employmentType === 'internal' ? 'A manager can give them app access.' : `${d.name.trim()} · ${cfg.outside.word}.` });
       } else if (modal.id) {
         await api.patch(`${cfg.api}/${modal.id}`, { name: d.name.trim(), employmentType: d.employmentType, vendorName, phone: d.phone.trim() });
         toast({ tone: 'success', title: `${cfg.Noun} updated.`, body: `${d.name.trim()}.` });
@@ -134,7 +141,7 @@ function WorkerList({ list, tabs }: { list: ListKey; tabs: ReactNode }) {
     } catch (e) { notifyFailure(e); }
   }
 
-  const openEdit = (w: Worker) => setModal({ mode: 'edit', id: w.id, draft: { name: w.name, employmentType: w.employmentType, vendorName: w.vendorName ?? '', phone: w.phone ?? '', userId: w.userId ?? '' } });
+  const openEdit = (w: Worker) => setModal({ mode: 'edit', id: w.id, draft: { name: w.name, employmentType: w.employmentType, vendorName: w.vendorName ?? '', phone: w.phone ?? '' } });
   const rows = (side: Worker[]) => (loading && roster.length === 0 ? null : side);
 
   return (
@@ -143,14 +150,9 @@ function WorkerList({ list, tabs }: { list: ListKey; tabs: ReactNode }) {
       <PageHeader
         title="Workers"
         sub={data ? `${plural(roster.length, cfg.noun)} · ${activeCount} active · ${internal.length} ${cfg.inside.word.toLowerCase()} · ${outsourced.length} ${cfg.outside.word.toLowerCase()}` : 'Loading the list…'}
-        actions={
-          <Button size="sm" variant="secondary" icon={<Icon name="UserPlus" size="sm" />} onClick={() => setModal({ mode: 'create', draft: emptyDraft('outsourced') })}>
-            {cfg.outside.add}
-          </Button>
-        }
         primary={
           <Button size="sm" variant="primary" icon={<Icon name="UserPlus" size="sm" />} onClick={() => setModal({ mode: 'create', draft: emptyDraft('internal') })}>
-            {cfg.inside.add}
+            Add {cfg.noun}
           </Button>
         }
       />
@@ -159,21 +161,19 @@ function WorkerList({ list, tabs }: { list: ListKey; tabs: ReactNode }) {
       {error && <StaleBanner message={`Showing the last list we have. ${error}`} onRetry={reload} />}
 
       <div className="flex flex-col gap-5">
-        <WorkerSection list={list} side="internal" cfg={cfg} workers={rows(internal)} onAdd={() => setModal({ mode: 'create', draft: emptyDraft('internal') })} onEdit={openEdit} onToggle={toggleActive} onAccess={mayGrant ? setAccess : undefined} />
+        <WorkerSection list={list} side="internal" cfg={cfg} workers={rows(internal)} onAdd={() => setModal({ mode: 'create', draft: emptyDraft('internal') })} onEdit={openEdit} onToggle={toggleActive} onAccess={mayGrant ? w => setAccess({ worker: w }) : undefined} />
         <WorkerSection list={list} side="outsourced" cfg={cfg} workers={rows(outsourced)} onAdd={() => setModal({ mode: 'create', draft: emptyDraft('outsourced') })} onEdit={openEdit} onToggle={toggleActive} />
       </div>
 
-      {access && <AccessModal cfg={cfg} worker={access} onClose={() => setAccess(null)} onDone={reload} />}
+      {access && <AccessModal cfg={cfg} worker={access.worker} given0={access.given} onClose={() => setAccess(null)} onDone={reload} />}
 
       {modal && (
         <FormModal
           cfg={cfg}
-          creating={modal.mode === 'create'}
-          title={modal.mode === 'create' ? (modal.draft.employmentType === 'internal' ? cfg.inside.add : cfg.outside.add) : `Edit ${cfg.noun}`}
+          title={modal.mode === 'create' ? `Add ${cfg.noun}` : `Edit ${cfg.noun}`}
           busy={busy}
-          logins={loginData?.data ?? []}
-          takenUserIds={roster.map(w => w.userId).filter((v): v is string => !!v)}
-          currentUserId={modal.mode === 'edit' ? roster.find(w => w.id === modal.id)?.userId ?? null : null}
+          note={modal.mode === 'create' && modal.draft.employmentType === 'internal'
+            ? (mayGrant ? 'After saving you get their employee ID and first PIN for the app.' : 'A manager can give them app access after you save.') : null}
           draft={modal.draft}
           onChange={d => setModal(m => m && { ...m, draft: d })}
           onClose={() => setModal(null)}
@@ -249,19 +249,18 @@ function WorkerSection({ list, side, cfg, workers, onAdd, onEdit, onToggle, onAc
   );
 }
 
-function FormModal({ cfg, creating, title, busy, draft, logins, takenUserIds, currentUserId, onChange, onClose, onSave }: {
-  cfg: ListConfig; creating: boolean; title: string; busy: boolean; draft: Draft; logins: Login[]; takenUserIds: string[]; currentUserId: string | null;
+function FormModal({ cfg, title, busy, draft, note, onChange, onClose, onSave }: {
+  cfg: ListConfig; title: string; busy: boolean; draft: Draft; note: string | null;
   onChange: (d: Draft) => void; onClose: () => void; onSave: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    ref.current?.querySelector<HTMLElement>('input,select')?.focus();
+    ref.current?.querySelector<HTMLElement>('#wk-name')?.focus();
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !busy) onClose(); };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [busy, onClose]);
   const set = (p: Partial<Draft>) => onChange({ ...draft, ...p });
-  const linkable = logins.filter(u => !takenUserIds.includes(u.id) || u.id === currentUserId);
 
   return (
     <div role="dialog" aria-modal="true" aria-label={title}
@@ -274,15 +273,15 @@ function FormModal({ cfg, creating, title, busy, draft, logins, takenUserIds, cu
         </div>
         <div className="pt-4 px-5 pb-1 flex flex-col gap-4">
           <div className="flex flex-col gap-[7px]">
-            <label htmlFor="wk-name" className={labelCls}>Name</label>
-            <input id="wk-name" value={draft.name} disabled={busy} placeholder={draft.employmentType === 'outsourced' ? cfg.outside.namePh : cfg.inside.namePh}
-              onChange={e => set({ name: e.target.value })} className={inputCls} />
-          </div>
-
-          <div className="flex flex-col gap-[7px]">
             <Select label="Employment" showLabel size="md" value={draft.employmentType} disabled={busy}
               onChange={v => set({ employmentType: v as Employment })}
               options={[{ value: 'internal', label: cfg.inside.word }, { value: 'outsourced', label: cfg.outside.title }]} />
+          </div>
+
+          <div className="flex flex-col gap-[7px]">
+            <label htmlFor="wk-name" className={labelCls}>Name</label>
+            <input id="wk-name" value={draft.name} disabled={busy} placeholder={draft.employmentType === 'outsourced' ? cfg.outside.namePh : cfg.inside.namePh}
+              onChange={e => set({ name: e.target.value })} className={inputCls} />
           </div>
 
           {draft.employmentType === 'outsourced' && (
@@ -293,18 +292,11 @@ function FormModal({ cfg, creating, title, busy, draft, logins, takenUserIds, cu
             </div>
           )}
 
-          {draft.employmentType === 'internal' && creating && (
-            <div className="flex flex-col gap-[7px]">
-              <Select label={cfg.linkLabel} showLabel size="md" value={draft.userId} disabled={busy}
-                onChange={v => set({ userId: v })} placeholder="No login link"
-                options={linkable.map(u => ({ value: u.id, label: u.name }))} />
-              <span className="text-meta text-muted-ink">No login yet? Save, then press Give app access.</span>
-            </div>
-          )}
 
           <div className="flex flex-col gap-[7px]">
             <PhoneInput label="Phone (optional)" value={draft.phone} onChange={v => set({ phone: v })} disabled={busy} error={phoneProblem(draft.phone)} />
           </div>
+          {note && <span className="text-meta text-muted-ink">{note}</span>}
         </div>
         <div className="py-[14px] px-5 mt-2 [border-top:1px_solid_var(--color-line)] bg-page flex items-center justify-end gap-[9px] flex-wrap sticky bottom-0">
           <Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
@@ -316,10 +308,12 @@ function FormModal({ cfg, creating, title, busy, draft, logins, takenUserIds, cu
 }
 
 /** "Give app access" / "New PIN": the worker's employee ID (made on first access) and their first PIN, shown once. */
-function AccessModal({ cfg, worker, onClose, onDone }: { cfg: ListConfig; worker: Worker; onClose: () => void; onDone: () => void }) {
+function AccessModal({ cfg, worker, given0, onClose, onDone }: {
+  cfg: ListConfig; worker: Worker; given0?: { employeeId: string; pin: string }; onClose: () => void; onDone: () => void;
+}) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [given, setGiven] = useState<{ employeeId: string; pin: string } | null>(null);
+  const [given, setGiven] = useState<{ employeeId: string; pin: string } | null>(given0 ?? null);
   const fresh = !worker.userId;
   const title = given ? `Sign-in for ${worker.name}` : worker.employeeId ? `New PIN for ${worker.name}` : `Give ${worker.name} app access`;
 

@@ -51,8 +51,6 @@ const hafiz = r.json.data?.find(t => t.userId === HAFIZ);
 check('picker: list entries with id, kind and login', r.status === 200 && hafiz?.kind === 'in_house' && hafiz.id && r.json.data.some(t => t.kind === 'contractor' && t.name === 'Ah Seng Plumbing'), r.json);
 r = await call(opsMgr, 'GET', '/api/maintenance/technicians?all=1');
 check('whole list: office link shows its role', r.status === 200 && r.json.data.some(t => t.name === 'Aina Zulkifli' && t.loginRole === 'operations_manager'), r.json);
-r = await call(opsMgr, 'GET', '/api/maintenance/technicians?logins=1');
-check('linkable logins: field and operations only', r.status === 200 && r.json.data.every(u => ['technician', 'housekeeper', 'operations_staff', 'operations_manager'].includes(u.role)) && r.json.data.some(u => u.id === HAFIZ), r.json);
 r = await call(finance, 'GET', '/api/maintenance/technicians?all=1');
 check('finance cannot open the list (403)', r.status === 403, r);
 

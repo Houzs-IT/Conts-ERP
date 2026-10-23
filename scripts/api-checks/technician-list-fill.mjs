@@ -1,5 +1,6 @@
 // Migration 0144's fill-in against messy jobs: a technician login, an operations manager with a job, one contractor typed
-// two ways. Re-runs the migration twice on the demo data. Throwaway database only (scripts/dev-pglite.mjs):
+// two ways. Re-runs the migration twice on the demo data. Run it first, on a fresh throwaway database (scripts/dev-pglite.mjs),
+// before workers-technicians.mjs, which needs the entries it makes:
 //   DB_URL=postgres://pos_app:local@127.0.0.1:55441/postgres node scripts/api-checks/technician-list-fill.mjs
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
