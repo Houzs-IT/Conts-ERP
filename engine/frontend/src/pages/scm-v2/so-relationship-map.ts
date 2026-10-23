@@ -123,7 +123,7 @@ export function useSoRelationshipMap(salesOrder: SoRelationshipHeader | null): {
     () =>
       (flow.data?.amendments ?? []).map((a) => ({
         id: a.id,
-        label: `Amendment ${a.amendmentNo}`,
+        label: `VO ${a.amendmentNo}`,
         status: a.status,
       })),
     [flow.data],

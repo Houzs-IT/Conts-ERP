@@ -148,9 +148,9 @@ export async function notifySoAmendmentRaised(
       await postPersonalNotice(env, {
         userIds: approverAudience,
         category: "GENERAL",
-        title: `SO amendment ${opts.amendmentNo} needs approval`,
+        title: `VO ${opts.amendmentNo} needs approval`,
         body:
-          `Amendment ${opts.amendmentNo} on Sales Order ${opts.soDocNo} was raised${raisedBy} ` +
+          `VO ${opts.amendmentNo} on Sales Order ${opts.soDocNo} was raised${raisedBy} ` +
           `and is waiting for ${laneLabel} approval.${tail}`,
         source: SO_SOURCE,
       });
@@ -165,9 +165,9 @@ export async function notifySoAmendmentRaised(
       await postPersonalNotice(env, {
         userIds: salesAudience,
         category: "GENERAL",
-        title: `Amendment ${opts.amendmentNo} raised on your Sales Order`,
+        title: `VO ${opts.amendmentNo} raised on your Sales Order`,
         body:
-          `Amendment ${opts.amendmentNo} was raised${raisedBy} on Sales Order ${opts.soDocNo} ` +
+          `VO ${opts.amendmentNo} was raised${raisedBy} on Sales Order ${opts.soDocNo} ` +
           `(${laneLabel}) and is waiting for approval.${tail}`,
         source: SO_SOURCE,
       });
@@ -214,9 +214,9 @@ export async function notifySoAmendmentHandedOver(
       await postPersonalNotice(env, {
         userIds: approverAudience,
         category: "GENERAL",
-        title: `SO amendment ${opts.amendmentNo} needs approval`,
+        title: `VO ${opts.amendmentNo} needs approval`,
         body:
-          `${passedBy} passed amendment ${opts.amendmentNo} on Sales Order ${opts.soDocNo} to you` +
+          `${passedBy} passed VO ${opts.amendmentNo} on Sales Order ${opts.soDocNo} to you` +
           `${why}: ${note} It is now waiting for ${LANE_NOTICE_LABEL[opts.toLane]} approval.`,
         source: SO_SOURCE,
       });
@@ -229,9 +229,9 @@ export async function notifySoAmendmentHandedOver(
       await postPersonalNotice(env, {
         userIds: requesterAudience,
         category: "GENERAL",
-        title: `SO amendment ${opts.amendmentNo} was passed to another approver`,
+        title: `VO ${opts.amendmentNo} was passed to another approver`,
         body:
-          `${passedBy} passed amendment ${opts.amendmentNo} on Sales Order ${opts.soDocNo} to the ` +
+          `${passedBy} passed VO ${opts.amendmentNo} on Sales Order ${opts.soDocNo} to the ` +
           `${LANE_NOTICE_LABEL[opts.toLane]} approver: ${note} It is still waiting for approval.`,
         source: SO_SOURCE,
       });
@@ -273,12 +273,12 @@ export async function notifySoAmendmentResolved(
       category: opts.outcome === "approved" ? "GENERAL" : "WARNING",
       title:
         opts.outcome === "approved"
-          ? `SO amendment ${opts.amendmentNo} approved`
-          : `SO amendment ${opts.amendmentNo} rejected`,
+          ? `VO ${opts.amendmentNo} approved`
+          : `VO ${opts.amendmentNo} rejected`,
       body:
         opts.outcome === "approved"
-          ? `Amendment ${opts.amendmentNo} was approved${by}. Sales Order ${opts.soDocNo} has been revised.`
-          : `Amendment ${opts.amendmentNo} on Sales Order ${opts.soDocNo} was rejected${by}.` +
+          ? `VO ${opts.amendmentNo} was approved${by}. Sales Order ${opts.soDocNo} has been revised.`
+          : `VO ${opts.amendmentNo} on Sales Order ${opts.soDocNo} was rejected${by}.` +
             (reason ? ` Reason: ${reason}` : ""),
       source: SO_SOURCE,
     });
@@ -322,7 +322,7 @@ export async function notifyPoAmendmentRaised(
       body: src
         ? `Approved SO amendment ${src} raised amendment ${opts.amendmentNo} on Purchase Order ` +
           `${opts.poNumber}. Confirming it applies the revised Sales Order to this PO.`
-        : `Amendment ${opts.amendmentNo} on Purchase Order ${opts.poNumber} was raised` +
+        : `VO ${opts.amendmentNo} on Purchase Order ${opts.poNumber} was raised` +
           `${by ? ` by ${by}` : ""} and is waiting for your confirmation.` +
           (reason ? ` Reason: ${reason}` : ""),
       source: PO_SOURCE,
@@ -361,8 +361,8 @@ export async function notifyPoAmendmentResolved(
           : `PO amendment ${opts.amendmentNo} rejected`,
       body:
         opts.outcome === "approved"
-          ? `Amendment ${opts.amendmentNo} was approved${by}. Purchase Order ${opts.poNumber} has been revised.`
-          : `Amendment ${opts.amendmentNo} on Purchase Order ${opts.poNumber} was rejected${by}.` +
+          ? `VO ${opts.amendmentNo} was approved${by}. Purchase Order ${opts.poNumber} has been revised.`
+          : `VO ${opts.amendmentNo} on Purchase Order ${opts.poNumber} was rejected${by}.` +
             (reason ? ` Reason: ${reason}` : ""),
       source: PO_SOURCE,
     });

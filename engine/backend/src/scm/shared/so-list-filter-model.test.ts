@@ -175,7 +175,7 @@ describe('money and summaries', () => {
     expect(soFilterSummary(soFilterDefaultRow('name'), labels)).toBe('Choose…');
     expect(soFilterSummary({ field: 'warehouse', op: 'is', value: 'e309c399-697c-4174-967f-ae2c888ad999' }, labels)).toBe('is KL WAREHOUSE');
     expect(soFilterSummary({ field: 'itemCategory', op: 'is', value: 'sofa' }, labels)).toBe('Sofa');
-    expect(soFilterSummary({ field: 'pendingAmendment', op: 'is', value: 'no' }, labels)).toBe('No pending amendment');
+    expect(soFilterSummary({ field: 'pendingAmendment', op: 'is', value: 'no' }, labels)).toBe('No pending VO');
     expect(soFilterField('balance')?.label).toBe('Balance');
   });
 });

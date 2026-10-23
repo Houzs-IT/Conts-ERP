@@ -35,7 +35,7 @@ export type PoAmendmentInboxRow =
 
 export const PO_AMENDMENT_INBOX_SOURCE_LABEL: Record<PoAmendmentInboxRow['kind'], string> = {
   po: 'PO amendment',
-  so: 'From SO amendment',
+  so: 'From VO',
 };
 
 export function buildPoAmendmentInbox(

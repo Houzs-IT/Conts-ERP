@@ -225,7 +225,7 @@ export function DocumentRelationshipMapModal({
   // instead of the sales-side defaults. Omitted → labels unchanged.
   rowLabels?: { primary: string; secondary: string };
   // Optional heading for the amendments row (default keeps the SO map's
-  // "Amendments off the Sales Order").
+  // "VOs off the Sales Order").
   amendmentsLabel?: string;
   // Optional SO↔PO pairing kind (see PairingKind). Passed by the maps that
   // carry a purchase leg (the PO map, the SO map): the pairing hop restyles
@@ -525,7 +525,7 @@ export function DocumentRelationshipMapModal({
         <div className="mt-3 rounded-xl border border-border-subtle bg-surface-2 px-3 py-2.5">
           <div className="mb-1.5 flex items-center gap-1.5 font-mono text-[9px] font-semibold uppercase tracking-brand text-ink-muted">
             <Share2 size={11} />
-            {amendmentsLabel ?? "Amendments off the Sales Order"}
+            {amendmentsLabel ?? "VOs off the Sales Order"}
           </div>
           <div className="flex flex-wrap gap-2">
             {amendments.map((a) => (

@@ -142,12 +142,12 @@ async function resolvedAmendmentAudience(
 /* The refusal every legacy-only gate answers when pointed at a lane row. */
 const NOT_IN_LANE_FLOW = (what: string) => ({
   error: 'not_in_lane_flow',
-  reason: `This amendment uses the two-lane flow — ${what}`,
+  reason: `This VO uses the two-lane flow — ${what}`,
 });
 /* The refusal the lane-only flag answers when pointed at a legacy row. */
 const LEGACY_HAS_NO_DESK = {
   error: 'legacy_amendment',
-  reason: 'This amendment predates the two-desk flow, so there is no other desk to pass it to.',
+  reason: 'This VO predates the two-desk flow, so there is no other desk to pass it to.',
 };
 type AmendmentWriteLoad =
   // A Houzs-NATIVE amendment: apply locally, exactly as before.
@@ -1309,7 +1309,7 @@ soAmendments.patch('/:id/reject', async (c) => {
   if (!reason) {
     return c.json({
       error: 'reason_required',
-      message: 'Give a reason for rejecting this amendment — the person who raised it needs to know what to change.',
+      message: 'Give a reason for rejecting this VO — the person who raised it needs to know what to change.',
     }, 400);
   }
 
@@ -1431,13 +1431,13 @@ soAmendments.patch('/:id/flag-lane', async (c) => {
   if (lane === 'PRICE') {
     return c.json({
       error: 'price_lane_no_handover',
-      reason: "A price amendment is the Sales Director's to approve or reject — it cannot be passed to another desk.",
+      reason: "A price VO is the Sales Director's to approve or reject — it cannot be passed to another desk.",
     }, 409);
   }
   if (!hasHouzsPerm(c, LANE_APPROVE_KEY[lane])) {
     return c.json({
       error: 'flag_forbidden',
-      message: `Only an approver of the ${LANE_LABEL[lane]} lane can pass this amendment to the other desk.`,
+      message: `Only an approver of the ${LANE_LABEL[lane]} lane can pass this VO to the other desk.`,
     }, 403);
   }
   if (loaded.mirrored) return c.json(MIRRORED_SO_READONLY, 409);
@@ -1445,13 +1445,13 @@ soAmendments.patch('/:id/flag-lane', async (c) => {
   if (amendment.status !== 'REQUESTED') {
     return c.json({
       error: 'bad_transition',
-      reason: 'This amendment has already been acted on, so it can no longer be passed to the other desk.',
+      reason: 'This VO has already been acted on, so it can no longer be passed to the other desk.',
     }, 409);
   }
   if ((amendment.lane_flag_note ?? '').trim()) {
     return c.json({
       error: 'already_handed_over',
-      reason: 'This amendment was already passed over from the other desk once. Approve it, or reject it with a reason.',
+      reason: 'This VO was already passed over from the other desk once. Approve it, or reject it with a reason.',
     }, 409);
   }
 
@@ -1517,7 +1517,7 @@ soAmendments.patch('/:id/lane', async (c) => {
   const sb = c.get('supabase'); const id = c.req.param('id'); const user = c.get('user');
 
   if (!hasHouzsPerm(c, '*')) {
-    return c.json({ error: 'forbidden', message: 'Only a super admin can change who approves an amendment.' }, 403);
+    return c.json({ error: 'forbidden', message: 'Only a super admin can change who approves a VO.' }, 403);
   }
   let body: { lane?: string; note?: string } = {};
   try { body = (await c.req.json()) as typeof body; } catch { /* validated below */ }
@@ -1533,7 +1533,7 @@ soAmendments.patch('/:id/lane', async (c) => {
   if (loaded.mirrored) return c.json(MIRRORED_SO_READONLY, 409);
   const { amendment } = loaded;
   if (amendment.status !== 'REQUESTED') {
-    return c.json({ error: 'bad_transition', reason: 'This amendment has already been acted on, so its approver can no longer change.' }, 409);
+    return c.json({ error: 'bad_transition', reason: 'This VO has already been acted on, so its approver can no longer change.' }, 409);
   }
   if (lane === toLane) return c.json({ error: 'same_lane', reason: `It is already waiting on the ${DESK[lane]} desk.` }, 409);
 
@@ -1631,7 +1631,7 @@ soAmendments.patch('/:id/withdraw', async (c) => {
   if (!isRequester && !hasHouzsPerm(c, withdrawFallbackKey)) {
     return c.json({
       error: 'withdraw_forbidden',
-      message: 'Only the person who raised this amendment can withdraw it.',
+      message: 'Only the person who raised this VO can withdraw it.',
     }, 403);
   }
 
@@ -1641,7 +1641,7 @@ soAmendments.patch('/:id/withdraw', async (c) => {
       error: 'bad_transition',
       reason: amendment.status === 'REQUESTED'
         ? `Cannot withdraw an amendment from status ${amendment.status}.`
-        : 'This amendment has already been acted on, so it can no longer be withdrawn. Ask an approver to reject it instead.',
+        : 'This VO has already been acted on, so it can no longer be withdrawn. Ask an approver to reject it instead.',
     }, 409);
   }
   const to = nextStatus(amendment.status, action);

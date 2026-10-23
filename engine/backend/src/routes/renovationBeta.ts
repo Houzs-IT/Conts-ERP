@@ -27,6 +27,8 @@ import {
   type BetaDesignPatch, type BetaEventPatch, type BoardAppointmentRow, type BoardFileRow, type BoardNoteRow, type BoardPayment, type BoardProjectRow,
   type BoardReviewRow,
 } from "../services/renovation/betaBoard";
+import { loadClientItems, loadProjectPoLines, loadProjectVos } from "../services/renovation/betaVoPo";
+import { LINK_DAYS, signClientLink } from "../services/renovation/betaClientLink";
 
 type Ctx = Context<{ Bindings: Env }>;
 const app = new Hono<{ Bindings: Env }>();
@@ -712,6 +714,59 @@ app.delete("/events/:id", requirePermission("projects.write"), async (c) => {
   ).bind(id, co.companyId, userId(c)).first<{ id: number }>();
   if (!row) return c.json({ error: "not_found" }, 404);
   return c.json({ ok: true });
+});
+
+// ── VO, PO, Client PO (bundle B, owner 24 Oct 2026) ─────────────────────
+
+/** A read of the project's documents; a database without the renovation tables yet reads as empty. */
+async function readOr<T>(c: Ctx, what: string, fn: () => Promise<T>): Promise<Response> {
+  try {
+    return c.json(await fn());
+  } catch (e) {
+    console.error(`[renovation-beta] ${what} read failed`, e);
+    return c.json({ error: "renovation_read_failed", message: `The ${what} could not be read. Try again.` }, 409);
+  }
+}
+
+app.get("/projects/:id/vo", requirePageAccess("projects.list"), async (c) => {
+  const id = parseId(c.req.param("id"));
+  if (!id) return c.json({ error: "invalid_id" }, 400);
+  const co = await projectCompany(c, id);
+  if (co == null) return c.json({ error: "not_found" }, 404);
+  return readOr(c, "VO list", () => loadProjectVos(db(c), id, co, !financeHiddenForUser(c.get("user"))));
+});
+
+app.get("/projects/:id/po", requirePageAccess("projects.list"), async (c) => {
+  const id = parseId(c.req.param("id"));
+  if (!id) return c.json({ error: "invalid_id" }, 400);
+  const co = await projectCompany(c, id);
+  if (co == null) return c.json({ error: "not_found" }, 404);
+  return readOr(c, "purchase order", () => loadProjectPoLines(db(c), id, co));
+});
+
+app.get("/projects/:id/client-po", requirePageAccess("projects.list"), async (c) => {
+  const id = parseId(c.req.param("id"));
+  if (!id) return c.json({ error: "invalid_id" }, 400);
+  const co = await projectCompany(c, id);
+  if (co == null) return c.json({ error: "not_found" }, 404);
+  return readOr(c, "client item", async () => {
+    const vo = await loadProjectVos(db(c), id, co, false);
+    return loadClientItems(db(c), id, co, vo.vos);
+  });
+});
+
+/** A read-only link for the client to the Client PO list. The token carries the project and company, signed. */
+app.post("/projects/:id/client-link", requirePermission("projects.write"), async (c) => {
+  const id = parseId(c.req.param("id"));
+  if (!id) return c.json({ error: "invalid_id" }, 400);
+  const co = await projectCompany(c, id);
+  if (co == null) return c.json({ error: "not_found" }, 404);
+  const secret = (c.env as unknown as { CONTS_SSO_SECRET?: string }).CONTS_SSO_SECRET;
+  if (!secret) return c.json({ error: "link_unavailable", message: "Client links are not set up on this server yet." }, 503);
+  const expiresAt = Date.now() + LINK_DAYS * 86_400_000;
+  const token = await signClientLink(secret, { projectId: id, companyId: co, expiresAt });
+  await activityStmt(c, id, co, "beta_client_link", null, null, `Client PO link made, valid until ${new Date(expiresAt).toISOString().slice(0, 10)}`).run();
+  return c.json({ token, expiresAt: new Date(expiresAt).toISOString() });
 });
 
 export default app;

@@ -704,8 +704,8 @@ function SalesOrderDetailV2ReadOnly() {
       : "This order is locked — it already has a downstream Delivery Order / Sales Invoice.";
   const editLabel = canAmend
     ? hasOpenAmend
-      ? "View amendment"
-      : "Submit SO Amendment"
+      ? "View VO"
+      : "Submit VO"
     : "Edit";
 
   // Back always returns to the Sales Orders list (owner 2026-07-24: every
@@ -1284,7 +1284,7 @@ function SalesOrderDetailV2ReadOnly() {
                 migratedLocked || hardLocked
                   ? lockedEditHint
                   : canAmend
-                    ? "This order is processing-locked — changes go through the SO Amendment workflow."
+                    ? "This order is processing-locked — changes go through a VO."
                     : undefined
               }
             >

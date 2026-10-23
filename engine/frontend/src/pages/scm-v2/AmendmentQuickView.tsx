@@ -80,7 +80,7 @@ function SoAmendmentBody({ target, onClose }: { target: AmendmentQuickViewTarget
     <QuickViewFrame
       target={target}
       title={String(a?.amendment_no ?? target.label)}
-      subtitle="Sales Order amendment"
+      subtitle="VO"
       onClose={onClose}
     >
       <DetailState isLoading={q.isLoading} error={q.error} ready={a != null}>

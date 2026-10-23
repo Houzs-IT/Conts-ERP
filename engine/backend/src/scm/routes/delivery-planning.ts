@@ -2056,7 +2056,7 @@ deliveryPlanning.patch('/:type/:id/fields', async (c) => {
     if (dpLocked) {
       return c.json({
         error: 'so_locked_processing',
-        reason: 'Replacement / disposal is locked on this order — request the change as an amendment instead (it goes to Logistics for approval in SO Amendments).',
+        reason: 'Replacement / disposal is locked on this order — request the change as a VO instead (it goes to Logistics for approval in VOs).',
       }, 409);
     }
   }

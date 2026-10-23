@@ -867,7 +867,7 @@ export const PurchaseOrderDetail = () => {
               body: (lineName
                 ? `The line for ${lineName} would be revised down to ${revised}, but ${received} have already been received. `
                 : `One PO line would be revised down to ${revised}, but ${received} have already been received. `)
-                + 'Raise a Purchase Return for the excess first, then approve the amendment again.',
+                + 'Raise a Purchase Return for the excess first, then approve the VO again.',
               tone: 'error',
             });
             return;
@@ -894,13 +894,13 @@ export const PurchaseOrderDetail = () => {
     if (!openAmendment) return;
     askConfirm({
       title: `Mark amendment ${openAmendment.amendment_no} as sent?`,
-      body: 'This marks the amendment SENT. There is no automatic email — download the Revised PO below and send it to the supplier yourself (print / WhatsApp).',
+      body: 'This marks the VO SENT. There is no automatic email — download the Revised PO below and send it to the supplier yourself (print / WhatsApp).',
       confirmLabel: 'Mark sent',
     }).then((ok) => {
       if (!ok) return;
       sendAmendment.mutate({ id: openAmendment.id }, {
         onError: (e) => notify({ title: 'Could not mark sent', body: e instanceof Error ? e.message : 'Something went wrong.', tone: 'error' }),
-        onSuccess: () => notify({ title: 'Amendment marked sent' }),
+        onSuccess: () => notify({ title: 'VO marked sent' }),
       });
     });
   };
