@@ -3,7 +3,7 @@ import { requireSession, isFieldRole } from '../../_lib/auth';
 import { notify } from '../../_lib/notify';
 import { resolveUnit } from '../../_lib/ops';
 import { windowsFor, staysOverlapping } from '../../_lib/cleaning';
-import { CATEGORIES, URGENCIES, SOURCES, CHARGE_TO, JOB_TYPES, SEVERITIES, DAY, assigneeUserId, assigneeKindFor, hasBilling, toInstant, hasJobType, urgencyOf, approvalRules, ruleNeedsApproval } from '../../_lib/maintenance';
+import { CATEGORIES, URGENCIES, SOURCES, CHARGE_TO, JOB_TYPES, SEVERITIES, DAY, assigneeUserId, pickAssignee, hasTechnicianList, hasBilling, toInstant, hasJobType, urgencyOf, approvalRules, ruleNeedsApproval } from '../../_lib/maintenance';
 import { repairNotice } from '../../_lib/notices';
 import { hasServicePrices, serviceBook } from '../../_lib/servicePrices';
 import { layoutKey } from '../../_lib/cleaningPrices';
@@ -164,23 +164,27 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   // Sent to the owner on purpose, or held for the owner by management's approval rules (Maintenance > Approval rules).
   const asked = !!b.ownerApprovalRequired;
   const approval = asked || (cols && chargeTo === 'owner' && ruleNeedsApproval(await approvalRules(env), category, severity, quoted));
-  const vendor = typeof b.assigneeName === 'string' && b.assigneeName.trim() && !field ? b.assigneeName.trim().slice(0, 80) : null;
+  const typed = typeof b.assigneeName === 'string' && b.assigneeName.trim() && !field ? b.assigneeName : null;
+  const who = typed ? await pickAssignee(env, session, typed) : null;
+  if (typeof who === 'string') return fail('VALIDATION', who, 422, { assigneeName: who });
+  const vendor = who?.name ?? null;
   const state = approval ? 'waiting' : vendor ? 'assigned' : 'open';
 
   const id = crypto.randomUUID(), now = nowIso();
-  const userId = await assigneeUserId(env, vendor);
+  const userId = who ? who.userId : await assigneeUserId(env, null);
   const withUser = userId !== undefined;
+  const listed = await hasTechnicianList(env);
   await run(env, `
     INSERT INTO maintenance_issues
       (id, unit_id, reported_by, state, title, detail, sku_id, quoted_amount, owner_approval_required,
        blocks_unit, blocked_from, blocked_to, charge_to, category, urgency, source, source_task_id, vendor_name, assignee_kind,
-       reported_at, created_at, updated_at${withUser ? ', assignee_user_id' : ''}${cols ? ', job_type, severity, needs_parts, due_on' : ''}${billingCols ? ', contractor_amount' : ''})
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?${withUser ? ', ?' : ''}${cols ? ', ?, ?, ?, ?' : ''}${billingCols ? ', ?' : ''})`,
+       reported_at, created_at, updated_at${withUser ? ', assignee_user_id' : ''}${listed ? ', technician_id' : ''}${cols ? ', job_type, severity, needs_parts, due_on' : ''}${billingCols ? ', contractor_amount' : ''})
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?${withUser ? ', ?' : ''}${listed ? ', ?' : ''}${cols ? ', ?, ?, ?, ?' : ''}${billingCols ? ', ?' : ''})`,
     id, unit.id, session.userId, state, b.title.trim().slice(0, 160), b.detail ? String(b.detail).slice(0, 2000) : null, skuId,
     quoted, approval ? 1 : 0,
     b.blocksUnit ? 1 : 0, b.blocksUnit ? (b.blockedFrom ?? mytToday()) : null, b.blockedTo ?? null,
-    chargeTo, category, urgency, source, sourceTaskId, vendor, vendor ? await assigneeKindFor(env, vendor) : null,
-    now, now, now, ...(withUser ? [userId] : []), ...(cols ? [jobType, severity, b.needsParts ? 1 : 0, b.dueOn ?? null] : []), ...(billingCols ? [internal] : []));
+    chargeTo, category, urgency, source, sourceTaskId, vendor, who?.kind ?? null,
+    now, now, now, ...(withUser ? [userId] : []), ...(listed ? [who?.technicianId ?? null] : []), ...(cols ? [jobType, severity, b.needsParts ? 1 : 0, b.dueOn ?? null] : []), ...(billingCols ? [internal] : []));
 
   if (lines.length) await writeLines(env, id, lines, session.userId);
   if (b.blocksUnit) await run(env, "UPDATE units SET readiness = 'maintenance', updated_at = ? WHERE id = ?", now, unit.id);

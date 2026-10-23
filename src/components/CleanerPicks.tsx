@@ -7,9 +7,9 @@ import { cx } from '../lib/design-tokens';
 import { dayLabel, mytDay } from './ops/OpsUi';
 
 /** Hint shown beside a cleaner in a picker: the outsourced company, or the load on `day` (the roster must be
- *  fetched for that same day: useCleaners' `date`). */
+ *  fetched for that same day: useCleaners' `date`). An internal cleaner with no login is flagged: the job reaches no phone. */
 export const cleanerHint = (c: Cleaner, day?: string) => (c.employmentType === 'outsourced' ? (c.vendorName ?? 'Outsourced')
-  : `${c.busy} open ${!day || day === mytDay(0) ? 'today' : `on ${dayLabel(day)}`}`);
+  : `${c.userId ? '' : 'No app access · '}${c.busy} open ${!day || day === mytDay(0) ? 'today' : `on ${dayLabel(day)}`}`);
 
 /** Tick one or more cleaners (owner, 11 Oct 2026: a big unit can take two or three people). The order they are
  *  ticked in is kept: the first one is the job's main cleaner. */
@@ -127,7 +127,7 @@ function AddCleaners({ others, disabled, label, tone, onAdd }: {
                     onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); add(); } }}
                     className="w-4 h-4 m-0 flex-none accent-[var(--color-brand-black)]" />
                   <span className="flex-1 min-w-0 truncate font-medium text-ink">{c.name}</span>
-                  {c.employmentType === 'outsourced' && <span className="text-meta text-muted-ink whitespace-nowrap">{c.vendorName ?? 'Outsourced'}</span>}
+                  {(c.employmentType === 'outsourced' || !c.userId) && <span className="text-meta text-muted-ink whitespace-nowrap">{c.employmentType === 'outsourced' ? c.vendorName ?? 'Outsourced' : 'No app access'}</span>}
                 </label>
               );
             })}

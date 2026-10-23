@@ -1,6 +1,7 @@
 import { type Env, run, json, fail, nowIso, audit } from '../../_lib/db';
 import { requireSession, hashPassword } from '../../_lib/auth';
 import { notify } from '../../_lib/notify';
+import { secretProblem, signsInWithPin } from '../../_lib/fieldPin';
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
@@ -8,12 +9,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
   const { password } = await request.json<{ password: string }>();
 
-  // Enforced server-side as well as in the UI — the client checklist is convenience.
-  const problems: Record<string, string> = {};
-  if (!password || password.length < 8) problems.password = 'At least 8 characters';
-  else if (!/[A-Z]/.test(password)) problems.password = 'At least 1 uppercase letter';
-  else if (!/[0-9]/.test(password)) problems.password = 'At least 1 digit';
-  if (Object.keys(problems).length) return fail('VALIDATION', 'Password does not meet the requirements.', 422, problems);
+  // Enforced server-side as well as in the UI — the client checklist is convenience. A phone sign-in account picks a PIN.
+  const pin = await signsInWithPin(env, session.userId);
+  const problem = secretProblem(typeof password === 'string' ? password : '', pin);
+  if (problem) return fail('VALIDATION', pin ? 'The PIN does not meet the rules.' : 'Password does not meet the requirements.', 422, { password: problem });
 
   const hash = await hashPassword(password);
   await run(env, 'UPDATE users SET password_hash = ?, must_change_password = 0, updated_at = ? WHERE id = ?', hash, nowIso(), session.userId);

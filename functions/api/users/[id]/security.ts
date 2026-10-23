@@ -2,6 +2,7 @@ import { type Env, one, run, json, fail, audit, nowIso } from '../../../_lib/db'
 import { requireSession, revokeSessions, sendPasswordReset, hashPassword } from '../../../_lib/auth';
 import { doorFor } from '../../../_lib/door';
 import { twoFactorTables } from '../../../_lib/twoFactor';
+import { signsInWithPin, tempPin } from '../../../_lib/fieldPin';
 
 const ACTIONS = ['reset_email', 'temp_password', 'revoke_sessions', 'unlock', 'reset_2fa'] as const;
 type Action = typeof ACTIONS[number];
@@ -43,7 +44,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
     result = { delivery: delivery.state, reason: delivery.reason };
   } else if (action === 'temp_password') {
     // Only its hash is stored; the plain text is in this one response and nowhere else (not the audit entry).
-    const temp = tempPassword();
+    // A phone sign-in account types a PIN on a number pad, so it gets a temporary PIN.
+    const temp = (await signsInWithPin(env, id)) ? tempPin() : tempPassword();
     await run(env, 'UPDATE users SET password_hash = ?, must_change_password = 1, failed_attempts = 0, locked_until = NULL, updated_at = ? WHERE id = ?',
       await hashPassword(temp), nowIso(), id);
     const revoked = await revokeSessions(env, id);

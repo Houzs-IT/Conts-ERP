@@ -1,6 +1,7 @@
 import { type Env, one, run, json, fail, audit, nowIso } from '../../../_lib/db';
 import { requireSession, hashPassword } from '../../../_lib/auth';
 import { notify } from '../../../_lib/notify';
+import { hasRealEmail } from '../../../_lib/fieldPin';
 
 const MANAGE = ['management'];
 
@@ -24,6 +25,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
     env, 'SELECT id, email, full_name, must_change_password, last_login_at, is_active FROM users WHERE id = ?', id);
   if (!user) return fail('NOT_FOUND', 'That account no longer exists.', 404);
   if (!user.is_active) return fail('VALIDATION', 'Reactivate the account before re-inviting.', 422);
+  if (!hasRealEmail(user.email)) return fail('NO_EMAIL', 'This person signs in with a phone number. Give a new PIN from the Cleaners page instead.', 409);
   if (!(user.must_change_password && !user.last_login_at)) {
     return fail('ALREADY_ACTIVE', 'This person has already signed in — send them a password reset instead.', 409);
   }

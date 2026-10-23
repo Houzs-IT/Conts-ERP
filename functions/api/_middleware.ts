@@ -69,7 +69,7 @@ const SUPPLY_CHAIN = /^\/api\/(consignment-notes|customers|delivery-orders|deliv
 const MONEY_ONLY = /^\/api\/(payment-vouchers|purchase-invoices|sales-invoices|unbilled-deliveries|credit-notes|accounting)(\/|$)/;
 
 const PUBLIC = new Set([
-  'POST /api/auth/login', 'POST /api/auth/login-2fa', 'POST /api/auth/forgot-password',
+  'POST /api/auth/login', 'POST /api/auth/login-pin', 'POST /api/auth/login-2fa', 'POST /api/auth/forgot-password',
   'GET /api/auth/reset-password', 'POST /api/auth/reset-password', 'GET /api/settings/public',
 ]);
 

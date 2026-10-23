@@ -9,6 +9,8 @@ export interface Cleaner {
   vendorName: string | null;
   phone: string | null;
   userId: string | null;
+  /** The employee ID the linked login signs in with (with a PIN), when it has one. */
+  employeeId?: string | null;
   isActive: boolean;
   busy: number;
 }

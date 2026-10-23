@@ -1,5 +1,6 @@
 import { type Env, all, one, run, nowIso } from './db';
 import { hasColumn } from './auth';
+import { hasRealEmail } from './fieldPin';
 
 /**
  * Every outbound message goes through here. Templates and their triggers are in
@@ -55,6 +56,8 @@ async function key(s: Send) {
 }
 
 export async function notify(env: Env, s: Send): Promise<{ state: 'sent' | 'queued' | 'failed'; reason?: string }> {
+  // A phone sign-in account's placeholder address (migration 0143) can never receive mail.
+  if (s.channel === 'email' && !hasRealEmail(s.recipient)) return { state: 'failed', reason: 'This account has no email address.' };
   const idem = await key(s);
 
   const existing = await one<{ state: string }>(env,

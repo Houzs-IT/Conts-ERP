@@ -6,12 +6,14 @@ import { Logo } from '../components/Logo';
 import { Button } from '../components/Button';
 import { Field, PasswordField } from '../components/Field';
 import { CodeInput } from '../components/inputs/CodeInput';
+import { PIN_INPUT, digitsOnly, pinPolicy } from '../lib/pin';
 import '../styles/login.css';
 
-type Screen = 'signin' | 'forgot' | 'change' | 'reset' | 'code';
+type Screen = 'signin' | 'pin' | 'forgot' | 'change' | 'reset' | 'code';
 
 const COPY: Record<Screen, { eyebrow: string; heading: string; sub: string; submit: string }> = {
   signin: { eyebrow: 'CONTS ERP', heading: 'Sign in', sub: 'Use the work email your administrator invited.', submit: 'Sign in' },
+  pin: { eyebrow: 'FIELD APP', heading: 'Sign in', sub: 'Cleaners and technicians: your employee ID and 6-digit PIN.', submit: 'Sign in' },
   forgot: { eyebrow: 'ACCOUNT RECOVERY', heading: 'Reset password', sub: 'We will email you a reset link.', submit: 'Send reset link' },
   change: { eyebrow: 'NEW PASSWORD', heading: 'Set a new password', sub: 'You signed in with a temporary password. Choose your own to continue.', submit: 'Save and continue' },
   reset: { eyebrow: 'ACCOUNT RECOVERY', heading: 'Set a new password', sub: 'Choose a new password for your account.', submit: 'Save and sign in' },
@@ -21,10 +23,22 @@ const COPY: Record<Screen, { eyebrow: string; heading: string; sub: string; subm
 
 const SUPPORT_PHONE = '+60 11-6133 3289';
 
+/** A phone that signed in with a PIN opens on the PIN form next time; #/field always does. */
+const SIGNIN_KEY = 'conts.signin';
+function startsOnPin(): boolean {
+  if (window.location.hash.startsWith('#/field')) return true;
+  try { return localStorage.getItem(SIGNIN_KEY) === 'pin'; } catch { return false; }
+}
+function rememberSignIn(way: 'pin' | 'signin') {
+  try { localStorage.setItem(SIGNIN_KEY, way); } catch { /* the email form shows next time instead */ }
+}
+
 export default function LoginPage({ forceChangePassword = false, resetToken = null }: { forceChangePassword?: boolean; resetToken?: string | null }) {
-  const { login, verifyCode, requestReset, changePassword, resetPassword, checkResetToken } = useSession();
-  const [screen, setScreen] = useState<Screen>(forceChangePassword ? 'change' : resetToken ? 'reset' : 'signin');
+  const { user, login, loginPin, verifyCode, requestReset, changePassword, resetPassword, checkResetToken } = useSession();
+  const [screen, setScreen] = useState<Screen>(forceChangePassword ? 'change' : resetToken ? 'reset' : startsOnPin() ? 'pin' : 'signin');
   const [email, setEmail] = useState('');
+  // The number after EMP-, which the box always shows.
+  const [empNo, setEmpNo] = useState('');
   const [password, setPassword] = useState('');
   const [remember, setRemember] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -69,13 +83,18 @@ export default function LoginPage({ forceChangePassword = false, resetToken = nu
   }, [resetToken]);
   // owner.theconts.com is the owners' door; the server refuses staff there too.
   const ownerDoor = window.location.hostname.split('.')[0] === 'owner';
+  // A cleaner or technician on the first PIN from the office picks their own PIN, not a password.
+  const newPin = screen === 'change' && !!user?.employeeId;
+  const pinEntry = screen === 'pin' || newPin;
   const c = ownerDoor && screen === 'signin'
     ? { ...COPY.signin, eyebrow: 'OWNER PORTAL', sub: 'Use the email The Conts registered for your unit.' }
+    : newPin
+      ? { eyebrow: 'NEW PIN', heading: 'Choose your PIN', sub: 'You signed in with a PIN from the office. Choose your own 6 digits to continue.', submit: 'Save and continue' }
     : screen === 'code' && useBackup
       ? { ...COPY.code, heading: 'Enter a backup code', sub: 'Use one of the ten backup codes you saved when you set up two-step sign-in. Each works once.' }
       : COPY[screen];
 
-  const policy = [
+  const policy = newPin ? pinPolicy(password) : [
     { label: 'At least 8 characters', ok: password.length >= 8 },
     { label: 'At least 1 uppercase letter', ok: /[A-Z]/.test(password) },
     { label: 'At least 1 digit', ok: /[0-9]/.test(password) },
@@ -90,7 +109,9 @@ export default function LoginPage({ forceChangePassword = false, resetToken = nu
       else if (screen === 'change') { await changePassword(password); }
       else if (screen === 'code') { await verifyCode(twoStep!.challenge, code); }
       else {
-        const res = screen === 'reset' ? await resetPassword(resetToken!, password) : await login(email, password, remember);
+        const res = screen === 'reset' ? await resetPassword(resetToken!, password)
+          : screen === 'pin' ? await loginPin(`EMP-${empNo}`, password) : await login(email, password, remember);
+        if (screen === 'pin' || screen === 'signin') rememberSignIn(screen);
         if (res.twoStep) {
           setTwoStep(res.twoStep); setUseBackup(res.twoStep.backupOnly); setCode(''); setScreen('code');
         }
@@ -195,7 +216,14 @@ export default function LoginPage({ forceChangePassword = false, resetToken = nu
               </>
             )}
 
-            {screen !== 'change' && screen !== 'reset' && screen !== 'code' && (
+            {screen === 'pin' && (
+              <Field label="Employee ID" required autoComplete="username" inputMode="numeric" value={`EMP-${empNo}`}
+                onChange={e => setEmpNo(e.target.value.replace(/^EMP-?/i, '').replace(/\D/g, '').slice(0, 7))}
+                onFocus={e => { const el = e.currentTarget; requestAnimationFrame(() => el.setSelectionRange(el.value.length, el.value.length)); }}
+                placeholder="EMP-001" style={{ letterSpacing: '0.04em', fontVariantNumeric: 'tabular-nums' }} />
+            )}
+
+            {screen !== 'change' && screen !== 'reset' && screen !== 'code' && screen !== 'pin' && (
               <Field label="Email" type="email" required autoComplete="email" value={email}
                 onChange={e => setEmail(e.target.value)} placeholder="you@theconts.com" />
             )}
@@ -205,10 +233,11 @@ export default function LoginPage({ forceChangePassword = false, resetToken = nu
             )}
 
             {screen !== 'forgot' && screen !== 'code' && (screen !== 'reset' || tokenState === 'valid') && (
-              <PasswordField label={newPassword ? 'New password' : 'Password'} required
+              <PasswordField label={pinEntry ? (newPin ? 'New PIN' : 'PIN') : newPassword ? 'New password' : 'Password'} required
                 autoComplete={newPassword ? 'new-password' : 'current-password'}
-                value={password} onChange={e => setPassword(e.target.value)}
-                placeholder={newPassword ? 'New password' : 'Enter password'} />
+                value={password} onChange={e => setPassword(pinEntry ? digitsOnly(e.target.value) : e.target.value)}
+                {...(pinEntry ? PIN_INPUT : {})}
+                placeholder={pinEntry ? '6 digits' : newPassword ? 'New password' : 'Enter password'} />
             )}
 
             {(screen === 'change' || (screen === 'reset' && tokenState === 'valid')) && (
@@ -247,7 +276,18 @@ export default function LoginPage({ forceChangePassword = false, resetToken = nu
             </Button>
           ) : null}
 
-          {screen !== 'signin' && !forceChangePassword && (
+          {screen === 'pin' && (
+            <span className="text-meta text-muted-ink text-center text-pretty">Forgot your PIN? Ask the office for a new one.</span>
+          )}
+
+          {(screen === 'signin' || screen === 'pin') && !ownerDoor && (
+            <Button type="button" variant="tertiary" size="md" className="self-center"
+              onClick={() => { setScreen(screen === 'pin' ? 'signin' : 'pin'); setError(''); setPassword(''); }}>
+              {screen === 'pin' ? 'Office staff: sign in with email' : 'Cleaner or technician? Sign in with your phone'}
+            </Button>
+          )}
+
+          {screen !== 'signin' && screen !== 'pin' && !forceChangePassword && (
             <Button type="button" variant="tertiary" size="md" className="self-center"
               onClick={() => { if (resetToken) window.location.hash = '/'; setScreen('signin'); setError(''); setSent(false); setTwoStep(null); setPassword(''); }}>
               Back to sign in

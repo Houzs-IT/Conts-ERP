@@ -6,6 +6,7 @@ import { StatusBadge } from '../components/StatusBadge';
 import { Button } from '../components/Button';
 import Icon from '../components/Icon';
 import { PasswordField } from '../components/Field';
+import { PIN_INPUT, digitsOnly, pinPolicy } from '../lib/pin';
 import { CodeInput } from '../components/inputs';
 import { ConfirmDialog, type ConfirmSpec } from '../components/ConfirmDialog';
 import { TableSkeleton } from '../components/DataState';
@@ -76,9 +77,9 @@ export default function AccountPage({ gate = false }: { gate?: boolean }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader title="My account" sub={user ? `${user.fullName} · ${user.email}` : undefined} />
+      <PageHeader title="My account" sub={user ? `${user.fullName} · ${user.employeeId ? `Employee ID ${user.employeeId}` : user.email}` : undefined} />
       {twoStep}
-      <PasswordCard />
+      <PasswordCard pin={!!user?.employeeId} />
       {data?.devices && (
         <Card>
           <CardHeader title="Signed in now" />
@@ -312,13 +313,14 @@ function Note({ tone, children }: { tone: keyof typeof NOTE_TONE; children: Reac
 
 /* --------------------------------- password --------------------------------- */
 
-function PasswordCard() {
+function PasswordCard({ pin }: { pin: boolean }) {
   const toast = useToast();
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
-  const policy = [
+  const word = pin ? 'PIN' : 'password';
+  const policy = pin ? pinPolicy(next) : [
     { label: 'At least 8 characters', ok: next.length >= 8 },
     { label: 'At least 1 uppercase letter', ok: /[A-Z]/.test(next) },
     { label: 'At least 1 digit', ok: /[0-9]/.test(next) },
@@ -329,25 +331,25 @@ function PasswordCard() {
     setBusy(true); setErrors({});
     try {
       await api.post('/account/password', { current, password: next });
-      toast({ tone: 'success', title: 'Password changed.', body: 'Use the new one next time you sign in.' });
+      toast({ tone: 'success', title: pin ? 'PIN changed.' : 'Password changed.', body: 'Use the new one next time you sign in.' });
       setCurrent(''); setNext('');
     } catch (err) {
       if (err instanceof ApiFailure && err.fields) setErrors(err.fields);
-      else toast({ tone: 'critical', title: 'Password not changed.', body: errorMessage(err, 'Try again in a moment.') });
+      else toast({ tone: 'critical', title: pin ? 'PIN not changed.' : 'Password not changed.', body: errorMessage(err, 'Try again in a moment.') });
     } finally { setBusy(false); }
   }
   return (
     <Card>
-      <CardHeader title="Password" />
+      <CardHeader title={pin ? 'PIN' : 'Password'} />
       <form onSubmit={submit} className="px-5 pb-5 flex flex-col gap-4 max-w-[360px]">
-        <PasswordField label="Current password" value={current} required autoComplete="current-password" onChange={e => setCurrent(e.target.value)} error={errors.current} />
-        <PasswordField label="New password" value={next} required autoComplete="new-password" onChange={e => setNext(e.target.value)} error={errors.password} />
+        <PasswordField label={`Current ${word}`} value={current} required autoComplete="current-password" onChange={e => setCurrent(pin ? digitsOnly(e.target.value) : e.target.value)} error={errors.current} {...(pin ? PIN_INPUT : {})} />
+        <PasswordField label={`New ${word}`} value={next} required autoComplete="new-password" onChange={e => setNext(pin ? digitsOnly(e.target.value) : e.target.value)} error={errors.password} {...(pin ? PIN_INPUT : {})} />
         <div className="flex flex-col gap-1.5">
           {policy.map(p => (
             <span key={p.label} className={`text-meta ${p.ok ? 'text-success' : 'text-muted-ink'}`}>{p.ok ? '✓' : '○'} {p.label}</span>
           ))}
         </div>
-        <div><Button type="submit" variant="primary" size="sm" loading={busy} disabled={!policy.every(p => p.ok) || !current}>Change password</Button></div>
+        <div><Button type="submit" variant="primary" size="sm" loading={busy} disabled={!policy.every(p => p.ok) || !current}>{pin ? 'Change PIN' : 'Change password'}</Button></div>
       </form>
     </Card>
   );

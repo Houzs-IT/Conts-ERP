@@ -88,12 +88,12 @@ export async function cleaningNotice(env: Env, id: string, event: 'assigned' | '
   }
 }
 
-interface Issue { id: string; title: string; unit: string; urgency: string | null; vendor_name: string | null; reported_by: string | null; quoted_amount: number | null; owner_user: string | null }
+interface Issue { id: string; title: string; unit: string; urgency: string | null; vendor_name: string | null; assignee_user_id: string | null; reported_by: string | null; quoted_amount: number | null; owner_user: string | null }
 
 async function issue(env: Env, id: string): Promise<Issue | null> {
   try {
     return await one<Issue>(env, `
-      SELECT m.id, m.title, m.urgency, m.vendor_name, m.reported_by, m.quoted_amount, o.user_id AS owner_user,
+      SELECT m.id, m.title, m.urgency, m.vendor_name, m.assignee_user_id, m.reported_by, m.quoted_amount, o.user_id AS owner_user,
              trim(coalesce(p.name, '') || ' ' || u.unit_number) AS unit
       FROM maintenance_issues m JOIN units u ON u.id = m.unit_id LEFT JOIN properties p ON p.id = u.property_id
       LEFT JOIN owners o ON o.id = u.owner_id WHERE m.id = ?`, id);
@@ -109,7 +109,8 @@ export async function repairNotice(env: Env, id: string, event: RepairEvent, by:
   if (!m) return;
   const link = `/operations/maintenance?id=${encodeURIComponent(id)}`;
   const base = { link, entityTable: 'maintenance_issues', entityId: id, except: by };
-  const tech = await technicianFor(env, m.vendor_name);
+  // The login the job is given to; older jobs without one are matched by the technician's name.
+  const tech = m.assignee_user_id ? [m.assignee_user_id] : await technicianFor(env, m.vendor_name);
   const urgent = m.urgency === 'urgent' ? 'Urgent maintenance job' : 'Maintenance job';
   switch (event) {
     case 'reported':

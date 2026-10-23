@@ -89,6 +89,8 @@ export const NAV: NavGroup[] = [
     { key: 'today', label: 'Today', icon: 'clipboard-check', path: '/operations/today', area: 'operations', badge: 'today' },
     { key: 'cleaning', label: 'Cleaning', icon: 'sparkles', path: '/operations/cleaning', area: 'operations' },
     { key: 'maintenance', label: 'Maintenance', icon: 'wrench', path: '/operations/maintenance', area: 'operations', badge: 'maintenance' },
+    // Cleaners and technicians, in-house and outside, and who has the app (owner, 23 Oct 2026).
+    { key: 'workers', label: 'Workers', icon: 'users', path: '/operations/workers', area: 'operations' },
   ] },
   { label: 'UNITS', workspace: 'rental', items: [
     // Buildings, the unit record and access codes are one Units screen (owner, 8 Oct).
@@ -334,7 +336,6 @@ const groupName = (label: string) => label.charAt(0) + label.slice(1).toLowerCas
 
 /** Rental screens reached from another screen rather than the menu: their breadcrumb, instead of "Home". */
 const RENTAL_OFF_MENU: Record<string, { group: string; item: string; page?: string }> = {
-  '/operations/cleaners': { group: 'Operations', item: 'Cleaning', page: 'Cleaners' },
 };
 
 /** Breadcrumbs: group, menu entry and, on a record or sub-page, the page itself. */

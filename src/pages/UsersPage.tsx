@@ -24,6 +24,7 @@ import { HistoryDisclosure } from '../components/RecordHistory';
 import { RowActions, type RowAction } from '../components/RowActions';
 import { deliveryToast } from '../lib/emailDelivery';
 import Icon from '../components/Icon';
+import { hasRealEmail } from '../lib/pin';
 
 /* ------------------------------------------------------------------ *
  * Users and roles — three tabs (routes.json → SYSTEM → UsersPage):
@@ -50,7 +51,7 @@ const roleTone: Record<UserRole, Tone> = {
 };
 
 interface Row {
-  id: string; fullName: string; email: string; phone: string | null; role: UserRole;
+  id: string; fullName: string; email: string; employeeId?: string | null; phone: string | null; role: UserRole;
   department?: string | null; position?: string | null;
   managerId: string | null;
   isActive: boolean; mustChangePassword: boolean; isLocked?: boolean; twoStep?: boolean; lastLoginAt: string | null;
@@ -231,7 +232,7 @@ export default function UsersPage() {
       { key: 'position', label: 'Position', value: (u: Row) => u.position || null, width: 160 },
       { key: 'department', label: 'Department', value: (u: Row) => u.department || null, width: 140 },
     ] : []),
-    { key: 'email', label: 'Email', value: u => u.email, width: 210 },
+    { key: 'email', label: 'Email or employee ID', value: u => (hasRealEmail(u.email) ? u.email : u.employeeId ?? 'No email'), width: 210 },
     { key: 'phone', label: 'Phone', type: 'phone', value: u => u.phone || null, hidden: true, width: 140 },
     { key: 'role', label: 'Role', type: 'status', value: u => u.role, status: u => ({ label: roleLabel(u.role), tone: roleTone[u.role] }), width: 150 },
     { key: 'manager', label: 'Reports to', type: 'person', value: u => (u.managerId ? nameById[u.managerId] ?? null : null), width: 150 },
@@ -434,7 +435,7 @@ export default function UsersPage() {
       confirmLabel: 'Reset and sign out', busyLabel: 'Resetting…', danger: true,
       onConfirm: () => act(u, async () => {
         const res = await api.post<{ tempPassword: string }>(`/users/${u.id}/security`, { action: 'temp_password' });
-        setTempShown({ name: u.fullName, email: u.email, password: res.tempPassword });
+        setTempShown({ name: u.fullName, email: hasRealEmail(u.email) ? u.email : u.employeeId ?? u.email, password: res.tempPassword });
       }, `${u.fullName}'s password was reset.`, 'They have been signed out on every device.'),
     }) });
     if (!self) items.push({ key: 'revoke', label: 'Sign out everywhere', icon: 'LogOut', run: () => setConfirm({
@@ -622,7 +623,7 @@ export default function UsersPage() {
                 <span className="flex flex-col gap-1 min-w-0 flex-1">
                   <span className="text-copy font-medium truncate" title={u.fullName}>{u.fullName}</span>
                   {jobLine(u) && <span className="text-meta text-ink truncate" title={jobLine(u)}>{jobLine(u)}</span>}
-                  <span className="text-meta text-muted-ink truncate" title={u.email}>{u.email}</span>
+                  <span className="text-meta text-muted-ink truncate" title={u.email}>{hasRealEmail(u.email) ? u.email : u.employeeId ?? 'No email'}</span>
                   <span className="flex items-center gap-1.5 flex-wrap"><StatusBadge tone={roleTone[u.role]} label={roleLabel(u.role)} size="sm" /><StatusBadge tone={s.tone} label={s.label} size="sm" /></span>
                   {isInvited(u) && <InviteCell u={u} onResend={canManage ? () => confirmResend(u) : undefined} />}
                 </span>

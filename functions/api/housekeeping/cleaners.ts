@@ -2,6 +2,7 @@ import { mayWork } from '../../_lib/access';
 import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
 import { taskCleanersReady } from '../../_lib/taskCleaners';
+import { hasEmployeeIds } from '../../_lib/fieldPin';
 
 const EMPLOYMENT = ['internal', 'outsourced'] as const;
 type Employment = (typeof EMPLOYMENT)[number];
@@ -38,9 +39,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     SELECT NULL, 'System', 'housekeeping.cleaner_create', 'cleaners', a.id, NULL,
            json_build_object('name', a.full_name, 'employment', 'internal', 'userId', a.user_id, 'reason', 'cleaner login not on the roster')::text, 'system', ?
     FROM added a`, at, at, at);
-  const ready = await taskCleanersReady(env);
+  const [ready, pins] = await Promise.all([taskCleanersReady(env), hasEmployeeIds(env)]);
   const rows = await all<any>(env, `
     SELECT c.id, c.full_name, c.employment_type, c.vendor_name, c.phone, c.user_id, c.is_active,
+           ${pins ? '(SELECT u.employee_id FROM users u WHERE u.id = c.user_id)' : 'NULL'} AS employee_id,
            (SELECT COUNT(*) FROM tasks t
               WHERE (t.cleaner_id = c.id OR (c.user_id IS NOT NULL AND t.assignee_id = c.user_id)${ready ? ' OR EXISTS (SELECT 1 FROM task_cleaners tc WHERE tc.task_id = t.id AND tc.cleaner_id = c.id)' : ''})
                 AND t.state NOT IN ('resolved')
@@ -54,7 +56,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     data: rows.map(r => ({
       id: r.id, name: r.full_name, employmentType: r.employment_type,
       vendorName: r.vendor_name || null, phone: r.phone || null,
-      userId: r.user_id || null, isActive: !!r.is_active, busy: Number(r.busy),
+      userId: r.user_id || null, employeeId: r.employee_id ?? null, isActive: !!r.is_active, busy: Number(r.busy),
     })),
   });
 };
