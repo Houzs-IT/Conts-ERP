@@ -494,7 +494,9 @@ export default function UsersPage() {
     const errs: { fullName?: string; email?: string; phone?: string } = {};
     if (!editName.trim()) errs.fullName = 'Enter a name.';
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(editEmail)) errs.email = 'Enter a valid email address.';
-    const phoneErr = phoneProblem(editPhone);
+    // Only owners have a phone here; staff are invited without one, so their edit form matches.
+    const isOwner = editing.role === 'owner';
+    const phoneErr = isOwner ? phoneProblem(editPhone) : null;
     if (phoneErr) errs.phone = phoneErr;
     if (Object.keys(errs).length) { setEditErrors(errs); return; }
 
@@ -502,13 +504,14 @@ export default function UsersPage() {
     const roleChanged = editRole !== editing.role;
     const patch = {
       ...(roleChanged ? { role: editRole } : {}), managerId: editManager || null, isActive: editActive,
-      fullName: editName.trim(), email: editEmail.trim().toLowerCase(), phone: editPhone.trim() || null,
+      fullName: editName.trim(), email: editEmail.trim().toLowerCase(),
+      ...(isOwner ? { phone: editPhone.trim() || null } : {}),
       ...(jobFields ? { department: editDepartment.trim() || null, position: editPosition.trim() || null } : {}),
       ...(sideField && editing.role !== 'owner' ? { side: editSide } : {}),
     };
     try {
       await api.patch(`/users/${editing.id}`, patch);
-      setEdits(m => ({ ...m, [editing.id]: { ...m[editing.id], ...patch, phone: patch.phone ?? '' } }));
+      setEdits(m => ({ ...m, [editing.id]: { ...m[editing.id], ...patch } }));
       toast({
         tone: 'success',
         title: `${editName.trim()} updated.`,
@@ -726,7 +729,7 @@ export default function UsersPage() {
             {sideField && editing.role !== 'owner' && <SidePicker id="ed-side" value={editSide} onChange={setEditSide} role={editRole} error={editErrors.side} />}
             <Field label="Full name" value={editName} onChange={e => setEditName(e.target.value)} error={editErrors.fullName} />
             <Field label="Email" type="email" value={editEmail} onChange={e => setEditEmail(e.target.value)} error={editErrors.email} />
-            <PhoneInput label="Phone" value={editPhone} onChange={setEditPhone} error={editErrors.phone} />
+            {editing.role === 'owner' && <PhoneInput label="Phone" value={editPhone} onChange={setEditPhone} error={editErrors.phone} />}
             {jobFields && <JobFields department={editDepartment} position={editPosition} onDepartment={setEditDepartment} onPosition={setEditPosition}
               errors={editErrors} departments={departmentOptions} positions={positionsFor(editDepartment)} departmentOf={departmentOf} />}
             <div className="flex flex-col gap-1.5">
