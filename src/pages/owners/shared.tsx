@@ -265,7 +265,8 @@ export function Modal({ title, sub, onClose, onSubmit, submitLabel, canSubmit, c
             {sub && <p className="m-0 text-copy text-muted-ink">{sub}</p>}
           </div>
           <div className="py-4 px-[22px] flex flex-col gap-[14px]">{children}</div>
-          <div className="py-[14px] px-[22px] [border-top:1px_solid_var(--color-line)] bg-page flex justify-end gap-[9px]">
+          {/* Pinned to the bottom so Cancel and the action stay in view when the form is taller than a phone screen. */}
+          <div className="sticky bottom-0 py-[14px] px-[22px] [border-top:1px_solid_var(--color-line)] bg-page flex justify-end gap-[9px]">
             <Button size="sm" variant="secondary" type="button" onClick={onClose}>Cancel</Button>
             <Button size="sm" variant="primary" type="submit" disabled={!canSubmit} disabledReason="Fill the required fields first">{submitLabel}</Button>
           </div>
