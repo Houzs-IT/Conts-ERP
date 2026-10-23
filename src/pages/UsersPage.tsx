@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { SystemStats } from '../components/SystemStats';
@@ -161,7 +161,9 @@ export default function UsersPage() {
   // The managed departments and positions (Permissions > Departments and positions) feed the forms and the side label.
   const { user: me } = useSession();
   const canManage = me?.role === 'management';
-  const { data: deptData } = useDepartments(canManage);
+  const { data: deptData, reload: reloadDepartments } = useDepartments(canManage);
+  // The list can be edited on the Permissions tab, so it is read again when the user comes back to Users.
+  useEffect(() => { if (tab === 'users' && canManage) reloadDepartments(); }, [tab]); // eslint-disable-line react-hooks/exhaustive-deps
   const departments = useMemo(() => deptData?.departments ?? [], [deptData]);
   const departmentById = useMemo(() => new Map(departments.map(d => [d.id, d])), [departments]);
   // A row from before the managed list has only the text, so it is matched by name.
