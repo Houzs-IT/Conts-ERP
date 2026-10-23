@@ -3,7 +3,11 @@ import Icon from './Icon';
 import { Floating } from './DataTableParts';
 import { cx } from '../lib/design-tokens';
 
-export interface SelectOption { value: string; label: string; group?: string; hint?: string; disabled?: boolean }
+export interface SelectOption {
+  value: string; label: string; group?: string; hint?: string; disabled?: boolean;
+  /** Extra words the search matches but the row never shows, e.g. a country's letter code (MY). */
+  keywords?: string;
+}
 
 const CONTROL = 'h-9 rounded-control border border-solid border-line bg-card text-ink font-sans text-copy cursor-pointer';
 
@@ -66,7 +70,7 @@ export function SearchSelect({ value, onChange, options, label, showLabel, allLa
     (a.group ?? '').localeCompare(b.group ?? '', 'en', { numeric: true }) || a.label.localeCompare(b.label, 'en', { numeric: true })), [options]);
   const shown = useMemo(() => {
     const t = q.trim().toLowerCase();
-    const hits = t ? sorted.filter(o => `${o.group ?? ''} ${o.label} ${o.hint ?? ''}`.toLowerCase().includes(t)) : sorted;
+    const hits = t ? sorted.filter(o => `${o.group ?? ''} ${o.label} ${o.hint ?? ''} ${o.keywords ?? ''}`.toLowerCase().includes(t)) : sorted;
     return allLabel && !t ? [{ value: '', label: allLabel }, ...hits] : hits;
   }, [sorted, q, allLabel]);
   const current = options.find(o => o.value === value);

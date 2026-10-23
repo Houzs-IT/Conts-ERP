@@ -38,8 +38,9 @@ export function phoneProblem(value: string): string | undefined {
 }
 
 const COUNTRIES = phoneCountries();
-// Rows read "Malaysia  +60", sorted by name and found by name or code; the button shows only the code.
-const OPTIONS = COUNTRIES.map(c => ({ value: c.code, label: c.name, hint: `+${c.callingCode}` }));
+// Rows read "Malaysia  +60", sorted by name; the button shows only +60. Found by name, by +60 or 60, or by the
+// letter code (MY), which is never shown.
+const OPTIONS = COUNTRIES.map(c => ({ value: c.code, label: c.name, hint: `+${c.callingCode}`, keywords: c.code }));
 
 const digitsOf = (s: string) => s.replace(/\D/g, '');
 /** The caret position just after the n-th digit of `text` (0 = start). */
