@@ -225,15 +225,16 @@
 }
 @media (max-width: 1023px) { .login-watermark { width: 240px; right: -50px; bottom: -40px; } }
 
-/* Small text on linen must still clear 4.5:1 — faint grey does not. */
+/* Small text on linen must still clear 4.5:1 — faint grey does not, nor the gold eyebrow (4.4:1; this is 5.2:1). */
 .login-panel .text-faint { color: #706D67; }
+.login-panel .text-gold-ink { color: #7E6028; }
 
 .login-panel input {
   background: #FFFFFF;
-  border-color: #E2DACB;
+  border-color: var(--color-line-input);
   box-shadow: 0 1px 0 rgba(21, 21, 21, 0.03);
 }
-.login-panel input:hover { border-color: #CDBF9F; }
+.login-panel input:hover { border-color: var(--color-gold-ink); }
 
 /* Phone and tablet: a dark band behind the logo lockup, so "PROPERTY MANAGEMENT"
  * reads on any photograph. Desktop already has a full-height scrim. */
@@ -254,6 +255,7 @@
     radial-gradient(90% 55% at 100% 0%, rgba(200, 164, 106, 0.12) 0%, rgba(200, 164, 106, 0) 70%),
     linear-gradient(180deg, #161513 0%, #11100F 100%);
 }
-:root[data-theme="theconts-dark"] .login-panel input { background: #1F1D1A; border-color: #3D3934; box-shadow: none; }
+:root[data-theme="theconts-dark"] .login-panel input { background: #1F1D1A; border-color: var(--color-line-input); box-shadow: none; }
+:root[data-theme="theconts-dark"] .login-panel .text-gold-ink { color: var(--color-gold-ink); }
 :root[data-theme="theconts-dark"] .login-panel .text-faint { color: #A8A29A; }
 :root[data-theme="theconts-dark"] .login-watermark { opacity: 0.05; filter: none; }

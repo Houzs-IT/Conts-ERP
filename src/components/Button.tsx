@@ -1,4 +1,4 @@
-import type { CSSProperties, ButtonHTMLAttributes, ReactNode } from 'react';
+import type { AnchorHTMLAttributes, CSSProperties, ButtonHTMLAttributes, ReactNode } from 'react';
 
 /** `outline` is another name for `secondary` and `ghost` for `tertiary`: same look, for the primary / outline / ghost naming. */
 type Variant = 'primary' | 'secondary' | 'outline' | 'tertiary' | 'ghost' | 'brand' | 'danger';
@@ -71,6 +71,19 @@ export function Button({
       {loading ? <Spinner /> : icon}
       <span>{children}</span>
     </button>
+  );
+}
+
+/** A link that looks like a Button, for actions that leave the page (a phone call, WhatsApp): the browser keeps
+ *  what a link gives, such as long-press to copy the number. */
+export function ButtonLink({ variant = 'secondary', size = 'md', icon, children, style, className, ...rest }:
+  Omit<AnchorHTMLAttributes<HTMLAnchorElement>, 'children'> & { variant?: Variant; size?: Size; icon?: ReactNode; children: ReactNode }) {
+  return (
+    <a {...rest} className={['ui-btn', className].filter(Boolean).join(' ')} data-variant={LOOK[variant]}
+      style={{ ...base, ...sizes[size], ...variants[LOOK[variant]], boxSizing: 'border-box', textDecoration: 'none', ...style }}>
+      {icon}
+      <span>{children}</span>
+    </a>
   );
 }
 
