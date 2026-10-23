@@ -43,9 +43,11 @@ export function Select({ value, onChange, options, label, showLabel, placeholder
  * A searchable picker for long lists (139 units): type to filter, options grouped (by building) and
  * sorted A to Z, arrow keys and Enter to choose, Escape to close. `allLabel` adds a first "All ..." row.
  */
-export function SearchSelect({ value, onChange, options, label, showLabel, allLabel, placeholder = 'Search', className, renderOption, size = 'sm' }: {
+export function SearchSelect({ value, onChange, options, label, showLabel, allLabel, placeholder = 'Search', className, menuClassName, renderOption, size = 'sm' }: {
   value: string; onChange: (v: string) => void; options: SelectOption[]; label: string;
   showLabel?: boolean; allLabel?: string; placeholder?: string; className?: string;
+  /** Classes for the open list, e.g. min-w-[300px] when the button is narrower than the options need. */
+  menuClassName?: string;
   renderOption?: (o: SelectOption) => ReactNode;
   /** md = 40px, the height of the text fields in a dialog form; sm = 36px for filter bars. */
   size?: 'sm' | 'md';
@@ -95,7 +97,7 @@ export function SearchSelect({ value, onChange, options, label, showLabel, allLa
         <Icon name="ChevronDown" size="sm" color="var(--color-muted-ink)" />
       </button>
       {open && (
-        <div className={cx('absolute z-30 top-[calc(100%+4px)] left-0 w-full max-w-[calc(100vw-32px)]', size === 'md' ? 'min-w-0' : 'min-w-[260px]', 'bg-card border border-solid border-line rounded-card shadow-[var(--shadow-overlay)] overflow-hidden')}>
+        <div className={cx('absolute z-30 top-[calc(100%+4px)] left-0 w-full max-w-[calc(100vw-32px)]', size === 'md' ? 'min-w-0' : 'min-w-[260px]', 'bg-card border border-solid border-line rounded-card shadow-[var(--shadow-overlay)] overflow-hidden', menuClassName)}>
           <div className="flex items-center gap-2 px-3 h-10 [border-bottom:1px_solid_var(--color-line-soft)]">
             <Icon name="Search" size="sm" color="var(--color-muted-ink)" />
             <input ref={input} value={q} onChange={e => setQ(e.target.value)} onKeyDown={onKey} placeholder={placeholder}
