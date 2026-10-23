@@ -12,6 +12,7 @@ import { buildModel, HOME_TABS, homeCounts, homeList, homeRow, shortLeft, type H
 import { boardApi, boardKey, invalidateBeta, readLastProject, rememberLastProject } from "./renovationBetaBoardApi";
 import { BTN_FILL, CARD, CondPill, ErrorBanner, INK_SOFT, MUTED, useIsPhone, useToast } from "./BetaCalParts";
 import { BetaDialogs, type BetaDialog } from "./BetaForms";
+import { simpleApi, type BoardRowV2 } from "../projects/renovation/simpleApi";
 
 const TH = { padding: "10px 10px", textAlign: "left", fontSize: 12, fontWeight: 600, color: MUTED, borderBottom: `1px solid ${BETA.line}`, whiteSpace: "nowrap" } as const;
 const TD = { padding: "9px 10px", borderBottom: `1px solid ${BETA.lineSoft}`, verticalAlign: "middle", fontSize: 13 } as const;
@@ -25,12 +26,41 @@ function DuePill({ left, small = false }: { left: number; small?: boolean }): Re
   );
 }
 
+/* Payment colours: green = fully paid, amber = a bill waits for money, blue = some received, grey = nothing yet. */
+function payTone(text: string): readonly [string, string, string] {
+  if (/Fully paid/.test(text)) return ["#1E6B3A", "#DDF0E3", "#3E9B5F"];
+  if (/Pending/.test(text)) return ["#6B5600", "#F6EDC6", "#C9A227"];
+  if (/^[1-9]\d* of/.test(text)) return ["#1F4E8C", "#D9EAF7", "#3A7BD5"];
+  return [INK_SOFT, "#E8EDEC", "#8C9593"];
+}
+
 function PayPill({ text }: { text: string }): ReactElement {
-  const pending = /Pending/.test(text);
+  const [ink, bg, dot] = payTone(text);
   return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "3px 10px", borderRadius: 999, background: pending ? "#F6EDC6" : "#E8EDEC", color: pending ? "#6B5600" : INK_SOFT, fontSize: 12, fontWeight: 600, whiteSpace: "nowrap" }}>
-      <span aria-hidden="true" style={{ width: 7, height: 7, borderRadius: 4, background: pending ? "#C9A227" : "#8C9593" }} />
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "3px 10px", borderRadius: 999, background: bg, color: ink, fontSize: 12, fontWeight: 600, whiteSpace: "nowrap" }}>
+      <span aria-hidden="true" style={{ width: 7, height: 7, borderRadius: 4, background: dot }} />
       {text}
+    </span>
+  );
+}
+
+type Sla = { step: string; text: string; over: boolean } | null;
+
+/** The project's step on the current project page and its SLA: "Design · day 4 of 10", red once past the SLA. */
+function slaOf(r: BoardRowV2 | undefined): Sla {
+  if (!r) return null;
+  const s = r.sla;
+  if (!s || s.daysIn == null) return { step: r.step.label, text: "", over: false };
+  const text = s.days != null ? `day ${s.daysIn} of ${s.days}` : `day ${s.daysIn}`;
+  return { step: r.step.label, text: s.overdueBy != null && s.overdueBy > 0 ? `${s.overdueBy}d over SLA` : text, over: s.overdueBy != null && s.overdueBy > 0 };
+}
+
+function SlaCell({ sla }: { sla: Sla }): ReactElement {
+  if (!sla) return <span style={{ color: "#8C9593" }}>–</span>;
+  return (
+    <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.3 }}>
+      <span style={{ fontWeight: 600 }}>{sla.step}</span>
+      {sla.text && <span style={{ fontSize: 12, fontWeight: sla.over ? 700 : 400, color: sla.over ? "#A12622" : MUTED }}>{sla.text}</span>}
     </span>
   );
 }
@@ -41,6 +71,9 @@ export function RenovationBetaHome(): ReactElement {
   const canAssign = can("projects.write");
   const queryClient = useQueryClient();
   const q = useQuery(boardKey(), () => boardApi.board(), []);
+  // Step and SLA come from the current project board, so both screens agree while they run side by side.
+  const steps = useQuery(["renovation-beta", "step-sla"], () => simpleApi.boardRows(), []);
+  const slaById = useMemo(() => new Map((steps.data?.data ?? []).map((r) => [r.id, r])), [steps.data]);
   const phone = useIsPhone();
   const [tab, setTab] = useState<HomeTab>("all");
   const [dialog, setDialog] = useState<BetaDialog | null>(null);
@@ -110,11 +143,11 @@ export function RenovationBetaHome(): ReactElement {
       {phone ? (
         <ol style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 10 }}>
           {rows.length === 0 && <li style={{ color: MUTED }}>No projects here.</li>}
-          {rows.map((r) => <PhoneCard key={r.p.id} r={r} onOpen={() => rememberLastProject(r.p.id)} />)}
+          {rows.map((r) => <PhoneCard key={r.p.id} r={r} sla={slaOf(slaById.get(r.p.id))} onOpen={() => rememberLastProject(r.p.id)} />)}
         </ol>
       ) : (
         <div style={{ ...CARD, overflowX: "auto" }}>
-          <table style={{ width: "100%", minWidth: 780, borderCollapse: "collapse" }}>
+          <table style={{ width: "100%", minWidth: 900, borderCollapse: "collapse" }}>
             <thead>
               <tr>
                 <th scope="col" style={TH}>Building</th>
@@ -122,11 +155,12 @@ export function RenovationBetaHome(): ReactElement {
                 <th scope="col" style={TH}>ID condition</th>
                 <th scope="col" style={TH}>Who now</th>
                 <th scope="col" style={TH}>Due</th>
+                <th scope="col" style={TH}>Step · SLA</th>
                 {showPay && <th scope="col" style={TH}>Payment</th>}
               </tr>
             </thead>
             <tbody>
-              {rows.length === 0 && <tr><td colSpan={showPay ? 6 : 5} style={{ ...TD, color: MUTED }}>No projects here.</td></tr>}
+              {rows.length === 0 && <tr><td colSpan={showPay ? 7 : 6} style={{ ...TD, color: MUTED }}>No projects here.</td></tr>}
               {rows.map((r) => {
                 const [tagInk, tagBg] = betaTagTone(r.p.tag);
                 return (
@@ -143,6 +177,7 @@ export function RenovationBetaHome(): ReactElement {
                     <td style={TD}><CondPill text={r.cond} words={r.tone} /></td>
                     <td style={{ ...TD, whiteSpace: "nowrap" }}><WhoNow r={r} onAssign={() => assign(r.p.id)} /></td>
                     <td style={TD}>{r.left === null ? <span style={{ color: "#8C9593" }}>–</span> : <DuePill left={r.left} />}</td>
+                    <td style={{ ...TD, whiteSpace: "nowrap" }}><SlaCell sla={slaOf(slaById.get(r.p.id))} /></td>
                     {showPay && <td style={TD}>{r.p.payment != null && <PayPill text={r.p.payment} />}</td>}
                   </tr>
                 );
@@ -175,7 +210,7 @@ function WhoNow({ r, onAssign }: { r: HomeRow; onAssign: () => void }): ReactEle
   return <>{r.whoNow.name}</>;
 }
 
-function PhoneCard({ r, onOpen }: { r: HomeRow; onOpen: () => void }): ReactElement {
+function PhoneCard({ r, sla, onOpen }: { r: HomeRow; sla: Sla; onOpen: () => void }): ReactElement {
   const { p } = r;
   return (
     <li>
@@ -192,6 +227,7 @@ function PhoneCard({ r, onOpen }: { r: HomeRow; onOpen: () => void }): ReactElem
           {r.left !== null && <DuePill left={r.left} small />}
         </span>
         <span style={{ alignSelf: "flex-start" }}><CondPill text={r.cond} words={r.tone} /></span>
+        {sla && <span style={{ fontSize: 12, color: sla.over ? "#A12622" : INK_SOFT, fontWeight: sla.over ? 700 : 400 }}>{sla.step}{sla.text ? ` · ${sla.text}` : ""}</span>}
         <span style={{ fontSize: 12, color: INK_SOFT }}>
           {r.whoNow.kind === "name" ? `Now: ${r.whoNow.name}` : <b style={{ color: "#8A4A00" }}>Needs team</b>}
           {p.payment != null ? ` · ${p.payment}` : ""}

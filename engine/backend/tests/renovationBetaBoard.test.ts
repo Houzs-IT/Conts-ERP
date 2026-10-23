@@ -15,11 +15,11 @@ describe("Beta board: payment label", () => {
   test("ordinals", () => {
     expect([1, 2, 3, 4, 11, 12, 13, 21, 22, 23, 101, 111].map(ordinal)).toEqual(["1st", "2nd", "3rd", "4th", "11th", "12th", "13th", "21st", "22nd", "23rd", "101st", "111th"]);
   });
-  test("the first instalment not paid decides", () => {
+  test("paid out of all, or the bill waiting for money", () => {
     expect(paymentLabel(ok(inst(1, "paid"), inst(2, "billed"), inst(3, "not_billed")))).toEqual({ state: "ok", label: "Pending 2nd payment" });
-    expect(paymentLabel(ok(inst(1, "paid"), inst(2, "not_billed"), inst(3, "not_billed")))).toEqual({ state: "ok", label: "2nd payment" });
+    expect(paymentLabel(ok(inst(1, "paid"), inst(2, "not_billed"), inst(3, "not_billed")))).toEqual({ state: "ok", label: "1 of 3 paid" });
     expect(paymentLabel(ok(inst(1, "billed"), inst(2, "not_billed")))).toEqual({ state: "ok", label: "Pending 1st payment" });
-    expect(paymentLabel(ok(inst(1, "paid"), inst(2, "paid"), inst(3, "paid"), inst(4, "not_billed")))).toEqual({ state: "ok", label: "4th payment" });
+    expect(paymentLabel(ok(inst(1, "paid"), inst(2, "paid"), inst(3, "paid"), inst(4, "not_billed")))).toEqual({ state: "ok", label: "3 of 4 paid" });
   });
   test("all paid reads Fully paid", () => {
     expect(paymentLabel(ok(inst(1, "paid"), inst(2, "paid")))).toEqual({ state: "ok", label: "Fully paid" });

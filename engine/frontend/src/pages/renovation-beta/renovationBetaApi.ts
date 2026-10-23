@@ -43,12 +43,15 @@ export interface BetaInstalment {
   status: "paid" | "billed" | "not_billed";
   stageCode: string | null;
   trigger: string;
+  /** The day the money was recorded on the sales order; null when not received yet. */
+  paidOn?: string | null;
+  method?: string | null;
 }
 
 export type BetaPayments =
   | { state: "hidden" }
   | { state: "none" }
-  | { state: "ok"; contractSen: number; receivedSen: number; instalments: BetaInstalment[] };
+  | { state: "ok"; docNo?: string; contractSen: number; receivedSen: number; instalments: BetaInstalment[] };
 
 export interface BetaSettings { design3dDays: number; design2dDays: number }
 

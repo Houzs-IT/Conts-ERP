@@ -43,7 +43,7 @@ export function ContractCard({ d, canWrite, onDone, onError }: { d: ProjectDetai
       {d.so ? (
         <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
           <div className="col-span-2"><dt className="text-xs text-ink-secondary">Sales order</dt>
-            <dd><Link className="text-primary" to={`/scm/renovation/sales-orders/${encodeURIComponent(d.so.doc_no)}`}>{d.so.doc_no}</Link>
+            <dd><Link className="text-primary" to={`/scm/sales-orders/${encodeURIComponent(d.so.doc_no)}`}>{d.so.doc_no}</Link>
               <span className="text-ink-secondary"> · {d.so.status.replace(/^RENO_/, "").replace(/_/g, " ").toLowerCase()} · {shortDate(d.so.so_date)}</span></dd></div>
           <div><dt className="text-xs text-ink-secondary">Contract total</dt><dd className="tabular-nums">{hidden ? "Hidden" : money(d.money.contractSen)}</dd></div>
           <div><dt className="text-xs text-ink-secondary">Received</dt>
