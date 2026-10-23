@@ -315,7 +315,7 @@ function FilePicker({ label, files, onChange, multiple = false }: { label: strin
           {files.map((x, i) => (
             <li key={`${x.name}-${i}`} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, padding: "6px 10px", borderRadius: 8, background: WS.panel }}>
               <span style={{ flex: 1, minWidth: 0, overflowWrap: "anywhere" }}>{x.name}</span>
-              <span style={{ color: BETA.muted, flex: "none" }}>{(x.size / 1024 / 1024).toFixed(1)} MB</span>
+              <span style={{ color: BETA.muted, flex: "none" }}>{x.size < 1024 * 1024 ? `${Math.max(1, Math.round(x.size / 1024))} KB` : `${(x.size / 1024 / 1024).toFixed(1)} MB`}</span>
               <button type="button" className="link" style={{ color: WS.red, flex: "none" }} onClick={() => onChange(files.filter((_, j) => j !== i))}>Remove<span className="sr"> {x.name}</span></button>
             </li>
           ))}

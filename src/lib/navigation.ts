@@ -148,7 +148,7 @@ export const NAV: NavGroup[] = [
       // Renovation quotations (revisions, package templates, convert to the contract SO): engine only.
       { key: 'renoQuotations', label: 'Quotations', icon: 'file-text', path: '/sales/quotations' },
       { key: 'salesOrders', label: 'Sales orders', icon: 'shopping-cart', path: '/sales/orders' },
-      { key: 'salesOrderAmendment', label: 'Sales order amendment', icon: 'file-pen-line', path: '/sales/amendments' },
+      { key: 'salesOrderAmendment', label: 'VO', icon: 'file-pen-line', path: '/sales/amendments' },
       { key: 'deliveryOrders', label: 'Delivery orders', icon: 'truck', path: '/sales/delivery-orders' },
       { key: 'salesInvoices', label: 'Sales invoices', icon: 'receipt', path: '/sales/invoices', area: 'scInvoices' },
       { key: 'salesReturns', label: 'Delivery returns', icon: 'undo-2', path: '/sales/returns' },
