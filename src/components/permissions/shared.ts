@@ -26,6 +26,15 @@ export const SIDE_OPTIONS: { value: UserSide; label: string }[] = [
 ];
 export const sideLabel = (s: UserSide | undefined): string => SIDE_OPTIONS.find(o => o.value === (s ?? 'both'))?.label ?? 'Both';
 
+/** The area groups each side closes. Same table as CLOSED_BY_SIDE and closedBySide in functions/_lib/access.ts: keep them
+ *  in step. Management always sees both sides; Finance and System are on neither list, so they follow the rules. */
+const CLOSED_BY_SIDE: Record<UserSide, string[]> = {
+  conts: ['Dream Crafter'],
+  dream_crafter: ['Workspace', 'Operations', 'Growth'],
+  both: [],
+};
+export const closedBySide = (kind: DepartmentKind, side: UserSide, group: string): boolean => kind !== 'management' && CLOSED_BY_SIDE[side].includes(group);
+
 export const KIND_OPTIONS: { value: DepartmentKind; label: string }[] = [
   { value: 'staff', label: 'Staff (office work)' },
   { value: 'management', label: 'Management (full access)' },

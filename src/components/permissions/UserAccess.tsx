@@ -6,7 +6,7 @@ import { useToast } from '../Toast';
 import { api, errorMessage } from '../../lib/api';
 import { cx } from '../../lib/design-tokens';
 import type { AccessLevel, AccessOrigin, PersonAccess, PersonAccessArea, PersonAccessChange } from '../../lib/types';
-import { LEVEL_COLOR, LEVEL_LABEL, MUTED, ORIGIN_LABEL, SELECT, TAG } from './shared';
+import { LEVEL_COLOR, LEVEL_LABEL, MUTED, ORIGIN_LABEL, SELECT, TAG, closedBySide } from './shared';
 
 const LEVELS: AccessLevel[] = ['none', 'view', 'edit', 'full'];
 
@@ -102,19 +102,21 @@ export default function UserAccess({ userId }: { userId: string }) {
                     <div className="py-1.5 px-4 bg-page [border-bottom:1px_solid_var(--color-line-soft)] text-caption font-semibold tracking-[0.06em] uppercase text-muted-ink">{group}</div>
                     {areas.map(a => {
                       const s = shown(a);
-                      const custom = s.override !== null;
+                      // Their department's side closes this category: nothing they are given opens it.
+                      const closed = closedBySide(data.user.kind, data.user.side, a.group);
+                      const custom = !closed && s.override !== null;
                       return (
                         <div key={a.key} className={cx('py-1.5 px-4 grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1 items-center [border-bottom:1px_solid_var(--color-line-soft)]',
                           custom && 'bg-[var(--color-info)]')}>
                           <div className="min-w-0 flex items-center gap-2 flex-wrap">
                             <span className="text-copy font-medium">{a.label}</span>
-                            <span className="text-meta font-semibold" style={{ color: LEVEL_COLOR[s.level] }}>{LEVEL_LABEL[s.level]}</span>
-                            <span className={TAG} style={custom
+                            <span className="text-meta font-semibold" style={{ color: LEVEL_COLOR[closed ? 'none' : s.level] }}>{closed ? 'No access (closed by side)' : LEVEL_LABEL[s.level]}</span>
+                            {!closed && <span className={TAG} style={custom
                               ? { background: 'var(--color-info)', color: 'var(--color-info-fg)', borderColor: 'var(--color-info-line)' }
-                              : { color: MUTED, borderColor: 'var(--color-line)' }}>{ORIGIN_LABEL[s.origin]}</span>
+                              : { color: MUTED, borderColor: 'var(--color-line)' }}>{ORIGIN_LABEL[s.origin]}</span>}
                           </div>
                           {data.canEdit ? (
-                            <select aria-label={`${a.label} access for ${data.user.fullName}`} value={s.override ?? 'inherit'} disabled={busy}
+                            <select aria-label={`${a.label} access for ${data.user.fullName}`} value={s.override ?? 'inherit'} disabled={busy || closed}
                               onChange={e => pick(a, e.target.value)}
                               className={cx(SELECT, 'max-w-[230px]', custom ? 'font-semibold' : 'font-normal')}
                               style={{ color: custom ? LEVEL_COLOR[s.level] : MUTED, borderColor: draft[a.key] !== undefined ? 'var(--color-gold)' : 'var(--color-line)' }}>
