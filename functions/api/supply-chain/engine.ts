@@ -3,11 +3,10 @@ import { requireSession } from '../../_lib/auth';
 import { scmEngineConfigured, mayUseScmEngine } from '../../_lib/scmEngine';
 
 /** GET /api/supply-chain/engine — whether the supply chain screens come from the engine on this
- *  environment, for this person. Where it is not set up, the built-in screens are used. `beta`: the engine's
- *  Beta screens are on the menu (BETA_ENABLED, staging only; owner, 23 Oct 2026). */
+ *  environment, for this person. Where it is not set up, the built-in screens are used. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
   const enabled = scmEngineConfigured(env) && mayUseScmEngine(session);
-  return json({ enabled, beta: enabled && env.BETA_ENABLED?.trim().toLowerCase() === 'true' });
+  return json({ enabled });
 };

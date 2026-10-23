@@ -205,8 +205,6 @@ export interface NavTab {
    *  tap that 403s. Preferred over a position-name list: the answer is decided
    *  once, server-side, and cannot drift from the gate it describes. */
   requireCapability?: CapabilityKey;
-  /** Hide unless /auth/me said beta_enabled (staging only). A hard gate: no show-flag re-opens it. */
-  requireBeta?: boolean;
   /** Sales-access model: show this entry ONLY to a NON-director Sales user and
    *  hide it from everyone else (office/director). Bypasses the permission
    *  gates. Used for the single rep-facing "Sales Orders" leaf mounted directly
@@ -374,28 +372,24 @@ export const ALL_NAV_TABS: NavTab[] = [
     ],
   },
 
-  // ── Beta — work being tried on staging (owner, 23 Oct 2026). Shown only where the server says
-  //    beta_enabled (BETA_ENABLED in the worker's settings), never on production.
+  // ── Beta — the new project screens (owner, 23 Oct 2026), shown to everyone with project list access.
   {
     section: "operations",
     label: "Beta",
     icon: FlaskConical,
     groupId: "beta",
-    requireBeta: true,
     pageAccess: "projects.list",
     children: [
       {
         to: "/beta/projects",
         label: "Project list",
         icon: FolderOpen,
-        requireBeta: true,
         pageAccess: "projects.list",
       },
       {
         to: "/beta/calendar",
         label: "Calendar",
         icon: CalendarDays,
-        requireBeta: true,
         pageAccess: "projects.list",
       },
     ],

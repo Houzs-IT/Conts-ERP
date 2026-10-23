@@ -126,7 +126,7 @@ import { publicBrandCalendar } from "./routes/publicBrandCalendar";
 import { brandShare } from "./routes/brandShare";
 // Renovation projects (Conts renovation flow, phase 3). Own router: routes/projects.ts is at its size ceiling.
 import renovation from "./routes/renovation";
-// Beta project workspace (staging only): its own switch answers 404 on every route where BETA_ENABLED is not "true".
+// Beta project workspace.
 import renovationBeta from "./routes/renovationBeta";
 import { drainEmailOutbox } from "./services/email";
 import { runClientErrorDigest } from "./services/clientErrors";

@@ -100,5 +100,3 @@ VIEW_AS = "staging"
 # The supply chain engine on staging (engine/). The shared secret is SCM_ENGINE_SSO_SECRET, set as a secret.
 SCM_ENGINE_API = "https://conts-scm-engine-staging.conts-erp.workers.dev"
 SCM_ENGINE_SITE = "https://theconts-scm.pages.dev"
-# The engine's Beta screens on the menu: staging only (owner, 23 Oct 2026). Never in the production [vars].
-BETA_ENABLED = "true"

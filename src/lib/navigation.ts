@@ -138,7 +138,7 @@ export const NAV: NavGroup[] = [
     { key: 'projectFinances', label: 'Finances', icon: 'wallet', path: '/projects/finances', area: 'projects', full: true },
     { key: 'projectMaintenance', label: 'Project settings', icon: 'settings', path: '/projects/maintenance', area: 'projects', full: true },
   ] },
-  // Engine screens being tried on staging (owner, 23 Oct 2026). Shown only where the engine answer says beta.
+  // The engine's new project screens (owner, 23 Oct 2026). Their Projects area is engine-only, like Projects.
   { label: 'BETA', workspace: 'supply', items: [
     { key: 'betaProjects', label: 'Project list', icon: 'folder-open', path: '/beta/projects', area: 'projects' },
     { key: 'betaCalendar', label: 'Calendar', icon: 'calendar-days', path: '/beta/calendar', area: 'projects' },
@@ -227,8 +227,6 @@ export function switchedOff(path: string): boolean {
 
 /** Menu areas (and single menu keys) whose screens exist only in the supply chain engine: hidden where it is not set up. */
 const ENGINE_ONLY_AREAS = ['serviceCases', 'projects', 'renoQuotations', 'ledger'];
-/** Menu keys shown only where the engine's Beta screens are on (staging). */
-const BETA_ONLY_KEYS = ['betaProjects', 'betaCalendar'];
 const FIXED_ROLES: UserRole[] = ['housekeeper', 'technician', 'owner'];
 
 /** Areas (and menu keys) closed to a role: from its permission levels where the session carries them, else the built-in list. */
@@ -266,8 +264,8 @@ export function screenClosed(path: string, access?: Record<string, AccessLevel>)
   return !!item?.full && access[area] !== 'full';
 }
 
-export function navFor(role: UserRole, engine = false, access?: Record<string, AccessLevel>, beta = false): NavGroup[] {
-  const groups = navGroups(role, engine, access, beta);
+export function navFor(role: UserRole, engine = false, access?: Record<string, AccessLevel>): NavGroup[] {
+  const groups = navGroups(role, engine, access);
   // IT Support and Finance are in the supply chain sidebar only so it stays put; alone they must not open the
   // supply chain workspace to someone with no supply chain screens (Finance is then in Rental only).
   const shared = (g: NavGroup) => g.workspace === 'supply' && (g.label === SUPPLY_SUPPORT || g.label === SUPPLY_FINANCE);
@@ -275,8 +273,8 @@ export function navFor(role: UserRole, engine = false, access?: Record<string, A
   return supplyWork ? groups : groups.filter(g => !shared(g));
 }
 
-function navGroups(role: UserRole, engine: boolean, access?: Record<string, AccessLevel>, beta = false): NavGroup[] {
-  const deny = [...denied(role, access), ...SWITCHED_OFF_AREAS, ...(engine ? [] : ENGINE_ONLY_AREAS), ...(engine && beta ? [] : BETA_ONLY_KEYS)];
+function navGroups(role: UserRole, engine: boolean, access?: Record<string, AccessLevel>): NavGroup[] {
+  const deny = [...denied(role, access), ...SWITCHED_OFF_AREAS, ...(engine ? [] : ENGINE_ONLY_AREAS)];
   if (deny.includes('*')) return [];
   const open = (key: string, area: string) => !deny.includes(key) && !deny.includes(area);
   const enough = (i: NavItem) => !i.full || !access || FIXED_ROLES.includes(role) || access[areaOfItem(i)] === 'full';

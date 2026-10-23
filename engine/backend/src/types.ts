@@ -158,8 +158,6 @@ export type Env = {
   // regression). Parsed once via scm/lib/costing-enabled.isCostingDisplayEnabled.
   // Mirrors the FE build-time COSTING_DISPLAY_ENABLED, but THIS is authoritative.
   COSTING_DISPLAY_ENABLED?: string;
-  // "true" shows the Beta menu and opens its routes (staging only). See scm/lib/renovation-beta-enabled.ts.
-  BETA_ENABLED?: string;
   // Stock-take posting thresholds (phase 1, 2026-08-08). A variance whose
   // |qty delta| exceeds the qty limit, or whose |delta| x unit cost exceeds the
   // value limit (integer SEN), needs scm.stock_take.supervise to post. Absent /

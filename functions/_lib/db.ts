@@ -22,8 +22,6 @@ export interface Env {
   SCM_ENGINE_API?: string;
   SCM_ENGINE_SITE?: string;
   SCM_ENGINE_SSO_SECRET?: string;
-  /** "true" puts the engine's Beta screens on the menu (wrangler.toml [env.preview.vars] only, never production). */
-  BETA_ENABLED?: string;
   /** IT Support (functions/_lib/itHub.ts): the Houzs IT Hub's address and Conts's key for it. IT requests are kept
    *  there, not here. With either unset the IT Support screen says it is not connected. */
   IT_HUB_URL?: string;

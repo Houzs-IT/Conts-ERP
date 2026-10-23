@@ -39,24 +39,13 @@ describe("Beta routes: the switch", () => {
     ]);
   });
 
-  test("every route answers 404 before auth or any query when BETA_ENABLED is not true", async () => {
-    for (const env of [{}, { BETA_ENABLED: "false" }, { BETA_ENABLED: "" }, { BETA_ENABLED: "yes" }]) {
-      for (const r of routes) {
-        const path = `/api/beta${r.path.replace(":id", "1").replace(":defectId", "1").replace(":fileId", "1").replace(":noteId", "1").replace(":kind", "site_measure")}`;
-        const res = await app.request(path, { method: r.method, headers: { "content-type": "application/json" }, body: r.method === "GET" ? undefined : "{}" }, env);
-        expect(res.status, `${r.method} ${path} with ${JSON.stringify(env)}`).toBe(404);
-        expect(await res.json()).toEqual({ error: "not_found" });
-      }
+  // Beta has no switch (owner, 23 Oct 2026): every route sits behind the normal sign-in gate.
+  test("every route needs a session (no session: 401)", async () => {
+    for (const r of routes) {
+      const path = `/api/beta${r.path.replace(":id", "1").replace(":defectId", "1").replace(":fileId", "1").replace(":noteId", "1").replace(":kind", "site_measure")}`;
+      const res = await app.request(path, { method: r.method, headers: { "content-type": "application/json" }, body: r.method === "GET" ? undefined : "{}" }, {});
+      expect(res.status, `${r.method} ${path}`).toBe(401);
     }
-  });
-
-  test("an unknown path also answers 404 when off", async () => {
-    expect((await app.request("/api/beta/nothing", {}, {})).status).toBe(404);
-  });
-
-  test("with the switch on the request moves on to the normal gates (no session: 401)", async () => {
-    const res = await app.request("/api/beta/settings", { method: "PUT", body: "{}" }, { BETA_ENABLED: "true" });
-    expect(res.status).toBe(401);
   });
 });
 

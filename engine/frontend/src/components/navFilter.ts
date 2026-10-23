@@ -63,7 +63,6 @@ export function makeNavVisible({ user, can, pageAccess }: NavFilterCtx) {
        when tapped. capability() fails closed, so a stale shell with no resolved
        set hides the entry rather than leaking it. */
     if (t.requireCapability && !capability(user, t.requireCapability)) return false;
-    if (t.requireBeta && !user?.beta_enabled) return false;
     // Rep-only entry — visible ONLY to a non-director Sales rep; everyone else
     // (office/director) never sees it.
     if (t.salesRepOnly && !isSalesNonDirector(user)) return false;
