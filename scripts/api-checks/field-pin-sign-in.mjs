@@ -156,6 +156,17 @@ check('switching the cleaner off on Workers switches their login off', r.status 
 r = await call(opsStaff, 'PATCH', `/api/housekeeping/cleaners/${cleanerId}`, { isActive: true });
 const [on] = await db('SELECT is_active FROM users WHERE id = $1', u.id);
 check('...and back on, the login works again', r.status === 200 && on.is_active === 1, { r, on });
+// Outside company and back: the link stays, the login is off meanwhile, and Give app access reopens the same login.
+r = await call(opsStaff, 'PATCH', `/api/housekeeping/cleaners/${cleanerId}`, { employmentType: 'outsourced', vendorName: 'Some Sdn Bhd' });
+const [out] = await db('SELECT c.user_id, u.is_active FROM cleaners c JOIN users u ON u.id = c.user_id WHERE c.id = $1', cleanerId);
+check('moved to an outside company: same login kept, switched off', r.status === 200 && out?.user_id === u.id && out.is_active === 0, { r, out });
+r = await call(opsStaff, 'PATCH', `/api/housekeeping/cleaners/${cleanerId}`, { isActive: true });
+const [stillOff] = await db('SELECT is_active FROM users WHERE id = $1', u.id);
+check('...switching an outside entry on does not reopen its login', r.status === 200 && stillOff.is_active === 0, { r, stillOff });
+r = await call(opsStaff, 'PATCH', `/api/housekeeping/cleaners/${cleanerId}`, { employmentType: 'internal' });
+r = await call(opsMgr, 'POST', `/api/housekeeping/cleaners/${cleanerId}/access`, {});
+const [back] = await db('SELECT id, employee_id, is_active FROM users WHERE id = $1', u.id);
+check('back in-house, Give app access reopens the same login and employee ID', r.status === 200 && r.json.userId === u.id && r.json.employeeId === employeeId && back.is_active === 1, { r, back });
 
 console.log(fails ? `${fails} FAILED` : 'all passed');
 process.exit(fails ? 1 : 0);

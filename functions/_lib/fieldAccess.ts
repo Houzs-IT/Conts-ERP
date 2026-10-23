@@ -38,14 +38,14 @@ export async function giveFieldAccess(env: Env, session: Session, list: WorkerLi
   let userId = w.user_id;
   let employeeId: string;
   if (userId) {
-    const u = await one<{ role: string; is_active: number; employee_id: string | null }>(env, 'SELECT role, is_active, employee_id FROM users WHERE id = ?', userId);
+    const u = await one<{ role: string; employee_id: string | null }>(env, 'SELECT role, employee_id FROM users WHERE id = ?', userId);
     if (!u) return fail('NOT_FOUND', `The login linked to this ${noun} no longer exists.`, 404);
     // A list entry may link an office login (an operations person who also fixes things); phone sign-in is never
-    // put on one, so this button cannot reach an office account's password.
+    // put on one, so this button cannot reach an office account's password. A field login switched off with its
+    // entry (followWorker) is reopened here: the entry is in-house and on, checked above.
     if (!PIN_ROLES.includes(u.role)) return fail('FORBIDDEN', 'The linked login is an office account. It signs in with email; management manages it under Users and roles.', 403);
-    if (!u.is_active) return fail('VALIDATION', 'The linked login is switched off. Management can switch it back on under Users and roles.', 422);
     employeeId = u.employee_id ?? await nextId();
-    await run(env, 'UPDATE users SET employee_id = ?, password_hash = ?, must_change_password = 1, failed_attempts = 0, locked_until = NULL, updated_at = ? WHERE id = ?',
+    await run(env, 'UPDATE users SET employee_id = ?, password_hash = ?, must_change_password = 1, failed_attempts = 0, locked_until = NULL, is_active = 1, updated_at = ? WHERE id = ?',
       employeeId, hash, now, userId);
     await revokeSessions(env, userId);
   } else {
@@ -66,7 +66,7 @@ export async function giveFieldAccess(env: Env, session: Session, list: WorkerLi
 }
 
 /** Cleaners and technicians are managed on Workers only, so a worker switched off there (or changed to an outside
- *  company, which drops the link) loses their field-app login at once, and switched back on gets it back. An office
+ *  company, which keeps the link) loses their field-app login at once, and switched back on gets it back. An office
  *  login linked to a technician entry is never touched: only a cleaner or technician login follows its entry.
  *  Answers whether the login changed, for the entry's audit row. */
 export async function followWorker(env: Env, userId: string | null, active: boolean): Promise<boolean> {

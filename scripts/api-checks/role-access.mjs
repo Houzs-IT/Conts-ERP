@@ -108,8 +108,29 @@ r = await callAsUser(staff, 'GET', '/api/reservations');
 check('...so The Conts screens close for them', r.status === 403, `${r.status}`);
 r = await callAsUser(staff, 'GET', '/api/sales-orders');
 check('...and the Dream Crafter ones open', r.status === 200, `${r.status} ${r.text.slice(0, 120)}`);
+r = await call('GET', `/api/users/${staff.userId}/access`);
+check('...and their own access chart says the same', r.status === 200 && r.json?.user?.side === 'dream_crafter' && r.json.areas.find(a => a.key === 'reservations')?.level === 'none', r.text.slice(0, 200));
 r = await call('PATCH', `/api/users/${staff.userId}`, { side: 'conts', departmentId: ops.id, positionId: staffPos.id });
 check('back to Operations / Operations Staff', r.status === 200, r.text);
+
+// The department screens cannot make, change or empty a field department either: that would turn office staff into
+// cleaners or technicians (or the reverse) outside Workers.
+const maintenance = start.departments.find(d => d.kind === 'maintenance');
+r = await call('POST', '/api/departments', { name: `Field ${Date.now()}`, kind: 'cleaning', side: 'conts' });
+check('a Cleaning-kind department cannot be added (422)', r.status === 422, r.text);
+r = await call('PATCH', `/api/departments/${ops.id}`, { kind: 'maintenance' });
+check('an office department cannot become Maintenance (422)', r.status === 422, r.text);
+r = await call('PATCH', `/api/departments/${maintenance.id}`, { kind: 'staff' });
+check('Maintenance cannot become an office department (422)', r.status === 422, r.text);
+r = await call('DELETE', `/api/departments/${cleaning.id}`, { moveTo: { departmentId: admin.id, positionId: null } });
+check('Cleaning cannot be deleted from here (400)', r.status === 400, r.text);
+const temp = (await call('POST', '/api/departments', { name: `Temp ${Date.now()}`, kind: 'staff', side: 'both' })).json?.department;
+r = await call('DELETE', `/api/departments/${temp?.id}`, { moveTo: { departmentId: cleaning.id, positionId: null } });
+check('nobody is moved into Cleaning by a delete (422)', !!temp && r.status === 422, r.text);
+r = await call('DELETE', `/api/departments/${temp?.id}`);
+check('...and the empty department still deletes', r.status === 200, r.text);
+r = await call('PATCH', '/api/users/11111111-1111-4111-8111-000000000005', { fullName: 'Renamed Here' });
+check('a cleaner account cannot be changed under Users (422)', r.status === 422 && /Workers/.test(r.text), r.text);
 
 // Back to how it was.
 r = await put(keep);

@@ -1,7 +1,7 @@
 import { type Env, one, run, json, fail, audit, nowIso, transaction } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { checkPhone } from '../../_lib/validate';
-import { forgetRules, isSide, roleForKind, sideFits } from '../../_lib/access';
+import { forgetRules, isFieldKind, isSide, roleForKind, sideFits } from '../../_lib/access';
 import { loadDepartment, otherManagers } from '../../_lib/accessRules';
 
 interface Before {
@@ -37,6 +37,8 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
 
   const before = await one<Before>(env, 'SELECT role, is_active, manager_id, full_name, email, phone, department_id, position_id, department, position, side FROM users WHERE id = ?', id);
   if (!before) return fail('NOT_FOUND', 'That account no longer exists.', 404);
+  // Switching off, renaming and the PIN all happen on Workers, which keeps the worker entry and its login together.
+  if (before.role === 'housekeeper' || before.role === 'technician') return fail('VALIDATION', 'Cleaners and technicians are managed on Workers.', 422);
   if (b.managerId && !(await one(env, 'SELECT 1 AS x FROM users WHERE id = ?', b.managerId))) return fail('VALIDATION', 'That manager does not exist.', 422, { managerId: 'Pick a manager from the list.' });
   if (b.email !== undefined && b.email.trim().toLowerCase() !== before.email.toLowerCase()
       && await one(env, 'SELECT 1 AS x FROM users WHERE lower(email) = lower(?) AND id != ?', b.email.trim(), id)) {
@@ -48,12 +50,11 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   let job: { departmentId: string; positionId: string | null; department: string; position: string | null; side: string; role: string; moved: boolean } | null = null;
   if (jobTouched) {
     if (before.role === 'owner') return fail('VALIDATION', 'An owner login has no department.', 422, { departmentId: 'Owners are managed under Owners.' });
-    if (before.role === 'housekeeper' || before.role === 'technician') return fail('VALIDATION', 'Cleaners and technicians are managed on Workers.', 422, { departmentId: 'Manage cleaners and technicians on Workers.' });
     const departmentId = typeof b.departmentId === 'string' ? b.departmentId : before.department_id;
     const department = departmentId ? await loadDepartment(env, departmentId) : null;
     if (!department) return fail('VALIDATION', 'That department does not exist.', 422, { departmentId: 'Choose a department from the list.' });
     const moved = department.id !== before.department_id;
-    if (moved && (department.kind === 'cleaning' || department.kind === 'maintenance')) return fail('VALIDATION', 'Cleaners and technicians are added on Workers.', 422, { departmentId: 'Add cleaners and technicians on Workers.' });
+    if (moved && isFieldKind(department.kind)) return fail('VALIDATION', 'Cleaners and technicians are added on Workers.', 422, { departmentId: 'Add cleaners and technicians on Workers.' });
     if (isSide(b.side) && !sideFits(department.side, b.side)) return fail('VALIDATION', `${department.name} works on one side only.`, 422, { departmentId: `${department.name} is not on that side.` });
     const chosen = isSide(b.side) ? b.side : isSide(before.side) ? before.side : 'both';
     const side = department.side === 'both' ? chosen : department.side;

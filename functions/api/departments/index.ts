@@ -1,6 +1,6 @@
 import { type Env, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
-import { isKind, isSide } from '../../_lib/access';
+import { isFieldKind, isKind, isSide } from '../../_lib/access';
 import { cleanName, isRecord, isUniqueViolation, loadDepartment, loadDepartments } from '../../_lib/accessRules';
 
 /** GET /api/departments -> every department with its positions and head counts. Same gate as the permissions chart. */
@@ -27,6 +27,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!isKind(kind)) fields.kind = 'Choose a kind.';
   if (!isSide(side)) fields.side = 'Choose The Conts, Dream Crafter or both.';
   if (!name || !isKind(kind) || !isSide(side)) return fail('VALIDATION', 'Check the department details.', 400, fields);
+  if (isFieldKind(kind)) return fail('VALIDATION', 'Cleaners and technicians are added on Workers.', 422, { kind: 'Choose Staff or Management.' });
 
   const top = await one<{ n: number | null }>(env, 'SELECT max(sort) AS n FROM departments');
   const id = crypto.randomUUID(), now = nowIso();

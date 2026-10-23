@@ -5,7 +5,7 @@ import { twoFactorTables } from '../../_lib/twoFactor';
 import { userJobReady } from '../../_lib/userJob';
 import { hasEmployeeIds } from '../../_lib/fieldPin';
 import { userSideReady } from '../../_lib/userSide';
-import { isSide, maySee, roleForKind, sideFits } from '../../_lib/access';
+import { isFieldKind, isSide, maySee, roleForKind, sideFits } from '../../_lib/access';
 import { isRecord, loadDepartment } from '../../_lib/accessRules';
 
 const MANAGE = ['management'];
@@ -67,7 +67,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
   const department = await loadDepartment(env, departmentId);
   if (!department) return fail('VALIDATION', 'That department does not exist.', 422, { departmentId: 'Choose a department from the list.' });
-  if (department.kind === 'cleaning' || department.kind === 'maintenance') return fail('VALIDATION', 'Cleaners and technicians are added on Workers.', 422, { departmentId: 'Add cleaners and technicians on Workers.' });
+  if (isFieldKind(department.kind)) return fail('VALIDATION', 'Cleaners and technicians are added on Workers.', 422, { departmentId: 'Add cleaners and technicians on Workers.' });
   if (!sideFits(department.side, side)) return fail('VALIDATION', `${department.name} works on one side only.`, 422, { departmentId: `${department.name} is not on that side.` });
   const position = typeof positionId === 'string' && positionId ? department.positions.find(p => p.id === positionId) ?? null : null;
   if (typeof positionId === 'string' && positionId && !position) return fail('VALIDATION', 'That position is not in the department.', 422, { positionId: 'Choose a position of this department.' });

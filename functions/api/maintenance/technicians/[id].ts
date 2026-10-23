@@ -1,5 +1,5 @@
 import { mayWork } from '../../../_lib/access';
-import { type Env, one, run, json, fail, audit, nowIso } from '../../../_lib/db';
+import { type Env, one, run, json, fail, audit, nowIso, transaction } from '../../../_lib/db';
 import { requireSession } from '../../../_lib/auth';
 import { hasTechnicianList } from '../../../_lib/maintenance';
 import { followWorker } from '../../../_lib/fieldAccess';
@@ -40,8 +40,9 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     if (!EMPLOYMENT.includes(b.employmentType)) return fail('VALIDATION', 'Pick in-house or contractor.', 422, { employmentType: 'In-house or contractor.' });
     sets.push('employment_type = ?'); args.push(b.employmentType);
     before.employmentType = t.employment_type; after.employmentType = b.employmentType;
-    // Moving to in-house clears the company; moving to contractor clears the login link.
-    sets.push(b.employmentType === 'internal' ? 'vendor_name = NULL' : 'user_id = NULL');
+    // Moving to in-house clears the company. Moving to contractor keeps the login link but switches the login off
+    // (below), so Give app access later reopens the same login and employee ID instead of making a second one.
+    if (b.employmentType === 'internal') sets.push('vendor_name = NULL');
   }
   if (typeof b?.vendorName === 'string') {
     const v = b.vendorName.trim() ? b.vendorName.trim().slice(0, 120) : null;
@@ -60,13 +61,17 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   if (!sets.length) return fail('VALIDATION', 'Nothing to change.', 422);
 
   const now = nowIso();
-  await run(env, `UPDATE technicians SET ${sets.join(', ')}, updated_at = ? WHERE id = ?`, ...args, now, id);
-  const loginActive = b?.employmentType === 'outsourced' ? false : b?.isActive === true || b?.isActive === false ? b.isActive : null;
-  if (loginActive !== null && await followWorker(env, t.user_id, loginActive)) after.appLogin = loginActive ? 'on' : 'off';
-  if (rename) await run(env, `UPDATE maintenance_issues SET vendor_name = ?, updated_at = ? WHERE technician_id = ? AND state <> 'resolved'`, rename, now, id);
-  // Moving to contractor drops the login, so their open jobs stop showing in that login's field app.
-  if (b?.employmentType === 'outsourced') await run(env, `UPDATE maintenance_issues SET assignee_kind = 'contractor', assignee_user_id = NULL, updated_at = ? WHERE technician_id = ? AND state <> 'resolved'`, now, id);
-  else if (b?.employmentType === 'internal') await run(env, `UPDATE maintenance_issues SET assignee_kind = 'in_house', updated_at = ? WHERE technician_id = ? AND state <> 'resolved'`, now, id);
-  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'maintenance.technician_update', entityTable: 'technicians', entityId: id, before, after });
+  // Only an in-house entry's login can be on.
+  const internal = (b?.employmentType ?? t.employment_type) === 'internal';
+  const loginActive = b?.employmentType === 'outsourced' ? false : typeof b?.isActive === 'boolean' ? b.isActive && internal : null;
+  await transaction(env, async tx => {
+    await run(tx, `UPDATE technicians SET ${sets.join(', ')}, updated_at = ? WHERE id = ?`, ...args, now, id);
+    if (loginActive !== null && await followWorker(tx, t.user_id, loginActive)) after.appLogin = loginActive ? 'on' : 'off';
+    if (rename) await run(tx, `UPDATE maintenance_issues SET vendor_name = ?, updated_at = ? WHERE technician_id = ? AND state <> 'resolved'`, rename, now, id);
+    // Moving to contractor switches the login off, so their open jobs stop showing in that login's field app.
+    if (b?.employmentType === 'outsourced') await run(tx, `UPDATE maintenance_issues SET assignee_kind = 'contractor', assignee_user_id = NULL, updated_at = ? WHERE technician_id = ? AND state <> 'resolved'`, now, id);
+    else if (b?.employmentType === 'internal') await run(tx, `UPDATE maintenance_issues SET assignee_kind = 'in_house', updated_at = ? WHERE technician_id = ? AND state <> 'resolved'`, now, id);
+    await audit(tx, { actorId: session.userId, actorLabel: session.fullName, action: 'maintenance.technician_update', entityTable: 'technicians', entityId: id, before, after });
+  });
   return json({ ok: true });
 };

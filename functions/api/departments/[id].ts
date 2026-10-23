@@ -1,6 +1,6 @@
 import { type Env, one, run, json, fail, audit, nowIso, transaction } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
-import { isKind, isSide, roleForKind, forgetRules } from '../../_lib/access';
+import { isFieldKind, isKind, isSide, roleForKind, forgetRules } from '../../_lib/access';
 import { type Department, type Position, IN_DEPARTMENT, cleanName, isRecord, isSort, isUniqueViolation, loadDepartment, managersIn, otherManagers, parseDepartmentMove } from '../../_lib/accessRules';
 
 /** PATCH /api/departments/:id { name?, kind?, side?, sort? } -> { department }. Management only. A new name, kind or
@@ -27,6 +27,10 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
 
   const cur = await loadDepartment(env, id);
   if (!cur) return fail('NOT_FOUND', 'That department no longer exists.', 404);
+  // A kind change re-roles every member, so it would turn office staff into field logins or the reverse.
+  if (kind !== undefined && kind !== cur.kind && (isFieldKind(kind) || isFieldKind(cur.kind))) {
+    return fail('VALIDATION', 'Cleaners and technicians are added on Workers.', 422, { kind: 'Cleaning and Maintenance cannot be changed to or from here.' });
+  }
 
   // The people in it get the role their department's kind gives, so a department that stops being management must not
   // take the last management accounts with it.
@@ -42,7 +46,8 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
       // Every save brings the members' hidden role back in line with the kind, so an old account cannot drift from it.
       // Owners have no department and are never touched.
       await run(tx, `UPDATE users SET role = ? WHERE department_id = ? AND role <> 'owner' AND role <> ?`, roleForKind(kind ?? cur.kind), id, roleForKind(kind ?? cur.kind));
-      if (side && side !== cur.side) await run(tx, 'UPDATE users SET side = ? WHERE department_id = ?', side, id);
+      // A department on one side puts its people there; made 'both', each person's own Works on choice stands again.
+      if (side && side !== cur.side && side !== 'both') await run(tx, 'UPDATE users SET side = ? WHERE department_id = ?', side, id);
       await audit(tx, {
         actorId: session.userId, actorLabel: session.fullName, action: 'department.update', entityTable: 'departments', entityId: id,
         before: { name: cur.name, kind: cur.kind, side: cur.side, sort: cur.sort },
@@ -70,6 +75,7 @@ export const onRequestDelete: PagesFunction<Env> = async ({ request, env, params
   const cur = await loadDepartment(env, id);
   if (!cur) return fail('NOT_FOUND', 'That department no longer exists.', 404);
   if (cur.kind === 'management') return fail('VALIDATION', 'The management department cannot be deleted.', 400);
+  if (isFieldKind(cur.kind)) return fail('VALIDATION', 'Cleaning and Maintenance hold the Workers logins and cannot be deleted here.', 400);
 
   const parsed = parseDepartmentMove(await request.json().catch(() => null));
   if (!parsed.ok) return fail('VALIDATION', parsed.message, 400);
@@ -91,6 +97,9 @@ export const onRequestDelete: PagesFunction<Env> = async ({ request, env, params
       return fail('VALIDATION', 'Moving people into Management gives them Full access. Do that for each person on the user form instead.', 400,
         { moveTo: 'Choose a department other than Management.' });
     }
+    if (target && isFieldKind(target.kind)) {
+      return fail('VALIDATION', 'Cleaners and technicians are added on Workers.', 422, { moveTo: 'Choose an office department.' });
+    }
   }
   if (count > 0 && move) {
     if (!target || target.id === id) return fail('VALIDATION', 'Pick another department to move people to.', 400);
@@ -107,8 +116,10 @@ export const onRequestDelete: PagesFunction<Env> = async ({ request, env, params
   }
   await transaction(env, async tx => {
     if (moveTarget) {
-      await run(tx, `UPDATE users SET department_id = ?, position_id = ?, department = ?, position = ?, role = ?, side = ?, updated_at = ? WHERE ${inside}`,
-        moveTarget.id, targetPosition?.id ?? null, moveTarget.name, targetPosition?.name ?? null, roleForKind(moveTarget.kind), moveTarget.side, nowIso(), id, id);
+      // Side as sideSql reads it: a one-sided target puts them there; a target on both sides keeps each person's own choice.
+      await run(tx, `UPDATE users SET department_id = ?, position_id = ?, department = ?, position = ?, role = ?,
+          side = CASE WHEN ? IN ('conts', 'dream_crafter') THEN ? ELSE side END, updated_at = ? WHERE ${inside}`,
+        moveTarget.id, targetPosition?.id ?? null, moveTarget.name, targetPosition?.name ?? null, roleForKind(moveTarget.kind), moveTarget.side, moveTarget.side, nowIso(), id, id);
     }
     await run(tx, `DELETE FROM access_rules WHERE scope = 'department' AND scope_id = ?`, id);
     await run(tx, `DELETE FROM access_rules WHERE scope = 'position' AND scope_id IN (SELECT id FROM positions WHERE department_id = ?)`, id);

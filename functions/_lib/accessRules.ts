@@ -1,6 +1,6 @@
 import { type Env, all, one } from './db';
 import {
-  AREAS, GROUPS, closedBySide, LEVELS, groupKey, isKind, isLevel, isSetting, isSide, resolveFor, rulesFor,
+  AREAS, GROUPS, closedBySide, LEVELS, groupKey, isKind, isLevel, isSetting, isSide, resolveFor, rulesFor, sideSql,
   type DepartmentKind, type Level, type Origin, type Rules, type Setting, type Side,
 } from './access';
 
@@ -229,7 +229,7 @@ interface PersonRow {
 /** The person's grid: effective level and origin per area, their own override, and what they would get without it. */
 export async function personAccess(env: Env, userId: string, canEdit: boolean): Promise<PersonResult> {
   const row = await one<PersonRow>(env,
-    `SELECT u.id, u.full_name, u.department_id, u.position_id, d.name AS dept_name, d.kind, d.side AS dept_side, p.name AS pos_name
+    `SELECT u.id, u.full_name, u.department_id, u.position_id, d.name AS dept_name, d.kind, ${sideSql('u', 'd')} AS dept_side, p.name AS pos_name
        FROM users u LEFT JOIN departments d ON d.id = u.department_id LEFT JOIN positions p ON p.id = u.position_id WHERE u.id = ?`, userId);
   if (!row) return { found: 'no-user' };
   if (!row.department_id || !row.dept_name || !isKind(row.kind) || !isSide(row.dept_side)) return { found: 'no-department' };
