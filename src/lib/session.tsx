@@ -3,6 +3,7 @@ import { api, ApiFailure } from './api';
 import { twoStepPrompt } from './twoStepPrompt';
 import { invalidateCachePrefix } from './cached-fetch';
 import type { SessionUser } from './types';
+import { go } from './go';
 
 /** The password was right and the account has two-step sign-in on: the code is asked for next. */
 export interface TwoStep { challenge: string; backupOnly: boolean }
@@ -26,7 +27,7 @@ const Ctx = createContext<SessionCtx | null>(null);
 
 /** DEV-only stand-in used when no backend is reachable, so the whole app (every
  *  page on its mock fallback) is browsable for frontend work. Never used in a
- *  production build — see refresh(). Visit #/login to still see the sign-in screen. */
+ *  production build — see refresh(). Visit /login to still see the sign-in screen. */
 const DEV_USER: SessionUser = {
   id: 'dev-admin',
   fullName: 'Dev Admin',
@@ -48,8 +49,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     } catch {
       // DEV-only: with no backend running, sign in as an admin so every page is
       // reachable for frontend work. Stripped from production builds. Visit
-      // #/login to still exercise the real sign-in screen.
-      if (import.meta.env.DEV && !window.location.hash.startsWith('#/login')) {
+      // /login to still exercise the real sign-in screen.
+      if (import.meta.env.DEV && !window.location.pathname.startsWith('/login')) {
         setUser(DEV_USER);
       } else {
         setUser(null);
@@ -70,7 +71,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const finish = (res: SignInAnswer): SignedIn => {
     if (res.twoStep) return { twoStep: { challenge: res.challenge, backupOnly: res.backupOnly } };
     setUser(res.user);
-    window.location.hash = res.home;
+    go(res.home);
     return { home: res.home };
   };
 
@@ -90,7 +91,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setUser(null);
     // Cached reads are kept per browser, not per person: the next person on a shared phone or desk must not see them.
     invalidateCachePrefix('');
-    window.location.hash = '/';
+    go('/');
   };
 
   /** Throws with the server's plain-language reason when no reset email went out (no account, switched off,

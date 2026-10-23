@@ -1,5 +1,5 @@
 import { lazy, Suspense, useMemo, useRef, useState, type ReactNode } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import Icon from '../components/Icon';
@@ -36,7 +36,7 @@ const StatementsPage = lazy(() => import('./StatementsPage'));
 const PayoutsPage = lazy(() => import('./PayoutsPage'));
 
 /**
- * Owners list. Each row opens the full owner profile at `#/owners/:id`
+ * Owners list. Each row opens the full owner profile at `/owners/:id`
  * (OwnerProfilePage) — the real profile with per-unit P&L, expenses and the
  * owner-level default fee — rather than a small drawer. Add-owner lives here;
  * link unit, contract, invite, delete and the per-unit financials all live on
@@ -48,7 +48,7 @@ const PayoutsPage = lazy(() => import('./PayoutsPage'));
  *
  * Owner statements and owner payouts live on the owner (owner, 11 Oct 2026). One owner's month is on their profile;
  * the whole month for every owner (generate, mark final, send, start the payout run, mark paid) is this page's
- * Statements and Payouts tabs, for people with the Finance area. `#/finance/statements` and `#/finance/payouts`
+ * Statements and Payouts tabs, for people with the Finance area. `/finance/statements` and `/finance/payouts`
  * redirect here. On a phone the tabs show only when a link opened one.
  */
 
@@ -284,11 +284,11 @@ function OwnerList({ tabs }: { tabs: ReactNode }) {
             <span className="truncate">{ownerTerms(o)}</span>
           </button>
           {open[o.id] && o.units.map(u => (
-            <a key={u.unitId} href={`#/properties/units/${encodeURIComponent(u.unitId)}?tab=contract`} onClick={e => e.stopPropagation()}
+            <Link key={u.unitId} to={`/properties/units/${encodeURIComponent(u.unitId)}?tab=contract`} onClick={e => e.stopPropagation()}
               className="flex items-center justify-between gap-2 min-w-0 pl-5 no-underline text-inherit! hover:underline" title={`${u.unitLabel} · ${terms(u)}`}>
               <span className="text-meta text-ink truncate">{titleCase(u.unitLabel)}</span>
               <span className="shrink-0"><ModelChip model={modelOf(u)} label={terms(u)} /></span>
-            </a>
+            </Link>
           ))}
         </span>
       ) : <span className="text-copy text-muted-ink truncate block" title={ownerTerms(o)}>{ownerTerms(o)}</span> },

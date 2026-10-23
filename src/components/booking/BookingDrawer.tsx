@@ -24,6 +24,7 @@ import { DocumentsSection, type GuestDocument } from './GuestDocuments';
 import { isStaged, stagedToast, useApprovalsOn, type Approval } from '../../lib/approvals';
 import { CloseButton } from '../CloseButton';
 import { moneyStatus, lastPaidOn, isOtaChannel } from '../../lib/payoutStatus';
+import { Link } from 'react-router-dom';
 
 /* ------------------------------------------------------------------ */
 /* Shapes (GET /api/reservations/:id)                                  */
@@ -880,7 +881,7 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
               <div className="flex justify-between gap-3"><span className="text-muted-ink">Country</span>
                 <span className="text-right">{d.country.name}<span className="text-muted-ink"> · from phone number</span></span></div>
             )}
-            {d.guestId && <a href={`#/reservations/guests?g=${encodeURIComponent(d.guestId)}`} className="self-start mt-1 text-meta text-ink underline">Open guest profile</a>}
+            {d.guestId && <Link to={`/reservations/guests?g=${encodeURIComponent(d.guestId)}`} className="self-start mt-1 text-meta text-ink underline">Open guest profile</Link>}
           </div>
         )}
 

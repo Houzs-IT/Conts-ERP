@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode, type MutableRefOb
 import { Button } from '../components/Button';
 import { EmptyState } from '../components/States';
 import { usePhone } from './finance/listKit';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import Icon from '../components/Icon';
 import ChannelMark from '../components/ChannelMark';
@@ -25,6 +25,7 @@ import { CalendarRangeControl, addDaysIso, daysBetween, isDay, LEAD_DAYS, MAX_WI
 import { type CalendarBlock as Block, type CalendarUnit as Unit } from '../components/calendar/types';
 import UnitMonthCalendar from '../components/calendar/UnitMonthCalendar';
 import { useFillHeight } from '../lib/useFillHeight';
+import { go } from '../lib/go';
 
 /** Width of one night column, px (narrower on phones, so a thumb's swipe covers a week). The unit column width is the
  *  CSS variable --unit-col. */
@@ -479,7 +480,7 @@ function CalendarBoard() {
                 <span className="hidden sm:inline-flex items-center gap-1.5 text-meta text-muted-ink whitespace-nowrap" title={`Last update sent to the channels ${dateTime(lastSync)}`}>
                   <span className="w-1.5 h-1.5 rounded-full flex-none" style={{ background: TONE[syncTrouble ? 'warning' : 'success'].line }} />
                   {syncTrouble
-                    ? <a href="#/system/integrations" className="no-underline" style={{ color: TONE.warning.fg }}>Channel errors · see Integrations</a>
+                    ? <Link to="/system/integrations" className="no-underline" style={{ color: TONE.warning.fg }}>Channel errors · see Integrations</Link>
                     : <>Channels updated {iso(new Date(lastSync)) === todayMyt() ? timeWithZone(lastSync) : `${dateShort(lastSync)} ${time(lastSync)}`}</>}
                 </span>
               )}
@@ -577,7 +578,7 @@ function CalendarBoard() {
               <div className="sticky left-0 w-[min(100%,calc(100vw-2rem))] md:w-[min(100%,720px)]">
                 {filtersDirty
                     ? <EmptyState bare kind="filtered" title="No units match these filters." action={{ label: 'Clear filters', onClick: () => { setOff({}); setStatusOff({}); setProperty('all'); } }} />
-                    : <EmptyState bare icon="CalendarDays" title="No units on the board yet." body="Units appear here once they are added under Units." action={{ label: 'Open units', onClick: () => { window.location.hash = '#/properties/units'; } }} />}
+                    : <EmptyState bare icon="CalendarDays" title="No units on the board yet." body="Units appear here once they are added under Units." action={{ label: 'Open units', onClick: () => { go('/properties/units'); } }} />}
               </div>
             )}
 
@@ -844,7 +845,7 @@ function CalendarBoard() {
         const checkOut = iso(addDays(new Date(popover.last), 1));
         return (
           <SelectionPopover sel={popover} phone={phone} canSetRates={canSetRates} onClose={closePick}
-            onBook={() => { closePick(); window.location.hash = `#/reservations/bookings?create=1&forUnit=${encodeURIComponent(u.id)}&checkIn=${popover.first}&checkOut=${checkOut}`; }}
+            onBook={() => { closePick(); go(`/reservations/bookings?create=1&forUnit=${encodeURIComponent(u.id)}&checkIn=${popover.first}&checkOut=${checkOut}`); }}
             onBlock={() => { closePick(); setBlockPrefill({ unitId: u.id, from: popover.first, to: checkOut }); setBlockWizard(true); }}
             onPrice={() => { closePick(); setRateUpdate({ unitIds: [u.id], from: popover.first, to: popover.last }); }} />
         );

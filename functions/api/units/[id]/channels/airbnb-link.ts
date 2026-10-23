@@ -5,7 +5,7 @@ import { linkedUnitFor, channexRefused } from '../../../../_lib/channexChannels'
 /** POST /api/units/:id/channels/airbnb-link { reconnect? } — starts connecting Airbnb for this unit.
  *  One Airbnb account is one Channex channel shared by every unit on it, so once any unit is connected
  *  the answer is that channel (pick another listing, no sign-in). Otherwise it returns Airbnb's sign-in
- *  link; after approval Airbnb sends the browser back to Conts (#/channex/airbnb-return) with the new
+ *  link; after approval Airbnb sends the browser back to Conts (/channex/airbnb-return) with the new
  *  channel id and this unit's id as the token. `reconnect` re-authorises the existing channel. */
 export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }) => {
   const gate = await linkedUnitFor(request, env, String(params.id));
@@ -21,7 +21,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   const origin = new URL(request.url).origin;
   const link = await channexAirbnbConnectionLink(env, {
     groupId, propertyId: unit.propertyId, token: unit.id,
-    redirectUri: `${origin}/#/channex/airbnb-return`, failureRedirectUri: `${origin}/#/channex/airbnb-return`,
+    redirectUri: `${origin}/channex/airbnb-return`, failureRedirectUri: `${origin}/channex/airbnb-return`,
     ...(existing && b?.reconnect ? { channelId: existing.channex_channel_id } : {}),
   });
   const url = link.body?.data?.attributes?.url;

@@ -48,8 +48,7 @@ export default function ViewAs({ docked = false }: { docked?: boolean } = {}) {
     try {
       const res = await api.post<{ home: string }>('/auth/view-as', to);
       // A full reload: every screen and the menu must be rebuilt for the other account.
-      window.location.hash = res.home;
-      window.location.reload();
+      window.location.assign(res.home);
     } catch (e) {
       setBusy(false);
       toast({ tone: 'critical', title: 'Could not switch account.', body: errorMessage(e, 'Try again in a moment.') });

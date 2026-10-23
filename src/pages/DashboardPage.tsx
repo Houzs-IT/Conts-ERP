@@ -20,6 +20,8 @@ import { EmptyState } from '../components/States';
 import { TONE, cx } from '../lib/design-tokens';
 import type { Tone } from '../lib/types';
 import { tone } from '../theme';
+import { Link } from 'react-router-dom';
+import { go } from '../lib/go';
 
 /* ------------------------------------------------------------------ KPIs -- */
 /* Kept as the existing read-only KPI row — see the brief: keep KPI row + chart. */
@@ -47,7 +49,7 @@ const KPI_FALLBACK: KpiPayload = {
 const HERO_KPI = 'accommodation_revenue';
 /** Where each KPI tile goes when tapped (design: every card opens its module). */
 const KPI_LINK: Record<string, string> = {
-  occupancy: '#/portfolio', adr: '#/performance/pricing', revpar: '#/portfolio', net_owner_payout: '#/finance/statements',
+  occupancy: '/portfolio', adr: '/performance/pricing', revpar: '/portfolio', net_owner_payout: '/finance/statements',
 };
 
 /** Revenue statement tile (design "Redesign Desktop A" Dashboard, and the phone Dashboard): dark card, the month's
@@ -320,7 +322,6 @@ const KPI_ROW = 'grid grid-cols-2 xl:grid-cols-[minmax(0,1.5fr)_repeat(4,minmax(
 const KPI_HERO_FLEX = 'col-span-2 xl:col-span-1 min-w-0';
 const KPI_FLEX = 'min-w-0';
 
-const go = (hash: string) => { window.location.hash = hash; };
 
 const NUM = 'tabular-nums whitespace-nowrap';
 const TOP_COLUMNS: Column<PortfolioRow>[] = [
@@ -412,8 +413,8 @@ export default function DashboardPage() {
     switch (e.action.label) {
       case 'Assign cleaner': setAssign({ ex: e, cleanerId: CREW[0]?.id ?? '' }); break;
       case 'Notify owner': setNotify(e); break;
-      case 'Review and send': go('#/finance/statements'); break;
-      case 'Open pricing': go(`#/performance/pricing?unitId=${encodeURIComponent(e.unitId ?? '')}`); break;
+      case 'Review and send': go('/finance/statements'); break;
+      case 'Open pricing': go(`/performance/pricing?unitId=${encodeURIComponent(e.unitId ?? '')}`); break;
     }
   }
 
@@ -452,8 +453,8 @@ export default function DashboardPage() {
         sub={[period ? `${monthLabel(period)} to date` : '', lastUpdated ? `Last updated ${lastUpdated}` : ''].filter(Boolean).join(' · ')
           // Holds the subtitle's line while the figures load, so the page does not shift down when it arrives.
           || (kpi.loading ? <span aria-hidden className="skeleton inline-block align-middle h-[11px] w-[200px]" /> : undefined)}
-        actions={<Button variant="secondary" size="sm" onClick={() => go('#/properties/units')}>Manage units</Button>}
-        primary={<Button variant="primary" size="sm" icon={<Icon name="Plus" size="sm" />} onClick={() => go('#/reservations/bookings?create=1')}>Create reservation</Button>}
+        actions={<Button variant="secondary" size="sm" onClick={() => go('/properties/units')}>Manage units</Button>}
+        primary={<Button variant="primary" size="sm" icon={<Icon name="Plus" size="sm" />} onClick={() => go('/reservations/bookings?create=1')}>Create reservation</Button>}
       />
 
       {failure && <StaleBanner message={`Showing the last figures we have. ${failure}`} onRetry={() => { kpi.reload(); trend.reload(); today.reload(); exc.reload(); portfolio.reload(); channels.reload(); }} />}
@@ -535,7 +536,7 @@ export default function DashboardPage() {
         </Card>
 
         <Card>
-          <CardHeader title="Needs attention" right={seesOps ? <LinkAction onClick={() => go('#/operations/today')}>Open operations →</LinkAction> : undefined} />
+          <CardHeader title="Needs attention" right={seesOps ? <LinkAction onClick={() => go('/operations/today')}>Open operations →</LinkAction> : undefined} />
           {exc.loading && exceptions.length === 0 ? (
             <div className="pb-2"><TableSkeleton rows={3} cols={1} /></div>
           ) : exceptions.length === 0 ? (
@@ -559,7 +560,7 @@ export default function DashboardPage() {
           ))}
           {allExceptions.length > exceptions.length && (
             <div className="py-3 px-5 [border-top:1px_solid_var(--color-line-soft)] text-meta text-muted-ink">
-              {count(allExceptions.length - exceptions.length)} more in <a href="#/operations/today" className="text-gold-ink! no-underline font-semibold">Operations</a>
+              {count(allExceptions.length - exceptions.length)} more in <Link to="/operations/today" className="text-gold-ink! no-underline font-semibold">Operations</Link>
             </div>
           )}
         </Card>
@@ -567,7 +568,7 @@ export default function DashboardPage() {
 
       {/* Today */}
       <Card className="max-md:order-3">
-        <CardHeader title="Today" right={seesOps ? <LinkAction onClick={() => go('#/operations/today')}>Open operations →</LinkAction> : undefined} />
+        <CardHeader title="Today" right={seesOps ? <LinkAction onClick={() => go('/operations/today')}>Open operations →</LinkAction> : undefined} />
         <div className="[border-top:1px_solid_var(--color-line)]">
          <div className="-ml-px -mt-px grid grid-cols-2 sm:grid-cols-[repeat(auto-fit,minmax(150px,1fr))]">
           {(today.data?.rows ?? []).map(r => (
@@ -609,7 +610,7 @@ export default function DashboardPage() {
         </Card>
 
         <Card>
-          <CardHeader title="Occupancy by building" right={<LinkAction onClick={() => go('#/portfolio')}>Portfolio →</LinkAction>} />
+          <CardHeader title="Occupancy by building" right={<LinkAction onClick={() => go('/portfolio')}>Portfolio →</LinkAction>} />
           <div className="px-5 pb-5 flex flex-col gap-[11px]">
             {buildings.length === 0
               ? <EmptyState bare icon="Building2" title="No building figures for this month yet." />
@@ -633,14 +634,14 @@ export default function DashboardPage() {
       {seesPortfolio && <Card className="max-md:order-5">
         <CardHeader
           title="Top units this month"
-          right={<LinkAction onClick={() => go('#/portfolio')}>{portfolio.data ? `All ${count(portfolio.data.units)} units →` : 'All units →'}</LinkAction>}
+          right={<LinkAction onClick={() => go('/portfolio')}>{portfolio.data ? `All ${count(portfolio.data.units)} units →` : 'All units →'}</LinkAction>}
         />
         <div className="pt-0 px-5 pb-3 -mt-2 text-meta text-muted-ink min-h-[18px]">
           {portfolio.data ? `The ${Math.min(TOP_UNITS, allRows.length)} highest by earnings of ${plural(portfolio.data.units, 'listed unit')} in ${plural(portfolio.data.buildings, 'building')}${period ? ` · ${monthLabel(period)} to date` : ''}` : ''}
         </div>
         <DataTable<PortfolioRow> id="dashboard.topunits" urlPrefix="top." bare noViews noToolbar pageSize={0} maxHeight="none"
           columns={TOP_COLUMNS} rows={portfolio.data ? rows : null} rowKey={u => u.unitId} noun={['unit', 'units']}
-          onRowClick={u => go(`#/properties/units/${encodeURIComponent(u.unitId)}`)}
+          onRowClick={u => go(`/properties/units/${encodeURIComponent(u.unitId)}`)}
           empty={{ title: 'No listed units for this month yet.', icon: 'BarChart3' }}
           renderCard={u => (
             <span className="flex items-center justify-between gap-3">

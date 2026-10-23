@@ -5,7 +5,7 @@ import { ownerFor } from '../../../_lib/ownerScope';
 
 /** GET /api/statements/:id/report[?unit=<unit id>] — the Owner Income Report's figures: the company letterhead
  *  and terms (Settings), the owner, and per unit the month (page 1) and the year to date (page 2). The page
- *  #/finance/statements/:id/report prints it; Save as PDF gives the owner's two-page report. */
+ *  /finance/statements/:id/report prints it; Save as PDF gives the owner's two-page report. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;

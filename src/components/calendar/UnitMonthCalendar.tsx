@@ -15,6 +15,7 @@ import { BlockWizard } from './CalendarModals';
 import { SelectionPopover, type NightSelection } from './SelectionPopover';
 import { displayName, holdName, phaseOf } from './ReservationBar';
 import type { CalendarBlock as Block, CalendarUnit as Unit } from './types';
+import { go } from '../../lib/go';
 
 /**
  * Phone calendar (owner, Oct 2026 — design "Redesign Mobile", Calendar screen).
@@ -323,9 +324,9 @@ function MonthView({ unit, data, ym, first, next, nights, today, error, reload, 
       )}
       {popover && (
         <SelectionPopover sel={popover} phone canSetRates={canSetRates} onClose={() => setPopover(null)}
-          onBook={() => { const s = popover; setPopover(null); window.location.hash = `#/reservations/bookings?create=1&forUnit=${encodeURIComponent(unit.id)}&checkIn=${s.first}&checkOut=${addDays(s.last, 1)}`; }}
+          onBook={() => { const s = popover; setPopover(null); go(`/reservations/bookings?create=1&forUnit=${encodeURIComponent(unit.id)}&checkIn=${s.first}&checkOut=${addDays(s.last, 1)}`); }}
           onBlock={() => { const s = popover; setPopover(null); setBlock({ from: s.first, to: addDays(s.last, 1) }); }}
-          onPrice={() => { const s = popover; setPopover(null); window.location.hash = `#/reservations/calendar?unit=${encodeURIComponent(unit.id)}&rates=1&from=${s.first}&to=${s.last}`; }} />
+          onPrice={() => { const s = popover; setPopover(null); go(`/reservations/calendar?unit=${encodeURIComponent(unit.id)}&rates=1&from=${s.first}&to=${s.last}`); }} />
       )}
       {block && <BlockWizard units={[unit]} initial={{ unitId: unit.id, ...block }} onClose={() => setBlock(null)}
         onSave={v => {

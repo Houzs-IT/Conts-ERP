@@ -34,7 +34,7 @@ export class CrashScreen extends Component<Props, State> {
           </p>
           <div className="flex gap-2 flex-wrap justify-center">
             <Button variant="primary" onClick={() => window.location.reload()}>Reload</Button>
-            {!stale && <Button onClick={() => { window.location.hash = '#/'; window.location.reload(); }}>Go to the dashboard</Button>}
+            {!stale && <Button onClick={() => { window.location.assign('/'); }}>Go to the dashboard</Button>}
           </div>
         </div>
       </div>

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { DateField, MoneyInput, TimeField } from '../components/inputs';
@@ -954,7 +954,7 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft, onCheckIn, sav
       {data && data.damage.length > 0 && (
         <section className="flex flex-col gap-1">
           <h3 className="m-0 text-copy font-semibold">Damage reported</h3>
-          {data.damage.map(d => <a key={d.id} href={`#/operations/maintenance?id=${d.id}`} className="text-gold-ink">{d.title} · {stamp(d.reportedAt)}</a>)}
+          {data.damage.map(d => <Link key={d.id} to={`/operations/maintenance?id=${d.id}`} className="text-gold-ink">{d.title} · {stamp(d.reportedAt)}</Link>)}
         </section>
       )}
       {!row.external && <Button variant="danger" icon={<Icon name="TriangleAlert" size="sm" />} onClick={() => setDamage(true)}>Report damage</Button>}

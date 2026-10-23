@@ -15,6 +15,7 @@ import { BANKS } from '../units/shared';
 import { Eyebrow, Figure } from '../../components/Metric';
 import type { StatementState } from '../../lib/types';
 import type { RevenueModel, ContractCode } from '../../lib/revenueModel';
+import { Link } from 'react-router-dom';
 
 /**
  * Shared owner-side building blocks. Extracted verbatim from OwnersPage so the
@@ -199,9 +200,9 @@ function StatementMakeUp({ s }: { s: OwnerStatement }) {
       </>}
       <Row label="Net Payout to Owner" sen={d.totals.netPayout} strong />
       <div className="flex flex-wrap gap-x-4 gap-y-1 pt-2 text-meta">
-        <a href={`#/owners/statements/${encodeURIComponent(s.id)}`} className="text-gold-ink no-underline font-medium">Open the full owner statement</a>
+        <Link to={`/owners/statements/${encodeURIComponent(s.id)}`} className="text-gold-ink no-underline font-medium">Open the full owner statement</Link>
         {hasUnits
-          ? <a href={`#/finance/statements/${encodeURIComponent(s.id)}/report?view=owner`} className="text-gold-ink no-underline font-medium">Owner Income Report</a>
+          ? <Link to={`/finance/statements/${encodeURIComponent(s.id)}/report?view=owner`} className="text-gold-ink no-underline font-medium">Owner Income Report</Link>
           : <a href={`/api/statements/${encodeURIComponent(s.id)}/pdf?format=legacy`} target="_blank" rel="noreferrer" className="text-gold-ink no-underline font-medium">Owner statement as paid</a>}
       </div>
     </div>

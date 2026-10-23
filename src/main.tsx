@@ -1,6 +1,6 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import { HashRouter } from 'react-router-dom';
+import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 import App from './App';
 import { CrashScreen } from './components/CrashScreen';
 import './styles/tokens.css';
@@ -8,6 +8,7 @@ import './styles/devices.css';
 import './styles/theme-dark.css';
 import './styles/hover.css';
 import { initTheme } from './lib/theme';
+import { setNavigate } from './lib/go';
 
 initTheme();
 
@@ -36,6 +37,13 @@ function healChunkError(reason: unknown): boolean {
 window.addEventListener('vite:preloadError', e => { if (healChunkError((e as unknown as { payload?: unknown }).payload)) e.preventDefault(); });
 window.addEventListener('unhandledrejection', e => healChunkError(e.reason));
 
+// Addresses used to carry the screen after a '#' (/#/owners/5). Links already sent by email, WhatsApp or saved as
+// bookmarks still do, so they are moved to the plain address before the app reads it.
+if (window.location.hash.startsWith('#/')) window.history.replaceState(null, '', window.location.hash.slice(1));
+
+const router = createBrowserRouter([{ path: '*', element: <App /> }]);
+setNavigate(router.navigate);
+
 createRoot(document.getElementById('root')!).render(
-  <React.StrictMode><CrashScreen><HashRouter><App /></HashRouter></CrashScreen></React.StrictMode>
+  <React.StrictMode><CrashScreen><RouterProvider router={router} /></CrashScreen></React.StrictMode>
 );

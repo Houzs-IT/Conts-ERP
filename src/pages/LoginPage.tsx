@@ -7,6 +7,7 @@ import { Button } from '../components/Button';
 import { Field, PasswordField } from '../components/Field';
 import { CodeInput } from '../components/inputs/CodeInput';
 import '../styles/login.css';
+import { go } from '../lib/go';
 
 type Screen = 'signin' | 'forgot' | 'change' | 'reset' | 'code';
 
@@ -238,7 +239,7 @@ export default function LoginPage({ forceChangePassword = false, resetToken = nu
 
           {screen === 'reset' && tokenState === 'invalid' ? (
             <Button type="button" variant="primary" size="touch" className="login-submit" style={{ width: '100%' }}
-              onClick={() => { window.location.hash = '/'; setScreen('forgot'); setError(''); }}>
+              onClick={() => { go('/'); setScreen('forgot'); setError(''); }}>
               Request a new link
             </Button>
           ) : screen !== 'reset' || tokenState === 'valid' ? (
@@ -249,7 +250,7 @@ export default function LoginPage({ forceChangePassword = false, resetToken = nu
 
           {screen !== 'signin' && !forceChangePassword && (
             <Button type="button" variant="tertiary" size="md" className="self-center"
-              onClick={() => { if (resetToken) window.location.hash = '/'; setScreen('signin'); setError(''); setSent(false); setTwoStep(null); setPassword(''); }}>
+              onClick={() => { if (resetToken) go('/'); setScreen('signin'); setError(''); setSent(false); setTwoStep(null); setPassword(''); }}>
               Back to sign in
             </Button>
           )}

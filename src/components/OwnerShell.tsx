@@ -1,5 +1,5 @@
 import { type ReactNode } from 'react';
-import { useLocation } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { color, text } from '../theme';
 import { useSession } from '../lib/session';
 import { Logo } from './Logo';
@@ -28,10 +28,10 @@ export default function OwnerShell({ children }: { children: ReactNode }) {
         </div>
         {/* A repair quote waiting for their approval reaches them here, not only on the next visit to the portal. */}
         <FieldNotificationBell />
-        <a href={atAccount ? '#/' : '#/account'} aria-label={atAccount ? 'Back to my portal' : 'Settings'} title={atAccount ? 'Back to my portal' : 'Settings'}
+        <Link to={atAccount ? '/' : '/account'} aria-label={atAccount ? 'Back to my portal' : 'Settings'} title={atAccount ? 'Back to my portal' : 'Settings'}
           style={{ width: 44, height: 44, flex: 'none', display: 'grid', placeItems: 'center', borderRadius: 'var(--radius-control)', border: '1px solid rgba(255,255,255,0.14)', color: color.onDark }}>
           <Icon name={atAccount ? 'House' : 'Settings'} size="nav" />
-        </a>
+        </Link>
         <Button variant="tertiary" size="touch" onClick={logout} icon={<Icon name="LogOut" size="nav" />}
           style={{ flex: 'none', fontSize: text.copy, color: color.onDark, borderColor: 'rgba(255,255,255,0.14)' }}>
           {/* On a phone the word gives way to the owner's own name; the icon and the button's name stay. */}

@@ -19,6 +19,7 @@ import { FilterBar } from '../components/FilterBar';
 import { statusLabel } from '../lib/status';
 import { Eyebrow, Figure, StatRow, StatTile } from '../components/Metric';
 import { AdjustDialog, SectionHead } from './owners/OwnerMoney';
+import { go } from '../lib/go';
 
 interface Statement {
   id: string; period?: string; ownerName: string; unitsLabel: string; state: StatementState;
@@ -186,7 +187,7 @@ export default function StatementsPage({ embedded = false }: { embedded?: boolea
     return r.rows;
   }
 
-  function openRow(r: Statement) { window.location.hash = `#/owners/statements/${encodeURIComponent(r.id)}`; }
+  function openRow(r: Statement) { go(`/owners/statements/${encodeURIComponent(r.id)}`); }
 
   const columns = useMemo<Column<Statement>[]>(() => [
     { key: 'owner', label: 'Owner', value: r => r.ownerName, hideable: false, width: 240, sub: r => r.unitsLabel,
@@ -212,7 +213,7 @@ export default function StatementsPage({ embedded = false }: { embedded?: boolea
               <Icon name="Pencil" size="sm" />
             </button>
           )}
-          <button onClick={() => { window.location.hash = `#/finance/statements/${encodeURIComponent(s.id)}/report`; }}
+          <button onClick={() => { go(`/finance/statements/${encodeURIComponent(s.id)}/report`); }}
             aria-label={`Owner Income Report for ${s.ownerName}`} title="Owner Income Report (PDF)"
             className="grid place-items-center w-[30px] h-[30px] rounded-control bg-transparent border border-solid border-line text-muted-ink cursor-pointer">
             <Icon name="FileText" size="sm" />
