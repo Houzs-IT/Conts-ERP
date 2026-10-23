@@ -192,7 +192,7 @@ export function PhoneInput({ value, onChange, label, help, error, placeholder, c
           placeholder="Country or code"
           size="md"
           className="flex-none w-[88px]"
-          buttonClassName="h-auto flex-1 rounded-r-none relative focus-visible:z-[1]"
+          buttonClassName={cx('h-auto flex-1 rounded-r-none relative focus-visible:z-[1]', shown && 'border-critical-line')}
           menuWidth={300}
           shortLabel={o => o.hint ?? o.label}
         />

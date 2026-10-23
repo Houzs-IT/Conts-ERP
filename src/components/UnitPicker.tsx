@@ -89,7 +89,7 @@ export function UnitPicker({ units, value, onChange, label = 'Unit', placeholder
     else if (e.key === 'PageDown') { e.preventDefault(); setActive(a => Math.min(a + 8, rows.length - 1)); }
     else if (e.key === 'PageUp') { e.preventDefault(); setActive(a => Math.max(a - 8, 0)); }
     else if (e.key === 'Enter') { e.preventDefault(); choose(rows[active]); }
-    else if (e.key === 'Tab') setOpen(false);
+    else if (e.key === 'Tab') { setOpen(false); setQ(''); trigger.current?.focus(); }
   }
 
   // Grouped for sticky headings: a run of rows under each building (or Recent).

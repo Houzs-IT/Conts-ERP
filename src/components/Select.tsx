@@ -91,6 +91,9 @@ export function SearchSelect({ value, onChange, options, label, showLabel, allLa
     else if (e.key === 'ArrowDown') { e.preventDefault(); setActive(a => Math.min(a + 1, shown.length - 1)); }
     else if (e.key === 'ArrowUp') { e.preventDefault(); setActive(a => Math.max(a - 1, 0)); }
     else if (e.key === 'Enter') { e.preventDefault(); choose(shown[active]); }
+    // The list sits at the end of the page, so Tab from it would leave the form: hand focus back to the button
+    // first and let Tab carry on from there to the next field.
+    else if (e.key === 'Tab') { close(); button.current?.focus(); }
   };
 
   let lastGroup: string | undefined;
@@ -235,7 +238,8 @@ export function Menu({ trigger, items, label, align = 'right' }: { trigger: Reac
         {trigger}
       </button>
       <Floating anchor={button} open={open} onClose={() => setOpen(false)} label={label} width={280} align={align}>
-        <div role="menu" aria-label={label} className="py-1">
+        <div role="menu" aria-label={label} className="py-1"
+          onKeyDown={e => { if (e.key === 'Tab') { setOpen(false); button.current?.focus(); } }}>
           {items.map((it, i) => {
             const off = !!it.disabledReason;
             return (

@@ -37,7 +37,7 @@ export default function ChannexSyncPanel({ onState }: { onState?: (state: Channe
 
   async function fullSync() {
     const ok = await ask({
-      title: 'Send everything to the booking sites again?',
+      title: 'Send everything to the channels again?',
       body: 'Prices and open nights for the next 500 days are resent to Airbnb, Booking.com and every other channel, for every unit set up in Channex.',
       meta: `${data?.linkedUnits ?? 0} ${data?.linkedUnits === 1 ? 'unit' : 'units'} set up in Channex`,
       confirmLabel: 'Send everything', danger: false,
