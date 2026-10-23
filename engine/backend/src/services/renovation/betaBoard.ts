@@ -214,14 +214,16 @@ export function ordinal(n: number): string {
 
 export type BoardPayment = { state: "hidden" } | { state: "none" } | { state: "ok"; label: string };
 
-/** The first instalment not paid: billed gives "Pending 2nd payment", not billed gives "2nd payment"; all paid gives
-    "Fully paid". A contract without instalments has nothing to pay, so it reads as none. */
+/** "2 of 4 paid", "Fully paid", or "Pending 2nd payment" while a bill waits for money. A contract without
+    instalments has nothing to pay, so it reads as none. */
 export function paymentLabel(p: BetaPayments): BoardPayment {
   if (p.state !== "ok") return p.state === "hidden" ? { state: "hidden" } : { state: "none" };
   if (p.instalments.length === 0) return { state: "none" };
+  const paid = p.instalments.filter((i) => i.status === "paid").length;
+  if (paid === p.instalments.length) return { state: "ok", label: "Fully paid" };
   const next = p.instalments.find((i) => i.status !== "paid");
-  if (!next) return { state: "ok", label: "Fully paid" };
-  return { state: "ok", label: next.status === "billed" ? `Pending ${ordinal(next.seq)} payment` : `${ordinal(next.seq)} payment` };
+  if (next?.status === "billed") return { state: "ok", label: `Pending ${ordinal(next.seq)} payment` };
+  return { state: "ok", label: `${paid} of ${p.instalments.length} paid` };
 }
 
 /** Rows grouped by their project_id, each group in the order the rows came. */

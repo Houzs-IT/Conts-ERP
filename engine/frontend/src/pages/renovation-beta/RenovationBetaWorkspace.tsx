@@ -87,7 +87,7 @@ export function RenovationBetaWorkspace(): ReactElement {
   const later = LATER_TABS[current.key];
 
   return (
-    <div className="bws" style={{ display: "flex", flexDirection: "column", gap: 20, maxWidth: 1240, width: "100%", paddingBottom: 40 }}>
+    <div className="bws" style={{ display: "flex", flexDirection: "column", gap: 20, width: "100%", minWidth: 0, paddingBottom: 40 }}>
       <WsStyle />
       <BetaWsHeader d={d} p={board.p} people={board.m.everyone} canWrite={can("projects.write")} today={today} openDialog={setDialog} />
       <BetaWsStepper items={items} hold={hold} />
