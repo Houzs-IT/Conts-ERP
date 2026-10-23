@@ -91,11 +91,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     finish(await api.post<SignInAnswer>('/auth/login-2fa', { challenge, code }));
 
   const logout = async () => {
+    // Cleaners and technicians go back to their own door (/portal opens the PIN sign-in), the office to /.
+    const worker = user?.role === 'housekeeper' || user?.role === 'technician';
     try { await api.post('/auth/logout'); } catch (e) { if (!(e instanceof ApiFailure)) throw e; }
     setUser(null);
     // Cached reads are kept per browser, not per person: the next person on a shared phone or desk must not see them.
     invalidateCachePrefix('');
-    go('/');
+    go(worker ? '/portal' : '/');
   };
 
   /** Throws with the server's plain-language reason when no reset email went out (no account, switched off,

@@ -1,4 +1,5 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useSession, type TwoStep } from '../lib/session';
 import { ApiFailure, api } from '../lib/api';
 import Icon from '../components/Icon';
@@ -6,7 +7,9 @@ import { Logo } from '../components/Logo';
 import { Button } from '../components/Button';
 import { Field, PasswordField } from '../components/Field';
 import { CodeInput } from '../components/inputs/CodeInput';
-import { PIN_INPUT, digitsOnly, pinPolicy } from '../lib/pin';
+import { Segmented } from '../components/Metric';
+import { pinPolicy } from '../lib/pin';
+import { PinInput } from '../components/inputs/PinInput';
 import '../styles/login.css';
 import { go } from '../lib/go';
 
@@ -85,6 +88,14 @@ export default function LoginPage({ forceChangePassword = false, resetToken = nu
   }, [resetToken]);
   // owner.theconts.com is the owners' door; the server refuses staff there too.
   const ownerDoor = window.location.hostname.split('.')[0] === 'owner';
+  // Office or Worker tab. The address follows it (/portal is the workers' door), so a refresh or a bookmark opens
+  // the same tab, and the choice is remembered for the next sign-in on this device.
+  const navigate = useNavigate();
+  const form = useRef<HTMLFormElement>(null);
+  const pickDoor = (way: 'signin' | 'pin') => {
+    setScreen(way); setError(''); setPassword(''); rememberSignIn(way);
+    navigate(way === 'pin' ? '/portal' : '/', { replace: true });
+  };
   // A cleaner or technician on the first PIN from the office picks their own PIN, not a password.
   const newPin = screen === 'change' && !!user?.employeeId;
   const pinEntry = screen === 'pin' || newPin;
@@ -121,6 +132,8 @@ export default function LoginPage({ forceChangePassword = false, resetToken = nu
     } catch (err: any) {
       // The five minutes between password and code ran out: start again from the password.
       if (err instanceof ApiFailure && err.code === 'CHALLENGE_EXPIRED') { setTwoStep(null); setScreen('signin'); setPassword(''); }
+      // A refused PIN empties the boxes, so the next try starts from the first digit instead of six backspaces.
+      if (screen === 'pin') setPassword('');
       setError(err?.message ?? 'Could not reach the server. Check your connection and try again.');
     } finally { setBusy(false); }
   }
@@ -191,7 +204,13 @@ export default function LoginPage({ forceChangePassword = false, resetToken = nu
           </span>
         </div>
 
-        <form onSubmit={submit} className="login-form login-in login-in-form w-full max-w-[344px] self-center flex flex-col gap-8">
+        <form ref={form} onSubmit={submit} className="login-form login-in login-in-form w-full max-w-[344px] self-center flex flex-col gap-8">
+          {(screen === 'signin' || screen === 'pin') && !ownerDoor && (
+            <Segmented label="Sign in as" value={screen} onChange={pickDoor}
+              options={[{ key: 'signin', label: 'Office' }, { key: 'pin', label: 'Worker' }]}
+              className="w-full box-border [&>button]:flex-1 [&>button]:justify-center [&>button]:h-10" />
+          )}
+
           <div className="flex flex-col gap-2.5">
             <span className={`${labelCaps} text-gold-ink`}>{c.eyebrow}</span>
             <h1 className="login-display m-0 text-[36px] leading-[1.1]">{c.heading}</h1>
@@ -234,12 +253,19 @@ export default function LoginPage({ forceChangePassword = false, resetToken = nu
               <div className="text-meta text-muted-ink">Checking your link…</div>
             )}
 
-            {screen !== 'forgot' && screen !== 'code' && (screen !== 'reset' || tokenState === 'valid') && (
-              <PasswordField label={pinEntry ? (newPin ? 'New PIN' : 'PIN') : newPassword ? 'New password' : 'Password'} required
+            {pinEntry ? (
+              // The sixth digit signs in when the employee ID is there, so a phone held in one hand needs no extra tap.
+              <PinInput label={newPin ? 'New PIN' : 'PIN'} required autoComplete={newPin ? 'new-password' : 'current-password'}
+                value={password}
+                onChange={pin => {
+                  setPassword(pin);
+                  if (screen === 'pin' && pin.length === 6 && empNo && !busy) requestAnimationFrame(() => form.current?.requestSubmit());
+                }} />
+            ) : screen !== 'forgot' && screen !== 'code' && (screen !== 'reset' || tokenState === 'valid') && (
+              <PasswordField label={newPassword ? 'New password' : 'Password'} required
                 autoComplete={newPassword ? 'new-password' : 'current-password'}
-                value={password} onChange={e => setPassword(pinEntry ? digitsOnly(e.target.value) : e.target.value)}
-                {...(pinEntry ? PIN_INPUT : {})}
-                placeholder={pinEntry ? '6 digits' : newPassword ? 'New password' : 'Enter password'} />
+                value={password} onChange={e => setPassword(e.target.value)}
+                placeholder={newPassword ? 'New password' : 'Enter password'} />
             )}
 
             {(screen === 'change' || (screen === 'reset' && tokenState === 'valid')) && (
@@ -280,13 +306,6 @@ export default function LoginPage({ forceChangePassword = false, resetToken = nu
 
           {screen === 'pin' && (
             <span className="text-meta text-muted-ink text-center text-pretty">Forgot your PIN? Ask the office for a new one.</span>
-          )}
-
-          {(screen === 'signin' || screen === 'pin') && !ownerDoor && (
-            <Button type="button" variant="tertiary" size="md" className="self-center"
-              onClick={() => { setScreen(screen === 'pin' ? 'signin' : 'pin'); setError(''); setPassword(''); }}>
-              {screen === 'pin' ? 'Office staff: sign in with email' : 'Cleaner or technician? Sign in with your phone'}
-            </Button>
           )}
 
           {screen !== 'signin' && screen !== 'pin' && !forceChangePassword && (
