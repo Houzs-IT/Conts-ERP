@@ -31,8 +31,13 @@ export interface SiteDelivery {
   poNumber: string | null;
   poIds: string[];
   areas: string[];
+  /** The lines it carries (absent from an older server). */
+  lines?: DeliveryLine[];
   photos: SitePhoto[];
 }
+
+/** One line a DO or GR carries: its sales order line and, on a goods receipt, the PO line it received. */
+export interface DeliveryLine { soItemId: string | null; poLineId: string | null; qty: number }
 
 export interface SiteView { ready: boolean; areas: string[]; deliveries: SiteDelivery[] }
 

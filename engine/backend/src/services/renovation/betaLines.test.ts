@@ -3,7 +3,7 @@ import { cleanLinePlan, grOf, markOf, mergePlan, planOrderRefusal, type LinePo }
 import { amendmentLineChange, lineChangeWords, type AmendmentLineRow } from "./betaVoPo";
 
 const po = (over: Partial<LinePo>): LinePo => ({ photoKeys: [],
-  poId: "p", poNumber: "PO-1", poStatus: "SUBMITTED", poLineId: "l", poDate: null, deliveryDate: null, qty: 1, received: 0, ...over,
+  poId: "p", poNumber: "PO-1", poStatus: "SUBMITTED", poLineId: "l", poDate: null, deliveryDate: null, supplierRevised: false, qty: 1, received: 0, ...over,
 });
 
 describe("line marks", () => {

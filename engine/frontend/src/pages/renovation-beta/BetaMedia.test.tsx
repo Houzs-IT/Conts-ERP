@@ -1,4 +1,4 @@
-/* The shared media grid lays out 1, 2, 3 and 4+ items as the owner asked, a video is a play tile, a file that fails
+/* The shared media grid keeps one 4:3 box for any count and the strip one tile size with "+N", a video is a play tile, a file that fails
    is a plain tile; the list keeps a row in place after a save; photo cards group by event. */
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
@@ -8,7 +8,7 @@ vi.mock("../../api/client", async (importOriginal) => {
   return { ...actual, api: { ...actual.api, fetchBlobUrl: async (path: string) => { if (path.includes("broken")) throw new Error("404"); return `blob:${path}`; } } };
 });
 
-import { MediaGrid, durationText, mediaRefusal, type MediaItem } from "./BetaMedia";
+import { MediaGrid, MediaStrip, durationText, mediaRefusal, type MediaItem } from "./BetaMedia";
 import { keepOrder, matchesSearch, newestFirst, orderOf } from "./renovationBetaHomeModel";
 import { cardLine, dayTitle, photoTimeline } from "./renovationBetaPhotosModel";
 import type { ProjectPhoto } from "./renovationBetaMediaApi";
@@ -20,9 +20,10 @@ describe("MediaGrid", () => {
   it.each([
     [1, "1fr", 1, null],
     [2, "1fr 1fr", 2, null],
-    [4, "1fr 1fr", 4, null],
-    [6, "1fr 1fr", 4, "+2"],
-  ])("lays out %i items", (n, cols, tiles, more) => {
+    [3, "1fr 1fr", 3, null],
+    [4, "1fr 1fr 1fr", 4, null],
+    [11, "1fr 1fr 1fr", 4, "+7"],
+  ])("lays out %i items in the same 4:3 box", (n, cols, tiles, more) => {
     const { container } = render(<MediaGrid items={Array.from({ length: n }, (_, i) => item(i, i === 2 ? "video" : "image"))} label="Photos" />);
     const grid = container.querySelector("[role=group] > div") as HTMLElement;
     expect(grid.style.gridTemplateColumns).toBe(cols);
@@ -31,13 +32,23 @@ describe("MediaGrid", () => {
     if (more) expect(within(grid).getByText(more)).toBeTruthy();
   });
 
-  it("puts three as one large and two small, and a video as a play tile", () => {
+  it("puts the first on top of an even row of tiles, and a video as a play tile", () => {
     const { container } = render(<MediaGrid items={[item(0), item(1), item(2, "video")]} label="Photos" />);
     const grid = container.querySelector("[role=group] > div") as HTMLElement;
-    expect(grid.style.gridTemplateColumns).toBe("2fr 1fr");
-    expect((grid.firstElementChild as HTMLElement).style.gridRow).toBe("1 / span 2");
+    expect((grid.firstElementChild as HTMLElement).style.gridColumn).toBe("1 / -1");
     expect(screen.getByRole("button", { name: /^Open video file-2/ })).toBeTruthy();
     expect(screen.getByText("Before")).toBeTruthy();
+  });
+
+  it("shows a strip of equal tiles with +N on the last one, opening the gallery at that item", async () => {
+    render(<MediaStrip items={Array.from({ length: 10 }, (_, i) => item(i))} label="POD" size={64} max={6} />);
+    const strip = screen.getByRole("list", { name: "POD: 10 items" });
+    const tiles = within(strip).getAllByRole("listitem");
+    expect(tiles.length).toBe(6);
+    expect(tiles.every((t) => t.style.width === "64px" && t.style.height === "64px")).toBe(true);
+    expect(within(strip).getByText("+4")).toBeTruthy();
+    fireEvent.click(within(tiles[5]).getByRole("button"));
+    expect(await screen.findByText("6 / 10")).toBeTruthy();
   });
 
   it("shows a plain tile, never a broken image, for a file that cannot be read", async () => {

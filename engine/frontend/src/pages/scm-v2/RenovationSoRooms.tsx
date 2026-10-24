@@ -8,16 +8,22 @@
    moves to another room from its small move button. Line numbers run in the order
    shown. Totals, payments and the line cards themselves are Houzs's, unchanged.
    With `card` (New SO, owner 20 Oct 2026) each room is a card of its own in place of
-   the one "Line items" card: the rooms are the order's main sections. */
+   the one "Line items" card: the rooms are the order's main sections.
+   With `compact` (Edit SO, owner 24 Oct 2026) each line is one short row under a column
+   header, like the read-only table; the move button is handed to the row to place, and
+   lines carrying a `group` (on a delivery order / invoice) are listed first under a slim
+   label. */
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ArrowDown, ArrowRightLeft, ArrowUp, LayoutGrid, Plus, Trash2 } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { RenovationLineHead, renovationLineStyles } from '../../vendor/scm/components/renovationSoLineCompact';
 import { useConfirm } from '../../vendor/scm/components/ConfirmDialog';
 import { generateRooms, moveRoom, nextRoomName, placeRows, renameRoom } from '../renovation/roomSections';
 
-/** One line: its key, its saved room, and how to draw it given its number in the order shown (0-based). */
-export interface RoomRow { key: string; room: string; render: (displayIndex: number) => ReactNode }
+/** One line: its key, its saved room, and how to draw it given its number in the order shown (0-based).
+ *  In compact mode `move` is the line's move button, for the row to place among its own buttons. */
+export interface RoomRow { key: string; room: string; group?: string; render: (displayIndex: number, move?: ReactNode) => ReactNode }
 export interface RoomLayout { label: string; bedrooms: number; bathrooms: number }
 /** The page's own card classes, so a room looks like the page's other sections. */
 export interface RoomCard { section: string; header: string; title: string; body: string }
@@ -53,7 +59,7 @@ function RoomName({ name, disabled, inTitle, onRename }: { name: string; disable
 }
 
 /** The small move button on a line: a short list of the other rooms. */
-function MoveLine({ rooms, current, onMove }: { rooms: string[]; current: string; onMove: (room: string) => void }) {
+function MoveLine({ rooms, current, onMove, inline }: { rooms: string[]; current: string; onMove: (room: string) => void; inline?: boolean }) {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -65,13 +71,20 @@ function MoveLine({ rooms, current, onMove }: { rooms: string[]; current: string
   const others = rooms.filter((r) => r !== current);
   if (others.length === 0) return null;
   return (
-    <div ref={box} className="absolute -top-2.5 right-10 z-10">
-      <button type="button" aria-label="Move this line to another room" title="Move to another room" onClick={() => setOpen((x) => !x)}
-        className="inline-flex h-6 items-center gap-1 rounded-full border border-border bg-surface px-2 text-[11px] font-semibold text-ink-secondary shadow-sm hover:border-primary hover:text-primary">
-        <ArrowRightLeft size={12} /> Move
-      </button>
+    <div ref={box} className={inline ? 'relative' : 'absolute -top-2.5 right-10 z-10'}>
+      {inline ? (
+        <button type="button" aria-label="Move this line to another room" title="Move to another room" onClick={() => setOpen((x) => !x)}
+          className={renovationLineStyles.iconBtn}>
+          <ArrowRightLeft size={14} />
+        </button>
+      ) : (
+        <button type="button" aria-label="Move this line to another room" title="Move to another room" onClick={() => setOpen((x) => !x)}
+          className="inline-flex h-6 items-center gap-1 rounded-full border border-border bg-surface px-2 text-[11px] font-semibold text-ink-secondary shadow-sm hover:border-primary hover:text-primary">
+          <ArrowRightLeft size={12} /> Move
+        </button>
+      )}
       {open && (
-        <ul role="menu" className="absolute right-0 mt-1 max-h-60 w-48 overflow-auto rounded-md border border-border bg-surface py-1 shadow-lg">
+        <ul role="menu" className="absolute right-0 z-20 mt-1 max-h-60 w-48 overflow-auto rounded-md border border-border bg-surface py-1 shadow-lg">
           {others.map((r) => (
             <li key={r}>
               <button type="button" role="menuitem" className="block w-full px-3 py-1.5 text-left text-[12.5px] hover:bg-primary-soft"
@@ -84,7 +97,7 @@ function MoveLine({ rooms, current, onMove }: { rooms: string[]; current: string
   );
 }
 
-export function RenovationSoRooms({ rooms, onRoomsChange, rows, onRowRoom, onAddLine, layout, disabled, card }: {
+export function RenovationSoRooms({ rooms, onRoomsChange, rows, onRowRoom, onAddLine, layout, disabled, card, compact }: {
   rooms: string[];
   /** `rename` is set when one room was renamed, so the parent moves its lines too. */
   onRoomsChange: (next: string[], rename?: { from: string; to: string }) => void;
@@ -95,12 +108,19 @@ export function RenovationSoRooms({ rooms, onRoomsChange, rows, onRowRoom, onAdd
   disabled?: boolean;
   /** Each room as its own card (the page's classes) instead of rows inside one card. */
   card?: RoomCard;
+  /** One compact row per line under a column header (Edit SO). */
+  compact?: boolean;
 }) {
   const [note, setNote] = useState<string | null>(null);
   const confirm = useConfirm();
   const placed = placeRows(rooms, rows);
   const shown = placed.rooms;
-  const groups = shown.map((room) => ({ room, rows: rows.filter((r) => placed.roomOf[r.key] === room) }));
+  /* Within a room, grouped lines (locked ones) come first, each group together; the rest keep their order. */
+  const groups = shown.map((room) => {
+    const inRoom = rows.filter((r) => placed.roomOf[r.key] === room);
+    const labels = [...new Set(inRoom.map((r) => r.group).filter((g): g is string => !!g))];
+    return { room, rows: [...labels.flatMap((l) => inRoom.filter((r) => r.group === l)), ...inRoom.filter((r) => !r.group)] };
+  });
   /* Line numbers in the order shown, across rooms. */
   const numberOf = new Map<string, number>();
   let n = 0;
@@ -161,17 +181,29 @@ export function RenovationSoRooms({ rooms, onRoomsChange, rows, onRowRoom, onAdd
       </>
     ),
     lines: (
-      <div className="flex flex-col gap-3">
-        {g.rows.map((row) => (
-          <div key={row.key} className="relative">
-            {!disabled && <MoveLine rooms={shown} current={g.room} onMove={(room) => onRowRoom(row.key, room)} />}
-            {row.render(numberOf.get(row.key) ?? 0)}
-          </div>
-        ))}
+      <div className={compact ? renovationLineStyles.lines : 'flex flex-col gap-3'}>
+        {compact && g.rows.length > 0 && <RenovationLineHead />}
+        {g.rows.map((row, j) => {
+          const label = row.group && row.group !== g.rows[j - 1]?.group ? row.group : null;
+          const divider = label && <div className={renovationLineStyles.divider}>{label}</div>;
+          if (compact) {
+            const move = !disabled ? <MoveLine inline rooms={shown} current={g.room} onMove={(room) => onRowRoom(row.key, room)} /> : undefined;
+            return <div key={row.key}>{divider}{row.render(numberOf.get(row.key) ?? 0, move)}</div>;
+          }
+          return (
+            <div key={row.key}>
+              {divider}
+              <div className="relative">
+                {!disabled && <MoveLine rooms={shown} current={g.room} onMove={(room) => onRowRoom(row.key, room)} />}
+                {row.render(numberOf.get(row.key) ?? 0)}
+              </div>
+            </div>
+          );
+        })}
         {g.rows.length === 0 && disabled && <p className="px-2 text-[12px] text-ink-muted">No lines in this room.</p>}
         {!disabled && (
           <button type="button" onClick={() => onAddLine(g.room)}
-            className="inline-flex items-center gap-1.5 self-start rounded-md px-2 py-1 text-[12.5px] font-semibold text-primary hover:bg-primary-soft">
+            className="mt-1 inline-flex items-center gap-1.5 self-start rounded-md px-2 py-1 text-[12.5px] font-semibold text-primary hover:bg-primary-soft">
             <Plus size={14} /> Add line to {g.room}
           </button>
         )}

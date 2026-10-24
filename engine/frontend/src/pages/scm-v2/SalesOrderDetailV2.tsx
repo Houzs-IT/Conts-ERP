@@ -1630,20 +1630,25 @@ function SalesOrderDetailV2ReadOnly() {
 
               <AsideCard title="Key dates">
                 <KeyDateRow k="SO date" v={fmtDate(salesOrder.so_date)} />
-                <KeyDateRow
-                  k="Processing"
-                  v={fmtDate(salesOrder.processing_date)}
-                  muted={!salesOrder.processing_date}
-                />
-                <KeyDateRow
-                  k="Delivery"
-                  v={
-                    salesOrder.customer_delivery_date
-                      ? fmtDate(salesOrder.customer_delivery_date)
-                      : "Not set"
-                  }
-                  muted={!salesOrder.customer_delivery_date}
-                />
+                {/* A renovation order has no whole-order processing or delivery date: each line carries its own (owner 24 Oct 2026). */}
+                {!renoMode && (
+                  <>
+                    <KeyDateRow
+                      k="Processing"
+                      v={fmtDate(salesOrder.processing_date)}
+                      muted={!salesOrder.processing_date}
+                    />
+                    <KeyDateRow
+                      k="Delivery"
+                      v={
+                        salesOrder.customer_delivery_date
+                          ? fmtDate(salesOrder.customer_delivery_date)
+                          : "Not set"
+                      }
+                      muted={!salesOrder.customer_delivery_date}
+                    />
+                  </>
+                )}
               </AsideCard>
 
               <AsideCard title="People">

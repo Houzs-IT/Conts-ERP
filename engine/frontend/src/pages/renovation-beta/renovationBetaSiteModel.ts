@@ -4,7 +4,7 @@
 import type { TaskViewV2 } from "../projects/renovation/simpleApi";
 import type { BetaPayments } from "./renovationBetaApi";
 import { ord } from "./renovationBetaBoard";
-import { defectColumn, defectDaysLate, type DefectColumn, type SiteStep } from "./renovationBetaModel";
+import { defectColumn, defectDaysLate, slaDayText, type DefectColumn, type RenovationDays, type SiteStep, type StepSlaDays } from "./renovationBetaModel";
 import type { DefectTicket, SiteDelivery, SitePhoto } from "./renovationBetaSiteApi";
 
 const same = (a: string, b: string): boolean => a.trim().toLowerCase() === b.trim().toLowerCase();
@@ -110,4 +110,15 @@ export function siteStepsPlus(
       waitsFor: s.state === "done" ? null : unpaidFor(t.stage_key, payments),
     };
   });
+}
+
+/** The day count in the Site progress header: the step SLA's, the same words the project list and the stepper show
+    ("Day 1 of 45"), with the step named when it is not Renovation. Only with no SLA does it fall back to the span of
+    the site tasks' dates, which says "Day 1 of 1" when the tasks are all planned on one day. */
+export function progressDayText(
+  sla: (StepSlaDays & { stepKey?: string }) | null | undefined, stepLabel: string | null, span: RenovationDays | null, today: string,
+): string | null {
+  const t = slaDayText(sla, today);
+  if (t) return sla?.stepKey && sla.stepKey !== "renovation" && stepLabel ? `${stepLabel} · ${t}` : t;
+  return span && span.day > 0 ? `Day ${span.day} of ${span.total}` : null;
 }

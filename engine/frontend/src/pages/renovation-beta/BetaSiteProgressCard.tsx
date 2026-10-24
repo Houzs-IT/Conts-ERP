@@ -9,7 +9,7 @@ import { WS, WsCard, WsCheck } from "./BetaWsUi";
 import type { BetaTabProps } from "./betaShared";
 import { dayMonth, renovationDays, siteTimeline, trimTimeline, type SiteStep } from "./renovationBetaModel";
 import { betaSiteApi } from "./renovationBetaSiteApi";
-import { photosByPo, siteStepsPlus, type SiteStepPlus } from "./renovationBetaSiteModel";
+import { photosByPo, progressDayText, siteStepsPlus, type SiteStepPlus } from "./renovationBetaSiteModel";
 import { BETA } from "./renovationBetaTheme";
 
 /** The handover always closes the list (the mockup), saying so when its date is not set yet. */
@@ -52,9 +52,10 @@ export function BetaSiteProgressCard({ p }: { p: BetaTabProps }): ReactElement {
   const done = live.filter((s) => s.state === "done").length;
   const late = live.filter((s) => s.state === "late").length;
   const span = renovationDays(d.tasks, today);
+  const stepLabel = d.flow.steps.find((x) => x.key === d.stepSla?.stepKey)?.label ?? null;
   const sub = live.length === 0
     ? "No site tasks yet"
-    : [span && span.day > 0 ? `Day ${span.day} of ${span.total}` : null, `${done} of ${live.length} steps done`, late > 0 ? `${late} late` : null].filter(Boolean).join(" · ");
+    : [progressDayText(d.stepSla, stepLabel, span, today), `${done} of ${live.length} steps done`, late > 0 ? `${late} late` : null].filter(Boolean).join(" · ");
   return (
     <WsCard title="Site progress" sub={sub} right={<button type="button" className="link" onClick={() => p.openTab("site")}>Site photos →</button>}>
       {live.length > 0 ? (

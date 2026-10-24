@@ -1,21 +1,20 @@
-/* Beta workspace > Site & photos (owner, 24 Oct 2026): one timeline of every photo and video of the project, newest
-   first to the minute. Each day is a node on a vertical line; under it one card per source document or defect,
-   laid out 1 column on a phone and 2-3 on a desktop, each with its time and category on one line and its media in a
-   row of large thumbnails. Each card carries its category: Progress (the site
-   team's own photos and site steps), DO (proof of delivery), GR, PO, Measure (site measure) and Defect (before and
-   after). Category chips with counts filter it, and an area filter narrows it further. Deliveries by document live
-   in the DO and GR tabs. "Add photos" uploads progress photos, a site step's photos, or photos onto a DO, GR or PO. */
+/* Beta workspace > Site & photos (owner, 24 Oct 2026): one vertical timeline of every photo and video of the project,
+   newest first to the minute, drawn like the Overview's Site progress card: the day and time on the left, a dot on a
+   line, and on the right the event (one DO's POD, one GR's receipt photos, one defect's before / after, one upload of
+   progress photos) with its category chip and its media as one strip of equal tiles. DO PODs and GR photos come in by
+   themselves from those documents (GET /photos), nothing is uploaded twice. Category chips with counts filter it, and
+   an area filter narrows it further. "Add photos" opens on Progress. */
 
 import { useMemo, useState, type ReactElement } from "react";
 import { Camera } from "lucide-react";
 import { useQuery } from "../../hooks/useQuery";
 import { MediaStrip } from "./BetaMedia";
 import { PhotoUploadDialog } from "./BetaPhotoUpload";
-import { WS, WsEmpty, WsFilterPill, WsPageHead, btnStyle, cardStyle, inputStyle } from "./BetaWsUi";
+import { WS, WsEmpty, WsFilterPill, WsPageHead, btnStyle, inputStyle } from "./BetaWsUi";
 import type { BetaTabProps } from "./betaShared";
 import { asMedia, betaMediaApi, type PhotoCategory } from "./renovationBetaMediaApi";
 import {
-  CATEGORY_CHIP, cardLine, cardMeta, countBy, dayTitle, filterPhotos, photoAreas, photoFilters, photoTimeline, type PhotoCard, type PhotoFilter,
+  CATEGORY_CHIP, cardLine, clockOf, countBy, dayTitle, mediaCount, filterPhotos, photoAreas, photoFilters, photoTimeline, type PhotoCard, type PhotoFilter,
 } from "./renovationBetaPhotosModel";
 import { BETA, type BetaTone } from "./renovationBetaTheme";
 
@@ -34,18 +33,29 @@ function CategoryChip({ c }: { c: PhotoCategory }): ReactElement {
   return <span style={{ flex: "none", padding: "2px 8px", borderRadius: 6, background: bg, color: ink, fontSize: 12, fontWeight: 700 }}>{CATEGORY_CHIP[c]}</span>;
 }
 
-function EventCard({ c }: { c: PhotoCard }): ReactElement {
+/** The left column: the day on the first event of each day, then the time of every event. */
+function EventRow({ c, day, today, last }: { c: PhotoCard; day: string | null | undefined; today: string; last: boolean }): ReactElement {
   const area = [...new Set(c.items.map((i) => i.area).filter(Boolean))].join(", ");
   const note = c.items.find((i) => i.note)?.note ?? null;
+  const isToday = day === today;
   return (
-    <li style={{ ...cardStyle, padding: 12, gap: 8, minWidth: 0 }} aria-label={cardLine(c)}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-        <CategoryChip c={c.category} />
-        <span style={{ fontSize: 13, color: BETA.muted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{cardMeta(c)}</span>
+    <li aria-label={cardLine(c)} style={{ display: "grid", gridTemplateColumns: "72px 18px minmax(0, 1fr)", columnGap: 10 }}>
+      <div style={{ padding: last ? "0" : "0 0 18px", fontSize: 13, color: BETA.muted, lineHeight: 1.35 }}>
+        {day !== undefined && (day ? dayTitle(day, today).split(" · ") : ["No date"]).map((t) => <div key={t} style={{ fontWeight: 700, color: isToday ? BETA.accentInk : BETA.ink }}>{t}</div>)}
+        <div>{clockOf(c.at) ?? ""}</div>
       </div>
-      <div style={{ fontWeight: 700, fontSize: 14, overflowWrap: "anywhere" }}>{c.title}</div>
-      {(area || note) && <div style={{ fontSize: 13, color: BETA.muted, overflowWrap: "anywhere" }}>{[area, note].filter(Boolean).join(" · ")}</div>}
-      <MediaStrip items={c.items.map(asMedia)} label={`Photos: ${c.title}`} />
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+        <span aria-hidden="true" style={{ flex: "none", marginTop: 3, width: 12, height: 12, borderRadius: 6, background: day !== undefined ? BETA.accent : BETA.surface, border: `2px solid ${BETA.accent}` }} />
+        {!last && <span aria-hidden="true" style={{ flex: 1, width: 2, background: BETA.line }} />}
+      </div>
+      <div style={{ padding: last ? 0 : "0 0 18px", minWidth: 0, display: "flex", flexDirection: "column", gap: 6 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, flexWrap: "wrap" }}>
+          <CategoryChip c={c.category} />
+          <span style={{ fontWeight: 700, fontSize: 14, overflowWrap: "anywhere", minWidth: 0 }}>{c.title}</span>
+        </div>
+        <div style={{ fontSize: 13, color: BETA.muted, overflowWrap: "anywhere" }}>{[c.label, mediaCount(c.items), area, note].filter(Boolean).join(" · ")}</div>
+        <MediaStrip items={c.items.map(asMedia)} label={`Photos: ${c.title}`} size={88} max={8} />
+      </div>
     </li>
   );
 }
@@ -60,6 +70,8 @@ export function BetaSiteTab({ projectId, today, canWrite, onDone }: BetaTabProps
   const areas = photoAreas(q.data?.areas ?? [], photos);
   const shown = filterPhotos(photos, filter, area);
   const days = photoTimeline(shown);
+  // undefined day = same day as the event above, so the left column names each day once.
+  const events = days.flatMap((d) => d.cards.map((c, i) => ({ c, day: i === 0 ? d.day : undefined })));
 
   return (
     <>
@@ -93,22 +105,13 @@ export function BetaSiteTab({ projectId, today, canWrite, onDone }: BetaTabProps
         : shown.length === 0 ? (
           <WsEmpty>{photos.length === 0 ? "No photos yet. Progress photos, PODs, goods receipts, the site measure and defects all show here." : "No photos match this filter."}</WsEmpty>
         ) : (
-          <ol aria-label="Photo timeline" style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 18 }}>
-            {days.map((d) => (
-              <li key={d.day ?? "undated"} style={{ position: "relative", paddingLeft: 26 }}>
-                <span aria-hidden="true" style={{ position: "absolute", left: 7, top: 22, bottom: -18, width: 2, background: BETA.line }} />
-                <span aria-hidden="true" style={{ position: "absolute", left: 1, top: 6, width: 14, height: 14, borderRadius: 7, background: d.day === today ? BETA.accent : BETA.surface, border: `2px solid ${BETA.accent}` }} />
-                <h3 style={{ margin: "0 0 10px", fontSize: 16, fontWeight: 700 }}>{d.day ? dayTitle(d.day, today) : "No date"}</h3>
-                <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(300px, 100%), 1fr))", gap: 10, alignItems: "start" }}>
-                  {d.cards.map((c, i) => <EventCard key={`${c.key}-${i}`} c={c} />)}
-                </ul>
-              </li>
-            ))}
+          <ol aria-label="Photo timeline" style={{ listStyle: "none", margin: 0, padding: 0 }}>
+            {events.map((e, i) => <EventRow key={`${e.c.key}-${i}`} c={e.c} day={e.day} today={today} last={i === events.length - 1} />)}
           </ol>
         )}
 
       {adding && q.data && (
-        <PhotoUploadDialog projectId={projectId} docs={q.data.docs} tasks={q.data.tasks} areas={q.data.areas}
+        <PhotoUploadDialog projectId={projectId} initial={{ kind: "progress" }} docs={q.data.docs} tasks={q.data.tasks} areas={q.data.areas}
           onClose={() => setAdding(false)} onDone={(t) => { setAdding(false); onDone(t); q.reload(); }} />
       )}
     </>

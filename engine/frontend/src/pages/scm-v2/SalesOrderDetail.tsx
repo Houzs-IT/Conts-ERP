@@ -18,7 +18,7 @@
 
 import {
   forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState,
-  type CSSProperties,
+  type CSSProperties, type ReactNode,
 } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
@@ -166,6 +166,7 @@ import {
 } from '../projects/renovation/customerPropertyModel';
 import { soInfoErrorText } from '../projects/renovation/customerPropertyApi';
 import { RenovationSoRooms, roomLayoutOf, type RoomLayout } from './RenovationSoRooms';
+import { renovationLineStyles } from '../../vendor/scm/components/renovationSoLineCompact';
 import { placeRows } from '../renovation/roomSections';
 import { DateField } from "../../vendor/scm/components/DateField";
 import { HoldChip } from "../../vendor/scm/components/HoldChip";
@@ -1860,7 +1861,7 @@ export const SalesOrderDetail = () => {
      did when the hook was created here. */
   deliverPrintPdfRef.current = deliverPrintPdf;
 
-  const renderEditLine = (it: (typeof items)[number], idx: number) => {
+  const renderEditLine = (it: (typeof items)[number], idx: number, move?: ReactNode) => {
               const editDraft = editingDrafts[it.id];
               // A freshly-deleted row drops its draft (removeEditingLine) but
               // lingers in `items` until the re-fetch — skip rendering it.
@@ -1873,7 +1874,8 @@ export const SalesOrderDetail = () => {
                       mutation), so it isn't duplicated here. Override is a
                       single-line audited operation that the inline card
                       doesn't expose, so it stays in this small action bar. */}
-                  <div className={styles.actionsCell} style={{ marginBottom: 'var(--space-2)' }}>
+                  {/* Renovation mode: one compact row with the $ and move buttons in it; the room list shows the locked label once above its group. */}
+                  {!renoLines && <div className={styles.actionsCell} style={{ marginBottom: 'var(--space-2)' }}>
                     {/* Override price writes DIRECTLY to the per-line override
                         route, which the server 409s on a processing-locked SO —
                         so it stays gated on the raw lock, not on `linesLocked`
@@ -1886,8 +1888,17 @@ export const SalesOrderDetail = () => {
                       onClick={() => !overrideLocked && !frozen && setOverriding(it)}>
                       <DollarSign {...SM_ICON} />
                     </button>
-                  </div>
+                  </div>}
                   <SoLineCard
+                    compact={renoLines}
+                    actions={renoLines ? <>
+                      <button type="button" className={renovationLineStyles.iconBtn} title="Override price" aria-label="Override price"
+                        disabled={overrideLocked || frozen}
+                        onClick={() => !overrideLocked && !frozen && setOverriding(it)}>
+                        <DollarSign {...SM_ICON} />
+                      </button>
+                      {!frozen && move}
+                    </> : undefined}
                     index={idx}
                     draft={editDraft}
                     onChange={cb?.onChange ?? ((patch) => patchEditingDraft(it.id, patch))}
@@ -1908,16 +1919,21 @@ export const SalesOrderDetail = () => {
                 </div>
               );
   };
-  const renderStagedLine = (staged: (typeof addingDrafts)[number], i: number, displayIndex?: number) => {
+  const renderStagedLine = (staged: (typeof addingDrafts)[number], i: number, displayIndex?: number, move?: ReactNode) => {
               const cb = addCallbacks.get(staged.key);
               return (
                 <div key={staged.key}>
-                  <div className={styles.actionsCell} style={{ marginBottom: 'var(--space-2)' }}>
+                  {!renoLines && <div className={styles.actionsCell} style={{ marginBottom: 'var(--space-2)' }}>
                     <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: '#a6471e' }}>
                       {stagedAddLabel(i + 1)} — not saved yet
                     </span>
-                  </div>
+                  </div>}
                   <SoLineCard
+                    compact={renoLines}
+                    actions={renoLines ? <>
+                      <span className={renovationLineStyles.newTag} title={`${stagedAddLabel(i + 1)} — not saved yet`}>New</span>
+                      {move}
+                    </> : undefined}
                     index={displayIndex ?? visibleLines.persisted + i}
                     draft={staged.draft}
                     onChange={cb?.onChange ?? ((patch) => patchAddingDraft(staged.key, patch))}
@@ -2400,13 +2416,17 @@ export const SalesOrderDetail = () => {
                   if (rename) setRenoRowRoom((m) => Object.fromEntries(Object.entries(m).map(([k, r]) => [k, r === rename.from ? rename.to : r])));
                 }}
                 rows={[
-                  ...items.filter((it) => it.id in editingDrafts).map((it) => ({ key: it.id, room: renoRowRoom[it.id] ?? '', render: (n: number) => renderEditLine(it, n) })),
-                  ...addingDrafts.map((staged, i) => ({ key: staged.key, room: renoRowRoom[staged.key] ?? '', render: (n: number) => renderStagedLine(staged, i, n) })),
+                  ...items.filter((it) => it.id in editingDrafts).map((it) => ({
+                    key: it.id, room: renoRowRoom[it.id] ?? '', group: soItemFrozen(it) ? FROZEN_LINE_LABEL : undefined,
+                    render: (n: number, move?: ReactNode) => renderEditLine(it, n, move),
+                  })),
+                  ...addingDrafts.map((staged, i) => ({ key: staged.key, room: renoRowRoom[staged.key] ?? '', render: (n: number, move?: ReactNode) => renderStagedLine(staged, i, n, move) })),
                 ]}
                 onRowRoom={(key, room) => setRenoRowRoom((m) => ({ ...m, [key]: room }))}
                 onAddLine={(room) => startAddLine(room)}
                 layout={renoLayout}
                 disabled={linesLocked}
+                compact
               />
             ) : (
               <>

@@ -3,7 +3,7 @@
 
 import type { ReactElement } from "react";
 import { Link } from "react-router-dom";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Pencil } from "lucide-react";
 import { usePeople } from "../projects/renovation/PersonSelect";
 import type { ProjectDetailV2 } from "../projects/renovation/simpleApi";
 import type { AssignRole, BetaDialog } from "./BetaForms";
@@ -122,6 +122,7 @@ export function BetaWsHeader({ d, p: board, people = [], canWrite, today, openDi
                     <button type="button" onClick={() => openDialog({ t: "assign", projectId: p.id, role: c.key })} aria-label={`${c.role}: ${c.who.map((x) => x.name).join(", ") || "not set"}. Change`}
                       style={{ ...box, border: 0, borderRadius: 0, flex: 1, width: "auto", background: "transparent", font: "inherit", color: "inherit", textAlign: "left", cursor: "pointer" }}>
                       {body}
+                      <Pencil size={14} aria-hidden="true" style={{ flex: "none", color: BETA.muted }} />
                     </button>
                   ) : <div style={{ ...box, border: 0, flex: 1, width: "auto", background: "transparent" }}>{body}</div>}
                   {c.lead && designer && (

@@ -9,7 +9,7 @@ describe("Beta site: areas and deliveries", () => {
   });
 
   test("deliveries newest first, undated last", () => {
-    const d = (no: string, at: string | null): SiteDelivery => ({ type: "delivery_order", id: no, no, at, status: "DELIVERED", from: null, poNumber: null, poIds: [], areas: [], photos: [] });
+    const d = (no: string, at: string | null): SiteDelivery => ({ type: "delivery_order", id: no, no, at, status: "DELIVERED", from: null, poNumber: null, poIds: [], areas: [], lines: [], photos: [] });
     expect(sortDeliveries([d("a", "2026-10-01T00:00:00Z"), d("b", null), d("c", "2026-10-05T00:00:00Z")]).map((x) => x.no)).toEqual(["c", "a", "b"]);
   });
 });

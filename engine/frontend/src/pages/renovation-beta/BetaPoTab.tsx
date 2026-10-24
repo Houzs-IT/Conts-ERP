@@ -2,27 +2,29 @@
    after VOs, by category: SKU, description, variants, qty, amount, when to order, when to deliver, and whether the goods
    were received (GR) and delivered (DO).
 
-   The pale yellow fields change the line. "Save & post to VO" applies every change to the sales order at once and
-   keeps it as one VO per order (no approval: renovationBetaLines.ts postVo). The dates are not VOs: on a line a PO
-   holds they change the PO itself; before that they are the plan. A PO a VO changed is flagged until purchasing
-   confirms the PO change. */
+   The tab reads as plain text until Edit is pressed (owner, 24 Oct 2026). In edit mode the pale yellow fields change
+   the line, and "Save & post to VO" applies every change to the sales order at once and keeps it as one VO per order
+   (no approval: renovationBetaLines.ts postVo). The dates are not VOs and save as they are set: on a line a PO holds
+   they change the PO itself; before that they are the plan. A category or sub-category band sets the date of every
+   line in it through the same per-line paths. A PO a VO changed is flagged until purchasing confirms the PO change. */
 
 import { useCallback, useMemo, useRef, useState, type CSSProperties, type ReactElement } from "react";
 import { Link } from "react-router-dom";
-import { AlertTriangle, ChevronDown, ChevronRight, Download, FilePlus2, Search } from "lucide-react";
+import { AlertTriangle, ChevronDown, ChevronRight, Download, FilePlus2, Pencil, Search } from "lucide-react";
 import { useAuth } from "../../auth/AuthContext";
 import { useQuery } from "../../hooks/useQuery";
-import { useMfgProducts } from "../../vendor/scm/lib/mfg-products-queries";
 import { money } from "../projects/renovation/renovationModel";
-import { WS, WsBadge, WsDialog, WsEmpty, WsFilterPill, WsPageHead, TONE_ALERT, TONE_QUIET, TONE_WAIT, btnStyle, inputStyle } from "./BetaWsUi";
+import { WS, WsBadge, WsDialog, WsEmpty, WsFilterPill, WsPageHead, TONE_QUIET, TONE_WAIT, btnStyle, inputStyle } from "./BetaWsUi";
 import { WsStat, WsStats, metaStyle, thStyle } from "./BetaVoPoUi";
 import type { BetaTabProps } from "./betaShared";
-import { dayMonthYear } from "./renovationBetaModel";
+import { dayMonth, dayMonthYear } from "./renovationBetaModel";
+import { BetaSkuPicker } from "./BetaSkuPicker";
 import { BETA } from "./renovationBetaTheme";
 import { voPoApi } from "./renovationBetaVoPo";
 import { LinePhotoThumbs, photoCount, type LinePhotoSet } from "./BetaLinePhotos";
 import {
-  amountAfter, byAreaBlocks, byCategory, livePo, colourEditable, colourOf, editProblem, editWords, effectiveEdit, lineDates, lineLate, linesApi, linesCsv, postVo, refusalText,
+  amountAfter, byAreaBlocks, byCategory, livePo, colourEditable, colourOf, dateSettable, editProblem, editWords, effectiveEdit, groupDate, groupDateTargets, lineDates, lineLate,
+  linesApi, linesCsv, postVo, refusalText,
   voBatches, type LineEdit, type ManagedLine, type PendingPoChange, type PostedVo,
 } from "./renovationBetaLines";
 
@@ -39,7 +41,6 @@ const BANDS: ReadonlyArray<readonly [string, string, string]> = [
 const EDIT_BG = "#FFF9DB";
 const EDIT_LINE = "#E9D77E";
 const editInput: CSSProperties = { ...inputStyle, minHeight: 30, height: 30, fontSize: 12.5, background: EDIT_BG, borderColor: EDIT_LINE, padding: "0 6px" };
-const COLS = 10;
 /* Below this width of the tab the table becomes stacked row cards: every column fits from here up (1280-1600px
    screens, 80% zoom included), and nothing is ever hidden or scrolled sideways. */
 const TABLE_MIN = 900;
@@ -49,7 +50,7 @@ const headStyle: CSSProperties = { ...thStyle, padding: "8px 6px", fontSize: 11.
 
 /** Column widths (percent of the table), with and without the Amount column. */
 function colWidths(finance: boolean): number[] {
-  return finance ? [13, 23, 10, 6, 9, 9.5, 9.5, 10, 5, 5] : [14, 30, 11, 6, 0, 9.5, 9.5, 10, 5, 5];
+  return finance ? [12, 21, 10, 5, 9, 9, 9, 15, 5, 5] : [13, 27, 11, 5, 0, 9.5, 9.5, 15, 5, 5];
 }
 
 /** The tab's own width, so the layout follows the space it has (inside Property OS it is not the window's). */
@@ -67,6 +68,7 @@ function useWidth(): [(el: HTMLDivElement | null) => void, number] {
 }
 
 type DateField = "orderOn" | "deliverOn" | "poDate";
+type PlanDate = "orderOn" | "deliverOn";
 
 export function BetaPoTab(p: BetaTabProps): ReactElement {
   const q = useQuery(["renovation-beta", "lines", p.projectId], () => linesApi.lines(p.projectId), [p.projectId]);
@@ -80,6 +82,7 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
   const [refusals, setRefusals] = useState<Record<string, string>>({});
   const [result, setResult] = useState<PostedVo[] | null>(null);
   const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
   const [wrapRef, width] = useWidth();
 
   const lines = q.data?.lines ?? [];
@@ -96,7 +99,7 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
   if (q.error) return <p role="alert" style={{ fontSize: 14, color: WS.red }}>The sales order lines could not be loaded: {q.error}</p>;
   if (!q.data) return <p style={{ padding: "40px 0", textAlign: "center", fontSize: 14, color: BETA.muted }}>Loading PO...</p>;
   const d = q.data;
-  const editable = p.canWrite;
+  const editable = p.canWrite && editing;
   const toggle = (key: string): void => setClosed((s) => { const n = new Set(s); if (n.has(key)) n.delete(key); else n.add(key); return n; });
   const allKeys = tree.flatMap((c) => [c.key, ...c.subs.map((s) => s.key)]);
   const setEdit = (id: string, patch: Partial<LineEdit>): void => setEdits((e) => ({ ...e, [id]: { ...e[id], ...patch } }));
@@ -117,6 +120,7 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
     setRefusals(refused);
     // Keep the edits of an order that refused, so they can be fixed; drop the applied ones.
     setEdits((e) => Object.fromEntries(Object.entries(e).filter(([id]) => refused[lines.find((l) => l.id === id)?.soDocNo ?? ""])));
+    if (Object.keys(refused).length === 0) setEditing(false);
     setResult(posted);
     q.reload();
     vo.reload();
@@ -144,6 +148,37 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
     }
   };
 
+  /** One date for every line of a band, through each line's own save path; a refusal on one line does not stop the rest. */
+  const saveGroupDate = async (key: string, label: string, group: readonly ManagedLine[], which: PlanDate, value: string): Promise<void> => {
+    const v = value || null;
+    const targets = groupDateTargets(group, which, v, d.plansReady);
+    if (targets.length === 0) return;
+    setBusyKey(`group:${key}:${which}`);
+    const refusedLines: string[] = [];
+    let firstReason: string | null = null;
+    const queue = [...targets];
+    const worker = async (): Promise<void> => {
+      for (let l = queue.shift(); l; l = queue.shift()) {
+        const po = lineDates(l).fromPo;
+        try {
+          if (which === "deliverOn" && po) await linesApi.setPoLineDelivery(po.poId, po.poLineId, v);
+          else await linesApi.savePlan(p.projectId, l.id, { [which]: v });
+        } catch (e) {
+          refusedLines.push(l.itemCode);
+          firstReason ??= refusalText(e);
+        }
+      }
+    };
+    // A few at a time: each line is its own request, and a long band should not wait on them one by one.
+    await Promise.all([worker(), worker(), worker(), worker()]);
+    setBusyKey(null);
+    q.reload();
+    const what = which === "orderOn" ? "Processing date" : "Delivery date";
+    const done = targets.length - refusedLines.length;
+    if (refusedLines.length === 0) p.onDone(`${what} ${v ? dayMonthYear(v) : "cleared"} on ${done} line${done === 1 ? "" : "s"} of ${label}.`);
+    else p.onError(`${what} set on ${done} of ${targets.length} lines of ${label}. Not set on ${refusedLines.join(", ")}: ${firstReason}`);
+  };
+
   const setNoPo = async (l: ManagedLine, noPo: boolean): Promise<void> => {
     setBusyKey(`${l.id}:noPo`);
     try { await linesApi.savePlan(p.projectId, l.id, { noPo }); q.reload(); } catch (e) { p.onError(refusalText(e)); } finally { setBusyKey(null); }
@@ -165,6 +200,15 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
     URL.revokeObjectURL(a.href);
   };
 
+  const changedCount = batches.reduce((n, b) => n + b.lines.length, 0);
+  const bandDates = (key: string, label: string, group: readonly ManagedLine[]): BandDates => ({
+    lines: group, editable,
+    settable: { orderOn: group.some((l) => dateSettable(l, "orderOn", d.plansReady)), deliverOn: group.some((l) => dateSettable(l, "deliverOn", d.plansReady)) },
+    busy: { orderOn: busyKey === `group:${key}:orderOn`, deliverOn: busyKey === `group:${key}:deliverOn` },
+    label,
+    save: (w, v) => void saveGroupDate(key, label, group, w, v),
+  });
+
   const cell = (l: ManagedLine): RowCtx => ({
     l, edit: edits[l.id], editable: editable && l.voLocked, finance: d.finance, today: p.today, plansReady: d.plansReady, busyKey,
     refusal: edits[l.id] ? refusals[l.soDocNo] ?? null : null, pending: l.pos.flatMap((x) => pendingByPo.get(x.poId) ?? []),
@@ -176,9 +220,14 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
       <style>{DATE_CSS}</style>
       <WsPageHead
         title="PO"
-        sub="Every line of the sales order, after VOs. Change a yellow field, then Save & post to VO: the order changes at once and the VO keeps the record."
+        sub={editing
+          ? "Editing. Change a yellow field, then Save & post to VO: the order changes at once and the VO keeps the record. Dates save as you set them."
+          : "Every line of the sales order, after VOs."}
         right={(
           <span style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {p.canWrite && lines.length > 0 && !editing && (
+              <button type="button" style={btnStyle("dark", "sm")} onClick={() => { setEditing(true); setResult(null); }}><Pencil size={14} aria-hidden="true" />Edit</button>
+            )}
             {tree.length > 0 && <button type="button" style={btnStyle("outline", "sm")} onClick={() => setClosed(closed.size ? new Set() : new Set(allKeys))}>{closed.size ? "Open all" : "Close all"}</button>}
             {lines.length > 0 && <button type="button" style={btnStyle("outline", "sm")} onClick={exportCsv}><Download size={14} aria-hidden="true" />Export</button>}
             {needPo.length > 0 && d.sos.map((s) => (
@@ -250,13 +299,16 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
                   {tree.map((c, ci) => {
                     const open = !closed.has(c.key);
                     const band = BANDS[ci % BANDS.length];
+                    const catLines = c.subs.flatMap((s) => s.items);
                     return [
-                      <Band key={c.key} band={band} level="cat" label={c.label} hint={catHint(c.subs.flatMap((s) => s.items), d.finance)} open={open} onToggle={() => toggle(c.key)} cols={d.finance ? COLS : COLS - 1} />,
+                      <Band key={c.key} band={band} level="cat" label={c.label} hint={catHint(catLines, d.finance)} open={open} onToggle={() => toggle(c.key)} finance={d.finance}
+                        dates={bandDates(c.key, c.label, catLines)} />,
                       ...(open ? c.subs.flatMap((s) => {
                         if (!s.label) return s.items.map((l) => <LineRow key={l.id} {...cell(l)} />);
                         const subOpen = !closed.has(s.key);
                         return [
-                          <Band key={s.key} band={band} level="sub" label={s.label} hint={`${s.items.length} line${s.items.length === 1 ? "" : "s"}`} open={subOpen} onToggle={() => toggle(s.key)} cols={d.finance ? COLS : COLS - 1} />,
+                          <Band key={s.key} band={band} level="sub" label={s.label} hint={`${s.items.length} line${s.items.length === 1 ? "" : "s"}`} open={subOpen} onToggle={() => toggle(s.key)} finance={d.finance}
+                            dates={bandDates(s.key, `${c.label} / ${s.label}`, s.items)} />,
                           ...(subOpen ? s.items.map((l) => <LineRow key={l.id} {...cell(l)} />) : []),
                         ];
                       }) : []),
@@ -279,6 +331,14 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
                     </button>
                     {open && (
                       <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+                        <li style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8, padding: "6px 12px", borderBottom: `1px solid ${WS.rowLine}`, background: band[1] }}>
+                          {(["orderOn", "deliverOn"] as const).map((w) => (
+                            <span key={w} style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
+                              <span style={metaStyle}>{w === "orderOn" ? "Processing (all lines)" : "Delivery (all lines)"}</span>
+                              <GroupDate g={bandDates(c.key, c.label, c.subs.flatMap((s) => s.items))} which={w} />
+                            </span>
+                          ))}
+                        </li>
                         {c.subs.flatMap((s) => s.items).map((l) => <LineCard key={l.id} {...cell(l)} />)}
                       </ul>
                     )}
@@ -289,15 +349,17 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
           )}
       </div>
 
-      {batches.length > 0 && (
+      {editing && (
         <div style={{ position: "sticky", bottom: 0, zIndex: 5, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end", padding: "10px 12px", background: BETA.surface, border: `1px solid ${EDIT_LINE}`, borderRadius: 10, boxShadow: "0 -2px 10px rgba(0,0,0,.06)" }}>
           <span style={{ flex: "1 1 200px", fontSize: 14 }}>
-            {batches.reduce((n, b) => n + b.lines.length, 0)} line{batches.reduce((n, b) => n + b.lines.length, 0) === 1 ? "" : "s"} changed
+            {changedCount > 0 ? `${changedCount} line${changedCount === 1 ? "" : "s"} changed` : "Editing: no line changed yet."}
             {problems.length > 0 && <span style={{ color: WS.red }}> · {problems[0]}</span>}
           </span>
-          <button type="button" style={btnStyle("outline", "md")} onClick={() => { setEdits({}); setRefusals({}); }}>Discard</button>
-          <button type="button" style={btnStyle("teal", "md")} disabled={problems.length > 0} onClick={() => setConfirming(true)}>
-            Save & post to VO ({batches.map((_, i) => voLabel(i)).join(", ")})
+          {changedCount > 0
+            ? <button type="button" style={btnStyle("outline", "md")} onClick={() => { setEdits({}); setRefusals({}); setEditing(false); }}>Discard</button>
+            : <button type="button" style={btnStyle("outline", "md")} onClick={() => { setRefusals({}); setEditing(false); }}>Done</button>}
+          <button type="button" style={btnStyle("teal", "md")} disabled={problems.length > 0 || changedCount === 0} onClick={() => setConfirming(true)}>
+            Save & post to VO{batches.length > 0 ? ` (${batches.map((_, i) => voLabel(i)).join(", ")})` : ""}
           </button>
         </div>
       )}
@@ -341,7 +403,7 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
         </WsDialog>
       )}
       {picking && (
-        <SkuPicker
+        <BetaSkuPicker
           current={picking.itemCode}
           onClose={() => setPicking(null)}
           onPick={(code, name, priceSen) => { setEdit(picking.id, { itemCode: code, pickedName: name, pickedPriceSen: priceSen }); setPicking(null); }}
@@ -357,11 +419,37 @@ function catHint(items: readonly ManagedLine[], finance: boolean): string {
   return [`${items.length} line${items.length === 1 ? "" : "s"}`, `${onPo} on PO`, finance ? money(total) : null].filter(Boolean).join(" · ");
 }
 
-function Band({ band, level, label, hint, open, onToggle, cols }: { band: readonly [string, string, string]; level: "cat" | "sub"; label: string; hint: string; open: boolean; onToggle: () => void; cols: number }): ReactElement {
+/** What a band needs to show and set its lines' dates. */
+interface BandDates {
+  lines: readonly ManagedLine[];
+  editable: boolean;
+  settable: Record<PlanDate, boolean>;
+  busy: Record<PlanDate, boolean>;
+  label: string;
+  save: (which: PlanDate, value: string) => void;
+}
+
+/** A band's date: the one its lines share or "Mixed"; in edit mode a control that sets every line's date. */
+function GroupDate({ g, which }: { g: BandDates; which: PlanDate }): ReactElement | null {
+  const v = groupDate(g.lines, which);
+  const what = which === "orderOn" ? "Processing date" : "Delivery date";
+  if (g.editable && g.settable[which]) {
+    return (
+      <DateControl value={v === "mixed" ? null : v} placeholder={v === "mixed" ? "Mixed" : "Set all"} busy={g.busy[which]}
+        label={`${what} for every line of ${g.label}`} title={`${what} for every line of ${g.label}${v === "mixed" ? " (the lines differ now)" : ""}`} onSave={(x) => g.save(which, x)} />
+    );
+  }
+  if (v === null) return null;
+  return <span title={v === "mixed" ? "The lines have different dates" : `${what}: every line`} style={{ display: "block", fontSize: 12, fontWeight: 600, color: v === "mixed" ? BETA.muted : WS.text2, fontStyle: v === "mixed" ? "italic" : undefined, ...ellipsis }}>{v === "mixed" ? "Mixed" : dayMonthYear(v)}</span>;
+}
+
+function Band({ band, level, label, hint, open, onToggle, finance, dates }: { band: readonly [string, string, string]; level: "cat" | "sub"; label: string; hint: string; open: boolean; onToggle: () => void; finance: boolean; dates: BandDates }): ReactElement {
   const Icon = open ? ChevronDown : ChevronRight;
+  const bg = level === "cat" ? band[1] : WS.tealSoft;
+  const td: CSSProperties = { padding: "0 6px", background: bg, borderBottom: `1px solid ${BETA.line}`, verticalAlign: "middle", overflow: "hidden" };
   return (
     <tr>
-      <td colSpan={cols} style={{ padding: 0, background: level === "cat" ? band[1] : WS.tealSoft, borderBottom: `1px solid ${BETA.line}` }}>
+      <td colSpan={finance ? 5 : 4} style={{ ...td, padding: 0 }}>
         <button type="button" aria-expanded={open} onClick={onToggle}
           style={{
             display: "flex", alignItems: "center", gap: 8, width: "100%", minHeight: level === "cat" ? 38 : 32, overflow: "hidden", padding: `0 12px 0 ${level === "cat" ? 8 : 28}px`, border: 0,
@@ -373,6 +461,9 @@ function Band({ band, level, label, hint, open, onToggle, cols }: { band: readon
           <span style={{ flex: "0 1 auto", fontSize: 12, fontWeight: 500, color: WS.text2, ...ellipsis }}>{hint}</span>
         </button>
       </td>
+      <td style={td}><GroupDate g={dates} which="orderOn" /></td>
+      <td style={td}><GroupDate g={dates} which="deliverOn" /></td>
+      <td colSpan={3} style={td} />
     </tr>
   );
 }
@@ -492,53 +583,65 @@ const DATE_CSS = `.bpo-date::-webkit-calendar-picker-indicator{position:absolute
 /** A whole calendar date (a typed year is complete only at four digits starting 19 or 20). */
 const fullDate = (v: string): boolean => /^(19|20)\d\d-\d\d-\d\d$/.test(v);
 
-/** A date as compact text; clicking it opens the browser's date picker, and picking or clearing saves it. */
-function DateButton({ r, which, value, label, late, small = false }: { r: RowCtx; which: DateField; value: string | null; label: string; late: boolean; small?: boolean }): ReactElement {
-  const busy = r.busyKey === `${r.l.id}:${which}`;
+/** A date as compact text; clicking it opens the browser's date picker, and picking or clearing saves it.
+    "box" is the yellow edit field; "inline" is small muted text for the PO date beside the PO number. */
+function DateControl({ value, label, title, placeholder = "Set date", busy, late = false, inline = false, onSave }: {
+  value: string | null; label: string; title?: string; placeholder?: string; busy: boolean; late?: boolean; inline?: boolean; onSave: (v: string) => void;
+}): ReactElement {
+  const face: CSSProperties = inline
+    ? { display: "inline-flex", alignItems: "center", fontSize: 12, color: BETA.muted, borderBottom: `1px dashed ${EDIT_LINE}`, background: EDIT_BG, padding: "0 3px", borderRadius: 3, whiteSpace: "nowrap" }
+    : { ...editInput, display: "flex", alignItems: "center", width: "100%", fontSize: 12, height: 26, minHeight: 26, ...(late ? { borderColor: WS.red, color: WS.red, fontWeight: 600 } : value ? {} : { color: BETA.muted }), ...ellipsis };
   return (
-    <span style={{ position: "relative", display: "block", minWidth: 0 }} title={late ? `${label}: late` : label}>
-      <span aria-hidden="true"
-        style={{ ...editInput, display: "flex", alignItems: "center", width: "100%", fontSize: small ? 11.5 : 12, ...(small ? { height: 22, minHeight: 22 } : {}), ...(late ? { borderColor: WS.red, color: WS.red, fontWeight: 600 } : value ? {} : { color: BETA.muted }), ...ellipsis }}>
-        {busy ? "Saving..." : value ? dayMonthYear(value) : "Set date"}
-      </span>
-      <input type="date" className="bpo-date" aria-label={`${label} for ${r.l.itemCode}`} disabled={busy} defaultValue={value ?? ""} key={value ?? ""}
+    <span style={{ position: "relative", display: inline ? "inline-block" : "block", minWidth: 0, flexShrink: 0 }} title={title ?? (late ? `${label}: late` : label)}>
+      <span aria-hidden="true" style={face}>{busy ? "Saving..." : value ? (inline ? dayMonth(value) : dayMonthYear(value)) : placeholder}</span>
+      <input type="date" className="bpo-date" aria-label={label} disabled={busy} defaultValue={value ?? ""} key={value ?? ""}
         onChange={(ev) => {
           const v = ev.target.value;
-          if ((v || null) !== (value ?? null) && (v === "" || fullDate(v))) r.saveDate(which, v);
+          if ((v || null) !== (value ?? null) && (v === "" || fullDate(v))) onSave(v);
         }}
         style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity: 0, cursor: "pointer", border: 0, padding: 0, margin: 0 }} />
     </span>
   );
 }
 
-function DateText({ value, late }: { value: string | null; late: boolean }): ReactElement {
-  return <span style={{ display: "block", fontSize: 12.5, ...(late ? { color: WS.red, fontWeight: 600 } : {}), ...ellipsis }}>{value ? dayMonthYear(value) : "-"}</span>;
+function DateButton({ r, which, value, label, late }: { r: RowCtx; which: DateField; value: string | null; label: string; late: boolean }): ReactElement {
+  return <DateControl value={value} label={`${label} for ${r.l.itemCode}`} busy={r.busyKey === `${r.l.id}:${which}`} late={late} onSave={(v) => r.saveDate(which, v)} />;
+}
+
+function DateText({ value, late, title }: { value: string | null; late: boolean; title?: string }): ReactElement {
+  return <span title={title} style={{ display: "block", fontSize: 12.5, fontVariantNumeric: "tabular-nums", ...(late ? { color: WS.red, fontWeight: 600 } : value ? {} : { color: BETA.muted }), ...ellipsis }}>{value ? dayMonthYear(value) : "-"}</span>;
 }
 
 /** When to place the order: the line's own date, before and after a PO exists. */
 function ProcessingCell({ r }: { r: RowCtx }): ReactElement {
   const d = lineDates(r.l);
   const late = lineLate(r.l, r.today) === "order";
-  return r.editable && r.plansReady ? <DateButton r={r} which="orderOn" value={d.orderOn} label="Processing date" late={late} /> : <DateText value={d.orderOn} late={late} />;
+  return r.editable && dateSettable(r.l, "orderOn", r.plansReady) ? <DateButton r={r} which="orderOn" value={d.orderOn} label="Processing date" late={late} /> : <DateText value={d.orderOn} late={late} />;
 }
 
-/** When to deliver: the PO line's delivery date once a PO holds the line (changed on the PO), else the line's own. */
+/** When to deliver: the PO line's effective delivery date once a PO holds the line (changed on the PO), else the
+    line's own. A date a supplier revised is shown but changed on the PO itself. */
 function DeliveryCell({ r }: { r: RowCtx }): ReactElement {
   const d = lineDates(r.l);
   const late = lineLate(r.l, r.today) === "deliver";
-  return r.editable && (d.fromPo || r.plansReady)
+  const revised = d.fromPo?.supplierRevised ? `Supplier's revised date on ${d.fromPo.poNumber}; change it on the PO` : undefined;
+  return r.editable && dateSettable(r.l, "deliverOn", r.plansReady)
     ? <DateButton r={r} which="deliverOn" value={d.deliverOn} label={d.fromPo ? `Delivery date on ${d.fromPo.poNumber}` : "Delivery date"} late={late} />
-    : <DateText value={d.deliverOn} late={late} />;
+    : <DateText value={d.deliverOn} late={late} title={revised ?? (d.fromPo ? `Delivery date on ${d.fromPo.poNumber}` : undefined)} />;
 }
 
-/** The PO doc no and its PO date once a PO holds the line, else "-" (and, for a line we buy, whether it needs one). */
+/** One line: the PO number and its PO date ("TC-PO-2610-006 · 24 Oct"); the date is a small control in edit mode.
+    No PO yet: "-" (and, for a line we buy in edit mode, whether it needs one). */
 function PoCell({ r }: { r: RowCtx }): ReactElement {
   const po = livePo(r.l);
   if (po) {
     return (
-      <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
-        <Link to={`/scm/purchase-orders/${po.poId}`} title={po.poNumber} style={{ fontSize: 12.5, fontWeight: 600, ...ellipsis }}>{po.poNumber}</Link>
-        {r.editable ? <DateButton r={r} which="poDate" value={po.poDate} label={`PO date of ${po.poNumber}`} late={false} small /> : <span style={metaStyle}>{dayMonthYear(po.poDate)}</span>}
+      <div style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0, whiteSpace: "nowrap" }} title={`${po.poNumber}${po.poDate ? `, PO date ${dayMonthYear(po.poDate)}` : ""}`}>
+        <Link to={`/scm/purchase-orders/${po.poId}`} style={{ fontSize: 12.5, fontWeight: 600, flex: "0 1 auto", ...ellipsis }}>{po.poNumber}</Link>
+        <span aria-hidden="true" style={{ ...metaStyle, flexShrink: 0 }}>·</span>
+        {r.editable
+          ? <DateControl inline value={po.poDate} label={`PO date of ${po.poNumber}`} busy={r.busyKey === `${r.l.id}:poDate`} onSave={(v) => r.saveDate("poDate", v)} />
+          : <span style={{ ...metaStyle, flexShrink: 0 }}>{dayMonth(po.poDate)}</span>}
       </div>
     );
   }
@@ -642,29 +745,5 @@ function SaveResult({ posted, onClose }: { posted: PostedVo[]; onClose: () => vo
       </div>
       <button type="button" style={btnStyle("outline", "sm")} onClick={onClose}>OK</button>
     </div>
-  );
-}
-
-function SkuPicker({ current, onPick, onClose }: { current: string; onPick: (code: string, name: string, priceSen: number) => void; onClose: () => void }): ReactElement {
-  const [search, setSearch] = useState("");
-  const q = useMfgProducts({ search: search.trim(), enabled: search.trim().length >= 2 });
-  const rows = (q.data ?? []).filter((x) => x.code !== current && String((x as { status?: string }).status ?? "ACTIVE").toUpperCase() === "ACTIVE").slice(0, 40);
-  return (
-    <WsDialog title="Swap SKU" sub={`Replaces ${current} on this line. The amount uses the new SKU's price.`} onClose={onClose} wide>
-      <input autoFocus aria-label="Search the catalog" placeholder="Search by SKU or name (2 letters or more)" style={inputStyle} value={search} onChange={(e) => setSearch(e.target.value)} />
-      <div style={{ maxHeight: 360, overflowY: "auto", border: `1px solid ${BETA.line}`, borderRadius: 8 }}>
-        {search.trim().length < 2 ? <p style={{ margin: 0, padding: 12, ...metaStyle }}>Type to search the catalog.</p>
-          : q.isLoading ? <p style={{ margin: 0, padding: 12, ...metaStyle }}>Searching...</p>
-          : rows.length === 0 ? <p style={{ margin: 0, padding: 12, ...metaStyle }}>No active SKU matches.</p>
-          : rows.map((x) => (
-            <button key={x.id} type="button" onClick={() => onPick(x.code, x.name, x.sell_price_sen ?? 0)}
-              style={{ display: "flex", width: "100%", gap: 8, justifyContent: "space-between", padding: "10px 12px", border: 0, borderBottom: `1px solid ${WS.rowLine}`, background: BETA.surface, font: "inherit", cursor: "pointer", textAlign: "left" }}>
-              <span><span style={{ fontFamily: "ui-monospace, monospace", fontSize: 13 }}>{x.code}</span><br /><span style={{ fontSize: 14 }}>{x.name}</span></span>
-              <span style={{ whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{money(x.sell_price_sen ?? 0)}</span>
-            </button>
-          ))}
-      </div>
-      {q.error && <p role="alert" style={{ margin: 0, color: WS.red, fontSize: 13 }}>The catalog could not be searched.</p>}
-    </WsDialog>
   );
 }

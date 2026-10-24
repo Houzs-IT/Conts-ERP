@@ -1,10 +1,9 @@
 /* One way to show photos and videos everywhere in Beta (owner, 24 Oct 2026): defect cards and tickets, Site & photos,
    the site measure, the DO and GR tabs. A card shows a fixed 4:3 thumbnail:
      1 item   one cover
-     2 items  side by side
-     3 items  one large and two small
-     4+       a 2 x 2 grid, "+N" on the last tile
-   A row (MediaRow) shows square tiles in a line for an event card. A click opens the gallery: arrows, swipe on a
+     2 items  side by side (a before / after pair)
+     3+       one on top, up to three equal tiles under it, "+N" on the last tile
+   A row (MediaStrip) shows equal square tiles in one line, as many as fit, "+N" on the last. A click opens the gallery: arrows, swipe on a
    phone, Esc to close, videos play with controls, "2 / 5", and a download link. A video is a dark tile with a play
    mark (its frames are not fetched for a thumbnail: a phone video can be 90 MB). A file that cannot be shown is a
    plain tile, never a broken-image icon. Files stream through the signed-in API, so each is fetched as a blob. */
@@ -133,7 +132,9 @@ export function MediaTile({ item, onClick, overlay, showLabel = true }: { item: 
   );
 }
 
-/** The card thumbnail: 1, 2, 3 or a 2 x 2 grid with "+N", always 4:3. Opens the gallery on a click. */
+/** The card thumbnail, always the same box (4:3) whatever the count or the photos' shape, each tile cropped to fill:
+    one item covers it; two sit side by side (a before / after pair); three or more put the first on top and up to
+    three equal tiles in a row under it, "+N" on the last. Opens the gallery on a click. */
 export function MediaGrid({ items, label, ratio = "4 / 3", interactive = true }: { items: readonly MediaItem[]; label: string; ratio?: string; interactive?: boolean }): ReactElement | null {
   const [open, setOpen] = useState<number | null>(null);
   if (items.length === 0) return null;
@@ -147,16 +148,13 @@ export function MediaGrid({ items, label, ratio = "4 / 3", interactive = true }:
   let body: ReactElement;
   if (n === 1) body = <div style={{ ...grid, gridTemplateColumns: "1fr" }}>{tile(0, {})}</div>;
   else if (n === 2) body = <div style={{ ...grid, gridTemplateColumns: "1fr 1fr" }}>{tile(0, {})}{tile(1, {})}</div>;
-  else if (n === 3) {
+  else {
+    const small = Math.min(n - 1, 3);
+    const more = n - 1 - small;
     body = (
-      <div style={{ ...grid, gridTemplateColumns: "2fr 1fr", gridTemplateRows: "1fr 1fr" }}>
-        {tile(0, { gridRow: "1 / span 2" })}{tile(1, {})}{tile(2, {})}
-      </div>
-    );
-  } else {
-    body = (
-      <div style={{ ...grid, gridTemplateColumns: "1fr 1fr", gridTemplateRows: "1fr 1fr" }}>
-        {tile(0, {})}{tile(1, {})}{tile(2, {})}{tile(3, {}, n > 4 ? `+${n - 4}` : undefined)}
+      <div style={{ ...grid, gridTemplateColumns: Array.from({ length: small }, () => "1fr").join(" "), gridTemplateRows: "2fr 1fr" }}>
+        {tile(0, { gridColumn: "1 / -1" })}
+        {Array.from({ length: small }, (_, k) => tile(k + 1, {}, k === small - 1 && more > 0 ? `+${more}` : undefined))}
       </div>
     );
   }
@@ -168,39 +166,42 @@ export function MediaGrid({ items, label, ratio = "4 / 3", interactive = true }:
   );
 }
 
-/** A line of square tiles for an event card; wraps on a phone. */
-export function MediaRow({ items, label, size = 96 }: { items: readonly MediaItem[]; label: string; size?: number }): ReactElement | null {
-  const [open, setOpen] = useState<number | null>(null);
-  if (items.length === 0) return null;
-  return (
-    <>
-      <ul aria-label={label} style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gridTemplateColumns: `repeat(auto-fill, minmax(min(${size}px, 30%), 1fr))`, gap: 6 }}>
-        {items.map((m, i) => (
-          <li key={m.id} style={{ aspectRatio: "1 / 1", borderRadius: MEDIA_RADIUS, overflow: "hidden", minWidth: 0 }}>
-            <MediaTile item={m} onClick={() => setOpen(i)} />
-          </li>
-        ))}
-      </ul>
-      {open != null && <MediaLightbox items={items} index={open} onIndex={setOpen} onClose={() => setOpen(null)} />}
-    </>
-  );
+/** How many tiles of `size` fit across the element, never more than `max`; `max` until it is measured. */
+function useFit(size: number, gap: number, max: number): [(el: HTMLElement | null) => void, number] {
+  const [width, setWidth] = useState<number | null>(null);
+  const obs = useRef<ResizeObserver | null>(null);
+  const ref = useCallback((el: HTMLElement | null) => {
+    obs.current?.disconnect();
+    obs.current = null;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver((e) => { const w = e[0]?.contentRect.width; if (w) setWidth(w); });
+    ro.observe(el);
+    obs.current = ro;
+  }, []);
+  const fit = width == null ? max : Math.max(1, Math.floor((width + gap) / (size + gap)));
+  return [ref, Math.min(max, fit)];
 }
 
-/** One row of large thumbnails that scrolls sideways when there are more than fit (Site & photos cards). */
-export function MediaStrip({ items, label, size = 132 }: { items: readonly MediaItem[]; label: string; size?: number }): ReactElement | null {
+/** One row of equal square tiles, as many as fit (at most `max`), the last one "+N" when more are left: the DO and GR
+    rows and the Site & photos timeline. Every tile is the same size and cropped to fill, so a portrait POD and a
+    landscape room photo sit level. A click opens the gallery at that item. */
+export function MediaStrip({ items, label, size = 72, max = 8 }: { items: readonly MediaItem[]; label: string; size?: number; max?: number }): ReactElement | null {
   const [open, setOpen] = useState<number | null>(null);
+  const [ref, fit] = useFit(size, 6, max);
   if (items.length === 0) return null;
+  const shown = items.length > fit ? items.slice(0, fit) : items;
+  const more = items.length - shown.length;
   return (
-    <>
-      <ul aria-label={label} style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", gap: 8, overflowX: "auto", scrollSnapType: "x proximity", minWidth: 0 }}>
-        {items.map((m, i) => (
-          <li key={m.id} style={{ flex: `0 0 ${size}px`, width: size, height: size, borderRadius: MEDIA_RADIUS, overflow: "hidden", scrollSnapAlign: "start" }}>
-            <MediaTile item={m} onClick={() => setOpen(i)} />
+    <div ref={ref} style={{ minWidth: 0, width: "100%" }}>
+      <ul aria-label={`${label}: ${items.length} ${items.length === 1 ? "item" : "items"}`} style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", gap: 6, minWidth: 0 }}>
+        {shown.map((m, i) => (
+          <li key={m.id} style={{ flex: `0 0 ${size}px`, width: size, height: size, borderRadius: 8, overflow: "hidden" }}>
+            <MediaTile item={m} onClick={() => setOpen(i)} showLabel={size >= 64} overlay={more > 0 && i === shown.length - 1 ? `+${more}` : null} />
           </li>
         ))}
       </ul>
       {open != null && <MediaLightbox items={items} index={open} onIndex={setOpen} onClose={() => setOpen(null)} />}
-    </>
+    </div>
   );
 }
 

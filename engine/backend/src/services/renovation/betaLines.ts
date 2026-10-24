@@ -25,7 +25,11 @@ export interface LinePo {
   poStatus: string;
   poLineId: string;
   poDate: string | null;
+  /** The PO line's effective delivery date, by the rule every PO reader uses (scm/shared/effective-delivery.ts): the
+      latest of the line's date and its supplier revisions, else the same for the PO header. */
   deliveryDate: string | null;
+  /** A supplier revision on the PO line sets deliveryDate, so changing the line's own date would not move it. */
+  supplierRevised: boolean;
   qty: number;
   received: number;
   /** Photos uploaded on the PO line itself (po-items/...); the SO line's own photos ride ManagedLine.photoKeys. */
@@ -154,7 +158,7 @@ function posOf(v: unknown): LinePo[] {
   const list = Array.isArray(v) ? v : typeof v === "string" ? (JSON.parse(v) as unknown[]) : [];
   return (list as Array<Record<string, unknown>>).map((p) => ({
     poId: String(p.po_id), poNumber: String(p.po_number), poStatus: String(p.po_status), poLineId: String(p.po_line_id),
-    poDate: (p.po_date as string | null) ?? null, deliveryDate: (p.delivery_date as string | null) ?? null,
+    poDate: (p.po_date as string | null) ?? null, deliveryDate: (p.delivery_date as string | null) ?? null, supplierRevised: Boolean(p.supplier_revised),
     qty: Number(p.qty ?? 0), received: Number(p.received ?? 0),
     photoKeys: photoList(p.photo_urls).filter((k) => k.startsWith("po-items/")),
   }));
@@ -201,7 +205,9 @@ export async function loadProjectLines(db: Db, projectId: number, companyId: num
             cg.label AS cat_label, cg.sort_order AS cat_sort, sc.label AS sub_label, sc.sort_order AS sub_sort,
             (SELECT coalesce(jsonb_agg(jsonb_build_object(
                       'po_id', po.id::text, 'po_number', po.po_number, 'po_status', po.status::text, 'po_line_id', pi.id::text,
-                      'po_date', po.po_date::text, 'delivery_date', coalesce(pi.delivery_date, po.expected_at)::text,
+                      'po_date', po.po_date::text, 'delivery_date', coalesce(greatest(pi.delivery_date, pi.supplier_delivery_date_2, pi.supplier_delivery_date_3, pi.supplier_delivery_date_4),
+                                                greatest(po.expected_at, po.supplier_delivery_date_2, po.supplier_delivery_date_3, po.supplier_delivery_date_4))::text,
+                      'supplier_revised', coalesce(pi.supplier_delivery_date_2, pi.supplier_delivery_date_3, pi.supplier_delivery_date_4) IS NOT NULL,
                       'qty', pi.qty, 'received', pi.received_qty, 'photo_urls', to_jsonb(pi.photo_urls)) ORDER BY po.po_date, po.po_number), '[]'::jsonb)
                FROM scm.purchase_order_items pi JOIN scm.purchase_orders po ON po.id = pi.purchase_order_id
               WHERE pi.so_item_id = i.id) AS pos,

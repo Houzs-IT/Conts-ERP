@@ -140,7 +140,7 @@ export function PhotoUploadDialog({ projectId, docs, tasks, areas, initial = { k
           Mark “{task.label}” done
         </label>
       )}
-      {onDoc && <p style={{ fontSize: 12, color: BETA.muted }}>Saved on the document itself, so it also shows on its DO or GR card and on the document's page.</p>}
+      {onDoc && <p style={{ fontSize: 12, color: BETA.muted }}>Saved on the document itself, so it also shows on its DO or GR row, in Site &amp; photos and on the document's page.</p>}
       {error && <p role="alert" style={{ fontSize: 13, color: WS.red }}>{error}</p>}
     </WsDialog>
   );

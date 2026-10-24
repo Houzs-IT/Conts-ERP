@@ -413,14 +413,13 @@ function AssignForm({ env, p, role }: { env: FormEnv; p: DesignProject; role?: A
   const save = useSave(env);
   // Names already on the project, so a person no longer listed keeps theirs.
   const known = new Map([...m.everyone, ...p.team["3"], ...p.team["2"]].map((x) => [x.id, x.name] as const));
-  const leadInfo = m.everyone.find((x) => x.id === p.lead?.id);
 
   async function submit(): Promise<void> {
     await save.run(async () => {
       if (lead == null) throw new Error("Choose the design lead.");
       if (w3.length === 0 || w2.length === 0) throw new Error("Choose who does the 3D and who does the 2D.");
       await assignPeople(p.id, {
-        ...(p.lead ? {} : { designerPersonId: lead }),
+        ...(lead !== (p.lead?.id ?? null) ? { designerPersonId: lead } : {}),
         ...(site !== (p.site?.id ?? null) ? { picPersonId: site } : {}),
         person3dIds: w3,
         person2dIds: w2,
@@ -432,17 +431,13 @@ function AssignForm({ env, p, role }: { env: FormEnv; p: DesignProject; role?: A
 
   return (
     <BetaModal title="Assign" sub={p.name} onClose={env.onClose} onSubmit={submit} error={save.error} busy={save.busy}>
-      {p.lead ? (
-        <ul style={LIST}><PersonCard person={leadInfo ? { ...leadInfo, active: true } : undefined} name={p.lead.name} role="Design lead (fixed)" tint /></ul>
-      ) : (
-        <PersonPick label="Design lead (3D and 2D)" name="lead" all={all} value={lead} onChange={setLead} blank="Choose..." required />
-      )}
+      <PersonPick label="Design lead" name="lead" all={all} value={lead} onChange={setLead} blank="Choose..." required autoFocus={role === "lead"} />
       <div style={PICK_GRID}>
         <PeoplePick label="3D by" name="who3" all={all} value={w3} onChange={setW3} known={known} startOpen={role === "3"} />
         <PeoplePick label="2D by" name="who2" all={all} value={w2} onChange={setW2} known={known} startOpen={role === "2"} />
       </div>
       <PersonPick label="Site PIC (handover lead)" name="site" all={all} value={site} onChange={setSite} blank="Not chosen" autoFocus={role === "site"} />
-      <div style={NOTE}>Pick one or more people for the 3D and for the 2D. They see it in their own Calendar right away. Only people who can edit projects can change this.</div>
+      <div style={NOTE}>Every role can be changed here, the design lead too. Pick one or more people for the 3D and for the 2D. They see it in their own Calendar right away. Only people who can edit projects can change this.</div>
     </BetaModal>
   );
 }
