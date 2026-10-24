@@ -4,7 +4,7 @@
 
 import { useEffect, useId, useRef, useState, type CSSProperties, type ReactElement, type ReactNode } from "react";
 import { api } from "../../api/client";
-import { BETA, type BetaTone } from "./renovationBetaTheme";
+import { BETA, TONES, type BetaTone } from "./renovationBetaTheme";
 
 /** Fixed colours the mockup uses besides the shared palette in renovationBetaTheme.ts. */
 export const WS = {
@@ -16,23 +16,28 @@ export const WS = {
   tealSoft: "#F3F9F8",
   tealLine: "#A9CFCB",
   dash: "#A9B4B2",
-  green: "#1E6B3A",
-  red: "#A12622",
-  redDot: "#C62828",
-  amber: "#8A4A00",
-  amberDot: "#D98A1F",
+  /* "Done" and "paid" are the accent green; there is no second green (owner, 24 Oct 2026). */
+  green: BETA.accent,
+  greenDot: BETA.accent,
+  red: TONES.red.ink,
+  redDot: TONES.red.dot,
+  amber: TONES.amber.ink,
+  amberDot: TONES.amber.dot,
   amberBtn: "#B86A0B",
-  blue: "#1F4E8C",
+  /* What was blue (information, deliveries, "waiting for the check") is now the neutral dark grey. */
+  blue: TONES.grey.ink,
+  blueDot: TONES.grey.dot,
 } as const;
 
-export const TONE_PAID: BetaTone = [WS.green, "#DDF0E3"];
-export const TONE_DONE: BetaTone = [WS.green, "#E5F3EA"];
-export const TONE_ALERT: BetaTone = [WS.red, "#FADCDA"];
-export const TONE_QUIET: BetaTone = [WS.text2, WS.chip];
-export const TONE_WAIT: BetaTone = [WS.amber, "#FDF1E2"];
-export const TONE_WAIT_STRONG: BetaTone = [WS.amber, "#FBE3C2"];
-export const TONE_INFO: BetaTone = [WS.blue, "#E8F0FB"];
-export const TONE_ACCENT: BetaTone = [BETA.accent, "#E4F1EF"];
+/* Every status pill in Beta takes one of these. */
+export const TONE_PAID: BetaTone = [TONES.accent.ink, TONES.accent.soft];
+export const TONE_DONE: BetaTone = [TONES.accent.ink, TONES.accent.soft];
+export const TONE_ALERT: BetaTone = [TONES.red.ink, TONES.red.strong];
+export const TONE_QUIET: BetaTone = [TONES.grey.ink, TONES.grey.soft];
+export const TONE_WAIT: BetaTone = [TONES.amber.ink, TONES.amber.soft];
+export const TONE_WAIT_STRONG: BetaTone = [TONES.amber.ink, TONES.amber.strong];
+export const TONE_INFO: BetaTone = [TONES.grey.ink, TONES.grey.soft];
+export const TONE_ACCENT: BetaTone = [TONES.accent.ink, TONES.accent.soft];
 
 /* Hover, focus and the tab bar cannot be inline styles; the rules are the mockup's styles.css. */
 const CSS = `
@@ -45,7 +50,7 @@ const CSS = `
 .bws .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 .bws .ws-input{min-height:40px;width:100%;border:1px solid ${BETA.border};border-radius:8px;padding:0 8px;font:inherit;font-size:14px;background:${BETA.surface};color:${BETA.ink}}
 .bws .ws-input-sm{min-height:38px;width:100%;min-width:0;border:1px solid ${BETA.border};border-radius:8px;padding:0 8px;font:inherit;font-size:14px;background:${BETA.surface};color:${BETA.ink}}
-@media (max-width:720px){.bws .h1{font-size:22px!important}.bws .tab{padding:0 12px}.bws .chips{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))}.bws .chips>*{min-width:0}}
+@media (max-width:720px){.bws .h1{font-size:22px!important}.bws .tab{padding:0 12px}.bws .chips{display:grid!important;grid-template-columns:minmax(0,1fr)}.bws .chips>*{min-width:0;width:auto!important}}
 .bws .tabs{display:flex;flex-wrap:nowrap;gap:4px;border-bottom:1px solid ${BETA.line};overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
 .bws .tabs::-webkit-scrollbar{display:none}
 .bws .tab{display:flex;flex:none;white-space:nowrap;align-items:center;min-height:44px;padding:0 16px;border:0;border-bottom:3px solid transparent;background:transparent;font:inherit;color:${WS.text2};font-weight:500;cursor:pointer}
@@ -257,7 +262,7 @@ export function WsNotice({ tone, children }: { tone: "ok" | "err"; children: Rea
   return (
     <div
       role={ok ? "status" : "alert"}
-      style={{ padding: "10px 14px", borderRadius: 10, fontSize: 13, fontWeight: 600, background: ok ? "#F1F8F3" : "#FDF4F3", border: `1px solid ${ok ? "#B7DCC3" : "#E8A5A2"}`, color: ok ? WS.green : WS.red }}
+      style={{ padding: "10px 14px", borderRadius: 10, fontSize: 13, fontWeight: 600, background: ok ? "#F3F9F8" : "#FDF4F3", border: `1px solid ${ok ? "#A9D2CC" : "#E8A5A2"}`, color: ok ? WS.green : WS.red }}
     >
       {children}
     </div>

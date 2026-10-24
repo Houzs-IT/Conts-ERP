@@ -85,6 +85,28 @@ h.routes = {
         photos: [{ id: "pod-d1", path: "/api/renovation/7/document-files/delivery_order/d1/pod", name: "Proof of delivery", image: true, area: null, at: null, source: "pod" }] },
     ],
   },
+  "/api/beta/projects/7/photos": {
+    ready: true, areas: ["Kitchen", "Master bedroom"],
+    photos: [
+      { id: "media-1", path: "/api/renovation/7/files?key=renovation/7/progress-1.jpg", kind: "image", name: "wall.jpg", at: `${day(0)}T07:42:00Z`, area: "Kitchen",
+        category: "progress", label: null, group: { key: "progress:a", title: "Site photos by Alex" }, note: "Hacking done" },
+      { id: "media-2", path: "/api/renovation/7/files?key=renovation/7/progress-2.mp4", kind: "video", name: "walk.mp4", at: `${day(0)}T07:42:00Z`, area: "Kitchen",
+        category: "progress", label: null, group: { key: "progress:a", title: "Site photos by Alex" }, note: null },
+      { id: "pod-d1", path: "/api/renovation/7/document-files/delivery_order/d1/pod", kind: "image", name: "Proof of delivery", at: `${day(-1)}T04:00:00Z`, area: "Master bedroom",
+        category: "do", label: "POD", group: { key: "do:d1", title: "DO DO-001" }, note: null },
+      { id: "defect-11-b0", path: "/api/renovation/7/files?key=renovation/7/defect-1.jpg", kind: "image", name: "Before", at: `${day(-5)}T02:00:00Z`, area: "Kitchen",
+        category: "defect", label: "Before", group: { key: "defect:11", title: "Defect: Cabinet door not aligned" }, note: null },
+    ],
+    docs: { dos: [{ id: "d1", no: "DO-001" }], grs: [{ id: "g1", no: "GRN-001" }], pos: [] },
+    tasks: [{ id: 2, label: "Electrical wiring & ceiling frame", state: "in_progress" }],
+  },
+  "/api/beta/projects/7/timeline": {
+    entries: [
+      { id: "act:202", at: `${day(0)}T03:46:23Z`, dateOnly: false, category: "site", title: "Site task done", body: "INTERNAL:pre_reno_delivery", by: "Lim" },
+      { id: "act:178", at: `${day(0)}T03:08:56Z`, dateOnly: false, category: "design", title: "site_measure booked", body: "On 2026-10-24 · by JIAXIN", by: "Lim" },
+      { id: "note:1", at: `${day(0)}T02:00:00Z`, dateOnly: false, category: "site", title: null, body: "Client asked about the_wall", by: "Lim", noteId: 1 },
+    ],
+  },
   "/api/renovation/people": { data: [{ id: 1, name: "Jia Xin", roles: [], active: true, phone: "012-345 6789" }] },
   "/api/renovation/7": {
     project: { id: 7, code: "RN-2608-002", name: "Legacy OUG A26-03", customer_name: "Mr Wayne", customer_phone: "012-111 2222", building: "Legacy", unit_no: "A26-03", planned_handover_date: day(25), handed_over_at: null, notes: null, layout_label: null },
@@ -146,7 +168,7 @@ describe("Beta project workspace", () => {
     expect(within(steps).getByText(/Day 13 of 19/)).toBeTruthy();
     expect(within(steps).getAllByRole("listitem").find((li) => li.getAttribute("aria-current") === "step")?.textContent).toContain("Renovation");
     const tabs = screen.getByRole("navigation", { name: "Project sections" });
-    expect(within(tabs).getAllByRole("button").map((b) => b.textContent)).toEqual(["Overview", "Drawings", "VO", "PO", "Client PO", "Site & photos", "Defects", "Timeline"]);
+    expect(within(tabs).getAllByRole("button").map((b) => b.textContent)).toEqual(["Overview", "Drawings", "VO", "PO", "Client PO", "DO", "GR", "Site & photos", "Defects", "Timeline"]);
     expect(within(tabs).getByRole("button", { name: "Overview" }).getAttribute("aria-current")).toBe("page");
     expect(screen.getByRole("link", { name: "Back to the project list" }).getAttribute("href")).toBe("/beta/projects");
     expect(localStorage.getItem("beta:lastProject")).toBe("7");
@@ -175,8 +197,9 @@ describe("Beta project workspace", () => {
     expect(screen.getByText("2D · by Yi Xuan")).toBeTruthy();
     expect(screen.getByText("Site briefing · Alex")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Start 3D today" })).toBeTruthy();
-    // To do uses the same board logic as Calendar's Deadlines.
-    expect(screen.getByText("Next step · waiting for payment")).toBeTruthy();
+    // Past design the step bar's step leads To do (live run, 24 Oct 2026); the design and payment rows follow it.
+    expect(screen.getByText("Next step · renovation")).toBeTruthy();
+    expect(screen.getByText("Next site step: Electrical wiring & ceiling frame")).toBeTruthy();
     expect(screen.getByText("3D not started")).toBeTruthy();
     expect(screen.getByRole("button", { name: /Start 3D today\s*: 3D not started/ })).toBeTruthy();
     expect(screen.getByText("SO-001 · signed 10 Aug 2026")).toBeTruthy();
@@ -212,9 +235,11 @@ describe("Beta project workspace", () => {
     try {
       open();
       const team = await screen.findByRole("group", { name: "Project team" });
-      expect(within(team).getAllByText("Yi Xuan").length).toBe(2);
-      expect(within(team).getAllByText("3D artist · Design").length).toBe(2);
-      expect(within(team).getAllByText("Site supervisor · Projects").length).toBe(2);
+      // Two people on a card: one line with the first name and "+1 other", both names under it, two avatars.
+      expect(within(team).getByText("Yi Xuan +1 other")).toBeTruthy();
+      expect(within(team).getByText("Yi Xuan, Alex")).toBeTruthy();
+      expect(within(team).getByText("3D artist · Design")).toBeTruthy();
+      expect(within(team).getByText("Site supervisor · Projects")).toBeTruthy();
       fireEvent.click(within(team).getByRole("button", { name: "Assign" }));
       const dialog = await screen.findByRole("dialog", { name: "Assign" });
       const two = within(dialog).getByRole("group", { name: "2D by" });
@@ -227,6 +252,7 @@ describe("Beta project workspace", () => {
       fireEvent.click(within(two).getByRole("checkbox", { name: "Alex · Site supervisor · Projects" }));
       fireEvent.click(within(two).getByRole("button", { name: "Done" }));
       expect(within(within(two).getByRole("list", { name: "2D by picked" })).getAllByRole("listitem").length).toBe(2);
+      expect(within(two).getByRole("button", { name: "Remove Alex" })).toBeTruthy();
       const three = within(dialog).getByRole("group", { name: "3D by" });
       fireEvent.click(within(three).getByRole("button", { name: "Remove Alex" }));
       fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
@@ -262,16 +288,66 @@ describe("Beta project workspace", () => {
     fireEvent.click(within(pipe).getByRole("button", { name: /Open defect: Kitchen/ }));
     const dlg = await screen.findByRole("dialog", { name: "Cabinet door not aligned" });
     expect(within(dlg).getByRole("button", { name: "Mark complete" }).hasAttribute("disabled")).toBe(true);
-    expect(within(dlg).getByText("Photo after the fix (required)")).toBeTruthy();
+    expect(within(dlg).getByLabelText("Photos or videos after the fix")).toBeTruthy();
+    // Before and after each show their photos and videos, labelled.
+    expect(within(dlg).getByText("Before · 1")).toBeTruthy();
+    expect(within(dlg).getByText("After · 0")).toBeTruthy();
   });
 
-  it("shows each delivery with its proof photos and filters by area", async () => {
-    open("/beta/projects/7?tab=site");
-    expect(await screen.findByRole("listitem", { name: "Goods receipt GRN-001" })).toBeTruthy();
-    expect(screen.getByRole("listitem", { name: "Delivery order DO-001" })).toBeTruthy();
-    const areas = screen.getByRole("group", { name: "Filter by area" });
-    fireEvent.click(within(areas).getByRole("button", { name: /^Master bedroom/ }));
+  it("asks for the area from the project's areas, with Other for one typed by hand", async () => {
+    open("/beta/projects/7?tab=defects");
+    fireEvent.click(await screen.findByRole("button", { name: /Report a problem/ }));
+    const form = screen.getByRole("form", { name: "Report a problem" });
+    const area = within(form).getByRole("combobox", { name: "Area" });
+    expect(within(area).getAllByRole("option").map((o) => o.textContent)).toEqual(["Choose the area", "Kitchen", "Master bedroom", "Other..."]);
+    fireEvent.change(area, { target: { value: "__other__" } });
+    expect(within(form).getByRole("textbox", { name: "Area, other" })).toBeTruthy();
+    expect(within(form).getByText(/videos up to 95 MB/)).toBeTruthy();
+  });
+
+  it("shows each delivery order and goods receipt on its own tab, with its photos", async () => {
+    open("/beta/projects/7?tab=do");
+    const doCard = await screen.findByRole("listitem", { name: "Delivery order DO-001" });
+    expect(within(doCard).getByRole("group", { name: "Photos of DO-001: 1 item" })).toBeTruthy();
+    expect(within(doCard).getByText("POD")).toBeTruthy();
     expect(screen.queryByRole("listitem", { name: "Goods receipt GRN-001" })).toBeNull();
-    expect(screen.getByRole("listitem", { name: "Delivery order DO-001" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "GR" }));
+    const gr = await screen.findByRole("listitem", { name: "Goods receipt GRN-001" });
+    expect(within(gr).getByRole("group", { name: "Photos of GRN-001: 2 items" })).toBeTruthy();
+    expect(within(gr).getByText(/Kabinet Sdn Bhd · PO PO-001/)).toBeTruthy();
+  });
+
+  it("shows every photo on one timeline, newest first, filtered by category and area", async () => {
+    open("/beta/projects/7?tab=site");
+    const line = await screen.findByRole("list", { name: "Photo timeline" });
+    const cards = within(line).getAllByRole("listitem").filter((li) => li.getAttribute("aria-label"));
+    expect(cards.map((c) => c.getAttribute("aria-label"))).toEqual([
+      "3:42 pm · Site photos by Alex · 1 photo, 1 video",
+      "12:00 pm · DO DO-001 · POD · 1 photo",
+      "10:00 am · Defect: Cabinet door not aligned · Before · 1 photo",
+    ]);
+    expect(within(line).getByRole("heading", { name: /^Today · / })).toBeTruthy();
+    const show = screen.getByRole("group", { name: "Show" });
+    expect(within(show).getAllByRole("button").map((b) => b.textContent)).toEqual(["All 4", "Progress 2", "DO 1", "GR 0", "Measure 0", "Defect 1"]);
+    fireEvent.click(within(show).getByRole("button", { name: /^DO/ }));
+    expect(within(screen.getByRole("list", { name: "Photo timeline" })).getAllByRole("listitem").filter((li) => li.getAttribute("aria-label")).length).toBe(1);
+    fireEvent.click(within(show).getByRole("button", { name: /^All/ }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Filter by area" }), { target: { value: "Kitchen" } });
+    expect(within(screen.getByRole("list", { name: "Photo timeline" })).getAllByRole("listitem").filter((li) => li.getAttribute("aria-label")).length).toBe(2);
+    // A click opens the gallery with its counter, and Esc closes it.
+    fireEvent.click(screen.getAllByRole("button", { name: /^Open video walk\.mp4/ })[0]);
+    expect(await screen.findByText("2 / 2")).toBeTruthy();
+    fireEvent.keyDown(window, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByText("2 / 2")).toBeNull());
+  });
+
+  it("never shows a stored code on the Timeline", async () => {
+    open("/beta/projects/7?tab=timeline");
+    expect(await screen.findByText("Pre-reno works & item delivery")).toBeTruthy();
+    const region = screen.getByRole("region", { name: "Timeline" });
+    expect(String(region.textContent)).not.toMatch(/INTERNAL:|\bsite_measure\b/);
+    expect(within(region).getByText("site measure booked")).toBeTruthy();
+    // A note a person wrote is shown as written.
+    expect(within(region).getByText("Client asked about the_wall")).toBeTruthy();
   });
 });

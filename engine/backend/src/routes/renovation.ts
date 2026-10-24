@@ -38,6 +38,8 @@ import renovationDocumentFiles from "./renovationDocumentFiles";
 import renovationTimeline from "./renovationTimeline";
 import { propertyColumnsReady, pushProjectToOpenSos, readProjectCustomerInfo, regenerateProjectName, writeProjectShared } from "../services/renovation/customerProperty";
 import { projectNameFrom } from "../scm/shared/renovation-property";
+import { MEDIA_TYPES, mediaCap } from "../services/renovation/betaMedia";
+import { streamObject } from "../scm/routes/doc-attachments";
 
 type Ctx = Context<{ Bindings: Env }>;
 const app = new Hono<{ Bindings: Env }>();
@@ -687,7 +689,9 @@ app.post("/:id/handover", requirePermission("projects.write"), failClosed(async 
 
 // ── Files (R2 renovation/{projectId}/...) ───────────────────────────────
 
-const FILE_TYPES: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "application/pdf": "pdf" };
+/* Photos, short phone videos (owner, 24 Oct 2026: photos and videos everywhere in Beta) and PDFs. A video goes
+   straight from the request into storage; the size comes from Content-Length and is checked first. */
+const FILE_TYPES: Record<string, string> = { ...MEDIA_TYPES, "application/pdf": "pdf" };
 const FILE_MAX = 10 * 1024 * 1024;
 
 app.post("/:id/files", requirePermission("projects.write"), async (c) => {
@@ -696,12 +700,19 @@ app.post("/:id/files", requirePermission("projects.write"), async (c) => {
   if (!(await projectInCompany(c, id))) return c.json({ error: "not_found" }, 404);
   const type = (c.req.header("content-type") || "").split(";")[0]!.trim().toLowerCase();
   const ext = FILE_TYPES[type];
-  if (!ext) return c.json({ error: "unsupported_type" }, 415);
-  const buf = await c.req.arrayBuffer();
-  if (!buf.byteLength) return c.json({ error: "empty" }, 400);
-  if (buf.byteLength > FILE_MAX) return c.json({ error: "too_large" }, 413);
+  if (!ext) return c.json({ error: "unsupported_type", message: "Add a photo, a video (MP4, MOV or WebM) or a PDF." }, 415);
+  const cap = mediaCap(type) ?? FILE_MAX;
+  const declared = Number(c.req.header("content-length") ?? NaN);
+  if (Number.isFinite(declared) && declared > cap) return c.json({ error: "too_large", message: `The file is over ${cap / 1024 / 1024} MB.` }, 413);
   const kind = (c.req.query("kind") ?? "file").replace(/[^a-z_]/g, "").slice(0, 20) || "file";
   const key = `renovation/${id}/${kind}-${Date.now()}-${crypto.randomUUID().slice(0, 8)}.${ext}`;
+  if (type.startsWith("video/") && Number.isFinite(declared) && declared > 0 && c.req.raw.body) {
+    await c.env.POD_BUCKET.put(key, c.req.raw.body, { httpMetadata: { contentType: type } });
+    return c.json({ key }, 201);
+  }
+  const buf = await c.req.arrayBuffer();
+  if (!buf.byteLength) return c.json({ error: "empty" }, 400);
+  if (buf.byteLength > cap) return c.json({ error: "too_large", message: `The file is over ${cap / 1024 / 1024} MB.` }, 413);
   await c.env.POD_BUCKET.put(key, buf, { httpMetadata: { contentType: type } });
   return c.json({ key }, 201);
 });
@@ -711,11 +722,20 @@ app.get("/:id/files", requirePageAccess("projects.list"), async (c) => {
   const key = c.req.query("key") ?? "";
   if (!id || !key.startsWith(`renovation/${id}/`) || key.includes("..")) return c.json({ error: "invalid_key" }, 400);
   if (!(await projectInCompany(c, id))) return c.json({ error: "not_found" }, 404);
+  const range = c.req.header("range");
+  if (range) {
+    /* A video plays in the browser only when the player can ask for a part of it. */
+    const head = await c.env.POD_BUCKET.head(key);
+    if (!head) return c.json({ error: "not_found" }, 404);
+    const part = await streamObject(c.env.POD_BUCKET, key, head.httpMetadata?.contentType || "application/octet-stream", key.split("/").pop() ?? "file", range);
+    if (part) return part;
+  }
   const obj = await c.env.POD_BUCKET.get(key);
   if (!obj) return c.json({ error: "not_found" }, 404);
   const headers = new Headers();
   obj.writeHttpMetadata(headers);
   headers.set("cache-control", "private, max-age=3600");
+  headers.set("accept-ranges", "bytes");
   return new Response(obj.body, { headers });
 });
 

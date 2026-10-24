@@ -4,6 +4,7 @@
 import { api } from "../../api/client";
 import type { TimelineEntry } from "../projects/renovation/renovationTimelineModel";
 import type { BetaTrade } from "./renovationBetaApi";
+import type { UploadedMedia } from "./renovationBetaMediaApi";
 
 export type DeliveryType = "delivery_order" | "goods_received";
 
@@ -13,6 +14,8 @@ export interface SitePhoto {
   path: string;
   name: string;
   image: boolean;
+  /** Photo, video or another file; absent from an older server (then `image` decides). */
+  kind?: "image" | "video" | "file";
   area: string | null;
   at: string | null;
   source: "pod" | "site" | "upload";
@@ -53,7 +56,12 @@ export interface DefectTicket {
   assigneeName: string | null;
   assigneePhone: string | null;
   lastRedoNote: string | null;
+  /** Every photo and video of the problem, and of the current fix (the first of each is photoKey / afterPhotoKey). */
+  before?: DefectMediaFile[];
+  after?: DefectMediaFile[];
 }
+
+export interface DefectMediaFile { key: string; path: string; kind: "image" | "video" | "file"; name: string; at: string | null }
 
 export interface DefectPatch {
   assigneePersonId?: number | null;
@@ -70,6 +78,8 @@ export interface NewTicket {
   dueDate: string | null;
   photoKey: string;
   assigneePersonId: number | null;
+  /** The other photos and videos of the problem. */
+  media?: UploadedMedia[];
 }
 
 const B = "/api/beta";

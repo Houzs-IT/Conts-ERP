@@ -19,6 +19,8 @@ export interface SitePhoto {
   path: string;
   name: string;
   image: boolean;
+  /** Photo, video, or another file (a PDF): the screens draw a video as a play tile and never a broken photo. */
+  kind: "image" | "video" | "file";
   /** The room the photo was taken in, when the site team tagged it. */
   area: string | null;
   at: string | null;

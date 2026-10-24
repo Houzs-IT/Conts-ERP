@@ -14,6 +14,7 @@
    link / unlink / project from SO, site tasks by category, crew and fulfilment.
    Every read and write is scoped to the active company. */
 
+import { MEDIA_TYPES, MEDIA_VIDEO_MAX_BYTES } from "../services/renovation/betaMedia";
 import { Hono, type Context } from "hono";
 import type { Env } from "../types";
 import { requirePageAccess, requirePermission } from "../middleware/auth";
@@ -679,18 +680,29 @@ app.post("/:id/site-measures/:recordId/files", requirePermission("projects.write
   const rec = await db(c).prepare(`SELECT id FROM project_design_records WHERE id = ? AND project_id = ?`).bind(recordId, id).first();
   if (!rec) return c.json({ error: "not_found" }, 404);
   const type = (c.req.header("content-type") || "").split(";")[0]!.trim().toLowerCase();
-  const ext = DESIGN_FILE_TYPES[type];
-  if (!ext) return c.json({ error: "unsupported_type", message: "PDF, image, DWG or ZIP files only." }, 415);
-  const buf = await c.req.arrayBuffer();
-  if (!buf.byteLength) return c.json({ error: "empty" }, 400);
-  if (buf.byteLength > DESIGN_FILE_MAX) return c.json({ error: "too_large", message: "A file can be up to 25 MB." }, 413);
+  /* A short phone video of the site is taken too (owner, 24 Oct 2026); it streams straight into storage. */
+  const video = type.startsWith("video/") && !!MEDIA_TYPES[type];
+  const ext = DESIGN_FILE_TYPES[type] ?? (video ? MEDIA_TYPES[type] : undefined);
+  if (!ext) return c.json({ error: "unsupported_type", message: "Photos, videos (MP4, MOV, WebM), PDF, DWG or ZIP files only." }, 415);
   const fileName = (c.req.query("fileName") ?? "").trim().slice(0, 200) || `onsite.${ext}`;
   const key = `renovation/${id}/onsite-${recordId}-${Date.now()}-${crypto.randomUUID().slice(0, 8)}.${ext}`;
-  await c.env.POD_BUCKET.put(key, buf, { httpMetadata: { contentType: type } });
+  let size: number;
+  if (video) {
+    size = Number(c.req.header("content-length") ?? NaN);
+    if (!Number.isFinite(size) || size <= 0 || !c.req.raw.body) return c.json({ error: "no_length", message: "The video arrived without its size. Try again." }, 411);
+    if (size > MEDIA_VIDEO_MAX_BYTES) return c.json({ error: "too_large", message: `A video can be up to ${MEDIA_VIDEO_MAX_BYTES / 1024 / 1024} MB.` }, 413);
+    await c.env.POD_BUCKET.put(key, c.req.raw.body, { httpMetadata: { contentType: type } });
+  } else {
+    const buf = await c.req.arrayBuffer();
+    if (!buf.byteLength) return c.json({ error: "empty" }, 400);
+    if (buf.byteLength > DESIGN_FILE_MAX) return c.json({ error: "too_large", message: "A file can be up to 25 MB." }, 413);
+    size = buf.byteLength;
+    await c.env.POD_BUCKET.put(key, buf, { httpMetadata: { contentType: type } });
+  }
   const row = await db(c).prepare(
     `INSERT INTO project_design_record_files (record_id, project_id, file_name, content_type, size_bytes, r2_key, uploaded_by)
      VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id::int AS id`,
-  ).bind(recordId, id, fileName, type, buf.byteLength, key, userId(c)).first<{ id: number }>();
+  ).bind(recordId, id, fileName, type, size, key, userId(c)).first<{ id: number }>();
   return c.json({ id: row?.id, key }, 201);
 });
 

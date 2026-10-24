@@ -13,6 +13,7 @@ import { useQuery } from "../../hooks/useQuery";
 import { simpleApi } from "../projects/renovation/simpleApi";
 import { BetaClientPoTab } from "./BetaClientPoTab";
 import { BetaDefectsTab } from "./BetaDefectsTab";
+import { BetaDoTab, BetaGrTab } from "./BetaDocTabs";
 import { BetaDrawingsTab } from "./BetaDrawingsTab";
 import { BetaOverviewTab } from "./BetaOverviewTab";
 import { BetaPoTab } from "./BetaPoTab";
@@ -117,6 +118,8 @@ export function RenovationBetaWorkspace(): ReactElement {
           {tab === "vo" && <BetaVoTab {...props} />}
           {tab === "po" && <BetaPoTab {...props} />}
           {tab === "client-po" && <BetaClientPoTab {...props} />}
+          {tab === "do" && <BetaDoTab {...props} />}
+          {tab === "gr" && <BetaGrTab {...props} />}
         </div>
       )}
 

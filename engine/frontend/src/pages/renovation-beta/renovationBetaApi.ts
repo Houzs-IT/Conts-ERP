@@ -74,8 +74,8 @@ export const betaApi = {
   workspace: (projectId: number): Promise<BetaWorkspace> => api.get<BetaWorkspace>(`${B}/projects/${projectId}/workspace`),
   saveSettings: (b: BetaSettings): Ok => api.put<{ ok: true }>(`${B}/settings`, b),
   reportDefect: (projectId: number, b: NewDefect): Promise<{ id: number }> => api.post<{ id: number }>(`${B}/projects/${projectId}/defects`, b),
-  defectFixed: (defectId: number, afterPhotoKey: string | null): Ok =>
-    api.post<{ ok: true }>(`${B}/defects/${defectId}/fixed`, afterPhotoKey ? { afterPhotoKey } : {}),
+  defectFixed: (defectId: number, afterPhotoKey: string | null, media: ReadonlyArray<{ key: string; name: string; mime: string; size: number }> = []): Ok =>
+    api.post<{ ok: true }>(`${B}/defects/${defectId}/fixed`, afterPhotoKey ? { afterPhotoKey, media } : {}),
   defectRedo: (defectId: number, note: string | null): Ok => api.post<{ ok: true }>(`${B}/defects/${defectId}/redo`, note ? { note } : {}),
   defectClose: (defectId: number): Ok => api.post<{ ok: true }>(`${B}/defects/${defectId}/close`, {}),
   designSent: (fileId: number, b: { sentOn: string; dueOn: string }): Ok => api.post<{ ok: true }>(`${B}/design-files/${fileId}/sent`, b),

@@ -33,8 +33,12 @@ import {
   betaCategory, cleanAssignee, cleanDefectPatch, defectPatchNote, isImageName, money, sortDeliveries, uniqueAreas,
   type DefectPatch, type DeliveryType, type SiteDelivery, type SitePhoto,
 } from "../services/renovation/betaSite";
+import {
+  MEDIA_ACTION, cleanMediaList, mediaKindOf, mediaRowsJson, metaOf, parseTarget, sortPhotos, targetCode,
+  type MediaItemIn, type ProjectPhoto,
+} from "../services/renovation/betaMedia";
 import { projectDocSql } from "../services/renovation/documents";
-import { readProjectTimeline, sortTimeline, timelineNotesReady, type TimelineCategory, type TimelineEntry } from "../services/renovation/timeline";
+import { plainEntry, readProjectTimeline, sortTimeline, taskCodeLabel, timelineNotesReady, type TimelineCategory, type TimelineEntry } from "../services/renovation/timeline";
 import { docFlowColumnsReady } from "../scm/routes/renovation-doc-flow";
 import { POD_FILE_ID, attachmentsReady, listFilesFor, podFile, type DocFile } from "../scm/lib/doc-attachments";
 
@@ -219,6 +223,10 @@ app.post("/projects/:id/defects", requirePermission("projects.write"), async (c)
   const named = await companyPeople(c, co, who.value == null ? [] : [who.value]);
   if (!named) return c.json(PERSON_REFUSAL, 400);
   const reportNote = [location, trade, who.value == null ? null : `to fix: ${named.get(who.value) ?? "someone"}`].filter(Boolean).join(", ") || null;
+  // The second and later photos or videos of the problem (the first is the defect's own photo, which the project page shows).
+  const extra = cleanMediaList(raw.media, id, { area: location });
+  if (!extra.ok) return c.json({ error: extra.error, message: extra.message }, 400);
+  const more = extra.value.filter((m) => m.key !== photoKey);
   // Phase 'snag' so the handover rule (every snag closed first) counts it.
   // One statement: the defect and its activity row are written together or not at all.
   const row = await db(c).prepare(
@@ -229,9 +237,13 @@ app.post("/projects/:id/defects", requirePermission("projects.write"), async (c)
        RETURNING id, project_id, company_id, item_description),
      a AS (
        INSERT INTO project_activity (project_id, action, from_value, to_value, note, user_id, company_id)
-       SELECT d.project_id, 'beta_defect_reported', NULL, d.item_description, ?::text, ?::bigint, d.company_id FROM d)
+       SELECT d.project_id, 'beta_defect_reported', NULL, d.item_description, ?::text, ?::bigint, d.company_id FROM d),
+     m AS (
+       INSERT INTO project_activity (project_id, action, from_value, to_value, note, user_id, company_id)
+       SELECT d.project_id, '${MEDIA_ACTION}', 'defect:' || d.id || ':before', x.key, x.meta, ?::bigint, d.company_id
+         FROM d, jsonb_to_recordset(?::text::jsonb) AS x(key text, meta text))
      SELECT id::int AS id FROM d`,
-  ).bind(id, description, photoKey, userId(c), location, dueDate, trade, co, who.value, reportNote, userId(c))
+  ).bind(id, description, photoKey, userId(c), location, dueDate, trade, co, who.value, reportNote, userId(c), userId(c), mediaRowsJson(more))
     .first<{ id: number }>();
   if (!row) return c.json({ error: "defect_not_saved", message: "The problem could not be saved. Try again." }, 409);
   return c.json({ id: row.id }, 201);
@@ -251,9 +263,13 @@ async function moveDefect(c: Ctx, move: DefectMove): Promise<Response> {
   let update: string;
   let args: unknown[];
   let note: string | null = null;
+  let afterMedia: MediaItemIn[] = [];
   if (move === "fixed") {
     const v = cleanDefectFixed(raw, d.project_id);
     if (!v.ok) return c.json({ error: v.error, message: v.message }, 400);
+    const extra = cleanMediaList(raw.media, d.project_id);
+    if (!extra.ok) return c.json({ error: extra.error, message: extra.message }, 400);
+    afterMedia = extra.value.filter((m) => m.key !== v.value.afterPhotoKey);
     update = `UPDATE project_defects SET fixed_at = now(), fixed_by = ?, after_photo_r2_key = ? WHERE id = ? AND fixed_at IS NULL AND closed_at IS NULL`;
     args = [userId(c), v.value.afterPhotoKey, defectId];
   } else if (move === "redo") {
@@ -269,11 +285,14 @@ async function moveDefect(c: Ctx, move: DefectMove): Promise<Response> {
   }
   // The activity row is written from the rows the update really changed, so a lost race writes nothing and answers 409.
   const row = await db(c).prepare(
-    `WITH u AS (${update} RETURNING id, item_description),
+    `WITH u AS (${update} RETURNING id, item_description, redo_count),
           a AS (INSERT INTO project_activity (project_id, action, from_value, to_value, note, user_id, company_id)
-                SELECT ?::bigint, ?::text, NULL, u.item_description, ?::text, ?::bigint, ?::bigint FROM u)
+                SELECT ?::bigint, ?::text, NULL, u.item_description, ?::text, ?::bigint, ?::bigint FROM u),
+          m AS (INSERT INTO project_activity (project_id, action, from_value, to_value, note, user_id, company_id)
+                SELECT ?::bigint, '${MEDIA_ACTION}', 'defect:' || u.id || ':after:' || coalesce(u.redo_count, 0), x.key, x.meta, ?::bigint, ?::bigint
+                  FROM u, jsonb_to_recordset(?::text::jsonb) AS x(key text, meta text))
      SELECT id::int AS id FROM u`,
-  ).bind(...args, d.project_id, action, note, userId(c), d.company_id).first<{ id: number }>();
+  ).bind(...args, d.project_id, action, note, userId(c), d.company_id, d.project_id, userId(c), d.company_id, mediaRowsJson(afterMedia)).first<{ id: number }>();
   if (!row) return c.json({ error: "defect_changed", message: "Someone else just changed this problem. Reload and look again." }, 409);
   return c.json({ ok: true });
 }
@@ -467,7 +486,8 @@ app.get("/board", requirePageAccess("projects.list"), async (c) => {
                 p.designer_person_id::int AS lead_id, dp.name AS lead_name, p.reno_pic_person_id::int AS pic_id, rp.name AS pic_name,
                 ${designPeopleSql("3d")} AS p3_people, ${designPeopleSql("2d")} AS p2_people,
                 (SELECT min(r.done_on) FROM project_design_records r WHERE r.project_id = p.id AND r.kind = 'site_measure')::text AS measured_on,
-                bd.start_3d_on::text AS start_3d_on, bd.start_2d_on::text AS start_2d_on, bd.po_done_on::text AS po_done_on
+                bd.start_3d_on::text AS start_3d_on, bd.start_2d_on::text AS start_2d_on, bd.po_done_on::text AS po_done_on,
+                (SELECT string_agg(so.doc_no, ' ' ORDER BY so.doc_no) FROM scm.mfg_sales_orders so WHERE so.project_id = p.id) AS so_doc_nos
            FROM projects p
            LEFT JOIN project_people sp ON sp.id = p.sales_person_id
            LEFT JOIN project_people dp ON dp.id = p.designer_person_id
@@ -832,7 +852,8 @@ async function siteDeliveries(c: Ctx, projectId: number, companyId: number): Pro
   const docPath = (type: DeliveryType, docId: string, fileId: string) =>
     `/api/renovation/${projectId}/document-files/${type}/${encodeURIComponent(docId)}/${encodeURIComponent(fileId)}`;
   const uploads = (type: DeliveryType, docId: string): SitePhoto[] => (attached.get(`${type}:${docId}`) ?? []).map((f) => ({
-    id: `${type}-${docId}-${f.id}`, path: docPath(type, docId, f.id), name: f.caption || f.name, image: f.kind === "image", area: null, at: f.at || null, source: "upload" as const,
+    id: `${type}-${docId}-${f.id}`, path: docPath(type, docId, f.id), name: f.caption || f.name, image: f.kind === "image", kind: mediaKindOf(f.mime, f.name),
+    area: null, at: f.at || null, source: "upload" as const,
   }));
 
   const out: SiteDelivery[] = [];
@@ -840,7 +861,7 @@ async function siteDeliveries(c: Ctx, projectId: number, companyId: number): Pro
     const id = String(d.id);
     const photos: SitePhoto[] = [];
     const pod = await podFile(db(c), id).catch(() => null);
-    if (pod) photos.push({ id: `pod-${id}`, path: docPath("delivery_order", id, POD_FILE_ID), name: "Proof of delivery", image: true, area: null, at: pod.at || null, source: "pod" });
+    if (pod) photos.push({ id: `pod-${id}`, path: docPath("delivery_order", id, POD_FILE_ID), name: "Proof of delivery", image: true, kind: "image", area: null, at: pod.at || null, source: "pod" });
     photos.push(...uploads("delivery_order", id));
     out.push({
       type: "delivery_order", id, no: String(d.no), at: str(d.at) ?? str(d.made_on), status: String(d.status), from: str(d.so_doc_no), poNumber: null, poIds: [],
@@ -851,7 +872,7 @@ async function siteDeliveries(c: Ctx, projectId: number, companyId: number): Pro
     const id = String(g.id);
     const site: SitePhoto[] = sitePhotos.filter((p) => p.grn_id === id).map((p) => ({
       id: `site-${String(p.id)}`, path: `/api/renovation/${projectId}/files?key=${encodeURIComponent(String(p.r2_key))}`,
-      name: str(p.caption) ?? (p.kind === "supplier_do" ? "Supplier delivery order" : "Site photo"), image: isImageName(String(p.r2_key)),
+      name: str(p.caption) ?? (p.kind === "supplier_do" ? "Supplier delivery order" : "Site photo"), image: isImageName(String(p.r2_key)), kind: mediaKindOf(null, String(p.r2_key)),
       area: str(p.location), at: str(p.at), source: "site" as const,
     }));
     const poIds = uniqueAreas([str(g.po_id), ...(Array.isArray(g.po_ids) ? (g.po_ids as unknown[]).map(str) : [])]);
@@ -897,6 +918,7 @@ app.get("/projects/:id/defects", requirePageAccess("projects.list"), async (c) =
          LEFT JOIN project_people ap ON ap.id = d.assignee_person_id
         WHERE d.project_id = ? AND d.archived_at IS NULL ORDER BY d.id`,
     ).bind(id).all<Row>();
+    const media = await mediaRows(c, id);
     return c.json({
       defects: (rows.results ?? []).map((d) => ({
         id: Number(d.id), phase: String(d.phase), location: str(d.location), description: str(d.item_description), trade: str(d.trade), dueDate: str(d.due_date),
@@ -904,6 +926,7 @@ app.get("/projects/:id/defects", requirePageAccess("projects.list"), async (c) =
         fixedAt: str(d.fixed_at), fixedByName: str(d.fixed_by_name), closedAt: str(d.closed_at), closedByName: str(d.closed_by_name), redoCount: Number(d.redo_count ?? 0),
         assigneeId: d.assignee_id == null ? null : Number(d.assignee_id), assigneeName: str(d.assignee_name), assigneePhone: str(d.assignee_phone),
         lastRedoNote: str(d.last_redo_note),
+        ...defectMedia(id, d, media),
       })),
     });
   } catch (e) {
@@ -1012,11 +1035,163 @@ app.get("/projects/:id/timeline", requirePageAccess("projects.list"), async (c) 
       readProjectTimeline(db(c), id, co, { docsReady, notesReady }),
       docsReady ? betaTimelineExtras(c, id, co) : Promise.resolve([] as TimelineEntry[]),
     ]);
-    const entries = sortTimeline([...base, ...extra]).map((e) => ({ ...e, category: betaCategory(e) }));
+    const entries = sortTimeline([...base, ...extra]).map((e) => plainEntry({ ...e, category: betaCategory(e) }));
     return c.json({ entries });
   } catch (e) {
     console.error("[renovation-beta] timeline read failed", e);
     return c.json({ error: "renovation_read_failed", message: "The project's timeline could not be read. Try again." }, 409);
+  }
+});
+
+// ── Photos and videos without a document of their own (services/renovation/betaMedia.ts) ──
+
+interface MediaRow { id: string; target: string; key: string; note: string | null; at: string | null; by: string | null }
+
+async function mediaRows(c: Ctx, projectId: number): Promise<MediaRow[]> {
+  const r = await db(c).prepare(
+    `SELECT a.id::text AS id, a.from_value AS target, a.to_value AS key, a.note, a.created_at::text AS at, u.name AS by
+       FROM project_activity a LEFT JOIN users u ON u.id = a.user_id
+      WHERE a.project_id = ? AND a.action = '${MEDIA_ACTION}' AND a.archived_at IS NULL AND a.to_value IS NOT NULL ORDER BY a.id`,
+  ).bind(projectId).all<MediaRow>();
+  return r.results ?? [];
+}
+
+export interface DefectMediaItem { key: string; path: string; kind: "image" | "video" | "file"; name: string; at: string | null }
+
+const fileUrl = (projectId: number, key: string): string => `/api/renovation/${projectId}/files?key=${encodeURIComponent(key)}`;
+
+/** A defect's before photos (its own photo, then the others) and its after photos of the current round. */
+function defectMedia(projectId: number, d: Row, media: readonly MediaRow[]): { before: DefectMediaItem[]; after: DefectMediaItem[] } {
+  const id = Number(d.id);
+  const round = Number(d.redo_count ?? 0);
+  const one = (key: string, name: string, mime: string | null, at: string | null): DefectMediaItem =>
+    ({ key, path: fileUrl(projectId, key), kind: mediaKindOf(mime, key), name, at });
+  const rowsFor = (side: "before" | "after"): DefectMediaItem[] => media.flatMap((m) => {
+    const t = parseTarget(m.target);
+    if (!t || t.kind !== "defect" || t.defectId !== id || t.side !== side || (side === "after" && t.round !== round)) return [];
+    const meta = metaOf(m.note, m.key);
+    return [one(m.key, meta.name, meta.mime, m.at)];
+  });
+  const before = [...(d.photo_r2_key ? [one(String(d.photo_r2_key), "Before", null, str(d.reported_at))] : []), ...rowsFor("before")];
+  const after = [...(d.after_photo_r2_key ? [one(String(d.after_photo_r2_key), "After", null, str(d.fixed_at))] : []), ...rowsFor("after")];
+  return { before, after };
+}
+
+/** Progress photos from the project, or the photos of one site step. The files are uploaded first (POST /api/renovation/:id/files). */
+app.post("/projects/:id/media", requirePermission("projects.write"), async (c) => {
+  const id = parseId(c.req.param("id"));
+  if (!id) return c.json({ error: "invalid_id" }, 400);
+  const co = await projectCompany(c, id);
+  if (co == null) return c.json({ error: "not_found" }, 404);
+  const b = await body(c);
+  const target = parseTarget(typeof b.target === "string" ? b.target : "progress");
+  if (!target || target.kind === "defect") return c.json({ error: "target_invalid", message: "Say what the photos are for." }, 400);
+  if (target.kind === "task") {
+    const t = await db(c).prepare(`SELECT id FROM project_trade_tasks WHERE id = ? AND project_id = ?`).bind(target.taskId, id).first();
+    if (!t) return c.json({ error: "task_not_found", message: "That site step is not on this project." }, 404);
+  }
+  const list = cleanMediaList(b.items, id, { area: b.area, note: b.note });
+  if (!list.ok) return c.json({ error: list.error, message: list.message }, 400);
+  if (list.value.length === 0) return c.json({ error: "media_required", message: "Add at least one photo or video." }, 400);
+  await db(c).prepare(
+    `INSERT INTO project_activity (project_id, action, from_value, to_value, note, user_id, company_id)
+     SELECT ?::bigint, '${MEDIA_ACTION}', ?::text, x.key, x.meta, ?::bigint, ?::bigint FROM jsonb_to_recordset(?::text::jsonb) AS x(key text, meta text)`,
+  ).bind(id, targetCode(target), userId(c), co, mediaRowsJson(list.value)).run();
+  return c.json({ ok: true, added: list.value.length }, 201);
+});
+
+/** Every photo and video of the project, newest first, each with what it is (progress, DO, GR, PO, measure, defect)
+    and its area when one is known; with the project's DOs, GRs, POs and site steps for the upload form. */
+app.get("/projects/:id/photos", requirePageAccess("projects.list"), async (c) => {
+  const id = parseId(c.req.param("id"));
+  if (!id) return c.json({ error: "invalid_id" }, 400);
+  const co = await projectCompany(c, id);
+  if (co == null) return c.json({ error: "not_found" }, 404);
+  try {
+    const docsReady = await docFlowColumnsReady(db(c)).catch(() => false);
+    const q = (sql: string) => projectDocSql(sql, id, co);
+    const [site, pos, measures, defects, tasks, media] = await Promise.all([
+      docsReady ? siteDeliveries(c, id, co) : Promise.resolve({ areas: [] as string[], deliveries: [] as SiteDelivery[] }),
+      docsReady ? rowsOf(c, q(`SELECT po.id::text AS id, po.po_number AS no, sup.name AS supplier
+                                  FROM scm.purchase_orders po LEFT JOIN scm.suppliers sup ON sup.id = po.supplier_id
+                                 WHERE po.id IN (__POS__) AND po.status::text <> 'CANCELLED' ORDER BY po.po_date DESC NULLS LAST, po.po_number`)) : Promise.resolve([] as Row[]),
+      rowsOf(c, { text: `SELECT f.id::text AS id, f.file_name, f.content_type, f.r2_key, ${TS("f.uploaded_at")} AS at, r.id::text AS record_id, r.kind, r.done_on::text AS done_on,
+                                pp.name AS person_name, r.note
+                           FROM project_design_record_files f JOIN project_design_records r ON r.id = f.record_id
+                           LEFT JOIN project_people pp ON pp.id = r.person_id
+                          WHERE r.project_id = ? ORDER BY f.id`, args: [id] }),
+      rowsOf(c, { text: `SELECT d.id::int AS id, d.location, d.item_description, d.photo_r2_key, d.after_photo_r2_key, d.reported_at, ${TS("d.fixed_at")} AS fixed_at,
+                                d.redo_count::int AS redo_count
+                           FROM project_defects d WHERE d.project_id = ? AND d.archived_at IS NULL ORDER BY d.id`, args: [id] }),
+      rowsOf(c, { text: `SELECT id::int AS id, label, trade_code, state FROM project_trade_tasks WHERE project_id = ? ORDER BY seq NULLS LAST, id`, args: [id] }),
+      mediaRows(c, id),
+    ]);
+    const ready = docsReady && (await attachmentsReady(db(c)).catch(() => false));
+    const poFiles = ready && pos.length ? await listFilesFor(db(c), pos.map((p) => ({ type: "purchase_order" as const, id: String(p.id) })), co) : new Map<string, DocFile[]>();
+    const out: ProjectPhoto[] = [];
+    for (const d of site.deliveries) {
+      const isDo = d.type === "delivery_order";
+      const group = { key: `${isDo ? "do" : "gr"}:${d.id}`, title: `${isDo ? "DO" : "GR"} ${d.no}${!isDo && d.from ? ` · ${d.from}` : ""}` };
+      const oneArea = d.areas.length === 1 ? d.areas[0] : null;
+      for (const ph of d.photos) {
+        out.push({
+          id: ph.id, path: ph.path, kind: ph.kind, name: ph.name, at: ph.at ?? d.at, area: ph.area ?? oneArea,
+          category: isDo ? "do" : "gr", label: ph.source === "pod" ? "POD" : null, group, note: null,
+        });
+      }
+    }
+    for (const p of pos) {
+      const pid = String(p.id);
+      for (const f of poFiles.get(`purchase_order:${pid}`) ?? []) {
+        out.push({
+          id: `po-${pid}-${f.id}`, path: `/api/renovation/${id}/document-files/purchase_order/${encodeURIComponent(pid)}/${encodeURIComponent(f.id)}`,
+          kind: mediaKindOf(f.mime, f.name), name: f.caption || f.name, at: f.at || null, area: null, category: "po", label: null,
+          group: { key: `po:${pid}`, title: `PO ${String(p.no)}${p.supplier ? ` · ${String(p.supplier)}` : ""}` }, note: null,
+        });
+      }
+    }
+    for (const m of measures) {
+      const kind = String(m.kind ?? "site_measure");
+      const title = kind === "site_measure" ? "Site measure" : taskCodeLabel(kind);
+      out.push({
+        id: `measure-${String(m.id)}`, path: fileUrl(id, String(m.r2_key)), kind: mediaKindOf(str(m.content_type), str(m.file_name) ?? String(m.r2_key)),
+        name: str(m.file_name) ?? title, at: str(m.at) ?? (m.done_on ? `${String(m.done_on)}T04:00:00Z` : null), area: null, category: "measure", label: null,
+        group: { key: `measure:${String(m.record_id)}`, title: [title, str(m.person_name) ? `by ${String(m.person_name)}` : null].filter(Boolean).join(" ") }, note: str(m.note),
+      });
+    }
+    for (const d of defects) {
+      const shown = defectMedia(id, d, media);
+      const group = { key: `defect:${String(d.id)}`, title: `Defect: ${str(d.item_description) ?? "no description"}` };
+      shown.before.forEach((x, i) => out.push({ id: `defect-${String(d.id)}-b${i}`, path: x.path, kind: x.kind, name: x.name, at: x.at, area: str(d.location), category: "defect", label: "Before", group, note: null }));
+      shown.after.forEach((x, i) => out.push({ id: `defect-${String(d.id)}-a${i}`, path: x.path, kind: x.kind, name: x.name, at: x.at, area: str(d.location), category: "defect", label: "After", group, note: null }));
+    }
+    const taskName = new Map(tasks.map((t) => [Number(t.id), str(t.label) ?? taskCodeLabel(String(t.trade_code ?? ""))] as const));
+    for (const m of media) {
+      const t = parseTarget(m.target);
+      if (!t || t.kind === "defect") continue;
+      const meta = metaOf(m.note, m.key);
+      const step = t.kind === "task" ? taskName.get(t.taskId) ?? "Site step" : null;
+      out.push({
+        id: `media-${m.id}`, path: fileUrl(id, m.key), kind: mediaKindOf(meta.mime, meta.name), name: meta.name, at: m.at, area: meta.area, category: "progress",
+        label: step,
+        group: t.kind === "task" ? { key: `task:${t.taskId}`, title: `Site step: ${step ?? "Site step"}` } : { key: `progress:${m.at ?? m.id}:${m.by ?? ""}`, title: m.by ? `Site photos by ${m.by}` : "Site photos" },
+        note: meta.note,
+      });
+    }
+    return c.json({
+      ready: docsReady,
+      areas: site.areas,
+      photos: sortPhotos(out),
+      docs: {
+        dos: site.deliveries.filter((d) => d.type === "delivery_order").map((d) => ({ id: d.id, no: d.no })),
+        grs: site.deliveries.filter((d) => d.type === "goods_received").map((d) => ({ id: d.id, no: d.no })),
+        pos: pos.map((p) => ({ id: String(p.id), no: String(p.no) })),
+      },
+      tasks: tasks.filter((t) => t.state !== "skipped").map((t) => ({ id: Number(t.id), label: taskName.get(Number(t.id)) ?? "Site step", state: String(t.state) })),
+    });
+  } catch (e) {
+    console.error("[renovation-beta] photos read failed", e);
+    return c.json({ error: "renovation_read_failed", message: "The project's photos could not be read. Try again." }, 409);
   }
 });
 

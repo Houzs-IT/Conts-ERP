@@ -478,6 +478,11 @@ function photoList(v: unknown): string[] {
   return [];
 }
 
+/* The room of a client line, read the way the PO tab reads it: the renovation line's room, else the SO line's own room
+   (Conts rooms, migration 0112), else its location. A plain sales order has no renovation lines, so reading only the
+   first left every Client PO line without an area while the PO tab showed them (live run, 24 Oct 2026). */
+export const CLIENT_LINE_ROOM = `coalesce(nullif(trim(d.room), ''), nullif(trim(to_jsonb(i)->>'room'), ''), nullif(trim(i.location), ''))`;
+
 /** SO lines the client buys: supplier CUSTOMER (the line's, else the SKU's main supplier), a CUS-* SKU at cost 0, or supplied by the owner. */
 export async function loadClientItems(db: Db, projectId: number, companyId: number, pendingVos: readonly VoRow[] = []): Promise<ClientAnswer> {
   const r = await rows<{
@@ -487,7 +492,7 @@ export async function loadClientItems(db: Db, projectId: number, companyId: numb
     sku_photos: unknown;
   }>(db,
     `SELECT i.id::text AS id, i.doc_no, i.item_code, i.description, i.qty, i.uom, i.unit_cost_sen, i.photo_urls,
-            d.room, d.supply_by_owner, d.line_supplier_code, d.measure, d.measure_uom, d.vo_no,
+            ${CLIENT_LINE_ROOM} AS room, d.supply_by_owner, d.line_supplier_code, d.measure, d.measure_uom, d.vo_no,
             cg.label AS cat_label, cg.sort_order AS cat_sort, sc.label AS sub_label, sc.sort_order AS sub_sort,
             (SELECT sp.code FROM scm.supplier_material_bindings b JOIN scm.suppliers sp ON sp.id = b.supplier_id
               WHERE b.item_code = i.item_code AND b.company_id = so.company_id AND b.is_main_supplier LIMIT 1) AS main_supplier_code,

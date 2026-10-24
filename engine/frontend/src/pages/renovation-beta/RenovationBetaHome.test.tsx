@@ -33,9 +33,9 @@ h.board = {
   today: "2026-10-23", mePersonId: 1, settings: { design3dDays: 10, design2dDays: 12, amendmentDays: 3 },
   people: [person(1, "Jia Xin"), person(2, "Ying Tzy")],
   projects: [
-    { ...base, id: 13, name: "Bukit Jalil The Park 2", building: "Bukit Jalil The Park 2", unitNo: null, customerName: "Ms Tan", lead: null, measuredOn: null },
+    { ...base, id: 13, code: "RN-2610-006", createdAt: "2026-10-24T02:57:52Z", name: "Bukit Jalil The Park 2", building: "Bukit Jalil The Park 2", unitNo: null, customerName: "Ms Tan", lead: null, measuredOn: null },
     {
-      ...base, id: 7, name: "Seri Riana C-12-03", building: "Seri Riana", unitNo: "C-12-03", customerName: "Ms Lim", lead: { id: 1, name: "Jia Xin" },
+      ...base, id: 7, createdAt: "2026-10-11T07:00:00Z", name: "Seri Riana C-12-03", building: "Seri Riana", unitNo: "C-12-03", customerName: "Ms Lim", lead: { id: 1, name: "Jia Xin" },
       files: [{ id: 71, kind: "3d", version: 1, submittedOn: "2026-09-03" }, { id: 72, kind: "2d", version: 1, submittedOn: "2026-09-20" }],
       reviews: [{ fileId: 71, sentOn: null, approvedOn: "2026-09-05" }, { fileId: 72, sentOn: null, approvedOn: "2026-09-22" }],
       appointments: [
@@ -43,7 +43,7 @@ h.board = {
         { kind: "site_briefing", onDate: "2026-10-05", atTime: null, personId: 1, withText: null, doneAt: null },
       ],
     },
-    { ...base, id: 4, name: "Baron C-20-08", building: "Baron", unitNo: "C-20-08", customerName: "Mr Albert", lead: { id: 1, name: "Jia Xin" }, start3dOn: "2026-10-20" },
+    { ...base, id: 4, createdAt: "2026-09-01T07:00:00Z", soDocNos: ["TC-SO-2610-001"], name: "Baron C-20-08", building: "Baron", unitNo: "C-20-08", customerName: "Mr Albert", lead: { id: 1, name: "Jia Xin" }, start3dOn: "2026-10-20" },
   ],
   events: [{ id: 9, projectId: 4, onDate: "2026-10-27", atTime: "11:30:00", type: "client", note: "Client meeting @ 11:30am", personId: 1, done: false }],
 } as unknown as BetaBoard;
@@ -92,7 +92,33 @@ describe("Beta Home", () => {
     expect(screen.getByTitle("A - New · team not assigned")).toBeTruthy();
     expect(screen.getByRole("button", { name: /Assign/ })).toBeTruthy();
     expect(screen.getByText("3D in progress")).toBeTruthy();
-    expect(screen.getByText("3 shown · tap a project to open it")).toBeTruthy();
+    expect(screen.getByText("3 shown · newest first · tap a project to open it")).toBeTruthy();
+  });
+
+  it("lists the newest project first, and keeps the order chosen in the address", async () => {
+    renderAt("/beta/projects");
+    await screen.findByRole("heading", { name: "All projects" });
+    const names = (): string[] => within(screen.getByRole("table")).getAllByRole("link").map((a) => String(a.textContent));
+    expect(names()).toEqual(["Bukit Jalil The Park 2", "Seri Riana C-12-03", "Baron C-20-08"]);
+    fireEvent.change(screen.getByRole("combobox", { name: "Sort projects" }), { target: { value: "due" } });
+    expect(where).toBe("/beta/projects?sort=due");
+  });
+
+  it("finds a project as you type, by unit, client, code, SO number or person, and keeps it in the address", async () => {
+    renderAt("/beta/projects?q=c-12");
+    await screen.findByRole("heading", { name: "All projects" });
+    expect(screen.getByRole("status").textContent).toBe("1 of 3");
+    expect(within(screen.getByRole("table")).getAllByRole("link").map((a) => a.textContent)).toEqual(["Seri Riana C-12-03"]);
+    const box = screen.getByRole("searchbox", { name: "Search projects" });
+    fireEvent.change(box, { target: { value: "TC-SO-2610" } });
+    expect(where).toBe("/beta/projects?q=TC-SO-2610");
+    expect(within(screen.getByRole("table")).getAllByRole("link").map((a) => a.textContent)).toEqual(["Baron C-20-08"]);
+    fireEvent.change(box, { target: { value: "jia" } });
+    expect(screen.getByRole("status").textContent).toBe("2 of 3");
+    fireEvent.change(box, { target: { value: "RN-2610-006" } });
+    expect(within(screen.getByRole("table")).getAllByRole("link").map((a) => a.textContent)).toEqual(["Bukit Jalil The Park 2"]);
+    // The tab counts follow the search.
+    expect(within(screen.getByRole("tablist", { name: "Project groups" })).getAllByRole("tab")[0].textContent).toBe("All projects1");
   });
 
   it("opens a project from its row and remembers it", async () => {

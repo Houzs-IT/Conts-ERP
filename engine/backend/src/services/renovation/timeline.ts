@@ -11,7 +11,8 @@
    Notes people add by hand live in project_timeline_notes (migration 0118), typed Customer / Design / Supplier /
    Site / Sales. Newest first. */
 
-import { FLOW_STEP_DEFAULT_LABEL, HOLD_FLAG_LABEL, isFlowStepKey } from "../../scm/shared/renovation-stages";
+import { FLOW_STEP_DEFAULT_LABEL, HOLD_FLAG_LABEL, INTERNAL_TASKS, TASK_CATEGORIES, isFlowStepKey } from "../../scm/shared/renovation-stages";
+import { mediaActivityText } from "./betaMedia";
 import { projectDocSql } from "./documents";
 import { isMissingRelation, type Db } from "./load";
 
@@ -78,6 +79,43 @@ const humanize = (s: string) => {
   return t.charAt(0).toUpperCase() + t.slice(1);
 };
 const arrow = (from: unknown, to: unknown) => `${str(from) ?? "-"} to ${str(to) ?? "-"}`;
+
+const sentence = (s: string) => {
+  const t = s.trim().toLowerCase();
+  return t.charAt(0).toUpperCase() + t.slice(1);
+};
+
+/** A stored site task code as words: "INTERNAL:pre_reno_delivery" is "Pre-reno works & item delivery",
+    "CAT:CURTAIN" is "Curtain installation", a trade code "MASONRY_TILING" is "Masonry tiling". */
+export function taskCodeLabel(code: string): string {
+  const c = code.trim();
+  if (/^INTERNAL:/i.test(c)) {
+    const key = c.slice("INTERNAL:".length);
+    return INTERNAL_TASKS.find((t) => t.key === key)?.label ?? humanize(key);
+  }
+  if (/^CAT:/i.test(c)) {
+    const cat = c.slice(4).toUpperCase();
+    const def = TASK_CATEGORIES.find((t) => t.code === cat);
+    return def ? sentence(def.label) : sentence(cat.replace(/_/g, " "));
+  }
+  return sentence(c.replace(/_/g, " "));
+}
+
+/* A code is "INTERNAL:x" / "CAT:X", or a lower-case snake_case word (site_measure). Words that touch "@", "/" or "."
+   are left alone, so an e-mail address or a file key is never rewritten. */
+const TASK_CODE = /(?<![\w@./-])(?:INTERNAL|CAT):[A-Za-z0-9_]+(?![\w@/-])/g;
+const SNAKE = /(?<![\w@./-])[a-z][a-z0-9]*(?:_[a-z0-9]+)+(?![\w@/-])/g;
+
+/** Text as people read it: stored codes become words (owner, 24 Oct 2026: the Timeline showed "INTERNAL:pre_reno_delivery"). */
+export function plainWords(text: string | null): string | null {
+  if (text == null) return null;
+  return text.replace(TASK_CODE, (m) => taskCodeLabel(m)).replace(SNAKE, (m) => m.replace(/_/g, " "));
+}
+
+/** An entry with its title and text in words. */
+export function plainEntry<T extends { title: string | null; body: string | null }>(e: T): T {
+  return { ...e, title: e.title == null ? null : plainWords(e.title), body: plainWords(e.body) };
+}
 const HOLD_LABEL: Readonly<Record<string, string | undefined>> = HOLD_FLAG_LABEL;
 const TEAM: Record<string, string> = { sales_changed: "Sales person", designer_changed: "Designer", reno_pic_changed: "Project PIC" };
 
@@ -100,10 +138,11 @@ export function activityText(a: Row): { title: string; body: string | null } {
     case "design_file_attached": return { title: `Design ${(to ?? "").toUpperCase()} file uploaded`.trim(), body: null };
     case "onsite_edited": return { title: "Onsite visit edited", body: to ? `Date ${to}` : null };
     case "procurement_dates": return { title: `Procurement dates changed${note ? ` (${note})` : ""}`, body: to };
-    case "task_added": return { title: "Site task added", body: to };
+    case "task_added": return { title: "Site task added", body: to ? taskCodeLabel(to) : null };
     case "task_fulfilment": return { title: `Site task now ${to === "po" ? "by purchase order" : "by in-house crew"}`, body: note };
-    case "task_done": return { title: "Site task done", body: [from, note].filter(Boolean).join(": ") || null };
-    case "task_skipped": return { title: "Site task skipped", body: [from, note].filter(Boolean).join(": ") || null };
+    case "task_done": return { title: "Site task done", body: [from ? taskCodeLabel(from) : null, note].filter(Boolean).join(": ") || null };
+    case "task_skipped": return { title: "Site task skipped", body: [from ? taskCodeLabel(from) : null, note].filter(Boolean).join(": ") || null };
+    case "beta_media": return mediaActivityText(from, note);
     case "handover_signed": return { title: "Handover signed", body: to ? `Signed by ${to}` : null };
     case "archived": return { title: "Project archived", body: null };
     case "restored": return { title: "Project restored", body: null };
@@ -171,7 +210,7 @@ export async function readProjectTimeline(db: Db, projectId: number, companyId: 
     out.push({ ...rest, at: when.at, dateOnly: when.dateOnly });
   };
   const sys = (id: string, when: { at: string; dateOnly: boolean } | null, t: { title: string; body: string | null }, by: unknown) =>
-    push({ id, when, category: "system", title: t.title, body: t.body, by: str(by) });
+    push({ id, when, category: "system", title: plainWords(t.title), body: plainWords(t.body), by: str(by) });
 
   const [project, acts, flow, labelsRows, keys, visits, files, dnotes, notes, docs] = await Promise.all([
     db.prepare(`SELECT created_at, ${TS("closed_at")} AS closed_at, ${TS("handed_over_at")} AS handed_over_at, end_date FROM projects WHERE id = ?`).bind(projectId).first<Row>(),

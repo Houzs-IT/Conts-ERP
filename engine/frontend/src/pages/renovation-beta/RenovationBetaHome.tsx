@@ -2,14 +2,16 @@
    five tabs, the table on a desktop and the cards on a phone, the footer line. A row opens the Beta project.
    Plan: docs/superpowers/plans/2026-10-23-beta-project-workspace.md, section 10. */
 
-import { useMemo, useState, type MouseEvent, type ReactElement, type ReactNode } from "react";
+import { useMemo, useRef, useState, type MouseEvent, type ReactElement, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { Search, X } from "lucide-react";
 import { useAuth } from "../../auth/AuthContext";
 import { useQuery } from "../../hooks/useQuery";
 import { money } from "../projects/renovation/renovationModel";
 import { BETA, BETA_STAGE, betaConditionTone, betaDueTone, betaTagTone } from "./renovationBetaTheme";
 import { buildModel, HOME_TABS, homeCounts, homeList, homeRow, initials, shortLeft, type HomeRow, type HomeTab } from "./renovationBetaBoard";
+import { HOME_SORTS, keepOrder, matchesSearch, newestFirst, orderOf, sortFromParam, type HomeSort } from "./renovationBetaHomeModel";
 import { boardApi, boardKey, invalidateBeta, readLastProject, rememberLastProject } from "./renovationBetaBoardApi";
 import { BTN_MAIN, CARD, ErrorBanner, INK_SOFT, MUTED, useIsPhone, useToast } from "./BetaCalParts";
 import { BetaDialogs, type BetaDialog } from "./BetaForms";
@@ -22,9 +24,10 @@ const TH = {
 const TD = { padding: "11px 12px", borderBottom: `1px solid ${BETA.lineSoft}`, verticalAlign: "middle", fontSize: 13 } as const;
 const DASH = <span style={{ color: "#A3ACAA" }}>–</span>;
 /* Column shares of the table width (fixed layout), so the columns line up and fill the row at any width or zoom.
+   The building tag wraps instead of being cut ("18 USJ 2/4P S...", owner 24 Oct 2026), so its column is wider.
    Order: building, project, status, who now, due, step, payment. */
-const COLS_PAY = ["10%", "22%", "17%", "14%", "6%", "14%", "17%"] as const;
-const COLS_NO_PAY = ["12%", "26%", "20%", "16%", "8%", "18%"] as const;
+const COLS_PAY = ["13%", "20%", "16%", "14%", "6%", "14%", "17%"] as const;
+const COLS_NO_PAY = ["15%", "24%", "19%", "16%", "8%", "18%"] as const;
 
 function DuePill({ left, small = false }: { left: number; small?: boolean }): ReactElement {
   const [ink, bg] = betaDueTone(left);
@@ -37,9 +40,9 @@ function DuePill({ left, small = false }: { left: number; small?: boolean }): Re
 
 /* Payment colours: green = fully paid, amber = a bill waits for money, blue = some received, grey = nothing yet. */
 function payTone(text: string): readonly [string, string] {
-  if (/Fully paid/.test(text)) return ["#1E6B3A", "#3E9B5F"];
-  if (/Pending/.test(text)) return ["#6B5600", "#C9A227"];
-  if (/^[1-9]\d* of/.test(text)) return ["#1F4E8C", "#3A7BD5"];
+  if (/Fully paid/.test(text)) return ["#1A6B66", "#1A6B66"];
+  if (/Pending/.test(text)) return ["#8A4A00", "#D98A1F"];
+  if (/^[1-9]\d* of/.test(text)) return ["#3F4947", "#8C9593"];
   return [INK_SOFT, "#8C9593"];
 }
 
@@ -120,6 +123,19 @@ export function RenovationBetaHome(): ReactElement {
   const slaById = useMemo(() => new Map((steps.data?.data ?? []).map((r) => [r.id, r])), [steps.data]);
   const phone = useIsPhone();
   const [tab, setTab] = useState<HomeTab>("all");
+  const [params, setParams] = useSearchParams();
+  const query = params.get("q") ?? "";
+  const sort = sortFromParam(params.get("sort"));
+  /* The order rows were first shown in, per tab, sort and search: Assign and other saves reload the board, and a row
+     must not jump under the finger (live run, 24 Oct 2026: the wrong project was opened). A reload starts afresh. */
+  const kept = useRef<{ key: string; order: Map<number, number> } | null>(null);
+  function setParam(k: "q" | "sort", v: string): void {
+    setParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (v && !(k === "sort" && v === "newest")) next.set(k, v); else next.delete(k);
+      return next;
+    }, { replace: true });
+  }
   const [dialog, setDialog] = useState<BetaDialog | null>(null);
   const { toast, show } = useToast();
   const last = readLastProject();
@@ -129,8 +145,14 @@ export function RenovationBetaHome(): ReactElement {
   if (!m) return <p style={{ padding: "40px 0", textAlign: "center", color: MUTED, fontSize: 14 }}>Loading projects...</p>;
 
   const counts = homeCounts(m);
-  const list = homeList(m, tab);
+  const inTab = homeList(m, tab);
+  const sorted = sort === "newest" ? newestFirst(inTab) : inTab;
+  const found = sorted.filter((p) => matchesSearch(p, query));
+  const viewKey = `${tab}|${sort}|${query.trim().toLowerCase()}`;
+  if (!kept.current || kept.current.key !== viewKey) kept.current = { key: viewKey, order: orderOf(found) };
+  const list = keepOrder(found, kept.current.order);
   const rows = list.map((p) => homeRow(m, p, canAssign));
+  const tabCount = (key: HomeTab): number => (query.trim() ? homeList(m, key).filter((p) => matchesSearch(p, query)).length : counts.tabs[key]);
   const showPay = m.projects.some((p) => p.payment != null);
 
   function open(id: number): void {
@@ -161,6 +183,37 @@ export function RenovationBetaHome(): ReactElement {
 
       {q.error && <ErrorBanner text={`The projects could not be refreshed: ${q.error}`} onRetry={q.reload} />}
 
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
+        <label style={{ position: "relative", flex: "1 1 320px", minWidth: 0, display: "block" }}>
+          <span className="sr" style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)" }}>Search projects</span>
+          <Search size={18} aria-hidden="true" style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: MUTED }} />
+          <style>{".bh-search::-webkit-search-cancel-button{display:none}"}</style>
+          <input
+            type="search"
+            className="bh-search"
+            aria-label="Search projects"
+            placeholder="Search name, building, unit, client, RN- code, SO no or person"
+            value={query}
+            onChange={(e) => setParam("q", e.target.value)}
+            style={{ width: "100%", minHeight: 46, padding: "0 40px 0 40px", border: `1px solid ${BETA.border}`, borderRadius: 10, background: "#FFFFFF", font: "inherit", fontSize: 15, color: BETA.ink, boxSizing: "border-box" }}
+          />
+          {query && (
+            <button type="button" aria-label="Clear the search" onClick={() => setParam("q", "")}
+              style={{ position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)", width: 34, height: 34, border: 0, borderRadius: 17, background: "transparent", color: MUTED, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+              <X size={16} />
+            </button>
+          )}
+        </label>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: MUTED }}>
+          Sort
+          <select aria-label="Sort projects" value={sort} onChange={(e) => setParam("sort", e.target.value as HomeSort)}
+            style={{ minHeight: 40, padding: "0 8px", border: `1px solid ${BETA.border}`, borderRadius: 8, background: "#FFFFFF", font: "inherit", fontSize: 14, color: BETA.ink }}>
+            {HOME_SORTS.map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+          </select>
+        </label>
+        {query.trim() && <span role="status" style={{ fontSize: 13, fontWeight: 600, color: INK_SOFT }}>{list.length} of {inTab.length}</span>}
+      </div>
+
       <div role="tablist" aria-label="Project groups" style={{ display: "flex", flexWrap: "wrap", gap: 4, borderBottom: `1px solid ${BETA.line}` }}>
         {HOME_TABS.map(([key, label]) => {
           const on = tab === key;
@@ -178,7 +231,7 @@ export function RenovationBetaHome(): ReactElement {
               }}
             >
               {label}
-              <span style={{ fontSize: 12, color: "#8C9593" }}>{counts.tabs[key]}</span>
+              <span style={{ fontSize: 12, color: MUTED }}>{tabCount(key)}</span>
             </button>
           );
         })}
@@ -186,7 +239,7 @@ export function RenovationBetaHome(): ReactElement {
 
       {phone ? (
         <ol style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 10 }}>
-          {rows.length === 0 && <li style={{ color: MUTED }}>No projects here.</li>}
+          {rows.length === 0 && <li style={{ color: MUTED }}>{query.trim() ? `No project matches "${query.trim()}".` : "No projects here."}</li>}
           {rows.map((r) => <PhoneCard key={r.p.id} r={r} sla={slaOf(slaById.get(r.p.id))} onOpen={() => rememberLastProject(r.p.id)} />)}
         </ol>
       ) : (
@@ -207,13 +260,13 @@ export function RenovationBetaHome(): ReactElement {
               </tr>
             </thead>
             <tbody>
-              {rows.length === 0 && <tr><td colSpan={showPay ? 7 : 6} style={{ ...TD, color: MUTED }}>No projects here.</td></tr>}
+              {rows.length === 0 && <tr><td colSpan={showPay ? 7 : 6} style={{ ...TD, color: MUTED }}>{query.trim() ? `No project matches "${query.trim()}".` : "No projects here."}</td></tr>}
               {rows.map((r) => {
                 const [tagInk, tagBg] = betaTagTone(r.p.tag);
                 return (
                   <tr key={r.p.id} onClick={(e) => rowClick(e, r.p.id)} style={{ cursor: "pointer", background: r.p.id === last ? "#F3F9F8" : "#FFFFFF" }}>
                     <td style={TD}>
-                      <span title={r.p.tag} style={{ display: "inline-block", maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", verticalAlign: "middle", padding: "2px 8px", borderRadius: 4, background: tagBg, color: tagInk, fontSize: 12, fontWeight: 600, whiteSpace: "nowrap" }}>
+                      <span title={r.p.tag} style={{ display: "inline-block", maxWidth: "100%", padding: "2px 8px", borderRadius: 4, background: tagBg, color: tagInk, fontSize: 12, fontWeight: 600, lineHeight: 1.35, overflowWrap: "anywhere" }}>
                         {r.p.tag.toUpperCase()}
                       </span>
                     </td>
@@ -236,7 +289,7 @@ export function RenovationBetaHome(): ReactElement {
         </div>
       )}
 
-      <div style={{ fontSize: 12, color: MUTED }}>{list.length} shown · tap a project to open it</div>
+      <div style={{ fontSize: 12, color: MUTED }}>{list.length} shown · {sort === "newest" ? "newest first" : "due soonest first"} · tap a project to open it</div>
 
       <BetaDialogs
         dialog={dialog}

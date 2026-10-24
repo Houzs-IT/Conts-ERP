@@ -264,6 +264,8 @@ export interface BoardProjectRow {
   /** The 3D and 2D people in the order picked, as JSON text or parsed ([{ id, name }]). */
   p3_people: unknown; p2_people: unknown;
   measured_on: string | null; start_3d_on: string | null; start_2d_on: string | null; po_done_on: string | null;
+  /** The project's sales order numbers, space separated, for the list's search; absent on older callers. */
+  so_doc_nos?: string | null;
 }
 export interface BoardFileRow { id: number; project_id: number; kind: "3d" | "2d"; version: number; submitted_on: string }
 export interface BoardNoteRow { id: number; project_id: number; kind: "3d" | "2d"; noted_on: string; closed_on: string | null; days: number | null }
@@ -283,6 +285,9 @@ export interface BoardSets {
 export interface BoardProject {
   id: number; code: string | null; name: string; building: string | null; unitNo: string | null;
   customerName: string | null; salesName: string | null; createdOn: string | null; handoverOn: string | null;
+  /** When the project was made (UTC ISO), for "newest first". */
+  createdAt: string | null;
+  soDocNos: string[];
   lead: BoardPersonRef | null; sitePic: BoardPersonRef | null;
   /** The first of people3d / people2d, for screens that show one name. */
   person3d: BoardPersonRef | null; person2d: BoardPersonRef | null;
@@ -313,6 +318,8 @@ export function buildBoardProject(p: BoardProjectRow, sets: BoardSets, payment: 
   return {
     id: p.id, code: p.code, name: p.name, building: p.building, unitNo: p.unit_no, customerName: p.customer_name, salesName: p.sales_name,
     createdOn: createdOnOf(p.created_at), handoverOn: p.handover_on,
+    createdAt: p.created_at && !Number.isNaN(Date.parse(p.created_at)) ? new Date(Date.parse(p.created_at)).toISOString() : null,
+    soDocNos: String(p.so_doc_nos ?? "").split(/\s+/).filter(Boolean),
     lead: refOf(p.lead_id, p.lead_name), sitePic: refOf(p.pic_id, p.pic_name),
     person3d: people3d[0] ?? null, person2d: people2d[0] ?? null, people3d, people2d,
     measuredOn: p.measured_on, start3dOn: p.start_3d_on, start2dOn: p.start_2d_on, poDoneOn: p.po_done_on,

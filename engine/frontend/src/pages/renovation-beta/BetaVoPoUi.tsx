@@ -62,6 +62,6 @@ export function WsStats({ children }: { children: ReactNode }): ReactElement {
 
 /** Yes (green), part (amber), no (grey). */
 export function WsMark({ state, yes = "Yes", part = "Part", no = "No" }: { state: "yes" | "part" | "no"; yes?: string; part?: string; no?: string }): ReactElement {
-  const [fg, bg, text] = state === "yes" ? [WS.green, "#E5F3EA", yes] : state === "part" ? [WS.amber, "#FDF1E2", part] : [WS.text2, WS.chip, no];
+  const [fg, bg, text] = state === "yes" ? [WS.green, "#E4F1EF", yes] : state === "part" ? [WS.amber, "#FDF1E2", part] : [WS.text2, WS.chip, no];
   return <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 6, background: bg, color: fg, fontSize: 12, fontWeight: 600, whiteSpace: "nowrap" }}>{text}</span>;
 }
