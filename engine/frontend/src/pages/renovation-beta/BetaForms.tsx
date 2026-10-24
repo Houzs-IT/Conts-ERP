@@ -70,7 +70,8 @@ export function BetaModal({ title, sub, onClose, onSubmit, error, busy, children
   const box = useRef<HTMLFormElement>(null);
   useEffect(() => {
     const before = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    box.current?.querySelector<HTMLElement>("input:not([type=hidden]), select, textarea")?.focus();
+    // Focus the dialog, not its first field: a field focused on open draws a box the owner read as a fault.
+    box.current?.focus();
     return () => before?.focus();
   }, []);
 
@@ -101,8 +102,9 @@ export function BetaModal({ title, sub, onClose, onSubmit, error, busy, children
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
+        tabIndex={-1}
         onSubmit={submit}
-        style={{ maxWidth: 520, margin: "0 auto", background: BETA.surface, borderRadius: 14, padding: 20, display: "flex", flexDirection: "column", gap: 12, color: BETA.ink }}
+        style={{ outline: "none", maxWidth: 520, margin: "0 auto", background: BETA.surface, borderRadius: 14, padding: 20, display: "flex", flexDirection: "column", gap: 12, color: BETA.ink }}
       >
         <h2 id={titleId} style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>{title}</h2>
         {sub && <div style={{ fontSize: 14, color: "#3F4947" }}>{sub}</div>}
@@ -200,11 +202,11 @@ function PersonCard({ person, name, role, tint, onRemove }: {
 }
 
 /** One person: a select of the offered people, and the pick shown as a card under it. */
-function PersonPick({ label, name, all, value, onChange, blank, required, autoFocus }: {
-  label: string; name: string; all: readonly Person[]; value: number | null; onChange: (id: number | null) => void; blank: string; required?: boolean; autoFocus?: boolean;
+function PersonPick({ label, name, all, value, onChange, blank, required, reveal }: {
+  label: string; name: string; all: readonly Person[]; value: number | null; onChange: (id: number | null) => void; blank: string; required?: boolean; reveal?: boolean;
 }): ReactElement {
   const ref = useRef<HTMLSelectElement>(null);
-  useEffect(() => { if (autoFocus) ref.current?.focus(); }, [autoFocus]);
+  useEffect(() => { if (reveal) ref.current?.scrollIntoView({ block: "nearest" }); }, [reveal]);
   const picked = value == null ? undefined : all.find((x) => x.id === value);
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
@@ -431,12 +433,12 @@ function AssignForm({ env, p, role }: { env: FormEnv; p: DesignProject; role?: A
 
   return (
     <BetaModal title="Assign" sub={p.name} onClose={env.onClose} onSubmit={submit} error={save.error} busy={save.busy}>
-      <PersonPick label="Design lead" name="lead" all={all} value={lead} onChange={setLead} blank="Choose..." required autoFocus={role === "lead"} />
+      <PersonPick label="Design lead" name="lead" all={all} value={lead} onChange={setLead} blank="Choose..." required reveal={role === "lead"} />
       <div style={PICK_GRID}>
         <PeoplePick label="3D by" name="who3" all={all} value={w3} onChange={setW3} known={known} startOpen={role === "3"} />
         <PeoplePick label="2D by" name="who2" all={all} value={w2} onChange={setW2} known={known} startOpen={role === "2"} />
       </div>
-      <PersonPick label="Site PIC (handover lead)" name="site" all={all} value={site} onChange={setSite} blank="Not chosen" autoFocus={role === "site"} />
+      <PersonPick label="Site PIC (handover lead)" name="site" all={all} value={site} onChange={setSite} blank="Not chosen" reveal={role === "site"} />
       <div style={NOTE}>Every role can be changed here, the design lead too. Pick one or more people for the 3D and for the 2D. They see it in their own Calendar right away. Only people who can edit projects can change this.</div>
     </BetaModal>
   );
