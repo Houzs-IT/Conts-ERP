@@ -28,6 +28,7 @@
 // Pure — no I/O. Shared by apps/api (409 gate), apps/backend (save gates +
 // warning banners), and any future surface. Do NOT hand-copy the lists again.
 // ----------------------------------------------------------------------------
+import { CONTS_SOFA_MIX_RULE_ON } from '../../conts/flowFlags';
 import { isColourKiv } from './variant-summary';
 
 export type VariantAxis = {
@@ -93,6 +94,8 @@ function mainCategory(raw: string | null | undefined): '' | 'SOFA' | 'BEDFRAME' 
  *  the operator gets one plain sentence instead of a raw 400. `itemGroups` is
  *  each line's resolved category / itemGroup. */
 export function hasSofaMixConflict(itemGroups: Array<string | null | undefined>): boolean {
+  /* Conts (conts/flowFlags.ts): a renovation order mixes sofas, bedframes and mattresses freely. */
+  if (!CONTS_SOFA_MIX_RULE_ON) return false;
   const cats = itemGroups.map(mainCategory);
   return cats.includes('SOFA')
     && cats.some((c) => c === 'BEDFRAME' || c === 'MATTRESS');

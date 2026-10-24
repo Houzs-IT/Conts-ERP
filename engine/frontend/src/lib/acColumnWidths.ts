@@ -22,6 +22,8 @@
 // ----------------------------------------------------------------------------
 
 /** The widest an address line may be. Keep in step with the backend constant. */
+import { CONTS_ADDRESS_LINE_CAP } from '../conts/flowFlags';
+
 export const ADDRESS_LINE_MAX = 40;
 
 /**
@@ -113,6 +115,8 @@ export function addressLineProps(
   setLine: (v: string) => void,
   spill: { value: string; set: (v: string) => void } | null,
 ) {
+  /* Conts (conts/flowFlags.ts): no AutoCount, so no 40-character cap and no spill into the next line. */
+  if (!CONTS_ADDRESS_LINE_CAP) return {};
   return {
     maxLength: ADDRESS_LINE_MAX,
     onPaste: (e: { currentTarget: HTMLInputElement; clipboardData: DataTransfer; preventDefault: () => void }) =>

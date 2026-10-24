@@ -13,6 +13,7 @@
  * PO returns no gaps. */
 import type { Variables } from '../env';
 import { missingVariantAxes } from '../shared/so-variant-rule';
+import { PO_VARIANTS_FOLLOW_SO, poMissingAxesForSoLine } from '../lib/renovation-flow-rules';
 
 export type PoVariantGap = { code: string; miss: string[] };
 export type PoVariantGapsResult = { checkFailed: string } | { gaps: PoVariantGap[] };
@@ -50,13 +51,25 @@ export async function poVariantGaps(
 ): Promise<PoVariantGapsResult> {
   const { data, error } = await sb
     .from('purchase_order_items')
-    .select('item_code, item_group, variants')
+    .select('item_code, item_group, variants, so_item_id')
     .eq('purchase_order_id', poId);
   if (error) return { checkFailed: error.message };
-  const gaps = ((data ?? []) as Array<{ item_code: string | null; item_group: string | null; variants: Record<string, unknown> | null }>)
+  const rows = (data ?? []) as Array<{ item_code: string | null; item_group: string | null; variants: Record<string, unknown> | null; so_item_id: string | null }>;
+  /* Conts (renovation-flow-rules.ts): a line taken from an SO line needs only the options that SO line has. */
+  const soVariants = new Map<string, Record<string, unknown> | null>();
+  const soIds = PO_VARIANTS_FOLLOW_SO ? [...new Set(rows.map((r) => r.so_item_id).filter((v): v is string => !!v))] : [];
+  if (soIds.length > 0) {
+    const so = await sb.from('mfg_sales_order_items').select('id, variants').in('id', soIds);
+    if (so.error) return { checkFailed: so.error.message };
+    for (const r of (so.data ?? []) as Array<{ id: string; variants: Record<string, unknown> | null }>) soVariants.set(r.id, r.variants ?? {});
+  }
+  const gaps = rows
     .map((l) => ({
       code: (l.item_code ?? '').trim(),
-      miss: missingVariantAxes(l.item_group, l.variants, l.item_code ?? null).map((a) => a.label),
+      miss: poMissingAxesForSoLine(
+        missingVariantAxes(l.item_group, l.variants, l.item_code ?? null),
+        l.so_item_id && soVariants.has(l.so_item_id) ? soVariants.get(l.so_item_id) : undefined,
+      ).map((a) => a.label),
     }))
     .filter((x) => x.code && x.miss.length > 0);
   return { gaps };

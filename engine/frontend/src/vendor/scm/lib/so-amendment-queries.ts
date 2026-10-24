@@ -153,6 +153,11 @@ const invalidateAmendmentSideEffects = (
      ['mfg-sales-orders'], not nested under it). */
   invalidateSoLists(qc);
   qc.invalidateQueries({ queryKey: ['mfg-sales-order-detail'] });
+  /* Conts: a VO applies at once and moves the SO total, which the renovation project screens also show (their
+     useQuery keys are ["uq", "renovation...", ...]). Without this they kept the old total until a reload. */
+  qc.invalidateQueries({
+    predicate: (q) => q.queryKey[0] === 'uq' && typeof q.queryKey[1] === 'string' && q.queryKey[1].startsWith('renovation'),
+  });
   qc.invalidateQueries({ queryKey: ['mfg-purchase-orders'] });
   qc.invalidateQueries({ queryKey: ['mfg-purchase-order-detail'] });
   /* Two-lane rework: a LINES-lane approve auto-raises follow-up rows in the PO

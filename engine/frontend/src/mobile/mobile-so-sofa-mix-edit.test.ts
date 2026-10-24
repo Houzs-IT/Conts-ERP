@@ -23,8 +23,11 @@
 
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 import { hasSofaMixConflict, sofaMixIntroduced } from '../vendor/shared/so-variant-rule';
+/* These cases pin HOUZS's rules; Conts switches them off (conts/flowFlags.ts), so they are forced on here. */
+vi.mock('../conts/flowFlags', () => ({ CONTS_SOFA_MIX_RULE_ON: true, CONTS_ADDRESS_LINE_CAP: true }));
+
 
 const read = (rel: string): string => readFileSync(resolve(process.cwd(), rel), 'utf8');
 

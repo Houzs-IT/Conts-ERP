@@ -1262,6 +1262,9 @@ export const SalesOrderDetail = () => {
       }
       setSavingOrder(false);
       endEditSession();
+      /* The VO has already applied (Conts: no approver), so the order total moved: read it back now rather than
+         trusting the cache the direct-half save just wrote (owner run, 24 Oct 2026: total stale until reload). */
+      if (plan === 'AMENDMENT') void detail.refetch();
       /* Two-lane rework: the server classifies (and may SPLIT) the request —
          product changes go to Purchasing, delivery changes to Logistics, each
          applied by ONE signature. Tell the operator exactly what was raised. */
@@ -1447,7 +1450,10 @@ export const SalesOrderDetail = () => {
               ? `Remove ${it.item_code} in this VO?`
               : `Remove ${it.item_code} from this SO?`,
             body: removeViaAmendment
-              ? 'The line stays until the VO is approved — submit the VO to request its removal.'
+              ? (header?.vo_applies_on_raise
+                /* Conts: a VO needs no approval (renovation-vo-rule.ts), so the pop-up says what the banner says. */
+                ? 'The line is removed when you press "Record VO". No approval is needed.'
+                : 'The line stays until the VO is approved — submit the VO to request its removal.')
               : undefined,
             confirmLabel: 'Remove',
             danger: true,
@@ -1466,7 +1472,7 @@ export const SalesOrderDetail = () => {
     }
     return map;
   }, [items, patchEditingDraft, removeEditingLine, askConfirm,
-      header?.amendment_eligible, header?.has_open_amendment]);
+      header?.amendment_eligible, header?.has_open_amendment, header?.vo_applies_on_raise]);
 
   /* Add path — one more inline SoLineCard appended below the table on every
      "+ Add Line Item" click. Every staged draft is committed together with the

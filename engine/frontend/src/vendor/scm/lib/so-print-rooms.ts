@@ -16,3 +16,23 @@ export function roomOrdered<T extends { id: string }>(items: readonly T[], rooms
   };
   return items.map((it, i) => ({ it, i })).sort((a, b) => rank(a.it) - rank(b.it) || a.i - b.i).map((x) => x.it);
 }
+
+/** One area (room) of a sales order: its lines in line order and their subtotal. */
+export interface SoAreaGroup<T> { area: string; lines: T[]; subtotalSen: number }
+
+/** The "By area" view (owner, 24 Oct 2026): the lines grouped under their room, in the order's room order, with a
+    subtotal per room. Lines in no listed room come last, under "Other items". Pure. */
+export function roomGroups<T extends { id: string; total_sen?: number | null }>(items: readonly T[], rooms: SoPrintRooms): SoAreaGroup<T>[] {
+  const out: SoAreaGroup<T>[] = [];
+  for (const it of roomOrdered(items, rooms)) {
+    const area = roomLabel(rooms, it.id);
+    let g = out[out.length - 1];
+    if (!g || g.area !== area) {
+      g = { area, lines: [], subtotalSen: 0 };
+      out.push(g);
+    }
+    g.lines.push(it);
+    g.subtotalSen += Number(it.total_sen ?? 0);
+  }
+  return out;
+}
