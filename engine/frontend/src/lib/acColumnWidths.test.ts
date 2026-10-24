@@ -4,6 +4,9 @@
 import { describe, expect, test, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { ADDRESS_LINE_MAX, addressLineProps, onAddressPaste, splitAddressAtLimit } from './acColumnWidths';
+/* These cases pin HOUZS's rules; Conts switches them off (conts/flowFlags.ts), so they are forced on here. */
+vi.mock('../conts/flowFlags', () => ({ CONTS_SOFA_MIX_RULE_ON: true, CONTS_ADDRESS_LINE_CAP: true }));
+
 
 describe('the input limit is the account book\'s own column width', () => {
   test('it matches the backend constant, read from the backend source', () => {
@@ -131,7 +134,7 @@ describe('the cap and the spill travel together', () => {
     const set2 = vi.fn();
     const clip = 'No 12 Jalan Perindustrian Bukit Minyak 2 Taman Perindustrian';
     const props = addressLineProps(set1, { value: '', set: set2 });
-    props.onPaste({
+    (props.onPaste as NonNullable<typeof props.onPaste>)({
       currentTarget: { value: '', selectionStart: 0, selectionEnd: 0 } as unknown as HTMLInputElement,
       clipboardData: { getData: () => clip } as unknown as DataTransfer,
       preventDefault: () => {},

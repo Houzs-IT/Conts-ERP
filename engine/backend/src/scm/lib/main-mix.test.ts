@@ -5,6 +5,10 @@ import {
 } from './main-mix';
 import { parsePgrestInList } from './pgrest-in-list';
 
+/* These suites pin HOUZS's rule. Conts switches it off (renovation-flow-rules.ts, tested there), so the
+   switch is forced on here to keep the rule itself under test. */
+vi.mock('./renovation-flow-rules', async (orig) => ({ ...(await orig<typeof import('./renovation-flow-rules')>()), SOFA_MIX_RULE_ON: true }));
+
 /* ═══════════════════════════════════════════════════════════════════════════
    "May a sofa share an order with a bedframe or a mattress?" — one rule, three
    FORMS, and the difference between them is the whole risk of this change.

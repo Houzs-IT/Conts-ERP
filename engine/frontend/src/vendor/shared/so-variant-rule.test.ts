@@ -1,7 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   missingVariantAxes, missingConfirmVariantAxes, hasSofaMixConflict, sofaMixIntroduced,
 } from './so-variant-rule';
+/* These cases pin HOUZS's rules; Conts switches them off (conts/flowFlags.ts), so they are forced on here. */
+vi.mock('../../conts/flowFlags', () => ({ CONTS_SOFA_MIX_RULE_ON: true, CONTS_ADDRESS_LINE_CAP: true }));
+
 
 /* The colour-KIV carve-out: a line that committed to a fabric SERIES with the
    colour confirmed later SATISFIES the fabric axis.

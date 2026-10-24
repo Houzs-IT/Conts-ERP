@@ -17,6 +17,8 @@ import type { Context } from 'hono';
 import type { Env, Variables } from '../env';
 import { scopeToCompany } from './companyScope';
 import { fitSoAddress } from '../../services/autocount-address-fit';
+/* Conts switch: no AutoCount, so an address is stored as typed (renovation-flow-rules.ts). */
+import { ADDRESS_FIT_ON_SAVE } from './renovation-flow-rules';
 
 type Sb = { from: (t: string) => any };
 
@@ -47,7 +49,7 @@ export async function fitAddressIfTouched(
   docNo: string,
   updates: Record<string, unknown>,
 ): Promise<void> {
-  if (!ADDRESS_COLS.some((col) => col in updates)) return;
+  if (!ADDRESS_FIT_ON_SAVE || !ADDRESS_COLS.some((col) => col in updates)) return;
   const { data: held, error: heldErr } = await scopeToCompany(
     sb.from('mfg_sales_orders').select('address1, address2, address3, address4').eq('doc_no', docNo), c,
   ).maybeSingle();

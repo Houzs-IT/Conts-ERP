@@ -26,7 +26,12 @@ describe("amendmentLineChange", () => {
   it("a price-only change keeps the line's quantity beside the money", () => {
     const v = amendmentLineChange(line({ change_type: "SPEC", new_item_code: "RN-ELECTRICAL", new_qty: 1, new_unit_price_sen: 120000,
       old_snapshot: { itemCode: "RN-ELECTRICAL", qty: 1, unitPriceSen: 150000, itemGroup: "works" }, cur_room: "Living hall", cur_item_group: "works" }));
-    expect(v).toMatchObject({ qty: 0, lineQty: 1, amountSen: -30000, change: "deduct", room: "Living hall", goesTo: "works" });
+    expect(v).toMatchObject({ qty: 0, lineQty: 1, amountSen: -30000, change: "change", room: "Living hall", goesTo: "works" });
+  });
+  it("a price rise on the same line is a change, not an add (VO-03, cabinet 6000 to 6500)", () => {
+    const v = amendmentLineChange(line({ change_type: "SPEC", new_item_code: "CUS-KITCHEN_CABINET", new_qty: 1, new_unit_price_sen: 650000,
+      old_snapshot: { itemCode: "CUS-KITCHEN_CABINET", qty: 1, unitPriceSen: 600000, itemGroup: "builtin" } }));
+    expect(v).toMatchObject({ qty: 0, lineQty: 1, amountSen: 50000, change: "change" });
   });
   it("an added line reads the room it was added in, and a supplier decides where it goes", () => {
     expect(amendmentLineChange(line({ new_item_code: "RN-GRILL", new_qty: 1, new_unit_price_sen: 95000, old_snapshot: { itemGroup: "works", room: "Bedroom 1" } })))

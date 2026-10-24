@@ -197,7 +197,9 @@ export function amendmentLineChange(l: AmendmentLineRow): VoLine {
     amount = q * p - d - oldTotal;
   }
   const fromItemCode = l.new_item_code && oldCode && l.new_item_code !== oldCode ? oldCode : null;
-  const change = qty > 0 ? "add" : qty < 0 ? "deduct" : amount !== null && amount > 0 ? "add" : amount !== null && amount < 0 ? "deduct" : "change";
+  /* A line whose quantity stays is a change (a price or spec change), never an add or a deduct: VO-03's
+     6000 -> 6500 cabinet read "1 added" (owner run, 24 Oct 2026). The amount still carries the money. */
+  const change = qty > 0 ? "add" : qty < 0 ? "deduct" : "change";
   return { ...base, qty, lineQty: newQty ?? oldQty ?? num(l.cur_qty), amountSen: amount, change, fromItemCode, changes: lineChangeWords(l) };
 }
 

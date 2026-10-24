@@ -312,6 +312,8 @@ export type DoDeliveryEvidence = {
   podAccuracyM?: number;
   /** The READING's own time, which can be minutes older than `delivered_at`. */
   podLocatedAt?: string;
+  /** Conts office "Mark delivered": the day the goods arrived (YYYY-MM-DD) → `delivered_at`. */
+  deliveredOn?: string;
 };
 
 export const useUpdateMfgDeliveryOrderStatus = () => {

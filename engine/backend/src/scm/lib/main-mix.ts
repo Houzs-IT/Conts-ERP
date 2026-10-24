@@ -63,6 +63,8 @@
 // ----------------------------------------------------------------------------
 import { normCategory, MAIN_CATEGORIES } from './so-readiness';
 import { loadProductsByCodes } from './mfg-pricing-recompute';
+/* Conts switch (renovation-flow-rules.ts): a renovation order mixes sofas, bedframes and mattresses freely. */
+import { SOFA_MIX_RULE_ON } from './renovation-flow-rules';
 
 /* The request-scoped Supabase client. This repo has no shared type for it —
    every lib helper this file stands beside takes it untyped (loadProductsByCodes,
@@ -136,7 +138,7 @@ export type CreateMixLine = { itemCode?: unknown; itemGroup?: unknown };
 export async function createMixRefusal(
   sb: Sb, items: readonly CreateMixLine[], companyId: number | null | undefined,
 ): Promise<MixRefusal | null> {
-  if (items.length === 0) return null;
+  if (!SOFA_MIX_RULE_ON || items.length === 0) return null;
   const codes = items.map((it) => clean(it.itemCode));
   const byCode = await loadProductsByCodes(sb, codes, companyId);
   const unresolved = codes.filter((code) => code !== '' && !byCode.has(code));
@@ -198,6 +200,7 @@ export async function lineMixRefusal(
   newItemCode: string,
   companyId: number | null | undefined,
 ): Promise<MixRefusal | null> {
+  if (!SOFA_MIX_RULE_ON) return null;
   const newCode = clean(newItemCode);
   const live = await liveLines(sb, table, docNo);
   if (!live.ok) return mixCheckUnavailable(table, live.detail);
@@ -241,6 +244,7 @@ export type AmendmentMixLine = {
 export async function amendmentMixRefusal(
   sb: Sb, docNo: string, lines: readonly AmendmentMixLine[], companyId: number | null | undefined,
 ): Promise<MixRefusal | null> {
+  if (!SOFA_MIX_RULE_ON) return null;
   const code = (l: AmendmentMixLine) => clean(l.newItemCode);
   const kind = (l: AmendmentMixLine) => clean(l.changeType).toUpperCase();
   /* No requested code, no possible introduction: a QTY / SPEC / remark-only
