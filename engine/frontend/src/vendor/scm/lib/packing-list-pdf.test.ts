@@ -184,7 +184,9 @@ describe('the packing list sheet', () => {
   test('takes the letterhead from branding and writes no company details of its own', async () => {
     const draws = await render(LIST);
     expect(draws.some((d) => d.text === 'PACKING LIST')).toBe(true);
-    expect(draws.some((d) => d.text === DEFAULT_BRANDING.companyName)).toBe(true);
+    // The letterhead prints the name in capitals with the registration number (renovation-doc-theme.ts).
+    const names = (ds: Array<{ text: string }>, name: string) => ds.some((d) => d.text.toUpperCase().includes(name.toUpperCase()));
+    expect(names(draws, DEFAULT_BRANDING.companyName)).toBe(true);
     // A hand-typed company name would survive a branding change; this one does not.
     setBrandingCache({ ...DEFAULT_BRANDING, companyName: 'Renamed Test Co', logoR2Key: '' }, 'HOUZS');
     const renamed = await (async () => {
@@ -196,8 +198,8 @@ describe('the packing list sheet', () => {
       await renderPackingListInto(doc, autoTable, LIST, { date: '2026-08-26', runUrl: null });
       return d;
     })();
-    expect(renamed.some((d) => d.text === 'Renamed Test Co')).toBe(true);
-    expect(renamed.some((d) => d.text === DEFAULT_BRANDING.companyName)).toBe(false);
+    expect(names(renamed, 'Renamed Test Co')).toBe(true);
+    expect(names(renamed, DEFAULT_BRANDING.companyName)).toBe(false);
   });
 
   /* THE CAPTION MOVED WITH THE LINK (2026-08-26). It read "SCAN · OPEN THIS

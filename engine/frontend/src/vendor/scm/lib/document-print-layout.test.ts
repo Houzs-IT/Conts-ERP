@@ -161,13 +161,10 @@ describe('letterhead: the company block never runs into the meta column', () => 
     // And the guard actually engaged rather than the address happening to fit:
     // the address reaches drawHeader as 2 comma-split lines and has to wrap
     // further to clear the meta column.
-    const addressSpans = company.filter(
-      (s) => s.text !== CROWDED_BRANDING.companyName && s.text !== CROWDED_BRANDING.registrationNo,
-    );
+    const addressSpans = company.filter((s) => !s.text.toUpperCase().includes(CROWDED_BRANDING.companyName.toUpperCase()));
     expect(addressSpans.length).toBeGreaterThan(2);
-    // The block sits BESIDE the logo, not under it — the indent is what makes
-    // the measure narrow, so a regression that dropped it would hide the bug.
-    expect(Math.min(...company.map((s) => s.left))).toBeGreaterThan(20);
+    // Conts letterhead (24 Oct 2026, renovation-doc-theme.ts): the company block sits under the rule, beside the meta.
+    expect(Math.min(...company.map((s) => s.y))).toBeGreaterThan(40);
   });
 
   test('a letterhead that already fits is not re-wrapped', async () => {
@@ -184,9 +181,8 @@ describe('letterhead: the company block never runs into the meta column', () => 
       rightMeta: [{ label: 'DO No', value: 'DO-1' }],
     });
 
-    // The company name is one 16pt line, not split mid-word.
-    expect(spans.some((s) => s.text === DEFAULT_BRANDING.companyName)).toBe(true);
-    expect(spans.some((s) => s.text === DEFAULT_BRANDING.registrationNo)).toBe(true);
+    // The name and registration number print whole on one line, not split mid-word.
+    expect(spans.some((s) => s.text === `${DEFAULT_BRANDING.companyName.toUpperCase()} ${DEFAULT_BRANDING.registrationNo}`)).toBe(true);
   });
 });
 
