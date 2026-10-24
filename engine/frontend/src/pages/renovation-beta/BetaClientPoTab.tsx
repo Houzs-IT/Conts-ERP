@@ -1,12 +1,14 @@
 /* Beta workspace > Client PO (owner, 24 Oct 2026): every line the client buys themselves, which is every SO line
    whose SKU's supplier is "Customer" (the CUS-* SKUs) or that is marked supplied by the owner, plus such lines on a VO
-   not on the SO yet. Grouped by category and sub-category, or by area. Each line shows its SKU and the photos uploaded
-   on the order line. The client gets the list as a PDF or as a read-only link (Preview, Send by WhatsApp). */
+   not on the SO yet. Grouped by category and sub-category, or by area. Each line shows its SKU, the photos uploaded
+   on the order line and the SKU's catalog photos; the client link shows the same photos. The client gets the list as a PDF or as a read-only link (Preview, Send by WhatsApp). */
 
 import { useMemo, useState, type ReactElement } from "react";
 import { Download, ExternalLink, Send } from "lucide-react";
 import { useQuery } from "../../hooks/useQuery";
 import { SoLinePhotoStrip } from "../../components/scm-v2/SoLinePhotoStrip";
+import { resolveApiAssetUrl } from "../../components/scm-v2/PhotoGallery";
+import { PlainPhotoStrip } from "./BetaClientPhotos";
 import { errorText } from "../projects/renovation/renovationModel";
 import { TONE_WAIT, WS, WsBadge, WsEmpty, WsFilterPill, WsPageHead, btnStyle } from "./BetaWsUi";
 import { WsNarrow, WsNarrowStyle, WsTable, metaStyle, narrowBandStyle, narrowItemStyle, numStyle, tdStyle, thStyle } from "./BetaVoPoUi";
@@ -14,7 +16,24 @@ import type { BetaTabProps } from "./betaShared";
 import { downloadClientPdf } from "./renovationBetaClientPdf";
 import { whatsappLink } from "./renovationBetaModel";
 import { BETA } from "./renovationBetaTheme";
-import { byArea, byCategory, clientLinkUrl, voPoApi, type ClientItem } from "./renovationBetaVoPo";
+import { byArea, byCategory, clientLinkUrl, skuPhotoPath, voPoApi, type ClientItem } from "./renovationBetaVoPo";
+
+/** The line's photos (uploaded on the order line, carried to its PO) and the SKU's catalog photos, as the client link shows them. */
+function LinePhotos({ i }: { i: ClientItem }): ReactElement {
+  const line = i.soItemId && i.soDocNo && (i.photoKeys?.length ?? 0) > 0;
+  const sku = (i.skuPhotos ?? []).map((ph) => ({
+    thumb: resolveApiAssetUrl(skuPhotoPath(ph.productId, ph.thumbKey ?? ph.key)),
+    full: resolveApiAssetUrl(skuPhotoPath(ph.productId, ph.key)),
+    label: `SKU photo of ${i.itemCode ?? i.description}`,
+  }));
+  if (!line && sku.length === 0) return <span style={metaStyle}>None</span>;
+  return (
+    <span style={{ display: "inline-flex", flexWrap: "wrap", alignItems: "center", gap: 6 }}>
+      {line && <SoLinePhotoStrip source="so" docId={i.soDocNo ?? ""} itemId={i.soItemId ?? ""} photoKeys={i.photoKeys ?? []} edit={null} />}
+      {sku.length > 0 && <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><span style={metaStyle}>SKU</span><PlainPhotoStrip photos={sku} label={`SKU photos of ${i.description || i.itemCode || "item"}`} /></span>}
+    </span>
+  );
+}
 
 type View = "category" | "area";
 
@@ -128,9 +147,7 @@ export function BetaClientPoTab(p: BetaTabProps): ReactElement {
                           <span>{view === "category" ? (i.area ?? "No area") : `${i.categoryLabel} · ${i.subLabel}`}</span>
                           {i.pending && <span>Not confirmed yet</span>}
                         </div>
-                        {i.soItemId && i.soDocNo && (i.photoKeys?.length ?? 0) > 0 && (
-                          <SoLinePhotoStrip source="so" docId={i.soDocNo} itemId={i.soItemId} photoKeys={i.photoKeys ?? []} edit={null} />
-                        )}
+                        {((i.photoKeys?.length ?? 0) > 0 || (i.skuPhotos?.length ?? 0) > 0) && <LinePhotos i={i} />}
                       </li>
                     ))}
                   </ul>
@@ -158,9 +175,7 @@ function ItemRow({ i, view }: { i: ClientItem; view: View }): ReactElement {
       <td style={tdStyle}>{view === "category" ? (i.area ?? "-") : `${i.categoryLabel} · ${i.subLabel}`}</td>
       <td style={numStyle}>{i.measure ?? `${i.qty}${i.uom ? ` ${i.uom}` : ""}`}</td>
       <td style={tdStyle}>
-        {i.soItemId && i.soDocNo && (i.photoKeys?.length ?? 0) > 0
-          ? <SoLinePhotoStrip source="so" docId={i.soDocNo} itemId={i.soItemId} photoKeys={i.photoKeys ?? []} edit={null} />
-          : <span style={metaStyle}>None</span>}
+        <LinePhotos i={i} />
       </td>
     </tr>
   );

@@ -4,7 +4,10 @@
 
    POST /projects/:id/sheet-files?fileName=   one sheet file, raw body; answers its key (nothing is listed yet)
    POST /projects/:id/design-2d-sets          a new 2D version from sheets already uploaded
-   GET  /projects/:id/design-sheets           every sheet of the project, for the screens to build each version's set */
+   GET  /projects/:id/design-sheets           every sheet of the project, for the screens to build each version's set
+   POST /projects/:id/design-sheets/remove    { name } soft-removes a sheet: all its files stay, marked removed (0153)
+   POST /projects/:id/design-sheets/restore   { name } puts a removed sheet back in the set
+   POST /projects/:id/design-sheets/rename    { name, newName } renames a sheet in every version it is in */
 
 import { Hono, type Context } from "hono";
 import type { Env } from "../types";
@@ -13,7 +16,7 @@ import { activeCompanySql } from "../scm/lib/companyScope";
 import { todayMyt } from "../scm/lib/my-time";
 import { isMissingRelation, type Db } from "../services/renovation/load";
 import { DESIGN_FILE_MAX, DESIGN_FILE_TYPES } from "../services/renovation/records";
-import { cleanSheetSet, sheetKeyPrefix, sheetVersionName } from "../services/renovation/betaSheets";
+import { cleanSheetName, cleanSheetRename, cleanSheetSet, sheetKeyPrefix, sheetVersionName } from "../services/renovation/betaSheets";
 
 type Ctx = Context<{ Bindings: Env }>;
 const app = new Hono<{ Bindings: Env }>();
@@ -114,19 +117,91 @@ app.post("/projects/:id/design-2d-sets", requirePermission("projects.write"), as
   return c.json({ id: row.id, version: row.version }, 201);
 });
 
+const isMissingColumn = (e: unknown): boolean => (e as { code?: string } | null)?.code === "42703";
+
 app.get("/projects/:id/design-sheets", requirePageAccess("projects.list"), async (c) => {
   const id = parseId(c.req.param("id"));
   if (!id) return c.json({ error: "invalid_id" }, 400);
   if ((await projectCompany(c, id)) == null) return c.json({ error: "not_found" }, 404);
+  const cols = `id::int AS id, file_id::int AS "fileId", name, file_name AS "fileName", content_type AS "contentType", size_bytes::int AS size, r2_key AS key,
+              uploaded_at::text AS "uploadedAt"`;
   try {
-    const r = await db(c).prepare(
-      `SELECT id::int AS id, file_id::int AS "fileId", name, file_name AS "fileName", content_type AS "contentType", size_bytes::int AS size, r2_key AS key,
-              uploaded_at::text AS "uploadedAt"
-         FROM project_design_sheets WHERE project_id = ? ORDER BY id`,
-    ).bind(id).all<Record<string, unknown>>();
-    return c.json({ ready: true, sheets: r.results ?? [] });
+    let r: { results?: Record<string, unknown>[] };
+    let canRemove = true;
+    try {
+      r = await db(c).prepare(`SELECT ${cols}, removed_at::text AS "removedAt" FROM project_design_sheets WHERE project_id = ? ORDER BY id`)
+        .bind(id).all<Record<string, unknown>>();
+    } catch (e) {
+      // Before database update 0153 no sheet can be removed; the list is the same without the column.
+      if (!isMissingColumn(e)) throw e;
+      canRemove = false;
+      r = await db(c).prepare(`SELECT ${cols}, NULL::text AS "removedAt" FROM project_design_sheets WHERE project_id = ? ORDER BY id`)
+        .bind(id).all<Record<string, unknown>>();
+    }
+    return c.json({ ready: true, canRemove, sheets: r.results ?? [] });
   } catch (e) {
-    if (isMissingRelation(e)) return c.json({ ready: false, sheets: [] });
+    if (isMissingRelation(e)) return c.json({ ready: false, canRemove: false, sheets: [] });
+    throw e;
+  }
+});
+
+/** The project's sheets, one per name (spelled as its newest file has it), and whether each is removed. */
+async function sheetNames(c: Ctx, id: number): Promise<Array<{ name: string; removed: boolean }>> {
+  const r = await db(c).prepare(
+    `SELECT DISTINCT ON (lower(name)) name, (removed_at IS NOT NULL) AS removed FROM project_design_sheets WHERE project_id = ? ORDER BY lower(name), id DESC`,
+  ).bind(id).all<{ name: string; removed: boolean }>();
+  return r.results ?? [];
+}
+
+const activity = (c: Ctx, id: number, co: number, action: string, from: string | null, to: string) =>
+  db(c).prepare(`INSERT INTO project_activity (project_id, action, from_value, to_value, note, user_id, company_id) VALUES (?, ?, ?, ?, NULL, ?, ?)`)
+    .bind(id, action, from, to, userId(c), co);
+
+for (const action of ["remove", "restore"] as const) {
+  app.post(`/projects/:id/design-sheets/${action}`, requirePermission("projects.write"), async (c) => {
+    const id = parseId(c.req.param("id"));
+    if (!id) return c.json({ error: "invalid_id" }, 400);
+    const co = await projectCompany(c, id);
+    if (co == null) return c.json({ error: "not_found" }, 404);
+    const n = cleanSheetName((await body(c)).name);
+    if (!n.ok) return c.json({ error: n.error, message: n.message }, 400);
+    try {
+      const sheet = (await sheetNames(c, id)).find((x) => x.name.toLowerCase() === n.value.toLowerCase());
+      if (!sheet) return c.json({ error: "sheet_not_found", message: "That sheet is not in this project's 2D set." }, 404);
+      if (sheet.removed === (action === "remove")) return c.json({ ok: true, name: sheet.name, changed: false });
+      // Every file the sheet had, in every version, so it leaves (or comes back to) every set and the PDF at once.
+      const upd = action === "remove"
+        ? db(c).prepare(`UPDATE project_design_sheets SET removed_at = now(), removed_by = ? WHERE project_id = ? AND lower(name) = lower(?) AND removed_at IS NULL`)
+          .bind(userId(c), id, sheet.name)
+        : db(c).prepare(`UPDATE project_design_sheets SET removed_at = NULL, removed_by = NULL WHERE project_id = ? AND lower(name) = lower(?) AND removed_at IS NOT NULL`)
+          .bind(id, sheet.name);
+      await db(c).batch!([upd, activity(c, id, co, action === "remove" ? "beta_2d_sheet_removed" : "beta_2d_sheet_restored", null, sheet.name)]);
+      return c.json({ ok: true, name: sheet.name, changed: true });
+    } catch (e) {
+      if (isMissingColumn(e) || isMissingRelation(e)) {
+        return c.json({ error: "not_ready", message: "Removing 2D sheets is not switched on yet (database update 0153)." }, 503);
+      }
+      throw e;
+    }
+  });
+}
+
+app.post("/projects/:id/design-sheets/rename", requirePermission("projects.write"), async (c) => {
+  const id = parseId(c.req.param("id"));
+  if (!id) return c.json({ error: "invalid_id" }, 400);
+  const co = await projectCompany(c, id);
+  if (co == null) return c.json({ error: "not_found" }, 404);
+  const b = await body(c);
+  try {
+    const v = cleanSheetRename(b, (await sheetNames(c, id)).map((x) => x.name));
+    if (!v.ok) return c.json({ error: v.error, message: v.message }, v.error === "sheet_not_found" ? 404 : 400);
+    await db(c).batch!([
+      db(c).prepare(`UPDATE project_design_sheets SET name = ? WHERE project_id = ? AND lower(name) = lower(?)`).bind(v.value.to, id, v.value.from),
+      activity(c, id, co, "beta_2d_sheet_renamed", v.value.from, v.value.to),
+    ]);
+    return c.json({ ok: true, name: v.value.to });
+  } catch (e) {
+    if (isMissingRelation(e)) return c.json({ error: "not_ready", message: "2D sheets are not switched on yet (database update 0149)." }, 503);
     throw e;
   }
 });

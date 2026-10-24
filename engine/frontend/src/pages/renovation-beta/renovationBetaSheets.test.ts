@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DesignFile } from "../projects/renovation/simpleApi";
-import { sheetNameOf, sheetSetAt, type BetaSheet } from "./renovationBetaSheets";
+import { removedSheetsOf, sheetNameOf, sheetSetAt, type BetaSheet } from "./renovationBetaSheets";
 
 const file = (id: number, version: number, extra: Partial<DesignFile> = {}): DesignFile => ({
   id, kind: "2d", version, file_name: `v${version}`, r2_key: `k${id}`, external_url: null, person_name: null, uploaded_by_name: null,
@@ -33,5 +33,25 @@ describe("sheetSetAt", () => {
 describe("sheetNameOf", () => {
   it("drops the extension and underscores", () => {
     expect(sheetNameOf("A-01_Floor_plan.pdf")).toBe("A-01 Floor plan");
+  });
+});
+
+describe("removed sheets", () => {
+  const files = [file(1, 1), file(2, 2)];
+  const gone = (s: BetaSheet): BetaSheet => ({ ...s, removedAt: "2026-10-24 10:00:00+08" });
+  const sheets = [sheet(1, 1, "A-01"), gone(sheet(2, 1, "A-02")), gone(sheet(3, 2, "A-02")), sheet(4, 2, "A-03")];
+
+  it("leaves a removed sheet out of every set, and keeps a version with only removed sheets a sheet version", () => {
+    expect(sheetSetAt(files, sheets, 2).map((s) => s.key)).toEqual(["s1", "s4"]);
+    expect(sheetSetAt(files, sheets, 1).map((s) => s.key)).toEqual(["s1"]);
+    const onlyGone = [sheet(1, 1, "A-01"), gone(sheet(2, 2, "A-01"))];
+    // V2 held only the removed sheet: it is not a one-file version, so V1's A-01 is not replaced by "v2".
+    expect(sheetSetAt(files, onlyGone, 2).map((s) => s.name)).toEqual(["A-01"]);
+  });
+
+  it("lists each removed sheet once with all its files, newest first", () => {
+    expect(removedSheetsOf(files, sheets)).toEqual([
+      { name: "A-02", removedAt: "2026-10-24 10:00:00+08", history: [{ version: 2, key: "s3", fileName: "A-02.pdf" }, { version: 1, key: "s2", fileName: "A-02.pdf" }] },
+    ]);
   });
 });

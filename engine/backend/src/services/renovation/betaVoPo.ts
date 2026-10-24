@@ -448,13 +448,29 @@ export interface ClientItem {
   measure: string | null;
   uom: string | null;
   photoKeys: string[];
+  /** The SKU's own catalog photos (scm.mfg_product_photos), primary first. */
+  skuPhotos: SkuPhoto[];
   /** The VO that added it, when one did. */
   voNo: string | null;
   /** A VO not approved yet: the item is not on the SO until it is. */
   pending: boolean;
 }
 
+export interface SkuPhoto { productId: string; key: string; thumbKey: string | null }
+
 export interface ClientAnswer { items: ClientItem[] }
+
+export function skuPhotoList(v: unknown): SkuPhoto[] {
+  let arr: unknown = v;
+  if (typeof v === "string") { try { arr = JSON.parse(v); } catch { arr = []; } }
+  if (!Array.isArray(arr)) return [];
+  return arr.flatMap((x) => {
+    const o = (x ?? {}) as Record<string, unknown>;
+    return typeof o.productId === "string" && typeof o.key === "string" && o.key
+      ? [{ productId: o.productId, key: o.key, thumbKey: typeof o.thumbKey === "string" && o.thumbKey ? o.thumbKey : null }]
+      : [];
+  });
+}
 
 function photoList(v: unknown): string[] {
   if (Array.isArray(v)) return v.filter((x): x is string => typeof x === "string" && x.length > 0);
@@ -468,12 +484,17 @@ export async function loadClientItems(db: Db, projectId: number, companyId: numb
     id: string; doc_no: string; item_code: string | null; description: string | null; qty: number; uom: string | null; unit_cost_sen: number; photo_urls: unknown;
     room: string | null; supply_by_owner: boolean | null; line_supplier_code: string | null; main_supplier_code: string | null; measure: string | null;
     measure_uom: string | null; vo_no: string | null; cat_label: string | null; cat_sort: number | null; sub_label: string | null; sub_sort: number | null;
+    sku_photos: unknown;
   }>(db,
     `SELECT i.id::text AS id, i.doc_no, i.item_code, i.description, i.qty, i.uom, i.unit_cost_sen, i.photo_urls,
             d.room, d.supply_by_owner, d.line_supplier_code, d.measure, d.measure_uom, d.vo_no,
             cg.label AS cat_label, cg.sort_order AS cat_sort, sc.label AS sub_label, sc.sort_order AS sub_sort,
             (SELECT sp.code FROM scm.supplier_material_bindings b JOIN scm.suppliers sp ON sp.id = b.supplier_id
-              WHERE b.item_code = i.item_code AND b.company_id = so.company_id AND b.is_main_supplier LIMIT 1) AS main_supplier_code
+              WHERE b.item_code = i.item_code AND b.company_id = so.company_id AND b.is_main_supplier LIMIT 1) AS main_supplier_code,
+            (SELECT coalesce(json_agg(json_build_object('productId', ph.product_id, 'key', ph.r2_key, 'thumbKey', ph.thumb_key)
+                                      ORDER BY ph.is_primary DESC, ph.sort_order, ph.created_at), '[]'::json)::text
+               FROM scm.mfg_products mp JOIN scm.mfg_product_photos ph ON ph.product_id = mp.id AND ph.company_id = mp.company_id
+              WHERE mp.code = i.item_code AND mp.company_id = so.company_id) AS sku_photos
        FROM scm.mfg_sales_order_items i
        JOIN scm.mfg_sales_orders so ON so.doc_no = i.doc_no
        LEFT JOIN LATERAL (
@@ -496,7 +517,7 @@ export async function loadClientItems(db: Db, projectId: number, companyId: numb
       key: `so:${x.id}`, soDocNo: x.doc_no, soItemId: x.id, itemCode: x.item_code, description: x.description ?? "",
       categoryLabel: x.cat_label ?? "Other", categorySort: x.cat_sort ?? 999, subLabel: x.sub_label ?? "General", subSort: x.sub_sort ?? 999,
       area: x.room || null, qty: Number(x.qty), measure: x.measure ? `${Number(x.measure)} ${x.measure_uom ?? ""}`.trim() : null, uom: x.uom,
-      photoKeys: photoList(x.photo_urls), voNo: x.vo_no, pending: false,
+      photoKeys: photoList(x.photo_urls), skuPhotos: skuPhotoList(x.sku_photos), voNo: x.vo_no, pending: false,
     });
   }
   // A VO not on the SO yet that adds a client item: listed so the client can be asked early, marked as such.
@@ -507,19 +528,46 @@ export async function loadClientItems(db: Db, projectId: number, companyId: numb
       items.push({
         key: `${v.key}:${i}`, soDocNo: v.soDocNo, soItemId: null, itemCode: l.itemCode, description: l.description,
         categoryLabel: "Other", categorySort: 999, subLabel: "General", subSort: 999, area: l.room, qty: l.qty, measure: l.measure, uom: null,
-        photoKeys: [], voNo: v.label, pending: true,
+        photoKeys: [], skuPhotos: [], voNo: v.label, pending: true,
       });
     });
   }
   return { items };
 }
 
-export type ClientPublicItem = Pick<ClientItem, "key" | "itemCode" | "description" | "categoryLabel" | "subLabel" | "area" | "qty" | "measure" | "uom" | "pending">;
+/** One photo on the client's link: an opaque reference the link's photo route resolves again, never the storage key. */
+export interface ClientPublicPhoto { ref: string; from: "line" | "sku" }
 
-/** What the client's read-only link shows: no prices, suppliers, staff or photo keys. */
-export function clientView(items: readonly ClientItem[]): ClientPublicItem[] {
-  return items.map((i) => ({
+export type ClientPublicItem = Pick<ClientItem, "key" | "itemCode" | "description" | "categoryLabel" | "subLabel" | "area" | "qty" | "measure" | "uom" | "pending">
+  & { photos: ClientPublicPhoto[] };
+
+/** A storage key's reference on the client link: 24 hex of its SHA-256, so the link names no key and no document
+ *  number, and a reference only resolves to a photo of an item on that same link. */
+export async function photoRef(key: string): Promise<string> {
+  const d = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`beta-client-photo:${key}`)));
+  return [...d.slice(0, 12)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+export interface ClientPhotoTarget { key: string; thumbKey: string | null; from: "line" | "sku" }
+
+/** Every photo the client link may show, by reference: the lines' photos and the SKUs' photos. */
+export async function clientPhotoIndex(items: readonly ClientItem[]): Promise<Map<string, ClientPhotoTarget>> {
+  const out = new Map<string, ClientPhotoTarget>();
+  for (const i of items) {
+    for (const k of i.photoKeys) out.set(await photoRef(k), { key: k, thumbKey: null, from: "line" });
+    for (const ph of i.skuPhotos) out.set(await photoRef(ph.key), { key: ph.key, thumbKey: ph.thumbKey, from: "sku" });
+  }
+  return out;
+}
+
+/** What the client's read-only link shows: no prices, suppliers, staff or storage keys; photos by reference only. */
+export async function clientView(items: readonly ClientItem[]): Promise<ClientPublicItem[]> {
+  return Promise.all(items.map(async (i) => ({
     key: i.key, itemCode: i.itemCode, description: i.description, categoryLabel: i.categoryLabel, subLabel: i.subLabel, area: i.area, qty: i.qty,
     measure: i.measure, uom: i.uom, pending: i.pending,
-  }));
+    photos: [
+      ...(await Promise.all(i.photoKeys.map(async (k) => ({ ref: await photoRef(k), from: "line" as const })))),
+      ...(await Promise.all(i.skuPhotos.map(async (ph) => ({ ref: await photoRef(ph.key), from: "sku" as const })))),
+    ],
+  })));
 }
