@@ -349,7 +349,7 @@ const SelfCheckTab = () => {
   return (
     <div className="space-y-3">
       {q.isLoading && <div style={{ fontSize: 'var(--fs-13)' }}>Running checks…</div>}
-      {checks.map((check) => <ControlCheckCard key={check.role} check={check} />)}
+      {checks.map((check) => <ControlCheckCard key={check.accountCode} check={check} />)}
       {q.data?.payments && <UnbookedPaymentsCard p={q.data.payments} />}
       {q.data?.paymentDrift && <PaymentDriftCard d={q.data.paymentDrift} />}
       {/* Money on cancelled orders with no exit taken yet (docs/bugs/0931). */}

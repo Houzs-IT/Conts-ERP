@@ -226,11 +226,18 @@ export async function ensureDebtor(
       const row = ((data ?? []) as Array<{ code: string }>)[0];
       if (row) return { ok: true, code: row.code };
     }
-    const { data, error } = await paginateAll((from, to) => sb.from('debtors').select('code, name, phone')
-      .eq('company_id', companyId).order('code').range(from, to));
-    if (error) return { ok: false, error: (error as { message?: string }).message ?? String(error) };
-    const same = ((data ?? []) as Array<{ code: string; name: string; phone: string | null }>)
-      .find((d) => d.name.trim().toUpperCase() === name.toUpperCase() && (d.phone?.trim() || null) === phone);
+    /* By name only with a phone to go with it: two walk-ins called MR TAN with no number are two people. A debtor
+       already tied to another customer is not this one. */
+    if (!phone) return { ok: true, code: null };
+    const { data, error } = await sb.from('debtors').select('id, code, name, customer_id')
+      .eq('company_id', companyId).eq('phone', phone).order('code');
+    if (error) return { ok: false, error: error.message };
+    const same = ((data ?? []) as Array<{ id: string; code: string; name: string; customer_id: string | null }>)
+      .find((d) => d.name.trim().toUpperCase() === name.toUpperCase() && (!d.customer_id || !input.customerId || d.customer_id === input.customerId));
+    if (same && !same.customer_id && input.customerId) {
+      const { error: tieErr } = await sb.from('debtors').update({ customer_id: input.customerId }).eq('company_id', companyId).eq('id', same.id);
+      if (tieErr) return { ok: false, error: tieErr.message };
+    }
     return { ok: true, code: same?.code ?? null };
   };
   const hit = await found();
@@ -275,10 +282,16 @@ export async function ensureDebtorSql(
       'select code from scm.debtors where company_id = $1 and customer_id = $2 order by code limit 1', [companyId, input.customerId]);
     if (byCustomer) return byCustomer.code;
   }
-  const [byName] = await db.q<{ code: string }>(
+  /* As ensureDebtor: by name only with a phone, and never a debtor already tied to another customer. */
+  const [byName] = phone ? await db.q<{ code: string }>(
     `select code from scm.debtors where company_id = $1 and upper(btrim(name)) = upper(btrim($2))
-        and coalesce(nullif(btrim(phone), ''), '') = coalesce($3, '') order by code limit 1`, [companyId, name, phone]);
-  if (byName) return byName.code;
+        and btrim(phone) = $3 and (customer_id is null or $4::text is null or customer_id::text = $4::text) order by code limit 1`, [companyId, name, phone, input.customerId]) : [];
+  if (byName) {
+    if (input.customerId) {
+      await db.q('update scm.debtors set customer_id = $3 where company_id = $1 and code = $2 and customer_id is null', [companyId, byName.code, input.customerId]);
+    }
+    return byName.code;
+  }
   const [mapped] = await db.q<{ control_account: string }>(
     'select control_account from scm.acc_debtor_control_map where company_id = $1 and order_kind = $2', [companyId, input.orderKind]);
   const [role] = mapped ? [] : await db.q<{ account_code: string }>(
@@ -307,4 +320,16 @@ export async function nextSupplierCode(sb: Db, companyId: number | null, name: s
   const { data, error } = await q;
   if (error) return { ok: false, error: error.message };
   return { ok: true, code: nextPartyCode(control.slice(0, 3), letter, ((data ?? []) as Array<{ code: string }>).map((r) => r.code)) };
+}
+
+/** What a party still has on a control: the sum of its lines there (a reversal and its original cancel out). A party
+    is moved to another control only when this is nil — what it owes cannot follow it, as manual journals may not
+    touch a control (acc/engine.ts), so a move with a balance would strand it on the old one. */
+export async function partyBalanceOn(sb: Db, companyId: number, partyCode: string, accountCode: string): Promise<{ ok: true; balanceSen: number } | { ok: false; error: string }> {
+  const { data, error } = await paginateAll((from, to) => sb.from('v_gl_entries').select('debit_sen, credit_sen')
+    .eq('company_id', companyId).eq('party_code', partyCode).eq('account_code', accountCode).order('line_id').range(from, to));
+  if (error) return { ok: false, error: (error as { message?: string }).message ?? String(error) };
+  const balanceSen = ((data ?? []) as Array<{ debit_sen: number | null; credit_sen: number | null }>)
+    .reduce((sum, l) => sum + Number(l.debit_sen ?? 0) - Number(l.credit_sen ?? 0), 0);
+  return { ok: true, balanceSen };
 }

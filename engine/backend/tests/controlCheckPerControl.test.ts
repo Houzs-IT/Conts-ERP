@@ -66,6 +66,26 @@ describe('the control self-check', () => {
     expect(byCode.get('302-0000')?.foreignLines.map((l) => l.jeNo)).toEqual(['JE-3']);
     expect(body.checks.filter((x) => x.accountCode === '300-0000')).toHaveLength(1);
   });
+
+  test('a supplier bill out of step is reported once, on the trade creditors line, not again on every supplier control', async () => {
+    const sb = fakeSb({
+      accounts: [...CHART.map((r) => ({ ...r })), acct('406-0000', 'LIABILITY', 'SCC')], acc_account_roles: [],
+      journal_entries: [], journal_entry_lines: [], v_gl_entries: [],
+      sales_invoices: [], purchase_invoices: [], mfg_sales_order_payments: [], sales_invoice_payments: [],
+      ap_invoices: [{ company_id: CO, invoice_number: 'API-1', total_sen: 5_000, status: 'POSTED' }],
+    });
+    const app = new Hono();
+    app.use('*', async (c, next) => {
+      c.set('supabase' as never, sb as never);
+      c.set('companyId' as never, CO as never);
+      c.set('houzsUser' as never, { name: 'T', permissions_set: ['scm.payment_voucher.post'] } as never);
+      await next();
+    });
+    app.get('/control-check', controlCheckHandler as never);
+    const body = await (await app.request('/control-check')).json() as { checks: Array<{ accountCode: string; driftDocs?: Array<{ docNo: string }> }> };
+    const flagged = body.checks.filter((x) => (x.driftDocs ?? []).some((d) => d.docNo === 'API-1')).map((x) => x.accountCode);
+    expect(flagged).toEqual(['400-0000']);
+  });
 });
 
 describe('Ledger setup and the controls', () => {

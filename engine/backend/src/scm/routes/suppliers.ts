@@ -35,8 +35,9 @@ import { scopeToCompany, activeCompanyId, stampCompany,
   detailMissResponse } from '../lib/companyScope';
 import type { Env, Variables } from '../env';
 import { pgrestIn } from '../lib/pgrest-in-list';
-import { resolveRoles } from '../../acc/rules';
-import { nextSupplierCode } from '../../conts/parties';
+import { apControlOf, resolveRoles } from '../../acc/rules';
+import { hasHouzsPerm } from '../lib/houzs-perms';
+import { nextSupplierCode, partyBalanceOn } from '../../conts/parties';
 
 /* Task #91 — small helper: normalize a body field to E.164 phone storage,
    passing through nullish + non-string values untouched. */
@@ -459,12 +460,15 @@ suppliers.get('/:id', async (c) => {
 });
 
 // ── Create supplier ──────────────────────────────────────────────────
-/** The payables control a supplier is given: a supplier control of the chart (special type SCC), or the trade
-    creditors control when none is named. Anything else is refused by name. (Conts, finance phase 1.5.) */
-async function supplierControlOrRefusal(c: any, raw: string | null): Promise<{ code: string } | { resp: Response }> {
+const NO_CONTROL_PERM = { error: 'forbidden', message: "Choosing a supplier's control needs the ledger's post key." };
+
+/** The payables control a supplier is given: a supplier control of the chart (special type SCC), or — when none is
+    named — the one its code's rule gives (405- other creditors, else trade creditors; no code yet: trade creditors).
+    Anything else is refused by name. (Conts, finance phase 1.5.) */
+async function supplierControlOrRefusal(c: any, raw: string | null, supplierCode: string | null = null): Promise<{ code: string } | { resp: Response }> {
   const sb = c.get('supabase');
   const companyId = activeCompanyId(c) ?? null;
-  const code = raw ?? (await resolveRoles(sb, companyId)).AP;
+  const code = raw ?? apControlOf(await resolveRoles(sb, companyId), { code: supplierCode, control_account: null });
   const { data, error } = await sb.from('accounts').select('account_code, special_type').eq('company_id', companyId).eq('account_code', code).maybeSingle();
   if (error) return { resp: c.json({ error: 'load_failed', reason: error.message }, 500) };
   if (raw && (data as { special_type?: string | null } | null)?.special_type !== 'SCC') {
@@ -485,9 +489,11 @@ export const createSupplierHandler = async (c: any): Promise<Response> => {
   /* Conts (finance phase 1.5; SOP 2.1): the payables control the supplier posts to (default the trade creditors
      control), and — when no code is typed — the next code under it, coded like AutoCount (400-H011). */
   const controlRaw = String(body.controlAccount ?? '').trim();
-  const control = await supplierControlOrRefusal(c, controlRaw || null);
-  if ('resp' in control) return control.resp;
+  /* Where the supplier's bills post is the ledger's to decide: naming a control needs its post key. */
+  if (controlRaw && !hasHouzsPerm(c, 'scm.payment_voucher.post')) return c.json(NO_CONTROL_PERM, 403);
   const typedCode = (body.code as string | undefined)?.trim();
+  const control = await supplierControlOrRefusal(c, controlRaw || null, typedCode || null);
+  if ('resp' in control) return control.resp;
   let code = typedCode ?? '';
   if (!code) {
     const next = await nextSupplierCode(c.get('supabase'), activeCompanyId(c) ?? null, name, control.code);
@@ -609,10 +615,33 @@ export const patchSupplierHandler = async (c: any) => {
   }
   /* Conts: the payables control, a supplier control of the chart (or cleared back to the code's rule). */
   if (body.controlAccount !== undefined) {
+    if (!hasHouzsPerm(c, 'scm.payment_voucher.post')) return c.json(NO_CONTROL_PERM, 403);
     const raw = String(body.controlAccount ?? '').trim() || null;
     if (raw) {
       const ok = await supplierControlOrRefusal(c, raw);
       if ('resp' in ok) return ok.resp;
+    }
+    /* What the supplier still owes cannot follow it to another control (manual journals may not touch one), so a
+       supplier is moved only once nothing is left on the control it books to now. */
+    const co = requireActiveCompanyId(c);
+    if (!co.ok) return c.json(co.refusal, 409);
+    const sb = c.get('supabase');
+    const { data: cur, error: curErr } = await sb.from('suppliers').select('code, control_account').eq('company_id', co.companyId).eq('id', id).maybeSingle();
+    if (curErr) return c.json({ error: 'load_failed', reason: curErr.message }, 500);
+    if (cur) {
+      const roles = await resolveRoles(sb, co.companyId);
+      const from = apControlOf(roles, cur as { code: string; control_account: string | null });
+      const to = apControlOf(roles, { code: (cur as { code: string }).code, control_account: raw });
+      if (from !== to) {
+        const bal = await partyBalanceOn(sb, co.companyId, (cur as { code: string }).code, from);
+        if (!bal.ok) return c.json({ error: 'load_failed', reason: bal.error }, 500);
+        if (bal.balanceSen !== 0) {
+          return c.json({
+            error: 'supplier_has_balance', accountCode: from, balanceSen: bal.balanceSen,
+            message: `${(cur as { code: string }).code} still has a balance on ${from}. Settle its bills there first, then move it to ${to}.`,
+          }, 409);
+        }
+      }
     }
     updates.control_account = raw;
   }

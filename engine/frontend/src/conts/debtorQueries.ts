@@ -10,7 +10,7 @@ export type Debtor = {
 export type DebtorControl = { code: string; name: string; debtors: Debtor[] };
 export type DebtorInput = {
   name?: string; code?: string; controlAccount?: string; phone?: string; email?: string; address?: string; notes?: string;
-  isActive?: boolean; confirm?: boolean;
+  isActive?: boolean;
 };
 
 const KEY = ["conts-debtors"];

@@ -3,8 +3,8 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 
 // Debtors (finance phase 1.5, SOP 2.1): every customer under its control. Pinned: a new debtor goes in with its
-// control and a blank code (the server numbers it); a move of a debtor that already has postings asks first and is
-// sent again with confirm.
+// control and a blank code (the server numbers it); a move to another control asks first, and a refusal is shown
+// in the server's words.
 const saveAsync = vi.fn();
 const confirmFn = vi.fn(async () => true);
 vi.mock("./debtorQueries", async (importOriginal) => ({
@@ -48,17 +48,29 @@ describe("Debtors", () => {
     expect(saveAsync.mock.calls[0][0]).toMatchObject({ id: null, body: { name: "MS CHEW", controlAccount: "302-0000", code: "" } });
   });
 
-  it("moving a debtor with postings asks first, then sends it again with confirm", async () => {
+  it("a move asks first, and a refusal (still owing) is shown in the server's words", async () => {
     saveAsync.mockReset();
     confirmFn.mockClear();
-    const refused = Object.assign(new Error("in use"), { status: 409, body: JSON.stringify({ error: "debtor_in_use", message: "301-M001 already has postings on 301-0000." }) });
-    saveAsync.mockRejectedValueOnce(refused).mockResolvedValueOnce({ debtor: {} });
+    const refused = Object.assign(new Error("refused"), { status: 409, body: JSON.stringify({ error: "debtor_has_balance", message: "301-M001 still has a balance on 301-0000." }) });
+    saveAsync.mockRejectedValueOnce(refused);
     render(<MemoryRouter><Debtors /></MemoryRouter>);
     fireEvent.click(screen.getByText(/301-M001 MS LEE/));
     fireEvent.change(screen.getByLabelText("Control"), { target: { value: "302-0000" } });
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
-    await waitFor(() => expect(saveAsync).toHaveBeenCalledTimes(2));
+    expect(await screen.findByRole("alert")).toHaveProperty("textContent", "301-M001 still has a balance on 301-0000.");
     expect(confirmFn).toHaveBeenCalledTimes(1);
-    expect(saveAsync.mock.calls[1][0]).toMatchObject({ id: "d1", body: { controlAccount: "302-0000", confirm: true } });
+    expect(saveAsync).toHaveBeenCalledTimes(1);
+    expect(saveAsync.mock.calls[0][0]).toMatchObject({ id: "d1", body: { controlAccount: "302-0000" } });
+  });
+
+  it("a declined move sends nothing", async () => {
+    saveAsync.mockReset();
+    confirmFn.mockResolvedValueOnce(false);
+    render(<MemoryRouter><Debtors /></MemoryRouter>);
+    fireEvent.click(screen.getByText(/301-M001 MS LEE/));
+    fireEvent.change(screen.getByLabelText("Control"), { target: { value: "302-0000" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(confirmFn).toHaveBeenCalled());
+    expect(saveAsync).not.toHaveBeenCalled();
   });
 });

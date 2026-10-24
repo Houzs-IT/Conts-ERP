@@ -1,7 +1,8 @@
 /* Debtors — finance's list of customers, by control (Conts, finance phase 1.5; spec 2.1). Pinned:
      · the list comes grouped by control (each control's code and name ride along);
      · a new debtor with no code takes the next one under its control; a control must be a customer control (SDC);
-     · a rename keeps the code; moving a debtor that already has postings asks first (409 debtor_in_use);
+     · a rename keeps the code; a debtor still owing on its control is not moved (409 debtor_has_balance);
+     · the Other Debtors control is not a customer control here; a typed code must sit under its control;
      · writing needs the post key. */
 import { Hono } from 'hono';
 import { describe, expect, test } from 'vitest';
@@ -13,6 +14,7 @@ const world = (over: Record<string, Row[]> = {}) => fakeSb({
   accounts: [
     { company_id: CO, account_code: '301-0000', account_name: 'RENOVATION CUSTOMER', account_type: 'ASSET', special_type: 'SDC', is_active: true },
     { company_id: CO, account_code: '302-0000', account_name: 'INHOUSE RENOVATION CUSTOMER', account_type: 'ASSET', special_type: 'SDC', is_active: true },
+    { company_id: CO, account_code: '305-0000', account_name: 'OTHER DEBTORS', account_type: 'ASSET', special_type: 'SDC', is_active: true },
     { company_id: CO, account_code: '400-0000', account_name: 'TRADE CREDITORS', account_type: 'LIABILITY', special_type: 'SCC', is_active: true },
   ],
   debtors: [
@@ -20,6 +22,7 @@ const world = (over: Record<string, Row[]> = {}) => fakeSb({
     { id: 'd2', company_id: CO, code: '302-M005', name: 'MR TAN', control_account: '302-0000', is_active: true },
   ],
   v_gl_entries: [],
+  acc_account_roles: [],
   ...over,
 }, {}, [{ table: 'debtors', column: 'code' }]);
 
@@ -69,16 +72,35 @@ describe('Debtors', () => {
     expect(sb.tables.debtors[0]).toMatchObject({ code: '301-M001', name: 'MS LEE MEI LING' });
   });
 
-  test('moving a debtor with postings asks first, then moves on confirm', async () => {
-    const sb = world({ v_gl_entries: [{ line_id: 1, company_id: CO, account_code: '301-0000', party_code: '301-M001', debit_sen: 100, credit_sen: 0, posted: true, reversed: false }] });
+  test('a debtor still owing on its control is not moved, confirm or not', async () => {
+    const sb = world({ v_gl_entries: [{ line_id: 1, company_id: CO, account_code: '301-0000', party_code: '301-M001', debit_sen: 100, credit_sen: 0 }] });
     const a = app(sb);
-    const first = await send(a, 'PATCH', '/debtors/d1', { controlAccount: '302-0000' });
+    const first = await send(a, 'PATCH', '/debtors/d1', { controlAccount: '302-0000', confirm: true });
     expect(first.status).toBe(409);
-    expect(await first.json()).toMatchObject({ error: 'debtor_in_use' });
+    expect(await first.json()).toMatchObject({ error: 'debtor_has_balance', balanceSen: 100 });
     expect(sb.tables.debtors[0].control_account).toBe('301-0000');
-    const again = await send(a, 'PATCH', '/debtors/d1', { controlAccount: '302-0000', confirm: true });
-    expect(again.status).toBe(200);
+  });
+
+  test('a debtor with nothing owing moves, history and all', async () => {
+    const sb = world({ v_gl_entries: [
+      { line_id: 1, company_id: CO, account_code: '301-0000', party_code: '301-M001', debit_sen: 100, credit_sen: 0 },
+      { line_id: 2, company_id: CO, account_code: '301-0000', party_code: '301-M001', debit_sen: 0, credit_sen: 100 },
+    ] });
+    const res = await send(app(sb), 'PATCH', '/debtors/d1', { controlAccount: '302-0000' });
+    expect(res.status).toBe(200);
     expect(sb.tables.debtors[0].control_account).toBe('302-0000');
+  });
+
+  test('the Other Debtors control is not offered nor taken', async () => {
+    const list = await (await send(app(world()), 'GET', '/debtors')).json() as { controls: Array<{ code: string }> };
+    expect(list.controls.map((c) => c.code)).not.toContain('305-0000');
+    expect((await send(app(world()), 'POST', '/debtors', { name: 'X', controlAccount: '305-0000' })).status).toBe(400);
+  });
+
+  test('a typed code must sit under its control', async () => {
+    const res = await send(app(world()), 'POST', '/debtors', { name: 'X', code: '302-X001', controlAccount: '301-0000' });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ error: 'code_not_under_control' });
   });
 
   test('refuses without the post key', async () => {

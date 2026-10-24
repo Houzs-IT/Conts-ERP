@@ -3,12 +3,14 @@
 // /accounting, so the Ledger guard (ledger-access.ts) stands in front; writing needs the post key, as the chart does.
 //   GET   /accounting/debtors?control=&q=&active=   the customers grouped by control, as AutoCount shows them
 //   POST  /accounting/debtors                       a new customer (no code → the next one under its control)
-//   PATCH /accounting/debtors/:id                   name, contact, notes, active; moving control asks first when
-//                                                   the customer already has postings
+//   PATCH /accounting/debtors/:id                   name, contact, notes, active; another control only once nothing
+//                                                   is owing on the old one (it could not follow: manual journals
+//                                                   may not touch a control)
 import { hasHouzsPerm } from '../scm/lib/houzs-perms';
 import { requireActiveCompanyId } from '../scm/lib/companyScope';
 import { paginateAll } from '../scm/lib/paginate-all';
-import { debtorLetter, nextPartyCode } from './parties';
+import { resolveRoles } from '../acc/rules';
+import { debtorLetter, nextPartyCode, partyBalanceOn } from './parties';
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- Hono context and PostgREST client, untyped as in the routes they sit beside */
 type Ctx = any;
@@ -22,12 +24,20 @@ type DebtorRow = {
 const COLS = 'id, code, name, control_account, customer_id, phone, email, address, notes, is_active';
 const text = (v: unknown): string | null => (typeof v === 'string' && v.trim() ? v.trim() : null);
 
-/** The customer controls of the chart (special type SDC), by code. */
+/** The customer controls of the chart (special type SDC), by code — less the Other Debtors control, which keeps the
+    Other Debtors register's own bills (its control check accepts only those). */
 async function customerControls(sb: any, companyId: number): Promise<{ ok: true; byCode: Map<string, string> } | { ok: false; error: string }> {
-  const { data, error } = await sb.from('accounts').select('account_code, account_name, special_type')
-    .eq('company_id', companyId).eq('special_type', 'SDC');
+  const [{ data, error }, roles] = await Promise.all([
+    sb.from('accounts').select('account_code, account_name, special_type').eq('company_id', companyId).eq('special_type', 'SDC'),
+    resolveRoles(sb, companyId),
+  ]);
   if (error) return { ok: false, error: error.message };
-  return { ok: true, byCode: new Map(((data ?? []) as Array<{ account_code: string; account_name: string | null }>).map((a) => [a.account_code, a.account_name ?? a.account_code])) };
+  return {
+    ok: true,
+    byCode: new Map(((data ?? []) as Array<{ account_code: string; account_name: string | null }>)
+      .filter((a) => a.account_code !== roles.AR_OTHER)
+      .map((a) => [a.account_code, a.account_name ?? a.account_code])),
+  };
 }
 
 export const listDebtorsHandler = async (c: Ctx): Promise<Response> => {
@@ -71,7 +81,10 @@ export const createDebtorHandler = async (c: Ctx): Promise<Response> => {
   if (!control || !ctl.byCode.has(control)) {
     return c.json({ error: 'not_a_customer_control', message: `${control ?? 'No control'} is not a customer control (SDC) of the chart.` }, 400);
   }
-  const typed = text(body.code);
+  const typed = text(body.code)?.toUpperCase() ?? null;
+  if (typed && !typed.startsWith(`${control.slice(0, 3)}-`)) {
+    return c.json({ error: 'code_not_under_control', message: `${typed} does not sit under ${control}: a code under it starts ${control.slice(0, 3)}-.` }, 400);
+  }
   const fields = {
     company_id: co.companyId, name, control_account: control, phone: text(body.phone), email: text(body.email),
     address: text(body.address), notes: text(body.notes), is_active: true,
@@ -121,17 +134,15 @@ export const patchDebtorHandler = async (c: Ctx): Promise<Response> => {
     if (!control || !ctl.byCode.has(control)) {
       return c.json({ error: 'not_a_customer_control', message: `${control ?? 'No control'} is not a customer control (SDC) of the chart.` }, 400);
     }
-    /* What this customer already owes stays on the old control: a move changes where new postings go. */
-    if (body.confirm !== true) {
-      const { data: lines, error: lErr } = await sb.from('v_gl_entries').select('debit_sen, credit_sen')
-        .eq('company_id', co.companyId).eq('party_code', row.code).eq('account_code', row.control_account).limit(1);
-      if (lErr) return c.json({ error: 'load_failed', reason: lErr.message }, 500);
-      if ((lines ?? []).length > 0) {
-        return c.json({
-          error: 'debtor_in_use',
-          message: `${row.code} already has postings on ${row.control_account}. They stay there; only new postings go to ${control}. Move the balance with a journal entry if it should follow.`,
-        }, 409);
-      }
+    /* What this customer owes cannot follow it (manual journals may not touch a control), so it moves only once
+       nothing is left on the old one; its settled history stays there. */
+    const bal = await partyBalanceOn(sb, co.companyId, row.code, row.control_account);
+    if (!bal.ok) return c.json({ error: 'load_failed', reason: bal.error }, 500);
+    if (bal.balanceSen !== 0) {
+      return c.json({
+        error: 'debtor_has_balance', accountCode: row.control_account, balanceSen: bal.balanceSen,
+        message: `${row.code} still has a balance on ${row.control_account}. Settle it there first, then move the customer to ${control}.`,
+      }, 409);
     }
     patch.control_account = control;
   }

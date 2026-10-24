@@ -622,8 +622,9 @@ const SupplierFields = ({
     <p className={styles.eyebrow}>Identity</p>
     <div className={styles.formGrid}>
       <Field label="Credit Account (blank — the next one)" value={(form.code as string) ?? ''} onChange={(v) => onChange('code', v)} />
-      {/* Conts (finance phase 1.5): blank books to the trade creditors control; else a supplier control (SCC). */}
-      <Field label="Control (blank — trade creditors)" value={(form.controlAccount as string) ?? ''} onChange={(v) => onChange('controlAccount', v)} />
+      {/* Conts (finance phase 1.5): blank books by the code (405- other creditors, else trade creditors); else a
+          supplier control (SCC), which needs the ledger's post key. */}
+      <Field label="Control (blank — by its code)" value={String(form.controlAccount)} onChange={(v) => onChange('controlAccount', v)} />
       <Field label="Company Name *" value={(form.name as string) ?? ''} onChange={(v) => onChange('name', v)} />
       <Field label="Supplier Type" value={(form.supplierType as string) ?? ''} onChange={(v) => onChange('supplierType', v)} />
       {/* Owner spec 2026-06-12 — Supply Category is a multi-select chip

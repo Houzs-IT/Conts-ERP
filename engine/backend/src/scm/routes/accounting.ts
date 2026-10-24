@@ -1483,7 +1483,7 @@ export const controlCheckHandler = async (c: any) => {
        either creditor control by the supplier's code. The AP arm walks them
        once, the same shape as the PIs above (docs/bugs/0654: they were not
        walked at all, and their journals read as foreign lines below). */
-    if (role === 'AP') {
+    if (role === 'AP' && walkDocs) {
       const { data: apiJes, error: apiJesErr } = await sb.from('journal_entries')
         .select('id, je_no, source_doc_no, total_debit_sen')
         .eq('company_id', companyId).eq('source_type', 'API')

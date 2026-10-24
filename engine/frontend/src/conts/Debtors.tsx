@@ -1,7 +1,7 @@
 // Conts only (not part of Houzs's code): Debtors — /scm/debtors (finance phase 1.5, SOP 2.1). Every customer has a
 // debtor code under its control (301-0000 renovation, 302-0000 inhouse renovation, 303-0000 rental), coded like
 // AutoCount: 301-M001. New orders open one by themselves; here finance looks them up, adds one by hand, renames one or
-// moves it to another control. Moving a customer that already has postings asks first: what it owes stays behind.
+// moves it to another control. A move asks first, and is refused while the customer still owes on the old control.
 import { useMemo, useState } from "react";
 import { Plus } from "lucide-react";
 import { Button } from "@2990s/design-system";
@@ -68,16 +68,17 @@ export function Debtors() {
       name: v.name, controlAccount: v.controlAccount, phone: v.phone, email: v.email, address: v.address, notes: v.notes,
       ...(id ? { isActive: v.isActive } : { code: v.code }),
     };
+    /* A move asks first; the server refuses it while the customer still owes on the old control, and says so. */
+    if (editing !== "new" && v.controlAccount !== editing.control_account && !(await askConfirm({
+      title: `Move ${editing.code} to ${v.controlAccount}?`,
+      body: `From now on ${editing.name}'s invoices and payments post to ${v.controlAccount} instead of ${editing.control_account}. The code stays ${editing.code}.`,
+      confirmLabel: "Move it",
+    }))) return;
     try {
       await save.mutateAsync({ id, body });
       close();
     } catch (err) {
-      const r = refusalOf(err);
-      if (r.error !== "debtor_in_use" || !id) { setNote(r.message ?? (err instanceof Error ? err.message : "The customer could not be saved.")); return; }
-      if (!(await askConfirm({ title: "This customer already has postings", body: r.message ?? "", confirmLabel: "Move it anyway" }))) return;
-      try { await save.mutateAsync({ id, body: { ...body, confirm: true } }); close(); } catch (again) {
-        setNote(refusalOf(again).message ?? (again instanceof Error ? again.message : "The customer could not be saved."));
-      }
+      setNote(refusalOf(err).message ?? (err instanceof Error ? err.message : "The customer could not be saved."));
     }
   };
 

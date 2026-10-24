@@ -213,6 +213,24 @@ describe('opening a debtor for a new order', () => {
     expect(r).toEqual({ ok: true, code: '300-H001', created: true });
   });
 
+  test('a walk-in with no phone is not attached to another customer of the same name', async () => {
+    const { ensureDebtor } = await import('./parties');
+    const sb = fakeSb({ acc_debtor_control_map: MAP.map((r) => ({ ...r })), acc_account_roles: [], debtors: [{ id: 'd1', company_id: CO, code: '301-M001', name: 'MR TAN', control_account: '301-0000', customer_id: null, phone: null, is_active: true }] });
+    const r = await ensureDebtor(sb, CO, { name: 'MR TAN', phone: null, customerId: 'c-7', orderKind: 'STANDARD' });
+    expect(r).toEqual({ ok: true, code: '300-M001', created: true });
+  });
+
+  test('a name and phone match takes on the customer; one already tied to another customer is not it', async () => {
+    const { ensureDebtor } = await import('./parties');
+    const sb = fakeSb({ acc_debtor_control_map: MAP.map((r) => ({ ...r })), acc_account_roles: [], debtors: [
+      { id: 'd1', company_id: CO, code: '301-M001', name: 'MS LEE', control_account: '301-0000', customer_id: null, phone: '012', is_active: true },
+      { id: 'd2', company_id: CO, code: '301-M002', name: 'MS WONG', control_account: '301-0000', customer_id: 'c-1', phone: '013', is_active: true },
+    ] });
+    expect(await ensureDebtor(sb, CO, { name: 'MS LEE', phone: '012', customerId: 'c-9', orderKind: 'RENOVATION' })).toEqual({ ok: true, code: '301-M001', created: false });
+    expect(sb.tables.debtors[0].customer_id).toBe('c-9');
+    expect(await ensureDebtor(sb, CO, { name: 'MS WONG', phone: '013', customerId: 'c-2', orderKind: 'RENOVATION' })).toEqual({ ok: true, code: '301-M003', created: true });
+  });
+
   test('two orders racing for a new customer get one debtor and no clash', async () => {
     const { ensureDebtor } = await import('./parties');
     const sb = fakeSb({ acc_debtor_control_map: MAP.map((r) => ({ ...r })), acc_account_roles: [], debtors: [] }, {}, [{ table: 'debtors', column: 'code' }]);
@@ -235,6 +253,10 @@ describe('opening a debtor inside a renovation transaction', () => {
         sent.push(text.split(/\s+/).slice(0, 4).join(' '));
         if (/customer_id = \$2/.test(text)) return debtors.filter((d) => d.customer_id === params[1]).map((d) => ({ code: d.code })) as T[];
         if (/upper\(btrim\(name\)\)/.test(text)) return debtors.filter((d) => d.name.trim().toUpperCase() === String(params[1]).trim().toUpperCase() && (d.phone ?? '') === (params[2] ?? '')).map((d) => ({ code: d.code })) as T[];
+        if (/^update scm.debtors set customer_id/.test(text)) {
+          for (const d of debtors) if (d.code === params[1] && !d.customer_id) d.customer_id = String(params[2]);
+          return [] as T[];
+        }
         if (/acc_debtor_control_map/.test(text)) return (map[String(params[1])] ? [{ control_account: map[String(params[1])] }] : []) as T[];
         if (/acc_account_roles/.test(text)) return [] as T[];
         if (/code like \$2/.test(text)) return debtors.filter((d) => d.code.startsWith(String(params[1]).replace('%', ''))).map((d) => ({ code: d.code })) as T[];
@@ -267,5 +289,11 @@ describe('opening a debtor inside a renovation transaction', () => {
       return q<T>(text, params);
     };
     expect(await ensureDebtorSql(db, CO, { name: 'MS CHEW', phone: '012', customerId: 'c-9', orderKind: 'RENOVATION' })).toBe('301-M002');
+  });
+
+  test('a customer with no phone is not matched by name alone', async () => {
+    const { ensureDebtorSql } = await import('./parties');
+    const db = fakeDb([{ code: '301-M001', name: 'MR TAN', phone: null, customer_id: null }], { RENOVATION: '301-0000' });
+    expect(await ensureDebtorSql(db, CO, { name: 'MR TAN', phone: null, customerId: 'c-7', orderKind: 'RENOVATION' })).toBe('301-M002');
   });
 });
