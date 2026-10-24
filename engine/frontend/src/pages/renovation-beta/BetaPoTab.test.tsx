@@ -11,6 +11,8 @@ vi.mock("../../api/client", async (importOriginal) => {
   const get = async (path: string): Promise<unknown> => {
     if (path.endsWith("/lines")) return LINES;
     if (path.endsWith("/vo")) return { vos: [] };
+    if (path.endsWith("/site")) return SITE;
+    if (path.endsWith("/photos")) return { photos: [], areas: [], docs: { dos: [], grs: [], pos: [] }, tasks: [] };
     throw new Error(`no mock for ${path}`);
   };
   const put = async (path: string, body: unknown): Promise<unknown> => { h.puts.push([path, body]); return { ok: true, plan: {} }; };
@@ -40,6 +42,12 @@ const LINES = {
   ],
 };
 
+const SITE = {
+  ready: true, areas: ["Kitchen"],
+  deliveries: [{ type: "delivery_order", id: "d1", no: "TC-DO-2610-003", at: "2026-10-24T06:31:00Z", status: "DELIVERED", from: "TC-SO-1", poNumber: null, poIds: [], areas: ["Kitchen"],
+    lines: [{ soItemId: "a", poLineId: null, qty: 1 }], photos: [] }],
+};
+
 function renderTab(): void {
   // jsdom has no ResizeObserver; width 0 keeps the table layout.
   globalThis.ResizeObserver ??= class { observe(): void {} disconnect(): void {} unobserve(): void {} } as unknown as typeof ResizeObserver;
@@ -56,8 +64,12 @@ describe("PO tab", () => {
     // One line PO cell: number and short date.
     expect(within(region).getByText("TC-PO-2610-006")).toBeTruthy();
     expect(within(region).getAllByText("24 Oct").length).toBeGreaterThan(0);
-    // The band: processing differs between the lines, delivery on the PO line vs none.
-    expect(within(region).getAllByText("Mixed").length).toBeGreaterThan(0);
+    // The band: processing differs between the lines (their span), delivery is set on the PO line only.
+    expect(within(region).getAllByText("1 Nov - 2 Nov").length).toBe(2);
+    expect(within(region).getAllByText("10 Nov, 1 not set").length).toBe(2);
+    // DO: the delivery order that carried line a, a link to it; line b has none yet.
+    expect(await within(region).findByText("TC-DO-2610-003")).toBeTruthy();
+    expect(within(region).getAllByText("Not yet").length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     expect(within(region).getAllByRole("textbox").length).toBeGreaterThan(0);

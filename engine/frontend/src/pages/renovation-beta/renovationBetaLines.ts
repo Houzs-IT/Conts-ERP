@@ -315,6 +315,12 @@ export function groupDate(lines: readonly ManagedLine[], which: "orderOn" | "del
   return [...vals][0] || null;
 }
 
+/** The earliest and latest of a group's dates and how many lines have none, for a band whose lines differ. */
+export function groupRange(lines: readonly ManagedLine[], which: "orderOn" | "deliverOn"): { from: string | null; to: string | null; unset: number } {
+  const days = lines.map((l) => lineDates(l)[which]).filter((x): x is string => !!x).sort();
+  return { from: days[0] ?? null, to: days[days.length - 1] ?? null, unset: lines.length - days.length };
+}
+
 /** The lines a group date sets: those whose date can be set here and differs from the new one. */
 export function groupDateTargets(lines: readonly ManagedLine[], which: "orderOn" | "deliverOn", value: string | null, plansReady: boolean): ManagedLine[] {
   return lines.filter((l) => dateSettable(l, which, plansReady) && (lineDates(l)[which] ?? null) !== value);
