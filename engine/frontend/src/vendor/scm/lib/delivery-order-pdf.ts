@@ -1,27 +1,15 @@
 // ----------------------------------------------------------------------------
 // Delivery Order PDF — customer-facing signed POD.
 //
-// 2026-09-08 REBUILT FOR THE PRINTER IT ACTUALLY GOES THROUGH. The DO is
-// printed on an Epson LQ-310 dot-matrix printer onto 9.5 x 11 inch 2-ply
-// continuous paper (owner). The Theme C "Ink & Petrol" sheet of 2026-08-07 was
-// designed as CSS for a screen and printed unreadably there — see
-// delivery-order-theme.ts for the three mechanisms. What changed:
+// Conts (owner, 24 Oct 2026): DOs go through a normal A4 printer, not the
+// dot-matrix the Houzs build of 2026-09-08 was made for, so the sheet is A4 and
+// the letterhead is the one every Conts document prints
+// (lib/renovation/renovation-doc-theme.ts). The rest of that build stays: black
+// ink only, one sans family at the DO_SIZE scale for the body, the info panel,
+// the table and the signatures pinned to the bottom. A long DO may run onto a
+// second page.
 //
-//   · PAGE: Letter (8.5 x 11 in), not A4. 9.5 x 11 continuous paper is 8.5 in
-//     wide once the tractor strips are torn off, and 11 in tall; A4 is 18mm
-//     taller, so the print dialog was shrinking every sheet to fit — which
-//     shrank the type with it.
-//   · INK: black only. No grey text, no tinted fills, no pills, no rounded
-//     paper panels or header bands — an impact printer dithers every one of
-//     those into a field of dots.
-//   · FACE: one family (helvetica) at the DO_SIZE scale, nothing under 9pt.
-//     The courier identifier columns are gone.
-//
-// This renderer does NOT use the shared pdf-common letterhead / info block /
-// signature helpers: the DO's header, panel and signature areas are specific
-// to this document. The other seven documents keep the shared ones.
-//
-// Page anatomy (Letter portrait, padding 14/14/12mm): header → info panel →
+// Page anatomy (A4 portrait, padding 14/14/12mm): header → info panel →
 // items table (the flexing item) → signature → footer. The signature and
 // footer are pinned to the BOTTOM of the last page, so a 3-line DO and a
 // 30-line DO both close the same way; the table absorbs the slack and repeats
@@ -34,6 +22,7 @@ import {
   deliverPdf,
   ensurePdfCjkFont,
   fmtDocDate,
+  letterheadLines,
   safeName,
   type PdfAction,
 } from './pdf-common';
@@ -43,10 +32,11 @@ import {
   HOUZS_COMPANY_CODE,
   type BrandingLogo,
 } from '../../../lib/branding';
-import { DO_SIZE as S, DO_THEME as T, SANS, charSpace, pt, type Rgb } from './delivery-order-theme';
+import { DO_SIZE as S, DO_THEME as T, SANS, pt, type Rgb } from './delivery-order-theme';
 import { docVariantLine, loadCustomerFabricMaps } from './supplier-doc-data';
 import { stripBookText } from './book-text';
 import { drawQrIntoPdf } from './pdf-qr';
+import { DOC_THEME, drawDocLetterheadAt } from '../../../lib/renovation/renovation-doc-theme';
 /* Owner spec 2026-08 — photos follow the line onto the printed document
    (SO → PO → DO). Same shared block the SO/PO PDFs print through; keys are
    the SO-carried `photo_urls` (mig 20260828T0746). All generated strings are
@@ -141,15 +131,12 @@ type DoItem = {
 type Doc = import('jspdf').jsPDF;
 
 // ── Page geometry ────────────────────────────────────────────────────────────
-/* jsPDF 'letter': 8.5 x 11 in. The 9.5 x 11 continuous form is 8.5 in between
-   its perforations, so this is the sheet the storekeeper tears off — not A4,
-   which is 18mm taller and was being scaled down to fit (owner 2026-09-08). */
-export const DO_PAGE_FORMAT = 'letter';
-const PAGE_W = 215.9;
-const PAGE_H = 279.4;
+export const DO_PAGE_FORMAT = 'a4';
+const PAGE_W = 210;
+const PAGE_H = 297;
 const M = 14;                       // left / right / top padding
 const PAD_BOTTOM = 12;
-const CONTENT_W = PAGE_W - M * 2;   // 187.9mm
+const CONTENT_W = PAGE_W - M * 2;   // 182mm
 
 const EM_DASH = '—';
 
@@ -185,192 +172,45 @@ const font = (doc: Doc, sizePt: number, style: 'normal' | 'bold' = 'normal'): vo
   doc.setFontSize(sizePt);
 };
 
-/**
- * The letterhead: logo + company stack on the left, document title + number on
- * the right, closed by a heavy rule.
- *
- * Both columns are laid out from their own top edge and the rule clears
- * whichever ran longer — the two never consult each other's width because the
- * right column is right-aligned and the left is wrapped into the measure that
- * remains. (That measure is the fix from 2026-08-07: the old shared letterhead
- * let a long address run straight under the meta column.)
- */
+/** The letterhead, closed by a heavy rule; returns that rule's y. */
 function drawDoHeader(
   doc: Doc,
   header: DoHeader,
   opts: { docTitle: string; logo?: BrandingLogo | null },
 ): number {
-  // ── Right column first: it is fixed-width and defines the left's measure ──
-  const rightEdge = PAGE_W - M;
-  const titleWords = opts.docTitle.trim().split(/\s+/);
-  const titleTracking = charSpace(S.title, 0.06);
+  /* The shared Conts letterhead. The number ("No. :", owner 2026-09-21) and issue date sit in its right column; the
+     customer-service desk (owner 2026-08-07, falling back to the headline phone / e-mail) is its contact line. */
+  const QR = 14;       // a floor: drawQrIntoPdf grows the code when the link needs more modules (2026-08-27)
+  const QR_BOX = 20;
+  const QR_GAP = 6;
+  const withQr = Boolean(header.scanToken && typeof window !== 'undefined');
+  const head = drawDocLetterheadAt(doc, {
+    title: opts.docTitle.toUpperCase(),
+    name: COMPANY.shortName,
+    logo: opts.logo ?? getBrandingLogoCache(),
+    lines: letterheadLines({ phone: COMPANY.csPhone || COMPANY.phone, email: COMPANY.csEmail || COMPANY.email }),
+    meta: [{ label: 'No. :', value: header.do_number }, { label: 'Issued', value: fmtDocDate(header.do_date) }],
+    margin: M,
+    reserve: withQr ? QR_BOX + QR_GAP : 0,
+  });
+  let bottom = head.bottom;
 
-  font(doc, S.title, 'bold');
-  let rightW = 0;
-  for (const word of titleWords) {
-    rightW = Math.max(rightW, doc.getTextWidth(word) + titleTracking * Math.max(0, word.length - 1));
-  }
-
-  let ty = baselineOf(M, S.title);
-  setInk(doc, T.ink);
-  for (const word of titleWords) {
-    doc.text(word.toUpperCase(), rightEdge, ty, { align: 'right', charSpace: titleTracking });
-    ty += pt(S.title * 1.1);
-  }
-
-  /* The DO number, bold and large: the one thing on the sheet the warehouse
-     reads from across a desk. It used to be a brass pill. */
-  const docNoBaseline = ty - pt(S.title * 1.1) + pt(S.docNo) + 2.5;
-  font(doc, S.docNo, 'bold');
-  // Owner 2026-09-21: label the number "No. :" so it reads as the document
-  // number, not a bare code.
-  const docNoText = `No. : ${header.do_number}`;
-  doc.text(docNoText, rightEdge, docNoBaseline, { align: 'right' });
-  rightW = Math.max(rightW, doc.getTextWidth(docNoText));
-
-  const issuedBaseline = docNoBaseline + pt(S.meta) + 2;
-  const issued = `Issued ${fmtDocDate(header.do_date)}`;
-  font(doc, S.meta);
-  doc.text(issued, rightEdge, issuedBaseline, { align: 'right' });
-  rightW = Math.max(rightW, doc.getTextWidth(issued));
-
-  let rightBottom = issuedBaseline + 1.2;
-
-  /* THE SCAN QR. It points at the PUBLIC page now (2026-08-26): the driver has
-     no account, so the link must open without one — the owner's call,
-     「就跟hookka一样」 — and the 64-hex token in it is the only credential. It
-     used to encode /scm/do-load?id=<uuid>, which only signed-in office staff
-     could open.
-
-     THE CAPTION CHANGED WITH IT, and had to. "SCAN · MARK LOADED" was written
-     when the code did exactly one thing (DRAFT -> LOADED). Since the three-scan
-     ladder it does four — confirm loading, confirm loaded onto the lorry,
-     confirm departure, confirm delivered — so a caption naming one of them is
-     wrong on three of the four papers a storekeeper picks up, and the one it
-     names is the rung most papers never see. "SCAN AT EACH STEP" is what is
-     true of every rung, and it tells the person holding the paper the thing the
-     old caption did not: that this code is scanned more than once.
-
-     It sits BESIDE the title column, not under it (2026-09-08). Stacked under
-     the date it added ~18mm to the letterhead, and on the Letter sheet that
-     alone pushed a three-line DO's signature onto a second form. Beside the
-     title it costs the left column some measure and the letterhead no height.
-     The header rule still clears whichever column ran longer. */
-  if (header.scanToken && typeof window !== 'undefined') {
-    /* 14mm, DOWN FROM 16 (owner, 2026-08-27: 「我不要 16mm，只想要 10mm，太大了可能
-       会有影响」). 10mm was measured and refused back to him: the smallest QR that
-       exists is 21 modules square, so 10mm cannot carry a URL at a readable module
-       size no matter how short the link — it lands at 0.303mm, WORSE than the 16mm
-       it replaced. 14mm with the shortened token is 0.424mm, which is both smaller
-       on the sheet than today AND better to scan than today.
-
-       This number is a FLOOR, not a promise: drawQrIntoPdf grows the code when the
-       payload needs more room, so a delivery order still carrying a legacy 64-char
-       token prints readable instead of silently unscannable. The code is drawn
-       from its LEFT edge inside a 20mm reserve, so growing never runs it into
-       the title column. */
-    const QR = 14;
-    const QR_BOX = 20;
-    const QR_GAP = 6;
-    const qrRight = rightEdge - rightW - QR_GAP;
+  /* THE SCAN QR opens the PUBLIC page (2026-08-26): the driver has no account, and the token in it is the only
+     credential. It is scanned at each step of the loading ladder, hence the caption. It sits beside the number column,
+     in the space the letterhead kept for it, so it adds no height. */
+  if (withQr && header.scanToken) {
+    const x = head.columnLeft;
+    const top = DOC_THEME.blockTop - 3;
     const url = `${window.location.origin}/d/${encodeURIComponent(header.scanToken)}`;
-    const drawn = drawQrIntoPdf(doc, url, qrRight - QR_BOX, M, QR);
+    const drawn = drawQrIntoPdf(doc, url, x, top, QR);
     font(doc, S.footer, 'bold');
     setInk(doc, T.ink);
-    const caption = 'SCAN AT EACH STEP';
-    const labelBaseline = baselineOf(M + Math.max(drawn, QR_BOX) + 1, S.footer);
-    doc.text('SCAN AT EACH STEP', qrRight, labelBaseline, { align: 'right' });
-    rightW += QR_GAP + Math.max(QR_BOX, drawn, doc.getTextWidth(caption));
-    rightBottom = Math.max(rightBottom, labelBaseline + 0.8);
+    const labelBaseline = baselineOf(top + Math.max(drawn, QR) + 1, S.footer);
+    doc.text('SCAN AT EACH STEP', x, labelBaseline);
+    bottom = Math.max(bottom, labelBaseline + 1);
   }
 
-  // ── Left column, wrapped into what the right one left ────────────────────
-  const GUTTER = 7;
-  let textX = M;
-  let logoBottom = 0;
-  const logo = opts.logo ?? getBrandingLogoCache();
-  if (logo) {
-    /* The box is 28.8 x 20mm: wide enough for 2990's WIDE mark (≈2.25:1) to
-       fill edge to edge, tall enough that Houzs's stacked, near-square lockup
-       covers about the same area (20² ≈ 28.8 x 12.8) so the two companies'
-       documents carry equal weight (owner 2026-08-07).
-       A logo is never distorted to fill the box: it is scaled to fit and
-       CENTRED in it, because the text column starts after the box's full
-       width either way, and a narrow mark pinned left reads as though it had
-       drifted away from the wordmark. */
-    const BOX_W = 28.8;
-    const BOX_H = 20;
-    const scale = Math.min(BOX_W / logo.width, BOX_H / logo.height);
-    const w = logo.width * scale;
-    const h = logo.height * scale;
-    try {
-      doc.addImage(logo.dataUrl, logo.format, M + (BOX_W - w) / 2, M + 1, w, h);
-      textX = M + BOX_W + 4;
-      logoBottom = M + 1 + h;
-    } catch { /* fail-soft: text-only letterhead */ }
-  }
-
-  const leftMaxW = Math.max(40, rightEdge - rightW - GUTTER - textX);
-
-  font(doc, S.company, 'bold');
-  const nameLines = doc.splitTextToSize(COMPANY.name, leftMaxW) as string[];
-  let y = baselineOf(M, S.company);
-  setInk(doc, T.ink);
-  nameLines.forEach((line, i) => {
-    if (i) y += pt(S.company * 1.15);
-    doc.text(line, textX, y);
-  });
-
-  font(doc, S.meta);
-  if (COMPANY.reg) {
-    y += 2 + pt(S.meta);
-    doc.text(COMPANY.reg, textX, y);
-  }
-
-  const addressLines = COMPANY.addressLines.flatMap(
-    (line) => doc.splitTextToSize(line, leftMaxW) as string[],
-  );
-  let first = true;
-  for (const line of addressLines) {
-    y += first ? 2 + pt(S.meta) : pt(S.meta * LINE);
-    first = false;
-    doc.text(line, textX, y);
-  }
-
-  /* Customer-service contact (owner 2026-08-07). A delivery note is the one
-     document a customer holds while something is wrong with the delivery, so
-     the desk to call belongs on it.
-     The dedicated Branding fields are an OVERRIDE, not a requirement: a company
-     that has not set them falls back to its own headline phone / email, which
-     is what the letterhead would print anyway and is the number a customer
-     would find regardless. Houzs's headline number IS its service desk.
-     The fallback reads THIS company's row, so a 2990 sheet still cannot print a
-     Houzs contact — the invariant survives. Both blank ⇒ the line is omitted. */
-  const cs = [COMPANY.csPhone || COMPANY.phone, COMPANY.csEmail || COMPANY.email]
-    .map((v) => (v || '').trim())
-    .filter(Boolean);
-  if (cs.length > 0) {
-    font(doc, S.meta);
-    const label = 'Customer Service';
-    const labelW = doc.getTextWidth(label) + 2;
-    const valueW = Math.max(30, leftMaxW - labelW);
-    const oneLine = cs.join('  ·  ');
-    /* One line when phone + e-mail fit beside the label. Otherwise each channel
-       takes its own line, and any that is too wide for the indented column (a
-       long e-mail, once the logo + QR have narrowed this column) drops to the
-       full-width left edge so it is NEVER force-broken mid-word — the bug that
-       printed operation@houzscentury.com as "operation@houzsce" / "ntury.com". */
-    const csRows: Array<[number, string]> = doc.getTextWidth(oneLine) <= valueW
-      ? [[textX + labelW, oneLine]]
-      : cs.map((v, i) => [i > 0 && doc.getTextWidth(v) > valueW ? textX : textX + labelW, v]);
-    csRows.forEach(([x, text], i) => {
-      y += i === 0 ? 2 + pt(S.meta) : pt(S.meta * LINE);
-      if (i === 0) doc.text(label, textX, y);
-      doc.text(text, x, y);
-    });
-  }
-
-  const ruleY = Math.max(y + 1.2, rightBottom, logoBottom) + 5;
+  const ruleY = bottom + 1;
   rule(doc, M, ruleY, PAGE_W - M, RULE_HEAVY);
   return ruleY;
 }
@@ -542,7 +382,7 @@ const FOOTER_RULE_Y = PAGE_H - PAD_BOTTOM - 6;
    break threshold, NOT a drawn box: drawClosing always strikes the rule at
    SIG_TITLE_TOP, so a short DO keeps a large blank above it either way. At 20mm
    (+6mm gap = 26mm reserved) even a five-line DO spilled a near-empty second
-   Letter sheet. Trimmed to 8mm (+4mm gap = 12mm floor, owner 2026-09-21): still
+   sheet. Trimmed to 8mm (+4mm gap = 12mm floor, owner 2026-09-21): still
    room to sign, and normal DOs now close on one page. */
 const SIG_BOX_H = 8;
 const SIG_FIELD_ROW = pt(S.sigField) + 3.6;

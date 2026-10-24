@@ -169,7 +169,8 @@ describe("security-upgraded document dependencies", () => {
     const flattenedText = drawnText.flatMap((value) =>
       Array.isArray(value) ? value.map(String) : [String(value)]
     );
-    expect(flattenedText).toContain(testBranding.companyName);
+    // The shared letterhead prints the name in capitals beside the registration number.
+    expect(flattenedText.some((line) => line.includes(testBranding.companyName.toUpperCase()))).toBe(true);
     // The Theme C DO (2026-08-07) labels the name inside the Deliver To panel
     // ("Customer :  中文客户"), so it reaches the page within a line rather than
     // as one. What this guards is that it reaches the page at all, through the
