@@ -6,9 +6,7 @@
 import { useMemo, useState, type ReactElement } from "react";
 import { Download, ExternalLink, Send } from "lucide-react";
 import { useQuery } from "../../hooks/useQuery";
-import { SoLinePhotoStrip } from "../../components/scm-v2/SoLinePhotoStrip";
-import { resolveApiAssetUrl } from "../../components/scm-v2/PhotoGallery";
-import { PlainPhotoStrip } from "./BetaClientPhotos";
+import { LinePhotoThumbs, photoCount } from "./BetaLinePhotos";
 import { errorText } from "../projects/renovation/renovationModel";
 import { TONE_WAIT, WS, WsBadge, WsEmpty, WsFilterPill, WsPageHead, btnStyle } from "./BetaWsUi";
 import { WsNarrow, WsNarrowStyle, WsTable, metaStyle, narrowBandStyle, narrowItemStyle, numStyle, tdStyle, thStyle } from "./BetaVoPoUi";
@@ -16,23 +14,18 @@ import type { BetaTabProps } from "./betaShared";
 import { downloadClientPdf } from "./renovationBetaClientPdf";
 import { whatsappLink } from "./renovationBetaModel";
 import { BETA } from "./renovationBetaTheme";
-import { byArea, byCategory, clientLinkUrl, skuPhotoPath, voPoApi, type ClientItem } from "./renovationBetaVoPo";
+import { byArea, byCategory, clientLinkUrl, voPoApi, type ClientItem } from "./renovationBetaVoPo";
 
-/** The line's photos (uploaded on the order line, carried to its PO) and the SKU's catalog photos, as the client link shows them. */
+/** The line's photos (uploaded on the order line, carried to its PO) and the SKU's catalog photos, as the client link
+    shows them: up to three, then "+N" (BetaLinePhotos.tsx, shared with the PO tab). */
 function LinePhotos({ i }: { i: ClientItem }): ReactElement {
-  const line = i.soItemId && i.soDocNo && (i.photoKeys?.length ?? 0) > 0;
-  const sku = (i.skuPhotos ?? []).map((ph) => ({
-    thumb: resolveApiAssetUrl(skuPhotoPath(ph.productId, ph.thumbKey ?? ph.key)),
-    full: resolveApiAssetUrl(skuPhotoPath(ph.productId, ph.key)),
-    label: `SKU photo of ${i.itemCode ?? i.description}`,
-  }));
-  if (!line && sku.length === 0) return <span style={metaStyle}>None</span>;
-  return (
-    <span style={{ display: "inline-flex", flexWrap: "wrap", alignItems: "center", gap: 6 }}>
-      {line && <SoLinePhotoStrip source="so" docId={i.soDocNo ?? ""} itemId={i.soItemId ?? ""} photoKeys={i.photoKeys ?? []} edit={null} />}
-      {sku.length > 0 && <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><span style={metaStyle}>SKU</span><PlainPhotoStrip photos={sku} label={`SKU photos of ${i.description || i.itemCode || "item"}`} /></span>}
-    </span>
-  );
+  const set = {
+    so: i.soItemId && i.soDocNo && (i.photoKeys?.length ?? 0) > 0 ? { docNo: i.soDocNo, itemId: i.soItemId, keys: i.photoKeys ?? [] } : null,
+    po: [],
+    sku: i.skuPhotos ?? [],
+  };
+  if (photoCount(set) === 0) return <span style={metaStyle}>None</span>;
+  return <LinePhotoThumbs photos={set} label={i.description || i.itemCode || "item"} />;
 }
 
 type View = "category" | "area";

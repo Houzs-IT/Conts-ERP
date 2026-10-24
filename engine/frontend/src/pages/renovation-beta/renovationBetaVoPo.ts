@@ -19,6 +19,8 @@ export interface VoLine {
   lineQty?: number | null;
   goesTo: GoesTo;
   fromItemCode: string | null;
+  /** What a change to an existing line moved, in words ("Colour: White -> Grey", "Remark: ..."). */
+  changes?: string[];
 }
 
 export interface VoRow {
