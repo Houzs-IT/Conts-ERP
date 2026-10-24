@@ -95,6 +95,10 @@ export interface ClientItem {
   measure: string | null;
   uom: string | null;
   photoKeys?: string[];
+  /** The SKU's catalog photos, primary first (staff answer only). */
+  skuPhotos?: Array<{ productId: string; key: string; thumbKey: string | null }>;
+  /** The client link's photos, by reference (public answer only). */
+  photos?: Array<{ ref: string; from: "line" | "sku" }>;
   voNo?: string | null;
   pending: boolean;
 }
@@ -112,6 +116,16 @@ export const voPoApi = {
   clientLink: (projectId: number): Promise<{ token: string; expiresAt: string }> =>
     api.post<{ token: string; expiresAt: string }>(`${B}/projects/${projectId}/client-link`, {}),
 };
+
+/** A SKU catalog photo: served without login, so a plain <img> can show it (public-images.ts). */
+export function skuPhotoPath(productId: string, key: string): string {
+  return `/api/scm/mfg-products/${encodeURIComponent(productId)}/photo/${encodeURIComponent(key)}`;
+}
+
+/** One photo of the client's link, fetched through the link's own token. */
+export function clientPhotoUrl(apiBase: string, token: string, ref: string, thumb: boolean): string {
+  return `${apiBase}/api/public/beta-client/${encodeURIComponent(token)}/photos/${ref}${thumb ? "?thumb=1" : ""}`;
+}
 
 /** The client's page address for a link token (the engine screens site, as the other share links). */
 export function clientLinkUrl(origin: string, token: string): string {

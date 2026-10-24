@@ -63,3 +63,27 @@ export function sheetVersionName(isFirst: boolean, count: number): string {
   const n = `${count} sheet${count === 1 ? "" : "s"}`;
   return isFirst ? `2D set, ${n}` : `${n} updated`;
 }
+
+/** A sheet name as stored: trimmed, inner spaces folded (the same cleaning as a new set). */
+export function cleanSheetName(x: unknown): Refusal<string> {
+  const name = String(x ?? "").trim().replace(/\s+/g, " ");
+  if (!name) return no("name_required", "Give the sheet a name.");
+  if (name.length > 120) return no("name_too_long", "A sheet name can be up to 120 characters.");
+  return { ok: true, value: name };
+}
+
+/** Renaming a sheet (every file it had, in every version): the new name must be free among the project's other sheets,
+ *  removed ones included, or two sheets would merge into one set entry. Changing only the capitals is allowed. */
+export function cleanSheetRename(b: Record<string, unknown>, names: readonly string[]): Refusal<{ from: string; to: string }> {
+  const from = cleanSheetName(b.name);
+  if (!from.ok) return from;
+  const to = cleanSheetName(b.newName);
+  if (!to.ok) return to;
+  const lower = names.map((n) => n.toLowerCase());
+  if (!lower.includes(from.value.toLowerCase())) return no("sheet_not_found", "That sheet is not in this project's 2D set.");
+  if (from.value === to.value) return no("unchanged", "The name is the same.");
+  if (from.value.toLowerCase() !== to.value.toLowerCase() && lower.includes(to.value.toLowerCase())) {
+    return no("name_duplicate", `There is already a sheet named "${to.value}". Give this sheet its own name.`);
+  }
+  return { ok: true, value: { from: from.value, to: to.value } };
+}

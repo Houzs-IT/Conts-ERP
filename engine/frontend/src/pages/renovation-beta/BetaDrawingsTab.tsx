@@ -15,8 +15,9 @@ import { BetaUploadDialog, type UploadDialog } from "./BetaDrawingUploads";
 import { FileDialog, sendReminder, useGuarded, type BetaTabProps, type ViewedFile } from "./betaShared";
 import { betaApi } from "./renovationBetaApi";
 import { approvedSet, dayMonth, dayMonthYear, daysLeft, versionLabel, whatsappLink, type ApprovedSet, type DesignKind, type VersionInfo } from "./renovationBetaModel";
-import { downloadAsPdf, type PdfPart } from "./renovationBetaPdf";
-import { sheetSetAt, sheetsApi, type BetaSheet, type SetSheet } from "./renovationBetaSheets";
+import { downloadAsPdf, type PdfPart, type TitleBlock } from "./renovationBetaPdf";
+import { removedSheetsOf, sheetSetAt, sheetsApi, type BetaSheet, type SetSheet } from "./renovationBetaSheets";
+import { getBrandingCache } from "../../lib/branding";
 import { BETA } from "./renovationBetaTheme";
 
 type DrawPick = "m" | DesignKind;
@@ -82,7 +83,7 @@ export function BetaDrawingsTab(p: BetaTabProps): ReactElement {
       {pick === "m" ? <MeasureDetail measures={records.measures} projectId={p.projectId} onView={setViewing} onUpload={upload} onError={p.onError} />
         // Keyed on the version count too, so a new upload opens on its own "New version" view.
         : <KindDetail key={`${pick}-${sets[pick].versions.length}`} kind={pick} p={p} set={sets[pick]} onEdit={(type, v) => setEditing({ type, kind: pick, v })} onOpen={openFile} onUpload={upload}
-          sheets={sheets} sheetsReady={sheetsReady} onView={setViewing} />}
+          sheets={sheets} sheetsReady={sheetsReady} canRemoveSheets={sheetsQ.data?.canRemove ?? false} onSheetsChanged={sheetsQ.reload} onView={setViewing} />}
 
       {editing?.type === "send" && <SendDialog p={p} editing={editing} onClose={() => setEditing(null)} />}
       {editing?.type === "approve" && <ApproveDialog p={p} editing={editing} onClose={() => setEditing(null)} />}
@@ -251,9 +252,9 @@ function MeasureDetail({ measures, projectId, onView, onUpload, onError }: {
 
 /* ---------- 3D and 2D ---------- */
 
-function KindDetail({ kind, p, set, onEdit, onOpen, onUpload, sheets, sheetsReady, onView }: {
+function KindDetail({ kind, p, set, onEdit, onOpen, onUpload, sheets, sheetsReady, canRemoveSheets, onSheetsChanged, onView }: {
   kind: DesignKind; p: BetaTabProps; set: ApprovedSet; onEdit: (type: "send" | "approve", v: VersionInfo) => void; onOpen: (f: DesignFile) => void; onUpload: ((d: UploadDialog) => void) | null;
-  sheets: readonly BetaSheet[]; sheetsReady: boolean; onView: (f: ViewedFile) => void;
+  sheets: readonly BetaSheet[]; sheetsReady: boolean; canRemoveSheets: boolean; onSheetsChanged: () => void; onView: (f: ViewedFile) => void;
 }): ReactElement {
   const dialog = useDialog();
   const { busy, run } = useGuarded();
@@ -264,10 +265,23 @@ function KindDetail({ kind, p, set, onEdit, onOpen, onUpload, sheets, sheetsRead
   const view: View = picked === "waiting" && !waiting ? (approved ? "approved" : "history") : picked === "approved" && !approved ? (waiting ? "waiting" : "history") : picked;
   const notes = records.notes.filter((n) => n.kind === kind).sort((a, b) => b.noted_on.localeCompare(a.noted_on) || b.id - a.id);
   const K = kind.toUpperCase();
-  const sheetBox = (v: VersionInfo): ReactElement => (
-    <SheetBox projectId={projectId} version={v.file.version} sheets={sheetSetAt(records.files, sheets, v.file.version)} onView={onView} onError={p.onError}
-      outName={`${detail.project.name} 2D V${v.file.version}.pdf`} />
-  );
+  const sheetBox = (v: VersionInfo): ReactElement => {
+    const versionDate = new Map(records.files.filter((f) => f.kind === "2d").map((f) => [f.version, dayMonthYear(submittedOf(f))]));
+    const status = v.review?.approvedOn
+      ? `Approved by client ${dayMonthYear(v.review.approvedOn)}`
+      : v.review?.sentOn ? `Sent ${dayMonthYear(v.review.sentOn)}, waiting for approval` : "Not sent to client yet";
+    const unit = [detail.project.building, detail.project.unit_no].filter(Boolean).join(" ") || null;
+    const block = (x: SetSheet): TitleBlock => ({
+      company: getBrandingCache().companyName, project: detail.project.name, unit, sheet: x.name,
+      version: x.version === v.file.version ? `V${x.version}` : `Set V${v.file.version} · sheet V${x.version}`,
+      date: versionDate.get(x.version) ?? "", status,
+    });
+    return (
+      <SheetBox projectId={projectId} version={v.file.version} sheets={sheetSetAt(records.files, sheets, v.file.version)} onView={onView} onError={p.onError}
+        outName={`${detail.project.name} 2D V${v.file.version}.pdf`} block={block}
+        edit={canWrite && canRemoveSheets ? { removed: removedSheetsOf(records.files, sheets), onChanged: onSheetsChanged, onDone: p.onDone } : null} />
+    );
+  };
 
   async function removeApproval(v: VersionInfo): Promise<void> {
     const label = versionLabel(kind, v.file);
@@ -470,15 +484,60 @@ function LinkTile(): ReactElement {
 }
 
 /** The sheets of a 2D set as of one version: the newest file of each sheet, its older files under History. */
-function SheetBox({ projectId, version, sheets, onView, onError, outName }: {
+function SheetBox({ projectId, version, sheets, onView, onError, outName, block, edit }: {
   projectId: number; version: number; sheets: SetSheet[]; onView: (f: ViewedFile) => void; onError: (t: string) => void; outName: string;
+  block: (x: SetSheet) => TitleBlock;
+  /** Rename / remove / put back; null when the user cannot write or before database update 0153. */
+  edit: { removed: ReturnType<typeof removedSheetsOf>; onChanged: () => void; onDone: (t: string) => void } | null;
 }): ReactElement {
+  const dialog = useDialog();
+  const { busy, run } = useGuarded();
   const [open, setOpen] = useState<string | null>(null);
+  const [showRemoved, setShowRemoved] = useState(false);
   const openSheet = (x: { key: string | null; url: string | null; fileName: string }): void => {
     if (x.url) window.open(x.url, "_blank", "noopener");
     else if (x.key) onView({ key: x.key, name: x.fileName });
   };
-  const parts: PdfPart[] = sheets.filter((x) => x.key).map((x) => ({ key: x.key ?? "", fileName: x.fileName }));
+  const parts: PdfPart[] = sheets.filter((x) => x.key).map((x) => ({ key: x.key ?? "", fileName: x.fileName, block: block(x) }));
+  // A one-file 2D version (no sheet rows) is shown as one sheet but has nothing to rename or remove.
+  const editable = (x: SetSheet): boolean => edit != null && x.url == null && x.history.every((h) => h.key != null) && x.contentType != null;
+
+  async function rename(x: SetSheet): Promise<void> {
+    const to = await dialog.prompt({ title: `Rename ${x.name}`, message: "The new name is used in every version of this sheet.", defaultValue: x.name, required: true, confirmLabel: "Rename" });
+    if (to == null || to.trim().replace(/\s+/g, " ") === x.name) return;
+    try {
+      const r = await sheetsApi.rename(projectId, x.name, to);
+      edit?.onChanged();
+      edit?.onDone(`${x.name} renamed to ${r.name}.`);
+    } catch (e) {
+      onError(errorText(e));
+    }
+  }
+  async function remove(x: SetSheet): Promise<void> {
+    const ok = await dialog.confirm({
+      title: `Remove ${x.name} from the 2D set?`,
+      message: "It leaves the set and the set PDF. Its files are kept under Removed sheets and it can be put back.",
+      confirmLabel: "Remove sheet", danger: true,
+    });
+    if (!ok) return;
+    try {
+      await sheetsApi.remove(projectId, x.name);
+      edit?.onChanged();
+      edit?.onDone(`${x.name} removed from the 2D set.`);
+    } catch (e) {
+      onError(errorText(e));
+    }
+  }
+  async function restore(name: string): Promise<void> {
+    try {
+      await sheetsApi.restore(projectId, name);
+      edit?.onChanged();
+      edit?.onDone(`${name} is back in the 2D set.`);
+    } catch (e) {
+      onError(errorText(e));
+    }
+  }
+  const removed = edit?.removed ?? [];
   return (
     <div style={boxStyle}>
       <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "10px 16px", background: WS.head }}>
@@ -501,6 +560,12 @@ function SheetBox({ projectId, version, sheets, onView, onError, outName }: {
                 </button>
               )}
               <WsBtn kind="teal" size="sm" onClick={() => openSheet(x)}>Open<span className="sr"> {x.name}</span></WsBtn>
+              {editable(x) && (
+                <>
+                  <WsBtn size="sm" disabled={busy} onClick={() => void run(() => rename(x))}>Rename<span className="sr"> {x.name}</span></WsBtn>
+                  <WsBtn kind="danger" size="sm" disabled={busy} onClick={() => void run(() => remove(x))}>Remove<span className="sr"> {x.name}</span></WsBtn>
+                </>
+              )}
             </div>
             {open === x.name && (
               <ul style={{ listStyle: "none", margin: 0, padding: "0 0 0 46px", display: "flex", flexDirection: "column", gap: 4 }}>
@@ -515,6 +580,26 @@ function SheetBox({ projectId, version, sheets, onView, onError, outName }: {
           </li>
         ))}
       </ul>
+      {removed.length > 0 && (
+        <div style={{ borderTop: `1px solid ${WS.rowLine}`, padding: "10px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
+          <button type="button" className="link" aria-expanded={showRemoved} onClick={() => setShowRemoved(!showRemoved)} style={{ alignSelf: "flex-start" }}>
+            Removed sheets ({removed.length})
+          </button>
+          {showRemoved && (
+            <ul aria-label="Removed sheets" style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 8 }}>
+              {removed.map((r) => (
+                <li key={r.name} style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, fontSize: 13, color: WS.text2 }}>
+                  <span style={{ flex: "1 1 200px", minWidth: 0, overflowWrap: "anywhere" }}>
+                    <span style={{ fontWeight: 600, color: BETA.ink }}>{r.name}</span> · removed {dayMonthYear(r.removedAt.slice(0, 10))} · {plural(r.history.length, "file")}
+                  </span>
+                  {r.history[0] && <button type="button" className="link" onClick={() => openSheet({ key: r.history[0]!.key, url: null, fileName: r.history[0]!.fileName })}>Open<span className="sr"> {r.name}</span></button>}
+                  <WsBtn size="sm" disabled={busy} onClick={() => void run(() => restore(r.name))}>Put back<span className="sr"> {r.name}</span></WsBtn>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
     </div>
   );
 }

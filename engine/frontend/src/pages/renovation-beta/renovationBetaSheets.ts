@@ -1,12 +1,18 @@
 /* 2D as a set of sheets (owner, 24 Oct 2026; migration 0149). A 2D version either holds sheets (the first set, or only
    the sheets that changed) or is one file from before sheets existed. The set a version stands for: walk the versions
    from V1 up to it; a one-file version replaces everything; a sheet version lays its sheets over the set before it,
-   by sheet name, unless the set before it was a one-file version, which it then replaces. */
+   by sheet name, unless the set before it was a one-file version, which it then replaces.
+   A removed sheet (migration 0153) is left out of every set and of the set PDF, but its files stay, listed by
+   removedSheetsOf, and it can be put back. */
 
 import { api } from "../../api/client";
 import type { DesignFile } from "../projects/renovation/simpleApi";
 
-export interface BetaSheet { id: number; fileId: number; name: string; fileName: string; contentType: string | null; size: number | null; key: string; uploadedAt: string }
+export interface BetaSheet {
+  id: number; fileId: number; name: string; fileName: string; contentType: string | null; size: number | null; key: string; uploadedAt: string;
+  /** When the sheet was removed from the set; null or absent while it is in it. */
+  removedAt?: string | null;
+}
 
 /** One sheet of a set as of a version: the file shown now, and every file it had up to that version (newest first). */
 export interface SetSheet {
@@ -41,6 +47,8 @@ export function sheetSetAt(files: readonly DesignFile[], sheets: readonly BetaSh
     }
     if (fromOneFile) { set = new Map(); fromOneFile = false; }
     for (const s of own) {
+      // A removed sheet's version still counts as a sheet version above; only the sheet itself is left out.
+      if (s.removedAt) continue;
       const k = nameKey(s.name);
       const before = set.get(k);
       const entry = { version: f.version, key: s.key, url: null, fileName: s.fileName };
@@ -49,6 +57,23 @@ export function sheetSetAt(files: readonly DesignFile[], sheets: readonly BetaSh
     }
   }
   return [...set.values()];
+}
+
+/** The removed sheets, one per name, with every file each had (newest first). A name uploaded again since is a sheet
+ *  of the set once more, so it is not listed. */
+export function removedSheetsOf(files: readonly DesignFile[], sheets: readonly BetaSheet[]): Array<{ name: string; removedAt: string; history: Array<{ version: number; key: string; fileName: string }> }> {
+  const version = new Map(files.map((f) => [f.id, f.version]));
+  const out = new Map<string, { name: string; removedAt: string; history: Array<{ version: number; key: string; fileName: string }> }>();
+  const live = new Set(sheets.filter((s) => !s.removedAt).map((s) => nameKey(s.name)));
+  for (const s of [...sheets].sort((a, b) => b.id - a.id)) {
+    if (!s.removedAt) continue;
+    const k = nameKey(s.name);
+    if (live.has(k)) continue;
+    const e = out.get(k) ?? { name: s.name, removedAt: s.removedAt, history: [] };
+    e.history.push({ version: version.get(s.fileId) ?? 0, key: s.key, fileName: s.fileName });
+    out.set(k, e);
+  }
+  return [...out.values()];
 }
 
 /** A sheet's name from its file name: no extension, separators read as spaces. */
@@ -60,7 +85,11 @@ export interface UploadedSheet { key: string; fileName: string; contentType: str
 
 const B = "/api/beta";
 export const sheetsApi = {
-  list: (projectId: number): Promise<{ ready: boolean; sheets: BetaSheet[] }> => api.get(`${B}/projects/${projectId}/design-sheets`),
+  list: (projectId: number): Promise<{ ready: boolean; canRemove?: boolean; sheets: BetaSheet[] }> => api.get(`${B}/projects/${projectId}/design-sheets`),
+  remove: (projectId: number, name: string): Promise<{ ok: true; name: string }> => api.post(`${B}/projects/${projectId}/design-sheets/remove`, { name }),
+  restore: (projectId: number, name: string): Promise<{ ok: true; name: string }> => api.post(`${B}/projects/${projectId}/design-sheets/restore`, { name }),
+  rename: (projectId: number, name: string, newName: string): Promise<{ ok: true; name: string }> =>
+    api.post(`${B}/projects/${projectId}/design-sheets/rename`, { name, newName }),
   uploadFile: (projectId: number, file: File): Promise<UploadedSheet> =>
     api.postBinary<UploadedSheet>(`${B}/projects/${projectId}/sheet-files?fileName=${encodeURIComponent(file.name)}`, file, file.type || "application/octet-stream"),
   saveVersion: (projectId: number, b: { submittedOn: string; personIds: number[]; note: string | null; sheets: Array<UploadedSheet & { name: string }> }): Promise<{ id: number; version: number }> =>
