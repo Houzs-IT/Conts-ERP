@@ -156,7 +156,10 @@ describe("Beta project workspace", () => {
     open();
     await screen.findByRole("heading", { name: "Payments" });
     expect(screen.getByText("1 of 3 received")).toBeTruthy();
-    expect(screen.getByText(/Contract RM 50,000.00 · received .* · VO 1 of 2 approved/)).toBeTruthy();
+    expect(screen.getByText("VO 1 of 2 approved")).toBeTruthy();
+    const totals = screen.getByLabelText("Payment totals");
+    expect(within(totals).getByText("RM 50,000.00")).toBeTruthy();
+    expect(within(totals).getByText("Outstanding")).toBeTruthy();
     expect(screen.getByText("Paid · unlocked Design")).toBeTruthy();
     expect(screen.getByText("Not confirmed")).toBeTruthy();
     expect(screen.getByText("At handover")).toBeTruthy();
@@ -215,10 +218,14 @@ describe("Beta project workspace", () => {
       fireEvent.click(within(team).getByRole("button", { name: "Assign" }));
       const dialog = await screen.findByRole("dialog", { name: "Assign" });
       const two = within(dialog).getByRole("group", { name: "2D by" });
-      // Only people linked to an active account are offered, labelled as on the project page.
-      await waitFor(() => expect(within(two).getByRole("option", { name: "Alex · Site supervisor · Projects" })).toBeTruthy());
-      expect(within(two).queryByRole("option", { name: /Old Name/ })).toBeNull();
-      fireEvent.change(within(two).getByRole("combobox"), { target: { value: "3" } });
+      fireEvent.click(within(two).getByRole("button", { name: "Change people" }));
+      // Only people linked to an active account are offered, labelled as on the project page, each with a tick box.
+      await waitFor(() => expect(within(two).getByRole("checkbox", { name: "Alex · Site supervisor · Projects" })).toBeTruthy());
+      expect(within(two).queryByRole("checkbox", { name: /Old Name/ })).toBeNull();
+      fireEvent.change(within(two).getByRole("searchbox"), { target: { value: "ale" } });
+      expect(within(two).queryByRole("checkbox", { name: /Yi Xuan/ })).toBeNull();
+      fireEvent.click(within(two).getByRole("checkbox", { name: "Alex · Site supervisor · Projects" }));
+      fireEvent.click(within(two).getByRole("button", { name: "Done" }));
       expect(within(within(two).getByRole("list", { name: "2D by picked" })).getAllByRole("listitem").length).toBe(2);
       const three = within(dialog).getByRole("group", { name: "3D by" });
       fireEvent.click(within(three).getByRole("button", { name: "Remove Alex" }));

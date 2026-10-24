@@ -209,18 +209,85 @@ function PersonPick({ label, name, all, value, onChange, blank, required }: {
   );
 }
 
-/** Several people: an "Add a person" select, then a card with a remove button for each pick, in the order picked. */
+/** Several people: the picks as cards with a remove button, in the order picked, and a "Choose people" list with a
+    search box and a tick box per person, so several can be ticked at once. Done keeps the ticks, Cancel drops them. */
 function PeoplePick({ label, name, all, value, onChange, known }: {
   label: string; name: string; all: readonly Person[]; value: number[]; onChange: (ids: number[]) => void; known: ReadonlyMap<number, string>;
 }): ReactElement {
   const byId = new Map(all.map((x) => [x.id, x] as const));
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState<number[]>(value);
+  const [find, setFind] = useState("");
+  const listId = useId();
+  const search = useRef<HTMLInputElement>(null);
+  useEffect(() => { if (open) search.current?.focus(); }, [open]);
+
+  const options = peopleOptions(all, undefined, value);
+  const needle = find.trim().toLowerCase();
+  const shown = needle ? options.filter((x) => personLabel(x).toLowerCase().includes(needle)) : options;
+
+  function start(): void {
+    setDraft(value);
+    setFind("");
+    setOpen(true);
+  }
+  function toggle(id: number): void {
+    setDraft((d) => (d.includes(id) ? d.filter((x) => x !== id) : [...d, id]));
+  }
+  function done(): void {
+    onChange(draft);
+    setOpen(false);
+  }
+  function keys(e: KeyboardEvent<HTMLDivElement>): void {
+    // Escape closes this list, not the whole dialog; Enter in the search box must not save the form.
+    if (e.key === "Escape") { e.stopPropagation(); setOpen(false); }
+    if (e.key === "Enter" && e.target instanceof HTMLInputElement && e.target.type === "search") e.preventDefault();
+  }
+
   return (
-    <div role="group" aria-label={label} style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
-      <Field label={label}>
-        <select name={name} value="" onChange={(e) => { const id = num(e.target.value); if (id != null && !value.includes(id)) onChange([...value, id]); }} style={IN}>
-          <PersonOptions all={all} current={value} skip={value} blank={value.length ? "Add another person..." : "Add a person..."} />
-        </select>
-      </Field>
+    <div role="group" aria-label={label} style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0, gridColumn: open ? "1 / -1" : undefined }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, minHeight: 30 }}>
+        <span style={{ fontSize: 12, color: BETA.muted }}>{label}</span>
+        {!open && (
+          <button type="button" name={name} onClick={start} aria-expanded={false} aria-controls={listId}
+            style={{ minHeight: 30, padding: "0 10px", border: `1px solid ${BETA.accent}`, borderRadius: 8, background: BETA.surface, color: BETA.accentInk, font: "inherit", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+            {value.length ? "Change people" : "Choose people"}
+          </button>
+        )}
+      </div>
+      {open && (
+        <div id={listId} onKeyDown={keys} style={{ border: `1px solid ${BETA.accent}`, borderRadius: 10, background: BETA.surface, boxShadow: "0 6px 20px rgba(23,32,31,.12)", overflow: "hidden" }}>
+          <div style={{ padding: 8, borderBottom: `1px solid ${BETA.line}` }}>
+            <input ref={search} type="search" aria-label={`Search people for ${label}`} placeholder="Search name, position or department" value={find} onChange={(e) => setFind(e.target.value)} style={{ ...IN, minHeight: 36 }} />
+          </div>
+          <ul aria-label={`People for ${label}`} style={{ listStyle: "none", margin: 0, padding: 4, maxHeight: 260, overflowY: "auto" }}>
+            {shown.length === 0 && <li style={{ padding: "10px 8px", fontSize: 13, color: BETA.muted }}>{options.length ? "Nobody matches." : "No people yet."}</li>}
+            {shown.map((x) => {
+              const on = draft.includes(x.id);
+              const info = personInfo({ position: x.position ?? null, department: x.department ?? null });
+              return (
+                <li key={x.id}>
+                  <label style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 8px", minHeight: 44, borderRadius: 8, cursor: "pointer", background: on ? "#E4F1EF" : undefined }}>
+                    <input type="checkbox" checked={on} onChange={() => toggle(x.id)} aria-label={personLabel(x)} style={{ flex: "none", width: 18, height: 18, margin: 0, accentColor: BETA.accent }} />
+                    <span aria-hidden="true" style={AVATAR(28)}>{initials(x.name)}</span>
+                    <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.25, minWidth: 0 }}>
+                      <span style={{ fontSize: 14, fontWeight: 600, color: BETA.ink, overflowWrap: "anywhere" }}>{x.name}{noLongerListed(x)}</span>
+                      {info && <span style={{ fontSize: 12, color: BETA.muted, overflowWrap: "anywhere" }}>{info}</span>}
+                    </span>
+                  </label>
+                </li>
+              );
+            })}
+          </ul>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: 8, borderTop: `1px solid ${BETA.line}`, background: "#FAFBFB" }}>
+            <span style={{ fontSize: 12, color: BETA.muted }}>{draft.length} picked</span>
+            <span style={{ display: "flex", gap: 6 }}>
+              <button type="button" onClick={() => setOpen(false)} style={{ ...FOOT_BTN, minHeight: 34, fontSize: 13 }}>Cancel</button>
+              <button type="button" onClick={done} style={{ ...FOOT_BTN, minHeight: 34, fontSize: 13, background: BETA.accent, borderColor: BETA.accent, color: "#FFFFFF" }}>Done</button>
+            </span>
+          </div>
+        </div>
+      )}
       {value.length > 0 ? (
         <ul aria-label={`${label} picked`} style={LIST}>
           {value.map((id) => {

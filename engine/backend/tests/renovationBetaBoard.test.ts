@@ -16,13 +16,17 @@ describe("Beta board: payment label", () => {
     expect([1, 2, 3, 4, 11, 12, 13, 21, 22, 23, 101, 111].map(ordinal)).toEqual(["1st", "2nd", "3rd", "4th", "11th", "12th", "13th", "21st", "22nd", "23rd", "101st", "111th"]);
   });
   test("paid out of all, or the bill waiting for money", () => {
-    expect(paymentLabel(ok(inst(1, "paid"), inst(2, "billed"), inst(3, "not_billed")))).toEqual({ state: "ok", label: "Pending 2nd payment" });
-    expect(paymentLabel(ok(inst(1, "paid"), inst(2, "not_billed"), inst(3, "not_billed")))).toEqual({ state: "ok", label: "1 of 3 paid" });
-    expect(paymentLabel(ok(inst(1, "billed"), inst(2, "not_billed")))).toEqual({ state: "ok", label: "Pending 1st payment" });
-    expect(paymentLabel(ok(inst(1, "paid"), inst(2, "paid"), inst(3, "paid"), inst(4, "not_billed")))).toEqual({ state: "ok", label: "3 of 4 paid" });
+    expect(paymentLabel(ok(inst(1, "paid"), inst(2, "billed"), inst(3, "not_billed")))).toMatchObject({ state: "ok", label: "Pending 2nd payment" });
+    expect(paymentLabel(ok(inst(1, "paid"), inst(2, "not_billed"), inst(3, "not_billed")))).toMatchObject({ state: "ok", label: "1 of 3 paid" });
+    expect(paymentLabel(ok(inst(1, "billed"), inst(2, "not_billed")))).toMatchObject({ state: "ok", label: "Pending 1st payment" });
+    expect(paymentLabel(ok(inst(1, "paid"), inst(2, "paid"), inst(3, "paid"), inst(4, "not_billed")))).toMatchObject({ state: "ok", label: "3 of 4 paid" });
+  });
+  test("outstanding is the order total less what was received, never below zero", () => {
+    expect(paymentLabel({ state: "ok", contractSen: 10000, receivedSen: 2500, instalments: [inst(1, "paid"), inst(2, "not_billed")] })).toEqual({ state: "ok", label: "1 of 2 paid", outstandingSen: 7500 });
+    expect(paymentLabel({ state: "ok", contractSen: 10000, receivedSen: 12000, instalments: [inst(1, "paid")] })).toEqual({ state: "ok", label: "Fully paid", outstandingSen: 0 });
   });
   test("all paid reads Fully paid", () => {
-    expect(paymentLabel(ok(inst(1, "paid"), inst(2, "paid")))).toEqual({ state: "ok", label: "Fully paid" });
+    expect(paymentLabel(ok(inst(1, "paid"), inst(2, "paid")))).toMatchObject({ state: "ok", label: "Fully paid" });
   });
   test("hidden and none pass through; a contract with no instalments is none", () => {
     expect(paymentLabel({ state: "hidden" })).toEqual({ state: "hidden" });

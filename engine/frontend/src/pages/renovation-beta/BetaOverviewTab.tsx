@@ -14,8 +14,8 @@ import { FileDialog, sendReminder, useGuarded, type BetaTabProps, type ViewedFil
 import { add, ds, designKind } from "./renovationBetaBoard";
 import { approveNewest, boardApi, markPoDone } from "./renovationBetaBoardApi";
 import {
-  approvedSet, dayMonth, dayMonthYear, emptyPaymentRows, nextStep, paymentCard, paymentStrip, soConfirmed, todoList, designTodoRows, mergeTodo,
-  type TodoAction, type TodoRow,
+  approvedSet, dayMonth, dayMonthYear, emptyPaymentRows, nextStep, paymentCard, paymentStrip, paymentTotals, soConfirmed, todoList, designTodoRows, mergeTodo,
+  type PaymentTotals, type TodoAction, type TodoRow,
 } from "./renovationBetaModel";
 import { downloadAsPdf } from "./renovationBetaPdf";
 import { sheetSetAt, sheetsApi } from "./renovationBetaSheets";
@@ -74,15 +74,17 @@ function PaymentsCard({ p }: { p: BetaTabProps }): ReactElement {
   const rows = strip ? strip.rows : payments.state === "none" ? emptyPaymentRows() : [];
   const handoverOn = d.project.handed_over_at ?? d.project.planned_handover_date;
   const paid = rows.filter((r) => r.status === "paid").length;
-  const vo = d.vo && d.vo.count > 0 ? ` · VO ${d.vo.approved} of ${d.vo.count} approved` : "";
+  const vo = d.vo && d.vo.count > 0 ? `VO ${d.vo.approved} of ${d.vo.count} approved` : "";
   const soNo = payments.state === "ok" ? payments.docNo : undefined;
+  const totals = paymentTotals(payments);
   return (
     <WsCard
       title="Payments"
       subInline
       sub={rows.length > 0 ? `${paid} of ${rows.length} received${soNo ? ` · from ${soNo}` : ""}` : undefined}
-      right={strip ? <span style={subStyle}>Contract {money(strip.contractSen)} · received {money(strip.receivedSen)}{vo}</span> : undefined}
+      right={strip && vo ? <span style={subStyle}>{vo}</span> : undefined}
     >
+      {totals && <PaymentTotalsRow totals={totals} linked={payments.state === "ok"} />}
       {payments.state === "hidden" && <p style={{ fontSize: 14, color: BETA.muted }}>Payment figures are hidden for your role.</p>}
       {payments.state === "none" && <p style={{ fontSize: 14, color: BETA.muted }}>No sales order is linked yet. Once one is, each payment recorded on it fills the next box here.</p>}
       {rows.length > 0 && (
@@ -104,6 +106,36 @@ function PaymentsCard({ p }: { p: BetaTabProps }): ReactElement {
         </ol>
       )}
     </WsCard>
+  );
+}
+
+/** Total, received and outstanding side by side, with a thin bar for the share received. */
+function PaymentTotalsRow({ totals, linked }: { totals: PaymentTotals; linked: boolean }): ReactElement {
+  const pct = totals.totalSen > 0 ? Math.min(100, Math.round((totals.receivedSen / totals.totalSen) * 100)) : 0;
+  const cells: ReadonlyArray<{ label: string; value: string; note: string; ink?: string }> = [
+    { label: "Total amount", value: linked ? money(totals.totalSen) : "RM 0.00", note: linked ? "Sales order total" : "No sales order yet" },
+    { label: "Total received", value: money(totals.receivedSen), note: linked && totals.totalSen > 0 ? `${pct}% of total` : "–", ink: totals.receivedSen > 0 ? WS.green : undefined },
+    {
+      label: "Outstanding", value: linked ? money(totals.outstandingSen) : "–",
+      note: !linked ? "–" : totals.outstandingSen === 0 && totals.totalSen > 0 ? "Fully paid" : "Still to collect",
+      ink: linked && totals.outstandingSen > 0 ? WS.red : undefined,
+    },
+  ];
+  return (
+    <div style={{ border: `1px solid ${BETA.line}`, borderRadius: 10, background: WS.panel, overflow: "hidden" }}>
+      <dl aria-label="Payment totals" style={{ margin: 0, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 1, background: BETA.line }}>
+        {cells.map((c) => (
+          <div key={c.label} style={{ padding: "12px 16px", background: WS.panel, minWidth: 0 }}>
+            <dt style={{ fontSize: 11, fontWeight: 600, letterSpacing: ".04em", textTransform: "uppercase", color: BETA.muted }}>{c.label}</dt>
+            <dd style={{ margin: "4px 0 0", fontSize: 20, fontWeight: 700, color: linked ? c.ink ?? BETA.ink : BETA.muted, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{c.value}</dd>
+            <dd style={{ margin: "2px 0 0", fontSize: 12, color: WS.text2 }}>{c.note}</dd>
+          </div>
+        ))}
+      </dl>
+      <div aria-hidden="true" style={{ height: 4, background: "#E3E8E7" }}>
+        <div style={{ width: `${pct}%`, height: "100%", background: "#3E9B5F" }} />
+      </div>
+    </div>
   );
 }
 

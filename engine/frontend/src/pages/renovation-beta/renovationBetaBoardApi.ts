@@ -26,7 +26,7 @@ export interface BetaBoardAppointment {
   doneAt: string | null;
 }
 
-export type BetaBoardPayment = { state: "hidden" } | { state: "none" } | { state: "ok"; label: string };
+export type BetaBoardPayment = { state: "hidden" } | { state: "none" } | { state: "ok"; label: string; outstandingSen?: number };
 
 export interface BetaBoardProject {
   id: number;
