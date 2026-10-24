@@ -93,6 +93,8 @@ export function photoTimeline(photos: readonly ProjectPhoto[]): PhotoDay[] {
   }
   for (const d of days) {
     for (const c of d.cards) {
+      // A defect reads before -> after, whichever was uploaded last; the sort is stable, so time order stays within each.
+      if (c.category === "defect") c.items.sort((a, b) => Number(a.label === "After") - Number(b.label === "After"));
       const labels = [...new Set(c.items.map((i) => i.label).filter((x): x is string => !!x))];
       c.label = c.category === "progress" ? null : labels.join(" / ") || null;
     }

@@ -184,7 +184,9 @@ export function RenovationSoRooms({ rooms, onRoomsChange, rows, onRowRoom, onAdd
       <div className={compact ? renovationLineStyles.lines : 'flex flex-col gap-3'}>
         {compact && g.rows.length > 0 && <RenovationLineHead />}
         {g.rows.map((row, j) => {
-          const label = row.group && row.group !== g.rows[j - 1]?.group ? row.group : null;
+          const prev = g.rows[j - 1]?.group;
+          // After a locked group, the open lines get their own label so they do not read as locked too.
+          const label = row.group ? (row.group !== prev ? row.group : null) : prev ? 'Open to change' : null;
           const divider = label && <div className={renovationLineStyles.divider}>{label}</div>;
           if (compact) {
             const move = !disabled ? <MoveLine inline rooms={shown} current={g.room} onMove={(room) => onRowRoom(row.key, room)} /> : undefined;
