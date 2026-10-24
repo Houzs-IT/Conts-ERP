@@ -23,6 +23,7 @@ vi.mock("./ledgerSettings", async (importOriginal) => ({
     ],
     itemGroups: [{ group: "SOFA", missing: ["sales_return_account"] }],
     banksWithoutLetter: ["310-0010"],
+    controlsWithChildren: ["301-0000"],
     ledgerStartDate: null,
   } }),
   useSetRole: () => ({ mutateAsync: setRoleAsync, isPending: false }),
@@ -128,6 +129,9 @@ describe("Ledger setup — Posting rules", () => {
     expect(screen.getByText(/1 posting rule needs an account/)).toBeTruthy();
     expect(screen.getByText(/SOFA: sales_return_account/)).toBeTruthy();
     expect(screen.getByText(/310-0010/)).toBeTruthy();
+    // Conts: a customer control with sub-accounts could not be posted to.
+    expect(screen.getByText(/1 customer or supplier control has sub-accounts/)).toBeTruthy();
+    expect(screen.getByText(/Controls with sub-accounts/).parentElement!.textContent).toContain("301-0000");
     const bank = screen.getByText("Default bank").closest("tr")!;
     expect(bank.getAttribute("data-problem")).toBe("not_money");
     expect(bank.textContent).toContain("must be a bank or cash account");

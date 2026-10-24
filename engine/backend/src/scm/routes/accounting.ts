@@ -1385,7 +1385,9 @@ export const controlCheckHandler = async (c: any) => {
   type CheckOk = { role: string; accountCode: string; glBalanceSen: number; driftDocs: Drift[]; foreignLines: Foreign[]; ok: boolean };
   type CheckErr = { role: string; accountCode: string; error: string };
 
-  const runCheck = async (role: 'AR' | 'AP' | 'AP_OTHER' | 'AR_OTHER', accountCode: string): Promise<CheckOk | CheckErr> => {
+  /* walkDocs false: a further control of the same kind (Conts) — the per-document walk runs once, on the role's own
+     control; the further ones contribute their balance and any foreign line. */
+  const runCheck = async (role: 'AR' | 'AP' | 'AP_OTHER' | 'AR_OTHER', accountCode: string, walkDocs = true): Promise<CheckOk | CheckErr> => {
     const expectedSource = role === 'AR' ? 'SI' : 'PI';
     /* AP_OTHER (405-0000, the 2026-09-03 split) and AR_OTHER (305-0000, the
        Other Debtors module): the document↔journal drift walk below is
@@ -1393,7 +1395,7 @@ export const controlCheckHandler = async (c: any) => {
        once, and a debtor bill cannot exist without its journal (the create is
        atomic). These arms contribute what IS control-specific: the GL balance
        and any foreign line parked on the control. */
-    const docDrift = role !== 'AP_OTHER' && role !== 'AR_OTHER';
+    const docDrift = walkDocs && role !== 'AP_OTHER' && role !== 'AR_OTHER';
 
     const jeByDoc = new Map<string, { jeTotal: number }>();
     if (docDrift) {
@@ -1408,7 +1410,7 @@ export const controlCheckHandler = async (c: any) => {
     }
 
     const drift: Drift[] = [];
-    if (role === 'AR') {
+    if (role === 'AR' && docDrift) {
       const { data: docs, error } = await sb.from('sales_invoices')
         .select('invoice_number, total_sen, status, migrated_no_stock, opening_balance')
         .eq('company_id', companyId);
@@ -1550,6 +1552,18 @@ export const controlCheckHandler = async (c: any) => {
     await runCheck('AP', roles.AP),
     await runCheck('AP_OTHER', roles.AP_OTHER),
   ];
+  /* Conts (finance phase 1.5): every other customer or supplier control the chart marks SDC / SCC (301-0000,
+     302-0000, a supplier's own control) gets a line of its own. */
+  {
+    const { data: ctl, error: ctlErr } = await sb.from('accounts').select('account_code, special_type')
+      .eq('company_id', companyId).in('special_type', ['SDC', 'SCC']).order('account_code');
+    if (ctlErr) return c.json({ error: 'load_failed', reason: ctlErr.message }, 500);
+    const known = new Set([roles.AR, roles.AR_OTHER, roles.AP, roles.AP_OTHER]);
+    for (const a of (ctl ?? []) as Array<{ account_code: string; special_type: string }>) {
+      if (known.has(a.account_code)) continue;
+      checks.push(await runCheck(a.special_type === 'SDC' ? 'AR' : 'AP', a.account_code, false));
+    }
+  }
 
   /* THE THIRD FINDING: money recorded on a document that never reached the
      ledger at all. A booking failure does not fail the operator's save (sales

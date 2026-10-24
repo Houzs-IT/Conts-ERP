@@ -155,6 +155,7 @@ function PostingRules({ canSave }: { canSave: boolean }) {
     badRoles > 0 ? `${badRoles} posting rule${badRoles === 1 ? " needs an account" : "s need an account"}` : null,
     s.itemGroups.length > 0 ? `${s.itemGroups.length} item group${s.itemGroups.length === 1 ? " is" : "s are"} missing an account` : null,
     s.banksWithoutLetter.length > 0 ? `${s.banksWithoutLetter.length} bank${s.banksWithoutLetter.length === 1 ? " has" : "s have"} no voucher letter` : null,
+    s.controlsWithChildren.length > 0 ? `${s.controlsWithChildren.length} customer or supplier control${s.controlsWithChildren.length === 1 ? " has" : "s have"} sub-accounts` : null,
     s.ledgerStartDate ? null : "the books have no start date",
   ].filter(Boolean);
 
@@ -196,6 +197,11 @@ function PostingRules({ canSave }: { canSave: boolean }) {
         <div>
           <b>Item groups missing an account</b> — set them on <Link to="/scm/accounting?tab=groups">Item group accounts</Link>:
           <ul style={{ margin: "4px 0 0 18px" }}>{s.itemGroups.map((g) => <li key={g.group}>{g.group}: {g.missing.join(", ")}</li>)}</ul>
+        </div>
+      )}
+      {s.controlsWithChildren.length > 0 && (
+        <div>
+          <b>Controls with sub-accounts</b> — customers and suppliers are kept as Debtors and Suppliers, not as accounts under their control; move or remove these on <Link to="/scm/chart-of-accounts">Chart of accounts</Link>: {s.controlsWithChildren.join(", ")}
         </div>
       )}
       {s.banksWithoutLetter.length > 0 && (

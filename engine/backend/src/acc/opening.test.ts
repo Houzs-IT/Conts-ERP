@@ -248,3 +248,25 @@ describe('the opening check, other cases', () => {
     expect(r).toEqual({ created: 1, skipped: 0, errors: [] });
   });
 });
+
+/* Conts (finance phase 1.5): customers and suppliers on their own controls are checked control by control. */
+describe('the opening check, control by control', () => {
+  test('an opening invoice of a 301 customer is checked against 301-0000', async () => {
+    const sb = world({
+      debtors: [{ id: 'd1', company_id: CO, code: '301-M001', name: 'MS LEE', control_account: '301-0000', is_active: true }],
+    });
+    sb.tables.accounts.push({ ...CHART[0], account_code: '301-0000', special_type: 'SDC' });
+    await importOpeningJournal(sb, CO, [
+      { accountCode: '310-0001', debitSen: 0, creditSen: 50_000 }, { accountCode: '301-0000', debitSen: 50_000, creditSen: 0 },
+    ], 'T');
+    const je = sb.tables.journal_entries[0];
+    sb.tables.v_gl_entries = sb.tables.journal_entry_lines.map((l) => ({
+      ...l, company_id: CO, entry_date: je.entry_date, posted: true, reversed: false, reversed_by_je: null, account_name: l.account_code, account_type: 'ASSET',
+    }));
+    await importOpeningReceivables(sb, CO, [{ docNo: 'IV-9', debtorName: 'MS LEE', debtorCode: '301-M001', invoiceDate: '2026-11-01', dueDate: '2026-11-30', outstandingSen: 50_000 }], ACTOR);
+    const r = await openingCheck(sb, CO);
+    expect(r.ok && r.controls.find((x) => x.accountCode === '301-0000')).toMatchObject({ role: 'AR', controlSen: 50_000, documentsSen: 50_000 });
+    expect(r.ok && r.controls.find((x) => x.accountCode === '300-0000')).toMatchObject({ controlSen: 0, documentsSen: 0 });
+    expect(r).toMatchObject({ balanced: true });
+  });
+});
