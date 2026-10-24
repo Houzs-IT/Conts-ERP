@@ -88,7 +88,8 @@ describe("executable route contract", () => {
     // 170 since 2026-10-16 (Conts): /scm/document-files/import, files onto many documents at once.
     // 171 since 2026-10-21 (Conts): /scm/ledger-setup, the day the books start and the fiscal year end.
     // 172 since 2026-10-24 (Conts): /scm/debtors, every customer under its control.
-    expect(STAFF_ROUTE_PATTERNS).toHaveLength(172);
+    // 173 since 2026-10-25 (Conts): /scm/party-ledger, one customer's or supplier's ledger.
+    expect(STAFF_ROUTE_PATTERNS).toHaveLength(173);
     expect(new Set(STAFF_ROUTE_PATTERNS).size).toBe(STAFF_ROUTE_PATTERNS.length);
     expect([...STAFF_ROUTE_PATTERNS].sort()).toEqual([...appPages].sort());
   });
@@ -132,7 +133,8 @@ describe("executable route contract", () => {
     // 179 since 2026-10-16 — /scm/document-files/import (Conts).
     // 180 since 2026-10-21 — /scm/ledger-setup (Conts).
     // 181 since 2026-10-24 — /scm/debtors (Conts).
-    expect(ROUTE_CONTRACT).toHaveLength(181);
+    // 182 since 2026-10-25 — /scm/party-ledger (Conts).
+    expect(ROUTE_CONTRACT).toHaveLength(182);
   });
 
   it("keeps every desktop nav destination on a live staff route", () => {
