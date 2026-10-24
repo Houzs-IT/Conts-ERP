@@ -625,13 +625,25 @@ export async function renderSalesOrderInto(
   const sectionRowStyles = { fontStyle: 'bold', textColor: 40, halign: 'left', lineWidth: { top: 0.4 } as never } as const;
   const bodyRows: RowInput[] = [];
   let lastGroup: string | null = null;
+  /* Renovation mode: each room closes with its subtotal (owner, 24 Oct 2026, "By area"). */
+  let roomSubtotal = 0;
+  const pushRoomSubtotal = () => {
+    if (!rooms || lastGroup == null) return;
+    bodyRows.push([
+      { content: `Subtotal - ${lastGroup}`, colSpan: 6, styles: { fontStyle: 'bold', halign: 'right', textColor: 60 } },
+      { content: fmtRm(roomSubtotal, header.currency), styles: { fontStyle: 'bold', halign: 'right', fontSize: 7.5 } },
+    ]);
+  };
   orderedItems.forEach((it, itIdx) => {
     if (rooms) {
       const room = roomLabel(rooms, it.id);
       if (room !== lastGroup) {
+        pushRoomSubtotal();
         bodyRows.push([{ content: room.toUpperCase(), colSpan: 7, styles: sectionRowStyles }]);
         lastGroup = room;
+        roomSubtotal = 0;
       }
+      roomSubtotal += Number(it.total_sen ?? 0);
       bodyRows.push(tableRows[itIdx]!);
       return;
     }
@@ -648,6 +660,7 @@ export async function renderSalesOrderInto(
     }
     bodyRows.push(tableRows[itIdx]!);
   });
+  pushRoomSubtotal();
 
   autoTable(doc, {
     startY: y,

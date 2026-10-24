@@ -108,6 +108,8 @@ import { projectDatesText } from "../projects/renovation/customerPropertyModel";
 import { RenovationSoOrderInfo } from "./RenovationSoOrderInfo";
 import { DocAttachments, LineFilesButton } from "../../components/doc-attachments/DocAttachments";
 import { roomOrdered } from "../../vendor/scm/lib/so-print-rooms";
+import { CONTS_LINES_BY_NAME, contsLineIdentity } from "../../conts/flowRules";
+import { SoAreaLines, SoLinesViewToggle, type SoLinesView } from "./renovationSoAreaLines";
 import { soStatusDisplay } from "../../vendor/scm/lib/so-status";
 import { soRowStatus } from "./so-list-status";
 // ─── Row types (subset — see MfgSalesOrdersList.tsx for the full SoRow) ────
@@ -616,6 +618,8 @@ function SalesOrderDetailV2ReadOnly() {
   const renoMode = useSoInfoLists().data?.ready === true;
   /* Rooms (mig 0112): lines shown and printed room by room. */
   const renoRooms = useSoRooms(docNo, renoMode).data ?? null;
+  /* "By item" (the table) or "By area" (room headings with subtotals); offered when the order has rooms. */
+  const [linesView, setLinesView] = useState<SoLinesView>("item");
   const printRooms = renoMode && renoRooms && renoRooms.roomSections.length > 0
     ? { order: renoRooms.roomSections, byItem: renoRooms.itemRooms } : undefined;
   /* The printed Start / End date are the linked project's (owner, 15 Oct 2026), from the same read as the rooms
@@ -894,7 +898,8 @@ function SalesOrderDetailV2ReadOnly() {
            above keeps it the sort / search / export value. Live variant summary
            wins over the stored description2, which can be stale on older rows
            that carry no variants blob. */
-        const { primary, secondary } = orderLineIdentity({
+        /* Conts reads a line by its product name, the code under it (conts/flowRules.ts). */
+        const { primary, secondary } = (CONTS_LINES_BY_NAME ? contsLineIdentity : orderLineIdentity)({
           code: l.item_code,
           description: l.description,
           variant:
@@ -1514,13 +1519,26 @@ function SalesOrderDetailV2ReadOnly() {
             <Section
               title={`Line items · ${items.length}`}
               actions={
-                focCount > 0 ? (
-                  <span className="text-[11.5px] text-ink-muted">
-                    {focCount} FOC line{focCount === 1 ? "" : "s"} included
+                focCount > 0 || printRooms ? (
+                  <span className="flex flex-wrap items-center gap-3">
+                    {focCount > 0 && (
+                      <span className="text-[11.5px] text-ink-muted">
+                        {focCount} FOC line{focCount === 1 ? "" : "s"} included
+                      </span>
+                    )}
+                    {printRooms && <SoLinesViewToggle view={linesView} onChange={setLinesView} />}
                   </span>
                 ) : undefined
               }
             >
+              {printRooms && linesView === "area" ? (
+                <SoAreaLines<SoItem>
+                  items={items}
+                  rooms={printRooms}
+                  columns={lineColumns.filter((col) => ["item", "qty", "unit", "disc", "total"].includes(col.key))}
+                  money={(sen) => fmtMoney(sen, salesOrder.currency)}
+                />
+              ) : (
               <DataTable<SoItem>
                 tableId={`so-lines-${docNo}`}
                 layoutFamily={DATA_TABLE_LAYOUT_FAMILIES.salesOrderLines} persistSort={false} persistFilters={false}
@@ -1536,6 +1554,7 @@ function SalesOrderDetailV2ReadOnly() {
                 getRowKey={(l) => l.id}
                 emptyLabel="No line items"
               />
+              )}
             </Section>
 
             <DocAttachments docType="sales_order" docId={salesOrder.doc_no} canEdit={salesOrder.status.toLowerCase() !== "cancelled"} />

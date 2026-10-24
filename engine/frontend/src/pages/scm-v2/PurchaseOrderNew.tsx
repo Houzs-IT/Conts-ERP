@@ -40,7 +40,7 @@ import { readScmHandoff, removeScmHandoff, writeScmHandoff } from '../../lib/scm
 import { useMfgProducts, useMaintenanceConfig, useSpecialAddons, mfgCategoryLabel } from '../../vendor/scm/lib/mfg-products-queries';
 import { activeOptions, maintPickerValues, fmtMoneySen } from '@2990s/shared';
 import { useFabricTrackings, fabricOptionLabel } from '../../vendor/scm/lib/fabric-queries';
-import { missingRequiredVariants } from '../../vendor/scm/components/SoLineCard';
+import { poMissingOptionLabels } from '../../conts/flowRules';
 import { useWarehouses } from '../../vendor/scm/lib/inventory-queries';
 import { sortByText, sortByNumeric, byText } from '../../vendor/scm/lib/sort-options';
 import {
@@ -117,6 +117,8 @@ type DraftLine = {
       so the API increments mfg_sales_order_items.po_qty_picked, which drops the
       line from the From-SO picker. NULL for manual / one-off PO lines. */
   soItemId?: string | null;
+  /** Conts — the options the source SO line carried, so the confirm gate asks for no more (conts/flowRules.ts). */
+  soVariants?: Record<string, unknown>;
 };
 
 const newLine = (): DraftLine => ({
@@ -399,6 +401,7 @@ export const PurchaseOrderNew = () => {
       // Commander 2026-05-29 (BUG 1) — remember the source SO line so the
       // create call can increment its po_qty_picked (drops it from the picker).
       soItemId: p.soItemId,
+      soVariants: p.soItemId ? ((p.variants ?? {}) as Record<string, unknown>) : undefined,
     }));
     // Replace the initial blank line if the form is still empty; else append.
     setLines((prev) => (prev.some((l) => l.itemCode.trim()) ? [...prev, ...mapped] : mapped));
@@ -645,7 +648,7 @@ export const PurchaseOrderNew = () => {
        gaps are collected and shown together (owner: never one-at-a-time). */
     if (!asDraft) {
       const variantGaps = validLines
-        .map((l) => ({ code: l.itemCode, miss: missingRequiredVariants(l.category, l.variants, l.itemCode) }))
+        .map((l) => ({ code: l.itemCode, miss: poMissingOptionLabels(l.category, l.variants, l.itemCode, l.soItemId ? l.soVariants : undefined) }))
         .filter((x) => x.miss.length > 0);
       if (variantGaps.length > 0) {
         notify({

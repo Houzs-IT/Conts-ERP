@@ -131,6 +131,7 @@ export interface DesignFile {
   id: number; kind: "2d" | "3d" | "other"; version: number; file_name: string; r2_key: string | null; external_url: string | null;
   person_name: string | null; uploaded_by_name: string | null; uploaded_at: string; note: string | null;
   submitted_on: string | null; next_person_id: number | null; next_person_name: string | null; people?: NamedRef[]; person_id?: number | null;
+  content_type?: string | null; size_bytes?: number | null;
 }
 export interface DesignNote {
   id: number; kind: "3d" | "2d"; noted_on: string; requested_by_person_id: number | null; requested_by_person_name: string | null;

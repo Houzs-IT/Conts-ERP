@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cleanSheetName, cleanSheetRename, cleanSheetSet, sheetVersionName } from "../src/services/renovation/betaSheets";
+import { cleanLinkSet, cleanSheetName, cleanSheetRename, cleanSheetSet, linkVersionName, sheetKindOf, sheetVersionName } from "../src/services/renovation/betaSheets";
 
 const ok = { key: "renovation/7/sheet-1-a.pdf", contentType: "application/pdf", size: 10, fileName: "a.pdf" };
 
@@ -46,5 +46,27 @@ describe("cleanSheetRename", () => {
     expect(cleanSheetRename({ name: "Z-99", newName: "Z-100" }, names)).toMatchObject({ ok: false, error: "sheet_not_found" });
     expect(cleanSheetRename({ name: "A-01 Plan", newName: "A-01  Plan" }, names)).toMatchObject({ ok: false, error: "unchanged" });
     expect(cleanSheetRename({ name: "A-01 Plan", newName: "" }, names)).toMatchObject({ ok: false, error: "name_required" });
+  });
+});
+
+describe("cleanLinkSet (3D links in one version)", () => {
+  const ok = { submittedOn: "2026-10-24", personIds: [4], nextPersonId: 9, links: [{ name: " Living  room ", url: "https://kuula.co/a" }, { name: "Bedroom", url: "https://my.matterport.com/b" }] };
+  it("takes several named links", () => {
+    expect(cleanLinkSet(ok, "2026-10-24")).toEqual({ ok: true, value: { submittedOn: "2026-10-24", personIds: [4], nextPersonId: 9, note: null,
+      links: [{ name: "Living room", url: "https://kuula.co/a" }, { name: "Bedroom", url: "https://my.matterport.com/b" }] } });
+  });
+  it("refuses no links, a nameless link, a bad address, a repeated name and a future date", () => {
+    expect(cleanLinkSet({ links: [] }, "2026-10-24")).toMatchObject({ ok: false, error: "links_required" });
+    expect(cleanLinkSet({ links: [{ name: "", url: "https://x.y" }] }, "2026-10-24")).toMatchObject({ ok: false, error: "name_required" });
+    expect(cleanLinkSet({ links: [{ name: "A", url: "ftp://x" }] }, "2026-10-24")).toMatchObject({ ok: false, error: "url_invalid" });
+    expect(cleanLinkSet({ links: [{ name: "A", url: "https://x" }, { name: "a", url: "https://y" }] }, "2026-10-24")).toMatchObject({ ok: false, error: "name_duplicate" });
+    expect(cleanLinkSet({ ...ok, submittedOn: "2026-10-25" }, "2026-10-24")).toMatchObject({ ok: false, error: "date_in_future" });
+    expect(cleanLinkSet({ ...ok, nextPersonId: "x" }, "2026-10-24")).toMatchObject({ ok: false, error: "person_invalid" });
+  });
+  it("names the version and reads the kind", () => {
+    expect(linkVersionName(true, 3)).toBe("3D set, 3 links");
+    expect(linkVersionName(false, 1)).toBe("1 link updated");
+    expect(sheetKindOf("3d")).toBe("3d");
+    expect(sheetKindOf(undefined)).toBe("2d");
   });
 });

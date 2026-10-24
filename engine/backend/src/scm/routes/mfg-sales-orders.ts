@@ -185,6 +185,7 @@ import { baseKeyOf, deleteThumbFor, putOptionalThumb, thumbKeyFor } from '../../
 import { photoProxyPath, proxyFallbackPayload, warnSigningFailedOnce, type PhotoUrlPayload } from '../lib/photoProxyFallback';
 import { slipBindings } from '../lib/slip';
 import { amendmentMixRefusal, createMixRefusal, lineMixRefusal, mixesSofaWithOtherMain } from '../lib/main-mix';
+import { SOFA_MIX_RULE_ON, soLineRemarkOf } from '../lib/renovation-flow-rules';
 import { refuseWithoutWriting } from '../lib/no-write-refusal';
 import {
   loadMaintenanceConfig,
@@ -3360,10 +3361,7 @@ async function createSalesOrderCore(c: SoCreateContext): Promise<SoCreateOutcome
       description2: buildVariantSummary((productRowByCode.get(String(it.itemCode ?? '').trim())?.category ?? '').trim().toLowerCase() || String(it.itemGroup ?? '').trim() || 'others', (it.variants as Record<string, unknown> | null) ?? null) || null,
       /* Spec 2026-06-06 — per-line operator remark from the POS product page.
          Same column SoLineCard edits (mfg_sales_order_items.remark). */
-      remark: (() => {
-        const r = (it.variants as { remark?: unknown } | null)?.remark;
-        return typeof r === 'string' && r.trim() !== '' ? r.trim() : null;
-      })(),
+      remark: soLineRemarkOf(it),
       uom: (it.uom as string) ?? 'UNIT',
       qty,
       unit_price_sen: unit,
@@ -4912,7 +4910,7 @@ mfgSalesOrders.post('/validate', async (c) => {
        line groups as origItemGroups; on a create it omits them ([] -> !mixes([])
        is true), so the ONE formula below is flat for a create and differential
        for an edit, matching the server's line-mix gate. */
-    sofaMixConflict:
+    sofaMixConflict: SOFA_MIX_RULE_ON &&
       mixesSofaWithOtherMain(items.map((it) => (it.itemGroup as string | null | undefined) ?? null))
       && !mixesSofaWithOtherMain(((body.origItemGroups as unknown[] | undefined) ?? []).map((g) => (typeof g === 'string' ? g : null))),
     paymentGaps,
@@ -7488,6 +7486,8 @@ mfgSalesOrders.post('/:docNo/items', async (c) => {
   const row = {
     ...baseRow,
     ...(nextLineNo !== null ? { line_no: nextLineNo } : {}),
+    /* The line remark, sent as the line's own field or inside variants (same rule as create). */
+    remark: soLineRemarkOf(it),
     /* Commander 2026-05-28 — "Description 2" auto-generated from variants. */
     description2: buildVariantSummary(String(it.itemGroup ?? ''), (it.variants as Record<string, unknown> | null) ?? null) || null,
   };

@@ -106,6 +106,18 @@ export async function readProjectParty(db: RenoDb, projectId: number | null, com
 
 type PartyFields = Partial<ProjectParty>;
 
+/** The project's two typed address lines (migration 0115), or null when it has none. Read through to_jsonb so a
+    database without those columns answers null instead of failing. */
+async function projectAddressLines(db: RenoDb, projectId: number | null, companyId: number): Promise<{ address1: string; address2: string } | null> {
+  if (projectId == null) return null;
+  const r = (await db.q<{ a1: string | null; a2: string | null }>(
+    `select to_jsonb(p)->>'address1' as a1, to_jsonb(p)->>'address2' as a2 from public.projects p where p.id = $1 and p.company_id = $2`,
+    [projectId, companyId],
+  )).at(0);
+  const a1 = String(r?.a1 ?? '').trim();
+  return a1 ? { address1: a1, address2: String(r?.a2 ?? '').trim() } : null;
+}
+
 /** Fill every blank party field of a quotation header from its project (a typed value always stays). Pure. */
 export function fillBlanksFromProject<T extends PartyFields>(header: T, project: ProjectParty | null): T {
   if (!project) return header;
@@ -145,8 +157,11 @@ export async function stampContractFromQuotation(
 ): Promise<void> {
   const project = await readProjectParty(db, q.projectId, q.companyId);
   const p = fillBlanksFromProject({ ...q.property, building: q.building, unitNo: q.unitNo }, project);
-  /* Without a site address the contract keeps what conversion always wrote (building, unit). */
-  const addr = soAddressFromSite(p.siteAddress);
+  /* Without a site address the contract keeps what conversion always wrote (building, unit). When the site address
+     is the project's own, its two typed address lines are used as they are: re-splitting the one-text address put
+     the postcode, city and state into line 2 (owner run, 24 Oct 2026). */
+  const typed = project && p.siteAddress.trim() === project.siteAddress.trim() ? await projectAddressLines(db, q.projectId, q.companyId) : null;
+  const addr = typed ?? soAddressFromSite(p.siteAddress);
   if (addr.address1) {
     await db.q(`update scm.mfg_sales_orders set address1 = $2, address2 = $3 where doc_no = $1`, [docNo, addr.address1, addr.address2 || null]);
   }

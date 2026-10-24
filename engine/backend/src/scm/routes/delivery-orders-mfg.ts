@@ -99,6 +99,8 @@ import { buildDoItemRow as buildItemRow, loadCarriedSoLinePhotos, carriedPhotoUr
 import { soRemainingByItemId } from '../lib/so-remaining-by-item';
 import { lineLinkItemMismatch, assertLinkedLineItemsMatch } from '../lib/line-link-item-identity';
 import { checkStockAvailability, shortStockResponse, stockCheckableLines, uncoveredStockCheckLines, type StockShortage } from '../lib/check-stock-availability';
+/* Conts switches: customer-supplied lines hold no stock; a renovation DO takes its site and brand from its own SO and lines. */
+import { customerGoodsCodes, deliveredOnTimestamp, doBrandingFromLines, renovationDoSiteFields } from '../lib/renovation-flow-rules';
 import { findSofaLinesWithoutCompleteBatch, sofaNoCompleteBatchResponse, findIncompleteSofaSets, sofaIncompleteSetResponse, detectSofaSoItemIds } from '../lib/sofa-batch-guard';
 import { resolveExpectedBatchBySoItem, buildDropshipOffenders } from '../lib/dropship-batch';
 import {
@@ -1033,7 +1035,9 @@ async function checkDoStockAvailability(
   headerWarehouseId: string | null,
   companyId: number | undefined,
 ): Promise<StockShortage[]> {
-  const shippable = stockCheckableLines(lines, new Set());
+  /* Customer-supplied goods (Conts) are the client's, not warehouse stock: never measured, never moved. */
+  const customerGoods = await customerGoodsCodes(sb, lines.map((l) => l.itemCode), companyId);
+  const shippable = stockCheckableLines(lines, new Set()).filter((l) => !customerGoods.has(l.itemCode.trim()));
   if (shippable.length === 0) return [];
   const lineWh = await resolveDoLineWarehouses(sb, shippable.map((l) => ({ id: l.lineRef, so_item_id: l.soItemId })), headerWarehouseId, companyId);
   const active = await uncoveredStockCheckLines(sb, shippable, lineWh, companyId);
@@ -1241,6 +1245,8 @@ async function deductInventoryForDo(sb: any, deliveryOrderId: string, performedB
   const doNo = (doHeader as { do_number: string } | null)?.do_number ?? deliveryOrderId;
   const isDropship = (doHeader as { is_dropship?: boolean } | null)?.is_dropship === true;
   if (!items) return [];
+  const customerGoods = await customerGoodsCodes(sb, (items as Array<{ item_code: string }>).map((it) => it.item_code),
+    (doHeader as { company_id?: number | null } | null)?.company_id ?? null);
 
   // Per-line warehouse — each line ships from its SO line's warehouse (0118),
   // not a single DO-header default. Stock never crosses warehouses.
@@ -1280,6 +1286,7 @@ async function deductInventoryForDo(sb: any, deliveryOrderId: string, performedB
        the DO for invoicing + driver visibility (D2 final) but are not goods:
        shipping them must not deduct stock. */
     if (isServiceLine({ itemGroup: it.item_group, itemCode: it.item_code })) continue;
+    if (customerGoods.has(String(it.item_code ?? '').trim())) continue;
     const qty = Number(it.qty ?? 0);
     if (qty <= 0) continue;
     const warehouseId = lineWh.get(it.id) ?? null;
@@ -1361,8 +1368,10 @@ async function stockOutDoLinesFromRacks(
   /* Every rack read/write below FILTERS on the companyId stamped above: the rack is caller-supplied and the predicate is the only boundary (docs/bugs/0497-*.md). */
   const touchedRacks = new Set<string>();
 
+  const customerGoods = await customerGoodsCodes(sb, items.map((it) => String(it.item_code ?? '')), companyId);
   for (const it of items) {
     if (isServiceLine({ itemGroup: it.item_group as string | null, itemCode: it.item_code as string })) continue;
+    if (customerGoods.has(String(it.item_code ?? '').trim())) continue;
     const qty = Number(it.qty ?? 0);
     if (qty <= 0) continue;
     const itemCode = (it.item_code as string | null) ?? null;
@@ -1631,11 +1640,14 @@ export async function resyncInventoryForDo(sb: any, deliveryOrderId: string, per
 
   type Bucket = { warehouse_id: string; item_code: string; variant_key: string; product_name: string | null; qty: number; batch_no: string | null };
   const targetByBucket = new Map<string, Bucket>();
+  const customerGoods = await customerGoodsCodes(sb, ((items ?? []) as Array<{ item_code: string }>).map((it) => it.item_code),
+    (doHeader as { company_id?: number | null }).company_id ?? null);
   for (const it of (items as Array<{ id: string; so_item_id?: string | null; item_code: string; description: string | null; qty: number; item_group?: string | null; variants?: VariantAttrs | null }> ?? [])) {
     /* P1 SO-SKU spec §4.6 — SERVICE lines never wrote OUT on first ship, so
        they must stay out of the resync TARGET too, or the delta walk would
        "correct" the net OUT upward and deduct phantom stock. */
     if (isServiceLine({ itemGroup: it.item_group, itemCode: it.item_code })) continue;
+    if (customerGoods.has(String(it.item_code ?? '').trim())) continue;
     const qty = Number(it.qty ?? 0);
     if (qty <= 0) continue;
     const warehouseId = lineWh.get(it.id) ?? null;
@@ -2886,6 +2898,10 @@ deliveryOrdersMfg.get('/so-source/:docNo', async (c) => {
      fields the SOURCE genuinely lacks, so "we could not read the SO" and "the SO
      has no email" are never the same blank screen again. */
   const source = soHeaderToDoSource(row as unknown as Record<string, unknown>);
+  /* Conts: a renovation SO's delivery goes to its own building and unit, with the building type its property says. */
+  const renoSite = renovationDoSiteFields(row as unknown as Record<string, unknown>);
+  if (renoSite.venue) source.venue = renoSite.venue;
+  if (renoSite.buildingType) source.buildingType = renoSite.buildingType;
   return c.json({ source, missing: missingSourceFields(source) });
 });
 
@@ -3320,6 +3336,10 @@ deliveryOrdersMfg.post('/', async (c) => {
 
   const phoneRaw = (body.phone as string | undefined) ?? null;
   const emPhoneRaw = (body.emergencyContactPhone as string | undefined) ?? null;
+  /* Conts: the brand on the delivery is the brand of the goods on it, not the SO header's. */
+  const lineBranding = await doBrandingFromLines(sb, items.map((it) => ({
+    itemCode: String(it.itemCode ?? ''), soItemId: (it.soItemId as string | null) ?? null,
+  })), activeCompanyId(c) ?? null);
 
   const { data: header, error: hErr } = await insertWithDocNoRetry<{ id: string; do_number: string }>(
     () => nextNum(sb, c),
@@ -3354,7 +3374,7 @@ deliveryOrdersMfg.post('/', async (c) => {
     email: (body.email as string) ?? null,
     customer_type: (body.customerType as string) ?? null,
     building_type: (body.buildingType as string) ?? null,
-    branding: (body.branding as string) ?? null,
+    branding: lineBranding !== undefined ? lineBranding : ((body.branding as string) ?? null),
     venue: (body.venue as string) ?? null,
     venue_id: (body.venueId as string) ?? null,
     /* The Create-DO form sends the reference as customerSoNo only; without
@@ -3833,6 +3853,8 @@ export const createDoFromSoLinesHandler = async (c: Context<{ Bindings: Env; Var
   if (loaded.error) return c.json({ error: 'load_failed', reason: loaded.error }, 500);
   if (!loaded.head) return c.json({ error: 'not_found' }, 404);
   const head = loaded.head;
+  const renoSite = renovationDoSiteFields(head);
+  const lineBranding = await doBrandingFromLines(sb, sortedPicks.map((l) => ({ itemCode: l.itemCode, soItemId: l.soItemId })), doCompanyId ?? null);
 
   const doAddress2 = (head.address2 as string | null)
     ?? ([head.address3, head.address4].filter(Boolean).join(', ') || null);
@@ -3882,9 +3904,9 @@ export const createDoFromSoLinesHandler = async (c: Context<{ Bindings: Env; Var
     agent: (head.agent as string | null) ?? null,
     email: (head.email as string | null) ?? null,
     customer_type: (head.customer_type as string | null) ?? null,
-    building_type: (head.building_type as string | null) ?? null,
-    branding: (head.branding as string | null) ?? null,
-    venue: (head.venue as string | null) ?? null,
+    building_type: renoSite.buildingType ?? (head.building_type as string | null) ?? null,
+    branding: lineBranding !== undefined ? lineBranding : ((head.branding as string | null) ?? null),
+    venue: renoSite.venue ?? (head.venue as string | null) ?? null,
     venue_id: (head.venue_id as string | null) ?? null,
     ref: docNos.length > 1
       ? `Merged from ${[...docNos].sort().join(', ')}`
@@ -4474,7 +4496,8 @@ export const addDeliveryOrderItemHandler = async (c: Context<{ Bindings: Env; Va
     itemGroup: (it.itemGroup as string | null) ?? null,
     itemCode: (it.itemCode as string | null) ?? null,
   });
-  if (addWarehouseId && !addIsService) {
+  const addIsCustomerGoods = (await customerGoodsCodes(sb, [String(it.itemCode ?? '')], activeCompanyId(c))).size > 0;
+  if (addWarehouseId && !addIsService && !addIsCustomerGoods) {
     const stockLines = [{
       itemCode: String(it.itemCode ?? ''),
       productName: (it.description as string | null) ?? null,
@@ -4800,6 +4823,7 @@ deliveryOrdersMfg.patch('/:id/items/:itemId', async (c) => {
         /* SERVICE lines have no stock and write no OUT — the delta on one can
            never be short (shared/service-sku.ts, P1 §4.6). */
         const shortages = isServiceLine({ itemGroup: effGroup, itemCode: effCode })
+          || (await customerGoodsCodes(sb, [String(effCode ?? '')], activeCompanyId(c))).size > 0
           ? []
           : await checkStockAvailability(sb, targetWh, stockLines, activeCompanyId(c));
         /* priorShippedQty/priorBatchNo are what stop this re-bucketing a line
@@ -5060,6 +5084,8 @@ export const patchDeliveryOrderStatusHandler = async (c: any) => {
   let body: {
     status?: string; signatureData?: string; podKey?: string;
     podLat?: number; podLng?: number; podAccuracyM?: number; podLocatedAt?: string;
+    /* Conts office "Mark delivered" (renovationDoDelivered.ts): the day the goods arrived, YYYY-MM-DD. */
+    deliveredOn?: string;
   }; try { body = (await c.req.json()) as typeof body; } catch { return c.json({ error: 'invalid_json' }, 400); }
   if (!body.status) return c.json({ error: 'status_required' }, 400);
   /* NORMALISE FIRST, exactly as the Sales Order handler does
@@ -5173,7 +5199,12 @@ export const patchDeliveryOrderStatusHandler = async (c: any) => {
   const tsNum: Record<string, number> = {};
   if (toStatus === 'DISPATCHED') ts.dispatched_at = now;
   if (toStatus === 'SIGNED')     ts.signed_at = now;
-  if (toStatus === 'DELIVERED')  ts.delivered_at = now;
+  /* Conts office "Mark delivered" may name the day the goods arrived (renovation-flow-rules.ts). */
+  const deliveredOn = toStatus === 'DELIVERED' ? deliveredOnTimestamp(body.deliveredOn, now) : null;
+  if (deliveredOn === 'invalid') {
+    return c.json({ error: 'invalid_delivered_on', reason: 'The delivery date must be a real date, not in the future.' }, 400);
+  }
+  if (toStatus === 'DELIVERED')  ts.delivered_at = deliveredOn ?? now;
   /* POD capture — the mobile app posts the proof-of-delivery signature +
      photo alongside the status flip. Persist them to the existing columns
      (signature_data, pod_r2_key) so a DELIVERED DO keeps its signature +

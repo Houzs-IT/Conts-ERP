@@ -6,11 +6,14 @@
 // The repo's standing rule is that a UI change is verified by observing it, and
 // this is the observation that does not need the whole sales-order page (which
 // needs a router, a query client and a session) to make it.
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 import { useState } from 'react';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ADDRESS_LINE_MAX, addressLineProps } from './acColumnWidths';
+/* These cases pin HOUZS's rules; Conts switches them off (conts/flowFlags.ts), so they are forced on here. */
+vi.mock('../conts/flowFlags', () => ({ CONTS_SOFA_MIX_RULE_ON: true, CONTS_ADDRESS_LINE_CAP: true }));
+
 
 /** The two address boxes as the sales-order forms wire them, and nothing else. */
 function AddressPair() {

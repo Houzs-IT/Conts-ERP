@@ -28,6 +28,7 @@ import {
   type BoardReviewRow,
 } from "../services/renovation/betaBoard";
 import { loadClientItems, loadProjectPoLines, loadProjectVos } from "../services/renovation/betaVoPo";
+import { cleanLinePlan, loadProjectLines, projectLine, saveLinePlan } from "../services/renovation/betaLines";
 import { LINK_DAYS, signClientLink } from "../services/renovation/betaClientLink";
 import {
   betaCategory, cleanAssignee, cleanDefectPatch, defectPatchNote, isImageName, money, sortDeliveries, uniqueAreas,
@@ -787,6 +788,42 @@ app.get("/projects/:id/client-po", requirePageAccess("projects.list"), async (c)
     const vo = await loadProjectVos(db(c), id, co, false);
     return loadClientItems(db(c), id, co, vo.vos);
   });
+});
+
+/* The PO tab as the line manager: every current SO line with its dates, PO, GR and DO. Line edits go through the
+   sales order's VO route from the screen; only the planned dates of a line no PO holds yet are saved here. */
+app.get("/projects/:id/lines", requirePageAccess("projects.list"), async (c) => {
+  const id = parseId(c.req.param("id"));
+  if (!id) return c.json({ error: "invalid_id" }, 400);
+  const co = await projectCompany(c, id);
+  if (co == null) return c.json({ error: "not_found" }, 404);
+  return readOr(c, "sales order line", async () => {
+    const vo = await loadProjectVos(db(c), id, co, false);
+    const labels = new Map(vo.vos.filter((v) => v.key.startsWith("a:")).map((v) => [v.key.slice(2), v.label] as const));
+    return loadProjectLines(db(c), id, co, !financeHiddenForUser(c.get("user")), labels);
+  });
+});
+
+app.put("/projects/:id/lines/:itemId/plan", requirePermission("projects.write"), async (c) => {
+  const id = parseId(c.req.param("id"));
+  if (!id) return c.json({ error: "invalid_id" }, 400);
+  const co = await projectCompany(c, id);
+  if (co == null) return c.json({ error: "not_found" }, 404);
+  const cleaned = cleanLinePlan(await body(c));
+  if (!cleaned.ok) return c.json({ error: "invalid_plan", message: cleaned.message }, 400);
+  const line = await projectLine(db(c), id, co, c.req.param("itemId"));
+  if (!line) return c.json({ error: "not_found" }, 404);
+  try {
+    const saved = await saveLinePlan(db(c), line.id, co, userId(c), cleaned.patch);
+    if ("refusal" in saved) return c.json({ error: "invalid_plan", message: saved.refusal }, 400);
+    const note = [saved.orderOn ? `order ${saved.orderOn}` : null, saved.deliverOn ? `deliver ${saved.deliverOn}` : null, saved.noPo ? "no PO needed" : null]
+      .filter(Boolean).join(", ") || "plan cleared";
+    await activityStmt(c, id, co, "beta_line_plan", null, line.doc_no, `Line plan: ${note}`).run();
+    return c.json({ ok: true, plan: saved });
+  } catch (e) {
+    if (isMissingRelation(e)) return c.json({ error: "plans_not_ready", message: "Planned dates are not switched on yet on this server." }, 409);
+    throw e;
+  }
 });
 
 /** A read-only link for the client to the Client PO list. The token carries the project and company, signed. */

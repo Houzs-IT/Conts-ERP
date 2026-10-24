@@ -45,7 +45,9 @@ export const SO_CONVERT_HEADER =
   'address1, address2, address3, address4, city, customer_state, postcode, phone, ' +
   'email, customer_type, building_type, branding, venue, venue_id, ref, sales_location, ' +
   'customer_country, customer_delivery_date, customer_so_no, ' +
-  'emergency_contact_name, emergency_contact_phone, emergency_contact_relationship, currency';
+  'emergency_contact_name, emergency_contact_phone, emergency_contact_relationship, currency, ' +
+  /* Renovation property (mig 0112): a Conts DO's venue and building type come from these. */
+  'project_id, building, unit_no, property_type';
 
 /** Trim to null — an all-whitespace column is absent, not present-and-empty. */
 function str(v: unknown): string | null {

@@ -157,6 +157,7 @@ function LineTable({ lines, finance, withVo = false }: { lines: Array<{ l: VoLin
                 <td style={tdStyle}>
                   {l.description || "-"}
                   {l.fromItemCode && <div style={metaStyle}>Was {l.fromItemCode}</div>}
+                  {(l.changes ?? []).map((w) => <div key={w} style={metaStyle}>{w}</div>)}
                 </td>
                 <td style={tdStyle}>{l.room ?? "-"}</td>
                 <td style={{ ...numStyle, color: tone, fontWeight: 700 }}>{signedQty(l)}</td>
@@ -184,6 +185,7 @@ function LineTable({ lines, finance, withVo = false }: { lines: Array<{ l: VoLin
                 <WsBadge tone={goesToTone(l)} size={11}>{GOES_TO_LABEL[l.goesTo]}</WsBadge>
               </div>
               {l.fromItemCode && <div style={metaStyle}>Was {l.fromItemCode}</div>}
+              {(l.changes ?? []).map((w) => <div key={w} style={metaStyle}>{w}</div>)}
             </li>
           );
         })}

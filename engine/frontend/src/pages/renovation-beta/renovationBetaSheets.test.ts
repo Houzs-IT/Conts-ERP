@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DesignFile } from "../projects/renovation/simpleApi";
-import { removedSheetsOf, sheetNameOf, sheetSetAt, type BetaSheet } from "./renovationBetaSheets";
+import { changedAgainst, linkHost, removedSheetsOf, sheetNameOf, sheetSetAt, sizeText, type BetaSheet } from "./renovationBetaSheets";
 
 const file = (id: number, version: number, extra: Partial<DesignFile> = {}): DesignFile => ({
   id, kind: "2d", version, file_name: `v${version}`, r2_key: `k${id}`, external_url: null, person_name: null, uploaded_by_name: null,
@@ -31,8 +31,9 @@ describe("sheetSetAt", () => {
 });
 
 describe("sheetNameOf", () => {
-  it("drops the extension and underscores", () => {
-    expect(sheetNameOf("A-01_Floor_plan.pdf")).toBe("A-01 Floor plan");
+  it("is the file name as it is, without the extension (no other name logic)", () => {
+    expect(sheetNameOf("A-01_Floor_plan v2.pdf")).toBe("A-01_Floor_plan v2");
+    expect(sheetNameOf("Kitchen elevations.JPG")).toBe("Kitchen elevations");
   });
 });
 
@@ -51,7 +52,49 @@ describe("removed sheets", () => {
 
   it("lists each removed sheet once with all its files, newest first", () => {
     expect(removedSheetsOf(files, sheets)).toEqual([
-      { name: "A-02", removedAt: "2026-10-24 10:00:00+08", history: [{ version: 2, key: "s3", fileName: "A-02.pdf" }, { version: 1, key: "s2", fileName: "A-02.pdf" }] },
+      { name: "A-02", removedAt: "2026-10-24 10:00:00+08", history: [{ version: 2, key: "s3", url: null, fileName: "A-02.pdf" }, { version: 1, key: "s2", url: null, fileName: "A-02.pdf" }] },
     ]);
+  });
+});
+
+describe("3D link sets", () => {
+  const f3 = (id: number, version: number, extra: Partial<DesignFile> = {}): DesignFile => file(id, version, { kind: "3d", r2_key: null, ...extra });
+  const link = (id: number, fileId: number, name: string, url: string): BetaSheet => ({ id, fileId, name, fileName: name, contentType: null, size: null, key: null, url, uploadedAt: "" });
+
+  it("keeps links added one by one (one-file versions) together in one set, newest per name", () => {
+    const files = [f3(1, 1, { file_name: "Living", external_url: "https://kuula.co/a" }), f3(2, 2, { file_name: "Bedroom", external_url: "https://kuula.co/b" }),
+      f3(3, 3, { file_name: "living", external_url: "https://kuula.co/a2" })];
+    const set = sheetSetAt(files, [], 3, "3d");
+    expect(set.map((s) => [s.name, s.url, s.version])).toEqual([["living", "https://kuula.co/a2", 3], ["Bedroom", "https://kuula.co/b", 2]]);
+    expect(set[0]?.history.map((h) => h.version)).toEqual([3, 1]);
+  });
+
+  it("lays a link-set version over the set and leaves 2D files out", () => {
+    const files = [f3(1, 1, { file_name: "Living", external_url: "https://kuula.co/a" }), f3(2, 2), file(9, 1)];
+    const links = [link(1, 2, "Kitchen", "https://my.matterport.com/k"), link(2, 2, "Living", "https://kuula.co/a3")];
+    expect(sheetSetAt(files, links, 2, "3d").map((s) => [s.name, s.url, s.fromSheet])).toEqual([["Living", "https://kuula.co/a3", true], ["Kitchen", "https://my.matterport.com/k", true]]);
+  });
+
+  it("names the host people know", () => {
+    expect(linkHost("https://kuula.co/share/abc")).toBe("Kuula");
+    expect(linkHost("https://my.matterport.com/show/?m=1")).toBe("Matterport");
+    expect(linkHost("https://drive.google.com/file/d/1")).toBe("Google Drive");
+    expect(linkHost("https://www.example.com/x")).toBe("example.com");
+    expect(linkHost("not a link")).toBe("Link");
+  });
+});
+
+describe("changedAgainst and sizeText", () => {
+  const files = [file(1, 1), file(2, 2)];
+  const sheets = [sheet(1, 1, "A"), sheet(2, 1, "B"), sheet(3, 2, "B"), sheet(4, 2, "C")];
+  it("marks a replaced or new sheet changed against the approved set, the rest same", () => {
+    const m = changedAgainst(sheetSetAt(files, sheets, 2), sheetSetAt(files, sheets, 1));
+    expect([...m.entries()]).toEqual([["A", false], ["B", true], ["C", true]]);
+    expect([...changedAgainst(sheetSetAt(files, sheets, 2), null).values()]).toEqual([false, false, false]);
+  });
+  it("says sizes in KB or MB", () => {
+    expect(sizeText(0)).toBeNull();
+    expect(sizeText(2048)).toBe("2 KB");
+    expect(sizeText(14_050_000)).toBe("13.4 MB");
   });
 });

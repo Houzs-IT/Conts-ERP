@@ -45,6 +45,9 @@ export interface VoLine {
   goesTo: GoesTo;
   /** A spec change: the item code it replaced. */
   fromItemCode: string | null;
+  /** What a change to an existing line moved, in words ("Colour: White -> Grey", "Remark: ..."), so a change that
+      costs nothing (a colour or a remark) still reads as a record. Empty for an added or removed line. */
+  changes?: string[];
 }
 
 export interface VoRow {
@@ -103,6 +106,8 @@ export interface AmendmentLineRow {
   new_qty: number | null;
   new_unit_price_sen: number | null;
   new_discount_sen: number | null;
+  new_remark?: string | null;
+  new_variants?: unknown;
   old_snapshot: unknown;
   cur_item_code: string | null;
   cur_description: string | null;
@@ -115,6 +120,42 @@ export interface AmendmentLineRow {
   /** The SKU's catalog category and main supplier code, for where the line goes. */
   product_category?: string | null;
   main_supplier?: string | null;
+}
+
+const VARIANT_LABEL: Readonly<Record<string, string>> = {
+  colorCode: "Colour", colourLabel: "Colour", colourId: "Colour", fabricCode: "Fabric", fabricLabel: "Fabric", size: "Size",
+  legHeight: "Leg", divanHeight: "Divan", gap: "Gap", totalHeight: "Total height", seatHeight: "Seat",
+};
+
+const shown = (v: unknown): string => (v === null || v === undefined || v === "" ? "none" : typeof v === "object" ? JSON.stringify(v) : String(v));
+
+/** The fields a change to an existing line moved, in words. Variants are compared key by key, the remark key aside
+    (it rides new_remark; amendment-noop-lines.ts). */
+export function lineChangeWords(l: Pick<AmendmentLineRow, "change_type" | "new_item_code" | "new_qty" | "new_remark" | "new_variants" | "old_snapshot">): string[] {
+  const type = String(l.change_type ?? "").toUpperCase();
+  if (type === "ADD" || type === "REMOVE") return [];
+  const old = snapshotOf(l.old_snapshot);
+  const out: string[] = [];
+  const oldCode = (old.item_code ?? old.itemCode ?? null) as string | null;
+  if (l.new_item_code && oldCode && l.new_item_code !== oldCode) out.push(`SKU: ${oldCode} -> ${l.new_item_code}`);
+  const oldQty = num(old.qty);
+  const newQty = num(l.new_qty);
+  if (newQty !== null && oldQty !== null && newQty !== oldQty) out.push(`Qty: ${oldQty} -> ${newQty}`);
+  if (l.new_variants != null) {
+    const before = snapshotOf(old.variants);
+    const after = snapshotOf(l.new_variants);
+    const seen = new Set<string>();
+    for (const k of [...Object.keys(before), ...Object.keys(after)]) {
+      if (k === "remark" || seen.has(k)) continue;
+      seen.add(k);
+      if (shown(before[k]) === shown(after[k])) continue;
+      out.push(`${VARIANT_LABEL[k] ?? k}: ${shown(before[k])} -> ${shown(after[k])}`);
+    }
+  }
+  if (l.new_remark != null && l.new_remark.trim() !== String(old.remark ?? "").trim()) {
+    out.push(l.new_remark.trim() ? `Remark: ${l.new_remark.trim()}` : "Remark cleared");
+  }
+  return out;
 }
 
 /** One SO amendment line as a VO line: what it adds or deducts, in quantity and money. */
@@ -156,8 +197,10 @@ export function amendmentLineChange(l: AmendmentLineRow): VoLine {
     amount = q * p - d - oldTotal;
   }
   const fromItemCode = l.new_item_code && oldCode && l.new_item_code !== oldCode ? oldCode : null;
-  const change = qty > 0 ? "add" : qty < 0 ? "deduct" : amount !== null && amount > 0 ? "add" : amount !== null && amount < 0 ? "deduct" : "change";
-  return { ...base, qty, lineQty: newQty ?? oldQty ?? num(l.cur_qty), amountSen: amount, change, fromItemCode };
+  /* A line whose quantity stays is a change (a price or spec change), never an add or a deduct: VO-03's
+     6000 -> 6500 cabinet read "1 added" (owner run, 24 Oct 2026). The amount still carries the money. */
+  const change = qty > 0 ? "add" : qty < 0 ? "deduct" : "change";
+  return { ...base, qty, lineQty: newQty ?? oldQty ?? num(l.cur_qty), amountSen: amount, change, fromItemCode, changes: lineChangeWords(l) };
 }
 
 const AMENDMENT_STATUS: Readonly<Record<string, [string, VoBucket]>> = {
@@ -239,7 +282,7 @@ async function amendmentVos(db: Db, projectId: number, companyId: number): Promi
   if (heads.length === 0) return [];
   const lines = await rows<AmendmentLineRow & { amendment_id: string }>(db,
     `SELECT l.amendment_id::text AS amendment_id, l.change_type, l.new_item_code, l.new_qty, l.new_unit_price_sen, l.new_discount_sen::int AS new_discount_sen,
-            l.old_snapshot, i.item_code AS cur_item_code, i.description AS cur_description, i.qty AS cur_qty, i.total_sen AS cur_total_sen,
+            l.new_remark, l.new_variants, l.old_snapshot, i.item_code AS cur_item_code, i.description AS cur_description, i.qty AS cur_qty, i.total_sen AS cur_total_sen,
             coalesce(nullif(trim((SELECT rl.room FROM scm.reno_doc_lines rl WHERE rl.so_item_id = i.id LIMIT 1)), ''), nullif(trim(to_jsonb(i)->>'room'), ''), nullif(trim(i.location), '')) AS cur_room,
             i.item_group AS cur_item_group,
             (SELECT p.category::text FROM scm.mfg_products p WHERE p.code = coalesce(l.new_item_code, i.item_code) AND p.company_id = so.company_id LIMIT 1) AS product_category,
@@ -472,7 +515,7 @@ export function skuPhotoList(v: unknown): SkuPhoto[] {
   });
 }
 
-function photoList(v: unknown): string[] {
+export function photoList(v: unknown): string[] {
   if (Array.isArray(v)) return v.filter((x): x is string => typeof x === "string" && x.length > 0);
   if (typeof v === "string" && v.startsWith("{")) return v.slice(1, -1).split(",").map((x) => x.replace(/^"|"$/g, "")).filter(Boolean);
   return [];

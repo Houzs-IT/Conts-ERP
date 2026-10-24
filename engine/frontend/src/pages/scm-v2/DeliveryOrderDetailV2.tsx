@@ -101,6 +101,7 @@ import { DocumentHistoryDrawer } from "./DocumentHistoryDrawer";
 import { isFocLine } from '../../vendor/scm/lib/foc-line';
 import { CollectedOnOrderCard } from "../../vendor/scm/components/CollectedOnOrderCard";
 import { RenovationDocBlock, renoLineColumns, useRenoDocInfo } from "./RenovationDocInfo";
+import { MarkDeliveredButton } from "./renovationDoDelivered";
 // ─── Header + item shapes (subset — full 40-field row lives in the list V2) ─
 
 type DoLifecycle = "shipped" | "invoiced" | "returned";
@@ -1233,6 +1234,9 @@ export function DeliveryOrderDetailV2() {
                 {advanceStep.label}
               </Button>
             )}
+            {canWriteDo && (
+              <MarkDeliveredButton doId={deliveryOrder.id} doNumber={deliveryOrder.do_number} status={deliveryOrder.status} />
+            )}
             {/* The transfer takes the PRIMARY slot; the advance above stays
                 secondary because it changes THIS document's own status rather
                 than producing the next document (owner rule, 2026-08-17). */}
@@ -1675,6 +1679,7 @@ export function DeliveryOrderDetailV2() {
               <CheckCircle2 size={16} /> {advanceStep.label}
             </button>
             )}
+            <MarkDeliveredButton doId={deliveryOrder.id} doNumber={deliveryOrder.do_number} status={deliveryOrder.status} phone />
             <button
               type="button"
               onClick={goConvertToSi}

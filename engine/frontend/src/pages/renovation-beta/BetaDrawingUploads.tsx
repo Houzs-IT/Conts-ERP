@@ -3,7 +3,7 @@
    on a site measure already recorded. Files are checked before anything is saved, so a wrong file never leaves a
    site measure behind without its files. */
 
-import { useState, type ReactElement } from "react";
+import { useRef, useState, type ReactElement } from "react";
 import { prepareImageForUpload } from "../../lib/imagePipeline";
 import { errorText } from "../projects/renovation/renovationModel";
 import { peopleOptions, personLabel, usePeople } from "../projects/renovation/PersonSelect";
@@ -12,15 +12,20 @@ import { BetaModal, BetaPeoplePicker } from "./BetaForms";
 import { WS, WsField, inputStyle, textareaStyle } from "./BetaWsUi";
 import type { BetaTabProps } from "./betaShared";
 import type { DesignKind } from "./renovationBetaModel";
-import { sheetNameOf, sheetSetAt, sheetsApi, type BetaSheet } from "./renovationBetaSheets";
+import { sheetNameOf, sheetSetAt, sheetsApi, type BetaSheet, type SetSheet, type UploadedSheet } from "./renovationBetaSheets";
+import { isPdf, pdfPageCount, splitPdf } from "./renovationBetaPdfSplit";
 import { BETA } from "./renovationBetaTheme";
 
 export type UploadDialog =
   | { t: "measure" }
   | { t: "measure-files"; measure: SiteMeasure }
   | { t: "file"; kind: DesignKind }
-  | { t: "sheets" }
-  | { t: "link" };
+  /** 2D sheets: the full set (first time, or redrawn), only the changed pages, or a new version of one sheet. */
+  | { t: "sheets"; mode?: "full" | "replace"; sheet?: string }
+  /** One 3D link the old way (before database update 0155). */
+  | { t: "link" }
+  /** Several named 3D links in one version (0155). */
+  | { t: "links" };
 
 /* The server's list (DESIGN_FILE_TYPES in engine/backend/src/services/renovation/records.ts). A file the browser
    cannot name (a DWG, usually) goes up as application/octet-stream, which the server takes. */
@@ -61,7 +66,8 @@ export function BetaUploadDialog({ p, dialog, sheets, onClose, onSaved }: {
 }): ReactElement {
   if (dialog.t === "measure") return <MeasureForm p={p} onClose={onClose} onSaved={onSaved} />;
   if (dialog.t === "measure-files") return <MeasureFilesForm p={p} measure={dialog.measure} onClose={onClose} onSaved={onSaved} />;
-  if (dialog.t === "sheets") return <SheetsForm p={p} sheets={sheets} onClose={onClose} onSaved={onSaved} />;
+  if (dialog.t === "sheets") return <SheetsForm p={p} sheets={sheets} mode={dialog.mode ?? "full"} forSheet={dialog.sheet} onClose={onClose} onSaved={onSaved} />;
+  if (dialog.t === "links") return <LinksForm p={p} sheets={sheets} onClose={onClose} onSaved={onSaved} />;
   return <DesignForm p={p} kind={dialog.t === "link" ? "3d" : dialog.kind} link={dialog.t === "link"} onClose={onClose} onSaved={onSaved} />;
 }
 
@@ -193,52 +199,93 @@ function DesignForm({ p, kind, link, onClose, onSaved }: FormProps & { kind: Des
 
 /* ---------- 2D sheets ---------- */
 
+/** A file going up: a new sheet (named after the file, renamable here), or a new version of one sheet of the set. */
 interface SheetRow { id: number; file: File; name: string; replaces: boolean }
 
-/** The first 2D set (several sheets at once), or a new version that replaces some sheets and may add new ones. */
-function SheetsForm({ p, sheets, onClose, onSaved }: FormProps & { sheets: readonly BetaSheet[] }): ReactElement {
+/** The 2D set as sheets (owner, 24 Oct 2026). "full": the first set, or new sheets added to it; each file (or each page
+ *  of a multi-page PDF) is one new sheet, named after the file without its extension, and a name already in the set
+ *  gets a number so nothing is replaced by accident. "replace": a Replace button on each sheet of the set (or on the
+ *  one sheet the dialog was opened for); only the sheets picked change, the rest are kept. File names never decide
+ *  what is replaced. Files already uploaded are not sent again when Save is pressed again after a failure. */
+function SheetsForm({ p, sheets, mode, forSheet, onClose, onSaved }: FormProps & { sheets: readonly BetaSheet[]; mode: "full" | "replace"; forSheet?: string }): ReactElement {
   const twoD = p.records.files.filter((x) => x.kind === "2d").sort((a, b) => b.version - a.version);
   const last = twoD.at(0);
   const nextVersion = (last?.version ?? 0) + 1;
   const current = last ? sheetSetAt(p.records.files, sheets, last.version) : [];
+  const first = current.length === 0;
+  const replacing = !first && (mode === "replace" || forSheet != null);
+  const listed = forSheet ? current.filter((s) => s.name === forSheet) : current;
   const [rows, setRows] = useState<SheetRow[]>([]);
   const [seq, setSeq] = useState(1);
   const [on, setOn] = useState(p.today);
   const [people, setPeople] = useState<number[]>(() => idsOf(last?.people, last?.person_id));
   const [note, setNote] = useState("");
   const [progress, setProgress] = useState<string | null>(null);
+  const done = useRef(new Map<File, UploadedSheet>());
   const f = useForm();
-  const first = current.length === 0;
 
-  const addNew = (files: File[]): void => {
-    setRows((r) => [...r, ...files.map((file, i) => ({ id: seq + i, file, name: sheetNameOf(file.name), replaces: false }))]);
-    setSeq((n) => n + files.length);
+  /** A name not used by the set or by another file going up: "Plan", else "Plan (2)", "Plan (3)" ... */
+  const freeName = (base: string, taken: Set<string>): string => {
+    let n = base;
+    for (let i = 2; taken.has(n.toLowerCase()); i += 1) n = `${base} (${i})`;
+    taken.add(n.toLowerCase());
+    return n;
   };
+  async function addNew(picked: File[]): Promise<void> {
+    const taken = new Set([...current.map((s) => s.name.toLowerCase()), ...rows.map((r) => r.name.trim().toLowerCase())]);
+    const out: Array<{ file: File; name: string }> = [];
+    for (const file of picked) {
+      const base = sheetNameOf(file.name);
+      if (isPdf(file) && (await pdfPageCount(file)) > 1) {
+        setProgress(`Splitting ${file.name} into pages...`);
+        try {
+          for (const page of await splitPdf(file, base)) out.push({ file: page, name: freeName(sheetNameOf(page.name), taken) });
+        } catch {
+          out.push({ file, name: freeName(base, taken) });
+        } finally {
+          setProgress(null);
+        }
+        continue;
+      }
+      out.push({ file, name: freeName(base, taken) });
+    }
+    setRows((r) => [...r, ...out.map((x, i) => ({ id: seq + i, ...x, replaces: false }))]);
+    setSeq((n) => n + out.length);
+  }
   const replace = (name: string, file: File): void => {
     setRows((r) => [...r.filter((x) => !(x.replaces && x.name === name)), { id: seq, file, name, replaces: true }]);
     setSeq((n) => n + 1);
   };
-  const replacing = new Map(rows.filter((x) => x.replaces).map((x) => [x.name, x]));
+  const byName = new Map(rows.filter((x) => x.replaces).map((x) => [x.name, x]));
   const added = rows.filter((x) => !x.replaces);
+  const title = forSheet ? `Replace ${forSheet} (2D V${nextVersion})` : first ? `Upload 2D set (V${nextVersion})` : replacing ? `Replace changed pages (2D V${nextVersion})` : `Add sheets to the 2D set (V${nextVersion})`;
 
   return (
     <BetaModal
-      title={first ? `Upload 2D set (V${nextVersion})` : `Update 2D sheets (V${nextVersion})`} sub={p.detail.project.name} onClose={onClose} error={f.error} busy={f.busy}
+      title={title} sub={p.detail.project.name} onClose={onClose} error={f.error} busy={f.busy || progress != null}
       onSubmit={() => f.run(async () => {
-        if (rows.length === 0) { f.setError(first ? "Choose the sheets of the 2D set." : "Replace at least one sheet or add a new one."); return; }
+        if (rows.length === 0) { f.setError(replacing ? "Press Replace on the sheets that changed." : "Choose the sheets (PDF or photos)."); return; }
         if (!on || on > p.today) { f.setError("Give the date the drawings were handed in (not ahead of today)."); return; }
         const names = rows.map((x) => x.name.trim().replace(/\s+/g, " "));
         if (names.some((x) => !x)) { f.setError("Give every sheet a name."); return; }
         const lower = names.map((x) => x.toLowerCase());
         const dup = lower.find((x, i) => lower.indexOf(x) !== i);
-        if (dup) { f.setError(`Two sheets are named "${names[lower.indexOf(dup)]}". Give each sheet its own name.`); return; }
-        const ready = await readyFiles(rows.map((x) => x.file));
-        if ("error" in ready) { f.setError(ready.error); return; }
-        const uploaded = [];
+        if (dup) { f.setError(`Two sheets are both named "${names[lower.indexOf(dup)]}". Rename one of them.`); return; }
+        const clash = rows.find((x, i) => !x.replaces && current.some((s) => s.name.toLowerCase() === lower[i]));
+        if (clash) { f.setError(`"${clash.name}" is already a sheet in the set. Rename the new one, or use Replace on that sheet.`); return; }
+        const uploaded: Array<UploadedSheet & { name: string }> = [];
         try {
-          for (let i = 0; i < ready.ok.length; i += 1) {
-            setProgress(`Uploading ${i + 1} of ${ready.ok.length}...`);
-            uploaded.push({ ...(await sheetsApi.uploadFile(p.projectId, ready.ok[i]!)), name: names[i]! });
+          for (let i = 0; i < rows.length; i += 1) {
+            const row = rows[i]!;
+            let up = done.current.get(row.file);
+            if (!up) {
+              setProgress(`Uploading ${i + 1} of ${rows.length}...`);
+              const ready = await readyFiles([row.file]);
+              if ("error" in ready) { f.setError(ready.error); return; }
+              up = await sheetsApi.uploadFile(p.projectId, ready.ok[0]!);
+              done.current.set(row.file, up);
+            }
+            uploaded.push({ ...up, name: names[i]! });
           }
           setProgress("Saving the version...");
           const r = await sheetsApi.saveVersion(p.projectId, { submittedOn: on, personIds: people, note: note.trim() || null, sheets: uploaded });
@@ -248,12 +295,12 @@ function SheetsForm({ p, sheets, onClose, onSaved }: FormProps & { sheets: reado
         }
       })}
     >
-      {!first && (
+      {replacing && (
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          <div style={{ fontSize: 12, color: BETA.muted }}>Current set · replace only the sheets that changed</div>
-          <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 4, maxHeight: 260, overflowY: "auto" }}>
-            {current.map((s) => {
-              const r = replacing.get(s.name);
+          {!forSheet && <div style={{ fontSize: 12, color: BETA.muted }}>Press Replace on each sheet that changed. The others are kept from the set.</div>}
+          <ul aria-label="Sheets of the set" style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 4, maxHeight: 280, overflowY: "auto" }}>
+            {listed.map((s) => {
+              const r = byName.get(s.name);
               return (
                 <li key={s.name} style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, padding: "6px 10px", borderRadius: 8, background: r ? WS.tealSoft : WS.panel, fontSize: 13 }}>
                   <span style={{ flex: "1 1 140px", minWidth: 0, overflowWrap: "anywhere", fontWeight: 600 }}>{s.name} <span style={{ fontWeight: 400, color: BETA.muted }}>· V{s.version}</span></span>
@@ -272,9 +319,11 @@ function SheetsForm({ p, sheets, onClose, onSaved }: FormProps & { sheets: reado
           </ul>
         </div>
       )}
-      <FilePicker label={first ? "All sheets of the set (PDF or photos)" : "New sheets to add (optional)"} multiple files={[]} onChange={addNew} />
+      {!forSheet && (
+        <FilePicker label={replacing ? "New sheets to add (optional)" : "PDF or photos: one sheet per file, or per page of a PDF"} multiple files={[]} onChange={(x) => void addNew(x)} />
+      )}
       {added.length > 0 && (
-        <ul aria-label="New sheets" style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 6 }}>
+        <ul aria-label="New sheets" style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 6, maxHeight: 300, overflowY: "auto" }}>
           {added.map((x) => (
             <li key={x.id} style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, padding: 8, borderRadius: 8, background: WS.panel }}>
               <input aria-label={`Sheet name for ${x.file.name}`} style={{ ...inputStyle, flex: "1 1 160px", minHeight: 36 }} value={x.name} maxLength={120}
@@ -285,14 +334,78 @@ function SheetsForm({ p, sheets, onClose, onSaved }: FormProps & { sheets: reado
           ))}
         </ul>
       )}
-      {!first && added.some((x) => current.some((s) => s.name.toLowerCase() === x.name.trim().toLowerCase())) && (
-        <p style={{ fontSize: 13, color: WS.amber }}>A new sheet with the same name as a sheet in the set replaces that sheet.</p>
-      )}
       {nextVersion > 1 && <p style={{ fontSize: 13, color: WS.text2 }}>V{nextVersion} answers every 2D amendment request still open.</p>}
       <WsField label="Handed in on"><input type="date" required style={inputStyle} value={on} max={p.today} onChange={(e) => setOn(e.target.value)} /></WsField>
       <PeoplePicker label="2D drawn by" value={people} onChange={setPeople} />
       <WsField label="What changed in this revision (optional)"><textarea style={textareaStyle} rows={2} maxLength={500} value={note} onChange={(e) => setNote(e.target.value)} /></WsField>
       {progress && <p role="status" style={{ fontSize: 13, color: BETA.accentInk }}>{progress}</p>}
+    </BetaModal>
+  );
+}
+
+/* ---------- 3D links ---------- */
+
+interface LinkRow { id: number; name: string; url: string }
+
+/** A 3D version of several named links (migration 0155). A link named like one in the current 3D set replaces it; the
+ *  others are added; the rest of the set stays. Approving the version approves every link in its set. */
+function LinksForm({ p, sheets, onClose, onSaved }: FormProps & { sheets: readonly BetaSheet[] }): ReactElement {
+  const last = p.records.files.filter((x) => x.kind === "3d").sort((a, b) => b.version - a.version).at(0);
+  const nextVersion = (last?.version ?? 0) + 1;
+  const current = last ? sheetSetAt(p.records.files, sheets, last.version, "3d") : [];
+  const [rows, setRows] = useState<LinkRow[]>([{ id: 1, name: "", url: "" }]);
+  const [on, setOn] = useState(p.today);
+  const [people, setPeople] = useState<number[]>(() => idsOf(last?.people, last?.person_id));
+  const [next, setNext] = useState<number | null>(last?.next_person_id ?? null);
+  const [note, setNote] = useState("");
+  const f = useForm();
+  const set = (id: number, patch: Partial<LinkRow>): void => setRows((r) => r.map((x) => (x.id === id ? { ...x, ...patch } : x)));
+  const inSet = (name: string): SetSheet | undefined => current.find((s) => s.name.toLowerCase() === name.trim().replace(/\s+/g, " ").toLowerCase());
+
+  return (
+    <BetaModal
+      title={`Add 3D links (V${nextVersion})`} sub={p.detail.project.name} onClose={onClose} error={f.error} busy={f.busy}
+      onSubmit={() => f.run(async () => {
+        const links = rows.filter((x) => x.name.trim() || x.url.trim()).map((x) => ({ name: x.name.trim().replace(/\s+/g, " "), url: x.url.trim() }));
+        if (links.length === 0) { f.setError("Add at least one link with its name."); return; }
+        const bad = links.find((x) => !x.name);
+        if (bad) { f.setError("Give every link a name, e.g. Living room render."); return; }
+        const badUrl = links.find((x) => !isLink(x.url));
+        if (badUrl) { f.setError(`Paste the full link for "${badUrl.name}", starting with https://.`); return; }
+        if (!on || on > p.today) { f.setError("Give the date the 3D was handed in (not ahead of today)."); return; }
+        const r = await sheetsApi.saveLinks(p.projectId, { submittedOn: on, personIds: people, nextPersonId: next, note: note.trim() || null, links });
+        onSaved(`3D V${r.version} saved with ${plural(links.length, "link")}.`);
+      })}
+    >
+      {current.length > 0 && (
+        <p style={{ fontSize: 13, color: WS.text2 }}>
+          The 3D set has {plural(current.length, "link")}: {current.map((x) => x.name).join(", ")}. A link with the same name replaces it; the others stay.
+        </p>
+      )}
+      <ul aria-label="Links" style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 8 }}>
+        {rows.map((x, i) => (
+          <li key={x.id} style={{ display: "flex", flexDirection: "column", gap: 6, padding: 10, borderRadius: 8, background: WS.panel }}>
+            <WsField label={`Link ${i + 1} name`}>
+              <input placeholder="e.g. Living room render" style={inputStyle} value={x.name} maxLength={120} onChange={(e) => set(x.id, { name: e.target.value })} />
+            </WsField>
+            <WsField label={`Link ${i + 1} address`}>
+              <input type="url" placeholder="https://..." style={inputStyle} value={x.url} maxLength={2000} onChange={(e) => set(x.id, { url: e.target.value })} />
+            </WsField>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 12, color: BETA.muted }}>
+              <span>{x.name.trim() ? (inSet(x.name) ? `Replaces V${inSet(x.name)!.version}` : "New link") : ""}</span>
+              {rows.length > 1 && <button type="button" className="link" style={{ color: WS.red }} onClick={() => setRows((r) => r.filter((y) => y.id !== x.id))}>Remove<span className="sr"> link {i + 1}</span></button>}
+            </div>
+          </li>
+        ))}
+      </ul>
+      <button type="button" className="link" style={{ alignSelf: "flex-start", fontWeight: 600 }}
+        onClick={() => setRows((r) => [...r, { id: Math.max(0, ...r.map((y) => y.id)) + 1, name: "", url: "" }])}>
+        Add another link
+      </button>
+      <WsField label="Handed in on"><input type="date" required style={inputStyle} value={on} max={p.today} onChange={(e) => setOn(e.target.value)} /></WsField>
+      <PeoplePicker label="3D drawn by" value={people} onChange={setPeople} />
+      <PersonPick label="2D designer (optional)" value={next} onChange={setNext} />
+      <WsField label="Note (optional)"><textarea style={textareaStyle} rows={2} maxLength={500} value={note} onChange={(e) => setNote(e.target.value)} /></WsField>
     </BetaModal>
   );
 }
