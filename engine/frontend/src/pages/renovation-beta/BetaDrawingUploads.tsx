@@ -8,7 +8,7 @@ import { prepareImageForUpload } from "../../lib/imagePipeline";
 import { errorText } from "../projects/renovation/renovationModel";
 import { peopleOptions, personLabel, usePeople } from "../projects/renovation/PersonSelect";
 import { simpleApi, type DesignFile, type NamedRef, type SiteMeasure } from "../projects/renovation/simpleApi";
-import { BetaModal } from "./BetaForms";
+import { BetaModal, BetaPeoplePicker } from "./BetaForms";
 import { WS, WsField, inputStyle, textareaStyle } from "./BetaWsUi";
 import type { BetaTabProps } from "./betaShared";
 import type { DesignKind } from "./renovationBetaModel";
@@ -452,31 +452,7 @@ function PersonPick({ label, value, onChange }: { label: string; value: number |
   );
 }
 
-/** Several people: pick one more from the list; each picked person shows as a chip with Remove. */
+/** Several people: the same tick-box picker with avatar chips as the Assign dialog (owner, 24 Oct 2026). */
 function PeoplePicker({ label, value, onChange }: { label: string; value: number[]; onChange: (ids: number[]) => void }): ReactElement {
-  const q = usePeople();
-  const all = q.data?.data ?? [];
-  const byId = new Map(all.map((x) => [x.id, x]));
-  const opts = peopleOptions(all, undefined, value).filter((x) => !value.includes(x.id));
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      <WsField label={label}>
-        <select style={inputStyle} value="" disabled={q.loading} onChange={(e) => { const id = Number(e.target.value); if (id && !value.includes(id)) onChange([...value, id]); }}>
-          <option value="">{q.loading ? "Loading..." : value.length ? "Add another person" : "Add a person"}</option>
-          {opts.map((x) => <option key={x.id} value={x.id}>{personLabel(x)}</option>)}
-        </select>
-      </WsField>
-      {value.length > 0 && (
-        <div aria-label={`${label}: picked`} style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-          {value.map((id) => (
-            <span key={id} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 6px 4px 10px", borderRadius: 999, border: `1px solid ${BETA.line}`, background: WS.panel, fontSize: 13 }}>
-              {byId.get(id)?.name ?? `#${id}`}
-              <button type="button" aria-label={`Remove ${byId.get(id)?.name ?? "person"}`} onClick={() => onChange(value.filter((x) => x !== id))}
-                style={{ width: 22, height: 22, border: 0, borderRadius: 11, background: "transparent", color: BETA.muted, cursor: "pointer", fontSize: 14, lineHeight: 1 }}>x</button>
-            </span>
-          ))}
-        </div>
-      )}
-    </div>
-  );
+  return <BetaPeoplePicker label={label} value={value} onChange={onChange} />;
 }

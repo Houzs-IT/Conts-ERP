@@ -2,24 +2,24 @@
    per day with a round icon per entry, a RECORD tag on approvals, key passes and the handover, and a CSV export of what
    is on screen. The engine's categories take the mockup's icons and colours. */
 
-import { useState, type ReactElement, type ReactNode } from "react";
+import { useMemo, useState, type ReactElement, type ReactNode } from "react";
 import { useQuery } from "../../hooks/useQuery";
 import {
   CATEGORY_LABEL, FILTERS, countByCategory, filterEntries, type TimelineCategory, type TimelineEntry,
 } from "../projects/renovation/renovationTimelineModel";
 import { WS, WsEmpty, WsFilterPill, WsPageHead, WsTag, btnStyle, cardStyle } from "./BetaWsUi";
 import type { BetaTabProps } from "./betaShared";
-import { dayHeading, groupByDay, isRecordEntry, mytDay, mytTime, searchEntries, timelineCsv } from "./renovationBetaModel";
+import { dayHeading, groupByDay, isRecordEntry, mytDay, mytTime, plainTimelineEntry, searchEntries, timelineCsv } from "./renovationBetaModel";
 import { betaSiteApi } from "./renovationBetaSiteApi";
 import { BETA, type BetaTone } from "./renovationBetaTheme";
 import type { BetaTabKey } from "./renovationBetaTabs";
 
 const TONE: Readonly<Record<TimelineCategory, BetaTone>> = {
   site: ["#1A6B66", "#E4F1EF"],
-  design: ["#3B5BA9", "#E9EEF9"],
-  customer: ["#1F4E8C", "#E8F0FB"],
+  design: ["#3F4947", "#EEF2F1"],
+  customer: ["#3F4947", "#EEF2F1"],
   supplier: ["#8A4A00", "#FDF1E2"],
-  sales: ["#1E6B3A", "#E5F3EA"],
+  sales: ["#1A6B66", "#E4F1EF"],
   system: ["#3F4947", "#EEF2F1"],
 };
 
@@ -51,7 +51,7 @@ export function BetaTimelineTab({ projectId, today, onDone, onError, openTab }: 
   const q = useQuery(["renovation-beta", "timeline", projectId], () => betaSiteApi.timeline(projectId), [projectId], { refetchOnMount: "always", staleTime: 0 });
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>("all");
   const [search, setSearch] = useState("");
-  const entries = q.data?.entries ?? [];
+  const entries = useMemo(() => (q.data?.entries ?? []).map(plainTimelineEntry), [q.data]);
   const counts = countByCategory(entries);
   const shown = searchEntries(filterEntries(entries, filter), search);
   const days = groupByDay(shown, (e) => mytDay(e.at));

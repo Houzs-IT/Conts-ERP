@@ -1,7 +1,7 @@
 /* Pure rules behind the Beta project workspace, bundle A (plan section 9). No React, no calls: every function
    takes today (Malaysia time, YYYY-MM-DD) as a value so the rules can be tested on fixed dates. */
 
-import { RENO_STAGES, STAGE_LABEL } from "../../vendor/shared/renovation-stages";
+import { INTERNAL_TASKS, RENO_STAGES, STAGE_LABEL, TASK_CATEGORIES } from "../../vendor/shared/renovation-stages";
 import { CATEGORY_LABEL, type TimelineEntry } from "../projects/renovation/renovationTimelineModel";
 import { daysBetween, money, shortDate } from "../projects/renovation/renovationModel";
 import type { DesignFile, SiteMeasure, TaskViewV2 } from "../projects/renovation/simpleApi";
@@ -329,6 +329,35 @@ export function mergeTodo(design: readonly TodoRow[], other: readonly TodoRow[])
 
 /* ---------- Timeline ---------- */
 
+const sentenceCase = (s: string): string => { const t = s.trim().toLowerCase(); return t.charAt(0).toUpperCase() + t.slice(1); };
+
+/** A stored site task code as words ("INTERNAL:pre_reno_delivery" is "Pre-reno works & item delivery"). */
+export function taskCodeWords(code: string): string {
+  if (/^INTERNAL:/i.test(code)) {
+    const key = code.slice(9);
+    return INTERNAL_TASKS.find((t) => t.key === key)?.label ?? sentenceCase(key.replace(/_/g, " "));
+  }
+  if (/^CAT:/i.test(code)) {
+    const c = code.slice(4).toUpperCase();
+    return sentenceCase(TASK_CATEGORIES.find((t) => t.code === c)?.label ?? c.replace(/_/g, " "));
+  }
+  return sentenceCase(code.replace(/_/g, " "));
+}
+
+/** The screen's last guard (the server already words its entries): no stored code reaches a person. */
+export function plainText(text: string | null): string | null {
+  if (text == null) return null;
+  return text
+    .replace(/(?<![\w@./-])(?:INTERNAL|CAT):[A-Za-z0-9_]+/g, (m) => taskCodeWords(m))
+    .replace(/(?<![\w@./-])[a-z][a-z0-9]*(?:_[a-z0-9]+)+(?![\w@/-])/g, (m) => m.replace(/_/g, " "));
+}
+
+/** A system entry with its words cleaned; a note a person wrote is shown as written. */
+export function plainTimelineEntry(e: TimelineEntry): TimelineEntry {
+  if (e.noteId != null) return e;
+  return { ...e, title: plainText(e.title), body: plainText(e.body) };
+}
+
 const RECORD_TITLE = /\bapproved\b|key passed|handover signed|handed over/i;
 
 /** Approvals, key passes and the handover are the entries that settle a question; the screen tags them RECORD. */
@@ -528,8 +557,38 @@ export function paymentCard(r: Pick<PaymentRow, "status" | "stageCode" | "unlock
 
 /** The next step is the design waiting for the client when there is one (as in the mockup), else the worst row. */
 export function nextStep(rows: readonly TodoRow[]): { next: TodoRow | null; rest: TodoRow[] } {
-  const next = rows.find((r) => r.id.startsWith("approval-")) ?? rows.at(0) ?? null;
+  const next = rows.find((r) => r.id.startsWith("flow-")) ?? rows.find((r) => r.id.startsWith("approval-")) ?? rows.at(0) ?? null;
   return { next, rest: rows.filter((r) => r !== next) };
+}
+
+/** The steps past design, where the step bar is the truth for what comes next (live run, 24 Oct 2026: the step
+    bar said Renovation while To do still suggested "Book carpentry measure"). */
+const PAST_DESIGN = ["ordering", "renovation", "handover"] as const;
+
+type FlowTask = Pick<TaskViewV2, "id" | "label" | "status" | "planned_start" | "planned_end" | "actual_start">;
+
+/** The To do row for the project's step once it is past design, or null while it is still in design (or closed). */
+export function flowStepRow(flow: { current: string; currentLabel: string }, tasks: readonly FlowTask[], today: string): TodoRow | null {
+  if (!(PAST_DESIGN as readonly string[]).includes(flow.current)) return null;
+  if (flow.current === "ordering") {
+    return { id: "flow-ordering", tone: "warn", group: flow.currentLabel.toLowerCase(), title: "Order the main items", detail: "Purchase orders for this project's sales order", action: { type: "open", label: "Open PO", tab: "po" } };
+  }
+  if (flow.current === "handover") {
+    return { id: "flow-handover", tone: "warn", group: flow.currentLabel.toLowerCase(), title: "Close the defects and hand over", detail: "Keys and final payment after every defect is closed", action: { type: "open", label: "Open defects", tab: "defects" } };
+  }
+  const open = tasks.filter((t) => t.status !== "done" && t.status !== "skipped")
+    .sort((a, b) => (a.actual_start ?? a.planned_start ?? "9999").localeCompare(b.actual_start ?? b.planned_start ?? "9999"));
+  const t = open.at(0);
+  const from = t?.planned_start ? day(t.planned_start) : null;
+  const late = !!t?.planned_end && day(t.planned_end) < today;
+  return {
+    id: "flow-renovation",
+    tone: late ? "err" : "warn",
+    group: flow.currentLabel.toLowerCase(),
+    title: t ? `Next site step: ${t.label}` : "Every site step is done",
+    detail: t ? (from ? `${late ? "Late · " : ""}planned ${dayMonth(from)}${t.planned_end ? ` to ${dayMonth(day(t.planned_end))}` : ""}` : "No date planned yet") : "Next is the handover",
+    action: { type: "open", label: "Site photos", tab: "site" },
+  };
 }
 
 /* ---------- Site progress: the vertical timeline ---------- */

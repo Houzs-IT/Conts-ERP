@@ -15,13 +15,20 @@ import {
   addAmendment, assignPeople, boardApi, type EventBody,
 } from "./renovationBetaBoardApi";
 import { BETA } from "./renovationBetaTheme";
+import { MediaPicker } from "./BetaMedia";
+import { uploadMeasureFile } from "./renovationBetaMediaApi";
+import { simpleApi } from "../projects/renovation/simpleApi";
 
 export type BetaDialog =
   | { t: "work"; ev: CalEvent | null; day: string }
-  | { t: "assign"; projectId: number }
+  | { t: "assign"; projectId: number; role?: AssignRole }
+  | { t: "measured"; projectId: number }
   | { t: "book"; projectId: number; key: ApptKey }
   | { t: "amend"; projectId: number; k: Kind }
   | { t: "dates"; projectId: number };
+
+/** The header card the Assign dialog was opened from: that part opens ready to change. */
+export type AssignRole = "lead" | "3" | "2" | "site";
 
 export interface FormEnv {
   m: BoardModel;
@@ -193,14 +200,16 @@ function PersonCard({ person, name, role, tint, onRemove }: {
 }
 
 /** One person: a select of the offered people, and the pick shown as a card under it. */
-function PersonPick({ label, name, all, value, onChange, blank, required }: {
-  label: string; name: string; all: readonly Person[]; value: number | null; onChange: (id: number | null) => void; blank: string; required?: boolean;
+function PersonPick({ label, name, all, value, onChange, blank, required, autoFocus }: {
+  label: string; name: string; all: readonly Person[]; value: number | null; onChange: (id: number | null) => void; blank: string; required?: boolean; autoFocus?: boolean;
 }): ReactElement {
+  const ref = useRef<HTMLSelectElement>(null);
+  useEffect(() => { if (autoFocus) ref.current?.focus(); }, [autoFocus]);
   const picked = value == null ? undefined : all.find((x) => x.id === value);
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
       <Field label={label}>
-        <select name={name} required={required} value={value ?? ""} onChange={(e) => onChange(num(e.target.value))} style={IN}>
+        <select ref={ref} name={name} required={required} value={value ?? ""} onChange={(e) => onChange(num(e.target.value))} style={IN}>
           <PersonOptions all={all} current={value == null ? [] : [value]} blank={blank} />
         </select>
       </Field>
@@ -211,11 +220,11 @@ function PersonPick({ label, name, all, value, onChange, blank, required }: {
 
 /** Several people: the picks as cards with a remove button, in the order picked, and a "Choose people" list with a
     search box and a tick box per person, so several can be ticked at once. Done keeps the ticks, Cancel drops them. */
-function PeoplePick({ label, name, all, value, onChange, known }: {
-  label: string; name: string; all: readonly Person[]; value: number[]; onChange: (ids: number[]) => void; known: ReadonlyMap<number, string>;
+function PeoplePick({ label, name, all, value, onChange, known, startOpen = false }: {
+  label: string; name: string; all: readonly Person[]; value: number[]; onChange: (ids: number[]) => void; known: ReadonlyMap<number, string>; startOpen?: boolean;
 }): ReactElement {
   const byId = new Map(all.map((x) => [x.id, x] as const));
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(startOpen);
   const [draft, setDraft] = useState<number[]>(value);
   const [find, setFind] = useState("");
   const listId = useId();
@@ -289,15 +298,33 @@ function PeoplePick({ label, name, all, value, onChange, known }: {
         </div>
       )}
       {value.length > 0 ? (
-        <ul aria-label={`${label} picked`} style={LIST}>
+        /* Compact chips that wrap, so ten people take two lines, not ten rows (owner, 24 Oct 2026). */
+        <ul aria-label={`${label} picked`} style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexWrap: "wrap", gap: 6 }}>
           {value.map((id) => {
             const who = byId.get(id)?.name ?? known.get(id) ?? `Person ${id}`;
-            return <PersonCard key={id} person={byId.get(id)} name={who} onRemove={() => onChange(value.filter((x) => x !== id))} />;
+            const info = personInfo(byId.get(id) ? { position: byId.get(id)?.position ?? null, department: byId.get(id)?.department ?? null } : undefined);
+            return (
+              <li key={id} title={info || who} style={{ display: "inline-flex", alignItems: "center", gap: 6, maxWidth: "100%", minHeight: 32, padding: "2px 2px 2px 3px", borderRadius: 16, border: `1px solid ${BETA.line}`, background: BETA.surface }}>
+                <span aria-hidden="true" style={AVATAR(24)}>{initials(who)}</span>
+                <span style={{ fontSize: 13, fontWeight: 600, color: BETA.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{who}</span>
+                <button type="button" onClick={() => onChange(value.filter((x) => x !== id))} aria-label={`Remove ${who}`}
+                  style={{ flex: "none", width: 26, height: 26, border: 0, borderRadius: 13, background: "transparent", color: BETA.muted, fontSize: 16, lineHeight: 1, cursor: "pointer" }}>×</button>
+              </li>
+            );
           })}
         </ul>
       ) : <div style={{ fontSize: 13, color: BETA.muted }}>Nobody yet.</div>}
     </div>
   );
+}
+
+/** The tick-box people picker of the Assign dialog, with its own people list, for any form that picks several people
+    (the Drawings uploads' "drawn by", the site measure's "measured by"). */
+export function BetaPeoplePicker({ label, value, onChange, name = "people" }: { label: string; value: number[]; onChange: (ids: number[]) => void; name?: string }): ReactElement {
+  const q = usePeople();
+  const all = q.data?.data ?? [];
+  const known = new Map(all.map((x) => [x.id, x.name] as const));
+  return <PeoplePick label={label} name={name} all={all} value={value} onChange={onChange} known={known} />;
 }
 
 /** Two columns that fall to one on a phone. */
@@ -376,7 +403,7 @@ function WorkForm({ env, ev, day }: { env: FormEnv; ev: CalEvent | null; day: st
 
 /* ---------- Assign ---------- */
 
-function AssignForm({ env, p }: { env: FormEnv; p: DesignProject }): ReactElement {
+function AssignForm({ env, p, role }: { env: FormEnv; p: DesignProject; role?: AssignRole }): ReactElement {
   const { m } = env;
   const all = useFormPeople(m);
   const [lead, setLead] = useState<number | null>(p.lead?.id ?? m.mePersonId ?? null);
@@ -411,10 +438,10 @@ function AssignForm({ env, p }: { env: FormEnv; p: DesignProject }): ReactElemen
         <PersonPick label="Design lead (3D and 2D)" name="lead" all={all} value={lead} onChange={setLead} blank="Choose..." required />
       )}
       <div style={PICK_GRID}>
-        <PeoplePick label="3D by" name="who3" all={all} value={w3} onChange={setW3} known={known} />
-        <PeoplePick label="2D by" name="who2" all={all} value={w2} onChange={setW2} known={known} />
+        <PeoplePick label="3D by" name="who3" all={all} value={w3} onChange={setW3} known={known} startOpen={role === "3"} />
+        <PeoplePick label="2D by" name="who2" all={all} value={w2} onChange={setW2} known={known} startOpen={role === "2"} />
       </div>
-      <PersonPick label="Site PIC (handover lead)" name="site" all={all} value={site} onChange={setSite} blank="Not chosen" />
+      <PersonPick label="Site PIC (handover lead)" name="site" all={all} value={site} onChange={setSite} blank="Not chosen" autoFocus={role === "site"} />
       <div style={NOTE}>Pick one or more people for the 3D and for the 2D. They see it in their own Calendar right away. Only people who can edit projects can change this.</div>
     </BetaModal>
   );
@@ -434,12 +461,21 @@ function BookForm({ env, p, k }: { env: FormEnv; p: DesignProject; k: ApptKey })
   const [done, setDone] = useState(a?.done ?? false);
   const save = useSave(env);
   const cm = p.appts.cm?.d;
+  // Ticking Done on a site measure records the measure: who measured is required, notes and photos are asked for.
+  const recordsMeasure = k === "msr" && done && !p.measuredOn;
+  const measure = useMeasureFields(all, person ? [Number(person)] : p.lead ? [p.lead.id] : []);
 
   async function submit(): Promise<void> {
     await save.run(async () => {
       const issue = bookIssue(p, k, d);
       if (issue) throw new Error(issue);
+      if (recordsMeasure) measure.check(d);
       await boardApi.saveAppointment(p.id, apptKindOf(k), { onDate: d, atTime: t || null, personId: num(person), withText: withText.trim() || null });
+      if (recordsMeasure) {
+        const n = await measure.save(p.id, d);
+        if (!a?.done) await boardApi.appointmentDone(p.id, apptKindOf(k));
+        return { text: `Site measure recorded ${ds(d)}${n ? ` · ${n} ${n === 1 ? "file" : "files"}` : ""}` };
+      }
       if (done && !a?.done) await boardApi.appointmentDone(p.id, apptKindOf(k));
       return { text: `Booked ${ds(d)}${t ? ` ${t}` : ""} · on the calendar` };
     });
@@ -480,6 +516,67 @@ function BookForm({ env, p, k }: { env: FormEnv; p: DesignProject; k: ApptKey })
           Done
         </label>
       )}
+      {recordsMeasure && measure.fields(env.m)}
+    </BetaModal>
+  );
+}
+
+/* ---------- Site measure done ---------- */
+
+/** Who measured (required), notes and photos (optional, asked for), as the site measure's Done asks them. */
+function useMeasureFields(all: readonly Person[], firstPeople: number[]): {
+  check: (on: string) => void; save: (projectId: number, on: string) => Promise<number>; fields: (m: BoardModel) => ReactElement;
+} {
+  const [people, setPeople] = useState<number[]>(firstPeople);
+  const [note, setNote] = useState("");
+  const [files, setFiles] = useState<File[]>([]);
+  const [fileError, setFileError] = useState<string | null>(null);
+  const check = (on: string): void => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(on)) throw new Error("Give the day it was measured.");
+    if (people.length === 0) throw new Error("Choose who measured.");
+  };
+  async function save(projectId: number, on: string): Promise<number> {
+    check(on);
+    const r = await simpleApi.addSiteMeasure(projectId, { doneOn: on, personIds: people, note: note.trim() || null });
+    for (const f of files) await uploadMeasureFile(projectId, r.id, f);
+    return files.length;
+  }
+  const fields = (m: BoardModel): ReactElement => {
+    const known = new Map(m.everyone.map((x) => [x.id, x.name] as const));
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: 12, borderRadius: 10, border: `1px solid ${BETA.line}`, background: "#FAFBFB" }}>
+        <PeoplePick label="Measured by (required)" name="measuredBy" all={all} value={people} onChange={setPeople} known={known} />
+        <Field label="Notes (optional): sizes, things to watch">
+          <textarea name="measureNote" rows={3} maxLength={2000} value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. living 5.2 m x 4.1 m, kitchen wall to hack, ceiling 2.9 m" style={{ ...IN, minHeight: 72, padding: "8px 10px", resize: "vertical" }} />
+        </Field>
+        <MediaPicker files={files} onChange={setFiles} label="Site photos or videos" onError={setFileError} />
+        {fileError && <div role="alert" style={{ fontSize: 13, color: "#A12622" }}>{fileError}</div>}
+      </div>
+    );
+  };
+  return { check, save, fields };
+}
+
+function MeasureForm({ env, p }: { env: FormEnv; p: DesignProject }): ReactElement {
+  const all = useFormPeople(env.m);
+  const a = p.appts.msr;
+  const [on, setOn] = useState(a?.d && a.d <= env.m.today ? a.d : env.m.today);
+  const measure = useMeasureFields(all, a?.who ? [a.who.id] : p.lead ? [p.lead.id] : []);
+  const save = useSave(env);
+  async function submit(): Promise<void> {
+    await save.run(async () => {
+      const n = await measure.save(p.id, on);
+      if (a?.d && !a.done) await boardApi.appointmentDone(p.id, apptKindOf("msr"));
+      return { text: `Site measure recorded ${ds(on)}${n ? ` · ${n} ${n === 1 ? "file" : "files"}` : ""}` };
+    });
+  }
+  return (
+    <BetaModal title="Site measure done" sub={p.name} onClose={env.onClose} onSubmit={submit} error={save.error} busy={save.busy}>
+      <Field label="Measured on (required)">
+        <input type="date" name="measuredOn" required value={on} max={env.m.today} onChange={(e) => setOn(e.target.value)} style={IN} />
+      </Field>
+      {measure.fields(env.m)}
+      <div style={NOTE}>The measure is what the project page and the 3D wait for. Photos and notes help the designer, so add them while you are on site.</div>
     </BetaModal>
   );
 }
@@ -559,7 +656,8 @@ export function BetaDialogs({ dialog, env }: { dialog: BetaDialog | null; env: F
   if (dialog.t === "work") return <WorkForm key={dialog.ev?.id ?? "new"} env={env} ev={dialog.ev} day={dialog.day} />;
   const p = env.m.byId.get(dialog.projectId);
   if (!p) return null;
-  if (dialog.t === "assign") return <AssignForm env={env} p={p} />;
+  if (dialog.t === "assign") return <AssignForm env={env} p={p} role={dialog.role} />;
+  if (dialog.t === "measured") return <MeasureForm env={env} p={p} />;
   if (dialog.t === "book") return <BookForm env={env} p={p} k={dialog.key} />;
   if (dialog.t === "amend") return <AmendForm env={env} p={p} k={dialog.k} />;
   return <DatesForm env={env} p={p} />;

@@ -38,6 +38,12 @@ export interface DesignProject {
   customer: string | null;
   salesName: string | null;
   createdOn: string | null;
+  /** When it was made (ISO), for "newest first"; falls back to the day. */
+  createdAt: string | null;
+  /** Building, unit and sales order numbers, for the list's search. */
+  building: string | null;
+  unitNo: string | null;
+  soDocNos: string[];
   /** Title and customer joined with the mockup's separator. */
   name: string;
   tag: string;
@@ -240,6 +246,10 @@ export function toBoardProjects(board: BetaBoard): DesignProject[] {
       customer,
       salesName: p.salesName,
       createdOn: p.createdOn,
+      createdAt: p.createdAt ?? (p.createdOn ? `${p.createdOn}T00:00:00Z` : null),
+      building: p.building,
+      unitNo: p.unitNo,
+      soDocNos: p.soDocNos ?? [],
       name: customer ? `${title} · ${customer}` : title,
       tag: p.building?.trim() || buildingFromTitle(title),
       lead,
@@ -314,8 +324,16 @@ export function adone(m: BoardModel, a: Appt | undefined): boolean {
   return !!a && (a.done || a.d < m.today);
 }
 
-export function measured(m: BoardModel, p: DesignProject): boolean {
-  return !!p.measuredOn || adone(m, p.appts.msr) || !!p.design["3"].s;
+/** Measured = a site measure is recorded (its date, who measured, notes, photos), the same fact the project page
+    reads. A booked or ticked appointment alone is not a measure (live run, 24 Oct 2026: Beta said Done while the
+    project page said Not measured). */
+export function measured(_m: BoardModel, p: DesignProject): boolean {
+  return !!p.measuredOn;
+}
+
+/** Past the measure for the design flow: measured, or the 3D has started anyway (older projects with no record). */
+export function pastMeasure(m: BoardModel, p: DesignProject): boolean {
+  return measured(m, p) || !!p.design["3"].s;
 }
 
 /** Who does an appointment: the person on it, else the design lead. */
@@ -339,7 +357,7 @@ export function stepDone(m: BoardModel, p: DesignProject, k: StepKey): boolean {
 
 export function status(m: BoardModel, p: DesignProject): readonly [Letter, string] {
   if (p.unassigned) return ["A", "New · team not assigned"];
-  if (!measured(m, p)) return ["A", p.appts.msr?.d ? "Site measure booked" : "Pending site measure"];
+  if (!pastMeasure(m, p)) return ["A", p.appts.msr?.d ? "Site measure booked" : "Pending site measure"];
   const g3 = stage(m, p, "3");
   if (g3.st !== "ok") return ["B", g3.st === "none" ? "Pending 3D design" : g3.st === "wait" ? "3D sent · waiting client" : g3.r.n ? "3D amendment" : "3D in progress"];
   const g2 = stage(m, p, "2");
@@ -431,7 +449,7 @@ export function deadlineGroups(m: BoardModel, who: Viewing, canAssign: boolean):
       const s = stage(m, p, k);
       if (s.st === "wait" && mineAny(who, p.team[k]) && s.r.done) g.waiting.push({ p, k, n: s.r.n, sent: s.r.done });
     }
-    if (!p.unassigned && !p.design["3"].s && measured(m, p) && mineAny(who, p.team["3"])) g.ready.push({ p, k: "3" });
+    if (!p.unassigned && !p.design["3"].s && pastMeasure(m, p) && mineAny(who, p.team["3"])) g.ready.push({ p, k: "3" });
     else if (p.design["3"].ok && !p.design["2"].s && mineAny(who, p.team["2"])) g.ready.push({ p, k: "2" });
   }
   for (const p of m.projects) {
@@ -441,7 +459,7 @@ export function deadlineGroups(m: BoardModel, who: Viewing, canAssign: boolean):
       continue;
     }
     if (!mine(who, p.lead?.id)) continue;
-    if (!measured(m, p) && !p.appts.msr?.d) g.todo.push({ p, k: "msr" });
+    if (!pastMeasure(m, p) && !p.appts.msr?.d) g.todo.push({ p, k: "msr" });
     if (p.design["2"].ok) {
       if (!p.appts.cm?.d) g.todo.push({ p, k: "cm" });
       else if (!p.appts.sb?.d) g.todo.push({ p, k: "sb" });

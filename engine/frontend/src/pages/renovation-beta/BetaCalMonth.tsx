@@ -65,7 +65,7 @@ export function BetaCalMonth({ m, who, view, selDay, onPrev, onNext, onToday, on
             <button type="button" onClick={onToday} style={{ ...BTN, minHeight: 40, fontSize: 14 }}>Today</button>
           </div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 14, fontSize: 12, color: INK_SOFT }}>
-            {([["#A12622", "Deadline"], ["#1F4E8C", "Meeting / site"], ["#1A6B66", "Design work"], ["#B4540A", "Drawing update"]] as const).map(([c, label]) => (
+            {([["#A12622", "Deadline"], ["#3F4947", "Meeting / site"], ["#1A6B66", "Design work"], ["#8A4A00", "Drawing update"]] as const).map(([c, label]) => (
               <span key={label} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
                 <span aria-hidden="true" style={{ width: 10, height: 10, borderRadius: 3, background: c }} />{label}
               </span>

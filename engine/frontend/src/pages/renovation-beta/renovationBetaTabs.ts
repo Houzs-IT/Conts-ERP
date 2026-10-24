@@ -1,5 +1,6 @@
 /* The tabs of the Beta project workspace, in the mockup's order (owner, 23 Oct 2026). `bundle` says which
-   part of the plan (docs/superpowers/plans/2026-10-23-beta-project-workspace.md) fills the tab. */
+   part of the plan (docs/superpowers/plans/2026-10-23-beta-project-workspace.md) fills the tab; C is the DO and GR
+   tabs the owner added on 24 Oct 2026, each delivery with its photos, out of Site & photos. */
 
 export const BETA_TABS = [
   { key: "overview", label: "Overview", bundle: "A" },
@@ -7,6 +8,8 @@ export const BETA_TABS = [
   { key: "vo", label: "VO", bundle: "B" },
   { key: "po", label: "PO", bundle: "B" },
   { key: "client-po", label: "Client PO", bundle: "B" },
+  { key: "do", label: "DO", bundle: "C" },
+  { key: "gr", label: "GR", bundle: "C" },
   { key: "site", label: "Site & photos", bundle: "A" },
   { key: "defects", label: "Defects", bundle: "A" },
   { key: "timeline", label: "Timeline", bundle: "A" },

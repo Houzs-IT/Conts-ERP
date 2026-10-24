@@ -23,6 +23,8 @@ describe("Beta routes: the switch", () => {
       "GET /board",
       "GET /projects/:id/client-po",
       "GET /projects/:id/defects",
+      "GET /projects/:id/lines",
+      "GET /projects/:id/photos",
       "GET /projects/:id/po",
       "GET /projects/:id/site",
       "GET /projects/:id/timeline",
@@ -39,10 +41,12 @@ describe("Beta routes: the switch", () => {
       "POST /projects/:id/appointments/:kind/done",
       "POST /projects/:id/client-link",
       "POST /projects/:id/defects",
+      "POST /projects/:id/media",
       "POST /projects/:id/reminders",
       "PUT /design-notes/:noteId/days",
       "PUT /projects/:id/appointments/:kind",
       "PUT /projects/:id/design",
+      "PUT /projects/:id/lines/:itemId/plan",
       "PUT /settings",
     ]);
   });

@@ -5,23 +5,26 @@
    or Redo (back to To fix). On a phone the columns scroll sideways, one column per screen. */
 
 import { useState, type FormEvent, type ReactElement, type ReactNode } from "react";
-import { CalendarDays, ChevronRight, MapPin, Plus, RotateCcw, User, Wrench } from "lucide-react";
+import { CalendarDays, ChevronRight, MapPin, Plus, RotateCcw, User } from "lucide-react";
 import { useQuery } from "../../hooks/useQuery";
 import { renovationApi } from "../projects/renovation/renovationApi";
 import { errorText } from "../projects/renovation/renovationModel";
-import { WS, WsBtn, WsDialog, WsEmpty, WsField, WsPageHead, WsPhoto, btnStyle, inputStyle, textareaStyle } from "./BetaWsUi";
+import { MediaGrid, MediaPicker, MEDIA_RADIUS, type MediaItem } from "./BetaMedia";
+import { AreaPick } from "./BetaPhotoUpload";
+import { WS, WsBtn, WsDialog, WsEmpty, WsField, WsPageHead, btnStyle, inputStyle, textareaStyle } from "./BetaWsUi";
+import { uploadAll } from "./renovationBetaMediaApi";
 import { sendReminder, tradeLabel, useGuarded, TRADE_LABEL, type BetaTabProps } from "./betaShared";
 import { BETA_TRADES, betaApi, type BetaTrade } from "./renovationBetaApi";
 import { dayMonth, dayMonthYear, defectColumn, defectDaysLate, mytDay, snagProgress, type DefectColumn } from "./renovationBetaModel";
-import { betaSiteApi, type DefectPatch, type DefectTicket } from "./renovationBetaSiteApi";
+import { betaSiteApi, type DefectMediaFile, type DefectPatch, type DefectTicket } from "./renovationBetaSiteApi";
 import { dueLine, overdueCount, ticketColumns } from "./renovationBetaSiteModel";
 import { BETA } from "./renovationBetaTheme";
 
 /** Column header colours: amber for the contractor's turn, blue for the check, green for done. */
 const COLUMNS: ReadonlyArray<{ key: DefectColumn; title: string; caption: string; ink: string; bg: string; bar: string; empty: string }> = [
-  { key: "to_fix", title: "To fix", caption: "Contractor's turn", ink: "#8A4A00", bg: "#FDF1E2", bar: "#D98A1F", empty: "Nothing waiting to be fixed." },
-  { key: "check", title: "Check", caption: "Fixed, your turn to check", ink: WS.blue, bg: "#E8F0FB", bar: "#3A7BD5", empty: "Nothing waiting for a check." },
-  { key: "done", title: "Done", caption: "Checked and closed", ink: WS.green, bg: "#E5F3EA", bar: "#3E9B5F", empty: "No closed defects yet." },
+  { key: "to_fix", title: "To fix", caption: "Contractor's turn", ink: WS.amber, bg: "#FDF1E2", bar: WS.amberDot, empty: "Nothing waiting to be fixed." },
+  { key: "check", title: "Check", caption: "Fixed, your turn to check", ink: WS.blue, bg: "#EEF2F1", bar: WS.blueDot, empty: "Nothing waiting for a check." },
+  { key: "done", title: "Done", caption: "Checked and closed", ink: WS.green, bg: "#E4F1EF", bar: WS.greenDot, empty: "No closed defects yet." },
 ];
 
 const PIPE_CSS = `
@@ -29,11 +32,21 @@ const PIPE_CSS = `
 .bws .bdp{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;align-items:start}
 @container bdp (max-width:700px){.bws .bdp{grid-template-columns:repeat(3,minmax(47%,1fr));overflow-x:auto;scroll-snap-type:x mandatory;padding-bottom:6px;-webkit-overflow-scrolling:touch}.bws .bdp>section{scroll-snap-align:start}}
 @container bdp (max-width:560px){.bws .bdp{grid-template-columns:repeat(3,minmax(86%,1fr))}}
-.bws .bdp-card{display:flex;flex-direction:column;width:100%;padding:0;border:1px solid ${BETA.line};border-radius:12px;background:${BETA.surface};text-align:left;font:inherit;color:inherit;cursor:pointer;overflow:hidden;box-shadow:0 1px 2px rgba(23,32,31,.04)}
+.bws .bdp-card{display:flex;flex-direction:column;width:100%;padding:0;border:1px solid ${BETA.line};border-radius:12px;background:${BETA.surface};text-align:left;color:inherit;overflow:hidden;box-shadow:0 1px 2px rgba(23,32,31,.04)}
 .bws .bdp-card:hover{border-color:${BETA.border};box-shadow:0 2px 8px rgba(23,32,31,.08)}
 `;
 
 const plural = (n: number, w: string): string => `${n} ${w}${n === 1 ? "" : "s"}`;
+
+/** A defect's photos and videos, labelled Before / After; an older server sends only the two keys. */
+export function defectMediaItems(t: DefectTicket, projectId: number, which: "before" | "after" | "both"): MediaItem[] {
+  const one = (f: DefectMediaFile, i: number, label: "Before" | "After"): MediaItem => ({ id: `${label}-${i}-${f.key}`, path: f.path, kind: f.kind, name: f.name, label, at: f.at, caption: t.location });
+  const fallback = (key: string | null, label: "Before" | "After", at: string | null): DefectMediaFile[] =>
+    key ? [{ key, path: renovationApi.fileUrl(projectId, key), kind: "image", name: label, at }] : [];
+  const before = (t.before ?? fallback(t.photoKey, "Before", t.reportedAt)).map((f, i) => one(f, i, "Before"));
+  const after = (t.after ?? fallback(t.afterPhotoKey, "After", t.fixedAt)).map((f, i) => one(f, i, "After"));
+  return which === "before" ? before : which === "after" ? after : [...before, ...after];
+}
 const whereOf = (t: DefectTicket): string => t.location ?? "No area given";
 
 export function BetaDefectsTab(p: BetaTabProps): ReactElement {
@@ -118,18 +131,15 @@ function whoFixes(t: DefectTicket): string | null {
 
 function TicketCard({ t, p, onOpen }: { t: DefectTicket; p: BetaTabProps; onOpen: () => void }): ReactElement {
   const col = defectColumn(t);
-  const key = col === "done" ? (t.afterPhotoKey ?? t.photoKey) : col === "check" ? (t.afterPhotoKey ?? t.photoKey) : t.photoKey;
+  // To fix shows the problem; Check and Done show the problem and the fix together, labelled.
+  const media = defectMediaItems(t, p.projectId, col === "to_fix" ? "before" : "both");
   const due = dueLine(t, p.today, dayMonth);
   const who = whoFixes(t);
   return (
-    <button type="button" className="bdp-card" onClick={onOpen} aria-label={`Open defect: ${whereOf(t)}, ${t.description ?? ""}`}>
-      {key && (
-        <span style={{ position: "relative", display: "block", width: "100%", height: "clamp(132px, 11vw, 220px)", overflow: "hidden" }}>
-          <WsPhoto path={renovationApi.fileUrl(p.projectId, key)} alt="" />
-          {col !== "to_fix" && t.afterPhotoKey && <span style={{ position: "absolute", left: 8, top: 8, padding: "2px 8px", borderRadius: 10, background: WS.green, color: "#FFFFFF", fontSize: 12, fontWeight: 600 }}>After</span>}
-        </span>
-      )}
-      <span style={{ display: "flex", gap: 8, padding: "12px 14px 14px", alignItems: "flex-start" }}>
+    <div className="bdp-card">
+      {media.length > 0 && <div style={{ padding: 8, paddingBottom: 0 }}><MediaGrid items={media} label={`Photos of ${t.description ?? "the defect"}`} /></div>}
+      <button type="button" onClick={onOpen} aria-label={`Open defect: ${whereOf(t)}, ${t.description ?? ""}`}
+        style={{ display: "flex", gap: 8, padding: "12px 14px 14px", alignItems: "flex-start", width: "100%", border: 0, background: "transparent", font: "inherit", color: "inherit", textAlign: "left", cursor: "pointer" }}>
         <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 5 }}>
           <Info icon={<MapPin size={14} />} color={BETA.ink} weight={600}>{whereOf(t)}</Info>
           <span style={{ fontSize: 14, color: col === "done" ? WS.text2 : BETA.ink, overflowWrap: "anywhere" }}>{t.description ?? "No description"}</span>
@@ -140,8 +150,8 @@ function TicketCard({ t, p, onOpen }: { t: DefectTicket; p: BetaTabProps; onOpen
           {t.redoCount > 0 && col !== "done" && <Info icon={<RotateCcw size={14} />} color={WS.amber} weight={600}>Redone {plural(t.redoCount, "time")}</Info>}
         </span>
         <ChevronRight size={20} aria-hidden="true" style={{ flex: "none", alignSelf: "center", color: BETA.muted }} />
-      </span>
-    </button>
+      </button>
+    </div>
   );
 }
 
@@ -155,17 +165,9 @@ function PeopleSelect({ p, value, onChange }: { p: BetaTabProps; value: number |
   );
 }
 
-function AreaInput({ id, value, areas, onChange }: { id: string; value: string; areas: readonly string[]; onChange: (v: string) => void }): ReactElement {
-  return (
-    <>
-      <input style={inputStyle} value={value} maxLength={120} placeholder="e.g. Kitchen" list={id} onChange={(e) => onChange(e.target.value)} />
-      <datalist id={id}>{areas.map((a) => <option key={a} value={a} />)}</datalist>
-    </>
-  );
-}
-
 function ReportForm({ p, areas, onClose }: { p: BetaTabProps; areas: readonly string[]; onClose: () => void }): ReactElement {
-  const [photo, setPhoto] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
+  const [step, setStep] = useState<string | null>(null);
   const [location, setLocation] = useState("");
   const [description, setDescription] = useState("");
   const [trade, setTrade] = useState<BetaTrade | "">("");
@@ -176,20 +178,24 @@ function ReportForm({ p, areas, onClose }: { p: BetaTabProps; areas: readonly st
 
   async function submit(e: FormEvent): Promise<void> {
     e.preventDefault();
-    if (!photo) { setError("Add a photo of the problem."); return; }
+    if (files.length === 0) { setError("Add a photo or video of the problem."); return; }
     if (!description.trim()) { setError("Say what is wrong."); return; }
     setBusy(true);
     setError(null);
     try {
-      const { key } = await renovationApi.upload(p.projectId, "defect", photo);
+      const up = await uploadAll(p.projectId, "defect", files, (d, n) => setStep(`Uploading ${d} of ${n}...`));
+      // The first photo is the defect's own (the project page shows it); a video goes first only when there is no photo.
+      const first = up.find((u) => u.mime.startsWith("image/")) ?? up[0];
       await betaSiteApi.report(p.projectId, {
-        location: location.trim() || null, description: description.trim(), trade: trade || null, dueDate: dueDate || null, photoKey: key, assigneePersonId: assignee,
+        location: location.trim() || null, description: description.trim(), trade: trade || null, dueDate: dueDate || null, photoKey: first.key, assigneePersonId: assignee,
+        media: up.filter((u) => u !== first),
       });
       p.onDone("Defect reported. It is in To fix.");
       onClose();
     } catch (err) {
       setError(errorText(err));
       setBusy(false);
+      setStep(null);
     }
   }
 
@@ -199,12 +205,8 @@ function ReportForm({ p, areas, onClose }: { p: BetaTabProps; areas: readonly st
       aria-label="Report a problem"
       style={{ background: BETA.surface, border: `2px solid ${BETA.accent}`, borderRadius: 12, padding: 18, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 12, alignItems: "end" }}
     >
-      <label style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 4, minHeight: 76, border: `1.5px dashed ${WS.dash}`, borderRadius: 10, textAlign: "center", cursor: "pointer", fontWeight: 600, fontSize: 14, padding: 6, position: "relative" }}>
-        Photo of the problem
-        <span style={{ fontSize: 12, fontWeight: 400, color: BETA.muted, overflowWrap: "anywhere" }}>{photo ? photo.name : "Required · take or upload"}</span>
-        <input type="file" accept="image/*" capture="environment" className="sr" onChange={(e) => setPhoto(e.target.files?.item(0) ?? null)} />
-      </label>
-      <WsField label="Area"><AreaInput id="beta-defect-areas" value={location} areas={areas} onChange={setLocation} /></WsField>
+      <div style={{ gridColumn: "1 / -1" }}><MediaPicker files={files} onChange={setFiles} label="Photos or videos of the problem" required onError={setError} /></div>
+      <AreaPick value={location} areas={areas} onChange={setLocation} blank="Choose the area" />
       <WsField label="What's wrong"><input style={inputStyle} value={description} maxLength={1000} placeholder="e.g. cabinet door not aligned" onChange={(e) => setDescription(e.target.value)} /></WsField>
       <WsField label="Who fixes it"><PeopleSelect p={p} value={assignee} onChange={setAssignee} /></WsField>
       <WsField label="Kind of work">
@@ -216,7 +218,7 @@ function ReportForm({ p, areas, onClose }: { p: BetaTabProps; areas: readonly st
       <WsField label="Fix by"><input type="date" style={inputStyle} value={dueDate} min={p.today} onChange={(e) => setDueDate(e.target.value)} /></WsField>
       <div style={{ display: "flex", gap: 8 }}>
         <WsBtn onClick={onClose} disabled={busy} style={{ minHeight: 42 }}>Cancel</WsBtn>
-        <WsBtn kind="dark" type="submit" disabled={busy} style={{ minHeight: 42, flex: 1 }}>{busy ? "Saving..." : <>Add to “To fix”</>}</WsBtn>
+        <WsBtn kind="dark" type="submit" disabled={busy} style={{ minHeight: 42, flex: 1 }}>{busy ? step ?? "Saving..." : <>Add to “To fix”</>}</WsBtn>
       </div>
       {error && <p role="alert" style={{ gridColumn: "1 / -1", fontSize: 13, color: WS.red }}>{error}</p>}
     </form>
@@ -242,7 +244,7 @@ function TicketDialog({ t, p, areas, onClose }: { t: DefectTicket; p: BetaTabPro
   const [trade, setTrade] = useState<BetaTrade | "">(BETA_TRADES.find((x) => x === t.trade) ?? "");
   const [dueDate, setDueDate] = useState(t.dueDate ?? "");
   const [location, setLocation] = useState(t.location ?? "");
-  const [after, setAfter] = useState<File | null>(null);
+  const [after, setAfter] = useState<File[]>([]);
   const [redoNote, setRedoNote] = useState("");
   const [redoing, setRedoing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -264,11 +266,12 @@ function TicketDialog({ t, p, areas, onClose }: { t: DefectTicket; p: BetaTabPro
   }
   const save = (): Promise<void> => act(() => betaSiteApi.patchDefect(t.id, patch), "Defect updated.", false);
   async function complete(): Promise<void> {
-    if (!after) { setError("Add the photo after the fix first."); return; }
+    if (after.length === 0) { setError("Add a photo or video after the fix first."); return; }
     await act(async () => {
       if (changed) await betaSiteApi.patchDefect(t.id, patch);
-      const { key } = await renovationApi.upload(p.projectId, "defect", after);
-      await betaApi.defectFixed(t.id, key);
+      const up = await uploadAll(p.projectId, "defect", after);
+      const first = up.find((u) => u.mime.startsWith("image/")) ?? up[0];
+      await betaApi.defectFixed(t.id, first.key, up.filter((u) => u !== first));
     }, "Marked complete. It is now in Check.");
   }
   // The confirm is asked inside the ticket: a second dialog would open behind this one.
@@ -278,21 +281,23 @@ function TicketDialog({ t, p, areas, onClose }: { t: DefectTicket; p: BetaTabPro
     void run(() => sendReminder(p.projectId, { kind: "defect", text, phone: t.assigneePhone }, p.onDone, p.onError));
   }
 
-  const photo = (key: string | null, label: string, tone: string): ReactElement => (
-    <figure style={{ margin: 0, minWidth: 0 }}>
-      <div style={{ position: "relative", aspectRatio: "4 / 3", borderRadius: 10, overflow: "hidden", background: WS.chip }}>
-        {key ? <WsPhoto path={renovationApi.fileUrl(p.projectId, key)} alt={`${label}: ${whereOf(t)}`} /> : <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", fontSize: 13, color: BETA.muted }}>No photo yet</div>}
-        <span style={{ position: "absolute", left: 8, top: 8, padding: "2px 8px", borderRadius: 10, background: tone, color: "#FFFFFF", fontSize: 12, fontWeight: 600 }}>{label}</span>
-      </div>
+  const before = defectMediaItems(t, p.projectId, "before");
+  const afterShown = defectMediaItems(t, p.projectId, "after");
+  const side = (items: MediaItem[], label: string, empty: string): ReactElement => (
+    <figure style={{ margin: 0, minWidth: 0, display: "flex", flexDirection: "column", gap: 6 }}>
+      <figcaption style={{ fontSize: 12, fontWeight: 700, color: BETA.muted, textTransform: "uppercase", letterSpacing: ".05em" }}>{label} · {items.length}</figcaption>
+      {items.length > 0 ? <MediaGrid items={items} label={`${label}: ${whereOf(t)}`} /> : (
+        <div style={{ aspectRatio: "4 / 3", borderRadius: MEDIA_RADIUS, background: WS.chip, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, color: BETA.muted }}>{empty}</div>
+      )}
     </figure>
   );
 
   const status = col === "to_fix" ? (late > 0 ? "To fix · overdue" : "To fix") : col === "check" ? "Fixed, waiting for check" : "Done";
   return (
     <WsDialog title={t.description ?? "Defect"} sub={`${whereOf(t)} · ${status}`} onClose={onClose} wide>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}>
-        {photo(t.photoKey, "Before", "rgba(23,32,31,.75)")}
-        {photo(t.afterPhotoKey, "After", WS.green)}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 220px), 1fr))", gap: 12 }}>
+        {side(before, "Before", "No photo yet")}
+        {side(afterShown, "After", "Not fixed yet")}
       </div>
 
       <dl style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12, margin: 0 }}>
@@ -314,7 +319,7 @@ function TicketDialog({ t, p, areas, onClose }: { t: DefectTicket; p: BetaTabPro
             </select>
           </WsField>
           <WsField label="Fix by"><input type="date" style={inputStyle} value={dueDate} onChange={(e) => setDueDate(e.target.value)} /></WsField>
-          <WsField label="Area"><AreaInput id={`beta-defect-areas-${t.id}`} value={location} areas={areas} onChange={setLocation} /></WsField>
+          <AreaPick value={location} areas={areas} onChange={setLocation} />
           {changed && <WsBtn kind="dark" disabled={busy} onClick={() => void save()} style={{ alignSelf: "end" }}>Save changes</WsBtn>}
         </div>
       )}
@@ -322,15 +327,10 @@ function TicketDialog({ t, p, areas, onClose }: { t: DefectTicket; p: BetaTabPro
       {p.canWrite && col === "to_fix" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: 12, borderRadius: 10, border: `1px solid ${BETA.line}` }}>
           <div style={{ fontSize: 14, fontWeight: 700 }}>Fix done?</div>
-          <label style={{ display: "flex", alignItems: "center", gap: 10, minHeight: 56, padding: "8px 12px", border: `1.5px dashed ${WS.dash}`, borderRadius: 10, cursor: "pointer", fontSize: 14 }}>
-            <Wrench size={16} aria-hidden="true" />
-            <span style={{ flex: 1, minWidth: 0, overflowWrap: "anywhere" }}>{after ? after.name : "Photo after the fix (required)"}</span>
-            <span style={{ ...btnStyle("outline", "sm") }}>{after ? "Change" : "Add photo"}</span>
-            <input type="file" accept="image/*" capture="environment" className="sr" onChange={(e) => setAfter(e.target.files?.item(0) ?? null)} />
-          </label>
+          <MediaPicker files={after} onChange={setAfter} label="Photos or videos after the fix" required onError={setError} />
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "flex-end" }}>
             <WsBtn disabled={busy} onClick={remind}>Remind {t.assigneeName ?? "on WhatsApp"}</WsBtn>
-            <WsBtn kind="teal" disabled={busy || !after} onClick={() => void complete()}>Mark complete</WsBtn>
+            <WsBtn kind="teal" disabled={busy || after.length === 0} onClick={() => void complete()}>Mark complete</WsBtn>
           </div>
         </div>
       )}

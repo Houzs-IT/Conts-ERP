@@ -89,12 +89,12 @@ function dueRow(m: BoardModel, who: Viewing, x: DueItem): ReactElement {
 
 function apptRow(m: BoardModel, who: Viewing, x: ApptItem): ReactElement {
   const l = diff(x.due, m.today);
-  const [ink, bg] = l < 0 ? ["#A12622", "#FDF1F0"] : ["#1F4E8C", "#E8F0FB"];
+  const [ink, bg] = l < 0 ? ["#A12622", "#FDF1F0"] : ["#3F4947", "#EEF2F1"];
   return (
     <li key={`${x.p.id}-${x.ak}`} style={LI}>
       <DateBox due={x.due} />
       <div style={MID}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: "#1F4E8C" }}>{APPT_LABEL[x.ak]}{x.a.t ? ` · ${x.a.t}` : ""}</div>
+        <div style={{ fontSize: 12, fontWeight: 700, color: "#3F4947" }}>{APPT_LABEL[x.ak]}{x.a.t ? ` · ${x.a.t}` : ""}</div>
         <NameLink p={x.p} />
         <div style={META}>
           {showBy(who, x.by) && <><Badge name={x.by.name} /><span style={{ color: BETA.ink, fontWeight: 600 }}>{x.by.name}</span></>}
@@ -136,13 +136,13 @@ export function BetaCalDeadlines({ m, who, canAssign, viewingName, ...act }: Pro
                 <Section title="Next 7 days" color="#8A4A00" count={g.week.length}>{rowsOf(g.week)}</Section>
                 <Section title="In 8–14 days" color="#1A6B66" count={g.two.length}>{rowsOf(g.two)}</Section>
                 <Section title="Later" color={MUTED} count={g.later.length}>{rowsOf(g.later)}</Section>
-                <Section title="Waiting for client" color="#1F4E8C" count={g.waiting.length}>
+                <Section title="Waiting for client" color="#3F4947" count={g.waiting.length}>
                   {g.waiting.map((x) => {
                     const ago = diff(m.today, x.sent);
                     return (
                       <li key={`${x.p.id}-${x.k}`} style={LI}>
                         <div style={MID}>
-                          <div style={{ fontSize: 12, fontWeight: 700, color: "#1F4E8C" }}>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: "#3F4947" }}>
                             {x.k}D {x.n ? `${ord(x.n)} amendment ` : ""}sent {ds(x.sent)}{ago > 0 ? ` · ${ago} ${dayWord(ago)} ago` : ""}
                           </div>
                           <NameLink p={x.p} />
@@ -190,7 +190,7 @@ export function BetaCalDeadlines({ m, who, canAssign, viewingName, ...act }: Pro
               <ol style={LIST}>{g.todo.map((x) => <TodoRow key={`${x.p.id}-${x.k}`} m={m} who={who} x={x} canAssign={canAssign} act={act} />)}</ol>
             </aside>
           ) : (
-            <aside style={{ flex: "1 1 300px", minWidth: 0, background: "#F3F9F5", border: "1px solid #CFE3D6", borderRadius: 12, padding: "14px 16px", fontSize: 13, color: "#1E6B3A", fontWeight: 600 }}>
+            <aside style={{ flex: "1 1 300px", minWidth: 0, background: "#F3F9F8", border: "1px solid #A9D2CC", borderRadius: 12, padding: "14px 16px", fontSize: 13, color: "#1A6B66", fontWeight: 600 }}>
               Nothing to book or do right now.
             </aside>
           )}

@@ -12,6 +12,6 @@ describe("tabFromParam", () => {
     expect(tabFromParam("payments")).toBe("overview");
   });
   it("keeps the mockup's tab order", () => {
-    expect(BETA_TABS.map((t) => t.label)).toEqual(["Overview", "Drawings", "VO", "PO", "Client PO", "Site & photos", "Defects", "Timeline"]);
+    expect(BETA_TABS.map((t) => t.label)).toEqual(["Overview", "Drawings", "VO", "PO", "Client PO", "DO", "GR", "Site & photos", "Defects", "Timeline"]);
   });
 });

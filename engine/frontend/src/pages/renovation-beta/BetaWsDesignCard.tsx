@@ -97,20 +97,31 @@ export function BetaWsDesignCard({ board, canWrite, openDialog, onDone, onError 
 
   const appt = (key: ApptKey, gate: boolean, gateText: string): { body: ReactNode; buttons: ReactNode } => {
     const a = p.appts[key];
-    if (a && adone(m, a)) return { body: ok(`Done ${ds(a.d)}`), buttons: null };
+    // A site measure is done only once it is recorded (date, who measured): its Done asks for those.
+    if (a && key !== "msr" && adone(m, a)) return { body: ok(`Done ${ds(a.d)}`), buttons: null };
     if (a?.d) {
       return {
         body: <span style={{ color: WS.blue, fontWeight: 600 }}>{ds(a.d)}{a.t ? ` ${a.t}` : ""} · with {a.with || apptWithDefault(p, key)}</span>,
         buttons: canWrite ? (
           <>
             {btn("Edit", () => openDialog({ t: "book", projectId: p.id, key }))}
-            {btn("Done", () => void act(() => boardApi.appointmentDone(p.id, apptKindOf(key)), "Marked done"), true)}
+            {key === "msr"
+              ? btn("Done", () => openDialog({ t: "measured", projectId: p.id }), true)
+              : btn("Done", () => void act(() => boardApi.appointmentDone(p.id, apptKindOf(key)), "Marked done"), true)}
           </>
         ) : null,
       };
     }
     if (!gate) return { body: mut(gateText), buttons: null };
-    return { body: mut("Not booked"), buttons: canWrite ? btn("Book time", () => openDialog({ t: "book", projectId: p.id, key }), true) : null };
+    return {
+      body: mut("Not booked"),
+      buttons: canWrite ? (
+        <>
+          {btn("Book time", () => openDialog({ t: "book", projectId: p.id, key }), true)}
+          {key === "msr" && btn("Record measure", () => openDialog({ t: "measured", projectId: p.id }))}
+        </>
+      ) : null,
+    };
   };
 
   const d3 = design("3");
@@ -119,7 +130,7 @@ export function BetaWsDesignCard({ board, canWrite, openDialog, onDone, onError 
   const sb = appt("sb", !!p.appts.cm?.d, "After carpentry measure");
   const siteName = p.site?.name ?? "Site PIC";
   const lines: Line[] = [
-    { key: "msr", label: "Site measure", ...(measured(m, p) ? { body: ok("Done"), buttons: null } : appt("msr", true, "")) },
+    { key: "msr", label: "Site measure", ...(measured(m, p) ? { body: ok(`Done${p.measuredOn ? ` ${ds(p.measuredOn)}` : ""}`), buttons: null } : appt("msr", true, "")) },
     { key: "3", label: `3D · by ${p.by["3"]?.name ?? "not set"}`, ...d3 },
     { key: "2", label: `2D · by ${p.by["2"]?.name ?? "not set"}`, ...d2 },
     { key: "cm", label: "Carpentry measure", ...cm },

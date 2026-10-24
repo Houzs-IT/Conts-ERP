@@ -14,7 +14,7 @@ import { FileDialog, sendReminder, useGuarded, type BetaTabProps, type ViewedFil
 import { add, ds, designKind } from "./renovationBetaBoard";
 import { approveNewest, boardApi, markPoDone } from "./renovationBetaBoardApi";
 import {
-  approvedSet, dayMonth, dayMonthYear, emptyPaymentRows, nextStep, paymentCard, paymentStrip, paymentTotals, soConfirmed, todoList, designTodoRows, mergeTodo,
+  approvedSet, dayMonth, dayMonthYear, emptyPaymentRows, flowStepRow, nextStep, paymentCard, paymentStrip, paymentTotals, soConfirmed, todoList, designTodoRows, mergeTodo,
   type PaymentTotals, type TodoAction, type TodoRow,
 } from "./renovationBetaModel";
 import { downloadAsPdf } from "./renovationBetaPdf";
@@ -29,10 +29,13 @@ export function BetaOverviewTab(p: BetaTabProps): ReactElement {
   const { detail: d, workspace, today } = p;
   const [viewing, setViewing] = useState<ViewedFile | null>(null);
   // Design rows come from the board logic Calendar uses; payment and defect rows from the workspace.
-  const todo = mergeTodo(
+  // Past design, the step bar's step leads To do; design leftovers stay listed under it.
+  const step = flowStepRow(d.flow, d.tasks, today);
+  const merged = mergeTodo(
     designTodoRows(p.board.m, p.board.p, p.canWrite, d.project.customer_phone),
     todoList({ today, projectName: d.project.name, currentStage: d.currentStage, workspace }),
   );
+  const todo = step ? [step, ...merged.map((r) => (r.group === "to book" ? { ...r, tone: "muted" as const } : r))] : merged;
   const openFile = (f: DesignFile): void => {
     if (f.external_url) window.open(f.external_url, "_blank", "noopener");
     else if (f.r2_key) setViewing({ key: f.r2_key, name: f.file_name });
@@ -61,7 +64,7 @@ export function BetaOverviewTab(p: BetaTabProps): ReactElement {
 /* ---------- Payments ---------- */
 
 const PAY_LOOK = {
-  paid: { border: "1px solid #CFE3D6", bg: "#F3F9F5", pad: 14, tone: TONE_PAID },
+  paid: { border: "1px solid #A9D2CC", bg: "#F3F9F8", pad: 14, tone: TONE_PAID },
   alert: { border: "2px solid #E8A5A2", bg: "#FDF4F3", pad: 13, tone: TONE_ALERT },
   quiet: { border: `1px solid ${BETA.line}`, bg: "#FAFBFB", pad: 14, tone: TONE_QUIET },
 } as const;
@@ -133,7 +136,7 @@ function PaymentTotalsRow({ totals, linked }: { totals: PaymentTotals; linked: b
         ))}
       </dl>
       <div aria-hidden="true" style={{ height: 4, background: "#E3E8E7" }}>
-        <div style={{ width: `${pct}%`, height: "100%", background: "#3E9B5F" }} />
+        <div style={{ width: `${pct}%`, height: "100%", background: "#1A6B66" }} />
       </div>
     </div>
   );
