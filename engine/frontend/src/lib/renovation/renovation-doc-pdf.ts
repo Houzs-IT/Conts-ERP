@@ -10,6 +10,7 @@
 import type { jsPDF as JsPdf } from 'jspdf';
 import { PRINT_FORMATS } from './print-formats';
 import { A4, BODY_TOP, FOOTER_TOP, layoutDocument, pageTotalSen, ROW_HEIGHTS, summaryRows, type Density, type Layout, type WrapFn } from './print-layout';
+import { drawDocLetterhead } from './renovation-doc-theme';
 import { DOC_TITLE, rmGrouped, rmPlain, type PrintDoc } from './print-model';
 
 const M = A4.margin;
@@ -33,32 +34,7 @@ function dmy(iso: string | null | undefined, longYear = false): string {
 
 function drawLetterhead(pdf: JsPdf, d: PrintDoc): void {
   const b = d.brand;
-  if (b.logo) {
-    const maxW = 62;
-    const maxH = 24;
-    const scale = Math.min(maxW / b.logo.width, maxH / b.logo.height);
-    pdf.addImage(b.logo.dataUrl, b.logo.format, M + 2, 12, b.logo.width * scale, b.logo.height * scale);
-  } else {
-    pdf.setFont('times', 'normal');
-    pdf.setFontSize(20);
-    pdf.setTextColor(30);
-    pdf.text(b.name.toUpperCase().split('').join(' '), M + 2, 26, { maxWidth: 100 });
-  }
-  pdf.setFont('times', 'bold');
-  pdf.setFontSize(20);
-  pdf.setTextColor(0);
-  pdf.text(DOC_TITLE[d.kind], RIGHT - 4, 27, { align: 'right' });
-  pdf.setDrawColor(0);
-  pdf.setLineWidth(0.3);
-  pdf.line(M + 2, 40, RIGHT - 2, 40);
-
-  pdf.setFont('helvetica', 'normal');
-  pdf.setFontSize(6.5);
-  let y = 47;
-  for (const l of [...b.companyLines, b.contactLine].filter(Boolean)) {
-    pdf.text(l, M + 2, y);
-    y += 4.1;
-  }
+  drawDocLetterhead(pdf, { title: DOC_TITLE[d.kind], name: b.name, logo: b.logo, lines: [...b.companyLines, b.contactLine], margin: M });
 }
 
 function drawInfo(pdf: JsPdf, d: PrintDoc): void {

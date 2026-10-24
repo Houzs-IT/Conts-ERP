@@ -47,7 +47,9 @@ import {
   sortSoLinesByGroupRank,
 } from '@2990s/shared/so-line-display';
 import { drawSofaLayout } from './sofa-layout-pdf';
-import { COMPANY, amountInWordsMyr, deliverPdf, drawInfoColumns, ensurePdfCjkFont, fmtDocDate, fmtDocStamp, safeName, type PdfAction } from './pdf-common';
+import { COMPANY, amountInWordsMyr, deliverPdf, drawInfoColumns, ensurePdfCjkFont, fmtDocDate, fmtDocStamp, letterheadLines, safeName, type PdfAction } from './pdf-common';
+import { getBrandingLogoCache } from '../../../lib/branding';
+import { drawDocLetterhead } from '../../../lib/renovation/renovation-doc-theme';
 import { supplierBlock } from './pdf-party-blocks';
 import { poDisplayNumber } from './po-status';
 import {
@@ -329,28 +331,14 @@ async function renderPurchaseOrderInto(
     header, items, fullSupplier, skuMap, fabricMap,
   ]);
 
-  // ── Company letterhead (centered, AutoCount style) ────────────────
-  let y = margin;
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(14);
-  doc.text(COMPANY.name, pageW / 2, y, { align: 'center' });
-  y += 5;
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(9);
-  doc.text(COMPANY.reg, pageW / 2, y, { align: 'center' });
-  y += 4;
-  for (const line of COMPANY.addressLines) {
-    doc.text(line, pageW / 2, y, { align: 'center' });
-    y += 4;
-  }
-  y += 2;
-
-  doc.setDrawColor(0); doc.setLineWidth(0.4);
-  doc.line(margin, y, pageW - margin, y);
-  y += 6;
-
-  // ── Title bar ─────────────────────────────────────────────────────
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(15);
-  doc.text(docTitle, pageW / 2, y, { align: 'center' });
-  y += 8;
+  // ── Letterhead: the one every Conts document prints (renovation-doc-theme.ts, owner 24 Oct 2026) ──
+  let y = drawDocLetterhead(doc, {
+    title: docTitle.toUpperCase(),
+    name: COMPANY.shortName,
+    logo: getBrandingLogoCache(),
+    lines: letterheadLines(),
+    margin,
+  }) + 2;
 
   // ── Supplier (left) + PO details (right) — borderless, like the SO ──
   /* Embedded 7-field supplier first, full master record as the top-up for
