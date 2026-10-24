@@ -19,7 +19,7 @@
 import { Hono } from 'hono';
 import { describe, expect, test } from 'vitest';
 import {
-  chartUnionHandler, chartTickHandler, chartImportHandler, requireLeafAccount,
+  chartUnionHandler, chartTickHandler, chartImportHandler, chartImportMatchHandler, requireLeafAccount,
   chartRenameHandler, chartUpdateHandler, chartDeleteHandler, chartCreateHandler,
 } from '../src/scm/routes/accounting-chart';
 
@@ -36,6 +36,8 @@ class FakeQuery {
   select() { return this; }
   order(col: string) { this.orderCol = col; return this; }
   limit(n: number) { this.limitN = n; return this; }
+  private rangeAt: [number, number] | null = null;
+  range(from: number, to: number) { this.rangeAt = [from, to]; return this; }
   update(p: Row) { this.op = 'update'; this.patch = p; return this; }
   insert(p: Row | Row[]) { this.op = 'insert'; this.inserted = Array.isArray(p) ? p : [p]; return this; }
   upsert(p: Row | Row[], opts?: { onConflict?: string }) {
@@ -64,6 +66,7 @@ class FakeQuery {
     let hit = this.rows.filter((r) => this.preds.every((p) => p(r)));
     if (this.orderCol) hit = [...hit].sort((a, b) => Number(a[this.orderCol!]) - Number(b[this.orderCol!]));
     if (this.limitN != null) hit = hit.slice(0, this.limitN);
+    if (this.rangeAt) hit = hit.slice(this.rangeAt[0], this.rangeAt[1] + 1);
     if (this.op === 'update') for (const r of hit) Object.assign(r, this.patch);
     if (this.op === 'delete') {
       for (const r of hit) {
@@ -106,6 +109,7 @@ function harness(
   app.get('/chart', chartUnionHandler as never);
   app.put('/chart/tick', chartTickHandler as never);
   app.post('/chart/import', chartImportHandler as never);
+  app.post('/chart/import/match', chartImportMatchHandler as never);
   app.put('/chart/rename', chartRenameHandler as never);
   app.put('/chart/update', chartUpdateHandler as never);
   app.post('/chart/account', chartCreateHandler as never);
@@ -218,6 +222,55 @@ describe('POST /chart/import', () => {
     });
     expect(res.status).toBe(400);
     expect((await res.json() as { message: string }).message).toMatch(/201-1000 names parent 201-0000/);
+  });
+});
+
+/* Conts (finance phase 1.5): AutoCount's customer and supplier sub-accounts arrive as parties, not accounts. */
+describe('POST /chart/import with parties', () => {
+  const post = (app: Hono, path: string, body: unknown) => app.request(path, {
+    method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' },
+  });
+  const control = { code: '301-0000', name: 'RENOVATION CUSTOMER', accountType: 'ASSET', parentCode: null, accMoney: false, specialType: 'SDC', shared: true };
+  const creditors = { code: '400-0000', name: 'TRADE CREDITORS', accountType: 'LIABILITY', parentCode: null, accMoney: false, specialType: 'SCC', shared: true };
+
+  test('parties are written as customers and suppliers, never as accounts', async () => {
+    const tables: Record<string, Row[]> = { accounts: [], debtors: [], suppliers: [] };
+    const res = await post(harness(tables, { allowed: [1] }), '/chart/import', {
+      companyId: 1, rows: [control, creditors],
+      parties: [
+        { code: '301-M001', name: 'MS YAP', controlCode: '301-0000', kind: 'DEBTOR' },
+        { code: '400-A001', name: 'AR RAYYAN SHAH RESOURCES', controlCode: '400-0000', kind: 'CREDITOR' },
+      ],
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ imported: 2, parties: { debtors: 1, creditors: 1, errors: [] } });
+    expect(tables.accounts.map((r) => r.account_code).sort()).toEqual(['301-0000', '400-0000']);
+    expect(tables.debtors[0]).toMatchObject({ code: '301-M001', control_account: '301-0000' });
+    expect(tables.suppliers[0]).toMatchObject({ code: '400-A001', control_account: '400-0000' });
+  });
+
+  test('a party naming a control not in the file is refused', async () => {
+    const res = await post(harness({ accounts: [] }, { allowed: [1] }), '/chart/import', {
+      companyId: 1, rows: [creditors], parties: [{ code: '301-M001', name: 'MS YAP', controlCode: '301-0000', kind: 'DEBTOR' }],
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json() as { message: string }).message).toMatch(/301-M001 names control 301-0000/);
+  });
+
+  test('accepts up to 3000 rows and parties, refuses more', async () => {
+    const many = Array.from({ length: 2999 }, (_, i) => ({ code: `301-M${String(i + 1).padStart(4, '0')}`, name: `C ${i}`, controlCode: '301-0000', kind: 'DEBTOR' }));
+    const ok = await post(harness({ accounts: [], debtors: [] }, { allowed: [1] }), '/chart/import', { companyId: 1, rows: [control], parties: many });
+    expect(ok.status).toBe(200);
+    const over = await post(harness({ accounts: [] }, { allowed: [1] }), '/chart/import', { companyId: 1, rows: [control, creditors], parties: many });
+    expect(over.status).toBe(400);
+  });
+
+  test('match suggests which ERP supplier each AutoCount creditor is', async () => {
+    const tables: Record<string, Row[]> = { suppliers: [{ id: 'h', company_id: 1, code: 'HOOKKA', name: 'HOOKKA INDUSTRIES SDN BHD' }] };
+    const res = await post(harness(tables, { allowed: [1] }), '/chart/import/match', {
+      companyId: 1, parties: [{ code: '400-H006', name: 'HOOKKA MANUFACTURING SDN BHD', controlCode: '400-0000', kind: 'CREDITOR' }],
+    });
+    expect(await res.json()).toMatchObject({ matches: { '400-H006': 'h' } });
   });
 });
 

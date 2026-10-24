@@ -60,7 +60,7 @@ import { paymentCorrections } from './accounting-payment-corrections';
 import { bankConfigList, bankConfigSave } from './accounting-bank-config';
 import { payoutUpload, payoutList, payoutCharge, payoutChargeUndo } from './accounting-payouts';
 import {
-  chartUnionHandler, chartTickHandler, chartImportHandler,
+  chartUnionHandler, chartTickHandler, chartImportHandler, chartImportMatchHandler,
   chartRenameHandler, chartUpdateHandler, chartDeleteHandler, chartCreateHandler,
 } from './accounting-chart';
 import { itemGroupsList, itemGroupCreate, itemGroupBind, itemGroupPatch } from './accounting-item-groups';
@@ -212,6 +212,7 @@ accounting.patch('/item-groups/:code', itemGroupPatch);
 accounting.get('/chart', chartUnionHandler);
 accounting.put('/chart/tick', chartTickHandler);
 accounting.post('/chart/import', chartImportHandler);
+accounting.post('/chart/import/match', chartImportMatchHandler);
 accounting.put('/chart/rename', chartRenameHandler);
 accounting.put('/chart/update', chartUpdateHandler);
 accounting.post('/chart/account', chartCreateHandler);

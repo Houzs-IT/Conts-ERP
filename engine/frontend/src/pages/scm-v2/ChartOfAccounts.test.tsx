@@ -28,6 +28,7 @@ const SECTIONS = [
 ] as const;
 const tickAsync = vi.fn(async (_b: unknown) => ({}));
 const importAsync = vi.fn(async (_b: unknown) => ({ ok: true, imported: 3, shared: 2, sharedTo: [2] }));
+const matchAsync = vi.fn(async (_b: unknown) => ({ suppliers: [{ id: 'sup-h', code: 'HOOKKA', name: 'HOOKKA INDUSTRIES SDN BHD' }], matches: { '400-H006': 'sup-h' } }));
 const renameAsync = vi.fn(async (_b: unknown) => ({ ok: true, moved: { accounts: 2, journal_lines: 3 } }));
 const createAsync = vi.fn(async (_b: unknown) => ({ ok: true, code: '305-0010', companies: [1, 2] }));
 const updateAsync = vi.fn(async (_b: unknown) => ({ ok: true, companies: 2 }));
@@ -45,6 +46,7 @@ vi.mock('../../vendor/scm/lib/accounting-queries', () => ({
   ] }, isLoading: false, error: null }),
   useChartTick: () => ({ mutateAsync: tickAsync, isPending: false }),
   useChartImport: () => ({ mutateAsync: importAsync, isPending: false }),
+  useChartImportMatch: () => ({ mutateAsync: matchAsync, isPending: false }),
   useChartRename: () => ({ mutateAsync: renameAsync, isPending: false }),
   useChartUpdate: () => ({ mutateAsync: updateAsync, isPending: false }),
   useChartDelete: () => ({ mutateAsync: deleteAsync, isPending: false }),
@@ -444,5 +446,40 @@ describe('the upload preview', () => {
     expect(sent.rows.map((r) => [r.code, r.shared])).toEqual([
       ['310-0000', true], ['310-0010', false], ['900-A002', true],
     ]);
+  });
+
+  /* Conts: customers and suppliers come in as parties; the ERP's own suppliers are paired to AutoCount's by name. */
+  test('counts customers and suppliers apart and sends the supplier pairs finance confirmed', async () => {
+    importAsync.mockClear();
+    draw();
+    const cells = (m: Record<number, string>) => { const r: (string | null)[] = Array.from({ length: 17 }, () => null); for (const [i, v] of Object.entries(m)) r[Number(i)] = v; return r; };
+    const aoa = [
+      cells({ 15: 'Special Acc Type' }),
+      cells({ 0: 'Acc. No.', 3: 'Description', 9: 'Currency' }),
+      ['CURRENT ASSETS'],
+      cells({ 0: '301-0000', 3: 'RENOVATION CUSTOMER', 16: 'SDC' }),
+      cells({ 0: '    301-M001', 3: 'MS YAP', 16: 'SDR' }),
+      ['CURRENT LIABILITIES'],
+      cells({ 0: '400-0000', 3: 'TRADE CREDITORS', 16: 'SCC' }),
+      cells({ 0: '    400-H006', 3: 'HOOKKA MANUFACTURING SDN BHD', 16: 'SCR' }),
+      cells({ 0: '    400-A001', 3: 'AR RAYYAN SHAH RESOURCES', 16: 'SCR' }),
+    ];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), 'Sheet');
+    const buf = XLSX.write(wb, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer;
+    const file = new File([buf], 'chart.xlsx');
+    Object.defineProperty(file, 'arrayBuffer', { value: async () => buf });
+
+    fireEvent.change(screen.getByLabelText(/Upload AutoCount chart/), { target: { files: [file] } });
+    await waitFor(() => expect(screen.getByTestId('chart-import-parties').textContent).toMatch(/1 customer\(s\) and 2 supplier\(s\)/));
+    const pick = await screen.findByLabelText('AutoCount supplier for HOOKKA') as HTMLSelectElement;
+    expect(pick.value).toBe('400-H006');
+
+    fireEvent.click(screen.getByText('Import 2 accounts and 3 customers and suppliers'));
+    await waitFor(() => expect(importAsync).toHaveBeenCalled());
+    const sent = importAsync.mock.calls[0]![0] as { rows: Array<{ code: string }>; parties: Array<{ code: string }>; supplierMatches: Record<string, string> };
+    expect(sent.rows.map((r) => r.code)).toEqual(['301-0000', '400-0000']);
+    expect(sent.parties.map((p) => p.code)).toEqual(['301-M001', '400-H006', '400-A001']);
+    expect(sent.supplierMatches).toEqual({ '400-H006': 'sup-h' });
   });
 });

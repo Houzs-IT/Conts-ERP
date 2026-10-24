@@ -22,7 +22,7 @@ import * as XLSX from 'xlsx';
 import { ChevronDown, ChevronRight, Pencil, Plus, Trash2, Upload } from 'lucide-react';
 import { Button } from '@2990s/design-system';
 import {
-  useChartUnion, useChartTick, useChartImport,
+  useChartUnion, useChartTick, useChartImport, useChartImportMatch,
   useChartRename, useChartUpdate, useChartDelete, useChartCreate, isControlSpecial,
   type ChartRow, type ChartImportRow, type AccountSection,
 } from '../../vendor/scm/lib/accounting-queries';
@@ -207,6 +207,11 @@ export const ChartOfAccounts = () => {
     });
   };
   const [parsed, setParsed] = useState<ParsedChart | null>(null);
+  /* Conts: the ERP's suppliers and which AutoCount creditor each one is (supplier id → creditor code; '' = keep it as
+     it is). Proposed by the server from the names, changed here by finance before the import. */
+  const [erpSuppliers, setErpSuppliers] = useState<{ id: string; code: string; name: string }[]>([]);
+  const [supplierPick, setSupplierPick] = useState<Record<string, string>>({});
+  const doMatch = useChartImportMatch();
   const [busyKey, setBusyKey] = useState<string | null>(null);
   /* 快速模式 — session-only, never persisted: every visit starts with the
      confirms back on (see the toggle's comment in the header). */
@@ -482,6 +487,13 @@ export const ChartOfAccounts = () => {
         return;
       }
       setParsed(p);
+      setErpSuppliers([]);
+      setSupplierPick({});
+      if (p.parties.some((x) => x.kind === 'CREDITOR')) {
+        const m = await doMatch.mutateAsync({ companyId: 1, parties: p.parties });
+        setErpSuppliers(m.suppliers.filter((x) => !p.parties.some((y) => y.kind === 'CREDITOR' && y.code === x.code)));
+        setSupplierPick(Object.fromEntries(Object.entries(m.matches).map(([code, id]) => [id, code])));
+      }
     } catch (e) {
       void notify({ title: 'Could not read the file', body: e instanceof Error ? e.message : 'Something went wrong.', tone: 'error' });
     }
@@ -490,8 +502,22 @@ export const ChartOfAccounts = () => {
   const runImport = async () => {
     if (!parsed) return;
     try {
-      const res = await doImport.mutateAsync({ companyId: 1, rows: parsed.rows });
+      const supplierMatches = Object.fromEntries(Object.entries(supplierPick).filter(([, code]) => code).map(([id, code]) => [code, id]));
+      const res = await doImport.mutateAsync({ companyId: 1, rows: parsed.rows, parties: parsed.parties, supplierMatches });
       setParsed(null);
+      const pr = res.parties;
+      if (pr) {
+        void notify({
+          title: `${res.imported} account(s), ${pr.debtors} customer(s), ${pr.creditors} supplier(s) imported`,
+          body: [
+            pr.renamed > 0 ? `${pr.renamed} existing supplier(s) took their AutoCount code.` : '',
+            pr.kept > 0 ? `${pr.kept} already there were kept as they are.` : '',
+            pr.errors.length > 0 ? `Not imported: ${pr.errors.map((x) => `${x.code} (${x.error})`).join('; ')}` : '',
+          ].filter(Boolean).join(' ') || 'Done.',
+          tone: pr.errors.length > 0 ? 'error' : 'info',
+        });
+        return;
+      }
       void notify({
         title: `${res.imported} account(s) imported`,
         body: res.shared > 0 && res.sharedTo.length > 0
@@ -664,6 +690,35 @@ export const ChartOfAccounts = () => {
               {parsed.rows.length} account(s) read · {parsed.rows.length - exclusiveRows.length} will be SHARED to every company ·{' '}
               {exclusiveRows.length} stay HOUZS-only (banks, cash, related-party loans, directors, HP/borrowings).
             </div>
+            {parsed.parties.length > 0 && (
+              <div data-testid="chart-import-parties">
+                {parsed.parties.filter((x) => x.kind === 'DEBTOR').length} customer(s) and {parsed.parties.filter((x) => x.kind === 'CREDITOR').length} supplier(s)
+                {' '}come in as names under their control, not as accounts.
+              </div>
+            )}
+            {erpSuppliers.length > 0 && (
+              <div>
+                <b>Suppliers already in the system</b> — choose the AutoCount supplier each one is, so it takes that code:
+                <table style={{ marginTop: 6, borderCollapse: 'collapse', fontSize: 'var(--fs-13)' }}>
+                  <tbody>
+                    {erpSuppliers.map((sup) => (
+                      <tr key={sup.id} style={{ borderTop: '1px solid var(--line)' }}>
+                        <td style={{ padding: '4px 8px' }}>{sup.code} · {sup.name}</td>
+                        <td style={{ padding: '4px 8px' }}>
+                          <select aria-label={`AutoCount supplier for ${sup.code}`} value={supplierPick[sup.id] ?? ''}
+                            onChange={(e) => setSupplierPick((cur) => ({ ...cur, [sup.id]: e.target.value }))}>
+                            <option value="">Keep as it is</option>
+                            {parsed.parties.filter((x) => x.kind === 'CREDITOR')
+                              .filter((x) => x.code === supplierPick[sup.id] || !Object.values(supplierPick).includes(x.code))
+                              .map((x) => <option key={x.code} value={x.code}>{x.code} · {x.name}</option>)}
+                          </select>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
             {parsed.unknownSections.length > 0 && (
               <div style={{ color: 'var(--c-festive-b, #B8331F)' }}>
                 Unknown section(s) fell back to EXPENSE: {parsed.unknownSections.join(', ')} — check them after import.
@@ -677,7 +732,7 @@ export const ChartOfAccounts = () => {
             </details>
             <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
               <Button variant="primary" size="sm" onClick={() => void runImport()} disabled={doImport.isPending}>
-                {doImport.isPending ? 'Importing…' : `Import ${parsed.rows.length} accounts`}
+                {doImport.isPending ? 'Importing…' : `Import ${parsed.rows.length} accounts${parsed.parties.length > 0 ? ` and ${parsed.parties.length} customers and suppliers` : ''}`}
               </Button>
               <Button variant="ghost" size="sm" onClick={() => setParsed(null)} disabled={doImport.isPending}>
                 Cancel

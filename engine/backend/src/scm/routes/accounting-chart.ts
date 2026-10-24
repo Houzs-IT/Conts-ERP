@@ -26,6 +26,7 @@
 
 import { hasHouzsPerm } from '../lib/houzs-perms';
 import { ACCOUNT_SECTIONS, defaultSectionFor, isAccountSection, sectionType } from '../lib/account-sections';
+import { importParties, suggestSupplierMatches, type ParsedParty, type PartyImportResult } from '../../conts/parties';
 
 const requireChartPerm = (c: any): boolean => hasHouzsPerm(c, 'scm.payment_voucher.post');
 
@@ -39,6 +40,10 @@ const ACCOUNT_TYPES = new Set(['ASSET', 'LIABILITY', 'EQUITY', 'INCOME', 'EXPENS
 const SPECIAL_RE = /^[A-Z]{2,4}$/;
 const CONTROL_SPECIALS = new Set(['SDC', 'SCC', 'SBS']);
 const ACCOUNT_CODE_RE = /^\d{3}-[A-Za-z0-9]{4}$/;
+/* A customer or supplier code: AutoCount's shape, with a running number of any length (301-M1000; SOP 2.1). */
+const PARTY_CODE_RE = /^\d{3}-[A-Za-z0-9]+$/;
+/* Accounts plus the customers and suppliers riding along (Conts's chart: 450 + 439). */
+const CHART_IMPORT_MAX = 3000;
 
 type AccountRow = {
   company_id: number;
@@ -219,7 +224,11 @@ export const chartImportHandler = async (c: any): Promise<Response> => {
   }
   const rows = Array.isArray(body.rows) ? body.rows : [];
   if (rows.length === 0) return c.json({ error: 'no_rows' }, 400);
-  if (rows.length > 1000) return c.json({ error: 'too_many_rows', message: 'At most 1000 accounts per import.' }, 400);
+  /* Conts: the customers and suppliers AutoCount keeps as sub-accounts ride along as parties (conts/parties.ts). */
+  const partiesIn: unknown[] = Array.isArray(body.parties) ? body.parties : [];
+  if (rows.length + partiesIn.length > CHART_IMPORT_MAX) {
+    return c.json({ error: 'too_many_rows', message: `At most ${CHART_IMPORT_MAX} accounts, customers and suppliers per import.` }, 400);
+  }
 
   const clean: Array<{ code: string; name: string; type: string; parent: string | null; money: boolean; special: string | null; section: string; shared: boolean }> = [];
   const seen = new Set<string>();
@@ -250,6 +259,21 @@ export const chartImportHandler = async (c: any): Promise<Response> => {
       shared: r?.shared === true,
     });
   }
+  const parties: ParsedParty[] = [];
+  for (const [i, raw] of partiesIn.entries()) {
+    const p = raw as Partial<ParsedParty> | null;
+    const code = String(p?.code ?? '').trim();
+    const controlCode = String(p?.controlCode ?? '').trim();
+    const kind = p?.kind;
+    if (!PARTY_CODE_RE.test(code) || !String(p?.name ?? '').trim() || (kind !== 'DEBTOR' && kind !== 'CREDITOR')) {
+      return c.json({ error: 'bad_row', message: `Customer or supplier ${i + 1} (${code || 'no code'}) is missing its code, name or kind.` }, 400);
+    }
+    if (!seen.has(controlCode)) {
+      return c.json({ error: 'bad_row', message: `${code} names control ${controlCode}, which is not in the file.` }, 400);
+    }
+    parties.push({ code, name: String(p?.name).trim(), controlCode, kind });
+  }
+
   /* Parents must be rows of the same file (or already known) — a child that
      points nowhere would orphan the tree. */
   for (const r of clean) {
@@ -294,10 +318,14 @@ export const chartImportHandler = async (c: any): Promise<Response> => {
     if (shErr) return c.json({ error: 'save_failed', reason: `company ${id}: ${shErr.message}` }, 500);
   }
 
+  const supplierMatches: Record<string, string> = body.supplierMatches && typeof body.supplierMatches === 'object' ? body.supplierMatches : {};
+  const partyResult: PartyImportResult | null = parties.length > 0 ? await importParties(sb, targetId, parties, supplierMatches) : null;
+
   return c.json({
     ok: true,
     companyId: targetId,
     imported: clean.length,
+    parties: partyResult,
     sharedTo: sharedRows.length > 0 ? others : [],
     shared: sharedRows.length,
   });
@@ -784,4 +812,21 @@ export const chartDeleteHandler = async (c: any): Promise<Response> => {
   const removed = ((gone ?? []) as unknown[]).length;
   if (removed === 0) return c.json({ error: 'code_unknown', message: `${code} exists in no company's chart.` }, 404);
   return c.json({ ok: true, code, companies: removed });
+};
+
+/* ── POST /accounting/chart/import/match — which ERP supplier each AutoCount creditor is (Conts) ── */
+export const chartImportMatchHandler = async (c: any): Promise<Response> => {
+  if (!requireChartPerm(c)) {
+    return c.json({ error: "You don't have permission to manage the chart of accounts." }, 403);
+  }
+  let body: any;
+  try { body = await c.req.json(); } catch { return c.json({ error: 'invalid_json' }, 400); }
+  const ids = allowedIds(c);
+  const targetId = Number(body.companyId ?? 1);
+  if (!ids.includes(targetId)) return c.json({ error: 'company_not_yours', message: 'That company is not in your grants.' }, 403);
+  const parties = (Array.isArray(body.parties) ? body.parties : []) as ParsedParty[];
+  const { data, error } = await c.get('supabase').from('suppliers').select('id, code, name').eq('company_id', targetId);
+  if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
+  const suppliers = (data ?? []) as Array<{ id: string; code: string; name: string }>;
+  return c.json({ suppliers, matches: suggestSupplierMatches(suppliers, parties) });
 };
