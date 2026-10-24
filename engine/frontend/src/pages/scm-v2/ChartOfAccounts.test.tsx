@@ -92,6 +92,71 @@ describe('parseChartXlsx — the AutoCount report shape', () => {
     expect(p.rows.find((r) => r.code === '999-0001')).toMatchObject({ accountType: 'EXPENSE', section: null });
     expect(p.unknownSections).toEqual(['MYSTERY SECTION']);
   });
+
+  /* The Conts export (finance, 22 Oct 2026): the name sits in column 3, the currency in 9, the special type in 16 under
+     a "Special Acc Type" label one row above the header. Every customer (SDR) and supplier (SCR) is a sub-account of
+     its control in AutoCount; here they are parties, not accounts — a control with sub-accounts could not be posted. */
+  const at = (cells: Record<number, string>): (string | null)[] => {
+    const row: (string | null)[] = Array.from({ length: 17 }, () => null);
+    for (const [i, v] of Object.entries(cells)) row[Number(i)] = v;
+    return row;
+  };
+  const contsBook = () => {
+    const aoa = [
+      ['THE CONTS SDN BHD (1521322-V)'],
+      at({ 15: 'Special Acc Type' }), // a merged cell in the real export: the label one column left of its values
+      at({ 0: 'Acc. No.', 3: 'Description', 9: 'Currency' }),
+      ['CURRENT ASSETS'],
+      at({ 0: '301-0000', 3: 'RENOVATION CUSTOMER', 9: 'MYR', 16: 'SDC' }),
+      at({ 0: '    301-M001', 3: 'MS YAP (MAPLE A10-02)', 9: 'MYR', 16: 'SDR' }),
+      at({ 0: '310-0000', 3: 'CASH AT BANK', 9: 'MYR' }),
+      at({ 0: '    310-0010', 3: 'HONG LEONG BANK', 9: 'MYR', 16: 'SBK' }),
+      ['CURRENT LIABILITIES'],
+      at({ 0: '400-0000', 3: 'TRADE CREDITORS', 9: 'MYR', 16: 'SCC' }),
+      at({ 0: '    400-A001', 3: 'AR RAYYAN SHAH RESOURCES', 9: 'MYR', 16: 'SCR' }),
+      at({ 0: '481-0000', 3: 'ACCRUAL OF SALES (THE CONTS)', 9: 'MYR' }),
+      at({ 0: '    481-S012', 3: 'SKYLINE D-25-13', 9: 'MYR' }),
+    ];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), 'Sheet');
+    return wb;
+  };
+
+  test('reads the name and special type by the header, not by position', () => {
+    const p = parseChartXlsx(contsBook(), SECTIONS);
+    expect(p.rows.find((r) => r.code === '310-0010')).toMatchObject({ name: 'HONG LEONG BANK', accMoney: true, specialType: 'SBK', parentCode: '310-0000' });
+    expect(p.rows.find((r) => r.code === '301-0000')).toMatchObject({ name: 'RENOVATION CUSTOMER', specialType: 'SDC' });
+    expect(p.rows.find((r) => r.code === '481-S012')).toMatchObject({ name: 'SKYLINE D-25-13', parentCode: '481-0000', accountType: 'LIABILITY' });
+  });
+
+  test('SDR and SCR sub-accounts become parties under their control', () => {
+    const p = parseChartXlsx(contsBook(), SECTIONS);
+    expect(p.rows.map((r) => r.code)).not.toContain('301-M001');
+    expect(p.rows.map((r) => r.code)).not.toContain('400-A001');
+    expect(p.parties).toEqual([
+      { code: '301-M001', name: 'MS YAP (MAPLE A10-02)', controlCode: '301-0000', kind: 'DEBTOR' },
+      { code: '400-A001', name: 'AR RAYYAN SHAH RESOURCES', controlCode: '400-0000', kind: 'CREDITOR' },
+    ]);
+  });
+
+  test('a control keeps no children once its parties are taken out', () => {
+    const p = parseChartXlsx(contsBook(), SECTIONS);
+    expect(p.rows.filter((r) => r.parentCode === '301-0000' || r.parentCode === '400-0000')).toEqual([]);
+  });
+
+  test('the old layout reads as before and has no parties', () => {
+    const aoa = [
+      ['Acc. No.', 'Description', null, 'Currency'],
+      ['CURRENT ASSETS'],
+      ['310-0000', 'CASH AT BANK', null, 'MYR'],
+      ['    310-0010', 'CASH AT BANK - MAYBANK', null, 'MYR', null, null, null, null, 'SBK'],
+    ];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), 'Sheet');
+    const p = parseChartXlsx(wb, SECTIONS);
+    expect(p.rows.find((r) => r.code === '310-0010')).toMatchObject({ name: 'CASH AT BANK - MAYBANK', specialType: 'SBK' });
+    expect(p.parties).toEqual([]);
+  });
 });
 
 describe('the tick grid', () => {

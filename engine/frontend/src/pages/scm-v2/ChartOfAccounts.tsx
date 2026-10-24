@@ -50,13 +50,34 @@ const CODE_RE = /^(\s*)(\d{3}-[A-Za-z0-9]{4})\s*$/;
 const isExclusive = (code: string, special: string): boolean =>
   ['SBK', 'SCH'].includes(special) || /^(350|351|430|450|451|460|406)-/.test(code);
 
-export type ParsedChart = { rows: ChartImportRow[]; sections: string[]; unknownSections: string[] };
+/* Conts (finance, 22 Oct 2026): a customer (SDR) or supplier (SCR) sub-account of AutoCount is a party under its
+   control, not an account — the ledger posts to the control and names the party on the line. */
+export type ParsedParty = { code: string; name: string; controlCode: string; kind: 'DEBTOR' | 'CREDITOR' };
+export type ParsedChart = { rows: ChartImportRow[]; parties: ParsedParty[]; sections: string[]; unknownSections: string[] };
+
+const PARTY_KIND: Record<string, ParsedParty['kind']> = { SDR: 'DEBTOR', SCR: 'CREDITOR' };
+
+/** Where the name and the special type sit. Houzs's export has them in columns 1 and 8; the Conts export in 3 and 16,
+    under a "Description" header and a "Special Acc Type" label (on the header row or the row above). */
+function columnsOf(grid: unknown[][]): { name: number; special: number } {
+  const norm = (v: unknown) => String(v ?? '').trim().toLowerCase();
+  const at = grid.findIndex((r) => norm(r[0]) === 'acc. no.');
+  if (at < 0) return { name: 1, special: 8 };
+  const name = grid[at]!.findIndex((v) => norm(v) === 'description');
+  const label = [grid[at]!, grid[at - 1] ?? []].map((r) => r.findIndex((v) => norm(v) === 'special acc type')).find((i) => i >= 0);
+  if (label === undefined) return { name: name >= 0 ? name : 1, special: 8 };
+  /* The label is a merged cell: the codes sit under it or one column to its right. Take the column that holds them. */
+  const codes = (i: number) => grid.filter((r) => CODE_RE.test(String(r[0] ?? '')) && /^[A-Z]{2,4}$/.test(String(r[i] ?? '').trim())).length;
+  return { name: name >= 0 ? name : 1, special: codes(label + 1) > codes(label) ? label + 1 : label };
+}
 
 export function parseChartXlsx(wb: XLSX.WorkBook, known: ReadonlyArray<AccountSection>): ParsedChart {
   const sheet = wb.Sheets[wb.SheetNames[0]!];
   const grid = XLSX.utils.sheet_to_json<unknown[]>(sheet!, { header: 1, raw: false });
+  const col = columnsOf(grid);
   const typeOf = new Map(known.map((s) => [s.section, s.type]));
   const rows: ChartImportRow[] = [];
+  const parties: ParsedParty[] = [];
   const sections: string[] = [];
   const unknownSections: string[] = [];
   let section = '';
@@ -78,11 +99,19 @@ export function parseChartXlsx(wb: XLSX.WorkBook, known: ReadonlyArray<AccountSe
     }
     const depth = Math.floor(m[1]!.length / 4);
     const code = m[2]!;
+    const special = r[col.special] != null ? String(r[col.special]).trim().toUpperCase() : '';
+    const name = String(r[col.name] ?? '').trim() || code;
+    const kind = PARTY_KIND[special];
+    if (kind) {
+      /* Its control is the account above it in AutoCount's tree; one with none above takes its series' control. */
+      const controlCode = depth > 0 ? (prevByDepth[depth - 1] ?? `${code.slice(0, 3)}-0000`) : `${code.slice(0, 3)}-0000`;
+      parties.push({ code, name, controlCode, kind });
+      continue;
+    }
     prevByDepth[depth] = code;
-    const special = r[8] != null ? String(r[8]).trim().toUpperCase() : '';
     rows.push({
       code,
-      name: String(r[1] ?? '').trim() || code,
+      name,
       accountType: typeOf.get(section) ?? 'EXPENSE',
       section: typeOf.has(section) ? section : null,
       parentCode: depth > 0 ? (prevByDepth[depth - 1] ?? null) : null,
@@ -91,7 +120,7 @@ export function parseChartXlsx(wb: XLSX.WorkBook, known: ReadonlyArray<AccountSe
       shared: !isExclusive(code, special),
     });
   }
-  return { rows, sections, unknownSections };
+  return { rows, parties, sections, unknownSections };
 }
 
 /* ── The tree order: parents first, children under them ──────────────────── */
