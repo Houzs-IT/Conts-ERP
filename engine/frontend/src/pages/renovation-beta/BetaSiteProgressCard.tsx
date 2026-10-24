@@ -7,20 +7,47 @@ import { Camera } from "lucide-react";
 import { useQuery } from "../../hooks/useQuery";
 import { WS, WsCard, WsCheck } from "./BetaWsUi";
 import type { BetaTabProps } from "./betaShared";
-import { dayMonth, renovationDays, siteTimeline, trimTimeline } from "./renovationBetaModel";
+import { dayMonth, renovationDays, siteTimeline, trimTimeline, type SiteStep } from "./renovationBetaModel";
 import { betaSiteApi } from "./renovationBetaSiteApi";
 import { photosByPo, siteStepsPlus, type SiteStepPlus } from "./renovationBetaSiteModel";
 import { BETA } from "./renovationBetaTheme";
+
+/** The handover always closes the list (the mockup), saying so when its date is not set yet. */
+function withHandover(steps: SiteStep[]): SiteStep[] {
+  if (steps.length === 0 || steps.some((s) => s.id === "handover")) return steps;
+  return [...steps, { id: "handover", state: "handover", date: null, label: "Handover", sub: "Final payment · keys to client · date not set yet" }];
+}
+
+/** One step in progress is "Today" (the one started last); any other reads "Started" on the day it started, in date
+    order with the rest. The handover stays last. */
+function startedSteps(rows: SiteStepPlus[], tasks: BetaTabProps["detail"]["tasks"]): Array<SiteStepPlus & { started?: boolean }> {
+  const startOf = (id: string): string | null => {
+    const t = tasks.find((x) => `task-${x.id}` === id);
+    const on = t?.actual_start ?? t?.planned_start ?? null;
+    return on ? on.slice(0, 10) : null;
+  };
+  const current = rows.filter((s) => s.state === "current");
+  if (current.length < 2) return rows;
+  const today = [...current].sort((a, b) => String(startOf(b.id) ?? "").localeCompare(String(startOf(a.id) ?? "")))[0];
+  const mapped = rows.map((s) => {
+    if (s.state !== "current" || s === today) return s;
+    return { ...s, started: true, date: startOf(s.id) ?? s.date, sub: (s.sub ?? "").replace(/^In progress/, "Started") };
+  });
+  const handover = mapped.filter((s) => s.id === "handover");
+  const rest = mapped.filter((s) => s.id !== "handover");
+  const key = (s: SiteStepPlus): string => s.date ?? "9999";
+  return [...rest.map((s, i) => ({ s, i })).sort((a, b) => key(a.s).localeCompare(key(b.s)) || a.i - b.i).map((x) => x.s), ...handover];
+}
 
 export function BetaSiteProgressCard({ p }: { p: BetaTabProps }): ReactElement {
   const { detail: d, today, workspace } = p;
   const site = useQuery(["renovation-beta", "site", p.projectId], () => betaSiteApi.site(p.projectId), [p.projectId]);
   const [showAll, setShowAll] = useState(false);
   const handoverOn = d.project.handed_over_at ?? d.project.planned_handover_date;
-  const all = siteTimeline(d.tasks, today, handoverOn);
+  const all = withHandover(siteTimeline(d.tasks, today, handoverOn));
   const trimmed = trimTimeline(all, showAll);
   const canTrim = trimTimeline(all, false).hiddenDone + trimTimeline(all, false).hiddenLater > 0;
-  const rows = siteStepsPlus(trimmed.steps, d.tasks, workspace.payments, photosByPo(site.data?.deliveries ?? []));
+  const rows = startedSteps(siteStepsPlus(trimmed.steps, d.tasks, workspace.payments, photosByPo(site.data?.deliveries ?? [])), d.tasks);
   const live = all.filter((s) => s.id !== "handover");
   const done = live.filter((s) => s.state === "done").length;
   const late = live.filter((s) => s.state === "late").length;
@@ -48,14 +75,15 @@ export function BetaSiteProgressCard({ p }: { p: BetaTabProps }): ReactElement {
   );
 }
 
-function SiteRow({ s, last, today, onPhotos }: { s: SiteStepPlus; last: boolean; today: string; onPhotos: () => void }): ReactElement {
-  const now = s.state === "current";
+function SiteRow({ s, last, today, onPhotos }: { s: SiteStepPlus & { started?: boolean }; last: boolean; today: string; onPhotos: () => void }): ReactElement {
+  const now = s.state === "current" && !s.started;
+  const started = s.state === "current" && s.started === true;
   const done = s.state === "done";
   const isLate = s.state === "late";
   const ring = isLate ? "2px solid #E8A5A2" : `2px solid ${BETA.border}`;
   const extra = (
     <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: s.photos > 0 || s.waitsFor ? 4 : 0 }}>
-      {s.waitsFor && <span style={{ padding: "2px 8px", borderRadius: 6, background: "#FDF1E2", color: WS.amber, fontSize: 12, fontWeight: 600 }}>{s.waitsFor}</span>}
+      {s.waitsFor && <span style={{ padding: "2px 8px", borderRadius: 6, background: "#FADCDA", color: WS.red, fontSize: 12, fontWeight: 600 }}>{s.waitsFor}</span>}
       {s.photos > 0 && (
         <button type="button" onClick={onPhotos} style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 8px", borderRadius: 6, border: 0, background: WS.chip, color: WS.text2, font: "inherit", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
           <Camera size={12} aria-hidden="true" />{s.photos} photo{s.photos === 1 ? "" : "s"}
@@ -66,13 +94,15 @@ function SiteRow({ s, last, today, onPhotos }: { s: SiteStepPlus; last: boolean;
   return (
     <li aria-current={now ? "step" : undefined} style={{ display: "grid", gridTemplateColumns: "64px 24px 1fr", gap: 10 }}>
       <div style={{ padding: last ? "2px 0 0" : "2px 0 14px", color: now ? BETA.accentInk : isLate ? WS.red : BETA.muted, fontSize: 13, fontWeight: now || isLate ? 700 : 400 }}>
-        {now ? <>Today<br />{dayMonth(today)}</> : dayMonth(s.date)}
+        {now ? <>Today<br />{dayMonth(today)}</> : s.date ? dayMonth(s.date) : "No date"}
       </div>
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
         {done ? (
           <span style={{ width: 18, height: 18, borderRadius: 9, background: BETA.accent, display: "flex", alignItems: "center", justifyContent: "center" }}><WsCheck size={10} stroke={3.5} /></span>
         ) : now ? (
           <span style={{ width: 18, height: 18, borderRadius: 9, background: BETA.surface, border: `3px solid ${BETA.accent}` }} />
+        ) : started ? (
+          <span style={{ width: 18, height: 18, borderRadius: 9, background: "#E4F1EF", border: `2px solid ${BETA.accent}` }} />
         ) : s.state === "handover" ? (
           <span style={{ width: 18, height: 18, borderRadius: 4, background: BETA.ink }} />
         ) : (
