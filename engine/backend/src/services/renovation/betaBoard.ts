@@ -212,18 +212,20 @@ export function ordinal(n: number): string {
   return `${n}${suffix}`;
 }
 
-export type BoardPayment = { state: "hidden" } | { state: "none" } | { state: "ok"; label: string };
+/** outstandingSen = the sales order total less the money received on it, never below zero. */
+export type BoardPayment = { state: "hidden" } | { state: "none" } | { state: "ok"; label: string; outstandingSen: number };
 
 /** "2 of 4 paid", "Fully paid", or "Pending 2nd payment" while a bill waits for money. A contract without
     instalments has nothing to pay, so it reads as none. */
 export function paymentLabel(p: BetaPayments): BoardPayment {
   if (p.state !== "ok") return p.state === "hidden" ? { state: "hidden" } : { state: "none" };
   if (p.instalments.length === 0) return { state: "none" };
+  const outstandingSen = Math.max(0, p.contractSen - p.receivedSen);
   const paid = p.instalments.filter((i) => i.status === "paid").length;
-  if (paid === p.instalments.length) return { state: "ok", label: "Fully paid" };
+  if (paid === p.instalments.length) return { state: "ok", label: "Fully paid", outstandingSen };
   const next = p.instalments.find((i) => i.status !== "paid");
-  if (next?.status === "billed") return { state: "ok", label: `Pending ${ordinal(next.seq)} payment` };
-  return { state: "ok", label: `${paid} of ${p.instalments.length} paid` };
+  if (next?.status === "billed") return { state: "ok", label: `Pending ${ordinal(next.seq)} payment`, outstandingSen };
+  return { state: "ok", label: `${paid} of ${p.instalments.length} paid`, outstandingSen };
 }
 
 /** Rows grouped by their project_id, each group in the order the rows came. */
