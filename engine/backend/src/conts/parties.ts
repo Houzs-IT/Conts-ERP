@@ -333,3 +333,24 @@ export async function partyBalanceOn(sb: Db, companyId: number, partyCode: strin
     .reduce((sum, l) => sum + Number(l.debit_sen ?? 0) - Number(l.credit_sen ?? 0), 0);
   return { ok: true, balanceSen };
 }
+
+/** The kind of a renovation contract, which decides its customer's control (0160; chew, 24 Oct 2026): the project's
+    own kind when it names one, else its quotation's brand's (The Conts → inhouse renovation, Dream Crafter →
+    renovation), else renovation. */
+export async function contractOrderKind(
+  db: { q<T = Record<string, unknown>>(text: string, params?: readonly unknown[]): Promise<T[]> },
+  projectId: number | null, brandId: number | null,
+): Promise<OrderKind> {
+  const known = (k: string | null | undefined): OrderKind | null => (k === 'RENOVATION' || k === 'INHOUSE_RENOVATION' ? k : null);
+  const [proj] = projectId ? await db.q<{ finance_kind: string | null }>('select finance_kind from public.projects where id = $1', [projectId]) : [];
+  const own = known(proj?.finance_kind);
+  if (own) return own;
+  const [brand] = brandId ? await db.q<{ finance_kind: string | null }>('select finance_kind from public.project_brands where id = $1', [brandId]) : [];
+  return known(brand?.finance_kind) ?? 'RENOVATION';
+}
+
+/** A project's kind as typed on its page: renovation, inhouse renovation, or blank (null) to follow the brand. */
+export function financeKindFrom(v: unknown): { ok: true; value: 'RENOVATION' | 'INHOUSE_RENOVATION' | null } | { ok: false } {
+  if (v == null || v === '') return { ok: true, value: null };
+  return v === 'RENOVATION' || v === 'INHOUSE_RENOVATION' ? { ok: true, value: v } : { ok: false };
+}

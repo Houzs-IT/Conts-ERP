@@ -19,7 +19,7 @@ import { cn } from "../../../lib/utils";
 import { renovationApi, type ProjectDetail } from "./renovationApi";
 import { errorText, money, shortDate, supplyLabel, supplyTone } from "./renovationModel";
 import { Dialog, Field, Pill, SkipReasonDialog, inputClass } from "./renovationUi";
-import { simpleApi, type ProjectDetailV2 } from "./simpleApi";
+import { simpleApi, type FinanceKind, type ProjectDetailV2 } from "./simpleApi";
 import { SiteTasksPanel } from "./SiteTasksPanel";
 import { FlowPanel } from "./FlowPanel";
 import { ContractCard, KeyCard, PeopleCard } from "./ProjectRecords";
@@ -133,6 +133,9 @@ function ProjectFacts({ d, canWrite, onDone, onError }: { d: ProjectDetailV2; ca
     /* Owner, 16 Oct 2026: the planned handover could only be typed when the project was created; set it here. */
     facts.push(["Planned handover", <PlannedHandover projectId={d.project.id} value={d.project.planned_handover_date ?? null} canWrite={canWrite} onDone={onDone} onError={onError} />]);
   }
+  /* Conts (finance phase 1.5; chew, 24 Oct 2026): renovation (301-0000) or inhouse renovation (302-0000) — the control
+     the customer is opened under when the quotation becomes the contract. Settled once there is a contract. */
+  facts.push(["Type", <FinanceKindFact projectId={d.project.id} value={d.project.finance_kind ?? null} canWrite={canWrite && !d.so} onDone={onDone} onError={onError} />]);
   if (facts.length === 0) return null;
   return (
     <dl className="flex flex-wrap gap-x-5 gap-y-1 text-xs">
@@ -226,6 +229,32 @@ function LinkedDocuments({ d }: { d: ProjectDetail }) {
         </div>
       </dl>
     </section>
+  );
+}
+
+const FINANCE_KIND_LABEL: Record<string, string> = {
+  "": "By quotation brand", RENOVATION: "Renovation (301)", INHOUSE_RENOVATION: "Inhouse renovation (302)",
+};
+
+/** Renovation or inhouse renovation, chosen in place (PATCH /api/renovation/:id); blank follows the quotation's brand:
+    The Conts → inhouse renovation, Dream Crafter → renovation. */
+export function FinanceKindFact({ projectId, value, canWrite, onDone, onError }: {
+  projectId: number; value: string | null; canWrite: boolean; onDone: (t: string) => void; onError: (t: string) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  if (!canWrite) return <span>{FINANCE_KIND_LABEL[value ?? ""] ?? value}</span>;
+  return (
+    <select className="h-7 rounded border border-border bg-surface px-1.5 text-xs" aria-label="Project type" value={value ?? ""} disabled={busy}
+      onChange={async (e) => {
+        const next = (e.target.value || null) as FinanceKind | null;
+        setBusy(true);
+        try {
+          await simpleApi.setFinanceKind(projectId, next);
+          onDone(`Type set to ${FINANCE_KIND_LABEL[next ?? ""]}.`);
+        } catch (err) { onError(errorText(err)); } finally { setBusy(false); }
+      }}>
+      {Object.entries(FINANCE_KIND_LABEL).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+    </select>
   );
 }
 

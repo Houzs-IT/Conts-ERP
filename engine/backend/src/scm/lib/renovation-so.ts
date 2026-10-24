@@ -11,7 +11,7 @@
    - setContractStatus: Confirmed -> In progress -> Completed -> Closed, or Cancelled. */
 
 import { auditEntity, auditSo, mintDocNo, refuse, todayKl, yymmOf, type RenoDb } from './renovation-db';
-import { ensureDebtorSql } from '../../conts/parties';
+import { contractOrderKind, ensureDebtorSql } from '../../conts/parties';
 import { cloneSections, insertInstalments, insertSections, readInstalments, readSections, totalsOf, toMoneyLine } from './renovation-doc-lines';
 import { lockQuotation, readRevision, type RenoActor } from './renovation-quotation';
 import type { DocHeaderInput, NormSection, PrintFormat } from './renovation-validate';
@@ -166,12 +166,14 @@ export async function convertQuotationToSo(
 
   const [brand] = q.brandId ? await db.q<{ name: string }>(`select name from public.project_brands where id = $1`, [q.brandId]) : [];
   const debtorName = h.customerName || h.attention || 'Customer';
-  /* Conts (finance phase 1.5; SOP 2.1): the contract's customer as a debtor under the renovation control, so its
-     invoices and payments name the customer and post to its control. The project's customer, when it has one. */
+  /* Conts (finance phase 1.5; SOP 2.1): the contract's customer as a debtor under its control — renovation 301-0000
+     or inhouse renovation 302-0000, by the project's kind else the brand's (contractOrderKind) — so its invoices and
+     payments name the customer and post to its control. The project's customer, when it has one. */
   const [proj] = q.projectId ? await db.q<{ customer_id: string | null }>(`select customer_id from public.projects where id = $1`, [q.projectId]) : [];
   const customerId = proj?.customer_id ?? null;
   const debtorCode = await ensureDebtorSql(db, actor.companyId, {
-    name: debtorName, phone: h.customerPhone || null, email: h.customerEmail || null, customerId, orderKind: 'RENOVATION',
+    name: debtorName, phone: h.customerPhone || null, email: h.customerEmail || null, customerId,
+    orderKind: await contractOrderKind(db, q.projectId ?? null, q.brandId ?? null),
   });
   await db.q(
     `insert into scm.mfg_sales_orders (doc_no, so_date, so_kind, status, debtor_name, debtor_code, customer_id, project_id, branding, ref, phone, email,
