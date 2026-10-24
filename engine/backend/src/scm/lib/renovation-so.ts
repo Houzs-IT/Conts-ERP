@@ -11,6 +11,7 @@
    - setContractStatus: Confirmed -> In progress -> Completed -> Closed, or Cancelled. */
 
 import { auditEntity, auditSo, mintDocNo, refuse, todayKl, yymmOf, type RenoDb } from './renovation-db';
+import { ensureDebtorSql } from '../../conts/parties';
 import { cloneSections, insertInstalments, insertSections, readInstalments, readSections, totalsOf, toMoneyLine } from './renovation-doc-lines';
 import { lockQuotation, readRevision, type RenoActor } from './renovation-quotation';
 import type { DocHeaderInput, NormSection, PrintFormat } from './renovation-validate';
@@ -165,12 +166,19 @@ export async function convertQuotationToSo(
 
   const [brand] = q.brandId ? await db.q<{ name: string }>(`select name from public.project_brands where id = $1`, [q.brandId]) : [];
   const debtorName = h.customerName || h.attention || 'Customer';
+  /* Conts (finance phase 1.5; SOP 2.1): the contract's customer as a debtor under the renovation control, so its
+     invoices and payments name the customer and post to its control. The project's customer, when it has one. */
+  const [proj] = q.projectId ? await db.q<{ customer_id: string | null }>(`select customer_id from public.projects where id = $1`, [q.projectId]) : [];
+  const customerId = proj?.customer_id ?? null;
+  const debtorCode = await ensureDebtorSql(db, actor.companyId, {
+    name: debtorName, phone: h.customerPhone || null, email: h.customerEmail || null, customerId, orderKind: 'RENOVATION',
+  });
   await db.q(
-    `insert into scm.mfg_sales_orders (doc_no, so_date, so_kind, status, debtor_name, project_id, branding, ref, phone, email,
+    `insert into scm.mfg_sales_orders (doc_no, so_date, so_kind, status, debtor_name, debtor_code, customer_id, project_id, branding, ref, phone, email,
         address1, address2, note, created_by, company_id)
-     values ($1, $2::date, 'RENOVATION', 'RENO_CONFIRMED', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+     values ($1, $2::date, 'RENOVATION', 'RENO_CONFIRMED', $3, $14, $15, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
     [docNo, soDate, debtorName, q.projectId, brand?.name ?? null, rev.docNo, h.customerPhone || null, h.customerEmail || null,
-      h.building || null, h.unitNo || null, `Renovation contract from quotation ${rev.docNo}`, actor.staffId, actor.companyId],
+      h.building || null, h.unitNo || null, `Renovation contract from quotation ${rev.docNo}`, actor.staffId, actor.companyId, debtorCode, customerId],
   );
   await insertSoItems(db, docNo, rows, { companyId: actor.companyId, debtorName, lineDate: soDate });
   const revised = await recomputeSoHeader(db, docNo);

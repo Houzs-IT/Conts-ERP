@@ -35,6 +35,8 @@ import { scopeToCompany, activeCompanyId, stampCompany,
   detailMissResponse } from '../lib/companyScope';
 import type { Env, Variables } from '../env';
 import { pgrestIn } from '../lib/pgrest-in-list';
+import { resolveRoles } from '../../acc/rules';
+import { nextSupplierCode } from '../../conts/parties';
 
 /* Task #91 — small helper: normalize a body field to E.164 phone storage,
    passing through nullish + non-string values untouched. */
@@ -457,20 +459,46 @@ suppliers.get('/:id', async (c) => {
 });
 
 // ── Create supplier ──────────────────────────────────────────────────
-suppliers.post('/', async (c) => {
+/** The payables control a supplier is given: a supplier control of the chart (special type SCC), or the trade
+    creditors control when none is named. Anything else is refused by name. (Conts, finance phase 1.5.) */
+async function supplierControlOrRefusal(c: any, raw: string | null): Promise<{ code: string } | { resp: Response }> {
+  const sb = c.get('supabase');
+  const companyId = activeCompanyId(c) ?? null;
+  const code = raw ?? (await resolveRoles(sb, companyId)).AP;
+  const { data, error } = await sb.from('accounts').select('account_code, special_type').eq('company_id', companyId).eq('account_code', code).maybeSingle();
+  if (error) return { resp: c.json({ error: 'load_failed', reason: error.message }, 500) };
+  if (raw && (data as { special_type?: string | null } | null)?.special_type !== 'SCC') {
+    return { resp: c.json({ error: 'not_a_supplier_control', message: `${code} is not a supplier control (SCC) of the chart.` }, 400) };
+  }
+  return { code };
+}
+
+/* Exported so a test can drive it without the supabaseAuth bridge. */
+export const createSupplierHandler = async (c: any): Promise<Response> => {
   let body: Record<string, unknown>;
   try { body = (await c.req.json()) as Record<string, unknown>; } catch {
     return c.json({ error: 'invalid_json' }, 400);
   }
 
-  const code = (body.code as string | undefined)?.trim();
   const name = (body.name as string | undefined)?.trim();
-  if (!code) return c.json({ error: 'code_required' }, 400);
   if (!name) return c.json({ error: 'name_required' }, 400);
+  /* Conts (finance phase 1.5; SOP 2.1): the payables control the supplier posts to (default the trade creditors
+     control), and — when no code is typed — the next code under it, coded like AutoCount (400-H011). */
+  const controlRaw = String(body.controlAccount ?? '').trim();
+  const control = await supplierControlOrRefusal(c, controlRaw || null);
+  if ('resp' in control) return control.resp;
+  const typedCode = (body.code as string | undefined)?.trim();
+  let code = typedCode ?? '';
+  if (!code) {
+    const next = await nextSupplierCode(c.get('supabase'), activeCompanyId(c) ?? null, name, control.code);
+    if (!next.ok) return c.json({ error: 'load_failed', reason: next.error }, 500);
+    code = next.code;
+  }
 
   const row = {
     code,
     name,
+    control_account: control.code,
     /* Task #91 — normalize phone-like fields to E.164 on the server too. */
     whatsapp_number: normPhone(body.whatsappNumber),
     email: (body.email as string) ?? null,
@@ -515,7 +543,14 @@ suppliers.post('/', async (c) => {
   };
 
   const supabase = c.get('supabase');
-  const { data, error } = await supabase.from('suppliers').insert({ ...row, company_id: activeCompanyId(c) }).select(SUPPLIER_COLS).single();
+  let { data, error } = await supabase.from('suppliers').insert({ ...row, company_id: activeCompanyId(c) }).select(SUPPLIER_COLS).single();
+  /* A code worked out here and taken a moment ago by another new supplier: work it out again (a typed code is the
+     operator's, and its clash is theirs to see). */
+  for (let attempt = 0; !typedCode && error?.code === '23505' && attempt < 4; attempt += 1) {
+    const next = await nextSupplierCode(supabase, activeCompanyId(c) ?? null, name, control.code);
+    if (!next.ok) return c.json({ error: 'load_failed', reason: next.error }, 500);
+    ({ data, error } = await supabase.from('suppliers').insert({ ...row, code: next.code, company_id: activeCompanyId(c) }).select(SUPPLIER_COLS).single());
+  }
   if (error) {
     if (error.code === '23505') return c.json({ error: 'duplicate_code' }, 409);
     /* DEAD BRANCH -- here and at EVERY other 42501 site in this file. 42501 is
@@ -530,7 +565,8 @@ suppliers.post('/', async (c) => {
     return c.json({ error: 'insert_failed', reason: error.message }, 500);
   }
   return c.json({ supplier: data }, 201);
-});
+};
+suppliers.post('/', createSupplierHandler);
 
 // ── Update supplier ─────────────────────────────────────────────────
 export const patchSupplierHandler = async (c: any) => {
@@ -570,6 +606,15 @@ export const patchSupplierHandler = async (c: any) => {
     } else {
       updates[to] = body[from];
     }
+  }
+  /* Conts: the payables control, a supplier control of the chart (or cleared back to the code's rule). */
+  if (body.controlAccount !== undefined) {
+    const raw = String(body.controlAccount ?? '').trim() || null;
+    if (raw) {
+      const ok = await supplierControlOrRefusal(c, raw);
+      if ('resp' in ok) return ok.resp;
+    }
+    updates.control_account = raw;
   }
   if (body.status !== undefined && SUPPLIER_STATUSES.has(body.status as string)) {
     updates.status = body.status;

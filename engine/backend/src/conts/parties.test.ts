@@ -157,3 +157,115 @@ describe('the control a party posts to', () => {
     expect(apControlFor(DEFAULT_ROLE_CODES, { code: 'DHI' })).toBe(DEFAULT_ROLE_CODES.AP);
   });
 });
+
+/* PR B: a new customer gets a debtor, coded like AutoCount (SOP 2.1). */
+describe('debtor codes', () => {
+  test('the letter: MR / MS and their kin are M, anyone else their first letter, a digit 0', async () => {
+    const { debtorLetter } = await import('./parties');
+    expect(debtorLetter('MS LEE')).toBe('M');
+    expect(debtorLetter('MR. / MS. LEE SOH TENG')).toBe('M');
+    expect(debtorLetter('Dr. Kris See')).toBe('D'); // as AutoCount coded him (301-D001): only the MR / MS family is M
+    expect(debtorLetter('HOOKKA MANUFACTURING')).toBe('H');
+    expect(debtorLetter('  the 2990 home')).toBe('T');
+    expect(debtorLetter('2RIO SDN BHD')).toBe('0');
+    expect(debtorLetter('MSIG INSURANCE')).toBe('M');
+    expect(debtorLetter('MARVANT EVOLUTIONS')).toBe('M');
+  });
+
+  test('the next number: one past the highest, three digits at least, no ceiling', async () => {
+    const { nextPartyCode } = await import('./parties');
+    expect(nextPartyCode('301', 'M', ['301-M154', '301-M009', '301-H001', '302-M200'])).toBe('301-M155');
+    expect(nextPartyCode('301', 'M', ['301-M999'])).toBe('301-M1000');
+    expect(nextPartyCode('301', 'H', [])).toBe('301-H001');
+    expect(nextPartyCode('301', 'M', ['301-MAXX', '301-M0007'])).toBe('301-M008');
+  });
+});
+
+describe('opening a debtor for a new order', () => {
+  const MAP = [
+    { company_id: CO, order_kind: 'RENOVATION', control_account: '301-0000' },
+    { company_id: CO, order_kind: 'INHOUSE_RENOVATION', control_account: '302-0000' },
+  ];
+
+  test('a renovation customer gets the next 301 code', async () => {
+    const { ensureDebtor } = await import('./parties');
+    const sb = fakeSb({ acc_debtor_control_map: MAP.map((r) => ({ ...r })), acc_account_roles: [], debtors: [{ id: 'd1', company_id: CO, code: '301-M154', name: 'MS IRIS', control_account: '301-0000', customer_id: null, phone: '011', is_active: true }] });
+    const r = await ensureDebtor(sb, CO, { name: 'MS CHEW', phone: '012', customerId: 'c-9', orderKind: 'RENOVATION' });
+    expect(r).toEqual({ ok: true, code: '301-M155', created: true });
+    expect(sb.tables.debtors.find((d) => d.code === '301-M155')).toMatchObject({ name: 'MS CHEW', phone: '012', customer_id: 'c-9', control_account: '301-0000' });
+  });
+
+  test('the second order for the same customer reuses the debtor — by customer, else by name and phone', async () => {
+    const { ensureDebtor } = await import('./parties');
+    const sb = fakeSb({ acc_debtor_control_map: MAP.map((r) => ({ ...r })), acc_account_roles: [], debtors: [] });
+    const a = await ensureDebtor(sb, CO, { name: 'MS CHEW', phone: '012', customerId: 'c-9', orderKind: 'RENOVATION' });
+    const b = await ensureDebtor(sb, CO, { name: 'MS CHEW', phone: '012', customerId: 'c-9', orderKind: 'RENOVATION' });
+    const c = await ensureDebtor(sb, CO, { name: ' ms chew ', phone: '012', customerId: null, orderKind: 'RENOVATION' });
+    expect([a, b, c].map((x) => x.ok && x.code)).toEqual(['301-M001', '301-M001', '301-M001']);
+    expect(b).toMatchObject({ created: false });
+    expect(sb.tables.debtors).toHaveLength(1);
+  });
+
+  test('a kind with no control row opens under the AR rule', async () => {
+    const { ensureDebtor } = await import('./parties');
+    const sb = fakeSb({ acc_debtor_control_map: MAP.map((r) => ({ ...r })), acc_account_roles: [], debtors: [] });
+    const r = await ensureDebtor(sb, CO, { name: 'HOOKKA', phone: null, customerId: null, orderKind: 'STANDARD' });
+    expect(r).toEqual({ ok: true, code: '300-H001', created: true });
+  });
+
+  test('two orders racing for a new customer get one debtor and no clash', async () => {
+    const { ensureDebtor } = await import('./parties');
+    const sb = fakeSb({ acc_debtor_control_map: MAP.map((r) => ({ ...r })), acc_account_roles: [], debtors: [] }, {}, [{ table: 'debtors', column: 'code' }]);
+    const [a, b] = await Promise.all([
+      ensureDebtor(sb, CO, { name: 'MS CHEW', phone: '012', customerId: 'c-9', orderKind: 'RENOVATION' }),
+      ensureDebtor(sb, CO, { name: 'MR TAN', phone: '013', customerId: 'c-8', orderKind: 'RENOVATION' }),
+    ]);
+    expect(a.ok && b.ok).toBe(true);
+    expect(new Set(sb.tables.debtors.map((d) => d.code)).size).toBe(2);
+  });
+});
+
+describe('opening a debtor inside a renovation transaction', () => {
+  /* The SQL the function sends, answered from memory: enough to pin its order of questions and its retry. */
+  const fakeDb = (debtors: Array<{ code: string; name: string; phone: string | null; customer_id: string | null }>, map: Record<string, string>) => {
+    const sent: string[] = [];
+    return {
+      sent, debtors,
+      async q<T>(text: string, params: readonly unknown[] = []): Promise<T[]> {
+        sent.push(text.split(/\s+/).slice(0, 4).join(' '));
+        if (/customer_id = \$2/.test(text)) return debtors.filter((d) => d.customer_id === params[1]).map((d) => ({ code: d.code })) as T[];
+        if (/upper\(btrim\(name\)\)/.test(text)) return debtors.filter((d) => d.name.trim().toUpperCase() === String(params[1]).trim().toUpperCase() && (d.phone ?? '') === (params[2] ?? '')).map((d) => ({ code: d.code })) as T[];
+        if (/acc_debtor_control_map/.test(text)) return (map[String(params[1])] ? [{ control_account: map[String(params[1])] }] : []) as T[];
+        if (/acc_account_roles/.test(text)) return [] as T[];
+        if (/code like \$2/.test(text)) return debtors.filter((d) => d.code.startsWith(String(params[1]).replace('%', ''))).map((d) => ({ code: d.code })) as T[];
+        if (/insert into scm.debtors/.test(text)) {
+          if (debtors.some((d) => d.code === params[1])) return [] as T[];
+          debtors.push({ code: String(params[1]), name: String(params[2]), phone: (params[5] as string | null) ?? null, customer_id: (params[4] as string | null) ?? null });
+          return [{ code: params[1] }] as T[];
+        }
+        throw new Error(`unexpected ${text}`);
+      },
+    };
+  };
+
+  test('a renovation customer gets the next 301 code, and the same customer keeps it', async () => {
+    const { ensureDebtorSql } = await import('./parties');
+    const db = fakeDb([{ code: '301-M154', name: 'MS IRIS', phone: '011', customer_id: null }], { RENOVATION: '301-0000' });
+    expect(await ensureDebtorSql(db, CO, { name: 'MS CHEW', phone: '012', customerId: 'c-9', orderKind: 'RENOVATION' })).toBe('301-M155');
+    expect(await ensureDebtorSql(db, CO, { name: 'MS CHEW', phone: '012', customerId: 'c-9', orderKind: 'RENOVATION' })).toBe('301-M155');
+    expect(db.debtors).toHaveLength(2);
+  });
+
+  test('a code taken a moment ago is skipped, not fatal', async () => {
+    const { ensureDebtorSql } = await import('./parties');
+    const db = fakeDb([], { RENOVATION: '301-0000' });
+    const q = db.q.bind(db);
+    let first = true;
+    db.q = async <T,>(text: string, params?: readonly unknown[]) => {
+      // Another transaction takes 301-M001 between this one's look and its insert.
+      if (first && /insert into scm.debtors/.test(text)) { first = false; db.debtors.push({ code: '301-M001', name: 'MR TAN', phone: null, customer_id: 'c-8' }); }
+      return q<T>(text, params);
+    };
+    expect(await ensureDebtorSql(db, CO, { name: 'MS CHEW', phone: '012', customerId: 'c-9', orderKind: 'RENOVATION' })).toBe('301-M002');
+  });
+});
