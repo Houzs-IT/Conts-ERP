@@ -7,7 +7,7 @@
 //   · a check that the two agree, and that the trial balance and each bank read as AutoCount's.
 import { postJournal, reverseJournal } from './engine';
 import { loadLedgerSettings } from './ledger-settings';
-import { apControlRole, resolveRoles } from './rules';
+import { apControlOf, resolveRoles } from './rules';
 import { paginateAll } from '../scm/lib/paginate-all';
 import { loadSums } from '../scm/routes/accounting-reports';
 
@@ -246,7 +246,7 @@ export type OpeningCheck = {
 
 type CheckDoc = {
   total_sen: number | null; paid_sen: number | null; status: string | null; invoice_date: string | null;
-  opening_balance: boolean | null; migrated_no_stock: boolean | null; supplier_id?: string | null;
+  opening_balance: boolean | null; migrated_no_stock: boolean | null; supplier_id?: string | null; debtor_code?: string | null;
 };
 
 /** The figures on the opening day, side by side with what explains them. The documents side is the ageing as it
@@ -256,14 +256,15 @@ export async function openingCheck(sb: Db, companyId: number): Promise<OpeningCh
   const day = await openingDayOf(sb, companyId);
   if (!day.ok) return day;
   const DOC_COLS = 'total_sen, paid_sen, status, invoice_date, opening_balance, migrated_no_stock';
-  const [sums, roles, opening, chart, sis, pis, sups] = await Promise.all([
+  const [sums, roles, opening, chart, sis, pis, sups, debtors] = await Promise.all([
     loadSums(sb, companyId, null, day.day),
     resolveRoles(sb, companyId),
     activeOpening(sb, companyId),
-    paginateAll((from, to) => sb.from('accounts').select('account_code, account_name, acc_money').eq('company_id', companyId).order('account_code').range(from, to)),
-    allDocs<CheckDoc>(sb, 'sales_invoices', companyId, DOC_COLS),
+    paginateAll((from, to) => sb.from('accounts').select('account_code, account_name, acc_money, special_type').eq('company_id', companyId).order('account_code').range(from, to)),
+    allDocs<CheckDoc>(sb, 'sales_invoices', companyId, `${DOC_COLS}, debtor_code`),
     allDocs<CheckDoc>(sb, 'purchase_invoices', companyId, `${DOC_COLS}, supplier_id`),
-    paginateAll((from, to) => sb.from('suppliers').select('id, code').eq('company_id', companyId).order('id').range(from, to)),
+    paginateAll((from, to) => sb.from('suppliers').select('id, code, control_account').eq('company_id', companyId).order('id').range(from, to)),
+    paginateAll((from, to) => sb.from('debtors').select('code, control_account').eq('company_id', companyId).order('code').range(from, to)),
   ]);
   if (!sums.ok) return { ok: false, error: `The ledger could not be read: ${sums.reason}` };
   if (!opening.ok) return { ok: false, error: `The journal could not be read: ${opening.error}` };
@@ -271,7 +272,9 @@ export async function openingCheck(sb: Db, companyId: number): Promise<OpeningCh
   if (!sis.ok) return { ok: false, error: `The invoices could not be read: ${sis.error}` };
   if (!pis.ok) return { ok: false, error: `The bills could not be read: ${pis.error}` };
   if (sups.error) return { ok: false, error: `The suppliers could not be read: ${(sups.error as { message?: string }).message ?? ''}` };
-  const supplierCode = new Map(((sups.data ?? []) as Array<{ id: string; code: string }>).map((x) => [x.id, x.code]));
+  if (debtors.error) return { ok: false, error: `The customers could not be read: ${(debtors.error as { message?: string }).message ?? ''}` };
+  const supplierOf = new Map(((sups.data ?? []) as Array<{ id: string; code: string; control_account: string | null }>).map((x) => [x.id, x]));
+  const debtorControlOf = new Map(((debtors.data ?? []) as Array<{ code: string; control_account: string }>).map((x) => [x.code, x.control_account]));
 
   const net = (code: string): number => {
     const s = sums.sums.find((x) => x.code === code);
@@ -286,7 +289,7 @@ export async function openingCheck(sb: Db, companyId: number): Promise<OpeningCh
     if (!d.invoice_date || d.invoice_date > day.day) return null;
     return { sen: Number(d.total_sen ?? 0) - Number(d.paid_sen ?? 0), erp: true };
   };
-  const line = (role: ControlLine['role'], sign: 1 | -1, docs: CheckDoc[]): ControlLine => {
+  const line = (role: ControlLine['role'], accountCode: string, sign: 1 | -1, docs: CheckDoc[]): ControlLine => {
     let documentsSen = 0;
     let erpDocuments = 0;
     for (const d of docs) {
@@ -295,13 +298,27 @@ export async function openingCheck(sb: Db, companyId: number): Promise<OpeningCh
       documentsSen += o.sen;
       if (o.erp) erpDocuments += 1;
     }
-    return { role, accountCode: roles[role], controlSen: sign * net(roles[role]) || 0 /* never -0 */, documentsSen, erpDocuments };
+    return { role, accountCode, controlSen: sign * net(accountCode) || 0 /* never -0 */, documentsSen, erpDocuments };
   };
-  // A 405- supplier's bills sit on the other creditors control (rules.ts apControlRole), here as in every posting.
-  const bills = (role: 'AP' | 'AP_OTHER') => pis.rows.filter((d) => apControlRole(supplierCode.get(String(d.supplier_id)) ?? null) === role);
-  const controls = [line('AR', 1, sis.rows), line('AP', -1, bills('AP')), line('AP_OTHER', -1, bills('AP_OTHER'))];
+  /* Conts (finance phase 1.5): each invoice on its customer's control (scm.debtors), each bill on its supplier's
+     (its control_account, else the 405- rule) — where every posting puts them. Every customer and supplier control
+     of the chart gets a line, with documents or not (an opening balance there has to be explained too); the other
+     debtors control (AR_OTHER) belongs to the Other Debtors bills, not to invoices, and stays out. */
+  const arOf = (d: CheckDoc) => debtorControlOf.get(String(d.debtor_code ?? '')) ?? roles.AR;
+  const apOf = (d: CheckDoc) => {
+    const sup = supplierOf.get(String(d.supplier_id));
+    return apControlOf(roles, { code: sup?.code ?? null, control_account: sup?.control_account ?? null });
+  };
+  const chartRows = (chart.data ?? []) as Array<{ account_code: string; account_name: string | null; acc_money: boolean | null; special_type?: string | null }>;
+  const ordered = (first: string[], rest: Iterable<string>) => [...first, ...[...new Set(rest)].filter((x) => !first.includes(x)).sort()];
+  const arCodes = ordered([roles.AR], [...sis.rows.map(arOf), ...chartRows.filter((a) => a.special_type === 'SDC' && a.account_code !== roles.AR_OTHER).map((a) => a.account_code)]);
+  const apCodes = ordered([roles.AP, roles.AP_OTHER], [...pis.rows.map(apOf), ...chartRows.filter((a) => a.special_type === 'SCC').map((a) => a.account_code)]);
+  const controls = [
+    ...arCodes.map((code) => line('AR', code, 1, sis.rows.filter((d) => arOf(d) === code))),
+    ...apCodes.map((code) => line(code === roles.AP_OTHER ? 'AP_OTHER' : 'AP', code, -1, pis.rows.filter((d) => apOf(d) === code))),
+  ];
 
-  const banks = ((chart.data ?? []) as Array<{ account_code: string; account_name: string | null; acc_money: boolean | null }>)
+  const banks = chartRows
     .filter((a) => a.acc_money === true)
     .map((a) => ({ accountCode: a.account_code, name: a.account_name ?? a.account_code, balanceSen: net(a.account_code) }));
   return {

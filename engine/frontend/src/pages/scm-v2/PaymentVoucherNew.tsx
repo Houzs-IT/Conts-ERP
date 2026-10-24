@@ -517,9 +517,10 @@ export const PaymentVoucherNew = () => {
      its payment debits AP_OTHER (405-0000), everyone else AP (400-0000). The
      authoritative prefix rule lives server-side (acc/rules.ts apControlRole;
      create refuses the wrong control) — this is the display mirror. */
-  const apAccountCode = (supplierRow?.code.startsWith('405-')
+  /* Conts: the supplier's own control first (its record, from the AutoCount import), the prefix rule after. */
+  const apAccountCode = (supplierRow?.control_account || (supplierRow?.code.startsWith('405-')
     ? rolesQ.data?.roles.AP_OTHER
-    : rolesQ.data?.roles.AP) ?? '';
+    : rolesQ.data?.roles.AP)) ?? '';
   const realLines = lines.filter((l) => l.debitAccountCode && l.amountSen > 0);
   const canSave = isRefund
     ? !!refundSrc && refundSrc.eligible && !!creditAccountCode && (refundAmountSen ?? 0) > 0 && (refundAmountSen ?? 0) <= refundSrc.refundableSen

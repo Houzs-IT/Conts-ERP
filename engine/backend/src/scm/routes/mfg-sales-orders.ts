@@ -313,6 +313,7 @@ import { registerCustomerCreditRoutes } from './mfg-sales-orders/customer-credit
 import { registerHistoryRoutes } from './mfg-sales-orders/history';
 import { registerPaymentsListRoutes } from './mfg-sales-orders/payments-list';
 import { registerDebtorSearchRoutes } from './mfg-sales-orders/debtor-search';
+import { ensureDebtor } from '../../conts/parties';
 
 export const mfgSalesOrders = new Hono<{ Bindings: Env; Variables: Variables }>();
 mfgSalesOrders.use('*', supabaseAuth);
@@ -2734,6 +2735,18 @@ async function createSalesOrderCore(c: SoCreateContext): Promise<SoCreateOutcome
       orderCustomerId = (resolvedCustomerId as string | null) ?? null;
     }
   }
+  /* Conts (finance phase 1.5; SOP 2.1): the order's customer as a debtor — the code the screen picked, else the
+     debtor already opened for this customer, else a new one under the control a standard order maps to. Best-effort
+     like the customer above: a sale is never refused for it, and an order with no code posts under the AR rule. */
+  let orderDebtorCode: string | null = String(body.debtorCode ?? body.customerCode ?? '').trim() || null;
+  if (!orderDebtorCode && body._scanShell !== true && customerName) {
+    const d = await ensureDebtor(sb, casCo.companyId, {
+      name: customerName, phone: normPhone, email: typeof body.email === 'string' && body.email.trim() ? body.email.trim() : null,
+      customerId: orderCustomerId, orderKind: 'STANDARD',
+    });
+    if (d.ok) orderDebtorCode = d.code;
+    else console.error('[mfg-so] debtor resolve failed:', d.error);
+  }
   const pwpBaseByIdx = new Map<number, number>();            // non-sofa idx → pwp_price_sen
   const pwpSofaByIdx = new Map<number, string[]>();          // sofa idx → granted reward combo ids
   /* Default Free Gift (migration 0170) — a line tagged variants.freeGift is
@@ -3348,7 +3361,7 @@ async function createSalesOrderCore(c: SoCreateContext): Promise<SoCreateOutcome
       : Boolean(it.lineDeliveryDateOverridden ?? false);
     const baseRow = {
       line_date: dateOrNull(it.lineDate) ?? todayMyt(),
-      debtor_code: (body.debtorCode as string) ?? null,
+      debtor_code: orderDebtorCode,
       debtor_name: body.debtorName,
       agent: agentToStamp,
       item_group: (productRowByCode.get(String(it.itemCode ?? '').trim())?.category ?? '').trim().toLowerCase() || String(it.itemGroup ?? '').trim() || 'others', // SKU wins — lib/sku-category.ts, docs/bugs/0514
@@ -3722,7 +3735,7 @@ async function createSalesOrderCore(c: SoCreateContext): Promise<SoCreateOutcome
     for (const spec of serviceSpecs) {
       itemRows.push({
         line_date: lineDateToday,
-        debtor_code: (body.debtorCode as string) ?? null,
+        debtor_code: orderDebtorCode,
         debtor_name: customerName,
         agent: agentToStamp,
         item_group: 'service',
@@ -4088,7 +4101,7 @@ async function createSalesOrderCore(c: SoCreateContext): Promise<SoCreateOutcome
     transfer_to: (body.transferTo as string) ?? null,
     so_date: dateOrNull(body.soDate) ?? todayMyt(),
     branding: (body.branding as string) ?? null,
-    debtor_code: (body.debtorCode ?? body.customerCode as string) ?? null,
+    debtor_code: orderDebtorCode,
     debtor_name: customerName,
     agent: agentToStamp,
     sales_location: derivedSalesLocation ?? null,

@@ -98,7 +98,7 @@ function CheckPanel({ check, canSave }: { check: OpeningCheck; canSave: boolean 
           <tbody>
             <Compare label="Trial balance" left={check.trialDebitSen} leftLabel="Dr" right={check.trialCreditSen} rightLabel="Cr" />
             {check.controls.map((c) => (
-              <Compare key={c.role} label={`${CONTROL_LABEL[c.role]} (${c.accountCode})`} left={c.controlSen} leftLabel="control"
+              <Compare key={c.accountCode} label={`${CONTROL_LABEL[c.role]} (${c.accountCode})`} left={c.controlSen} leftLabel="control"
                 right={c.documentsSen} rightLabel={c.role === "AR" ? "invoices" : "bills"} />
             ))}
           </tbody>

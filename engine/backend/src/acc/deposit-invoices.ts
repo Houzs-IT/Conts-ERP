@@ -33,6 +33,7 @@
 
 import { postJournal, reverseJournal } from './engine';
 import { depositInvoiceLines, resolveRoles } from './rules';
+import { resolveDebtorRoles } from '../conts/parties';
 import { customerPartyCode } from './payments';
 import { companyCodeById, docMonthTag, mintMonthlyDocNo } from '../scm/lib/doc-no';
 import { docPrefixForCode } from '../scm/lib/companyScope';
@@ -264,7 +265,10 @@ export async function postDepositInvoice(
   sb: Db,
   di: { id: string; companyId: number; diNumber: string; soDocNo: string; partyCode: string | null; partyName: string | null; amountSen: number; invoiceDate: string },
 ): Promise<{ ok: true; jeNo: string; status: 'posted' | 'already_posted' } | { ok: false; reason: string }> {
-  const roles = await resolveRoles(sb, di.companyId);
+  /* Conts: the customer's own control (scm.debtors), else the AR rule. */
+  const dr = await resolveDebtorRoles(sb, di.companyId, di.partyCode);
+  if (!dr.ok) return { ok: false, reason: dr.error };
+  const roles = dr.roles;
   const r = await postJournal(sb, {
     companyId: di.companyId,
     entryDate: di.invoiceDate,

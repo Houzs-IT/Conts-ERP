@@ -163,6 +163,14 @@ export async function validateJournal(sb: any, input: PostJournalInput): Promise
   if (sourceType === 'MANUAL') {
     const roles = await resolveRoles(sb, companyId);
     const controlCodes = new Set(CONTROL_ROLES.map((role) => roles[role]));
+    /* Conts (finance phase 1.5): every customer and supplier control is one — 301-0000, 302-0000, a supplier's own
+       control — not only the four the roles name. The chart marks them SDC / SCC. */
+    const { data: specials, error: spErr } = await sb.from('accounts').select('account_code, special_type')
+      .eq('company_id', accMastersCompanyId(companyId, 'validateJournal')).in('account_code', [...new Set(lines.map((l) => l.accountCode))]);
+    if (spErr) return { ok: false, status: 'account_check_failed', reason: spErr.message };
+    for (const a of (specials ?? []) as Array<{ account_code: string; special_type: string | null }>) {
+      if (a.special_type === 'SDC' || a.special_type === 'SCC') controlCodes.add(a.account_code);
+    }
     const hit = lines.find((l) => controlCodes.has(l.accountCode));
     if (hit) {
       return {

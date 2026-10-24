@@ -35,6 +35,9 @@ import { scopeToCompany, activeCompanyId, stampCompany,
   detailMissResponse } from '../lib/companyScope';
 import type { Env, Variables } from '../env';
 import { pgrestIn } from '../lib/pgrest-in-list';
+import { apControlOf, resolveRoles } from '../../acc/rules';
+import { hasHouzsPerm } from '../lib/houzs-perms';
+import { nextSupplierCode, partyBalanceOn } from '../../conts/parties';
 
 /* Task #91 — small helper: normalize a body field to E.164 phone storage,
    passing through nullish + non-string values untouched. */
@@ -67,7 +70,7 @@ const SUPPLIER_BASE_COLS =
   'payment_terms, status, rating, notes, supplier_type, category, tin_number, ' +
   'business_reg_no, postcode, area, mobile, fax, website, attention, business_nature, ' +
   'currency, statement_type, aging_basis, credit_limit_sen, country, ' +
-  'registration_no, nature_of_business, exemption_no, phone2';
+  'registration_no, nature_of_business, exemption_no, phone2, control_account'; // control_account: Conts 0156 (the list view has it since 0158)
 /* Mig 0131 — SO-style structured pickup address (the DP supplier-pickup auto-fill
    prefers these over the legacy single `address` line). Added to the base table
    AFTER the list view froze its `s.*` expansion (0084), so they exist on the base
@@ -457,20 +460,51 @@ suppliers.get('/:id', async (c) => {
 });
 
 // ── Create supplier ──────────────────────────────────────────────────
-suppliers.post('/', async (c) => {
+const NO_CONTROL_PERM = { error: 'forbidden', message: "Choosing a supplier's control needs the ledger's post key." };
+
+/** The payables control a supplier is given: a supplier control of the chart (special type SCC), or — when none is
+    named — the one its code's rule gives (405- other creditors, else trade creditors; no code yet: trade creditors).
+    Anything else is refused by name. (Conts, finance phase 1.5.) */
+async function supplierControlOrRefusal(c: any, raw: string | null, supplierCode: string | null = null): Promise<{ code: string } | { resp: Response }> {
+  const sb = c.get('supabase');
+  const companyId = activeCompanyId(c) ?? null;
+  const code = raw ?? apControlOf(await resolveRoles(sb, companyId), { code: supplierCode, control_account: null });
+  const { data, error } = await sb.from('accounts').select('account_code, special_type').eq('company_id', companyId).eq('account_code', code).maybeSingle();
+  if (error) return { resp: c.json({ error: 'load_failed', reason: error.message }, 500) };
+  if (raw && (data as { special_type?: string | null } | null)?.special_type !== 'SCC') {
+    return { resp: c.json({ error: 'not_a_supplier_control', message: `${code} is not a supplier control (SCC) of the chart.` }, 400) };
+  }
+  return { code };
+}
+
+/* Exported so a test can drive it without the supabaseAuth bridge. */
+export const createSupplierHandler = async (c: any): Promise<Response> => {
   let body: Record<string, unknown>;
   try { body = (await c.req.json()) as Record<string, unknown>; } catch {
     return c.json({ error: 'invalid_json' }, 400);
   }
 
-  const code = (body.code as string | undefined)?.trim();
   const name = (body.name as string | undefined)?.trim();
-  if (!code) return c.json({ error: 'code_required' }, 400);
   if (!name) return c.json({ error: 'name_required' }, 400);
+  /* Conts (finance phase 1.5; SOP 2.1): the payables control the supplier posts to (default the trade creditors
+     control), and — when no code is typed — the next code under it, coded like AutoCount (400-H011). */
+  const controlRaw = String(body.controlAccount ?? '').trim();
+  /* Where the supplier's bills post is the ledger's to decide: naming a control needs its post key. */
+  if (controlRaw && !hasHouzsPerm(c, 'scm.payment_voucher.post')) return c.json(NO_CONTROL_PERM, 403);
+  const typedCode = (body.code as string | undefined)?.trim();
+  const control = await supplierControlOrRefusal(c, controlRaw || null, typedCode || null);
+  if ('resp' in control) return control.resp;
+  let code = typedCode ?? '';
+  if (!code) {
+    const next = await nextSupplierCode(c.get('supabase'), activeCompanyId(c) ?? null, name, control.code);
+    if (!next.ok) return c.json({ error: 'load_failed', reason: next.error }, 500);
+    code = next.code;
+  }
 
   const row = {
     code,
     name,
+    control_account: control.code,
     /* Task #91 — normalize phone-like fields to E.164 on the server too. */
     whatsapp_number: normPhone(body.whatsappNumber),
     email: (body.email as string) ?? null,
@@ -515,7 +549,14 @@ suppliers.post('/', async (c) => {
   };
 
   const supabase = c.get('supabase');
-  const { data, error } = await supabase.from('suppliers').insert({ ...row, company_id: activeCompanyId(c) }).select(SUPPLIER_COLS).single();
+  let { data, error } = await supabase.from('suppliers').insert({ ...row, company_id: activeCompanyId(c) }).select(SUPPLIER_COLS).single();
+  /* A code worked out here and taken a moment ago by another new supplier: work it out again (a typed code is the
+     operator's, and its clash is theirs to see). */
+  for (let attempt = 0; !typedCode && error?.code === '23505' && attempt < 4; attempt += 1) {
+    const next = await nextSupplierCode(supabase, activeCompanyId(c) ?? null, name, control.code);
+    if (!next.ok) return c.json({ error: 'load_failed', reason: next.error }, 500);
+    ({ data, error } = await supabase.from('suppliers').insert({ ...row, code: next.code, company_id: activeCompanyId(c) }).select(SUPPLIER_COLS).single());
+  }
   if (error) {
     if (error.code === '23505') return c.json({ error: 'duplicate_code' }, 409);
     /* DEAD BRANCH -- here and at EVERY other 42501 site in this file. 42501 is
@@ -530,7 +571,8 @@ suppliers.post('/', async (c) => {
     return c.json({ error: 'insert_failed', reason: error.message }, 500);
   }
   return c.json({ supplier: data }, 201);
-});
+};
+suppliers.post('/', createSupplierHandler);
 
 // ── Update supplier ─────────────────────────────────────────────────
 export const patchSupplierHandler = async (c: any) => {
@@ -570,6 +612,38 @@ export const patchSupplierHandler = async (c: any) => {
     } else {
       updates[to] = body[from];
     }
+  }
+  /* Conts: the payables control, a supplier control of the chart (or cleared back to the code's rule). */
+  if (body.controlAccount !== undefined) {
+    if (!hasHouzsPerm(c, 'scm.payment_voucher.post')) return c.json(NO_CONTROL_PERM, 403);
+    const raw = String(body.controlAccount ?? '').trim() || null;
+    if (raw) {
+      const ok = await supplierControlOrRefusal(c, raw);
+      if ('resp' in ok) return ok.resp;
+    }
+    /* What the supplier still owes cannot follow it to another control (manual journals may not touch one), so a
+       supplier is moved only once nothing is left on the control it books to now. */
+    const co = requireActiveCompanyId(c);
+    if (!co.ok) return c.json(co.refusal, 409);
+    const sb = c.get('supabase');
+    const { data: cur, error: curErr } = await sb.from('suppliers').select('code, control_account').eq('company_id', co.companyId).eq('id', id).maybeSingle();
+    if (curErr) return c.json({ error: 'load_failed', reason: curErr.message }, 500);
+    if (cur) {
+      const roles = await resolveRoles(sb, co.companyId);
+      const from = apControlOf(roles, cur as { code: string; control_account: string | null });
+      const to = apControlOf(roles, { code: (cur as { code: string }).code, control_account: raw });
+      if (from !== to) {
+        const bal = await partyBalanceOn(sb, co.companyId, (cur as { code: string }).code, from);
+        if (!bal.ok) return c.json({ error: 'load_failed', reason: bal.error }, 500);
+        if (bal.balanceSen !== 0) {
+          return c.json({
+            error: 'supplier_has_balance', accountCode: from, balanceSen: bal.balanceSen,
+            message: `${(cur as { code: string }).code} still has a balance on ${from}. Settle its bills there first, then move it to ${to}.`,
+          }, 409);
+        }
+      }
+    }
+    updates.control_account = raw;
   }
   if (body.status !== undefined && SUPPLIER_STATUSES.has(body.status as string)) {
     updates.status = body.status;

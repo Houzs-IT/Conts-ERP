@@ -40,6 +40,8 @@ export type SupplierRow = {
   id: string;
   code: string;
   name: string;
+  /** Conts: the payables control this supplier posts to; empty = the 405- rule. */
+  control_account?: string | null;
   whatsapp_number: string | null;
   email: string | null;
   contact_person: string | null;

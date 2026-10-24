@@ -51,7 +51,8 @@ import { docMonthTag, mintMonthlyDocNo, insertWithDocNoRetry } from '../lib/doc-
 import { isDocumentHeld } from '../lib/document-hold';
 import { dateOrNull } from '../lib/date-coerce';
 import { postJournal, reverseJournal } from '../../acc/engine';
-import { apControlRole, pvLines, customerRefundLines, resolveRoles, settlementDepartments, DEFAULT_DEPARTMENT, isDepartment, type Department } from '../../acc/rules';
+import { apControlOf, pvLines, customerRefundLines, resolveRoles, settlementDepartments, DEFAULT_DEPARTMENT, isDepartment, type Department } from '../../acc/rules';
+import { resolveDebtorRoles } from '../../conts/parties';
 import { customerPartyCode } from '../../acc/payments';
 import { refundSourceHandler, refundCreateGuard, refundOwnControl, bookRefundCredit, refundHookInput } from '../lib/pv-refund';
 import { refundDepositInvoicesBestEffort, releaseRefundNotesBestEffort } from '../../acc/deposit-refunds';
@@ -592,22 +593,25 @@ export async function learnVendorMemory(
    supplier payment or names no supplier; a supplier we cannot read fails
    CLOSED (500), the same way requireLeafAccount does. */
 async function supplierOwnControl(
-  c: any, purposeRaw: unknown, supplierIdRaw: unknown,
+  c: any, purposeRaw: unknown, supplierIdRaw: unknown, refundControl: string | null = null,
 ): Promise<{ code: string | null; control: string | null; wrong: string | null } | { resp: Response }> {
   const none = { code: null, control: null, wrong: null };
-  if (isRefund(purposeRaw)) return { ...none, control: await refundOwnControl(c.get('supabase'), activeCompanyId(c)) };
+  /* A refund's line is the customer's own control (Conts), which its guard worked out. */
+  if (isRefund(purposeRaw)) return { ...none, control: refundControl ?? await refundOwnControl(c.get('supabase'), activeCompanyId(c)) };
   if (normalizePurpose(purposeRaw) !== 'SUPPLIER_PAYMENT' || !supplierIdRaw) return none;
   const coId = activeCompanyId(c);
   if (coId == null) return none;
   const sb = c.get('supabase');
   const { data: sup, error: supErr } = await sb.from('suppliers')
-    .select('code').eq('id', String(supplierIdRaw)).maybeSingle();
+    .select('code, control_account').eq('id', String(supplierIdRaw)).maybeSingle();
   if (supErr) return { resp: c.json({ error: 'load_failed', reason: supErr.message }, 500) };
-  const code = (sup as { code?: string | null } | null)?.code ?? null;
+  const row = sup as { code?: string | null; control_account?: string | null } | null;
+  const code = row?.code ?? null;
   if (!code) return none;
   const roles = await resolveRoles(sb, coId);
-  const role = apControlRole(code);
-  return { code, control: roles[role], wrong: role === 'AP_OTHER' ? roles.AP : roles.AP_OTHER };
+  /* Conts: the supplier's own control when its record names one, else the 405- rule. */
+  const control = apControlOf(roles, { code, control_account: row?.control_account ?? null });
+  return { code, control, wrong: control === roles.AP ? roles.AP_OTHER : roles.AP };
 }
 
 export const createPaymentVoucherHandler = async (c: any) => {
@@ -650,13 +654,13 @@ export const createPaymentVoucherCore = async (c: any, body: Record<string, unkn
      the control lock below must let the supplier payment's OWN control line
      through (docs/bugs/0649 — it refused every AP Payment for three days),
      and the wrong-control door refuses the OTHER control. */
-  const own = await supplierOwnControl(c, body.purpose, body.supplierId);
+  const own = await supplierOwnControl(c, body.purpose, body.supplierId, refund && refund.ok ? refund.arControl : null);
   if ('resp' in own) return own.resp;
 
   if (own.control != null && own.wrong != null && built.rows.some((r) => r.debit_account_code === own.wrong)) {
     return c.json({
       error: 'wrong_ap_control',
-      message: `Supplier ${own.code} books to ${own.control} (${apControlRole(own.code) === 'AP_OTHER' ? 'Other Creditors' : 'Account Payable'}) — not ${own.wrong}. Refresh the page and raise the payment again.`,
+      message: `Supplier ${own.code} books to ${own.control} — not ${own.wrong}. Refresh the page and raise the payment again.`,
     }, 400);
   }
   /* 父户不记账 (owner 2026-09-02) at TYPING time — the GL gate (engine rule 3)
@@ -878,9 +882,11 @@ export const updatePaymentVoucherHandler = async (c: any) => {
   // Lines (optional) — full replace + recompute total when supplied.
   let newTotal: number | undefined;
   let newLines: Array<{ line_no: number; debit_account_code: string }> | undefined;
+  let refundControl: string | null = null;
   if (isRefund(before.purpose) && body.refundAmountSen !== undefined) {
     const re = await refundCreateGuard(c, { refundSourceType: before.refund_source_type, refundSourceDocNo: before.refund_source_doc_no, refundAmountSen: body.refundAmountSen }, id);
     if (!re.ok) return re.resp;
+    refundControl = re.arControl;
     body.lines = re.rows.map((r) => ({ description: r.description, debitAccountCode: r.debit_account_code, amountSen: r.amount_sen }));
   } else if (isRefund(before.purpose) && body.lines !== undefined) {
     return c.json({ error: 'refund_lines_fixed', message: 'A refund has one line the system writes — change the refund amount instead.' }, 400);
@@ -904,6 +910,7 @@ export const updatePaymentVoucherHandler = async (c: any) => {
       c,
       body.purpose !== undefined ? body.purpose : before.purpose,
       body.supplierId !== undefined ? body.supplierId : before.supplier_id,
+      refundControl,
     );
     if ('resp' in own) return own.resp;
     for (const dCode of [...new Set(built.rows.map((r) => r.debit_account_code))]) {
@@ -1021,7 +1028,7 @@ export const postPaymentVoucherHandler = async (c: any) => {
   if (!co.ok) return c.json(co.refusal, 409);
 
   const { data: pvRaw } = await scopeToCompanyId(sb.from('payment_vouchers')
-    .select(`${HEADER}, supplier:suppliers(code, name)`).eq('id', id), co.companyId).maybeSingle();
+    .select(`${HEADER}, supplier:suppliers(code, name, control_account)`).eq('id', id), co.companyId).maybeSingle();
   if (!pvRaw) return c.json(NOT_THIS_COMPANY, 404);
   const pv = pvRaw as unknown as {
     id: string; pv_number: string; voucher_date: string; payee_name: string;
@@ -1087,7 +1094,7 @@ export const postPaymentVoucherHandler = async (c: any) => {
      leg that IS the sub-ledger (owner 2026-09-06: Dr 405-H001 / Cr bank — the
      invoice side already stamps its Cr leg). Only a supplier payment has one. */
   const apControlCode = normalizePurpose(pv.purpose) === 'SUPPLIER_PAYMENT' && supplier.code
-    ? (await resolveRoles(sb, companyId))[apControlRole(supplier.code)]
+    ? apControlOf(await resolveRoles(sb, companyId), supplier)
     : null;
 
   const pf = await assertAuditWritable(sb, { entityType: 'PAYMENT_VOUCHER', entityId: id, action: 'POST', companyId });
@@ -1103,6 +1110,14 @@ export const postPaymentVoucherHandler = async (c: any) => {
   /* The customer's party code: the debtor code when kept, else the header's
      customer_id — the same rule the payment booked with (owner 2026-09-08). */
   const refundPv = pvRaw as { refund_source_type?: string | null; refund_source_doc_no?: string | null; debtor_code?: string | null; customer_id?: string | null };
+  /* Conts: a refund debits the customer's own control (scm.debtors), where its money was booked. */
+  const refundParty = customerPartyCode(refundPv.debtor_code, refundPv.customer_id);
+  let refundArControl = '';
+  if (isRefund(pv.purpose)) {
+    const dr = await resolveDebtorRoles(sb, companyId, refundParty);
+    if (!dr.ok) return c.json({ error: 'post_failed', reason: dr.error }, 500);
+    refundArControl = dr.roles.AR;
+  }
   const r = await postJournal(sb, {
     companyId,
     entryDate: pv.voucher_date,
@@ -1110,7 +1125,7 @@ export const postPaymentVoucherHandler = async (c: any) => {
     sourceDocNo: pv.pv_number,
     narration: isRefund(pv.purpose) ? `Customer refund ${pv.pv_number} — ${pv.payee_name} (${refundPv.refund_source_doc_no ?? '?'})` : `Payment voucher ${pv.pv_number} — ${pv.payee_name}`,
     lines: isRefund(pv.purpose)
-      ? customerRefundLines({ ...pv, refund_source_doc_no: refundPv.refund_source_doc_no ?? null }, (await resolveRoles(sb, companyId)).AR, { code: customerPartyCode(refundPv.debtor_code, refundPv.customer_id), name: pv.payee_name }, totalSen)
+      ? customerRefundLines({ ...pv, refund_source_doc_no: refundPv.refund_source_doc_no ?? null }, refundArControl, { code: refundParty, name: pv.payee_name }, totalSen)
       : pvLines(pv, apControlCode ? await settledDepartmentLegs(sb, companyId, id, debitLegs, apControlCode, rate) : debitLegs, supplier, apControlCode),
   });
   if (!r.ok) {

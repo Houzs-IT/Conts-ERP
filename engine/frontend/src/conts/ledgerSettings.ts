@@ -51,6 +51,8 @@ export type LedgerSetupStatus = {
   roles: { role: string; accountCode: string; kind: RoleKind; problem: null | RoleProblem }[];
   itemGroups: { group: string; missing: string[] }[];
   banksWithoutLetter: string[];
+  /** Customer or supplier controls with sub-accounts under them (they cannot be posted to). */
+  controlsWithChildren: string[];
   ledgerStartDate: string | null;
 };
 

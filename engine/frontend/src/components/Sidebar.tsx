@@ -706,6 +706,8 @@ export const ALL_NAV_TABS: NavTab[] = [
           // receipt the same payment is born with.
           { to: "/scm/deposit-invoices", label: "Deposit Invoices", icon: Receipt, anyPerm: ["*", "scm.access", "scm.payment_voucher.post", "scm.sales_order.write"], anyAccess: ["scm.finance.accounting"] },
           { to: "/scm/receipts", label: "Receipts", icon: SettingsIcon, anyPerm: ["*", "scm.access", "scm.payment_voucher.create"], anyAccess: ["scm.finance.accounting"] },
+          // Debtors (Conts, finance phase 1.5) — every customer under its control, coded like AutoCount.
+          { to: "/scm/debtors", label: "Debtors", icon: SettingsIcon, anyPerm: ["*", "scm.access", "scm.payment_voucher.post"], anyAccess: ["scm.finance.accounting"] },
           { to: "/scm/other-debtors", label: "Other Debtors", icon: SettingsIcon, anyPerm: ["*", "scm.access", "scm.payment_voucher.create"], anyAccess: ["scm.finance.accounting"] },
           { to: "/scm/outstanding", label: "Outstanding", icon: AlertCircle, anyPerm: ["*", "scm.access"], anyAccess: ["scm.finance.outstanding"] },
           { to: "/scm/unbilled-deliveries", label: "Not Yet Billed", icon: HandCoins, anyPerm: ["*", "scm.access"], anyAccess: ["scm.finance.outstanding"] },

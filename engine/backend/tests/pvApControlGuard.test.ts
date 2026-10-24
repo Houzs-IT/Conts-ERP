@@ -192,3 +192,26 @@ describe("the control lock spares the supplier payment's OWN AP-control line (do
     expect((await res.json() as { error: string }).error).toBe('control_account_locked');
   });
 });
+
+/* Conts (finance phase 1.5): a supplier whose record names its own control (scm.suppliers.control_account, from the
+   AutoCount import) books there whatever its code says — 400-K001 KC TAN & CO is filed under 405-0000. */
+describe("a supplier's own control on its record", () => {
+  const withOwn = () => {
+    const t = tablesWith();
+    t.suppliers.push({ id: 'sup-own', code: '400-K001', name: 'KC TAN & CO', company_id: CO, control_account: '405-0000' });
+    return t;
+  };
+
+  test('its payment onto the control its record names saves', async () => {
+    const res = await send(harness(withOwn()), apBody('sup-own', '405-0000'));
+    expect(res.status, await res.clone().text()).toBe(201);
+  });
+
+  test('its payment onto the control its code would suggest is refused', async () => {
+    const res = await send(harness(withOwn()), apBody('sup-own', '400-0000'));
+    expect(res.status).toBe(400);
+    const body = await res.json() as { error: string; message: string };
+    expect(body.error).toBe('wrong_ap_control');
+    expect(body.message).toMatch(/400-K001 books to 405-0000/);
+  });
+});

@@ -170,6 +170,14 @@ export const Suppliers = () => {
       filterValue: (r) => r.code,
       sortFn: (a, b) => (a.code ?? '').localeCompare(b.code ?? ''),
     },
+    /* Conts (finance phase 1.5): the supplier control it books to, as AutoCount files it (400-0000 trade creditors…). */
+    {
+      key: 'control',
+      label: 'Control',
+      width: 110,
+      accessor: (r) => r.control_account ?? '—',
+      filterValue: (r) => r.control_account ?? '—',
+    },
     {
       key: 'name',
       label: 'Name',
@@ -535,6 +543,7 @@ const CreateForm = ({ onClose }: { onClose: () => void }) => {
   const [form, setForm] = useState<Record<string, string | number>>({
     code: '',
     name: '',
+    controlAccount: '',
     /* PR #40 — full master record */
     supplierType: '',
     category: '',
@@ -575,12 +584,14 @@ const CreateForm = ({ onClose }: { onClose: () => void }) => {
   const submit = () => {
     const code = String(form.code ?? '').trim();
     const name = String(form.name ?? '').trim();
-    if (!code || !name) {
-      notify({ title: 'Code and Name are required.', tone: 'error' });
+    /* Conts (finance phase 1.5): a blank code takes the next one under the supplier's control (400-H011). */
+    if (!name) {
+      notify({ title: 'Name is required.', tone: 'error' });
       return;
     }
     create.mutate({
       ...form,
+      code,
       rating: Number(form.rating) || 0,
     } as unknown as Partial<SupplierRow>, { onSuccess: onClose });
   };
@@ -610,7 +621,10 @@ const SupplierFields = ({
   <div className={styles.section}>
     <p className={styles.eyebrow}>Identity</p>
     <div className={styles.formGrid}>
-      <Field label="Credit Account *" value={(form.code as string) ?? ''} onChange={(v) => onChange('code', v)} />
+      <Field label="Credit Account (blank — the next one)" value={(form.code as string) ?? ''} onChange={(v) => onChange('code', v)} />
+      {/* Conts (finance phase 1.5): blank books by the code (405- other creditors, else trade creditors); else a
+          supplier control (SCC), which needs the ledger's post key. */}
+      <Field label="Control (blank — by its code)" value={String(form.controlAccount)} onChange={(v) => onChange('controlAccount', v)} />
       <Field label="Company Name *" value={(form.name as string) ?? ''} onChange={(v) => onChange('name', v)} />
       <Field label="Supplier Type" value={(form.supplierType as string) ?? ''} onChange={(v) => onChange('supplierType', v)} />
       {/* Owner spec 2026-06-12 — Supply Category is a multi-select chip

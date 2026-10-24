@@ -91,7 +91,7 @@ async function loadInvoice(c: any, id: string): Promise<{ inv: Row } | { resp: R
 
 async function loadSupplier(c: any, supplierId: string): Promise<{ supplier: { id: string; code: string | null; name: string | null } } | { resp: Response }> {
   const sb = c.get('supabase');
-  const { data, error } = await scopeToCompany(sb.from('suppliers').select('id, code, name').eq('id', supplierId), c).maybeSingle();
+  const { data, error } = await scopeToCompany(sb.from('suppliers').select('id, code, name, control_account').eq('id', supplierId), c).maybeSingle();
   if (error) return { resp: c.json({ error: 'load_failed', reason: error.message }, 500) };
   if (!data) return { resp: c.json({ error: 'supplier_unknown', message: 'That supplier is not in the company you are working in.' }, 400) };
   return { supplier: data as { id: string; code: string | null; name: string | null } };
@@ -162,7 +162,7 @@ export const apInvoiceDetailHandler = async (c: any): Promise<Response> => {
   const sb = c.get('supabase');
   const [lines, sup] = await Promise.all([
     scopeToCompany(sb.from('ap_invoice_lines').select(LINE).eq('invoice_id', found.inv.id), c).order('line_no'),
-    scopeToCompany(sb.from('suppliers').select('id, code, name').eq('id', found.inv.supplier_id), c).maybeSingle(),
+    scopeToCompany(sb.from('suppliers').select('id, code, name, control_account').eq('id', found.inv.supplier_id), c).maybeSingle(),
   ]);
   if (lines.error) return c.json({ error: 'load_failed', reason: lines.error.message }, 500);
   if (sup.error) return c.json({ error: 'load_failed', reason: sup.error.message }, 500);
