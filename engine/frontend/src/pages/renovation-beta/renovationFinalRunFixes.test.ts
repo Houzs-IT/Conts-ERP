@@ -40,9 +40,9 @@ describe("Site & photos groups a day's photos per document or defect", () => {
       ph("e", "2026-10-23T06:00:00Z", "defect:1", "Before"),
     ]);
     expect(days.map((d) => d.cards.map((c) => [c.key, c.items.map((i) => i.id).join("")]))).toEqual([
-      [["defect:1", "ac"], ["defect:2", "bd"]],
+      [["defect:1", "ca"], ["defect:2", "bd"]],
       [["defect:1", "e"]],
     ]);
-    expect(cardMeta(days[0]!.cards[0]!)).toBe("5:00 pm · After / Before · 2 photos");
+    expect(cardMeta(days[0]!.cards[0]!)).toBe("5:00 pm · Before / After · 2 photos");
   });
 });
