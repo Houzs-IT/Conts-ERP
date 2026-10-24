@@ -1,0 +1,64 @@
+import { describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
+
+// Debtors (finance phase 1.5, SOP 2.1): every customer under its control. Pinned: a new debtor goes in with its
+// control and a blank code (the server numbers it); a move of a debtor that already has postings asks first and is
+// sent again with confirm.
+const saveAsync = vi.fn();
+const confirmFn = vi.fn(async () => true);
+vi.mock("./debtorQueries", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./debtorQueries")>()),
+  useDebtors: () => ({ isLoading: false, isError: false, data: { controls: [
+    { code: "301-0000", name: "RENOVATION CUSTOMER", debtors: [
+      { id: "d1", code: "301-M001", name: "MS LEE", control_account: "301-0000", customer_id: null, phone: "012", email: null, address: null, notes: null, is_active: true },
+    ] },
+    { code: "302-0000", name: "INHOUSE RENOVATION CUSTOMER", debtors: [] },
+  ] } }),
+  useSaveDebtor: () => ({ mutateAsync: saveAsync, isPending: false }),
+}));
+vi.mock("../auth/AuthContext", () => ({ useAuth: () => ({ can: () => true }) }));
+vi.mock("../vendor/scm/components/ConfirmDialog", () => ({ useConfirm: () => confirmFn }));
+vi.mock("../components/Layout", () => ({
+  PageHeader: ({ title, actions }: { title: string; actions?: React.ReactNode }) => <header><h1>{title}</h1>{actions}</header>,
+}));
+vi.mock("../components/DataTable", () => ({
+  DataTable: ({ rows, onRowClick }: { rows: Array<{ id: string; code: string; name: string; controlLabel: string }> | null; onRowClick?: (r: unknown) => void }) => (
+    <ul>{(rows ?? []).map((r) => <li key={r.id}><button onClick={() => onRowClick?.(r)}>{r.controlLabel} · {r.code} {r.name}</button></li>)}</ul>
+  ),
+}));
+
+import { Debtors } from "./Debtors";
+
+describe("Debtors", () => {
+  it("lists each debtor with its control", () => {
+    render(<MemoryRouter><Debtors /></MemoryRouter>);
+    expect(screen.getByText("301-0000 RENOVATION CUSTOMER · 301-M001 MS LEE")).toBeTruthy();
+  });
+
+  it("a new debtor goes in with its control and a blank code", async () => {
+    saveAsync.mockReset();
+    saveAsync.mockResolvedValue({ debtor: {} });
+    render(<MemoryRouter><Debtors /></MemoryRouter>);
+    fireEvent.click(screen.getByRole("button", { name: /New debtor/ }));
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "MS CHEW" } });
+    fireEvent.change(screen.getByLabelText("Control"), { target: { value: "302-0000" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(saveAsync).toHaveBeenCalledTimes(1));
+    expect(saveAsync.mock.calls[0][0]).toMatchObject({ id: null, body: { name: "MS CHEW", controlAccount: "302-0000", code: "" } });
+  });
+
+  it("moving a debtor with postings asks first, then sends it again with confirm", async () => {
+    saveAsync.mockReset();
+    confirmFn.mockClear();
+    const refused = Object.assign(new Error("in use"), { status: 409, body: JSON.stringify({ error: "debtor_in_use", message: "301-M001 already has postings on 301-0000." }) });
+    saveAsync.mockRejectedValueOnce(refused).mockResolvedValueOnce({ debtor: {} });
+    render(<MemoryRouter><Debtors /></MemoryRouter>);
+    fireEvent.click(screen.getByText(/301-M001 MS LEE/));
+    fireEvent.change(screen.getByLabelText("Control"), { target: { value: "302-0000" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(saveAsync).toHaveBeenCalledTimes(2));
+    expect(confirmFn).toHaveBeenCalledTimes(1);
+    expect(saveAsync.mock.calls[1][0]).toMatchObject({ id: "d1", body: { controlAccount: "302-0000", confirm: true } });
+  });
+});

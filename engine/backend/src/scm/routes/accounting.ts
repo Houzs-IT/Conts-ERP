@@ -68,6 +68,7 @@ import { piPeriodicBackfill } from './accounting-pi-backfill';
 import { stockCloseStatus, stockCloseRun } from './accounting-stock-close';
 import { pnlReport, balanceSheetReport, loadAccounts, loadSums } from './accounting-reports';
 import { importOpeningJournal, importOpeningPayables, importOpeningReceivables, openingCheck, reverseOpeningJournal } from '../../acc/opening';
+import { createDebtorHandler, listDebtorsHandler, patchDebtorHandler } from '../../conts/debtors-routes';
 import { assertAuditWritable, auditUnavailableBody, compactChanges, fieldChange, recordEntityAudit, type AuditActor } from '../lib/entity-audit';
 import { journalEntryEdit } from './accounting-journal-edit';
 import { reportLayoutGet, reportLayoutPut, reportLayoutReset } from './accounting-report-layouts';
@@ -213,6 +214,10 @@ accounting.get('/chart', chartUnionHandler);
 accounting.put('/chart/tick', chartTickHandler);
 accounting.post('/chart/import', chartImportHandler);
 accounting.post('/chart/import/match', chartImportMatchHandler);
+/* Conts: Debtors, the customers under their controls (conts/debtors-routes.ts). */
+accounting.get('/debtors', listDebtorsHandler);
+accounting.post('/debtors', createDebtorHandler);
+accounting.patch('/debtors/:id', patchDebtorHandler);
 accounting.put('/chart/rename', chartRenameHandler);
 accounting.put('/chart/update', chartUpdateHandler);
 accounting.post('/chart/account', chartCreateHandler);
