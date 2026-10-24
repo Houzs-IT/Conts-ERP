@@ -22,7 +22,7 @@ const world = () => fakeSb({
     { company_id: CO, account_code: '400-0000', account_name: 'TRADE CREDITORS', account_type: 'LIABILITY', special_type: 'SCC' },
     { company_id: CO, account_code: '481-S032', account_name: 'SKYLINE A-12-06', account_type: 'LIABILITY', special_type: null },
   ],
-  debtors: [{ id: 'd1', company_id: CO, code: '301-M001', name: 'MS LEE', control_account: '301-0000' }],
+  debtors: [{ id: 'd1', company_id: CO, code: '301-M001', name: 'MS LEE', control_account: '301-0000', customer_id: 'c-9' }],
   suppliers: [{ id: 's1', company_id: CO, code: '400-H010', name: 'HOYEN SPACE', control_account: '400-0000' }],
   journal_entries: [],
   v_gl_entries: [
@@ -33,6 +33,13 @@ const world = () => fakeSb({
     gl('JE-4', '2026-11-13', 'SIPAY', '301-0000', '301-M009', 0, 50_000),
     gl('JE-5', '2026-11-14', 'PI', '400-0000', '400-H010', 0, 120_000),
     gl('JE-6', '2026-11-20', 'PV', '400-0000', '400-H010', 70_000, 0),
+    /* An order that named no debtor code: the payment carries the customer id. */
+    gl('JE-7', '2026-11-15', 'SOPAY', '301-0000', 'c-9', 0, 10_000),
+    /* The customer named on a line that is not a control: not theirs to owe. */
+    gl('JE-8', '2026-11-16', 'MANUAL', '481-S032', '301-M001', 0, 5_000),
+    /* A reversed payment and its contra: neither shows, nothing changes. */
+    gl('JE-9', '2026-11-17', 'SIPAY', '301-0000', '301-M001', 0, 77_000, { reversed: true }),
+    gl('JE-10', '2026-11-18', 'SIPAY_REVERSAL', '301-0000', '301-M001', 77_000, 0, { reversed_by_je: 'JE-9' }),
   ],
 });
 const ask = async (q: string) => {
@@ -58,8 +65,9 @@ describe('a ledger for one party', () => {
     expect(b.lines.map((l) => [l.jeNo, l.debitSen, l.creditSen, l.balanceSen])).toEqual([
       ['JE-2', 3_000_000, 0, 2_900_000],
       ['JE-3', 0, 900_000, 2_000_000],
+      ['JE-7', 0, 10_000, 1_990_000],
     ]);
-    expect(b.closingSen).toBe(2_000_000);
+    expect(b.closingSen).toBe(1_990_000);
     expect(b.lines.every((l) => l.account === '301-0000')).toBe(true);
   });
 

@@ -31,7 +31,7 @@ describe("Customer ledger", () => {
     };
     at("/scm/party-ledger?kind=debtor&code=301-M001&from=2026-11-01&to=2026-11-30");
     expect(screen.getByText("Customer ledger")).toBeTruthy();
-    expect(screen.getByText("RM -1,000.00")).toBeTruthy();
+    expect(screen.getByText("RM (1,000.00)")).toBeTruthy();
     expect(screen.getByText("RM 20,000.00")).toBeTruthy();
     expect(screen.getByText("JE-3 · 2000000")).toBeTruthy();
   });

@@ -34,10 +34,16 @@ export const partyLedgerHandler = async (c: Ctx): Promise<Response> => {
   if (!DATE.test(from) || !DATE.test(to) || from > to) return c.json({ error: 'bad_range', message: 'from and to must be YYYY-MM-DD, from no later than to.' }, 400);
   const sb = c.get('supabase');
 
-  const { data: party, error: pErr } = await sb.from(kind === 'debtor' ? 'debtors' : 'suppliers').select('code, name, control_account')
+  const { data: found, error: pErr } = await sb.from(kind === 'debtor' ? 'debtors' : 'suppliers')
+    .select(kind === 'debtor' ? 'code, name, control_account, customer_id' : 'code, name, control_account')
     .eq('company_id', co.companyId).eq('code', code).maybeSingle();
   if (pErr) return c.json({ error: 'load_failed', reason: pErr.message }, 500);
-  if (!party) return c.json({ error: 'not_found', message: `${code} is not a ${kind === 'debtor' ? 'customer' : 'supplier'}.` }, 404);
+  if (!found) return c.json({ error: 'not_found', message: `${code} is not a ${kind === 'debtor' ? 'customer' : 'supplier'}.` }, 404);
+  const f0 = found as { code: string; name: string; control_account: string | null; customer_id?: string | null };
+  const party = { code: f0.code, name: f0.name, control_account: f0.control_account };
+  /* A customer's lines carry their debtor code — or, on an order that named none, the order's customer id
+     (acc/payments.ts customerPartyCode): both are theirs. */
+  const partyCodes = f0.customer_id ? [code, String(f0.customer_id)] : [code];
 
   /* The controls the party's lines can sit on: every customer control for a customer, every supplier control for a supplier. */
   const { data: ctl, error: cErr } = await sb.from('accounts').select('account_code')
@@ -48,7 +54,7 @@ export const partyLedgerHandler = async (c: Ctx): Promise<Response> => {
 
   const read = await paginateAll<Line>((f, t) => sb.from('v_gl_entries')
     .select('line_id, je_no, entry_date, source_type, source_doc_no, line_no, account_code, debit_sen, credit_sen, notes, reversed, reversed_by_je')
-    .eq('company_id', co.companyId).eq('party_code', code).in('account_code', controls).lte('entry_date', to)
+    .eq('company_id', co.companyId).in('party_code', partyCodes).in('account_code', controls).lte('entry_date', to)
     .order('line_id').range(f, t));
   if (read.error) return c.json({ error: 'load_failed', reason: String((read.error as { message?: string }).message ?? read.error) }, 500);
   /* A reversed entry and its contra cancel out: neither is shown, as the general ledger does by default. */
@@ -57,7 +63,7 @@ export const partyLedgerHandler = async (c: Ctx): Promise<Response> => {
 
   const openingSen = lines.filter((l) => l.entry_date < from).reduce((s, l) => s + sign(l), 0);
   const period = lines.filter((l) => l.entry_date >= from)
-    .sort((a, b) => a.entry_date.localeCompare(b.entry_date) || a.je_no.localeCompare(b.je_no) || Number(a.line_no) - Number(b.line_no));
+    .sort((a, b) => a.entry_date.localeCompare(b.entry_date) || Number(a.line_id) - Number(b.line_id));
 
   const jeNos = [...new Set(period.map((l) => l.je_no))];
   const narration = new Map<string, string | null>();

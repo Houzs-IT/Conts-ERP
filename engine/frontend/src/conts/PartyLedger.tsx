@@ -2,11 +2,11 @@
 // SOP 2.1: "每个顾客看得到欠款、所有往来和余额"). Pick a customer or a supplier and a period: what was owed at the start,
 // every line of the period with a running balance, and what is owed at the end. The choice lives in the address
 // (?kind=debtor&code=301-M001&from=&to=), so the Debtors list links straight to one customer's ledger.
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { PageHeader } from "../components/Layout";
 import { DataTable, type Column } from "../components/DataTable";
-import { fmtSen, fmtSenPlain } from "../vendor/shared/format";
+import { fmtSenPlain } from "../vendor/shared/format";
 import { useSuppliers } from "../vendor/scm/lib/suppliers-queries";
 import { useDebtors } from "./debtorQueries";
 import { usePartyLedger, type PartyKind, type PartyLedgerLine } from "./partyLedgerQueries";
@@ -36,7 +36,7 @@ function Figure({ label, sen, hint, tone }: { label: string; sen: number; hint?:
   return (
     <div style={{ border: "1px solid var(--line)", borderRadius: 12, padding: 16, minWidth: 0 }}>
       <div style={{ fontSize: "var(--fs-12)", color: "var(--fg-muted)" }}>{label}</div>
-      <div style={{ ...num, fontSize: 24, fontWeight: 650, color: tone === "bad" ? "var(--c-festive-b, #b3261e)" : undefined }}>{fmtSen(sen)}</div>
+      <div style={{ ...num, fontSize: 24, fontWeight: 650, color: tone === "bad" ? "var(--c-festive-b, #b3261e)" : undefined }}>RM {fmtSenPlain(sen)}</div>
       {hint && <div style={{ fontSize: "var(--fs-12)", color: "var(--fg-muted)" }}>{hint}</div>}
     </div>
   );
@@ -61,6 +61,8 @@ export function PartyLedger() {
     : (suppliers.data ?? []).map((s) => ({ code: s.code, name: s.name }))), [kind, debtors.data, suppliers.data]);
   /* What is typed; the ledger follows only once it names a real code (picked from the list or typed in full). */
   const [text, setText] = useState(code);
+  /* The address can change under the box (the sidebar, Back): the box follows it. */
+  useEffect(() => { setText(code); }, [code, kind]);
   const q = usePartyLedger({ kind, code, from, to });
   const rows = useMemo<Row[]>(() => (q.data?.lines ?? []).map((l, i) => ({ ...l, key: `${l.jeNo}-${i}` })), [q.data]);
   const owes = kind === "debtor" ? "Owes us" : "We owe";
@@ -83,8 +85,9 @@ export function PartyLedger() {
             onChange={(e) => {
               setText(e.target.value);
               const picked = e.target.value.split(" — ")[0].trim().toUpperCase();
+              /* Only a whole code, or a line picked from the list, opens a ledger; anything else closes it. */
               const hit = parties.find((p) => p.code.toUpperCase() === picked);
-              if (hit) set({ code: hit.code });
+              set({ code: hit ? hit.code : "" });
             }} />
           <datalist id="party-ledger-parties">
             {parties.map((p) => <option key={p.code} value={`${p.code} — ${p.name}`} />)}
@@ -125,7 +128,7 @@ export function PartyLedger() {
           columns={COLUMNS}
           rows={d ? rows : null}
           loading={q.isLoading}
-          error={null}
+          error={q.isError ? "The ledger did not load." : null}
           emptyLabel="No postings in this period."
           getRowKey={(l) => l.key}
         />
