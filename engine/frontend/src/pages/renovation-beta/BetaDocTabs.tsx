@@ -1,13 +1,14 @@
-/* Beta workspace > DO and GR (owner, 24 Oct 2026). One long row per delivery order of the project's sales order(s), or
-   per goods receipt of its POs, newest first: the number, date, status, the rooms of its lines, its PO (or "Client
-   PO") and delivery date as the PO tab shows them (renovationBetaDocsModel.ts), a GR's DOs, and a strip of its
-   photos (POD for a DO, the site team's receipt photos for a GR) with "Add photos". "By category" and "By area" list
-   the delivered lines instead, each with the documents that delivered it. ?do=<no> or ?gr=<no> opens the tab on that
-   document's row. */
+/* Beta workspace > DO and GR (owner, 24 Oct 2026). A vertical timeline, newest first, drawn like Site & photos: the
+   day and time on the left, a dot on a line, and on the right one delivery order of the project's sales order(s), or
+   one goods receipt of its POs. DO and GR are twins (owner, 24 Oct 2026) and show the same fields in the same order:
+   number and status, PO (or "Client PO") and delivery date as the PO tab shows them (renovationBetaDocsModel.ts),
+   lines and quantity, the other side's documents (a DO's GRs, a GR's DOs, each a link), where it came from, the
+   rooms, the document's own note, and its photos with "Upload POD". "By category" and "By area" list the delivered
+   lines instead, each with the documents that delivered it. ?do=<no> or ?gr=<no> opens the tab on that document. */
 
 import { useEffect, useMemo, useState, type ReactElement } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Camera, PackageCheck, Truck } from "lucide-react";
+import { Camera, PackageCheck, StickyNote, Truck } from "lucide-react";
 import { useQuery } from "../../hooks/useQuery";
 import { MediaStrip, type MediaItem } from "./BetaMedia";
 import { PhotoUploadDialog, type UploadTarget } from "./BetaPhotoUpload";
@@ -15,7 +16,8 @@ import { TONE_DONE, TONE_QUIET, TONE_WAIT, WS, WsBadge, WsEmpty, WsFilterPill, W
 import type { BetaTabProps } from "./betaShared";
 import { datesText, deliveredGroups, docSummary, type DeliveredLine, type DocRef, type DocView } from "./renovationBetaDocsModel";
 import { linesApi, type ManagedLine } from "./renovationBetaLines";
-import { dayMonth, dayMonthYear, mytDay, mytTime } from "./renovationBetaModel";
+import { dayMonth, mytDay } from "./renovationBetaModel";
+import { clockOf, dayTitle } from "./renovationBetaPhotosModel";
 import { betaMediaApi } from "./renovationBetaMediaApi";
 import { betaSiteApi, type SiteDelivery, type SitePhoto } from "./renovationBetaSiteApi";
 import { BETA } from "./renovationBetaTheme";
@@ -25,6 +27,8 @@ import { statusLabel } from "../../vendor/scm/lib/status-pill";
 export function photoAsMedia(p: SitePhoto): MediaItem {
   return { id: p.id, path: p.path, kind: p.kind ?? (p.image ? "image" : "file"), name: p.name, label: p.source === "pod" ? "POD" : null, at: p.at, caption: p.area };
 }
+
+const plural = (n: number, w: string): string => `${n} ${w}${n === 1 ? "" : "s"}`;
 
 /* The words the DO and GR screens use for the same stored status (status-pill.ts via renovationDoStatus.ts), so a
    confirmed DO reads "Confirmed" here as on the DO list, not the raw "Loaded" value. */
@@ -38,12 +42,6 @@ export function statusTone(d: Pick<SiteDelivery, "type" | "status">): { tone: re
   if (["RECEIVED", "POSTED", "CLOSED", "COMPLETED"].includes(s)) return { tone: TONE_DONE, text };
   if (s === "DRAFT" || s === "CANCELLED") return { tone: TONE_QUIET, text };
   return { tone: TONE_WAIT, text };
-}
-
-function when(d: SiteDelivery): string {
-  if (!d.at) return "No date";
-  const t = mytTime(d.at);
-  return `${dayMonthYear(mytDay(d.at))}${t && t !== "00:00" ? ` ${t}` : ""}`;
 }
 
 const chip = { padding: "2px 10px", borderRadius: 10, fontSize: 12, fontWeight: 600, background: WS.chip, color: WS.text2, whiteSpace: "nowrap" } as const;
@@ -76,8 +74,10 @@ function poText(pos: readonly string[], client: boolean): string | null {
   return [...pos, ...(client ? ["Client PO"] : [])].join(", ") || null;
 }
 
-function DocRow({ d, lines, all, focused, canWrite, onAdd, openDo }: {
-  d: SiteDelivery; lines: readonly ManagedLine[]; all: readonly SiteDelivery[]; focused: boolean; canWrite: boolean; onAdd: () => void; openDo: (no: string) => void;
+/** One document on the timeline. The left column shows the day on the first document of each day, then the time. */
+function DocRow({ d, day, today, last, lines, all, focused, canWrite, onAdd, openDo, openGr }: {
+  d: SiteDelivery; day: string | null | undefined; today: string; last: boolean; lines: readonly ManagedLine[]; all: readonly SiteDelivery[];
+  focused: boolean; canWrite: boolean; onAdd: () => void; openDo: (no: string) => void; openGr: (no: string) => void;
 }): ReactElement {
   const isDo = d.type === "delivery_order";
   const st = statusTone(d);
@@ -85,37 +85,54 @@ function DocRow({ d, lines, all, focused, canWrite, onAdd, openDo }: {
   const s = docSummary(d, lines, all);
   const po = poText(s.pos, s.clientPo);
   const due = datesText(s.deliverOn, dayMonth);
-  const sub = [when(d), isDo ? (d.from ? `from ${d.from}` : null) : d.from].filter(Boolean).join(" · ");
+  const other = isDo ? s.grs : s.dos;
+  const from = isDo
+    ? [d.from ? `Sales order ${d.from}` : null, d.driver ? `Driver ${d.driver}` : null]
+    : [d.from ? `Supplier ${d.from}` : null, d.supplierRef ? `Supplier DO ${d.supplierRef}` : null];
+  const isToday = day === today;
   return (
     <li id={`beta-doc-${d.no}`} aria-label={`${isDo ? "Delivery order" : "Goods receipt"} ${d.no}`} aria-current={focused ? "true" : undefined}
-      style={{ ...cardStyle, padding: "12px 16px", gap: 10, flexDirection: "row", flexWrap: "wrap", alignItems: "center", scrollMarginTop: 96,
-        ...(focused ? { borderColor: BETA.accent, boxShadow: `0 0 0 2px ${BETA.accent}33` } : {}) }}>
-      <div style={{ flex: "1 1 340px", minWidth: 0, display: "flex", gap: 12, alignItems: "flex-start" }}>
-        <span aria-hidden="true" style={{ flex: "none", width: 36, height: 36, borderRadius: 18, background: isDo ? "#EEF2F1" : "#E4F1EF", color: isDo ? WS.blue : BETA.accent, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          {isDo ? <Truck size={16} /> : <PackageCheck size={16} />}
-        </span>
-        <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 6 }}>
+      style={{ display: "grid", gridTemplateColumns: "72px 18px minmax(0, 1fr)", columnGap: 10, scrollMarginTop: 96 }}>
+      <div style={{ padding: last ? 0 : "0 0 22px", fontSize: 13, color: BETA.muted, lineHeight: 1.35 }}>
+        {day !== undefined && (day ? dayTitle(day, today).split(" · ") : ["No date"]).map((t) => <div key={t} style={{ fontWeight: 700, color: isToday ? BETA.accentInk : BETA.ink }}>{t}</div>)}
+        <div>{clockOf(d.at) ?? ""}</div>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+        <span aria-hidden="true" style={{ flex: "none", marginTop: 4, width: 12, height: 12, borderRadius: 6, background: day !== undefined ? BETA.accent : BETA.surface, border: `2px solid ${BETA.accent}` }} />
+        {!last && <span aria-hidden="true" style={{ flex: 1, width: 2, background: BETA.line }} />}
+      </div>
+      <div style={{ padding: last ? 0 : "0 0 22px", minWidth: 0 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "12px 14px", borderRadius: 12, background: BETA.surface, border: `1px solid ${focused ? BETA.accent : BETA.line}`,
+          ...(focused ? { boxShadow: `0 0 0 2px ${BETA.accent}33` } : {}) }}>
           <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
-            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, overflowWrap: "anywhere" }}>{d.no}</h3>
+            <span aria-hidden="true" style={{ flex: "none", width: 28, height: 28, borderRadius: 14, background: isDo ? "#EEF2F1" : "#E4F1EF", color: isDo ? WS.blue : BETA.accent, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              {isDo ? <Truck size={14} /> : <PackageCheck size={14} />}
+            </span>
+            <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, overflowWrap: "anywhere" }}>{d.no}</h3>
             <WsBadge tone={st.tone}>{st.text}</WsBadge>
-            <span style={{ fontSize: 13, color: BETA.muted, overflowWrap: "anywhere" }}>{sub}</span>
+            {canWrite && <button type="button" onClick={onAdd} style={{ ...btnStyle("outline", "sm"), marginLeft: "auto" }}><Camera size={14} aria-hidden="true" />Upload POD</button>}
           </div>
-          <div style={{ display: "flex", flexWrap: "wrap", columnGap: 16, rowGap: 4 }}>
+          <div style={{ display: "flex", flexWrap: "wrap", columnGap: 18, rowGap: 4 }}>
             <Meta label={po && s.pos.length === 0 ? "" : "PO"}>{po ?? "No PO"}</Meta>
             <Meta label="Delivery">{due ?? "Not set"}</Meta>
-            {!isDo && <Meta label="DO">{s.dos.length > 0 ? <DocLinks docs={s.dos} onOpen={openDo} /> : "None yet"}</Meta>}
+            <Meta label="Qty">{s.lineCount > 0 ? `${plural(s.lineCount, "line")} · ${s.units}` : "No lines"}</Meta>
+            <Meta label={isDo ? "GR" : "DO"}>{other.length > 0 ? <DocLinks docs={other} onOpen={isDo ? openGr : openDo} /> : "None yet"}</Meta>
           </div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-            {d.areas.length > 0 ? d.areas.map((a) => <span key={a} style={chip}>{a}</span>) : <span style={metaLabel}>No rooms on its lines</span>}
-          </div>
-        </div>
-      </div>
-      <div style={{ flex: "1 1 280px", minWidth: 0, display: "flex", alignItems: "center", gap: 10 }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          {media.length > 0 ? <MediaStrip items={media} label={`Photos of ${d.no}`} size={64} max={6} />
+          {(from.some(Boolean) || d.areas.length > 0) && (
+            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6 }}>
+              {from.filter(Boolean).map((t) => <span key={t} style={{ fontSize: 12.5, color: BETA.muted, marginRight: 6 }}>{t}</span>)}
+              {d.areas.map((a) => <span key={a} style={chip}>{a}</span>)}
+            </div>
+          )}
+          {d.note && (
+            <div style={{ display: "flex", gap: 8, alignItems: "flex-start", padding: "8px 10px", borderRadius: 8, background: "#FBF8EF", borderLeft: `3px solid ${WS.amberDot}`, fontSize: 13, color: WS.text2, whiteSpace: "pre-line", overflowWrap: "anywhere" }}>
+              <StickyNote size={14} aria-hidden="true" style={{ flex: "none", marginTop: 2, color: WS.amber }} />
+              <span><span style={{ fontWeight: 600, color: BETA.ink }}>Note </span>{d.note}</span>
+            </div>
+          )}
+          {media.length > 0 ? <MediaStrip items={media} label={`Photos of ${d.no}`} size={88} max={8} />
             : <span style={metaLabel}>{isDo ? "No proof of delivery photo yet" : "No photos on this receipt yet"}</span>}
         </div>
-        {canWrite && <button type="button" onClick={onAdd} style={{ ...btnStyle("outline", "sm"), flex: "none" }}><Camera size={14} aria-hidden="true" />Add photos</button>}
       </div>
     </li>
   );
@@ -201,12 +218,18 @@ function DocList({ p, type }: { p: BetaTabProps; type: SiteDelivery["type"] }): 
         : !site.data.ready ? <WsEmpty>Deliveries are not switched on for this system yet.</WsEmpty>
         : list.length === 0 ? <WsEmpty>{isDo ? "No delivery orders yet. Each DO made from this project's sales order shows here with its POD." : "No goods receipts yet. Each GR of this project's POs shows here with its photos."}</WsEmpty>
         : view === "doc" ? (
-          <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 10 }}>
-            {list.map((d) => (
-              <DocRow key={d.id} d={d} lines={soLines} all={all} focused={focus === d.no} canWrite={p.canWrite} openDo={openDo}
-                onAdd={() => setAdding({ kind: isDo ? "do" : "gr", id: d.id })} />
-            ))}
-          </ul>
+          <ol aria-label={`${title} timeline`} style={{ listStyle: "none", margin: 0, padding: 0 }}>
+            {list.map((d, i) => {
+              const day = d.at ? mytDay(d.at) : null;
+              const before = i > 0 ? list[i - 1].at : null;
+              const prev = i > 0 ? (before ? mytDay(before) : null) : undefined;
+              return (
+                <DocRow key={d.id} d={d} day={i === 0 || prev !== day ? day : undefined} today={p.today} last={i === list.length - 1} lines={soLines} all={all}
+                  focused={focus === d.no} canWrite={p.canWrite} openDo={openDo} openGr={(no) => open("gr", no)}
+                  onAdd={() => setAdding({ kind: isDo ? "do" : "gr", id: d.id })} />
+              );
+            })}
+          </ol>
         ) : lines.error && !lines.data ? <p role="alert" style={{ fontSize: 14, color: WS.red }}>The order lines could not be loaded: {lines.error}</p>
         : !lines.data ? <p style={{ fontSize: 14, color: BETA.muted }}>Loading...</p>
         : groups.length === 0 ? <WsEmpty>None of the lines on these {isDo ? "delivery orders" : "goods receipts"} is on the project's sales order.</WsEmpty>

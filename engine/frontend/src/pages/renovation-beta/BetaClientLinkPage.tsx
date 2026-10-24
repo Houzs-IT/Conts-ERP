@@ -1,12 +1,14 @@
 /* The client's read-only Client PO page, /cpo/:token, no login (owner, 24 Oct 2026). Shows the company, the project
-   and the items the client buys, by category or by area, each with its photos (the order line's and the SKU's, the
-   same ones the staff Client PO tab shows). The token is the only credential, for the list and for every photo
+   and the items the client buys, by category or by area, each with its quantity, the dates it is needed by (buy by,
+   on site by: the PO tab's processing and delivery dates) and its photos (the order line's and the SKU's, the same
+   ones the staff Client PO tab shows). The token is the only credential, for the list and for every photo
    (engine/backend/src/routes/renovationBetaClientPublic.ts). */
 
 import { useEffect, useMemo, useState, type ReactElement } from "react";
 import { WsFilterPill, WsStyle } from "./BetaWsUi";
 import { WsNarrow, WsNarrowStyle, WsTable, metaStyle, narrowBandStyle, narrowItemStyle, numStyle, tdStyle, thStyle } from "./BetaVoPoUi";
 import { BETA } from "./renovationBetaTheme";
+import { dayMonthYear } from "./renovationBetaModel";
 import { byArea, byCategory, clientPhotoUrl, type ClientItem, type ClientPublicAnswer } from "./renovationBetaVoPo";
 import { PlainPhotoStrip } from "./BetaClientPhotos";
 
@@ -62,27 +64,31 @@ export function BetaClientLinkPage(): ReactElement {
               <WsFilterPill on={view === "area"} onClick={() => setView("area")}>By area</WsFilterPill>
             </div>
             {data.items.length === 0 ? <p style={{ fontSize: 14, color: BETA.muted }}>Nothing to buy yet.</p> : (
-              <WsTable minWidth={640} label="Items to buy">
+              <WsTable minWidth={820} label="Items to buy">
                 <thead>
                   <tr>
                     <th style={thStyle}>Item</th>
                     <th style={thStyle}>SKU</th>
                     <th style={thStyle}>{view === "category" ? "Area" : "Category"}</th>
                     <th style={{ ...thStyle, textAlign: "right" }}>Qty</th>
+                    <th style={thStyle}>Buy by</th>
+                    <th style={thStyle}>On site by</th>
                     <th style={thStyle}>Photos</th>
                   </tr>
                 </thead>
                 <tbody style={{ background: BETA.surface }}>
                   {groups.map((g) => [
-                    <tr key={g.key}><td colSpan={5} style={{ padding: "8px 10px", background: "#E1F1EE", borderLeft: `4px solid ${BETA.accent}`, color: BETA.accentInk, fontWeight: 700 }}>{g.label}</td></tr>,
+                    <tr key={g.key}><td colSpan={7} style={{ padding: "8px 10px", background: "#E1F1EE", borderLeft: `4px solid ${BETA.accent}`, color: BETA.accentInk, fontWeight: 700 }}>{g.label}</td></tr>,
                     ...g.subs.flatMap((s) => [
-                      ...(s.label ? [<tr key={s.key}><td colSpan={5} style={{ padding: "6px 10px 6px 24px", background: "#F3F9F8", fontWeight: 600 }}>{s.label}</td></tr>] : []),
+                      ...(s.label ? [<tr key={s.key}><td colSpan={7} style={{ padding: "6px 10px 6px 24px", background: "#F3F9F8", fontWeight: 600 }}>{s.label}</td></tr>] : []),
                       ...s.items.map((i) => (
                         <tr key={i.key}>
                           <td style={{ ...tdStyle, paddingLeft: 32 }}>{i.description || "-"}{i.pending && <div style={metaStyle}>Not confirmed yet</div>}</td>
                           <td style={{ ...tdStyle, fontFamily: "ui-monospace, monospace", fontSize: 13 }}>{i.itemCode ?? "-"}</td>
                           <td style={tdStyle}>{view === "category" ? (i.area ?? "-") : `${i.categoryLabel} · ${i.subLabel}`}</td>
                           <td style={numStyle}>{i.measure ?? `${i.qty}${i.uom ? ` ${i.uom}` : ""}`}</td>
+                          <td style={{ ...tdStyle, whiteSpace: "nowrap" }}>{i.orderOn ? dayMonthYear(i.orderOn) : "-"}</td>
+                          <td style={{ ...tdStyle, whiteSpace: "nowrap" }}>{i.deliverOn ? dayMonthYear(i.deliverOn) : "-"}</td>
                           <td style={tdStyle}>{(i.photos?.length ?? 0) > 0 ? <Photos token={token} i={i} size={48} /> : <span style={metaStyle}>-</span>}</td>
                         </tr>
                       )),
@@ -111,6 +117,12 @@ export function BetaClientLinkPage(): ReactElement {
                           <span>{view === "category" ? (i.area ?? "No area") : `${i.categoryLabel} · ${i.subLabel}`}</span>
                           {i.pending && <span>Not confirmed yet</span>}
                         </div>
+                        {(i.orderOn || i.deliverOn) && (
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 12, fontSize: 13 }}>
+                            <span><span style={metaStyle}>Buy by </span>{i.orderOn ? dayMonthYear(i.orderOn) : "-"}</span>
+                            <span><span style={metaStyle}>On site by </span>{i.deliverOn ? dayMonthYear(i.deliverOn) : "-"}</span>
+                          </div>
+                        )}
                         {(i.photos?.length ?? 0) > 0 && <Photos token={token} i={i} size={56} />}
                       </li>
                     ))}

@@ -9,7 +9,7 @@ import { CalendarDays, ChevronRight, MapPin, Plus, RotateCcw, User } from "lucid
 import { useQuery } from "../../hooks/useQuery";
 import { renovationApi } from "../projects/renovation/renovationApi";
 import { errorText } from "../projects/renovation/renovationModel";
-import { MediaGrid, MediaPicker, MEDIA_RADIUS, type MediaItem } from "./BetaMedia";
+import { MediaGrid, MediaPicker, MediaStrip, MEDIA_RADIUS, type MediaItem } from "./BetaMedia";
 import { AreaPick } from "./BetaPhotoUpload";
 import { WS, WsBtn, WsDialog, WsEmpty, WsField, WsPageHead, btnStyle, inputStyle, textareaStyle } from "./BetaWsUi";
 import { uploadAll } from "./renovationBetaMediaApi";
@@ -137,9 +137,8 @@ function TicketCard({ t, p, onOpen }: { t: DefectTicket; p: BetaTabProps; onOpen
   const who = whoFixes(t);
   return (
     <div className="bdp-card">
-      {media.length > 0 && <div style={{ padding: 8, paddingBottom: 0 }}><MediaGrid items={media} label={`Photos of ${t.description ?? "the defect"}`} /></div>}
       <button type="button" onClick={onOpen} aria-label={`Open defect: ${whereOf(t)}, ${t.description ?? ""}`}
-        style={{ display: "flex", gap: 8, padding: "12px 14px 14px", alignItems: "flex-start", width: "100%", border: 0, background: "transparent", font: "inherit", color: "inherit", textAlign: "left", cursor: "pointer" }}>
+        style={{ display: "flex", gap: 8, padding: "10px 14px", alignItems: "flex-start", width: "100%", border: 0, background: "transparent", font: "inherit", color: "inherit", textAlign: "left", cursor: "pointer" }}>
         <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 5 }}>
           <Info icon={<MapPin size={14} />} color={BETA.ink} weight={600}>{whereOf(t)}</Info>
           <span style={{ fontSize: 14, color: col === "done" ? WS.text2 : BETA.ink, overflowWrap: "anywhere" }}>{t.description ?? "No description"}</span>
@@ -151,6 +150,8 @@ function TicketCard({ t, p, onOpen }: { t: DefectTicket; p: BetaTabProps; onOpen
         </span>
         <ChevronRight size={20} aria-hidden="true" style={{ flex: "none", alignSelf: "center", color: BETA.muted }} />
       </button>
+      {/* Small labelled thumbnails, not full-width photos: a column of big photos filled the screen (owner, 24 Oct 2026). */}
+      {media.length > 0 && <div style={{ padding: "0 14px 12px" }}><MediaStrip items={media} label={`Photos of ${t.description ?? "the defect"}`} size={56} max={4} /></div>}
     </div>
   );
 }

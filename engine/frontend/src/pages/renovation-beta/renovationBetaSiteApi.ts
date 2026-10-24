@@ -34,6 +34,12 @@ export interface SiteDelivery {
   /** The lines it carries (absent from an older server). */
   lines?: DeliveryLine[];
   photos: SitePhoto[];
+  /** The document's own note: a DO's note, a GR's site and office notes (absent from an older server). */
+  note?: string | null;
+  /** A DO's driver. */
+  driver?: string | null;
+  /** A GR's supplier delivery note number. */
+  supplierRef?: string | null;
 }
 
 /** One line a DO or GR carries: its sales order line and, on a goods receipt, the PO line it received. */

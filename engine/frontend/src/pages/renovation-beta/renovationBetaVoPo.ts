@@ -103,6 +103,9 @@ export interface ClientItem {
   photos?: Array<{ ref: string; from: "line" | "sku" }>;
   voNo?: string | null;
   pending: boolean;
+  /** The PO tab's processing (buy by) and delivery dates of the line (absent from an older server). */
+  orderOn?: string | null;
+  deliverOn?: string | null;
 }
 
 export interface ClientAnswer { items: ClientItem[] }

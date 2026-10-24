@@ -10,7 +10,7 @@
 
 import { useCallback, useMemo, useRef, useState, type CSSProperties, type ReactElement } from "react";
 import { Link } from "react-router-dom";
-import { AlertTriangle, ChevronDown, ChevronRight, Download, FilePlus2, Pencil, Search } from "lucide-react";
+import { AlertTriangle, Camera, ChevronDown, ChevronRight, Download, FilePlus2, Pencil, Search } from "lucide-react";
 import { useAuth } from "../../auth/AuthContext";
 import { useQuery } from "../../hooks/useQuery";
 import { money } from "../projects/renovation/renovationModel";
@@ -18,12 +18,17 @@ import { WS, WsBadge, WsDialog, WsEmpty, WsFilterPill, WsPageHead, TONE_QUIET, T
 import { WsStat, WsStats, metaStyle, thStyle } from "./BetaVoPoUi";
 import type { BetaTabProps } from "./betaShared";
 import { dayMonth, dayMonthYear } from "./renovationBetaModel";
+import { lineDocs, type LineDoc } from "./renovationBetaDocsModel";
+import { DocCell, useOpenDoc, type DocTab } from "./BetaLineDocs";
+import { betaSiteApi } from "./renovationBetaSiteApi";
+import { betaMediaApi } from "./renovationBetaMediaApi";
+import { PhotoUploadDialog, type UploadTarget } from "./BetaPhotoUpload";
 import { BetaSkuPicker } from "./BetaSkuPicker";
 import { BETA } from "./renovationBetaTheme";
 import { voPoApi } from "./renovationBetaVoPo";
 import { LinePhotoThumbs, photoCount, type LinePhotoSet } from "./BetaLinePhotos";
 import {
-  amountAfter, byAreaBlocks, byCategory, livePo, colourEditable, colourOf, dateSettable, editProblem, editWords, effectiveEdit, groupDate, groupDateTargets, lineDates, lineLate,
+  amountAfter, byAreaBlocks, byCategory, livePo, colourEditable, colourOf, dateSettable, editProblem, editWords, effectiveEdit, groupDate, groupDateTargets, groupRange, lineDates, lineLate,
   linesApi, linesCsv, postVo, refusalText,
   voBatches, type LineEdit, type ManagedLine, type PendingPoChange, type PostedVo,
 } from "./renovationBetaLines";
@@ -50,7 +55,7 @@ const headStyle: CSSProperties = { ...thStyle, padding: "8px 6px", fontSize: 11.
 
 /** Column widths (percent of the table), with and without the Amount column. */
 function colWidths(finance: boolean): number[] {
-  return finance ? [12, 21, 10, 5, 9, 9, 9, 15, 5, 5] : [13, 27, 11, 5, 0, 9.5, 9.5, 15, 5, 5];
+  return finance ? [11, 17, 9, 5, 8, 8.5, 8.5, 13, 10, 10] : [12, 22, 10, 5, 0, 9, 9, 13, 10, 10];
 }
 
 /** The tab's own width, so the layout follows the space it has (inside Property OS it is not the window's). */
@@ -73,6 +78,10 @@ type PlanDate = "orderOn" | "deliverOn";
 export function BetaPoTab(p: BetaTabProps): ReactElement {
   const q = useQuery(["renovation-beta", "lines", p.projectId], () => linesApi.lines(p.projectId), [p.projectId]);
   const vo = useQuery(["renovation-beta", "vo", p.projectId], () => voPoApi.vo(p.projectId), [p.projectId]);
+  const site = useQuery(["renovation-beta", "site", p.projectId], () => betaSiteApi.site(p.projectId), [p.projectId]);
+  const openDoc = useOpenDoc();
+  const photos = useQuery(["renovation-beta", "photos", p.projectId], () => betaMediaApi.photos(p.projectId), [p.projectId]);
+  const [uploading, setUploading] = useState<UploadTarget | null>(null);
   const { can } = useAuth();
   const [closed, setClosed] = useState<ReadonlySet<string>>(new Set());
   const [edits, setEdits] = useState<Record<string, LineEdit>>({});
@@ -209,10 +218,12 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
     save: (w, v) => void saveGroupDate(key, label, group, w, v),
   });
 
+  const deliveries = site.data?.deliveries ?? [];
   const cell = (l: ManagedLine): RowCtx => ({
     l, edit: edits[l.id], editable: editable && l.voLocked, finance: d.finance, today: p.today, plansReady: d.plansReady, busyKey,
     refusal: edits[l.id] ? refusals[l.soDocNo] ?? null : null, pending: l.pos.flatMap((x) => pendingByPo.get(x.poId) ?? []),
     setEdit: (patch) => setEdit(l.id, patch), pick: () => setPicking(l), saveDate: (w, v) => void saveDate(l, w, v), setNoPo: (v) => void setNoPo(l, v),
+    grDocs: lineDocs(l.id, deliveries, "goods_received"), doDocs: lineDocs(l.id, deliveries, "delivery_order"), openDoc,
   });
 
   return (
@@ -229,6 +240,9 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
               <button type="button" style={btnStyle("dark", "sm")} onClick={() => { setEditing(true); setResult(null); }}><Pencil size={14} aria-hidden="true" />Edit</button>
             )}
             {tree.length > 0 && <button type="button" style={btnStyle("outline", "sm")} onClick={() => setClosed(closed.size ? new Set() : new Set(allKeys))}>{closed.size ? "Open all" : "Close all"}</button>}
+            {p.canWrite && (photos.data?.docs.pos.length ?? 0) > 0 && (
+              <button type="button" style={btnStyle("outline", "sm")} onClick={() => setUploading({ kind: "po", id: photos.data?.docs.pos[0]?.id ?? "" })}><Camera size={14} aria-hidden="true" />Upload photos</button>
+            )}
             {lines.length > 0 && <button type="button" style={btnStyle("outline", "sm")} onClick={exportCsv}><Download size={14} aria-hidden="true" />Export</button>}
             {needPo.length > 0 && d.sos.map((s) => (
               <Link key={s.docNo} to={s.renovation ? `/scm/renovation/contracts/${encodeURIComponent(s.docNo)}` : "/scm/purchase-orders/from-so"} style={btnStyle("teal", "sm")}>
@@ -291,8 +305,8 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
                     <th style={headStyle} title="Processing date: when to place the order">Processing</th>
                     <th style={headStyle} title="Delivery date">Delivery</th>
                     <th style={headStyle}>PO</th>
-                    <th style={{ ...headStyle, textAlign: "center" }}>GR</th>
-                    <th style={{ ...headStyle, textAlign: "center" }}>DO</th>
+                    <th style={headStyle}>GR</th>
+                    <th style={headStyle}>DO</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -402,6 +416,10 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
           ))}
         </WsDialog>
       )}
+      {uploading && photos.data && (
+        <PhotoUploadDialog projectId={p.projectId} initial={uploading} areas={site.data?.areas ?? []} docs={photos.data.docs} tasks={photos.data.tasks}
+          onClose={() => setUploading(null)} onDone={(t) => { setUploading(null); p.onDone(t); photos.reload(); q.reload(); }} />
+      )}
       {picking && (
         <BetaSkuPicker
           current={picking.itemCode}
@@ -433,14 +451,19 @@ interface BandDates {
 function GroupDate({ g, which }: { g: BandDates; which: PlanDate }): ReactElement | null {
   const v = groupDate(g.lines, which);
   const what = which === "orderOn" ? "Processing date" : "Delivery date";
+  /* Lines with different dates show their span ("24 Oct - 2 Nov"), not a bare "Mixed" (owner, 24 Oct 2026). */
+  const r = groupRange(g.lines, which);
+  const span = r.from && r.to ? (r.from === r.to ? dayMonth(r.from) : `${dayMonth(r.from)} - ${dayMonth(r.to)}`) : null;
+  const spanText = span ? `${span}${r.unset > 0 ? `, ${r.unset} not set` : ""}` : "Not set";
+  const spanTitle = `${what}s of ${g.label} differ: ${span ?? "none set"}${r.unset > 0 ? `; ${r.unset} line${r.unset === 1 ? "" : "s"} not set` : ""}`;
   if (g.editable && g.settable[which]) {
     return (
-      <DateControl value={v === "mixed" ? null : v} placeholder={v === "mixed" ? "Mixed" : "Set all"} busy={g.busy[which]}
-        label={`${what} for every line of ${g.label}`} title={`${what} for every line of ${g.label}${v === "mixed" ? " (the lines differ now)" : ""}`} onSave={(x) => g.save(which, x)} />
+      <DateControl value={v === "mixed" ? null : v} placeholder={v === "mixed" ? spanText : "Set for all"} busy={g.busy[which]}
+        label={`${what} for every line of ${g.label}`} title={v === "mixed" ? `${spanTitle}. Pick a date to give every line the same one.` : `Pick a date to set it on every line of ${g.label}`} onSave={(x) => g.save(which, x)} />
     );
   }
   if (v === null) return null;
-  return <span title={v === "mixed" ? "The lines have different dates" : `${what}: every line`} style={{ display: "block", fontSize: 12, fontWeight: 600, color: v === "mixed" ? BETA.muted : WS.text2, fontStyle: v === "mixed" ? "italic" : undefined, ...ellipsis }}>{v === "mixed" ? "Mixed" : dayMonthYear(v)}</span>;
+  return <span title={v === "mixed" ? spanTitle : `${what}: every line`} style={{ display: "block", fontSize: 12, fontWeight: 600, color: v === "mixed" ? BETA.muted : WS.text2, ...ellipsis }}>{v === "mixed" ? spanText : dayMonthYear(v)}</span>;
 }
 
 function Band({ band, level, label, hint, open, onToggle, finance, dates }: { band: readonly [string, string, string]; level: "cat" | "sub"; label: string; hint: string; open: boolean; onToggle: () => void; finance: boolean; dates: BandDates }): ReactElement {
@@ -482,6 +505,9 @@ interface RowCtx {
   pick: () => void;
   saveDate: (which: DateField, value: string) => void;
   setNoPo: (v: boolean) => void;
+  grDocs: LineDoc[];
+  doDocs: LineDoc[];
+  openDoc: (tab: DocTab, no: string) => void;
 }
 
 function changed(r: RowCtx): LineEdit | null {
@@ -664,18 +690,6 @@ function linePhotoSet(l: ManagedLine): LinePhotoSet {
   };
 }
 
-const PILL: Readonly<Record<"yes" | "part" | "no", readonly [string, string, string]>> = {
-  yes: [WS.green, "#E5F3EA", "Yes"],
-  part: [WS.amber, "#FDF1E2", "Part"],
-  no: [WS.text2, WS.chip, "No"],
-};
-
-function Pill({ state, what }: { state: "yes" | "part" | "no" | null; what: string }): ReactElement {
-  if (!state) return <span style={metaStyle} aria-label={`${what}: not applicable`}>-</span>;
-  const [fg, bg, text] = PILL[state];
-  return <span title={`${what}: ${text}`} style={{ display: "inline-block", padding: "1px 5px", borderRadius: 9, background: bg, color: fg, fontSize: 10.5, fontWeight: 700, lineHeight: "16px" }}>{text}</span>;
-}
-
 function grState(l: ManagedLine): "yes" | "part" | "no" | null {
   return l.goesTo !== "po" && l.pos.length === 0 ? null : l.gr;
 }
@@ -692,8 +706,8 @@ function LineRow(r: RowCtx): ReactElement {
       <td style={cellStyle}><ProcessingCell r={r} /></td>
       <td style={cellStyle}><DeliveryCell r={r} /></td>
       <td style={cellStyle}><PoCell r={r} /></td>
-      <td style={{ ...cellStyle, textAlign: "center" }}><Pill state={grState(r.l)} what="Goods received" /></td>
-      <td style={{ ...cellStyle, textAlign: "center" }}><Pill state={r.l.do} what="Delivery order" /></td>
+      <td style={cellStyle}><DocCell docs={r.grDocs} state={grState(r.l)} tab="gr" open={r.openDoc} /></td>
+      <td style={cellStyle}><DocCell docs={r.doDocs} state={r.l.do} tab="do" open={r.openDoc} /></td>
     </tr>
   );
 }
@@ -720,7 +734,10 @@ function LineCard(r: RowCtx): ReactElement {
         {field("Delivery", <DeliveryCell r={r} />)}
         {field("PO", <PoCell r={r} />)}
       </div>
-      <div style={{ display: "flex", gap: 8, alignItems: "center", ...metaStyle }}>GR <Pill state={grState(r.l)} what="Goods received" /> DO <Pill state={r.l.do} what="Delivery order" /></div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
+        {field("GR", <DocCell docs={r.grDocs} state={grState(r.l)} tab="gr" open={r.openDoc} />)}
+        {field("DO", <DocCell docs={r.doDocs} state={r.l.do} tab="do" open={r.openDoc} />)}
+      </div>
     </li>
   );
 }

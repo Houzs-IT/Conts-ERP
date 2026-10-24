@@ -43,6 +43,12 @@ export interface SiteDelivery {
   /** The lines it carries: the sales order line (null when none) and, on a goods receipt, the PO line. */
   lines: DeliveryLine[];
   photos: SitePhoto[];
+  /** The document's own note: a delivery order's note, a goods receipt's site and office notes. */
+  note: string | null;
+  /** A delivery order's driver. */
+  driver: string | null;
+  /** A goods receipt's supplier delivery note number. */
+  supplierRef: string | null;
 }
 
 export interface DeliveryLine { soItemId: string | null; poLineId: string | null; qty: number }
