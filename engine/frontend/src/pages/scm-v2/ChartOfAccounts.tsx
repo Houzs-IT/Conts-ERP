@@ -55,7 +55,7 @@ const isExclusive = (code: string, special: string): boolean =>
 export type ParsedParty = { code: string; name: string; controlCode: string; kind: 'DEBTOR' | 'CREDITOR' };
 export type ParsedChart = { rows: ChartImportRow[]; parties: ParsedParty[]; sections: string[]; unknownSections: string[] };
 
-const PARTY_KIND: Record<string, ParsedParty['kind']> = { SDR: 'DEBTOR', SCR: 'CREDITOR' };
+const PARTY_KIND: Partial<Record<string, ParsedParty['kind']>> = { SDR: 'DEBTOR', SCR: 'CREDITOR' };
 
 /** Where the name and the special type sit. Houzs's export has them in columns 1 and 8; the Conts export in 3 and 16,
     under a "Description" header and a "Special Acc Type" label (on the header row or the row above). */
