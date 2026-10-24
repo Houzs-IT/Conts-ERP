@@ -271,6 +271,10 @@ export const chartImportHandler = async (c: any): Promise<Response> => {
     if (!seen.has(controlCode)) {
       return c.json({ error: 'bad_row', message: `${code} names control ${controlCode}, which is not in the file.` }, 400);
     }
+    const want = kind === 'DEBTOR' ? 'SDC' : 'SCC';
+    if (clean.find((r) => r.code === controlCode)?.special !== want) {
+      return c.json({ error: 'bad_row', message: `${code} is a ${kind === 'DEBTOR' ? 'customer' : 'supplier'} under ${controlCode}, which is not a ${kind === 'DEBTOR' ? 'customer control (SDC)' : 'supplier control (SCC)'}.` }, 400);
+    }
     parties.push({ code, name: String(p?.name).trim(), controlCode, kind });
   }
 
@@ -283,6 +287,24 @@ export const chartImportHandler = async (c: any): Promise<Response> => {
   }
 
   const sb = c.get('supabase');
+
+  /* Conts: a customer or supplier control is posted to directly, so it may have no sub-accounts — in the file or
+     already in the books (requireLeafAccount counts retired ones too). Customers and suppliers come in as parties. */
+  const controls = new Set(clean.filter((r) => r.special === 'SDC' || r.special === 'SCC').map((r) => r.code));
+  const strayInFile = clean.find((r) => r.parent && controls.has(r.parent));
+  if (strayInFile) {
+    return c.json({ error: 'bad_row', message: `${strayInFile.code} sits under ${strayInFile.parent}, a customer or supplier control: a control cannot have sub-accounts.` }, 400);
+  }
+  if (controls.size > 0) {
+    const { data: kids, error: kidsErr } = await sb.from('accounts').select('account_code, parent_code')
+      .eq('company_id', targetId).in('parent_code', [...controls]);
+    if (kidsErr) return c.json({ error: 'load_failed', reason: kidsErr.message }, 500);
+    const stray = ((kids ?? []) as Array<{ account_code: string; parent_code: string }>);
+    if (stray.length > 0) {
+      return c.json({ error: 'control_has_children', message: `These accounts sit under a customer or supplier control and must be moved or removed first: ${stray.map((k) => `${k.account_code} (under ${k.parent_code})`).join(', ')}.` }, 400);
+    }
+  }
+
   const toUpsert = (companyId: number, subset: typeof clean) => subset.map((r) => ({
     company_id: companyId,
     account_code: r.code,

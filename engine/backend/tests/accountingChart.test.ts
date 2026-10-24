@@ -257,6 +257,29 @@ describe('POST /chart/import with parties', () => {
     expect((await res.json() as { message: string }).message).toMatch(/301-M001 names control 301-0000/);
   });
 
+  /* A control with sub-accounts cannot be posted to (requireLeafAccount counts retired children too). */
+  test('an account under a customer or supplier control is refused', async () => {
+    const child = { code: '301-0001', name: 'STRAY', accountType: 'ASSET', parentCode: '301-0000', accMoney: false, shared: true };
+    const res = await post(harness({ accounts: [] }, { allowed: [1] }), '/chart/import', { companyId: 1, rows: [control, child] });
+    expect(res.status).toBe(400);
+    expect((await res.json() as { message: string }).message).toMatch(/301-0001 sits under 301-0000/);
+  });
+
+  test('an account already under a control in the books is refused, retired or not', async () => {
+    const tables: Record<string, Row[]> = { accounts: [acct(1, '301-0005', { parent_code: '301-0000', is_active: false })] };
+    const res = await post(harness(tables, { allowed: [1] }), '/chart/import', { companyId: 1, rows: [control] });
+    expect(res.status).toBe(400);
+    expect((await res.json() as { message: string }).message).toMatch(/301-0005/);
+  });
+
+  test('a customer must sit under a customer control, a supplier under a supplier control', async () => {
+    const res = await post(harness({ accounts: [] }, { allowed: [1] }), '/chart/import', {
+      companyId: 1, rows: [control, creditors], parties: [{ code: '400-M001', name: 'MS X', controlCode: '400-0000', kind: 'DEBTOR' }],
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json() as { message: string }).message).toMatch(/400-M001 .*customer control/);
+  });
+
   test('accepts up to 3000 rows and parties, refuses more', async () => {
     const many = Array.from({ length: 2999 }, (_, i) => ({ code: `301-M${String(i + 1).padStart(4, '0')}`, name: `C ${i}`, controlCode: '301-0000', kind: 'DEBTOR' }));
     const ok = await post(harness({ accounts: [], debtors: [] }, { allowed: [1] }), '/chart/import', { companyId: 1, rows: [control], parties: many });

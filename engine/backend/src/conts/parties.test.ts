@@ -77,3 +77,50 @@ describe('suggesting supplier matches', () => {
     expect(suggestSupplierMatches([{ id: 'h', code: '400-H006', name: 'HOOKKA' }], parties)).toEqual({});
   });
 });
+
+describe('suggesting supplier matches, best pair first', () => {
+  test('the closest creditor wins even when a weaker one comes first in the file', () => {
+    const r = suggestSupplierMatches([{ id: 'h', code: 'HOOKKA', name: 'HOOKKA INDUSTRIES SDN BHD' }], [
+      P('400-H001', 'HOOKKA TRADING', '400-0000', 'CREDITOR'),
+      P('400-H006', 'HOOKKA INDUSTRIES SDN BHD', '400-0000', 'CREDITOR'),
+    ]);
+    expect(r).toEqual({ '400-H006': 'h' });
+  });
+
+  test('a tie is left for finance to choose', () => {
+    expect(suggestSupplierMatches([{ id: 'h', code: 'HOOKKA', name: 'HOOKKA' }], [
+      P('400-H001', 'HOOKKA TRADING', '400-0000', 'CREDITOR'),
+      P('400-H006', 'HOOKKA INDUSTRIES', '400-0000', 'CREDITOR'),
+    ])).toEqual({});
+  });
+
+  test('a repeated word counts once', () => {
+    expect(suggestSupplierMatches([{ id: 'k', code: 'KK', name: 'K & K TRADING' }], [
+      P('400-K003', 'K & K GYPSUM MARKETING SDN BHD', '400-0000', 'CREDITOR'),
+    ])).toEqual({});
+  });
+});
+
+describe('importing parties, a batch already saved', () => {
+  test('a row that is already there counts as kept, not as an error', async () => {
+    const sb = fakeSb({ debtors: [], suppliers: [] }, {}, [{ table: 'debtors', column: 'code' }]);
+    // Another import wrote this code between the read and the insert.
+    const orig = sb.from.bind(sb);
+    let calls = 0;
+    (sb as { from: typeof sb.from }).from = ((t: string) => {
+      // The second call is the batch insert: the row lands just after the read saw nothing.
+      if (t === 'debtors' && ++calls === 2) sb.tables.debtors.push({ company_id: CO, code: '301-M001', name: 'X', control_account: '301-0000' });
+      return orig(t);
+    }) as typeof sb.from;
+    const r = await importParties(sb, CO, [P('301-M001', 'MS YAP', '301-0000', 'DEBTOR'), P('301-M002', 'MR LIM', '301-0000', 'DEBTOR')], {});
+    expect(r).toMatchObject({ debtors: 1, kept: 1, errors: [] });
+  });
+});
+
+describe('suggesting supplier matches, codes', () => {
+  test('a supplier already on another AutoCount-shaped code is left alone', () => {
+    expect(suggestSupplierMatches([{ id: 'h', code: '400-H999', name: 'HOOKKA INDUSTRIES SDN BHD' }], [
+      P('400-H006', 'HOOKKA INDUSTRIES SDN BHD', '400-0000', 'CREDITOR'),
+    ])).toEqual({});
+  });
+});

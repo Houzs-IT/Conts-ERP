@@ -36,7 +36,8 @@ const ICON = { size: 16, strokeWidth: 1.75 } as const;
 
 /* ── The AutoCount export, parsed (the scan page's discipline) ───────────── */
 
-const CODE_RE = /^(\s*)(\d{3}-[A-Za-z0-9]{4})\s*$/;
+/* Four characters after the dash, or more for a customer or supplier whose running number grew (301-M1000). */
+const CODE_RE = /^(\s*)(\d{3}-[A-Za-z0-9]{4,})\s*$/;
 
 /* The section headings → type map is NOT written here: the server hands the
    vocabulary down (GET /accounting/chart `sections`, one home in backend
@@ -53,28 +54,35 @@ const isExclusive = (code: string, special: string): boolean =>
 /* Conts (finance, 22 Oct 2026): a customer (SDR) or supplier (SCR) sub-account of AutoCount is a party under its
    control, not an account — the ledger posts to the control and names the party on the line. */
 export type ParsedParty = { code: string; name: string; controlCode: string; kind: 'DEBTOR' | 'CREDITOR' };
-export type ParsedChart = { rows: ChartImportRow[]; parties: ParsedParty[]; sections: string[]; unknownSections: string[] };
+/** error: why the file is not read at all (nothing else is filled then). */
+export type ParsedChart = { rows: ChartImportRow[]; parties: ParsedParty[]; sections: string[]; unknownSections: string[]; error: string | null };
 
 const PARTY_KIND: Partial<Record<string, ParsedParty['kind']>> = { SDR: 'DEBTOR', SCR: 'CREDITOR' };
 
 /** Where the name and the special type sit. Houzs's export has them in columns 1 and 8; the Conts export in 3 and 16,
     under a "Description" header and a "Special Acc Type" label (on the header row or the row above). */
-function columnsOf(grid: unknown[][]): { name: number; special: number } {
+function columnsOf(grid: unknown[][]): { name: number; special: number; header: boolean } {
   const norm = (v: unknown) => String(v ?? '').trim().toLowerCase();
-  const at = grid.findIndex((r) => norm(r[0]) === 'acc. no.');
-  if (at < 0) return { name: 1, special: 8 };
+  /* "Acc. No.", "Acc No", "Account No." — the spellings an export can carry. */
+  const at = grid.findIndex((r) => /^acc(ount)?\.?\s*no\.?$/.test(norm(r[0])));
+  if (at < 0) return { name: 1, special: 8, header: false };
   const name = grid[at]!.findIndex((v) => norm(v) === 'description');
   const label = [grid[at]!, grid[at - 1] ?? []].map((r) => r.findIndex((v) => norm(v) === 'special acc type')).find((i) => i >= 0);
-  if (label === undefined) return { name: name >= 0 ? name : 1, special: 8 };
+  if (label === undefined) return { name: name >= 0 ? name : 1, special: 8, header: true };
   /* The label is a merged cell: the codes sit under it or one column to its right. Take the column that holds them. */
   const codes = (i: number) => grid.filter((r) => CODE_RE.test(String(r[0] ?? '')) && /^[A-Z]{2,4}$/.test(String(r[i] ?? '').trim())).length;
-  return { name: name >= 0 ? name : 1, special: codes(label + 1) > codes(label) ? label + 1 : label };
+  return { name: name >= 0 ? name : 1, special: codes(label + 1) > codes(label) ? label + 1 : label, header: true };
 }
 
 export function parseChartXlsx(wb: XLSX.WorkBook, known: ReadonlyArray<AccountSection>): ParsedChart {
   const sheet = wb.Sheets[wb.SheetNames[0]!];
   const grid = XLSX.utils.sheet_to_json<unknown[]>(sheet!, { header: 1, raw: false });
   const col = columnsOf(grid);
+  /* Without its header a Conts export (names in column 3) would read the old way: every name lost, every customer
+     a sub-account of its control. Refuse it rather than guess. */
+  if (!col.header && grid.some((r) => CODE_RE.test(String(r[0] ?? '')) && !String(r[1] ?? '').trim() && String(r[3] ?? '').trim())) {
+    return { rows: [], parties: [], sections: [], unknownSections: [], error: 'The "Acc. No." header row is missing, so the columns cannot be told apart. Export the chart from AutoCount again with its header.' };
+  }
   const typeOf = new Map(known.map((s) => [s.section, s.type]));
   const rows: ChartImportRow[] = [];
   const parties: ParsedParty[] = [];
@@ -120,7 +128,7 @@ export function parseChartXlsx(wb: XLSX.WorkBook, known: ReadonlyArray<AccountSe
       shared: !isExclusive(code, special),
     });
   }
-  return { rows, parties, sections, unknownSections };
+  return { rows, parties, sections, unknownSections, error: null };
 }
 
 /* ── The tree order: parents first, children under them ──────────────────── */
@@ -482,18 +490,30 @@ export const ChartOfAccounts = () => {
     try {
       const wb = XLSX.read(await f.arrayBuffer(), { type: 'array' });
       const p = parseChartXlsx(wb, sections);
+      if (p.error) {
+        void notify({ title: 'Could not read the file', body: p.error, tone: 'error' });
+        return;
+      }
       if (p.rows.length === 0) {
         void notify({ title: 'Nothing to import', body: 'No account codes were found in the file — is this the AutoCount chart export?', tone: 'error' });
         return;
       }
-      setParsed(p);
-      setErpSuppliers([]);
-      setSupplierPick({});
+      /* The pairing comes first: shown before it, an import could add HOOKKA a second time under its AutoCount code. */
+      let suppliersHere: { id: string; code: string; name: string }[] = [];
+      let pick: Record<string, string> = {};
       if (p.parties.some((x) => x.kind === 'CREDITOR')) {
-        const m = await doMatch.mutateAsync({ companyId: 1, parties: p.parties });
-        setErpSuppliers(m.suppliers.filter((x) => !p.parties.some((y) => y.kind === 'CREDITOR' && y.code === x.code)));
-        setSupplierPick(Object.fromEntries(Object.entries(m.matches).map(([code, id]) => [id, code])));
+        try {
+          const m = await doMatch.mutateAsync({ companyId: 1, parties: p.parties });
+          suppliersHere = m.suppliers.filter((x) => !p.parties.some((y) => y.kind === 'CREDITOR' && y.code === x.code));
+          pick = Object.fromEntries(Object.entries(m.matches).map(([code, id]) => [id, code]));
+        } catch (e) {
+          void notify({ title: 'Could not pair the suppliers', body: `${e instanceof Error ? e.message : 'Something went wrong.'} Nothing was imported; try the file again.`, tone: 'error' });
+          return;
+        }
       }
+      setErpSuppliers(suppliersHere);
+      setSupplierPick(pick);
+      setParsed(p);
     } catch (e) {
       void notify({ title: 'Could not read the file', body: e instanceof Error ? e.message : 'Something went wrong.', tone: 'error' });
     }

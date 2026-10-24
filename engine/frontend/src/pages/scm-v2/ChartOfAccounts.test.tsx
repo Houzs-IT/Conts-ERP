@@ -146,6 +146,45 @@ describe('parseChartXlsx — the AutoCount report shape', () => {
     expect(p.rows.filter((r) => r.parentCode === '301-0000' || r.parentCode === '400-0000')).toEqual([]);
   });
 
+  test('codes with a longer running number are read', () => {
+    const aoa = [
+      at({ 15: 'Special Acc Type' }),
+      at({ 0: 'Acc. No.', 3: 'Description', 9: 'Currency' }),
+      ['CURRENT ASSETS'],
+      at({ 0: '301-0000', 3: 'RENOVATION CUSTOMER', 16: 'SDC' }),
+      at({ 0: '    301-M1000', 3: 'MR TAN', 16: 'SDR' }),
+    ];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), 'Sheet');
+    expect(parseChartXlsx(wb, SECTIONS).parties.map((p) => p.code)).toEqual(['301-M1000']);
+  });
+
+  /* Read the old way, a Conts file would lose every name and turn its customers into sub-accounts of their controls. */
+  test('a file laid out like the Conts export but without its header is refused', () => {
+    const aoa = [
+      ['CURRENT ASSETS'],
+      at({ 0: '301-0000', 3: 'RENOVATION CUSTOMER', 16: 'SDC' }),
+      at({ 0: '    301-M001', 3: 'MS YAP', 16: 'SDR' }),
+    ];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), 'Sheet');
+    const p = parseChartXlsx(wb, SECTIONS);
+    expect(p.error).toMatch(/Acc. No./);
+    expect(p.rows).toEqual([]);
+  });
+
+  test('a header spelt Acc No reads the same', () => {
+    const aoa = [
+      at({ 15: 'Special Acc Type' }),
+      at({ 0: 'Acc No', 3: 'Description', 9: 'Currency' }),
+      ['CURRENT ASSETS'],
+      at({ 0: '310-0010', 3: 'HONG LEONG BANK', 16: 'SBK' }),
+    ];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), 'Sheet');
+    expect(parseChartXlsx(wb, SECTIONS).rows[0]).toMatchObject({ name: 'HONG LEONG BANK', accMoney: true });
+  });
+
   test('the old layout reads as before and has no parties', () => {
     const aoa = [
       ['Acc. No.', 'Description', null, 'Currency'],
@@ -449,6 +488,26 @@ describe('the upload preview', () => {
   });
 
   /* Conts: customers and suppliers come in as parties; the ERP's own suppliers are paired to AutoCount's by name. */
+  test('no preview when the suppliers could not be paired, so nothing imports unpaired', async () => {
+    importAsync.mockClear();
+    matchAsync.mockRejectedValueOnce(new Error('offline'));
+    draw();
+    const cells = (m: Record<number, string>) => { const r: (string | null)[] = Array.from({ length: 17 }, () => null); for (const [i, v] of Object.entries(m)) r[Number(i)] = v; return r; };
+    const aoa = [
+      cells({ 15: 'Special Acc Type' }), cells({ 0: 'Acc. No.', 3: 'Description', 9: 'Currency' }), ['CURRENT LIABILITIES'],
+      cells({ 0: '400-0000', 3: 'TRADE CREDITORS', 16: 'SCC' }), cells({ 0: '    400-H006', 3: 'HOOKKA MANUFACTURING SDN BHD', 16: 'SCR' }),
+    ];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), 'Sheet');
+    const buf = XLSX.write(wb, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer;
+    const file = new File([buf], 'chart.xlsx');
+    Object.defineProperty(file, 'arrayBuffer', { value: async () => buf });
+    fireEvent.change(screen.getByLabelText(/Upload AutoCount chart/), { target: { files: [file] } });
+    await waitFor(() => expect(matchAsync).toHaveBeenCalled());
+    await new Promise((r) => setTimeout(r, 20));
+    expect(screen.queryByText('Ready to import')).toBeNull();
+  });
+
   test('counts customers and suppliers apart and sends the supplier pairs finance confirmed', async () => {
     importAsync.mockClear();
     draw();

@@ -38,7 +38,9 @@ async function insertChunks(sb: Db, table: string, rows: Record<string, unknown>
     if (!error) { out[count] += chunk.length; continue; }
     for (const r of chunk) {
       const one = await sb.from(table).insert(r);
-      if (one.error) out.errors.push({ code: String(r.code), error: one.error.message });
+      // Already there (another import, or this batch saved before its answer was lost): kept, not an error.
+      if (one.error?.code === '23505') out.kept += 1;
+      else if (one.error) out.errors.push({ code: String(r.code), error: one.error.message });
       else out[count] += 1;
     }
   }
@@ -113,27 +115,36 @@ function words(name: string): string[] {
     .split(/\s+/).filter(Boolean);
 }
 
-/** Which ERP supplier each AutoCount creditor most likely is: same first word, and at least half the words of the
-    shorter name in common. Each side is paired once; a supplier already on an AutoCount code is left alone. */
+/** Which ERP supplier each AutoCount creditor most likely is. A pair scores the words the two names share over the
+    words of the longer one (each word once), and needs the same first word and a score of at least a half. The best
+    pairs are taken first, each side once; a supplier whose best score is shared by two creditors is left for finance
+    to choose, and so is one already on an AutoCount code. */
 export function suggestSupplierMatches(
   existing: Array<{ id: string; code: string; name: string }>, parties: ParsedParty[],
 ): Record<string, string> {
-  const out: Record<string, string> = {};
-  const taken = new Set<string>();
-  const creditorCodes = new Set(parties.filter((p) => p.kind === 'CREDITOR').map((p) => p.code));
+  const creditors = parties.filter((p) => p.kind === 'CREDITOR');
+  const creditorCodes = new Set(creditors.map((p) => p.code));
   const candidates = existing.filter((s) => !creditorCodes.has(s.code) && !/^\d{3}-/.test(s.code));
-  for (const p of parties.filter((x) => x.kind === 'CREDITOR')) {
-    const pw = words(p.name);
-    let best: { id: string; score: number } | null = null;
-    for (const s of candidates) {
-      if (taken.has(s.id)) continue;
-      const sw = words(s.name);
+  const pairs: Array<{ id: string; code: string; score: number }> = [];
+  for (const s of candidates) {
+    const sw = [...new Set(words(s.name))];
+    for (const p of creditors) {
+      const pw = [...new Set(words(p.name))];
       if (pw.length === 0 || sw.length === 0 || pw[0] !== sw[0]) continue;
-      const common = pw.filter((w) => sw.includes(w)).length;
-      const score = common / Math.min(pw.length, sw.length);
-      if (score >= 0.5 && (!best || score > best.score)) best = { id: s.id, score };
+      const score = pw.filter((w) => sw.includes(w)).length / Math.max(pw.length, sw.length);
+      if (score >= 0.5) pairs.push({ id: s.id, code: p.code, score });
     }
-    if (best) { out[p.code] = best.id; taken.add(best.id); }
+  }
+  const tied = new Set(candidates.map((s) => s.id).filter((id) => {
+    const scores = pairs.filter((x) => x.id === id).map((x) => x.score).sort((a, b) => b - a);
+    return scores.length > 1 && scores[0] === scores[1];
+  }));
+  const out: Record<string, string> = {};
+  const usedSuppliers = new Set<string>();
+  for (const x of pairs.filter((y) => !tied.has(y.id)).sort((a, b) => b.score - a.score)) {
+    if (usedSuppliers.has(x.id) || x.code in out) continue;
+    out[x.code] = x.id;
+    usedSuppliers.add(x.id);
   }
   return out;
 }
