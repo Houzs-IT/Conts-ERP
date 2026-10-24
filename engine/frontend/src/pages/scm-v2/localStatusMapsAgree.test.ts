@@ -63,7 +63,6 @@ const PAGES: ReadonlyArray<readonly [rel: string, docType: StatusDocType]> = [
   ['pages/scm-v2/SalesInvoiceDetailV2.tsx', 'si'],
   ['pages/scm-v2/SalesOrderDetailV2.tsx', 'so'],
   ['pages/scm-v2/so-list-status.ts', 'so'],
-  ['pages/scm-v2/DeliveryOrderDetailV2.tsx', 'do'],
   ['pages/scm-v2/do-list-status.ts', 'do'],
   ['pages/scm-v2/DeliveryReturnsListV2.tsx', 'dr'],
   ['pages/scm-v2/DeliveryReturnDetailV2.tsx', 'dr'],

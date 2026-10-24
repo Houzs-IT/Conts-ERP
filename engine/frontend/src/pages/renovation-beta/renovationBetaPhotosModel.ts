@@ -73,20 +73,23 @@ export interface PhotoCard {
 
 export interface PhotoDay { day: string | null; cards: PhotoCard[] }
 
-/** Days newest first; in a day, photos that follow each other with the same event become one card. The list must
-    already be newest first (the server sorts it). Undated photos come last, under "No date". */
+/** Days newest first; in a day, every photo of one source document or defect (its group key) is one card, wherever it
+    falls in the day, so a defect's before and after or a DO's several PODs no longer make a card each. A card sits at
+    its newest photo's time and cards keep newest first. The list must already be newest first (the server sorts it).
+    Undated photos come last, under "No date". */
 export function photoTimeline(photos: readonly ProjectPhoto[]): PhotoDay[] {
   const days: PhotoDay[] = [];
+  const cardOf = new Map<string, PhotoCard>();
   for (const p of photos) {
     const day = p.at ? mytDayOf(p.at) : null;
-    let g = days.at(-1);
-    if (!g || g.day !== day) { g = { day, cards: [] }; days.push(g); }
-    const last = g.cards.at(-1);
-    if (last && last.key === p.group.key) {
-      last.items.push(p);
-      continue;
-    }
-    g.cards.push({ key: p.group.key, at: p.at, category: p.category, title: p.group.title, label: null, items: [p] });
+    let g = days.find((d) => d.day === day);
+    if (!g) { g = { day, cards: [] }; days.push(g); }
+    const k = `${day ?? ""}|${p.group.key}`;
+    const card = cardOf.get(k);
+    if (card) { card.items.push(p); continue; }
+    const fresh: PhotoCard = { key: p.group.key, at: p.at, category: p.category, title: p.group.title, label: null, items: [p] };
+    cardOf.set(k, fresh);
+    g.cards.push(fresh);
   }
   for (const d of days) {
     for (const c of d.cards) {
@@ -109,4 +112,9 @@ export function mediaCount(items: ReadonlyArray<Pick<ProjectPhoto, "kind">>): st
 /** The card's one line: "3:42 pm · DO TC-DO-2610-003 · POD · 2 photos". */
 export function cardLine(c: PhotoCard): string {
   return [clockOf(c.at), c.title, c.label, mediaCount(c.items)].filter(Boolean).join(" · ");
+}
+
+/** The card's top line beside its category chip: "3:42 pm · POD · 2 photos"; the title goes on the line under it. */
+export function cardMeta(c: PhotoCard): string {
+  return [clockOf(c.at), c.label, mediaCount(c.items)].filter(Boolean).join(" · ");
 }

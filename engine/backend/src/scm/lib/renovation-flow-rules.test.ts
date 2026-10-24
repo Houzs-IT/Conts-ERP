@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   ADDRESS_FIT_ON_SAVE, SOFA_MIX_RULE_ON, brandingFromLineBrands, buildingTypeFromProperty, customerGoodsCodes,
-  deliveredOnTimestamp, isCustomerGoods, poMissingAxesForSoLine, renovationDoSiteFields, soLineRemarkOf,
+  deliveredOnTimestamp, doBrandingFromLines, isCustomerGoods, poMissingAxesForSoLine, renovationDoSiteFields, soLineRemarkOf,
 } from './renovation-flow-rules';
 import { createMixRefusal, lineMixRefusal, amendmentMixRefusal } from './main-mix';
 import { fitAddressIfTouched } from './so-address-on-save';
@@ -115,5 +115,35 @@ describe('an SO address is stored as typed', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- the helper only reads the context when it fits
     await fitAddressIfTouched(fakeSb({ mfg_sales_orders: [] }), {} as any, 'SO-1', updates);
     expect(updates).toEqual({ address1: 'TESTING T-01-01, Jalan Testing', address2: 'TESTING - test project, not a real customer' });
+  });
+});
+
+describe('a new DO takes its branding from its lines, not the SO header (TESTING, TC-SO-2610-002)', () => {
+  /* The lines and SKUs of TC-SO-2610-002 as production holds them; the SO header says AKEMI. */
+  const sb = () => fakeSb({
+    mfg_sales_order_items: [
+      { id: 'pillow', branding: 'HOOKKA INDUSTRIES SDN BHD' },
+      { id: 'bed-q', branding: 'HOOKKA INDUSTRIES SDN BHD' },
+      { id: 'matt-q', branding: 'AKEMI' },
+      { id: 'track', branding: null },
+    ],
+    mfg_products: [
+      { code: 'ACC-HKA-LONGPILLOW', company_id: 1, branding: 'HOOKKA INDUSTRIES SDN BHD' },
+      { code: 'BED-HKA-1003-(Q)', company_id: 1, branding: 'HOOKKA INDUSTRIES SDN BHD' },
+      { code: 'AKEMI APEX MATT (Q)', company_id: 1, branding: 'AKEMI' },
+      { code: 'TRK-LTW-IMI-TR16-12W-WH-4K', company_id: 1, branding: 'LOT WIN LED LIGHTINGS (PUCHONG) SDN BHD' },
+    ],
+  });
+  it('the Hookka bed DO (like TC-DO-2610-002) reads Hookka, not AKEMI', async () => {
+    expect(await doBrandingFromLines(sb(), [
+      { itemCode: 'ACC-HKA-LONGPILLOW', soItemId: 'pillow' }, { itemCode: 'BED-HKA-1003-(Q)', soItemId: 'bed-q' },
+    ], 1)).toBe('HOOKKA INDUSTRIES SDN BHD');
+  });
+  it('a line with no brand of its own takes the SKU brand; mixed lines list both', async () => {
+    expect(await doBrandingFromLines(sb(), [{ itemCode: 'TRK-LTW-IMI-TR16-12W-WH-4K', soItemId: 'track' }], 1))
+      .toBe('LOT WIN LED LIGHTINGS (PUCHONG) SDN BHD');
+    expect(await doBrandingFromLines(sb(), [
+      { itemCode: 'AKEMI APEX MATT (Q)', soItemId: 'matt-q' }, { itemCode: 'BED-HKA-1003-(Q)', soItemId: 'bed-q' },
+    ], 1)).toBe('AKEMI / HOOKKA INDUSTRIES SDN BHD');
   });
 });

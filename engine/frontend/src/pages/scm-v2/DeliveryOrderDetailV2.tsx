@@ -102,6 +102,7 @@ import { isFocLine } from '../../vendor/scm/lib/foc-line';
 import { CollectedOnOrderCard } from "../../vendor/scm/components/CollectedOnOrderCard";
 import { RenovationDocBlock, renoLineColumns, useRenoDocInfo } from "./RenovationDocInfo";
 import { MarkDeliveredButton } from "./renovationDoDelivered";
+import { doDeliveredDay, doStatusWords } from "./renovationDoStatus";
 // ─── Header + item shapes (subset — full 40-field row lives in the list V2) ─
 
 type DoLifecycle = "shipped" | "invoiced" | "returned";
@@ -114,6 +115,9 @@ type DoHeader = HoldFields & {
   do_date: string;
   expected_delivery_at: string | null;
   customer_delivery_date: string | null;
+  /* The day the goods arrived (office Mark delivered or driver POD) and the delivered moment. */
+  customer_delivered_date?: string | null;
+  delivered_at?: string | null;
   debtor_code: string | null;
   debtor_name: string;
   salesperson_id: string | null;
@@ -230,66 +234,16 @@ const soOf = (h: DoHeader): string => h.so_doc_no || "—";
 
 const brandOf = (h: DoHeader): string => h.branding || "—";
 
-type Effective = "draft" | "shipped" | "invoiced" | "returned" | "cancelled";
-const effectiveOf = (h: DoHeader): Effective => {
-  const s = (h.status || "").toUpperCase();
-  if (s === "CANCELLED") return "cancelled";
-  if (s === "DRAFT") return "draft";
-  if (h.lifecycle_state === "returned") return "returned";
-  if (h.lifecycle_state === "invoiced") return "invoiced";
-  return "shipped";
-};
+/* Status words, tone and "has it arrived" come from the one DO status map (renovationDoStatus.ts), so this page,
+   the DO list and the Beta workspace say the same thing for the same row. */
+const statusOf = (h: DoHeader) => doStatusWords(h.status, h.lifecycle_state);
 
-const EFFECTIVE_TONE: Record<
-  Effective,
-  { tone: "success" | "warning" | "error" | "neutral"; label: string; blurb: string }
-> = {
-  draft: {
-    tone: "warning",
-    label: "Draft",
-    blurb: "Draft · not yet shipped",
-  },
-  shipped: {
-    tone: "warning",
-    label: "Ready to dispatch",
-    blurb: "Scheduled · goods on the road",
-  },
-  invoiced: {
-    tone: "success",
-    label: "Invoiced",
-    blurb: "Invoiced · SI issued",
-  },
-  returned: {
-    tone: "error",
-    label: "Returned",
-    blurb: "Returned · goods came back",
-  },
-  cancelled: {
-    tone: "error",
-    label: "Cancelled",
-    blurb: "Cancelled · no further action",
-  },
-};
-
-// Fine-grained stage label — kept for the sticky header Badge so ops sees
-// the exact stored status (Confirmed / Loaded / In transit / Signed / …)
-// even when the effective bucket collapses to "shipped".
-//
-// DISPATCHED reads "Loaded" since 2026-08-26 (owner), matching status-pill.ts.
-// It said "Dispatched" here and "Shipped" everywhere else — the same stored
-// value under two words on two screens — and neither of them was what the step
-// means on the three-scan flow: DISPATCHED is the pallet ON the lorry, and
-// departure is IN_TRANSIT. The stored value is untouched.
-const STAGE_LABEL: Record<string, string> = {
-  DRAFT: "Draft",
-  LOADED: "Confirmed",
-  DISPATCHED: "Loaded",
-  IN_TRANSIT: "In transit",
-  SIGNED: "Signed",
-  DELIVERED: "Delivered",
-  INVOICED: "Invoiced",
-  RETURNED: "Returned",
-  CANCELLED: "Cancelled",
+/** Key dates > Delivered: the day it arrived once delivered, else what the status says, else Pending. */
+const deliveredKeyDate = (h: DoHeader): string => {
+  const st = statusOf(h);
+  if (!st.delivered) return st.tone === "error" ? st.label : "Pending";
+  const day = doDeliveredDay(h);
+  return day ? fmtDate(day) : st.label;
 };
 
 const initialsOf = (name: string | null | undefined): string => {
@@ -541,8 +495,7 @@ function DeliveryStatusCard({
   header: DoHeader;
   totalQty: number;
 }) {
-  const eff = effectiveOf(header);
-  const t = EFFECTIVE_TONE[eff];
+  const t = statusOf(header);
   return (
     <div className="rounded-lg bg-sidebar px-5 py-5 text-sidebar-ink shadow-stone">
       <div className="font-mono text-[10px] font-semibold uppercase tracking-brand text-sidebar-ink-muted">
@@ -565,7 +518,9 @@ function DeliveryStatusCard({
           )}
         />
         <span className="text-[12.5px] text-sidebar-ink-muted">
-          {header.customer_delivery_date
+          {t.delivered && doDeliveredDay(header)
+            ? `Delivered ${fmtDate(doDeliveredDay(header))}`
+            : header.customer_delivery_date
             ? `Scheduled ${fmtDate(header.customer_delivery_date)}`
             : header.expected_delivery_at
               ? `Expected ${fmtDate(header.expected_delivery_at)}`
@@ -695,12 +650,8 @@ export function DeliveryOrderDetailV2() {
   const openPrintPreview = useCallback(() => setModal("print"), []);
   useOpenPrintPreviewFromUrl(openPrintPreview, !!deliveryOrder);
 
-  const eff = deliveryOrder ? effectiveOf(deliveryOrder) : null;
-  const stageLabel = deliveryOrder
-    ? STAGE_LABEL[(deliveryOrder.status || "").toUpperCase()] ??
-      deliveryOrder.status
-    : "";
-  const badgeTone = eff ? EFFECTIVE_TONE[eff].tone : "neutral";
+  const stageLabel = deliveryOrder ? statusOf(deliveryOrder).label : "";
+  const badgeTone = deliveryOrder ? statusOf(deliveryOrder).tone : "neutral";
 
   const foldedNote = useMemo(
     () => deliveryOrder?.note || deliveryOrder?.notes || null,
@@ -1283,11 +1234,13 @@ export function DeliveryOrderDetailV2() {
             Delivery status
           </div>
           <div className="mt-1 font-display text-[22px] font-bold leading-tight text-ink">
-            {EFFECTIVE_TONE[effectiveOf(deliveryOrder)].label}
+            {statusOf(deliveryOrder).label}
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-ink-muted">
             <span>
-              {deliveryOrder.customer_delivery_date
+              {statusOf(deliveryOrder).delivered && doDeliveredDay(deliveryOrder)
+                ? `Delivered ${fmtDate(doDeliveredDay(deliveryOrder))}`
+                : deliveryOrder.customer_delivery_date
                 ? `Scheduled ${fmtDate(deliveryOrder.customer_delivery_date)}`
                 : deliveryOrder.expected_delivery_at
                   ? `Expected ${fmtDate(deliveryOrder.expected_delivery_at)}`
@@ -1540,8 +1493,8 @@ export function DeliveryOrderDetailV2() {
                 />
                 <KeyDateRow
                   k="Delivered"
-                  v={effectiveOf(deliveryOrder) === "shipped" ? "Pending" : EFFECTIVE_TONE[effectiveOf(deliveryOrder)].label}
-                  muted={effectiveOf(deliveryOrder) === "shipped" || effectiveOf(deliveryOrder) === "draft"}
+                  v={deliveredKeyDate(deliveryOrder)}
+                  muted={!statusOf(deliveryOrder).delivered}
                 />
               </AsideCard>
 
@@ -1613,12 +1566,12 @@ export function DeliveryOrderDetailV2() {
                   fetch), mirroring SalesOrderDetailV2's aside card. */}
               <AsideCard title="Recent activity">
                 <ActivityRow
-                  title={`Status · ${EFFECTIVE_TONE[effectiveOf(deliveryOrder)].label}`}
+                  title={`Status · ${statusOf(deliveryOrder).label}`}
                   meta={fmtDate(deliveryOrder.do_date)}
                   dot={
-                    EFFECTIVE_TONE[effectiveOf(deliveryOrder)].tone === "success"
+                    statusOf(deliveryOrder).tone === "success"
                       ? "success"
-                      : EFFECTIVE_TONE[effectiveOf(deliveryOrder)].tone === "error"
+                      : statusOf(deliveryOrder).tone === "error"
                         ? "muted"
                         : "primary"
                   }

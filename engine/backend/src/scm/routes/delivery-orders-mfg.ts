@@ -100,7 +100,7 @@ import { soRemainingByItemId } from '../lib/so-remaining-by-item';
 import { lineLinkItemMismatch, assertLinkedLineItemsMatch } from '../lib/line-link-item-identity';
 import { checkStockAvailability, shortStockResponse, stockCheckableLines, uncoveredStockCheckLines, type StockShortage } from '../lib/check-stock-availability';
 /* Conts switches: customer-supplied lines hold no stock; a renovation DO takes its site and brand from its own SO and lines. */
-import { customerGoodsCodes, deliveredOnTimestamp, doBrandingFromLines, renovationDoSiteFields } from '../lib/renovation-flow-rules';
+import { customerGoodsCodes, deliveredPatch, doBrandingFromLines, renovationDoSiteFields } from '../lib/renovation-flow-rules';
 import { findSofaLinesWithoutCompleteBatch, sofaNoCompleteBatchResponse, findIncompleteSofaSets, sofaIncompleteSetResponse, detectSofaSoItemIds } from '../lib/sofa-batch-guard';
 import { resolveExpectedBatchBySoItem, buildDropshipOffenders } from '../lib/dropship-batch';
 import {
@@ -305,7 +305,7 @@ async function prepareSoAmendMirrorAudit(
    per-category totals + costs) extend it. */
 const HEADER =
   'id, do_number, so_doc_no, debtor_code, debtor_name, do_date, expected_delivery_at, ' +
-  'customer_delivery_date, signed_at, delivered_at, dispatched_at, ' +
+  'customer_delivery_date, customer_delivered_date, delivery_state, signed_at, delivered_at, dispatched_at, ' +
   'driver_id, driver_name, vehicle, m3_total_milli, ' +
   'address1, address2, city, state, postcode, phone, ' +
   'salesperson_id, agent, email, customer_type, building_type, branding, venue, venue_id, ref, ' +
@@ -5133,7 +5133,7 @@ export const patchDeliveryOrderStatusHandler = async (c: any) => {
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
   const { data: cur } = await scopeToCompanyId(
-    sb.from('delivery_orders').select('status, so_doc_no').eq('id', id), co.companyId,
+    sb.from('delivery_orders').select('status, so_doc_no, customer_delivered_date').eq('id', id), co.companyId,
   ).maybeSingle();
   if (!cur) return c.json(NOT_THIS_COMPANY, 404);
   const prevStatus = (cur as { status: string }).status;
@@ -5199,12 +5199,15 @@ export const patchDeliveryOrderStatusHandler = async (c: any) => {
   const tsNum: Record<string, number> = {};
   if (toStatus === 'DISPATCHED') ts.dispatched_at = now;
   if (toStatus === 'SIGNED')     ts.signed_at = now;
-  /* Conts office "Mark delivered" may name the day the goods arrived (renovation-flow-rules.ts). */
-  const deliveredOn = toStatus === 'DELIVERED' ? deliveredOnTimestamp(body.deliveredOn, now) : null;
-  if (deliveredOn === 'invalid') {
+  /* DELIVERED writes the same columns for the driver POD and the office "Mark delivered", which may name the day
+     the goods arrived (renovation-flow-rules.ts deliveredPatch). */
+  const delivered = toStatus === 'DELIVERED'
+    ? deliveredPatch(body.deliveredOn, now, (cur as { customer_delivered_date?: string | null }).customer_delivered_date)
+    : null;
+  if (delivered === 'invalid') {
     return c.json({ error: 'invalid_delivered_on', reason: 'The delivery date must be a real date, not in the future.' }, 400);
   }
-  if (toStatus === 'DELIVERED')  ts.delivered_at = deliveredOn ?? now;
+  if (delivered) Object.assign(ts, delivered);
   /* POD capture — the mobile app posts the proof-of-delivery signature +
      photo alongside the status flip. Persist them to the existing columns
      (signature_data, pod_r2_key) so a DELIVERED DO keeps its signature +

@@ -78,7 +78,7 @@ export interface BoardRowV2 {
   startDate?: string | null;
   endDate?: string | null;
   /** The current step against its SLA (owner, 16 Oct 2026); null in Closed or before migration 0121. */
-  sla?: { days: number | null; daysIn: number | null; overdueBy: number | null } | null;
+  sla?: { days: number | null; daysIn: number | null; overdueBy: number | null; enteredOn?: string | null } | null;
   redFlagCount: number;
   /** Optional: an engine older than 15 Oct 2026 sends only the count. */
   redFlags?: Array<{ code: string; text: string }>;

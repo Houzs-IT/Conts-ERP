@@ -186,6 +186,24 @@ export function MediaRow({ items, label, size = 96 }: { items: readonly MediaIte
   );
 }
 
+/** One row of large thumbnails that scrolls sideways when there are more than fit (Site & photos cards). */
+export function MediaStrip({ items, label, size = 132 }: { items: readonly MediaItem[]; label: string; size?: number }): ReactElement | null {
+  const [open, setOpen] = useState<number | null>(null);
+  if (items.length === 0) return null;
+  return (
+    <>
+      <ul aria-label={label} style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", gap: 8, overflowX: "auto", scrollSnapType: "x proximity", minWidth: 0 }}>
+        {items.map((m, i) => (
+          <li key={m.id} style={{ flex: `0 0 ${size}px`, width: size, height: size, borderRadius: MEDIA_RADIUS, overflow: "hidden", scrollSnapAlign: "start" }}>
+            <MediaTile item={m} onClick={() => setOpen(i)} />
+          </li>
+        ))}
+      </ul>
+      {open != null && <MediaLightbox items={items} index={open} onIndex={setOpen} onClose={() => setOpen(null)} />}
+    </>
+  );
+}
+
 function when(at: string | null | undefined): string | null {
   if (!at) return null;
   const t = Date.parse(at);
