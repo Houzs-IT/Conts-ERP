@@ -36,6 +36,8 @@ export interface StepSlaView {
   steps: StepSlaStep[]; totalDays: number | null;
 }
 
+export type FinanceKind = "RENOVATION" | "INHOUSE_RENOVATION";
+
 export interface ProjectDetailV2 extends Omit<ProjectDetail, "tasks"> {
   flow: FlowView;
   /** null before migration 0121 (or from an older engine) */
@@ -164,6 +166,8 @@ export const simpleApi = {
   /** A project's own days for one of its steps; useDefault puts it back on the default. */
   setStepSla: (id: number, key: FlowStepKey, b: { days: number | null } | { useDefault: true }) => api.put<{ ok: true; days: number | null }>(`${R}/${id}/step-sla/${key}`, b),
   setPlannedHandover: (id: number, date: string | null) => api.patch<{ ok: true }>(`${R}/${id}`, { plannedHandoverDate: date }),
+  /** Renovation or inhouse renovation (Conts, finance phase 1.5); null follows the quotation's brand. */
+  setFinanceKind: (id: number, kind: FinanceKind | null) => api.patch<{ ok: true }>(`${R}/${id}`, { financeKind: kind }),
   crewAssignments: () => api.get<{ data: CrewAssignment[] }>(`${R}/crew-assignments`),
   patchFlowStep: (key: FlowStepKey, b: Partial<{ label: string; sortOrder: number; active: boolean }>) => api.patch<{ ok: true }>(`${R}/flow-steps/${key}`, b),
   taskCategories: () => api.get<{ data: TaskCategoryRow[] }>(`${R}/task-categories`),

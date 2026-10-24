@@ -297,3 +297,42 @@ describe('opening a debtor inside a renovation transaction', () => {
     expect(await ensureDebtorSql(db, CO, { name: 'MR TAN', phone: null, customerId: 'c-7', orderKind: 'RENOVATION' })).toBe('301-M002');
   });
 });
+
+describe('the kind of a renovation contract, for its customer control', () => {
+  /* The two questions it asks — the project's own kind, the brand's — answered from memory. */
+  const db = (projectKind: string | null, brandKind: string | null) => ({
+    async q<T>(text: string): Promise<T[]> {
+      if (/from public\.projects/.test(text)) return [{ finance_kind: projectKind }] as T[];
+      if (/from public\.project_brands/.test(text)) return [{ finance_kind: brandKind }] as T[];
+      throw new Error(`unexpected ${text}`);
+    },
+  });
+
+  test('follows the brand: The Conts is inhouse renovation, Dream Crafter renovation', async () => {
+    const { contractOrderKind } = await import('./parties');
+    expect(await contractOrderKind(db(null, 'INHOUSE_RENOVATION'), 7, 2)).toBe('INHOUSE_RENOVATION');
+    expect(await contractOrderKind(db(null, 'RENOVATION'), 7, 1)).toBe('RENOVATION');
+  });
+
+  test('a kind the project names wins over the brand', async () => {
+    const { contractOrderKind } = await import('./parties');
+    expect(await contractOrderKind(db('RENOVATION', 'INHOUSE_RENOVATION'), 7, 2)).toBe('RENOVATION');
+  });
+
+  test('neither says: renovation', async () => {
+    const { contractOrderKind } = await import('./parties');
+    expect(await contractOrderKind(db(null, null), 7, 2)).toBe('RENOVATION');
+    expect(await contractOrderKind(db(null, null), null, null)).toBe('RENOVATION');
+  });
+});
+
+describe("a project's kind as typed", () => {
+  test('renovation, inhouse renovation, or blank to follow the brand; anything else is refused', async () => {
+    const { financeKindFrom } = await import('./parties');
+    expect(financeKindFrom('INHOUSE_RENOVATION')).toEqual({ ok: true, value: 'INHOUSE_RENOVATION' });
+    expect(financeKindFrom('RENOVATION')).toEqual({ ok: true, value: 'RENOVATION' });
+    expect(financeKindFrom('')).toEqual({ ok: true, value: null });
+    expect(financeKindFrom(null)).toEqual({ ok: true, value: null });
+    expect(financeKindFrom('RENTAL')).toEqual({ ok: false });
+  });
+});

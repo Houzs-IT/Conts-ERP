@@ -97,6 +97,7 @@ import { EffectiveDatedHistory } from '../../vendor/scm/components/EffectiveDate
 import { todayMyt } from '../../vendor/scm/lib/dates';
 import { statusLabel } from '../../vendor/scm/lib/status-pill';
 import { DateField } from '../../vendor/scm/components/DateField';
+import { SupplierControl } from '../../conts/SupplierControl';
 
 const ICON = { size: 16, strokeWidth: 1.75 } as const;
 const SM_ICON = { size: 14, strokeWidth: 1.75 } as const;
@@ -2370,6 +2371,8 @@ const SupplierInfoCard = ({
         {!editing ? (
           <div className={styles.infoGrid}>
             <InfoCell label="Credit Account" value={supplier.code} />
+            {/* Conts (finance phase 1.5): the payables control, changed in place with the ledger's post key. */}
+            <SupplierControl supplier={supplier} cellClass={styles.infoCell} labelClass={styles.infoLabel} valueClass={styles.infoValue} />
             <InfoCell label="Company Name" value={supplier.name} />
             <InfoCell label="Supplier Type" value={supplier.supplier_type ?? '—'} />
             <InfoCell

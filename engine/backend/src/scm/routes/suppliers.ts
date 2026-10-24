@@ -37,6 +37,7 @@ import type { Env, Variables } from '../env';
 import { pgrestIn } from '../lib/pgrest-in-list';
 import { apControlOf, resolveRoles } from '../../acc/rules';
 import { hasHouzsPerm } from '../lib/houzs-perms';
+import { holdsLedger } from '../../conts/ledger-access';
 import { nextSupplierCode, partyBalanceOn } from '../../conts/parties';
 
 /* Task #91 — small helper: normalize a body field to E.164 phone storage,
@@ -460,7 +461,10 @@ suppliers.get('/:id', async (c) => {
 });
 
 // ── Create supplier ──────────────────────────────────────────────────
-const NO_CONTROL_PERM = { error: 'forbidden', message: "Choosing a supplier's control needs the ledger's post key." };
+const NO_CONTROL_PERM = { error: 'forbidden', message: "Choosing a supplier's control needs the Ledger and its post key." };
+/** The Ledger asked for literally (the * of Full in the supply areas does not open the books: ledger-access.ts), and
+    its post key. */
+const mayChooseControl = (c: any): boolean => holdsLedger(c.get('houzsUser') ?? c.get('user')) && hasHouzsPerm(c, 'scm.payment_voucher.post');
 
 /** The payables control a supplier is given: a supplier control of the chart (special type SCC), or — when none is
     named — the one its code's rule gives (405- other creditors, else trade creditors; no code yet: trade creditors).
@@ -490,7 +494,7 @@ export const createSupplierHandler = async (c: any): Promise<Response> => {
      control), and — when no code is typed — the next code under it, coded like AutoCount (400-H011). */
   const controlRaw = String(body.controlAccount ?? '').trim();
   /* Where the supplier's bills post is the ledger's to decide: naming a control needs its post key. */
-  if (controlRaw && !hasHouzsPerm(c, 'scm.payment_voucher.post')) return c.json(NO_CONTROL_PERM, 403);
+  if (controlRaw && !mayChooseControl(c)) return c.json(NO_CONTROL_PERM, 403);
   const typedCode = (body.code as string | undefined)?.trim();
   const control = await supplierControlOrRefusal(c, controlRaw || null, typedCode || null);
   if ('resp' in control) return control.resp;
@@ -615,7 +619,7 @@ export const patchSupplierHandler = async (c: any) => {
   }
   /* Conts: the payables control, a supplier control of the chart (or cleared back to the code's rule). */
   if (body.controlAccount !== undefined) {
-    if (!hasHouzsPerm(c, 'scm.payment_voucher.post')) return c.json(NO_CONTROL_PERM, 403);
+    if (!mayChooseControl(c)) return c.json(NO_CONTROL_PERM, 403);
     const raw = String(body.controlAccount ?? '').trim() || null;
     if (raw) {
       const ok = await supplierControlOrRefusal(c, raw);

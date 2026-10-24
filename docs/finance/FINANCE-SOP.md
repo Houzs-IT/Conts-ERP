@@ -54,10 +54,12 @@
 ### 2.1 顾客（Debtor）和供应商（Creditor）（财务确认，2026-10-22）
 
 - **Control**：每个顾客挂在一个 debtor control 下面，以后可以再加 control。按顾客类型分：
-  - Rental 的顾客：新开 303-0000 RENTAL CUSTOMER（AutoCount 科目表没有，导入后在 ERP 加）。300-0000 以前混了别的东西，不再放新的 rental 顾客；
+  - Rental 的顾客：新开 303-0000 RENTAL CUSTOMER（AutoCount 科目表没有，导入后在 ERP 加）。300-0000 以前混了别的东西，不再放新的 rental 顾客。303 是给 Airbnb 出租用的：收到钱就算 sales，方便按月 cut-off。Rental 的单从 Property OS 来，一过来就自动进 303；Property OS 还没和 ERP 接通，所以**暂时不用**，等接通时再做（财务确认，2026-10-24）；
   - 装修顾客：301-0000 RENOVATION CUSTOMER；
   - 自家装修（inhouse reno）顾客：302-0000 INHOUSE RENOVATION CUSTOMER。两种装修分开，因为毛利、销售员、买的货都不同。
-  - 什么顾客挂哪个 control、系统怎么分辨一张单是哪一种装修：**财务整理中**（第 12 节）。
+  - **怎么分辨两种装修**（财务确认，2026-10-24）：项目有一栏「类型」——装修 / inhouse 装修。默认跟报价单的品牌：**The Conts → inhouse 装修（302）**，**Dream Crafter → 装修（301）**。在项目里改过的，以项目为准；报价转成销售订单（合约）之后就不再改。以后再加「绑定 user」（某个员工开的单默认某个类型），到时再定 user 和品牌哪个优先。
+  - **一位顾客两种装修**（例如先 Dream Crafter 301-M001，后 The Conts）：目前一位顾客只有一个户口，第二张合约也记在第一个户口；要分开就在 Debtors 换。要不要改成每种类型各开一个户口：**财务未定**。
+  - **换 control**：顾客在 Debtors 页面换，供应商在供应商页面换；要有过账权限，先问一次确认。还欠钱的不能换，先在原来的 control 结清；已结清的旧记录留在原来的 control，代码不变。
 - **维护**：财务可以维护每个顾客（debtor maintenance），像 AutoCount 一样看到「某个 control 下面的顾客」。
 - **自动开顾客**：新订单来了，新顾客自动开一个 debtor，挂在对应的 control 下面。
 - **代码**：control 的前三码 + 名字的第一个字母 + 流水号，例如 HOOKKA → 301-H001；个人顾客（MR / MS）用 M → 301-M001。流水号**不限位数**：至少三位，M999 之后是 M1000。
@@ -611,7 +613,7 @@
 | # | 事项 | 谁定 |
 |---|---|---|
 | 1 | 权限表：收款人名单（谁可以新增、核对、修改银行资料、停用）、预算（谁定、谁确认）等 | 财务提供 |
-| 2 | 什么顾客挂哪个 debtor control；系统怎么分辨装修和自家装修（inhouse reno）的单（2.1） | 财务整理 |
+| 2 | ~~什么顾客挂哪个 debtor control；怎么分辨两种装修~~ — 已定（2.1，2026-10-24）。剩：rental 等 Property OS 接通；以后「绑定 user」时定 user 和品牌哪个优先 | 财务 |
 
 ## 13. 需要提供的资料
 

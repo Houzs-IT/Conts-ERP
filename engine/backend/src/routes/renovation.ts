@@ -40,6 +40,7 @@ import { propertyColumnsReady, pushProjectToOpenSos, readProjectCustomerInfo, re
 import { projectNameFrom } from "../scm/shared/renovation-property";
 import { MEDIA_TYPES, mediaCap } from "../services/renovation/betaMedia";
 import { streamObject } from "../scm/routes/doc-attachments";
+import { financeKindFrom } from "../conts/parties";
 
 type Ctx = Context<{ Bindings: Env }>;
 const app = new Hono<{ Bindings: Env }>();
@@ -609,6 +610,19 @@ app.patch("/:id", requirePermission("projects.write"), async (c) => {
     if (col === "planned_handover_date" && val && !/^\d{4}-\d{2}-\d{2}$/.test(val)) return c.json({ error: "date_invalid" }, 400);
     sets.push(col === "planned_handover_date" ? `${col} = ?::date` : `${col} = ?`);
     args.push(val);
+  }
+  /* Conts (finance phase 1.5): renovation or inhouse renovation — the control its customer is opened under when the
+     quotation becomes the contract; blank follows the quotation's brand. */
+  if ("financeKind" in b) {
+    const kind = financeKindFrom(b.financeKind);
+    if (!kind.ok) return c.json({ error: "finance_kind_invalid" }, 400);
+    /* Settled with the contract: its customer is already opened under a control (move it on Debtors instead). */
+    const contract = await db(c).prepare(
+      `SELECT doc_no FROM scm.mfg_sales_orders WHERE project_id = ? AND so_kind = 'RENOVATION' AND status <> 'CANCELLED' LIMIT 1`,
+    ).bind(id).first<{ doc_no: string }>();
+    if (contract) return c.json({ error: "finance_kind_settled", message: `${contract.doc_no} is already the contract; its customer's control is changed on Debtors.` }, 409);
+    sets.push("finance_kind = ?");
+    args.push(kind.value);
   }
   if (sets.length === 0) return c.json({ ok: true });
   await db(c).prepare(`UPDATE projects SET ${sets.join(", ")}, updated_at = to_char(timezone('UTC', now()), 'YYYY-MM-DD"T"HH24:MI:SS"Z"') WHERE id = ?`)
