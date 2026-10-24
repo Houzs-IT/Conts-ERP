@@ -16,6 +16,7 @@ import { boardApi, boardKey, invalidateBeta, readLastProject, rememberLastProjec
 import { BTN_MAIN, CARD, ErrorBanner, INK_SOFT, MUTED, useIsPhone, useToast } from "./BetaCalParts";
 import { BetaDialogs, type BetaDialog } from "./BetaForms";
 import { simpleApi, type BoardRowV2 } from "../projects/renovation/simpleApi";
+import { mytDay, slaDayText } from "./renovationBetaModel";
 
 const TH = {
   padding: "10px 12px", textAlign: "left", fontSize: 11, fontWeight: 600, letterSpacing: ".04em", textTransform: "uppercase", color: MUTED,
@@ -93,13 +94,12 @@ function Avatar({ name }: { name: string }): ReactElement {
 
 type Sla = { step: string; text: string; over: boolean } | null;
 
-/** The project's step on the current project page and its SLA: "Design · day 4 of 10", red once past the SLA. */
-function slaOf(r: BoardRowV2 | undefined): Sla {
+/** The project's step and its day against the step SLA: "Renovation · Day 1 of 45", red once past the SLA. The same
+    words the workspace stepper shows (slaDayText). */
+function slaOf(r: BoardRowV2 | undefined, today: string): Sla {
   if (!r) return null;
-  const s = r.sla;
-  if (!s || s.daysIn == null) return { step: r.step.label, text: "", over: false };
-  const text = s.days != null ? `day ${s.daysIn} of ${s.days}` : `day ${s.daysIn}`;
-  return { step: r.step.label, text: s.overdueBy != null && s.overdueBy > 0 ? `${s.overdueBy}d over SLA` : text, over: s.overdueBy != null && s.overdueBy > 0 };
+  const over = r.sla?.overdueBy != null && r.sla.overdueBy > 0;
+  return { step: r.step.label, text: slaDayText(r.sla, today) ?? "", over };
 }
 
 function SlaCell({ sla }: { sla: Sla }): ReactElement {
@@ -122,6 +122,7 @@ export function RenovationBetaHome(): ReactElement {
   const steps = useQuery(["renovation-beta", "step-sla"], () => simpleApi.boardRows(), []);
   const slaById = useMemo(() => new Map((steps.data?.data ?? []).map((r) => [r.id, r])), [steps.data]);
   const phone = useIsPhone();
+  const today = mytDay(new Date().toISOString());
   const [tab, setTab] = useState<HomeTab>("all");
   const [params, setParams] = useSearchParams();
   const query = params.get("q") ?? "";
@@ -240,7 +241,7 @@ export function RenovationBetaHome(): ReactElement {
       {phone ? (
         <ol style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 10 }}>
           {rows.length === 0 && <li style={{ color: MUTED }}>{query.trim() ? `No project matches "${query.trim()}".` : "No projects here."}</li>}
-          {rows.map((r) => <PhoneCard key={r.p.id} r={r} sla={slaOf(slaById.get(r.p.id))} onOpen={() => rememberLastProject(r.p.id)} />)}
+          {rows.map((r) => <PhoneCard key={r.p.id} r={r} sla={slaOf(slaById.get(r.p.id), today)} onOpen={() => rememberLastProject(r.p.id)} />)}
         </ol>
       ) : (
         <div style={{ ...CARD, overflowX: "auto" }}>
@@ -279,7 +280,7 @@ export function RenovationBetaHome(): ReactElement {
                     <td style={TD}><StatusCell r={r} /></td>
                     <td style={TD}><WhoNow r={r} onAssign={() => assign(r.p.id)} /></td>
                     <td style={TD}>{r.left === null ? DASH : <DuePill left={r.left} />}</td>
-                    <td style={TD}><SlaCell sla={slaOf(slaById.get(r.p.id))} /></td>
+                    <td style={TD}><SlaCell sla={slaOf(slaById.get(r.p.id), today)} /></td>
                     {showPay && <td style={TD}>{r.p.payment != null ? <PayCell text={r.p.payment} outstandingSen={r.p.outstandingSen} /> : DASH}</td>}
                   </tr>
                 );

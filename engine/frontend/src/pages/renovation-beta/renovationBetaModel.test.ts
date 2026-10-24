@@ -5,7 +5,7 @@ import { buildModel } from "./renovationBetaBoard";
 import type { BetaBoard, BetaBoardProject } from "./renovationBetaBoardApi";
 import type { BetaDefect, BetaReview, BetaWorkspace } from "./renovationBetaApi";
 import {
-  dayHeading, dayMonth, dayMonthYear, groupByDay, initials, mytDay, mytTime, nextStep, paymentCard, renovationDays, siteTimeline, stepperItems, trimTimeline,
+  dayHeading, dayMonth, dayMonthYear, groupByDay, initials, mytDay, mytTime, nextStep, paymentCard, renovationDays, siteTimeline, slaDayText, stepperItems, trimTimeline,
   approvedSet, defectColumn, defectDaysLate, designTodoRows, feedRooms, filterFeed, groupDefects, mergeTodo,
   isRecordEntry, paymentStrip, paymentTotals, searchEntries, siteFeed, siteProgress, snagProgress, stageReach, timelineCsv, todoList, versionLabel,
   whatsappLink, whatsappNumber, type TodoInput,
@@ -369,10 +369,22 @@ describe("stepperItems", () => {
   const at = (currentKey: string, over: Partial<Parameters<typeof stepperItems>[0]> = {}) =>
     stepperItems({ steps, currentKey, currentIndex: steps.findIndex((s) => s.key === currentKey), soDate: "2026-08-10", handoverOn: "2026-11-15", tasks, today: TODAY, ...over });
   it("draws the mockup's order and words each step as the mockup does", () => {
-    expect(at("renovation").map((i) => [i.label, i.state, i.sub])).toEqual([
+    const sla = { stepKey: "renovation", enteredOn: "2026-10-12", daysIn: 11, days: 45, overdueBy: null };
+    expect(at("renovation", { sla }).map((i) => [i.label, i.state, i.sub])).toEqual([
       ["Sales order", "done", "Signed 10 Aug"], ["Design", "done", "Design approved"], ["Ordering", "done", "Main items ordered"],
-      ["Renovation", "current", "Day 12 of 25"], ["Handover", "later", "15 Nov"], ["Closed", "later", "-"],
+      ["Renovation", "current", "Day 12 of 45"], ["Handover", "later", "15 Nov"], ["Closed", "later", "-"],
     ]);
+  });
+  it("Renovation reads the step SLA, the same words as the project list (TESTING: entered today, 45 days)", () => {
+    const sla = { stepKey: "renovation", enteredOn: TODAY, daysIn: 0, days: 45, overdueBy: null };
+    expect(at("renovation", { sla })[3]?.sub).toBe("Day 1 of 45");
+    expect(slaDayText(sla, TODAY)).toBe("Day 1 of 45");
+    expect(slaDayText({ ...sla, daysIn: 48, overdueBy: 3 }, TODAY)).toBe("3d over SLA");
+    expect(slaDayText({ ...sla, enteredOn: "2026-11-02", daysIn: 0 }, TODAY)).toBe("Starts 2 Nov");
+    expect(slaDayText({ ...sla, days: null }, TODAY)).toBe("Day 1");
+    expect(slaDayText(null, TODAY)).toBeNull();
+    /* no SLA data: the stepper no longer counts the site tasks' own span ("Day 1 of 1") */
+    expect(at("renovation", { sla: null })[3]?.sub).toBe("In progress");
   });
   it("at design the Sales order is not signed and Design is current", () => {
     expect(at("design").slice(0, 3).map((i) => [i.label, i.state, i.sub])).toEqual([

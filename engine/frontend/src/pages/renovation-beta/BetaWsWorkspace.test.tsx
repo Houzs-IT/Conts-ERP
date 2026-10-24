@@ -117,6 +117,7 @@ h.routes = {
     flow: { current: "renovation", currentLabel: "Renovation", currentIndex: 3, derived: "renovation", manualStep: null, manualInEffect: false, steps: [
       { key: "design", label: "Design" }, { key: "signed", label: "Signed" }, { key: "ordering", label: "Ordering" }, { key: "renovation", label: "Renovation" }, { key: "handover", label: "Handover" }, { key: "closed", label: "Closed" },
     ] },
+    stepSla: { stepKey: "renovation", enteredOn: day(-12), daysIn: 12, days: 45, overdueBy: null, steps: [], totalDays: 45 },
     people: { sales: { id: 2, name: "Chai" }, designer: { id: 1, name: "Jia Xin" }, renoPic: { id: null, name: null }, pic: { id: 3, name: "Alex" }, attending: [] },
     tasks: [
       task(1, "done", "Hacking & demolition", day(-12), day(-10), { actual_end: day(-10) }),
@@ -165,7 +166,7 @@ describe("Beta project workspace", () => {
     const steps = screen.getByRole("list", { name: "Project stages" });
     expect(within(steps).getByText("Sales order")).toBeTruthy();
     expect(within(steps).getByText("Design approved")).toBeTruthy();
-    expect(within(steps).getByText(/Day 13 of 19/)).toBeTruthy();
+    expect(within(steps).getByText(/Day 13 of 45/)).toBeTruthy();
     expect(within(steps).getAllByRole("listitem").find((li) => li.getAttribute("aria-current") === "step")?.textContent).toContain("Renovation");
     const tabs = screen.getByRole("navigation", { name: "Project sections" });
     expect(within(tabs).getAllByRole("button").map((b) => b.textContent)).toEqual(["Overview", "Drawings", "VO", "PO", "Client PO", "DO", "GR", "Site & photos", "Defects", "Timeline"]);

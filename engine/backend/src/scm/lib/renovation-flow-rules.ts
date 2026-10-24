@@ -183,3 +183,24 @@ export function deliveredOnTimestamp(deliveredOn: unknown, nowIso: string): stri
   if (deliveredOn === todayMyt) return null;
   return stamp.toISOString();
 }
+
+/** Every column a DO's DELIVERED step writes, for the driver POD and the office "Mark delivered" alike (both PATCH
+    /delivery-orders-mfg/:id/status). Before 24 Oct 2026 only status + delivered_at were set, so the planning board's
+    delivered date (customer_delivered_date) and delivered bucket (delivery_state) stayed empty on a delivered DO.
+    customer_delivered_date is the day the goods arrived: the day picked, else today in Malaysia, but a day already
+    typed on the planning board is kept when none is picked. DELIVERED is final (a revert only leaves LOADED or
+    DISPATCHED), so the DELIVERED delivery_state can never go stale. */
+export function deliveredPatch(
+  deliveredOn: unknown, nowIso: string, existingDeliveredDate: string | null | undefined,
+): { delivered_at: string; customer_delivered_date: string; delivery_state: 'DELIVERED' } | 'invalid' {
+  const stamp = deliveredOnTimestamp(deliveredOn, nowIso);
+  if (stamp === 'invalid') return 'invalid';
+  const todayMyt = new Date(new Date(nowIso).getTime() + 8 * 3600_000).toISOString().slice(0, 10);
+  const picked = typeof deliveredOn === 'string' && deliveredOn ? deliveredOn : null;
+  const kept = existingDeliveredDate ? String(existingDeliveredDate).slice(0, 10) : null;
+  return {
+    delivered_at: stamp ?? nowIso,
+    customer_delivered_date: picked ?? kept ?? todayMyt,
+    delivery_state: 'DELIVERED',
+  };
+}

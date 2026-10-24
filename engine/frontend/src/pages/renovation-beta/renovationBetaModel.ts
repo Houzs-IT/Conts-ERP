@@ -654,6 +654,21 @@ export function trimTimeline(steps: readonly SiteStep[], showAll: boolean, keepD
   return { steps: steps.filter((s) => !dropDone.has(s) && !dropLater.has(s)), hiddenDone: dropDone.size, hiddenLater: dropLater.size };
 }
 
+/* ---------- The step's day against its SLA (project list and workspace stepper) ---------- */
+
+export interface StepSlaDays { daysIn: number | null; days: number | null; overdueBy: number | null; enteredOn?: string | null }
+
+/** "Day 1 of 45": the project list and the workspace stepper both read the step SLA (engine stepSla.ts: the day the
+    project entered its current step and the days Project Maintenance allows for it), counted from Day 1 on the day it
+    entered. "3d over SLA" once past it, "Starts 2 Nov" when the step's first day is still ahead, null with no SLA data. */
+export function slaDayText(sla: StepSlaDays | null | undefined, today: string): string | null {
+  if (!sla) return null;
+  if (sla.overdueBy != null && sla.overdueBy > 0) return `${sla.overdueBy}d over SLA`;
+  if (sla.enteredOn && sla.enteredOn.slice(0, 10) > today) return `Starts ${dayMonth(sla.enteredOn)}`;
+  if (sla.daysIn == null) return null;
+  return sla.days != null ? `Day ${sla.daysIn + 1} of ${sla.days}` : `Day ${sla.daysIn + 1}`;
+}
+
 /* ---------- The stage stepper (header) ---------- */
 
 export interface StepperItem { key: string; label: string; state: "done" | "current" | "later"; sub: string }
@@ -670,6 +685,8 @@ export interface StepperInput {
   handoverOn: string | null;
   tasks: readonly TaskDates[];
   today: string;
+  /** The current step against its SLA (ProjectDetailV2.stepSla), the same day count the project list shows. */
+  sla?: (StepSlaDays & { stepKey: string }) | null;
 }
 
 /** The engine's own order of the flow; the mockup draws Sales order before Design. */
@@ -687,6 +704,7 @@ export function stepperItems(i: StepperInput): StepperItem[] {
   const days = renovationDays(i.tasks, i.today);
   const cur = FLOW_RANK[i.currentKey] ?? i.currentIndex;
   const label = (key: string, fallback: string): string => i.steps.find((s) => s.key === key)?.label ?? fallback;
+  const slaSub = i.sla && i.sla.stepKey === "renovation" && i.currentKey === "renovation" ? slaDayText(i.sla, i.today) : null;
   return MOCKUP_ORDER.filter((key) => i.steps.some((s) => s.key === key)).map((key): StepperItem => {
     const rank = FLOW_RANK[key] ?? 0;
     if (key === "signed") {
@@ -698,7 +716,7 @@ export function stepperItems(i: StepperInput): StepperItem[] {
     if (key === "design") sub = state === "done" ? "Design approved" : "In progress";
     else if (key === "ordering") sub = state === "done" ? "Main items ordered" : state === "current" ? "In progress" : "-";
     else if (key === "renovation") {
-      if (state === "current") sub = days && days.day > 0 ? `Day ${days.day} of ${days.total}` : days ? `Starts ${dayMonth(days.start)}` : "In progress";
+      if (state === "current") sub = slaSub ?? (days && days.day === 0 ? `Starts ${dayMonth(days.start)}` : "In progress");
       else if (state === "done") sub = "Done";
     } else if (key === "handover") sub = i.handoverOn ? dayMonth(i.handoverOn) : state === "done" ? "Done" : "-";
     return { key, label: label(key, key), state, sub };

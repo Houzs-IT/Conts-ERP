@@ -14,19 +14,25 @@ import { dayMonthYear, mytDay, mytTime } from "./renovationBetaModel";
 import { betaMediaApi } from "./renovationBetaMediaApi";
 import { betaSiteApi, type SiteDelivery, type SitePhoto } from "./renovationBetaSiteApi";
 import { BETA } from "./renovationBetaTheme";
+import { doStatusWords } from "../scm-v2/renovationDoStatus";
+import { statusLabel } from "../../vendor/scm/lib/status-pill";
 
 export function photoAsMedia(p: SitePhoto): MediaItem {
   return { id: p.id, path: p.path, kind: p.kind ?? (p.image ? "image" : "file"), name: p.name, label: p.source === "pod" ? "POD" : null, at: p.at, caption: p.area };
 }
 
-const ARRIVED = ["DELIVERED", "SIGNED", "INVOICED", "RECEIVED", "POSTED", "COMPLETED"];
-
-function statusTone(d: SiteDelivery): { tone: readonly [string, string]; text: string } {
+/* The words the DO and GR screens use for the same stored status (status-pill.ts via renovationDoStatus.ts), so a
+   confirmed DO reads "Confirmed" here as on the DO list, not the raw "Loaded" value. */
+export function statusTone(d: Pick<SiteDelivery, "type" | "status">): { tone: readonly [string, string]; text: string } {
   const s = d.status.toUpperCase();
-  const words = s.charAt(0) + s.slice(1).toLowerCase().replace(/_/g, " ");
-  if (ARRIVED.includes(s)) return { tone: TONE_DONE, text: words };
-  if (s === "DRAFT" || s === "CANCELLED") return { tone: TONE_QUIET, text: words };
-  return { tone: TONE_WAIT, text: words };
+  if (d.type === "delivery_order") {
+    const w = doStatusWords(s);
+    return { tone: w.tone === "success" ? TONE_DONE : w.tone === "error" || s === "DRAFT" ? TONE_QUIET : TONE_WAIT, text: w.label };
+  }
+  const text = statusLabel("grn", s);
+  if (["RECEIVED", "POSTED", "CLOSED", "COMPLETED"].includes(s)) return { tone: TONE_DONE, text };
+  if (s === "DRAFT" || s === "CANCELLED") return { tone: TONE_QUIET, text };
+  return { tone: TONE_WAIT, text };
 }
 
 function when(d: SiteDelivery): string {
