@@ -328,19 +328,32 @@ export type ChartImportRow = {
   section?: string | null;
   parentCode: string | null; accMoney: boolean; specialType?: string | null; shared: boolean;
 };
+/** Conts: a customer (SDR) or supplier (SCR) sub-account of AutoCount's chart, imported as a party under its control
+    (backend conts/parties.ts). */
+export type ChartImportParty = { code: string; name: string; controlCode: string; kind: 'DEBTOR' | 'CREDITOR' };
+export type ChartPartyResult = { debtors: number; creditors: number; renamed: number; kept: number; errors: { code: string; error: string }[] };
 export const useChartImport = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: { companyId: number; rows: ChartImportRow[] }) =>
-      authedFetch<{ ok: boolean; imported: number; shared: number; sharedTo: number[] }>(
+    /* supplierMatches: AutoCount creditor code → the ERP supplier (id) that takes it. */
+    mutationFn: (body: { companyId: number; rows: ChartImportRow[]; parties?: ChartImportParty[]; supplierMatches?: Record<string, string> }) =>
+      authedFetch<{ ok: boolean; imported: number; shared: number; sharedTo: number[]; parties?: ChartPartyResult | null }>(
         `/accounting/chart/import`, { method: 'POST', body: JSON.stringify(body) },
       ),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['chart-union'] });
       void qc.invalidateQueries({ queryKey: ['accounts'] });
+      void qc.invalidateQueries({ queryKey: ['suppliers'] });
     },
   });
 };
+/** Which ERP supplier each AutoCount creditor most likely is (POST /accounting/chart/import/match). */
+export const useChartImportMatch = () => useMutation({
+  mutationFn: (body: { companyId: number; parties: ChartImportParty[] }) =>
+    authedFetch<{ suppliers: { id: string; code: string; name: string }[]; matches: Record<string, string> }>(
+      `/accounting/chart/import/match`, { method: 'POST', body: JSON.stringify(body) },
+    ),
+});
 
 /* ONE door to open an account (owner 2026-09-03: 照理说应该维护 overall
    chart of account 罢了): the definition is created once and lands in every
