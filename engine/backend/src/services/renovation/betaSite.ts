@@ -40,8 +40,12 @@ export interface SiteDelivery {
   poIds: string[];
   /** The rooms of the sales order lines it carries, in line order. */
   areas: string[];
+  /** The lines it carries: the sales order line (null when none) and, on a goods receipt, the PO line. */
+  lines: DeliveryLine[];
   photos: SitePhoto[];
 }
+
+export interface DeliveryLine { soItemId: string | null; poLineId: string | null; qty: number }
 
 /** Trimmed, de-duplicated (case-insensitive, first spelling kept), in the order given. */
 export function uniqueAreas(xs: ReadonlyArray<string | null | undefined>): string[] {

@@ -15,7 +15,13 @@ export type GoesTo = "po" | "client" | "works";
 
 export interface LinePo {
   poId: string; poNumber: string; poStatus: string; poLineId: string;
-  poDate: string | null; deliveryDate: string | null; qty: number; received: number;
+  poDate: string | null;
+  /** The PO line's effective delivery date (backend betaLines.ts: the latest of the line's date and its supplier
+      revisions, else the PO header's), the date GR and the PO itself plan on. */
+  deliveryDate: string | null;
+  /** A supplier revision sets deliveryDate; the line's own date can no longer move it from here. */
+  supplierRevised: boolean;
+  qty: number; received: number;
   photoKeys: string[];
 }
 
@@ -289,6 +295,29 @@ export function livePo(l: Pick<ManagedLine, "pos">): LinePo | null {
 export function lineDates(l: ManagedLine): { orderOn: string | null; deliverOn: string | null; fromPo: LinePo | null } {
   const po = livePo(l);
   return { orderOn: l.plan.orderOn, deliverOn: po ? po.deliveryDate : l.plan.deliverOn, fromPo: po };
+}
+
+/** Whether the line's date can be set from here: processing is the line's plan; delivery is the PO line's once a PO
+    holds it (unless a supplier revision governs it), else the plan. */
+export function dateSettable(l: ManagedLine, which: "orderOn" | "deliverOn", plansReady: boolean): boolean {
+  if (!l.voLocked) return false;
+  const po = livePo(l);
+  if (which === "deliverOn" && po) return !po.supplierRevised;
+  return plansReady;
+}
+
+/** A category's or sub-category's date: the one date every line shares, "mixed" when they differ (a line with no
+    date counts as different from one with a date), null when none has one. */
+export function groupDate(lines: readonly ManagedLine[], which: "orderOn" | "deliverOn"): string | "mixed" | null {
+  if (lines.length === 0) return null;
+  const vals = new Set(lines.map((l) => lineDates(l)[which] ?? ""));
+  if (vals.size > 1) return "mixed";
+  return [...vals][0] || null;
+}
+
+/** The lines a group date sets: those whose date can be set here and differs from the new one. */
+export function groupDateTargets(lines: readonly ManagedLine[], which: "orderOn" | "deliverOn", value: string | null, plansReady: boolean): ManagedLine[] {
+  return lines.filter((l) => dateSettable(l, which, plansReady) && (lineDates(l)[which] ?? null) !== value);
 }
 
 /** Late: the order date has passed with no PO, or the delivery date has passed with nothing delivered. */

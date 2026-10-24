@@ -447,7 +447,8 @@ export async function loadProjectPoLines(db: Db, projectId: number, companyId: n
             cg.code AS cat, cg.label AS cat_label, cg.sort_order AS cat_sort, sc.code AS sub, sc.label AS sub_label, sc.sort_order AS sub_sort,
             coalesce(nullif(pi.description, ''), pi.material_name) AS product, pi.item_code AS sku, pi.uom, pi.qty, pi.received_qty,
             coalesce(nullif(pi.room, ''), (SELECT nullif(l.room, '') FROM scm.reno_doc_lines l WHERE l.so_item_id = pi.so_item_id LIMIT 1)) AS area,
-            po.po_date::text AS po_date, coalesce(pi.delivery_date, po.expected_at)::text AS delivery_date,
+            po.po_date::text AS po_date, coalesce(greatest(pi.delivery_date, pi.supplier_delivery_date_2, pi.supplier_delivery_date_3, pi.supplier_delivery_date_4),
+                     greatest(po.expected_at, po.supplier_delivery_date_2, po.supplier_delivery_date_3, po.supplier_delivery_date_4))::text AS delivery_date,
             (pi.so_item_id IS NOT NULL AND EXISTS (
                SELECT 1 FROM scm.delivery_order_items doi JOIN scm.delivery_orders dd ON dd.id = doi.delivery_order_id
                 WHERE doi.so_item_id = pi.so_item_id AND dd.status::text NOT IN ('CANCELLED', 'DRAFT'))) AS delivered

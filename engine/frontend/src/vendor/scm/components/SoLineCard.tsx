@@ -24,7 +24,7 @@
 // this in without touching the parent.
 // ----------------------------------------------------------------------------
 
-import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Trash2, ImagePlus, X } from 'lucide-react';
 import {
@@ -70,6 +70,7 @@ import styles from './SoLineCard.module.css';
 import { DateField } from "./DateField";
 import { DiscountInput } from './DiscountInput';
 import { NumberInput } from './NumberInput';
+import { RenovationPhotoButton, renovationLineStyles as compactStyles } from './renovationSoLineCompact';
 const ICON = { size: 16, strokeWidth: 1.75 } as const;
 const SM_ICON = { size: 14, strokeWidth: 1.75 } as const;
 
@@ -195,6 +196,8 @@ const SoLineCardInner = ({
   variantsRequired,
   seedSofaLegDefault,
   searchHint,
+  compact = false,
+  actions,
 }: {
   index:     number;
   draft:     SoLineDraft;
@@ -267,6 +270,11 @@ const SoLineCardInner = ({
      they pick a real SKU. It is a HINT ONLY — never committed as the product
      value (a no-match line must be filled from the dropdown, not free-typed). */
   searchHint?: string;
+  /* Conts renovation mode: one compact row (renovationSoLineCompact) with the photos
+     behind a small button, no category badge and no pricing rail. Houzs never sets it. */
+  compact?: boolean;
+  /** Compact only: extra per-line buttons, shown before the remove button. */
+  actions?: ReactNode;
 }) => {
   const notify = useNotify();
   const maintQ   = useMaintenanceConfig('master');
@@ -774,6 +782,150 @@ const SoLineCardInner = ({
 
   /* ── Render ─────────────────────────────────────────────────────── */
 
+  /* Photos — saved mode (R2 thumbs) + draft mode (object-URL previews staged on the
+     draft). canStagePhotos === !isSaved && isEditing; canMutatePhotos === isSaved &&
+     isEditing. In the right rail, or (compact) in the photo button's pop-over. */
+  const photosBlock = canShowPhotos && (
+      <div className={styles.photosCard}>
+        <div className={styles.photosHead}>
+          PHOTOS
+          {(photoUrls.length > 0 || pendingFiles.length > 0) && (
+            <span style={{ marginLeft: 6, color: 'var(--c-ink)', fontWeight: 600 }}>
+              · {photoUrls.length + pendingFiles.length}
+            </span>
+          )}
+        </div>
+        <div className={styles.photosStrip}>
+          {/* Saved photos (R2 signed URL thumbs) */}
+          {photoUrls.map((key) => (
+            <PhotoThumb
+              key={key}
+              photoKey={key}
+              docNo={docNo}
+              itemId={itemId}
+              canDelete={canMutatePhotos && !deletePhoto.isPending}
+              onDelete={() => {
+                if (!docNo || !itemId) return;
+                deletePhoto.mutate({ docNo, itemId, photoKey: key }, {
+                  onSuccess: () => {
+                    onChange({ photoUrls: photoUrls.filter((k) => k !== key) });
+                  },
+                });
+              }}
+            />
+          ))}
+
+          {/* Pending (DRAFT) photos — preview from object URL with
+              a small "pending" stripe + a delete X that removes
+              the File from the staged array. */}
+          {pendingPreviews.map((p, i) => (
+            <div key={`pending-${i}`} className={styles.photoTile}>
+              <img src={p.url} alt={p.name} />
+              <span className={styles.photoPendingMark}>pending</span>
+              {canStagePhotos && (
+                <button
+                  type="button"
+                  className={styles.photoDelete}
+                  title="Remove (not uploaded yet)"
+                  onClick={() => {
+                    const next = pendingFiles.filter((_, idx) => idx !== i);
+                    onChange({ pendingPhotoFiles: next });
+                  }}
+                >
+                  <X size={12} strokeWidth={2.5} />
+                </button>
+              )}
+            </div>
+          ))}
+
+          {/* Hidden file input + Add button. The same input is used
+              for both saved (immediate upload) and draft (stage in
+              component-state) modes. */}
+          {(canMutatePhotos || canStagePhotos) && (
+            <>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                style={{ display: 'none' }}
+                onChange={async (e) => {
+                  const files = Array.from(e.target.files ?? []);
+                  if (files.length === 0) return;
+
+                  if (canStagePhotos) {
+                    // DRAFT mode — stage Files on the draft. Parent
+                    // drains pendingPhotoFiles after the line saves.
+                    onChange({ pendingPhotoFiles: [...pendingFiles, ...files] });
+                    if (fileInputRef.current) fileInputRef.current.value = '';
+                    return;
+                  }
+
+                  // SAVED mode — upload immediately to R2.
+                  if (!docNo || !itemId) return;
+                  const newKeys: string[] = [];
+                  for (const f of files) {
+                    try {
+                      const res = await uploadPhoto.mutateAsync({ docNo, itemId, file: f });
+                      newKeys.push(res.photoKey);
+                      // Task #92 — seed the signed-URL cache with
+                      // the URL the API just minted so PhotoThumb
+                      // doesn't do a redundant /signed round-trip
+                      // on first render of the just-uploaded photo.
+                      // WO-7 — carry the thumbUrl the same way.
+                      // The startsWith('http') filter is load-bearing:
+                      // the upload route's OWN signing fallback returns
+                      // photoUrl as a RELATIVE proxy path, which an
+                      // <img src> cannot use. Filtered here, the cache
+                      // holds only <img>-loadable URLs by construction.
+                      if (res.expiresAt && res.photoUrl?.startsWith('http')) {
+                        cacheSoLinePhotoSignedUrl(res.photoKey, {
+                          signedUrl: res.photoUrl,
+                          thumbUrl: res.thumbUrl,
+                          expiresAt: new Date(res.expiresAt).getTime(),
+                        });
+                      }
+                    } catch (err) {
+                      // eslint-disable-next-line no-console
+                      console.error('[so-line-photo] upload failed:', err);
+                      notify({ title: `Photo upload failed for ${f.name}`, body: err instanceof Error ? err.message : 'Something went wrong.', tone: 'error' });
+                    }
+                  }
+                  if (newKeys.length > 0) {
+                    onChange({ photoUrls: [...photoUrls, ...newKeys] });
+                  }
+                  if (fileInputRef.current) fileInputRef.current.value = '';
+                }}
+              />
+              <button
+                type="button"
+                className={styles.photoAddBtn}
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploadPhoto.isPending}
+                title={
+                  uploadPhoto.isPending
+                    ? 'Uploading…'
+                    : canStagePhotos
+                      ? 'Stage photo (uploads on save)'
+                      : 'Add photo'
+                }
+              >
+                <ImagePlus {...ICON} />
+              </button>
+            </>
+          )}
+
+          {!canMutatePhotos && !canStagePhotos
+            && photoUrls.length === 0 && pendingFiles.length === 0 && (
+            <span className={styles.photoHint}>
+              Read-only — photos can be edited in edit mode.
+            </span>
+          )}
+        </div>
+      </div>
+  );
+
+
   /* Keep the portal'd SKU dropdown pinned to its input while open. The
      geometry — flip above when there is more room there, clamp the height to
      the room actually available — is the shared house rule in
@@ -783,9 +935,9 @@ const SoLineCardInner = ({
   const menuPos = useAnchoredPanel(pickerWrapRef, showPicker && isEditing, SUGGEST_LIST_MAX_H);
 
   return (
-    <div className={styles.card}>
+    <div className={compact ? compactStyles.card : styles.card}>
       {/* ── Main single row ────────────────────────────────────────── */}
-      <div className={styles.row}>
+      <div className={compact ? compactStyles.row : styles.row}>
         {/* 1. No # */}
         <span className={styles.lineNo}>{index + 1}</span>
 
@@ -1028,13 +1180,33 @@ const SoLineCardInner = ({
         {/* 8. Amount */}
         <span className={styles.amount}>{fmtRm(lineTotal)}</span>
 
-        {/* 9. Group badge */}
-        <span className={styles.badge} style={{ background: badge.bg, color: badge.fg }}>
-          {badge.label}
-        </span>
+        {/* 9. Group badge (compact: the photo button in its place) */}
+        {compact ? (
+          <RenovationPhotoButton
+            count={photoUrls.length + pendingFiles.length}
+            disabled={!canShowPhotos}
+            title={canShowPhotos ? undefined : 'Pick an item first'}
+          >
+            {photosBlock}
+          </RenovationPhotoButton>
+        ) : (
+          <span className={styles.badge} style={{ background: badge.bg, color: badge.fg }}>
+            {badge.label}
+          </span>
+        )}
 
         {/* 9. Trash — hidden when not editing */}
-        {isEditing ? (
+        {compact ? (
+          <div className={compactStyles.actions}>
+            {actions}
+            {isEditing && (
+              <button type="button" title="Remove this line" aria-label="Remove this line"
+                onClick={onRemove} disabled={!canRemove} className={compactStyles.iconBtn}>
+                <Trash2 {...SM_ICON} />
+              </button>
+            )}
+          </div>
+        ) : isEditing ? (
           <button
             type="button"
             title="Remove this line"
@@ -1047,10 +1219,10 @@ const SoLineCardInner = ({
         ) : <span />}
 
         {/* Conts: labels for the stacked layout on a narrow card; hidden on the single row (SoLineCard.module.css). */}
-        <span className={styles.cellLabel}>Qty</span>
-        <span className={styles.cellLabel}>Unit price</span>
-        <span className={styles.cellLabel}>Discount</span>
-        <span className={styles.cellLabel}>Delivery date</span>
+        <span className={compact ? compactStyles.label : styles.cellLabel}>Qty</span>
+        <span className={compact ? compactStyles.label : styles.cellLabel}>Unit price</span>
+        <span className={compact ? compactStyles.label : styles.cellLabel}>Discount</span>
+        <span className={compact ? compactStyles.label : styles.cellLabel}>{compact ? 'Date' : 'Delivery date'}</span>
       </div>
 
       {/* ── Two-column body (Commander 2026-05-27 redesign) ──────────
@@ -1073,7 +1245,7 @@ const SoLineCardInner = ({
           is now unconditional and bodyRight is pinned to track 2 (see the
           module CSS), so the photo rail holds the right edge on EVERY line and
           the left of a variant-less line is simply the empty track. */}
-      {(picked || hasVariants || hasSpecialOrder || canShowPhotos) && (
+      {(compact ? (hasVariants || hasSpecialOrder) : (picked || hasVariants || hasSpecialOrder || canShowPhotos)) && (
       <div className={styles.body}>
         {(hasVariants || hasSpecialOrder) && <div className={styles.bodyLeft}>
       {hasVariants && category === 'bedframe' && (
@@ -1237,7 +1409,7 @@ const SoLineCardInner = ({
         {/* /bodyLeft */}
 
         {/* ── Right rail (price summary + photos) ───────────────── */}
-        <div className={styles.bodyRight}>
+        {!compact && <div className={styles.bodyRight}>
           {/* Price summary — only meaningful once a SKU is picked. */}
           {picked && (
             <div className={styles.priceSummary}>
@@ -1273,149 +1445,8 @@ const SoLineCardInner = ({
             </div>
           )}
 
-          {/* Photos — saved mode (R2 thumbs) + draft mode (object-URL
-              previews staged on the draft). canStagePhotos === !isSaved
-              && isEditing; canMutatePhotos === isSaved && isEditing. */}
-          {canShowPhotos && (
-            <div className={styles.photosCard}>
-              <div className={styles.photosHead}>
-                PHOTOS
-                {(photoUrls.length > 0 || pendingFiles.length > 0) && (
-                  <span style={{ marginLeft: 6, color: 'var(--c-ink)', fontWeight: 600 }}>
-                    · {photoUrls.length + pendingFiles.length}
-                  </span>
-                )}
-              </div>
-              <div className={styles.photosStrip}>
-                {/* Saved photos (R2 signed URL thumbs) */}
-                {photoUrls.map((key) => (
-                  <PhotoThumb
-                    key={key}
-                    photoKey={key}
-                    docNo={docNo}
-                    itemId={itemId}
-                    canDelete={canMutatePhotos && !deletePhoto.isPending}
-                    onDelete={() => {
-                      if (!docNo || !itemId) return;
-                      deletePhoto.mutate({ docNo, itemId, photoKey: key }, {
-                        onSuccess: () => {
-                          onChange({ photoUrls: photoUrls.filter((k) => k !== key) });
-                        },
-                      });
-                    }}
-                  />
-                ))}
-
-                {/* Pending (DRAFT) photos — preview from object URL with
-                    a small "pending" stripe + a delete X that removes
-                    the File from the staged array. */}
-                {pendingPreviews.map((p, i) => (
-                  <div key={`pending-${i}`} className={styles.photoTile}>
-                    <img src={p.url} alt={p.name} />
-                    <span className={styles.photoPendingMark}>pending</span>
-                    {canStagePhotos && (
-                      <button
-                        type="button"
-                        className={styles.photoDelete}
-                        title="Remove (not uploaded yet)"
-                        onClick={() => {
-                          const next = pendingFiles.filter((_, idx) => idx !== i);
-                          onChange({ pendingPhotoFiles: next });
-                        }}
-                      >
-                        <X size={12} strokeWidth={2.5} />
-                      </button>
-                    )}
-                  </div>
-                ))}
-
-                {/* Hidden file input + Add button. The same input is used
-                    for both saved (immediate upload) and draft (stage in
-                    component-state) modes. */}
-                {(canMutatePhotos || canStagePhotos) && (
-                  <>
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept="image/*"
-                      multiple
-                      style={{ display: 'none' }}
-                      onChange={async (e) => {
-                        const files = Array.from(e.target.files ?? []);
-                        if (files.length === 0) return;
-
-                        if (canStagePhotos) {
-                          // DRAFT mode — stage Files on the draft. Parent
-                          // drains pendingPhotoFiles after the line saves.
-                          onChange({ pendingPhotoFiles: [...pendingFiles, ...files] });
-                          if (fileInputRef.current) fileInputRef.current.value = '';
-                          return;
-                        }
-
-                        // SAVED mode — upload immediately to R2.
-                        if (!docNo || !itemId) return;
-                        const newKeys: string[] = [];
-                        for (const f of files) {
-                          try {
-                            const res = await uploadPhoto.mutateAsync({ docNo, itemId, file: f });
-                            newKeys.push(res.photoKey);
-                            // Task #92 — seed the signed-URL cache with
-                            // the URL the API just minted so PhotoThumb
-                            // doesn't do a redundant /signed round-trip
-                            // on first render of the just-uploaded photo.
-                            // WO-7 — carry the thumbUrl the same way.
-                            // The startsWith('http') filter is load-bearing:
-                            // the upload route's OWN signing fallback returns
-                            // photoUrl as a RELATIVE proxy path, which an
-                            // <img src> cannot use. Filtered here, the cache
-                            // holds only <img>-loadable URLs by construction.
-                            if (res.expiresAt && res.photoUrl?.startsWith('http')) {
-                              cacheSoLinePhotoSignedUrl(res.photoKey, {
-                                signedUrl: res.photoUrl,
-                                thumbUrl: res.thumbUrl,
-                                expiresAt: new Date(res.expiresAt).getTime(),
-                              });
-                            }
-                          } catch (err) {
-                            // eslint-disable-next-line no-console
-                            console.error('[so-line-photo] upload failed:', err);
-                            notify({ title: `Photo upload failed for ${f.name}`, body: err instanceof Error ? err.message : 'Something went wrong.', tone: 'error' });
-                          }
-                        }
-                        if (newKeys.length > 0) {
-                          onChange({ photoUrls: [...photoUrls, ...newKeys] });
-                        }
-                        if (fileInputRef.current) fileInputRef.current.value = '';
-                      }}
-                    />
-                    <button
-                      type="button"
-                      className={styles.photoAddBtn}
-                      onClick={() => fileInputRef.current?.click()}
-                      disabled={uploadPhoto.isPending}
-                      title={
-                        uploadPhoto.isPending
-                          ? 'Uploading…'
-                          : canStagePhotos
-                            ? 'Stage photo (uploads on save)'
-                            : 'Add photo'
-                      }
-                    >
-                      <ImagePlus {...ICON} />
-                    </button>
-                  </>
-                )}
-
-                {!canMutatePhotos && !canStagePhotos
-                  && photoUrls.length === 0 && pendingFiles.length === 0 && (
-                  <span className={styles.photoHint}>
-                    Read-only — photos can be edited in edit mode.
-                  </span>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
+          {photosBlock}
+        </div>}
         {/* /bodyRight */}
       </div>
       )}

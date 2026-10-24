@@ -73,15 +73,27 @@ h.routes = {
         redoCount: 1, assigneeId: null, assigneeName: null, assigneePhone: null, lastRedoNote: "Still a drip" },
     ],
   },
+  "/api/beta/projects/7/lines": {
+    finance: false, plansReady: true, sos: [], pendingPoChanges: [],
+    lines: [{
+      id: "li1", soDocNo: "SO-001", soStatus: "CONFIRMED", voLocked: false, lineNo: 1, itemCode: "CAB-01", description: "Kitchen cabinet", variantText: null, variants: {},
+      itemGroup: null, uom: "UNIT", qty: 1, unitPriceSen: null, discountSen: null, amountSen: null, area: "Kitchen", remark: null, supplierName: "Kabinet Sdn Bhd",
+      goesTo: "po", categoryLabel: "Cabinet", categorySort: 1, subLabel: "", subSort: 0, photoKeys: [], skuPhotos: [], gr: "yes", do: "yes",
+      pos: [{ poId: "po-1", poNumber: "PO-001", poStatus: "SUBMITTED", poLineId: "pl1", poDate: null, deliveryDate: "2026-11-02", qty: 1, received: 1, photoKeys: [] }],
+      plan: { orderOn: null, deliverOn: "2026-12-30", noPo: false },
+    }],
+  },
   "/api/beta/projects/7/site": {
     ready: true, areas: ["Kitchen", "Master bedroom"],
     deliveries: [
       { type: "goods_received", id: "g1", no: "GRN-001", at: `${day(-3)}T04:00:00Z`, status: "RECEIVED", from: "Kabinet Sdn Bhd", poNumber: "PO-001", poIds: ["po-1"], areas: ["Kitchen"],
+        lines: [{ soItemId: "li1", poLineId: "pl1", qty: 1 }],
         photos: [
           { id: "site-1", path: "/api/renovation/7/files?key=a.jpg", name: "Cabinet in place", image: true, area: "Kitchen", at: null, source: "site" },
           { id: "site-2", path: "/api/renovation/7/files?key=b.jpg", name: "Cabinet top", image: true, area: "Kitchen", at: null, source: "site" },
         ] },
       { type: "delivery_order", id: "d1", no: "DO-001", at: `${day(-1)}T04:00:00Z`, status: "DELIVERED", from: "SO-001", poNumber: null, poIds: [], areas: ["Master bedroom"],
+        lines: [{ soItemId: "li1", poLineId: null, qty: 1 }],
         photos: [{ id: "pod-d1", path: "/api/renovation/7/document-files/delivery_order/d1/pod", name: "Proof of delivery", image: true, area: null, at: null, source: "pod" }] },
     ],
   },
@@ -188,7 +200,8 @@ describe("Beta project workspace", () => {
     expect(screen.getByText("At handover")).toBeTruthy();
     const headings = screen.getAllByRole("heading", { level: 2 }).map((x) => x.textContent);
     expect(headings).toEqual(["Payments", "To do", "Site progress", "Unit key", "Design progress", "Sales order", "Final drawings", "Client & team"]);
-    expect(screen.getByText("Day 13 of 19 · 1 of 3 steps done")).toBeTruthy();
+    // The same day count as the stepper and the project list (the step SLA), not the site tasks' span.
+    expect(screen.getByText("Day 13 of 45 · 1 of 3 steps done")).toBeTruthy();
     // The step at the hardware stage waits for the unpaid 2nd payment; its PO has two site photos.
     expect(screen.getAllByText("Waits for 2nd payment").length).toBeGreaterThanOrEqual(1);
     expect(await screen.findByRole("button", { name: "2 photos" })).toBeTruthy();
@@ -309,13 +322,25 @@ describe("Beta project workspace", () => {
   it("shows each delivery order and goods receipt on its own tab, with its photos", async () => {
     open("/beta/projects/7?tab=do");
     const doCard = await screen.findByRole("listitem", { name: "Delivery order DO-001" });
-    expect(within(doCard).getByRole("group", { name: "Photos of DO-001: 1 item" })).toBeTruthy();
+    expect(within(doCard).getByRole("list", { name: "Photos of DO-001: 1 item" })).toBeTruthy();
     expect(within(doCard).getByText("POD")).toBeTruthy();
+    // The PO and delivery date are the PO line's, as the PO tab shows them, not the line's own plan.
+    expect(within(doCard).getByText("PO-001")).toBeTruthy();
+    expect(within(doCard).getByText("2 Nov")).toBeTruthy();
     expect(screen.queryByRole("listitem", { name: "Goods receipt GRN-001" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "By category" }));
+    const cat = await screen.findByRole("region", { name: "Cabinet" });
+    expect(within(cat).getByText("Kitchen cabinet")).toBeTruthy();
+    expect(within(cat).getByRole("button", { name: "DO-001 (1)" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "GR" }));
     const gr = await screen.findByRole("listitem", { name: "Goods receipt GRN-001" });
-    expect(within(gr).getByRole("group", { name: "Photos of GRN-001: 2 items" })).toBeTruthy();
-    expect(within(gr).getByText(/Kabinet Sdn Bhd · PO PO-001/)).toBeTruthy();
+    expect(within(gr).getByRole("list", { name: "Photos of GRN-001: 2 items" })).toBeTruthy();
+    expect(within(gr).getByText(/Kabinet Sdn Bhd/)).toBeTruthy();
+    expect(within(gr).getByText("PO-001")).toBeTruthy();
+    // A GR names the DO that delivered its lines; a click opens the DO tab on that DO's row.
+    fireEvent.click(within(gr).getByRole("button", { name: "DO-001" }));
+    const focused = await screen.findByRole("listitem", { name: "Delivery order DO-001" });
+    expect(focused.getAttribute("aria-current")).toBe("true");
   });
 
   it("shows every photo on one timeline, newest first, filtered by category and area", async () => {
@@ -327,7 +352,9 @@ describe("Beta project workspace", () => {
       "12:00 pm · DO DO-001 · POD · 1 photo",
       "10:00 am · Defect: Cabinet door not aligned · Before · 1 photo",
     ]);
-    expect(within(line).getByRole("heading", { name: /^Today · / })).toBeTruthy();
+    // The left column names each day once, then the time of each event, newest first.
+    expect(within(cards[0]).getByText("Today")).toBeTruthy();
+    expect(within(cards[1]).getByText("Yesterday")).toBeTruthy();
     const show = screen.getByRole("group", { name: "Show" });
     expect(within(show).getAllByRole("button").map((b) => b.textContent)).toEqual(["All 4", "Progress 2", "DO 1", "GR 0", "Measure 0", "Defect 1"]);
     fireEvent.click(within(show).getByRole("button", { name: /^DO/ }));

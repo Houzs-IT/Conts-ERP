@@ -1,0 +1,184 @@
+/* Renovation mode (Conts, owner 24 Oct 2026): the Sales Order editor shows each line as one
+   compact row, in the same column order as the read-only table, instead of Houzs's tall card.
+   The header and every row share one grid, so the column widths are fixed (no `auto` track):
+   separate grids only line up when every track is sized the same way.
+   Children of .row, in order: no, item, remarks, qty, price, discount, date, amount, photos,
+   actions, then four .label spans that show only on a narrow list. */
+
+.lines {
+  container-type: inline-size;
+  display: flex;
+  flex-direction: column;
+}
+
+.row,
+.head {
+  display: grid;
+  grid-template-columns:
+    28px                  /* No */
+    minmax(180px, 340px)  /* Item */
+    minmax(120px, 1fr)    /* Remarks */
+    60px                  /* Qty */
+    96px                  /* Unit price */
+    100px                 /* Disc */
+    124px                 /* Date */
+    96px                  /* Amount */
+    36px                  /* Photos */
+    84px;                 /* Override / move / remove */
+  align-items: center;
+  column-gap: 8px;
+}
+
+.head {
+  padding: 0 8px 4px;
+  border-bottom: 1px solid var(--line);
+  font-family: var(--font-sans);
+  font-size: var(--fs-11);
+  font-weight: 600;
+  color: var(--fg-muted);
+  white-space: nowrap;
+}
+
+.right { text-align: right; }
+.center { text-align: center; }
+
+.card {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.card:hover { background: color-mix(in srgb, var(--c-cream, #f7f3ea) 45%, transparent); }
+
+.label { display: none; }
+
+.actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+}
+
+.iconBtn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+
+.iconBtn:hover:not(:disabled) {
+  border-color: var(--line);
+  background: var(--c-paper);
+  color: var(--c-ink);
+}
+
+.iconBtn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+.photoBtn { composes: iconBtn; }
+.photoBtnOn { color: var(--c-burnt, #8a4b1c); }
+
+.count {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 3px;
+  border-radius: 999px;
+  background: var(--c-burnt, #8a4b1c);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 15px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.popover {
+  box-sizing: border-box;
+  overflow: auto;
+  padding: 8px;
+  background: var(--c-paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14);
+}
+
+.newTag {
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: #fbe9dd;
+  color: #a6471e;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+}
+
+/* The slim label above a room's lines that are already on a delivery order or invoice. */
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 2px;
+  font-family: var(--font-sans);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: #6b6f66;
+}
+
+.divider::after {
+  content: '';
+  flex: 1;
+  border-top: 1px dashed var(--line);
+}
+
+/* A narrow list (a phone, or a window beside a menu): each line stacks into labelled rows. */
+@container (max-width: 860px) {
+  .head { display: none; }
+  .row {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-template-areas:
+      "no    item   item   item   item   act"
+      "rem   rem    rem    rem    rem    rem"
+      "qtyL  qtyL   priceL priceL discL  discL"
+      "qty   qty    price  price  disc   disc"
+      "dateL dateL  dateL  dateL  .      ."
+      "date  date   date   date   photo  amt";
+    row-gap: 4px;
+  }
+  .row > :nth-child(1) { grid-area: no; }
+  .row > :nth-child(2) { grid-area: item; }
+  .row > :nth-child(3) { grid-area: rem; }
+  .row > :nth-child(4) { grid-area: qty; }
+  .row > :nth-child(5) { grid-area: price; }
+  .row > :nth-child(6) { grid-area: disc; }
+  .row > :nth-child(7) { grid-area: date; }
+  .row > :nth-child(8) { grid-area: amt; }
+  .row > :nth-child(9) { grid-area: photo; justify-self: end; }
+  .row > :nth-child(10) { grid-area: act; }
+  .row > :nth-child(11) { grid-area: qtyL; }
+  .row > :nth-child(12) { grid-area: priceL; }
+  .row > :nth-child(13) { grid-area: discL; }
+  .row > :nth-child(14) { grid-area: dateL; }
+  .label {
+    display: block;
+    margin-top: 4px;
+    font-family: var(--font-sans);
+    font-size: var(--fs-11);
+    font-weight: 600;
+    color: var(--fg-muted);
+  }
+  .card { padding: 10px 4px; }
+}

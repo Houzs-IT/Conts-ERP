@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { amendmentLine, amountAfter, byAreaBlocks, editProblem, effectiveEdit, lineDates, lineLate, linesCsv, refusalText, voBatches, type ManagedLine } from "./renovationBetaLines";
+import { amendmentLine, amountAfter, byAreaBlocks, dateSettable, editProblem, effectiveEdit, groupDate, groupDateTargets, lineDates, lineLate, linesCsv, refusalText, voBatches, type ManagedLine } from "./renovationBetaLines";
 
 const line = (over: Partial<ManagedLine> = {}): ManagedLine => ({
   id: "i1", soDocNo: "TC-SO-1", soStatus: "CONFIRMED", voLocked: true, lineNo: 1, itemCode: "PNT-5L", description: "Paint 5L", variantText: null,
@@ -56,7 +56,7 @@ describe("Save & post to VO", () => {
 });
 
 describe("dates", () => {
-  const po = { poId: "p", poNumber: "PO-1", poStatus: "SUBMITTED", poLineId: "pl", poDate: "2026-10-01", deliveryDate: "2026-10-20", qty: 2, received: 0, photoKeys: [] };
+  const po = { poId: "p", poNumber: "PO-1", poStatus: "SUBMITTED", poLineId: "pl", poDate: "2026-10-01", deliveryDate: "2026-10-20", supplierRevised: false, qty: 2, received: 0, photoKeys: [] };
   it("processing date is always the line's own; delivery is the PO line's once a PO holds it", () => {
     const l = line({ pos: [po], plan: { orderOn: "2026-09-01", deliverOn: "2026-09-02", noPo: false } });
     expect(lineDates(l)).toMatchObject({ orderOn: "2026-09-01", deliverOn: "2026-10-20" });
@@ -67,6 +67,26 @@ describe("dates", () => {
     expect(lineLate(line({ plan: { orderOn: "2026-10-01", deliverOn: null, noPo: true } }), "2026-10-24")).toBeNull();
     expect(lineLate(line({ pos: [po] }), "2026-10-24")).toBe("deliver");
     expect(lineLate(line({ pos: [po], do: "yes" }), "2026-10-24")).toBeNull();
+  });
+  it("a group shows the date its lines share, else mixed", () => {
+    const a = line({ id: "a", plan: { orderOn: "2026-10-01", deliverOn: null, noPo: false } });
+    const b = line({ id: "b", plan: { orderOn: "2026-10-01", deliverOn: null, noPo: false } });
+    const c = line({ id: "c" });
+    expect(groupDate([a, b], "orderOn")).toBe("2026-10-01");
+    expect(groupDate([a, b, c], "orderOn")).toBe("mixed");
+    expect(groupDate([c], "deliverOn")).toBeNull();
+    expect(groupDate([line({ id: "d", pos: [po] }), line({ id: "e", plan: { orderOn: null, deliverOn: "2026-10-20", noPo: false } })], "deliverOn")).toBe("2026-10-20");
+  });
+  it("a group date sets only the lines it can and that differ; a supplier-revised PO line keeps its date", () => {
+    const onPo = line({ id: "p", pos: [po] });
+    const revised = line({ id: "r", pos: [{ ...po, supplierRevised: true }] });
+    const draft = line({ id: "d", voLocked: false });
+    const plain = line({ id: "x" });
+    expect(dateSettable(onPo, "deliverOn", false)).toBe(true);
+    expect(dateSettable(revised, "deliverOn", true)).toBe(false);
+    expect(dateSettable(plain, "orderOn", false)).toBe(false);
+    expect(groupDateTargets([onPo, revised, draft, plain], "deliverOn", "2026-11-01", true).map((l) => l.id)).toEqual(["p", "x"]);
+    expect(groupDateTargets([onPo], "deliverOn", "2026-10-20", true)).toEqual([]);
   });
   it("by area: one block per room, no area last", () => {
     const b = byAreaBlocks([line({ id: "a", area: null }), line({ id: "b", area: "Kitchen" }), line({ id: "c", area: "Kitchen" })]);

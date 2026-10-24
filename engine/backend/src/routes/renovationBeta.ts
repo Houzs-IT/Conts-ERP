@@ -32,7 +32,7 @@ import { cleanLinePlan, loadProjectLines, projectLine, saveLinePlan } from "../s
 import { LINK_DAYS, signClientLink } from "../services/renovation/betaClientLink";
 import {
   betaCategory, cleanAssignee, cleanDefectPatch, defectPatchNote, isImageName, money, sortDeliveries, uniqueAreas,
-  type DefectPatch, type DeliveryType, type SiteDelivery, type SitePhoto,
+  type DefectPatch, type DeliveryLine, type DeliveryType, type SiteDelivery, type SitePhoto,
 } from "../services/renovation/betaSite";
 import {
   MEDIA_ACTION, cleanMediaList, mediaKindOf, mediaRowsJson, metaOf, parseTarget, sortPhotos, targetCode,
@@ -869,12 +869,12 @@ async function siteDeliveries(c: Ctx, projectId: number, companyId: number): Pro
                           WHERE gi.grn_id = g.id) AS po_ids
                    FROM scm.grns g LEFT JOIN scm.suppliers sup ON sup.id = g.supplier_id LEFT JOIN scm.purchase_orders po ON po.id = g.purchase_order_id
                   WHERE g.id IN (__GRS__) AND g.status::text NOT IN ('CANCELLED', 'DRAFT')`)),
-    rowsOf(c, q(`SELECT x.delivery_order_id::text AS doc_id, ${LINE_AREA} AS area
-                   FROM scm.delivery_order_items x JOIN scm.mfg_sales_order_items i ON i.id = x.so_item_id
+    rowsOf(c, q(`SELECT x.delivery_order_id::text AS doc_id, ${LINE_AREA} AS area, x.so_item_id::text AS so_item_id, NULL::text AS po_line_id, x.qty::numeric AS qty
+                   FROM scm.delivery_order_items x LEFT JOIN scm.mfg_sales_order_items i ON i.id = x.so_item_id
                   WHERE x.delivery_order_id IN (__DOS__) ORDER BY x.line_no, x.id`)),
-    rowsOf(c, q(`SELECT gi.grn_id::text AS doc_id, ${LINE_AREA} AS area
+    rowsOf(c, q(`SELECT gi.grn_id::text AS doc_id, ${LINE_AREA} AS area, x.so_item_id::text AS so_item_id, gi.purchase_order_item_id::text AS po_line_id, gi.qty_received::numeric AS qty
                    FROM scm.grn_items gi JOIN scm.purchase_order_items x ON x.id = gi.purchase_order_item_id
-                   JOIN scm.mfg_sales_order_items i ON i.id = x.so_item_id
+                   LEFT JOIN scm.mfg_sales_order_items i ON i.id = x.so_item_id
                   WHERE gi.grn_id IN (__GRS__) ORDER BY gi.created_at, gi.id`)),
     rowsOf(c, { text: `SELECT ph.id::text AS id, ph.grn_id::text AS grn_id, ph.location, ph.r2_key, ph.caption, ph.kind, ${TS("coalesce(ph.taken_at, ph.created_at)")} AS at
                          FROM scm.grn_site_photos ph WHERE ph.project_id = ? ORDER BY ph.created_at`, args: [projectId] }),
@@ -886,6 +886,8 @@ async function siteDeliveries(c: Ctx, projectId: number, companyId: number): Pro
   ];
   const attached = ready ? await listFilesFor(db(c), docRefs, companyId) : new Map<string, DocFile[]>();
   const areasOf = (rows: Row[], id: string) => uniqueAreas(rows.filter((r) => r.doc_id === id).map((r) => str(r.area)));
+  const linesOf = (rows: Row[], id: string): DeliveryLine[] => rows.filter((r) => r.doc_id === id)
+    .map((r) => ({ soItemId: str(r.so_item_id), poLineId: str(r.po_line_id), qty: Number(r.qty ?? 0) }));
   const docPath = (type: DeliveryType, docId: string, fileId: string) =>
     `/api/renovation/${projectId}/document-files/${type}/${encodeURIComponent(docId)}/${encodeURIComponent(fileId)}`;
   const uploads = (type: DeliveryType, docId: string): SitePhoto[] => (attached.get(`${type}:${docId}`) ?? []).map((f) => ({
@@ -902,7 +904,7 @@ async function siteDeliveries(c: Ctx, projectId: number, companyId: number): Pro
     photos.push(...uploads("delivery_order", id));
     out.push({
       type: "delivery_order", id, no: String(d.no), at: str(d.at) ?? str(d.made_on), status: String(d.status), from: str(d.so_doc_no), poNumber: null, poIds: [],
-      areas: areasOf(doAreas, id), photos,
+      areas: areasOf(doAreas, id), lines: linesOf(doAreas, id), photos,
     });
   }
   for (const g of grs) {
@@ -915,7 +917,7 @@ async function siteDeliveries(c: Ctx, projectId: number, companyId: number): Pro
     const poIds = uniqueAreas([str(g.po_id), ...(Array.isArray(g.po_ids) ? (g.po_ids as unknown[]).map(str) : [])]);
     out.push({
       type: "goods_received", id, no: String(g.no), at: str(g.at), status: String(g.status), from: str(g.supplier), poNumber: str(g.po_number), poIds,
-      areas: uniqueAreas([...areasOf(grAreas, id), ...site.map((p) => p.area)]), photos: [...site, ...uploads("goods_received", id)],
+      areas: uniqueAreas([...areasOf(grAreas, id), ...site.map((p) => p.area)]), lines: linesOf(grAreas, id), photos: [...site, ...uploads("goods_received", id)],
     });
   }
   return { areas: uniqueAreas(soAreas.map((r) => str(r.area))), deliveries: sortDeliveries(out) };
