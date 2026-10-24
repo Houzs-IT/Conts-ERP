@@ -66,7 +66,7 @@ export async function downloadAsPdf(projectId: number, parts: PdfPart[], outName
     // A page the size of the picture in points (72 per inch at 150 dpi), turned the way the picture is, plus the band.
     const w = (canvas.width * 72) / 150;
     const h = (canvas.height * 72) / 150;
-    const band = block ? Math.max(48, Math.min(w, 2400) * 0.05) : 0;
+    const band = block ? Math.max(60, Math.min(w, 2400) * 0.075) : 0;
     const total = h + band;
     const orientation = w > total ? "landscape" : "portrait";
     if (!doc) doc = new jsPDF({ orientation, unit: "pt", format: [w, total], compress: true });
@@ -82,8 +82,8 @@ export async function downloadAsPdf(projectId: number, parts: PdfPart[], outName
     d.rect(pad, h + pad * 0.5, w - pad * 2, band - pad, "FD");
     let x = pad;
     const inner = w - pad * 2;
-    const labelSize = band * 0.16;
-    const valueSize = band * 0.24;
+    const labelSize = band * 0.13;
+    const valueSize = band * 0.2;
     titleBlockCells(block, page).forEach((cell, i) => {
       const cw = inner * cell.share;
       if (i > 0) d.line(x, h + pad * 0.5, x, h + band - pad * 0.5);
@@ -96,8 +96,13 @@ export async function downloadAsPdf(projectId: number, parts: PdfPart[], outName
       // An approved set's status prints in the accent teal, everything else in ink.
       if (cell.label === "Status" && /^approved/i.test(cell.value)) d.setTextColor(26, 107, 102);
       else d.setTextColor(23, 32, 31);
-      const first = (d.splitTextToSize(cell.value, cw - pad * 1.2) as string[])[0] ?? "";
-      d.text(first, x + pad * 0.6, h + band - pad * 1.1);
+      // A long value first gets smaller type, then a second line; only what still does not fit is cut.
+      const room = cw - pad * 1.2;
+      let size = valueSize;
+      while (size > valueSize * 0.7 && d.getTextWidth(cell.value) > room) d.setFontSize((size *= 0.92));
+      const lines = (d.splitTextToSize(cell.value, room) as string[]).slice(0, 2);
+      const top = h + pad * 0.5 + labelSize * 1.25 + size * 1.15;
+      lines.forEach((t, n) => d.text(t, x + pad * 0.6, top + n * size * 1.1));
       x += cw;
     });
   };
