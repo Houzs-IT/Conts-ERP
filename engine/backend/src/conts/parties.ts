@@ -3,6 +3,7 @@
 // customer (SDR) and supplier (SCR) as a sub-account of its control; here the control is the only account, the
 // customer is a row of scm.debtors and the supplier a row of scm.suppliers, each naming its control.
 import { paginateAll } from '../scm/lib/paginate-all';
+import { apControlRole, type RoleCodes } from '../acc/rules';
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- PostgREST client, untyped as everywhere in acc/ */
 type Db = any;
@@ -147,4 +148,29 @@ export function suggestSupplierMatches(
     usedSuppliers.add(x.id);
   }
   return out;
+}
+
+/* ── The control a party posts to (PR B; spec 2.4) ─────────────────────────────────────────────────────────── */
+
+/** The control account a customer's receivables post to, from scm.debtors (an inactive customer keeps its control).
+    No code, or a code with no row, is `control: null` — the caller then posts to the AR rule as before. A read that
+    does not answer is `ok: false`: it must never read as "no control", or the line would land on the wrong one. */
+export async function debtorControl(sb: Db, companyId: number | null, debtorCode: string | null | undefined): Promise<{ ok: true; control: string | null } | { ok: false; error: string }> {
+  const code = String(debtorCode ?? '').trim();
+  if (!code) return { ok: true, control: null };
+  let q = sb.from('debtors').select('control_account').eq('code', code);
+  if (companyId != null) q = q.eq('company_id', companyId);
+  const { data, error } = await q.maybeSingle();
+  if (error) return { ok: false, error: error.message };
+  return { ok: true, control: (data as { control_account?: string | null } | null)?.control_account ?? null };
+}
+
+/** The posting roles with AR pointed at a customer's own control (unchanged when it has none). */
+export function rolesForDebtor(roles: RoleCodes, control: string | null): RoleCodes {
+  return control ? { ...roles, AR: control } : roles;
+}
+
+/** The payables control a supplier posts to: its own control, else today's rule (405- codes → AP_OTHER, others → AP). */
+export function apControlFor(roles: RoleCodes, supplier: { code: string | null; control_account?: string | null }): string {
+  return supplier.control_account || roles[apControlRole(supplier.code)];
 }

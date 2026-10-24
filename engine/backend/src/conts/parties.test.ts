@@ -124,3 +124,36 @@ describe('suggesting supplier matches, codes', () => {
     ])).toEqual({});
   });
 });
+
+/* PR B: every customer and supplier posts to its own control (spec 2.4). */
+describe('the control a party posts to', () => {
+  test('a debtor posts to its own control', async () => {
+    const { debtorControl } = await import('./parties');
+    const sb = fakeSb({ debtors: [{ id: 'd1', company_id: CO, code: '301-M001', name: 'MS LEE', control_account: '301-0000', is_active: true }] });
+    expect(await debtorControl(sb, CO, '301-M001')).toEqual({ ok: true, control: '301-0000' });
+  });
+
+  test('an unknown or empty debtor code falls back to the AR rule', async () => {
+    const { debtorControl, rolesForDebtor } = await import('./parties');
+    const { DEFAULT_ROLE_CODES } = await import('../acc/rules');
+    const sb = fakeSb({ debtors: [] });
+    expect(await debtorControl(sb, CO, '301-M999')).toEqual({ ok: true, control: null });
+    expect(await debtorControl(sb, CO, null)).toEqual({ ok: true, control: null });
+    expect(rolesForDebtor(DEFAULT_ROLE_CODES, null).AR).toBe(DEFAULT_ROLE_CODES.AR);
+    expect(rolesForDebtor(DEFAULT_ROLE_CODES, '302-0000').AR).toBe('302-0000');
+  });
+
+  test('a read that fails is not read as "no control"', async () => {
+    const { debtorControl } = await import('./parties');
+    const sb = fakeSb({ debtors: [] }, { debtors: ['control_account'] });
+    expect(await debtorControl(sb, CO, '301-M001')).toMatchObject({ ok: false });
+  });
+
+  test('a supplier with a control uses it; one without keeps the 405- rule', async () => {
+    const { apControlFor } = await import('./parties');
+    const { DEFAULT_ROLE_CODES } = await import('../acc/rules');
+    expect(apControlFor(DEFAULT_ROLE_CODES, { code: '400-K001', control_account: '405-0000' })).toBe('405-0000');
+    expect(apControlFor(DEFAULT_ROLE_CODES, { code: '405-O001', control_account: null })).toBe(DEFAULT_ROLE_CODES.AP_OTHER);
+    expect(apControlFor(DEFAULT_ROLE_CODES, { code: 'DHI' })).toBe(DEFAULT_ROLE_CODES.AP);
+  });
+});
