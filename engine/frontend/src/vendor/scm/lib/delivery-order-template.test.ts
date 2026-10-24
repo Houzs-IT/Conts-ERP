@@ -1,4 +1,5 @@
-// Delivery Order — the dot-matrix template (owner 2026-09-08; Theme C before).
+// Delivery Order — A4 on the shared Conts letterhead (owner, 24 Oct 2026; before
+// that the Houzs dot-matrix template of 2026-09-08, and Theme C before that).
 //
 // The DO is drawn by jsPDF, so "does it match the design" is not something a
 // test can assert. What IS worth pinning are the properties that make the sheet
@@ -6,10 +7,9 @@
 //
 //   · the letterhead's two columns must not overlap (2990's long address ran
 //     under the date on a real prod DO);
-//   · the sheet is black on white, one face, nothing under 9pt, on a Letter
-//     page — it is printed on an Epson LQ-310 onto 9.5 x 11 2-ply continuous
-//     paper, where grey text and tinted fills dither into dots and small
-//     courier was unreadable (owner 2026-09-08);
+//   · the sheet is black on white on an A4 page, the letterhead is the one every
+//     Conts document prints (lib/renovation/renovation-doc-theme.ts), and the
+//     body below it stays one face at 9pt or more;
 //   · the TOTAL label must not wrap ("TOT / AL" — caught in review, because the
 //     row-number column is 5% wide and the label was dropped into it);
 //   · a DO that spills onto a second page must repeat the column header, close
@@ -215,28 +215,28 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('Delivery Order — Theme C template', () => {
+/* The letterhead's contact line ("PHONE : ... // EMAIL : ..."): the customer-service desk, else the headline contacts. */
+const isContact = (s: { text: string }) => /^(PHONE|EMAIL) : /.test(s.text);
+
+describe('Delivery Order template', () => {
   test('the letterhead columns never overlap, however long the address', async () => {
     setBrandingCache({ ...BRANDING_2990 }, '2990');
-    const { spans } = await renderDo([itemAt(1)]);
+    const { spans } = await renderDo([itemAt(1)], { ...HEADER, scanToken: 'a'.repeat(64) });
 
-    // The right column: the two title words, the doc number and the issued
-    // date — everything drawn above the header rule at the right edge.
-    const meta = spans.filter(
-      (s) => ['DELIVERY', 'ORDER', `No. : ${HEADER.do_number}`, 'Issued 2026/08/06'].includes(s.text) && s.y < 50,
-    );
-    expect(meta.length).toBeGreaterThanOrEqual(4);
-    const metaLeft = Math.min(...meta.map((s) => s.left));
+    // The title above the rule; the number and issue date in the right column under it.
+    const title = spans.find((s) => s.text === 'DELIVERY ORDER');
+    expect(title).toBeDefined();
+    expect(title!.y).toBeLessThan(40);
+    const meta = spans.filter((s) => [`No. : ${HEADER.do_number}`, 'Issued: 2026/08/06'].includes(s.text));
+    expect(meta).toHaveLength(2);
+    const qr = spans.find((s) => s.text === 'SCAN AT EACH STEP');
+    expect(qr).toBeDefined();
+    const columnLeft = Math.min(qr!.left, ...meta.map((s) => s.left));
 
-    const company = spans.filter(
-      (s) => s.y < 50 && !meta.includes(s) && s.text.trim() !== '',
-    );
-    expect(company.length).toBeGreaterThan(0);
-    expect(Math.max(...company.map((s) => s.right))).toBeLessThan(metaLeft);
-
-    // The company block sits BESIDE the logo — that indent is what narrows the
-    // measure, so losing it would hide the bug rather than fix it.
-    expect(Math.min(...company.map((s) => s.left))).toBeGreaterThan(20);
+    // The company block: under the rule, left of the scan code and the number column.
+    const company = spans.filter((s) => s.y > 40 && s.y < 70 && s !== qr && !meta.includes(s) && s.text.trim() !== '');
+    expect(company.length).toBeGreaterThan(2);
+    expect(Math.max(...company.map((s) => s.right))).toBeLessThan(columnLeft);
   });
 
   test('the customer account code is not printed on the customer copy', async () => {
@@ -250,10 +250,9 @@ describe('Delivery Order — Theme C template', () => {
     expect(spans.some((s) => s.text === HEADER.debtor_code)).toBe(false);
   });
 
-  /* The sheet goes through an Epson LQ-310 (24-pin, black ribbon) onto 9.5 x 11
-     2-ply continuous paper (owner 2026-09-08). On that printer the Theme C
-     sheet was unreadable for three separate reasons, and each is pinned as its
-     own property so a regression names the one it broke. Every one of these
+  /* Black ink only, kept from the dot-matrix build (owner 2026-09-08, when the
+     sheet went through an Epson LQ-310 onto 2-ply continuous paper): it reads
+     the same on any printer and photocopies cleanly. Every one of these
      is measured off the DRAWN output: autoTable applies its cell styles through
      the same setters, so its cells are in the population too. */
   test('the sheet is black on white: no fill of any colour, every ink pure black', async () => {
@@ -274,40 +273,34 @@ describe('Delivery Order — Theme C template', () => {
     expect(notBlack).toEqual([]);
   });
 
-  test('one face, and nothing under the 9pt floor', async () => {
-    /* 字体统一 (owner): the courier / helvetica mix is gone. Helvetica is also
-       the family ensurePdfCjkFont redirects onto the CJK subset, so this is
-       what lets a Chinese address paint in EVERY cell. And 24 pins at 180dpi
-       cannot form a 7.5pt glyph — the floor is the theme's DO_SIZE.min, and a
-       size added under it fails here rather than smudging on the second ply. */
+  test('below the letterhead, one face and nothing under the 9pt floor', async () => {
+    /* The letterhead is the shared one: a serif title and its small company block. Everything else on the sheet keeps
+       the DO's own scale, one sans face (the one ensurePdfCjkFont redirects onto the CJK subset), nothing under
+       DO_SIZE.min. */
     const { DO_SIZE, SANS } = await import('./delivery-order-theme');
+    const { DOC_THEME } = await import('../../../lib/renovation/renovation-doc-theme');
     setBrandingCache({ ...BRANDING_2990, csPhone: '+60 11-1110 8855', csEmail: 'ops@2990shome.com' }, '2990');
     const { faces, sizes } = await renderDo(
       Array.from({ length: 30 }, (_, i) => itemAt(i + 1)),
       { ...HEADER, driver_name: 'Ah Seng', vehicle: 'WXY 1234', notes: 'Call the guardhouse.' } as typeof HEADER,
     );
 
-    expect(faces.length).toBeGreaterThan(0);
-    expect(new Set(faces)).toEqual(new Set([SANS]));
-    expect(sizes.length).toBeGreaterThan(0);
-    expect(Math.min(...sizes)).toBeGreaterThanOrEqual(DO_SIZE.min);
+    expect(new Set(faces)).toEqual(new Set([SANS, DOC_THEME.titleFont]));
+    const small = sizes.filter((n) => n < DO_SIZE.min);
+    expect(small.every((n) => n === DOC_THEME.blockPt || n === DOC_THEME.metaPt)).toBe(true);
   });
 
-  test('the page is Letter — the 9.5 x 11 continuous form between its perforations', async () => {
-    /* 9.5 x 11 continuous paper is 8.5 in wide once the tractor strips are
-       torn off and 11 in tall: exactly Letter. A4 is 18mm taller, so a print
-       dialog set to fit was shrinking every sheet, and the type with it. */
-    const { doc } = await renderDo([itemAt(1)]);
+  test('the page is A4', async () => {
+    /* Conts prints DOs on a normal A4 printer (owner, 24 Oct 2026). The footer sits inside the bottom padding of
+       THIS page. */
+    const { doc, spans } = await renderDo([itemAt(1)]);
     const size = doc.internal.pageSize;
-    expect(size.getWidth()).toBeCloseTo(215.9, 0);
-    expect(size.getHeight()).toBeCloseTo(279.4, 0);
-    // And the layout was laid out for that sheet, not for A4: the footer sits
-    // inside the bottom padding of THIS page, not 18mm past its edge.
-    const { spans } = await renderDo([itemAt(1)]);
+    expect(size.getWidth()).toBeCloseTo(210, 0);
+    expect(size.getHeight()).toBeCloseTo(297, 0);
     const footer = spans.find((s) => s.text.startsWith('By signing above'));
     expect(footer).toBeDefined();
-    expect(footer!.y).toBeLessThan(279.4 - 8);
-    expect(footer!.y).toBeGreaterThan(279.4 - 20);
+    expect(footer!.y).toBeLessThan(297 - 8);
+    expect(footer!.y).toBeGreaterThan(297 - 20);
   });
 
   test('the TOTAL label prints as one word, not wrapped into the number rail', async () => {
@@ -366,7 +359,7 @@ describe('Delivery Order — Theme C template', () => {
       import('jspdf-autotable'),
       import('./delivery-order-pdf'),
     ]);
-    const doc = new jsPDF({ unit: 'mm', format: 'letter' });
+    const doc = new jsPDF({ unit: 'mm', format: 'a4' });
     const { spans } = capture(doc);
 
     await renderDeliveryOrderInto(doc, autoTable, HEADER as never, [itemAt(1)] as never, { logo: LOGO });
@@ -482,9 +475,9 @@ describe('Delivery Order — Theme C template', () => {
     expect(spans.some((s) => s.text.toUpperCase() === 'DISPATCHED')).toBe(false);
   });
 
-  test('a DO whose table runs into the lower third closes on ONE Letter page', async () => {
+  test('a DO whose table runs into the lower third closes on ONE page', async () => {
     /* Owner 2026-09-21: real Houzs DOs (e.g. HC-DO-2609-167) spilled a near-empty
-       second Letter sheet because the closing block reserved ~26mm of blank above
+       second sheet because the closing block reserved ~26mm of blank above
        the signature rule. The reserve is now ~12mm (the rule is still struck at a
        fixed baseline, so a short DO's signing space is unchanged), plus a little
        vertical tightening, so a DO whose table runs into the lower third keeps
@@ -529,22 +522,19 @@ describe('Delivery Order — Theme C template', () => {
     expect(sig[0]!.page).toBe(1);
   });
 
-  test('a stacked logo gets the same presence as a wide one', async () => {
-    /* The handoff's 28.8 x 14.6mm box was sized around 2990's WIDE mark, which
-       fills it edge to edge. Houzs's lockup is stacked and near-square: in a box
-       that flat it is height-bound and lands at half the width — which is what
-       the owner saw on a real Houzs DO (2026-08-07). The height allowance is now
-       20mm, so a square mark covers about the same AREA as the wide one, and a
-       wide mark is untouched. */
+  test('a logo of any shape fits the shared letterhead box undistorted', async () => {
+    /* The shared letterhead's box is 62 x 24mm (renovation-doc-theme.ts DOC_THEME): a wide mark and a stacked,
+       near-square one both scale into it whole, at their own proportions. */
+    const { DOC_THEME } = await import('../../../lib/renovation/renovation-doc-theme');
     const drawn: Array<{ w: number; h: number }> = [];
-    const [{ jsPDF }, { default: autoTable }, { renderDeliveryOrderInto }] = await Promise.all([
+    const [{ jsPDF }, { default: autoTable }, { renderDeliveryOrderInto, DO_PAGE_FORMAT }] = await Promise.all([
       import('jspdf'),
       import('jspdf-autotable'),
       import('./delivery-order-pdf'),
     ]);
 
     const measure = async (width: number, height: number) => {
-      const doc = new jsPDF({ unit: 'mm', format: 'letter' });
+      const doc = new jsPDF({ unit: 'mm', format: DO_PAGE_FORMAT });
       const addImage = doc.addImage.bind(doc);
       vi.spyOn(doc, 'addImage').mockImplementation(((...args: unknown[]) => {
         drawn.push({ w: Number(args[4]), h: Number(args[5]) });
@@ -557,22 +547,12 @@ describe('Delivery Order — Theme C template', () => {
     };
 
     setBrandingCache({ ...BRANDING_2990 }, '2990');
-    const wide = await measure(3508, 1561);   // 2990's mark
-    const square = await measure(1024, 1024); // a stacked lockup
-
-    // The wide mark still fills the box's width exactly — unchanged by the
-    // taller allowance, so 2990's letterhead did not move.
-    expect(wide.w).toBeCloseTo(28.8, 1);
-    expect(wide.h).toBeCloseTo(28.8 / (3508 / 1561), 1);
-
-    // The square one is no longer capped at 14.6mm...
-    expect(square.h).toBeGreaterThan(14.6);
-    // ...and now carries comparable weight: within 15% of the wide mark's area.
-    const ratio = (square.w * square.h) / (wide.w * wide.h);
-    expect(ratio).toBeGreaterThan(0.85);
-    expect(ratio).toBeLessThan(1.15);
-
-    // Neither is distorted.
+    const wide = await measure(3508, 1561);
+    const square = await measure(1024, 1024);
+    for (const m of [wide, square]) {
+      expect(m.w).toBeLessThanOrEqual(DOC_THEME.logoMaxW + 0.01);
+      expect(m.h).toBeLessThanOrEqual(DOC_THEME.logoMaxH + 0.01);
+    }
     expect(wide.w / wide.h).toBeCloseTo(3508 / 1561, 1);
     expect(square.w / square.h).toBeCloseTo(1, 1);
   });
@@ -585,7 +565,7 @@ describe('Delivery Order — Theme C template', () => {
       '2990',
     );
     const { spans } = await renderDo([itemAt(1)]);
-    expect(spans.some((s) => s.text === 'Customer Service')).toBe(true);
+    expect(spans.some(isContact)).toBe(true);
     expect(spans.some((s) => s.text.includes('11-1110 8855'))).toBe(true);
     expect(spans.some((s) => s.text.includes('operation@houzscentury.com'))).toBe(true);
   });
@@ -599,7 +579,7 @@ describe('Delivery Order — Theme C template', () => {
       '2990',
     );
     const { spans } = await renderDo([itemAt(1)]);
-    expect(spans.some((s) => s.text === 'Customer Service')).toBe(true);
+    expect(spans.some(isContact)).toBe(true);
     expect(spans.some((s) => s.text.includes('hello@2990shome.com'))).toBe(true);
     // The load-bearing half: never the other company's.
     expect(spans.some((s) => s.text.includes('houzscentury.com'))).toBe(false);
@@ -608,7 +588,7 @@ describe('Delivery Order — Theme C template', () => {
   test('a company with neither contact prints no such line', async () => {
     setBrandingCache({ ...BRANDING_2990, csPhone: '', csEmail: '', phone: '', email: '' }, '2990');
     const { spans } = await renderDo([itemAt(1)]);
-    expect(spans.some((s) => s.text === 'Customer Service')).toBe(false);
+    expect(spans.some(isContact)).toBe(false);
   });
 
   test('the dedicated fields WIN over the headline ones', async () => {
@@ -630,10 +610,10 @@ describe('Delivery Order — Theme C template', () => {
   test('one half of the contact is enough — the line prints what there is', async () => {
     setBrandingCache({ ...BRANDING_2990, csPhone: '', csEmail: 'ops@2990shome.com' }, '2990');
     const { spans } = await renderDo([itemAt(1)]);
-    expect(spans.some((s) => s.text === 'Customer Service')).toBe(true);
+    expect(spans.some(isContact)).toBe(true);
     expect(spans.some((s) => s.text.includes('ops@2990shome.com'))).toBe(true);
     // No orphaned separator when only one side is set.
-    expect(spans.some((s) => s.text.trim().startsWith('·') || s.text.trim().endsWith('·'))).toBe(false);
+    expect(spans.some((s) => isContact(s) && (s.text.trim().startsWith('//') || s.text.trim().endsWith('//')))).toBe(false);
   });
 
   test('the Consignment Note reuse drops the picking columns and keeps its own title', async () => {
@@ -643,7 +623,7 @@ describe('Delivery Order — Theme C template', () => {
       import('jspdf-autotable'),
       import('./delivery-order-pdf'),
     ]);
-    const doc = new jsPDF({ unit: 'mm', format: 'letter' });
+    const doc = new jsPDF({ unit: 'mm', format: 'a4' });
     const { spans } = capture(doc);
     await renderDeliveryOrderInto(doc, autoTable, HEADER as never, [itemAt(1)] as never, {
       docTitle: 'CONSIGNMENT NOTE',
@@ -652,9 +632,7 @@ describe('Delivery Order — Theme C template', () => {
       logo: LOGO,
     });
 
-    // The title splits one word per line, so both halves are drawn.
-    expect(spans.some((s) => s.text === 'CONSIGNMENT')).toBe(true);
-    expect(spans.some((s) => s.text === 'NOTE')).toBe(true);
+    expect(spans.some((s) => s.text === 'CONSIGNMENT NOTE')).toBe(true);
     expect(spans.some((s) => s.text === 'SOURCE PO')).toBe(false);
     expect(spans.some((s) => s.text === 'RACK')).toBe(false);
     expect(spans.some((s) => s.text === 'QTY')).toBe(true);

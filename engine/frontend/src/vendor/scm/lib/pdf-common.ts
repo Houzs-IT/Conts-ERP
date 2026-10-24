@@ -133,8 +133,8 @@ export const COMPANY = {
 
 /** The company block of the shared letterhead (renovation-doc-theme.ts), in the samples' shape: name and registration
  *  on one line, the address, then "PHONE : ... // EMAIL : ...". */
-export function letterheadLines(): string[] {
-  const contact = [COMPANY.phone && `PHONE : ${COMPANY.phone}`, COMPANY.email && `EMAIL : ${COMPANY.email}`].filter(Boolean).join(' // ');
+export function letterheadLines(contactOf: { phone: string; email: string } = COMPANY): string[] {
+  const contact = [contactOf.phone && `PHONE : ${contactOf.phone}`, contactOf.email && `EMAIL : ${contactOf.email}`].filter(Boolean).join(' // ');
   return [[COMPANY.name.toUpperCase(), COMPANY.reg].filter(Boolean).join(' '), ...COMPANY.addressLines, contact];
 }
 

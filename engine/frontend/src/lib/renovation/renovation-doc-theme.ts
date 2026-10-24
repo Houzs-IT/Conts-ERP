@@ -3,8 +3,8 @@
    document title in large serif capitals top right, a black rule, then the company block in small type under the rule
    on the left. The engine's own documents (PO, GRN, amendments, invoices, the plain SO) draw the same letterhead and
    put their number and dates in a column on the right under the rule, where the quotation keeps its info block.
-   The delivery order keeps its own template (delivery-order-pdf.ts): it is built for a multi-ply dot-matrix sheet on
-   Letter paper (one face, nothing under 9pt, one page), which this letterhead's small type and height would break.
+   The delivery order draws it too (owner, 24 Oct 2026: Conts prints DOs on a normal A4 printer, not dot-matrix), with its
+   scan code in the space `reserve` keeps beside the number column.
    Units are millimetres on an A4 jsPDF page. */
 
 import type { jsPDF as JsPdf } from 'jspdf';
@@ -51,10 +51,17 @@ export interface LetterheadOpts {
   /** The document's number and dates, right-aligned under the rule. */
   meta?: ReadonlyArray<{ label: string; value: string }>;
   margin?: number;
+  /** Width (mm) kept free left of the right column, for something the caller draws there (the DO's scan code). */
+  reserve?: number;
 }
 
 /** Draws the letterhead and returns the y (mm) where the document's body may start. */
 export function drawDocLetterhead(pdf: JsPdf, o: LetterheadOpts): number {
+  return drawDocLetterheadAt(pdf, o).bottom;
+}
+
+/** As drawDocLetterhead, also giving the x where the right column (with its reserved space) begins. */
+export function drawDocLetterheadAt(pdf: JsPdf, o: LetterheadOpts): { bottom: number; columnLeft: number } {
   const t = DOC_THEME;
   const M = o.margin ?? 14;
   const right = pdf.internal.pageSize.getWidth() - M;
@@ -72,7 +79,8 @@ export function drawDocLetterhead(pdf: JsPdf, o: LetterheadOpts): number {
     }
   }
   if (!o.logo) {
-    pdf.setFont(t.titleFont, 'normal');
+    // The serif has no CJK glyphs; helvetica is the face ensurePdfCjkFont redirects onto the CJK subset.
+    pdf.setFont(/^[\u0000-\u00ff]*$/.test(o.name) ? t.titleFont : 'helvetica', 'normal');
     pdf.setFontSize(20);
     pdf.setTextColor(30);
     const spaced = o.name.toUpperCase().split('').join(' ');
@@ -107,7 +115,8 @@ export function drawDocLetterhead(pdf: JsPdf, o: LetterheadOpts): number {
 
   pdf.setFont('helvetica', 'normal');
   pdf.setFontSize(t.blockPt);
-  const blockW = right - 2 - (metaW ? metaW + 8 : 0) - (M + 2);
+  const columnLeft = right - 2 - metaW - (o.reserve ?? 0);
+  const blockW = columnLeft - (metaW || o.reserve ? 8 : 0) - (M + 2);
   let y = t.blockTop;
   for (const line of o.lines) {
     if (!line) continue;
@@ -116,5 +125,5 @@ export function drawDocLetterhead(pdf: JsPdf, o: LetterheadOpts): number {
       y += t.blockStep;
     }
   }
-  return Math.max(y, metaY) + 2;
+  return { bottom: Math.max(y, metaY) + 2, columnLeft };
 }
