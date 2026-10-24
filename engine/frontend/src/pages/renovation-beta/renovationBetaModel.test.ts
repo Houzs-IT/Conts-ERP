@@ -7,7 +7,7 @@ import type { BetaDefect, BetaReview, BetaWorkspace } from "./renovationBetaApi"
 import {
   dayHeading, dayMonth, dayMonthYear, groupByDay, initials, mytDay, mytTime, nextStep, paymentCard, renovationDays, siteTimeline, stepperItems, trimTimeline,
   approvedSet, defectColumn, defectDaysLate, designTodoRows, feedRooms, filterFeed, groupDefects, mergeTodo,
-  isRecordEntry, paymentStrip, searchEntries, siteFeed, siteProgress, snagProgress, stageReach, timelineCsv, todoList, versionLabel,
+  isRecordEntry, paymentStrip, paymentTotals, searchEntries, siteFeed, siteProgress, snagProgress, stageReach, timelineCsv, todoList, versionLabel,
   whatsappLink, whatsappNumber, type TodoInput,
 } from "./renovationBetaModel";
 
@@ -138,6 +138,12 @@ describe("payments", () => {
     expect(s?.rows[0]?.unlocks).toBeNull();
     expect(s?.rows[1]?.statusLabel).toBe("Not billed");
     expect(s?.receivedPct).toBe(30);
+  });
+  it("sums the total, received and outstanding", () => {
+    expect(paymentTotals({ state: "hidden" })).toBeNull();
+    expect(paymentTotals({ state: "none" })).toEqual({ totalSen: 0, receivedSen: 0, outstandingSen: 0 });
+    expect(paymentTotals({ state: "ok", contractSen: 5000000, receivedSen: 1500000, instalments: [] })).toEqual({ totalSen: 5000000, receivedSen: 1500000, outstandingSen: 3500000 });
+    expect(paymentTotals({ state: "ok", contractSen: 1000, receivedSen: 1200, instalments: [] })?.outstandingSen).toBe(0);
   });
   it("copes with a zero contract", () => {
     expect(paymentStrip({ state: "ok", contractSen: 0, receivedSen: 0, instalments: [] })?.receivedPct).toBeNull();

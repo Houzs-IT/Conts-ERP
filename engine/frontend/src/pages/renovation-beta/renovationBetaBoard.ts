@@ -55,6 +55,8 @@ export interface DesignProject {
   appts: Partial<Record<ApptKey, Appt>>;
   /** Null when the person may not see money (the Payment column is then left out). */
   payment: string | null;
+  /** Money still owed on the sales order; null when there is none or money is hidden. */
+  outstandingSen: number | null;
 }
 
 export type EventGroup = "upd" | "meet" | "work";
@@ -251,6 +253,7 @@ export function toBoardProjects(board: BetaBoard): DesignProject[] {
       po: p.poDoneOn,
       appts,
       payment: paymentText(p),
+      outstandingSen: p.payment.state === "ok" ? p.payment.outstandingSen ?? null : null,
     };
   });
 }
@@ -534,6 +537,8 @@ export function homeList(m: BoardModel, t: HomeTab): DesignProject[] {
 export interface HomeRow {
   p: DesignProject;
   cond: string;
+  /** The condition letter (A to E) and its words, apart, for the status cell. */
+  letter: Letter;
   tone: string;
   /** Who now: "assign" when the team is empty and the viewer may assign, "needs" when they may not, else a name. */
   whoNow: { kind: "assign" } | { kind: "needs" } | { kind: "name"; name: string };
@@ -542,10 +547,11 @@ export interface HomeRow {
 
 export function homeRow(m: BoardModel, p: DesignProject, canAssign: boolean): HomeRow {
   const nx = nextFor(m, p);
-  const [, words] = status(m, p);
+  const [letter, words] = status(m, p);
   return {
     p,
     cond: conditionText(m, p),
+    letter,
     tone: words,
     whoNow: p.unassigned ? (canAssign ? { kind: "assign" } : { kind: "needs" }) : { kind: "name", name: nx?.by?.name ?? p.by["3"]?.name ?? "" },
     left: nx?.d ? diff(nx.d, m.today) : null,

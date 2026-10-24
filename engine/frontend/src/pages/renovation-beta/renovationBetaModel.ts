@@ -117,6 +117,17 @@ export function paymentStrip(payments: BetaPayments): PaymentStrip | null {
   return { contractSen, receivedSen, receivedPct: contractSen > 0 ? Math.round((receivedSen / contractSen) * 100) : null, rows };
 }
 
+export interface PaymentTotals { totalSen: number; receivedSen: number; outstandingSen: number }
+
+/** The Payments card's summary: the sales order total, what came in, and what is still owed (never below zero).
+    Zeros before a sales order is linked; null when money is hidden from the viewer. */
+export function paymentTotals(payments: BetaPayments): PaymentTotals | null {
+  if (payments.state === "hidden") return null;
+  if (payments.state === "none") return { totalSen: 0, receivedSen: 0, outstandingSen: 0 };
+  const { contractSen, receivedSen } = payments;
+  return { totalSen: contractSen, receivedSen, outstandingSen: Math.max(0, contractSen - receivedSen) };
+}
+
 /** reached = the project is at that step or past it; next = the step right after; later = further on. */
 export function stageReach(stageCode: string | null, currentStage: string): "reached" | "next" | "later" {
   if (!stageCode) return "reached";
