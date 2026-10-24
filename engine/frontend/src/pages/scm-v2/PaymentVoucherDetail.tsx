@@ -397,7 +397,8 @@ export const PaymentVoucherDetail = () => {
   /* The AP split (owner 2026-09-03): a 405-x supplier is an OTHER CREDITOR — its
      payment debits AP_OTHER, everyone else AP. The server holds the rule
      (acc/rules.ts apControlRole); this is the display mirror, as on PV New. */
-  const apAccountCode = (supplierRow?.code.startsWith('405-') ? rolesQ.data?.roles.AP_OTHER : rolesQ.data?.roles.AP) ?? '';
+  /* Conts: the supplier's own control first (its record), the prefix rule after. */
+  const apAccountCode = (supplierRow?.control_account || (supplierRow?.code.startsWith('405-') ? rolesQ.data?.roles.AP_OTHER : rolesQ.data?.roles.AP)) ?? '';
   /* Derived from the ringgit actually paid over the foreign face total, re-derived
      when either moves. null (blank figure, or a zero total — the divide-by-zero)
      leaves the rate alone rather than blanking it. */

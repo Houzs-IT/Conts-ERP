@@ -20,6 +20,7 @@
 
 import { postJournal, reverseJournal, validateJournal, type ReverseJournalResult } from './engine';
 import { resolveRoles, customerPaymentLines, orderMoneyTransferLines, type RuleLine } from './rules';
+import { debtorControl, resolveDebtorRoles } from '../conts/parties';
 import { accMastersCompanyId } from './masters-company';
 import { paymentEntryDrift, type EntryFact, type PaymentDrift, type PaymentFact } from './payment-drift';
 import { mytDateOf } from '../scm/lib/my-time';
@@ -128,7 +129,10 @@ export async function postSoPayment(sb: any, p: SoPaymentRow, opts: { dryRun?: b
   const customerName = order?.debtor_name ?? null;
   const customerCode = customerPartyCode(order?.debtor_code, order?.customer_id);
 
-  const roles = await resolveRoles(sb, companyId);
+  /* Conts: the customer's own control (scm.debtors), else the AR rule. */
+  const dr = await resolveDebtorRoles(sb, companyId, customerCode);
+  if (!dr.ok) return { ok: false, status: 'post_failed', reason: dr.error };
+  const roles = dr.roles;
   const transit = p.method === 'merchant' || p.method === 'installment'
     ? await transitFor(sb, companyId, p.merchant_provider)
     : null;
@@ -198,13 +202,17 @@ async function postConvertedPayment(sb: any, p: SoPaymentRow, opts: { dryRun?: b
   const entryDate = (p.created_at ? mytDateOf(p.created_at) : null) ?? paymentDate(p.paid_at);
   if (!entryDate) return { ok: false, status: 'bad_paid_at', reason: `converted payment ${p.id} has no usable date` };
   const roles = await resolveRoles(sb, companyId);
+  /* Conts: each customer's own control — the money leaves one and lands on the other. */
+  const [fromCtl, toCtl] = await Promise.all([debtorControl(sb, companyId, from.code), debtorControl(sb, companyId, to.code)]);
+  if (!fromCtl.ok) return { ok: false, status: 'post_failed', reason: fromCtl.error };
+  if (!toCtl.ok) return { ok: false, status: 'post_failed', reason: toCtl.error };
   const input = {
     companyId,
     entryDate,
     sourceType: CONVERT_SOURCE,
     sourceDocNo: p.id,
     narration: `Money on ${fromDocNo} moved to ${p.so_doc_no}${to.name ? ` — ${to.name}` : ''}`,
-    lines: orderMoneyTransferLines(roles, { fromDocNo, toDocNo: p.so_doc_no, from: { code: from.code, name: from.name }, to: { code: to.code, name: to.name } }, amountSen),
+    lines: orderMoneyTransferLines(roles, { fromDocNo, toDocNo: p.so_doc_no, from: { code: from.code, name: from.name, control: fromCtl.control }, to: { code: to.code, name: to.name, control: toCtl.control } }, amountSen),
   };
   if (opts.dryRun) {
     const v = await validateJournal(sb, input);
@@ -260,18 +268,28 @@ export async function postSiPayment(sb: any, p: SiPaymentRow): Promise<PostPayme
 
   const { data: si, error: siErr } = await sb
     .from('sales_invoices')
-    .select('invoice_number, company_id, debtor_code, debtor_name, migrated_no_stock')
+    .select('invoice_number, company_id, debtor_code, debtor_name, migrated_no_stock, so_doc_no')
     .eq('id', p.sales_invoice_id)
     .maybeSingle();
   if (siErr) return { ok: false, status: 'si_read_failed', reason: siErr.message };
-  const inv = si as { invoice_number?: string; company_id?: number | null; debtor_code?: string | null; debtor_name?: string | null; migrated_no_stock?: boolean | null } | null;
+  const inv = si as { invoice_number?: string; company_id?: number | null; debtor_code?: string | null; debtor_name?: string | null; migrated_no_stock?: boolean | null; so_doc_no?: string | null } | null;
   if (!inv) return { ok: false, status: 'si_not_found', reason: p.sales_invoice_id };
   /* A migrated invoice booked NO receivable here (AutoCount carries it), so
      its payment must not relieve an AR this ledger never recorded. */
   if (inv.migrated_no_stock === true) return { ok: true, status: 'skipped_imported' };
 
   const companyId = inv.company_id ?? p.company_id ?? null;
-  const roles = await resolveRoles(sb, companyId);
+  /* The customer the invoice named on its AR (post-si-revenue): the debtor code, else the order's customer — so the
+     invoice and its payment net on one party. */
+  let customerCode: string | null = customerPartyCode(inv.debtor_code, null);
+  if (!customerCode && inv.so_doc_no) {
+    const o = await orderCustomer(sb, inv.so_doc_no);
+    if (!o.ok) return { ok: false, status: 'so_read_failed', reason: o.reason };
+    customerCode = o.code;
+  }
+  const dr = await resolveDebtorRoles(sb, companyId, customerCode);
+  if (!dr.ok) return { ok: false, status: 'post_failed', reason: dr.error };
+  const roles = dr.roles;
   const transit = p.method === 'merchant' || p.method === 'installment'
     ? await transitFor(sb, companyId, p.merchant_provider)
     : null;
@@ -286,7 +304,7 @@ export async function postSiPayment(sb: any, p: SiPaymentRow): Promise<PostPayme
       method: p.method,
       docNo: inv.invoice_number ?? p.sales_invoice_id,
       transitAccountCode: transit,
-      customerCode: inv.debtor_code ?? null,
+      customerCode,
       customerName: inv.debtor_name ?? null,
     }, amountSen),
   });

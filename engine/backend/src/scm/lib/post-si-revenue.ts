@@ -18,6 +18,7 @@
 import { todayMyt } from './my-time';
 import { postJournal, reverseJournal } from '../../acc/engine';
 import { resolveRoles, siLines, DEFAULT_ROLE_CODES } from '../../acc/rules';
+import { resolveDebtorRoles } from '../../conts/parties';
 import { splitByItemGroup } from '../../acc/item-group-split';
 import { customerPartyCode } from '../../acc/payments';
 import { applyDepositInvoicesBestEffort } from '../../acc/deposit-invoices';
@@ -116,7 +117,10 @@ export async function postSiRevenue(sb: any, invoiceNumber: string): Promise<Pos
     partyCode = customerPartyCode(order?.debtor_code, order?.customer_id);
   }
 
-  const roles = await resolveRoles(sb, companyId);
+  /* Conts: the customer's own control (scm.debtors), else the AR rule. */
+  const dr = await resolveDebtorRoles(sb, companyId, partyCode);
+  if (!dr.ok) return { ok: false, status: 'post_failed', reason: dr.error };
+  const roles = dr.roles;
   const r = await postJournal(sb, {
     companyId,
     entryDate: si.invoice_date,

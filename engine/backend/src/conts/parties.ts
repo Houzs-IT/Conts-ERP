@@ -3,7 +3,7 @@
 // customer (SDR) and supplier (SCR) as a sub-account of its control; here the control is the only account, the
 // customer is a row of scm.debtors and the supplier a row of scm.suppliers, each naming its control.
 import { paginateAll } from '../scm/lib/paginate-all';
-import { apControlRole, type RoleCodes } from '../acc/rules';
+import { apControlOf, resolveRoles, type RoleCodes } from '../acc/rules';
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- PostgREST client, untyped as everywhere in acc/ */
 type Db = any;
@@ -172,5 +172,12 @@ export function rolesForDebtor(roles: RoleCodes, control: string | null): RoleCo
 
 /** The payables control a supplier posts to: its own control, else today's rule (405- codes → AP_OTHER, others → AP). */
 export function apControlFor(roles: RoleCodes, supplier: { code: string | null; control_account?: string | null }): string {
-  return supplier.control_account || roles[apControlRole(supplier.code)];
+  return apControlOf(roles, supplier);
+}
+
+/** The company's posting roles with AR pointed at this customer's own control: what every receivable posting asks. */
+export async function resolveDebtorRoles(sb: Db, companyId: number | null, debtorCode: string | null | undefined): Promise<{ ok: true; roles: RoleCodes } | { ok: false; error: string }> {
+  const ctl = await debtorControl(sb, companyId, debtorCode);
+  if (!ctl.ok) return { ok: false, error: `The customer's control could not be read: ${ctl.error}` };
+  return { ok: true, roles: rolesForDebtor(await resolveRoles(sb, companyId), ctl.control) };
 }

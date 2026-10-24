@@ -113,6 +113,11 @@ export const CONTROL_ROLES: AccountRole[] = ['AR', 'AR_OTHER', 'AP', 'AP_OTHER']
 export const apControlRole = (supplierCode: string | null | undefined): 'AP' | 'AP_OTHER' =>
   supplierCode != null && supplierCode.startsWith('405-') ? 'AP_OTHER' : 'AP';
 
+/** The payables control a supplier posts to (Conts, finance phase 1.5): the control its record names
+    (scm.suppliers.control_account, from the AutoCount import or Suppliers), else the 405- rule above. */
+export const apControlOf = (roles: RoleCodes, supplier: { code: string | null; control_account?: string | null }): string =>
+  supplier.control_account || roles[apControlRole(supplier.code)];
+
 /** source_type of the contra entry that voids a given source_type. */
 export const REVERSAL_SOURCE: Record<string, string> = {
   SI: 'SI_REVERSAL',
@@ -282,7 +287,8 @@ export function siLines(
    own lines on the other. Amounts arrive in MYR sen and already sum to the
    header total — the caller owns that. */
 export type NoteLine = { accountCode: string; amountSen: number; description: string | null };
-export type NoteParty = { code: string | null; name: string | null };
+/* control_account: a supplier's own payables control (apControlOf); customers leave it out. */
+export type NoteParty = { code: string | null; name: string | null; control_account?: string | null };
 
 /** Customer credit note posted: Dr each line's account (RETURN INWARDS by
     default) / Cr AR, party the customer — the customer owes that much less. */
@@ -327,7 +333,7 @@ export function supplierCreditNoteLines(roles: RoleCodes, note: { note_number: s
   const totalSen = lines.reduce((s, l) => s + l.amountSen, 0);
   return [
     {
-      accountCode: roles[apControlRole(supplier.code)], debitSen: totalSen, creditSen: 0,
+      accountCode: apControlOf(roles, supplier), debitSen: totalSen, creditSen: 0,
       partyType: 'SUPPLIER', partyCode: supplier.code, partyName: supplier.name,
       notes: `Supplier credit note ${note.note_number}`,
     },
@@ -347,7 +353,7 @@ export function supplierCreditNoteLines(roles: RoleCodes, note: { note_number: s
 export function apInvoiceLines(
   roles: RoleCodes,
   inv: { invoice_number: string },
-  supplier: { code: string | null; name: string | null },
+  supplier: { code: string | null; name: string | null; control_account?: string | null },
   debits: Array<{ accountCode: string; myrSen: number; description: string | null; department?: Department | null }>,
 ): RuleLine[] {
   return [
@@ -363,7 +369,7 @@ export function apInvoiceLines(
     })),
     // Conts: the supplier's AP is credited per department (one line when the bill has one), so each balances.
     ...splitByDepartment(debits.map((d) => ({ department: d.department, sen: d.myrSen }))).map((part) => ({
-      accountCode: roles[apControlRole(supplier.code)],
+      accountCode: apControlOf(roles, supplier),
       debitSen: 0,
       creditSen: part.sen,
       partyType: 'SUPPLIER',
@@ -378,7 +384,7 @@ export function apInvoiceLines(
 export function piLines(
   roles: RoleCodes,
   pi: { invoice_number: string },
-  supplier: { code: string | null; name: string | null },
+  supplier: { code: string | null; name: string | null; control_account?: string | null },
   groupDebits: Array<{ groupCode: string; accountCode: string; myrSen: number }>,
 ): RuleLine[] {
   const totalSen = groupDebits.reduce((s, g) => s + g.myrSen, 0);
@@ -393,7 +399,7 @@ export function piLines(
       notes: `Purchases — ${g.groupCode} on ${pi.invoice_number}`,
     })),
     {
-      accountCode: roles[apControlRole(supplier.code)],
+      accountCode: apControlOf(roles, supplier),
       debitSen: 0,
       creditSen: totalSen,
       partyType: 'SUPPLIER',
@@ -412,7 +418,7 @@ export function piLines(
 export function pvLines(
   pv: { pv_number: string; payee_name: string; credit_account_code: string },
   debitLegs: Array<{ description: string | null; debit_account_code: string; myrSen: number; department?: Department | null }>,
-  supplier: { code: string | null; name: string | null },
+  supplier: { code: string | null; name: string | null; control_account?: string | null },
   /** The supplier's own AP control (a supplier payment): the Dr leg on it IS
       the supplier's sub-ledger, so it carries the party the way the invoice
       side's Cr leg does — owner 2026-09-06, AutoCount in hand: the payment
@@ -559,14 +565,15 @@ export function orderMoneyTransferLines(
   p: {
     fromDocNo: string;
     toDocNo: string;
-    from: { code: string | null; name: string | null };
-    to: { code: string | null; name: string | null };
+    /* control: the customer's own control (Conts); absent → the AR rule. */
+    from: { code: string | null; name: string | null; control?: string | null };
+    to: { code: string | null; name: string | null; control?: string | null };
   },
   amountSen: number,
 ): RuleLine[] {
   return [
     {
-      accountCode: roles.AR,
+      accountCode: p.from.control || roles.AR,
       debitSen: amountSen,
       creditSen: 0,
       partyType: 'CUSTOMER',
@@ -575,7 +582,7 @@ export function orderMoneyTransferLines(
       notes: `Money on ${p.fromDocNo} moved to ${p.toDocNo}`,
     },
     {
-      accountCode: roles.AR,
+      accountCode: p.to.control || roles.AR,
       debitSen: 0,
       creditSen: amountSen,
       partyType: 'CUSTOMER',

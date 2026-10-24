@@ -19,6 +19,7 @@
 
 import { postJournal, reverseJournal } from './engine';
 import { creditNoteLines, debitNoteLines, supplierCreditNoteLines, resolveRoles, type NoteLine, type NoteParty } from './rules';
+import { resolveDebtorRoles } from '../conts/parties';
 import { docMonthTag, mintMonthlyDocNo } from '../scm/lib/doc-no';
 import { todayMyt } from '../scm/lib/my-time';
 
@@ -118,7 +119,19 @@ export async function postCreditNote(
   if (lines.length === 0) return { ok: false, status: 'lines_required', reason: 'This note has no lines to post.' };
   const kind = String(note.kind) as NoteKind;
   const party: NoteParty = { code: note.party_code ?? null, name: note.party_name ?? null };
-  const roles = await resolveRoles(sb, p.companyId);
+  /* Conts: the party's own control — a customer's from scm.debtors, a supplier's from scm.suppliers. */
+  let roles = await resolveRoles(sb, p.companyId);
+  if (kind === 'SCN') {
+    if (party.code) {
+      const { data: sup, error: supErr } = await sb.from('suppliers').select('control_account').eq('company_id', p.companyId).eq('code', party.code).maybeSingle();
+      if (supErr) return { ok: false, status: 'load_failed', reason: `The supplier's control could not be read: ${supErr.message}` };
+      party.control_account = (sup as { control_account?: string | null } | null)?.control_account ?? null;
+    }
+  } else {
+    const dr = await resolveDebtorRoles(sb, p.companyId, party.code);
+    if (!dr.ok) return { ok: false, status: 'load_failed', reason: dr.error };
+    roles = dr.roles;
+  }
   const ruleLines = kind === 'CN' ? creditNoteLines(roles, { note_number: String(note.note_number) }, party, lines)
     : kind === 'DN' ? debitNoteLines(roles, { note_number: String(note.note_number) }, party, lines)
     : supplierCreditNoteLines(roles, { note_number: String(note.note_number) }, party, lines);

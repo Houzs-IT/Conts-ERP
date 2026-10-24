@@ -33,6 +33,8 @@
 
 import { requireActiveCompanyId, scopeToCompanyId } from './companyScope';
 import { resolveRoles } from '../../acc/rules';
+import { resolveDebtorRoles } from '../../conts/parties';
+import { customerPartyCode } from '../../acc/payments';
 import { addCustomerCredit } from './customer-credits';
 import { standingDeposits, type RefundInput } from '../../acc/deposit-refunds';
 import { conversionsFrom } from './so-money';
@@ -253,7 +255,10 @@ export async function refundCreateGuard(
       }, 409),
     };
   }
-  const roles = await resolveRoles(sb, co.companyId);
+  /* Conts: the customer's own control (scm.debtors), else the AR rule — where the money it refunds was booked. */
+  const dr = await resolveDebtorRoles(sb, co.companyId, customerPartyCode(s.customer.debtorCode, s.customer.customerId));
+  if (!dr.ok) return { ok: false, resp: c.json({ error: 'load_failed', reason: dr.error }, 500) };
+  const roles = dr.roles;
   return {
     ok: true,
     arControl: roles.AR,

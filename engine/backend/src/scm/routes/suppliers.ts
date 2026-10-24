@@ -67,7 +67,7 @@ const SUPPLIER_BASE_COLS =
   'payment_terms, status, rating, notes, supplier_type, category, tin_number, ' +
   'business_reg_no, postcode, area, mobile, fax, website, attention, business_nature, ' +
   'currency, statement_type, aging_basis, credit_limit_sen, country, ' +
-  'registration_no, nature_of_business, exemption_no, phone2';
+  'registration_no, nature_of_business, exemption_no, phone2, control_account'; // control_account: Conts 0156 (the list view has it since 0158)
 /* Mig 0131 — SO-style structured pickup address (the DP supplier-pickup auto-fill
    prefers these over the legacy single `address` line). Added to the base table
    AFTER the list view froze its `s.*` expansion (0084), so they exist on the base
