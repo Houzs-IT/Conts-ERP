@@ -7,7 +7,7 @@
    holds they change the PO itself; before that they are the plan. A PO a VO changed is flagged until purchasing
    confirms the PO change. */
 
-import { useMemo, useState, type CSSProperties, type ReactElement, type ReactNode } from "react";
+import { useCallback, useMemo, useRef, useState, type CSSProperties, type ReactElement } from "react";
 import { Link } from "react-router-dom";
 import { AlertTriangle, ChevronDown, ChevronRight, Download, FilePlus2, Search } from "lucide-react";
 import { useAuth } from "../../auth/AuthContext";
@@ -15,12 +15,12 @@ import { useQuery } from "../../hooks/useQuery";
 import { useMfgProducts } from "../../vendor/scm/lib/mfg-products-queries";
 import { money } from "../projects/renovation/renovationModel";
 import { WS, WsBadge, WsDialog, WsEmpty, WsFilterPill, WsPageHead, TONE_ALERT, TONE_QUIET, TONE_WAIT, btnStyle, inputStyle } from "./BetaWsUi";
-import { WsMark, WsNarrow, WsNarrowStyle, WsStat, WsStats, WsTable, metaStyle, narrowItemStyle, numStyle, tdStyle, thStyle } from "./BetaVoPoUi";
+import { WsStat, WsStats, metaStyle, thStyle } from "./BetaVoPoUi";
 import type { BetaTabProps } from "./betaShared";
 import { dayMonthYear } from "./renovationBetaModel";
 import { BETA } from "./renovationBetaTheme";
 import { voPoApi } from "./renovationBetaVoPo";
-import { LinePhotoThumbs, type LinePhotoSet } from "./BetaLinePhotos";
+import { LinePhotoThumbs, photoCount, type LinePhotoSet } from "./BetaLinePhotos";
 import {
   amountAfter, byAreaBlocks, byCategory, livePo, colourEditable, colourOf, editProblem, editWords, effectiveEdit, lineDates, lineLate, linesApi, linesCsv, postVo, refusalText,
   voBatches, type LineEdit, type ManagedLine, type PendingPoChange, type PostedVo,
@@ -38,9 +38,33 @@ const BANDS: ReadonlyArray<readonly [string, string, string]> = [
 
 const EDIT_BG = "#FFF9DB";
 const EDIT_LINE = "#E9D77E";
-const editInput: CSSProperties = { ...inputStyle, minHeight: 34, fontSize: 13, background: EDIT_BG, borderColor: EDIT_LINE, padding: "0 8px" };
-const dateInput: CSSProperties = { ...editInput, width: 132, padding: "0 4px" };
+const editInput: CSSProperties = { ...inputStyle, minHeight: 30, height: 30, fontSize: 12.5, background: EDIT_BG, borderColor: EDIT_LINE, padding: "0 6px" };
 const COLS = 10;
+/* Below this width of the tab the table becomes stacked row cards: every column fits from here up (1280-1600px
+   screens, 80% zoom included), and nothing is ever hidden or scrolled sideways. */
+const TABLE_MIN = 900;
+const ellipsis: CSSProperties = { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 };
+const cellStyle: CSSProperties = { padding: "6px 6px", fontSize: 13, borderBottom: `1px solid ${WS.rowLine}`, verticalAlign: "middle", overflow: "hidden" };
+const headStyle: CSSProperties = { ...thStyle, padding: "8px 6px", fontSize: 11.5, ...ellipsis };
+
+/** Column widths (percent of the table), with and without the Amount column. */
+function colWidths(finance: boolean): number[] {
+  return finance ? [13, 23, 10, 6, 9, 9.5, 9.5, 10, 5, 5] : [14, 30, 11, 6, 0, 9.5, 9.5, 10, 5, 5];
+}
+
+/** The tab's own width, so the layout follows the space it has (inside Property OS it is not the window's). */
+function useWidth(): [(el: HTMLDivElement | null) => void, number] {
+  const [w, setW] = useState(0);
+  const ro = useRef<ResizeObserver | null>(null);
+  const ref = useCallback((el: HTMLDivElement | null) => {
+    ro.current?.disconnect();
+    if (!el) return;
+    setW(el.clientWidth);
+    ro.current = new ResizeObserver((es) => { const e = es[0]; if (e) setW(e.contentRect.width); });
+    ro.current.observe(el);
+  }, []);
+  return [ref, w];
+}
 
 type DateField = "orderOn" | "deliverOn" | "poDate";
 
@@ -56,6 +80,7 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
   const [refusals, setRefusals] = useState<Record<string, string>>({});
   const [result, setResult] = useState<PostedVo[] | null>(null);
   const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [wrapRef, width] = useWidth();
 
   const lines = q.data?.lines ?? [];
   const [view, setView] = useState<"category" | "area">("category");
@@ -148,7 +173,7 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
 
   return (
     <>
-      <WsNarrowStyle />
+      <style>{DATE_CSS}</style>
       <WsPageHead
         title="PO"
         sub="Every line of the sales order, after VOs. Change a yellow field, then Save & post to VO: the order changes at once and the VO keeps the record."
@@ -201,63 +226,68 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
         <p style={{ margin: 0, fontSize: 13, color: WS.text2 }}>A draft order's lines are changed on the order itself; they show here read only until it is confirmed.</p>
       )}
 
-      {tree.length === 0 ? <WsEmpty>No sales order lines for this project yet. Link a sales order to see its lines here.</WsEmpty> : (
-        <WsTable minWidth={980} label="Sales order lines by category">
-          <thead>
-            <tr>
-              <th style={thStyle}>SKU</th>
-              <th style={thStyle}>Description</th>
-              <th style={thStyle}>Variants</th>
-              <th style={{ ...thStyle, textAlign: "right" }}>Qty</th>
-              {d.finance && <th style={{ ...thStyle, textAlign: "right" }}>Amount</th>}
-              <th style={thStyle}>Processing date</th>
-              <th style={thStyle}>Delivery date</th>
-              <th style={thStyle}>PO</th>
-              <th style={thStyle}>GR</th>
-              <th style={thStyle}>DO</th>
-            </tr>
-          </thead>
-          <tbody>
-            {tree.map((c, ci) => {
-              const open = !closed.has(c.key);
-              const band = BANDS[ci % BANDS.length];
-              return [
-                <Band key={c.key} band={band} level="cat" label={c.label} hint={catHint(c.subs.flatMap((s) => s.items), d.finance)} open={open} onToggle={() => toggle(c.key)} cols={d.finance ? COLS : COLS - 1} />,
-                ...(open ? c.subs.flatMap((s) => {
-                  if (!s.label) return s.items.map((l) => <LineRow key={l.id} {...cell(l)} />);
-                  const subOpen = !closed.has(s.key);
-                  return [
-                    <Band key={s.key} band={band} level="sub" label={s.label} hint={`${s.items.length} line${s.items.length === 1 ? "" : "s"}`} open={subOpen} onToggle={() => toggle(s.key)} cols={d.finance ? COLS : COLS - 1} />,
-                    ...(subOpen ? s.items.map((l) => <LineRow key={l.id} {...cell(l)} />) : []),
-                  ];
-                }) : []),
-              ];
-            })}
-          </tbody>
-        </WsTable>
-      )}
-      {tree.length > 0 && (
-        <WsNarrow label="Sales order lines by category">
-          {tree.map((c, ci) => {
-            const band = BANDS[ci % BANDS.length];
-            const open = !closed.has(c.key);
-            return (
-              <li key={c.key}>
-                <button type="button" aria-expanded={open} onClick={() => toggle(c.key)}
-                  style={{ width: "100%", border: 0, borderLeft: `4px solid ${band[0]}`, borderBottom: `1px solid ${BETA.line}`, background: band[1], color: band[2], padding: "8px 12px", font: "inherit", fontWeight: 700, fontSize: 15, cursor: "pointer", display: "flex", gap: 6, alignItems: "center", textAlign: "left" }}>
-                  {open ? <ChevronDown size={16} aria-hidden="true" /> : <ChevronRight size={16} aria-hidden="true" />}
-                  <span style={{ flex: 1 }}>{c.label} ({c.count})</span>
-                </button>
-                {open && (
-                  <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
-                    {c.subs.flatMap((s) => s.items).map((l) => <NarrowLine key={l.id} {...cell(l)} />)}
-                  </ul>
-                )}
-              </li>
-            );
-          })}
-        </WsNarrow>
-      )}
+      <div ref={wrapRef} style={{ width: "100%", minWidth: 0 }}>
+        {tree.length === 0 ? <WsEmpty>No sales order lines for this project yet. Link a sales order to see its lines here.</WsEmpty>
+          : width === 0 || width >= TABLE_MIN ? (
+            <div role="region" aria-label="Sales order lines" style={{ border: `1px solid ${BETA.line}`, borderRadius: 10, overflow: "hidden" }}>
+              <table style={{ width: "100%", tableLayout: "fixed", borderCollapse: "collapse" }}>
+                <colgroup>{colWidths(d.finance).map((w, k) => (w > 0 ? <col key={k} style={{ width: `${w}%` }} /> : null))}</colgroup>
+                <thead>
+                  <tr>
+                    <th style={headStyle}>SKU</th>
+                    <th style={headStyle}>Description</th>
+                    <th style={headStyle}>Variants</th>
+                    <th style={{ ...headStyle, textAlign: "right" }}>Qty</th>
+                    {d.finance && <th style={{ ...headStyle, textAlign: "right" }}>Amount</th>}
+                    <th style={headStyle} title="Processing date: when to place the order">Processing</th>
+                    <th style={headStyle} title="Delivery date">Delivery</th>
+                    <th style={headStyle}>PO</th>
+                    <th style={{ ...headStyle, textAlign: "center" }}>GR</th>
+                    <th style={{ ...headStyle, textAlign: "center" }}>DO</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {tree.map((c, ci) => {
+                    const open = !closed.has(c.key);
+                    const band = BANDS[ci % BANDS.length];
+                    return [
+                      <Band key={c.key} band={band} level="cat" label={c.label} hint={catHint(c.subs.flatMap((s) => s.items), d.finance)} open={open} onToggle={() => toggle(c.key)} cols={d.finance ? COLS : COLS - 1} />,
+                      ...(open ? c.subs.flatMap((s) => {
+                        if (!s.label) return s.items.map((l) => <LineRow key={l.id} {...cell(l)} />);
+                        const subOpen = !closed.has(s.key);
+                        return [
+                          <Band key={s.key} band={band} level="sub" label={s.label} hint={`${s.items.length} line${s.items.length === 1 ? "" : "s"}`} open={subOpen} onToggle={() => toggle(s.key)} cols={d.finance ? COLS : COLS - 1} />,
+                          ...(subOpen ? s.items.map((l) => <LineRow key={l.id} {...cell(l)} />) : []),
+                        ];
+                      }) : []),
+                    ];
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <ul aria-label="Sales order lines" style={{ listStyle: "none", margin: 0, padding: 0, border: `1px solid ${BETA.line}`, borderRadius: 10, overflow: "hidden" }}>
+              {tree.map((c, ci) => {
+                const band = BANDS[ci % BANDS.length];
+                const open = !closed.has(c.key);
+                return (
+                  <li key={c.key}>
+                    <button type="button" aria-expanded={open} onClick={() => toggle(c.key)}
+                      style={{ width: "100%", border: 0, borderLeft: `4px solid ${band[0]}`, borderBottom: `1px solid ${BETA.line}`, background: band[1], color: band[2], padding: "8px 12px", font: "inherit", fontWeight: 700, fontSize: 15, cursor: "pointer", display: "flex", gap: 6, alignItems: "center", textAlign: "left" }}>
+                      {open ? <ChevronDown size={16} aria-hidden="true" /> : <ChevronRight size={16} aria-hidden="true" />}
+                      <span style={{ flex: 1, ...ellipsis }}>{c.label} ({c.count})</span>
+                    </button>
+                    {open && (
+                      <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+                        {c.subs.flatMap((s) => s.items).map((l) => <LineCard key={l.id} {...cell(l)} />)}
+                      </ul>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+      </div>
 
       {batches.length > 0 && (
         <div style={{ position: "sticky", bottom: 0, zIndex: 5, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end", padding: "10px 12px", background: BETA.surface, border: `1px solid ${EDIT_LINE}`, borderRadius: 10, boxShadow: "0 -2px 10px rgba(0,0,0,.06)" }}>
@@ -334,13 +364,13 @@ function Band({ band, level, label, hint, open, onToggle, cols }: { band: readon
       <td colSpan={cols} style={{ padding: 0, background: level === "cat" ? band[1] : WS.tealSoft, borderBottom: `1px solid ${BETA.line}` }}>
         <button type="button" aria-expanded={open} onClick={onToggle}
           style={{
-            display: "flex", alignItems: "center", gap: 8, width: "100%", minHeight: level === "cat" ? 42 : 36, padding: `0 12px 0 ${level === "cat" ? 8 : 28}px`, border: 0,
+            display: "flex", alignItems: "center", gap: 8, width: "100%", minHeight: level === "cat" ? 38 : 32, overflow: "hidden", padding: `0 12px 0 ${level === "cat" ? 8 : 28}px`, border: 0,
             borderLeft: `4px solid ${level === "cat" ? band[0] : `${band[0]}66`}`, background: "transparent", color: level === "cat" ? band[2] : WS.text2, font: "inherit",
             fontSize: level === "cat" ? 15 : 13, fontWeight: level === "cat" ? 700 : 600, cursor: "pointer", textAlign: "left",
           }}>
-          <Icon size={16} aria-hidden="true" />
-          <span style={{ flex: 1 }}>{label}</span>
-          <span style={{ fontSize: 12, fontWeight: 500, color: WS.text2 }}>{hint}</span>
+          <Icon size={16} aria-hidden="true" style={{ flexShrink: 0 }} />
+          <span style={{ flex: "1 1 auto", ...ellipsis }}>{label}</span>
+          <span style={{ flex: "0 1 auto", fontSize: 12, fontWeight: 500, color: WS.text2, ...ellipsis }}>{hint}</span>
         </button>
       </td>
     </tr>
@@ -369,33 +399,54 @@ function changed(r: RowCtx): LineEdit | null {
 
 function SkuCell(r: RowCtx): ReactElement {
   const e = changed(r);
+  const code = e?.itemCode ?? r.l.itemCode;
+  if (!r.editable) return <span title={code} style={{ display: "block", fontFamily: "ui-monospace, monospace", fontSize: 12, ...ellipsis }}>{code}</span>;
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-start" }}>
-      {r.editable ? (
-        <button type="button" onClick={r.pick} aria-label={`Change SKU ${r.l.itemCode}`}
-          style={{ ...editInput, width: "auto", maxWidth: 150, minWidth: 100, display: "inline-flex", textAlign: "left", alignItems: "center", gap: 6, cursor: "pointer", fontFamily: "ui-monospace, monospace" }}>
-          {e?.itemCode ?? r.l.itemCode}<Search size={12} aria-hidden="true" />
-        </button>
-      ) : <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 13 }}>{r.l.itemCode}</span>}
-      {e?.itemCode && <span style={{ ...metaStyle, textDecoration: "line-through" }}>{r.l.itemCode}</span>}
-    </div>
+    <button type="button" onClick={r.pick} aria-label={`Change SKU ${r.l.itemCode}`} title={e?.itemCode ? `${code} (was ${r.l.itemCode})` : `${code}: change SKU`}
+      style={{ ...editInput, width: "100%", display: "flex", alignItems: "center", gap: 4, cursor: "pointer", fontFamily: "ui-monospace, monospace", fontSize: 12, fontWeight: e?.itemCode ? 700 : 400 }}>
+      <span style={{ flex: 1, textAlign: "left", ...ellipsis }}>{code}</span><Search size={11} aria-hidden="true" style={{ flexShrink: 0 }} />
+    </button>
   );
+}
+
+/** The remark as one line of text (click to edit), or "+ remark"; an input only while editing. */
+function RemarkControl(r: RowCtx): ReactElement | null {
+  const [open, setOpen] = useState(false);
+  const value = r.edit?.remark ?? r.l.remark ?? "";
+  const moved = r.edit?.remark !== undefined && r.edit.remark.trim() !== (r.l.remark ?? "").trim();
+  if (!r.editable) return value ? <span title={value} style={{ ...metaStyle, ...ellipsis }}>{value}</span> : null;
+  if (open) {
+    return (
+      <input autoFocus aria-label={`Remark for ${r.l.itemCode}`} placeholder="Remark" style={{ ...editInput, height: 24, minHeight: 24, fontSize: 12, flex: "1 1 120px", minWidth: 0 }}
+        value={value} onChange={(ev) => r.setEdit({ remark: ev.target.value })} onBlur={() => setOpen(false)}
+        onKeyDown={(ev) => { if (ev.key === "Enter" || ev.key === "Escape") (ev.target as HTMLInputElement).blur(); }} />
+    );
+  }
+  const link: CSSProperties = { border: 0, padding: 0, background: "transparent", font: "inherit", fontSize: 12, cursor: "pointer", textAlign: "left", ...ellipsis };
+  return value
+    ? <button type="button" title={`Remark: ${value} (click to edit)`} onClick={() => setOpen(true)} style={{ ...link, color: moved ? BETA.accentInk : WS.text2, fontWeight: moved ? 600 : 400, flex: "0 1 auto" }}>"{value}"</button>
+    : <button type="button" aria-label={`Add a remark to ${r.l.itemCode}`} onClick={() => setOpen(true)} style={{ ...link, color: BETA.accent, flex: "0 0 auto" }}>+ remark</button>;
 }
 
 function DescCell(r: RowCtx): ReactElement {
   const e = changed(r);
+  const name = e?.pickedName ?? r.l.description;
+  const meta = [r.l.supplierName, r.l.area].filter(Boolean).join(" · ");
+  const photos = linePhotoSet(r.l);
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 190 }}>
-      <span style={{ fontWeight: 600 }}>{e?.pickedName ?? r.l.description}</span>
-      <span style={metaStyle}>{[r.l.supplierName, r.l.area, r.l.uom].filter(Boolean).join(" · ")}</span>
-      {r.l.goesTo !== "po" && <span><WsBadge tone={TONE_QUIET} size={11}>{r.l.goesTo === "client" ? "Client buys (Client PO)" : "Our works"}</WsBadge></span>}
-      <LinePhotoThumbs photos={linePhotoSet(r.l)} label={r.l.description || r.l.itemCode} />
-      {r.editable ? (
-        <input aria-label={`Remark for ${r.l.itemCode}`} placeholder="Remark" style={editInput} value={r.edit?.remark ?? r.l.remark ?? ""} onChange={(ev) => r.setEdit({ remark: ev.target.value })} />
-      ) : r.l.remark && <span style={metaStyle}>{r.l.remark}</span>}
+    <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+        <span title={name} style={{ fontWeight: 600, fontSize: 13, ...ellipsis }}>{name}</span>
+        {r.l.goesTo !== "po" && <span style={{ flexShrink: 0 }}><WsBadge tone={TONE_QUIET} size={10}>{r.l.goesTo === "client" ? "Client buys" : "Our works"}</WsBadge></span>}
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+        {meta && <span title={meta} style={{ ...metaStyle, flex: "0 1 auto", ...ellipsis }}>{meta}</span>}
+        <RemarkControl {...r} />
+      </div>
+      {photoCount(photos) > 0 && <LinePhotoThumbs photos={photos} label={r.l.description || r.l.itemCode} />}
       {r.refusal && <span role="alert" style={{ fontSize: 12, color: WS.red }}>Not saved: {r.refusal}</span>}
       {r.pending.map((c) => (
-        <Link key={c.id} to={`/scm/po-amendments/${c.id}`} style={{ fontSize: 12, color: WS.amber, fontWeight: 600 }}>
+        <Link key={c.id} to={`/scm/po-amendments/${c.id}`} style={{ fontSize: 12, color: WS.amber, fontWeight: 600, ...ellipsis }}>
           {c.poNumber}: change from {c.voLabel ?? "a VO"} waiting for PO approval
         </Link>
       ))}
@@ -404,21 +455,19 @@ function DescCell(r: RowCtx): ReactElement {
 }
 
 function VariantCell(r: RowCtx): ReactElement {
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 130 }}>
-      {r.l.variantText && <span style={{ fontSize: 13 }}>{r.l.variantText}</span>}
-      {r.editable && colourEditable(r.l) ? (
-        <input aria-label={`Colour for ${r.l.itemCode}`} placeholder="Colour / code" style={editInput} value={r.edit?.colour ?? colourOf(r.l)} onChange={(ev) => r.setEdit({ colour: ev.target.value })} />
-      ) : !r.l.variantText && <span style={metaStyle}>-</span>}
-    </div>
-  );
+  if (r.editable && colourEditable(r.l)) {
+    return <input aria-label={`Colour for ${r.l.itemCode}`} placeholder="Colour / code" title={r.l.variantText ?? undefined} style={{ ...editInput, width: "100%" }}
+      value={r.edit?.colour ?? colourOf(r.l)} onChange={(ev) => r.setEdit({ colour: ev.target.value })} />;
+  }
+  return r.l.variantText ? <span title={r.l.variantText} style={{ display: "block", fontSize: 12.5, ...ellipsis }}>{r.l.variantText}</span> : <span style={metaStyle}>-</span>;
 }
 
 function QtyCell(r: RowCtx): ReactElement {
   if (!r.editable) return <span>{r.l.qty}</span>;
   return (
-    <input aria-label={`Qty for ${r.l.itemCode}`} type="number" min={1} step={1} inputMode="numeric" style={{ ...editInput, width: 72, textAlign: "right" }}
-      value={r.edit?.qty ?? r.l.qty} onChange={(ev) => r.setEdit({ qty: ev.target.value === "" ? Number.NaN : Number(ev.target.value) })} />
+    <input aria-label={`Qty for ${r.l.itemCode}`} type="text" inputMode="numeric" title={r.l.uom} style={{ ...editInput, width: "100%", maxWidth: 64, textAlign: "right" }}
+      value={r.edit?.qty === undefined ? String(r.l.qty) : Number.isNaN(r.edit.qty) ? "" : String(r.edit.qty)}
+      onChange={(ev) => { const t = ev.target.value.trim(); r.setEdit({ qty: t === "" ? Number.NaN : Number(t) }); }} />
   );
 }
 
@@ -428,47 +477,58 @@ function AmountCell(r: RowCtx): ReactElement {
   if (r.l.amountSen === null) return <span>-</span>;
   const moved = after !== null && after !== r.l.amountSen;
   return (
-    <span style={{ display: "inline-flex", flexDirection: "column", alignItems: "flex-end" }}>
-      <span style={{ fontWeight: moved ? 700 : 400 }}>{money(after ?? r.l.amountSen)}</span>
-      {moved && <span style={{ ...metaStyle, textDecoration: "line-through" }}>{money(r.l.amountSen)}</span>}
+    <span title={moved ? `Was ${money(r.l.amountSen)}` : undefined}
+      style={{ display: "block", fontSize: 12.5, fontVariantNumeric: "tabular-nums", fontWeight: moved ? 700 : 400, color: moved ? BETA.accentInk : undefined, ...ellipsis }}>
+      {money(after ?? r.l.amountSen)}
     </span>
   );
 }
 
-function DateInput({ r, which, value, label, late }: { r: RowCtx; which: DateField; value: string | null; label: string; late: boolean }): ReactElement {
+/* The native date input lies, transparent, over the compact date text, and its picker button is stretched over the
+   whole input: a real click anywhere opens the browser's own picker. That works inside Property OS's frame too, where
+   a script may not open the picker (showPicker is refused in a cross-origin frame). */
+const DATE_CSS = `.bpo-date::-webkit-calendar-picker-indicator{position:absolute;inset:0;width:auto;height:auto;margin:0;padding:0;opacity:0;cursor:pointer}`;
+
+/** A whole calendar date (a typed year is complete only at four digits starting 19 or 20). */
+const fullDate = (v: string): boolean => /^(19|20)\d\d-\d\d-\d\d$/.test(v);
+
+/** A date as compact text; clicking it opens the browser's date picker, and picking or clearing saves it. */
+function DateButton({ r, which, value, label, late, small = false }: { r: RowCtx; which: DateField; value: string | null; label: string; late: boolean; small?: boolean }): ReactElement {
+  const busy = r.busyKey === `${r.l.id}:${which}`;
   return (
-    <input type="date" aria-label={`${label} for ${r.l.itemCode}`} disabled={r.busyKey === `${r.l.id}:${which}`}
-      style={{ ...dateInput, ...(late ? { borderColor: WS.red, color: WS.red } : {}) }}
-      defaultValue={value ?? ""} key={`${value ?? ""}`}
-      onBlur={(ev) => { if ((ev.target.value || null) !== (value ?? null)) r.saveDate(which, ev.target.value); }} />
+    <span style={{ position: "relative", display: "block", minWidth: 0 }} title={late ? `${label}: late` : label}>
+      <span aria-hidden="true"
+        style={{ ...editInput, display: "flex", alignItems: "center", width: "100%", fontSize: small ? 11.5 : 12, ...(small ? { height: 22, minHeight: 22 } : {}), ...(late ? { borderColor: WS.red, color: WS.red, fontWeight: 600 } : value ? {} : { color: BETA.muted }), ...ellipsis }}>
+        {busy ? "Saving..." : value ? dayMonthYear(value) : "Set date"}
+      </span>
+      <input type="date" className="bpo-date" aria-label={`${label} for ${r.l.itemCode}`} disabled={busy} defaultValue={value ?? ""} key={value ?? ""}
+        onChange={(ev) => {
+          const v = ev.target.value;
+          if ((v || null) !== (value ?? null) && (v === "" || fullDate(v))) r.saveDate(which, v);
+        }}
+        style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity: 0, cursor: "pointer", border: 0, padding: 0, margin: 0 }} />
+    </span>
   );
+}
+
+function DateText({ value, late }: { value: string | null; late: boolean }): ReactElement {
+  return <span style={{ display: "block", fontSize: 12.5, ...(late ? { color: WS.red, fontWeight: 600 } : {}), ...ellipsis }}>{value ? dayMonthYear(value) : "-"}</span>;
 }
 
 /** When to place the order: the line's own date, before and after a PO exists. */
 function ProcessingCell({ r }: { r: RowCtx }): ReactElement {
   const d = lineDates(r.l);
   const late = lineLate(r.l, r.today) === "order";
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-      {r.editable && r.plansReady ? <DateInput r={r} which="orderOn" value={d.orderOn} label="Processing date" late={late} />
-        : <span style={late ? { color: WS.red, fontWeight: 600 } : undefined}>{d.orderOn ? dayMonthYear(d.orderOn) : "-"}</span>}
-      {late && <WsBadge tone={TONE_ALERT} size={11}>Order late</WsBadge>}
-    </div>
-  );
+  return r.editable && r.plansReady ? <DateButton r={r} which="orderOn" value={d.orderOn} label="Processing date" late={late} /> : <DateText value={d.orderOn} late={late} />;
 }
 
 /** When to deliver: the PO line's delivery date once a PO holds the line (changed on the PO), else the line's own. */
 function DeliveryCell({ r }: { r: RowCtx }): ReactElement {
   const d = lineDates(r.l);
   const late = lineLate(r.l, r.today) === "deliver";
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-      {r.editable && (d.fromPo || r.plansReady) ? <DateInput r={r} which="deliverOn" value={d.deliverOn} label="Delivery date" late={late} />
-        : <span style={late ? { color: WS.red, fontWeight: 600 } : undefined}>{d.deliverOn ? dayMonthYear(d.deliverOn) : "-"}</span>}
-      {late && <WsBadge tone={TONE_ALERT} size={11}>Delivery late</WsBadge>}
-      {d.fromPo && <span style={metaStyle}>On the PO</span>}
-    </div>
-  );
+  return r.editable && (d.fromPo || r.plansReady)
+    ? <DateButton r={r} which="deliverOn" value={d.deliverOn} label={d.fromPo ? `Delivery date on ${d.fromPo.poNumber}` : "Delivery date"} late={late} />
+    : <DateText value={d.deliverOn} late={late} />;
 }
 
 /** The PO doc no and its PO date once a PO holds the line, else "-" (and, for a line we buy, whether it needs one). */
@@ -476,23 +536,21 @@ function PoCell({ r }: { r: RowCtx }): ReactElement {
   const po = livePo(r.l);
   if (po) {
     return (
-      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-        <Link to={`/scm/purchase-orders/${po.poId}`} style={{ fontSize: 13, fontWeight: 600, whiteSpace: "nowrap" }}>{po.poNumber}</Link>
-        {r.editable ? <DateInput r={r} which="poDate" value={po.poDate} label={`PO date of ${po.poNumber}`} late={false} />
-          : <span style={metaStyle}>{dayMonthYear(po.poDate)}</span>}
+      <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
+        <Link to={`/scm/purchase-orders/${po.poId}`} title={po.poNumber} style={{ fontSize: 12.5, fontWeight: 600, ...ellipsis }}>{po.poNumber}</Link>
+        {r.editable ? <DateButton r={r} which="poDate" value={po.poDate} label={`PO date of ${po.poNumber}`} late={false} small /> : <span style={metaStyle}>{dayMonthYear(po.poDate)}</span>}
       </div>
     );
   }
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-      <span>-</span>
-      {r.l.goesTo === "po" && (r.editable && r.plansReady ? (
-        <label style={{ display: "inline-flex", gap: 6, alignItems: "center", fontSize: 12, color: WS.text2, whiteSpace: "nowrap" }}>
-          <input type="checkbox" checked={r.l.plan.noPo} disabled={r.busyKey === `${r.l.id}:noPo`} onChange={(ev) => r.setNoPo(ev.target.checked)} />No PO needed
-        </label>
-      ) : r.l.plan.noPo ? <span style={metaStyle}>No PO needed</span> : null)}
-    </div>
-  );
+  if (r.l.goesTo !== "po") return <span style={metaStyle}>-</span>;
+  if (r.editable && r.plansReady) {
+    return (
+      <label title="This line needs no PO" style={{ display: "flex", gap: 4, alignItems: "center", fontSize: 12, color: WS.text2, ...ellipsis }}>
+        <input type="checkbox" checked={r.l.plan.noPo} disabled={r.busyKey === `${r.l.id}:noPo`} onChange={(ev) => r.setNoPo(ev.target.checked)} style={{ margin: 0, flexShrink: 0 }} />No PO
+      </label>
+    );
+  }
+  return <span style={metaStyle}>{r.l.plan.noPo ? "No PO" : "-"}</span>;
 }
 
 function linePhotoSet(l: ManagedLine): LinePhotoSet {
@@ -503,49 +561,63 @@ function linePhotoSet(l: ManagedLine): LinePhotoSet {
   };
 }
 
-function grMark(l: ManagedLine): ReactElement {
-  if (l.goesTo !== "po" && l.pos.length === 0) return <span style={metaStyle}>-</span>;
-  return <WsMark state={l.gr} />;
+const PILL: Readonly<Record<"yes" | "part" | "no", readonly [string, string, string]>> = {
+  yes: [WS.green, "#E5F3EA", "Yes"],
+  part: [WS.amber, "#FDF1E2", "Part"],
+  no: [WS.text2, WS.chip, "No"],
+};
+
+function Pill({ state, what }: { state: "yes" | "part" | "no" | null; what: string }): ReactElement {
+  if (!state) return <span style={metaStyle} aria-label={`${what}: not applicable`}>-</span>;
+  const [fg, bg, text] = PILL[state];
+  return <span title={`${what}: ${text}`} style={{ display: "inline-block", padding: "1px 5px", borderRadius: 9, background: bg, color: fg, fontSize: 10.5, fontWeight: 700, lineHeight: "16px" }}>{text}</span>;
+}
+
+function grState(l: ManagedLine): "yes" | "part" | "no" | null {
+  return l.goesTo !== "po" && l.pos.length === 0 ? null : l.gr;
 }
 
 function LineRow(r: RowCtx): ReactElement {
-  const dim = r.l.goesTo === "client";
   const touched = changed(r) !== null;
   return (
-    <tr style={{ opacity: dim ? 0.75 : 1, background: touched ? "#FFFDF0" : undefined }}>
-      <td style={{ ...tdStyle, paddingLeft: 24 }}><SkuCell {...r} /></td>
-      <td style={tdStyle}><DescCell {...r} /></td>
-      <td style={tdStyle}><VariantCell {...r} /></td>
-      <td style={numStyle}><QtyCell {...r} /></td>
-      {r.finance && <td style={numStyle}><AmountCell {...r} /></td>}
-      <td style={tdStyle}><ProcessingCell r={r} /></td>
-      <td style={tdStyle}><DeliveryCell r={r} /></td>
-      <td style={tdStyle}><PoCell r={r} /></td>
-      <td style={tdStyle}>{grMark(r.l)}</td>
-      <td style={tdStyle}><WsMark state={r.l.do} /></td>
+    <tr style={{ opacity: r.l.goesTo === "client" ? 0.75 : 1, background: touched ? "#FFFDF0" : undefined }}>
+      <td style={{ ...cellStyle, paddingLeft: 12 }}><SkuCell {...r} /></td>
+      <td style={cellStyle}><DescCell {...r} /></td>
+      <td style={cellStyle}><VariantCell {...r} /></td>
+      <td style={{ ...cellStyle, textAlign: "right" }}><QtyCell {...r} /></td>
+      {r.finance && <td style={{ ...cellStyle, textAlign: "right" }}><AmountCell {...r} /></td>}
+      <td style={cellStyle}><ProcessingCell r={r} /></td>
+      <td style={cellStyle}><DeliveryCell r={r} /></td>
+      <td style={cellStyle}><PoCell r={r} /></td>
+      <td style={{ ...cellStyle, textAlign: "center" }}><Pill state={grState(r.l)} what="Goods received" /></td>
+      <td style={{ ...cellStyle, textAlign: "center" }}><Pill state={r.l.do} what="Delivery order" /></td>
     </tr>
   );
 }
 
-function NarrowLine(r: RowCtx): ReactElement {
+/** One line as a stacked card, when the tab is narrower than the table needs. */
+function LineCard(r: RowCtx): ReactElement {
   const touched = changed(r) !== null;
+  const field = (label: string, child: ReactElement): ReactElement => (
+    <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}><span style={metaStyle}>{label}</span>{child}</div>
+  );
   return (
-    <li style={{ ...narrowItemStyle, gap: 8, opacity: r.l.goesTo === "client" ? 0.75 : 1, background: touched ? "#FFFDF0" : BETA.surface }}>
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "flex-start" }}>
+    <li style={{ padding: "10px 12px", borderBottom: `1px solid ${WS.rowLine}`, display: "flex", flexDirection: "column", gap: 8, opacity: r.l.goesTo === "client" ? 0.75 : 1, background: touched ? "#FFFDF0" : BETA.surface }}>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: 8, alignItems: "center" }}>
         <SkuCell {...r} />
         {r.finance && <AmountCell {...r} />}
       </div>
       <DescCell {...r} />
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-start" }}>
-        <div style={{ flex: "1 1 150px" }}><VariantCell {...r} /></div>
-        <label style={{ display: "flex", flexDirection: "column", gap: 2, fontSize: 12, color: BETA.muted }}>Qty ({r.l.uom})<QtyCell {...r} /></label>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 72px", gap: 8 }}>
+        {field("Variants", <VariantCell {...r} />)}
+        {field(`Qty (${r.l.uom})`, <QtyCell {...r} />)}
       </div>
-      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-        <div><div style={metaStyle}>Processing date</div><ProcessingCell r={r} /></div>
-        <div><div style={metaStyle}>Delivery date</div><DeliveryCell r={r} /></div>
-        <div><div style={metaStyle}>PO</div><PoCell r={r} /></div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>
+        {field("Processing", <ProcessingCell r={r} />)}
+        {field("Delivery", <DeliveryCell r={r} />)}
+        {field("PO", <PoCell r={r} />)}
       </div>
-      <div style={{ display: "flex", gap: 8, alignItems: "center", ...metaStyle }}>GR {grMark(r.l)} DO <WsMark state={r.l.do} /></div>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", ...metaStyle }}>GR <Pill state={grState(r.l)} what="Goods received" /> DO <Pill state={r.l.do} what="Delivery order" /></div>
     </li>
   );
 }
