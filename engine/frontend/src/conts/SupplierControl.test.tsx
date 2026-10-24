@@ -6,7 +6,8 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 let canPost = true;
 const mutateAsync = vi.fn();
 const confirmFn = vi.fn(async () => true);
-vi.mock("../auth/AuthContext", () => ({ useAuth: () => ({ can: () => canPost }) }));
+let perms = ["scm.ledger.use", "scm.payment_voucher.post"];
+vi.mock("../auth/AuthContext", () => ({ useAuth: () => ({ can: () => canPost, user: { permissions: perms } }) }));
 vi.mock("../vendor/scm/components/ConfirmDialog", () => ({ useConfirm: () => confirmFn }));
 vi.mock("../vendor/scm/lib/accounting-queries", () => ({
   useAccounts: () => ({ isLoading: false, data: { accounts: [
@@ -28,6 +29,13 @@ describe("a supplier's control on its page", () => {
     expect(screen.queryByLabelText("Supplier control")).toBeNull();
     expect(screen.getByText("400-0000")).toBeTruthy();
     canPost = true;
+  });
+
+  it("the * wildcard without the Ledger is shown, not offered", () => {
+    perms = ["*"];
+    render(<SupplierControl supplier={S} />);
+    expect(screen.queryByLabelText("Supplier control")).toBeNull();
+    perms = ["scm.ledger.use", "scm.payment_voucher.post"];
   });
 
   it("offers only supplier controls; a move asks first and a refusal is shown", async () => {

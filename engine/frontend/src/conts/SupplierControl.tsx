@@ -7,6 +7,7 @@ import { useConfirm } from "../vendor/scm/components/ConfirmDialog";
 import { useAccounts } from "../vendor/scm/lib/accounting-queries";
 import { useUpdateSupplier, type SupplierRow } from "../vendor/scm/lib/suppliers-queries";
 import { refusalOf } from "./debtorQueries";
+import { canUseLedger } from "./ledger";
 
 /** What a supplier with no control of its own books to: its code's rule (405- other creditors, else trade creditors). */
 const byCode = (code: string): string => (code.startsWith("405-") ? "405-0000" : "400-0000");
@@ -14,7 +15,9 @@ const byCode = (code: string): string => (code.startsWith("405-") ? "405-0000" :
 export function SupplierControl({ supplier, cellClass, labelClass, valueClass }: {
   supplier: Pick<SupplierRow, "id" | "code" | "control_account">; cellClass?: string; labelClass?: string; valueClass?: string;
 }) {
-  const canPost = useAuth().can("scm.payment_voucher.post");
+  const { can, user } = useAuth();
+  // The Ledger literally (the * of Full in the supply areas does not open the books), and its post key — as the server.
+  const canPost = canUseLedger(user?.permissions) && can("scm.payment_voucher.post");
   const current = supplier.control_account || byCode(supplier.code);
   return (
     <div className={cellClass}>

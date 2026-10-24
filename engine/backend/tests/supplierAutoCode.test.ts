@@ -19,7 +19,7 @@ const world = (suppliers: Row[] = [], gl: Row[] = []) => fakeSb({
   v_gl_entries: gl,
 }, {}, [{ table: 'suppliers', column: 'code' }]);
 
-function send(sb: ReturnType<typeof world>, method: 'POST' | 'PATCH', body: Row, perms: string[] = ['*']) {
+function send(sb: ReturnType<typeof world>, method: 'POST' | 'PATCH', body: Row, perms: string[] = ['*', 'scm.ledger.use']) {
   const app = new Hono();
   app.use('*', async (c, next) => {
     c.set('supabase' as never, sb as never);
@@ -65,6 +65,11 @@ describe('a new supplier and its code', () => {
     const res = await post(world(), { name: 'X', controlAccount: '900-A001' });
     expect(res.status).toBe(400);
     expect((await res.json() as { error: string }).error).toBe('not_a_supplier_control');
+  });
+
+  test('the * wildcard alone does not choose a control: the Ledger is asked for literally', async () => {
+    const res = await post(world(), { name: 'X', controlAccount: '405-0000' }, ['*']);
+    expect(res.status).toBe(403);
   });
 
   test('naming a control needs the post key', async () => {

@@ -134,8 +134,9 @@ function ProjectFacts({ d, canWrite, onDone, onError }: { d: ProjectDetailV2; ca
     facts.push(["Planned handover", <PlannedHandover projectId={d.project.id} value={d.project.planned_handover_date ?? null} canWrite={canWrite} onDone={onDone} onError={onError} />]);
   }
   /* Conts (finance phase 1.5; chew, 24 Oct 2026): renovation (301-0000) or inhouse renovation (302-0000) — the control
-     the customer is opened under when the quotation becomes the contract. Settled once there is a contract. */
-  facts.push(["Type", <FinanceKindFact projectId={d.project.id} value={d.project.finance_kind ?? null} canWrite={canWrite && !d.so} onDone={onDone} onError={onError} />]);
+     the customer is opened under when the quotation becomes the contract. Settled once there is a contract (the
+     server refuses a change then). Not shown to those who do not see the money. */
+  if (!d.financeHidden) facts.push(["Finance type", <FinanceKindFact projectId={d.project.id} value={d.project.finance_kind ?? null} canWrite={canWrite && !d.so} onDone={onDone} onError={onError} />]);
   if (facts.length === 0) return null;
   return (
     <dl className="flex flex-wrap gap-x-5 gap-y-1 text-xs">

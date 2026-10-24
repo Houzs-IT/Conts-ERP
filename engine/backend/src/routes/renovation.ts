@@ -616,6 +616,11 @@ app.patch("/:id", requirePermission("projects.write"), async (c) => {
   if ("financeKind" in b) {
     const kind = financeKindFrom(b.financeKind);
     if (!kind.ok) return c.json({ error: "finance_kind_invalid" }, 400);
+    /* Settled with the contract: its customer is already opened under a control (move it on Debtors instead). */
+    const contract = await db(c).prepare(
+      `SELECT doc_no FROM scm.mfg_sales_orders WHERE project_id = ? AND so_kind = 'RENOVATION' AND status <> 'CANCELLED' LIMIT 1`,
+    ).bind(id).first<{ doc_no: string }>();
+    if (contract) return c.json({ error: "finance_kind_settled", message: `${contract.doc_no} is already the contract; its customer's control is changed on Debtors.` }, 409);
     sets.push("finance_kind = ?");
     args.push(kind.value);
   }
