@@ -208,7 +208,7 @@ export function nextPartyCode(prefix3: string, letter: string, existing: string[
   return `${head}${String(max + 1).padStart(3, '0')}`;
 }
 
-/** The customer of a new order, as a debtor: the one already opened for this customer (by customer id, else by
+/** The customer of a new order, as a debtor: the one already opened for this customer under this control (by customer id, else by
     name and phone), or a new one under the control the order's kind maps to (scm.acc_debtor_control_map; none →
     the AR rule), coded the next in its series. Two orders opening one at the same time cannot take one code:
     the unique index refuses the second, which reads again and takes the next. */
@@ -219,9 +219,16 @@ export async function ensureDebtor(
   const name = input.name.trim();
   if (!name) return { ok: false, error: 'A customer needs a name.' };
   const phone = input.phone?.trim() || null;
+  const { data: mapRow, error: mapErr } = await sb.from('acc_debtor_control_map').select('control_account')
+    .eq('company_id', companyId).eq('order_kind', input.orderKind).maybeSingle();
+  if (mapErr) return { ok: false, error: mapErr.message };
+  const control = (mapRow as { control_account?: string } | null)?.control_account ?? (await resolveRoles(sb, companyId)).AR;
+  /* One debtor per customer per control (chew, 24 Oct 2026): the same customer on a renovation and on an inhouse
+     renovation has two, so each kind's sales and margin stay apart. Only debtors under this control are looked at. */
   const found = async (): Promise<{ ok: true; code: string | null } | { ok: false; error: string }> => {
     if (input.customerId) {
-      const { data, error } = await sb.from('debtors').select('code').eq('company_id', companyId).eq('customer_id', input.customerId).limit(1);
+      const { data, error } = await sb.from('debtors').select('code').eq('company_id', companyId).eq('control_account', control)
+        .eq('customer_id', input.customerId).limit(1);
       if (error) return { ok: false, error: error.message };
       const row = ((data ?? []) as Array<{ code: string }>)[0];
       if (row) return { ok: true, code: row.code };
@@ -230,7 +237,7 @@ export async function ensureDebtor(
        already tied to another customer is not this one. */
     if (!phone) return { ok: true, code: null };
     const { data, error } = await sb.from('debtors').select('id, code, name, customer_id')
-      .eq('company_id', companyId).eq('phone', phone).order('code');
+      .eq('company_id', companyId).eq('control_account', control).eq('phone', phone).order('code');
     if (error) return { ok: false, error: error.message };
     const same = ((data ?? []) as Array<{ id: string; code: string; name: string; customer_id: string | null }>)
       .find((d) => d.name.trim().toUpperCase() === name.toUpperCase() && (!d.customer_id || !input.customerId || d.customer_id === input.customerId));
@@ -244,10 +251,6 @@ export async function ensureDebtor(
   if (!hit.ok) return hit;
   if (hit.code) return { ok: true, code: hit.code, created: false };
 
-  const { data: mapRow, error: mapErr } = await sb.from('acc_debtor_control_map').select('control_account')
-    .eq('company_id', companyId).eq('order_kind', input.orderKind).maybeSingle();
-  if (mapErr) return { ok: false, error: mapErr.message };
-  const control = (mapRow as { control_account?: string } | null)?.control_account ?? (await resolveRoles(sb, companyId)).AR;
   const letter = debtorLetter(name);
   for (let attempt = 0; attempt < 5; attempt += 1) {
     const { data: codes, error: codesErr } = await sb.from('debtors').select('code')
@@ -277,26 +280,28 @@ export async function ensureDebtorSql(
 ): Promise<string> {
   const name = input.name.trim();
   const phone = input.phone?.trim() || null;
+  const [mapped] = await db.q<{ control_account: string }>(
+    'select control_account from scm.acc_debtor_control_map where company_id = $1 and order_kind = $2', [companyId, input.orderKind]);
+  const [role] = mapped ? [] : await db.q<{ account_code: string }>(
+    `select account_code from scm.acc_account_roles where company_id = $1 and role = 'AR'`, [companyId]);
+  const control = mapped?.control_account ?? role?.account_code ?? DEFAULT_ROLE_CODES.AR;
+  /* As ensureDebtor: one debtor per customer per control, so only this control's debtors are looked at. */
   if (input.customerId) {
     const [byCustomer] = await db.q<{ code: string }>(
-      'select code from scm.debtors where company_id = $1 and customer_id = $2 order by code limit 1', [companyId, input.customerId]);
+      'select code from scm.debtors where company_id = $1 and customer_id = $2 and control_account = $3 order by code limit 1', [companyId, input.customerId, control]);
     if (byCustomer) return byCustomer.code;
   }
   /* As ensureDebtor: by name only with a phone, and never a debtor already tied to another customer. */
   const [byName] = phone ? await db.q<{ code: string }>(
     `select code from scm.debtors where company_id = $1 and upper(btrim(name)) = upper(btrim($2))
-        and btrim(phone) = $3 and (customer_id is null or $4::text is null or customer_id::text = $4::text) order by code limit 1`, [companyId, name, phone, input.customerId]) : [];
+        and btrim(phone) = $3 and (customer_id is null or $4::text is null or customer_id::text = $4::text)
+        and control_account = $5 order by code limit 1`, [companyId, name, phone, input.customerId, control]) : [];
   if (byName) {
     if (input.customerId) {
       await db.q('update scm.debtors set customer_id = $3 where company_id = $1 and code = $2 and customer_id is null', [companyId, byName.code, input.customerId]);
     }
     return byName.code;
   }
-  const [mapped] = await db.q<{ control_account: string }>(
-    'select control_account from scm.acc_debtor_control_map where company_id = $1 and order_kind = $2', [companyId, input.orderKind]);
-  const [role] = mapped ? [] : await db.q<{ account_code: string }>(
-    `select account_code from scm.acc_account_roles where company_id = $1 and role = 'AR'`, [companyId]);
-  const control = mapped?.control_account ?? role?.account_code ?? DEFAULT_ROLE_CODES.AR;
   const letter = debtorLetter(name);
   const series = `${control.slice(0, 3)}-${letter}`;
   for (let attempt = 0; attempt < 5; attempt += 1) {
