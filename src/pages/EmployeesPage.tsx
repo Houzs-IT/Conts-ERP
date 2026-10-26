@@ -15,6 +15,8 @@ const AdvancesTab = lazy(() => import('./workers/AdvancesTab'));
 const EmployeesTab = lazy(() => import('./workers/EmployeesTab'));
 const LeaveTab = lazy(() => import('./workers/LeaveTab'));
 const PenaltiesTab = lazy(() => import('./workers/PenaltiesTab'));
+const LaborCostTab = lazy(() => import('./workers/LaborCostTab'));
+const DepartmentLaborTab = lazy(() => import('./workers/DepartmentLaborTab'));
 
 /* ------------------------------------------------------------------ *
  * HR > Employees: Hookka's Employees page (erp.hookka.com /employees),
@@ -47,11 +49,6 @@ const UNDECIDED: Partial<Record<TabKey, string>> = {
   detail: 'One person\'s production hours, jobs and efficiency over a period.',
   'department-performance': 'Each department\'s production hours and efficiency, day by day.',
 };
-/** Tabs being built next, in Hookka's layout. */
-const NEXT: Partial<Record<TabKey, string>> = {
-  'labor-cost': 'Labour cost against what the cleaning and repair jobs were charged, with the month\'s payroll reconciliation.',
-  'department-labor': 'Hours and labour cost per department (Cleaning, Maintenance).',
-};
 
 export default function EmployeesPage() {
   const [params, setParams] = useSearchParams();
@@ -71,10 +68,12 @@ export default function EmployeesPage() {
   else if (tab === 'employee-master') body = <EmployeesTab />;
   else if (tab === 'leave') body = <LeaveTab />;
   else if (tab === 'penalties') body = <PenaltiesTab />;
-  else if (UNDECIDED[tab]) {
+  else if (tab === 'labor-cost') body = <LaborCostTab />;
+  else if (tab === 'department-labor') body = <DepartmentLaborTab />;
+  else {
     body = <EmptyState icon="Activity" title="Production time is not decided yet"
-      body={`${UNDECIDED[tab]} On Hookka this comes from factory job cards. It stays empty until The Conts decides what counts as production time for cleaning and repair jobs.`} />;
-  } else body = <EmptyState icon="Hammer" title="Being built next" body={NEXT[tab]} />;
+      body={`${UNDECIDED[tab] ?? ''} On Hookka this comes from factory job cards. It stays empty until The Conts decides what counts as production time for cleaning and repair jobs.`} />;
+  }
 
   return (
     <>
