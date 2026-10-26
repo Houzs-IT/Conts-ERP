@@ -21,18 +21,21 @@ import { useSession } from '../lib/session';
 
 const EmployeesTab = lazy(() => import('./workers/EmployeesTab'));
 const AttendanceTab = lazy(() => import('./workers/AttendanceTab'));
+const LeaveTab = lazy(() => import('./workers/LeaveTab'));
 
 /* ------------------------------------------------------------------ *
  * Operations -> Workers: everyone who does the cleaning and the repairs,
  * one tab each. Each list has the company's own people (who can be
  * given app access: employee ID and PIN) and outside companies (no
  * login). The assign pickers on Cleaning and Maintenance pick from here.
- * Two more tabs for those with access to HR: Employees keeps the in-house
- * people's HR record (pay, bank, statutory), Attendance their punches.
+ * More tabs for those with access to HR: Employees keeps the in-house
+ * people's HR record (pay, bank, statutory), Attendance their punches,
+ * Leave their requests, balances and the public holidays.
  * ------------------------------------------------------------------ */
 
 type ListKey = 'cleaners' | 'technicians';
-type TabKey = ListKey | 'employees' | 'attendance';
+type TabKey = ListKey | 'employees' | 'attendance' | 'leave';
+const HR_TABS: TabKey[] = ['employees', 'attendance', 'leave'];
 
 /** A list entry: a cleaner (GET /housekeeping/cleaners) or a technician (GET /maintenance/technicians?all=1). */
 type Worker = Cleaner & { loginRole?: string | null };
@@ -85,13 +88,14 @@ export default function WorkersPage() {
   const { user } = useSession();
   const hr = maySee(user, 'hr');
   const asked = params.get('tab');
-  const tab: TabKey = (asked === 'employees' || asked === 'attendance') && hr ? asked : isListKey(asked) ? asked : 'cleaners';
+  const tab: TabKey = hr ? HR_TABS.find(t => t === asked) ?? (isListKey(asked) ? asked : 'cleaners') : isListKey(asked) ? asked : 'cleaners';
   const tabs = (
     <PillTabs<TabKey> value={tab} onChange={t => setParams(p => { const n = new URLSearchParams(p); n.set('tab', t); return n; }, { replace: true })}
-      tabs={[{ value: 'cleaners', label: 'Cleaners' }, { value: 'technicians', label: 'Technicians' }, ...(hr ? [{ value: 'employees' as const, label: 'Employees' }, { value: 'attendance' as const, label: 'Attendance' }] : [])]} />
+      tabs={[{ value: 'cleaners', label: 'Cleaners' }, { value: 'technicians', label: 'Technicians' }, ...(hr ? [{ value: 'employees' as const, label: 'Employees' }, { value: 'attendance' as const, label: 'Attendance' }, { value: 'leave' as const, label: 'Leave' }] : [])]} />
   );
   if (tab === 'employees') return <Suspense fallback={null}><EmployeesTab tabs={tabs} /></Suspense>;
   if (tab === 'attendance') return <Suspense fallback={null}><AttendanceTab tabs={tabs} /></Suspense>;
+  if (tab === 'leave') return <Suspense fallback={null}><LeaveTab tabs={tabs} /></Suspense>;
   return <WorkerList key={tab} list={tab} tabs={tabs} />;
 }
 

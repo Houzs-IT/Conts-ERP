@@ -4,6 +4,8 @@ import { hasEmployees, listEmployees } from '../../_lib/hr';
 import type { Employee } from '../../_lib/hrFields';
 import { hasAttendance, NOT_MIGRATED, buildings, toView, ROW_COLS, type AttendanceRow, type PunchView } from '../../_lib/attendance';
 import { nearestBuilding, type Nearest } from '../../_lib/attendanceCalc';
+import { hasLeaves } from '../../_lib/leave';
+import type { LeaveType } from '../../_lib/leaveRules';
 
 export interface AttendanceLine {
   employee: Pick<Employee, 'id' | 'name' | 'employeeId' | 'cleanerId' | 'technicianId' | 'isActive' | 'status'>;
@@ -11,6 +13,8 @@ export interface AttendanceLine {
   /** The closest building to where they clocked in and out; null without GPS or without buildings that have a location. */
   inPlace: Nearest | null;
   outPlace: Nearest | null;
+  /** Approved leave covering the day, so "not in" reads "on leave". */
+  leave: LeaveType | null;
 }
 
 /** GET /api/attendance?date=YYYY-MM-DD — everyone's punch on one Malaysia day (today by default), for HR > Workers >
@@ -24,12 +28,16 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const today = mytToday();
   const asked = new URL(request.url).searchParams.get('date');
   const day = asked && /^\d{4}-\d{2}-\d{2}$/.test(asked) ? asked : today;
-  const [people, rows, sites] = await Promise.all([
+  const [people, rows, sites, away] = await Promise.all([
     listEmployees(env),
     all<AttendanceRow>(env, `SELECT ${ROW_COLS} FROM attendance WHERE work_date = ?`, day),
     buildings(env),
+    hasLeaves(env).then(ok => ok
+      ? all<{ employee_id: string; type: LeaveType }>(env, `SELECT employee_id, type FROM leaves WHERE status = 'approved' AND start_date <= ? AND end_date >= ?`, day, day)
+      : []),
   ]);
   const byEmployee = new Map(rows.map(r => [r.employee_id, r]));
+  const onLeave = new Map(away.map(l => [l.employee_id, l.type]));
   const at = (lat: number | null, lng: number | null) => (lat !== null && lng !== null ? nearestBuilding({ lat, lng }, sites) : null);
 
   const data: AttendanceLine[] = people
@@ -41,6 +49,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         punch: r ? toView(r, today) : null,
         inPlace: r ? at(r.in_lat, r.in_lng) : null,
         outPlace: r ? at(r.out_lat, r.out_lng) : null,
+        leave: (p.id && onLeave.get(p.id)) || null,
       };
     });
   return json({ date: day, today, buildingsWithLocation: sites.length, data });

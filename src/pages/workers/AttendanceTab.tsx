@@ -17,6 +17,7 @@ import { useSession } from '../../lib/session';
 import { date, time } from '../../lib/format';
 import { ON_SITE_METRES, type Nearest } from '../../../functions/_lib/attendanceCalc';
 import type { AttendanceLine } from '../../../functions/api/attendance/index';
+import { LEAVE_TYPE_LABEL } from '../../../functions/_lib/leaveRules';
 
 /* ------------------------------------------------------------------ *
  * HR > Workers > Attendance: who clocked in on a day, when, where and
@@ -39,7 +40,7 @@ const rowKey = (l: AttendanceLine): string => l.employee.id ?? l.employee.cleane
 
 function stateOf(l: AttendanceLine): { label: string; tone: 'success' | 'info' | 'warning' | 'neutral' } {
   const p = l.punch;
-  if (!p) return { label: 'Not in', tone: 'neutral' };
+  if (!p) return l.leave ? { label: `On ${LEAVE_TYPE_LABEL[l.leave].toLowerCase()} leave`, tone: 'info' } : { label: 'Not in', tone: 'neutral' };
   if (p.forgotOut) return { label: 'No clock-out', tone: 'warning' };
   return p.clockOutAt ? { label: 'Done', tone: 'success' } : { label: 'In now', tone: 'info' };
 }
@@ -87,7 +88,7 @@ export default function AttendanceTab({ tabs }: { tabs: ReactNode }) {
 
   return (
     <>
-      <PageHeader title="Workers" sub={data ? `${date(`${shown}T12:00:00+08:00`)} · ${count('In now')} in now · ${count('Done')} done · ${count('Not in')} not in${count('No clock-out') ? ` · ${count('No clock-out')} no clock-out` : ''}` : 'Loading the day…'} />
+      <PageHeader title="Workers" sub={data ? `${date(`${shown}T12:00:00+08:00`)} · ${count('In now')} in now · ${count('Done')} done · ${count('Not in')} not in${lines.some(l => !l.punch && l.leave) ? ` · ${lines.filter(l => !l.punch && l.leave).length} on leave` : ''}${count('No clock-out') ? ` · ${count('No clock-out')} no clock-out` : ''}` : 'Loading the day…'} />
       <div className="mb-4">{tabs}</div>
       {error && <StaleBanner message={`Showing the last day we have. ${error}`} onRetry={reload} />}
 
@@ -104,7 +105,7 @@ export default function AttendanceTab({ tabs }: { tabs: ReactNode }) {
       <DataTable<AttendanceLine>
         id="attendance" columns={columns} rows={loading && lines.length === 0 ? null : lines} rowKey={rowKey}
         pageSize={0} noun={['person', 'people']} exportName={`attendance-${shown}`}
-        rowTone={l => (l.punch ? null : 'muted')}
+        rowTone={l => (l.punch || l.leave ? null : 'muted')}
         header={
           <div className="pt-5 pb-3 px-5 flex items-baseline justify-between gap-x-3 gap-y-1 flex-wrap [border-bottom:1px_solid_var(--color-line-soft)]">
             <span className="text-[16px] font-semibold tracking-[-0.01em]">Attendance</span>

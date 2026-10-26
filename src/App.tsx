@@ -99,6 +99,7 @@ const NotDesignedPage = lazy(() => import('./pages/NotDesignedPage'));
 const PlaceholderPage = lazy(() => import('./pages/PlaceholderPage'));
 const FieldHome = lazy(() => import('./pages/FieldHome'));
 const FieldClockPage = lazy(() => import('./pages/FieldClockPage'));
+const FieldMePage = lazy(() => import('./pages/FieldMePage'));
 const OwnerPortalPage = lazy(() => import('./pages/OwnerPortalPage'));
 const AccountPage = lazy(() => import('./pages/AccountPage'));
 const MobileSettingsHub = lazy(() => import('./components/MobileSettingsHub'));
@@ -220,7 +221,7 @@ function Routed() {
   if (user.role === 'housekeeper' || user.role === 'technician') {
     // Cleaners' and technicians' screens moved from /field (then /worker) to /portal; old bookmarks and links follow.
     if (/^\/(field|worker)(\/|$)/.test(location.pathname)) return <Navigate to={location.pathname.replace(/^\/(field|worker)/, '/portal') + location.search} replace />;
-    return <FieldShell><Suspense fallback={<Fallback />}>{account ? <AccountPage /> : location.pathname.startsWith('/portal/clock') ? <FieldClockPage /> : <FieldHome />}</Suspense></FieldShell>;
+    return <FieldShell><Suspense fallback={<Fallback />}>{account ? <AccountPage /> : location.pathname.startsWith('/portal/clock') ? <FieldClockPage /> : location.pathname.startsWith('/portal/me') ? <FieldMePage /> : <FieldHome />}</Suspense></FieldShell>;
   }
   // Owners see only their own portal, whatever the address bar says.
   if (user.role === 'owner') {

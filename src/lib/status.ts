@@ -303,6 +303,13 @@ export const STATUS_VOCAB = {
     ON_LEAVE: { label: 'On leave', tone: 'warning' },
     INACTIVE: { label: 'Inactive', tone: 'neutral' },
   },
+  // HR > Workers > Leave and the portal's Me screen (migration 0164).
+  leave: {
+    pending: { label: 'Waiting', tone: 'warning' },
+    approved: { label: 'Approved', tone: 'success' },
+    rejected: { label: 'Not approved', tone: 'danger' },
+    cancelled: { label: 'Cancelled', tone: 'neutral' },
+  },
   fabric_tier: {
     standard: { label: 'Standard', tone: 'neutral' },
     premium: { label: 'Premium', tone: 'info' },
