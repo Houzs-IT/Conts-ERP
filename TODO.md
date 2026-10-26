@@ -540,3 +540,4 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - [ ] 2D sheets: no way yet to remove a sheet from the set or rename one after upload (only replace or add).
 - [ ] Beta is not reachable on a phone browser (the mobile shell has no /beta route); the 375px layout was checked in a desktop frame.
 - [ ] Owner mockup (artifact 1vwc4QNboJAH4MN7eRF5Rk) could not be read by the agent; compare Drawings against it by eye.
+- Health warnings (CONTS-0005, owner 26 Oct): management is emailed when a System health card turns red or a channel is reported down on status.channex.io, and when it clears. Email only for now; a WhatsApp copy is the owner's later call. Runs on the 5-minute health report, so production only (the cron worker); staging shows the new Channel status card but sends no warnings.
