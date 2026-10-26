@@ -23,7 +23,7 @@ export const SUPPLY_CONDITION_LABEL: Readonly<Record<SupplyCondition, string>> =
   all_arrived: "All arrived",
 };
 
-export const FURNITURE_GROUPS: readonly CatalogGroup[] = ["FURNITURE", "BUILTIN", "APPLIANCE", "SOFT", "LIGHTING"];
+export const FURNITURE_GROUPS: readonly CatalogGroup[] = ["FURNITURE", "BUILTIN", "APPLIANCE", "SOFT", "LIGHTING", "AIRBNB"];
 export const RENO_ITEM_GROUPS: readonly CatalogGroup[] = ["WORKS"];
 
 /** What the purchase and delivery side holds for one SO line. */
