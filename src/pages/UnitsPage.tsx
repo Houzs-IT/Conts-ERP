@@ -184,10 +184,14 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
     finally { setSaving(false); inFlight.current = false; }
     if (retry) await save(true, quiet);
   }
+  // Moving the unit to another owner or building is never saved by leaving a box: it waits for Save, so a slip in a
+  // list cannot move a unit (its contract stays with the previous owner).
+  const kept = form ? original.find(u => u.id === form.id) : undefined;
+  const moving = !!form && !!kept && ((!!form.ownerId && form.ownerId !== kept.ownerId) || form.buildingId !== kept.buildingId);
   // The Details tab saves itself when a box is left (staff sheet UNIT, 26 Oct 2026). A car park bay with no lot number
   // waits until it has one; a refused save waits for Save again, so the same error is not shown on every box.
   function autoSave() {
-    if (!form || !dirty || inFlight.current || saveFailed) return;
+    if (!form || !dirty || inFlight.current || saveFailed || moving) return;
     if ((form.parkingBays ?? []).some(b => !b.lotNumber.trim())) return;
     void save(false, true);
   }
@@ -362,7 +366,7 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
             detail.error ? <Card><div className="p-10 text-center text-muted-ink text-copy">{detail.error}</div></Card> : <RecordSkeleton />
           ) : (
             <UnitRecord d={d} form={form} buildings={buildings} building={building} unitLabel={unitLabel}
-              tab={tab} setTab={setTab} canEdit={canEdit} dirty={dirty} saving={saving} saveFailed={saveFailed} onSave={() => { setSaveFailed(false); void save(false, true); }} onAutoSave={autoSave} onDelete={() => void deleteUnit()}
+              tab={tab} setTab={setTab} canEdit={canEdit} dirty={dirty} saving={saving} saveFailed={saveFailed} moving={moving} onSave={() => { setSaveFailed(false); void save(); }} onAutoSave={autoSave} onDelete={() => void deleteUnit()}
               onChange={p => form && patch(form.id, p)} reload={reloadAll} reloadDetail={detail.reload}
               readiness={readiness[d.unit.id] ?? d.unit.readiness}
               setReadiness={(id, r) => setReadinessEdits(m => { const n = { ...m }; if (r) n[id] = r; else delete n[id]; return n; })} />
@@ -377,12 +381,12 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
 
 interface RecordProps {
   d: UnitDetail; form: Unit | null; buildings: Building[]; building: Building | undefined; unitLabel: string;
-  tab: Tab; setTab: (t: Tab) => void; canEdit: boolean; dirty: boolean; saving: boolean; saveFailed: boolean; onSave: () => void; onAutoSave: () => void; onDelete: () => void;
+  tab: Tab; setTab: (t: Tab) => void; canEdit: boolean; dirty: boolean; saving: boolean; saveFailed: boolean; moving: boolean; onSave: () => void; onAutoSave: () => void; onDelete: () => void;
   onChange: (p: Partial<Unit>) => void; reload: () => void; reloadDetail: () => void;
   readiness: UnitReadiness; setReadiness: (id: string, r: UnitReadiness | null) => void;
 }
 
-function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canEdit, dirty, saving, saveFailed, onSave, onAutoSave, onDelete, onChange, reload, reloadDetail, readiness, setReadiness }: RecordProps) {
+function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canEdit, dirty, saving, saveFailed, moving, onSave, onAutoSave, onDelete, onChange, reload, reloadDetail, readiness, setReadiness }: RecordProps) {
   const toast = useToast();
   const { user } = useSession();
   // Same people as edit the unit's master data (the server's channex-setup / channex-connect).
@@ -544,7 +548,7 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
       {on('details') && (form ? (
         <Card>
           <SaveBar title="Details & owner" sub="Listing name, purpose, type, beds, car park, owner and income model." dirty={dirty} saving={saving} canEdit={canEdit} onSave={onSave}
-            auto failed={saveFailed}
+            auto failed={saveFailed} hold={moving ? 'Moving this unit: press Save to confirm.' : undefined}
             extra={canEdit ? <Button size="sm" variant="tertiary" icon={<Icon name="Trash2" size="sm" />} onClick={onDelete}>Delete unit</Button> : undefined} />
           <div onBlur={onAutoSave}>
             <DetailsForm u={form} owner={u.owner} buildings={buildings} canEdit={canEdit} onChange={onChange} onOpenContract={() => setTab('contract')} />
