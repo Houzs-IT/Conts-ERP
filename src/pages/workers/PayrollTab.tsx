@@ -94,7 +94,7 @@ function exportCsv(data: PayrollPayload): void {
     const advanceDates = data.advances.filter(a => a.employeeId === l.employee.id).map(a => `${a.date} ${rm2(a.amountSen)}`).join('; ');
     return [[
       l.employee.employeeId, l.employee.name, department(l), f.basicSalarySen, f.workingDays, f.daysWorked, f.paidLeaveDays, f.absentDays,
-      f.absenceDeductionSen || null, f.absentDays > 0 ? `${rm2(f.dayRateSen)}/day x ${f.absentDays} = ${rm2(f.absenceDeductionSen)}` : '',
+      f.absenceDeductionSen || null, f.absenceDeductionSen > 0 ?`${rm2(f.dayRateSen)}/day x ${f.absentDays} = ${rm2(f.absenceDeductionSen)}` : '',
       f.lateShortHours || null, f.lateShortSen || null,
       f.lateShortHours > 0 ? `${f.lateShortHours}h x ${rm2(Math.round(f.lateShortSen / f.lateShortHours))}/h = ${rm2(f.lateShortSen)}` : '',
       basicEarned(l, f), f.otHours, f.sundayHours, f.holidayHours, f.hourRateSen, f.otSen, f.sundaySen, f.holidaySen, otTotal(f), f.allowanceSen,
