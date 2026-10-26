@@ -1,11 +1,10 @@
 import { lazy, Suspense, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
-import Icon from '../components/Icon';
 import { StatTile, StatRow } from '../components/Metric';
 import { EmptyState } from '../components/States';
+import { TabBar, tabId, panelId } from '../components/TabBar';
 import { useApi } from '../lib/useApi';
-import { cx } from '../lib/design-tokens';
 import type { AttendanceLine } from '../../functions/api/attendance/index';
 
 const WorkingHoursTab = lazy(() => import('./workers/WorkingHoursTab'));
@@ -85,19 +84,11 @@ export default function EmployeesPage() {
         <StatTile label="Avg Efficiency" value="—" hint="Production time not decided" />
       </StatRow>
 
-      {/* All eleven tabs stay in view on a desk screen: they wrap instead of scrolling sideways, and the icons only show
-          where the row has room for them; at 1440px wide the row just fits on one line. A phone keeps the sideways swipe, where wrapping would stack five rows. */}
-      <div role="tablist" aria-label="Employees" className="flex flex-none gap-1 md:gap-0 overflow-x-auto [scrollbar-width:none] -mx-4 px-4 md:mx-0 md:px-0 md:flex-wrap md:overflow-visible my-5 [border-bottom:1px_solid_var(--color-line)]">
-        {TABS.map(t => (
-          <button key={t.key} type="button" role="tab" aria-selected={tab === t.key} onClick={() => setTab(t.key)}
-            className={cx('flex-none inline-flex items-center gap-1.5 h-10 px-3 md:px-2 mb-1.5 rounded-control text-meta whitespace-nowrap cursor-pointer border border-solid',
-              tab === t.key ? 'border-ink text-ink font-semibold bg-card' : 'border-transparent text-muted-ink hover:text-ink')}>
-            <span className="hidden min-[1600px]:inline-flex"><Icon name={t.icon} size="sm" /></span>{t.label}
-          </button>
-        ))}
-      </div>
+      <div className="my-5 -mx-4 md:mx-0"><TabBar id="employees" label="Employees" tabs={TABS} value={tab} onChange={setTab} /></div>
 
-      <Suspense fallback={null}>{body}</Suspense>
+      <div role="tabpanel" id={panelId('employees')} aria-labelledby={tab === 'leave' ? undefined : tabId('employees', tab)}>
+        <Suspense fallback={null}>{body}</Suspense>
+      </div>
     </>
   );
 }
