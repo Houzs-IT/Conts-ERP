@@ -38,7 +38,8 @@ interface Row {
   hours: number | null;
   notes: string;
   attendanceId: string | null;
-  origin: 'saved' | 'punch' | 'new';
+  /** new: Add Row (person and day can be picked); split: a second department for the same person and day. */
+  origin: 'saved' | 'punch' | 'new' | 'split';
   dirty: boolean;
 }
 
@@ -98,7 +99,7 @@ export default function WorkingHoursTab() {
   const duplicate = (r: Row) => setRows(rs => {
     const other = DEPARTMENTS.find(d => d !== r.department) ?? r.department;
     const i = rs.findIndex(x => x.key === r.key);
-    const copy: Row = { ...r, key: newKey(), entryId: null, savedAs: null, department: other, hours: null, notes: '', origin: 'new', dirty: true };
+    const copy: Row = { ...r, key: newKey(), entryId: null, savedAs: null, department: other, hours: null, notes: '', origin: 'split', dirty: true };
     return [...rs.slice(0, i + 1), copy, ...rs.slice(i + 1)];
   });
   const addRow = () => {
