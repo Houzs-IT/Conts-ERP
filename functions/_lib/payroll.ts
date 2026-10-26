@@ -5,6 +5,7 @@ import type { Employee } from './hrFields';
 import { hasLeaves, readHolidays } from './leave';
 import type { LeaveType } from './leaveRules';
 import { workedMinutes } from './attendanceCalc';
+import { hasWorkingHours } from './workingHours';
 import type { PcbStatus } from './pcb';
 import { computePay, parsePayRules, type PayFigures, type PayInput, type PayRules, type PunchDay, type ApprovedLeave } from './payrollCalc';
 
@@ -50,7 +51,7 @@ export async function monthInputs(env: Env, people: Employee[], period: string, 
   const inIds = `employee_id IN (SELECT jsonb_array_elements_text(?::text::jsonb))`;
   const start = `${period}-01`, end = lastDay(period);
   const today = mytToday();
-  const [rules, holidays, punches, leaves, advances, ytd, salaries] = await Promise.all([
+  const [rules, holidays, punches, leaves, advances, ytd, salaries, logged] = await Promise.all([
     readPayRules(env),
     readHolidays(env),
     all<{ employee_id: string; work_date: string; clock_in_at: string; clock_out_at: string | null; forgot_out: number }>(env,
@@ -65,6 +66,9 @@ export async function monthInputs(env: Env, people: Employee[], period: string, 
     all<{ employee_id: string; basic_salary_sen: number }>(env, `
       SELECT DISTINCT ON (employee_id) employee_id, basic_salary_sen FROM employee_salary_history
       WHERE ${inIds} AND effective_from <= ? ORDER BY employee_id, effective_from DESC`, idList, end),
+    hasWorkingHours(env).then(ok => ok ? all<{ employee_id: string; work_date: string; minutes: number }>(env, `
+      SELECT employee_id, work_date, ROUND(SUM(hours) * 60)::int AS minutes FROM working_hour_entries
+      WHERE ${inIds} AND work_date BETWEEN ? AND ? GROUP BY employee_id, work_date`, idList, start, end) : []),
   ]);
 
   const group = <T extends { employee_id: string }>(rows: T[]) => {
@@ -72,7 +76,7 @@ export async function monthInputs(env: Env, people: Employee[], period: string, 
     for (const r of rows) m.set(r.employee_id, [...(m.get(r.employee_id) ?? []), r]);
     return m;
   };
-  const punchesBy = group(punches), leavesBy = group(leaves);
+  const punchesBy = group(punches), leavesBy = group(leaves), loggedBy = group(logged);
   const advanceBy = new Map(advances.map(a => [a.employee_id, Number(a.total)]));
   const ytdBy = new Map(ytd.map(y => [y.employee_id, { remunerationSen: Number(y.gross), epfSen: Number(y.epf), pcbSen: Number(y.pcb) }]));
   const salaryBy = new Map(salaries.map(s => [s.employee_id, s.basic_salary_sen]));
@@ -87,6 +91,12 @@ export async function monthInputs(env: Env, people: Employee[], period: string, 
         inMin: mytMinute(r.clock_in_at), outMin: r.clock_out_at ? mytMinute(r.clock_out_at) : null,
       };
     });
+    // The Working Hours grid wins over the punch for the days it has; a logged day with no punch is a day too.
+    const loggedOn = new Map((loggedBy.get(e.id) ?? []).map(l => [l.work_date, Number(l.minutes)]));
+    for (const day of days) if (loggedOn.has(day.date)) day.loggedMin = loggedOn.get(day.date) ?? null;
+    for (const [date, minutes] of loggedOn) {
+      if (!days.some(day => day.date === date)) days.push({ date, minutes, forgotOut: false, inMin: null, outMin: null, loggedMin: minutes });
+    }
     const approved: ApprovedLeave[] = (leavesBy.get(e.id) ?? []).map(l => ({ type: l.type, startDate: l.start_date, endDate: l.end_date }));
     out.set(e.id, {
       period, throughDay: through, employee: e,

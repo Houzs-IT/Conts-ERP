@@ -166,3 +166,21 @@ test('leader allowance: the share of the month not missed, added after statutory
   assert.equal(f.epfEmployeeSen, 28_600);      // EPF unchanged by the allowance
   assert.equal(f.netSen, 275_000 - 28_600 - 745 - 390);
 });
+
+test('Working Hours grid: logged hours win over the punch; a logged day with no punch counts; zero logged is not worked', () => {
+  const days = workingDates.map(d => ({ date: d, minutes: 480, forgotOut: false, inMin: null, outMin: null }));
+  days[0].loggedMin = 600;                     // office logged 10 h on 2 Nov over an 8 h punch: 2 h overtime
+  days[1].loggedMin = 0;                       // office logged 0 on 3 Nov: an absence
+  days.push({ date: '2026-11-15', minutes: 300, forgotOut: false, inMin: null, outMin: null, loggedMin: 300 }); // a Sunday, logged only
+  const f = computePay({ ...base, days });
+  assert.equal(f.otHours, 2);
+  assert.equal(f.absentDays, 1);
+  assert.equal(f.sundayHours, 5);
+});
+
+test('Working Hours grid with shift rules on: a logged day short of the standard day is docked', () => {
+  const days = workingDates.map(d => ({ date: d, minutes: 0, forgotOut: false, inMin: null, outMin: null, loggedMin: d === '2026-11-02' ? 480 : 540 }));
+  const f = computePay({ ...base, employee: { ...person, workingHoursPerDay: 9 }, days, rules: SHIFT });
+  assert.equal(f.lateShortHours, 1);           // standard 08:00-18:00 less lunch = 9 h; 8 h logged
+  assert.equal(f.otHours, 0);
+});

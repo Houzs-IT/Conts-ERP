@@ -106,8 +106,9 @@ export const pcbProfile = (e: Pick<Employee, 'taxResidency' | 'taxCategory' | 't
   childReliefSen: e.taxChildReliefSen,
 });
 
-/** One day's punch. inMin / outMin are minutes since midnight in Malaysia time, for the shift rules; null when open. */
-export interface PunchDay { date: string; minutes: number; forgotOut: boolean; inMin: number | null; outMin: number | null }
+/** One day's punch. inMin / outMin are minutes since midnight in Malaysia time, for the shift rules; null when open.
+ *  loggedMin: the day's hours on the Working Hours grid (all departments), which win over the punch when present. */
+export interface PunchDay { date: string; minutes: number; forgotOut: boolean; inMin: number | null; outMin: number | null; loggedMin?: number | null }
 export interface ApprovedLeave { type: LeaveType; startDate: string; endDate: string }
 export interface YearToDate { remunerationSen: number; epfSen: number; pcbSen: number }
 
@@ -176,6 +177,15 @@ export function computePay(p: PayInput): PayFigures {
   const worked = new Map<string, Day>();
   for (const d of p.days) {
     if (!d.date.startsWith(`${p.period}-`) || d.date > p.throughDay) continue;
+    // Hours the office logged on the Working Hours grid are the day (Hookka: payroll reads the grid). Zero logged = not
+    // worked. Overtime is above the daily hours; with the shift rules on, the shortfall against the standard day is docked.
+    if (d.loggedMin !== undefined && d.loggedMin !== null) {
+      if (d.loggedMin <= 0) continue;
+      const surplus = Math.max(0, d.loggedMin - hoursPerDay * 60);
+      const standard = Math.max(0, rules.shiftEndMin - rules.shiftStartMin - rules.lunchMin);
+      worked.set(d.date, { minutes: d.loggedMin, otMin: Math.floor(surplus / rules.otBlockMin + 1e-9) * rules.otBlockMin, dockMin: shift ? Math.max(0, standard - d.loggedMin) : 0 });
+      continue;
+    }
     if (d.forgotOut) { worked.set(d.date, { minutes: hoursPerDay * 60, otMin: 0, dockMin: 0 }); continue; }
     if (shift && d.inMin !== null && d.outMin !== null && d.outMin > d.inMin) {
       const day = shiftDay(d.inMin, d.outMin, rules);
