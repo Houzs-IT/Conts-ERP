@@ -7,7 +7,6 @@ import { ToastProvider } from './components/Toast';
 import ViewAs from './components/ViewAs';
 import TwoStepPrompt from './components/TwoStepPrompt';
 import AppShell from './components/AppShell';
-import FieldShell from './components/FieldShell';
 import UpdateNotice from './components/UpdateNotice';
 import OwnerShell from './components/OwnerShell';
 import LoginPage from './pages/LoginPage';
@@ -98,6 +97,8 @@ const ItSupportPage = lazy(() => import('./pages/ItSupportPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 const NotDesignedPage = lazy(() => import('./pages/NotDesignedPage'));
 const PlaceholderPage = lazy(() => import('./pages/PlaceholderPage'));
+// The portal's shell carries its four-language strings (src/lib/portalI18n.ts): only cleaners and technicians load it.
+const FieldShell = lazy(() => import('./components/FieldShell'));
 const FieldHome = lazy(() => import('./pages/FieldHome'));
 const FieldClockPage = lazy(() => import('./pages/FieldClockPage'));
 const FieldMePage = lazy(() => import('./pages/FieldMePage'));
@@ -223,7 +224,7 @@ function Routed() {
   if (user.role === 'housekeeper' || user.role === 'technician') {
     // Cleaners' and technicians' screens moved from /field (then /worker) to /portal; old bookmarks and links follow.
     if (/^\/(field|worker)(\/|$)/.test(location.pathname)) return <Navigate to={location.pathname.replace(/^\/(field|worker)/, '/portal') + location.search} replace />;
-    return <FieldShell><Suspense fallback={<Fallback />}>{account ? <AccountPage /> : location.pathname.startsWith('/portal/clock') ? <FieldClockPage /> : location.pathname.startsWith('/portal/me') ? <FieldMePage /> : location.pathname.startsWith('/portal/pay') ? <FieldPayPage /> : <FieldHome />}</Suspense></FieldShell>;
+    return <Suspense fallback={<Fallback />}><FieldShell><Suspense fallback={<Fallback />}>{account ? <AccountPage /> : location.pathname.startsWith('/portal/clock') ? <FieldClockPage /> : location.pathname.startsWith('/portal/me') ? <FieldMePage /> : location.pathname.startsWith('/portal/pay') ? <FieldPayPage /> : <FieldHome />}</Suspense></FieldShell></Suspense>;
   }
   // Owners see only their own portal, whatever the address bar says.
   if (user.role === 'owner') {

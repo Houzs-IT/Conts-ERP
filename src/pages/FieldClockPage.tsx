@@ -6,7 +6,8 @@ import { StaleBanner } from '../components/DataState';
 import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
-import { date, time } from '../lib/format';
+import { time, todayMyt } from '../lib/format';
+import { usePortalText, usePortalDates } from '../lib/portalI18n';
 import type { PunchView } from '../../functions/_lib/attendance';
 
 /* ------------------------------------------------------------------ *
@@ -19,8 +20,6 @@ interface ClockPayload {
   name: string; employeeId: string | null; today: PunchView | null; month: string; days: PunchView[];
   totals: { days: number; minutes: number; forgotten: number };
 }
-
-const hm = (min: number): string => `${Math.floor(min / 60)}h ${String(min % 60).padStart(2, '0')}m`;
 
 /** The phone's position, or null when it is refused, off or slow. Never throws: location is optional. */
 function position(): Promise<GeolocationPosition | null> {
@@ -51,6 +50,9 @@ export default function FieldClockPage() {
   const toast = useToast();
   const camera = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
+  const t = usePortalText();
+  const { day } = usePortalDates();
+  const hm = t.common.hm;
 
   const today = data?.today ?? null;
   const action: 'in' | 'out' | null = !today ? 'in' : today.clockOutAt ? null : 'out';
@@ -70,10 +72,10 @@ export default function FieldClockPage() {
       }
       const res = await api.post<{ data: PunchView; photoKept: boolean; closedForgotten: number }>('/field/clock', form);
       const at = time(action === 'in' ? res.data.clockInAt : res.data.clockOutAt ?? res.data.clockInAt);
-      toast({ tone: 'success', title: action === 'in' ? `Clocked in at ${at}.` : `Clocked out at ${at}.`,
-        body: action === 'out' ? `${hm(res.data.minutes)} today.` : res.closedForgotten ? 'You did not clock out last time. The office will check that day.' : 'Have a good day.' });
-      if (!res.photoKept) toast({ tone: 'warning', title: 'Your photo was not saved.', body: 'The punch counts. Tell the office if this keeps happening.' });
-      if (!pos) toast({ tone: 'warning', title: 'No location with this punch.', body: 'Turn on location for this site so the office can see where you clocked.' });
+      toast({ tone: 'success', title: action === 'in' ? t.clock.clockedIn(at) : t.clock.clockedOut(at),
+        body: action === 'out' ? t.clock.workedToday(hm(res.data.minutes)) : res.closedForgotten ? t.clock.forgotLast : t.clock.goodDay });
+      if (!res.photoKept) toast({ tone: 'warning', title: t.clock.photoNotSaved, body: t.clock.photoNotSavedBody });
+      if (!pos) toast({ tone: 'warning', title: t.clock.noLocation, body: t.clock.noLocationBody });
       reload();
     } catch (e) { notifyFailure(e); }
     finally {
@@ -85,37 +87,37 @@ export default function FieldClockPage() {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-0.5">
-        <h1 className="m-0 text-title font-semibold">Clock</h1>
-        <div className="text-copy text-muted-ink">{date(new Date().toISOString())}{data?.employeeId ? ` · ${data.employeeId}` : ''}</div>
+        <h1 className="m-0 text-title font-semibold">{t.clock.title}</h1>
+        <div className="text-copy text-muted-ink">{day(todayMyt())}{data?.employeeId ? ` · ${data.employeeId}` : ''}</div>
       </div>
 
       {error && <StaleBanner message={error} onRetry={reload} />}
 
       <section className="bg-card rounded-card border border-solid border-line px-4 py-4 flex flex-col gap-3">
-        {loading && !data ? <span className="text-copy text-muted-ink">Loading…</span> : (
+        {loading && !data ? <span className="text-copy text-muted-ink">{t.common.loading}</span> : (
           <>
             <div className="flex flex-col gap-1">
-              <span className="text-meta text-muted-ink">Today</span>
+              <span className="text-meta text-muted-ink">{t.clock.today}</span>
               <span className="text-[22px] leading-tight font-bold tracking-[-0.01em] tabular-nums">
-                {!today ? 'Not clocked in' : today.clockOutAt ? `${time(today.clockInAt)} – ${time(today.clockOutAt)}` : `In since ${time(today.clockInAt)}`}
+                {!today ? t.clock.notIn : today.clockOutAt ? `${time(today.clockInAt)} – ${time(today.clockOutAt)}` : t.clock.inSince(time(today.clockInAt))}
               </span>
-              {today && <span className="text-copy text-muted-ink tabular-nums">{hm(today.minutes)}{today.clockOutAt ? ' worked' : ' so far'}</span>}
+              {today && <span className="text-copy text-muted-ink tabular-nums">{today.clockOutAt ? t.clock.worked(hm(today.minutes)) : t.clock.soFar(hm(today.minutes))}</span>}
             </div>
             {action ? (
               <>
                 <Button size="touch" variant="primary" className="w-full" loading={busy} icon={<Icon name="Camera" size="sm" />}
                   onClick={() => camera.current?.click()}>
-                  {action === 'in' ? 'Clock in with a selfie' : 'Clock out with a selfie'}
+                  {action === 'in' ? t.clock.inWithSelfie : t.clock.outWithSelfie}
                 </Button>
                 <input ref={camera} type="file" accept="image/*" capture="user" className="hidden"
                   onChange={e => { const f = e.target.files?.[0]; if (f) void punch(f); }} />
                 <button type="button" disabled={busy} onClick={() => void punch(null)}
                   className="min-h-11 self-center text-copy text-muted-ink underline underline-offset-2 bg-transparent border-0 cursor-pointer [font-family:inherit]">
-                  Camera not working? {action === 'in' ? 'Clock in' : 'Clock out'} without a photo
+                  {action === 'in' ? t.clock.noCameraIn : t.clock.noCameraOut}
                 </button>
               </>
             ) : (
-              <span className="text-copy text-muted-ink">Done for today. Ask the office if a time is wrong.</span>
+              <span className="text-copy text-muted-ink">{t.clock.done}</span>
             )}
           </>
         )}
@@ -124,18 +126,18 @@ export default function FieldClockPage() {
       {data && (
         <section className="flex flex-col gap-2">
           <h2 className="m-0 text-[16px] font-semibold tracking-[-0.01em] flex items-baseline gap-2">
-            This month
-            <span className="text-meta text-muted-ink font-normal tabular-nums">{data.totals.days} {data.totals.days === 1 ? 'day' : 'days'} · {hm(data.totals.minutes)}</span>
+            {t.clock.thisMonth}
+            <span className="text-meta text-muted-ink font-normal tabular-nums">{t.common.days(data.totals.days)} · {hm(data.totals.minutes)}</span>
           </h2>
-          {data.days.length === 0 && <span className="text-copy text-muted-ink">No days yet this month.</span>}
+          {data.days.length === 0 && <span className="text-copy text-muted-ink">{t.clock.noDays}</span>}
           {data.days.map(d => (
             <div key={d.id} className="bg-card rounded-card border border-solid border-line px-4 py-3 flex items-center justify-between gap-3">
               <span className="flex flex-col min-w-0">
-                <span className="text-copy font-semibold">{date(`${d.date}T12:00:00+08:00`)}</span>
+                <span className="text-copy font-semibold">{day(d.date)}</span>
                 <span className="text-meta text-muted-ink tabular-nums">{time(d.clockInAt)} – {d.clockOutAt ? time(d.clockOutAt) : '…'}</span>
               </span>
               {d.forgotOut
-                ? <StatusBadge tone="warning" label="No clock-out" size="sm" />
+                ? <StatusBadge tone="warning" label={t.clock.noClockOut} size="sm" />
                 : <span className="text-copy tabular-nums">{hm(d.minutes)}</span>}
             </div>
           ))}
