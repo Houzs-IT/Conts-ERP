@@ -52,6 +52,9 @@ const CSS = `
 .bws .ws-input{min-height:40px;width:100%;border:1px solid ${BETA.border};border-radius:10px;padding:0 8px;font:inherit;font-size:14px;background:${BETA.field};color:${BETA.ink}}
 .bws .ws-input-sm{min-height:38px;width:100%;min-width:0;border:1px solid ${BETA.border};border-radius:10px;padding:0 8px;font:inherit;font-size:14px;background:${BETA.field};color:${BETA.ink}}
 @media (max-width:720px){.bws .h1{font-size:22px!important}.bws .tab{padding:0 12px}.bws .chips{display:grid!important;grid-template-columns:minmax(0,1fr)}.bws .chips>*{min-width:0;width:auto!important}}
+.bws .pay-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+@media (max-width:1100px){.bws .pay-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:560px){.bws .pay-grid{grid-template-columns:minmax(0,1fr)}}
 .bws .tabs{display:flex;flex-wrap:nowrap;gap:4px;border-bottom:1px solid ${BETA.line};overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
 .bws .tabs::-webkit-scrollbar{display:none}
 .bws .tab{display:flex;flex:none;white-space:nowrap;align-items:center;min-height:44px;padding:0 16px;border:0;border-bottom:3px solid transparent;margin-bottom:-1px;background:transparent;font:inherit;color:${BETA.muted};font-weight:500;cursor:pointer}

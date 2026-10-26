@@ -93,12 +93,13 @@ function PaymentsCard({ p }: { p: BetaTabProps }): ReactElement {
       {payments.state === "hidden" && <p style={{ fontSize: 14, color: BETA.muted }}>Payment figures are hidden for your role.</p>}
       {payments.state === "none" && <p style={{ fontSize: 14, color: BETA.muted }}>No sales order is linked yet. Once one is, each payment recorded on it fills the next box here.</p>}
       {rows.length > 0 && (
-        <ol aria-label="Payments" style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
+        // .pay-grid (BetaWsUi CSS): four across, two on a narrow frame, one on a phone; auto-fit left a lone fourth tile.
+        <ol aria-label="Payments" className="pay-grid" style={{ listStyle: "none", margin: 0, padding: 0 }}>
           {rows.map((r) => {
             const v = paymentCard(r, d.currentStage, handoverOn);
             const look = PAY_LOOK[v.look];
             return (
-              <li key={r.seq} style={{ border: look.border, background: look.bg, borderRadius: 26, padding: 14, display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
+              <li key={r.seq} style={{ border: look.border, background: look.bg, borderRadius: 18, padding: 16, display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
                   <span style={{ fontWeight: 600, overflowWrap: "anywhere" }}>{r.label}</span>
                   <WsBadge tone={look.tone}>{v.badge}</WsBadge>
@@ -202,16 +203,19 @@ function TodoCard({ rows, p }: { rows: TodoRow[]; p: BetaTabProps }): ReactEleme
       {(r.more ?? []).map((a) => button(r, a, "outline", size))}
     </div>
   );
-  /* One row as the design draws it: a coloured bar, the words, then the blue pill. */
+  /* One row as the design draws it: a coloured bar, the words, then the blue pill. The buttons drop under the words
+     when the card is too narrow for both, instead of running past its edge. */
   const row = (r: TodoRow, key: string, bar: string, lead: ReactNode, size: "sm" | "lg"): ReactElement => (
-    <li key={key} style={{ display: "grid", gridTemplateColumns: "4px minmax(0, 1fr) auto", gap: 14, alignItems: "center", padding: "14px 20px", borderTop: `1px solid ${WS.rowLine}` }}>
+    <li key={key} style={{ display: "grid", gridTemplateColumns: "4px minmax(0, 1fr)", gap: 14, padding: "14px 20px", borderTop: `1px solid ${WS.rowLine}` }}>
       <span aria-hidden="true" style={{ alignSelf: "stretch", borderRadius: 2, background: bar }} />
-      <div style={{ minWidth: 0 }}>
-        {lead}
-        <div style={{ fontWeight: 600, fontSize: 15, overflowWrap: "anywhere" }}>{r.title}</div>
-        {r.detail && <div style={{ fontSize: 13, color: BETA.muted, overflowWrap: "anywhere" }}>{r.detail}</div>}
+      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "10px 14px", minWidth: 0 }}>
+        <div style={{ flex: "1 1 240px", minWidth: 0 }}>
+          {lead}
+          <div style={{ fontWeight: 600, fontSize: 15, overflowWrap: "anywhere" }}>{r.title}</div>
+          {r.detail && <div style={{ fontSize: 13, color: BETA.muted, overflowWrap: "anywhere" }}>{r.detail}</div>}
+        </div>
+        {act(r, "dark", size)}
       </div>
-      {act(r, "dark", size)}
     </li>
   );
   return (
@@ -270,6 +274,8 @@ function OrderCard({ p }: { p: BetaTabProps }): ReactElement {
 
 /* ---------- Final drawings ---------- */
 
+const drawingRow: CSSProperties = { display: "flex", flexDirection: "column", gap: 8, padding: "12px 0", borderTop: `1px solid ${BETA.lineSoft}` };
+
 function FinalDrawingsCard({ p, onOpen }: { p: BetaTabProps; onOpen: (f: DesignFile) => void }): ReactElement {
   const { records, workspace } = p;
   const two = approvedSet(records.files, workspace.reviews, "2d").approved;
@@ -293,8 +299,9 @@ function FinalDrawingsCard({ p, onOpen }: { p: BetaTabProps; onOpen: (f: DesignF
     }
   }
   return (
-    <WsCard title="Final drawings" gap={10} right={<button type="button" className="link" onClick={() => p.openTab("drawings")}>All versions →</button>}>
-      <div style={{ border: `1px solid ${two ? WS.tealLine : BETA.line}`, background: two ? WS.tealSoft : BETA.panel, borderRadius: 16, padding: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+    // Rows split by a line, as the design draws them, not a boxed card inside the card.
+    <WsCard title="Final drawings" gap={0} right={<button type="button" className="link" onClick={() => p.openTab("drawings")}>All versions →</button>}>
+      <div style={drawingRow}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
           <div>
             <div style={{ fontWeight: 700 }}>2D · Approved set</div>
@@ -304,7 +311,7 @@ function FinalDrawingsCard({ p, onOpen }: { p: BetaTabProps; onOpen: (f: DesignF
         </div>
         {two && <button type="button" style={outline} disabled={making} onClick={() => void (two.file.external_url ? onOpen(two.file) : download2d(two.file))}>{two.file.external_url ? "Open 2D link" : making ? "Making PDF..." : "Download 2D PDF"}</button>}
       </div>
-      <div style={{ border: `1px solid ${BETA.line}`, background: BETA.panel, borderRadius: 16, padding: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+      <div style={drawingRow}>
         <div>
           <div style={{ fontWeight: 700 }}>3D · Approved set</div>
           <div style={{ fontSize: 12, color: BETA.muted }}>{three ? `Client approved ${dayMonth(three.review?.approvedOn)}` : "Not approved yet"}</div>

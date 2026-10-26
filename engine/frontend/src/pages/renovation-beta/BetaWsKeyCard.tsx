@@ -82,7 +82,8 @@ export function BetaWsKeyCard({ d, canWrite, today, onDone }: Props): ReactEleme
         </button>
       ) : undefined}
     >
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "12px 14px", borderRadius: 14, background: "transparent" }}>
+      {/* The holder block sits indented as the design draws it; the empty line lines up with the title instead. */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: holder ? "12px 14px" : 0, borderRadius: 14, background: "transparent" }}>
         {holder ? (
           <>
             <div>
