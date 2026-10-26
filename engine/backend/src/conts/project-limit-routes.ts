@@ -111,3 +111,29 @@ export const listProjectsHandler = async (c: Ctx): Promise<Response> => {
   if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
   return c.json({ projects: data ?? [] });
 };
+
+/** GET /accounting/everyday-expense — the expense accounts, each marked or not as an everyday expense (SOP 3.4: rent,
+    utilities — paid as usual, outside a project's limit or budget). */
+export const listEverydayExpenseHandler = async (c: Ctx): Promise<Response> => {
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  const { data, error } = await c.get('supabase').from('accounts').select('account_code, account_name, everyday_expense, is_active')
+    .eq('company_id', co.companyId).eq('account_type', 'EXPENSE').order('account_code');
+  if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
+  return c.json({ accounts: ((data ?? []) as Array<Record<string, unknown>>).filter((a) => a.is_active !== false) });
+};
+
+/** PUT /accounting/everyday-expense { accountCode, on } — finance marks an expense account (the chart's key). */
+export const setEverydayExpenseHandler = async (c: Ctx): Promise<Response> => {
+  if (!hasHouzsPerm(c, 'scm.payment_voucher.post')) return c.json({ error: "You don't have permission to change the chart." }, 403);
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  let body: Record<string, unknown>;
+  try { body = await c.req.json(); } catch { return c.json({ error: 'invalid_json' }, 400); }
+  const code = String(body.accountCode ?? '').trim();
+  const { data, error } = await c.get('supabase').from('accounts').update({ everyday_expense: body.on === true })
+    .eq('company_id', co.companyId).eq('account_code', code).eq('account_type', 'EXPENSE').select('account_code, everyday_expense').maybeSingle();
+  if (error) return c.json({ error: 'save_failed', reason: error.message }, 500);
+  if (!data) return c.json({ error: 'not_found', message: `${code} is not an expense account of this company.` }, 404);
+  return c.json({ account: data });
+};

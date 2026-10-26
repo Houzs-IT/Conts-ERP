@@ -41,6 +41,7 @@ import { projectNameFrom } from "../scm/shared/renovation-property";
 import { MEDIA_TYPES, mediaCap } from "../services/renovation/betaMedia";
 import { streamObject } from "../scm/routes/doc-attachments";
 import { financeKindFrom } from "../conts/parties";
+import { fundingFrom } from "../conts/project-limit";
 
 type Ctx = Context<{ Bindings: Env }>;
 const app = new Hono<{ Bindings: Env }>();
@@ -223,12 +224,20 @@ app.post("/", requirePermission("projects.write"), async (c) => {
       building: v.building || null, unitNo: v.unitNo || null,
     });
   }
+  /* Conts (finance phase 1.5; SOP 3.4): an internal project — the company's own money — has a department and a budget,
+     and no customer of its own. */
+  const fund = fundingFrom(body as Record<string, unknown>);
+  if (!fund.ok) return c.json({ error: fund.error }, 400);
+  if (fund.funding === "internal" && !String(body.customerName ?? "").trim() && !body.customerId) body.customerName = "INTERNAL";
   if (!String(body.name ?? "").trim()) body.name = projectNameFrom(body.building, body.unitNo, body.customerName);
   const refusal = validateCreate(body);
   if (refusal) return c.json({ error: refusal }, 400);
   const created = await createRenovationProject(db(c), body as CreateRenovationInput, userId(c), co.companyId);
   if (!created) return c.json({ error: "type_not_found" }, 400);
   if (info) await writeProjectShared(db(c), created.id, info.value);
+  if (fund.funding === "internal") {
+    await db(c).prepare("UPDATE projects SET funding = 'internal', internal_department = ?, budget_sen = ? WHERE id = ?").bind(fund.department, fund.budgetSen, created.id).run();
+  }
   return c.json(created, 201);
 });
 

@@ -181,3 +181,16 @@ export function overLimitBody(over: Array<{ projectId: number; projectName: stri
     message: `${o.projectName} has RM ${rm(Math.max(0, o.leftSen))} left of its limit: this voucher is RM ${rm(o.overSen)} over. Ask for extra limit, or lower the amount.`,
   };
 }
+
+/** A new project's funding, as the form sends it (SOP 3.4): a customer project (the default), or an internal one —
+    the company's own money — with the department it counts to (rental: a unit to rent out; supply: the showroom) and
+    its budget. */
+export function fundingFrom(body: Record<string, unknown>): { ok: true; funding: 'customer' | 'internal'; department: 'rental' | 'supply' | null; budgetSen: number | null } | { ok: false; error: string } {
+  if (body.funding == null || body.funding === 'customer') return { ok: true, funding: 'customer', department: null, budgetSen: null };
+  if (body.funding !== 'internal') return { ok: false, error: 'funding_invalid' };
+  const department = body.internalDepartment;
+  if (department !== 'rental' && department !== 'supply') return { ok: false, error: 'department_required' };
+  const budget = Number(body.budgetSen);
+  if (!Number.isInteger(budget) || budget <= 0) return { ok: false, error: 'budget_required' };
+  return { ok: true, funding: 'internal', department, budgetSen: budget };
+}
