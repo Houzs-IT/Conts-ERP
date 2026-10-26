@@ -81,12 +81,15 @@ export default function EmployeesPage() {
   return (
     <>
       <PageHeader title="Employees & Attendance" sub="Worker attendance, production hours, and efficiency tracking" />
-      <StatRow cols={4}>
-        <StatTile label="Total Workers" value={today.data ? String(lines.length) : undefined} loading={today.loading && !today.data} />
-        <StatTile label="Present" value={today.data ? String(present) : undefined} hint="Clocked in today" loading={today.loading && !today.data} />
-        <StatTile label="Working Hours" value={today.data ? `${(minutes / 60).toFixed(1)} h` : undefined} hint="Today so far" loading={today.loading && !today.data} />
-        <StatTile label="Avg Efficiency" value="—" hint="Production time not decided" />
-      </StatRow>
+      {/* The two lists are for finding a person on a phone: today's attendance figures would push them off the screen. */}
+      <div className={tab === 'employee-master' || tab === 'outside' ? 'hidden md:block' : undefined}>
+        <StatRow cols={4}>
+          <StatTile label="Total Workers" value={today.data ? String(lines.length) : undefined} loading={today.loading && !today.data} />
+          <StatTile label="Present" value={today.data ? String(present) : undefined} hint="Clocked in today" loading={today.loading && !today.data} />
+          <StatTile label="Working Hours" value={today.data ? `${(minutes / 60).toFixed(1)} h` : undefined} hint="Today so far" loading={today.loading && !today.data} />
+          <StatTile label="Avg Efficiency" value="—" hint="Production time not decided" />
+        </StatRow>
+      </div>
 
       <div className="my-5 -mx-4 md:mx-0"><TabBar id="employees" label="Employees" tabs={TABS} value={tab} onChange={setTab} /></div>
 
