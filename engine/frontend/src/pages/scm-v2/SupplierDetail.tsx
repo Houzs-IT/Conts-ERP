@@ -98,6 +98,7 @@ import { todayMyt } from '../../vendor/scm/lib/dates';
 import { statusLabel } from '../../vendor/scm/lib/status-pill';
 import { DateField } from '../../vendor/scm/components/DateField';
 import { SupplierControl } from '../../conts/SupplierControl';
+import { scmListReturnTo } from '../../lib/scmListReturn';
 
 const ICON = { size: 16, strokeWidth: 1.75 } as const;
 const SM_ICON = { size: 14, strokeWidth: 1.75 } as const;
@@ -351,7 +352,7 @@ export const SupplierDetail = () => {
     const otherCo = detail.isError ? readOtherCompanyMiss(detail.error) : null;
     return (
       <div className="space-y-4">
-        <Link to="/scm/suppliers" className={BACK_LINK_CLASS}>
+        <Link to={scmListReturnTo("/scm/suppliers")} className={BACK_LINK_CLASS}>
           <ArrowLeft {...ICON} />
           <span>Back to Suppliers</span>
         </Link>
@@ -386,7 +387,7 @@ export const SupplierDetail = () => {
         title={`${supplier.code} — ${supplier.name}`}
         description="Supplier scorecard, SKU mappings and recent purchase order history."
         primaryAction={
-          <Link to="/scm/suppliers" className={BACK_LINK_CLASS}>
+          <Link to={scmListReturnTo("/scm/suppliers")} className={BACK_LINK_CLASS}>
             <ArrowLeft size={14} />
             <span>Back</span>
           </Link>
