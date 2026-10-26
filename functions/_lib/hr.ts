@@ -97,3 +97,33 @@ export async function ensureEmployeeId(env: Env, e: Employee): Promise<string> {
   if (!made?.id) throw new Error(`No employee record could be made for ${e.name}.`);
   return made.id;
 }
+
+/** Someone in a form: by HR record, or by roster entry before they have one. */
+export interface PersonRef { employeeId?: string | null; cleanerId?: string | null; technicianId?: string | null }
+
+/**
+ * The HR record id of each person given, making the missing records in one statement (Working Hours, Worker Penalty
+ * name people by roster entry before anyone saved an HR record). Throws for anyone who is not an in-house person.
+ */
+export async function employeeIdsFor(env: Env, refs: PersonRef[]): Promise<string[]> {
+  const unnamed = refs.filter(r => !r.employeeId);
+  const byRoster = new Map<string, string>();
+  if (unnamed.length) {
+    const now = nowIso();
+    const fresh = [...new Map(unnamed.map(r => [`${r.cleanerId ?? ''}|${r.technicianId ?? ''}`, { id: crypto.randomUUID(), cleaner_id: r.cleanerId ?? null, technician_id: r.technicianId ?? null }])).values()];
+    await run(env, `
+      INSERT INTO employees (id, cleaner_id, technician_id, created_at, updated_at)
+      SELECT r.id, r.cleaner_id, r.technician_id, ?, ? FROM jsonb_to_recordset(?::text::jsonb) AS r(id text, cleaner_id text, technician_id text)
+      ON CONFLICT DO NOTHING`, now, now, JSON.stringify(fresh));
+    for (const p of await listEmployees(env)) {
+      if (!p.id) continue;
+      if (p.cleanerId) byRoster.set(`c:${p.cleanerId}`, p.id);
+      if (p.technicianId) byRoster.set(`t:${p.technicianId}`, p.id);
+    }
+  }
+  return refs.map(r => {
+    const id = r.employeeId ?? (r.cleanerId && byRoster.get(`c:${r.cleanerId}`)) ?? (r.technicianId && byRoster.get(`t:${r.technicianId}`)) ?? null;
+    if (!id) throw new Error('That person is not an in-house cleaner or technician.');
+    return id;
+  });
+}

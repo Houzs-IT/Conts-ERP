@@ -125,6 +125,8 @@ export interface PayInput {
   leaves: ApprovedLeave[];
   holidays: readonly PublicHoliday[];
   advanceSen: number;
+  /** Approved worker penalties on this payroll month (Worker Penalty), taken after statutory like an advance. */
+  penaltySen: number;
   ytd: YearToDate;
   rules: PayRules;
 }
@@ -142,7 +144,7 @@ export interface PayFigures {
   epfEmployeeSen: number; epfEmployerSen: number; socsoEmployeeSen: number; socsoEmployerSen: number;
   eisEmployeeSen: number; eisEmployerSen: number;
   pcbSen: number; pcbStatus: PcbStatus; pcbNote: string;
-  advanceSen: number; totalDeductionsSen: number; netSen: number;
+  advanceSen: number; penaltySen: number; totalDeductionsSen: number; netSen: number;
 }
 
 const utcDay = (d: string): Date => new Date(Date.UTC(Number(d.slice(0, 4)), Number(d.slice(5, 7)) - 1, Number(d.slice(8, 10))));
@@ -279,6 +281,6 @@ export function computePay(p: PayInput): PayFigures {
     otHours, otSen, sundayHours, sundaySen, holidayHours, holidaySen, lateShortHours, lateShortSen, allowanceSen, grossSen: grossWithAllowanceSen,
     epfEmployeeSen, epfEmployerSen, socsoEmployeeSen, socsoEmployerSen, eisEmployeeSen, eisEmployerSen,
     pcbSen: pcb.pcbSen, pcbStatus: pcb.status, pcbNote: pcb.note,
-    advanceSen: p.advanceSen, totalDeductionsSen, netSen: grossWithAllowanceSen - totalDeductionsSen - p.advanceSen,
+    advanceSen: p.advanceSen, penaltySen: p.penaltySen, totalDeductionsSen, netSen: grossWithAllowanceSen - totalDeductionsSen - p.advanceSen - p.penaltySen,
   };
 }

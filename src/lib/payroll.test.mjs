@@ -18,7 +18,7 @@ const person = {
 };
 const NO_YTD = { remunerationSen: 0, epfSen: 0, pcbSen: 0 };
 const workingDates = periodDates('2026-11', '2026-11-30').filter(d => new Date(`${d}T00:00:00Z`).getUTCDay() !== 0);
-const base = { period: '2026-11', throughDay: '2026-11-30', employee: person, basicSalarySen: 260_000, leaves: [], holidays: [], advanceSen: 0, ytd: NO_YTD, rules: DEFAULT_PAY_RULES };
+const base = { period: '2026-11', throughDay: '2026-11-30', employee: person, basicSalarySen: 260_000, leaves: [], holidays: [], advanceSen: 0, penaltySen: 0, ytd: NO_YTD, rules: DEFAULT_PAY_RULES };
 
 test('November 2026 has 25 working days', () => {
   assert.equal(workingDates.length, 25);
@@ -183,4 +183,14 @@ test('Working Hours grid with shift rules on: a logged day short of the standard
   const f = computePay({ ...base, employee: { ...person, workingHoursPerDay: 9 }, days, rules: SHIFT });
   assert.equal(f.lateShortHours, 1);           // standard 08:00-18:00 less lunch = 9 h; 8 h logged
   assert.equal(f.otHours, 0);
+});
+
+test('a worker penalty comes off net pay after statutory, like an advance', () => {
+  const days = workingDates.map(d => ({ date: d, minutes: 480, forgotOut: false, inMin: null, outMin: null }));
+  const without = computePay({ ...base, days });
+  const f = computePay({ ...base, days, penaltySen: 5_000, advanceSen: 2_000 });
+  assert.equal(f.penaltySen, 5_000);
+  assert.equal(f.grossSen, without.grossSen);
+  assert.equal(f.epfEmployeeSen, without.epfEmployeeSen);
+  assert.equal(f.netSen, without.netSen - 5_000 - 2_000);
 });

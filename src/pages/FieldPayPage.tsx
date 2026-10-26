@@ -89,6 +89,7 @@ export default function FieldPayPage() {
             {line('EIS', rm(f.eisEmployeeSen), { minus: true })}
             {pcbHasFigure(f.pcbStatus) ? line('PCB (tax)', rm(f.pcbSen), { minus: true }) : f.pcbStatus !== 'DISABLED' && line('PCB (tax)', 'Not worked out')}
             {f.advanceSen > 0 && line('Advance taken back', rm(f.advanceSen), { minus: true })}
+            {f.penaltySen > 0 && line('Penalty', rm(f.penaltySen), { minus: true })}
             <span className="text-meta text-muted-ink pt-2">Worked {f.daysWorked} of {f.workingDays} working days · paid leave {f.paidLeaveDays} · absent {f.absentDays}</span>
           </section>
 

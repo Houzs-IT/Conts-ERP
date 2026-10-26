@@ -76,6 +76,7 @@ export async function payslipPdf(s: PayslipDoc, company: Company): Promise<Uint8
     ['PCB (tax)', pcbShown ? rm(s.pcbSen) : '-'],
   ];
   if (s.advanceSen) deductions.push(['Advance taken back', rm(s.advanceSen)]);
+  if (s.penaltySen) deductions.push(['Penalty', rm(s.penaltySen)]);
   const top = y;
   t('EARNINGS', L, y, { size: 8.5, f: bold, color: MUTED }); t('DEDUCTIONS', mid + 6 * MM, y, { size: 8.5, f: bold, color: MUTED }); y -= 6; rule(y); y -= 13;
   let yl = y, yr = y;
@@ -83,7 +84,7 @@ export async function payslipPdf(s: PayslipDoc, company: Company): Promise<Uint8
   for (const [k, v] of deductions) { t(k, mid + 6 * MM, yr); t(v, R, yr, { right: true }); yr -= 13; }
   y = Math.min(yl, yr) - 2; rule(y); y -= 13;
   t('Gross pay', L, y, { f: bold }); t(rm(s.grossSen), L + colW, y, { f: bold, right: true });
-  t('Total deductions', mid + 6 * MM, y, { f: bold }); t(rm(s.totalDeductionsSen + s.advanceSen), R, y, { f: bold, right: true });
+  t('Total deductions', mid + 6 * MM, y, { f: bold }); t(rm(s.totalDeductionsSen + s.advanceSen + s.penaltySen), R, y, { f: bold, right: true });
   page.drawLine({ start: { x: mid, y: top + 10 }, end: { x: mid, y: y - 4 }, thickness: 0.8, color: LINE });
   y -= 22;
   page.drawRectangle({ x: L, y: y - 8, width: R - L, height: 26, color: rgb(0.96, 0.95, 0.93) });

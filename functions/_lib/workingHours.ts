@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { type Env, all, run, nowIso } from './db';
 import { hasColumn } from './auth';
-import { listEmployees } from './hr';
+import { employeeIdsFor } from './hr';
 import { DEPARTMENTS, type Department, type Employee } from './hrFields';
 
 export { DEPARTMENTS, DEPARTMENT_LABEL, type Department } from './hrFields';
@@ -54,25 +54,10 @@ export async function saveHours(env: Env, rows: HourRow[], removed: string[], us
   if (!rows.length) return { saved: 0, removed: removed.length };
 
   // People keyed by roster id get their HR record now (the grid can log hours before anyone saved one).
-  const unnamed = rows.filter(r => !r.employeeId);
-  const byRoster = new Map<string, string>();
-  if (unnamed.length) {
-    const fresh = [...new Map(unnamed.map(r => [`${r.cleanerId ?? ''}|${r.technicianId ?? ''}`, { id: crypto.randomUUID(), cleaner_id: r.cleanerId, technician_id: r.technicianId }])).values()];
-    await run(env, `
-      INSERT INTO employees (id, cleaner_id, technician_id, created_at, updated_at)
-      SELECT r.id, r.cleaner_id, r.technician_id, ?, ? FROM jsonb_to_recordset(?::text::jsonb) AS r(id text, cleaner_id text, technician_id text)
-      ON CONFLICT DO NOTHING`, now, now, JSON.stringify(fresh));
-    for (const p of await listEmployees(env)) {
-      if (!p.id) continue;
-      if (p.cleanerId) byRoster.set(`c:${p.cleanerId}`, p.id);
-      if (p.technicianId) byRoster.set(`t:${p.technicianId}`, p.id);
-    }
-  }
-  const records = rows.map(r => {
-    const employeeId = r.employeeId ?? (r.cleanerId && byRoster.get(`c:${r.cleanerId}`)) ?? (r.technicianId && byRoster.get(`t:${r.technicianId}`)) ?? null;
-    if (!employeeId) throw new Error(`No employee record could be found or made for the row on ${r.date}.`);
-    return { id: crypto.randomUUID(), employee_id: employeeId, work_date: r.date, department: r.department, hours: r.hours, notes: r.notes, attendance_id: r.attendanceId };
-  });
+  const ids = await employeeIdsFor(env, rows);
+  const records = rows.map((r, i) => ({
+    id: crypto.randomUUID(), employee_id: ids[i], work_date: r.date, department: r.department, hours: r.hours, notes: r.notes, attendance_id: r.attendanceId,
+  }));
   await run(env, `
     INSERT INTO working_hour_entries (id, employee_id, work_date, department, hours, notes, attendance_id, created_by, updated_by, created_at, updated_at)
     SELECT r.id, r.employee_id, r.work_date, r.department, r.hours, r.notes, r.attendance_id, ?, ?, ?, ?

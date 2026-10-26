@@ -228,7 +228,8 @@ function SlipModal({ line, month, full, onClose, onChange }: { line: PayrollLine
           {row('EIS', rm(f.eisEmployeeSen))}
           {row('PCB', <span title={f.pcbNote}>{pcbCell(f)}</span>)}
           {f.advanceSen > 0 && row('Advance', rm(f.advanceSen))}
-          {row('Total', rm(f.totalDeductionsSen + f.advanceSen), true)}
+          {f.penaltySen > 0 && row('Penalty', rm(f.penaltySen))}
+          {row('Total', rm(f.totalDeductionsSen + f.advanceSen + f.penaltySen), true)}
         </div>
       </div>
       <div className="mt-4 px-4 py-3 rounded-control bg-page flex justify-between text-[18px] font-bold"><span>Net pay</span><span className={`tabular-nums ${f.netSen < 0 ? 'text-danger' : ''}`}>{rm(f.netSen)}</span></div>

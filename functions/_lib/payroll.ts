@@ -6,6 +6,7 @@ import { hasLeaves, readHolidays } from './leave';
 import type { LeaveType } from './leaveRules';
 import { workedMinutes } from './attendanceCalc';
 import { hasWorkingHours } from './workingHours';
+import { hasPenalties, PENALTY_SUM_SQL } from './penalties';
 import type { PcbStatus } from './pcb';
 import { computePay, parsePayRules, type PayFigures, type PayInput, type PayRules, type PunchDay, type ApprovedLeave } from './payrollCalc';
 
@@ -51,7 +52,7 @@ export async function monthInputs(env: Env, people: Employee[], period: string, 
   const inIds = `employee_id IN (SELECT jsonb_array_elements_text(?::text::jsonb))`;
   const start = `${period}-01`, end = lastDay(period);
   const today = mytToday();
-  const [rules, holidays, punches, leaves, advances, ytd, salaries, logged] = await Promise.all([
+  const [rules, holidays, punches, leaves, advances, ytd, salaries, logged, penalties] = await Promise.all([
     readPayRules(env),
     readHolidays(env),
     all<{ employee_id: string; work_date: string; clock_in_at: string; clock_out_at: string | null; forgot_out: number }>(env,
@@ -69,6 +70,7 @@ export async function monthInputs(env: Env, people: Employee[], period: string, 
     hasWorkingHours(env).then(ok => ok ? all<{ employee_id: string; work_date: string; minutes: number }>(env, `
       SELECT employee_id, work_date, ROUND(SUM(hours) * 60)::int AS minutes FROM working_hour_entries
       WHERE ${inIds} AND work_date BETWEEN ? AND ? GROUP BY employee_id, work_date`, idList, start, end) : []),
+    hasPenalties(env).then(ok => ok ? all<{ employee_id: string; total: number }>(env, `${PENALTY_SUM_SQL} AND l.${inIds} GROUP BY l.employee_id`, period, idList) : []),
   ]);
 
   const group = <T extends { employee_id: string }>(rows: T[]) => {
@@ -78,6 +80,7 @@ export async function monthInputs(env: Env, people: Employee[], period: string, 
   };
   const punchesBy = group(punches), leavesBy = group(leaves), loggedBy = group(logged);
   const advanceBy = new Map(advances.map(a => [a.employee_id, Number(a.total)]));
+  const penaltyBy = new Map(penalties.map(a => [a.employee_id, Number(a.total)]));
   const ytdBy = new Map(ytd.map(y => [y.employee_id, { remunerationSen: Number(y.gross), epfSen: Number(y.epf), pcbSen: Number(y.pcb) }]));
   const salaryBy = new Map(salaries.map(s => [s.employee_id, s.basic_salary_sen]));
 
@@ -102,7 +105,7 @@ export async function monthInputs(env: Env, people: Employee[], period: string, 
       period, throughDay: through, employee: e,
       // Before any history row exists (a record saved before 0165 with no salary), the record's own salary.
       basicSalarySen: salaryBy.get(e.id) ?? e.basicSalarySen,
-      days, leaves: approved, holidays, advanceSen: advanceBy.get(e.id) ?? 0,
+      days, leaves: approved, holidays, advanceSen: advanceBy.get(e.id) ?? 0, penaltySen: penaltyBy.get(e.id) ?? 0,
       ytd: ytdBy.get(e.id) ?? { remunerationSen: 0, epfSen: 0, pcbSen: 0 }, rules,
     });
   }
@@ -130,7 +133,7 @@ const FIGURE_COLS: [keyof PayFigures, string][] = [
   ['lateShortHours', 'late_short_hours'], ['lateShortSen', 'late_short_sen'], ['allowanceSen', 'allowance_sen'], ['grossSen', 'gross_sen'],
   ['epfEmployeeSen', 'epf_employee_sen'], ['epfEmployerSen', 'epf_employer_sen'], ['socsoEmployeeSen', 'socso_employee_sen'],
   ['socsoEmployerSen', 'socso_employer_sen'], ['eisEmployeeSen', 'eis_employee_sen'], ['eisEmployerSen', 'eis_employer_sen'],
-  ['pcbSen', 'pcb_sen'], ['pcbStatus', 'pcb_status'], ['pcbNote', 'pcb_note'], ['advanceSen', 'advance_sen'],
+  ['pcbSen', 'pcb_sen'], ['pcbStatus', 'pcb_status'], ['pcbNote', 'pcb_note'], ['advanceSen', 'advance_sen'], ['penaltySen', 'penalty_sen'],
   ['totalDeductionsSen', 'total_deductions_sen'], ['netSen', 'net_sen'],
 ];
 
@@ -145,7 +148,7 @@ export function toPayslip(r: PayslipRow): PayslipView {
     lateShortHours: n('late_short_hours'), lateShortSen: n('late_short_sen'), allowanceSen: n('allowance_sen'), grossSen: n('gross_sen'),
     epfEmployeeSen: n('epf_employee_sen'), epfEmployerSen: n('epf_employer_sen'), socsoEmployeeSen: n('socso_employee_sen'),
     socsoEmployerSen: n('socso_employer_sen'), eisEmployeeSen: n('eis_employee_sen'), eisEmployerSen: n('eis_employer_sen'),
-    pcbSen: n('pcb_sen'), pcbStatus: isPcbStatus(status) ? status : 'UNKNOWN', pcbNote: String(r.pcb_note), advanceSen: n('advance_sen'),
+    pcbSen: n('pcb_sen'), pcbStatus: isPcbStatus(status) ? status : 'UNKNOWN', pcbNote: String(r.pcb_note), advanceSen: n('advance_sen'), penaltySen: n('penalty_sen'),
     totalDeductionsSen: n('total_deductions_sen'), netSen: n('net_sen'),
     id: r.id, employeeId: r.employee_id, period: r.period, status: r.status, employeeName: r.employee_name, employeeNo: r.employee_no,
     payBasis: r.pay_basis, paymentMethod: r.payment_method, bankName: r.bank_name, bankAccount: r.bank_account,

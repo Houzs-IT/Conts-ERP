@@ -3,6 +3,7 @@ import { type Env, one, run, json, fail, audit, nowIso } from '../../../_lib/db'
 import { requireSession } from '../../../_lib/auth';
 import { notifyUsers } from '../../../_lib/notify';
 import { hasPayroll, NOT_MIGRATED, periodEnded, toPayslip, type PayslipRow } from '../../../_lib/payroll';
+import { hasPenalties, PENALTY_SUM_SQL, postPenalties, unpostPenalties } from '../../../_lib/penalties';
 
 const MANAGE = ['management']; // everyone else needs Full on HR (functions/_lib/access.ts)
 const MOVES: Record<string, { from: string; to: 'draft' | 'approved' | 'paid' }> = {
@@ -33,13 +34,24 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   if (slip.status !== move.from) return fail('CONFLICT', `That payslip is ${slip.status}; it cannot be ${DONE[action]} from there.`, 409);
   if (action === 'approve' && !periodEnded(slip.period)) return fail('CONFLICT', 'A month can be approved once it has ended. Until then the slip is an estimate.', 409);
 
+  // Hookka: a penalty approved or revoked after the draft was made must be on the slip before it is approved.
+  const penalties = await hasPenalties(env);
+  if (action === 'approve' && penalties) {
+    const current = await one<{ total: number }>(env, `${PENALTY_SUM_SQL} AND l.employee_id = ? GROUP BY l.employee_id`, slip.period, slip.employee_id);
+    if (Number(current?.total ?? 0) !== Number(slip.penalty_sen ?? 0)) {
+      return fail('CONFLICT', 'Penalties for this month changed after the draft was made. Refresh drafts, check the slip, then approve.', 409);
+    }
+  }
+
   const now = nowIso();
   const set = action === 'approve' ? 'approved_by = ?, approved_at = ?' : action === 'pay' ? 'paid_by = ?, paid_at = ?' : 'approved_by = NULL, approved_at = NULL, generated_by = ?, generated_at = ?';
   await run(env, `UPDATE payslips SET status = ?, ${set}, updated_at = ? WHERE id = ? AND status = ?`, move.to, session.userId, now, now, slip.id, move.from);
   if (action === 'approve') {
     await run(env, `UPDATE employee_advances SET status = 'settled', settled_period = ?, updated_at = ? WHERE employee_id = ? AND advance_date LIKE ? AND status = 'unsettled'`,
       slip.period, now, slip.employee_id, `${slip.period}-%`);
+    if (penalties) await postPenalties(env, slip.id, slip.employee_id, slip.period);
   } else if (action === 'reopen') {
+    if (penalties) await unpostPenalties(env, slip.id);
     await run(env, `UPDATE employee_advances SET status = 'unsettled', settled_period = NULL, updated_at = ? WHERE employee_id = ? AND settled_period = ?`,
       now, slip.employee_id, slip.period);
   }
