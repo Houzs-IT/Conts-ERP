@@ -102,6 +102,19 @@ export const dateShort = (iso: string) => {
   return `${p.d} ${MONTHS[p.m]}`;
 };
 
+/** Sunday, 25 October 2026 — the Owner Showcase's headline date. */
+export const dateLong = (iso: string) => {
+  const p = mytParts(iso);
+  const day = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][new Date(Date.UTC(p.y, p.m, p.d)).getUTCDay()];
+  return `${day}, ${p.d} ${MONTHS_LONG[p.m]} ${p.y}`;
+};
+
+/** Wed — short weekday alone. */
+export const weekdayShort = (iso: string) => {
+  const p = mytParts(iso);
+  return WEEKDAYS[new Date(Date.UTC(p.y, p.m, p.d)).getUTCDay()];
+};
+
 /** Wed 16 — short weekday and day. */
 export const weekdayDay = (iso: string) => {
   const p = mytParts(iso);
