@@ -1,6 +1,6 @@
 import { type CSSProperties, useEffect, useMemo, useRef, useState } from 'react';
 import { color, shell, radius, motion, text } from '../theme';
-import { navFor, withoutOffItems, workspaceOf, WORKSPACE_LABEL, type BadgeKey, type NavGroup, type Workspace } from '../lib/navigation';
+import { groupName, navFor, withoutOffItems, workspaceOf, WORKSPACE_LABEL, type BadgeKey, type NavGroup, type Workspace } from '../lib/navigation';
 import { useApi } from '../lib/useApi';
 import { useSession } from '../lib/session';
 import { useNavCounts } from '../lib/navBadges';
@@ -169,7 +169,7 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
               <button type="button"
                 onClick={() => setCollapsedSections(s => ({ ...s, [g.label]: !s[g.label] }))}
                 aria-expanded={!sectionCollapsed}
-                aria-label={`${g.label.charAt(0)}${g.label.slice(1).toLowerCase()} section`}
+                aria-label={`${groupName(g.label)} section`}
                 style={{
                   display: 'flex', alignItems: 'center', gap: 6, width: '100%', padding: '6px 8px 4px',
                   background: 'none', border: 'none', cursor: 'pointer', font: 'inherit', textAlign: 'left',

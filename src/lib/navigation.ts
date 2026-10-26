@@ -93,8 +93,14 @@ export const NAV: NavGroup[] = [
     { key: 'today', label: 'Today', icon: 'clipboard-check', path: '/operations/today', area: 'operations', badge: 'today' },
     { key: 'cleaning', label: 'Cleaning', icon: 'sparkles', path: '/operations/cleaning', area: 'operations' },
     { key: 'maintenance', label: 'Maintenance', icon: 'wrench', path: '/operations/maintenance', area: 'operations', badge: 'maintenance' },
-    // Cleaners and technicians, in-house and outside, and who has the app (owner, 23 Oct 2026).
+    // Cleaners and technicians, in-house and outside, and who has the app (owner, 23 Oct 2026). Back under Operations
+    // when HR became Hookka's Employees page (owner, 26 Oct 2026).
     { key: 'workers', label: 'Workers', icon: 'users', path: '/operations/workers', area: 'operations' },
+  ] },
+  // Hookka's Employees page with its eleven tabs: working hours, attendance, labour cost, payroll, advances, penalties,
+  // the employee record (owner, 26 Oct 2026; PLAN-hr-employees.md).
+  { label: 'HR', workspace: 'rental', items: [
+    { key: 'employees', label: 'Employees', icon: 'users', path: '/hr/employees', area: 'hr' },
   ] },
   { label: 'UNITS', workspace: 'rental', items: [
     // Buildings, the unit record and access codes are one Units screen (owner, 8 Oct).
@@ -348,7 +354,8 @@ const SUB_PAGES: [RegExp, string][] = [
   [/^\/system\/integrations\/hostplatform$/, 'HostPlatform import'],
 ];
 
-const groupName = (label: string) => label.charAt(0) + label.slice(1).toLowerCase();
+/** A menu group's name in a sentence ("Operations"); an acronym stays as it is ("HR", not "Hr"). */
+export const groupName = (label: string): string => label === 'HR' ? label : label.charAt(0) + label.slice(1).toLowerCase();
 
 /** Rental screens reached from another screen rather than the menu: their breadcrumb, instead of "Home". */
 const RENTAL_OFF_MENU: Record<string, { group: string; item: string; page?: string }> = {

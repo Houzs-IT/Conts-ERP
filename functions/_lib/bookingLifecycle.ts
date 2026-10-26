@@ -1,4 +1,4 @@
-import { replanTurnover, ensureTurnovers } from './cleaning';
+import { replanTurnover, ensureTurnovers, CLEAN_KINDS_SQL } from './cleaning';
 import { type Env, one, all, run, audit, nowIso } from './db';
 import type { Session } from './auth';
 import { findClash, clashResponseBody, withUnitLock } from './reservations';
@@ -199,7 +199,8 @@ export async function applyMove(env: Env, session: Session & { manage?: boolean 
     if (target === 'checked_out') {
       await run(env, 'UPDATE units SET readiness = ?, updated_at = ? WHERE id = ?', 'dirty', now, cur.unit_id);
       effects.readiness = 'dirty';
-      const open = await one(env, `SELECT 1 AS x FROM tasks WHERE reservation_id = ? AND kind = 'turnover' AND state != 'resolved' AND title = 'Turnover after check-out'`, id);
+      // Any open clean of the stay counts, also one switched to Deep clean (DC): never a second job.
+      const open = await one(env, `SELECT 1 AS x FROM tasks WHERE reservation_id = ? AND kind IN ${CLEAN_KINDS_SQL} AND state != 'resolved'`, id);
       if (!open) {
         const taskId = crypto.randomUUID();
         await run(env, `

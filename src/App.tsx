@@ -7,7 +7,6 @@ import { ToastProvider } from './components/Toast';
 import ViewAs from './components/ViewAs';
 import TwoStepPrompt from './components/TwoStepPrompt';
 import AppShell from './components/AppShell';
-import FieldShell from './components/FieldShell';
 import UpdateNotice from './components/UpdateNotice';
 import OwnerShell from './components/OwnerShell';
 import LoginPage from './pages/LoginPage';
@@ -31,6 +30,7 @@ const GuestsPage = lazy(() => import('./pages/GuestsPage'));
 const OperationsTodayPage = lazy(() => import('./pages/OperationsTodayPage'));
 const CleaningPage = lazy(() => import('./pages/CleaningPage'));
 const WorkersPage = lazy(() => import('./pages/WorkersPage'));
+const EmployeesPage = lazy(() => import('./pages/EmployeesPage'));
 const MaintenancePage = lazy(() => import('./pages/MaintenancePage'));
 import SupplyChainEngine, { signInToEngineEarly } from './components/SupplyChainEngine';
 import { ENGINE_PATH } from './lib/scmEngine';
@@ -100,7 +100,12 @@ const ItSupportPage = lazy(() => import('./pages/ItSupportPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 const NotDesignedPage = lazy(() => import('./pages/NotDesignedPage'));
 const PlaceholderPage = lazy(() => import('./pages/PlaceholderPage'));
+// The portal's shell carries its four-language strings (src/lib/portalI18n.ts): only cleaners and technicians load it.
+const FieldShell = lazy(() => import('./components/FieldShell'));
 const FieldHome = lazy(() => import('./pages/FieldHome'));
+const FieldClockPage = lazy(() => import('./pages/FieldClockPage'));
+const FieldMePage = lazy(() => import('./pages/FieldMePage'));
+const FieldPayPage = lazy(() => import('./pages/FieldPayPage'));
 const OwnerPortalPage = lazy(() => import('./pages/OwnerPortalPage'));
 const AccountPage = lazy(() => import('./pages/AccountPage'));
 const MobileSettingsHub = lazy(() => import('./components/MobileSettingsHub'));
@@ -230,7 +235,7 @@ function Routed() {
   if (user.role === 'housekeeper' || user.role === 'technician') {
     // Cleaners' and technicians' screens moved from /field (then /worker) to /portal; old bookmarks and links follow.
     if (/^\/(field|worker)(\/|$)/.test(location.pathname)) return <Navigate to={location.pathname.replace(/^\/(field|worker)/, '/portal') + location.search} replace />;
-    return <FieldShell><Suspense fallback={<Fallback />}>{account ? <AccountPage /> : <FieldHome />}</Suspense></FieldShell>;
+    return <Suspense fallback={<Fallback />}><FieldShell><Suspense fallback={<Fallback />}>{account ? <AccountPage /> : location.pathname.startsWith('/portal/clock') ? <FieldClockPage /> : location.pathname.startsWith('/portal/me') ? <FieldMePage /> : location.pathname.startsWith('/portal/pay') ? <FieldPayPage /> : <FieldHome />}</Suspense></FieldShell></Suspense>;
   }
   // Owners see only their own portal, whatever the address bar says.
   if (user.role === 'owner') {
@@ -265,6 +270,7 @@ function Routed() {
         <Route path="/operations/today" element={<OperationsTodayPage />} />
         <Route path="/operations/cleaning" element={<CleaningPage />} />
         <Route path="/operations/workers" element={<WorkersPage />} />
+        <Route path="/hr/employees" element={<EmployeesPage />} />
         <Route path="/operations/cleaners" element={<Navigate replace to="/operations/workers" />} />
         <Route path="/operations/maintenance" element={<MaintenancePage />} />
         {/* Housekeeping is Cleaning; Inspections is gone; All tasks is the History tab (owner, 10 Oct). */}
