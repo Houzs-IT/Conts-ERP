@@ -14,6 +14,7 @@ const PayrollTab = lazy(() => import('./workers/PayrollTab'));
 const AdvancesTab = lazy(() => import('./workers/AdvancesTab'));
 const EmployeesTab = lazy(() => import('./workers/EmployeesTab'));
 const LeaveTab = lazy(() => import('./workers/LeaveTab'));
+const PenaltiesTab = lazy(() => import('./workers/PenaltiesTab'));
 
 /* ------------------------------------------------------------------ *
  * HR > Employees: Hookka's Employees page (erp.hookka.com /employees),
@@ -50,7 +51,6 @@ const UNDECIDED: Partial<Record<TabKey, string>> = {
 const NEXT: Partial<Record<TabKey, string>> = {
   'labor-cost': 'Labour cost against what the cleaning and repair jobs were charged, with the month\'s payroll reconciliation.',
   'department-labor': 'Hours and labour cost per department (Cleaning, Maintenance).',
-  penalties: 'Penalties raised against a cleaning or repair job, approved, then taken off the payroll month.',
 };
 
 export default function EmployeesPage() {
@@ -70,6 +70,7 @@ export default function EmployeesPage() {
   else if (tab === 'advances') body = <AdvancesTab />;
   else if (tab === 'employee-master') body = <EmployeesTab />;
   else if (tab === 'leave') body = <LeaveTab />;
+  else if (tab === 'penalties') body = <PenaltiesTab />;
   else if (UNDECIDED[tab]) {
     body = <EmptyState icon="Activity" title="Production time is not decided yet"
       body={`${UNDECIDED[tab]} On Hookka this comes from factory job cards. It stays empty until The Conts decides what counts as production time for cleaning and repair jobs.`} />;
