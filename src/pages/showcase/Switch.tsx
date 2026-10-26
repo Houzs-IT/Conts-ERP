@@ -38,7 +38,7 @@ export function SwitchButton({ current, next, rolled, onClick }: { current: stri
   return (
     <button type="button" className={`sc-switch${rolled ? ' rolled' : ''}`} onClick={onClick} aria-label={`Switch to the ${next} view`}>
       <span className="sc-switch-icon" aria-hidden>⇄</span>
-      <span style={{ color: 'var(--sc-muted)', fontWeight: 600 }}>Switch</span>
+      <span className="sc-switch-label" style={{ color: 'var(--sc-muted)', fontWeight: 600 }}>Switch</span>
       <span className="sc-switch-roll" aria-hidden><span><span>{current}</span><span style={{ color: 'var(--sc-teal)' }}>{next}</span></span></span>
     </button>
   );

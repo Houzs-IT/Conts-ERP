@@ -29,8 +29,19 @@
   .sc-nudge, .sc-curtain-to, .sc-curtain-sub { animation: none; }
 }
 
+/* On a narrow screen the headers drop the words around the Switch, so it always stays on screen. */
+@media (max-width: 640px) {
+  .sc-switch { padding: 0 12px 0 8px; gap: 6px; margin-left: 0; }
+  .sc-switch-label, .sc-logo-word, .sc-op-avatar { display: none !important; }
+  .sc-header { padding: 0 12px; gap: 10px; }
+  .sc-head-right { gap: 8px; }
+  .sc-exit { padding: 0 12px; }
+}
+
 /* Desktop portal */
 .sc-op-header { position: sticky; top: 0; z-index: 20; background: var(--sc-surface); border-bottom: 1px solid var(--sc-line); display: flex; flex-wrap: wrap; align-items: center; column-gap: 20px; padding: 0 32px; }
+.sc-op-right { display: flex; align-items: center; justify-content: flex-end; gap: 20px; margin-left: auto; padding-left: 24px; min-width: 0; }
+@media (max-width: 640px) { .sc-op-right { gap: 10px; padding-left: 0; } .sc-op-right .sc-seg button { padding: 7px 10px; } }
 .sc-op-pill { font-size: 11px; font-weight: 800; padding: 4px 9px; border-radius: 999px; background: var(--sc-teal-tint); color: var(--sc-teal-deep); letter-spacing: 0.04em; display: none; }
 .sc-op-name { display: none; font-size: 13px; font-weight: 700; white-space: nowrap; }
 @media (min-width: 1150px) { .sc-op-pill { display: inline; } }

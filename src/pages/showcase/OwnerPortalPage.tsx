@@ -84,9 +84,9 @@ export default function OwnerPortalPage() {
         <nav className="sc-op-tabs" aria-label="Owner portal pages">
           {PAGES.map(([k, l]) => <button key={k} type="button" className="sc-op-tab" aria-current={page === k ? 'page' : undefined} onClick={() => setParam('tab', k === 'listings' ? null : k)}>{l}</button>)}
         </nav>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 20, flexShrink: 0, marginLeft: 'auto', paddingLeft: 24 }}>
+        <div className="sc-op-right">
           <Segmented value={device} onChange={v => setParam('device', v === 'mobile' ? 'mobile' : null)} options={[{ key: 'desktop', label: 'Desktop' }, { key: 'mobile', label: 'Mobile' }]} />
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><div className="sc-avatar" style={{ width: 34, height: 34, fontSize: 13, background: 'var(--sc-tint-4)' }}>{OWNER.initials}</div><div className="sc-op-name">{OWNER.name}</div></div>
+          <div className="sc-op-avatar" style={{ display: 'flex', alignItems: 'center', gap: 8 }}><div className="sc-avatar" style={{ width: 34, height: 34, fontSize: 13, background: 'var(--sc-tint-4)' }}>{OWNER.initials}</div><div className="sc-op-name">{OWNER.name}</div></div>
           <SwitchButton current="Owner" next="Portfolio" rolled={sw.rolled} onClick={sw.go} />
         </div>
       </header>
