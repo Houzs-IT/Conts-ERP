@@ -37,7 +37,7 @@ def parse(path):
             line = ' '.join(w['text'] for w in c)
             for key, pat in (('to', r'\bTo\s+(.+?)(?:\s+Building|\s+Prepared|$)'), ('attention', r'Attention\s+(.+?)(?:\s+Prepared|$)'),
                              ('prepared', r'Prepared By\s+(.+)$'), ('building', r'Building\s+(.+)$'), ('unit', r'\bUnit\s+(.+)$'),
-                             ('date', r'\bDate\s+(\d{1,2}/\d{1,2}/\d{4})'), ('amend', r'LAST AMEND\s*:\s*(\S+)')):
+                             ('date', r'\bDate\s+(\d{1,2}/\d{1,2}/\d{2,4})'), ('amend', r'LAST AMEND\s*:\s*(\S+)')):
                 m = re.search(pat, line)
                 if m and key not in doc['head']: doc['head'][key] = m.group(1).strip()
         last = None; page_start = len(doc['items']); in_terms = False
