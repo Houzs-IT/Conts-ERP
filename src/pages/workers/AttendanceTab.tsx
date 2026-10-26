@@ -33,6 +33,8 @@ const hhmm = (iso: string): string => time(iso).slice(0, 5);
 const place = (p: Nearest | null): string =>
   !p ? '' : p.metres <= ON_SITE_METRES ? `At ${p.name}` : `${p.metres >= 1000 ? `${(p.metres / 1000).toFixed(1)} km` : `${p.metres} m`} from ${p.name}`;
 const mytDay = (iso: string): string => new Date(Date.parse(iso) + 8 * 3_600_000).toISOString().slice(0, 10);
+/** A fix by the office is information, not a problem: grey, where a missing photo or location is yellow. */
+const flagTone = (f: string): 'neutral' | 'warning' => (f === 'Fixed by office' ? 'neutral' : 'warning');
 const rowKey = (l: AttendanceLine): string => l.employee.id ?? l.employee.cleanerId ?? l.employee.technicianId ?? l.employee.name;
 
 function stateOf(l: AttendanceLine): { label: string; tone: 'success' | 'info' | 'warning' | 'neutral' } {
@@ -77,7 +79,7 @@ export default function AttendanceTab({ tabs }: { tabs: ReactNode }) {
     { key: 'where', label: 'Where', value: l => place(l.inPlace), width: 220, render: l => l.punch ? (place(l.inPlace) || <span className="text-muted-ink">No location</span>) : '' },
     { key: 'photos', label: 'Selfies', noExport: true, sortable: false, filter: false, width: 130, render: l => <Selfies line={l} /> },
     { key: 'flags', label: 'Check', value: l => flags(l).join(', '), width: 190, render: l => (
-      <span className="flex gap-1 flex-wrap">{flags(l).map(f => <StatusBadge key={f} tone={f === 'Fixed by office' ? 'neutral' : 'warning'} label={f} size="sm" />)}</span>
+      <span className="flex gap-1 flex-wrap">{flags(l).map(f => <StatusBadge key={f} tone={flagTone(f)} label={f} size="sm" />)}</span>
     ) },
     { key: 'go', label: '', noExport: true, sortable: false, filter: false, width: 110, align: 'right',
       render: l => mayFix && l.punch ? <Button size="sm" variant="tertiary" icon={<Icon name="Pencil" size="sm" />} onClick={() => setFixing(l)}>Fix</Button> : null },
@@ -91,7 +93,7 @@ export default function AttendanceTab({ tabs }: { tabs: ReactNode }) {
 
       <div className="flex items-end gap-2 flex-wrap mb-4">
         <Button size="sm" variant="secondary" icon={<Icon name="ChevronLeft" size="sm" />} disabled={!shown} onClick={() => setDay(shift(shown, -1))}>Day before</Button>
-        <DateField aria-label="Day" value={shown} max={data?.today} onChange={v => v && setDay(v)} />
+        <DateField aria-label="Day" className="w-[180px]" value={shown} max={data?.today} onChange={v => v && setDay(v)} />
         <Button size="sm" variant="secondary" disabled={!shown || !data || shown >= data.today} onClick={() => setDay(shift(shown, 1))}>Next day</Button>
         {data && shown !== data.today && <Button size="sm" variant="tertiary" onClick={() => setDay(data.today)}>Today</Button>}
       </div>
@@ -123,7 +125,7 @@ export default function AttendanceTab({ tabs }: { tabs: ReactNode }) {
                 <span>{place(l.inPlace) || 'No location'}</span>
               </span>
             )}
-            {flags(l).length > 0 && <span className="flex gap-1 flex-wrap">{flags(l).map(f => <StatusBadge key={f} tone="warning" label={f} size="sm" />)}</span>}
+            {flags(l).length > 0 && <span className="flex gap-1 flex-wrap">{flags(l).map(f => <StatusBadge key={f} tone={flagTone(f)} label={f} size="sm" />)}</span>}
             {l.punch && <span className="flex items-center gap-2 pt-1"><Selfies line={l} />{mayFix && <Button size="sm" variant="tertiary" icon={<Icon name="Pencil" size="sm" />} onClick={() => setFixing(l)}>Fix</Button>}</span>}
           </span>
         )}
