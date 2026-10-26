@@ -51,14 +51,15 @@ export const STATUS_VOCAB = {
     confirmed: BOOKING.confirmed, checked_in: BOOKING.checked_in, checked_out: BOOKING.checked_out, pending: BOOKING.pending,
     blocked: { label: 'Blocked', tone: 'danger' },
   },
+  /** Staff sheet UNIT (23 Oct 2026): ready green, occupied blue, cleaning and maintenance yellow, blocked red. */
   readiness: {
     occupied: { label: 'Occupied', tone: 'info' },
     dirty: { label: 'Dirty', tone: 'warning' },
-    cleaning: { label: 'Cleaning', tone: 'info' },
+    cleaning: { label: 'Cleaning', tone: 'warning' },
     inspection: { label: 'Inspection', tone: 'warning' },
     ready: { label: 'Ready', tone: 'success' },
-    maintenance: { label: 'Maintenance', tone: 'danger' },
-    blocked: { label: 'Blocked', tone: 'neutral' },
+    maintenance: { label: 'Maintenance', tone: 'warning' },
+    blocked: { label: 'Blocked', tone: 'danger' },
   },
   task: {
     open: { label: 'Open', tone: 'neutral' },

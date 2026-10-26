@@ -45,8 +45,8 @@ interface Day {
 
 const CHANNELS = ['airbnb', 'booking_com', 'agoda', 'direct', 'owner_stay', 'maintenance_block'];
 const unitReady: Record<string, { label: string; tone: AnyTone }> = {
-  ready: { label: 'Unit ready', tone: 'success' }, dirty: { label: 'Needs cleaning', tone: 'warning' }, cleaning: { label: 'Cleaning now', tone: 'info' },
-  occupied: { label: 'Occupied', tone: 'neutral' }, maintenance: { label: 'Under repair', tone: 'critical' }, blocked: { label: 'Blocked', tone: 'critical' },
+  ready: { label: 'Unit ready', tone: 'success' }, dirty: { label: 'Needs cleaning', tone: 'warning' }, cleaning: { label: 'Cleaning now', tone: 'warning' },
+  occupied: { label: 'Occupied', tone: 'info' }, maintenance: { label: 'Under repair', tone: 'warning' }, blocked: { label: 'Blocked', tone: 'critical' },
 };
 const PROGRESS: Record<Progress, { label: string; tone: AnyTone }> = {
   reported: { label: 'Reported', tone: 'neutral' }, assigned: { label: 'Assigned', tone: 'neutral' }, in_progress: { label: 'In progress', tone: 'info' },

@@ -93,7 +93,7 @@ export async function chargeClean(env: Env, session: Session, task: { id: string
     await run(env, `
       INSERT INTO expenses (id, unit_id, task_id, category, description, amount, currency, incurred_on, charge_to, created_by, created_at)
       VALUES (?, ?, ?, 'cleaning', ?, ?, 'MYR', ?, 'owner', ?, ?)`,
-      id, task.unit_id, task.id, task.kind === 'deep_clean' ? 'Deep clean' : 'Standard clean', price.amount, day, session.userId, nowIso());
+      id, task.unit_id, task.id, task.kind === 'deep_clean' ? 'Deep clean' : 'Basic clean', price.amount, day, session.userId, nowIso());
     await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'expense.create', entityTable: 'expenses', entityId: id, after: { unitId: task.unit_id, taskId: task.id, category: 'cleaning', amount: price.amount, source: price.source } });
     return { amount: price.amount, created: true, reason: null };
   } catch (e) {

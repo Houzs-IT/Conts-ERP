@@ -19,7 +19,7 @@ import { LinesEditor, linesPayload, type DraftLine } from './JobMoney';
 
 /** The status of one clean; its words and colour are entity "cleaning" in lib/status.ts. */
 export type CleanStatus = 'done' | 'cleaning' | 'ready' | 'guest_in' | 'unassigned' | 'waiting' | 'unplanned';
-export const KIND_LABEL: Record<string, string> = { turnover: 'Standard', light_clean: 'Light', deep_clean: 'Deep' };
+export const KIND_LABEL: Record<string, string> = { turnover: 'Basic', light_clean: 'Light', deep_clean: 'Deep' };
 
 /** "1 h 20 m" / "45 min". */
 export function minutesLabel(min: number): string {

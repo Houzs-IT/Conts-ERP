@@ -27,6 +27,8 @@ export interface ServiceItem {
 }
 interface ListPayload {
   ready: boolean; mayEdit: boolean; mayPrice: boolean; today: string; layouts: string[]; uoms: string[]; cleanTypes: string[];
+  /** The unit Types' names, staff-kept since 0161 (functions/_lib/layoutTypes.ts). */
+  layoutLabels?: Record<string, string>;
   categories: Record<Domain, string[]>; items: ServiceItem[];
 }
 interface Detail extends ServiceItem {
@@ -36,7 +38,7 @@ interface Detail extends ServiceItem {
 
 export const DOMAIN_LABEL: Record<Domain, string> = { cleaning: 'Cleaning', maintenance: 'Maintenance' };
 export const SUB_LABEL: Record<string, string> = {
-  turnover: 'Standard clean', deep_clean: 'Deep clean', light_clean: 'Light clean', laundry: 'Laundry', aircon: 'Aircon', plumbing: 'Plumbing',
+  turnover: 'Basic clean', deep_clean: 'Deep clean', light_clean: 'Light clean', laundry: 'Laundry', aircon: 'Aircon', plumbing: 'Plumbing',
   electrical: 'Electrical', furniture: 'Furniture', appliance: 'Appliance', cleaning: 'Cleaning', general: 'General', other: 'Other',
 };
 export const LAYOUT_LABEL: Record<string, string> = {
@@ -44,7 +46,7 @@ export const LAYOUT_LABEL: Record<string, string> = {
   duplex: 'Duplex', dual_key: 'Dual key', penthouse: 'Penthouse', other: 'Other',
 };
 const UOM_LABEL: Record<string, string> = { job: 'Per job', unit: 'Per unit', hour: 'Per hour', visit: 'Per visit', set: 'Per set' };
-const CLEAN_TYPE_LABEL: Record<string, string> = { turnover: 'Standard clean', deep_clean: 'Deep clean', light_clean: 'Light clean' };
+const CLEAN_TYPE_LABEL: Record<string, string> = { turnover: 'Basic clean', deep_clean: 'Deep clean', light_clean: 'Light clean' };
 
 const layoutsOf = (i: { byLayout: boolean }, all: string[]) => (i.byLayout ? all : ['all']);
 const priced = (cells: Cell[]) => cells.filter(c => c.ownerPrice != null || c.internalCost != null);
@@ -75,6 +77,9 @@ export function ServicePrices({ domain, above, onChanged }: { domain?: Domain; a
   const [creating, setCreating] = useState(false);
   const [importing, setImporting] = useState(false);
   const d = list.data;
+  // Types staff added on the Units screen are named by the server. The fixed names only ever gain keys, so every
+  // component that reads LAYOUT_LABEL sees them. 'all' keeps its own name here.
+  if (d?.layoutLabels) for (const [k, v] of Object.entries(d.layoutLabels)) if (k !== 'all') LAYOUT_LABEL[k] = v;
   const items = useMemo(() => (d?.items ?? []).filter(i => (showRetired || i.active) && (domain || type === 'all' || i.domain === type)), [d, showRetired, type, domain]);
   const layouts = d?.layouts ?? [];
 

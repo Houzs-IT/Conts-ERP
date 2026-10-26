@@ -1,7 +1,7 @@
 import { type Env, one, run, json, fail, audit, nowIso, mytToday } from '../../../_lib/db';
 import { requireSession, isFieldRole } from '../../../_lib/auth';
 import { mayWork } from '../../../_lib/access';
-import { hasServicePrices, itemView, loadPrices, checkItem, ITEM_WRITERS } from '../../../_lib/servicePrices';
+import { hasServicePrices, itemView, loadPrices, checkItem, layoutGrid, ITEM_WRITERS } from '../../../_lib/servicePrices';
 
 /** GET /api/operations/service-prices/:id — one item, its prices in force today and its price history: every dated
  *  change, newest first, with who set it, and how many jobs were priced from the item. */
@@ -19,7 +19,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
   const currentFrom = [...byDate.keys()].find(d => d <= today) ?? null;
   const used = await one<{ n: number }>(env, `SELECT (SELECT COUNT(*) FROM tasks WHERE service_item_id = ?) + (SELECT COUNT(*) FROM maintenance_issues WHERE sku_id = ?) AS n`, item.id, item.id);
   return json({
-    ...itemView(item, rows, today), today, jobs: Number(used?.n ?? 0),
+    ...itemView(item, rows, today, await layoutGrid(env)), today, jobs: Number(used?.n ?? 0),
     history: [...byDate.entries()].map(([effectiveFrom, list]) => ({
       effectiveFrom, status: effectiveFrom > today ? 'scheduled' : effectiveFrom === currentFrom ? 'current' : 'past',
       note: list[0].note ?? null, setBy: list[0].created_by_name ?? null, setAt: list[0].created_at,
