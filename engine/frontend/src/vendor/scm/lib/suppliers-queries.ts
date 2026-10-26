@@ -393,6 +393,15 @@ export function useSuppliersPaged(params: {
   });
 }
 
+/** Every supplier list: the picker list and the paged Suppliers page (Conts 2026-10-26: the paged one was
+ *  missed, so a changed control showed its old value for up to 30 seconds after Back). */
+export function invalidateSupplierLists(qc: ReturnType<typeof useQueryClient>) {
+  return Promise.all([
+    qc.invalidateQueries({ queryKey: ['suppliers'] }),
+    qc.invalidateQueries({ queryKey: ['suppliers-paged'] }),
+  ]);
+}
+
 export function useSupplierDetail(id: string | null) {
   return useQuery({
     queryKey: ['supplier-detail', id],
@@ -444,7 +453,7 @@ export function useCreateSupplier() {
         method: 'POST',
         body: JSON.stringify(body),
       }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['suppliers'] }),
+    onSuccess: () => invalidateSupplierLists(qc),
     onError: writeFailed,
   });
 }
@@ -458,7 +467,7 @@ export function useUpdateSupplier() {
         body: JSON.stringify(body),
       }),
     onSuccess: (_, vars) => {
-      qc.invalidateQueries({ queryKey: ['suppliers'] });
+      void invalidateSupplierLists(qc);
       qc.invalidateQueries({ queryKey: ['supplier-detail', vars.id] });
     },
   });
