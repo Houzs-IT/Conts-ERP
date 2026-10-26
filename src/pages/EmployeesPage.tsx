@@ -84,7 +84,7 @@ export default function EmployeesPage() {
         <StatTile label="Avg Efficiency" value="—" hint="Production time not decided" />
       </StatRow>
 
-      <div role="tablist" aria-label="Employees" className="flex gap-1 overflow-x-auto [scrollbar-width:none] -mx-4 px-4 md:mx-0 md:px-0 my-5 [border-bottom:1px_solid_var(--color-line)]">
+      <div role="tablist" aria-label="Employees" className="flex flex-none gap-1 overflow-x-auto [scrollbar-width:none] -mx-4 px-4 md:mx-0 md:px-0 my-5 [border-bottom:1px_solid_var(--color-line)]">
         {TABS.map(t => (
           <button key={t.key} type="button" role="tab" aria-selected={tab === t.key} onClick={() => setTab(t.key)}
             className={cx('flex-none inline-flex items-center gap-1.5 h-10 px-3 mb-1.5 rounded-control text-meta whitespace-nowrap cursor-pointer border border-solid',
