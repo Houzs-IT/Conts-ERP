@@ -8,7 +8,7 @@ import { DataTable, type Column } from '../../components/DataTable';
 import { Modal } from '../../components/Modal';
 import { Field } from '../../components/Field';
 import { Select } from '../../components/Select';
-import { MoneyInput, NumberInput, DateField } from '../../components/inputs';
+import { MoneyInput, DateField } from '../../components/inputs';
 import { useToast } from '../../components/Toast';
 import { useConfirm } from '../../components/ConfirmDialog';
 import { useApi } from '../../lib/useApi';
@@ -17,7 +17,8 @@ import { mayRun } from '../../lib/areaAccess';
 import { useSession } from '../../lib/session';
 import { rm, date, todayMyt } from '../../lib/format';
 import type { PayrollPayload, PayrollLine, AdvanceView } from '../../../functions/api/payroll/index';
-import type { PayFigures, PayRules } from '../../../functions/_lib/payrollCalc';
+import type { PayFigures } from '../../../functions/_lib/payrollCalc';
+import { PayRulesPanel } from './PayRules';
 import { pcbHasFigure } from '../../../functions/_lib/pcb';
 import type { PayslipDoc } from '../../lib/payslipPdf';
 
@@ -47,7 +48,6 @@ export default function PayrollTab() {
   const toast = useToast();
   const [confirmDialog, ask] = useConfirm();
   const [open, setOpen] = useState<PayrollLine | null>(null);
-  const [editingRules, setEditingRules] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const period = data?.period ?? todayMyt().slice(0, 7);
@@ -106,7 +106,6 @@ export default function PayrollTab() {
         </span>
         {full && data && (
           <span className="flex items-center gap-2 flex-wrap">
-            <Button size="sm" variant="tertiary" icon={<Icon name="Settings" size="sm" />} onClick={() => setEditingRules(true)}>Pay rules</Button>
             <Button size="sm" variant="secondary" icon={<Icon name="RefreshCw" size="sm" />} disabled={busy} onClick={() => void run()}>
               {lines.some(l => l.payslip) ? 'Refresh drafts' : 'Run payroll'}
             </Button>
@@ -140,10 +139,11 @@ export default function PayrollTab() {
             );
           }}
         />
+
+        {data && <PayRulesPanel rules={data.rules} full={full} onSaved={reload} />}
       </div>
 
       {open && data && <SlipModal line={open} month={data} full={full} onClose={() => setOpen(null)} onChange={() => { setOpen(null); reload(); }} />}
-      {editingRules && data && <RulesModal rules={data.rules} onClose={() => setEditingRules(false)} onDone={() => { setEditingRules(false); reload(); }} />}
     </>
   );
 }
@@ -214,6 +214,7 @@ function SlipModal({ line, month, full, onClose, onChange }: { line: PayrollLine
           <span className="text-meta font-semibold text-muted-ink pb-1">EARNINGS</span>
           {row(line.employee.payBasis === 'daily' ? `Days worked ${f.daysWorked} x ${rm(f.dayRateSen)}` : 'Basic salary', rm(line.employee.payBasis === 'daily' ? f.grossSen - f.otSen - f.sundaySen - f.holidaySen : f.basicSalarySen))}
           {f.absentDays > 0 && row(`Absent ${f.absentDays} d`, rm(-f.absenceDeductionSen))}
+          {f.lateShortHours > 0 && row(`Late / short ${f.lateShortHours} h`, rm(-f.lateShortSen))}
           {f.otHours > 0 && row(`Overtime ${f.otHours} h`, rm(f.otSen))}
           {f.sundayHours > 0 && row(`Sunday ${f.sundayHours} h`, rm(f.sundaySen))}
           {f.holidayHours > 0 && row(`Public holiday ${f.holidayHours} h`, rm(f.holidaySen))}
@@ -234,40 +235,6 @@ function SlipModal({ line, month, full, onClose, onChange }: { line: PayrollLine
         Working days {f.workingDays} · worked {f.daysWorked} · paid leave {f.paidLeaveDays} · absent {f.absentDays}. Employer pays EPF {rm(f.epfEmployerSen)}, SOCSO {rm(f.socsoEmployerSen)}, EIS {rm(f.eisEmployerSen)}.
       </p>
       {!pcbHasFigure(f.pcbStatus) && f.pcbStatus !== 'DISABLED' && <p className="m-0 mt-2 text-meta text-warning">{f.pcbNote}</p>}
-    </Modal>
-  );
-}
-
-function RulesModal({ rules, onClose, onDone }: { rules: PayRules; onClose: () => void; onDone: () => void }) {
-  const toast = useToast();
-  const [r, setR] = useState<PayRules>(rules);
-  const [busy, setBusy] = useState(false);
-  const set = <K extends keyof PayRules>(k: K, v: PayRules[K]) => setR(p => ({ ...p, [k]: v }));
-  async function save() {
-    setBusy(true);
-    try { await api.put('/payroll/rules', r); toast({ tone: 'success', title: 'Pay rules saved.', body: 'Draft payslips use them when you refresh. Approved ones keep the old rules.' }); onDone(); }
-    catch (e) { notifyFailure(e); }
-    finally { setBusy(false); }
-  }
-  return (
-    <Modal title="Pay rules" sub="Hookka's rules to start with. They apply to draft payslips from the next refresh." onClose={onClose} width={560}
-      footer={<><Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" variant="primary" onClick={() => void save()} disabled={busy}>{busy ? 'Saving…' : 'Save rules'}</Button></>}>
-      <div className="grid gap-x-4 gap-y-3 grid-cols-1 sm:grid-cols-2">
-        <NumberInput label="EPF employee %" value={r.epfEmployeePct} decimals={2} min={0} max={30} onChange={v => set('epfEmployeePct', v ?? 0)} />
-        <NumberInput label="EPF employer %" value={r.epfEmployerPct} decimals={2} min={0} max={30} onChange={v => set('epfEmployerPct', v ?? 0)} />
-        <MoneyInput label="SOCSO employee (RM)" valueSen={r.socsoEmployeeSen} onChangeSen={v => set('socsoEmployeeSen', v ?? 0)} />
-        <MoneyInput label="SOCSO employer (RM)" valueSen={r.socsoEmployerSen} onChangeSen={v => set('socsoEmployerSen', v ?? 0)} />
-        <MoneyInput label="EIS employee (RM)" valueSen={r.eisEmployeeSen} onChangeSen={v => set('eisEmployeeSen', v ?? 0)} />
-        <MoneyInput label="EIS employer (RM)" valueSen={r.eisEmployerSen} onChangeSen={v => set('eisEmployerSen', v ?? 0)} />
-        <NumberInput label="Overtime counted in blocks of (minutes)" value={r.otBlockMin} min={1} max={60} onChange={v => set('otBlockMin', v ?? 15)} />
-        <NumberInput label="Sunday hours paid at (x)" value={r.sundayMultiplier} decimals={2} min={1} max={5} onChange={v => set('sundayMultiplier', v ?? 2)} />
-        <NumberInput label="Public holiday hours paid at (x)" value={r.holidayMultiplier} decimals={2} min={1} max={5} onChange={v => set('holidayMultiplier', v ?? 3)} />
-        <label className="flex items-center gap-2.5 min-h-10 cursor-pointer self-end">
-          <input type="checkbox" className="size-4 accent-[var(--color-ink)]" checked={r.emergencyLeavePaid} onChange={e => set('emergencyLeavePaid', e.target.checked)} />
-          <span className="text-copy">Emergency leave is paid</span>
-        </label>
-      </div>
-      <p className="m-0 mt-3 text-meta text-muted-ink">SOCSO and EIS are one amount for everyone, as on Hookka, not the contribution tables. Check them before the first filing.</p>
     </Modal>
   );
 }

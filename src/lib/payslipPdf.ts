@@ -65,6 +65,7 @@ export async function payslipPdf(s: PayslipDoc, company: Company): Promise<Uint8
       : ['Basic salary', s.basicSalarySen],
   ];
   if (s.absentDays) earnings.push([`Absent ${s.absentDays} ${s.absentDays === 1 ? 'day' : 'days'}`, -s.absenceDeductionSen]);
+  if (s.lateShortHours) earnings.push([`Late / short ${s.lateShortHours} h`, -s.lateShortSen]);
   if (s.otHours) earnings.push([`Overtime ${s.otHours} h`, s.otSen]);
   if (s.sundayHours) earnings.push([`Sunday ${s.sundayHours} h`, s.sundaySen]);
   if (s.holidayHours) earnings.push([`Public holiday ${s.holidayHours} h`, s.holidaySen]);
