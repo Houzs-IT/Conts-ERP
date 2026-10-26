@@ -10,6 +10,7 @@ const MOVES: Record<string, { from: string; to: 'draft' | 'approved' | 'paid' }>
   pay: { from: 'approved', to: 'paid' },
   reopen: { from: 'approved', to: 'draft' },
 };
+const DONE: Record<string, string> = { approve: 'approved', pay: 'marked paid', reopen: 'reopened' };
 
 /**
  * POST /api/payroll/:id/status { action: approve | pay | reopen } — a slip's life after the run.
@@ -29,7 +30,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   if (!move) return fail('VALIDATION', 'Say approve, pay or reopen.', 422);
   const slip = await one<PayslipRow>(env, 'SELECT * FROM payslips WHERE id = ?', String(params.id));
   if (!slip) return fail('NOT_FOUND', 'That payslip no longer exists.', 404);
-  if (slip.status !== move.from) return fail('CONFLICT', `That payslip is ${slip.status}; it cannot be ${action === 'pay' ? 'marked paid' : `${action}d`} from there.`, 409);
+  if (slip.status !== move.from) return fail('CONFLICT', `That payslip is ${slip.status}; it cannot be ${DONE[action]} from there.`, 409);
   if (action === 'approve' && !periodEnded(slip.period)) return fail('CONFLICT', 'A month can be approved once it has ended. Until then the slip is an estimate.', 409);
 
   const now = nowIso();

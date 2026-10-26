@@ -34,7 +34,8 @@ export async function payslipPdf(s: PayslipDoc, company: Company): Promise<Uint8
   let y = H - 16 * MM;
 
   const t = (str: string, x: number, at: number, o: { size?: number; f?: PDFFont; right?: boolean; color?: typeof INK } = {}) => {
-    const size = o.size ?? 9.5, f = o.f ?? font, txt = safe(str);
+    // The built-in font has no long dashes (PCB notes use them): print a plain hyphen rather than "?".
+    const size = o.size ?? 9.5, f = o.f ?? font, txt = safe(str.replace(/[–—]/g, '-'));
     page.drawText(txt, { x: o.right ? x - f.widthOfTextAtSize(txt, size) : x, y: at, size, font: f, color: o.color ?? INK });
   };
   const rule = (at: number, p: PDFPage = page) => p.drawLine({ start: { x: L, y: at }, end: { x: R, y: at }, thickness: 0.8, color: LINE });
