@@ -7,23 +7,24 @@ import { DataTable, type Column } from '../../components/DataTable';
 import { Modal } from '../../components/Modal';
 import { Field } from '../../components/Field';
 import { Select } from '../../components/Select';
-import { MoneyInput, NumberInput, DateField } from '../../components/inputs';
+import { MoneyInput, NumberInput, DateField, PhoneInput, phoneProblem } from '../../components/inputs';
 import { useToast } from '../../components/Toast';
 import { useApi } from '../../lib/useApi';
 import { api, ApiFailure, notifyFailure } from '../../lib/api';
-import { mayWork } from '../../lib/areaAccess';
+import { mayRun, mayWork } from '../../lib/areaAccess';
 import { useSession } from '../../lib/session';
 import { rm, plural, todayMyt } from '../../lib/format';
 import {
-  MALAYSIAN_BANKS, PAYMENT_METHODS, PAYMENT_METHOD_LABEL, PAY_BASES, PAY_BASIS_LABEL, TAX_RESIDENCIES, TAX_RESIDENCY_LABEL,
+  EMPLOYEE_DEFAULTS, MALAYSIAN_BANKS, PAYMENT_METHODS, PAYMENT_METHOD_LABEL, TAX_RESIDENCIES, TAX_RESIDENCY_LABEL,
   TAX_CATEGORIES, TAX_CATEGORY_LABEL, type Employee, type EmployeeInput,
 } from '../../../functions/_lib/hrFields';
 
 /* ------------------------------------------------------------------ *
- * HR > Workers > Employees: the HR record of every in-house cleaner and
- * technician (migration 0162), ported from Hookka's Employee Master.
- * People are added on the Cleaners and Technicians tabs; this tab keeps
- * their IC, pay, bank, statutory and tax details for payroll.
+ * HR > Employees > Employee Master: Hookka's Employee Master for the
+ * in-house cleaners and technicians (owner, 26 Oct 2026): its columns,
+ * Add Employee and its employee form, in The Conts' own look. No IC or
+ * passport number is asked for. A person's department is the roster they
+ * are on (Cleaning, Maintenance); adding one here puts them on it.
  * ------------------------------------------------------------------ */
 
 const STATUTORY: { key: 'epfEnabled' | 'socsoEnabled' | 'eisEnabled' | 'pcbEnabled'; label: string; hint: string }[] = [
@@ -33,11 +34,10 @@ const STATUTORY: { key: 'epfEnabled' | 'socsoEnabled' | 'eisEnabled' | 'pcbEnabl
   { key: 'pcbEnabled', label: 'PCB', hint: 'Monthly tax deduction' },
 ];
 
-const roleOf = ({ cleanerId, technicianId }: Employee): string =>
-  cleanerId && technicianId ? 'Cleaner and technician' : cleanerId ? 'Cleaner' : 'Technician';
-const payOf = (e: Employee): string => e.payBasis === 'daily' ? `${rm(e.dailyRateSen)} / day` : `${rm(e.basicSalarySen)} / month`;
-const paidBy = (e: Employee): string =>
-  e.paymentMethod === 'cash' ? 'Cash' : e.bankName ? `${e.bankName}${e.bankAccount ? ` ·${e.bankAccount.slice(-4)}` : ''}` : 'Bank not set';
+const departmentsOf = ({ cleanerId, technicianId }: Pick<Employee, 'cleanerId' | 'technicianId'>): string =>
+  [cleanerId && 'Cleaning', technicianId && 'Maintenance'].filter(Boolean).join(', ');
+const paidBy = (e: Employee): string => (e.paymentMethod === 'cash' ? 'Cash' : 'Transfer');
+const account = (e: Employee): string => (e.paymentMethod === 'cash' || !e.bankAccount ? '' : `****${e.bankAccount.slice(-4)}`);
 const statutoryOf = (e: Employee): string => STATUTORY.filter(s => e[s.key]).map(s => s.label).join(' · ') || 'None';
 function statusOf(e: Employee): { label: string; tone: 'success' | 'neutral' | 'warning' } {
   if (e.status === 'resigned') return { label: 'Resigned', tone: 'neutral' };
@@ -49,122 +49,228 @@ export default function EmployeesTab() {
   const { data, loading, error, reload } = useApi<{ data: Employee[] }>('/employees');
   const { user } = useSession();
   const mayEdit = mayWork(user, 'hr');
-  const [editing, setEditing] = useState<Employee | null>(null);
-
+  const [form, setForm] = useState<{ person: Employee | null } | null>(null);
+  const [given, setGiven] = useState<{ name: string; employeeId: string; pin: string } | null>(null);
   const people = data?.data ?? [];
-  const notSet = people.filter(e => e.status === 'active' && !e.id).length;
 
   const columns = useMemo<Column<Employee>[]>(() => [
-    { key: 'name', label: 'Name', value: e => e.name, hideable: false, width: 200, render: e => <span className="font-semibold">{e.name}</span> },
-    { key: 'empNo', label: 'Employee ID', value: e => e.employeeId, width: 120 },
-    { key: 'role', label: 'Works as', value: roleOf, width: 170 },
-    { key: 'joined', label: 'Joined', type: 'date', value: e => e.joinDate, width: 120 },
-    { key: 'pay', label: 'Pay', type: 'money', value: e => (e.payBasis === 'daily' ? e.dailyRateSen : e.basicSalarySen), render: payOf, width: 170 },
-    { key: 'paidBy', label: 'Paid by', value: paidBy, width: 170 },
-    { key: 'statutory', label: 'Statutory', value: statutoryOf, width: 190 },
+    { key: 'empNo', label: 'Emp No', value: e => e.employeeId, width: 100 },
+    { key: 'name', label: 'Name', value: e => e.name, hideable: false, width: 190, render: e => <span className="font-semibold">{e.name}</span> },
+    { key: 'departments', label: 'Departments', value: departmentsOf, width: 170 },
+    { key: 'position', label: 'Position', value: e => e.position, width: 140 },
+    { key: 'phone', label: 'Phone', type: 'phone', value: e => e.phone, width: 150 },
+    { key: 'basic', label: 'Basic Salary', type: 'money', value: e => (e.payBasis === 'daily' ? e.dailyRateSen : e.basicSalarySen), width: 140,
+      render: e => e.payBasis === 'daily' ? `${rm(e.dailyRateSen)} / day` : rm(e.basicSalarySen) },
+    { key: 'hours', label: 'Hrs/Day', type: 'number', value: e => e.workingHoursPerDay, width: 90 },
+    { key: 'days', label: 'Days/Mo', type: 'number', value: e => e.workingDaysPerMonth, width: 90 },
+    { key: 'ot', label: 'OT ×', type: 'number', value: e => e.otMultiplier, width: 80 },
+    { key: 'effAllowance', label: 'Eff. Allowance', type: 'money', value: e => e.efficiencyAllowanceSen, width: 130 },
+    { key: 'effThreshold', label: 'Eff. Threshold %', type: 'number', value: e => e.efficiencyThresholdPct, width: 130 },
+    { key: 'leader', label: 'Leader Allowance', type: 'money', value: e => e.leaderAllowanceSen, width: 140 },
+    { key: 'payBy', label: 'Pay By', value: paidBy, width: 100 },
+    { key: 'bank', label: 'Bank', value: e => (e.paymentMethod === 'cash' ? null : e.bankName), width: 140 },
+    { key: 'account', label: 'Account No', value: account, width: 120 },
+    { key: 'statutory', label: 'Statutory', value: statutoryOf, width: 180 },
+    { key: 'joined', label: 'Join Date', type: 'date', value: e => e.joinDate, width: 120 },
+    { key: 'nationality', label: 'Nationality', value: e => e.nationality, width: 120 },
     { key: 'status', label: 'Status', type: 'status', value: e => statusOf(e).label, status: statusOf, width: 120 },
-    { key: 'go', label: '', noExport: true, sortable: false, filter: false, width: 110, align: 'right',
-      render: e => mayEdit ? <Button size="sm" variant="tertiary" icon={<Icon name="Pencil" size="sm" />} onClick={() => setEditing(e)}>Edit</Button> : null },
+    { key: 'go', label: '', noExport: true, sortable: false, filter: false, width: 100, align: 'right',
+      render: e => mayEdit ? <Button size="sm" variant="tertiary" icon={<Icon name="Pencil" size="sm" />} onClick={() => setForm({ person: e })}>Edit</Button> : null },
   ], [mayEdit]);
 
   return (
     <>
-      <p className="m-0 mb-4 text-copy text-muted-ink">{data ? `${plural(people.length, 'employee')}${notSet ? ` · ${notSet} without a record yet` : ''}` : 'Loading the list…'}</p>
+      <p className="m-0 mb-4 text-copy text-muted-ink">{data ? plural(people.length, 'employee') : 'Loading the list…'}</p>
       {error && <StaleBanner message={`Showing the last list we have. ${error}`} onRetry={reload} />}
 
       <DataTable<Employee>
         id="employees" columns={columns} rows={loading && people.length === 0 ? null : people}
-        rowKey={e => e.cleanerId ?? e.technicianId ?? e.name} pageSize={0} noun={['employee', 'employees']} exportName="employees"
+        rowKey={e => e.cleanerId ?? e.technicianId ?? e.name} pageSize={0} noun={['employee', 'employees']} exportName="employee-master"
         rowTone={e => (e.status === 'resigned' || !e.isActive ? 'muted' : null)}
-        onRowClick={mayEdit ? setEditing : undefined}
+        onRowClick={mayEdit ? e => setForm({ person: e }) : undefined}
         header={
-          <div className="pt-5 pb-3 px-5 flex items-baseline justify-between gap-x-3 gap-y-1 flex-wrap [border-bottom:1px_solid_var(--color-line-soft)]">
-            <span className="text-[16px] font-semibold tracking-[-0.01em]">In-house staff</span>
-            <span className="text-meta text-muted-ink">Pay, bank, statutory and tax details for payroll. Add people on the Cleaners or Technicians tab.</span>
+          <div className="pt-5 pb-3 px-5 flex items-center justify-between gap-3 flex-wrap [border-bottom:1px_solid_var(--color-line-soft)]">
+            <span className="flex flex-col gap-0.5">
+              <span className="text-[16px] font-semibold tracking-[-0.01em]">Employee Master</span>
+              <span className="text-meta text-muted-ink">The company's own cleaners and technicians, with their pay and statutory details.</span>
+            </span>
+            {mayEdit && <Button size="sm" variant="primary" icon={<Icon name="UserPlus" size="sm" />} onClick={() => setForm({ person: null })}>Add Employee</Button>}
           </div>
         }
-        empty={{ title: 'No in-house staff yet.', body: 'Add an internal cleaner or an in-house technician first; they show here.' }}
+        empty={{ title: 'No employees yet.', body: 'Add the first cleaner or technician.', action: mayEdit ? { label: 'Add Employee', onClick: () => setForm({ person: null }) } : undefined }}
         renderCard={e => (
           <span className="flex flex-col gap-[3px] min-w-0">
             <span className="flex items-center gap-[9px] flex-wrap">
               <span className="text-copy font-semibold">{e.name}</span>
               {statusOf(e).tone !== 'success' && <StatusBadge tone={statusOf(e).tone} label={statusOf(e).label} size="sm" />}
-              {!e.id && e.status === 'active' && <StatusBadge tone="warning" label="No record yet" size="sm" />}
             </span>
             <span className="text-meta text-muted-ink flex gap-x-3 flex-wrap">
               {e.employeeId && <span>{e.employeeId}</span>}
-              <span>{roleOf(e)}</span>
-              <span>{payOf(e)}</span>
-              <span>{paidBy(e)}</span>
+              <span>{departmentsOf(e)}{e.position ? ` · ${e.position}` : ''}</span>
+              <span>{e.payBasis === 'daily' ? `${rm(e.dailyRateSen)} / day` : `${rm(e.basicSalarySen)} / month`}</span>
             </span>
-            {mayEdit && <span className="flex justify-start pt-1"><Button size="sm" variant="tertiary" icon={<Icon name="Pencil" size="sm" />} onClick={() => setEditing(e)}>Edit</Button></span>}
           </span>
         )}
       />
 
-      {editing && <EmployeeModal person={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); reload(); }} />}
+      {form && (
+        <EmployeeForm person={form.person} onClose={() => setForm(null)}
+          onSaved={g => { setForm(null); if (g) setGiven(g); reload(); }} />
+      )}
+      {given && (
+        <Modal title={`${given.name} can sign in`} sub="Give them these. The PIN is shown only once." onClose={() => setGiven(null)}
+          footer={<Button size="sm" variant="primary" onClick={() => setGiven(null)}>Done</Button>}>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-control bg-page px-4 py-3"><span className="block text-meta text-muted-ink">Employee ID</span><span className="text-[20px] font-bold tabular-nums">{given.employeeId}</span></div>
+            <div className="rounded-control bg-page px-4 py-3"><span className="block text-meta text-muted-ink">First PIN</span><span className="text-[20px] font-bold tabular-nums">{given.pin}</span></div>
+          </div>
+        </Modal>
+      )}
     </>
   );
 }
 
-function EmployeeModal({ person, onClose, onSaved }: { person: Employee; onClose: () => void; onSaved: () => void }) {
+type Dept = 'cleaning' | 'maintenance';
+const ROSTER: Record<Dept, string> = { cleaning: '/housekeeping/cleaners', maintenance: '/maintenance/technicians' };
+
+/**
+ * Add or edit one employee. Adding puts them on the roster of each department ticked (Cleaning first when both) and,
+ * when asked, gives them app access; two departments share one login, so both need app access. Name and phone live on
+ * the roster and are saved there; everything else is the HR record.
+ */
+function EmployeeForm({ person, onClose, onSaved }: {
+  person: Employee | null; onClose: () => void; onSaved: (given: { name: string; employeeId: string; pin: string } | null) => void;
+}) {
   const toast = useToast();
-  const { id: _id, cleanerId, technicianId, name, phone: _phone, employeeId, isActive: _isActive, ...start } = person;
-  const [d, setD] = useState<EmployeeInput>(start);
-  // A new basic salary is paid from this day on (salary history, migration 0165); the start of this month by default.
+  const { user } = useSession();
+  const mayGrant = mayRun(user, 'operations');
+  const creating = !person;
+  const start: EmployeeInput = person ?? EMPLOYEE_DEFAULTS;
+  const [d, setD] = useState<EmployeeInput>(() => {
+    if (!person) return { ...EMPLOYEE_DEFAULTS, joinDate: todayMyt() };
+    const { id: _id, cleanerId: _c, technicianId: _t, name: _n, phone: _p, employeeId: _e, isActive: _a, ...record } = person;
+    return record;
+  });
+  const [name, setName] = useState(person?.name ?? '');
+  const [phone, setPhone] = useState(person?.phone ?? '');
+  const [depts, setDepts] = useState<Dept[]>(person ? [] : ['cleaning']);
+  const [giveAccess, setGiveAccess] = useState(mayGrant);
   const [salaryFrom, setSalaryFrom] = useState(`${todayMyt().slice(0, 7)}-01`);
-  const salaryChanged = d.payBasis === 'monthly' && d.basicSalarySen > 0 && d.basicSalarySen !== start.basicSalarySen;
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const set = <K extends keyof EmployeeInput>(k: K, v: EmployeeInput[K]) => setD(p => ({ ...p, [k]: v }));
+  const daily = d.payBasis === 'daily';
+  const salaryChanged = !creating && !daily && d.basicSalarySen > 0 && d.basicSalarySen !== start.basicSalarySen;
+  const toggleDept = (dep: Dept, on: boolean) => setDepts(p => (on ? [...p.filter(x => x !== dep), dep] : p.filter(x => x !== dep)).sort());
 
   async function save() {
+    const problems: Record<string, string> = {};
+    if (!name.trim()) problems.name = 'Enter their name.';
+    const phoneError = phone.trim() ? phoneProblem(phone) : null;
+    if (phoneError) problems.phone = phoneError;
+    if (creating && depts.length === 0) problems.departments = 'Tick at least one department.';
+    if (creating && depts.length === 2 && !giveAccess) problems.departments = 'Both departments share one app login: give app access, or tick one.';
+    if (Object.keys(problems).length) { setErrors(problems); return; }
     setBusy(true);
     setErrors({});
     try {
+      let cleanerId = person?.cleanerId ?? null, technicianId = person?.technicianId ?? null;
+      let given: { name: string; employeeId: string; pin: string } | null = null;
+      const roster = { name: name.trim(), phone: phone.trim() || null };
+      if (creating) {
+        const [first, second] = depts;
+        const { id } = await api.post<{ id: string }>(ROSTER[first], { ...roster, employmentType: 'internal', vendorName: null });
+        if (first === 'cleaning') cleanerId = id; else technicianId = id;
+        let userId: string | null = null;
+        if (giveAccess) {
+          const g = await api.post<{ employeeId: string; pin: string; userId: string }>(`${ROSTER[first]}/${id}/access`, {});
+          given = { name: roster.name, employeeId: g.employeeId, pin: g.pin };
+          userId = g.userId;
+        }
+        if (second) {
+          const { id: id2 } = await api.post<{ id: string }>(ROSTER[second], { ...roster, employmentType: 'internal', vendorName: null, userId });
+          technicianId = id2;
+        }
+      } else {
+        // Name and phone are kept on the roster, once per department.
+        if (roster.name !== person.name || roster.phone !== person.phone) {
+          if (cleanerId) await api.patch(`${ROSTER.cleaning}/${cleanerId}`, { name: roster.name, phone: roster.phone ?? '' });
+          if (technicianId) await api.patch(`${ROSTER.maintenance}/${technicianId}`, { name: roster.name, phone: roster.phone ?? '' });
+        }
+      }
       await api.put('/employees', { ...d, cleanerId, technicianId, ...(salaryChanged ? { salaryEffectiveFrom: salaryFrom } : {}) });
-      toast({ tone: 'success', title: 'Employee record saved.', body: `${name}.` });
-      onSaved();
+      toast({ tone: 'success', title: creating ? 'Employee added.' : 'Employee saved.', body: roster.name });
+      onSaved(given);
     } catch (e) {
       if (e instanceof ApiFailure && e.fields) setErrors(e.fields);
       notifyFailure(e);
     } finally { setBusy(false); }
   }
 
-  const daily = d.payBasis === 'daily';
   return (
-    <Modal title={name} sub={[employeeId, roleOf(person)].filter(Boolean).join(' · ')} onClose={onClose} width={620}
+    <Modal title={creating ? 'Add Employee' : name || 'Employee'} sub={creating ? 'A cleaner or technician on the company payroll.' : [person.employeeId, departmentsOf(person), d.position].filter(Boolean).join(' · ')}
+      onClose={onClose} width={640}
       footer={<>
         <Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
-        <Button size="sm" variant="primary" onClick={save} disabled={busy}>{busy ? 'Saving…' : 'Save'}</Button>
+        <Button size="sm" variant="primary" onClick={() => void save()} disabled={busy}>{busy ? 'Saving…' : creating ? 'Add Employee' : 'Save'}</Button>
       </>}>
       <div className="flex flex-col gap-6">
         <Section title="Details">
-          <Field label="IC number" value={d.icNumber ?? ''} onChange={e => set('icNumber', e.target.value)} placeholder="900101-14-5678" error={errors.icNumber} />
-          <Field label="Passport number" value={d.passportNumber ?? ''} onChange={e => set('passportNumber', e.target.value)} placeholder="For non-Malaysians" error={errors.passportNumber} />
-          <Field label="Nationality" value={d.nationality ?? ''} onChange={e => set('nationality', e.target.value)} placeholder="Malaysian" error={errors.nationality} />
-          <DateField label="Joined on" value={d.joinDate ?? ''} onChange={v => set('joinDate', v || null)} error={errors.joinDate} />
+          <Field label="Employee No" value={person?.employeeId ?? ''} readOnly placeholder={creating ? 'Given with app access' : 'No app access yet'}
+            help={creating ? undefined : 'Given when app access is set up on Operations > Workers.'} />
+          <Field label="Name" value={name} onChange={e => setName(e.target.value)} placeholder="Nurul Huda" error={errors.name} />
+          <Field label="Position" value={d.position ?? ''} onChange={e => set('position', e.target.value)} placeholder="Cleaner" error={errors.position} />
+          <PhoneInput label="Phone" value={phone} onChange={setPhone} error={errors.phone} />
+          <div className="sm:col-span-2 flex flex-col gap-1.5">
+            <span className="text-meta font-medium text-muted-ink">Departments</span>
+            {creating ? (
+              <span className="flex gap-5 flex-wrap">
+                {(['cleaning', 'maintenance'] as const).map(dep => (
+                  <label key={dep} className="flex items-center gap-2.5 min-h-10 cursor-pointer">
+                    <input type="checkbox" className="size-4 accent-[var(--color-ink)]" checked={depts.includes(dep)} onChange={e => toggleDept(dep, e.target.checked)} />
+                    <span className="text-copy">{dep === 'cleaning' ? 'Cleaning' : 'Maintenance'}</span>
+                  </label>
+                ))}
+              </span>
+            ) : <span className="text-copy min-h-10 flex items-center">{departmentsOf(person)}</span>}
+            {errors.departments && <span className="text-meta text-danger">{errors.departments}</span>}
+          </div>
           <Select label="Status" showLabel size="md" value={d.status} onChange={v => set('status', v === 'resigned' ? 'resigned' : 'active')}
             options={[{ value: 'active', label: 'Active' }, { value: 'resigned', label: 'Resigned' }]} />
+          <DateField label="Join date" value={d.joinDate ?? ''} onChange={v => set('joinDate', v || null)} error={errors.joinDate} />
           {d.status === 'resigned' && (
             <DateField label="Last working day" value={d.resignedAt ?? ''} onChange={v => set('resignedAt', v || null)} required error={errors.resignedAt} />
           )}
+          <Field label="Nationality" value={d.nationality ?? ''} onChange={e => set('nationality', e.target.value)} placeholder="Malaysian" error={errors.nationality} />
+          {creating && mayGrant && (
+            <label className="sm:col-span-2 flex items-center gap-2.5 min-h-10 cursor-pointer">
+              <input type="checkbox" className="size-4 accent-[var(--color-ink)]" checked={giveAccess} onChange={e => setGiveAccess(e.target.checked)} />
+              <span className="text-copy">Give app access now (employee ID and first PIN)</span>
+            </label>
+          )}
         </Section>
 
-        {/* Zero pay means not set yet: shown empty so typing starts clean. */}
         <Section title="Pay">
-          <Select label="Paid by" showLabel size="md" value={d.payBasis} onChange={v => set('payBasis', PAY_BASES.find(b => b === v) ?? 'monthly')}
-            options={PAY_BASES.map(b => ({ value: b, label: PAY_BASIS_LABEL[b] }))} />
+          <label className="sm:col-span-2 flex items-center gap-2.5 min-h-10 cursor-pointer">
+            <input type="checkbox" className="size-4 accent-[var(--color-ink)]" checked={daily} onChange={e => set('payBasis', e.target.checked ? 'daily' : 'monthly')} />
+            <span className="text-copy">Paid per day instead of a monthly salary</span>
+          </label>
           {daily
             ? <MoneyInput label="Rate per day (RM)" valueSen={d.dailyRateSen || null} onChangeSen={v => set('dailyRateSen', v ?? 0)} error={errors.dailyRateSen} />
-            : <MoneyInput label="Basic salary (RM a month)" valueSen={d.basicSalarySen || null} onChangeSen={v => set('basicSalarySen', v ?? 0)} error={errors.basicSalarySen} />}
+            : <MoneyInput label="Basic salary (RM)" valueSen={d.basicSalarySen || null} onChangeSen={v => set('basicSalarySen', v ?? 0)} error={errors.basicSalarySen} />}
+          <NumberInput label="Days / month" value={d.workingDaysPerMonth} onChange={v => set('workingDaysPerMonth', v ?? 26)} min={1} max={31} help="The divisor for the day rate." error={errors.workingDaysPerMonth} />
           {salaryChanged && (
             <DateField label="New salary takes effect from" value={salaryFrom} onChange={v => v && setSalaryFrom(v)} required
               help="Months ending on or after this day are paid on the new salary. Approved payslips stay as they are." />
           )}
-          <NumberInput label="Working days a month" value={d.workingDaysPerMonth} onChange={v => set('workingDaysPerMonth', v ?? 26)} min={1} max={31} error={errors.workingDaysPerMonth} />
-          <NumberInput label="Hours a day" value={d.workingHoursPerDay} onChange={v => set('workingHoursPerDay', v ?? 8)} decimals={2} min={0.5} max={24} error={errors.workingHoursPerDay} />
-          <NumberInput label="Overtime rate (times hourly pay)" value={d.otMultiplier} onChange={v => set('otMultiplier', v ?? 1.5)} decimals={2} min={1} max={5} error={errors.otMultiplier} />
+          <NumberInput label="Hours / day" value={d.workingHoursPerDay} onChange={v => set('workingHoursPerDay', v ?? 8)} decimals={2} min={0.5} max={24}
+            help="Their standard day: the overtime line, and what a short day is short of." error={errors.workingHoursPerDay} />
+          <NumberInput label="OT multiplier" value={d.otMultiplier} onChange={v => set('otMultiplier', v ?? 1.5)} decimals={2} min={1} max={5} error={errors.otMultiplier} />
+          <MoneyInput label="Leader allowance (RM)" valueSen={d.leaderAllowanceSen || null} onChangeSen={v => set('leaderAllowanceSen', v ?? 0)}
+            help="Each month, less the share of working days missed." error={errors.leaderAllowanceSen} />
+          <MoneyInput label="Eff. allowance (RM)" valueSen={d.efficiencyAllowanceSen || null} onChangeSen={v => set('efficiencyAllowanceSen', v ?? 0)}
+            help="Paid once production time is decided." error={errors.efficiencyAllowanceSen} />
+          <NumberInput label="Eff. threshold %" value={d.efficiencyThresholdPct} onChange={v => set('efficiencyThresholdPct', v ?? 100)} min={0} max={200} error={errors.efficiencyThresholdPct} />
         </Section>
 
         <Section title="How they are paid">
@@ -177,7 +283,7 @@ function EmployeeModal({ person, onClose, onSaved }: { person: Employee; onClose
           </>}
         </Section>
 
-        <Section title="Statutory" note="Each one is taken from their pay only when ticked. All start off.">
+        <Section title="Statutory" note="Each one is taken from their pay only when ticked.">
           {STATUTORY.map(s => (
             <label key={s.key} className="flex items-center gap-2.5 min-h-10 cursor-pointer">
               <input type="checkbox" className="size-4 accent-[var(--color-ink)]" checked={d[s.key]} onChange={e => set(s.key, e.target.checked)} />
@@ -201,15 +307,9 @@ function EmployeeModal({ person, onClose, onSaved }: { person: Employee; onClose
           </Section>
         )}
 
-        <Section title="Leave" note="Empty follows the Employment Act for their years of service.">
-          <NumberInput label="Annual leave days a year" value={d.annualLeaveDays} onChange={v => set('annualLeaveDays', v)} min={0} max={60} placeholder="By the Act" error={errors.annualLeaveDays} />
-          <NumberInput label="Medical leave days a year" value={d.medicalLeaveDays} onChange={v => set('medicalLeaveDays', v)} min={0} max={60} placeholder="By the Act" error={errors.medicalLeaveDays} />
-        </Section>
-
         {errors.form && <p className="m-0 text-meta text-danger">{errors.form}</p>}
-        {!person.id && <p className="m-0 text-meta text-muted-ink">No record has been saved for {name} yet: these are the starting values.</p>}
-        {person.status === 'active' && d.status === 'resigned' && (
-          <p className="m-0 text-meta text-muted-ink">Resigning keeps the record. To stop their app sign-in and new jobs, deactivate them on the {person.cleanerId ? 'Cleaners' : 'Technicians'} tab.</p>
+        {person && person.status === 'active' && d.status === 'resigned' && (
+          <p className="m-0 text-meta text-muted-ink">Resigning keeps the record. To stop their app sign-in and new jobs, switch them off on Operations &gt; Workers.</p>
         )}
       </div>
     </Modal>

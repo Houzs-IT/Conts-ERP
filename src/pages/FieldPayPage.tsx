@@ -75,12 +75,13 @@ export default function FieldPayPage() {
 
           <section className="bg-card rounded-card border border-solid border-line px-4 py-3 flex flex-col">
             <span className="text-meta font-semibold text-muted-ink pb-1">EARNINGS</span>
-            {line(data.payslip?.payBasis === 'daily' ? `Days worked (${f.daysWorked})` : 'Basic salary', rm(data.payslip?.payBasis === 'daily' ? f.grossSen - f.otSen - f.sundaySen - f.holidaySen : f.basicSalarySen))}
+            {line(data.payslip?.payBasis === 'daily' ? `Days worked (${f.daysWorked})` : 'Basic salary', rm(data.payslip?.payBasis === 'daily' ? f.daysWorked * f.dayRateSen : f.basicSalarySen))}
             {f.absentDays > 0 && line(`Absent ${f.absentDays} ${f.absentDays === 1 ? 'day' : 'days'}`, rm(f.absenceDeductionSen), { minus: true })}
             {f.lateShortHours > 0 && line(`Late / short ${f.lateShortHours} h`, rm(f.lateShortSen), { minus: true })}
             {f.otHours > 0 && line(`Overtime ${f.otHours} h`, rm(f.otSen))}
             {f.sundayHours > 0 && line(`Sunday ${f.sundayHours} h`, rm(f.sundaySen))}
             {f.holidayHours > 0 && line(`Public holiday ${f.holidayHours} h`, rm(f.holidaySen))}
+            {f.allowanceSen > 0 && line('Leader allowance', rm(f.allowanceSen))}
             {line('Gross', rm(f.grossSen), { strong: true })}
             <span className="text-meta font-semibold text-muted-ink pt-3 pb-1">DEDUCTIONS</span>
             {line('EPF', rm(f.epfEmployeeSen), { minus: true })}

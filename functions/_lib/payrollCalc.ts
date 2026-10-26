@@ -116,7 +116,7 @@ export interface PayInput {
   period: string;
   /** Last day counted: the month's last day, or today while the month is running (the portal's estimate). */
   throughDay: string;
-  employee: Pick<Employee, 'payBasis' | 'dailyRateSen' | 'workingDaysPerMonth' | 'workingHoursPerDay' | 'otMultiplier'
+  employee: Pick<Employee, 'payBasis' | 'dailyRateSen' | 'workingDaysPerMonth' | 'workingHoursPerDay' | 'otMultiplier' | 'leaderAllowanceSen'
     | 'epfEnabled' | 'socsoEnabled' | 'eisEnabled' | 'pcbEnabled' | 'taxResidency' | 'taxCategory' | 'taxChildReliefSen'>;
   /** Basic salary in force on the month's last day (salary history). */
   basicSalarySen: number;
@@ -134,6 +134,9 @@ export interface PayFigures {
   otHours: number; otSen: number; sundayHours: number; sundaySen: number; holidayHours: number; holidaySen: number;
   /** Late and short hours docked under the shift rules (0 with them off). */
   lateShortHours: number; lateShortSen: number;
+  /** Leader allowance for the month (Hookka: less the share of working days missed; the efficiency allowance waits
+   *  for production time to be decided). Added to gross after statutory and PCB are worked out. */
+  allowanceSen: number;
   grossSen: number;
   epfEmployeeSen: number; epfEmployerSen: number; socsoEmployeeSen: number; socsoEmployerSen: number;
   eisEmployeeSen: number; eisEmployerSen: number;
@@ -254,13 +257,18 @@ export function computePay(p: PayInput): PayFigures {
     ytdPcbSen: p.ytd.pcbSen,
   });
 
+  // Hookka's resolveLeadershipAllowanceSen: the share of the person's working days a month not missed.
+  const daysPerMonth = Math.max(1, e.workingDaysPerMonth);
+  const allowanceSen = e.leaderAllowanceSen > 0 ? Math.round((e.leaderAllowanceSen * Math.max(0, daysPerMonth - absentDays)) / daysPerMonth) : 0;
+  const grossWithAllowanceSen = grossSen + allowanceSen;
+
   const totalDeductionsSen = epfEmployeeSen + socsoEmployeeSen + eisEmployeeSen + pcb.pcbSen;
   return {
     basicSalarySen: basic, dayRateSen: Math.round(dayRateExact), hourRateSen,
     workingDays: workingDates.size, daysWorked, paidLeaveDays: leaveDates.size, absentDays, absenceDeductionSen,
-    otHours, otSen, sundayHours, sundaySen, holidayHours, holidaySen, lateShortHours, lateShortSen, grossSen,
+    otHours, otSen, sundayHours, sundaySen, holidayHours, holidaySen, lateShortHours, lateShortSen, allowanceSen, grossSen: grossWithAllowanceSen,
     epfEmployeeSen, epfEmployerSen, socsoEmployeeSen, socsoEmployerSen, eisEmployeeSen, eisEmployerSen,
     pcbSen: pcb.pcbSen, pcbStatus: pcb.status, pcbNote: pcb.note,
-    advanceSen: p.advanceSen, totalDeductionsSen, netSen: grossSen - totalDeductionsSen - p.advanceSen,
+    advanceSen: p.advanceSen, totalDeductionsSen, netSen: grossWithAllowanceSen - totalDeductionsSen - p.advanceSen,
   };
 }

@@ -35,7 +35,8 @@ const PEOPLE = `
 
 interface Row {
   p_cleaner_id: string | null; p_technician_id: string | null; full_name: string; phone: string | null; is_active: number; employee_id: string | null;
-  id: string | null; ic_number: string | null; passport_number: string | null; nationality: string | null; join_date: string | null;
+  id: string | null; position: string | null; nationality: string | null; join_date: string | null;
+  leader_allowance_sen: number | null; efficiency_allowance_sen: number | null; efficiency_threshold_pct: number | null;
   status: EmployeeStatus | null; resigned_at: string | null; pay_basis: PayBasis | null; basic_salary_sen: number | null; daily_rate_sen: number | null;
   working_days_per_month: number | null; working_hours_per_day: number | null; ot_multiplier: number | null;
   payment_method: PaymentMethod | null; bank_name: Bank | null; bank_account: string | null;
@@ -49,7 +50,10 @@ function toEmployee(r: Row): Employee {
   return {
     id: r.id, cleanerId: r.p_cleaner_id, technicianId: r.p_technician_id, name: r.full_name, phone: r.phone,
     employeeId: r.employee_id, isActive: !!r.is_active,
-    icNumber: r.ic_number, passportNumber: r.passport_number, nationality: r.nationality, joinDate: r.join_date,
+    position: r.position ?? null, nationality: r.nationality, joinDate: r.join_date,
+    // Read before migration 0167 the columns are missing: the record's defaults apply.
+    leaderAllowanceSen: r.leader_allowance_sen ?? d.leaderAllowanceSen, efficiencyAllowanceSen: r.efficiency_allowance_sen ?? d.efficiencyAllowanceSen,
+    efficiencyThresholdPct: r.efficiency_threshold_pct ?? d.efficiencyThresholdPct,
     status: r.status ?? d.status, resignedAt: r.resigned_at, payBasis: r.pay_basis ?? d.payBasis,
     basicSalarySen: r.basic_salary_sen ?? d.basicSalarySen, dailyRateSen: r.daily_rate_sen ?? d.dailyRateSen,
     workingDaysPerMonth: r.working_days_per_month ?? d.workingDaysPerMonth, workingHoursPerDay: r.working_hours_per_day ?? d.workingHoursPerDay,

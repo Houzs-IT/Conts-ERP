@@ -212,12 +212,13 @@ function SlipModal({ line, month, full, onClose, onChange }: { line: PayrollLine
       <div className="grid gap-x-6 gap-y-4 grid-cols-1 sm:grid-cols-2">
         <div className="flex flex-col">
           <span className="text-meta font-semibold text-muted-ink pb-1">EARNINGS</span>
-          {row(line.employee.payBasis === 'daily' ? `Days worked ${f.daysWorked} x ${rm(f.dayRateSen)}` : 'Basic salary', rm(line.employee.payBasis === 'daily' ? f.grossSen - f.otSen - f.sundaySen - f.holidaySen : f.basicSalarySen))}
+          {row(line.employee.payBasis === 'daily' ? `Days worked ${f.daysWorked} x ${rm(f.dayRateSen)}` : 'Basic salary', rm(line.employee.payBasis === 'daily' ? f.daysWorked * f.dayRateSen : f.basicSalarySen))}
           {f.absentDays > 0 && row(`Absent ${f.absentDays} d`, rm(-f.absenceDeductionSen))}
           {f.lateShortHours > 0 && row(`Late / short ${f.lateShortHours} h`, rm(-f.lateShortSen))}
           {f.otHours > 0 && row(`Overtime ${f.otHours} h`, rm(f.otSen))}
           {f.sundayHours > 0 && row(`Sunday ${f.sundayHours} h`, rm(f.sundaySen))}
           {f.holidayHours > 0 && row(`Public holiday ${f.holidayHours} h`, rm(f.holidaySen))}
+          {f.allowanceSen > 0 && row('Leader allowance', rm(f.allowanceSen))}
           {row('Gross', rm(f.grossSen), true)}
         </div>
         <div className="flex flex-col">

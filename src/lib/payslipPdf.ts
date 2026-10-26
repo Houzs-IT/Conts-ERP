@@ -61,7 +61,7 @@ export async function payslipPdf(s: PayslipDoc, company: Company): Promise<Uint8
   const mid = (L + R) / 2, colW = mid - L - 6 * MM;
   const earnings: [string, number][] = [
     s.payBasis === 'daily'
-      ? [`Days worked (${s.daysWorked} x ${rm(s.dayRateSen)})`, s.grossSen - s.otSen - s.sundaySen - s.holidaySen]
+      ? [`Days worked (${s.daysWorked} x ${rm(s.dayRateSen)})`, s.daysWorked * s.dayRateSen]
       : ['Basic salary', s.basicSalarySen],
   ];
   if (s.absentDays) earnings.push([`Absent ${s.absentDays} ${s.absentDays === 1 ? 'day' : 'days'}`, -s.absenceDeductionSen]);
@@ -69,6 +69,7 @@ export async function payslipPdf(s: PayslipDoc, company: Company): Promise<Uint8
   if (s.otHours) earnings.push([`Overtime ${s.otHours} h`, s.otSen]);
   if (s.sundayHours) earnings.push([`Sunday ${s.sundayHours} h`, s.sundaySen]);
   if (s.holidayHours) earnings.push([`Public holiday ${s.holidayHours} h`, s.holidaySen]);
+  if (s.allowanceSen) earnings.push(['Leader allowance', s.allowanceSen]);
   const pcbShown = pcbHasFigure(s.pcbStatus);
   const deductions: [string, string][] = [
     ['EPF', rm(s.epfEmployeeSen)], ['SOCSO', rm(s.socsoEmployeeSen)], ['EIS', rm(s.eisEmployeeSen)],

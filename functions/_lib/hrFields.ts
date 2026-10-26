@@ -38,8 +38,7 @@ const sen = z.int().min(0).max(100_000_000);
 
 /** What the Employees form saves. Every field is the whole value, not a change. */
 export const employeeInput = z.object({
-  icNumber: text(20),
-  passportNumber: text(20),
+  position: text(60),
   nationality: text(40),
   joinDate: day.nullable(),
   status: z.enum(['active', 'resigned']),
@@ -50,6 +49,9 @@ export const employeeInput = z.object({
   workingDaysPerMonth: z.int().min(1).max(31),
   workingHoursPerDay: z.number().gt(0).max(24),
   otMultiplier: z.number().min(1).max(5),
+  leaderAllowanceSen: sen,
+  efficiencyAllowanceSen: sen,
+  efficiencyThresholdPct: z.number().min(0).max(200),
   paymentMethod: z.enum(PAYMENT_METHODS),
   bankName: z.enum(MALAYSIAN_BANKS).nullable(),
   bankAccount: z.string().trim().regex(/^[0-9 -]{0,30}$/, 'Digits only.').transform(v => v.replace(/\D/g, '') || null).nullable(),
@@ -81,8 +83,9 @@ export interface Employee extends EmployeeInput {
 
 /** The record a person starts with before anyone saves one. Matches the column defaults in migration 0162. */
 export const EMPLOYEE_DEFAULTS: EmployeeInput = {
-  icNumber: null, passportNumber: null, nationality: null, joinDate: null, status: 'active', resignedAt: null,
+  position: null, nationality: null, joinDate: null, status: 'active', resignedAt: null,
   payBasis: 'monthly', basicSalarySen: 0, dailyRateSen: 0, workingDaysPerMonth: 26, workingHoursPerDay: 8, otMultiplier: 1.5,
+  leaderAllowanceSen: 0, efficiencyAllowanceSen: 0, efficiencyThresholdPct: 100,
   paymentMethod: 'transfer', bankName: null, bankAccount: null,
   epfEnabled: false, socsoEnabled: false, eisEnabled: false, pcbEnabled: false,
   taxResidency: null, taxCategory: null, taxChildReliefSen: null, annualLeaveDays: null, medicalLeaveDays: null,

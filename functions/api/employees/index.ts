@@ -8,7 +8,7 @@ import { hasPayroll } from '../../_lib/payroll';
 const MANAGE = ['management']; // everyone else follows their level in HR (functions/_lib/access.ts)
 const NOT_MIGRATED = 'The employee record needs a database update (migration 0162) that has not been applied yet.';
 /** Kept out of the audit trail's before/after: the trail shows that they changed, not what they are. */
-const PRIVATE: (keyof EmployeeInput)[] = ['icNumber', 'passportNumber', 'bankAccount'];
+const PRIVATE: (keyof EmployeeInput)[] = ['bankAccount'];
 
 /** GET /api/employees — every in-house cleaner and technician with their HR record (HR > Employees, migration 0162). */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
@@ -43,10 +43,11 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
   // Resigned people keep their record; an active one has no last day.
   const resignedAt = e.status === 'resigned' ? e.resignedAt : null;
   const cols: [string, unknown][] = [
-    ['ic_number', e.icNumber], ['passport_number', e.passportNumber], ['nationality', e.nationality], ['join_date', e.joinDate],
+    ['position', e.position], ['nationality', e.nationality], ['join_date', e.joinDate],
     ['status', e.status], ['resigned_at', resignedAt], ['pay_basis', e.payBasis], ['basic_salary_sen', e.basicSalarySen],
     ['daily_rate_sen', e.dailyRateSen], ['working_days_per_month', e.workingDaysPerMonth], ['working_hours_per_day', e.workingHoursPerDay],
-    ['ot_multiplier', e.otMultiplier], ['payment_method', e.paymentMethod],
+    ['ot_multiplier', e.otMultiplier], ['leader_allowance_sen', e.leaderAllowanceSen], ['efficiency_allowance_sen', e.efficiencyAllowanceSen],
+    ['efficiency_threshold_pct', e.efficiencyThresholdPct], ['payment_method', e.paymentMethod],
     // Cash needs no bank, so none is kept that a payment file could pick up by mistake.
     ['bank_name', e.paymentMethod === 'cash' ? null : e.bankName], ['bank_account', e.paymentMethod === 'cash' ? null : e.bankAccount],
     ['epf_enabled', e.epfEnabled ? 1 : 0], ['socso_enabled', e.socsoEnabled ? 1 : 0], ['eis_enabled', e.eisEnabled ? 1 : 0], ['pcb_enabled', e.pcbEnabled ? 1 : 0],

@@ -156,3 +156,13 @@ test('day rate by the month\'s calendar days or working days', () => {
   assert.equal(computePay({ ...base, days: [], rules: { ...DEFAULT_PAY_RULES, dayRateDivisorMode: 'calendarDays' } }).dayRateSen, 8_667); // 2,600 / 30
   assert.equal(computePay({ ...base, days: [], rules: { ...DEFAULT_PAY_RULES, dayRateDivisorMode: 'workingDays' } }).dayRateSen, 10_400); // 2,600 / 25
 });
+
+test('leader allowance: the share of the month not missed, added after statutory and PCB', () => {
+  const days = workingDates.filter(d => d !== '2026-11-30').map(d => ({ date: d, minutes: 480, forgotOut: false, inMin: null, outMin: null }));
+  const f = computePay({ ...base, days, employee: { ...person, leaderAllowanceSen: 26_000 } });
+  assert.equal(f.absentDays, 1);
+  assert.equal(f.allowanceSen, 25_000);        // RM 260 x 25 / 26
+  assert.equal(f.grossSen, 250_000 + 25_000);  // 2,600 - 100 absent + 250 allowance
+  assert.equal(f.epfEmployeeSen, 28_600);      // EPF unchanged by the allowance
+  assert.equal(f.netSen, 275_000 - 28_600 - 745 - 390);
+});
