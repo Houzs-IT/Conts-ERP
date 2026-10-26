@@ -70,7 +70,7 @@ import { pnlReport, balanceSheetReport, loadAccounts, loadSums } from './account
 import { importOpeningJournal, importOpeningPayables, importOpeningReceivables, openingCheck, reverseOpeningJournal } from '../../acc/opening';
 import { createDebtorHandler, listDebtorsHandler, patchDebtorHandler } from '../../conts/debtors-routes';
 import { partyLedgerHandler } from '../../conts/party-ledger';
-import { approveLimitRequestHandler, createLimitRequestHandler, listLimitRequestsHandler, projectLimitHandler, rejectLimitRequestHandler } from '../../conts/project-limit-routes';
+import { approveLimitRequestHandler, createLimitRequestHandler, listLimitRequestsHandler, listProjectsHandler, projectLimitHandler, rejectLimitRequestHandler } from '../../conts/project-limit-routes';
 import { assertAuditWritable, auditUnavailableBody, compactChanges, fieldChange, recordEntityAudit, type AuditActor } from '../lib/entity-audit';
 import { journalEntryEdit } from './accounting-journal-edit';
 import { reportLayoutGet, reportLayoutPut, reportLayoutReset } from './accounting-report-layouts';
@@ -221,6 +221,7 @@ accounting.get('/debtors', listDebtorsHandler);
 /* Conts: one customer's or supplier's ledger (conts/party-ledger.ts). */
 accounting.get('/party-ledger', partyLedgerHandler);
 /* Conts: a project's limit and extra limit (conts/project-limit-routes.ts; SOP 3.4). */
+accounting.get('/projects', listProjectsHandler);
 accounting.get('/projects/:id/limit', projectLimitHandler);
 accounting.post('/projects/:id/limit-requests', createLimitRequestHandler);
 accounting.get('/limit-requests', listLimitRequestsHandler);

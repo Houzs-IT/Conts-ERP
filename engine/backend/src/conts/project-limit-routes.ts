@@ -101,3 +101,13 @@ const decide = (to: 'APPROVED' | 'REJECTED') => async (c: Ctx): Promise<Response
 };
 export const approveLimitRequestHandler = decide('APPROVED');
 export const rejectLimitRequestHandler = decide('REJECTED');
+
+/** GET /accounting/projects — the projects a voucher can pay: id, code, name, funding. */
+export const listProjectsHandler = async (c: Ctx): Promise<Response> => {
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  const { data, error } = await c.get('supabase').from('projects').select('id, code, name, funding')
+    .eq('company_id', co.companyId).order('id', { ascending: false }).limit(2000);
+  if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
+  return c.json({ projects: data ?? [] });
+};

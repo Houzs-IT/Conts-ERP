@@ -122,6 +122,7 @@ const ScmPaymentVoucherScanV2 = lazy(() => import("./pages/scm-v2/PaymentVoucher
 const ScmChartOfAccountsV2 = lazy(() => import("./pages/scm-v2/ChartOfAccounts").then((m) => ({ default: m.ChartOfAccounts })));
 // Conts: the ledger's own settings — the day the books start, the fiscal year end (finance phase 1).
 const ContsPartyLedger = lazy(() => import("./conts/PartyLedger").then((m) => ({ default: m.PartyLedger })));
+const ContsLimitRequests = lazy(() => import("./conts/LimitRequests").then((m) => ({ default: m.LimitRequests })));
 const ContsDebtors = lazy(() => import("./conts/Debtors").then((m) => ({ default: m.Debtors })));
 const ContsLedgerSetup = lazy(() => import("./conts/LedgerSetup").then((m) => ({ default: m.LedgerSetup })));
 const ScmOtherDebtorsV2 = lazy(() => import("./pages/scm-v2/OtherDebtors").then((m) => ({ default: m.OtherDebtors })));
@@ -776,6 +777,7 @@ export default function App() {
         <Route path="/scm/chart-of-accounts" element={<ContsLedgerGate><ScmGuard area="scm.finance.accounting"><Scm2990Shell><ScmChartOfAccountsV2 /></Scm2990Shell></ScmGuard></ContsLedgerGate>} />
         <Route path="/scm/ledger-setup" element={<ContsLedgerGate><ScmGuard area="scm.finance.accounting"><Scm2990Shell><ContsLedgerSetup /></Scm2990Shell></ScmGuard></ContsLedgerGate>} />
         <Route path="/scm/party-ledger" element={<ContsLedgerGate><ScmGuard area="scm.finance.accounting"><Scm2990Shell><ContsPartyLedger /></Scm2990Shell></ScmGuard></ContsLedgerGate>} />
+        <Route path="/scm/limit-requests" element={<ContsLedgerGate><ScmGuard area="scm.finance.accounting"><Scm2990Shell><ContsLimitRequests /></Scm2990Shell></ScmGuard></ContsLedgerGate>} />
         <Route path="/scm/debtors" element={<ContsLedgerGate><ScmGuard area="scm.finance.accounting"><Scm2990Shell><ContsDebtors /></Scm2990Shell></ScmGuard></ContsLedgerGate>} />
         <Route path="/scm/other-debtors" element={<ScmGuard area="scm.finance.accounting"><Scm2990Shell><ScmOtherDebtorsV2 /></Scm2990Shell></ScmGuard>} />
         <Route path="/scm/receipts" element={<ContsLedgerGate><ScmGuard area="scm.finance.accounting"><Scm2990Shell><ScmReceiptsV2 /></Scm2990Shell></ScmGuard></ContsLedgerGate>} />
