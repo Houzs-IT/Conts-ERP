@@ -85,12 +85,14 @@ export default function EmployeesPage() {
         <StatTile label="Avg Efficiency" value="—" hint="Production time not decided" />
       </StatRow>
 
-      <div role="tablist" aria-label="Employees" className="flex flex-none gap-1 overflow-x-auto [scrollbar-width:none] -mx-4 px-4 md:mx-0 md:px-0 my-5 [border-bottom:1px_solid_var(--color-line)]">
+      {/* All eleven tabs stay in view on a desk screen: they wrap instead of scrolling sideways, and the icons only show
+          where the row has room for them. A phone keeps the sideways swipe, where wrapping would stack five rows. */}
+      <div role="tablist" aria-label="Employees" className="flex flex-none gap-1 overflow-x-auto [scrollbar-width:none] -mx-4 px-4 md:mx-0 md:px-0 md:flex-wrap md:overflow-visible my-5 [border-bottom:1px_solid_var(--color-line)]">
         {TABS.map(t => (
           <button key={t.key} type="button" role="tab" aria-selected={tab === t.key} onClick={() => setTab(t.key)}
-            className={cx('flex-none inline-flex items-center gap-1.5 h-10 px-3 mb-1.5 rounded-control text-meta whitespace-nowrap cursor-pointer border border-solid',
+            className={cx('flex-none inline-flex items-center gap-1.5 h-10 px-2.5 mb-1.5 rounded-control text-meta whitespace-nowrap cursor-pointer border border-solid',
               tab === t.key ? 'border-ink text-ink font-semibold bg-card' : 'border-transparent text-muted-ink hover:text-ink')}>
-            <Icon name={t.icon} size="sm" />{t.label}
+            <span className="hidden min-[1600px]:inline-flex"><Icon name={t.icon} size="sm" /></span>{t.label}
           </button>
         ))}
       </div>
