@@ -138,16 +138,18 @@ export const BETA_HEX: { readonly [K in BetaToken]: string } = (() => {
 })();
 
 /** Both skins as one stylesheet: light on :root, dark under the attribute, and the solid fallback for people who ask for less
-    transparency (the glass cards lose their blur and take a solid colour). */
+    transparency (the glass cards lose their blur and take a solid colour). Dark form controls (color-scheme) and the page
+    backdrop apply only while a Beta screen is open: the attribute stays on <html> for the engine's other screens too. */
 export const BETA_SKIN_CSS: string = (() => {
   const rows = (i: 0 | 1): string => [
     ...Object.entries(BASE_TOKENS).map(([name, pair]) => `--beta-${name}:${pair[i]}`),
     ...Object.entries(TONE_TOKENS).flatMap(([family, keys]) => Object.entries(keys).map(([k, pair]) => `--beta-tone-${family}-${k}:${pair[i]}`)),
   ].join(";");
   return `:root{${rows(0)}}
-html[data-beta-skin="night"]{${rows(1)};color-scheme:dark}
+html[data-beta-skin="night"]{${rows(1)}}
 @media (prefers-reduced-transparency:reduce){:root,html[data-beta-skin="night"]{--beta-glass:var(--beta-glassSolid);--beta-blur:none;--beta-blurSm:none}}
-html.beta-page body,html.beta-page main.paper-grain{background:var(--beta-page)}`;
+html.beta-page body,html.beta-page main.paper-grain{background:var(--beta-page)}
+html.beta-page[data-beta-skin="night"]{color-scheme:dark}`;
 })();
 
 /* ---------- Shared looks (inline styles that more than one file uses) ---------- */
