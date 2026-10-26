@@ -279,7 +279,7 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unit
           </div>
           {d.contractCode === 'MANAGE' && (
             <p className="m-0 -mt-2 text-meta text-muted-ink">
-              Management fee = {rm(d.ownerAmount ?? 0)} x {pctText(d.managementPct ?? 0)}% = <span className="font-semibold text-ink">{rm(Math.round(((d.ownerAmount ?? 0) * (d.managementPct ?? 0)) / 100))}</span>
+              Operator share = {rm(d.ownerAmount ?? 0)} x {pctText(d.managementPct ?? 0)}% = <span className="font-semibold text-ink">{rm(Math.round(((d.ownerAmount ?? 0) * (d.managementPct ?? 0)) / 100))}</span>
             </p>
           )}
           {d.contractCode === 'RTR' && (

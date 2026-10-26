@@ -31,6 +31,7 @@ interface Payload { data: Credential[]; generatedAt: string }
 /** What can be picked for a new item, in groups. */
 interface KindGroup { group: string; kinds: [string, string][] }
 const KIND_GROUPS: KindGroup[] = [
+  // vocab-ok: 'Room key' is the staff's name for one bedroom's door key, not the unit (staff sheet UNIT).
   { group: 'Key', kinds: [['smartlock_key', 'Smartlock key'], ['main_door_key', 'Main door key'], ['room_key', 'Room key'], ['mailbox_key', 'Mailbox key'], ['yard_key', 'Yard key'], ['balcony_key', 'Balcony key']] },
   { group: 'PIN', kinds: [['smartlock_pin', 'Smartlock PIN'], ['mailbox_pin', 'Mailbox PIN'], ['lockbox_pin', 'Lockbox PIN (inside mailbox)'], ['wifi', 'Wi-Fi']] },
   { group: 'Card', kinds: [['card', 'Card'], ['lift_card', 'Lift card'], ['parking_card', 'Parking card'], ['two_in_one_card', '2-in-1 card']] },
