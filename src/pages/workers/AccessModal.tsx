@@ -7,7 +7,7 @@ import { api } from '../../lib/api';
 /** Who gets the sign-in, and which roster holds them (POST {rosterApi}/{id}/access). */
 export interface AccessTarget { id: string; name: string; employeeId: string | null; rosterApi: string; jobs: string }
 
-/** "Give app access" / "New PIN": the worker's employee ID (made on first access) and their first PIN, shown once. */
+/** "Give app access" / "Reset PIN": the worker's employee ID (made on first access) and their first PIN, shown once. */
 export function AccessModal({ target, given0, onClose, onDone }: {
   target: AccessTarget; given0?: { employeeId: string; pin: string }; onClose: () => void; onDone: () => void;
 }) {
@@ -42,7 +42,7 @@ export function AccessModal({ target, given0, onClose, onDone }: {
     } finally { setBusy(false); }
   }
 
-  const title = given ? `Sign-in for ${target.name}` : target.employeeId ? `New PIN for ${target.name}` : `Give ${target.name} app access`;
+  const title = given ? `Sign-in for ${target.name}` : target.employeeId ? `Reset PIN for ${target.name}` : `Give ${target.name} app access`;
   return (
     <Modal title={title} onClose={onClose}
       footer={given
@@ -52,7 +52,7 @@ export function AccessModal({ target, given0, onClose, onDone }: {
           </>
         : <>
             <Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
-            <Button size="sm" variant="primary" loading={busy} onClick={() => void submit()}>{target.employeeId ? 'Give new PIN' : 'Give app access'}</Button>
+            <Button size="sm" variant="primary" loading={busy} onClick={() => void submit()}>{target.employeeId ? 'Reset PIN' : 'Give app access'}</Button>
           </>}>
       {given ? (
         <div className="flex flex-col gap-4 text-copy">

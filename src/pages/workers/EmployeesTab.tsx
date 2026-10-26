@@ -112,7 +112,7 @@ export default function EmployeesTab() {
     return (
       <span className="flex gap-[7px] items-center justify-end" onClick={ev => ev.stopPropagation()} onKeyDown={ev => ev.stopPropagation()}>
         {mayGrant && e.isActive && (
-          <Button size="sm" variant="tertiary" icon={<Icon name="KeyRound" size="sm" />} onClick={() => giveAccess(e)}>{e.employeeId ? 'New PIN' : 'Give app access'}</Button>
+          <Button size="sm" variant="tertiary" icon={<Icon name="KeyRound" size="sm" />} onClick={() => giveAccess(e)}>{e.employeeId ? 'Reset PIN' : 'Give app access'}</Button>
         )}
         {mayEdit && <Button size="sm" variant="tertiary" icon={<Icon name="Pencil" size="sm" />} onClick={() => setForm({ person: e })}>Edit</Button>}
         {mayRoster && (

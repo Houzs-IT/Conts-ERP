@@ -45,7 +45,7 @@ export function PinHelpSheet({ open, onClose, supportPhone, employeeNo }: { open
           <p className="m-0 text-copy">Ask the office or your supervisor for a new PIN.</p>
         )}
         <p className="m-0 text-meta text-muted-ink text-pretty">
-          Your supervisor can also give you a new PIN on HR &gt; Employees, under New PIN.
+          Your supervisor can also give you a new PIN on HR &gt; Employees, under Reset PIN.
         </p>
         <Button type="button" variant="tertiary" size="touch" onClick={onClose} style={{ width: '100%' }}>Close</Button>
       </div>
