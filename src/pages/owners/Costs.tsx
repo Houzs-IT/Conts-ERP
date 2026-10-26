@@ -516,7 +516,7 @@ function CleaningPrice({ unitId, price, deepPrice, legacy, canEdit, onSaved }: {
     <div className="flex flex-col gap-3 pt-4 [border-top:1px_solid_var(--color-line-soft)]">
       <div className="flex flex-wrap items-end gap-3">
         <div className="w-[200px] max-w-full">
-          <MoneyInput label="Standard clean (RM)" placeholder="Not set" valueSen={shown ?? null} onChangeSen={v => setDraft(v)} disabled={!canEdit} />
+          <MoneyInput label="Basic clean (RM)" placeholder="Not set" valueSen={shown ?? null} onChangeSen={v => setDraft(v)} disabled={!canEdit} />
         </div>
         <div className="w-[200px] max-w-full">
           <MoneyInput label="Deep clean (RM)" placeholder="Not set" valueSen={shownDeep ?? null} onChangeSen={v => setDraftDeep(v)} disabled={!canEdit} />

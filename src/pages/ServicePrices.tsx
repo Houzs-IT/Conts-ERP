@@ -36,7 +36,7 @@ interface Detail extends ServiceItem {
 
 export const DOMAIN_LABEL: Record<Domain, string> = { cleaning: 'Cleaning', maintenance: 'Maintenance' };
 export const SUB_LABEL: Record<string, string> = {
-  turnover: 'Standard clean', deep_clean: 'Deep clean', light_clean: 'Light clean', laundry: 'Laundry', aircon: 'Aircon', plumbing: 'Plumbing',
+  turnover: 'Basic clean', deep_clean: 'Deep clean', light_clean: 'Light clean', laundry: 'Laundry', aircon: 'Aircon', plumbing: 'Plumbing',
   electrical: 'Electrical', furniture: 'Furniture', appliance: 'Appliance', cleaning: 'Cleaning', general: 'General', other: 'Other',
 };
 export const LAYOUT_LABEL: Record<string, string> = {
@@ -44,7 +44,7 @@ export const LAYOUT_LABEL: Record<string, string> = {
   duplex: 'Duplex', dual_key: 'Dual key', penthouse: 'Penthouse', other: 'Other',
 };
 const UOM_LABEL: Record<string, string> = { job: 'Per job', unit: 'Per unit', hour: 'Per hour', visit: 'Per visit', set: 'Per set' };
-const CLEAN_TYPE_LABEL: Record<string, string> = { turnover: 'Standard clean', deep_clean: 'Deep clean', light_clean: 'Light clean' };
+const CLEAN_TYPE_LABEL: Record<string, string> = { turnover: 'Basic clean', deep_clean: 'Deep clean', light_clean: 'Light clean' };
 
 const layoutsOf = (i: { byLayout: boolean }, all: string[]) => (i.byLayout ? all : ['all']);
 const priced = (cells: Cell[]) => cells.filter(c => c.ownerPrice != null || c.internalCost != null);

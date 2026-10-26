@@ -2,7 +2,7 @@ import { type Env, all, one, json, fail, nowIso } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
 import { MYT_DATE, SHEET_CLEANER } from '../../_lib/ops';
 import { taskCleanersReady, cleanerListSql, parseCleaners, rosterIdSql } from '../../_lib/taskCleaners';
-import { unitLayoutSql, unitLayout } from '../../_lib/unitLayout';
+import { unitLayoutSql, unitMattressesSql, unitLayout } from '../../_lib/unitLayout';
 import { CLEAN_KINDS_SQL, LIVE_STAY_SQL, standardItems, windowsOnDay, mytToday, isDay, autoGuestLeft, ensureTurnovers } from '../../_lib/cleaning';
 import { hasCleanPrices, priceBook, layoutKey } from '../../_lib/cleaningPrices';
 
@@ -29,9 +29,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if (date > sixtyDaysOut) await ensureTurnovers(env, { from: today, to: date }, 50);
   if (date >= today) await ensureTurnovers(env, { from: today, to: sixtyDaysOut }, 50);
 
-  const [defaults, ready, layoutSql, priced] = await Promise.all([
+  const [defaults, ready, layoutSql, priced, mattressSql] = await Promise.all([
     all<{ key: string; value: string }>(env, `SELECT key, value FROM settings WHERE key IN ('operations.checkIn','operations.checkOut','ops.check_in','ops.check_out')`),
-    taskCleanersReady(env), unitLayoutSql(env), hasCleanPrices(env),
+    taskCleanersReady(env), unitLayoutSql(env), hasCleanPrices(env), unitMattressesSql(env),
   ]);
   const pick = (a: string, b: string, d: string) => defaults.find(x => x.key === a)?.value ?? defaults.find(x => x.key === b)?.value ?? d;
   const stdIn = pick('operations.checkIn', 'ops.check_in', '15:00');
@@ -41,7 +41,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const rows = await all<any>(env, `
     SELECT ${money} t.id, t.kind, t.state, t.title, t.instructions, t.scheduled_for, t.due_at, t.started_at, t.completed_at, t.guest_left_at,
            t.assignee_id, t.cleaner_id, t.unit_id, t.reservation_id, ${when} AS day,
-           u.unit_number, u.readiness, u.bedrooms, u.bathrooms, ${layoutSql} AS layout_type, p.id AS property_id, p.name AS property_name,
+           u.unit_number, u.readiness, u.bedrooms, u.bathrooms, ${layoutSql} AS layout_type, ${mattressSql} AS mattresses, p.id AS property_id, p.name AS property_name,
            COALESCE(cl.full_name, a.full_name) AS assignee_name, ${SHEET_CLEANER('t')} AS sheet_cleaner, ${cleanerListSql(ready)} AS cleaner_list, ${rosterIdSql()} AS roster_id,
            prev.id AS prev_id, prev.state AS prev_state, prev.check_out_time AS prev_time, prev.channel AS prev_channel,
            COALESCE(NULLIF(pg.full_name, ''), CASE WHEN prev.id IS NOT NULL THEN 'Guest' END) AS prev_guest,
@@ -91,7 +91,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   // Guests leaving that day with no clean on the unit: the gap the board must not hide.
   const departures = await all<any>(env, `
-    SELECT r.id, r.state, r.check_out_time, r.channel, u.id AS unit_id, u.unit_number, u.bedrooms, u.bathrooms, ${layoutSql} AS layout_type, p.id AS property_id, p.name AS property_name,
+    SELECT r.id, r.state, r.check_out_time, r.channel, u.id AS unit_id, u.unit_number, u.bedrooms, u.bathrooms, ${layoutSql} AS layout_type, ${mattressSql} AS mattresses, p.id AS property_id, p.name AS property_name,
            COALESCE(NULLIF(g.full_name, ''), 'Guest') AS guest_name,
            (SELECT n.check_in_time FROM reservations n WHERE n.unit_id = r.unit_id AND n.check_in = r.check_out AND n.id != r.id AND ${LIVE_STAY_SQL('n')} LIMIT 1) AS next_time,
            (SELECT n.id FROM reservations n WHERE n.unit_id = r.unit_id AND n.check_in = r.check_out AND n.id != r.id AND ${LIVE_STAY_SQL('n')} LIMIT 1) AS next_id,

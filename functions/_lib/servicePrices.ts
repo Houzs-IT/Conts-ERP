@@ -165,14 +165,14 @@ export async function writePrices(env: Env, itemId: string, set: PriceSet, userI
 export const LABEL = {
   domain: { cleaning: 'Cleaning', maintenance: 'Maintenance' } as Record<string, string>,
   category: {
-    turnover: 'Standard clean', deep_clean: 'Deep clean', light_clean: 'Light clean', laundry: 'Laundry', aircon: 'Aircon', plumbing: 'Plumbing',
+    turnover: 'Basic clean', deep_clean: 'Deep clean', light_clean: 'Light clean', laundry: 'Laundry', aircon: 'Aircon', plumbing: 'Plumbing',
     electrical: 'Electrical', furniture: 'Furniture', appliance: 'Appliance', cleaning: 'Cleaning', general: 'General', other: 'Other',
   } as Record<string, string>,
   layout: {
     all: 'All', studio: 'Studio', '1_bedroom': '1 bedroom', '2_bedroom': '2 bedroom', '3_bedroom': '3 bedroom', '4_plus_bedroom': '4+ bedroom',
     duplex: 'Duplex', dual_key: 'Dual key', penthouse: 'Penthouse', other: 'Other',
   } as Record<string, string>,
-  cleanType: { turnover: 'Standard clean', deep_clean: 'Deep clean', light_clean: 'Light clean' } as Record<string, string>,
+  cleanType: { turnover: 'Basic clean', deep_clean: 'Deep clean', light_clean: 'Light clean' } as Record<string, string>,
   uom: { job: 'Job', unit: 'Unit', hour: 'Hour', visit: 'Visit', set: 'Set' } as Record<string, string>,
 };
 export const SHEET_COLUMNS = ['Code', 'Name', 'Type', 'Sub-category', 'Unit of measure', 'Priced by layout', 'Reservation clean type', 'Layout',
@@ -183,7 +183,8 @@ export function fromLabel(map: Record<string, string>, v: unknown): string | nul
   const t = String(v ?? '').trim().replace(/^'/, '').toLowerCase();
   if (!t) return null;
   for (const [k, l] of Object.entries(map)) if (k.toLowerCase() === t || l.toLowerCase() === t) return k;
-  return undefined;
+  // "Standard clean" was renamed "Basic clean" (23 Oct 2026); sheets filled in before that still import.
+  return t === 'standard clean' && 'turnover' in map ? 'turnover' : undefined;
 }
 /** "RM 1,200.50", "1200.5", "80" -> sen. Blank -> null. Anything else -> NaN. */
 export function senOf(v: unknown): number | null {

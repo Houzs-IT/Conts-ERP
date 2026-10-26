@@ -106,7 +106,7 @@ const ASSIGNEE_KIND: Record<string, string> = { in_house: 'In-house', contractor
 
 /** A stored code in the words the rest of the app uses for it; null when the field has no list of its own. */
 /** A cleaning job's kind in the words the Cleaning board uses. */
-const CLEAN_KIND: Record<string, string> = { turnover: 'Standard clean', deep_clean: 'Deep clean', light_clean: 'Light clean' };
+const CLEAN_KIND: Record<string, string> = { turnover: 'Basic clean', deep_clean: 'Deep clean', light_clean: 'Light clean' };
 
 function known(k: string, v: string, table: string): string | null {
   if (table === 'tasks' && k === 'kind' && CLEAN_KIND[v]) return CLEAN_KIND[v];

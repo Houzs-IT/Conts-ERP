@@ -83,7 +83,7 @@ interface Detail {
 type Tab = 'board' | 'history' | 'prices' | 'pay' | 'profit';
 type DayPick = 'today' | 'tomorrow' | 'pick';
 
-const KIND_NAME: Record<string, string> = { turnover: 'Standard clean', deep_clean: 'Deep clean', light_clean: 'Light clean' };
+const KIND_NAME: Record<string, string> = { turnover: 'Basic clean', deep_clean: 'Deep clean', light_clean: 'Light clean' };
 const COST_SOURCE: Record<string, string> = { unit: "the unit's own price", history: 'last charged on this unit', default: 'standard rate', job: 'set on this job', table: 'price table' };
 /** Board order (staff comment sheet): units ready to check in at the top, then being cleaned, then guest out, then the rest. */
 const BOARD_ORDER: Record<string, number> = { done: 0, cleaning: 1, ready: 2, waiting: 3, guest_in: 4, unassigned: 5 };
@@ -436,9 +436,10 @@ function BulkCloseModal({ action, jobs, onClose, onDone }: { action: 'done' | 'c
 /* ---------- one building ---------- */
 
 // Columns follow the card's own width, not the window's. Checkout and check-in hold full guest names, so they get at
-// least 220px and the most share. Amount must fit "Price not set" and status "Guest out, ready to clean", which
-// were cut off at the card edge on a laptop.
-const COLS = '@4xl:grid @4xl:grid-cols-[minmax(0,0.7fr)_minmax(220px,1.4fr)_minmax(220px,1.4fr)_minmax(0,0.7fr)_minmax(0,0.8fr)_minmax(0,0.8fr)_minmax(0,1.3fr)] @6xl:grid-cols-[minmax(0,0.7fr)_minmax(220px,1.4fr)_minmax(220px,1.4fr)_minmax(0,0.6fr)_minmax(0,0.55fr)_minmax(0,0.7fr)_minmax(0,0.75fr)_minmax(0,0.85fr)_minmax(0,1.4fr)] @4xl:items-center @4xl:gap-2.5';
+// least 220px and the most share. Status must fit "Guest out, ready to clean", which was cut off at the card edge on
+// a laptop. No amount column: the board is for running the cleans (staff sheet CLEANING, 23 Oct 2026); the price is
+// in the job's panel and Cleaning > Prices.
+const COLS = '@4xl:grid @4xl:grid-cols-[minmax(0,0.7fr)_minmax(220px,1.4fr)_minmax(220px,1.4fr)_minmax(0,0.7fr)_minmax(0,0.8fr)_minmax(0,1.3fr)] @6xl:grid-cols-[minmax(0,0.7fr)_minmax(220px,1.4fr)_minmax(220px,1.4fr)_minmax(0,0.6fr)_minmax(0,0.55fr)_minmax(0,1fr)_minmax(0,0.85fr)_minmax(0,1.4fr)] @4xl:items-center @4xl:gap-2.5';
 const HIDDEN_IN_NARROW_TABLE = '@4xl:@max-6xl:hidden';
 const STACKED_LABEL = '@4xl:hidden flex-none w-[60px] text-meta text-muted-ink';
 const LABELLED_CELL = 'min-w-0 items-baseline gap-2';
@@ -545,7 +546,7 @@ function BuildingCard({ group, now, future, selected, busy, onSelect, onGuestLef
       </header>
       {!shut && <>
       <div className={cx('hidden text-meta font-semibold text-muted-ink px-5 py-2 [border-top:1px_solid_var(--color-line-soft)]', COLS)}>
-        <div>{external ? 'Address' : 'Unit'}</div><div>{external ? 'Client' : 'Checkout (leaving)'}</div><div>{external ? '' : 'Check-in (arriving)'}</div><div>Time left</div><div className={HIDDEN_IN_NARROW_TABLE}>Type</div><div className={HIDDEN_IN_NARROW_TABLE}>Layout</div><div>Amount</div><div>Cleaner</div><div>Status</div>
+        <div>{external ? 'Address' : 'Unit'}</div><div>{external ? 'Client' : 'Checkout (leaving)'}</div><div>{external ? '' : 'Check-in (arriving)'}</div><div>Time left</div><div className={HIDDEN_IN_NARROW_TABLE}>Type</div><div className={HIDDEN_IN_NARROW_TABLE}>Layout</div><div>Cleaner</div><div>Status</div>
       </div>
       {group.rows.map(r => <CleanRow key={r.id} r={r} now={now} active={r.id === selected} busy={busy === `left-${r.id}`} savingIn={!!r.next?.reservationId && busy === `in-${r.next.reservationId}`}
         picked={picks ? picks.has(r.id) : undefined} onPick={picks ? on => picks.toggle([r.id], on) : undefined}
@@ -558,8 +559,7 @@ function BuildingCard({ group, now, future, selected, busy, onSelect, onGuestLef
           <div className="min-w-0">{d.next ? <GuestLine time={<CheckInTime time={d.next.checkInTime} saving={!!d.next.reservationId && busy === `in-${d.next.reservationId}`} onSave={d.next.reservationId ? t => onCheckIn(d.next!.reservationId!, t, d.unitNumber) : undefined} />} name={d.next.guestName} /> : <span className="text-muted-ink">No check-in</span>}</div>
           <div><span className="@4xl:hidden text-muted-ink">Time left </span><TimeLeft at={d.next?.checkInAt} now={now} /></div>
           <div className="hidden @6xl:block text-muted-ink">—</div>
-          <div className="hidden @6xl:block min-w-0">{d.unit?.layout ?? d.unit?.size ?? <span className="text-muted-ink">—</span>}</div>
-          <div className="hidden @4xl:block text-muted-ink">—</div>
+          <div className="hidden @6xl:block min-w-0">{d.unit?.size ?? d.unit?.layout ?? <span className="text-muted-ink">—</span>}</div>
           <div className="hidden @4xl:block text-muted-ink">—</div>
           <div className="col-span-full @4xl:col-auto flex items-center gap-2 flex-wrap justify-end @4xl:justify-start pt-1 @4xl:pt-0">
             <span className="hidden @4xl:inline"><StatusBadge tone="critical">No cleaning job</StatusBadge></span>
@@ -625,8 +625,7 @@ function CleanRow({ r, now, active, busy, savingIn, onSelect, onGuestLeft, onUnd
       </div>
       <div className={cx(LABELLED_CELL, r.next ? 'flex' : 'hidden @4xl:flex')}><span className={STACKED_LABEL}>Time left</span><TimeLeft at={r.next?.checkInAt} now={now} done={r.status === 'done'} /></div>
       <div className={cx(LABELLED_CELL, 'flex', HIDDEN_IN_NARROW_TABLE)}><span className={STACKED_LABEL}>Type</span>{KIND_LABEL[r.kind] ?? r.kind}</div>
-      <div className={cx(LABELLED_CELL, 'flex', HIDDEN_IN_NARROW_TABLE, !r.unit?.layout && !r.unit?.size && '@max-4xl:hidden')}><span className={STACKED_LABEL}>Layout</span><span className="min-w-0">{r.unit?.layout ?? r.unit?.size ?? <span className="text-muted-ink">—</span>}</span></div>
-      <div className={cx(LABELLED_CELL, 'flex whitespace-nowrap')}><span className={STACKED_LABEL}>Amount</span>{r.amount != null ? <span className="tabular-nums truncate">{rm(r.amount, { cents: false })}</span> : <span className="text-muted-ink truncate" title="Set it in Cleaning > Prices">Price not set</span>}</div>
+      <div className={cx(LABELLED_CELL, 'flex', HIDDEN_IN_NARROW_TABLE, !r.unit?.layout && !r.unit?.size && '@max-4xl:hidden')}><span className={STACKED_LABEL}>Layout</span><span className="min-w-0">{r.unit?.size ?? r.unit?.layout ?? <span className="text-muted-ink">—</span>}</span></div>
       <CleanerCell r={r} />
       <div className="hidden @4xl:flex items-center gap-1.5 flex-wrap min-w-0">
         {/* Wraps inside its column rather than spilling past the card edge, where it was cut off. */}
@@ -642,7 +641,7 @@ const PHONE_STATUS: Record<string, string> = { ready: 'Ready to clean', done: 'D
 
 const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]!.toUpperCase()).join('');
 
-/** One job on a phone: unit and status; who leaves and who arrives, each with the full name; layout, type, amount, cleaner. */
+/** One job on a phone: unit and status; who leaves and who arrives, each with the full name; layout, type, cleaner. */
 function PhoneCleanCard({ r, now, active, busy, onSelect, onGuestLeft, onUndoLeft, picked, onPick }: {
   r: Row; now: number; active: boolean; busy: boolean; onSelect: () => void; onGuestLeft: () => void; onUndoLeft: () => void;
   picked?: boolean; onPick?: (on: boolean) => void;
@@ -650,7 +649,7 @@ function PhoneCleanCard({ r, now, active, busy, onSelect, onGuestLeft, onUndoLef
   const st = statusOf('cleaning', r.status);
   const mayTick = !!r.previous && r.status !== 'done' && r.status !== 'cleaning' && r.day <= mytDay(0);
   const names = r.cleaners.length ? r.cleaners.map(c => c.name) : r.assigneeName ? [r.assigneeName] : [];
-  const meta = [r.unit?.layout ?? r.unit?.size, KIND_LABEL[r.kind] ?? r.kind].filter(Boolean).join(' · ');
+  const meta = [r.unit?.size ?? r.unit?.layout, KIND_LABEL[r.kind] ?? r.kind].filter(Boolean).join(' · ');
   return (
     <div role="button" tabIndex={0} aria-pressed={active} onClick={onSelect} onKeyDown={e => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onSelect(); } }}
       className={cx('px-3 py-2.5 [border-top:1px_solid_var(--color-line-soft)] text-copy cursor-pointer flex flex-col gap-1 outline-none focus-visible:[box-shadow:inset_0_0_0_2px_var(--color-gold)]',
@@ -682,7 +681,7 @@ function PhoneCleanCard({ r, now, active, busy, onSelect, onGuestLeft, onUndoLef
       )}
       <div className="flex items-center gap-2 min-w-0 text-meta text-muted-ink">
         <span className="min-w-0 truncate">
-          {meta}{meta && ' · '}{r.amount != null ? <span className="tabular-nums">{rm(r.amount, { cents: false })}</span> : <span className="text-warning font-medium">Price not set</span>}
+          {meta}
         </span>
         <span className="flex-none ml-auto flex items-center" title={names.join(', ') || undefined}>
           {names.length ? <>
@@ -823,7 +822,7 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft, onCheckIn, sav
   const used = row.startedAt ? (Date.parse(row.completedAt ?? new Date(now).toISOString()) - Date.parse(row.startedAt)) / 60000 : null;
   const unitLabel = `${row.propertyName} ${row.unitNumber}`;
   const kind = picked.kind ?? row.kind;
-  const kindName = KIND_NAME[kind] ?? 'Standard clean';
+  const kindName = KIND_NAME[kind] ?? 'Basic clean';
   const cleanerName = shownTeam.length ? shownTeam.map(id => teamNames[id] ?? cleaners.find(c => c.id === id)?.name ?? 'Cleaner').join(', ') : row.assigneeName;
   const size = sizeLine(data?.unit?.size ?? row.unit?.size, data?.unit?.layout ?? row.unit?.layout);
   const origin = data?.createdAt ? {
@@ -860,7 +859,7 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft, onCheckIn, sav
           <div className="grid grid-cols-2 gap-2.5">
           <FormRow label="Type">
             <select className={INPUT} value={kind} disabled={busy === 'kind'} onChange={e => { const v = e.target.value; setPicked(p => ({ ...p, kind: v })); void act('kind', () => api.patch(`/housekeeping/tasks/${row.id}`, { kind: v, title: v === 'deep_clean' ? 'Deep clean' : row.title }), 'Cleaning type changed.').then(ok => { if (!ok) setPicked(p => ({ ...p, kind: undefined })); }); }}>
-              <option value="turnover">Standard</option><option value="deep_clean">Deep</option><option value="light_clean">Light</option>
+              <option value="turnover">Basic</option><option value="deep_clean">Deep</option><option value="light_clean">Light</option>
             </select>
           </FormRow>
           </div>
@@ -1062,7 +1061,7 @@ function NewCleanModal({ date, onClose, onDone }: { date: string; onClose: () =>
     if (bad.unit || bad.address || bad.amount) { setError(bad); return; }
     setBusy(true); setError({});
     try {
-      const title = item && itemId ? item.name : kind === 'deep_clean' ? 'Deep clean' : kind === 'light_clean' ? 'Light clean' : 'Standard clean';
+      const title = item && itemId ? item.name : kind === 'deep_clean' ? 'Deep clean' : kind === 'light_clean' ? 'Light clean' : 'Basic clean';
       await api.post('/housekeeping/tasks', {
         ...(external ? { external: { address: address.trim(), clientName: client.trim() || undefined, clientPhone: phone.trim() || undefined }, layout } : { unitId }),
         date: day, kind, cleanerIds, instructions: notes.trim() || undefined, title,
@@ -1094,11 +1093,13 @@ function NewCleanModal({ date, onClose, onDone }: { date: string; onClose: () =>
         <FormRow label="Day"><DateField aria-label="Day" className={INPUT} value={day} onChange={v => v && setDay(v)} /></FormRow>
         <FormRow label="Type">
           <select className={INPUT} value={kind} onChange={e => setKind(e.target.value)}>
-            <option value="turnover">Standard</option><option value="deep_clean">Deep</option><option value="light_clean">Light</option>
+            <option value="turnover">Basic</option><option value="deep_clean">Deep</option><option value="light_clean">Light</option>
           </select>
         </FormRow>
       </div>
-      {ready && (
+      {/* A job on one of our units is priced from Cleaning > Prices, so it shows no pricing (staff sheet CLEANING,
+          23 Oct 2026); an external job still needs its item and amounts. */}
+      {ready && external && (
         <div className="grid grid-cols-2 gap-3">
           <FormRow label="Item" hint={itemId === 'other' ? 'Type both amounts below.' : 'From Service prices.'}>
             <select className={INPUT} value={itemId || forKind?.id || ''} onChange={e => setItemId(e.target.value)} aria-label="Item">
@@ -1107,7 +1108,7 @@ function NewCleanModal({ date, onClose, onDone }: { date: string; onClose: () =>
               <option value="other">Other (type the amounts)</option>
             </select>
           </FormRow>
-          {external && item?.byLayout && (
+          {item?.byLayout && (
             <FormRow label="Layout" hint="Priced as this layout.">
               <select className={INPUT} value={layout} onChange={e => setLayout(e.target.value)} aria-label="Layout">
                 {(service.data?.layouts ?? []).map(l => <option key={l} value={l}>{LAYOUT_NAME[l] ?? l}</option>)}
@@ -1116,15 +1117,16 @@ function NewCleanModal({ date, onClose, onDone }: { date: string; onClose: () =>
           )}
         </div>
       )}
-      <div className="grid grid-cols-2 gap-3">
-        <FormRow label={external ? 'Charge, RM' : 'Owner price, RM'} error={error.amount}
-          hint={external ? 'What the client is charged.' : unitId ? (suggested != null && !touchedAmount ? 'From Service prices; type over it for this job.' : 'Leave empty to use the old cleaning rate, or type one.') : undefined}>
-          <MoneyInput className={INPUT} valueSen={amount} onChangeSen={v => { setAmount(v); setTouchedAmount(true); setError(x => ({ ...x, amount: undefined })); }} aria-label="Owner price in RM" />
-        </FormRow>
-        <FormRow label="Internal cost, RM" hint="What the cleaner is paid for this job.">
-          <MoneyInput className={INPUT} valueSen={pay} onChangeSen={v => { setPay(v); setTouchedPay(true); }} aria-label="Internal cost in RM" placeholder="Not set" />
-        </FormRow>
-      </div>
+      {external && (
+        <div className="grid grid-cols-2 gap-3">
+          <FormRow label="Charge, RM" error={error.amount} hint="What the client is charged.">
+            <MoneyInput className={INPUT} valueSen={amount} onChangeSen={v => { setAmount(v); setTouchedAmount(true); setError(x => ({ ...x, amount: undefined })); }} aria-label="Charge in RM" />
+          </FormRow>
+          <FormRow label="Internal cost, RM" hint="What the cleaner is paid for this job.">
+            <MoneyInput className={INPUT} valueSen={pay} onChangeSen={v => { setPay(v); setTouchedPay(true); }} aria-label="Internal cost in RM" placeholder="Not set" />
+          </FormRow>
+        </div>
+      )}
       <div className="flex flex-col gap-1.5 min-w-0">
         <CleanerChecklist cleaners={cleaners} value={cleanerIds} onChange={setCleanerIds} label="Cleaners (optional)" day={day} />
         {!cleanerIds.length && <span className="text-meta text-muted-ink">Leave empty to assign later. Tick more than one for a team.</span>}
