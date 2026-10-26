@@ -57,8 +57,9 @@ async function projectReceived(sb: Db, companyId: number, projectId: number): Pr
   ]);
   if (sop.error) return { ok: false, error: sop.error.message };
   if (sis.error) return { ok: false, error: sis.error.message };
-  let sen = ((sop.data ?? []) as Array<{ amount_sen: number; method: string }>).filter((p) => p.method !== 'converted').reduce((s, p) => s + Number(p.amount_sen ?? 0), 0);
-  const siIds = ((sis.data ?? []) as Array<{ id: string; status: string }>).filter((s) => !['DRAFT', 'CANCELLED'].includes(String(s.status).toUpperCase())).map((s) => s.id);
+  /* Every row: a 'converted' one is money moved in (positive) or out / refunded (negative) — SOP 4.4: a refund lowers the limit. */
+  let sen = ((sop.data ?? []) as Array<{ amount_sen: number }>).reduce((s, p) => s + Number(p.amount_sen ?? 0), 0);
+  const siIds = ((sis.data ?? []) as Array<{ id: string; status: string }>).filter((s) => !['DRAFT', 'CANCELLED', 'VOID'].includes(String(s.status).toUpperCase())).map((s) => s.id);
   if (siIds.length > 0) {
     const { data: sip, error: sipErr } = await sb.from('sales_invoice_payments').select('amount_sen').eq('company_id', companyId).in('sales_invoice_id', siIds);
     if (sipErr) return { ok: false, error: sipErr.message };
@@ -147,4 +148,36 @@ export async function projectOfBills(sb: Db, companyId: number, bills: { piIds: 
   }
   if (projects.size > 1) return { ok: false, error: 'many_projects' };
   return { ok: true, projectId: projects.size === 1 ? [...projects][0]! : null };
+}
+
+/** The project a voucher pays (SOP 3.4): the one named on it, else the one its bills belong to. A name that differs
+    from the bills', or bills of two projects, is refused — one voucher pays one project. */
+export async function resolveVoucherProject(
+  sb: Db, companyId: number, named: unknown, bills: { piIds: string[]; apInvoiceIds: string[] },
+): Promise<{ ok: true; projectId: number | null } | { ok: false; status: 400 | 409 | 500; body: Record<string, unknown> }> {
+  const fromBills = await projectOfBills(sb, companyId, bills);
+  if (!fromBills.ok) {
+    if (fromBills.error === 'many_projects') return { ok: false, status: 409, body: { error: 'many_projects', message: 'One payment voucher pays one project: these bills belong to more than one.' } };
+    return { ok: false, status: 500, body: { error: 'load_failed', reason: fromBills.error } };
+  }
+  if (named == null || named === '') return { ok: true, projectId: fromBills.projectId };
+  const id = Number(named);
+  if (!Number.isInteger(id) || id <= 0) return { ok: false, status: 400, body: { error: 'project_invalid' } };
+  const { data, error } = await sb.from('projects').select('id').eq('company_id', companyId).eq('id', id).maybeSingle();
+  if (error) return { ok: false, status: 500, body: { error: 'load_failed', reason: error.message } };
+  if (!data) return { ok: false, status: 400, body: { error: 'project_invalid', message: `Project ${id} is not this company's.` } };
+  if (fromBills.projectId != null && fromBills.projectId !== id) {
+    return { ok: false, status: 409, body: { error: 'project_mismatch', message: "The bills this voucher pays belong to another project." } };
+  }
+  return { ok: true, projectId: id };
+}
+
+/** The refusal of a voucher over a project's limit, in the SOP's words: what is left and by how much it is over. */
+export function overLimitBody(over: Array<{ projectId: number; projectName: string; leftSen: number; overSen: number }>): Record<string, unknown> {
+  const o = over[0]!;
+  const rm = (sen: number) => (sen / 100).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return {
+    error: 'over_project_limit', projectId: o.projectId, leftSen: o.leftSen, overSen: o.overSen, over,
+    message: `${o.projectName} has RM ${rm(Math.max(0, o.leftSen))} left of its limit: this voucher is RM ${rm(o.overSen)} over. Ask for extra limit, or lower the amount.`,
+  };
 }
