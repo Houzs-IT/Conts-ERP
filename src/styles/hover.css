@@ -15,6 +15,10 @@
   [data-sidebar] button:not([aria-current="page"]):not([aria-selected="true"]):not(:disabled):not(.menu-sheet button):hover {
     background-image: linear-gradient(rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.06)) !important;
   }
+  /* The Dream Crafter side's light glass: a white wash would vanish there, so it takes a dark one. */
+  [data-sidebar][data-look="dcLight"] button:not([aria-current="page"]):not([aria-selected="true"]):not(:disabled):not(.menu-sheet button):hover {
+    background-image: linear-gradient(rgba(17, 18, 22, 0.05), rgba(17, 18, 22, 0.05)) !important;
+  }
 
   /* Light menus (the phone More sheet, the sidebar account menu): a dark wash; white on the dark theme. */
   .menu-sheet button:not([aria-current="page"]):hover {
@@ -47,6 +51,9 @@ button[aria-label^="Notifications"]:focus-visible {
   outline: none;
   box-shadow: 0 0 0 2px var(--color-gold, #C8A46A) !important;
 }
+/* The Dream Crafter glass: gold is under 3:1 on the light card, so an ink ring there and the design's blue on dark. */
+[data-sidebar][data-look="dcLight"] button:not(.menu-sheet button):focus-visible { box-shadow: 0 0 0 2px #111216 !important; }
+[data-sidebar][data-look="dcDark"] button:not(.menu-sheet button):focus-visible { box-shadow: 0 0 0 2px #9FC0FF !important; }
 
 /* The phone menu draws its own press wash, so the grey tap flash would double it. */
 .menu-sheet button {

@@ -68,6 +68,26 @@ export const shell = {
   navItem: 34, navItemL3: 30,
 } as const;
 
+/** Dream Crafter's glass sidebar, from the Project Workspace designs: v10 "Vision" (light) and v13 "Night Glass" (dark).
+ *  Only the Dream Crafter side of the sidebar uses these (Sidebar.tsx, PLAN-dc-sidebar.md). */
+export const dcGlass = {
+  light: {
+    backdrop: 'linear-gradient(118deg,rgba(255,255,255,0) 58%,rgba(255,248,226,.85) 66%,rgba(255,255,255,0) 76%),'
+      + 'radial-gradient(48% 52% at 14% 16%,#F6C9D6 0%,rgba(246,201,214,0) 72%),'
+      + 'radial-gradient(52% 58% at 90% 34%,#BFE6EA 0%,rgba(191,230,234,0) 72%),'
+      + 'radial-gradient(46% 46% at 40% 100%,#CBD3FA 0%,rgba(236,227,207,0) 72%),'
+      + 'linear-gradient(160deg,#E6ECEA 0%,#ECEEF3 50%,#DDE2EC 100%)',
+    ink: '#111216', text: '#4A4A4A', muted: '#6B6B6B', faint: '#5A5A5A', surface: '#FFFFFF', accent: '#3D5AFE',
+  },
+  dark: {
+    backdrop: 'radial-gradient(45% 40% at 18% 12%,rgba(70,110,255,.35) 0%,rgba(70,110,255,0) 70%),'
+      + 'radial-gradient(40% 40% at 88% 70%,rgba(150,90,255,.28) 0%,rgba(150,90,255,0) 70%),'
+      + 'radial-gradient(35% 35% at 50% 100%,rgba(60,180,255,.18) 0%,rgba(60,180,255,0) 70%),'
+      + 'linear-gradient(160deg,#151823 0%,#0D0F16 100%)',
+    ink: '#EEF1F8', text: '#B9C0D0', muted: '#9AA2B4', faint: '#A9B0C1', surface: '#FFFFFF', accent: '#9FC0FF', base: '#151823',
+  },
+} as const;
+
 /** lucide-react, the dependency already in houzs-erp and hookka-erp. */
 export const iconSize = { sm: 16, nav: 17, base: 20, lg: 24 } as const;
 export const iconStroke = 1.75;
