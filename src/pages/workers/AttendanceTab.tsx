@@ -1,6 +1,5 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import PageHeader from '../../components/PageHeader';
 import { StatusBadge } from '../../components/StatusBadge';
 import { Button } from '../../components/Button';
 import Icon from '../../components/Icon';
@@ -56,7 +55,7 @@ function flags(l: AttendanceLine): string[] {
   return out;
 }
 
-export default function AttendanceTab({ tabs }: { tabs: ReactNode }) {
+export default function AttendanceTab() {
   const [params, setParams] = useSearchParams();
   const asked = params.get('day');
   const day = asked && /^\d{4}-\d{2}-\d{2}$/.test(asked) ? asked : null;
@@ -88,8 +87,7 @@ export default function AttendanceTab({ tabs }: { tabs: ReactNode }) {
 
   return (
     <>
-      <PageHeader title="Workers" sub={data ? `${date(`${shown}T12:00:00+08:00`)} · ${count('In now')} in now · ${count('Done')} done · ${count('Not in')} not in${lines.some(l => !l.punch && l.leave) ? ` · ${lines.filter(l => !l.punch && l.leave).length} on leave` : ''}${count('No clock-out') ? ` · ${count('No clock-out')} no clock-out` : ''}` : 'Loading the day…'} />
-      <div className="mb-4">{tabs}</div>
+      <p className="m-0 mb-4 text-copy text-muted-ink">{data ? `${date(`${shown}T12:00:00+08:00`)} · ${count('In now')} in now · ${count('Done')} done · ${count('Not in')} not in${lines.some(l => !l.punch && l.leave) ? ` · ${lines.filter(l => !l.punch && l.leave).length} on leave` : ''}${count('No clock-out') ? ` · ${count('No clock-out')} no clock-out` : ''}` : 'Loading the day…'}</p>
       {error && <StaleBanner message={`Showing the last day we have. ${error}`} onRetry={reload} />}
 
       <div className="flex items-end gap-2 flex-wrap mb-4">

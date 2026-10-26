@@ -89,12 +89,14 @@ export const NAV: NavGroup[] = [
     { key: 'today', label: 'Today', icon: 'clipboard-check', path: '/operations/today', area: 'operations', badge: 'today' },
     { key: 'cleaning', label: 'Cleaning', icon: 'sparkles', path: '/operations/cleaning', area: 'operations' },
     { key: 'maintenance', label: 'Maintenance', icon: 'wrench', path: '/operations/maintenance', area: 'operations', badge: 'maintenance' },
-  ] },
-  // Moved out of Operations into its own HR group (owner, 26 Oct 2026). Becomes Employees once the HR record,
-  // attendance, leave and payroll land (PLAN-hr-employees.md); it keeps its address until then.
-  { label: 'HR', workspace: 'rental', items: [
-    // Cleaners and technicians, in-house and outside, and who has the app (owner, 23 Oct 2026).
+    // Cleaners and technicians, in-house and outside, and who has the app (owner, 23 Oct 2026). Back under Operations
+    // when HR became Hookka's Employees page (owner, 26 Oct 2026).
     { key: 'workers', label: 'Workers', icon: 'users', path: '/operations/workers', area: 'operations' },
+  ] },
+  // Hookka's Employees page with its eleven tabs: working hours, attendance, labour cost, payroll, advances, penalties,
+  // the employee record (owner, 26 Oct 2026; PLAN-hr-employees.md).
+  { label: 'HR', workspace: 'rental', items: [
+    { key: 'employees', label: 'Employees', icon: 'users', path: '/hr/employees', area: 'hr' },
   ] },
   { label: 'UNITS', workspace: 'rental', items: [
     // Buildings, the unit record and access codes are one Units screen (owner, 8 Oct).

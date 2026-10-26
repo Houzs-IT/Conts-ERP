@@ -1,5 +1,4 @@
 import { useMemo, useState, type ReactNode } from 'react';
-import PageHeader from '../../components/PageHeader';
 import { StatusBadge } from '../../components/StatusBadge';
 import { Button } from '../../components/Button';
 import Icon from '../../components/Icon';
@@ -46,7 +45,7 @@ function statusOf(e: Employee): { label: string; tone: 'success' | 'neutral' | '
   return { label: 'Active', tone: 'success' };
 }
 
-export default function EmployeesTab({ tabs }: { tabs: ReactNode }) {
+export default function EmployeesTab() {
   const { data, loading, error, reload } = useApi<{ data: Employee[] }>('/employees');
   const { user } = useSession();
   const mayEdit = mayWork(user, 'hr');
@@ -70,8 +69,7 @@ export default function EmployeesTab({ tabs }: { tabs: ReactNode }) {
 
   return (
     <>
-      <PageHeader title="Workers" sub={data ? `${plural(people.length, 'employee')}${notSet ? ` · ${notSet} without a record yet` : ''}` : 'Loading the list…'} />
-      <div className="mb-4">{tabs}</div>
+      <p className="m-0 mb-4 text-copy text-muted-ink">{data ? `${plural(people.length, 'employee')}${notSet ? ` · ${notSet} without a record yet` : ''}` : 'Loading the list…'}</p>
       {error && <StaleBanner message={`Showing the last list we have. ${error}`} onRetry={reload} />}
 
       <DataTable<Employee>

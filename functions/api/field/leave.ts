@@ -63,7 +63,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   await notifyUsers(env, office.map(p => p.id), {
     kind: 'leave.requested', title: `${me.name} asked for ${LEAVE_TYPE_LABEL[r.type].toLowerCase()} leave`,
     body: `${span}, ${days} ${days === 1 ? 'day' : 'days'}.${r.reason ? ` ${r.reason}` : ''}`,
-    link: '/operations/workers?tab=leave', entityTable: 'leaves', entityId: id, dedupeKey: `leave-${id}`, except: session.userId,
+    link: '/hr/employees?tab=leave', entityTable: 'leaves', entityId: id, dedupeKey: `leave-${id}`, except: session.userId,
   });
   return json({ id }, 201);
 };

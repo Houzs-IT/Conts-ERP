@@ -1,6 +1,5 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import PageHeader from '../../components/PageHeader';
 import { StatusBadge } from '../../components/StatusBadge';
 import { Button } from '../../components/Button';
 import Icon from '../../components/Icon';
@@ -30,8 +29,8 @@ import type { PayslipDoc } from '../../lib/payslipPdf';
  * ------------------------------------------------------------------ */
 
 const MON = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-const monthName = (p: string): string => `${MON[Number(p.slice(5, 7)) - 1]} ${p.slice(0, 4)}`;
-const shiftMonth = (p: string, by: number): string => {
+export const monthName = (p: string): string => `${MON[Number(p.slice(5, 7)) - 1]} ${p.slice(0, 4)}`;
+export const shiftMonth = (p: string, by: number): string => {
   const d = new Date(Date.UTC(Number(p.slice(0, 4)), Number(p.slice(5, 7)) - 1 + by, 1));
   return d.toISOString().slice(0, 7);
 };
@@ -39,7 +38,7 @@ const figuresOf = (l: PayrollLine): PayFigures | null => l.payslip ?? l.estimate
 const statusOf = (l: PayrollLine): string => l.payslip?.status ?? 'none';
 const pcbCell = (f: PayFigures): string => (pcbHasFigure(f.pcbStatus) ? rm(f.pcbSen) : f.pcbStatus === 'DISABLED' ? 'Off' : 'Not worked out');
 
-export default function PayrollTab({ tabs }: { tabs: ReactNode }) {
+export default function PayrollTab() {
   const [params, setParams] = useSearchParams();
   const asked = params.get('month');
   const { data, loading, error, reload } = useApi<PayrollPayload>(`/payroll${asked && /^\d{4}-\d{2}$/.test(asked) ? `?period=${asked}` : ''}`);
@@ -49,7 +48,6 @@ export default function PayrollTab({ tabs }: { tabs: ReactNode }) {
   const [confirmDialog, ask] = useConfirm();
   const [open, setOpen] = useState<PayrollLine | null>(null);
   const [editingRules, setEditingRules] = useState(false);
-  const [addingAdvance, setAddingAdvance] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const period = data?.period ?? todayMyt().slice(0, 7);
@@ -97,8 +95,7 @@ export default function PayrollTab({ tabs }: { tabs: ReactNode }) {
   return (
     <>
       {confirmDialog}
-      <PageHeader title="Workers" sub={data ? `Payroll ${monthName(period)} · ${lines.length} people · net ${rm(netTotal)}${data.ended ? '' : ' so far'}` : 'Loading payroll…'} />
-      <div className="mb-4">{tabs}</div>
+      <p className="m-0 mb-4 text-copy text-muted-ink">{data ? `Payroll ${monthName(period)} · ${lines.length} people · net ${rm(netTotal)}${data.ended ? '' : ' so far'}` : 'Loading payroll…'}</p>
       {error && <StaleBanner message={`Showing the last payroll we have. ${error}`} onRetry={reload} />}
 
       <div className="flex items-center justify-between gap-3 flex-wrap mb-4">
@@ -110,7 +107,6 @@ export default function PayrollTab({ tabs }: { tabs: ReactNode }) {
         {full && data && (
           <span className="flex items-center gap-2 flex-wrap">
             <Button size="sm" variant="tertiary" icon={<Icon name="Settings" size="sm" />} onClick={() => setEditingRules(true)}>Pay rules</Button>
-            <Button size="sm" variant="secondary" icon={<Icon name="HandCoins" size="sm" />} onClick={() => setAddingAdvance(true)}>Add advance</Button>
             <Button size="sm" variant="secondary" icon={<Icon name="RefreshCw" size="sm" />} disabled={busy} onClick={() => void run()}>
               {lines.some(l => l.payslip) ? 'Refresh drafts' : 'Run payroll'}
             </Button>
@@ -144,18 +140,15 @@ export default function PayrollTab({ tabs }: { tabs: ReactNode }) {
             );
           }}
         />
-
-        <Advances advances={data?.advances ?? []} full={full} onChange={reload} />
       </div>
 
       {open && data && <SlipModal line={open} month={data} full={full} onClose={() => setOpen(null)} onChange={() => { setOpen(null); reload(); }} />}
       {editingRules && data && <RulesModal rules={data.rules} onClose={() => setEditingRules(false)} onDone={() => { setEditingRules(false); reload(); }} />}
-      {addingAdvance && data && <AdvanceModal lines={lines} period={period} onClose={() => setAddingAdvance(false)} onDone={() => { setAddingAdvance(false); reload(); }} />}
     </>
   );
 }
 
-function Advances({ advances, full, onChange }: { advances: AdvanceView[]; full: boolean; onChange: () => void }) {
+export function Advances({ advances, full, onChange }: { advances: AdvanceView[]; full: boolean; onChange: () => void }) {
   const toast = useToast();
   async function remove(a: AdvanceView) {
     try { await api.del(`/payroll/advances/${a.id}`); toast({ tone: 'success', title: 'Advance removed.', body: `${a.name}, ${rm(a.amountSen)}.` }); onChange(); }
@@ -279,7 +272,7 @@ function RulesModal({ rules, onClose, onDone }: { rules: PayRules; onClose: () =
   );
 }
 
-function AdvanceModal({ lines, period, onClose, onDone }: { lines: PayrollLine[]; period: string; onClose: () => void; onDone: () => void }) {
+export function AdvanceModal({ lines, period, onClose, onDone }: { lines: PayrollLine[]; period: string; onClose: () => void; onDone: () => void }) {
   const toast = useToast();
   const [who, setWho] = useState('');
   const today = todayMyt();

@@ -1,6 +1,5 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import PageHeader from '../../components/PageHeader';
 import { StatusBadge } from '../../components/StatusBadge';
 import { Button } from '../../components/Button';
 import Icon from '../../components/Icon';
@@ -33,7 +32,7 @@ const span = (l: { startDate: string; endDate: string }): string => (l.startDate
 const days = (n: number): string => `${n} ${n === 1 ? 'day' : 'days'}`;
 const isAllowance = (t: string): t is AllowanceType => t === 'annual' || t === 'medical';
 
-export default function LeaveTab({ tabs }: { tabs: ReactNode }) {
+export default function LeaveTab() {
   const [params, setParams] = useSearchParams();
   const asked = Number(params.get('year'));
   const { data, loading, error, reload } = useApi<LeavesPayload>(`/leaves${Number.isInteger(asked) && asked > 2000 ? `?year=${asked}` : ''}`);
@@ -77,8 +76,7 @@ export default function LeaveTab({ tabs }: { tabs: ReactNode }) {
 
   return (
     <>
-      <PageHeader title="Workers" sub={data ? `Leave ${year} · ${pending.length} waiting for a decision` : 'Loading leave…'} />
-      <div className="mb-4">{tabs}</div>
+      <p className="m-0 mb-4 text-copy text-muted-ink">{data ? `Leave ${year} · ${pending.length} waiting for a decision` : 'Loading leave…'}</p>
       {error && <StaleBanner message={`Showing the last leave we have. ${error}`} onRetry={reload} />}
 
       <div className="flex items-center gap-2 flex-wrap mb-4">

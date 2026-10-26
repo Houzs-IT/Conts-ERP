@@ -28,6 +28,7 @@ const GuestsPage = lazy(() => import('./pages/GuestsPage'));
 const OperationsTodayPage = lazy(() => import('./pages/OperationsTodayPage'));
 const CleaningPage = lazy(() => import('./pages/CleaningPage'));
 const WorkersPage = lazy(() => import('./pages/WorkersPage'));
+const EmployeesPage = lazy(() => import('./pages/EmployeesPage'));
 const MaintenancePage = lazy(() => import('./pages/MaintenancePage'));
 import SupplyChainEngine, { signInToEngineEarly } from './components/SupplyChainEngine';
 import { ENGINE_PATH } from './lib/scmEngine';
@@ -254,6 +255,7 @@ function Routed() {
         <Route path="/operations/today" element={<OperationsTodayPage />} />
         <Route path="/operations/cleaning" element={<CleaningPage />} />
         <Route path="/operations/workers" element={<WorkersPage />} />
+        <Route path="/hr/employees" element={<EmployeesPage />} />
         <Route path="/operations/cleaners" element={<Navigate replace to="/operations/workers" />} />
         <Route path="/operations/maintenance" element={<MaintenancePage />} />
         {/* Housekeeping is Cleaning; Inspections is gone; All tasks is the History tab (owner, 10 Oct). */}
