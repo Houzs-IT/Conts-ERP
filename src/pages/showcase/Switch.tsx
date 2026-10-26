@@ -29,16 +29,27 @@ export function useSwitch(target: string, curtain: Curtain) {
     const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
     setRolled(true);
     timers.current.push(window.setTimeout(() => setClosing(curtain), reduced ? 0 : 460));
-    timers.current.push(window.setTimeout(() => navigate(target, { state: { switched: curtain } }), reduced ? 300 : 1220));
+    // Replace, not push: the two views are one place, so Exit (one step back) always returns to the ERP page.
+    timers.current.push(window.setTimeout(() => navigate(target, { replace: true, state: { switched: curtain } }), reduced ? 300 : 1220));
   };
   return { go, rolled, curtain: closing ? { c: closing, dir: 'in' as const } : opening ? { c: opening, dir: 'out' as const } : null };
+}
+
+/** Leaves the showcase (either view) for the ERP page it was opened from, else Showcase control. Inside the visual
+ *  editor's frame it asks the control panel instead. */
+export function useExit() {
+  const navigate = useNavigate();
+  return () => {
+    if (window.parent !== window) { window.parent.postMessage('tc-exit', window.location.origin); return; }
+    if ((window.history.state?.idx ?? 0) > 0) navigate(-1); else navigate('/performance/showcase-control');
+  };
 }
 
 export function SwitchButton({ current, next, rolled, onClick }: { current: string; next: string; rolled: boolean; onClick: () => void }) {
   return (
     <button type="button" className={`sc-switch${rolled ? ' rolled' : ''}`} onClick={onClick} aria-label={`Switch to the ${next} view`}>
       <span className="sc-switch-icon" aria-hidden>⇄</span>
-      <span style={{ color: 'var(--sc-muted)', fontWeight: 600 }}>Switch</span>
+      <span className="sc-switch-label" style={{ color: 'var(--sc-muted)', fontWeight: 600 }}>Switch</span>
       <span className="sc-switch-roll" aria-hidden><span><span>{current}</span><span style={{ color: 'var(--sc-teal)' }}>{next}</span></span></span>
     </button>
   );

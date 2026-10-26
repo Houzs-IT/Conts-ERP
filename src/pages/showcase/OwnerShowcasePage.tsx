@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type MouseEvent } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { useApi } from '../../lib/useApi';
 import { date, dateShort, time, todayMyt, count } from '../../lib/format';
 import { resolve, activeCount, addDays, LEAD_KEYS, type FigureKey, type Insights, type Live, type ShowcaseData } from './model';
@@ -7,7 +7,7 @@ import { useOverrides } from './useOverrides';
 import { FigureContext, FigureEditor, PropertyDropdown, DateRangePicker } from './parts';
 import { CalendarScreen } from './CalendarScreen';
 import { TodayScreen, ListingsScreen, ReviewsScreen, OccupancyScreen, LeadScreen, ViewsScreen } from './screens';
-import { useSwitch, SwitchButton, CurtainLayer } from './Switch';
+import { useSwitch, useExit, SwitchButton, CurtainLayer } from './Switch';
 import './showcase.css';
 import './owner-portal.css';
 
@@ -22,9 +22,7 @@ const FONT_ID = 'sc-manrope';
  *  ?edit=1 is the control panel's visual editor: every replaceable figure is underlined and editable in place. */
 export default function OwnerShowcasePage() {
   const [params, setParams] = useSearchParams();
-  const navigate = useNavigate();
   const edit = params.get('edit') === '1';
-  const embedded = window.parent !== window;
   const page = (PAGES.some(p => p[0] === params.get('page')) ? params.get('page') : 'today') as Page;
   const setPage = (p: Page) => setParams(prev => { const n = new URLSearchParams(prev); n.set('page', p); return n; }, { replace: true });
 
@@ -57,10 +55,7 @@ export default function OwnerShowcasePage() {
     return () => window.clearInterval(t);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const exit = () => {
-    if (embedded) { window.parent.postMessage('tc-exit', window.location.origin); return; }
-    if ((window.history.state?.idx ?? 0) > 0) navigate(-1); else navigate('/performance/showcase-control');
-  };
+  const exit = useExit();
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !editor && !edit && !document.querySelector('.sc-popover')) exit(); };
     window.addEventListener('keydown', onKey);
