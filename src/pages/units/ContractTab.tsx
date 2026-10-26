@@ -265,7 +265,7 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unit
               {day('guaranteeEndsOn', 'Minimum applies until')}
             </>}
             {m === 'management_yearly_guarantee' && money('yearlyGuarantee', 'Guarantee per contract year (RM)',
-              `${(d.yearlyGuarantee ?? 0) > 0 ? `${rm(Math.round((d.yearlyGuarantee ?? 0) / 12))} a month x 12 months = ${rm(d.yearlyGuarantee ?? 0)} a year. ` : ''}Checked once a year: on the last statement of each contract year the company tops up any shortfall.`)}
+              `${(d.yearlyGuarantee ?? 0) > 0 ? `${rm(d.yearlyGuarantee ?? 0)} a year / 12 months = ${rm(Math.round((d.yearlyGuarantee ?? 0) / 12))} per month. ` : ''}Checked once a year: on the last statement of each contract year the company tops up any shortfall.`)}
             {m === 'grr' && money('monthlyRent', 'Monthly rent to owner (RM)', 'Paid whatever the unit earns.')}
             {m === 'master_lease' && d.contractCode !== 'RTR' && <>
               {money('monthlyRent', 'Monthly rent to the owner (RM)', 'Recorded as a company cost; no owner statement.')}
