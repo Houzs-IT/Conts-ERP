@@ -47,6 +47,9 @@ const FIELD_ALLOWED: [string, RegExp][] = [
   ['GET', /^\/api\/notifications(\/count)?$/],
   ['PATCH', /^\/api\/notifications$/],
   ['GET', /^\/api\/field\/(tasks|repairs|units)$/],
+  // Their own clock-in and clock-out (HR phase 2); the handler finds their employee record from the login.
+  ['GET', /^\/api\/field\/clock$/],
+  ['POST', /^\/api\/field\/clock$/],
   // Repair jobs on the phone: the technician's own and the unassigned ones they may pick up (the handlers check which).
   ['GET', /^\/api\/field\/repairs\/[^/]+$/],
   ['POST', /^\/api\/field\/repairs\/[^/]+\/(pick|note)$/],

@@ -7,11 +7,18 @@ import Icon from './Icon';
 import { FieldNotificationBell } from './NotificationBell';
 import { jobTitle } from '../lib/vocabulary';
 
+/** The portal's bottom bar. */
+const TABS: { to: string; label: string; icon: string; match: (path: string) => boolean }[] = [
+  { to: '/portal/today', label: 'Jobs', icon: 'ClipboardList', match: p => !p.startsWith('/portal/clock') },
+  { to: '/portal/clock', label: 'Clock', icon: 'Clock', match: p => p.startsWith('/portal/clock') },
+];
+
 /** Housekeepers and technicians work on a phone, in a car park, one-handed.
  *  One column, 44px targets, and the whole page scrolls normally. */
 export default function FieldShell({ children }: { children: ReactNode }) {
   const { user } = useSession();
-  const atAccount = useLocation().pathname === '/account';
+  const path = useLocation().pathname;
+  const atAccount = path === '/account';
   return (
     <div style={{ flex: 1, minHeight: '100vh', display: 'flex', flexDirection: 'column', background: color.page }}>
       <header style={{
@@ -31,9 +38,29 @@ export default function FieldShell({ children }: { children: ReactNode }) {
         {/* Log out sits at the bottom of Settings (AccountPage), never one mis-tap from the bell (owner, Oct 2026). */}
       </header>
 
-      <main style={{ flex: 1, padding: '16px 16px 32px', display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 560, width: '100%', boxSizing: 'border-box', margin: '0 auto' }}>
+      <main style={{ flex: 1, padding: atAccount ? '16px 16px 32px' : '16px 16px 96px', display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 560, width: '100%', boxSizing: 'border-box', margin: '0 auto' }}>
         {children}
       </main>
+
+      {/* Jobs and Clock (HR phase 2). Pay and Me join in later phases. Hidden on Settings, which has its own way back. */}
+      {!atAccount && (
+        <nav aria-label="Portal" style={{
+          position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 20, display: 'grid', gridTemplateColumns: `repeat(${TABS.length}, 1fr)`,
+          background: color.card, borderTop: `1px solid ${color.border}`, paddingBottom: 'env(safe-area-inset-bottom)',
+        }}>
+          {TABS.map(t => {
+            const on = t.match(path);
+            return (
+              <Link key={t.to} to={t.to} aria-current={on ? 'page' : undefined}
+                style={{ minHeight: 56, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2,
+                  fontSize: text.caption, fontWeight: on ? 600 : 500, color: on ? color.ink : color.textMuted, textDecoration: 'none' }}>
+                <Icon name={t.icon} size="nav" />
+                {t.label}
+              </Link>
+            );
+          })}
+        </nav>
+      )}
     </div>
   );
 }

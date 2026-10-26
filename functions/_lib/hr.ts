@@ -1,4 +1,4 @@
-import { type Env, all, one } from './db';
+import { type Env, all, one, run, nowIso } from './db';
 import { hasColumn } from './auth';
 import { EMPLOYEE_DEFAULTS, type Bank, type Employee, type EmployeeStatus, type PayBasis, type PaymentMethod, type TaxCategory, type TaxResidency } from './hrFields';
 
@@ -73,4 +73,22 @@ export async function findEmployee(env: Env, by: { cleanerId?: string | null; te
     ? await one<Row>(env, `${PEOPLE} WHERE p.cleaner_id = ?`, by.cleanerId)
     : by.technicianId ? await one<Row>(env, `${PEOPLE} WHERE p.technician_id = ?`, by.technicianId) : null;
   return row ? toEmployee(row) : null;
+}
+
+/** The in-house person a login belongs to (from "Give app access" on either roster). Null for anyone else. */
+export async function employeeForUser(env: Env, userId: string): Promise<Employee | null> {
+  const row = await one<Row>(env, `${PEOPLE} WHERE p.user_id = ?`, userId);
+  return row ? toEmployee(row) : null;
+}
+
+/** The HR record's id, making the row with the defaults if nobody has saved one yet (a first clock-in). Two requests at
+ *  once both land on the one row: the roster ids are unique. */
+export async function ensureEmployeeId(env: Env, e: Employee): Promise<string> {
+  if (e.id) return e.id;
+  const now = nowIso();
+  await run(env, `INSERT INTO employees (id, cleaner_id, technician_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
+    crypto.randomUUID(), e.cleanerId, e.technicianId, now, now);
+  const made = await findEmployee(env, e);
+  if (!made?.id) throw new Error(`No employee record could be made for ${e.name}.`);
+  return made.id;
 }
