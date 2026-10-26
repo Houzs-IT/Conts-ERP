@@ -89,6 +89,10 @@ export const NAV: NavGroup[] = [
     { key: 'today', label: 'Today', icon: 'clipboard-check', path: '/operations/today', area: 'operations', badge: 'today' },
     { key: 'cleaning', label: 'Cleaning', icon: 'sparkles', path: '/operations/cleaning', area: 'operations' },
     { key: 'maintenance', label: 'Maintenance', icon: 'wrench', path: '/operations/maintenance', area: 'operations', badge: 'maintenance' },
+  ] },
+  // Moved out of Operations into its own HR group (owner, 26 Oct 2026). Becomes Employees once the HR record,
+  // attendance, leave and payroll land (PLAN-hr-employees.md); it keeps its address until then.
+  { label: 'HR', workspace: 'rental', items: [
     // Cleaners and technicians, in-house and outside, and who has the app (owner, 23 Oct 2026).
     { key: 'workers', label: 'Workers', icon: 'users', path: '/operations/workers', area: 'operations' },
   ] },
