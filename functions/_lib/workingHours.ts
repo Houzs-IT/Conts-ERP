@@ -2,6 +2,9 @@ import { z } from 'zod';
 import { type Env, all, run, nowIso } from './db';
 import { hasColumn } from './auth';
 import { employeeIdsFor } from './hr';
+import { hasAttendance } from './attendance';
+import { workedMinutes } from './attendanceCalc';
+import { shiftDay, type PayRules } from './payrollCalc';
 import { DEPARTMENTS, type Department, type Employee } from './hrFields';
 
 export { DEPARTMENTS, DEPARTMENT_LABEL, type Department } from './hrFields';
@@ -71,3 +74,23 @@ export async function saveHours(env: Env, rows: HourRow[], removed: string[], us
 
 /** The department a person's punch is filed under before anyone splits the day: Cleaning when they are on both lists. */
 export const homeDepartment = (e: Pick<Employee, 'cleanerId' | 'technicianId'>): Department => (e.cleanerId ? 'cleaning' : 'maintenance');
+
+/** A phone punch row, for the grid and for labour cost. */
+export interface PunchRow { id: string; employee_id: string; work_date: string; clock_in_at: string; clock_out_at: string | null; forgot_out: number }
+export async function punchesBetween(env: Env, from: string, to: string): Promise<PunchRow[]> {
+  if (!(await hasAttendance(env))) return [];
+  return all<PunchRow>(env, 'SELECT id, employee_id, work_date, clock_in_at, clock_out_at, forgot_out FROM attendance WHERE work_date BETWEEN ? AND ?', from, to);
+}
+
+const mytMinute = (iso: string): number => Math.floor(Date.parse(iso) / 60_000 + 8 * 60) % (24 * 60);
+/** The hours a punch gives (Hookka's hoursFromPunch): clock-out minus clock-in, or under the shift rules the day's
+ *  regular and overtime minutes. An earlier day still open, or a forgotten clock-out, is the standard day, as payroll. */
+export function punchHours(r: PunchRow, rules: PayRules, hoursPerDay: number, today: string): { forgotOut: boolean; hours: number } {
+  const forgotOut = !!r.forgot_out || (!r.clock_out_at && r.work_date < today);
+  let minutes = forgotOut ? hoursPerDay * 60 : workedMinutes(r.clock_in_at, r.clock_out_at);
+  if (!forgotOut && rules.useShiftRules && r.clock_out_at) {
+    const d = shiftDay(mytMinute(r.clock_in_at), mytMinute(r.clock_out_at), rules);
+    minutes = d.regularMin + d.otMin;
+  }
+  return { forgotOut, hours: Math.round((minutes / 60) * 100) / 100 };
+}
