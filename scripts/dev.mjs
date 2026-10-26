@@ -1,5 +1,5 @@
 // Local dev with the supply chain engine: `npm run dev` (production database) or `npm run dev:staging`.
-// Starts Property OS on :8788, the engine's server on :8787 and its screens on :5173, all on one database.
+// Starts Property OS on :8788, the engine's server on :8787 and its screens on :5173 (next free port if taken), all on one database.
 // The database address and the engine's Supabase key come from .dev.vars (DATABASE_URL_STAGING / _PRODUCTION,
 // SUPABASE_SERVICE_ROLE_KEY_STAGING / _PRODUCTION).
 // Files, photos and the session cache are wrangler's local copies, never the real buckets.
@@ -12,9 +12,9 @@ import { createServer, connect } from 'node:net';
 const PROJECTS = { production: 'cweomoenhsjvsxfsmiiw', staging: 'ecgyrmblqfxvbfjlqkdq' };
 const target = process.argv[2];
 if (!PROJECTS[target]) { console.error('usage: node scripts/dev.mjs production|staging'); process.exit(2); }
-// Older notes run `<local test database> npm run dev`; that must not quietly land on production instead.
+// A database left in the shell would override the one chosen here and quietly land on the wrong database.
 if (process.env.WRANGLER_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE || process.env.CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE) {
-  console.error('A database is already set in *_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE. For a local test database use `npm run dev:os`.');
+  console.error('A database is already set in *_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE. Unset it; the database comes from .dev.vars.');
   process.exit(2);
 }
 
@@ -23,7 +23,7 @@ const file = '.dev.vars';
 const suffix = target.toUpperCase();
 let text = '';
 try { text = readFileSync(file, 'utf8'); } catch { /* reported below */ }
-const read = key => text.match(new RegExp(`^${key}\\s*=\\s*"?([^"\\r\\n]+)"?`, 'm'))?.[1];
+const read = key => text.match(new RegExp(`^${key}\\s*=\\s*["']?([^"'\\r\\n]+)["']?`, 'm'))?.[1];
 const db = read(`DATABASE_URL_${suffix}`);
 const serviceKey = read(`SUPABASE_SERVICE_ROLE_KEY_${suffix}`);
 if (!db) { console.error(`${file} needs a DATABASE_URL_${suffix} line (see .dev.vars.example).`); process.exit(2); }
@@ -44,9 +44,11 @@ const freePort = () => new Promise(ok => { const s = createServer().listen(0, '1
 const [osInspector, engineInspector] = [await freePort(), await freePort()];
 // The same Windows quirk lets a second server start on a taken port without any error, and then nothing loads.
 const taken = port => new Promise(ok => { const c = connect(port, '127.0.0.1', () => { c.destroy(); ok(true); }).on('error', () => ok(false)); });
-for (const port of [8787, 8788, 5173]) {
-  if (await taken(port)) { console.error(`Port ${port} is already in use by another program. Stop it first (an older dev run or another session).`); process.exit(2); }
-}
+// Another session's dev run may hold the usual ports: take the next free one instead of stopping it.
+const firstFree = async (port, skip = []) => { while (skip.includes(port) || await taken(port)) port++; return port; };
+const engineApiPort = await firstFree(8787);
+const osPort = await firstFree(8788, [engineApiPort]);
+const screensPort = await firstFree(5173, [engineApiPort, osPort]);
 
 const build = spawnSync(process.execPath, [bin('.', 'vite', 'bin/vite.js'), 'build'], { stdio: 'inherit' });
 if (build.status !== 0) process.exit(build.status ?? 1);
@@ -55,18 +57,18 @@ const staging = target === 'staging'
   ? ['-b', 'APP_NAME=Conts ERP (staging)', '-b', 'VIEW_AS=staging', '-b', 'CHANNEX_BASE_URL=https://staging.channex.io']
   : [];
 const apps = [
-  ['os', '.', [...wrangler('.'), 'pages', 'dev', '--port', '8788', '--inspector-port', osInspector,
-    '-b', 'SCM_ENGINE_API=http://localhost:8787', '-b', 'SCM_ENGINE_SITE=http://localhost:5173', '-b', `SCM_ENGINE_SSO_SECRET=${sso}`, '-b', 'DB_SEARCH_PATH=pos', ...staging],
+  ['os', '.', [...wrangler('.'), 'pages', 'dev', '--port', String(osPort), '--inspector-port', osInspector,
+    '-b', `SCM_ENGINE_API=http://localhost:${engineApiPort}`, '-b', `SCM_ENGINE_SITE=http://localhost:${screensPort}`, '-b', `SCM_ENGINE_SSO_SECRET=${sso}`, '-b', 'DB_SEARCH_PATH=pos', ...staging],
     hyperdrive],
-  ['engine', 'engine/backend', [...wrangler('engine/backend'), 'dev', '--port', '8787', '--inspector-port', engineInspector,
-    '--var', `CONTS_SSO_SECRET:${sso}`, '--var', 'PUBLIC_APP_URL:http://localhost:8788',
+  ['engine', 'engine/backend', [...wrangler('engine/backend'), 'dev', '--port', String(engineApiPort), '--inspector-port', engineInspector,
+    '--var', `CONTS_SSO_SECRET:${sso}`, '--var', `PUBLIC_APP_URL:http://localhost:${osPort}`,
     ...(serviceKey ? ['--var', `SUPABASE_SERVICE_ROLE_KEY:${serviceKey}`] : [])],
     hyperdrive],
-  ['screens', 'engine/frontend', [bin('engine/frontend', 'vite', 'bin/vite.js'), '--port', '5173', '--strictPort'],
-    { ...process.env, VITE_API_URL: 'http://localhost:8787' }],
+  ['screens', 'engine/frontend', [bin('engine/frontend', 'vite', 'bin/vite.js'), '--port', String(screensPort), '--strictPort'],
+    { ...process.env, VITE_API_URL: `http://localhost:${engineApiPort}` }],
 ];
 
-console.log(`\n${target} database (${PROJECTS[target]}). Open http://localhost:8788\n`);
+console.log(`\n${target} database (${PROJECTS[target]}). Open http://localhost:${osPort}\n`);
 const children = apps.map(([name, cwd, args, env]) => {
   // No keyboard for the children, so their shortcut keys do not fight over one terminal. Ctrl+C still reaches them.
   const child = spawn(process.execPath, args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
