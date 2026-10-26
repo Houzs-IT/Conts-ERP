@@ -29,7 +29,14 @@ interface ContractView {
   yearlyGuarantee?: number; contractCode?: ContractCode; agreementDocumentId?: string | null;
   monthlyRent: number; deposit: number | null; tenantName: string | null;
   startsOn: string | null; endsOn: string | null; renewsOn: string | null; miscCharges: boolean; sharedWith: number; createdAt: string | null;
+  /** MANAGE: the owner's amount a month, sen. */
+  ownerAmount?: number | null;
+  /** Rent to rent (0147), recorded only. Sen or null. */
+  rentToRent?: Partial<Record<RentToRentKey, number | null>>;
 }
+/** The rent-to-rent grid beyond the rent and deposit (0147): what else we pay the owner, and what we rent it out for. */
+const RENT_TO_RENT_KEYS = ['depositUtilities', 'depositCard', 'rentOutAmount', 'rentOutDeposit', 'rentOutDepositUtilities', 'rentOutDepositCard'] as const;
+export type RentToRentKey = typeof RENT_TO_RENT_KEYS[number];
 export interface Example {
   month: string; model: RevenueModel; nights: number; occupancy: number;
   income: number; costs: { label: string; amount: number }[]; costsTotal: number; net: number;
@@ -50,6 +57,9 @@ interface Draft {
   minimumGuarantee: number | null; guaranteeStartsOn: string; guaranteeEndsOn: string;
   monthlyRent: number | null; deposit: number | null; tenantName: string; ltFeePct: number | null;
   startsOn: string; endsOn: string; renewsOn: string; miscCharges: boolean;
+  ownerAmount: number | null;
+  depositUtilities: number | null; depositCard: number | null;
+  rentOutAmount: number | null; rentOutDeposit: number | null; rentOutDepositUtilities: number | null; rentOutDepositCard: number | null;
 }
 const senOrEmpty = (sen: number | null | undefined) => (sen ? sen : null);
 const pctOf = (n: number | null | undefined) => (n == null ? null : Number(n.toFixed(2)));
@@ -63,6 +73,10 @@ function draftOf(c: ContractView): Draft {
     minimumGuarantee: senOrEmpty(c.minimumGuarantee), guaranteeStartsOn: c.guaranteeStartsOn ?? '', guaranteeEndsOn: c.guaranteeEndsOn ?? '',
     monthlyRent: senOrEmpty(c.monthlyRent), deposit: senOrEmpty(c.deposit), tenantName: c.tenantName ?? '', ltFeePct: pctOf(isTenancy(c.revenueModel) ? c.managementPct : 10),
     startsOn: c.startsOn?.slice(0, 10) ?? '', endsOn: c.endsOn?.slice(0, 10) ?? '', renewsOn: c.renewsOn?.slice(0, 10) ?? '', miscCharges: c.miscCharges,
+    ownerAmount: senOrEmpty(c.ownerAmount),
+    depositUtilities: c.rentToRent?.depositUtilities ?? null, depositCard: c.rentToRent?.depositCard ?? null,
+    rentOutAmount: c.rentToRent?.rentOutAmount ?? null, rentOutDeposit: c.rentToRent?.rentOutDeposit ?? null,
+    rentOutDepositUtilities: c.rentToRent?.rentOutDepositUtilities ?? null, rentOutDepositCard: c.rentToRent?.rentOutDepositCard ?? null,
   };
 }
 function bodyOf(d: Draft) {
@@ -70,11 +84,14 @@ function bodyOf(d: Draft) {
   return {
     revenueModel: m, contractCode: d.contractCode,
     ...(m === 'management_yearly_guarantee' ? { yearlyGuarantee: d.yearlyGuarantee ?? 0 } : {}),
-    ...(share ? { ownerPct: d.ownerPct ?? 0, managementPct: d.managementPct ?? 0, agentPct: d.agentPct ?? 0, agentName: d.agentName || null, miscCharges: d.miscCharges } : {}),
+    ...(share ? { ownerPct: d.contractCode === 'MANAGE' ? manageOwnerPct(d) : d.ownerPct ?? 0, managementPct: d.managementPct ?? 0, agentPct: d.agentPct ?? 0, agentName: d.agentName || null, miscCharges: d.miscCharges } : {}),
     ...(m === 'management_guarantee' ? { minimumGuarantee: d.minimumGuarantee ?? 0, guaranteeStartsOn: d.guaranteeStartsOn || null, guaranteeEndsOn: d.guaranteeEndsOn || null } : {}),
     ...(!share ? { monthlyRent: d.monthlyRent ?? 0 } : {}),
+    ...(d.contractCode === 'MANAGE' ? { ownerAmount: d.ownerAmount ?? 0 } : {}),
     ...(m === 'master_lease' ? { deposit: d.deposit ?? null } : {}),
-    ...(isTenancy(m) ? { tenantName: d.tenantName, managementPct: d.ltFeePct ?? 0 } : {}),
+    ...(d.contractCode === 'RTR' ? Object.fromEntries(RENT_TO_RENT_KEYS.map(k => [k, d[k]])) : {}),
+    // LT (Package C) has no operator share (staff sheet UNIT, 26 Oct 2026); WH LT keeps its own.
+    ...(isTenancy(m) ? { tenantName: d.tenantName, managementPct: d.contractCode === 'LT' ? 0 : d.ltFeePct ?? 0 } : {}),
     startsOn: d.startsOn, endsOn: d.endsOn || null, renewsOn: d.renewsOn || null,
   };
 }
@@ -82,10 +99,12 @@ function bodyOf(d: Draft) {
 function problems(d: Draft): Record<string, string> {
   const f: Record<string, string> = {}, m = d.revenueModel;
   if (isShare(m)) {
-    const sum = (d.ownerPct ?? 0) + (d.managementPct ?? 0) + (d.agentPct ?? 0);
-    if (Math.abs(sum - 100) > 0.001) f.ownerPct = `Owner, management and agent add up to ${Number(sum.toFixed(2))}%, not 100%.`;
+    const sum = (d.contractCode === 'MANAGE' ? manageOwnerPct(d) : d.ownerPct ?? 0) + (d.managementPct ?? 0) + (d.agentPct ?? 0);
+    if (d.contractCode === 'MANAGE' && manageOwnerPct(d) < 0) f.managementPct = 'Management and agent add up to more than 100%.';
+    else if (Math.abs(sum - 100) > 0.001) f.ownerPct = `Owner, management and agent add up to ${Number(sum.toFixed(2))}%, not 100%.`;
     if (m === 'management_guarantee' && !((d.minimumGuarantee ?? 0) > 0)) f.minimumGuarantee = 'Enter the monthly minimum.';
     if (m === 'management_yearly_guarantee' && !((d.yearlyGuarantee ?? 0) > 0)) f.yearlyGuarantee = 'Enter the guarantee for each contract year.';
+    if (d.contractCode === 'MANAGE' && !((d.ownerAmount ?? 0) > 0)) f.ownerAmount = "Enter the owner's amount.";
   } else if (!((d.monthlyRent ?? 0) > 0)) f.monthlyRent = 'Enter the monthly rent.';
   if (isTenancy(m) && !d.tenantName.trim()) f.tenantName = 'Enter the tenant.';
   if (d.endsOn && d.startsOn && d.endsOn < d.startsOn) f.endsOn = 'The end date is before the start date.';
@@ -93,6 +112,8 @@ function problems(d: Draft): Record<string, string> {
   return f;
 }
 
+/** MANAGE has no Owner % box: the owner's share of the split is what management and agent leave. */
+const manageOwnerPct = (d: Draft) => Number((100 - (d.managementPct ?? 0) - (d.agentPct ?? 0)).toFixed(2));
 const isShare = (m: RevenueModel) => m === 'management' || m === 'management_guarantee' || m === 'management_yearly_guarantee';
 
 const HISTORY_COLUMNS: Column<ContractView>[] = [
@@ -172,7 +193,7 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unit
   const pct = (k: 'ownerPct' | 'managementPct' | 'agentPct' | 'ltFeePct', label: string) => (
     <PercentInput label={label} value={d[k]} onChange={v => set({ [k]: v })} error={shown[k === 'ltFeePct' ? 'managementPct' : k]} />
   );
-  const money = (k: 'minimumGuarantee' | 'yearlyGuarantee' | 'monthlyRent' | 'deposit', label: string, help?: string) => (
+  const money = (k: 'minimumGuarantee' | 'yearlyGuarantee' | 'monthlyRent' | 'deposit' | 'ownerAmount' | RentToRentKey, label: string, help?: string) => (
     <MoneyInput label={label} placeholder="e.g. 3,000.00" valueSen={d[k]} onChangeSen={v => set({ [k]: v })} error={shown[k]} help={help} />
   );
   const day = (k: 'startsOn' | 'endsOn' | 'renewsOn' | 'guaranteeStartsOn' | 'guaranteeEndsOn', label: string) => (
@@ -231,7 +252,9 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unit
 
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
             {share && <>
-              {pct('ownerPct', 'Owner %')}
+              {/* MANAGE: the owner's amount in RM instead of a %; the owner % still makes the split up to 100 until
+                  the MANAGE payout is decided (PLAN-units-form.md Q6b). */}
+              {d.contractCode === 'MANAGE' ? money('ownerAmount', 'Owner (RM)') : pct('ownerPct', 'Owner %')}
               {pct('managementPct', 'Management %')}
               {pct('agentPct', 'Agent %')}
               <Field label="Agent" placeholder="Who brought the unit in" value={d.agentName} onChange={e => set({ agentName: e.target.value })} />
@@ -241,18 +264,42 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unit
               {day('guaranteeStartsOn', 'Minimum applies from')}
               {day('guaranteeEndsOn', 'Minimum applies until')}
             </>}
-            {m === 'management_yearly_guarantee' && money('yearlyGuarantee', 'Guarantee per contract year (RM)', 'Checked once a year: on the last statement of each contract year the company tops up any shortfall.')}
+            {m === 'management_yearly_guarantee' && money('yearlyGuarantee', 'Guarantee per contract year (RM)',
+              `${(d.yearlyGuarantee ?? 0) > 0 ? `${rm(Math.round((d.yearlyGuarantee ?? 0) / 12))} a month x 12 months = ${rm(d.yearlyGuarantee ?? 0)} a year. ` : ''}Checked once a year: on the last statement of each contract year the company tops up any shortfall.`)}
             {m === 'grr' && money('monthlyRent', 'Monthly rent to owner (RM)', 'Paid whatever the unit earns.')}
-            {m === 'master_lease' && <>
-              {money('monthlyRent', d.contractCode === 'WH' ? 'Monthly rent to the owner (RM)' : 'Monthly rent we pay (RM)', 'Recorded as a company cost; no owner statement.')}
+            {m === 'master_lease' && d.contractCode !== 'RTR' && <>
+              {money('monthlyRent', 'Monthly rent to the owner (RM)', 'Recorded as a company cost; no owner statement.')}
               {money('deposit', 'Deposit (RM)')}
             </>}
             {isTenancy(m) && <>
               <Field label="Tenant" placeholder="Tenant's name" value={d.tenantName} onChange={e => set({ tenantName: e.target.value })} error={shown.tenantName} />
               {money('monthlyRent', 'Monthly rent from tenant (RM)')}
-              {pct('ltFeePct', 'Operator share % of the rent')}
+              {d.contractCode !== 'LT' && pct('ltFeePct', 'Operator share % of the rent')}
             </>}
           </div>
+          {d.contractCode === 'MANAGE' && (
+            <p className="m-0 -mt-2 text-meta text-muted-ink">
+              Management fee = {rm(d.ownerAmount ?? 0)} x {pctText(d.managementPct ?? 0)}% = <span className="font-semibold text-ink">{rm(Math.round(((d.ownerAmount ?? 0) * (d.managementPct ?? 0)) / 100))}</span>
+            </p>
+          )}
+          {d.contractCode === 'RTR' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
+              <div className="flex flex-col gap-4 min-w-0">
+                <span className="text-caption font-semibold uppercase tracking-[0.06em] text-muted-ink">We pay the owner</span>
+                {money('monthlyRent', 'Monthly rent we pay (RM)', 'Recorded as a company cost; no owner statement.')}
+                {money('deposit', 'Deposit rental (RM)')}
+                {money('depositUtilities', 'Deposit utilities (RM)')}
+                {money('depositCard', 'Deposit card (RM)')}
+              </div>
+              <div className="flex flex-col gap-4 min-w-0">
+                <span className="text-caption font-semibold uppercase tracking-[0.06em] text-muted-ink">We rent it out</span>
+                {money('rentOutAmount', 'Rental out amount (RM)', "For the record; the unit's result still comes from its reservations.")}
+                {money('rentOutDeposit', 'Deposit rental (RM)')}
+                {money('rentOutDepositUtilities', 'Deposit utilities (RM)')}
+                {money('rentOutDepositCard', 'Deposit card (RM)')}
+              </div>
+            </div>
+          )}
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
             {day('startsOn', m === 'master_lease' ? 'Lease starts' : isTenancy(m) ? 'Tenancy starts' : 'Contract starts')}
             {day('endsOn', m === 'master_lease' ? 'Lease ends' : isTenancy(m) ? 'Tenancy ends' : 'Contract ends')}
@@ -260,7 +307,7 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unit
             {share && (
               <label className="flex items-start gap-2 pt-[26px] text-copy cursor-pointer">
                 <input type="checkbox" checked={d.miscCharges} onChange={e => set({ miscCharges: e.target.checked })} className="mt-[3px] accent-[var(--color-gold-ink)]" />
-                <span>Deduct miscellaneous charges <span className="block text-meta text-muted-ink">RM 100 a month times occupancy</span></span>
+                <span>Deduct miscellaneous charges <span className="block text-meta text-muted-ink">RM 100 x the occupancy rate, never more than RM 100 (e.g. 80% occupied = RM 80)</span></span>
               </label>
             )}
           </div>
@@ -320,7 +367,7 @@ export function StatementExample({ example: x, month, draft, busy }: { example: 
           </> : isTenancy(x.model) ? <>
             <Row label="Monthly rent from the tenant" sen={x.income} />
             {x.costs.map(c => <Row key={c.label} label={c.label} sen={-c.amount} sub />)}
-            <Row label={`${pctText(100 - (x.ownerPct ?? 100))}% To Operator (of the rent)`} sen={-x.operatorShare} />
+            {x.operatorShare !== 0 && <Row label={`${pctText(100 - (x.ownerPct ?? 100))}% To Operator (of the rent)`} sen={-x.operatorShare} />}
             {x.adjustments !== 0 && <Row label="Owner Adjustments" sen={x.adjustments} />}
             <Row label="Net Payout to Owner" sen={x.netPayout} strong />
           </> : <>

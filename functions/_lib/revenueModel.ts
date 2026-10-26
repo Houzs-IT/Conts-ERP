@@ -60,7 +60,27 @@ export interface ContractDraft {
   /** The staff's code (0125); its model must match revenueModel. */
   contractCode?: string;
   monthlyRent?: number; deposit?: number | null; tenantName?: string | null;
+  /** MANAGE: the owner's amount a month, sen (owner_contracts.grr_amount, which a share does not use otherwise). The
+   *  management fee is this times the management %. How the statement pays it out is still open (PLAN-units-form.md Q6b). */
+  ownerAmount?: number | null;
   startsOn?: string; endsOn?: string | null; renewsOn?: string | null; miscCharges?: boolean;
+  /** Rent to rent, recorded only (0147): the other deposits we pay the owner, and what we rent the unit out for. Sen. */
+  depositUtilities?: number | null; depositCard?: number | null;
+  rentOutAmount?: number | null; rentOutDeposit?: number | null; rentOutDepositUtilities?: number | null; rentOutDepositCard?: number | null;
+}
+
+/** The rent-to-rent grid's fields beyond the rent and deposit (0147), draft key to owner_contracts column. */
+export const RENT_TO_RENT = {
+  depositUtilities: 'deposit_utilities', depositCard: 'deposit_card', rentOutAmount: 'rent_out_amount',
+  rentOutDeposit: 'rent_out_deposit', rentOutDepositUtilities: 'rent_out_deposit_utilities', rentOutDepositCard: 'rent_out_deposit_card',
+} as const;
+export type RentToRentKey = keyof typeof RENT_TO_RENT;
+export const RENT_TO_RENT_KEYS = Object.keys(RENT_TO_RENT) as RentToRentKey[];
+
+/** The 0147 columns for a draft: kept on a master lease, cleared on every other model. */
+export function rentToRentColumns(d: ContractDraft): Record<(typeof RENT_TO_RENT)[RentToRentKey], number | null> {
+  const lease = d.revenueModel === 'master_lease';
+  return Object.fromEntries(RENT_TO_RENT_KEYS.map(k => [RENT_TO_RENT[k], lease ? d[k] ?? null : null])) as Record<(typeof RENT_TO_RENT)[RentToRentKey], number | null>;
 }
 
 /** A profit share: the owner gets a percentage of the net (with or without a guarantee). */
@@ -86,6 +106,7 @@ export function invalidDraft(d: ContractDraft): Record<string, string> {
     for (const [k, v] of [['ownerPct', o], ['managementPct', g], ['agentPct', a]] as const) if (!Number.isFinite(v) || v < 0 || v > 100) f[k] = 'Enter 0 to 100.';
     if (!f.ownerPct && !f.managementPct && !f.agentPct && Math.abs(o + g + a - 100) > 0.001) f.ownerPct = `Owner, management and agent must add up to 100% (now ${Number((o + g + a).toFixed(2))}%).`;
     if (m === 'management_yearly_guarantee' && (!sen(d.yearlyGuarantee) || !d.yearlyGuarantee)) f.yearlyGuarantee = 'Enter the guarantee for each contract year.';
+    if (d.contractCode === 'MANAGE' && (!sen(d.ownerAmount) || !d.ownerAmount)) f.ownerAmount = "Enter the owner's amount.";
     if (m === 'management_guarantee') {
       if (!sen(d.minimumGuarantee) || !d.minimumGuarantee) f.minimumGuarantee = 'Enter the monthly minimum.';
       if (d.guaranteeStartsOn && !DATE.test(d.guaranteeStartsOn)) f.guaranteeStartsOn = 'Enter a date.';
@@ -94,6 +115,7 @@ export function invalidDraft(d: ContractDraft): Record<string, string> {
   } else {
     if (!sen(d.monthlyRent) || !d.monthlyRent) f.monthlyRent = 'Enter the monthly rent.';
     if (m === 'master_lease' && d.deposit != null && !sen(d.deposit)) f.deposit = 'Enter the deposit in ringgit.';
+    if (m === 'master_lease') for (const k of RENT_TO_RENT_KEYS) if (d[k] != null && !sen(d[k])) f[k] = 'Enter an amount in ringgit.';
     if (isTenancy(m)) {
       if (!d.tenantName?.trim()) f.tenantName = 'Enter the tenant.';
       const g = Number(d.managementPct ?? 0);
@@ -122,7 +144,7 @@ export function draftColumns(d: ContractDraft) {
     ...(m === 'management_yearly_guarantee' ? { minimum_guarantee_annual: Number(d.yearlyGuarantee) } : {}),
     guarantee_starts_on: m === 'management_guarantee' ? (d.guaranteeStartsOn || null) : null,
     guarantee_ends_on: m === 'management_guarantee' ? (d.guaranteeEndsOn || null) : null,
-    grr_amount: share ? 0 : Number(d.monthlyRent),
+    grr_amount: share ? (d.contractCode === 'MANAGE' ? Number(d.ownerAmount ?? 0) : 0) : Number(d.monthlyRent),
     deposit_amount: m === 'master_lease' ? (d.deposit ?? null) : null,
     tenant_name: isTenancy(m) ? (d.tenantName?.trim() || null) : null,
     starts_on: d.startsOn!, ends_on: d.endsOn || null, renews_on: d.renewsOn || null,
