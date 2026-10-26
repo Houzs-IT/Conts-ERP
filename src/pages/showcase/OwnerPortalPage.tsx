@@ -6,7 +6,7 @@ import { addDays, daysBetween, type CalendarStay, type Listing } from './model';
 import { Avatar, Photo, Segmented, MonthNav, useEscape } from './parts';
 import { MonthGrid, monthStats, monthDays } from './CalendarScreen';
 import { ListingPreview } from './screens';
-import { useSwitch, SwitchButton, CurtainLayer } from './Switch';
+import { useSwitch, useExit, SwitchButton, CurtainLayer } from './Switch';
 import { OwnerPhone } from './OwnerPhone';
 import { sampleOwner, monthShift, occupancy, STATUS_WORD, UNITS, OWNER, MANAGER, GUARANTEE, type SampleCase } from './sampleOwner';
 import './showcase.css';
@@ -48,6 +48,13 @@ export default function OwnerPortalPage() {
   const { chat, send } = useChat(data.chat);
   const chatRef = useRef<HTMLDivElement>(null);
   const sw = useSwitch('/performance/showcase', { from: 'Owner', to: 'Portfolio', sub: 'The Conts · every listing' });
+  const exit = useExit();
+  // Esc leaves, as on the showcase; an open drawer, modal or preview closes first (useEscape stops the key there).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') exit(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
 
   useEffect(() => {
     document.title = 'Owner portal · The Conts';
@@ -88,6 +95,7 @@ export default function OwnerPortalPage() {
           <Segmented value={device} onChange={v => setParam('device', v === 'mobile' ? 'mobile' : null)} options={[{ key: 'desktop', label: 'Desktop' }, { key: 'mobile', label: 'Mobile' }]} />
           <div className="sc-op-avatar" style={{ display: 'flex', alignItems: 'center', gap: 8 }}><div className="sc-avatar" style={{ width: 34, height: 34, fontSize: 13, background: 'var(--sc-tint-4)' }}>{OWNER.initials}</div><div className="sc-op-name">{OWNER.name}</div></div>
           <SwitchButton current="Owner" next="Portfolio" rolled={sw.rolled} onClick={sw.go} />
+          <button type="button" className="sc-exit" onClick={exit} aria-label="Exit the showcase">✕ Exit</button>
         </div>
       </header>
 
