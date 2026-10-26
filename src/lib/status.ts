@@ -303,6 +303,13 @@ export const STATUS_VOCAB = {
     ON_LEAVE: { label: 'On leave', tone: 'warning' },
     INACTIVE: { label: 'Inactive', tone: 'neutral' },
   },
+  // HR > Workers > Payroll and the portal's Pay screen (migration 0165). 'none': the month has not been run for them.
+  payslip: {
+    none: { label: 'Not run', tone: 'neutral' },
+    draft: { label: 'Draft', tone: 'warning' },
+    approved: { label: 'Approved', tone: 'info' },
+    paid: { label: 'Paid', tone: 'success' },
+  },
   // HR > Workers > Leave and the portal's Me screen (migration 0164).
   leave: {
     pending: { label: 'Waiting', tone: 'warning' },

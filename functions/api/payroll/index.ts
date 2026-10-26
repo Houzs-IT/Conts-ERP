@@ -1,5 +1,6 @@
 import { type Env, all, json, fail, mytToday } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
+import { companyDetails, type Company } from '../../_lib/letterhead';
 import { hasEmployees, listEmployees } from '../../_lib/hr';
 import type { Employee } from '../../_lib/hrFields';
 import { computePay, type PayFigures, type PayRules } from '../../_lib/payrollCalc';
@@ -13,7 +14,7 @@ export interface PayrollLine {
   estimate: PayFigures | null;
 }
 export interface AdvanceView { id: string; employeeId: string; name: string; date: string; amountSen: number; note: string | null; status: 'unsettled' | 'settled' }
-export interface PayrollPayload { period: string; today: string; ended: boolean; rules: PayRules; lines: PayrollLine[]; advances: AdvanceView[] }
+export interface PayrollPayload { period: string; today: string; ended: boolean; rules: PayRules; company: Company; lines: PayrollLine[]; advances: AdvanceView[] }
 
 /** GET /api/payroll?period=YYYY-MM — HR > Workers > Payroll: each person on the month's payroll with their slip (or what
  *  it would come to now), the month's advances and the pay rules. */
@@ -28,10 +29,11 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const period = isPeriod(asked) ? asked : today.slice(0, 7);
   const through = throughDay(period, today);
   const people = (await listEmployees(env)).filter(e => onPayroll(e, period));
-  const [slips, inputs, rules, advances] = await Promise.all([
+  const [slips, inputs, rules, company, advances] = await Promise.all([
     payslipsFor(env, period),
     through ? monthInputs(env, people, period, through) : Promise.resolve(new Map()),
     readPayRules(env),
+    companyDetails(env),
     all<{ id: string; employee_id: string; advance_date: string; amount_sen: number; note: string | null; status: 'unsettled' | 'settled'; name: string }>(env, `
       SELECT a.id, a.employee_id, a.advance_date, a.amount_sen, a.note, a.status, COALESCE(c.full_name, t.full_name) AS name
       FROM employee_advances a JOIN employees e ON e.id = a.employee_id
@@ -49,7 +51,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     };
   });
   const payload: PayrollPayload = {
-    period, today, ended: periodEnded(period, today), rules, lines,
+    period, today, ended: periodEnded(period, today), rules, company, lines,
     advances: advances.map(a => ({ id: a.id, employeeId: a.employee_id, name: a.name, date: a.advance_date, amountSen: Number(a.amount_sen), note: a.note, status: a.status })),
   };
   return json(payload);

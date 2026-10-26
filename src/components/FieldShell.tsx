@@ -9,8 +9,9 @@ import { jobTitle } from '../lib/vocabulary';
 
 /** The portal's bottom bar. */
 const TABS: { to: string; label: string; icon: string; match: (path: string) => boolean }[] = [
-  { to: '/portal/today', label: 'Jobs', icon: 'ClipboardList', match: p => !/^\/portal\/(clock|me)/.test(p) },
+  { to: '/portal/today', label: 'Jobs', icon: 'ClipboardList', match: p => !/^\/portal\/(clock|pay|me)/.test(p) },
   { to: '/portal/clock', label: 'Clock', icon: 'Clock', match: p => p.startsWith('/portal/clock') },
+  { to: '/portal/pay', label: 'Pay', icon: 'Wallet', match: p => p.startsWith('/portal/pay') },
   { to: '/portal/me', label: 'Me', icon: 'CircleUser', match: p => p.startsWith('/portal/me') },
 ];
 
@@ -43,7 +44,7 @@ export default function FieldShell({ children }: { children: ReactNode }) {
         {children}
       </main>
 
-      {/* Jobs, Clock and Me (HR phases 2 and 3). Pay joins in phase 4. Hidden on Settings, which has its own way back. */}
+      {/* Jobs, Clock, Pay and Me (HR phases 2 to 4). Hidden on Settings, which has its own way back. */}
       {!atAccount && (
         <nav aria-label="Portal" style={{
           position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 20, display: 'grid', gridTemplateColumns: `repeat(${TABS.length}, 1fr)`,

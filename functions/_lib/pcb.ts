@@ -128,7 +128,7 @@ export type PcbOutcome = {
 // ---------------------------------------------------------------------------
 // The schedule. Resident rates as revised by Budget 2023, effective YA 2023.
 //
-// ⚠️ EFFECTIVE-DATED BY YEAR OF ASSESSMENT ON PURPOSE. `resolvePcb` refuses
+// WARNING: EFFECTIVE-DATED BY YEAR OF ASSESSMENT ON PURPOSE. `resolvePcb` refuses
 // (UNKNOWN → the payslip prints "—") for any year outside the declared range
 // instead of quietly applying a stale schedule to a year Parliament has
 // re-rated. Extending the range is a deliberate act: confirm the schedule for
