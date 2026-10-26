@@ -2,6 +2,7 @@ import { type Env, all, one, json, fail } from '../../../_lib/db';
 import { requireSession, isFieldRole } from '../../../_lib/auth';
 import { mineSql, hasAssigneeUser, UNASSIGNED_SQL, hasJobType, fieldVisibleSql } from '../../../_lib/maintenance';
 import { fieldRepairs } from '../../../_lib/fieldRepairs';
+import { usedBySql } from '../../../_lib/credentials';
 import { parkingFor } from '../../../_lib/unitPurpose';
 
 /** GET /api/field/repairs/:id — one repair job for the phone: the job, its Before and After photos and videos, its
@@ -28,7 +29,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
     SELECT d.id, d.kind, d.file_name, d.mime_type, d.byte_size, d.created_at, u.full_name AS uploader
     FROM documents d LEFT JOIN users u ON u.id = d.uploaded_by WHERE d.maintenance_id = ? ORDER BY d.created_at`, id);
   const access = flags.mine || !field
-    ? await all<{ id: string; label: string; instruction: string | null }>(env, 'SELECT id, label, instruction FROM access_credentials WHERE unit_id = ? ORDER BY label', job.unitId)
+    ? await all<{ id: string; label: string; instruction: string | null }>(env, `SELECT id, label, instruction FROM access_credentials c WHERE unit_id = ?${await usedBySql(env, 'c', 'maintenance')} ORDER BY label`, job.unitId)
     : [];
   const notes = await all<{ note: string; actor_label: string; occurred_at: string; action: string }>(env, `
     SELECT after_state::jsonb ->> 'note' AS note, actor_label, occurred_at, action FROM audit_log

@@ -234,7 +234,7 @@ interface ProfitRow {
 }
 interface ProfitPayload { kind: Kind; month: string; rows: ProfitRow[]; totals: { jobs: number; billed: number; actual: number; profit: number; estimated: number; unknown: number } }
 const lastMonths = (n: number) => Array.from({ length: n }, (_, k) => { const d = new Date(`${mytDay(0).slice(0, 7)}-01T00:00:00Z`); d.setUTCMonth(d.getUTCMonth() - k); return d.toISOString().slice(0, 7); });
-const CATEGORY_WORD: Record<string, string> = { turnover: 'Standard clean', deep_clean: 'Deep clean', light_clean: 'Light clean', aircon: 'Aircon', plumbing: 'Plumbing', electrical: 'Electrical', furniture: 'Furniture', appliance: 'Appliance', cleaning: 'Cleaning', general: 'General', other: 'Other' };
+const CATEGORY_WORD: Record<string, string> = { turnover: 'Basic clean', deep_clean: 'Deep clean', light_clean: 'Light clean', aircon: 'Aircon', plumbing: 'Plumbing', electrical: 'Electrical', furniture: 'Furniture', appliance: 'Appliance', cleaning: 'Cleaning', general: 'General', other: 'Other' };
 
 /** Profit by job for a month: billed, actual cost and profit of every job finished in it, filterable, with totals and the
  *  table's own CSV export. */

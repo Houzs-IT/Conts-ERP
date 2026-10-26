@@ -1,11 +1,11 @@
 import { type Env, all, one, run, json, fail, audit, nowIso } from '../../../_lib/db';
 import { parkingFor } from '../../../_lib/unitPurpose';
 import { isOnTask, currentCleaners } from '../../../_lib/taskCleaners';
-import { unitLayoutSql, unitLayout } from '../../../_lib/unitLayout';
+import { unitLayoutSql, unitMattressesSql, unitLayout } from '../../../_lib/unitLayout';
 import { requireSession, isFieldRole } from '../../../_lib/auth';
 import { cleanPrice } from '../../../_lib/cleaning';
 import { hasCleanPrices, cleanAmounts } from '../../../_lib/cleaningPrices';
-import { mayEditCredentials } from '../../../_lib/credentials';
+import { mayEditCredentials, usedBySql } from '../../../_lib/credentials';
 
 /** GET /api/housekeeping/tasks/:id — what the clean's detail panel needs in one answer: the proof
  *  photos and videos, the unit's access (masked; the code itself is a separate audited reveal, for the roles that
@@ -15,9 +15,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
   if (!session) return response!;
   const id = String(params.id);
   const layoutSql = await unitLayoutSql(env);
+  const mattressSql = await unitMattressesSql(env);
   const priced = await hasCleanPrices(env);
   const t = await one<any>(env, `
-    SELECT ${priced ? 't.amount, t.cleaner_pay, t.external_address, t.external_client, t.external_phone,' : ''} t.id, t.kind, t.state, t.unit_id, t.assignee_id, u.bedrooms, u.bathrooms, ${layoutSql} AS layout_type, t.instructions, t.started_at, t.completed_at, t.guest_left_at,
+    SELECT ${priced ? 't.amount, t.cleaner_pay, t.external_address, t.external_client, t.external_phone,' : ''} t.id, t.kind, t.state, t.unit_id, t.assignee_id, u.bedrooms, u.bathrooms, ${layoutSql} AS layout_type, ${mattressSql} AS mattresses, t.instructions, t.started_at, t.completed_at, t.guest_left_at,
            t.created_at, t.reservation_id, cb.full_name AS completed_by_name,
            COALESCE(t.scheduled_for, t.due_at, t.created_at) AS day_at, u.unit_number, p.name AS property_name
     FROM tasks t LEFT JOIN units u ON u.id = t.unit_id LEFT JOIN properties p ON p.id = u.property_id
@@ -30,7 +31,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
     SELECT d.id, d.kind, d.file_name, d.mime_type, d.byte_size, d.created_at, u.full_name AS uploader
     FROM documents d LEFT JOIN users u ON u.id = d.uploaded_by
     WHERE d.task_id = ? AND d.kind IN ('photo','video') ORDER BY d.created_at`, id);
-  const creds = await all<any>(env, `SELECT id, kind, label, instruction, secret FROM access_credentials WHERE unit_id = ? ORDER BY label`, t.unit_id);
+  const creds = await all<any>(env, `SELECT id, kind, label, instruction, secret FROM access_credentials c WHERE unit_id = ?${await usedBySql(env, 'c', 'cleaner')} ORDER BY label`, t.unit_id);
   const charged = await one<{ amount: number }>(env, `SELECT amount FROM expenses WHERE task_id = ? LIMIT 1`, id);
   // The job's own amount, else the price table's, else (price not set) the old pricing. An external job has only its own.
   const table = t.unit_id && priced ? await cleanAmounts(env, t.unit_id, t.kind, t.day_at) : null;
@@ -113,7 +114,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     before.instructions = t.instructions; after.instructions = instructions;
   }
   if (typeof b?.kind === 'string') {
-    if (!CLEAN_KINDS.includes(b.kind)) return fail('VALIDATION', 'Pick a cleaning kind.', 422, { kind: 'Standard, deep or light clean.' });
+    if (!CLEAN_KINDS.includes(b.kind)) return fail('VALIDATION', 'Pick a cleaning kind.', 422, { kind: 'Basic, deep or light clean.' });
     sets.push('kind = ?'); args.push(b.kind);
     before.kind = t.kind; after.kind = b.kind;
   }

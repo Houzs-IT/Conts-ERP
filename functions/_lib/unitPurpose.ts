@@ -14,7 +14,7 @@ export const PURPOSE_LABEL: Record<Purpose, string> = { rental: 'Rental', showro
 export const USED_BY = ['the_conts', 'dream_crafter', 'inhouse_reno'] as const;
 export type UsedBy = typeof USED_BY[number];
 
-export const BED_SIZES = ['king', 'queen', 'super_single', 'single', 'sofa_bed'] as const;
+export const BED_SIZES = ['king', 'queen', 'super_single', 'single', 'sofa_bed', 'single_floor_mattress', 'double_decker'] as const;
 export type BedSize = typeof BED_SIZES[number];
 export interface Bed { size: BedSize; quantity: number }
 
@@ -115,13 +115,19 @@ export async function extrasFor(env: Env, ids: string[] | null): Promise<Map<str
 
 /** "1 King · 2 Single". */
 export function bedsLabel(beds: Bed[]): string {
-  const name: Record<BedSize, string> = { king: 'King', queen: 'Queen', super_single: 'Super single', single: 'Single', sofa_bed: 'Sofa bed' };
+  const name: Record<BedSize, string> = { king: 'King', queen: 'Queen', super_single: 'Super single', single: 'Single', sofa_bed: 'Sofa bed', single_floor_mattress: 'Single floor mattress', double_decker: 'Double decker' };
   return beds.map(b => `${b.quantity} ${name[b.size] ?? b.size}`).join(' · ');
 }
-/** "2 bays: L2-105, L2-106". */
-export function baysLabel(bays: { lotNumber: string; level?: string | null }[]): string {
+/** "LEVEL 5-100 (Tandem)": level first, then the lot, then the note (staff sheet UNIT, 23 Oct 2026). A level typed
+ *  as "L5" or "Level 5" is not doubled up. */
+export function bayLabel(b: { lotNumber: string; level?: string | null; note?: string | null }): string {
+  const lot = b.lotNumber.trim(), level = b.level?.trim().replace(/^(level|lvl|l)\s*(?=\d)/i, ''), note = b.note?.trim();
+  return `${level ? `LEVEL ${level}-${lot}` : lot}${note ? ` (${note})` : ''}`;
+}
+/** "2 bays: LEVEL 2-105, LEVEL 2-106". */
+export function baysLabel(bays: { lotNumber: string; level?: string | null; note?: string | null }[]): string {
   if (!bays.length) return '';
-  return `${bays.length} ${bays.length === 1 ? 'bay' : 'bays'}: ${bays.map(b => (b.level ? `${b.lotNumber} (${b.level})` : b.lotNumber)).join(', ')}`;
+  return `${bays.length} ${bays.length === 1 ? 'bay' : 'bays'}: ${bays.map(bayLabel).join(', ')}`;
 }
 
 export async function saveBays(env: Env, unitId: string, bays: BayInput[]) {
@@ -133,9 +139,9 @@ export async function saveBays(env: Env, unitId: string, bays: BayInput[]) {
     unitId, now, JSON.stringify(bays.map((b, n) => ({ lot: b.lotNumber.trim(), level: b.level?.trim() ?? '', note: b.note?.trim() ?? '', n }))));
 }
 
-/** "2 bays: L2-105, L2-106" for one unit, or null (also before 0125). For the screens that show how to get in. */
+/** "2 bays: LEVEL 2-105, LEVEL 2-106" for one unit, or null (also before 0125). For the screens that show how to get in. */
 export async function parkingFor(env: Env, unitId: string): Promise<string | null> {
   if (!(await purposeReady(env))) return null;
-  const bays = await all<{ lot_number: string; level: string | null }>(env, 'SELECT lot_number, level FROM unit_parking_bays WHERE unit_id = ? ORDER BY sort_order, lot_number', unitId);
-  return baysLabel(bays.map(b => ({ lotNumber: b.lot_number, level: b.level }))) || null;
+  const bays = await all<{ lot_number: string; level: string | null; note: string | null }>(env, 'SELECT lot_number, level, note FROM unit_parking_bays WHERE unit_id = ? ORDER BY sort_order, lot_number', unitId);
+  return baysLabel(bays.map(b => ({ lotNumber: b.lot_number, level: b.level, note: b.note }))) || null;
 }

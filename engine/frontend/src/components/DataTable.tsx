@@ -2063,8 +2063,20 @@ function DataTableInner<T, L>({
       wrap.scrollTop = offset;
       wrap.dispatchEvent(new Event("scroll"));
     } else if (tbodyRef.current) {
-      window.scrollTo({ top: window.scrollY + tbodyRef.current.getBoundingClientRect().top + offset - window.innerHeight / 2 });
-      window.dispatchEvent(new Event("scroll"));
+      /* The page scrolls inside a panel (the app's <main>), not the window: move that panel, or the
+         window when nothing above the table scrolls (Conts 2026-10-26, the Suppliers list's Back). */
+      const tbody = tbodyRef.current;
+      let panel: HTMLElement | null = tbody.parentElement;
+      while (panel && !(/(auto|scroll)/.test(getComputedStyle(panel).overflowY) && panel.scrollHeight > panel.clientHeight)) {
+        panel = panel.parentElement;
+      }
+      if (panel) {
+        panel.scrollTop += tbody.getBoundingClientRect().top - panel.getBoundingClientRect().top + offset - panel.clientHeight / 2;
+        panel.dispatchEvent(new Event("scroll"));
+      } else {
+        window.scrollTo({ top: window.scrollY + tbody.getBoundingClientRect().top + offset - window.innerHeight / 2 });
+        window.dispatchEvent(new Event("scroll"));
+      }
     }
     const raf = requestAnimationFrame(() => requestAnimationFrame(settle));
     return () => cancelAnimationFrame(raf);

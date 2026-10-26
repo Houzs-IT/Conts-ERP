@@ -48,7 +48,7 @@ export const AREAS: Area[] = [
   // Reservations arrive from the channels through the API; finance reads them but does not create or change them (owner, 11 Oct 2026).
   { key: 'reservations', label: 'Reservations', group: 'Operations', api: ['reservations', 'guests', 'blocks', 'guest-documents'] },
   { key: 'operations', label: 'Operations', group: 'Operations', api: ['operations', 'housekeeping', 'maintenance', 'tasks'] },
-  { key: 'properties', label: 'Units', group: 'Operations', api: ['properties', 'units', 'inventory', 'access-credentials', 'residence-rules', 'lettings'] },
+  { key: 'properties', label: 'Units', group: 'Operations', api: ['properties', 'units', 'unit-layout-types', 'inventory', 'access-credentials', 'residence-rules', 'lettings'] },
   // Field staff's HR record: IC, bank, salary and statutory (PLAN-hr-employees.md). Its own group so Operations staff do
   // not see pay by default. The cleaner and technician rosters themselves stay under Operations.
   { key: 'hr', label: 'Employees', group: 'HR', api: ['employees', 'attendance', 'leaves', 'payroll', 'working-hours', 'penalties', 'labor-cost'], strictRead: true },

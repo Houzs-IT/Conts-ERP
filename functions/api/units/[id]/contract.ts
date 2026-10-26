@@ -1,9 +1,9 @@
 import { type Env, all, one, run, json, fail, audit, nowIso } from '../../../_lib/db';
-import { requireSession } from '../../../_lib/auth';
+import { requireSession, hasColumn } from '../../../_lib/auth';
 import { can } from '../../../_lib/access';
 import { todayMyt } from '../../../_lib/ops';
 import { statementSettings, type Query } from '../../../_lib/ownerStatement';
-import { invalidDraft, draftColumns, modelOf, MODEL_LABEL, type ContractDraft } from '../../../_lib/revenueModel';
+import { invalidDraft, draftColumns, rentToRentColumns, modelOf, MODEL_LABEL, type ContractDraft } from '../../../_lib/revenueModel';
 import { contractView, unitExample, lastMonth } from '../../../_lib/unitContract';
 import { purposeReady, codesFor, codeOf, isContractCode, CODE_MODEL, CODE_LABEL, PURPOSE_LABEL, type Purpose, type ContractCode } from '../../../_lib/unitPurpose';
 
@@ -91,7 +91,12 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env, params })
   if (!allowed.includes(code)) {
     return fail('VALIDATION', `A ${PURPOSE_LABEL[u.purpose as Purpose].toLowerCase()} unit can take ${allowed.join(', ')} only, not ${code} (${CODE_LABEL[code]}).`, 422, { contractCode: `Pick ${allowed.join(' or ')}.` });
   }
-  const c = { ...draftColumns(b), ...((await purposeReady(env)) ? { contract_code: code } : {}) }, now = nowIso();
+  const c = {
+    ...draftColumns(b), ...((await purposeReady(env)) ? { contract_code: code } : {}),
+    ...((await hasColumn(env, 'owner_contracts', 'rent_out_amount')) ? rentToRentColumns(b) : {}),
+    // LT (Package C) has no operator share: the owner gets the tenant's whole rent less costs (staff sheet UNIT, 26 Oct 2026).
+    ...(code === 'LT' ? { management_fee_pct: 0 } : {}),
+  }, now = nowIso();
   const shared = cur ? Number((await one<{ n: number }>(env, 'SELECT COUNT(*) AS n FROM units WHERE contract_id = ? AND id <> ?', cur.id, id))?.n ?? 0) : 0;
   const mode = b.mode === 'new' ? 'new' : 'update';
   if (mode === 'new' && cur && cur.starts_on && c.starts_on <= String(cur.starts_on).slice(0, 10)) {

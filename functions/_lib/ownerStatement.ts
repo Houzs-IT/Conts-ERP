@@ -258,7 +258,8 @@ export function computeUnitMonth(month: string, unit: UnitRow, terms: Terms, sta
   // A master lease deducts nothing from the owner: every cost of the unit is the company's.
   const myCosts = terms.basis === 'none' ? [] : costs.filter(c => c.unit_id === unit.id && c.incurred_on >= start && c.incurred_on < endEx).sort((a, b) => a.incurred_on.localeCompare(b.incurred_on));
   const occupancy = nights / days;
-  const miscExact = terms.miscCharges && terms.basis === 'share' ? miscMonthly * occupancy : 0;
+  // RM 100 (the setting) times the occupancy rate, never more than the RM 100 (staff sheet UNIT, 26 Oct 2026).
+  const miscExact = terms.miscCharges && terms.basis === 'share' ? miscMonthly * Math.min(1, occupancy) : 0;
   const misc = roundSen(miscExact);
   const groups = new Map<DeductionCategory, { quantity: number; amounts: number[] }>();
   for (const c of myCosts) {

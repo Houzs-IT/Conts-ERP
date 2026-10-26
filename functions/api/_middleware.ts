@@ -59,6 +59,8 @@ const FIELD_ALLOWED: [string, RegExp][] = [
   // Repair jobs on the phone: the technician's own and the unassigned ones they may pick up (the handlers check which).
   ['GET', /^\/api\/field\/repairs\/[^/]+$/],
   ['POST', /^\/api\/field\/repairs\/[^/]+\/(pick|note)$/],
+  // A cleaner on the job switches it between Basic clean (BC) and Deep clean (DC) (the handler checks it is theirs).
+  ['PATCH', /^\/api\/field\/tasks\/[^/]+\/kind$/],
   ['GET', /^\/api\/housekeeping\/tasks\/[^/]+(\/checklist|\/photos)?$/],
   ['POST', /^\/api\/housekeeping\/tasks\/[^/]+\/(checklist|start)$/],
   ['POST', /^\/api\/housekeeping\/guest-left$/],
