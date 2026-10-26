@@ -5,8 +5,8 @@
      · editing a voucher names its project on every line. */
 import { Hono } from 'hono';
 import { describe, expect, test } from 'vitest';
-import { fakeSb, type Row } from '../src/scm/lib/fake-postgrest';
-import { submitPaymentVoucherHandler, updatePaymentVoucherHandler } from '../src/scm/routes/payment-vouchers';
+import { fakeSb, publicTablesOnly, type Row } from '../src/scm/lib/fake-postgrest';
+import { checkPaymentVoucherHandler, submitPaymentVoucherHandler, updatePaymentVoucherHandler } from '../src/scm/routes/payment-vouchers';
 import { postNowHandler } from '../src/conts/pv-post-now';
 
 const CO = 2;
@@ -17,7 +17,7 @@ const DRAFT: Row = {
   submitted_at: null, submitted_by: null, checked_at: null, checked_by: null, approved_at: null, approved_by: null,
 };
 function harness(sen: number) {
-  const sb = fakeSb({
+  const sb = publicTablesOnly(fakeSb({
     accounts: [
       { company_id: CO, account_code: '310-0010', account_name: 'MAYBANK', parent_code: null, is_active: true, acc_money: true, everyday_expense: false },
       { company_id: CO, account_code: '601-0001', account_name: 'RENOVATION COST', parent_code: null, is_active: true, acc_money: false, everyday_expense: false },
@@ -33,7 +33,7 @@ function harness(sen: number) {
     payment_voucher_lines: [{ id: 'l1', pv_id: 'pv-1', company_id: CO, line_no: 1, description: 'Carpentry', debit_account_code: '601-0001', amount_sen: sen, project_id: 7 }],
     payment_vouchers: [{ ...DRAFT, total_sen: sen }],
     pv_allocations: [],
-  }, {}, [{ table: 'payment_vouchers', column: 'pv_number', name: 'payment_vouchers_pv_number_key' }]);
+  }, {}, [{ table: 'payment_vouchers', column: 'pv_number', name: 'payment_vouchers_pv_number_key' }]), ['projects', 'project_brands']);
   const app = new Hono();
   app.use('*', async (c, next) => {
     c.set('supabase' as never, sb as never);
@@ -46,6 +46,7 @@ function harness(sen: number) {
     await next();
   });
   app.post('/payment-vouchers/:id/submit', submitPaymentVoucherHandler as never);
+  app.post('/payment-vouchers/:id/check', checkPaymentVoucherHandler as never);
   app.post('/payment-vouchers/:id/post-now', postNowHandler as never);
   app.patch('/payment-vouchers/:id', updatePaymentVoucherHandler as never);
   return { app, sb };
@@ -81,5 +82,18 @@ describe('a voucher and its project’s limit', () => {
     const res = await app.request('/payment-vouchers/pv-1', { method: 'PATCH', body: JSON.stringify({ projectId: 7 }), headers: { 'content-type': 'application/json' } });
     expect(res.status, await res.clone().text()).toBe(200);
     expect(sb.tables.payment_voucher_lines[0].project_id).toBe(7);
+  });
+});
+
+describe('a submitted voucher raised afterwards', () => {
+  test('the check sees the limit again: a voucher edited over it is refused there', async () => {
+    const { app, sb } = harness(600_000);
+    expect((await app.request('/payment-vouchers/pv-1/submit', { method: 'POST' })).status).toBe(200);
+    sb.tables.payment_voucher_lines[0].amount_sen = 5_000_000;
+    sb.tables.payment_vouchers[0].total_sen = 5_000_000;
+    const res = await app.request('/payment-vouchers/pv-1/check', { method: 'POST' });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ error: 'over_project_limit' });
+    expect(sb.tables.payment_vouchers[0].checked_at).toBeNull();
   });
 });

@@ -7,12 +7,14 @@ import { useAskLimit, useProjectLimit, useProjectOptions } from "./projectLimitQ
 
 const BAD = "var(--c-festive-b, #b3261e)";
 
-export function ProjectLimitField({ projectId, onChange, amountSen, disabled, fieldClass, labelClass, inputClass }: {
+export function ProjectLimitField({ projectId, onChange, amountSen, disabled, exceptPvId, fieldClass, labelClass, inputClass }: {
   projectId: number | null; onChange: (id: number | null) => void; amountSen: number; disabled?: boolean;
+  /** A voucher already submitted, being edited: its own reservation is not counted against it. */
+  exceptPvId?: string | null;
   fieldClass?: string; labelClass?: string; inputClass?: string;
 }) {
   const projects = useProjectOptions();
-  const limit = useProjectLimit(projectId);
+  const limit = useProjectLimit(projectId, exceptPvId ?? null);
   const ask = useAskLimit();
   const [asking, setAsking] = useState(false);
   const [reason, setReason] = useState("");

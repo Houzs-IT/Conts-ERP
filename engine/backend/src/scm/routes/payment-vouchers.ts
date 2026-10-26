@@ -945,7 +945,7 @@ export const updatePaymentVoucherHandler = async (c: any) => {
       if (leafErr) return leafErr;
     }
     await sb.from('payment_voucher_lines').delete().eq('pv_id', id);
-    const { error: lErr } = await sb.from('payment_voucher_lines').insert(stampCompany(built.rows.map((r) => ({ ...r, pv_id: id })), c));
+    const { error: lErr } = await sb.from('payment_voucher_lines').insert(stampCompany(built.rows.map((r) => ({ ...r, pv_id: id, ...(voucherProject !== undefined ? { project_id: voucherProject } : {}) })), c));
     if (lErr) return c.json({ error: 'lines_update_failed', reason: lErr.message }, 500);
     updates.total_sen = built.total;
     newTotal = built.total;
@@ -1534,6 +1534,15 @@ export const checkPaymentVoucherHandler = async (c: any) => {
   const { sb, id, pv, companyId } = loaded;
   const v = pvCanCheck(pv as PvApprovalShape);
   if (!v.ok) return c.json({ error: v.error, message: v.message }, 409);
+  /* Conts (finance phase 1.5; SOP 3.4): again here — a prepared voucher can still be edited until it is checked, and
+     after the check it cannot; so the amount that is checked is the amount that fits. */
+  {
+    const lim = await checkVoucherLimit(sb, companyId, id);
+    if (!lim.ok) {
+      if ('error' in lim) return c.json({ error: 'load_failed', reason: lim.error }, 500);
+      return c.json(overLimitBody(lim.over), 409);
+    }
+  }
   const who = approvalActor(c);
   const at = new Date().toISOString();
 
@@ -1923,6 +1932,19 @@ export const applyAdvanceHandler = async (c: any) => {
   if (outside.length > 0) return c.json(ALLOCATION_NOT_THIS_COMPANY(outside), 404);
   const held = await allocationPisOnHold(sb, c, piIds);
   if (held.length > 0) return c.json(ALLOCATION_ON_HOLD(held), 409);
+  /* Conts (finance phase 1.5; SOP 3.4): an advance paid ahead with no project takes the project of the bills it now
+     settles, so its money counts on that project's limit. One that already names a project keeps it; bills of
+     another project, or of two, are refused as a voucher's are. */
+  {
+    const { data: was } = await sb.from('payment_voucher_lines').select('project_id').eq('company_id', co.companyId).eq('pv_id', id).limit(1);
+    const named = ((was ?? []) as Array<{ project_id: number | null }>)[0]?.project_id ?? null;
+    const vp = await resolveVoucherProject(sb, co.companyId, named, { piIds, apInvoiceIds: apIds });
+    if (!vp.ok) return c.json(vp.body, vp.status);
+    if (vp.projectId != null && named == null) {
+      const { error: pErr } = await sb.from('payment_voucher_lines').update({ project_id: vp.projectId }).eq('company_id', co.companyId).eq('pv_id', id);
+      if (pErr) return c.json({ error: 'save_failed', reason: pErr.message }, 500);
+    }
+  }
 
   let appliedSen = 0;
   const results: Array<{ piId: string | null; apInvoiceId: string | null; askedSen: number; appliedSen: number }> = [];

@@ -6,7 +6,7 @@
      · lines on an everyday-expense account (rent, utilities) do not count;
      · a voucher paying one project's bills names that project; one paying two projects' bills is refused. */
 import { describe, expect, test } from 'vitest';
-import { fakeSb, type Row } from '../scm/lib/fake-postgrest';
+import { fakeSb, publicTablesOnly, type Row } from '../scm/lib/fake-postgrest';
 import { checkVoucherLimit, projectLimit, projectOfBills } from './project-limit';
 
 const CO = 1;
@@ -14,7 +14,7 @@ const pv = (id: string, sen: number, over: Row = {}): Row[] => [
   { id, company_id: CO, status: 'DRAFT', submitted_at: null, total_sen: sen, ...over },
 ];
 const line = (pvId: string, sen: number, project: number | null = 7, account = '601-0001'): Row => ({ id: `${pvId}-l`, pv_id: pvId, company_id: CO, project_id: project, amount_sen: sen, debit_account_code: account });
-const world = (over: Record<string, Row[]> = {}) => fakeSb({
+const world = (over: Record<string, Row[]> = {}) => publicTablesOnly(fakeSb({
   projects: [
     { id: 7, company_id: CO, name: 'SKYLINE A-12-06', funding: 'customer', limit_pct_bp: null, budget_sen: null },
     { id: 8, company_id: CO, name: 'SHOWROOM', funding: 'internal', limit_pct_bp: null, budget_sen: 500_000 },
@@ -31,7 +31,7 @@ const world = (over: Record<string, Row[]> = {}) => fakeSb({
   project_limit_requests: [],
   purchase_invoices: [], purchase_orders: [], ap_invoice_lines: [],
   ...over,
-});
+}), ['projects', 'project_brands']);
 
 describe('a project’s limit', () => {
   test('70% of what the customer paid', async () => {

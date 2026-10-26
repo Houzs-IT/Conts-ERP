@@ -4,16 +4,16 @@
      · an approved percentage becomes the project's own share; a decided request cannot be decided again. */
 import { Hono } from 'hono';
 import { describe, expect, test } from 'vitest';
-import { fakeSb } from '../scm/lib/fake-postgrest';
+import { fakeSb, publicTablesOnly } from '../scm/lib/fake-postgrest';
 import { approveLimitRequestHandler, createLimitRequestHandler, rejectLimitRequestHandler } from './project-limit-routes';
 
 const CO = 1;
-const world = () => fakeSb({
+const world = () => publicTablesOnly(fakeSb({
   projects: [{ id: 7, company_id: CO, name: 'SKYLINE', funding: 'customer', limit_pct_bp: null, budget_sen: null }, { id: 8, company_id: CO, name: 'SHOWROOM', funding: 'internal', budget_sen: 100 }],
   acc_company_settings: [{ company_id: CO, project_limit_pct_bp: 7000 }],
   mfg_sales_orders: [], mfg_sales_order_payments: [], sales_invoices: [], sales_invoice_payments: [], payment_voucher_lines: [], payment_vouchers: [], accounts: [],
   project_limit_requests: [],
-});
+}), ['projects', 'project_brands']);
 const app = (sb: ReturnType<typeof world>, name: string, perms: string[]) => {
   const a = new Hono();
   a.use('*', async (c, next) => {

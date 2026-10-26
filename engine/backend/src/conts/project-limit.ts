@@ -70,7 +70,7 @@ async function projectReceived(sb: Db, companyId: number, projectId: number): Pr
 
 /** A project's limit, used, reserved and left. `exceptPvId`: a voucher left out of the reservation (checking itself). */
 export async function projectLimit(sb: Db, companyId: number, projectId: number, exceptPvId: string | null = null): Promise<ProjectLimit | Fail> {
-  const { data: p, error } = await sb.from('projects').select('id, name, funding, limit_pct_bp, budget_sen').eq('company_id', companyId).eq('id', projectId).maybeSingle();
+  const { data: p, error } = await sb.schema('public').from('projects').select('id, name, funding, limit_pct_bp, budget_sen').eq('company_id', companyId).eq('id', projectId).maybeSingle();
   if (error) return { ok: false, error: error.message };
   if (!p) return { ok: false, error: `Project ${projectId} not found.` };
   const proj = p as { name: string; funding: string | null; limit_pct_bp: number | null; budget_sen: number | null };
@@ -163,7 +163,7 @@ export async function resolveVoucherProject(
   if (named == null || named === '') return { ok: true, projectId: fromBills.projectId };
   const id = Number(named);
   if (!Number.isInteger(id) || id <= 0) return { ok: false, status: 400, body: { error: 'project_invalid' } };
-  const { data, error } = await sb.from('projects').select('id').eq('company_id', companyId).eq('id', id).maybeSingle();
+  const { data, error } = await sb.schema('public').from('projects').select('id').eq('company_id', companyId).eq('id', id).maybeSingle();
   if (error) return { ok: false, status: 500, body: { error: 'load_failed', reason: error.message } };
   if (!data) return { ok: false, status: 400, body: { error: 'project_invalid', message: `Project ${id} is not this company's.` } };
   if (fromBills.projectId != null && fromBills.projectId !== id) {

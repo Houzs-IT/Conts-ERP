@@ -12,13 +12,16 @@ import { projectLimit } from './project-limit';
 type Ctx = any;
 export const APPROVE_KEY = 'scm.project_limit.approve';
 const who = (c: Ctx): string => String(c.get('houzsUser')?.name ?? c.get('houzsUser')?.email ?? 'unknown');
+const whoId = (c: Ctx): string | null => (c.get('houzsUser')?.id != null ? String(c.get('houzsUser').id) : null);
 
 export const projectLimitHandler = async (c: Ctx): Promise<Response> => {
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
   const id = Number(c.req.param('id'));
   if (!Number.isInteger(id) || id <= 0) return c.json({ error: 'invalid_id' }, 400);
-  const r = await projectLimit(c.get('supabase'), co.companyId, id);
+  /* exceptPvId: a submitted voucher being edited is not counted against itself. */
+  const except = String(c.req.query('exceptPvId') ?? '').trim() || null;
+  const r = await projectLimit(c.get('supabase'), co.companyId, id, except);
   if (!r.ok) return c.json({ error: 'load_failed', reason: r.error }, 404);
   return c.json(r);
 };
@@ -46,7 +49,7 @@ export const createLimitRequestHandler = async (c: Ctx): Promise<Response> => {
   }
   const { data, error } = await sb.from('project_limit_requests').insert({
     company_id: co.companyId, project_id: id, kind, amount_sen: kind === 'pct' ? null : amount, pct_bp: kind === 'pct' ? pct : null,
-    reason, status: 'PENDING', requested_by: who(c),
+    reason, status: 'PENDING', requested_by: who(c), requested_by_id: whoId(c),
   }).select('*').single();
   if (error) return c.json({ error: 'insert_failed', reason: error.message }, 500);
   return c.json({ request: data }, 201);
@@ -65,7 +68,7 @@ export const listLimitRequestsHandler = async (c: Ctx): Promise<Response> => {
   const ids = [...new Set(rows.map((r) => Number(r.project_id)))];
   const names = new Map<number, string>();
   if (ids.length > 0) {
-    const { data: ps, error: pErr } = await sb.from('projects').select('id, code, name').eq('company_id', co.companyId).in('id', ids);
+    const { data: ps, error: pErr } = await sb.schema('public').from('projects').select('id, code, name').eq('company_id', co.companyId).in('id', ids);
     if (pErr) return c.json({ error: 'load_failed', reason: pErr.message }, 500);
     for (const p of (ps ?? []) as Array<{ id: number; code: string | null; name: string }>) names.set(Number(p.id), p.code ? `${p.code} ${p.name}` : p.name);
   }
@@ -83,10 +86,11 @@ const decide = (to: 'APPROVED' | 'REJECTED') => async (c: Ctx): Promise<Response
   const { data: req, error } = await sb.from('project_limit_requests').select('*').eq('company_id', co.companyId).eq('id', id).maybeSingle();
   if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
   if (!req) return c.json({ error: 'not_found' }, 404);
-  const r = req as { status: string; requested_by: string; kind: string; pct_bp: number | null; project_id: number };
+  const r = req as { status: string; requested_by: string; requested_by_id: string | null; kind: string; pct_bp: number | null; project_id: number };
   if (r.status !== 'PENDING') return c.json({ error: 'decided', message: `This request is ${r.status.toLowerCase()} already.` }, 409);
   /* Nobody approves their own spending (SOP 3.4). */
-  if (to === 'APPROVED' && r.requested_by === who(c)) return c.json({ error: 'own_request', message: 'Someone else must approve your own request.' }, 409);
+  const mine = r.requested_by_id != null && whoId(c) != null ? r.requested_by_id === whoId(c) : r.requested_by === who(c);
+  if (to === 'APPROVED' && mine) return c.json({ error: 'own_request', message: 'Someone else must approve your own request.' }, 409);
   const { data: done, error: uErr } = await sb.from('project_limit_requests')
     .update({ status: to, decided_by: who(c), decided_at: new Date().toISOString(), decision_note: note })
     .eq('company_id', co.companyId).eq('id', id).eq('status', 'PENDING').select('*').maybeSingle();
@@ -94,7 +98,7 @@ const decide = (to: 'APPROVED' | 'REJECTED') => async (c: Ctx): Promise<Response
   if (!done) return c.json({ error: 'decided', message: 'This request was decided a moment ago.' }, 409);
   /* A higher percentage is the project's own share from now on. */
   if (to === 'APPROVED' && r.kind === 'pct' && r.pct_bp != null) {
-    const { error: pErr } = await sb.from('projects').update({ limit_pct_bp: r.pct_bp }).eq('company_id', co.companyId).eq('id', r.project_id);
+    const { error: pErr } = await sb.schema('public').from('projects').update({ limit_pct_bp: r.pct_bp }).eq('company_id', co.companyId).eq('id', r.project_id);
     if (pErr) return c.json({ error: 'save_failed', reason: pErr.message }, 500);
   }
   return c.json({ request: done });
@@ -106,7 +110,7 @@ export const rejectLimitRequestHandler = decide('REJECTED');
 export const listProjectsHandler = async (c: Ctx): Promise<Response> => {
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
-  const { data, error } = await c.get('supabase').from('projects').select('id, code, name, funding')
+  const { data, error } = await c.get('supabase').schema('public').from('projects').select('id, code, name, funding')
     .eq('company_id', co.companyId).order('id', { ascending: false }).limit(2000);
   if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
   return c.json({ projects: data ?? [] });
@@ -125,7 +129,8 @@ export const listEverydayExpenseHandler = async (c: Ctx): Promise<Response> => {
 
 /** PUT /accounting/everyday-expense { accountCode, on } — finance marks an expense account (the chart's key). */
 export const setEverydayExpenseHandler = async (c: Ctx): Promise<Response> => {
-  if (!hasHouzsPerm(c, 'scm.payment_voucher.post')) return c.json({ error: "You don't have permission to change the chart." }, 403);
+  /* It changes what every project's limit counts, past spending included: the limit's own key. */
+  if (!hasHouzsPerm(c, APPROVE_KEY)) return c.json({ error: "You don't have permission to change which expenses count against a project limit." }, 403);
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
   let body: Record<string, unknown>;

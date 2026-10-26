@@ -21,6 +21,9 @@ export function LimitRequests() {
   const { can, user } = useAuth();
   const canDecide = can("scm.project_limit.approve");
   const me = String((user as { name?: string } | null)?.name ?? "");
+  const myId = (user as { id?: string | number } | null)?.id != null ? String((user as { id: string | number }).id) : null;
+  /* Mine by user id where the request has one, else by name (requests made before the id was kept). */
+  const mine = (r: LimitRequest) => (r.requested_by_id != null && myId != null ? r.requested_by_id === myId : r.requested_by === me);
   const [note, setNote] = useState<string | null>(null);
 
   const run = async (r: LimitRequest, decision: "approve" | "reject") => {
@@ -49,13 +52,14 @@ export function LimitRequests() {
       key: "decide", label: "",
       render: (r) => (canDecide && r.status === "PENDING" ? (
         <span style={{ display: "inline-flex", gap: 6 }}>
-          <Button className="h-8" disabled={decide.isPending || r.requested_by === me} title={r.requested_by === me ? "Someone else must approve your own request." : undefined} onClick={() => void run(r, "approve")}>Approve</Button>
+          <Button className="h-8" disabled={decide.isPending || mine(r)} title={mine(r) ? "Someone else must approve your own request." : undefined} onClick={() => void run(r, "approve")}>Approve</Button>
           <Button className="h-8" variant="secondary" disabled={decide.isPending} onClick={() => void run(r, "reject")}>Reject</Button>
         </span>
       ) : null),
       getValue: () => "",
     },
-  ], [canDecide, decide.isPending, me]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mine() reads me and myId, both listed
+  ], [canDecide, decide.isPending, me, myId]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>

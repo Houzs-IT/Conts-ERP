@@ -432,3 +432,18 @@ export function fakeSb(
   };
   return api as never as typeof api;
 }
+
+/** A fake that refuses, by name, a read of a `public` table through the `scm`-pinned client (db/supabase.ts): the
+    fakes model one namespace, so without this a `sb.from('projects')` passes every test and fails on production,
+    where projects live only in public. Reached through `.schema('public')`, the table answers as usual. */
+export function publicTablesOnly<T extends { from: (t: string) => unknown; schema: (s: string) => unknown }>(sb: T, publicTables: readonly string[]): T {
+  const only = new Set(publicTables);
+  return {
+    ...sb,
+    from: (t: string) => {
+      if (only.has(t)) throw new Error(`${t} lives in the public schema: read it through .schema('public')`);
+      return sb.from(t);
+    },
+    schema: (s: string) => (s === 'public' ? sb : sb.schema(s)),
+  } as T;
+}

@@ -37,6 +37,8 @@ create table scm.project_limit_requests (
   reason text not null,
   status text not null default 'PENDING' check (status in ('PENDING', 'APPROVED', 'REJECTED')),
   requested_by text not null,
+  -- Who asked, by user id: the same person never approves it (a name can be shared or changed).
+  requested_by_id text,
   decided_by text,
   decided_at timestamptz,
   decision_note text,

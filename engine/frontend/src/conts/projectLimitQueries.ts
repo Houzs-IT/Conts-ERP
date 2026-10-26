@@ -10,7 +10,7 @@ export type ProjectLimit = {
 };
 export type LimitRequest = {
   id: string; project_id: number; project_name: string; kind: "amount" | "pct" | "budget"; amount_sen: number | null; pct_bp: number | null;
-  reason: string; status: "PENDING" | "APPROVED" | "REJECTED"; requested_by: string; decided_by: string | null; decided_at: string | null;
+  reason: string; status: "PENDING" | "APPROVED" | "REJECTED"; requested_by: string; requested_by_id: string | null; decided_by: string | null; decided_at: string | null;
   decision_note: string | null; created_at: string;
 };
 
@@ -20,9 +20,9 @@ export const useProjectOptions = () => useQuery({
   staleTime: 60_000,
 });
 
-export const useProjectLimit = (projectId: number | null) => useQuery({
-  queryKey: ["conts-project-limit", projectId],
-  queryFn: () => authedFetch<ProjectLimit>(`/accounting/projects/${projectId}/limit`),
+export const useProjectLimit = (projectId: number | null, exceptPvId: string | null = null) => useQuery({
+  queryKey: ["conts-project-limit", projectId, exceptPvId],
+  queryFn: () => authedFetch<ProjectLimit>(`/accounting/projects/${projectId}/limit${exceptPvId ? `?exceptPvId=${encodeURIComponent(exceptPvId)}` : ""}`),
   enabled: projectId != null,
   staleTime: 15_000,
 });

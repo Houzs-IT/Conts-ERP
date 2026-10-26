@@ -758,7 +758,7 @@ export const PaymentVoucherDetail = () => {
                 <textarea value={notes} onChange={(e) => setNotes(e.target.value)} className={styles.fieldInput} rows={2} style={{ resize: 'vertical', minHeight: 60 }} />
               </label>
               {!isRefundPv && (
-                <ProjectLimitField projectId={editProjectId} onChange={setEditProjectId} amountSen={viewTotalSen}
+                <ProjectLimitField projectId={editProjectId} onChange={setEditProjectId} amountSen={viewTotalSen} exceptPvId={id}
                   fieldClass={styles.field} labelClass={styles.fieldLabel} inputClass={styles.fieldInput} />
               )}
             </div>
