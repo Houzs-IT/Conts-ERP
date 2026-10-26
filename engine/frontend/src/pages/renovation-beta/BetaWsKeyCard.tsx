@@ -30,8 +30,8 @@ export function BetaWsKeyCard({ d, canWrite, today, onDone }: Props): ReactEleme
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
   const rows = keyLogRows(q.data?.data ?? [], today);
-  const loaded = !q.loading || q.data != null;
-  const formOpen = canWrite && (adding || (loaded && rows.length === 0));
+  // The form opens from "+ Key passed", as the design has it; open by itself it filled the card on every new project.
+  const formOpen = canWrite && adding;
   const shown = showAll ? rows : rows.slice(0, 3);
 
   async function save(fn: () => Promise<unknown>, ok: string, after?: () => void): Promise<void> {
@@ -157,7 +157,8 @@ export function BetaWsKeyCard({ d, canWrite, today, onDone }: Props): ReactEleme
 function KeyFields({ draft, onChange, today, prefix }: { draft: KeyDraft; onChange: (d: KeyDraft) => void; today: string; prefix: string }): ReactElement {
   return (
     <>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
+      {/* Side by side when the card is wide enough, stacked in the narrow right column, so names are not cut off. */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 8 }}>
         <WsField label="From"><PersonSelect label={`${prefix} from`} placeholder="Optional" value={draft.from} onChange={(v) => onChange({ ...draft, from: v })} className="ws-input-sm" /></WsField>
         <WsField label="To"><PersonSelect label={`${prefix} to`} placeholder="Choose person" value={draft.to} onChange={(v) => onChange({ ...draft, to: v })} className="ws-input-sm" /></WsField>
       </div>
