@@ -348,7 +348,8 @@ const SUB_PAGES: [RegExp, string][] = [
   [/^\/system\/integrations\/hostplatform$/, 'HostPlatform import'],
 ];
 
-const groupName = (label: string) => label.charAt(0) + label.slice(1).toLowerCase();
+/** A menu group's name in a sentence ("Operations"); an acronym stays as it is ("HR", not "Hr"). */
+export const groupName = (label: string): string => label === 'HR' ? label : label.charAt(0) + label.slice(1).toLowerCase();
 
 /** Rental screens reached from another screen rather than the menu: their breadcrumb, instead of "Home". */
 const RENTAL_OFF_MENU: Record<string, { group: string; item: string; page?: string }> = {

@@ -150,12 +150,13 @@ function EmployeeModal({ person, onClose, onSaved }: { person: Employee; onClose
           )}
         </Section>
 
+        {/* Zero pay means not set yet: shown empty so typing starts clean. */}
         <Section title="Pay">
           <Select label="Paid by" showLabel size="md" value={d.payBasis} onChange={v => set('payBasis', PAY_BASES.find(b => b === v) ?? 'monthly')}
             options={PAY_BASES.map(b => ({ value: b, label: PAY_BASIS_LABEL[b] }))} />
           {daily
-            ? <MoneyInput label="Rate per day (RM)" valueSen={d.dailyRateSen} onChangeSen={v => set('dailyRateSen', v ?? 0)} error={errors.dailyRateSen} />
-            : <MoneyInput label="Basic salary (RM a month)" valueSen={d.basicSalarySen} onChangeSen={v => set('basicSalarySen', v ?? 0)} error={errors.basicSalarySen} />}
+            ? <MoneyInput label="Rate per day (RM)" valueSen={d.dailyRateSen || null} onChangeSen={v => set('dailyRateSen', v ?? 0)} error={errors.dailyRateSen} />
+            : <MoneyInput label="Basic salary (RM a month)" valueSen={d.basicSalarySen || null} onChangeSen={v => set('basicSalarySen', v ?? 0)} error={errors.basicSalarySen} />}
           <NumberInput label="Working days a month" value={d.workingDaysPerMonth} onChange={v => set('workingDaysPerMonth', v ?? 26)} min={1} max={31} error={errors.workingDaysPerMonth} />
           <NumberInput label="Hours a day" value={d.workingHoursPerDay} onChange={v => set('workingHoursPerDay', v ?? 8)} decimals={2} min={0.5} max={24} error={errors.workingHoursPerDay} />
           <NumberInput label="Overtime rate (times hourly pay)" value={d.otMultiplier} onChange={v => set('otMultiplier', v ?? 1.5)} decimals={2} min={1} max={5} error={errors.otMultiplier} />
