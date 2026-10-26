@@ -14,7 +14,7 @@ import { useApi } from '../../lib/useApi';
 import { api, ApiFailure, notifyFailure } from '../../lib/api';
 import { mayWork } from '../../lib/areaAccess';
 import { useSession } from '../../lib/session';
-import { rm, plural } from '../../lib/format';
+import { rm, plural, todayMyt } from '../../lib/format';
 import {
   MALAYSIAN_BANKS, PAYMENT_METHODS, PAYMENT_METHOD_LABEL, PAY_BASES, PAY_BASIS_LABEL, TAX_RESIDENCIES, TAX_RESIDENCY_LABEL,
   TAX_CATEGORIES, TAX_CATEGORY_LABEL, type Employee, type EmployeeInput,
@@ -113,6 +113,9 @@ function EmployeeModal({ person, onClose, onSaved }: { person: Employee; onClose
   const toast = useToast();
   const { id: _id, cleanerId, technicianId, name, phone: _phone, employeeId, isActive: _isActive, ...start } = person;
   const [d, setD] = useState<EmployeeInput>(start);
+  // A new basic salary is paid from this day on (salary history, migration 0165); the start of this month by default.
+  const [salaryFrom, setSalaryFrom] = useState(`${todayMyt().slice(0, 7)}-01`);
+  const salaryChanged = d.payBasis === 'monthly' && d.basicSalarySen > 0 && d.basicSalarySen !== start.basicSalarySen;
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const set = <K extends keyof EmployeeInput>(k: K, v: EmployeeInput[K]) => setD(p => ({ ...p, [k]: v }));
@@ -121,7 +124,7 @@ function EmployeeModal({ person, onClose, onSaved }: { person: Employee; onClose
     setBusy(true);
     setErrors({});
     try {
-      await api.put('/employees', { ...d, cleanerId, technicianId });
+      await api.put('/employees', { ...d, cleanerId, technicianId, ...(salaryChanged ? { salaryEffectiveFrom: salaryFrom } : {}) });
       toast({ tone: 'success', title: 'Employee record saved.', body: `${name}.` });
       onSaved();
     } catch (e) {
@@ -157,6 +160,10 @@ function EmployeeModal({ person, onClose, onSaved }: { person: Employee; onClose
           {daily
             ? <MoneyInput label="Rate per day (RM)" valueSen={d.dailyRateSen || null} onChangeSen={v => set('dailyRateSen', v ?? 0)} error={errors.dailyRateSen} />
             : <MoneyInput label="Basic salary (RM a month)" valueSen={d.basicSalarySen || null} onChangeSen={v => set('basicSalarySen', v ?? 0)} error={errors.basicSalarySen} />}
+          {salaryChanged && (
+            <DateField label="New salary takes effect from" value={salaryFrom} onChange={v => v && setSalaryFrom(v)} required
+              help="Months ending on or after this day are paid on the new salary. Approved payslips stay as they are." />
+          )}
           <NumberInput label="Working days a month" value={d.workingDaysPerMonth} onChange={v => set('workingDaysPerMonth', v ?? 26)} min={1} max={31} error={errors.workingDaysPerMonth} />
           <NumberInput label="Hours a day" value={d.workingHoursPerDay} onChange={v => set('workingHoursPerDay', v ?? 8)} decimals={2} min={0.5} max={24} error={errors.workingHoursPerDay} />
           <NumberInput label="Overtime rate (times hourly pay)" value={d.otMultiplier} onChange={v => set('otMultiplier', v ?? 1.5)} decimals={2} min={1} max={5} error={errors.otMultiplier} />

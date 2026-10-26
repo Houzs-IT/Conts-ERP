@@ -54,6 +54,8 @@ const FIELD_ALLOWED: [string, RegExp][] = [
   ['GET', /^\/api\/field\/leave$/],
   ['POST', /^\/api\/field\/leave$/],
   ['POST', /^\/api\/field\/leave\/[^/]+\/cancel$/],
+  // Their own pay: approved and paid slips, and an estimate of the month so far (HR phase 4).
+  ['GET', /^\/api\/field\/pay$/],
   // Repair jobs on the phone: the technician's own and the unassigned ones they may pick up (the handlers check which).
   ['GET', /^\/api\/field\/repairs\/[^/]+$/],
   ['POST', /^\/api\/field\/repairs\/[^/]+\/(pick|note)$/],

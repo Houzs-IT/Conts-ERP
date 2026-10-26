@@ -1,8 +1,9 @@
 import { mayWork } from '../../_lib/access';
-import { type Env, one, run, json, fail, audit, nowIso } from '../../_lib/db';
+import { type Env, one, run, json, fail, audit, nowIso, mytToday } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
 import { hasEmployees, listEmployees, findEmployee } from '../../_lib/hr';
 import { employeeInput, type Employee, type EmployeeInput } from '../../_lib/hrFields';
+import { hasPayroll } from '../../_lib/payroll';
 
 const MANAGE = ['management']; // everyone else follows their level in HR (functions/_lib/access.ts)
 const NOT_MIGRATED = 'The employee record needs a database update (migration 0162) that has not been applied yet.';
@@ -65,6 +66,18 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
     await run(env, `INSERT INTO employees (id, cleaner_id, technician_id, ${cols.map(([c]) => c).join(', ')}, created_at, updated_at)
       VALUES (?, ?, ?, ${cols.map(() => '?').join(', ')}, ?, ?)`,
       id, before.cleanerId, before.technicianId, ...cols.map(([, v]) => v), now, now);
+  }
+
+  // A new basic salary takes effect from the date the form gives (the start of this month by default); payroll pays each
+  // month on the salary in force on its last day (migration 0165).
+  if (e.payBasis === 'monthly' && e.basicSalarySen > 0 && (!before.id || before.basicSalarySen !== e.basicSalarySen) && await hasPayroll(env)) {
+    const asked = b?.salaryEffectiveFrom;
+    const from = typeof asked === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(asked) ? asked : `${mytToday().slice(0, 7)}-01`;
+    await run(env, `
+      INSERT INTO employee_salary_history (id, employee_id, basic_salary_sen, effective_from, note, created_by, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT (employee_id, effective_from) DO UPDATE SET basic_salary_sen = excluded.basic_salary_sen, created_by = excluded.created_by, created_at = excluded.created_at`,
+      crypto.randomUUID(), id, e.basicSalarySen, from, before.id ? `Was ${before.basicSalarySen} sen` : 'First salary', session.userId, now);
   }
 
   const after = await findEmployee(env, by);
