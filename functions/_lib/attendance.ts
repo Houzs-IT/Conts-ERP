@@ -4,12 +4,12 @@ import { mediaKind } from './media';
 import { coord, workedMinutes, type Building } from './attendanceCalc';
 
 /**
- * Clocking in and out (migration 0163, PLAN-hr-employees.md phase 2), ported from Hookka's POST /api/worker/clock.
+ * Clocking in and out (migration 0166, PLAN-hr-employees.md phase 2), ported from Hookka's POST /api/worker/clock.
  * Soft like Hookka: GPS and the selfie are recorded when the phone gives them, and never stop a punch.
  */
 
 export const hasAttendance = (env: Env): Promise<boolean> => hasColumn(env, 'attendance', 'id').catch(() => false);
-export const NOT_MIGRATED = 'Attendance needs a database update (migration 0163) that has not been applied yet.';
+export const NOT_MIGRATED = 'Attendance needs a database update (migration 0166) that has not been applied yet.';
 
 export interface AttendanceRow {
   id: string; employee_id: string; work_date: string; clock_in_at: string; clock_out_at: string | null;

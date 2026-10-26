@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 /**
- * Leave rules (migration 0164, PLAN-hr-employees.md phase 3), ported from Hookka's src/lib/leave-entitlement.ts. The one
+ * Leave rules (migration 0167, PLAN-hr-employees.md phase 3), ported from Hookka's src/lib/leave-entitlement.ts. The one
  * place allowances, chargeable days and the leave year are decided. No database code: the portal, the desk, the API and
  * the tests share it, so the phone and the office can never show two different balances (Hookka's bug C4).
  */

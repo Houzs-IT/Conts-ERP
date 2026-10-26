@@ -16,7 +16,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
   if (isFieldRole(session.role) || session.role === 'owner') return fail('FORBIDDEN', 'Labour cost is kept by the office.', 403);
-  if (!(await hasEmployees(env))) return fail('NOT_MIGRATED', 'Labour cost needs the employee record (migration 0162).', 503);
+  if (!(await hasEmployees(env))) return fail('NOT_MIGRATED', 'Labour cost needs the employee record (migration 0165).', 503);
   const today = mytToday();
   const q = new URL(request.url).searchParams;
   const from = isDay(q.get('from')) ? String(q.get('from')) : `${today.slice(0, 7)}-01`;

@@ -3,7 +3,7 @@ import { hasColumn } from './auth';
 import { EMPLOYEE_DEFAULTS, type Bank, type Employee, type EmployeeStatus, type PayBasis, type PaymentMethod, type TaxCategory, type TaxResidency } from './hrFields';
 
 /**
- * The employee record (migration 0162, PLAN-hr-employees.md): the HR side of an in-house cleaner or technician,
+ * The employee record (migration 0165, PLAN-hr-employees.md): the HR side of an in-house cleaner or technician,
  * ported from Hookka's Employee Master. The database side; the fields and their rules are in hrFields.ts.
  */
 
@@ -52,7 +52,7 @@ function toEmployee(r: Row): Employee {
     employeeId: r.employee_id, isActive: !!r.is_active,
     // Free text saved before the Leader tick ("Cleaning leader") reads as a leader when it says so.
     position: r.position?.toLowerCase().includes('leader') ? 'leader' : 'employee', nationality: r.nationality, joinDate: r.join_date,
-    // Read before migration 0167 the columns are missing: the record's defaults apply.
+    // Read before migration 0170 the columns are missing: the record's defaults apply.
     leaderAllowanceSen: r.leader_allowance_sen ?? d.leaderAllowanceSen, efficiencyAllowanceSen: r.efficiency_allowance_sen ?? d.efficiencyAllowanceSen,
     efficiencyThresholdPct: r.efficiency_threshold_pct ?? d.efficiencyThresholdPct,
     status: r.status ?? d.status, resignedAt: r.resigned_at, payBasis: r.pay_basis ?? d.payBasis,

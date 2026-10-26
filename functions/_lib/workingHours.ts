@@ -10,13 +10,13 @@ import { DEPARTMENTS, type Department, type Employee } from './hrFields';
 export { DEPARTMENTS, DEPARTMENT_LABEL, type Department } from './hrFields';
 
 /**
- * Working Hours (migration 0168): the hours each employee worked per day per department, as Hookka keeps them
+ * Working Hours (migration 0171): the hours each employee worked per day per department, as Hookka keeps them
  * (working_hour_entries). The office keys or corrects them on HR > Employees > Working Hours, starting from the phone
  * punches; payroll reads them (payroll.ts monthInputs).
  */
 
 export const hasWorkingHours = (env: Env): Promise<boolean> => hasColumn(env, 'working_hour_entries', 'id').catch(() => false);
-export const NOT_MIGRATED = 'Working Hours needs a database update (migration 0168) that has not been applied yet.';
+export const NOT_MIGRATED = 'Working Hours needs a database update (migration 0171) that has not been applied yet.';
 /** The longest range the grid reads at once: two months. */
 export const MAX_RANGE_DAYS = 62;
 

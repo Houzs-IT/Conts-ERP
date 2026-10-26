@@ -3,10 +3,10 @@ import { hasColumn } from './auth';
 import type { Employee } from './hrFields';
 import { ALLOWANCE_TYPES, balance, chargeableDays, parseHolidays, type Balance, type LeaveStatus, type LeaveType, type PublicHoliday } from './leaveRules';
 
-/** Leave on the database (migration 0164, PLAN-hr-employees.md phase 3). The rules themselves are in leaveRules.ts. */
+/** Leave on the database (migration 0167, PLAN-hr-employees.md phase 3). The rules themselves are in leaveRules.ts. */
 
 export const hasLeaves = (env: Env): Promise<boolean> => hasColumn(env, 'leaves', 'id').catch(() => false);
-export const NOT_MIGRATED = 'Leave needs a database update (migration 0164) that has not been applied yet.';
+export const NOT_MIGRATED = 'Leave needs a database update (migration 0167) that has not been applied yet.';
 export const HOLIDAYS_KEY = 'hr.public_holidays';
 
 export async function readHolidays(env: Env): Promise<PublicHoliday[]> {

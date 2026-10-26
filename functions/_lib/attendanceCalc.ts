@@ -1,5 +1,5 @@
 /**
- * Attendance arithmetic (migration 0163, PLAN-hr-employees.md phase 2). No database code: the portal, the desk and the
+ * Attendance arithmetic (migration 0166, PLAN-hr-employees.md phase 2). No database code: the portal, the desk and the
  * tests share it.
  */
 

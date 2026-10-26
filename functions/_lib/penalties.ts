@@ -4,13 +4,13 @@ import { hasColumn } from './auth';
 import { employeeIdsFor } from './hr';
 
 /**
- * Worker Penalty (migration 0169), ported from Hookka's worker-penalties: a penalty raised against a cleaning or repair
+ * Worker Penalty (migration 0173), ported from Hookka's worker-penalties: a penalty raised against a cleaning or repair
  * job (Hookka: a production order), shared out to the workers responsible, approved, then taken off each one's payslip
  * for the payroll month it lands on.
  */
 
 export const hasPenalties = (env: Env): Promise<boolean> => hasColumn(env, 'worker_penalties', 'id').catch(() => false);
-export const NOT_MIGRATED = 'Worker Penalty needs a database update (migration 0169) that has not been applied yet.';
+export const NOT_MIGRATED = 'Worker Penalty needs a database update (migration 0173) that has not been applied yet.';
 export const PENALTY_STATUSES = ['draft', 'pending', 'approved', 'posted'] as const;
 export type PenaltyStatus = (typeof PENALTY_STATUSES)[number];
 export type JobKind = 'cleaning' | 'repair';

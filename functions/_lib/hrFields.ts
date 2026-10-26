@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 /**
- * The employee record's fields (migration 0162, PLAN-hr-employees.md), ported from Hookka's Employee Master. No database
+ * The employee record's fields (migration 0165, PLAN-hr-employees.md), ported from Hookka's Employee Master. No database
  * code here: the Employees tab imports this too, so the form and the API use the same lists and the same rules.
  */
 
@@ -86,7 +86,7 @@ export interface Employee extends EmployeeInput {
   isActive: boolean;
 }
 
-/** The record a person starts with before anyone saves one. Matches the column defaults in migration 0162. */
+/** The record a person starts with before anyone saves one. Matches the column defaults in migration 0165. */
 export const EMPLOYEE_DEFAULTS: EmployeeInput = {
   position: 'employee', nationality: null, joinDate: null, status: 'active', resignedAt: null,
   payBasis: 'monthly', basicSalarySen: 0, dailyRateSen: 0, workingDaysPerMonth: 26, workingHoursPerDay: 8, otMultiplier: 1.5,

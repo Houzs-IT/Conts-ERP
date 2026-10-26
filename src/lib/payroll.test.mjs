@@ -1,4 +1,4 @@
-// node --test src/lib/payroll.test.mjs. One month's pay in functions/_lib/payrollCalc.ts (migration 0165), figures worked
+// node --test src/lib/payroll.test.mjs. One month's pay in functions/_lib/payrollCalc.ts (migration 0168), figures worked
 // out by hand. November 2026: the 1st is a Sunday, so Monday to Saturday gives 25 working days.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

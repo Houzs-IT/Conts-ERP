@@ -10,10 +10,10 @@ import { hasPenalties, PENALTY_SUM_SQL } from './penalties';
 import type { PcbStatus } from './pcb';
 import { computePay, parsePayRules, type PayFigures, type PayInput, type PayRules, type PunchDay, type ApprovedLeave } from './payrollCalc';
 
-/** Payroll on the database (migration 0165, PLAN-hr-employees.md phase 4). The arithmetic is in payrollCalc.ts. */
+/** Payroll on the database (migration 0168, PLAN-hr-employees.md phase 4). The arithmetic is in payrollCalc.ts. */
 
 export const hasPayroll = (env: Env): Promise<boolean> => hasColumn(env, 'payslips', 'id').catch(() => false);
-export const NOT_MIGRATED = 'Payroll needs a database update (migration 0165) that has not been applied yet.';
+export const NOT_MIGRATED = 'Payroll needs a database update (migration 0168) that has not been applied yet.';
 export const RULES_KEY = 'hr.pay_rules';
 export const isPeriod = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(v);
 
@@ -103,7 +103,7 @@ export async function monthInputs(env: Env, people: Employee[], period: string, 
     const approved: ApprovedLeave[] = (leavesBy.get(e.id) ?? []).map(l => ({ type: l.type, startDate: l.start_date, endDate: l.end_date }));
     out.set(e.id, {
       period, throughDay: through, employee: e,
-      // Before any history row exists (a record saved before 0165 with no salary), the record's own salary.
+      // Before any history row exists (a record saved before 0168 with no salary), the record's own salary.
       basicSalarySen: salaryBy.get(e.id) ?? e.basicSalarySen,
       days, leaves: approved, holidays, advanceSen: advanceBy.get(e.id) ?? 0, penaltySen: penaltyBy.get(e.id) ?? 0,
       ytd: ytdBy.get(e.id) ?? { remunerationSen: 0, epfSen: 0, pcbSen: 0 }, rules,

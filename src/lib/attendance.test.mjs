@@ -1,4 +1,4 @@
-// node --test src/lib/attendance.test.mjs. Punch arithmetic in functions/_lib/attendanceCalc.ts (migration 0163).
+// node --test src/lib/attendance.test.mjs. Punch arithmetic in functions/_lib/attendanceCalc.ts (migration 0166).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 

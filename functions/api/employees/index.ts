@@ -6,11 +6,11 @@ import { employeeInput, type Employee, type EmployeeInput } from '../../_lib/hrF
 import { hasPayroll } from '../../_lib/payroll';
 
 const MANAGE = ['management']; // everyone else follows their level in HR (functions/_lib/access.ts)
-const NOT_MIGRATED = 'The employee record needs a database update (migration 0162) that has not been applied yet.';
+const NOT_MIGRATED = 'The employee record needs a database update (migration 0165) that has not been applied yet.';
 /** Kept out of the audit trail's before/after: the trail shows that they changed, not what they are. */
 const PRIVATE: (keyof EmployeeInput)[] = ['bankAccount'];
 
-/** GET /api/employees — every in-house cleaner and technician with their HR record (HR > Employees, migration 0162). */
+/** GET /api/employees — every in-house cleaner and technician with their HR record (HR > Employees, migration 0165). */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
@@ -70,7 +70,7 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
   }
 
   // A new basic salary takes effect from the date the form gives (the start of this month by default); payroll pays each
-  // month on the salary in force on its last day (migration 0165).
+  // month on the salary in force on its last day (migration 0168).
   if (e.payBasis === 'monthly' && e.basicSalarySen > 0 && (!before.id || before.basicSalarySen !== e.basicSalarySen) && await hasPayroll(env)) {
     const asked = b?.salaryEffectiveFrom;
     const from = typeof asked === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(asked) ? asked : `${mytToday().slice(0, 7)}-01`;

@@ -32,7 +32,7 @@ export const sideSql = (u: string, d: string) => `CASE WHEN ${d}.side IN ('conts
 export const sideFits = (departmentSide: Side, side: Side) => departmentSide === 'both' || departmentSide === side;
 
 /** The area groups each side closes. Finance and System are on neither list, so they follow the role. The Dream Crafter
- *  groups match its sidebar sections (owner, 26 Oct 2026; migration 0169 copied the old Dream Crafter baseline to each). */
+ *  groups match its sidebar sections (owner, 26 Oct 2026; migration 0172 copied the old Dream Crafter baseline to each). */
 const CLOSED_BY_SIDE: Record<Side, string[]> = {
   conts: ['Service cases', 'Projects', 'Supply chain'],
   dream_crafter: ['Workspace', 'Operations', 'HR', 'Growth'],

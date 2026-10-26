@@ -1,4 +1,4 @@
-// node --test src/lib/leave.test.mjs. Leave rules in functions/_lib/leaveRules.ts (migration 0164), ported from Hookka.
+// node --test src/lib/leave.test.mjs. Leave rules in functions/_lib/leaveRules.ts (migration 0167), ported from Hookka.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 

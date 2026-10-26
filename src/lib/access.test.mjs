@@ -72,7 +72,7 @@ test('cleaning and maintenance have no desk areas, whatever is stored', () => {
 });
 
 // The levels the rules migrations-pg/0145 seeds give, written out per area (they match the category chart the app had
-// before departments: Operations staff, Operations manager and Finance admin columns). HR came later (migration 0162)
+// before departments: Operations staff, Operations manager and Finance admin columns). HR came later (migration 0165)
 // and nobody is seeded into it: pay and bank details stay hidden until management grants HR.
 const seeded = {
   operations_staff: { dashboard: 'none', portfolio: 'none', reservations: 'edit', operations: 'edit', properties: 'edit', hr: 'none', serviceCases: 'edit', projects: 'edit', scSales: 'edit', scInvoices: 'none', scConsignment: 'edit', scProcurement: 'edit', scTransportPlan: 'edit', scWarehouse: 'edit', finance: 'none', owners: 'none', ledger: 'none', performance: 'edit', comms: 'edit', users: 'none', integrations: 'none', settings: 'none', health: 'none' },
@@ -81,7 +81,7 @@ const seeded = {
 };
 
 test('the seeded rules give the levels of the old role chart', () => {
-  // Migration 0169 copied each seeded Dream Crafter baseline to its three sidebar categories.
+  // Migration 0172 copied each seeded Dream Crafter baseline to its three sidebar categories.
   const dc = level => ({ 'group:Service cases': level, 'group:Projects': level, 'group:Supply chain': level });
   const staffDept = { 'group:Operations': 'edit', ...dc('edit'), 'group:Growth': 'edit', scInvoices: 'none' };
   const financeDept = {

@@ -4,7 +4,7 @@ import type { LeaveType, PublicHoliday } from './leaveRules';
 import type { Employee, TaxCategory, TaxResidency } from './hrFields';
 
 /**
- * One month's pay (migration 0165, PLAN-hr-employees.md phase 4), ported from Hookka's labor-engine computeMonthlyLabor,
+ * One month's pay (migration 0168, PLAN-hr-employees.md phase 4), ported from Hookka's labor-engine computeMonthlyLabor,
  * attendance-rules computeAttendanceDay and payslips calcStatutory. Every rule is a setting on Payroll > Pay rules
  * (owner, 26 Oct 2026: The Conts' own rules are not decided yet), starting from Hookka's defaults, except that shift
  * rules start off. No database code: the API, the portal estimate and the tests all run this one function.

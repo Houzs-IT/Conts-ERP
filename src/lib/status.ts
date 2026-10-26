@@ -304,21 +304,21 @@ export const STATUS_VOCAB = {
     ON_LEAVE: { label: 'On leave', tone: 'warning' },
     INACTIVE: { label: 'Inactive', tone: 'neutral' },
   },
-  // HR > Employees > Worker Penalty (migration 0169), Hookka's lifecycle.
+  // HR > Employees > Worker Penalty (migration 0173), Hookka's lifecycle.
   penalty: {
     draft: { label: 'Draft', tone: 'neutral' },
     pending: { label: 'Pending approval', tone: 'warning' },
     approved: { label: 'Approved, awaiting payroll', tone: 'info' },
     posted: { label: 'Posted', tone: 'success' },
   },
-  // HR > Workers > Payroll and the portal's Pay screen (migration 0165). 'none': the month has not been run for them.
+  // HR > Workers > Payroll and the portal's Pay screen (migration 0168). 'none': the month has not been run for them.
   payslip: {
     none: { label: 'Not run', tone: 'neutral' },
     draft: { label: 'Draft', tone: 'warning' },
     approved: { label: 'Approved', tone: 'info' },
     paid: { label: 'Paid', tone: 'success' },
   },
-  // HR > Workers > Leave and the portal's Me screen (migration 0164).
+  // HR > Workers > Leave and the portal's Me screen (migration 0167).
   leave: {
     pending: { label: 'Waiting', tone: 'warning' },
     approved: { label: 'Approved', tone: 'success' },
