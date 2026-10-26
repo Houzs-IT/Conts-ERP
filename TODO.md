@@ -183,10 +183,10 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 - Page Views (screen 07): no live source (Channex has no Airbnb page views or impressions); shows only Control values, hidden when empty.
 - Listing photos: units get a cover photo upload; placeholder stripes until one is uploaded.
 - Owner portal in the showcase uses a fixed sample owner (Tan Wei Ming, 3 units), never a real owner's money or guests.
-- PR 1 built and tested locally (feat/owner-showcase, migration 0164): apply 0164 to staging, then production, before merge; without it the showcase still opens with live figures and Showcase control says it is not set up.
+- PR 1 merged 26 Oct 2026 (#409). Check migration 0164 is on staging and production; without it Showcase control says it is not set up.
 - Showcase figures definitions: occupancy = booked nights / listed units x days; cancellation = cancelled / (counted + cancelled) by check-in in range; lead time = check-in minus the day the booking reached Conts (imported bookings recorded after check-in are left out); 5-star = rating 5.
-- Not built in PR 1: the Switch button (needs the owner portal, PR 2); per-listing page views; a setting to show full guest names (always first name + initial).
-- PR 2: not started.
+- Not built: per-listing page views; a setting to show full guest names (always first name + initial).
+- PR 2 (feat/owner-showcase-portal, no migration): sample owner portal at /performance/showcase/owner (7 desktop tabs, iOS + Android phones) and the Switch curtain both ways. All its figures are made-up examples in src/pages/showcase/sampleOwner.ts, generated around today; it never reads a real owner. Download PDF on a sample statement is switched off.
 
 ## Later
 - Packages (8 Oct, chore/update-packages): Property OS has 0 flagged packages (wrangler 4.148, source-map-js, and an override pinning sharp to 0.35.5 inside wrangler's local emulator; all build/dev tools, none ran in production). Engine: the non-breaking fixes are in (hono on the server, dompurify on the screens, and build tools). Left in engine/, each needing a breaking upgrade of Houzs's code or tools: react-router 6 (moderate), wrangler's sharp and undici, esbuild, vitest, braces. Take them with the next Houzs copy.

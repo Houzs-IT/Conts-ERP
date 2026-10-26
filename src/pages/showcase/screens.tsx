@@ -136,12 +136,13 @@ export function ListingsScreen({ data, g }: { data: ShowcaseData; g: G }) {
           <button type="button" className="sc-chip" style={{ height: 42, padding: '0 20px', fontWeight: 700 }} onClick={() => setShown(n => n + 14)}>Showing {shown} of {fmtFigure('listings', g('listings'))} · Load more</button>
         </div>
       )}
-      {preview && <ListingPreview l={preview} g={g} onClose={() => setPreview(null)} />}
+      {preview && <ListingPreview l={preview} hostLine={`${fmtFigure('rev_count', g('rev_count'))} reviews across ${fmtFigure('listings', g('listings'))} homes`} onClose={() => setPreview(null)} />}
     </div>
   );
 }
 
-function ListingPreview({ l, g, onClose }: { l: Listing; g: G; onClose: () => void }) {
+/** A listing as guests see it on Airbnb, desktop or phone. `hostLine` is the line under "Hosted by The Conts". */
+export function ListingPreview({ l, hostLine, onClose }: { l: Listing; hostLine: string; onClose: () => void }) {
   const [mode, setMode] = useState<'desktop' | 'mobile'>('desktop');
   useEscape(onClose);
   const room = l.airbnbId ? `airbnb.com/rooms/${l.airbnbId}` : 'airbnb.com';
@@ -174,7 +175,7 @@ function ListingPreview({ l, g, onClose }: { l: Listing; g: G; onClose: () => vo
                 <div style={{ fontSize: 15, fontWeight: 700, marginTop: 6 }}>{ratingLine(l)}</div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 14, borderTop: '1px solid var(--sc-line)', borderBottom: '1px solid var(--sc-line)', padding: '20px 0', marginTop: 22 }}>
                   <div className="sc-logo-tile" style={{ width: 44, height: 44, borderRadius: '50%' }}>TC</div>
-                  <div><div style={{ fontSize: 15, fontWeight: 700 }}>Hosted by The Conts</div><div style={{ fontSize: 13, color: 'var(--sc-muted)' }}>{fmtFigure('rev_count', g('rev_count'))} reviews across {fmtFigure('listings', g('listings'))} homes</div></div>
+                  <div><div style={{ fontSize: 15, fontWeight: 700 }}>Hosted by The Conts</div><div style={{ fontSize: 13, color: 'var(--sc-muted)' }}>{hostLine}</div></div>
                 </div>
               </div>
               <div style={{ border: '1px solid var(--sc-line)', borderRadius: 16, padding: 24, boxShadow: '0 6px 20px rgba(28,27,25,0.08)' }}>

@@ -202,6 +202,10 @@ export const allow = {
   'src/pages/showcase/CalendarScreen.tsx': 'The sales presentation copies the approved design pack word for word.',
   'src/pages/showcase/parts.tsx': 'The sales presentation copies the approved design pack word for word.',
   'src/pages/showcase/model.ts': 'The figure names the design pack gives the showcase and its control panel.',
+  'src/pages/showcase/OwnerPortalPage.tsx': 'The sample owner portal copies the approved design pack word for word.',
+  'src/pages/showcase/OwnerPhone.tsx': 'The sample owner app copies the approved design pack word for word.',
+  'src/pages/showcase/portalParts.tsx': 'The sample owner portal copies the approved design pack word for word.',
+  'src/pages/showcase/sampleOwner.ts': 'The sample owner\'s example cases and statements, in the design pack\'s words.',
 };
 
 /** Files being reworked elsewhere that apply these words themselves when their rework lands: the check skips them

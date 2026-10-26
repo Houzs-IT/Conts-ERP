@@ -1,0 +1,102 @@
+/* Sample owner portal and the Switch between it and the Owner Showcase (CONTS-0006 part 2). Same design pack and
+   palette as showcase.css; the extra colours are named here once. */
+.sc { --sc-green-bg: #E3F2EA; --sc-green-ink: #1F6B48; --sc-bezel-android: #2A2926; --sc-nav-android: #F6F5F2; --sc-camera: #141413; }
+
+@keyframes scCurtainIn { from { transform: translateY(100%); } to { transform: none; } }
+@keyframes scCurtainOut { from { transform: none; } to { transform: translateY(-100%); } }
+@keyframes scNudge { 0%, 100% { transform: translateX(0); } 50% { transform: translateX(6px); } }
+@keyframes scSheetUp { from { transform: translateY(100%); } to { transform: none; } }
+@keyframes scPopCentre { from { opacity: 0; transform: translate(-50%, -48%) scale(.97); } to { opacity: 1; transform: translate(-50%, -50%); } }
+
+/* Switch */
+.sc-switch { height: 40px; padding: 0 18px 0 14px; border-radius: 999px; border: 1px solid var(--sc-control); background: var(--sc-surface); font-size: 13px; font-weight: 700; display: flex; align-items: center; gap: 10px; cursor: pointer; white-space: nowrap; margin-left: 6px; }
+.sc-switch-icon { display: inline-flex; width: 24px; height: 24px; border-radius: 50%; background: var(--sc-teal-tint); color: var(--sc-teal-deep); align-items: center; justify-content: center; font-size: 13px; transition: transform 420ms var(--sc-ease-switch); }
+.sc-switch-roll { display: inline-block; height: 18px; overflow: hidden; }
+.sc-switch-roll > span { display: flex; flex-direction: column; transition: transform 420ms var(--sc-ease-switch); }
+.sc-switch-roll > span > span { height: 18px; line-height: 18px; }
+.sc-switch.rolled .sc-switch-icon { transform: rotate(180deg); }
+.sc-switch.rolled .sc-switch-roll > span { transform: translateY(-18px); }
+.sc-curtain { position: fixed; inset: 0; z-index: 300; background: var(--sc-dark); color: var(--sc-surface); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; padding: 0 16px; text-align: center; }
+.sc-curtain.in { animation: scCurtainIn 460ms var(--sc-ease-switch); }
+.sc-curtain.out { animation: scCurtainOut 520ms 260ms var(--sc-ease-switch) both; }
+.sc-nudge { color: var(--sc-teal-on-dark); display: inline-block; animation: scNudge 700ms ease-in-out infinite; }
+.sc-curtain-to { display: inline-block; animation: scPop 420ms 180ms var(--sc-ease) both; }
+.sc-curtain-sub { font-size: 14px; color: var(--sc-dark-muted); animation: scFade 400ms 280ms both; }
+@media (prefers-reduced-motion: reduce) {
+  .sc-switch-icon, .sc-switch-roll > span { transition: none; }
+  .sc-curtain.in { animation: scFade 200ms ease-out; }
+  .sc-curtain.out { animation: scFade 200ms ease-out reverse both; }
+  .sc-nudge, .sc-curtain-to, .sc-curtain-sub { animation: none; }
+}
+
+/* Desktop portal */
+.sc-op-header { position: sticky; top: 0; z-index: 20; background: var(--sc-surface); border-bottom: 1px solid var(--sc-line); display: flex; flex-wrap: wrap; align-items: center; column-gap: 20px; padding: 0 32px; }
+.sc-op-pill { font-size: 11px; font-weight: 800; padding: 4px 9px; border-radius: 999px; background: var(--sc-teal-tint); color: var(--sc-teal-deep); letter-spacing: 0.04em; display: none; }
+.sc-op-name { display: none; font-size: 13px; font-weight: 700; white-space: nowrap; }
+@media (min-width: 1150px) { .sc-op-pill { display: inline; } }
+@media (min-width: 1400px) { .sc-op-name { display: block; } }
+.sc-op-tabs { order: 3; flex-basis: 100%; display: flex; gap: 28px; min-width: 0; overflow-x: auto; scrollbar-width: none; border-top: 1px solid var(--sc-subtle); height: 52px; align-items: stretch; }
+.sc-op-tabs::-webkit-scrollbar { display: none; }
+.sc-op-tab { border: none; border-bottom: 2px solid transparent; background: transparent; color: var(--sc-muted); padding: 0 2px; font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap; flex-shrink: 0; }
+.sc-op-tab[aria-current="page"] { border-bottom-color: var(--sc-ink); color: var(--sc-ink); font-weight: 800; }
+.sc-op-main { flex: 1; width: 100%; max-width: 1240px; margin: 0 auto; padding: 32px 32px 64px; display: flex; flex-direction: column; gap: 24px; }
+.sc-op-card { background: var(--sc-surface); border: 1px solid var(--sc-line); border-radius: 24px; padding: 28px; }
+.sc-status { font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 999px; white-space: nowrap; }
+.sc-status.ok { background: var(--sc-green-bg); color: var(--sc-green-ink); }
+.sc-status.open { background: var(--sc-amber-bg); color: var(--sc-amber-ink); }
+.sc-scroll-x { overflow-x: auto; }
+.sc-op-case-grid { display: grid; grid-template-columns: 110px minmax(0, 1.3fr) minmax(0, 1fr) 150px 120px 120px; gap: 16px; min-width: 760px; }
+.sc-op-statement-grid { display: grid; grid-template-columns: 120px 70px repeat(4, minmax(0, 1fr)) 130px 110px 80px; gap: 12px; min-width: 980px; }
+.sc-op-grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; }
+.sc-op-pay-top { display: grid; grid-template-columns: minmax(0, 1.2fr) repeat(3, minmax(0, 1fr)); gap: 20px; }
+.sc-op-support { display: grid; grid-template-columns: 280px minmax(0, 1fr); background: var(--sc-surface); border: 1px solid var(--sc-line); border-radius: 24px; overflow: hidden; height: 620px; }
+.sc-scrim-dim { position: fixed; inset: 0; z-index: 39; background: rgba(28, 27, 25, 0.25); animation: scFade 200ms ease-out; }
+.sc-side { position: fixed; top: 0; right: 0; bottom: 0; max-width: 100vw; background: var(--sc-surface); z-index: 40; animation: scSlideIn 320ms var(--sc-ease); display: flex; flex-direction: column; box-shadow: -12px 0 32px rgba(28, 27, 25, 0.12); }
+.sc-modal { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 560px; max-width: calc(100vw - 32px); max-height: 86vh; overflow: auto; background: var(--sc-surface); border-radius: 24px; z-index: 40; padding: 32px; box-shadow: 0 24px 60px rgba(28, 27, 25, 0.2); animation: scPopCentre 240ms var(--sc-ease); }
+.sc-lightbox { position: fixed; inset: 0; z-index: 50; background: rgba(20, 20, 19, 0.88); animation: scFade 200ms ease-out; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 16px; cursor: zoom-out; }
+.sc-lightbox-photo { border-radius: 16px; background: repeating-linear-gradient(135deg, var(--sc-dark-line) 0 8px, var(--sc-bezel-android) 8px 16px); display: flex; align-items: center; justify-content: center; font-family: ui-monospace, monospace; font-size: 13px; color: var(--sc-dark-muted); }
+.sc-bubble { padding: 12px 16px; font-size: 14px; line-height: 1.5; }
+.sc-bubble.me { border-radius: 18px 18px 4px 18px; background: var(--sc-ink); color: var(--sc-surface); }
+.sc-bubble.them { border-radius: 18px 18px 18px 4px; background: var(--sc-surface); border: 1px solid var(--sc-line); }
+.sc-input { flex: 1; height: 46px; border: 1px solid var(--sc-control); border-radius: 999px; padding: 0 18px; font-size: 14px; outline: none; color: var(--sc-ink); background: var(--sc-surface); min-width: 0; }
+.sc-btn-dark { height: 46px; padding: 0 22px; border: none; border-radius: 999px; background: var(--sc-ink); color: var(--sc-surface) !important; font-size: 14px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.sc-btn-dark:disabled { background: var(--sc-disabled); cursor: default; }
+.sc-btn-line { height: 44px; border-radius: 999px; border: 1px solid var(--sc-control); background: var(--sc-surface); font-size: 13px; font-weight: 700; cursor: pointer; }
+.sc-btn-line:disabled { color: var(--sc-faint); cursor: default; }
+.sc-sample-note { font-size: 12px; color: var(--sc-faint); text-align: center; }
+@media (max-width: 1000px) {
+  .sc-op-header { padding: 0 16px; }
+  .sc-op-main { padding: 24px 16px 48px; }
+  .sc-op-grid-3, .sc-op-pay-top { grid-template-columns: minmax(0, 1fr); }
+  .sc-op-support { grid-template-columns: minmax(0, 1fr); height: auto; }
+  .sc-op-support > :first-child { border-right: none !important; border-bottom: 1px solid var(--sc-line); }
+  .sc-op-support > :last-child { height: 520px; }
+}
+
+/* Phones */
+.sc-phones { flex: 1; display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: center; gap: 56px; padding: 40px 32px 56px; background: var(--sc-preview); }
+.sc-phone { background: var(--sc-page); overflow: hidden; display: flex; flex-direction: column; position: relative; box-shadow: 0 24px 60px rgba(28, 27, 25, 0.2); max-width: calc(100vw - 32px); }
+.sc-phone.ios { width: 390px; height: 844px; border-radius: 54px; border: 10px solid var(--sc-ink); }
+.sc-phone.android { width: 384px; height: 832px; border-radius: 38px; border: 8px solid var(--sc-bezel-android); }
+.sc-phone-scroll { flex: 1; overflow-y: auto; scrollbar-width: none; padding: 0 18px 28px; display: flex; flex-direction: column; gap: 20px; }
+.sc-phone-scroll::-webkit-scrollbar { display: none; }
+.sc-phone-card { background: var(--sc-surface); border: 1px solid var(--sc-line); border-radius: 18px; padding: 16px; }
+.sc-phone-tabs { flex-shrink: 0; border-top: 1px solid var(--sc-seg); display: grid; grid-template-columns: repeat(5, 1fr); background: var(--sc-surface); }
+.sc-phone.android .sc-phone-tabs, .sc-phone.android .sc-phone-home { background: var(--sc-nav-android); }
+.sc-phone-tab { border: none; background: transparent; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 4px; color: var(--sc-faint); font-size: 11px; font-weight: 700; padding: 0; }
+.sc-phone-tab[aria-current="page"] { color: var(--sc-ink); }
+.sc-phone-tab .icon { height: 30px; border-radius: 999px; display: flex; align-items: center; justify-content: center; }
+.sc-phone.ios .sc-phone-tab .icon { width: 30px; }
+.sc-phone.ios .sc-phone-tab[aria-current="page"] .icon { color: var(--sc-teal); }
+.sc-phone.android .sc-phone-tab .icon { width: 58px; }
+.sc-phone.android .sc-phone-tab[aria-current="page"] .icon { background: var(--sc-teal-tint); color: var(--sc-teal-deep); }
+.sc-phone-home { flex-shrink: 0; display: flex; align-items: center; justify-content: center; background: var(--sc-surface); }
+.sc-phone-sub { position: absolute; left: 0; right: 0; bottom: 0; background: var(--sc-past); z-index: 5; animation: scSlideIn 320ms var(--sc-ease); display: flex; flex-direction: column; }
+.sc-phone-sheet { position: absolute; left: 0; right: 0; bottom: 0; z-index: 9; background: var(--sc-surface); border-radius: 26px 26px 0 0; animation: scSheetUp 300ms var(--sc-ease); padding: 10px 20px 34px; display: flex; flex-direction: column; gap: 12px; }
+.sc-phone-white { background: var(--sc-surface); border-radius: 20px; padding: 18px; }
+.sc-phone-day { margin: 2px; border-radius: 12px; border: 1px solid var(--sc-seg); background: var(--sc-surface); display: flex; flex-direction: column; align-items: center; justify-content: space-between; padding: 6px 0 5px; }
+.sc-phone-day.past { background: var(--sc-past); border-color: var(--sc-past); }
+.sc-phone-bar { position: absolute; top: 34px; height: 28px; border: none; color: var(--sc-surface) !important; display: flex; align-items: center; gap: 6px; cursor: pointer; overflow: hidden; white-space: nowrap; }
+.sc-phone-bar.completed { background: var(--sc-faint); }
+.sc-phone-bar.in_stay { background: var(--sc-teal-deep); }
+.sc-phone-bar.confirmed { background: var(--sc-teal-mid); }

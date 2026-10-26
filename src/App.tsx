@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef } from 'react';
+import { lazy, Suspense, useEffect, useRef, type ReactNode } from 'react';
 import { readDevice } from './lib/deviceClass';
 import { CrashScreen } from './components/CrashScreen';
 import { Routes, Route, Outlet, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
@@ -23,6 +23,7 @@ const NotificationsPage = lazy(() => import('./pages/NotificationsPage'));
 const PortfolioPage = lazy(() => import('./pages/PortfolioPage'));
 const OwnerShowcasePage = lazy(() => import('./pages/showcase/OwnerShowcasePage'));
 const ShowcaseControlPage = lazy(() => import('./pages/showcase/ShowcaseControlPage'));
+const OwnerPortalDemoPage = lazy(() => import('./pages/showcase/OwnerPortalPage'));
 const OwnerOverallReportPage = lazy(() => import('./pages/OwnerOverallReportPage'));
 const CalendarPage = lazy(() => import('./pages/CalendarPage'));
 const BookingsPage = lazy(() => import('./pages/BookingsPage'));
@@ -114,12 +115,12 @@ function SettingsHome() {
 const Fallback = () => <PageSkeleton />;
 
 /** Desktop shell as a layout route; the matched page renders into <Outlet />. */
-/** The Owner Showcase has no app shell around it, so it applies the screen's access itself. */
-function ShowcaseRoute() {
+/** The Owner Showcase and its sample owner portal have no app shell around them, so they apply the Owner Showcase
+ *  screen's access themselves. */
+function ShowcaseRoute({ children }: { children: ReactNode }) {
   const { user } = useSession();
-  const location = useLocation();
-  if (screenClosed(location.pathname, user?.access)) return <Navigate to={user ? homeFor(user) : '/'} replace />;
-  return <Suspense fallback={<Fallback />}><OwnerShowcasePage /></Suspense>;
+  if (screenClosed('/performance/showcase', user?.access)) return <Navigate to={user ? homeFor(user) : '/'} replace />;
+  return <Suspense fallback={<Fallback />}>{children}</Suspense>;
 }
 
 function AppLayout() {
@@ -251,7 +252,8 @@ function Routed() {
       <Route path="/finance/statements/:id/report" element={<Suspense fallback={<Fallback />}><OwnerIncomeReportPage /></Suspense>} />
       <Route path="/finance/statements/print" element={<Suspense fallback={<Fallback />}><StatementsPrintPage /></Suspense>} />
       {/* Sales staff present it to a prospective owner: full screen, no menu (CONTS-0006). */}
-      <Route path="/performance/showcase" element={<ShowcaseRoute />} />
+      <Route path="/performance/showcase" element={<ShowcaseRoute><OwnerShowcasePage /></ShowcaseRoute>} />
+      <Route path="/performance/showcase/owner" element={<ShowcaseRoute><OwnerPortalDemoPage /></ShowcaseRoute>} />
       <Route element={<AppLayout />}>
         <Route path="/" element={<DashboardPage />} />
         <Route path="/notifications" element={<NotificationsPage />} />
