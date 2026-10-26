@@ -19,8 +19,8 @@ const isLang = (v: unknown): v is PortalLang => PORTAL_LANGS.some(l => l === v);
 
 /** Each language in its own script, so the person can find theirs. */
 export const LANG_LABEL: Record<PortalLang, string> = { en: 'English', ms: 'Bahasa Melayu', zh: '中文', my: 'မြန်မာ' };
-/** Dates and month names in the language; Burmese keeps 0-9 digits, as times and amounts are shown with them. */
-const LOCALE: Record<PortalLang, string> = { en: 'en-MY', ms: 'ms-MY', zh: 'zh-CN', my: 'my-MM-u-nu-latn' };
+/** Dates and month names in the language (Burmese has its own, OWN_MONTHS below). */
+const LOCALE: Record<PortalLang, string> = { en: 'en-MY', ms: 'ms-MY', zh: 'zh-CN', my: 'en-MY' };
 
 const KEY = 'conts.portal.lang';
 const listeners = new Set<() => void>();
@@ -314,7 +314,15 @@ export interface PortalDates { day: (isoDate: string) => string; month: (period:
 /** Dates in the phone's language: "26 Oct 2026", "26 Okt 2026", "2026年10月26日"; a pay month as "October 2026". */
 export function usePortalDates(): PortalDates {
   const lang = usePortalLang();
-  const day = useCallback((isoDate: string): string => dateIn(LOCALE[lang], isoDate), [lang]);
-  const month = useCallback((period: string): string => monthIn(LOCALE[lang], period), [lang]);
+  const own = OWN_MONTHS[lang];
+  const day = useCallback((isoDate: string): string =>
+    (own ? `${Number(isoDate.slice(8, 10))} ${own[Number(isoDate.slice(5, 7)) - 1]} ${isoDate.slice(0, 4)}` : dateIn(LOCALE[lang], isoDate)), [lang, own]);
+  const month = useCallback((period: string): string =>
+    (own ? `${own[Number(period.slice(5, 7)) - 1]} ${period.slice(0, 4)}` : monthIn(LOCALE[lang], period)), [lang, own]);
   return { day, month };
 }
+
+/** Month names a phone's browser may not carry: Chrome's date data has no Burmese, so it falls back to English. */
+const OWN_MONTHS: Partial<Record<PortalLang, readonly string[]>> = {
+  my: ['ဇန်နဝါရီ', 'ဖေဖော်ဝါရီ', 'မတ်', 'ဧပြီ', 'မေ', 'ဇွန်', 'ဇူလိုင်', 'ဩဂုတ်', 'စက်တင်ဘာ', 'အောက်တိုဘာ', 'နိုဝင်ဘာ', 'ဒီဇင်ဘာ'],
+};
