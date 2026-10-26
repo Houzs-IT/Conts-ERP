@@ -62,7 +62,7 @@ export const AREAS: Area[] = [
   // The company ledger in the engine (finance phase 1): no Property OS routes, sent to the engine at sign-on.
   // Operations managers read the rest of Finance but never the company books.
   { key: 'ledger', label: 'Ledger', group: 'Finance', api: [], managed: true, strictRead: true },
-  { key: 'performance', label: 'Performance', group: 'Growth', api: ['analytics', 'pricing', 'rates', 'reviews'] },
+  { key: 'performance', label: 'Performance', group: 'Growth', api: ['analytics', 'pricing', 'rates', 'reviews', 'showcase'] },
   { key: 'comms', label: 'Communication', group: 'Growth', api: ['messages', 'automations'] },
   // The user list is read by management and operations managers only (functions/api/users), so finance admins start at none.
   { key: 'users', label: 'Users and roles', group: 'System', api: ['users', 'departments'], managed: true },
