@@ -1,0 +1,3326 @@
+{
+ "built": "2026-10-26",
+ "tag": "sku-batch2 2026-10-26",
+ "new_sub_categories": [
+  [
+   "APPLIANCE",
+   "SMALL_APPLIANCE",
+   "Small appliance",
+   70
+  ],
+  [
+   "SOFT",
+   "TOWEL_BATH",
+   "Towel & bath",
+   70
+  ],
+  [
+   "SERVICE",
+   "DESIGN",
+   "Design",
+   80
+  ],
+  [
+   "SERVICE",
+   "SIGNBOARD",
+   "Signboard",
+   90
+  ],
+  [
+   "SERVICE",
+   "DEFECT_CHECK",
+   "Defect checking",
+   100
+  ],
+  [
+   "BUILTIN",
+   "WALL_CABINET",
+   "Wall Cabinet",
+   80
+  ],
+  [
+   "LIGHTING",
+   "TRACK_LIGHT",
+   "Track light",
+   200
+  ]
+ ],
+ "new_suppliers": [
+  {
+   "key": "DIY",
+   "code": "400-D005",
+   "name": "DIY"
+  },
+  {
+   "key": "HOMES HARMONY",
+   "code": "400-H011",
+   "name": "HOMES HARMONY"
+  },
+  {
+   "key": "KAISON",
+   "code": "400-K007",
+   "name": "KAISON"
+  },
+  {
+   "key": "OFFICE OWN DO",
+   "code": "400-O004",
+   "name": "OFFICE OWN DO"
+  }
+ ],
+ "balance": [
+  {
+   "code": "ELE-0001",
+   "name": "ELECTRIC KETTLE",
+   "category": "APPLIANCE",
+   "sub_category": "SMALL_APPLIANCE",
+   "uom": "PCS",
+   "cost_rm": 42,
+   "links": [
+    {
+     "supplier": "400-S002",
+     "supplier_name": "Shopee",
+     "main": true
+    }
+   ],
+   "source": "balance file: Airbnb / Appliances"
+  },
+  {
+   "code": "ELE-0002",
+   "name": "EXTENSION HEAVY DUTY",
+   "category": "APPLIANCE",
+   "sub_category": "SMALL_APPLIANCE",
+   "uom": "PCS",
+   "cost_rm": 43,
+   "links": [
+    {
+     "supplier": "400-S002",
+     "supplier_name": "Shopee",
+     "main": true
+    }
+   ],
+   "source": "balance file: Airbnb / Appliances"
+  },
+  {
+   "code": "ELE-0003",
+   "name": "EXTENSION WIRE (UNIVERSAL)",
+   "category": "APPLIANCE",
+   "sub_category": "SMALL_APPLIANCE",
+   "uom": "PCS",
+   "cost_rm": 30,
+   "links": [
+    {
+     "supplier": "400-S002",
+     "supplier_name": "Shopee",
+     "main": true
+    }
+   ],
+   "source": "balance file: Airbnb / Appliances"
+  },
+  {
+   "code": "ELE-0004",
+   "name": "HAIR DRYER (HAIRSCAPE 5000)",
+   "category": "APPLIANCE",
+   "sub_category": "SMALL_APPLIANCE",
+   "uom": "PCS",
+   "cost_rm": 35.8,
+   "links": [
+    {
+     "supplier": "400-S002",
+     "supplier_name": "Shopee",
+     "main": true
+    }
+   ],
+   "source": "balance file: Airbnb / Appliances"
+  },
+  {
+   "code": "ELE-0005",
+   "name": "IRON",
+   "category": "APPLIANCE",
+   "sub_category": "SMALL_APPLIANCE",
+   "uom": "PCS",
+   "cost_rm": 40,
+   "links": [
+    {
+     "supplier": "400-S002",
+     "supplier_name": "Shopee",
+     "main": true
+    }
+   ],
+   "source": "balance file: Airbnb / Appliances"
+  },
+  {
+   "code": "ELE-0006",
+   "name": "IRON & IRON BOARD SET",
+   "category": "APPLIANCE",
+   "sub_category": "SMALL_APPLIANCE",
+   "uom": "PCS",
+   "cost_rm": 100,
+   "links": [
+    {
+     "supplier": "400-S002",
+     "supplier_name": "Shopee",
+     "main": true
+    }
+   ],
+   "source": "balance file: Airbnb / Appliances"
+  },
+  {
+   "code": "ELE-0007",
+   "name": "IRON BOARD",
+   "category": "APPLIANCE",
+   "sub_category": "SMALL_APPLIANCE",
+   "uom": "PCS",
+   "cost_rm": 29,
+   "links": [
+    {
+     "supplier": "400-I001",
+     "supplier_name": "IKEA",
+     "main": true
+    }
+   ],
+   "source": "balance file: Airbnb / Appliances"
+  },
+  {
+   "code": "ELE-0008",
+   "name": "MICROWAVE",
+   "category": "APPLIANCE",
+   "sub_category": "SMALL_APPLIANCE",
+   "uom": "PCS",
+   "cost_rm": 219,
+   "links": [
+    {
+     "supplier": "400-S002",
+     "supplier_name": "Shopee",
+     "main": true
+    },
+    {
+     "supplier": "400-0002",
+     "supplier_name": "HLK (CHAIN-STORE) SDN BHD",
+     "main": false
+    },
+    {
+     "supplier": "400-O003",
+     "supplier_name": "ONE LIVING SDN BHD",
+     "main": false
+    }
+   ],
+   "source": "balance file: Airbnb / Appliances"
+  },
+  {
+   "code": "ELE-0009",
+   "name": "MICROWAVE LID",
+   "category": "APPLIANCE",
+   "sub_category": "SMALL_APPLIANCE",
+   "uom": "PCS",
+   "cost_rm": 5,
+   "links": [
+    {
+     "supplier": "400-I001",
+     "supplier_name": "IKEA",
+     "main": true
+    }
+   ],
+   "source": "balance file: Airbnb / Appliances"
+  },
+  {
+   "code": "ELE-0010",
+   "name": "WATER FILTER",
+   "category": "APPLIANCE",
+   "sub_category": "SMALL_APPLIANCE",
+   "uom": "PCS",
+   "cost_rm": 139,
+   "links": [
+    {
+     "supplier": "400-S001",
+     "supplier_name": "SINCERE ZONE ELECTRONICS (M) SDN BHD",
+     "main": true
+    },
+    {
+     "supplier": "400-S002",
+     "supplier_name": "Shopee",
+     "main": false
+    }
+   ],
+   "source": "balance file: Airbnb / Appliances"
+  },
+  {
+   "code": "AIB-0003",
+   "name": "BATHROOM HANGING HOOD STICK",
+   "category": "AIRBNB",
+   "sub_category": "BATH_CLEANING",
+   "uom": "PCS",
+   "cost_rm": 10,
+   "links": [
+    {
+     "supplier": "400-S002",
+     "supplier_name": "Shopee",
+     "main": true
+    },
+    {
+     "supplier": "400-D005",
+     "supplier_name": "DIY",
+     "main": false
+    }
+   ],
+   "source": "balance file: Airbnb / Bathroom"
+  },
+  {
+   "code": "AIB-0005",
+   "name": "BROOMSET",
+   "category": "AIRBNB",
+   "sub_category": "BATH_CLEANING",
+   "uom": "PCS",
+   "cost_rm": 13.9,
+   "links": [
+    {
+     "supplier": "400-S002",
+     "supplier_name": "Shopee",
+     "main": true
+    }
+   ],
+   "source": "balance file: Airbnb / Bathroom"
+  },
+  {
+   "code": "AIB-0006",
+   "name": "BUCKET",
+   "category": "AIRBNB",
+   "sub_category": "BATH_CLEANING",
+   "uom": "PCS",
+   "cost_rm": 10,
+   "links": [
+    {
+     "supplier": "400-D005",
+     "supplier_name": "DIY",
+     "main": true
+    },
+    {
+     "supplier": "400-S002",
+     "supplier_name": "Shopee",
+     "main": false
+    }
+   ],
+   "source": "balance file: Airbnb / Bathroom"
+  },
+  {
+   "code": "AIB-0014",
+   "name": "DISPENSER BOTTLE 500ML",
+   "category": "AIRBNB",
+   "sub_category": "BATH_CLEANING",
+   "uom": "PCS",
+   "cost_rm": 3,
+   "links": [
+    {
+     "supplier": "400-S002",
+     "supplier_name": "Shopee",
+     "main": true
+    }
+   ],
+   "source": "balance file: Airbnb / Bathroom"
+  },
+  {
+   "code": "AIB-0016",
+   "name": "DUSTBIN",
+   "category": "AIRBNB",
+   "sub_category": "BATH_CLEANING",
+   "uom": "PCS",
+   "cost_rm": 5,
+   "links": [
+    {
+     "supplier": "400-I001",
+     "supplier_name": "IKEA",
+     "main": true
+    }
+   ],
+   "source": "balance file: Airbnb / Bathroom"
+  },
+  {
+   "code": "AIB-0028",
+   "name": "MOP",
+   "category": "AIRBNB",
+   "sub_category": "BATH_CLEANING",
+   "uom": "PCS",
+   "cost_rm": 10.88,
+   "links": [
+    {
+     "supplier": "400-S002",
+     "supplier_name": "Shopee",
+     "main": true
+    }
+   ],
+   "source": "balance file: Airbnb / Bathroom"
+  },
+  {
+   "code": "AIB-0029",
+   "name": "MOP WITH BUCKET SET",
+   "category": "AIRBNB",
+   "sub_category": "BATH_CLEANING",
+   "uom": "PCS",
+   "cost_rm": 25,
+   "links": [
+    {
+     "supplier": "400-D005",
+     "supplier_name": "DIY",
+     "main": true
+    },
+    {
+     "supplier": "400-S002",
+     "supplier_name": "Shopee",
+     "main": false
+    }
+   ],
+   "source": "balance file: Airbnb / Bathroom"
+  },
+  {
+   "code": "AIB-0040",
+   "name": "SHAMPOO BOTTLE",
+   "category": "AIRBNB",
+   "sub_category": "BATH_CLEANING",
+   "uom": "PCS",
+   "cost_rm": 9,
+   "links": [
+    {
+     "supplier": "400-D005",
+     "supplier_name": "DIY",
+     "main": true
+    },
+    {
+     "supplier": "400-S002",
+     "supplier_name": "Shopee",
+     "main": false
+    }
+   ],
+   "source": "balance file: Airbnb / Bathroom"
+  },
+  {
+   "code": "AIB-0044",
+   "name": "TOILET BRUSH",
+   "category": "AIRBNB",
+   "sub_category": "BATH_CLEANING",
+   "uom": "PCS",
+   "cost_rm": 5,
+   "links": [
+    {
+     "supplier": "400-I001",
+     "supplier_name": "IKEA",
+     "main": true
+    }
+   ],
+   "source": "balance file: Airbnb / Bathroom"
+  },
+  {
+   "code": "CON-0001",
+   "name": "AIR REFRESHING GEL",
+   "category": "AIRBNB",
+   "sub_category": "CONSUMABLES",
+   "uom": "PCS",
+   "cost_rm": 10,
+   "links": [
+    {
+     "supplier": "400-D005",
+     "supplier_name": "DIY",
+     "main": true
+    },
+    {
+     "supplier": "400-S002",
+     "supplier_name": "Shopee",
+     "main": false
+    }
+   ],
+   "source": "balance file: Airbnb / Consume"
+  },
+  {
+   "code": "CON-0002",
+   "name": "BASIC HAIR & BODY SHAMPOO (LUX)10L",
+   "category": "AIRBNB",
+   "sub_category": "CONSUMABLES",
+   "uom": "PCS",
+   "cost_rm": 43,
+   "links": [
+    {
+     "supplier": "400-V001",
+     "supplier_name": "VIP HOSPITALITY SUPPLIES SDN BHD",
+     "main": true
+    }
+   ],
+   "source": "balance file: Airbnb / Consume"
+  },
+  {
+   "code": "CON-0003",
+   "name": "BASIC HAIR SHAMPOO (FLORA RHYTHM)10L",
+   "category": "AIRBNB",
+   "sub_category": "CONSUMABLES",
+   "uom": "PCS",
+   "cost_rm": 43,
+   "links": [
+    {
+     "supplier": "400-V001",
+     "supplier_name": "VIP HOSPITALITY SUPPLIES SDN BHD",
+     "main": true
+    }
+   ],
+   "source": "balance file: Airbnb / Consume"
+  },
+  {
+   "code": "CON-0004",
+   "name": "DISH WASH (LIQUID)",
+   "category": "AIRBNB",
+   "sub_category": "CONSUMABLES",
+   "uom": "PCS",
+   "cost_rm": 43,
+   "links": [
+    {
+     "supplier": "400-D005",
+     "supplier_name": "DIY",
+     "main": true
+    },
+    {
+     "supplier": "400-S002",
+     "supplier_name": "Shopee",
+     "main": false
+    },
+    {
+     "supplier": "400-V001",
+     "supplier_name": "VIP HOSPITALITY SUPPLIES SDN BHD",
+     "main": false
+    }
+   ],
+   "source": "balance file: Airbnb / Consume"
+  },
+  {
+   "code": "CON-0005",
+   "name": "DISHWASHER PASTE (750G)",
+   "category": "AIRBNB",
+   "sub_category": "CONSUMABLES",
+   "uom": "PCS",
+   "cost_rm": 10,
+   "links": [
+    {
+     "supplier": "400-D005",
+     "supplier_name": "DIY",
+     "main": true
+    },
+    {
+     "supplier": "400-S002",
+     "supplier_name": "Shopee",
+     "main": false
+    }
+   ],
+   "source": "balance file: Airbnb / Consume"
+  },
+  {
+   "code": "CON-0006",
+   "name": "GARBAGE BAG S",
+   "category": "AIRBNB",
+   "sub_category": "CONSUMABLES",
+   "uom": "PCS",
+   "cost_rm": 1.5,
+   "links": [
+    {
+     "supplier": "400-V001",
+     "supplier_name": "VIP HOSPITALITY SUPPLIES SDN BHD",
+     "main": true
+    },
+    {
+     "supplier": "400-S002",
+     "supplier_name": "Shopee",
+     "main": false
+    },
+    {
+     "supplier": "400-D005",
+     "supplier_name": "DIY",
+     "main": false
+    }
+   ],
+   "source": "balance file: Airbnb / Consume"
+  },
+  {
+   "code": "CON-0007",
+   "name": "SPONGE*10",
+   "category": "AIRBNB",
+   "sub_category": "CONSUMABLES",
+   "uom": "PKT",
+   "cost_rm": 5,
+   "links": [
+    {
+     "supplier": "400-S002",
+     "supplier_name": "Shopee",
+     "main": true
+    }
+   ],
+   "source": "balance file: Airbnb / Consume"
+  },
+  {
+   "code": "CON-0008",
+   "name": "TISSUE ROLL PACK*10",
+   "category": "AIRBNB",
+   "sub_category": "CONSUMABLES",
+   "uom": "PKT",
+   "cost_rm": 10,
+   "links": [
+    {
+     "supplier": "400-V001",
+     "supplier_name": "VIP HOSPITALITY SUPPLIES SDN BHD",
+     "main": true
+    },
+    {
+     "supplier": "400-S002",
+     "supplier_name": "Shopee",
+     "main": false
+    },
+    {
+     "supplier": "400-D005",
+     "supplier_name": "DIY",
+     "main": false
+    }
+   ],
+   "source": "balance file: Airbnb / Consume"
+  },
+  {
+   "code": "SIG-0003",
+   "name": "CARD HOLDER",
+   "category": "AIRBNB",
+   "sub_category": "FIXTURE",
+   "uom": "PCS",
+   "cost_rm": 1,
+   "links": [
+    {
+     "supplier": "400-S002",
+     "supplier_name": "Shopee",
+     "main": true
+    }
+   ],
+   "source": "balance file: Airbnb / Fixture"
+  },
+  {
+   "code": "AIB-0009",
+   "name": "CLOTH HANGER*10",
+   "category": "AIRBNB",
+   "sub_category": "FIXTURE",
+   "uom": "PKT",
+   "cost_rm": 10,
+   "links": [
+    {
+     "supplier": "400-I001",
+     "supplier_name": "IKEA",
+     "main": true
+    }
+   ],
+   "source": "balance file: Airbnb / Fixture"
+  },
+  {
+   "code": "AIB-0010",
+   "name": "CLOTH HANGING RACK (PORTABLE)",
+   "category": "AIRBNB",
+   "sub_category": "FIXTURE",
+   "uom": "PCS",
+   "cost_rm": 30,
+   "links": [
+    {
+     "supplier": "400-I001",
+     "supplier_name": "IKEA",
+     "main": true
+    }
+   ],
+   "source": "balance file: Airbnb / Fixture"
+  },
+  {
+   "code": "FIX-0001",
+   "name": "DOOR LOCK NO PUNCH",
+   "category": "AIRBNB",
+   "sub_category": "FIXTURE",
+   "uom": "PCS",
+   "cost_rm": 14,
+   "links": [
+    {
+     "supplier": "400-S002",
+     "supplier_name": "Shopee",
+     "main": true
+    }
+   ],
+   "source": "balance file: Airbnb / Fixture"
+  },
+  {
+   "code": "SIG-0004",
+   "name": "KEY BOX INSIDE MAILBOX",
+   "category": "AIRBNB",
+   "sub_category": "FIXTURE",
+   "uom": "PCS",
+   "cost_rm": 30,
+   "links": [
+    {
+     "supplier": "400-S002",
+     "supplier_name": "Shopee",
+     "main": true
+    }
+   ],
+   "source": "balance file: Airbnb / Fixture"
+  },
+  {
+   "code": "SIG-0005",
+   "name": "MAILBOX INSIDE DOUBLE LOCK",
+   "category": "AIRBNB",
+   "sub_category": "FIXTURE",
+   "uom": "PCS",
+   "cost_rm": 25,
+   "links": [
+    {
+     "supplier": "400-S002",
+     "supplier_name": "Shopee",
+     "main": true
+    }
+   ],
+   "source": "balance file: Airbnb / Fixture"
+  },
+  {
+   "code": "SIG-0006",
+   "name": "MAILBOX LOCKER",
+   "category": "AIRBNB",
+   "sub_category": "FIXTURE",
+   "uom": "PCS",
+   "cost_rm": 22,
+   "links": [
+    {
+     "supplier": "400-S002",
+     "supplier_name": "Shopee",
+     "main": true
+    }
+   ],
+   "source": "balance file: Airbnb / Fixture"
+  },
+  {
+   "code": "FIX-0002",
+   "name": "MOP HOLDER",
+   "category": "AIRBNB",
+   "sub_category": "FIXTURE",
+   "uom": "PCS",
+   "cost_rm": 35,
+   "links": [
+    {
+     "supplier": "400-S002",
+     "supplier_name": "Shopee",
+     "main": true
+    }
+   ],
+   "source": "balance file: Airbnb / Fixture"
+  },
+  {
+   "code": "FIX-0003",
+   "name": "SHAMPOO RACK",
+   "category": "AIRBNB",
+   "sub_category": "FIXTURE",
+   "uom": "PCS",
+   "cost_rm": 60,
+   "links": [
+    {
+     "supplier": "400-S002",
+     "supplier_name": "Shopee",
+     "main": true
+    }
+   ],
+   "source": "balance file: Airbnb / Fixture"
+  },
+  {
+   "code": "FIX-0004",
+   "name": "SHOE RACK",
+   "category": "AIRBNB",
+   "sub_category": "FIXTURE",
+   "uom": "PCS",
+   "cost_rm": 18,
+   "links": [
+    {
+     "supplier": "400-S002",
+     "supplier_name": "Shopee",
+     "main": true
+    }
+   ],
+   "source": "balance file: Airbnb / Fixture"
+  },
+  {
+   "code": "FIX-0005",
+   "name": "STAINLESS STEEL FLOOR MOUNT DOOR STOPPER",
+   "category": "AIRBNB",
+   "sub_category": "FIXTURE",
+   "uom": "PCS",
+   "cost_rm": 2.7,
+   "links": [
+    {
+     "supplier": "400-S002",
+     "supplier_name": "Shopee",
+     "main": true
+    }
+   ],
+   "source": "balance file: Airbnb / Fixture"
+  },
+  {
+   "code": "FIX-0006",
+   "name": "TOWEL BAR RACK",
+   "category": "AIRBNB",
+   "sub_category": "FIXTURE",
+   "uom": "PCS",
+   "cost_rm": 50,
+   "links": [
+    {
+     "supplier": "400-S002",
+     "supplier_name": "Shopee",
+     "main": true
+    }
+   ],
+   "source": "balance file: Airbnb / Fixture"
+  },
+  {
+   "code": "AIB-0001",
+   "name": "3 PIECE KITCHEN UTENSIL SET",
+   "category": "AIRBNB",
+   "sub_category": "KITCHENWARE",
+   "uom": "PCS",
+   "cost_rm": 29,
+   "links": [
+    {
+     "supplier": "400-I001",
+     "supplier_name": "IKEA",
+     "main": true
+    }
+   ],
+   "source": "balance file: Airbnb / Kitchen"
+  },
+  {
+   "code": "AIB-0004",
+   "name": "BOWL 15CM",
+   "category": "AIRBNB",
+   "sub_category": "KITCHENWARE",
+   "uom": "PCS",
+   "cost_rm": 3.5,
+   "links": [
+    {
+     "supplier": "400-I001",
+     "supplier_name": "IKEA",
+     "main": true
+    }
+   ],
+   "source": "balance file: Airbnb / Kitchen"
+  },
+  {
+   "code": "AIB-0007",
+   "name": "CAN OPENER",
+   "category": "AIRBNB",
+   "sub_category": "KITCHENWARE",
+   "uom": "PCS",
+   "cost_rm": 8,
+   "links": [
+    {
+     "supplier": "400-S002",
+     "supplier_name": "Shopee",
+     "main": true
+    }
+   ],
+   "source": "balance file: Airbnb / Kitchen"
+  },
+  {
+   "code": "AIB-0011",
+   "name": "CORKSCREW",
+   "category": "AIRBNB",
+   "sub_category": "KITCHENWARE",
+   "uom": "PCS",
+   "cost_rm": 10,
+   "links": [
+    {
+     "supplier": "400-I001",
+     "supplier_name": "IKEA",
+     "main": true
+    }
+   ],
+   "source": "balance file: Airbnb / Kitchen"
+  },
+  {
+   "code": "AIB-0012",
+   "name": "CUTLERY TRAY",
+   "category": "AIRBNB",
+   "sub_category": "KITCHENWARE",
+   "uom": "PCS",
+   "cost_rm": 5,
+   "links": [
+    {
+     "supplier": "400-I001",
+     "supplier_name": "IKEA",
+     "main": true
+    }
+   ],
+   "source": "balance file: Airbnb / Kitchen"
+  },
+  {
+   "code": "AIB-0013",
+   "name": "CUTTING BOARD",
+   "category": "AIRBNB",
+   "sub_category": "KITCHENWARE",
+   "uom": "PCS",
+   "cost_rm": 5,
+   "links": [
+    {
+     "supplier": "400-S002",
+     "supplier_name": "Shopee",
+     "main": true
+    }
+   ],
+   "source": "balance file: Airbnb / Kitchen"
+  },
+  {
+   "code": "AIB-0015",
+   "name": "DRAWER MAT TRANSPARENT",
+   "category": "AIRBNB",
+   "sub_category": "KITCHENWARE",
+   "uom": "PCS",
+   "cost_rm": 15,
+   "links": [
+    {
+     "supplier": "400-I001",
+     "supplier_name": "IKEA",
+     "main": true
+    }
+   ],
+   "source": "balance file: Airbnb / Kitchen"
+  },
+  {
+   "code": "AIB-0018",
+   "name": "FORK",
+   "category": "AIRBNB",
+   "sub_category": "KITCHENWARE",
+   "uom": "PCS",
+   "cost_rm": 18,
+   "links": [
+    {
+     "supplier": "400-I001",
+     "supplier_name": "IKEA",
+     "main": true
+    }
+   ],
+   "source": "balance file: Airbnb / Kitchen"
+  },
+  {
+   "code": "AIB-0019",
+   "name": "FRYING PAN",
+   "category": "AIRBNB",
+   "sub_category": "KITCHENWARE",
+   "uom": "PCS",
+   "cost_rm": 25,
+   "links": [
+    {
+     "supplier": "400-I001",
+     "supplier_name": "IKEA",
+     "main": true
+    }
+   ],
+   "source": "balance file: Airbnb / Kitchen"
+  },
+  {
+   "code": "AIB-0020",
+   "name": "KITCHEN CLOTH",
+   "category": "AIRBNB",
+   "sub_category": "KITCHENWARE",
+   "uom": "PCS",
+   "cost_rm": 6,
+   "links": [
+    {
+     "supplier": "400-S002",
+     "supplier_name": "Shopee",
+     "main": true
+    },
+    {
+     "supplier": "400-I001",
+     "supplier_name": "IKEA",
+     "main": false
+    },
+    {
+     "supplier": "400-D005",
+     "supplier_name": "DIY",
+     "main": false
+    }
+   ],
+   "source": "balance file: Airbnb / Kitchen"
+  },
+  {
+   "code": "AIB-0021",
+   "name": "KITCHEN CLOTH (4 PACK)",
+   "category": "AIRBNB",
+   "sub_category": "KITCHENWARE",
+   "uom": "PKT",
+   "cost_rm": 10,
+   "links": [
+    {
+     "supplier": "400-S002",
+     "supplier_name": "Shopee",
+     "main": true
+    }
+   ],
+   "source": "balance file: Airbnb / Kitchen"
+  },
+  {
+   "code": "AIB-0022",
+   "name": "KNIFE BIG",
+   "category": "AIRBNB",
+   "sub_category": "KITCHENWARE",
+   "uom": "PCS",
+   "cost_rm": 15,
+   "links": [
+    {
+     "supplier": "400-I001",
+     "supplier_name": "IKEA",
+     "main": true
+    },
+    {
+     "supplier": "400-S002",
+     "supplier_name": "Shopee",
+     "main": false
+    },
+    {
+     "supplier": "400-D005",
+     "supplier_name": "DIY",
+     "main": false
+    }
+   ],
+   "source": "balance file: Airbnb / Kitchen"
+  },
+  {
+   "code": "AIB-0023",
+   "name": "KNIFE BLOCK",
+   "category": "AIRBNB",
+   "sub_category": "KITCHENWARE",
+   "uom": "PCS",
+   "cost_rm": 40,
+   "links": [
+    {
+     "supplier": "400-I001",
+     "supplier_name": "IKEA",
+     "main": true
+    }
+   ],
+   "source": "balance file: Airbnb / Kitchen"
+  },
+  {
+   "code": "AIB-0024",
+   "name": "KNIFE HOLDER (OPTIONAL)",
+   "category": "AIRBNB",
+   "sub_category": "KITCHENWARE",
+   "uom": "PCS",
+   "cost_rm": 20,
+   "links": [
+    {
+     "supplier": "400-S002",
+     "supplier_name": "Shopee",
+     "main": true
+    },
+    {
+     "supplier": "400-I001",
+     "supplier_name": "IKEA",
+     "main": false
+    },
+    {
+     "supplier": "400-D005",
+     "supplier_name": "DIY",
+     "main": false
+    }
+   ],
+   "source": "balance file: Airbnb / Kitchen"
+  },
+  {
+   "code": "AIB-0025",
+   "name": "KNIFE SET (3 PIECE)",
+   "category": "AIRBNB",
+   "sub_category": "KITCHENWARE",
+   "uom": "PCS",
+   "cost_rm": 35,
+   "links": [
+    {
+     "supplier": "400-I001",
+     "supplier_name": "IKEA",
+     "main": true
+    }
+   ],
+   "source": "balance file: Airbnb / Kitchen"
+  },
+  {
+   "code": "AIB-0026",
+   "name": "KNIFE SMALL",
+   "category": "AIRBNB",
+   "sub_category": "KITCHENWARE",
+   "uom": "PCS",
+   "cost_rm": 15,
+   "links": [
+    {
+     "supplier": "400-S002",
+     "supplier_name": "Shopee",
+     "main": true
+    },
+    {
+     "supplier": "400-I001",
+     "supplier_name": "IKEA",
+     "main": false
+    },
+    {
+     "supplier": "400-D005",
+     "supplier_name": "DIY",
+     "main": false
+    }
+   ],
+   "source": "balance file: Airbnb / Kitchen"
+  },
+  {
+   "code": "AIB-0027",
+   "name": "KNIFE SMALL WITH COVER",
+   "category": "AIRBNB",
+   "sub_category": "KITCHENWARE",
+   "uom": "PCS",
+   "cost_rm": 30,
+   "links": [
+    {
+     "supplier": "400-S002",
+     "supplier_name": "Shopee",
+     "main": true
+    }
+   ],
+   "source": "balance file: Airbnb / Kitchen"
+  },
+  {
+   "code": "AIB-0030",
+   "name": "MUG",
+   "category": "AIRBNB",
+   "sub_category": "KITCHENWARE",
+   "uom": "PCS",
+   "cost_rm": 5,
+   "links": [
+    {
+     "supplier": "400-I001",
+     "supplier_name": "IKEA",
+     "main": true
+    }
+   ],
+   "source": "balance file: Airbnb / Kitchen"
+  },
+  {
+   "code": "AIB-0031",
+   "name": "PEELER",
+   "category": "AIRBNB",
+   "sub_category": "KITCHENWARE",
+   "uom": "PCS",
+   "cost_rm": 13,
+   "links": [
+    {
+     "supplier": "400-I001",
+     "supplier_name": "IKEA",
+     "main": true
+    }
+   ],
+   "source": "balance file: Airbnb / Kitchen"
+  },
+  {
+   "code": "AIB-0032",
+   "name": "PLATE 25CM",
+   "category": "AIRBNB",
+   "sub_category": "KITCHENWARE",
+   "uom": "PCS",
+   "cost_rm": 3.5,
+   "links": [
+    {
+     "supplier": "400-I001",
+     "supplier_name": "IKEA",
+     "main": true
+    }
+   ],
+   "source": "balance file: Airbnb / Kitchen"
+  },
+  {
+   "code": "AIB-0033",
+   "name": "PLATE HOLDER BASE",
+   "category": "AIRBNB",
+   "sub_category": "KITCHENWARE",
+   "uom": "PCS",
+   "cost_rm": 20,
+   "links": [
+    {
+     "supplier": "400-I001",
+     "supplier_name": "IKEA",
+     "main": true
+    }
+   ],
+   "source": "balance file: Airbnb / Kitchen"
+  },
+  {
+   "code": "AIB-0034",
+   "name": "PLATE TRAY",
+   "category": "AIRBNB",
+   "sub_category": "KITCHENWARE",
+   "uom": "PCS",
+   "cost_rm": 30,
+   "links": [
+    {
+     "supplier": "400-I001",
+     "supplier_name": "IKEA",
+     "main": true
+    }
+   ],
+   "source": "balance file: Airbnb / Kitchen"
+  },
+  {
+   "code": "AIB-0035",
+   "name": "POT",
+   "category": "AIRBNB",
+   "sub_category": "KITCHENWARE",
+   "uom": "PCS",
+   "cost_rm": 30,
+   "links": [
+    {
+     "supplier": "400-S002",
+     "supplier_name": "Shopee",
+     "main": true
+    },
+    {
+     "supplier": "400-I001",
+     "supplier_name": "IKEA",
+     "main": false
+    },
+    {
+     "supplier": "400-D005",
+     "supplier_name": "DIY",
+     "main": false
+    }
+   ],
+   "source": "balance file: Airbnb / Kitchen"
+  },
+  {
+   "code": "AIB-0036",
+   "name": "POT STAND CORK (3 PACK)",
+   "category": "AIRBNB",
+   "sub_category": "KITCHENWARE",
+   "uom": "PKT",
+   "cost_rm": 8,
+   "links": [
+    {
+     "supplier": "400-I001",
+     "supplier_name": "IKEA",
+     "main": true
+    }
+   ],
+   "source": "balance file: Airbnb / Kitchen"
+  },
+  {
+   "code": "AIB-0038",
+   "name": "SAUCEPAN",
+   "category": "AIRBNB",
+   "sub_category": "KITCHENWARE",
+   "uom": "PCS",
+   "cost_rm": 30,
+   "links": [
+    {
+     "supplier": "400-I001",
+     "supplier_name": "IKEA",
+     "main": true
+    }
+   ],
+   "source": "balance file: Airbnb / Kitchen"
+  },
+  {
+   "code": "AIB-0039",
+   "name": "SCISSOR",
+   "category": "AIRBNB",
+   "sub_category": "KITCHENWARE",
+   "uom": "PCS",
+   "cost_rm": 6,
+   "links": [
+    {
+     "supplier": "400-I001",
+     "supplier_name": "IKEA",
+     "main": true
+    }
+   ],
+   "source": "balance file: Airbnb / Kitchen"
+  },
+  {
+   "code": "AIB-0041",
+   "name": "SPATULA SET",
+   "category": "AIRBNB",
+   "sub_category": "KITCHENWARE",
+   "uom": "PCS",
+   "cost_rm": 10,
+   "links": [
+    {
+     "supplier": "400-S002",
+     "supplier_name": "Shopee",
+     "main": true
+    },
+    {
+     "supplier": "400-I001",
+     "supplier_name": "IKEA",
+     "main": false
+    },
+    {
+     "supplier": "400-D005",
+     "supplier_name": "DIY",
+     "main": false
+    }
+   ],
+   "source": "balance file: Airbnb / Kitchen"
+  },
+  {
+   "code": "AIB-0042",
+   "name": "SPONGE HOLDER",
+   "category": "AIRBNB",
+   "sub_category": "KITCHENWARE",
+   "uom": "PCS",
+   "cost_rm": 20,
+   "links": [
+    {
+     "supplier": "400-S002",
+     "supplier_name": "Shopee",
+     "main": true
+    },
+    {
+     "supplier": "400-I001",
+     "supplier_name": "IKEA",
+     "main": false
+    },
+    {
+     "supplier": "400-D005",
+     "supplier_name": "DIY",
+     "main": false
+    }
+   ],
+   "source": "balance file: Airbnb / Kitchen"
+  },
+  {
+   "code": "AIB-0043",
+   "name": "SPOON",
+   "category": "AIRBNB",
+   "sub_category": "KITCHENWARE",
+   "uom": "PCS",
+   "cost_rm": 18,
+   "links": [
+    {
+     "supplier": "400-S002",
+     "supplier_name": "Shopee",
+     "main": true
+    }
+   ],
+   "source": "balance file: Airbnb / Kitchen"
+  },
+  {
+   "code": "AIB-0045",
+   "name": "WINE GLASS",
+   "category": "AIRBNB",
+   "sub_category": "KITCHENWARE",
+   "uom": "PCS",
+   "cost_rm": 5,
+   "links": [
+    {
+     "supplier": "400-S002",
+     "supplier_name": "Shopee",
+     "main": true
+    },
+    {
+     "supplier": "400-I001",
+     "supplier_name": "IKEA",
+     "main": false
+    },
+    {
+     "supplier": "400-D005",
+     "supplier_name": "DIY",
+     "main": false
+    }
+   ],
+   "source": "balance file: Airbnb / Kitchen"
+  },
+  {
+   "code": "LIN-0001",
+   "name": "BATHMAT",
+   "category": "SOFT",
+   "sub_category": "TOWEL_BATH",
+   "uom": "PCS",
+   "cost_rm": 8.5,
+   "links": [
+    {
+     "supplier": "400-Z001",
+     "supplier_name": "ZOE HOME SDN BHD",
+     "main": true
+    },
+    {
+     "supplier": "400-H011",
+     "supplier_name": "HOMES HARMONY",
+     "main": false
+    }
+   ],
+   "source": "balance file: Linens / Bedding"
+  },
+  {
+   "code": "LIN-0002",
+   "name": "BEDSHEET KING",
+   "category": "SOFT",
+   "sub_category": "BED_LINEN",
+   "uom": "PCS",
+   "cost_rm": 38,
+   "links": [
+    {
+     "supplier": "400-Z001",
+     "supplier_name": "ZOE HOME SDN BHD",
+     "main": true
+    },
+    {
+     "supplier": "400-H011",
+     "supplier_name": "HOMES HARMONY",
+     "main": false
+    }
+   ],
+   "source": "balance file: Linens / Bedding"
+  },
+  {
+   "code": "LIN-0003",
+   "name": "BEDSHEET QUEEN",
+   "category": "SOFT",
+   "sub_category": "BED_LINEN",
+   "uom": "PCS",
+   "cost_rm": 33,
+   "links": [
+    {
+     "supplier": "400-Z001",
+     "supplier_name": "ZOE HOME SDN BHD",
+     "main": true
+    },
+    {
+     "supplier": "400-H011",
+     "supplier_name": "HOMES HARMONY",
+     "main": false
+    }
+   ],
+   "source": "balance file: Linens / Bedding"
+  },
+  {
+   "code": "LIN-0004",
+   "name": "BEDSHEET SINGLE",
+   "category": "SOFT",
+   "sub_category": "BED_LINEN",
+   "uom": "PCS",
+   "cost_rm": 31,
+   "links": [
+    {
+     "supplier": "400-Z001",
+     "supplier_name": "ZOE HOME SDN BHD",
+     "main": true
+    },
+    {
+     "supplier": "400-H011",
+     "supplier_name": "HOMES HARMONY",
+     "main": false
+    }
+   ],
+   "source": "balance file: Linens / Bedding"
+  },
+  {
+   "code": "LIN-0005",
+   "name": "MATTRESS PROTECTOR QUEEN",
+   "category": "SOFT",
+   "sub_category": "BED_LINEN",
+   "uom": "PCS",
+   "cost_rm": 34.1,
+   "links": [
+    {
+     "supplier": "400-Z001",
+     "supplier_name": "ZOE HOME SDN BHD",
+     "main": true
+    },
+    {
+     "supplier": "400-H011",
+     "supplier_name": "HOMES HARMONY",
+     "main": false
+    }
+   ],
+   "source": "balance file: Linens / Bedding"
+  },
+  {
+   "code": "LIN-0006",
+   "name": "PILLOW STANDARD",
+   "category": "SOFT",
+   "sub_category": "BED_LINEN",
+   "uom": "PCS",
+   "cost_rm": 20,
+   "links": [
+    {
+     "supplier": "400-C004",
+     "supplier_name": "CARRESS SDN BHD",
+     "main": true
+    },
+    {
+     "supplier": "400-H003",
+     "supplier_name": "HOUZS CENTURY SDN BHD",
+     "main": false
+    },
+    {
+     "supplier": "400-S002",
+     "supplier_name": "Shopee",
+     "main": false
+    },
+    {
+     "supplier": "400-Z001",
+     "supplier_name": "ZOE HOME SDN BHD",
+     "main": false
+    },
+    {
+     "supplier": "400-H011",
+     "supplier_name": "HOMES HARMONY",
+     "main": false
+    }
+   ],
+   "source": "balance file: Linens / Bedding"
+  },
+  {
+   "code": "LIN-0007",
+   "name": "PILLOWCASE",
+   "category": "SOFT",
+   "sub_category": "BED_LINEN",
+   "uom": "PCS",
+   "cost_rm": 7,
+   "links": [
+    {
+     "supplier": "400-Z001",
+     "supplier_name": "ZOE HOME SDN BHD",
+     "main": true
+    },
+    {
+     "supplier": "400-H011",
+     "supplier_name": "HOMES HARMONY",
+     "main": false
+    }
+   ],
+   "source": "balance file: Linens / Bedding"
+  },
+  {
+   "code": "LIN-0008",
+   "name": "QUILT COVER KING",
+   "category": "SOFT",
+   "sub_category": "BED_LINEN",
+   "uom": "PCS",
+   "cost_rm": 57,
+   "links": [
+    {
+     "supplier": "400-Z001",
+     "supplier_name": "ZOE HOME SDN BHD",
+     "main": true
+    },
+    {
+     "supplier": "400-H011",
+     "supplier_name": "HOMES HARMONY",
+     "main": false
+    }
+   ],
+   "source": "balance file: Linens / Bedding"
+  },
+  {
+   "code": "LIN-0009",
+   "name": "QUILT COVER QUEEN",
+   "category": "SOFT",
+   "sub_category": "BED_LINEN",
+   "uom": "PCS",
+   "cost_rm": 49,
+   "links": [
+    {
+     "supplier": "400-Z001",
+     "supplier_name": "ZOE HOME SDN BHD",
+     "main": true
+    },
+    {
+     "supplier": "400-H011",
+     "supplier_name": "HOMES HARMONY",
+     "main": false
+    }
+   ],
+   "source": "balance file: Linens / Bedding"
+  },
+  {
+   "code": "LIN-0010",
+   "name": "QUILT COVER SINGLE",
+   "category": "SOFT",
+   "sub_category": "BED_LINEN",
+   "uom": "PCS",
+   "cost_rm": 41,
+   "links": [
+    {
+     "supplier": "400-Z001",
+     "supplier_name": "ZOE HOME SDN BHD",
+     "main": true
+    },
+    {
+     "supplier": "400-H011",
+     "supplier_name": "HOMES HARMONY",
+     "main": false
+    }
+   ],
+   "source": "balance file: Linens / Bedding"
+  },
+  {
+   "code": "LIN-0011",
+   "name": "QUILT INSERT KING",
+   "category": "SOFT",
+   "sub_category": "BED_LINEN",
+   "uom": "PCS",
+   "cost_rm": 62,
+   "links": [
+    {
+     "supplier": "400-Z001",
+     "supplier_name": "ZOE HOME SDN BHD",
+     "main": true
+    },
+    {
+     "supplier": "400-H011",
+     "supplier_name": "HOMES HARMONY",
+     "main": false
+    }
+   ],
+   "source": "balance file: Linens / Bedding"
+  },
+  {
+   "code": "LIN-0012",
+   "name": "QUILT INSERT QUEEN",
+   "category": "SOFT",
+   "sub_category": "BED_LINEN",
+   "uom": "PCS",
+   "cost_rm": 57,
+   "links": [
+    {
+     "supplier": "400-Z001",
+     "supplier_name": "ZOE HOME SDN BHD",
+     "main": true
+    },
+    {
+     "supplier": "400-H011",
+     "supplier_name": "HOMES HARMONY",
+     "main": false
+    }
+   ],
+   "source": "balance file: Linens / Bedding"
+  },
+  {
+   "code": "LIN-0013",
+   "name": "QUILT INSERT SINGLE",
+   "category": "SOFT",
+   "sub_category": "BED_LINEN",
+   "uom": "PCS",
+   "cost_rm": 50,
+   "links": [
+    {
+     "supplier": "400-Z001",
+     "supplier_name": "ZOE HOME SDN BHD",
+     "main": true
+    },
+    {
+     "supplier": "400-H011",
+     "supplier_name": "HOMES HARMONY",
+     "main": false
+    }
+   ],
+   "source": "balance file: Linens / Bedding"
+  },
+  {
+   "code": "LIN-0014",
+   "name": "TOWEL 400G",
+   "category": "SOFT",
+   "sub_category": "TOWEL_BATH",
+   "uom": "PCS",
+   "cost_rm": 13.5,
+   "links": [
+    {
+     "supplier": "400-Z001",
+     "supplier_name": "ZOE HOME SDN BHD",
+     "main": true
+    },
+    {
+     "supplier": "400-H011",
+     "supplier_name": "HOMES HARMONY",
+     "main": false
+    }
+   ],
+   "source": "balance file: Linens / Bedding"
+  },
+  {
+   "code": "AIB-0008",
+   "name": "CARPET",
+   "category": "SOFT",
+   "sub_category": "CARPET",
+   "uom": "PCS",
+   "cost_rm": 100,
+   "links": [
+    {
+     "supplier": "400-K007",
+     "supplier_name": "KAISON",
+     "main": true
+    },
+    {
+     "supplier": "400-U001",
+     "supplier_name": "UJU HOME",
+     "main": false
+    },
+    {
+     "supplier": "400-S002",
+     "supplier_name": "Shopee",
+     "main": false
+    }
+   ],
+   "source": "balance file: Deco / Carpet"
+  },
+  {
+   "code": "DEC-0006",
+   "name": "BEDROOM WALL ART",
+   "category": "SOFT",
+   "sub_category": "DECORATION",
+   "uom": "PCS",
+   "cost_rm": 50,
+   "links": [
+    {
+     "supplier": "400-U001",
+     "supplier_name": "UJU HOME",
+     "main": true
+    },
+    {
+     "supplier": "400-S002",
+     "supplier_name": "Shopee",
+     "main": false
+    }
+   ],
+   "source": "balance file: Deco / Photo"
+  },
+  {
+   "code": "DEC-0005",
+   "name": "LIVING WALL ART",
+   "category": "SOFT",
+   "sub_category": "DECORATION",
+   "uom": "PCS",
+   "cost_rm": 50,
+   "links": [
+    {
+     "supplier": "400-U001",
+     "supplier_name": "UJU HOME",
+     "main": true
+    },
+    {
+     "supplier": "400-S002",
+     "supplier_name": "Shopee",
+     "main": false
+    }
+   ],
+   "source": "balance file: Deco / Photo"
+  },
+  {
+   "code": "DEC-0003",
+   "name": "PHOTO FRAME",
+   "category": "SOFT",
+   "sub_category": "DECORATION",
+   "uom": "PCS",
+   "cost_rm": 35,
+   "links": [
+    {
+     "supplier": "400-U001",
+     "supplier_name": "UJU HOME",
+     "main": true
+    },
+    {
+     "supplier": "400-S002",
+     "supplier_name": "Shopee",
+     "main": false
+    }
+   ],
+   "source": "balance file: Deco / Photo"
+  },
+  {
+   "code": "SIG-0001",
+   "name": "BOTTLE LABEL (BODY/HAIR)",
+   "category": "AIRBNB",
+   "sub_category": "SIGNAGE",
+   "uom": "PCS",
+   "cost_rm": 3,
+   "links": [
+    {
+     "supplier": "400-S002",
+     "supplier_name": "Shopee",
+     "main": true
+    }
+   ],
+   "source": "balance file: Deco / Signage"
+  },
+  {
+   "code": "SIG-0002",
+   "name": "BOTTLE LABEL (BODY/HAIR/DISH WASH)",
+   "category": "AIRBNB",
+   "sub_category": "SIGNAGE",
+   "uom": "PCS",
+   "cost_rm": 3,
+   "links": [
+    {
+     "supplier": "400-S002",
+     "supplier_name": "Shopee",
+     "main": true
+    }
+   ],
+   "source": "balance file: Deco / Signage"
+  },
+  {
+   "code": "SIG-0007",
+   "name": "NON SMOKING LABEL",
+   "category": "AIRBNB",
+   "sub_category": "SIGNAGE",
+   "uom": "PCS",
+   "cost_rm": 5,
+   "links": [
+    {
+     "supplier": "400-S002",
+     "supplier_name": "Shopee",
+     "main": true
+    }
+   ],
+   "source": "balance file: Deco / Signage"
+  },
+  {
+   "code": "SIG-0008",
+   "name": "OFF AC INSTRUCTION",
+   "category": "AIRBNB",
+   "sub_category": "SIGNAGE",
+   "uom": "PCS",
+   "cost_rm": 5,
+   "links": [
+    {
+     "supplier": "400-O004",
+     "supplier_name": "OFFICE OWN DO",
+     "main": true
+    }
+   ],
+   "source": "balance file: Deco / Signage"
+  },
+  {
+   "code": "SIG-0009",
+   "name": "SAVE ELECTRICITY LABEL",
+   "category": "AIRBNB",
+   "sub_category": "SIGNAGE",
+   "uom": "PCS",
+   "cost_rm": 5,
+   "links": [
+    {
+     "supplier": "400-S002",
+     "supplier_name": "Shopee",
+     "main": true
+    }
+   ],
+   "source": "balance file: Deco / Signage"
+  },
+  {
+   "code": "SIG-0010",
+   "name": "SHAMPOO STICKER",
+   "category": "AIRBNB",
+   "sub_category": "SIGNAGE",
+   "uom": "PCS",
+   "cost_rm": 3,
+   "links": [
+    {
+     "supplier": "400-S002",
+     "supplier_name": "Shopee",
+     "main": true
+    }
+   ],
+   "source": "balance file: Deco / Signage"
+  },
+  {
+   "code": "SIG-0011",
+   "name": "SWITCH LABEL STICKER",
+   "category": "AIRBNB",
+   "sub_category": "SIGNAGE",
+   "uom": "PCS",
+   "cost_rm": 7,
+   "links": [
+    {
+     "supplier": "400-S002",
+     "supplier_name": "Shopee",
+     "main": true
+    }
+   ],
+   "source": "balance file: Deco / Signage"
+  },
+  {
+   "code": "SIG-0012",
+   "name": "WIFI FRAME",
+   "category": "AIRBNB",
+   "sub_category": "SIGNAGE",
+   "uom": "PCS",
+   "cost_rm": 5,
+   "links": [
+    {
+     "supplier": "400-O004",
+     "supplier_name": "OFFICE OWN DO",
+     "main": true
+    }
+   ],
+   "source": "balance file: Deco / Signage"
+  },
+  {
+   "code": "DEC-0002",
+   "name": "DECORATION ITEM",
+   "category": "SOFT",
+   "sub_category": "DECORATION",
+   "uom": "PCS",
+   "cost_rm": 200,
+   "links": [
+    {
+     "supplier": "400-U001",
+     "supplier_name": "UJU HOME",
+     "main": true
+    },
+    {
+     "supplier": "400-S002",
+     "supplier_name": "Shopee",
+     "main": false
+    }
+   ],
+   "source": "balance file: Deco / Small Deco"
+  },
+  {
+   "code": "DEC-0010",
+   "name": "DECORATIVE FABRIC",
+   "category": "SOFT",
+   "sub_category": "DECORATION",
+   "uom": "PCS",
+   "cost_rm": 50,
+   "links": [
+    {
+     "supplier": "400-U001",
+     "supplier_name": "UJU HOME",
+     "main": true
+    },
+    {
+     "supplier": "400-S002",
+     "supplier_name": "Shopee",
+     "main": false
+    }
+   ],
+   "source": "balance file: Deco / Small Deco"
+  },
+  {
+   "code": "DEC-0008",
+   "name": "DECORATIVE LIGHT",
+   "category": "SOFT",
+   "sub_category": "DECORATION",
+   "uom": "PCS",
+   "cost_rm": 70,
+   "links": [
+    {
+     "supplier": "400-U001",
+     "supplier_name": "UJU HOME",
+     "main": true
+    },
+    {
+     "supplier": "400-S002",
+     "supplier_name": "Shopee",
+     "main": false
+    }
+   ],
+   "source": "balance file: Deco / Small Deco"
+  },
+  {
+   "code": "DEC-0011",
+   "name": "FLOOR LAMP",
+   "category": "SOFT",
+   "sub_category": "DECORATION",
+   "uom": "PCS",
+   "cost_rm": 120,
+   "links": [
+    {
+     "supplier": "400-U001",
+     "supplier_name": "UJU HOME",
+     "main": true
+    },
+    {
+     "supplier": "400-S002",
+     "supplier_name": "Shopee",
+     "main": false
+    }
+   ],
+   "source": "balance file: Deco / Small Deco"
+  },
+  {
+   "code": "DEC-0009",
+   "name": "ROOM FRAGRANCE",
+   "category": "SOFT",
+   "sub_category": "DIFFUSER",
+   "uom": "PCS",
+   "cost_rm": 20,
+   "links": [
+    {
+     "supplier": "400-U001",
+     "supplier_name": "UJU HOME",
+     "main": true
+    },
+    {
+     "supplier": "400-S002",
+     "supplier_name": "Shopee",
+     "main": false
+    }
+   ],
+   "source": "balance file: Deco / Small Deco"
+  },
+  {
+   "code": "DEC-0007",
+   "name": "SMALL DECORATIVE PLANT",
+   "category": "SOFT",
+   "sub_category": "DECORATION",
+   "uom": "PCS",
+   "cost_rm": 20,
+   "links": [
+    {
+     "supplier": "400-U001",
+     "supplier_name": "UJU HOME",
+     "main": true
+    },
+    {
+     "supplier": "400-S002",
+     "supplier_name": "Shopee",
+     "main": false
+    }
+   ],
+   "source": "balance file: Deco / Small Deco"
+  },
+  {
+   "code": "DEC-0004",
+   "name": "SMALL PILLOW",
+   "category": "SOFT",
+   "sub_category": "DECORATION",
+   "uom": "PCS",
+   "cost_rm": 30,
+   "links": [
+    {
+     "supplier": "400-U001",
+     "supplier_name": "UJU HOME",
+     "main": true
+    },
+    {
+     "supplier": "400-S002",
+     "supplier_name": "Shopee",
+     "main": false
+    }
+   ],
+   "source": "balance file: Deco / Small Deco"
+  },
+  {
+   "code": "SRV-0001",
+   "name": "AIRBNB SETUP SERVICE",
+   "category": "SERVICE",
+   "sub_category": "AIRBNB_SETUP",
+   "uom": "LOT",
+   "cost_rm": null,
+   "links": [],
+   "source": "balance file: Service / Setup Service"
+  },
+  {
+   "code": "SRV-0002",
+   "name": "INITIAL SETUP SERVICE",
+   "category": "SERVICE",
+   "sub_category": "AIRBNB_SETUP",
+   "uom": "LOT",
+   "cost_rm": 150,
+   "links": [],
+   "source": "balance file: Service / Setup Service"
+  }
+ ],
+ "so_codes": [
+  {
+   "code": "RN-COUNTERTOP",
+   "name": "Built-in - Countertop (stone)",
+   "category": "BUILTIN",
+   "sub_category": "COUNTERTOP",
+   "uom": "FT",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "RN-KITCHEN_CABINET",
+   "name": "Built-in - Kitchen cabinet",
+   "category": "BUILTIN",
+   "sub_category": "KITCHEN_CABINET",
+   "uom": "FT",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "RN-SHELVING",
+   "name": "Built-in - Shelving",
+   "category": "BUILTIN",
+   "sub_category": "SHELVING",
+   "uom": "FT",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "RN-SHOE_CABINET",
+   "name": "Built-in - Shoe cabinet",
+   "category": "BUILTIN",
+   "sub_category": "SHOE_CABINET",
+   "uom": "FT",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "RN-STUDY_TABLE",
+   "name": "Built-in - Study table",
+   "category": "BUILTIN",
+   "sub_category": "STUDY_TABLE",
+   "uom": "FT",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "RN-TV_CABINET",
+   "name": "Built-in - TV cabinet",
+   "category": "BUILTIN",
+   "sub_category": "TV_CABINET",
+   "uom": "FT",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "RN-WALL_CABINET",
+   "name": "Built-in - Wall cabinet",
+   "category": "BUILTIN",
+   "sub_category": "WALL_CABINET",
+   "uom": "FT",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "RN-WARDROBE",
+   "name": "Built-in - Wardrobe",
+   "category": "BUILTIN",
+   "sub_category": "WARDROBE",
+   "uom": "FT",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "FAN-FNZ-42-R-BK",
+   "name": "FANZO ceiling fan 42 inch with remote, black",
+   "category": "LIGHTING",
+   "sub_category": "CEILING_FAN",
+   "uom": "UNIT",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "FAN-FNZ-56-R-BK",
+   "name": "FANZO ceiling fan 56 inch with remote, black",
+   "category": "LIGHTING",
+   "sub_category": "CEILING_FAN",
+   "uom": "UNIT",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "FAN-FNZ-FAN",
+   "name": "FANZO ceiling fan",
+   "category": "LIGHTING",
+   "sub_category": "CEILING_FAN",
+   "uom": "UNIT",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "FAN-FNZ-FANLIGHT",
+   "name": "FANZO ceiling fan with light",
+   "category": "LIGHTING",
+   "sub_category": "CEILING_FAN",
+   "uom": "UNIT",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "FAN-GEN-5B42-R",
+   "name": "Ceiling fan 5 blade 42 inch with remote",
+   "category": "LIGHTING",
+   "sub_category": "CEILING_FAN",
+   "uom": "UNIT",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "FAN-GEN-5B56-R",
+   "name": "Ceiling fan 5 blade 56 inch with remote",
+   "category": "LIGHTING",
+   "sub_category": "CEILING_FAN",
+   "uom": "UNIT",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "FAN-GEN-5B56-RL",
+   "name": "Ceiling fan 5 blade 56 inch with remote and light",
+   "category": "LIGHTING",
+   "sub_category": "CEILING_FAN",
+   "uom": "UNIT",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "FAN-GEN-CEILING",
+   "name": "Ceiling fan with remote (size to confirm)",
+   "category": "LIGHTING",
+   "sub_category": "CEILING_FAN",
+   "uom": "UNIT",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "FAN-GEN-EXHAUST",
+   "name": "Exhaust / ventilation fan",
+   "category": "LIGHTING",
+   "sub_category": "CEILING_FAN",
+   "uom": "UNIT",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "FAN-GEN-WALL",
+   "name": "Wall fan",
+   "category": "LIGHTING",
+   "sub_category": "CEILING_FAN",
+   "uom": "UNIT",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "FAN-W1L-DEKA-42-L",
+   "name": "DEKA ceiling fan 42 inch with light",
+   "category": "LIGHTING",
+   "sub_category": "CEILING_FAN",
+   "uom": "UNIT",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "DLT-GEN-GRILL226",
+   "name": "Grill light 226mm",
+   "category": "LIGHTING",
+   "sub_category": "DOWNLIGHT",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "DLT-GEN-GRILLADJ110",
+   "name": "Adjustable grill light 110mm",
+   "category": "LIGHTING",
+   "sub_category": "DOWNLIGHT",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "DLT-GEN-LINEAR600",
+   "name": "Linear light 600mm",
+   "category": "LIGHTING",
+   "sub_category": "DOWNLIGHT",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "DLT-GEN-RECESS",
+   "name": "Recessed downlight",
+   "category": "LIGHTING",
+   "sub_category": "DOWNLIGHT",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "DLT-GEN-SURF",
+   "name": "Surface downlight (size to confirm)",
+   "category": "LIGHTING",
+   "sub_category": "DOWNLIGHT",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "DLT-GEN-SURF8-CW",
+   "name": "Surface downlight 8 inch cool white",
+   "category": "LIGHTING",
+   "sub_category": "DOWNLIGHT",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "EYB-GEN-EYEBALL",
+   "name": "Eyeball light",
+   "category": "LIGHTING",
+   "sub_category": "EYEBALL",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "LGT-GEN-T5",
+   "name": "T5 LED batten",
+   "category": "LIGHTING",
+   "sub_category": "LED_STRIP",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "PND-GEN-DESIGNER",
+   "name": "Designer hanging lamp",
+   "category": "LIGHTING",
+   "sub_category": "PENDANT",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "PND-GEN-DINING",
+   "name": "Dining hanging light",
+   "category": "LIGHTING",
+   "sub_category": "PENDANT",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "PND-GEN-WALL",
+   "name": "Wall light",
+   "category": "LIGHTING",
+   "sub_category": "PENDANT",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "TRK-GEN-1M-2P2",
+   "name": "Track light 1m with 2+2 heads",
+   "category": "LIGHTING",
+   "sub_category": "TRACK_LIGHT",
+   "uom": "SET",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "TRK-GEN-1M-SET",
+   "name": "Track light 1m with 1+3 heads",
+   "category": "LIGHTING",
+   "sub_category": "TRACK_LIGHT",
+   "uom": "SET",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "TRK-GEN-2M-3",
+   "name": "Track light 2m with 3 heads",
+   "category": "LIGHTING",
+   "sub_category": "TRACK_LIGHT",
+   "uom": "SET",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "TRK-GEN-LINEAR24W",
+   "name": "LED linear track light 24W",
+   "category": "LIGHTING",
+   "sub_category": "TRACK_LIGHT",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "TRK-GEN-MAG-SURF",
+   "name": "Surface magnetic track",
+   "category": "LIGHTING",
+   "sub_category": "TRACK_LIGHT",
+   "uom": "M",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "TRK-GEN-MAGNETIC",
+   "name": "Recessed magnetic track",
+   "category": "LIGHTING",
+   "sub_category": "TRACK_LIGHT",
+   "uom": "M",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "ACU-HIS-15HP",
+   "name": "Hisense aircon 1.5HP (incl. 10ft copper)",
+   "category": "APPLIANCE",
+   "sub_category": "AIRCON_UNIT",
+   "uom": "UNIT",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "ACU-HIS-1HP",
+   "name": "Hisense aircon 1HP (incl. 10ft copper)",
+   "category": "APPLIANCE",
+   "sub_category": "AIRCON_UNIT",
+   "uom": "UNIT",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "FRG-GEN-110L",
+   "name": "Fridge 110L",
+   "category": "APPLIANCE",
+   "sub_category": "FRIDGE",
+   "uom": "UNIT",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "FRG-GEN-200L",
+   "name": "Fridge 200L",
+   "category": "APPLIANCE",
+   "sub_category": "FRIDGE",
+   "uom": "UNIT",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "FRG-GEN-280L",
+   "name": "Fridge 280L",
+   "category": "APPLIANCE",
+   "sub_category": "FRIDGE",
+   "uom": "UNIT",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "FRG-HIS-420L",
+   "name": "Hisense fridge 420L 2 door",
+   "category": "APPLIANCE",
+   "sub_category": "FRIDGE",
+   "uom": "UNIT",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "HOB-HET-2IN1",
+   "name": "Hetch 2-in-1 induction and ceramic cooker 3000W",
+   "category": "APPLIANCE",
+   "sub_category": "HOOD_HOB",
+   "uom": "UNIT",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "HOD-ELB-M7598",
+   "name": "Elba slim hood ESH-M7598",
+   "category": "APPLIANCE",
+   "sub_category": "HOOD_HOB",
+   "uom": "UNIT",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "TV-HIS-43",
+   "name": "Hisense smart TV 43 inch",
+   "category": "APPLIANCE",
+   "sub_category": "TV",
+   "uom": "UNIT",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "TV-HIS-50",
+   "name": "Hisense smart TV 50 inch",
+   "category": "APPLIANCE",
+   "sub_category": "TV",
+   "uom": "UNIT",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "WSH-MID-2IN1",
+   "name": "Midea washer dryer 2 in 1, 7.5kg",
+   "category": "APPLIANCE",
+   "sub_category": "WASHER",
+   "uom": "UNIT",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "HTR-GEN-HEATER",
+   "name": "Water heater",
+   "category": "APPLIANCE",
+   "sub_category": "WATER_HEATER",
+   "uom": "UNIT",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "FUR-GEN-POUF",
+   "name": "Designer nordic pouf",
+   "category": "FURNITURE",
+   "sub_category": "ACCESSORY",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "FUR-GEN-WORKCHAIR",
+   "name": "Working / study chair",
+   "category": "FURNITURE",
+   "sub_category": "ACCESSORY",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "FUR-GEN-CHAIR",
+   "name": "Dining chair",
+   "category": "FURNITURE",
+   "sub_category": "DINING",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "FUR-GEN-CHAIR-CARTER",
+   "name": "CARTER dining chair",
+   "category": "FURNITURE",
+   "sub_category": "DINING",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "FUR-GEN-CHAIR-MACY",
+   "name": "MACY chair",
+   "category": "FURNITURE",
+   "sub_category": "DINING",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "FUR-GEN-CHAIR-MARLO",
+   "name": "MARLO chair",
+   "category": "FURNITURE",
+   "sub_category": "DINING",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "FUR-GEN-CHAIR-NAIDA",
+   "name": "NAIDA chair",
+   "category": "FURNITURE",
+   "sub_category": "DINING",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "FUR-GEN-CHAIR-NANZO",
+   "name": "NANZO chair",
+   "category": "FURNITURE",
+   "sub_category": "DINING",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "FUR-GEN-CHAIR-ZOLA",
+   "name": "ZOLA dining chair",
+   "category": "FURNITURE",
+   "sub_category": "DINING",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "FUR-GEN-DIN-AIMON",
+   "name": "AIMON dining table",
+   "category": "FURNITURE",
+   "sub_category": "DINING",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "FUR-GEN-DIN-GERALD180",
+   "name": "GERALD dining table 1800mm",
+   "category": "FURNITURE",
+   "sub_category": "DINING",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "FUR-GEN-DIN-ROUND180",
+   "name": "Round dining table 1800mm",
+   "category": "FURNITURE",
+   "sub_category": "DINING",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "FUR-GEN-DINSET2",
+   "name": "Dining table + 2 chairs",
+   "category": "FURNITURE",
+   "sub_category": "DINING",
+   "uom": "SET",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "FUR-GEN-DINSET6",
+   "name": "Dining set 1 table + 6 chairs",
+   "category": "FURNITURE",
+   "sub_category": "DINING",
+   "uom": "SET",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "FUR-GEN-NEATH150",
+   "name": "NEATH dining table 1.5m",
+   "category": "FURNITURE",
+   "sub_category": "DINING",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "FUR-MUJ-DINBENCH",
+   "name": "MUJI dining bench",
+   "category": "FURNITURE",
+   "sub_category": "DINING",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "FUR-MUJ-DINCHAIR",
+   "name": "MUJI dining chair",
+   "category": "FURNITURE",
+   "sub_category": "DINING",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "FUR-MUJ-DINTABLE",
+   "name": "MUJI dining table 1500mm",
+   "category": "FURNITURE",
+   "sub_category": "DINING",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "FUR-MUJ-TVCAB",
+   "name": "MUJI TV cabinet (Malmo 1.8m)",
+   "category": "FURNITURE",
+   "sub_category": "LOOSE_STORAGE",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "FUR-MUJ-WARDROBE3D",
+   "name": "MUJI 3 door soft close wardrobe",
+   "category": "FURNITURE",
+   "sub_category": "LOOSE_STORAGE",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "FUR-MUJ-WARDROBEOPEN",
+   "name": "MUJI open shelf wardrobe",
+   "category": "FURNITURE",
+   "sub_category": "LOOSE_STORAGE",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "AKEMI GALLENT MATT (K)",
+   "name": "AKEMI GALLENT MATTRESS (183X190X20CM)",
+   "category": "FURNITURE",
+   "sub_category": "MATTRESS",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "AKEMI GALLENT MATT (Q)",
+   "name": "AKEMI GALLENT MATTRESS (152X190X20CM)",
+   "category": "FURNITURE",
+   "sub_category": "MATTRESS",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "AKEMI GALLENT MATT (S)",
+   "name": "AKEMI GALLENT MATTRESS (90X190X20CM)",
+   "category": "FURNITURE",
+   "sub_category": "MATTRESS",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "AKEMI GALLENT MATT (SS)",
+   "name": "AKEMI GALLENT MATTRESS (107X190X20CM)",
+   "category": "FURNITURE",
+   "sub_category": "MATTRESS",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "CARRES B1201S MATT (K)",
+   "name": "CARRES B1201S MATTRESS (183X190CM)",
+   "category": "FURNITURE",
+   "sub_category": "MATTRESS",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "CARRES B1201S MATT (Q)",
+   "name": "CARRES B1201S MATTRESS (152X190CM)",
+   "category": "FURNITURE",
+   "sub_category": "MATTRESS",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "CARRES B1201S MATT (S)",
+   "name": "CARRES B1201S MATTRESS (90X190CM)",
+   "category": "FURNITURE",
+   "sub_category": "MATTRESS",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "CARRES B1201S MATT (SS)",
+   "name": "CARRES B1201S MATTRESS (107X190CM)",
+   "category": "FURNITURE",
+   "sub_category": "MATTRESS",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "CARRES HOTEL PREMIUM L MATT (K)",
+   "name": "CARRES HOTEL PREMIUM L MATTRESS (183X190CM)",
+   "category": "FURNITURE",
+   "sub_category": "MATTRESS",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "CARRES HOTEL PREMIUM L MATT (Q)",
+   "name": "CARRES HOTEL PREMIUM L MATTRESS (152X190CM)",
+   "category": "FURNITURE",
+   "sub_category": "MATTRESS",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "CARRES HOTEL PREMIUM L MATT (S)",
+   "name": "CARRES HOTEL PREMIUM L MATTRESS (90X190CM)",
+   "category": "FURNITURE",
+   "sub_category": "MATTRESS",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "CARRES HOTEL PREMIUM L MATT (SS)",
+   "name": "CARRES HOTEL PREMIUM L MATTRESS (107X190CM)",
+   "category": "FURNITURE",
+   "sub_category": "MATTRESS",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "CARRES L1201F MATT (K)",
+   "name": "CARRES L1201F MATTRESS (183X190CM)",
+   "category": "FURNITURE",
+   "sub_category": "MATTRESS",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "CARRES L1201F MATT (Q)",
+   "name": "CARRES L1201F MATTRESS (152X190CM)",
+   "category": "FURNITURE",
+   "sub_category": "MATTRESS",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "CARRES L1201F MATT (S)",
+   "name": "CARRES L1201F MATTRESS (90X190CM)",
+   "category": "FURNITURE",
+   "sub_category": "MATTRESS",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "CARRES L1201F MATT (SS)",
+   "name": "CARRES L1201F MATTRESS (107X190CM)",
+   "category": "FURNITURE",
+   "sub_category": "MATTRESS",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "DOCTOR K MATT (K)",
+   "name": "DOCTOR K MATTRESS (183X190CM)",
+   "category": "FURNITURE",
+   "sub_category": "MATTRESS",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "DOCTOR K MATT (Q)",
+   "name": "DOCTOR K MATTRESS (152X190CM)",
+   "category": "FURNITURE",
+   "sub_category": "MATTRESS",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "DOCTOR K MATT (S)",
+   "name": "DOCTOR K MATTRESS (90X190CM)",
+   "category": "FURNITURE",
+   "sub_category": "MATTRESS",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "DOCTOR K MATT (SS)",
+   "name": "DOCTOR K MATTRESS (107X190CM)",
+   "category": "FURNITURE",
+   "sub_category": "MATTRESS",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "DR MACIO MATT (K)",
+   "name": "DR MACIO MATTRESS (183X190X30CM)",
+   "category": "FURNITURE",
+   "sub_category": "MATTRESS",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "DR MACIO MATT (Q)",
+   "name": "DR MACIO MATTRESS (152X190X30CM)",
+   "category": "FURNITURE",
+   "sub_category": "MATTRESS",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "DR MACIO MATT (S)",
+   "name": "DR MACIO MATTRESS (90X190X30CM)",
+   "category": "FURNITURE",
+   "sub_category": "MATTRESS",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "DR MACIO MATT (SS)",
+   "name": "DR MACIO MATTRESS (107X190X30CM)",
+   "category": "FURNITURE",
+   "sub_category": "MATTRESS",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "FLOOR MATT (K)",
+   "name": "FLOOR MATTRESS (183X190CM)",
+   "category": "FURNITURE",
+   "sub_category": "MATTRESS",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "FLOOR MATT (Q)",
+   "name": "FLOOR MATTRESS (152X190CM)",
+   "category": "FURNITURE",
+   "sub_category": "MATTRESS",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "FLOOR MATT (S)",
+   "name": "FLOOR MATTRESS (90X190CM)",
+   "category": "FURNITURE",
+   "sub_category": "MATTRESS",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "FLOOR MATT (SS)",
+   "name": "FLOOR MATTRESS (107X190CM)",
+   "category": "FURNITURE",
+   "sub_category": "MATTRESS",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "SOF-GEN-1S",
+   "name": "SOFA 1S",
+   "category": "FURNITURE",
+   "sub_category": "SOFA",
+   "uom": "UNIT",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "SOF-GEN-3S",
+   "name": "SOFA 3S",
+   "category": "FURNITURE",
+   "sub_category": "SOFA",
+   "uom": "UNIT",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "SOF-GEN-BLATT-3S",
+   "name": "SOFA BLATT 3S",
+   "category": "FURNITURE",
+   "sub_category": "SOFA",
+   "uom": "UNIT",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "SOF-GEN-NEXON-3S",
+   "name": "SOFA NEXON 3S",
+   "category": "FURNITURE",
+   "sub_category": "SOFA",
+   "uom": "UNIT",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "SOF-GEN-PREMIUM-2.5S",
+   "name": "SOFA PREMIUM 2.5S",
+   "category": "FURNITURE",
+   "sub_category": "SOFA",
+   "uom": "UNIT",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "SOF-GEN-PUSHBACK-3S",
+   "name": "SOFA PUSH BACK 3S",
+   "category": "FURNITURE",
+   "sub_category": "SOFA",
+   "uom": "UNIT",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "SOF-GEN-SOFABED",
+   "name": "SOFA BED",
+   "category": "FURNITURE",
+   "sub_category": "SOFA",
+   "uom": "UNIT",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "SOF-HKA-6112-3S",
+   "name": "SOFA 6112 3S",
+   "category": "FURNITURE",
+   "sub_category": "SOFA",
+   "uom": "UNIT",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "FUR-GEN-BEDSIDE",
+   "name": "Bedside table",
+   "category": "FURNITURE",
+   "sub_category": "TABLES",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "FUR-GEN-COF-HIACE",
+   "name": "HIACE coffee table",
+   "category": "FURNITURE",
+   "sub_category": "TABLES",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "FUR-GEN-COF-OZZY80",
+   "name": "OZZY round coffee table 800mm",
+   "category": "FURNITURE",
+   "sub_category": "TABLES",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "FUR-GEN-COF-PANRA2",
+   "name": "PANRA coffee table, set of 2",
+   "category": "FURNITURE",
+   "sub_category": "TABLES",
+   "uom": "SET",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "FUR-GEN-COF-SANDRA2",
+   "name": "SANDRA coffee table, set of 2",
+   "category": "FURNITURE",
+   "sub_category": "TABLES",
+   "uom": "SET",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "FUR-GEN-COFFEE",
+   "name": "Coffee table",
+   "category": "FURNITURE",
+   "sub_category": "TABLES",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "FUR-GEN-DESKTV",
+   "name": "Working desk + TV cabinet table",
+   "category": "FURNITURE",
+   "sub_category": "TABLES",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "FUR-GEN-DRESSING",
+   "name": "Designer dressing table",
+   "category": "FURNITURE",
+   "sub_category": "TABLES",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "FUR-GEN-SIDE-HIRADO",
+   "name": "HIRADO side table",
+   "category": "FURNITURE",
+   "sub_category": "TABLES",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "FUR-GEN-SIDETABLE",
+   "name": "Side / bedside table",
+   "category": "FURNITURE",
+   "sub_category": "TABLES",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "FUR-MUJ-COFFEESET",
+   "name": "MUJI coffee table set",
+   "category": "FURNITURE",
+   "sub_category": "TABLES",
+   "uom": "SET",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "FUR-MUJ-SIDETABLE",
+   "name": "MUJI side table",
+   "category": "FURNITURE",
+   "sub_category": "TABLES",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "BLD-GEN-BLINDS",
+   "name": "Blinds",
+   "category": "SOFT",
+   "sub_category": "CURTAIN_BLINDS",
+   "uom": "UNIT",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "BLD-GEN-ROLLER",
+   "name": "Roller blinds",
+   "category": "SOFT",
+   "sub_category": "CURTAIN_BLINDS",
+   "uom": "SQFT",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "BLD-GEN-ZEBRA",
+   "name": "Zebra blinds",
+   "category": "SOFT",
+   "sub_category": "CURTAIN_BLINDS",
+   "uom": "SQFT",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "CUR-GEN-DOUBLE",
+   "name": "Curtain double-ply SG pleat",
+   "category": "SOFT",
+   "sub_category": "CURTAIN_BLINDS",
+   "uom": "FT",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "CUR-GEN-SINGLE",
+   "name": "Curtain single-ply SG pleat",
+   "category": "SOFT",
+   "sub_category": "CURTAIN_BLINDS",
+   "uom": "FT",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "CUR-MUJ-DOUBLE",
+   "name": "MUJI curtain, double layer",
+   "category": "SOFT",
+   "sub_category": "CURTAIN_BLINDS",
+   "uom": "SET",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "CUR-MUJ-SINGLE",
+   "name": "MUJI curtain, single layer",
+   "category": "SOFT",
+   "sub_category": "CURTAIN_BLINDS",
+   "uom": "SET",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "MIR-CTS-CUSTOM",
+   "name": "Custom mirror",
+   "category": "SOFT",
+   "sub_category": "DECORATION",
+   "uom": "UNIT",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "MIR-GEN-BRONZE",
+   "name": "Bronze mirror",
+   "category": "SOFT",
+   "sub_category": "DECORATION",
+   "uom": "SQFT",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "MIR-GEN-ROUND600",
+   "name": "Round mirror 600mm",
+   "category": "SOFT",
+   "sub_category": "DECORATION",
+   "uom": "PCS",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "RN-DEFECT",
+   "name": "Service - Defect checking",
+   "category": "SERVICE",
+   "sub_category": "DEFECT_CHECK",
+   "uom": "LOT",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "RN-DESIGN",
+   "name": "Service - Design",
+   "category": "SERVICE",
+   "sub_category": "DESIGN",
+   "uom": "LOT",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  },
+  {
+   "code": "RN-SIGNAGE",
+   "name": "Service - Signage",
+   "category": "SERVICE",
+   "sub_category": "SIGNBOARD",
+   "uom": "LOT",
+   "cost_rm": null,
+   "links": [],
+   "source": "outstanding AutoCount SOs, New-SKU-codes.xlsx"
+  }
+ ]
+}

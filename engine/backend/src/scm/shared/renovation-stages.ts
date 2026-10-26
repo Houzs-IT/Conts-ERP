@@ -46,7 +46,7 @@ export const AUTO_SKIP_RULE: Readonly<Partial<Record<StageKey, readonly CatalogG
   hardware: ['WORKS'],
   furniture: ['FURNITURE', 'BUILTIN'],
   appliances: ['APPLIANCE'],
-  soft_furnishing: ['SOFT', 'SERVICE'],
+  soft_furnishing: ['SOFT', 'SERVICE', 'AIRBNB'],
 };
 
 export interface TradeStep {
