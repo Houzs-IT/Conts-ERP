@@ -10,7 +10,7 @@ FILE_DATE = re.compile(r'\((\d{1,2})\s*(JAN|FEB|MAR|APR|MAY|JUNE?|JULY?|AUG|SEPT
 
 def pdate(s):
     if not s: return None
-    for f in ('%d/%m/%Y', '%m/%d/%Y'):
+    for f in ('%d/%m/%Y', '%m/%d/%Y', '%d/%m/%y'):
         try: return datetime.datetime.strptime(s.strip(), f).date()
         except ValueError: pass
     return None
