@@ -20,6 +20,9 @@ export async function readPayRules(env: Env): Promise<PayRules> {
   return parsePayRules(row?.value);
 }
 
+/** Minutes since midnight, Malaysia time (UTC+8 all year), for the shift rules. */
+const mytMinute = (iso: string): number => Math.floor(Date.parse(iso) / 60_000 + 8 * 60) % (24 * 60);
+
 const lastDay = (period: string): string =>
   `${period}-${String(new Date(Date.UTC(Number(period.slice(0, 4)), Number(period.slice(5, 7)), 0)).getUTCDate()).padStart(2, '0')}`;
 /** The day a period is counted to: its last day, or today while it is running. Null for a month not started. */
@@ -79,7 +82,10 @@ export async function monthInputs(env: Env, people: Employee[], period: string, 
     const days: PunchDay[] = (punchesBy.get(e.id) ?? []).map(r => {
       // An earlier day still open has no end: it counts as the standard day, like a forgotten clock-out.
       const forgotOut = !!r.forgot_out || (!r.clock_out_at && r.work_date < today);
-      return { date: r.work_date, minutes: forgotOut ? 0 : workedMinutes(r.clock_in_at, r.clock_out_at), forgotOut };
+      return {
+        date: r.work_date, minutes: forgotOut ? 0 : workedMinutes(r.clock_in_at, r.clock_out_at), forgotOut,
+        inMin: mytMinute(r.clock_in_at), outMin: r.clock_out_at ? mytMinute(r.clock_out_at) : null,
+      };
     });
     const approved: ApprovedLeave[] = (leavesBy.get(e.id) ?? []).map(l => ({ type: l.type, startDate: l.start_date, endDate: l.end_date }));
     out.set(e.id, {
@@ -110,7 +116,8 @@ const FIGURE_COLS: [keyof PayFigures, string][] = [
   ['basicSalarySen', 'basic_salary_sen'], ['dayRateSen', 'day_rate_sen'], ['hourRateSen', 'hour_rate_sen'],
   ['workingDays', 'working_days'], ['daysWorked', 'days_worked'], ['paidLeaveDays', 'paid_leave_days'], ['absentDays', 'absent_days'],
   ['absenceDeductionSen', 'absence_deduction_sen'], ['otHours', 'ot_hours'], ['otSen', 'ot_sen'], ['sundayHours', 'sunday_hours'],
-  ['sundaySen', 'sunday_sen'], ['holidayHours', 'holiday_hours'], ['holidaySen', 'holiday_sen'], ['grossSen', 'gross_sen'],
+  ['sundaySen', 'sunday_sen'], ['holidayHours', 'holiday_hours'], ['holidaySen', 'holiday_sen'],
+  ['lateShortHours', 'late_short_hours'], ['lateShortSen', 'late_short_sen'], ['grossSen', 'gross_sen'],
   ['epfEmployeeSen', 'epf_employee_sen'], ['epfEmployerSen', 'epf_employer_sen'], ['socsoEmployeeSen', 'socso_employee_sen'],
   ['socsoEmployerSen', 'socso_employer_sen'], ['eisEmployeeSen', 'eis_employee_sen'], ['eisEmployerSen', 'eis_employer_sen'],
   ['pcbSen', 'pcb_sen'], ['pcbStatus', 'pcb_status'], ['pcbNote', 'pcb_note'], ['advanceSen', 'advance_sen'],
@@ -124,7 +131,8 @@ export function toPayslip(r: PayslipRow): PayslipView {
     basicSalarySen: n('basic_salary_sen'), dayRateSen: n('day_rate_sen'), hourRateSen: n('hour_rate_sen'),
     workingDays: n('working_days'), daysWorked: n('days_worked'), paidLeaveDays: n('paid_leave_days'), absentDays: n('absent_days'),
     absenceDeductionSen: n('absence_deduction_sen'), otHours: n('ot_hours'), otSen: n('ot_sen'), sundayHours: n('sunday_hours'),
-    sundaySen: n('sunday_sen'), holidayHours: n('holiday_hours'), holidaySen: n('holiday_sen'), grossSen: n('gross_sen'),
+    sundaySen: n('sunday_sen'), holidayHours: n('holiday_hours'), holidaySen: n('holiday_sen'),
+    lateShortHours: n('late_short_hours'), lateShortSen: n('late_short_sen'), grossSen: n('gross_sen'),
     epfEmployeeSen: n('epf_employee_sen'), epfEmployerSen: n('epf_employer_sen'), socsoEmployeeSen: n('socso_employee_sen'),
     socsoEmployerSen: n('socso_employer_sen'), eisEmployeeSen: n('eis_employee_sen'), eisEmployerSen: n('eis_employer_sen'),
     pcbSen: n('pcb_sen'), pcbStatus: isPcbStatus(status) ? status : 'UNKNOWN', pcbNote: String(r.pcb_note), advanceSen: n('advance_sen'),

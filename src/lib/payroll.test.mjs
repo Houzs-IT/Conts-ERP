@@ -104,3 +104,55 @@ test('pay rules: defaults when never set, an error when broken', () => {
   assert.deepEqual(parsePayRules(null), DEFAULT_PAY_RULES);
   assert.throws(() => parsePayRules('{"epfEmployeePct":"eleven"}'), /not valid/);
 });
+
+const { shiftDay } = await import('../../functions/_lib/payrollCalc.ts');
+const SHIFT = { ...DEFAULT_PAY_RULES, useShiftRules: true }; // Hookka's 08:00-18:00, 12:00-13:00 lunch, 15 min grace
+const hm = s => Number(s.slice(0, 2)) * 60 + Number(s.slice(3));
+
+test('shift rules start off; the defaults are Hookka\'s otherwise', () => {
+  assert.equal(DEFAULT_PAY_RULES.useShiftRules, false);
+  assert.equal(DEFAULT_PAY_RULES.shiftStartMin, 480);
+  assert.equal(DEFAULT_PAY_RULES.epfOn, 'basic');
+  assert.deepEqual(parsePayRules('{"epfEmployeePct":11}').useShiftRules, false); // an old saved setting gains the new rules
+});
+
+test('Hookka\'s day: late past the grace counts from the start, lunch comes off, overtime in blocks after the end', () => {
+  assert.deepEqual(shiftDay(hm('08:20'), hm('18:40'), SHIFT), { regularMin: 520, otMin: 30, shortfallMin: 0, lateMin: 20 });
+  assert.deepEqual(shiftDay(hm('08:10'), hm('17:00'), SHIFT), { regularMin: 480, otMin: 0, shortfallMin: 60, lateMin: 0 });
+  assert.equal(shiftDay(hm('08:00'), hm('18:14'), SHIFT).otMin, 0); // under one block earns nothing
+});
+
+test('shift rules on: a short day is docked at the hour rate (day rate / (hours + lunch))', () => {
+  const days = workingDates.map(d => ({ date: d, minutes: 600, forgotOut: false, inMin: 480, outMin: d === '2026-11-02' ? 1020 : 1080 }));
+  const f = computePay({ ...base, employee: { ...person, workingHoursPerDay: 9 }, days, rules: SHIFT });
+  assert.equal(f.hourRateSen, 1_000);          // RM 100 / (9 h + 1 h lunch)
+  assert.equal(f.lateShortHours, 1);
+  assert.equal(f.lateShortSen, 1_000);
+  assert.equal(f.otHours, 0);
+  assert.equal(f.grossSen, 259_000);
+});
+
+test('shift rules off: lunch does not change the hour rate', () => {
+  const f = computePay({ ...base, days: workingDates.map(d => ({ date: d, minutes: 480, forgotOut: false, inMin: null, outMin: null })) });
+  assert.equal(f.hourRateSen, 1_250);
+  assert.equal(f.lateShortSen, 0);
+});
+
+test('EPF on the basic earned instead of the full basic', () => {
+  // No work in November: 25 absent days at RM 100 leave RM 100 of the RM 2,600 (the /26 day rate, as on Hookka).
+  const f = computePay({ ...base, days: [], rules: { ...DEFAULT_PAY_RULES, epfOn: 'earned' } });
+  assert.equal(f.grossSen, 10_000);
+  assert.equal(f.epfEmployeeSen, 1_100);       // 11% of RM 100
+  assert.equal(computePay({ ...base, days: [] }).epfEmployeeSen, 28_600); // Hookka's rule: 11% of the full RM 2,600
+});
+
+test('while the month runs, the last two working days with nothing logged are pending, not absent', () => {
+  const f = computePay({ ...base, throughDay: '2026-11-10', days: [] });
+  assert.equal(f.workingDays, 8);
+  assert.equal(f.absentDays, 6);
+});
+
+test('day rate by the month\'s calendar days or working days', () => {
+  assert.equal(computePay({ ...base, days: [], rules: { ...DEFAULT_PAY_RULES, dayRateDivisorMode: 'calendarDays' } }).dayRateSen, 8_667); // 2,600 / 30
+  assert.equal(computePay({ ...base, days: [], rules: { ...DEFAULT_PAY_RULES, dayRateDivisorMode: 'workingDays' } }).dayRateSen, 10_400); // 2,600 / 25
+});
