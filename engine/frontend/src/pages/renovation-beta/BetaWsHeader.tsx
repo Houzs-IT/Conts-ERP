@@ -170,7 +170,8 @@ const LINE_DONE = "linear-gradient(90deg,#6E9BFF,#C9A6F2,#F6A9C4)";
 
 export function BetaWsStepper({ items, hold }: { items: StepperItem[]; hold: string | null }): ReactElement {
   return (
-    <div style={{ ...GLASS, overflowX: "auto", overflowY: "hidden", borderRadius: 26, padding: "20px 8px 16px" }}>
+    // .no-bar: it still scrolls sideways on a phone, without the grey bar and arrows inside the card.
+    <div className="no-bar" style={{ ...GLASS, overflowX: "auto", overflowY: "hidden", borderRadius: 26, padding: "20px 8px 16px" }}>
       <ol aria-label="Project stages" style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", minWidth: 560 }}>
         {items.map((s, i) => {
           const last = i === items.length - 1;

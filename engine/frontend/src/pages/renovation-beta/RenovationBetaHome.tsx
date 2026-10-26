@@ -228,7 +228,8 @@ function HomeScreen(): ReactElement {
         {query.trim() && <span role="status" style={{ fontSize: 13, fontWeight: 600, color: INK_SOFT }}>{list.length} of {inTab.length}</span>}
       </div>
 
-      <div role="tablist" aria-label="Project groups" style={{ display: "flex", flexWrap: "wrap", gap: 4, borderBottom: `1px solid ${BETA.line}` }}>
+      {/* One row that scrolls sideways when narrow: wrapped, the five groups took three uneven rows on a phone. */}
+      <div role="tablist" aria-label="Project groups" style={{ display: "flex", flexWrap: "nowrap", gap: 4, overflowX: "auto", overflowY: "hidden", scrollbarWidth: "none", borderBottom: `1px solid ${BETA.line}` }}>
         {HOME_TABS.map(([key, label]) => {
           const on = tab === key;
           return (
@@ -239,7 +240,7 @@ function HomeScreen(): ReactElement {
               aria-selected={on}
               onClick={() => setTab(key)}
               style={{
-                display: "inline-flex", alignItems: "center", gap: 6, minHeight: 40, padding: "0 12px", border: 0, borderRadius: "8px 8px 0 0",
+                display: "inline-flex", flex: "none", whiteSpace: "nowrap", alignItems: "center", gap: 6, minHeight: 40, padding: "0 12px", border: 0, borderRadius: "8px 8px 0 0",
                 marginBottom: -1, background: on ? BETA.chip : "transparent", borderBottom: `3px solid ${on ? BETA.blue : "transparent"}`, font: "inherit", fontSize: 14,
                 fontWeight: on ? 700 : 500, color: on ? BETA.ink : MUTED, cursor: "pointer",
               }}

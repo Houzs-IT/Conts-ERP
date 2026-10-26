@@ -93,14 +93,15 @@ function PaymentsCard({ p }: { p: BetaTabProps }): ReactElement {
       {payments.state === "hidden" && <p style={{ fontSize: 14, color: BETA.muted }}>Payment figures are hidden for your role.</p>}
       {payments.state === "none" && <p style={{ fontSize: 14, color: BETA.muted }}>No sales order is linked yet. Once one is, each payment recorded on it fills the next box here.</p>}
       {rows.length > 0 && (
-        // .pay-grid (BetaWsUi CSS): four across, two on a narrow frame, one on a phone; auto-fit left a lone fourth tile.
+        // .pay-grid (BetaWsUi CSS): four across, two on a narrow frame or a phone; auto-fit left a lone fourth tile.
         <ol aria-label="Payments" className="pay-grid" style={{ listStyle: "none", margin: 0, padding: 0 }}>
           {rows.map((r) => {
             const v = paymentCard(r, d.currentStage, handoverOn);
             const look = PAY_LOOK[v.look];
             return (
               <li key={r.seq} style={{ border: look.border, background: look.bg, borderRadius: 18, padding: 16, display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                {/* Wraps so the badge drops under the name on a half-width phone tile. */}
+                <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: "4px 8px" }}>
                   <span style={{ fontWeight: 600, overflowWrap: "anywhere" }}>{r.label}</span>
                   <WsBadge tone={look.tone}>{v.badge}</WsBadge>
                 </div>
@@ -129,7 +130,8 @@ function PaymentTotalsRow({ totals, linked }: { totals: PaymentTotals; linked: b
   ];
   return (
     <div style={{ border: `1px solid ${BETA.line}`, borderRadius: 16, background: WS.panel, overflow: "hidden" }}>
-      <dl aria-label="Payment totals" style={{ margin: 0, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 1, background: BETA.line }}>
+      {/* .pay-totals (BetaWsUi CSS): three across; on a phone one row each, label left and amount right. */}
+      <dl aria-label="Payment totals" className="pay-totals" style={{ margin: 0, background: BETA.line }}>
         {cells.map((c) => (
           <div key={c.label} style={{ padding: "12px 16px", background: WS.panel, minWidth: 0 }}>
             <dt style={{ fontSize: 11, fontWeight: 600, letterSpacing: ".04em", textTransform: "uppercase", color: BETA.muted }}>{c.label}</dt>
