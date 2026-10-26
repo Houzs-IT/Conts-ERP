@@ -6,27 +6,29 @@ import Icon from '../../components/Icon';
 import { StaleBanner } from '../../components/DataState';
 import { DataTable, type Column } from '../../components/DataTable';
 import { Modal } from '../../components/Modal';
-import { Field } from '../../components/Field';
 import { Select } from '../../components/Select';
-import { MoneyInput, DateField } from '../../components/inputs';
+import { StatTile, StatRow } from '../../components/Metric';
 import { useToast } from '../../components/Toast';
 import { useConfirm } from '../../components/ConfirmDialog';
 import { useApi } from '../../lib/useApi';
 import { api, notifyFailure } from '../../lib/api';
 import { mayRun } from '../../lib/areaAccess';
 import { useSession } from '../../lib/session';
-import { rm, date, todayMyt } from '../../lib/format';
-import type { PayrollPayload, PayrollLine, AdvanceView } from '../../../functions/api/payroll/index';
+import { rm, todayMyt } from '../../lib/format';
+import { downloadTable, type ExportColumn, type ExportCell } from '../../lib/export';
+import type { PayrollPayload, PayrollLine } from '../../../functions/api/payroll/index';
 import type { PayFigures } from '../../../functions/_lib/payrollCalc';
+import { DEPARTMENT_LABEL } from '../../../functions/_lib/hrFields';
 import { PayRulesPanel } from './PayRules';
 import { pcbHasFigure } from '../../../functions/_lib/pcb';
 import type { PayslipDoc } from '../../lib/payslipPdf';
 
 /* ------------------------------------------------------------------ *
- * HR > Workers > Payroll: the month's pay for every in-house cleaner and
- * technician (HR phase 4, ported from Hookka). Run the month to make
- * draft payslips, check them, approve once the month has ended, then mark
- * them paid. Advances and the pay rules are kept here too.
+ * HR > Employees > Payroll: Hookka's Payroll Processing. The month's pay
+ * for every in-house cleaner and technician in Hookka's columns, its four
+ * summary cards and its Export CSV. Generate the month to make draft
+ * payslips, check them, approve once the month has ended, then mark them
+ * paid. The pay rules are kept here too.
  * ------------------------------------------------------------------ */
 
 const MON = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -38,6 +40,80 @@ export const shiftMonth = (p: string, by: number): string => {
 const figuresOf = (l: PayrollLine): PayFigures | null => l.payslip ?? l.estimate;
 const statusOf = (l: PayrollLine): string => l.payslip?.status ?? 'none';
 const pcbCell = (f: PayFigures): string => (pcbHasFigure(f.pcbStatus) ? rm(f.pcbSen) : f.pcbStatus === 'DISABLED' ? 'Off' : 'Not worked out');
+
+/** Month picker for the payroll tabs (Hookka's month and year selects as one): the last two years, newest first. */
+export function MonthSelect({ value, latest, onChange }: { value: string; latest: string; onChange: (m: string) => void }) {
+  const months = Array.from({ length: 24 }, (_, i) => shiftMonth(latest, -i));
+  if (!months.includes(value)) months.push(value);
+  return <Select label="Month" size="md" className="w-[180px]" value={value} onChange={onChange} options={months.map(m => ({ value: m, label: monthName(m) }))} />;
+}
+
+const department = (l: PayrollLine): string => DEPARTMENT_LABEL[l.employee.cleanerId ? 'cleaning' : 'maintenance'];
+const otTotal = (f: PayFigures): number => f.otSen + f.sundaySen + f.holidaySen;
+const totalPay = (f: PayFigures): number => f.grossSen + f.epfEmployerSen + f.socsoEmployerSen + f.eisEmployerSen;
+const basicEarned = (l: PayrollLine, f: PayFigures): number =>
+  l.employee.payBasis === 'daily' ? f.daysWorked * f.dayRateSen : Math.max(0, f.basicSalarySen - f.absenceDeductionSen - f.lateShortSen);
+const minus = (sen: number): ReactNode => (sen > 0 ? <span className="tabular-nums text-danger">-{rm(sen)}</span> : '');
+
+function docOf(line: PayrollLine, month: PayrollPayload, f: PayFigures): PayslipDoc {
+  const { employee: e, payslip: slip } = line;
+  return {
+    ...f, period: month.period, employeeName: e.name, employeeNo: e.employeeId, payBasis: e.payBasis,
+    paymentMethod: e.paymentMethod, bankName: e.bankName, bankAccount: slip?.bankAccount ?? null, status: slip?.status ?? 'estimate',
+  };
+}
+async function downloadPdf(line: PayrollLine, month: PayrollPayload): Promise<void> {
+  const f = figuresOf(line);
+  if (!f) return;
+  try { const { downloadPayslip } = await import('../../lib/payslipPdf'); await downloadPayslip(docOf(line, month, f), month.company); }
+  catch (e) { notifyFailure(e); }
+}
+
+/** Hookka's Export CSV: one row per person with every figure and how the docks were worked out, for the accountant. */
+function exportCsv(data: PayrollPayload): void {
+  const cols: ExportColumn[] = [
+    { label: 'Employee No', kind: 'text' }, { label: 'Employee Name', kind: 'text' }, { label: 'Department', kind: 'text' },
+    { label: 'Basic Salary', kind: 'money' }, { label: 'Working Days', kind: 'number' }, { label: 'Days Worked', kind: 'number' },
+    { label: 'Paid Leave Days', kind: 'number' }, { label: 'Absent Days', kind: 'number' }, { label: 'Absence Deduction', kind: 'money' },
+    { label: 'Absence Formula', kind: 'text' }, { label: 'Late/Short Hours', kind: 'number' }, { label: 'Late/Short Deduction', kind: 'money' },
+    { label: 'Late/Short Formula', kind: 'text' }, { label: 'Basic Earned', kind: 'money' },
+    { label: 'OT Weekday Hrs', kind: 'number' }, { label: 'OT Sunday Hrs', kind: 'number' }, { label: 'OT PH Hrs', kind: 'number' },
+    { label: 'Hourly Rate', kind: 'money' }, { label: 'OT Weekday Amt', kind: 'money' }, { label: 'OT Sunday Amt', kind: 'money' },
+    { label: 'OT PH Amt', kind: 'money' }, { label: 'Total OT', kind: 'money' }, { label: 'Allowances', kind: 'money' },
+    { label: 'Gross Pay', kind: 'money' }, { label: 'EPF EE', kind: 'money' }, { label: 'EPF ER', kind: 'money' },
+    { label: 'SOCSO EE', kind: 'money' }, { label: 'SOCSO ER', kind: 'money' }, { label: 'EIS EE', kind: 'money' }, { label: 'EIS ER', kind: 'money' },
+    { label: 'PCB', kind: 'money' }, { label: 'Total Deductions', kind: 'money' },
+    // After the statutory total, where they sit in the sum: Gross - Total Deductions - Advance - Penalty = Net Pay.
+    { label: 'Advance Taken', kind: 'money' }, { label: 'Advance Dates', kind: 'text' }, { label: 'Worker Penalty', kind: 'money' },
+    { label: 'Net Pay', kind: 'money' }, { label: 'Bank Account', kind: 'text' }, { label: 'Status', kind: 'text' },
+  ];
+  const rm2 = (sen: number): string => (sen / 100).toFixed(2);
+  const rows: ExportCell[][] = data.lines.flatMap(l => {
+    const f = figuresOf(l);
+    if (!f) return [];
+    const advanceDates = data.advances.filter(a => a.employeeId === l.employee.id).map(a => `${a.date} ${rm2(a.amountSen)}`).join('; ');
+    return [[
+      l.employee.employeeId, l.employee.name, department(l), f.basicSalarySen, f.workingDays, f.daysWorked, f.paidLeaveDays, f.absentDays,
+      f.absenceDeductionSen || null, f.absentDays > 0 ? `${rm2(f.dayRateSen)}/day x ${f.absentDays} = ${rm2(f.absenceDeductionSen)}` : '',
+      f.lateShortHours || null, f.lateShortSen || null,
+      f.lateShortHours > 0 ? `${f.lateShortHours}h x ${rm2(Math.round(f.lateShortSen / f.lateShortHours))}/h = ${rm2(f.lateShortSen)}` : '',
+      basicEarned(l, f), f.otHours, f.sundayHours, f.holidayHours, f.hourRateSen, f.otSen, f.sundaySen, f.holidaySen, otTotal(f), f.allowanceSen,
+      f.grossSen, f.epfEmployeeSen, f.epfEmployerSen, f.socsoEmployeeSen, f.socsoEmployerSen, f.eisEmployeeSen, f.eisEmployerSen,
+      // A blank, not 0.00, where no PCB was worked out (as on screen).
+      pcbHasFigure(f.pcbStatus) ? f.pcbSen : null, f.totalDeductionsSen,
+      f.advanceSen || null, advanceDates, f.penaltySen || null, f.netSen, l.payslip?.bankAccount ?? '', l.payslip?.status ?? 'not run',
+    ]];
+  });
+  downloadTable('csv', `payroll-${data.period}`, 'Payroll', cols, rows);
+}
+
+const money = (key: string, label: string, pick: (f: PayFigures) => number, width = 110, title?: string): Column<PayrollLine> =>
+  ({ key, label, type: 'money', value: l => { const f = figuresOf(l); return f ? pick(f) : null; }, width, title, align: 'right' });
+const hours = (key: string, label: string, pick: (f: PayFigures) => number): Column<PayrollLine> =>
+  ({ key, label, type: 'number', value: l => { const f = figuresOf(l); return f ? pick(f) : null; }, width: 80, align: 'right' });
+/** A deduction column: shown as a red minus, blank when nothing was taken. */
+const dock = (key: string, label: string, pick: (f: PayFigures) => number, title: string): Column<PayrollLine> =>
+  ({ ...money(key, label, pick, 110, title), render: l => { const f = figuresOf(l); return f ? minus(pick(f)) : ''; } });
 
 export default function PayrollTab() {
   const [params, setParams] = useSearchParams();
@@ -54,7 +130,11 @@ export default function PayrollTab() {
   const setMonth = (m: string) => setParams(p => { const n = new URLSearchParams(p); n.set('month', m); return n; }, { replace: true });
   const lines = data?.lines ?? [];
   const drafts = lines.filter(l => l.payslip?.status === 'draft');
-  const netTotal = lines.reduce((n, l) => n + (figuresOf(l)?.netSen ?? 0), 0);
+  const figures = lines.map(figuresOf).filter((f): f is PayFigures => !!f);
+  const sum = (pick: (f: PayFigures) => number): number => figures.reduce((n, f) => n + pick(f), 0);
+  const pcbMissing = figures.filter(f => !pcbHasFigure(f.pcbStatus) && f.pcbStatus !== 'DISABLED').length;
+  const stored = lines.some(l => l.payslip);
+  const canGenerate = !stored || drafts.length > 0 || lines.some(l => !l.payslip && l.estimate);
 
   async function run() {
     setBusy(true);
@@ -78,63 +158,101 @@ export default function PayrollTab() {
   }
 
   const columns = useMemo<Column<PayrollLine>[]>(() => [
-    { key: 'name', label: 'Name', value: l => l.employee.name, hideable: false, width: 190, render: l => <span className="font-semibold">{l.employee.name}</span> },
-    { key: 'status', label: 'Payslip', type: 'status', entity: 'payslip', value: statusOf, width: 120 },
-    { key: 'days', label: 'Worked / absent', value: l => figuresOf(l)?.daysWorked ?? null, width: 140, render: l => { const f = figuresOf(l); return f ? <span className="tabular-nums">{f.daysWorked} / {f.absentDays}</span> : ''; } },
-    { key: 'gross', label: 'Gross', type: 'money', value: l => figuresOf(l)?.grossSen ?? null, width: 130 },
-    { key: 'statutory', label: 'EPF+SOCSO+EIS', type: 'money', value: l => { const f = figuresOf(l); return f ? f.epfEmployeeSen + f.socsoEmployeeSen + f.eisEmployeeSen : null; }, width: 150 },
-    { key: 'pcb', label: 'PCB', value: l => { const f = figuresOf(l); return f ? pcbCell(f) : null; }, width: 140,
-      render: l => { const f = figuresOf(l); return f ? <span className={pcbHasFigure(f.pcbStatus) || f.pcbStatus === 'DISABLED' ? '' : 'text-warning'} title={f.pcbNote}>{pcbCell(f)}</span> : ''; } },
-    { key: 'advance', label: 'Advance', type: 'money', value: l => figuresOf(l)?.advanceSen ?? null, width: 120 },
-    { key: 'net', label: 'Net pay', type: 'money', value: l => figuresOf(l)?.netSen ?? null, width: 130,
+    { key: 'name', label: 'Employee', value: l => l.employee.name, hideable: false, width: 190,
+      render: l => <span className="flex flex-col"><span className="font-semibold whitespace-nowrap">{l.employee.name}</span><span className="text-meta text-muted-ink">{l.employee.employeeId ?? '-'} · {department(l)}</span></span> },
+    money('basic', 'Basic', f => f.basicSalarySen),
+    { key: 'days', label: 'Days', value: l => figuresOf(l)?.daysWorked ?? null, width: 80, align: 'center', title: 'Days worked of the working days in the month.',
+      render: l => { const f = figuresOf(l); return f ? <span className="tabular-nums">{f.daysWorked}/{f.workingDays}</span> : ''; } },
+    dock('absence', 'Absence', f => f.absenceDeductionSen, 'Whole working days missed, at the day rate.'),
+    dock('late', 'Late/Short', f => f.lateShortSen, 'Hours short on days worked (late past the grace, left early), under the shift rules.'),
+    hours('otWk', 'OT Wk', f => f.otHours),
+    hours('otSun', 'OT Sun', f => f.sundayHours),
+    hours('otPh', 'OT PH', f => f.holidayHours),
+    money('otAmt', 'OT Amt', otTotal),
+    money('allowance', 'Allowance', f => f.allowanceSen, 110, 'Leader allowance.'),
+    money('gross', 'Gross', f => f.grossSen, 120),
+    money('epfEe', 'EPF EE', f => f.epfEmployeeSen, 100),
+    money('epfEr', 'EPF ER', f => f.epfEmployerSen, 100),
+    money('socso', 'SOCSO', f => f.socsoEmployeeSen, 100, 'Employee share.'),
+    money('eis', 'EIS', f => f.eisEmployeeSen, 90, 'Employee share.'),
+    { key: 'pcb', label: 'PCB', value: l => { const f = figuresOf(l); return f ? pcbCell(f) : null; }, width: 120, align: 'right',
+      render: l => { const f = figuresOf(l); return f ? <span className={`tabular-nums ${pcbHasFigure(f.pcbStatus) || f.pcbStatus === 'DISABLED' ? '' : 'text-warning'}`} title={f.pcbNote}>{pcbCell(f)}</span> : ''; } },
+    dock('advance', 'Advance', f => f.advanceSen, 'Cash handed over during the month (Advances tab). Comes off after statutory.'),
+    dock('penalty', 'Penalty', f => f.penaltySen, 'Approved worker penalties for the month (Worker Penalty tab).'),
+    { ...money('net', 'Net Pay', f => f.netSen, 120),
       render: l => { const f = figuresOf(l); return f ? <span className={`font-semibold tabular-nums ${f.netSen < 0 ? 'text-danger' : ''}`}>{rm(f.netSen)}</span> : ''; } },
-    { key: 'go', label: '', noExport: true, sortable: false, filter: false, width: 100, align: 'right',
-      render: l => figuresOf(l) ? <Button size="sm" variant="tertiary" onClick={() => setOpen(l)}>Open</Button> : null },
-  ], []);
+    { ...money('total', 'Total Pay', totalPay, 120, 'Gross + employer EPF, SOCSO and EIS: what this person costs. An advance does not reduce it.'),
+      render: l => { const f = figuresOf(l); return f ? <span className="font-semibold tabular-nums">{rm(totalPay(f))}</span> : ''; } },
+    { key: 'status', label: 'Status', type: 'status', entity: 'payslip', value: statusOf, width: 110 },
+    { key: 'pdf', label: 'Print', noExport: true, sortable: false, filter: false, width: 80, align: 'center',
+      render: l => figuresOf(l) && data ? <Button size="sm" variant="tertiary" aria-label={`Payslip PDF for ${l.employee.name}`} icon={<Icon name="Printer" size="sm" />}
+        onClick={e => { e.stopPropagation(); void downloadPdf(l, data); }}>PDF</Button> : null },
+  ], [data]);
 
   return (
     <>
       {confirmDialog}
-      <p className="m-0 mb-4 text-copy text-muted-ink">{data ? `Payroll ${monthName(period)} · ${lines.length} people · net ${rm(netTotal)}${data.ended ? '' : ' so far'}` : 'Loading payroll…'}</p>
       {error && <StaleBanner message={`Showing the last payroll we have. ${error}`} onRetry={reload} />}
-
-      <div className="flex items-center justify-between gap-3 flex-wrap mb-4">
-        <span className="flex items-center gap-2">
-          <Button size="sm" variant="secondary" icon={<Icon name="ChevronLeft" size="sm" />} onClick={() => setMonth(shiftMonth(period, -1))}>Previous</Button>
-          <span className="text-copy font-semibold px-2">{monthName(period)}</span>
-          <Button size="sm" variant="secondary" disabled={!data || period >= data.today.slice(0, 7)} onClick={() => setMonth(shiftMonth(period, 1))}>Next</Button>
-        </span>
-        {full && data && (
-          <span className="flex items-center gap-2 flex-wrap">
-            <Button size="sm" variant="secondary" icon={<Icon name="RefreshCw" size="sm" />} disabled={busy} onClick={() => void run()}>
-              {lines.some(l => l.payslip) ? 'Refresh drafts' : 'Run payroll'}
-            </Button>
-            <Button size="sm" variant="primary" icon={<Icon name="Check" size="sm" />} disabled={busy || !data.ended || drafts.length === 0}
-              title={data.ended ? undefined : 'A month can be approved once it has ended.'} onClick={() => void approveAll()}>
-              Approve {drafts.length || ''} drafts
-            </Button>
-          </span>
-        )}
-      </div>
-      {data && !data.ended && <p className="m-0 mb-3 text-meta text-muted-ink">{monthName(period)} is still running: figures cover the days up to today and change as people clock in. Approve once the month has ended.</p>}
-
       <div className="flex flex-col gap-5">
+        {figures.length > 0 && (
+          <StatRow cols={4}>
+            <StatTile label="Total Pay" value={rm(sum(totalPay))} hint={`Gross + all employer statutory${sum(f => f.advanceSen) > 0 ? ` · ${rm(sum(f => f.advanceSen))} of it already handed out as advances` : ''}`} />
+            <StatTile label="Gross Pay" value={rm(sum(f => f.grossSen))} hint="Basic - deductions + OT + allowance" />
+            <StatTile label="Net Pay" value={rm(sum(f => f.netSen))} hint="Total take-home after statutory" />
+            <StatTile label="Statutory (all)" value={rm(sum(f => f.epfEmployeeSen + f.epfEmployerSen + f.socsoEmployeeSen + f.socsoEmployerSen + f.eisEmployeeSen + f.eisEmployerSen + f.pcbSen))}
+              hint={`EPF ${rm(sum(f => f.epfEmployeeSen + f.epfEmployerSen))} · SOCSO ${rm(sum(f => f.socsoEmployeeSen + f.socsoEmployerSen))} · EIS ${rm(sum(f => f.eisEmployeeSen + f.eisEmployerSen))} · PCB ${pcbMissing ? `not worked out for ${pcbMissing}` : rm(sum(f => f.pcbSen))}`}
+              hintTone={pcbMissing ? 'warning' : undefined} />
+          </StatRow>
+        )}
+
         <DataTable<PayrollLine>
           id="payroll" columns={columns} rows={loading && !data ? null : lines} rowKey={l => l.employee.id ?? l.employee.cleanerId ?? l.employee.technicianId ?? l.employee.name}
           pageSize={0} noun={['person', 'people']} exportName={`payroll-${period}`} onRowClick={l => figuresOf(l) && setOpen(l)}
           header={
-            <div className="pt-5 pb-3 px-5 flex items-baseline justify-between gap-3 flex-wrap [border-bottom:1px_solid_var(--color-line-soft)]">
-              <span className="text-[16px] font-semibold tracking-[-0.01em]">Payslips</span>
-              <span className="text-meta text-muted-ink">"Not run" rows show what the month comes to now. Run payroll to make draft payslips.</span>
+            <div className="pt-5 pb-4 px-5 flex flex-col gap-3 [border-bottom:1px_solid_var(--color-line-soft)]">
+              <div className="flex items-start justify-between gap-3 flex-wrap">
+                <span className="flex flex-col gap-0.5">
+                  <span className="text-[16px] font-semibold tracking-[-0.01em]">Payroll Processing - {monthName(period)}</span>
+                  {figures.length > 0 && <span className="text-meta text-muted-ink">{figures.length} active {figures.length === 1 ? 'worker' : 'workers'} · total salary {rm(sum(f => f.basicSalarySen))} · total pay {rm(sum(totalPay))}</span>}
+                </span>
+                <span className="flex items-center gap-2 flex-wrap">
+                  <MonthSelect value={period} latest={data?.today.slice(0, 7) ?? period} onChange={setMonth} />
+                  {full && data && canGenerate && (
+                    <Button size="sm" variant={stored ? 'secondary' : 'primary'} icon={<Icon name="DollarSign" size="sm" />} disabled={busy} onClick={() => void run()}
+                      title={stored ? 'Recompute this month\'s draft payslips from the current hours, salaries and rules. Approved and paid ones stay as they are.' : undefined}>
+                      {busy ? 'Working…' : stored ? 'Regenerate' : data.ended ? 'Generate Payslips' : 'Generate (finalise)'}
+                    </Button>
+                  )}
+                  {full && data && drafts.length > 0 && (
+                    <Button size="sm" variant="primary" icon={<Icon name="Check" size="sm" />} disabled={busy || !data.ended}
+                      title={data.ended ? undefined : 'A month can be approved once it has ended.'} onClick={() => void approveAll()}>Approve All</Button>
+                  )}
+                  {data && figures.length > 0 && <Button size="sm" variant="secondary" icon={<Icon name="Download" size="sm" />} onClick={() => exportCsv(data)}>Export CSV</Button>}
+                  {figures.length > 0 && <Button size="sm" variant="tertiary" icon={<Icon name="Printer" size="sm" />} onClick={() => window.print()}>Print Report</Button>}
+                </span>
+              </div>
+              {data && !data.ended && (
+                <p className="m-0 px-3 py-2 rounded-control bg-page text-meta text-muted-ink">
+                  <span className="font-semibold text-ink">Estimate · month in progress.</span> Figures cover the days up to today and change as hours are logged. Generate at month-end to lock them in.
+                </p>
+              )}
             </div>
           }
-          empty={{ title: 'Nobody on payroll this month.', body: 'In-house cleaners and technicians show here.' }}
+          footer={figures.length > 0 ? (
+            <div className="px-5 py-3 flex items-center justify-between gap-3 flex-wrap text-copy font-semibold [border-top:1px_solid_var(--color-line)] bg-page">
+              <span>TOTAL ({figures.length} {figures.length === 1 ? 'employee' : 'employees'})</span>
+              <span className="flex gap-x-5 gap-y-1 flex-wrap tabular-nums">
+                <span>Gross {rm(sum(f => f.grossSen))}</span><span>Net {rm(sum(f => f.netSen))}</span><span>Total Pay {rm(sum(totalPay))}</span>
+              </span>
+            </div>
+          ) : undefined}
+          empty={{ title: `No payslip records for ${monthName(period)}.`, body: 'In-house cleaners and technicians show here once they are on the payroll.' }}
           renderCard={l => {
             const f = figuresOf(l);
             return (
               <span className="flex flex-col gap-[3px]">
                 <span className="flex items-center gap-2 flex-wrap"><span className="text-copy font-semibold">{l.employee.name}</span><StatusBadge entity="payslip" value={statusOf(l)} size="sm" /></span>
-                {f && <span className="text-meta text-muted-ink tabular-nums">Gross {rm(f.grossSen)} · Net {rm(f.netSen)} · PCB {pcbCell(f)}</span>}
+                {f && <span className="text-meta text-muted-ink tabular-nums">Gross {rm(f.grossSen)} · Net {rm(f.netSen)} · Total pay {rm(totalPay(f))}</span>}
               </span>
             );
           }}
@@ -148,43 +266,12 @@ export default function PayrollTab() {
   );
 }
 
-export function Advances({ advances, full, onChange }: { advances: AdvanceView[]; full: boolean; onChange: () => void }) {
-  const toast = useToast();
-  async function remove(a: AdvanceView) {
-    try { await api.del(`/payroll/advances/${a.id}`); toast({ tone: 'success', title: 'Advance removed.', body: `${a.name}, ${rm(a.amountSen)}.` }); onChange(); }
-    catch (e) { notifyFailure(e); }
-  }
-  return (
-    <section className="bg-card rounded-card border border-solid border-line">
-      <div className="pt-5 pb-3 px-5 flex items-baseline justify-between gap-3 flex-wrap [border-bottom:1px_solid_var(--color-line-soft)]">
-        <span className="text-[16px] font-semibold tracking-[-0.01em]">Advances this month</span>
-        <span className="text-meta text-muted-ink">Taken back in full on this month's payslip.</span>
-      </div>
-      <div className="px-5 py-2 flex flex-col">
-        {advances.length === 0 && <span className="text-copy text-muted-ink py-2">No advances this month.</span>}
-        {advances.map(a => (
-          <span key={a.id} className="flex items-center justify-between gap-3 min-h-11 text-copy [border-bottom:1px_solid_var(--color-line-soft)] last:border-b-0">
-            <span className="flex flex-col"><span className="font-semibold">{a.name} · {rm(a.amountSen)}</span><span className="text-meta text-muted-ink">{date(`${a.date}T12:00:00+08:00`)}{a.note ? ` · ${a.note}` : ''}</span></span>
-            {a.status === 'settled' ? <span className="text-meta text-muted-ink">Taken back</span>
-              : full && <Button size="sm" variant="tertiary" icon={<Icon name="Trash2" size="sm" />} onClick={() => void remove(a)}>Remove</Button>}
-          </span>
-        ))}
-      </div>
-    </section>
-  );
-}
-
 function SlipModal({ line, month, full, onClose, onChange }: { line: PayrollLine; month: PayrollPayload; full: boolean; onClose: () => void; onChange: () => void }) {
   const toast = useToast();
   const [busy, setBusy] = useState(false);
   const f = figuresOf(line);
   if (!f) return null;
   const slip = line.payslip;
-  const doc: PayslipDoc = {
-    ...f, period: month.period, employeeName: line.employee.name, employeeNo: line.employee.employeeId, payBasis: line.employee.payBasis,
-    paymentMethod: line.employee.paymentMethod, bankName: line.employee.bankName, bankAccount: slip?.bankAccount ?? null,
-    status: slip?.status ?? 'estimate',
-  };
   async function move(action: 'approve' | 'pay' | 'reopen') {
     setBusy(true);
     try {
@@ -194,17 +281,13 @@ function SlipModal({ line, month, full, onClose, onChange }: { line: PayrollLine
     } catch (e) { notifyFailure(e); }
     finally { setBusy(false); }
   }
-  async function pdf() {
-    try { const { downloadPayslip } = await import('../../lib/payslipPdf'); await downloadPayslip(doc, month.company); }
-    catch (e) { notifyFailure(e); }
-  }
   const row = (k: string, v: ReactNode, strong = false) => (
     <span className={`flex justify-between gap-3 py-1 text-copy ${strong ? 'font-semibold' : ''}`}><span className={strong ? '' : 'text-muted-ink'}>{k}</span><span className="tabular-nums">{v}</span></span>
   );
   return (
     <Modal title={`${line.employee.name} · ${monthName(month.period)}`} sub={slip ? `Payslip ${slip.status}` : 'Not run yet: what the month comes to now'} onClose={onClose} width={560}
       footer={<>
-        <Button size="sm" variant="secondary" icon={<Icon name="Download" size="sm" />} onClick={() => void pdf()}>PDF</Button>
+        <Button size="sm" variant="secondary" icon={<Icon name="Download" size="sm" />} onClick={() => void downloadPdf(line, month)}>PDF</Button>
         {full && slip?.status === 'approved' && <Button size="sm" variant="secondary" disabled={busy} onClick={() => void move('reopen')}>Reopen</Button>}
         {full && slip?.status === 'draft' && <Button size="sm" variant="primary" disabled={busy || !month.ended} title={month.ended ? undefined : 'Once the month has ended.'} onClick={() => void move('approve')}>Approve</Button>}
         {full && slip?.status === 'approved' && <Button size="sm" variant="primary" disabled={busy} onClick={() => void move('pay')}>Mark paid</Button>}
@@ -237,39 +320,6 @@ function SlipModal({ line, month, full, onClose, onChange }: { line: PayrollLine
         Working days {f.workingDays} · worked {f.daysWorked} · paid leave {f.paidLeaveDays} · absent {f.absentDays}. Employer pays EPF {rm(f.epfEmployerSen)}, SOCSO {rm(f.socsoEmployerSen)}, EIS {rm(f.eisEmployerSen)}.
       </p>
       {!pcbHasFigure(f.pcbStatus) && f.pcbStatus !== 'DISABLED' && <p className="m-0 mt-2 text-meta text-warning">{f.pcbNote}</p>}
-    </Modal>
-  );
-}
-
-export function AdvanceModal({ lines, period, onClose, onDone }: { lines: PayrollLine[]; period: string; onClose: () => void; onDone: () => void }) {
-  const toast = useToast();
-  const [who, setWho] = useState('');
-  const today = todayMyt();
-  const [day, setDay] = useState(today.startsWith(period) ? today : `${period}-01`);
-  const [amountSen, setAmount] = useState<number | null>(null);
-  const [note, setNote] = useState('');
-  const [busy, setBusy] = useState(false);
-  const key = (l: PayrollLine): string => l.employee.cleanerId ? `c:${l.employee.cleanerId}` : `t:${l.employee.technicianId}`;
-  const picked = lines.find(l => key(l) === who);
-  async function save() {
-    if (!picked || !amountSen) return;
-    setBusy(true);
-    try {
-      await api.post('/payroll/advances', { cleanerId: picked.employee.cleanerId, technicianId: picked.employee.cleanerId ? null : picked.employee.technicianId, date: day, amountSen, note });
-      toast({ tone: 'success', title: 'Advance recorded.', body: `${picked.employee.name}, ${rm(amountSen)}. Taken back on the ${monthName(day.slice(0, 7))} payslip.` });
-      onDone();
-    } catch (e) { notifyFailure(e); }
-    finally { setBusy(false); }
-  }
-  return (
-    <Modal title="Add advance" sub="Money paid out before payday. The payslip of the same month takes it back." onClose={onClose}
-      footer={<><Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" variant="primary" onClick={() => void save()} disabled={busy || !picked || !amountSen}>{busy ? 'Saving…' : 'Save'}</Button></>}>
-      <div className="flex flex-col gap-3">
-        <Select label="Who" showLabel size="md" value={who} placeholder="Pick a person" onChange={setWho} options={lines.map(l => ({ value: key(l), label: l.employee.name }))} />
-        <DateField label="Paid on" value={day} onChange={v => v && setDay(v)} required />
-        <MoneyInput label="Amount (RM)" valueSen={amountSen} onChangeSen={setAmount} />
-        <Field label="Note (optional)" value={note} onChange={e => setNote(e.target.value)} placeholder="Cash for a family emergency" />
-      </div>
     </Modal>
   );
 }

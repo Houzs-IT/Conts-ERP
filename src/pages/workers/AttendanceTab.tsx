@@ -8,20 +8,23 @@ import { DataTable, type Column } from '../../components/DataTable';
 import { Modal } from '../../components/Modal';
 import { Field } from '../../components/Field';
 import { DateField, TimeField } from '../../components/inputs';
+import { StatTile, StatRow } from '../../components/Metric';
 import { useToast } from '../../components/Toast';
 import { useApi } from '../../lib/useApi';
 import { api, ApiFailure, notifyFailure } from '../../lib/api';
 import { mayWork } from '../../lib/areaAccess';
 import { useSession } from '../../lib/session';
-import { date, time } from '../../lib/format';
+import { date, time, rm } from '../../lib/format';
 import { ON_SITE_METRES, type Nearest } from '../../../functions/_lib/attendanceCalc';
 import type { AttendanceLine } from '../../../functions/api/attendance/index';
-import { LEAVE_TYPE_LABEL } from '../../../functions/_lib/leaveRules';
+import type { HoursPayload } from '../../../functions/api/working-hours/index';
+import type { Employee } from '../../../functions/_lib/hrFields';
 
 /* ------------------------------------------------------------------ *
- * HR > Workers > Attendance: who clocked in on a day, when, where and
- * with which selfie (HR phase 2). The office fixes a forgotten clock-out
- * here; the portal's Clock screen is where people punch.
+ * HR > Employees > Attendance: Hookka's Attendance tab. The month's
+ * figures on top, then the day's phone punches: when, whether at a
+ * building, and the selfies. The office fixes a forgotten clock-out here;
+ * the portal's Clock screen is where people punch.
  * ------------------------------------------------------------------ */
 
 interface DayPayload { date: string; today: string; buildingsWithLocation: number; data: AttendanceLine[] }
@@ -33,26 +36,46 @@ const hhmm = (iso: string): string => time(iso).slice(0, 5);
 const place = (p: Nearest | null): string =>
   !p ? '' : p.metres <= ON_SITE_METRES ? `At ${p.name}` : `${p.metres >= 1000 ? `${(p.metres / 1000).toFixed(1)} km` : `${p.metres} m`} from ${p.name}`;
 const mytDay = (iso: string): string => new Date(Date.parse(iso) + 8 * 3_600_000).toISOString().slice(0, 10);
-/** A fix by the office is information, not a problem: grey, where a missing photo or location is yellow. */
-const flagTone = (f: string): 'neutral' | 'warning' => (f === 'Fixed by office' ? 'neutral' : 'warning');
 const rowKey = (l: AttendanceLine): string => l.employee.id ?? l.employee.cleanerId ?? l.employee.technicianId ?? l.employee.name;
 
-function stateOf(l: AttendanceLine): { label: string; tone: 'success' | 'info' | 'warning' | 'neutral' } {
+/** Hookka's location badge: at a building (within ON_SITE_METRES of the nearest one), off-site, or no location. The
+ *  clock-in decides; the clock-out stands in when the clock-in had no GPS. Soft only: it never blocks a punch. */
+function siteOf(l: AttendanceLine): { label: string; tone: 'success' | 'warning' | 'neutral'; off: boolean } {
   const p = l.punch;
-  if (!p) return l.leave ? { label: `On ${LEAVE_TYPE_LABEL[l.leave].toLowerCase()} leave`, tone: 'info' } : { label: 'Not in', tone: 'neutral' };
-  if (p.forgotOut) return { label: 'No clock-out', tone: 'warning' };
-  return p.clockOutAt ? { label: 'Done', tone: 'success' } : { label: 'In now', tone: 'info' };
+  if (!p || (!p.inGps && !p.outGps)) return { label: 'No GPS', tone: 'neutral', off: false };
+  const near = (p.inGps ? l.inPlace : null) ?? l.outPlace;
+  if (!near) return { label: 'No building to compare', tone: 'neutral', off: false };
+  return near.metres <= ON_SITE_METRES ? { label: `At ${near.name}`, tone: 'success', off: false } : { label: `Off-site · ${place(near)}`, tone: 'warning', off: true };
 }
 
-/** What the office should look at: a punch without a selfie or a location, or one fixed by hand. */
-function flags(l: AttendanceLine): string[] {
-  const p = l.punch;
-  if (!p) return [];
-  const out: string[] = [];
-  if (!p.inPhoto || (p.clockOutAt && !p.outPhoto)) out.push('No photo');
-  if (!p.inGps || (p.clockOutAt && !p.outGps)) out.push('No GPS');
-  if (p.note) out.push('Fixed by office');
-  return out;
+const monthEnd = (m: string): string => `${m}-${String(new Date(Date.UTC(Number(m.slice(0, 4)), Number(m.slice(5, 7)), 0)).getUTCDate()).padStart(2, '0')}`;
+
+/** Hookka's month dashboard over the calendar month of the day shown: active workers, average salary, and the hours one
+ *  person logs in one day (logged hours, the punch where nothing is logged, over the person-days). Efficiency and
+ *  production hours wait for production time to be decided. */
+function MonthFigures({ day, today }: { day: string; today: string }) {
+  const month = day.slice(0, 7);
+  const to = monthEnd(month) < today ? monthEnd(month) : today;
+  const hours = useApi<HoursPayload>(`/working-hours?from=${month}-01&to=${to < `${month}-01` ? `${month}-01` : to}`);
+  const people = useApi<{ data: Employee[] }>('/employees');
+  const active = (people.data?.data ?? []).filter(e => e.isActive && e.status === 'active');
+  const avgSalary = active.length ? Math.round(active.reduce((n, e) => n + e.basicSalarySen, 0) / active.length) : 0;
+  const perDay = new Map<string, number>();
+  for (const e of hours.data?.entries ?? []) perDay.set(`${e.employeeId}|${e.date}`, (perDay.get(`${e.employeeId}|${e.date}`) ?? 0) + e.hours);
+  const logged = new Set(perDay.keys());
+  for (const p of hours.data?.punches ?? []) if (!logged.has(`${p.employeeId}|${p.date}`)) perDay.set(`${p.employeeId}|${p.date}`, (perDay.get(`${p.employeeId}|${p.date}`) ?? 0) + p.hours);
+  const days = [...perDay.values()].filter(h => h > 0);
+  const avgHours = days.length ? days.reduce((n, h) => n + h, 0) / days.length : 0;
+  const busy = (hours.loading && !hours.data) || (people.loading && !people.data);
+  return (
+    <StatRow cols={5}>
+      <StatTile label="Active Workers" value={people.data ? String(active.length) : undefined} loading={busy} />
+      <StatTile label="Avg Efficiency (this month)" value="—" hint="Production time not decided" />
+      <StatTile label="Avg Salary / Worker" value={people.data ? rm(avgSalary) : undefined} loading={busy} />
+      <StatTile label="Avg Working Hrs / day" value={hours.data ? `${avgHours.toFixed(1)}h` : undefined} hint={hours.error ?? `${days.length} person-days`} hintTone={hours.error ? 'critical' : undefined} loading={busy} />
+      <StatTile label="Avg Production Hrs / day" value="—" hint="Production time not decided" />
+    </StatRow>
+  );
 }
 
 export default function AttendanceTab() {
@@ -63,87 +86,109 @@ export default function AttendanceTab() {
   const { user } = useSession();
   const mayFix = mayWork(user, 'hr');
   const [fixing, setFixing] = useState<AttendanceLine | null>(null);
+  const [photo, setPhoto] = useState<{ src: string; title: string } | null>(null);
 
   const shown = data?.date ?? day ?? '';
   const setDay = (d: string) => setParams(p => { const n = new URLSearchParams(p); n.set('day', d); return n; }, { replace: true });
   const lines = data?.data ?? [];
-  const count = (label: string) => lines.filter(l => stateOf(l).label === label).length;
+  // Hookka lists the phone punches of the day; who is not in or on leave is counted in the line under the title.
+  const punched = lines.filter(l => l.punch);
+  const offSite = punched.filter(l => siteOf(l).off).length;
+  const onLeave = lines.filter(l => !l.punch && l.leave).length;
+  const noOut = punched.filter(l => l.punch?.forgotOut).length;
 
   const columns = useMemo<Column<AttendanceLine>[]>(() => [
-    { key: 'name', label: 'Name', value: l => l.employee.name, hideable: false, width: 190, render: l => <span className="font-semibold">{l.employee.name}</span> },
-    { key: 'empNo', label: 'Employee ID', value: l => l.employee.employeeId, width: 110 },
-    { key: 'state', label: 'Status', type: 'status', value: l => stateOf(l).label, status: stateOf, width: 130 },
-    { key: 'in', label: 'In', value: l => l.punch?.clockInAt ?? null, width: 90, render: l => l.punch ? time(l.punch.clockInAt) : '' },
-    { key: 'out', label: 'Out', value: l => l.punch?.clockOutAt ?? null, width: 90, render: l => l.punch?.clockOutAt ? time(l.punch.clockOutAt) : '' },
-    { key: 'hours', label: 'Hours', type: 'number', value: l => l.punch?.minutes ?? null, width: 90, render: l => l.punch && !l.punch.forgotOut ? hm(l.punch.minutes) : '' },
-    { key: 'where', label: 'Where', value: l => place(l.inPlace), width: 220, render: l => l.punch ? (place(l.inPlace) || <span className="text-muted-ink">No location</span>) : '' },
-    { key: 'photos', label: 'Selfies', noExport: true, sortable: false, filter: false, width: 130, render: l => <Selfies line={l} /> },
-    { key: 'flags', label: 'Check', value: l => flags(l).join(', '), width: 190, render: l => (
-      <span className="flex gap-1 flex-wrap">{flags(l).map(f => <StatusBadge key={f} tone={flagTone(f)} label={f} size="sm" />)}</span>
-    ) },
-    { key: 'go', label: '', noExport: true, sortable: false, filter: false, width: 110, align: 'right',
+    { key: 'name', label: 'Employee', value: l => l.employee.name, hideable: false, width: 190,
+      render: l => <span className="flex flex-col"><span className="font-semibold">{l.employee.name}</span>{l.employee.employeeId && <span className="text-meta text-muted-ink">{l.employee.employeeId}</span>}</span> },
+    { key: 'in', label: 'Clock In', value: l => l.punch?.clockInAt ?? null, width: 100, render: l => l.punch ? <span className="tabular-nums">{time(l.punch.clockInAt)}</span> : '' },
+    { key: 'out', label: 'Clock Out', value: l => l.punch?.clockOutAt ?? null, width: 110,
+      render: l => l.punch?.clockOutAt ? <span className="tabular-nums">{time(l.punch.clockOutAt)}</span> : l.punch?.forgotOut ? <StatusBadge tone="warning" label="No clock-out" size="sm" /> : <span className="text-muted-ink">In now</span> },
+    { key: 'hours', label: 'Hours', type: 'number', value: l => l.punch?.minutes ?? null, width: 90, render: l => l.punch && !l.punch.forgotOut ? <span className="tabular-nums">{hm(l.punch.minutes)}</span> : '' },
+    { key: 'where', label: 'Location', type: 'status', value: l => siteOf(l).label, status: siteOf, width: 240 },
+    { key: 'photos', label: 'Photo', noExport: true, sortable: false, filter: false, width: 130, render: l => <Selfies line={l} onOpen={setPhoto} /> },
+    { key: 'note', label: 'Office fix', value: l => l.punch?.note ?? null, width: 180, hidden: true },
+    { key: 'go', label: '', noExport: true, sortable: false, filter: false, width: 100, align: 'right',
       render: l => mayFix && l.punch ? <Button size="sm" variant="tertiary" icon={<Icon name="Pencil" size="sm" />} onClick={() => setFixing(l)}>Fix</Button> : null },
   ], [mayFix]);
 
   return (
-    <>
-      <p className="m-0 mb-4 text-copy text-muted-ink">{data ? `${date(`${shown}T12:00:00+08:00`)} · ${count('In now')} in now · ${count('Done')} done · ${count('Not in')} not in${lines.some(l => !l.punch && l.leave) ? ` · ${lines.filter(l => !l.punch && l.leave).length} on leave` : ''}${count('No clock-out') ? ` · ${count('No clock-out')} no clock-out` : ''}` : 'Loading the day…'}</p>
+    <div className="flex flex-col gap-5">
+      {data && <MonthFigures day={shown} today={data.today} />}
       {error && <StaleBanner message={`Showing the last day we have. ${error}`} onRetry={reload} />}
 
-      <div className="flex items-end gap-2 flex-wrap mb-4">
-        <Button size="sm" variant="secondary" icon={<Icon name="ChevronLeft" size="sm" />} disabled={!shown} onClick={() => setDay(shift(shown, -1))}>Day before</Button>
-        <div className="w-[180px] flex-none"><DateField aria-label="Day" value={shown} max={data?.today} onChange={v => v && setDay(v)} /></div>
-        <Button size="sm" variant="secondary" disabled={!shown || !data || shown >= data.today} onClick={() => setDay(shift(shown, 1))}>Next day</Button>
-        {data && shown !== data.today && <Button size="sm" variant="tertiary" onClick={() => setDay(data.today)}>Today</Button>}
-      </div>
-      {data && data.buildingsWithLocation === 0 && (
-        <p className="m-0 mb-3 text-meta text-muted-ink">No building has a map location yet, so "Where" stays empty. Add one on the building to see where people clocked in.</p>
-      )}
-
       <DataTable<AttendanceLine>
-        id="attendance" columns={columns} rows={loading && lines.length === 0 ? null : lines} rowKey={rowKey}
-        pageSize={0} noun={['person', 'people']} exportName={`attendance-${shown}`}
-        rowTone={l => (l.punch || l.leave ? null : 'muted')}
+        id="attendance" columns={columns} rows={loading && lines.length === 0 ? null : punched} rowKey={rowKey}
+        pageSize={0} noun={['punch', 'punches']} exportName={`attendance-${shown}`}
         header={
-          <div className="pt-5 pb-3 px-5 flex items-baseline justify-between gap-x-3 gap-y-1 flex-wrap [border-bottom:1px_solid_var(--color-line-soft)]">
-            <span className="text-[16px] font-semibold tracking-[-0.01em]">Attendance</span>
-            <span className="text-meta text-muted-ink">People clock in and out on their phone, with a selfie and their location.</span>
+          <div className="pt-5 pb-4 px-5 flex flex-col gap-3 [border-bottom:1px_solid_var(--color-line-soft)]">
+            <div className="flex items-start justify-between gap-3 flex-wrap">
+              <span className="flex flex-col gap-0.5">
+                <span className="text-[16px] font-semibold tracking-[-0.01em]">Attendance - Phone Punches</span>
+                <span className="text-meta text-muted-ink">
+                  When someone clocks in or out on their phone it lands here, with where they were against the buildings. Off-site = more than {ON_SITE_METRES} m from the nearest building.
+                  {offSite > 0 && <span className="font-semibold text-warning"> {offSite} off-site.</span>}
+                </span>
+              </span>
+              <span className="flex items-end gap-2 flex-wrap">
+                <Button size="sm" variant="secondary" icon={<Icon name="ChevronLeft" size="sm" />} disabled={!shown} onClick={() => setDay(shift(shown, -1))}>Day before</Button>
+                <div className="w-[170px] flex-none"><DateField aria-label="Day" value={shown} max={data?.today} onChange={v => v && setDay(v)} /></div>
+                <Button size="sm" variant="secondary" disabled={!shown || !data || shown >= data.today} onClick={() => setDay(shift(shown, 1))}>Next day</Button>
+                {data && shown !== data.today && <Button size="sm" variant="tertiary" onClick={() => setDay(data.today)}>Today</Button>}
+              </span>
+            </div>
+            {data && (
+              <span className="text-meta text-muted-ink">
+                {date(`${shown}T12:00:00+08:00`)} · {punched.length} punched · {lines.length - punched.length - onLeave} not in{onLeave ? ` · ${onLeave} on leave` : ''}{noOut ? ` · ${noOut} no clock-out` : ''}
+                {data.buildingsWithLocation === 0 ? ' · No building has a map location yet, so nobody can read as at a building.' : ''}
+              </span>
+            )}
           </div>
         }
-        empty={{ title: 'No in-house staff yet.', body: 'Add an internal cleaner or an in-house technician first.' }}
+        empty={{ title: `No phone punches on ${shown ? date(`${shown}T12:00:00+08:00`) : 'this day'}.`, body: 'People clock in and out on their phone, with a selfie and their location.' }}
         renderCard={l => (
           <span className="flex flex-col gap-[3px] min-w-0">
             <span className="flex items-center gap-[9px] flex-wrap">
               <span className="text-copy font-semibold">{l.employee.name}</span>
-              <StatusBadge tone={stateOf(l).tone} label={stateOf(l).label} size="sm" />
+              <StatusBadge tone={siteOf(l).tone} label={siteOf(l).label} size="sm" />
             </span>
             {l.punch && (
               <span className="text-meta text-muted-ink flex gap-x-3 flex-wrap tabular-nums">
-                <span>{time(l.punch.clockInAt)} – {l.punch.clockOutAt ? time(l.punch.clockOutAt) : '…'}</span>
+                <span>{time(l.punch.clockInAt)} – {l.punch.clockOutAt ? time(l.punch.clockOutAt) : l.punch.forgotOut ? 'no clock-out' : '…'}</span>
                 {!l.punch.forgotOut && <span>{hm(l.punch.minutes)}</span>}
-                <span>{place(l.inPlace) || 'No location'}</span>
               </span>
             )}
-            {flags(l).length > 0 && <span className="flex gap-1 flex-wrap">{flags(l).map(f => <StatusBadge key={f} tone={flagTone(f)} label={f} size="sm" />)}</span>}
-            {l.punch && <span className="flex items-center gap-2 pt-1"><Selfies line={l} />{mayFix && <Button size="sm" variant="tertiary" icon={<Icon name="Pencil" size="sm" />} onClick={() => setFixing(l)}>Fix</Button>}</span>}
+            {l.punch && <span className="flex items-center gap-2 pt-1"><Selfies line={l} onOpen={setPhoto} />{mayFix && <Button size="sm" variant="tertiary" icon={<Icon name="Pencil" size="sm" />} onClick={() => setFixing(l)}>Fix</Button>}</span>}
           </span>
         )}
       />
 
       {fixing?.punch && <FixModal line={fixing} onClose={() => setFixing(null)} onSaved={() => { setFixing(null); reload(); }} />}
-    </>
+      {photo && (
+        <Modal title={photo.title} onClose={() => setPhoto(null)} width={420} footer={<Button size="sm" variant="secondary" onClick={() => setPhoto(null)}>Close</Button>}>
+          <img src={photo.src} alt="Punch selfie" className="w-full rounded-control" />
+        </Modal>
+      )}
+    </div>
   );
 }
 
-function Selfies({ line }: { line: AttendanceLine }) {
+/** Hookka's punch thumbnails: small selfies that load as they scroll into view; a click shows the full one. */
+function Selfies({ line, onOpen }: { line: AttendanceLine; onOpen: (p: { src: string; title: string }) => void }) {
   const p = line.punch;
   if (!p) return null;
-  const link = (side: 'in' | 'out') => (
-    <a href={`/api/attendance/${p.id}/photo/${side}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 min-h-8 text-ink underline underline-offset-2">
-      <Icon name="Image" size="sm" />{side === 'in' ? 'In' : 'Out'}
-    </a>
-  );
-  return <span className="flex gap-3">{p.inPhoto && link('in')}{p.outPhoto && link('out')}</span>;
+  const thumb = (side: 'in' | 'out', at: string | null) => {
+    const src = `/api/attendance/${p.id}/photo/${side}`;
+    const label = side === 'in' ? 'In' : 'Out';
+    return (
+      <button type="button" title={`View ${label.toLowerCase()} photo`} onClick={e => { e.stopPropagation(); onOpen({ src, title: `${line.employee.name} · Clock ${label} ${at ? time(at) : ''}` }); }}
+        className="relative flex-none p-0 border-0 bg-transparent cursor-pointer">
+        <img src={src} alt={`${label} punch`} loading="lazy" className="size-10 rounded-[6px] object-cover border border-solid border-line" />
+        <span className="absolute -bottom-1 -right-1 rounded-[4px] bg-ink px-1 text-[9px] leading-[12px] text-white">{label}</span>
+      </button>
+    );
+  };
+  if (!p.inPhoto && !p.outPhoto) return <span className="text-meta text-muted-ink">No photo</span>;
+  return <span className="flex gap-2">{p.inPhoto && thumb('in', p.clockInAt)}{p.outPhoto && thumb('out', p.clockOutAt)}</span>;
 }
 
 function FixModal({ line, onClose, onSaved }: { line: AttendanceLine; onClose: () => void; onSaved: () => void }) {
