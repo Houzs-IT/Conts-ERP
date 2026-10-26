@@ -7,7 +7,7 @@ import { employeeIdOf, hasEmployeeIds } from '../../_lib/fieldPin';
 
 /**
  * POST /api/auth/login-pin { employeeId, pin } — the field app's sign-in for cleaners and technicians given app access
- * on Workers. "1", "001" and "EMP-001" all mean EMP-001. Same locks and records as POST /api/auth/login: wrong PINs
+ * on HR > Employees. "1", "001" and "EMP-001" all mean EMP-001. Same locks and records as POST /api/auth/login: wrong PINs
  * count towards the account's lock and the connection's limit, so six digits are never open to unlimited guessing.
  */
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {

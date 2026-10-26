@@ -12,6 +12,7 @@ const AttendanceTab = lazy(() => import('./workers/AttendanceTab'));
 const PayrollTab = lazy(() => import('./workers/PayrollTab'));
 const AdvancesTab = lazy(() => import('./workers/AdvancesTab'));
 const EmployeesTab = lazy(() => import('./workers/EmployeesTab'));
+const OutsideTab = lazy(() => import('./workers/OutsideTab'));
 const LeaveTab = lazy(() => import('./workers/LeaveTab'));
 const PenaltiesTab = lazy(() => import('./workers/PenaltiesTab'));
 const LaborCostTab = lazy(() => import('./workers/LaborCostTab'));
@@ -20,9 +21,10 @@ const DepartmentLaborTab = lazy(() => import('./workers/DepartmentLaborTab'));
 /* ------------------------------------------------------------------ *
  * HR > Employees: Hookka's Employees page (erp.hookka.com /employees),
  * its eleven tabs in its order with its labels and icons (owner, 26 Oct
- * 2026: follow Hookka's tabs). The cleaner and technician lists stay on
- * Operations > Workers. Leave is off the bar, as on Hookka ("hidden until
- * rollout"), and still opens from its notices at ?tab=leave.
+ * 2026: follow Hookka's tabs), plus Outside Companies: the cleaning and
+ * repair companies, which have no HR record (Operations > Workers is gone).
+ * Leave is off the bar, as on Hookka ("hidden until rollout"), and still
+ * opens from its notices at ?tab=leave.
  * ------------------------------------------------------------------ */
 
 const TABS = [
@@ -37,6 +39,7 @@ const TABS = [
   { key: 'advances', label: 'Advances', icon: 'Download' },
   { key: 'penalties', label: 'Worker Penalty', icon: 'TriangleAlert' },
   { key: 'employee-master', label: 'Employee Master', icon: 'Users' },
+  { key: 'outside', label: 'Outside Companies', icon: 'Building2' },
 ] as const;
 type TabKey = (typeof TABS)[number]['key'] | 'leave';
 const isTab = (v: string | null): v is TabKey => v === 'leave' || TABS.some(t => t.key === v);
@@ -65,6 +68,7 @@ export default function EmployeesPage() {
   else if (tab === 'payroll') body = <PayrollTab />;
   else if (tab === 'advances') body = <AdvancesTab />;
   else if (tab === 'employee-master') body = <EmployeesTab />;
+  else if (tab === 'outside') body = <OutsideTab />;
   else if (tab === 'leave') body = <LeaveTab />;
   else if (tab === 'penalties') body = <PenaltiesTab />;
   else if (tab === 'labor-cost') body = <LaborCostTab />;

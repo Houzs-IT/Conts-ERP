@@ -335,10 +335,10 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
               cleans are given by building or one by one (staff comment sheet, 16 Oct 2026). */}
           <span className="flex items-center gap-2 min-w-0 max-md:w-full">
             <TabSwitch tab="board" onTab={onTab} className="max-md:flex-initial max-md:min-w-0" />
-            <CleaningMore onCleaners={() => navigate('/operations/workers')} />
+            <CleaningMore onCleaners={() => navigate('/hr/employees?tab=employee-master')} />
           </span>
           <span className="contents max-md:hidden">
-            <Button size="sm" variant="secondary" icon={<Icon name="Users" size="sm" />} onClick={() => navigate('/operations/workers')}>Cleaners</Button>
+            <Button size="sm" variant="secondary" icon={<Icon name="Users" size="sm" />} onClick={() => navigate('/hr/employees?tab=employee-master')}>Cleaners</Button>
           </span>
         </>}
         primary={<Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setCreating(true)}>Add cleaning job</Button>} />

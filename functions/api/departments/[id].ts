@@ -29,7 +29,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   if (!cur) return fail('NOT_FOUND', 'That department no longer exists.', 404);
   // A kind change re-roles every member, so it would turn office staff into field logins or the reverse.
   if (kind !== undefined && kind !== cur.kind && (isFieldKind(kind) || isFieldKind(cur.kind))) {
-    return fail('VALIDATION', 'Cleaners and technicians are added on Workers.', 422, { kind: 'Cleaning and Maintenance cannot be changed to or from here.' });
+    return fail('VALIDATION', 'Cleaners and technicians are added on HR > Employees.', 422, { kind: 'Cleaning and Maintenance cannot be changed to or from here.' });
   }
 
   // The people in it get the role their department's kind gives, so a department that stops being management must not
@@ -75,7 +75,7 @@ export const onRequestDelete: PagesFunction<Env> = async ({ request, env, params
   const cur = await loadDepartment(env, id);
   if (!cur) return fail('NOT_FOUND', 'That department no longer exists.', 404);
   if (cur.kind === 'management') return fail('VALIDATION', 'The management department cannot be deleted.', 400);
-  if (isFieldKind(cur.kind)) return fail('VALIDATION', 'Cleaning and Maintenance hold the Workers logins and cannot be deleted here.', 400);
+  if (isFieldKind(cur.kind)) return fail('VALIDATION', 'Cleaning and Maintenance hold the cleaner and technician logins and cannot be deleted here.', 400);
 
   const parsed = parseDepartmentMove(await request.json().catch(() => null));
   if (!parsed.ok) return fail('VALIDATION', parsed.message, 400);
@@ -98,7 +98,7 @@ export const onRequestDelete: PagesFunction<Env> = async ({ request, env, params
         { moveTo: 'Choose a department other than Management.' });
     }
     if (target && isFieldKind(target.kind)) {
-      return fail('VALIDATION', 'Cleaners and technicians are added on Workers.', 422, { moveTo: 'Choose an office department.' });
+      return fail('VALIDATION', 'Cleaners and technicians are added on HR > Employees.', 422, { moveTo: 'Choose an office department.' });
     }
   }
   if (count > 0 && move) {

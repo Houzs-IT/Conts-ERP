@@ -4,7 +4,7 @@ import { can } from './access';
 import { NO_EMAIL_DOMAIN, PIN_ROLES, employeeIdFor, hasEmployeeIds, tempPin } from './fieldPin';
 
 
-/** The two worker lists on Workers: cleaners sign in as housekeepers, technicians as technicians. */
+/** The two rosters on HR > Employees: cleaners sign in as housekeepers, technicians as technicians. */
 const LISTS = {
   cleaners: { role: 'housekeeper', noun: 'cleaner', action: 'housekeeping.cleaner' },
   technicians: { role: 'technician', noun: 'technician', action: 'maintenance.technician' },
@@ -65,7 +65,7 @@ export async function giveFieldAccess(env: Env, session: Session, list: WorkerLi
   return json({ userId, employeeId, pin }, 200, { 'cache-control': 'no-store' });
 }
 
-/** Cleaners and technicians are managed on Workers only, so a worker switched off there (or changed to an outside
+/** Cleaners and technicians are managed on HR > Employees only, so a worker switched off there (or changed to an outside
  *  company, which keeps the link) loses their field-app login at once, and switched back on gets it back. An office
  *  login linked to a technician entry is never touched: only a cleaner or technician login follows its entry.
  *  Answers whether the login changed, for the entry's audit row. */

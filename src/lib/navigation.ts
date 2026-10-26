@@ -93,9 +93,6 @@ export const NAV: NavGroup[] = [
     { key: 'today', label: 'Today', icon: 'clipboard-check', path: '/operations/today', area: 'operations', badge: 'today' },
     { key: 'cleaning', label: 'Cleaning', icon: 'sparkles', path: '/operations/cleaning', area: 'operations' },
     { key: 'maintenance', label: 'Maintenance', icon: 'wrench', path: '/operations/maintenance', area: 'operations', badge: 'maintenance' },
-    // Cleaners and technicians, in-house and outside, and who has the app (owner, 23 Oct 2026). Back under Operations
-    // when HR became Hookka's Employees page (owner, 26 Oct 2026).
-    { key: 'workers', label: 'Workers', icon: 'users', path: '/operations/workers', area: 'operations' },
   ] },
   // Hookka's Employees page with its eleven tabs: working hours, attendance, labour cost, payroll, advances, penalties,
   // the employee record (owner, 26 Oct 2026; PLAN-hr-employees.md).

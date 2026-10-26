@@ -93,7 +93,7 @@ export type DepartmentKind = 'management' | 'staff' | 'cleaning' | 'maintenance'
 export const roleForKind = (kind: DepartmentKind): string =>
   kind === 'management' ? 'management' : kind === 'cleaning' ? 'housekeeper' : kind === 'maintenance' ? 'technician' : 'operations_staff';
 export const isKind = (v: unknown): v is DepartmentKind => v === 'management' || v === 'staff' || v === 'cleaning' || v === 'maintenance';
-/** Cleaning and Maintenance hold the cleaners' and technicians' logins, which are managed on Workers only (owner,
+/** Cleaning and Maintenance hold the cleaners' and technicians' logins, which are managed on HR > Employees only (owner,
  *  23 Oct 2026): no department screen or user form creates one, moves anyone into or out of one, or changes its kind. */
 export const isFieldKind = (kind: DepartmentKind): boolean => kind === 'cleaning' || kind === 'maintenance';
 /** Where a person's level in an area comes from. 'fixed': management, always Full. 'none': nothing sets it. */
