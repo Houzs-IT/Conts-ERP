@@ -3,7 +3,7 @@ import { requireSession, isFieldRole } from '../../_lib/auth';
 import { MYT_DATE, SHEET_CLEANER } from '../../_lib/ops';
 import { taskCleanersReady, cleanerListSql, parseCleaners, rosterIdSql } from '../../_lib/taskCleaners';
 import { unitLayoutSql, unitMattressesSql, unitLayout } from '../../_lib/unitLayout';
-import { CLEAN_KINDS_SQL, LIVE_STAY_SQL, standardItems, windowsOnDay, mytToday, isDay, autoGuestLeft, ensureTurnovers } from '../../_lib/cleaning';
+import { CLEAN_KINDS_SQL, LIVE_STAY_SQL, standardItems, windowsOnDay, mytToday, isDay, ensureTurnovers } from '../../_lib/cleaning';
 import { hasCleanPrices, priceBook, layoutKey } from '../../_lib/cleaningPrices';
 
 /** GET /api/housekeeping/board?date=YYYY-MM-DD — the Cleaning screen for one day, one row per clean.
@@ -11,8 +11,8 @@ import { hasCleanPrices, priceBook, layoutKey } from '../../_lib/cleaningPrices'
  *  (check-in time, name), from the bookings: a late check-out or early check-in on the booking replaces the
  *  default times. Today also shows cleans left over from earlier days. `departures` are guests leaving that
  *  day with no clean planned yet; `repairs` are repair windows on that day. Grouping by building is the
- *  screen's job: every row carries its building. A guest nobody marked out counts as out from the checkout time
- *  (autoGuestLeft). Each clean carries its amount and cleaner pay; `external` lists cleans at outside addresses. */
+ *  screen's job: every row carries its building. A guest is out only once staff tick it (or the booking is
+ *  Checked out): past the checkout time the board shows the row red until they do (26 Oct 2026). Each clean carries its amount and cleaner pay; `external` lists cleans at outside addresses. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
@@ -73,8 +73,6 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     WHERE t.kind IN ${CLEAN_KINDS_SQL}
       AND (${when} = ? OR (? = ? AND ${when} < ? AND t.state != 'resolved'))
     ORDER BY p.name, u.unit_number`, date, date, today, date);
-
-  await autoGuestLeft(env, rows, stdOut);
 
   // External cleans (an address, no unit): their own group on the board, never a unit's cost.
   const external = !priced ? [] : await all<any>(env, `
@@ -140,7 +138,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
           checkInTime: r.next_time || stdIn, earlyCheckIn: !!r.next_time && r.next_time < stdIn,
           checkInAt: at(r.day, r.next_time, stdIn),
         } : null,
-        guestOut, guestLeftAt: leftAt, guestLeftAuto: !!r.guest_left_auto || (!!r.guest_left_at && r.guest_left_at === `${r.day}T${r.prev_time || stdOut}:00+08:00`),
+        guestOut, guestLeftAt: leftAt, guestLeftAuto: (!!r.guest_left_at && r.guest_left_at === `${r.day}T${r.prev_time || stdOut}:00+08:00`),
         // What the clean is charged (external) and what the cleaner is paid (internal): the job's own, else the price table.
         amount: r.amount ?? p.external, cleanerPay: r.cleaner_pay ?? p.internal, priceSource: r.amount != null ? 'job' : p.source, external: null,
         startedAt: r.started_at ?? null, completedAt: r.completed_at ?? null,

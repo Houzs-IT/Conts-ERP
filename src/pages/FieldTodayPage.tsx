@@ -12,7 +12,7 @@ import { useNow } from '../lib/useMedia';
 import { api, errorMessage } from '../lib/api';
 import { cx } from '../lib/design-tokens';
 import {
-  TimeLeft, KIND_LABEL, uploadTo, ReportDamageModal, Segmented, hm, dayLabel, mytDay, type MediaItem,
+  TimeLeft, uploadTo, ReportDamageModal, Segmented, hm, dayLabel, mytDay, type MediaItem,
 } from '../components/ops/OpsUi';
 import { StatusBadge } from '../components/StatusBadge';
 import { sizeLine } from '../lib/unitSize';
@@ -42,6 +42,13 @@ export default function FieldTodayPage({ linkTask, onLinked }: { linkTask?: stri
   const [pick, setPick] = useState<'today' | 'tomorrow'>('today');
   const date = pick === 'today' ? mytDay(0) : mytDay(1);
   const { data, loading, error, reload } = useApi<{ rows: Job[] }>(`/field/tasks?date=${date}`);
+  // The office ticks the guest out on its board: the list catches up every minute and when the phone comes back to the app.
+  useEffect(() => {
+    const tick = () => { if (document.visibilityState === 'visible') reload(); };
+    const t = window.setInterval(tick, 60_000);
+    document.addEventListener('visibilitychange', tick);
+    return () => { window.clearInterval(t); document.removeEventListener('visibilitychange', tick); };
+  }, [date]); // eslint-disable-line react-hooks/exhaustive-deps
   const [open, setOpen] = useState<string | null>(null);
   const jobs = data?.rows ?? [];
   const openJob = jobs.find(j => j.id === open) ?? null;
@@ -92,7 +99,8 @@ export default function FieldTodayPage({ linkTask, onLinked }: { linkTask?: stri
   );
 }
 
-const cleanName = (j: Job) => (['turnover', 'deep_clean', 'light_clean'].includes(j.kind) ? `${KIND_LABEL[j.kind] ?? j.kind} clean` : j.work);
+const CLEAN_NAME: Record<string, string> = { turnover: 'Basic clean (BC)', deep_clean: 'Deep clean (DC)', light_clean: 'Light clean' };
+const cleanName = (j: Job) => CLEAN_NAME[j.kind] ?? j.work;
 const subtitle = (j: Job) => [cleanName(j), sizeLine(j.unit.size, j.unit.layout)].filter(Boolean).join(' · ');
 
 function JobStatus({ job: j }: { job: Job }) {
@@ -195,6 +203,12 @@ function TaskDetail({ job: j, now, onClose, onChanged }: { job: Job; now: number
           <b className="text-heading">{j.unit.unitNumber} · {j.unit.propertyName}</b>
           <span>{subtitle(j)}</span>
           {j.team && j.team.length > 0 && <span>With {j.team.join(', ')}</span>}
+          {/* Basic clean unless the cleaner sees it needs a deep one (26 Oct 2026). */}
+          {!j.done && !j.external && (j.kind === 'turnover' || j.kind === 'deep_clean') && (
+            <Segmented label="Cleaning type" className="mt-1 self-start [&>button]:h-11" value={j.kind}
+              onChange={v => { if (busy !== 'kind' && v !== j.kind) void act('kind', () => api.patch(`/field/tasks/${j.id}/kind`, { kind: v }), `Changed to ${CLEAN_NAME[v]}.`); }}
+              options={[{ value: 'turnover', label: 'Basic (BC)' }, { value: 'deep_clean', label: 'Deep (DC)' }]} />
+          )}
           {j.external?.clientName && <span>{j.external.clientName}{j.external.clientPhone ? ` · ${j.external.clientPhone}` : ''}</span>}
           {address && <MapLink address={address} className="self-start" />}
         </section>

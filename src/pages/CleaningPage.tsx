@@ -36,6 +36,7 @@ import {
   KIND_LABEL, TimeLeft, Segmented, OpsModal, FormRow, INPUT, TEXTAREA, CloseButton, uploadTo, ReportDamageModal, dayLabel, hm, stamp, minutesLabel, mytDay, type CleanStatus, type MediaItem,
 } from '../components/ops/OpsUi';
 import { statusOf } from '../lib/status';
+import { cleanRowTone, type CleanRowTone } from '../lib/cleanRowTone';
 import { StatusBadge } from '../components/StatusBadge';
 
 /* ---------- what the board endpoint answers (functions/api/housekeeping/board.ts) ---------- */
@@ -84,6 +85,16 @@ type Tab = 'board' | 'history' | 'prices' | 'pay' | 'profit';
 type DayPick = 'today' | 'tomorrow' | 'pick';
 
 const KIND_NAME: Record<string, string> = { turnover: 'Basic clean', deep_clean: 'Deep clean', light_clean: 'Light clean' };
+/** A job still titled by its type follows the type; a title someone typed stays. */
+const cleanTitle = (kind: string, title: string) => (Object.values(KIND_NAME).includes(title) ? KIND_NAME[kind] ?? title : title);
+
+/** Basic (BC) is the default and Deep (DC) the other choice (26 Oct 2026). Light only shows on an old Light job. */
+function CleanTypeOptions({ current }: { current?: string }) {
+  return <>
+    <option value="turnover">Basic clean (BC)</option><option value="deep_clean">Deep clean (DC)</option>
+    {current === 'light_clean' && <option value="light_clean">Light clean</option>}
+  </>;
+}
 const COST_SOURCE: Record<string, string> = { unit: "the unit's own price", history: 'last charged on this unit', default: 'standard rate', job: 'set on this job', table: 'price table' };
 /** Board order (staff comment sheet): units ready to check in at the top, then being cleaned, then guest out, then the rest. */
 const BOARD_ORDER: Record<string, number> = { done: 0, cleaning: 1, ready: 2, waiting: 3, guest_in: 4, unassigned: 5 };
@@ -593,10 +604,12 @@ function CleanRow({ r, now, active, busy, savingIn, onSelect, onGuestLeft, onUnd
   // One tap on the row marks the guest out (or takes the mark back while nobody has started); the tick is the button.
   const mayTick = !!r.previous && r.status !== 'done' && r.status !== 'cleaning' && r.day <= mytDay(0);
   const label = r.status === 'done' ? 'Ready to check in' : st.label;
+  const tone = rowTone(r, now);
+  const tick = mayTick && <GuestOutTick out={r.guestOut} busy={busy} onTick={r.guestOut ? onUndoLeft : onGuestLeft} />;
   return (
     <div role="button" tabIndex={0} aria-pressed={active} onClick={onSelect} onKeyDown={e => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onSelect(); } }}
       className={cx('px-4 @4xl:px-5 py-3 [border-top:1px_solid_var(--color-line-soft)] text-copy cursor-pointer grid grid-cols-1 @sm:grid-cols-2 items-baseline gap-x-4 gap-y-1.5 outline-none focus-visible:[box-shadow:inset_0_0_0_2px_var(--color-gold)]', COLS,
-        active ? 'bg-gold-tint [box-shadow:inset_3px_0_0_var(--color-gold)]' : 'hover:bg-page')}>
+        active ? 'bg-gold-tint [box-shadow:inset_3px_0_0_var(--color-gold)]' : TONE_BG[tone ?? 'none'])}>
       <div className="col-span-full @4xl:col-auto flex flex-wrap @max-4xl:flex-nowrap items-center gap-x-2 gap-y-1 min-w-0">
         {onPick && (
           <input type="checkbox" checked={!!picked} onChange={e => onPick(e.target.checked)} onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}
@@ -606,16 +619,16 @@ function CleanRow({ r, now, active, busy, savingIn, onSelect, onGuestLeft, onUnd
           <b className="text-ink whitespace-nowrap">{r.unitNumber}</b>
         </span>
         {r.carriedOver && <span className="flex-none"><StatusBadge tone="warning" title={`Carried over from ${dayLabel(r.day)}`}>{dayLabel(r.day).replace(/^\w+\s/, '')}</StatusBadge></span>}
-        <span className="@4xl:hidden ml-auto flex-none"><StatusBadge tone={st.tone}>{label}</StatusBadge></span>
+        <span className="@4xl:hidden ml-auto flex-none flex items-center gap-2"><StatusBadge tone={st.tone}>{label}</StatusBadge>{tick}</span>
       </div>
       <div className="min-w-0 flex items-start gap-2">
         {!r.external && <span className={cx(STACKED_LABEL, 'self-baseline')}>Out</span>}
-        {mayTick && <GuestOutTick out={r.guestOut} busy={busy} onTick={r.guestOut ? onUndoLeft : onGuestLeft} />}
         <div className="min-w-0 self-baseline">
           {r.external ? <>{r.external.clientName ?? <span className="text-muted-ink">No client name</span>}{r.external.clientPhone && <div className="text-meta text-muted-ink">{r.external.clientPhone}</div>}</>
             : <>{r.previous ? <GuestLine time={<b className="[font-variant-numeric:tabular-nums]">{r.previous.checkOutTime}</b>} name={r.previous.guestName} /> : <span className="text-muted-ink">No departing guest</span>}
               {r.previous?.lateCheckOut && <StatusBadge tone="warning" className="ml-1">Late checkout</StatusBadge>}
-              {r.guestOut && r.guestLeftAt && <div className="text-meta text-gold-ink">{r.guestLeftAuto ? `Out at checkout ${hm(r.guestLeftAt)} (automatic)` : `Left at ${hm(r.guestLeftAt)}`}</div>}</>}
+              {r.guestOut && r.guestLeftAt && <div className="text-meta text-gold-ink">{r.guestLeftAuto ? `Out at checkout ${hm(r.guestLeftAt)} (automatic)` : `Left at ${hm(r.guestLeftAt)}`}</div>}
+              {tone === 'overdue' && <div className="text-meta text-danger font-medium">{OVERDUE_NOTE}</div>}</>}
         </div>
       </div>
       <div className={cx(LABELLED_CELL, r.external ? 'hidden @4xl:flex' : 'flex')}>
@@ -631,10 +644,17 @@ function CleanRow({ r, now, active, busy, savingIn, onSelect, onGuestLeft, onUnd
         {/* Wraps inside its column rather than spilling past the card edge, where it was cut off. */}
         <span className="hidden @4xl:inline min-w-0"><StatusBadge tone={st.tone} className="whitespace-normal">{label}</StatusBadge></span>
         {r.status === 'done' && <span className="hidden @4xl:inline text-meta text-muted-ink whitespace-nowrap">{r.completedAt ? `Done ${hm(r.completedAt)}` : 'Done'}{files > 0 ? ` · ${files} ${files === 1 ? 'photo' : 'photos'}` : ''}</span>}
+        {tick && <span className="ml-auto flex-none">{tick}</span>}
       </div>
     </div>
   );
 }
+
+/** Red: the checkout time has passed and nobody ticked the guest out. Yellow: the guest is out, the clean not finished. */
+const rowTone = (r: Row, now: number): CleanRowTone =>
+  cleanRowTone({ day: r.day, status: r.status, guestOut: r.guestOut, checkOutTime: r.previous?.checkOutTime ?? null }, now);
+const TONE_BG: Record<NonNullable<CleanRowTone> | 'none', string> = { overdue: 'bg-danger-bg', out: 'bg-warning-bg', none: 'hover:bg-page' };
+const OVERDUE_NOTE = 'Checkout time passed. Tick when the guest has left.';
 
 /** Phone status words: the tick on the card already says the guest is out. */
 const PHONE_STATUS: Record<string, string> = { ready: 'Ready to clean', done: 'Done' };
@@ -650,10 +670,11 @@ function PhoneCleanCard({ r, now, active, busy, onSelect, onGuestLeft, onUndoLef
   const mayTick = !!r.previous && r.status !== 'done' && r.status !== 'cleaning' && r.day <= mytDay(0);
   const names = r.cleaners.length ? r.cleaners.map(c => c.name) : r.assigneeName ? [r.assigneeName] : [];
   const meta = [r.unit?.size ?? r.unit?.layout, KIND_LABEL[r.kind] ?? r.kind].filter(Boolean).join(' · ');
+  const tone = rowTone(r, now);
   return (
     <div role="button" tabIndex={0} aria-pressed={active} onClick={onSelect} onKeyDown={e => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onSelect(); } }}
       className={cx('px-3 py-2.5 [border-top:1px_solid_var(--color-line-soft)] text-copy cursor-pointer flex flex-col gap-1 outline-none focus-visible:[box-shadow:inset_0_0_0_2px_var(--color-gold)]',
-        active ? 'bg-gold-tint [box-shadow:inset_3px_0_0_var(--color-gold)]' : 'active:bg-page')}>
+        active ? 'bg-gold-tint [box-shadow:inset_3px_0_0_var(--color-gold)]' : tone ? TONE_BG[tone] : 'active:bg-page')}>
       {/* Wraps rather than cutting the unit code short (it read "C." on a phone). */}
       <div className="flex items-center flex-wrap gap-x-2 gap-y-1 min-w-0">
         {onPick && (
@@ -662,7 +683,8 @@ function PhoneCleanCard({ r, now, active, busy, onSelect, onGuestLeft, onUndoLef
         )}
         {r.external ? <b className="min-w-0 truncate text-ink">{r.external.address}</b> : <b className="flex-none whitespace-nowrap text-ink">{r.unitNumber}</b>}
         {r.carriedOver && <span className="min-w-0 flex"><StatusBadge tone="warning" size="sm" title={`Carried over from ${dayLabel(r.day)}`}>{dayLabel(r.day).replace(/^\w+\s/, '')}</StatusBadge></span>}
-        <span className="ml-auto min-w-0 flex justify-end"><StatusBadge tone={st.tone} size="sm">{PHONE_STATUS[r.status] ?? st.label}</StatusBadge></span>
+        <span className="ml-auto min-w-0 flex items-center justify-end gap-1.5"><StatusBadge tone={st.tone} size="sm">{PHONE_STATUS[r.status] ?? st.label}</StatusBadge>
+          {mayTick && <GuestOutTick out={r.guestOut} busy={busy} onTick={r.guestOut ? onUndoLeft : onGuestLeft} small />}</span>
       </div>
       {r.external ? (
         <div className="min-w-0 truncate">{r.external.clientName ?? <span className="text-muted-ink">No client name</span>}{r.external.clientPhone && <span className="text-muted-ink"> · {r.external.clientPhone}</span>}</div>
@@ -670,9 +692,8 @@ function PhoneCleanCard({ r, now, active, busy, onSelect, onGuestLeft, onUndoLef
         <div className="flex flex-wrap gap-x-4 gap-y-1.5 min-w-0">
           {r.previous ? (
             <PhoneStay label="Out" time={r.previous.checkOutTime} name={r.previous.guestName}
-              aside={mayTick ? <GuestOutTick out={r.guestOut} busy={busy} onTick={r.guestOut ? onUndoLeft : onGuestLeft} small />
-                : r.guestOut && <span className="flex-none text-gold-ink" title="Guest is out"><Icon name="Check" size="sm" /></span>}
-              note={r.guestOut && r.guestLeftAt ? (r.guestLeftAuto ? `Out at checkout ${hm(r.guestLeftAt)} (automatic)` : `Left at ${hm(r.guestLeftAt)}`) : undefined} />
+              aside={!mayTick && r.guestOut && <span className="flex-none text-gold-ink" title="Guest is out"><Icon name="Check" size="sm" /></span>}
+              note={tone === 'overdue' ? OVERDUE_NOTE : r.guestOut && r.guestLeftAt ? (r.guestLeftAuto ? `Out at checkout ${hm(r.guestLeftAt)} (automatic)` : `Left at ${hm(r.guestLeftAt)}`) : undefined} />
           ) : <PhoneStay label="No guest leaving" />}
           {r.next ? <PhoneStay label="In" time={r.next.checkInTime} name={r.next.guestName}
               aside={r.status !== 'done' && <span className="ml-auto pl-1 text-meta whitespace-nowrap"><TimeLeft at={r.next.checkInAt} now={now} /></span>} />
@@ -858,8 +879,8 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft, onCheckIn, sav
           </FormRow>
           <div className="grid grid-cols-2 gap-2.5">
           <FormRow label="Type">
-            <select className={INPUT} value={kind} disabled={busy === 'kind'} onChange={e => { const v = e.target.value; setPicked(p => ({ ...p, kind: v })); void act('kind', () => api.patch(`/housekeeping/tasks/${row.id}`, { kind: v, title: v === 'deep_clean' ? 'Deep clean' : row.title }), 'Cleaning type changed.').then(ok => { if (!ok) setPicked(p => ({ ...p, kind: undefined })); }); }}>
-              <option value="turnover">Basic</option><option value="deep_clean">Deep</option><option value="light_clean">Light</option>
+            <select className={INPUT} value={kind} disabled={busy === 'kind'} onChange={e => { const v = e.target.value; setPicked(p => ({ ...p, kind: v })); void act('kind', () => api.patch(`/housekeeping/tasks/${row.id}`, { kind: v, title: cleanTitle(v, row.title) }), 'Cleaning type changed.').then(ok => { if (!ok) setPicked(p => ({ ...p, kind: undefined })); }); }}>
+              <CleanTypeOptions current={row.kind} />
             </select>
           </FormRow>
           </div>
@@ -1022,6 +1043,9 @@ function CleanAmount({ taskId, cost, external, done, kindName, onSaved }: {
 
 function NewCleanModal({ date, onClose, onDone }: { date: string; onClose: () => void; onDone: () => void }) {
   const units = useUnitRoster();
+  const { user } = useSession();
+  // CS (operations staff) asks for the clean; Basic or Deep is the cleaning team's call (26 Oct 2026).
+  const picksType = user?.role !== 'operations_staff';
   const [unitId, setUnitId] = useState('');
   const [day, setDay] = useState(date);
   const { cleaners } = useCleaners(true, day);
@@ -1061,7 +1085,7 @@ function NewCleanModal({ date, onClose, onDone }: { date: string; onClose: () =>
     if (bad.unit || bad.address || bad.amount) { setError(bad); return; }
     setBusy(true); setError({});
     try {
-      const title = item && itemId ? item.name : kind === 'deep_clean' ? 'Deep clean' : kind === 'light_clean' ? 'Light clean' : 'Basic clean';
+      const title = item && itemId ? item.name : KIND_NAME[kind] ?? 'Basic clean';
       await api.post('/housekeeping/tasks', {
         ...(external ? { external: { address: address.trim(), clientName: client.trim() || undefined, clientPhone: phone.trim() || undefined }, layout } : { unitId }),
         date: day, kind, cleanerIds, instructions: notes.trim() || undefined, title,
@@ -1091,11 +1115,13 @@ function NewCleanModal({ date, onClose, onDone }: { date: string; onClose: () =>
       )}
       <div className="grid grid-cols-2 gap-3">
         <FormRow label="Day"><DateField aria-label="Day" className={INPUT} value={day} onChange={v => v && setDay(v)} /></FormRow>
-        <FormRow label="Type">
-          <select className={INPUT} value={kind} onChange={e => setKind(e.target.value)}>
-            <option value="turnover">Basic</option><option value="deep_clean">Deep</option><option value="light_clean">Light</option>
-          </select>
-        </FormRow>
+        {picksType ? (
+          <FormRow label="Type">
+            <select className={INPUT} value={kind} onChange={e => setKind(e.target.value)}><CleanTypeOptions /></select>
+          </FormRow>
+        ) : (
+          <FormRow label="Type" hint="The cleaning team switches it to Deep clean when needed."><span className="text-copy">Basic clean (BC)</span></FormRow>
+        )}
       </div>
       {/* A job on one of our units is priced from Cleaning > Prices, so it shows no pricing (staff sheet CLEANING,
           23 Oct 2026); an external job still needs its item and amounts. */}
