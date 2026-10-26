@@ -1,6 +1,6 @@
 /* Beta Drawings, the sets as the owner's mockup draws them (24 Oct 2026): a 2D set is a row of sheet pictures, each
    with its name, a Changed / Same badge against the approved set, its history, and its own Replace and Remove; a 3D
-   set is a list of link cards (name, where it points, Open, Copy link). Thumbnails come from the stored file through
+   set is a "3D PDF" list and a "3D links" list (name, address, Open, Copy for client). Thumbnails come from the stored file through
    the staff file route: a photo as it is, a PDF's first page drawn by pdf.js, anything else a drawing icon. */
 
 import { useEffect, useRef, useState, type CSSProperties, type ReactElement, type ReactNode } from "react";
@@ -8,10 +8,10 @@ import { api } from "../../api/client";
 import { useDialog } from "../../hooks/useDialog";
 import { errorText } from "../projects/renovation/renovationModel";
 import { simpleApi } from "../projects/renovation/simpleApi";
-import { WS, WsBadge, WsBtn, WsDialog, TONE_QUIET, TONE_WAIT } from "./BetaWsUi";
+import { WS, WsBadge, WsBtn, WsDialog, WsPdfTile, TONE_QUIET, TONE_WAIT } from "./BetaWsUi";
 import { useGuarded, type ViewedFile } from "./betaShared";
 import { dayMonthYear } from "./renovationBetaModel";
-import { linkHost, removedSheetsOf, sheetsApi, type SetSheet, type SheetKind } from "./renovationBetaSheets";
+import { removedSheetsOf, sheetsApi, sizeText, type SetSheet, type SheetKind } from "./renovationBetaSheets";
 import { BETA } from "./renovationBetaTheme";
 
 const IMAGE = /\.(png|jpe?g|webp|gif)$/i;
@@ -140,9 +140,9 @@ export function SheetGrid({ projectId, sheets, changed, onView, onError, edit }:
 }): ReactElement {
   const dialog = useDialog();
   const { busy, run } = useGuarded();
-  const view =(x: { key: string | null; url: string | null; fileName: string }): void => {
+  const view = (x: SetSheet): void => {
     if (x.url) window.open(x.url, "_blank", "noopener");
-    else if (x.key) onView({ key: x.key, name: x.fileName });
+    else if (x.key) onView({ key: x.key, name: x.name, versions: x.history.flatMap((h) => (h.key ? [{ version: h.version, key: h.key, fileName: h.fileName, uploadedOn: h.uploadedOn }] : [])) });
   };
   async function rename(x: SetSheet): Promise<void> {
     if (!edit) return;
@@ -197,23 +197,7 @@ export function SheetGrid({ projectId, sheets, changed, onView, onError, edit }:
               </button>
               <div style={{ fontWeight: 600, fontSize: 13, overflowWrap: "anywhere" }}>{x.name}</div>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6, fontSize: 12, color: BETA.muted }}>
-                {x.history.length > 1 ? (
-                  <Popover label={`V${x.version} · ${x.history.length - 1} older`} srLabel={`Versions of ${x.name}`}>
-                    {(close) => (
-                      <ul style={{ listStyle: "none", margin: 0, padding: 8, display: "grid", gridTemplateColumns: "repeat(3, 52px)", gap: 6, maxHeight: 208, overflowY: "auto" }}>
-                        {x.history.map((h, i) => (
-                          <li key={`${h.version}-${h.key ?? h.url}`}>
-                            <button type="button" title={`${i === 0 ? "Current · " : ""}${dayMonthYear(h.uploadedOn)}`} onClick={() => { close(); view(h); }}
-                              style={{ width: "100%", minHeight: 34, borderRadius: 6, font: "inherit", fontSize: 13, fontWeight: 700, cursor: "pointer",
-                                border: `1px solid ${i === 0 ? BETA.ink : BETA.border}`, background: i === 0 ? BETA.ink : BETA.surface, color: i === 0 ? BETA.surface : BETA.ink }}>
-                              V{h.version}<span className="sr"> {dayMonthYear(h.uploadedOn)}{i === 0 ? ", current" : ""}</span>
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </Popover>
-                ) : <span>V{x.version}</span>}
+                <span>V{x.version}{x.history.length > 1 ? ` · ${x.history.length} versions` : ""}</span>
                 {editable && (
                   <Popover label="⋯" srLabel={`Actions for ${x.name}`} align="right" iconOnly>
                     {(close) => (
@@ -305,13 +289,16 @@ export function CompareDialog({ projectId, next, approved, onClose }: { projectI
 
 function CubeIcon(): ReactElement {
   return (
-    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke={WS.blue} strokeWidth="1.8" aria-hidden="true">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={BETA.accent} strokeWidth="1.8" aria-hidden="true">
       <path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z" /><path d="M12 12l8-4.5M12 12v9M12 12L4 7.5" />
     </svg>
   );
 }
 
-/** The links (and any 3D files) of a 3D set as cards: name, where it points, Open, Copy link; a 3D render file opens large. */
+const boxStyle: CSSProperties = { border: `1px solid ${BETA.line}`, borderRadius: 10, overflow: "hidden" };
+const rowStyle: CSSProperties = { display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, padding: "12px 16px", borderTop: `1px solid ${WS.rowLine}` };
+
+/** A 3D set as the client's mockup draws it: a "3D PDF" list (file, size, Open) and a "3D links" list (name, address, Open, Copy for client). */
 export function LinkCards({ projectId, links, changed, onView, onError, edit }: {
   projectId: number; links: SetSheet[]; changed: Map<string, boolean> | null; onView: (f: ViewedFile) => void; onError: (t: string) => void;
   edit: SheetGridEdit | null;
@@ -331,43 +318,48 @@ export function LinkCards({ projectId, links, changed, onView, onError, edit }: 
     if (!ok) return;
     try { await sheetsApi.remove(projectId, x.name, "3d"); edit.onChanged(); edit.onDone(`${x.name} removed from the 3D set.`); } catch (e) { onError(errorText(e)); }
   }
+  const newBadge = (x: SetSheet): ReactElement | null => {
+    if (!changed) return null;
+    const isNew = changed.get(x.name) ?? false;
+    return <WsBadge tone={isNew ? TONE_WAIT : TONE_QUIET}>{isNew ? "New" : "Same"}</WsBadge>;
+  };
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      {urls.length > 0 && (
-        <ul aria-label="3D links" style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 12 }}>
-          {urls.map((x) => {
-            const isNew = changed?.get(x.name) ?? false;
-            return (
-              <li key={x.name} style={{ display: "flex", flexDirection: "column", gap: 10, padding: 14, borderRadius: 10, background: BETA.surface, border: isNew ? `2px solid ${WS.amberBtn}` : `1px solid ${BETA.line}` }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
-                  <span style={{ flex: "none", width: 48, height: 48, borderRadius: 10, background: "#E8F0FB", display: "flex", alignItems: "center", justifyContent: "center" }}><CubeIcon /></span>
-                  <div style={{ minWidth: 0, flex: 1 }}>
-                    <div style={{ fontWeight: 700, overflowWrap: "anywhere" }}>{x.name}</div>
-                    <div style={{ fontSize: 13, color: BETA.muted }}>{linkHost(x.url ?? "")} · V{x.version}</div>
-                  </div>
-                  {changed && <WsBadge tone={isNew ? TONE_WAIT : TONE_QUIET}>{isNew ? "New" : "Same"}</WsBadge>}
-                </div>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                  <WsBtn kind="teal" size="sm" onClick={() => window.open(x.url ?? "", "_blank", "noopener")}>Open<span className="sr"> {x.name}</span></WsBtn>
-                  <WsBtn size="sm" onClick={() => void copy(x)}>{copied === x.name ? "Copied" : "Copy link"}<span className="sr"> of {x.name}</span></WsBtn>
-                  {edit && x.fromSheet && <WsBtn kind="danger" size="sm" disabled={busy} onClick={() => void run(() => remove(x))}>Remove<span className="sr"> {x.name}</span></WsBtn>}
-                </div>
-                {x.history.length > 1 && <div style={{ fontSize: 12, color: BETA.muted }}>Earlier: {x.history.slice(1).map((h) => `V${h.version}`).join(", ")}</div>}
-              </li>
-            );
-          })}
-        </ul>
-      )}
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       {files.length > 0 && (
-        <div>
-          <div style={{ fontSize: 12, color: BETA.muted, fontWeight: 600, marginBottom: 8 }}>3D renders</div>
-          <ul aria-label="3D renders" style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 10 }}>
+        <div style={boxStyle}>
+          <div style={{ padding: "12px 16px", background: WS.head, fontWeight: 600 }}>3D PDF</div>
+          <ul aria-label="3D PDF" style={{ listStyle: "none", margin: 0, padding: 0 }}>
             {files.map((x) => (
-              <li key={x.name} style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 0 }}>
-                <button type="button" onClick={() => x.key && onView({ key: x.key, name: x.fileName })} style={{ aspectRatio: "4 / 3", padding: 4, border: `1px solid ${BETA.line}`, borderRadius: 8, overflow: "hidden", background: "#FFFFFF", cursor: "zoom-in" }}>
-                  <SheetThumb projectId={projectId} sheet={x} /><span className="sr">Open {x.name}</span>
-                </button>
-                <span style={{ fontSize: 13, fontWeight: 600, overflowWrap: "anywhere" }}>{x.name}</span>
+              <li key={x.name} style={rowStyle}>
+                {PDF.test(x.key ?? "") || x.contentType === "application/pdf"
+                  ? <WsPdfTile />
+                  : <span style={{ flex: "none", width: 44, height: 36, borderRadius: 4, overflow: "hidden", border: `1px solid ${BETA.line}` }}><SheetThumb projectId={projectId} sheet={x} /></span>}
+                <div style={{ flex: "1 1 200px", minWidth: 0 }}>
+                  <div style={{ fontWeight: 600, overflowWrap: "anywhere" }}>{x.fileName}</div>
+                  <div style={{ fontSize: 12, color: BETA.muted }}>{(x.size ? sizeText(x.size) : null) ?? "File"}</div>
+                </div>
+                {newBadge(x)}
+                <WsBtn kind="teal" size="sm" onClick={() => x.key && onView({ key: x.key, name: x.name, versions: x.history.flatMap((h) => (h.key ? [{ version: h.version, key: h.key, fileName: h.fileName, uploadedOn: h.uploadedOn }] : [])) })}>Open<span className="sr"> {x.name}</span></WsBtn>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {urls.length > 0 && (
+        <div style={boxStyle}>
+          <div style={{ padding: "12px 16px", background: WS.head, fontWeight: 600 }}>3D links</div>
+          <ul aria-label="3D links" style={{ listStyle: "none", margin: 0, padding: 0 }}>
+            {urls.map((x) => (
+              <li key={x.name} style={rowStyle}>
+                <CubeIcon />
+                <div style={{ flex: "1 1 200px", minWidth: 0 }}>
+                  <div style={{ fontWeight: 600, overflowWrap: "anywhere" }}>{x.name}</div>
+                  <div style={{ fontSize: 12, color: BETA.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={x.url ?? ""}>{x.url}</div>
+                </div>
+                {newBadge(x)}
+                <WsBtn kind="teal" size="sm" onClick={() => window.open(x.url ?? "", "_blank", "noopener")}>Open<span className="sr"> {x.name}</span></WsBtn>
+                <WsBtn size="sm" onClick={() => void copy(x)}>{copied === x.name ? "Copied" : "Copy for client"}<span className="sr"> {x.name}</span></WsBtn>
+                {edit && x.fromSheet && <WsBtn kind="danger" size="sm" disabled={busy} onClick={() => void run(() => remove(x))}>Remove<span className="sr"> {x.name}</span></WsBtn>}
               </li>
             ))}
           </ul>
