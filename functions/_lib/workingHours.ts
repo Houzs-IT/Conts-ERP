@@ -2,7 +2,9 @@ import { z } from 'zod';
 import { type Env, all, run, nowIso } from './db';
 import { hasColumn } from './auth';
 import { listEmployees } from './hr';
-import type { Employee } from './hrFields';
+import { DEPARTMENTS, type Department, type Employee } from './hrFields';
+
+export { DEPARTMENTS, DEPARTMENT_LABEL, type Department } from './hrFields';
 
 /**
  * Working Hours (migration 0168): the hours each employee worked per day per department, as Hookka keeps them
@@ -12,9 +14,6 @@ import type { Employee } from './hrFields';
 
 export const hasWorkingHours = (env: Env): Promise<boolean> => hasColumn(env, 'working_hour_entries', 'id').catch(() => false);
 export const NOT_MIGRATED = 'Working Hours needs a database update (migration 0168) that has not been applied yet.';
-export const DEPARTMENTS = ['cleaning', 'maintenance'] as const;
-export type Department = (typeof DEPARTMENTS)[number];
-export const DEPARTMENT_LABEL: Record<Department, string> = { cleaning: 'Cleaning', maintenance: 'Maintenance' };
 /** The longest range the grid reads at once: two months. */
 export const MAX_RANGE_DAYS = 62;
 

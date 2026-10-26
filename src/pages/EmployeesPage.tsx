@@ -8,6 +8,7 @@ import { useApi } from '../lib/useApi';
 import { cx } from '../lib/design-tokens';
 import type { AttendanceLine } from '../../functions/api/attendance/index';
 
+const WorkingHoursTab = lazy(() => import('./workers/WorkingHoursTab'));
 const AttendanceTab = lazy(() => import('./workers/AttendanceTab'));
 const PayrollTab = lazy(() => import('./workers/PayrollTab'));
 const AdvancesTab = lazy(() => import('./workers/AdvancesTab'));
@@ -47,7 +48,6 @@ const UNDECIDED: Partial<Record<TabKey, string>> = {
 };
 /** Tabs being built next, in Hookka's layout. */
 const NEXT: Partial<Record<TabKey, string>> = {
-  'working-hours': 'Hours per person per day per department, filled from the phone punches and corrected here. Payroll reads these hours. The public holiday list moves here.',
   'labor-cost': 'Labour cost against what the cleaning and repair jobs were charged, with the month\'s payroll reconciliation.',
   'department-labor': 'Hours and labour cost per department (Cleaning, Maintenance).',
   penalties: 'Penalties raised against a cleaning or repair job, approved, then taken off the payroll month.',
@@ -64,7 +64,8 @@ export default function EmployeesPage() {
   const minutes = lines.reduce((n, l) => n + (l.punch?.minutes ?? 0), 0);
 
   let body: ReactNode;
-  if (tab === 'attendance') body = <AttendanceTab />;
+  if (tab === 'working-hours') body = <WorkingHoursTab />;
+  else if (tab === 'attendance') body = <AttendanceTab />;
   else if (tab === 'payroll') body = <PayrollTab />;
   else if (tab === 'advances') body = <AdvancesTab />;
   else if (tab === 'employee-master') body = <EmployeesTab />;

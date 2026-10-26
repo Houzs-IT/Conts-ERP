@@ -90,3 +90,8 @@ export const EMPLOYEE_DEFAULTS: EmployeeInput = {
   epfEnabled: false, socsoEnabled: false, eisEnabled: false, pcbEnabled: false,
   taxResidency: null, taxCategory: null, taxChildReliefSen: null, annualLeaveDays: null, medicalLeaveDays: null,
 };
+
+/** The departments an employee works in: the rosters they are on (Working Hours, Department Labor). */
+export const DEPARTMENTS = ['cleaning', 'maintenance'] as const;
+export type Department = (typeof DEPARTMENTS)[number];
+export const DEPARTMENT_LABEL: Record<Department, string> = { cleaning: 'Cleaning', maintenance: 'Maintenance' };
