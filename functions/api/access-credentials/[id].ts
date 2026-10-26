@@ -45,7 +45,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     b.kind ?? null, b.label !== undefined ? String(b.label).trim() : null, b.instruction !== undefined ? String(b.instruction).trim() : null,
     b.rotatesAfterStay === undefined ? null : (b.rotatesAfterStay ? 1 : 0), nowIso(), id);
   if (codeChanged) await run(env, 'UPDATE access_credentials SET secret = ? WHERE id = ?', secret, id);
-  if (b.usedBy && await usedByReady(env)) await run(env, 'UPDATE access_credentials SET used_by = ?::jsonb WHERE id = ?', JSON.stringify(b.usedBy), id);
+  if (b.usedBy && await usedByReady(env)) await run(env, 'UPDATE access_credentials SET used_by = ?::text::jsonb WHERE id = ?', JSON.stringify(b.usedBy), id);
   await audit(env, {
     actorId: session.userId, actorLabel: session.fullName, action: 'access.update', entityTable: 'access_credentials', entityId: id,
     before: { kind: cur.kind, label: cur.label, rotatesAfterStay: !!cur.rotates_after_stay, hasCode: !!cur.has_code },

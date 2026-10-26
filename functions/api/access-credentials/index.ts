@@ -62,7 +62,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     INSERT INTO access_credentials (id, unit_id, kind, label, secret, instruction, rotates_after_stay, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     id, b.unitId, b.kind, String(b.label).trim(), secret, String(b.instruction).trim(), b.rotatesAfterStay ? 1 : 0, nowIso());
-  if (b.usedBy && await usedByReady(env)) await run(env, 'UPDATE access_credentials SET used_by = ?::jsonb WHERE id = ?', JSON.stringify(usedBy), id);
+  if (b.usedBy && await usedByReady(env)) await run(env, 'UPDATE access_credentials SET used_by = ?::text::jsonb WHERE id = ?', JSON.stringify(usedBy), id);
   await audit(env, {
     actorId: session.userId, actorLabel: session.fullName, action: 'access.create', entityTable: 'access_credentials', entityId: id,
     after: { unitId: b.unitId, unitNumber: unit.unit_number, kind: b.kind, label: String(b.label).trim(), hasCode: !!secret, rotatesAfterStay: !!b.rotatesAfterStay, usedBy },
