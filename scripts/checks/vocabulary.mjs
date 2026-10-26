@@ -195,6 +195,17 @@ export const allow = {
   // The overall owner report keeps the owner workbook's own column names (revenue, GP, LT/GRR), as the owner asked (22 Oct 2026).
   'src/pages/OwnerOverallReportPage.tsx': 'The owner workbook\'s overall report sheet, in its own column names.',
   'src/pages/OwnerOverallDetail.tsx': 'The unit drawer of that same overall report sheet, in the sheet\'s words.',
+  // The Owner Showcase is shown to prospective owners in the words of Loo Wen Wei's approved design pack (CONTS-0006,
+  // 26 Oct 2026): Airbnb's guest-facing words (property, booking, check-outs), not the ERP's working vocabulary.
+  'src/pages/showcase/OwnerShowcasePage.tsx': 'The sales presentation copies the approved design pack word for word.',
+  'src/pages/showcase/screens.tsx': 'The sales presentation copies the approved design pack word for word.',
+  'src/pages/showcase/CalendarScreen.tsx': 'The sales presentation copies the approved design pack word for word.',
+  'src/pages/showcase/parts.tsx': 'The sales presentation copies the approved design pack word for word.',
+  'src/pages/showcase/model.ts': 'The figure names the design pack gives the showcase and its control panel.',
+  'src/pages/showcase/OwnerPortalPage.tsx': 'The sample owner portal copies the approved design pack word for word.',
+  'src/pages/showcase/OwnerPhone.tsx': 'The sample owner app copies the approved design pack word for word.',
+  'src/pages/showcase/portalParts.tsx': 'The sample owner portal copies the approved design pack word for word.',
+  'src/pages/showcase/sampleOwner.ts': 'The sample owner\'s example cases and statements, in the design pack\'s words.',
 };
 
 /** Files being reworked elsewhere that apply these words themselves when their rework lands: the check skips them

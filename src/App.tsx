@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef } from 'react';
+import { lazy, Suspense, useEffect, useRef, type ReactNode } from 'react';
 import { readDevice } from './lib/deviceClass';
 import { CrashScreen } from './components/CrashScreen';
 import { Routes, Route, Outlet, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
@@ -20,6 +20,9 @@ import { BootScreen, PageShown, PageSkeleton } from './components/Loading';
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
 const NotificationsPage = lazy(() => import('./pages/NotificationsPage'));
 const PortfolioPage = lazy(() => import('./pages/PortfolioPage'));
+const OwnerShowcasePage = lazy(() => import('./pages/showcase/OwnerShowcasePage'));
+const ShowcaseControlPage = lazy(() => import('./pages/showcase/ShowcaseControlPage'));
+const OwnerPortalDemoPage = lazy(() => import('./pages/showcase/OwnerPortalPage'));
 const OwnerOverallReportPage = lazy(() => import('./pages/OwnerOverallReportPage'));
 const CalendarPage = lazy(() => import('./pages/CalendarPage'));
 const BookingsPage = lazy(() => import('./pages/BookingsPage'));
@@ -117,6 +120,14 @@ function SettingsHome() {
 const Fallback = () => <PageSkeleton />;
 
 /** Desktop shell as a layout route; the matched page renders into <Outlet />. */
+/** The Owner Showcase and its sample owner portal have no app shell around them, so they apply the Owner Showcase
+ *  screen's access themselves. */
+function ShowcaseRoute({ children }: { children: ReactNode }) {
+  const { user } = useSession();
+  if (screenClosed('/performance/showcase', user?.access)) return <Navigate to={user ? homeFor(user) : '/'} replace />;
+  return <Suspense fallback={<Fallback />}>{children}</Suspense>;
+}
+
 function AppLayout() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -245,6 +256,9 @@ function Routed() {
       {/* The Owner Income Report prints on its own: no app shell around it. */}
       <Route path="/finance/statements/:id/report" element={<Suspense fallback={<Fallback />}><OwnerIncomeReportPage /></Suspense>} />
       <Route path="/finance/statements/print" element={<Suspense fallback={<Fallback />}><StatementsPrintPage /></Suspense>} />
+      {/* Sales staff present it to a prospective owner: full screen, no menu (CONTS-0006). */}
+      <Route path="/performance/showcase" element={<ShowcaseRoute><OwnerShowcasePage /></ShowcaseRoute>} />
+      <Route path="/performance/showcase/owner" element={<ShowcaseRoute><OwnerPortalDemoPage /></ShowcaseRoute>} />
       <Route element={<AppLayout />}>
         <Route path="/" element={<DashboardPage />} />
         <Route path="/notifications" element={<NotificationsPage />} />
@@ -323,6 +337,7 @@ function Routed() {
         {/* Revenue was the same screen as Performance > Analytics (UI audit); one route, the old address redirects. */}
         <Route path="/finance/revenue" element={<Navigate to="/performance/analytics" replace />} />
         <Route path="/performance" element={<Navigate to="/performance/analytics" replace />} />
+        <Route path="/performance/showcase-control" element={<ShowcaseControlPage />} />
         {/* Owner statements and owner payouts moved onto the owner; Expenses is Accounts payable (owner, 11 Oct 2026). */}
         <Route path="/finance/payables" element={<ExpensesPage />} />
         <Route path="/finance/utility-bills" element={<ExpensesPage utilities />} />

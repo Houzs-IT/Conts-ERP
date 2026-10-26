@@ -104,6 +104,7 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
     if (k === 'today') return `${n} to do`;
     if (k === 'statements') return `${n} final, not sent`;
     if (k === 'approvals') return `${n} waiting for approval`;
+    if (k === 'showcase') return `${n} ${n === 1 ? 'figure' : 'figures'} overridden`;
     return `${n} new`;
   };
 
@@ -216,6 +217,7 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
                   >
                     <Icon name={toPascal(it.icon)} size="nav" />
                     {open && <span style={{ flex: 1, minWidth: 0, fontSize: text.copy, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.label}</span>}
+                    {open && it.fresh && n === 0 && <span style={{ fontSize: text.micro, fontWeight: 700, padding: '1px 6px', borderRadius: radius.pill, flex: 'none', background: color.gold, color: color.black }}>New</span>}
                     {open && !it.children && n > 0 && <span style={badge(selfActive)}>{countLabel(n)}</span>}
                     {/* The rail shows a dot where the full menu shows a count. */}
                     {!open && n > 0 && <span aria-hidden style={{ position: 'absolute', top: 6, right: 10, width: 7, height: 7, borderRadius: 999, background: color.gold, boxShadow: `0 0 0 2px ${color.black}` }} />}

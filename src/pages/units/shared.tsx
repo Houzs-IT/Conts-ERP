@@ -114,6 +114,8 @@ export interface UnitDetail {
   maintenance: { id: string; title: string; detail: string | null; state: TaskState; vendorName: string | null; ownerApprovalRequired: boolean; blocksUnit: boolean; chargeTo: string; reportedAt: string; resolvedAt: string | null; quotedAmount?: number | null; finalAmount?: number | null }[];
   inventory: { id: string; name: string; quantity: string; condition: string; suppliedInHouse: boolean; installedOn: string | null; lastChecked: string | null; purchaseCost?: number | null }[];
   documents: { id: string; name: string; kind: string; sizeLabel: string; updatedAt: string }[];
+  /** The unit's cover photo (functions/api/units/detail.ts). */
+  coverPhotoId?: string | null;
   activity: { actorLabel: string; action: string; source: string; occurredAt: string }[];
   generatedAt: string;
 }
