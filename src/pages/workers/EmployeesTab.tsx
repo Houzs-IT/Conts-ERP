@@ -167,13 +167,8 @@ export default function EmployeesTab() {
       )}
       {access && <AccessModal target={access} onClose={() => setAccess(null)} onDone={reload} />}
       {given && (
-        <Modal title={`${given.name} can sign in`} sub="Give them these. The PIN is shown only once." onClose={() => setGiven(null)}
-          footer={<Button size="sm" variant="primary" onClick={() => setGiven(null)}>Done</Button>}>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="rounded-control bg-page px-4 py-3"><span className="block text-meta text-muted-ink">Employee ID</span><span className="text-[20px] font-bold tabular-nums">{given.employeeId}</span></div>
-            <div className="rounded-control bg-page px-4 py-3"><span className="block text-meta text-muted-ink">First PIN</span><span className="text-[20px] font-bold tabular-nums">{given.pin}</span></div>
-          </div>
-        </Modal>
+        <AccessModal target={{ id: '', name: given.name, employeeId: given.employeeId, rosterApi: '', jobs: '' }} given0={given}
+          onClose={() => setGiven(null)} onDone={reload} />
       )}
     </>
   );

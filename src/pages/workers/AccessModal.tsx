@@ -8,10 +8,13 @@ import { api } from '../../lib/api';
 export interface AccessTarget { id: string; name: string; employeeId: string | null; rosterApi: string; jobs: string }
 
 /** "Give app access" / "New PIN": the worker's employee ID (made on first access) and their first PIN, shown once. */
-export function AccessModal({ target, onClose, onDone }: { target: AccessTarget; onClose: () => void; onDone: () => void }) {
+export function AccessModal({ target, given0, onClose, onDone }: {
+  target: AccessTarget; given0?: { employeeId: string; pin: string }; onClose: () => void; onDone: () => void;
+}) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [given, setGiven] = useState<{ employeeId: string; pin: string } | null>(null);
+  // given0: the sign-in was just made by Add Employee, so the PIN is shown straight away.
+  const [given, setGiven] = useState<{ employeeId: string; pin: string } | null>(given0 ?? null);
   const toast = useToast();
   const link = `${window.location.origin}/portal`;
 
