@@ -3,7 +3,7 @@
    set is a list of link cards (name, where it points, Open, Copy link). Thumbnails come from the stored file through
    the staff file route: a photo as it is, a PDF's first page drawn by pdf.js, anything else a drawing icon. */
 
-import { useEffect, useState, type CSSProperties, type ReactElement } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactElement, type ReactNode } from "react";
 import { api } from "../../api/client";
 import { useDialog } from "../../hooks/useDialog";
 import { errorText } from "../projects/renovation/renovationModel";
@@ -89,6 +89,43 @@ export function SheetThumb({ projectId, sheet }: { projectId: number; sheet: { k
 
 /* ---------- 2D sheet grid ---------- */
 
+const MENU_ITEM: CSSProperties = {
+  display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, width: "100%", minHeight: 32, padding: "0 12px",
+  border: 0, background: "transparent", font: "inherit", fontSize: 13, textAlign: "left", cursor: "pointer", color: BETA.ink, whiteSpace: "nowrap",
+};
+
+/** A small button that opens a floating panel; closes on outside click and Escape. */
+function Popover({ label, srLabel, align = "left", iconOnly = false, children }: {
+  label: string; srLabel: string; align?: "left" | "right"; iconOnly?: boolean; children: (close: () => void) => ReactNode;
+}): ReactElement {
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: MouseEvent): void => { if (!(e.target instanceof Node) || !box.current?.contains(e.target)) setOpen(false); };
+    const esc = (e: KeyboardEvent): void => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", away);
+    document.addEventListener("keydown", esc);
+    return () => { document.removeEventListener("mousedown", away); document.removeEventListener("keydown", esc); };
+  }, [open]);
+  return (
+    <div ref={box} style={{ position: "relative", flex: "none" }}>
+      <button type="button" aria-haspopup="true" aria-expanded={open} onClick={() => setOpen(!open)}
+        style={{ display: "inline-flex", alignItems: "center", gap: 4, minHeight: 28, padding: iconOnly ? "0 8px" : "0 8px 0 6px", border: `1px solid ${BETA.border}`, borderRadius: 6,
+          background: BETA.surface, font: "inherit", fontSize: iconOnly ? 16 : 12, fontWeight: 600, lineHeight: 1, color: BETA.ink, cursor: "pointer" }}>
+        {label}{!iconOnly && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>}
+        <span className="sr"> {srLabel}</span>
+      </button>
+      {open && (
+        <div style={{ position: "absolute", top: 32, [align]: 0, zIndex: 30, minWidth: 150, padding: "4px 0", background: BETA.surface, border: `1px solid ${BETA.line}`,
+          borderRadius: 8, boxShadow: "0 8px 24px rgba(23,32,31,.14)" }}>
+          {children(() => setOpen(false))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export interface SheetGridEdit {
   kind: SheetKind;
   onReplace: (name: string) => void;
@@ -103,8 +140,7 @@ export function SheetGrid({ projectId, sheets, changed, onView, onError, edit }:
 }): ReactElement {
   const dialog = useDialog();
   const { busy, run } = useGuarded();
-  const [open, setOpen] = useState<string | null>(null);
-  const view = (x: { key: string | null; url: string | null; fileName: string }): void => {
+  const view =(x: { key: string | null; url: string | null; fileName: string }): void => {
     if (x.url) window.open(x.url, "_blank", "noopener");
     else if (x.key) onView({ key: x.key, name: x.fileName });
   };
@@ -135,8 +171,8 @@ export function SheetGrid({ projectId, sheets, changed, onView, onError, edit }:
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
       {changed && (
-        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 14, fontSize: 13, color: WS.text2 }}>
-          <span style={{ fontWeight: 600, color: BETA.ink }}>Sheets in the new set</span>
+        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 14, fontSize: 12, color: WS.text2 }}>
+          <span style={{ fontWeight: 600 }}>Sheets in the new set</span>
           <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><span style={{ width: 12, height: 12, border: `2px solid ${WS.amberBtn}`, borderRadius: 3 }} />Changed · {nChanged}</span>
           <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><span style={{ width: 12, height: 12, border: `1px solid ${BETA.border}`, borderRadius: 3 }} />Same as approved · {sheets.length - nChanged}</span>
         </div>
@@ -159,31 +195,36 @@ export function SheetGrid({ projectId, sheets, changed, onView, onError, edit }:
                 )}
                 <span className="sr">Open {x.name}</span>
               </button>
-              <div style={{ fontWeight: 600, fontSize: 14, overflowWrap: "anywhere" }}>{x.name}</div>
-              <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, fontSize: 12, color: BETA.muted }}>
-                <span>V{x.version}</span>
-                {x.history.length > 1 && (
-                  <button type="button" className="link" style={{ fontSize: 12 }} aria-expanded={open === x.name} onClick={() => setOpen(open === x.name ? null : x.name)}>
-                    {x.history.length - 1} older<span className="sr"> of {x.name}</span>
-                  </button>
+              <div style={{ fontWeight: 600, fontSize: 13, overflowWrap: "anywhere" }}>{x.name}</div>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6, fontSize: 12, color: BETA.muted }}>
+                {x.history.length > 1 ? (
+                  <Popover label={`V${x.version} · ${x.history.length - 1} older`} srLabel={`Versions of ${x.name}`}>
+                    {(close) => (
+                      <ul style={{ listStyle: "none", margin: 0, padding: 0, maxHeight: 208, overflowY: "auto" }}>
+                        {x.history.map((h, i) => (
+                          <li key={`${h.version}-${h.key ?? h.url}`}>
+                            <button type="button" style={MENU_ITEM} onClick={() => { close(); view(h); }}>
+                              <span style={{ fontWeight: 600 }}>V{h.version}</span>
+                              <span style={{ color: BETA.muted }}>{dayMonthYear(h.uploadedOn)}{i === 0 ? " · now" : ""}</span>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </Popover>
+                ) : <span>V{x.version}</span>}
+                {editable && (
+                  <Popover label="⋯" srLabel={`Actions for ${x.name}`} align="right" iconOnly>
+                    {(close) => (
+                      <div role="menu" style={{ display: "flex", flexDirection: "column" }}>
+                        <button type="button" role="menuitem" style={MENU_ITEM} disabled={busy} onClick={() => { close(); edit.onReplace(x.name); }}>Replace</button>
+                        <button type="button" role="menuitem" style={MENU_ITEM} disabled={busy} onClick={() => { close(); void run(() => rename(x)); }}>Rename</button>
+                        <button type="button" role="menuitem" style={{ ...MENU_ITEM, color: WS.red }} disabled={busy} onClick={() => { close(); void run(() => remove(x)); }}>Remove</button>
+                      </div>
+                    )}
+                  </Popover>
                 )}
               </div>
-              {open === x.name && (
-                <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 2, fontSize: 12 }}>
-                  {x.history.slice(1).map((h) => (
-                    <li key={`${h.version}-${h.key ?? h.url}`}>
-                      <button type="button" className="link" style={{ fontSize: 12 }} onClick={() => view(h)}>V{h.version} · {h.fileName}</button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-              {editable && (
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                  <WsBtn size="sm" disabled={busy} onClick={() => edit.onReplace(x.name)}>Replace<span className="sr"> {x.name}</span></WsBtn>
-                  <WsBtn kind="danger" size="sm" disabled={busy} onClick={() => void run(() => remove(x))}>Remove<span className="sr"> {x.name}</span></WsBtn>
-                  <button type="button" className="link" style={{ fontSize: 12 }} disabled={busy} onClick={() => void run(() => rename(x))}>Rename<span className="sr"> {x.name}</span></button>
-                </div>
-              )}
             </li>
           );
         })}
