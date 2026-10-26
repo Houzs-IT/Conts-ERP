@@ -200,12 +200,13 @@ export function SheetGrid({ projectId, sheets, changed, onView, onError, edit }:
                 {x.history.length > 1 ? (
                   <Popover label={`V${x.version} · ${x.history.length - 1} older`} srLabel={`Versions of ${x.name}`}>
                     {(close) => (
-                      <ul style={{ listStyle: "none", margin: 0, padding: 0, maxHeight: 208, overflowY: "auto" }}>
+                      <ul style={{ listStyle: "none", margin: 0, padding: 8, display: "grid", gridTemplateColumns: "repeat(3, 52px)", gap: 6, maxHeight: 208, overflowY: "auto" }}>
                         {x.history.map((h, i) => (
                           <li key={`${h.version}-${h.key ?? h.url}`}>
-                            <button type="button" style={MENU_ITEM} onClick={() => { close(); view(h); }}>
-                              <span style={{ fontWeight: 600 }}>V{h.version}</span>
-                              <span style={{ color: BETA.muted }}>{dayMonthYear(h.uploadedOn)}{i === 0 ? " · now" : ""}</span>
+                            <button type="button" title={`${i === 0 ? "Current · " : ""}${dayMonthYear(h.uploadedOn)}`} onClick={() => { close(); view(h); }}
+                              style={{ width: "100%", minHeight: 34, borderRadius: 6, font: "inherit", fontSize: 13, fontWeight: 700, cursor: "pointer",
+                                border: `1px solid ${i === 0 ? BETA.ink : BETA.border}`, background: i === 0 ? BETA.ink : BETA.surface, color: i === 0 ? BETA.surface : BETA.ink }}>
+                              V{h.version}<span className="sr"> {dayMonthYear(h.uploadedOn)}{i === 0 ? ", current" : ""}</span>
                             </button>
                           </li>
                         ))}
