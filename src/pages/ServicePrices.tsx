@@ -27,6 +27,8 @@ export interface ServiceItem {
 }
 interface ListPayload {
   ready: boolean; mayEdit: boolean; mayPrice: boolean; today: string; layouts: string[]; uoms: string[]; cleanTypes: string[];
+  /** The unit Types' names, staff-kept since 0147 (functions/_lib/layoutTypes.ts). */
+  layoutLabels?: Record<string, string>;
   categories: Record<Domain, string[]>; items: ServiceItem[];
 }
 interface Detail extends ServiceItem {
@@ -75,6 +77,9 @@ export function ServicePrices({ domain, above, onChanged }: { domain?: Domain; a
   const [creating, setCreating] = useState(false);
   const [importing, setImporting] = useState(false);
   const d = list.data;
+  // Types staff added on the Units screen are named by the server. The fixed names only ever gain keys, so every
+  // component that reads LAYOUT_LABEL sees them. 'all' keeps its own name here.
+  if (d?.layoutLabels) for (const [k, v] of Object.entries(d.layoutLabels)) if (k !== 'all') LAYOUT_LABEL[k] = v;
   const items = useMemo(() => (d?.items ?? []).filter(i => (showRetired || i.active) && (domain || type === 'all' || i.domain === type)), [d, showRetired, type, domain]);
   const layouts = d?.layouts ?? [];
 

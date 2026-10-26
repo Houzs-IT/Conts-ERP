@@ -4,7 +4,7 @@ import { MYT_DATE, SHEET_CLEANER, hhmm, linenSet, resolveUnit, rosterByIds, pick
 import { checkDate, invalid, type Fields } from '../../_lib/validate';
 import { cleaningNotice } from '../../_lib/notices';
 import { hasCleanPrices, cleanAmounts, layoutKey } from '../../_lib/cleaningPrices';
-import { hasServicePrices, serviceBook, GRID_LAYOUTS } from '../../_lib/servicePrices';
+import { hasServicePrices, serviceBook, layoutGrid } from '../../_lib/servicePrices';
 import { taskCleanersReady, mineSql, mineArgs, cleanerListSql, parseCleaners, writeTaskCleaners, rosterIdSql } from '../../_lib/taskCleaners';
 
 /** The three cleaning kinds a manual task may be. Inspection/maintenance/delivery
@@ -155,7 +155,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const picked = b?.serviceItemId;
     if (picked != null && picked !== 'other' && !book.items.some(i => i.id === picked && i.domain === 'cleaning' && i.active)) return fail('NOT_FOUND', 'That cleaning item is not on the price list.', 404, { serviceItemId: 'Pick a cleaning item, or Other.' });
     const item = picked === 'other' ? null : picked ? book.items.find(i => i.id === picked)! : book.itemForKind(kind);
-    if (b?.layout != null && !(GRID_LAYOUTS as readonly string[]).includes(b.layout)) return fail('VALIDATION', 'Pick the layout.', 422, { layout: 'Pick the layout.' });
+    if (b?.layout != null && !(await layoutGrid(env)).keys.includes(b.layout)) return fail('VALIDATION', 'Pick the layout.', 422, { layout: 'Pick the layout.' });
     let layout = typeof b?.layout === 'string' ? b.layout : 'other';
     if (unit) {
       const u = await one<{ layout_type: string | null; bedrooms: number | null }>(env, 'SELECT * FROM units WHERE id = ?', unit.id);

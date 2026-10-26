@@ -1,7 +1,7 @@
 import { type Env, all, one, run, json, fail, audit, nowIso, mytToday } from '../../../_lib/db';
 import { requireSession, isFieldRole } from '../../../_lib/auth';
 import { mayWork } from '../../../_lib/access';
-import { DOMAINS, CATEGORIES, UOMS, CLEAN_TYPES, GRID_LAYOUTS, hasServicePrices, itemView, loadPrices, checkItem, checkPriceRows, writePrices, ITEM_WRITERS } from '../../../_lib/servicePrices';
+import { DOMAINS, CATEGORIES, UOMS, CLEAN_TYPES, hasServicePrices, itemView, loadPrices, checkItem, checkPriceRows, writePrices, layoutGrid, ITEM_WRITERS } from '../../../_lib/servicePrices';
 
 /** GET /api/operations/service-prices?domain= — the service item list (cleaning and maintenance) with, per item, the
  *  owner price and internal cost in force today (per layout for an item priced by layout) and the next scheduled change.
@@ -10,13 +10,14 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
   if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Only the office sees service prices.', 403);
-  const meta = { domains: DOMAINS, categories: CATEGORIES, uoms: UOMS, cleanTypes: CLEAN_TYPES, layouts: GRID_LAYOUTS, today: mytToday() };
+  const grid = await layoutGrid(env);
+  const meta = { domains: DOMAINS, categories: CATEGORIES, uoms: UOMS, cleanTypes: CLEAN_TYPES, layouts: grid.keys, layoutLabels: grid.labels, today: mytToday() };
   if (!(await hasServicePrices(env))) return json({ ready: false, ...meta, items: [], mayEdit: false, mayPrice: false });
   const domain = new URL(request.url).searchParams.get('domain');
   const items = await all<any>(env, `SELECT * FROM service_items ${domain && (DOMAINS as readonly string[]).includes(domain) ? 'WHERE domain = ?' : ''} ORDER BY domain, active DESC, code`, ...(domain ? [domain] : []));
   const prices = await loadPrices(env);
   return json({ ready: true, ...meta, mayEdit: !!session.manage || mayWork(session, ITEM_WRITERS), mayPrice: !!session.manage,
-    items: items.map(i => itemView(i, prices.get(i.id) ?? [], meta.today)) });
+    items: items.map(i => itemView(i, prices.get(i.id) ?? [], meta.today, grid)) });
 };
 
 /** POST /api/operations/service-prices { code, name, domain, category, uom, cleanKind?, byLayout, notes?, prices?: { effectiveFrom, rows: [{ layout, ownerPrice, internalCost }] } }
@@ -35,7 +36,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   let priceRows: ReturnType<typeof checkPriceRows> | null = null;
   if (b.prices) {
     if (!session.manage) return fail('FORBIDDEN', 'Only management sets prices.', 403);
-    priceRows = checkPriceRows(b.prices, !!b.byLayout);
+    priceRows = checkPriceRows(b.prices, !!b.byLayout, await layoutGrid(env));
     if ('error' in priceRows) return priceRows.error;
   }
   const id = crypto.randomUUID(), now = nowIso();

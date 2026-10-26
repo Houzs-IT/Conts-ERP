@@ -39,7 +39,7 @@ import {
   mayEditUnits, STATES, layoutFromBedrooms,
   type Unit, type Building, type PropertiesPayload, type UnitDetail, type RosterRow,
 } from './units/shared';
-import { statusLabel } from '../lib/status';
+import { statusLabel, statusOf, TONE_STYLE } from '../lib/status';
 import { PnlTable } from './units/PnlTable';
 import { stayPhase, stayWho } from '../lib/bookingStatus';
 
@@ -97,6 +97,8 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
   const [modal, setModal] = useState<Modal>(null);
   const [treeOpen, setTreeOpen] = useState(!unitId);
   const [saving, setSaving] = useState(false);
+  const [saveFailed, setSaveFailed] = useState(false);
+  const inFlight = useRef(false);
   const [dialog, ask] = useConfirm();
   // The open tab lives in the address (?tab=), so a link or a reload lands on the same tab.
   const tabParam = params.get('tab');
@@ -141,8 +143,9 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
   const dirty = !!form && !!edits[form.id];
 
   // Every write waits for the server; a refused save leaves the edits in place to correct and save again.
-  async function save(endContract = false): Promise<void> {
-    if (!form) return;
+  async function save(endContract = false, quiet = false): Promise<void> {
+    if (!form || inFlight.current) return;
+    const sent = edits[form.id];
     const before = original.find(u => u.id === form.id);
     // The contract is saved on its own tab (PUT /units/:id/contract); never sent from here, so an older copy in
     // this form cannot overwrite it.
@@ -161,23 +164,37 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
       ...(changed('parkingBays') ? { parkingBays: (parkingBays ?? []).map(b => ({ lotNumber: b.lotNumber, level: b.level, note: b.note })) } : {}),
       ...(endContract ? { endContract: true } : {}),
     };
-    setSaving(true);
+    setSaving(true); inFlight.current = true;
     let retry = false;
     try {
       await api.patch(`/units/${form.id}`, body);
-      toast({ tone: 'success', title: 'Changes saved.', body: `${form.listingName || form.unitCode} updated.` });
-      setEdits(e => { const n = { ...e }; delete n[form.id]; return n; });
+      if (!quiet) toast({ tone: 'success', title: 'Changes saved.', body: `${form.listingName || form.unitCode} updated.` });
+      // Only what was sent is cleared: a box changed while this save was on its way stays, to be saved next.
+      setEdits(e => { if (e[form.id] !== sent) return e; const n = { ...e }; delete n[form.id]; return n; });
+      setSaveFailed(false);
       reloadAll();
     } catch (e) {
+      setSaveFailed(true);
       // A new purpose the contract does not fit: say so, and on a yes end the contract and save again.
       if (e instanceof ApiFailure && e.code === 'CONTRACT_MISMATCH' && !endContract) {
         retry = (await ask({ title: 'End the current contract?', body: e.message, meta: 'The ended contract stays in the contract history of the unit.',
           confirmLabel: 'End contract and save', cancelLabel: 'Keep it', danger: true })) !== null;
       } else notifyFailure(e);
     }
-    finally { setSaving(false); }
-    if (retry) await save(true);
+    finally { setSaving(false); inFlight.current = false; }
+    if (retry) await save(true, quiet);
   }
+  // The Details tab saves itself when a box is left (staff sheet UNIT, 26 Oct 2026). A car park bay with no lot number
+  // waits until it has one; a refused save waits for Save again, so the same error is not shown on every box.
+  function autoSave() {
+    if (!form || !dirty || inFlight.current || saveFailed) return;
+    if ((form.parkingBays ?? []).some(b => !b.lotNumber.trim())) return;
+    void save(false, true);
+  }
+  // A box changed while a save was on its way is saved as soon as that save is back.
+  useEffect(() => { if (!saving) autoSave(); }, [saving]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Another unit starts clean.
+  useEffect(() => setSaveFailed(false), [openId]);
   // Delete only a unit added by mistake; anything with history is refused and offered Blocked instead.
   async function deleteUnit() {
     if (!form) return;
@@ -345,7 +362,7 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
             detail.error ? <Card><div className="p-10 text-center text-muted-ink text-copy">{detail.error}</div></Card> : <RecordSkeleton />
           ) : (
             <UnitRecord d={d} form={form} buildings={buildings} building={building} unitLabel={unitLabel}
-              tab={tab} setTab={setTab} canEdit={canEdit} dirty={dirty} saving={saving} onSave={() => void save()} onDelete={() => void deleteUnit()}
+              tab={tab} setTab={setTab} canEdit={canEdit} dirty={dirty} saving={saving} saveFailed={saveFailed} onSave={() => { setSaveFailed(false); void save(false, true); }} onAutoSave={autoSave} onDelete={() => void deleteUnit()}
               onChange={p => form && patch(form.id, p)} reload={reloadAll} reloadDetail={detail.reload}
               readiness={readiness[d.unit.id] ?? d.unit.readiness}
               setReadiness={(id, r) => setReadinessEdits(m => { const n = { ...m }; if (r) n[id] = r; else delete n[id]; return n; })} />
@@ -360,12 +377,12 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
 
 interface RecordProps {
   d: UnitDetail; form: Unit | null; buildings: Building[]; building: Building | undefined; unitLabel: string;
-  tab: Tab; setTab: (t: Tab) => void; canEdit: boolean; dirty: boolean; saving: boolean; onSave: () => void; onDelete: () => void;
+  tab: Tab; setTab: (t: Tab) => void; canEdit: boolean; dirty: boolean; saving: boolean; saveFailed: boolean; onSave: () => void; onAutoSave: () => void; onDelete: () => void;
   onChange: (p: Partial<Unit>) => void; reload: () => void; reloadDetail: () => void;
   readiness: UnitReadiness; setReadiness: (id: string, r: UnitReadiness | null) => void;
 }
 
-function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canEdit, dirty, saving, onSave, onDelete, onChange, reload, reloadDetail, readiness, setReadiness }: RecordProps) {
+function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canEdit, dirty, saving, saveFailed, onSave, onAutoSave, onDelete, onChange, reload, reloadDetail, readiness, setReadiness }: RecordProps) {
   const toast = useToast();
   const { user } = useSession();
   // Same people as edit the unit's master data (the server's channex-setup / channex-connect).
@@ -444,10 +461,12 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
             <span className="text-copy text-muted-ink">{form?.address || `${u.addressLine}, ${u.city}`}</span>
             <div className="flex items-center gap-3 flex-wrap">
               {/* One control for the state; the dot keeps its colour. A native select, so the list is never clipped by the card. */}
-              <span className="inline-flex items-center gap-2" title="Change the unit state">
+              {/* Each state has its colour (staff sheet UNIT): the box takes the current one, the list shows each row in its own. */}
+              <span className="inline-flex items-center gap-2 [&_select]:[border-color:var(--tone)] [&_select]:[box-shadow:inset_3px_0_0_var(--tone)]" title="Change the unit state"
+                style={{ ['--tone' as string]: TONE_STYLE[statusOf('readiness', readiness).tone].line }}>
                 <StatusDot entity="readiness" value={readiness} />
                 <Select label="Status" className="w-[150px]" value={readiness} onChange={v => changeReadiness(v as UnitReadiness)}
-                  options={READINESS_OPTIONS.map(r => ({ value: r, label: statusLabel('readiness', r) }))} />
+                  options={READINESS_OPTIONS.map(r => ({ value: r, label: statusLabel('readiness', r), color: TONE_STYLE[statusOf('readiness', r).tone].fg }))} />
               </span>
               {form?.parentUnitId && <StatusBadge tone="warning" label="Sub-unit" />}
               <PurposeBadge purpose={u.purpose} />
@@ -524,9 +543,12 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
       {stacked && on('details') && <h3 className="m-0 mt-2 text-heading font-semibold">Details and owner</h3>}
       {on('details') && (form ? (
         <Card>
-          <SaveBar title="Details & owner" sub="Listing name, purpose, layout, beds, car park, owner and income model." dirty={dirty} saving={saving} canEdit={canEdit} onSave={onSave}
+          <SaveBar title="Details & owner" sub="Listing name, purpose, type, beds, car park, owner and income model." dirty={dirty} saving={saving} canEdit={canEdit} onSave={onSave}
+            auto failed={saveFailed}
             extra={canEdit ? <Button size="sm" variant="tertiary" icon={<Icon name="Trash2" size="sm" />} onClick={onDelete}>Delete unit</Button> : undefined} />
-          <DetailsForm u={form} owner={u.owner} buildings={buildings} canEdit={canEdit} onChange={onChange} onOpenContract={() => setTab('contract')} />
+          <div onBlur={onAutoSave}>
+            <DetailsForm u={form} owner={u.owner} buildings={buildings} canEdit={canEdit} onChange={onChange} onOpenContract={() => setTab('contract')} />
+          </div>
         </Card>
       ) : needsForm)}
 
@@ -540,7 +562,7 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
         </>)}
 
       {stacked && on('access') && <h3 className="m-0 mt-2 text-heading font-semibold">Access and keys</h3>}
-      {on('access') && <AccessTab key={u.id} unitId={u.id} unitLabel={unitLabel} parking={form?.parkingLabel} />}
+      {on('access') && <AccessTab key={u.id} unitId={u.id} unitLabel={unitLabel} parking={form?.parkingLabel} fullAccessCard={building?.fullAccessCard} />}
 
       {stacked && on('reservations') && <h3 className="m-0 mt-2 text-heading font-semibold">Reservations</h3>}
       {on('reservations') && <BookingsTab key={u.id} unitId={u.id} />}

@@ -5,6 +5,8 @@ import { cx } from '../lib/design-tokens';
 
 export interface SelectOption {
   value: string; label: string; group?: string; hint?: string; disabled?: boolean;
+  /** The native list's text colour for this row, e.g. a status colour (browsers that do not colour options ignore it). */
+  color?: string;
   /** Extra words the search matches but the row never shows, e.g. a country's letter code (MY). */
   keywords?: string;
 }
@@ -34,8 +36,8 @@ export function Select({ value, onChange, options, label, showLabel, placeholder
           className={cx(CONTROL, 'w-full appearance-none pl-3 pr-8 truncate disabled:cursor-not-allowed disabled:text-faint', size === 'md' && 'h-10')}>
           {placeholder !== undefined && <option value="">{placeholder}</option>}
           {groups.map(([g, opts]) => g
-            ? <optgroup key={g} label={g}>{opts.map(o => <option key={o.value} value={o.value} disabled={o.disabled}>{o.label}</option>)}</optgroup>
-            : opts.map(o => <option key={o.value} value={o.value} disabled={o.disabled}>{o.label}</option>))}
+            ? <optgroup key={g} label={g}>{opts.map(o => <option key={o.value} value={o.value} disabled={o.disabled} style={o.color ? { color: o.color } : undefined}>{o.label}</option>)}</optgroup>
+            : opts.map(o => <option key={o.value} value={o.value} disabled={o.disabled} style={o.color ? { color: o.color } : undefined}>{o.label}</option>))}
         </select>
         <Icon name="ChevronDown" size="sm" color="var(--color-muted-ink)" style={{ position: 'absolute', right: 10, pointerEvents: 'none' }} />
       </div>

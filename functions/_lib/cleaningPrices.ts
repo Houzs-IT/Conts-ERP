@@ -11,9 +11,10 @@ export const LAYOUTS = ['studio', '1_bedroom', '2_bedroom', '3_bedroom', '4_plus
 /** Migration 0126. Without it there are no price tables and no external jobs. */
 export const hasCleanPrices = (env: Env) => hasColumn(env, 'tasks', 'amount').catch(() => false);
 
-/** The price-table row a unit falls in: its layout type, else its bedrooms (0 studio, 4 or more 4+), else Other. */
+/** The price-table row a unit falls in: its Type, else its bedrooms (0 studio, 4 or more 4+), else Other. Any Type the
+ *  database holds is valid (staff keep the list since 0147); one not priced yet shows as price not set. */
 export function layoutKey(layoutType: unknown, bedrooms: unknown): string {
-  if (typeof layoutType === 'string' && (LAYOUTS as readonly string[]).includes(layoutType)) return layoutType;
+  if (typeof layoutType === 'string' && layoutType.trim()) return layoutType;
   const n = bedrooms == null || bedrooms === '' ? NaN : Number(bedrooms);
   if (!Number.isFinite(n)) return 'other';
   return n <= 0 ? 'studio' : n >= 4 ? '4_plus_bedroom' : `${n}_bedroom`;

@@ -2,6 +2,7 @@ import { mayRun } from '../../lib/areaAccess';
 import type { SessionUser } from '../../lib/types';
 import { useEffect, useRef, type ReactNode } from 'react';
 import { cx } from '../../lib/design-tokens';
+import { useApi } from '../../lib/useApi';
 import { Select as UiSelect } from '../../components/Select';
 import type { UnitReadiness, TaskState, BookingChannel, ReservationState } from '../../lib/types';
 import type { RevenueModel, ContractCode, UnitPurpose } from '../../lib/revenueModel';
@@ -22,8 +23,17 @@ export const LAYOUTS = [
   ['studio', 'Studio'], ['1_bedroom', '1 bedroom'], ['2_bedroom', '2 bedroom'], ['3_bedroom', '3 bedroom'], ['4_plus_bedroom', '4+ bedroom'],
   ['duplex', 'Duplex'], ['dual_key', 'Dual key'], ['penthouse', 'Penthouse'], ['other', 'Other'],
 ] as const;
-export type LayoutType = typeof LAYOUTS[number][0];
+/** A unit Type key. Staff add their own since 0147 (GET /api/unit-layout-types); LAYOUTS is the list before that. */
+export type LayoutType = string;
 export const layoutLabel = (t: string | null | undefined) => LAYOUTS.find(([k]) => k === t)?.[1] ?? null;
+
+export interface LayoutTypeOption { key: string; label: string; sortOrder: number; isActive: boolean }
+export interface LayoutTypesPayload { ready: boolean; mayEdit: boolean; data: LayoutTypeOption[] }
+const LAYOUT_TYPES_FALLBACK: LayoutTypesPayload = {
+  ready: false, mayEdit: false, data: LAYOUTS.map(([key, label], n) => ({ key, label, sortOrder: (n + 1) * 10, isActive: true })),
+};
+/** The unit Type list, hidden types too (a unit may still have one). */
+export const useLayoutTypes = (on = true) => useApi<LayoutTypesPayload>(on ? '/unit-layout-types' : null, LAYOUT_TYPES_FALLBACK);
 /** The layout a unit with this many bedrooms most likely has, to pre-fill an empty Layout type. */
 export const layoutFromBedrooms = (n: number | null | undefined): LayoutType | null =>
   n == null ? null : n <= 0 ? 'studio' : n === 1 ? '1_bedroom' : n === 2 ? '2_bedroom' : n === 3 ? '3_bedroom' : '4_plus_bedroom';
@@ -67,7 +77,11 @@ export interface Unit {
 }
 export interface Bed { size: string; quantity: number }
 export interface Bay { id?: string; lotNumber: string; level: string | null; note: string | null }
-export interface Building { id: string; name: string; city: string; state: string }
+export interface Building {
+  id: string; name: string; city: string; state: string;
+  /** Migration 0147: the building's card alone opens the lobby, lift and car park. */
+  fullAccessCard?: boolean;
+}
 export interface PropertiesPayload { buildings: Building[]; units: Unit[]; generatedAt: string }
 
 /* ---- GET /api/units/detail: the record for one unit ---- */

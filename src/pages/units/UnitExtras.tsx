@@ -53,17 +53,17 @@ export function BedsEditor({ beds, onChange, disabled }: { beds: Bed[]; onChange
   );
 }
 
-/** Any number of car park bays: lot number (required), level and a note. */
+/** Any number of car park bays: level, lot number (required) and a note, in the order they are read: LEVEL 5-100A (Tandem). */
 export function BaysEditor({ bays, onChange, disabled }: { bays: Bay[]; onChange: (b: Bay[]) => void; disabled?: boolean }) {
   const set = (i: number, p: Partial<Bay>) => onChange(bays.map((x, j) => (j === i ? { ...x, ...p } : x)));
   return (
     <div className="flex flex-col gap-2 min-w-0">
       {bays.length === 0 && <span className="text-copy text-muted-ink">No car park bays recorded.</span>}
       {bays.map((b, i) => (
-        <div key={b.id ?? `new-${i}`} className="grid grid-cols-[minmax(0,1fr)_minmax(0,0.7fr)_36px] sm:grid-cols-[minmax(0,1fr)_minmax(0,0.7fr)_minmax(0,1.4fr)_36px] items-start gap-2 min-w-0">
-          <Field aria-label={`Bay ${i + 1} lot number`} placeholder="Lot no., e.g. L2-105" value={b.lotNumber} maxLength={40}
+        <div key={b.id ?? `new-${i}`} className="grid grid-cols-[minmax(0,0.7fr)_minmax(0,1fr)_36px] sm:grid-cols-[minmax(0,0.7fr)_minmax(0,1fr)_minmax(0,1.4fr)_36px] items-start gap-2 min-w-0">
+          <Field aria-label={`Bay ${i + 1} level`} placeholder="Level, e.g. 5" value={b.level ?? ''} maxLength={40} onChange={e => set(i, { level: e.target.value })} />
+          <Field aria-label={`Bay ${i + 1} lot number`} placeholder="Lot no., e.g. 100A" value={b.lotNumber} maxLength={40}
             error={!b.lotNumber.trim() ? 'Enter the lot number.' : undefined} onChange={e => set(i, { lotNumber: e.target.value })} />
-          <Field aria-label={`Bay ${i + 1} level`} placeholder="Level" value={b.level ?? ''} maxLength={40} onChange={e => set(i, { level: e.target.value })} />
           <span className="max-sm:hidden"><Field aria-label={`Bay ${i + 1} note`} placeholder="Note (optional)" value={b.note ?? ''} maxLength={200} onChange={e => set(i, { note: e.target.value })} /></span>
           <button type="button" aria-label={`Remove bay ${b.lotNumber || i + 1}`} disabled={disabled} className={removeBtn}
             onClick={() => onChange(bays.filter((_, j) => j !== i))}><Icon name="X" size="sm" /></button>
