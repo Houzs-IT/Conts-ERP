@@ -7,7 +7,9 @@ import { useOverrides } from './useOverrides';
 import { FigureContext, FigureEditor, PropertyDropdown, DateRangePicker } from './parts';
 import { CalendarScreen } from './CalendarScreen';
 import { TodayScreen, ListingsScreen, ReviewsScreen, OccupancyScreen, LeadScreen, ViewsScreen } from './screens';
+import { useSwitch, SwitchButton, CurtainLayer } from './Switch';
 import './showcase.css';
+import './owner-portal.css';
 
 const PAGES = [['today', 'Today'], ['list', 'Listings'], ['cal', 'Calendar'], ['rev', 'Reviews'], ['occ', 'Occupancy'], ['lead', 'Lead Time'], ['views', 'Page Views']] as const;
 type Page = typeof PAGES[number][0];
@@ -42,6 +44,7 @@ export default function OwnerShowcasePage() {
   const ins = useApi<Insights>(FILTERED.includes(page) ? `/showcase/insights?from=${from}&to=${to}${one ? `&unitId=${prop}` : ''}` : null);
   const ovs = useOverrides(data?.overrides);
   const { reload } = main;
+  const sw = useSwitch('/performance/showcase/owner', { from: 'Portfolio', to: 'Owner', sub: 'Tan Wei Ming · 3 units' });
 
   useEffect(() => {
     document.title = 'Owner Showcase · The Conts';
@@ -102,6 +105,7 @@ export default function OwnerShowcasePage() {
           <div className="sc-head-right">
             {data && <div className="sc-sync"><span className="sc-dot" />Synced with Airbnb · {time(data.generatedAt)}</div>}
             {edit && <span className="sc-edit-pill">Edit mode · {activeCount(ovs.ov)} {activeCount(ovs.ov) === 1 ? 'override' : 'overrides'}</span>}
+            {!edit && <SwitchButton current="Portfolio" next="Owner" rolled={sw.rolled} onClick={sw.go} />}
             {!edit && <button type="button" className="sc-exit" onClick={exit} aria-label="Exit the showcase">✕ Exit</button>}
           </div>
         </header>
@@ -144,6 +148,7 @@ export default function OwnerShowcasePage() {
             onLive={() => { if (ovs.ov[editor.k]) void ovs.setActive(editor.k, false); setEditor(null); }}
             onEdit={() => setEditor({ ...editor, mode: 'edit' })} />
         )}
+        <CurtainLayer curtain={sw.curtain} />
       </div>
     </FigureContext.Provider>
   );
