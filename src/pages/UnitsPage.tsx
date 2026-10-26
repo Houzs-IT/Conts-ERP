@@ -148,7 +148,8 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
     // this form cannot overwrite it.
     // Owner and payout details belong to the owner and are edited on the owner's page; the old monthly costs list and
     // the cleaning price are saved on the Financials tab. None of them is sent from this form.
-    const { baseRate, contract: _contract, revenueModel: _model, termsLabel: _terms, ownerName: _on, ic: _ic, bankName: _bn, bankAccount: _ba,
+    // The nightly price is set on the Pricing page (PUT /rates), never from this form.
+    const { baseRate: _rate, contract: _contract, revenueModel: _model, termsLabel: _terms, ownerName: _on, ic: _ic, bankName: _bn, bankAccount: _ba,
       accountHolder: _ah, expenses: _ex, cleaningPrice: _cp, deepCleaningPrice: _dcp, bedsLabel: _bl, parkingLabel: _pl, contractCode: _cc, ownerId, ...rest } = form;
     // An empty layout takes the one proposed from the bedrooms, as the form shows it.
     // The purpose, beds and bays go only when changed: a database without migration 0125 never sees them.
@@ -164,9 +165,6 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
     let retry = false;
     try {
       await api.patch(`/units/${form.id}`, body);
-      // The base rate has its own endpoint because changing it re-sends prices to linked channels. A showroom or
-      // warehouse has no nightly price.
-      if (baseRate !== undefined && baseRate !== before?.baseRate && (purpose ?? 'rental') === 'rental') await api.put('/rates', { unitId: form.id, baseRate });
       toast({ tone: 'success', title: 'Changes saved.', body: `${form.listingName || form.unitCode} updated.` });
       setEdits(e => { const n = { ...e }; delete n[form.id]; return n; });
       reloadAll();
@@ -528,7 +526,7 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
         <Card>
           <SaveBar title="Details & owner" sub="Listing name, purpose, layout, beds, car park, owner and income model." dirty={dirty} saving={saving} canEdit={canEdit} onSave={onSave}
             extra={canEdit ? <Button size="sm" variant="tertiary" icon={<Icon name="Trash2" size="sm" />} onClick={onDelete}>Delete unit</Button> : undefined} />
-          <DetailsForm u={form} owner={u.owner} buildings={buildings} money={money} canEdit={canEdit} onChange={onChange} onOpenContract={() => setTab('contract')} />
+          <DetailsForm u={form} owner={u.owner} buildings={buildings} canEdit={canEdit} onChange={onChange} onOpenContract={() => setTab('contract')} />
         </Card>
       ) : needsForm)}
 

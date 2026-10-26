@@ -12,10 +12,15 @@ import { Select, type Bed, type Bay } from './shared';
 const BED_LABEL = Object.fromEntries(BED_SIZES.map(b => [b.value, b.label]));
 /** "1 King · 2 Single", as the server writes it. */
 export const bedsText = (beds: Bed[] | undefined) => (beds ?? []).map(b => `${b.quantity} ${BED_LABEL[b.size] ?? b.size}`).join(' · ');
-/** "2 bays: L2-105, L2-106". */
+/** "LEVEL 5-100 (Tandem)", as the server writes it (bayLabel in functions/_lib/unitPurpose.ts). */
+const bayText = (b: Bay) => {
+  const lot = b.lotNumber.trim(), level = b.level?.trim().replace(/^(level|lvl|l)\s*(?=\d)/i, ''), note = b.note?.trim();
+  return `${level ? `LEVEL ${level}-${lot}` : lot}${note ? ` (${note})` : ''}`;
+};
+/** "2 bays: LEVEL 2-105, LEVEL 2-106". */
 export const baysText = (bays: Bay[] | undefined) => {
   const l = (bays ?? []).filter(b => b.lotNumber.trim());
-  return l.length ? `${l.length} ${l.length === 1 ? 'bay' : 'bays'}: ${l.map(b => (b.level?.trim() ? `${b.lotNumber.trim()} (${b.level.trim()})` : b.lotNumber.trim())).join(', ')}` : '';
+  return l.length ? `${l.length} ${l.length === 1 ? 'bay' : 'bays'}: ${l.map(bayText).join(', ')}` : '';
 };
 
 const removeBtn = 'grid place-items-center w-9 h-9 flex-none rounded-control bg-card border border-solid border-line cursor-pointer text-muted-ink hover:text-ink disabled:cursor-default disabled:opacity-50';

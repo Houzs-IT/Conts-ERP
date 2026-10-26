@@ -3,7 +3,7 @@ import { DataTable, type Column } from '../../components/DataTable';
 import { Button } from '../../components/Button';
 import { ConfirmButton } from '../../components/ConfirmDialog';
 import { Field } from '../../components/Field';
-import { MoneyInput, NumberInput } from '../../components/inputs';
+import { NumberInput } from '../../components/inputs';
 import Icon from '../../components/Icon';
 import { Card } from '../../components/Card';
 import { FileDropRow } from '../../components/Attachments';
@@ -53,7 +53,7 @@ export function SaveBar({ title, sub, dirty, saving, canEdit, onSave, extra }: {
   );
 }
 
-export function DetailsForm({ u, owner, buildings, money, canEdit, onChange, onOpenContract }: { u: Unit; owner: { id: string; name: string; email?: string | null; phone?: string | null; address?: OwnerAddress | null }; buildings: Building[]; money: boolean; canEdit: boolean; onChange: Change; onOpenContract?: () => void }) {
+export function DetailsForm({ u, owner, buildings, canEdit, onChange, onOpenContract }: { u: Unit; owner: { id: string; name: string; email?: string | null; phone?: string | null; address?: OwnerAddress | null }; buildings: Building[]; canEdit: boolean; onChange: Change; onOpenContract?: () => void }) {
   const building = buildings.find(b => b.id === u.buildingId);
   const { owners } = useOwnerOptions(canEdit);
   const ownerId = u.ownerId ?? owner.id;
@@ -86,12 +86,7 @@ export function DetailsForm({ u, owner, buildings, money, canEdit, onChange, onO
         <Labeled label="Address" span2>
           <Field label="" aria-label="Address" value={u.address} onChange={e => onChange({ address: e.target.value })} />
         </Labeled>
-        {money && u.baseRate !== undefined && (u.purpose ?? 'rental') === 'rental' && (
-          <Labeled label="Nightly price (RM)" help="The price of one night before each channel's markup. Saving it sends new prices to the linked channels.">
-            <MoneyInput label="" aria-label="Nightly price" minSen={100} valueSen={u.baseRate}
-              onChangeSen={sen => onChange({ baseRate: sen ?? 0 })} />
-          </Labeled>
-        )}
+        {/* The nightly price is set on the Pricing page only (staff sheet UNIT, 23 Oct 2026). */}
       </Grid3>
 
       <SectionHead>What the unit is for</SectionHead>
