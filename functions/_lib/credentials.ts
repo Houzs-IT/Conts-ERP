@@ -10,13 +10,13 @@ export const CREDENTIAL_KINDS = [
   'smart_lock', 'key_box', 'guard_desk',
 ];
 
-/** Who an access item may be handed to. Every item starts with all five (migration 0147). */
+/** Who an access item may be handed to. Every item starts with all five (migration 0161). */
 export const CREDENTIAL_USERS = ['maintenance', 'cleaner', 'guest', 'sales', 'management'] as const;
 export type CredentialUser = typeof CREDENTIAL_USERS[number];
 
 export const usedByReady = (env: Env): Promise<boolean> => hasColumn(env, 'access_credentials', 'used_by').catch(() => false);
 
-/** ` AND <alias>.used_by @> '["who"]'::jsonb` once migration 0147 is in, else ''. No `?` here: the db helpers turn every `?` into a parameter. */
+/** ` AND <alias>.used_by @> '["who"]'::jsonb` once migration 0161 is in, else ''. No `?` here: the db helpers turn every `?` into a parameter. */
 export async function usedBySql(env: Env, alias: string, who: CredentialUser): Promise<string> {
   return (await usedByReady(env)) ? ` AND ${alias}.used_by @> '["${who}"]'::jsonb` : '';
 }

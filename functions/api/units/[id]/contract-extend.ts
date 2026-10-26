@@ -50,7 +50,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   const shared = Number((await one<{ n: number }>(env, 'SELECT COUNT(*) AS n FROM units WHERE contract_id = ? AND id <> ?', cur.id, id))?.n ?? 0) > 0;
   const newId = crypto.randomUUID(), now = nowIso();
   // Same terms, new period. The guarantee window of the old period does not carry over. The rent-to-rent deposits and
-  // rent-out figures (0147) carry over where the database has them.
+  // rent-out figures (0161) carry over where the database has them.
   const r2r = (await hasColumn(env, 'owner_contracts', 'rent_out_amount')) ? Object.values(RENT_TO_RENT).map(k => `, ${k}`).join('') : '';
   await run(env, `
     INSERT INTO owner_contracts (id, owner_id, unit_id, created_at, starts_on, ends_on, renews_on, agreement_document_id, contract_code,

@@ -16,7 +16,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   // Owner identity and bank numbers are shown only to roles that manage them.
   const banking = session.manage || can(session, 'finance', 'view');
 
-  // full_access_card is migration 0147.
+  // full_access_card is migration 0161.
   const card = (await hasColumn(env, 'properties', 'full_access_card').catch(() => false)) ? 'full_access_card' : 'false AS full_access_card';
   const [buildings, units, expenses, docs, { defaultFeePct }, extras] = await Promise.all([
     all<any>(env, `SELECT id, name, city, state, postcode, ${card} FROM properties ORDER BY state, name`),

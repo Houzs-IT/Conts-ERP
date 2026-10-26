@@ -27,7 +27,7 @@ export interface ServiceItem {
 }
 interface ListPayload {
   ready: boolean; mayEdit: boolean; mayPrice: boolean; today: string; layouts: string[]; uoms: string[]; cleanTypes: string[];
-  /** The unit Types' names, staff-kept since 0147 (functions/_lib/layoutTypes.ts). */
+  /** The unit Types' names, staff-kept since 0161 (functions/_lib/layoutTypes.ts). */
   layoutLabels?: Record<string, string>;
   categories: Record<Domain, string[]>; items: ServiceItem[];
 }

@@ -31,10 +31,10 @@ interface ContractView {
   startsOn: string | null; endsOn: string | null; renewsOn: string | null; miscCharges: boolean; sharedWith: number; createdAt: string | null;
   /** MANAGE: the owner's amount a month, sen. */
   ownerAmount?: number | null;
-  /** Rent to rent (0147), recorded only. Sen or null. */
+  /** Rent to rent (0161), recorded only. Sen or null. */
   rentToRent?: Partial<Record<RentToRentKey, number | null>>;
 }
-/** The rent-to-rent grid beyond the rent and deposit (0147): what else we pay the owner, and what we rent it out for. */
+/** The rent-to-rent grid beyond the rent and deposit (0161): what else we pay the owner, and what we rent it out for. */
 const RENT_TO_RENT_KEYS = ['depositUtilities', 'depositCard', 'rentOutAmount', 'rentOutDeposit', 'rentOutDepositUtilities', 'rentOutDepositCard'] as const;
 export type RentToRentKey = typeof RENT_TO_RENT_KEYS[number];
 export interface Example {

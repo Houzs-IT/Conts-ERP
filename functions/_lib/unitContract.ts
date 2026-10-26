@@ -20,14 +20,14 @@ export interface ContractView {
   /** MANAGE: the owner's amount a month, sen; null on every other code. */
   ownerAmount: number | null;
   startsOn: string | null; endsOn: string | null; renewsOn: string | null; miscCharges: boolean;
-  /** Rent to rent (0147), recorded only: the other deposits we pay, and what we rent the unit out for. Sen or null. */
+  /** Rent to rent (0161), recorded only: the other deposits we pay, and what we rent the unit out for. Sen or null. */
   rentToRent: Record<RentToRentKey, number | null>;
   /** Other units on the same contract record (older agreements covered every unit of an owner). */
   sharedWith: number; createdAt: string | null;
 }
 
 const noRentToRent = (): Record<RentToRentKey, number | null> => Object.fromEntries(RENT_TO_RENT_KEYS.map(k => [k, null])) as Record<RentToRentKey, number | null>;
-/** The 0147 columns of a contract row; null where the row (or the database) has none. */
+/** The 0161 columns of a contract row; null where the row (or the database) has none. */
 const rentToRentOf = (c: Record<string, unknown>): Record<RentToRentKey, number | null> =>
   Object.fromEntries(RENT_TO_RENT_KEYS.map(k => [k, c[RENT_TO_RENT[k]] == null ? null : Number(c[RENT_TO_RENT[k]])])) as Record<RentToRentKey, number | null>;
 

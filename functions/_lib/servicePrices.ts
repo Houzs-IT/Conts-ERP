@@ -89,7 +89,7 @@ export async function loadPrices(env: Env): Promise<Map<string, (PriceRow & { no
   return out;
 }
 
-/** The grid's layout rows and their names: the active unit Types (0147), else the fixed list. */
+/** The grid's layout rows and their names: the active unit Types (0161), else the fixed list. */
 export interface Grid { keys: readonly string[]; labels: Record<string, string> }
 export const DEFAULT_GRID = (): Grid => ({ keys: GRID_LAYOUTS, labels: LABEL.layout });
 export async function layoutGrid(env: Env): Promise<Grid> {

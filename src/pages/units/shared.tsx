@@ -23,7 +23,7 @@ export const LAYOUTS = [
   ['studio', 'Studio'], ['1_bedroom', '1 bedroom'], ['2_bedroom', '2 bedroom'], ['3_bedroom', '3 bedroom'], ['4_plus_bedroom', '4+ bedroom'],
   ['duplex', 'Duplex'], ['dual_key', 'Dual key'], ['penthouse', 'Penthouse'], ['other', 'Other'],
 ] as const;
-/** A unit Type key. Staff add their own since 0147 (GET /api/unit-layout-types); LAYOUTS is the list before that. */
+/** A unit Type key. Staff add their own since 0161 (GET /api/unit-layout-types); LAYOUTS is the list before that. */
 export type LayoutType = string;
 export const layoutLabel = (t: string | null | undefined) => LAYOUTS.find(([k]) => k === t)?.[1] ?? null;
 
@@ -79,7 +79,7 @@ export interface Bed { size: string; quantity: number }
 export interface Bay { id?: string; lotNumber: string; level: string | null; note: string | null }
 export interface Building {
   id: string; name: string; city: string; state: string;
-  /** Migration 0147: the building's card alone opens the lobby, lift and car park. */
+  /** Migration 0161: the building's card alone opens the lobby, lift and car park. */
   fullAccessCard?: boolean;
 }
 export interface PropertiesPayload { buildings: Building[]; units: Unit[]; generatedAt: string }

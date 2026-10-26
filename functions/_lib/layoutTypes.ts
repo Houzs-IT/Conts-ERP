@@ -2,7 +2,7 @@ import { type Env, all } from './db';
 import { hasColumn } from './auth';
 
 /** The unit Type list (Studio, 1 bedroom, ...), kept by staff on the Units screen (staff sheet UNIT, 26 Oct 2026;
- *  migration 0147). Before 0147 it is the fixed list below, the one units.layout_type was checked against. The cleaning
+ *  migration 0161). Before 0161 it is the fixed list below, the one units.layout_type was checked against. The cleaning
  *  price grid has a row per active type (servicePrices.layoutGrid). */
 export interface LayoutTypeRow { key: string; label: string; sortOrder: number; isActive: boolean }
 

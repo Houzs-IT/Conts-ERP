@@ -64,12 +64,12 @@ export interface ContractDraft {
    *  management fee is this times the management %. How the statement pays it out is still open (PLAN-units-form.md Q6b). */
   ownerAmount?: number | null;
   startsOn?: string; endsOn?: string | null; renewsOn?: string | null; miscCharges?: boolean;
-  /** Rent to rent, recorded only (0147): the other deposits we pay the owner, and what we rent the unit out for. Sen. */
+  /** Rent to rent, recorded only (0161): the other deposits we pay the owner, and what we rent the unit out for. Sen. */
   depositUtilities?: number | null; depositCard?: number | null;
   rentOutAmount?: number | null; rentOutDeposit?: number | null; rentOutDepositUtilities?: number | null; rentOutDepositCard?: number | null;
 }
 
-/** The rent-to-rent grid's fields beyond the rent and deposit (0147), draft key to owner_contracts column. */
+/** The rent-to-rent grid's fields beyond the rent and deposit (0161), draft key to owner_contracts column. */
 export const RENT_TO_RENT = {
   depositUtilities: 'deposit_utilities', depositCard: 'deposit_card', rentOutAmount: 'rent_out_amount',
   rentOutDeposit: 'rent_out_deposit', rentOutDepositUtilities: 'rent_out_deposit_utilities', rentOutDepositCard: 'rent_out_deposit_card',
@@ -77,7 +77,7 @@ export const RENT_TO_RENT = {
 export type RentToRentKey = keyof typeof RENT_TO_RENT;
 export const RENT_TO_RENT_KEYS = Object.keys(RENT_TO_RENT) as RentToRentKey[];
 
-/** The 0147 columns for a draft: kept on a master lease, cleared on every other model. */
+/** The 0161 columns for a draft: kept on a master lease, cleared on every other model. */
 export function rentToRentColumns(d: ContractDraft): Record<(typeof RENT_TO_RENT)[RentToRentKey], number | null> {
   const lease = d.revenueModel === 'master_lease';
   return Object.fromEntries(RENT_TO_RENT_KEYS.map(k => [RENT_TO_RENT[k], lease ? d[k] ?? null : null])) as Record<(typeof RENT_TO_RENT)[RentToRentKey], number | null>;

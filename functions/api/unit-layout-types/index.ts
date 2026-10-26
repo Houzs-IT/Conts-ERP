@@ -4,7 +4,7 @@ import { maySee } from '../../_lib/access';
 import { layoutTypes, layoutTypesReady, layoutKeyOf } from '../../_lib/layoutTypes';
 
 /** GET /api/unit-layout-types — the unit Type list, hidden types too (staff sheet UNIT, 26 Oct 2026). `ready` is false
- *  before migration 0147: the fixed list is returned and it cannot be changed. */
+ *  before migration 0161: the fixed list is returned and it cannot be changed. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;

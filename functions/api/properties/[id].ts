@@ -2,7 +2,7 @@ import { type Env, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession, hasColumn } from '../../_lib/auth';
 
 /** PATCH /api/properties/:id { name, city, state, fullAccessCard? } — correct a building's name or location, and say
- *  whether its card alone opens the lobby, lift and car park (0147). */
+ *  whether its card alone opens the lobby, lift and car park (0161). */
 export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;

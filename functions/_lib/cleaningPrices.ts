@@ -12,7 +12,7 @@ export const LAYOUTS = ['studio', '1_bedroom', '2_bedroom', '3_bedroom', '4_plus
 export const hasCleanPrices = (env: Env) => hasColumn(env, 'tasks', 'amount').catch(() => false);
 
 /** The price-table row a unit falls in: its Type, else its bedrooms (0 studio, 4 or more 4+), else Other. Any Type the
- *  database holds is valid (staff keep the list since 0147); one not priced yet shows as price not set. */
+ *  database holds is valid (staff keep the list since 0161); one not priced yet shows as price not set. */
 export function layoutKey(layoutType: unknown, bedrooms: unknown): string {
   if (typeof layoutType === 'string' && layoutType.trim()) return layoutType;
   const n = bedrooms == null || bedrooms === '' ? NaN : Number(bedrooms);
