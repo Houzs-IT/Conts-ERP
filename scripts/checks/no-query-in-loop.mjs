@@ -42,6 +42,7 @@ export const allow = {
   'functions/_lib/channexSync.ts': `${BOUNDED}: at most three booking sites per unit.`,
   'functions/_lib/repairBlocks.ts': `${BOUNDED}: the calendar blocks of one repair job.`,
   'functions/_lib/twoFactor.ts': `${BOUNDED}: ten backup codes.`,
+  'functions/_lib/payroll.ts': `${BOUNDED}: one payslip per in-house cleaner or technician (tens of people), run by hand once a month.`,
   'functions/_lib/properties.ts': `${BOUNDED}: the monthly cost lines typed on one unit form.`,
   'functions/_lib/history.ts': 'Writes in parts of 1,000 rows per INSERT; the loop is over parts, not rows.',
   'functions/api/statements/generate.ts': 'Writes statement lines in parts of 2,000 rows per INSERT; the loop is over parts.',

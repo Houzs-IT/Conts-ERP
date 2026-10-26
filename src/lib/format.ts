@@ -56,6 +56,10 @@ export const date = (iso: string) => {
   return `${p.d} ${MONTHS[p.m]} ${p.y}`;
 };
 
+/** A YYYY-MM-DD day (or YYYY-MM-15 for a month) in another language, for the portal (src/lib/portalI18n.ts). */
+export const dateIn = (locale: string, day: string, opts: Intl.DateTimeFormatOptions) =>
+  new Intl.DateTimeFormat(locale, { ...opts, timeZone: MYT }).format(new Date(`${day.slice(0, 10)}T12:00:00+08:00`));
+
 /** 16 Sep – 29 Sep 2026. Always disambiguated across months. */
 export const dateRange = (fromIso: string, toIso: string) => {
   const f = mytParts(fromIso), t = mytParts(toIso);

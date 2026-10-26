@@ -35,9 +35,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
     if (no || !r) return no ?? fail('NOT_FOUND', 'That reservation does not exist.', 404);
     const at = nowIso();
     await run(tx, 'UPDATE reservations SET check_out_time = ?, updated_at = ? WHERE id = ?', open.checkoutTime, at, id);
-    // Paid after the old checkout time, the clean was already marked "guest out" automatically at that time
-    // (cleaning.ts autoGuestLeft, stamped in +08:00 form; a staff tap never is). The guest is staying, so that mark goes
-    // and comes back by itself at the new time. A tap by staff stays.
+    // Until 26 Oct 2026 a clean was marked "guest out" automatically at the checkout time (stamped in +08:00 form; a
+    // staff tap never is). A clean still carrying that mark for the old time loses it: the guest is staying. A tap by
+    // staff stays.
     const oldAt = `${r.check_out}T${r.check_out_time || '11:00'}:00+08:00`;
     const unmarked = await all<{ id: string }>(tx, `UPDATE tasks SET guest_left_at = NULL, updated_at = ? WHERE unit_id = ? AND guest_left_at = ? AND state <> 'resolved' RETURNING id`, at, r.unit_id, oldAt);
     if (unmarked.length && r.state === 'checked_in') await run(tx, `UPDATE units SET readiness = 'occupied', updated_at = ? WHERE id = ? AND readiness = 'dirty'`, at, r.unit_id);

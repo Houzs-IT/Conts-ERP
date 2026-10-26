@@ -10,6 +10,9 @@ export const cjk = {
   name: 'english-only',
   rule: 'no Chinese / Japanese / Korean characters in src/',
   files: () => srcFiles(),
+  allow: {
+    'src/lib/portalI18n.ts': 'The worker portal in English, Malay, Chinese and Burmese (owner, Oct 2026, as Hookka). Its translations live only here; the office side stays English.',
+  },
   scan: (text) => lineHits(text, [{ re: CJK, msg: m => `non-English character "${m[0]}"` }]),
   selfTest: {
     bad: [{ path: 'src/pages/X.tsx', text: "<h1>用户管理</h1>" }, { path: 'src/pages/Y.tsx', text: "label: '保存'," }],

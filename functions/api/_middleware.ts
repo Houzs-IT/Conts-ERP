@@ -47,9 +47,20 @@ const FIELD_ALLOWED: [string, RegExp][] = [
   ['GET', /^\/api\/notifications(\/count)?$/],
   ['PATCH', /^\/api\/notifications$/],
   ['GET', /^\/api\/field\/(tasks|repairs|units)$/],
+  // Their own clock-in and clock-out (HR phase 2); the handler finds their employee record from the login.
+  ['GET', /^\/api\/field\/clock$/],
+  ['POST', /^\/api\/field\/clock$/],
+  // Their own leave: balances, applying and taking back a request the office has not decided (HR phase 3).
+  ['GET', /^\/api\/field\/leave$/],
+  ['POST', /^\/api\/field\/leave$/],
+  ['POST', /^\/api\/field\/leave\/[^/]+\/cancel$/],
+  // Their own pay: approved and paid slips, and an estimate of the month so far (HR phase 4).
+  ['GET', /^\/api\/field\/pay$/],
   // Repair jobs on the phone: the technician's own and the unassigned ones they may pick up (the handlers check which).
   ['GET', /^\/api\/field\/repairs\/[^/]+$/],
   ['POST', /^\/api\/field\/repairs\/[^/]+\/(pick|note)$/],
+  // A cleaner on the job switches it between Basic clean (BC) and Deep clean (DC) (the handler checks it is theirs).
+  ['PATCH', /^\/api\/field\/tasks\/[^/]+\/kind$/],
   ['GET', /^\/api\/housekeeping\/tasks\/[^/]+(\/checklist|\/photos)?$/],
   ['POST', /^\/api\/housekeeping\/tasks\/[^/]+\/(checklist|start)$/],
   ['POST', /^\/api\/housekeeping\/guest-left$/],
