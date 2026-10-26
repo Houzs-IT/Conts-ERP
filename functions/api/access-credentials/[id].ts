@@ -1,6 +1,6 @@
 import { type Env, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
-import { invalidCredential, mayEditCredentials, type CredentialInput } from '../../_lib/credentials';
+import { invalidCredential, mayEditCredentials, usedByReady, type CredentialInput } from '../../_lib/credentials';
 
 /** GET /api/access-credentials/:id?reveal=true — the clear code. Only operations managers and management, and every reveal is written to the audit log. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env, params }) => {
@@ -45,13 +45,14 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     b.kind ?? null, b.label !== undefined ? String(b.label).trim() : null, b.instruction !== undefined ? String(b.instruction).trim() : null,
     b.rotatesAfterStay === undefined ? null : (b.rotatesAfterStay ? 1 : 0), nowIso(), id);
   if (codeChanged) await run(env, 'UPDATE access_credentials SET secret = ? WHERE id = ?', secret, id);
+  if (b.usedBy && await usedByReady(env)) await run(env, 'UPDATE access_credentials SET used_by = ?::jsonb WHERE id = ?', JSON.stringify(b.usedBy), id);
   await audit(env, {
     actorId: session.userId, actorLabel: session.fullName, action: 'access.update', entityTable: 'access_credentials', entityId: id,
     before: { kind: cur.kind, label: cur.label, rotatesAfterStay: !!cur.rotates_after_stay, hasCode: !!cur.has_code },
     after: {
       unitNumber: cur.unit_number, kind: b.kind ?? cur.kind, label: b.label !== undefined ? String(b.label).trim() : cur.label,
       rotatesAfterStay: b.rotatesAfterStay ?? !!cur.rotates_after_stay, instructionChanged: b.instruction !== undefined && String(b.instruction).trim() !== cur.instruction,
-      codeChanged, ...(codeChanged ? { hasCode: !!secret } : {}),
+      codeChanged, ...(b.usedBy ? { usedBy: b.usedBy } : {}), ...(codeChanged ? { hasCode: !!secret } : {}),
     },
   });
   return json({ ok: true });

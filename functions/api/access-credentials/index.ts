@@ -1,6 +1,6 @@
 import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
-import { invalidCredential, mayEditCredentials, type CredentialInput } from '../../_lib/credentials';
+import { invalidCredential, mayEditCredentials, usedByReady, CREDENTIAL_USERS, type CredentialInput } from '../../_lib/credentials';
 
 /** Bullets with the last three characters shown, e.g. "••••17#". Empty stays empty. */
 function maskOf(clear: string | null): string {
@@ -26,12 +26,14 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     ORDER BY p.name, u.unit_number, a.label`, ...(unitId ? [unitId] : []));
 
   const field = isFieldRole(session.role);
+  const hasUsedBy = await usedByReady(env);
   return json({
     generatedAt: nowIso(),
     data: rows.map(r => ({
       id: r.id, unitNumber: r.unit_number, propertyName: r.property_name,
       kind: r.kind, label: r.label, instruction: r.instruction,
       rotatesAfterStay: !!r.rotates_after_stay, updatedAt: r.updated_at,
+      usedBy: hasUsedBy && Array.isArray(r.used_by) ? r.used_by : [...CREDENTIAL_USERS],
       // Field roles get the instruction only, not even the masked tail.
       secret: field ? '' : maskOf(r.secret),
       lastRevealedBy: r.revealed_by ?? null, lastRevealedAt: r.revealed_at ? String(r.revealed_at).slice(0, 10) : null,
@@ -55,13 +57,15 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
   const id = crypto.randomUUID();
   const secret = String(b.secret ?? '').trim() || null;
+  const usedBy = b.usedBy ?? [...CREDENTIAL_USERS];
   await run(env, `
     INSERT INTO access_credentials (id, unit_id, kind, label, secret, instruction, rotates_after_stay, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     id, b.unitId, b.kind, String(b.label).trim(), secret, String(b.instruction).trim(), b.rotatesAfterStay ? 1 : 0, nowIso());
+  if (b.usedBy && await usedByReady(env)) await run(env, 'UPDATE access_credentials SET used_by = ?::jsonb WHERE id = ?', JSON.stringify(usedBy), id);
   await audit(env, {
     actorId: session.userId, actorLabel: session.fullName, action: 'access.create', entityTable: 'access_credentials', entityId: id,
-    after: { unitId: b.unitId, unitNumber: unit.unit_number, kind: b.kind, label: String(b.label).trim(), hasCode: !!secret, rotatesAfterStay: !!b.rotatesAfterStay },
+    after: { unitId: b.unitId, unitNumber: unit.unit_number, kind: b.kind, label: String(b.label).trim(), hasCode: !!secret, rotatesAfterStay: !!b.rotatesAfterStay, usedBy },
   });
   return json({ id }, 201);
 };

@@ -23,20 +23,36 @@ interface Credential {
   fullSecret?: string;
   instruction: string; rotatesAfterStay: boolean; updatedAt: string;
   lastRevealedBy?: string | null; lastRevealedAt?: string | null;
+  /** Who is given it: maintenance, cleaner, guest, sales, management. Missing (older server) = everyone. */
+  usedBy?: string[];
 }
 interface Payload { data: Credential[]; generatedAt: string }
 
+/** What can be picked for a new item, in groups. */
+interface KindGroup { group: string; kinds: [string, string][] }
+const KIND_GROUPS: KindGroup[] = [
+  { group: 'Key', kinds: [['smartlock_key', 'Smartlock key'], ['main_door_key', 'Main door key'], ['room_key', 'Room key'], ['mailbox_key', 'Mailbox key'], ['yard_key', 'Yard key'], ['balcony_key', 'Balcony key']] },
+  { group: 'PIN', kinds: [['smartlock_pin', 'Smartlock PIN'], ['mailbox_pin', 'Mailbox PIN'], ['lockbox_pin', 'Lockbox PIN (inside mailbox)'], ['wifi', 'Wi-Fi']] },
+  { group: 'Card', kinds: [['card', 'Card'], ['lift_card', 'Lift card'], ['parking_card', 'Parking card'], ['two_in_one_card', '2-in-1 card']] },
+];
+/** Kept so existing items still show their name; not offered for new ones. */
+const OLD_KIND_LABEL: Record<string, string> = { smart_lock: 'Smart lock', key_box: 'Key box', guard_desk: 'Guard desk' };
 const KIND_LABEL: Record<string, string> = {
-  smart_lock: 'Smart lock', key_box: 'Key box', guard_desk: 'Guard desk', lift_card: 'Lift card', wifi: 'Wi-Fi',
+  ...OLD_KIND_LABEL, ...Object.fromEntries(KIND_GROUPS.flatMap(g => g.kinds)),
 };
-const KINDS = Object.entries(KIND_LABEL).map(([value, label]) => ({ value, label }));
+const kindOptions = (current?: string) => [
+  ...KIND_GROUPS.flatMap(g => g.kinds.map(([value, label]) => ({ value, label, group: g.group }))),
+  ...(current && OLD_KIND_LABEL[current] ? [{ value: current, label: OLD_KIND_LABEL[current], group: 'Older types' }] : []),
+];
+const USERS = [['maintenance', 'Maintenance'], ['cleaner', 'Cleaner'], ['guest', 'Guest'], ['sales', 'Sales'], ['management', 'Management']] as const;
+const usedByText = (u?: string[]) => USERS.filter(([v]) => (u ?? USERS.map(x => x[0])).includes(v)).map(([, l]) => l).join(' · ');
 /** Who may reveal, and so add, change or remove, a code: Full on Units (functions/_lib/credentials.ts). */
 
 const mask = (clear: string) => clear ? '•'.repeat(Math.max(2, clear.length - 3)) + clear.slice(-3) : '';
 const FALLBACK: Payload = {
   generatedAt: '',
   data: [
-    { id: 'a1', kind: 'smart_lock', label: 'Main door', fullSecret: '4417#', secret: mask('4417#'), instruction: 'Smart lock 4417#. Lobby via the guard — say The Conts.', rotatesAfterStay: true, updatedAt: '2026-09-13', lastRevealedBy: 'Nurul (Operations)', lastRevealedAt: '2026-09-18' },
+    { id: 'a1', kind: 'smartlock_pin', label: 'Main door', fullSecret: '4417#', secret: mask('4417#'), instruction: 'Smart lock 4417#. Lobby via the guard — say The Conts.', rotatesAfterStay: true, updatedAt: '2026-09-13', lastRevealedBy: 'Nurul (Operations)', lastRevealedAt: '2026-09-18' },
     { id: 'a1w', kind: 'wifi', label: 'Guest Wi-Fi — VistaJaya_Guest', fullSecret: 'stayhappy88', secret: mask('stayhappy88'), instruction: 'Wi-Fi VistaJaya_Guest, password on the fridge card.', rotatesAfterStay: false, updatedAt: '2026-08-02', lastRevealedBy: null, lastRevealedAt: null },
     { id: 'a4', kind: 'guard_desk', label: 'Site office key', secret: '', instruction: 'Collect the key from the site office before 14:00.', rotatesAfterStay: false, updatedAt: '2026-09-04', lastRevealedBy: null, lastRevealedAt: null },
   ],
@@ -57,7 +73,7 @@ function IconAction({ name, label, onClick }: { name: string; label: string; onC
   );
 }
 
-export default function AccessTab({ unitId, unitLabel, parking }: { unitId: string; unitLabel: string; parking?: string }) {
+export default function AccessTab({ unitId, unitLabel, parking, fullAccessCard }: { unitId: string; unitLabel: string; parking?: string; fullAccessCard?: boolean }) {
   const { data, loading, error, reload } = useApi<Payload>(`/access-credentials?unitId=${encodeURIComponent(unitId)}`, FALLBACK);
   const { user } = useSession();
   const toast = useToast();
@@ -135,6 +151,7 @@ export default function AccessTab({ unitId, unitLabel, parking }: { unitId: stri
         <span className="flex flex-col gap-[3px] min-w-0">
           <span className="font-medium">{KIND_LABEL[r.kind] ?? r.kind}</span>
           <span className="text-meta text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis" title={r.label}>{r.label}</span>
+          <span className="text-caption text-muted-ink whitespace-normal" title="Who is given it">{usedByText(r.usedBy)}</span>
           {r.rotatesAfterStay && <span><StatusBadge tone="info" label="Changes after each reservation" size="sm" /></span>}
         </span>
       ) },
@@ -166,6 +183,7 @@ export default function AccessTab({ unitId, unitLabel, parking }: { unitId: stri
           </span>
         );
       } },
+    { key: 'usedBy', label: 'Who uses it', value: r => usedByText(r.usedBy), hidden: true, width: 200 },
     { key: 'instruction', label: 'Instruction', value: r => r.instruction, width: 260,
       render: r => <span className="block text-meta text-muted-ink whitespace-normal text-pretty">{r.instruction}</span> },
     { key: 'rotates', label: 'Changes after each reservation', value: r => (r.rotatesAfterStay ? 'Yes' : 'No'), hidden: true, width: 120 },
@@ -188,6 +206,7 @@ export default function AccessTab({ unitId, unitLabel, parking }: { unitId: stri
             <span className="text-[16px] font-semibold tracking-[-0.01em]">Access and keys</span>
             <span className="text-meta text-muted-ink">Codes are masked. Revealing one is recorded in the audit trail.</span>
             <span className="text-meta"><span className="text-muted-ink">Car park:</span> {parking || 'No bays recorded. Add them on the Details tab.'}</span>
+            {fullAccessCard && <span className="text-meta"><span className="text-muted-ink">Building:</span> full access card (lobby, lift and car park on one card)</span>}
           </div>
           {canEdit && <Button size="sm" variant="secondary" icon={<Icon name="Plus" size="sm" />} onClick={() => setEditing('new')}>Add access</Button>}
         </div>
@@ -206,18 +225,20 @@ export default function AccessTab({ unitId, unitLabel, parking }: { unitId: stri
 }
 
 function CredentialModal({ initial, unitLabel, onClose, onSubmit }: { initial: Credential | null; unitLabel: string; onClose: () => void; onSubmit: (body: Record<string, unknown>, existing: Credential | null) => Promise<void> }) {
-  const [kind, setKind] = useState(initial?.kind ?? 'smart_lock');
+  const [kind, setKind] = useState(initial?.kind ?? 'main_door_key');
   const [label, setLabel] = useState(initial?.label ?? '');
   const [secret, setSecret] = useState('');
   const [removeCode, setRemoveCode] = useState(false);
   const [instruction, setInstruction] = useState(initial?.instruction ?? '');
   const [rotates, setRotates] = useState(initial?.rotatesAfterStay ?? false);
+  const [usedBy, setUsedBy] = useState<string[]>(initial?.usedBy ?? USERS.map(([v]) => v));
   const [busy, setBusy] = useState(false);
-  const ok = label.trim() !== '' && instruction.trim() !== '';
+  const isWifi = kind === 'wifi';
+  const ok = label.trim() !== '' && instruction.trim() !== '' && usedBy.length > 0;
   const hadCode = !!initial?.secret;
 
   async function submit() {
-    const body: Record<string, unknown> = { kind, label: label.trim(), instruction: instruction.trim(), rotatesAfterStay: rotates };
+    const body: Record<string, unknown> = { kind, label: label.trim(), instruction: instruction.trim(), rotatesAfterStay: rotates, usedBy };
     // Only a typed or removed code is sent: a blank field on an edit keeps the stored one.
     if (!initial) body.secret = secret.trim();
     else if (removeCode) body.secret = '';
@@ -228,15 +249,15 @@ function CredentialModal({ initial, unitLabel, onClose, onSubmit }: { initial: C
 
   return (
     <CentreModal title={initial ? `Edit ${initial.label}` : 'Add access'} sub={`${unitLabel}. Codes are shown masked, and a code is never written to History.`} onClose={onClose}
-      footer={<><Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button><Button size="sm" variant="primary" loading={busy} disabled={!ok} disabledReason="Fill the name and the instruction" onClick={() => void submit()}>{initial ? 'Save' : 'Add access'}</Button></>}>
-      <Labeled label="Type"><Select label="Type" value={kind} onChange={setKind} options={KINDS} /></Labeled>
-      <Field label="Name" placeholder="e.g. Main door" value={label} onChange={e => setLabel(e.target.value)} />
-      <Field label={initial && hadCode ? 'New code' : 'Code'} placeholder={initial && hadCode ? 'Leave blank to keep the current code' : 'e.g. 4417#  (leave blank if there is none)'}
+      footer={<><Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button><Button size="sm" variant="primary" loading={busy} disabled={!ok} disabledReason={usedBy.length === 0 ? 'Tick at least one person who uses it' : 'Fill the name and the instruction'} onClick={() => void submit()}>{initial ? 'Save' : 'Add access'}</Button></>}>
+      <Labeled label="Type"><Select label="Type" value={kind} onChange={setKind} options={kindOptions(initial?.kind)} /></Labeled>
+      <Field label={isWifi ? 'Network name' : 'Name'} placeholder={isWifi ? 'e.g. VistaJaya_Guest' : 'e.g. Main door'} value={label} onChange={e => setLabel(e.target.value)} />
+      <Field label={isWifi ? (initial && hadCode ? 'New password' : 'Password') : (initial && hadCode ? 'New code' : 'Code')} placeholder={initial && hadCode ? 'Leave blank to keep the current code' : 'e.g. 4417#  (leave blank if there is none)'}
         value={secret} autoComplete="off" spellCheck={false} disabled={removeCode} onChange={e => setSecret(e.target.value)} />
       {initial && hadCode && (
         <label className="flex items-center gap-2 text-copy -mt-1">
           <input type="checkbox" checked={removeCode} onChange={e => { setRemoveCode(e.target.checked); if (e.target.checked) setSecret(''); }} />
-          Remove the code (for example a guard desk that needs none)
+          Remove the code (for example a key that needs none)
         </label>
       )}
       <div className="flex flex-col gap-[7px]">
@@ -244,6 +265,17 @@ function CredentialModal({ initial, unitLabel, onClose, onSubmit }: { initial: C
         <textarea id="credential-instruction" rows={3} value={instruction} onChange={e => setInstruction(e.target.value)} placeholder="e.g. Smart lock on the main door. Lobby via the guard — say The Conts."
           className="field-input w-full box-border min-h-[84px] py-2! resize-y" />
       </div>
+      <fieldset className="flex flex-col gap-[7px] border-0 p-0 m-0 min-w-0">
+        <legend className="p-0 mb-[7px] text-[length:var(--text-small)] font-medium text-muted-ink">Who uses it</legend>
+        <div className="flex flex-wrap gap-x-4 gap-y-2">
+          {USERS.map(([v, l]) => (
+            <label key={v} className="flex items-center gap-2 text-copy">
+              <input type="checkbox" checked={usedBy.includes(v)} onChange={e => setUsedBy(u => e.target.checked ? [...u, v] : u.filter(x => x !== v))} />
+              {l}
+            </label>
+          ))}
+        </div>
+      </fieldset>
       <label className="flex items-center gap-2 text-copy">
         <input type="checkbox" checked={rotates} onChange={e => setRotates(e.target.checked)} />
         The code changes after each reservation

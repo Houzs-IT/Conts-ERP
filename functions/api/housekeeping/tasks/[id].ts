@@ -5,7 +5,7 @@ import { unitLayoutSql, unitMattressesSql, unitLayout } from '../../../_lib/unit
 import { requireSession, isFieldRole } from '../../../_lib/auth';
 import { cleanPrice } from '../../../_lib/cleaning';
 import { hasCleanPrices, cleanAmounts } from '../../../_lib/cleaningPrices';
-import { mayEditCredentials } from '../../../_lib/credentials';
+import { mayEditCredentials, usedBySql } from '../../../_lib/credentials';
 
 /** GET /api/housekeeping/tasks/:id — what the clean's detail panel needs in one answer: the proof
  *  photos and videos, the unit's access (masked; the code itself is a separate audited reveal, for the roles that
@@ -31,7 +31,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
     SELECT d.id, d.kind, d.file_name, d.mime_type, d.byte_size, d.created_at, u.full_name AS uploader
     FROM documents d LEFT JOIN users u ON u.id = d.uploaded_by
     WHERE d.task_id = ? AND d.kind IN ('photo','video') ORDER BY d.created_at`, id);
-  const creds = await all<any>(env, `SELECT id, kind, label, instruction, secret FROM access_credentials WHERE unit_id = ? ORDER BY label`, t.unit_id);
+  const creds = await all<any>(env, `SELECT id, kind, label, instruction, secret FROM access_credentials c WHERE unit_id = ?${await usedBySql(env, 'c', 'cleaner')} ORDER BY label`, t.unit_id);
   const charged = await one<{ amount: number }>(env, `SELECT amount FROM expenses WHERE task_id = ? LIMIT 1`, id);
   // The job's own amount, else the price table's, else (price not set) the old pricing. An external job has only its own.
   const table = t.unit_id && priced ? await cleanAmounts(env, t.unit_id, t.kind, t.day_at) : null;
