@@ -36,9 +36,6 @@ const STATUTORY: { key: 'epfEnabled' | 'socsoEnabled' | 'eisEnabled' | 'pcbEnabl
 
 const departmentsOf = ({ cleanerId, technicianId }: Pick<Employee, 'cleanerId' | 'technicianId'>): string =>
   [cleanerId && 'Cleaning', technicianId && 'Maintenance'].filter(Boolean).join(', ');
-const paidBy = (e: Employee): string => (e.paymentMethod === 'cash' ? 'Cash' : 'Transfer');
-const account = (e: Employee): string => (e.paymentMethod === 'cash' || !e.bankAccount ? '' : `****${e.bankAccount.slice(-4)}`);
-const statutoryOf = (e: Employee): string => STATUTORY.filter(s => e[s.key]).map(s => s.label).join(' · ') || 'None';
 function statusOf(e: Employee): { label: string; tone: 'success' | 'neutral' | 'warning' } {
   if (e.status === 'resigned') return { label: 'Resigned', tone: 'neutral' };
   if (!e.isActive) return { label: 'Switched off', tone: 'warning' };
@@ -58,23 +55,10 @@ export default function EmployeesTab() {
     { key: 'name', label: 'Name', value: e => e.name, hideable: false, width: 190, render: e => <span className="font-semibold">{e.name}</span> },
     { key: 'departments', label: 'Departments', value: departmentsOf, width: 170 },
     { key: 'position', label: 'Position', value: e => POSITION_LABEL[e.position], width: 120 },
-    { key: 'phone', label: 'Phone', type: 'phone', value: e => e.phone, width: 150 },
     { key: 'basic', label: 'Basic Salary', type: 'money', value: e => (e.payBasis === 'daily' ? e.dailyRateSen : e.basicSalarySen), width: 140,
       render: e => e.payBasis === 'daily' ? `${rm(e.dailyRateSen)} / day` : rm(e.basicSalarySen) },
-    { key: 'hours', label: 'Hrs/Day', type: 'number', value: e => e.workingHoursPerDay, width: 90 },
-    { key: 'days', label: 'Days/Mo', type: 'number', value: e => e.workingDaysPerMonth, width: 90 },
-    { key: 'ot', label: 'OT ×', type: 'number', value: e => e.otMultiplier, width: 80 },
-    { key: 'effAllowance', label: 'Eff. Allowance', type: 'money', value: e => e.efficiencyAllowanceSen, width: 130 },
-    { key: 'effThreshold', label: 'Eff. Threshold %', type: 'number', value: e => e.efficiencyThresholdPct, width: 130 },
-    { key: 'leader', label: 'Leader Allowance', type: 'money', value: e => e.leaderAllowanceSen, width: 140 },
-    { key: 'payBy', label: 'Pay By', value: paidBy, width: 100 },
-    { key: 'bank', label: 'Bank', value: e => (e.paymentMethod === 'cash' ? null : e.bankName), width: 140 },
-    { key: 'account', label: 'Account No', value: account, width: 120 },
-    { key: 'statutory', label: 'Statutory', value: statutoryOf, width: 180 },
-    { key: 'joined', label: 'Join Date', type: 'date', value: e => e.joinDate, width: 120 },
-    { key: 'nationality', label: 'Nationality', value: e => e.nationality, width: 120 },
     { key: 'status', label: 'Status', type: 'status', value: e => statusOf(e).label, status: statusOf, width: 120 },
-    { key: 'go', label: '', noExport: true, sortable: false, filter: false, width: 100, align: 'right',
+    { key: 'go', label: 'Actions', noExport: true, sortable: false, filter: false, width: 100, align: 'right',
       render: e => mayEdit ? <Button size="sm" variant="tertiary" icon={<Icon name="Pencil" size="sm" />} onClick={() => setForm({ person: e })}>Edit</Button> : null },
   ], [mayEdit]);
 
@@ -99,16 +83,13 @@ export default function EmployeesTab() {
         }
         empty={{ title: 'No employees yet.', body: 'Add the first cleaner or technician.', action: mayEdit ? { label: 'Add Employee', onClick: () => setForm({ person: null }) } : undefined }}
         renderCard={e => (
-          <span className="flex flex-col gap-[3px] min-w-0">
-            <span className="flex items-center gap-[9px] flex-wrap">
-              <span className="text-copy font-semibold">{e.name}</span>
-              {statusOf(e).tone !== 'success' && <StatusBadge tone={statusOf(e).tone} label={statusOf(e).label} size="sm" />}
+          <span className="flex flex-col gap-1 min-w-0">
+            <span className="flex items-center justify-between gap-3">
+              <span className="text-copy font-semibold truncate">{e.name}</span>
+              <StatusBadge tone={statusOf(e).tone} label={statusOf(e).label} size="sm" />
             </span>
-            <span className="text-meta text-muted-ink flex gap-x-3 flex-wrap">
-              {e.employeeId && <span>{e.employeeId}</span>}
-              <span>{departmentsOf(e)} · {POSITION_LABEL[e.position]}</span>
-              <span>{e.payBasis === 'daily' ? `${rm(e.dailyRateSen)} / day` : `${rm(e.basicSalarySen)} / month`}</span>
-            </span>
+            <span className="text-meta text-muted-ink">{[e.employeeId, departmentsOf(e), POSITION_LABEL[e.position]].filter(Boolean).join(' · ')}</span>
+            <span className="text-copy font-medium tabular-nums">{e.payBasis === 'daily' ? `${rm(e.dailyRateSen)} / day` : `${rm(e.basicSalarySen)} / month`}</span>
           </span>
         )}
       />
