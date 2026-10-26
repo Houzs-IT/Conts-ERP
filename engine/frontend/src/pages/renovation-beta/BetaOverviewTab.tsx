@@ -1,5 +1,6 @@
-/* Beta workspace > Overview, laid out as the mockup's project page: Payments across the top, then To do, Site progress
-   and Unit key on the left and Design progress, Sales order, Final drawings and Client & team on the right. */
+/* Beta workspace > Overview, laid out as the Dream Crafter design of the project page (v10 / v13): Payments across the top,
+   then Needs attention (what was To do) and Site progress on the left, and Unit key, Final drawings and Sales order on the
+   right. The design has no place for Design progress and Client & team, so they stay below those three (owner, 26 Oct 2026). */
 
 import { useId, useState, type CSSProperties, type ReactElement, type ReactNode } from "react";
 import { Link } from "react-router-dom";
@@ -19,7 +20,7 @@ import {
 } from "./renovationBetaModel";
 import { downloadAsPdf } from "./renovationBetaPdf";
 import { sheetSetAt, sheetsApi } from "./renovationBetaSheets";
-import { BETA } from "./renovationBetaTheme";
+import { BETA, GLASS, TONES } from "./renovationBetaTheme";
 import { useQuery } from "../../hooks/useQuery";
 import type { DesignFile } from "../projects/renovation/simpleApi";
 
@@ -47,12 +48,12 @@ export function BetaOverviewTab(p: BetaTabProps): ReactElement {
         <div style={{ ...column, flex: "999 1 520px" }}>
           <TodoCard rows={todo} p={p} />
           <BetaSiteProgressCard p={p} />
-          <BetaWsKeyCard d={d} canWrite={p.canWrite} today={today} onDone={p.onDone} />
         </div>
         <aside style={{ ...column, flex: "1 1 320px" }}>
-          <BetaWsDesignCard board={p.board} canWrite={p.canWrite} openDialog={p.openDialog} onDone={p.onDone} onError={p.onError} />
-          <OrderCard p={p} />
+          <BetaWsKeyCard d={d} canWrite={p.canWrite} today={today} onDone={p.onDone} />
           <FinalDrawingsCard p={p} onOpen={openFile} />
+          <OrderCard p={p} />
+          <BetaWsDesignCard board={p.board} canWrite={p.canWrite} openDialog={p.openDialog} onDone={p.onDone} onError={p.onError} />
           <TeamCard p={p} onEdit={() => p.openDialog({ t: "assign", projectId: p.projectId })} />
         </aside>
       </div>
@@ -63,10 +64,11 @@ export function BetaOverviewTab(p: BetaTabProps): ReactElement {
 
 /* ---------- Payments ---------- */
 
+/* The design's tiles: paid is a teal glass gradient, needs attention a pink one, and a payment still to come plain glass. */
 const PAY_LOOK = {
-  paid: { border: "1px solid #A9D2CC", bg: "#F3F9F8", pad: 14, tone: TONE_PAID },
-  alert: { border: "2px solid #E8A5A2", bg: "#FDF4F3", pad: 13, tone: TONE_ALERT },
-  quiet: { border: `1px solid ${BETA.line}`, bg: "#FAFBFB", pad: 14, tone: TONE_QUIET },
+  paid: { border: `1px solid ${BETA.payEdge}`, bg: BETA.payPaid, tone: TONE_PAID },
+  alert: { border: `1px solid ${BETA.payEdge}`, bg: BETA.payAlert, tone: TONE_ALERT },
+  quiet: { border: `1px solid ${BETA.payLaterEdge}`, bg: BETA.payLater, tone: TONE_QUIET },
 } as const;
 
 function PaymentsCard({ p }: { p: BetaTabProps }): ReactElement {
@@ -96,12 +98,12 @@ function PaymentsCard({ p }: { p: BetaTabProps }): ReactElement {
             const v = paymentCard(r, d.currentStage, handoverOn);
             const look = PAY_LOOK[v.look];
             return (
-              <li key={r.seq} style={{ border: look.border, background: look.bg, borderRadius: 10, padding: look.pad, display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
+              <li key={r.seq} style={{ border: look.border, background: look.bg, borderRadius: 26, padding: 14, display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-                  <span style={{ fontWeight: 700, overflowWrap: "anywhere" }}>{r.label}</span>
+                  <span style={{ fontWeight: 600, overflowWrap: "anywhere" }}>{r.label}</span>
                   <WsBadge tone={look.tone}>{v.badge}</WsBadge>
                 </div>
-                <div style={{ fontSize: 20, fontWeight: 700, color: r.amountSen > 0 ? undefined : BETA.muted }}>{r.amountSen > 0 ? money(r.amountSen) : "-"}</div>
+                <div style={{ fontSize: 20, fontWeight: 600, letterSpacing: "-.02em", color: r.amountSen > 0 ? undefined : BETA.muted }}>{r.amountSen > 0 ? money(r.amountSen) : "-"}</div>
                 <div style={{ fontSize: 12, color: WS.text2 }}>{v.note}{r.status === "billed" && r.paidSen > 0 && ` · paid so far ${money(r.paidSen)}`}</div>
               </li>
             );
@@ -125,7 +127,7 @@ function PaymentTotalsRow({ totals, linked }: { totals: PaymentTotals; linked: b
     },
   ];
   return (
-    <div style={{ border: `1px solid ${BETA.line}`, borderRadius: 10, background: WS.panel, overflow: "hidden" }}>
+    <div style={{ border: `1px solid ${BETA.line}`, borderRadius: 16, background: WS.panel, overflow: "hidden" }}>
       <dl aria-label="Payment totals" style={{ margin: 0, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 1, background: BETA.line }}>
         {cells.map((c) => (
           <div key={c.label} style={{ padding: "12px 16px", background: WS.panel, minWidth: 0 }}>
@@ -135,8 +137,8 @@ function PaymentTotalsRow({ totals, linked }: { totals: PaymentTotals; linked: b
           </div>
         ))}
       </dl>
-      <div aria-hidden="true" style={{ height: 4, background: "#E3E8E7" }}>
-        <div style={{ width: `${pct}%`, height: "100%", background: "#1A6B66" }} />
+      <div aria-hidden="true" style={{ height: 4, background: BETA.stepTrack }}>
+        <div style={{ width: `${pct}%`, height: "100%", background: TONES.accent.dot }} />
       </div>
     </div>
   );
@@ -144,7 +146,7 @@ function PaymentTotalsRow({ totals, linked }: { totals: PaymentTotals; linked: b
 
 /* ---------- To do ---------- */
 
-const DOT: Record<TodoRow["tone"], string> = { err: WS.redDot, warn: WS.amberDot, muted: "#8C9593" };
+const DOT: Record<TodoRow["tone"], string> = { err: WS.redDot, warn: WS.amberDot, muted: TONES.grey.dot };
 
 function TodoCard({ rows, p }: { rows: TodoRow[]; p: BetaTabProps }): ReactElement {
   const { busy, run } = useGuarded();
@@ -193,44 +195,35 @@ function TodoCard({ rows, p }: { rows: TodoRow[]; p: BetaTabProps }): ReactEleme
       </WsBtn>
     );
   };
-  // The first action is the row's main button; the others sit beside it as plain outline buttons.
-  const act = (r: TodoRow, kind: "amber" | "dark", size: "sm" | "lg"): ReactNode => (
+  // The first action is the row's main button, the blue pill; the others sit beside it as glass pills.
+  const act = (r: TodoRow, kind: "dark", size: "sm" | "lg"): ReactNode => (
     <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
       {button(r, r.action, kind, size)}
       {(r.more ?? []).map((a) => button(r, a, "outline", size))}
     </div>
   );
+  /* One row as the design draws it: a coloured bar, the words, then the blue pill. */
+  const row = (r: TodoRow, key: string, bar: string, lead: ReactNode, size: "sm" | "lg"): ReactElement => (
+    <li key={key} style={{ display: "grid", gridTemplateColumns: "4px minmax(0, 1fr) auto", gap: 14, alignItems: "center", padding: "14px 20px", borderTop: `1px solid ${WS.rowLine}` }}>
+      <span aria-hidden="true" style={{ alignSelf: "stretch", borderRadius: 2, background: bar }} />
+      <div style={{ minWidth: 0 }}>
+        {lead}
+        <div style={{ fontWeight: 600, fontSize: 15, overflowWrap: "anywhere" }}>{r.title}</div>
+        {r.detail && <div style={{ fontSize: 13, color: BETA.muted, overflowWrap: "anywhere" }}>{r.detail}</div>}
+      </div>
+      {act(r, "dark", size)}
+    </li>
+  );
   return (
     <section aria-labelledby={id} style={{ ...cardStyle, padding: 0, gap: 0, overflow: "hidden" }}>
-      <div style={{ padding: "16px 20px 0" }}><h2 id={id} style={h2Style}>To do</h2></div>
-      {!next && <p style={{ padding: "12px 20px 16px", fontSize: 14, color: BETA.muted }}>Nothing needs attention right now.</p>}
-      {next && (
-        <div style={{ margin: "12px 20px 0", background: "#FFF6EA", border: "1px solid #F2CC94", borderRadius: 10, padding: 16, display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: 14 }}>
-          <div style={{ minWidth: 0, flex: "1 1 240px" }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: WS.amber, textTransform: "uppercase", letterSpacing: ".05em" }}>Next step · {next.group}</div>
-            <div style={{ margin: "4px 0 2px", fontSize: 18, fontWeight: 700, overflowWrap: "anywhere" }}>{next.title}</div>
-            <div style={{ color: WS.text2 }}>{next.detail ?? " "}</div>
-          </div>
-          {act(next, "amber", "lg")}
-        </div>
-      )}
-      {rest.length > 0 && (
-        <ul style={{ listStyle: "none", margin: 0, padding: "4px 20px 8px" }}>
-          {rest.map((r) => (
-            <li key={r.id} style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: 10, padding: "12px 0", borderBottom: `1px solid ${WS.rowLine}` }}>
-              <div style={{ display: "flex", gap: 10, alignItems: "flex-start", minWidth: 0, flex: "1 1 220px" }}>
-                <span aria-hidden="true" style={{ flex: "none", width: 8, height: 8, marginTop: 7, borderRadius: 4, background: DOT[r.tone] }} />
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontWeight: 600, overflowWrap: "anywhere" }}>{r.title}</div>
-                  {r.detail && <div style={{ fontSize: 13, color: BETA.muted, overflowWrap: "anywhere" }}>{r.detail}</div>}
-                </div>
-              </div>
-              {act(r, "dark", "sm")}
-            </li>
-          ))}
+      <div style={{ padding: "18px 20px 6px" }}><h2 id={id} style={h2Style}>Needs attention</h2></div>
+      {!next && <p style={{ padding: "6px 20px 18px", fontSize: 14, color: BETA.muted }}>Nothing needs attention right now.</p>}
+      {(next || rest.length > 0) && (
+        <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+          {next && row(next, "next", TONES.amber.dot, <div style={{ fontSize: 12, fontWeight: 600, color: WS.amber, textTransform: "uppercase", letterSpacing: ".05em" }}>Next step · {next.group}</div>, "sm")}
+          {rest.map((r) => row(r, String(r.id), DOT[r.tone], null, "sm"))}
         </ul>
       )}
-      {next && rest.length === 0 && <div style={{ height: 16 }} />}
     </section>
   );
 }
@@ -301,17 +294,17 @@ function FinalDrawingsCard({ p, onOpen }: { p: BetaTabProps; onOpen: (f: DesignF
   }
   return (
     <WsCard title="Final drawings" gap={10} right={<button type="button" className="link" onClick={() => p.openTab("drawings")}>All versions →</button>}>
-      <div style={{ border: `1px solid ${two ? WS.tealLine : BETA.line}`, background: two ? WS.tealSoft : BETA.surface, borderRadius: 10, padding: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+      <div style={{ border: `1px solid ${two ? WS.tealLine : BETA.line}`, background: two ? WS.tealSoft : BETA.panel, borderRadius: 16, padding: 12, display: "flex", flexDirection: "column", gap: 8 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
           <div>
             <div style={{ fontWeight: 700 }}>2D · Approved set</div>
             <div style={{ fontSize: 12, color: BETA.muted }}>{two ? `Client approved ${dayMonth(two.review?.approvedOn)} · for site` : "Not approved yet"}</div>
           </div>
-          {two && <span style={{ padding: "3px 8px", borderRadius: 6, background: BETA.accent, color: "#FFFFFF", fontSize: 11, fontWeight: 600 }}>For site</span>}
+          {two && <span style={{ padding: "3px 8px", borderRadius: 999, background: TONES.accent.soft, color: TONES.accent.ink, fontSize: 11, fontWeight: 600 }}>For site</span>}
         </div>
         {two && <button type="button" style={outline} disabled={making} onClick={() => void (two.file.external_url ? onOpen(two.file) : download2d(two.file))}>{two.file.external_url ? "Open 2D link" : making ? "Making PDF..." : "Download 2D PDF"}</button>}
       </div>
-      <div style={{ border: `1px solid ${BETA.line}`, borderRadius: 10, padding: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+      <div style={{ border: `1px solid ${BETA.line}`, background: BETA.panel, borderRadius: 16, padding: 12, display: "flex", flexDirection: "column", gap: 8 }}>
         <div>
           <div style={{ fontWeight: 700 }}>3D · Approved set</div>
           <div style={{ fontSize: 12, color: BETA.muted }}>{three ? `Client approved ${dayMonth(three.review?.approvedOn)}` : "Not approved yet"}</div>

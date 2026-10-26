@@ -2,7 +2,7 @@
    and the side list ("Coming up", or the picked day). */
 
 import type { CSSProperties, ReactElement } from "react";
-import { BETA, BETA_CHIP } from "./renovationBetaTheme";
+import { BETA, BETA_CHIP, GLASS, PILL_GLASS, PILL_MAIN, TONES } from "./renovationBetaTheme";
 import {
   dayKey, dueOn, ds, eventsOn, groupOf, initials, listFor, monthCells, MONTHS, typeLabel,
   type BoardModel, type CalEvent, type DueItem, type Viewing,
@@ -30,8 +30,8 @@ const projectTitle = (m: BoardModel, id: number | null): string => (id == null ?
 
 function DeadlineChip({ x, who }: { x: DueItem; who: Viewing }): ReactElement {
   return (
-    <div style={{ ...CHIP, background: "#A12622", color: "#FFFFFF", fontWeight: 700 }}>
-      {who === "All" && x.by && <Badge name={x.by.name} inverted />}
+    <div style={{ ...CHIP, borderLeft: `3px solid ${TONES.red.dot}`, background: TONES.red.strong, color: TONES.red.ink, fontWeight: 700 }}>
+      {who === "All" && x.by && <Badge name={x.by.name} />}
       <span style={CLAMP}>{x.k === "h" ? "Handover" : `${x.k}D${x.n ? ` A${x.n}` : ""} due`} · {x.p.title}</span>
     </div>
   );
@@ -51,28 +51,28 @@ export function BetaCalMonth({ m, who, view, selDay, onPrev, onNext, onToday, on
   const cells = monthCells(view.y, view.m);
   const list = listFor(m, who, selDay);
   const monthName = MONTHS[view.m];
-  const arrow: CSSProperties = { width: 40, height: 40, border: `1px solid ${BETA.border}`, borderRadius: 8, background: BETA.surface, cursor: "pointer", fontSize: 16, color: BETA.ink };
+  const arrow: CSSProperties = { ...PILL_GLASS, width: 40, height: 40, cursor: "pointer", fontSize: 16 };
   const first = m.people[0];
 
   return (
     <div style={{ display: "flex", flexWrap: "wrap", gap: 20, alignItems: "flex-start" }}>
-      <section aria-label="Month" style={{ flex: "999 1 640px", minWidth: 0, background: BETA.surface, border: `1px solid ${BETA.line}`, borderRadius: 12, padding: 20, display: "flex", flexDirection: "column", gap: 12 }}>
+      <section aria-label="Month" style={{ ...GLASS, flex: "999 1 640px", minWidth: 0, borderRadius: 26, padding: 20, display: "flex", flexDirection: "column", gap: 12 }}>
         <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <button type="button" aria-label="Previous month" onClick={onPrev} style={arrow}>‹</button>
-            <h2 aria-live="polite" style={{ margin: 0, fontSize: 18, fontWeight: 700, minWidth: 150, textAlign: "center" }}>{monthName} {view.y}</h2>
+            <h2 aria-live="polite" style={{ margin: 0, fontSize: 17, fontWeight: 600, minWidth: 150, textAlign: "center", letterSpacing: "-.02em" }}>{monthName} {view.y}</h2>
             <button type="button" aria-label="Next month" onClick={onNext} style={arrow}>›</button>
             <button type="button" onClick={onToday} style={{ ...BTN, minHeight: 40, fontSize: 14 }}>Today</button>
           </div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 14, fontSize: 12, color: INK_SOFT }}>
-            {([["#A12622", "Deadline"], ["#3F4947", "Meeting / site"], ["#1A6B66", "Design work"], ["#8A4A00", "Drawing update"]] as const).map(([c, label]) => (
+            {([[TONES.red.dot, "Deadline"], [TONES.grey.dot, "Meeting / site"], [TONES.accent.dot, "Design work"], [TONES.amber.dot, "Drawing update"]] as const).map(([c, label]) => (
               <span key={label} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
                 <span aria-hidden="true" style={{ width: 10, height: 10, borderRadius: 3, background: c }} />{label}
               </span>
             ))}
             {who === "All" && first && (
               <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                <span aria-hidden="true" style={{ minWidth: 22, height: 17, padding: "0 3px", borderRadius: 4, background: BETA.ink, color: "#FFFFFF", fontSize: 10, fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{initials(first.name)}</span>
+                <span aria-hidden="true" style={{ minWidth: 22, height: 17, padding: "0 3px", borderRadius: 4, background: BETA.avatar, color: "#FFFFFF", fontSize: 10, fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{initials(first.name)}</span>
                 Who does it
               </span>
             )}
@@ -84,7 +84,7 @@ export function BetaCalMonth({ m, who, view, selDay, onPrev, onNext, onToday, on
               <div key={w} style={{ padding: "6px 8px", fontSize: 12, fontWeight: 600, color: MUTED }}>{w}</div>
             ))}
             {cells.map((d, i) => {
-              if (d == null) return <div key={`b${i}`} style={{ minHeight: 118, background: "#FAFBFB", borderTop: `1px solid ${BETA.lineSoft}` }} />;
+              if (d == null) return <div key={`b${i}`} style={{ minHeight: 118, background: BETA.head, borderTop: `1px solid ${BETA.lineSoft}` }} />;
               const day = dayKey(view.y, view.m, d);
               const chips = [
                 ...dueOn(m, who, day).map((x) => <DeadlineChip key={`d${x.p.id}${x.k}`} x={x} who={who} />),
@@ -101,10 +101,10 @@ export function BetaCalMonth({ m, who, view, selDay, onPrev, onNext, onToday, on
                   onClick={() => onPick(day)}
                   style={{
                     minHeight: 118, textAlign: "left", display: "flex", flexDirection: "column", gap: 3, padding: 6, border: 0, borderTop: `1px solid ${BETA.lineSoft}`,
-                    background: isSel ? "#F3F9F8" : "#FFFFFF", outline: isSel ? `2px solid ${BETA.accent}` : "none", outlineOffset: -2, font: "inherit", cursor: "pointer", minWidth: 0, color: BETA.ink,
+                    background: isSel ? BETA.pick : BETA.row, outline: isSel ? `2px solid ${BETA.blue}` : "none", outlineOffset: -2, font: "inherit", cursor: "pointer", minWidth: 0, color: BETA.ink,
                   }}
                 >
-                  <span style={{ alignSelf: "flex-start", minWidth: 24, height: 24, borderRadius: 12, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: isToday ? 700 : 500, background: isToday ? BETA.accent : "transparent", color: isToday ? "#FFFFFF" : BETA.ink }}>{d}</span>
+                  <span style={{ alignSelf: "flex-start", minWidth: 24, height: 24, borderRadius: 12, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: isToday ? 700 : 500, background: isToday ? BETA.accentFill : "transparent", color: isToday ? "#FFFFFF" : BETA.ink }}>{d}</span>
                   {chips.slice(0, 3)}
                   {chips.length > 3 && <span style={{ fontSize: 11, color: MUTED }}>+{chips.length - 3} more</span>}
                 </button>
@@ -115,13 +115,13 @@ export function BetaCalMonth({ m, who, view, selDay, onPrev, onNext, onToday, on
       </section>
 
       <aside style={{ flex: "1 1 260px", maxWidth: "100%", minWidth: 0, display: "flex", flexDirection: "column", gap: 16 }}>
-        {canWrite && <button type="button" onClick={onAddWork} style={{ minHeight: 46, border: 0, borderRadius: 10, background: BETA.accent, color: "#FFFFFF", font: "inherit", fontWeight: 600, cursor: "pointer" }}>+ Add work</button>}
-        <section aria-labelledby="betaCalListTitle" style={{ background: BETA.surface, border: `1px solid ${BETA.line}`, borderRadius: 12, padding: 18, display: "flex", flexDirection: "column", gap: 6 }}>
-          <h2 id="betaCalListTitle" style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>{list.title}</h2>
+        {canWrite && <button type="button" onClick={onAddWork} style={{ ...PILL_MAIN, minHeight: 46, font: "inherit", fontWeight: 600, cursor: "pointer" }}>+ Add work</button>}
+        <section aria-labelledby="betaCalListTitle" style={{ ...GLASS, borderRadius: 22, padding: 18, display: "flex", flexDirection: "column", gap: 6 }}>
+          <h2 id="betaCalListTitle" style={{ margin: 0, fontSize: 17, fontWeight: 600, letterSpacing: "-.02em" }}>{list.title}</h2>
           <ol style={{ listStyle: "none", margin: 0, padding: 0 }}>
             {list.due.map((x) => (
-              <li key={`${x.p.id}${x.k}`} style={{ display: "flex", gap: 10, alignItems: "center", padding: "10px 0", borderTop: "1px solid #E8EDEC" }}>
-                <span aria-hidden="true" style={{ flex: "none", width: 10, height: 10, borderRadius: 3, background: "#A12622" }} />
+              <li key={`${x.p.id}${x.k}`} style={{ display: "flex", gap: 10, alignItems: "center", padding: "10px 0", borderTop: `1px solid ${BETA.lineSoft}` }}>
+                <span aria-hidden="true" style={{ flex: "none", width: 10, height: 10, borderRadius: 3, background: TONES.red.dot }} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontWeight: 600 }}>{x.what}</div>
                   <div style={{ fontSize: 12, color: MUTED }}>{who === "All" && x.by && <><b style={{ color: BETA.ink }}>{x.by.name}</b> · </>}{x.p.name}</div>
@@ -145,7 +145,7 @@ export function BetaCalMonth({ m, who, view, selDay, onPrev, onNext, onToday, on
               );
               const row: CSSProperties = { width: "100%", display: "flex", gap: 10, alignItems: "flex-start", padding: "10px 0", border: 0, background: "transparent", textAlign: "left", font: "inherit", opacity: e.done ? 0.55 : 1, color: BETA.ink };
               return (
-                <li key={e.id} style={{ borderTop: "1px solid #E8EDEC" }}>
+                <li key={e.id} style={{ borderTop: `1px solid ${BETA.lineSoft}` }}>
                   {canWrite ? <button type="button" onClick={() => onEditEvent(e)} style={{ ...row, cursor: "pointer" }}>{body}</button> : <div style={row}>{body}</div>}
                 </li>
               );

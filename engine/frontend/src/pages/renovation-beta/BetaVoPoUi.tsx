@@ -3,7 +3,7 @@
 
 import type { CSSProperties, ReactElement, ReactNode } from "react";
 import { WS } from "./BetaWsUi";
-import { BETA } from "./renovationBetaTheme";
+import { BETA, TONES } from "./renovationBetaTheme";
 
 export const thStyle: CSSProperties = {
   textAlign: "left", padding: "8px 10px", fontSize: 12, fontWeight: 700, color: WS.text2, background: WS.head, borderBottom: `1px solid ${BETA.line}`,
@@ -31,8 +31,8 @@ export function WsNarrow({ label, children }: { label: string; children: ReactNo
 
 export const narrowItemStyle: CSSProperties = { padding: "10px 12px", borderBottom: `1px solid ${WS.rowLine}`, display: "flex", flexDirection: "column", gap: 4, background: BETA.surface };
 export const narrowBandStyle = (level: "cat" | "sub"): CSSProperties => ({
-  padding: level === "cat" ? "8px 12px" : "6px 12px 6px 20px", background: level === "cat" ? "#E1F1EE" : "#F3F9F8",
-  borderLeft: `4px solid ${level === "cat" ? BETA.accent : "#A9CFCB"}`, color: level === "cat" ? BETA.accentInk : WS.text2, fontWeight: level === "cat" ? 700 : 600,
+  padding: level === "cat" ? "8px 12px" : "6px 12px 6px 20px", background: level === "cat" ? TONES.accent.soft : BETA.tealSoft,
+  borderLeft: `4px solid ${level === "cat" ? BETA.accent : TONES.accent.line}`, color: level === "cat" ? BETA.accentInk : WS.text2, fontWeight: level === "cat" ? 700 : 600,
   fontSize: level === "cat" ? 15 : 14, borderBottom: `1px solid ${BETA.line}`,
 });
 
@@ -62,6 +62,6 @@ export function WsStats({ children }: { children: ReactNode }): ReactElement {
 
 /** Yes (green), part (amber), no (grey). */
 export function WsMark({ state, yes = "Yes", part = "Part", no = "No" }: { state: "yes" | "part" | "no"; yes?: string; part?: string; no?: string }): ReactElement {
-  const [fg, bg, text] = state === "yes" ? [WS.green, "#E4F1EF", yes] : state === "part" ? [WS.amber, "#FDF1E2", part] : [WS.text2, WS.chip, no];
+  const [fg, bg, text] = state === "yes" ? [WS.green, TONES.accent.soft, yes] : state === "part" ? [WS.amber, TONES.amber.soft, part] : [WS.text2, WS.chip, no];
   return <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 6, background: bg, color: fg, fontSize: 12, fontWeight: 600, whiteSpace: "nowrap" }}>{text}</span>;
 }

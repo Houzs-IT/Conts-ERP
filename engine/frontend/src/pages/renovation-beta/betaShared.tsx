@@ -10,6 +10,7 @@ import type { BetaDialog } from "./BetaForms";
 import type { BoardModel, DesignProject } from "./renovationBetaBoard";
 import type { BetaBoardProject } from "./renovationBetaBoardApi";
 import { whatsappLink } from "./renovationBetaModel";
+import { BETA } from "./renovationBetaTheme";
 import type { BetaTabKey } from "./renovationBetaTabs";
 
 /** The project as Home and Calendar see it (the board's logic), so the workspace shows the same dates and conditions. */
@@ -88,7 +89,7 @@ export function FileDialog({ projectId, file, onClose }: { projectId: number; fi
     <WsDialog title={file.name} onClose={onClose} wide>
       {isImage ? <div style={{ maxHeight: "70vh", overflow: "auto" }}><WsPhoto path={path} alt={file.name} style={{ height: "auto", objectFit: "contain" }} /></div>
         : error ? <p role="alert" style={{ fontSize: 14, color: WS.red }}>The file could not be loaded: {error}</p>
-        : !blobUrl ? <p style={{ fontSize: 14, color: "#55605E" }}>Loading the file...</p>
+        : !blobUrl ? <p style={{ fontSize: 14, color: BETA.muted }}>Loading the file...</p>
         : <p style={{ fontSize: 14 }}><a href={blobUrl} target="_blank" rel="noopener" download={file.name}>Open the file</a></p>}
     </WsDialog>
   );

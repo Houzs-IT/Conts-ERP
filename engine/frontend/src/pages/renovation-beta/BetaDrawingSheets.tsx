@@ -298,7 +298,7 @@ export function LinkCards({ projectId, links, changed, onView, onError, edit }: 
             return (
               <li key={x.name} style={{ display: "flex", flexDirection: "column", gap: 10, padding: 14, borderRadius: 10, background: BETA.surface, border: isNew ? `2px solid ${WS.amberBtn}` : `1px solid ${BETA.line}` }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
-                  <span style={{ flex: "none", width: 48, height: 48, borderRadius: 10, background: "#E8F0FB", display: "flex", alignItems: "center", justifyContent: "center" }}><CubeIcon /></span>
+                  <span style={{ flex: "none", width: 48, height: 48, borderRadius: 10, background: BETA.blueSoft, display: "flex", alignItems: "center", justifyContent: "center" }}><CubeIcon /></span>
                   <div style={{ minWidth: 0, flex: 1 }}>
                     <div style={{ fontWeight: 700, overflowWrap: "anywhere" }}>{x.name}</div>
                     <div style={{ fontSize: 13, color: BETA.muted }}>{linkHost(x.url ?? "")} · V{x.version}</div>

@@ -11,16 +11,16 @@ import { WS, WsEmpty, WsFilterPill, WsPageHead, WsTag, btnStyle, cardStyle } fro
 import type { BetaTabProps } from "./betaShared";
 import { dayHeading, groupByDay, isRecordEntry, mytDay, mytTime, plainTimelineEntry, searchEntries, timelineCsv } from "./renovationBetaModel";
 import { betaSiteApi } from "./renovationBetaSiteApi";
-import { BETA, type BetaTone } from "./renovationBetaTheme";
+import { BETA, TONES, type BetaTone } from "./renovationBetaTheme";
 import type { BetaTabKey } from "./renovationBetaTabs";
 
 const TONE: Readonly<Record<TimelineCategory, BetaTone>> = {
-  site: ["#1A6B66", "#E4F1EF"],
-  design: ["#3F4947", "#EEF2F1"],
-  customer: ["#3F4947", "#EEF2F1"],
-  supplier: ["#8A4A00", "#FDF1E2"],
-  sales: ["#1A6B66", "#E4F1EF"],
-  system: ["#3F4947", "#EEF2F1"],
+  site: [TONES.accent.ink, TONES.accent.soft],
+  design: [TONES.grey.ink, TONES.grey.soft],
+  customer: [TONES.grey.ink, TONES.grey.soft],
+  supplier: [TONES.amber.ink, TONES.amber.soft],
+  sales: [TONES.accent.ink, TONES.accent.soft],
+  system: [TONES.grey.ink, TONES.grey.soft],
 };
 
 const TAB_NAME: Readonly<Partial<Record<BetaTabKey, string>>> = { drawings: "Drawings", site: "Site and photos", defects: "Defects", overview: "Overview" };

@@ -10,7 +10,7 @@ import type { AssignRole, BetaDialog } from "./BetaForms";
 import { WS, WsAvatar, WsBadge, WsCheck, btnStyle, TONE_WAIT } from "./BetaWsUi";
 import { personInfo, type BoardPerson, type DesignProject, type PersonRef } from "./renovationBetaBoard";
 import { dayMonthYear, initials, whatsappLink, type StepperItem } from "./renovationBetaModel";
-import { BETA } from "./renovationBetaTheme";
+import { BETA, GLASS } from "./renovationBetaTheme";
 
 interface HeaderProps {
   d: ProjectDetailV2;
@@ -51,7 +51,7 @@ function AvatarStack({ who, ring }: { who: readonly PersonRef[]; ring: string })
     <span aria-hidden="true" style={{ display: "flex", flex: "none" }}>
       {(shown.length ? shown : [null]).map((x, i) => (
         <span key={x?.id ?? "none"} style={{ marginLeft: i ? -6 : 0, borderRadius: 999, boxShadow: i ? `0 0 0 2px ${ring}` : undefined, display: "inline-flex" }}>
-          <WsAvatar text={x ? initials(x.name) : "?"} size={28} bg={x ? BETA.ink : BETA.border} />
+          <WsAvatar text={x ? initials(x.name) : "?"} size={28} bg={x ? BETA.avatar : BETA.border} />
         </span>
       ))}
       {more > 0 && (
@@ -94,28 +94,28 @@ export function BetaWsHeader({ d, p: board, people = [], canWrite, today, openDi
           <ArrowLeft size={18} aria-hidden="true" />
         </Link>
         <div style={{ minWidth: 0 }}>
-          <h1 className="h1" style={{ margin: 0, fontSize: 28, fontWeight: 700, letterSpacing: "-.01em", overflowWrap: "anywhere" }}>{title}</h1>
+          <h1 className="h1" style={{ margin: 0, fontSize: 28, fontWeight: 600, letterSpacing: "-.02em", overflowWrap: "anywhere" }}>{title}</h1>
           <div style={{ marginTop: 4, color: BETA.muted, fontSize: 14 }}>
             {line}
             {left && <> <span style={{ color: left.late ? WS.red : WS.green, fontWeight: 600 }}>{left.text}</span></>}
           </div>
           <div role="group" aria-label="Project team" className="chips" style={{ display: "flex", flexWrap: "wrap", alignItems: "stretch", gap: 8, marginTop: 12 }}>
             {chips.map((c) => {
-              const bg = c.lead ? "#E4F1EF" : BETA.surface;
+              const bg = c.lead ? BETA.blueSoft : BETA.surface;
               const one = c.who.length === 1 ? infoOf(c.who[0].id) : "";
               const body = (
                 <>
                   <AvatarStack who={c.who} ring={bg} />
                   <span style={{ display: "flex", flexDirection: "column", gap: 2, lineHeight: 1.2, minWidth: 0, flex: 1 }}>
                     <span style={{ fontSize: 11, color: BETA.muted, fontWeight: 600, textTransform: "uppercase", letterSpacing: ".05em", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.role}</span>
-                    <span style={{ fontSize: 14, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{peopleLine(c.who)}</span>
+                    <span style={{ fontSize: 14, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{peopleLine(c.who)}</span>
                     <span style={{ fontSize: 12, color: BETA.muted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minHeight: 14 }}>
                       {one || (c.who.length > 1 ? c.who.map((x) => x.name).join(", ") : "")}
                     </span>
                   </span>
                 </>
               );
-              const box = { display: "flex", alignItems: "center", gap: 10, height: CARD_H, width: 268, maxWidth: "100%", minWidth: 0, padding: "0 10px 0 8px", borderRadius: 10, background: bg, border: `1px solid ${c.lead ? "#A9D2CC" : BETA.line}`, boxSizing: "border-box" } as const;
+              const box = { display: "flex", alignItems: "center", gap: 10, height: CARD_H, width: 268, maxWidth: "100%", minWidth: 0, padding: "0 10px 0 8px", borderRadius: 32, background: bg, border: `1px solid ${c.lead ? BETA.blue : BETA.glassEdge}`, boxSizing: "border-box" } as const;
               return (
                 <div key={c.key} title={c.who.map((x) => x.name).join(", ") || undefined} style={{ ...box, padding: 0, gap: 0, overflow: "hidden" }}>
                   {canWrite ? (
@@ -130,7 +130,7 @@ export function BetaWsHeader({ d, p: board, people = [], canWrite, today, openDi
                       href={whatsappLink(phone, `Hi ${designer}, about ${p.name}.`)}
                       target="_blank"
                       rel="noopener noreferrer"
-                      style={{ flex: "none", marginRight: 8, minHeight: 32, padding: "0 10px", borderRadius: 8, background: BETA.accent, color: "#FFFFFF", fontSize: 13, fontWeight: 600, display: "inline-flex", alignItems: "center", textDecoration: "none" }}
+                      style={{ flex: "none", marginRight: 8, minHeight: 32, padding: "0 12px", borderRadius: 999, background: BETA.accentFill, color: "#FFFFFF", fontSize: 13, fontWeight: 600, display: "inline-flex", alignItems: "center", textDecoration: "none" }}
                     >
                       WhatsApp<span className="sr"> {designer}</span>
                     </a>
@@ -139,7 +139,7 @@ export function BetaWsHeader({ d, p: board, people = [], canWrite, today, openDi
               );
             })}
             {canWrite && (
-              <button type="button" onClick={() => openDialog({ t: "assign", projectId: p.id })} style={{ minHeight: 44, height: CARD_H, padding: "0 14px", border: `1.5px dashed ${BETA.accent}`, borderRadius: 10, background: BETA.surface, color: BETA.accentInk, font: "inherit", fontWeight: 700, cursor: "pointer" }}>
+              <button type="button" onClick={() => openDialog({ t: "assign", projectId: p.id })} style={{ minHeight: 44, height: CARD_H, padding: "0 20px", border: `1.5px dashed ${BETA.dash}`, borderRadius: 999, background: "transparent", color: BETA.ink, font: "inherit", fontWeight: 600, cursor: "pointer" }}>
                 Assign
               </button>
             )}
@@ -160,30 +160,37 @@ function scrollIntoRow(el: HTMLLIElement | null): void {
   box.scrollLeft = Math.max(0, at - (box.clientWidth - el.offsetWidth) / 2);
 }
 
+/* The stepper's dots, as the designs draw them. The blue of a finished step and the red glow of the current one read the same on
+   both skins; only the track and the steps still to come change with the skin (BETA.stepTrack, stepNext). */
+const DOT_DONE = "radial-gradient(circle at 30% 25%,#FFFFFF 0%,#C9D6FF 30%,#8BA8FF 62%,#3F6FF0 100%)";
+const DOT_NOW = "radial-gradient(circle at 32% 26%,#FFD0DA 0%,#F7889E 55%,#EE5C78 100%)";
+const LINE_DONE = "linear-gradient(90deg,#6E9BFF,#C9A6F2,#F6A9C4)";
+
 export function BetaWsStepper({ items, hold }: { items: StepperItem[]; hold: string | null }): ReactElement {
   return (
-    <div style={{ overflowX: "auto", background: BETA.surface, border: `1px solid ${BETA.line}`, borderRadius: 12, padding: "20px 8px 16px" }}>
+    <div style={{ ...GLASS, overflowX: "auto", overflowY: "hidden", borderRadius: 26, padding: "20px 8px 16px" }}>
       <ol aria-label="Project stages" style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", minWidth: 560 }}>
         {items.map((s, i) => {
           const last = i === items.length - 1;
           const done = s.state === "done";
           const now = s.state === "current";
+          const dot = { position: "relative", boxSizing: "border-box", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center" } as const;
           return (
             <li key={s.key} ref={now ? scrollIntoRow : undefined} aria-current={now ? "step" : undefined} style={{ flex: 1, position: "relative", display: "flex", flexDirection: "column", alignItems: "center", gap: 4, textAlign: "center" }}>
-              {!last && <div aria-hidden="true" style={{ position: "absolute", top: 13, left: "50%", width: "100%", height: done ? 2 : 0, background: done ? BETA.accent : undefined, borderTop: done ? undefined : "2px dashed #C3CCCA" }} />}
+              {!last && <div aria-hidden="true" style={{ position: "absolute", top: 13, left: "50%", width: "100%", height: 6, borderRadius: 6, background: done ? LINE_DONE : BETA.stepTrack, boxShadow: done ? "0 0 10px rgba(47,107,255,.4)" : undefined }} />}
               {done ? (
-                <div style={{ position: "relative", width: 28, height: 28, borderRadius: 14, background: BETA.accent, display: "flex", alignItems: "center", justifyContent: "center" }}><WsCheck /></div>
+                <div style={{ ...dot, zIndex: 1, width: 30, height: 30, background: DOT_DONE, boxShadow: "inset 0 2px 3px rgba(255,255,255,.6),inset 0 -3px 6px rgba(10,40,140,.3),0 6px 12px -4px rgba(47,107,255,.5)" }}><WsCheck /></div>
               ) : now ? (
-                <div style={{ position: "relative", width: 28, height: 28, borderRadius: 14, background: BETA.surface, border: `2px solid ${BETA.accent}`, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <span style={{ width: 14, height: 14, borderRadius: 7, background: BETA.accent }} />
+                <div style={{ ...dot, zIndex: 1, width: 34, height: 34, marginTop: -2, background: DOT_NOW, boxShadow: "0 0 0 6px rgba(238,92,120,.12),0 10px 24px -6px rgba(238,92,120,.55),inset 0 2px 3px rgba(255,255,255,.6),inset 0 -4px 8px rgba(170,40,70,.25)" }}>
+                  <span style={{ width: 12, height: 12, borderRadius: "50%", background: "radial-gradient(circle at 35% 30%,#FFFFFF,#FFE3EA)", boxShadow: "0 0 6px rgba(255,255,255,.9)" }} />
                 </div>
               ) : (
-                <div style={{ position: "relative", width: 28, height: 28, borderRadius: 14, background: BETA.surface, border: `2px solid ${BETA.border}` }} />
+                <div style={{ ...dot, zIndex: 1, width: 30, height: 30, background: BETA.stepNext, border: `1px solid ${BETA.stepNextEdge}`, boxShadow: BETA.stepNextShadow }} />
               )}
-              <div style={{ fontSize: 13, fontWeight: now ? 700 : 600, color: now ? BETA.accentInk : done ? BETA.ink : BETA.muted }}>
+              <div style={{ marginTop: now ? 0 : undefined, fontSize: 13, fontWeight: now ? 700 : 600, color: now ? BETA.stepNow : done ? BETA.ink : BETA.muted }}>
                 {s.label}<span className="sr">{done ? " (done)" : now ? " (current step)" : " (not yet)"}</span>
               </div>
-              <div style={{ fontSize: 12, fontWeight: now ? 600 : 400, color: now ? BETA.accentInk : BETA.muted }}>{s.sub}</div>
+              <div style={{ fontSize: 12, fontWeight: now ? 600 : 400, color: now ? BETA.stepNow : BETA.faint }}>{s.sub}</div>
               {now && hold && <WsBadge tone={TONE_WAIT} size={11}>{hold}</WsBadge>}
             </li>
           );

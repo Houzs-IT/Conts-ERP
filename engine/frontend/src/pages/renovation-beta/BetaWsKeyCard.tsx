@@ -9,7 +9,7 @@ import { daysBetween, keyDraftRefusal, keyLogRows, type KeyDraft } from "../proj
 import { PersonSelect } from "../projects/renovation/PersonSelect";
 import { errorText } from "../projects/renovation/renovationModel";
 import { simpleApi, type KeyMove, type ProjectDetailV2 } from "../projects/renovation/simpleApi";
-import { WS, WsBtn, WsCard, WsField, inputStyle } from "./BetaWsUi";
+import { WS, WsBtn, WsCard, WsField, btnStyle, inputStyle } from "./BetaWsUi";
 import { dayMonth, dayMonthYear } from "./renovationBetaModel";
 import { BETA } from "./renovationBetaTheme";
 
@@ -76,13 +76,13 @@ export function BetaWsKeyCard({ d, canWrite, today, onDone }: Props): ReactEleme
         <button
           type="button"
           onClick={() => { setMsg(null); setDraft(fresh()); setAdding(true); }}
-          style={{ minHeight: 36, padding: "0 12px", border: `1px solid ${WS.tealLine}`, borderRadius: 8, background: BETA.surface, color: BETA.accentInk, font: "inherit", fontSize: 13, fontWeight: 600, cursor: "pointer" }}
+          style={btnStyle("outline", "sm")}
         >
           + Key passed
         </button>
       ) : undefined}
     >
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: 12, borderRadius: 10, background: WS.tealSoft }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "12px 14px", borderRadius: 14, background: "transparent" }}>
         {holder ? (
           <>
             <div>
@@ -91,7 +91,7 @@ export function BetaWsKeyCard({ d, canWrite, today, onDone }: Props): ReactEleme
               <div style={{ fontSize: 12, color: BETA.muted }}>since {dayMonthYear(holder.movedOn)}</div>
             </div>
             <div style={{ textAlign: "right" }}>
-              <div style={{ fontSize: 22, fontWeight: 700 }}>{daysBetween(holder.movedOn, today)}</div>
+              <div style={{ fontSize: 32, fontWeight: 600, lineHeight: 1, letterSpacing: "-.02em" }}>{daysBetween(holder.movedOn, today)}</div>
               <div style={{ fontSize: 12, color: BETA.muted }}>days</div>
             </div>
           </>
@@ -99,7 +99,7 @@ export function BetaWsKeyCard({ d, canWrite, today, onDone }: Props): ReactEleme
       </div>
 
       {formOpen && (
-        <div role={adding ? "group" : undefined} aria-label={adding ? "Record key pass" : undefined} style={{ display: "flex", flexDirection: "column", gap: 8, padding: 12, border: `1.5px solid ${BETA.accent}`, borderRadius: 10 }}>
+        <div role={adding ? "group" : undefined} aria-label={adding ? "Record key pass" : undefined} style={{ display: "flex", flexDirection: "column", gap: 8, padding: 12, border: `1.5px solid ${BETA.blue}`, borderRadius: 14 }}>
           <KeyFields draft={draft} onChange={setDraft} today={today} prefix="New key pass" />
           <div style={{ display: "flex", gap: 8 }}>
             {adding && <WsBtn style={{ flex: 1 }} disabled={busy} onClick={() => { setAdding(false); setMsg(null); }}>Cancel</WsBtn>}
