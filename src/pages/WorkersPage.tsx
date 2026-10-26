@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import { StatusBadge } from '../components/StatusBadge';
@@ -9,7 +9,7 @@ import { DataTable, type Column } from '../components/DataTable';
 import { useToast } from '../components/Toast';
 import { useConfirm } from '../components/ConfirmDialog';
 import { useApi } from '../lib/useApi';
-import { mayRun } from '../lib/areaAccess';
+import { mayRun, maySee } from '../lib/areaAccess';
 import { CLEANER_FALLBACK, type Cleaner, type Employment } from '../lib/useCleaners';
 import { api, notifyFailure } from '../lib/api';
 import { plural } from '../lib/format';
@@ -19,14 +19,19 @@ import { PhoneInput, phoneProblem } from '../components/inputs/PhoneInput';
 import { PillTabs } from '../components/ops/OpsUi';
 import { useSession } from '../lib/session';
 
+const EmployeesTab = lazy(() => import('./workers/EmployeesTab'));
+
 /* ------------------------------------------------------------------ *
  * Operations -> Workers: everyone who does the cleaning and the repairs,
  * one tab each. Each list has the company's own people (who can be
  * given app access: employee ID and PIN) and outside companies (no
  * login). The assign pickers on Cleaning and Maintenance pick from here.
+ * A third tab, Employees, keeps the in-house people's HR record (pay,
+ * bank, statutory) for those with access to HR.
  * ------------------------------------------------------------------ */
 
 type ListKey = 'cleaners' | 'technicians';
+type TabKey = ListKey | 'employees';
 
 /** A list entry: a cleaner (GET /housekeeping/cleaners) or a technician (GET /maintenance/technicians?all=1). */
 type Worker = Cleaner & { loginRole?: string | null };
@@ -76,12 +81,15 @@ const emptyDraft = (employmentType: Employment): Draft => ({ name: '', employmen
 
 export default function WorkersPage() {
   const [params, setParams] = useSearchParams();
+  const { user } = useSession();
+  const hr = maySee(user, 'hr');
   const asked = params.get('tab');
-  const tab: ListKey = isListKey(asked) ? asked : 'cleaners';
+  const tab: TabKey = asked === 'employees' && hr ? 'employees' : isListKey(asked) ? asked : 'cleaners';
   const tabs = (
-    <PillTabs<ListKey> value={tab} onChange={t => setParams(p => { const n = new URLSearchParams(p); n.set('tab', t); return n; }, { replace: true })}
-      tabs={[{ value: 'cleaners', label: 'Cleaners' }, { value: 'technicians', label: 'Technicians' }]} />
+    <PillTabs<TabKey> value={tab} onChange={t => setParams(p => { const n = new URLSearchParams(p); n.set('tab', t); return n; }, { replace: true })}
+      tabs={[{ value: 'cleaners', label: 'Cleaners' }, { value: 'technicians', label: 'Technicians' }, ...(hr ? [{ value: 'employees' as const, label: 'Employees' }] : [])]} />
   );
+  if (tab === 'employees') return <Suspense fallback={null}><EmployeesTab tabs={tabs} /></Suspense>;
   return <WorkerList key={tab} list={tab} tabs={tabs} />;
 }
 

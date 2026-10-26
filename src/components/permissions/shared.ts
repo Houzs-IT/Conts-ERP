@@ -30,7 +30,7 @@ export const sideLabel = (s: UserSide | undefined): string => SIDE_OPTIONS.find(
  *  in step. Management always sees both sides; Finance and System are on neither list, so they follow the rules. */
 const CLOSED_BY_SIDE: Record<UserSide, string[]> = {
   conts: ['Dream Crafter'],
-  dream_crafter: ['Workspace', 'Operations', 'Growth'],
+  dream_crafter: ['Workspace', 'Operations', 'HR', 'Growth'],
   both: [],
 };
 export const closedBySide = (kind: DepartmentKind, side: UserSide, group: string): boolean => kind !== 'management' && CLOSED_BY_SIDE[side].includes(group);

@@ -34,7 +34,7 @@ export const sideFits = (departmentSide: Side, side: Side) => departmentSide ===
 /** The area groups each side closes. Finance and System are on neither list, so they follow the role. */
 const CLOSED_BY_SIDE: Record<Side, string[]> = {
   conts: ['Dream Crafter'],
-  dream_crafter: ['Workspace', 'Operations', 'Growth'],
+  dream_crafter: ['Workspace', 'Operations', 'HR', 'Growth'],
   both: [],
 };
 /** Management always sees both sides, so nobody can lock the system out of one. */
@@ -48,6 +48,9 @@ export const AREAS: Area[] = [
   { key: 'reservations', label: 'Reservations', group: 'Operations', api: ['reservations', 'guests', 'blocks', 'guest-documents'] },
   { key: 'operations', label: 'Operations', group: 'Operations', api: ['operations', 'housekeeping', 'maintenance', 'tasks'] },
   { key: 'properties', label: 'Units', group: 'Operations', api: ['properties', 'units', 'inventory', 'access-credentials', 'residence-rules', 'lettings'] },
+  // Field staff's HR record: IC, bank, salary and statutory (PLAN-hr-employees.md). Its own group so Operations staff do
+  // not see pay by default. The cleaner and technician rosters themselves stay under Operations.
+  { key: 'hr', label: 'Employees', group: 'HR', api: ['employees'], strictRead: true },
   { key: 'serviceCases', label: 'Service cases', group: 'Dream Crafter', api: [] },
   { key: 'projects', label: 'Projects', group: 'Dream Crafter', api: [] },
   { key: 'scSales', label: 'Sales order', group: 'Dream Crafter', api: ['sales-orders', 'so-amendments', 'delivery-orders', 'sales-returns', 'customers'] },
