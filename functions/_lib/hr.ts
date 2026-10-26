@@ -50,7 +50,8 @@ function toEmployee(r: Row): Employee {
   return {
     id: r.id, cleanerId: r.p_cleaner_id, technicianId: r.p_technician_id, name: r.full_name, phone: r.phone,
     employeeId: r.employee_id, isActive: !!r.is_active,
-    position: r.position ?? null, nationality: r.nationality, joinDate: r.join_date,
+    // Free text saved before the Leader tick ("Cleaning leader") reads as a leader when it says so.
+    position: r.position?.toLowerCase().includes('leader') ? 'leader' : 'employee', nationality: r.nationality, joinDate: r.join_date,
     // Read before migration 0167 the columns are missing: the record's defaults apply.
     leaderAllowanceSen: r.leader_allowance_sen ?? d.leaderAllowanceSen, efficiencyAllowanceSen: r.efficiency_allowance_sen ?? d.efficiencyAllowanceSen,
     efficiencyThresholdPct: r.efficiency_threshold_pct ?? d.efficiencyThresholdPct,

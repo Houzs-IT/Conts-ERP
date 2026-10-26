@@ -92,7 +92,7 @@ export default function AttendanceTab() {
 
       <div className="flex items-end gap-2 flex-wrap mb-4">
         <Button size="sm" variant="secondary" icon={<Icon name="ChevronLeft" size="sm" />} disabled={!shown} onClick={() => setDay(shift(shown, -1))}>Day before</Button>
-        <DateField aria-label="Day" className="w-[180px]" value={shown} max={data?.today} onChange={v => v && setDay(v)} />
+        <div className="w-[180px] flex-none"><DateField aria-label="Day" value={shown} max={data?.today} onChange={v => v && setDay(v)} /></div>
         <Button size="sm" variant="secondary" disabled={!shown || !data || shown >= data.today} onClick={() => setDay(shift(shown, 1))}>Next day</Button>
         {data && shown !== data.today && <Button size="sm" variant="tertiary" onClick={() => setDay(data.today)}>Today</Button>}
       </div>

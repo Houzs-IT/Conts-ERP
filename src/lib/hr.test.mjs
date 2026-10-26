@@ -16,9 +16,10 @@ test('a resigned employee needs a last working day', () => {
 });
 
 test('bank account keeps digits only; empty text becomes null', () => {
-  const r = employeeInput.parse({ ...EMPLOYEE_DEFAULTS, bankAccount: '1234 5678-90', position: '  ', nationality: ' Malaysian ' });
+  const r = employeeInput.parse({ ...EMPLOYEE_DEFAULTS, bankAccount: '1234 5678-90', nationality: ' Malaysian ' });
   assert.equal(r.bankAccount, '1234567890');
-  assert.equal(r.position, null);
+  assert.equal(r.position, 'employee');
+  assert.equal(employeeInput.safeParse({ ...EMPLOYEE_DEFAULTS, position: 'manager' }).success, false);
   assert.equal(r.nationality, 'Malaysian');
   assert.equal(employeeInput.safeParse({ ...EMPLOYEE_DEFAULTS, bankAccount: '12ab' }).success, false);
 });

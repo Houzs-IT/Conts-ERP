@@ -15,7 +15,7 @@ import { mayRun, mayWork } from '../../lib/areaAccess';
 import { useSession } from '../../lib/session';
 import { rm, plural, todayMyt } from '../../lib/format';
 import {
-  EMPLOYEE_DEFAULTS, MALAYSIAN_BANKS, PAYMENT_METHODS, PAYMENT_METHOD_LABEL, TAX_RESIDENCIES, TAX_RESIDENCY_LABEL,
+  EMPLOYEE_DEFAULTS, POSITION_LABEL, MALAYSIAN_BANKS, PAYMENT_METHODS, PAYMENT_METHOD_LABEL, TAX_RESIDENCIES, TAX_RESIDENCY_LABEL,
   TAX_CATEGORIES, TAX_CATEGORY_LABEL, type Employee, type EmployeeInput,
 } from '../../../functions/_lib/hrFields';
 
@@ -57,7 +57,7 @@ export default function EmployeesTab() {
     { key: 'empNo', label: 'Emp No', value: e => e.employeeId, width: 100 },
     { key: 'name', label: 'Name', value: e => e.name, hideable: false, width: 190, render: e => <span className="font-semibold">{e.name}</span> },
     { key: 'departments', label: 'Departments', value: departmentsOf, width: 170 },
-    { key: 'position', label: 'Position', value: e => e.position, width: 140 },
+    { key: 'position', label: 'Position', value: e => POSITION_LABEL[e.position], width: 120 },
     { key: 'phone', label: 'Phone', type: 'phone', value: e => e.phone, width: 150 },
     { key: 'basic', label: 'Basic Salary', type: 'money', value: e => (e.payBasis === 'daily' ? e.dailyRateSen : e.basicSalarySen), width: 140,
       render: e => e.payBasis === 'daily' ? `${rm(e.dailyRateSen)} / day` : rm(e.basicSalarySen) },
@@ -106,7 +106,7 @@ export default function EmployeesTab() {
             </span>
             <span className="text-meta text-muted-ink flex gap-x-3 flex-wrap">
               {e.employeeId && <span>{e.employeeId}</span>}
-              <span>{departmentsOf(e)}{e.position ? ` · ${e.position}` : ''}</span>
+              <span>{departmentsOf(e)} · {POSITION_LABEL[e.position]}</span>
               <span>{e.payBasis === 'daily' ? `${rm(e.dailyRateSen)} / day` : `${rm(e.basicSalarySen)} / month`}</span>
             </span>
           </span>
@@ -208,7 +208,7 @@ function EmployeeForm({ person, onClose, onSaved }: {
   }
 
   return (
-    <Modal title={creating ? 'Add Employee' : name || 'Employee'} sub={creating ? 'A cleaner or technician on the company payroll.' : [person.employeeId, departmentsOf(person), d.position].filter(Boolean).join(' · ')}
+    <Modal title={creating ? 'Add Employee' : name || 'Employee'} sub={creating ? 'A cleaner or technician on the company payroll.' : [person.employeeId, departmentsOf(person), POSITION_LABEL[d.position]].filter(Boolean).join(' · ')}
       onClose={onClose} width={640}
       footer={<>
         <Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
@@ -219,8 +219,15 @@ function EmployeeForm({ person, onClose, onSaved }: {
           <Field label="Employee No" value={person?.employeeId ?? ''} readOnly placeholder={creating ? 'Given with app access' : 'No app access yet'}
             help={creating ? undefined : 'Given when app access is set up on Operations > Workers.'} />
           <Field label="Name" value={name} onChange={e => setName(e.target.value)} placeholder="Nurul Huda" error={errors.name} />
-          <Field label="Position" value={d.position ?? ''} onChange={e => set('position', e.target.value)} placeholder="Cleaner" error={errors.position} />
           <PhoneInput label="Phone" value={phone} onChange={setPhone} error={errors.phone} />
+          <label className="sm:col-span-2 flex items-center gap-2.5 min-h-10 cursor-pointer">
+            <input type="checkbox" className="size-4 accent-[var(--color-ink)]" checked={d.position === 'leader'}
+              onChange={e => setD(p => ({ ...p, position: e.target.checked ? 'leader' : 'employee', leaderAllowanceSen: e.target.checked ? p.leaderAllowanceSen : 0 }))} />
+            <span className="flex flex-col">
+              <span className="text-copy font-medium">Leader</span>
+              <span className="text-meta text-muted-ink">Leads a team and can get the leader allowance. Unticked: a normal employee.</span>
+            </span>
+          </label>
           <div className="sm:col-span-2 flex flex-col gap-1.5">
             <span className="text-meta font-medium text-muted-ink">Departments</span>
             {creating ? (
@@ -266,8 +273,10 @@ function EmployeeForm({ person, onClose, onSaved }: {
           <NumberInput label="Hours / day" value={d.workingHoursPerDay} onChange={v => set('workingHoursPerDay', v ?? 8)} decimals={2} min={0.5} max={24}
             help="Their standard day: the overtime line, and what a short day is short of." error={errors.workingHoursPerDay} />
           <NumberInput label="OT multiplier" value={d.otMultiplier} onChange={v => set('otMultiplier', v ?? 1.5)} decimals={2} min={1} max={5} error={errors.otMultiplier} />
-          <MoneyInput label="Leader allowance (RM)" valueSen={d.leaderAllowanceSen || null} onChangeSen={v => set('leaderAllowanceSen', v ?? 0)}
-            help="Each month, less the share of working days missed." error={errors.leaderAllowanceSen} />
+          {d.position === 'leader' && (
+            <MoneyInput label="Leader allowance (RM)" valueSen={d.leaderAllowanceSen || null} onChangeSen={v => set('leaderAllowanceSen', v ?? 0)}
+              help="Each month, less the share of working days missed." error={errors.leaderAllowanceSen} />
+          )}
           <MoneyInput label="Eff. allowance (RM)" valueSen={d.efficiencyAllowanceSen || null} onChangeSen={v => set('efficiencyAllowanceSen', v ?? 0)}
             help="Paid once production time is decided." error={errors.efficiencyAllowanceSen} />
           <NumberInput label="Eff. threshold %" value={d.efficiencyThresholdPct} onChange={v => set('efficiencyThresholdPct', v ?? 100)} min={0} max={200} error={errors.efficiencyThresholdPct} />

@@ -32,13 +32,18 @@ export const TAX_CATEGORY_LABEL: Record<TaxCategory, string> = {
   single: 'Single', married_spouse_not_working: 'Married, spouse not working', married_spouse_working: 'Married, spouse working',
 };
 
+export const POSITIONS = ['employee', 'leader'] as const;
+export type Position = (typeof POSITIONS)[number];
+export const POSITION_LABEL: Record<Position, string> = { employee: 'Employee', leader: 'Leader' };
+
 const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use a date.');
 const text = (max: number) => z.string().trim().max(max).transform(v => v || null).nullable();
 const sen = z.int().min(0).max(100_000_000);
 
 /** What the Employees form saves. Every field is the whole value, not a change. */
 export const employeeInput = z.object({
-  position: text(60),
+  /** Hookka's Operator / Operator Leader as one tick (owner, 26 Oct 2026): a leader, or a normal employee. */
+  position: z.enum(POSITIONS),
   nationality: text(40),
   joinDate: day.nullable(),
   status: z.enum(['active', 'resigned']),
@@ -83,7 +88,7 @@ export interface Employee extends EmployeeInput {
 
 /** The record a person starts with before anyone saves one. Matches the column defaults in migration 0162. */
 export const EMPLOYEE_DEFAULTS: EmployeeInput = {
-  position: null, nationality: null, joinDate: null, status: 'active', resignedAt: null,
+  position: 'employee', nationality: null, joinDate: null, status: 'active', resignedAt: null,
   payBasis: 'monthly', basicSalarySen: 0, dailyRateSen: 0, workingDaysPerMonth: 26, workingHoursPerDay: 8, otMultiplier: 1.5,
   leaderAllowanceSen: 0, efficiencyAllowanceSen: 0, efficiencyThresholdPct: 100,
   paymentMethod: 'transfer', bankName: null, bankAccount: null,

@@ -169,10 +169,10 @@ export default function WorkingHoursTab() {
             <span className="text-meta text-muted-ink">{data?.shiftRules ? 'Punch hours follow the shift rules (Payroll > Pay Rules).' : 'Punch hours are clock-out minus clock-in.'}</span>
           </span>
           <span className="flex items-end gap-2 flex-wrap">
-            <DateField label="From" className="w-[170px]" value={from} max={to} onChange={v => v && void leave(() => setRange(v, to))} />
-            <DateField label="To" className="w-[170px]" value={to} min={from} onChange={v => v && void leave(() => setRange(from, v))} />
+            <div className="w-[170px] flex-none"><DateField label="From" value={from} max={to} onChange={v => v && void leave(() => setRange(v, to))} /></div>
+            <div className="w-[170px] flex-none"><DateField label="To" value={to} min={from} onChange={v => v && void leave(() => setRange(from, v))} /></div>
             {mayEdit && <>
-              <DateField label="Copy from" className="w-[170px]" value={copyFrom} onChange={v => v && setCopyFrom(v)} />
+              <div className="w-[170px] flex-none"><DateField label="Copy from" value={copyFrom} onChange={v => v && setCopyFrom(v)} /></div>
               <Button size="sm" variant="secondary" icon={<Icon name="Copy" size="sm" />} onClick={() => copyDay(copyFrom, to)}>Copy</Button>
               <Button size="sm" variant="secondary" onClick={() => copyDay(shiftDay(to, -1), to)}>Copy yesterday</Button>
               <Button size="sm" variant="secondary" icon={<Icon name="Plus" size="sm" />} onClick={addRow}>Add Row</Button>
@@ -191,7 +191,7 @@ export default function WorkingHoursTab() {
             </span>
           )}
           <span className="flex items-end gap-2 flex-wrap">
-            {multiDay && <DateField label="Date" className="w-[170px]" value={filter.day} min={from} max={to} onChange={v => setFilter(f => ({ ...f, day: v }))} />}
+            {multiDay && <div className="w-[170px] flex-none"><DateField label="Date" value={filter.day} min={from} max={to} onChange={v => setFilter(f => ({ ...f, day: v }))} /></div>}
             <Field label="Employee" value={filter.name} onChange={e => setFilter(f => ({ ...f, name: e.target.value }))} placeholder="Name" />
             <Select label="Department" showLabel size="md" className="w-[180px]" value={filter.department} placeholder="All departments"
               onChange={v => setFilter(f => ({ ...f, department: v === 'cleaning' || v === 'maintenance' ? v : '' }))}
@@ -240,7 +240,7 @@ function HoursRow({ row: r, multiDay, people, person, punch, total, from, to, ma
     <tr className={cx('align-top [border-bottom:1px_solid_var(--color-line-soft)]', r.dirty && 'bg-page')}>
       {multiDay && (
         <td className="py-2 px-4 whitespace-nowrap">
-          {editable ? <DateField aria-label="Date" className="w-[160px]" value={r.date} min={from} max={to} onChange={v => v && onChange({ date: v, attendanceId: null })} /> : dayText(r.date)}
+          {editable ? <div className="w-[160px] flex-none"><DateField aria-label="Date" value={r.date} min={from} max={to} onChange={v => v && onChange({ date: v, attendanceId: null })} /></div> : dayText(r.date)}
         </td>
       )}
       <td className="py-2 px-4 min-w-[180px]">
@@ -309,7 +309,7 @@ function PublicHolidays({ holidays, mayEdit, onChange, year }: { holidays: Publi
       </span>
       {mayEdit && (
         <span className="flex items-end gap-2 flex-wrap">
-          <DateField label="Date" className="w-[170px]" value={day} onChange={setDay} />
+          <div className="w-[170px] flex-none"><DateField label="Date" value={day} onChange={setDay} /></div>
           <Field label="Name (optional)" value={name} onChange={e => setName(e.target.value)} placeholder="Hari Merdeka" />
           <Button size="sm" variant="secondary" icon={<Icon name="Plus" size="sm" />} disabled={!day || busy} onClick={add}>Add</Button>
         </span>
