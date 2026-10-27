@@ -67,6 +67,11 @@ const CSS = `
 .bws .tab{display:flex;flex:none;white-space:nowrap;align-items:center;min-height:44px;padding:0 16px;border:0;border-bottom:3px solid transparent;margin-bottom:-1px;background:transparent;font:inherit;color:${BETA.muted};font-weight:500;cursor:pointer}
 .bws .tab[aria-current="page"]{border-bottom-color:${BETA.blue};color:${BETA.ink};font-weight:600}
 .bws .tab:hover{color:${BETA.ink}}
+.bws .vrow{flex:1 1 0;min-width:0;display:flex;align-items:center;gap:8px;padding:2px;overflow-x:auto;scrollbar-width:none}
+.bws .vrow::-webkit-scrollbar{display:none}
+.bws .vpill{flex:none;min-height:40px;padding:0 16px;border:1px solid ${BETA.border};border-radius:999px;background:${BETA.surface};color:${BETA.ink};font:inherit;font-size:13px;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap;cursor:pointer;transition:background .15s ease-out,border-color .15s ease-out,color .15s ease-out}
+.bws .vpill:hover{border-color:${BETA.muted}}
+.bws .vpill[aria-pressed="true"]{background:${BETA.ink};border-color:${BETA.ink};color:${BETA.surface}}
 .bws .link{padding:0;border:0;background:transparent;font:inherit;font-size:13px;font-weight:600;color:${BETA.accent};cursor:pointer;text-decoration:underline}
 .bws .link:hover{color:${BETA.accentInk}}
 @media (prefers-reduced-motion:no-preference){.bws .fade{animation:bwsfade .18s ease-out}@keyframes bwsfade{from{opacity:.4}to{opacity:1}}}

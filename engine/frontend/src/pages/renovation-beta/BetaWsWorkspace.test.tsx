@@ -4,7 +4,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
-const h = vi.hoisted(() => ({ routes: {} as Record<string, unknown>, puts: [] as Array<[string, unknown]> }));
+const h = vi.hoisted(() => ({ routes: {} as Record<string, unknown>, puts: [] as Array<[string, unknown]>, posts: [] as Array<[string, unknown]> }));
 
 vi.mock("../../api/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../api/client")>();
@@ -14,7 +14,12 @@ vi.mock("../../api/client", async (importOriginal) => {
     return hit[1];
   };
   const put = async (path: string, body: unknown): Promise<unknown> => { h.puts.push([path, body]); return { ok: true }; };
-  return { ...actual, api: { ...actual.api, get, put, fetchBlobUrl: async () => "blob:x" } };
+  const post = async (path: string, body: unknown): Promise<unknown> => { h.posts.push([path, body]); return { id: 99, version: 2, ok: true }; };
+  const postBinary = async (path: string): Promise<unknown> => {
+    const name = decodeURIComponent(path.split("fileName=")[1] ?? "x.pdf");
+    return { key: `up/${name}`, fileName: name, contentType: "application/pdf", size: 1000 };
+  };
+  return { ...actual, api: { ...actual.api, get, put, post, postBinary, fetchBlobUrl: async () => "blob:x" } };
 });
 vi.mock("../../auth/AuthContext", () => ({ useAuth: () => ({ can: () => true }) }));
 
@@ -367,6 +372,65 @@ describe("Beta project workspace", () => {
     expect(await screen.findByText("2 / 2")).toBeTruthy();
     fireEvent.keyDown(window, { key: "Escape" });
     await waitFor(() => expect(screen.queryByText("2 / 2")).toBeNull());
+  });
+
+  it("Replace changed pages refuses a file with no sheet picked, and keeps the other sheets when one is ticked", async () => {
+    const { PDFDocument } = await import("pdf-lib");
+    const doc = await PDFDocument.create();
+    doc.addPage();
+    const pdf = new File([await doc.save()], "Baron b30-05_bedroom 01.pdf", { type: "application/pdf" });
+    const file = (id: number, version: number, name: string) => ({
+      id, kind: "2d", version, file_name: name, r2_key: `k${id}`, external_url: null, person_name: null, uploaded_by_name: "Jia Xin", uploaded_at: "2026-10-20T02:00:00Z",
+      note: null, submitted_on: "2026-10-20", next_person_id: null, next_person_name: null,
+    });
+    const sheet = (id: number, name: string) => ({ id, fileId: 1, name, fileName: `${name}.pdf`, contentType: "application/pdf", size: 1000, key: `s${id}`, uploadedAt: "2026-10-20T02:00:00Z" });
+    const saved = { "design-records": h.routes["design-records"], "design-sheets": h.routes["design-sheets"] };
+    h.routes["design-records"] = { measures: [], files: [file(1, 1, "set")], notes: [] };
+    h.routes["design-sheets"] = { ready: true, canRemove: true, sheets: [sheet(1, "Layout"), sheet(2, "Ceiling"), sheet(3, "Plumbing")] };
+    h.posts = [];
+    try {
+      open("/beta/projects/7?tab=drawings");
+      await screen.findByRole("button", { name: /Replace changed pages/ });
+      fireEvent.change(await screen.findByTestId("replace-picker"), { target: { files: [pdf] } });
+      const dlg = await screen.findByRole("dialog", { name: /Replace changed pages/ });
+      await within(dlg).findByText("Tick the sheet it replaces below");
+      fireEvent.click(within(dlg).getByRole("button", { name: "Replace sheets" }));
+      expect(await within(dlg).findByText(/Tick the sheet each file replaces/)).toBeTruthy();
+      expect(h.posts.length).toBe(0);
+      fireEvent.click(within(dlg).getByRole("checkbox", { name: /Ceiling/ }));
+      fireEvent.click(within(dlg).getByRole("button", { name: "Replace sheets" }));
+      await waitFor(() => expect(h.posts.find(([path]) => path.endsWith("/design-2d-sets"))).toBeTruthy());
+      const body = h.posts.find(([path]) => path.endsWith("/design-2d-sets"))?.[1] as { sheets: Array<{ name: string }> };
+      expect(body.sheets.map((x) => x.name)).toEqual(["Ceiling"]);
+    } finally {
+      Object.assign(h.routes, saved);
+    }
+  });
+
+  it("switches the 2D set between versions with the View version pills, marking what each version changed", async () => {
+    const file = (id: number, version: number) => ({
+      id, kind: "2d", version, file_name: `set v${version}`, r2_key: `k${id}`, external_url: null, person_name: null, uploaded_by_name: "Jia Xin", uploaded_at: "2026-10-20T02:00:00Z",
+      note: null, submitted_on: `2026-10-2${version}`, next_person_id: null, next_person_name: null,
+    });
+    const sheet = (id: number, fileId: number, name: string) => ({ id, fileId, name, fileName: `${name}.pdf`, contentType: "application/pdf", size: 1000, key: `s${id}`, uploadedAt: "2026-10-20T02:00:00Z" });
+    const saved = { "design-records": h.routes["design-records"], "design-sheets": h.routes["design-sheets"] };
+    h.routes["design-records"] = { measures: [], files: [file(1, 1), file(2, 2), file(3, 3)], notes: [] };
+    h.routes["design-sheets"] = { ready: true, canRemove: true, sheets: [sheet(1, 1, "Layout"), sheet(2, 1, "Ceiling"), sheet(3, 2, "Ceiling"), sheet(4, 3, "Layout")] };
+    try {
+      open("/beta/projects/7?tab=drawings");
+      const row = await screen.findByRole("group", { name: "View version" });
+      expect(within(row).getAllByRole("button").map((b) => b.textContent)).toEqual(["V1", "V2", "V3 · latest"]);
+      fireEvent.click(within(row).getByRole("button", { name: "V2" }));
+      expect(await screen.findByText("OLDER VERSION")).toBeTruthy();
+      // V2 changed Ceiling only; Layout is the same as in V1.
+      expect(screen.getAllByText("Changed").length).toBe(1);
+      expect(screen.getAllByText("Same").length).toBe(1);
+      fireEvent.click(within(row).getByRole("button", { name: "V3 · latest" }));
+      expect(await screen.findByText("LATEST")).toBeTruthy();
+      expect(screen.getAllByText("Changed").length).toBe(1);
+    } finally {
+      Object.assign(h.routes, saved);
+    }
   });
 
   it("never shows a stored code on the Timeline", async () => {
