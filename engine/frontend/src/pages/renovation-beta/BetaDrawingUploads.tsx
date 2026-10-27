@@ -9,6 +9,7 @@ import { addDays, errorText } from "../projects/renovation/renovationModel";
 import { peopleOptions, personLabel, usePeople } from "../projects/renovation/PersonSelect";
 import { simpleApi, type DesignFile, type NamedRef, type SiteMeasure } from "../projects/renovation/simpleApi";
 import { BetaModal, BetaPeoplePicker } from "./BetaForms";
+import { SheetThumb } from "./BetaDrawingSheets";
 import { WS, WsField, inputStyle, textareaStyle } from "./BetaWsUi";
 import type { BetaTabProps } from "./betaShared";
 import { betaApi } from "./renovationBetaApi";
@@ -290,6 +291,14 @@ function SheetsForm({ p, sheets, mode, forSheet, initial, onClose, onSaved }: Fo
   const choose = (id: number, choice: string): void => setRows((r) => r.map((x) => (x.id !== id ? x
     : choice === "" || choice === NEW_SHEET ? { ...x, choice, replaces: false, name: x.own }
     : { ...x, choice, replaces: true, name: choice })));
+  const unmatched = rows.filter((x) => x.choice === "").length;
+  /** Ticking a sheet gives it to the first file still without one; unticking frees it. */
+  const tick = (name: string): void => setRows((r) => {
+    const owner = r.find((x) => x.choice === name);
+    if (owner) return r.map((x) => (x === owner ? { ...x, choice: "", replaces: false, name: x.own } : x));
+    const free = r.find((x) => x.choice === "");
+    return free ? r.map((x) => (x === free ? { ...x, choice: name, replaces: true, name } : x)) : r;
+  });
   // The files picked before the dialog opened go through the same path as files chosen inside it.
   const started = useRef(false);
   useEffect(() => {
@@ -304,9 +313,10 @@ function SheetsForm({ p, sheets, mode, forSheet, initial, onClose, onSaved }: Fo
   return (
     <BetaModal
       title={title} sub={p.detail.project.name} onClose={onClose} error={f.error} busy={f.busy || progress != null}
+      wide={pickMode} saveLabel={pickMode ? "Replace sheets" : undefined}
       onSubmit={() => f.run(async () => {
         if (rows.length === 0) { f.setError(forSheet ? "Press Replace on the sheets that changed." : "Choose the sheets (PDF or photos)."); return; }
-        if (pickMode && rows.some((x) => x.choice === "")) { f.setError("Pick the sheet each file replaces, or choose Add as a new sheet."); return; }
+        if (pickMode && rows.some((x) => x.choice === "")) { f.setError("Tick the sheet each file replaces, or choose Add as a new sheet."); return; }
         if (!on || on > p.today) { f.setError("Give the date the drawings were handed in (not ahead of today)."); return; }
         const names = rows.map((x) => x.name.trim().replace(/\s+/g, " "));
         if (names.some((x) => !x)) { f.setError("Give every sheet a name."); return; }
@@ -338,24 +348,47 @@ function SheetsForm({ p, sheets, mode, forSheet, initial, onClose, onSaved }: Fo
       })}
     >
       {pickMode && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          <div style={{ fontSize: 12, color: BETA.muted }}>Pick the sheet each file replaces. The other sheets are kept from the set.</div>
-          <ul aria-label="Files and the sheet each replaces" style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 6, maxHeight: 320, overflowY: "auto" }}>
-            {rows.map((x) => (
-              <li key={x.id} style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, padding: 8, borderRadius: 8, background: x.choice === "" ? WS.panel : WS.tealSoft }}>
-                <span style={{ flex: "1 1 140px", minWidth: 0, overflowWrap: "anywhere", fontSize: 13, fontWeight: 600 }}>{x.file.name}</span>
-                <select aria-label={`Sheet that ${x.file.name} replaces`} style={{ ...inputStyle, flex: "1 1 180px", minHeight: 36 }} value={x.choice} onChange={(e) => choose(x.id, e.target.value)}>
-                  <option value="">Pick the sheet it replaces...</option>
-                  {current.map((s) => <option key={s.name} value={s.name} disabled={rows.some((y) => y !== x && y.choice === s.name)}>{s.name} · V{s.version}</option>)}
-                  <option value={NEW_SHEET}>Add as a new sheet</option>
-                </select>
-                {x.choice === NEW_SHEET && (
-                  <input aria-label={`Name of the new sheet for ${x.file.name}`} style={{ ...inputStyle, flex: "1 1 140px", minHeight: 36 }} value={x.name} maxLength={120}
-                    onChange={(e) => setRows((r) => r.map((y) => (y.id === x.id ? { ...y, name: e.target.value, own: e.target.value } : y)))} />
-                )}
-                <button type="button" className="link" style={{ color: WS.red }} onClick={() => setRows((r) => r.filter((y) => y.id !== x.id))}>Remove<span className="sr"> {x.file.name}</span></button>
-              </li>
-            ))}
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {rows.length > 0 && (
+            <ul aria-label="Files to put in" style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 6 }}>
+              {rows.map((x) => (
+                <li key={x.id} style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "4px 10px", padding: "8px 10px", borderRadius: 8, background: x.choice === "" ? WS.panel : WS.tealSoft, fontSize: 13 }}>
+                  <span style={{ flex: "1 1 180px", minWidth: 0, overflowWrap: "anywhere", fontWeight: 600 }}>{x.file.name}</span>
+                  {x.choice === NEW_SHEET ? (
+                    <input aria-label={`Name of the new sheet for ${x.file.name}`} style={{ ...inputStyle, flex: "1 1 160px", minHeight: 34 }} value={x.name} maxLength={120}
+                      onChange={(e) => setRows((r) => r.map((y) => (y.id === x.id ? { ...y, name: e.target.value, own: e.target.value } : y)))} />
+                  ) : (
+                    <span style={{ flex: "1 1 160px", color: x.choice === "" ? BETA.muted : BETA.accentInk }}>{x.choice === "" ? "Tick the sheet it replaces below" : `Replaces ${x.choice}`}</span>
+                  )}
+                  {x.choice === NEW_SHEET
+                    ? <button type="button" className="link" onClick={() => choose(x.id, "")}>Replace a sheet instead<span className="sr"> for {x.file.name}</span></button>
+                    : x.choice === "" && <button type="button" className="link" onClick={() => choose(x.id, NEW_SHEET)}>Add as a new sheet<span className="sr"> for {x.file.name}</span></button>}
+                  <button type="button" className="link" style={{ color: WS.red }} onClick={() => setRows((r) => r.filter((y) => y.id !== x.id))}>Remove<span className="sr"> {x.file.name}</span></button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <div style={{ fontSize: 12, color: BETA.muted }}>
+            {rows.length === 0 ? "Choose the files that changed." : unmatched > 0
+              ? `Tick the ${unmatched === 1 ? "sheet" : `${unmatched} sheets`} these files replace. The other sheets are kept from the set.`
+              : "Every file is matched. Untick a sheet to change its match."}
+          </div>
+          <ul aria-label="Sheets of the set" style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))", gap: 10, maxHeight: 380, overflowY: "auto" }}>
+            {current.map((s) => {
+              const owner = rows.find((x) => x.choice === s.name);
+              return (
+                <li key={s.name} style={{ minWidth: 0 }}>
+                  <label style={{ position: "relative", display: "flex", flexDirection: "column", gap: 4, height: "100%", padding: 4, borderRadius: 8, cursor: owner || unmatched > 0 ? "pointer" : "not-allowed",
+                    border: owner ? `2px solid ${BETA.accent}` : `1px solid ${BETA.line}`, background: owner ? WS.tealSoft : BETA.surface, opacity: !owner && unmatched === 0 ? 0.55 : 1 }}>
+                    <input type="checkbox" checked={owner != null} disabled={!owner && unmatched === 0} onChange={() => tick(s.name)}
+                      style={{ position: "absolute", top: 8, left: 8, zIndex: 1, width: 20, height: 20, accentColor: BETA.accent }} />
+                    <div style={{ aspectRatio: "4 / 3", borderRadius: 6, overflow: "hidden", background: "#FFFFFF" }}><SheetThumb projectId={p.projectId} sheet={s} /></div>
+                    <span style={{ fontWeight: 600, fontSize: 12, overflowWrap: "anywhere" }}>{s.name}</span>
+                    <span style={{ fontSize: 11, color: owner ? BETA.accentInk : BETA.muted, overflowWrap: "anywhere" }}>{owner ? `New: ${owner.file.name}` : `V${s.version}`}</span>
+                  </label>
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}

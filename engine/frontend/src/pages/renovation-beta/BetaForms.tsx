@@ -60,12 +60,16 @@ interface ModalProps {
   children: ReactNode;
   /** The left-hand destructive button, e.g. Delete. */
   danger?: { label: string; onClick: () => void };
+  /** A wider box for a picture grid (880px, not 520px). */
+  wide?: boolean;
+  /** The words on the submit button; Save when absent. */
+  saveLabel?: string;
 }
 
 const FOCUSABLE = "input:not([type=hidden]):not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled]), a[href]";
 
 /** The mockup's modal: dim page, a white 520px form with the title, fields and Cancel / Save. */
-export function BetaModal({ title, sub, onClose, onSubmit, error, busy, children, danger }: ModalProps): ReactElement {
+export function BetaModal({ title, sub, onClose, onSubmit, error, busy, children, danger, wide = false, saveLabel = "Save" }: ModalProps): ReactElement {
   const titleId = useId();
   const box = useRef<HTMLFormElement>(null);
   useEffect(() => {
@@ -104,7 +108,7 @@ export function BetaModal({ title, sub, onClose, onSubmit, error, busy, children
         aria-labelledby={titleId}
         tabIndex={-1}
         onSubmit={submit}
-        style={{ outline: "none", maxWidth: 520, margin: "0 auto", background: BETA.surface, border: `1px solid ${BETA.glassEdge}`, boxShadow: BETA.glassShadow, borderRadius: 22, padding: 20, display: "flex", flexDirection: "column", gap: 12, color: BETA.ink }}
+        style={{ outline: "none", maxWidth: wide ? 880 : 520, margin: "0 auto", background: BETA.surface, border: `1px solid ${BETA.glassEdge}`, boxShadow: BETA.glassShadow, borderRadius: 22, padding: 20, display: "flex", flexDirection: "column", gap: 12, color: BETA.ink }}
       >
         <h2 id={titleId} style={{ margin: 0, fontSize: 18, fontWeight: 600, letterSpacing: "-.02em" }}>{title}</h2>
         {sub && <div style={{ fontSize: 14, color: TONES.grey.ink }}>{sub}</div>}
@@ -119,7 +123,7 @@ export function BetaModal({ title, sub, onClose, onSubmit, error, busy, children
           <div style={{ display: "flex", gap: 8 }}>
             <button type="button" onClick={onClose} style={FOOT_BTN}>Cancel</button>
             <button type="submit" disabled={busy} style={{ ...PILL_MAIN, minHeight: 42, padding: "0 20px", font: "inherit", fontWeight: 600, cursor: busy ? "default" : "pointer", opacity: busy ? 0.7 : 1 }}>
-              {busy ? "Saving..." : "Save"}
+              {busy ? "Saving..." : saveLabel}
             </button>
           </div>
         </div>
