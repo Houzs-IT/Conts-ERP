@@ -118,7 +118,8 @@ export function FileDialog({ projectId, file: opened, onClose }: { projectId: nu
         : !blobUrl ? <p style={{ fontSize: 14, color: BETA.muted }}>Loading the file...</p>
         : (
           <>
-            {inlinePdf && <iframe src={blobUrl} title={file.name} style={{ width: "100%", height: "70vh", border: 0, borderRadius: 8, background: "#FFFFFF", marginBottom: 10 }} />}
+            {/* The fragment asks Chrome's viewer for the plain page at full width: no toolbar, no thumbnail strip. The new-tab link keeps the full viewer. */}
+            {inlinePdf && <iframe src={`${blobUrl}#toolbar=0&navpanes=0&view=FitH`} title={file.name} style={{ width: "100%", height: "70vh", border: 0, borderRadius: 8, background: "#FFFFFF", marginBottom: 10 }} />}
             <p style={{ fontSize: 14 }}><a href={blobUrl} target="_blank" rel="noopener" download={downloadName}>{inlinePdf ? "Open in a new tab" : "Open the file"}</a></p>
           </>
         )}
