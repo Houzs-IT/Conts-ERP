@@ -1,4 +1,8 @@
-import { type Env, all, one, run, nowIso } from './db';
+import { type Env, all, one, run, audit, nowIso } from './db';
+import { ensureTurnovers, replanTurnover } from './cleaning';
+import { hostplatformConfigured, hostplatformProperties, hostplatformReservationPage, type HpReservation } from './hostplatform';
+import { mapApiReservations } from './hostplatformImport';
+import { type Db, importReservations } from './hostplatformImportDb';
 import { peopleWithAccess } from './access';
 import { deliver, notifyUsers, retryAt, MAX_SEND_ATTEMPTS, hasSendLease, sendLeaseUntil } from './notify';
 import { flushWhenQuiet } from './channexQueue';
@@ -118,6 +122,66 @@ export async function repairBlockSweep(env: Env, o: RunOptions = {}): Promise<Jo
   };
 }
 
+const HP_SYNCED_KEY = 'hostplatform.synced_at';
+/** A first run, with no earlier one on record, looks back this far; each run overlaps the last by a few minutes. */
+const HP_FIRST_LOOKBACK_MS = 2 * 86400e3;
+const HP_OVERLAP_MS = 5 * 60e3;
+const HP_MAX_PAGES = 40;
+
+/** Every 5 minutes: pull what HostPlatform changed since the last good run, for every building. This is how HostPlatform
+ *  reaches us: its webhook has one slot and StreamHost holds it. It is the Pull button's work (importReservations, source
+ *  'api': an existing booking keeps its money, channel, notes, guest and staff check-in/out; nothing is deleted), limited by
+ *  updated_after. The time is only moved on once every building was read and written, so a failed run is repeated whole.
+ *  Reads HostPlatform only; with dryRun nothing is written, here or there. */
+export async function hostplatformPull(env: Env, o: RunOptions = {}): Promise<JobReport> {
+  const job = 'hostplatform-pull';
+  if (!hostplatformConfigured(env)) return { job, summary: 'HostPlatform is not configured here (HOSTPLATFORM_BASE_URL or HOSTPLATFORM_ACCESS_TOKEN not set): nothing pulled.' };
+  const startedAt = o.now ?? new Date();
+  const last = Date.parse((await one<{ value: string }>(env, 'SELECT value FROM settings WHERE key = ?', HP_SYNCED_KEY))?.value ?? '');
+  const since = new Date((Number.isNaN(last) ? startedAt.getTime() - HP_FIRST_LOOKBACK_MS : last) - HP_OVERLAP_MS).toISOString();
+  const buildings = await hostplatformProperties(env);
+  if (!buildings.ok || !buildings.body) throw new Error(`HostPlatform did not return its buildings (status ${buildings.status}).`);
+
+  const pulled: HpReservation[] = [];
+  let malformed = 0;
+  for (const { id: propertyId } of buildings.body) {
+    let cursor: string | null = null, pages = 0;
+    do {
+      const page = await hostplatformReservationPage(env, { propertyId, from: since.slice(0, 10), to: since.slice(0, 10), updatedAfter: since, cursor });
+      if (!page.ok || !page.body) throw new Error(`HostPlatform refused the reservation list for ${propertyId} (status ${page.status}).`);
+      pulled.push(...page.body.reservations);
+      malformed += page.body.malformed;
+      cursor = page.body.nextCursor;
+    } while (cursor && ++pages < HP_MAX_PAGES);
+    if (cursor) throw new Error(`${propertyId} has more than ${HP_MAX_PAGES * 50} changes since ${since}; nothing was saved. Use the Pull button.`);
+  }
+  const items = malformed ? [`${malformed} reservation(s) were missing their code, dates or unit and were left out.`] : [];
+  if (o.dryRun) return { job, summary: `Would write ${plural(pulled.length, 'reservation')} HostPlatform changed since ${since}.`, items };
+
+  const db: Db = { all: (sql, ...args) => all(env, sql, ...args) as never, run: (sql, ...args) => run(env, sql, ...args) };
+  const result = pulled.length ? await importReservations(db, mapApiReservations(pulled, mytParts(startedAt).day), nowIso(), { source: 'api' }) : null;
+  const { effects } = result ?? {};
+  if (effects) {
+    for (const id of effects.cancelled) await replanTurnover(env, id, false);
+    for (const id of effects.checkoutMoved) await replanTurnover(env, id, true);
+    await ensureTurnovers(env, { reservationIds: effects.live });
+  }
+  await run(env, `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at`,
+    HP_SYNCED_KEY, startedAt.toISOString(), nowIso());
+  const problems = result ? [...result.errors, ...result.skippedRows].map(e => e.reason) : [];
+  // Only a run that changed something leaves a line in History: this runs every 5 minutes.
+  if (result && (result.created || result.updated || effects?.cancelled.length)) {
+    await audit(env, {
+      actorId: null, actorLabel: 'Scheduled job', action: 'import.hostplatform.scheduled', entityTable: 'import', entityId: 'hostplatform',
+      after: { since, pulled: pulled.length, created: result.created, updated: result.updated, cancelled: effects?.cancelled.length ?? 0, problems: problems.length },
+    }).catch(() => {});
+  }
+  return {
+    job, summary: pulled.length ? `Wrote ${plural(pulled.length, 'reservation')} HostPlatform changed since ${since}: ${result?.created ?? 0} new, ${result?.updated ?? 0} changed.` : `HostPlatform changed nothing since ${since}.`,
+    items: [...items, ...problems.slice(0, 20)],
+  };
+}
+
 /** Hourly: work past its time. A clean past its due time becomes Overdue and its cleaner and the operations managers
  *  are told once; a repair job left open too long (urgent: a day, otherwise a week) is flagged once; finalised owner
  *  statements unsent for three days are flagged to finance. Only work due in the last 7 days is announced, so the first
@@ -201,6 +265,7 @@ export async function dailyDigest(env: Env, o: RunOptions = {}): Promise<JobRepo
 
 export const CRON = {
   everyMinute: '* * * * *',
+  fiveMinutes: '*/5 * * * *',
   quarterHour: '*/15 * * * *',
   hourly: '0 * * * *',
   /** 00:00 UTC is 08:00 in Malaysia. */
@@ -210,6 +275,7 @@ export const CRON = {
 /** What each trigger runs, in order. */
 export const SCHEDULE: Record<string, ((env: Env, o?: RunOptions) => Promise<JobReport>)[]> = {
   [CRON.everyMinute]: [channexOutbox, hubHealthReport],
+  [CRON.fiveMinutes]: [hostplatformPull],
   [CRON.quarterHour]: [drainOutbox, repairBlockSweep],
   [CRON.hourly]: [overdueSweep],
   [CRON.daily]: [dailyDigest],
