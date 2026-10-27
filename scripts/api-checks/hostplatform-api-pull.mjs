@@ -97,6 +97,19 @@ const second = await M.importReservations(db, M.mapApiReservations(api, '2026-10
 check('repeat pull: nothing added, nothing rewritten', [second.created, second.updated, second.effects.checkoutMoved.length, second.effects.cancelled.length], [0, 0, 0, 0]);
 check('repeat pull: no new reservations', (await db.all(`SELECT count(*)::int AS n FROM reservations`))[0].n, 6);
 
+// Reservations HostPlatform no longer sends are listed, never touched: a live one, not a block, a cancelled or a workbook row.
+await db.run(`insert into reservations (id, unit_id, channel, external_ref, state, check_in, check_out, guests_count, gross_booking_value, channel_fee, collected_revenue, currency, notes, created_at, updated_at) values
+  ('hp-res-GONE00001', 'u1', 'owner_stay', 'GONE00001', 'confirmed', '2026-10-23', '2026-10-26', 1, 0, 0, 0, 'MYR', 'x', '${t}', '${t}'),
+  ('hp-res-BLKOLD001', 'u1', 'maintenance_block', 'BLKOLD001', 'confirmed', '2026-10-01', '2026-10-02', 1, 0, 0, 0, 'MYR', 'x', '${t}', '${t}'),
+  ('hp-res-CXLOLD001', 'u1', 'airbnb', 'HMCXL', 'cancelled', '2026-10-03', '2026-10-04', 1, 0, 0, 0, 'MYR', 'x', '${t}', '${t}'),
+  ('hp-res-ab-HMWB-x', 'u1', 'airbnb', 'HMWB', 'confirmed', '2026-10-05', '2026-10-06', 1, 0, 0, 0, 'MYR', 'x', '${t}', '${t}'),
+  ('hp-res-OLDJULY01', 'u1', 'airbnb', 'HMJUL', 'checked_out', '2026-07-01', '2026-07-05', 1, 0, 0, 0, 'MYR', 'x', '${t}', '${t}')`);
+const sent = api.map(r => `hp-res-${r.code}`);
+const gone = await M.notOnSource(db, ['u1'], '2026-08-01', '2028-04-27', sent);
+check('not on HostPlatform: only the live reservation in the window is listed', gone.map(g => g.row), ['GONE00001']);
+check('not on HostPlatform: nothing removed', (await db.all(`SELECT state FROM reservations WHERE id = 'hp-res-GONE00001'`))[0].state, 'confirmed');
+check('not on HostPlatform: other units not checked', (await M.notOnSource(db, ['u2'], '2026-08-01', '2028-04-27', sent)).length, 0);
+
 await wire.end();
 await server.stop();
 console.log(fails ? `\n${fails} FAILED` : '\nall ok'); process.exit(fails ? 1 : 0);

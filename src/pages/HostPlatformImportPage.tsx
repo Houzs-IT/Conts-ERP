@@ -26,7 +26,7 @@ import {
  */
 
 interface Existing { units: { id: string; unitNumber: string; propertyId: string; propertyName: string }[]; properties: { id: string; name: string }[]; importedReservations: number }
-interface Result { created: number; updated: number; skipped: number; errors: RowError[]; skippedRows: RowError[]; notes: string[]; tables: Record<string, { created: number; updated: number }>; stats?: Record<string, number> }
+interface Result { created: number; updated: number; skipped: number; errors: RowError[]; skippedRows: RowError[]; notes: string[]; tables: Record<string, { created: number; updated: number }>; stats?: Record<string, number>; missing?: RowError[] }
 interface Run { done: number; total: number; result: Result | null; failed: string | null; busy: boolean; preview?: boolean }
 
 // Small parts keep each request well inside a Worker's CPU allowance (about 4 ms of mapping per 200 bookings measured locally).
@@ -45,7 +45,7 @@ function merge(a: Result | null, b: Result): Result {
   for (const [k, v] of Object.entries(b.stats ?? {})) stats[k] = (stats[k] ?? 0) + v;
   return {
     created: a.created + b.created, updated: a.updated + b.updated, skipped: a.skipped + b.skipped,
-    errors: [...a.errors, ...b.errors], skippedRows: [...a.skippedRows, ...b.skippedRows],
+    errors: [...a.errors, ...b.errors], skippedRows: [...a.skippedRows, ...b.skippedRows], missing: [...(a.missing ?? []), ...(b.missing ?? [])],
     notes: [...new Set([...a.notes, ...b.notes])], tables, stats,
   };
 }
@@ -408,6 +408,7 @@ function ResultView({ r, preview }: { r: Result; preview?: boolean }) {
       {r.notes.map(t => <p key={t} className="m-0 text-meta text-[var(--color-ink-2)]">{t}</p>)}
       <RowList title={r.errors.length === 1 ? 'row not imported (error)' : 'rows not imported (errors)'} rows={r.errors} />
       <RowList title={r.skippedRows.length === 1 ? 'row skipped on purpose' : 'rows skipped on purpose'} rows={r.skippedRows} />
+      <RowList title={r.missing?.length === 1 ? 'reservation live here that HostPlatform no longer has (nothing removed; check and cancel by hand)' : 'reservations live here that HostPlatform no longer has (nothing removed; check and cancel by hand)'} rows={r.missing ?? []} />
     </div>
   );
 }

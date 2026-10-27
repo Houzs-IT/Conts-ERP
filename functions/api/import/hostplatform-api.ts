@@ -3,8 +3,8 @@ import { can } from '../../_lib/access';
 import { requireSession, type Session } from '../../_lib/auth';
 import { ensureTurnovers, replanTurnover } from '../../_lib/cleaning';
 import { hostplatformConfigured, hostplatformProperties, hostplatformReservationPage, type HpReservation } from '../../_lib/hostplatform';
-import { mapApiReservations, todayInKL } from '../../_lib/hostplatformImport';
-import { type Db, importReservations } from '../../_lib/hostplatformImportDb';
+import { type RowError, mapApiReservations, todayInKL } from '../../_lib/hostplatformImport';
+import { type Db, importReservations, notOnSource } from '../../_lib/hostplatformImportDb';
 
 /**
  * Pull reservations from the HostPlatform API · /system/integrations/hostplatform.
@@ -12,6 +12,7 @@ import { type Db, importReservations } from '../../_lib/hostplatformImportDb';
  * POST { propertyId, from, updatedAfter? } -> every reservation of that property whose stay overlaps from .. 18 months
  *   ahead (or, with updatedAfter, every one HostPlatform changed since then), cancellations included, written like the CSV import (importReservations, source 'api': an existing booking keeps
  *   its money, channel, notes, guest and staff check-in/out). Read-only on HostPlatform. Nothing is deleted.
+ *   Also lists (never removes) live reservations on the building's units that HostPlatform no longer has.
  * POST { ..., preview: true } -> the same, rolled back: what the pull would add, change, cancel and leave out. Saves nothing
  *   but its line in History.
  * One pull, and one preview, per property per minute: a second click while one runs, or right after, is refused.
@@ -97,13 +98,22 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     }
     result.skipped = result.errors.length + result.skippedRows.length;
     if (malformed) result.notes.push(`${malformed} reservation(s) from HostPlatform were missing their code, dates or unit and were left out.`);
+    // Reservations this building's units still have that HostPlatform no longer sent: listed for staff, never removed.
+    // Only for a full window (an updatedAfter pull sends just the changes) and only when nothing came back malformed.
+    let missing: RowError[] = [];
+    if (!updatedAfter && !malformed) {
+      const props = await hostplatformProperties(env);
+      const prop = props.body?.find(p => p.id === propertyId);
+      if (prop) missing = await notOnSource(dbFor(env), prop.unitKeys.map(k => `hp-unit-${k}`), from, to, pulled.map(r => `hp-res-${r.code}`));
+      else result.notes.push(`Could not check which reservations HostPlatform no longer has (status ${props.status}).`);
+    }
     const blocks = pulled.filter(r => !r.guest_details).length;
     const codes = (ids: string[] = []) => ids.map(id => id.replace(/^hp-res-/, ''));
     await audit(env, {
       actorId: session.userId, actorLabel: session.fullName, action, entityTable: 'import', entityId: propertyId,
-      after: { from, to, pulled: pulled.length, malformed, blocks, tables: result.tables, errors: result.errors.length, skipped: result.skippedRows.length, cancelled: effects?.cancelled.length ?? 0, checkoutMoved: effects?.checkoutMoved.length ?? 0 },
+      after: { from, to, pulled: pulled.length, malformed, blocks, tables: result.tables, errors: result.errors.length, skipped: result.skippedRows.length, cancelled: effects?.cancelled.length ?? 0, checkoutMoved: effects?.checkoutMoved.length ?? 0, notOnHostPlatform: missing.map(m => m.row) },
     });
-    return json({ ...result, effects: undefined, preview, pulled: pulled.length, blocks, cancelled: codes(effects?.cancelled), checkoutMoved: codes(effects?.checkoutMoved) });
+    return json({ ...result, effects: undefined, preview, pulled: pulled.length, blocks, cancelled: codes(effects?.cancelled), checkoutMoved: codes(effects?.checkoutMoved), missing });
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: `${action}.failed`, entityTable: 'import', entityId: propertyId, after: { from, pulled: pulled.length, error: message.slice(0, 300) } }).catch(() => {});

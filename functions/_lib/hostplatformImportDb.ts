@@ -304,8 +304,25 @@ export async function importReservations(db: Db, plan: ReservationPlan, now: str
   return res;
 }
 
+/** Live HostPlatform reservations Property OS still has on these units, in from..to, that HostPlatform no longer sent
+ *  (deleted there, or moved to a unit outside this pull). Read-only: listed for staff, never deleted or cancelled here,
+ *  since a pull that misses rows must not take bookings away. Blocks are not checked (the API does not send them), nor
+ *  the workbook's own 'hp-res-ab-' / 'hp-res-bc-' rows (they carry the booking site's code, not HostPlatform's). */
+export async function notOnSource(db: Db, unitIds: string[], from: string, to: string, sentIds: string[]): Promise<RowError[]> {
+  if (!unitIds.length) return [];
+  const rows = await db.all<{ id: string; unit_number: string; check_in: string; check_out: string; channel: string; state: string }>(`
+    SELECT r.id, u.unit_number, r.check_in, r.check_out, r.channel, r.state FROM reservations r JOIN units u ON u.id = r.unit_id
+    WHERE r.unit_id IN (SELECT jsonb_array_elements_text(?::text::jsonb)) AND r.check_out > ? AND r.check_in < ?
+      AND r.id LIKE 'hp-res-%' AND r.id NOT LIKE 'hp-res-ab-%' AND r.id NOT LIKE 'hp-res-bc-%'
+      AND r.channel != 'maintenance_block' AND r.state NOT IN ('cancelled','no_show')
+      AND r.id NOT IN (SELECT jsonb_array_elements_text(?::text::jsonb))
+    ORDER BY r.check_in, r.id`, JSON.stringify(unitIds), from, to, JSON.stringify(sentIds));
+  return rows.map(r => ({ row: r.id.replace(/^hp-res-/, ''),
+    reason: `${r.unit_number}, ${r.check_in} to ${r.check_out} (${Object.entries(CHANNEL_LABEL).find(([k]) => k === r.channel)?.[1] ?? r.channel}) is live here but HostPlatform no longer has it. Check it and cancel it here if it is gone.` }));
+}
+
 /* ------------------------------------------------------------------ */
-/* Workbook: units, owners, contracts                                 */
+/* Workbook: units, owners, contracts                                */
 /* ------------------------------------------------------------------ */
 
 export async function importWorkbookUnits(db: Db, units: WorkbookUnitIn[], now: string, today = new Date(Date.parse(now) + 8 * 3600e3).toISOString().slice(0, 10)): Promise<ImportResult> {

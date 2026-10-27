@@ -60,13 +60,18 @@ export const isHpReservation = (v: unknown): v is HpReservation =>
   isRecord(v) && ['code', 'check_in_date', 'check_out_date', 'status', 'source', 'unit', 'unit_id', 'property', 'property_id'].every(k => isText(v[k]))
   && ['guest_details', 'price_details', 'service_fees'].every(k => v[k] === undefined || v[k] === null || isRecord(v[k]));
 
-export interface HpProperty { id: string; name: string }
+/** unitKeys: HostPlatform's own unit keys, the same keys the CSV listing export carries, so 'hp-unit-<key>' is the
+ *  Property OS unit the listing import made for each. */
+export interface HpProperty { id: string; name: string; unitKeys: string[] }
 
 /** Every property the token can see (GET /external/v1/listing/properties). */
 export async function hostplatformProperties(env: Env): Promise<HpResult<HpProperty[]>> {
   const res = await hpGet(env, '/external/v1/listing/properties');
   if (!res.ok || !Array.isArray(res.body)) return { ok: false, status: res.status, body: null };
-  const body = res.body.filter(isRecord).filter(p => isText(p.propertyId)).map(p => ({ id: String(p.propertyId), name: String(p.propertyName ?? '') }));
+  const body = res.body.filter(isRecord).filter(p => isText(p.propertyId)).map(p => ({
+    id: String(p.propertyId), name: String(p.propertyName ?? ''),
+    unitKeys: (Array.isArray(p.unit) ? p.unit : []).filter(isRecord).map(u => u.unit).filter(isText).map(k => k.toLowerCase()),
+  }));
   return { ok: true, status: res.status, body };
 }
 
