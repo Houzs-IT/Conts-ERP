@@ -5,7 +5,7 @@
 //   DB_URL=postgres://postgres@127.0.0.1:55441/postgres API_BASE=http://localhost:8891 node scripts/api-checks/late-bills.mjs
 import postgres from 'postgres';
 import { randomUUID } from 'node:crypto';
-import { call, cookieFor, check, done } from './harness.mjs';
+import { call, check, done } from './harness.mjs';
 
 const DB_URL = process.env.DB_URL;
 if (!DB_URL || !/@(127\.0\.0\.1|localhost)[:/]/.test(DB_URL)) { console.error('Set DB_URL to the local test database.'); process.exit(2); }
@@ -33,12 +33,12 @@ const statementFor = async (month) => (await db(`SELECT id, state FROM owner_sta
 const generate = (month) => call('POST', '/api/statements/generate', { period: month, ownerIds: [unit.owner_id] });
 const linesOf = async (month) => { const st = await statementFor(month); if (!st) return []; const r = await call('GET', `/api/statements/${st.id}`); return r.json?.data?.lines ?? []; };
 const totalOf = async (month) => (await db(`SELECT net_payout FROM owner_statements WHERE owner_id = $1 AND period_start LIKE $2`, unit.owner_id, `${month}%`))[0]?.net_payout;
+// The receipt rows only (the file itself is not read here; utility-bills.mjs covers uploading one).
 async function receipt(name) {
-  const fd = new FormData();
-  fd.append('file', new Blob([`%PDF-1.4 ${name}`], { type: 'application/pdf' }), name);
-  fd.append('unitId', unit.id); fd.append('kind', 'receipt');
-  const r = await fetch(`${BASE}/api/documents`, { method: 'POST', headers: { cookie: cookieFor('management') }, body: fd });
-  return (await r.json().catch(() => null))?.id;
+  const id = randomUUID();
+  await db(`INSERT INTO documents (id, kind, file_name, mime_type, byte_size, storage_key, unit_id, created_at)
+    VALUES ($1, 'receipt', $2, 'application/pdf', 10, $3, $4, now()::text)`, id, name, `documents/${unit.id}/${id}`, unit.id);
+  return id;
 }
 
 // ── The engine reads the deduction month (Task 1) ──

@@ -1,4 +1,5 @@
 import { type Env, one, all } from './db';
+import { firstOpenMonth } from '../../src/lib/deductMonth';
 
 export const EXPENSE_CATEGORIES = ['internet', 'electricity', 'water', 'sewerage', 'cleaning', 'housekeeping', 'maintenance', 'utilities', 'consumables', 'furniture', 'management_fee', 'channel_fee', 'other'];
 /** Who pays an expense ("Paid by" on screen). Only 'owner' reaches the owner statement; the rest stay in the unit's
@@ -15,10 +16,41 @@ export function expenseDayLabel(d: string | null | undefined) {
 }
 export const CHARGE_TO = ['owner', 'the_conts', 'tenant', 'guest_deposit', 'warranty'];
 
-/** SQL: true when an owner statement covering this expense's date has been finalised, sent or paid.
+/** Utility bills keep the month on the bill and, when that month is already final, go on the next open statement
+ *  (spec docs/superpowers/specs/2026-10-27-utility-bills-design.md §3). Every other expense still needs an open month. */
+export const UTILITY_KINDS = ['electricity', 'water', 'internet', 'sewerage'];
+export const isUtility = (category: string | null | undefined) => UTILITY_KINDS.includes(String(category ?? ''));
+
+/** SQL: true when the expense can no longer change: the owner statement that deducts it is finalised, sent or paid.
+ *  That is the statement for its deduction month for a utility bill, and for its date for anything else.
  *  Alias `e` is the expense and `u` its unit. */
 export const LOCKED_SQL = `EXISTS (SELECT 1 FROM owner_statements s WHERE s.owner_id = u.owner_id AND s.state IN ('finalised','sent','paid')
-   AND e.incurred_on >= s.period_start AND e.incurred_on <= s.period_end)`;
+   AND (CASE WHEN e.category IN ('electricity','water','internet','sewerage') THEN e.deduct_month || '-01' ELSE e.incurred_on END) >= s.period_start
+   AND (CASE WHEN e.category IN ('electricity','water','internet','sewerage') THEN e.deduct_month || '-01' ELSE e.incurred_on END) <= s.period_end)`;
+
+/** For each unit, the YYYY-MM months from `fromMonth` on whose owner statement is final. */
+export async function finalMonthsFor(env: Env, unitIds: string[], fromMonth: string): Promise<Map<string, Set<string>>> {
+  const out = new Map<string, Set<string>>();
+  if (!unitIds.length) return out;
+  const rows = await all<{ unit_id: string; month: string }>(env, `
+    SELECT DISTINCT u.id AS unit_id, substr(s.period_start, 1, 7) AS month FROM owner_statements s JOIN units u ON u.owner_id = s.owner_id
+    WHERE u.id IN (SELECT jsonb_array_elements_text(?::text::jsonb)) AND s.state IN ('finalised','sent','paid') AND s.period_end >= ?`,
+    JSON.stringify([...new Set(unitIds)]), `${fromMonth}-01`);
+  for (const r of rows) { const s = out.get(r.unit_id) ?? new Set<string>(); s.add(r.month); out.set(r.unit_id, s); }
+  return out;
+}
+
+/** Which statement deducts a utility bill on this unit dated `date`: its own month, or the next open one (rolled). */
+export async function utilityDeduction(env: Env, unitId: string, date: string): Promise<{ deductMonth: string; rolled: boolean }> {
+  const month = date.slice(0, 7);
+  const deductMonth = firstOpenMonth(month, (await finalMonthsFor(env, [unitId], month)).get(unitId) ?? new Set());
+  return { deductMonth, rolled: deductMonth !== month };
+}
+
+/** Is this expense on (or due on) a statement that is final? See LOCKED_SQL. */
+export async function isExpenseLocked(env: Env, e: { unit_id: string; category: string; incurred_on: string; deduct_month: string }): Promise<boolean> {
+  return isPeriodLocked(env, e.unit_id, isUtility(e.category) ? `${e.deduct_month}-01` : e.incurred_on);
+}
 
 /** Is a new or changed expense on this unit and date inside a statement that is already final? */
 export async function isPeriodLocked(env: Env, unitId: string, date: string): Promise<boolean> {
