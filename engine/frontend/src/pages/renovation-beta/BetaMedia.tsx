@@ -34,7 +34,7 @@ export interface MediaItem {
 
 export const MEDIA_RADIUS = 10;
 export const MEDIA_GAP = 4;
-const TILE_BG = "#E9EEED";
+const TILE_BG = BETA.chip;
 const VIDEO_BG = "#1E2A29";
 
 /* Blob URLs by path, so a photo shown on a card and again in the gallery is fetched once per page. */
@@ -79,7 +79,7 @@ const labelChip: CSSProperties = {
 };
 
 function labelTone(label: string): string {
-  if (/^after/i.test(label)) return "#1A6B66";
+  if (/^after/i.test(label)) return BETA.accentFill;
   return "rgba(23,32,31,.78)";
 }
 
@@ -360,7 +360,7 @@ export function MediaPicker({ files, onChange, label = "Photos or videos", requi
   }
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 0 }}>
-      <label style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2, minHeight: 64, padding: 8, border: `1.5px dashed #A9B4B2`, borderRadius: MEDIA_RADIUS, textAlign: "center", cursor: "pointer", fontWeight: 600, fontSize: 14 }}>
+      <label style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2, minHeight: 64, padding: 8, border: `1.5px dashed ${BETA.dash}`, borderRadius: MEDIA_RADIUS, textAlign: "center", cursor: "pointer", fontWeight: 600, fontSize: 14 }}>
         {label}{required ? "" : " (optional)"}
         <span style={{ fontSize: 12, fontWeight: 400, color: BETA.muted }}>{files.length ? `${files.length} picked · tap to add more` : "Tap to take or choose several"}</span>
         <span style={{ fontSize: 11, fontWeight: 400, color: BETA.muted }}>{MEDIA_LIMIT_TEXT}</span>

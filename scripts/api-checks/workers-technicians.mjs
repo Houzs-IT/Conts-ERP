@@ -1,4 +1,4 @@
-// Workers > Technicians (PR #365), end to end: the list, app access, jobs linked to the entry and reaching the phone app.
+// Technicians roster (PR #365), end to end: the list, app access, jobs linked to the entry and reaching the phone app.
 //
 // Run on a throwaway database only (it adds accounts, cleaners, technicians and jobs):
 //   node scripts/dev-pglite.mjs   (leave running), a local server on it (wrangler pages dev dist with

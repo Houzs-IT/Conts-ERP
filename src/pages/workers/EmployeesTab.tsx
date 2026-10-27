@@ -9,6 +9,8 @@ import { Field } from '../../components/Field';
 import { Select } from '../../components/Select';
 import { MoneyInput, NumberInput, DateField, PhoneInput, phoneProblem } from '../../components/inputs';
 import { useToast } from '../../components/Toast';
+import { useConfirm } from '../../components/ConfirmDialog';
+import { AccessModal, type AccessTarget } from './AccessModal';
 import { useApi } from '../../lib/useApi';
 import { api, ApiFailure, notifyFailure } from '../../lib/api';
 import { mayRun, mayWork } from '../../lib/areaAccess';
@@ -36,9 +38,6 @@ const STATUTORY: { key: 'epfEnabled' | 'socsoEnabled' | 'eisEnabled' | 'pcbEnabl
 
 const departmentsOf = ({ cleanerId, technicianId }: Pick<Employee, 'cleanerId' | 'technicianId'>): string =>
   [cleanerId && 'Cleaning', technicianId && 'Maintenance'].filter(Boolean).join(', ');
-const paidBy = (e: Employee): string => (e.paymentMethod === 'cash' ? 'Cash' : 'Transfer');
-const account = (e: Employee): string => (e.paymentMethod === 'cash' || !e.bankAccount ? '' : `****${e.bankAccount.slice(-4)}`);
-const statutoryOf = (e: Employee): string => STATUTORY.filter(s => e[s.key]).map(s => s.label).join(' · ') || 'None';
 function statusOf(e: Employee): { label: string; tone: 'success' | 'neutral' | 'warning' } {
   if (e.status === 'resigned') return { label: 'Resigned', tone: 'neutral' };
   if (!e.isActive) return { label: 'Switched off', tone: 'warning' };
@@ -49,6 +48,12 @@ export default function EmployeesTab() {
   const { data, loading, error, reload } = useApi<{ data: Employee[] }>('/employees');
   const { user } = useSession();
   const mayEdit = mayWork(user, 'hr');
+  // Same rules as the roster routes: Operations to switch someone off, Full on Operations to give app access.
+  const mayRoster = mayWork(user, 'operations');
+  const mayGrant = mayRun(user, 'operations');
+  const [confirmDialog, ask] = useConfirm();
+  const toast = useToast();
+  const [access, setAccess] = useState<AccessTarget | null>(null);
   const [form, setForm] = useState<{ person: Employee | null } | null>(null);
   const [given, setGiven] = useState<{ name: string; employeeId: string; pin: string } | null>(null);
   const people = data?.data ?? [];
@@ -58,28 +63,54 @@ export default function EmployeesTab() {
     { key: 'name', label: 'Name', value: e => e.name, hideable: false, width: 190, render: e => <span className="font-semibold">{e.name}</span> },
     { key: 'departments', label: 'Departments', value: departmentsOf, width: 170 },
     { key: 'position', label: 'Position', value: e => POSITION_LABEL[e.position], width: 120 },
-    { key: 'phone', label: 'Phone', type: 'phone', value: e => e.phone, width: 150 },
     { key: 'basic', label: 'Basic Salary', type: 'money', value: e => (e.payBasis === 'daily' ? e.dailyRateSen : e.basicSalarySen), width: 140,
       render: e => e.payBasis === 'daily' ? `${rm(e.dailyRateSen)} / day` : rm(e.basicSalarySen) },
-    { key: 'hours', label: 'Hrs/Day', type: 'number', value: e => e.workingHoursPerDay, width: 90 },
-    { key: 'days', label: 'Days/Mo', type: 'number', value: e => e.workingDaysPerMonth, width: 90 },
-    { key: 'ot', label: 'OT ×', type: 'number', value: e => e.otMultiplier, width: 80 },
-    { key: 'effAllowance', label: 'Eff. Allowance', type: 'money', value: e => e.efficiencyAllowanceSen, width: 130 },
-    { key: 'effThreshold', label: 'Eff. Threshold %', type: 'number', value: e => e.efficiencyThresholdPct, width: 130 },
-    { key: 'leader', label: 'Leader Allowance', type: 'money', value: e => e.leaderAllowanceSen, width: 140 },
-    { key: 'payBy', label: 'Pay By', value: paidBy, width: 100 },
-    { key: 'bank', label: 'Bank', value: e => (e.paymentMethod === 'cash' ? null : e.bankName), width: 140 },
-    { key: 'account', label: 'Account No', value: account, width: 120 },
-    { key: 'statutory', label: 'Statutory', value: statutoryOf, width: 180 },
-    { key: 'joined', label: 'Join Date', type: 'date', value: e => e.joinDate, width: 120 },
-    { key: 'nationality', label: 'Nationality', value: e => e.nationality, width: 120 },
     { key: 'status', label: 'Status', type: 'status', value: e => statusOf(e).label, status: statusOf, width: 120 },
-    { key: 'go', label: '', noExport: true, sortable: false, filter: false, width: 100, align: 'right',
-      render: e => mayEdit ? <Button size="sm" variant="tertiary" icon={<Icon name="Pencil" size="sm" />} onClick={() => setForm({ person: e })}>Edit</Button> : null },
-  ], [mayEdit]);
+    { key: 'go', label: '', noExport: true, sortable: false, filter: false, width: 340, align: 'right', render: e => actions(e) },
+  ], [mayEdit, mayRoster, mayGrant]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** The roster entries a person is on: one per department, sharing a login when both. */
+  const rosterEntries = (e: Employee): { api: string; id: string }[] => [
+    ...(e.cleanerId ? [{ api: ROSTER.cleaning, id: e.cleanerId }] : []),
+    ...(e.technicianId ? [{ api: ROSTER.maintenance, id: e.technicianId }] : []),
+  ];
+
+  async function toggleActive(e: Employee) {
+    if (e.isActive && await ask({ title: `Switch off ${e.name}?`, body: 'They come off the assign pickers, so no new jobs can go to them, and their app login stops. Jobs already assigned stay as they are. You can switch them back on at any time.', confirmLabel: 'Switch off', danger: true }) === null) return;
+    try {
+      for (const r of rosterEntries(e)) await api.patch(`${r.api}/${r.id}`, { isActive: !e.isActive });
+      toast({ tone: e.isActive ? 'warning' : 'success', title: e.isActive ? `${e.name} switched off.` : `${e.name} switched on.`, body: e.isActive ? 'No new jobs can go to them.' : 'They can be given jobs again.' });
+    } catch (err) { notifyFailure(err); }
+    reload();
+  }
+
+  function giveAccess(e: Employee) {
+    // Two departments share one login, so either roster entry reaches it.
+    const onCleaning = !!e.cleanerId;
+    setAccess({ id: (onCleaning ? e.cleanerId : e.technicianId) ?? '', name: e.name, employeeId: e.employeeId,
+      rosterApi: onCleaning ? ROSTER.cleaning : ROSTER.maintenance, jobs: onCleaning ? 'cleaning jobs' : 'repair jobs' });
+  }
+
+  function actions(e: Employee, align: 'start' | 'end' = 'end'): ReactNode {
+    // The row itself opens the form, so a click or Enter on a button here must not reach it.
+    return (
+      <span className={`flex gap-[7px] items-center flex-wrap ${align === 'start' ? 'justify-start' : 'justify-end'}`} onClick={ev => ev.stopPropagation()} onKeyDown={ev => ev.stopPropagation()}>
+        {mayGrant && e.isActive && (
+          <Button size="sm" variant="tertiary" icon={<Icon name="KeyRound" size="sm" />} onClick={() => giveAccess(e)}>{e.employeeId ? 'Reset PIN' : 'Give app access'}</Button>
+        )}
+        {mayEdit && <Button size="sm" variant="tertiary" icon={<Icon name="Pencil" size="sm" />} onClick={() => setForm({ person: e })}>Edit</Button>}
+        {mayRoster && (
+          <Button size="sm" variant="tertiary" icon={<Icon name={e.isActive ? 'UserMinus' : 'UserCheck'} size="sm" />} onClick={() => void toggleActive(e)}>
+            {e.isActive ? 'Switch off' : 'Switch on'}
+          </Button>
+        )}
+      </span>
+    );
+  }
 
   return (
     <>
+      {confirmDialog}
       <p className="m-0 mb-4 text-copy text-muted-ink">{data ? plural(people.length, 'employee') : 'Loading the list…'}</p>
       {error && <StaleBanner message={`Showing the last list we have. ${error}`} onRetry={reload} />}
 
@@ -92,23 +123,21 @@ export default function EmployeesTab() {
           <div className="pt-5 pb-3 px-5 flex items-center justify-between gap-3 flex-wrap [border-bottom:1px_solid_var(--color-line-soft)]">
             <span className="flex flex-col gap-0.5">
               <span className="text-[16px] font-semibold tracking-[-0.01em]">Employee Master</span>
-              <span className="text-meta text-muted-ink">The company's own cleaners and technicians, with their pay and statutory details.</span>
+              <span className="text-meta text-muted-ink">The company's own cleaners and technicians. Open a person for their pay, bank and statutory details.</span>
             </span>
             {mayEdit && <Button size="sm" variant="primary" icon={<Icon name="UserPlus" size="sm" />} onClick={() => setForm({ person: null })}>Add Employee</Button>}
           </div>
         }
         empty={{ title: 'No employees yet.', body: 'Add the first cleaner or technician.', action: mayEdit ? { label: 'Add Employee', onClick: () => setForm({ person: null }) } : undefined }}
         renderCard={e => (
-          <span className="flex flex-col gap-[3px] min-w-0">
-            <span className="flex items-center gap-[9px] flex-wrap">
-              <span className="text-copy font-semibold">{e.name}</span>
-              {statusOf(e).tone !== 'success' && <StatusBadge tone={statusOf(e).tone} label={statusOf(e).label} size="sm" />}
+          <span className="flex flex-col gap-1 min-w-0">
+            <span className="flex items-center justify-between gap-3">
+              <span className="text-copy font-semibold min-w-0 truncate">{e.name}</span>
+              <StatusBadge tone={statusOf(e).tone} label={statusOf(e).label} size="sm" />
             </span>
-            <span className="text-meta text-muted-ink flex gap-x-3 flex-wrap">
-              {e.employeeId && <span>{e.employeeId}</span>}
-              <span>{departmentsOf(e)} · {POSITION_LABEL[e.position]}</span>
-              <span>{e.payBasis === 'daily' ? `${rm(e.dailyRateSen)} / day` : `${rm(e.basicSalarySen)} / month`}</span>
-            </span>
+            <span className="text-meta text-muted-ink">{[e.employeeId, departmentsOf(e), POSITION_LABEL[e.position]].filter(Boolean).join(' · ')}</span>
+            <span className="text-copy tabular-nums">{e.payBasis === 'daily' ? `${rm(e.dailyRateSen)} / day` : `${rm(e.basicSalarySen)} / month`}</span>
+            <span className="pt-1">{actions(e, 'start')}</span>
           </span>
         )}
       />
@@ -117,14 +146,10 @@ export default function EmployeesTab() {
         <EmployeeForm person={form.person} onClose={() => setForm(null)}
           onSaved={g => { setForm(null); if (g) setGiven(g); reload(); }} />
       )}
+      {access && <AccessModal target={access} onClose={() => setAccess(null)} onDone={reload} />}
       {given && (
-        <Modal title={`${given.name} can sign in`} sub="Give them these. The PIN is shown only once." onClose={() => setGiven(null)}
-          footer={<Button size="sm" variant="primary" onClick={() => setGiven(null)}>Done</Button>}>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="rounded-control bg-page px-4 py-3"><span className="block text-meta text-muted-ink">Employee ID</span><span className="text-[20px] font-bold tabular-nums">{given.employeeId}</span></div>
-            <div className="rounded-control bg-page px-4 py-3"><span className="block text-meta text-muted-ink">First PIN</span><span className="text-[20px] font-bold tabular-nums">{given.pin}</span></div>
-          </div>
-        </Modal>
+        <AccessModal target={{ id: '', name: given.name, employeeId: given.employeeId, rosterApi: '', jobs: '' }} given0={given}
+          onClose={() => setGiven(null)} onDone={reload} />
       )}
     </>
   );
@@ -217,7 +242,7 @@ function EmployeeForm({ person, onClose, onSaved }: {
       <div className="flex flex-col gap-6">
         <Section title="Details">
           <Field label="Employee No" value={person?.employeeId ?? ''} readOnly placeholder={creating ? 'Given with app access' : 'No app access yet'}
-            help={creating ? undefined : 'Given when app access is set up on Operations > Workers.'} />
+            help={creating ? undefined : 'Given with app access: use Give app access on the list.'} />
           <Field label="Name" value={name} onChange={e => setName(e.target.value)} placeholder="Nurul Huda" error={errors.name} />
           <PhoneInput label="Phone" value={phone} onChange={setPhone} error={errors.phone} />
           <label className="sm:col-span-2 flex items-center gap-2.5 min-h-10 cursor-pointer">
@@ -318,7 +343,7 @@ function EmployeeForm({ person, onClose, onSaved }: {
 
         {errors.form && <p className="m-0 text-meta text-danger">{errors.form}</p>}
         {person && person.status === 'active' && d.status === 'resigned' && (
-          <p className="m-0 text-meta text-muted-ink">Resigning keeps the record. To stop their app sign-in and new jobs, switch them off on Operations &gt; Workers.</p>
+          <p className="m-0 text-meta text-muted-ink">Resigning keeps the record. To stop their app sign-in and new jobs, use Switch off on the list.</p>
         )}
       </div>
     </Modal>

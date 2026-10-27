@@ -11,9 +11,9 @@ const isEmployment = (v: unknown): v is Employment => EMPLOYMENT.includes(v as E
 
 /**
  * GET /api/maintenance/technicians — who a job can be given to ("who fixes it"): the active entries of the technician
- *   list (Workers > Technicians, migration 0144), in-house people first, then contractors. Without the list: the
+ *   list (HR > Employees, migration 0144), in-house people first, then contractors. Without the list: the
  *   company's own people and every contractor name already used on a job, as before.
- * GET ?all=1     the whole list for Workers > Technicians, switched-off entries too, with each one's open jobs.
+ * GET ?all=1     the whole list for the roster, switched-off entries too, with each one's open jobs.
  */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);

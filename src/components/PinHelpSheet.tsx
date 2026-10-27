@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { Phone, MessageCircle } from 'lucide-react';
 import { Button, ButtonLink } from './Button';
 
-/** "Forgot your PIN?" on the worker sign-in: ways to reach the office, which gives a new PIN on Workers.
+/** "Forgot your PIN?" on the worker sign-in: ways to reach the office, which gives a new PIN on HR > Employees.
  *  The browser's own modal dialog keeps focus inside, closes on Escape and returns focus to the button. On a phone
  *  it rises from the bottom, where the thumb is. */
 export function PinHelpSheet({ open, onClose, supportPhone, employeeNo }: { open: boolean; onClose: () => void; supportPhone: string; employeeNo: string }) {
@@ -45,7 +45,7 @@ export function PinHelpSheet({ open, onClose, supportPhone, employeeNo }: { open
           <p className="m-0 text-copy">Ask the office or your supervisor for a new PIN.</p>
         )}
         <p className="m-0 text-meta text-muted-ink text-pretty">
-          Your supervisor can also give you a new PIN on the Workers page, under Give app access.
+          Your supervisor can also give you a new PIN on HR &gt; Employees, under Reset PIN.
         </p>
         <Button type="button" variant="tertiary" size="touch" onClick={onClose} style={{ width: '100%' }}>Close</Button>
       </div>

@@ -17,7 +17,7 @@ export function PlainPhotoStrip({ photos, size = 32, label }: { photos: readonly
         {photos.map((ph, i) => (
           <span role="listitem" key={ph.full}>
             <button type="button" title="Open full size" onClick={() => setOpenAt(i)}
-              style={{ width: size, height: size, padding: 0, border: "1px solid rgba(0,0,0,0.1)", borderRadius: 4, overflow: "hidden", cursor: "zoom-in", background: "#F3F5F4" }}>
+              style={{ width: size, height: size, padding: 0, border: "1px solid rgba(0,0,0,0.1)", borderRadius: 4, overflow: "hidden", cursor: "zoom-in", background: BETA.chip }}>
               <img src={ph.thumb} alt={ph.label} loading="lazy" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
                 onError={(e) => { if (e.currentTarget.src !== ph.full) e.currentTarget.src = ph.full; }} />
             </button>

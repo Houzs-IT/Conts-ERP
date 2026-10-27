@@ -93,9 +93,6 @@ export const NAV: NavGroup[] = [
     { key: 'today', label: 'Today', icon: 'clipboard-check', path: '/operations/today', area: 'operations', badge: 'today' },
     { key: 'cleaning', label: 'Cleaning', icon: 'sparkles', path: '/operations/cleaning', area: 'operations' },
     { key: 'maintenance', label: 'Maintenance', icon: 'wrench', path: '/operations/maintenance', area: 'operations', badge: 'maintenance' },
-    // Cleaners and technicians, in-house and outside, and who has the app (owner, 23 Oct 2026). Back under Operations
-    // when HR became Hookka's Employees page (owner, 26 Oct 2026).
-    { key: 'workers', label: 'Workers', icon: 'users', path: '/operations/workers', area: 'operations' },
   ] },
   // Hookka's Employees page with its eleven tabs: working hours, attendance, labour cost, payroll, advances, penalties,
   // the employee record (owner, 26 Oct 2026; PLAN-hr-employees.md).
@@ -150,7 +147,7 @@ export const NAV: NavGroup[] = [
   ] },
   // The engine's new project screens (owner, 23 Oct 2026). Their Projects area is engine-only, like Projects.
   { label: 'BETA', workspace: 'supply', items: [
-    { key: 'betaProjects', label: 'Project list', icon: 'folder-open', path: '/beta/projects', area: 'projects' },
+    { key: 'betaProjects', label: 'Home', icon: 'house', path: '/beta/projects', area: 'projects' },
     { key: 'betaCalendar', label: 'Calendar', icon: 'calendar-days', path: '/beta/calendar', area: 'projects' },
   ] },
   { label: 'SUPPLY CHAIN', workspace: 'supply', items: [

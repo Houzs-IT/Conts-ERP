@@ -29,7 +29,6 @@ const BookingsPage = lazy(() => import('./pages/BookingsPage'));
 const GuestsPage = lazy(() => import('./pages/GuestsPage'));
 const OperationsTodayPage = lazy(() => import('./pages/OperationsTodayPage'));
 const CleaningPage = lazy(() => import('./pages/CleaningPage'));
-const WorkersPage = lazy(() => import('./pages/WorkersPage'));
 const EmployeesPage = lazy(() => import('./pages/EmployeesPage'));
 const MaintenancePage = lazy(() => import('./pages/MaintenancePage'));
 import SupplyChainEngine, { signInToEngineEarly } from './components/SupplyChainEngine';
@@ -181,6 +180,14 @@ function ToUnits({ tab }: { tab?: string }) {
   return <Navigate replace to={`/properties/units${unit ? `/${encodeURIComponent(unit)}` : ''}${t ? `?tab=${encodeURIComponent(t)}` : ''}`} />;
 }
 
+/** The old Workers screen (Operations > Workers): its in-house lists are Employee Master now, and the tabs HR took
+ *  over in 26 Oct 2026 keep their own addresses. Outside companies have their own tab, not a redirect target here. */
+const WORKERS_MOVED: Record<string, string> = { attendance: 'attendance', leave: 'leave', payroll: 'payroll' };
+function ToEmployees() {
+  const asked = new URLSearchParams(useLocation().search).get('tab');
+  return <Navigate replace to={`/hr/employees?tab=${(asked && WORKERS_MOVED[asked]) || 'employee-master'}`} />;
+}
+
 /** The old All tasks list: maintenance work opens Maintenance's History, everything else Cleaning's History. */
 function ToTaskHistory() {
   const kind = new URLSearchParams(useLocation().search).get('kind');
@@ -269,9 +276,9 @@ function Routed() {
         <Route path="/reservations/guests" element={<GuestsPage />} />
         <Route path="/operations/today" element={<OperationsTodayPage />} />
         <Route path="/operations/cleaning" element={<CleaningPage />} />
-        <Route path="/operations/workers" element={<WorkersPage />} />
         <Route path="/hr/employees" element={<EmployeesPage />} />
-        <Route path="/operations/cleaners" element={<Navigate replace to="/operations/workers" />} />
+        <Route path="/operations/workers" element={<ToEmployees />} />
+        <Route path="/operations/cleaners" element={<ToEmployees />} />
         <Route path="/operations/maintenance" element={<MaintenancePage />} />
         {/* Housekeeping is Cleaning; Inspections is gone; All tasks is the History tab (owner, 10 Oct). */}
         <Route path="/operations/housekeeping" element={<Navigate to="/operations/cleaning" replace />} />
