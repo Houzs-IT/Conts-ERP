@@ -549,7 +549,7 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
       {stacked && on('details') && <h3 className="m-0 mt-2 text-heading font-semibold">Details and owner</h3>}
       {on('details') && (form ? (
         <Card>
-          <SaveBar title="Details & owner" sub="Listing name, purpose, type, beds, car park, owner and income model." dirty={dirty} saving={saving} canEdit={canEdit} onSave={onSave}
+          <SaveBar title="Details & owner" sub="Four steps: listing, space, owner, then cleaning prices and income model." dirty={dirty} saving={saving} canEdit={canEdit} onSave={onSave}
             auto failed={saveFailed} hold={moving ? 'Moving this unit: press Save to confirm.' : undefined}
             extra={canEdit ? <Button size="sm" variant="tertiary" icon={<Icon name="Trash2" size="sm" />} onClick={onDelete}>Delete unit</Button> : undefined} />
           <div onBlur={onAutoSave}>
