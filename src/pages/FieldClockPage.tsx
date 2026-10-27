@@ -12,8 +12,8 @@ import type { PunchView } from '../../functions/_lib/attendance';
 
 /* ------------------------------------------------------------------ *
  * Portal > Clock: clock in and out with a selfie and the phone's GPS
- * (HR phase 2, ported from Hookka's worker home). Both are kept when the
- * phone gives them and never stop a punch; the office sees what is missing.
+ * (HR phase 2, ported from Hookka's worker home). The selfie is required (owner, 27 Oct 2026);
+ * the location is kept when the phone gives it and never stops a punch.
  * ------------------------------------------------------------------ */
 
 interface ClockPayload {
@@ -57,14 +57,14 @@ export default function FieldClockPage() {
   const today = data?.today ?? null;
   const action: 'in' | 'out' | null = !today ? 'in' : today.clockOutAt ? null : 'out';
 
-  async function punch(photo: File | null) {
+  async function punch(photo: File) {
     if (!action) return;
     setBusy(true);
     try {
       const form = new FormData();
       form.set('action', action);
-      const [pos, img] = await Promise.all([position(), photo ? shrink(photo) : Promise.resolve(null)]);
-      if (img) form.set('photo', img, 'selfie.jpg');
+      const [pos, img] = await Promise.all([position(), shrink(photo)]);
+      form.set('photo', img, 'selfie.jpg');
       if (pos) {
         form.set('lat', String(pos.coords.latitude));
         form.set('lng', String(pos.coords.longitude));
@@ -111,10 +111,6 @@ export default function FieldClockPage() {
                 </Button>
                 <input ref={camera} type="file" accept="image/*" capture="user" className="hidden"
                   onChange={e => { const f = e.target.files?.[0]; if (f) void punch(f); }} />
-                <button type="button" disabled={busy} onClick={() => void punch(null)}
-                  className="min-h-11 self-center text-copy text-muted-ink underline underline-offset-2 bg-transparent border-0 cursor-pointer [font-family:inherit]">
-                  {action === 'in' ? t.clock.noCameraIn : t.clock.noCameraOut}
-                </button>
               </>
             ) : (
               <span className="text-copy text-muted-ink">{t.clock.done}</span>
