@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type CSSProperties, type ReactElement, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactElement, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { color, radius, text, shadow } from '../theme';
@@ -6,6 +6,8 @@ import { api } from '../lib/api';
 import { relative, dateTime } from '../lib/format';
 import { useNavCounts } from '../lib/navBadges';
 import { useSession } from '../lib/session';
+import { announceFieldChanged } from '../lib/fieldLive';
+import { useToast } from './Toast';
 import Icon from './Icon';
 
 /* ------------------------------------------------------------------ *
@@ -26,6 +28,7 @@ export const NOTICES_CHANGED = 'conts:notifications-changed';
 export const announceNoticesChanged = () => window.dispatchEvent(new Event(NOTICES_CHANGED));
 
 const POLL_MS = 60_000;
+const LIVE_POLL_MS = 15_000;
 const PANEL_W = 380;
 const PANEL_GAP = 16;
 const TONE_DOT = { critical: 'var(--color-critical-line)', warning: 'var(--color-warning-line)', info: 'var(--color-info-line)' } as const;
@@ -41,14 +44,25 @@ export function noticeIcon(kind: string) {
   return 'Bell';
 }
 
-export function useUnreadNotices() {
+/** `pollMs` asks more often (the field app uses 15 seconds); `onArrive` runs when a notice newer than any seen arrives,
+ *  never for the first answer after opening, which is only the baseline. */
+export function useUnreadNotices(opts: { pollMs?: number; onArrive?: () => void } = {}) {
+  const { pollMs = POLL_MS, onArrive } = opts;
   const [unread, setUnread] = useState(0);
+  const newest = useRef<number | null | undefined>(undefined);
+  const arrive = useRef(onArrive);
+  arrive.current = onArrive;
   const refresh = useCallback(() => {
-    api.get<{ unread: number }>('/notifications/count').then(r => setUnread(r.unread ?? 0)).catch(() => {});
+    api.get<{ unread: number; latest?: string | null }>('/notifications/count').then(r => {
+      setUnread(r.unread ?? 0);
+      const at = r.latest ? Date.parse(r.latest) : null;
+      if (newest.current !== undefined && at !== null && at > (newest.current ?? 0)) arrive.current?.();
+      newest.current = at;
+    }).catch(() => {});
   }, []);
   useEffect(() => {
     refresh();
-    const t = window.setInterval(() => { if (document.visibilityState === 'visible') refresh(); }, POLL_MS);
+    const t = window.setInterval(() => { if (document.visibilityState === 'visible') refresh(); }, pollMs);
     const onVisible = () => { if (document.visibilityState === 'visible') refresh(); };
     document.addEventListener('visibilitychange', onVisible);
     window.addEventListener(NOTICES_CHANGED, refresh);
@@ -97,17 +111,26 @@ export function FieldNotificationBell() {
   const target = (n: Notice) => !field || !n.entityId ? null
     : n.entityTable === 'tasks' ? `/?task=${encodeURIComponent(n.entityId)}`
     : n.entityTable === 'maintenance_issues' ? `/?repair=${encodeURIComponent(n.entityId)}` : null;
-  return <Bell navigate={navigate} target={target} size={44} alerts={[]} dark />;
+  return <Bell navigate={navigate} target={target} size={44} alerts={[]} dark live />;
 }
 
-function Bell({ navigate, target, size, alerts, dark = false, glass }: { navigate: (p: string) => void; target?: (n: Notice) => string | null; size: number; alerts: Alert[]; dark?: boolean; glass?: CSSProperties }) {
+function Bell({ navigate, target, size, alerts, dark = false, glass, live = false }: { navigate: (p: string) => void; target?: (n: Notice) => string | null; size: number; alerts: Alert[]; dark?: boolean; glass?: CSSProperties; live?: boolean }) {
   const floating = !!glass;
   const [open, setOpen] = useState(false);
   // Floating panel: where it hangs, taken from the bell when it is clicked (fixed, so no bar can clip or tint it).
   const [anchor, setAnchor] = useState<{ top: number; right: number } | null>(null);
   // How far the panel slides right of the bell so it stays on screen: in the field header the bell is not the last icon.
   const [shift, setShift] = useState(0);
-  const { unread, setUnread, refresh } = useUnreadNotices();
+  const toast = useToast();
+  // Field app: a new notice says the job lists changed, so they reload now; the notice shows as a toast and the phone buzzes.
+  const arrived = () => {
+    announceFieldChanged();
+    navigator.vibrate?.(120);
+    api.get<NoticePage>('/notifications', { pageSize: 1, unread: 1 })
+      .then(r => { const n = r.data[0]; if (n) toast({ tone: 'info', title: n.title, body: n.body ?? undefined }); })
+      .catch(() => {});
+  };
+  const { unread, setUnread, refresh } = useUnreadNotices(live ? { pollMs: LIVE_POLL_MS, onArrive: arrived } : {});
   const [list, setList] = useState<Notice[] | null>(null);
   const [loadError, setLoadError] = useState(false);
   const attention = alerts.filter(a => a.tone !== 'info').length;

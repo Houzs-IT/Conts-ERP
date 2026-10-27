@@ -4,16 +4,18 @@ import { hasCleanPrices, priceBook, layoutKey, PRICE_KINDS } from '../../_lib/cl
 import { hasServicePrices, serviceBook } from '../../_lib/servicePrices';
 
 /** GET /api/housekeeping/unit-prices — every unit with its layout and, per clean type, the cleaner's pay and the charge
- *  per clean that apply (its own override, else the price table), and where they come from. */
+ *  per clean that apply (its own override, else the price table), and where they come from. `?unitId=` answers for that
+ *  one unit only (the unit's Details tab). */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
   if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Only the office sees cleaning prices.', 403);
   if (!(await hasCleanPrices(env))) return json({ ready: false, rows: [], mayEdit: false });
   const layout = (await hasColumn(env, 'units', 'layout_type').catch(() => false)) ? 'u.layout_type' : 'NULL::text';
+  const only = new URL(request.url).searchParams.get('unitId');
   const units = await all<any>(env, `
     SELECT u.id, u.unit_number, u.bedrooms, ${layout} AS layout_type, p.id AS property_id, p.name AS property_name
-    FROM units u JOIN properties p ON p.id = u.property_id ORDER BY p.name, u.unit_number`);
+    FROM units u JOIN properties p ON p.id = u.property_id ${only ? 'WHERE u.id = ?' : ''} ORDER BY p.name, u.unit_number`, ...(only ? [only] : []));
   // Since Service prices (0127) a unit's own figures are per item: the cleaning item of each clean type.
   const own = (await hasServicePrices(env))
     ? await all<{ unit_id: string; kind: string; internal_cost: number | null; external_charge: number | null }>(env,

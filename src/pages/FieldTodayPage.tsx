@@ -17,6 +17,7 @@ import {
 import { StatusBadge } from '../components/StatusBadge';
 import { sizeLine } from '../lib/unitSize';
 import { usePortalText, usePortalDates, wordFor, type PortalStrings } from '../lib/portalI18n';
+import { useFieldRefresh, useFreshIds } from '../lib/fieldLive';
 
 /** Days a job is past its day, 0 when it is today's or later. */
 const daysLate = (day: string) => Math.max(0, Math.round((Date.parse(mytDay(0)) - Date.parse(day)) / 864e5));
@@ -43,7 +44,9 @@ export default function FieldTodayPage({ linkTask, onLinked }: { linkTask?: stri
   const { weekday } = usePortalDates();
   const [pick, setPick] = useState<'today' | 'tomorrow'>('today');
   const date = pick === 'today' ? mytDay(0) : mytDay(1);
-  const { data, loading, error, reload } = useApi<{ rows: Job[] }>(`/field/tasks?date=${date}`);
+  const { data, loading, error, reload } = useApi<{ rows: Job[]; date?: string }>(`/field/tasks?date=${date}`);
+  // A new notice, or the phone coming back to the app, reloads the list now; a job that just arrived carries a New mark.
+  useFieldRefresh(reload);
   // The office ticks the guest out on its board: the list catches up every minute and when the phone comes back to the app.
   useEffect(() => {
     const tick = () => { if (document.visibilityState === 'visible') reload(); };
@@ -53,6 +56,7 @@ export default function FieldTodayPage({ linkTask, onLinked }: { linkTask?: stri
   }, [date]); // eslint-disable-line react-hooks/exhaustive-deps
   const [open, setOpen] = useState<string | null>(null);
   const jobs = data?.rows ?? [];
+  const fresh = useFreshIds(jobs.map(j => j.id), date, !!data && data.date === date);
   const openJob = jobs.find(j => j.id === open) ?? null;
   useEffect(() => { if (open && data && !openJob) setOpen(null); }, [data]); // eslint-disable-line react-hooks/exhaustive-deps
   // A notice tapped in the bell: open that job on its own day.
@@ -90,7 +94,7 @@ export default function FieldTodayPage({ linkTask, onLinked }: { linkTask?: stri
         : groups.map(([id, g]) => (
           <section key={id} className="flex flex-col gap-2">
             <h2 className="m-0 text-[16px] font-semibold tracking-[-0.01em] flex items-baseline gap-2">{g.name}<span className="text-meta text-muted-ink font-normal tabular-nums">{t.jobs.groupDone(g.jobs.filter(j => j.done).length, g.jobs.length)}</span></h2>
-            {g.jobs.map(j => <TaskCard key={j.id} job={j} onOpen={() => setOpen(j.id)} />)}
+            {g.jobs.map(j => <TaskCard key={j.id} job={j} fresh={fresh.has(j.id)} onOpen={() => setOpen(j.id)} />)}
           </section>
         ))}
       {/* The list stays mounted under the sheet, so closing it lands back at the same scroll position. */}
@@ -135,12 +139,12 @@ function MapLink({ address, className }: { address: string; className?: string }
  *  The building and its address are on the section header and in TaskDetail, not repeated on every card.
  *  The unit's button stretches over the whole card and only opens TaskDetail. Start job lives there, not here,
  *  so a tap while scrolling the list can never start a job by mistake. */
-function TaskCard({ job: j, onOpen }: { job: Job; onOpen: () => void }) {
+function TaskCard({ job: j, fresh, onOpen }: { job: Job; fresh: boolean; onOpen: () => void }) {
   const t = usePortalText();
   const late = !j.done && daysLate(j.day) > 0;
   const row = 'flex items-start gap-2 text-copy';
   return (
-    <article className={cx('relative bg-card rounded-card border border-solid px-4 py-3.5 flex flex-col gap-2 has-[button:active]:bg-page', late ? 'border-danger-line' : 'border-line', j.done && 'text-muted-ink')}>
+    <article className={cx('relative bg-card rounded-card border border-solid px-4 py-3.5 flex flex-col gap-2 has-[button:active]:bg-page', late ? 'border-danger-line' : fresh ? 'border-info-line' : 'border-line', j.done && 'text-muted-ink')}>
       <div className="flex items-start gap-2">
         <button type="button" onClick={onOpen} className="flex-1 min-w-0 text-left cursor-pointer after:absolute after:inset-0 after:rounded-card">
           <span className="block text-[20px] leading-tight font-bold tracking-[-0.01em] text-ink [overflow-wrap:anywhere]">{j.unit.unitNumber}</span>
@@ -149,7 +153,7 @@ function TaskCard({ job: j, onOpen }: { job: Job; onOpen: () => void }) {
         <Icon name="ChevronRight" size="sm" color="var(--color-muted-ink)" style={{ marginTop: 3, flex: 'none' }} />
       </div>
       {/* Badges get their own row: beside the title they took most of a phone's width and broke the unit number. */}
-      <span className="flex items-center gap-1.5 flex-wrap"><JobStatus job={j} /></span>
+      <span className="flex items-center gap-1.5 flex-wrap">{fresh && <StatusBadge tone="info" label={t.jobs.newJob} />}<JobStatus job={j} /></span>
       {!j.external && j.accessInstruction && (
         <div className={row}><Icon name="KeyRound" size="sm" color="var(--color-muted-ink)" style={{ marginTop: 3 }} /><span className="min-w-0 line-clamp-2">{j.accessInstruction}</span></div>
       )}
@@ -190,6 +194,20 @@ function TaskDetail({ job: j, now, onClose, onChanged }: { job: Job; now: number
     const ok = await ask({ title: m.kind === 'video' ? t.jobs.removeVideo : t.jobs.removePhoto, body: t.jobs.removeBody, confirmLabel: t.jobs.remove, cancelLabel: t.jobs.keep, danger: true });
     if (ok === null) return;
     void act('remove', () => api.del(`/tasks/${j.id}/photos/${m.id}`), m.kind === 'video' ? t.jobs.videoRemoved : t.jobs.photoRemoved);
+  }
+  // Proof in is the last step of the job (owner, 27 Oct 2026): once photos went up the job is marked complete without
+  // another tap. If that call fails the error shows and the Mark complete button is still there.
+  async function afterUpload(uploaded: number) {
+    detail.reload(); onChanged();
+    if (uploaded === 0 || j.done) return;
+    setBusy('done');
+    try {
+      const d = await api.get<Detail>(`/housekeeping/tasks/${j.id}`);
+      await api.post(`/tasks/${j.id}/complete`, { photoIds: d.media.map(m => m.id) });
+      toast({ tone: 'success', title: t.jobs.doneThanks(j.unit.unitNumber) });
+      onChanged(); detail.reload();
+    } catch (e) { toast({ tone: 'critical', title: t.jobs.notSaved, body: errorMessage(e, t.jobs.checkSignal) }); }
+    finally { setBusy(null); }
   }
   // Door codes stay with the office (housekeeping/tasks/[id].ts never sends them to field staff): only the instructions show.
   const access = detail.data?.access.length ? detail.data.access : j.accessInstruction ? [{ id: 'a', label: t.jobs.access, instruction: j.accessInstruction }] : [];
@@ -278,7 +296,7 @@ function TaskDetail({ job: j, now, onClose, onChanged }: { job: Job; now: number
               phase === 'started' ? <StatusBadge tone="warning">{t.jobs.proofRequired}</StatusBadge>
                 : phase === 'proof' ? <StatusBadge tone="success"><span className="inline-flex items-center gap-1">{t.jobs.proofAttached}<Icon name="Check" size="sm" style={{ width: 13, height: 13 }} /></span></StatusBadge>
                 : undefined} />
-            {detail.data ? <MediaGallery items={detail.data.media} upload={j.done ? undefined : uploadTo(`/tasks/${j.id}/photos`)} onDone={() => { detail.reload(); onChanged(); }}
+            {detail.data ? <MediaGallery items={detail.data.media} upload={j.done ? undefined : uploadTo(`/tasks/${j.id}/photos`)} onDone={n => void afterUpload(n)} repeat={false}
               onRemove={j.done ? undefined : m => void remove(m)} addLabel={t.jobs.addPhoto} emptyText={t.jobs.noPhotos} />
               : <Skeleton height={84} />}
           </section>

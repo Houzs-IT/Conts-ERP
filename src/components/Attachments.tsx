@@ -53,8 +53,11 @@ interface Pending { key: string; name: string; preview: string | null; video: bo
 /** Thumbnails of the photos and videos already attached, then an "Add photo" tile. With `upload`, files picked or
  *  dropped go up one at a time (the caller's `upload` sends one file) and show on the grid while they do; refused
  *  files stay as a red tile saying why. Without `upload` the grid is read-only. */
-export function MediaGallery({ items, upload, onDone, addLabel = 'Add photo', capture, emptyText, showStage, onRemove, openAddRef }: {
-  items: MediaItem[]; upload?: (file: File) => Promise<unknown>; onDone?: () => void; addLabel?: string;
+export function MediaGallery({ items, upload, onDone, addLabel = 'Add photo', capture, emptyText, showStage, onRemove, openAddRef, repeat = true }: {
+  /** `onDone` runs after each batch with how many files went up (0 when every one failed). */
+  items: MediaItem[]; upload?: (file: File) => Promise<unknown>; onDone?: (uploaded: number) => void; addLabel?: string;
+  /** After a camera shot, offer "Take another" (the standard). False for a screen where the shot ends the step. */
+  repeat?: boolean;
   capture?: boolean; emptyText?: string; showStage?: boolean;
   /** Puts an X on each saved tile. The caller confirms and deletes. */
   onRemove?: (item: MediaItem) => void;
@@ -100,12 +103,13 @@ export function MediaGallery({ items, upload, onDone, addLabel = 'Add photo', ca
     }));
     setPending(ps => [...ps, ...batch]);
     const mark = (key: string, next: Partial<Pending>) => setPending(ps => ps.map(p => (p.key === key ? { ...p, ...next } : p)));
+    let uploaded = 0;
     for (let i = 0; i < files.length; i++) {
       mark(batch[i].key, { state: 'uploading' });
-      try { await upload(files[i]); mark(batch[i].key, { state: 'done' }); }
+      try { await upload(files[i]); uploaded += 1; mark(batch[i].key, { state: 'done' }); }
       catch (e) { mark(batch[i].key, { state: 'failed', error: errorMessage(e, 'Upload failed, try again.') }); }
     }
-    onDone?.();
+    onDone?.(uploaded);
   }
   function dismiss(p: Pending) {
     if (p.preview) URL.revokeObjectURL(p.preview);
@@ -196,9 +200,9 @@ export function MediaGallery({ items, upload, onDone, addLabel = 'Add photo', ca
             onChange={e => { if (e.target.files?.length) void send(e.target.files); e.target.value = ''; }} />
           {/* Camera: one shot per open (the OS camera returns one file), then "Take another" re-opens it. */}
           <input ref={cameraPhoto} type="file" accept="image/*" capture="environment" className="hidden"
-            onChange={e => { if (e.target.files?.length) { void send(e.target.files); setLastKind('photo'); setSource('again'); } e.target.value = ''; }} />
+            onChange={e => { if (e.target.files?.length) { void send(e.target.files); setLastKind('photo'); setSource(repeat ? 'again' : null); } e.target.value = ''; }} />
           <input ref={cameraVideo} type="file" accept="video/*" capture="environment" className="hidden"
-            onChange={e => { if (e.target.files?.length) { void send(e.target.files); setLastKind('video'); setSource('again'); } e.target.value = ''; }} />
+            onChange={e => { if (e.target.files?.length) { void send(e.target.files); setLastKind('video'); setSource(repeat ? 'again' : null); } e.target.value = ''; }} />
         </>
       )}
       {source && (
