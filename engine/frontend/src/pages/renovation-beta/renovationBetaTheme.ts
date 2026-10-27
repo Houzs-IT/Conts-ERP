@@ -99,12 +99,14 @@ const BASE_TOKENS = {
   tbEdge: ["#EBD3A0", "rgba(245,190,80,.35)"],
 } as const satisfies Record<string, Pair>;
 
-/** The four families, each as ink (text), soft (pill background), strong (a deeper background), dot and line. */
+/** The families, each as ink (text), soft (pill background), strong (a deeper background), dot and line. Blue is the
+ *  designs' "in progress / pending" condition pill (v10 and v13); it is not used for anything else. */
 const TONE_TOKENS = {
   accent: { ink: ["#0F5F58", "#7BE8D8"], soft: ["#DCF0ED", "rgba(40,200,180,.16)"], strong: ["#C8E8E3", "rgba(40,200,180,.26)"], dot: ["#1A7A72", "#2CC9B4"], line: ["#A9D2CC", "rgba(40,200,180,.4)"] },
   amber: { ink: ["#7A4F00", "#F7CD73"], soft: ["#F8EED9", "rgba(245,190,80,.16)"], strong: ["#F3E2BC", "rgba(245,190,80,.26)"], dot: ["#B07A1A", "#F2B84B"], line: ["#EBD3A0", "rgba(245,190,80,.4)"] },
   red: { ink: ["#962D25", "#FF9B90"], soft: ["#F6E3E0", "rgba(255,110,100,.16)"], strong: ["#F1D0CB", "rgba(255,110,100,.26)"], dot: ["#A3322A", "#FF6E64"], line: ["#E3AEA9", "rgba(255,110,100,.4)"] },
   grey: { ink: ["#4A4A4A", "#B9C0D0"], soft: ["#F0F0F0", "rgba(255,255,255,.07)"], strong: ["#E3E3E3", "rgba(255,255,255,.12)"], dot: ["#8E8E8E", "#7E869A"], line: ["#C9CED8", "rgba(150,175,255,.28)"] },
+  blue: { ink: ["#303030", "#DDE2EE"], soft: ["#E6EDFF", "rgba(80,130,255,.18)"], strong: ["#D3E0FF", "rgba(80,130,255,.28)"], dot: ["#111216", "#EEF1F8"], line: ["#B9CCFF", "rgba(80,130,255,.4)"] },
 } as const satisfies Record<string, Record<string, Pair>>;
 
 type BetaToken = keyof typeof BASE_TOKENS;
@@ -213,7 +215,8 @@ export function betaTagTone(name: string): BetaTone {
 /** Condition pill: [text, background, dot], by the wording of the condition, as the mockup's condPill. */
 export function betaConditionTone(text: string): readonly [string, string, string] {
   if (/amendment/i.test(text)) return [TONES.red.ink, TONES.red.soft, TONES.red.dot];
-  if (/New/.test(text)) return [TONES.amber.ink, TONES.amber.soft, TONES.amber.dot];
-  if (/waiting|booked|Done/i.test(text)) return [TONES.accent.ink, TONES.accent.soft, TONES.accent.dot];
-  return [TONES.grey.ink, TONES.grey.soft, TONES.grey.dot];
+  if (/New|waiting/i.test(text)) return [TONES.amber.ink, TONES.amber.soft, TONES.amber.dot];
+  if (/booked|Done/i.test(text)) return [TONES.accent.ink, TONES.accent.soft, TONES.accent.dot];
+  if (/^Pending site/.test(text)) return [TONES.grey.ink, TONES.grey.soft, TONES.grey.dot];
+  return [TONES.blue.ink, TONES.blue.soft, TONES.blue.dot];
 }

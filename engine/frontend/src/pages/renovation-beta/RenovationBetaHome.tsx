@@ -9,7 +9,7 @@ import { Search, X } from "lucide-react";
 import { useAuth } from "../../auth/AuthContext";
 import { useQuery } from "../../hooks/useQuery";
 import { money } from "../projects/renovation/renovationModel";
-import { BETA, BETA_STAGE, GLASS, TONES, betaConditionTone, betaDueTone, betaTagTone } from "./renovationBetaTheme";
+import { BETA, GLASS, TONES, betaConditionTone, betaDueTone, betaTagTone } from "./renovationBetaTheme";
 import { buildModel, HOME_TABS, homeCounts, homeList, homeRow, initials, shortLeft, type HomeRow, type HomeTab } from "./renovationBetaBoard";
 import { HOME_SORTS, keepOrder, matchesSearch, newestFirst, orderOf, sortFromParam, type HomeSort } from "./renovationBetaHomeModel";
 import { boardApi, boardKey, invalidateBeta, readLastProject, rememberLastProject } from "./renovationBetaBoardApi";
@@ -70,21 +70,10 @@ function PayCell({ text, outstandingSen }: { text: string; outstandingSen: numbe
   );
 }
 
-/** The status words. A project with no team says only "New": the Who now cell already offers the Assign. */
-const statusWords = (r: HomeRow): string => (r.p.unassigned ? "New" : r.tone);
-
-/** The condition letter in its stage colour, then the words with the condition's dot. */
+/** The condition as the designs draw it: one pill, "B - 3D in progress", with the condition's dot. */
 function StatusCell({ r }: { r: HomeRow }): ReactElement {
-  const [lInk, lBg] = BETA_STAGE[r.letter];
   const [ink, bg, dot] = betaConditionTone(r.tone);
-  return (
-    <span title={r.cond} style={{ display: "inline-flex", alignItems: "center", gap: 8, minWidth: 0, maxWidth: "100%" }}>
-      <span aria-label={`Stage ${r.letter}`} style={{ flex: "none", display: "inline-grid", placeItems: "center", width: 22, height: 22, borderRadius: 6, background: lBg, color: lInk, fontSize: 12, fontWeight: 700 }}>
-        {r.letter}
-      </span>
-      <DotText dot={r.p.unassigned ? TONES.grey.dot : dot} ink={r.p.unassigned ? INK_SOFT : ink} bg={r.p.unassigned ? TONES.grey.soft : bg}>{statusWords(r)}</DotText>
-    </span>
-  );
+  return <span title={r.cond} style={{ display: "inline-flex", minWidth: 0, maxWidth: "100%" }}><DotText dot={dot} ink={ink} bg={bg}>{r.cond}</DotText></span>;
 }
 
 function Avatar({ name }: { name: string }): ReactElement {

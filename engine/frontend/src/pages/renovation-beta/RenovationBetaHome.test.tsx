@@ -88,10 +88,9 @@ describe("Beta Home", () => {
     expect(screen.getByText("3 projects")).toBeTruthy();
     const tabs = within(screen.getByRole("tablist", { name: "Project groups" })).getAllByRole("tab");
     expect(tabs.map((t) => t.textContent)).toEqual(["All projects3", "Site Measure1", "Design1", "Carpentry · Site · PO1", "Done Design0"]);
-    expect(screen.getByText("New")).toBeTruthy();
-    expect(screen.getByTitle("A - New · team not assigned")).toBeTruthy();
+    expect(screen.getByText("A - New · team not assigned")).toBeTruthy();
     expect(screen.getByRole("button", { name: /Assign/ })).toBeTruthy();
-    expect(screen.getByText("3D in progress")).toBeTruthy();
+    expect(screen.getByText("B - 3D in progress")).toBeTruthy();
     expect(screen.getByText("3 shown · newest first · tap a project to open it")).toBeTruthy();
   });
 

@@ -140,7 +140,7 @@ export const NAV: NavGroup[] = [
   ] },
   // The engine's new project screens (owner, 23 Oct 2026). Their Projects area is engine-only, like Projects.
   { label: 'BETA', workspace: 'supply', items: [
-    { key: 'betaProjects', label: 'Project list', icon: 'folder-open', path: '/beta/projects', area: 'projects' },
+    { key: 'betaProjects', label: 'Home', icon: 'house', path: '/beta/projects', area: 'projects' },
     { key: 'betaCalendar', label: 'Calendar', icon: 'calendar-days', path: '/beta/calendar', area: 'projects' },
   ] },
   { label: 'SUPPLY CHAIN', workspace: 'supply', items: [
