@@ -26,7 +26,7 @@ id = "e0781ccdee9046919161c28cb95694c0"
 crons = [
   "* * * * *",      # Channex outbox: retries and anything the request-time flush missed
   "*/15 * * * *",   # email / WhatsApp outbox (quiet hours, retries); release calendar blocks of finished repair jobs
-  "0 * * * *",      # overdue cleans and repairs; statements finalised but unsent
+  "0 * * * *",      # overdue cleans and repairs; statements finalised but unsent; punches open over 16 h marked forgotten
   "0 0 * * *",      # 08:00 Malaysia: the "today" digest for operations
 ]
 
