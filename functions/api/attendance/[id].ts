@@ -48,3 +48,37 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   });
   return json({ data: toView(after) });
 };
+
+const removal = z.object({ note: z.string().trim().min(3, 'Say why the attendance is removed.').max(300) });
+
+/** DELETE /api/attendance/:id { note } — the office removes a day's punch (a clock-in or clock-out pressed by mistake).
+ *  Refused once that month's payslip is approved or paid. The audit log keeps the times, the note and the photo ids; the
+ *  photos themselves stay in storage but are no longer reachable from any screen. */
+export const onRequestDelete: PagesFunction<Env> = async ({ request, env, params }) => {
+  const { session, response } = await requireSession(request, env);
+  if (!session) return response!;
+  if (!mayWork(session, MANAGE)) return fail('FORBIDDEN', 'Your access does not include removing attendance.', 403);
+  if (!(await hasAttendance(env))) return fail('NOT_MIGRATED', NOT_MIGRATED, 503);
+
+  const before = await one<AttendanceRow>(env, `SELECT ${ROW_COLS} FROM attendance WHERE id = ?`, String(params.id));
+  if (!before) return fail('NOT_FOUND', 'That day is not on record.', 404);
+  const parsed = removal.safeParse(await request.json().catch(() => null));
+  if (!parsed.success) return fail('VALIDATION', 'Some fields need a fix.', 422, { note: parsed.error.issues[0]?.message ?? 'Say why the attendance is removed.' });
+
+  // A payslip already approved or paid was worked out from this day: reopen it first. Before payroll exists there is none.
+  const locked = await one<{ x: number }>(env, `SELECT 1 AS x FROM payslips WHERE employee_id = ? AND period = ? AND status <> 'draft' LIMIT 1`,
+    before.employee_id, before.work_date.slice(0, 7)).catch((e: unknown) => {
+    if (/payslips/.test(e instanceof Error ? e.message : String(e))) return null;
+    throw e;
+  });
+  if (locked) return fail('CONFLICT', `The payslip for ${before.work_date.slice(0, 7)} is already approved or paid. Reopen it before removing attendance.`, 409);
+
+  await run(env, 'DELETE FROM attendance WHERE id = ?', before.id);
+  await audit(env, {
+    actorId: session.userId, actorLabel: session.fullName, action: 'attendance.remove', entityTable: 'attendance', entityId: before.id,
+    before: { employeeId: before.employee_id, date: before.work_date, clockInAt: before.clock_in_at, clockOutAt: before.clock_out_at, forgotOut: !!before.forgot_out,
+      note: before.note, inPhotoId: before.in_photo_id, outPhotoId: before.out_photo_id },
+    after: { removed: true, reason: parsed.data.note },
+  });
+  return json({ ok: true });
+};
