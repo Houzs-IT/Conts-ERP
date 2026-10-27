@@ -98,9 +98,10 @@
 :root[data-theme="theconts-dark"] .border-black { border-color: var(--color-muted-ink); }
 
 /* The sidebar is dark in both themes: keep its "inverse" text white so the active item, the Rental/Supply chain
-   toggle and the name at the bottom stay readable. The profile pop-up inside it uses card/ink and is unaffected. */
-:root[data-theme="theconts-dark"] [data-sidebar] { --color-text-inverse: #FFFFFF; }
-:root[data-theme="theconts-dark"] [data-sidebar] [role="tablist"] button[aria-selected="true"] { background: #2E2B27 !important; box-shadow: inset 0 0 0 1px #4A4339; }
+   toggle and the name at the bottom stay readable. The profile pop-up inside it uses card/ink and is unaffected.
+   The Dream Crafter side's glass skin carries its own dark colours (Sidebar.tsx LOOKS), so these skip it. */
+:root[data-theme="theconts-dark"] [data-sidebar][data-look="conts"] { --color-text-inverse: #FFFFFF; }
+:root[data-theme="theconts-dark"] [data-sidebar][data-look="conts"] [role="tablist"] button[aria-selected="true"] { background: #2E2B27 !important; box-shadow: inset 0 0 0 1px #4A4339; }
 
 /* tokens.css inlines the status colours (@theme inline), so text-success, bg-success-bg and the rest kept their light
    values (dark green on near-black, pale tints under light text). Point them back at this theme's own values. */

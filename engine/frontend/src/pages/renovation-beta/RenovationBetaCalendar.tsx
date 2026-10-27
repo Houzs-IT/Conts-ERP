@@ -11,11 +11,12 @@ import { errorText } from "../projects/renovation/renovationModel";
 import { BETA } from "./renovationBetaTheme";
 import { add, buildModel, ds, rangeFor, SOP_LABEL, shiftMonth, type CalEvent, type Kind, type Viewing } from "./renovationBetaBoard";
 import { approveNewest, boardApi, boardKey, invalidateBeta, type BetaBoardProject, type BoardRange } from "./renovationBetaBoardApi";
-import { ErrorBanner, MUTED, useToast } from "./BetaCalParts";
+import { ErrorBanner, INK_SOFT, MUTED, useToast } from "./BetaCalParts";
 import { BetaCalDeadlines } from "./BetaCalDeadlines";
 import { BetaCalProgress } from "./BetaCalProgress";
 import { BetaCalMonth } from "./BetaCalMonth";
 import { BetaDialogs, type BetaDialog } from "./BetaForms";
+import { BetaSkin } from "./BetaWsUi";
 
 type CalTab = "design" | "prog" | "mine";
 const TABS: ReadonlyArray<readonly [CalTab, string]> = [["design", "Deadlines"], ["prog", "Progress"], ["mine", "Calendar"]];
@@ -23,7 +24,17 @@ const TABS: ReadonlyArray<readonly [CalTab, string]> = [["design", "Deadlines"],
 /** Where "+ Add project" goes: the Projects list with its New project form open (Projects.tsx reads ?new=1). */
 export const ADD_PROJECT_PATH = "/projects?view=list&new=1";
 
+/** The colours are set before anything else draws, so the loading line and an error already have them. */
 export function RenovationBetaCalendar(): ReactElement {
+  return (
+    <>
+      <BetaSkin />
+      <CalendarScreen />
+    </>
+  );
+}
+
+function CalendarScreen(): ReactElement {
   const navigate = useNavigate();
   const { can } = useAuth();
   const canWrite = can("projects.write");
@@ -73,31 +84,31 @@ export function RenovationBetaCalendar(): ReactElement {
   const raw = (id: number): BetaBoardProject | undefined => q.data?.projects.find((p) => p.id === id);
 
   const switchBtn = (on: boolean): CSSProperties => ({
-    minHeight: 38, padding: "0 14px", border: 0, borderRadius: 8, font: "inherit", fontWeight: 600, cursor: "pointer",
-    background: on ? BETA.surface : "transparent", color: on ? BETA.accentInk : "#3F4947", boxShadow: on ? "0 1px 2px rgba(23,32,31,.12)" : "none",
+    minHeight: 36, padding: "0 14px", border: `2px solid ${on ? BETA.blue : "transparent"}`, borderRadius: 999, font: "inherit", fontWeight: 600, cursor: "pointer",
+    background: on ? BETA.surface : "transparent", color: on ? BETA.ink : INK_SOFT,
   });
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16, color: BETA.ink }}>
       <section style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "flex-end", gap: 12 }}>
         <div>
-          <h1 style={{ margin: 0, fontSize: 28, fontWeight: 700, letterSpacing: "-.01em" }}>Calendar</h1>
+          <h1 style={{ margin: 0, fontSize: 28, fontWeight: 600, letterSpacing: "-.02em" }}>Calendar</h1>
           <div style={{ marginTop: 4, color: MUTED, fontSize: 14 }}>{SOP_LABEL(m)}</div>
         </div>
         <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 10 }}>
-          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#3F4947" }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: INK_SOFT }}>
             Viewing
             <select
               value={String(who)}
               onChange={(e) => setPick(e.target.value === "All" ? "All" : Number(e.target.value))}
-              style={{ minHeight: 40, border: `1px solid ${BETA.border}`, borderRadius: 8, padding: "0 10px", font: "inherit", fontWeight: 600, background: BETA.surface, color: BETA.ink }}
+              style={{ minHeight: 40, border: `1px solid ${BETA.glassEdge}`, borderRadius: 999, padding: "0 12px", font: "inherit", fontWeight: 600, background: BETA.field, boxShadow: BETA.btnGlassShadow, color: BETA.ink }}
             >
               <option value="All">Whole team</option>
               {m.people.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
               {who !== "All" && !m.people.some((x) => x.id === who) && viewingName && <option value={who}>{viewingName}</option>}
             </select>
           </label>
-          <div role="tablist" aria-label="Calendar views" style={{ display: "flex", gap: 4, padding: 4, borderRadius: 10, background: "#E8EDEC" }}>
+          <div role="tablist" aria-label="Calendar views" style={{ display: "flex", gap: 2, padding: 3, borderRadius: 999, background: BETA.head }}>
             {TABS.map(([key, label]) => (
               <button key={key} type="button" role="tab" aria-selected={tab === key} onClick={() => setTab(key)} style={switchBtn(tab === key)}>{label}</button>
             ))}

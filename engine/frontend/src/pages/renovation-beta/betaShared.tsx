@@ -10,6 +10,7 @@ import type { BetaDialog } from "./BetaForms";
 import type { BoardModel, DesignProject } from "./renovationBetaBoard";
 import type { BetaBoardProject } from "./renovationBetaBoardApi";
 import { dayMonthYear, whatsappLink } from "./renovationBetaModel";
+import { BETA } from "./renovationBetaTheme";
 import type { BetaTabKey } from "./renovationBetaTabs";
 
 /** The project as Home and Calendar see it (the board's logic), so the workspace shows the same dates and conditions. */
@@ -96,13 +97,13 @@ export function FileDialog({ projectId, file: opened, onClose }: { projectId: nu
     <WsDialog title={file.name} sub={picked ? `V${picked.version} · ${dayMonthYear(picked.uploadedOn)}${picked === versions[0] ? " · latest" : ""}` : undefined} onClose={onClose} wide>
       {versions.length > 1 && (
         <div role="group" aria-label="Choose version" style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, marginBottom: 12, fontSize: 13 }}>
-          <span style={{ color: "#55605E", fontWeight: 600, marginRight: 4 }}>Version</span>
+          <span style={{ color: BETA.muted, fontWeight: 600, marginRight: 4 }}>Version</span>
           {versions.map((v) => {
             const on = v.key === file.key;
             return (
               <button key={v.key} type="button" aria-pressed={on} onClick={() => { setBlobUrl(null); setError(null); setPickedKey(v.key); }}
                 style={{ display: "flex", flexDirection: "column", alignItems: "center", minWidth: 64, minHeight: 44, padding: "4px 10px", borderRadius: 8, font: "inherit", cursor: "pointer",
-                  border: `1px solid ${on ? "#17201F" : "#C3CCCA"}`, background: on ? "#17201F" : "#FFFFFF", color: on ? "#FFFFFF" : "#17201F" }}>
+                  border: `1px solid ${on ? BETA.ink : BETA.line}`, background: on ? BETA.ink : BETA.surface, color: on ? BETA.surface : BETA.ink }}>
                 <span style={{ fontWeight: 700 }}>V{v.version}</span>
                 <span style={{ fontSize: 11, opacity: 0.8 }}>{dayMonthYear(v.uploadedOn)}</span>
               </button>
@@ -112,7 +113,7 @@ export function FileDialog({ projectId, file: opened, onClose }: { projectId: nu
       )}
       {isImage ? <div style={{ maxHeight: "70vh", overflow: "auto" }}><WsPhoto path={path} alt={file.name} style={{ height: "auto", objectFit: "contain" }} /></div>
         : error ? <p role="alert" style={{ fontSize: 14, color: WS.red }}>The file could not be loaded: {error}</p>
-        : !blobUrl ? <p style={{ fontSize: 14, color: "#55605E" }}>Loading the file...</p>
+        : !blobUrl ? <p style={{ fontSize: 14, color: BETA.muted }}>Loading the file...</p>
         : <p style={{ fontSize: 14 }}><a href={blobUrl} target="_blank" rel="noopener" download={downloadName}>Open the file</a></p>}
     </WsDialog>
   );

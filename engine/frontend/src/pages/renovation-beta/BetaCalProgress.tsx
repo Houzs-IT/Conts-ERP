@@ -3,17 +3,17 @@
 
 import type { ReactElement } from "react";
 import { Link } from "react-router-dom";
-import { BETA } from "./renovationBetaTheme";
+import { BETA, GLASS, TONES } from "./renovationBetaTheme";
 import { currentStep, progressList, status, STEPS, stepDone, type BoardModel, type Viewing } from "./renovationBetaBoard";
 import { rememberLastProject } from "./renovationBetaBoardApi";
-import { CondPill, MUTED } from "./BetaCalParts";
+import { CondPill, INK_SOFT, MUTED } from "./BetaCalParts";
 
 export function BetaCalProgress({ m, who, viewingName }: { m: BoardModel; who: Viewing; viewingName: string | null }): ReactElement {
   const list = progressList(m, who);
   return (
-    <section aria-labelledby="betaProgHead" style={{ background: BETA.surface, border: `1px solid ${BETA.line}`, borderRadius: 12, padding: 20, display: "flex", flexDirection: "column", gap: 8 }}>
+    <section aria-labelledby="betaProgHead" style={{ ...GLASS, borderRadius: 26, padding: 20, display: "flex", flexDirection: "column", gap: 8 }}>
       <div>
-        <h2 id="betaProgHead" style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>{viewingName ? `${viewingName}'s projects` : "Team design progress"}</h2>
+        <h2 id="betaProgHead" style={{ margin: 0, fontSize: 17, fontWeight: 600, letterSpacing: "-.02em" }}>{viewingName ? `${viewingName}'s projects` : "Team design progress"}</h2>
         <div style={{ marginTop: 4, fontSize: 13, color: MUTED }}>Updates by itself from Drawings, Client PO and bookings. Your part is highlighted.</div>
       </div>
       <ol style={{ listStyle: "none", margin: 0, padding: 0 }}>
@@ -37,7 +37,7 @@ export function BetaCalProgress({ m, who, viewingName }: { m: BoardModel; who: V
                   {chips.map(([label, name, id]) => {
                     const me = who !== "All" && id.includes(who);
                     return (
-                      <span key={label} style={{ padding: "2px 8px", borderRadius: 6, ...(me ? { background: BETA.accent, color: "#FFFFFF", fontWeight: 700 } : { background: "#F2F5F4", color: "#3F4947", fontWeight: 500 }) }}>
+                      <span key={label} style={{ padding: "2px 8px", borderRadius: 999, ...(me ? { background: BETA.accentFill, color: "#FFFFFF", fontWeight: 700 } : { background: BETA.chip, color: INK_SOFT, fontWeight: 500 }) }}>
                         {label} · {name ?? "Not chosen"}
                       </span>
                     );
@@ -50,11 +50,11 @@ export function BetaCalProgress({ m, who, viewingName }: { m: BoardModel; who: V
                   const on = i === cur;
                   return (
                     <div key={key} style={{ flex: "1 1 0", minWidth: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, position: "relative" }}>
-                      {i > 0 && <span aria-hidden="true" style={{ position: "absolute", top: 10, right: "50%", width: "100%", height: 2, background: done || on ? BETA.accent : "#DCE2E1" }} />}
+                      {i > 0 && <span aria-hidden="true" style={{ position: "absolute", top: 10, right: "50%", width: "100%", height: 2, background: done || on ? TONES.accent.dot : BETA.line }} />}
                       <span
                         role="img"
                         aria-label={`${label}: ${done ? "done" : on ? "now" : "not yet"}`}
-                        style={{ position: "relative", width: 22, height: 22, borderRadius: 11, display: "inline-flex", alignItems: "center", justifyContent: "center", background: done ? BETA.accent : "#FFFFFF", border: `2px solid ${done || on ? BETA.accent : BETA.border}`, boxSizing: "border-box" }}
+                        style={{ position: "relative", width: 22, height: 22, borderRadius: 11, display: "inline-flex", alignItems: "center", justifyContent: "center", background: done ? BETA.accentFill : BETA.surface, border: `2px solid ${done || on ? TONES.accent.dot : BETA.border}`, boxSizing: "border-box" }}
                       >
                         {done && (
                           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7" /></svg>

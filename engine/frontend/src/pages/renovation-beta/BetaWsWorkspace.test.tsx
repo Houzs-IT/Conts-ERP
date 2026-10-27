@@ -199,7 +199,7 @@ describe("Beta project workspace", () => {
     expect(screen.getByText("Not confirmed")).toBeTruthy();
     expect(screen.getByText("At handover")).toBeTruthy();
     const headings = screen.getAllByRole("heading", { level: 2 }).map((x) => x.textContent);
-    expect(headings).toEqual(["Payments", "To do", "Site progress", "Unit key", "Design progress", "Sales order", "Final drawings", "Client & team"]);
+    expect(headings).toEqual(["Payments", "Needs attention", "Site progress", "Unit key", "Final drawings", "Sales order", "Design progress", "Client & team"]);
     // The same day count as the stepper and the project list (the step SLA), not the site tasks' span.
     expect(screen.getByText("Day 13 of 45 · 1 of 3 steps done")).toBeTruthy();
     // The step at the hardware stage waits for the unpaid 2nd payment; its PO has two site photos.

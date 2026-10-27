@@ -20,7 +20,7 @@ import { dayMonth, mytDay } from "./renovationBetaModel";
 import { clockOf, dayTitle } from "./renovationBetaPhotosModel";
 import { betaMediaApi } from "./renovationBetaMediaApi";
 import { betaSiteApi, type SiteDelivery, type SitePhoto } from "./renovationBetaSiteApi";
-import { BETA } from "./renovationBetaTheme";
+import { BETA, TONES } from "./renovationBetaTheme";
 import { doStatusWords } from "../scm-v2/renovationDoStatus";
 import { statusLabel } from "../../vendor/scm/lib/status-pill";
 
@@ -103,9 +103,9 @@ function DocRow({ d, day, today, last, lines, all, focused, canWrite, onAdd, ope
       </div>
       <div style={{ padding: last ? 0 : "0 0 22px", minWidth: 0 }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "12px 14px", borderRadius: 12, background: BETA.surface, border: `1px solid ${focused ? BETA.accent : BETA.line}`,
-          ...(focused ? { boxShadow: `0 0 0 2px ${BETA.accent}33` } : {}) }}>
+          ...(focused ? { boxShadow: `0 0 0 2px color-mix(in srgb, ${BETA.accent} 20%, transparent)` } : {}) }}>
           <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
-            <span aria-hidden="true" style={{ flex: "none", width: 28, height: 28, borderRadius: 14, background: isDo ? "#EEF2F1" : "#E4F1EF", color: isDo ? WS.blue : BETA.accent, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <span aria-hidden="true" style={{ flex: "none", width: 28, height: 28, borderRadius: 14, background: isDo ? TONES.grey.soft : TONES.accent.soft, color: isDo ? WS.blue : BETA.accent, display: "flex", alignItems: "center", justifyContent: "center" }}>
               {isDo ? <Truck size={14} /> : <PackageCheck size={14} />}
             </span>
             <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, overflowWrap: "anywhere" }}>{d.no}</h3>
@@ -125,7 +125,7 @@ function DocRow({ d, day, today, last, lines, all, focused, canWrite, onAdd, ope
             </div>
           )}
           {d.note && (
-            <div style={{ display: "flex", gap: 8, alignItems: "flex-start", padding: "8px 10px", borderRadius: 8, background: "#FBF8EF", borderLeft: `3px solid ${WS.amberDot}`, fontSize: 13, color: WS.text2, whiteSpace: "pre-line", overflowWrap: "anywhere" }}>
+            <div style={{ display: "flex", gap: 8, alignItems: "flex-start", padding: "8px 10px", borderRadius: 8, background: TONES.amber.soft, borderLeft: `3px solid ${WS.amberDot}`, fontSize: 13, color: WS.text2, whiteSpace: "pre-line", overflowWrap: "anywhere" }}>
               <StickyNote size={14} aria-hidden="true" style={{ flex: "none", marginTop: 2, color: WS.amber }} />
               <span><span style={{ fontWeight: 600, color: BETA.ink }}>Note </span>{d.note}</span>
             </div>
