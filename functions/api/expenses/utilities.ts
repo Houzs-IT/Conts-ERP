@@ -15,7 +15,9 @@ const monthName = (ym: string) => `${MONTH_NAMES[Number(ym.slice(5, 7)) - 1]} ${
 const nextMonth = (ym: string) => { const [y, m] = ym.split('-').map(Number); return m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`; };
 
 /** GET /api/expenses/utilities?month=YYYY-MM[&ownerId=|&unitId=]
- *  Also lists the units in scope with no account number on file at all, so the screen can offer to add one. */
+ *  Also lists the units in scope with no account number on file at all, so the screen can offer to add one, and
+ *  `rollsTo`: for each unit whose owner statement for the month is already final, the month a new bill will be
+ *  deducted in instead. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
@@ -46,8 +48,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     SELECT unit_id, category, amount, deduct_month, rolled, record_only FROM expenses WHERE unit_id IN (SELECT jsonb_array_elements_text(?::text::jsonb))
       AND category IN ('electricity','water','internet','sewerage') AND incurred_on >= ? AND incurred_on < ?
     ORDER BY created_at`, JSON.stringify(bare.map(u => u.id)), `${month}-01`, `${nextMonth(month)}-01`) : [];
+  const finals = await finalMonthsFor(env, [...new Set([...rows.map(r => r.unit_id as string), ...bare.map(u => u.id as string)])], month);
+  const rollsTo = Object.fromEntries([...finals].map(([unit, set]) => [unit, firstOpenMonth(month, set)]).filter(([, m]) => m !== month));
   return json({
-    generatedAt: nowIso(), month,
+    generatedAt: nowIso(), month, rollsTo,
     unitsWithoutAccount: bare.map(u => ({
       unitId: u.id, unitLabel: `${u.property_name} ${u.unit_number}`,
       recorded: bareBills.filter(x => x.unit_id === u.id).map(x => ({ kind: x.category, kindLabel: KIND_LABEL[x.category], amount: Number(x.amount), deductMonth: x.deduct_month, rolled: !!x.rolled, recordOnly: !!x.record_only })),
