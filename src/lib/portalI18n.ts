@@ -112,6 +112,7 @@ const en = {
   },
   payslipStatus: { none: 'Not run', draft: 'Draft', approved: 'Approved', paid: 'Paid' },
   jobs: {
+    newJob: 'New',
     notOnList: 'That job is no longer on your list.',
     title: 'My jobs',
     summary: (left: number, done: number): string => `${left} to do, ${done} done`,
@@ -267,6 +268,7 @@ const ms: PortalStrings = {
   },
   payslipStatus: { none: 'Belum dijana', draft: 'Draf', approved: 'Diluluskan', paid: 'Dibayar' },
   jobs: {
+    newJob: 'Baru',
     notOnList: 'Kerja itu tiada lagi dalam senarai anda.',
     title: 'Kerja saya',
     summary: (left, done) => `${left} belum siap, ${done} siap`,
@@ -418,6 +420,7 @@ const zh: PortalStrings = {
   },
   payslipStatus: { none: '未生成', draft: '草稿', approved: '已批准', paid: '已发放' },
   jobs: {
+    newJob: '新',
     notOnList: '这项工作已不在你的列表上。',
     title: '我的工作',
     summary: (left, done) => `待做 ${left}，已完成 ${done}`,
@@ -569,6 +572,7 @@ const my: PortalStrings = {
   },
   payslipStatus: { none: 'မတွက်ရသေး', draft: 'မူကြမ်း', approved: 'အတည်ပြုပြီး', paid: 'ပေးချေပြီး' },
   jobs: {
+    newJob: 'အသစ်',
     notOnList: 'ထိုအလုပ်သည် သင့်စာရင်းတွင် မရှိတော့ပါ။',
     title: 'ကျွန်ုပ်၏ အလုပ်များ',
     summary: (left, done) => `လုပ်ရန် ${left}၊ ပြီးပြီ ${done}`,
