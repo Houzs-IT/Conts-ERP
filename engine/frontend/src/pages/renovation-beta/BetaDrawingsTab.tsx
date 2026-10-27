@@ -4,7 +4,7 @@
    "For site" bar and the two set uploads; the approved set; or the history. 3D is a set of named link cards. Sending
    and approval write through /api/beta; the upload boxes open the dialogs in BetaDrawingUploads.tsx. */
 
-import { useState, type CSSProperties, type ReactElement, type ReactNode } from "react";
+import { useRef, useState, type CSSProperties, type ReactElement, type ReactNode } from "react";
 import { useDialog } from "../../hooks/useDialog";
 import { useQuery } from "../../hooks/useQuery";
 import { addDays, errorText } from "../projects/renovation/renovationModel";
@@ -284,6 +284,7 @@ function KindDetail({ kind, p, set, onEdit, onOpen, onUpload, sheets, sheetsRead
   const { approved, waiting } = set;
   const [picked, setView] = useState<View>(waiting ? "waiting" : approved ? "approved" : "history");
   const [comparing, setComparing] = useState(false);
+  const replacePicker = useRef<HTMLInputElement>(null);
   // After a save the picked view can be gone (the waiting version was just approved), so fall back to what exists.
   const view: View = picked === "waiting" && !waiting ? (approved ? "approved" : "history") : picked === "approved" && !approved ? (waiting ? "waiting" : "history") : picked;
   const notes = records.notes.filter((n) => n.kind === kind).sort((a, b) => b.noted_on.localeCompare(a.noted_on) || b.id - a.id);
@@ -457,7 +458,12 @@ function KindDetail({ kind, p, set, onEdit, onOpen, onUpload, sheets, sheetsRead
 
       {onUpload && is2d && sheetsReady && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 10 }}>
-          <BigUpload title="Replace changed pages" sub="Upload only the pages you changed. The rest are kept from the set." onClick={() => onUpload({ t: "sheets", mode: "replace" })} strong />
+          {/* The click goes straight to the file picker; the dialog then lists the set so each file can be matched to a sheet. */}
+          <BigUpload title="Replace changed pages" sub="Pick the files you changed, then choose which sheet each one replaces." onClick={() => replacePicker.current?.click()} strong />
+          <input
+            ref={replacePicker} type="file" multiple accept="application/pdf,image/*" className="sr" tabIndex={-1} aria-hidden="true" data-testid="replace-picker"
+            onChange={(e) => { const files = [...(e.target.files ?? [])]; e.target.value = ""; if (files.length) onUpload({ t: "sheets", mode: "replace", files }); }}
+          />
           <BigUpload title="Upload full set" sub="First time, or when the whole set is redrawn." onClick={() => onUpload({ t: "sheets", mode: "full" })} />
         </div>
       )}
