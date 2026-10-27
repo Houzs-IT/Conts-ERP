@@ -861,10 +861,12 @@ async function siteDeliveries(c: Ctx, projectId: number, companyId: number): Pro
                   WHERE i.doc_no IN (SELECT doc_no FROM scm.mfg_sales_orders WHERE project_id = ?1 AND company_id = ?2) AND NOT i.cancelled
                   ORDER BY i.doc_no, i.line_no NULLS LAST, i.created_at, i.id`)),
     rowsOf(c, q(`SELECT d.id::text AS id, d.do_number AS no, ${TS("coalesce(d.delivered_at, d.signed_at, d.dispatched_at)")} AS at,
-                        d.do_date::text AS made_on, d.status::text AS status, d.so_doc_no
+                        d.do_date::text AS made_on, d.status::text AS status, d.so_doc_no,
+                        coalesce(nullif(trim(d.note), ''), nullif(trim(d.notes), '')) AS note, nullif(trim(d.driver_name), '') AS driver
                    FROM scm.delivery_orders d WHERE d.id IN (__DOS__) AND d.status::text <> 'CANCELLED'`)),
     rowsOf(c, q(`SELECT g.id::text AS id, g.grn_number AS no, ${TS("coalesce(g.site_received_at, (g.received_at::timestamp AT TIME ZONE 'Asia/Kuala_Lumpur'))")} AS at,
                         g.status::text AS status, sup.name AS supplier, po.po_number, g.purchase_order_id::text AS po_id,
+                        nullif(concat_ws(E'\n', nullif(trim(g.site_notes), ''), nullif(trim(g.notes), '')), '') AS note, nullif(trim(g.delivery_note_ref), '') AS supplier_ref,
                         (SELECT json_agg(DISTINCT x.purchase_order_id::text) FROM scm.grn_items gi JOIN scm.purchase_order_items x ON x.id = gi.purchase_order_item_id
                           WHERE gi.grn_id = g.id) AS po_ids
                    FROM scm.grns g LEFT JOIN scm.suppliers sup ON sup.id = g.supplier_id LEFT JOIN scm.purchase_orders po ON po.id = g.purchase_order_id
@@ -904,7 +906,7 @@ async function siteDeliveries(c: Ctx, projectId: number, companyId: number): Pro
     photos.push(...uploads("delivery_order", id));
     out.push({
       type: "delivery_order", id, no: String(d.no), at: str(d.at) ?? str(d.made_on), status: String(d.status), from: str(d.so_doc_no), poNumber: null, poIds: [],
-      areas: areasOf(doAreas, id), lines: linesOf(doAreas, id), photos,
+      areas: areasOf(doAreas, id), lines: linesOf(doAreas, id), photos, note: str(d.note), driver: str(d.driver), supplierRef: null,
     });
   }
   for (const g of grs) {
@@ -918,6 +920,7 @@ async function siteDeliveries(c: Ctx, projectId: number, companyId: number): Pro
     out.push({
       type: "goods_received", id, no: String(g.no), at: str(g.at), status: String(g.status), from: str(g.supplier), poNumber: str(g.po_number), poIds,
       areas: uniqueAreas([...areasOf(grAreas, id), ...site.map((p) => p.area)]), lines: linesOf(grAreas, id), photos: [...site, ...uploads("goods_received", id)],
+      note: str(g.note), driver: null, supplierRef: str(g.supplier_ref),
     });
   }
   return { areas: uniqueAreas(soAreas.map((r) => str(r.area))), deliveries: sortDeliveries(out) };

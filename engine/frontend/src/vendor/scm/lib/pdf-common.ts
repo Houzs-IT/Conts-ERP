@@ -18,6 +18,7 @@ import {
   type BrandingLogo,
 } from '../../../lib/branding';
 import { canonicalizeSinglePhone, formatPhone } from '../../shared/phone';
+import { drawDocLetterhead } from '../../../lib/renovation/renovation-doc-theme';
 
 /* HOUZS letterhead — name / reg no / address / phone / email now come from the
    centralised Branding config (one editable record in Settings → Branding),
@@ -77,6 +78,10 @@ export const COMPANY = {
   get name(): string {
     return getBrandingCache().companyName;
   },
+  /** "The Conts" for "The Conts Sdn Bhd": the letterhead's wordmark when no logo is uploaded. */
+  get shortName(): string {
+    return shortCompanyName(getBrandingCache().companyName);
+  },
   get reg(): string {
     return getBrandingCache().registrationNo;
   },
@@ -118,10 +123,20 @@ export const COMPANY = {
   // any other active company renders "<short name> ERP" (e.g. "2990's Home
   // ERP"). Live getter like the fields above, so it flips with the switcher.
   get portalLabel(): string {
-    if (getBrandingCompanyCode() === HOUZS_COMPANY_CODE) return 'Houzs ERP';
-    return `${shortCompanyName(getBrandingCache().companyName)} ERP`;
+    /* Conts runs on the company code HOUZS (its only company row), so the code alone printed "Houzs ERP" on every
+       Conts document; the name decides. */
+    const name = getBrandingCache().companyName;
+    if (getBrandingCompanyCode() === HOUZS_COMPANY_CODE && /houzs/i.test(name)) return 'Houzs ERP';
+    return `${shortCompanyName(name)} ERP`;
   },
 };
+
+/** The company block of the shared letterhead (renovation-doc-theme.ts), in the samples' shape: name and registration
+ *  on one line, the address, then "PHONE : ... // EMAIL : ...". */
+export function letterheadLines(contactOf: { phone: string; email: string } = COMPANY): string[] {
+  const contact = [contactOf.phone && `PHONE : ${contactOf.phone}`, contactOf.email && `EMAIL : ${contactOf.email}`].filter(Boolean).join(' // ');
+  return [[COMPANY.name.toUpperCase(), COMPANY.reg].filter(Boolean).join(' '), ...COMPANY.addressLines, contact];
+}
 
 /* ── CJK-safe text ─────────────────────────────────────────────────────
    jspdf paints the built-in helvetica through WinAnsiEncoding (jspdf 2.5.2
@@ -469,115 +484,20 @@ export function drawHeader(
     /** Per-document logo override (owner 2026-07 — brand letterheads): when
      *  set, draws THIS logo (e.g. the SO's resolved brand logo) instead of
      *  the company logo. null/undefined → the company logo memo, then the
-     *  historic text-only header — company letterhead stays the fallback. */
+     *  company name in spaced capitals. */
     logo?: BrandingLogo | null;
   },
 ): number {
-  const pageW = doc.internal.pageSize.getWidth();
-  const margin = 14;
-  let y = margin;
-
-  /* Branding logo (owner 2026-07 — 左上角): when the owner has uploaded a
-     logo it renders TOP-LEFT and the company name/address block shifts to
-     sit BESIDE it, keeping the exact same line spacing. No logo (or the
-     memo not yet warmed) → the historic text-only header, byte-identical.
-     The memo is primed by useBranding() at app load and awaited by the SO
-     generator, so multi-page / multi-print runs never refetch. */
-  /* Measure the right-hand meta column FIRST. The company block on the left
-     used to be drawn with no width limit at all, so a long address simply ran
-     under the right column — on a 2990 Delivery Order "…Wilayah Persekutuan
-     KL" ended up touching "Date: 06/08/2026". Reserving the right column's
-     real width (plus a gutter) and wrapping the left block into what remains
-     is what keeps the two apart; nothing moves for a letterhead that already
-     fitted. */
-  const gutter = 8;
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(14);
-  let rightW = doc.getTextWidth(opts.docTitle);
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(10);
-  for (const m of opts.rightMeta) {
-    rightW = Math.max(rightW, doc.getTextWidth(`${m.label}: ${m.value}`));
-  }
-
-  let textX = margin;
-  const logo = opts.logo ?? getBrandingLogoCache();
-  let logoBox: { w: number; h: number } | null = null;
-  if (logo) {
-    const maxW = 40;   // mm — letterhead-scale, never dominates the header
-    const maxH = 16;   // mm — fits beside the 4-line text block
-    const scale = Math.min(maxW / logo.width, maxH / logo.height);
-    logoBox = { w: logo.width * scale, h: logo.height * scale };
-    textX = margin + logoBox.w + 6;
-  }
-
-  // What the left block may occupy before it would collide with the meta
-  // column. Floored so a pathological logo/meta combination still leaves a
-  // usable measure rather than a negative one.
-  const leftMaxW = Math.max(40, pageW - margin - textX - rightW - gutter);
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(16);
-  const nameLines = doc.splitTextToSize(COMPANY.name, leftMaxW) as string[];
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(9);
-  const regLines = doc.splitTextToSize(COMPANY.reg, leftMaxW) as string[];
-  /* Comma-aware (see wrapAtCommas): the width wrap must not cut inside a
-     chunk like "No. 2,". Only a chunk that ALONE overflows the measure falls
-     back to the word wrap. Shared letterhead — every document tidies up
-     together. */
-  const addressLines = COMPANY.addressLines.flatMap((line) =>
-    wrapAtCommas(line, leftMaxW, (s) => doc.getTextWidth(s)).flatMap((l) =>
-      doc.getTextWidth(l) > leftMaxW ? (doc.splitTextToSize(l, leftMaxW) as string[]) : [l],
-    ),
-  );
-
-  let logoBottomY = 0;
-  if (logo && logoBox) {
-    /* Vertical centring (owner 2026-07 — 左上角的中间位置): the company text
-       block spans from the name's cap line (margin - 5, the 16pt cap height
-       above the baseline at `margin`) down to the last address-line baseline.
-       Centre the logo's midline on that block's midline; a logo TALLER than
-       the block keeps the historic top alignment so it never floats above the
-       page margin. Measured from the WRAPPED lines, so a block that grew a
-       line still centres correctly. */
-    const blockTop = margin - 5;
-    const lastBaseline =
-      margin + 6 * (nameLines.length - 1) + 5 * regLines.length + 4 * addressLines.length;
-    const blockH = lastBaseline - blockTop;
-    const topY = logoBox.h < blockH ? blockTop + (blockH - logoBox.h) / 2 : blockTop;
-    try {
-      doc.addImage(logo.dataUrl, logo.format, margin, topY, logoBox.w, logoBox.h);
-      logoBottomY = topY + logoBox.h;
-    } catch {
-      textX = margin; // fail-soft: draw the text-only header, full width
-    }
-  }
-
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(16);
-  nameLines.forEach((line, i) => {
-    if (i) y += 6;
-    doc.text(line, textX, y);
+  /* Conts (owner, 24 Oct 2026): every document draws the letterhead of the owner's sample quotations, so a PO, DO,
+     GRN or invoice reads as the same family as the quotation, SO and VO. */
+  const y = drawDocLetterhead(doc, {
+    title: opts.docTitle.toUpperCase(),
+    name: COMPANY.shortName,
+    logo: opts.logo ?? getBrandingLogoCache(),
+    lines: letterheadLines(),
+    meta: opts.rightMeta,
   });
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(9);
-  for (const line of regLines) {
-    y += 5;
-    doc.text(line, textX, y);
-  }
-  for (const line of addressLines) {
-    y += 4;
-    doc.text(line, textX, y);
-  }
-
-  let rightY = margin;
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(14);
-  doc.text(opts.docTitle, pageW - margin, rightY, { align: 'right' });
-  rightY += 6;
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(10);
-  for (const m of opts.rightMeta) {
-    doc.text(`${m.label}: ${m.value}`, pageW - margin, rightY, { align: 'right' });
-    rightY += 5;
-  }
-
-  y = Math.max(y, rightY) + 6;
-  if (logoBottomY) y = Math.max(y, logoBottomY + 3); // divider clears the logo
-  doc.setDrawColor(180); doc.line(margin, y, pageW - margin, y);
-  return y + 4;
+  return y + 2;
 }
 
 // Two-column info block (e.g. "BILL TO" + "DETAILS")

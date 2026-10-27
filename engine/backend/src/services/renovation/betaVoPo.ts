@@ -13,7 +13,7 @@
 import { readVo } from "../../scm/lib/renovation-vo";
 import { isCustomerSupplied, poPickerOffers, voGoesTo } from "../../scm/lib/renovation-po-split";
 import { renoDbFromD1 } from "./dbBridge";
-import type { Db } from "./load";
+import { isMissingRelation, type Db } from "./load";
 
 async function rows<T>(db: Db, sql: string, ...args: unknown[]): Promise<T[]> {
   const res = await db.prepare(sql).bind(...args).all<T>();
@@ -498,6 +498,9 @@ export interface ClientItem {
   voNo: string | null;
   /** A VO not approved yet: the item is not on the SO until it is. */
   pending: boolean;
+  /** The line's processing (buy by) and delivery dates, the plan the PO tab sets (scm.reno_beta_line_plans). */
+  orderOn: string | null;
+  deliverOn: string | null;
 }
 
 export interface SkuPhoto { productId: string; key: string; thumbKey: string | null }
@@ -557,6 +560,7 @@ export async function loadClientItems(db: Db, projectId: number, companyId: numb
       WHERE ${PROJECT_SO} AND NOT i.cancelled
       ORDER BY i.doc_no, i.line_no NULLS LAST`,
     projectId, companyId);
+  const plans = await clientPlans(db, r.map((x) => x.id));
   const items: ClientItem[] = [];
   for (const x of r) {
     const owner = Boolean(x.supply_by_owner);
@@ -567,6 +571,7 @@ export async function loadClientItems(db: Db, projectId: number, companyId: numb
       categoryLabel: x.cat_label ?? "Other", categorySort: x.cat_sort ?? 999, subLabel: x.sub_label ?? "General", subSort: x.sub_sort ?? 999,
       area: x.room || null, qty: Number(x.qty), measure: x.measure ? `${Number(x.measure)} ${x.measure_uom ?? ""}`.trim() : null, uom: x.uom,
       photoKeys: photoList(x.photo_urls), skuPhotos: skuPhotoList(x.sku_photos), voNo: x.vo_no, pending: false,
+      orderOn: plans.get(x.id)?.order_on ?? null, deliverOn: plans.get(x.id)?.deliver_on ?? null,
     });
   }
   // A VO not on the SO yet that adds a client item: listed so the client can be asked early, marked as such.
@@ -577,17 +582,33 @@ export async function loadClientItems(db: Db, projectId: number, companyId: numb
       items.push({
         key: `${v.key}:${i}`, soDocNo: v.soDocNo, soItemId: null, itemCode: l.itemCode, description: l.description,
         categoryLabel: "Other", categorySort: 999, subLabel: "General", subSort: 999, area: l.room, qty: l.qty, measure: l.measure, uom: null,
-        photoKeys: [], skuPhotos: [], voNo: v.label, pending: true,
+        photoKeys: [], skuPhotos: [], voNo: v.label, pending: true, orderOn: null, deliverOn: null,
       });
     });
   }
   return { items };
 }
 
+/** The PO tab's dates of these lines; none before the plans table exists (betaLines.ts readPlans reads the same). */
+async function clientPlans(db: Db, ids: readonly string[]): Promise<Map<string, { order_on: string | null; deliver_on: string | null }>> {
+  const out = new Map<string, { order_on: string | null; deliver_on: string | null }>();
+  if (ids.length === 0) return out;
+  try {
+    const r = await rows<{ so_item_id: string; order_on: string | null; deliver_on: string | null }>(db,
+      `SELECT so_item_id::text AS so_item_id, order_on::text AS order_on, deliver_on::text AS deliver_on
+         FROM scm.reno_beta_line_plans WHERE so_item_id::text IN (SELECT jsonb_array_elements_text(?::text::jsonb))`,
+      JSON.stringify(ids));
+    for (const x of r) out.set(x.so_item_id, x);
+  } catch (e) {
+    if (!isMissingRelation(e)) throw e;
+  }
+  return out;
+}
+
 /** One photo on the client's link: an opaque reference the link's photo route resolves again, never the storage key. */
 export interface ClientPublicPhoto { ref: string; from: "line" | "sku" }
 
-export type ClientPublicItem = Pick<ClientItem, "key" | "itemCode" | "description" | "categoryLabel" | "subLabel" | "area" | "qty" | "measure" | "uom" | "pending">
+export type ClientPublicItem = Pick<ClientItem, "key" | "itemCode" | "description" | "categoryLabel" | "subLabel" | "area" | "qty" | "measure" | "uom" | "pending" | "orderOn" | "deliverOn">
   & { photos: ClientPublicPhoto[] };
 
 /** A storage key's reference on the client link: 24 hex of its SHA-256, so the link names no key and no document
@@ -613,7 +634,7 @@ export async function clientPhotoIndex(items: readonly ClientItem[]): Promise<Ma
 export async function clientView(items: readonly ClientItem[]): Promise<ClientPublicItem[]> {
   return Promise.all(items.map(async (i) => ({
     key: i.key, itemCode: i.itemCode, description: i.description, categoryLabel: i.categoryLabel, subLabel: i.subLabel, area: i.area, qty: i.qty,
-    measure: i.measure, uom: i.uom, pending: i.pending,
+    measure: i.measure, uom: i.uom, pending: i.pending, orderOn: i.orderOn, deliverOn: i.deliverOn,
     photos: [
       ...(await Promise.all(i.photoKeys.map(async (k) => ({ ref: await photoRef(k), from: "line" as const })))),
       ...(await Promise.all(i.skuPhotos.map(async (ph) => ({ ref: await photoRef(ph.key), from: "sku" as const })))),

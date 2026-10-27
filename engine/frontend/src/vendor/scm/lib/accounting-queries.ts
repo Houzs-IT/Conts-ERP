@@ -344,6 +344,7 @@ export const useChartImport = () => {
       void qc.invalidateQueries({ queryKey: ['chart-union'] });
       void qc.invalidateQueries({ queryKey: ['accounts'] });
       void qc.invalidateQueries({ queryKey: ['suppliers'] });
+      void qc.invalidateQueries({ queryKey: ['suppliers-paged'] });
     },
   });
 };

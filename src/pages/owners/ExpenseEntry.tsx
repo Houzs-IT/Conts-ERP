@@ -85,6 +85,9 @@ export function UtilitiesModal({ ownerId, unitId, month: initial, onClose, onSav
   const needsReceipt = (r: UtilityRow) => receiptRequired(r.kind, payer(r)) && !receipts[r.accountId] && !r.receiptDocumentId;
   const missing = [...entered.filter(needsReceipt), ...looseMissing];
   const count = entered.length + looseEntered.length;
+  // How many bills of the month still have no amount, typed here or recorded before (finance, 26 Oct 2026).
+  const lines = rows.length + loose.length;
+  const toFill = lines - rows.filter(r => r.recordedElsewhere || (value(r) ?? 0) > 0).length - looseEntered.length;
 
   async function save() {
     setBusy(true); setRowErrors({});
@@ -130,6 +133,11 @@ export function UtilitiesModal({ ownerId, unitId, month: initial, onClose, onSav
         <button type="button" aria-label="Previous month" onClick={() => step(-1)} className="w-[34px] h-[34px] grid place-items-center rounded-control bg-card border border-solid border-line cursor-pointer text-muted-ink"><Icon name="ChevronLeft" size="sm" /></button>
         <span className="text-copy font-semibold min-w-[96px] text-center">{monthLabel(month)}</span>
         <button type="button" aria-label="Next month" onClick={() => step(1)} className="w-[34px] h-[34px] grid place-items-center rounded-control bg-card border border-solid border-line cursor-pointer text-muted-ink"><Icon name="ChevronRight" size="sm" /></button>
+        {data && lines > 0 && (
+          <span role="status" className={toFill ? 'text-copy font-semibold text-warning' : 'text-copy font-semibold text-success'}>
+            {toFill ? `${toFill} of ${lines} ${lines === 1 ? 'bill' : 'bills'} still to fill` : `All ${lines} ${lines === 1 ? 'bill' : 'bills'} filled`}
+          </span>
+        )}
       </div>
       <div className="w-[220px] max-w-full">
         <DateField label="Bill date" value={billDate} onChange={setBillDate} min={`${month}-01`} max={lastDayOf(month)}

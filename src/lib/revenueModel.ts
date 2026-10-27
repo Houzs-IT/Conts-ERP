@@ -16,7 +16,7 @@ export const MODELS: { key: RevenueModel; label: string; short: string; blurb: s
   { key: 'master_lease', label: 'Master lease', short: 'Lease', blurb: 'We rent the unit from the owner',
     statement: 'No owner statement. The rent is a company cost; the unit\'s profit or loss is the company\'s.' },
   { key: 'long_term', label: 'Long-term let', short: 'Long-term', blurb: 'Let to one tenant, not on channels',
-    statement: 'The owner gets the tenant\'s rent less the operator share and owner-paid costs.' },
+    statement: 'The owner gets the tenant\'s rent less owner-paid costs. No operator share.' },
   { key: 'wh_long_term', label: 'Showroom / warehouse let', short: 'WH LT', blurb: 'A showroom or warehouse let long term to one tenant (e.g. Dream Crafter)',
     statement: 'The owner gets the tenant\'s rent less the operator share and owner-paid costs.' },
 ];
@@ -87,4 +87,5 @@ export const USED_BY: { value: string; label: string }[] = [
 ];
 export const BED_SIZES: { value: string; label: string }[] = [
   { value: 'king', label: 'King' }, { value: 'queen', label: 'Queen' }, { value: 'super_single', label: 'Super single' }, { value: 'single', label: 'Single' }, { value: 'sofa_bed', label: 'Sofa bed' },
+  { value: 'single_floor_mattress', label: 'Single floor mattress' }, { value: 'double_decker', label: 'Double decker' },
 ];

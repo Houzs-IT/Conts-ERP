@@ -96,7 +96,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     // Statements, invoices and payout advice carry money, so they follow the same rule as the P and L.
     // An owner sees only what has been released to them.
     all<any>(env, `
-      SELECT id, kind, file_name, byte_size, created_at
+      SELECT id, kind, file_name, byte_size, created_at, maintenance_id, task_id, mime_type
       FROM documents
       WHERE unit_id = ?
         ${money ? '' : "AND kind NOT IN ('statement','invoice','payout_advice')"}
@@ -200,6 +200,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       suppliedInHouse: !!i.supplied_in_house, installedOn: i.installed_on, lastChecked: i.last_checked,
       ...(money ? { purchaseCost: i.purchase_cost } : {}),
     })),
+    // The unit's cover: its newest photo added on the Units screen, not a photo from a cleaning or repair job.
+    coverPhotoId: documents.find(d => d.kind === 'photo' && !d.maintenance_id && !d.task_id && String(d.mime_type).startsWith('image/'))?.id ?? null,
     documents: documents.map(d => ({
       id: d.id, name: d.file_name, kind: d.kind, sizeLabel: sizeLabel(d.file_name, Number(d.byte_size)), updatedAt: d.created_at,
     })),

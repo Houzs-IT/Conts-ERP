@@ -24,7 +24,7 @@ test('names are trimmed and spaces collapsed; empty and long ones are refused', 
 
 test('rule keys: an area, a category, or nothing', () => {
   assert.equal(ruleKeyKind('scSales'), 'area');
-  assert.equal(ruleKeyKind('group:Dream Crafter'), 'group');
+  assert.equal(ruleKeyKind('group:Supply chain'), 'group');
   assert.equal(ruleKeyKind('group:Nope'), null);
   assert.equal(ruleKeyKind('nope'), null);
 });
@@ -87,11 +87,11 @@ test('moveTo: absent is fine, malformed is not', () => {
 });
 
 test('the side closes the other side\'s categories, never for management', () => {
-  assert.equal(closedBySide('staff', 'conts', 'Dream Crafter'), true);
+  assert.equal(closedBySide('staff', 'conts', 'Supply chain'), true);
   assert.equal(closedBySide('staff', 'conts', 'Operations'), false);
   assert.equal(closedBySide('staff', 'dream_crafter', 'Growth'), true);
-  assert.equal(closedBySide('staff', 'both', 'Dream Crafter'), false);
-  assert.equal(closedBySide('management', 'conts', 'Dream Crafter'), false);
+  assert.equal(closedBySide('staff', 'both', 'Supply chain'), false);
+  assert.equal(closedBySide('management', 'conts', 'Supply chain'), false);
 });
 
 test('a unique-index clash is recognised', () => {

@@ -17,6 +17,8 @@ export const REQUEST_CODE = /^[A-Z0-9]{2,6}-\d{1,8}$/;
 export const MAX_FILES = 5;
 export const MAX_FILE_BYTES = 10 * 1024 * 1024;
 const FILE_KINDS = /^(image\/|video\/mp4$|video\/quicktime$|application\/pdf$)/;
+/* A .zip goes by its name: browsers label it application/zip, application/x-zip-compressed or nothing. */
+const isZip = (f: File) => f.name.toLowerCase().endsWith('.zip');
 
 const ROLE_NAME: Record<string, string> = {
   management: 'Management', operations_staff: 'Operations staff',
@@ -99,8 +101,8 @@ export function filesRefusal(files: File[]): string | null {
   if (files.length > MAX_FILES) return `Attach at most ${MAX_FILES} files.`;
   const big = files.find(f => f.size > MAX_FILE_BYTES);
   if (big) return `${big.name} is larger than 10 MB.`;
-  const odd = files.find(f => !FILE_KINDS.test(f.type));
-  return odd ? `${odd.name} is not a picture, an MP4 or MOV video, or a PDF.` : null;
+  const odd = files.find(f => !isZip(f) && !FILE_KINDS.test(f.type));
+  return odd ? `${odd.name} is not a picture, an MP4 or MOV video, a PDF or a ZIP.` : null;
 }
 
 /** Who the hub is told is reporting: the signed-in person, from the session. */

@@ -176,7 +176,8 @@ export async function generateAmendmentPdf(
        documents). The grid theme already rules every cell, so the header only
        needs weight. The red/green before/after fills below STAY — those carry
        meaning, and a change sheet that loses them loses the change. */
-    headStyles: { fontStyle: 'bold' },
+    // autoTable's grid theme paints its head teal unless told otherwise; that teal band is what printed.
+    headStyles: { fontStyle: 'bold', fillColor: [255, 255, 255], textColor: [0, 0, 0] },
     columnStyles: {
       0: { cellWidth: 44 },
       1: { cellWidth: 24 },

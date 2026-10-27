@@ -3,6 +3,7 @@
 // AutoCount: 301-M001. New orders open one by themselves; here finance looks them up, adds one by hand, renames one or
 // moves it to another control. A move asks first, and is refused while the customer still owes on the old control.
 import { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { Plus } from "lucide-react";
 import { Button } from "@2990s/design-system";
 import { PageHeader } from "../components/Layout";
@@ -29,6 +30,11 @@ const COLUMNS: Column<Row>[] = [
       </span>
     ),
     getValue: (d) => (d.is_active ? "ACTIVE" : "INACTIVE"),
+  },
+  {
+    key: "ledger", label: "Ledger",
+    render: (d) => <Link to={`/scm/party-ledger?kind=debtor&code=${encodeURIComponent(d.code)}`} onClick={(e) => e.stopPropagation()}>Ledger</Link>,
+    getValue: () => "",
   },
 ];
 

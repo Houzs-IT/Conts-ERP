@@ -80,3 +80,32 @@ export function scmListReturnTo(listPath: string): string {
   const stored = readMap()[sectionOf(listPath)];
   return stored && sectionOf(stored) === sectionOf(listPath) ? stored : listPath;
 }
+
+/** Conts (2026-10-26): the row last opened from a list, so coming back scrolls to it ("当我打开 creditor 去改
+ *  code 后，他就会跳回最开始的地方"). Per tab and per list, read once. */
+export const SCM_LIST_FOCUS_KEY = "conts.scmListFocus.v1";
+
+export function rememberScmListFocus(listPath: string, rowKey: string): void {
+  try {
+    const raw = sessionStorage.getItem(SCM_LIST_FOCUS_KEY);
+    const map = raw ? (JSON.parse(raw) as Record<string, string>) : {};
+    map[sectionOf(listPath)] = rowKey;
+    sessionStorage.setItem(SCM_LIST_FOCUS_KEY, JSON.stringify(map));
+  } catch {
+    // Storage unavailable: the list simply opens at the top.
+  }
+}
+
+export function takeScmListFocus(listPath: string): string | null {
+  try {
+    const raw = sessionStorage.getItem(SCM_LIST_FOCUS_KEY);
+    if (!raw) return null;
+    const map = JSON.parse(raw) as Record<string, unknown>;
+    const key = map[sectionOf(listPath)];
+    delete map[sectionOf(listPath)];
+    sessionStorage.setItem(SCM_LIST_FOCUS_KEY, JSON.stringify(map));
+    return typeof key === "string" ? key : null;
+  } catch {
+    return null;
+  }
+}

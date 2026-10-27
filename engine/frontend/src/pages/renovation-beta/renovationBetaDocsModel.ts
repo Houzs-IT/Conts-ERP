@@ -21,6 +21,11 @@ export interface DocSummary {
   deliverOn: string[];
   /** For a goods receipt: the delivery orders that carried the same sales order lines, newest first. */
   dos: DocRef[];
+  /** For a delivery order: the goods receipts that received the same sales order lines, newest first. */
+  grs: DocRef[];
+  /** How many lines it carries and their total quantity. */
+  lineCount: number;
+  units: number;
 }
 
 const linesOf = (d: SiteDelivery): DeliveryLine[] => d.lines ?? [];
@@ -47,10 +52,14 @@ export function docSummary(d: SiteDelivery, lines: readonly ManagedLine[], all: 
   }
   if (pos.length === 0 && d.poNumber) pos.push(d.poNumber);
   const mine = new Set(linesOf(d).map((x) => x.soItemId).filter((x): x is string => !!x));
-  const dos = d.type === "goods_received"
-    ? all.filter((o) => o.type === "delivery_order" && linesOf(o).some((x) => x.soItemId != null && mine.has(x.soItemId))).map((o) => ({ id: o.id, no: o.no }))
-    : [];
-  return { pos, clientPo, deliverOn: [...dates].sort(), dos };
+  const other = (type: SiteDelivery["type"]): DocRef[] => all
+    .filter((o) => o.type === type && o.id !== d.id && linesOf(o).some((x) => x.soItemId != null && mine.has(x.soItemId))).map((o) => ({ id: o.id, no: o.no }));
+  return {
+    pos, clientPo, deliverOn: [...dates].sort(),
+    dos: d.type === "goods_received" ? other("delivery_order") : [],
+    grs: d.type === "delivery_order" ? other("goods_received") : [],
+    lineCount: linesOf(d).length, units: linesOf(d).reduce((n, x) => n + x.qty, 0),
+  };
 }
 
 /** "24 Oct", "24 Oct, 2 Nov", "24 Oct to 9 Nov" (three or more). */
@@ -119,4 +128,18 @@ export function deliveredGroups(
       label: g.label,
       lines: g.lines.sort((a, b) => (view === "category" ? a.line.subSort - b.line.subSort : 0) || (order.get(a.key) ?? 0) - (order.get(b.key) ?? 0)),
     }));
+}
+
+export interface LineDoc { id: string; no: string; at: string | null; qty: number }
+
+/** The delivery orders or goods receipts that carried one sales order line, newest first (the order of `deliveries`),
+    with how many each carried: the PO and Client PO tabs' GR and DO columns. */
+export function lineDocs(soItemId: string, deliveries: readonly SiteDelivery[], type: SiteDelivery["type"]): LineDoc[] {
+  const out: LineDoc[] = [];
+  for (const d of deliveries) {
+    if (d.type !== type) continue;
+    const mine = linesOf(d).filter((x) => x.soItemId === soItemId);
+    if (mine.length > 0) out.push({ id: d.id, no: d.no, at: d.at, qty: mine.reduce((n, x) => n + x.qty, 0) });
+  }
+  return out;
 }

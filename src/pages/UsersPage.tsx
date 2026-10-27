@@ -63,7 +63,7 @@ interface Row {
 interface Payload { data: Row[]; generatedAt: string }
 
 /** The departments and positions come from the managed list (Permissions > Departments and positions), so nothing is typed
- *  here. Cleaners and technicians are not offered: they are added on Workers. */
+ *  here. Cleaners and technicians are not offered: they are added on HR > Employees. */
 const departmentNote = (d: Department | undefined): string | null => (d ? KIND_NOTE[d.kind] ?? null : null);
 /** A department on one side puts everyone in it there; in one on both sides the person's own choice stands
  *  (sideSql in functions/_lib/access.ts). */
@@ -656,7 +656,7 @@ export default function UsersPage() {
             <Select label="Reports to" showLabel size="md" value={managerId} onChange={setManagerId} placeholder="No manager"
               options={managerOptions(staff)} />
             <div className="text-meta text-muted-ink leading-[1.5]">
-              Works on closes the other side’s screens; the department and position set their permissions. The reporting line is for escalation and rosters only. Cleaners and technicians are added on Workers, and owners from their own record under Owners.
+              Works on closes the other side’s screens; the department and position set their permissions. The reporting line is for escalation and rosters only. Cleaners and technicians are added on HR &gt; Employees, and owners from their own record under Owners.
             </div>
           </form>
           {lastTempPassword && (

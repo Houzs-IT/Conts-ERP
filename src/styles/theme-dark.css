@@ -23,6 +23,7 @@
   --color-line-input: #7A736A;
   --color-gold-ink: #D0B37E;
   --color-gold-tint: rgba(200, 164, 106, 0.14);
+  --color-tab: #818CF8;
 
   /* Same roles as root tokens.css: --color-{tone} is the TINT behind a badge, -fg its text, -line dots and borders.
      These once held the text colour under the tint's name, so every badge read through status.ts drew a bright

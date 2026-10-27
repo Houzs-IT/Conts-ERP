@@ -51,12 +51,13 @@ export async function bookingNotice(env: Env, id: string, event: BookingEvent, b
   } else if (event === 'checked_out') {
     let cleaners: string[] = [];
     let taskId: string | null = null;
+    let type = '';
     try {
-      const t = await one<{ id: string }>(env, `SELECT id FROM tasks WHERE reservation_id = ? AND kind IN ('turnover','light_clean','deep_clean') AND state <> 'resolved' ORDER BY scheduled_for NULLS LAST, created_at LIMIT 1`, id);
-      if (t) { taskId = t.id; cleaners = await taskPeople(env, t.id); }
+      const t = await one<{ id: string; kind: string }>(env, `SELECT id, kind FROM tasks WHERE reservation_id = ? AND kind IN ('turnover','light_clean','deep_clean') AND state <> 'resolved' ORDER BY scheduled_for NULLS LAST, created_at LIMIT 1`, id);
+      if (t) { taskId = t.id; type = t.kind === 'deep_clean' ? ' (DC)' : t.kind === 'turnover' ? ' (BC)' : ''; cleaners = await taskPeople(env, t.id); }
     } catch { /* no clean found: ops are still told */ }
     const cleanLink = taskId ? `/operations/cleaning?task=${encodeURIComponent(taskId)}` : '/operations/cleaning';
-    const notice = { kind: 'booking.checked_out', title: `Guest checked out: ${b.unit}`, body: `${who} has left. Cleaning can start.`, link: cleanLink, entityTable: 'reservations', entityId: id, except: by, dedupeKey: `checked-out-${id}` };
+    const notice = { kind: 'booking.checked_out', title: `Guest checked out: ${b.unit}`, body: `${who} has left. Cleaning can start${type}.`, link: cleanLink, entityTable: 'reservations', entityId: id, except: by, dedupeKey: `checked-out-${id}` };
     await notifyUsers(env, { roles: ['ops'], userIds: cleaners }, notice);
   }
 }

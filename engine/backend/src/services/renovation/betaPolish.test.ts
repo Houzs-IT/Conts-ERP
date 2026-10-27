@@ -47,7 +47,8 @@ describe("Client PO area", () => {
     let sql = "";
     const db = {
       prepare(text: string) {
-        sql = text;
+        sql += `${text}
+`;
         return {
           bind: () => ({
             all: async () => ({

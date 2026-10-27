@@ -87,6 +87,8 @@ body { margin: 0; }
   --color-gold: #C8A46A;
   --color-gold-ink: #8A6A2F;
   --color-gold-tint: #FBF7F0;
+  /* The active tab's underline on TabBar (owner, Oct 2026: indigo). 6.3:1 on white. */
+  --color-tab: #4F46E5;
 
   --color-airbnb: #FF5A5F;
   --color-booking: #003B95;

@@ -29,11 +29,14 @@ export const sideLabel = (s: UserSide | undefined): string => SIDE_OPTIONS.find(
 /** The area groups each side closes. Same table as CLOSED_BY_SIDE and closedBySide in functions/_lib/access.ts: keep them
  *  in step. Management always sees both sides; Finance and System are on neither list, so they follow the rules. */
 const CLOSED_BY_SIDE: Record<UserSide, string[]> = {
-  conts: ['Dream Crafter'],
-  dream_crafter: ['Workspace', 'Operations', 'Growth'],
+  conts: ['Service cases', 'Projects', 'Supply chain'],
+  dream_crafter: ['Workspace', 'Operations', 'HR', 'Growth'],
   both: [],
 };
 export const closedBySide = (kind: DepartmentKind, side: UserSide, group: string): boolean => kind !== 'management' && CLOSED_BY_SIDE[side].includes(group);
+/** The company a category belongs to: the side that does not close it. Finance and System belong to both. */
+export const categorySide = (group: string): UserSide =>
+  CLOSED_BY_SIDE.dream_crafter.includes(group) ? 'conts' : CLOSED_BY_SIDE.conts.includes(group) ? 'dream_crafter' : 'both';
 
 /** The Cleaning and Maintenance departments hold the cleaners' and technicians' logins, which are managed on Workers
  *  only: Users and roles never lists, offers or changes them. */

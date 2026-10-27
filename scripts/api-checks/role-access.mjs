@@ -91,11 +91,11 @@ r = await call('POST', '/api/users', {}, 'finance_admin');
 check('inviting users stays with management whatever the rules say (403)', r.status === 403, `${r.status}`);
 
 // Works on (owner, 23 Oct 2026): it must fit the department, a department on both sides leaves it to the person, and
-// cleaners and technicians are added on Workers, never through Users and roles.
+// cleaners and technicians are added on HR > Employees, never through Users and roles.
 const cleaning = start.departments.find(d => d.kind === 'cleaning'), admin = dept('Admin');
 const adminPos = admin.positions[0];
 r = await call('POST', '/api/users', { fullName: 'Field Test', email: `field-${Date.now()}@example.com`, side: 'conts', departmentId: cleaning.id });
-check('a cleaner cannot be invited through Users (422)', r.status === 422 && /Workers/.test(r.text), r.text);
+check('a cleaner cannot be invited through Users (422)', r.status === 422 && /Employees/.test(r.text), r.text);
 r = await call('POST', '/api/users', { fullName: 'Side Test', email: `side-${Date.now()}@example.com`, side: 'dream_crafter', departmentId: ops.id });
 check('Works on must fit the department: Operations is The Conts only (422)', r.status === 422, r.text);
 r = await call('POST', '/api/users', { fullName: 'No Side', email: `noside-${Date.now()}@example.com`, departmentId: admin.id });
@@ -114,7 +114,7 @@ r = await call('PATCH', `/api/users/${staff.userId}`, { side: 'conts', departmen
 check('back to Operations / Operations Staff', r.status === 200, r.text);
 
 // The department screens cannot make, change or empty a field department either: that would turn office staff into
-// cleaners or technicians (or the reverse) outside Workers.
+// cleaners or technicians (or the reverse) outside HR > Employees.
 const maintenance = start.departments.find(d => d.kind === 'maintenance');
 r = await call('POST', '/api/departments', { name: `Field ${Date.now()}`, kind: 'cleaning', side: 'conts' });
 check('a Cleaning-kind department cannot be added (422)', r.status === 422, r.text);
@@ -130,7 +130,7 @@ check('nobody is moved into Cleaning by a delete (422)', !!temp && r.status === 
 r = await call('DELETE', `/api/departments/${temp?.id}`);
 check('...and the empty department still deletes', r.status === 200, r.text);
 r = await call('PATCH', '/api/users/11111111-1111-4111-8111-000000000005', { fullName: 'Renamed Here' });
-check('a cleaner account cannot be changed under Users (422)', r.status === 422 && /Workers/.test(r.text), r.text);
+check('a cleaner account cannot be changed under Users (422)', r.status === 422 && /Employees/.test(r.text), r.text);
 
 // Back to how it was.
 r = await put(keep);

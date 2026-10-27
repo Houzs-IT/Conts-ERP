@@ -1,7 +1,7 @@
 import { type Env, all, run, json, fail, audit, nowIso, mytToday, transaction } from '../../../_lib/db';
 import { requireSession } from '../../../_lib/auth';
 import { mayWork } from '../../../_lib/access';
-import { hasServicePrices, loadPrices, planImport, writePriceSets, isDayStr, ITEM_WRITERS } from '../../../_lib/servicePrices';
+import { hasServicePrices, loadPrices, planImport, writePriceSets, isDayStr, layoutGrid, ITEM_WRITERS } from '../../../_lib/servicePrices';
 
 /** POST /api/operations/service-prices/import { rows: [{ Code, Name, Type, ... }], effectiveFrom?, dryRun? } — the item
  *  list back from a spreadsheet (the screen reads the CSV or Excel file and sends its rows, keyed by the export's column
@@ -20,7 +20,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!isDayStr(effectiveFrom)) return fail('VALIDATION', 'Pick the date the prices apply from.', 422, { effectiveFrom: 'Pick a date.' });
 
   const items = await all<any>(env, 'SELECT * FROM service_items');
-  const plan = planImport(b.rows, items, await loadPrices(env), effectiveFrom);
+  const plan = planImport(b.rows, items, await loadPrices(env), effectiveFrom, await layoutGrid(env));
   const priceChanges = plan.prices.length + plan.creates.filter(c => c.prices).length;
   if (priceChanges && !session.manage) plan.errors.push({ line: 0, message: 'The file changes prices, and only management sets prices.' });
   const summary = {

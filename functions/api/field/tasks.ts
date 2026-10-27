@@ -1,9 +1,10 @@
 import { type Env, all, json, nowIso } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
+import { usedBySql } from '../../_lib/credentials';
 import { MYT_DATE } from '../../_lib/ops';
-import { unitLayoutSql, unitLayout } from '../../_lib/unitLayout';
+import { unitLayoutSql, unitMattressesSql, unitLayout } from '../../_lib/unitLayout';
 import { taskCleanersReady, mineSql, mineArgs, cleanerListSql, parseCleaners } from '../../_lib/taskCleaners';
-import { LIVE_STAY_SQL, mytToday, isDay, standardItems, autoGuestLeft } from '../../_lib/cleaning';
+import { LIVE_STAY_SQL, mytToday, isDay, standardItems } from '../../_lib/cleaning';
 import { hasCleanPrices } from '../../_lib/cleaningPrices';
 
 /** GET /api/field/tasks?date=today — the signed-in person's own jobs for the day (plus, for today, anything left over from earlier),
@@ -21,13 +22,15 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const when = MYT_DATE('COALESCE(t.scheduled_for, t.due_at, t.created_at)');
   const ready = await taskCleanersReady(env);
   const layoutSql = await unitLayoutSql(env);
+  const usedBy = await usedBySql(env, 'c', 'cleaner');
+  const mattressSql = await unitMattressesSql(env);
   const ext = (await hasCleanPrices(env)) ? 't.external_address, t.external_client, t.external_phone' : 'NULL::text AS external_address, NULL::text AS external_client, NULL::text AS external_phone';
 
   const rows = await all<any>(env, `
     SELECT t.id, t.unit_id, t.kind, t.title, t.instructions, t.state, t.due_at, t.scheduled_for, t.next_guest_at, t.requires_photo, t.sync, t.updated_at,
            t.started_at, t.completed_at, t.guest_left_at, ${ext}, ${when} AS day, ${cleanerListSql(ready)} AS cleaner_list,
-           u.unit_number, u.readiness, u.bedrooms, u.bathrooms, ${layoutSql} AS layout_type, p.id AS property_id, p.name AS property_name, p.address_line,
-           (SELECT c.instruction FROM access_credentials c WHERE c.unit_id = u.id ORDER BY c.updated_at DESC LIMIT 1) AS access_instruction,
+           u.unit_number, u.readiness, u.bedrooms, u.bathrooms, ${layoutSql} AS layout_type, ${mattressSql} AS mattresses, p.id AS property_id, p.name AS property_name, p.address_line,
+           (SELECT c.instruction FROM access_credentials c WHERE c.unit_id = u.id${usedBy} ORDER BY c.updated_at DESC LIMIT 1) AS access_instruction,
            (SELECT COUNT(*) FROM documents d WHERE d.task_id = t.id AND d.kind IN ('photo','video')) AS photo_count,
            (SELECT COUNT(*)::int FROM task_checklist_items c WHERE c.task_id = t.id AND c.done_at IS NOT NULL) AS ticks,
            (SELECT COUNT(*)::int FROM task_checklist_items c WHERE c.task_id = t.id AND c.item_key LIKE 'c-%') AS custom_items,
@@ -49,7 +52,6 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       AND (${when} = ?${carry ? ` OR (t.state != 'resolved' AND ${when} < ?)` : ''})
     ORDER BY p.name NULLS LAST, u.unit_number`, ...mineArgs(ready, session.userId), date, ...(carry ? [date] : []));
   const defaultOut = (await all<{ value: string }>(env, `SELECT value FROM settings WHERE key IN ('operations.checkOut','ops.check_out') ORDER BY key = 'operations.checkOut' DESC LIMIT 1`))[0]?.value ?? '11:00';
-  await autoGuestLeft(env, rows, defaultOut);
 
   return json({
     generatedAt: nowIso(), date,
@@ -70,7 +72,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         readiness: r.readiness, done: r.state === 'resolved', flag: sameDay ? 'Same-day turnaround' : null,
         requiresPhoto: !!r.requires_photo, photoCount: Number(r.photo_count),
         checklist: { done: Number(r.ticks), total: standardItems(r.kind).length + Number(r.custom_items) },
-        guestOut, guestLeftAuto: !!r.guest_left_auto || (!!r.guest_left_at && r.guest_left_at === `${r.day}T${r.prev_time || defaultOut}:00+08:00`), previous: r.prev_guest ? { guestName: r.prev_guest, checkOutTime: r.prev_time || '11:00', state: r.prev_state } : null,
+        guestOut, guestLeftAuto: (!!r.guest_left_at && r.guest_left_at === `${r.day}T${r.prev_time || defaultOut}:00+08:00`), previous: r.prev_guest ? { guestName: r.prev_guest, checkOutTime: r.prev_time || '11:00', state: r.prev_state } : null,
         next: r.next_guest ? { guestName: r.next_guest, checkInTime: r.next_time || '15:00', checkInAt: `${r.day}T${r.next_time || '15:00'}:00+08:00` } : null,
         sync: r.state === 'resolved' ? 'synced' : r.sync === 'synced' ? null : r.sync,
         syncedAt: r.state === 'resolved' ? r.updated_at : null,

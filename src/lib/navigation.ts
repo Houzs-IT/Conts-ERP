@@ -2,16 +2,17 @@ import type { UserRole, AccessLevel, SessionUser } from './types';
 import { LEDGER_SCREENS } from './scmEngine';
 
 /** `badge` names a live count from /api/nav/badges; shown only when above zero. */
-export type BadgeKey = 'today' | 'maintenance' | 'inbox' | 'statements' | 'approvals' | 'itSupport';
+export type BadgeKey = 'today' | 'maintenance' | 'inbox' | 'statements' | 'approvals' | 'itSupport' | 'showcase';
 /** The sidebar shows one workspace at a time. Rental (The Conts) is the daily work; supply chain (Dream Crafter) sits behind the switch. */
 export type Workspace = 'rental' | 'supply';
 /** `area` is the permission area (functions/_lib/access.ts AREAS) the screen belongs to. */
 /** `icon`: drawn only in the phone menu, where each screen is its own row; the desktop shows its category's icon. */
 export interface NavChild { key: string; label: string; path: string; area?: string; badge?: BadgeKey; icon?: string }
-/** `full`: the screen's data is for roles with Full on its area (the server refuses Edit), so it is shown only then. */
+/** `full`: the screen's data is for roles with Full on its area (the server refuses Edit), so it is shown only then.
+ *  `fresh`: a newly added screen, marked New in the desktop menu. */
 export interface NavItem {
   key: string; label: string; icon: string; path?: string; area?: string;
-  badge?: BadgeKey; children?: NavChild[]; full?: boolean;
+  badge?: BadgeKey; children?: NavChild[]; full?: boolean; fresh?: boolean;
 }
 /** `phone: false`: left off the menu at phone width; its screens still open by address. */
 export interface NavGroup { label: string; workspace: Workspace; items: NavItem[]; phone?: boolean }
@@ -74,6 +75,9 @@ export const NAV: NavGroup[] = [
     { key: 'portfolio', label: 'Portfolio', icon: 'layers', path: '/portfolio', area: 'portfolio' },
     { key: 'unitReport', label: 'Overall unit report', icon: 'file-spreadsheet', path: '/portfolio/owner-report', area: 'portfolio', full: true },
     { key: 'analytics', label: 'Performance', icon: 'trending-up', path: '/performance/analytics', area: 'performance', full: true },
+    // Sales staff open it in front of a prospective owner (CONTS-0006); it opens full screen, without the menu.
+    { key: 'showcase', label: 'Owner Showcase', icon: 'presentation', path: '/performance/showcase', area: 'performance', fresh: true },
+    { key: 'showcaseControl', label: 'Showcase control', icon: 'sliders-horizontal', path: '/performance/showcase-control', area: 'performance', badge: 'showcase', fresh: true },
   ] },
   { label: 'RESERVATIONS', workspace: 'rental', items: [
     { key: 'calendar', label: 'Calendar', icon: 'calendar-days', path: '/reservations/calendar', area: 'reservations' },
@@ -89,8 +93,11 @@ export const NAV: NavGroup[] = [
     { key: 'today', label: 'Today', icon: 'clipboard-check', path: '/operations/today', area: 'operations', badge: 'today' },
     { key: 'cleaning', label: 'Cleaning', icon: 'sparkles', path: '/operations/cleaning', area: 'operations' },
     { key: 'maintenance', label: 'Maintenance', icon: 'wrench', path: '/operations/maintenance', area: 'operations', badge: 'maintenance' },
-    // Cleaners and technicians, in-house and outside, and who has the app (owner, 23 Oct 2026).
-    { key: 'workers', label: 'Workers', icon: 'users', path: '/operations/workers', area: 'operations' },
+  ] },
+  // Hookka's Employees page with its eleven tabs: working hours, attendance, labour cost, payroll, advances, penalties,
+  // the employee record (owner, 26 Oct 2026; PLAN-hr-employees.md).
+  { label: 'HR', workspace: 'rental', items: [
+    { key: 'employees', label: 'Employees', icon: 'users', path: '/hr/employees', area: 'hr' },
   ] },
   { label: 'UNITS', workspace: 'rental', items: [
     // Buildings, the unit record and access codes are one Units screen (owner, 8 Oct).
@@ -344,7 +351,8 @@ const SUB_PAGES: [RegExp, string][] = [
   [/^\/system\/integrations\/hostplatform$/, 'HostPlatform import'],
 ];
 
-const groupName = (label: string) => label.charAt(0) + label.slice(1).toLowerCase();
+/** A menu group's name in a sentence ("Operations"); an acronym stays as it is ("HR", not "Hr"). */
+export const groupName = (label: string): string => label === 'HR' ? label : label.charAt(0) + label.slice(1).toLowerCase();
 
 /** Rental screens reached from another screen rather than the menu: their breadcrumb, instead of "Home". */
 const RENTAL_OFF_MENU: Record<string, { group: string; item: string; page?: string }> = {
