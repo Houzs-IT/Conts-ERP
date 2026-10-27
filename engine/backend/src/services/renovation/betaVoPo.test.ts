@@ -48,7 +48,7 @@ describe("VO numbering and totals", () => {
   const vo = (no: string, date: string, bucket: VoRow["bucket"], amounts: number[]): VoRow => ({
     key: no, label: "", source: "amendment", no, soDocNo: "SO-1", title: null, status: "", statusLabel: "", bucket, date, raisedBy: null, approvedBy: null,
     approvedAt: null, recorded: bucket === "approved", netSen: amounts.reduce((s, a) => s + a, 0), href: "", lines: amounts.map((a) => ({
-      itemCode: null, description: "", room: null, qty: 1, lineQty: 1, measure: null, amountSen: a, change: a < 0 ? "deduct" : "add", goesTo: "po", fromItemCode: null,
+      itemCode: null, description: "", room: null, qty: 1, lineQty: 1, measure: null, amountSen: a, change: a < 0 ? "deduct" : "add", goesTo: "po", fromItemCode: null, categoryCode: null, subCode: null,
     })),
   });
   it("numbers VOs oldest first", () => {

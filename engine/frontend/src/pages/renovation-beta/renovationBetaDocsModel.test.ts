@@ -11,7 +11,7 @@ const po = (over: Partial<LinePo>): LinePo => ({
 const line = (id: string, over: Partial<ManagedLine> = {}): ManagedLine => ({
   id, soDocNo: "SO-1", soStatus: "CONFIRMED", voLocked: false, lineNo: 1, itemCode: `SKU-${id}`, description: `Item ${id}`, variantText: null, variants: {},
   itemGroup: null, uom: "UNIT", qty: 2, unitPriceSen: null, discountSen: null, amountSen: null, area: "Kitchen", remark: null, supplierName: null,
-  goesTo: "po", categoryLabel: "Cabinet", categorySort: 1, subLabel: "", subSort: 0, pos: [], photoKeys: [], skuPhotos: [], gr: "no", do: "no",
+  goesTo: "po", categoryCode: null, subCode: null, categoryLabel: "Cabinet", categorySort: 1, subLabel: "", subSort: 0, pos: [], photoKeys: [], skuPhotos: [], gr: "no", do: "no",
   plan: { orderOn: null, deliverOn: "2026-11-05", noPo: false }, ...over,
 });
 const doc = (over: Partial<SiteDelivery>): SiteDelivery => ({
