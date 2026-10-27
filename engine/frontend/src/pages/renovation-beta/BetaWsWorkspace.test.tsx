@@ -375,10 +375,8 @@ describe("Beta project workspace", () => {
   });
 
   it("Replace changed pages refuses a file with no sheet picked, and keeps the other sheets when one is ticked", async () => {
-    const { PDFDocument } = await import("pdf-lib");
-    const doc = await PDFDocument.create();
-    doc.addPage();
-    const pdf = new File([await doc.save()], "Baron b30-05_bedroom 01.pdf", { type: "application/pdf" });
+    const { jsPDF } = await import("jspdf");
+    const pdf = new File([new jsPDF().output("arraybuffer")], "Baron b30-05_bedroom 01.pdf", { type: "application/pdf" });
     const file = (id: number, version: number, name: string) => ({
       id, kind: "2d", version, file_name: name, r2_key: `k${id}`, external_url: null, person_name: null, uploaded_by_name: "Jia Xin", uploaded_at: "2026-10-20T02:00:00Z",
       note: null, submitted_on: "2026-10-20", next_person_id: null, next_person_name: null,
