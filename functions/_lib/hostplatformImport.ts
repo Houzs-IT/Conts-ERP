@@ -5,6 +5,8 @@
  *  Every id is derived from the source (HostPlatform key, booking code, workbook unit id ...), so running
  *  the same file twice updates the rows the first run created instead of adding new ones. */
 
+import type { HpReservation } from './hostplatform';
+
 export type Row = Record<string, unknown>;
 export interface RowError { row: number | string; reason: string }
 
@@ -397,6 +399,61 @@ export function mapReservations(rows: Row[], today: string): ReservationPlan {
         deposit_collected: nonNeg(r['Deposit Collected']), deposit_refunded: nonNeg(r['Deposit Refunded']),
         payment_method: opt(r['Payment Method'])?.slice(0, 60) ?? null, rate_plan: rateName?.slice(0, 120) ?? null,
         guest_nationality: opt(r['Nationality'])?.slice(0, 60) ?? null,
+      },
+    });
+  });
+  return { guests: [...guests.values()], reservations, errors };
+}
+
+/* ------------------------------------------------------------------ */
+/* Reservations from the HostPlatform API (version 2)                  */
+/* ------------------------------------------------------------------ */
+
+/** 'Trion KL (2) The Conts' -> 'Trion KL': HostPlatform lists Trion KL as two properties, Property OS keeps one building. */
+export const apiBuildingName = (property: unknown) => buildingName(property).replace(/\s*\(\d+\)$/, '');
+
+/** HostPlatform API reservations as a reservation plan, the same shape mapReservations makes from the CSV export, so
+ *  importReservations writes both. The API has no booking type: a HostPlatform booking without guest details is a
+ *  block (an owner stay when its remarks say so), any other is direct. Money is only used for bookings Property OS
+ *  does not have yet (importReservations with source 'api' leaves existing money alone): the API carries no taxes,
+ *  deposits or payment received. Airbnb's room amount is the host payout, so its fee goes on top (as mapReservations). */
+export function mapApiReservations(list: HpReservation[], today: string): ReservationPlan {
+  const errors: RowError[] = [], guests = new Map<string, GuestIn>(), reservations: ReservationIn[] = [], codes = new Set<string>();
+  list.forEach((r, i) => {
+    const { code } = r;
+    if (!/^[A-Za-z0-9_-]{3,40}$/.test(code)) return errors.push({ row: code, reason: 'No usable HostPlatform code.' });
+    if (codes.has(code)) return errors.push({ row: code, reason: `Reservation ${code} came twice; the first one was kept.` });
+    const building = apiBuildingName(r.property), unitNumber = parseUnitName(r.unit).code;
+    const checkIn = toDate(r.check_in_date), checkOut = toDate(r.check_out_date);
+    if (!checkIn || !checkOut) return errors.push({ row: code, reason: 'Check-in and checkout must be dates.' });
+    if (checkOut <= checkIn) return errors.push({ row: code, reason: 'Checkout is not after check-in.' });
+    codes.add(code);
+    const g = r.guest_details ?? null, price = r.price_details ?? {};
+    const channel = channelFor(g ? 'platform' : 'blocked', r.source, r.remarks);
+    const state: State = /cancel/i.test(r.status) ? 'cancelled' : stayState(checkIn, checkOut, today);
+    const ota = opt(r.source_id);
+    let gid: string | null = null;
+    if (g) {
+      const phone = opt(g.contact_no), email = opt(g.email)?.toLowerCase() ?? null;
+      const name = [opt(g.first_name), opt(g.last_name)].filter(Boolean).join(' ') || placeholderGuestName(CHANNEL_LABEL[channel], ota ?? code);
+      gid = guestId(name, phone, email);
+      if (!guests.has(gid)) guests.set(gid, { id: gid, fullName: name.slice(0, 200), email, phone: phone && /\d/.test(phone) ? phone : null, countryCode: null });
+    }
+    const room = nonNeg(price.room) ?? 0, cleaning = nonNeg(price.cleaning_fee), fee = nonNeg(price.platform_fee) ?? 0;
+    const extras = [nonNeg(price.extra_guest_fee), ...Object.values(r.service_fees ?? {}).map(nonNeg)].filter((x): x is number => x !== null);
+    const extra = extras.length ? extras.reduce((a, b) => a + b, 0) : null;
+    const base = room + (cleaning ?? 0) + (extra ?? 0);
+    const remarks = opt(r.remarks);
+    reservations.push({
+      id: `hp-res-${code}`, row: i + 1, code, building, unitNumber, channel, state, externalRef: ota ?? code, checkIn, checkOut,
+      guestsCount: Math.max(1, Math.round(num(g?.number_of_pax) ?? 1)), gross: channel === 'airbnb' ? base + fee : base, fee, collected: 0,
+      currency: (opt(price.currency) ?? 'MYR').toUpperCase().slice(0, 3),
+      notes: `Imported from the HostPlatform API (${code})${remarks && channel !== 'airbnb' && channel !== 'booking_com' && channel !== 'agoda' ? ` · ${remarks.slice(0, 200)}` : ''}`,
+      createdAt: opt(r.created_at) && !Number.isNaN(Date.parse(String(r.created_at))) ? new Date(String(r.created_at)).toISOString() : null,
+      guestId: gid, maxGuests: null, sizeSqft: null,
+      money: {
+        room_revenue: room, guest_cleaning_fee: cleaning, extra_fees: extra, sst_amount: null, tourism_tax: null, ota_tax: null,
+        deposit_collected: null, deposit_refunded: null, payment_method: null, rate_plan: null, guest_nationality: null,
       },
     });
   });

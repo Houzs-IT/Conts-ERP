@@ -47,6 +47,8 @@ RESET_TOKEN_MINUTES = "60"
 QUIET_HOURS_START = "22"
 QUIET_HOURS_END = "8"
 CHANNEX_BASE_URL = "https://app.channex.io"
+# HostPlatform External API (functions/_lib/hostplatform.ts). The token is the secret HOSTPLATFORM_ACCESS_TOKEN.
+HOSTPLATFORM_BASE_URL = "https://nebulapi-asg.hostplatform.com"
 # The supply chain engine on production (engine/, put live with scripts/engine-production.mjs). Supply chain,
 # Service cases and Projects open its screens once these and the secret SCM_ENGINE_SSO_SECRET are all set.
 SCM_ENGINE_API = "https://conts-scm-engine.conts-erp.workers.dev"
@@ -94,6 +96,8 @@ RESET_TOKEN_MINUTES = "60"
 QUIET_HOURS_START = "22"
 QUIET_HOURS_END = "8"
 CHANNEX_BASE_URL = "https://staging.channex.io"
+# HostPlatform has no test server for us: staging reads the live one too (read-only; real guest data lands in the staging database).
+HOSTPLATFORM_BASE_URL = "https://nebulapi-asg.hostplatform.com"
 # Staging only: management can view the system as another account (functions/api/auth/view-as.ts).
 # Do not add this to the production [vars] above.
 VIEW_AS = "staging"
