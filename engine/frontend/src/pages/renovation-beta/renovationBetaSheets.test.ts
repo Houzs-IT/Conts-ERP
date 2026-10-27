@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DesignFile } from "../projects/renovation/simpleApi";
-import { changedAgainst, linkHost, removedSheetsOf, sheetNameOf, sheetSetAt, sizeText, type BetaSheet } from "./renovationBetaSheets";
+import { changedAgainst, linkHost, removedSheetsOf, sheetNameOf, sheetSetAt, sizeText, versionWhat, type BetaSheet } from "./renovationBetaSheets";
 
 const file = (id: number, version: number, extra: Partial<DesignFile> = {}): DesignFile => ({
   id, kind: "2d", version, file_name: `v${version}`, r2_key: `k${id}`, external_url: null, person_name: null, uploaded_by_name: null,
@@ -27,6 +27,31 @@ describe("sheetSetAt", () => {
     const ss = [sheet(1, 1, "A-01"), sheet(2, 3, "B-01")];
     expect(sheetSetAt(fs, ss, 2).map((s) => s.url)).toEqual(["https://x"]);
     expect(sheetSetAt(fs, ss, 3).map((s) => s.key)).toEqual(["s2"]);
+  });
+});
+
+describe("versionWhat", () => {
+  const files = [file(1, 1), file(2, 2), file(3, 3)];
+  const sheets = [
+    sheet(1, 1, "A-01"), sheet(2, 1, "A-02"), sheet(3, 1, "A-03"),
+    sheet(4, 2, "A-02"),
+    sheet(5, 3, "A-01"), sheet(6, 3, "A-02"), sheet(7, 3, "A-03"),
+  ];
+
+  it("the first upload is a full set", () => {
+    expect(versionWhat(files, sheets, files[0]!)).toBe("full set · 3 sheets");
+  });
+
+  it("an upload of some sheets names the ones it changed", () => {
+    expect(versionWhat(files, sheets, files[1]!)).toBe("changed A-02");
+  });
+
+  it("an upload of every sheet again is a full set", () => {
+    expect(versionWhat(files, sheets, files[2]!)).toBe("full set · 3 sheets");
+  });
+
+  it("a one-file later version is a full set", () => {
+    expect(versionWhat([file(1, 1), file(2, 2)], [], file(2, 2))).toBe("full set · 1 sheet");
   });
 });
 
