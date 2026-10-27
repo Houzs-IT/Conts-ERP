@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Button } from '../../components/Button';
 import { Field } from '../../components/Field';
 import { NumberInput } from '../../components/inputs';
@@ -56,19 +57,26 @@ export function BedsEditor({ beds, onChange, disabled }: { beds: Bed[]; onChange
 /** Any number of car park bays: level, lot number (required) and a note, in the order they are read: LEVEL 5-100A (Tandem). */
 export function BaysEditor({ bays, onChange, disabled }: { bays: Bay[]; onChange: (b: Bay[]) => void; disabled?: boolean }) {
   const set = (i: number, p: Partial<Bay>) => onChange(bays.map((x, j) => (j === i ? { ...x, ...p } : x)));
+  // A fresh row stays calm: the missing-lot error shows once a box in the row has been left or the row has other content.
+  const [left, setLeft] = useState<ReadonlySet<string>>(new Set());
+  const markLeft = (key: string) => setLeft(prev => (prev.has(key) ? prev : new Set(prev).add(key)));
   return (
     <div className="flex flex-col gap-2 min-w-0">
       {bays.length === 0 && <span className="text-copy text-muted-ink">No car park bays recorded.</span>}
-      {bays.map((b, i) => (
-        <div key={b.id ?? `new-${i}`} className="grid grid-cols-[minmax(0,0.7fr)_minmax(0,1fr)_36px] sm:grid-cols-[minmax(0,0.7fr)_minmax(0,1fr)_minmax(0,1.4fr)_36px] items-start gap-2 min-w-0">
-          <Field aria-label={`Bay ${i + 1} level`} placeholder="Level, e.g. 5" value={b.level ?? ''} maxLength={40} onChange={e => set(i, { level: e.target.value })} />
-          <Field aria-label={`Bay ${i + 1} lot number`} placeholder="Lot no., e.g. 100A" value={b.lotNumber} maxLength={40}
-            error={!b.lotNumber.trim() ? 'Enter the lot number.' : undefined} onChange={e => set(i, { lotNumber: e.target.value })} />
+      {bays.map((b, i) => {
+        const key = b.id ?? `new-${i}`;
+        const missingLot = !b.lotNumber.trim() && (left.has(key) || !!b.level?.trim() || !!b.note?.trim());
+        return (
+        <div key={key} onBlur={() => markLeft(key)} className="grid grid-cols-[minmax(64px,0.7fr)_minmax(0,1fr)_36px] sm:grid-cols-[minmax(64px,0.6fr)_minmax(0,1fr)_minmax(0,1.4fr)_36px] items-start gap-2 min-w-0">
+          <Field aria-label={`Bay ${i + 1} level`} placeholder="Level" title="Level, e.g. 5" value={b.level ?? ''} maxLength={40} onChange={e => set(i, { level: e.target.value })} />
+          <Field aria-label={`Bay ${i + 1} lot number`} placeholder="Lot no." title="Lot number, e.g. 100A" value={b.lotNumber} maxLength={40}
+            error={missingLot ? 'Lot number needed.' : undefined} onChange={e => set(i, { lotNumber: e.target.value })} />
           <span className="max-sm:hidden"><Field aria-label={`Bay ${i + 1} note`} placeholder="Note (optional)" value={b.note ?? ''} maxLength={200} onChange={e => set(i, { note: e.target.value })} /></span>
           <button type="button" aria-label={`Remove bay ${b.lotNumber || i + 1}`} disabled={disabled} className={removeBtn}
             onClick={() => onChange(bays.filter((_, j) => j !== i))}><Icon name="X" size="sm" /></button>
         </div>
-      ))}
+        );
+      })}
       {!disabled && bays.length < 30 && (
         <div><Button size="sm" variant="tertiary" icon={<Icon name="Plus" size="sm" />} onClick={() => onChange([...bays, { lotNumber: '', level: null, note: null }])}>Add a bay</Button></div>
       )}
