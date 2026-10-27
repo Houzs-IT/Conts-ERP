@@ -375,6 +375,9 @@ function KindDetail({ kind, p, set, onEdit, onOpen, onUpload, sheets, sheetsRead
   const shownSet = setOf(shown);
   const viewedV = view === "history" ? set.versions.find((v) => v.file.id === histId) ?? null : null;
   const changed = view === "waiting" && approved ? changedAgainst(shownSet, approvedSet) : null;
+  // A version after the first marks the sheets it changed against the version before it; V1 has nothing to compare with.
+  const before = viewedV ? set.versions[set.versions.indexOf(viewedV) + 1] : undefined;
+  const versionMarks = viewedV && before ? changedAgainst(setOf(viewedV), setOf(before)) : null;
   const word = is2d ? "sheet" : "link";
   const shownSize = shown ? setSize(shown) : null;
   const shareSite = (): void => {
@@ -414,6 +417,19 @@ function KindDetail({ kind, p, set, onEdit, onOpen, onUpload, sheets, sheetsRead
         {approved && <ShowPill on={view === "approved"} onClick={() => setView("approved")}>{is2d ? "Approved set · site uses this" : "Approved set"}</ShowPill>}
         <ShowPill on={view === "history"} onClick={() => { setView("history"); setHistId(null); }} quiet>History</ShowPill>
       </div>
+
+      {is2d && set.versions.length > 1 && (
+        <div style={{ display: "flex", alignItems: "center", gap: 12, fontSize: 13 }}>
+          <span style={{ flex: "none", color: BETA.muted, fontWeight: 600 }}>View version</span>
+          <div role="group" aria-label="View version" className="vrow">
+            {[...set.versions].reverse().map((v, i, oldestFirst) => (
+              <button key={v.file.id} type="button" className="vpill" aria-pressed={viewedV === v} onClick={() => { setView("history"); setHistId(v.file.id); }}>
+                {`V${v.file.version}${i === oldestFirst.length - 1 ? " · latest" : ""}`}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {view === "waiting" && waiting && (
         <WaitingView kind={kind} v={waiting} p={p} busy={busy} onEdit={onEdit} newSet={shownSet} hasApproved={approved != null}
@@ -465,13 +481,13 @@ function KindDetail({ kind, p, set, onEdit, onOpen, onUpload, sheets, sheetsRead
               <div style={{ fontSize: 18, fontWeight: 800 }}>V{viewedV.file.version} · {roundOf(viewedV)}</div>
               <div style={{ fontSize: 13, color: WS.text2 }}>{dayMonthYear(submittedOf(viewedV.file))} · {versionWhat(records.files, sheets, viewedV.file)}</div>
             </div>
-            <WsBtn size="sm" onClick={() => setHistId(null)}>Back to all versions</WsBtn>
+            {partsOf(viewedV).length > 0 && <PdfButton projectId={projectId} parts={partsOf(viewedV)} outName={pdfName(viewedV)} label="Download" onError={p.onError} />}
           </div>
-          {grid(viewedV, null)}
+          {grid(viewedV, versionMarks)}
         </>
       )}
 
-      {view === "history" && !viewedV && (
+      {view === "history" && (
         // Not overflow hidden here: the "..." menu of the last rows has to open past the box.
         <div style={{ ...boxStyle, overflow: "visible" }}>
           <div style={{ padding: "12px 16px", background: WS.head, fontWeight: 600, borderRadius: "10px 10px 0 0" }}>All versions · newest first</div>
@@ -481,7 +497,7 @@ function KindDetail({ kind, p, set, onEdit, onOpen, onUpload, sheets, sheetsRead
               const menu = menuOf(v);
               const details = [roundOf(v), is2d ? versionWhat(records.files, sheets, v.file) : null, dayMonthYear(submittedOf(v.file)), versionSize(v), picNames(v.file)].filter(Boolean);
               return (
-                <li key={v.file.id} style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, padding: "12px 16px", borderTop: `1px solid ${WS.rowLine}` }}>
+                <li key={v.file.id} aria-current={v === viewedV ? "true" : undefined} style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, padding: "12px 16px", borderTop: `1px solid ${WS.rowLine}`, background: v === viewedV ? WS.tealSoft : undefined }}>
                   <span style={{ flex: "none", minWidth: 34, fontWeight: 700 }}>V{v.file.version}</span>
                   <div style={{ flex: "1 1 220px", minWidth: 0 }}>
                     <div style={{ fontWeight: 600, overflowWrap: "anywhere" }}>
@@ -514,7 +530,6 @@ function KindDetail({ kind, p, set, onEdit, onOpen, onUpload, sheets, sheetsRead
             ref={replacePicker} type="file" multiple accept="application/pdf,image/*" className="sr" tabIndex={-1} aria-hidden="true" data-testid="replace-picker"
             onChange={(e) => { const files = [...(e.target.files ?? [])]; e.target.value = ""; if (files.length) onUpload({ t: "sheets", mode: "replace", files }); }}
           />
-          <BigUpload title="Upload full set" sub="First time, or when the whole set is redrawn." onClick={() => onUpload({ t: "sheets", mode: "full" })} />
         </div>
       )}
       {onUpload && !is2d && (
