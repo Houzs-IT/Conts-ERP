@@ -514,7 +514,6 @@ function KindDetail({ kind, p, set, onEdit, onOpen, onUpload, sheets, sheetsRead
             ref={replacePicker} type="file" multiple accept="application/pdf,image/*" className="sr" tabIndex={-1} aria-hidden="true" data-testid="replace-picker"
             onChange={(e) => { const files = [...(e.target.files ?? [])]; e.target.value = ""; if (files.length) onUpload({ t: "sheets", mode: "replace", files }); }}
           />
-          <BigUpload title="Upload full set" sub="First time, or when the whole set is redrawn." onClick={() => onUpload({ t: "sheets", mode: "full" })} />
         </div>
       )}
       {onUpload && !is2d && (
