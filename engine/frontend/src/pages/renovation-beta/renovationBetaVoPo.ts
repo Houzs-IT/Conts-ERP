@@ -18,6 +18,9 @@ export interface VoLine {
   /** The line's quantity after the VO; shown when the VO changes only the price. */
   lineQty?: number | null;
   goesTo: GoesTo;
+  /** The catalog group and sub-category codes (null: none, or not read when the role sees every category). */
+  categoryCode: string | null;
+  subCode: string | null;
   fromItemCode: string | null;
   /** What a change to an existing line moved, in words ("Colour: White -> Grey", "Remark: ..."). */
   changes?: string[];
@@ -50,6 +53,8 @@ export interface VoAnswer {
   vos: VoRow[];
   counts: { pending: number; approved: number; closed: number };
   totals: { addedSen: number; deductedSen: number; netSen: number; pendingNetSen: number } | null;
+  /** The caller's role sees only some product categories: VO lines of the others are left out by the server. */
+  categoryRestricted: boolean;
 }
 
 export type GrState = "yes" | "part" | "no";
@@ -80,6 +85,8 @@ export interface PoLine {
 export interface PoAnswer {
   lines: PoLine[];
   counts: { pos: number; lines: number; received: number; delivered: number; cancelled: number };
+  /** The caller's role sees only some product categories: lines of the others are left out by the server. */
+  categoryRestricted: boolean;
 }
 
 export interface ClientItem {
@@ -88,6 +95,9 @@ export interface ClientItem {
   soItemId?: string | null;
   itemCode: string | null;
   description: string;
+  /** Not sent on the public client link, which has no role. */
+  categoryCode?: string | null;
+  subCode?: string | null;
   categoryLabel: string;
   categorySort?: number;
   subLabel: string;
@@ -108,7 +118,11 @@ export interface ClientItem {
   deliverOn?: string | null;
 }
 
-export interface ClientAnswer { items: ClientItem[] }
+export interface ClientAnswer {
+  items: ClientItem[];
+  /** The caller's role sees only some product categories: items of the others are left out by the server. */
+  categoryRestricted: boolean;
+}
 
 export interface ClientPublicAnswer { company: string | null; project: string; expiresAt: string; items: ClientItem[] }
 

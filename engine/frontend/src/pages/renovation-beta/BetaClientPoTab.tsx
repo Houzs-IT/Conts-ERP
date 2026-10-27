@@ -92,7 +92,10 @@ export function BetaClientPoTab(p: BetaTabProps): ReactElement {
         title="Client PO"
         sub={`What the client buys: ${items.length} item${items.length === 1 ? "" : "s"}, ${dated} with both dates set. Lines with supplier "Customer" come here by themselves; their dates are set in the PO tab.`}
       />
-      <SharePanel p={p} rows={[...rows.values()]} />
+      {q.data.categoryRestricted && <p style={{ margin: 0, fontSize: 13, color: BETA.muted }}>Some categories are hidden for your role.</p>}
+      {q.data.categoryRestricted
+        ? <p style={{ margin: 0, fontSize: 13, color: BETA.muted }}>Sharing with the client is not available for a role limited to some categories.</p>
+        : <SharePanel p={p} rows={[...rows.values()]} />}
 
       <div role="group" aria-label="Group by" style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
         <WsFilterPill on={view === "category"} onClick={() => setView("category")}>By category</WsFilterPill>

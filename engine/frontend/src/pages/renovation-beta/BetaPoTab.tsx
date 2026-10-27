@@ -253,6 +253,7 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
           </span>
         )}
       />
+      {d.categoryRestricted && <p style={{ margin: 0, fontSize: 13, color: BETA.muted }}>Some categories are hidden for your role.</p>}
       {lines.length > 0 && (
         <div role="group" aria-label="Group the lines" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <WsFilterPill on={view === "category"} onClick={() => setView("category")}>By category</WsFilterPill>
@@ -291,7 +292,7 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
       )}
 
       <div ref={wrapRef} style={{ width: "100%", minWidth: 0 }}>
-        {tree.length === 0 ? <WsEmpty>No sales order lines for this project yet. Link a sales order to see its lines here.</WsEmpty>
+        {tree.length === 0 ? <WsEmpty>{d.categoryRestricted ? "No lines you can see for this project." : "No sales order lines for this project yet. Link a sales order to see its lines here."}</WsEmpty>
           : width === 0 || width >= TABLE_MIN ? (
             <div role="region" aria-label="Sales order lines" style={{ border: `1px solid ${BETA.line}`, borderRadius: 10, overflow: "hidden", background: BETA.surface }}>
               <table style={{ width: "100%", tableLayout: "fixed", borderCollapse: "collapse" }}>

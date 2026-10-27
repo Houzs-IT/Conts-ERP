@@ -45,6 +45,7 @@ function VoBody({ p, d }: { p: BetaTabProps; d: VoAnswer }): ReactElement {
         sub="Changes after the sales order. Each line goes to PO (we buy it), Client PO (the client buys it) or is our own works."
         right={<NewVo p={p} so={d.so} />}
       />
+      {d.categoryRestricted && <p style={{ margin: 0, fontSize: 13, color: BETA.muted }}>Some categories are hidden for your role.</p>}
 
       <WsStats>
         {d.totals ? (
