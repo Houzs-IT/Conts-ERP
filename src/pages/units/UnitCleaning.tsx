@@ -13,7 +13,7 @@ import { rm } from '../../lib/format';
 export interface UnitPrice { internalCost: number | null; externalCharge: number | null; source: 'unit' | 'table' | null; override: { internalCost: number | null; externalCharge: number | null } | null }
 export interface UnitPriceData { ready: boolean; rows: Array<{ unitId: string; prices: Record<string, UnitPrice> }>; mayEdit: boolean }
 
-export const CLEAN_KINDS = [['turnover', 'Basic clean'], ['deep_clean', 'Deep clean'], ['light_clean', 'Light clean']] as const;
+export const CLEAN_KINDS = [['turnover', 'Basic clean'], ['deep_clean', 'Deep clean']] as const;
 
 /** Basic or deep clean with no owner price at all (not its own, not the list's): cleaning jobs on this unit show "Price not set". */
 export const missingCleanPrice = (d: UnitPriceData | null): boolean => {
