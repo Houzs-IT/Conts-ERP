@@ -36,8 +36,11 @@ const STATUTORY: { key: 'epfEnabled' | 'socsoEnabled' | 'eisEnabled' | 'pcbEnabl
   { key: 'pcbEnabled', label: 'PCB', hint: 'Monthly tax deduction' },
 ];
 
-const departmentsOf = ({ cleanerId, technicianId }: Pick<Employee, 'cleanerId' | 'technicianId'>): string =>
-  [cleanerId && 'Cleaning', technicianId && 'Maintenance'].filter(Boolean).join(', ');
+/** The departments they work in now; a person switched off everywhere still shows the ones they were on. */
+const departmentsOf = ({ cleanerId, technicianId, cleanerActive, technicianActive }: Pick<Employee, 'cleanerId' | 'technicianId' | 'cleanerActive' | 'technicianActive'>): string => {
+  const working = [cleanerActive && 'Cleaning', technicianActive && 'Maintenance'].filter(Boolean);
+  return (working.length ? working : [cleanerId && 'Cleaning', technicianId && 'Maintenance'].filter(Boolean)).join(', ');
+};
 function statusOf(e: Employee): { label: string; tone: 'success' | 'neutral' | 'warning' } {
   if (e.status === 'resigned') return { label: 'Resigned', tone: 'neutral' };
   if (!e.isActive) return { label: 'Switched off', tone: 'warning' };
@@ -69,10 +72,11 @@ export default function EmployeesTab() {
     { key: 'go', label: '', noExport: true, sortable: false, filter: false, width: 340, align: 'right', render: e => actions(e) },
   ], [mayEdit, mayRoster, mayGrant]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  /** The roster entries a person is on: one per department, sharing a login when both. */
+  /** The roster entries a person is on: one per department, sharing a login when both. Switching off leaves alone a
+   *  department already switched off on its own. */
   const rosterEntries = (e: Employee): { api: string; id: string }[] => [
-    ...(e.cleanerId ? [{ api: ROSTER.cleaning, id: e.cleanerId }] : []),
-    ...(e.technicianId ? [{ api: ROSTER.maintenance, id: e.technicianId }] : []),
+    ...(e.cleanerId && (!e.isActive || e.cleanerActive) ? [{ api: ROSTER.cleaning, id: e.cleanerId }] : []),
+    ...(e.technicianId && (!e.isActive || e.technicianActive) ? [{ api: ROSTER.maintenance, id: e.technicianId }] : []),
   ];
 
   async function toggleActive(e: Employee) {
@@ -86,7 +90,7 @@ export default function EmployeesTab() {
 
   function giveAccess(e: Employee) {
     // Two departments share one login, so either roster entry reaches it.
-    const onCleaning = !!e.cleanerId;
+    const onCleaning = !!e.cleanerId && (e.cleanerActive || !e.technicianActive);
     setAccess({ id: (onCleaning ? e.cleanerId : e.technicianId) ?? '', name: e.name, employeeId: e.employeeId,
       rosterApi: onCleaning ? ROSTER.cleaning : ROSTER.maintenance, jobs: onCleaning ? 'cleaning jobs' : 'repair jobs' });
   }
@@ -173,12 +177,15 @@ function EmployeeForm({ person, onClose, onSaved }: {
   const start: EmployeeInput = person ?? EMPLOYEE_DEFAULTS;
   const [d, setD] = useState<EmployeeInput>(() => {
     if (!person) return { ...EMPLOYEE_DEFAULTS, joinDate: todayMyt() };
-    const { id: _id, cleanerId: _c, technicianId: _t, name: _n, phone: _p, employeeId: _e, isActive: _a, ...record } = person;
+    const { id: _id, cleanerId: _c, technicianId: _t, name: _n, phone: _p, employeeId: _e, isActive: _a, cleanerActive: _ca, technicianActive: _ta, userId: _u, ...record } = person;
     return record;
   });
   const [name, setName] = useState(person?.name ?? '');
   const [phone, setPhone] = useState(person?.phone ?? '');
-  const [depts, setDepts] = useState<Dept[]>(person ? [] : ['cleaning']);
+  const wasDepts: Dept[] = [...(person?.cleanerActive ? ['cleaning' as const] : []), ...(person?.technicianActive ? ['maintenance' as const] : [])];
+  const [depts, setDepts] = useState<Dept[]>(person ? wasDepts : ['cleaning']);
+  // Changing a department changes the roster, which is Operations' to run (as Switch off is).
+  const mayRoster = mayWork(user, 'operations');
   const [giveAccess, setGiveAccess] = useState(mayGrant);
   const [salaryFrom, setSalaryFrom] = useState(`${todayMyt().slice(0, 7)}-01`);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -195,6 +202,13 @@ function EmployeeForm({ person, onClose, onSaved }: {
     if (phoneError) problems.phone = phoneError;
     if (creating && depts.length === 0) problems.departments = 'Tick at least one department.';
     if (creating && depts.length === 2 && !giveAccess) problems.departments = 'Both departments share one app login: give app access, or tick one.';
+    // Editing: a department they are not on yet needs the shared login, and someone cannot be taken off both here.
+    const added = person ? depts.filter(dep => !(dep === 'cleaning' ? person.cleanerId : person.technicianId)) : [];
+    const deptsChanged = !!person && mayRoster && depts.join() !== wasDepts.join();
+    if (person && deptsChanged) {
+      if (depts.length === 0) problems.departments = 'Tick at least one department. To take them off both, use Switch off on the list.';
+      else if (added.length && !person.userId) problems.departments = 'Both departments share one app login: use Give app access on the list first, then add the department.';
+    }
     if (Object.keys(problems).length) { setErrors(problems); return; }
     setBusy(true);
     setErrors({});
@@ -221,6 +235,21 @@ function EmployeeForm({ person, onClose, onSaved }: {
         if (roster.name !== person.name || roster.phone !== person.phone) {
           if (cleanerId) await api.patch(`${ROSTER.cleaning}/${cleanerId}`, { name: roster.name, phone: roster.phone ?? '' });
           if (technicianId) await api.patch(`${ROSTER.maintenance}/${technicianId}`, { name: roster.name, phone: roster.phone ?? '' });
+        }
+        // Departments: add or switch on first so the shared login is never left with nothing on, then switch off.
+        if (deptsChanged) {
+          const entries = [
+            { dep: 'cleaning' as const, id: cleanerId, was: person.cleanerActive },
+            { dep: 'maintenance' as const, id: technicianId, was: person.technicianActive },
+          ];
+          for (const { dep, id, was } of entries) {
+            if (!depts.includes(dep)) continue;
+            if (!id) {
+              const made = await api.post<{ id: string }>(ROSTER[dep], { ...roster, employmentType: 'internal', vendorName: null, userId: person.userId });
+              if (dep === 'cleaning') cleanerId = made.id; else technicianId = made.id;
+            } else if (!was) await api.patch(`${ROSTER[dep]}/${id}`, { isActive: true });
+          }
+          for (const { dep, id, was } of entries) if (id && was && !depts.includes(dep)) await api.patch(`${ROSTER[dep]}/${id}`, { isActive: false });
         }
       }
       await api.put('/employees', { ...d, cleanerId, technicianId, ...(salaryChanged ? { salaryEffectiveFrom: salaryFrom } : {}) });
@@ -255,7 +284,7 @@ function EmployeeForm({ person, onClose, onSaved }: {
           </label>
           <div className="sm:col-span-2 flex flex-col gap-1.5">
             <span className="text-meta font-medium text-muted-ink">Departments</span>
-            {creating ? (
+            {creating || mayRoster ? (
               <span className="flex gap-5 flex-wrap">
                 {(['cleaning', 'maintenance'] as const).map(dep => (
                   <label key={dep} className="flex items-center gap-2.5 min-h-10 cursor-pointer">

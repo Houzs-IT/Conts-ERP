@@ -16,16 +16,17 @@ export const hasEmployees = (env: Env): Promise<boolean> => hasColumn(env, 'empl
  */
 const PEOPLE = `
   WITH people AS (
-    SELECT c.id AS cleaner_id, t.id AS technician_id, c.full_name, c.phone, c.user_id, c.is_active
+    SELECT c.id AS cleaner_id, t.id AS technician_id, c.full_name, c.phone, c.user_id, GREATEST(c.is_active, COALESCE(t.is_active, 0)) AS is_active,
+      c.is_active AS cleaner_active, t.is_active AS technician_active
     FROM cleaners c LEFT JOIN technicians t ON t.user_id = c.user_id AND t.employment_type = 'internal'
     WHERE c.employment_type = 'internal'
     UNION ALL
-    SELECT NULL, t.id, t.full_name, t.phone, t.user_id, t.is_active
+    SELECT NULL, t.id, t.full_name, t.phone, t.user_id, t.is_active, NULL, t.is_active
     FROM technicians t
     WHERE t.employment_type = 'internal'
       AND NOT EXISTS (SELECT 1 FROM cleaners c WHERE c.employment_type = 'internal' AND c.user_id = t.user_id)
   )
-  SELECT p.cleaner_id AS p_cleaner_id, p.technician_id AS p_technician_id, p.full_name, p.phone, p.is_active, u.employee_id, e.*
+  SELECT p.cleaner_id AS p_cleaner_id, p.technician_id AS p_technician_id, p.full_name, p.phone, p.is_active, p.cleaner_active, p.technician_active, p.user_id AS p_user_id, u.employee_id, e.*
   FROM people p
   LEFT JOIN users u ON u.id = p.user_id
   LEFT JOIN LATERAL (
@@ -35,6 +36,7 @@ const PEOPLE = `
 
 interface Row {
   p_cleaner_id: string | null; p_technician_id: string | null; full_name: string; phone: string | null; is_active: number; employee_id: string | null;
+  cleaner_active: number | null; technician_active: number | null; p_user_id: string | null;
   id: string | null; position: string | null; nationality: string | null; join_date: string | null;
   leader_allowance_sen: number | null; efficiency_allowance_sen: number | null; efficiency_threshold_pct: number | null;
   status: EmployeeStatus | null; resigned_at: string | null; pay_basis: PayBasis | null; basic_salary_sen: number | null; daily_rate_sen: number | null;
@@ -49,7 +51,7 @@ function toEmployee(r: Row): Employee {
   const d = EMPLOYEE_DEFAULTS;
   return {
     id: r.id, cleanerId: r.p_cleaner_id, technicianId: r.p_technician_id, name: r.full_name, phone: r.phone,
-    employeeId: r.employee_id, isActive: !!r.is_active,
+    employeeId: r.employee_id, isActive: !!r.is_active, cleanerActive: !!r.cleaner_active, technicianActive: !!r.technician_active, userId: r.p_user_id,
     // Free text saved before the Leader tick ("Cleaning leader") reads as a leader when it says so.
     position: r.position?.toLowerCase().includes('leader') ? 'leader' : 'employee', nationality: r.nationality, joinDate: r.join_date,
     // Read before migration 0170 the columns are missing: the record's defaults apply.
