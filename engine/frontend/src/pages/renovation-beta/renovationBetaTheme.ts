@@ -18,14 +18,20 @@ type Pair = readonly [string, string];
 const GLASS_SHADOW_VISION = "inset 0 1px 0 rgba(255,255,255,1),inset 0 0 0 1px rgba(255,255,255,.35),inset 0 -10px 24px rgba(120,150,255,.08),0 0 0 1px rgba(120,150,255,.14),0 0 40px -12px rgba(110,160,255,.45),0 30px 60px -24px rgba(60,80,160,.35)";
 const GLASS_SHADOW_NIGHT = "inset 0 1px 0 rgba(255,255,255,.18),inset 0 0 0 1px rgba(255,255,255,.04),inset 0 -10px 24px rgba(120,150,255,.08),0 0 0 1px rgba(120,150,255,.14),0 0 40px -10px rgba(80,130,255,.35),0 30px 60px -24px rgba(0,0,0,.6)";
 
+/* The faint 44px grid and the soft wash over the colour glows, as both designs draw the page (the glows alone read as
+   bubbles). The designs fade the grid out towards the edges with a mask; a background layer cannot, so it stays even. */
+const PAGE_GRID = "linear-gradient(rgba(47,107,255,.07) 1px,transparent 1px) 0 0/44px 44px,linear-gradient(90deg,rgba(47,107,255,.07) 1px,transparent 1px) 0 0/44px 44px";
+const WASH_VISION = "linear-gradient(180deg,rgba(250,251,253,.30),rgba(236,239,245,.38))";
+const WASH_NIGHT = "linear-gradient(180deg,rgba(16,18,26,.25),rgba(16,18,26,.35))";
+
 /* The page behind the cards, as the Dream Crafter sidebar draws it (src/theme.ts dcGlass in the ERP; copied, the engine
    cannot import from there). */
-const PAGE_VISION = "linear-gradient(118deg,rgba(255,255,255,0) 58%,rgba(255,248,226,.85) 66%,rgba(255,255,255,0) 76%),"
+const PAGE_VISION = PAGE_GRID + "," + WASH_VISION + ",linear-gradient(118deg,rgba(255,255,255,0) 58%,rgba(255,248,226,.85) 66%,rgba(255,255,255,0) 76%),"
   + "radial-gradient(48% 52% at 14% 16%,#F6C9D6 0%,rgba(246,201,214,0) 72%),"
   + "radial-gradient(52% 58% at 90% 34%,#BFE6EA 0%,rgba(191,230,234,0) 72%),"
   + "radial-gradient(46% 46% at 40% 100%,#CBD3FA 0%,rgba(236,227,207,0) 72%),"
   + "linear-gradient(160deg,#E6ECEA 0%,#ECEEF3 50%,#DDE2EC 100%)";
-const PAGE_NIGHT = "radial-gradient(45% 40% at 18% 12%,rgba(70,110,255,.35) 0%,rgba(70,110,255,0) 70%),"
+const PAGE_NIGHT = PAGE_GRID + "," + WASH_NIGHT + ",radial-gradient(45% 40% at 18% 12%,rgba(70,110,255,.35) 0%,rgba(70,110,255,0) 70%),"
   + "radial-gradient(40% 40% at 88% 70%,rgba(150,90,255,.28) 0%,rgba(150,90,255,0) 70%),"
   + "radial-gradient(35% 35% at 50% 100%,rgba(60,180,255,.18) 0%,rgba(60,180,255,0) 70%),"
   + "linear-gradient(160deg,#151823 0%,#0D0F16 100%)";
@@ -150,7 +156,7 @@ export const BETA_SKIN_CSS: string = (() => {
   return `:root{${rows(0)}}
 html[data-beta-skin="night"]{${rows(1)}}
 @media (prefers-reduced-transparency:reduce){:root,html[data-beta-skin="night"]{--beta-glass:var(--beta-glassSolid);--beta-blur:none;--beta-blurSm:none}}
-html.beta-page body,html.beta-page main.paper-grain{background:var(--beta-page)}
+html.beta-page body,html.beta-page main.paper-grain{background:var(--beta-page);background-attachment:fixed}
 html.beta-page[data-beta-skin="night"]{color-scheme:dark}`;
 })();
 

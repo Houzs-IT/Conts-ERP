@@ -59,14 +59,14 @@ export default function AppShell({
   // The Beta screens paint the glass backdrop in their frame; painting the same one behind the top bar lets it float
   // over the page as the designs draw it, with no seam where the frame starts.
   const dark = useDarkTheme();
-  const betaBackdrop = path.startsWith('/beta') && !isNarrow ? dcGlass[dark ? 'dark' : 'light'].backdrop : undefined;
+  const betaBackdrop = path.startsWith('/beta') && !isNarrow ? dcGlass[dark ? 'dark' : 'light'].page : undefined;
 
   return (
     <div data-print-root data-device={device.cls} data-fold={device.fold} style={{ flex: 1, minWidth: 0, height: '100dvh', display: 'flex', overflow: 'hidden' }}>
       {/* Phones navigate from the bottom tab bar and its menu sheet; there is no sidebar there. */}
       {!isNarrow && <Sidebar path={path} navigate={navigate} open={navOpen} onToggle={toggleNav} />}
 
-      <div data-print-root style={{ position: 'relative', flex: 1, minWidth: 0, height: '100dvh', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: betaBackdrop }}>
+      <div data-print-root style={{ position: 'relative', flex: 1, minWidth: 0, height: '100dvh', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: betaBackdrop, backgroundAttachment: betaBackdrop ? 'fixed' : undefined }}>
         <RefreshLine />
         {isNarrow && (
           // One row on phones: menu, logo, then search / bell / page action. The desk top bar's crumbs are
