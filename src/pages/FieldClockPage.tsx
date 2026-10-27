@@ -93,8 +93,9 @@ export default function FieldClockPage() {
 
       {error && <StaleBanner message={error} onRetry={reload} />}
 
-      <section className="bg-card rounded-card border border-solid border-line px-4 py-4 flex flex-col gap-3">
-        {loading && !data ? <span className="text-copy text-muted-ink">{t.common.loading}</span> : (
+      {/* Nothing loaded (not on the employee list, or offline): today's state is unknown, so no "Not clocked in" and no punch button. */}
+      {(data || !error) && <section className="bg-card rounded-card border border-solid border-line px-4 py-4 flex flex-col gap-3">
+        {loading && !data ?<span className="text-copy text-muted-ink">{t.common.loading}</span> : (
           <>
             <div className="flex flex-col gap-1">
               <span className="text-meta text-muted-ink">{t.clock.today}</span>
@@ -117,7 +118,7 @@ export default function FieldClockPage() {
             )}
           </>
         )}
-      </section>
+      </section>}
 
       {data && (
         <section className="flex flex-col gap-2">
