@@ -25,13 +25,13 @@ import type { Employee } from '../../../functions/_lib/hrFields';
 /* ------------------------------------------------------------------ *
  * HR > Employees > Attendance: Hookka's Attendance tab. The month's
  * figures on top, then everyone on the day: when they punched, whether at
- * a building or punch site (with a map link), and the selfies, or that
+ * a building (within its radius, with a map link), and the selfies, or that
  * they are not in or on leave. The office fixes a forgotten clock-out or
  * keys a day nobody punched here; the portal's Clock screen is where
  * people punch.
  * ------------------------------------------------------------------ */
 
-interface DayPayload { date: string; today: string; sitesToCompare: number; data: AttendanceLine[] }
+interface DayPayload { date: string; today: string; buildingsWithLocation: number; data: AttendanceLine[] }
 
 const hm = (min: number): string => `${Math.floor(min / 60)}h ${String(min % 60).padStart(2, '0')}m`;
 const shift = (day: string, by: number): string => new Date(Date.parse(`${day}T00:00:00Z`) + by * 86_400_000).toISOString().slice(0, 10);
@@ -42,14 +42,14 @@ const place = (p: Nearest | null): string =>
 const mytDay = (iso: string): string => new Date(Date.parse(iso) + 8 * 3_600_000).toISOString().slice(0, 10);
 const rowKey = (l: AttendanceLine): string => l.employee.id ?? l.employee.cleanerId ?? l.employee.technicianId ?? l.employee.name;
 
-/** Hookka's location badge: at a building or punch site (within its radius), off-site, or no location. The clock-in
+/** Hookka's location badge: at a building (within its radius), off-site, or no location. The clock-in
  *  decides; the clock-out stands in when the clock-in had no GPS. Soft only: it never blocks a punch. */
 function siteOf(l: AttendanceLine): { label: string; tone: 'success' | 'warning' | 'neutral'; off: boolean } {
   const p = l.punch;
   if (!p) return { label: '', tone: 'neutral', off: false };
   if (!p.inGps && !p.outGps) return { label: p.edited && !p.inPhoto ? 'Keyed by the office' : 'No GPS', tone: 'neutral', off: false };
   const near = (p.inGps ? l.inPlace : null) ?? l.outPlace;
-  if (!near) return { label: 'No site to compare', tone: 'neutral', off: false };
+  if (!near) return { label: 'No building to compare', tone: 'neutral', off: false };
   return near.onSite ? { label: `At ${near.name}`, tone: 'success', off: false } : { label: `Off-site · ${place(near)}`, tone: 'warning', off: true };
 }
 
@@ -147,7 +147,7 @@ export default function AttendanceTab() {
               <span className="flex flex-col gap-0.5">
                 <span className="text-[16px] font-semibold tracking-[-0.01em]">Daily Attendance</span>
                 <span className="text-meta text-muted-ink">
-                  Everyone active, punched or not. A phone punch shows where they were against the buildings and punch sites; off-site = outside every site's radius.
+                  Everyone active, punched or not. A phone punch shows where they were against the buildings; off-site = outside every building's radius (Punch Sites).
                   {offSite > 0 && <span className="font-semibold text-warning"> {offSite} off-site.</span>}
                 </span>
               </span>
@@ -161,7 +161,7 @@ export default function AttendanceTab() {
             {data && (
               <span className="text-meta text-muted-ink">
                 {date(`${shown}T12:00:00+08:00`)} · {punched.length} punched · {lines.length - punched.length - onLeave} not in{onLeave ? ` · ${onLeave} on leave` : ''}{noOut ? ` · ${noOut} no clock-out` : ''}
-                {data.sitesToCompare === 0 ? ' · No building or punch site has a map location yet, so nobody can read as on site.' : ''}
+                {data.buildingsWithLocation === 0 ? ' · No building has a map location yet, so nobody can read as at a building.' : ''}
               </span>
             )}
           </div>

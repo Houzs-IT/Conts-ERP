@@ -1,10 +1,10 @@
 // node --test src/lib/attendance.test.mjs. Punch arithmetic in functions/_lib/attendanceCalc.ts (migration 0166) and the
-// punch site fields in functions/_lib/punchSites.ts (migration 0174).
+// building punch radius in functions/_lib/punchSites.ts (migration 0174).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 const { distanceM, placeOf, coord, workedMinutes, mytInstant, openTooLong, isForgottenOut, FORGOTTEN_AFTER_HOURS } = await import('../../functions/_lib/attendanceCalc.ts');
-const { siteInput, parseLatLng } = await import('../../functions/_lib/punchSites.ts');
+const { radiusInput, toSite } = await import('../../functions/_lib/punchSites.ts');
 
 test('distance: one degree of latitude is about 111 km, a point to itself is 0', () => {
   assert.ok(Math.abs(distanceM({ lat: 3, lng: 101 }, { lat: 4, lng: 101 }) - 111_195) < 50);
@@ -61,23 +61,15 @@ test('forgotten clock-out: open past 16 hours, or marked; a shift past midnight 
   assert.equal(isForgottenOut({ clock_in_at: inAt, clock_out_at: '2026-10-26T20:00:00.000Z', forgot_out: 0 }, h(100)), false);
 });
 
-test('punch site fields: name, a point and a radius from 20 m to 5 km', () => {
-  const ok = siteInput.safeParse({ name: ' HQ ', lat: 3.139, lng: 101.6869, radiusM: 150 });
-  assert.equal(ok.success, true);
-  assert.equal(ok.data.name, 'HQ');
-  assert.equal(ok.data.active, true);
-  const bad = siteInput.safeParse({ name: '', lat: 91, lng: 181, radiusM: 10 });
-  assert.equal(bad.success, false);
-  assert.deepEqual(new Set(bad.error.issues.map(i => i.path[0])), new Set(['name', 'lat', 'lng', 'radiusM']));
-  assert.equal(siteInput.safeParse({ name: 'X', lat: 3, lng: 101, radiusM: 5001 }).success, false);
-  assert.equal(siteInput.safeParse({ name: 'X', lat: 3, lng: 101, radiusM: 100.5 }).success, false);
+test('building radius: whole metres from 20 m to 5 km, or empty for the default', () => {
+  assert.equal(radiusInput.safeParse({ radiusM: 150 }).success, true);
+  assert.equal(radiusInput.safeParse({ radiusM: null }).data.radiusM, null);
+  for (const radiusM of [10, 5001, 100.5, '150', undefined]) assert.equal(radiusInput.safeParse({ radiusM }).success, false, String(radiusM));
 });
 
-test('a pin copied from a map reads as latitude, longitude', () => {
-  assert.deepEqual(parseLatLng('3.139003, 101.686855'), { lat: 3.139003, lng: 101.686855 });
-  assert.deepEqual(parseLatLng(' -33.8,151.2 '), { lat: -33.8, lng: 151.2 });
-  assert.equal(parseLatLng('101.68, 3.13'), null);
-  assert.equal(parseLatLng('Jalan Ampang'), null);
+test('a building row reads as a punch site, with no radius of its own until one is set', () => {
+  assert.deepEqual(toSite({ id: 'p1', name: 'Sky Suites', latitude: 3.1, longitude: 101.6, punch_radius_m: null }),
+    { id: 'p1', name: 'Sky Suites', lat: 3.1, lng: 101.6, radiusM: null });
 });
 
 test('coordinates: text or numbers in range, anything else is no location', () => {

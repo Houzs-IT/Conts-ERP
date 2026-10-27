@@ -4,12 +4,12 @@
  */
 
 export interface Point { lat: number; lng: number }
-/** A building (radius ON_SITE_METRES) or a punch site (its own radius, migration 0174). */
+/** A building with a map location and its punch radius (its own, migration 0174, or ON_SITE_METRES). */
 export interface Site extends Point { id: string; name: string; radiusM: number }
 export interface Nearest { id: string; name: string; metres: number; radiusM: number; onSite: boolean }
 
-/** The radius every building gets. A punch site can set its own (Employees > Hours > Punch Sites). Only a label: nothing
- *  is blocked by distance (Hookka's soft geofence). */
+/** The radius a building gets until it is given its own (Employees > Hours > Punch Sites). Only a label: nothing is
+ *  blocked by distance (Hookka's soft geofence). */
 export const ON_SITE_METRES = 200;
 
 /** An open punch older than this is a forgotten clock-out, not a long shift (Houzs Century's rule): a clock-out after
@@ -30,7 +30,7 @@ export function distanceM(a: Point, b: Point): number {
 /**
  * Where a punch was: the closest site whose circle holds it (on site), else the closest site of all (off site, with its
  * distance). Null when the punch has no location or there is no site to compare with. A small site inside a wide one
- * wins when it is closer, so "At Office" is not hidden by "At Warehouse yard".
+ * wins when it is closer, so "At Block A" is not hidden by a wide circle round the building next door.
  */
 export function placeOf(p: Point | null, sites: Site[]): Nearest | null {
   if (!p) return null;

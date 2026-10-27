@@ -12,7 +12,7 @@ import type { LeaveType } from '../../_lib/leaveRules';
 export interface AttendanceLine {
   employee: Pick<Employee, 'id' | 'name' | 'employeeId' | 'cleanerId' | 'technicianId' | 'isActive' | 'status'>;
   punch: PunchView | null;
-  /** Where they clocked in and out against the buildings and punch sites (placeOf); null without GPS or without a site. */
+  /** Where they clocked in and out against the buildings and their radiuses (placeOf); null without GPS or without one. */
   inPlace: Nearest | null;
   outPlace: Nearest | null;
   /** Approved leave covering the day, so "not in" reads "on leave". */
@@ -54,7 +54,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         leave: (p.id && onLeave.get(p.id)) || null,
       };
     });
-  return json({ date: day, today, sitesToCompare: sites.length, data });
+  return json({ date: day, today, buildingsWithLocation: sites.length, data });
 };
 
 const MANAGE = ['management']; // everyone else follows their level in HR (functions/_lib/access.ts)

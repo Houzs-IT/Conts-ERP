@@ -43,16 +43,12 @@ export async function readPunch(request: Request): Promise<{ action: 'in' | 'out
   };
 }
 
-export const hasPunchSites = (env: Env): Promise<boolean> => hasColumn(env, 'punch_sites', 'id').catch(() => false);
+export const hasPunchRadius = (env: Env): Promise<boolean> => hasColumn(env, 'properties', 'punch_radius_m').catch(() => false);
 
-/** Everywhere a punch is checked against: every building with a location (ON_SITE_METRES each) and every punch site in
- *  use (its own radius, migration 0174; skipped before it is applied). */
+/** Every building with a map location, each with its own punch radius (migration 0174) or ON_SITE_METRES. */
 export async function punchSites(env: Env): Promise<Site[]> {
-  const [buildings, own] = await Promise.all([
-    all<Site>(env, `SELECT id, name, latitude AS lat, longitude AS lng, ${ON_SITE_METRES} AS "radiusM" FROM properties WHERE latitude IS NOT NULL AND longitude IS NOT NULL`),
-    hasPunchSites(env).then(ok => ok ? all<Site>(env, 'SELECT id, name, lat, lng, radius_m AS "radiusM" FROM punch_sites WHERE is_active = 1') : []),
-  ]);
-  return [...own, ...buildings];
+  const radius = (await hasPunchRadius(env)) ? `COALESCE(punch_radius_m, ${ON_SITE_METRES})` : String(ON_SITE_METRES);
+  return all<Site>(env, `SELECT id, name, latitude AS lat, longitude AS lng, ${radius} AS "radiusM" FROM properties WHERE latitude IS NOT NULL AND longitude IS NOT NULL`);
 }
 
 /** "20:15" in Malaysia time, for a message to the phone. */

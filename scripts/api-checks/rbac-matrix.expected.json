@@ -410,7 +410,6 @@
  "POST /api/properties": "AAFFFFFU",
  "POST /api/properties/[id]/channels": "EEFFFFFU",
  "POST /api/properties/[id]/channels/lookup": "EEFFFFFU",
- "POST /api/punch-sites": "AFFFFFFU",
  "POST /api/purchase-consignment": "AFFFFFFU",
  "POST /api/purchase-invoices": "AFFAFFFU",
  "POST /api/purchase-orders": "AFFFFFFU",
