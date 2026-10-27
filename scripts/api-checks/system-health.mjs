@@ -18,7 +18,7 @@ check('storage reported', typeof h.r2?.bound === 'boolean', JSON.stringify(h.r2)
 const isCount = n => Number.isInteger(n) && n >= 0;
 check('user and audit counts are whole numbers', ['users_active', 'users_invited', 'users_disabled', 'users_locked', 'audit_24h', 'audit_7d', 'sensitive_24h'].every(k => isCount(h.counts?.[k])), JSON.stringify(h.counts));
 check('24h audit count is within the 7d count', h.counts.audit_24h <= h.counts.audit_7d && h.counts.sensitive_24h <= h.counts.audit_24h, JSON.stringify(h.counts));
-const KEYS = ['email', 'channex', 'bookings', 'queue', 'jobs', 'problems'];
+const KEYS = ['email', 'channex', 'bookings', 'queue', 'jobs', 'channels', 'problems'];
 check('one card per integration', KEYS.every(k => h.checks?.some(c => c.key === k)), JSON.stringify(h.checks?.map(c => c.key)));
 check('every card has a value, status and plain summary', (h.checks ?? []).every(c => ['ok', 'warning', 'critical', 'off'].includes(c.status) && c.label && c.value && c.summary && !/undefined|null|NaN/.test(c.value + c.summary + (c.detail ?? ''))), JSON.stringify(h.checks));
 check('ok is false whenever a card is critical', h.ok === !(h.checks ?? []).some(c => c.status === 'critical'), `${h.ok}`);

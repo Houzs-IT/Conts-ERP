@@ -27,6 +27,36 @@ const PROBLEM: Record<string, string> = {
   'unit.import_undo_failed': 'A failed Airbnb import could not be undone',
 };
 
+/** Channex's public status page. Conts reaches Booking.com, Airbnb and Agoda through Channex, so the states it
+ *  publishes for each channel are the ones that matter here (it recorded the Booking.com outage of 22 Oct 2026
+ *  the same morning). Names as Channex spells them; `API` is Channex itself. */
+const CHANNEL_STATUS_URL = 'https://status.channex.io/index.json';
+const WATCHED: [name: string, label: string][] = [['API', 'Channex'], ['Booking.com', 'Booking.com'], ['Airbnb', 'Airbnb'], ['Agoda', 'Agoda']];
+
+/** One card for what the channels themselves report. Their page being unreadable is not our outage, so it
+ *  reads "off" rather than red, and only a channel the page names as down or having problems raises it. */
+export async function channelStatus(): Promise<Check> {
+  const card = (c: Omit<Check, 'key' | 'label'>): Check => ({ key: 'channels', label: 'Channel status', ...c });
+  let states: Map<string, string>;
+  try {
+    const res = await fetch(CHANNEL_STATUS_URL, { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(8_000) });
+    if (!res.ok) throw new Error(`status ${res.status}`);
+    const page = await res.json() as { included?: { type?: string; attributes?: { public_name?: string; status?: string } }[] };
+    states = new Map((page.included ?? []).filter(x => x.type === 'status_page_resource' && x.attributes?.public_name)
+      .map(x => [x.attributes!.public_name!, String(x.attributes!.status ?? '')]));
+  } catch {
+    return card({ value: '—', status: 'off', summary: "Channex's status page could not be read", detail: 'Checked again in a few minutes. This does not mean a channel is down.' });
+  }
+  const watched = WATCHED.filter(([name]) => states.has(name)).map(([name, label]) => ({ label, state: states.get(name)! }));
+  if (!watched.length) return card({ value: '—', status: 'off', summary: "Channex's status page no longer lists the channels" });
+  const names = (state: string) => watched.filter(w => w.state === state).map(w => w.label).join(', ');
+  const why = 'Reported by Channex (status.channex.io). Prices, open dates and reservations for that channel may be late or missing until it clears; there is nothing to fix on our side.';
+  if (names('downtime')) return card({ value: 'Down', status: 'critical', summary: `${names('downtime')} down`, detail: why });
+  if (names('degraded')) return card({ value: 'Problems', status: 'warning', summary: `${names('degraded')} having problems`, detail: why });
+  if (names('maintenance')) return card({ value: 'Maintenance', status: 'ok', summary: `Planned maintenance on ${names('maintenance')}` });
+  return card({ value: 'All up', status: 'ok', summary: `${watched.map(w => w.label).join(', ')} working` });
+}
+
 /** The live state of every moving part, measured now and never read from a stored status. `db`, `r2` and
  *  `counts` are the portable core (the same shape as the Hookka /admin/health live payload); `checks` are
  *  this system's own integrations, one stat card each. Every check runs on its own: one that cannot be
@@ -155,7 +185,7 @@ export async function measureHealth(env: Env, origin: string) {
   const lastDay = problems.filter(p => p.at >= ago(DAY)).length;
   const errors: Check = { key: 'problems', label: 'Problems 24h', value: String(lastDay), status: lastDay > 0 ? 'warning' : 'ok', summary: `${problems.length} in 7 days` };
 
-  const checks = [...await Promise.all([email, channex, bookings, queue, jobs]), errors];
+  const checks = [...await Promise.all([email, channex, bookings, queue, jobs, channelStatus()]), errors];
   const ok = db.ok && !(r2.bound && !r2.ok) && !checks.some(c => c.status === 'critical');
   return { ok, time: nowIso(), db, r2, counts, checks, problems };
 }

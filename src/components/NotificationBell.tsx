@@ -41,6 +41,7 @@ export function noticeIcon(kind: string) {
   if (kind.startsWith('approval.')) return 'BadgeCheck';
   if (kind.startsWith('statement.') || kind.startsWith('payout.')) return 'Receipt';
   if (kind.startsWith('digest.')) return 'Sun';
+  if (kind.startsWith('health.')) return 'Activity';
   return 'Bell';
 }
 

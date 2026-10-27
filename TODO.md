@@ -544,3 +544,5 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 ## Notion SO import (feat/so-notion-import, no migration, 26 Oct 2026, docs/so-import/)
 - Lead: run "Notion SO import (one-off)" dry-run, then apply; expect 79 SOs (78 linked to projects) and 27 VOs, RM 3,688,221 in all; then delete the workflow.
 - Owner: payments received per SO come from Accounts; THE HIPSTER C10-05 MS IRIS has no project (SO imported without one); MAPLE B18-3 had three same-day PDFs, ordered by guess.
+
+- Health warnings (CONTS-0005, owner 26 Oct): management is emailed when a System health card turns red or a channel is reported down on status.channex.io, and when it clears. Email only for now; a WhatsApp copy is the owner's later call. Runs on the 5-minute health report, so production only (the cron worker); staging shows the new Channel status card but sends no warnings.
