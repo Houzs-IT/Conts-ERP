@@ -69,7 +69,7 @@ if (process.argv.includes('--secrets')) {
 const list = wrangler(['secret', 'list', '--config', 'wrangler.cron.toml']);
 const has = (k) => new RegExp(`"name":\\s*"${k}"`).test(list.out);
 say('\nSecrets on theconts-cron:');
-for (const [k, need] of [['CHANNEX_API_KEY', 'needed for the Channex outbox'], ['MAIL_API_KEY', 'optional, email copies'], ['WHATSAPP_TOKEN', 'optional, WhatsApp copies'], ['WHATSAPP_PHONE_ID', 'optional, WhatsApp copies']]) {
+for (const [k, need] of [['CHANNEX_API_KEY', 'needed for the Channex outbox'], ['HOSTPLATFORM_ACCESS_TOKEN', 'needed to pull reservations from HostPlatform'],['MAIL_API_KEY', 'optional, email copies'], ['WHATSAPP_TOKEN', 'optional, WhatsApp copies'], ['WHATSAPP_PHONE_ID', 'optional, WhatsApp copies']]) {
   say(`  ${has(k) ? 'set    ' : 'missing'}  ${k}  (${need})${has(k) ? '' : `  ->  npx wrangler secret put ${k} --config wrangler.cron.toml`}`);
 }
 say('\nDone. The jobs start on their next minute. Check them in Cloudflare > Workers > theconts-cron > Logs, or in System health.');
