@@ -76,7 +76,7 @@ export interface StayRow {
 export interface StayPart { check_in: string; check_out: string; amount: number }
 /** An owner-charged expense. incurred_on is the bill's own date; deduct_month (YYYY-MM) the statement that takes it, a later
  *  month when the bill came after its own month was final (rolled: the line says so). */
-export interface CostRow { id: string; unit_id: string; category: string; description: string; amount: number; incurred_on: string; deduct_month: string; rolled?: boolean; reference: string | null; task_kind: string | null }
+export interface CostRow { id: string; unit_id: string; category: string; description: string; amount: number; incurred_on: string; deduct_month?: string; rolled?: boolean; reference: string | null; task_kind: string | null }
 export interface AdjustmentRow { id: string; owner_id: string; unit_id: string | null; kind: string; amount: number; description: string; occurred_on: string; reference: string | null; state: string; statement_id: string | null }
 
 export interface Terms {
@@ -171,6 +171,9 @@ function daysCovered(month: string, from: string | null, to: string | null) {
   return nightsInWindow(a, toEx < endEx ? toEx : endEx, start, endEx);
 }
 
+/** The statement month that takes a cost: its deduction month, or the month of its date for a cost built without one. */
+export const deductMonthOf = (c: Pick<CostRow, 'deduct_month' | 'incurred_on'>) => c.deduct_month ?? c.incurred_on.slice(0, 7);
+
 /** A cost's statement line: its description, and "(late bill)" when it is deducted after its own month. */
 export function costLabel(c: Pick<CostRow, 'description' | 'category' | 'rolled'>): string {
   const text = c.description || c.category;
@@ -264,7 +267,7 @@ export function computeUnitMonth(month: string, unit: UnitRow, terms: Terms, sta
 
   // Deductions, by the workbook's rows.
   // A master lease deducts nothing from the owner: every cost of the unit is the company's.
-  const myCosts = terms.basis === 'none' ? [] : costs.filter(c => c.unit_id === unit.id && c.deduct_month === month).sort((a, b) => a.incurred_on.localeCompare(b.incurred_on));
+  const myCosts = terms.basis === 'none' ? [] : costs.filter(c => c.unit_id === unit.id && deductMonthOf(c) === month).sort((a, b) => a.incurred_on.localeCompare(b.incurred_on));
   const occupancy = nights / days;
   // RM 100 (the setting) times the occupancy rate, never more than the RM 100 (staff sheet UNIT, 26 Oct 2026).
   const miscExact = terms.miscCharges && terms.basis === 'share' ? miscMonthly * Math.min(1, occupancy) : 0;
@@ -492,7 +495,7 @@ export function computeMonth(month: string, inputs: Inputs, settings: { defaultF
   for (const u of inputs.units) { const l = byOwner.get(u.owner_id); if (l) l.push(u); else byOwner.set(u.owner_id, [u]); }
   const start = `${month}-01`, endEx = monthEndExclusive(month);
   const stays = inputs.stays.filter(s => s.check_in < endEx && s.check_out > start);
-  const costs = inputs.costs.filter(c => c.deduct_month === month);
+  const costs = inputs.costs.filter(c => deductMonthOf(c) === month);
   const out: UnitMonth[] = [];
   for (const [ownerId, units] of byOwner) {
     const asOf = units.map(u => unitForMonth(u, month));

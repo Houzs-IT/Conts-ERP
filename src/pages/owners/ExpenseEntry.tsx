@@ -47,7 +47,7 @@ interface UtilityRow {
   /** The statement that deducts the bill entered here: a later month when it came after its own month was final. */
   deductMonth?: string | null; rolled?: boolean;
 }
-interface BareUnit { unitId: string; unitLabel: string; recorded?: { kind: string; kindLabel: string; amount: number }[] }
+interface BareUnit { unitId: string; unitLabel: string; recorded?: { kind: string; kindLabel: string; amount: number; deductMonth?: string; rolled?: boolean }[] }
 /** A bill typed for a unit with no account number on file: recorded with no reference (POST rows with unitId + kind). */
 interface LooseLine { key: string; unitId: string; kind: string; amount: number | null; payer: string; file: File | null }
 
@@ -119,7 +119,7 @@ export function UtilitiesModal({ ownerId, unitId, month: initial, onClose, onSav
       });
       const skipped = r.locked.length + r.recordedElsewhere.length;
       const late = r.rolled ?? [];
-      const lateNote = late.length ? `${late.length} ${late.length === 1 ? 'goes' : 'go'} on the ${[...new Set(late.map(x => monthLabel(x.deductMonth)))].join(' or ')} statement as late ${late.length === 1 ? 'bill' : 'bills'}. ` : '';
+      const lateNote = late.length ? `${late.length} ${late.length === 1 ? 'goes' : 'go'} on the ${[...new Set(late.map(x => monthLabel(x.deductMonth)))].join(' or ')} statement as ${late.length === 1 ? 'a late bill' : 'late bills'}. ` : '';
       toast({ tone: skipped ? 'warning' : 'success', title: `${r.saved} ${r.saved === 1 ? 'bill' : 'bills'} recorded for ${monthLabel(month)}.`,
         body: skipped || late.length ? `${lateNote}${r.locked.length ? `${r.locked.length} skipped: already on a final statement. ` : ''}${r.recordedElsewhere.length ? `${r.recordedElsewhere.length} already recorded another way.` : ''}`.trim() : 'Owner-paid bills go on the owner statement with their receipts.' });
       onSaved(); onClose();
@@ -250,7 +250,7 @@ function NoAccountUnits({ units, lines, setLines, errors, onAdded }: {
                 <span className="text-copy font-medium truncate" title={u.unitLabel}>{titleCase(u.unitLabel)}</span>
                 <span className="text-meta text-muted-ink">
                   No account on file, a bill can still go in.
-                  {(u.recorded ?? []).length > 0 && ` Already recorded this month: ${u.recorded!.map(x => `${kindLabel(x.kind)} ${rm(x.amount)}`).join(', ')}.`}
+                  {(u.recorded ?? []).length > 0 && ` Already recorded this month: ${u.recorded!.map(x => `${kindLabel(x.kind)} ${rm(x.amount)}${x.rolled && x.deductMonth ? ` (deducted ${monthLabel(x.deductMonth)})` : ''}`).join(', ')}.`}
                 </span>
               </span>
               {mine.map(l => {

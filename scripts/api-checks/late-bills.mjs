@@ -17,9 +17,11 @@ const db = async (text, ...values) => {
 const next = (ym, n = 1) => { const [y, m] = ym.split('-').map(Number); const d = new Date(Date.UTC(y, m - 1 + n, 1)); return d.toISOString().slice(0, 7); };
 
 // A unit sharing its profit (its statement lists every deduction; a unit with no contract takes the default operator
-// share) and three months its owner has no statement for.
+// share), with no utility account numbers on file (its bills go in by unit and kind), and three months its owner has
+// no statement for.
 const units = await db(`SELECT u.id, u.owner_id FROM units u LEFT JOIN owner_contracts c ON c.id = u.contract_id
-  WHERE u.parent_unit_id IS NULL AND coalesce(c.model, 'management') IN ('management','management_guarantee') ORDER BY u.id`);
+  WHERE u.parent_unit_id IS NULL AND coalesce(c.model, 'management') IN ('management','management_guarantee')
+    AND NOT EXISTS (SELECT 1 FROM unit_utility_accounts a WHERE a.unit_id = u.id) ORDER BY u.id`);
 let unit, m1;
 for (const u of units) {
   const taken = new Set((await db(`SELECT substr(period_start, 1, 7) AS m FROM owner_statements WHERE owner_id = $1`, u.owner_id)).map(x => x.m));
@@ -70,6 +72,14 @@ check('a water bill for a final month is saved', r.status === 201 && r.json?.sav
 check('the save says which month deducts it', JSON.stringify(r.json ?? {}).includes(m2), r.text);
 const [late] = await db(`SELECT id, incurred_on, deduct_month, rolled FROM expenses WHERE unit_id = $1 AND category = 'water' AND incurred_on LIKE $2`, unit.id, `${m1}%`);
 check('it keeps its own month and rolls its deduction', late?.deduct_month === m2 && late?.rolled === true, JSON.stringify(late));
+// The m2 draft was made before the bill came: finalising it as it stands would leave the bill on no statement.
+r = await call('POST', '/api/statements/finalise', { statementIds: [(await statementFor(m2)).id] });
+check('a draft made before a late bill came is not finalised', r.status === 200 && r.json?.finalised === 0 && /generate/i.test(JSON.stringify(r.json?.failed ?? [])), r.text);
+// The owner's cost screens agree with the statement: the bill counts where it is deducted.
+const deducted = async (month) => (await call('GET', `/api/expenses/breakdown?month=${month}&unitId=${unit.id}`)).json?.units?.[0]?.totals?.deducted ?? null;
+const pnlCosts = async (month) => (await call('GET', `/api/owners/${unit.owner_id}/pnl?month=${month}`)).json?.units?.find(u => u.unitId === unit.id)?.expensesTotal ?? null;
+check('the costs screen counts it in the month that deducts it', (await deducted(m2)) >= 4500 && (await deducted(m1)) < 4500, `${await deducted(m1)} / ${await deducted(m2)}`);
+check('so does the owner P&L', (await pnlCosts(m2)) >= 4500 && (await pnlCosts(m1)) < 4500, `${await pnlCosts(m1)} / ${await pnlCosts(m2)}`);
 await generate(m2);
 const lateLine = (await linesOf(m2)).find(l => l.expenseId === late?.id);
 check('the next statement deducts it as a late bill', /\(late bill\)$/.test(lateLine?.description ?? ''), JSON.stringify(lateLine));
@@ -100,4 +110,14 @@ await db(`INSERT INTO expenses (id, unit_id, category, description, amount, curr
   VALUES ($1, $2, 'electricity', 'Electricity backfill', 7777, 'MYR', $3, $4, 'owner', true, now())`, ro, unit.id, `${m3}-28`, m3);
 await generate(m3);
 check('a record-only bill is on no statement', !(await linesOf(m3)).some(l => l.expenseId === ro));
+check('nor counted as deducted on the costs screen', (await deducted(m3)) < 7777, String(await deducted(m3)));
+
+// ── A rolled bill changed to another category stays with the statement that deducts it ──
+const moved = randomUUID();
+await db(`INSERT INTO expenses (id, unit_id, category, description, amount, currency, incurred_on, deduct_month, rolled, charge_to, created_at)
+  VALUES ($1, $2, 'internet', 'Wi-Fi late', 5000, 'MYR', $3, $4, true, 'owner', now())`, moved, unit.id, `${m1}-20`, m3);
+r = await call('PATCH', `/api/expenses/${moved}`, { category: 'other' });
+check('a rolled bill can change category while its statement is open', r.status === 200, r.text);
+r = await call('PATCH', `/api/expenses/${moved}`, { amount: 5100 });
+check('and is still editable after that', r.status === 200, r.text);
 done();

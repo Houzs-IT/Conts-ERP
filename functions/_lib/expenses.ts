@@ -21,12 +21,11 @@ export const CHARGE_TO = ['owner', 'the_conts', 'tenant', 'guest_deposit', 'warr
 export const UTILITY_KINDS = ['electricity', 'water', 'internet', 'sewerage'];
 export const isUtility = (category: string | null | undefined) => UTILITY_KINDS.includes(String(category ?? ''));
 
-/** SQL: true when the expense can no longer change: the owner statement that deducts it is finalised, sent or paid.
- *  That is the statement for its deduction month for a utility bill, and for its date for anything else.
- *  Alias `e` is the expense and `u` its unit. */
+/** SQL: true when the expense can no longer change: the owner statement that deducts it (its deduction month: the
+ *  month of its date, or a later one for a utility bill that came after its month was final) is finalised, sent or
+ *  paid. Alias `e` is the expense and `u` its unit. */
 export const LOCKED_SQL = `EXISTS (SELECT 1 FROM owner_statements s WHERE s.owner_id = u.owner_id AND s.state IN ('finalised','sent','paid')
-   AND (CASE WHEN e.category IN ('electricity','water','internet','sewerage') THEN e.deduct_month || '-01' ELSE e.incurred_on END) >= s.period_start
-   AND (CASE WHEN e.category IN ('electricity','water','internet','sewerage') THEN e.deduct_month || '-01' ELSE e.incurred_on END) <= s.period_end)`;
+   AND e.deduct_month || '-01' >= s.period_start AND e.deduct_month || '-01' <= s.period_end)`;
 
 /** For each unit, the YYYY-MM months from `fromMonth` on whose owner statement is final. */
 export async function finalMonthsFor(env: Env, unitIds: string[], fromMonth: string): Promise<Map<string, Set<string>>> {
@@ -48,8 +47,8 @@ export async function utilityDeduction(env: Env, unitId: string, date: string): 
 }
 
 /** Is this expense on (or due on) a statement that is final? See LOCKED_SQL. */
-export async function isExpenseLocked(env: Env, e: { unit_id: string; category: string; incurred_on: string; deduct_month: string }): Promise<boolean> {
-  return isPeriodLocked(env, e.unit_id, isUtility(e.category) ? `${e.deduct_month}-01` : e.incurred_on);
+export async function isExpenseLocked(env: Env, e: { unit_id: string; deduct_month: string }): Promise<boolean> {
+  return isPeriodLocked(env, e.unit_id, `${e.deduct_month}-01`);
 }
 
 /** Is a new or changed expense on this unit and date inside a statement that is already final? */

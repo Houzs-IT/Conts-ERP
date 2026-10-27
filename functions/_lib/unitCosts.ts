@@ -81,6 +81,8 @@ export interface CostItem {
   id: string; unitId: string; unitLabel: string; kind: string; kindLabel: string; group: CostGroup; category: string; description: string;
   amount: number; chargeTo: string; incurredOn: string; reference: string | null; receiptDocumentId: string | null; locked: boolean;
   source: CostSource; taskId: string | null; maintenanceId: string | null;
+  /** The statement month that deducts it (later than its date for a late utility bill); record-only bills are on none. */
+  deductMonth: string; rolled: boolean; recordOnly: boolean;
 }
 export interface AdjustmentItem {
   id: string; unitId: string; unitLabel: string; placedOnFirstUnit: boolean; kind: string; amount: number; description: string; isMaintenanceFee: boolean;
@@ -97,11 +99,14 @@ export async function unitCosts(env: Env, month: string, scope: { unitId?: strin
   const ownerIds = JSON.stringify([...new Set(units.map(u => u.owner_id))]);
   const [expenses, adjustments, cleans] = await Promise.all([
     all<any>(env, `
-      SELECT e.id, e.unit_id, e.category, e.description, e.amount, e.incurred_on, e.charge_to, e.reference, e.maintenance_id, e.task_id, e.receipt_document_id,
-             ${LOCKED_SQL} AS locked
+      SELECT e.id, e.unit_id, e.category, e.description, e.amount, e.incurred_on, e.deduct_month, e.rolled, e.record_only, e.charge_to, e.reference,
+             e.maintenance_id, e.task_id, e.receipt_document_id, ${LOCKED_SQL} AS locked
       FROM expenses e JOIN units u ON u.id = e.unit_id
-      WHERE e.unit_id IN (SELECT jsonb_array_elements_text(?::text::jsonb)) AND e.incurred_on >= ? AND e.incurred_on < ?
-      ORDER BY e.incurred_on, e.created_at`, ids, from, toEx),
+      -- What the owner is charged belongs to the month whose statement deducts it (a late utility bill: the next open
+      -- one); the rest, and record-only bills, to the month of their date.
+      WHERE e.unit_id IN (SELECT jsonb_array_elements_text(?::text::jsonb))
+        AND CASE WHEN e.charge_to = 'owner' AND NOT e.record_only THEN e.deduct_month = substr(?, 1, 7) ELSE e.incurred_on >= ? AND e.incurred_on < ? END
+      ORDER BY e.incurred_on, e.created_at`, ids, from, from, toEx),
     // Dated in the month, plus any still waiting for a statement: held ones, and open ones no statement carries yet.
     all<any>(env, `
       SELECT a.id, a.owner_id, a.unit_id, a.kind, a.amount, a.description, a.occurred_on, a.reference, a.state, a.source,
@@ -134,7 +139,8 @@ export async function unitCosts(env: Env, month: string, scope: { unitId?: strin
     const k = KIND.get(kindOf(e))!;
     return {
       id: e.id, unitId: e.unit_id, unitLabel: label(byId.get(e.unit_id)), kind: k.key, kindLabel: k.label, group: k.group, category: e.category,
-      description: e.description ?? '', amount: Number(e.amount), chargeTo: e.charge_to, incurredOn: String(e.incurred_on).slice(0, 10),
+      description: e.description ?? '', amount: Number(e.amount), chargeTo: e.charge_to, recordOnly: !!e.record_only, incurredOn: String(e.incurred_on).slice(0, 10),
+      deductMonth: e.deduct_month, rolled: !!e.rolled,
       reference: e.reference ?? null, receiptDocumentId: e.receipt_document_id ?? null, locked: !!e.locked,
       source: sourceOf(e, k.key), taskId: e.task_id ?? null, maintenanceId: e.maintenance_id ?? null,
     };
@@ -167,7 +173,7 @@ export async function unitCosts(env: Env, month: string, scope: { unitId?: strin
   for (const u of units) bucket(u.id);
   const add = (b: typeof all_, it: CostItem) => {
     const k = b.kinds.get(it.kind) ?? { owner: 0, others: 0 };
-    if (it.chargeTo === 'owner') {
+    if (it.chargeTo === 'owner' && !it.recordOnly) {
       k.owner += it.amount; b.totals.deducted += it.amount;
       b.totals[TOTAL_OF[it.group]] += it.amount;
     } else { k.others += it.amount; b.totals.notCharged += it.amount; }
