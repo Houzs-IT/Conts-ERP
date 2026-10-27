@@ -1,0 +1,46 @@
+# One-off (owner, 26 Oct 2026): the renovation SOs kept as PDFs in Notion become engine contracts
+# (engine/backend/scripts/so-notion-import.mts, docs/so-import). The production database is reachable only through
+# the PROD_DB_URL secret. Manual only. "dry-run" checks SKUs and projects and prints the plan; "apply" also needs the
+# production project ref typed into confirm_ref. Safe to run again: imported projects are skipped. Delete this file
+# once the import is done.
+name: Notion SO import (one-off)
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: dry-run or apply
+        required: true
+        default: dry-run
+        type: choice
+        options: [dry-run, apply]
+      confirm_ref:
+        description: production project ref, required for apply
+        required: false
+        default: ''
+permissions:
+  contents: read
+concurrency: so-notion-import
+jobs:
+  import:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: engine/backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --no-audit --no-fund
+      - name: Run the import
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DB_URL }}
+          MODE: ${{ inputs.mode }}
+          CONFIRM_REF: ${{ inputs.confirm_ref }}
+        run: |
+          if [ "$MODE" = "apply" ]; then
+            npx tsx scripts/so-notion-import.mts --confirm-ref="$CONFIRM_REF"
+          else
+            npx tsx scripts/so-notion-import.mts --dry-run
+          fi

@@ -1,5 +1,6 @@
-import { type CSSProperties, useEffect, useMemo, useRef, useState } from 'react';
-import { color, shell, radius, motion, text } from '../theme';
+import { type CSSProperties, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { flushSync } from 'react-dom';
+import { color, dcGlass, shell, radius, motion, text } from '../theme';
 import { groupName, navFor, withoutOffItems, workspaceOf, WORKSPACE_LABEL, type BadgeKey, type NavGroup, type Workspace } from '../lib/navigation';
 import { useApi } from '../lib/useApi';
 import { useSession } from '../lib/session';
@@ -19,6 +20,105 @@ interface Props { path: string; navigate: (p: string) => void; open: boolean; on
 const WS_KEY = 'conts.shell.workspace';
 export const readWs = (): Workspace => { try { return localStorage.getItem(WS_KEY) === 'supply' ? 'supply' : 'rental'; } catch { return 'rental'; } };
 export const saveWs = (w: Workspace) => { try { localStorage.setItem(WS_KEY, w); } catch { /* not kept */ } };
+
+/** Whether the dark theme is on. theme.ts writes data-theme on <html>, and the top bar's switch changes it at any time. */
+const subscribeTheme = (onChange: () => void): (() => void) => {
+  const mo = new MutationObserver(onChange);
+  mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  return () => mo.disconnect();
+};
+export const useDarkTheme = (): boolean =>
+  useSyncExternalStore(subscribeTheme, () => document.documentElement.dataset.theme === 'theconts-dark');
+
+export type SidebarLookKey = 'conts' | 'dcLight' | 'dcDark';
+
+/** Every colour the menu paints, per skin. */
+export interface SidebarLook {
+  /** The column behind the menu. */
+  shellBg: string;
+  /** The glass card the menu sits on (Dream Crafter only); null keeps the plain column. */
+  card: CSSProperties | null;
+  textOn: string; text: string; muted: string; faint: string;
+  /** Hairlines under the logo and above the account button. */
+  line: string;
+  activeBg: string; activeShadow: string; childOnBg: string; childOnShadow: string;
+  badgeBg: string; badgeOnBg: string; badgeInk: string; badgeOnInk: string;
+  /** The rule beside open sub-items, and the group hairlines on the rail. */
+  rule: string; divider: string;
+  /** The faint fill of the rail's expand button and the open account button. */
+  wash: string;
+  track: string; tabOnBg: string; tabOnBorder: string; tabOnInk: string;
+  /** Left unset where none is wanted, so theme-dark.css can still ring The Conts tab. */
+  tabOnShadow?: string;
+  railSwitchInk: string; dot: string; dotRing: string; avatarBg: string; avatarInk: string;
+  /** The logo's light-on-dark artwork. */
+  onDark: boolean;
+  /** Icons on a tile, as in the glass designs; null draws them bare. */
+  tile: { background: string; boxShadow: string } | null;
+  itemH: number;
+  /** The selected item's weight; undefined leaves it as the menu's own. */
+  weightOn?: number;
+}
+
+const GLASS_SHAPE: CSSProperties = { backdropFilter: 'blur(30px) saturate(1.6)', WebkitBackdropFilter: 'blur(30px) saturate(1.6)' };
+
+/** conts is the black sidebar as it always was. The Dream Crafter workspace takes the glass look of the Project
+ *  Workspace designs: v10 "Vision" in the light theme, v13 "Night Glass" in the dark one (PLAN-dc-sidebar.md). */
+export const LOOKS: Record<SidebarLookKey, SidebarLook> = {
+  conts: {
+    shellBg: color.black, card: null,
+    textOn: 'var(--color-text-inverse)', text: color.onDark, muted: color.dim, faint: color.faint, line: color.charcoal,
+    activeBg: color.charcoal, activeShadow: `inset 2px 0 0 ${color.gold}`,
+    // The same gold bar as a top-level item: the tint alone was too faint to find.
+    childOnBg: 'rgba(200,164,106,0.14)', childOnShadow: `inset 2px 0 0 ${color.gold}`,
+    // Badge text uses the menu's own text colours: gold and dim on these washes fell under 4.5:1.
+    badgeBg: 'rgba(255,255,255,0.08)', badgeOnBg: 'rgba(200,164,106,0.18)', badgeInk: color.onDark, badgeOnInk: 'var(--color-text-inverse)',
+    rule: 'rgba(255,255,255,0.12)', divider: 'rgba(255,255,255,0.1)', wash: 'rgba(255,255,255,0.06)',
+    track: color.charcoal, tabOnBg: color.black, tabOnBorder: color.gold, tabOnInk: 'var(--color-text-inverse)',
+    railSwitchInk: color.gold, dot: color.gold, dotRing: color.black, avatarBg: color.charcoal, avatarInk: color.gold,
+    onDark: true, tile: null, itemH: shell.navItem,
+  },
+  dcLight: {
+    shellBg: dcGlass.light.backdrop,
+    card: {
+      ...GLASS_SHAPE,
+      background: 'linear-gradient(180deg,rgba(255,255,255,.86),rgba(244,246,251,.62))',
+      border: '1px solid rgba(255,255,255,.8)',
+      boxShadow: 'inset 0 1px 0 rgba(255,255,255,1),inset 0 0 0 1px rgba(255,255,255,.35),inset 0 -10px 24px rgba(120,150,255,.08),'
+        + '0 0 0 1px rgba(120,150,255,.14),0 0 40px -12px rgba(110,160,255,.45),0 30px 60px -24px rgba(60,80,160,.35)',
+    },
+    textOn: dcGlass.light.ink, text: dcGlass.light.text, muted: dcGlass.light.muted, faint: dcGlass.light.faint, line: 'rgba(17,18,22,.08)',
+    activeBg: dcGlass.light.surface, activeShadow: '0 0 0 1px rgba(255,255,255,.7),0 6px 14px -8px rgba(60,80,160,.35)',
+    childOnBg: 'rgba(255,255,255,.75)', childOnShadow: '0 0 0 1px rgba(255,255,255,.7)',
+    badgeBg: 'rgba(17,18,22,.06)', badgeOnBg: 'rgba(17,18,22,.08)', badgeInk: dcGlass.light.ink, badgeOnInk: dcGlass.light.ink,
+    rule: 'rgba(17,18,22,.12)', divider: 'rgba(17,18,22,.08)', wash: 'rgba(17,18,22,.05)',
+    track: 'rgba(17,18,22,.06)', tabOnBg: dcGlass.light.surface, tabOnBorder: 'rgba(255,255,255,.9)', tabOnInk: dcGlass.light.ink, tabOnShadow: '0 4px 10px -6px rgba(60,80,160,.35)',
+    railSwitchInk: dcGlass.light.ink, dot: dcGlass.light.accent, dotRing: dcGlass.light.surface, avatarBg: dcGlass.light.ink, avatarInk: dcGlass.light.surface,
+    onDark: false, tile: { background: 'rgba(255,255,255,.8)', boxShadow: '0 3px 6px -2px rgba(90,105,150,.22)' }, itemH: 38, weightOn: 600,
+  },
+  dcDark: {
+    shellBg: dcGlass.dark.backdrop,
+    card: {
+      ...GLASS_SHAPE,
+      background: 'linear-gradient(180deg,rgba(255,255,255,.085),rgba(255,255,255,.025))',
+      border: '1px solid rgba(150,175,255,.24)',
+      boxShadow: 'inset 0 1px 0 rgba(255,255,255,.18),inset 0 0 0 1px rgba(255,255,255,.04),inset 0 -10px 24px rgba(120,150,255,.08),'
+        + '0 0 0 1px rgba(120,150,255,.14),0 0 40px -10px rgba(80,130,255,.35),0 30px 60px -24px rgba(0,0,0,.6)',
+    },
+    textOn: dcGlass.dark.ink, text: dcGlass.dark.text, muted: dcGlass.dark.muted, faint: dcGlass.dark.faint, line: 'rgba(150,175,255,.14)',
+    activeBg: 'rgba(255,255,255,.08)', activeShadow: '0 0 0 1px rgba(150,175,255,.18)',
+    childOnBg: 'rgba(255,255,255,.06)', childOnShadow: '0 0 0 1px rgba(150,175,255,.14)',
+    badgeBg: 'rgba(150,175,255,.16)', badgeOnBg: 'rgba(150,175,255,.24)', badgeInk: dcGlass.dark.ink, badgeOnInk: dcGlass.dark.ink,
+    rule: 'rgba(150,175,255,.18)', divider: 'rgba(150,175,255,.14)', wash: 'rgba(255,255,255,.06)',
+    track: 'rgba(255,255,255,.05)', tabOnBg: 'rgba(255,255,255,.1)', tabOnBorder: 'rgba(150,175,255,.3)', tabOnInk: dcGlass.dark.ink,
+    railSwitchInk: dcGlass.dark.accent, dot: dcGlass.dark.accent, dotRing: dcGlass.dark.base, avatarBg: 'rgba(120,160,255,.28)', avatarInk: dcGlass.dark.surface,
+    onDark: true, tile: { background: 'rgba(255,255,255,.06)', boxShadow: 'inset 0 0 0 1px rgba(150,175,255,.12)' }, itemH: 38, weightOn: 600,
+  },
+};
+
+/** Which skin the menu wears: the glass one only on the Dream Crafter side. */
+export const sidebarLookKey = (dreamCrafter: boolean, dark: boolean): SidebarLookKey =>
+  dreamCrafter ? (dark ? 'dcDark' : 'dcLight') : 'conts';
 
 function parentOf(groups: NavGroup[], path: string) {
   for (const g of groups) for (const it of g.items)
@@ -70,14 +170,25 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
   useEffect(() => { const w = workspaceOf(path); if (w) { setWs(w); saveWs(w); } }, [path]);
   useEffect(() => rememberPage(path), [path]);
   const pick = (w: Workspace) => {
-    setWs(w); saveWs(w);
+    saveWs(w);
     const first = all.find(g => g.workspace === w)?.items[0];
     const target = first?.path ?? first?.children?.[0]?.path;
-    if (target && workspaceOf(path) !== w) navigate(target);
+    const swap = () => {
+      flushSync(() => setWs(w));
+      if (target && workspaceOf(path) !== w) navigate(target);
+    };
+    // The two sides wear different skins, so the swap is one snapshot crossfade, as the theme switch does (lib/theme.ts).
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (w !== ws && document.startViewTransition && !reduce) document.startViewTransition(swap);
+    else swap();
   };
   const groups = all.filter(g => g.workspace === (hasSupply ? ws : 'rental'));
   // The supply chain workspace is Dream Crafter's side of the business, so its logo heads the menu there.
   const brand = hasSupply && ws === 'supply' ? 'dreamCrafter' : 'theConts';
+  const dark = useDarkTheme();
+  const lookKey = sidebarLookKey(brand === 'dreamCrafter', dark);
+  const look = LOOKS[lookKey];
+  const glass = look.card !== null;
   const activeParent = parentOf(groups, path);
   const selected = activeKey(groups, path);
 
@@ -108,42 +219,49 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
     return `${n} new`;
   };
 
-  // Badge text uses the menu's own text colours: gold and dim on these washes fell under 4.5:1.
   const badge = (on: boolean): CSSProperties => ({
     fontSize: text.micro, fontWeight: 600, padding: '1px 6px', borderRadius: radius.pill, flex: 'none', fontVariantNumeric: 'tabular-nums',
-    background: on ? 'rgba(200,164,106,0.18)' : 'rgba(255,255,255,0.08)',
-    color: on ? 'var(--color-text-inverse)' : color.onDark,
+    background: on ? look.badgeOnBg : look.badgeBg,
+    color: on ? look.badgeOnInk : look.badgeInk,
   });
 
   return (
-    <div data-print-hide data-sidebar style={{
-      width: open ? shell.sidebar : shell.sidebarCollapsed, flex: 'none', height: '100dvh',
-      display: 'flex', flexDirection: 'column', background: color.black, color: 'var(--color-text-inverse)',
+    <div data-print-hide data-sidebar data-look={lookKey} style={{
+      width: open ? shell.sidebar : shell.sidebarCollapsed, flex: 'none', height: '100dvh', boxSizing: 'border-box',
+      display: 'flex', flexDirection: 'column', background: look.shellBg, color: look.textOn,
+      // The glass card floats inside the column, so the backdrop shows round it.
+      padding: glass ? (open ? 12 : 8) : 0,
       transition: `width ${motion.standard} ${motion.ease}`,
     }}>
+      {/* The glass card on the Dream Crafter side; a plain column on The Conts side. It stacks above the page so the
+          account menu, which can reach past the rail, is not drawn under the content. */}
+      <div className={glass ? 'sidebar-glass' : undefined} style={{
+        flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column',
+        ...(look.card && { ...look.card, borderRadius: open ? 28 : 20, padding: open ? '6px 0 4px' : '4px 0', position: 'relative', zIndex: 1 }),
+      }}>
       {/* Expanded: logo then the collapse control on the right. Collapsed: the mark, and the expand control
           centred under it, both inside the 68px rail (it used to sit outside the rail and be clipped). */}
       <div style={{
-        padding: open ? '18px 12px 18px 16px' : '14px 0 10px', display: 'flex', flexDirection: open ? 'row' : 'column',
-        alignItems: 'center', gap: open ? 8 : 10, borderBottom: `1px solid ${color.charcoal}`,
+        padding: open ? (glass ? '14px 10px 6px 14px' : '18px 12px 18px 16px') : '14px 0 10px', display: 'flex', flexDirection: open ? 'row' : 'column',
+        alignItems: 'center', gap: open ? 8 : 10, borderBottom: glass ? 'none' : `1px solid ${look.line}`,
       }}>
         <div style={{ flex: open ? 1 : 'none', minWidth: 0, overflow: 'hidden' }}>
-          {open ? <Logo variant="full" size="sm" onDark product brand={brand} /> : <Logo variant="mark" size="sm" onDark brand={brand} />}
+          {open ? <Logo variant="full" size="sm" onDark={look.onDark} product brand={brand} /> : <Logo variant="mark" size="sm" onDark={look.onDark} brand={brand} />}
         </div>
         <button onClick={onToggle} aria-label={open ? 'Collapse navigation' : 'Expand navigation'} title={open ? 'Collapse navigation' : 'Expand navigation'}
-          style={{ width: 30, height: 30, flex: 'none', display: 'grid', placeItems: 'center', borderRadius: radius.sm, color: color.onDark, background: open ? 'none' : 'rgba(255,255,255,0.06)', border: 'none', cursor: 'pointer' }}>
+          style={{ width: 30, height: 30, flex: 'none', display: 'grid', placeItems: 'center', borderRadius: radius.sm, color: look.text, background: open ? 'none' : look.wash, border: 'none', cursor: 'pointer' }}>
           <Icon name={open ? 'PanelLeftClose' : 'PanelLeftOpen'} size="sm" />
         </button>
       </div>
 
       {hasSupply && (
         open ? (
-          <div role="tablist" aria-label="Workspace" style={{ margin: '12px 10px 0', padding: 3, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 3, borderRadius: radius.control, background: color.charcoal }}>
+          <div role="tablist" aria-label="Workspace" style={{ margin: '12px 10px 0', padding: 3, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 3, borderRadius: radius.control, background: look.track }}>
             {(['rental', 'supply'] as Workspace[]).map(w => (
               <button key={w} role="tab" aria-selected={ws === w} onClick={() => pick(w)}
                 // A real border, not a shadow, so high-contrast mode still shows which side is chosen.
-                style={{ height: 28, borderRadius: 6, border: `1px solid ${ws === w ? color.gold : 'transparent'}`, cursor: 'pointer', font: 'inherit', fontSize: text.meta, fontWeight: 500,
-                  background: ws === w ? color.black : 'transparent', color: ws === w ? 'var(--color-text-inverse)' : color.onDark }}>
+                style={{ height: 28, borderRadius: 6, border: `1px solid ${ws === w ? look.tabOnBorder : 'transparent'}`, cursor: 'pointer', font: 'inherit', fontSize: text.meta, fontWeight: 500,
+                  background: ws === w ? look.tabOnBg : 'transparent', color: ws === w ? look.tabOnInk : look.text, boxShadow: ws === w ? look.tabOnShadow : undefined }}>
                 {WORKSPACE_LABEL[w]}
               </button>
             ))}
@@ -151,7 +269,7 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
         ) : (
           <button onClick={() => pick(ws === 'rental' ? 'supply' : 'rental')} title={`Switch to ${WORKSPACE_LABEL[ws === 'rental' ? 'supply' : 'rental']}`}
             aria-label={`Workspace: ${WORKSPACE_LABEL[ws]}. Switch to ${WORKSPACE_LABEL[ws === 'rental' ? 'supply' : 'rental']}`}
-            style={{ margin: '10px auto 0', width: 40, height: 28, display: 'grid', placeItems: 'center', borderRadius: radius.sm, border: 'none', cursor: 'pointer', background: color.charcoal, color: color.gold }}>
+            style={{ margin: '10px auto 0', width: 40, height: 28, display: 'grid', placeItems: 'center', borderRadius: radius.sm, border: 'none', cursor: 'pointer', background: look.track, color: look.railSwitchInk }}>
             <Icon name={ws === 'rental' ? 'House' : 'Boxes'} size="sm" />
           </button>
         )
@@ -160,7 +278,7 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
       {/* Own scroller: the sidebar never rides the page scroll. Its bar is thin and dark and shows only while the
           menu is scrolling (.nav-scroll in tokens.css), never the grey browser bar with arrows. */}
       <nav aria-label={hasSupply ? WORKSPACE_LABEL[ws] : 'Main'} className={cx('nav-scroll', scrolling && 'is-scrolling')} onScroll={onNavScroll}
-        style={{ flex: 1, minHeight: 0, overflowY: 'auto', overscrollBehavior: 'contain', padding: open ? '12px 10px 20px' : '10px 10px 20px', display: 'flex', flexDirection: 'column', gap: open ? 14 : 6 }}>
+        style={{ flex: 1, minHeight: 0, overflowY: 'auto', overscrollBehavior: 'contain', padding: open ? '12px 10px 20px' : `10px ${glass ? 6 : 10}px 20px`, display: 'flex', flexDirection: 'column', gap: open ? 14 : 6 }}>
         {groups.map((g, gi) => {
           const sectionCollapsed = open && !!collapsedSections[g.label];
           return (
@@ -173,7 +291,7 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
                 style={{
                   display: 'flex', alignItems: 'center', gap: 6, width: '100%', padding: '6px 8px 4px',
                   background: 'none', border: 'none', cursor: 'pointer', font: 'inherit', textAlign: 'left',
-                  fontSize: text.micro, fontWeight: 600, letterSpacing: '0.13em', color: color.dim,
+                  fontSize: text.micro, fontWeight: 600, letterSpacing: '0.13em', color: look.muted,
                 }}
               >
                 <span style={{ flex: 1, minWidth: 0 }}>{g.label}</span>
@@ -183,7 +301,7 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
               </button>
             ) : gi > 0 && (
               // The rail keeps the group boundaries as hairlines.
-              <div aria-hidden style={{ height: 1, margin: '4px 8px 6px', background: 'rgba(255,255,255,0.1)' }} />
+              <div aria-hidden style={{ height: 1, margin: '4px 8px 6px', background: look.divider }} />
             )}
             {!sectionCollapsed && g.items.map(it => {
               const isOpen = open && (expanded[it.key] ?? activeParent === it.key);
@@ -205,22 +323,25 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
                       } else if (it.path) navigate(it.path);
                     }}
                     style={{
-                      position: 'relative', display: 'flex', alignItems: 'center', gap: 10, height: shell.navItem,
-                      padding: open ? '0 9px' : 0, justifyContent: open ? 'flex-start' : 'center',
-                      borderRadius: radius.control, cursor: 'pointer', border: 'none', width: '100%',
+                      position: 'relative', display: 'flex', alignItems: 'center', gap: 10, height: look.itemH,
+                      padding: open ? (look.tile ? '0 6px' : '0 9px') : 0, justifyContent: open ? 'flex-start' : 'center',
+                      borderRadius: look.tile ? 10 : radius.control, cursor: 'pointer', border: 'none', width: '100%',
                       font: 'inherit', textAlign: 'left',
                       transition: `background ${motion.fast} ease-out`,
-                      color: selfActive ? 'var(--color-text-inverse)' : color.onDark,
-                      background: selfActive ? color.charcoal : 'transparent',
-                      boxShadow: selfActive ? `inset 2px 0 0 ${color.gold}` : 'none',
+                      color: selfActive ? look.textOn : look.text,
+                      background: selfActive ? look.activeBg : 'transparent',
+                      boxShadow: selfActive ? look.activeShadow : 'none',
+                      fontWeight: selfActive ? look.weightOn : undefined,
                     }}
                   >
-                    <Icon name={toPascal(it.icon)} size="nav" />
+                    {look.tile
+                      ? <span aria-hidden style={{ width: 30, height: 30, flex: 'none', borderRadius: 9, display: 'grid', placeItems: 'center', ...look.tile }}><Icon name={toPascal(it.icon)} size="sm" /></span>
+                      : <Icon name={toPascal(it.icon)} size="nav" />}
                     {open && <span style={{ flex: 1, minWidth: 0, fontSize: text.copy, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.label}</span>}
                     {open && it.fresh && n === 0 && <span style={{ fontSize: text.micro, fontWeight: 700, padding: '1px 6px', borderRadius: radius.pill, flex: 'none', background: color.gold, color: color.black }}>New</span>}
                     {open && !it.children && n > 0 && <span style={badge(selfActive)}>{countLabel(n)}</span>}
                     {/* The rail shows a dot where the full menu shows a count. */}
-                    {!open && n > 0 && <span aria-hidden style={{ position: 'absolute', top: 6, right: 10, width: 7, height: 7, borderRadius: 999, background: color.gold, boxShadow: `0 0 0 2px ${color.black}` }} />}
+                    {!open && n > 0 && <span aria-hidden style={{ position: 'absolute', top: look.tile ? 4 : 6, right: look.tile ? 6 : 10, width: 7, height: 7, borderRadius: 999, background: look.dot, boxShadow: `0 0 0 2px ${look.dotRing}` }} />}
                     {open && it.children && (
                       <span style={{ display: 'flex', opacity: 0.6, transition: `transform 180ms ${motion.ease}`, transform: `rotate(${isOpen ? 90 : 0}deg)` }}>
                         <Icon name="ChevronRight" size="sm" />
@@ -229,7 +350,7 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
                   </button>
 
                   {isOpen && it.children && (
-                    <div style={{ margin: '2px 0 4px 20px', paddingLeft: 12, borderLeft: '1px solid rgba(255,255,255,0.12)', display: 'flex', flexDirection: 'column', gap: 1 }}>
+                    <div style={{ margin: `2px 0 4px ${look.tile ? 22 : 20}px`, paddingLeft: 12, borderLeft: `1px solid ${look.rule}`, display: 'flex', flexDirection: 'column', gap: 1 }}>
                       {it.children.map(c => {
                         const on = c.path === path;
                         return (
@@ -240,10 +361,9 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
                               display: 'flex', alignItems: 'center', gap: 8, height: shell.navItemL3,
                               padding: '0 9px', borderRadius: 7, cursor: 'pointer', border: 'none', width: '100%',
                               font: 'inherit', textAlign: 'left',
-                              color: on ? 'var(--color-text-inverse)' : color.faint,
-                              background: on ? 'rgba(200,164,106,0.14)' : 'transparent',
-                              // The same gold bar as a top-level item: the tint alone was too faint to find.
-                              boxShadow: on ? `inset 2px 0 0 ${color.gold}` : 'none',
+                              color: on ? look.textOn : look.faint,
+                              background: on ? look.childOnBg : 'transparent',
+                              boxShadow: on ? look.childOnShadow : 'none',
                               fontWeight: on ? 500 : 400,
                             }}>
                             <span style={{ flex: 1, minWidth: 0, fontSize: text.meta, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.label}</span>
@@ -261,7 +381,7 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
         })}
       </nav>
 
-      <div ref={profileRef} style={{ flex: 'none', padding: 10, borderTop: `1px solid ${color.charcoal}`, position: 'relative' }}>
+      <div ref={profileRef} style={{ flex: 'none', padding: 10, borderTop: `1px solid ${look.line}`, position: 'relative' }}>
         {profileOpen && (
           // .menu-sheet: the light-card hover and press washes in styles/hover.css.
           <div className="menu-sheet" style={{ position: 'absolute', left: 10, bottom: 62, width: Math.max(224, open ? shell.sidebar - 20 : 224), zIndex: 30, background: color.card, border: `1px solid ${color.border}`, borderRadius: radius.card, boxShadow: '0 12px 32px rgba(21,21,21,0.24)', overflow: 'hidden' }}>
@@ -287,18 +407,19 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
           </div>
         )}
         <button type="button" onClick={() => setProfileOpen(v => !v)} aria-label={`${user!.fullName}, account menu`} aria-expanded={profileOpen}
-          style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 8, borderRadius: radius.control, cursor: 'pointer', width: '100%', border: 'none', font: 'inherit', textAlign: 'left', justifyContent: open ? 'flex-start' : 'center', background: profileOpen ? 'rgba(255,255,255,0.06)' : 'transparent', color: 'var(--color-text-inverse)' }}>
-          <span style={{ width: 30, height: 30, flex: 'none', borderRadius: radius.pill, background: color.charcoal, color: color.gold, display: 'grid', placeItems: 'center', fontSize: text.micro, fontWeight: 600 }}>
+          style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 8, borderRadius: radius.control, cursor: 'pointer', width: '100%', border: 'none', font: 'inherit', textAlign: 'left', justifyContent: open ? 'flex-start' : 'center', background: profileOpen ? look.wash : 'transparent', color: look.textOn }}>
+          <span style={{ width: 30, height: 30, flex: 'none', borderRadius: radius.pill, background: look.avatarBg, color: look.avatarInk, display: 'grid', placeItems: 'center', fontSize: text.micro, fontWeight: 600 }}>
             {user!.fullName.split(' ').map(n => n[0]).slice(0, 2).join('')}
           </span>
           {open && (
             <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 }}>
               <span style={{ fontSize: text.copy, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{user!.fullName}</span>
-              <span style={{ fontSize: text.micro, color: color.dim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{jobTitle(user!)}</span>
+              <span style={{ fontSize: text.micro, color: look.muted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{jobTitle(user!)}</span>
             </span>
           )}
-          {open && <Icon name="ChevronUp" size="sm" color={color.dim} />}
+          {open && <Icon name="ChevronUp" size="sm" color={look.muted} />}
         </button>
+      </div>
       </div>
     </div>
   );

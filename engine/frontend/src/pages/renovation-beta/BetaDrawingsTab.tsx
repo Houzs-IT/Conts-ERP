@@ -20,7 +20,7 @@ import { downloadAsPdf, type PdfPart, type TitleBlock } from "./renovationBetaPd
 import { changedAgainst, removedSheetsOf, sheetSetAt, sheetsApi, sizeText, type BetaSheet, type SetSheet } from "./renovationBetaSheets";
 import { CompareDialog, LinkCards, RemovedList, SheetGrid, type SheetGridEdit } from "./BetaDrawingSheets";
 import { getBrandingCache } from "../../lib/branding";
-import { BETA } from "./renovationBetaTheme";
+import { BETA, TONES } from "./renovationBetaTheme";
 
 type DrawPick = "m" | DesignKind;
 type View = "waiting" | "approved" | "history";
@@ -399,7 +399,7 @@ function KindDetail({ kind, p, set, onEdit, onOpen, onUpload, sheets, sheetsRead
 
       {view === "approved" && approved && (
         <>
-          <div style={{ border: "1.5px solid #B7DCC3", background: "#F1F8F3", borderRadius: 10, padding: "14px 16px", display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+          <div style={{ border: `1.5px solid ${TONES.accent.line}`, background: TONES.accent.soft, borderRadius: 10, padding: "14px 16px", display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
             <div style={{ minWidth: 0 }}>
               <div style={{ fontWeight: 700, color: WS.green }}>Client approved · {dayMonth(approved.review?.approvedOn)}</div>
               <div style={{ fontSize: 13, color: WS.text2 }}>{approved.review?.approvedByName ? `Approved by ${approved.review.approvedByName}` : "Approval recorded"}</div>
@@ -413,7 +413,7 @@ function KindDetail({ kind, p, set, onEdit, onOpen, onUpload, sheets, sheetsRead
 
       {(view === "waiting" || view === "approved") && approved && is2d && (
         <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, padding: "12px 14px", borderRadius: 10, background: WS.tealSoft, border: `1.5px solid ${WS.tealLine}` }}>
-          <span style={{ padding: "4px 10px", borderRadius: 6, background: BETA.accent, color: "#FFFFFF", fontSize: 12, fontWeight: 600 }}>For site</span>
+          <span style={{ padding: "4px 10px", borderRadius: 999, background: TONES.accent.soft, color: TONES.accent.ink, fontSize: 12, fontWeight: 600 }}>For site</span>
           <div style={{ flex: "1 1 240px", minWidth: 0 }}>
             <div style={{ fontWeight: 700, overflowWrap: "anywhere" }}>{pdfName(approved)}</div>
             <div style={{ fontSize: 13, color: WS.text2 }}>
@@ -516,14 +516,14 @@ function WaitingView({ kind, v, p, busy, onEdit, onRemind, newSet, hasApproved }
   return (
     <>
       <ol aria-label={`How a ${kind.toUpperCase()} revision works`} style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
-        <li style={card("1px solid #CFE3D6", "#F3F9F5", 14)}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>{dot(WS.green, <WsCheck size={12} />)}<span style={{ fontWeight: 700 }}>1. {hasApproved ? `Changed ${word}s uploaded` : "Uploaded"}</span></div>
+        <li style={card(`1px solid ${TONES.accent.line}`, TONES.accent.soft, 14)}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>{dot(BETA.accentFill, <WsCheck size={12} />)}<span style={{ fontWeight: 700 }}>1. {hasApproved ? `Changed ${word}s uploaded` : "Uploaded"}</span></div>
           <div style={{ fontSize: 13, color: WS.text2, overflowWrap: "anywhere" }}>{dayMonth(submittedOf(v.file))} · {ownText}</div>
         </li>
-        <li aria-current="step" style={card("2px solid #E0A955", "#FFF6EA", 13)}>
+        <li aria-current="step" style={card(`2px solid ${TONES.amber.dot}`, TONES.amber.soft, 13)}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             {dot(WS.amberBtn, "2")}<span style={{ fontWeight: 700 }}>Client approves</span>
-            <span style={{ marginLeft: "auto" }}><WsBadge tone={[WS.amber, "#FBE3C2"]}>Now</WsBadge></span>
+            <span style={{ marginLeft: "auto" }}><WsBadge tone={[WS.amber, TONES.amber.strong]}>Now</WsBadge></span>
           </div>
           <div style={{ fontSize: 13, color: late ? WS.red : WS.text2, fontWeight: late ? 600 : 400 }}>
             {sentOn
@@ -547,7 +547,7 @@ function WaitingView({ kind, v, p, busy, onEdit, onRemind, newSet, hasApproved }
             </div>
           )}
         </li>
-        <li style={card(`1px solid ${BETA.line}`, "#FAFBFB", 14)}>
+        <li style={card(`1px solid ${BETA.line}`, BETA.head, 14)}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>{dot("transparent", "3", `2px solid ${BETA.border}`)}<span style={{ fontWeight: 700, color: WS.text2 }}>{is2d ? "Becomes the site set" : "Becomes the approved set"}</span></div>
           <div style={{ fontSize: 13, color: BETA.muted }}>
             {hasApproved && own.length

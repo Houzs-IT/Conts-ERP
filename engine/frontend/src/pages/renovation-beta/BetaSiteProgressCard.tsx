@@ -10,7 +10,7 @@ import type { BetaTabProps } from "./betaShared";
 import { dayMonth, renovationDays, siteTimeline, trimTimeline, type SiteStep } from "./renovationBetaModel";
 import { betaSiteApi } from "./renovationBetaSiteApi";
 import { photosByPo, progressDayText, siteStepsPlus, type SiteStepPlus } from "./renovationBetaSiteModel";
-import { BETA } from "./renovationBetaTheme";
+import { BETA, TONES } from "./renovationBetaTheme";
 
 /** The handover always closes the list (the mockup), saying so when its date is not set yet. */
 function withHandover(steps: SiteStep[]): SiteStep[] {
@@ -81,12 +81,12 @@ function SiteRow({ s, last, today, onPhotos }: { s: SiteStepPlus & { started?: b
   const started = s.state === "current" && s.started === true;
   const done = s.state === "done";
   const isLate = s.state === "late";
-  const ring = isLate ? "2px solid #E8A5A2" : `2px solid ${BETA.border}`;
+  const ring = isLate ? `2px solid ${TONES.red.line}` : `2px solid ${BETA.border}`;
   const extra = (
     <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: s.photos > 0 || s.waitsFor ? 4 : 0 }}>
-      {s.waitsFor && <span style={{ padding: "2px 8px", borderRadius: 6, background: "#FADCDA", color: WS.red, fontSize: 12, fontWeight: 600 }}>{s.waitsFor}</span>}
+      {s.waitsFor && <span style={{ padding: "2px 8px", borderRadius: 999, background: TONES.red.strong, color: WS.red, fontSize: 12, fontWeight: 600 }}>{s.waitsFor}</span>}
       {s.photos > 0 && (
-        <button type="button" onClick={onPhotos} style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 8px", borderRadius: 6, border: 0, background: WS.chip, color: WS.text2, font: "inherit", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+        <button type="button" onClick={onPhotos} style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 8px", borderRadius: 999, border: 0, background: WS.chip, color: WS.text2, font: "inherit", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
           <Camera size={12} aria-hidden="true" />{s.photos} photo{s.photos === 1 ? "" : "s"}
         </button>
       )}
@@ -99,22 +99,22 @@ function SiteRow({ s, last, today, onPhotos }: { s: SiteStepPlus & { started?: b
       </div>
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
         {done ? (
-          <span style={{ width: 18, height: 18, borderRadius: 9, background: BETA.accent, display: "flex", alignItems: "center", justifyContent: "center" }}><WsCheck size={10} stroke={3.5} /></span>
+          <span style={{ width: 18, height: 18, borderRadius: 9, background: BETA.accentFill, display: "flex", alignItems: "center", justifyContent: "center" }}><WsCheck size={10} stroke={3.5} /></span>
         ) : now ? (
-          <span style={{ width: 18, height: 18, borderRadius: 9, background: BETA.surface, border: `3px solid ${BETA.accent}` }} />
+          <span style={{ width: 18, height: 18, borderRadius: 9, background: BETA.surface, border: `3px solid ${TONES.accent.dot}` }} />
         ) : started ? (
-          <span style={{ width: 18, height: 18, borderRadius: 9, background: "#E4F1EF", border: `2px solid ${BETA.accent}` }} />
+          <span style={{ width: 18, height: 18, borderRadius: 9, background: TONES.accent.soft, border: `2px solid ${TONES.accent.dot}` }} />
         ) : s.state === "handover" ? (
           <span style={{ width: 18, height: 18, borderRadius: 4, background: BETA.ink }} />
         ) : (
           <span style={{ width: 18, height: 18, borderRadius: 9, background: BETA.surface, border: ring }} />
         )}
-        {!last && (done ? <span style={{ flex: 1, width: 2, background: BETA.accent }} /> : <span style={{ flex: 1, width: 0, borderLeft: `2px dashed ${BETA.border}` }} />)}
+        {!last && (done ? <span style={{ flex: 1, width: 2, background: TONES.accent.dot }} /> : <span style={{ flex: 1, width: 0, borderLeft: `2px dashed ${BETA.border}` }} />)}
       </div>
       {now ? (
-        <div style={{ marginBottom: last ? 0 : 14, padding: "10px 12px", borderRadius: 8, background: "#E4F1EF", minWidth: 0 }}>
+        <div style={{ marginBottom: last ? 0 : 14, padding: "10px 12px", borderRadius: 14, background: TONES.accent.soft, minWidth: 0 }}>
           <div style={{ fontWeight: 700, color: BETA.accentInk, overflowWrap: "anywhere" }}>{s.label}</div>
-          {s.sub && <div style={{ fontSize: 13, color: "#2B3533" }}>{s.sub}</div>}
+          {s.sub && <div style={{ fontSize: 13, color: BETA.text2 }}>{s.sub}</div>}
           {extra}
         </div>
       ) : (

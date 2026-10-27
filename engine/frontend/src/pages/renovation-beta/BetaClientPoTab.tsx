@@ -21,7 +21,7 @@ import { lineDocs, type LineDoc } from "./renovationBetaDocsModel";
 import { lineDates, lineLate, linesApi, type ManagedLine } from "./renovationBetaLines";
 import { dayMonthYear, whatsappLink } from "./renovationBetaModel";
 import { betaSiteApi, type SiteDelivery } from "./renovationBetaSiteApi";
-import { BETA } from "./renovationBetaTheme";
+import { BETA, TONES } from "./renovationBetaTheme";
 import { byArea, byCategory, clientLinkUrl, voPoApi, type ClientItem } from "./renovationBetaVoPo";
 
 /** The line's photos (uploaded on the order line, carried to its PO) and the SKU's catalog photos, as the client link
@@ -116,9 +116,9 @@ export function BetaClientPoTab(p: BetaTabProps): ReactElement {
           </thead>
           <tbody>
             {groups.map((g) => [
-              <tr key={g.key}><td colSpan={COLS} style={{ padding: "8px 10px", background: "#E1F1EE", borderLeft: `4px solid ${BETA.accent}`, color: BETA.accentInk, fontWeight: 700, fontSize: 15 }}>{g.label}</td></tr>,
+              <tr key={g.key}><td colSpan={COLS} style={{ padding: "8px 10px", background: TONES.accent.soft, borderLeft: `4px solid ${BETA.accent}`, color: BETA.accentInk, fontWeight: 700, fontSize: 15 }}>{g.label}</td></tr>,
               ...g.subs.flatMap((s) => [
-                ...(s.label ? [<tr key={s.key}><td colSpan={COLS} style={{ padding: "6px 10px 6px 28px", background: "#F3F9F8", borderLeft: "4px solid #A9CFCB", color: WS.text2, fontWeight: 600 }}>{s.label}</td></tr>] : []),
+                ...(s.label ? [<tr key={s.key}><td colSpan={COLS} style={{ padding: "6px 10px 6px 28px", background: BETA.tealSoft, borderLeft: `4px solid ${TONES.accent.line}`, color: WS.text2, fontWeight: 600 }}>{s.label}</td></tr>] : []),
                 ...s.items.map((i) => {
                   const r = rows.get(i.key);
                   return r ? <ItemRow key={i.key} r={r} view={view} openDoc={openDoc} /> : null;

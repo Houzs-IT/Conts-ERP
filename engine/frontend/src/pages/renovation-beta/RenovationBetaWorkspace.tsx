@@ -22,7 +22,7 @@ import { BetaTimelineTab } from "./BetaTimelineTab";
 import { BetaVoTab } from "./BetaVoTab";
 import { BetaDialogs, type BetaDialog } from "./BetaForms";
 import { BetaWsHeader, BetaWsStepper } from "./BetaWsHeader";
-import { WS, WsNotice, WsStyle } from "./BetaWsUi";
+import { BetaSkin, WS, WsNotice, WsStyle } from "./BetaWsUi";
 import type { BetaTabProps, BoardView } from "./betaShared";
 import { betaApi } from "./renovationBetaApi";
 import { projectView } from "./renovationBetaBoard";
@@ -36,7 +36,17 @@ function isNotFound(e: unknown): boolean {
   return typeof e === "object" && e !== null && "status" in e && (e as { status?: unknown }).status === 404;
 }
 
+/** The colours are set before anything else draws, so the loading line and an error already have them. */
 export function RenovationBetaWorkspace(): ReactElement {
+  return (
+    <>
+      <BetaSkin />
+      <WorkspaceScreen />
+    </>
+  );
+}
+
+function WorkspaceScreen(): ReactElement {
   const id = Number(useParams().id);
   const [params, setParams] = useSearchParams();
   const tab = tabFromParam(params.get("tab"));

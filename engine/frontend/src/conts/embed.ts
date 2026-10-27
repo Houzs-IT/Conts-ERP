@@ -55,7 +55,16 @@ const tellLocation = () => {
   try { window.parent.postMessage({ type: "conts:location", path: here() }, parentOrigin); } catch { /* no parent */ }
 };
 
-/** Follows Property OS's menu: { type: "conts:navigate", path } moves this app without reloading it.
+/** The Dream Crafter screens' look for the theme Property OS is in: its dark theme is the "night" skin, anything else
+ *  the light "vision" one. null when the message is not a theme the ERP can send. */
+export function betaSkinFor(theme: unknown): "night" | "vision" | null {
+  if (theme === "dark") return "night";
+  if (theme === "light") return "vision";
+  return null;
+}
+
+/** Follows Property OS's menu: { type: "conts:navigate", path } moves this app without reloading it, and
+ *  { type: "conts:theme", theme: "light" | "dark" } sets the Beta screens' look.
  *  Tells Property OS where it is after every move ({ type: "conts:location", path }), so its menu follows links
  *  inside these screens. */
 export function listenForContsNavigation(): void {
@@ -63,7 +72,14 @@ export function listenForContsNavigation(): void {
   window.addEventListener("message", (e: MessageEvent) => {
     if (!trusted(e.origin)) return;
     parentOrigin = e.origin;
-    const d = e.data as { type?: string; path?: string } | null;
+    const d = e.data as { type?: string; path?: string; theme?: unknown } | null;
+    // Property OS's light or dark theme: the Beta screens read it as data-beta-skin on <html> (renovationBetaTheme.ts).
+    // Opened on its own this app never hears it, so it stays light.
+    if (d?.type === "conts:theme") {
+      const skin = betaSkinFor(d.theme);
+      if (skin) document.documentElement.dataset.betaSkin = skin;
+      return;
+    }
     if (d?.type !== "conts:navigate" || typeof d.path !== "string" || !d.path.startsWith("/") || d.path.startsWith("//")) return;
     if (d.path !== here()) window.history.pushState(null, "", d.path);
     // Also on the same address: the phone screens keep the open record out of the address, so this takes them

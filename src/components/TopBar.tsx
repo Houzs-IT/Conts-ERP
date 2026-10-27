@@ -1,4 +1,6 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactElement, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
+import { LOOKS, sidebarLookKey, useDarkTheme } from './Sidebar';
 import { color, radius, text, shell, motion, shadow } from '../theme';
 import { findNav } from '../lib/navigation';
 import { useApi } from '../lib/useApi';
@@ -112,9 +114,34 @@ export default function TopBar({
   const counts = useNavCounts(path);
   const channelSync = counts?.channels;
 
+  /* The Beta screens wear the glass look of the Project Workspace designs (v10 light, v13 night): the bar floats as a
+     glass pill, as the designs draw their top bar. The colour tokens are re-set on the bar only, so the search box,
+     the theme switch and the bell follow it without changing anywhere else. The View as button keeps its amber: it
+     warns that the screen is being seen as someone else. */
+  const dc = !compact && path.startsWith('/beta');
+  const look = LOOKS[sidebarLookKey(true, useDarkTheme())];
+  const dcBar = {
+    flex: 'none', margin: '16px 24px 4px', padding: '8px 12px 8px 22px', display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'nowrap',
+    borderRadius: radius.pill, ...look.card, color: look.text,
+    '--color-card': look.wash, '--color-line': look.rule, '--color-ink': look.textOn,
+    '--color-muted-ink': look.muted, '--color-faint': look.faint, '--color-muted': look.wash,
+    // White on the bell's red count, in both themes (the dark theme's inverse text is near black).
+    '--color-text-inverse': look.avatarInk,
+  } as CSSProperties;
+  // The bell's panel: the same glass, with its rows left see-through and its text, lines and link in the glass colours.
+  const glassPanel = {
+    ...look.card,
+    '--color-card': 'transparent', '--color-gold-tint': look.wash, '--color-line': look.rule, '--color-line-soft': look.divider,
+    '--color-muted': look.wash, '--color-ink': look.textOn, '--color-ink-2': look.text, '--color-muted-ink': look.muted,
+    '--color-faint': look.faint, '--color-gold-ink': look.dot,
+  } as CSSProperties;
+  // The glass blur makes the bar the anchor of anything fixed inside it, so the search overlay goes to the page body.
+  const inBody = (overlay: ReactElement): ReactNode => (dc ? createPortal(overlay, document.body) : overlay);
+
   return (
     <div data-print-hide style={compact
       ? { flex: 'none', display: 'flex', alignItems: 'center', gap: 8 }
+      : dc ? dcBar
       : { flex: 'none', background: color.card, borderBottom: `1px solid ${color.border}`, padding: '14px 28px', display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' }}>
       {!compact && <nav aria-label="Breadcrumb" style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: '0 1 auto', overflow: 'hidden' }}>
         {(() => {
@@ -132,7 +159,7 @@ export default function TopBar({
         <button type="button" onClick={() => setSearchOpen(true)} aria-label="Search" aria-keyshortcuts="/"
           style={compact
             ? { width: ctl, height: ctl, flex: 'none', display: 'grid', placeItems: 'center', padding: 0, border: `1px solid ${color.border}`, borderRadius: radius.control, background: color.card, color: color.ink, cursor: 'pointer' }
-            : { display: 'flex', alignItems: 'center', gap: 8, height: shell.controlSm, padding: '0 12px', border: `1px solid ${color.border}`, borderRadius: radius.control, background: color.card, color: color.textMuted, flex: '0 1 260px', minWidth: 44, overflow: 'hidden', cursor: 'text', font: 'inherit', textAlign: 'left' }}>
+            : { display: 'flex', alignItems: 'center', gap: 8, height: shell.controlSm, padding: '0 12px', border: `1px solid ${color.border}`, borderRadius: dc ? radius.pill : radius.control, background: color.card, color: color.textMuted, flex: '0 1 260px', minWidth: 44, overflow: 'hidden', cursor: 'text', font: 'inherit', textAlign: 'left' }}>
           <Icon name="Search" size={compact ? 'nav' : 'sm'} />
           {!compact && <span style={{ fontSize: text.copy, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Search reservation ref, guest, unit</span>}
           {!compact && <span style={{ marginLeft: 'auto', fontSize: text.micro, color: color.faint, flex: 'none' }}>/</span>}
@@ -154,7 +181,7 @@ export default function TopBar({
 
         <ViewAs docked />
         <ThemeButton size={ctl} />
-        <NotificationBell path={path} navigate={go} size={ctl} />
+        <NotificationBell path={path} navigate={go} size={ctl} glass={dc ? glassPanel : undefined} />
 
         {action && (
           <button type="button" onClick={action.onClick} aria-label={action.label} title={compact ? action.label : undefined}
@@ -166,7 +193,7 @@ export default function TopBar({
       </div>
 
       {/* --------------------------- search overlay --------------------------- */}
-      {searchOpen && (
+      {searchOpen && inBody(
         <div onClick={closeSearch}
           style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(21,21,21,0.24)', display: 'flex', justifyContent: 'center', alignItems: 'flex-start', padding: compact ? '8px' : '12vh 16px 16px' }}>
           <div onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Search"

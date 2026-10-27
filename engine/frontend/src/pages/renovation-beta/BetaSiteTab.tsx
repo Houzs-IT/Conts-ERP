@@ -16,16 +16,16 @@ import { asMedia, betaMediaApi, type PhotoCategory } from "./renovationBetaMedia
 import {
   CATEGORY_CHIP, cardLine, clockOf, countBy, dayTitle, mediaCount, filterPhotos, photoAreas, photoFilters, photoTimeline, type PhotoCard, type PhotoFilter,
 } from "./renovationBetaPhotosModel";
-import { BETA, type BetaTone } from "./renovationBetaTheme";
+import { BETA, TONES, type BetaTone } from "./renovationBetaTheme";
 
 /* One accent per category, from the Beta palette: teal for the site team, blue for deliveries, amber for defects. */
 export const CATEGORY_TONE: Readonly<Record<PhotoCategory, BetaTone>> = {
-  progress: [BETA.accent, "#E4F1EF"],
-  do: [WS.blue, "#EEF2F1"],
-  gr: [WS.blue, "#EEF2F1"],
+  progress: [BETA.accent, TONES.accent.soft],
+  do: [WS.blue, TONES.grey.soft],
+  gr: [WS.blue, TONES.grey.soft],
   po: [WS.text2, WS.chip],
   measure: [WS.text2, WS.chip],
-  defect: [WS.amber, "#FDF1E2"],
+  defect: [WS.amber, TONES.amber.soft],
 };
 
 function CategoryChip({ c }: { c: PhotoCategory }): ReactElement {

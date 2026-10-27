@@ -24,7 +24,7 @@ import { betaSiteApi } from "./renovationBetaSiteApi";
 import { betaMediaApi } from "./renovationBetaMediaApi";
 import { PhotoUploadDialog, type UploadTarget } from "./BetaPhotoUpload";
 import { BetaSkuPicker } from "./BetaSkuPicker";
-import { BETA } from "./renovationBetaTheme";
+import { BETA, TONES } from "./renovationBetaTheme";
 import { voPoApi } from "./renovationBetaVoPo";
 import { LinePhotoThumbs, photoCount, type LinePhotoSet } from "./BetaLinePhotos";
 import {
@@ -34,17 +34,14 @@ import {
 } from "./renovationBetaLines";
 
 /** One colour per category band, in the mockup's spirit: [bar, band background, text]. */
-const BANDS: ReadonlyArray<readonly [string, string, string]> = [
-  ["#1A6B66", "#E1F1EE", "#0F4A46"],
-  ["#B4540A", "#FFF1E0", "#7A3906"],
-  ["#1F4E8C", "#E8F0FB", "#163A69"],
-  ["#7A3E9D", "#F3EAF8", "#552B6E"],
-  ["#2E7D32", "#E7F3E8", "#1E5420"],
-  ["#A12622", "#FBEAE9", "#741B18"],
-];
+const BAND_BARS = ["#1A6B66", "#B4540A", "#1F4E8C", "#7A3E9D", "#2E7D32", "#A12622"] as const;
+/* The band's tint and text are mixed from its bar colour, so the same six read on a light and a dark page. */
+const BANDS: ReadonlyArray<readonly [string, string, string]> = BAND_BARS.map((bar) => [
+  bar, `color-mix(in srgb, ${bar} 14%, transparent)`, `color-mix(in srgb, ${bar} 60%, ${BETA.ink})`,
+] as const);
 
-const EDIT_BG = "#FFF9DB";
-const EDIT_LINE = "#E9D77E";
+const EDIT_BG = TONES.amber.soft;
+const EDIT_LINE = TONES.amber.line;
 const editInput: CSSProperties = { ...inputStyle, minHeight: 30, height: 30, fontSize: 12.5, background: EDIT_BG, borderColor: EDIT_LINE, padding: "0 6px" };
 /* Below this width of the tab the table becomes stacked row cards: every column fits from here up (1280-1600px
    screens, 80% zoom included), and nothing is ever hidden or scrolled sideways. */
@@ -266,7 +263,7 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
       </WsStats>
 
       {d.pendingPoChanges.length > 0 && (
-        <div role="status" style={{ border: `1px solid #F0C98A`, background: "#FDF1E2", borderRadius: 10, padding: "10px 12px", display: "flex", flexDirection: "column", gap: 8 }}>
+        <div role="status" style={{ border: `1px solid ${TONES.amber.line}`, background: TONES.amber.soft, borderRadius: 10, padding: "10px 12px", display: "flex", flexDirection: "column", gap: 8 }}>
           {d.pendingPoChanges.map((c) => (
             <div key={c.id} style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", color: WS.amber, fontSize: 14 }}>
               <AlertTriangle size={16} aria-hidden="true" />
@@ -697,7 +694,7 @@ function grState(l: ManagedLine): "yes" | "part" | "no" | null {
 function LineRow(r: RowCtx): ReactElement {
   const touched = changed(r) !== null;
   return (
-    <tr style={{ opacity: r.l.goesTo === "client" ? 0.75 : 1, background: touched ? "#FFFDF0" : undefined }}>
+    <tr style={{ opacity: r.l.goesTo === "client" ? 0.75 : 1, background: touched ? TONES.amber.soft : undefined }}>
       <td style={{ ...cellStyle, paddingLeft: 12 }}><SkuCell {...r} /></td>
       <td style={cellStyle}><DescCell {...r} /></td>
       <td style={cellStyle}><VariantCell {...r} /></td>
@@ -719,7 +716,7 @@ function LineCard(r: RowCtx): ReactElement {
     <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}><span style={metaStyle}>{label}</span>{child}</div>
   );
   return (
-    <li style={{ padding: "10px 12px", borderBottom: `1px solid ${WS.rowLine}`, display: "flex", flexDirection: "column", gap: 8, opacity: r.l.goesTo === "client" ? 0.75 : 1, background: touched ? "#FFFDF0" : BETA.surface }}>
+    <li style={{ padding: "10px 12px", borderBottom: `1px solid ${WS.rowLine}`, display: "flex", flexDirection: "column", gap: 8, opacity: r.l.goesTo === "client" ? 0.75 : 1, background: touched ? TONES.amber.soft : BETA.surface }}>
       <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: 8, alignItems: "center" }}>
         <SkuCell {...r} />
         {r.finance && <AmountCell {...r} />}
@@ -745,7 +742,7 @@ function LineCard(r: RowCtx): ReactElement {
 function SaveResult({ posted, onClose }: { posted: PostedVo[]; onClose: () => void }): ReactElement {
   const ok = posted.every((x) => x.applied);
   return (
-    <div role="status" style={{ border: `1px solid ${ok ? "#B7DCC3" : "#E8A5A2"}`, background: ok ? "#E5F3EA" : "#FDF1F0", borderRadius: 10, padding: "10px 12px", fontSize: 14, display: "flex", gap: 8, alignItems: "flex-start" }}>
+    <div role="status" style={{ border: `1px solid ${ok ? TONES.accent.line : TONES.red.line}`, background: ok ? TONES.accent.soft : TONES.red.soft, borderRadius: 10, padding: "10px 12px", fontSize: 14, display: "flex", gap: 8, alignItems: "flex-start" }}>
       <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 4 }}>
         {posted.map((x) => (
           <div key={x.docNo}>
