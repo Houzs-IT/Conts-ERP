@@ -5,13 +5,14 @@
 
 import { useRef, useState, type ReactElement } from "react";
 import { prepareImageForUpload } from "../../lib/imagePipeline";
-import { errorText } from "../projects/renovation/renovationModel";
+import { addDays, errorText } from "../projects/renovation/renovationModel";
 import { peopleOptions, personLabel, usePeople } from "../projects/renovation/PersonSelect";
 import { simpleApi, type DesignFile, type NamedRef, type SiteMeasure } from "../projects/renovation/simpleApi";
 import { BetaModal, BetaPeoplePicker } from "./BetaForms";
 import { WS, WsField, inputStyle, textareaStyle } from "./BetaWsUi";
 import type { BetaTabProps } from "./betaShared";
-import type { DesignKind } from "./renovationBetaModel";
+import { betaApi } from "./renovationBetaApi";
+import { dayMonth, type DesignKind } from "./renovationBetaModel";
 import { sheetNameOf, sheetSetAt, sheetsApi, type BetaSheet, type SetSheet, type UploadedSheet } from "./renovationBetaSheets";
 import { isPdf, pdfPageCount, splitPdf } from "./renovationBetaPdfSplit";
 import { BETA } from "./renovationBetaTheme";
@@ -47,6 +48,18 @@ async function readyFiles(files: File[]): Promise<{ ok: File[] } | { error: stri
     out.push(ready);
   }
   return { ok: out };
+}
+
+/** An upload in Drawings counts as sent to the client that day, as in the mockup; the answer is due after the ID SOP days
+ *  of its kind. A failed mark is reported, never hidden: the version stays and "Send to client" still works on it. */
+async function savedAndSent(p: BetaTabProps, kind: DesignKind, fileId: number, text: string, onSaved: (text: string, failed?: string) => void): Promise<void> {
+  const dueOn = addDays(p.today, p.board.m.sop[kind === "3d" ? "3" : "2"]);
+  try {
+    await betaApi.designSent(fileId, { sentOn: p.today, dueOn });
+    onSaved(`${text} Marked as sent to the client, answer due ${dayMonth(dueOn)}.`);
+  } catch (e) {
+    onSaved(text, `It could not be marked as sent (${errorText(e)}). Use "Send to client" on it.`);
+  }
 }
 
 /** Uploads one after another; a failure does not stop the rest, and is reported by file name. */
@@ -167,7 +180,7 @@ function DesignForm({ p, kind, link, onClose, onSaved }: FormProps & { kind: Des
           if (!linkName.trim()) { f.setError("Give the link a name, e.g. Living room render."); return; }
           if (!isLink(url)) { f.setError("Paste the full link, starting with https://."); return; }
           const r = await simpleApi.addDesignLink(p.projectId, { kind, url: url.trim(), name: linkName.trim(), personIds: people, note: note.trim() || null, ...extra });
-          onSaved(`${K} v${r.version} added.`);
+          await savedAndSent(p, kind, r.id, `${K} v${r.version} added.`, onSaved);
           return;
         }
         const picked = file.at(0);
@@ -175,7 +188,7 @@ function DesignForm({ p, kind, link, onClose, onSaved }: FormProps & { kind: Des
         const ready = await readyFiles([picked]);
         if ("error" in ready) { f.setError(ready.error); return; }
         const r = await simpleApi.uploadDesignFile(p.projectId, kind, ready.ok[0], people, note.trim() || null, extra);
-        onSaved(`${K} v${r.version} uploaded.`);
+        await savedAndSent(p, kind, r.id, `${K} v${r.version} uploaded.`, onSaved);
       })}
     >
       {kind === "2d" && nextVersion > 1 && <p style={{ fontSize: 13, color: WS.text2 }}>V{nextVersion} answers every 2D amendment request still open.</p>}
@@ -289,7 +302,7 @@ function SheetsForm({ p, sheets, mode, forSheet, onClose, onSaved }: FormProps &
           }
           setProgress("Saving the version...");
           const r = await sheetsApi.saveVersion(p.projectId, { submittedOn: on, personIds: people, note: note.trim() || null, sheets: uploaded });
-          onSaved(first ? `2D V${r.version} uploaded with ${plural(uploaded.length, "sheet")}.` : `2D V${r.version} saved: ${plural(uploaded.length, "sheet")} changed.`);
+          await savedAndSent(p, "2d", r.id, first ? `2D V${r.version} uploaded with ${plural(uploaded.length, "sheet")}.` : `2D V${r.version} saved: ${plural(uploaded.length, "sheet")} changed.`, onSaved);
         } finally {
           setProgress(null);
         }
@@ -374,7 +387,7 @@ function LinksForm({ p, sheets, onClose, onSaved }: FormProps & { sheets: readon
         if (badUrl) { f.setError(`Paste the full link for "${badUrl.name}", starting with https://.`); return; }
         if (!on || on > p.today) { f.setError("Give the date the 3D was handed in (not ahead of today)."); return; }
         const r = await sheetsApi.saveLinks(p.projectId, { submittedOn: on, personIds: people, nextPersonId: next, note: note.trim() || null, links });
-        onSaved(`3D V${r.version} saved with ${plural(links.length, "link")}.`);
+        await savedAndSent(p, "3d", r.id, `3D V${r.version} saved with ${plural(links.length, "link")}.`, onSaved);
       })}
     >
       {current.length > 0 && (

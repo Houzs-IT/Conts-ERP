@@ -54,6 +54,9 @@ const CSS = `
 @media (max-width:720px){.bws .h1{font-size:22px!important}.bws .tab{padding:0 12px}.bws .chips{display:grid!important;grid-template-columns:minmax(0,1fr)}.bws .chips>*{min-width:0;width:auto!important}}
 .bws .pay-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
 @media (max-width:1100px){.bws .pay-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.bws .ov-four{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:20px}
+@media (max-width:1100px){.bws .ov-four{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:560px){.bws .ov-four{grid-template-columns:minmax(0,1fr)}}
 .bws .pay-totals{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px}
 @media (max-width:560px){.bws .pay-grid{gap:8px}.bws .pay-totals{grid-template-columns:minmax(0,1fr)}.bws .pay-totals>div{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:baseline;column-gap:8px;padding:10px 14px!important}.bws .pay-totals dd{margin:0!important}.bws .pay-totals dd:nth-of-type(1){font-size:16px!important}.bws .pay-totals dd:nth-of-type(2){grid-column:1/-1}}
 .bws .no-bar{scrollbar-width:none}.bws .no-bar::-webkit-scrollbar{display:none}
