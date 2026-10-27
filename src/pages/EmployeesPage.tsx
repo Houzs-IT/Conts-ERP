@@ -48,11 +48,11 @@ const isTab = (v: string | null): v is TabKey => v === 'leave' || TABS.some(t =>
 /** Twelve tabs do not fit in one row, so the bar shows three sections and the second row shows the pages in the
  *  chosen section (owner, 27 Oct 2026). Hookka's order is kept inside each section. */
 const SECTIONS = [
-  { key: 'time', label: 'Time', tabs: ['working-hours', 'efficiency', 'detail', 'department-performance'] },
-  { key: 'people', label: 'People', tabs: ['employee-master', 'attendance', 'outside'] },
-  { key: 'money', label: 'Money', tabs: ['payroll', 'advances', 'penalties', 'labor-cost', 'department-labor'] },
+  { key: 'hours', label: 'Hours', tabs: ['working-hours', 'attendance', 'efficiency', 'detail', 'department-performance'] },
+  { key: 'staff', label: 'Staff', tabs: ['employee-master', 'outside'] },
+  { key: 'pay', label: 'Pay', tabs: ['payroll', 'advances', 'penalties', 'labor-cost', 'department-labor'] },
 ] as const satisfies readonly { key: string; label: string; tabs: readonly TabKey[] }[];
-/** Leave is off the bar but belongs with People, so its notices still show the right section. */
+/** Leave is off the bar but belongs with Staff, so its notices still show the right section. */
 const sectionOf = (t: TabKey): (typeof SECTIONS)[number] =>
   SECTIONS.find(s => (s.tabs as readonly TabKey[]).includes(t)) ?? SECTIONS[1];
 const tabsIn = (section: (typeof SECTIONS)[number]): typeof TABS[number][] =>
