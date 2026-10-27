@@ -18,6 +18,8 @@ import { useApi } from '../../lib/useApi';
 import { masked as maskTail } from '../../lib/format';
 import { MODEL, CODE, codeName, PURPOSES, USED_BY } from '../../lib/revenueModel';
 import { BedsEditor, BaysEditor, bedsText, baysText } from './UnitExtras';
+import { UnitCleaning, missingCleanPrice, type UnitPriceData } from './UnitCleaning';
+import { cx } from '../../lib/design-tokens';
 import { Link } from 'react-router-dom';
 import {
   STATES, cap, layoutFromBedrooms, useLayoutTypes,
@@ -32,6 +34,10 @@ export function useOwnerOptions(on = true) {
 }
 
 type Change = (p: Partial<Unit>) => void;
+
+/** The Details tab is four steps in the order a unit is filled (staff sheet UNIT, 27 Oct 2026): one short page each. */
+const SUBS = [['listing', 'Listing'], ['space', 'Space'], ['owner', 'Owner'], ['cleaning', 'Cleaning and income']] as const;
+type Sub = typeof SUBS[number][0];
 type Doc = UnitDetail['documents'][number];
 
 /** The bar above an editable tab: what is pending, and the one Save for the whole unit. `auto`: the tab saves itself
@@ -76,11 +82,33 @@ export function DetailsForm({ u, owner, buildings, canEdit, onChange, onOpenCont
   const layout = u.layoutType ?? suggested;
   const types = useLayoutTypes();
   const [editingTypes, setEditingTypes] = useState(false);
+  const [sub, setSub] = useState<Sub>('listing');
+  const prices = useApi<UnitPriceData>(`/housekeeping/unit-prices?unitId=${encodeURIComponent(u.id)}`);
+  // A dot on a step says something in it still needs filling.
+  const needs: Record<Sub, boolean> = {
+    listing: false, owner: false,
+    space: !layout || (u.parkingBays ?? []).some(b => !b.lotNumber.trim()),
+    cleaning: missingCleanPrice(prices.data),
+  };
   // Hidden types are not offered, except the one this unit already has.
   const typeOptions = (types.data?.data ?? []).filter(t => t.isActive || t.key === layout);
   return (
     <>
+    {/* Outside the fieldset: a disabled fieldset would also disable the tabs, and read-only staff still need to move between them. */}
+    <div role="tablist" aria-label="Unit details" className="flex gap-1.5 overflow-x-auto px-5 pt-5">
+      {SUBS.map(([k, label], i) => (
+        <button key={k} type="button" role="tab" id={`unit-sub-${k}`} aria-selected={sub === k} aria-controls="unit-sub-panel"
+          onClick={() => setSub(k)}
+          className={cx('h-9 px-3 flex-none rounded-control border border-solid text-copy whitespace-nowrap cursor-pointer inline-flex items-center gap-1.5',
+            sub === k ? 'bg-black text-white border-black' : 'bg-card text-ink border-line')}>
+          {i + 1}. {label}
+          {needs[k] && <><span aria-hidden className="inline-block w-2 h-2 rounded-full bg-warning-line" /><span className="sr-only"> (needs attention)</span></>}
+        </button>
+      ))}
+    </div>
     <fieldset disabled={!canEdit} className="p-5 m-0 border-0 min-w-0">
+      <div role="tabpanel" id="unit-sub-panel" aria-labelledby={`unit-sub-${sub}`}>
+      {sub === 'listing' && <>
       <SectionHead>Listing</SectionHead>
       <Grid3>
         <Labeled label="Listing name" help="Exactly as published on the channels">
@@ -114,6 +142,9 @@ export function DetailsForm({ u, owner, buildings, canEdit, onChange, onOpenCont
         </Labeled>
       </Grid3>
 
+      </>}
+
+      {sub === 'space' && <>
       <SectionHead>Type and size</SectionHead>
       <Grid3>
         <Labeled label="Type" help={u.layoutType ? undefined : suggested ? `Suggested from ${u.bedrooms === 0 ? 'no bedrooms' : `${u.bedrooms} ${u.bedrooms === 1 ? 'bedroom' : 'bedrooms'}`}. Saved with the next save.` : 'Pick one.'}>
@@ -150,6 +181,9 @@ export function DetailsForm({ u, owner, buildings, canEdit, onChange, onOpenCont
         </div>
       </div>
 
+      </>}
+
+      {sub === 'owner' && <>
       <SectionHead>Owner</SectionHead>
       <Grid3>
         <Labeled label="Owner" help={moved ? 'Saving moves this unit to this owner. Its current contract stays with the previous owner.' : 'Picked from the owner profiles.'}>
@@ -181,6 +215,11 @@ export function DetailsForm({ u, owner, buildings, canEdit, onChange, onOpenCont
         </div>
       )}
       {moved && <div className="mb-[22px]" />}
+      </>}
+
+      {sub === 'cleaning' && <>
+      <SectionHead>Cleaning prices</SectionHead>
+      <UnitCleaning unitId={u.id} data={prices.data} loading={prices.loading} error={prices.error} reload={prices.reload} canEdit={canEdit} />
 
       <SectionHead>Income model</SectionHead>
       <div className="flex flex-wrap items-center gap-3 mb-[6px]">
@@ -188,6 +227,8 @@ export function DetailsForm({ u, owner, buildings, canEdit, onChange, onOpenCont
         {onOpenContract && <button type="button" onClick={onOpenContract} className="p-0 bg-transparent border-none cursor-pointer [font-family:inherit] text-meta font-semibold text-gold-ink">Change on the Contract tab</button>}
       </div>
       <details className="m-0 text-meta text-muted-ink [&>summary]:cursor-pointer"><summary className="w-fit list-none inline-flex items-center gap-1 text-muted-ink"><span aria-hidden className="inline-grid place-items-center w-4 h-4 rounded-full border border-solid border-line text-[10px] font-semibold">?</span> How this works</summary><p className="m-0 mt-1.5">One income model per contract decides how the owner statement is worked out. Package {u.pkg.replace('Package ', '')} is kept from the owner workbook for reference.</p></details>
+      </>}
+      </div>
     </fieldset>
     {editingTypes && <LayoutTypesModal types={types.data?.data ?? []} onClose={() => setEditingTypes(false)} onChanged={types.reload} />}
     </>
