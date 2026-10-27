@@ -296,14 +296,14 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unit
               <div role="group" aria-label="Rent to rent terms" className="rounded-card [border:1px_solid_var(--color-line)] bg-page overflow-hidden max-w-[760px]">
                 <div className={cx(gridCols, 'py-2.5 bg-muted text-caption font-semibold uppercase tracking-[0.06em] text-muted-ink')}>
                   <span aria-hidden />
-                  <span className="text-right">We pay the owner</span>
-                  <span className="text-right">We rent it out</span>
+                  <span className="text-right">Costing Rental Amount</span>
+                  <span className="text-right">Rental Out Amount</span>
                 </div>
                 {rows.map(([label, pay, rentOut]) => (
                   <div key={pay} className={cx(gridCols, 'items-start py-2.5 [border-top:1px_solid_var(--color-line-soft)]')}>
                     <span className="min-h-10 flex items-center text-copy text-muted-ink">{label}</span>
-                    <MoneyInput prefix aria-label={`${label}, we pay the owner`} placeholder="0.00" valueSen={d[pay]} onChangeSen={v => set({ [pay]: v })} error={shown[pay]} />
-                    <MoneyInput prefix aria-label={`${label}, we rent it out`} placeholder="0.00" valueSen={d[rentOut]} onChangeSen={v => set({ [rentOut]: v })} error={shown[rentOut]} />
+                    <MoneyInput prefix aria-label={`${label}, Costing Rental Amount`} placeholder="0.00" valueSen={d[pay]} onChangeSen={v => set({ [pay]: v })} error={shown[pay]} />
+                    <MoneyInput prefix aria-label={`${label}, Rental Out Amount`} placeholder="0.00" valueSen={d[rentOut]} onChangeSen={v => set({ [rentOut]: v })} error={shown[rentOut]} />
                   </div>
                 ))}
                 <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 px-4 py-2.5 [border-top:1px_solid_var(--color-line-soft)] text-meta text-muted-ink">
