@@ -29,6 +29,7 @@ export const allow = {
   'functions/api/auth/session.ts': 'Answers "who am I" for the caller\'s own cookie.',
   'functions/api/auth/view-as.ts': 'Checks itself that the person who really signed in is management and that VIEW_AS is on (staging only).',
   'functions/api/integrations/channex-webhook.ts': 'Called by Channex, authenticated by the shared webhook secret.',
+  'functions/api/integrations/hostplatform-webhook.ts': 'Called by HostPlatform, authenticated by the shared webhook secret header.',
   'functions/api/supply-chain/engine.ts': 'Says only whether the supply chain engine is switched on (true/false) for the menu.',
   'functions/api/table-layouts/index.ts': 'A person\'s own saved table views; company views are management-only inside (mayShare).',
   'functions/api/coverage-fleet/index.ts': 'Supply chain (Transportation): field and owner accounts are refused by the middleware; same data as drivers/vehicles.',

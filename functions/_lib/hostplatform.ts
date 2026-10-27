@@ -44,7 +44,7 @@ async function hpGet(env: Env, path: string): Promise<HpResult<unknown>> {
   }
 }
 
-const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
+export const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const isText = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
 
 /** One reservation as V2 sends it. Only the fields every row has are required; real rows were seen without

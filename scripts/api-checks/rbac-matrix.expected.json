@@ -361,6 +361,7 @@
  "POST /api/integrations/channex-webhook": "UUFUFFFU",
  "POST /api/integrations/channex-webhook-setup": "EFFFFFFU",
  "POST /api/integrations/channex/full-sync": "EEFEFFFU",
+ "POST /api/integrations/hostplatform-webhook": "UUFUFFFU",
  "POST /api/integrations/sync": "EEEFFFFU",
  "POST /api/inventory": "AAAFFFFU",
  "POST /api/it-support/tickets": "EEEEFFFU",

@@ -21,6 +21,8 @@ export interface Env {
    *  (secret). HostPlatform has no test server for us, so both point at the live one; with either unset nothing is pulled. */
   HOSTPLATFORM_BASE_URL?: string;
   HOSTPLATFORM_ACCESS_TOKEN?: string;
+  /** Secret HostPlatform sends in the x-hostplatform-secret header on every webhook call (functions/api/integrations/hostplatform-webhook.ts). Unset: the webhook refuses every call. */
+  HOSTPLATFORM_WEBHOOK_SECRET?: string;
   /** The supply chain engine (engine/): its server, its site, and the secret the two servers share for
    *  signing people in. Supply chain uses the built-in screens wherever these are not all set. */
   SCM_ENGINE_API?: string;
