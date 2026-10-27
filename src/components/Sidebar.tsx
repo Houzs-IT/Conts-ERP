@@ -27,7 +27,7 @@ const subscribeTheme = (onChange: () => void): (() => void) => {
   mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
   return () => mo.disconnect();
 };
-const useDarkTheme = (): boolean =>
+export const useDarkTheme = (): boolean =>
   useSyncExternalStore(subscribeTheme, () => document.documentElement.dataset.theme === 'theconts-dark');
 
 export type SidebarLookKey = 'conts' | 'dcLight' | 'dcDark';
@@ -64,7 +64,7 @@ const GLASS_SHAPE: CSSProperties = { backdropFilter: 'blur(30px) saturate(1.6)',
 
 /** conts is the black sidebar as it always was. The Dream Crafter workspace takes the glass look of the Project
  *  Workspace designs: v10 "Vision" in the light theme, v13 "Night Glass" in the dark one (PLAN-dc-sidebar.md). */
-const LOOKS: Record<SidebarLookKey, SidebarLook> = {
+export const LOOKS: Record<SidebarLookKey, SidebarLook> = {
   conts: {
     shellBg: color.black, card: null,
     textOn: 'var(--color-text-inverse)', text: color.onDark, muted: color.dim, faint: color.faint, line: color.charcoal,
