@@ -282,24 +282,39 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unit
               Operator share = {rm(d.ownerAmount ?? 0)} x {pctText(d.managementPct ?? 0)}% = <span className="font-semibold text-ink">{rm(Math.round(((d.ownerAmount ?? 0) * (d.managementPct ?? 0)) / 100))}</span>
             </p>
           )}
-          {d.contractCode === 'RTR' && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
-              <div className="flex flex-col gap-4 min-w-0">
-                <span className="text-caption font-semibold uppercase tracking-[0.06em] text-muted-ink">We pay the owner</span>
-                {money('monthlyRent', 'Monthly rent we pay (RM)', 'Recorded as a company cost; no owner statement.')}
-                {money('deposit', 'Deposit rental (RM)')}
-                {money('depositUtilities', 'Deposit utilities (RM)')}
-                {money('depositCard', 'Deposit card (RM)')}
+          {d.contractCode === 'RTR' && (() => {
+            // One row per thing, one column per side: the row name is printed once, so the two sides read across.
+            const rows = [
+              ['Monthly rent', 'monthlyRent', 'rentOutAmount'],
+              ['Deposit rental', 'deposit', 'rentOutDeposit'],
+              ['Deposit utilities', 'depositUtilities', 'rentOutDepositUtilities'],
+              ['Deposit card', 'depositCard', 'rentOutDepositCard'],
+            ] as const;
+            const gridCols = 'grid grid-cols-[84px_minmax(0,1fr)_minmax(0,1fr)] sm:grid-cols-[150px_minmax(0,1fr)_minmax(0,1fr)] gap-x-3 px-4';
+            const gap = (d.rentOutAmount ?? 0) - (d.monthlyRent ?? 0);
+            return (
+              <div role="group" aria-label="Rent to rent terms" className="rounded-card [border:1px_solid_var(--color-line)] bg-page overflow-hidden max-w-[760px]">
+                <div className={cx(gridCols, 'py-2.5 bg-muted text-caption font-semibold uppercase tracking-[0.06em] text-muted-ink')}>
+                  <span aria-hidden />
+                  <span className="text-right">We pay the owner</span>
+                  <span className="text-right">We rent it out</span>
+                </div>
+                {rows.map(([label, pay, rentOut]) => (
+                  <div key={pay} className={cx(gridCols, 'items-start py-2.5 [border-top:1px_solid_var(--color-line-soft)]')}>
+                    <span className="min-h-10 flex items-center text-copy text-muted-ink">{label}</span>
+                    <MoneyInput prefix aria-label={`${label}, we pay the owner`} placeholder="0.00" valueSen={d[pay]} onChangeSen={v => set({ [pay]: v })} error={shown[pay]} />
+                    <MoneyInput prefix aria-label={`${label}, we rent it out`} placeholder="0.00" valueSen={d[rentOut]} onChangeSen={v => set({ [rentOut]: v })} error={shown[rentOut]} />
+                  </div>
+                ))}
+                <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 px-4 py-2.5 [border-top:1px_solid_var(--color-line-soft)] text-meta text-muted-ink">
+                  <span>Recorded only. The unit's result still comes from its reservations.</span>
+                  {(d.monthlyRent ?? 0) > 0 && (d.rentOutAmount ?? 0) > 0 && (
+                    <span className="text-ink tabular-nums">Rent out is <span className="font-semibold">{rm(Math.abs(gap))}</span> {gap >= 0 ? 'above' : 'below'} the rent we pay</span>
+                  )}
+                </div>
               </div>
-              <div className="flex flex-col gap-4 min-w-0">
-                <span className="text-caption font-semibold uppercase tracking-[0.06em] text-muted-ink">We rent it out</span>
-                {money('rentOutAmount', 'Rental out amount (RM)', "For the record; the unit's result still comes from its reservations.")}
-                {money('rentOutDeposit', 'Deposit rental (RM)')}
-                {money('rentOutDepositUtilities', 'Deposit utilities (RM)')}
-                {money('rentOutDepositCard', 'Deposit card (RM)')}
-              </div>
-            </div>
-          )}
+            );
+          })()}
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
             {day('startsOn', m === 'master_lease' ? 'Lease starts' : isTenancy(m) ? 'Tenancy starts' : 'Contract starts')}
             {day('endsOn', m === 'master_lease' ? 'Lease ends' : isTenancy(m) ? 'Tenancy ends' : 'Contract ends')}
