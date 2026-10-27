@@ -1,5 +1,6 @@
 {
  "DELETE /api/access-credentials/[id]": "AAFFFFFU",
+ "DELETE /api/attendance/[id]": "AFFFFFFU",
  "DELETE /api/categories/[id]": "AFFFFFFU",
  "DELETE /api/customers/[id]": "AFFFFFFU",
  "DELETE /api/delivery-schedule/[id]": "AFFFFFFU",

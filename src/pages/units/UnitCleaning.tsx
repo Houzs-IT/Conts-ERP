@@ -49,7 +49,7 @@ export function UnitCleaning({ unitId, data, loading, error, reload, canEdit }: 
     setBusy(true);
     try {
       for (const [k] of changed) await api.put('/housekeeping/unit-prices', { unitId, kind: k, internalCost: pay(k), externalCharge: charge(k) });
-      toast({ tone: 'success', title: 'Cleaning prices saved.', body: 'Cleans not yet finished on this unit use them from now on.' });
+      toast({ tone: 'success', title: 'Cleaning prices saved.', body: 'Cleaning jobs not yet finished on this unit use them from now on.' });
       setDraft({});
       reload();
     } catch (e) { notifyFailure(e); } finally { setBusy(false); }
