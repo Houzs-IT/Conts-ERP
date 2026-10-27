@@ -5,8 +5,11 @@ import type { CSSProperties, ReactElement, ReactNode } from "react";
 import { WS } from "./BetaWsUi";
 import { BETA, TONES } from "./renovationBetaTheme";
 
+/* A table head and the table's own surface are solid: the page behind the glass cards is pastel and gridded (light) or
+   glowing (night), and a see-through row on it is hard to read. */
+const HEAD_SOLID = `color-mix(in srgb, ${BETA.ink} 6%, ${BETA.surface})`;
 export const thStyle: CSSProperties = {
-  textAlign: "left", padding: "8px 10px", fontSize: 12, fontWeight: 700, color: WS.text2, background: WS.head, borderBottom: `1px solid ${BETA.line}`,
+  textAlign: "left", padding: "8px 10px", fontSize: 12, fontWeight: 700, color: WS.text2, background: HEAD_SOLID, borderBottom: `1px solid ${BETA.line}`,
   whiteSpace: "nowrap", position: "sticky", top: 0,
 };
 export const tdStyle: CSSProperties = { padding: "8px 10px", fontSize: 14, borderBottom: `1px solid ${WS.rowLine}`, verticalAlign: "top" };
@@ -23,7 +26,7 @@ export function WsNarrowStyle(): ReactElement {
 /** The phone layout of a table: one bordered list, one block per line. */
 export function WsNarrow({ label, children }: { label: string; children: ReactNode }): ReactElement {
   return (
-    <ul className="bvo-narrow" aria-label={label} style={{ listStyle: "none", margin: 0, padding: 0, flexDirection: "column", border: `1px solid ${BETA.line}`, borderRadius: 10, overflow: "hidden" }}>
+    <ul className="bvo-narrow" aria-label={label} style={{ listStyle: "none", margin: 0, padding: 0, flexDirection: "column", border: `1px solid ${BETA.line}`, borderRadius: 10, overflow: "hidden", background: BETA.surface }}>
       {children}
     </ul>
   );
@@ -39,7 +42,7 @@ export const narrowBandStyle = (level: "cat" | "sub"): CSSProperties => ({
 /** A table that keeps its columns and scrolls sideways inside its card when the screen is narrower than it. */
 export function WsTable({ minWidth, label, children }: { minWidth: number; label: string; children: ReactNode }): ReactElement {
   return (
-    <div className="bvo-wide" role="region" aria-label={label} tabIndex={0} style={{ width: "100%", overflowX: "auto", border: `1px solid ${BETA.line}`, borderRadius: 10 }}>
+    <div className="bvo-wide" role="region" aria-label={label} tabIndex={0} style={{ width: "100%", overflowX: "auto", border: `1px solid ${BETA.line}`, borderRadius: 10, background: BETA.surface }}>
       <table style={{ width: "100%", minWidth, borderCollapse: "collapse" }}>{children}</table>
     </div>
   );
