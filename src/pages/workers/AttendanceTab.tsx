@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { StatusBadge } from '../../components/StatusBadge';
 import { Button } from '../../components/Button';
+import { ConfirmButton } from '../../components/ConfirmDialog';
 import Icon from '../../components/Icon';
 import { StaleBanner } from '../../components/DataState';
 import { DataTable, type Column } from '../../components/DataTable';
@@ -217,9 +218,21 @@ function FixModal({ line, onClose, onSaved }: { line: AttendanceLine; onClose: (
     } finally { setBusy(false); }
   }
 
+  async function remove(reason: string) {
+    if (!p) return;
+    try {
+      await api.del(`/attendance/${p.id}`, { note: reason });
+      toast({ tone: 'success', title: 'Attendance removed.', body: `${line.employee.name}, ${date(`${p.date}T12:00:00+08:00`)}. They can clock in again.` });
+      onSaved();
+    } catch (e) { notifyFailure(e); }
+  }
+
   return (
     <Modal title={`Fix times: ${line.employee.name}`} sub={date(`${p.date}T12:00:00+08:00`)} onClose={onClose}
       footer={<>
+        <ConfirmButton variant="tertiary" icon={<Icon name="Trash2" size="sm" />} style={{ marginRight: 'auto' }} onConfirm={remove}
+          confirm={{ title: `Remove ${line.employee.name}'s attendance?`, body: `This removes the whole punch for ${date(`${p.date}T12:00:00+08:00`)}, the clock-in and the clock-out. ${p.clockOutAt ? 'To only undo a clock-out pressed by mistake, close this and use Fix: empty the Clocked out time. ' : ''}The change is kept in the history.`,
+            confirmLabel: 'Remove attendance', reason: { label: 'Why is it removed?', placeholder: 'Clocked out by mistake' } }}>Remove attendance</ConfirmButton>
         <Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
         <Button size="sm" variant="primary" onClick={save} disabled={busy}>{busy ? 'Saving…' : 'Save'}</Button>
       </>}>
