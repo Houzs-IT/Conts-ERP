@@ -37,7 +37,7 @@ export function DocCell({ docs, state, tab, open }: { docs: readonly LineDoc[]; 
     <button type="button" onClick={() => open(tab, first.no)} title={`${what}: ${all}${state === "part" ? ". Part of the quantity so far" : ""}. Open it`}
       style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 1, width: "100%", minWidth: 0, padding: 0, border: 0, background: "transparent", font: "inherit", textAlign: "left", cursor: "pointer" }}>
       <span style={{ display: "flex", alignItems: "center", gap: 3, maxWidth: "100%", fontSize: 12, fontWeight: 600, color: BETA.accentInk }}>
-        <Check size={12} aria-hidden="true" style={{ flex: "none", color: state === "part" ? WS.amber : WS.green }} /><span style={{ ...ellipsis, textDecoration: "underline", textDecorationColor: `${BETA.accent}66`, textUnderlineOffset: 2 }}>{first.no}</span>
+        <Check size={12} aria-hidden="true" style={{ flex: "none", color: state === "part" ? WS.amber : WS.green }} /><span style={{ ...ellipsis, textDecoration: "underline", textDecorationColor: `color-mix(in srgb, ${BETA.accent} 40%, transparent)`, textUnderlineOffset: 2 }}>{first.no}</span>
       </span>
       <span style={{ fontSize: 11, color: state === "part" ? WS.amber : BETA.muted, maxWidth: "100%", ...ellipsis }}>
         {[first.at ? dayMonth(mytDay(first.at)) : null, state === "part" ? "Part" : null, docs.length > 1 ? `+${docs.length - 1} more` : null].filter(Boolean).join(" · ")}

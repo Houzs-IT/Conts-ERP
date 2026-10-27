@@ -1,17 +1,17 @@
 /* Beta Drawings, the sets as the owner's mockup draws them (24 Oct 2026): a 2D set is a row of sheet pictures, each
    with its name, a Changed / Same badge against the approved set, its history, and its own Replace and Remove; a 3D
-   set is a list of link cards (name, where it points, Open, Copy link). Thumbnails come from the stored file through
+   set is a "3D PDF" list and a "3D links" list (name, address, Open, Copy for client). Thumbnails come from the stored file through
    the staff file route: a photo as it is, a PDF's first page drawn by pdf.js, anything else a drawing icon. */
 
-import { useEffect, useState, type CSSProperties, type ReactElement } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactElement, type ReactNode } from "react";
 import { api } from "../../api/client";
 import { useDialog } from "../../hooks/useDialog";
 import { errorText } from "../projects/renovation/renovationModel";
 import { simpleApi } from "../projects/renovation/simpleApi";
-import { WS, WsBadge, WsBtn, WsDialog, TONE_QUIET, TONE_WAIT } from "./BetaWsUi";
+import { WS, WsBadge, WsBtn, WsDialog, WsPdfTile, TONE_QUIET, TONE_WAIT } from "./BetaWsUi";
 import { useGuarded, type ViewedFile } from "./betaShared";
 import { dayMonthYear } from "./renovationBetaModel";
-import { linkHost, removedSheetsOf, sheetsApi, type SetSheet, type SheetKind } from "./renovationBetaSheets";
+import { removedSheetsOf, sheetsApi, sizeText, type SetSheet, type SheetKind } from "./renovationBetaSheets";
 import { BETA } from "./renovationBetaTheme";
 
 const IMAGE = /\.(png|jpe?g|webp|gif)$/i;
@@ -89,6 +89,43 @@ export function SheetThumb({ projectId, sheet }: { projectId: number; sheet: { k
 
 /* ---------- 2D sheet grid ---------- */
 
+const MENU_ITEM: CSSProperties = {
+  display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, width: "100%", minHeight: 32, padding: "0 12px",
+  border: 0, background: "transparent", font: "inherit", fontSize: 13, textAlign: "left", cursor: "pointer", color: BETA.ink, whiteSpace: "nowrap",
+};
+
+/** A small button that opens a floating panel; closes on outside click and Escape. */
+function Popover({ label, srLabel, align = "left", iconOnly = false, children }: {
+  label: string; srLabel: string; align?: "left" | "right"; iconOnly?: boolean; children: (close: () => void) => ReactNode;
+}): ReactElement {
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: MouseEvent): void => { if (!(e.target instanceof Node) || !box.current?.contains(e.target)) setOpen(false); };
+    const esc = (e: KeyboardEvent): void => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", away);
+    document.addEventListener("keydown", esc);
+    return () => { document.removeEventListener("mousedown", away); document.removeEventListener("keydown", esc); };
+  }, [open]);
+  return (
+    <div ref={box} style={{ position: "relative", flex: "none" }}>
+      <button type="button" aria-haspopup="true" aria-expanded={open} onClick={() => setOpen(!open)}
+        style={{ display: "inline-flex", alignItems: "center", gap: 4, minHeight: 28, padding: iconOnly ? "0 8px" : "0 8px 0 6px", border: `1px solid ${BETA.border}`, borderRadius: 6,
+          background: BETA.surface, font: "inherit", fontSize: iconOnly ? 16 : 12, fontWeight: 600, lineHeight: 1, color: BETA.ink, cursor: "pointer" }}>
+        {label}{!iconOnly && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>}
+        <span className="sr"> {srLabel}</span>
+      </button>
+      {open && (
+        <div style={{ position: "absolute", top: 32, [align]: 0, zIndex: 30, minWidth: 150, padding: "4px 0", background: BETA.surface, border: `1px solid ${BETA.line}`,
+          borderRadius: 8, boxShadow: "0 8px 24px rgba(23,32,31,.14)" }}>
+          {children(() => setOpen(false))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export interface SheetGridEdit {
   kind: SheetKind;
   onReplace: (name: string) => void;
@@ -103,10 +140,9 @@ export function SheetGrid({ projectId, sheets, changed, onView, onError, edit }:
 }): ReactElement {
   const dialog = useDialog();
   const { busy, run } = useGuarded();
-  const [open, setOpen] = useState<string | null>(null);
-  const view = (x: { key: string | null; url: string | null; fileName: string }): void => {
+  const view = (x: SetSheet): void => {
     if (x.url) window.open(x.url, "_blank", "noopener");
-    else if (x.key) onView({ key: x.key, name: x.fileName });
+    else if (x.key) onView({ key: x.key, name: x.name, versions: x.history.flatMap((h) => (h.key ? [{ version: h.version, key: h.key, fileName: h.fileName, uploadedOn: h.uploadedOn }] : [])) });
   };
   async function rename(x: SetSheet): Promise<void> {
     if (!edit) return;
@@ -135,8 +171,8 @@ export function SheetGrid({ projectId, sheets, changed, onView, onError, edit }:
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
       {changed && (
-        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 14, fontSize: 13, color: WS.text2 }}>
-          <span style={{ fontWeight: 600, color: BETA.ink }}>Sheets in the new set</span>
+        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 14, fontSize: 12, color: WS.text2 }}>
+          <span style={{ fontWeight: 600 }}>Sheets in the new set</span>
           <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><span style={{ width: 12, height: 12, border: `2px solid ${WS.amberBtn}`, borderRadius: 3 }} />Changed · {nChanged}</span>
           <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><span style={{ width: 12, height: 12, border: `1px solid ${BETA.border}`, borderRadius: 3 }} />Same as approved · {sheets.length - nChanged}</span>
         </div>
@@ -159,31 +195,21 @@ export function SheetGrid({ projectId, sheets, changed, onView, onError, edit }:
                 )}
                 <span className="sr">Open {x.name}</span>
               </button>
-              <div style={{ fontWeight: 600, fontSize: 14, overflowWrap: "anywhere" }}>{x.name}</div>
-              <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, fontSize: 12, color: BETA.muted }}>
-                <span>V{x.version}</span>
-                {x.history.length > 1 && (
-                  <button type="button" className="link" style={{ fontSize: 12 }} aria-expanded={open === x.name} onClick={() => setOpen(open === x.name ? null : x.name)}>
-                    {x.history.length - 1} older<span className="sr"> of {x.name}</span>
-                  </button>
+              <div style={{ fontWeight: 600, fontSize: 13, overflowWrap: "anywhere" }}>{x.name}</div>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6, fontSize: 12, color: BETA.muted }}>
+                <span>V{x.version}{x.history.length > 1 ? ` · ${x.history.length} versions` : ""}</span>
+                {editable && (
+                  <Popover label="⋯" srLabel={`Actions for ${x.name}`} align="right" iconOnly>
+                    {(close) => (
+                      <div role="menu" style={{ display: "flex", flexDirection: "column" }}>
+                        <button type="button" role="menuitem" style={MENU_ITEM} disabled={busy} onClick={() => { close(); edit.onReplace(x.name); }}>Replace</button>
+                        <button type="button" role="menuitem" style={MENU_ITEM} disabled={busy} onClick={() => { close(); void run(() => rename(x)); }}>Rename</button>
+                        <button type="button" role="menuitem" style={{ ...MENU_ITEM, color: WS.red }} disabled={busy} onClick={() => { close(); void run(() => remove(x)); }}>Remove</button>
+                      </div>
+                    )}
+                  </Popover>
                 )}
               </div>
-              {open === x.name && (
-                <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 2, fontSize: 12 }}>
-                  {x.history.slice(1).map((h) => (
-                    <li key={`${h.version}-${h.key ?? h.url}`}>
-                      <button type="button" className="link" style={{ fontSize: 12 }} onClick={() => view(h)}>V{h.version} · {h.fileName}</button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-              {editable && (
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                  <WsBtn size="sm" disabled={busy} onClick={() => edit.onReplace(x.name)}>Replace<span className="sr"> {x.name}</span></WsBtn>
-                  <WsBtn kind="danger" size="sm" disabled={busy} onClick={() => void run(() => remove(x))}>Remove<span className="sr"> {x.name}</span></WsBtn>
-                  <button type="button" className="link" style={{ fontSize: 12 }} disabled={busy} onClick={() => void run(() => rename(x))}>Rename<span className="sr"> {x.name}</span></button>
-                </div>
-              )}
             </li>
           );
         })}
@@ -263,13 +289,16 @@ export function CompareDialog({ projectId, next, approved, onClose }: { projectI
 
 function CubeIcon(): ReactElement {
   return (
-    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke={WS.blue} strokeWidth="1.8" aria-hidden="true">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={BETA.accent} strokeWidth="1.8" aria-hidden="true">
       <path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z" /><path d="M12 12l8-4.5M12 12v9M12 12L4 7.5" />
     </svg>
   );
 }
 
-/** The links (and any 3D files) of a 3D set as cards: name, where it points, Open, Copy link; a 3D render file opens large. */
+const boxStyle: CSSProperties = { border: `1px solid ${BETA.line}`, borderRadius: 10, overflow: "hidden" };
+const rowStyle: CSSProperties = { display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, padding: "12px 16px", borderTop: `1px solid ${WS.rowLine}` };
+
+/** A 3D set as the client's mockup draws it: a "3D PDF" list (file, size, Open) and a "3D links" list (name, address, Open, Copy for client). */
 export function LinkCards({ projectId, links, changed, onView, onError, edit }: {
   projectId: number; links: SetSheet[]; changed: Map<string, boolean> | null; onView: (f: ViewedFile) => void; onError: (t: string) => void;
   edit: SheetGridEdit | null;
@@ -289,43 +318,48 @@ export function LinkCards({ projectId, links, changed, onView, onError, edit }: 
     if (!ok) return;
     try { await sheetsApi.remove(projectId, x.name, "3d"); edit.onChanged(); edit.onDone(`${x.name} removed from the 3D set.`); } catch (e) { onError(errorText(e)); }
   }
+  const newBadge = (x: SetSheet): ReactElement | null => {
+    if (!changed) return null;
+    const isNew = changed.get(x.name) ?? false;
+    return <WsBadge tone={isNew ? TONE_WAIT : TONE_QUIET}>{isNew ? "New" : "Same"}</WsBadge>;
+  };
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      {urls.length > 0 && (
-        <ul aria-label="3D links" style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 12 }}>
-          {urls.map((x) => {
-            const isNew = changed?.get(x.name) ?? false;
-            return (
-              <li key={x.name} style={{ display: "flex", flexDirection: "column", gap: 10, padding: 14, borderRadius: 10, background: BETA.surface, border: isNew ? `2px solid ${WS.amberBtn}` : `1px solid ${BETA.line}` }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
-                  <span style={{ flex: "none", width: 48, height: 48, borderRadius: 10, background: "#E8F0FB", display: "flex", alignItems: "center", justifyContent: "center" }}><CubeIcon /></span>
-                  <div style={{ minWidth: 0, flex: 1 }}>
-                    <div style={{ fontWeight: 700, overflowWrap: "anywhere" }}>{x.name}</div>
-                    <div style={{ fontSize: 13, color: BETA.muted }}>{linkHost(x.url ?? "")} · V{x.version}</div>
-                  </div>
-                  {changed && <WsBadge tone={isNew ? TONE_WAIT : TONE_QUIET}>{isNew ? "New" : "Same"}</WsBadge>}
-                </div>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                  <WsBtn kind="teal" size="sm" onClick={() => window.open(x.url ?? "", "_blank", "noopener")}>Open<span className="sr"> {x.name}</span></WsBtn>
-                  <WsBtn size="sm" onClick={() => void copy(x)}>{copied === x.name ? "Copied" : "Copy link"}<span className="sr"> of {x.name}</span></WsBtn>
-                  {edit && x.fromSheet && <WsBtn kind="danger" size="sm" disabled={busy} onClick={() => void run(() => remove(x))}>Remove<span className="sr"> {x.name}</span></WsBtn>}
-                </div>
-                {x.history.length > 1 && <div style={{ fontSize: 12, color: BETA.muted }}>Earlier: {x.history.slice(1).map((h) => `V${h.version}`).join(", ")}</div>}
-              </li>
-            );
-          })}
-        </ul>
-      )}
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       {files.length > 0 && (
-        <div>
-          <div style={{ fontSize: 12, color: BETA.muted, fontWeight: 600, marginBottom: 8 }}>3D renders</div>
-          <ul aria-label="3D renders" style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 10 }}>
+        <div style={boxStyle}>
+          <div style={{ padding: "12px 16px", background: WS.head, fontWeight: 600 }}>3D PDF</div>
+          <ul aria-label="3D PDF" style={{ listStyle: "none", margin: 0, padding: 0 }}>
             {files.map((x) => (
-              <li key={x.name} style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 0 }}>
-                <button type="button" onClick={() => x.key && onView({ key: x.key, name: x.fileName })} style={{ aspectRatio: "4 / 3", padding: 4, border: `1px solid ${BETA.line}`, borderRadius: 8, overflow: "hidden", background: "#FFFFFF", cursor: "zoom-in" }}>
-                  <SheetThumb projectId={projectId} sheet={x} /><span className="sr">Open {x.name}</span>
-                </button>
-                <span style={{ fontSize: 13, fontWeight: 600, overflowWrap: "anywhere" }}>{x.name}</span>
+              <li key={x.name} style={rowStyle}>
+                {PDF.test(x.key ?? "") || x.contentType === "application/pdf"
+                  ? <WsPdfTile />
+                  : <span style={{ flex: "none", width: 44, height: 36, borderRadius: 4, overflow: "hidden", border: `1px solid ${BETA.line}` }}><SheetThumb projectId={projectId} sheet={x} /></span>}
+                <div style={{ flex: "1 1 200px", minWidth: 0 }}>
+                  <div style={{ fontWeight: 600, overflowWrap: "anywhere" }}>{x.fileName}</div>
+                  <div style={{ fontSize: 12, color: BETA.muted }}>{(x.size ? sizeText(x.size) : null) ?? "File"}</div>
+                </div>
+                {newBadge(x)}
+                <WsBtn kind="teal" size="sm" onClick={() => x.key && onView({ key: x.key, name: x.name, versions: x.history.flatMap((h) => (h.key ? [{ version: h.version, key: h.key, fileName: h.fileName, uploadedOn: h.uploadedOn }] : [])) })}>Open<span className="sr"> {x.name}</span></WsBtn>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {urls.length > 0 && (
+        <div style={boxStyle}>
+          <div style={{ padding: "12px 16px", background: WS.head, fontWeight: 600 }}>3D links</div>
+          <ul aria-label="3D links" style={{ listStyle: "none", margin: 0, padding: 0 }}>
+            {urls.map((x) => (
+              <li key={x.name} style={rowStyle}>
+                <CubeIcon />
+                <div style={{ flex: "1 1 200px", minWidth: 0 }}>
+                  <div style={{ fontWeight: 600, overflowWrap: "anywhere" }}>{x.name}</div>
+                  <div style={{ fontSize: 12, color: BETA.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={x.url ?? ""}>{x.url}</div>
+                </div>
+                {newBadge(x)}
+                <WsBtn kind="teal" size="sm" onClick={() => window.open(x.url ?? "", "_blank", "noopener")}>Open<span className="sr"> {x.name}</span></WsBtn>
+                <WsBtn size="sm" onClick={() => void copy(x)}>{copied === x.name ? "Copied" : "Copy for client"}<span className="sr"> {x.name}</span></WsBtn>
+                {edit && x.fromSheet && <WsBtn kind="danger" size="sm" disabled={busy} onClick={() => void run(() => remove(x))}>Remove<span className="sr"> {x.name}</span></WsBtn>}
               </li>
             ))}
           </ul>

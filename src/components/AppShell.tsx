@@ -1,13 +1,13 @@
 import { useRef, useState, type ReactNode } from 'react';
 import { useScrollMemory } from '../lib/useScrollMemory';
 import { useDevice } from '../lib/deviceClass';
-import Sidebar from './Sidebar';
+import Sidebar, { useDarkTheme } from './Sidebar';
 import TopBar from './TopBar';
 import { Logo } from './Logo';
 import { RefreshLine } from './Loading';
 import MobileTabBar, { TAB_BAR_HEIGHT } from './MobileTabBar';
 import { PagePrimaryScope } from './States';
-import { color } from '../theme';
+import { color, dcGlass } from '../theme';
 import { workspaceOf } from '../lib/navigation';
 
 /** Persisted so the collapse choice survives a reload (BUTTONS §2, Writes = localStorage).
@@ -56,13 +56,17 @@ export default function AppShell({
   useScrollMemory(mainRef, path);
   // A supply chain screen is Dream Crafter's side: the phone header shows its logo there, as the sidebar does.
   const dc = workspaceOf(path) === 'supply';
+  // The Beta screens paint the glass backdrop in their frame; painting the same one behind the top bar lets it float
+  // over the page as the designs draw it, with no seam where the frame starts.
+  const dark = useDarkTheme();
+  const betaBackdrop = path.startsWith('/beta') && !isNarrow ? dcGlass[dark ? 'dark' : 'light'].page : undefined;
 
   return (
     <div data-print-root data-device={device.cls} data-fold={device.fold} style={{ flex: 1, minWidth: 0, height: '100dvh', display: 'flex', overflow: 'hidden' }}>
       {/* Phones navigate from the bottom tab bar and its menu sheet; there is no sidebar there. */}
       {!isNarrow && <Sidebar path={path} navigate={navigate} open={navOpen} onToggle={toggleNav} />}
 
-      <div data-print-root style={{ position: 'relative', flex: 1, minWidth: 0, height: '100dvh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div data-print-root style={{ position: 'relative', flex: 1, minWidth: 0, height: '100dvh', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: betaBackdrop, backgroundAttachment: betaBackdrop ? 'fixed' : undefined }}>
         <RefreshLine />
         {isNarrow && (
           // One row on phones: menu, logo, then search / bell / page action. The desk top bar's crumbs are

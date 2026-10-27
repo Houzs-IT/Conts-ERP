@@ -18,13 +18,13 @@ import { BETA_TRADES, betaApi, type BetaTrade } from "./renovationBetaApi";
 import { dayMonth, dayMonthYear, defectColumn, defectDaysLate, mytDay, snagProgress, type DefectColumn } from "./renovationBetaModel";
 import { betaSiteApi, type DefectMediaFile, type DefectPatch, type DefectTicket } from "./renovationBetaSiteApi";
 import { dueLine, overdueCount, ticketColumns } from "./renovationBetaSiteModel";
-import { BETA } from "./renovationBetaTheme";
+import { BETA, TONES } from "./renovationBetaTheme";
 
 /** Column header colours: amber for the contractor's turn, blue for the check, green for done. */
 const COLUMNS: ReadonlyArray<{ key: DefectColumn; title: string; caption: string; ink: string; bg: string; bar: string; empty: string }> = [
-  { key: "to_fix", title: "To fix", caption: "Contractor's turn", ink: WS.amber, bg: "#FDF1E2", bar: WS.amberDot, empty: "Nothing waiting to be fixed." },
-  { key: "check", title: "Check", caption: "Fixed, your turn to check", ink: WS.blue, bg: "#EEF2F1", bar: WS.blueDot, empty: "Nothing waiting for a check." },
-  { key: "done", title: "Done", caption: "Checked and closed", ink: WS.green, bg: "#E4F1EF", bar: WS.greenDot, empty: "No closed defects yet." },
+  { key: "to_fix", title: "To fix", caption: "Contractor's turn", ink: WS.amber, bg: TONES.amber.soft, bar: WS.amberDot, empty: "Nothing waiting to be fixed." },
+  { key: "check", title: "Check", caption: "Fixed, your turn to check", ink: WS.blue, bg: TONES.grey.soft, bar: WS.blueDot, empty: "Nothing waiting for a check." },
+  { key: "done", title: "Done", caption: "Checked and closed", ink: WS.green, bg: TONES.accent.soft, bar: WS.greenDot, empty: "No closed defects yet." },
 ];
 
 const PIPE_CSS = `

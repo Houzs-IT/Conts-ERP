@@ -83,7 +83,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     return done;
   };
 
-  /** Cleaners and technicians given app access on Workers: employee ID (EMP-001) and 6-digit PIN. */
+  /** Cleaners and technicians given app access on HR > Employees: employee ID (EMP-001) and 6-digit PIN. */
   const loginPin = async (employeeId: string, pin: string) => finish(await api.post<SignInAnswer>('/auth/login-pin', { employeeId, pin }));
 
   /** The second step: a code from the authenticator app or a backup code. */

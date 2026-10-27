@@ -9,7 +9,8 @@ import { betaApi, type BetaTrade, type BetaWorkspace, type DesignRecords, type R
 import type { BetaDialog } from "./BetaForms";
 import type { BoardModel, DesignProject } from "./renovationBetaBoard";
 import type { BetaBoardProject } from "./renovationBetaBoardApi";
-import { whatsappLink } from "./renovationBetaModel";
+import { dayMonthYear, whatsappLink } from "./renovationBetaModel";
+import { BETA } from "./renovationBetaTheme";
 import type { BetaTabKey } from "./renovationBetaTabs";
 
 /** The project as Home and Calendar see it (the board's logic), so the workspace shows the same dates and conditions. */
@@ -63,13 +64,21 @@ export async function sendReminder(projectId: number, r: ReminderRequest, onDone
   }
 }
 
-export interface ViewedFile { key: string; name: string }
+export interface ViewedVersion { version: number; key: string; fileName: string; uploadedOn: string }
+
+/** `versions` (newest first) lets the viewer switch between the versions of one sheet. */
+export interface ViewedFile { key: string; name: string; versions?: ViewedVersion[] }
 
 const IMAGE = /\.(png|jpe?g|webp)$/i;
 const FILE_TYPE: Readonly<Record<string, string | undefined>> = { pdf: "application/pdf", png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp" };
 
 /** An image shows in place. Any other file is fetched with the sign-in header (a plain link cannot carry it) and offered as a link to the downloaded copy. */
-export function FileDialog({ projectId, file, onClose }: { projectId: number; file: ViewedFile; onClose: () => void }): ReactElement {
+export function FileDialog({ projectId, file: opened, onClose }: { projectId: number; file: ViewedFile; onClose: () => void }): ReactElement {
+  const versions = opened.versions ?? [];
+  const [pickedKey, setPickedKey] = useState(opened.key);
+  const picked = versions.find((v) => v.key === pickedKey);
+  const file: ViewedFile = { key: picked?.key ?? opened.key, name: opened.name };
+  const downloadName = picked?.fileName ?? opened.name;
   const path = simpleApi.fileUrl(projectId, file.key);
   const isImage = IMAGE.test(file.key);
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
@@ -85,11 +94,27 @@ export function FileDialog({ projectId, file, onClose }: { projectId: number; fi
     return () => { live = false; if (made) URL.revokeObjectURL(made); };
   }, [path, isImage, file.key]);
   return (
-    <WsDialog title={file.name} onClose={onClose} wide>
+    <WsDialog title={file.name} sub={picked ? `V${picked.version} · ${dayMonthYear(picked.uploadedOn)}${picked === versions[0] ? " · latest" : ""}` : undefined} onClose={onClose} wide>
+      {versions.length > 1 && (
+        <div role="group" aria-label="Choose version" style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, marginBottom: 12, fontSize: 13 }}>
+          <span style={{ color: BETA.muted, fontWeight: 600, marginRight: 4 }}>Version</span>
+          {versions.map((v) => {
+            const on = v.key === file.key;
+            return (
+              <button key={v.key} type="button" aria-pressed={on} onClick={() => { setBlobUrl(null); setError(null); setPickedKey(v.key); }}
+                style={{ display: "flex", flexDirection: "column", alignItems: "center", minWidth: 64, minHeight: 44, padding: "4px 10px", borderRadius: 8, font: "inherit", cursor: "pointer",
+                  border: `1px solid ${on ? BETA.ink : BETA.line}`, background: on ? BETA.ink : BETA.surface, color: on ? BETA.surface : BETA.ink }}>
+                <span style={{ fontWeight: 700 }}>V{v.version}</span>
+                <span style={{ fontSize: 11, opacity: 0.8 }}>{dayMonthYear(v.uploadedOn)}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
       {isImage ? <div style={{ maxHeight: "70vh", overflow: "auto" }}><WsPhoto path={path} alt={file.name} style={{ height: "auto", objectFit: "contain" }} /></div>
         : error ? <p role="alert" style={{ fontSize: 14, color: WS.red }}>The file could not be loaded: {error}</p>
-        : !blobUrl ? <p style={{ fontSize: 14, color: "#55605E" }}>Loading the file...</p>
-        : <p style={{ fontSize: 14 }}><a href={blobUrl} target="_blank" rel="noopener" download={file.name}>Open the file</a></p>}
+        : !blobUrl ? <p style={{ fontSize: 14, color: BETA.muted }}>Loading the file...</p>
+        : <p style={{ fontSize: 14 }}><a href={blobUrl} target="_blank" rel="noopener" download={downloadName}>Open the file</a></p>}
     </WsDialog>
   );
 }

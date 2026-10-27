@@ -116,7 +116,10 @@ export default function DepartmentsView({ onDirty }: { onDirty: (pending: number
   const gridStyle = { gridTemplateColumns: `minmax(220px,1.4fr) repeat(${columns.length}, minmax(190px,1fr))` };
   const ROW = 'grid gap-2.5 items-center px-5';
   // The first column stays put while the rest scrolls sideways; it needs its own background to hide what slides under.
-  const STICKY = 'sticky left-0 z-[1] min-w-0';
+  // -mr-2.5 + pr-2.5 stretches the cell over the grid gap, so scrolled cells don't peek out beside it.
+  const STICKY = 'sticky left-0 z-[1] min-w-0 -mr-2.5 pr-2.5';
+  const GRID_GAP = 10;
+  const ROW_PADDING = 40;
 
   return (
     <>
@@ -137,10 +140,11 @@ export default function DepartmentsView({ onDirty }: { onDirty: (pending: number
       {columns.length === 0 ? (
         <div className="p-5 text-copy text-muted-ink">No departments on this side yet. Add one under Departments and positions.</div>
       ) : (
-        <div className="overflow-x-auto">
-          <div style={{ minWidth: 220 + columns.length * 190 }}>
-            <div className={cx(ROW, 'py-2.5 bg-muted [border-bottom:1px_solid_var(--color-line)] text-caption font-semibold text-muted-ink')} style={gridStyle}>
-              <div className={cx(STICKY, 'bg-muted')}>Category and area</div>
+        // Own scroll box in both directions: a sticky header can only pin inside the box that scrolls vertically.
+        <div className="overflow-auto max-h-[70vh]">
+          <div style={{ minWidth: ROW_PADDING + 220 + columns.length * (190 + GRID_GAP) }}>
+            <div className={cx(ROW, 'sticky top-0 z-[2] py-2.5 bg-muted [border-bottom:1px_solid_var(--color-line)] text-caption font-semibold text-muted-ink')} style={gridStyle}>
+              <div className={cx(STICKY, 'z-[3] bg-muted')}>Category and area</div>
               {columns.map(d => (
                 <div key={d.id} className="min-w-0">
                   <div className="text-ink truncate" title={d.name}>{d.name}</div>
