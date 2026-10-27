@@ -27,9 +27,9 @@ const TD = { padding: "11px 12px", borderBottom: `1px solid ${BETA.lineSoft}`, v
 const DASH = <span style={{ color: BETA.faint }}>–</span>;
 /* Column shares of the table width (fixed layout), so the columns line up and fill the row at any width or zoom.
    The building tag wraps instead of being cut ("18 USJ 2/4P S...", owner 24 Oct 2026), so its column is wider.
-   Order: building, project, status, who now, due, step, payment. */
-const COLS_PAY = ["13%", "20%", "16%", "14%", "6%", "14%", "17%"] as const;
-const COLS_NO_PAY = ["15%", "24%", "19%", "16%", "8%", "18%"] as const;
+   Order, as the designs head it: Building, Project, ID condition, Who now, Due, Payment. */
+const COLS_PAY = ["14%", "26%", "24%", "14%", "8%", "14%"] as const;
+const COLS_NO_PAY = ["16%", "30%", "28%", "16%", "10%"] as const;
 /* The dot before each filter tab, as the designs colour the stages. Saturated enough to read on both skins. */
 const TAB_DOT: Readonly<Partial<Record<HomeTab, string>>> = { A: "#7FD3DC", BC: "#2F6BFF", D: "#F4A7BE", E: "#2EC4A6" };
 
@@ -92,16 +92,6 @@ function slaOf(r: BoardRowV2 | undefined, today: string): Sla {
   if (!r) return null;
   const over = r.sla?.overdueBy != null && r.sla.overdueBy > 0;
   return { step: r.step.label, text: slaDayText(r.sla, today) ?? "", over };
-}
-
-function SlaCell({ sla }: { sla: Sla }): ReactElement {
-  if (!sla) return DASH;
-  return (
-    <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.3, minWidth: 0 }}>
-      <span style={{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis" }}>{sla.step}</span>
-      {sla.text && <span style={{ fontSize: 12, fontWeight: sla.over ? 700 : 400, color: sla.over ? TONES.red.ink : MUTED }}>{sla.text}</span>}
-    </span>
-  );
 }
 
 /** The colours are set before anything else draws, so the loading line and an error already have them. */
@@ -257,15 +247,14 @@ function HomeScreen(): ReactElement {
               <tr>
                 <th scope="col" style={TH}>Building</th>
                 <th scope="col" style={TH}>Project</th>
-                <th scope="col" style={TH}>Status</th>
+                <th scope="col" style={TH}>ID condition</th>
                 <th scope="col" style={TH}>Who now</th>
                 <th scope="col" style={TH}>Due</th>
-                <th scope="col" style={TH}>Step · SLA</th>
                 {showPay && <th scope="col" style={TH}>Payment</th>}
               </tr>
             </thead>
             <tbody>
-              {rows.length === 0 && <tr><td colSpan={showPay ? 7 : 6} style={{ ...TD, color: MUTED }}>{query.trim() ? `No project matches "${query.trim()}".` : "No projects here."}</td></tr>}
+              {rows.length === 0 && <tr><td colSpan={showPay ? 6 : 5} style={{ ...TD, color: MUTED }}>{query.trim() ? `No project matches "${query.trim()}".` : "No projects here."}</td></tr>}
               {rows.map((r) => {
                 const [tagInk, tagBg] = betaTagTone(r.p.tag);
                 return (
@@ -284,7 +273,6 @@ function HomeScreen(): ReactElement {
                     <td style={TD}><StatusCell r={r} /></td>
                     <td style={TD}><WhoNow r={r} onAssign={() => assign(r.p.id)} /></td>
                     <td style={TD}>{r.left === null ? DASH : <DuePill left={r.left} />}</td>
-                    <td style={TD}><SlaCell sla={slaOf(slaById.get(r.p.id), today)} /></td>
                     {showPay && <td style={TD}>{r.p.payment != null ? <PayCell text={r.p.payment} outstandingSen={r.p.outstandingSen} /> : DASH}</td>}
                   </tr>
                 );
@@ -313,7 +301,7 @@ function WhoNow({ r, onAssign }: { r: HomeRow; onAssign: () => void }): ReactEle
   if (r.whoNow.kind === "assign") {
     return (
       <button type="button" onClick={onAssign} aria-label={`Assign ${r.p.name}`} style={{ ...BTN_MAIN, minHeight: 30, padding: "0 12px", fontSize: 12 }}>
-        + Assign team
+        Assign
       </button>
     );
   }
