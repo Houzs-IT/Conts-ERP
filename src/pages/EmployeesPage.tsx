@@ -4,6 +4,7 @@ import PageHeader from '../components/PageHeader';
 import { StatTile, StatRow } from '../components/Metric';
 import { EmptyState } from '../components/States';
 import { TabBar, tabId, panelId } from '../components/TabBar';
+import { Button } from '../components/Button';
 import { useApi } from '../lib/useApi';
 import type { AttendanceLine } from '../../functions/api/attendance/index';
 
@@ -44,6 +45,19 @@ const TABS = [
 type TabKey = (typeof TABS)[number]['key'] | 'leave';
 const isTab = (v: string | null): v is TabKey => v === 'leave' || TABS.some(t => t.key === v);
 
+/** Twelve tabs do not fit in one row, so the bar shows three sections and the second row shows the pages in the
+ *  chosen section (owner, 27 Oct 2026). Hookka's order is kept inside each section. */
+const SECTIONS = [
+  { key: 'time', label: 'Time', tabs: ['working-hours', 'efficiency', 'detail', 'department-performance'] },
+  { key: 'people', label: 'People', tabs: ['employee-master', 'attendance', 'outside'] },
+  { key: 'money', label: 'Money', tabs: ['payroll', 'advances', 'penalties', 'labor-cost', 'department-labor'] },
+] as const satisfies readonly { key: string; label: string; tabs: readonly TabKey[] }[];
+/** Leave is off the bar but belongs with People, so its notices still show the right section. */
+const sectionOf = (t: TabKey): (typeof SECTIONS)[number] =>
+  SECTIONS.find(s => (s.tabs as readonly TabKey[]).includes(t)) ?? SECTIONS[1];
+const tabsIn = (section: (typeof SECTIONS)[number]): typeof TABS[number][] =>
+  section.tabs.flatMap(k => TABS.filter(t => t.key === k));
+
 /** Tabs Hookka measures from factory job cards. The Conts has not decided what production time is for cleaning and
  *  repair jobs (owner, 26 Oct 2026), so they stay empty rather than show a made-up figure. */
 const UNDECIDED: Partial<Record<TabKey, string>> = {
@@ -57,6 +71,7 @@ export default function EmployeesPage() {
   const asked = params.get('tab');
   const tab: TabKey = isTab(asked) ? asked : 'working-hours';
   const setTab = (t: TabKey) => setParams(p => { const n = new URLSearchParams(p); n.set('tab', t); n.delete('month'); n.delete('day'); n.delete('year'); return n; }, { replace: true });
+  const section = sectionOf(tab);
   const today = useApi<{ data: AttendanceLine[] }>('/attendance');
   const lines = today.data?.data ?? [];
   const present = lines.filter(l => l.punch).length;
@@ -91,7 +106,13 @@ export default function EmployeesPage() {
         </StatRow>
       </div>
 
-      <div className="my-5 -mx-4 md:mx-0"><TabBar id="employees" label="Employees" tabs={TABS} value={tab} onChange={setTab} /></div>
+      <div role="group" aria-label="Section" className="mt-5 mb-3 flex gap-2">
+        {SECTIONS.map(s => (
+          <Button key={s.key} size="sm" variant={s.key === section.key ? 'primary' : 'secondary'} aria-pressed={s.key === section.key}
+            onClick={() => setTab(s.tabs[0])}>{s.label}</Button>
+        ))}
+      </div>
+      <div className="mb-5 -mx-4 md:mx-0"><TabBar id="employees" label={`${section.label} pages`} tabs={tabsIn(section)} value={tab} onChange={setTab} /></div>
 
       <div role="tabpanel" id={panelId('employees')} aria-labelledby={tab === 'leave' ? undefined : tabId('employees', tab)}>
         <Suspense fallback={null}>{body}</Suspense>
