@@ -5,14 +5,15 @@
  *  Shared by functions/api/expenses and the bill forms. */
 export const RECEIPT_EXEMPT_CATEGORIES = ['cleaning', 'housekeeping'];
 
-export function receiptRequired(category: string | null | undefined, chargeTo: string | null | undefined): boolean {
-  return (chargeTo ?? 'owner') === 'owner' && !RECEIPT_EXEMPT_CATEGORIES.includes(String(category ?? ''));
+export function receiptRequired(category: string | null | undefined, chargeTo: string | null | undefined, recordOnly = false): boolean {
+  // A record-only bill (the 2026 backfill of months already settled with the owner) is on no statement.
+  return !recordOnly && (chargeTo ?? 'owner') === 'owner' && !RECEIPT_EXEMPT_CATEGORIES.includes(String(category ?? ''));
 }
 
 /** An existing expense that should carry a receipt and does not: an owner-paid bill typed in by hand or imported, not
  *  one written by a cleaning or maintenance job. */
-export function missingReceipt(e: { category: string; chargeTo: string; receiptDocumentId: string | null; taskId?: string | null; maintenanceId?: string | null }): boolean {
-  return !e.receiptDocumentId && !e.taskId && !e.maintenanceId && receiptRequired(e.category, e.chargeTo);
+export function missingReceipt(e: { category: string; chargeTo: string; receiptDocumentId: string | null; taskId?: string | null; maintenanceId?: string | null; recordOnly?: boolean }): boolean {
+  return !e.receiptDocumentId && !e.taskId && !e.maintenanceId && receiptRequired(e.category, e.chargeTo, e.recordOnly);
 }
 
 export const RECEIPT_REQUIRED = 'Attach the receipt: the owner pays this bill.';

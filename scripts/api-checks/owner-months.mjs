@@ -163,8 +163,8 @@ async function sixQueries(from, toExclusive, scope = {}) {
   const stays = await q(`SELECT r.id, r.unit_id, r.check_in, r.check_out, r.collected_revenue, r.channel, r.external_ref, g.full_name AS guest_name
     FROM reservations r LEFT JOIN guests g ON g.id = r.guest_id WHERE r.state IN ('confirmed','checked_in','checked_out')
     AND r.channel NOT IN ('maintenance_block','owner_stay') AND r.check_in < ? AND r.check_out > ? AND r.unit_id IN ${list}`, toExclusive, from, ids);
-  const costs = await q(`SELECT e.id, e.unit_id, e.category, e.description, e.amount, e.incurred_on, e.reference, t.kind AS task_kind
-    FROM expenses e LEFT JOIN tasks t ON t.id = e.task_id WHERE e.charge_to = 'owner' AND e.incurred_on >= ? AND e.incurred_on < ? AND e.unit_id IN ${list}`, from, toExclusive, ids);
+  const costs = await q(`SELECT e.id, e.unit_id, e.category, e.description, e.amount, e.incurred_on, e.deduct_month, e.rolled, e.reference, t.kind AS task_kind
+    FROM expenses e LEFT JOIN tasks t ON t.id = e.task_id WHERE e.charge_to = 'owner' AND NOT e.record_only AND e.deduct_month >= substr(?, 1, 7) AND e.deduct_month < substr(?, 1, 7) AND e.unit_id IN ${list}`, from, toExclusive, ids);
   const adjustments = await q(`SELECT a.id, a.owner_id, a.unit_id, a.kind, a.amount, a.description, a.occurred_on, a.reference, a.state, a.statement_id
     FROM owner_adjustments a WHERE a.state <> 'held' AND a.occurred_on < ? AND a.owner_id IN (SELECT DISTINCT owner_id FROM units WHERE id IN ${list})
     ORDER BY a.occurred_on, a.id`, toExclusive, ids);
