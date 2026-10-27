@@ -79,7 +79,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
   let userId: string | null = null;
   if (employment === 'internal' && typeof b?.userId === 'string' && b.userId.trim()) {
-    const u = await one<{ id: string }>(env, "SELECT id FROM users WHERE id = ? AND role = 'housekeeper'", b.userId.trim());
+    const u = await one<{ id: string }>(env, "SELECT id FROM users WHERE id = ? AND role IN ('housekeeper', 'technician')", b.userId.trim());
     if (!u) return fail('NOT_FOUND', 'That cleaner account does not exist.', 404, { userId: 'Pick a cleaner.' });
     const taken = await one<{ id: string }>(env, 'SELECT id FROM cleaners WHERE user_id = ?', u.id);
     if (taken) return fail('CONFLICT', 'That login is already on the roster.', 409, { userId: 'Already linked to a cleaner.' });
