@@ -172,7 +172,7 @@ export default function TopBar({
 
         <ViewAs docked />
         <ThemeButton size={ctl} />
-        <NotificationBell path={path} navigate={go} size={ctl} />
+        <NotificationBell path={path} navigate={go} size={ctl} floating={dc} />
 
         {action && (
           <button type="button" onClick={action.onClick} aria-label={action.label} title={compact ? action.label : undefined}
