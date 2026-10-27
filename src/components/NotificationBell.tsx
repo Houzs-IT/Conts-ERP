@@ -155,7 +155,7 @@ function Bell({ navigate, target, size, alerts, dark = false, glass }: { navigat
         style={{ position: 'relative', width: size, height: size, flex: 'none', display: 'grid', placeItems: 'center', border: dark ? '1px solid rgba(255,255,255,0.14)' : `1px solid ${color.border}`, borderRadius: radius.control, background: dark ? 'transparent' : color.card, color: dark ? color.onDark : color.ink, cursor: 'pointer' }}>
         <Icon name="Bell" size="nav" />
         {unread > 0
-          ? <span aria-hidden style={{ position: 'absolute', top: -6, right: -6, minWidth: 18, height: 18, padding: '0 5px', boxSizing: 'border-box', borderRadius: radius.pill, background: 'var(--color-critical-line)', color: floating ? '#FFFFFF' : color.card, fontSize: 10, fontWeight: 700, lineHeight: '18px', textAlign: 'center', border: `2px solid ${floating ? 'transparent' : dark ? color.black : color.card}`, fontVariantNumeric: 'tabular-nums' }}>{badge}</span>
+          ? <span aria-hidden style={{ position: 'absolute', top: -6, right: -6, minWidth: 18, height: 18, padding: '0 5px', boxSizing: 'border-box', borderRadius: radius.pill, background: 'var(--color-critical-line)', color: floating ? 'var(--color-text-inverse)' : color.card, fontSize: 10, fontWeight: 700, lineHeight: '18px', textAlign: 'center', border: `2px solid ${floating ? 'transparent' : dark ? color.black : color.card}`, fontVariantNumeric: 'tabular-nums' }}>{badge}</span>
           : attention > 0 && <span aria-hidden style={{ position: 'absolute', top: 6, right: 7, width: 7, height: 7, borderRadius: radius.pill, background: 'var(--color-critical-line)' }} />}
       </button>
 

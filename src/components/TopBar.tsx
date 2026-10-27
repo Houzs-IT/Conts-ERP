@@ -125,6 +125,8 @@ export default function TopBar({
     borderRadius: radius.pill, ...look.card, color: look.text,
     '--color-card': look.wash, '--color-line': look.rule, '--color-ink': look.textOn,
     '--color-muted-ink': look.muted, '--color-faint': look.faint, '--color-muted': look.wash,
+    // White on the bell's red count, in both themes (the dark theme's inverse text is near black).
+    '--color-text-inverse': look.avatarInk,
   } as CSSProperties;
   // The bell's panel: the same glass, with its rows left see-through and its text, lines and link in the glass colours.
   const glassPanel = {
