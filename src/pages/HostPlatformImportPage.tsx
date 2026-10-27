@@ -4,6 +4,7 @@ import PageHeader from '../components/PageHeader';
 import { StatusBadge } from '../components/StatusBadge';
 import { Button } from '../components/Button';
 import { FileDropRow } from '../components/Attachments';
+import { DateField } from '../components/inputs';
 import { StaleBanner } from '../components/DataState';
 import { useApi } from '../lib/useApi';
 import { api, errorMessage } from '../lib/api';
@@ -26,7 +27,7 @@ import {
 
 interface Existing { units: { id: string; unitNumber: string; propertyId: string; propertyName: string }[]; properties: { id: string; name: string }[]; importedReservations: number }
 interface Result { created: number; updated: number; skipped: number; errors: RowError[]; skippedRows: RowError[]; notes: string[]; tables: Record<string, { created: number; updated: number }>; stats?: Record<string, number> }
-interface Run { done: number; total: number; result: Result | null; failed: string | null; busy: boolean }
+interface Run { done: number; total: number; result: Result | null; failed: string | null; busy: boolean; preview?: boolean }
 
 // Small parts keep each request well inside a Worker's CPU allowance (about 4 ms of mapping per 200 bookings measured locally).
 const CHUNK = 200;
@@ -160,6 +161,8 @@ export default function HostPlatformImportPage() {
         </div>
       </Card>
 
+      <ApiPull />
+
       <Step no={1} title="HostPlatform listing" hint="The units export (listing.csv). Creates the buildings and units." run={runs.listing}
         picker={<FileDropRow label="Choose listing CSV" hint="listing.csv from HostPlatform" chosen={listing?.name} accept=".csv,text/csv" onPick={pickListing} />}
         preview={listingPlan && (
@@ -258,10 +261,61 @@ export default function HostPlatformImportPage() {
 
 /* ------------------------------------------------------------------ */
 
+/** Reservations straight from the HostPlatform API, one HostPlatform property per request (functions/api/import/hostplatform-api.ts).
+ *  Updates the bookings already here by their HostPlatform code and adds the missing ones; never deletes. */
+function ApiPull() {
+  const info = useApi<{ configured: boolean; properties: { id: string; name: string }[] }>('/import/hostplatform-api');
+  const [from, setFrom] = useState('2026-08-01');
+  const [run, setRun] = useState<Run>();
+  // Saving unlocks only once a preview of the same start date has finished.
+  const [previewedFrom, setPreviewedFrom] = useState<string | null>(null);
+  const properties = info.data?.properties ?? [];
+
+  async function pull(preview: boolean) {
+    setRun({ done: 0, total: properties.length, result: null, failed: null, busy: true, preview });
+    if (preview) setPreviewedFrom(null);
+    let result: Result | null = null;
+    for (const [i, p] of properties.entries()) {
+      try {
+        const res = await api.post<Result & { pulled: number; blocks: number; cancelled: string[]; checkoutMoved: string[] }>('/import/hostplatform-api', { propertyId: p.id, from, preview });
+        const notes = [
+          ...res.notes,
+          ...(res.cancelled.length ? [`${p.name}: ${preview ? 'would cancel' : 'cancelled'} ${res.cancelled.join(', ')}`] : []),
+          ...(res.checkoutMoved.length ? [`${p.name}: checkout ${preview ? 'would move' : 'moved'} for ${res.checkoutMoved.join(', ')}`] : []),
+        ];
+        result = merge(result, { ...res, notes, stats: { pulled: res.pulled, blocks: res.blocks } });
+        setRun({ done: i + 1, total: properties.length, result, failed: null, busy: i + 1 < properties.length, preview });
+      } catch (e) {
+        const after = preview ? 'Nothing was saved; preview again.' : 'Everything before it is saved; pull again to finish (nothing is duplicated).';
+        setRun({ done: i, total: properties.length, result, failed: `Stopped at ${p.name}: ${errorMessage(e, 'The connection dropped.')} ${after}`, busy: false, preview });
+        return;
+      }
+    }
+    if (preview) setPreviewedFrom(from);
+  }
+
+  const hint = info.data && !info.data.configured
+    ? 'Not set up here yet: HOSTPLATFORM_BASE_URL and the HOSTPLATFORM_ACCESS_TOKEN secret are needed.'
+    : 'Reads every reservation from the date below onward, cancellations included, straight from HostPlatform. Preview first: it shows what would be added, changed, cancelled and left out, and saves nothing. Reservations already here keep their amounts, notes, guest and check-in/out; only dates, unit, guest count and cancellations follow HostPlatform. Nothing is deleted and nothing is sent to HostPlatform.';
+  const busy = !!run?.busy;
+  return (
+    <Step no="API" title="Pull reservations from HostPlatform" hint={hint} run={run}
+      picker={info.data?.configured && <div className="max-w-[220px]"><DateField label="Stays from" value={from} onChange={setFrom} /></div>}
+      action={info.data?.configured && <>
+        <Button variant="primary" size="sm" loading={busy && run?.preview} disabled={!properties.length || !from || busy} disabledReason={busy ? 'A pull is running.' : 'HostPlatform returned no buildings.'}
+          onClick={() => pull(true)}>Preview {plural(properties.length, 'building')}</Button>
+        <Button variant="secondary" size="sm" loading={busy && !run?.preview} disabled={busy || previewedFrom !== from} disabledReason={busy ? 'A pull is running.' : 'Preview this start date first.'}
+          onClick={() => pull(false)}>Pull and save</Button>
+      </>} />
+  );
+}
+
 function Step({ no, title, hint, picker, preview, action, run, waitFor }: {
-  no: number; title: string; hint: string; picker?: ReactNode; preview?: ReactNode; action?: ReactNode; run?: Run; waitFor?: string | null;
+  no: number | string; title: string; hint: string; picker?: ReactNode; preview?: ReactNode; action?: ReactNode; run?: Run; waitFor?: string | null;
 }) {
-  const state = run?.failed ? { label: 'Stopped', tone: 'critical' as const } : run?.busy ? { label: 'Importing', tone: 'info' as const } : run?.result ? { label: 'Imported', tone: 'success' as const } : null;
+  const state = run?.failed ? { label: 'Stopped', tone: 'critical' as const }
+    : run?.busy ? { label: run.preview ? 'Previewing' : 'Importing', tone: 'info' as const }
+    : run?.result ? { label: run.preview ? 'Preview only' : 'Imported', tone: run.preview ? 'info' as const : 'success' as const } : null;
   return (
     <Card>
       <div className="p-5 flex flex-col gap-3">
@@ -285,7 +339,7 @@ function Step({ no, title, hint, picker, preview, action, run, waitFor }: {
           </div>
         )}
         {run?.failed && <div role="alert" className="text-copy text-danger">{run.failed}</div>}
-        {run?.result && <ResultView r={run.result} />}
+        {run?.result && <ResultView r={run.result} preview={run.preview} />}
       </div>
       {action && (
         <div className="flex items-center gap-2 flex-wrap py-3 px-5 [border-top:1px_solid_var(--color-line-soft)]">
@@ -334,18 +388,21 @@ function RowList({ title, rows: all }: { title: string; rows: RowError[] }) {
   );
 }
 
-function ResultView({ r }: { r: Result }) {
+function ResultView({ r, preview }: { r: Result; preview?: boolean }) {
   const TABLE: Record<string, string> = { properties: 'Buildings', owners: 'Owners', owner_contracts: 'Contracts', units: 'Units', unit_expenses: 'Monthly costs', guests: 'Guests', reservations: 'Reservations', tasks: 'Cleaning jobs', expenses: 'Expenses',
     cleaners: 'Cleaners', unit_utility_accounts: 'Utility accounts', guarantee_pool_months: 'Guarantee pool months', owner_adjustments: 'Owner adjustments and debts',
     owner_statements: 'Owner statements', statement_lines: 'Owner statement lines', payouts: 'Owner payouts', booking_payments: 'Reservation payments' };
   return (
     <div className="flex flex-col gap-2 py-3 px-3 rounded-control [border:1px_solid_var(--color-line-soft)]">
-      <span className="text-copy font-semibold">{n(r.created)} added · {n(r.updated)} updated · {n(r.skipped)} not imported</span>
+      <span className="text-copy font-semibold">{preview
+        ? `Preview, nothing saved: ${n(r.created)} would be added · ${n(r.updated)} would change · ${n(r.skipped)} would be left out`
+        : `${n(r.created)} added · ${n(r.updated)} updated · ${n(r.skipped)} not imported`}</span>
       <div className="flex flex-wrap gap-x-4 gap-y-1 text-meta text-[var(--color-ink-2)]">
         {Object.entries(r.tables).map(([t, v]) => <span key={t}>{TABLE[t] ?? t.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase())}: {n(v.created)} new, {n(v.updated)} updated</span>)}
         {r.stats && 'matched' in r.stats && <span>Matched {n(r.stats.matched)}, workbook only {n(r.stats.workbookOnly)}, HostPlatform only {n(r.stats.hostPlatformOnly)}</span>}
         {r.stats && 'statesBefore' in r.stats && <span>States written {n(r.stats.statesBefore)} ways before, {n(r.stats.statesAfter)} after; cities {n(r.stats.citiesBefore)} before, {n(r.stats.citiesAfter)} after</span>}
         {r.stats && 'statements' in r.stats && <span>{n(r.stats.statements)} statements for {n(r.stats.unitMonths)} unit-months, {n(r.stats.payouts)} paid owner payouts; {n(r.stats.creditsSettled)} credits marked as already paid in them</span>}
+        {r.stats && 'pulled' in r.stats && <span>{n(r.stats.pulled)} reservations read from HostPlatform, {n(r.stats.blocks)} of them blocks (no guest)</span>}
         {r.stats && 'matchedHostPlatform' in r.stats && <span>Amounts set on {n(r.stats.matchedHostPlatform)} HostPlatform reservations, {n(r.stats.createdFromWorkbook)} added from the workbook</span>}
       </div>
       {r.notes.map(t => <p key={t} className="m-0 text-meta text-[var(--color-ink-2)]">{t}</p>)}

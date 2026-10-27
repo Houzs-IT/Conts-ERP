@@ -107,4 +107,30 @@ check('expenses: a negative line is not an expense', ex.skipped.length, 1);
 check('chunkByKey keeps a code together', M.chunkByKey(['a', 'b', 'b', 'c'], x => x, 2).map(c => c.join('')), ['a', 'bb', 'c']);
 check('pick keeps only listed columns', M.pick([{ a: 1, secret: 2, _row: 5 }], ['a']), [{ a: 1, _row: 5 }]);
 
+// HostPlatform API (version 2) rows, shaped like the live API's answers.
+const apiBase = { check_in_date: '2026-10-22', check_out_date: '2026-10-23', status: 'Confirmed', unit: 'C13-13A 2B1B', unit_id: 'i65p5u1', property: 'Agile The Conts', property_id: 'i65p5',
+  guest_details: { number_of_pax: 4, first_name: 'A', last_name: 'Guest', contact_no: '', email: 'A@X.COM' },
+  price_details: { currency: 'MYR', room: 217.22, cleaning_fee: 0, extra_guest_fee: 0, platform_fee: 40.44 },
+  service_fees: { early_checkin_fee: 0, late_checkout_fee: 0, transport_fee: 0, breakfast_fee: 0, lunch_fee: 0, dinner_fee: 0, shuttle_fee: 0, other_fee: 0 } };
+const apiPlan = M.mapApiReservations([
+  { ...apiBase, code: '9L3VM5OSR', source: 'airbnb', source_id: 'HMCWQSHDFK' },
+  { ...apiBase, code: '5429066259', source: 'bookingcom', source_id: '6295633172', status: 'Cancelled by OTA', price_details: { currency: 'MYR', room: 694.4, platform_fee: 167.6026944 } },
+  { ...apiBase, code: 'PH6GK59W5', source: 'hostplatform', price_details: { currency: 'MYR', room: 0, cleaning_fee: 80, platform_fee: 0 }, remarks: 'walk-in friend' },
+  { ...apiBase, code: 'BLK000003', source: 'hostplatform', guest_details: undefined, price_details: undefined, service_fees: undefined, remarks: 'Block units for maintenance', unit: 'B56-06(A) 1B1B', property: 'Trion KL (2) The Conts' },
+  { ...apiBase, code: 'OWN000001', source: 'hostplatform', guest_details: null, remarks: 'owner stay' },
+  { ...apiBase, code: '9L3VM5OSR', source: 'airbnb' },
+  { ...apiBase, code: 'BADDATES2', source: 'airbnb', check_out_date: '2026-10-22' },
+], '2026-10-27');
+const byCode = Object.fromEntries(apiPlan.reservations.map(r => [r.code, r]));
+check('api: ids and references match the CSV import', apiPlan.reservations.map(r => [r.id, r.externalRef]),
+  [['hp-res-9L3VM5OSR', 'HMCWQSHDFK'], ['hp-res-5429066259', '6295633172'], ['hp-res-PH6GK59W5', 'PH6GK59W5'], ['hp-res-BLK000003', 'BLK000003'], ['hp-res-OWN000001', 'OWN000001']]);
+check('api: channels (no guest = block, owner stay by remarks)', apiPlan.reservations.map(r => r.channel), ['airbnb', 'booking_com', 'direct', 'maintenance_block', 'owner_stay']);
+check('api: Airbnb gross is payout plus fee (as stored by the CSV import)', [byCode['9L3VM5OSR'].gross, byCode['9L3VM5OSR'].fee, byCode['9L3VM5OSR'].collected], [25766, 4044, 0]);
+check('api: other channels add no fee on top', [byCode['5429066259'].gross, byCode['5429066259'].fee, byCode.PH6GK59W5.gross], [69440, 16760, 8000]);
+check('api: states', apiPlan.reservations.map(r => r.state), ['checked_out', 'cancelled', 'checked_out', 'checked_out', 'checked_out']);
+check('api: building "(2)" and room suffix normalised', [byCode.BLK000003.building, byCode.BLK000003.unitNumber], ['Trion KL', 'B56-06 (A)']);
+check('api: blocks have no guest, guests are lower-cased email', [byCode.BLK000003.guestId, apiPlan.guests.find(g => g.id === byCode['9L3VM5OSR'].guestId)?.email], [null, 'a@x.com']);
+check('api: remarks kept for direct, not for OTA', [byCode.PH6GK59W5.notes, byCode['9L3VM5OSR'].notes], ['Imported from the HostPlatform API (PH6GK59W5) · walk-in friend', 'Imported from the HostPlatform API (9L3VM5OSR)']);
+check('api: duplicate and bad dates refused', apiPlan.errors.map(e => e.row), ['9L3VM5OSR', 'BADDATES2']);
+
 console.log(fails ? `\n${fails} FAILED` : '\nall ok'); process.exit(fails ? 1 : 0);
