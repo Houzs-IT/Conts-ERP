@@ -52,5 +52,4 @@ BEGIN
 END $$;
 ALTER FUNCTION expenses_deduct_month() OWNER TO pos_app;
 
-DROP TRIGGER IF EXISTS expenses_deduct_month ON expenses;
-CREATE TRIGGER expenses_deduct_month BEFORE INSERT OR UPDATE ON expenses FOR EACH ROW EXECUTE FUNCTION expenses_deduct_month();
+CREATE OR REPLACE TRIGGER expenses_deduct_month BEFORE INSERT OR UPDATE ON expenses FOR EACH ROW EXECUTE FUNCTION expenses_deduct_month();
