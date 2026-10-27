@@ -126,6 +126,13 @@ export default function TopBar({
     '--color-card': look.wash, '--color-line': look.rule, '--color-ink': look.textOn,
     '--color-muted-ink': look.muted, '--color-faint': look.faint, '--color-muted': look.wash,
   } as CSSProperties;
+  // The bell's panel: the same glass, with its rows left see-through and its text, lines and link in the glass colours.
+  const glassPanel = {
+    ...look.card,
+    '--color-card': 'transparent', '--color-gold-tint': look.wash, '--color-line': look.rule, '--color-line-soft': look.divider,
+    '--color-muted': look.wash, '--color-ink': look.textOn, '--color-ink-2': look.text, '--color-muted-ink': look.muted,
+    '--color-faint': look.faint, '--color-gold-ink': look.dot,
+  } as CSSProperties;
   // The glass blur makes the bar the anchor of anything fixed inside it, so the search overlay goes to the page body.
   const inBody = (overlay: ReactElement): ReactNode => (dc ? createPortal(overlay, document.body) : overlay);
 
@@ -172,7 +179,7 @@ export default function TopBar({
 
         <ViewAs docked />
         <ThemeButton size={ctl} />
-        <NotificationBell path={path} navigate={go} size={ctl} floating={dc} />
+        <NotificationBell path={path} navigate={go} size={ctl} glass={dc ? glassPanel : undefined} />
 
         {action && (
           <button type="button" onClick={action.onClick} aria-label={action.label} title={compact ? action.label : undefined}
