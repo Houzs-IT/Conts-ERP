@@ -5,6 +5,7 @@ import { useToast } from '../Toast';
 import { api, errorMessage } from '../../lib/api';
 import { cx } from '../../lib/design-tokens';
 import type { AccessArea, AccessChange, AccessChart, AccessLevel, AccessSetting, Department } from '../../lib/types';
+import { LevelBoxes, TIERS } from './LevelBoxes';
 import { LEVEL_COLOR, LEVEL_LABEL, LEVEL_NOTE, SELECT, SIDE_OPTIONS, TAG, categorySide, isFieldKind, sideLabel } from './shared';
 
 /** A pending change: what is picked but not yet saved. `level` null deletes the stored row. */
@@ -13,39 +14,6 @@ type SideFilter = 'all' | 'conts' | 'dream_crafter';
 
 const groupKey = (group: string) => `group:${group}`;
 const draftKey = (deptId: string, key: string) => `${deptId}\n${key}`;
-
-/** The levels as three cumulative boxes: a higher box implies the ones before it. No box ticked is No access. */
-const TIERS: readonly { level: AccessLevel; label: string }[] = [{ level: 'view', label: 'View' }, { level: 'edit', label: 'Edit' }, { level: 'full', label: 'Full' }];
-const RANK: Record<AccessLevel, number> = { none: 0, view: 1, edit: 2, full: 3 };
-// Unticking a box drops to the level below it, so unticking View leaves No access.
-const BELOW: Record<AccessLevel, AccessLevel> = { none: 'none', view: 'none', edit: 'view', full: 'edit' };
-
-interface LevelBoxesProps {
-  level: AccessLevel | undefined;
-  label: string;
-  disabled: boolean;
-  /** Inherited from the category: drawn lighter so the eye goes to the overrides. */
-  faded?: boolean;
-  changed?: boolean;
-  onPick: (next: AccessLevel) => void;
-}
-
-/** The View, Edit and Full cells of one row (three grid cells). */
-function LevelBoxes({ level, label, disabled, faded = false, changed = false, onPick }: LevelBoxesProps) {
-  const rank = RANK[level ?? 'none'];
-  return (
-    <>
-      {TIERS.map(t => (
-        <div key={t.level} className={cx('flex justify-center', faded && 'opacity-60')}>
-          <input type="checkbox" aria-label={`${label}: ${t.label}`} checked={rank >= RANK[t.level]} disabled={disabled}
-            onChange={e => onPick(e.target.checked ? t.level : BELOW[t.level])}
-            className="h-[18px] w-[18px] m-0 cursor-pointer disabled:cursor-default"
-            style={{ accentColor: LEVEL_COLOR[t.level], boxShadow: changed ? '0 0 0 2px var(--color-gold)' : undefined, borderRadius: 3 }} />
-        </div>
-      ))}
-    </>
-  );
-}
 
 const FILTERS: { value: SideFilter; label: string }[] = [
   { value: 'conts', label: SIDE_OPTIONS[0].label }, { value: 'dream_crafter', label: SIDE_OPTIONS[1].label }, { value: 'all', label: 'All' },
