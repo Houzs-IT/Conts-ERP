@@ -70,7 +70,13 @@ const CSS = `
 .bws .tabs::-webkit-scrollbar{display:none}
 /* On a phone the header and stepper fill most of the screen, so the tab row stays at the top while a tab scrolls. Only
    inside Property OS: the engine opened on its own has its own sticky top bar, which would cover the row. */
-@media (max-width:720px){html.conts-embedded .bws .tabs{position:sticky;top:0;z-index:5}}
+@media (max-width:720px){html.conts-embedded .bws .tabs,html.conts-embedded .bws .tab-pick{position:sticky;top:0;z-index:5}}
+/* Phone: the section picker replaces the tab row (RenovationBetaWorkspace.tsx). 16px text so iOS does not zoom in. */
+.bws .tab-pick{display:none;position:relative;align-items:center}
+.bws .tab-pick select{appearance:none;-webkit-appearance:none;width:100%;min-height:48px;padding:0 44px 0 16px;border:1px solid ${BETA.border};border-radius:12px;background:${BETA.glassSolid};color:${BETA.ink};font:inherit;font-size:16px;font-weight:600;cursor:pointer}
+.bws .tab-pick select:focus-visible{outline:2px solid ${BETA.selInk};outline-offset:2px}
+.bws .tab-pick svg{position:absolute;right:16px;pointer-events:none;color:${BETA.muted}}
+@media (max-width:720px){.bws .tabs{display:none}.bws .tab-pick{display:flex}}
 .bws .tab{position:relative;display:flex;flex:none;white-space:nowrap;align-items:center;min-height:44px;padding:0 16px;border:0;border-bottom:3px solid transparent;margin-bottom:-1px;background:transparent;font:inherit;color:${BETA.muted};font-weight:500;cursor:pointer}
 .bws .tab:focus:not(:focus-visible){outline:none}
 .bws .tab[aria-current="page"]{color:${BETA.ink};font-weight:600}

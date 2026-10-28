@@ -9,6 +9,7 @@ import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { motion } from "motion/react";
+import { ChevronDown } from "lucide-react";
 import { BetaMotion, SPRING, STAGGER } from "./betaMotion";
 import { useAuth } from "../../auth/AuthContext";
 import { useQuery } from "../../hooks/useQuery";
@@ -135,6 +136,14 @@ function WorkspaceScreen(): ReactElement {
           </button>
         ))}
       </nav>
+      {/* Phone: ten tabs don't fit, so a picker jumps straight to any section (.tab-pick in BetaWsUi.tsx swaps it in). */}
+      <label className="tab-pick">
+        <span className="sr">Project section</span>
+        <select value={tab} onChange={(e) => { setNotice(null); openTab(tabFromParam(e.target.value)); }}>
+          {BETA_TABS.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
+        </select>
+        <ChevronDown size={18} aria-hidden="true" />
+      </label>
 
       <div aria-live="polite">{notice && <WsNotice tone={notice.tone}>{notice.text}</WsNotice>}</div>
 
