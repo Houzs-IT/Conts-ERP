@@ -28,7 +28,7 @@ import { BetaSkin, WS, WsNotice, WsStyle } from "./BetaWsUi";
 import type { BetaTabProps, BoardView } from "./betaShared";
 import { betaApi } from "./renovationBetaApi";
 import { projectView } from "./renovationBetaBoard";
-import { boardApi, boardKey, forgetLastProject, invalidateBeta, rememberLastProject } from "./renovationBetaBoardApi";
+import { boardApi, boardKey, forgetLastProject, invalidateBeta, projectBoardFromHome, rememberLastProject } from "./renovationBetaBoardApi";
 import { mytDay, stepperItems } from "./renovationBetaModel";
 import { BETA } from "./renovationBetaTheme";
 import { BETA_TABS, tabFromParam, type BetaTabKey } from "./renovationBetaTabs";
@@ -55,12 +55,17 @@ function WorkspaceScreen(): ReactElement {
   const tab = tabFromParam(params.get("tab"));
   const valid = Number.isInteger(id) && id > 0;
   const q = useQuery(["renovation-beta", "detail", id], () => simpleApi.detail(id), [id], { enabled: valid });
+  const queryClient = useQueryClient();
   // The same board answer Home and Calendar use, for this one project: people, dates and condition match them.
-  const bq = useQuery(boardKey(undefined, id), () => boardApi.board(undefined, id).catch((e: unknown) => { if (isNotFound(e)) forgetLastProject(); throw e; }), [id], { enabled: valid });
+  // When Home is already in the cache it seeds this (stamped with Home's own age, so it still refetches if stale).
+  const bq = useQuery(boardKey(undefined, id), () => boardApi.board(undefined, id).catch((e: unknown) => { if (isNotFound(e)) forgetLastProject(); throw e; }), [id], {
+    enabled: valid,
+    initialData: () => projectBoardFromHome(queryClient, id)?.data,
+    initialDataUpdatedAt: () => projectBoardFromHome(queryClient, id)?.at,
+  });
   const ws = useQuery(["renovation-beta", "workspace", id], () => betaApi.workspace(id), [id], { enabled: valid });
   const rec = useQuery(["renovation-beta", "records", id], () => simpleApi.designRecords(id), [id], { enabled: valid });
   const { can } = useAuth();
-  const queryClient = useQueryClient();
   const [notice, setNotice] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
   const [dialog, setDialog] = useState<BetaDialog | null>(null);
   const d = q.data;

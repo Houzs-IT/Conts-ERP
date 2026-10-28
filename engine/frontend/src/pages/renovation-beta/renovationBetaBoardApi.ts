@@ -1,5 +1,9 @@
 /* Calls for the Beta Home and Calendar screens (docs/superpowers/plans/2026-10-23-beta-project-workspace.md,
-   section 10). Shapes mirror the board routes in engine/backend/src/routes/renovationBeta.ts. */
+   section 10). Shapes mirror the board routes in engine/backend/src/routes/renovationBeta.ts.
+
+   NAMING RULE: every Beta query key starts with "renovation-beta" (so "uq", "renovation-beta", ... once useQuery builds
+   it). That name is what disk saving (lib/query-persist.ts isBetaKey), sign-out clearing and invalidateBeta all match.
+   A Beta query named any other way is not saved, not cleared on sign-out and not refreshed after a write. */
 
 import type { QueryClient } from "@tanstack/react-query";
 import { api } from "../../api/client";
@@ -106,6 +110,45 @@ export interface EventBody {
 /** The one query key of the board. Home, Calendar and the workspace all use it, so one write refreshes them all. */
 export function boardKey(range?: BoardRange, projectId?: number): ReadonlyArray<string | number> {
   return ["renovation-beta", "board", range?.from ?? "", range?.to ?? "", projectId ?? 0];
+}
+
+/** What the workspace can show at once from the Home board already in the cache: the one project, its people and
+    settings, and its own events. Home and the workspace both ask the server for the default date window, so the events
+    cover the same days. `at` is the Home answer's own age, so a stale or disk-restored copy still refetches on mount.
+    A Home answer a write has invalidated keeps its old data until the refetch lands, so it is seeded as stale (`at` 1):
+    the screen paints at once and the mount refetches, never serving the pre-write answer as fresh.
+    Undefined when Home was never loaded or does not list the project (the real fetch then answers, 404 included). */
+export function projectBoardFromHome(queryClient: QueryClient, projectId: number): { data: BetaBoard; at: number } | undefined {
+  const home = queryClient.getQueryState<BetaBoard>(buildQueryKey(boardKey()));
+  const project = home?.data?.projects.find((x) => x.id === projectId);
+  if (!home?.data || !project) return undefined;
+  return { data: { ...home.data, projects: [project], events: home.data.events.filter((e) => e.projectId === projectId) }, at: home.isInvalidated ? 1 : home.dataUpdatedAt };
+}
+
+/** Start the three requests a project page waits on, so the first open of a project is already under way when the row is
+    clicked. Same keys as the workspace (buildQueryKey), so the page picks the answers up from the cache. A failed
+    prefetch is silent on purpose: nothing was asked for yet, and the page's own query reports the error when it opens.
+    prefetchQuery skips anything fresher than the 30 s default, so pointing at the same row again costs nothing. */
+export function prefetchProject(queryClient: QueryClient, id: number): void {
+  void queryClient.prefetchQuery({ queryKey: buildQueryKey(["renovation-beta", "detail", id], [id]), queryFn: () => simpleApi.detail(id) });
+  void queryClient.prefetchQuery({ queryKey: buildQueryKey(["renovation-beta", "workspace", id], [id]), queryFn: () => betaApi.workspace(id) });
+  void queryClient.prefetchQuery({ queryKey: buildQueryKey(["renovation-beta", "records", id], [id]), queryFn: () => simpleApi.designRecords(id) });
+}
+
+const HOVER_INTENT_MS = 120;
+let hoverTimer: ReturnType<typeof setTimeout> | undefined;
+
+/** Mouse handlers for a project row: prefetch once the pointer rests on it (a sweep across the list fetches nothing),
+    or at once when the row gets keyboard focus. Phones get none: a touch that starts a scroll would fetch every card. */
+export function prefetchOnIntent(queryClient: QueryClient, id: number): { onMouseEnter: () => void; onMouseLeave: () => void; onFocus: () => void } {
+  return {
+    onMouseEnter: () => {
+      clearTimeout(hoverTimer);
+      hoverTimer = setTimeout(() => prefetchProject(queryClient, id), HOVER_INTENT_MS);
+    },
+    onMouseLeave: () => clearTimeout(hoverTimer),
+    onFocus: () => prefetchProject(queryClient, id),
+  };
 }
 
 /** Refetch everything Beta shows (the board and the workspace queries) after a write. */

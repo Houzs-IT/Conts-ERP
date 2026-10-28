@@ -15,9 +15,16 @@ export interface QueryState<T> {
 // queryClient (refetch-on-mount when stale). Set
 // `refetchOnMount: "always"` + `staleTime: 0` on a list query that must
 // reflect a sibling tab's create the instant the consumer mounts.
-export interface UseQueryOptions {
+export interface UseQueryOptions<T = unknown> {
   refetchOnMount?: boolean | "always";
   staleTime?: number;
+  // Seed the cache entry from data another query already holds (TanStack
+  // `initialData` / `initialDataUpdatedAt`), so a screen opens with no spinner.
+  // Only used when this key has no data yet. Return undefined for "nothing to
+  // seed". Give a real time in `initialDataUpdatedAt` (the source's own
+  // dataUpdatedAt): without one TanStack stamps the seed as fresh right now.
+  initialData?: () => T | undefined;
+  initialDataUpdatedAt?: () => number | undefined;
   // Set true on a PAGINATED / tab-switched list so changing page/tab keeps the
   // previous rows on screen while the next slice loads, instead of flashing an
   // empty table + spinner (TanStack v5's keepPreviousData behaviour). Purely
@@ -84,7 +91,7 @@ export function useQuery<T>(
   key: UseQueryKey,
   fetcher: (signal?: AbortSignal) => Promise<T>,
   deps: ReadonlyArray<unknown> = [],
-  options: UseQueryOptions = {},
+  options: UseQueryOptions<T> = {},
 ): QueryState<T> {
   const enabled = options.enabled ?? true;
   const q = useTanstackQuery<T>({
@@ -95,6 +102,10 @@ export function useQuery<T>(
       refetchOnMount: options.refetchOnMount,
     }),
     ...(options.staleTime !== undefined && { staleTime: options.staleTime }),
+    ...(options.initialData !== undefined && { initialData: options.initialData }),
+    ...(options.initialDataUpdatedAt !== undefined && {
+      initialDataUpdatedAt: options.initialDataUpdatedAt,
+    }),
     // keepPreviousData: hold the last successful data while the next key's
     // fetch is in flight, so a page/tab switch never blanks the list.
     ...(options.keepPreviousData && { placeholderData: keepPreviousData }),
