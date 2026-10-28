@@ -12,6 +12,7 @@ import { simpleApi, type KeyMove, type ProjectDetailV2 } from "../projects/renov
 import { WS, WsBtn, WsCard, WsField, btnStyle, inputStyle } from "./BetaWsUi";
 import { dayMonth, dayMonthYear } from "./renovationBetaModel";
 import { BETA } from "./renovationBetaTheme";
+import { BetaLoading } from "./BetaLoading";
 
 interface Props { d: ProjectDetailV2; canWrite: boolean; today: string; onDone: (text: string) => void }
 
@@ -100,7 +101,7 @@ export function BetaWsKeyCard({ d, canWrite, today, onDone }: Props): ReactEleme
       </div>
 
       {formOpen && (
-        <div role={adding ? "group" : undefined} aria-label={adding ? "Record key pass" : undefined} style={{ display: "flex", flexDirection: "column", gap: 8, padding: 12, border: `1.5px solid ${BETA.blue}`, borderRadius: 14 }}>
+        <div role={adding ? "group" : undefined} aria-label={adding ? "Record key pass" : undefined} style={{ display: "flex", flexDirection: "column", gap: 8, padding: 12, border: `1.5px solid ${BETA.border}`, borderRadius: 14 }}>
           <KeyFields draft={draft} onChange={setDraft} today={today} prefix="New key pass" />
           <div style={{ display: "flex", gap: 8 }}>
             {adding && <WsBtn style={{ flex: 1 }} disabled={busy} onClick={() => { setAdding(false); setMsg(null); }}>Cancel</WsBtn>}
@@ -112,13 +113,13 @@ export function BetaWsKeyCard({ d, canWrite, today, onDone }: Props): ReactEleme
       {msg && (msg.tone === "ok" || editing != null || !formOpen) && (
         <p role={msg.tone === "err" ? "alert" : "status"} style={{ fontSize: 13, color: msg.tone === "err" ? WS.red : WS.green }}>{msg.text}</p>
       )}
-      {q.loading && rows.length === 0 && <p style={{ fontSize: 13, color: BETA.muted }}>Loading key log...</p>}
+      {q.loading && rows.length === 0 && <BetaLoading label="Loading key log" size="inline" />}
       {q.error && rows.length === 0 && <p role="alert" style={{ fontSize: 13, color: WS.red }}>The key log could not be loaded: {q.error}</p>}
 
       {rows.length > 0 && (
         <div>
           <div style={{ fontSize: 12, color: BETA.muted, fontWeight: 600, marginBottom: 4 }}>History</div>
-          <ol style={{ listStyle: "none", margin: 0, padding: 0, fontSize: 13 }}>
+          <ol className="stag" style={{ listStyle: "none", margin: 0, padding: 0, fontSize: 13 }}>
             {shown.map((r) => editing?.moveId === r.id ? (
               <li key={r.id} style={{ padding: "8px 0", borderTop: `1px solid ${WS.rowLine}`, display: "flex", flexDirection: "column", gap: 8 }}>
                 <KeyFields draft={editing.draft} onChange={(x) => setEditing({ moveId: r.id, draft: x })} today={today} prefix="Edit key pass" />

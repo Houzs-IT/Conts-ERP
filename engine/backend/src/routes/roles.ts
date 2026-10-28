@@ -6,11 +6,6 @@ import { audit } from "../services/audit";
 import { getDb } from "../db/client";
 import { roles, users } from "../db/schema";
 import { eq, sql } from "drizzle-orm";
-import { isMissingRelation, type Db } from "../services/renovation/load";
-import {
-  cleanCategoryAccess, loadCategoryTree, loadKnownCategories, readCategoryRows, rowsOfInput, scopeOfRows, unknownCategory,
-  type CategoryScope,
-} from "../services/categoryAccess";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -184,91 +179,6 @@ app.patch("/:id", requirePermission("roles.manage"), async (c) => {
     entityId: id,
     summary: `Updated role #${id}`,
     meta: { changed: Object.keys(set), permissions: body.permissions },
-  });
-  return c.json({ ok: true });
-});
-
-/**
- * GET /api/roles/:id/category-access
- * Which product categories the role sees on the Renovation beta project screens, with the catalog tree to draw.
- * No stored rows means every category (restricted false). The owner role (`*`) cannot be restricted.
- */
-app.get("/:id/category-access", requirePermission("roles.read"), async (c) => {
-  const id = parseInt(c.req.param("id"), 10);
-  if (!id) return c.json({ error: "Invalid ID." }, 400);
-
-  const row = await getDb(c.env).select({ id: roles.id, permissions: roles.permissions }).from(roles).where(eq(roles.id, id)).limit(1);
-  if (row.length === 0) return c.json({ error: "Role not found" }, 404);
-
-  const db = c.env.DB as unknown as Db;
-  try {
-    const scope = scopeOfRows(await readCategoryRows(db, id));
-    // A code the catalog no longer has (hard deleted) is left out, so it cannot make the next save refuse. An inactive
-    // sub-category is still in the catalog and stays.
-    const known = await loadKnownCategories(db);
-    return c.json({
-      restricted: scope !== null,
-      groups: [...(scope?.groups ?? [])].filter((g) => known.groups.has(g)),
-      subs: [...(scope?.subs ?? [])].filter((x) => known.pairs.has(x)),
-      other: scope?.other ?? false,
-      catalog: await loadCategoryTree(db),
-    });
-  } catch (e) {
-    if (!isMissingRelation(e)) throw e;
-    return c.json({ error: "Category access is not switched on yet on this server." }, 409);
-  }
-});
-
-/**
- * PUT /api/roles/:id/category-access
- * Body: { restricted, groups: string[], subs: string[] ("GROUP/SUB"), other }
- * Replaces the role's stored rows in one transaction. restricted false clears them (every category).
- * System roles are editable here too; only the owner role (`*`) is refused.
- */
-app.put("/:id/category-access", requirePermission("roles.manage"), async (c) => {
-  const id = parseInt(c.req.param("id"), 10);
-  if (!id) return c.json({ error: "Invalid ID." }, 400);
-
-  const row = await getDb(c.env).select({ id: roles.id, name: roles.name, permissions: roles.permissions }).from(roles).where(eq(roles.id, id)).limit(1);
-  if (row.length === 0) return c.json({ error: "Role not found" }, 404);
-  if (parsePermissions(row[0].permissions).includes("*")) {
-    return c.json({ error: "The owner role always sees every category" }, 400);
-  }
-
-  const cleaned = cleanCategoryAccess(await c.req.json<unknown>().catch(() => null));
-  if (!cleaned.ok) return c.json({ error: cleaned.message }, 400);
-  const input = cleaned.value;
-
-  const db = c.env.DB as unknown as Db;
-  const unknown = unknownCategory(input, await loadKnownCategories(db));
-  if (unknown) return c.json({ error: unknown }, 400);
-
-  const stored = rowsOfInput(input);
-  const userId = c.get("user").id;
-  let before: CategoryScope | null;
-  try {
-    before = scopeOfRows(await readCategoryRows(db, id));
-    await c.env.DB.batch([
-      c.env.DB.prepare(`DELETE FROM public.role_category_access WHERE role_id = ?`).bind(id),
-      ...stored.map((r) =>
-        c.env.DB.prepare(`INSERT INTO public.role_category_access (role_id, group_code, sub_code, updated_by) VALUES (?, ?, ?, ?)`)
-          .bind(id, r.group_code, r.sub_code, userId),
-      ),
-    ]);
-  } catch (e) {
-    if (!isMissingRelation(e)) throw e;
-    return c.json({ error: "Category access is not switched on yet on this server." }, 409);
-  }
-
-  await audit(c, {
-    action: "role.category_access.update",
-    entityType: "role",
-    entityId: id,
-    summary: `${row[0].name}: product categories ${input.restricted ? "limited" : "all"}`,
-    meta: {
-      before: before && { groups: [...before.groups], subs: [...before.subs], other: before.other },
-      after: stored.map((r) => (r.sub_code === null ? r.group_code : `${r.group_code}/${r.sub_code}`)),
-    },
   });
   return c.json({ ok: true });
 });

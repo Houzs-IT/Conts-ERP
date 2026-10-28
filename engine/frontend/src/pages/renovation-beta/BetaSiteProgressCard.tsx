@@ -60,7 +60,7 @@ export function BetaSiteProgressCard({ p }: { p: BetaTabProps }): ReactElement {
     <WsCard title="Site progress" sub={sub} right={<button type="button" className="link" onClick={() => p.openTab("site")}>Site photos →</button>}>
       {live.length > 0 ? (
         <>
-          <ol style={{ listStyle: "none", margin: 0, padding: 0 }}>
+          <ol className="stag" style={{ listStyle: "none", margin: 0, padding: 0 }}>
             {rows.map((s, i) => <SiteRow key={s.id} s={s} last={i === rows.length - 1} today={today} onPhotos={() => p.openTab("site")} />)}
           </ol>
           {canTrim && (

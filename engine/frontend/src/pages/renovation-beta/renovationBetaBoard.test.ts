@@ -142,15 +142,18 @@ describe("next step and Home", () => {
   });
   it("counts the tabs and sorts unassigned first, soonest next", () => {
     const c = homeCounts(m);
-    expect(c.tabs).toEqual({ all: 7, A: 1, BC: 4, D: 2, E: 0 });
+    expect(c.tabs).toEqual({ all: 7, A: 1, B: 2, C: 2, D: 2, E: 0 });
     expect(c.late).toBe(0);
     expect(c.week).toBe(4);
     expect(homeList(m, "all").map((p) => p.id)).toEqual([13, 4, 5, 1, 11, 6, 10]);
   });
-  it("says who to ask on the row", () => {
-    expect(homeRow(m, get(13), true).whoNow).toEqual({ kind: "assign" });
-    expect(homeRow(m, get(13), false).whoNow).toEqual({ kind: "needs" });
-    expect(homeRow(m, get(1), true).whoNow).toEqual({ kind: "name", name: "Yi Xuan" });
+  it("shows one word for the condition, and the full text on hover", () => {
+    expect(homeRow(m, get(4)).word).toBe("Amendment");
+    expect(homeRow(m, get(1)).word).toBe("Progress");
+    expect(homeRow(m, get(6)).word).toBe("Waiting");
+    expect(homeRow(m, get(13)).word).toBe("Pending");
+    expect(homeRow(m, get(5)).word).toBe("Pending");
+    expect(homeRow(m, get(1)).cond).toBe("C - 2D in progress");
   });
   it("uses the building as the tag", () => {
     expect(get(13).tag).toBe("Bukit Jalil The Park 2");

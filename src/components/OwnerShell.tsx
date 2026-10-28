@@ -17,7 +17,7 @@ export default function OwnerShell({ children }: { children: ReactNode }) {
     <div style={{ position: 'relative', flex: 1, minHeight: '100vh', display: 'flex', flexDirection: 'column', background: color.page }}>
       <RefreshLine />
       <header style={{
-        flex: 'none', background: color.black, color: 'var(--color-text-inverse)',
+        flex: 'none', background: color.fillStrong, color: color.onFillStrong,
         padding: '12px clamp(16px, 4vw, 32px)', display: 'flex', alignItems: 'center', gap: 14,
       }}>
         <Logo variant="mark" size="sm" onDark />

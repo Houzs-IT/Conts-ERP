@@ -23,6 +23,7 @@ import { betaSiteApi, type SiteDelivery, type SitePhoto } from "./renovationBeta
 import { BETA, TONES } from "./renovationBetaTheme";
 import { doStatusWords } from "../scm-v2/renovationDoStatus";
 import { statusLabel } from "../../vendor/scm/lib/status-pill";
+import { BetaLoading } from "./BetaLoading";
 
 export function photoAsMedia(p: SitePhoto): MediaItem {
   return { id: p.id, path: p.path, kind: p.kind ?? (p.image ? "image" : "file"), name: p.name, label: p.source === "pod" ? "POD" : null, at: p.at, caption: p.area };
@@ -214,11 +215,11 @@ function DocList({ p, type }: { p: BetaTabProps; type: SiteDelivery["type"] }): 
           {VIEWS.map((v) => <WsFilterPill key={v.key} on={view === v.key} onClick={() => setView(v.key)}>{v.label(isDo)}</WsFilterPill>)}
         </div>
       )}
-      {!site.data ? <p style={{ fontSize: 14, color: BETA.muted }}>Loading...</p>
+      {!site.data ? <BetaLoading label="Loading" size="inline" />
         : !site.data.ready ? <WsEmpty>Deliveries are not switched on for this system yet.</WsEmpty>
         : list.length === 0 ? <WsEmpty>{isDo ? "No delivery orders yet. Each DO made from this project's sales order shows here with its POD." : "No goods receipts yet. Each GR of this project's POs shows here with its photos."}</WsEmpty>
         : view === "doc" ? (
-          <ol aria-label={`${title} timeline`} style={{ listStyle: "none", margin: 0, padding: 0 }}>
+          <ol className="stag" aria-label={`${title} timeline`} style={{ listStyle: "none", margin: 0, padding: 0 }}>
             {list.map((d, i) => {
               const day = d.at ? mytDay(d.at) : null;
               const before = i > 0 ? list[i - 1].at : null;
@@ -231,7 +232,7 @@ function DocList({ p, type }: { p: BetaTabProps; type: SiteDelivery["type"] }): 
             })}
           </ol>
         ) : lines.error && !lines.data ? <p role="alert" style={{ fontSize: 14, color: WS.red }}>The order lines could not be loaded: {lines.error}</p>
-        : !lines.data ? <p style={{ fontSize: 14, color: BETA.muted }}>Loading...</p>
+        : !lines.data ? <BetaLoading label="Loading" size="inline" />
         : groups.length === 0 ? <WsEmpty>None of the lines on these {isDo ? "delivery orders" : "goods receipts"} is on the project's sales order.</WsEmpty>
         : (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>

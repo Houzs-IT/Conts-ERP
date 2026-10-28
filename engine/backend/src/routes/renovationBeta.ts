@@ -50,7 +50,7 @@ const app = new Hono<{ Bindings: Env }>();
 const db = (c: Ctx): Db => c.env.DB as unknown as Db;
 const userId = (c: Ctx): number => Number(c.get("user")?.id ?? 0);
 const coSql = (c: Ctx, col = "company_id"): string => activeCompanySql(c, col);
-/** The caller's product category access (null: every category), read per request so a change on Roles applies at once. */
+/** The caller's product category access (null: every category), read per request so a change made on the Conts side applies at once. */
 const categoryScope = (c: Ctx): Promise<CategoryScope | null> => loadCategoryScope(db(c), c.get("user"));
 const body = async (c: Ctx): Promise<Record<string, unknown>> => (await c.req.json<Record<string, unknown>>().catch(() => ({}))) ?? {};
 

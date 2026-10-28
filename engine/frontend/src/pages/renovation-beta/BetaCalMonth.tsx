@@ -101,7 +101,7 @@ export function BetaCalMonth({ m, who, view, selDay, onPrev, onNext, onToday, on
                   onClick={() => onPick(day)}
                   style={{
                     minHeight: 118, textAlign: "left", display: "flex", flexDirection: "column", gap: 3, padding: 6, border: 0, borderTop: `1px solid ${BETA.lineSoft}`,
-                    background: isSel ? BETA.pick : BETA.row, outline: isSel ? `2px solid ${BETA.blue}` : "none", outlineOffset: -2, font: "inherit", cursor: "pointer", minWidth: 0, color: BETA.ink,
+                    background: isSel ? BETA.pick : BETA.row, outline: isSel ? `2px solid ${BETA.selInk}` : "none", outlineOffset: -2, font: "inherit", cursor: "pointer", minWidth: 0, color: BETA.ink,
                   }}
                 >
                   <span style={{ alignSelf: "flex-start", minWidth: 24, height: 24, borderRadius: 12, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: isToday ? 700 : 500, background: isToday ? BETA.accentFill : "transparent", color: isToday ? "#FFFFFF" : BETA.ink }}>{d}</span>
@@ -118,7 +118,7 @@ export function BetaCalMonth({ m, who, view, selDay, onPrev, onNext, onToday, on
         {canWrite && <button type="button" onClick={onAddWork} style={{ ...PILL_MAIN, minHeight: 46, font: "inherit", fontWeight: 600, cursor: "pointer" }}>+ Add work</button>}
         <section aria-labelledby="betaCalListTitle" style={{ ...GLASS, borderRadius: 22, padding: 18, display: "flex", flexDirection: "column", gap: 6 }}>
           <h2 id="betaCalListTitle" style={{ margin: 0, fontSize: 17, fontWeight: 600, letterSpacing: "-.02em" }}>{list.title}</h2>
-          <ol style={{ listStyle: "none", margin: 0, padding: 0 }}>
+          <ol className="stag" style={{ listStyle: "none", margin: 0, padding: 0 }}>
             {list.due.map((x) => (
               <li key={`${x.p.id}${x.k}`} style={{ display: "flex", gap: 10, alignItems: "center", padding: "10px 0", borderTop: `1px solid ${BETA.lineSoft}` }}>
                 <span aria-hidden="true" style={{ flex: "none", width: 10, height: 10, borderRadius: 3, background: TONES.red.dot }} />

@@ -8,6 +8,8 @@
 import { useEffect, useMemo, useState, type ReactElement } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
+import { motion } from "motion/react";
+import { BetaMotion, SPRING, STAGGER } from "./betaMotion";
 import { useAuth } from "../../auth/AuthContext";
 import { useQuery } from "../../hooks/useQuery";
 import { simpleApi } from "../projects/renovation/simpleApi";
@@ -30,6 +32,7 @@ import { boardApi, boardKey, forgetLastProject, invalidateBeta, projectBoardFrom
 import { mytDay, stepperItems } from "./renovationBetaModel";
 import { BETA } from "./renovationBetaTheme";
 import { BETA_TABS, tabFromParam, type BetaTabKey } from "./renovationBetaTabs";
+import { BetaLoading } from "./BetaLoading";
 
 /** A request the server answered with 404: the project is gone, or Beta is switched off. */
 function isNotFound(e: unknown): boolean {
@@ -74,9 +77,9 @@ function WorkspaceScreen(): ReactElement {
   }, [loaded, id]);
 
   if (!valid) return <p role="alert" style={{ padding: "24px 0", fontSize: 14, color: WS.red }}>This project address is not valid.</p>;
-  if (q.loading && !d) return <p style={{ padding: "40px 0", textAlign: "center", fontSize: 14, color: BETA.muted }}>Loading project...</p>;
+  if (q.loading && !d) return <BetaLoading label="Loading project" size="page" />;
   if (q.error || !d) return <p role="alert" style={{ padding: "24px 0", fontSize: 14, color: WS.red }}>The project could not be loaded: {q.error ?? "not found"}</p>;
-  if (bq.loading && !bq.data) return <p style={{ padding: "40px 0", textAlign: "center", fontSize: 14, color: BETA.muted }}>Loading project...</p>;
+  if (bq.loading && !bq.data) return <BetaLoading label="Loading project" size="page" />;
   const raw = bq.data?.projects.find((x) => x.id === id);
   if (bq.error || !view || !raw) return <p role="alert" style={{ padding: "24px 0", fontSize: 14, color: WS.red }}>The project could not be loaded: {bq.error ?? "not found"}</p>;
   const board: BoardView = { ...view, raw };
@@ -98,9 +101,12 @@ function WorkspaceScreen(): ReactElement {
   const hold = d.hold ? (d.hold.flag === "in_defect" ? "In defect" : "On hold") : null;
 
   return (
+    <BetaMotion>
     <div className="bws" style={{ display: "flex", flexDirection: "column", gap: 20, width: "100%", minWidth: 0, paddingBottom: 40 }}>
       <WsStyle />
-      <BetaWsHeader d={d} p={board.p} people={board.m.everyone} canWrite={can("projects.write")} today={today} openDialog={setDialog} />
+      <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} transition={SPRING}>
+        <BetaWsHeader d={d} p={board.p} people={board.m.everyone} canWrite={can("projects.write")} today={today} openDialog={setDialog} />
+      </motion.div>
       <BetaWsStepper items={items} hold={hold} />
 
       <nav aria-label="Project sections" className="tabs">
@@ -113,6 +119,7 @@ function WorkspaceScreen(): ReactElement {
             onClick={() => { setNotice(null); openTab(t.key); }}
           >
             {t.label}
+            {t.key === tab && <motion.span layoutId="beta-tab-ink" className="tab-ink" transition={SPRING} aria-hidden="true" />}
           </button>
         ))}
       </nav>
@@ -122,9 +129,9 @@ function WorkspaceScreen(): ReactElement {
       {ws.error || rec.error ? (
         <p role="alert" style={{ padding: "24px 0", fontSize: 14, color: WS.red }}>This section could not be loaded: {ws.error ?? rec.error}</p>
       ) : !props ? (
-        <p style={{ padding: "40px 0", textAlign: "center", fontSize: 14, color: BETA.muted }}>Loading {current.label.toLowerCase()}...</p>
+        <BetaLoading label={`Loading ${current.label.toLowerCase()}`} />
       ) : (
-        <div className="fade" style={{ display: "flex", flexDirection: "column", gap: 20 }} aria-label={current.label} role="region">
+        <motion.div key={tab} variants={STAGGER} initial="hidden" animate="show" style={{ display: "flex", flexDirection: "column", gap: 20 }} aria-label={current.label} role="region">
           {tab === "overview" && <BetaOverviewTab {...props} />}
           {tab === "drawings" && <BetaDrawingsTab {...props} />}
           {tab === "site" && <BetaSiteTab {...props} />}
@@ -135,7 +142,7 @@ function WorkspaceScreen(): ReactElement {
           {tab === "client-po" && <BetaClientPoTab {...props} />}
           {tab === "do" && <BetaDoTab {...props} />}
           {tab === "gr" && <BetaGrTab {...props} />}
-        </div>
+        </motion.div>
       )}
 
       <BetaDialogs
@@ -143,5 +150,6 @@ function WorkspaceScreen(): ReactElement {
         env={{ m: board.m, who: "All", onClose: () => setDialog(null), onSaved: (text) => { setDialog(null); onDone(text); } }}
       />
     </div>
+    </BetaMotion>
   );
 }

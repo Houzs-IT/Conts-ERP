@@ -1,8 +1,9 @@
 /* Beta workspace > Overview: Payments across the top, then Sales order, Unit key, Final drawings and Client & team in one
-   line of four, then Design progress, and below that Needs attention and Site progress at full width (owner, 27 Oct 2026;
-   the side column left the page lopsided when Site progress was short). */
+   line of four, then Design progress, Needs attention and Site progress side by side in one line of three (owner, 27 Oct 2026). */
 
 import { useId, useState, type CSSProperties, type ReactElement, type ReactNode } from "react";
+import { Download, ExternalLink, MessageCircle } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
 import { Link } from "react-router-dom";
 import { errorText, money } from "../projects/renovation/renovationModel";
 import { BetaSiteProgressCard } from "./BetaSiteProgressCard";
@@ -23,8 +24,6 @@ import { sheetSetAt, sheetsApi } from "./renovationBetaSheets";
 import { BETA, GLASS, TONES } from "./renovationBetaTheme";
 import { useQuery } from "../../hooks/useQuery";
 import type { DesignFile } from "../projects/renovation/simpleApi";
-
-const column: CSSProperties = { minWidth: 0, display: "flex", flexDirection: "column", gap: 20 };
 
 export function BetaOverviewTab(p: BetaTabProps): ReactElement {
   const { detail: d, workspace, today } = p;
@@ -51,8 +50,9 @@ export function BetaOverviewTab(p: BetaTabProps): ReactElement {
         <FinalDrawingsCard p={p} onOpen={openFile} />
         <TeamCard p={p} onEdit={() => p.openDialog({ t: "assign", projectId: p.projectId })} />
       </div>
-      <BetaWsDesignCard board={p.board} canWrite={p.canWrite} openDialog={p.openDialog} onDone={p.onDone} onError={p.onError} />
-      <div style={column}>
+      {/* .ov-three (BetaWsUi CSS): Design progress, Needs attention and Site progress side by side, stacked below 1100px. */}
+      <div className="ov-three">
+        <BetaWsDesignCard board={p.board} canWrite={p.canWrite} openDialog={p.openDialog} onDone={p.onDone} onError={p.onError} />
         <TodoCard rows={todo} p={p} />
         <BetaSiteProgressCard p={p} />
       </div>
@@ -193,7 +193,7 @@ function TodoCard({ rows, p }: { rows: TodoRow[]; p: BetaTabProps }): ReactEleme
         disabled={busy}
         onClick={() => void run(() => (action.type === "remind" ? sendReminder(p.projectId, action, p.onDone, p.onError) : design(action)))}
       >
-        {action.label}<span className="sr">: {r.title}</span>
+        {action.type === "remind" && <MessageCircle size={15} aria-hidden="true" />}{action.label}<span className="sr">: {r.title}</span>
       </WsBtn>
     );
   };
@@ -201,13 +201,21 @@ function TodoCard({ rows, p }: { rows: TodoRow[]; p: BetaTabProps }): ReactEleme
   const act = (r: TodoRow, kind: "dark", size: "sm" | "lg"): ReactNode => (
     <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
       {button(r, r.action, kind, size)}
-      {(r.more ?? []).map((a) => button(r, a, "outline", size))}
+      {(r.more ?? []).map((a) => button(r, a, a.type === "design" && a.op === "approve" ? "confirm" : a.type === "design" && a.op === "amend" ? "danger" : "outline", size))}
     </div>
   );
   /* One row as the design draws it: a coloured bar, the words, then the blue pill. The buttons drop under the words
      when the card is too narrow for both, instead of running past its edge. */
   const row = (r: TodoRow, key: string, bar: string, lead: ReactNode, size: "sm" | "lg"): ReactElement => (
-    <li key={key} style={{ display: "grid", gridTemplateColumns: "4px minmax(0, 1fr)", gap: 14, padding: "14px 20px", borderTop: `1px solid ${WS.rowLine}` }}>
+    <motion.li
+      key={key}
+      layout="position"
+      initial={{ opacity: 0, x: -16 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: 24 }}
+      transition={{ type: "spring", stiffness: 420, damping: 36 }}
+      style={{ display: "grid", gridTemplateColumns: "4px minmax(0, 1fr)", gap: 14, padding: "14px 20px", borderTop: `1px solid ${WS.rowLine}` }}
+    >
       <span aria-hidden="true" style={{ alignSelf: "stretch", borderRadius: 2, background: bar }} />
       <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "10px 14px", minWidth: 0 }}>
         <div style={{ flex: "1 1 240px", minWidth: 0 }}>
@@ -217,7 +225,7 @@ function TodoCard({ rows, p }: { rows: TodoRow[]; p: BetaTabProps }): ReactEleme
         </div>
         {act(r, "dark", size)}
       </div>
-    </li>
+    </motion.li>
   );
   return (
     <section aria-labelledby={id} style={{ ...cardStyle, padding: 0, gap: 0, overflow: "hidden" }}>
@@ -225,8 +233,10 @@ function TodoCard({ rows, p }: { rows: TodoRow[]; p: BetaTabProps }): ReactEleme
       {!next && <p style={{ padding: "6px 20px 18px", fontSize: 14, color: BETA.muted }}>Nothing needs attention right now.</p>}
       {(next || rest.length > 0) && (
         <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
-          {next && row(next, "next", TONES.amber.dot, <div style={{ fontSize: 12, fontWeight: 600, color: WS.amber, textTransform: "uppercase", letterSpacing: ".05em" }}>Next step · {next.group}</div>, "sm")}
-          {rest.map((r) => row(r, String(r.id), DOT[r.tone], null, "sm"))}
+          <AnimatePresence initial={false} mode="popLayout">
+            {next && row(next, "next", TONES.amber.dot, <div style={{ fontSize: 12, fontWeight: 600, color: WS.amber, textTransform: "uppercase", letterSpacing: ".05em" }}>Next step · {next.group}</div>, "sm")}
+            {rest.map((r) => row(r, String(r.id), DOT[r.tone], null, "sm"))}
+          </AnimatePresence>
         </ul>
       )}
     </section>
@@ -310,7 +320,7 @@ function FinalDrawingsCard({ p, onOpen }: { p: BetaTabProps; onOpen: (f: DesignF
           </div>
           {two && <span style={{ padding: "3px 8px", borderRadius: 999, background: TONES.accent.soft, color: TONES.accent.ink, fontSize: 11, fontWeight: 600 }}>For site</span>}
         </div>
-        {two && <button type="button" style={outline} disabled={making} onClick={() => void (two.file.external_url ? onOpen(two.file) : download2d(two.file))}>{two.file.external_url ? "Open 2D link" : making ? "Making PDF..." : "Download 2D PDF"}</button>}
+        {two && <button type="button" style={outline} disabled={making} onClick={() => void (two.file.external_url ? onOpen(two.file) : download2d(two.file))}>{two.file.external_url ? <><ExternalLink size={15} aria-hidden="true" />Open 2D link</> : <><Download size={15} aria-hidden="true" />{making ? "Making PDF..." : "Download 2D PDF"}</>}</button>}
       </div>
       <div style={drawingRow}>
         <div>

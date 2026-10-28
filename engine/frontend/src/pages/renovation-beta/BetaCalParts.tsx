@@ -3,8 +3,10 @@
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactElement, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { AnimatePresence, motion } from "motion/react";
+import { BetaMotion } from "./betaMotion";
 import { errorText } from "../projects/renovation/renovationModel";
-import { BETA, GLASS, PILL_GLASS, PILL_MAIN, TONES, betaConditionTone } from "./renovationBetaTheme";
+import { BETA, GLASS, PILL_CONFIRM, PILL_GLASS, PILL_MAIN, TONES, betaConditionTone } from "./renovationBetaTheme";
 import { invalidateBeta, markPoDone } from "./renovationBetaBoardApi";
 import { initials } from "./renovationBetaBoard";
 
@@ -12,10 +14,14 @@ import { initials } from "./renovationBetaBoard";
 export const BTN: CSSProperties = {
   ...PILL_GLASS, minHeight: 34, padding: "0 14px", font: "inherit", fontSize: 13, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap",
 };
-/** The blue pill of the main action ("Book time", "Client approved"). */
+/** The blue pill of the main action ("Book time"). */
 export const BTN_MAIN: CSSProperties = { ...BTN, ...PILL_MAIN };
 /** Also the blue pill ("Assign"): the designs draw every main action the same, so the old teal outline and teal fill merged. */
 export const BTN_FILL: CSSProperties = BTN_MAIN;
+/** The red-edged pill of "+ Amendment": a change request, not a plain action. */
+export const BTN_AMEND: CSSProperties = { ...BTN, border: `1px solid ${TONES.red.line}`, color: TONES.red.ink };
+/** The green pill of a confirming action ("Client approved", "PO done"). */
+export const BTN_CONFIRM: CSSProperties = { ...BTN, ...PILL_CONFIRM };
 
 /** A glass card with the design's big corners. */
 export const CARD: CSSProperties = { ...GLASS, borderRadius: 26 };
@@ -79,17 +85,28 @@ export function useToast(): { toast: ReactElement | null; show: (text: string) =
     timer.current = window.setTimeout(() => setText(null), 3500);
   }, []);
   useEffect(() => () => { if (timer.current != null) window.clearTimeout(timer.current); }, []);
-  const toast = text ? (
-    <div
-      role="status"
-      style={{
-        position: "fixed", left: "50%", bottom: "calc(24px + env(safe-area-inset-bottom, 0px))", transform: "translateX(-50%)",
+  const toast = (
+    <BetaMotion>
+      <AnimatePresence>
+        {text && (
+          <motion.div
+            key={text}
+            role="status"
+            initial={{ opacity: 0, y: 18, scale: 0.94 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 10, scale: 0.97 }}
+            transition={{ type: "spring", stiffness: 460, damping: 32 }}
+            style={{
+        x: "-50%", position: "fixed", left: "50%", bottom: "calc(24px + env(safe-area-inset-bottom, 0px))",
         background: BETA.avatar, color: "#FFFFFF", padding: "10px 16px", borderRadius: 999, fontSize: 14, fontWeight: 600, zIndex: 100, backdropFilter: BETA.blurSm, WebkitBackdropFilter: BETA.blurSm, maxWidth: "calc(100vw - 32px)",
       }}
     >
       {text}
-    </div>
-  ) : null;
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </BetaMotion>
+  );
   return { toast, show };
 }
 
@@ -119,5 +136,5 @@ export function PoDoneButton({ projectId, today, onDone, onError }: { projectId:
       setBusy(false);
     }
   }
-  return <button type="button" disabled={busy} onClick={() => void click()} style={BTN_MAIN}>PO done</button>;
+  return <button type="button" disabled={busy} onClick={() => void click()} style={BTN_CONFIRM}>PO done</button>;
 }

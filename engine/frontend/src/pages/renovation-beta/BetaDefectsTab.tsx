@@ -5,7 +5,7 @@
    or Redo (back to To fix). On a phone the columns scroll sideways, one column per screen. */
 
 import { useState, type FormEvent, type ReactElement, type ReactNode } from "react";
-import { CalendarDays, ChevronRight, MapPin, Plus, RotateCcw, User } from "lucide-react";
+import { CalendarDays, ChevronRight, MapPin, MessageCircle, Plus, RotateCcw, User } from "lucide-react";
 import { useQuery } from "../../hooks/useQuery";
 import { renovationApi } from "../projects/renovation/renovationApi";
 import { errorText } from "../projects/renovation/renovationModel";
@@ -19,6 +19,7 @@ import { dayMonth, dayMonthYear, defectColumn, defectDaysLate, mytDay, snagProgr
 import { betaSiteApi, type DefectMediaFile, type DefectPatch, type DefectTicket } from "./renovationBetaSiteApi";
 import { dueLine, overdueCount, ticketColumns } from "./renovationBetaSiteModel";
 import { BETA, TONES } from "./renovationBetaTheme";
+import { BetaLoading } from "./BetaLoading";
 
 /** Column header colours: amber for the contractor's turn, blue for the check, green for done. */
 const COLUMNS: ReadonlyArray<{ key: DefectColumn; title: string; caption: string; ink: string; bg: string; bar: string; empty: string }> = [
@@ -78,7 +79,7 @@ export function BetaDefectsTab(p: BetaTabProps): ReactElement {
 
       {reporting && <ReportForm p={p} areas={areas} onClose={() => setReporting(false)} />}
 
-      {q.loading && !q.data ? <p style={{ fontSize: 14, color: BETA.muted }}>Loading defects...</p>
+      {q.loading && !q.data ? <BetaLoading label="Loading defects" size="inline" />
         : q.error && !q.data ? <p role="alert" style={{ fontSize: 14, color: WS.red }}>The defects could not be loaded: {q.error}</p>
         : (
           <div className="bdp-wrap"><div className="bdp" aria-label="Defect pipeline" role="region">
@@ -90,7 +91,7 @@ export function BetaDefectsTab(p: BetaTabProps): ReactElement {
                   <span style={{ marginLeft: "auto", fontSize: 12, color: c.ink, textAlign: "right" }}>{c.caption}</span>
                 </div>
                 {cols[c.key].length === 0 ? <p style={{ padding: 16, fontSize: 13, color: BETA.muted }}>{c.empty}</p> : (
-                  <ul style={{ listStyle: "none", margin: 0, padding: 12, display: "flex", flexDirection: "column", gap: 12 }}>
+                  <ul className="stag" style={{ listStyle: "none", margin: 0, padding: 12, display: "flex", flexDirection: "column", gap: 12 }}>
                     {cols[c.key].map((t) => <li key={t.id}><TicketCard t={t} p={p} onOpen={() => setOpenId(t.id)} /></li>)}
                   </ul>
                 )}
@@ -330,8 +331,8 @@ function TicketDialog({ t, p, areas, onClose }: { t: DefectTicket; p: BetaTabPro
           <div style={{ fontSize: 14, fontWeight: 700 }}>Fix done?</div>
           <MediaPicker files={after} onChange={setAfter} label="Photos or videos after the fix" required onError={setError} />
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "flex-end" }}>
-            <WsBtn disabled={busy} onClick={remind}>Remind {t.assigneeName ?? "on WhatsApp"}</WsBtn>
-            <WsBtn kind="teal" disabled={busy || after.length === 0} onClick={() => void complete()}>Mark complete</WsBtn>
+            <WsBtn disabled={busy} onClick={remind}><MessageCircle size={15} aria-hidden="true" />Remind {t.assigneeName ?? "on WhatsApp"}</WsBtn>
+            <WsBtn kind="confirm" disabled={busy || after.length === 0} onClick={() => void complete()}>Mark complete</WsBtn>
           </div>
         </div>
       )}
@@ -352,9 +353,9 @@ function TicketDialog({ t, p, areas, onClose }: { t: DefectTicket; p: BetaTabPro
               <>
                 <span style={{ alignSelf: "center", fontSize: 14, fontWeight: 600 }}>Checked on site and good?</span>
                 <WsBtn disabled={busy} onClick={() => setConfirming(false)}>Not yet</WsBtn>
-                <WsBtn kind="teal" disabled={busy} onClick={() => void closeIt()}>Yes, close it</WsBtn>
+                <WsBtn kind="confirm" disabled={busy} onClick={() => void closeIt()}>Yes, close it</WsBtn>
               </>
-            ) : <WsBtn kind="teal" disabled={busy} onClick={() => setConfirming(true)}>Close defect</WsBtn>}
+            ) : <WsBtn kind="confirm" disabled={busy} onClick={() => setConfirming(true)}>Close defect</WsBtn>}
           </div>
         )
       )}

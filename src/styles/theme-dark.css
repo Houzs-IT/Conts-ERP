@@ -33,6 +33,7 @@
   --color-critical: rgba(194, 65, 59, 0.20); --color-critical-bg: rgba(194, 65, 59, 0.20); --color-critical-fg: #F08A84; --color-critical-line: #D9605A;
   --color-danger: rgba(194, 65, 59, 0.20);   --color-danger-bg: rgba(194, 65, 59, 0.20);   --color-danger-fg: #F08A84;   --color-danger-line: #D9605A;
   --color-info: rgba(46, 109, 164, 0.22);    --color-info-bg: rgba(46, 109, 164, 0.22);    --color-info-fg: #7DB3E6;     --color-info-line: #5A95CE;
+  --color-chart-ink: #D8D3CA;                --color-chart-teal: #4FBDBD;
   --color-neutral: #2A2723;                  --color-neutral-bg: #2A2723;                  --color-neutral-fg: #B5AFA6;  --color-neutral-line: #5A554D;
   --color-accent: rgba(200, 164, 106, 0.14); --color-accent-bg: rgba(200, 164, 106, 0.14); --color-accent-fg: #D0B37E;   --color-accent-line: #C8A46A;
 
@@ -62,6 +63,13 @@
      the primary action becomes brand gold with dark ink (7.80:1). */
   --color-brand-black: #C8A46A;
   --color-text-inverse: #151515;
+
+  /* The phone's black fills written as color.black (menu button, selected side switch, avatar, portal headers) drew
+     #151515 text or marks on #151515 and vanished. These lift them to a warm charcoal with light text and a ring that
+     keeps the edge visible on the cards (4.6:1). */
+  --color-fill-strong: #34302B;
+  --color-on-fill-strong: #F2EFE9;
+  --color-fill-ring: #8A8378;
 }
 
 :root[data-theme="theconts-dark"] input,

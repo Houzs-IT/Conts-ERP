@@ -6,7 +6,7 @@
 import { useState, type CSSProperties, type ReactElement, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { errorText } from "../projects/renovation/renovationModel";
-import { BTN, BTN_MAIN, CondPill, PoDoneButton } from "./BetaCalParts";
+import { BTN, BTN_AMEND, BTN_CONFIRM, BTN_MAIN, CondPill, PoDoneButton } from "./BetaCalParts";
 import type { BetaDialog } from "./BetaForms";
 import { WS, WsCard } from "./BetaWsUi";
 import type { BoardView } from "./betaShared";
@@ -47,8 +47,8 @@ export function BetaWsDesignCard({ board, canWrite, openDialog, onDone, onError 
     }
   }
 
-  const btn = (label: string, onClick: () => void, main = false): ReactElement => (
-    <button key={label} type="button" disabled={busy} onClick={onClick} style={main ? BTN_MAIN : BTN}>{label}</button>
+  const btn = (label: string, onClick: () => void, style: CSSProperties = BTN): ReactElement => (
+    <button key={label} type="button" disabled={busy} onClick={onClick} style={style}>{label}</button>
   );
 
   const design = (k: Kind): { body: ReactNode; buttons: ReactNode } => {
@@ -63,7 +63,7 @@ export function BetaWsDesignCard({ board, canWrite, openDialog, onDone, onError 
         buttons: !blocked && canWrite ? btn(`Start ${k}D today`, () => void act(
           () => boardApi.saveDesign(p.id, k === "3" ? { start3dOn: m.today } : { start2dOn: m.today }),
           `${k}D started · due ${ds(add(m.today, m.sop[k]))}`,
-        ), true) : null,
+        ), BTN_MAIN) : null,
       };
     }
     if (g.st === "ok") return { body: <>{ok("Approved")}{mut(am)}</>, buttons: null };
@@ -72,11 +72,11 @@ export function BetaWsDesignCard({ board, canWrite, openDialog, onDone, onError 
         body: <span style={{ color: WS.blue, fontWeight: 600 }}>Sent {g.r.done ? ds(g.r.done) : ""} · waiting client</span>,
         buttons: canWrite ? (
           <>
-            {btn("+ Amendment", () => openDialog({ t: "amend", projectId: p.id, k }))}
+            {btn("+ Amendment", () => openDialog({ t: "amend", projectId: p.id, k }), BTN_AMEND)}
             {btn("Approved", () => void act(
               () => approveNewest(raw, designKind(k), m.today, p.customer ?? "Client"),
               k === "3" ? "3D approved · 2D is ready to start" : "2D approved · now PO, carpentry measure and site briefing",
-            ), true)}
+            ), BTN_CONFIRM)}
           </>
         ) : null,
       };
@@ -106,8 +106,8 @@ export function BetaWsDesignCard({ board, canWrite, openDialog, onDone, onError 
           <>
             {btn("Edit", () => openDialog({ t: "book", projectId: p.id, key }))}
             {key === "msr"
-              ? btn("Done", () => openDialog({ t: "measured", projectId: p.id }), true)
-              : btn("Done", () => void act(() => boardApi.appointmentDone(p.id, apptKindOf(key)), "Marked done"), true)}
+              ? btn("Done", () => openDialog({ t: "measured", projectId: p.id }), BTN_MAIN)
+              : btn("Done", () => void act(() => boardApi.appointmentDone(p.id, apptKindOf(key)), "Marked done"), BTN_MAIN)}
           </>
         ) : null,
       };
@@ -117,7 +117,7 @@ export function BetaWsDesignCard({ board, canWrite, openDialog, onDone, onError 
       body: mut("Not booked"),
       buttons: canWrite ? (
         <>
-          {btn("Book time", () => openDialog({ t: "book", projectId: p.id, key }), true)}
+          {btn("Book time", () => openDialog({ t: "book", projectId: p.id, key }), BTN_MAIN)}
           {key === "msr" && btn("Record measure", () => openDialog({ t: "measured", projectId: p.id }))}
         </>
       ) : null,

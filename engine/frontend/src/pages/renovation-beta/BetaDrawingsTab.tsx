@@ -5,7 +5,7 @@
    and approval write through /api/beta; the upload boxes open the dialogs in BetaDrawingUploads.tsx. */
 
 import { useRef, useState, type CSSProperties, type ReactElement, type ReactNode } from "react";
-import { Download, Eye, ExternalLink } from "lucide-react";
+import { Download, Eye, ExternalLink, MessageCircle } from "lucide-react";
 import { RowActionsMenu, type MenuItem } from "../../components/RowActionsMenu";
 import { useDialog } from "../../hooks/useDialog";
 import { useQuery } from "../../hooks/useQuery";
@@ -158,9 +158,10 @@ function TypeCard({ on, onPick, icon, title, badge, sub }: { on: boolean; onPick
   return (
     <button
       type="button"
+      className={on ? "pickcard-on" : undefined}
       aria-pressed={on}
       onClick={onPick}
-      style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8, padding: on ? 15 : 16, borderRadius: 12, border: on ? `2px solid ${BETA.accent}` : `1px solid ${BETA.line}`, background: on ? WS.tealSoft : BETA.surface, font: "inherit", textAlign: "left", cursor: "pointer", color: BETA.ink }}
+      style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8, padding: on ? 15 : 16, borderRadius: 12, border: on ? "2px solid transparent" : `1px solid ${BETA.line}`, ...(on ? null : { background: BETA.surface }), font: "inherit", textAlign: "left", cursor: "pointer", color: BETA.ink }}
     >
       <span style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, width: "100%" }}>
         <span style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
@@ -231,7 +232,7 @@ function MeasureDetail({ measures, projectId, onView, onUpload, onError }: {
             {docs.length > 0 && (
               <div style={boxStyle}>
                 <div style={{ padding: "12px 16px", background: WS.head, fontWeight: 600 }}>Measurement files</div>
-                <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+                <ul className="stag" style={{ listStyle: "none", margin: 0, padding: 0 }}>
                   {docs.map((f) => (
                     <li key={f.id} style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, padding: "12px 16px", borderTop: `1px solid ${WS.rowLine}` }}>
                       <WsPdfTile />
@@ -377,6 +378,9 @@ function KindDetail({ kind, p, set, onEdit, onOpen, onUpload, sheets, sheetsRead
   const shownSet = setOf(shown);
   const viewedV = view === "history" ? set.versions.find((v) => v.file.id === histId) ?? null : null;
   const changed = view === "waiting" && approved ? changedAgainst(shownSet, approvedSet) : null;
+  // A version after the first marks the sheets it changed against the version before it; V1 has nothing to compare with.
+  const before = viewedV ? set.versions[set.versions.indexOf(viewedV) + 1] : undefined;
+  const versionMarks = viewedV && before ? changedAgainst(setOf(viewedV), setOf(before)) : null;
   const word = is2d ? "sheet" : "link";
   const shownSize = shown ? setSize(shown) : null;
   const shareSite = (): void => {
@@ -390,13 +394,13 @@ function KindDetail({ kind, p, set, onEdit, onOpen, onUpload, sheets, sheetsRead
     : <LinkCards projectId={projectId} links={setOf(v)} changed={marks} onView={onView} onError={p.onError} edit={editOf()} />);
 
   const versionRows = (
-    <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+    <ul className="stag" style={{ listStyle: "none", margin: 0, padding: 0 }}>
       {set.versions.map((v, i) => {
         const state = v === approved ? "Approved" : v === waiting ? (v.review?.sentOn ? "Sent, waiting" : "Not sent") : "Older";
         const menu = menuOf(v);
         const details = [roundOf(v), is2d ? versionWhat(records.files, sheets, v.file) : null, dayMonthYear(submittedOf(v.file)), versionSize(v), picNames(v.file)].filter(Boolean);
         return (
-          <li key={v.file.id} style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, padding: "12px 16px", borderTop: `1px solid ${WS.rowLine}` }}>
+          <li key={v.file.id} aria-current={v === viewedV ? "true" : undefined} style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, padding: "12px 16px", borderTop: `1px solid ${WS.rowLine}`, background: v === viewedV ? WS.tealSoft : undefined }}>
             <span style={{ flex: "none", minWidth: 34, fontWeight: 700 }}>V{v.file.version}</span>
             <div style={{ flex: "1 1 220px", minWidth: 0 }}>
               <div style={{ fontWeight: 600, overflowWrap: "anywhere" }}>
@@ -450,6 +454,20 @@ function KindDetail({ kind, p, set, onEdit, onOpen, onUpload, sheets, sheetsRead
         <ShowPill on={view === "history"} onClick={() => { setView("history"); setHistId(null); }} quiet>History</ShowPill>
       </div>
 
+      {is2d && set.versions.length > 1 && (
+        <div style={{ display: "flex", alignItems: "center", gap: 12, fontSize: 13 }}>
+          <span style={{ flex: "none", color: BETA.muted, fontWeight: 600 }}>View version</span>
+          <div role="group" aria-label="View version" className="vrow">
+            {[...set.versions].reverse().map((v, i, oldestFirst) => (
+              <button key={v.file.id} type="button" className="vpill" aria-pressed={viewedV === v} onClick={() => { setView("history"); setHistId(v.file.id); }}>
+                {`V${v.file.version}${i === oldestFirst.length - 1 ? " · latest" : ""}`}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div key={view} className="stag" style={{ display: "contents" }}>
       {view === "waiting" && waiting && (
         <WaitingView kind={kind} v={waiting} p={p} busy={busy} onEdit={onEdit} newSet={shownSet} hasApproved={approved != null}
           onRemind={() => void run(() => sendReminder(projectId, {
@@ -500,13 +518,14 @@ function KindDetail({ kind, p, set, onEdit, onOpen, onUpload, sheets, sheetsRead
               <div style={{ fontSize: 18, fontWeight: 800 }}>V{viewedV.file.version} · {roundOf(viewedV)}</div>
               <div style={{ fontSize: 13, color: WS.text2 }}>{dayMonthYear(submittedOf(viewedV.file))} · {versionWhat(records.files, sheets, viewedV.file)}</div>
             </div>
-            <WsBtn size="sm" onClick={() => setHistId(null)}>Back to all versions</WsBtn>
+            {partsOf(viewedV).length > 0 && <PdfButton projectId={projectId} parts={partsOf(viewedV)} outName={pdfName(viewedV)} label="Download" onError={p.onError} />}
           </div>
-          {grid(viewedV, null)}
+          {grid(viewedV, versionMarks)}
         </>
       )}
 
-      {view === "history" && !viewedV && versionList}
+      {view === "history" && versionList}
+      </div>
 
       {view !== "history" && (
         // The same list as the History view, folded under the sheets so a version can be found without leaving the page.
@@ -533,7 +552,6 @@ function KindDetail({ kind, p, set, onEdit, onOpen, onUpload, sheets, sheetsRead
             ref={replacePicker} type="file" multiple accept="application/pdf,image/*" className="sr" tabIndex={-1} aria-hidden="true" data-testid="replace-picker"
             onChange={(e) => { const files = [...(e.target.files ?? [])]; e.target.value = ""; if (files.length) onUpload({ t: "sheets", mode: "replace", files }); }}
           />
-          <BigUpload title="Upload full set" sub="First time, or when the whole set is redrawn." onClick={() => onUpload({ t: "sheets", mode: "full" })} />
         </div>
       )}
       {onUpload && !is2d && (
@@ -615,14 +633,14 @@ function WaitingView({ kind, v, p, busy, onEdit, onRemind, newSet, hasApproved }
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
               {sentOn ? (
                 <>
-                  <WsBtn size="sm" disabled={busy} onClick={onRemind}>Remind client</WsBtn>
-                  <WsBtn kind="amber" size="sm" disabled={busy} onClick={() => onEdit("approve", v)}>Record approval</WsBtn>
+                  <WsBtn size="sm" disabled={busy} onClick={onRemind}><MessageCircle size={15} aria-hidden="true" />Remind client</WsBtn>
+                  <WsBtn kind="confirm" size="sm" disabled={busy} onClick={() => onEdit("approve", v)}>Record approval</WsBtn>
                   <WsBtn size="sm" disabled={busy} onClick={() => onEdit("send", v)}>Send again</WsBtn>
                 </>
               ) : (
                 <>
                   <WsBtn kind="amber" size="sm" disabled={busy} onClick={() => onEdit("send", v)}>Send to client</WsBtn>
-                  <WsBtn size="sm" disabled={busy} onClick={() => onEdit("approve", v)}>Record approval</WsBtn>
+                  <WsBtn kind="confirm" size="sm" disabled={busy} onClick={() => onEdit("approve", v)}>Record approval</WsBtn>
                 </>
               )}
             </div>
@@ -665,7 +683,7 @@ function PdfButton({ projectId, parts, outName, label, onError }: { projectId: n
   }
   return (
     <span style={{ display: "inline-flex", flexDirection: "column", gap: 4 }}>
-      <WsBtn size="sm" disabled={busy} onClick={() => void go()}>{busy ? "Making PDF..." : label}</WsBtn>
+      <WsBtn size="sm" disabled={busy} onClick={() => void go()}><Download size={15} aria-hidden="true" />{busy ? "Making PDF..." : label}</WsBtn>
       {note && <span role="status" style={{ fontSize: 12, color: WS.amber, maxWidth: 260 }}>{note}</span>}
     </span>
   );
@@ -741,7 +759,7 @@ function SendDialog({ p, editing, onClose }: { p: BetaTabProps; editing: Editing
           <p style={{ fontSize: 14 }}>Saved. The sent and answer dates are recorded.</p>
           <p style={{ fontSize: 14, color: BETA.muted }}>Now send the drawing to the customer. This opens WhatsApp with a message ready to send.</p>
           <a style={{ ...btnStyle("outline", "md"), alignSelf: "flex-start", color: BETA.accent }} href={whatsappLink(p.detail.project.customer_phone, text)} target="_blank" rel="noopener noreferrer">
-            Open WhatsApp{p.detail.project.customer_phone ? "" : " (no phone on file, pick the contact)"}
+            <MessageCircle size={15} aria-hidden="true" />Open WhatsApp{p.detail.project.customer_phone ? "" : " (no phone on file, pick the contact)"}
           </a>
         </>
       ) : (
@@ -788,7 +806,7 @@ function ApproveDialog({ p, editing, onClose }: { p: BetaTabProps; editing: Edit
       footer={
         <>
           <WsBtn onClick={onClose} disabled={busy}>Cancel</WsBtn>
-          <WsBtn kind="teal" onClick={() => void save()} disabled={busy}>{busy ? "Saving..." : "Record approval"}</WsBtn>
+          <WsBtn kind="confirm" onClick={() => void save()} disabled={busy}>{busy ? "Saving..." : "Record approval"}</WsBtn>
         </>
       }
     >

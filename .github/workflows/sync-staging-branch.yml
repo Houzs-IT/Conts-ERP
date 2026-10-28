@@ -1,40 +1,25 @@
-# Keeps `staging` level with `main` after every merge, so staging-preview always
-# reflects what's actually live on production unless someone deliberately pushes
-# extra commits to `staging` for a one-off preview. If `staging` has diverged
-# (preview-only commits not in main), those commits are first saved on a
-# `staging-backup/<timestamp>` branch, then `staging` is reset to main. Nothing is
-# lost and the sync never needs a manual fix. Delete old backup branches when
-# you no longer need them.
+# Puts the staging-preview site level with `main` after every merge, so it always shows what is live on
+# production. It no longer moves the `staging` branch: the ruleset on `staging` (changes only through a
+# pull request, no force-push) refused the old push, so this workflow failed on every merge and the site was
+# never redeployed. Bring the branch up to date with a pull request from main into staging when needed.
+# The `staging-backup/*` branches left by the old runs are copies of staging and can be deleted.
 #
-# Deploys right here instead of leaving it to deploy-staging-preview.yml's own
-# `push: branches: [staging]` trigger: a push made with the default GITHUB_TOKEN
-# (like the one below) does not fire other workflows — that's a deliberate
-# GitHub Actions guard against infinite trigger loops, not a bug — so relying on
-# that trigger would silently never deploy. deploy-staging-preview.yml still
-# does fire on its own for a genuine human push straight to `staging`.
-name: Sync staging branch with main
+# The engine staging deploy has its own trigger on pushes to main (deploy-engine-staging.yml).
+name: Deploy staging preview from main
 on:
   push:
     branches: [main]
   workflow_dispatch:
 concurrency: sync-staging-branch
 permissions:
-  contents: write
+  contents: read
 jobs:
-  sync-and-deploy:
+  deploy-preview:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Move staging to main, backing up preview-only commits
-        run: |
-          if git merge-base --is-ancestor origin/staging origin/main; then
-            git push origin origin/main:refs/heads/staging
-          else
-            git push origin "origin/staging:refs/heads/staging-backup/$(date -u +%Y%m%d-%H%M%S)"
-            git push --force-with-lease=staging:"$(git rev-parse origin/staging)" origin origin/main:refs/heads/staging
-          fi
       - uses: actions/setup-node@v4
         with:
           node-version: 22

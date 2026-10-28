@@ -42,6 +42,7 @@ const PROVIDER_LABEL: Record<string, string> = {
   booking_com: 'Booking.com',
   agoda: 'Agoda',
   whatsapp: 'WhatsApp Business',
+  hostplatform: 'HostPlatform',
   email: 'Email (Resend)',
   bank: 'Bank transfers',
   maybank: 'Maybank',
@@ -100,6 +101,7 @@ function noteFor(row: Row): string {
 function syncedLine(row: Row): string {
   if (row.state === 'manual') return row.provider === 'bank' ? 'Recorded by hand' : row.lastSyncedAt ? `Last reading ${date(row.lastSyncedAt)}` : 'Entered by hand';
   if (row.provider === 'email' || row.provider === 'whatsapp') return row.state === 'not_connected' ? 'Key not set' : row.lastSyncedAt ? `Last sent ${date(row.lastSyncedAt)}` : 'Nothing sent yet';
+  if (row.provider === 'hostplatform') return row.state === 'not_connected' ? 'Keys not set' : row.lastSyncedAt ? `Last checked ${date(row.lastSyncedAt)} · ${timeWithZone(row.lastSyncedAt)}` : 'Not checked yet';
   if (row.state === 'not_connected') return 'Through Channex';
   if (row.viaChannex) return row.lastSyncedAt ? `Last update sent ${date(row.lastSyncedAt)} · ${timeWithZone(row.lastSyncedAt)}` : 'No updates sent yet';
   return row.lastSyncedAt ? `Last sent ${date(row.lastSyncedAt)} · ${timeWithZone(row.lastSyncedAt)}` : 'Nothing sent yet';
@@ -219,7 +221,7 @@ export default function IntegrationsPage() {
                 </div>
 
                 {/* The action strip only when it has an action; an empty grey band read as a broken card. */}
-                {(act.reconnect || act.retry || row.viaChannex || row.provider === 'utilities') && (
+                {(act.reconnect || act.retry || row.viaChannex || row.provider === 'utilities' || row.provider === 'hostplatform') && (
                 <div className="flex items-center gap-2 flex-wrap py-3 px-5 [border-top:1px_solid_var(--color-line-soft)]">
                   {act.reconnect && (
                     <Button size="sm" variant="brand" icon={<Icon name="PlugZap" size="sm" />} onClick={() => setReconnectId(row.id)}>
@@ -233,7 +235,9 @@ export default function IntegrationsPage() {
                   )}
                   {row.viaChannex
                     ? <Button size="sm" variant="tertiary" icon={<Icon name="Building2" size="sm" />} onClick={() => { go('/properties/units'); }}>Open units</Button>
-                    : row.provider === 'utilities' && (
+                    : row.provider === 'hostplatform' ? (
+                      <Button size="sm" variant="tertiary" icon={<Icon name="FileUp" size="sm" />} onClick={() => { go('/system/integrations/hostplatform'); }}>Open import</Button>
+                    ) : row.provider === 'utilities' && (
                       <Button size="sm" variant="tertiary" icon={<Icon name="SlidersHorizontal" size="sm" />} onClick={() => setManageId(row.id)}>
                         Manage
                       </Button>

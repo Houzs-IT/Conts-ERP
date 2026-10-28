@@ -195,6 +195,14 @@ export const STATUS_VOCAB = {
     other: { label: 'Other', tone: 'neutral' },
   },
 
+  // A utility bill on the utility listing (src/lib/utilityGrid.ts billState).
+  utility_bill: {
+    pending: { label: 'Not charged yet', tone: 'warning' },
+    charged: { label: 'Charged to owner', tone: 'success' },
+    record: { label: 'Record only', tone: 'info' },
+    company: { label: 'Company pays', tone: 'neutral' },
+  },
+
   /* ---------- Supply chain documents (built-in screens) ---------- */
   active_flag: ACTIVE_INACTIVE,
   customer: ACTIVE_INACTIVE,
