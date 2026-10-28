@@ -9,7 +9,7 @@ import {
   type ApptItem, type BoardModel, type DesignProject, type DueItem, type Kind, type ApptKey, type PersonRef, type TodoItem, type Viewing,
 } from "./renovationBetaBoard";
 import { rememberLastProject } from "./renovationBetaBoardApi";
-import { Badge, BTN, BTN_FILL, BTN_MAIN, EmptyBox, INK_SOFT, MUTED, PoDoneButton } from "./BetaCalParts";
+import { Badge, BTN, BTN_AMEND, BTN_CONFIRM, BTN_FILL, BTN_MAIN, EmptyBox, INK_SOFT, MUTED, PoDoneButton } from "./BetaCalParts";
 
 const LI: CSSProperties = { display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, padding: "12px 0", borderTop: `1px solid ${BETA.lineSoft}` };
 const LIST: CSSProperties = { listStyle: "none", margin: 0, padding: 0 };
@@ -154,8 +154,8 @@ export function BetaCalDeadlines({ m, who, canAssign, viewingName, ...act }: Pro
                         </div>
                         {canAssign && (
                           <div style={{ flex: "none", display: "flex", gap: 6, flexWrap: "wrap" }}>
-                            <button type="button" disabled={act.busy} onClick={() => act.onAmend(x.p.id, x.k)} style={BTN}>+ Amendment</button>
-                            <button type="button" disabled={act.busy} onClick={() => act.onApprove(x.p, x.k)} style={BTN_MAIN}>Client approved</button>
+                            <button type="button" disabled={act.busy} onClick={() => act.onAmend(x.p.id, x.k)} style={BTN_AMEND}>+ Amendment</button>
+                            <button type="button" disabled={act.busy} onClick={() => act.onApprove(x.p, x.k)} style={BTN_CONFIRM}>Client approved</button>
                           </div>
                         )}
                       </li>

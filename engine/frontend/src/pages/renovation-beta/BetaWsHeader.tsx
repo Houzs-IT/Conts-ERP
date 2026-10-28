@@ -3,7 +3,8 @@
 
 import type { ReactElement } from "react";
 import { Link } from "react-router-dom";
-import { ArrowLeft, Pencil } from "lucide-react";
+import { ArrowLeft, MessageCircle, Pencil } from "lucide-react";
+import { motion } from "motion/react";
 import { usePeople } from "../projects/renovation/PersonSelect";
 import type { ProjectDetailV2 } from "../projects/renovation/simpleApi";
 import type { AssignRole, BetaDialog } from "./BetaForms";
@@ -103,7 +104,7 @@ export function BetaWsHeader({ d, p: board, people = [], canWrite, today, openDi
           </div>
           <div role="group" aria-label="Project team" className="chips" style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, marginTop: 12 }}>
             {chips.map((c) => {
-              const bg = c.lead ? BETA.blueSoft : BETA.surface;
+              const bg = c.lead ? BETA.pick : BETA.surface;
               const one = c.who.length === 1 ? infoOf(c.who[0].id) : "";
               const extra = one || (c.who.length > 1 ? c.who.map((x) => x.name).join(", ") : "");
               // The chip fits its text, as the design's pills do; the third line shows only when it has something to say.
@@ -117,7 +118,7 @@ export function BetaWsHeader({ d, p: board, people = [], canWrite, today, openDi
                   </span>
                 </>
               );
-              const box = { display: "flex", alignItems: "center", gap: 10, minHeight: CARD_H, maxWidth: 300, minWidth: 0, padding: "6px 14px 6px 8px", borderRadius: 32, background: bg, border: `1px solid ${c.lead ? BETA.blue : BETA.glassEdge}`, boxSizing: "border-box" } as const;
+              const box = { display: "flex", alignItems: "center", gap: 10, minHeight: CARD_H, maxWidth: 300, minWidth: 0, padding: "6px 14px 6px 8px", borderRadius: 32, background: bg, border: `1px solid ${c.lead ? BETA.border : BETA.glassEdge}`, boxSizing: "border-box" } as const;
               return (
                 <div key={c.key} title={c.who.map((x) => x.name).join(", ") || undefined} style={{ ...box, padding: 0, gap: 0, overflow: "hidden" }}>
                   {canWrite ? (
@@ -132,9 +133,9 @@ export function BetaWsHeader({ d, p: board, people = [], canWrite, today, openDi
                       href={whatsappLink(phone, `Hi ${designer}, about ${p.name}.`)}
                       target="_blank"
                       rel="noopener noreferrer"
-                      style={{ flex: "none", marginRight: 8, minHeight: 32, padding: "0 12px", borderRadius: 999, background: BETA.accentFill, color: "#FFFFFF", fontSize: 13, fontWeight: 600, display: "inline-flex", alignItems: "center", textDecoration: "none" }}
+                      style={{ flex: "none", marginRight: 8, minHeight: 32, padding: "0 12px", borderRadius: 999, background: BETA.accentFill, color: "#FFFFFF", fontSize: 13, fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 6, textDecoration: "none" }}
                     >
-                      WhatsApp<span className="sr"> {designer}</span>
+                      <MessageCircle size={14} aria-hidden="true" />WhatsApp<span className="sr"> {designer}</span>
                     </a>
                   )}
                 </div>
@@ -179,12 +180,13 @@ export function BetaWsStepper({ items, hold }: { items: StepperItem[]; hold: str
           const now = s.state === "current";
           const dot = { position: "relative", boxSizing: "border-box", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center" } as const;
           return (
-            <li key={s.key} ref={now ? scrollIntoRow : undefined} aria-current={now ? "step" : undefined} style={{ flex: 1, position: "relative", display: "flex", flexDirection: "column", alignItems: "center", gap: 4, textAlign: "center" }}>
+            <motion.li key={s.key} ref={now ? scrollIntoRow : undefined} aria-current={now ? "step" : undefined} initial={{ opacity: 0, scale: 0.7, y: 8 }} animate={{ opacity: 1, scale: 1, y: 0 }} transition={{ type: "spring", stiffness: 380, damping: 26, delay: 0.05 + i * 0.05 }} style={{ flex: 1, position: "relative", display: "flex", flexDirection: "column", alignItems: "center", gap: 4, textAlign: "center" }}>
               {!last && <div aria-hidden="true" style={{ position: "absolute", top: 13, left: "50%", width: "100%", height: 6, borderRadius: 6, background: done ? LINE_DONE : BETA.stepTrack, boxShadow: done ? "0 0 10px rgba(47,107,255,.4)" : undefined }} />}
               {done ? (
                 <div style={{ ...dot, zIndex: 1, width: 30, height: 30, background: DOT_DONE, boxShadow: "inset 0 2px 3px rgba(255,255,255,.6),inset 0 -3px 6px rgba(10,40,140,.3),0 6px 12px -4px rgba(47,107,255,.5)" }}><WsCheck /></div>
               ) : now ? (
                 <div style={{ ...dot, zIndex: 1, width: 34, height: 34, marginTop: -2, background: DOT_NOW, boxShadow: "0 0 0 6px rgba(238,92,120,.12),0 10px 24px -6px rgba(238,92,120,.55),inset 0 2px 3px rgba(255,255,255,.6),inset 0 -4px 8px rgba(170,40,70,.25)" }}>
+                  <span className="ring" aria-hidden="true" />
                   <span style={{ width: 12, height: 12, borderRadius: "50%", background: "radial-gradient(circle at 35% 30%,#FFFFFF,#FFE3EA)", boxShadow: "0 0 6px rgba(255,255,255,.9)" }} />
                 </div>
               ) : (
@@ -195,7 +197,7 @@ export function BetaWsStepper({ items, hold }: { items: StepperItem[]; hold: str
               </div>
               <div style={{ fontSize: 12, fontWeight: now ? 600 : 400, color: now ? BETA.stepNow : BETA.faint }}>{s.sub}</div>
               {now && hold && <WsBadge tone={TONE_WAIT} size={11}>{hold}</WsBadge>}
-            </li>
+            </motion.li>
           );
         })}
       </ol>

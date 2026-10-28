@@ -17,6 +17,7 @@ import { BetaCalProgress } from "./BetaCalProgress";
 import { BetaCalMonth } from "./BetaCalMonth";
 import { BetaDialogs, type BetaDialog } from "./BetaForms";
 import { BetaSkin } from "./BetaWsUi";
+import { BetaLoading } from "./BetaLoading";
 
 type CalTab = "design" | "prog" | "mine";
 const TABS: ReadonlyArray<readonly [CalTab, string]> = [["design", "Deadlines"], ["prog", "Progress"], ["mine", "Calendar"]];
@@ -52,7 +53,7 @@ function CalendarScreen(): ReactElement {
   const m = useMemo(() => (q.data ? buildModel(q.data) : null), [q.data]);
 
   if (q.error && !m) return <ErrorBanner text={`The calendar could not be loaded: ${q.error}`} onRetry={q.reload} />;
-  if (!m) return <p style={{ padding: "40px 0", textAlign: "center", color: MUTED, fontSize: 14 }}>Loading calendar...</p>;
+  if (!m) return <BetaLoading label="Loading calendar" size="page" />;
 
   const who: Viewing = pick ?? m.mePersonId ?? "All";
   const viewingName = who === "All" ? null : m.everyone.find((x) => x.id === who)?.name ?? null;
@@ -84,7 +85,7 @@ function CalendarScreen(): ReactElement {
   const raw = (id: number): BetaBoardProject | undefined => q.data?.projects.find((p) => p.id === id);
 
   const switchBtn = (on: boolean): CSSProperties => ({
-    minHeight: 36, padding: "0 14px", border: `2px solid ${on ? BETA.blue : "transparent"}`, borderRadius: 999, font: "inherit", fontWeight: 600, cursor: "pointer",
+    minHeight: 36, padding: "0 14px", border: `2px solid ${on ? BETA.selInk : "transparent"}`, borderRadius: 999, font: "inherit", fontWeight: 600, cursor: "pointer",
     background: on ? BETA.surface : "transparent", color: on ? BETA.ink : INK_SOFT,
   });
 

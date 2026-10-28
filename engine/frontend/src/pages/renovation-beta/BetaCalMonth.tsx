@@ -101,7 +101,7 @@ export function BetaCalMonth({ m, who, view, selDay, onPrev, onNext, onToday, on
                   onClick={() => onPick(day)}
                   style={{
                     minHeight: 118, textAlign: "left", display: "flex", flexDirection: "column", gap: 3, padding: 6, border: 0, borderTop: `1px solid ${BETA.lineSoft}`,
-                    background: isSel ? BETA.pick : BETA.row, outline: isSel ? `2px solid ${BETA.blue}` : "none", outlineOffset: -2, font: "inherit", cursor: "pointer", minWidth: 0, color: BETA.ink,
+                    background: isSel ? BETA.pick : BETA.row, outline: isSel ? `2px solid ${BETA.selInk}` : "none", outlineOffset: -2, font: "inherit", cursor: "pointer", minWidth: 0, color: BETA.ink,
                   }}
                 >
                   <span style={{ alignSelf: "flex-start", minWidth: 24, height: 24, borderRadius: 12, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: isToday ? 700 : 500, background: isToday ? BETA.accentFill : "transparent", color: isToday ? "#FFFFFF" : BETA.ink }}>{d}</span>

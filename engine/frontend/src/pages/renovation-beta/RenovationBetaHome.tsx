@@ -18,6 +18,7 @@ import { BetaDialogs, type BetaDialog } from "./BetaForms";
 import { BetaSkin } from "./BetaWsUi";
 import { simpleApi, type BoardRowV2 } from "../projects/renovation/simpleApi";
 import { mytDay, slaDayText } from "./renovationBetaModel";
+import { BetaLoading } from "./BetaLoading";
 
 const TH = {
   padding: "10px 12px", textAlign: "left", fontSize: 11, fontWeight: 600, letterSpacing: ".04em", textTransform: "uppercase", color: MUTED,
@@ -135,7 +136,7 @@ function HomeScreen(): ReactElement {
   const m = useMemo(() => (q.data ? buildModel(q.data) : null), [q.data]);
 
   if (q.error && !m) return <ErrorBanner text={`The projects could not be loaded: ${q.error}`} onRetry={q.reload} />;
-  if (!m) return <p style={{ padding: "40px 0", textAlign: "center", color: MUTED, fontSize: 14 }}>Loading projects...</p>;
+  if (!m) return <BetaLoading label="Loading projects" size="page" />;
 
   const counts = homeCounts(m);
   const inTab = homeList(m, tab);
@@ -208,7 +209,9 @@ function HomeScreen(): ReactElement {
       </div>
 
       {/* One row that scrolls sideways when narrow: wrapped, the five groups took three uneven rows on a phone. */}
-      <div role="tablist" aria-label="Project groups" style={{ display: "flex", flexWrap: "nowrap", gap: 4, overflowX: "auto", overflowY: "hidden", scrollbarWidth: "none", borderBottom: `1px solid ${BETA.line}` }}>
+      <div role="tablist" aria-label="Project groups" style={{ display: "flex", flexWrap: "nowrap", gap: 4, overflowX: "auto", overflowY: "hidden", scrollbarWidth: "none", borderBottom: `1px solid ${BETA.line}`,
+        // A solid backing: the page's grid lines ran through the tab labels.
+        background: BETA.glassSolid, padding: "4px 8px 0", borderRadius: "12px 12px 0 0" }}>
         {HOME_TABS.map(([key, label]) => {
           const on = tab === key;
           return (
@@ -220,7 +223,7 @@ function HomeScreen(): ReactElement {
               onClick={() => setTab(key)}
               style={{
                 display: "inline-flex", flex: "none", whiteSpace: "nowrap", alignItems: "center", gap: 6, minHeight: 40, padding: "0 12px", border: 0, borderRadius: "8px 8px 0 0",
-                marginBottom: -1, background: on ? BETA.chip : "transparent", borderBottom: `3px solid ${on ? BETA.blue : "transparent"}`, font: "inherit", fontSize: 14,
+                marginBottom: -1, background: on ? BETA.chip : "transparent", borderBottom: `3px solid ${on ? BETA.selInk : "transparent"}`, font: "inherit", fontSize: 14,
                 fontWeight: on ? 700 : 500, color: on ? BETA.ink : MUTED, cursor: "pointer",
               }}
             >
