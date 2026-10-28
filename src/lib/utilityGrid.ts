@@ -6,11 +6,8 @@ export const KINDS: UtilityKind[] = ['electricity', 'water', 'internet', 'sewera
 export const KIND_LABEL: Record<UtilityKind, string> = { electricity: 'Electricity', water: 'Water', internet: 'Internet', sewerage: 'IWK' };
 
 /** charged: on a final owner statement · pending: the owner pays, not charged yet · company: the company pays ·
- *  record: kept for the records only (the 2026 backfill of settled months). */
+ *  record: kept for the records only (the 2026 backfill of settled months). Words and colours: STATUS_VOCAB.utility_bill. */
 export type BillState = 'charged' | 'pending' | 'company' | 'record';
-export const STATE_LABEL: Record<BillState, string> = {
-  charged: 'Charged to owner', pending: 'Not charged yet', company: 'Company pays', record: 'Record only',
-};
 
 export interface GridBill {
   id: string; unitId: string; kind: UtilityKind;
