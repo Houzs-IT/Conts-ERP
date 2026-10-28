@@ -11,7 +11,8 @@ import { LEVEL_LABEL, MUTED, ORIGIN_LABEL, TAG, closedBySide } from './shared';
 
 interface Person { id: string; fullName: string; department: string | null; position: string | null; isActive: boolean }
 
-const GRID = 'grid grid-cols-[minmax(200px,1fr)_repeat(3,64px)_150px] gap-2.5 items-center px-5';
+// Phone: name and three narrow box columns fit the screen, and the origin tag / Reset cell drops under the name.
+const GRID = 'grid gap-x-2.5 items-center px-5 grid-cols-[minmax(200px,1fr)_repeat(3,64px)_150px] max-md:px-4 max-md:gap-x-1 max-md:grid-cols-[minmax(0,1fr)_repeat(3,40px)]';
 
 /**
  * View 3 of the Permissions tab: one person at a time. Each area shows the level the person gets (lighter when they
@@ -140,16 +141,16 @@ export default function UsersView({ onDirty }: { onDirty: (pending: number) => v
             : 'Field app only. Their department uses the field app, so there are no desk areas to set.'}
         </div>
       ) : (
-        <div className="overflow-auto max-h-[70vh]">
-          <div className="min-w-[620px]">
+        <div className="md:overflow-auto md:max-h-[70vh]">
+          <div className="md:min-w-[620px]">
             <div className={cx(GRID, 'sticky top-0 z-[2] py-2.5 bg-muted [border-bottom:1px_solid_var(--color-line)] text-caption font-semibold text-ink')}>
               <div className="text-muted-ink">Category and area</div>
               {TIERS.map(t => <div key={t.level} className="text-center">{t.label}</div>)}
-              <div />
+              <div className="max-md:hidden" />
             </div>
             {groups.map(([group, areas]) => (
               <div key={group}>
-                <div className="px-5 py-2 bg-page [border-bottom:1px_solid_var(--color-line)] text-copy font-semibold text-ink">{group}</div>
+                <div className="px-5 max-md:px-4 py-2 bg-page [border-bottom:1px_solid_var(--color-line)] text-copy font-semibold text-ink">{group}</div>
                 {areas.map(a => {
                   const s = shown(a);
                   // Their department's side closes this category: nothing they are given opens it.
@@ -160,7 +161,7 @@ export default function UsersView({ onDirty }: { onDirty: (pending: number) => v
                       <div className="pl-[18px] text-copy font-medium min-w-0">{a.label}</div>
                       <LevelBoxes level={closed ? 'none' : s.level} label={`${data.user.fullName} access to ${a.label}`} disabled={!canEdit || closed}
                         faded={!custom} changed={draft[a.key] !== undefined} onPick={next => pick(a, next)} />
-                      <div className="flex items-center gap-1.5 min-w-0">
+                      <div className="flex items-center gap-1.5 min-w-0 max-md:col-span-full max-md:pl-[18px] max-md:pb-2">
                         {closed ? <span className="text-caption text-muted-ink">Closed by side</span> : (
                           <span title={custom ? 'Set just for this person' : `From their ${ORIGIN_LABEL[s.origin].toLowerCase()}: ${LEVEL_LABEL[s.level]}`} className={TAG}
                             style={custom

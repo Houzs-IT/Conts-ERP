@@ -1,18 +1,28 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react';
 import { Button } from '../Button';
 import { Select } from '../Select';
+import Icon from '../Icon';
 import { useToast } from '../Toast';
 import { useConfirm } from '../ConfirmDialog';
 import { api, errorMessage } from '../../lib/api';
 import { cx } from '../../lib/design-tokens';
 import type { AccessArea, AccessChange, AccessChart, AccessLevel, AccessSetting, Department } from '../../lib/types';
 import { LevelBoxes, TIERS } from './LevelBoxes';
-import { KIND_NOTE, LEVEL_LABEL, TAG, settingLabel } from './shared';
+import { KIND_NOTE, LEVEL_LABEL, SIDE_OPTIONS, TAG, categorySide, settingLabel } from './shared';
 
 interface Pending { key: string; level: AccessSetting | null }
 
 const groupKey = (group: string) => `group:${group}`;
-const GRID = 'grid grid-cols-[minmax(200px,1fr)_150px_repeat(3,64px)_150px] gap-2.5 items-center px-5';
+const toggleIn = (set: Dispatch<SetStateAction<Set<string>>>, key: string) => set(prev => {
+  const next = new Set(prev);
+  if (next.has(key)) next.delete(key); else next.add(key);
+  return next;
+});
+// Phone: name and three narrow box columns fit the screen; dense flow puts the boxes beside the name and drops
+// "what the department gives" and the Override / Reset cell onto their own lines under it.
+const GRID = 'grid gap-x-2.5 items-center px-5 grid-cols-[minmax(200px,1fr)_150px_repeat(3,64px)_150px] max-md:px-4 max-md:gap-x-1 max-md:grid-cols-[minmax(0,1fr)_repeat(3,40px)] max-md:grid-flow-row-dense';
+// Indent under the name: an area's label is indented 26px, a category's text starts after its 22px chevron.
+const underName = (a: AccessArea | null) => cx('max-md:col-span-full', a ? 'max-md:pl-[26px]' : 'max-md:pl-[22px]');
 
 /** What a position falls back to when it sets nothing, and where that comes from (PLAN.md, "How a person's level in an area is worked out"). */
 interface Fallback { level: AccessLevel | undefined; label: string }
@@ -29,6 +39,9 @@ export default function PositionsView({ onDirty }: { onDirty: (pending: number) 
   const [positionId, setPositionId] = useState('');
   const [draft, setDraft] = useState<Record<string, Pending>>({});
   const [saving, setSaving] = useState(false);
+  // Folded categories, and whole companies folded shut: the same grouping as the Departments view.
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [shutCompanies, setShutCompanies] = useState<Set<string>>(new Set());
   const [confirmDialog, ask] = useConfirm();
 
   const load = async () => {
@@ -49,6 +62,8 @@ export default function PositionsView({ onDirty }: { onDirty: (pending: number) 
   if (!data) return <div className="p-5 text-copy text-muted-ink">Loading the permissions chart…</div>;
 
   const { rules } = data;
+  // Rows by company, The Conts first, as the Departments view groups them.
+  const companies = SIDE_OPTIONS.map(o => ({ ...o, categories: data.categories.filter(c => categorySide(c.group) === o.value) })).filter(o => o.categories.length > 0);
   const canEdit = data.canEdit && !saving;
   const switchTo = async (apply: () => void) => {
     if (pending > 0 && (await ask({ title: 'Discard the unsaved changes?', confirmLabel: 'Discard changes', danger: true })) === null) return;
@@ -121,7 +136,7 @@ export default function PositionsView({ onDirty }: { onDirty: (pending: number) 
       <>
         <LevelBoxes level={level} label={`${position?.name} setting for ${a?.label ?? group}`} disabled={!canEdit} faded={inherited}
           changed={draft[key] !== undefined} onPick={next => pick(key, next)} />
-        <div className="flex items-center gap-1.5 min-w-0">
+        <div className={cx('flex items-center gap-1.5 min-w-0 max-md:pb-2 max-md:empty:hidden', underName(a))}>
           {!inherited && <span title="Overrides what the department gives" className={TAG}
             style={{ background: 'var(--color-info)', color: 'var(--color-info-fg)', borderColor: 'var(--color-info-line)' }}>Override</span>}
           {!inherited && canEdit && <Button size="sm" variant="tertiary" onClick={() => resetRow(key)} aria-label={`Reset ${a?.label ?? group} to the department`}>Reset</Button>}
@@ -132,7 +147,7 @@ export default function PositionsView({ onDirty }: { onDirty: (pending: number) 
   const valueCell = (a: AccessArea | null, group: string) => {
     const v = deptValue(a, group);
     return (
-      <div className="min-w-0 text-meta text-muted-ink">
+      <div className={cx('min-w-0 text-meta text-muted-ink max-md:-mt-2 max-md:pb-1.5', underName(a))}>
         <span className="font-medium">{settingLabel(v.level)}</span> <span className="text-caption">{v.from}</span>
       </div>
     );
@@ -160,25 +175,44 @@ export default function PositionsView({ onDirty }: { onDirty: (pending: number) 
       ) : !position ? (
         <div className="p-5 text-copy text-muted-ink">{dept.name} has no positions yet. Add one under Departments and positions.</div>
       ) : (
-        <div className="overflow-x-auto">
-          <div className="min-w-[820px]">
+        <div className="md:overflow-x-auto">
+          <div className="md:min-w-[820px]">
             <div className={cx(GRID, 'py-2.5 bg-muted [border-bottom:1px_solid_var(--color-line)] text-caption font-semibold text-muted-ink')}>
-              <div>Category and area</div><div>{dept.name} gives</div>{TIERS.map(t => <div key={t.level} className="text-center text-ink">{t.label}</div>)}<div />
+              <div>Category and area</div><div className="max-md:hidden">{dept.name} gives</div>{TIERS.map(t => <div key={t.level} className="text-center text-ink">{t.label}</div>)}<div className="max-md:hidden" />
             </div>
-            {data.categories.map(c => (
-              <div key={c.group}>
-                <div className={cx(GRID, 'py-2 bg-page [border-bottom:1px_solid_var(--color-line)]')}>
-                  <div className="text-copy font-semibold text-ink">{c.group}<span className="ml-1.5 text-caption font-normal text-muted-ink">baseline</span></div>
-                  {valueCell(null, c.group)}
-                  {cell(groupKey(c.group), null, c.group)}
-                </div>
-                {c.areas.map(a => (
-                  <div key={a.key} className={cx(GRID, 'py-[7px] [border-bottom:1px_solid_var(--color-line-soft)]')}>
-                    <div className="pl-[18px] text-copy font-medium">{a.label}</div>
-                    {valueCell(a, c.group)}
-                    {cell(a.key, a, c.group)}
-                  </div>
-                ))}
+            {companies.map(co => (
+              <div key={co.value}>
+                <button type="button" onClick={() => toggleIn(setShutCompanies, co.value)} aria-expanded={!shutCompanies.has(co.value)}
+                  className="flex w-full items-center gap-1.5 px-5 max-md:px-4 py-2 bg-muted border-none cursor-pointer text-left [font-family:inherit] [border-bottom:1px_solid_var(--color-line)]">
+                  <span className={cx('grid transition-transform duration-150 text-muted-ink', shutCompanies.has(co.value) && '-rotate-90')}><Icon name="ChevronDown" size="sm" /></span>
+                  <span className="text-caption font-semibold uppercase tracking-wide text-ink">{co.value === 'both' ? 'Both companies' : co.label}</span>
+                  <span className="text-caption font-normal text-muted-ink">{co.categories.length} {co.categories.length === 1 ? 'category' : 'categories'}</span>
+                </button>
+                {!shutCompanies.has(co.value) && co.categories.map(c => {
+                  const open = !collapsed.has(c.group);
+                  return (
+                    <div key={c.group}>
+                      {/* Category header: its boxes are this position's baseline for every area below it that sets nothing itself. */}
+                      <div className={cx(GRID, 'py-2 bg-page [border-bottom:1px_solid_var(--color-line)]')}>
+                        <button type="button" onClick={() => toggleIn(setCollapsed, c.group)} aria-expanded={open}
+                          className="flex items-center gap-1.5 p-0 border-none bg-transparent cursor-pointer text-left [font-family:inherit] text-copy font-semibold text-ink min-w-0">
+                          <span className={cx('grid transition-transform duration-150 text-muted-ink', !open && '-rotate-90')}><Icon name="ChevronDown" size="sm" /></span>
+                          {c.group}
+                          <span className="text-caption font-normal text-muted-ink">{c.areas.length} {c.areas.length === 1 ? 'area' : 'areas'}</span>
+                        </button>
+                        {valueCell(null, c.group)}
+                        {cell(groupKey(c.group), null, c.group)}
+                      </div>
+                      {open && c.areas.map(a => (
+                        <div key={a.key} className={cx(GRID, 'py-[7px] [border-bottom:1px_solid_var(--color-line-soft)]')}>
+                          <div className="pl-[26px] text-copy font-medium">{a.label}</div>
+                          {valueCell(a, c.group)}
+                          {cell(a.key, a, c.group)}
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })}
               </div>
             ))}
           </div>

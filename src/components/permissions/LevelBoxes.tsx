@@ -18,18 +18,18 @@ export interface LevelBoxesProps {
   onPick: (next: AccessLevel) => void;
 }
 
-/** The View, Edit and Full cells of one row (three grid cells). */
+/** The View, Edit and Full cells of one row (three grid cells). Each whole cell is the tap target, 44px tall on a phone. */
 export function LevelBoxes({ level, label, disabled, faded = false, changed = false, onPick }: LevelBoxesProps) {
   const rank = RANK[level ?? 'none'];
   return (
     <>
       {TIERS.map(t => (
-        <div key={t.level} className={cx('flex justify-center', faded && 'opacity-60')}>
+        <label key={t.level} className={cx('flex justify-center items-center self-stretch max-md:min-h-11', disabled ? 'cursor-default' : 'cursor-pointer', faded && 'opacity-60')}>
           <input type="checkbox" aria-label={`${label}: ${t.label}`} checked={rank >= RANK[t.level]} disabled={disabled}
             onChange={e => onPick(e.target.checked ? t.level : BELOW[t.level])}
             className="h-[18px] w-[18px] m-0 cursor-pointer disabled:cursor-default"
             style={{ accentColor: LEVEL_COLOR[t.level], boxShadow: changed ? '0 0 0 2px var(--color-gold)' : undefined, borderRadius: 3 }} />
-        </div>
+        </label>
       ))}
     </>
   );
