@@ -49,7 +49,7 @@ export default function MobileSettingsHub({ navigate }: { navigate: (p: string) 
       <h1 style={{ margin: 0, fontSize: 26, fontWeight: 600, letterSpacing: '-0.01em' }}>Settings</h1>
 
       <button type="button" onClick={() => navigate('/account')} style={{ ...card, display: 'flex', alignItems: 'center', gap: 14, padding: 16, cursor: 'pointer', textAlign: 'left', color: color.ink }}>
-        <span style={{ width: 52, height: 52, flex: 'none', borderRadius: radius.pill, background: color.black, color: color.gold, display: 'grid', placeItems: 'center', fontSize: 17, fontWeight: 600 }}>{initials}</span>
+        <span style={{ width: 52, height: 52, flex: 'none', borderRadius: radius.pill, background: color.fillStrong, color: color.gold, display: 'grid', placeItems: 'center', fontSize: 17, fontWeight: 600 }}>{initials}</span>
         <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
           <span style={{ fontSize: 17, fontWeight: 600 }}>{user.fullName}</span>
           <span style={{ fontSize: 13, color: color.textMuted }}>{jobTitle(user)}</span>
