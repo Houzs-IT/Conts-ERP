@@ -31,6 +31,7 @@ export default function DepartmentsView({ onDirty }: { onDirty: (pending: number
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
   const [filter, setFilter] = useState<SideFilter>('all');
+  const [deptId, setDeptId] = useState<string | null>(null);
 
   const load = async () => {
     try { setData(await api.get<AccessChart>('/users/access')); setError(null); setDraft({}); }
@@ -41,10 +42,13 @@ export default function DepartmentsView({ onDirty }: { onDirty: (pending: number
   const pending = Object.keys(draft).length;
   useEffect(() => { onDirty(pending); }, [pending, onDirty]);
 
-  const columns = useMemo<Department[]>(
+  const departments = useMemo<Department[]>(
     () => (data?.departments ?? []).filter(d => !isFieldKind(d.kind) && (filter === 'all' || d.side === filter || d.side === 'both')),
     [data, filter],
   );
+  // One department at a time: the chart is a single column, so it never scrolls sideways.
+  const selected = departments.find(d => d.id === deptId) ?? departments[0];
+  const columns = useMemo<Department[]>(() => (selected ? [selected] : []), [selected]);
   // Rows by company, The Conts first: a side's own categories, then the ones both companies share.
   const companies = useMemo(
     () => SIDE_OPTIONS
@@ -113,7 +117,7 @@ export default function DepartmentsView({ onDirty }: { onDirty: (pending: number
     }
   };
 
-  const gridStyle = { gridTemplateColumns: `minmax(220px,1.4fr) repeat(${columns.length}, minmax(190px,1fr))` };
+  const gridStyle = { gridTemplateColumns: 'minmax(220px,1fr) minmax(190px,320px)' };
   const ROW = 'grid gap-2.5 items-center px-5';
   // The first column stays put while the rest scrolls sideways; it needs its own background to hide what slides under.
   // -mr-2.5 + pr-2.5 stretches the cell over the grid gap, so scrolled cells don't peek out beside it.
@@ -137,6 +141,16 @@ export default function DepartmentsView({ onDirty }: { onDirty: (pending: number
         ))}
         <span className="text-caption text-muted-ink">Departments and categories marked Both always show.</span>
       </div>
+      {selected && (
+        <div className="flex items-center gap-2 flex-wrap py-2.5 px-5 [border-bottom:1px_solid_var(--color-line-soft)]">
+          <label htmlFor="permissions-department" className="text-meta text-muted-ink">Department</label>
+          <select id="permissions-department" value={selected.id} onChange={e => setDeptId(e.target.value)}
+            className={cx(SELECT, 'max-w-[280px] font-semibold border-line')}>
+            {departments.map(d => <option key={d.id} value={d.id}>{d.name} · {sideLabel(d.side)}</option>)}
+          </select>
+          {pending > 0 && <span className="text-caption text-muted-ink">{pending} unsaved {pending === 1 ? 'change' : 'changes'} across all departments.</span>}
+        </div>
+      )}
       {columns.length === 0 ? (
         <div className="p-5 text-copy text-muted-ink">No departments on this side yet. Add one under Departments and positions.</div>
       ) : (
