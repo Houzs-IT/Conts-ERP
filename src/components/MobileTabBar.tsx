@@ -95,7 +95,7 @@ function MoreSheet({ path, navigate, onClose }: { path: string; navigate: (p: st
   // Groups marked phone: false (Finance, owner 11 Oct 2026) stay off the phone; switched-off items stay off as on the desk.
   const all = useMemo(() => withoutOffItems(navFor(user!.role, !!engine.data?.enabled, user!.access), counts?.approvalsOn === true)
     .filter(g => g.phone !== false)
-    .map(g => g.label === 'SYSTEM' ? { ...g, label: 'SUPPORT', items: g.items.filter(it => it.key === 'itSupport') } : g),
+    .map(g => g.workspace === 'rental' && g.label === 'SYSTEM' ? { ...g, label: 'SUPPORT', items: g.items.filter(it => it.key === 'itSupport') } : g),
   [user, engine.data?.enabled, counts?.approvalsOn]);
   // Highlights the row a record or sub-page belongs to, the same rule as the desk sidebar.
   const current = useMemo(() => activeKey(all, path), [all, path]);
@@ -107,12 +107,13 @@ function MoreSheet({ path, navigate, onClose }: { path: string; navigate: (p: st
     // Matching a category's own name shows all of its screens.
     const hit = (label: string) => !needle || label.toLowerCase().includes(needle);
     return all
-      .filter(g => needle ? !(g.workspace === 'supply' && g.label === 'SUPPORT') : (!hasSupply || g.workspace === ws)) // a search lists IT Support once
+      .filter(g => needle || !hasSupply || g.workspace === ws)
       .flatMap(g => {
         const out: MenuSection[] = [];
         let loose: MenuRow[] = [];
         const flush = () => { if (loose.length) out.push({ key: `${g.workspace}:${g.label}:${out.length}`, label: g.label, rows: loose }); loose = []; };
-        for (const it of g.items) {
+        // A search lists IT Support once: the supply chain copy of it is left out.
+        for (const it of g.items.filter(i => !(needle && i.key === 'itSupportSupply'))) {
           if (it.children?.length) {
             flush();
             const rows = it.children.filter(c => hit(it.label) || hit(c.label))
