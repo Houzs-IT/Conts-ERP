@@ -1,9 +1,8 @@
 # Deploys Property OS to the staging-preview Cloudflare Pages environment (staging
 # Supabase project, staging R2 bucket — see wrangler.toml [env.preview]) whenever a
 # person pushes to the `staging` branch directly — a one-off preview of something not
-# on main yet. sync-staging-branch.yml keeps `staging` level with `main` after every
-# merge and deploys that case itself, since a push made with GITHUB_TOKEN (as that
-# workflow's sync step is) does not trigger this one — see its own comment.
+# on main yet. sync-staging-branch.yml deploys main to staging-preview after every merge to main;
+# a merge into `staging` through a pull request starts this one.
 name: Deploy Staging Preview
 on:
   push:
