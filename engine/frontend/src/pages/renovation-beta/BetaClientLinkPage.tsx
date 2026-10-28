@@ -5,12 +5,14 @@
    (engine/backend/src/routes/renovationBetaClientPublic.ts). */
 
 import { useEffect, useMemo, useState, type ReactElement } from "react";
+import { BetaMotion } from "./betaMotion";
 import { BetaSkin, WsFilterPill, WsStyle } from "./BetaWsUi";
 import { WsNarrow, WsNarrowStyle, WsTable, metaStyle, narrowBandStyle, narrowItemStyle, numStyle, tdStyle, thStyle } from "./BetaVoPoUi";
 import { BETA, TONES } from "./renovationBetaTheme";
 import { dayMonthYear } from "./renovationBetaModel";
 import { byArea, byCategory, clientPhotoUrl, type ClientItem, type ClientPublicAnswer } from "./renovationBetaVoPo";
 import { PlainPhotoStrip } from "./BetaClientPhotos";
+import { BetaLoading } from "./BetaLoading";
 
 const API_BASE: string = (import.meta.env.VITE_API_URL as string) || (import.meta.env.PROD ? "" : "https://conts-scm-engine.invalid");
 
@@ -48,12 +50,13 @@ export function BetaClientLinkPage(): ReactElement {
   }, [data, view]);
 
   return (
+    <BetaMotion>
     <div className="bws" style={{ minHeight: "100vh", background: BETA.page }}>
       <BetaSkin />
       <WsStyle />
       <WsNarrowStyle />
       <main style={{ maxWidth: 1100, margin: "0 auto", padding: "24px 16px 48px", display: "flex", flexDirection: "column", gap: 16 }}>
-        {error ? <p role="alert" style={{ padding: 24, fontSize: 15 }}>{error}</p> : !data ? <p style={{ padding: 24, color: BETA.muted }}>Loading...</p> : (
+        {error ? <p role="alert" style={{ padding: 24, fontSize: 15 }}>{error}</p> : !data ? <BetaLoading label="Loading" size="page" /> : (
           <>
             <header>
               <div style={metaStyle}>{data.company ?? ""}</div>
@@ -138,5 +141,6 @@ export function BetaClientLinkPage(): ReactElement {
         )}
       </main>
     </div>
+    </BetaMotion>
   );
 }

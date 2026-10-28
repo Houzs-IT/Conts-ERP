@@ -16,6 +16,7 @@ import type { BetaTabProps } from "./betaShared";
 import { dayMonthYear, mytDay } from "./renovationBetaModel";
 import { BETA, type BetaTone } from "./renovationBetaTheme";
 import { signedQty, voPoApi, type VoAnswer, type VoLine, type VoRow } from "./renovationBetaVoPo";
+import { BetaLoading } from "./BetaLoading";
 
 /* Where a line goes: we buy it (PO), the client buys it (Client PO), or it is our own works with no supplier. */
 const GOES_TO_LABEL: Record<VoLine["goesTo"], string> = { po: "PO", client: "Client PO", works: "Our works" };
@@ -26,7 +27,7 @@ const bucketTone = (v: VoRow): BetaTone => (v.bucket === "approved" ? TONE_DONE 
 export function BetaVoTab(p: BetaTabProps): ReactElement {
   const q = useQuery(["renovation-beta", "vo", p.projectId], () => voPoApi.vo(p.projectId), [p.projectId]);
   if (q.error) return <p role="alert" style={{ fontSize: 14, color: WS.red }}>The VO list could not be loaded: {q.error}</p>;
-  if (!q.data) return <p style={{ padding: "40px 0", textAlign: "center", fontSize: 14, color: BETA.muted }}>Loading VO...</p>;
+  if (!q.data) return <BetaLoading label="Loading VO" />;
   return <VoBody p={p} d={q.data} />;
 }
 

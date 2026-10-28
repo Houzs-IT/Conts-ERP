@@ -5,7 +5,7 @@
    and approval write through /api/beta; the upload boxes open the dialogs in BetaDrawingUploads.tsx. */
 
 import { useRef, useState, type CSSProperties, type ReactElement, type ReactNode } from "react";
-import { Download, Eye, ExternalLink } from "lucide-react";
+import { Download, Eye, ExternalLink, MessageCircle } from "lucide-react";
 import { RowActionsMenu, type MenuItem } from "../../components/RowActionsMenu";
 import { useDialog } from "../../hooks/useDialog";
 import { useQuery } from "../../hooks/useQuery";
@@ -158,9 +158,10 @@ function TypeCard({ on, onPick, icon, title, badge, sub }: { on: boolean; onPick
   return (
     <button
       type="button"
+      className={on ? "pickcard-on" : undefined}
       aria-pressed={on}
       onClick={onPick}
-      style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8, padding: on ? 15 : 16, borderRadius: 12, border: on ? `2px solid ${BETA.accent}` : `1px solid ${BETA.line}`, background: on ? WS.tealSoft : BETA.surface, font: "inherit", textAlign: "left", cursor: "pointer", color: BETA.ink }}
+      style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8, padding: on ? 15 : 16, borderRadius: 12, border: on ? "2px solid transparent" : `1px solid ${BETA.line}`, ...(on ? null : { background: BETA.surface }), font: "inherit", textAlign: "left", cursor: "pointer", color: BETA.ink }}
     >
       <span style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, width: "100%" }}>
         <span style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
@@ -630,14 +631,14 @@ function WaitingView({ kind, v, p, busy, onEdit, onRemind, newSet, hasApproved }
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
               {sentOn ? (
                 <>
-                  <WsBtn size="sm" disabled={busy} onClick={onRemind}>Remind client</WsBtn>
-                  <WsBtn kind="amber" size="sm" disabled={busy} onClick={() => onEdit("approve", v)}>Record approval</WsBtn>
+                  <WsBtn size="sm" disabled={busy} onClick={onRemind}><MessageCircle size={15} aria-hidden="true" />Remind client</WsBtn>
+                  <WsBtn kind="confirm" size="sm" disabled={busy} onClick={() => onEdit("approve", v)}>Record approval</WsBtn>
                   <WsBtn size="sm" disabled={busy} onClick={() => onEdit("send", v)}>Send again</WsBtn>
                 </>
               ) : (
                 <>
                   <WsBtn kind="amber" size="sm" disabled={busy} onClick={() => onEdit("send", v)}>Send to client</WsBtn>
-                  <WsBtn size="sm" disabled={busy} onClick={() => onEdit("approve", v)}>Record approval</WsBtn>
+                  <WsBtn kind="confirm" size="sm" disabled={busy} onClick={() => onEdit("approve", v)}>Record approval</WsBtn>
                 </>
               )}
             </div>
@@ -680,7 +681,7 @@ function PdfButton({ projectId, parts, outName, label, onError }: { projectId: n
   }
   return (
     <span style={{ display: "inline-flex", flexDirection: "column", gap: 4 }}>
-      <WsBtn size="sm" disabled={busy} onClick={() => void go()}>{busy ? "Making PDF..." : label}</WsBtn>
+      <WsBtn size="sm" disabled={busy} onClick={() => void go()}><Download size={15} aria-hidden="true" />{busy ? "Making PDF..." : label}</WsBtn>
       {note && <span role="status" style={{ fontSize: 12, color: WS.amber, maxWidth: 260 }}>{note}</span>}
     </span>
   );
@@ -756,7 +757,7 @@ function SendDialog({ p, editing, onClose }: { p: BetaTabProps; editing: Editing
           <p style={{ fontSize: 14 }}>Saved. The sent and answer dates are recorded.</p>
           <p style={{ fontSize: 14, color: BETA.muted }}>Now send the drawing to the customer. This opens WhatsApp with a message ready to send.</p>
           <a style={{ ...btnStyle("outline", "md"), alignSelf: "flex-start", color: BETA.accent }} href={whatsappLink(p.detail.project.customer_phone, text)} target="_blank" rel="noopener noreferrer">
-            Open WhatsApp{p.detail.project.customer_phone ? "" : " (no phone on file, pick the contact)"}
+            <MessageCircle size={15} aria-hidden="true" />Open WhatsApp{p.detail.project.customer_phone ? "" : " (no phone on file, pick the contact)"}
           </a>
         </>
       ) : (
@@ -803,7 +804,7 @@ function ApproveDialog({ p, editing, onClose }: { p: BetaTabProps; editing: Edit
       footer={
         <>
           <WsBtn onClick={onClose} disabled={busy}>Cancel</WsBtn>
-          <WsBtn kind="teal" onClick={() => void save()} disabled={busy}>{busy ? "Saving..." : "Record approval"}</WsBtn>
+          <WsBtn kind="confirm" onClick={() => void save()} disabled={busy}>{busy ? "Saving..." : "Record approval"}</WsBtn>
         </>
       }
     >

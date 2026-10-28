@@ -23,6 +23,7 @@ import { dayMonthYear, whatsappLink } from "./renovationBetaModel";
 import { betaSiteApi, type SiteDelivery } from "./renovationBetaSiteApi";
 import { BETA, TONES } from "./renovationBetaTheme";
 import { byArea, byCategory, clientLinkUrl, voPoApi, type ClientItem } from "./renovationBetaVoPo";
+import { BetaLoading } from "./BetaLoading";
 
 /** The line's photos (uploaded on the order line, carried to its PO) and the SKU's catalog photos, as the client link
     shows them: up to three, then "+N" (BetaLinePhotos.tsx, shared with the PO tab). */
@@ -81,7 +82,7 @@ export function BetaClientPoTab(p: BetaTabProps): ReactElement {
     : byArea(items).map((a) => ({ key: a.key, label: a.label, subs: [{ key: `${a.key}/all`, label: "", items: a.items }] }))), [items, view]);
 
   if (q.error) return <p role="alert" style={{ fontSize: 14, color: WS.red }}>The client items could not be loaded: {q.error}</p>;
-  if (!q.data) return <p style={{ padding: "40px 0", textAlign: "center", fontSize: 14, color: BETA.muted }}>Loading Client PO...</p>;
+  if (!q.data) return <BetaLoading label="Loading Client PO" />;
 
   const dated = [...rows.values()].filter((r) => r.orderOn && r.deliverOn).length;
   const COLS = 9;

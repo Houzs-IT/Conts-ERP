@@ -17,6 +17,7 @@ import {
   CATEGORY_CHIP, cardLine, clockOf, countBy, dayTitle, mediaCount, filterPhotos, photoAreas, photoFilters, photoTimeline, type PhotoCard, type PhotoFilter,
 } from "./renovationBetaPhotosModel";
 import { BETA, TONES, type BetaTone } from "./renovationBetaTheme";
+import { BetaLoading } from "./BetaLoading";
 
 /* One accent per category, from the Beta palette: teal for the site team, blue for deliveries, amber for defects. */
 export const CATEGORY_TONE: Readonly<Record<PhotoCategory, BetaTone>> = {
@@ -100,7 +101,7 @@ export function BetaSiteTab({ projectId, today, canWrite, onDone }: BetaTabProps
         )}
       </div>
 
-      {q.loading && !q.data ? <p style={{ fontSize: 14, color: BETA.muted }}>Loading photos...</p>
+      {q.loading && !q.data ? <BetaLoading label="Loading photos" size="inline" />
         : q.error && !q.data ? <p role="alert" style={{ fontSize: 14, color: WS.red }}>The photos could not be loaded: {q.error}</p>
         : shown.length === 0 ? (
           <WsEmpty>{photos.length === 0 ? "No photos yet. Progress photos, PODs, goods receipts, the site measure and defects all show here." : "No photos match this filter."}</WsEmpty>

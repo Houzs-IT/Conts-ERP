@@ -3,8 +3,10 @@
    styles, so the workspace looks like the mockup and not like the rest of the engine. */
 
 import { useEffect, useId, useRef, useState, type CSSProperties, type ReactElement, type ReactNode } from "react";
+import { motion } from "motion/react";
 import { api } from "../../api/client";
-import { BETA, BETA_SKIN_CSS, GLASS, PILL_GLASS, PILL_MAIN, TONES, type BetaTone } from "./renovationBetaTheme";
+import { BetaMotion, RISE } from "./betaMotion";
+import { BETA, BETA_SKIN_CSS, GLASS, PILL_CONFIRM, PILL_GLASS, PILL_MAIN, PILL_SELECTED, TONES, type BetaTone } from "./renovationBetaTheme";
 
 /** The mockup's other colours, now all from the shared palette in renovationBetaTheme.ts so both skins reach them. */
 export const WS = {
@@ -24,7 +26,7 @@ export const WS = {
   amber: TONES.amber.ink,
   amberDot: TONES.amber.dot,
   /* A solid amber under white text, so it stays the same on both skins. */
-  amberBtn: "#B86A0B",
+  amberBtn: "#A35C06",
   /* What was blue (information, deliveries, "waiting for the check") is now the neutral dark grey. */
   blue: TONES.grey.ink,
   blueDot: TONES.grey.dot,
@@ -46,7 +48,7 @@ const CSS = `
 .bws *{box-sizing:border-box}
 .bws h1,.bws h2,.bws h3,.bws p,.bws ol,.bws ul,.bws dl,.bws dd{margin:0}
 .bws a{color:${BETA.accent}}
-.bws a:focus-visible,.bws button:focus-visible,.bws input:focus-visible,.bws select:focus-visible,.bws textarea:focus-visible,.bws label:focus-within,.bws [role=dialog]:focus-visible{outline:3px solid ${BETA.focus};outline-offset:2px}
+.bws a:focus-visible,.bws button:focus-visible,.bws input:focus-visible,.bws select:focus-visible,.bws textarea:focus-visible,.bws label:has(input.sr:focus-visible),.bws [role=dialog]:focus-visible{outline:3px solid ${BETA.focus};outline-offset:2px}
 .bws button:disabled{opacity:.55;cursor:not-allowed}
 .bws .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 .bws .ws-input{min-height:40px;width:100%;border:1px solid ${BETA.border};border-radius:10px;padding:0 8px;font:inherit;font-size:14px;background:${BETA.field};color:${BETA.ink}}
@@ -64,8 +66,10 @@ const CSS = `
 .bws .no-bar{scrollbar-width:none}.bws .no-bar::-webkit-scrollbar{display:none}
 .bws .tabs{display:flex;flex-wrap:nowrap;gap:4px;border-bottom:1px solid ${BETA.line};background:${BETA.glassSolid};padding:4px 8px 0;border-radius:12px 12px 0 0;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
 .bws .tabs::-webkit-scrollbar{display:none}
-.bws .tab{display:flex;flex:none;white-space:nowrap;align-items:center;min-height:44px;padding:0 16px;border:0;border-bottom:3px solid transparent;margin-bottom:-1px;background:transparent;font:inherit;color:${BETA.muted};font-weight:500;cursor:pointer}
-.bws .tab[aria-current="page"]{border-bottom-color:${BETA.blue};color:${BETA.ink};font-weight:600}
+.bws .tab{position:relative;display:flex;flex:none;white-space:nowrap;align-items:center;min-height:44px;padding:0 16px;border:0;border-bottom:3px solid transparent;margin-bottom:-1px;background:transparent;font:inherit;color:${BETA.muted};font-weight:500;cursor:pointer}
+.bws .tab:focus:not(:focus-visible){outline:none}
+.bws .tab[aria-current="page"]{color:${BETA.ink};font-weight:600}
+.bws .tab-ink{position:absolute;left:10px;right:10px;bottom:-3px;height:3px;border-radius:3px 3px 0 0;background:${BETA.selInk}}
 .bws .tab:hover{color:${BETA.ink}}
 .bws .vrow{flex:1 1 0;min-width:0;display:flex;align-items:center;gap:8px;padding:2px;overflow-x:auto;scrollbar-width:none}
 .bws .vrow::-webkit-scrollbar{display:none}
@@ -74,7 +78,19 @@ const CSS = `
 .bws .vpill[aria-pressed="true"]{background:${BETA.ink};border-color:${BETA.ink};color:${BETA.surface}}
 .bws .link{padding:0;border:0;background:transparent;font:inherit;font-size:13px;font-weight:600;color:${BETA.accent};cursor:pointer;text-decoration:underline}
 .bws .link:hover{color:${BETA.accentInk}}
-@media (prefers-reduced-motion:no-preference){.bws .fade{animation:bwsfade .18s ease-out}@keyframes bwsfade{from{opacity:.4}to{opacity:1}}}
+/* The picked card (site measure, 3D, 2D): a band of colour that travels round the border. Nothing else moves. */
+@property --ang{syntax:"<angle>";inherits:false;initial-value:0deg}
+.bws .pickcard-on{border-color:transparent;background:linear-gradient(${BETA.tealSoft},${BETA.tealSoft}) padding-box,linear-gradient(${BETA.surface},${BETA.surface}) padding-box,conic-gradient(from var(--ang),${BETA.accent},${TONES.accent.line},${BETA.accent} 35%,${TONES.accent.dot} 60%,${TONES.accent.line} 80%,${BETA.accent}) border-box}
+@media (prefers-reduced-motion:no-preference){
+.bws .pickcard-on{animation:bwsspin 3.2s linear infinite}
+@keyframes bwsspin{to{--ang:360deg}}
+.bws .tab{transition:color .18s}
+.bws button:not(.tab):not(.link):not(.mo):not(:disabled){transition:transform .18s cubic-bezier(.2,.8,.2,1),filter .18s}
+.bws button:not(.tab):not(.link):not(.mo):not(:disabled):hover{transform:translateY(-1px);filter:brightness(1.05)}
+.bws button:not(.tab):not(.link):not(.mo):not(:disabled):active{transform:translateY(0) scale(.97);filter:none}
+.bws .ring{position:absolute;inset:0;border-radius:50%;border:2px solid ${BETA.stepNow};animation:bwsring 2.2s ease-out infinite;pointer-events:none}
+@keyframes bwsring{0%{transform:scale(1);opacity:.55}100%{transform:scale(1.9);opacity:0}}
+}
 `;
 
 export function WsStyle(): ReactElement {
@@ -115,7 +131,7 @@ interface WsCardProps {
 export function WsCard({ title, sub, subInline = false, right, gap = 14, children }: WsCardProps): ReactElement {
   const id = useId();
   return (
-    <section aria-labelledby={id} style={{ ...cardStyle, gap }}>
+    <motion.section variants={RISE} aria-labelledby={id} style={{ ...cardStyle, gap }}>
       <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
         <div style={subInline ? { display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" } : undefined}>
           <h2 id={id} style={h2Style}>{title}</h2>
@@ -124,7 +140,7 @@ export function WsCard({ title, sub, subInline = false, right, gap = 14, childre
         {right}
       </div>
       {children}
-    </section>
+    </motion.section>
   );
 }
 
@@ -158,7 +174,7 @@ export function WsTag({ children }: { children: ReactNode }): ReactElement {
 
 /* ---------- Buttons ---------- */
 
-export type WsBtnKind = "dark" | "teal" | "outline" | "amber" | "danger";
+export type WsBtnKind = "dark" | "teal" | "confirm" | "outline" | "amber" | "danger";
 export type WsBtnSize = "sm" | "md" | "lg";
 
 const HEIGHT: Record<WsBtnSize, number> = { sm: 36, md: 40, lg: 44 };
@@ -170,6 +186,7 @@ export function btnStyle(kind: WsBtnKind, size: WsBtnSize = "md"): CSSProperties
   };
   /* "dark" and "teal" were the filled main buttons; the designs draw every main action as the blue pill. */
   if (kind === "dark" || kind === "teal") return { ...base, ...PILL_MAIN };
+  if (kind === "confirm") return { ...base, ...PILL_CONFIRM };
   if (kind === "amber") return { ...base, border: 0, borderRadius: 999, background: WS.amberBtn, color: "#FFFFFF" };
   if (kind === "danger") return { ...base, ...PILL_GLASS, border: `1px solid ${TONES.red.line}`, color: WS.red };
   return { ...base, ...PILL_GLASS };
@@ -189,19 +206,24 @@ export function WsBtn({ kind = "outline", size = "md", disabled, onClick, type =
   return <button type={type} disabled={disabled} onClick={onClick} style={{ ...btnStyle(kind, size), ...style }}>{children}</button>;
 }
 
-/** A pill that filters (All, a room, a category): the chosen one is the blue pill. */
+/** A pill that filters (All, a room, a category): the chosen one is flat ink. */
 export function WsFilterPill({ on, onClick, children }: { on: boolean; onClick: () => void; children: ReactNode }): ReactElement {
   return (
-    <button
+    <motion.button
       type="button"
+      className="mo"
       aria-pressed={on}
       onClick={onClick}
+      whileHover={{ y: -1 }}
+      whileTap={{ scale: 0.95 }}
+      animate={{ scale: on ? [1, 1.08, 1] : 1 }}
+      transition={{ duration: 0.28 }}
       style={{
-        ...(on ? PILL_MAIN : PILL_GLASS), minHeight: 36, padding: "0 14px", font: "inherit", fontSize: 13, fontWeight: 600, cursor: "pointer",
+        ...(on ? PILL_SELECTED : PILL_GLASS), minHeight: 36, padding: "0 14px", font: "inherit", fontSize: 13, fontWeight: 600, cursor: "pointer",
       }}
     >
       {children}
-    </button>
+    </motion.button>
   );
 }
 
@@ -230,12 +252,19 @@ export function WsDialog({ title, sub, onClose, children, footer, wide = false }
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
   return (
-    <div
+    <BetaMotion>
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.18 }}
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
       style={{ position: "fixed", inset: 0, zIndex: 60, background: BETA.scrim, overflowY: "auto", padding: "24px 16px" }}
     >
-      <div
+      <motion.div
         ref={panel}
+        initial={{ opacity: 0, y: 20, scale: 0.97 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ type: "spring", stiffness: 420, damping: 32 }}
         role="dialog"
         aria-modal="true"
         aria-label={title}
@@ -253,8 +282,9 @@ export function WsDialog({ title, sub, onClose, children, footer, wide = false }
         </div>
         {children}
         {footer && <div style={{ display: "flex", justifyContent: "flex-end", flexWrap: "wrap", gap: 8 }}>{footer}</div>}
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
+    </BetaMotion>
   );
 }
 
