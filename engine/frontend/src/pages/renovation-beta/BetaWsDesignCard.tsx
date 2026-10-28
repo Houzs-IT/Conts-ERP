@@ -148,7 +148,7 @@ export function BetaWsDesignCard({ board, canWrite, openDialog, onDone, onError 
   }
 
   return (
-    <WsCard title="Design progress" gap={10} right={<Link to="/beta/calendar" style={{ fontSize: 13, fontWeight: 600 }}>Calendar →</Link>}>
+    <WsCard title="Design progress" gap={10} right={<Link to="/beta/calendar" className="link">Calendar →</Link>}>
       <div><CondPill text={conditionText(m, p)} words={status(m, p)[1]} /></div>
       <div>
         {lines.map((l) => (

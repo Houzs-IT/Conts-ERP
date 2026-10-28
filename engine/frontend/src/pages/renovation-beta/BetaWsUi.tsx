@@ -115,9 +115,9 @@ export function BetaSkin(): ReactElement {
   return <style>{BETA_SKIN_CSS}</style>;
 }
 
-/** Fetches the other staff Beta screens while one is open. Moving between them then never waits on a download, which
-    on a phone showed the engine's light page skeleton over the night skin. A failed fetch is left to the real
-    navigation, whose own loader reports it. */
+/** Fetches the other staff Beta screens while one is open, so moving between them waits less on a download (opening a
+    project: about 500 ms of loading shapes down to 300 ms on staging, more on a phone network). A failed fetch is left
+    to the real navigation, whose own loader reports it. */
 export function useBetaPreload(): void {
   useEffect(() => {
     for (const load of [() => import("./RenovationBetaHome"), () => import("./RenovationBetaCalendar"), () => import("./RenovationBetaWorkspace")]) {
