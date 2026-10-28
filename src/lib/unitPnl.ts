@@ -7,7 +7,7 @@
 export const LINE_KEYS = ['guestPaid', 'fees', 'cleaning', 'electricity', 'water', 'internet', 'sewerage', 'other', 'misc', 'operating', 'owner', 'company'] as const;
 export type LineKey = typeof LINE_KEYS[number];
 export const LINE_LABEL: Record<LineKey, string> = {
-  guestPaid: 'Guest paid', fees: 'Platform fees and taxes', cleaning: 'Cleaning', electricity: 'Electricity', water: 'Water',
+  guestPaid: 'Guest total', fees: 'Service fees and taxes', cleaning: 'Cleaning', electricity: 'Electricity', water: 'Water',
   internet: 'Internet', sewerage: 'Indah Water', other: 'Other costs', misc: 'Misc charge',
   operating: 'Operating profit', owner: "Owner's portion", company: 'Company keeps',
 };
@@ -51,7 +51,7 @@ export const pctOfIncome = (amount: number, income: number): number | null =>
 /** Finance style: (1,234.56) for a negative, – for zero. */
 export function bracketMoney(sen: number): { text: string; negative: boolean } {
   if (!sen) return { text: '–', negative: false };
-  const text = (Math.abs(sen) / 100).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const text = (Math.abs(sen) / 100).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
   return sen < 0 ? { text: `(${text})`, negative: true } : { text, negative: false };
 }
 
