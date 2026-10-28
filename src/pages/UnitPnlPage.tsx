@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { Fragment, useMemo, useState, type ReactNode } from 'react';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import Icon from '../components/Icon';
@@ -202,14 +202,16 @@ function PnlByMonth({ months, byMonth, total, mLabel }: { months: string[]; byMo
       line(LINE_LABEL.operating, p => p.operating), line(LINE_LABEL.owner, p => p.owner), line(LINE_LABEL.company, p => p.company),
     ]);
   }
+  // Grid lines between every month and every line; each month has its amount and its % of the guest total side by side.
+  const GRID = '[border-left:1px_solid_var(--color-line)]';
   const TH = 'px-3 py-2 text-meta font-semibold text-muted-ink text-right whitespace-nowrap bg-muted';
-  const cell = (p: Pnl, k: LineKey | 'costs', strong?: boolean) => {
+  const cell = (key: string, p: Pnl, k: LineKey | 'costs', strong?: boolean) => {
     const v = k === 'costs' ? costs(p) : p[k];
     return (
-      <td key={k} className="px-3 py-1.5 text-right align-top whitespace-nowrap">
-        <Money sen={v} strong={strong} />
-        {k !== 'guestPaid' && v !== 0 && <div className="text-[11px] text-muted-ink tabular-nums">{pctText(pctOfIncome(v, p.guestPaid))}</div>}
-      </td>
+      <Fragment key={key}>
+        <td className={cx('px-3 py-2 text-right whitespace-nowrap', GRID)}><Money sen={v} strong={strong} /></td>
+        <td className="pl-1 pr-3 py-2 text-right whitespace-nowrap text-meta text-muted-ink tabular-nums">{v !== 0 ? pctText(pctOfIncome(v, p.guestPaid)) : ''}</td>
+      </Fragment>
     );
   };
   return (
@@ -218,15 +220,23 @@ function PnlByMonth({ months, byMonth, total, mLabel }: { months: string[]; byMo
       <div className="overflow-x-auto -mx-4 sm:-mx-5">
         <table className="w-full border-collapse text-copy">
           <thead>
-            <tr className="[border-bottom:1px_solid_var(--color-line)]">
-              <th className={cx(TH, 'text-left sticky left-0 z-[1] min-w-[190px]')}>Line</th>
-              {cols.map(c => <th key={c.key} className={cx(TH, c.key === 'total' && '[border-left:1px_solid_var(--color-line)]')}>{c.label}</th>)}
+            <tr>
+              <th rowSpan={2} className={cx(TH, 'text-left align-bottom sticky left-0 z-[1] min-w-[190px] [border-bottom:1px_solid_var(--color-line-strong)]')}>Line</th>
+              {cols.map(c => <th key={c.key} colSpan={2} className={cx(TH, 'text-center', GRID, c.key === 'total' && 'text-ink')}>{c.label}</th>)}
+            </tr>
+            <tr className="[border-bottom:1px_solid_var(--color-line-strong)]">
+              {cols.map(c => (
+                <Fragment key={c.key}>
+                  <th className={cx(TH, 'pt-0 font-normal', GRID)}>RM</th>
+                  <th className={cx(TH, 'pt-0 pl-1 font-normal')}>%</th>
+                </Fragment>
+              ))}
             </tr>
           </thead>
           <tbody>
             {ROWS.map(r => (
-              <PnlRow key={r.key} kind={r.kind} label={LINE_LABEL[r.key]} cells={cols.map(c => cell(c.p, r.key, r.kind !== 'cost'))}
-                extra={r.key === 'misc' ? <PnlRow kind="subtotal" label="Total costs" cells={cols.map(c => cell(c.p, 'costs', true))} /> : null} />
+              <PnlRow key={r.key} kind={r.kind} label={LINE_LABEL[r.key]} cells={cols.map(c => cell(c.key, c.p, r.key, r.kind !== 'cost'))}
+                extra={r.key === 'misc' ? <PnlRow kind="subtotal" label="Total costs" cells={cols.map(c => cell(c.key, c.p, 'costs', true))} /> : null} />
             ))}
           </tbody>
         </table>
@@ -237,11 +247,11 @@ function PnlByMonth({ months, byMonth, total, mLabel }: { months: string[]; byMo
 }
 
 function PnlRow({ kind, label, cells, extra }: { kind: string; label: string; cells: ReactNode[]; extra?: ReactNode }) {
-  const rule = kind === 'sub' ? '[border-top:1px_solid_var(--color-line-strong)]' : kind === 'result' ? '[border-top:3px_double_var(--color-line-strong)]' : kind === 'subtotal' ? '[border-top:1px_solid_var(--color-line)]' : '';
+  const rule = kind === 'sub' ? '[border-top:1px_solid_var(--color-line-strong)]' : kind === 'result' ? '[border-top:3px_double_var(--color-line-strong)]' : kind === 'subtotal' ? '[border-top:1px_solid_var(--color-line-strong)]' : '';
   return (
     <>
-      <tr className={cx(rule, kind === 'result' && 'bg-muted')}>
-        <th scope="row" className={cx('px-3 py-1.5 text-left whitespace-nowrap sticky left-0 z-[1] bg-card', kind === 'result' && 'bg-muted',
+      <tr className={cx('[border-bottom:1px_solid_var(--color-line-soft)]', rule, (kind === 'result' || kind === 'subtotal' || kind === 'sub') && 'bg-muted')}>
+        <th scope="row" className={cx('px-3 py-2 text-left whitespace-nowrap sticky left-0 z-[1] bg-card', (kind === 'result' || kind === 'subtotal' || kind === 'sub') && 'bg-muted',
           kind === 'cost' ? 'pl-7 font-normal text-ink-2' : 'font-semibold')}>{label}</th>
         {cells}
       </tr>
