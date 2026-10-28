@@ -2,7 +2,8 @@
 # digest) whenever a merge to main changes it, or by hand. Runs scripts/cron-deploy.mjs, so the same checks apply:
 # the worker must use the production database of wrangler.toml and the token's account must own theconts-os.
 # Repository secrets: CLOUDFLARE_API_TOKEN (Conts ERP account, Workers Scripts > Edit) and CHANNEX_API_KEY (the
-# live Channex key, stored on the worker on every run; without it the Channex retry job reports "not configured").
+# live Channex key, stored on the worker on every run; without it the Channex retry job reports "not configured") and
+# HOSTPLATFORM_ACCESS_TOKEN (stored the same way; without it the 5-minute HostPlatform pull reports "not configured").
 name: Deploy scheduled jobs
 on:
   push:
@@ -32,4 +33,5 @@ jobs:
       - name: Publish scheduled worker
         env:
           CRON_CHANNEX_API_KEY: ${{ secrets.CHANNEX_API_KEY }}
+          CRON_HOSTPLATFORM_ACCESS_TOKEN: ${{ secrets.HOSTPLATFORM_ACCESS_TOKEN }}
         run: node scripts/cron-deploy.mjs
