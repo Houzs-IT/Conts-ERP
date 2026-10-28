@@ -200,7 +200,9 @@ function HomeScreen(): ReactElement {
       </div>
 
       {/* One row that scrolls sideways when narrow: wrapped, the five groups took three uneven rows on a phone. */}
-      <div role="tablist" aria-label="Project groups" style={{ display: "flex", flexWrap: "nowrap", gap: 4, overflowX: "auto", overflowY: "hidden", scrollbarWidth: "none", borderBottom: `1px solid ${BETA.line}` }}>
+      <div role="tablist" aria-label="Project groups" style={{ display: "flex", flexWrap: "nowrap", gap: 4, overflowX: "auto", overflowY: "hidden", scrollbarWidth: "none", borderBottom: `1px solid ${BETA.line}`,
+        // A solid backing: the page's grid lines ran through the tab labels.
+        background: BETA.glassSolid, padding: "4px 8px 0", borderRadius: "12px 12px 0 0" }}>
         {HOME_TABS.map(([key, label]) => {
           const on = tab === key;
           return (
