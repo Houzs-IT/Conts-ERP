@@ -21,6 +21,9 @@
 //     always refetches (cache-while-revalidate).
 //   - Whitelisted to the document LISTS only (not detail / sub-resource queries),
 //     size-capped, and fail-soft on quota / corruption.
+//   - Beta project pages (board, detail, workspace, records of the last few
+//     projects) live in a second slot ("...:beta") with their own cap, under the
+//     same build / session / company namespace, so the same rules apply.
 
 import type { QueryClient } from "@tanstack/react-query";
 import { authSessionFingerprint, subscribeAuthTokenChange } from "./authToken";
@@ -143,6 +146,64 @@ function isListKey(key: readonly unknown[]): boolean {
   return true;
 }
 
+// Beta (renovation workspace) queries are built by hooks/useQuery as
+// ["uq", "renovation-beta", <kind>, ...]. Every Beta key starts that way (see the
+// naming rule at the top of pages/renovation-beta/renovationBetaBoardApi.ts).
+// isBetaKey is the broad match (sign-out clearing); only the four kinds a project
+// page needs to open without a spinner are written to disk. Tab sub-queries
+// (site, photos, timeline...) stay in memory.
+const BETA_SAVED_KINDS = new Set(["board", "detail", "workspace", "records"]);
+const BETA_MAX_BYTES = 1_000_000; // ~1 MB — over this the oldest projects are dropped, the write still happens
+const BETA_MAX_PROJECTS = 5;
+const BETA_MAX_SHARED_BOARDS = 3; // all-project boards (Home, Calendar windows) kept beside the projects
+
+export function isBetaKey(key: readonly unknown[]): boolean {
+  return key[0] === "uq" && key[1] === "renovation-beta";
+}
+
+function isBetaSavedKey(key: readonly unknown[]): boolean {
+  const kind = key[2];
+  return isBetaKey(key) && typeof kind === "string" && BETA_SAVED_KINDS.has(kind);
+}
+
+// The project a Beta entry belongs to, or 0 for an all-project board. Detail,
+// workspace and records carry the id first (["uq","renovation-beta",kind,id,...]);
+// the board carries it after its date window (["uq","renovation-beta","board",from,to,id,...]).
+function betaProjectId(key: readonly unknown[]): number {
+  const id = key[key[2] === "board" ? 5 : 3];
+  return typeof id === "number" && id > 0 ? id : 0;
+}
+
+interface BetaEntry {
+  keyStr: string;
+  json: string;
+  project: number;
+  at: number;
+}
+
+/** The Beta slot's JSON: the newest few projects, trimmed to the cap, or null when there is nothing to keep. */
+function betaSnapshot(qc: QueryClient): string | null {
+  const entries: BetaEntry[] = [];
+  for (const q of qc.getQueryCache().getAll()) {
+    const key = q.queryKey as readonly unknown[];
+    if (q.state.status !== "success" || q.state.data == null || !isBetaSavedKey(key)) continue;
+    entries.push({ keyStr: JSON.stringify(key), json: JSON.stringify(q.state.data), project: betaProjectId(key), at: q.state.dataUpdatedAt });
+  }
+  // A project is as recent as its newest entry. Keep the latest few, newest first.
+  const seen = new Map<number, number>();
+  for (const { project, at } of entries) if (project > 0) seen.set(project, Math.max(seen.get(project) ?? 0, at));
+  const projects = [...seen].sort((a, b) => b[1] - a[1]).slice(0, BETA_MAX_PROJECTS).map(([id]) => id);
+  const groups = projects.map((id) => entries.filter((e) => e.project === id));
+  const shared = entries.filter((e) => e.project === 0).sort((a, b) => b.at - a.at).slice(0, BETA_MAX_SHARED_BOARDS);
+  const bytes = (): number => [...shared, ...groups.flat()].reduce((n, e) => n + e.keyStr.length + e.json.length, 0);
+  // Over the cap: oldest project first, the all-project boards last.
+  while (groups.length > 0 && bytes() > BETA_MAX_BYTES) groups.pop();
+  while (shared.length > 0 && bytes() > BETA_MAX_BYTES) shared.pop();
+  const kept = [...shared, ...groups.flat()];
+  if (kept.length === 0) return null;
+  return `{${kept.map((e) => `${JSON.stringify(e.keyStr)}:${e.json}`).join(",")}}`;
+}
+
 /** Serialize the whitelisted list queries to localStorage. */
 function save(qc: QueryClient, company: string, session: string): void {
   // Signed out → never write. Otherwise a sign-out mid-debounce would persist the
@@ -160,8 +221,17 @@ function save(qc: QueryClient, company: string, session: string): void {
       out[JSON.stringify(q.queryKey)] = q.state.data;
     }
     const json = JSON.stringify(out);
-    if (json.length > MAX_BYTES) return;
-    localStorage.setItem(`${BUILD_PREFIX}${session}:${company}`, json);
+    if (json.length <= MAX_BYTES) localStorage.setItem(`${BUILD_PREFIX}${session}:${company}`, json);
+  } catch {
+    // quota exceeded / serialization error → skip this write.
+  }
+  // Beta has its own slot and cap, so a big project never crowds out the SCM
+  // lists above (and a full SCM snapshot never blocks Beta).
+  try {
+    const beta = betaSnapshot(qc);
+    const slot = `${BUILD_PREFIX}${session}:${company}:beta`;
+    if (beta) localStorage.setItem(slot, beta);
+    else localStorage.removeItem(slot);
   } catch {
     // quota exceeded / serialization error → skip this write.
   }
@@ -185,24 +255,32 @@ function hydrate(qc: QueryClient): void {
       const k = localStorage.key(i);
       if (k && k.startsWith(NS_PREFIX) && !k.startsWith(keep)) localStorage.removeItem(k);
     }
-    const raw = localStorage.getItem(snapKey());
-    if (!raw) return;
-    const obj = JSON.parse(raw) as Record<string, unknown>;
-    for (const [keyStr, data] of Object.entries(obj)) {
-      let key: unknown[];
-      try {
-        key = JSON.parse(keyStr) as unknown[];
-      } catch {
-        continue;
-      }
-      if (!Array.isArray(key) || !isListKey(key)) continue;
-      // updatedAt in the distant past → stale on first mount, so react-query
-      // renders this snapshot instantly (no spinner) and refetches in the
-      // background, replacing it with fresh data. Never treated as fresh.
-      qc.setQueryData(key, data, { updatedAt: 1 });
-    }
+    seed(qc, localStorage.getItem(snapKey()), isListKey);
   } catch {
     // Corrupt snapshot → ignore and start clean.
+  }
+  try {
+    seed(qc, localStorage.getItem(`${snapKey()}:beta`), isBetaSavedKey);
+  } catch {
+    // Corrupt Beta snapshot → ignore; the SCM lists above are already in.
+  }
+}
+
+function seed(qc: QueryClient, raw: string | null, accept: (key: readonly unknown[]) => boolean): void {
+  if (!raw) return;
+  const obj = JSON.parse(raw) as Record<string, unknown>;
+  for (const [keyStr, data] of Object.entries(obj)) {
+    let key: unknown[];
+    try {
+      key = JSON.parse(keyStr) as unknown[];
+    } catch {
+      continue;
+    }
+    if (!Array.isArray(key) || !accept(key)) continue;
+    // updatedAt in the distant past → stale on first mount, so react-query
+    // renders this snapshot instantly (no spinner) and refetches in the
+    // background, replacing it with fresh data. Never treated as fresh.
+    qc.setQueryData(key, data, { updatedAt: 1 });
   }
 }
 
@@ -281,7 +359,10 @@ export function installQueryPersist(qc: QueryClient): () => void {
     // event, so it cannot rebind and its old-cache flush remains refused.
     cancelPending();
     qc.removeQueries({
-      predicate: (query) => isListKey(query.queryKey as readonly unknown[]),
+      predicate: (query) => {
+        const key = query.queryKey as readonly unknown[];
+        return isListKey(key) || isBetaKey(key);
+      },
     });
     installedSession = sessionFp();
     installedCompany = activeCompany();

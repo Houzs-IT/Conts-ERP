@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
 import { cors } from "hono/cors";
+import { etag } from "hono/etag";
 import { secureHeaders } from "hono/secure-headers";
 import type { Env } from "./types";
 import { GIT_SHA, resolveBuildSha } from "./build-info";
@@ -171,6 +172,17 @@ const inboxBustAfterWrite: MiddlewareHandler<{ Bindings: Env }> = async (c, next
   if (c.res.status >= 200 && c.res.status < 300) {
     const uid = c.get("user")?.id;
     if (uid != null) await bustInboxForUser(c.env, uid);
+  }
+};
+
+// Beta answers differ per user (category scope, finance hidden) and per company (X-Company-Id), so a browser may keep
+// them but must ask the server again before reuse, and a shared cache must never hold one. `no-cache` plus the ETag
+// from etag() below lets an unchanged answer come back as a small 304. Never `public`, never Hono cache().
+export const betaCacheHeaders: MiddlewareHandler<{ Bindings: Env }> = async (c, next) => {
+  await next();
+  if (c.req.method === "GET" && c.res.status === 200) {
+    c.res.headers.set("Cache-Control", "private, no-cache");
+    c.res.headers.append("Vary", "Authorization, X-Company-Id");
   }
 };
 
@@ -463,6 +475,9 @@ app.use("/api/renovation/*", inboxBustAfterWrite);
 app.route("/api/renovation", renovation);
 // Beta workspace (owner, 23 Oct 2026): behind the auth gate, switched off in production by renovationBeta's first middleware.
 app.use("/api/beta/*", inboxBustAfterWrite);
+// etag() is registered first so it wraps betaCacheHeaders: a 304 it builds then carries Cache-Control and Vary.
+app.use("/api/beta/*", etag());
+app.use("/api/beta/*", betaCacheHeaders);
 app.route("/api/beta", renovationBeta);
 app.route("/api/beta", renovationBetaSheets);
 app.route("/api/sales", sales);
