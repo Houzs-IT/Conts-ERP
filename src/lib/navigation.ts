@@ -27,7 +27,9 @@ export interface NavGroup { label: string; workspace: Workspace; items: NavItem[
  *  - Projects > Calendar is "Schedule"; Service / Project maintenance are "Case settings" / "Project settings",
  *    so no two menu entries share a name.
  */
-const SUPPLY_SUPPORT = 'SUPPORT';
+/** The Dream Crafter group that holds IT Support and Category access. It shares its label with the Rental System group,
+ *  so anything keyed by group label must also use the workspace. */
+const SUPPLY_SYSTEM = 'SYSTEM';
 const SUPPLY_FINANCE = 'FINANCE';
 
 export type SettingsSectionKey = 'company' | 'operations' | 'locale' | 'report' | 'agreement' | 'approvals' | 'services' | 'security';
@@ -202,7 +204,9 @@ export const NAV: NavGroup[] = [
   { label: SUPPLY_FINANCE, workspace: 'supply', phone: false, items: financeItems('/supply/finance', 'Supply') },
   // The same IT Support screen as under System, at its own address so the supply chain sidebar stays put.
   // A Property OS screen, not an engine one: the engine must not call a Houzs address (CLAUDE.md).
-  { label: SUPPLY_SUPPORT, workspace: 'supply', items: [
+  // Category access sets, per person, which product categories the renovation beta screens show (management only, so Full on Users and roles).
+  { label: SUPPLY_SYSTEM, workspace: 'supply', items: [
+    { key: 'categoryAccess', label: 'Category access', icon: 'tags', path: '/system/category-access', area: 'users', full: true },
     { key: 'itSupportSupply', label: 'IT Support', icon: 'life-buoy', path: '/supply/it-support', area: 'itSupport', badge: 'itSupport' },
   ] },
 ];
@@ -275,7 +279,7 @@ export function navFor(role: UserRole, engine = false, access?: Record<string, A
   const groups = navGroups(role, engine, access);
   // IT Support and Finance are in the supply chain sidebar only so it stays put; alone they must not open the
   // supply chain workspace to someone with no supply chain screens (Finance is then in Rental only).
-  const shared = (g: NavGroup) => g.workspace === 'supply' && (g.label === SUPPLY_SUPPORT || g.label === SUPPLY_FINANCE);
+  const shared = (g: NavGroup) => g.workspace === 'supply' && (g.label === SUPPLY_SYSTEM || g.label === SUPPLY_FINANCE);
   const supplyWork = groups.some(g => g.workspace === 'supply' && !shared(g));
   return supplyWork ? groups : groups.filter(g => !shared(g));
 }

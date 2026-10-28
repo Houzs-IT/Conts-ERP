@@ -92,6 +92,7 @@ const ReviewsPage = lazy(() => import('./pages/ReviewsPage'));
 const InboxPage = lazy(() => import('./pages/InboxPage'));
 const AutomationsPage = lazy(() => import('./pages/AutomationsPage'));
 const UsersPage = lazy(() => import('./pages/UsersPage'));
+const CategoryAccessPage = lazy(() => import('./pages/CategoryAccessPage'));
 const IntegrationsPage = lazy(() => import('./pages/IntegrationsPage'));
 const HostPlatformImportPage = lazy(() => import('./pages/HostPlatformImportPage'));
 const SystemHealthPage = lazy(() => import('./pages/SystemHealthPage'));
@@ -373,6 +374,7 @@ function Routed() {
         <Route path="/account" element={<AccountPage />} />
         <Route path="/change-password" element={<Navigate to="/" replace />} />
         <Route path="/system/users" element={<UsersPage />} />
+        <Route path="/system/category-access" element={<CategoryAccessPage />} />
         <Route path="/system/integrations" element={<IntegrationsPage />} />
         <Route path="/system/integrations/hostplatform" element={<HostPlatformImportPage />} />
         <Route path="/settings" element={<SettingsHome />} />
