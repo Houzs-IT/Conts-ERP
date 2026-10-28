@@ -4,24 +4,27 @@ import { ConfirmDialog } from './ConfirmDialog';
 import { Segmented } from './Metric';
 import DepartmentsView from './permissions/DepartmentsView';
 import PositionsView from './permissions/PositionsView';
+import UsersView from './permissions/UsersView';
 import ListView from './permissions/ListView';
 
-type View = 'departments' | 'positions' | 'list';
+type View = 'departments' | 'positions' | 'users' | 'list';
 
 const VIEWS: { key: View; label: string }[] = [
   { key: 'departments', label: 'Departments' },
   { key: 'positions', label: 'Positions' },
+  { key: 'users', label: 'Users' },
   { key: 'list', label: 'Departments and positions' },
 ];
 
 const INTRO: Record<View, string> = {
   departments: 'What each department can do in each part of the system. Set a level on a category and every area under it follows, unless the area has its own setting.',
   positions: 'What one position adds to or takes from its department.',
+  users: 'What one person gets, and the settings that are theirs alone. A setting made for a person beats their position and department.',
   list: 'The departments and positions people are placed in.',
 };
 
 /**
- * The Permissions tab: three views behind one switch. Access comes from three places, in this order: the person's own
+ * The Permissions tab: four views behind one switch. Access comes from three places, in this order: the person's own
  * settings (Edit user > Access), then their position, then their department. Only management can change any of it.
  * The view is local state because the page's tabs do not use the address either.
  */
@@ -44,6 +47,7 @@ export default function PermissionsChart() {
       </div>
       {view === 'departments' && <DepartmentsView onDirty={setPending} />}
       {view === 'positions' && <PositionsView onDirty={setPending} />}
+      {view === 'users' && <UsersView onDirty={setPending} />}
       {view === 'list' && <ListView onGoToDepartments={() => go('departments')} />}
       <ConfirmDialog spec={asking ? {
         title: 'Discard the unsaved changes?',
