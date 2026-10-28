@@ -106,13 +106,14 @@ export function BetaWsHeader({ d, p: board, people = [], canWrite, today, openDi
         </div>
         <div role="group" aria-label="Project team" className="chips" style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, marginTop: 12 }}>
           {chips.map((c) => {
-            const bg = c.lead ? BETA.pick : BETA.surface;
+            // The lead's tint is see-through, so it sits on a solid surface: the page's colour wash must not show through.
+            const bg = c.lead ? `linear-gradient(${BETA.pick}, ${BETA.pick}), ${BETA.surface}` : BETA.surface;
             const one = c.who.length === 1 ? infoOf(c.who[0].id) : "";
             const extra = one || (c.who.length > 1 ? c.who.map((x) => x.name).join(", ") : "");
             // The chip fits its text, as the design's pills do; the third line shows only when it has something to say.
             const body = (
               <>
-                <AvatarStack who={c.who} ring={bg} />
+                <AvatarStack who={c.who} ring={BETA.surface} />
                 <span style={{ display: "flex", flexDirection: "column", gap: 2, lineHeight: 1.2, minWidth: 0 }}>
                   <span style={{ fontSize: 11, color: BETA.muted, fontWeight: 600, textTransform: "uppercase", letterSpacing: ".05em", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.role}</span>
                   <span style={{ fontSize: 14, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{peopleLine(c.who)}</span>
