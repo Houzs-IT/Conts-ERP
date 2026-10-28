@@ -16,7 +16,7 @@ import { BetaCalDeadlines } from "./BetaCalDeadlines";
 import { BetaCalProgress } from "./BetaCalProgress";
 import { BetaCalMonth } from "./BetaCalMonth";
 import { BetaDialogs, type BetaDialog } from "./BetaForms";
-import { BetaSkin } from "./BetaWsUi";
+import { BetaSkin, useBetaPreload } from "./BetaWsUi";
 import { motion } from "motion/react";
 import { BetaLoading } from "./BetaLoading";
 import { BetaMotion, SPRING } from "./betaMotion";
@@ -29,6 +29,7 @@ export const ADD_PROJECT_PATH = "/projects?view=list&new=1";
 
 /** The colours are set before anything else draws, so the loading line and an error already have them. */
 export function RenovationBetaCalendar(): ReactElement {
+  useBetaPreload();
   return (
     <>
       <BetaSkin />
@@ -99,13 +100,14 @@ function CalendarScreen(): ReactElement {
           <h1 style={{ margin: 0, fontSize: 28, fontWeight: 600, letterSpacing: "-.02em" }}>Calendar</h1>
           <div style={{ marginTop: 4, color: MUTED, fontSize: 14 }}>{SOP_LABEL(m)}</div>
         </div>
-        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 10 }}>
-          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: INK_SOFT }}>
+        {/* minWidth 0 down to the select: a select is as wide as its longest name, and on a phone it ran off the screen. */}
+        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 10, minWidth: 0, maxWidth: "100%" }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: INK_SOFT, minWidth: 0, maxWidth: "100%" }}>
             Viewing
             <select
               value={String(who)}
               onChange={(e) => setPick(e.target.value === "All" ? "All" : Number(e.target.value))}
-              style={{ minHeight: 40, border: `1px solid ${BETA.glassEdge}`, borderRadius: 999, padding: "0 12px", font: "inherit", fontWeight: 600, background: BETA.field, boxShadow: BETA.btnGlassShadow, color: BETA.ink }}
+              style={{ minHeight: 40, minWidth: 0, maxWidth: "100%", flex: "1 1 auto", border: `1px solid ${BETA.glassEdge}`, borderRadius: 999, padding: "0 12px", font: "inherit", fontWeight: 600, background: BETA.field, boxShadow: BETA.btnGlassShadow, color: BETA.ink }}
             >
               <option value="All">Whole team</option>
               {m.people.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}

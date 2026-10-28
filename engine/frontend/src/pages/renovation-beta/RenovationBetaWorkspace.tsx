@@ -5,7 +5,7 @@
    The project, the workspace and the design records are loaded here once and handed to the tabs; every write
    shows a notice and reloads all three. */
 
-import { useEffect, useMemo, useState, type ReactElement } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { motion } from "motion/react";
@@ -24,7 +24,7 @@ import { BetaTimelineTab } from "./BetaTimelineTab";
 import { BetaVoTab } from "./BetaVoTab";
 import { BetaDialogs, type BetaDialog } from "./BetaForms";
 import { BetaWsHeader, BetaWsStepper } from "./BetaWsHeader";
-import { BetaSkin, WS, WsNotice, WsStyle } from "./BetaWsUi";
+import { BetaSkin, useBetaPreload, WS, WsNotice, WsStyle } from "./BetaWsUi";
 import type { BetaTabProps, BoardView } from "./betaShared";
 import { betaApi } from "./renovationBetaApi";
 import { projectView } from "./renovationBetaBoard";
@@ -41,6 +41,7 @@ function isNotFound(e: unknown): boolean {
 
 /** The colours are set before anything else draws, so the loading line and an error already have them. */
 export function RenovationBetaWorkspace(): ReactElement {
+  useBetaPreload();
   return (
     <>
       <BetaSkin />
@@ -76,6 +77,17 @@ function WorkspaceScreen(): ReactElement {
     if (loaded) rememberLastProject(id);
   }, [loaded, id]);
 
+  // On a phone the tabs scroll sideways: bring the open one into view (Client PO, Defects and Timeline sat off the edge),
+  // moving only the tab row, never the page.
+  const tabsRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const nav = tabsRef.current;
+    const on = nav?.querySelector<HTMLElement>('[aria-current="page"]');
+    if (!nav || !on || nav.scrollWidth <= nav.clientWidth) return;
+    const at = on.getBoundingClientRect().left - nav.getBoundingClientRect().left + nav.scrollLeft;
+    nav.scrollLeft = Math.max(0, at - (nav.clientWidth - on.offsetWidth) / 2);
+  }, [tab, loaded]);
+
   if (!valid) return <p role="alert" style={{ padding: "24px 0", fontSize: 14, color: WS.red }}>This project address is not valid.</p>;
   if (q.loading && !d) return <BetaLoading label="Loading project" size="page" />;
   if (q.error || !d) return <p role="alert" style={{ padding: "24px 0", fontSize: 14, color: WS.red }}>The project could not be loaded: {q.error ?? "not found"}</p>;
@@ -109,7 +121,7 @@ function WorkspaceScreen(): ReactElement {
       </motion.div>
       <BetaWsStepper items={items} hold={hold} />
 
-      <nav aria-label="Project sections" className="tabs">
+      <nav ref={tabsRef} aria-label="Project sections" className="tabs">
         {BETA_TABS.map((t) => (
           <button
             key={t.key}

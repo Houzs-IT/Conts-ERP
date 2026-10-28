@@ -53,7 +53,8 @@ const CSS = `
 .bws .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 .bws .ws-input{min-height:40px;width:100%;border:1px solid ${BETA.border};border-radius:10px;padding:0 8px;font:inherit;font-size:14px;background:${BETA.field};color:${BETA.ink}}
 .bws .ws-input-sm{min-height:38px;width:100%;min-width:0;border:1px solid ${BETA.border};border-radius:10px;padding:0 8px;font:inherit;font-size:14px;background:${BETA.field};color:${BETA.ink}}
-@media (max-width:720px){.bws .h1{font-size:22px!important}.bws .tab{padding:0 12px}.bws .chips{display:grid!important;grid-template-columns:minmax(0,1fr)}.bws .chips>*{min-width:0;width:auto!important}}
+.bws .ws-head .chips{grid-column:2}
+@media (max-width:720px){.bws .h1{font-size:22px!important}.bws .tab{padding:0 12px}.bws .ws-head .chips{grid-column:1/-1;display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))}.bws .chips>*{min-width:0;max-width:none!important;width:auto!important}.bws .chips>.chip-lead{grid-column:1/-1}}
 .bws .pay-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
 @media (max-width:1100px){.bws .pay-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .bws .ov-four{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:20px}
@@ -66,6 +67,9 @@ const CSS = `
 .bws .no-bar{scrollbar-width:none}.bws .no-bar::-webkit-scrollbar{display:none}
 .bws .tabs{display:flex;flex-wrap:nowrap;gap:4px;border-bottom:1px solid ${BETA.line};background:${BETA.glassSolid};padding:4px 8px 0;border-radius:12px 12px 0 0;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
 .bws .tabs::-webkit-scrollbar{display:none}
+/* On a phone the header and stepper fill most of the screen, so the tab row stays at the top while a tab scrolls. Only
+   inside Property OS: the engine opened on its own has its own sticky top bar, which would cover the row. */
+@media (max-width:720px){html.conts-embedded .bws .tabs{position:sticky;top:0;z-index:5}}
 .bws .tab{position:relative;display:flex;flex:none;white-space:nowrap;align-items:center;min-height:44px;padding:0 16px;border:0;border-bottom:3px solid transparent;margin-bottom:-1px;background:transparent;font:inherit;color:${BETA.muted};font-weight:500;cursor:pointer}
 .bws .tab:focus:not(:focus-visible){outline:none}
 .bws .tab[aria-current="page"]{color:${BETA.ink};font-weight:600}
@@ -78,6 +82,8 @@ const CSS = `
 .bws .vpill[aria-pressed="true"]{background:${BETA.ink};border-color:${BETA.ink};color:${BETA.surface}}
 .bws .link{padding:0;border:0;background:transparent;font:inherit;font-size:13px;font-weight:600;color:${BETA.accent};cursor:pointer;text-decoration:underline}
 .bws .link:hover{color:${BETA.accentInk}}
+/* On a touch screen a text link gets a finger-sized hit area; the negative margin keeps the words where they were. */
+@media (pointer:coarse){.bws .link{padding:10px 4px;margin:-10px -4px}}
 /* The picked card (site measure, 3D, 2D): a band of colour that travels round the border. Nothing else moves. */
 @property --ang{syntax:"<angle>";inherits:false;initial-value:0deg}
 .bws .pickcard-on{border-color:transparent;background:linear-gradient(${BETA.tealSoft},${BETA.tealSoft}) padding-box,linear-gradient(${BETA.surface},${BETA.surface}) padding-box,conic-gradient(from var(--ang),${BETA.accent},${TONES.accent.line},${BETA.accent} 35%,${TONES.accent.dot} 60%,${TONES.accent.line} 80%,${BETA.accent}) border-box}
@@ -107,6 +113,17 @@ export function BetaSkin(): ReactElement {
     return () => root.classList.remove("beta-page");
   }, []);
   return <style>{BETA_SKIN_CSS}</style>;
+}
+
+/** Fetches the other staff Beta screens while one is open, so moving between them waits less on a download (opening a
+    project: about 500 ms of loading shapes down to 300 ms on staging, more on a phone network). A failed fetch is left
+    to the real navigation, whose own loader reports it. */
+export function useBetaPreload(): void {
+  useEffect(() => {
+    for (const load of [() => import("./RenovationBetaHome"), () => import("./RenovationBetaCalendar"), () => import("./RenovationBetaWorkspace")]) {
+      load().catch(() => undefined);
+    }
+  }, []);
 }
 
 /* ---------- Cards, headings, badges ---------- */
