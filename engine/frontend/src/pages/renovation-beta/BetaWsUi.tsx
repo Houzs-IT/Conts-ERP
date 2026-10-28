@@ -85,7 +85,7 @@ const CSS = `
 .bws .vrow{flex:1 1 0;min-width:0;display:flex;align-items:center;gap:8px;padding:2px;overflow-x:auto;scrollbar-width:none}
 .bws .vrow::-webkit-scrollbar{display:none}
 .bws .vline{display:flex;align-items:center;gap:12px;font-size:13px}
-@media (max-width:720px){.bws .vline{flex-direction:column;align-items:flex-start;gap:8px}.bws .vline .vrow{flex:none;flex-wrap:wrap;overflow:visible;width:100%}.bws .vpill{min-height:44px}}
+@media (max-width:720px){.bws .vline{flex-direction:column;align-items:flex-start;gap:8px}.bws .vline .vrow{flex:none;flex-wrap:wrap;overflow:visible;width:100%}.bws .vline .vpill{min-height:44px}}
 .bws .vpill{flex:none;min-height:40px;padding:0 16px;border:1px solid ${BETA.border};border-radius:999px;background:${BETA.surface};color:${BETA.ink};font:inherit;font-size:13px;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap;cursor:pointer;transition:background .15s ease-out,border-color .15s ease-out,color .15s ease-out}
 .bws .vpill:hover{border-color:${BETA.muted}}
 .bws .vpill[aria-pressed="true"]{background:${BETA.ink};border-color:${BETA.ink};color:${BETA.surface}}
