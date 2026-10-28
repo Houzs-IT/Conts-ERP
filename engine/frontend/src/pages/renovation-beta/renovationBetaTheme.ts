@@ -153,7 +153,10 @@ export const BETA_SKIN_CSS: string = (() => {
     ...Object.entries(BASE_TOKENS).map(([name, pair]) => `--beta-${name}:${pair[i]}`),
     ...Object.entries(TONE_TOKENS).flatMap(([family, keys]) => Object.entries(keys).map(([k, pair]) => `--beta-tone-${family}-${k}:${pair[i]}`)),
   ].join(";");
-  return `:root{${rows(0)}}
+  /* Compose Semi Bold is the one weight the font has; 100 to 900 all map to it so a heading is not faux-bolded on top. */
+  return `@font-face{font-family:"Compose";src:url(/fonts/compose-semibold.ttf) format("truetype");font-weight:100 900;font-style:normal;font-display:swap}
+:root{--beta-font:"Compose",system-ui,sans-serif;${rows(0)}}
+html.beta-page :is(body,button,input,select,textarea){font-family:var(--beta-font)}
 html[data-beta-skin="night"]{${rows(1)}}
 @media (prefers-reduced-transparency:reduce){:root,html[data-beta-skin="night"]{--beta-glass:var(--beta-glassSolid);--beta-blur:none;--beta-blurSm:none}}
 html.beta-page body,html.beta-page main.paper-grain{background:var(--beta-page);background-attachment:fixed}
