@@ -43,8 +43,8 @@ export default function MobileTabBar({ path, navigate }: { path: string; navigat
                 <button type="button" onClick={() => setMoreOpen(true)} aria-label="All modules" aria-expanded={moreOpen}
                   style={{
                     width: 54, height: 54, marginTop: -16, flex: 'none', borderRadius: radius.pill, border: `4px solid ${color.card}`,
-                    background: color.black, color: color.gold, display: 'grid', placeItems: 'center', cursor: 'pointer',
-                    boxShadow: '0 6px 16px rgba(21,21,21,0.24)',
+                    background: color.fillStrong, color: color.gold, display: 'grid', placeItems: 'center', cursor: 'pointer',
+                    boxShadow: `0 6px 16px rgba(21,21,21,0.24), 0 0 0 1.5px ${color.fillRing}`,
                   }}>
                   {/* The company mark, as at the top left: a grid read as a QR scanner and three lines as a page menu. */}
                   <Logo variant="mark" size="sm" onDark />
@@ -148,7 +148,7 @@ function MoreSheet({ path, navigate, onClose }: { path: string; navigate: (p: st
             {(['rental', 'supply'] as Workspace[]).map(w => (
               <button key={w} type="button" role="tab" aria-selected={ws === w} onClick={() => pick(w)}
                 style={{ height: 40, borderRadius: 11, border: 'none', cursor: 'pointer', font: 'inherit', fontSize: 14, fontWeight: 600,
-                  background: ws === w ? color.black : 'transparent', color: ws === w ? 'var(--color-text-inverse)' : color.textMuted }}>
+                  background: ws === w ? color.fillStrong : 'transparent', color: ws === w ? color.onFillStrong : color.textMuted }}>
                 {WORKSPACE_LABEL[w]}
               </button>
             ))}

@@ -63,6 +63,13 @@
      the primary action becomes brand gold with dark ink (7.80:1). */
   --color-brand-black: #C8A46A;
   --color-text-inverse: #151515;
+
+  /* The phone's black fills written as color.black (menu button, selected side switch, avatar, portal headers) drew
+     #151515 text or marks on #151515 and vanished. These lift them to a warm charcoal with light text and a ring that
+     keeps the edge visible on the cards (4.6:1). */
+  --color-fill-strong: #34302B;
+  --color-on-fill-strong: #F2EFE9;
+  --color-fill-ring: #8A8378;
 }
 
 :root[data-theme="theconts-dark"] input,
