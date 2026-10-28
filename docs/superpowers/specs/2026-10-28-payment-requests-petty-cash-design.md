@@ -329,7 +329,16 @@ Design rules for these screens follow the project's existing engine theme. Numbe
 
 ## 6. Open questions for chew
 
-- None that blocks this version.
+- **Field departments (maintenance, renovation, cleaning) — not settled; chew to confirm** (2026-10-28). What chew said:
+  - Staff only submit receipts. They do not choose who pays.
+  - Maintenance receipts come from the job.
+  - Cleaning receipts are not always tied to a job, so a standalone phone submit is needed.
+  - Usually one person per department holds the petty cash and the others claim from them in cash. Some receipts go instead as a claim paid by finance.
+  - **Open:** who decides between "pay from the holder's petty cash" and "send to finance as a claim": the holder, finance, or an amount rule.
+  - **Open:** whether field staff see any amount or balance on the phone.
+  - The phone screens need all four portal languages (en, ms, zh, my).
+
+  Sections 4.4a, 4.5 and 4.7 still describe the earlier "the submitter holds the float" model and will be rewritten once this is settled.
 - The Goods kind waits on chew and management (§2).
 - The PO link for Supply chain goods will be asked when Goods is designed.
 
