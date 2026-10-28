@@ -106,7 +106,7 @@ export function BetaSiteTab({ projectId, today, canWrite, onDone }: BetaTabProps
         : shown.length === 0 ? (
           <WsEmpty>{photos.length === 0 ? "No photos yet. Progress photos, PODs, goods receipts, the site measure and defects all show here." : "No photos match this filter."}</WsEmpty>
         ) : (
-          <ol aria-label="Photo timeline" style={{ listStyle: "none", margin: 0, padding: 0 }}>
+          <ol className="stag" aria-label="Photo timeline" style={{ listStyle: "none", margin: 0, padding: 0 }}>
             {events.map((e, i) => <EventRow key={`${e.c.key}-${i}`} c={e.c} day={e.day} today={today} last={i === events.length - 1} />)}
           </ol>
         )}

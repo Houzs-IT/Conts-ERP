@@ -219,7 +219,7 @@ function DocList({ p, type }: { p: BetaTabProps; type: SiteDelivery["type"] }): 
         : !site.data.ready ? <WsEmpty>Deliveries are not switched on for this system yet.</WsEmpty>
         : list.length === 0 ? <WsEmpty>{isDo ? "No delivery orders yet. Each DO made from this project's sales order shows here with its POD." : "No goods receipts yet. Each GR of this project's POs shows here with its photos."}</WsEmpty>
         : view === "doc" ? (
-          <ol aria-label={`${title} timeline`} style={{ listStyle: "none", margin: 0, padding: 0 }}>
+          <ol className="stag" aria-label={`${title} timeline`} style={{ listStyle: "none", margin: 0, padding: 0 }}>
             {list.map((d, i) => {
               const day = d.at ? mytDay(d.at) : null;
               const before = i > 0 ? list[i - 1].at : null;

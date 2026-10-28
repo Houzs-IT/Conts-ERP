@@ -119,7 +119,7 @@ export function BetaWsKeyCard({ d, canWrite, today, onDone }: Props): ReactEleme
       {rows.length > 0 && (
         <div>
           <div style={{ fontSize: 12, color: BETA.muted, fontWeight: 600, marginBottom: 4 }}>History</div>
-          <ol style={{ listStyle: "none", margin: 0, padding: 0, fontSize: 13 }}>
+          <ol className="stag" style={{ listStyle: "none", margin: 0, padding: 0, fontSize: 13 }}>
             {shown.map((r) => editing?.moveId === r.id ? (
               <li key={r.id} style={{ padding: "8px 0", borderTop: `1px solid ${WS.rowLine}`, display: "flex", flexDirection: "column", gap: 8 }}>
                 <KeyFields draft={editing.draft} onChange={(x) => setEditing({ moveId: r.id, draft: x })} today={today} prefix="Edit key pass" />
