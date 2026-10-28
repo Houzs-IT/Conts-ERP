@@ -58,7 +58,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   for (const x of row?.nights ?? []) (nights[x.unit_id] ??= {})[x.month] = Number(x.nights);
   return json({
     generatedAt: nowIso(), from, to, months: list,
-    units: (row?.units ?? []).map(u => ({ id: u.id, propertyId: u.property_id, property: u.property, number: u.unit_number, owner: u.owner ?? null })),
+    units: (row?.units ?? []).map(u => ({ id: u.id, buildingId: u.property_id, building: u.property, number: u.unit_number, owner: u.owner ?? null })),
     bills: (row?.bills ?? []).map(b => ({
       id: b.id, unitId: b.unit_id, kind: b.category, billMonth: String(b.incurred_on).slice(0, 7), deductMonth: b.deduct_month,
       amount: Number(b.amount), chargeTo: b.charge_to, recordOnly: !!b.record_only, final: !!b.final,

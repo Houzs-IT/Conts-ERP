@@ -51,7 +51,7 @@ const j = r.json ?? {};
 check('months newest first', j.months?.[0] === '2029-06' && j.months?.length === 6, JSON.stringify(j.months));
 check('both units are listed, also the one with no bills', [a.id, b.id].every(id => j.units?.some(u => u.id === id)), JSON.stringify(j.units?.length));
 r = await call('GET', `/api/expenses/utility-listing?from=2029-01&to=2029-06&building=${a.property_id}`);
-check('one building only', r.status === 200 && r.json?.units?.length > 0 && r.json.units.every(u => u.propertyId === a.property_id) && r.json.units.some(u => u.id === a.id), r.text.slice(0, 300));
+check('one building only', r.status === 200 && r.json?.units?.length > 0 && r.json.units.every(u => u.buildingId === a.property_id) && r.json.units.some(u => u.id === a.id), r.text.slice(0, 300));
 const by = Object.fromEntries((j.bills ?? []).map(x => [x.id, x]));
 check('a bill on a final statement is final', by[charged]?.final === true && by[charged]?.chargeTo === 'owner', JSON.stringify(by[charged]));
 check('a bill not yet deducted is not final', by[pending]?.final === false, JSON.stringify(by[pending]));
