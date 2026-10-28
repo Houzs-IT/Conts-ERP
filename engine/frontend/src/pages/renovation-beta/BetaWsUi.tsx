@@ -67,8 +67,9 @@ const CSS = `
 .bws .no-bar{scrollbar-width:none}.bws .no-bar::-webkit-scrollbar{display:none}
 .bws .tabs{display:flex;flex-wrap:nowrap;gap:4px;border-bottom:1px solid ${BETA.line};background:${BETA.glassSolid};padding:4px 8px 0;border-radius:12px 12px 0 0;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
 .bws .tabs::-webkit-scrollbar{display:none}
-/* On a phone the header and stepper fill most of the screen, so the tab row stays at the top while a tab scrolls. */
-@media (max-width:720px){.bws .tabs{position:sticky;top:0;z-index:5}}
+/* On a phone the header and stepper fill most of the screen, so the tab row stays at the top while a tab scrolls. Only
+   inside Property OS: the engine opened on its own has its own sticky top bar, which would cover the row. */
+@media (max-width:720px){html.conts-embedded .bws .tabs{position:sticky;top:0;z-index:5}}
 .bws .tab{position:relative;display:flex;flex:none;white-space:nowrap;align-items:center;min-height:44px;padding:0 16px;border:0;border-bottom:3px solid transparent;margin-bottom:-1px;background:transparent;font:inherit;color:${BETA.muted};font-weight:500;cursor:pointer}
 .bws .tab:focus:not(:focus-visible){outline:none}
 .bws .tab[aria-current="page"]{color:${BETA.ink};font-weight:600}
