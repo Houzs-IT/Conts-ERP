@@ -1,6 +1,7 @@
 import { type Env, all, one, json, fail, run, audit, nowIso, transaction } from '../../../_lib/db';
 import { requireSession } from '../../../_lib/auth';
 import { choiceOfRows, describeChoice, parseCategoryAccess, rowsOfChoice, type CategoryChoice } from '../../../_lib/categoryCatalog';
+import { categoryAccessReady, notMigrated } from '../../../_lib/categoryAccessReady';
 
 interface DepartmentCategoryAccess extends CategoryChoice { departmentId: string; restricted: boolean }
 
@@ -14,6 +15,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
   const { session, response } = await requireSession(request, env);
   if (!session) return response;
   if (session.role !== 'management') return fail('FORBIDDEN', 'Only management can see category access.', 403);
+  if (!(await categoryAccessReady(env))) return notMigrated();
 
   const id = String(params.id);
   if (!await one(env, 'SELECT id FROM departments WHERE id = ?', id)) return fail('NOT_FOUND', 'That department no longer exists.', 404);
@@ -29,6 +31,7 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env, params })
   const { session, response } = await requireSession(request, env);
   if (!session) return response;
   if (session.role !== 'management') return fail('FORBIDDEN', 'Only management can change category access.', 403);
+  if (!(await categoryAccessReady(env))) return notMigrated();
 
   const id = String(params.id);
   const parsed = parseCategoryAccess(await request.json().catch(() => null));
