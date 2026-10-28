@@ -5,7 +5,8 @@ import { useToast } from '../Toast';
 import { api, errorMessage } from '../../lib/api';
 import { cx } from '../../lib/design-tokens';
 import type { AccessArea, AccessChange, AccessChart, AccessLevel, AccessSetting, Department } from '../../lib/types';
-import { LEVEL_COLOR, LEVEL_LABEL, LEVEL_NOTE, MUTED, SELECT, SIDE_OPTIONS, TAG, categorySide, isFieldKind, settingLabel, sideLabel } from './shared';
+import { LevelBoxes, TIERS } from './LevelBoxes';
+import { LEVEL_COLOR, LEVEL_LABEL, LEVEL_NOTE, SELECT, SIDE_OPTIONS, TAG, categorySide, isFieldKind, sideLabel } from './shared';
 
 /** A pending change: what is picked but not yet saved. `level` null deletes the stored row. */
 interface Pending { scopeId: string; key: string; level: AccessSetting | null }
@@ -31,6 +32,7 @@ export default function DepartmentsView({ onDirty }: { onDirty: (pending: number
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
   const [filter, setFilter] = useState<SideFilter>('all');
+  const [deptId, setDeptId] = useState<string | null>(null);
 
   const load = async () => {
     try { setData(await api.get<AccessChart>('/users/access')); setError(null); setDraft({}); }
@@ -41,10 +43,12 @@ export default function DepartmentsView({ onDirty }: { onDirty: (pending: number
   const pending = Object.keys(draft).length;
   useEffect(() => { onDirty(pending); }, [pending, onDirty]);
 
-  const columns = useMemo<Department[]>(
+  const departments = useMemo<Department[]>(
     () => (data?.departments ?? []).filter(d => !isFieldKind(d.kind) && (filter === 'all' || d.side === filter || d.side === 'both')),
     [data, filter],
   );
+  // One department at a time: the chart is a single column, so it never scrolls sideways.
+  const selected = departments.find(d => d.id === deptId) ?? departments[0];
   // Rows by company, The Conts first: a side's own categories, then the ones both companies share.
   const companies = useMemo(
     () => SIDE_OPTIONS
@@ -113,13 +117,12 @@ export default function DepartmentsView({ onDirty }: { onDirty: (pending: number
     }
   };
 
-  const gridStyle = { gridTemplateColumns: `minmax(220px,1.4fr) repeat(${columns.length}, minmax(190px,1fr))` };
+  const gridStyle = { gridTemplateColumns: 'minmax(220px,1fr) repeat(3, 64px) 112px' };
   const ROW = 'grid gap-2.5 items-center px-5';
   // The first column stays put while the rest scrolls sideways; it needs its own background to hide what slides under.
   // -mr-2.5 + pr-2.5 stretches the cell over the grid gap, so scrolled cells don't peek out beside it.
   const STICKY = 'sticky left-0 z-[1] min-w-0 -mr-2.5 pr-2.5';
-  const GRID_GAP = 10;
-  const ROW_PADDING = 40;
+  const MIN_WIDTH = 40 + 220 + 3 * (64 + 10) + (112 + 10);
 
   return (
     <>
@@ -137,20 +140,26 @@ export default function DepartmentsView({ onDirty }: { onDirty: (pending: number
         ))}
         <span className="text-caption text-muted-ink">Departments and categories marked Both always show.</span>
       </div>
-      {columns.length === 0 ? (
+      {selected && (
+        <div className="flex items-center gap-2 flex-wrap py-2.5 px-5 [border-bottom:1px_solid_var(--color-line-soft)]">
+          <label htmlFor="permissions-department" className="text-meta text-muted-ink">Department</label>
+          <select id="permissions-department" value={selected.id} onChange={e => setDeptId(e.target.value)}
+            className={cx(SELECT, 'max-w-[280px] font-semibold border-line')}>
+            {departments.map(d => <option key={d.id} value={d.id}>{d.name} · {sideLabel(d.side)}</option>)}
+          </select>
+          {pending > 0 && <span className="text-caption text-muted-ink">{pending} unsaved {pending === 1 ? 'change' : 'changes'} across all departments.</span>}
+        </div>
+      )}
+      {!selected ? (
         <div className="p-5 text-copy text-muted-ink">No departments on this side yet. Add one under Departments and positions.</div>
       ) : (
-        // Own scroll box in both directions: a sticky header can only pin inside the box that scrolls vertically.
+        // Own scroll box: a sticky header can only pin inside the box that scrolls vertically.
         <div className="overflow-auto max-h-[70vh]">
-          <div style={{ minWidth: ROW_PADDING + 220 + columns.length * (190 + GRID_GAP) }}>
-            <div className={cx(ROW, 'sticky top-0 z-[2] py-2.5 bg-muted [border-bottom:1px_solid_var(--color-line)] text-caption font-semibold text-muted-ink')} style={gridStyle}>
-              <div className={cx(STICKY, 'z-[3] bg-muted')}>Category and area</div>
-              {columns.map(d => (
-                <div key={d.id} className="min-w-0">
-                  <div className="text-ink truncate" title={d.name}>{d.name}</div>
-                  <span className="font-normal">{sideLabel(d.side)}</span>
-                </div>
-              ))}
+          <div style={{ minWidth: MIN_WIDTH }}>
+            <div className={cx(ROW, 'sticky top-0 z-[2] py-2.5 bg-muted [border-bottom:1px_solid_var(--color-line)] text-caption font-semibold text-ink')} style={gridStyle}>
+              <div className={cx(STICKY, 'z-[3] bg-muted text-muted-ink')}>Category and area</div>
+              {TIERS.map(t => <div key={t.level} className="text-center">{t.label}</div>)}
+              <div />
             </div>
             {companies.map(co => (
               <div key={co.value}>
@@ -161,9 +170,10 @@ export default function DepartmentsView({ onDirty }: { onDirty: (pending: number
                 </div>
                 {co.categories.map(c => {
                   const open = !collapsed.has(c.group);
+                  const isManagement = selected.kind === 'management';
                   return (
                     <div key={c.group}>
-                      {/* Category header: its dropdown is the baseline every inheriting area below follows. */}
+                      {/* Category header: its boxes are the baseline every inheriting area below follows. */}
                       <div className={cx(ROW, 'py-2 bg-page [border-bottom:1px_solid_var(--color-line)]')} style={gridStyle}>
                         <button type="button" onClick={() => toggle(c.group)} aria-expanded={open}
                           className={cx(STICKY, 'bg-page flex items-center gap-1.5 p-0 border-none cursor-pointer text-left [font-family:inherit] text-copy font-semibold text-ink')}>
@@ -171,51 +181,33 @@ export default function DepartmentsView({ onDirty }: { onDirty: (pending: number
                           {c.group}
                           <span className="text-caption font-normal text-muted-ink">{c.areas.length} {c.areas.length === 1 ? 'area' : 'areas'}</span>
                         </button>
-                        {columns.map(d => {
-                          if (d.kind === 'management') return <div key={d.id} className="text-meta font-semibold" style={{ color: LEVEL_COLOR.full }}>Full</div>;
-                          const level = baseline(d, c.group);
-                          const changed = draft[draftKey(d.id, groupKey(c.group))] !== undefined;
-                          return (
-                            <div key={d.id}>
-                              <select aria-label={`${d.name} baseline for ${c.group}`} value={level ?? ''} disabled={!canEdit}
-                                onChange={e => pick(d, groupKey(c.group), e.target.value === '' ? null : (e.target.value as AccessLevel), true)}
-                                className={cx(SELECT, level ? 'font-semibold' : 'font-normal')}
-                                style={{ color: level ? LEVEL_COLOR[level] : MUTED, borderColor: changed ? 'var(--color-gold)' : 'var(--color-line)' }}>
-                                <option value="">Not set</option>
-                                {levels.map(l => <option key={l} value={l}>{LEVEL_LABEL[l]}</option>)}
-                              </select>
-                            </div>
-                          );
-                        })}
+                        <LevelBoxes level={isManagement ? 'full' : baseline(selected, c.group)} label={`${selected.name} baseline for ${c.group}`}
+                          disabled={!canEdit || isManagement} changed={draft[draftKey(selected.id, groupKey(c.group))] !== undefined}
+                          onPick={next => pick(selected, groupKey(c.group), next === 'none' ? null : next, true)} />
+                        <div />
                       </div>
-                      {open && c.areas.map(a => (
-                        <div key={a.key} className={cx(ROW, 'py-[7px] [border-bottom:1px_solid_var(--color-line-soft)]')} style={gridStyle}>
-                          <div className={cx(STICKY, 'bg-card pl-[26px] text-copy font-medium')}>{a.label}</div>
-                          {columns.map(d => {
-                            if (d.kind === 'management') return <div key={d.id} className="text-meta text-muted-ink">Full</div>;
-                            const s = setting(d, a);
-                            const level = effective(d, a, c.group);
-                            const inherited = s === 'inherit';
-                            const changed = draft[draftKey(d.id, a.key)] !== undefined;
-                            return (
-                              <div key={d.id} className="flex items-center gap-1.5 min-w-0">
-                                <select aria-label={`${d.name} access to ${a.label}`} value={s} disabled={!canEdit}
-                                  onChange={e => pick(d, a.key, e.target.value as AccessSetting, false)}
-                                  className={cx(SELECT, inherited ? 'font-normal' : 'font-semibold')}
-                                  // Inherited: muted, so the eye goes to the overrides. Overridden: the level's own colour.
-                                  style={{ color: inherited || !level ? MUTED : LEVEL_COLOR[level], borderColor: changed ? 'var(--color-gold)' : 'var(--color-line)' }}>
-                                  <option value="inherit" title={`Inherit from ${c.group}`}>Inherit ({settingLabel(baseline(d, c.group))})</option>
-                                  {levels.map(l => <option key={l} value={l}>{LEVEL_LABEL[l]}</option>)}
-                                </select>
-                                {!inherited && (
-                                  <span title={`Overrides the ${c.group} baseline`} className={TAG}
-                                    style={{ background: 'var(--color-info)', color: 'var(--color-info-fg)', borderColor: 'var(--color-info-line)' }}>Override</span>
+                      {open && c.areas.map(a => {
+                        const s = setting(selected, a);
+                        const inherited = s === 'inherit';
+                        return (
+                          <div key={a.key} className={cx(ROW, 'py-[7px] [border-bottom:1px_solid_var(--color-line-soft)]')} style={gridStyle}>
+                            <div className={cx(STICKY, 'bg-card pl-[26px] text-copy font-medium')}>{a.label}</div>
+                            <LevelBoxes level={isManagement ? 'full' : effective(selected, a, c.group)} label={`${selected.name} access to ${a.label}`}
+                              disabled={!canEdit || isManagement} faded={inherited} changed={draft[draftKey(selected.id, a.key)] !== undefined}
+                              onPick={next => pick(selected, a.key, next, false)} />
+                            {!isManagement && !inherited ? (
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <span title={`Overrides the ${c.group} baseline`} className={TAG}
+                                  style={{ background: 'var(--color-info)', color: 'var(--color-info-fg)', borderColor: 'var(--color-info-line)' }}>Override</span>
+                                {canEdit && (
+                                  <button type="button" onClick={() => pick(selected, a.key, 'inherit', false)} title={`Follow ${c.group} again`}
+                                    className="p-0 border-none bg-transparent cursor-pointer [font-family:inherit] text-caption text-muted-ink underline">Reset</button>
                                 )}
                               </div>
-                            );
-                          })}
-                        </div>
-                      ))}
+                            ) : <div />}
+                          </div>
+                        );
+                      })}
                     </div>
                   );
                 })}

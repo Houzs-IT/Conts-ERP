@@ -520,13 +520,13 @@ export function nextFor(m: BoardModel, p: DesignProject): Next | null {
   return best;
 }
 
-export type HomeTab = "all" | "A" | "BC" | "D" | "E";
+export type HomeTab = "all" | "A" | "B" | "C" | "D" | "E";
 export const HOME_TABS: ReadonlyArray<readonly [HomeTab, string]> = [
-  ["all", "All projects"], ["A", "Site Measure"], ["BC", "Design"], ["D", "Carpentry · Site · PO"], ["E", "Done Design"],
+  ["all", "All projects"], ["A", "Site Measure"], ["B", "3D"], ["C", "2D"], ["D", "Carpentry · Site · PO"], ["E", "Done Design"],
 ];
 
 export function inTab(m: BoardModel, p: DesignProject, t: HomeTab): boolean {
-  return t === "all" || t.includes(status(m, p)[0]);
+  return t === "all" || t === status(m, p)[0];
 }
 
 export function homeCounts(m: BoardModel): { late: number; week: number; tabs: Record<HomeTab, number> } {
@@ -539,7 +539,7 @@ export function homeCounts(m: BoardModel): { late: number; week: number; tabs: R
     if (l < 0) late++;
     else if (l <= 7) week++;
   }
-  const tabs: Record<HomeTab, number> = { all: 0, A: 0, BC: 0, D: 0, E: 0 };
+  const tabs: Record<HomeTab, number> = { all: 0, A: 0, B: 0, C: 0, D: 0, E: 0 };
   for (const [t] of HOME_TABS) tabs[t] = m.projects.filter((p) => inTab(m, p, t)).length;
   return { late, week, tabs };
 }
@@ -552,26 +552,31 @@ export function homeList(m: BoardModel, t: HomeTab): DesignProject[] {
   });
 }
 
+/** The one word the list shows for a condition. */
+export type ConditionWord = "Pending" | "Waiting" | "Progress" | "Amendment" | "Done";
+
+export function conditionWord(words: string): ConditionWord {
+  if (/amendment/i.test(words)) return "Amendment";
+  if (/waiting/i.test(words)) return "Waiting";
+  if (/in progress/i.test(words)) return "Progress";
+  if (/^Done/.test(words)) return "Done";
+  return "Pending";
+}
+
 export interface HomeRow {
   p: DesignProject;
+  /** The full condition, "B - 3D amendment", for the hover text. */
   cond: string;
-  /** The condition letter (A to E) and its words, apart, for the status cell. */
-  letter: Letter;
-  tone: string;
-  /** Who now: "assign" when the team is empty and the viewer may assign, "needs" when they may not, else a name. */
-  whoNow: { kind: "assign" } | { kind: "needs" } | { kind: "name"; name: string };
+  word: ConditionWord;
   left: number | null;
 }
 
-export function homeRow(m: BoardModel, p: DesignProject, canAssign: boolean): HomeRow {
+export function homeRow(m: BoardModel, p: DesignProject): HomeRow {
   const nx = nextFor(m, p);
-  const [letter, words] = status(m, p);
   return {
     p,
     cond: conditionText(m, p),
-    letter,
-    tone: words,
-    whoNow: p.unassigned ? (canAssign ? { kind: "assign" } : { kind: "needs" }) : { kind: "name", name: nx?.by?.name ?? p.by["3"]?.name ?? "" },
+    word: conditionWord(status(m, p)[1]),
     left: nx?.d ? diff(nx.d, m.today) : null,
   };
 }

@@ -1,25 +1,28 @@
 import { type Env, one, json, nowIso } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
 import { MYT_DATE } from '../../_lib/ops';
+import { CLEAN_KINDS_SQL, LIVE_STAY_SQL } from '../../_lib/cleaning';
 import { waitingCount, approvalsEnabled } from '../../_lib/approvals';
 import { levelsFor } from '../../_lib/access';
 import { showcaseReady } from '../../_lib/showcase';
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString('en-MY')} ${n === 1 ? one : many}`;
 
-/** GET /api/nav/badges — live counts for the side menu: open work up to today, open maintenance, unread inbox
+/** GET /api/nav/badges — live counts for the side menu: today's check-ins and checkouts, open clean jobs up to today, open maintenance, unread inbox
  *  threads, statements finalised but not sent (finance roles only), the channel sync state, and `alerts`: the
  *  same live events as a short list for the bell, each with where to go. One request feeds the whole shell. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (isFieldRole(session.role)) return json({ today: 0, maintenance: 0, inbox: 0, statements: 0, channels: { units: 0, lastSentAt: null, failed: 0 }, alerts: [] });
+  if (isFieldRole(session.role)) return json({ today: 0, cleaning: 0, maintenance: 0, inbox: 0, statements: 0, channels: { units: 0, lastSentAt: null, failed: 0 }, alerts: [] });
 
   // Every menu load and every open tab once a minute asks this: the four reads go out together, not one after another.
-  const [c, ch, approvals, approvalsOn, lv] = await Promise.all([one<{ today: number; overdue: number; maintenance: number; maintenance_awaiting: number; inbox: number; statements: number; payouts_failed: number; payouts_pending: number; mail_failed: number }>(env, `
+  const [c, ch, approvals, approvalsOn, lv] = await Promise.all([one<{ today: number; cleaning: number; overdue: number; maintenance: number; maintenance_awaiting: number; inbox: number; statements: number; payouts_failed: number; payouts_pending: number; mail_failed: number }>(env, `
     SELECT
-      (SELECT count(*)::int FROM tasks WHERE state != 'resolved'
-         AND ${MYT_DATE('COALESCE(scheduled_for, due_at, created_at)')} <= to_char(now() AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM-DD')) AS today,
+      (SELECT count(*)::int FROM reservations r WHERE ${LIVE_STAY_SQL('r')} AND r.check_in = to_char(now() AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM-DD'))
+        + (SELECT count(*)::int FROM reservations r WHERE ${LIVE_STAY_SQL('r')} AND r.check_out = to_char(now() AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM-DD')) AS today,
+      (SELECT count(*)::int FROM tasks WHERE state != 'resolved' AND kind IN ${CLEAN_KINDS_SQL}
+         AND ${MYT_DATE('COALESCE(scheduled_for, due_at, created_at)')} <= to_char(now() AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM-DD')) AS cleaning,
       (SELECT count(*)::int FROM tasks WHERE state != 'resolved' AND (state = 'overdue' OR (due_at IS NOT NULL AND due_at < ?))) AS overdue,
       (SELECT count(*)::int FROM maintenance_issues WHERE state != 'resolved') AS maintenance,
       (SELECT count(*)::int FROM maintenance_issues WHERE state != 'resolved' AND owner_approval_required = 1 AND owner_approved_at IS NULL AND charge_to = 'owner') AS maintenance_awaiting,
@@ -59,9 +62,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const showcase = sees('performance') && (await showcaseReady(env))
     ? Number((await one<{ n: number }>(env, 'SELECT count(*)::int AS n FROM showcase_overrides WHERE active = 1'))?.n ?? 0) : 0;
 
-  // Today lists open maintenance alongside the day's tasks (operations/today.ts), so its count does too.
+  // Today counts the day's check-ins and checkouts; Cleaning counts the open clean jobs up to today (carried-over ones included).
   return json({
-    channels, today: ops ? n.today + n.maintenance : 0, maintenance: ops ? n.maintenance : 0, inbox,
+    channels, today: ops ? n.today : 0, cleaning: ops ? n.cleaning : 0, maintenance: ops ? n.maintenance : 0, inbox,
     // What the maintenance count is made of, for the menu's tooltip: the same split as the Maintenance header.
     maintenanceAwaiting: ops ? n.maintenance_awaiting : 0,
     statements: money ? n.statements : 0, approvals, approvalsOn, alerts, showcase,

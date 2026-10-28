@@ -6,12 +6,13 @@ import { useConfirm } from '../ConfirmDialog';
 import { api, errorMessage } from '../../lib/api';
 import { cx } from '../../lib/design-tokens';
 import type { AccessArea, AccessChange, AccessChart, AccessLevel, AccessSetting, Department } from '../../lib/types';
-import { KIND_NOTE, LEVEL_COLOR, LEVEL_LABEL, MUTED, SELECT, TAG, settingLabel } from './shared';
+import { LevelBoxes, TIERS } from './LevelBoxes';
+import { KIND_NOTE, LEVEL_LABEL, TAG, settingLabel } from './shared';
 
 interface Pending { key: string; level: AccessSetting | null }
 
 const groupKey = (group: string) => `group:${group}`;
-const GRID = 'grid grid-cols-[minmax(200px,1.4fr)_minmax(150px,1fr)_minmax(220px,1.2fr)_90px] gap-2.5 items-center px-5';
+const GRID = 'grid grid-cols-[minmax(200px,1fr)_150px_repeat(3,64px)_150px] gap-2.5 items-center px-5';
 
 /** What a position falls back to when it sets nothing, and where that comes from (PLAN.md, "How a person's level in an area is worked out"). */
 interface Fallback { level: AccessLevel | undefined; label: string }
@@ -47,7 +48,7 @@ export default function PositionsView({ onDirty }: { onDirty: (pending: number) 
   if (error && !data) return <div className="p-5 text-copy text-muted-ink">{error}</div>;
   if (!data) return <div className="p-5 text-copy text-muted-ink">Loading the permissions chart…</div>;
 
-  const { levels, rules } = data;
+  const { rules } = data;
   const canEdit = data.canEdit && !saving;
   const switchTo = async (apply: () => void) => {
     if (pending > 0 && (await ask({ title: 'Discard the unsaved changes?', confirmLabel: 'Discard changes', danger: true })) === null) return;
@@ -110,27 +111,21 @@ export default function PositionsView({ onDirty }: { onDirty: (pending: number) 
     }
   };
 
-  /** One row's dropdown: Inherit (what it falls back to) and the four levels, with an Override badge and reset when set. */
+  /** One row's three boxes: what it falls back to (lighter) or the position's own setting, with an Override tag and Reset when set. */
   const cell = (key: string, a: AccessArea | null, group: string) => {
     const shown = currentSetting(key);
     const s: AccessSetting = real(shown ?? undefined) ?? 'inherit';
     const inherited = s === 'inherit';
-    const fb = fallback(a, group);
-    const level = inherited ? fb.level : s;
+    const level = inherited ? fallback(a, group).level : s;
     return (
       <>
+        <LevelBoxes level={level} label={`${position?.name} setting for ${a?.label ?? group}`} disabled={!canEdit} faded={inherited}
+          changed={draft[key] !== undefined} onPick={next => pick(key, next)} />
         <div className="flex items-center gap-1.5 min-w-0">
-          <select aria-label={`${position?.name} setting for ${a?.label ?? group}`} value={s} disabled={!canEdit}
-            onChange={e => pick(key, e.target.value as AccessSetting)}
-            className={cx(SELECT, inherited ? 'font-normal' : 'font-semibold')}
-            style={{ color: inherited || !level ? MUTED : LEVEL_COLOR[level], borderColor: draft[key] ? 'var(--color-gold)' : 'var(--color-line)' }}>
-            <option value="inherit">Inherit ({fb.label})</option>
-            {levels.map(l => <option key={l} value={l}>{LEVEL_LABEL[l]}</option>)}
-          </select>
           {!inherited && <span title="Overrides what the department gives" className={TAG}
             style={{ background: 'var(--color-info)', color: 'var(--color-info-fg)', borderColor: 'var(--color-info-line)' }}>Override</span>}
+          {!inherited && canEdit && <Button size="sm" variant="tertiary" onClick={() => resetRow(key)} aria-label={`Reset ${a?.label ?? group} to the department`}>Reset</Button>}
         </div>
-        <div>{!inherited && canEdit && <Button size="sm" variant="tertiary" onClick={() => resetRow(key)} aria-label={`Reset ${a?.label ?? group} to the department`}>Reset</Button>}</div>
       </>
     );
   };
@@ -166,9 +161,9 @@ export default function PositionsView({ onDirty }: { onDirty: (pending: number) 
         <div className="p-5 text-copy text-muted-ink">{dept.name} has no positions yet. Add one under Departments and positions.</div>
       ) : (
         <div className="overflow-x-auto">
-          <div className="min-w-[760px]">
+          <div className="min-w-[820px]">
             <div className={cx(GRID, 'py-2.5 bg-muted [border-bottom:1px_solid_var(--color-line)] text-caption font-semibold text-muted-ink')}>
-              <div>Category and area</div><div>{dept.name} gives</div><div>{position.name} setting</div><div />
+              <div>Category and area</div><div>{dept.name} gives</div>{TIERS.map(t => <div key={t.level} className="text-center text-ink">{t.label}</div>)}<div />
             </div>
             {data.categories.map(c => (
               <div key={c.group}>

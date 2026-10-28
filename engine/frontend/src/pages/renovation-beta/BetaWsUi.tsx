@@ -59,6 +59,8 @@ const CSS = `
 .bws .ov-four{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:20px}
 @media (max-width:1100px){.bws .ov-four{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media (max-width:560px){.bws .ov-four{grid-template-columns:minmax(0,1fr)}}
+.bws .ov-three{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px}
+@media (max-width:1100px){.bws .ov-three{grid-template-columns:minmax(0,1fr)}}
 .bws .pay-totals{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px}
 @media (max-width:560px){.bws .pay-grid{gap:8px}.bws .pay-totals{grid-template-columns:minmax(0,1fr)}.bws .pay-totals>div{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:baseline;column-gap:8px;padding:10px 14px!important}.bws .pay-totals dd{margin:0!important}.bws .pay-totals dd:nth-of-type(1){font-size:16px!important}.bws .pay-totals dd:nth-of-type(2){grid-column:1/-1}}
 .bws .no-bar{scrollbar-width:none}.bws .no-bar::-webkit-scrollbar{display:none}
@@ -69,6 +71,11 @@ const CSS = `
 .bws .tab[aria-current="page"]{color:${BETA.ink};font-weight:600}
 .bws .tab-ink{position:absolute;left:10px;right:10px;bottom:-3px;height:3px;border-radius:3px 3px 0 0;background:${BETA.selInk}}
 .bws .tab:hover{color:${BETA.ink}}
+.bws .vrow{flex:1 1 0;min-width:0;display:flex;align-items:center;gap:8px;padding:2px;overflow-x:auto;scrollbar-width:none}
+.bws .vrow::-webkit-scrollbar{display:none}
+.bws .vpill{flex:none;min-height:40px;padding:0 16px;border:1px solid ${BETA.border};border-radius:999px;background:${BETA.surface};color:${BETA.ink};font:inherit;font-size:13px;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap;cursor:pointer;transition:background .15s ease-out,border-color .15s ease-out,color .15s ease-out}
+.bws .vpill:hover{border-color:${BETA.muted}}
+.bws .vpill[aria-pressed="true"]{background:${BETA.ink};border-color:${BETA.ink};color:${BETA.surface}}
 .bws .link{padding:0;border:0;background:transparent;font:inherit;font-size:13px;font-weight:600;color:${BETA.accent};cursor:pointer;text-decoration:underline}
 .bws .link:hover{color:${BETA.accentInk}}
 /* The picked card (site measure, 3D, 2D): a band of colour that travels round the border. Nothing else moves. */

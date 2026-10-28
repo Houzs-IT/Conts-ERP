@@ -1,6 +1,5 @@
 /* Beta workspace > Overview: Payments across the top, then Sales order, Unit key, Final drawings and Client & team in one
-   line of four, then Design progress, and below that Needs attention and Site progress at full width (owner, 27 Oct 2026;
-   the side column left the page lopsided when Site progress was short). */
+   line of four, then Design progress, Needs attention and Site progress side by side in one line of three (owner, 27 Oct 2026). */
 
 import { useId, useState, type CSSProperties, type ReactElement, type ReactNode } from "react";
 import { Download, ExternalLink, MessageCircle } from "lucide-react";
@@ -25,8 +24,6 @@ import { sheetSetAt, sheetsApi } from "./renovationBetaSheets";
 import { BETA, GLASS, TONES } from "./renovationBetaTheme";
 import { useQuery } from "../../hooks/useQuery";
 import type { DesignFile } from "../projects/renovation/simpleApi";
-
-const column: CSSProperties = { minWidth: 0, display: "flex", flexDirection: "column", gap: 20 };
 
 export function BetaOverviewTab(p: BetaTabProps): ReactElement {
   const { detail: d, workspace, today } = p;
@@ -53,8 +50,9 @@ export function BetaOverviewTab(p: BetaTabProps): ReactElement {
         <FinalDrawingsCard p={p} onOpen={openFile} />
         <TeamCard p={p} onEdit={() => p.openDialog({ t: "assign", projectId: p.projectId })} />
       </div>
-      <BetaWsDesignCard board={p.board} canWrite={p.canWrite} openDialog={p.openDialog} onDone={p.onDone} onError={p.onError} />
-      <div style={column}>
+      {/* .ov-three (BetaWsUi CSS): Design progress, Needs attention and Site progress side by side, stacked below 1100px. */}
+      <div className="ov-three">
+        <BetaWsDesignCard board={p.board} canWrite={p.canWrite} openDialog={p.openDialog} onDone={p.onDone} onError={p.onError} />
         <TodoCard rows={todo} p={p} />
         <BetaSiteProgressCard p={p} />
       </div>

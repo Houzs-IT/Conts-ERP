@@ -212,7 +212,8 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
       return [openJobs ? `${openJobs} open` : '', waiting ? `${waiting} awaiting owner approval` : ''].filter(Boolean).join(', ');
     }
     if (k === 'inbox') return `${n} unread`;
-    if (k === 'today') return `${n} to do`;
+    if (k === 'today') return `${n} check-ins and checkouts`;
+    if (k === 'cleaning') return `${n} to clean`;
     if (k === 'statements') return `${n} final, not sent`;
     if (k === 'approvals') return `${n} waiting for approval`;
     if (k === 'showcase') return `${n} ${n === 1 ? 'figure' : 'figures'} overridden`;
@@ -280,12 +281,13 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
       <nav aria-label={hasSupply ? WORKSPACE_LABEL[ws] : 'Main'} className={cx('nav-scroll', scrolling && 'is-scrolling')} onScroll={onNavScroll}
         style={{ flex: 1, minHeight: 0, overflowY: 'auto', overscrollBehavior: 'contain', padding: open ? '12px 10px 20px' : `10px ${glass ? 6 : 10}px 20px`, display: 'flex', flexDirection: 'column', gap: open ? 14 : 6 }}>
         {groups.map((g, gi) => {
-          const sectionCollapsed = open && !!collapsedSections[g.label];
+          const sectionKey = `${g.workspace}:${g.label}`; // SYSTEM is a group of both workspaces
+          const sectionCollapsed = open && !!collapsedSections[sectionKey];
           return (
-          <div key={g.label} style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <div key={sectionKey} style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             {open ? (
               <button type="button"
-                onClick={() => setCollapsedSections(s => ({ ...s, [g.label]: !s[g.label] }))}
+                onClick={() => setCollapsedSections(s => ({ ...s, [sectionKey]: !s[sectionKey] }))}
                 aria-expanded={!sectionCollapsed}
                 aria-label={`${groupName(g.label)} section`}
                 style={{
