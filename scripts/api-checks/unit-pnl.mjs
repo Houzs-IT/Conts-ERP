@@ -47,7 +47,9 @@ if (mar && apr) {
       JSON.stringify({ a, gp: b?.gp, ownerBase: b?.ownerBase }));
   }
 }
+const r0 = await call('GET', '/api/finance/unit-pnl?from=2029-03&to=2029-04');
 r = await call('GET', '/api/finance/unit-pnl?from=2028-01&to=2029-04');
+check('the three months before the range come for the checks', Array.isArray(r0.json?.lookBack), JSON.stringify(Object.keys(r0.json ?? {})));
 check('more than 12 months is refused', r.status === 422 && /12 months/.test(r.text), r.text);
 
 r = await call('PUT', '/api/finance/unit-pnl-limits', { lines: { cleaning: { pctMax: 20 }, electricity: { perNightMax: 1500 } }, marginMin: 30 }, 'finance_admin');

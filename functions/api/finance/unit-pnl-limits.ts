@@ -28,6 +28,6 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
   const value = JSON.stringify(out);
   await run(env, 'INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at', LIMITS_KEY, value, nowIso());
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'settings.update', entityTable: 'settings', entityId: LIMITS_KEY,
-    before: before?.value ? JSON.parse(before.value) : null, after: out });
+    before: before?.value ?? null, after: out });
   return json({ limits: out });
 };

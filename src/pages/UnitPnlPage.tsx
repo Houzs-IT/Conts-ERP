@@ -27,7 +27,7 @@ import {
  *  month, in two layers — the unit's operating profit, then what the company keeps after the owner's portion — with
  *  the checks that flag numbers that look wrong and the gaps that say a month's data is incomplete. */
 interface Unit { id: string; building: string; number: string; owner: string; contract: 'LT' | 'PS' }
-interface Payload { months: string[]; units: Unit[]; rows: UnitMonthInput[]; limits: Limits; excluded: number; toDate: string | null }
+interface Payload { months: string[]; units: Unit[]; rows: UnitMonthInput[]; lookBack: UnitMonthInput[]; limits: Limits; excluded: number; toDate: string | null }
 type View = 'overview' | 'checks';
 const RANGES = [3, 6, 12];
 
@@ -70,13 +70,16 @@ export default function UnitPnlPage() {
   const unitById = useMemo(() => new Map((data?.units ?? []).map(u => [u.id, u])), [data]);
   const buildings = useMemo(() => [...new Set((data?.units ?? []).map(u => u.building))].sort((a, b) => a.localeCompare(b, 'en', { numeric: true }))
     .map(b => ({ value: b, label: b })), [data]);
-  const shownUnits = useMemo(() => new Set((data?.units ?? []).filter(u => (!building || u.building === building) && (!contract || u.contract === contract)
-    && (!unitId || u.id === unitId) && (!q || `${u.building} ${u.number} ${u.owner}`.toLowerCase().includes(q))).map(u => u.id)), [data, building, contract, unitId, q]);
-  const rows = useMemo(() => (data?.rows ?? []).filter(r => shownUnits.has(r.unitId)), [data, shownUnits]);
+  const shownUnits = useMemo(() => new Set((data?.units ?? []).filter(u => (!building || u.building === building)
+    && (!unitId || u.id === unitId) && (!q || `${u.building} ${u.number} ${u.owner}`.toLowerCase().includes(q))).map(u => u.id)), [data, building, unitId, q]);
+  // The contract filter goes by each month's own contract, so a unit that changed contract keeps its earlier months.
+  const rows = useMemo(() => (data?.rows ?? []).filter(r => shownUnits.has(r.unitId) && (!contract || r.contract === contract)), [data, shownUnits, contract]);
   const months = data?.months ?? [];
   const buildingOf = useMemo(() => Object.fromEntries((data?.units ?? []).map(u => [u.id, u.building])), [data]);
-  // Checks look at every unit (the building median needs the neighbours), then follow the filters.
-  const flags = useMemo(() => (data ? checks(data.rows, buildingOf, data.limits) : []).filter(f => shownUnits.has(f.unitId)), [data, buildingOf, shownUnits]);
+  // Checks look at every unit (the building median needs the neighbours) and the three months before the range (each
+  // month is compared with the three before it), then follow the filters.
+  const flags = useMemo(() => (data ? checks([...(data.lookBack ?? []), ...data.rows], buildingOf, data.limits) : [])
+    .filter(f => shownUnits.has(f.unitId) && months.includes(f.month) && (!contract || rows.some(r => r.unitId === f.unitId && r.month === f.month))), [data, buildingOf, shownUnits, months, contract, rows]);
   const holes = useMemo(() => gaps(rows), [rows]);
   const focus = unitId ? unitById.get(unitId) : undefined;
 
@@ -126,8 +129,9 @@ function Overview({ rows, months, units, toDate, focus, flags, holes, excluded, 
   const byMonth = useMemo(() => new Map(months.map(m => [m, sumPnl(rows.filter(r => r.month === m).map(pnl))])), [rows, months]);
   const total = useMemo(() => sumPnl([...byMonth.values()]), [byMonth]);
   const mLabel = (m: string) => `${monthLabel(m)}${m === toDate ? ' (to date)' : ''}`;
-  // Each KPI compares the last month shown with the one before it.
-  const [last, prev] = [months[months.length - 1], months[months.length - 2]];
+  // Each KPI compares the last complete month shown with the one before it (a month to date would always look down).
+  const complete = months.filter(m => m !== toDate);
+  const [last, prev] = [complete[complete.length - 1], complete[complete.length - 2]];
   const L = byMonth.get(last), P = prev ? byMonth.get(prev) : undefined;
   const delta = (cur: number | null, before: number | null, higherIsGood: boolean, points = false) => {
     if (cur == null || before == null || !prev) return undefined;
@@ -140,8 +144,8 @@ function Overview({ rows, months, units, toDate, focus, flags, holes, excluded, 
   const kpis = [
     { label: 'Guest total', value: rm(total.guestPaid), d: delta(L?.guestPaid ?? null, P?.guestPaid ?? null, true) },
     { label: 'All costs, % of guest total', value: pctText(costPct(total)), d: delta(costPct(L), costPct(P), false, true) },
-    { label: 'Operating profit', value: rmText(total.operating), hint: `Margin ${pctText(pctOfIncome(total.operating, total.guestPaid))}`, d: delta(L?.operating ?? null, P?.operating ?? null, true) },
-    { label: 'Company keeps', value: rmText(total.company), d: delta(L?.company ?? null, P?.company ?? null, true) },
+    { label: 'Operating profit', value: rmText(total.operating), loss: total.operating < 0, hint: `Margin ${pctText(pctOfIncome(total.operating, total.guestPaid))}`, d: delta(L?.operating ?? null, P?.operating ?? null, true) },
+    { label: 'Company keeps', value: rmText(total.company), loss: total.company < 0, d: delta(L?.company ?? null, P?.company ?? null, true) },
   ];
   return (
     <div className="flex flex-col gap-4">
@@ -154,7 +158,7 @@ function Overview({ rows, months, units, toDate, focus, flags, holes, excluded, 
       )}
       <StatRow cols={4}>
         {kpis.map((k, i) => (
-          <StatTile key={k.label} hero={i === 3} label={k.label} value={k.value}
+          <StatTile key={k.label} hero={i === 3 && !('loss' in k && k.loss)} tone={'loss' in k && k.loss ? 'critical' : undefined} label={k.label} value={k.value}
             hint={<>{k.hint && <div>{k.hint}</div>}{k.d && <div className={k.d.tone && i !== 3 ? TONE[k.d.tone].text : undefined}>{k.d.text}</div>}</>} />
         ))}
       </StatRow>
@@ -331,8 +335,12 @@ function LimitsPanel({ limits, onSaved }: { limits: Limits; onSaved: () => void 
     margin: limits.marginMin?.toString() ?? '',
   }));
   const [busy, setBusy] = useState(false);
-  const num = (s: string) => (s.trim() === '' ? undefined : Number(s));
+  const num = (s: string) => (s.trim() === '' ? undefined : Number(s.trim()));
   async function save() {
+    const all = [...COST_KEYS.flatMap(k => [draft.lines[k].pct, draft.lines[k].night]), draft.margin].map(num);
+    if (all.some(v => v !== undefined && (!Number.isFinite(v) || v < 0))) {
+      toast({ tone: 'critical', title: 'Limits not saved.', body: 'Use plain numbers, e.g. 12.5 for a percent or 25 for RM 25.00 a night.' }); return;
+    }
     const body: Limits = { lines: {} };
     for (const k of COST_KEYS) {
       const pctMax = num(draft.lines[k].pct), night = num(draft.lines[k].night);

@@ -64,7 +64,8 @@ export interface ShareSeries { key: string; label: string; color: string }
 export function CostShare({ months, series, share }: {
   months: { key: string; label: string }[]; series: ShareSeries[]; share: (month: string, series: string) => number | null;
 }) {
-  const totals = months.map(m => series.reduce((n, s) => n + (share(m.key, s.key) ?? 0), 0));
+  // A negative share (service fees below zero) is not drawn and does not count towards the bar.
+  const totals = months.map(m => series.reduce((n, s) => n + Math.max(0, share(m.key, s.key) ?? 0), 0));
   const top = Math.max(10, Math.ceil(Math.max(0, ...totals) / 10) * 10);
   return (
     <div className="flex flex-col gap-2">
