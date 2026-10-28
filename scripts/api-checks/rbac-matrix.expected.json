@@ -76,6 +76,7 @@
  "GET /api/expenses/breakdown": "AAFAFFFU",
  "GET /api/expenses/report": "AAFAFFFU",
  "GET /api/expenses/utilities": "AAFAFFFU",
+ "GET /api/expenses/utility-listing": "AAFAFFFU",
  "GET /api/fabrics": "AFFAFFFU",
  "GET /api/field/clock": "FFFFFFFU",
  "GET /api/field/leave": "FFFFFFFU",

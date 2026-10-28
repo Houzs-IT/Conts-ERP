@@ -1,5 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { lazy, Suspense, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import Icon from '../components/Icon';
 import PageHeader from '../components/PageHeader';
 import { StatusBadge } from '../components/StatusBadge';
@@ -33,6 +32,7 @@ import { FileRow, FileDropRow } from '../components/Attachments';
 import { receiptRequired, missingReceipt } from '../lib/receipts';
 
 const ContractorClaims = lazy(() => import('./finance/ContractorClaims'));
+const UtilityListing = lazy(() => import('./finance/UtilityListing'));
 const AddUtilityBill = lazy(() => import('../components/AddUtilityBill').then(m => ({ default: m.AddUtilityBill })));
 const UtilitiesModal = lazy(() => import('./owners/ExpenseEntry').then(m => ({ default: m.UtilitiesModal })));
 
@@ -118,7 +118,8 @@ function qs(base: Record<string, string>, extra: Record<string, string | number>
 type ApTab = 'bills' | 'claims';
 const BILL_KEYS = ['month', 'category', 'building', 'unit', 'owner', 'q', 'view', 'sort', 'page', 'size', 'paid'];
 
-/** `utilities`: opened as Finance > Utility bills, which starts on the month's utility bills of every unit. */
+/** `utilities`: opened as Finance > Utility bills, the listing of every unit's utility bills by month (chew, 28 Oct 2026);
+ *  the month's entry screen opens from there. */
 export default function AccountsPayablePage({ utilities }: { utilities?: boolean } = {}) {
   const url = useUrlState();
   const tab: ApTab = url.get('tab') === 'claims' ? 'claims' : 'bills';
@@ -126,7 +127,8 @@ export default function AccountsPayablePage({ utilities }: { utilities?: boolean
     <Tabs<ApTab> label="Bills or contractor claims" value={tab} onChange={t => url.set({ tab: t === 'bills' ? null : t, ...Object.fromEntries(BILL_KEYS.map(k => [k, null])) })}
       className="self-start" options={[{ value: 'bills', label: 'Bills' }, { value: 'claims', label: 'Contractor claims' }]} />
   );
-  if (tab === 'bills' || utilities) return <ExpenseBills tabs={tabs} utilities={utilities} />;
+  if (utilities) return <Suspense fallback={<RowsSkeleton rows={8} cols={8} />}><UtilityListing /></Suspense>;
+  if (tab === 'bills') return <ExpenseBills tabs={tabs} />;
   return (
     <>
       <PageHeader title="Accounts payable" sub="What maintenance jobs owe their technician or contractor, and whether it is paid." />
@@ -136,14 +138,12 @@ export default function AccountsPayablePage({ utilities }: { utilities?: boolean
   );
 }
 
-function ExpenseBills({ tabs, utilities }: { tabs: ReactNode; utilities?: boolean }) {
+function ExpenseBills({ tabs }: { tabs: ReactNode }) {
   const toast = useToast();
-  const navigate = useNavigate();
   // Utility bills: the month's bills by account number for every unit (the owner page's "Utility bills, all units"),
-  // or one bill with its receipt. Finance > Utility bills opens the first.
-  const [bills, setBills] = useState<null | 'month' | 'one'>(utilities ? 'month' : null);
-  useEffect(() => { if (utilities) setBills('month'); }, [utilities]);
-  const closeBills = () => { setBills(null); if (utilities) navigate('/finance/payables'); };
+  // or one bill with its receipt.
+  const [bills, setBills] = useState<null | 'month' | 'one'>(null);
+  const closeBills = () => setBills(null);
   const url = useUrlState();
   const filters = useFinanceFilters();
 
