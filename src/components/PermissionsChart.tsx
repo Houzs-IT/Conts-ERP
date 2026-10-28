@@ -9,11 +9,12 @@ import ListView from './permissions/ListView';
 
 type View = 'departments' | 'positions' | 'users' | 'list';
 
-const VIEWS: { key: View; label: string }[] = [
-  { key: 'departments', label: 'Departments' },
-  { key: 'positions', label: 'Positions' },
-  { key: 'users', label: 'Users' },
-  { key: 'list', label: 'Departments and positions' },
+// Short labels keep all four on one line on a phone.
+const VIEWS: { key: View; label: string; short: string }[] = [
+  { key: 'departments', label: 'Departments', short: 'Depts' },
+  { key: 'positions', label: 'Positions', short: 'Positions' },
+  { key: 'users', label: 'Users', short: 'Users' },
+  { key: 'list', label: 'Departments and positions', short: 'Setup' },
 ];
 
 const INTRO: Record<View, string> = {

@@ -54,7 +54,8 @@ const CSS = `
 .bws .ws-input{min-height:40px;width:100%;border:1px solid ${BETA.border};border-radius:10px;padding:0 8px;font:inherit;font-size:14px;background:${BETA.field};color:${BETA.ink}}
 .bws .ws-input-sm{min-height:38px;width:100%;min-width:0;border:1px solid ${BETA.border};border-radius:10px;padding:0 8px;font:inherit;font-size:14px;background:${BETA.field};color:${BETA.ink}}
 .bws .ws-head .chips{grid-column:2}
-@media (max-width:720px){.bws .h1{font-size:22px!important}.bws .tab{padding:0 12px}.bws .ws-head .chips{grid-column:1/-1;display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))}.bws .chips>*{min-width:0;max-width:none!important;width:auto!important}.bws .chips>.chip-lead{grid-column:1/-1}}
+@media (max-width:720px){.bws .h1{font-size:22px!important}.bws .tab{padding:0 12px}.bws .ws-head .chips{grid-column:1/-1;display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))}.bws .chips>*{min-width:0;max-width:none!important;width:auto!important}.bws .chips>.chip-lead{grid-column:1/-1}.bws .steps{min-width:0!important}.bws .step-text{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}.bws .step-cap{display:flex!important}}
+.bws .step-cap{display:none}
 .bws .pay-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
 @media (max-width:1100px){.bws .pay-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .bws .ov-four{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:20px}
@@ -77,6 +78,8 @@ const CSS = `
 .bws .tab:hover{color:${BETA.ink}}
 .bws .vrow{flex:1 1 0;min-width:0;display:flex;align-items:center;gap:8px;padding:2px;overflow-x:auto;scrollbar-width:none}
 .bws .vrow::-webkit-scrollbar{display:none}
+.bws .vline{display:flex;align-items:center;gap:12px;font-size:13px}
+@media (max-width:720px){.bws .vline{flex-direction:column;align-items:flex-start;gap:8px}.bws .vline .vrow{flex:none;flex-wrap:wrap;overflow:visible;width:100%}.bws .vpill{min-height:44px}}
 .bws .vpill{flex:none;min-height:40px;padding:0 16px;border:1px solid ${BETA.border};border-radius:999px;background:${BETA.surface};color:${BETA.ink};font:inherit;font-size:13px;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap;cursor:pointer;transition:background .15s ease-out,border-color .15s ease-out,color .15s ease-out}
 .bws .vpill:hover{border-color:${BETA.muted}}
 .bws .vpill[aria-pressed="true"]{background:${BETA.ink};border-color:${BETA.ink};color:${BETA.surface}}

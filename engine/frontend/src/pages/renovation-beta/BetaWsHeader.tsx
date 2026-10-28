@@ -171,10 +171,13 @@ const DOT_NOW = "radial-gradient(circle at 32% 26%,#FFD0DA 0%,#F7889E 55%,#EE5C7
 const LINE_DONE = "linear-gradient(90deg,#6E9BFF,#C9A6F2,#F6A9C4)";
 
 export function BetaWsStepper({ items, hold }: { items: StepperItem[]; hold: string | null }): ReactElement {
+  // On a phone (.step-cap) the dots fit the width and only the current step is written out under them.
+  const capAt = Math.max(items.findIndex((s) => s.state === "current"), items.map((s) => s.state).lastIndexOf("done"), 0);
+  const cap = items[capAt];
   return (
-    // .no-bar: it still scrolls sideways on a phone, without the grey bar and arrows inside the card.
+    // .no-bar: a tablet still scrolls sideways, without the grey bar and arrows inside the card.
     <div className="no-bar" style={{ ...GLASS, overflowX: "auto", overflowY: "hidden", borderRadius: 26, padding: "20px 8px 16px" }}>
-      <ol aria-label="Project stages" style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", minWidth: 560 }}>
+      <ol aria-label="Project stages" className="steps" style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", minWidth: 560 }}>
         {items.map((s, i) => {
           const last = i === items.length - 1;
           const done = s.state === "done";
@@ -193,15 +196,25 @@ export function BetaWsStepper({ items, hold }: { items: StepperItem[]; hold: str
               ) : (
                 <div style={{ ...dot, zIndex: 1, width: 30, height: 30, background: BETA.stepNext, border: `1px solid ${BETA.stepNextEdge}`, boxShadow: BETA.stepNextShadow }} />
               )}
-              <div style={{ marginTop: now ? 0 : undefined, fontSize: 13, fontWeight: now ? 700 : 600, color: now ? BETA.stepNow : done ? BETA.ink : BETA.muted }}>
-                {s.label}<span className="sr">{done ? " (done)" : now ? " (current step)" : " (not yet)"}</span>
+              <div className="step-text" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+                <div style={{ fontSize: 13, fontWeight: now ? 700 : 600, color: now ? BETA.stepNow : done ? BETA.ink : BETA.muted }}>
+                  {s.label}<span className="sr">{done ? " (done)" : now ? " (current step)" : " (not yet)"}</span>
+                </div>
+                <div style={{ fontSize: 12, fontWeight: now ? 600 : 400, color: now ? BETA.stepNow : BETA.faint }}>{s.sub}</div>
+                {now && hold && <WsBadge tone={TONE_WAIT} size={11}>{hold}</WsBadge>}
               </div>
-              <div style={{ fontSize: 12, fontWeight: now ? 600 : 400, color: now ? BETA.stepNow : BETA.faint }}>{s.sub}</div>
-              {now && hold && <WsBadge tone={TONE_WAIT} size={11}>{hold}</WsBadge>}
             </motion.li>
           );
         })}
       </ol>
+      {cap && (
+        <div className="step-cap" aria-hidden="true" style={{ flexWrap: "wrap", justifyContent: "center", alignItems: "center", gap: "4px 8px", marginTop: 12, padding: "0 8px", textAlign: "center", fontSize: 13 }}>
+          <span style={{ fontWeight: 700, color: cap.state === "current" ? BETA.stepNow : BETA.ink }}>{cap.label}</span>
+          {cap.sub !== "-" && <span style={{ fontWeight: 600, color: cap.state === "current" ? BETA.stepNow : BETA.muted }}>{cap.sub}</span>}
+          {cap.state === "current" && hold && <WsBadge tone={TONE_WAIT} size={11}>{hold}</WsBadge>}
+          <span style={{ width: "100%", fontSize: 12, color: BETA.faint }}>Step {capAt + 1} of {items.length}</span>
+        </div>
+      )}
     </div>
   );
 }

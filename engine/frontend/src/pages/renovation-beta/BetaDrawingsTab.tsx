@@ -455,7 +455,8 @@ function KindDetail({ kind, p, set, onEdit, onOpen, onUpload, sheets, sheetsRead
       </div>
 
       {is2d && set.versions.length > 1 && (
-        <div style={{ display: "flex", alignItems: "center", gap: 12, fontSize: 13 }}>
+        // .vline: on a phone the label sits above the pills and the pills wrap, so every version stays in sight.
+        <div className="vline">
           <span style={{ flex: "none", color: BETA.muted, fontWeight: 600 }}>View version</span>
           <div role="group" aria-label="View version" className="vrow">
             {[...set.versions].reverse().map((v, i, oldestFirst) => (
@@ -524,7 +525,7 @@ function KindDetail({ kind, p, set, onEdit, onOpen, onUpload, sheets, sheetsRead
         </>
       )}
 
-      {view === "history" && versionList}
+      {view === "history" && !viewedV && versionList}
       </div>
 
       {view !== "history" && (
