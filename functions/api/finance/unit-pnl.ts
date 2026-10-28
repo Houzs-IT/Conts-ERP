@@ -37,6 +37,12 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     WHERE state IN ('confirmed','checked_in','checked_out') AND channel NOT IN ('maintenance_block','owner_stay')
       AND check_in < ? AND check_out > ?`, monthEndExclusive(to), `${from}-01`);
 
+  // Electricity bills kept for the records only, so a settled month with one is not reported as missing it.
+  const recordOnly = new Map((await all<{ unit_id: string; month: string; amount: number }>(env, `
+    SELECT unit_id, substr(incurred_on, 1, 7) AS month, sum(amount)::int AS amount FROM expenses
+    WHERE record_only AND category = 'electricity' AND incurred_on >= ? AND incurred_on < ? GROUP BY 1, 2`, `${from}-01`, monthEndExclusive(to)))
+    .map(x => [`${x.unit_id}|${x.month}`, Number(x.amount)]));
+
   const units = new Map<string, { id: string; building: string; number: string; owner: string; contract: 'LT' | 'PS' }>();
   const rows: UnitMonthInput[] = [];
   let excluded = 0;
@@ -64,7 +70,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         ownerPct: lt ? 0 : m.terms.ownerPct ?? 0,
         // A yearly guarantee is checked once a year, not month by month (as the Overall unit report).
         ltGrr: lt ? m.fixedRent : m.terms.model === 'management_guarantee' ? m.guarantee : 0,
-        nights: m.nights, days: m.days,
+        nights: m.nights, days: m.days, recordOnlyElectricity: recordOnly.get(`${m.unitId}|${month}`) ?? 0,
       });
     }
   }

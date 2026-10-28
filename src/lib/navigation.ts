@@ -62,6 +62,8 @@ export function financeItems(prefix: '/finance' | '/supply/finance', keySuffix: 
     { key: `payables${keySuffix}`, label: 'Accounts payable', icon: 'wallet', path: `${prefix}/payables`, area: 'finance' },
     // Staff could not find where utilities go (comment sheet, Oct 2026): the month's bills of every unit, on Accounts payable.
     { key: `utilityBills${keySuffix}`, label: 'Utility bills', icon: 'zap', path: `${prefix}/utility-bills`, area: 'finance' },
+    // What each unit earned and spent, in two layers (chew, 28 Oct 2026: it belongs in Finance).
+    { key: `unitPnl${keySuffix}`, label: 'Unit P&L', icon: 'chart-column', path: `${prefix}/unit-pnl`, area: 'finance' },
     { key: `approvals${keySuffix}`, label: 'Approvals', icon: 'stamp', path: `${prefix}/approvals`, area: 'finance', badge: 'approvals' },
     ...LEDGER_SCREENS.map(s => ({
       key: `ledger_${s.slug}${keySuffix}`, label: s.label, icon: LEDGER_ICON[s.slug] ?? 'book-open', path: `${prefix}/${s.slug}`, area: 'ledger',

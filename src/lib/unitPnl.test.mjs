@@ -82,3 +82,6 @@ test('the owner portion and company result agree with the Overall unit report', 
     assert.deepEqual([p.operating, p.owner, p.company], [f.gp, f.ownerBase, f.gainLoss]);
   }
 });
+test('an electricity bill kept for the records only is not a missing bill', () => {
+  assert.equal(gaps([row({ electricity: 0, recordOnlyElectricity: 30_000 })]).filter(g => g.kind === 'no_electricity').length, 0);
+});

@@ -23,6 +23,9 @@ export interface UnitMonthInput {
   gross: number;
   cleaning: number; electricity: number; water: number; internet: number; sewerage: number; other: number; misc: number;
   ownerPct: number; ltGrr: number; nights: number; days: number;
+  /** Utility bills kept for the records only (settled months, not on the statement): not a cost here, but an
+   *  electricity bill among them means the month is not missing one. */
+  recordOnlyElectricity?: number;
 }
 export type Pnl = Record<LineKey, number>;
 
@@ -137,7 +140,7 @@ export function gaps(rows: readonly UnitMonthInput[]): Gap[] {
     if (r.nights <= 0) add('no_nights');
     else {
       if (!r.cleaning) add('no_cleaning');
-      if (!r.electricity) add('no_electricity');
+      if (!r.electricity && !r.recordOnlyElectricity) add('no_electricity');
     }
     if (r.guestPaidMissing) add('guest_paid_missing');
     if (r.gross > r.guestPaid) add('payout_above_guest_paid');

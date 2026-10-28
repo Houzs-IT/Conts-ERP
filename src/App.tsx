@@ -79,6 +79,7 @@ const StockTransfersPage = lazy(() => import('./pages/StockTransfersPage'));
 const StockTakesPage = lazy(() => import('./pages/StockTakesPage'));
 const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage'));
 const ExpensesPage = lazy(() => import('./pages/ExpensesPage'));
+const UnitPnlPage = lazy(() => import('./pages/UnitPnlPage'));
 const StatementDetailPage = lazy(() => import('./pages/StatementDetailPage'));
 const OwnerIncomeReportPage = lazy(() => import('./pages/OwnerIncomeReportPage'));
 const StatementsPrintPage = lazy(async () => ({ default: (await import('./pages/OwnerIncomeReportPage')).StatementsPrintPage }));
@@ -348,6 +349,7 @@ function Routed() {
         {/* Owner statements and owner payouts moved onto the owner; Expenses is Accounts payable (owner, 11 Oct 2026). */}
         <Route path="/finance/payables" element={<ExpensesPage />} />
         <Route path="/finance/utility-bills" element={<ExpensesPage utilities />} />
+        <Route path="/finance/unit-pnl" element={<UnitPnlPage />} />
         <Route path="/finance/expenses" element={<Moved to="/finance/payables" />} />
         <Route path="/finance/statements" element={<Moved to="/owners" add={{ view: 'statements' }} />} />
         <Route path="/finance/statements/:id" element={<MovedStatement />} />
@@ -356,6 +358,7 @@ function Routed() {
         {/* The same screens in the supply chain Finance group, so that sidebar stays put (finance phase 1). */}
         <Route path="/supply/finance/payables" element={<ExpensesPage />} />
         <Route path="/supply/finance/utility-bills" element={<ExpensesPage utilities />} />
+        <Route path="/supply/finance/unit-pnl" element={<UnitPnlPage />} />
         <Route path="/supply/finance/approvals" element={<ApprovalsPage />} />
         {/* Project monitor was dropped (owner, 11 Oct 2026): old links open the Schedule. */}
         <Route path="/projects/monitor" element={<Moved to="/projects/calendar" />} />
