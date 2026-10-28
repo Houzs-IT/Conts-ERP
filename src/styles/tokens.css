@@ -138,6 +138,9 @@ body { margin: 0; }
   --color-info: #2E6DA4;
   --color-info-bg: #EAF2FA;
   --color-info-line: #2E6DA4;
+  /* Chart series that are not a status (unit P&L report): a dark bar and a teal that read in both themes. */
+  --color-chart-ink: #242424;
+  --color-chart-teal: #1F8A8A;
   --color-neutral: #706D67;
   --color-neutral-bg: #F1F0ED;
   --color-neutral-line: #C7C1B6;
