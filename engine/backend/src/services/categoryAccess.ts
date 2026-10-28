@@ -1,7 +1,8 @@
 /* Person access by product category (Renovation beta project screens, phase 1 of PLAN-category-rbac.md v2).
 
-   Set per person on the Conts side (pos.person_category_access) and read here through public.conts_category_access,
-   matched on the signed-in email. A person with no rows sees every category. A person with rows is limited, whatever
+   Set per department and per person on the Conts side (pos.department_category_access, pos.person_category_access; a
+   person's own rows replace their department's) and read here through public.conts_category_access, which already
+   resolves that, matched on the signed-in email. A person with no rows sees every category. A person with rows is limited, whatever
    permissions they hold: an allow-list of ticked groups (all their sub-categories, also ones added later), single ticked
    sub-categories, and "uncategorised" (products with no category, group code OTHER in the table).
    The scope is read per request, not kept in the auth cache, so a change on the Conts side applies on the next page load. */

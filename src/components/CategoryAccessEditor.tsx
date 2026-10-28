@@ -9,10 +9,27 @@ import { cx } from '../lib/design-tokens';
 export interface CategoryTreeSub { code: string; label: string }
 export interface CategoryTreeGroup { code: string; label: string; subs: CategoryTreeSub[] }
 
-/** What the server stores for one person. `subs` holds "GROUP/SUB" codes. */
+/** What the server stores for one person or department. `subs` holds "GROUP/SUB" codes. */
 export interface CategoryChoice { groups: string[]; subs: string[]; other: boolean }
-/** GET and PUT /users/:id/category-access. `restricted` false: the person sees everything. */
-export interface PersonCategoryAccess extends CategoryChoice { userId: string; restricted: boolean }
+/** A department's limit, as a person's answer carries it. */
+export interface DepartmentLimit extends CategoryChoice { id: string; name: string; restricted: boolean }
+/** GET and PUT /users/:id/category-access or /departments/:id/category-access. `restricted` false: no rows of their own,
+ *  so a person follows their department (`department`) and a department limits nobody. */
+export interface CategoryAccessState extends CategoryChoice { restricted: boolean; department?: DepartmentLimit | null }
+
+/** "Works, Soft furnishing (2 of 6), Uncategorised": what a limit allows. */
+export function describeLimit(catalog: CategoryTreeGroup[], limit: CategoryChoice): string {
+  const parts = catalog.flatMap(g => {
+    if (limit.groups.includes(g.code)) return [g.label];
+    const picked = g.subs.filter(s => limit.subs.includes(subKey(g.code, s.code))).length;
+    return picked > 0 ? [`${g.label} (${picked} of ${g.subs.length})`] : [];
+  });
+  if (limit.other) parts.push('Uncategorised');
+  return parts.length > 0 ? parts.join(', ') : 'nothing';
+}
+
+/** Who the editor is for: a person, or a whole department. */
+export interface AccessSubject { kind: 'user' | 'department'; id: string; name: string; job: string }
 
 export const subKey = (group: string, sub: string): string => `${group}/${sub}`;
 
@@ -23,7 +40,7 @@ type BoxState = 'on' | 'partial' | 'off';
 const draftKey = (all: boolean, groups: ReadonlySet<string>, subs: ReadonlySet<string>, other: boolean): string =>
   all ? 'all' : JSON.stringify([[...groups].sort(), [...subs].sort(), other]);
 
-const keyOf = (a: PersonCategoryAccess): string => draftKey(!a.restricted, new Set(a.groups), new Set(a.subs), a.other);
+const keyOf = (a: CategoryAccessState): string => draftKey(!a.restricted, new Set(a.groups), new Set(a.subs), a.other);
 
 function Tick({ state, label, onChange }: { state: BoxState; label: string; onChange: () => void }) {
   const box = useRef<HTMLInputElement>(null);
@@ -43,19 +60,21 @@ function Switch({ label, checked, onChange }: { label: string; checked: boolean;
 }
 
 /**
- * One person's product categories, in a drawer: which categories and sub-categories they see on the renovation beta
- * project screens (the PO, Client PO and VO tabs). All categories (the default) hides nothing; switched off, only the
- * ticked groups, sub-categories and Uncategorised lines are shown. Reads the person on opening and saves on its own
- * button (PUT /users/:id/category-access).
+ * One person's or one department's product categories, in a drawer: which categories and sub-categories they see on the
+ * renovation beta project screens (the PO, Client PO and VO tabs). The default hides nothing; switched off, only the
+ * ticked groups, sub-categories and Uncategorised lines are shown. A department's list is for everyone in it; a person's
+ * own list replaces their department's. Reads on opening and saves on its own button (PUT .../category-access).
  */
-export default function CategoryAccessEditor({ person, catalog, onClose, onSaved }: {
-  person: { id: string; fullName: string; job: string };
+export default function CategoryAccessEditor({ subject, catalog, onClose, onSaved }: {
+  subject: AccessSubject;
   catalog: CategoryTreeGroup[];
   onClose: () => void;
   onSaved: () => void;
 }) {
   const toast = useToast();
-  const [loaded, setLoaded] = useState<PersonCategoryAccess | null>(null);
+  const isDepartment = subject.kind === 'department';
+  const path = isDepartment ? '/departments' : '/users';
+  const [loaded, setLoaded] = useState<CategoryAccessState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   // What is on screen, and what the server has (so Discard goes back to the last saved ticks, not the first ones).
@@ -64,7 +83,7 @@ export default function CategoryAccessEditor({ person, catalog, onClose, onSaved
   const [subs, setSubs] = useState<ReadonlySet<string>>(new Set());
   const [other, setOther] = useState(false);
   const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
-  const [base, setBase] = useState<PersonCategoryAccess | null>(null);
+  const [base, setBase] = useState<CategoryAccessState | null>(null);
   const [busy, setBusy] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
@@ -72,13 +91,13 @@ export default function CategoryAccessEditor({ person, catalog, onClose, onSaved
     let live = true;
     setLoaded(null);
     setError(null);
-    api.get<PersonCategoryAccess>(`/users/${person.id}/category-access`)
+    api.get<CategoryAccessState>(`${path}/${subject.id}/category-access`)
       .then(res => { if (live) setLoaded(res); })
-      .catch((e: unknown) => { if (live) setError(errorMessage(e, 'Their category access could not be loaded.')); });
+      .catch((e: unknown) => { if (live) setError(errorMessage(e, 'The category access could not be loaded.')); });
     return () => { live = false; };
-  }, [person.id, attempt]);
+  }, [path, subject.id, attempt]);
 
-  function show(a: PersonCategoryAccess) {
+  function show(a: CategoryAccessState) {
     setAll(!a.restricted);
     setGroups(new Set(a.groups));
     setSubs(new Set(a.subs));
@@ -96,6 +115,9 @@ export default function CategoryAccessEditor({ person, catalog, onClose, onSaved
     setOpen(new Set(catalog.filter(g => g.subs.some(s => ticked.has(subKey(g.code, s.code)))).map(g => g.code)));
   }, [loaded]); // eslint-disable-line react-hooks/exhaustive-deps -- `catalog` only picks which groups start open
 
+  // A person with no list of their own follows their department's, when that has one.
+  const dept = isDepartment ? null : loaded?.department ?? null;
+  const followed = dept?.restricted === true;
   const nothingTicked = !all && groups.size === 0 && subs.size === 0 && !other;
   const dirty = base !== null && draftKey(all, groups, subs, other) !== keyOf(base);
 
@@ -140,9 +162,9 @@ export default function CategoryAccessEditor({ person, catalog, onClose, onSaved
     setBusy(true);
     setSaveError(null);
     try {
-      const saved = await api.put<PersonCategoryAccess>(`/users/${person.id}/category-access`, { restricted: !all, groups: [...groups], subs: [...subs], other });
+      const saved = await api.put<CategoryAccessState>(`${path}/${subject.id}/category-access`, { restricted: !all, groups: [...groups], subs: [...subs], other });
       setBase(saved);
-      toast({ tone: 'success', title: all ? `${person.fullName} sees all categories.` : 'Category access saved.', body: 'It applies the next time they open or refresh a project.' });
+      toast({ tone: 'success', title: all ? `${subject.name} has no category limit.` : 'Category access saved.', body: 'It applies the next time they open or refresh a project.' });
       onSaved();
     } catch (e) {
       setSaveError(errorMessage(e, 'Category access was not saved. Try again in a moment.'));
@@ -155,15 +177,15 @@ export default function CategoryAccessEditor({ person, catalog, onClose, onSaved
     <>
       <div className="flex items-start justify-between gap-3 py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)]">
         <div className="flex flex-col gap-0.5 min-w-0">
-          <span id="category-access-title" className="text-heading font-semibold [overflow-wrap:anywhere]">{person.fullName}</span>
-          {person.job && <span className="text-meta text-muted-ink">{person.job}</span>}
+          <span id="category-access-title" className="text-heading font-semibold [overflow-wrap:anywhere]">{subject.name}</span>
+          {subject.job && <span className="text-meta text-muted-ink">{subject.job}</span>}
         </div>
         <CloseButton onClick={onClose} />
       </div>
 
       <div className="py-3 px-5 text-meta text-muted-ink leading-[1.5] [border-bottom:1px_solid_var(--color-line-soft)]">
-        Choose which product categories this person sees on the renovation project screens (the PO, Client PO and VO tabs).
-        Lines in the other categories are hidden from them. The main Supply Chain screens are not covered yet.
+        Choose which product categories {isDepartment ? 'everyone in this department sees' : 'this person sees'} on the renovation project screens (the PO, Client PO and VO tabs).
+        Lines in the other categories are hidden. {isDepartment ? 'A person with their own list uses that instead of the department’s. ' : ''}The main Supply Chain screens are not covered yet.
       </div>
 
       {error && (
@@ -172,16 +194,20 @@ export default function CategoryAccessEditor({ person, catalog, onClose, onSaved
           <Button size="sm" onClick={() => setAttempt(n => n + 1)}>Try again</Button>
         </div>
       )}
-      {!loaded && !error && <div className="p-5 text-copy text-muted-ink" role="status">Loading their category access…</div>}
+      {!loaded && !error && <div className="p-5 text-copy text-muted-ink" role="status">Loading the category access…</div>}
 
       {loaded && (
         <>
           <label className="flex items-center justify-between gap-3 py-3 px-5 [border-bottom:1px_solid_var(--color-line-soft)]">
             <span className="flex flex-col gap-0.5">
-              <span className="text-copy font-medium">All categories</span>
-              <span className="text-meta text-muted-ink">{all ? 'Nothing is hidden from this person.' : 'Only what is ticked below is shown.'}</span>
+              <span className="text-copy font-medium">{dept && followed ? `Same as ${dept.name}` : 'All categories'}</span>
+              <span className="text-meta text-muted-ink">
+                {!all ? 'Only what is ticked below is shown.'
+                  : dept && followed ? `They see what the department sees: ${describeLimit(catalog, dept)}.`
+                  : isDepartment ? 'Nothing is hidden from this department.' : 'Nothing is hidden from this person.'}
+              </span>
             </span>
-            <Switch label="All categories" checked={all} onChange={setAll} />
+            <Switch label={dept && followed ? `Same as ${dept.name}` : 'All categories'} checked={all} onChange={setAll} />
           </label>
 
           {!all && (

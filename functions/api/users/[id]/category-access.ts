@@ -2,14 +2,26 @@ import { type Env, all, one, json, fail, run, audit, nowIso, transaction } from 
 import { requireSession } from '../../../_lib/auth';
 import { choiceOfRows, describeChoice, parseCategoryAccess, rowsOfChoice, type CategoryChoice } from '../../../_lib/categoryCatalog';
 
-interface PersonCategoryAccess extends CategoryChoice { userId: string; restricted: boolean }
+/** The person's department and what it limits everyone in it to; null when they have no department. Their own rows win over it. */
+interface FromDepartment extends CategoryChoice { id: string; name: string; restricted: boolean }
+interface PersonCategoryAccess extends CategoryChoice { userId: string; restricted: boolean; department: FromDepartment | null }
 
 const loadRows = (env: Env, id: string) =>
   all<{ group_code: string; sub_code: string | null }>(env,
     'SELECT group_code, sub_code FROM person_category_access WHERE user_id = ? ORDER BY group_code, sub_code', id);
 
+const loadDepartment = async (env: Env, id: string): Promise<FromDepartment | null> => {
+  const dept = await one<{ id: string; name: string }>(env,
+    'SELECT d.id, d.name FROM users u JOIN departments d ON d.id = u.department_id WHERE u.id = ?', id);
+  if (!dept) return null;
+  const rows = await all<{ group_code: string; sub_code: string | null }>(env,
+    'SELECT group_code, sub_code FROM department_category_access WHERE department_id = ? ORDER BY group_code, sub_code', dept.id);
+  return { ...dept, restricted: rows.length > 0, ...choiceOfRows(rows) };
+};
+
 /** GET /api/users/:id/category-access -> which product categories this person is limited to. `restricted` false means
- *  they see everything (no rows). `subs` holds "GROUP/SUB" codes. Management only. */
+ *  they have no setting of their own: they follow their department (`department`), or see everything when it has none
+ *  either. `subs` holds "GROUP/SUB" codes. Management only. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response;
@@ -18,7 +30,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
   const id = String(params.id);
   if (!await one(env, 'SELECT id FROM users WHERE id = ?', id)) return fail('NOT_FOUND', 'That account no longer exists.', 404);
   const rows = await loadRows(env, id);
-  const body: PersonCategoryAccess = { userId: id, restricted: rows.length > 0, ...choiceOfRows(rows) };
+  const body: PersonCategoryAccess = { userId: id, restricted: rows.length > 0, ...choiceOfRows(rows), department: await loadDepartment(env, id) };
   return json(body);
 };
 
@@ -55,6 +67,6 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env, params })
     });
   });
 
-  const body: PersonCategoryAccess = { userId: id, restricted, ...choice };
+  const body: PersonCategoryAccess = { userId: id, restricted, ...choice, department: await loadDepartment(env, id) };
   return json(body);
 };

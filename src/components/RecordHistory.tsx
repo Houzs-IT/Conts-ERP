@@ -56,7 +56,7 @@ const ACTION: Record<string, string> = {
   'maintenance.window_add': 'planned a visit', 'maintenance.window_remove': 'removed a visit', 'maintenance.photo': 'added a photo', 'maintenance.document': 'added a document',
   'maintenance.exchange': 'swapped a part', 'maintenance.block_released': 'gave the blocked nights back',
   'user.invite': 'invited this person', 'user.update': 'edited the account', 'user.reset_link': 'made a password reset link', 'user.resend_invite': 'resent the invitation',
-  'user.permission_change': 'changed permissions', 'user.category_access_change': 'changed the product categories they can see', 'user.view_as': 'viewed the system as this person',
+  'user.permission_change': 'changed permissions', 'user.category_access_change': 'changed the product categories they can see', 'department.category_access_change': 'changed the product categories this department can see', 'user.view_as': 'viewed the system as this person',
   'account.password_changed': 'changed the password', 'account.password_reset_completed': 'reset the password',
 };
 
