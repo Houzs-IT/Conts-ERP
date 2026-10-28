@@ -64,3 +64,7 @@ test('unusual rows are sorted by the size of the change', () => {
   const rows = unusual(buildCells([...steady(400), ...steady(20).map(b => ({ ...b, kind: 'water' }))]), ['u1'], months('2026-06', '2026-09'), {});
   assert.deepEqual(rows.map(r => r.kind), ['electricity', 'water']);
 });
+test('the first month shown is compared with the three months before the range', () => {
+  const rows = unusual(buildCells(steady(300)), ['u1'], months('2026-09', '2026-09'), {});
+  assert.equal(rows.length, 1); assert.equal(rows[0].baseline, 100);
+});

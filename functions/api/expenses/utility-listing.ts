@@ -8,7 +8,8 @@ import { months } from '../../../src/lib/utilityGrid';
  *  The utility listing (plan docs/superpowers/plans/2026-10-28-utility-listing.md): every unit, its electricity, water,
  *  internet and Indah Water bills whose bill month is in the range, each with whether its deduction month's owner
  *  statement is final, and the nights booked per unit and month (the stays the owner statement counts). Read only.
- *  Default range: the twelve months ending this month; at most 24 months. */
+ *  Default range: the twelve months ending this month; at most 24 months. Bills and nights of the three months before
+ *  the range come too (`months` does not list them): the unusual-bill check compares a month with the three before it. */
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
 const shift = (m: string, by: number) => {
   const t = Number(m.slice(0, 4)) * 12 + Number(m.slice(5, 7)) - 1 + by;
@@ -28,7 +29,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if (list.length > 24) return fail('VALIDATION', 'Choose up to 24 months.', 422);
   const building = url.searchParams.get('building'), unit = url.searchParams.get('unit');
   const scope = `${building ? 'AND u.property_id = $4' : ''} ${unit ? `AND u.id = $${building ? 5 : 4}` : ''}`;
-  const start = `${from}-01`, endEx = `${shift(to, 1)}-01`;
+  const lookBack = shift(from, -3);
+  const start = `${lookBack}-01`, endEx = `${shift(to, 1)}-01`;
 
   // Units: every whole unit, and any other unit (a room of a split flat) that has a utility bill in the range.
   const row = await one<{ units: any[] | null; bills: any[] | null; nights: any[] | null }>(env, `
@@ -52,7 +54,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       (SELECT json_agg(su ORDER BY su.property, su.unit_number) FROM su) AS units,
       (SELECT json_agg(b ORDER BY b.incurred_on, b.id) FROM b WHERE b.unit_id IN (SELECT id FROM su)) AS bills,
       (SELECT json_agg(n) FROM n) AS nights`,
-    start, endEx, JSON.stringify(list), ...(building ? [building] : []), ...(unit ? [unit] : []));
+    start, endEx, JSON.stringify(months(lookBack, to)), ...(building ? [building] : []), ...(unit ? [unit] : []));
 
   const nights: Record<string, Record<string, number>> = {};
   for (const x of row?.nights ?? []) (nights[x.unit_id] ??= {})[x.month] = Number(x.nights);

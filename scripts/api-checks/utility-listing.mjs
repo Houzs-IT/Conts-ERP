@@ -19,7 +19,7 @@ const [a, b] = await db(`SELECT u.id, u.owner_id, u.property_id FROM units u WHE
 check('two units of different owners', !!a && !!b);
 if (!a || !b) { done(); process.exit(1); }
 for (const u of [a, b]) {
-  await db(`DELETE FROM expenses WHERE unit_id = $1 AND incurred_on >= '2029-01-01' AND incurred_on < '2030-01-01'`, u.id);
+  await db(`DELETE FROM expenses WHERE unit_id = $1 AND incurred_on >= '2028-10-01' AND incurred_on < '2030-01-01'`, u.id);
   await db(`DELETE FROM owner_statements WHERE owner_id = $1 AND period_start >= '2029-01-01' AND period_start < '2030-01-01'`, u.owner_id);
 }
 const bill = async (o) => {
@@ -34,6 +34,7 @@ const pending = await bill({ kind: 'water', amount: 2000, date: '2029-02-28' });
 const company = await bill({ kind: 'internet', amount: 10494, date: '2029-03-31', chargeTo: 'company' });
 const record = await bill({ kind: 'sewerage', amount: 800, date: '2029-03-31', recordOnly: true });
 const rolled = await bill({ kind: 'water', amount: 3000, date: '2029-04-30', deduct: '2029-05', rolled: true });
+const before = await bill({ kind: 'electricity', amount: 999, date: '2028-11-30' });
 // March is final for unit a's owner; May is not.
 await db(`INSERT INTO owner_statements (id, owner_id, period_start, period_end, state, generated_at, created_at)
   VALUES ($1, $2, '2029-03-01', '2029-03-31', 'finalised', now()::text, now()::text)`, randomUUID(), a.owner_id).catch(e => check('final March statement seeded', false, e.message));
@@ -59,6 +60,7 @@ check('a company-paid bill says so', by[company]?.chargeTo !== 'owner', JSON.str
 check('a record-only bill says so', by[record]?.recordOnly === true, JSON.stringify(by[record]));
 check('a late bill sits in its bill month with its deduction month', by[rolled]?.billMonth === '2029-04' && by[rolled]?.deductMonth === '2029-05' && by[rolled]?.rolled === true, JSON.stringify(by[rolled]));
 check('kinds are the expense categories', by[record]?.kind === 'sewerage' && by[charged]?.kind === 'electricity');
+check('the three months before the range come for the unusual check, not as months', by[before]?.billMonth === '2028-11' && !j.months?.includes('2028-11'), JSON.stringify(by[before]));
 check('nights booked per month', j.nights?.[a.id]?.['2029-03'] === 3 && j.nights?.[a.id]?.['2029-04'] === 2, JSON.stringify(j.nights?.[a.id]));
 r = await call('GET', `/api/expenses/utility-listing?from=2029-01&to=2029-06&unit=${b.id}`);
 check('one unit only', r.json?.units?.length === 1 && r.json?.units?.[0]?.id === b.id && (r.json?.bills ?? []).length === 0, r.text.slice(0, 300));
@@ -69,7 +71,7 @@ check('a range back to front is refused', r.status === 422, r.text);
 r = await call('GET', '/api/expenses/utility-listing');
 check('the default is the twelve months to this month', r.status === 200 && r.json?.months?.length === 12, JSON.stringify(r.json?.months));
 
-for (const u of [a, b]) await db(`DELETE FROM expenses WHERE unit_id = $1 AND incurred_on >= '2029-01-01' AND incurred_on < '2030-01-01'`, u.id);
+for (const u of [a, b]) await db(`DELETE FROM expenses WHERE unit_id = $1 AND incurred_on >= '2028-10-01' AND incurred_on < '2030-01-01'`, u.id);
 await db(`DELETE FROM owner_statements WHERE owner_id = $1 AND period_start = '2029-03-01'`, a.owner_id);
 await db(`DELETE FROM reservations WHERE unit_id = $1 AND check_in = '2029-03-29'`, a.id);
 done();

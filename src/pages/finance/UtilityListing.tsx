@@ -15,6 +15,7 @@ import { monthLabel, rm, todayMyt } from '../../lib/format';
 import { downloadTable, type ExportCell, type ExportColumn } from '../../lib/export';
 import { statusOf, statusLabel, TONE_STYLE } from '../../lib/status';
 import { cx } from '../../lib/design-tokens';
+import { PAYER_LABEL } from '../../lib/revenueModel';
 import { useUrlState, SearchBox, FilterSelect, shiftMonth } from './listKit';
 import {
   KINDS, KIND_LABEL, billState, buildCells, months as monthsOf, unitAverages, unusual,
@@ -311,7 +312,7 @@ function BillPanel({ unit, month, kind, cell, onClose }: { unit: Unit; month: st
             </div>
             <Row label="Bill month">{monthLabel(b.billMonth)}</Row>
             <Row label="Deducted on">{monthLabel(b.deductMonth)} statement{b.rolled ? ' (late bill)' : ''}</Row>
-            <Row label="Who pays">{b.chargeTo === 'owner' ? 'Owner' : 'Company'}</Row>
+            <Row label="Who pays">{PAYER_LABEL[b.chargeTo] ?? b.chargeTo}</Row>
             {b.reference && <Row label="Account or reference">{b.reference}</Row>}
             {b.receiptId
               ? <div><Button size="sm" variant="secondary" icon={<Icon name="FileText" size="sm" />}
