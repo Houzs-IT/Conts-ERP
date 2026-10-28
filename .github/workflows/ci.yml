@@ -99,6 +99,11 @@ jobs:
         env:
           API_BASE: http://localhost:8788
           DB_URL: postgres://postgres@127.0.0.1:5432/ci
+      - name: Utility listing (utility-listing)
+        run: node scripts/api-checks/utility-listing.mjs
+        env:
+          API_BASE: http://localhost:8788
+          DB_URL: postgres://postgres@127.0.0.1:5432/ci
       - name: Server log
         if: failure()
         run: tail -n 200 wrangler.log
