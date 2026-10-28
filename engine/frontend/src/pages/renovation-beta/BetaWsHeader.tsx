@@ -91,62 +91,63 @@ export function BetaWsHeader({ d, p: board, people = [], canWrite, today, openDi
 
   return (
     <section style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "flex-start", gap: 16 }}>
-      <div style={{ display: "flex", gap: 12, alignItems: "flex-start", minWidth: 0, flex: "1 1 320px" }}>
-        <Link to="/beta/projects" aria-label="Back to the project list" style={{ ...btnStyle("outline", "lg"), width: 44, padding: 0, flex: "none" }}>
+      {/* A grid: the team chips sit under the title on a wide screen, and take the full width under it on a phone
+          (.ws-head in BetaWsUi.tsx), where the column beside the back button was too narrow for them. */}
+      <div className="ws-head" style={{ display: "grid", gridTemplateColumns: "44px minmax(0, 1fr)", columnGap: 12, alignItems: "start", minWidth: 0, flex: "1 1 320px" }}>
+        <Link to="/beta/projects" aria-label="Back to the project list" style={{ ...btnStyle("outline", "lg"), width: 44, padding: 0 }}>
           <ArrowLeft size={18} aria-hidden="true" />
         </Link>
-        {/* Grows to the row's width, so the team chips wrap at the page edge and not at the title's width. */}
-        <div style={{ minWidth: 0, flex: 1 }}>
+        <div style={{ minWidth: 0 }}>
           <h1 className="h1" style={{ margin: 0, fontSize: 28, fontWeight: 600, letterSpacing: "-.02em", overflowWrap: "anywhere" }}>{title}</h1>
           <div style={{ marginTop: 4, color: BETA.muted, fontSize: 14 }}>
             {line}
             {left && <> <span style={{ color: left.late ? WS.red : WS.green, fontWeight: 600 }}>{left.text}</span></>}
           </div>
-          <div role="group" aria-label="Project team" className="chips" style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, marginTop: 12 }}>
-            {chips.map((c) => {
-              const bg = c.lead ? BETA.pick : BETA.surface;
-              const one = c.who.length === 1 ? infoOf(c.who[0].id) : "";
-              const extra = one || (c.who.length > 1 ? c.who.map((x) => x.name).join(", ") : "");
-              // The chip fits its text, as the design's pills do; the third line shows only when it has something to say.
-              const body = (
-                <>
-                  <AvatarStack who={c.who} ring={bg} />
-                  <span style={{ display: "flex", flexDirection: "column", gap: 2, lineHeight: 1.2, minWidth: 0 }}>
-                    <span style={{ fontSize: 11, color: BETA.muted, fontWeight: 600, textTransform: "uppercase", letterSpacing: ".05em", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.role}</span>
-                    <span style={{ fontSize: 14, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{peopleLine(c.who)}</span>
-                    {extra && <span style={{ fontSize: 12, color: BETA.muted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{extra}</span>}
-                  </span>
-                </>
-              );
-              const box = { display: "flex", alignItems: "center", gap: 10, minHeight: CARD_H, maxWidth: 300, minWidth: 0, padding: "6px 14px 6px 8px", borderRadius: 32, background: bg, border: `1px solid ${c.lead ? BETA.border : BETA.glassEdge}`, boxSizing: "border-box" } as const;
-              return (
-                <div key={c.key} title={c.who.map((x) => x.name).join(", ") || undefined} style={{ ...box, padding: 0, gap: 0, overflow: "hidden" }}>
-                  {canWrite ? (
-                    <button type="button" onClick={() => openDialog({ t: "assign", projectId: p.id, role: c.key })} aria-label={`${c.role}: ${c.who.map((x) => x.name).join(", ") || "not set"}. Change`}
-                      style={{ ...box, border: 0, borderRadius: 0, flex: 1, background: "transparent", font: "inherit", color: "inherit", textAlign: "left", cursor: "pointer" }}>
-                      {body}
-                      <Pencil size={14} aria-hidden="true" style={{ flex: "none", marginLeft: 2, color: BETA.muted }} />
-                    </button>
-                  ) : <div style={{ ...box, border: 0, flex: 1, background: "transparent" }}>{body}</div>}
-                  {c.lead && designer && (
-                    <a
-                      href={whatsappLink(phone, `Hi ${designer}, about ${p.name}.`)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{ flex: "none", marginRight: 8, minHeight: 32, padding: "0 12px", borderRadius: 999, background: BETA.accentFill, color: "#FFFFFF", fontSize: 13, fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 6, textDecoration: "none" }}
-                    >
-                      <MessageCircle size={14} aria-hidden="true" />WhatsApp<span className="sr"> {designer}</span>
-                    </a>
-                  )}
-                </div>
-              );
-            })}
-            {canWrite && (
-              <button type="button" onClick={() => openDialog({ t: "assign", projectId: p.id })} style={{ minHeight: CARD_H, padding: "0 20px", border: `1.5px dashed ${BETA.dash}`, borderRadius: 999, background: "transparent", color: BETA.ink, font: "inherit", fontWeight: 600, cursor: "pointer" }}>
-                Assign
-              </button>
-            )}
-          </div>
+        </div>
+        <div role="group" aria-label="Project team" className="chips" style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, marginTop: 12 }}>
+          {chips.map((c) => {
+            const bg = c.lead ? BETA.pick : BETA.surface;
+            const one = c.who.length === 1 ? infoOf(c.who[0].id) : "";
+            const extra = one || (c.who.length > 1 ? c.who.map((x) => x.name).join(", ") : "");
+            // The chip fits its text, as the design's pills do; the third line shows only when it has something to say.
+            const body = (
+              <>
+                <AvatarStack who={c.who} ring={bg} />
+                <span style={{ display: "flex", flexDirection: "column", gap: 2, lineHeight: 1.2, minWidth: 0 }}>
+                  <span style={{ fontSize: 11, color: BETA.muted, fontWeight: 600, textTransform: "uppercase", letterSpacing: ".05em", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.role}</span>
+                  <span style={{ fontSize: 14, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{peopleLine(c.who)}</span>
+                  {extra && <span style={{ fontSize: 12, color: BETA.muted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{extra}</span>}
+                </span>
+              </>
+            );
+            const box = { display: "flex", alignItems: "center", gap: 10, minHeight: CARD_H, maxWidth: 300, minWidth: 0, padding: "6px 14px 6px 8px", borderRadius: 32, background: bg, border: `1px solid ${c.lead ? BETA.border : BETA.glassEdge}`, boxSizing: "border-box" } as const;
+            return (
+              <div key={c.key} className={c.lead ? "chip-lead" : undefined} title={c.who.map((x) => x.name).join(", ") || undefined} style={{ ...box, padding: 0, gap: 0, overflow: "hidden" }}>
+                {canWrite ? (
+                  <button type="button" onClick={() => openDialog({ t: "assign", projectId: p.id, role: c.key })} aria-label={`${c.role}: ${c.who.map((x) => x.name).join(", ") || "not set"}. Change`}
+                    style={{ ...box, border: 0, borderRadius: 0, flex: 1, background: "transparent", font: "inherit", color: "inherit", textAlign: "left", cursor: "pointer" }}>
+                    {body}
+                    <Pencil size={14} aria-hidden="true" style={{ flex: "none", marginLeft: 2, color: BETA.muted }} />
+                  </button>
+                ) : <div style={{ ...box, border: 0, flex: 1, background: "transparent" }}>{body}</div>}
+                {c.lead && designer && (
+                  <a
+                    href={whatsappLink(phone, `Hi ${designer}, about ${p.name}.`)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ flex: "none", marginRight: 8, minHeight: 32, padding: "0 12px", borderRadius: 999, background: BETA.accentFill, color: "#FFFFFF", fontSize: 13, fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 6, textDecoration: "none" }}
+                  >
+                    <MessageCircle size={14} aria-hidden="true" />WhatsApp<span className="sr"> {designer}</span>
+                  </a>
+                )}
+              </div>
+            );
+          })}
+          {canWrite && (
+            <button type="button" onClick={() => openDialog({ t: "assign", projectId: p.id })} style={{ minHeight: CARD_H, padding: "0 20px", border: `1.5px dashed ${BETA.dash}`, borderRadius: 999, background: "transparent", color: BETA.ink, font: "inherit", fontWeight: 600, cursor: "pointer" }}>
+              Assign
+            </button>
+          )}
         </div>
       </div>
     </section>

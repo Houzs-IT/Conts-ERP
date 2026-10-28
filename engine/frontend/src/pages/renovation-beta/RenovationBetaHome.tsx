@@ -13,7 +13,7 @@ import { buildModel, HOME_TABS, homeCounts, homeList, homeRow, shortLeft, type C
 import { HOME_SORTS, keepOrder, matchesSearch, newestFirst, orderOf, sortFromParam, type HomeSort } from "./renovationBetaHomeModel";
 import { boardApi, boardKey, prefetchOnIntent, readLastProject, rememberLastProject } from "./renovationBetaBoardApi";
 import { CARD, ErrorBanner, INK_SOFT, MUTED, useIsPhone } from "./BetaCalParts";
-import { BetaSkin } from "./BetaWsUi";
+import { BetaSkin, useBetaPreload } from "./BetaWsUi";
 import { simpleApi, type BoardRowV2 } from "../projects/renovation/simpleApi";
 import { mytDay, slaDayText } from "./renovationBetaModel";
 import { motion } from "motion/react";
@@ -83,10 +83,12 @@ function StatusCell({ r }: { r: HomeRow }): ReactElement {
   return <span title={r.cond} style={{ display: "inline-flex", minWidth: 0, maxWidth: "100%" }}><DotText dot={dot} ink={ink} bg={bg}>{r.word}</DotText></span>;
 }
 
-/** A finished design says Done in green; anything else shows the days left or late. */
-function DueCell({ r, small = false }: { r: HomeRow; small?: boolean }): ReactElement {
+/** A finished design says Done in green; anything else shows the days left or late. On a phone card (small) no due
+    date shows nothing: a lone dash in the card's corner read as a stray mark. */
+function DueCell({ r, small = false }: { r: HomeRow; small?: boolean }): ReactElement | null {
   if (r.word === "Done") return <DotText dot={TONES.accent.dot} ink={TONES.accent.ink} bg={TONES.accent.soft}>Done</DotText>;
-  return r.left === null ? DASH : <DuePill left={r.left} small={small} />;
+  if (r.left === null) return small ? null : DASH;
+  return <DuePill left={r.left} small={small} />;
 }
 
 type Sla = { step: string; text: string; over: boolean } | null;
@@ -101,6 +103,7 @@ function slaOf(r: BoardRowV2 | undefined, today: string): Sla {
 
 /** The colours are set before anything else draws, so the loading line and an error already have them. */
 export function RenovationBetaHome(): ReactElement {
+  useBetaPreload();
   return (
     <>
       <BetaSkin />

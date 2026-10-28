@@ -38,11 +38,13 @@ interface Props extends DeadlineActions {
   viewingName: string | null;
 }
 
+/** The padding and its negative margin give the one-line name a finger-sized tap area without moving the lines round it. */
 function NameLink({ p }: { p: DesignProject }): ReactElement {
   return (
-    <div style={{ ...CLIP }}>
-      <Link to={`/beta/projects/${p.id}`} onClick={() => rememberLastProject(p.id)} style={{ color: BETA.ink, fontWeight: 600, textDecoration: "none" }}>{p.name}</Link>
-    </div>
+    <Link to={`/beta/projects/${p.id}`} onClick={() => rememberLastProject(p.id)}
+      style={{ ...CLIP, display: "block", padding: "8px 0", margin: "-8px 0", color: BETA.ink, fontWeight: 600, textDecoration: "none" }}>
+      {p.name}
+    </Link>
   );
 }
 
