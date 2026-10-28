@@ -232,7 +232,7 @@ function MeasureDetail({ measures, projectId, onView, onUpload, onError }: {
             {docs.length > 0 && (
               <div style={boxStyle}>
                 <div style={{ padding: "12px 16px", background: WS.head, fontWeight: 600 }}>Measurement files</div>
-                <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+                <ul className="stag" style={{ listStyle: "none", margin: 0, padding: 0 }}>
                   {docs.map((f) => (
                     <li key={f.id} style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, padding: "12px 16px", borderTop: `1px solid ${WS.rowLine}` }}>
                       <WsPdfTile />
@@ -391,7 +391,7 @@ function KindDetail({ kind, p, set, onEdit, onOpen, onUpload, sheets, sheetsRead
     : <LinkCards projectId={projectId} links={setOf(v)} changed={marks} onView={onView} onError={p.onError} edit={editOf()} />);
 
   const versionRows = (
-    <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+    <ul className="stag" style={{ listStyle: "none", margin: 0, padding: 0 }}>
       {set.versions.map((v, i) => {
         const state = v === approved ? "Approved" : v === waiting ? (v.review?.sentOn ? "Sent, waiting" : "Not sent") : "Older";
         const menu = menuOf(v);
@@ -451,6 +451,7 @@ function KindDetail({ kind, p, set, onEdit, onOpen, onUpload, sheets, sheetsRead
         <ShowPill on={view === "history"} onClick={() => { setView("history"); setHistId(null); }} quiet>History</ShowPill>
       </div>
 
+      <div key={view} className="stag" style={{ display: "contents" }}>
       {view === "waiting" && waiting && (
         <WaitingView kind={kind} v={waiting} p={p} busy={busy} onEdit={onEdit} newSet={shownSet} hasApproved={approved != null}
           onRemind={() => void run(() => sendReminder(projectId, {
@@ -508,6 +509,7 @@ function KindDetail({ kind, p, set, onEdit, onOpen, onUpload, sheets, sheetsRead
       )}
 
       {view === "history" && !viewedV && versionList}
+      </div>
 
       {view !== "history" && (
         // The same list as the History view, folded under the sheets so a version can be found without leaving the page.

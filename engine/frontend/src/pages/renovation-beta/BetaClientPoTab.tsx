@@ -118,7 +118,7 @@ export function BetaClientPoTab(p: BetaTabProps): ReactElement {
               <th style={thStyle}>Photos</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody className="stag">
             {groups.map((g) => [
               <tr key={g.key}><td colSpan={COLS} style={{ padding: "8px 10px", background: TONES.accent.soft, borderLeft: `4px solid ${BETA.accent}`, color: BETA.accentInk, fontWeight: 700, fontSize: 15 }}>{g.label}</td></tr>,
               ...g.subs.flatMap((s) => [

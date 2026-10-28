@@ -17,7 +17,9 @@ import { BetaCalProgress } from "./BetaCalProgress";
 import { BetaCalMonth } from "./BetaCalMonth";
 import { BetaDialogs, type BetaDialog } from "./BetaForms";
 import { BetaSkin } from "./BetaWsUi";
+import { motion } from "motion/react";
 import { BetaLoading } from "./BetaLoading";
+import { BetaMotion, SPRING } from "./betaMotion";
 
 type CalTab = "design" | "prog" | "mine";
 const TABS: ReadonlyArray<readonly [CalTab, string]> = [["design", "Deadlines"], ["prog", "Progress"], ["mine", "Calendar"]];
@@ -85,11 +87,12 @@ function CalendarScreen(): ReactElement {
   const raw = (id: number): BetaBoardProject | undefined => q.data?.projects.find((p) => p.id === id);
 
   const switchBtn = (on: boolean): CSSProperties => ({
-    minHeight: 36, padding: "0 14px", border: `2px solid ${on ? BETA.selInk : "transparent"}`, borderRadius: 999, font: "inherit", fontWeight: 600, cursor: "pointer",
+    minHeight: 36, padding: "0 14px", border: "2px solid transparent", position: "relative", borderRadius: 999, font: "inherit", fontWeight: 600, cursor: "pointer",
     background: on ? BETA.surface : "transparent", color: on ? BETA.ink : INK_SOFT,
   });
 
   return (
+    <BetaMotion>
     <div style={{ display: "flex", flexDirection: "column", gap: 16, color: BETA.ink }}>
       <section style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "flex-end", gap: 12 }}>
         <div>
@@ -111,7 +114,10 @@ function CalendarScreen(): ReactElement {
           </label>
           <div role="tablist" aria-label="Calendar views" style={{ display: "flex", gap: 2, padding: 3, borderRadius: 999, background: BETA.head }}>
             {TABS.map(([key, label]) => (
-              <button key={key} type="button" role="tab" aria-selected={tab === key} onClick={() => setTab(key)} style={switchBtn(tab === key)}>{label}</button>
+              <button key={key} type="button" role="tab" aria-selected={tab === key} onClick={() => setTab(key)} style={switchBtn(tab === key)}>
+                {tab === key && <motion.span layoutId="cal-view-ring" transition={SPRING} aria-hidden="true" style={{ position: "absolute", inset: -2, border: `2px solid ${BETA.selInk}`, borderRadius: 999, pointerEvents: "none" }} />}
+                {label}
+              </button>
             ))}
           </div>
         </div>
@@ -185,5 +191,6 @@ function CalendarScreen(): ReactElement {
       />
       {toast}
     </div>
+    </BetaMotion>
   );
 }

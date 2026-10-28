@@ -99,7 +99,9 @@ function WorkspaceScreen(): ReactElement {
     <BetaMotion>
     <div className="bws" style={{ display: "flex", flexDirection: "column", gap: 20, width: "100%", minWidth: 0, paddingBottom: 40 }}>
       <WsStyle />
-      <BetaWsHeader d={d} p={board.p} people={board.m.everyone} canWrite={can("projects.write")} today={today} openDialog={setDialog} />
+      <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} transition={SPRING}>
+        <BetaWsHeader d={d} p={board.p} people={board.m.everyone} canWrite={can("projects.write")} today={today} openDialog={setDialog} />
+      </motion.div>
       <BetaWsStepper items={items} hold={hold} />
 
       <nav aria-label="Project sections" className="tabs">

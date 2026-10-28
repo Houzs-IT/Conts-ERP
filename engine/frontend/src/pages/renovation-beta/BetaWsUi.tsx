@@ -249,6 +249,7 @@ export function WsDialog({ title, sub, onClose, children, footer, wide = false }
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
       transition={{ duration: 0.18 }}
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
       style={{ position: "fixed", inset: 0, zIndex: 60, background: BETA.scrim, overflowY: "auto", padding: "24px 16px" }}
@@ -257,6 +258,7 @@ export function WsDialog({ title, sub, onClose, children, footer, wide = false }
         ref={panel}
         initial={{ opacity: 0, y: 20, scale: 0.97 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 12, scale: 0.98, transition: { duration: 0.15 } }}
         transition={{ type: "spring", stiffness: 420, damping: 32 }}
         role="dialog"
         aria-modal="true"

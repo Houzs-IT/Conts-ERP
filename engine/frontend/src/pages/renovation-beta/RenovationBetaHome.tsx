@@ -18,7 +18,9 @@ import { BetaDialogs, type BetaDialog } from "./BetaForms";
 import { BetaSkin } from "./BetaWsUi";
 import { simpleApi, type BoardRowV2 } from "../projects/renovation/simpleApi";
 import { mytDay, slaDayText } from "./renovationBetaModel";
+import { motion } from "motion/react";
 import { BetaLoading } from "./BetaLoading";
+import { BetaMotion, SPRING } from "./betaMotion";
 
 const TH = {
   padding: "10px 12px", textAlign: "left", fontSize: 11, fontWeight: 600, letterSpacing: ".04em", textTransform: "uppercase", color: MUTED,
@@ -165,6 +167,7 @@ function HomeScreen(): ReactElement {
   }
 
   return (
+    <BetaMotion>
     <div style={{ display: "flex", flexDirection: "column", gap: 16, color: BETA.ink }}>
       <section>
         <h1 style={{ margin: 0, fontSize: 28, fontWeight: 600, letterSpacing: "-.02em" }}>All projects</h1>
@@ -223,20 +226,21 @@ function HomeScreen(): ReactElement {
               onClick={() => setTab(key)}
               style={{
                 display: "inline-flex", flex: "none", whiteSpace: "nowrap", alignItems: "center", gap: 6, minHeight: 40, padding: "0 12px", border: 0, borderRadius: "8px 8px 0 0",
-                marginBottom: -1, background: on ? BETA.chip : "transparent", borderBottom: `3px solid ${on ? BETA.selInk : "transparent"}`, font: "inherit", fontSize: 14,
+                marginBottom: -1, background: on ? BETA.chip : "transparent", borderBottom: "3px solid transparent", position: "relative", font: "inherit", fontSize: 14,
                 fontWeight: on ? 700 : 500, color: on ? BETA.ink : MUTED, cursor: "pointer",
               }}
             >
               {TAB_DOT[key] && <span aria-hidden="true" style={{ flex: "none", width: 8, height: 8, borderRadius: 4, background: TAB_DOT[key] }} />}
               {label}
               <span style={{ fontSize: 12, color: MUTED }}>{tabCount(key)}</span>
+              {on && <motion.span layoutId="home-tab-ink" transition={SPRING} aria-hidden="true" style={{ position: "absolute", left: 6, right: 6, bottom: -3, height: 3, borderRadius: "3px 3px 0 0", background: BETA.selInk }} />}
             </button>
           );
         })}
       </div>
 
       {phone ? (
-        <ol style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 10 }}>
+        <ol className="stag" style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 10 }}>
           {rows.length === 0 && <li style={{ color: MUTED }}>{query.trim() ? `No project matches "${query.trim()}".` : "No projects here."}</li>}
           {rows.map((r) => <PhoneCard key={r.p.id} r={r} sla={slaOf(slaById.get(r.p.id), today)} onOpen={() => rememberLastProject(r.p.id)} />)}
         </ol>
@@ -256,7 +260,7 @@ function HomeScreen(): ReactElement {
                 {showPay && <th scope="col" style={TH}>Payment</th>}
               </tr>
             </thead>
-            <tbody>
+            <tbody className="stag">
               {rows.length === 0 && <tr><td colSpan={showPay ? 6 : 5} style={{ ...TD, color: MUTED }}>{query.trim() ? `No project matches "${query.trim()}".` : "No projects here."}</td></tr>}
               {rows.map((r) => {
                 const [tagInk, tagBg] = betaTagTone(r.p.tag);
@@ -297,6 +301,7 @@ function HomeScreen(): ReactElement {
       />
       {toast}
     </div>
+    </BetaMotion>
   );
 }
 

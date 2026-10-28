@@ -110,7 +110,7 @@ export function BetaTimelineTab({ projectId, today, onDone, onError, openTab }: 
                 <h3 style={{ margin: 0, fontSize: 13, fontWeight: 700, color: BETA.muted, textTransform: "uppercase", letterSpacing: ".06em" }}>
                   {g.day === today ? `Today · ${dayHeading(g.day, today)}` : g.day ? dayHeading(g.day, today) : "No date"}
                 </h3>
-                <ol style={{ ...cardStyle, listStyle: "none", margin: 0, padding: 0, gap: 0, overflow: "hidden" }}>
+                <ol className="stag" style={{ ...cardStyle, listStyle: "none", margin: 0, padding: 0, gap: 0, overflow: "hidden" }}>
                   {g.items.map((e, i) => <EntryRow key={e.id} e={e} first={i === 0} openTab={openTab} />)}
                 </ol>
               </section>

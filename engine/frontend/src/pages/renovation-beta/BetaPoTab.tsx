@@ -312,7 +312,7 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
                     <th style={headStyle}>DO</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="stag">
                   {tree.map((c, ci) => {
                     const open = !closed.has(c.key);
                     const band = BANDS[ci % BANDS.length];

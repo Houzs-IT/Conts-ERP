@@ -149,7 +149,7 @@ function LineTable({ lines, finance, withVo = false }: { lines: Array<{ l: VoLin
             <th style={thStyle}>Goes to</th>
           </tr>
         </thead>
-        <tbody>
+        <tbody className="stag">
           {lines.map(({ l, vo }, i) => {
             const tone = l.change === "add" ? WS.green : l.change === "deduct" ? WS.red : WS.text2;
             return (

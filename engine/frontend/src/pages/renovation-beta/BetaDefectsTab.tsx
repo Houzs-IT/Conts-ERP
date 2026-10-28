@@ -91,7 +91,7 @@ export function BetaDefectsTab(p: BetaTabProps): ReactElement {
                   <span style={{ marginLeft: "auto", fontSize: 12, color: c.ink, textAlign: "right" }}>{c.caption}</span>
                 </div>
                 {cols[c.key].length === 0 ? <p style={{ padding: 16, fontSize: 13, color: BETA.muted }}>{c.empty}</p> : (
-                  <ul style={{ listStyle: "none", margin: 0, padding: 12, display: "flex", flexDirection: "column", gap: 12 }}>
+                  <ul className="stag" style={{ listStyle: "none", margin: 0, padding: 12, display: "flex", flexDirection: "column", gap: 12 }}>
                     {cols[c.key].map((t) => <li key={t.id}><TicketCard t={t} p={p} onOpen={() => setOpenId(t.id)} /></li>)}
                   </ul>
                 )}

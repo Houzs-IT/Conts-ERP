@@ -111,7 +111,7 @@ function Section({ title, color, children, count }: { title: string; color: stri
   return (
     <section>
       <h3 style={{ margin: "0 0 2px", fontSize: 13, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", color }}>{title} · {count}</h3>
-      <ol style={LIST}>{children}</ol>
+      <ol className="stag" style={LIST}>{children}</ol>
     </section>
   );
 }
@@ -187,7 +187,7 @@ export function BetaCalDeadlines({ m, who, canAssign, viewingName, ...act }: Pro
           {g.todo.length > 0 ? (
             <aside style={{ flex: "1 1 300px", minWidth: 0, background: BETA.tbPanel, border: `1px solid ${BETA.tbEdge}`, borderRadius: 26, padding: "14px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
               <h3 style={{ margin: "0 0 2px", fontSize: 13, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", color: TONES.amber.ink }}>To book / to do · {g.todo.length}</h3>
-              <ol style={LIST}>{g.todo.map((x) => <TodoRow key={`${x.p.id}-${x.k}`} m={m} who={who} x={x} canAssign={canAssign} act={act} />)}</ol>
+              <ol className="stag" style={LIST}>{g.todo.map((x) => <TodoRow key={`${x.p.id}-${x.k}`} m={m} who={who} x={x} canAssign={canAssign} act={act} />)}</ol>
             </aside>
           ) : (
             <aside style={{ flex: "1 1 300px", minWidth: 0, background: TONES.accent.soft, border: `1px solid ${TONES.accent.line}`, borderRadius: 26, padding: "14px 16px", fontSize: 13, color: TONES.accent.ink, fontWeight: 600 }}>
