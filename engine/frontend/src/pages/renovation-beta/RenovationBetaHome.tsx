@@ -12,7 +12,7 @@ import { money } from "../projects/renovation/renovationModel";
 import { BETA, GLASS, TONES, betaConditionTone, betaDueTone, betaTagTone } from "./renovationBetaTheme";
 import { buildModel, HOME_TABS, homeCounts, homeList, homeRow, initials, shortLeft, type HomeRow, type HomeTab } from "./renovationBetaBoard";
 import { HOME_SORTS, keepOrder, matchesSearch, newestFirst, orderOf, sortFromParam, type HomeSort } from "./renovationBetaHomeModel";
-import { boardApi, boardKey, invalidateBeta, readLastProject, rememberLastProject } from "./renovationBetaBoardApi";
+import { boardApi, boardKey, invalidateBeta, prefetchOnIntent, readLastProject, rememberLastProject } from "./renovationBetaBoardApi";
 import { BTN_MAIN, CARD, ErrorBanner, INK_SOFT, MUTED, useIsPhone, useToast } from "./BetaCalParts";
 import { BetaDialogs, type BetaDialog } from "./BetaForms";
 import { BetaSkin } from "./BetaWsUi";
@@ -258,7 +258,7 @@ function HomeScreen(): ReactElement {
               {rows.map((r) => {
                 const [tagInk, tagBg] = betaTagTone(r.p.tag);
                 return (
-                  <tr key={r.p.id} onClick={(e) => rowClick(e, r.p.id)} style={{ cursor: "pointer", background: r.p.id === last ? BETA.pick : BETA.row }}>
+                  <tr key={r.p.id} onClick={(e) => rowClick(e, r.p.id)} {...prefetchOnIntent(queryClient, r.p.id)} style={{ cursor: "pointer", background: r.p.id === last ? BETA.pick : BETA.row }}>
                     <td style={TD}>
                       <span title={r.p.tag} style={{ display: "inline-block", maxWidth: "100%", padding: "2px 8px", borderRadius: 10, background: tagBg, color: tagInk, fontSize: 12, fontWeight: 600, lineHeight: 1.35, overflowWrap: "anywhere" }}>
                         {r.p.tag.toUpperCase()}

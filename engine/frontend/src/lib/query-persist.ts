@@ -149,10 +149,13 @@ function isListKey(key: readonly unknown[]): boolean {
 // Beta (renovation workspace) queries are built by hooks/useQuery as
 // ["uq", "renovation-beta", <kind>, ...]. Every Beta key starts that way (see the
 // naming rule at the top of pages/renovation-beta/renovationBetaBoardApi.ts).
-// isBetaKey is the broad match (sign-out clearing); only the four kinds a project
-// page needs to open without a spinner are written to disk. Tab sub-queries
-// (site, photos, timeline...) stay in memory.
-const BETA_SAVED_KINDS = new Set(["board", "detail", "workspace", "records"]);
+// isBetaKey is the broad match (sign-out clearing); only the kinds a project page
+// and its tabs need to open without a spinner are written to disk. The timeline is
+// left out on purpose: it is a live feed that always refetches on mount.
+const BETA_SAVED_KINDS = new Set([
+  "board", "detail", "workspace", "records",
+  "site", "lines", "photos", "vo", "client-po", "defects", "sheets",
+]);
 const BETA_MAX_BYTES = 1_000_000; // ~1 MB — over this the oldest projects are dropped, the write still happens
 const BETA_MAX_PROJECTS = 5;
 const BETA_MAX_SHARED_BOARDS = 3; // all-project boards (Home, Calendar windows) kept beside the projects
@@ -175,8 +178,8 @@ function betaProjectId(key: readonly unknown[]): number {
 }
 
 interface BetaEntry {
-  keyStr: string;
-  json: string;
+  key: readonly unknown[];
+  data: unknown;
   project: number;
   at: number;
 }
@@ -185,23 +188,27 @@ interface BetaEntry {
 function betaSnapshot(qc: QueryClient): string | null {
   const entries: BetaEntry[] = [];
   for (const q of qc.getQueryCache().getAll()) {
-    const key = q.queryKey as readonly unknown[];
+    const key: readonly unknown[] = q.queryKey;
     if (q.state.status !== "success" || q.state.data == null || !isBetaSavedKey(key)) continue;
-    entries.push({ keyStr: JSON.stringify(key), json: JSON.stringify(q.state.data), project: betaProjectId(key), at: q.state.dataUpdatedAt });
+    entries.push({ key, data: q.state.data, project: betaProjectId(key), at: q.state.dataUpdatedAt });
   }
   // A project is as recent as its newest entry. Keep the latest few, newest first.
   const seen = new Map<number, number>();
   for (const { project, at } of entries) if (project > 0) seen.set(project, Math.max(seen.get(project) ?? 0, at));
   const projects = [...seen].sort((a, b) => b[1] - a[1]).slice(0, BETA_MAX_PROJECTS).map(([id]) => id);
-  const groups = projects.map((id) => entries.filter((e) => e.project === id));
   const shared = entries.filter((e) => e.project === 0).sort((a, b) => b.at - a.at).slice(0, BETA_MAX_SHARED_BOARDS);
-  const bytes = (): number => [...shared, ...groups.flat()].reduce((n, e) => n + e.keyStr.length + e.json.length, 0);
+  // Only what is kept gets serialised: a dropped project costs nothing on each save.
+  const piece = (e: BetaEntry): string => `${JSON.stringify(JSON.stringify(e.key))}:${JSON.stringify(e.data)}`;
+  const groups = projects.map((id) => entries.filter((e) => e.project === id).map(piece));
+  const sharedPieces = shared.map(piece);
+  // The written string, braces and commas included, so the cap is the real size.
+  const bytes = (): number => [...sharedPieces, ...groups.flat()].reduce((n, p) => n + p.length + 1, 2);
   // Over the cap: oldest project first, the all-project boards last.
   while (groups.length > 0 && bytes() > BETA_MAX_BYTES) groups.pop();
-  while (shared.length > 0 && bytes() > BETA_MAX_BYTES) shared.pop();
-  const kept = [...shared, ...groups.flat()];
+  while (sharedPieces.length > 0 && bytes() > BETA_MAX_BYTES) sharedPieces.pop();
+  const kept = [...sharedPieces, ...groups.flat()];
   if (kept.length === 0) return null;
-  return `{${kept.map((e) => `${JSON.stringify(e.keyStr)}:${e.json}`).join(",")}}`;
+  return `{${kept.join(",")}}`;
 }
 
 /** Serialize the whitelisted list queries to localStorage. */
@@ -233,7 +240,12 @@ function save(qc: QueryClient, company: string, session: string): void {
     if (beta) localStorage.setItem(slot, beta);
     else localStorage.removeItem(slot);
   } catch {
-    // quota exceeded / serialization error → skip this write.
+    // Quota / serialization error: drop the old Beta slot rather than leave it taking space the SCM lists need.
+    try {
+      localStorage.removeItem(`${BUILD_PREFIX}${session}:${company}:beta`);
+    } catch {
+      // storage disabled: nothing to remove.
+    }
   }
 }
 
@@ -268,11 +280,13 @@ function hydrate(qc: QueryClient): void {
 
 function seed(qc: QueryClient, raw: string | null, accept: (key: readonly unknown[]) => boolean): void {
   if (!raw) return;
-  const obj = JSON.parse(raw) as Record<string, unknown>;
-  for (const [keyStr, data] of Object.entries(obj)) {
-    let key: unknown[];
+  const parsed: unknown = JSON.parse(raw);
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return;
+  const saved: Array<[string, unknown]> = Object.entries(parsed);
+  for (const [keyStr, data] of saved) {
+    let key: unknown;
     try {
-      key = JSON.parse(keyStr) as unknown[];
+      key = JSON.parse(keyStr);
     } catch {
       continue;
     }

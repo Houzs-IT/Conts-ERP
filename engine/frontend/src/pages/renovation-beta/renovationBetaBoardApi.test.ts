@@ -1,7 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
 import { buildQueryKey } from "../../hooks/useQuery";
-import { boardKey, invalidateBeta, projectBoardFromHome, type BetaBoard, type BetaBoardEvent, type BetaBoardProject } from "./renovationBetaBoardApi";
+import { simpleApi } from "../projects/renovation/simpleApi";
+import { betaApi } from "./renovationBetaApi";
+import { boardKey, invalidateBeta, prefetchOnIntent, prefetchProject, projectBoardFromHome, type BetaBoard, type BetaBoardEvent, type BetaBoardProject } from "./renovationBetaBoardApi";
+
+vi.mock("../projects/renovation/simpleApi", () => ({
+  simpleApi: { detail: vi.fn(async (id: number) => ({ detail: id })), designRecords: vi.fn(async (id: number) => ({ records: id })) },
+}));
+vi.mock("./renovationBetaApi", () => ({ betaApi: { workspace: vi.fn(async (id: number) => ({ workspace: id })) } }));
 
 function project(id: number): BetaBoardProject {
   return {
@@ -51,5 +58,55 @@ describe("projectBoardFromHome", () => {
     qc.setQueryData(homeKey, home);
     await invalidateBeta(qc);
     expect(projectBoardFromHome(qc, 1)?.at).toBe(1);
+  });
+});
+
+describe("prefetchProject", () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+    vi.useRealTimers();
+  });
+
+  it("fills the exact keys the project page reads, so it opens from the cache", async () => {
+    const qc = new QueryClient();
+    prefetchProject(qc, 7);
+    await vi.waitFor(() => expect(qc.getQueryData(buildQueryKey(["renovation-beta", "records", 7], [7]))).toEqual({ records: 7 }));
+    expect(qc.getQueryData(buildQueryKey(["renovation-beta", "detail", 7], [7]))).toEqual({ detail: 7 });
+    expect(qc.getQueryData(buildQueryKey(["renovation-beta", "workspace", 7], [7]))).toEqual({ workspace: 7 });
+  });
+
+  it("does not ask again while the answers are still fresh", async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { staleTime: 30_000 } } });
+    prefetchProject(qc, 7);
+    await vi.waitFor(() => expect(qc.getQueryData(buildQueryKey(["renovation-beta", "detail", 7], [7]))).toBeDefined());
+    prefetchProject(qc, 7);
+    expect(simpleApi.detail).toHaveBeenCalledTimes(1);
+    expect(betaApi.workspace).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("prefetchOnIntent", () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+    vi.useRealTimers();
+  });
+
+  it("waits for the pointer to rest, and a sweep across the row fetches nothing", () => {
+    vi.useFakeTimers();
+    const intent = prefetchOnIntent(new QueryClient(), 7);
+    intent.onMouseEnter();
+    vi.advanceTimersByTime(100);
+    intent.onMouseLeave();
+    vi.advanceTimersByTime(500);
+    expect(simpleApi.detail).not.toHaveBeenCalled();
+
+    intent.onMouseEnter();
+    vi.advanceTimersByTime(130);
+    expect(simpleApi.detail).toHaveBeenCalledTimes(1);
+  });
+
+  it("prefetches at once on keyboard focus", () => {
+    prefetchOnIntent(new QueryClient(), 8).onFocus();
+    expect(simpleApi.detail).toHaveBeenCalledWith(8);
   });
 });

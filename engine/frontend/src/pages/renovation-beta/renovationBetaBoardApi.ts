@@ -125,6 +125,32 @@ export function projectBoardFromHome(queryClient: QueryClient, projectId: number
   return { data: { ...home.data, projects: [project], events: home.data.events.filter((e) => e.projectId === projectId) }, at: home.isInvalidated ? 1 : home.dataUpdatedAt };
 }
 
+/** Start the three requests a project page waits on, so the first open of a project is already under way when the row is
+    clicked. Same keys as the workspace (buildQueryKey), so the page picks the answers up from the cache. A failed
+    prefetch is silent on purpose: nothing was asked for yet, and the page's own query reports the error when it opens.
+    prefetchQuery skips anything fresher than the 30 s default, so pointing at the same row again costs nothing. */
+export function prefetchProject(queryClient: QueryClient, id: number): void {
+  void queryClient.prefetchQuery({ queryKey: buildQueryKey(["renovation-beta", "detail", id], [id]), queryFn: () => simpleApi.detail(id) });
+  void queryClient.prefetchQuery({ queryKey: buildQueryKey(["renovation-beta", "workspace", id], [id]), queryFn: () => betaApi.workspace(id) });
+  void queryClient.prefetchQuery({ queryKey: buildQueryKey(["renovation-beta", "records", id], [id]), queryFn: () => simpleApi.designRecords(id) });
+}
+
+const HOVER_INTENT_MS = 120;
+let hoverTimer: ReturnType<typeof setTimeout> | undefined;
+
+/** Mouse handlers for a project row: prefetch once the pointer rests on it (a sweep across the list fetches nothing),
+    or at once when the row gets keyboard focus. Phones get none: a touch that starts a scroll would fetch every card. */
+export function prefetchOnIntent(queryClient: QueryClient, id: number): { onMouseEnter: () => void; onMouseLeave: () => void; onFocus: () => void } {
+  return {
+    onMouseEnter: () => {
+      clearTimeout(hoverTimer);
+      hoverTimer = setTimeout(() => prefetchProject(queryClient, id), HOVER_INTENT_MS);
+    },
+    onMouseLeave: () => clearTimeout(hoverTimer),
+    onFocus: () => prefetchProject(queryClient, id),
+  };
+}
+
 /** Refetch everything Beta shows (the board and the workspace queries) after a write. */
 export function invalidateBeta(queryClient: QueryClient): Promise<void> {
   return queryClient.invalidateQueries({ queryKey: buildQueryKey(["renovation-beta"]) });

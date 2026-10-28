@@ -262,17 +262,38 @@ describe("Beta snapshot slot", () => {
     expect(Object.keys(betaSaved())).toHaveLength(2);
   });
 
-  it("does not save a non-Beta uq key or a Beta tab sub-query", () => {
+  it("does not save a non-Beta uq key or the live timeline", () => {
     const qc = signedInAt(7);
     qc.setQueryData(["uq", "other-feature", 12], { secret: "NOT-BETA" });
-    qc.setQueryData(["uq", "renovation-beta", "site", 12, 12], { photos: "SUB-QUERY" });
+    qc.setQueryData(betaKey("timeline", 12), { events: "LIVE-FEED" });
     qc.setQueryData(betaKey("detail", 12), { project: "KEPT" });
     window.dispatchEvent(new Event("pagehide"));
 
     const values = snapshotKeys().map((key) => localStorage.getItem(key) ?? "").join("\n");
     expect(values).toContain("KEPT");
     expect(values).not.toContain("NOT-BETA");
-    expect(values).not.toContain("SUB-QUERY");
+    expect(values).not.toContain("LIVE-FEED");
+  });
+
+  it("saves the tab data a project tab opens with, and restores it stale", () => {
+    const qc = signedInAt(7);
+    const kinds = ["site", "lines", "photos", "vo", "client-po", "defects", "sheets"];
+    for (const kind of kinds) qc.setQueryData(betaKey(kind, 12), { kind });
+    window.dispatchEvent(new Event("pagehide"));
+
+    const reloaded = new QueryClient();
+    install(reloaded);
+    for (const kind of kinds) {
+      expect(reloaded.getQueryData(betaKey(kind, 12))).toEqual({ kind });
+      expect(reloaded.getQueryState(betaKey(kind, 12))?.dataUpdatedAt).toBe(1);
+    }
+  });
+
+  it("the written Beta slot never goes over the cap, braces and commas included", () => {
+    const qc = signedInAt(7);
+    for (let id = 1; id <= 3; id++) qc.setQueryData(betaKey("workspace", id), { big: "x".repeat(340_000) }, { updatedAt: id * 1000 });
+    window.dispatchEvent(new Event("pagehide"));
+    expect((localStorage.getItem(betaSlot() ?? "") ?? "").length).toBeLessThanOrEqual(1_000_000);
   });
 
   it("keeps the newest five projects", () => {

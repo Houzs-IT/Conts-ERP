@@ -476,6 +476,8 @@ app.route("/api/renovation", renovation);
 // Beta workspace (owner, 23 Oct 2026): behind the auth gate, switched off in production by renovationBeta's first middleware.
 app.use("/api/beta/*", inboxBustAfterWrite);
 // etag() is registered first so it wraps betaCacheHeaders: a 304 it builds then carries Cache-Control and Vary.
+// It reads each response body whole to hash it, so every route under /api/beta must stay small JSON: a file or
+// download route belongs elsewhere.
 app.use("/api/beta/*", etag());
 app.use("/api/beta/*", betaCacheHeaders);
 app.route("/api/beta", renovationBeta);
