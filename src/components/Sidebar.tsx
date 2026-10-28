@@ -212,7 +212,8 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
       return [openJobs ? `${openJobs} open` : '', waiting ? `${waiting} awaiting owner approval` : ''].filter(Boolean).join(', ');
     }
     if (k === 'inbox') return `${n} unread`;
-    if (k === 'today') return `${n} to do`;
+    if (k === 'today') return `${n} check-ins and checkouts`;
+    if (k === 'cleaning') return `${n} to clean`;
     if (k === 'statements') return `${n} final, not sent`;
     if (k === 'approvals') return `${n} waiting for approval`;
     if (k === 'showcase') return `${n} ${n === 1 ? 'figure' : 'figures'} overridden`;

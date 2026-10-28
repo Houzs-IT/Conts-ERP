@@ -7,7 +7,7 @@ import { rentalOnly } from './unitPurpose';
 
 export const CLEAN_KINDS = ['turnover', 'deep_clean', 'light_clean'] as const;
 export const CLEAN_KINDS_SQL = `('turnover','deep_clean','light_clean')`;
-/** Stays that leave no guest mess and hold no guest: never a "previous" or "next" guest. */
+/** Real guest stays, past or present: not cancelled, no-show or an enquiry, and not a repair block (a block holds no guest and leaves no mess). */
 export const LIVE_STAY_SQL = (r: string) => `${r}.state NOT IN ('cancelled','no_show','inquiry') AND ${r}.channel != 'maintenance_block'`;
 
 /** The standard checklist. Deep cleans add the last items. Labels are what the cleaner reads on the phone. */

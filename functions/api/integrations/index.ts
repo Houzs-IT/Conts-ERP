@@ -2,8 +2,12 @@ import { mayRun } from '../../_lib/access';
 import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { channexConfigured } from '../../_lib/channex';
+import { hostplatformConfigured } from '../../_lib/hostplatform';
 
 const MANAGE = ['management']; // everyone else follows the area's level (mayWork / maySee / mayRun)
+/** Same key the scheduled pull writes (cronJobs.ts HP_SYNCED_KEY). */
+const HP_SYNCED_KEY = 'hostplatform.synced_at';
+const HP_STALE_MS = 30 * 60e3;
 const OTA_PROVIDERS = ['airbnb', 'booking_com', 'agoda'];
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
@@ -56,6 +60,20 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     };
   };
 
+  // HostPlatform: whether its keys are set here, and when the 5-minute pull last finished a whole run. A pull that has
+  // not finished for 30 minutes (six runs) is shown as slow, so a silent failure of the job does not read as healthy.
+  const hpConfigured = hostplatformConfigured(env);
+  const hpAt = (await one<{ value: string }>(env, 'SELECT value FROM settings WHERE key = ?', HP_SYNCED_KEY))?.value ?? null;
+  const hpAgeMs = hpAt ? Date.now() - Date.parse(hpAt) : Infinity;
+  const hostplatform = {
+    id: 'hostplatform', provider: 'hostplatform',
+    state: !hpConfigured ? 'not_connected' : hpAgeMs > HP_STALE_MS ? 'degraded' : 'connected',
+    lastSyncedAt: hpAt,
+    lastError: hpConfigured && hpAgeMs > HP_STALE_MS ? (hpAt ? 'The last full check was more than 30 minutes ago.' : 'No check has finished yet.') + ' See Import from HostPlatform to pull by hand.' : null,
+    unitsLinked: 0, syncInterval: 'Every 5 minutes', credentialMasked: null,
+    detail: hpConfigured ? null : 'The HostPlatform keys (HOSTPLATFORM_BASE_URL and HOSTPLATFORM_ACCESS_TOKEN) are not set on this environment, so reservations are not pulled. Management adds them once in Cloudflare.',
+  };
+
   // Credentials are never serialised, at any role.
   const out = rows.filter(r => r.provider !== 'whatsapp' && r.provider !== 'maybank').map(r => OTA_PROVIDERS.includes(r.provider) ? { id: r.id, provider: r.provider, ...ota(r.provider) } : {
     id: r.id, provider: r.provider, state: 'manual',
@@ -65,6 +83,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     generatedAt: new Date().toISOString(),
     data: [
       ...out,
+      hostplatform,
       { id: 'email', provider: 'email', ...messaging('email', !!e.MAIL_API_KEY) },
       { id: 'whatsapp', provider: 'whatsapp', ...messaging('whatsapp', !!(e.WHATSAPP_TOKEN && e.WHATSAPP_PHONE_ID)) },
       { id: 'bank', provider: 'bank', state: 'manual', lastSyncedAt: null, lastError: null, unitsLinked: 0, syncInterval: null, credentialMasked: null,

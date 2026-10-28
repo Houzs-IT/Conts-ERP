@@ -18,7 +18,8 @@ import { releaseRepairBlocks } from './repairBlocks';
 export interface JobReport { job: string; summary: string; items?: string[]; error?: string }
 export interface RunOptions { dryRun?: boolean; now?: Date }
 
-const CLEAN_KINDS = `('turnover','deep_clean','light_clean','inspection')`;
+// The digest counts inspections as well, unlike CLEAN_KINDS_SQL in cleaning.ts.
+const DIGEST_JOB_KINDS = `('turnover','deep_clean','light_clean','inspection')`;
 const mytParts = (d: Date) => { const t = new Date(d.getTime() + 8 * 3600e3); return { day: t.toISOString().slice(0, 10), hour: t.getUTCHours() }; };
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
@@ -232,13 +233,14 @@ export async function overdueSweep(env: Env, o: RunOptions = {}): Promise<JobRep
  *  repairs open and repair visits today. */
 export async function dailyDigest(env: Env, o: RunOptions = {}): Promise<JobReport> {
   const { day } = mytParts(o.now ?? new Date());
-  const LIVE = `state NOT IN ('cancelled','no_show','inquiry') AND channel NOT IN ('maintenance_block','owner_stay')`;
+  // Unlike LIVE_STAY_SQL in cleaning.ts, owner stays are left out too.
+  const DIGEST_GUEST_STAYS = `state NOT IN ('cancelled','no_show','inquiry') AND channel NOT IN ('maintenance_block','owner_stay')`;
   const c = await one<{ arrivals: number; departures: number; cleans: number; unassigned: number; repairs: number; urgent: number; visits: number; blocked: number }>(env, `
     SELECT
-      (SELECT count(*)::int FROM reservations WHERE check_in = ? AND ${LIVE}) AS arrivals,
-      (SELECT count(*)::int FROM reservations WHERE check_out = ? AND ${LIVE}) AS departures,
-      (SELECT count(*)::int FROM tasks WHERE kind IN ${CLEAN_KINDS} AND state <> 'resolved' AND substr(coalesce(scheduled_for, due_at, ''), 1, 10) = ?) AS cleans,
-      (SELECT count(*)::int FROM tasks WHERE kind IN ${CLEAN_KINDS} AND state <> 'resolved' AND substr(coalesce(scheduled_for, due_at, ''), 1, 10) = ? AND assignee_id IS NULL AND cleaner_id IS NULL) AS unassigned,
+      (SELECT count(*)::int FROM reservations WHERE check_in = ? AND ${DIGEST_GUEST_STAYS}) AS arrivals,
+      (SELECT count(*)::int FROM reservations WHERE check_out = ? AND ${DIGEST_GUEST_STAYS}) AS departures,
+      (SELECT count(*)::int FROM tasks WHERE kind IN ${DIGEST_JOB_KINDS} AND state <> 'resolved' AND substr(coalesce(scheduled_for, due_at, ''), 1, 10) = ?) AS cleans,
+      (SELECT count(*)::int FROM tasks WHERE kind IN ${DIGEST_JOB_KINDS} AND state <> 'resolved' AND substr(coalesce(scheduled_for, due_at, ''), 1, 10) = ? AND assignee_id IS NULL AND cleaner_id IS NULL) AS unassigned,
       (SELECT count(*)::int FROM maintenance_issues WHERE state <> 'resolved') AS repairs,
       (SELECT count(*)::int FROM maintenance_issues WHERE state <> 'resolved' AND urgency = 'urgent') AS urgent,
       (SELECT count(*)::int FROM maintenance_windows w JOIN maintenance_issues m ON m.id = w.issue_id WHERE m.state <> 'resolved' AND substr(w.starts_at, 1, 10) = ?) AS visits,

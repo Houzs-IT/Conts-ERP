@@ -2,7 +2,7 @@ import type { UserRole, AccessLevel, SessionUser } from './types';
 import { LEDGER_SCREENS } from './scmEngine';
 
 /** `badge` names a live count from /api/nav/badges; shown only when above zero. */
-export type BadgeKey = 'today' | 'maintenance' | 'inbox' | 'statements' | 'approvals' | 'itSupport' | 'showcase';
+export type BadgeKey = 'today' | 'cleaning' | 'maintenance' | 'inbox' | 'statements' | 'approvals' | 'itSupport' | 'showcase';
 /** The sidebar shows one workspace at a time. Rental (The Conts) is the daily work; supply chain (Dream Crafter) sits behind the switch. */
 export type Workspace = 'rental' | 'supply';
 /** `area` is the permission area (functions/_lib/access.ts AREAS) the screen belongs to. */
@@ -91,7 +91,7 @@ export const NAV: NavGroup[] = [
   // Maintenance; the old addresses redirect (App.tsx). Housekeeping is called Cleaning everywhere.
   { label: 'OPERATIONS', workspace: 'rental', items: [
     { key: 'today', label: 'Today', icon: 'clipboard-check', path: '/operations/today', area: 'operations', badge: 'today' },
-    { key: 'cleaning', label: 'Cleaning', icon: 'sparkles', path: '/operations/cleaning', area: 'operations' },
+    { key: 'cleaning', label: 'Cleaning', icon: 'sparkles', path: '/operations/cleaning', area: 'operations', badge: 'cleaning' },
     { key: 'maintenance', label: 'Maintenance', icon: 'wrench', path: '/operations/maintenance', area: 'operations', badge: 'maintenance' },
   ] },
   // Hookka's Employees page with its eleven tabs: working hours, attendance, labour cost, payroll, advances, penalties,
