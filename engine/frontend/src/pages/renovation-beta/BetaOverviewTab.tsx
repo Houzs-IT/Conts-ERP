@@ -1,6 +1,5 @@
-/* Beta workspace > Overview, laid out as the Dream Crafter design of the project page (v10 / v13): Payments across the top,
-   then Needs attention (what was To do) and Site progress on the left, and Unit key, Final drawings and Sales order on the
-   right. The design has no place for Design progress and Client & team, so they stay below those three (owner, 26 Oct 2026). */
+/* Beta workspace > Overview: Payments across the top, then Sales order, Unit key, Final drawings and Client & team in one
+   line of four, then Design progress, Needs attention and Site progress side by side in one line of three (owner, 27 Oct 2026). */
 
 import { useId, useState, type CSSProperties, type ReactElement, type ReactNode } from "react";
 import { Link } from "react-router-dom";
@@ -24,8 +23,6 @@ import { BETA, GLASS, TONES } from "./renovationBetaTheme";
 import { useQuery } from "../../hooks/useQuery";
 import type { DesignFile } from "../projects/renovation/simpleApi";
 
-const column: CSSProperties = { minWidth: 0, display: "flex", flexDirection: "column", gap: 20 };
-
 export function BetaOverviewTab(p: BetaTabProps): ReactElement {
   const { detail: d, workspace, today } = p;
   const [viewing, setViewing] = useState<ViewedFile | null>(null);
@@ -44,18 +41,18 @@ export function BetaOverviewTab(p: BetaTabProps): ReactElement {
   return (
     <>
       <PaymentsCard p={p} />
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 20, alignItems: "flex-start" }}>
-        <div style={{ ...column, flex: "999 1 520px" }}>
-          <TodoCard rows={todo} p={p} />
-          <BetaSiteProgressCard p={p} />
-        </div>
-        <aside style={{ ...column, flex: "1 1 320px" }}>
-          <BetaWsKeyCard d={d} canWrite={p.canWrite} today={today} onDone={p.onDone} />
-          <FinalDrawingsCard p={p} onOpen={openFile} />
-          <OrderCard p={p} />
-          <BetaWsDesignCard board={p.board} canWrite={p.canWrite} openDialog={p.openDialog} onDone={p.onDone} onError={p.onError} />
-          <TeamCard p={p} onEdit={() => p.openDialog({ t: "assign", projectId: p.projectId })} />
-        </aside>
+      {/* .ov-four (BetaWsUi CSS): the four reference cards in one line, two across on a narrow frame, one on a phone. */}
+      <div className="ov-four">
+        <OrderCard p={p} />
+        <BetaWsKeyCard d={d} canWrite={p.canWrite} today={today} onDone={p.onDone} />
+        <FinalDrawingsCard p={p} onOpen={openFile} />
+        <TeamCard p={p} onEdit={() => p.openDialog({ t: "assign", projectId: p.projectId })} />
+      </div>
+      {/* .ov-three (BetaWsUi CSS): Design progress, Needs attention and Site progress side by side, stacked below 1100px. */}
+      <div className="ov-three">
+        <BetaWsDesignCard board={p.board} canWrite={p.canWrite} openDialog={p.openDialog} onDone={p.onDone} onError={p.onError} />
+        <TodoCard rows={todo} p={p} />
+        <BetaSiteProgressCard p={p} />
       </div>
       {viewing && <FileDialog projectId={p.projectId} file={viewing} onClose={() => setViewing(null)} />}
     </>

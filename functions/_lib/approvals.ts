@@ -18,7 +18,7 @@ import { type Env, all, one, run, audit, nowIso, transaction, json, fail } from 
 import type { Session } from './auth';
 import { can } from './access';
 import { insertPayment } from './bookingPayments';
-import { isPeriodLocked } from './expenses';
+import { isPeriodLocked, isExpenseLocked, isUtility, utilityDeduction } from './expenses';
 import { notifyUsers } from './notify';
 import { auditMany } from './history';
 
@@ -349,27 +349,31 @@ const EXECUTE: Record<ApprovalKind, Executor> = {
   /** A new expense, or a change raising one above the threshold (functions/api/expenses). The month must still be open. */
   async expense(tx, p, c) {
     if (p.op === 'update') {
-      const cur = await one<any>(tx, 'SELECT id, unit_id, category, amount, incurred_on, charge_to FROM expenses WHERE id = ?', p.expenseId);
+      const cur = await one<any>(tx, 'SELECT id, unit_id, category, amount, incurred_on, deduct_month, charge_to FROM expenses WHERE id = ?', p.expenseId);
       if (!cur) throw new ApprovalRefused('NOT_FOUND', 'The expense no longer exists.', 404);
       const d = p.changes ?? {};
-      for (const day of [cur.incurred_on, d.incurredOn].filter(Boolean)) {
-        if (await isPeriodLocked(tx, cur.unit_id, day)) throw new ApprovalRefused('PERIOD_LOCKED', 'That month\'s owner statement is now final, so the expense cannot change.');
-      }
+      if (await isExpenseLocked(tx, cur)) throw new ApprovalRefused('PERIOD_LOCKED', 'That month\'s owner statement is now final, so the expense cannot change.');
+      // A utility bill moved to another month goes on that month's statement, or the next open one.
+      const deduction = isUtility(d.category ?? cur.category) && (d.incurredOn || d.category) ? await utilityDeduction(tx, cur.unit_id, d.incurredOn ?? cur.incurred_on) : null;
+      if (!deduction && d.incurredOn && await isPeriodLocked(tx, cur.unit_id, d.incurredOn)) throw new ApprovalRefused('PERIOD_LOCKED', 'That month\'s owner statement is now final, so the expense cannot change.');
       await run(tx, `UPDATE expenses SET category = COALESCE(?, category), description = COALESCE(?, description), amount = COALESCE(?, amount),
-        incurred_on = COALESCE(?, incurred_on), reference = COALESCE(?, reference), charge_to = COALESCE(?, charge_to) WHERE id = ?`,
-        d.category ?? null, d.description ?? null, d.amount ?? null, d.incurredOn ?? null, d.reference ?? null, d.chargeTo ?? null, cur.id);
+        incurred_on = COALESCE(?, incurred_on), reference = COALESCE(?, reference), charge_to = COALESCE(?, charge_to),
+        deduct_month = COALESCE(?, deduct_month), rolled = COALESCE(?, rolled) WHERE id = ?`,
+        d.category ?? null, d.description ?? null, d.amount ?? null, d.incurredOn ?? null, d.reference ?? null, d.chargeTo ?? null,
+        deduction?.deductMonth ?? null, deduction?.rolled ?? null, cur.id);
       await audit(tx, { ...actor(c), action: 'expense.update', entityTable: 'expenses', entityId: cur.id,
         before: { category: cur.category, amount: Number(cur.amount), incurredOn: cur.incurred_on, chargeTo: cur.charge_to },
         after: { category: d.category ?? cur.category, amount: d.amount ?? Number(cur.amount), incurredOn: d.incurredOn ?? cur.incurred_on, chargeTo: d.chargeTo ?? cur.charge_to, approvalId: c.approvalId } });
       return { expenseId: cur.id };
     }
-    if (await isPeriodLocked(tx, p.unitId, p.incurredOn)) throw new ApprovalRefused('PERIOD_LOCKED', 'That month\'s owner statement is now final, so nothing can be added to it.');
+    const deduction = isUtility(p.category) ? await utilityDeduction(tx, p.unitId, p.incurredOn) : null;
+    if (!deduction && await isPeriodLocked(tx, p.unitId, p.incurredOn)) throw new ApprovalRefused('PERIOD_LOCKED', 'That month\'s owner statement is now final, so nothing can be added to it.');
     const id = crypto.randomUUID();
     await run(tx, `
-      INSERT INTO expenses (id, unit_id, maintenance_id, task_id, parent_expense_id, category, description, amount, currency, incurred_on, reference, charge_to, receipt_document_id, created_by, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'MYR', ?, ?, ?, ?, ?, ?)`,
+      INSERT INTO expenses (id, unit_id, maintenance_id, task_id, parent_expense_id, category, description, amount, currency, incurred_on, deduct_month, rolled, reference, charge_to, receipt_document_id, created_by, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'MYR', ?, ?, ?, ?, ?, ?, ?, ?)`,
       id, p.unitId, p.maintenanceId ?? null, p.taskId ?? null, p.parentExpenseId ?? null, p.category, p.description ?? '', Number(p.amount),
-      p.incurredOn, p.reference ?? null, p.chargeTo ?? 'owner', p.receiptDocumentId ?? null, c.requestedBy, nowIso());
+      p.incurredOn, deduction?.deductMonth ?? null, deduction?.rolled ?? false, p.reference ?? null, p.chargeTo ?? 'owner', p.receiptDocumentId ?? null, c.requestedBy, nowIso());
     await audit(tx, { ...actor(c), action: 'expense.create', entityTable: 'expenses', entityId: id,
       after: { unitId: p.unitId, category: p.category, amount: Number(p.amount), incurredOn: p.incurredOn, chargeTo: p.chargeTo ?? 'owner', approvalId: c.approvalId } });
     return { expenseId: id };

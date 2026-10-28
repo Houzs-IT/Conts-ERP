@@ -14,6 +14,7 @@ import { readVo } from "../../scm/lib/renovation-vo";
 import { isCustomerSupplied, poPickerOffers, voGoesTo } from "../../scm/lib/renovation-po-split";
 import { renoDbFromD1 } from "./dbBridge";
 import { isMissingRelation, type Db } from "./load";
+import { lineVisible, type CategoryScope } from "../categoryAccess";
 
 async function rows<T>(db: Db, sql: string, ...args: unknown[]): Promise<T[]> {
   const res = await db.prepare(sql).bind(...args).all<T>();
@@ -43,6 +44,9 @@ export interface VoLine {
   /** The line's quantity after the VO, shown when the VO changes only its price (qty is then 0). */
   lineQty: number | null;
   goesTo: GoesTo;
+  /** The SKU's catalog group and sub-category codes (null: none), for the role's category access. */
+  categoryCode: string | null;
+  subCode: string | null;
   /** A spec change: the item code it replaced. */
   fromItemCode: string | null;
   /** What a change to an existing line moved, in words ("Colour: White -> Grey", "Remark: ..."), so a change that
@@ -82,6 +86,8 @@ export interface VoAnswer {
   vos: VoRow[];
   counts: { pending: number; approved: number; closed: number };
   totals: VoTotals | null;
+  /** True when the caller's role sees only some categories: VO lines of the others are left out. */
+  categoryRestricted: boolean;
 }
 
 /* ---------- pure pieces (tested) ---------- */
@@ -120,6 +126,9 @@ export interface AmendmentLineRow {
   /** The SKU's catalog category and main supplier code, for where the line goes. */
   product_category?: string | null;
   main_supplier?: string | null;
+  /** The SKU's catalog group and sub-category codes (CATEGORY_SQL). */
+  cat_code?: string | null;
+  sub_code?: string | null;
 }
 
 const VARIANT_LABEL: Readonly<Record<string, string>> = {
@@ -175,7 +184,7 @@ export function amendmentLineChange(l: AmendmentLineRow): VoLine {
   });
   /* An added line has no SO line to read a room from; the VO carries the room it was added in (old_snapshot.room). */
   const room = l.cur_room ?? (typeof old.room === "string" && old.room.trim() ? old.room.trim() : null);
-  const base = { itemCode, description, room, measure: null, goesTo, fromItemCode: null };
+  const base = { itemCode, description, room, measure: null, goesTo, fromItemCode: null, categoryCode: l.cat_code ?? null, subCode: l.sub_code ?? null };
   if (type === "ADD") {
     const qty = num(l.new_qty) ?? num(l.cur_qty) ?? 0;
     const price = num(l.new_unit_price_sen);
@@ -254,6 +263,18 @@ export function voCounts(vos: readonly VoRow[]): VoAnswer["counts"] {
   };
 }
 
+/** The VOs a category scope lets through: lines outside it go, a VO left with none goes (one that never had a line stays),
+    and a VO that lost some lines is netted again from the lines that remain. */
+export function scopeVos<T extends VoRow>(vos: readonly T[], scope: CategoryScope | null): T[] {
+  if (scope === null) return [...vos];
+  return vos.flatMap((v) => {
+    const lines = v.lines.filter((l) => lineVisible(scope, l.categoryCode, l.subCode));
+    if (lines.length === v.lines.length) return [v];
+    if (lines.length === 0) return [];
+    return [{ ...v, lines, netSen: v.netSen === null ? null : lines.reduce((sum, l) => sum + (l.amountSen ?? 0), 0) }];
+  });
+}
+
 function hideMoney(v: VoRow): VoRow {
   return { ...v, netSen: null, lines: v.lines.map((l) => ({ ...l, amountSen: null })) };
 }
@@ -289,11 +310,13 @@ async function amendmentVos(db: Db, projectId: number, companyId: number): Promi
             (SELECT s.code FROM scm.supplier_material_bindings b JOIN scm.suppliers s ON s.id = b.supplier_id
               WHERE b.material_kind = 'mfg_product' AND b.item_code = coalesce(l.new_item_code, i.item_code) AND b.company_id = so.company_id
               ORDER BY b.is_main_supplier DESC LIMIT 1) AS main_supplier,
-            (SELECT p.name FROM scm.mfg_products p WHERE p.code = coalesce(l.new_item_code, i.item_code) AND p.company_id = so.company_id LIMIT 1) AS product_name
+            (SELECT p.name FROM scm.mfg_products p WHERE p.code = coalesce(l.new_item_code, i.item_code) AND p.company_id = so.company_id LIMIT 1) AS product_name,
+            cg.code AS cat_code, sc.code AS sub_code
        FROM scm.so_amendment_lines l
        JOIN scm.so_amendments a ON a.id = l.amendment_id
        JOIN scm.mfg_sales_orders so ON so.doc_no = a.so_doc_no
        LEFT JOIN scm.mfg_sales_order_items i ON i.id = l.sales_order_item_id
+       ${CATEGORY_SQL("coalesce(l.new_item_code, i.item_code)", "NULL::text", "NULL::text", "so.company_id")}
       WHERE ${PROJECT_SO}
         AND NOT EXISTS (SELECT 1 FROM scm.reno_variation_orders v WHERE v.amendment_id = a.id)
       ORDER BY l.amendment_id, i.line_no NULLS LAST`,
@@ -315,7 +338,7 @@ async function amendmentVos(db: Db, projectId: number, companyId: number): Promi
   });
 }
 
-async function renovationVos(db: Db, projectId: number, companyId: number, customerIds: Set<string>): Promise<VoRow[]> {
+async function renovationVos(db: Db, projectId: number, companyId: number, customerIds: Set<string>, scope: CategoryScope | null): Promise<VoRow[]> {
   const heads = await rows<{ id: string; created_by: string | null; created_at: string | null }>(db,
     `SELECT v.id::text AS id, v.created_by, ${TS("v.created_at")} AS created_at
        FROM scm.reno_variation_orders v JOIN scm.mfg_sales_orders so ON so.doc_no = v.so_doc_no
@@ -340,7 +363,7 @@ async function renovationVos(db: Db, projectId: number, companyId: number, custo
           qty: measured ? (omit ? -1 : 1) : omit ? -l.qty : l.qty,
           measure: measured ? `${Number(l.measure)} ${l.measureUom ?? ""}`.trim() : null,
           lineQty: omit ? 0 : measured ? 1 : l.qty,
-          amountSen: l.netSen, change: omit ? "deduct" : "add", fromItemCode: null,
+          amountSen: l.netSen, change: omit ? "deduct" : "add", fromItemCode: null, categoryCode: null, subCode: null,
           goesTo: client ? "client" : !l.supplierId && !poPickerOffers({ itemCode: l.itemCode, itemGroup: null, mainSupplierCode: null }) ? "works" : "po",
         });
       }
@@ -351,6 +374,32 @@ async function renovationVos(db: Db, projectId: number, companyId: number, custo
       netSen: v.totals.netSen, href: `/scm/renovation/variation-orders/${v.id}`, lines,
     });
   }
+  // A renovation VO line carries its SKU only: the catalog codes come from the SKU. Read only when a scope needs them.
+  if (scope === null) return out;
+  const cats = await skuCategories(db, companyId, out.flatMap((v) => v.lines.flatMap((l) => (l.itemCode ? [l.itemCode] : []))));
+  for (const v of out) {
+    for (const l of v.lines) {
+      const c = l.itemCode ? cats.get(l.itemCode) : undefined;
+      l.categoryCode = c?.cat_code ?? null;
+      l.subCode = c?.sub_code ?? null;
+    }
+  }
+  return out;
+}
+
+/** The catalog group and sub-category codes of SKUs, by item code (the active product first when a code repeats). */
+async function skuCategories(db: Db, companyId: number, itemCodes: readonly string[]): Promise<Map<string, { cat_code: string | null; sub_code: string | null }>> {
+  const out = new Map<string, { cat_code: string | null; sub_code: string | null }>();
+  if (itemCodes.length === 0) return out;
+  const r = await rows<{ code: string; cat_code: string | null; sub_code: string | null }>(db,
+    `SELECT DISTINCT ON (p.code) p.code, cg.code AS cat_code, sc.code AS sub_code
+       FROM scm.mfg_products p
+       LEFT JOIN scm.product_category_groups cg ON cg.code = p.category_group
+       LEFT JOIN scm.product_sub_categories sc ON sc.group_code = cg.code AND sc.code = p.sub_category
+      WHERE p.company_id = ? AND p.code IN (SELECT jsonb_array_elements_text(?::text::jsonb))
+      ORDER BY p.code, (p.status::text = 'ACTIVE') DESC`,
+    companyId, JSON.stringify([...new Set(itemCodes)]));
+  for (const x of r) out.set(x.code, x);
   return out;
 }
 
@@ -361,9 +410,10 @@ export function labelVos<T extends { date: string | null; no: string }>(vos: rea
     .map((v, i) => ({ ...v, label: `VO-${String(i + 1).padStart(2, "0")}` }));
 }
 
-export async function loadProjectVos(db: Db, projectId: number, companyId: number, finance: boolean): Promise<VoAnswer> {
+/** `scope`: the caller's category access (categoryAccess.ts). VO numbers are given before it applies, so VO-03 is the same VO for every role. */
+export async function loadProjectVos(db: Db, projectId: number, companyId: number, finance: boolean, scope: CategoryScope | null = null): Promise<VoAnswer> {
   const customerIds = await customerSupplierIds(db, companyId);
-  const all = labelVos([...(await renovationVos(db, projectId, companyId, customerIds)), ...(await amendmentVos(db, projectId, companyId))]);
+  const all = scopeVos(labelVos([...(await renovationVos(db, projectId, companyId, customerIds, scope)), ...(await amendmentVos(db, projectId, companyId))]), scope);
   const [so] = await rows<{ doc_no: string; renovation: boolean }>(db,
     `SELECT so.doc_no, EXISTS (SELECT 1 FROM scm.reno_so_contracts k WHERE k.so_doc_no = so.doc_no) AS renovation
        FROM scm.mfg_sales_orders so WHERE ${PROJECT_SO}
@@ -375,6 +425,7 @@ export async function loadProjectVos(db: Db, projectId: number, companyId: numbe
     vos: finance ? all : all.map(hideMoney),
     counts: voCounts(all),
     totals: finance ? voTotals(all) : null,
+    categoryRestricted: scope !== null,
   };
 }
 
@@ -419,6 +470,8 @@ export interface PoLine {
 export interface PoAnswer {
   lines: PoLine[];
   counts: { pos: number; lines: number; received: number; delivered: number; cancelled: number };
+  /** True when the caller's role sees only some categories: lines of the others are left out. */
+  categoryRestricted: boolean;
 }
 
 export function grState(qty: number, received: number): GrState {
@@ -437,14 +490,18 @@ export function poLineCounts(lines: readonly PoLine[]): PoAnswer["counts"] {
   };
 }
 
-export async function loadProjectPoLines(db: Db, projectId: number, companyId: number): Promise<PoAnswer> {
+/* The band a PO line sits in is the category stored on the PO line (else its PO); the category access filter reads the
+   product's live category (live_cat, live_sub), as /lines does, so a recategorised SKU moves between visible and hidden
+   on both screens together. */
+export async function loadProjectPoLines(db: Db, projectId: number, companyId: number, scope: CategoryScope | null = null): Promise<PoAnswer> {
   const r = await rows<{
     id: string; po_id: string; po_number: string; po_status: string; supplier_name: string | null; cat: string | null; cat_label: string | null; cat_sort: number | null;
-    sub: string | null; sub_label: string | null; sub_sort: number | null; product: string | null; sku: string; uom: string | null; qty: number; received_qty: number;
+    sub: string | null; sub_label: string | null; sub_sort: number | null; live_cat: string | null; live_sub: string | null; product: string | null; sku: string; uom: string | null; qty: number; received_qty: number;
     area: string | null; po_date: string | null; delivery_date: string | null; delivered: boolean;
   }>(db,
     `SELECT pi.id::text AS id, po.id::text AS po_id, po.po_number, po.status::text AS po_status, s.name AS supplier_name,
             cg.code AS cat, cg.label AS cat_label, cg.sort_order AS cat_sort, sc.code AS sub, sc.label AS sub_label, sc.sort_order AS sub_sort,
+            cgl.code AS live_cat, scl.code AS live_sub,
             coalesce(nullif(pi.description, ''), pi.material_name) AS product, pi.item_code AS sku, pi.uom, pi.qty, pi.received_qty,
             coalesce(nullif(pi.room, ''), (SELECT nullif(l.room, '') FROM scm.reno_doc_lines l WHERE l.so_item_id = pi.so_item_id LIMIT 1)) AS area,
             po.po_date::text AS po_date, coalesce(greatest(pi.delivery_date, pi.supplier_delivery_date_2, pi.supplier_delivery_date_3, pi.supplier_delivery_date_4),
@@ -456,6 +513,8 @@ export async function loadProjectPoLines(db: Db, projectId: number, companyId: n
        JOIN scm.purchase_orders po ON po.id = pi.purchase_order_id
        LEFT JOIN scm.suppliers s ON s.id = po.supplier_id
        ${CATEGORY_SQL("pi.item_code", "coalesce(pi.category_group, po.category_group)", "coalesce(pi.sub_category, po.sub_category)", "po.company_id")}
+       LEFT JOIN scm.product_category_groups cgl ON cgl.code = prod.category_group
+       LEFT JOIN scm.product_sub_categories scl ON scl.group_code = cgl.code AND scl.code = prod.sub_category
       WHERE po.company_id = ?
         AND (po.project_id = ?
              OR EXISTS (SELECT 1 FROM scm.purchase_order_items x
@@ -464,14 +523,14 @@ export async function loadProjectPoLines(db: Db, projectId: number, companyId: n
                          WHERE x.purchase_order_id = po.id AND ${PROJECT_SO}))
       ORDER BY po.po_date, po.po_number, pi.line_no NULLS LAST`,
     companyId, projectId, projectId, companyId);
-  const lines: PoLine[] = r.map((x) => ({
+  const lines: PoLine[] = r.filter((x) => lineVisible(scope, x.live_cat ?? null, x.live_sub ?? null)).map((x) => ({
     id: x.id, poId: x.po_id, poNumber: x.po_number, poStatus: x.po_status, supplierName: x.supplier_name,
     categoryCode: x.cat, categoryLabel: x.cat_label ?? "Other", categorySort: x.cat_sort ?? 999,
     subCode: x.sub, subLabel: x.sub_label ?? "General", subSort: x.sub_sort ?? 999,
     product: x.product ?? x.sku, sku: x.sku, uom: x.uom ?? "UNIT", qty: Number(x.qty), area: x.area,
     poDate: x.po_date, deliveryDate: x.delivery_date, gr: grState(Number(x.qty), Number(x.received_qty)), delivered: Boolean(x.delivered),
   }));
-  return { lines, counts: poLineCounts(lines) };
+  return { lines, counts: poLineCounts(lines), categoryRestricted: scope !== null };
 }
 
 /* ---------- Client PO ---------- */
@@ -483,6 +542,9 @@ export interface ClientItem {
   soItemId: string | null;
   itemCode: string | null;
   description: string;
+  /** The catalog group and sub-category codes (null: none), for the role's category access. */
+  categoryCode: string | null;
+  subCode: string | null;
   categoryLabel: string;
   categorySort: number;
   subLabel: string;
@@ -505,7 +567,11 @@ export interface ClientItem {
 
 export interface SkuPhoto { productId: string; key: string; thumbKey: string | null }
 
-export interface ClientAnswer { items: ClientItem[] }
+export interface ClientAnswer {
+  items: ClientItem[];
+  /** True when the caller's role sees only some categories: items of the others are left out. */
+  categoryRestricted: boolean;
+}
 
 export function skuPhotoList(v: unknown): SkuPhoto[] {
   let arr: unknown = v;
@@ -531,16 +597,18 @@ export function photoList(v: unknown): string[] {
 export const CLIENT_LINE_ROOM = `coalesce(nullif(trim(d.room), ''), nullif(trim(to_jsonb(i)->>'room'), ''), nullif(trim(i.location), ''))`;
 
 /** SO lines the client buys: supplier CUSTOMER (the line's, else the SKU's main supplier), a CUS-* SKU at cost 0, or supplied by the owner. */
-export async function loadClientItems(db: Db, projectId: number, companyId: number, pendingVos: readonly VoRow[] = []): Promise<ClientAnswer> {
+export async function loadClientItems(
+  db: Db, projectId: number, companyId: number, pendingVos: readonly VoRow[] = [], scope: CategoryScope | null = null,
+): Promise<ClientAnswer> {
   const r = await rows<{
     id: string; doc_no: string; item_code: string | null; description: string | null; qty: number; uom: string | null; unit_cost_sen: number; photo_urls: unknown;
     room: string | null; supply_by_owner: boolean | null; line_supplier_code: string | null; main_supplier_code: string | null; measure: string | null;
     measure_uom: string | null; vo_no: string | null; cat_label: string | null; cat_sort: number | null; sub_label: string | null; sub_sort: number | null;
-    sku_photos: unknown;
+    cat_code: string | null; sub_code: string | null; sku_photos: unknown;
   }>(db,
     `SELECT i.id::text AS id, i.doc_no, i.item_code, i.description, i.qty, i.uom, i.unit_cost_sen, i.photo_urls,
             ${CLIENT_LINE_ROOM} AS room, d.supply_by_owner, d.line_supplier_code, d.measure, d.measure_uom, d.vo_no,
-            cg.label AS cat_label, cg.sort_order AS cat_sort, sc.label AS sub_label, sc.sort_order AS sub_sort,
+            cg.label AS cat_label, cg.sort_order AS cat_sort, sc.label AS sub_label, sc.sort_order AS sub_sort, cg.code AS cat_code, sc.code AS sub_code,
             (SELECT sp.code FROM scm.supplier_material_bindings b JOIN scm.suppliers sp ON sp.id = b.supplier_id
               WHERE b.item_code = i.item_code AND b.company_id = so.company_id AND b.is_main_supplier LIMIT 1) AS main_supplier_code,
             (SELECT coalesce(json_agg(json_build_object('productId', ph.product_id, 'key', ph.r2_key, 'thumbKey', ph.thumb_key)
@@ -566,8 +634,10 @@ export async function loadClientItems(db: Db, projectId: number, companyId: numb
     const owner = Boolean(x.supply_by_owner);
     const sku = isCustomerSupplied({ itemCode: x.item_code, supplierCode: x.line_supplier_code ?? x.main_supplier_code ?? null, unitCostSen: Number(x.unit_cost_sen) });
     if (!owner && !sku) continue;
+    if (!lineVisible(scope, x.cat_code ?? null, x.sub_code ?? null)) continue;
     items.push({
       key: `so:${x.id}`, soDocNo: x.doc_no, soItemId: x.id, itemCode: x.item_code, description: x.description ?? "",
+      categoryCode: x.cat_code ?? null, subCode: x.sub_code ?? null,
       categoryLabel: x.cat_label ?? "Other", categorySort: x.cat_sort ?? 999, subLabel: x.sub_label ?? "General", subSort: x.sub_sort ?? 999,
       area: x.room || null, qty: Number(x.qty), measure: x.measure ? `${Number(x.measure)} ${x.measure_uom ?? ""}`.trim() : null, uom: x.uom,
       photoKeys: photoList(x.photo_urls), skuPhotos: skuPhotoList(x.sku_photos), voNo: x.vo_no, pending: false,
@@ -579,14 +649,16 @@ export async function loadClientItems(db: Db, projectId: number, companyId: numb
     if (v.bucket !== "pending") continue;
     v.lines.forEach((l, i) => {
       if (l.goesTo !== "client" || l.change !== "add") return;
+      if (!lineVisible(scope, l.categoryCode, l.subCode)) return;
       items.push({
         key: `${v.key}:${i}`, soDocNo: v.soDocNo, soItemId: null, itemCode: l.itemCode, description: l.description,
+        categoryCode: l.categoryCode, subCode: l.subCode,
         categoryLabel: "Other", categorySort: 999, subLabel: "General", subSort: 999, area: l.room, qty: l.qty, measure: l.measure, uom: null,
         photoKeys: [], skuPhotos: [], voNo: v.label, pending: true, orderOn: null, deliverOn: null,
       });
     });
   }
-  return { items };
+  return { items, categoryRestricted: scope !== null };
 }
 
 /** The PO tab's dates of these lines; none before the plans table exists (betaLines.ts readPlans reads the same). */

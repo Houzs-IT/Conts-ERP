@@ -66,10 +66,18 @@ if (process.argv.includes('--secrets')) {
   say(r.status === 0 ? '\nCHANNEX_API_KEY stored from the GitHub secret.' : '\nCHANNEX_API_KEY was NOT stored (wrangler refused).');
 }
 
+// The HostPlatform key comes the same way, from the repository secret HOSTPLATFORM_ACCESS_TOKEN (deploy-cron.yml).
+if (process.env.CRON_HOSTPLATFORM_ACCESS_TOKEN) {
+  const bin = path.join(ROOT, 'node_modules/wrangler/bin/wrangler.js');
+  const r = spawnSync(process.execPath, [bin, 'secret', 'put', 'HOSTPLATFORM_ACCESS_TOKEN', '--config', 'wrangler.cron.toml'],
+    { cwd: ROOT, encoding: 'utf8', input: process.env.CRON_HOSTPLATFORM_ACCESS_TOKEN });
+  say(r.status === 0 ? '\nHOSTPLATFORM_ACCESS_TOKEN stored from the GitHub secret.' : '\nHOSTPLATFORM_ACCESS_TOKEN was NOT stored (wrangler refused).');
+}
+
 const list = wrangler(['secret', 'list', '--config', 'wrangler.cron.toml']);
 const has = (k) => new RegExp(`"name":\\s*"${k}"`).test(list.out);
 say('\nSecrets on theconts-cron:');
-for (const [k, need] of [['CHANNEX_API_KEY', 'needed for the Channex outbox'], ['MAIL_API_KEY', 'optional, email copies'], ['WHATSAPP_TOKEN', 'optional, WhatsApp copies'], ['WHATSAPP_PHONE_ID', 'optional, WhatsApp copies']]) {
+for (const [k, need] of [['CHANNEX_API_KEY', 'needed for the Channex outbox'], ['HOSTPLATFORM_ACCESS_TOKEN', 'needed to pull reservations from HostPlatform'],['MAIL_API_KEY', 'optional, email copies'], ['WHATSAPP_TOKEN', 'optional, WhatsApp copies'], ['WHATSAPP_PHONE_ID', 'optional, WhatsApp copies']]) {
   say(`  ${has(k) ? 'set    ' : 'missing'}  ${k}  (${need})${has(k) ? '' : `  ->  npx wrangler secret put ${k} --config wrangler.cron.toml`}`);
 }
 say('\nDone. The jobs start on their next minute. Check them in Cloudflare > Workers > theconts-cron > Logs, or in System health.');

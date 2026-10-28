@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { StatusBadge } from '../../components/StatusBadge';
 import { Button } from '../../components/Button';
+import { ConfirmButton } from '../../components/ConfirmDialog';
 import Icon from '../../components/Icon';
 import { StaleBanner } from '../../components/DataState';
 import { DataTable, type Column } from '../../components/DataTable';
@@ -217,9 +218,23 @@ function FixModal({ line, onClose, onSaved }: { line: AttendanceLine; onClose: (
     } finally { setBusy(false); }
   }
 
+  async function remove(reason: string) {
+    if (!p) return;
+    try {
+      await api.del(`/attendance/${p.id}`, { note: reason });
+      toast({ tone: 'success', title: 'Clock-out removed.', body: `${line.employee.name} is in again, clocked in at ${time(p.clockInAt)}.` });
+      onSaved();
+    } catch (e) { notifyFailure(e); }
+  }
+
   return (
     <Modal title={`Fix times: ${line.employee.name}`} sub={date(`${p.date}T12:00:00+08:00`)} onClose={onClose}
       footer={<>
+        {p.clockOutAt && (
+          <ConfirmButton variant="tertiary" icon={<Icon name="Undo2" size="sm" />} style={{ marginRight: 'auto' }} onConfirm={remove}
+            confirm={{ title: `Remove ${line.employee.name}'s clock-out?`, body: `The clock-out at ${time(p.clockOutAt)} is removed. They are in again with their own clock-in at ${time(p.clockInAt)} and can clock out again. The change is kept in the history.`,
+              confirmLabel: 'Remove clock-out', reason: { label: 'Why is it removed?', placeholder: 'Clocked out by mistake' } }}>Remove clock-out</ConfirmButton>
+        )}
         <Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
         <Button size="sm" variant="primary" onClick={save} disabled={busy}>{busy ? 'Saving…' : 'Save'}</Button>
       </>}>

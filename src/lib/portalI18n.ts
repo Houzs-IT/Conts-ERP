@@ -64,7 +64,6 @@ const en = {
     worked: (hm: string): string => `${hm} worked`,
     soFar: (hm: string): string => `${hm} so far`,
     inWithSelfie: 'Clock in with a selfie', outWithSelfie: 'Clock out with a selfie',
-    noCameraIn: 'Camera not working? Clock in without a photo', noCameraOut: 'Camera not working? Clock out without a photo',
     done: 'Done for today. Ask the office if a time is wrong.',
     thisMonth: 'This month', noDays: 'No days yet this month.', noClockOut: 'No clock-out',
     clockedIn: (t: string): string => `Clocked in at ${t}.`,
@@ -112,6 +111,7 @@ const en = {
   },
   payslipStatus: { none: 'Not run', draft: 'Draft', approved: 'Approved', paid: 'Paid' },
   jobs: {
+    newJob: 'New',
     notOnList: 'That job is no longer on your list.',
     title: 'My jobs',
     summary: (left: number, done: number): string => `${left} to do, ${done} done`,
@@ -219,7 +219,6 @@ const ms: PortalStrings = {
     worked: hm => `${hm} bekerja`,
     soFar: hm => `${hm} setakat ini`,
     inWithSelfie: 'Daftar masuk dengan swafoto', outWithSelfie: 'Daftar keluar dengan swafoto',
-    noCameraIn: 'Kamera tidak berfungsi? Daftar masuk tanpa foto', noCameraOut: 'Kamera tidak berfungsi? Daftar keluar tanpa foto',
     done: 'Selesai untuk hari ini. Tanya pejabat jika ada masa yang salah.',
     thisMonth: 'Bulan ini', noDays: 'Belum ada hari bulan ini.', noClockOut: 'Tiada daftar keluar',
     clockedIn: t => `Daftar masuk pada ${t}.`,
@@ -267,6 +266,7 @@ const ms: PortalStrings = {
   },
   payslipStatus: { none: 'Belum dijana', draft: 'Draf', approved: 'Diluluskan', paid: 'Dibayar' },
   jobs: {
+    newJob: 'Baru',
     notOnList: 'Kerja itu tiada lagi dalam senarai anda.',
     title: 'Kerja saya',
     summary: (left, done) => `${left} belum siap, ${done} siap`,
@@ -370,7 +370,6 @@ const zh: PortalStrings = {
     worked: hm => `已工作 ${hm}`,
     soFar: hm => `目前 ${hm}`,
     inWithSelfie: '自拍上班打卡', outWithSelfie: '自拍下班打卡',
-    noCameraIn: '相机不能用？不拍照上班打卡', noCameraOut: '相机不能用？不拍照下班打卡',
     done: '今天已完成。时间不对请问办公室。',
     thisMonth: '本月', noDays: '本月还没有记录。', noClockOut: '未下班打卡',
     clockedIn: t => `${t} 上班打卡成功。`,
@@ -418,6 +417,7 @@ const zh: PortalStrings = {
   },
   payslipStatus: { none: '未生成', draft: '草稿', approved: '已批准', paid: '已发放' },
   jobs: {
+    newJob: '新',
     notOnList: '这项工作已不在你的列表上。',
     title: '我的工作',
     summary: (left, done) => `待做 ${left}，已完成 ${done}`,
@@ -521,7 +521,6 @@ const my: PortalStrings = {
     worked: hm => `${hm} အလုပ်လုပ်ခဲ့သည်`,
     soFar: hm => `ယခုထိ ${hm}`,
     inWithSelfie: 'ဆဲလ်ဖီဖြင့် အလုပ်ဝင်ရန်', outWithSelfie: 'ဆဲလ်ဖီဖြင့် အလုပ်ထွက်ရန်',
-    noCameraIn: 'ကင်မရာ အလုပ်မလုပ်ပါသလား။ ဓာတ်ပုံမပါဘဲ အလုပ်ဝင်ရန်', noCameraOut: 'ကင်မရာ အလုပ်မလုပ်ပါသလား။ ဓာတ်ပုံမပါဘဲ အလုပ်ထွက်ရန်',
     done: 'ယနေ့အတွက် ပြီးပါပြီ။ အချိန်မှားနေပါက ရုံးကို မေးပါ။',
     thisMonth: 'ယခုလ', noDays: 'ယခုလ မှတ်တမ်း မရှိသေးပါ။', noClockOut: 'အလုပ်ထွက် မမှတ်ထား',
     clockedIn: t => `${t} တွင် အလုပ်ဝင်ပြီး။`,
@@ -569,6 +568,7 @@ const my: PortalStrings = {
   },
   payslipStatus: { none: 'မတွက်ရသေး', draft: 'မူကြမ်း', approved: 'အတည်ပြုပြီး', paid: 'ပေးချေပြီး' },
   jobs: {
+    newJob: 'အသစ်',
     notOnList: 'ထိုအလုပ်သည် သင့်စာရင်းတွင် မရှိတော့ပါ။',
     title: 'ကျွန်ုပ်၏ အလုပ်များ',
     summary: (left, done) => `လုပ်ရန် ${left}၊ ပြီးပြီ ${done}`,

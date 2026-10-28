@@ -82,8 +82,13 @@ export interface Employee extends EmployeeInput {
   phone: string | null;
   /** EMP-001, from the login "Give app access" made; null without app access. */
   employeeId: string | null;
-  /** The roster entry is switched on. */
+  /** At least one of their roster entries is switched on. */
   isActive: boolean;
+  /** Each department's roster entry is switched on; false when they are not on that roster. */
+  cleanerActive: boolean;
+  technicianActive: boolean;
+  /** The field login the roster entries share; null without app access. */
+  userId: string | null;
 }
 
 /** The record a person starts with before anyone saves one. Matches the column defaults in migration 0165. */

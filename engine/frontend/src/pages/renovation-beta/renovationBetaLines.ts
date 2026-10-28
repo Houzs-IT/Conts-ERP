@@ -49,6 +49,9 @@ export interface ManagedLine {
   remark: string | null;
   supplierName: string | null;
   goesTo: GoesTo;
+  /** The catalog group and sub-category codes (null: the product has none). */
+  categoryCode: string | null;
+  subCode: string | null;
   categoryLabel: string;
   categorySort: number;
   subLabel: string;
@@ -67,6 +70,8 @@ export interface LinesAnswer {
   sos: Array<{ docNo: string; status: string; voLocked: boolean; renovation: boolean }>;
   lines: ManagedLine[];
   pendingPoChanges: PendingPoChange[];
+  /** The caller's role sees only some product categories: lines of the others are left out by the server. */
+  categoryRestricted: boolean;
 }
 
 const B = "/api/beta";

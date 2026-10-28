@@ -72,7 +72,7 @@ export interface ViewedFile { key: string; name: string; versions?: ViewedVersio
 const IMAGE = /\.(png|jpe?g|webp)$/i;
 const FILE_TYPE: Readonly<Record<string, string | undefined>> = { pdf: "application/pdf", png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp" };
 
-/** An image shows in place. Any other file is fetched with the sign-in header (a plain link cannot carry it) and offered as a link to the downloaded copy. */
+/** An image or a PDF shows in place. Any other file is fetched with the sign-in header (a plain link cannot carry it) and offered as a link to the downloaded copy. */
 export function FileDialog({ projectId, file: opened, onClose }: { projectId: number; file: ViewedFile; onClose: () => void }): ReactElement {
   const versions = opened.versions ?? [];
   const [pickedKey, setPickedKey] = useState(opened.key);
@@ -81,6 +81,8 @@ export function FileDialog({ projectId, file: opened, onClose }: { projectId: nu
   const downloadName = picked?.fileName ?? opened.name;
   const path = simpleApi.fileUrl(projectId, file.key);
   const isImage = IMAGE.test(file.key);
+  // A PDF shows in place, as MediaLightbox does; phones have no inline PDF viewer (an empty box), so they keep the link.
+  const inlinePdf = /\.pdf$/i.test(file.key) && !/Android|iPhone|iPad|Mobile/i.test(navigator.userAgent);
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
@@ -114,7 +116,13 @@ export function FileDialog({ projectId, file: opened, onClose }: { projectId: nu
       {isImage ? <div style={{ maxHeight: "70vh", overflow: "auto" }}><WsPhoto path={path} alt={file.name} style={{ height: "auto", objectFit: "contain" }} /></div>
         : error ? <p role="alert" style={{ fontSize: 14, color: WS.red }}>The file could not be loaded: {error}</p>
         : !blobUrl ? <p style={{ fontSize: 14, color: BETA.muted }}>Loading the file...</p>
-        : <p style={{ fontSize: 14 }}><a href={blobUrl} target="_blank" rel="noopener" download={downloadName}>Open the file</a></p>}
+        : (
+          <>
+            {/* The fragment asks Chrome's viewer for the plain page at full width: no toolbar, no thumbnail strip. The new-tab link keeps the full viewer. */}
+            {inlinePdf && <iframe src={`${blobUrl}#toolbar=0&navpanes=0&view=FitH`} title={file.name} style={{ width: "100%", height: "70vh", border: 0, borderRadius: 8, background: "#FFFFFF", marginBottom: 10 }} />}
+            <p style={{ fontSize: 14 }}><a href={blobUrl} target="_blank" rel="noopener" download={downloadName}>{inlinePdf ? "Open in a new tab" : "Open the file"}</a></p>
+          </>
+        )}
     </WsDialog>
   );
 }

@@ -3,18 +3,15 @@
    Plan: docs/superpowers/plans/2026-10-23-beta-project-workspace.md, section 10. */
 
 import { useMemo, useRef, useState, type MouseEvent, type ReactElement, type ReactNode } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Search, X } from "lucide-react";
-import { useAuth } from "../../auth/AuthContext";
 import { useQuery } from "../../hooks/useQuery";
 import { money } from "../projects/renovation/renovationModel";
-import { BETA, GLASS, TONES, betaConditionTone, betaDueTone, betaTagTone } from "./renovationBetaTheme";
-import { buildModel, HOME_TABS, homeCounts, homeList, homeRow, initials, shortLeft, type HomeRow, type HomeTab } from "./renovationBetaBoard";
+import { BETA, GLASS, TONES, betaDueTone, betaTagTone } from "./renovationBetaTheme";
+import { buildModel, HOME_TABS, homeCounts, homeList, homeRow, shortLeft, type ConditionWord, type HomeRow, type HomeTab } from "./renovationBetaBoard";
 import { HOME_SORTS, keepOrder, matchesSearch, newestFirst, orderOf, sortFromParam, type HomeSort } from "./renovationBetaHomeModel";
-import { boardApi, boardKey, invalidateBeta, readLastProject, rememberLastProject } from "./renovationBetaBoardApi";
-import { BTN_MAIN, CARD, ErrorBanner, INK_SOFT, MUTED, useIsPhone, useToast } from "./BetaCalParts";
-import { BetaDialogs, type BetaDialog } from "./BetaForms";
+import { boardApi, boardKey, readLastProject, rememberLastProject } from "./renovationBetaBoardApi";
+import { CARD, ErrorBanner, INK_SOFT, MUTED, useIsPhone } from "./BetaCalParts";
 import { BetaSkin } from "./BetaWsUi";
 import { simpleApi, type BoardRowV2 } from "../projects/renovation/simpleApi";
 import { mytDay, slaDayText } from "./renovationBetaModel";
@@ -27,11 +24,9 @@ const TD = { padding: "11px 12px", borderBottom: `1px solid ${BETA.lineSoft}`, v
 const DASH = <span style={{ color: BETA.faint }}>–</span>;
 /* Column shares of the table width (fixed layout), so the columns line up and fill the row at any width or zoom.
    The building tag wraps instead of being cut ("18 USJ 2/4P S...", owner 24 Oct 2026), so its column is wider.
-   Order, as the designs head it: Building, Project, ID condition, Who now, Due, Payment. */
-const COLS_PAY = ["14%", "26%", "24%", "14%", "8%", "14%"] as const;
-const COLS_NO_PAY = ["16%", "30%", "28%", "16%", "10%"] as const;
-/* The dot before each filter tab, as the designs colour the stages. Saturated enough to read on both skins. */
-const TAB_DOT: Readonly<Partial<Record<HomeTab, string>>> = { A: "#7FD3DC", BC: "#2F6BFF", D: "#F4A7BE", E: "#2EC4A6" };
+   Order: Building, Project, ID condition, Due, Payment. */
+const COLS_PAY = ["16%", "30%", "16%", "14%", "24%"] as const;
+const COLS_NO_PAY = ["18%", "40%", "20%", "22%"] as const;
 
 function DuePill({ left, small = false }: { left: number; small?: boolean }): ReactElement {
   const [ink, bg] = betaDueTone(left);
@@ -70,18 +65,24 @@ function PayCell({ text, outstandingSen }: { text: string; outstandingSen: numbe
   );
 }
 
-/** The condition as the designs draw it: one pill, "B - 3D in progress", with the condition's dot. */
+/* Pending, waiting and progress are amber, an amendment red, done green. [text, background, dot] */
+const AMBER = [TONES.amber.ink, TONES.amber.soft, TONES.amber.dot] as const;
+const WORD_TONE: Readonly<Record<ConditionWord, readonly [string, string, string]>> = {
+  Pending: AMBER, Waiting: AMBER, Progress: AMBER,
+  Amendment: [TONES.red.ink, TONES.red.soft, TONES.red.dot],
+  Done: [TONES.accent.ink, TONES.accent.soft, TONES.accent.dot],
+};
+
+/** The condition as one word on a coloured pill; the hover text keeps the full "B - 3D amendment". */
 function StatusCell({ r }: { r: HomeRow }): ReactElement {
-  const [ink, bg, dot] = betaConditionTone(r.tone);
-  return <span title={r.cond} style={{ display: "inline-flex", minWidth: 0, maxWidth: "100%" }}><DotText dot={dot} ink={ink} bg={bg}>{r.cond}</DotText></span>;
+  const [ink, bg, dot] = WORD_TONE[r.word];
+  return <span title={r.cond} style={{ display: "inline-flex", minWidth: 0, maxWidth: "100%" }}><DotText dot={dot} ink={ink} bg={bg}>{r.word}</DotText></span>;
 }
 
-function Avatar({ name }: { name: string }): ReactElement {
-  return (
-    <span aria-hidden="true" style={{ flex: "none", display: "inline-grid", placeItems: "center", width: 26, height: 26, borderRadius: 13, background: TONES.accent.soft, color: BETA.accent, fontSize: 11, fontWeight: 700 }}>
-      {initials(name)}
-    </span>
-  );
+/** A finished design says Done in green; anything else shows the days left or late. */
+function DueCell({ r, small = false }: { r: HomeRow; small?: boolean }): ReactElement {
+  if (r.word === "Done") return <DotText dot={TONES.accent.dot} ink={TONES.accent.ink} bg={TONES.accent.soft}>Done</DotText>;
+  return r.left === null ? DASH : <DuePill left={r.left} small={small} />;
 }
 
 type Sla = { step: string; text: string; over: boolean } | null;
@@ -106,9 +107,6 @@ export function RenovationBetaHome(): ReactElement {
 
 function HomeScreen(): ReactElement {
   const navigate = useNavigate();
-  const { can } = useAuth();
-  const canAssign = can("projects.write");
-  const queryClient = useQueryClient();
   const q = useQuery(boardKey(), () => boardApi.board(), []);
   // Step and SLA come from the current project board, so both screens agree while they run side by side.
   const steps = useQuery(["renovation-beta", "step-sla"], () => simpleApi.boardRows(), []);
@@ -129,8 +127,6 @@ function HomeScreen(): ReactElement {
       return next;
     }, { replace: true });
   }
-  const [dialog, setDialog] = useState<BetaDialog | null>(null);
-  const { toast, show } = useToast();
   const last = readLastProject();
   const m = useMemo(() => (q.data ? buildModel(q.data) : null), [q.data]);
 
@@ -144,7 +140,7 @@ function HomeScreen(): ReactElement {
   const viewKey = `${tab}|${sort}|${query.trim().toLowerCase()}`;
   if (!kept.current || kept.current.key !== viewKey) kept.current = { key: viewKey, order: orderOf(found) };
   const list = keepOrder(found, kept.current.order);
-  const rows = list.map((p) => homeRow(m, p, canAssign));
+  const rows = list.map((p) => homeRow(m, p));
   const tabCount = (key: HomeTab): number => (query.trim() ? homeList(m, key).filter((p) => matchesSearch(p, query)).length : counts.tabs[key]);
   const showPay = m.projects.some((p) => p.payment != null);
 
@@ -153,14 +149,10 @@ function HomeScreen(): ReactElement {
     navigate(`/beta/projects/${id}`);
   }
 
-  /* A click anywhere on the row opens the project; the link and the Assign button keep their own action. */
+  /* A click anywhere on the row opens the project; the link keeps its own action. */
   function rowClick(e: MouseEvent<HTMLElement>, id: number): void {
     if (e.target instanceof Element && e.target.closest("a, button")) return;
     open(id);
-  }
-
-  function assign(id: number): void {
-    setDialog({ t: "assign", projectId: id });
   }
 
   return (
@@ -224,7 +216,6 @@ function HomeScreen(): ReactElement {
                 fontWeight: on ? 700 : 500, color: on ? BETA.ink : MUTED, cursor: "pointer",
               }}
             >
-              {TAB_DOT[key] && <span aria-hidden="true" style={{ flex: "none", width: 8, height: 8, borderRadius: 4, background: TAB_DOT[key] }} />}
               {label}
               <span style={{ fontSize: 12, color: MUTED }}>{tabCount(key)}</span>
             </button>
@@ -248,13 +239,12 @@ function HomeScreen(): ReactElement {
                 <th scope="col" style={TH}>Building</th>
                 <th scope="col" style={TH}>Project</th>
                 <th scope="col" style={TH}>ID condition</th>
-                <th scope="col" style={TH}>Who now</th>
                 <th scope="col" style={TH}>Due</th>
                 {showPay && <th scope="col" style={TH}>Payment</th>}
               </tr>
             </thead>
             <tbody>
-              {rows.length === 0 && <tr><td colSpan={showPay ? 6 : 5} style={{ ...TD, color: MUTED }}>{query.trim() ? `No project matches "${query.trim()}".` : "No projects here."}</td></tr>}
+              {rows.length === 0 && <tr><td colSpan={showPay ? 5 : 4} style={{ ...TD, color: MUTED }}>{query.trim() ? `No project matches "${query.trim()}".` : "No projects here."}</td></tr>}
               {rows.map((r) => {
                 const [tagInk, tagBg] = betaTagTone(r.p.tag);
                 return (
@@ -271,8 +261,7 @@ function HomeScreen(): ReactElement {
                       </span>
                     </td>
                     <td style={TD}><StatusCell r={r} /></td>
-                    <td style={TD}><WhoNow r={r} onAssign={() => assign(r.p.id)} /></td>
-                    <td style={TD}>{r.left === null ? DASH : <DuePill left={r.left} />}</td>
+                    <td style={TD}><DueCell r={r} /></td>
                     {showPay && <td style={TD}>{r.p.payment != null ? <PayCell text={r.p.payment} outstandingSen={r.p.outstandingSen} /> : DASH}</td>}
                   </tr>
                 );
@@ -283,41 +272,14 @@ function HomeScreen(): ReactElement {
       )}
 
       <div style={{ fontSize: 12, color: MUTED }}>{list.length} shown · {sort === "newest" ? "newest first" : "due soonest first"} · tap a project to open it</div>
-
-      <BetaDialogs
-        dialog={dialog}
-        env={{
-          m, who: "All",
-          onClose: () => setDialog(null),
-          onSaved: (text) => { setDialog(null); void invalidateBeta(queryClient); show(text); },
-        }}
-      />
-      {toast}
     </div>
-  );
-}
-
-function WhoNow({ r, onAssign }: { r: HomeRow; onAssign: () => void }): ReactElement {
-  if (r.whoNow.kind === "assign") {
-    return (
-      <button type="button" onClick={onAssign} aria-label={`Assign ${r.p.name}`} style={{ ...BTN_MAIN, minHeight: 30, padding: "0 12px", fontSize: 12 }}>
-        Assign
-      </button>
-    );
-  }
-  if (r.whoNow.kind === "needs") return <span style={{ color: TONES.amber.ink, fontWeight: 600 }}>Needs team</span>;
-  if (!r.whoNow.name) return DASH;
-  return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 8, minWidth: 0, maxWidth: "100%" }}>
-      <Avatar name={r.whoNow.name} />
-      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.whoNow.name}</span>
-    </span>
   );
 }
 
 function PhoneCard({ r, sla, onOpen }: { r: HomeRow; sla: Sla; onOpen: () => void }): ReactElement {
   const { p } = r;
   const [tagInk, tagBg] = betaTagTone(p.tag);
+  const pay = [p.payment, p.outstandingSen != null && p.outstandingSen > 0 ? `${money(p.outstandingSen)} to collect` : null].filter(Boolean).join(" · ");
   return (
     <li>
       <Link
@@ -331,15 +293,11 @@ function PhoneCard({ r, sla, onOpen }: { r: HomeRow; sla: Sla; onOpen: () => voi
             <span style={{ fontWeight: 700, fontSize: 15, overflowWrap: "anywhere" }}>{p.title}</span>
             {p.customer && <span style={{ fontWeight: 500, fontSize: 12, color: MUTED }}>{p.customer}</span>}
           </span>
-          {r.left !== null && <DuePill left={r.left} small />}
+          <DueCell r={r} small />
         </span>
         <StatusCell r={r} />
         {sla && <span style={{ fontSize: 12, color: sla.over ? TONES.red.ink : INK_SOFT, fontWeight: sla.over ? 700 : 400 }}>{sla.step}{sla.text ? ` · ${sla.text}` : ""}</span>}
-        <span style={{ fontSize: 12, color: INK_SOFT, paddingTop: 8, borderTop: `1px solid ${BETA.lineSoft}` }}>
-          {r.whoNow.kind === "name" ? `Now: ${r.whoNow.name}` : <b style={{ color: TONES.amber.ink }}>Needs team</b>}
-          {p.payment != null ? ` · ${p.payment}` : ""}
-          {p.outstandingSen != null && p.outstandingSen > 0 ? ` · ${money(p.outstandingSen)} to collect` : ""}
-        </span>
+        {pay && <span style={{ fontSize: 12, color: INK_SOFT, paddingTop: 8, borderTop: `1px solid ${BETA.lineSoft}` }}>{pay}</span>}
       </Link>
     </li>
   );

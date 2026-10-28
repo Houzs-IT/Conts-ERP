@@ -13,6 +13,7 @@ import { runEach, skippedNote } from '../lib/bulk';
 import { CATEGORY, FormRow, INPUT, TEXTAREA, ProblemPhotos, Segmented, hm, uploadTo, usePickedMedia } from '../components/ops/OpsUi';
 import { statusOf } from '../lib/status';
 import { usePortalText, usePortalDates, wordFor } from '../lib/portalI18n';
+import { useFieldRefresh, useFreshIds } from '../lib/fieldLive';
 
 /* GET /api/field/repairs and /api/field/repairs/:id (functions/api/field/repairs*.ts). No amounts: the server never sends any. */
 interface Repair {
@@ -43,6 +44,12 @@ function progress(r: Repair): string {
  *  new problem. One column, 44px targets; a job opens full screen with its action pinned at the bottom. */
 export default function FieldRepairsPage({ above, linkRepair, onLinked }: { above?: ReactNode; linkRepair?: string | null; onLinked?: () => void }) {
   const { data, loading, error, reload } = useApi<ListPayload>('/field/repairs');
+  // A new notice, the phone coming back to the app, or a minute passing reloads the list; a repair that just arrived carries a New mark.
+  useFieldRefresh(reload);
+  useEffect(() => {
+    const t = window.setInterval(() => { if (document.visibilityState === 'visible') reload(); }, 60_000);
+    return () => window.clearInterval(t);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const [tab, setTab] = useState<'mine' | 'open'>('mine');
   const [open, setOpen] = useState<string | null>(null);
   // A notice tapped in the bell: open that repair (the sheet loads it by id and says so if it is not theirs).
@@ -56,6 +63,7 @@ export default function FieldRepairsPage({ above, linkRepair, onLinked }: { abov
   const finished = mine.filter(r => r.state === 'resolved' || r.endedAt);
   const pool = data?.open ?? [];
   const rows = tab === 'mine' ? todo : pool;
+  const fresh = useFreshIds([...mine, ...pool].map(r => r.id), 'repairs', !!data);
 
   return (
     <>
@@ -80,7 +88,7 @@ export default function FieldRepairsPage({ above, linkRepair, onLinked }: { abov
             body={tab === 'open' ? tr.noOpenBody : data?.mayPick ? tr.noMineBodyPick : tr.noMineBody} />
           : (
             <div className="flex flex-col gap-2.5">
-              {rows.map(r => <RepairCard key={r.id} r={r} offer={tab === 'open'} onOpen={() => setOpen(r.id)} />)}
+              {rows.map(r => <RepairCard key={r.id} r={r} offer={tab === 'open'} fresh={fresh.has(r.id)} onOpen={() => setOpen(r.id)} />)}
               {tab === 'mine' && finished.length > 0 && (
                 <>
                   <h2 className="m-0 mt-2 text-[16px] font-semibold">{tr.finished}</h2>
@@ -96,16 +104,17 @@ export default function FieldRepairsPage({ above, linkRepair, onLinked }: { abov
   );
 }
 
-function RepairCard({ r, offer, onOpen }: { r: Repair; offer?: boolean; onOpen: () => void }) {
+function RepairCard({ r, offer, fresh, onOpen }: { r: Repair; offer?: boolean; fresh?: boolean; onOpen: () => void }) {
   const t = usePortalText();
   const tr = t.repairs;
   const { short, stamp } = usePortalDates();
   const next = r.windows.find(w => Date.parse(w.endsAt) > Date.now());
   return (
     <button type="button" onClick={onOpen}
-      className={cx('w-full text-left bg-card rounded-card border border-solid p-4 flex flex-col gap-1.5 cursor-pointer min-h-[44px]', r.urgency === 'urgent' && r.state !== 'resolved' ? 'border-danger-line' : 'border-line')}>
+      className={cx('w-full text-left bg-card rounded-card border border-solid p-4 flex flex-col gap-1.5 cursor-pointer min-h-[44px]', r.urgency === 'urgent' && r.state !== 'resolved' ? 'border-danger-line' : fresh ? 'border-info-line' : 'border-line')}>
       <span className="flex items-center gap-2">
         <b className="text-heading flex-1 min-w-0 truncate">{r.unitNumber}<span className="text-copy text-muted-ink font-normal"> · {r.propertyName}</span></b>
+        {fresh && <StatusBadge tone="info" label={t.jobs.newJob} />}
         {r.urgency === 'urgent' && r.state !== 'resolved' && <StatusBadge tone="critical">{tr.urgent}</StatusBadge>}
         {r.jobType === 'pass_key' && r.state !== 'resolved' && <StatusBadge tone="info">{tr.passKey}</StatusBadge>}
       </span>

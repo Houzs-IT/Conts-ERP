@@ -87,10 +87,11 @@ describe("Beta Home", () => {
     expect(await screen.findByRole("heading", { name: "All projects" })).toBeTruthy();
     expect(screen.getByText("3 projects")).toBeTruthy();
     const tabs = within(screen.getByRole("tablist", { name: "Project groups" })).getAllByRole("tab");
-    expect(tabs.map((t) => t.textContent)).toEqual(["All projects3", "Site Measure1", "Design1", "Carpentry · Site · PO1", "Done Design0"]);
-    expect(screen.getByText("A - New · team not assigned")).toBeTruthy();
-    expect(screen.getByRole("button", { name: /Assign/ })).toBeTruthy();
-    expect(screen.getByText("B - 3D in progress")).toBeTruthy();
+    expect(tabs.map((t) => t.textContent)).toEqual(["All projects3", "Site Measure1", "3D1", "2D0", "Carpentry · Site · PO1", "Done Design0"]);
+    expect(screen.getAllByText("Pending").length).toBe(2);
+    expect(screen.getByText("Progress")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Assign/ })).toBeNull();
+    expect(screen.queryByText("Who now")).toBeNull();
     expect(screen.getByText("3 shown · newest first · tap a project to open it")).toBeTruthy();
   });
 
@@ -131,9 +132,9 @@ describe("Beta Home", () => {
   it("shows cards instead of the table on a phone", async () => {
     phone = true;
     renderAt("/beta/projects");
-    expect(await screen.findByText("Needs team")).toBeTruthy();
+    expect((await screen.findAllByText("1st payment")).length).toBeGreaterThan(0);
     expect(screen.queryByRole("table")).toBeNull();
-    expect(screen.getAllByText("Now: Jia Xin · 1st payment").length).toBeGreaterThan(0);
+    expect(screen.queryByText(/Needs team|Now:/)).toBeNull();
   });
 
 });

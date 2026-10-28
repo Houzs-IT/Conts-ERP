@@ -9,6 +9,7 @@
 import { isMissingRelation, type Db } from "./load";
 import { voGoesTo } from "../../scm/lib/renovation-po-split";
 import { photoList, skuPhotoList, type SkuPhoto } from "./betaVoPo";
+import { keepVisiblePos, lineVisible, type CategoryScope } from "../categoryAccess";
 
 async function rows<T>(db: Db, sql: string, ...args: unknown[]): Promise<T[]> {
   const res = await db.prepare(sql).bind(...args).all<T>();
@@ -68,6 +69,9 @@ export interface ManagedLine {
   remark: string | null;
   supplierName: string | null;
   goesTo: GoesTo;
+  /** The catalog group and sub-category codes (null: the product has none), for the role's category access. */
+  categoryCode: string | null;
+  subCode: string | null;
   categoryLabel: string;
   categorySort: number;
   subLabel: string;
@@ -89,6 +93,8 @@ export interface LinesAnswer {
   sos: Array<{ docNo: string; status: string; voLocked: boolean; renovation: boolean }>;
   lines: ManagedLine[];
   pendingPoChanges: PendingPoChange[];
+  /** True when the caller's role sees only some categories: lines of the others are left out. */
+  categoryRestricted: boolean;
 }
 
 /* ---------- pure pieces (tested) ---------- */
@@ -172,7 +178,7 @@ interface LineRow {
   id: string; doc_no: string; so_status: string; line_no: number | null; item_code: string | null; description: string | null; description2: string | null;
   variants: unknown; item_group: string | null; uom: string | null; qty: number; unit_price_sen: number | null; discount_sen: number | null; total_sen: number | null;
   area: string | null; remark: string | null; supplier_name: string | null; supplier_code: string | null; cat_label: string | null; cat_sort: number | null;
-  sub_label: string | null; sub_sort: number | null; pos: unknown; delivered: number | null; photo_urls: unknown; sku_photos: unknown;
+  sub_label: string | null; sub_sort: number | null; cat_code: string | null; sub_code: string | null; pos: unknown; delivered: number | null; photo_urls: unknown; sku_photos: unknown;
 }
 
 async function readPlans(db: Db, ids: readonly string[]): Promise<{ ready: boolean; byId: Map<string, ManagedLine["plan"]> }> {
@@ -191,18 +197,22 @@ async function readPlans(db: Db, ids: readonly string[]): Promise<{ ready: boole
   }
 }
 
-/** `voLabels`: so_amendments.id to its VO-0N label on this project (from loadProjectVos). */
-export async function loadProjectLines(db: Db, projectId: number, companyId: number, finance: boolean, voLabels: ReadonlyMap<string, string>): Promise<LinesAnswer> {
+/** `voLabels`: so_amendments.id to its VO-0N label on this project (from loadProjectVos).
+    `scope`: the caller's category access (categoryAccess.ts); lines outside it, and the PO changes of POs left with no line, are dropped. */
+export async function loadProjectLines(
+  db: Db, projectId: number, companyId: number, finance: boolean, voLabels: ReadonlyMap<string, string>, scope: CategoryScope | null = null,
+): Promise<LinesAnswer> {
   const sos = await rows<{ doc_no: string; status: string; renovation: boolean }>(db,
     `SELECT so.doc_no, so.status::text AS status, EXISTS (SELECT 1 FROM scm.reno_so_contracts k WHERE k.so_doc_no = so.doc_no) AS renovation
        FROM scm.mfg_sales_orders so WHERE ${PROJECT_SO} ORDER BY so.so_date NULLS LAST, so.doc_no`,
     projectId, companyId);
-  const r = await rows<LineRow>(db,
+  const all = await rows<LineRow>(db,
     `SELECT i.id::text AS id, i.doc_no, so.status::text AS so_status, i.line_no, i.item_code, i.description, i.description2, i.variants, i.item_group,
             i.uom, i.qty, i.unit_price_sen, i.discount_sen::bigint AS discount_sen, i.total_sen::bigint AS total_sen, i.remark,
             coalesce(nullif(trim(to_jsonb(i)->>'room'), ''), nullif(trim((SELECT l.room FROM scm.reno_doc_lines l WHERE l.so_item_id = i.id LIMIT 1)), ''), nullif(trim(i.location), '')) AS area,
             sup.name AS supplier_name, sup.code AS supplier_code,
             cg.label AS cat_label, cg.sort_order AS cat_sort, sc.label AS sub_label, sc.sort_order AS sub_sort,
+            cg.code AS cat_code, sc.code AS sub_code,
             (SELECT coalesce(jsonb_agg(jsonb_build_object(
                       'po_id', po.id::text, 'po_number', po.po_number, 'po_status', po.status::text, 'po_line_id', pi.id::text,
                       'po_date', po.po_date::text, 'delivery_date', coalesce(greatest(pi.delivery_date, pi.supplier_delivery_date_2, pi.supplier_delivery_date_3, pi.supplier_delivery_date_4),
@@ -230,6 +240,7 @@ export async function loadProjectLines(db: Db, projectId: number, companyId: num
       WHERE ${PROJECT_SO} AND NOT coalesce(i.cancelled, false)
       ORDER BY so.so_date NULLS LAST, i.doc_no, i.line_no NULLS LAST`,
     projectId, companyId);
+  const r = all.filter((x) => lineVisible(scope, x.cat_code ?? null, x.sub_code ?? null));
   const plans = await readPlans(db, r.map((x) => x.id));
   const lines: ManagedLine[] = r.map((x) => {
     const pos = posOf(x.pos);
@@ -243,6 +254,7 @@ export async function loadProjectLines(db: Db, projectId: number, companyId: num
       amountSen: finance ? Number(x.total_sen ?? 0) : null,
       area: x.area, remark: x.remark?.trim() || null, supplierName: x.supplier_name,
       goesTo: voGoesTo({ itemCode: x.item_code, itemGroup: x.item_group, mainSupplierCode: x.supplier_code }),
+      categoryCode: x.cat_code ?? null, subCode: x.sub_code ?? null,
       categoryLabel: x.cat_label ?? "Other", categorySort: x.cat_sort ?? 999, subLabel: x.sub_label ?? "General", subSort: x.sub_sort ?? 999,
       pos, photoKeys: photoList(x.photo_urls), skuPhotos: skuPhotoList(x.sku_photos), gr: grOf(pos), do: markOf(qty, Number(x.delivered ?? 0)),
       plan: plans.byId.get(x.id) ?? { orderOn: null, deliverOn: null, noPo: false },
@@ -255,11 +267,13 @@ export async function loadProjectLines(db: Db, projectId: number, companyId: num
       WHERE ${PROJECT_SO} AND a.status::text = 'REQUESTED'
       ORDER BY a.created_at`,
     projectId, companyId);
+  // A PO change shows only while the caller sees a line of that PO.
+  const shownPending = keepVisiblePos(pending, (p) => p.po_id, lines.flatMap((l) => l.pos.map((p) => p.poId)), scope);
   return {
-    finance, plansReady: plans.ready,
+    finance, plansReady: plans.ready, categoryRestricted: scope !== null,
     sos: sos.map((s) => ({ docNo: s.doc_no, status: s.status, voLocked: String(s.status).toUpperCase() !== "DRAFT", renovation: Boolean(s.renovation) })),
     lines,
-    pendingPoChanges: pending.map((p) => ({
+    pendingPoChanges: shownPending.map((p) => ({
       id: p.id, amendmentNo: p.amendment_no, poId: p.po_id, poNumber: p.po_number, voLabel: p.source ? voLabels.get(p.source) ?? null : null,
     })),
   };
@@ -267,12 +281,21 @@ export async function loadProjectLines(db: Db, projectId: number, companyId: num
 
 /* ---------- writes ---------- */
 
-/** The line, when it is on one of this project's live sales orders. */
-export async function projectLine(db: Db, projectId: number, companyId: number, soItemId: string): Promise<{ id: string; doc_no: string } | null> {
-  return db.prepare(
-    `SELECT i.id::text AS id, i.doc_no FROM scm.mfg_sales_order_items i JOIN scm.mfg_sales_orders so ON so.doc_no = i.doc_no
+/** The line, when it is on one of this project's live sales orders and in the caller's category scope (a hidden line reads as missing). */
+export async function projectLine(
+  db: Db, projectId: number, companyId: number, soItemId: string, scope: CategoryScope | null = null,
+): Promise<{ id: string; doc_no: string } | null> {
+  const line = await db.prepare(
+    `SELECT i.id::text AS id, i.doc_no, cg.code AS cat_code, sc.code AS sub_code
+       FROM scm.mfg_sales_order_items i JOIN scm.mfg_sales_orders so ON so.doc_no = i.doc_no
+       LEFT JOIN LATERAL (SELECT p.category_group, p.sub_category FROM scm.mfg_products p
+                           WHERE p.code = i.item_code AND p.company_id = so.company_id ORDER BY (p.status::text = 'ACTIVE') DESC LIMIT 1) prod ON true
+       LEFT JOIN scm.product_category_groups cg ON cg.code = prod.category_group
+       LEFT JOIN scm.product_sub_categories sc ON sc.group_code = cg.code AND sc.code = prod.sub_category
       WHERE i.id::text = ? AND ${PROJECT_SO}`,
-  ).bind(soItemId, projectId, companyId).first<{ id: string; doc_no: string }>();
+  ).bind(soItemId, projectId, companyId).first<{ id: string; doc_no: string; cat_code: string | null; sub_code: string | null }>();
+  if (!line || !lineVisible(scope, line.cat_code, line.sub_code)) return null;
+  return { id: line.id, doc_no: line.doc_no };
 }
 
 export async function saveLinePlan(db: Db, soItemId: string, companyId: number, userId: number, patch: LinePlanPatch): Promise<ManagedLine["plan"] | { refusal: string }> {

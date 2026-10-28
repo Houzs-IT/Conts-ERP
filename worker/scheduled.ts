@@ -7,6 +7,7 @@ import { SCHEDULE, runJobs } from '../functions/_lib/cronJobs';
  * and the same job code as the local dry run (scripts/cron-dry-run.mjs), functions/_lib/cronJobs.ts.
  *
  *   * * * * *      Channex outbox: retries and anything the request-time flush missed
+ *   *\/5 * * * *   HostPlatform: pull the reservations it changed since the last run
  *   *\/15 * * * *  email / WhatsApp outbox (quiet hours, retries); calendar blocks of finished repair jobs
  *   0 * * * *      overdue cleans and repairs, statements finalised but unsent
  *   0 0 * * *      the 08:00 "today" digest for operations

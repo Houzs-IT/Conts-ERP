@@ -29,8 +29,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   });
 };
 
-/** POST /api/field/clock (multipart) action=in|out, photo?, lat?, lng?, accuracy? — clock in or out. The selfie and the
- *  location are kept when the phone sends them and never stop the punch (Hookka's soft punch clock). */
+/** POST /api/field/clock (multipart) action=in|out, photo, lat?, lng?, accuracy? — clock in or out. The selfie is
+ *  required (owner, 27 Oct 2026); the location is kept when the phone sends it and never stops the punch. */
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
@@ -41,6 +41,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
   const sent = await readPunch(request);
   if ('error' in sent) return fail('VALIDATION', sent.error, 422);
+  if (!sent.punch.photo) return fail('VALIDATION', 'A selfie is needed to clock in or out. If your camera does not work, ask the office to fix your time.', 422);
   const employeeId = await ensureEmployeeId(env, me);
   const done = sent.action === 'in'
     ? await clockIn(env, employeeId, session.userId, sent.punch)

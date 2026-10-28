@@ -10,7 +10,7 @@
 
 import { useCallback, useMemo, useRef, useState, type CSSProperties, type ReactElement } from "react";
 import { Link } from "react-router-dom";
-import { AlertTriangle, Camera, ChevronDown, ChevronRight, Download, FilePlus2, Pencil, Search } from "lucide-react";
+import { AlertTriangle, Calculator, Camera, ChevronDown, ChevronRight, Download, FilePlus2, Pencil, Search } from "lucide-react";
 import { useAuth } from "../../auth/AuthContext";
 import { useQuery } from "../../hooks/useQuery";
 import { money } from "../projects/renovation/renovationModel";
@@ -24,6 +24,7 @@ import { betaSiteApi } from "./renovationBetaSiteApi";
 import { betaMediaApi } from "./renovationBetaMediaApi";
 import { PhotoUploadDialog, type UploadTarget } from "./BetaPhotoUpload";
 import { BetaSkuPicker } from "./BetaSkuPicker";
+import { BetaQuantityHelper } from "./BetaQuantityHelper";
 import { BETA, TONES } from "./renovationBetaTheme";
 import { voPoApi } from "./renovationBetaVoPo";
 import { LinePhotoThumbs, photoCount, type LinePhotoSet } from "./BetaLinePhotos";
@@ -89,6 +90,7 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
   const [result, setResult] = useState<PostedVo[] | null>(null);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
+  const [helping, setHelping] = useState(false);
   const [wrapRef, width] = useWidth();
 
   const lines = q.data?.lines ?? [];
@@ -226,6 +228,7 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
   return (
     <>
       <style>{DATE_CSS}</style>
+      {helping && <BetaQuantityHelper onClose={() => setHelping(false)} />}
       <WsPageHead
         title="PO"
         sub={editing
@@ -241,6 +244,7 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
               <button type="button" style={btnStyle("outline", "sm")} onClick={() => setUploading({ kind: "po", id: photos.data?.docs.pos[0]?.id ?? "" })}><Camera size={14} aria-hidden="true" />Upload photos</button>
             )}
             {lines.length > 0 && <button type="button" style={btnStyle("outline", "sm")} onClick={exportCsv}><Download size={14} aria-hidden="true" />Export</button>}
+            <button type="button" style={btnStyle("outline", "sm")} onClick={() => setHelping(true)}><Calculator size={14} aria-hidden="true" />Quantity helper</button>
             {needPo.length > 0 && d.sos.map((s) => (
               <Link key={s.docNo} to={s.renovation ? `/scm/renovation/contracts/${encodeURIComponent(s.docNo)}` : "/scm/purchase-orders/from-so"} style={btnStyle("teal", "sm")}>
                 <FilePlus2 size={14} aria-hidden="true" />Create PO{d.sos.length > 1 ? ` (${s.docNo})` : ""}
@@ -249,6 +253,7 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
           </span>
         )}
       />
+      {d.categoryRestricted && <p style={{ margin: 0, fontSize: 13, color: BETA.muted }}>Some categories are hidden for your role.</p>}
       {lines.length > 0 && (
         <div role="group" aria-label="Group the lines" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <WsFilterPill on={view === "category"} onClick={() => setView("category")}>By category</WsFilterPill>
@@ -287,9 +292,9 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
       )}
 
       <div ref={wrapRef} style={{ width: "100%", minWidth: 0 }}>
-        {tree.length === 0 ? <WsEmpty>No sales order lines for this project yet. Link a sales order to see its lines here.</WsEmpty>
+        {tree.length === 0 ? <WsEmpty>{d.categoryRestricted ? "No lines you can see for this project." : "No sales order lines for this project yet. Link a sales order to see its lines here."}</WsEmpty>
           : width === 0 || width >= TABLE_MIN ? (
-            <div role="region" aria-label="Sales order lines" style={{ border: `1px solid ${BETA.line}`, borderRadius: 10, overflow: "hidden" }}>
+            <div role="region" aria-label="Sales order lines" style={{ border: `1px solid ${BETA.line}`, borderRadius: 10, overflow: "hidden", background: BETA.surface }}>
               <table style={{ width: "100%", tableLayout: "fixed", borderCollapse: "collapse" }}>
                 <colgroup>{colWidths(d.finance).map((w, k) => (w > 0 ? <col key={k} style={{ width: `${w}%` }} /> : null))}</colgroup>
                 <thead>
@@ -329,7 +334,7 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
               </table>
             </div>
           ) : (
-            <ul aria-label="Sales order lines" style={{ listStyle: "none", margin: 0, padding: 0, border: `1px solid ${BETA.line}`, borderRadius: 10, overflow: "hidden" }}>
+            <ul aria-label="Sales order lines" style={{ listStyle: "none", margin: 0, padding: 0, border: `1px solid ${BETA.line}`, borderRadius: 10, overflow: "hidden", background: BETA.surface }}>
               {tree.map((c, ci) => {
                 const band = BANDS[ci % BANDS.length];
                 const open = !closed.has(c.key);

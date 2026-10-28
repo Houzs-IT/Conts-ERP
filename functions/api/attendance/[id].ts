@@ -48,3 +48,42 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   });
   return json({ data: toView(after) });
 };
+
+const removal = z.object({ note: z.string().trim().min(3, 'Say why the clock-out is removed.').max(300) });
+
+/** DELETE /api/attendance/:id { note } — the office removes a punch's clock-out (pressed by mistake): the person is "in
+ *  now" again with their own clock-in, and can clock out again. The clock-out's location and selfie are cleared from the
+ *  row (the photo file stays in storage, unreachable). Refused once that month's payslip is approved or paid. The audit
+ *  log keeps the removed clock-out, its photo id and the reason. */
+export const onRequestDelete: PagesFunction<Env> = async ({ request, env, params }) => {
+  const { session, response } = await requireSession(request, env);
+  if (!session) return response!;
+  if (!mayWork(session, MANAGE)) return fail('FORBIDDEN', 'Your access does not include fixing attendance.', 403);
+  if (!(await hasAttendance(env))) return fail('NOT_MIGRATED', NOT_MIGRATED, 503);
+
+  const before = await one<AttendanceRow>(env, `SELECT ${ROW_COLS} FROM attendance WHERE id = ?`, String(params.id));
+  if (!before) return fail('NOT_FOUND', 'That day is not on record.', 404);
+  if (!before.clock_out_at) return fail('CONFLICT', 'There is no clock-out on that day to remove.', 409);
+  const parsed = removal.safeParse(await request.json().catch(() => null));
+  if (!parsed.success) return fail('VALIDATION', 'Some fields need a fix.', 422, { note: parsed.error.issues[0]?.message ?? 'Say why the clock-out is removed.' });
+
+  // A payslip already approved or paid was worked out from this day: reopen it first. Before payroll exists there is none.
+  const locked = await one<{ x: number }>(env, `SELECT 1 AS x FROM payslips WHERE employee_id = ? AND period = ? AND status <> 'draft' LIMIT 1`,
+    before.employee_id, before.work_date.slice(0, 7)).catch((e: unknown) => {
+    if (/payslips/.test(e instanceof Error ? e.message : String(e))) return null;
+    throw e;
+  });
+  if (locked) return fail('CONFLICT', `The payslip for ${before.work_date.slice(0, 7)} is already approved or paid. Reopen it before changing attendance.`, 409);
+
+  await run(env, `
+    UPDATE attendance SET clock_out_at = NULL, out_lat = NULL, out_lng = NULL, out_accuracy_m = NULL, out_photo_id = NULL, forgot_out = 0,
+      note = ?, edited_by = ?, updated_at = ? WHERE id = ?`, parsed.data.note, session.userId, nowIso(), before.id);
+  const after = await one<AttendanceRow>(env, `SELECT ${ROW_COLS} FROM attendance WHERE id = ?`, before.id);
+  if (!after) throw new Error('The removal of the clock-out was not saved.');
+  await audit(env, {
+    actorId: session.userId, actorLabel: session.fullName, action: 'attendance.remove_clock_out', entityTable: 'attendance', entityId: before.id,
+    before: { clockInAt: before.clock_in_at, clockOutAt: before.clock_out_at, outPhotoId: before.out_photo_id, forgotOut: !!before.forgot_out },
+    after: { clockInAt: after.clock_in_at, clockOutAt: null, reason: parsed.data.note },
+  });
+  return json({ data: toView(after) });
+};

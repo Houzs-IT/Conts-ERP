@@ -17,6 +17,7 @@ export const allow = {
   'functions/api/auth/view-as.ts': 'Staging account switcher: verifies the signed-in and original sessions itself with readSession.',
   'functions/api/settings/public.ts': 'The sign-in page shows the support phone before anyone is signed in; it returns that one value only.',
   'functions/api/integrations/channex-webhook.ts': 'Called by Channex, not a person; authenticated by the shared webhook secret instead of a cookie.',
+  'functions/api/integrations/hostplatform-webhook.ts': 'Called by HostPlatform, not a person; authenticated by the shared webhook secret header instead of a cookie.',
   'functions/api/system/health/hub-report.ts': 'Called by the cron worker, not a person; authenticated by Conts\'s IT Hub key (compared in constant time) instead of a cookie.',
 };
 

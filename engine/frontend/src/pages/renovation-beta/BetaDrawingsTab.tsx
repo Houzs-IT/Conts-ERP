@@ -4,7 +4,9 @@
    "For site" bar and the two set uploads; the approved set; or the history. 3D is a set of named link cards. Sending
    and approval write through /api/beta; the upload boxes open the dialogs in BetaDrawingUploads.tsx. */
 
-import { useState, type CSSProperties, type ReactElement, type ReactNode } from "react";
+import { useRef, useState, type CSSProperties, type ReactElement, type ReactNode } from "react";
+import { Download, Eye, ExternalLink } from "lucide-react";
+import { RowActionsMenu, type MenuItem } from "../../components/RowActionsMenu";
 import { useDialog } from "../../hooks/useDialog";
 import { useQuery } from "../../hooks/useQuery";
 import { addDays, errorText } from "../projects/renovation/renovationModel";
@@ -17,7 +19,7 @@ import { FileDialog, sendReminder, useGuarded, type BetaTabProps, type ViewedFil
 import { betaApi } from "./renovationBetaApi";
 import { approvedSet, dayMonth, dayMonthYear, daysLeft, versionLabel, whatsappLink, type ApprovedSet, type DesignKind, type VersionInfo } from "./renovationBetaModel";
 import { downloadAsPdf, type PdfPart, type TitleBlock } from "./renovationBetaPdf";
-import { changedAgainst, removedSheetsOf, sheetSetAt, sheetsApi, sizeText, type BetaSheet, type SetSheet } from "./renovationBetaSheets";
+import { changedAgainst, removedSheetsOf, sheetSetAt, sheetsApi, sizeText, versionWhat, type BetaSheet, type SetSheet } from "./renovationBetaSheets";
 import { CompareDialog, LinkCards, RemovedList, SheetGrid, type SheetGridEdit } from "./BetaDrawingSheets";
 import { getBrandingCache } from "../../lib/branding";
 import { BETA, TONES } from "./renovationBetaTheme";
@@ -284,6 +286,9 @@ function KindDetail({ kind, p, set, onEdit, onOpen, onUpload, sheets, sheetsRead
   const { approved, waiting } = set;
   const [picked, setView] = useState<View>(waiting ? "waiting" : approved ? "approved" : "history");
   const [comparing, setComparing] = useState(false);
+  // History: the file id of the version whose pages are open, or null for the list.
+  const [histId, setHistId] = useState<number | null>(null);
+  const replacePicker = useRef<HTMLInputElement>(null);
   // After a save the picked view can be gone (the waiting version was just approved), so fall back to what exists.
   const view: View = picked === "waiting" && !waiting ? (approved ? "approved" : "history") : picked === "approved" && !approved ? (waiting ? "waiting" : "history") : picked;
   const notes = records.notes.filter((n) => n.kind === kind).sort((a, b) => b.noted_on.localeCompare(a.noted_on) || b.id - a.id);
@@ -309,6 +314,28 @@ function KindDetail({ kind, p, set, onEdit, onOpen, onUpload, sheets, sheetsRead
   }));
   const pdfName = (v: VersionInfo): string => `${detail.project.name} ${K} V${v.file.version}.pdf`;
   const setSize = (v: VersionInfo): string | null => sizeText(setOf(v).reduce((n, x) => n + (x.size ?? 0), 0));
+
+  /** First upload, or the requests a later one answered (the same rule as the older design task page). */
+  const roundOf = (v: VersionInfo): string => {
+    if (!set.versions.some((x) => x.file.version < v.file.version)) return "First submission";
+    const n = notes.filter((x) => x.closed_by_file_id === v.file.id).length;
+    return n ? `Answers ${plural(n, "request")}` : "Revision";
+  };
+  const ownSheets = (v: VersionInfo): BetaSheet[] => sheets.filter((s) => s.fileId === v.file.id && !s.removedAt);
+  const versionSize = (v: VersionInfo): string | null => sizeText(ownSheets(v).reduce((n, s) => n + (s.size ?? 0), 0) || v.file.size_bytes || 0);
+  const downloadSet = async (v: VersionInfo): Promise<void> => {
+    try {
+      const r = await downloadAsPdf(projectId, partsOf(v), pdfName(v).replace(/[\\/:*?"<>|]+/g, " "));
+      if (r.skipped.length) p.onError(`Not in the PDF (not a PDF or photo): ${r.skipped.join(", ")}`);
+    } catch (e) {
+      p.onError(`The PDF could not be made: ${errorText(e)}`);
+    }
+  };
+  const menuOf = (v: VersionInfo): MenuItem[] => [
+    ...(setOf(v).length > 0 && is2d ? [{ icon: Eye, label: `View V${v.file.version} pages`, onClick: () => setHistId(v.file.id) }] : []),
+    ...(ownSheets(v).length === 0 ? [{ icon: ExternalLink, label: "Open file", onClick: () => onOpen(v.file) }] : []),
+    ...(partsOf(v).length > 0 ? [{ icon: Download, label: "Download", onClick: () => void downloadSet(v) }] : []),
+  ];
 
   async function removeApproval(v: VersionInfo): Promise<void> {
     const label = versionLabel(kind, v.file);
@@ -346,7 +373,11 @@ function KindDetail({ kind, p, set, onEdit, onOpen, onUpload, sheets, sheetsRead
   const suffix = view === "waiting" ? (sentOn ? "· waiting for client" : "· not sent yet") : view === "approved" ? `· client approved ${dayMonth(approved?.review?.approvedOn)}` : "";
   const suffixColor = view === "waiting" ? WS.amber : WS.green;
   const shownSet = setOf(shown);
+  const viewedV = view === "history" ? set.versions.find((v) => v.file.id === histId) ?? null : null;
   const changed = view === "waiting" && approved ? changedAgainst(shownSet, approvedSet) : null;
+  // A version after the first marks the sheets it changed against the version before it; V1 has nothing to compare with.
+  const before = viewedV ? set.versions[set.versions.indexOf(viewedV) + 1] : undefined;
+  const versionMarks = viewedV && before ? changedAgainst(setOf(viewedV), setOf(before)) : null;
   const word = is2d ? "sheet" : "link";
   const shownSize = shown ? setSize(shown) : null;
   const shareSite = (): void => {
@@ -384,8 +415,21 @@ function KindDetail({ kind, p, set, onEdit, onOpen, onUpload, sheets, sheetsRead
         <span style={{ color: BETA.muted }}>Show:</span>
         {waiting && <ShowPill on={view === "waiting"} onClick={() => setView("waiting")}>{`New revision · ${sentOn ? "waiting client" : "not sent"}`}</ShowPill>}
         {approved && <ShowPill on={view === "approved"} onClick={() => setView("approved")}>{is2d ? "Approved set · site uses this" : "Approved set"}</ShowPill>}
-        <ShowPill on={view === "history"} onClick={() => setView("history")} quiet>History</ShowPill>
+        <ShowPill on={view === "history"} onClick={() => { setView("history"); setHistId(null); }} quiet>History</ShowPill>
       </div>
+
+      {is2d && set.versions.length > 1 && (
+        <div style={{ display: "flex", alignItems: "center", gap: 12, fontSize: 13 }}>
+          <span style={{ flex: "none", color: BETA.muted, fontWeight: 600 }}>View version</span>
+          <div role="group" aria-label="View version" className="vrow">
+            {[...set.versions].reverse().map((v, i, oldestFirst) => (
+              <button key={v.file.id} type="button" className="vpill" aria-pressed={viewedV === v} onClick={() => { setView("history"); setHistId(v.file.id); }}>
+                {`V${v.file.version}${i === oldestFirst.length - 1 ? " · latest" : ""}`}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {view === "waiting" && waiting && (
         <WaitingView kind={kind} v={waiting} p={p} busy={busy} onEdit={onEdit} newSet={shownSet} hasApproved={approved != null}
@@ -427,22 +471,45 @@ function KindDetail({ kind, p, set, onEdit, onOpen, onUpload, sheets, sheetsRead
         </div>
       )}
 
+      {view === "history" && viewedV && (
+        <>
+          <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "10px 14px", padding: "14px 16px", borderRadius: 10, ...(viewedV === set.versions[0]
+            ? { background: WS.tealSoft, border: `1.5px solid ${WS.tealLine}` }
+            : { background: BETA.surface, border: `1.5px solid ${BETA.line}` }) }}>
+            <span style={{ padding: "4px 10px", borderRadius: 6, background: viewedV === set.versions[0] ? BETA.accent : BETA.muted, color: BETA.surface, fontSize: 12, fontWeight: 800, letterSpacing: ".06em" }}>{viewedV === set.versions[0] ? "LATEST" : "OLDER VERSION"}</span>
+            <div style={{ flex: "1 1 220px", minWidth: 0, color: BETA.ink }}>
+              <div style={{ fontSize: 18, fontWeight: 800 }}>V{viewedV.file.version} · {roundOf(viewedV)}</div>
+              <div style={{ fontSize: 13, color: WS.text2 }}>{dayMonthYear(submittedOf(viewedV.file))} · {versionWhat(records.files, sheets, viewedV.file)}</div>
+            </div>
+            {partsOf(viewedV).length > 0 && <PdfButton projectId={projectId} parts={partsOf(viewedV)} outName={pdfName(viewedV)} label="Download" onError={p.onError} />}
+          </div>
+          {grid(viewedV, versionMarks)}
+        </>
+      )}
+
       {view === "history" && (
-        <div style={boxStyle}>
-          <div style={{ padding: "12px 16px", background: WS.head, fontWeight: 600 }}>All versions</div>
+        // Not overflow hidden here: the "..." menu of the last rows has to open past the box.
+        <div style={{ ...boxStyle, overflow: "visible" }}>
+          <div style={{ padding: "12px 16px", background: WS.head, fontWeight: 600, borderRadius: "10px 10px 0 0" }}>All versions · newest first</div>
           <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
-            {set.versions.map((v) => {
+            {set.versions.map((v, i) => {
               const state = v === approved ? "Approved" : v === waiting ? (v.review?.sentOn ? "Sent, waiting" : "Not sent") : "Older";
-              const own = sheets.filter((s) => s.fileId === v.file.id);
+              const menu = menuOf(v);
+              const details = [roundOf(v), is2d ? versionWhat(records.files, sheets, v.file) : null, dayMonthYear(submittedOf(v.file)), versionSize(v), picNames(v.file)].filter(Boolean);
               return (
-                <li key={v.file.id} style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, padding: "12px 16px", borderTop: `1px solid ${WS.rowLine}` }}>
+                <li key={v.file.id} aria-current={v === viewedV ? "true" : undefined} style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, padding: "12px 16px", borderTop: `1px solid ${WS.rowLine}`, background: v === viewedV ? WS.tealSoft : undefined }}>
+                  <span style={{ flex: "none", minWidth: 34, fontWeight: 700 }}>V{v.file.version}</span>
                   <div style={{ flex: "1 1 220px", minWidth: 0 }}>
-                    <div style={{ fontWeight: 600 }}>{versionLabel(kind, v.file)} <span style={{ fontWeight: 400, color: BETA.muted }}>· {dayMonth(submittedOf(v.file))} · {picNames(v.file)}</span></div>
-                    {own.length > 0 && <div style={{ fontSize: 12, color: BETA.muted, overflowWrap: "anywhere" }}>{own.map((s) => s.name).join(", ")}</div>}
+                    <div style={{ fontWeight: 600, overflowWrap: "anywhere" }}>
+                      {v.file.file_name}
+                      {i === 0 && <HistTag>Latest</HistTag>}
+                      {v === approved && is2d && <HistTag solid>For site</HistTag>}
+                    </div>
+                    <div style={{ fontSize: 12, color: BETA.muted, overflowWrap: "anywhere" }}>{details.join(" · ")}</div>
                     {v.file.note && <div style={{ fontSize: 12, color: BETA.muted, overflowWrap: "anywhere" }}>{v.file.note}</div>}
                   </div>
                   <WsBadge tone={v === approved ? TONE_DONE : v === waiting ? TONE_WAIT : TONE_QUIET}>{state}</WsBadge>
-                  {own.length === 0 && <WsBtn size="sm" onClick={() => onOpen(v.file)}>Open<span className="sr"> {versionLabel(kind, v.file)}</span></WsBtn>}
+                  {menu.length > 0 && <RowActionsMenu items={menu} size={36} title={`More for V${v.file.version}`} />}
                 </li>
               );
             })}
@@ -457,8 +524,12 @@ function KindDetail({ kind, p, set, onEdit, onOpen, onUpload, sheets, sheetsRead
 
       {onUpload && is2d && sheetsReady && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 10 }}>
-          <BigUpload title="Replace changed pages" sub="Upload only the pages you changed. The rest are kept from the set." onClick={() => onUpload({ t: "sheets", mode: "replace" })} strong />
-          <BigUpload title="Upload full set" sub="First time, or when the whole set is redrawn." onClick={() => onUpload({ t: "sheets", mode: "full" })} />
+          {/* The click goes straight to the file picker; the dialog then lists the set so each file can be matched to a sheet. */}
+          <BigUpload title="Replace changed pages" sub="Pick the files you changed, then choose which sheet each one replaces." onClick={() => replacePicker.current?.click()} strong />
+          <input
+            ref={replacePicker} type="file" multiple accept="application/pdf,image/*" className="sr" tabIndex={-1} aria-hidden="true" data-testid="replace-picker"
+            onChange={(e) => { const files = [...(e.target.files ?? [])]; e.target.value = ""; if (files.length) onUpload({ t: "sheets", mode: "replace", files }); }}
+          />
         </div>
       )}
       {onUpload && !is2d && (
@@ -470,6 +541,12 @@ function KindDetail({ kind, p, set, onEdit, onOpen, onUpload, sheets, sheetsRead
       {notes.length > 0 && <NotesList kind={kind} notes={notes} files={records.files} />}
       {comparing && <CompareDialog projectId={projectId} next={shownSet} approved={approvedSet} onClose={() => setComparing(false)} />}
     </section>
+  );
+}
+
+function HistTag({ solid = false, children }: { solid?: boolean; children: ReactNode }): ReactElement {
+  return (
+    <span style={{ marginLeft: 8, padding: "2px 7px", borderRadius: 5, fontSize: 11, fontWeight: 600, whiteSpace: "nowrap", background: solid ? BETA.accent : TONES.accent.soft, color: solid ? BETA.surface : TONES.accent.ink }}>{children}</span>
   );
 }
 
