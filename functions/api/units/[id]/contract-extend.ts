@@ -2,7 +2,7 @@ import { type Env, one, run, json, fail, audit, nowIso } from '../../../_lib/db'
 import { requireSession, hasColumn } from '../../../_lib/auth';
 import { checkDate } from '../../../_lib/validate';
 import { modelOf, RENT_TO_RENT } from '../../../_lib/revenueModel';
-import { purposeReady, codesFor, codeOf, type Purpose } from '../../../_lib/unitPurpose';
+import { purposeReady, codeOf } from '../../../_lib/unitPurpose';
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const dayBefore = (d: string) => new Date(Date.parse(`${d}T00:00:00Z`) - 864e5).toISOString().slice(0, 10);
@@ -43,9 +43,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
     return fail('VALIDATION', 'That file is already the agreement of another contract period. Upload the new one.', 422, { documentId: 'Already used for another period.' });
   }
   const code = codeOf(modelOf({ ...cur, contract_id: cur.id, package: u.package }), cur.contract_code);
-  if (!codesFor(u.purpose as Purpose, code).includes(code)) {
-    return fail('CONTRACT_MISMATCH', `A ${code} contract does not fit this ${u.purpose} unit. Start a new contract on the Contract tab instead.`, 409);
-  }
 
   const shared = Number((await one<{ n: number }>(env, 'SELECT COUNT(*) AS n FROM units WHERE contract_id = ? AND id <> ?', cur.id, id))?.n ?? 0) > 0;
   const newId = crypto.randomUUID(), now = nowIso();

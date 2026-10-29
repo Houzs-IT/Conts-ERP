@@ -2,7 +2,7 @@ import type { StatusTone } from './status';
 /** Revenue models and expense payers as the screens name them. The server's rules are in
  *  functions/_lib/revenueModel.ts and functions/_lib/ownerStatement.ts. */
 
-export type RevenueModel = 'management' | 'management_guarantee' | 'management_yearly_guarantee' | 'grr' | 'master_lease' | 'long_term' | 'wh_long_term';
+export type RevenueModel = 'management' | 'management_guarantee' | 'management_yearly_guarantee' | 'grr' | 'master_lease' | 'long_term';
 
 export const MODELS: { key: RevenueModel; label: string; short: string; blurb: string; statement: string }[] = [
   { key: 'management', label: 'Income split', short: 'Split', blurb: 'We manage the unit and split the profit',
@@ -17,11 +17,9 @@ export const MODELS: { key: RevenueModel; label: string; short: string; blurb: s
     statement: 'No owner statement. The rent is a company cost; the unit\'s profit or loss is the company\'s.' },
   { key: 'long_term', label: 'Long-term let', short: 'Long-term', blurb: 'Let to one tenant, not on channels',
     statement: 'The owner gets the tenant\'s rent less owner-paid costs. No operator share.' },
-  { key: 'wh_long_term', label: 'Showroom / warehouse let', short: 'WH LT', blurb: 'A showroom or warehouse let long term to one tenant (e.g. Dream Crafter)',
-    statement: 'The owner gets the tenant\'s rent less the operator share and owner-paid costs.' },
 ];
 /** Let to one tenant: the owner gets the tenant's rent less the operator share (functions/_lib/revenueModel.ts). */
-export const isTenancy = (m: string): boolean => m === 'long_term' || m === 'wh_long_term';
+export const isTenancy = (m: string): boolean => m === 'long_term';
 export const MODEL: Record<RevenueModel, typeof MODELS[number]> = Object.fromEntries(MODELS.map(m => [m.key, m])) as Record<RevenueModel, typeof MODELS[number]>;
 
 /** The colour each model's label takes (StatusBadge tone). */
@@ -32,7 +30,6 @@ export const MODEL_TONE: Record<RevenueModel, StatusTone> = {
   grr: 'success',
   master_lease: 'warning',
   long_term: 'neutral',
-  wh_long_term: 'danger',
 };
 
 /** Who pays an expense (expenses.charge_to). Only the owner's reach the statement. */
@@ -56,9 +53,8 @@ export const CATEGORY_LABEL: Record<string, string> = {
 };
 
 /** The staff's contract codes (sheet UNIT, 17 Oct 2026) and the model each is worked out by (functions/_lib/unitPurpose.ts).
- *  A rental unit takes PS, PS GRR, PS YGRR, LT, RTR or MANAGE (GRR only if it already has it); a showroom or warehouse
- *  takes a WH lease, a WH LT let or nothing. */
-export type ContractCode = 'PS' | 'PS GRR' | 'PS YGRR' | 'LT' | 'RTR' | 'MANAGE' | 'WH' | 'WH LT' | 'GRR';
+ *  Every unit, showroom and warehouse too, takes PS, PS GRR, PS YGRR, LT, RTR or MANAGE (GRR only if it already has it). */
+export type ContractCode = 'PS' | 'PS GRR' | 'PS YGRR' | 'LT' | 'RTR' | 'MANAGE' | 'GRR';
 export const CODES: { code: ContractCode; pkg?: string; model: RevenueModel; label: string; blurb: string }[] = [
   { code: 'PS', pkg: '(Package A)', model: 'management', label: 'Airbnb profit sharing', blurb: 'We run it on the channels and split the profit' },
   { code: 'PS GRR', pkg: '(Package B)', model: 'management_guarantee', label: 'Profit sharing, monthly GRR', blurb: 'A split, with a minimum for the owner every month' },
@@ -66,19 +62,17 @@ export const CODES: { code: ContractCode; pkg?: string; model: RevenueModel; lab
   { code: 'PS YGRR', pkg: '(Package D)', model: 'management_yearly_guarantee', label: 'Profit sharing, yearly GRR', blurb: 'A split, with a minimum for the owner each contract year' },
   { code: 'RTR', pkg:'-', model: 'master_lease', label: 'Rent to rent', blurb: 'We rent the unit from the owner and run it' },
   { code: 'MANAGE', pkg:'-',model: 'management', label: 'Listing management', blurb: 'We manage the listing for a fee, no guarantee' },
-  { code: 'WH', model: 'master_lease', label: 'Warehouse / showroom lease', blurb: 'Fixed monthly rent to the owner' },
-  { code: 'WH LT', model: 'wh_long_term', label: 'Showroom / warehouse long-term', blurb: 'Let to one tenant (e.g. Dream Crafter); owner gets the rent less our share' },
   { code: 'GRR', model: 'grr', label: 'Guaranteed rent', blurb: 'Fixed rent to the owner each month (older contracts)' },
 ];
 export const CODE: Record<ContractCode, typeof CODES[number]> = Object.fromEntries(CODES.map(c => [c.code, c])) as Record<ContractCode, typeof CODES[number]>;
 export const codeName = (c: ContractCode): string => CODE[c]?.pkg ? `${c} ${CODE[c].pkg}` : c;
-/** "Package B" for PS GRR, null for the codes that have none (RTR, MANAGE, GRR, WH, WH LT, or no contract). */
+/** "Package B" for PS GRR, null for the codes that have none (RTR, MANAGE, GRR, or no contract). */
 export const packageOf = (c: ContractCode | null | undefined): string | null => {
   const pkg = c ? CODE[c]?.pkg : undefined;
   return pkg && pkg !== '-' ? pkg.replace(/[()]/g, '') : null;
 };
 export const codeFromModel =(m: RevenueModel): ContractCode =>
-  ({ management: 'PS', management_guarantee: 'PS GRR', management_yearly_guarantee: 'PS YGRR', grr: 'GRR', master_lease: 'RTR', long_term: 'LT', wh_long_term: 'WH LT' } as const)[m];
+  ({ management: 'PS', management_guarantee: 'PS GRR', management_yearly_guarantee: 'PS YGRR', grr: 'GRR', master_lease: 'RTR', long_term: 'LT' } as const)[m];
 
 export type UnitPurpose = 'rental' | 'showroom' | 'warehouse';
 export const PURPOSES: { value: UnitPurpose; label: string; help: string }[] = [

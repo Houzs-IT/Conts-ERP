@@ -11,7 +11,7 @@ import { useApi } from '../../lib/useApi';
 import { api, ApiFailure, errorMessage } from '../../lib/api';
 import { date, monthLabel, rm } from '../../lib/format';
 import { cx } from '../../lib/design-tokens';
-import { MODEL, MODEL_TONE, CODES, CODE, codeName, codeFromModel, isTenancy, PURPOSE_LABEL, type RevenueModel, type ContractCode, type UnitPurpose } from '../../lib/revenueModel';
+import { MODEL, MODEL_TONE, CODES, CODE, codeName, codeFromModel, isTenancy, type RevenueModel, type ContractCode, type UnitPurpose } from '../../lib/revenueModel';
 import { ExtendContractModal, GenerateAgreement } from './ContractExtras';
 import { CodeBadge } from './UnitExtras';
 import { DataTable, type Column } from '../../components/DataTable';
@@ -49,7 +49,7 @@ export interface Example {
 }
 interface Payload {
   month: string; unit: { id: string; label: string; ownerName: string; purpose?: UnitPurpose };
-  /** The codes this unit may take: a showroom or warehouse only WH (0125). */
+  /** The codes this unit may take (the same for every purpose, migration 0181). */
   allowedCodes?: ContractCode[];
   current: ContractView; history: ContractView[]; example: Example | null;
 }
@@ -57,7 +57,7 @@ interface Payload {
 interface Draft {
   revenueModel: RevenueModel; contractCode: ContractCode; yearlyGuarantee: number | null; ownerPct: number | null; managementPct: number | null; agentPct: number | null; agentName: string;
   minimumGuarantee: number | null; guaranteeStartsOn: string; guaranteeEndsOn: string;
-  monthlyRent: number | null; deposit: number | null; tenantName: string; ltFeePct: number | null;
+  monthlyRent: number | null; deposit: number | null; tenantName: string;
   startsOn: string; endsOn: string; renewsOn: string; miscCharges: boolean;
   ownerAmount: number | null;
   depositUtilities: number | null; depositCard: number | null;
@@ -73,7 +73,7 @@ function draftOf(c: ContractView): Draft {
     ownerPct: pctOf(c.ownerPct ?? 75), managementPct: pctOf(c.managementPct != null && !isTenancy(c.revenueModel) ? c.managementPct : c.ownerPct != null ? 100 - c.ownerPct - (c.agentPct ?? 0) : 25),
     agentPct: pctOf(c.agentPct ?? 0), agentName: c.agentName ?? '',
     minimumGuarantee: senOrEmpty(c.minimumGuarantee), guaranteeStartsOn: c.guaranteeStartsOn ?? '', guaranteeEndsOn: c.guaranteeEndsOn ?? '',
-    monthlyRent: senOrEmpty(c.monthlyRent), deposit: senOrEmpty(c.deposit), tenantName: c.tenantName ?? '', ltFeePct: pctOf(isTenancy(c.revenueModel) ? c.managementPct : 10),
+    monthlyRent: senOrEmpty(c.monthlyRent), deposit: senOrEmpty(c.deposit), tenantName: c.tenantName ?? '',
     startsOn: c.startsOn?.slice(0, 10) ?? '', endsOn: c.endsOn?.slice(0, 10) ?? '', renewsOn: c.renewsOn?.slice(0, 10) ?? '', miscCharges: c.miscCharges,
     ownerAmount: senOrEmpty(c.ownerAmount),
     depositUtilities: c.rentToRent?.depositUtilities ?? null, depositCard: c.rentToRent?.depositCard ?? null,
@@ -92,8 +92,8 @@ function bodyOf(d: Draft) {
     ...(d.contractCode === 'MANAGE' ? { ownerAmount: d.ownerAmount ?? 0 } : {}),
     ...(m === 'master_lease' ? { deposit: d.deposit ?? null } : {}),
     ...(d.contractCode === 'RTR' ? Object.fromEntries(RENT_TO_RENT_KEYS.map(k => [k, d[k]])) : {}),
-    // LT (Package C) has no operator share (staff sheet UNIT, 26 Oct 2026); WH LT keeps its own.
-    ...(isTenancy(m) ? { tenantName: d.tenantName, managementPct: d.contractCode === 'LT' ? 0 : d.ltFeePct ?? 0 } : {}),
+    // LT (Package C) has no operator share (staff sheet UNIT, 26 Oct 2026).
+    ...(isTenancy(m) ? { tenantName: d.tenantName, managementPct: 0 } : {}),
     startsOn: d.startsOn, endsOn: d.endsOn || null, renewsOn: d.renewsOn || null,
   };
 }
@@ -176,9 +176,8 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unit
   const set = (p: Partial<Draft>) => { setDraft({ ...d, ...p }); setFields({}); };
   const m = d.revenueModel;
   const share = isShare(m);
-  const purpose = data?.unit.purpose ?? 'rental';
   // The current code stays offered even if the list has moved on (an older GRR), so the form can show it.
-  const offered = CODES.filter(c => (data?.allowedCodes ?? CODES.filter(x => x.code !== 'WH' && x.code !== 'WH LT' && x.code !== 'GRR').map(x => x.code)).includes(c.code) || c.code === d.contractCode);
+  const offered = CODES.filter(c => (data?.allowedCodes ?? CODES.filter(x => x.code !== 'GRR').map(x => x.code)).includes(c.code) || c.code === d.contractCode);
   const example = preview ?? data?.example ?? null;
   const guess = current.contractCode ?? codeFromModel(current.revenueModel);
 
@@ -196,8 +195,8 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unit
     } finally { setSaving(false); }
   }
 
-  const pct = (k: 'ownerPct' | 'managementPct' | 'agentPct' | 'ltFeePct', label: string) => (
-    <PercentInput label={label} value={d[k]} onChange={v => set({ [k]: v })} error={shown[k === 'ltFeePct' ? 'managementPct' : k]} />
+  const pct = (k: 'ownerPct' | 'managementPct' | 'agentPct', label: string) => (
+    <PercentInput label={label} value={d[k]} onChange={v => set({ [k]: v })} error={shown[k]} />
   );
   const money = (k: 'minimumGuarantee' | 'yearlyGuarantee' | 'monthlyRent' | 'deposit' | 'ownerAmount' | RentToRentKey, label: string, help?: string) => (
     <MoneyInput label={label} placeholder="e.g. 3,000.00" valueSen={d[k]} onChangeSen={v => set({ [k]: v })} error={shown[k]} help={help} />
@@ -235,7 +234,6 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unit
           {mode === 'new' && <div className="py-[10px] px-[14px] rounded-control bg-gold-tint text-copy">A new contract from its start date. The current one ends the day before and stays in this unit's history; statements before the new start keep using it.</div>}
           {current.sharedWith > 0 && mode === 'update' && <div className="py-[10px] px-[14px] rounded-control bg-muted text-meta text-muted-ink">This contract record also covers {current.sharedWith} other {current.sharedWith === 1 ? 'unit' : 'units'} of the owner. Saving here gives this unit its own copy; the others are not changed.</div>}
 
-          {purpose !== 'rental' && <div className="py-[10px] px-[14px] rounded-control bg-muted text-meta text-muted-ink">A {PURPOSE_LABEL[purpose].toLowerCase()} unit is not run on the channels: it takes a WH lease (a fixed monthly rent to the owner) or a WH LT let (one tenant, such as Dream Crafter, rents it; the owner gets the rent less the operator share).</div>}
           <Select label="Income model" showLabel size="md" className="max-w-[560px]" value={d.contractCode}
             options={offered.map(o => ({ value: o.code, label: `${o.code}${o.pkg && o.pkg !== '-' ? ` ${o.pkg}` : ''} - ${o.label}` }))}
             onChange={v => { const o = CODE[v as ContractCode]; set({ contractCode: o.code, revenueModel: o.model }); setPicked(true); }} />
@@ -286,7 +284,6 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unit
             {isTenancy(m) && <>
               <Field label="Tenant" placeholder="Tenant's name" value={d.tenantName} onChange={e => set({ tenantName: e.target.value })} error={shown.tenantName} />
               {money('monthlyRent', 'Monthly rent from tenant (RM)')}
-              {d.contractCode !== 'LT' && pct('ltFeePct', 'Operator share % of the rent')}
             </>}
           </div>
           {d.contractCode === 'MANAGE' && (

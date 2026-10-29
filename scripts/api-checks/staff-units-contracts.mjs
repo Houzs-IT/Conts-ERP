@@ -1,4 +1,4 @@
-// Staff comment sheet UNIT (17 Oct 2026): unit purpose, beds, car park bays, unit delete, contract codes per purpose,
+// Staff comment sheet UNIT (17 Oct 2026): unit purpose, beds, car park bays, unit delete, contract codes (the same for every purpose),
 // extend-requires-file, the agreement generator and its template, Agent to let. Run against a fresh local database
 // (scripts/dev-pglite.mjs) and a local server: API_BASE=http://localhost:8891 node scripts/api-checks/staff-units-contracts.mjs
 import { call, check, done } from './harness.mjs';
@@ -25,36 +25,26 @@ check('beds read back as "1 King · 2 Single"', u.bedsLabel === '1 King · 2 Sin
 check('bays read back with count and lots', u.parkingLabel === '3 bays: L2-105 (P2), L2-106, B1-7', u.parkingLabel);
 check('purpose defaults to rental', u.purpose === 'rental', u.purpose);
 
-// --- contract codes follow the purpose ---
+// --- contract codes are the same for every purpose: showroom and warehouse is only a label (migration 0181) ---
 const draft = { revenueModel: 'management', contractCode: 'PS', ownerPct: 75, managementPct: 25, agentPct: 0, startsOn: '2026-01-01', endsOn: '2026-12-31', mode: 'update' };
-r = await call('PUT', `/api/units/${id}/contract`, { ...draft, revenueModel: 'master_lease', contractCode: 'WH', monthlyRent: 200000 });
-check('a rental unit cannot take WH', r.status === 422 && r.json.error.fields?.contractCode, r.text);
-r = await call('PUT', `/api/units/${id}/contract`, { ...draft, revenueModel: 'wh_long_term', contractCode: 'WH LT', monthlyRent: 200000, tenantName: 'Dream Crafter', managementPct: 10 });
-check('a rental unit cannot take WH LT', r.status === 422 && r.json.error.fields?.contractCode, r.text);
 r = await call('PUT', `/api/units/${id}/contract`, draft);
 check('a rental unit takes PS', r.status === 200, r.text);
 r = await call('GET', `/api/units/${id}/contract`);
-check('contract reads back PS, and the rental codes are offered', r.json.current.contractCode === 'PS' && r.json.allowedCodes.includes('PS YGRR') && !r.json.allowedCodes.includes('WH'), JSON.stringify(r.json.allowedCodes));
+const rentalCodes = r.json.allowedCodes.join();
+check('contract reads back PS; Package A to D codes offered, no WH or WH LT', r.json.current.contractCode === 'PS' && r.json.allowedCodes.includes('PS YGRR') && r.json.allowedCodes.includes('LT') && !r.json.allowedCodes.some(c => c.startsWith('WH')), rentalCodes);
 
-// --- purpose change refused while the contract does not fit, then ends it ---
-r = await call('PATCH', `/api/units/${id}`, { purpose: 'warehouse' });
-check('warehouse refused while on a PS contract (409 CONTRACT_MISMATCH)', r.status === 409 && r.json.error.code === 'CONTRACT_MISMATCH', r.text);
-r = await call('PATCH', `/api/units/${id}`, { purpose: 'warehouse', endContract: true, usedBy: 'inhouse_reno' });
-check('warehouse with "end the contract" saves', r.status === 200, r.text);
+r = await call('PATCH', `/api/units/${id}`, { purpose: 'warehouse', usedBy: 'inhouse_reno' });
+check('a unit on PS becomes a warehouse and keeps its contract', r.status === 200, r.text);
 r = await call('GET', `/api/units/${id}/contract`);
-check('the PS contract is in the history, no contract in force, only WH and WH LT offered', r.json.current.id === null && r.json.history.length === 1 && r.json.allowedCodes.join() === 'WH,WH LT', JSON.stringify({ c: r.json.current.id, h: r.json.history.length, a: r.json.allowedCodes }));
-r = await call('PUT', `/api/units/${id}/contract`, { ...draft, contractCode: 'PS', mode: 'new', startsOn: '2027-01-01' });
-check('a warehouse cannot take PS', r.status === 422, r.text);
-r = await call('PUT', `/api/units/${id}/contract`, { revenueModel: 'master_lease', contractCode: 'WH', monthlyRent: 250000, startsOn: '2027-01-01', endsOn: '2027-12-31', mode: 'update' });
-check('a warehouse takes a WH lease', r.status === 200, r.text);
-r = await call('PUT', `/api/units/${id}/contract`, { revenueModel: 'wh_long_term', contractCode: 'WH LT', monthlyRent: 400000, startsOn: '2027-01-01', endsOn: '2027-12-31', mode: 'update' });
-check('a WH LT let needs its tenant', r.status === 422 && r.json.error.fields?.tenantName, r.text);
-r = await call('PUT', `/api/units/${id}/contract`, { revenueModel: 'wh_long_term', contractCode: 'WH LT', monthlyRent: 400000, tenantName: 'Inhouse Reno', managementPct: 10, startsOn: '2027-01-01', endsOn: '2027-12-31', mode: 'update' });
-check('a warehouse takes a WH LT let', r.status === 200, r.text);
+check('the PS contract is still in force and the same codes are offered', r.json.current.contractCode === 'PS' && r.json.allowedCodes.join() === rentalCodes, JSON.stringify({ c: r.json.current.contractCode, a: r.json.allowedCodes }));
+r = await call('PUT', `/api/units/${id}/contract`, { revenueModel: 'long_term', contractCode: 'LT', monthlyRent: 250000, managementPct: 0, startsOn: '2027-01-01', endsOn: '2027-12-31', mode: 'update' });
+check('an LT let needs its tenant', r.status === 422 && r.json.error.fields?.tenantName, r.text);
+r = await call('PUT', `/api/units/${id}/contract`, { revenueModel: 'long_term', contractCode: 'LT', monthlyRent: 250000, tenantName: 'Inhouse Reno', managementPct: 0, startsOn: '2027-01-01', endsOn: '2027-12-31', mode: 'update' });
+check('a warehouse takes LT (Package C), as the sheet says', r.status === 200, r.text);
 r = await call('GET', `/api/units/${id}/contract`);
-check('WH LT reads back with its tenant, rent and operator %', r.json.current.contractCode === 'WH LT' && r.json.current.revenueModel === 'wh_long_term' && r.json.current.tenantName === 'Inhouse Reno' && r.json.current.monthlyRent === 400000 && r.json.current.managementPct === 10, JSON.stringify(r.json.current));
-r = await call('PUT', `/api/units/${id}/contract`, { revenueModel: 'master_lease', contractCode: 'WH', monthlyRent: 250000, startsOn: '2027-01-01', endsOn: '2027-12-31', mode: 'update' });
-check('and back to a WH lease', r.status === 200, r.text);
+check('LT reads back with its tenant and rent', r.json.current.contractCode === 'LT' && r.json.current.revenueModel === 'long_term' && r.json.current.tenantName === 'Inhouse Reno' && r.json.current.monthlyRent === 250000, JSON.stringify(r.json.current));
+r = await call('PUT', `/api/units/${id}/contract`, { revenueModel: 'wh_long_term', contractCode: 'WH LT', monthlyRent: 250000, tenantName: 'Inhouse Reno', startsOn: '2027-01-01', endsOn: '2027-12-31', mode: 'update' });
+check('WH LT is refused', r.status === 422, r.text);
 
 // --- a warehouse is kept off the channels ---
 r = await call('PUT', '/api/rates', { unitId: id, baseRate: 20000 });
@@ -82,7 +72,7 @@ check('upload the renewal memo', up.status === 201 && doc.id, JSON.stringify(doc
 r = await call('POST', `/api/units/${id}/contract-extend`, { documentId: doc.id, startsOn: '2027-06-01', endsOn: '2027-05-01' });
 check('extend with an end before the start is refused', r.status === 422 && r.json.error.fields?.endsOn, r.text);
 r = await call('POST', `/api/units/${id}/contract-extend`, { documentId: doc.id, startsOn: '2028-01-01', endsOn: '2028-12-31' });
-check('extend with the file saves a new period', r.status === 201 && r.json.code === 'WH', r.text);
+check('extend with the file saves a new period', r.status === 201 && r.json.code === 'LT', r.text);
 r = await call('GET', `/api/units/${id}/contract`);
 const prev = r.json.history.find(h => h.startsOn?.startsWith('2027-01-01'));
 check('new period in force, old one ends the day before and is kept', r.json.current.startsOn.startsWith('2028-01-01') && r.json.current.agreementDocumentId === doc.id && prev?.endsOn?.startsWith('2027-12-31'), JSON.stringify({ cur: r.json.current.startsOn, prev: prev?.endsOn }));
@@ -108,7 +98,7 @@ check('finance cannot change the template', r.status === 403, r.text);
 r = await call('GET', `/api/units/${id}/agreement?check=1`);
 check('with the short template nothing is missing', r.json.ready === true, JSON.stringify(r.json.missing));
 r = await call('GET', `/api/units/${id}/agreement`);
-check('agreement generated as a print page with the unit, code and rent filled', r.status === 200 && r.text.includes(`T-${tag}`) && r.text.includes('WH') && r.text.includes('RM 2,500.00 a month'), r.text.slice(0, 300));
+check('agreement generated as a print page with the unit, code and rent filled', r.status === 200 && r.text.includes(`T-${tag}`) && r.text.includes('LT') &&r.text.includes('RM 2,500.00 a month'), r.text.slice(0, 300));
 r = await call('GET', `/api/units/${id}/agreement`, undefined, 'operations_staff');
 // 401 where the local demo data has no operations-staff login (seed.sql in CI has one): refused either way.
 check('operations staff cannot generate', r.status === 403 || r.status === 401, r.status);

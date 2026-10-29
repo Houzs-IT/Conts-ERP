@@ -66,27 +66,27 @@ export function invalidBays(v: unknown): string | null {
 
 /** The staff's list (sheet UNIT): each code and the revenue model the statement works it out by. GRR is the older
  *  guaranteed-rent model, kept for the contracts that have it. */
-export const CONTRACT_CODES = ['PS', 'PS GRR', 'PS YGRR', 'LT', 'RTR', 'MANAGE', 'WH', 'WH LT', 'GRR'] as const;
+export const CONTRACT_CODES = ['PS', 'PS GRR', 'PS YGRR', 'LT', 'RTR', 'MANAGE', 'GRR'] as const;
 export type ContractCode = typeof CONTRACT_CODES[number];
 export const CODE_MODEL: Record<ContractCode, RevenueModel> = {
   PS: 'management', 'PS GRR': 'management_guarantee', 'PS YGRR': 'management_yearly_guarantee', LT: 'long_term',
-  RTR: 'master_lease', MANAGE: 'management', WH: 'master_lease', 'WH LT': 'wh_long_term', GRR: 'grr',
+  RTR: 'master_lease', MANAGE: 'management', GRR: 'grr',
 };
 export const CODE_LABEL: Record<ContractCode, string> = {
   PS: 'Airbnb profit sharing', 'PS GRR': 'Profit sharing with monthly GRR', 'PS YGRR': 'Profit sharing with yearly GRR',
-  LT: 'Airbnb long term', RTR: 'Rent to rent', MANAGE: 'Listing management', WH: 'Warehouse / showroom lease', 'WH LT': 'Showroom / warehouse long-term', GRR: 'Guaranteed rent',
+  LT: 'Airbnb long term', RTR: 'Rent to rent', MANAGE: 'Listing management', GRR: 'Guaranteed rent',
 };
 export const isContractCode = (v: unknown): v is ContractCode => typeof v === 'string' && (CONTRACT_CODES as readonly string[]).includes(v);
 
 /** The code of a contract row: its own, else read from its model as the staff name them. */
 export function codeOf(revenueModel: RevenueModel, stored?: string | null): ContractCode {
   if (isContractCode(stored)) return stored;
-  return ({ management: 'PS', management_guarantee: 'PS GRR', management_yearly_guarantee: 'PS YGRR', grr: 'GRR', master_lease: 'RTR', long_term: 'LT', wh_long_term: 'WH LT' } as const)[revenueModel];
+  return ({ management: 'PS', management_guarantee: 'PS GRR', management_yearly_guarantee: 'PS YGRR', grr: 'GRR', master_lease: 'RTR', long_term: 'LT' } as const)[revenueModel];
 }
 
-/** Which codes a unit of each purpose may take (owner, 17 Oct 2026; WH LT 22 Oct 2026). A rental unit already on the older GRR keeps it. */
-export function codesFor(purpose: Purpose, currentCode?: ContractCode | null): ContractCode[] {
-  if (purpose !== 'rental') return ['WH', 'WH LT'];
+/** The codes a unit may take. Showroom and warehouse is only a label: those units follow the same SOP, Package A to D
+ *  (staff, 29 Oct 2026; WH and WH LT dropped in migration 0181). A unit already on the older GRR keeps it. */
+export function codesFor(currentCode?: ContractCode | null): ContractCode[] {
   const list: ContractCode[] = ['PS', 'PS GRR', 'PS YGRR', 'LT', 'RTR', 'MANAGE'];
   return currentCode === 'GRR' ? [...list, 'GRR'] : list;
 }

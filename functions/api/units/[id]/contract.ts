@@ -5,7 +5,7 @@ import { todayMyt } from '../../../_lib/ops';
 import { statementSettings, type Query } from '../../../_lib/ownerStatement';
 import { invalidDraft, draftColumns, rentToRentColumns, modelOf, MODEL_LABEL, type ContractDraft } from '../../../_lib/revenueModel';
 import { contractView, unitExample, lastMonth } from '../../../_lib/unitContract';
-import { purposeReady, codesFor, codeOf, isContractCode, CODE_MODEL, CODE_LABEL, PURPOSE_LABEL, type Purpose, type ContractCode } from '../../../_lib/unitPurpose';
+import { purposeReady, codesFor, codeOf, isContractCode, CODE_MODEL, CODE_LABEL, type Purpose, type ContractCode } from '../../../_lib/unitPurpose';
 
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
 
@@ -41,8 +41,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
   return json({
     generatedAt: nowIso(), month,
     unit: { id, label: `${u.property_name} ${u.unit_number}`, ownerId: u.owner_id, ownerName: u.owner_name, purpose: u.purpose as Purpose },
-    // The income models this unit may take (a showroom or warehouse: a lease only; owner, 17 Oct 2026).
-    allowedCodes: codesFor(u.purpose as Purpose, current ? view.contractCode : null),
+    // The income models this unit may take: the same for every purpose (migration 0181).
+    allowedCodes: codesFor(current ? view.contractCode : null),
     current: view,
     history: rows.filter(r => r.id !== u.contract_id).map(r => contractView(r, u, settings.defaultFeePct)),
     example,
@@ -87,9 +87,9 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env, params })
   const code: ContractCode = isContractCode(b.contractCode) ? b.contractCode : codeOf(b.revenueModel as never);
   if (CODE_MODEL[code] !== b.revenueModel) return fail('VALIDATION', 'Check the contract details.', 422, { contractCode: `${code} is worked out as ${MODEL_LABEL[CODE_MODEL[code]]}, not ${MODEL_LABEL[b.revenueModel as keyof typeof MODEL_LABEL]}.` });
   const curCode = cur ? codeOf(modelOf({ ...cur, contract_id: cur.id, package: u.package }), cur.contract_code) : null;
-  const allowed = codesFor(u.purpose as Purpose, curCode);
+  const allowed = codesFor(curCode);
   if (!allowed.includes(code)) {
-    return fail('VALIDATION', `A ${PURPOSE_LABEL[u.purpose as Purpose].toLowerCase()} unit can take ${allowed.join(', ')} only, not ${code} (${CODE_LABEL[code]}).`, 422, { contractCode: `Pick ${allowed.join(' or ')}.` });
+    return fail('VALIDATION', `A unit can take ${allowed.join(', ')} only, not ${code} (${CODE_LABEL[code]}).`, 422, { contractCode: `Pick ${allowed.join(' or ')}.` });
   }
   const c = {
     ...draftColumns(b), ...((await purposeReady(env)) ? { contract_code: code } : {}),
