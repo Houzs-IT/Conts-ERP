@@ -27,6 +27,8 @@ export type PaymentRequest = {
 export type FloatSummary = {
   id: string; floatSen: number; balanceSen: number; low: boolean; lastTopUpOn: string | null; topUpRequested?: boolean;
   departmentName?: string; keeperName?: string; warnPct?: number; active?: boolean;
+  /** The float's own account in the chart, e.g. 315-0101 PETTY CASH - AMIN; null books nothing. */
+  accountCode: string | null; accountName: string | null;
 };
 export type FloatRow = FloatSummary & {
   departmentId: string; departmentName: string; keeperUserId: string; keeperName: string; warnPct: number; active: boolean;
