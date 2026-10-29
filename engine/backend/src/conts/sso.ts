@@ -60,8 +60,17 @@ async function upsertRole(env: Env, name: string, description: string, permissio
   return found?.id ?? (await env.DB.prepare(`SELECT id FROM roles WHERE name = ?`).bind(name).first<{ id: number }>())?.id ?? null;
 }
 
-export async function roleIdFor(env: Env, contsRole: string, access: ContsAccess): Promise<number | null> {
-  if (!OFFICE.has(contsRole) || !hasAnyAccess(access)) return null;
+export async function roleIdFor(env: Env, contsRole: string, access: ContsAccess, opts: { claims?: boolean } = {}): Promise<number | null> {
+  if (!OFFICE.has(contsRole)) return null;
+  if (!hasAnyAccess(access)) {
+    /* My claims (Conts): every office account may hand in receipts and ask finance to pay, with no Supply chain or
+       Finance screen. One shared role with no keys and no pages; the claim routes check the person, not the role. */
+    if (!opts.claims) return null;
+    const name = contsRoleName("claims only");
+    const id = await upsertRole(env, name, "My claims only, from Property OS: no Supply chain or Finance screens", JSON.stringify([]));
+    await saveContsRoleAccess(env, name, access);
+    return id;
+  }
   if (isFullEverywhere(access)) {
     // The Conts ledger roles below hold "*" too; the full-access role is the one that is not one of them.
     const full = () => env.DB.prepare(`SELECT id FROM roles WHERE permissions LIKE '%"*"%' AND name NOT LIKE 'Conts: %' ORDER BY id LIMIT 1`).first<{ id: number }>();
@@ -104,7 +113,9 @@ app.post("/", async (c) => {
   const email = a.email.toLowerCase().trim();
   const access = parseContsAccess(a.access);
   if (!access) return c.json({ error: "Sign-in did not say what this account may open." }, 401);
-  const roleId = await roleIdFor(c.env, a.role, access);
+  /* Kept out of the area levels on purpose, so the roles named after them are unchanged. */
+  const claims = (a.access as Record<string, unknown> | undefined)?.claims === "edit";
+  const roleId = await roleIdFor(c.env, a.role, access, { claims });
   if (!roleId) return c.json({ error: "This account does not have access to supply chain." }, 403);
 
   let user = await c.env.DB.prepare(`SELECT id, status, role_id FROM users WHERE email = ?`).bind(email).first<{ id: number; status: string; role_id: number }>();
