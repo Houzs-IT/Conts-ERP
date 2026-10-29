@@ -17,6 +17,7 @@ import { resolveRoles } from '../../acc/rules';
 import { companyCodeById } from '../lib/doc-no';
 import { paginateAll } from '../lib/paginate-all';
 import { monthRange } from './accounting-receipts-check';
+import { fmtSen } from '../shared/format';
 
 /* Receipts are a sales-side paper: the writer key covers recording payments,
    so it covers seeing and printing the receipt for one. */
@@ -107,6 +108,26 @@ export const receiptFormalise = async (c: any): Promise<Response> => {
   try { body = await c.req.json(); } catch { /* empty body = default bank */ }
   const sb = c.get('supabase');
 
+  /* The receipt and the payment behind it, before anything is written: money
+     that is gone cannot be confirmed, and finance confirms the amount it saw. */
+  const { data: recRaw, error: recErr } = await sb.from('acc_official_receipts')
+    .select('id, status, payment_source, payment_id, amount_sen').eq('id', id).eq('company_id', co.companyId).maybeSingle();
+  if (recErr) return c.json({ error: 'load_failed', reason: recErr.message }, 500);
+  if (!recRaw) return c.json({ error: 'not_found', message: `Receipt ${id} not found.` }, 404);
+  const rec = recRaw as { status: string; payment_source: string; payment_id: string; amount_sen: number };
+  const source = rec.payment_source === 'SIPAY' ? 'SIPAY' : 'SOPAY';
+  const { data: payRaw, error: payErr } = await sb.from(source === 'SIPAY' ? 'sales_invoice_payments' : 'mfg_sales_order_payments')
+    .select('id, amount_sen').eq('id', rec.payment_id).eq('company_id', co.companyId).maybeSingle();
+  if (payErr) return c.json({ error: 'load_failed', reason: payErr.message }, 500);
+  if (!payRaw) return c.json({ error: 'payment_gone', message: 'The payment behind this receipt was deleted, so there is nothing to confirm.' }, 409);
+  const paySen = Number((payRaw as { amount_sen: number }).amount_sen);
+  if (rec.status !== 'FORMAL' && Number(rec.amount_sen) !== paySen) {
+    return c.json({
+      error: 'payment_edited',
+      message: `The payment was edited since this receipt was made (receipt ${fmtSen(Number(rec.amount_sen))}, payment ${fmtSen(paySen)}). Refresh and check it before confirming.`,
+    }, 409);
+  }
+
   const roles = await resolveRoles(sb, co.companyId);
   const accountCode = String(body?.accountCode ?? '').trim() || roles.BANK_DEFAULT;
   const allowed = await confirmBankRefusal(sb, co.companyId, accountCode);
@@ -123,21 +144,14 @@ export const receiptFormalise = async (c: any): Promise<Response> => {
 
   /* Confirmed = received: post the payment now (an already-formal receipt
      re-runs the post, which echoes or heals). */
-  const { data: rec, error: recErr } = await sb.from('acc_official_receipts')
-    .select('payment_source, payment_id').eq('id', id).eq('company_id', co.companyId).maybeSingle();
   let posting: { status: string; jeNo?: string; reason?: string };
-  if (recErr || !rec) {
-    posting = { status: 'not_posted', reason: recErr?.message ?? 'the receipt could not be read back' };
-  } else {
-    const source = (rec as { payment_source: string }).payment_source === 'SIPAY' ? 'SIPAY' : 'SOPAY';
-    try {
-      const p = await postConfirmedPayment(sb, source, String((rec as { payment_id: string }).payment_id), co.companyId);
-      posting = p.ok
-        ? { status: p.status, ...('jeNo' in p ? { jeNo: p.jeNo } : {}) }
-        : { status: p.status, ...(p.reason ? { reason: p.reason } : {}) };
-    } catch (e) {
-      posting = { status: 'not_posted', reason: e instanceof Error ? e.message : String(e) };
-    }
+  try {
+    const p = await postConfirmedPayment(sb, source, String(rec.payment_id), co.companyId);
+    posting = p.ok
+      ? { status: p.status, ...('jeNo' in p ? { jeNo: p.jeNo } : {}) }
+      : { status: p.status, ...(p.reason ? { reason: p.reason } : {}) };
+  } catch (e) {
+    posting = { status: 'not_posted', reason: e instanceof Error ? e.message : String(e) };
   }
   return c.json({ ok: true, orNumber: r.orNumber, already: r.already === true, posting });
 };

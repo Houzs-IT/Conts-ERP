@@ -160,14 +160,24 @@ export async function formaliseReceipt(
   const at = new Date().toISOString();
   for (let attempt = 0; attempt < 8; attempt += 1) {
     const formalNo = await mintMonthlyDocNo(sb, 'acc_official_receipts', 'or_number', `${prefix}${ch.letter}OR-${docMonthTag(r.paid_at)}`, digits);
-    const { error } = await sb.from('acc_official_receipts').update({
+    /* Only a DRAFT turns formal: of two confirms racing, the second touches
+       nothing and echoes the first — one number, one bank. */
+    const { data: won, error } = await sb.from('acc_official_receipts').update({
       or_number: formalNo,
       status: 'FORMAL',
       channel_account_code: input.accountCode,
       issued_at: at,
       issued_by: input.actor,
-    }).eq('id', r.id);
-    if (!error) return { ok: true, orNumber: formalNo };
+    }).eq('id', r.id).eq('status', 'DRAFT').select('id');
+    if (!error && ((won ?? []) as unknown[]).length > 0) return { ok: true, orNumber: formalNo };
+    if (!error) {
+      const { data: again, error: againErr } = await sb.from('acc_official_receipts')
+        .select('or_number, status').eq('id', r.id).maybeSingle();
+      if (againErr) return { ok: false, status: 'load_failed', reason: againErr.message };
+      const cur = again as { or_number: string; status: string } | null;
+      if (cur?.status === 'FORMAL') return { ok: true, orNumber: cur.or_number, already: true };
+      return { ok: false, status: 'save_failed', reason: `receipt ${input.receiptId} changed while it was being confirmed — try again` };
+    }
     const clash = String(error.code ?? '') === '23505' || /duplicate key/i.test(String(error.message ?? ''));
     if (!clash) return { ok: false, status: 'save_failed', reason: error.message };
   }
@@ -184,39 +194,106 @@ const NOT_RECEIVED_MONEY = new Set(['converted', 'imported', 'credit']);
 export const awaitsConfirmation = (method: string | null | undefined, amountSen: unknown): boolean =>
   !NOT_RECEIVED_MONEY.has(String(method ?? '')) && Number(amountSen ?? 0) > 0;
 
-/** Has finance confirmed this payment? Its receipt FORMAL = confirmed, with
-    the money account it was confirmed onto. No receipt = not confirmed. */
-export async function receiptConfirmation(
+/** The payments among these that already carry a LIVE posted entry (SOPAY /
+    SIPAY, not reversed). A payment posted under the rule before confirmation
+    (posted at recording) counts as confirmed: its money is in the books. */
+async function livePostedIds(
   sb: any,
-  source: 'SOPAY' | 'SIPAY',
-  paymentId: string,
-): Promise<{ ok: true; confirmed: boolean; channelAccountCode: string | null } | { ok: false; reason: string }> {
-  const { data, error } = await sb.from('acc_official_receipts')
-    .select('status, channel_account_code')
-    .eq('payment_source', source).eq('payment_id', paymentId).maybeSingle();
-  if (error) return { ok: false, reason: error.message };
-  const r = data as { status?: string; channel_account_code?: string | null } | null;
-  return { ok: true, confirmed: r?.status === 'FORMAL', channelAccountCode: r?.channel_account_code ?? null };
-}
-
-/** Which of these payments finance has confirmed — one read per 150 ids, for
-    the readers that sum received money (the project limit, the Self-check). */
-export async function confirmedPaymentIds(
-  sb: any,
-  companyId: number,
+  companyId: number | null,
   source: 'SOPAY' | 'SIPAY',
   paymentIds: string[],
 ): Promise<{ ok: true; ids: Set<string> } | { ok: false; reason: string }> {
   const ids = new Set<string>();
   for (let i = 0; i < paymentIds.length; i += 150) {
-    const { data, error } = await sb.from('acc_official_receipts')
+    let q = sb.from('journal_entries').select('source_doc_no, reversed')
+      .eq('source_type', source).eq('posted', true).in('source_doc_no', paymentIds.slice(i, i + 150));
+    if (companyId != null) q = q.eq('company_id', companyId);
+    const { data, error } = await q;
+    if (error) return { ok: false, reason: error.message };
+    /* `reversed` filtered here, not in the query — the fake leaves it absent on a fresh row (payment-repost.ts). */
+    for (const r of (data ?? []) as Array<{ source_doc_no: string; reversed: boolean | null }>) if (r.reversed !== true) ids.add(String(r.source_doc_no));
+  }
+  return { ok: true, ids };
+}
+
+/** Has finance confirmed this payment? Its receipt FORMAL = confirmed, with
+    the money account it was confirmed onto. No FORMAL receipt but a live
+    posted entry = confirmed under the old rule (`legacy`: posted at
+    recording, before confirmation existed; no bank named). Otherwise not. */
+export async function receiptConfirmation(
+  sb: any,
+  companyId: number | null,
+  source: 'SOPAY' | 'SIPAY',
+  paymentId: string,
+): Promise<{ ok: true; confirmed: boolean; legacy: boolean; channelAccountCode: string | null } | { ok: false; reason: string }> {
+  let q = sb.from('acc_official_receipts')
+    .select('status, channel_account_code')
+    .eq('payment_source', source).eq('payment_id', paymentId);
+  if (companyId != null) q = q.eq('company_id', companyId);
+  const { data, error } = await q.maybeSingle();
+  if (error) return { ok: false, reason: error.message };
+  const r = data as { status?: string; channel_account_code?: string | null } | null;
+  if (r?.status === 'FORMAL') return { ok: true, confirmed: true, legacy: false, channelAccountCode: r.channel_account_code ?? null };
+  const live = await livePostedIds(sb, companyId, source, [paymentId]);
+  if (!live.ok) return live;
+  const legacy = live.ids.has(paymentId);
+  return { ok: true, confirmed: legacy, legacy, channelAccountCode: null };
+}
+
+/** Which of these payments finance has confirmed (a FORMAL receipt, or a live
+    posted entry from before confirmation existed) — one read per 150 ids, for
+    the readers that sum received money (the project limit, the Self-check,
+    a cancelled order's credit). A null company reads across companies. */
+export async function confirmedPaymentIds(
+  sb: any,
+  companyId: number | null,
+  source: 'SOPAY' | 'SIPAY',
+  paymentIds: string[],
+): Promise<{ ok: true; ids: Set<string> } | { ok: false; reason: string }> {
+  const ids = new Set<string>();
+  for (let i = 0; i < paymentIds.length; i += 150) {
+    let q = sb.from('acc_official_receipts')
       .select('payment_id')
-      .eq('company_id', companyId).eq('payment_source', source).eq('status', 'FORMAL')
+      .eq('payment_source', source).eq('status', 'FORMAL')
       .in('payment_id', paymentIds.slice(i, i + 150));
+    if (companyId != null) q = q.eq('company_id', companyId);
+    const { data, error } = await q;
     if (error) return { ok: false, reason: error.message };
     for (const r of (data ?? []) as Array<{ payment_id: string }>) ids.add(String(r.payment_id));
   }
+  const rest = paymentIds.filter((id) => !ids.has(id));
+  if (rest.length === 0) return { ok: true, ids };
+  const live = await livePostedIds(sb, companyId, source, rest);
+  if (!live.ok) return live;
+  for (const id of live.ids) ids.add(id);
   return { ok: true, ids };
+}
+
+/** A deleted payment's DRAFT receipt goes with it — a draft is not an official
+    number, and confirming money that is gone must be impossible. A FORMAL one
+    stays on file (the receipts check names it as a receipt whose payment is
+    gone); its number is never re-used and it cannot be confirmed again. */
+export async function dropDraftReceipt(sb: any, source: 'SOPAY' | 'SIPAY', paymentId: string): Promise<void> {
+  const { error } = await sb.from('acc_official_receipts').delete()
+    .eq('payment_source', source).eq('payment_id', paymentId).eq('status', 'DRAFT');
+  // eslint-disable-next-line no-console
+  if (error) console.error('[receipts] draft receipt of a deleted payment not removed:', source, paymentId, error.message);
+}
+
+/** An edited payment's DRAFT receipt follows it — amount, method, day — so
+    what finance confirms is what the payment says. A FORMAL one is left as
+    issued (the receipts check names a difference). */
+export async function syncDraftReceipt(
+  sb: any,
+  source: 'SOPAY' | 'SIPAY',
+  paymentId: string,
+  p: { amountSen: number; method: string; paidAt: string | null },
+): Promise<void> {
+  const { error } = await sb.from('acc_official_receipts')
+    .update({ amount_sen: p.amountSen, method: p.method, paid_at: (p.paidAt ?? '').slice(0, 10) || null })
+    .eq('payment_source', source).eq('payment_id', paymentId).eq('status', 'DRAFT');
+  // eslint-disable-next-line no-console
+  if (error) console.error('[receipts] draft receipt of an edited payment not updated:', source, paymentId, error.message);
 }
 
 export type ConfirmBank = { code: string; name: string };

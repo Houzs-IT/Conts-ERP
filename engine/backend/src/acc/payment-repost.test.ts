@@ -185,6 +185,19 @@ describe('repostSoPaymentEdit — the entry follows the payment', () => {
     expect(contra.entry_date).toBe('2026-09-01');
   });
 
+  it('a confirmed cash payment corrected to a transfer re-posts, still on the bank finance chose', async () => {
+    const sb = await booked();
+    const out = await repostSoPaymentEdit(sb, {
+      before: facts(),
+      after: PAY({ method: 'transfer' }) as unknown as SoPaymentRow,
+    });
+    expect(out).toMatchObject({ ok: true, status: 'reposted', moved: ['method'] });
+    expect(active(sb)).toHaveLength(1);
+    const lines = sb.tables.journal_entry_lines.filter((l: Row) => l.journal_entry_id === active(sb)[0].id);
+    expect(lines[0]).toMatchObject({ account_code: '310-0020', debit_sen: 199_000 });
+    expect(lines[1]).toMatchObject({ account_code: DEFAULT_ROLE_CODES.AR, credit_sen: 199_000 });
+  });
+
   /* Cash and transfer both land in the bank finance chose; a card lands in its acquirer's transit. */
   it('a corrected METHOD moves the money to the account that method debits', async () => {
     const sb = await booked();

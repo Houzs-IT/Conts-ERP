@@ -10,7 +10,8 @@
 // derives nothing.
 // ----------------------------------------------------------------------------
 
-import { createReceiptForPayment } from '../../acc/receipts';
+import { createReceiptForPayment, dropDraftReceipt } from '../../acc/receipts';
+import { reverseSiPayment } from '../../acc/payments';
 import { companyCodeById } from './doc-no';
 
 export const SI_PAYMENT_COLS =
@@ -84,4 +85,13 @@ export async function insertSiPaymentRow(sb: any, p: SiPaymentRowInput) {
     }
   }
   return res;
+}
+
+/** After an invoice payment is deleted: void its ledger entry (a never-booked
+    row no-ops) and drop its DRAFT receipt, so money that is gone cannot be
+    confirmed (acc/receipts dropDraftReceipt). Best-effort, like the SO side. */
+export async function afterSiPaymentRemoved(sb: any, paymentId: string, invoiceNo: string | null) {
+  const unbooked = await reverseSiPayment(sb, paymentId, invoiceNo);
+  await dropDraftReceipt(sb, 'SIPAY', paymentId);
+  return unbooked;
 }

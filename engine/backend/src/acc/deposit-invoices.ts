@@ -195,15 +195,6 @@ export async function issueDepositInvoice(sb: Db, p: IssueInput): Promise<IssueR
   if (existing.error) return { ok: false, status: 'read_failed', reason: existing.error };
   if (existing.row) return { ok: true, status: 'already_issued', id: existing.row.id, diNumber: existing.row.di_number, jeNo: existing.row.je_no };
 
-  /* Money counts as received once finance confirms it (SOP 4.2): the invoice
-     waits for the payment's receipt to be FORMAL, and acc/receipt-confirm
-     issues it then. Money moved between orders was confirmed where it came in. */
-  if (awaitsConfirmation(p.method, p.amountSen)) {
-    const conf = await receiptConfirmation(sb, 'SOPAY', paymentId);
-    if (!conf.ok) return { ok: false, status: 'read_failed', reason: `receipt: ${conf.reason}` };
-    if (!conf.confirmed) return { ok: true, status: 'not_due', why: 'not_confirmed' };
-  }
-
   /* The order carries the company and the customer — the same read the
      payment's own posting makes (acc/payments), the same party code. */
   const { data: so, error: soErr } = await sb.from('mfg_sales_orders')
@@ -216,6 +207,16 @@ export async function issueDepositInvoice(sb: Db, p: IssueInput): Promise<IssueR
   if (NOT_AN_ORDER.has(String(order.status ?? '').toUpperCase())) return { ok: true, status: 'not_due', why: 'order_not_live' };
   const companyId = order.company_id ?? null;
   if (companyId == null) return { ok: false, status: 'no_company', reason: `${soDocNo} carries no company` };
+
+  /* Money counts as received once finance confirms it (SOP 4.2): the invoice
+     waits for the payment's receipt to be FORMAL (or a posting from before
+     confirmation existed), and acc/receipt-confirm issues it then. Money moved
+     between orders was confirmed where it came in. */
+  if (awaitsConfirmation(p.method, p.amountSen)) {
+    const conf = await receiptConfirmation(sb, companyId, 'SOPAY', paymentId);
+    if (!conf.ok) return { ok: false, status: 'read_failed', reason: `receipt: ${conf.reason}` };
+    if (!conf.confirmed) return { ok: true, status: 'not_due', why: 'not_confirmed' };
+  }
 
   const due = await depositInvoiceDue(sb, { companyId, soDocNo, paidAt: p.paidAt, amountSen: p.amountSen });
   if (!due.ok) return { ok: false, status: 'read_failed', reason: due.reason };

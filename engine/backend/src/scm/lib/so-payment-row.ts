@@ -19,7 +19,7 @@ import { CONVERTED_METHOD, postSoPayment, reverseSoPayment, type SoPaymentRow } 
 import { afterConvertedRowBooked, afterConvertedRowRemoved } from './so-money';
 import { mytDateOf, todayMyt } from './my-time';
 import { ledgerFactsOf, repostSoPaymentEdit } from '../../acc/payment-repost';
-import { createReceiptForPayment } from '../../acc/receipts';
+import { createReceiptForPayment, dropDraftReceipt, syncDraftReceipt } from '../../acc/receipts';
 import { cancelDepositInvoiceForPaymentBestEffort, reissueDepositInvoiceBestEffort } from '../../acc/deposit-invoices';
 import { companyCodeById } from './doc-no';
 import { recomputeSiPaidForOrder } from './si-order-deposit';
@@ -223,6 +223,8 @@ export async function repostSoPaymentBestEffort(
     amount_sen: p.next.amount_sen,
     company_id: p.companyId,
   };
+  /* The draft receipt follows the edit, so finance confirms what the payment now says (SOP 4.2). */
+  await syncDraftReceipt(sb, 'SOPAY', p.id, { amountSen: p.next.amount_sen, method: p.next.method, paidAt: p.next.paid_at });
   const out = await repostSoPaymentEdit(sb, { before: ledgerFactsOf(p.before), after });
   /* The deposit invoice follows the edit the way the ledger does (docs/bugs/
      0828): a moved amount or date cancels the standing invoice by contra and
@@ -411,6 +413,8 @@ export async function afterSoPaymentRemoved(
     console.error('[acc] SO payment reversal failed:', p.paymentId, unbooked.status, unbooked.reason);
   }
   const voided = unbooked.ok && unbooked.status === 'reversed' ? unbooked : null;
+  /* Its draft receipt goes with it, so money that is gone cannot be confirmed (acc/receipts). */
+  await dropDraftReceipt(sb, 'SOPAY', p.paymentId);
   /* Its deposit invoice goes with it — cancelled by contra, kept on file
      (docs/bugs/0828). A converted row's notes against the cancelled order's
      invoices go the same way (docs/bugs/0927); a row that moved nothing has

@@ -11,8 +11,10 @@
 import { Hono } from 'hono';
 import { describe, expect, test } from 'vitest';
 import { fakeSb, type Row } from '../src/scm/lib/fake-postgrest';
-import { bookSoPaymentBestEffort, repostSoPaymentBestEffort } from '../src/scm/lib/so-payment-row';
+import { afterSoPaymentRemoved, bookSoPaymentBestEffort, repostSoPaymentBestEffort } from '../src/scm/lib/so-payment-row';
 import { postSiPayment, postSoPayment } from '../src/acc/payments';
+import { formaliseReceipt, receiptConfirmation } from '../src/acc/receipts';
+import { issueDepositInvoice } from '../src/acc/deposit-invoices';
 import { receiptConfirmBanks, receiptFormalise } from '../src/scm/routes/accounting-receipts';
 import { projectLimit } from '../src/conts/project-limit';
 import { confirmSettlementRow } from '../src/acc/settlement';
@@ -69,7 +71,7 @@ type World = ReturnType<typeof world>;
 const payment = (sb: World, id: string) => (sb.tables.mfg_sales_order_payments as Row[]).find((p) => p.id === id)!;
 const receiptOf = (sb: World, id: string) => (sb.tables.acc_official_receipts as Row[]).find((r) => r.payment_id === id);
 const linesOf = (sb: World, sourceDocNo: string) => {
-  const je = (sb.tables.journal_entries as Row[]).filter((j) => j.source_doc_no === sourceDocNo && !j.reversed);
+  const je = (sb.tables.journal_entries as Row[]).filter((j) => j.source_doc_no === sourceDocNo && !j.reversed && (j.source_type === 'SOPAY' || j.source_type === 'SIPAY'));
   return (sb.tables.journal_entry_lines as Row[]).filter((l) => je.some((j) => j.id === l.journal_entry_id))
     .map((l) => ({ code: l.account_code, dr: Number(l.debit_sen), cr: Number(l.credit_sen), party: l.party_code ?? null }));
 };
@@ -277,5 +279,133 @@ describe('a card settlement that formalises a receipt posts its payment', () => 
       { code: '300-0000', dr: 0, cr: 80_000, party: 'cust-1' },
     ]);
     expect(await received(sb)).toBe(80_000);
+  });
+});
+
+const balance = (sb: World, code: string) => (sb.tables.journal_entry_lines as Row[])
+  .filter((l) => l.account_code === code).reduce((s, l) => s + Number(l.debit_sen ?? 0) - Number(l.credit_sen ?? 0), 0);
+const liveSopay = (sb: World) => (sb.tables.journal_entries as Row[]).filter((j) => j.source_type === 'SOPAY' && !j.reversed);
+
+describe('a card payment keyed with no acquirer, confirmed by a settlement', () => {
+  test("its debit ends on that acquirer's own clearing account", async () => {
+    const sb = world({
+      accounts: [...(world().tables.accounts as Row[]), acct('326-0010', 'CLEARING - MBB', 'ASSET')],
+      acc_acquirers: [{
+        company_id: CO, code: 'MBB', display_name: 'MBB', transit_account_code: '326-0010', fee_account_code: '930-0000', bank_account_code: '310-0020',
+        statement_format: 'CSV', has_unique_ref: true, fee_method: 'stated', date_tolerance_days: 3, column_map: null, is_active: true,
+      }],
+      acc_settlement_batches: [{ id: 1, company_id: CO, acquirer_code: 'MBB', period_from: '2026-10-23', period_to: '2026-10-23', gross_sen: 80_000, fee_sen: 1_000, net_sen: 79_000 }],
+      acc_settlement_rows: [{ id: 7, batch_id: 1, company_id: CO, acquirer_code: 'MBB', line_no: 1, txn_date: '2026-10-23', ref: 'A1', gross_sen: 80_000, fee_sen: 1_000, net_sen: 79_000, bucket: 'MATCHED', confirmed_at: null, posted_je_no: null }],
+      acc_settlement_matches: [], mfg_so_audit_log: [],
+      mfg_sales_order_payments: [{ id: 'p-card', so_doc_no: SO, paid_at: '2026-10-22', method: 'merchant', merchant_provider: null, amount_sen: 80_000, company_id: CO, created_by: 'sales-1' }],
+    });
+    await bookSoPaymentBestEffort(sb, payment(sb, 'p-card'), 'payment');
+    const r = await confirmSettlementRow(sb, { companyId: CO, rowId: 7, payments: [{ source: 'SOPAY', id: 'p-card', docNo: SO, amountSen: 80_000 }], matchReason: 'ref', userName: 'Finance Fiona' });
+    expect(r).toMatchObject({ ok: true, status: 'confirmed' });
+    expect(balance(sb, '326-0010')).toBe(79_000);
+    expect(balance(sb, '326-0000')).toBe(0);
+    expect(linesOf(sb, 'p-card')).toEqual([
+      { code: '326-0010', dr: 80_000, cr: 0, party: null },
+      { code: '300-0000', dr: 0, cr: 80_000, party: 'cust-1' },
+    ]);
+  });
+});
+
+/* Posted under the old rule (at recording), its receipt still a draft: the money is in the books, so it counts. */
+describe('a payment posted before confirmation existed', () => {
+  const legacy = async () => {
+    const sb = world();
+    await recordBoth(sb);
+    /* The old rule posted at recording: the transfer onto BANK_DEFAULT. */
+    const rec = receiptOf(sb, 'p-tr')!;
+    rec.status = 'FORMAL';
+    await postSoPayment(sb, payment(sb, 'p-tr') as never);
+    rec.status = 'DRAFT';
+    rec.channel_account_code = null;
+    return sb;
+  };
+
+  test('counts for the project limit and is due its deposit invoice', async () => {
+    const sb = await legacy();
+    expect(await received(sb)).toBe(100_000);
+    expect(await issueDepositInvoice(sb, { paymentId: 'p-tr', soDocNo: SO, paidAt: '2026-10-20', amountSen: 100_000, method: 'transfer' }))
+      .toMatchObject({ ok: true, status: 'issued' });
+  });
+
+  test('an edit reverses and re-posts it on the account it had, never reversed and left waiting', async () => {
+    const sb = await legacy();
+    await repostSoPaymentBestEffort(sb, {
+      id: 'p-tr', docNo: SO, companyId: CO,
+      before: { paid_at: '2026-10-20', method: 'transfer', amount_sen: 100_000, merchant_provider: null },
+      next: { paid_at: '2026-10-20', method: 'transfer', amount_sen: 120_000, merchant_provider: null, installment_months: null, online_type: null, approval_code: null, account_sheet: null, collected_by: null },
+    });
+    expect(liveSopay(sb)).toHaveLength(1);
+    expect(linesOf(sb, 'p-tr')[0]).toMatchObject({ code: '310-0010', dr: 120_000 });
+  });
+
+  test('confirmed later onto another bank, its entry moves there: the old one reversed, one live entry on the chosen bank', async () => {
+    const sb = await legacy();
+    const r = await harness(sb).confirm(receiptOf(sb, 'p-tr')!.id, { accountCode: '310-0020' });
+    expect(r.body).toMatchObject({ ok: true, posting: { status: 'posted' } });
+    expect(liveSopay(sb)).toHaveLength(1);
+    expect(linesOf(sb, 'p-tr')[0]).toMatchObject({ code: '310-0020', dr: 100_000 });
+    expect(balance(sb, '310-0010')).toBe(0);
+    expect(balance(sb, '310-0020')).toBe(100_000);
+  });
+});
+
+describe('finance confirms what the payment says', () => {
+  test("an edit keeps the draft receipt in step; a receipt whose amount is not the payment's is refused", async () => {
+    const sb = world();
+    await recordBoth(sb);
+    await repostSoPaymentBestEffort(sb, {
+      id: 'p-tr', docNo: SO, companyId: CO,
+      before: { paid_at: '2026-10-20', method: 'transfer', amount_sen: 100_000, merchant_provider: null },
+      next: { paid_at: '2026-10-21', method: 'cash', amount_sen: 90_000, merchant_provider: null, installment_months: null, online_type: null, approval_code: null, account_sheet: null, collected_by: null },
+    });
+    expect(receiptOf(sb, 'p-tr')).toMatchObject({ status: 'DRAFT', amount_sen: 90_000, method: 'cash', paid_at: '2026-10-21' });
+    /* A payment changed behind the receipt's back: refused, nothing written. */
+    payment(sb, 'p-cash').amount_sen = 55_000;
+    const r = await harness(sb).confirm(receiptOf(sb, 'p-cash')!.id, { accountCode: '310-0010' });
+    expect(r.status).toBe(409);
+    expect(r.body.error).toBe('payment_edited');
+    expect(receiptOf(sb, 'p-cash')).toMatchObject({ status: 'DRAFT' });
+    expect(sb.tables.journal_entries).toHaveLength(0);
+  });
+
+  test('a deleted payment: its draft receipt goes and confirming it is refused; a formal receipt stays on file', async () => {
+    const sb = world();
+    await recordBoth(sb);
+    const draftId = receiptOf(sb, 'p-cash')!.id;
+    await harness(sb).confirm(receiptOf(sb, 'p-tr')!.id, { accountCode: '310-0010' });
+    sb.tables.mfg_sales_order_payments = [];
+    const gone = await harness(sb).confirm(draftId, { accountCode: '310-0010' });
+    expect(gone.status).toBe(409);
+    expect(gone.body.error).toBe('payment_gone');
+    await afterSoPaymentRemoved(sb, { paymentId: 'p-cash', docNo: SO, companyId: CO });
+    await afterSoPaymentRemoved(sb, { paymentId: 'p-tr', docNo: SO, companyId: CO });
+    expect(receiptOf(sb, 'p-cash')).toBeUndefined();
+    expect(receiptOf(sb, 'p-tr')).toMatchObject({ status: 'FORMAL', or_number: '2990-HOR-2610-001' });
+    expect(liveSopay(sb)).toHaveLength(0);
+  });
+
+  test('two confirms racing mint one number; the second echoes the first', async () => {
+    const sb = world();
+    await recordBoth(sb);
+    const id = Number(receiptOf(sb, 'p-tr')!.id);
+    const [a, b] = await Promise.all([
+      formaliseReceipt(sb, { companyId: CO, companyCode: '2990', receiptId: id, accountCode: '310-0010', actor: 'A' }),
+      formaliseReceipt(sb, { companyId: CO, companyCode: '2990', receiptId: id, accountCode: '310-0020', actor: 'B' }),
+    ]);
+    expect(a).toMatchObject({ ok: true });
+    expect(b).toMatchObject({ ok: true, already: true });
+    expect(b.ok && b.orNumber).toBe(a.ok && a.orNumber);
+    expect(receiptOf(sb, 'p-tr')).toMatchObject({ status: 'FORMAL', channel_account_code: '310-0010', issued_by: 'A' });
+  });
+
+  test("another company's formal receipt for the same payment id is no confirmation", async () => {
+    const sb = world({ acc_official_receipts: [{ id: 99, company_id: 1, payment_source: 'SOPAY', payment_id: 'p-tr', status: 'FORMAL', channel_account_code: '310-0010' }] });
+    expect(await receiptConfirmation(sb, CO, 'SOPAY', 'p-tr')).toMatchObject({ ok: true, confirmed: false });
+    expect(await postSoPayment(sb, payment(sb, 'p-tr') as never)).toEqual({ ok: true, status: 'waiting_confirmation' });
   });
 });

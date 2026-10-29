@@ -16,6 +16,7 @@
 
 import { isMissingRpc } from './rpc-missing';
 import { fmtSen } from '../shared/format';
+import { awaitsConfirmation, confirmedPaymentIds } from '../../acc/receipts';
 
 export type CreditSourceType =
   | 'SI_CANCEL_REFUND'   // SI was cancelled with paid_sen > 0 → credit equal to paid_sen
@@ -600,18 +601,27 @@ export async function creditFromCancelledSo(
      credit row) but it is reported honestly instead of as "nothing was paid". */
   const { data: pays, error: paysErr } = await sb
     .from('mfg_sales_order_payments')
-    .select('amount_sen, company_id')
+    .select('id, amount_sen, company_id, method')
     .eq('so_doc_no', args.docNo);
   if (paysErr) {
     /* eslint-disable-next-line no-console */
     console.error('[customer-credit] SO deposit read failed — cancel refund NOT credited:', args.docNo, paysErr.message);
     return { credited: 0, reason: 'deposits_read_failed' };
   }
-  const payRows = (pays ?? []) as Array<{ amount_sen: number; company_id?: number | null }>;
-  const total = payRows.reduce((s, p) => s + Number(p.amount_sen ?? 0), 0);
-  if (total <= 0) return { credited: 0, reason: 'no_paid' };
+  const payRows = (pays ?? []) as Array<{ id: string; amount_sen: number; company_id?: number | null; method?: string | null }>;
   // Multi-company (mig 0061): the ledger row inherits the SO's company (via its payments).
   const companyId = payRows.find((p) => p.company_id != null)?.company_id ?? null;
+  /* Only money finance has confirmed was received (SOP 4.2; acc/receipts): a
+     payment still waiting for the bank check is no credit to hand back. */
+  const confirmed = await confirmedPaymentIds(sb, companyId, 'SOPAY', payRows.filter((p) => awaitsConfirmation(p.method, p.amount_sen)).map((p) => String(p.id)));
+  if (!confirmed.ok) {
+    /* eslint-disable-next-line no-console */
+    console.error('[customer-credit] SO deposit confirmation read failed — cancel refund NOT credited:', args.docNo, confirmed.reason);
+    return { credited: 0, reason: 'deposits_read_failed' };
+  }
+  const total = payRows.filter((p) => !awaitsConfirmation(p.method, p.amount_sen) || confirmed.ids.has(String(p.id)))
+    .reduce((s, p) => s + Number(p.amount_sen ?? 0), 0);
+  if (total <= 0) return { credited: 0, reason: 'no_paid' };
 
   const r = await addCustomerCredit(sb, {
     debtorCode: args.debtorCode,

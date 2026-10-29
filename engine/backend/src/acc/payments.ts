@@ -121,20 +121,32 @@ const paymentDate = (paidAt: string | null): string | null => {
 /** The bank a confirmed payment landed in (null: none named, BANK_DEFAULT
     answers), or the wait, or the failed read. Card money ignores the bank and
     keeps its clearing account; a row that is not money arriving (a customer
-    credit applied) has nothing to confirm and keeps today's posting. */
+    credit applied) has nothing to confirm and keeps today's posting.
+    `legacy`: posted before confirmation existed and not confirmed since — it
+    keeps the accounts it was first posted to (cash CASH, transfer
+    BANK_DEFAULT). `wasPosted`: the caller just reversed this payment's live
+    entry to re-post an edit, so its old posting still speaks for it. */
 async function confirmedMoney(
   sb: any,
   source: 'SOPAY' | 'SIPAY',
   p: { id: string; method: string; amount_sen: number },
-): Promise<{ ok: true; bank: string | null } | { ok: true; waiting: true } | { ok: false; status: string; reason: string }> {
-  if (!awaitsConfirmation(p.method, p.amount_sen)) return { ok: true, bank: null };
-  const conf = await receiptConfirmation(sb, source, p.id);
+  companyId: number | null,
+  wasPosted: boolean,
+): Promise<{ ok: true; bank: string | null; legacy: boolean } | { ok: true; waiting: true } | { ok: false; status: string; reason: string }> {
+  if (!awaitsConfirmation(p.method, p.amount_sen)) return { ok: true, bank: null, legacy: false };
+  const conf = await receiptConfirmation(sb, companyId, source, p.id);
   if (!conf.ok) return { ok: false, status: 'receipt_read_failed', reason: conf.reason };
-  if (!conf.confirmed) return { ok: true, waiting: true };
-  return { ok: true, bank: conf.channelAccountCode };
+  if (!conf.confirmed && !wasPosted) return { ok: true, waiting: true };
+  return { ok: true, bank: conf.channelAccountCode, legacy: conf.legacy || !conf.confirmed };
 }
 
-export async function postSoPayment(sb: any, p: SoPaymentRow, opts: { dryRun?: boolean } = {}): Promise<PostPaymentResult> {
+/** The debit account a confirmed cash / transfer payment books: the bank
+    finance chose, BANK_DEFAULT when none was named; a legacy posting keeps the
+    old rule (no bank passed). */
+const moneyAccountOf = (money: { bank: string | null; legacy: boolean }, bankDefault: string): string | null =>
+  money.legacy ? null : (money.bank || bankDefault);
+
+export async function postSoPayment(sb: any, p: SoPaymentRow, opts: { dryRun?: boolean; wasPosted?: boolean } = {}): Promise<PostPaymentResult> {
   if (p.method === 'imported') return { ok: true, status: 'skipped_imported' };
   /* Money moved from a cancelled order is not money received: it books the
      transfer between the two customers' AR, never a bank (docs/bugs/0927). */
@@ -143,7 +155,7 @@ export async function postSoPayment(sb: any, p: SoPaymentRow, opts: { dryRun?: b
   if (!Number.isInteger(amountSen) || amountSen <= 0) return { ok: true, status: 'skipped_zero' };
   const entryDate = paymentDate(p.paid_at);
   if (!entryDate) return { ok: false, status: 'bad_paid_at', reason: `payment ${p.id} has no usable paid_at` };
-  const money = await confirmedMoney(sb, 'SOPAY', p);
+  const money = await confirmedMoney(sb, 'SOPAY', p, p.company_id ?? null, opts.wasPosted === true);
   if (!money.ok) return { ok: false, status: money.status, reason: money.reason };
   if ('waiting' in money) return { ok: true, status: 'waiting_confirmation' };
 
@@ -185,7 +197,7 @@ export async function postSoPayment(sb: any, p: SoPaymentRow, opts: { dryRun?: b
       method: p.method,
       docNo: p.so_doc_no,
       transitAccountCode: transit,
-      moneyAccountCode: money.bank || roles.BANK_DEFAULT,
+      moneyAccountCode: moneyAccountOf(money, roles.BANK_DEFAULT),
       customerCode,
       customerName,
     }, amountSen),
@@ -319,7 +331,7 @@ export async function postSiPayment(sb: any, p: SiPaymentRow): Promise<PostPayme
   /* A migrated invoice booked NO receivable here (AutoCount carries it), so
      its payment must not relieve an AR this ledger never recorded. */
   if (inv.migrated_no_stock === true) return { ok: true, status: 'skipped_imported' };
-  const money = await confirmedMoney(sb, 'SIPAY', p);
+  const money = await confirmedMoney(sb, 'SIPAY', p, inv.company_id ?? p.company_id ?? null, false);
   if (!money.ok) return { ok: false, status: money.status, reason: money.reason };
   if ('waiting' in money) return { ok: true, status: 'waiting_confirmation' };
 
@@ -349,7 +361,7 @@ export async function postSiPayment(sb: any, p: SiPaymentRow): Promise<PostPayme
       method: p.method,
       docNo: inv.invoice_number ?? p.sales_invoice_id,
       transitAccountCode: transit,
-      moneyAccountCode: money.bank || roles.BANK_DEFAULT,
+      moneyAccountCode: moneyAccountOf(money, roles.BANK_DEFAULT),
       customerCode,
       customerName: inv.debtor_name ?? null,
     }, amountSen),

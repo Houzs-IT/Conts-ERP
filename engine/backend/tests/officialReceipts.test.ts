@@ -66,6 +66,7 @@ describe('birth', () => {
 });
 
 describe('the manual confirm', () => {
+  const P9 = { id: 'p9', so_doc_no: '2990-SO-2607-001', company_id: CO, paid_at: '2026-07-05', method: 'transfer', amount_sen: 5000 };
   function harness(tables: Record<string, Row[]> = {}) {
     const sb = world(tables);
     const app = new Hono();
@@ -83,6 +84,8 @@ describe('the manual confirm', () => {
   test('defaults to the company bank, mints {letter}OR, stamps who confirmed', async () => {
     const { app, sb } = harness({
       acc_official_receipts: [{ id: 7, company_id: CO, or_number: `2990-DraftOR-${yymm}-004`, status: 'DRAFT', payment_source: 'SOPAY', payment_id: 'p9', amount_sen: 5000, paid_at: '2026-07-05' }],
+      /* The payment behind it, for the amount the receipt shows: a gone or edited payment is refused. */
+      mfg_sales_order_payments: [P9],
     });
     const res = await app.request('/accounting/receipts/7/formalise', { method: 'POST' });
     expect(res.status).toBe(200);
@@ -93,6 +96,8 @@ describe('the manual confirm', () => {
   test('a bank with no letter refuses with the setup card named', async () => {
     const { app, sb } = harness({
       acc_official_receipts: [{ id: 7, company_id: CO, or_number: `2990-DraftOR-${yymm}-004`, status: 'DRAFT', payment_source: 'SOPAY', payment_id: 'p9', amount_sen: 5000, paid_at: '2026-07-05' }],
+      /* The payment behind it, for the amount the receipt shows: a gone or edited payment is refused. */
+      mfg_sales_order_payments: [P9],
       acc_bank_letters: [],
     });
     const res = await app.request('/accounting/receipts/7/formalise', { method: 'POST' });
