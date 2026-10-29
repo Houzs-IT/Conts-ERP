@@ -1155,7 +1155,7 @@ export const postPaymentVoucherHandler = async (c: any) => {
   let refundArControl = '';
   if (isRefund(pv.purpose)) {
     const dr = await resolveDebtorRoles(sb, companyId, refundParty);
-    if (!dr.ok) return c.json({ error: 'post_failed', reason: dr.error }, 500);
+    if (!dr.ok) return dr.noAccount ? c.json({ error: 'customer_no_account', message: dr.error }, 409) : c.json({ error: 'post_failed', reason: dr.error }, 500);
     refundArControl = dr.roles.AR;
   }
   const r = await postJournal(sb, {

@@ -20,7 +20,7 @@
 
 import { postJournal, reverseJournal, validateJournal, type ReverseJournalResult } from './engine';
 import { resolveRoles, customerPaymentLines, orderMoneyTransferLines, type RuleLine } from './rules';
-import { debtorControl, resolveDebtorRoles } from '../conts/parties';
+import { debtorControl, noCustomerAccountReason, resolveDebtorRoles } from '../conts/parties';
 import { accMastersCompanyId } from './masters-company';
 import { paymentEntryDrift, type EntryFact, type PaymentDrift, type PaymentFact } from './payment-drift';
 import { mytDateOf } from '../scm/lib/my-time';
@@ -206,6 +206,9 @@ async function postConvertedPayment(sb: any, p: SoPaymentRow, opts: { dryRun?: b
   const [fromCtl, toCtl] = await Promise.all([debtorControl(sb, companyId, from.code), debtorControl(sb, companyId, to.code)]);
   if (!fromCtl.ok) return { ok: false, status: 'post_failed', reason: fromCtl.error };
   if (!toCtl.ok) return { ok: false, status: 'post_failed', reason: toCtl.error };
+  /* Never guessed onto the AR rule: a customer with no account waits for finance (chew, 29 Oct 2026). */
+  if (!fromCtl.control) return { ok: false, status: 'customer_no_account', reason: noCustomerAccountReason(from.code) };
+  if (!toCtl.control) return { ok: false, status: 'customer_no_account', reason: noCustomerAccountReason(to.code) };
   const input = {
     companyId,
     entryDate,
