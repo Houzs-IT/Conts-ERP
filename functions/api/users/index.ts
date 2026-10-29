@@ -11,7 +11,7 @@ import { isRecord, loadDepartment } from '../../_lib/accessRules';
 const MANAGE = ['management'];
 
 /** GET /api/users — every office and owner account, with who each reports to. Cleaners and technicians are not here:
- *  they are added, given app access and switched off on Workers. Never the password hash or attempt counter; only
+ *  they are added, given app access and switched off on HR > Employees. Never the password hash or attempt counter; only
  *  whether a lock is on now. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
@@ -42,7 +42,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
 /** POST /api/users { fullName, email, side, departmentId, positionId?, managerId?, phone? } — an invitation. The
  *  department decides the hidden role; `side` (Works on) must fit it, and only a department on both sides leaves the
- *  choice open (sideFits). Cleaners and technicians are added on Workers, not here. The temporary password is emailed
+ *  choice open (sideFits). Cleaners and technicians are added on HR > Employees, not here. The temporary password is emailed
  *  and is never in the response. */
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
@@ -67,7 +67,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
   const department = await loadDepartment(env, departmentId);
   if (!department) return fail('VALIDATION', 'That department does not exist.', 422, { departmentId: 'Choose a department from the list.' });
-  if (isFieldKind(department.kind)) return fail('VALIDATION', 'Cleaners and technicians are added on Workers.', 422, { departmentId: 'Add cleaners and technicians on Workers.' });
+  if (isFieldKind(department.kind)) return fail('VALIDATION', 'Cleaners and technicians are added on HR > Employees.', 422, { departmentId: 'Add cleaners and technicians on HR > Employees.' });
   if (!sideFits(department.side, side)) return fail('VALIDATION', `${department.name} works on one side only.`, 422, { departmentId: `${department.name} is not on that side.` });
   const position = typeof positionId === 'string' && positionId ? department.positions.find(p => p.id === positionId) ?? null : null;
   if (typeof positionId === 'string' && positionId && !position) return fail('VALIDATION', 'That position is not in the department.', 422, { positionId: 'Choose a position of this department.' });

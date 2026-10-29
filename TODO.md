@@ -177,6 +177,17 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 - Apply 0138 to staging, then production, before merging: without it the booking panel shows no late checkout option.
 - The fee is company income kept on late_checkout_requests only: no receipt for it and no report listing the fees yet.
 
+## Owner Showcase (CONTS-0006, Loo Wen Wei, design pack "Property Management Sales Dashboard.zip", 26 Oct 2026)
+- Decided with Samuel: two PRs. PR 1 = Owner Showcase (7 screens, full screen) + Showcase control (Data fields + Visual editor). PR 2 = owner portal demo (7 desktop tabs, iOS + Android phones) + Switch animation.
+- Overrides: one company-wide copy in the database (`showcase_overrides`), not the prototype's localStorage; a figure shows the override when active and set, else live.
+- Page Views (screen 07): no live source (Channex has no Airbnb page views or impressions); shows only Control values, hidden when empty.
+- Listing photos: units get a cover photo upload; placeholder stripes until one is uploaded.
+- Owner portal in the showcase uses a fixed sample owner (Tan Wei Ming, 3 units), never a real owner's money or guests.
+- PR 1 merged 26 Oct 2026 (#409). Check migration 0164 is on staging and production; without it Showcase control says it is not set up.
+- Showcase figures definitions: occupancy = booked nights / listed units x days; cancellation = cancelled / (counted + cancelled) by check-in in range; lead time = check-in minus the day the booking reached Conts (imported bookings recorded after check-in are left out); 5-star = rating 5.
+- Not built: per-listing page views; a setting to show full guest names (always first name + initial).
+- PR 2 (feat/owner-showcase-portal, no migration): sample owner portal at /performance/showcase/owner (7 desktop tabs, iOS + Android phones) and the Switch curtain both ways. All its figures are made-up examples in src/pages/showcase/sampleOwner.ts, generated around today; it never reads a real owner. Download PDF on a sample statement is switched off.
+
 ## Later
 - Packages (8 Oct, chore/update-packages): Property OS has 0 flagged packages (wrangler 4.148, source-map-js, and an override pinning sharp to 0.35.5 inside wrangler's local emulator; all build/dev tools, none ran in production). Engine: the non-breaking fixes are in (hono on the server, dompurify on the screens, and build tools). Left in engine/, each needing a breaking upgrade of Houzs's code or tools: react-router 6 (moderate), wrangler's sharp and undici, esbuild, vitest, braces. Take them with the next Houzs copy.
 - Email delivery: needs MAIL_API_KEY on the preview environment too; production has it.
@@ -529,3 +540,9 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - [ ] 2D sheets: no way yet to remove a sheet from the set or rename one after upload (only replace or add).
 - [ ] Beta is not reachable on a phone browser (the mobile shell has no /beta route); the 375px layout was checked in a desktop frame.
 - [ ] Owner mockup (artifact 1vwc4QNboJAH4MN7eRF5Rk) could not be read by the agent; compare Drawings against it by eye.
+
+## Notion SO import (feat/so-notion-import, no migration, 26 Oct 2026, docs/so-import/)
+- Lead: run "Notion SO import (one-off)" dry-run, then apply; expect 79 SOs (78 linked to projects) and 27 VOs, RM 3,688,221 in all; then delete the workflow.
+- Owner: payments received per SO come from Accounts; THE HIPSTER C10-05 MS IRIS has no project (SO imported without one); MAPLE B18-3 had three same-day PDFs, ordered by guess.
+
+- Health warnings (CONTS-0005, owner 26 Oct): management is emailed when a System health card turns red or a channel is reported down on status.channex.io, and when it clears. Email only for now; a WhatsApp copy is the owner's later call. Runs on the 5-minute health report, so production only (the cron worker); staging shows the new Channel status card but sends no warnings.

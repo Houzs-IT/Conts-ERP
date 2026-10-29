@@ -56,7 +56,7 @@ const ACTION: Record<string, string> = {
   'maintenance.window_add': 'planned a visit', 'maintenance.window_remove': 'removed a visit', 'maintenance.photo': 'added a photo', 'maintenance.document': 'added a document',
   'maintenance.exchange': 'swapped a part', 'maintenance.block_released': 'gave the blocked nights back',
   'user.invite': 'invited this person', 'user.update': 'edited the account', 'user.reset_link': 'made a password reset link', 'user.resend_invite': 'resent the invitation',
-  'user.permission_change': 'changed permissions', 'user.view_as': 'viewed the system as this person',
+  'user.permission_change': 'changed permissions', 'user.category_access_change': 'changed the product categories they can see', 'department.category_access_change': 'changed the product categories this department can see', 'user.view_as': 'viewed the system as this person',
   'account.password_changed': 'changed the password', 'account.password_reset_completed': 'reset the password',
 };
 
@@ -106,7 +106,7 @@ const ASSIGNEE_KIND: Record<string, string> = { in_house: 'In-house', contractor
 
 /** A stored code in the words the rest of the app uses for it; null when the field has no list of its own. */
 /** A cleaning job's kind in the words the Cleaning board uses. */
-const CLEAN_KIND: Record<string, string> = { turnover: 'Standard clean', deep_clean: 'Deep clean', light_clean: 'Light clean' };
+const CLEAN_KIND: Record<string, string> = { turnover: 'Basic clean', deep_clean: 'Deep clean', light_clean: 'Light clean' };
 
 function known(k: string, v: string, table: string): string | null {
   if (table === 'tasks' && k === 'kind' && CLEAN_KIND[v]) return CLEAN_KIND[v];

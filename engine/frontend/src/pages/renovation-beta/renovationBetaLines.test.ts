@@ -4,7 +4,7 @@ import { amendmentLine, amountAfter, byAreaBlocks, dateSettable, editProblem, ef
 const line = (over: Partial<ManagedLine> = {}): ManagedLine => ({
   id: "i1", soDocNo: "TC-SO-1", soStatus: "CONFIRMED", voLocked: true, lineNo: 1, itemCode: "PNT-5L", description: "Paint 5L", variantText: null,
   variants: { colorCode: "White", remark: "old side channel" }, itemGroup: "materials", uom: "TIN", qty: 2, unitPriceSen: 10000, discountSen: 0, amountSen: 20000,
-  area: "Living", remark: null, supplierName: "Nippon", goesTo: "po", categoryLabel: "Paint", categorySort: 1, subLabel: "General", subSort: 1,
+  area: "Living", remark: null, supplierName: "Nippon", goesTo: "po", categoryCode: null, subCode: null, categoryLabel: "Paint", categorySort: 1, subLabel: "General", subSort: 1,
   pos: [], photoKeys: [], skuPhotos: [], gr: "no", do: "no", plan: { orderOn: null, deliverOn: null, noPo: false }, ...over,
 });
 

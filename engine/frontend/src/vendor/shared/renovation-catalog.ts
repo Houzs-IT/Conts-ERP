@@ -23,7 +23,7 @@ export type StageKey =
   | 'warranty'
   | 'closed';
 
-export const CATALOG_GROUPS = ['WORKS', 'BUILTIN', 'FURNITURE', 'LIGHTING', 'APPLIANCE', 'SOFT', 'SERVICE'] as const;
+export const CATALOG_GROUPS = ['WORKS', 'BUILTIN', 'FURNITURE', 'LIGHTING', 'APPLIANCE', 'SOFT', 'SERVICE', 'AIRBNB'] as const;
 export type CatalogGroup = (typeof CATALOG_GROUPS)[number];
 
 export interface GroupDef {
@@ -40,6 +40,8 @@ export const RENOVATION_GROUPS: readonly GroupDef[] = [
   { code: 'APPLIANCE', label: 'Appliances', stage: 'appliances' },
   { code: 'SOFT', label: 'Soft furnishing', stage: 'soft_furnishing' },
   { code: 'SERVICE', label: 'Service', stage: 'soft_furnishing' },
+  // Things only an Airbnb unit needs (kitchenware, cleaning, consumables, labels); owner, 26 Oct 2026, migration 0163.
+  { code: 'AIRBNB', label: 'Airbnb supplies', stage: 'soft_furnishing' },
 ];
 
 export interface SubCategoryDef {
@@ -117,6 +119,12 @@ export const SUB_CATEGORIES: readonly SubCategoryDef[] = [
   { group: 'SERVICE', code: 'AIRCON_INSTALL', label: 'Aircon install', sort: 50 },
   { group: 'SERVICE', code: 'CLEANING', label: 'Cleaning', sort: 60 },
   { group: 'SERVICE', code: 'PROJECT_MGMT', label: 'Project management', sort: 70 },
+
+  { group: 'AIRBNB', code: 'KITCHENWARE', label: 'Kitchenware', sort: 10 },
+  { group: 'AIRBNB', code: 'BATH_CLEANING', label: 'Bathroom & cleaning', sort: 20 },
+  { group: 'AIRBNB', code: 'FIXTURE', label: 'Fixture', sort: 30 },
+  { group: 'AIRBNB', code: 'CONSUMABLES', label: 'Consumables', sort: 40 },
+  { group: 'AIRBNB', code: 'SIGNAGE', label: 'Signage', sort: 50 },
 ];
 
 /* Legacy Houzs category -> group. SERVICE maps to itself with no sub-category. */
@@ -134,7 +142,7 @@ const LEGACY_GROUP: Readonly<Record<string, CatalogGroup>> = {
   SERVICE: 'SERVICE',
 };
 
-const NEW_GROUPS: ReadonlySet<string> = new Set(['WORKS', 'BUILTIN', 'FURNITURE', 'LIGHTING', 'APPLIANCE', 'SOFT']);
+const NEW_GROUPS: ReadonlySet<string> = new Set(['WORKS', 'BUILTIN', 'FURNITURE', 'LIGHTING', 'APPLIANCE', 'SOFT', 'AIRBNB']);
 
 export function isCatalogGroup(x: string | null | undefined): x is CatalogGroup {
   return (CATALOG_GROUPS as readonly string[]).includes(String(x ?? ''));

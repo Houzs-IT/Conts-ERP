@@ -27,7 +27,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!isKind(kind)) fields.kind = 'Choose a kind.';
   if (!isSide(side)) fields.side = 'Choose The Conts, Dream Crafter or both.';
   if (!name || !isKind(kind) || !isSide(side)) return fail('VALIDATION', 'Check the department details.', 400, fields);
-  if (isFieldKind(kind)) return fail('VALIDATION', 'Cleaners and technicians are added on Workers.', 422, { kind: 'Choose Staff or Management.' });
+  if (isFieldKind(kind)) return fail('VALIDATION', 'Cleaners and technicians are added on HR > Employees.', 422, { kind: 'Choose Staff or Management.' });
 
   const top = await one<{ n: number | null }>(env, 'SELECT max(sort) AS n FROM departments');
   const id = crypto.randomUUID(), now = nowIso();

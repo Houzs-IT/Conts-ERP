@@ -13,7 +13,7 @@ import { build } from 'esbuild';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const out = await build({
-  stdin: { contents: `export * from './functions/_lib/ownerStatement.ts'; export * from './functions/_lib/revenueModel.ts';`, resolveDir: root, loader: 'ts' },
+  stdin: { contents: `export * from './functions/_lib/ownerStatement.ts'; export * from './functions/_lib/revenueModel.ts'; export { contractView } from './functions/_lib/unitContract.ts';`, resolveDir: root, loader: 'ts' },
   bundle: true, format: 'esm', platform: 'node', write: false, logLevel: 'error',
 });
 const tmp = mkdtempSync(join(tmpdir(), 'rm-check-'));
@@ -193,6 +193,17 @@ if (process.env.BIGDATA_PORT) {
     throw Object.assign(new Error('rollback'), { rollback: true });
   }).catch(e => { if (!e.rollback) throw e; });
   await db.end();
+}
+
+console.log('\nContract type saved or only read from the terms (the Contract tab asks before it saves a guess)');
+{
+  const row = over => ({ id: 'c', model: 'management', management_fee_pct: 25, grr_amount: 0, minimum_guarantee: 0, ...over });
+  const view = c => M.contractView(c, { package: 'Package A' }, 25);
+  check('no code and no model saved: type not stored', view(row({})).typeStored === false);
+  check('a saved contract_code: type stored', view(row({ contract_code: 'PS GRR', minimum_guarantee: 310000 })).typeStored === true);
+  check('a saved revenue_model: type stored', view(row({ revenue_model: 'long_term' })).typeStored === true);
+  check('a contract_code that is not a code does not count', view(row({ contract_code: 'XYZ' })).typeStored === false);
+  check('no contract record: type not stored', M.contractView(null, { package: 'Package A', split_kind: null, split_value: null }, 25).typeStored === false);
 }
 
 console.log(fails ? `\n${fails} FAILED` : '\nall ok');

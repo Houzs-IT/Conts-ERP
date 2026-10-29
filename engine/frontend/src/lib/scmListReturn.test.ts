@@ -4,6 +4,7 @@ import {
   rememberScmListReturn,
   scmListReturnTo,
 } from "./scmListReturn";
+import { rememberScmListFocus, takeScmListFocus } from "./scmListReturn";
 
 beforeEach(() => sessionStorage.clear());
 afterEach(() => sessionStorage.clear());
@@ -59,5 +60,16 @@ describe("scmListReturn", () => {
       JSON.stringify({ "/scm/purchase-orders": "//evil.example/x" }),
     );
     expect(scmListReturnTo("/scm/purchase-orders")).toBe("/scm/purchase-orders");
+  });
+});
+
+describe("scmListFocus (Conts)", () => {
+  it("returns the row last opened from a list once, per list", () => {
+    sessionStorage.clear();
+    rememberScmListFocus("/scm/suppliers", "s37");
+    rememberScmListFocus("/scm/purchase-orders", "po1");
+    expect(takeScmListFocus("/scm/suppliers")).toBe("s37");
+    expect(takeScmListFocus("/scm/suppliers")).toBeNull();
+    expect(takeScmListFocus("/scm/purchase-orders")).toBe("po1");
   });
 });

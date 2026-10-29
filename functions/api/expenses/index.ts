@@ -2,13 +2,14 @@ import { type Env, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { isIsoDate } from '../../_lib/validate';
 import { resolveUnit } from '../../_lib/ops';
-import { EXPENSE_CATEGORIES, CHARGE_TO, isPeriodLocked, expenseCategoryLabel, expenseDayLabel } from '../../_lib/expenses';
+import { EXPENSE_CATEGORIES, CHARGE_TO, isPeriodLocked, isUtility, utilityDeduction, expenseCategoryLabel, expenseDayLabel } from '../../_lib/expenses';
 import { approvalSettings, approvalsEnabled, stage } from '../../_lib/approvals';
 import { receiptRequired, RECEIPT_REQUIRED } from '../../../src/lib/receipts';
 
 /** POST /api/expenses { unitId | unitNumber (+propertyName), category, amount, incurredOn, description, reference, chargeTo, receiptDocumentId }
  *  Every deduction needs a category, an amount and a date: that is what makes an owner statement explainable. A bill
- *  the owner pays also needs its receipt (src/lib/receipts.ts). */
+ *  the owner pays also needs its receipt (src/lib/receipts.ts). A utility bill for a month whose statement is final is
+ *  deducted on the next open statement; anything else needs an open month. */
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
@@ -27,7 +28,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const unit = await resolveUnit(env, b.unitId ?? b.unitNumber, b.propertyName);
   if (unit === 'ambiguous') return fail('VALIDATION', 'More than one unit has that number. Say which building.', 422, { unitId: 'Pick the building too.' });
   if (!unit) return fail('NOT_FOUND', 'That unit does not exist.', 404, { unitId: 'Pick a unit that exists.' });
-  if (await isPeriodLocked(env, unit.id, b.incurredOn)) return fail('PERIOD_LOCKED', 'That month\'s owner statement is already final, so nothing can be added to it.', 409, { incurredOn: 'This period is locked.' });
+  const deduction = isUtility(b.category) ? await utilityDeduction(env, unit.id, b.incurredOn) : null;
+  if (!deduction && await isPeriodLocked(env, unit.id, b.incurredOn)) return fail('PERIOD_LOCKED', 'That month\'s owner statement is already final, so nothing can be added to it.', 409, { incurredOn: 'This period is locked.' });
 
   if (!b.receiptDocumentId && receiptRequired(b.category, b.chargeTo)) return fail('RECEIPT_REQUIRED', RECEIPT_REQUIRED, 422, { receipt: RECEIPT_REQUIRED });
   if (b.receiptDocumentId && !(await one(env, "SELECT 1 AS x FROM documents WHERE id = ? AND kind = 'receipt'", b.receiptDocumentId))) {
@@ -52,10 +54,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   // maintenance rollup) points at its parent so the L2→L3 drill-down can nest it.
   // Manually added monthly expenses leave it null and stay top-level.
   await run(env, `
-    INSERT INTO expenses (id, unit_id, maintenance_id, task_id, parent_expense_id, category, description, amount, currency, incurred_on, reference, charge_to, receipt_document_id, created_by, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'MYR', ?, ?, ?, ?, ?, ?)`,
+    INSERT INTO expenses (id, unit_id, maintenance_id, task_id, parent_expense_id, category, description, amount, currency, incurred_on, deduct_month, rolled, reference, charge_to, receipt_document_id, created_by, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'MYR', ?, ?, ?, ?, ?, ?, ?, ?)`,
     id, unit.id, b.maintenanceId ?? null, b.taskId ?? null, b.parentExpenseId ?? null, b.category, String(b.description ?? '').slice(0, 300), b.amount,
-    b.incurredOn, b.reference ?? null, b.chargeTo ?? 'owner', b.receiptDocumentId ?? null, session.userId, nowIso());
+    b.incurredOn, deduction?.deductMonth ?? null, deduction?.rolled ?? false, b.reference ?? null, b.chargeTo ?? 'owner', b.receiptDocumentId ?? null, session.userId, nowIso());
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'expense.create', entityTable: 'expenses', entityId: id, after: { unitId: unit.id, category: b.category, amount: b.amount, incurredOn: b.incurredOn, chargeTo: b.chargeTo ?? 'owner' } });
-  return json({ id }, 201);
+  return json({ id, deductMonth: deduction?.deductMonth ?? b.incurredOn.slice(0, 7), rolled: deduction?.rolled ?? false }, 201);
 };

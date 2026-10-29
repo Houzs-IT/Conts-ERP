@@ -10,7 +10,7 @@
 
 import { useCallback, useMemo, useRef, useState, type CSSProperties, type ReactElement } from "react";
 import { Link } from "react-router-dom";
-import { AlertTriangle, Camera, ChevronDown, ChevronRight, Download, FilePlus2, Pencil, Search } from "lucide-react";
+import { AlertTriangle, Calculator, Camera, ChevronDown, ChevronRight, Download, FilePlus2, Pencil, Search } from "lucide-react";
 import { useAuth } from "../../auth/AuthContext";
 import { useQuery } from "../../hooks/useQuery";
 import { money } from "../projects/renovation/renovationModel";
@@ -24,7 +24,8 @@ import { betaSiteApi } from "./renovationBetaSiteApi";
 import { betaMediaApi } from "./renovationBetaMediaApi";
 import { PhotoUploadDialog, type UploadTarget } from "./BetaPhotoUpload";
 import { BetaSkuPicker } from "./BetaSkuPicker";
-import { BETA } from "./renovationBetaTheme";
+import { BetaQuantityHelper } from "./BetaQuantityHelper";
+import { BETA, TONES } from "./renovationBetaTheme";
 import { voPoApi } from "./renovationBetaVoPo";
 import { LinePhotoThumbs, photoCount, type LinePhotoSet } from "./BetaLinePhotos";
 import {
@@ -32,19 +33,17 @@ import {
   linesApi, linesCsv, postVo, refusalText,
   voBatches, type LineEdit, type ManagedLine, type PendingPoChange, type PostedVo,
 } from "./renovationBetaLines";
+import { BetaLoading } from "./BetaLoading";
 
 /** One colour per category band, in the mockup's spirit: [bar, band background, text]. */
-const BANDS: ReadonlyArray<readonly [string, string, string]> = [
-  ["#1A6B66", "#E1F1EE", "#0F4A46"],
-  ["#B4540A", "#FFF1E0", "#7A3906"],
-  ["#1F4E8C", "#E8F0FB", "#163A69"],
-  ["#7A3E9D", "#F3EAF8", "#552B6E"],
-  ["#2E7D32", "#E7F3E8", "#1E5420"],
-  ["#A12622", "#FBEAE9", "#741B18"],
-];
+const BAND_BARS = ["#1A6B66", "#B4540A", "#1F4E8C", "#7A3E9D", "#2E7D32", "#A12622"] as const;
+/* The band's tint and text are mixed from its bar colour, so the same six read on a light and a dark page. */
+const BANDS: ReadonlyArray<readonly [string, string, string]> = BAND_BARS.map((bar) => [
+  bar, `color-mix(in srgb, ${bar} 14%, transparent)`, `color-mix(in srgb, ${bar} 60%, ${BETA.ink})`,
+] as const);
 
-const EDIT_BG = "#FFF9DB";
-const EDIT_LINE = "#E9D77E";
+const EDIT_BG = TONES.amber.soft;
+const EDIT_LINE = TONES.amber.line;
 const editInput: CSSProperties = { ...inputStyle, minHeight: 30, height: 30, fontSize: 12.5, background: EDIT_BG, borderColor: EDIT_LINE, padding: "0 6px" };
 /* Below this width of the tab the table becomes stacked row cards: every column fits from here up (1280-1600px
    screens, 80% zoom included), and nothing is ever hidden or scrolled sideways. */
@@ -92,6 +91,7 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
   const [result, setResult] = useState<PostedVo[] | null>(null);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
+  const [helping, setHelping] = useState(false);
   const [wrapRef, width] = useWidth();
 
   const lines = q.data?.lines ?? [];
@@ -106,7 +106,7 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
   }, [q.data]);
 
   if (q.error) return <p role="alert" style={{ fontSize: 14, color: WS.red }}>The sales order lines could not be loaded: {q.error}</p>;
-  if (!q.data) return <p style={{ padding: "40px 0", textAlign: "center", fontSize: 14, color: BETA.muted }}>Loading PO...</p>;
+  if (!q.data) return <BetaLoading label="Loading PO" />;
   const d = q.data;
   const editable = p.canWrite && editing;
   const toggle = (key: string): void => setClosed((s) => { const n = new Set(s); if (n.has(key)) n.delete(key); else n.add(key); return n; });
@@ -229,6 +229,7 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
   return (
     <>
       <style>{DATE_CSS}</style>
+      {helping && <BetaQuantityHelper onClose={() => setHelping(false)} />}
       <WsPageHead
         title="PO"
         sub={editing
@@ -244,6 +245,7 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
               <button type="button" style={btnStyle("outline", "sm")} onClick={() => setUploading({ kind: "po", id: photos.data?.docs.pos[0]?.id ?? "" })}><Camera size={14} aria-hidden="true" />Upload photos</button>
             )}
             {lines.length > 0 && <button type="button" style={btnStyle("outline", "sm")} onClick={exportCsv}><Download size={14} aria-hidden="true" />Export</button>}
+            <button type="button" style={btnStyle("outline", "sm")} onClick={() => setHelping(true)}><Calculator size={14} aria-hidden="true" />Quantity helper</button>
             {needPo.length > 0 && d.sos.map((s) => (
               <Link key={s.docNo} to={s.renovation ? `/scm/renovation/contracts/${encodeURIComponent(s.docNo)}` : "/scm/purchase-orders/from-so"} style={btnStyle("teal", "sm")}>
                 <FilePlus2 size={14} aria-hidden="true" />Create PO{d.sos.length > 1 ? ` (${s.docNo})` : ""}
@@ -252,6 +254,7 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
           </span>
         )}
       />
+      {d.categoryRestricted && <p style={{ margin: 0, fontSize: 13, color: BETA.muted }}>Some categories are hidden for your role.</p>}
       {lines.length > 0 && (
         <div role="group" aria-label="Group the lines" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <WsFilterPill on={view === "category"} onClick={() => setView("category")}>By category</WsFilterPill>
@@ -266,7 +269,7 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
       </WsStats>
 
       {d.pendingPoChanges.length > 0 && (
-        <div role="status" style={{ border: `1px solid #F0C98A`, background: "#FDF1E2", borderRadius: 10, padding: "10px 12px", display: "flex", flexDirection: "column", gap: 8 }}>
+        <div role="status" style={{ border: `1px solid ${TONES.amber.line}`, background: TONES.amber.soft, borderRadius: 10, padding: "10px 12px", display: "flex", flexDirection: "column", gap: 8 }}>
           {d.pendingPoChanges.map((c) => (
             <div key={c.id} style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", color: WS.amber, fontSize: 14 }}>
               <AlertTriangle size={16} aria-hidden="true" />
@@ -290,9 +293,9 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
       )}
 
       <div ref={wrapRef} style={{ width: "100%", minWidth: 0 }}>
-        {tree.length === 0 ? <WsEmpty>No sales order lines for this project yet. Link a sales order to see its lines here.</WsEmpty>
+        {tree.length === 0 ? <WsEmpty>{d.categoryRestricted ? "No lines you can see for this project." : "No sales order lines for this project yet. Link a sales order to see its lines here."}</WsEmpty>
           : width === 0 || width >= TABLE_MIN ? (
-            <div role="region" aria-label="Sales order lines" style={{ border: `1px solid ${BETA.line}`, borderRadius: 10, overflow: "hidden" }}>
+            <div role="region" aria-label="Sales order lines" style={{ border: `1px solid ${BETA.line}`, borderRadius: 10, overflow: "hidden", background: BETA.surface }}>
               <table style={{ width: "100%", tableLayout: "fixed", borderCollapse: "collapse" }}>
                 <colgroup>{colWidths(d.finance).map((w, k) => (w > 0 ? <col key={k} style={{ width: `${w}%` }} /> : null))}</colgroup>
                 <thead>
@@ -309,7 +312,7 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
                     <th style={headStyle}>DO</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="stag">
                   {tree.map((c, ci) => {
                     const open = !closed.has(c.key);
                     const band = BANDS[ci % BANDS.length];
@@ -332,7 +335,7 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
               </table>
             </div>
           ) : (
-            <ul aria-label="Sales order lines" style={{ listStyle: "none", margin: 0, padding: 0, border: `1px solid ${BETA.line}`, borderRadius: 10, overflow: "hidden" }}>
+            <ul aria-label="Sales order lines" style={{ listStyle: "none", margin: 0, padding: 0, border: `1px solid ${BETA.line}`, borderRadius: 10, overflow: "hidden", background: BETA.surface }}>
               {tree.map((c, ci) => {
                 const band = BANDS[ci % BANDS.length];
                 const open = !closed.has(c.key);
@@ -697,7 +700,7 @@ function grState(l: ManagedLine): "yes" | "part" | "no" | null {
 function LineRow(r: RowCtx): ReactElement {
   const touched = changed(r) !== null;
   return (
-    <tr style={{ opacity: r.l.goesTo === "client" ? 0.75 : 1, background: touched ? "#FFFDF0" : undefined }}>
+    <tr style={{ opacity: r.l.goesTo === "client" ? 0.75 : 1, background: touched ? TONES.amber.soft : undefined }}>
       <td style={{ ...cellStyle, paddingLeft: 12 }}><SkuCell {...r} /></td>
       <td style={cellStyle}><DescCell {...r} /></td>
       <td style={cellStyle}><VariantCell {...r} /></td>
@@ -719,7 +722,7 @@ function LineCard(r: RowCtx): ReactElement {
     <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}><span style={metaStyle}>{label}</span>{child}</div>
   );
   return (
-    <li style={{ padding: "10px 12px", borderBottom: `1px solid ${WS.rowLine}`, display: "flex", flexDirection: "column", gap: 8, opacity: r.l.goesTo === "client" ? 0.75 : 1, background: touched ? "#FFFDF0" : BETA.surface }}>
+    <li style={{ padding: "10px 12px", borderBottom: `1px solid ${WS.rowLine}`, display: "flex", flexDirection: "column", gap: 8, opacity: r.l.goesTo === "client" ? 0.75 : 1, background: touched ? TONES.amber.soft : BETA.surface }}>
       <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: 8, alignItems: "center" }}>
         <SkuCell {...r} />
         {r.finance && <AmountCell {...r} />}
@@ -745,7 +748,7 @@ function LineCard(r: RowCtx): ReactElement {
 function SaveResult({ posted, onClose }: { posted: PostedVo[]; onClose: () => void }): ReactElement {
   const ok = posted.every((x) => x.applied);
   return (
-    <div role="status" style={{ border: `1px solid ${ok ? "#B7DCC3" : "#E8A5A2"}`, background: ok ? "#E5F3EA" : "#FDF1F0", borderRadius: 10, padding: "10px 12px", fontSize: 14, display: "flex", gap: 8, alignItems: "flex-start" }}>
+    <div role="status" style={{ border: `1px solid ${ok ? TONES.accent.line : TONES.red.line}`, background: ok ? TONES.accent.soft : TONES.red.soft, borderRadius: 10, padding: "10px 12px", fontSize: 14, display: "flex", gap: 8, alignItems: "flex-start" }}>
       <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 4 }}>
         {posted.map((x) => (
           <div key={x.docNo}>

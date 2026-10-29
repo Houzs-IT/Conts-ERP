@@ -33,7 +33,7 @@ test('a cookie without a kind falls back to the role', () => {
 
 test('staff level comes from the rules and always counts as chosen', async () => {
   forgetRules();
-  const env = envWith([rule('department', 'group:Dream Crafter', 'view'), rule('position', 'scSales', 'edit')]);
+  const env = envWith([rule('department', 'group:Supply chain', 'view'), rule('position', 'scSales', 'edit')]);
   const a = await accessFor(env, staff(), SO);
   assert.equal(a.level, 'edit');
   assert.equal(a.chosen, true);
@@ -44,7 +44,7 @@ test('staff level comes from the rules and always counts as chosen', async () =>
 
 test('the side closes the other side after the rules resolve, and is never opened by them', async () => {
   forgetRules();
-  const env = envWith([rule('department', 'group:Dream Crafter', 'full'), rule('department', 'group:Operations', 'edit')]);
+  const env = envWith([rule('department', 'group:Supply chain', 'full'), rule('department', 'group:Operations', 'edit')]);
   const conts = await accessFor(env, staff({ side: 'conts' }), SO);
   assert.deepEqual([conts.level, conts.chosen], ['none', true]);
   const dc = await accessFor(env, staff({ side: 'dream_crafter' }), '/api/reservations');

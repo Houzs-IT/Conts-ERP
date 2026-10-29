@@ -21,8 +21,9 @@ import { lineDocs, type LineDoc } from "./renovationBetaDocsModel";
 import { lineDates, lineLate, linesApi, type ManagedLine } from "./renovationBetaLines";
 import { dayMonthYear, whatsappLink } from "./renovationBetaModel";
 import { betaSiteApi, type SiteDelivery } from "./renovationBetaSiteApi";
-import { BETA } from "./renovationBetaTheme";
+import { BETA, TONES } from "./renovationBetaTheme";
 import { byArea, byCategory, clientLinkUrl, voPoApi, type ClientItem } from "./renovationBetaVoPo";
+import { BetaLoading } from "./BetaLoading";
 
 /** The line's photos (uploaded on the order line, carried to its PO) and the SKU's catalog photos, as the client link
     shows them: up to three, then "+N" (BetaLinePhotos.tsx, shared with the PO tab). */
@@ -81,7 +82,7 @@ export function BetaClientPoTab(p: BetaTabProps): ReactElement {
     : byArea(items).map((a) => ({ key: a.key, label: a.label, subs: [{ key: `${a.key}/all`, label: "", items: a.items }] }))), [items, view]);
 
   if (q.error) return <p role="alert" style={{ fontSize: 14, color: WS.red }}>The client items could not be loaded: {q.error}</p>;
-  if (!q.data) return <p style={{ padding: "40px 0", textAlign: "center", fontSize: 14, color: BETA.muted }}>Loading Client PO...</p>;
+  if (!q.data) return <BetaLoading label="Loading Client PO" />;
 
   const dated = [...rows.values()].filter((r) => r.orderOn && r.deliverOn).length;
   const COLS = 9;
@@ -92,7 +93,10 @@ export function BetaClientPoTab(p: BetaTabProps): ReactElement {
         title="Client PO"
         sub={`What the client buys: ${items.length} item${items.length === 1 ? "" : "s"}, ${dated} with both dates set. Lines with supplier "Customer" come here by themselves; their dates are set in the PO tab.`}
       />
-      <SharePanel p={p} rows={[...rows.values()]} />
+      {q.data.categoryRestricted && <p style={{ margin: 0, fontSize: 13, color: BETA.muted }}>Some categories are hidden for your role.</p>}
+      {q.data.categoryRestricted
+        ? <p style={{ margin: 0, fontSize: 13, color: BETA.muted }}>Sharing with the client is not available for a role limited to some categories.</p>
+        : <SharePanel p={p} rows={[...rows.values()]} />}
 
       <div role="group" aria-label="Group by" style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
         <WsFilterPill on={view === "category"} onClick={() => setView("category")}>By category</WsFilterPill>
@@ -114,11 +118,11 @@ export function BetaClientPoTab(p: BetaTabProps): ReactElement {
               <th style={thStyle}>Photos</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody className="stag">
             {groups.map((g) => [
-              <tr key={g.key}><td colSpan={COLS} style={{ padding: "8px 10px", background: "#E1F1EE", borderLeft: `4px solid ${BETA.accent}`, color: BETA.accentInk, fontWeight: 700, fontSize: 15 }}>{g.label}</td></tr>,
+              <tr key={g.key}><td colSpan={COLS} style={{ padding: "8px 10px", background: TONES.accent.soft, borderLeft: `4px solid ${BETA.accent}`, color: BETA.accentInk, fontWeight: 700, fontSize: 15 }}>{g.label}</td></tr>,
               ...g.subs.flatMap((s) => [
-                ...(s.label ? [<tr key={s.key}><td colSpan={COLS} style={{ padding: "6px 10px 6px 28px", background: "#F3F9F8", borderLeft: "4px solid #A9CFCB", color: WS.text2, fontWeight: 600 }}>{s.label}</td></tr>] : []),
+                ...(s.label ? [<tr key={s.key}><td colSpan={COLS} style={{ padding: "6px 10px 6px 28px", background: BETA.tealSoft, borderLeft: `4px solid ${TONES.accent.line}`, color: WS.text2, fontWeight: 600 }}>{s.label}</td></tr>] : []),
                 ...s.items.map((i) => {
                   const r = rows.get(i.key);
                   return r ? <ItemRow key={i.key} r={r} view={view} openDoc={openDoc} /> : null;

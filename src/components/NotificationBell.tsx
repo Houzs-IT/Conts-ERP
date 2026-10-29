@@ -1,10 +1,13 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactElement, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { color, radius, text, shadow } from '../theme';
 import { api } from '../lib/api';
 import { relative, dateTime } from '../lib/format';
 import { useNavCounts } from '../lib/navBadges';
 import { useSession } from '../lib/session';
+import { announceFieldChanged } from '../lib/fieldLive';
+import { useToast } from './Toast';
 import Icon from './Icon';
 
 /* ------------------------------------------------------------------ *
@@ -25,6 +28,7 @@ export const NOTICES_CHANGED = 'conts:notifications-changed';
 export const announceNoticesChanged = () => window.dispatchEvent(new Event(NOTICES_CHANGED));
 
 const POLL_MS = 60_000;
+const LIVE_POLL_MS = 15_000;
 const PANEL_W = 380;
 const PANEL_GAP = 16;
 const TONE_DOT = { critical: 'var(--color-critical-line)', warning: 'var(--color-warning-line)', info: 'var(--color-info-line)' } as const;
@@ -37,17 +41,29 @@ export function noticeIcon(kind: string) {
   if (kind.startsWith('approval.')) return 'BadgeCheck';
   if (kind.startsWith('statement.') || kind.startsWith('payout.')) return 'Receipt';
   if (kind.startsWith('digest.')) return 'Sun';
+  if (kind.startsWith('health.')) return 'Activity';
   return 'Bell';
 }
 
-export function useUnreadNotices() {
+/** `pollMs` asks more often (the field app uses 15 seconds); `onArrive` runs when a notice newer than any seen arrives,
+ *  never for the first answer after opening, which is only the baseline. */
+export function useUnreadNotices(opts: { pollMs?: number; onArrive?: () => void } = {}) {
+  const { pollMs = POLL_MS, onArrive } = opts;
   const [unread, setUnread] = useState(0);
+  const newest = useRef<number | null | undefined>(undefined);
+  const arrive = useRef(onArrive);
+  arrive.current = onArrive;
   const refresh = useCallback(() => {
-    api.get<{ unread: number }>('/notifications/count').then(r => setUnread(r.unread ?? 0)).catch(() => {});
+    api.get<{ unread: number; latest?: string | null }>('/notifications/count').then(r => {
+      setUnread(r.unread ?? 0);
+      const at = r.latest ? Date.parse(r.latest) : null;
+      if (newest.current !== undefined && at !== null && at > (newest.current ?? 0)) arrive.current?.();
+      newest.current = at;
+    }).catch(() => {});
   }, []);
   useEffect(() => {
     refresh();
-    const t = window.setInterval(() => { if (document.visibilityState === 'visible') refresh(); }, POLL_MS);
+    const t = window.setInterval(() => { if (document.visibilityState === 'visible') refresh(); }, pollMs);
     const onVisible = () => { if (document.visibilityState === 'visible') refresh(); };
     document.addEventListener('visibilitychange', onVisible);
     window.addEventListener(NOTICES_CHANGED, refresh);
@@ -79,9 +95,12 @@ export function NoticeRow({ n, onOpen, wide = false }: { n: Notice; onOpen: (n: 
 type Alert = NonNullable<NonNullable<ReturnType<typeof useNavCounts>>['alerts']>[number];
 
 /** The desk bell: the person's notices and the live alerts the menu counts. */
-export default function NotificationBell({ path, navigate, size }: { path: string; navigate: (p: string) => void; size: number }) {
+export default function NotificationBell({ path, navigate, size, glass }: { path: string; navigate: (p: string) => void; size: number;
+  /** The glass look of the Beta top bar. The panel is then drawn on the page body in this style, so the bar's blur
+   *  cannot trap or clip it. */
+  glass?: CSSProperties }) {
   const counts = useNavCounts(path);
-  return <Bell navigate={navigate} size={size} alerts={counts?.alerts ?? []} />;
+  return <Bell navigate={navigate} size={size} alerts={counts?.alerts ?? []} glass={glass} />;
 }
 
 /** The field app's bell (dark header): the person's own notices only; their app has one screen, so no "See all". */
@@ -93,14 +112,26 @@ export function FieldNotificationBell() {
   const target = (n: Notice) => !field || !n.entityId ? null
     : n.entityTable === 'tasks' ? `/?task=${encodeURIComponent(n.entityId)}`
     : n.entityTable === 'maintenance_issues' ? `/?repair=${encodeURIComponent(n.entityId)}` : null;
-  return <Bell navigate={navigate} target={target} size={44} alerts={[]} dark />;
+  return <Bell navigate={navigate} target={target} size={44} alerts={[]} dark live />;
 }
 
-function Bell({ navigate, target, size, alerts, dark = false }: { navigate: (p: string) => void; target?: (n: Notice) => string | null; size: number; alerts: Alert[]; dark?: boolean }) {
+function Bell({ navigate, target, size, alerts, dark = false, glass, live = false }: { navigate: (p: string) => void; target?: (n: Notice) => string | null; size: number; alerts: Alert[]; dark?: boolean; glass?: CSSProperties; live?: boolean }) {
+  const floating = !!glass;
   const [open, setOpen] = useState(false);
+  // Floating panel: where it hangs, taken from the bell when it is clicked (fixed, so no bar can clip or tint it).
+  const [anchor, setAnchor] = useState<{ top: number; right: number } | null>(null);
   // How far the panel slides right of the bell so it stays on screen: in the field header the bell is not the last icon.
   const [shift, setShift] = useState(0);
-  const { unread, setUnread, refresh } = useUnreadNotices();
+  const toast = useToast();
+  // Field app: a new notice says the job lists changed, so they reload now; the notice shows as a toast and the phone buzzes.
+  const arrived = () => {
+    announceFieldChanged();
+    navigator.vibrate?.(120);
+    api.get<NoticePage>('/notifications', { pageSize: 1, unread: 1 })
+      .then(r => { const n = r.data[0]; if (n) toast({ tone: 'info', title: n.title, body: n.body ?? undefined }); })
+      .catch(() => {});
+  };
+  const { unread, setUnread, refresh } = useUnreadNotices(live ? { pollMs: LIVE_POLL_MS, onArrive: arrived } : {});
   const [list, setList] = useState<Notice[] | null>(null);
   const [loadError, setLoadError] = useState(false);
   const attention = alerts.filter(a => a.tone !== 'info').length;
@@ -132,6 +163,7 @@ function Bell({ navigate, target, size, alerts, dark = false }: { navigate: (p: 
     api.patch('/notifications', { all: true }).then(() => announceNoticesChanged()).catch(refresh);
   };
 
+  const inPlace = (panel: ReactElement): ReactNode => (floating ? createPortal(panel, document.body) : panel);
   const badge = unread > 99 ? '99+' : String(unread);
   const label = unread ? `Notifications, ${unread} unread` : attention ? `Notifications, ${attention} need attention` : 'Notifications';
 
@@ -139,20 +171,22 @@ function Bell({ navigate, target, size, alerts, dark = false }: { navigate: (p: 
     <div style={{ position: 'relative', flex: 'none' }}>
       <button aria-label={label} aria-expanded={open} onClick={e => {
         const r = e.currentTarget.getBoundingClientRect();
-        setShift(Math.max(0, PANEL_GAP + Math.min(PANEL_W, window.innerWidth - 2 * PANEL_GAP) - r.right));
+        const slide = Math.max(0, PANEL_GAP + Math.min(PANEL_W, window.innerWidth - 2 * PANEL_GAP) - r.right);
+        setShift(slide);
+        setAnchor({ top: r.bottom + 8, right: window.innerWidth - r.right - slide });
         setOpen(v => !v);
       }}
         style={{ position: 'relative', width: size, height: size, flex: 'none', display: 'grid', placeItems: 'center', border: dark ? '1px solid rgba(255,255,255,0.14)' : `1px solid ${color.border}`, borderRadius: radius.control, background: dark ? 'transparent' : color.card, color: dark ? color.onDark : color.ink, cursor: 'pointer' }}>
         <Icon name="Bell" size="nav" />
         {unread > 0
-          ? <span aria-hidden style={{ position: 'absolute', top: -6, right: -6, minWidth: 18, height: 18, padding: '0 5px', boxSizing: 'border-box', borderRadius: radius.pill, background: 'var(--color-critical-line)', color: color.card, fontSize: 10, fontWeight: 700, lineHeight: '18px', textAlign: 'center', border: `2px solid ${dark ? color.black : color.card}`, fontVariantNumeric: 'tabular-nums' }}>{badge}</span>
+          ? <span aria-hidden style={{ position: 'absolute', top: -6, right: -6, minWidth: 18, height: 18, padding: '0 5px', boxSizing: 'border-box', borderRadius: radius.pill, background: 'var(--color-critical-line)', color: floating ? 'var(--color-text-inverse)' : color.card, fontSize: 10, fontWeight: 700, lineHeight: '18px', textAlign: 'center', border: `2px solid ${floating ? 'transparent' : dark ? color.black : color.card}`, fontVariantNumeric: 'tabular-nums' }}>{badge}</span>
           : attention > 0 && <span aria-hidden style={{ position: 'absolute', top: 6, right: 7, width: 7, height: 7, borderRadius: radius.pill, background: 'var(--color-critical-line)' }} />}
       </button>
 
-      {open && (
+      {open && inPlace(
         <>
-          <div onClick={() => setOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 40 }} />
-          <div role="dialog" aria-label="Notifications" style={{ position: 'absolute', top: 'calc(100% + 8px)', right: -shift, zIndex: 41, width: PANEL_W, maxWidth: `calc(100vw - ${2 * PANEL_GAP}px)`, background: color.card, border: `1px solid ${color.border}`, borderRadius: radius.card, boxShadow: shadow.overlay, overflow: 'hidden', display: 'flex', flexDirection: 'column', whiteSpace: 'normal' }}>
+          <div onClick={() => setOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: floating ? 45 : 40 }} />
+          <div role="dialog" aria-label="Notifications" style={{ ...(floating && anchor ? { position: 'fixed', top: anchor.top, right: anchor.right, zIndex: 46 } : { position: 'absolute', top: 'calc(100% + 8px)', right: -shift, zIndex: 41 }), width: PANEL_W, maxWidth: `calc(100vw - ${2 * PANEL_GAP}px)`, background: color.card, border: `1px solid ${color.border}`, borderRadius: radius.card, boxShadow: shadow.overlay, overflow: 'hidden', display: 'flex', flexDirection: 'column', whiteSpace: 'normal', ...glass }}>
             <div style={{ padding: '12px 16px', borderBottom: `1px solid ${color.borderMuted}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
               <span style={{ fontSize: text.copy, fontWeight: 600, color: color.ink }}>Notifications{unread ? ` (${unread})` : ''}</span>
               <button type="button" onClick={markAll} disabled={unread === 0} title={unread === 0 ? 'Nothing unread' : undefined}

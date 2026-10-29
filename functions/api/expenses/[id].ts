@@ -1,12 +1,13 @@
 import { type Env, one, run, json, fail, audit } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { isIsoDate } from '../../_lib/validate';
-import { EXPENSE_CATEGORIES, CHARGE_TO, isPeriodLocked, expenseCategoryLabel, expenseDayLabel } from '../../_lib/expenses';
+import { EXPENSE_CATEGORIES, CHARGE_TO, isPeriodLocked, isExpenseLocked, isUtility, utilityDeduction, expenseCategoryLabel, expenseDayLabel } from '../../_lib/expenses';
 import { approvalSettings, approvalsEnabled, stage } from '../../_lib/approvals';
 import { receiptRequired, RECEIPT_REQUIRED } from '../../../src/lib/receipts';
 
 /** PATCH /api/expenses/:id { category?, description?, amount?, incurredOn?, reference?, chargeTo?, receiptDocumentId? }
- *  Refused once the statement covering the expense is final, and also if the new date would land in a final statement.
+ *  Refused once the statement that deducts the expense is final, and for anything but a utility bill also if the new
+ *  date would land in a final statement; a utility bill moved into a final month goes on the next open statement.
  *  Attaching a receipt alone is allowed on a final month: it changes no figure, and an older bill without one is
  *  flagged "No receipt" until someone adds it. Turning a bill into one the owner pays needs its receipt. */
 export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params }) => {
@@ -25,7 +26,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   if (b.receiptDocumentId !== undefined && (typeof b.receiptDocumentId !== 'string' || !b.receiptDocumentId)) fields.receipt = 'Upload the receipt again.';
   if (Object.keys(fields).length) return fail('VALIDATION', 'Check the highlighted fields.', 422, fields);
 
-  const cur = await one<any>(env, 'SELECT id, unit_id, category, amount, incurred_on, description, reference, charge_to, receipt_document_id FROM expenses WHERE id = ?', id);
+  const cur = await one<any>(env, 'SELECT id, unit_id, category, amount, incurred_on, deduct_month, rolled, description, reference, charge_to, receipt_document_id FROM expenses WHERE id = ?', id);
   if (!cur) return fail('NOT_FOUND', 'That expense no longer exists.', 404);
   if (b.receiptDocumentId !== undefined && !(await one(env, "SELECT 1 AS x FROM documents WHERE id = ? AND kind = 'receipt' AND (unit_id IS NULL OR unit_id = ?)", b.receiptDocumentId, cur.unit_id))) {
     return fail('VALIDATION', 'That receipt was not found. Upload it again.', 422, { receipt: 'Upload the receipt again.' });
@@ -39,8 +40,11 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   }
   const becomesOwnerBill = !receiptRequired(cur.category, cur.charge_to) && receiptRequired(b.category ?? cur.category, b.chargeTo ?? cur.charge_to);
   if (becomesOwnerBill && !cur.receipt_document_id && !b.receiptDocumentId) return fail('RECEIPT_REQUIRED', RECEIPT_REQUIRED, 422, { receipt: RECEIPT_REQUIRED });
-  if (await isPeriodLocked(env, cur.unit_id, cur.incurred_on)) return fail('PERIOD_LOCKED', 'The owner statement for that month is final, so this expense is locked.', 409);
-  if (b.incurredOn && await isPeriodLocked(env, cur.unit_id, b.incurredOn)) return fail('PERIOD_LOCKED', 'That month\'s owner statement is already final.', 409, { incurredOn: 'This period is locked.' });
+  if (await isExpenseLocked(env, cur)) return fail('PERIOD_LOCKED', 'The owner statement for that month is final, so this expense is locked.', 409);
+  // A utility bill's statement follows its date: its own month, or the next open one when that month is final.
+  const category = b.category ?? cur.category, day = b.incurredOn ?? cur.incurred_on;
+  const deduction = isUtility(category) && (b.incurredOn !== undefined || b.category !== undefined) ? await utilityDeduction(env, cur.unit_id, day) : null;
+  if (!deduction && b.incurredOn && await isPeriodLocked(env, cur.unit_id, b.incurredOn)) return fail('PERIOD_LOCKED', 'That month\'s owner statement is already final.', 409, { incurredOn: 'This period is locked.' });
 
   const { expenseThreshold } = await approvalSettings(env);
   if (b.amount !== undefined && b.amount > expenseThreshold && b.amount > Number(cur.amount) && await approvalsEnabled(env)) {
@@ -59,9 +63,9 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   await run(env, `
     UPDATE expenses SET category = COALESCE(?, category), description = COALESCE(?, description), amount = COALESCE(?, amount),
                         incurred_on = COALESCE(?, incurred_on), reference = COALESCE(?, reference), charge_to = COALESCE(?, charge_to),
-                        receipt_document_id = COALESCE(?, receipt_document_id) WHERE id = ?`,
+                        receipt_document_id = COALESCE(?, receipt_document_id), deduct_month = COALESCE(?, deduct_month), rolled = COALESCE(?, rolled) WHERE id = ?`,
     b.category ?? null, typeof b.description === 'string' ? b.description.slice(0, 300) : null, b.amount ?? null, b.incurredOn ?? null,
-    typeof b.reference === 'string' ? b.reference : null, b.chargeTo ?? null, b.receiptDocumentId ?? null, id);
+    typeof b.reference === 'string' ? b.reference : null, b.chargeTo ?? null, b.receiptDocumentId ?? null, deduction?.deductMonth ?? null, deduction?.rolled ?? null, id);
   await audit(env, {
     actorId: session.userId, actorLabel: session.fullName, action: 'expense.update', entityTable: 'expenses', entityId: id,
     before: { category: cur.category, amount: cur.amount, incurredOn: cur.incurred_on, chargeTo: cur.charge_to },

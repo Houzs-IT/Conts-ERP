@@ -7,7 +7,7 @@ import { rentalOnly } from './unitPurpose';
 
 export const CLEAN_KINDS = ['turnover', 'deep_clean', 'light_clean'] as const;
 export const CLEAN_KINDS_SQL = `('turnover','deep_clean','light_clean')`;
-/** Stays that leave no guest mess and hold no guest: never a "previous" or "next" guest. */
+/** Real guest stays, past or present: not cancelled, no-show or an enquiry, and not a repair block (a block holds no guest and leaves no mess). */
 export const LIVE_STAY_SQL = (r: string) => `${r}.state NOT IN ('cancelled','no_show','inquiry') AND ${r}.channel != 'maintenance_block'`;
 
 /** The standard checklist. Deep cleans add the last items. Labels are what the cleaner reads on the phone. */
@@ -93,7 +93,7 @@ export async function chargeClean(env: Env, session: Session, task: { id: string
     await run(env, `
       INSERT INTO expenses (id, unit_id, task_id, category, description, amount, currency, incurred_on, charge_to, created_by, created_at)
       VALUES (?, ?, ?, 'cleaning', ?, ?, 'MYR', ?, 'owner', ?, ?)`,
-      id, task.unit_id, task.id, task.kind === 'deep_clean' ? 'Deep clean' : 'Standard clean', price.amount, day, session.userId, nowIso());
+      id, task.unit_id, task.id, task.kind === 'deep_clean' ? 'Deep clean' : 'Basic clean', price.amount, day, session.userId, nowIso());
     await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'expense.create', entityTable: 'expenses', entityId: id, after: { unitId: task.unit_id, taskId: task.id, category: 'cleaning', amount: price.amount, source: price.source } });
     return { amount: price.amount, created: true, reason: null };
   } catch (e) {
@@ -165,48 +165,6 @@ export async function windowsOnDay(env: Env, day: string) {
 /** Malaysian calendar day today. */
 export const mytToday = () => new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);
 export const isDay = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
-
-/** Nobody tapped "Guest left": from the checkout time on, the guest counts as out (owner, 17 Oct 2026; early leavers are
- *  still tapped by staff). There is no scheduled worker, so whichever screen first reads the clean after that time stamps
- *  it, once, at the checkout time itself, and writes the history row ("Automatic, at checkout 11:00"). Rows are changed
- *  in place (guest_left_at, guest_left_auto). The stamp is the checkout instant in +08:00 form, which a tap (an ISO 'Z'
- *  instant) never is, so later reads still know it was automatic. Never throws: a screen read must not fail over it. */
-export async function autoGuestLeft(env: Env, rows: any[], stdOut: string): Promise<void> {
-  const now = Date.now();
-  let due: { row: any; id: string; at: string; time: string; unit: string | null }[] = [];
-  for (const r of rows) {
-    if (r.guest_left_at || !r.prev_id || r.prev_state === 'checked_out' || r.state === 'resolved' || !r.day) continue;
-    const time = r.prev_time && /^\d{2}:\d{2}$/.test(r.prev_time) ? r.prev_time : stdOut;
-    const at = `${r.day}T${time}:00+08:00`;
-    if (Date.parse(at) > now) continue;
-    due.push({ row: r, id: r.id, at, time, unit: r.unit_id ?? null });
-  }
-  if (!due.length) return;
-  try {
-    const unmarkedByStaff = await all<{ id: string }>(env, `
-      SELECT DISTINCT l.entity_id AS id FROM audit_log l
-      WHERE l.entity_table = 'tasks' AND l.action = 'task.guest_left_undo' AND l.entity_id IN (SELECT jsonb_array_elements_text(?::text::jsonb))`,
-      JSON.stringify(due.map(d => d.id)));
-    due = due.filter(d => !unmarkedByStaff.some(u => u.id === d.id));
-    for (const d of due) { d.row.guest_left_at = d.at; d.row.guest_left_auto = true; }
-    if (!due.length) return;
-    const stamp = nowIso();
-    // Only the rows this read stamped get a history line: two screens reading at once write it once.
-    const set = await all<{ id: string }>(env, `
-      UPDATE tasks t SET guest_left_at = x.at, updated_at = ?
-      FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, at text)
-      WHERE t.id = x.id AND t.guest_left_at IS NULL RETURNING t.id`, stamp, JSON.stringify(due.map(d => ({ id: d.id, at: d.at }))));
-    const done = due.filter(d => set.some(s => s.id === d.id));
-    if (!done.length) return;
-    await run(env, `UPDATE units SET readiness = 'dirty', updated_at = ? WHERE id IN (SELECT jsonb_array_elements_text(?::text::jsonb)) AND readiness IN ('occupied','ready')`,
-      stamp, JSON.stringify(done.map(d => d.unit).filter(Boolean)));
-    await run(env, `
-      INSERT INTO audit_log (actor_id, actor_label, action, entity_table, entity_id, before_state, after_state, source, occurred_at)
-      SELECT NULL, 'Automatic', 'task.guest_left', 'tasks', x.id, NULL, x.after, 'system', ?
-      FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, after text)`,
-      stamp, JSON.stringify(done.map(d => ({ id: d.id, after: JSON.stringify({ guestLeftAt: d.at, auto: true, reason: `Automatic, at checkout ${d.time}` }) }))));
-  } catch { /* the next read tries again */ }
-}
 
 /**
  * Every live checkout of a rental unit gets its turnover cleaning job without anyone pressing Plan (lead, 18 Oct 2026):

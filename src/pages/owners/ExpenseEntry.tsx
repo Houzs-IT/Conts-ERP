@@ -44,8 +44,10 @@ function Sheet({ title, sub, onClose, footer, children, wide }: { title: string;
 interface UtilityRow {
   accountId: string; unitId: string; unitLabel: string; kind: string; kindLabel: string; accountNo: string; provider: string | null;
   expenseId: string | null; amount: number | null; chargeTo: string | null; receiptDocumentId: string | null; recordedElsewhere: boolean;
+  /** The statement that deducts the bill entered here: a later month when it came after its own month was final. */
+  deductMonth?: string | null; rolled?: boolean;
 }
-interface BareUnit { unitId: string; unitLabel: string; recorded?: { kind: string; kindLabel: string; amount: number }[] }
+interface BareUnit { unitId: string; unitLabel: string; recorded?: { kind: string; kindLabel: string; amount: number; deductMonth?: string; rolled?: boolean }[] }
 /** A bill typed for a unit with no account number on file: recorded with no reference (POST rows with unitId + kind). */
 interface LooseLine { key: string; unitId: string; kind: string; amount: number | null; payer: string; file: File | null }
 
@@ -58,7 +60,10 @@ export function UtilitiesModal({ ownerId, unitId, month: initial, onClose, onSav
   const toast = useToast();
   const [month, setMonth] = useState(initial);
   const scope = ownerId ? `&ownerId=${encodeURIComponent(ownerId)}` : unitId ? `&unitId=${encodeURIComponent(unitId)}` : '';
-  const { data, loading, error, reload } = useApi<{ data: UtilityRow[]; unitsWithoutAccount?: BareUnit[] }>(`/expenses/utilities?month=${month}${scope}`);
+  const { data, loading, error, reload } = useApi<{ data: UtilityRow[]; unitsWithoutAccount?: BareUnit[]; rollsTo?: Record<string, string> }>(`/expenses/utilities?month=${month}${scope}`);
+  // Units whose statement for this month is already final: their bills are deducted on the next open statement.
+  const rollsTo = data?.rollsTo ?? {};
+  const rollMonths = [...new Set(Object.values(rollsTo))].sort();
   const [amounts, setAmounts] = useState<Record<string, number | null>>({});
   const [payers, setPayers] = useState<Record<string, string>>({});
   const [receipts, setReceipts] = useState<Record<string, File | null>>({});
@@ -85,6 +90,9 @@ export function UtilitiesModal({ ownerId, unitId, month: initial, onClose, onSav
   const needsReceipt = (r: UtilityRow) => receiptRequired(r.kind, payer(r)) && !receipts[r.accountId] && !r.receiptDocumentId;
   const missing = [...entered.filter(needsReceipt), ...looseMissing];
   const count = entered.length + looseEntered.length;
+  // How many bills of the month still have no amount, typed here or recorded before (finance, 26 Oct 2026).
+  const lines = rows.length + loose.length;
+  const toFill = lines - rows.filter(r => r.recordedElsewhere || (value(r) ?? 0) > 0).length - looseEntered.length;
 
   async function save() {
     setBusy(true); setRowErrors({});
@@ -103,15 +111,17 @@ export function UtilitiesModal({ ownerId, unitId, month: initial, onClose, onSav
         fd.append('file', l.file); fd.append('unitId', l.unitId); fd.append('kind', 'receipt');
         uploaded[`${l.unitId}:${l.kind}`] = (await api.post<{ id: string }>('/documents', fd)).id;
       }
-      const r = await api.post<{ saved: number; locked: string[]; recordedElsewhere: string[] }>('/expenses/utilities', {
+      const r = await api.post<{ saved: number; locked: string[]; recordedElsewhere: string[]; rolled?: { key: string; deductMonth: string }[] }>('/expenses/utilities', {
         month, date: billDate, rows: [
           ...entered.map(x => ({ accountId: x.accountId, amount: value(x), chargeTo: payer(x), receiptDocumentId: uploaded[x.accountId] ?? null })),
           ...looseEntered.map(l => ({ unitId: l.unitId, kind: l.kind, amount: l.amount, chargeTo: l.payer, receiptDocumentId: uploaded[`${l.unitId}:${l.kind}`] ?? null })),
         ],
       });
       const skipped = r.locked.length + r.recordedElsewhere.length;
+      const late = r.rolled ?? [];
+      const lateNote = late.length ? `${late.length} ${late.length === 1 ? 'goes' : 'go'} on the ${[...new Set(late.map(x => monthLabel(x.deductMonth)))].join(' or ')} statement as ${late.length === 1 ? 'a late bill' : 'late bills'}. ` : '';
       toast({ tone: skipped ? 'warning' : 'success', title: `${r.saved} ${r.saved === 1 ? 'bill' : 'bills'} recorded for ${monthLabel(month)}.`,
-        body: skipped ? `${r.locked.length ? `${r.locked.length} skipped: that statement is final. ` : ''}${r.recordedElsewhere.length ? `${r.recordedElsewhere.length} already recorded another way.` : ''}` : 'Owner-paid bills go on the owner statement with their receipts.' });
+        body: skipped || late.length ? `${lateNote}${r.locked.length ? `${r.locked.length} skipped: already on a final statement. ` : ''}${r.recordedElsewhere.length ? `${r.recordedElsewhere.length} already recorded another way.` : ''}`.trim() : 'Owner-paid bills go on the owner statement with their receipts.' });
       onSaved(); onClose();
     } catch (e) {
       if (e instanceof ApiFailure && e.fields) setRowErrors(e.fields);
@@ -130,7 +140,17 @@ export function UtilitiesModal({ ownerId, unitId, month: initial, onClose, onSav
         <button type="button" aria-label="Previous month" onClick={() => step(-1)} className="w-[34px] h-[34px] grid place-items-center rounded-control bg-card border border-solid border-line cursor-pointer text-muted-ink"><Icon name="ChevronLeft" size="sm" /></button>
         <span className="text-copy font-semibold min-w-[96px] text-center">{monthLabel(month)}</span>
         <button type="button" aria-label="Next month" onClick={() => step(1)} className="w-[34px] h-[34px] grid place-items-center rounded-control bg-card border border-solid border-line cursor-pointer text-muted-ink"><Icon name="ChevronRight" size="sm" /></button>
+        {data && lines > 0 && (
+          <span role="status" className={toFill ? 'text-copy font-semibold text-warning' : 'text-copy font-semibold text-success'}>
+            {toFill ? `${toFill} of ${lines} ${lines === 1 ? 'bill' : 'bills'} still to fill` : `All ${lines} ${lines === 1 ? 'bill' : 'bills'} filled`}
+          </span>
+        )}
       </div>
+      {rollMonths.length > 0 && (
+        <div role="note" className="text-copy rounded-control border border-solid border-line bg-muted px-3 py-2">
+          {monthLabel(month)} is final for {Object.keys(rollsTo).length === 1 ? 'one unit' : `${Object.keys(rollsTo).length} units`}. Bills entered for {Object.keys(rollsTo).length === 1 ? 'it' : 'them'} will be deducted on the {rollMonths.map(m => monthLabel(m)).join(' or ')} statement.
+        </div>
+      )}
       <div className="w-[220px] max-w-full">
         <DateField label="Bill date" value={billDate} onChange={setBillDate} min={`${month}-01`} max={lastDayOf(month)}
           error={dateOk ? undefined : `A bill date in ${monthLabel(month)} is required.`} help="Every bill entered here carries this date." />
@@ -147,7 +167,7 @@ export function UtilitiesModal({ ownerId, unitId, month: initial, onClose, onSav
                   <div key={r.accountId} className="grid grid-cols-[minmax(0,1fr)_112px] sm:grid-cols-[minmax(0,1fr)_120px_140px_150px] gap-x-3 gap-y-2 items-center py-[10px] px-3 [border-bottom:1px_solid_var(--color-line-soft)] last:border-b-0">
                     <div className="flex flex-col min-w-0">
                       <span className="text-copy font-medium truncate" title={r.unitLabel}>{titleCase(r.unitLabel)}</span>
-                      <span className="text-meta text-muted-ink truncate">{r.kindLabel} · {r.accountNo}{r.provider ? ` · ${r.provider}` : ''}{r.recordedElsewhere ? ' · already recorded' : r.expenseId ? ' · entered here' : ''}</span>
+                      <span className="text-meta text-muted-ink truncate">{r.kindLabel} · {r.accountNo}{r.provider ? ` · ${r.provider}` : ''}{r.recordedElsewhere ? ' · already recorded' : r.expenseId ? ' · entered here' : ''}{r.rolled && r.deductMonth ? ` · deducted ${monthLabel(r.deductMonth)}` : !r.expenseId && rollsTo[r.unitId] ? ` · will be deducted ${monthLabel(rollsTo[r.unitId])}` : ''}</span>
                     </div>
                     {r.recordedElsewhere ? (
                       <MoneyText sen={r.amount ?? 0} mode="exact" tone="muted" className="text-copy text-right" />
@@ -230,7 +250,7 @@ function NoAccountUnits({ units, lines, setLines, errors, onAdded }: {
                 <span className="text-copy font-medium truncate" title={u.unitLabel}>{titleCase(u.unitLabel)}</span>
                 <span className="text-meta text-muted-ink">
                   No account on file, a bill can still go in.
-                  {(u.recorded ?? []).length > 0 && ` Already recorded this month: ${u.recorded!.map(x => `${kindLabel(x.kind)} ${rm(x.amount)}`).join(', ')}.`}
+                  {(u.recorded ?? []).length > 0 && ` Already recorded this month: ${u.recorded!.map(x => `${kindLabel(x.kind)} ${rm(x.amount)}${x.rolled && x.deductMonth ? ` (deducted ${monthLabel(x.deductMonth)})` : ''}`).join(', ')}.`}
                 </span>
               </span>
               {mine.map(l => {

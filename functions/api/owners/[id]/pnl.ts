@@ -64,7 +64,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
   const exp = await all<any>(env, `
     SELECT unit_id, category, SUM(amount) AS total
     FROM expenses
-    WHERE unit_id IN (${inClause}) AND charge_to = 'owner' AND substr(incurred_on, 1, 7) = ?
+    WHERE unit_id IN (${inClause}) AND charge_to = 'owner' AND NOT record_only AND deduct_month = ?
     GROUP BY unit_id, category
     ORDER BY category`, ...ids, month);
   const expBy = new Map<string, any[]>();

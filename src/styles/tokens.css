@@ -87,6 +87,8 @@ body { margin: 0; }
   --color-gold: #C8A46A;
   --color-gold-ink: #8A6A2F;
   --color-gold-tint: #FBF7F0;
+  /* The active tab's underline on TabBar (owner, Oct 2026: indigo). 6.3:1 on white. */
+  --color-tab: #4F46E5;
 
   --color-airbnb: #FF5A5F;
   --color-booking: #003B95;
@@ -136,6 +138,9 @@ body { margin: 0; }
   --color-info: #2E6DA4;
   --color-info-bg: #EAF2FA;
   --color-info-line: #2E6DA4;
+  /* Chart series that are not a status (unit P&L report): a dark bar and a teal that read in both themes. */
+  --color-chart-ink: #242424;
+  --color-chart-teal: #1F8A8A;
   --color-neutral: #706D67;
   --color-neutral-bg: #F1F0ED;
   --color-neutral-line: #C7C1B6;
@@ -162,6 +167,16 @@ body { margin: 0; }
 @supports not selector(::-webkit-scrollbar) {
   .nav-scroll { scrollbar-width: thin; scrollbar-color: transparent transparent; transition: scrollbar-color 300ms; }
   .nav-scroll.is-scrolling { scrollbar-color: rgba(255, 255, 255, 0.22) transparent; }
+}
+/* On the Dream Crafter side's light glass the bar is dark instead. */
+[data-look="dcLight"] .nav-scroll.is-scrolling::-webkit-scrollbar-thumb, [data-look="dcLight"] .nav-scroll:hover::-webkit-scrollbar-thumb:active { background: rgba(17, 18, 22, 0.22); }
+@supports not selector(::-webkit-scrollbar) {
+  [data-look="dcLight"] .nav-scroll.is-scrolling { scrollbar-color: rgba(17, 18, 22, 0.22) transparent; }
+}
+/* The Dream Crafter glass card (Sidebar.tsx): people who ask for less transparency get a solid card, no blur. */
+@media (prefers-reduced-transparency: reduce) {
+  .sidebar-glass { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; background: #F4F6FB !important; }
+  [data-look="dcDark"] .sidebar-glass { background: #171A24 !important; }
 }
 
 /* A pane that scrolls on its own inside a page (Cleaning, Maintenance): a thin quiet bar on the light surface. */

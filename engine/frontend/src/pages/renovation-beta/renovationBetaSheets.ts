@@ -38,7 +38,7 @@ export interface SetSheet {
   version: number;
   /** A row of project_design_sheets (it can be renamed, removed, replaced on its own); false for a one-file version. */
   fromSheet: boolean;
-  history: Array<{ version: number; key: string | null; url: string | null; fileName: string }>;
+  history: Array<{ version: number; key: string | null; url: string | null; fileName: string; uploadedOn: string }>;
 }
 
 const nameKey = (s: string): string => s.trim().replace(/\s+/g, " ").toLowerCase();
@@ -53,7 +53,7 @@ export function sheetSetAt(files: readonly DesignFile[], sheets: readonly BetaSh
     const own = (byFile.get(f.id) ?? []).sort((a, b) => a.id - b.id);
     if (own.length === 0) {
       const k = nameKey(f.file_name);
-      const entry = { version: f.version, key: f.r2_key, url: f.external_url, fileName: f.file_name };
+      const entry = { version: f.version, key: f.r2_key, url: f.external_url, fileName: f.file_name, uploadedOn: f.submitted_on ?? f.uploaded_at };
       const one: SetSheet = {
         name: f.file_name, key: f.r2_key, url: f.external_url, fileName: f.file_name, contentType: f.content_type ?? null, size: f.size_bytes ?? null,
         version: f.version, fromSheet: false, history: [entry, ...(kind === "3d" ? set.get(k)?.history ?? [] : [])],
@@ -69,7 +69,7 @@ export function sheetSetAt(files: readonly DesignFile[], sheets: readonly BetaSh
       const k = nameKey(s.name);
       const before = set.get(k);
       const url = s.url ?? null;
-      const entry = { version: f.version, key: s.key, url, fileName: s.fileName };
+      const entry = { version: f.version, key: s.key, url, fileName: s.fileName, uploadedOn: f.submitted_on ?? f.uploaded_at };
       // Replacing a sheet keeps its place in the set; a new sheet goes at the end.
       set.set(k, {
         name: s.name, key: s.key, url, fileName: s.fileName, contentType: s.contentType, size: s.size, version: f.version, fromSheet: true,
@@ -78,6 +78,16 @@ export function sheetSetAt(files: readonly DesignFile[], sheets: readonly BetaSh
     }
   }
   return [...set.values()];
+}
+
+/** What one 2D upload carried, read from the sheets it sent: the whole set (the first upload, a one-file version, or every
+ *  sheet again) or only the sheets it replaced or added, named. No saved field: the replace dialog pairs every file. */
+export function versionWhat(files: readonly DesignFile[], sheets: readonly BetaSheet[], file: DesignFile): string {
+  const own = sheets.filter((s) => s.fileId === file.id && !s.removedAt);
+  const total = sheetSetAt(files, sheets, file.version, "2d").length;
+  const first = !files.some((f) => f.kind === "2d" && f.version < file.version);
+  if (first || own.length === 0 || own.length >= total) return `full set · ${total} ${total === 1 ? "sheet" : "sheets"}`;
+  return `changed ${own.slice(0, 3).map((s) => s.name).join(", ")}${own.length > 3 ? ` +${own.length - 3} more` : ""}`;
 }
 
 /** Per sheet of a set, whether it differs from the approved set: a new file, or a sheet the approved set did not have. */

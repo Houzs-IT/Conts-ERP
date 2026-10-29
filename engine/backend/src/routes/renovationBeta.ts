@@ -11,6 +11,7 @@ import { activeCompanySql, requireActiveCompanyId } from "../scm/lib/companyScop
 import { billingViews } from "../scm/lib/renovation-billing";
 import { todayMyt } from "../scm/lib/my-time";
 import { financeHiddenForUser } from "../services/pmsAccess";
+import { keepVisiblePos, loadCategoryScope, type CategoryScope } from "../services/categoryAccess";
 import { setChecklistStatus } from "../services/projects";
 import { calendarMePersonIds } from "../services/renovation/calendarItems";
 import { syncPeopleFromUsers } from "../services/renovation/peopleSync";
@@ -49,6 +50,8 @@ const app = new Hono<{ Bindings: Env }>();
 const db = (c: Ctx): Db => c.env.DB as unknown as Db;
 const userId = (c: Ctx): number => Number(c.get("user")?.id ?? 0);
 const coSql = (c: Ctx, col = "company_id"): string => activeCompanySql(c, col);
+/** The caller's product category access (null: every category), read per request so a change made on the Conts side applies at once. */
+const categoryScope = (c: Ctx): Promise<CategoryScope | null> => loadCategoryScope(db(c), c.get("user"));
 const body = async (c: Ctx): Promise<Record<string, unknown>> => (await c.req.json<Record<string, unknown>>().catch(() => ({}))) ?? {};
 
 function parseId(x: string | undefined | null): number | null {
@@ -768,7 +771,7 @@ app.get("/projects/:id/vo", requirePageAccess("projects.list"), async (c) => {
   if (!id) return c.json({ error: "invalid_id" }, 400);
   const co = await projectCompany(c, id);
   if (co == null) return c.json({ error: "not_found" }, 404);
-  return readOr(c, "VO list", () => loadProjectVos(db(c), id, co, !financeHiddenForUser(c.get("user"))));
+  return readOr(c, "VO list", async () => loadProjectVos(db(c), id, co, !financeHiddenForUser(c.get("user")), await categoryScope(c)));
 });
 
 app.get("/projects/:id/po", requirePageAccess("projects.list"), async (c) => {
@@ -776,7 +779,7 @@ app.get("/projects/:id/po", requirePageAccess("projects.list"), async (c) => {
   if (!id) return c.json({ error: "invalid_id" }, 400);
   const co = await projectCompany(c, id);
   if (co == null) return c.json({ error: "not_found" }, 404);
-  return readOr(c, "purchase order", () => loadProjectPoLines(db(c), id, co));
+  return readOr(c, "purchase order", async () => loadProjectPoLines(db(c), id, co, await categoryScope(c)));
 });
 
 app.get("/projects/:id/client-po", requirePageAccess("projects.list"), async (c) => {
@@ -785,8 +788,9 @@ app.get("/projects/:id/client-po", requirePageAccess("projects.list"), async (c)
   const co = await projectCompany(c, id);
   if (co == null) return c.json({ error: "not_found" }, 404);
   return readOr(c, "client item", async () => {
-    const vo = await loadProjectVos(db(c), id, co, false);
-    return loadClientItems(db(c), id, co, vo.vos);
+    const scope = await categoryScope(c);
+    const vo = await loadProjectVos(db(c), id, co, false, scope);
+    return loadClientItems(db(c), id, co, vo.vos, scope);
   });
 });
 
@@ -798,9 +802,10 @@ app.get("/projects/:id/lines", requirePageAccess("projects.list"), async (c) => 
   const co = await projectCompany(c, id);
   if (co == null) return c.json({ error: "not_found" }, 404);
   return readOr(c, "sales order line", async () => {
-    const vo = await loadProjectVos(db(c), id, co, false);
+    const scope = await categoryScope(c);
+    const vo = await loadProjectVos(db(c), id, co, false, scope);
     const labels = new Map(vo.vos.filter((v) => v.key.startsWith("a:")).map((v) => [v.key.slice(2), v.label] as const));
-    return loadProjectLines(db(c), id, co, !financeHiddenForUser(c.get("user")), labels);
+    return loadProjectLines(db(c), id, co, !financeHiddenForUser(c.get("user")), labels, scope);
   });
 });
 
@@ -811,7 +816,7 @@ app.put("/projects/:id/lines/:itemId/plan", requirePermission("projects.write"),
   if (co == null) return c.json({ error: "not_found" }, 404);
   const cleaned = cleanLinePlan(await body(c));
   if (!cleaned.ok) return c.json({ error: "invalid_plan", message: cleaned.message }, 400);
-  const line = await projectLine(db(c), id, co, c.req.param("itemId"));
+  const line = await projectLine(db(c), id, co, c.req.param("itemId"), await categoryScope(c));
   if (!line) return c.json({ error: "not_found" }, 404);
   try {
     const saved = await saveLinePlan(db(c), line.id, co, userId(c), cleaned.patch);
@@ -832,6 +837,10 @@ app.post("/projects/:id/client-link", requirePermission("projects.write"), async
   if (!id) return c.json({ error: "invalid_id" }, 400);
   const co = await projectCompany(c, id);
   if (co == null) return c.json({ error: "not_found" }, 404);
+  // The client link shows every category of the project, so a role limited to some categories cannot make one.
+  if ((await categoryScope(c)) !== null) {
+    return c.json({ error: "category_restricted", message: "Client links show every category, so a role limited to some categories cannot make one." }, 403);
+  }
   const secret = (c.env as unknown as { CONTS_SSO_SECRET?: string }).CONTS_SSO_SECRET;
   if (!secret) return c.json({ error: "link_unavailable", message: "Client links are not set up on this server yet." }, 503);
   const expiresAt = Date.now() + LINK_DAYS * 86_400_000;
@@ -1169,7 +1178,11 @@ app.get("/projects/:id/photos", requirePageAccess("projects.list"), async (c) =>
       mediaRows(c, id),
     ]);
     const ready = docsReady && (await attachmentsReady(db(c)).catch(() => false));
-    const poFiles = ready && pos.length ? await listFilesFor(db(c), pos.map((p) => ({ type: "purchase_order" as const, id: String(p.id) })), co) : new Map<string, DocFile[]>();
+    // A restricted role sees a PO only while it holds a line the role may see (the PO tab's own rule).
+    const scope = docsReady && pos.length > 0 ? await categoryScope(c) : null;
+    const shownPos = scope === null ? pos
+      : keepVisiblePos(pos, (p) => String(p.id), (await loadProjectPoLines(db(c), id, co, scope)).lines.map((l) => l.poId), scope);
+    const poFiles = ready && shownPos.length ? await listFilesFor(db(c), shownPos.map((p) => ({ type: "purchase_order" as const, id: String(p.id) })), co) : new Map<string, DocFile[]>();
     const out: ProjectPhoto[] = [];
     for (const d of site.deliveries) {
       const isDo = d.type === "delivery_order";
@@ -1182,7 +1195,7 @@ app.get("/projects/:id/photos", requirePageAccess("projects.list"), async (c) =>
         });
       }
     }
-    for (const p of pos) {
+    for (const p of shownPos) {
       const pid = String(p.id);
       for (const f of poFiles.get(`purchase_order:${pid}`) ?? []) {
         out.push({
@@ -1227,7 +1240,7 @@ app.get("/projects/:id/photos", requirePageAccess("projects.list"), async (c) =>
       docs: {
         dos: site.deliveries.filter((d) => d.type === "delivery_order").map((d) => ({ id: d.id, no: d.no })),
         grs: site.deliveries.filter((d) => d.type === "goods_received").map((d) => ({ id: d.id, no: d.no })),
-        pos: pos.map((p) => ({ id: String(p.id), no: String(p.no) })),
+        pos: shownPos.map((p) => ({ id: String(p.id), no: String(p.no) })),
       },
       tasks: tasks.filter((t) => t.state !== "skipped").map((t) => ({ id: Number(t.id), label: taskName.get(Number(t.id)) ?? "Site step", state: String(t.state) })),
     });

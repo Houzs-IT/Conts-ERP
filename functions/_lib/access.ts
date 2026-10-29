@@ -31,10 +31,11 @@ export const sideSql = (u: string, d: string) => `CASE WHEN ${d}.side IN ('conts
 /** Whether a person may be put on `side` in a department on `departmentSide`: only a Both department leaves the choice. */
 export const sideFits = (departmentSide: Side, side: Side) => departmentSide === 'both' || departmentSide === side;
 
-/** The area groups each side closes. Finance and System are on neither list, so they follow the role. */
+/** The area groups each side closes. Finance and System are on neither list, so they follow the role. The Dream Crafter
+ *  groups match its sidebar sections (owner, 26 Oct 2026; migration 0172 copied the old Dream Crafter baseline to each). */
 const CLOSED_BY_SIDE: Record<Side, string[]> = {
-  conts: ['Dream Crafter'],
-  dream_crafter: ['Workspace', 'Operations', 'Growth'],
+  conts: ['Service cases', 'Projects', 'Supply chain'],
+  dream_crafter: ['Workspace', 'Operations', 'HR', 'Growth'],
   both: [],
 };
 /** Management always sees both sides, so nobody can lock the system out of one. */
@@ -47,22 +48,25 @@ export const AREAS: Area[] = [
   // Reservations arrive from the channels through the API; finance reads them but does not create or change them (owner, 11 Oct 2026).
   { key: 'reservations', label: 'Reservations', group: 'Operations', api: ['reservations', 'guests', 'blocks', 'guest-documents'] },
   { key: 'operations', label: 'Operations', group: 'Operations', api: ['operations', 'housekeeping', 'maintenance', 'tasks'] },
-  { key: 'properties', label: 'Units', group: 'Operations', api: ['properties', 'units', 'inventory', 'access-credentials', 'residence-rules', 'lettings'] },
-  { key: 'serviceCases', label: 'Service cases', group: 'Dream Crafter', api: [] },
-  { key: 'projects', label: 'Projects', group: 'Dream Crafter', api: [] },
-  { key: 'scSales', label: 'Sales order', group: 'Dream Crafter', api: ['sales-orders', 'so-amendments', 'delivery-orders', 'sales-returns', 'customers'] },
-  { key: 'scInvoices', label: 'Invoices and payments', group: 'Dream Crafter', api: ['payment-vouchers', 'purchase-invoices', 'sales-invoices', 'unbilled-deliveries', 'credit-notes', 'accounting'], managed: true, strictRead: true },
-  { key: 'scConsignment', label: 'Consignment', group: 'Dream Crafter', api: ['consignment-notes', 'purchase-consignment'] },
-  { key: 'scProcurement', label: 'Procurement', group: 'Dream Crafter', api: ['products', 'product-models', 'categories', 'fabrics', 'suppliers', 'mrp', 'purchase-orders', 'goods-receipts', 'purchase-returns'] },
-  { key: 'scTransportPlan', label: 'Transportation', group: 'Dream Crafter', api: ['delivery-schedule', 'delivery-zones', 'driver-leave', 'drivers', 'fleet-health', 'coverage-fleet', 'vehicles', 'threepl-companies', 'rate-cards'] },
-  { key: 'scWarehouse', label: 'Warehouse', group: 'Dream Crafter', api: ['loading-list', 'warehouses', 'racks', 'stock', 'stock-takes', 'stock-transfers'] },
+  { key: 'properties', label: 'Units', group: 'Operations', api: ['properties', 'units', 'unit-layout-types', 'inventory', 'access-credentials', 'residence-rules', 'lettings'] },
+  // Field staff's HR record: IC, bank, salary and statutory (PLAN-hr-employees.md). Its own group so Operations staff do
+  // not see pay by default. The cleaner and technician rosters themselves stay under Operations.
+  { key: 'hr', label: 'Employees', group: 'HR', api: ['employees', 'attendance', 'leaves', 'payroll', 'working-hours', 'penalties', 'labor-cost'], strictRead: true },
+  { key: 'serviceCases', label: 'Service cases', group: 'Service cases', api: [] },
+  { key: 'projects', label: 'Projects', group: 'Projects', api: [] },
+  { key: 'scSales', label: 'Sales order', group: 'Supply chain', api: ['sales-orders', 'so-amendments', 'delivery-orders', 'sales-returns', 'customers'] },
+  { key: 'scInvoices', label: 'Invoices and payments', group: 'Supply chain', api: ['payment-vouchers', 'purchase-invoices', 'sales-invoices', 'unbilled-deliveries', 'credit-notes', 'accounting'], managed: true, strictRead: true },
+  { key: 'scConsignment', label: 'Consignment', group: 'Supply chain', api: ['consignment-notes', 'purchase-consignment'] },
+  { key: 'scProcurement', label: 'Procurement', group: 'Supply chain', api: ['products', 'product-models', 'categories', 'fabrics', 'suppliers', 'mrp', 'purchase-orders', 'goods-receipts', 'purchase-returns'] },
+  { key: 'scTransportPlan', label: 'Transportation', group: 'Supply chain', api: ['delivery-schedule', 'delivery-zones', 'driver-leave', 'drivers', 'fleet-health', 'coverage-fleet', 'vehicles', 'threepl-companies', 'rate-cards'] },
+  { key: 'scWarehouse', label: 'Warehouse', group: 'Supply chain', api: ['loading-list', 'warehouses', 'racks', 'stock', 'stock-takes', 'stock-transfers'] },
   // 'owner': the owner portal's endpoints, which finance and management also open as an owner (?ownerId=).
   { key: 'finance', label: 'Finance', group: 'Finance', api: ['finance', 'expenses', 'statements', 'payouts', 'approvals', 'owner'], managed: true, strictRead: true },
   { key: 'owners', label: 'Owners', group: 'Finance', api: ['owners', 'contracts'] },
   // The company ledger in the engine (finance phase 1): no Property OS routes, sent to the engine at sign-on.
   // Operations managers read the rest of Finance but never the company books.
   { key: 'ledger', label: 'Ledger', group: 'Finance', api: [], managed: true, strictRead: true },
-  { key: 'performance', label: 'Performance', group: 'Growth', api: ['analytics', 'pricing', 'rates', 'reviews'] },
+  { key: 'performance', label: 'Performance', group: 'Growth', api: ['analytics', 'pricing', 'rates', 'reviews', 'showcase'] },
   { key: 'comms', label: 'Communication', group: 'Growth', api: ['messages', 'automations'] },
   // The user list is read by management and operations managers only (functions/api/users), so finance admins start at none.
   { key: 'users', label: 'Users and roles', group: 'System', api: ['users', 'departments'], managed: true },
@@ -89,7 +93,7 @@ export type DepartmentKind = 'management' | 'staff' | 'cleaning' | 'maintenance'
 export const roleForKind = (kind: DepartmentKind): string =>
   kind === 'management' ? 'management' : kind === 'cleaning' ? 'housekeeper' : kind === 'maintenance' ? 'technician' : 'operations_staff';
 export const isKind = (v: unknown): v is DepartmentKind => v === 'management' || v === 'staff' || v === 'cleaning' || v === 'maintenance';
-/** Cleaning and Maintenance hold the cleaners' and technicians' logins, which are managed on Workers only (owner,
+/** Cleaning and Maintenance hold the cleaners' and technicians' logins, which are managed on HR > Employees only (owner,
  *  23 Oct 2026): no department screen or user form creates one, moves anyone into or out of one, or changes its kind. */
 export const isFieldKind = (kind: DepartmentKind): boolean => kind === 'cleaning' || kind === 'maintenance';
 /** Where a person's level in an area comes from. 'fixed': management, always Full. 'none': nothing sets it. */

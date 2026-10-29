@@ -51,14 +51,15 @@ export const STATUS_VOCAB = {
     confirmed: BOOKING.confirmed, checked_in: BOOKING.checked_in, checked_out: BOOKING.checked_out, pending: BOOKING.pending,
     blocked: { label: 'Blocked', tone: 'danger' },
   },
+  /** Staff sheet UNIT (23 Oct 2026): ready green, occupied blue, cleaning and maintenance yellow, blocked red. */
   readiness: {
     occupied: { label: 'Occupied', tone: 'info' },
     dirty: { label: 'Dirty', tone: 'warning' },
-    cleaning: { label: 'Cleaning', tone: 'info' },
+    cleaning: { label: 'Cleaning', tone: 'warning' },
     inspection: { label: 'Inspection', tone: 'warning' },
     ready: { label: 'Ready', tone: 'success' },
-    maintenance: { label: 'Maintenance', tone: 'danger' },
-    blocked: { label: 'Blocked', tone: 'neutral' },
+    maintenance: { label: 'Maintenance', tone: 'warning' },
+    blocked: { label: 'Blocked', tone: 'danger' },
   },
   task: {
     open: { label: 'Open', tone: 'neutral' },
@@ -194,6 +195,14 @@ export const STATUS_VOCAB = {
     other: { label: 'Other', tone: 'neutral' },
   },
 
+  // A utility bill on the utility listing (src/lib/utilityGrid.ts billState).
+  utility_bill: {
+    pending: { label: 'Not charged yet', tone: 'warning' },
+    charged: { label: 'Charged to owner', tone: 'success' },
+    record: { label: 'Record only', tone: 'info' },
+    company: { label: 'Company pays', tone: 'neutral' },
+  },
+
   /* ---------- Supply chain documents (built-in screens) ---------- */
   active_flag: ACTIVE_INACTIVE,
   customer: ACTIVE_INACTIVE,
@@ -302,6 +311,27 @@ export const STATUS_VOCAB = {
     AVAILABLE: { label: 'Available', tone: 'success' },
     ON_LEAVE: { label: 'On leave', tone: 'warning' },
     INACTIVE: { label: 'Inactive', tone: 'neutral' },
+  },
+  // HR > Employees > Worker Penalty (migration 0173), Hookka's lifecycle.
+  penalty: {
+    draft: { label: 'Draft', tone: 'neutral' },
+    pending: { label: 'Pending approval', tone: 'warning' },
+    approved: { label: 'Approved, awaiting payroll', tone: 'info' },
+    posted: { label: 'Posted', tone: 'success' },
+  },
+  // HR > Workers > Payroll and the portal's Pay screen (migration 0168). 'none': the month has not been run for them.
+  payslip: {
+    none: { label: 'Not run', tone: 'neutral' },
+    draft: { label: 'Draft', tone: 'warning' },
+    approved: { label: 'Approved', tone: 'info' },
+    paid: { label: 'Paid', tone: 'success' },
+  },
+  // HR > Workers > Leave and the portal's Me screen (migration 0167).
+  leave: {
+    pending: { label: 'Waiting', tone: 'warning' },
+    approved: { label: 'Approved', tone: 'success' },
+    rejected: { label: 'Not approved', tone: 'danger' },
+    cancelled: { label: 'Cancelled', tone: 'neutral' },
   },
   fabric_tier: {
     standard: { label: 'Standard', tone: 'neutral' },

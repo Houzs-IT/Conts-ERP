@@ -157,7 +157,7 @@ export function BillModal({ units, defaultUnitId, ownerId, canAdjust, month, onC
           <h2 className="m-0 text-title font-semibold">Add a bill</h2>
           <p className="mt-[5px] mb-0 text-copy text-muted-ink">{fee
             ? 'The condo\'s maintenance fee, paid for the owner. The owner statement deducts it after the operator\'s share.'
-            : 'A bill or cost on the unit. The bill date decides the month and the owner statement it goes on.'}</p>
+            : 'A bill or cost on the unit. The bill date decides its month; a utility bill for a month whose statement is already final goes on the next open statement.'}</p>
         </div>
         <div className="py-4 px-[22px] flex flex-col gap-[14px] overflow-y-auto min-h-0">
           {units.length > 1 && <Select showLabel size="md" label="Unit" value={unitId} onChange={v => { setUnitId(v); setAccount(null); }} options={units.map(u => ({ value: u.id, label: titleCase(u.label) }))} />}
@@ -516,7 +516,7 @@ function CleaningPrice({ unitId, price, deepPrice, legacy, canEdit, onSaved }: {
     <div className="flex flex-col gap-3 pt-4 [border-top:1px_solid_var(--color-line-soft)]">
       <div className="flex flex-wrap items-end gap-3">
         <div className="w-[200px] max-w-full">
-          <MoneyInput label="Standard clean (RM)" placeholder="Not set" valueSen={shown ?? null} onChangeSen={v => setDraft(v)} disabled={!canEdit} />
+          <MoneyInput label="Basic clean (RM)" placeholder="Not set" valueSen={shown ?? null} onChangeSen={v => setDraft(v)} disabled={!canEdit} />
         </div>
         <div className="w-[200px] max-w-full">
           <MoneyInput label="Deep clean (RM)" placeholder="Not set" valueSen={shownDeep ?? null} onChangeSen={v => setDraftDeep(v)} disabled={!canEdit} />

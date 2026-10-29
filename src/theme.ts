@@ -5,6 +5,8 @@ export const color = {
   goldTint: 'var(--color-gold-tint, #FBF7F0)', gold200: '#EADCBD', gold300: '#DDC597',
   gold: '#C8A46A', goldInk: 'var(--color-gold-ink, #8A6A2F)',
   black: '#151515', charcoal: '#242424', basalt700: '#1E1E1E',
+  /** A strong fill and its text: black with white in light mode, lifted to warm charcoal in dark (theme-dark.css), where plain black vanishes on the cards. */
+  fillStrong: 'var(--color-fill-strong, #151515)', onFillStrong: 'var(--color-on-fill-strong, #FFFFFF)', fillRing: 'var(--color-fill-ring, transparent)',
   dim: '#8A8680', onDark: '#DEDAD3',
   page: 'var(--color-page, #FAF9F6)', card: 'var(--color-card, #FFFFFF)', muted: 'var(--color-muted, #F1F0ED)', sunken: 'var(--color-sunken, #EDEAE4)',
   border: 'var(--color-line, #DEDAD3)', borderMuted: 'var(--color-line-soft, #EDEAE4)', borderStrong: 'var(--color-line-strong, #C7C1B6)',
@@ -66,6 +68,32 @@ export const shell = {
   sidebar: 244, sidebarCollapsed: 68, contentMax: 1600,
   control: 40, controlSm: 36, controlTouch: 44,
   navItem: 34, navItemL3: 30,
+} as const;
+
+/** The faint 44px grid and the soft wash the designs lay over the colour glows (the engine's Beta pages draw the same). */
+const dcGrid = 'linear-gradient(rgba(47,107,255,.07) 1px,transparent 1px) 0 0/44px 44px,linear-gradient(90deg,rgba(47,107,255,.07) 1px,transparent 1px) 0 0/44px 44px';
+
+/** Dream Crafter's glass sidebar, from the Project Workspace designs: v10 "Vision" (light) and v13 "Night Glass" (dark).
+ *  Only the Dream Crafter side of the sidebar uses these (Sidebar.tsx, PLAN-dc-sidebar.md). */
+export const dcGlass = {
+  light: {
+    backdrop: 'linear-gradient(118deg,rgba(255,255,255,0) 58%,rgba(255,248,226,.85) 66%,rgba(255,255,255,0) 76%),'
+      + 'radial-gradient(48% 52% at 14% 16%,#F6C9D6 0%,rgba(246,201,214,0) 72%),'
+      + 'radial-gradient(52% 58% at 90% 34%,#BFE6EA 0%,rgba(191,230,234,0) 72%),'
+      + 'radial-gradient(46% 46% at 40% 100%,#CBD3FA 0%,rgba(236,227,207,0) 72%),'
+      + 'linear-gradient(160deg,#E6ECEA 0%,#ECEEF3 50%,#DDE2EC 100%)',
+    ink: '#111216', text: '#4A4A4A', muted: '#6B6B6B', faint: '#5A5A5A', surface: '#FFFFFF', accent: '#3D5AFE',
+    /** The page the Beta screens sit on: grid, wash, then the backdrop. */
+    get page() { return `${dcGrid},linear-gradient(180deg,rgba(250,251,253,.30),rgba(236,239,245,.38)),${this.backdrop}`; },
+  },
+  dark: {
+    backdrop: 'radial-gradient(45% 40% at 18% 12%,rgba(70,110,255,.35) 0%,rgba(70,110,255,0) 70%),'
+      + 'radial-gradient(40% 40% at 88% 70%,rgba(150,90,255,.28) 0%,rgba(150,90,255,0) 70%),'
+      + 'radial-gradient(35% 35% at 50% 100%,rgba(60,180,255,.18) 0%,rgba(60,180,255,0) 70%),'
+      + 'linear-gradient(160deg,#151823 0%,#0D0F16 100%)',
+    ink: '#EEF1F8', text: '#B9C0D0', muted: '#9AA2B4', faint: '#A9B0C1', surface: '#FFFFFF', accent: '#9FC0FF', base: '#151823',
+    get page() { return `${dcGrid},linear-gradient(180deg,rgba(16,18,26,.25),rgba(16,18,26,.35)),${this.backdrop}`; },
+  },
 } as const;
 
 /** lucide-react, the dependency already in houzs-erp and hookka-erp. */

@@ -3,15 +3,17 @@
    on a site measure already recorded. Files are checked before anything is saved, so a wrong file never leaves a
    site measure behind without its files. */
 
-import { useRef, useState, type ReactElement } from "react";
+import { useEffect, useRef, useState, type ReactElement } from "react";
 import { prepareImageForUpload } from "../../lib/imagePipeline";
-import { errorText } from "../projects/renovation/renovationModel";
+import { addDays, errorText } from "../projects/renovation/renovationModel";
 import { peopleOptions, personLabel, usePeople } from "../projects/renovation/PersonSelect";
 import { simpleApi, type DesignFile, type NamedRef, type SiteMeasure } from "../projects/renovation/simpleApi";
 import { BetaModal, BetaPeoplePicker } from "./BetaForms";
+import { SheetThumb } from "./BetaDrawingSheets";
 import { WS, WsField, inputStyle, textareaStyle } from "./BetaWsUi";
 import type { BetaTabProps } from "./betaShared";
-import type { DesignKind } from "./renovationBetaModel";
+import { betaApi } from "./renovationBetaApi";
+import { dayMonth, type DesignKind } from "./renovationBetaModel";
 import { sheetNameOf, sheetSetAt, sheetsApi, type BetaSheet, type SetSheet, type UploadedSheet } from "./renovationBetaSheets";
 import { isPdf, pdfPageCount, splitPdf } from "./renovationBetaPdfSplit";
 import { BETA } from "./renovationBetaTheme";
@@ -21,7 +23,7 @@ export type UploadDialog =
   | { t: "measure-files"; measure: SiteMeasure }
   | { t: "file"; kind: DesignKind }
   /** 2D sheets: the full set (first time, or redrawn), only the changed pages, or a new version of one sheet. */
-  | { t: "sheets"; mode?: "full" | "replace"; sheet?: string }
+  | { t: "sheets"; mode?: "full" | "replace"; sheet?: string; /** Files already picked, so the dialog opens on them. */ files?: File[] }
   /** One 3D link the old way (before database update 0155). */
   | { t: "link" }
   /** Several named 3D links in one version (0155). */
@@ -49,6 +51,18 @@ async function readyFiles(files: File[]): Promise<{ ok: File[] } | { error: stri
   return { ok: out };
 }
 
+/** An upload in Drawings counts as sent to the client that day, as in the mockup; the answer is due after the ID SOP days
+ *  of its kind. A failed mark is reported, never hidden: the version stays and "Send to client" still works on it. */
+async function savedAndSent(p: BetaTabProps, kind: DesignKind, fileId: number, text: string, onSaved: (text: string, failed?: string) => void): Promise<void> {
+  const dueOn = addDays(p.today, p.board.m.sop[kind === "3d" ? "3" : "2"]);
+  try {
+    await betaApi.designSent(fileId, { sentOn: p.today, dueOn });
+    onSaved(`${text} Marked as sent to the client, answer due ${dayMonth(dueOn)}.`);
+  } catch (e) {
+    onSaved(text, `It could not be marked as sent (${errorText(e)}). Use "Send to client" on it.`);
+  }
+}
+
 /** Uploads one after another; a failure does not stop the rest, and is reported by file name. */
 async function uploadEach(files: File[], send: (f: File) => Promise<unknown>): Promise<string[]> {
   const failed: string[] = [];
@@ -66,7 +80,7 @@ export function BetaUploadDialog({ p, dialog, sheets, onClose, onSaved }: {
 }): ReactElement {
   if (dialog.t === "measure") return <MeasureForm p={p} onClose={onClose} onSaved={onSaved} />;
   if (dialog.t === "measure-files") return <MeasureFilesForm p={p} measure={dialog.measure} onClose={onClose} onSaved={onSaved} />;
-  if (dialog.t === "sheets") return <SheetsForm p={p} sheets={sheets} mode={dialog.mode ?? "full"} forSheet={dialog.sheet} onClose={onClose} onSaved={onSaved} />;
+  if (dialog.t === "sheets") return <SheetsForm p={p} sheets={sheets} mode={dialog.mode ?? "full"} forSheet={dialog.sheet} initial={dialog.files} onClose={onClose} onSaved={onSaved} />;
   if (dialog.t === "links") return <LinksForm p={p} sheets={sheets} onClose={onClose} onSaved={onSaved} />;
   return <DesignForm p={p} kind={dialog.t === "link" ? "3d" : dialog.kind} link={dialog.t === "link"} onClose={onClose} onSaved={onSaved} />;
 }
@@ -167,7 +181,7 @@ function DesignForm({ p, kind, link, onClose, onSaved }: FormProps & { kind: Des
           if (!linkName.trim()) { f.setError("Give the link a name, e.g. Living room render."); return; }
           if (!isLink(url)) { f.setError("Paste the full link, starting with https://."); return; }
           const r = await simpleApi.addDesignLink(p.projectId, { kind, url: url.trim(), name: linkName.trim(), personIds: people, note: note.trim() || null, ...extra });
-          onSaved(`${K} v${r.version} added.`);
+          await savedAndSent(p, kind, r.id, `${K} v${r.version} added.`, onSaved);
           return;
         }
         const picked = file.at(0);
@@ -175,7 +189,7 @@ function DesignForm({ p, kind, link, onClose, onSaved }: FormProps & { kind: Des
         const ready = await readyFiles([picked]);
         if ("error" in ready) { f.setError(ready.error); return; }
         const r = await simpleApi.uploadDesignFile(p.projectId, kind, ready.ok[0], people, note.trim() || null, extra);
-        onSaved(`${K} v${r.version} uploaded.`);
+        await savedAndSent(p, kind, r.id, `${K} v${r.version} uploaded.`, onSaved);
       })}
     >
       {kind === "2d" && nextVersion > 1 && <p style={{ fontSize: 13, color: WS.text2 }}>V{nextVersion} answers every 2D amendment request still open.</p>}
@@ -200,14 +214,23 @@ function DesignForm({ p, kind, link, onClose, onSaved }: FormProps & { kind: Des
 /* ---------- 2D sheets ---------- */
 
 /** A file going up: a new sheet (named after the file, renamable here), or a new version of one sheet of the set. */
-interface SheetRow { id: number; file: File; name: string; replaces: boolean }
+interface SheetRow {
+  id: number; file: File; name: string; replaces: boolean;
+  /** The name this file takes as a new sheet, kept when it is switched away from replacing one. */
+  own: string;
+  /** "Replace changed pages": the sheet it replaces, NEW_SHEET, or "" while still to be picked. */
+  choice: string;
+}
+const NEW_SHEET = "+new";
 
 /** The 2D set as sheets (owner, 24 Oct 2026). "full": the first set, or new sheets added to it; each file (or each page
  *  of a multi-page PDF) is one new sheet, named after the file without its extension, and a name already in the set
- *  gets a number so nothing is replaced by accident. "replace": a Replace button on each sheet of the set (or on the
- *  one sheet the dialog was opened for); only the sheets picked change, the rest are kept. File names never decide
- *  what is replaced. Files already uploaded are not sent again when Save is pressed again after a failure. */
-function SheetsForm({ p, sheets, mode, forSheet, onClose, onSaved }: FormProps & { sheets: readonly BetaSheet[]; mode: "full" | "replace"; forSheet?: string }): ReactElement {
+ *  gets a number so nothing is replaced by accident. "replace": the files are picked first (owner, 27 Oct 2026), then
+ *  each one gets a select listing the set to say which sheet it replaces, or that it is a new sheet; a file named like a
+ *  sheet is only suggested for it. The Replace on one sheet of the grid opens the same dialog for that sheet alone.
+ *  Only the sheets picked change, the rest are kept. Files already uploaded are not sent again when Save is pressed
+ *  again after a failure. */
+function SheetsForm({ p, sheets, mode, forSheet, initial, onClose, onSaved }: FormProps & { sheets: readonly BetaSheet[]; mode: "full" | "replace"; forSheet?: string; initial?: File[] }): ReactElement {
   const twoD = p.records.files.filter((x) => x.kind === "2d").sort((a, b) => b.version - a.version);
   const last = twoD.at(0);
   const nextVersion = (last?.version ?? 0) + 1;
@@ -215,6 +238,8 @@ function SheetsForm({ p, sheets, mode, forSheet, onClose, onSaved }: FormProps &
   const first = current.length === 0;
   const replacing = !first && (mode === "replace" || forSheet != null);
   const listed = forSheet ? current.filter((s) => s.name === forSheet) : current;
+  // Replace changed pages: the files are picked first, then each one is matched to the sheet it replaces.
+  const pickMode = replacing && !forSheet;
   const [rows, setRows] = useState<SheetRow[]>([]);
   const [seq, setSeq] = useState(1);
   const [on, setOn] = useState(p.today);
@@ -233,29 +258,54 @@ function SheetsForm({ p, sheets, mode, forSheet, onClose, onSaved }: FormProps &
   };
   async function addNew(picked: File[]): Promise<void> {
     const taken = new Set([...current.map((s) => s.name.toLowerCase()), ...rows.map((r) => r.name.trim().toLowerCase())]);
-    const out: Array<{ file: File; name: string }> = [];
+    const out: Array<{ file: File; name: string; base: string }> = [];
     for (const file of picked) {
       const base = sheetNameOf(file.name);
       if (isPdf(file) && (await pdfPageCount(file)) > 1) {
         setProgress(`Splitting ${file.name} into pages...`);
         try {
-          for (const page of await splitPdf(file, base)) out.push({ file: page, name: freeName(sheetNameOf(page.name), taken) });
+          for (const page of await splitPdf(file, base)) out.push({ file: page, name: freeName(sheetNameOf(page.name), taken), base: sheetNameOf(page.name) });
         } catch {
-          out.push({ file, name: freeName(base, taken) });
+          out.push({ file, name: freeName(base, taken), base });
         } finally {
           setProgress(null);
         }
         continue;
       }
-      out.push({ file, name: freeName(base, taken) });
+      out.push({ file, name: freeName(base, taken), base });
     }
-    setRows((r) => [...r, ...out.map((x, i) => ({ id: seq + i, ...x, replaces: false }))]);
+    // Replace changed pages: a file named like a sheet of the set is suggested for it; the rest wait for the person's pick.
+    const claimed = new Set(rows.map((r) => r.choice));
+    setRows((r) => [...r, ...out.map((x, i): SheetRow => {
+      const hit = pickMode ? current.find((s) => s.name.toLowerCase() === x.base.toLowerCase() && !claimed.has(s.name)) : undefined;
+      if (hit) claimed.add(hit.name);
+      return { id: seq + i, file: x.file, own: x.name, name: hit?.name ?? x.name, replaces: hit != null, choice: hit?.name ?? (pickMode ? "" : NEW_SHEET) };
+    })]);
     setSeq((n) => n + out.length);
   }
   const replace = (name: string, file: File): void => {
-    setRows((r) => [...r.filter((x) => !(x.replaces && x.name === name)), { id: seq, file, name, replaces: true }]);
+    setRows((r) => [...r.filter((x) => !(x.replaces && x.name === name)), { id: seq, file, name, own: name, replaces: true, choice: name }]);
     setSeq((n) => n + 1);
   };
+  /** The select on a file in "Replace changed pages": the sheet it replaces, or a new sheet. */
+  const choose = (id: number, choice: string): void => setRows((r) => r.map((x) => (x.id !== id ? x
+    : choice === "" || choice === NEW_SHEET ? { ...x, choice, replaces: false, name: x.own }
+    : { ...x, choice, replaces: true, name: choice })));
+  const unmatched = rows.filter((x) => x.choice === "").length;
+  /** Ticking a sheet gives it to the first file still without one; unticking frees it. */
+  const tick = (name: string): void => setRows((r) => {
+    const owner = r.find((x) => x.choice === name);
+    if (owner) return r.map((x) => (x === owner ? { ...x, choice: "", replaces: false, name: x.own } : x));
+    const free = r.find((x) => x.choice === "");
+    return free ? r.map((x) => (x === free ? { ...x, choice: name, replaces: true, name } : x)) : r;
+  });
+  // The files picked before the dialog opened go through the same path as files chosen inside it.
+  const started = useRef(false);
+  useEffect(() => {
+    if (started.current || !initial?.length) return;
+    started.current = true;
+    void addNew(initial);
+  }, []);
   const byName = new Map(rows.filter((x) => x.replaces).map((x) => [x.name, x]));
   const added = rows.filter((x) => !x.replaces);
   const title = forSheet ? `Replace ${forSheet} (2D V${nextVersion})` : first ? `Upload 2D set (V${nextVersion})` : replacing ? `Replace changed pages (2D V${nextVersion})` : `Add sheets to the 2D set (V${nextVersion})`;
@@ -263,8 +313,10 @@ function SheetsForm({ p, sheets, mode, forSheet, onClose, onSaved }: FormProps &
   return (
     <BetaModal
       title={title} sub={p.detail.project.name} onClose={onClose} error={f.error} busy={f.busy || progress != null}
+      wide={pickMode} saveLabel={pickMode ? "Replace sheets" : undefined}
       onSubmit={() => f.run(async () => {
-        if (rows.length === 0) { f.setError(replacing ? "Press Replace on the sheets that changed." : "Choose the sheets (PDF or photos)."); return; }
+        if (rows.length === 0) { f.setError(forSheet ? "Press Replace on the sheets that changed." : "Choose the sheets (PDF or photos)."); return; }
+        if (pickMode && rows.some((x) => x.choice === "")) { f.setError("Tick the sheet each file replaces, or choose Add as a new sheet."); return; }
         if (!on || on > p.today) { f.setError("Give the date the drawings were handed in (not ahead of today)."); return; }
         const names = rows.map((x) => x.name.trim().replace(/\s+/g, " "));
         if (names.some((x) => !x)) { f.setError("Give every sheet a name."); return; }
@@ -289,15 +341,59 @@ function SheetsForm({ p, sheets, mode, forSheet, onClose, onSaved }: FormProps &
           }
           setProgress("Saving the version...");
           const r = await sheetsApi.saveVersion(p.projectId, { submittedOn: on, personIds: people, note: note.trim() || null, sheets: uploaded });
-          onSaved(first ? `2D V${r.version} uploaded with ${plural(uploaded.length, "sheet")}.` : `2D V${r.version} saved: ${plural(uploaded.length, "sheet")} changed.`);
+          await savedAndSent(p, "2d", r.id, first ? `2D V${r.version} uploaded with ${plural(uploaded.length, "sheet")}.` : `2D V${r.version} saved: ${plural(uploaded.length, "sheet")} changed.`, onSaved);
         } finally {
           setProgress(null);
         }
       })}
     >
-      {replacing && (
+      {pickMode && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {rows.length > 0 && (
+            <ul aria-label="Files to put in" style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 6 }}>
+              {rows.map((x) => (
+                <li key={x.id} style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "4px 10px", padding: "8px 10px", borderRadius: 8, background: x.choice === "" ? WS.panel : WS.tealSoft, fontSize: 13 }}>
+                  <span style={{ flex: "1 1 180px", minWidth: 0, overflowWrap: "anywhere", fontWeight: 600 }}>{x.file.name}</span>
+                  {x.choice === NEW_SHEET ? (
+                    <input aria-label={`Name of the new sheet for ${x.file.name}`} style={{ ...inputStyle, flex: "1 1 160px", minHeight: 34 }} value={x.name} maxLength={120}
+                      onChange={(e) => setRows((r) => r.map((y) => (y.id === x.id ? { ...y, name: e.target.value, own: e.target.value } : y)))} />
+                  ) : (
+                    <span style={{ flex: "1 1 160px", color: x.choice === "" ? BETA.muted : BETA.accentInk }}>{x.choice === "" ? "Tick the sheet it replaces below" : `Replaces ${x.choice}`}</span>
+                  )}
+                  {x.choice === NEW_SHEET
+                    ? <button type="button" className="link" onClick={() => choose(x.id, "")}>Replace a sheet instead<span className="sr"> for {x.file.name}</span></button>
+                    : x.choice === "" && <button type="button" className="link" onClick={() => choose(x.id, NEW_SHEET)}>Add as a new sheet<span className="sr"> for {x.file.name}</span></button>}
+                  <button type="button" className="link" style={{ color: WS.red }} onClick={() => setRows((r) => r.filter((y) => y.id !== x.id))}>Remove<span className="sr"> {x.file.name}</span></button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <div style={{ fontSize: 12, color: BETA.muted }}>
+            {rows.length === 0 ? "Choose the files that changed." : unmatched > 0
+              ? `Tick the ${unmatched === 1 ? "sheet" : `${unmatched} sheets`} these files replace. The other sheets are kept from the set.`
+              : "Every file is matched. Untick a sheet to change its match."}
+          </div>
+          <ul aria-label="Sheets of the set" style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))", gap: 10, maxHeight: 380, overflowY: "auto" }}>
+            {current.map((s) => {
+              const owner = rows.find((x) => x.choice === s.name);
+              return (
+                <li key={s.name} style={{ minWidth: 0 }}>
+                  <label style={{ position: "relative", display: "flex", flexDirection: "column", gap: 4, height: "100%", padding: 4, borderRadius: 8, cursor: owner || unmatched > 0 ? "pointer" : "not-allowed",
+                    border: owner ? `2px solid ${BETA.accent}` : `1px solid ${BETA.line}`, background: owner ? WS.tealSoft : BETA.surface, opacity: !owner && unmatched === 0 ? 0.55 : 1 }}>
+                    <input type="checkbox" checked={owner != null} disabled={!owner && unmatched === 0} onChange={() => tick(s.name)}
+                      style={{ position: "absolute", top: 8, left: 8, zIndex: 1, width: 20, height: 20, accentColor: BETA.accent }} />
+                    <div style={{ aspectRatio: "4 / 3", borderRadius: 6, overflow: "hidden", background: "#FFFFFF" }}><SheetThumb projectId={p.projectId} sheet={s} /></div>
+                    <span style={{ fontWeight: 600, fontSize: 12, overflowWrap: "anywhere" }}>{s.name}</span>
+                    <span style={{ fontSize: 11, color: owner ? BETA.accentInk : BETA.muted, overflowWrap: "anywhere" }}>{owner ? `New: ${owner.file.name}` : `V${s.version}`}</span>
+                  </label>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+      {forSheet && (
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          {!forSheet && <div style={{ fontSize: 12, color: BETA.muted }}>Press Replace on each sheet that changed. The others are kept from the set.</div>}
           <ul aria-label="Sheets of the set" style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 4, maxHeight: 280, overflowY: "auto" }}>
             {listed.map((s) => {
               const r = byName.get(s.name);
@@ -320,9 +416,9 @@ function SheetsForm({ p, sheets, mode, forSheet, onClose, onSaved }: FormProps &
         </div>
       )}
       {!forSheet && (
-        <FilePicker label={replacing ? "New sheets to add (optional)" : "PDF or photos: one sheet per file, or per page of a PDF"} multiple files={[]} onChange={(x) => void addNew(x)} />
+        <FilePicker label={pickMode ? "Add more files" : "PDF or photos: one sheet per file, or per page of a PDF"} multiple files={[]} onChange={(x) => void addNew(x)} />
       )}
-      {added.length > 0 && (
+      {!pickMode && added.length > 0 && (
         <ul aria-label="New sheets" style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 6, maxHeight: 300, overflowY: "auto" }}>
           {added.map((x) => (
             <li key={x.id} style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, padding: 8, borderRadius: 8, background: WS.panel }}>
@@ -374,7 +470,7 @@ function LinksForm({ p, sheets, onClose, onSaved }: FormProps & { sheets: readon
         if (badUrl) { f.setError(`Paste the full link for "${badUrl.name}", starting with https://.`); return; }
         if (!on || on > p.today) { f.setError("Give the date the 3D was handed in (not ahead of today)."); return; }
         const r = await sheetsApi.saveLinks(p.projectId, { submittedOn: on, personIds: people, nextPersonId: next, note: note.trim() || null, links });
-        onSaved(`3D V${r.version} saved with ${plural(links.length, "link")}.`);
+        await savedAndSent(p, "3d", r.id, `3D V${r.version} saved with ${plural(links.length, "link")}.`, onSaved);
       })}
     >
       {current.length > 0 && (

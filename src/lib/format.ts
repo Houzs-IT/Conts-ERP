@@ -56,6 +56,10 @@ export const date = (iso: string) => {
   return `${p.d} ${MONTHS[p.m]} ${p.y}`;
 };
 
+/** A YYYY-MM-DD day (or YYYY-MM-15 for a month) in another language, for the portal (src/lib/portalI18n.ts). */
+export const dateIn = (locale: string, day: string, opts: Intl.DateTimeFormatOptions) =>
+  new Intl.DateTimeFormat(locale, { ...opts, timeZone: MYT }).format(new Date(`${day.slice(0, 10)}T12:00:00+08:00`));
+
 /** 16 Sep – 29 Sep 2026. Always disambiguated across months. */
 export const dateRange = (fromIso: string, toIso: string) => {
   const f = mytParts(fromIso), t = mytParts(toIso);
@@ -100,6 +104,19 @@ export const dateTime = (iso: string) => `${date(iso)} ${time(iso)}`;
 export const dateShort = (iso: string) => {
   const p = mytParts(iso);
   return `${p.d} ${MONTHS[p.m]}`;
+};
+
+/** Sunday, 25 October 2026 — the Owner Showcase's headline date. */
+export const dateLong = (iso: string) => {
+  const p = mytParts(iso);
+  const day = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][new Date(Date.UTC(p.y, p.m, p.d)).getUTCDay()];
+  return `${day}, ${p.d} ${MONTHS_LONG[p.m]} ${p.y}`;
+};
+
+/** Wed — short weekday alone. */
+export const weekdayShort = (iso: string) => {
+  const p = mytParts(iso);
+  return WEEKDAYS[new Date(Date.UTC(p.y, p.m, p.d)).getUTCDay()];
 };
 
 /** Wed 16 — short weekday and day. */

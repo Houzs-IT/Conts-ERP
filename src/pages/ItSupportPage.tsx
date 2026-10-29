@@ -48,12 +48,13 @@ interface Detail {
 
 const KINDS = [{ value: 'bug', label: 'Something is not working' }, { value: 'development', label: 'Ask for a change' }];
 const kindLabel = (k: string) => KINDS.find(x => x.value === k)?.label ?? k;
-const URGENCY = [{ value: 'low', label: 'Low' }, { value: 'medium', label: 'Medium' }, { value: 'high', label: 'High' }];
+const URGENCY = [{ value: 'high', label: 'High' }, { value: 'medium', label: 'Medium' }, { value: 'low', label: 'Low' }];
 const MAX_FILES = 5;
 const MAX_BYTES = 10 * 1024 * 1024;
-const ACCEPT = 'image/*,video/mp4,video/quicktime,application/pdf';
+const ACCEPT = 'image/*,video/mp4,video/quicktime,application/pdf,.zip';
 /* ACCEPT only filters the file browser; a dropped or pasted file is checked here. */
-const accepted = (f: File) => f.type.startsWith('image/') || ['application/pdf', 'video/mp4', 'video/quicktime'].includes(f.type);
+const accepted = (f: File) => f.type.startsWith('image/') || ['application/pdf', 'video/mp4', 'video/quicktime'].includes(f.type)
+  || f.name.toLowerCase().endsWith('.zip');
 const TEXTAREA = 'w-full box-border px-3 py-2.5 [font-family:inherit] text-copy text-ink bg-card border border-solid border-line rounded-control outline-none resize-y';
 
 /** IT Support answered that it is not set up here, as opposed to failing. */
@@ -72,7 +73,7 @@ function Files({ files, onChange }: { files: File[]; onChange: (f: File[]) => vo
   const add = useCallback((list: File[]) => {
     const next = [...files, ...list];
     const odd = next.find(f => !accepted(f));
-    if (odd) { setRefused(`${odd.name} is not a picture, PDF, MP4 or MOV.`); return; }
+    if (odd) { setRefused(`${odd.name} is not a picture, PDF, MP4, MOV or ZIP.`); return; }
     const big = next.find(f => f.size > MAX_BYTES);
     if (big) { setRefused(`${big.name} is larger than 10 MB.`); return; }
     if (next.length > MAX_FILES) { setRefused(`Attach at most ${MAX_FILES} files.`); return; }
@@ -104,7 +105,7 @@ function Files({ files, onChange }: { files: File[]; onChange: (f: File[]) => vo
     <div className="flex flex-col gap-3 min-w-0">
       {files.length < MAX_FILES && (
         <FileDropRow tall label="Drop files here, click to browse, or paste a screenshot"
-          hint={`Up to ${MAX_FILES} files, 10 MB each: pictures, PDF, MP4 or MOV.`}
+          hint={`Up to ${MAX_FILES} files, 10 MB each: pictures, PDF, MP4, MOV or ZIP.`}
           accept={ACCEPT} multiple onPick={l => add(Array.from(l))} />
       )}
       {refused && <span className="text-meta text-danger" role="alert">{refused}</span>}

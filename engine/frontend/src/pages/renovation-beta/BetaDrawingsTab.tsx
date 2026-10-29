@@ -4,7 +4,9 @@
    "For site" bar and the two set uploads; the approved set; or the history. 3D is a set of named link cards. Sending
    and approval write through /api/beta; the upload boxes open the dialogs in BetaDrawingUploads.tsx. */
 
-import { useState, type CSSProperties, type ReactElement, type ReactNode } from "react";
+import { useRef, useState, type CSSProperties, type ReactElement, type ReactNode } from "react";
+import { Download, Eye, ExternalLink, MessageCircle } from "lucide-react";
+import { RowActionsMenu, type MenuItem } from "../../components/RowActionsMenu";
 import { useDialog } from "../../hooks/useDialog";
 import { useQuery } from "../../hooks/useQuery";
 import { addDays, errorText } from "../projects/renovation/renovationModel";
@@ -17,10 +19,10 @@ import { FileDialog, sendReminder, useGuarded, type BetaTabProps, type ViewedFil
 import { betaApi } from "./renovationBetaApi";
 import { approvedSet, dayMonth, dayMonthYear, daysLeft, versionLabel, whatsappLink, type ApprovedSet, type DesignKind, type VersionInfo } from "./renovationBetaModel";
 import { downloadAsPdf, type PdfPart, type TitleBlock } from "./renovationBetaPdf";
-import { changedAgainst, removedSheetsOf, sheetSetAt, sheetsApi, sizeText, type BetaSheet, type SetSheet } from "./renovationBetaSheets";
+import { changedAgainst, removedSheetsOf, sheetSetAt, sheetsApi, sizeText, versionWhat, type BetaSheet, type SetSheet } from "./renovationBetaSheets";
 import { CompareDialog, LinkCards, RemovedList, SheetGrid, type SheetGridEdit } from "./BetaDrawingSheets";
 import { getBrandingCache } from "../../lib/branding";
-import { BETA } from "./renovationBetaTheme";
+import { BETA, TONES } from "./renovationBetaTheme";
 
 type DrawPick = "m" | DesignKind;
 type View = "waiting" | "approved" | "history";
@@ -66,28 +68,34 @@ export function BetaDrawingsTab(p: BetaTabProps): ReactElement {
     const n = sheetSetAt(records.files, sheets, v.file.version, kind).length;
     return n ? ` · ${plural(n, kind === "2d" ? "sheet" : "link")}` : "";
   };
-  const actions: UploadLink[] = upload ? [
-    { label: "Upload PDF / photos", onClick: () => upload({ t: "measure" }) },
+  const measureUploads: UploadLink[] = upload ? [{ label: "Upload PDF / photos", onClick: () => upload({ t: "measure" }) }] : [];
+  const uploads3d: UploadLink[] = upload ? [
     { label: "Upload 3D PDF", onClick: () => upload({ t: "file", kind: "3d" }) },
     { label: "Add 3D link", onClick: () => upload(canLink ? { t: "links" } : { t: "link" }) },
-    { label: "Upload 2D PDF", onClick: () => upload(sheetsReady ? { t: "sheets", mode: "full" } : { t: "file", kind: "2d" }) },
   ] : [];
+  const uploads2d: UploadLink[] = upload ? [{ label: "Upload 2D PDF", onClick: () => upload(sheetsReady ? { t: "sheets", mode: "full" } : { t: "file", kind: "2d" }) }] : [];
+  const uploadsOf: Record<DrawPick, UploadLink[]> = { m: measureUploads, "3d": uploads3d, "2d": uploads2d };
 
   return (
     <>
-      {actions.length > 0 && <UploadRow uploads={actions} />}
-      <div role="group" aria-label="Drawing type" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
-        {(["2d", "3d"] as const).map((kind) => (
+      <div role="group" aria-label="Drawing type" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 14 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           <TypeCard
-            key={kind} on={pick === kind} onPick={() => setPick(kind)} icon={kind} title={kind === "2d" ? "2D drawings" : "3D design"}
-            badge={kindBadge(sets[kind])} sub={`${kindSub(kind, sets[kind])}${countOf(kind)}`}
+            on={pick === "m"} onPick={() => setPick("m")} icon="m" title="Site measurement"
+            badge={measureDone.length > 0 ? <WsBadge tone={TONE_DONE}>Done</WsBadge> : <WsBadge tone={TONE_QUIET}>Not measured</WsBadge>}
+            sub={measureDone.length > 0 ? `Measured ${dayMonth(measureDone[0]?.done_on)} · ${plural(measureFiles, "file")}` : "No site measure recorded yet"}
           />
+          <UploadRow uploads={uploadsOf.m} />
+        </div>
+        {(["3d", "2d"] as const).map((kind) => (
+          <div key={kind} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <TypeCard
+              on={pick === kind} onPick={() => setPick(kind)} icon={kind} title={`${kind.toUpperCase()} drawings`}
+              badge={kindBadge(sets[kind])} sub={`${kindSub(kind, sets[kind])}${countOf(kind)}`}
+            />
+            <UploadRow uploads={uploadsOf[kind]} />
+          </div>
         ))}
-        <TypeCard
-          on={pick === "m"} onPick={() => setPick("m")} icon="m" title="Site measure"
-          badge={measureDone.length > 0 ? <WsBadge tone={TONE_DONE}>Done</WsBadge> : <WsBadge tone={TONE_QUIET}>Not measured</WsBadge>}
-          sub={measureDone.length > 0 ? `Measured ${dayMonth(measureDone[0]?.done_on)} · ${plural(measureFiles, "file")}` : "No site measure recorded yet"}
-        />
       </div>
 
       {pick === "m" ? <MeasureDetail measures={records.measures} projectId={p.projectId} onView={setViewing} onUpload={upload} onError={p.onError} />
@@ -106,7 +114,7 @@ export function BetaDrawingsTab(p: BetaTabProps): ReactElement {
 /* ---------- The section cards ---------- */
 
 function kindBadge(set: ApprovedSet): ReactElement {
-  if (set.waiting) return <WsBadge tone={TONE_WAIT}>{set.waiting.review?.sentOn ? "Sent · waiting" : "Draft"}</WsBadge>;
+  if (set.waiting) return <WsBadge tone={TONE_WAIT}>{set.waiting.review?.sentOn ? "Waiting client" : "Draft"}</WsBadge>;
   if (set.approved) return <WsBadge tone={TONE_DONE}>Approved</WsBadge>;
   return <WsBadge tone={TONE_QUIET}>No version</WsBadge>;
 }
@@ -116,23 +124,25 @@ function kindSub(kind: DesignKind, set: ApprovedSet): string {
   const parts: string[] = [];
   if (set.waiting) {
     const sentOn = set.waiting.review?.sentOn;
-    parts.push(sentOn ? `${versionLabel(kind, set.waiting.file)} sent ${dayMonth(sentOn)}` : `${versionLabel(kind, set.waiting.file)} uploaded ${dayMonth(submittedOf(set.waiting.file))}`);
+    const what = set.approved ? "New revision" : versionLabel(kind, set.waiting.file);
+    parts.push(sentOn ? `${what} sent ${dayMonth(sentOn)}` : `${what} uploaded ${dayMonth(submittedOf(set.waiting.file))}`);
   }
-  if (set.approved) parts.push(`${set.waiting ? "site uses" : "Approved"} ${versionLabel(kind, set.approved.file)} (${dayMonth(set.approved.review?.approvedOn)})`);
+  if (set.approved) parts.push(set.waiting ? "site still uses the approved set" : `Approved ${dayMonth(set.approved.review?.approvedOn)}`);
   return parts.join(" · ");
 }
 
 interface UploadLink { label: string; onClick: () => void }
 
-function UploadRow({ uploads }: { uploads: UploadLink[] }): ReactElement {
+function UploadRow({ uploads }: { uploads: UploadLink[] }): ReactElement | null {
+  if (uploads.length === 0) return null;
   return (
-    <div role="group" aria-label="Upload" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10 }}>
+    <div role="group" aria-label="Upload" style={{ display: "flex", gap: 8 }}>
       {uploads.map((u) => (
         <button
           key={u.label}
           type="button"
           onClick={u.onClick}
-          style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, minHeight: 48, padding: "0 12px", borderRadius: 10, border: `1.5px dashed ${BETA.focus}`, background: WS.tealSoft, color: BETA.accentInk, font: "inherit", fontWeight: 600, fontSize: 14, cursor: "pointer" }}
+          style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, minHeight: 44, padding: "0 14px", borderRadius: 10, border: `1.5px dashed ${BETA.focus}`, background: WS.tealSoft, color: BETA.accentInk, font: "inherit", fontWeight: 600, fontSize: 14, cursor: "pointer" }}
         >
           {/link/i.test(u.label)
             ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M10 14a4 4 0 005.7 0l3-3a4 4 0 00-5.7-5.7l-1 1" /><path d="M14 10a4 4 0 00-5.7 0l-3 3a4 4 0 005.7 5.7l1-1" /></svg>
@@ -148,13 +158,14 @@ function TypeCard({ on, onPick, icon, title, badge, sub }: { on: boolean; onPick
   return (
     <button
       type="button"
+      className={on ? "pickcard-on" : undefined}
       aria-pressed={on}
       onClick={onPick}
-      style={{ display: "flex", flexDirection: "column", gap: 6, padding: on ? 13 : 14, borderRadius: 12, border: on ? `2px solid ${BETA.accent}` : `1px solid ${BETA.line}`, background: on ? WS.tealSoft : BETA.surface, font: "inherit", textAlign: "left", cursor: "pointer", color: BETA.ink }}
+      style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8, padding: on ? 15 : 16, borderRadius: 12, border: on ? "2px solid transparent" : `1px solid ${BETA.line}`, ...(on ? null : { background: BETA.surface }), font: "inherit", textAlign: "left", cursor: "pointer", color: BETA.ink }}
     >
       <span style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, width: "100%" }}>
         <span style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-          <span style={{ flex: "none", width: 34, height: 34, borderRadius: 8, background: WS.chip, display: "flex", alignItems: "center", justifyContent: "center" }}><TypeIcon kind={icon} /></span>
+          <span style={{ flex: "none", width: 38, height: 38, borderRadius: 8, background: WS.chip, display: "flex", alignItems: "center", justifyContent: "center" }}><TypeIcon kind={icon} /></span>
           <span style={{ fontSize: 17, fontWeight: 700 }}>{title}</span>
         </span>
         {badge}
@@ -216,13 +227,12 @@ function MeasureDetail({ measures, projectId, onView, onUpload, onError }: {
                   <PdfButton projectId={projectId} onError={onError} outName={`Site measure ${m.done_on ?? m.id}.pdf`} label="Download all"
                     parts={files.map((f) => ({ key: f.r2_key, fileName: f.file_name }))} />
                 )}
-                {onUpload && <WsBtn size="sm" onClick={() => onUpload({ t: "measure-files", measure: m })}>Add files<span className="sr"> to the site measure of {dayMonthYear(m.done_on)}</span></WsBtn>}
               </div>
             </div>
             {docs.length > 0 && (
               <div style={boxStyle}>
                 <div style={{ padding: "12px 16px", background: WS.head, fontWeight: 600 }}>Measurement files</div>
-                <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+                <ul className="stag" style={{ listStyle: "none", margin: 0, padding: 0 }}>
                   {docs.map((f) => (
                     <li key={f.id} style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, padding: "12px 16px", borderTop: `1px solid ${WS.rowLine}` }}>
                       <WsPdfTile />
@@ -254,6 +264,10 @@ function MeasureDetail({ measures, projectId, onView, onUpload, onError }: {
                 <div style={{ whiteSpace: "pre-line", overflowWrap: "anywhere" }}>{m.note}</div>
               </div>
             )}
+            {onUpload && (
+              <BigUpload center title="Upload measurement PDF or photos" sub={`Click to choose · PDF, JPG, PNG · adds to the measure of ${dayMonthYear(m.done_on)}`}
+                onClick={() => onUpload({ t: "measure-files", measure: m })} />
+            )}
           </section>
         );
       })}
@@ -273,6 +287,11 @@ function KindDetail({ kind, p, set, onEdit, onOpen, onUpload, sheets, sheetsRead
   const { approved, waiting } = set;
   const [picked, setView] = useState<View>(waiting ? "waiting" : approved ? "approved" : "history");
   const [comparing, setComparing] = useState(false);
+  // History: the file id of the version whose pages are open, or null for the list.
+  const [histId, setHistId] = useState<number | null>(null);
+  // The version list folded under the sheets of the other two views.
+  const [histOpen, setHistOpen] = useState(false);
+  const replacePicker = useRef<HTMLInputElement>(null);
   // After a save the picked view can be gone (the waiting version was just approved), so fall back to what exists.
   const view: View = picked === "waiting" && !waiting ? (approved ? "approved" : "history") : picked === "approved" && !approved ? (waiting ? "waiting" : "history") : picked;
   const notes = records.notes.filter((n) => n.kind === kind).sort((a, b) => b.noted_on.localeCompare(a.noted_on) || b.id - a.id);
@@ -298,6 +317,28 @@ function KindDetail({ kind, p, set, onEdit, onOpen, onUpload, sheets, sheetsRead
   }));
   const pdfName = (v: VersionInfo): string => `${detail.project.name} ${K} V${v.file.version}.pdf`;
   const setSize = (v: VersionInfo): string | null => sizeText(setOf(v).reduce((n, x) => n + (x.size ?? 0), 0));
+
+  /** First upload, or the requests a later one answered (the same rule as the older design task page). */
+  const roundOf = (v: VersionInfo): string => {
+    if (!set.versions.some((x) => x.file.version < v.file.version)) return "First submission";
+    const n = notes.filter((x) => x.closed_by_file_id === v.file.id).length;
+    return n ? `Answers ${plural(n, "request")}` : "Revision";
+  };
+  const ownSheets = (v: VersionInfo): BetaSheet[] => sheets.filter((s) => s.fileId === v.file.id && !s.removedAt);
+  const versionSize = (v: VersionInfo): string | null => sizeText(ownSheets(v).reduce((n, s) => n + (s.size ?? 0), 0) || v.file.size_bytes || 0);
+  const downloadSet = async (v: VersionInfo): Promise<void> => {
+    try {
+      const r = await downloadAsPdf(projectId, partsOf(v), pdfName(v).replace(/[\\/:*?"<>|]+/g, " "));
+      if (r.skipped.length) p.onError(`Not in the PDF (not a PDF or photo): ${r.skipped.join(", ")}`);
+    } catch (e) {
+      p.onError(`The PDF could not be made: ${errorText(e)}`);
+    }
+  };
+  const menuOf = (v: VersionInfo): MenuItem[] => [
+    ...(setOf(v).length > 0 && is2d ? [{ icon: Eye, label: `View V${v.file.version} pages`, onClick: () => { setView("history"); setHistId(v.file.id); } }] : []),
+    ...(ownSheets(v).length === 0 ? [{ icon: ExternalLink, label: "Open file", onClick: () => onOpen(v.file) }] : []),
+    ...(partsOf(v).length > 0 ? [{ icon: Download, label: "Download", onClick: () => void downloadSet(v) }] : []),
+  ];
 
   async function removeApproval(v: VersionInfo): Promise<void> {
     const label = versionLabel(kind, v.file);
@@ -335,7 +376,11 @@ function KindDetail({ kind, p, set, onEdit, onOpen, onUpload, sheets, sheetsRead
   const suffix = view === "waiting" ? (sentOn ? "· waiting for client" : "· not sent yet") : view === "approved" ? `· client approved ${dayMonth(approved?.review?.approvedOn)}` : "";
   const suffixColor = view === "waiting" ? WS.amber : WS.green;
   const shownSet = setOf(shown);
+  const viewedV = view === "history" ? set.versions.find((v) => v.file.id === histId) ?? null : null;
   const changed = view === "waiting" && approved ? changedAgainst(shownSet, approvedSet) : null;
+  // A version after the first marks the sheets it changed against the version before it; V1 has nothing to compare with.
+  const before = viewedV ? set.versions[set.versions.indexOf(viewedV) + 1] : undefined;
+  const versionMarks = viewedV && before ? changedAgainst(setOf(viewedV), setOf(before)) : null;
   const word = is2d ? "sheet" : "link";
   const shownSize = shown ? setSize(shown) : null;
   const shareSite = (): void => {
@@ -348,11 +393,44 @@ function KindDetail({ kind, p, set, onEdit, onOpen, onUpload, sheets, sheetsRead
     ? <SheetGrid projectId={projectId} sheets={setOf(v)} changed={marks} onView={onView} onError={p.onError} edit={editOf()} />
     : <LinkCards projectId={projectId} links={setOf(v)} changed={marks} onView={onView} onError={p.onError} edit={editOf()} />);
 
+  const versionRows = (
+    <ul className="stag" style={{ listStyle: "none", margin: 0, padding: 0 }}>
+      {set.versions.map((v, i) => {
+        const state = v === approved ? "Approved" : v === waiting ? (v.review?.sentOn ? "Sent, waiting" : "Not sent") : "Older";
+        const menu = menuOf(v);
+        const details = [roundOf(v), is2d ? versionWhat(records.files, sheets, v.file) : null, dayMonthYear(submittedOf(v.file)), versionSize(v), picNames(v.file)].filter(Boolean);
+        return (
+          <li key={v.file.id} aria-current={v === viewedV ? "true" : undefined} style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, padding: "12px 16px", borderTop: `1px solid ${WS.rowLine}`, background: v === viewedV ? WS.tealSoft : undefined }}>
+            <span style={{ flex: "none", minWidth: 34, fontWeight: 700 }}>V{v.file.version}</span>
+            <div style={{ flex: "1 1 220px", minWidth: 0 }}>
+              <div style={{ fontWeight: 600, overflowWrap: "anywhere" }}>
+                {v.file.file_name}
+                {i === 0 && <HistTag>Latest</HistTag>}
+                {v === approved && is2d && <HistTag solid>For site</HistTag>}
+              </div>
+              <div style={{ fontSize: 12, color: BETA.muted, overflowWrap: "anywhere" }}>{details.join(" · ")}</div>
+              {v.file.note && <div style={{ fontSize: 12, color: BETA.muted, overflowWrap: "anywhere" }}>{v.file.note}</div>}
+            </div>
+            <WsBadge tone={v === approved ? TONE_DONE : v === waiting ? TONE_WAIT : TONE_QUIET}>{state}</WsBadge>
+            {menu.length > 0 && <RowActionsMenu items={menu} size={36} title={`More for V${v.file.version}`} />}
+          </li>
+        );
+      })}
+    </ul>
+  );
+  // Not overflow hidden here: the "..." menu of the last rows has to open past the box.
+  const versionList = (
+    <div style={{ ...boxStyle, overflow: "visible" }}>
+      <div style={{ padding: "12px 16px", background: WS.head, fontWeight: 600, borderRadius: "10px 10px 0 0" }}>All versions · newest first</div>
+      {versionRows}
+    </div>
+  );
+
   return (
     <section aria-label={`${K} drawings`} style={sectionStyle}>
       <div style={{ display: "flex", flexWrap: "wrap", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
         <div style={{ minWidth: 0 }}>
-          <div style={eyebrow}>{is2d ? "2D drawings" : "3D design"}</div>
+          <div style={eyebrow}>{is2d ? "2D drawings" : "3D drawings"}</div>
           <h2 style={{ margin: "2px 0 0", fontSize: 20, fontWeight: 700 }}>{head} {suffix && <span style={{ fontSize: 15, fontWeight: 600, color: suffixColor }}>{suffix}</span>}</h2>
           {shown && (
             <div style={{ color: BETA.muted }}>
@@ -373,9 +451,24 @@ function KindDetail({ kind, p, set, onEdit, onOpen, onUpload, sheets, sheetsRead
         <span style={{ color: BETA.muted }}>Show:</span>
         {waiting && <ShowPill on={view === "waiting"} onClick={() => setView("waiting")}>{`New revision · ${sentOn ? "waiting client" : "not sent"}`}</ShowPill>}
         {approved && <ShowPill on={view === "approved"} onClick={() => setView("approved")}>{is2d ? "Approved set · site uses this" : "Approved set"}</ShowPill>}
-        <ShowPill on={view === "history"} onClick={() => setView("history")} quiet>History</ShowPill>
+        <ShowPill on={view === "history"} onClick={() => { setView("history"); setHistId(null); }} quiet>History</ShowPill>
       </div>
 
+      {is2d && set.versions.length > 1 && (
+        // .vline: on a phone the label sits above the pills and the pills wrap, so every version stays in sight.
+        <div className="vline">
+          <span style={{ flex: "none", color: BETA.muted, fontWeight: 600 }}>View version</span>
+          <div role="group" aria-label="View version" className="vrow">
+            {[...set.versions].reverse().map((v, i, oldestFirst) => (
+              <button key={v.file.id} type="button" className="vpill" aria-pressed={viewedV === v} onClick={() => { setView("history"); setHistId(v.file.id); }}>
+                {`V${v.file.version}${i === oldestFirst.length - 1 ? " · latest" : ""}`}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div key={view} className="stag" style={{ display: "contents" }}>
       {view === "waiting" && waiting && (
         <WaitingView kind={kind} v={waiting} p={p} busy={busy} onEdit={onEdit} newSet={shownSet} hasApproved={approved != null}
           onRemind={() => void run(() => sendReminder(projectId, {
@@ -388,7 +481,7 @@ function KindDetail({ kind, p, set, onEdit, onOpen, onUpload, sheets, sheetsRead
 
       {view === "approved" && approved && (
         <>
-          <div style={{ border: "1.5px solid #B7DCC3", background: "#F1F8F3", borderRadius: 10, padding: "14px 16px", display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+          <div style={{ border: `1.5px solid ${TONES.accent.line}`, background: TONES.accent.soft, borderRadius: 10, padding: "14px 16px", display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
             <div style={{ minWidth: 0 }}>
               <div style={{ fontWeight: 700, color: WS.green }}>Client approved · {dayMonth(approved.review?.approvedOn)}</div>
               <div style={{ fontSize: 13, color: WS.text2 }}>{approved.review?.approvedByName ? `Approved by ${approved.review.approvedByName}` : "Approval recorded"}</div>
@@ -402,7 +495,7 @@ function KindDetail({ kind, p, set, onEdit, onOpen, onUpload, sheets, sheetsRead
 
       {(view === "waiting" || view === "approved") && approved && is2d && (
         <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, padding: "12px 14px", borderRadius: 10, background: WS.tealSoft, border: `1.5px solid ${WS.tealLine}` }}>
-          <span style={{ padding: "4px 10px", borderRadius: 6, background: BETA.accent, color: "#FFFFFF", fontSize: 12, fontWeight: 600 }}>For site</span>
+          <span style={{ padding: "4px 10px", borderRadius: 999, background: TONES.accent.soft, color: TONES.accent.ink, fontSize: 12, fontWeight: 600 }}>For site</span>
           <div style={{ flex: "1 1 240px", minWidth: 0 }}>
             <div style={{ fontWeight: 700, overflowWrap: "anywhere" }}>{pdfName(approved)}</div>
             <div style={{ fontSize: 13, color: WS.text2 }}>
@@ -416,26 +509,34 @@ function KindDetail({ kind, p, set, onEdit, onOpen, onUpload, sheets, sheetsRead
         </div>
       )}
 
-      {view === "history" && (
-        <div style={boxStyle}>
-          <div style={{ padding: "12px 16px", background: WS.head, fontWeight: 600 }}>All versions</div>
-          <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
-            {set.versions.map((v) => {
-              const state = v === approved ? "Approved" : v === waiting ? (v.review?.sentOn ? "Sent, waiting" : "Not sent") : "Older";
-              const own = sheets.filter((s) => s.fileId === v.file.id);
-              return (
-                <li key={v.file.id} style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, padding: "12px 16px", borderTop: `1px solid ${WS.rowLine}` }}>
-                  <div style={{ flex: "1 1 220px", minWidth: 0 }}>
-                    <div style={{ fontWeight: 600 }}>{versionLabel(kind, v.file)} <span style={{ fontWeight: 400, color: BETA.muted }}>· {dayMonth(submittedOf(v.file))} · {picNames(v.file)}</span></div>
-                    {own.length > 0 && <div style={{ fontSize: 12, color: BETA.muted, overflowWrap: "anywhere" }}>{own.map((s) => s.name).join(", ")}</div>}
-                    {v.file.note && <div style={{ fontSize: 12, color: BETA.muted, overflowWrap: "anywhere" }}>{v.file.note}</div>}
-                  </div>
-                  <WsBadge tone={v === approved ? TONE_DONE : v === waiting ? TONE_WAIT : TONE_QUIET}>{state}</WsBadge>
-                  {own.length === 0 && <WsBtn size="sm" onClick={() => onOpen(v.file)}>Open<span className="sr"> {versionLabel(kind, v.file)}</span></WsBtn>}
-                </li>
-              );
-            })}
-          </ul>
+      {view === "history" && viewedV && (
+        <>
+          <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "10px 14px", padding: "14px 16px", borderRadius: 10, ...(viewedV === set.versions[0]
+            ? { background: WS.tealSoft, border: `1.5px solid ${WS.tealLine}` }
+            : { background: BETA.surface, border: `1.5px solid ${BETA.line}` }) }}>
+            <span style={{ padding: "4px 10px", borderRadius: 6, background: viewedV === set.versions[0] ? BETA.accent : BETA.muted, color: BETA.surface, fontSize: 12, fontWeight: 800, letterSpacing: ".06em" }}>{viewedV === set.versions[0] ? "LATEST" : "OLDER VERSION"}</span>
+            <div style={{ flex: "1 1 220px", minWidth: 0, color: BETA.ink }}>
+              <div style={{ fontSize: 18, fontWeight: 800 }}>V{viewedV.file.version} · {roundOf(viewedV)}</div>
+              <div style={{ fontSize: 13, color: WS.text2 }}>{dayMonthYear(submittedOf(viewedV.file))} · {versionWhat(records.files, sheets, viewedV.file)}</div>
+            </div>
+            {partsOf(viewedV).length > 0 && <PdfButton projectId={projectId} parts={partsOf(viewedV)} outName={pdfName(viewedV)} label="Download" onError={p.onError} />}
+          </div>
+          {grid(viewedV, versionMarks)}
+        </>
+      )}
+
+      {view === "history" && !viewedV && versionList}
+      </div>
+
+      {view !== "history" && (
+        // The same list as the History view, folded under the sheets so a version can be found without leaving the page.
+        <div style={{ ...boxStyle, overflow: "visible" }}>
+          <button type="button" aria-expanded={histOpen} onClick={() => setHistOpen((o) => !o)}
+            style={{ display: "flex", width: "100%", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "12px 16px", background: WS.head, border: 0, font: "inherit", fontWeight: 600, color: BETA.ink, textAlign: "left", cursor: "pointer", borderRadius: histOpen ? "10px 10px 0 0" : 10 }}>
+            <span>Version history <span style={{ fontWeight: 500, color: BETA.muted }}>· {plural(set.versions.length, "version")}</span></span>
+            <span aria-hidden="true" style={{ color: BETA.muted }}>{histOpen ? "Collapse ▴" : "Expand ▾"}</span>
+          </button>
+          {histOpen && versionRows}
         </div>
       )}
 
@@ -446,14 +547,18 @@ function KindDetail({ kind, p, set, onEdit, onOpen, onUpload, sheets, sheetsRead
 
       {onUpload && is2d && sheetsReady && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 10 }}>
-          <BigUpload title="Replace changed pages" sub="Upload only the pages you changed. The rest are kept from the set." onClick={() => onUpload({ t: "sheets", mode: "replace" })} strong />
-          <BigUpload title="Upload full set" sub="First time, or when the whole set is redrawn." onClick={() => onUpload({ t: "sheets", mode: "full" })} />
+          {/* The click goes straight to the file picker; the dialog then lists the set so each file can be matched to a sheet. */}
+          <BigUpload title="Replace changed pages" sub="Pick the files you changed, then choose which sheet each one replaces." onClick={() => replacePicker.current?.click()} strong />
+          <input
+            ref={replacePicker} type="file" multiple accept="application/pdf,image/*" className="sr" tabIndex={-1} aria-hidden="true" data-testid="replace-picker"
+            onChange={(e) => { const files = [...(e.target.files ?? [])]; e.target.value = ""; if (files.length) onUpload({ t: "sheets", mode: "replace", files }); }}
+          />
         </div>
       )}
       {onUpload && !is2d && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 10 }}>
-          <BigUpload title="Add 3D links" sub="One or more named links. A link with the same name replaces the old one." onClick={() => onUpload(canLink ? { t: "links" } : { t: "link" })} strong />
-          <BigUpload title="Upload 3D PDF / render" sub="A rendered image or PDF of the 3D." onClick={() => onUpload({ t: "file", kind })} />
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+          <BigUpload center title="Upload 3D PDF" sub="Click to choose · PDF or a rendered image" onClick={() => onUpload({ t: "file", kind })} />
+          <WsBtn kind="dark" style={{ alignSelf: "flex-end" }} onClick={() => onUpload(canLink ? { t: "links" } : { t: "link" })}>+ Add link</WsBtn>
         </div>
       )}
       {notes.length > 0 && <NotesList kind={kind} notes={notes} files={records.files} />}
@@ -462,11 +567,17 @@ function KindDetail({ kind, p, set, onEdit, onOpen, onUpload, sheets, sheetsRead
   );
 }
 
-function BigUpload({ title, sub, onClick, strong = false }: { title: string; sub: string; onClick: () => void; strong?: boolean }): ReactElement {
+function HistTag({ solid = false, children }: { solid?: boolean; children: ReactNode }): ReactElement {
+  return (
+    <span style={{ marginLeft: 8, padding: "2px 7px", borderRadius: 5, fontSize: 11, fontWeight: 600, whiteSpace: "nowrap", background: solid ? BETA.accent : TONES.accent.soft, color: solid ? BETA.surface : TONES.accent.ink }}>{children}</span>
+  );
+}
+
+function BigUpload({ title, sub, onClick, strong = false, center = false }: { title: string; sub: string; onClick: () => void; strong?: boolean; center?: boolean }): ReactElement {
   return (
     <button type="button" onClick={onClick}
-      style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 4, padding: "14px 16px", borderRadius: 10, border: `1.5px dashed ${strong ? BETA.accent : BETA.border}`,
-        background: strong ? WS.tealSoft : BETA.surface, font: "inherit", textAlign: "left", cursor: "pointer", color: BETA.ink }}>
+      style={{ flex: center ? "1 1 240px" : undefined, display: "flex", flexDirection: "column", alignItems: center ? "center" : "flex-start", gap: 4, padding: center ? 18 : "14px 16px", borderRadius: 10,
+        border: `1.5px dashed ${strong ? BETA.accent : "#A9B4B2"}`, background: strong ? WS.tealSoft : BETA.surface, font: "inherit", textAlign: center ? "center" : "left", cursor: "pointer", color: BETA.ink }}>
       <span style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 700, color: strong ? BETA.accentInk : BETA.ink }}>
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M12 16V4" /><path d="M7 9l5-5 5 5" /><path d="M4 20h16" /></svg>
         {title}
@@ -505,14 +616,14 @@ function WaitingView({ kind, v, p, busy, onEdit, onRemind, newSet, hasApproved }
   return (
     <>
       <ol aria-label={`How a ${kind.toUpperCase()} revision works`} style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
-        <li style={card("1px solid #CFE3D6", "#F3F9F5", 14)}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>{dot(WS.green, <WsCheck size={12} />)}<span style={{ fontWeight: 700 }}>1. {hasApproved ? `Changed ${word}s uploaded` : "Uploaded"}</span></div>
+        <li style={card(`1px solid ${TONES.accent.line}`, TONES.accent.soft, 14)}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>{dot(BETA.accentFill, <WsCheck size={12} />)}<span style={{ fontWeight: 700 }}>1. {hasApproved ? `Changed ${word}s uploaded` : "Uploaded"}</span></div>
           <div style={{ fontSize: 13, color: WS.text2, overflowWrap: "anywhere" }}>{dayMonth(submittedOf(v.file))} · {ownText}</div>
         </li>
-        <li aria-current="step" style={card("2px solid #E0A955", "#FFF6EA", 13)}>
+        <li aria-current="step" style={card(`2px solid ${TONES.amber.dot}`, TONES.amber.soft, 13)}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             {dot(WS.amberBtn, "2")}<span style={{ fontWeight: 700 }}>Client approves</span>
-            <span style={{ marginLeft: "auto" }}><WsBadge tone={[WS.amber, "#FBE3C2"]}>Now</WsBadge></span>
+            <span style={{ marginLeft: "auto" }}><WsBadge tone={[WS.amber, TONES.amber.strong]}>Now</WsBadge></span>
           </div>
           <div style={{ fontSize: 13, color: late ? WS.red : WS.text2, fontWeight: late ? 600 : 400 }}>
             {sentOn
@@ -523,20 +634,20 @@ function WaitingView({ kind, v, p, busy, onEdit, onRemind, newSet, hasApproved }
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
               {sentOn ? (
                 <>
-                  <WsBtn size="sm" disabled={busy} onClick={onRemind}>Remind client</WsBtn>
-                  <WsBtn kind="amber" size="sm" disabled={busy} onClick={() => onEdit("approve", v)}>Record approval</WsBtn>
+                  <WsBtn size="sm" disabled={busy} onClick={onRemind}><MessageCircle size={15} aria-hidden="true" />Remind client</WsBtn>
+                  <WsBtn kind="confirm" size="sm" disabled={busy} onClick={() => onEdit("approve", v)}>Record approval</WsBtn>
                   <WsBtn size="sm" disabled={busy} onClick={() => onEdit("send", v)}>Send again</WsBtn>
                 </>
               ) : (
                 <>
                   <WsBtn kind="amber" size="sm" disabled={busy} onClick={() => onEdit("send", v)}>Send to client</WsBtn>
-                  <WsBtn size="sm" disabled={busy} onClick={() => onEdit("approve", v)}>Record approval</WsBtn>
+                  <WsBtn kind="confirm" size="sm" disabled={busy} onClick={() => onEdit("approve", v)}>Record approval</WsBtn>
                 </>
               )}
             </div>
           )}
         </li>
-        <li style={card(`1px solid ${BETA.line}`, "#FAFBFB", 14)}>
+        <li style={card(`1px solid ${BETA.line}`, BETA.head, 14)}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>{dot("transparent", "3", `2px solid ${BETA.border}`)}<span style={{ fontWeight: 700, color: WS.text2 }}>{is2d ? "Becomes the site set" : "Becomes the approved set"}</span></div>
           <div style={{ fontSize: 13, color: BETA.muted }}>
             {hasApproved && own.length
@@ -573,7 +684,7 @@ function PdfButton({ projectId, parts, outName, label, onError }: { projectId: n
   }
   return (
     <span style={{ display: "inline-flex", flexDirection: "column", gap: 4 }}>
-      <WsBtn size="sm" disabled={busy} onClick={() => void go()}>{busy ? "Making PDF..." : label}</WsBtn>
+      <WsBtn size="sm" disabled={busy} onClick={() => void go()}><Download size={15} aria-hidden="true" />{busy ? "Making PDF..." : label}</WsBtn>
       {note && <span role="status" style={{ fontSize: 12, color: WS.amber, maxWidth: 260 }}>{note}</span>}
     </span>
   );
@@ -649,7 +760,7 @@ function SendDialog({ p, editing, onClose }: { p: BetaTabProps; editing: Editing
           <p style={{ fontSize: 14 }}>Saved. The sent and answer dates are recorded.</p>
           <p style={{ fontSize: 14, color: BETA.muted }}>Now send the drawing to the customer. This opens WhatsApp with a message ready to send.</p>
           <a style={{ ...btnStyle("outline", "md"), alignSelf: "flex-start", color: BETA.accent }} href={whatsappLink(p.detail.project.customer_phone, text)} target="_blank" rel="noopener noreferrer">
-            Open WhatsApp{p.detail.project.customer_phone ? "" : " (no phone on file, pick the contact)"}
+            <MessageCircle size={15} aria-hidden="true" />Open WhatsApp{p.detail.project.customer_phone ? "" : " (no phone on file, pick the contact)"}
           </a>
         </>
       ) : (
@@ -696,7 +807,7 @@ function ApproveDialog({ p, editing, onClose }: { p: BetaTabProps; editing: Edit
       footer={
         <>
           <WsBtn onClick={onClose} disabled={busy}>Cancel</WsBtn>
-          <WsBtn kind="teal" onClick={() => void save()} disabled={busy}>{busy ? "Saving..." : "Record approval"}</WsBtn>
+          <WsBtn kind="confirm" onClick={() => void save()} disabled={busy}>{busy ? "Saving..." : "Record approval"}</WsBtn>
         </>
       }
     >

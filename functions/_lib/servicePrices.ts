@@ -1,5 +1,6 @@
 import { type Env, all, run, fail, nowIso, mytToday } from './db';
 import { hasColumn } from './auth';
+import { layoutTypes } from './layoutTypes';
 
 /** Service prices (owner, 17 Oct 2026; migration 0127): one item list for cleaning and maintenance, each item with an
  *  owner price (what the owner is charged) and an internal cost (what it costs us), effective-dated. A job takes the
@@ -88,12 +89,19 @@ export async function loadPrices(env: Env): Promise<Map<string, (PriceRow & { no
   return out;
 }
 
-export const layoutsOf = (byLayout: unknown) => (byLayout ? [...GRID_LAYOUTS] : ['all']);
+/** The grid's layout rows and their names: the active unit Types (0161), else the fixed list. */
+export interface Grid { keys: readonly string[]; labels: Record<string, string> }
+export const DEFAULT_GRID = (): Grid => ({ keys: GRID_LAYOUTS, labels: LABEL.layout });
+export async function layoutGrid(env: Env): Promise<Grid> {
+  const types = await layoutTypes(env);
+  return { keys: types.filter(t => t.isActive).map(t => t.key), labels: { ...LABEL.layout, ...Object.fromEntries(types.map(t => [t.key, t.label])) } };
+}
+export const layoutsOf = (byLayout: unknown, grid: Grid = DEFAULT_GRID()) => (byLayout ? [...grid.keys] : ['all']);
 type Cell = { ownerPrice: number | null; internalCost: number | null; effectiveFrom: string | null };
 
 /** An item as the screen shows it: its prices in force today per layout, and the next scheduled change. */
-export function itemView(i: any, rows: PriceRow[], today: string) {
-  const layouts = layoutsOf(i.by_layout);
+export function itemView(i: any, rows: PriceRow[], today: string, grid: Grid = DEFAULT_GRID()) {
+  const layouts = layoutsOf(i.by_layout, grid);
   const current: Record<string, Cell> = {};
   for (const l of layouts) {
     const r = inForce(rows.filter(x => x.layout === l), today);
@@ -133,10 +141,10 @@ export type PriceSet = { effectiveFrom: string; note: string | null; rows: { lay
 const amountOk = (v: unknown) => v === null || (Number.isInteger(v) && (v as number) >= 0 && (v as number) <= 100_000_000);
 
 /** A dated price change: { effectiveFrom, note?, rows: [{ layout, ownerPrice, internalCost }] }, sen or null. */
-export function checkPriceRows(p: any, byLayout: boolean): PriceSet | { error: Response } {
+export function checkPriceRows(p: any, byLayout: boolean, grid: Grid = DEFAULT_GRID()): PriceSet | { error: Response } {
   if (!isDayStr(p?.effectiveFrom)) return { error: fieldFail('Pick the date the prices apply from.', 'effectiveFrom', 'Pick a date.') };
-  if (!Array.isArray(p.rows) || !p.rows.length || p.rows.length > 20) return { error: fieldFail('Enter the prices.', 'rows', 'Enter the prices.') };
-  const allowed = layoutsOf(byLayout);
+  if (!Array.isArray(p.rows) || !p.rows.length || p.rows.length > 60) return { error: fieldFail('Enter the prices.', 'rows', 'Enter the prices.') };
+  const allowed = layoutsOf(byLayout, grid);
   const seen = new Set<string>();
   for (const r of p.rows) {
     const layout = r?.layout ?? 'all';
@@ -165,14 +173,14 @@ export async function writePrices(env: Env, itemId: string, set: PriceSet, userI
 export const LABEL = {
   domain: { cleaning: 'Cleaning', maintenance: 'Maintenance' } as Record<string, string>,
   category: {
-    turnover: 'Standard clean', deep_clean: 'Deep clean', light_clean: 'Light clean', laundry: 'Laundry', aircon: 'Aircon', plumbing: 'Plumbing',
+    turnover: 'Basic clean', deep_clean: 'Deep clean', light_clean: 'Light clean', laundry: 'Laundry', aircon: 'Aircon', plumbing: 'Plumbing',
     electrical: 'Electrical', furniture: 'Furniture', appliance: 'Appliance', cleaning: 'Cleaning', general: 'General', other: 'Other',
   } as Record<string, string>,
   layout: {
     all: 'All', studio: 'Studio', '1_bedroom': '1 bedroom', '2_bedroom': '2 bedroom', '3_bedroom': '3 bedroom', '4_plus_bedroom': '4+ bedroom',
     duplex: 'Duplex', dual_key: 'Dual key', penthouse: 'Penthouse', other: 'Other',
   } as Record<string, string>,
-  cleanType: { turnover: 'Standard clean', deep_clean: 'Deep clean', light_clean: 'Light clean' } as Record<string, string>,
+  cleanType: { turnover: 'Basic clean', deep_clean: 'Deep clean', light_clean: 'Light clean' } as Record<string, string>,
   uom: { job: 'Job', unit: 'Unit', hour: 'Hour', visit: 'Visit', set: 'Set' } as Record<string, string>,
 };
 export const SHEET_COLUMNS = ['Code', 'Name', 'Type', 'Sub-category', 'Unit of measure', 'Priced by layout', 'Reservation clean type', 'Layout',
@@ -183,7 +191,8 @@ export function fromLabel(map: Record<string, string>, v: unknown): string | nul
   const t = String(v ?? '').trim().replace(/^'/, '').toLowerCase();
   if (!t) return null;
   for (const [k, l] of Object.entries(map)) if (k.toLowerCase() === t || l.toLowerCase() === t) return k;
-  return undefined;
+  // "Standard clean" was renamed "Basic clean" (23 Oct 2026); sheets filled in before that still import.
+  return t === 'standard clean' && 'turnover' in map ? 'turnover' : undefined;
 }
 /** "RM 1,200.50", "1200.5", "80" -> sen. Blank -> null. Anything else -> NaN. */
 export function senOf(v: unknown): number | null {
@@ -200,14 +209,14 @@ const yesNo = (v: unknown) => {
 const blank = (v: unknown) => v == null || String(v).trim() === '';
 
 /** Export rows for the item list as it stands today. */
-export function sheetRows(items: any[], prices: Map<string, PriceRow[]>, today: string): string[][] {
+export function sheetRows(items: any[], prices: Map<string, PriceRow[]>, today: string, grid: Grid = DEFAULT_GRID()): string[][] {
   const out: string[][] = [];
   for (const i of items) {
-    const v = itemView(i, prices.get(i.id) ?? [], today);
-    for (const l of layoutsOf(i.by_layout)) {
+    const v = itemView(i, prices.get(i.id) ?? [], today, grid);
+    for (const l of layoutsOf(i.by_layout, grid)) {
       const c = v.current[l];
       out.push([i.code, i.name, LABEL.domain[i.domain] ?? i.domain, LABEL.category[i.category] ?? i.category, LABEL.uom[i.unit_label] ?? i.unit_label,
-        i.by_layout ? 'Yes' : 'No', i.clean_kind ? LABEL.cleanType[i.clean_kind] : '', LABEL.layout[l] ?? l,
+        i.by_layout ? 'Yes' : 'No', i.clean_kind ? LABEL.cleanType[i.clean_kind] : '', grid.labels[l] ?? l,
         rmText(c.ownerPrice), rmText(c.internalCost), c.ownerPrice != null && c.internalCost != null ? rmText(c.ownerPrice - c.internalCost) : '',
         c.effectiveFrom ?? '', i.active ? 'Yes' : 'No', i.notes ?? '']);
     }
@@ -225,7 +234,7 @@ export interface ImportPlan {
 
 /** Works out what an imported sheet changes. Blank cells leave things as they are; a changed price becomes a price
  *  change from `effectiveFrom`. "Margin" and "Price since" are for reading and are ignored. Nothing is written here. */
-export function planImport(raw: Record<string, unknown>[], items: any[], prices: Map<string, PriceRow[]>, effectiveFrom: string): ImportPlan {
+export function planImport(raw: Record<string, unknown>[], items: any[], prices: Map<string, PriceRow[]>, effectiveFrom: string, grid: Grid = DEFAULT_GRID()): ImportPlan {
   const plan: ImportPlan = { errors: [], creates: [], updates: [], prices: [], unchanged: 0 };
   const groups = new Map<string, { line: number; get: (c: string) => unknown }[]>();
   raw.forEach((r, i) => {
@@ -272,14 +281,14 @@ export function planImport(raw: Record<string, unknown>[], items: any[], prices:
     const notes = first.get('Notes') === undefined ? cur?.notes ?? null : String(first.get('Notes') ?? '').trim().slice(0, 500) || null;
 
     // Prices, one row per layout.
-    const allowed = layoutsOf(byLayout), seen = new Set<string>();
+    const allowed = layoutsOf(byLayout, grid), seen = new Set<string>();
     const rowsOut: PriceSet['rows'] = [];
     let bad = false;
     const had = prices.get(cur?.id ?? '') ?? [];
     for (const r of rows) {
-      const layout = byLayout ? fromLabel(LABEL.layout, r.get('Layout')) : 'all';
-      if (!layout || !allowed.includes(layout)) { err(r.line, byLayout ? `Layout must be one of: ${allowed.map(l => LABEL.layout[l]).join(', ')}.` : 'This item has one price: leave Layout as All.'); bad = true; break; }
-      if (seen.has(layout)) { err(r.line, `${LABEL.layout[layout]} is listed twice.`); bad = true; break; }
+      const layout = byLayout ? fromLabel(grid.labels, r.get('Layout')) : 'all';
+      if (!layout || !allowed.includes(layout)) { err(r.line, byLayout ? `Layout must be one of: ${allowed.map(l => grid.labels[l] ?? l).join(', ')}.` : 'This item has one price: leave Layout as All.'); bad = true; break; }
+      if (seen.has(layout)) { err(r.line, `${grid.labels[layout] ?? layout} is listed twice.`); bad = true; break; }
       seen.add(layout);
       const owner = senOf(r.get('Owner price (RM)')), internal = senOf(r.get('Internal cost (RM)'));
       if (Number.isNaN(owner) || Number.isNaN(internal)) { err(r.line, 'Prices are numbers like 80 or 80.00, or empty.'); bad = true; break; }

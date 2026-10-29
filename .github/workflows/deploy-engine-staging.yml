@@ -1,7 +1,7 @@
 # Publishes the supply chain engine (engine/) to STAGING: worker conts-scm-engine-staging and the screens site
 # theconts-scm, both pointed at the staging database. Runs when a push to `staging` changes it (a one-off preview)
-# and when a merge to `main` changes it, since sync-staging-branch.yml then makes `staging` equal to `main` with a
-# push that cannot start other workflows. Also by hand. Publishes only the part that changed: engine/backend is the
+# and when a merge to `main` changes it (`staging` only moves through pull requests, so pushes to main are
+# watched directly). Also by hand. Publishes only the part that changed: engine/backend is the
 # server, engine/frontend the screens. Uses the repository secret CLOUDFLARE_API_TOKEN (Conts ERP account).
 name: Deploy engine to staging
 on:

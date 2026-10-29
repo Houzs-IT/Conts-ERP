@@ -181,15 +181,24 @@ export async function importListing(db: Db, plan: ListingPlan, now: string): Pro
 /* Reservations                                                        */
 /* ------------------------------------------------------------------ */
 
-export async function importReservations(db: Db, plan: ReservationPlan, now: string): Promise<ImportResult> {
-  const res = empty();
+/** What an API pull changed, for the caller to replan cleaning (cleaning.ts needs the environment, this file does not). */
+export interface ReservationEffects { live: string[]; cancelled: string[]; checkoutMoved: string[] }
+
+/** source 'api' (the HostPlatform API pull) only moves an existing booking's unit, dates, guest count and references,
+ *  and cancels or reinstates it. Everything else stays as Property OS has it: money (the API has no taxes, deposits or
+ *  payment received), channel (the API cannot tell an owner stay from a direct booking), notes (they carry the workbook
+ *  mark), the guest record (guest documents hang off it) and where the guest is in the stay (staff tick check-in and
+ *  checkout). A new booking that overlaps one made in Property OS is left out rather than doubled. */
+export async function importReservations(db: Db, plan: ReservationPlan, now: string, opts: { source?: 'csv' | 'api' } = {}): Promise<ImportResult & { effects?: ReservationEffects }> {
+  const api = opts.source === 'api';
+  const res: ImportResult & { effects?: ReservationEffects } = empty();
   res.errors.push(...plan.errors);
   const snap = await snapshot(db);
   const unitOf = new Map(snap.units.map(u => [unitKey(u.propertyName, u.unitNumber), u.id]));
 
   const ids = plan.reservations.map(r => r.id), refs = plan.reservations.map(r => r.externalRef);
-  const existing = plan.reservations.length ? await db.all<{ id: string; external_ref: string | null; unit_id: string }>(`
-    SELECT id, external_ref, unit_id FROM reservations
+  const existing = plan.reservations.length ? await db.all<{ id: string; external_ref: string | null; unit_id: string; state: string; check_out: string }>(`
+    SELECT id, external_ref, unit_id, state, check_out FROM reservations
     WHERE id IN (SELECT jsonb_array_elements_text(?::text::jsonb)) OR external_ref IN (SELECT jsonb_array_elements_text(?::text::jsonb))`,
     JSON.stringify(ids), JSON.stringify(refs)) : [];
   const byId = new Set(existing.map(e => e.id));
@@ -201,11 +210,23 @@ export async function importReservations(db: Db, plan: ReservationPlan, now: str
       ON x.unit_id = r.unit_id AND x.check_in = r.check_in AND x.check_out = r.check_out
     WHERE r.id ~ '^hp-res-(ab|bc)-'`, JSON.stringify(keyed)) : [];
   const taken = new Set<string>();
+  // API only: bookings Property OS made itself (not 'hp-res-') that a new HostPlatform booking would sit on top of.
+  const fresh = api ? plan.reservations.filter(r => !byId.has(r.id) && r.state !== 'cancelled' && r.channel !== 'maintenance_block') : [];
+  const clashes = fresh.length ? await db.all<{ incoming: string; id: string }>(`
+    SELECT x.id AS incoming, r.id FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, unit_id text, check_in text, check_out text)
+    JOIN reservations r ON r.unit_id = x.unit_id AND r.check_in < x.check_out AND r.check_out > x.check_in
+    WHERE r.id NOT LIKE 'hp-res-%' AND r.state NOT IN ('cancelled','no_show','inquiry') AND r.channel != 'maintenance_block'`,
+    JSON.stringify(fresh.map(r => ({ id: r.id, unit_id: unitOf.get(unitKey(r.building, r.unitNumber)) ?? '', check_in: r.checkIn, check_out: r.checkOut })))) : [];
+  const clashOf = new Map(clashes.map(c => [c.incoming, c.id]));
+  const prevOf = new Map(existing.map(e => [e.id, e]));
+  const effects: ReservationEffects = { live: [], cancelled: [], checkoutMoved: [] };
 
   const keep: Record<string, unknown>[] = [], usedGuests = new Set<string>(), unitFacts = new Map<string, { max: number | null; size: number | null; at: string }>();
   for (const r of plan.reservations) {
     const unitId = unitOf.get(unitKey(r.building, r.unitNumber));
     if (!unitId) { res.errors.push({ row: r.row, reason: `${r.building} ${r.unitNumber} is not in Property OS. Import the HostPlatform listing first.` }); continue; }
+    const clash = clashOf.get(r.id);
+    if (clash) { res.skippedRows.push({ row: r.code, reason: `${r.code} overlaps reservation ${clash}, made in Property OS on the same unit; left out so the stay is not counted twice.` }); continue; }
     let id = r.id;
     if (!byId.has(id)) {
       const same = existing.filter(e => e.external_ref === r.externalRef);
@@ -215,9 +236,18 @@ export async function importReservations(db: Db, plan: ReservationPlan, now: str
       if (fromWorkbook) { id = fromWorkbook.id; taken.add(id); }
       else if (fromChannex) { res.skippedRows.push({ row: r.row, reason: `${r.code} is already in Property OS from Channex; left as it is.` }); continue; }
     }
-    if (r.guestId) usedGuests.add(r.guestId);
+    const prev = prevOf.get(id);
+    // An API row only brings its guest when the booking is new: an existing booking keeps its guest record.
+    if (r.guestId && !(api && prev)) usedGuests.add(r.guestId);
+    if (api) {
+      if (r.state === 'cancelled') { if (prev && prev.state !== 'cancelled') effects.cancelled.push(id); }
+      else {
+        effects.live.push(id);
+        if (prev && prev.check_out !== r.checkOut) effects.checkoutMoved.push(id);
+      }
+    }
     keep.push({
-      id, unit_id: unitId, guest_id: r.guestId, channel: r.channel, external_ref: r.externalRef, state: r.state, check_in: r.checkIn, check_out: r.checkOut,
+      id, unit_id: unitId, guest_id: api && prev ? null : r.guestId, channel: r.channel, external_ref: r.externalRef, state: r.state, check_in: r.checkIn, check_out: r.checkOut,
       guests_count: r.guestsCount, gross_booking_value: r.gross, channel_fee: r.fee, collected_revenue: r.collected, currency: r.currency,
       notes: r.notes, created_at: r.createdAt ?? now, updated_at: now, ...r.money,
     });
@@ -234,11 +264,18 @@ export async function importReservations(db: Db, plan: ReservationPlan, now: str
 
   // Once the owner workbook has set a booking's money, a later HostPlatform run leaves the money alone.
   const wb = `reservations.notes LIKE '%${WORKBOOK_MONEY_MARK}%'`;
+  // API: a cancellation cancels, a booking HostPlatform has live again is reinstated, any other state is staff's.
+  // Rows where nothing changed are not rewritten (and not counted as updated), so a repeat pull reads 0 updated.
+  const apiState = `CASE WHEN EXCLUDED.state = 'cancelled' THEN 'cancelled' WHEN reservations.state = 'cancelled' THEN 'confirmed' ELSE reservations.state END`;
+  const apiCols = ['unit_id', 'external_ref', 'check_in', 'check_out', 'guests_count'];
+  const apiOnConflict = `DO UPDATE SET ${apiCols.map(c => `${c} = EXCLUDED.${c}`).join(', ')}, guest_id = COALESCE(reservations.guest_id, EXCLUDED.guest_id),
+      state = ${apiState}, updated_at = EXCLUDED.updated_at
+    WHERE (${apiCols.map(c => `reservations.${c}`).join(', ')}, reservations.state) IS DISTINCT FROM (${apiCols.map(c => `EXCLUDED.${c}`).join(', ')}, ${apiState})`;
   add(res, 'reservations', await upsert(db, 'reservations',
     [['id', 'text'], ['unit_id', 'text'], ['guest_id', 'text'], ['channel', 'text'], ['external_ref', 'text'], ['state', 'text'], ['check_in', 'text'], ['check_out', 'text'],
      ['guests_count', 'int'], ['gross_booking_value', 'int'], ['channel_fee', 'int'], ['collected_revenue', 'int'], ['currency', 'text'], ['notes', 'text'], ['created_at', 'text'], ['updated_at', 'text'],
      ...RESERVATION_MONEY_COLUMNS.map(c => [c, MONEY_TEXT.has(c) ? 'text' : 'int'] as [string, string])],
-    keep, `DO UPDATE SET unit_id = EXCLUDED.unit_id, guest_id = EXCLUDED.guest_id, channel = EXCLUDED.channel, external_ref = EXCLUDED.external_ref,
+    keep, api ? apiOnConflict : `DO UPDATE SET unit_id = EXCLUDED.unit_id, guest_id = EXCLUDED.guest_id, channel = EXCLUDED.channel, external_ref = EXCLUDED.external_ref,
       ${RESERVATION_MONEY_COLUMNS.map(c => WORKBOOK_OWNED.has(c)
         // The Airbnb earnings report is the better source for these two; once it has set a booking's money, HostPlatform does not overwrite them.
         ? `${c} = CASE WHEN ${wb} THEN reservations.${c} ELSE EXCLUDED.${c} END`
@@ -262,11 +299,30 @@ export async function importReservations(db: Db, plan: ReservationPlan, now: str
     await db.run(`UPDATE units u SET max_guests = COALESCE(x.max_guests, u.max_guests), size_sqft = COALESCE(x.size_sqft, u.size_sqft)
       FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, max_guests int, size_sqft int) WHERE u.id = x.id`, JSON.stringify(facts));
   }
-  return finish(res, 'reservations');
+  if (api) res.effects = effects;
+  finish(res, 'reservations');
+  return res;
+}
+
+/** Live HostPlatform reservations Property OS still has on these units, in from..to, that HostPlatform no longer sent
+ *  (deleted there, or moved to a unit outside this pull). Read-only: listed for staff, never deleted or cancelled here,
+ *  since a pull that misses rows must not take bookings away. Blocks are not checked (the API does not send them), nor
+ *  the workbook's own 'hp-res-ab-' / 'hp-res-bc-' rows (they carry the booking site's code, not HostPlatform's). */
+export async function notOnSource(db: Db, unitIds: string[], from: string, to: string, sentIds: string[]): Promise<RowError[]> {
+  if (!unitIds.length) return [];
+  const rows = await db.all<{ id: string; unit_number: string; check_in: string; check_out: string; channel: string; state: string }>(`
+    SELECT r.id, u.unit_number, r.check_in, r.check_out, r.channel, r.state FROM reservations r JOIN units u ON u.id = r.unit_id
+    WHERE r.unit_id IN (SELECT jsonb_array_elements_text(?::text::jsonb)) AND r.check_out > ? AND r.check_in < ?
+      AND r.id LIKE 'hp-res-%' AND r.id NOT LIKE 'hp-res-ab-%' AND r.id NOT LIKE 'hp-res-bc-%'
+      AND r.channel != 'maintenance_block' AND r.state NOT IN ('cancelled','no_show')
+      AND r.id NOT IN (SELECT jsonb_array_elements_text(?::text::jsonb))
+    ORDER BY r.check_in, r.id`, JSON.stringify(unitIds), from, to, JSON.stringify(sentIds));
+  return rows.map(r => ({ row: r.id.replace(/^hp-res-/, ''),
+    reason: `${r.unit_number}, ${r.check_in} to ${r.check_out} (${Object.entries(CHANNEL_LABEL).find(([k]) => k === r.channel)?.[1] ?? r.channel}) is live here but HostPlatform no longer has it. Check it and cancel it here if it is gone.` }));
 }
 
 /* ------------------------------------------------------------------ */
-/* Workbook: units, owners, contracts                                  */
+/* Workbook: units, owners, contracts                                */
 /* ------------------------------------------------------------------ */
 
 export async function importWorkbookUnits(db: Db, units: WorkbookUnitIn[], now: string, today = new Date(Date.parse(now) + 8 * 3600e3).toISOString().slice(0, 10)): Promise<ImportResult> {
@@ -404,10 +460,9 @@ export async function importWorkbookUnits(db: Db, units: WorkbookUnitIn[], now: 
       grr_amount = EXCLUDED.grr_amount, starts_on = EXCLUDED.starts_on, ends_on = EXCLUDED.ends_on,
       agent_fee_pct = EXCLUDED.agent_fee_pct, minimum_guarantee = EXCLUDED.minimum_guarantee, minimum_guarantee_annual = EXCLUDED.minimum_guarantee_annual,
       guarantee_starts_on = EXCLUDED.guarantee_starts_on, guarantee_ends_on = EXCLUDED.guarantee_ends_on,
-      agreement_file = EXCLUDED.agreement_file, misc_charges = EXCLUDED.misc_charges,
-      revenue_model = CASE WHEN owner_contracts.revenue_model IN ('master_lease','long_term','wh_long_term') THEN owner_contracts.revenue_model ELSE NULL END`));
-  // revenue_model NULL reads from model / minimum guarantee / package (revenueModel.ts), so a re-import that changes those
-  // is never contradicted by an older choice; the models the workbook cannot express are kept.
+      agreement_file = EXCLUDED.agreement_file, misc_charges = EXCLUDED.misc_charges`));
+  // revenue_model and contract_code are not in the list above: the import never writes them, so any value there was
+  // saved on the Contract tab and a re-import keeps it. With none saved they are read from model / minimum guarantee / package (revenueModel.ts).
   if (links.length) {
     await db.run(`UPDATE units u SET contract_id = x.contract_id FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, contract_id text) WHERE u.id = x.id AND u.contract_id IS NULL`, JSON.stringify(links));
     await db.run(`UPDATE owner_contracts c SET unit_id = x.id FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, contract_id text) WHERE c.id = x.contract_id AND c.unit_id IS NULL`, JSON.stringify(links));

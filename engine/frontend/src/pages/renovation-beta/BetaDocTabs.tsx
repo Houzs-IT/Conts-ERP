@@ -20,9 +20,10 @@ import { dayMonth, mytDay } from "./renovationBetaModel";
 import { clockOf, dayTitle } from "./renovationBetaPhotosModel";
 import { betaMediaApi } from "./renovationBetaMediaApi";
 import { betaSiteApi, type SiteDelivery, type SitePhoto } from "./renovationBetaSiteApi";
-import { BETA } from "./renovationBetaTheme";
+import { BETA, TONES } from "./renovationBetaTheme";
 import { doStatusWords } from "../scm-v2/renovationDoStatus";
 import { statusLabel } from "../../vendor/scm/lib/status-pill";
+import { BetaLoading } from "./BetaLoading";
 
 export function photoAsMedia(p: SitePhoto): MediaItem {
   return { id: p.id, path: p.path, kind: p.kind ?? (p.image ? "image" : "file"), name: p.name, label: p.source === "pod" ? "POD" : null, at: p.at, caption: p.area };
@@ -103,9 +104,9 @@ function DocRow({ d, day, today, last, lines, all, focused, canWrite, onAdd, ope
       </div>
       <div style={{ padding: last ? 0 : "0 0 22px", minWidth: 0 }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "12px 14px", borderRadius: 12, background: BETA.surface, border: `1px solid ${focused ? BETA.accent : BETA.line}`,
-          ...(focused ? { boxShadow: `0 0 0 2px ${BETA.accent}33` } : {}) }}>
+          ...(focused ? { boxShadow: `0 0 0 2px color-mix(in srgb, ${BETA.accent} 20%, transparent)` } : {}) }}>
           <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
-            <span aria-hidden="true" style={{ flex: "none", width: 28, height: 28, borderRadius: 14, background: isDo ? "#EEF2F1" : "#E4F1EF", color: isDo ? WS.blue : BETA.accent, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <span aria-hidden="true" style={{ flex: "none", width: 28, height: 28, borderRadius: 14, background: isDo ? TONES.grey.soft : TONES.accent.soft, color: isDo ? WS.blue : BETA.accent, display: "flex", alignItems: "center", justifyContent: "center" }}>
               {isDo ? <Truck size={14} /> : <PackageCheck size={14} />}
             </span>
             <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, overflowWrap: "anywhere" }}>{d.no}</h3>
@@ -125,7 +126,7 @@ function DocRow({ d, day, today, last, lines, all, focused, canWrite, onAdd, ope
             </div>
           )}
           {d.note && (
-            <div style={{ display: "flex", gap: 8, alignItems: "flex-start", padding: "8px 10px", borderRadius: 8, background: "#FBF8EF", borderLeft: `3px solid ${WS.amberDot}`, fontSize: 13, color: WS.text2, whiteSpace: "pre-line", overflowWrap: "anywhere" }}>
+            <div style={{ display: "flex", gap: 8, alignItems: "flex-start", padding: "8px 10px", borderRadius: 8, background: TONES.amber.soft, borderLeft: `3px solid ${WS.amberDot}`, fontSize: 13, color: WS.text2, whiteSpace: "pre-line", overflowWrap: "anywhere" }}>
               <StickyNote size={14} aria-hidden="true" style={{ flex: "none", marginTop: 2, color: WS.amber }} />
               <span><span style={{ fontWeight: 600, color: BETA.ink }}>Note </span>{d.note}</span>
             </div>
@@ -214,11 +215,11 @@ function DocList({ p, type }: { p: BetaTabProps; type: SiteDelivery["type"] }): 
           {VIEWS.map((v) => <WsFilterPill key={v.key} on={view === v.key} onClick={() => setView(v.key)}>{v.label(isDo)}</WsFilterPill>)}
         </div>
       )}
-      {!site.data ? <p style={{ fontSize: 14, color: BETA.muted }}>Loading...</p>
+      {!site.data ? <BetaLoading label="Loading" size="inline" />
         : !site.data.ready ? <WsEmpty>Deliveries are not switched on for this system yet.</WsEmpty>
         : list.length === 0 ? <WsEmpty>{isDo ? "No delivery orders yet. Each DO made from this project's sales order shows here with its POD." : "No goods receipts yet. Each GR of this project's POs shows here with its photos."}</WsEmpty>
         : view === "doc" ? (
-          <ol aria-label={`${title} timeline`} style={{ listStyle: "none", margin: 0, padding: 0 }}>
+          <ol className="stag" aria-label={`${title} timeline`} style={{ listStyle: "none", margin: 0, padding: 0 }}>
             {list.map((d, i) => {
               const day = d.at ? mytDay(d.at) : null;
               const before = i > 0 ? list[i - 1].at : null;
@@ -231,7 +232,7 @@ function DocList({ p, type }: { p: BetaTabProps; type: SiteDelivery["type"] }): 
             })}
           </ol>
         ) : lines.error && !lines.data ? <p role="alert" style={{ fontSize: 14, color: WS.red }}>The order lines could not be loaded: {lines.error}</p>
-        : !lines.data ? <p style={{ fontSize: 14, color: BETA.muted }}>Loading...</p>
+        : !lines.data ? <BetaLoading label="Loading" size="inline" />
         : groups.length === 0 ? <WsEmpty>None of the lines on these {isDo ? "delivery orders" : "goods receipts"} is on the project's sales order.</WsEmpty>
         : (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>

@@ -1,10 +1,10 @@
 /** A unit's contract as the Contract tab edits it (one revenue model, only that model's fields), its history, and
  *  the "how this month's statement works" example worked out by the statement engine on real figures. */
 import { loadInputs, withYearToDate, computeMonth, statementSettings, termsFor, unitForMonth, type Query, type UnitRow, type UnitMonth } from './ownerStatement';
-import { modelOf, termsLabel, draftColumns, isShare, isTenancy, type RevenueModel, type ContractDraft } from './revenueModel';
+import { modelOf, isRevenueModel, termsLabel, draftColumns, isShare, isTenancy, RENT_TO_RENT, RENT_TO_RENT_KEYS, type RevenueModel, type ContractDraft, type RentToRentKey } from './revenueModel';
 import { monthEndExclusive } from './revenue';
 import { shiftMonth } from './expenses';
-import { codeOf, type ContractCode } from './unitPurpose';
+import { codeOf, isContractCode, type ContractCode } from './unitPurpose';
 
 export interface ContractView {
   id: string | null; revenueModel: RevenueModel; termsLabel: string;
@@ -14,13 +14,24 @@ export interface ContractView {
   yearlyGuarantee: number;
   /** The staff's short code (WH, PS, PS GRR, ...). */
   contractCode: ContractCode;
+  /** False while `contractCode` is only read from the terms (nothing saved on the Contract tab or by a migration). */
+  typeStored: boolean;
   /** The agreement or memo file a renewal was saved with. */
   agreementDocumentId: string | null;
   monthlyRent: number; deposit: number | null; tenantName: string | null;
+  /** MANAGE: the owner's amount a month, sen; null on every other code. */
+  ownerAmount: number | null;
   startsOn: string | null; endsOn: string | null; renewsOn: string | null; miscCharges: boolean;
+  /** Rent to rent (0161), recorded only: the other deposits we pay, and what we rent the unit out for. Sen or null. */
+  rentToRent: Record<RentToRentKey, number | null>;
   /** Other units on the same contract record (older agreements covered every unit of an owner). */
   sharedWith: number; createdAt: string | null;
 }
+
+const noRentToRent = (): Record<RentToRentKey, number | null> => Object.fromEntries(RENT_TO_RENT_KEYS.map(k => [k, null])) as Record<RentToRentKey, number | null>;
+/** The 0161 columns of a contract row; null where the row (or the database) has none. */
+const rentToRentOf = (c: Record<string, unknown>): Record<RentToRentKey, number | null> =>
+  Object.fromEntries(RENT_TO_RENT_KEYS.map(k => [k, c[RENT_TO_RENT[k]] == null ? null : Number(c[RENT_TO_RENT[k]])])) as Record<RentToRentKey, number | null>;
 
 /** A contract row (or, with no contract, the unit's own split) as the screen shows it. */
 export function contractView(c: any | null, unit: { split_kind?: string | null; split_value?: number | null; package?: string | null; misc_charges?: number | null }, defaultFeePct: number, sharedWith = 0): ContractView {
@@ -30,8 +41,8 @@ export function contractView(c: any | null, unit: { split_kind?: string | null; 
     const rent = model === 'grr' ? Number(unit.split_value ?? 0) : 0;
     return {
       id: null, revenueModel: model, termsLabel: termsLabel(model, { ownerPct, rent }), ownerPct, managementPct: ownerPct == null ? null : 100 - ownerPct, agentPct: null, agentName: null,
-      minimumGuarantee: 0, guaranteeStartsOn: null, guaranteeEndsOn: null, yearlyGuarantee: 0, contractCode: codeOf(model), agreementDocumentId: null, monthlyRent: rent, deposit: null, tenantName: null,
-      startsOn: null, endsOn: null, renewsOn: null, miscCharges: Number(unit.misc_charges ?? 0) === 1, sharedWith: 0, createdAt: null,
+      minimumGuarantee: 0, guaranteeStartsOn: null, guaranteeEndsOn: null, yearlyGuarantee: 0, contractCode: codeOf(model), typeStored: false, agreementDocumentId: null, monthlyRent: rent, deposit: null, tenantName: null, ownerAmount: null,
+      startsOn: null, endsOn: null, renewsOn: null, miscCharges: Number(unit.misc_charges ?? 0) === 1, rentToRent: noRentToRent(), sharedWith: 0, createdAt: null,
     };
   }
   const model = modelOf({ ...c, package: unit.package });
@@ -46,11 +57,12 @@ export function contractView(c: any | null, unit: { split_kind?: string | null; 
     ownerPct, managementPct: share ? fee - (agent ?? 0) : isTenancy(model) ? fee : null, agentPct: share ? agent : null, agentName: c.agent_name ?? null,
     minimumGuarantee: model === 'management_guarantee' ? Number(c.minimum_guarantee ?? 0) : 0,
     yearlyGuarantee: model === 'management_yearly_guarantee' ? Number(c.minimum_guarantee_annual ?? 0) : 0,
-    contractCode: codeOf(model, c.contract_code), agreementDocumentId: c.agreement_document_id ?? null,
+    contractCode: codeOf(model, c.contract_code), typeStored: isContractCode(c.contract_code) || isRevenueModel(c.revenue_model), agreementDocumentId: c.agreement_document_id ?? null,
     guaranteeStartsOn: c.guarantee_starts_on ?? null, guaranteeEndsOn: c.guarantee_ends_on ?? null,
+    ownerAmount: code === 'MANAGE' ? Number(c.grr_amount ?? 0) : null,
     monthlyRent: share ? 0 : Number(c.grr_amount ?? 0), deposit: c.deposit_amount == null ? null : Number(c.deposit_amount), tenantName: c.tenant_name ?? null,
     startsOn: c.starts_on ?? null, endsOn: c.ends_on ?? null, renewsOn: c.renews_on ?? null, miscCharges: Number(c.misc_charges ?? 0) === 1,
-    sharedWith, createdAt: c.created_at ?? null,
+    rentToRent: rentToRentOf(c), sharedWith, createdAt: c.created_at ?? null,
   };
 }
 

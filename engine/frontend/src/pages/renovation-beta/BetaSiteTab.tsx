@@ -16,16 +16,17 @@ import { asMedia, betaMediaApi, type PhotoCategory } from "./renovationBetaMedia
 import {
   CATEGORY_CHIP, cardLine, clockOf, countBy, dayTitle, mediaCount, filterPhotos, photoAreas, photoFilters, photoTimeline, type PhotoCard, type PhotoFilter,
 } from "./renovationBetaPhotosModel";
-import { BETA, type BetaTone } from "./renovationBetaTheme";
+import { BETA, TONES, type BetaTone } from "./renovationBetaTheme";
+import { BetaLoading } from "./BetaLoading";
 
 /* One accent per category, from the Beta palette: teal for the site team, blue for deliveries, amber for defects. */
 export const CATEGORY_TONE: Readonly<Record<PhotoCategory, BetaTone>> = {
-  progress: [BETA.accent, "#E4F1EF"],
-  do: [WS.blue, "#EEF2F1"],
-  gr: [WS.blue, "#EEF2F1"],
+  progress: [BETA.accent, TONES.accent.soft],
+  do: [WS.blue, TONES.grey.soft],
+  gr: [WS.blue, TONES.grey.soft],
   po: [WS.text2, WS.chip],
   measure: [WS.text2, WS.chip],
-  defect: [WS.amber, "#FDF1E2"],
+  defect: [WS.amber, TONES.amber.soft],
 };
 
 function CategoryChip({ c }: { c: PhotoCategory }): ReactElement {
@@ -100,12 +101,12 @@ export function BetaSiteTab({ projectId, today, canWrite, onDone }: BetaTabProps
         )}
       </div>
 
-      {q.loading && !q.data ? <p style={{ fontSize: 14, color: BETA.muted }}>Loading photos...</p>
+      {q.loading && !q.data ? <BetaLoading label="Loading photos" size="inline" />
         : q.error && !q.data ? <p role="alert" style={{ fontSize: 14, color: WS.red }}>The photos could not be loaded: {q.error}</p>
         : shown.length === 0 ? (
           <WsEmpty>{photos.length === 0 ? "No photos yet. Progress photos, PODs, goods receipts, the site measure and defects all show here." : "No photos match this filter."}</WsEmpty>
         ) : (
-          <ol aria-label="Photo timeline" style={{ listStyle: "none", margin: 0, padding: 0 }}>
+          <ol className="stag" aria-label="Photo timeline" style={{ listStyle: "none", margin: 0, padding: 0 }}>
             {events.map((e, i) => <EventRow key={`${e.c.key}-${i}`} c={e.c} day={e.day} today={today} last={i === events.length - 1} />)}
           </ol>
         )}

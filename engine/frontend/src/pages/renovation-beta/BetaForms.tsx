@@ -14,10 +14,11 @@ import {
 import {
   addAmendment, assignPeople, boardApi, type EventBody,
 } from "./renovationBetaBoardApi";
-import { BETA } from "./renovationBetaTheme";
+import { BETA, PILL_GLASS, PILL_MAIN, TONES } from "./renovationBetaTheme";
 import { MediaPicker } from "./BetaMedia";
 import { uploadMeasureFile } from "./renovationBetaMediaApi";
 import { simpleApi } from "../projects/renovation/simpleApi";
+import { AnimatePresence } from "motion/react";
 
 export type BetaDialog =
   | { t: "work"; ev: CalEvent | null; day: string }
@@ -39,12 +40,12 @@ export interface FormEnv {
 }
 
 const IN: CSSProperties = {
-  minHeight: 40, border: `1px solid ${BETA.border}`, borderRadius: 8, padding: "0 10px", font: "inherit", fontSize: 14, background: BETA.surface, width: "100%", color: BETA.ink,
+  minHeight: 40, border: `1px solid ${BETA.border}`, borderRadius: 10, padding: "0 10px", font: "inherit", fontSize: 14, background: BETA.field, width: "100%", color: BETA.ink,
 };
 const LB: CSSProperties = { display: "flex", flexDirection: "column", gap: 4, fontSize: 12, color: BETA.muted };
 const TWO: CSSProperties = { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 };
-const NOTE: CSSProperties = { fontSize: 13, color: "#3F4947", padding: "10px 12px", borderRadius: 8, background: "#F2F5F4" };
-const FOOT_BTN: CSSProperties = { minHeight: 42, padding: "0 14px", border: `1px solid ${BETA.border}`, borderRadius: 8, background: BETA.surface, font: "inherit", fontWeight: 600, cursor: "pointer", color: BETA.ink };
+const NOTE: CSSProperties = { fontSize: 13, color: TONES.grey.ink, padding: "10px 12px", borderRadius: 8, background: BETA.chip };
+const FOOT_BTN: CSSProperties = { ...PILL_GLASS, minHeight: 42, padding: "0 16px", font: "inherit", fontWeight: 600, cursor: "pointer" };
 
 function Field({ label, children }: { label: string; children: ReactNode }): ReactElement {
   return <label style={LB}>{label}{children}</label>;
@@ -60,12 +61,16 @@ interface ModalProps {
   children: ReactNode;
   /** The left-hand destructive button, e.g. Delete. */
   danger?: { label: string; onClick: () => void };
+  /** A wider box for a picture grid (880px, not 520px). */
+  wide?: boolean;
+  /** The words on the submit button; Save when absent. */
+  saveLabel?: string;
 }
 
 const FOCUSABLE = "input:not([type=hidden]):not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled]), a[href]";
 
 /** The mockup's modal: dim page, a white 520px form with the title, fields and Cancel / Save. */
-export function BetaModal({ title, sub, onClose, onSubmit, error, busy, children, danger }: ModalProps): ReactElement {
+export function BetaModal({ title, sub, onClose, onSubmit, error, busy, children, danger, wide = false, saveLabel = "Save" }: ModalProps): ReactElement {
   const titleId = useId();
   const box = useRef<HTMLFormElement>(null);
   useEffect(() => {
@@ -95,7 +100,7 @@ export function BetaModal({ title, sub, onClose, onSubmit, error, busy, children
     <div
       onKeyDown={keys}
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
-      style={{ position: "fixed", inset: 0, zIndex: 60, background: "rgba(23,32,31,.55)", overflowY: "auto", padding: "24px 16px" }}
+      style={{ position: "fixed", inset: 0, zIndex: 60, background: BETA.scrim, overflowY: "auto", padding: "24px 16px" }}
     >
       <form
         ref={box}
@@ -104,22 +109,22 @@ export function BetaModal({ title, sub, onClose, onSubmit, error, busy, children
         aria-labelledby={titleId}
         tabIndex={-1}
         onSubmit={submit}
-        style={{ outline: "none", maxWidth: 520, margin: "0 auto", background: BETA.surface, borderRadius: 14, padding: 20, display: "flex", flexDirection: "column", gap: 12, color: BETA.ink }}
+        style={{ outline: "none", maxWidth: wide ? 880 : 520, margin: "0 auto", background: BETA.surface, border: `1px solid ${BETA.glassEdge}`, boxShadow: BETA.glassShadow, borderRadius: 22, padding: 20, display: "flex", flexDirection: "column", gap: 12, color: BETA.ink }}
       >
-        <h2 id={titleId} style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>{title}</h2>
-        {sub && <div style={{ fontSize: 14, color: "#3F4947" }}>{sub}</div>}
+        <h2 id={titleId} style={{ margin: 0, fontSize: 18, fontWeight: 600, letterSpacing: "-.02em" }}>{title}</h2>
+        {sub && <div style={{ fontSize: 14, color: TONES.grey.ink }}>{sub}</div>}
         {children}
-        {error && <div role="alert" style={{ fontSize: 13, color: "#A12622", padding: "10px 12px", borderRadius: 8, background: "#FDF1F0" }}>{error}</div>}
+        {error && <div role="alert" style={{ fontSize: 13, color: TONES.red.ink, padding: "10px 12px", borderRadius: 8, background: TONES.red.soft }}>{error}</div>}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "space-between" }}>
           {danger ? (
-            <button type="button" onClick={danger.onClick} disabled={busy} style={{ minHeight: 42, padding: "0 14px", border: "1px solid #E8A5A2", borderRadius: 8, background: BETA.surface, color: "#A12622", font: "inherit", fontWeight: 600, cursor: "pointer" }}>
+            <button type="button" onClick={danger.onClick} disabled={busy} style={{ ...FOOT_BTN, border: `1px solid ${TONES.red.line}`, color: TONES.red.ink }}>
               {danger.label}
             </button>
           ) : <span />}
           <div style={{ display: "flex", gap: 8 }}>
             <button type="button" onClick={onClose} style={FOOT_BTN}>Cancel</button>
-            <button type="submit" disabled={busy} style={{ minHeight: 42, padding: "0 18px", border: 0, borderRadius: 8, background: BETA.accent, color: "#FFFFFF", font: "inherit", fontWeight: 600, cursor: busy ? "default" : "pointer", opacity: busy ? 0.7 : 1 }}>
-              {busy ? "Saving..." : "Save"}
+            <button type="submit" disabled={busy} style={{ ...PILL_MAIN, minHeight: 42, padding: "0 20px", font: "inherit", fontWeight: 600, cursor: busy ? "default" : "pointer", opacity: busy ? 0.7 : 1 }}>
+              {busy ? "Saving..." : saveLabel}
             </button>
           </div>
         </div>
@@ -172,7 +177,7 @@ function PersonOptions({ all, current, blank, skip = [] }: { all: readonly Perso
 }
 
 const AVATAR = (size: number): CSSProperties => ({
-  flex: "none", width: size, height: size, borderRadius: size / 2, background: BETA.ink, color: "#FFFFFF", fontSize: size > 28 ? 12 : 10, fontWeight: 700,
+  flex: "none", width: size, height: size, borderRadius: size / 2, background: BETA.avatar, color: "#FFFFFF", fontSize: size > 28 ? 12 : 10, fontWeight: 700,
   display: "inline-flex", alignItems: "center", justifyContent: "center",
 });
 const LIST: CSSProperties = { listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 6 };
@@ -184,7 +189,7 @@ function PersonCard({ person, name, role, tint, onRemove }: {
 }): ReactElement {
   const info = personInfo(person ? { position: person.position ?? null, department: person.department ?? null } : undefined);
   return (
-    <li style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 6px 6px 8px", minHeight: 48, borderRadius: 10, border: `1px solid ${tint ? "#A9D2CC" : BETA.line}`, background: tint ? "#E4F1EF" : BETA.surface, minWidth: 0 }}>
+    <li style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 6px 6px 8px", minHeight: 48, borderRadius: 10, border: `1px solid ${tint ? TONES.accent.line : BETA.line}`, background: tint ? TONES.accent.soft : BETA.surface, minWidth: 0 }}>
       <span aria-hidden="true" style={AVATAR(32)}>{initials(name)}</span>
       <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.25, minWidth: 0, flex: 1 }}>
         {role && <span style={ROLE}>{role}</span>}
@@ -261,13 +266,13 @@ function PeoplePick({ label, name, all, value, onChange, known, startOpen = fals
         <span style={{ fontSize: 12, color: BETA.muted }}>{label}</span>
         {!open && (
           <button type="button" name={name} onClick={start} aria-expanded={false} aria-controls={listId}
-            style={{ minHeight: 30, padding: "0 10px", border: `1px solid ${BETA.accent}`, borderRadius: 8, background: BETA.surface, color: BETA.accentInk, font: "inherit", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+            style={{ ...PILL_GLASS, minHeight: 30, padding: "0 12px", font: "inherit", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
             {value.length ? "Change people" : "Choose people"}
           </button>
         )}
       </div>
       {open && (
-        <div id={listId} onKeyDown={keys} style={{ border: `1px solid ${BETA.accent}`, borderRadius: 10, background: BETA.surface, boxShadow: "0 6px 20px rgba(23,32,31,.12)", overflow: "hidden" }}>
+        <div id={listId} onKeyDown={keys} style={{ border: `1px solid ${BETA.accent}`, borderRadius: 10, background: BETA.surface, boxShadow: BETA.glassShadow, overflow: "hidden" }}>
           <div style={{ padding: 8, borderBottom: `1px solid ${BETA.line}` }}>
             <input ref={search} type="search" aria-label={`Search people for ${label}`} placeholder="Search name, position or department" value={find} onChange={(e) => setFind(e.target.value)} style={{ ...IN, minHeight: 36 }} />
           </div>
@@ -278,7 +283,7 @@ function PeoplePick({ label, name, all, value, onChange, known, startOpen = fals
               const info = personInfo({ position: x.position ?? null, department: x.department ?? null });
               return (
                 <li key={x.id}>
-                  <label style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 8px", minHeight: 44, borderRadius: 8, cursor: "pointer", background: on ? "#E4F1EF" : undefined }}>
+                  <label style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 8px", minHeight: 44, borderRadius: 8, cursor: "pointer", background: on ? TONES.accent.soft : undefined }}>
                     <input type="checkbox" checked={on} onChange={() => toggle(x.id)} aria-label={personLabel(x)} style={{ flex: "none", width: 18, height: 18, margin: 0, accentColor: BETA.accent }} />
                     <span aria-hidden="true" style={AVATAR(28)}>{initials(x.name)}</span>
                     <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.25, minWidth: 0 }}>
@@ -290,11 +295,11 @@ function PeoplePick({ label, name, all, value, onChange, known, startOpen = fals
               );
             })}
           </ul>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: 8, borderTop: `1px solid ${BETA.line}`, background: "#FAFBFB" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: 8, borderTop: `1px solid ${BETA.line}`, background: BETA.head }}>
             <span style={{ fontSize: 12, color: BETA.muted }}>{draft.length} picked</span>
             <span style={{ display: "flex", gap: 6 }}>
               <button type="button" onClick={() => setOpen(false)} style={{ ...FOOT_BTN, minHeight: 34, fontSize: 13 }}>Cancel</button>
-              <button type="button" onClick={done} style={{ ...FOOT_BTN, minHeight: 34, fontSize: 13, background: BETA.accent, borderColor: BETA.accent, color: "#FFFFFF" }}>Done</button>
+              <button type="button" onClick={done} style={{ ...FOOT_BTN, ...PILL_MAIN, minHeight: 34, fontSize: 13 }}>Done</button>
             </span>
           </div>
         </div>
@@ -541,13 +546,13 @@ function useMeasureFields(all: readonly Person[], firstPeople: number[]): {
   const fields = (m: BoardModel): ReactElement => {
     const known = new Map(m.everyone.map((x) => [x.id, x.name] as const));
     return (
-      <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: 12, borderRadius: 10, border: `1px solid ${BETA.line}`, background: "#FAFBFB" }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: 12, borderRadius: 10, border: `1px solid ${BETA.line}`, background: BETA.head }}>
         <PeoplePick label="Measured by (required)" name="measuredBy" all={all} value={people} onChange={setPeople} known={known} />
         <Field label="Notes (optional): sizes, things to watch">
           <textarea name="measureNote" rows={3} maxLength={2000} value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. living 5.2 m x 4.1 m, kitchen wall to hack, ceiling 2.9 m" style={{ ...IN, minHeight: 72, padding: "8px 10px", resize: "vertical" }} />
         </Field>
         <MediaPicker files={files} onChange={setFiles} label="Site photos or videos" onError={setFileError} />
-        {fileError && <div role="alert" style={{ fontSize: 13, color: "#A12622" }}>{fileError}</div>}
+        {fileError && <div role="alert" style={{ fontSize: 13, color: TONES.red.ink }}>{fileError}</div>}
       </div>
     );
   };
@@ -648,8 +653,12 @@ function DatesForm({ env, p }: { env: FormEnv; p: DesignProject }): ReactElement
 
 /* ---------- the one that picks the dialog ---------- */
 
-export function BetaDialogs({ dialog, env }: { dialog: BetaDialog | null; env: FormEnv }): ReactElement | null {
-  if (!dialog) return null;
+export function BetaDialogs({ dialog, env }: { dialog: BetaDialog | null; env: FormEnv }): ReactElement {
+  // AnimatePresence keeps the last dialog on screen while it fades out.
+  return <AnimatePresence>{dialog && <div key={dialog.t} style={{ display: "contents" }}>{dialogOf(dialog, env)}</div>}</AnimatePresence>;
+}
+
+function dialogOf(dialog: BetaDialog, env: FormEnv): ReactElement | null {
   if (dialog.t === "work") return <WorkForm key={dialog.ev?.id ?? "new"} env={env} ev={dialog.ev} day={dialog.day} />;
   const p = env.m.byId.get(dialog.projectId);
   if (!p) return null;

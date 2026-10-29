@@ -9,9 +9,10 @@ import { daysBetween, keyDraftRefusal, keyLogRows, type KeyDraft } from "../proj
 import { PersonSelect } from "../projects/renovation/PersonSelect";
 import { errorText } from "../projects/renovation/renovationModel";
 import { simpleApi, type KeyMove, type ProjectDetailV2 } from "../projects/renovation/simpleApi";
-import { WS, WsBtn, WsCard, WsField, inputStyle } from "./BetaWsUi";
+import { WS, WsBtn, WsCard, WsField, btnStyle, inputStyle } from "./BetaWsUi";
 import { dayMonth, dayMonthYear } from "./renovationBetaModel";
 import { BETA } from "./renovationBetaTheme";
+import { BetaLoading } from "./BetaLoading";
 
 interface Props { d: ProjectDetailV2; canWrite: boolean; today: string; onDone: (text: string) => void }
 
@@ -30,8 +31,8 @@ export function BetaWsKeyCard({ d, canWrite, today, onDone }: Props): ReactEleme
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
   const rows = keyLogRows(q.data?.data ?? [], today);
-  const loaded = !q.loading || q.data != null;
-  const formOpen = canWrite && (adding || (loaded && rows.length === 0));
+  // The form opens from "+ Key passed", as the design has it; open by itself it filled the card on every new project.
+  const formOpen = canWrite && adding;
   const shown = showAll ? rows : rows.slice(0, 3);
 
   async function save(fn: () => Promise<unknown>, ok: string, after?: () => void): Promise<void> {
@@ -76,13 +77,14 @@ export function BetaWsKeyCard({ d, canWrite, today, onDone }: Props): ReactEleme
         <button
           type="button"
           onClick={() => { setMsg(null); setDraft(fresh()); setAdding(true); }}
-          style={{ minHeight: 36, padding: "0 12px", border: `1px solid ${WS.tealLine}`, borderRadius: 8, background: BETA.surface, color: BETA.accentInk, font: "inherit", fontSize: 13, fontWeight: 600, cursor: "pointer" }}
+          style={btnStyle("outline", "sm")}
         >
           + Key passed
         </button>
       ) : undefined}
     >
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: 12, borderRadius: 10, background: WS.tealSoft }}>
+      {/* The holder block sits indented as the design draws it; the empty line lines up with the title instead. */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: holder ? "12px 14px" : 0, borderRadius: 14, background: "transparent" }}>
         {holder ? (
           <>
             <div>
@@ -91,7 +93,7 @@ export function BetaWsKeyCard({ d, canWrite, today, onDone }: Props): ReactEleme
               <div style={{ fontSize: 12, color: BETA.muted }}>since {dayMonthYear(holder.movedOn)}</div>
             </div>
             <div style={{ textAlign: "right" }}>
-              <div style={{ fontSize: 22, fontWeight: 700 }}>{daysBetween(holder.movedOn, today)}</div>
+              <div style={{ fontSize: 32, fontWeight: 600, lineHeight: 1, letterSpacing: "-.02em" }}>{daysBetween(holder.movedOn, today)}</div>
               <div style={{ fontSize: 12, color: BETA.muted }}>days</div>
             </div>
           </>
@@ -99,7 +101,7 @@ export function BetaWsKeyCard({ d, canWrite, today, onDone }: Props): ReactEleme
       </div>
 
       {formOpen && (
-        <div role={adding ? "group" : undefined} aria-label={adding ? "Record key pass" : undefined} style={{ display: "flex", flexDirection: "column", gap: 8, padding: 12, border: `1.5px solid ${BETA.accent}`, borderRadius: 10 }}>
+        <div role={adding ? "group" : undefined} aria-label={adding ? "Record key pass" : undefined} style={{ display: "flex", flexDirection: "column", gap: 8, padding: 12, border: `1.5px solid ${BETA.border}`, borderRadius: 14 }}>
           <KeyFields draft={draft} onChange={setDraft} today={today} prefix="New key pass" />
           <div style={{ display: "flex", gap: 8 }}>
             {adding && <WsBtn style={{ flex: 1 }} disabled={busy} onClick={() => { setAdding(false); setMsg(null); }}>Cancel</WsBtn>}
@@ -111,13 +113,13 @@ export function BetaWsKeyCard({ d, canWrite, today, onDone }: Props): ReactEleme
       {msg && (msg.tone === "ok" || editing != null || !formOpen) && (
         <p role={msg.tone === "err" ? "alert" : "status"} style={{ fontSize: 13, color: msg.tone === "err" ? WS.red : WS.green }}>{msg.text}</p>
       )}
-      {q.loading && rows.length === 0 && <p style={{ fontSize: 13, color: BETA.muted }}>Loading key log...</p>}
+      {q.loading && rows.length === 0 && <BetaLoading label="Loading key log" size="inline" />}
       {q.error && rows.length === 0 && <p role="alert" style={{ fontSize: 13, color: WS.red }}>The key log could not be loaded: {q.error}</p>}
 
       {rows.length > 0 && (
         <div>
           <div style={{ fontSize: 12, color: BETA.muted, fontWeight: 600, marginBottom: 4 }}>History</div>
-          <ol style={{ listStyle: "none", margin: 0, padding: 0, fontSize: 13 }}>
+          <ol className="stag" style={{ listStyle: "none", margin: 0, padding: 0, fontSize: 13 }}>
             {shown.map((r) => editing?.moveId === r.id ? (
               <li key={r.id} style={{ padding: "8px 0", borderTop: `1px solid ${WS.rowLine}`, display: "flex", flexDirection: "column", gap: 8 }}>
                 <KeyFields draft={editing.draft} onChange={(x) => setEditing({ moveId: r.id, draft: x })} today={today} prefix="Edit key pass" />
@@ -157,7 +159,8 @@ export function BetaWsKeyCard({ d, canWrite, today, onDone }: Props): ReactEleme
 function KeyFields({ draft, onChange, today, prefix }: { draft: KeyDraft; onChange: (d: KeyDraft) => void; today: string; prefix: string }): ReactElement {
   return (
     <>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
+      {/* Side by side when the card is wide enough, stacked in the narrow right column, so names are not cut off. */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 8 }}>
         <WsField label="From"><PersonSelect label={`${prefix} from`} placeholder="Optional" value={draft.from} onChange={(v) => onChange({ ...draft, from: v })} className="ws-input-sm" /></WsField>
         <WsField label="To"><PersonSelect label={`${prefix} to`} placeholder="Choose person" value={draft.to} onChange={(v) => onChange({ ...draft, to: v })} className="ws-input-sm" /></WsField>
       </div>

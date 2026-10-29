@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef } from 'react';
+import { lazy, Suspense, useEffect, useRef, type ReactNode } from 'react';
 import { readDevice } from './lib/deviceClass';
 import { CrashScreen } from './components/CrashScreen';
 import { Routes, Route, Outlet, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
@@ -7,7 +7,6 @@ import { ToastProvider } from './components/Toast';
 import ViewAs from './components/ViewAs';
 import TwoStepPrompt from './components/TwoStepPrompt';
 import AppShell from './components/AppShell';
-import FieldShell from './components/FieldShell';
 import UpdateNotice from './components/UpdateNotice';
 import OwnerShell from './components/OwnerShell';
 import LoginPage from './pages/LoginPage';
@@ -21,13 +20,16 @@ import { BootScreen, PageShown, PageSkeleton } from './components/Loading';
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
 const NotificationsPage = lazy(() => import('./pages/NotificationsPage'));
 const PortfolioPage = lazy(() => import('./pages/PortfolioPage'));
+const OwnerShowcasePage = lazy(() => import('./pages/showcase/OwnerShowcasePage'));
+const ShowcaseControlPage = lazy(() => import('./pages/showcase/ShowcaseControlPage'));
+const OwnerPortalDemoPage = lazy(() => import('./pages/showcase/OwnerPortalPage'));
 const OwnerOverallReportPage = lazy(() => import('./pages/OwnerOverallReportPage'));
 const CalendarPage = lazy(() => import('./pages/CalendarPage'));
 const BookingsPage = lazy(() => import('./pages/BookingsPage'));
 const GuestsPage = lazy(() => import('./pages/GuestsPage'));
 const OperationsTodayPage = lazy(() => import('./pages/OperationsTodayPage'));
 const CleaningPage = lazy(() => import('./pages/CleaningPage'));
-const WorkersPage = lazy(() => import('./pages/WorkersPage'));
+const EmployeesPage = lazy(() => import('./pages/EmployeesPage'));
 const MaintenancePage = lazy(() => import('./pages/MaintenancePage'));
 import SupplyChainEngine, { signInToEngineEarly } from './components/SupplyChainEngine';
 import { ENGINE_PATH } from './lib/scmEngine';
@@ -77,6 +79,7 @@ const StockTransfersPage = lazy(() => import('./pages/StockTransfersPage'));
 const StockTakesPage = lazy(() => import('./pages/StockTakesPage'));
 const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage'));
 const ExpensesPage = lazy(() => import('./pages/ExpensesPage'));
+const UnitPnlPage = lazy(() => import('./pages/UnitPnlPage'));
 const StatementDetailPage = lazy(() => import('./pages/StatementDetailPage'));
 const OwnerIncomeReportPage = lazy(() => import('./pages/OwnerIncomeReportPage'));
 const StatementsPrintPage = lazy(async () => ({ default: (await import('./pages/OwnerIncomeReportPage')).StatementsPrintPage }));
@@ -90,6 +93,7 @@ const ReviewsPage = lazy(() => import('./pages/ReviewsPage'));
 const InboxPage = lazy(() => import('./pages/InboxPage'));
 const AutomationsPage = lazy(() => import('./pages/AutomationsPage'));
 const UsersPage = lazy(() => import('./pages/UsersPage'));
+const CategoryAccessPage = lazy(() => import('./pages/CategoryAccessPage'));
 const IntegrationsPage = lazy(() => import('./pages/IntegrationsPage'));
 const HostPlatformImportPage = lazy(() => import('./pages/HostPlatformImportPage'));
 const SystemHealthPage = lazy(() => import('./pages/SystemHealthPage'));
@@ -97,7 +101,12 @@ const ItSupportPage = lazy(() => import('./pages/ItSupportPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 const NotDesignedPage = lazy(() => import('./pages/NotDesignedPage'));
 const PlaceholderPage = lazy(() => import('./pages/PlaceholderPage'));
+// The portal's shell carries its four-language strings (src/lib/portalI18n.ts): only cleaners and technicians load it.
+const FieldShell = lazy(() => import('./components/FieldShell'));
 const FieldHome = lazy(() => import('./pages/FieldHome'));
+const FieldClockPage = lazy(() => import('./pages/FieldClockPage'));
+const FieldMePage = lazy(() => import('./pages/FieldMePage'));
+const FieldPayPage = lazy(() => import('./pages/FieldPayPage'));
 const OwnerPortalPage = lazy(() => import('./pages/OwnerPortalPage'));
 const AccountPage = lazy(() => import('./pages/AccountPage'));
 const MobileSettingsHub = lazy(() => import('./components/MobileSettingsHub'));
@@ -112,6 +121,14 @@ function SettingsHome() {
 const Fallback = () => <PageSkeleton />;
 
 /** Desktop shell as a layout route; the matched page renders into <Outlet />. */
+/** The Owner Showcase and its sample owner portal have no app shell around them, so they apply the Owner Showcase
+ *  screen's access themselves. */
+function ShowcaseRoute({ children }: { children: ReactNode }) {
+  const { user } = useSession();
+  if (screenClosed('/performance/showcase', user?.access)) return <Navigate to={user ? homeFor(user) : '/'} replace />;
+  return <Suspense fallback={<Fallback />}>{children}</Suspense>;
+}
+
 function AppLayout() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -163,6 +180,14 @@ function ToUnits({ tab }: { tab?: string }) {
   const unit = q.get('unit') ?? q.get('unitId');
   const t = tab ?? q.get('tab');
   return <Navigate replace to={`/properties/units${unit ? `/${encodeURIComponent(unit)}` : ''}${t ? `?tab=${encodeURIComponent(t)}` : ''}`} />;
+}
+
+/** The old Workers screen (Operations > Workers): its in-house lists are Employee Master now, and the tabs HR took
+ *  over in 26 Oct 2026 keep their own addresses. Outside companies have their own tab, not a redirect target here. */
+const WORKERS_MOVED: Record<string, string> = { attendance: 'attendance', leave: 'leave', payroll: 'payroll' };
+function ToEmployees() {
+  const asked = new URLSearchParams(useLocation().search).get('tab');
+  return <Navigate replace to={`/hr/employees?tab=${(asked && WORKERS_MOVED[asked]) || 'employee-master'}`} />;
 }
 
 /** The old All tasks list: maintenance work opens Maintenance's History, everything else Cleaning's History. */
@@ -219,7 +244,7 @@ function Routed() {
   if (user.role === 'housekeeper' || user.role === 'technician') {
     // Cleaners' and technicians' screens moved from /field (then /worker) to /portal; old bookmarks and links follow.
     if (/^\/(field|worker)(\/|$)/.test(location.pathname)) return <Navigate to={location.pathname.replace(/^\/(field|worker)/, '/portal') + location.search} replace />;
-    return <FieldShell><Suspense fallback={<Fallback />}>{account ? <AccountPage /> : <FieldHome />}</Suspense></FieldShell>;
+    return <Suspense fallback={<Fallback />}><FieldShell><Suspense fallback={<Fallback />}>{account ? <AccountPage /> : location.pathname.startsWith('/portal/clock') ? <FieldClockPage /> : location.pathname.startsWith('/portal/me') ? <FieldMePage /> : location.pathname.startsWith('/portal/pay') ? <FieldPayPage /> : <FieldHome />}</Suspense></FieldShell></Suspense>;
   }
   // Owners see only their own portal, whatever the address bar says.
   if (user.role === 'owner') {
@@ -240,6 +265,9 @@ function Routed() {
       {/* The Owner Income Report prints on its own: no app shell around it. */}
       <Route path="/finance/statements/:id/report" element={<Suspense fallback={<Fallback />}><OwnerIncomeReportPage /></Suspense>} />
       <Route path="/finance/statements/print" element={<Suspense fallback={<Fallback />}><StatementsPrintPage /></Suspense>} />
+      {/* Sales staff present it to a prospective owner: full screen, no menu (CONTS-0006). */}
+      <Route path="/performance/showcase" element={<ShowcaseRoute><OwnerShowcasePage /></ShowcaseRoute>} />
+      <Route path="/performance/showcase/owner" element={<ShowcaseRoute><OwnerPortalDemoPage /></ShowcaseRoute>} />
       <Route element={<AppLayout />}>
         <Route path="/" element={<DashboardPage />} />
         <Route path="/notifications" element={<NotificationsPage />} />
@@ -250,8 +278,9 @@ function Routed() {
         <Route path="/reservations/guests" element={<GuestsPage />} />
         <Route path="/operations/today" element={<OperationsTodayPage />} />
         <Route path="/operations/cleaning" element={<CleaningPage />} />
-        <Route path="/operations/workers" element={<WorkersPage />} />
-        <Route path="/operations/cleaners" element={<Navigate replace to="/operations/workers" />} />
+        <Route path="/hr/employees" element={<EmployeesPage />} />
+        <Route path="/operations/workers" element={<ToEmployees />} />
+        <Route path="/operations/cleaners" element={<ToEmployees />} />
         <Route path="/operations/maintenance" element={<MaintenancePage />} />
         {/* Housekeeping is Cleaning; Inspections is gone; All tasks is the History tab (owner, 10 Oct). */}
         <Route path="/operations/housekeeping" element={<Navigate to="/operations/cleaning" replace />} />
@@ -317,9 +346,11 @@ function Routed() {
         {/* Revenue was the same screen as Performance > Analytics (UI audit); one route, the old address redirects. */}
         <Route path="/finance/revenue" element={<Navigate to="/performance/analytics" replace />} />
         <Route path="/performance" element={<Navigate to="/performance/analytics" replace />} />
+        <Route path="/performance/showcase-control" element={<ShowcaseControlPage />} />
         {/* Owner statements and owner payouts moved onto the owner; Expenses is Accounts payable (owner, 11 Oct 2026). */}
         <Route path="/finance/payables" element={<ExpensesPage />} />
         <Route path="/finance/utility-bills" element={<ExpensesPage utilities />} />
+        <Route path="/finance/unit-pnl" element={<UnitPnlPage />} />
         <Route path="/finance/expenses" element={<Moved to="/finance/payables" />} />
         <Route path="/finance/statements" element={<Moved to="/owners" add={{ view: 'statements' }} />} />
         <Route path="/finance/statements/:id" element={<MovedStatement />} />
@@ -328,6 +359,7 @@ function Routed() {
         {/* The same screens in the supply chain Finance group, so that sidebar stays put (finance phase 1). */}
         <Route path="/supply/finance/payables" element={<ExpensesPage />} />
         <Route path="/supply/finance/utility-bills" element={<ExpensesPage utilities />} />
+        <Route path="/supply/finance/unit-pnl" element={<UnitPnlPage />} />
         <Route path="/supply/finance/approvals" element={<ApprovalsPage />} />
         {/* Project monitor was dropped (owner, 11 Oct 2026): old links open the Schedule. */}
         <Route path="/projects/monitor" element={<Moved to="/projects/calendar" />} />
@@ -345,6 +377,7 @@ function Routed() {
         <Route path="/account" element={<AccountPage />} />
         <Route path="/change-password" element={<Navigate to="/" replace />} />
         <Route path="/system/users" element={<UsersPage />} />
+        <Route path="/system/category-access" element={<CategoryAccessPage />} />
         <Route path="/system/integrations" element={<IntegrationsPage />} />
         <Route path="/system/integrations/hostplatform" element={<HostPlatformImportPage />} />
         <Route path="/settings" element={<SettingsHome />} />

@@ -4,7 +4,7 @@ import { can } from './access';
 import { NO_EMAIL_DOMAIN, PIN_ROLES, employeeIdFor, hasEmployeeIds, tempPin } from './fieldPin';
 
 
-/** The two worker lists on Workers: cleaners sign in as housekeepers, technicians as technicians. */
+/** The two rosters on HR > Employees: cleaners sign in as housekeepers, technicians as technicians. */
 const LISTS = {
   cleaners: { role: 'housekeeper', noun: 'cleaner', action: 'housekeeping.cleaner' },
   technicians: { role: 'technician', noun: 'technician', action: 'maintenance.technician' },
@@ -65,12 +65,17 @@ export async function giveFieldAccess(env: Env, session: Session, list: WorkerLi
   return json({ userId, employeeId, pin }, 200, { 'cache-control': 'no-store' });
 }
 
-/** Cleaners and technicians are managed on Workers only, so a worker switched off there (or changed to an outside
+/** Cleaners and technicians are managed on HR > Employees only, so a worker switched off there (or changed to an outside
  *  company, which keeps the link) loses their field-app login at once, and switched back on gets it back. An office
  *  login linked to a technician entry is never touched: only a cleaner or technician login follows its entry.
+ *  A login shared by a cleaner and a technician entry stays on while either is on: switching one department off must not
+ *  lock the person out of the other (the caller has already saved its own entry, so it reads as off here).
  *  Answers whether the login changed, for the entry's audit row. */
 export async function followWorker(env: Env, userId: string | null, active: boolean): Promise<boolean> {
   if (!userId) return false;
+  if (!active && await one(env, `
+    SELECT 1 AS x FROM cleaners WHERE user_id = ? AND employment_type = 'internal' AND is_active = 1
+    UNION ALL SELECT 1 FROM technicians WHERE user_id = ? AND employment_type = 'internal' AND is_active = 1 LIMIT 1`, userId, userId)) return false;
   const u = await one<{ role: string; is_active: number }>(env, 'SELECT role, is_active FROM users WHERE id = ?', userId);
   if (!u || !PIN_ROLES.includes(u.role) || !!u.is_active === active) return false;
   await run(env, 'UPDATE users SET is_active = ?, updated_at = ? WHERE id = ?', active ? 1 : 0, nowIso(), userId);

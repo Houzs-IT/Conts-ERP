@@ -27,9 +27,18 @@ interface ContractView {
   minimumGuarantee: number; guaranteeStartsOn: string | null; guaranteeEndsOn: string | null;
   /** PS YGRR: the guarantee for each contract year, sen. */
   yearlyGuarantee?: number; contractCode?: ContractCode; agreementDocumentId?: string | null;
+  /** False while the code is only read from the terms; the tab then asks for the type before saving. */
+  typeStored?: boolean;
   monthlyRent: number; deposit: number | null; tenantName: string | null;
   startsOn: string | null; endsOn: string | null; renewsOn: string | null; miscCharges: boolean; sharedWith: number; createdAt: string | null;
+  /** MANAGE: the owner's amount a month, sen. */
+  ownerAmount?: number | null;
+  /** Rent to rent (0161), recorded only. Sen or null. */
+  rentToRent?: Partial<Record<RentToRentKey, number | null>>;
 }
+/** The rent-to-rent grid beyond the rent and deposit (0161): what else we pay the owner, and what we rent it out for. */
+const RENT_TO_RENT_KEYS = ['depositUtilities', 'depositCard', 'rentOutAmount', 'rentOutDeposit', 'rentOutDepositUtilities', 'rentOutDepositCard'] as const;
+export type RentToRentKey = typeof RENT_TO_RENT_KEYS[number];
 export interface Example {
   month: string; model: RevenueModel; nights: number; occupancy: number;
   income: number; costs: { label: string; amount: number }[]; costsTotal: number; net: number;
@@ -50,6 +59,9 @@ interface Draft {
   minimumGuarantee: number | null; guaranteeStartsOn: string; guaranteeEndsOn: string;
   monthlyRent: number | null; deposit: number | null; tenantName: string; ltFeePct: number | null;
   startsOn: string; endsOn: string; renewsOn: string; miscCharges: boolean;
+  ownerAmount: number | null;
+  depositUtilities: number | null; depositCard: number | null;
+  rentOutAmount: number | null; rentOutDeposit: number | null; rentOutDepositUtilities: number | null; rentOutDepositCard: number | null;
 }
 const senOrEmpty = (sen: number | null | undefined) => (sen ? sen : null);
 const pctOf = (n: number | null | undefined) => (n == null ? null : Number(n.toFixed(2)));
@@ -63,6 +75,10 @@ function draftOf(c: ContractView): Draft {
     minimumGuarantee: senOrEmpty(c.minimumGuarantee), guaranteeStartsOn: c.guaranteeStartsOn ?? '', guaranteeEndsOn: c.guaranteeEndsOn ?? '',
     monthlyRent: senOrEmpty(c.monthlyRent), deposit: senOrEmpty(c.deposit), tenantName: c.tenantName ?? '', ltFeePct: pctOf(isTenancy(c.revenueModel) ? c.managementPct : 10),
     startsOn: c.startsOn?.slice(0, 10) ?? '', endsOn: c.endsOn?.slice(0, 10) ?? '', renewsOn: c.renewsOn?.slice(0, 10) ?? '', miscCharges: c.miscCharges,
+    ownerAmount: senOrEmpty(c.ownerAmount),
+    depositUtilities: c.rentToRent?.depositUtilities ?? null, depositCard: c.rentToRent?.depositCard ?? null,
+    rentOutAmount: c.rentToRent?.rentOutAmount ?? null, rentOutDeposit: c.rentToRent?.rentOutDeposit ?? null,
+    rentOutDepositUtilities: c.rentToRent?.rentOutDepositUtilities ?? null, rentOutDepositCard: c.rentToRent?.rentOutDepositCard ?? null,
   };
 }
 function bodyOf(d: Draft) {
@@ -70,11 +86,14 @@ function bodyOf(d: Draft) {
   return {
     revenueModel: m, contractCode: d.contractCode,
     ...(m === 'management_yearly_guarantee' ? { yearlyGuarantee: d.yearlyGuarantee ?? 0 } : {}),
-    ...(share ? { ownerPct: d.ownerPct ?? 0, managementPct: d.managementPct ?? 0, agentPct: d.agentPct ?? 0, agentName: d.agentName || null, miscCharges: d.miscCharges } : {}),
+    ...(share ? { ownerPct: d.contractCode === 'MANAGE' ? manageOwnerPct(d) : d.ownerPct ?? 0, managementPct: d.managementPct ?? 0, agentPct: d.agentPct ?? 0, agentName: d.agentName || null, miscCharges: d.miscCharges } : {}),
     ...(m === 'management_guarantee' ? { minimumGuarantee: d.minimumGuarantee ?? 0, guaranteeStartsOn: d.guaranteeStartsOn || null, guaranteeEndsOn: d.guaranteeEndsOn || null } : {}),
     ...(!share ? { monthlyRent: d.monthlyRent ?? 0 } : {}),
+    ...(d.contractCode === 'MANAGE' ? { ownerAmount: d.ownerAmount ?? 0 } : {}),
     ...(m === 'master_lease' ? { deposit: d.deposit ?? null } : {}),
-    ...(isTenancy(m) ? { tenantName: d.tenantName, managementPct: d.ltFeePct ?? 0 } : {}),
+    ...(d.contractCode === 'RTR' ? Object.fromEntries(RENT_TO_RENT_KEYS.map(k => [k, d[k]])) : {}),
+    // LT (Package C) has no operator share (staff sheet UNIT, 26 Oct 2026); WH LT keeps its own.
+    ...(isTenancy(m) ? { tenantName: d.tenantName, managementPct: d.contractCode === 'LT' ? 0 : d.ltFeePct ?? 0 } : {}),
     startsOn: d.startsOn, endsOn: d.endsOn || null, renewsOn: d.renewsOn || null,
   };
 }
@@ -82,10 +101,12 @@ function bodyOf(d: Draft) {
 function problems(d: Draft): Record<string, string> {
   const f: Record<string, string> = {}, m = d.revenueModel;
   if (isShare(m)) {
-    const sum = (d.ownerPct ?? 0) + (d.managementPct ?? 0) + (d.agentPct ?? 0);
-    if (Math.abs(sum - 100) > 0.001) f.ownerPct = `Owner, management and agent add up to ${Number(sum.toFixed(2))}%, not 100%.`;
+    const sum = (d.contractCode === 'MANAGE' ? manageOwnerPct(d) : d.ownerPct ?? 0) + (d.managementPct ?? 0) + (d.agentPct ?? 0);
+    if (d.contractCode === 'MANAGE' && manageOwnerPct(d) < 0) f.managementPct = 'Management and agent add up to more than 100%.';
+    else if (Math.abs(sum - 100) > 0.001) f.ownerPct = `Owner, management and agent add up to ${Number(sum.toFixed(2))}%, not 100%.`;
     if (m === 'management_guarantee' && !((d.minimumGuarantee ?? 0) > 0)) f.minimumGuarantee = 'Enter the monthly minimum.';
     if (m === 'management_yearly_guarantee' && !((d.yearlyGuarantee ?? 0) > 0)) f.yearlyGuarantee = 'Enter the guarantee for each contract year.';
+    if (d.contractCode === 'MANAGE' && !((d.ownerAmount ?? 0) > 0)) f.ownerAmount = "Enter the owner's amount.";
   } else if (!((d.monthlyRent ?? 0) > 0)) f.monthlyRent = 'Enter the monthly rent.';
   if (isTenancy(m) && !d.tenantName.trim()) f.tenantName = 'Enter the tenant.';
   if (d.endsOn && d.startsOn && d.endsOn < d.startsOn) f.endsOn = 'The end date is before the start date.';
@@ -93,6 +114,8 @@ function problems(d: Draft): Record<string, string> {
   return f;
 }
 
+/** MANAGE has no Owner % box: the owner's share of the split is what management and agent leave. */
+const manageOwnerPct = (d: Draft) => Number((100 - (d.managementPct ?? 0) - (d.agentPct ?? 0)).toFixed(2));
 const isShare = (m: RevenueModel) => m === 'management' || m === 'management_guarantee' || m === 'management_yearly_guarantee';
 
 const HISTORY_COLUMNS: Column<ContractView>[] = [
@@ -117,6 +140,7 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unit
   const [preview, setPreview] = useState<Example | null>(null);
   const [previewing, setPreviewing] = useState(false);
   const [extending, setExtending] = useState(false);
+  const [picked, setPicked] = useState(false);
 
   const current = data?.current ?? null;
   const allowedCodes = data?.allowedCodes;
@@ -127,10 +151,12 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unit
     if (!current.id && allowedCodes?.length && !allowedCodes.includes(o.contractCode)) return { ...o, contractCode: allowedCodes[0], revenueModel: CODE[allowedCodes[0]].model };
     return o;
   }, [current, allowedCodes]);
-  useEffect(() => { if (original) { setDraft(original); setMode('update'); setFields({}); setPreview(null); } }, [original]);
+  useEffect(() => { if (original) { setDraft(original); setMode('update'); setFields({}); setPreview(null); setPicked(false); } }, [original]);
   const d = draft ?? original;
-  const dirty = !!d && !!original && JSON.stringify(d) !== JSON.stringify(original);
-  const local = d ? problems(d) : {};
+  // A contract with no saved type is read from its terms; saving would lock that guess in, so the type is chosen first.
+  const typeUnset = !!current?.id && current.typeStored === false && mode === 'update';
+  const dirty = (!!d && !!original && JSON.stringify(d) !== JSON.stringify(original)) || (typeUnset && picked);
+  const local: Record<string, string> = { ...(d ? problems(d) : {}), ...(typeUnset && !picked ? { contractCode: 'Choose the contract type first.' } : {}) };
   const shown = { ...local, ...fields };
 
   // The example follows the form: once the terms change, the server works last month out again on them.
@@ -154,6 +180,7 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unit
   // The current code stays offered even if the list has moved on (an older GRR), so the form can show it.
   const offered = CODES.filter(c => (data?.allowedCodes ?? CODES.filter(x => x.code !== 'WH' && x.code !== 'WH LT' && x.code !== 'GRR').map(x => x.code)).includes(c.code) || c.code === d.contractCode);
   const example = preview ?? data?.example ?? null;
+  const guess = current.contractCode ?? codeFromModel(current.revenueModel);
 
   async function save() {
     if (!d) return;
@@ -172,7 +199,7 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unit
   const pct = (k: 'ownerPct' | 'managementPct' | 'agentPct' | 'ltFeePct', label: string) => (
     <PercentInput label={label} value={d[k]} onChange={v => set({ [k]: v })} error={shown[k === 'ltFeePct' ? 'managementPct' : k]} />
   );
-  const money = (k: 'minimumGuarantee' | 'yearlyGuarantee' | 'monthlyRent' | 'deposit', label: string, help?: string) => (
+  const money = (k: 'minimumGuarantee' | 'yearlyGuarantee' | 'monthlyRent' | 'deposit' | 'ownerAmount' | RentToRentKey, label: string, help?: string) => (
     <MoneyInput label={label} placeholder="e.g. 3,000.00" valueSen={d[k]} onChangeSen={v => set({ [k]: v })} error={shown[k]} help={help} />
   );
   const day = (k: 'startsOn' | 'endsOn' | 'renewsOn' | 'guaranteeStartsOn' | 'guaranteeEndsOn', label: string) => (
@@ -211,7 +238,13 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unit
           {purpose !== 'rental' && <div className="py-[10px] px-[14px] rounded-control bg-muted text-meta text-muted-ink">A {PURPOSE_LABEL[purpose].toLowerCase()} unit is not run on the channels: it takes a WH lease (a fixed monthly rent to the owner) or a WH LT let (one tenant, such as Dream Crafter, rents it; the owner gets the rent less the operator share).</div>}
           <Select label="Income model" showLabel size="md" className="max-w-[560px]" value={d.contractCode}
             options={offered.map(o => ({ value: o.code, label: `${o.code}${o.pkg && o.pkg !== '-' ? ` ${o.pkg}` : ''} - ${o.label}` }))}
-            onChange={v => { const o = CODE[v as ContractCode]; set({ contractCode: o.code, revenueModel: o.model }); }} />
+            onChange={v => { const o = CODE[v as ContractCode]; set({ contractCode: o.code, revenueModel: o.model }); setPicked(true); }} />
+          {typeUnset && !picked && (
+            <div className="flex flex-wrap items-center justify-between gap-3 py-[10px] px-[14px] rounded-control bg-gold-tint text-copy">
+              <span>Type not set. This contract has no saved type; it is being read as <b>{codeName(guess)}</b> from its terms. Choose the type above, or keep this one, before saving.</span>
+              <Button size="sm" variant="secondary" onClick={() => setPicked(true)}>Keep {guess}</Button>
+            </div>
+          )}
           {(() => {
             const o = CODE[d.contractCode];
             return (
@@ -231,7 +264,9 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unit
 
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
             {share && <>
-              {pct('ownerPct', 'Owner %')}
+              {/* MANAGE: the owner's amount in RM instead of a %; the owner % still makes the split up to 100 until
+                  the MANAGE payout is decided (PLAN-units-form.md Q6b). */}
+              {d.contractCode === 'MANAGE' ? money('ownerAmount', 'Owner (RM)') : pct('ownerPct', 'Owner %')}
               {pct('managementPct', 'Management %')}
               {pct('agentPct', 'Agent %')}
               <Field label="Agent" placeholder="Who brought the unit in" value={d.agentName} onChange={e => set({ agentName: e.target.value })} />
@@ -241,18 +276,57 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unit
               {day('guaranteeStartsOn', 'Minimum applies from')}
               {day('guaranteeEndsOn', 'Minimum applies until')}
             </>}
-            {m === 'management_yearly_guarantee' && money('yearlyGuarantee', 'Guarantee per contract year (RM)', 'Checked once a year: on the last statement of each contract year the company tops up any shortfall.')}
+            {m === 'management_yearly_guarantee' && money('yearlyGuarantee', 'Guarantee per contract year (RM)',
+              `${(d.yearlyGuarantee ?? 0) > 0 ? `${rm(d.yearlyGuarantee ?? 0)} a year / 12 months = ${rm(Math.round((d.yearlyGuarantee ?? 0) / 12))} per month. ` : ''}Checked once a year: on the last statement of each contract year the company tops up any shortfall.`)}
             {m === 'grr' && money('monthlyRent', 'Monthly rent to owner (RM)', 'Paid whatever the unit earns.')}
-            {m === 'master_lease' && <>
-              {money('monthlyRent', d.contractCode === 'WH' ? 'Monthly rent to the owner (RM)' : 'Monthly rent we pay (RM)', 'Recorded as a company cost; no owner statement.')}
+            {m === 'master_lease' && d.contractCode !== 'RTR' && <>
+              {money('monthlyRent', 'Monthly rent to the owner (RM)', 'Recorded as a company cost; no owner statement.')}
               {money('deposit', 'Deposit (RM)')}
             </>}
             {isTenancy(m) && <>
               <Field label="Tenant" placeholder="Tenant's name" value={d.tenantName} onChange={e => set({ tenantName: e.target.value })} error={shown.tenantName} />
               {money('monthlyRent', 'Monthly rent from tenant (RM)')}
-              {pct('ltFeePct', 'Operator share % of the rent')}
+              {d.contractCode !== 'LT' && pct('ltFeePct', 'Operator share % of the rent')}
             </>}
           </div>
+          {d.contractCode === 'MANAGE' && (
+            <p className="m-0 -mt-2 text-meta text-muted-ink">
+              Operator share = {rm(d.ownerAmount ?? 0)} x {pctText(d.managementPct ?? 0)}% = <span className="font-semibold text-ink">{rm(Math.round(((d.ownerAmount ?? 0) * (d.managementPct ?? 0)) / 100))}</span>
+            </p>
+          )}
+          {d.contractCode === 'RTR' && (() => {
+            // One row per thing, one column per side: the row name is printed once, so the two sides read across.
+            const rows = [
+              ['Monthly rent', 'monthlyRent', 'rentOutAmount'],
+              ['Deposit rental', 'deposit', 'rentOutDeposit'],
+              ['Deposit utilities', 'depositUtilities', 'rentOutDepositUtilities'],
+              ['Deposit card', 'depositCard', 'rentOutDepositCard'],
+            ] as const;
+            const gridCols = 'grid grid-cols-[84px_minmax(0,1fr)_minmax(0,1fr)] sm:grid-cols-[150px_minmax(0,1fr)_minmax(0,1fr)] gap-x-3 px-4';
+            const gap = (d.rentOutAmount ?? 0) - (d.monthlyRent ?? 0);
+            return (
+              <div role="group" aria-label="Rent to rent terms" className="rounded-card [border:1px_solid_var(--color-line)] bg-page overflow-hidden max-w-[760px]">
+                <div className={cx(gridCols, 'py-2.5 bg-muted text-caption font-semibold uppercase tracking-[0.06em] text-muted-ink')}>
+                  <span aria-hidden />
+                  <span className="text-right">Costing Rental Amount</span>
+                  <span className="text-right">Rental Out Amount</span>
+                </div>
+                {rows.map(([label, pay, rentOut]) => (
+                  <div key={pay} className={cx(gridCols, 'items-start py-2.5 [border-top:1px_solid_var(--color-line-soft)]')}>
+                    <span className="min-h-10 flex items-center text-copy text-muted-ink">{label}</span>
+                    <MoneyInput prefix aria-label={`${label}, Costing Rental Amount`} placeholder="0.00" valueSen={d[pay]} onChangeSen={v => set({ [pay]: v })} error={shown[pay]} />
+                    <MoneyInput prefix aria-label={`${label}, Rental Out Amount`} placeholder="0.00" valueSen={d[rentOut]} onChangeSen={v => set({ [rentOut]: v })} error={shown[rentOut]} />
+                  </div>
+                ))}
+                <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 px-4 py-2.5 [border-top:1px_solid_var(--color-line-soft)] text-meta text-muted-ink">
+                  <span>Recorded only. The unit's result still comes from its reservations.</span>
+                  {(d.monthlyRent ?? 0) > 0 && (d.rentOutAmount ?? 0) > 0 && (
+                    <span className="text-ink tabular-nums">Rent out is <span className="font-semibold">{rm(Math.abs(gap))}</span> {gap >= 0 ? 'above' : 'below'} the rent we pay</span>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
             {day('startsOn', m === 'master_lease' ? 'Lease starts' : isTenancy(m) ? 'Tenancy starts' : 'Contract starts')}
             {day('endsOn', m === 'master_lease' ? 'Lease ends' : isTenancy(m) ? 'Tenancy ends' : 'Contract ends')}
@@ -260,7 +334,7 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unit
             {share && (
               <label className="flex items-start gap-2 pt-[26px] text-copy cursor-pointer">
                 <input type="checkbox" checked={d.miscCharges} onChange={e => set({ miscCharges: e.target.checked })} className="mt-[3px] accent-[var(--color-gold-ink)]" />
-                <span>Deduct miscellaneous charges <span className="block text-meta text-muted-ink">RM 100 a month times occupancy</span></span>
+                <span>Deduct miscellaneous charges <span className="block text-meta text-muted-ink">RM 100 x the occupancy rate, never more than RM 100 (e.g. 80% occupied = RM 80)</span></span>
               </label>
             )}
           </div>
@@ -320,7 +394,7 @@ export function StatementExample({ example: x, month, draft, busy }: { example: 
           </> : isTenancy(x.model) ? <>
             <Row label="Monthly rent from the tenant" sen={x.income} />
             {x.costs.map(c => <Row key={c.label} label={c.label} sen={-c.amount} sub />)}
-            <Row label={`${pctText(100 - (x.ownerPct ?? 100))}% To Operator (of the rent)`} sen={-x.operatorShare} />
+            {x.operatorShare !== 0 && <Row label={`${pctText(100 - (x.ownerPct ?? 100))}% To Operator (of the rent)`} sen={-x.operatorShare} />}
             {x.adjustments !== 0 && <Row label="Owner Adjustments" sen={x.adjustments} />}
             <Row label="Net Payout to Owner" sen={x.netPayout} strong />
           </> : <>

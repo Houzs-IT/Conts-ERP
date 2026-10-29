@@ -82,6 +82,16 @@ export default function SupplyChainEngine({ enginePath, active = true }: { engin
     return () => window.clearTimeout(t);
   }, [src]);
 
+  // The frame's Dream Crafter screens follow the theme: told when it is ready (below) and whenever data-theme changes.
+  const tellTheme = () => {
+    const theme = document.documentElement.dataset.theme === 'theconts-dark' ? 'dark' : 'light';
+    if (site.current) frame.current?.contentWindow?.postMessage({ type: 'conts:theme', theme }, site.current);
+  };
+  useEffect(() => {
+    const mo = new MutationObserver(tellTheme);
+    mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    return () => mo.disconnect();
+  }, []);
   const steer = () => { if (site.current) frame.current?.contentWindow?.postMessage({ type: 'conts:navigate', path: wanted.current }, site.current); };
   // On every menu click, the item already open included (location.key changes), so it leaves a record. The path is
   // watched too: an address typed or changed in the bar twice in a row keeps the same key ("default").
@@ -94,7 +104,7 @@ export default function SupplyChainEngine({ enginePath, active = true }: { engin
     const onMessage = (e: MessageEvent) => {
       if (e.origin !== site.current || e.source !== frame.current?.contentWindow) return;
       // The engine says when it has started, in case a menu click arrived before it was listening.
-      if (e.data?.type === 'conts:ready') steer();
+      if (e.data?.type === 'conts:ready') { steer(); tellTheme(); }
       if (e.data?.type === 'conts:shown') setStarted(true);
       // A link inside the frame moved it: the address and the menu follow, without a new history entry.
       if (e.data?.type === 'conts:location' && typeof e.data.path === 'string' && isActive.current) {

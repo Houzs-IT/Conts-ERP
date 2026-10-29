@@ -19,7 +19,7 @@ interface UnitPrice { internalCost: number | null; externalCharge: number | null
 interface UnitRow { unitId: string; unitNumber: string; propertyName: string; buildingId: string; layout: string; prices: Record<string, UnitPrice> }
 interface PayRow { cleanerId: string; name: string; unitJobs: number; externalJobs: number; unitPay: number; externalPay: number; unpriced: number; total: number }
 
-const KIND: Record<string, string> = { turnover: 'Standard', deep_clean: 'Deep', light_clean: 'Light' };
+const KIND: Record<string, string> = { turnover: 'Basic', deep_clean: 'Deep', light_clean: 'Light' };
 const LAYOUT: Record<string, string> = {
   studio: 'Studio', '1_bedroom': '1 bedroom', '2_bedroom': '2 bedroom', '3_bedroom': '3 bedroom', '4_plus_bedroom': '4+ bedroom',
   duplex: 'Duplex', dual_key: 'Dual key', penthouse: 'Penthouse', other: 'Other',

@@ -28,8 +28,8 @@ check('Quotations belongs to the Sales order area (the engine guards it with scm
 check('Quotations is under Supply chain > Sales order', M.findNav('/sales/quotations')?.group === 'Sales order', JSON.stringify(M.findNav('/sales/quotations')));
 check('Quotations is hidden where the engine is not set up', !paths(M.navFor('management', false)).includes('/sales/quotations'));
 check('a role with no Sales order access does not see it', !paths(M.navFor('operations_staff', true, { scSales: 'none' })).includes('/sales/quotations'));
-// Property OS screens in the supply chain menu, not engine ones: IT Support and finance's own desk screens.
-const PROPERTY_OS_SUPPLY = ['/supply/it-support', '/supply/finance/payables', '/supply/finance/utility-bills', '/supply/finance/approvals'];
+// Property OS screens in the supply chain menu, not engine ones: IT Support, Category access and finance's own desk screens.
+const PROPERTY_OS_SUPPLY = ['/supply/it-support', '/system/category-access', '/supply/finance/payables', '/supply/finance/utility-bills', '/supply/finance/approvals'];
 const unmapped = paths(M.navFor('management', true)).filter((p) => !M.ENGINE_PATH[p] && !PROPERTY_OS_SUPPLY.includes(p) && (M.workspaceOf(p) === 'supply'));
 check('every supply chain menu entry opens an engine screen', unmapped.length === 0, unmapped.join(' '));
 check('Project list and Schedule open the engine views that switch to renovation by themselves',
@@ -103,6 +103,20 @@ check('the supply chain IT Support address is not an engine screen', !M.ENGINE_P
 const noSupply = Object.fromEntries(['serviceCases', 'projects', 'scSales', 'scConsignment', 'scProcurement', 'scTransportPlan', 'scWarehouse', 'scInvoices'].map((a) => [a, 'none']));
 check('IT Support alone does not open the supply chain workspace', supply(M.navFor('operations_staff', true, noSupply)).length === 0, supply(M.navFor('operations_staff', true, noSupply)).join(' '));
 check('a field role gets no supply chain IT Support', !supply(M.navFor('housekeeper', true)).includes('/supply/it-support'));
+
+// Category access (per-person product categories): in the Dream Crafter System group, which shares its name with the Rental one.
+const systemGroups = (role, access) => M.navFor(role, true, access).filter((g) => g.label === 'SYSTEM');
+check('Rental and Dream Crafter each have a SYSTEM group', systemGroups('management').map((g) => g.workspace).join(' ') === 'rental supply', systemGroups('management').map((g) => g.workspace).join(' '));
+check('Category access is in the Dream Crafter System group, next to IT Support, and not in Rental',
+  systemGroups('management').find((g) => g.workspace === 'supply')?.items.map((i) => i.path).join(' ') === '/system/category-access /supply/it-support'
+    && !paths(M.navFor('management', true).filter((g) => g.workspace === 'rental')).includes('/system/category-access'));
+check('Category access keeps the Dream Crafter sidebar and its own breadcrumb', M.workspaceOf('/system/category-access') === 'supply' && M.findNav('/system/category-access')?.item === 'Category access',
+  `${M.workspaceOf('/system/category-access')} ${JSON.stringify(M.findNav('/system/category-access'))}`);
+check('Category access belongs to the Users and roles area and is not an engine screen', M.areaOfPath('/system/category-access') === 'users' && !M.ENGINE_PATH['/system/category-access']);
+check('Category access needs Full on Users and roles', !supply(M.navFor('operations_staff', true, { users: 'edit' })).includes('/system/category-access')
+  && !supply(M.navFor('operations_staff', true, { users: 'none' })).includes('/system/category-access')
+  && supply(M.navFor('operations_staff', true, { users: 'full' })).includes('/system/category-access'));
+check('the old SUPPORT group is gone', !M.navFor('management', true).some((g) => g.label === 'SUPPORT'));
 
 // The supply chain Finance group is the rental one again: like IT Support, it alone opens no supply chain workspace.
 check('Finance alone does not open the supply chain workspace, and stays in Rental',

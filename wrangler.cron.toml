@@ -7,6 +7,7 @@
 #
 # Secrets (set once with `npx wrangler secret put <NAME> --config wrangler.cron.toml`, typed at the prompt):
 #   CHANNEX_API_KEY      needed for the Channex outbox; without it that job reports "not configured"
+#   HOSTPLATFORM_ACCESS_TOKEN   needed to pull reservations from HostPlatform every 5 minutes; without it that job reports "not configured"
 #   MAIL_API_KEY         optional: email copies and owner emails
 #   WHATSAPP_TOKEN, WHATSAPP_PHONE_ID   optional: WhatsApp copies
 #   IT_HUB_API_KEY       optional: the same key the Pages project uses for IT Support; with it, the worker asks
@@ -25,6 +26,7 @@ id = "e0781ccdee9046919161c28cb95694c0"
 [triggers]
 crons = [
   "* * * * *",      # Channex outbox: retries and anything the request-time flush missed
+  "*/5 * * * *",    # HostPlatform: pull the reservations it changed since the last run (its webhook slot is StreamHost's)
   "*/15 * * * *",   # email / WhatsApp outbox (quiet hours, retries); release calendar blocks of finished repair jobs
   "0 * * * *",      # overdue cleans and repairs; statements finalised but unsent
   "0 0 * * *",      # 08:00 Malaysia: the "today" digest for operations
@@ -35,6 +37,9 @@ TIMEZONE = "Asia/Kuala_Lumpur"
 QUIET_HOURS_START = "22"
 QUIET_HOURS_END = "8"
 CHANNEX_BASE_URL = "https://app.channex.io"
+# HostPlatform External API (hostplatformPull in functions/_lib/cronJobs.ts). The access token is the secret
+# HOSTPLATFORM_ACCESS_TOKEN (npx wrangler secret put HOSTPLATFORM_ACCESS_TOKEN --config wrangler.cron.toml).
+HOSTPLATFORM_BASE_URL = "https://nebulapi-asg.hostplatform.com"
 # The website the worker asks to send its health report to the Houzs IT Hub (hubHealthReport in
 # functions/_lib/cronJobs.ts): the address staff use, which the Channex callback is registered against.
 APP_ORIGIN = "https://erp.theconts.com"

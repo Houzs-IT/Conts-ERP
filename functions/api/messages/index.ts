@@ -1,5 +1,6 @@
 import { type Env, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession, isFieldRole, hasColumn } from '../../_lib/auth';
+import { usedBySql } from '../../_lib/credentials';
 import { notify } from '../../_lib/notify';
 import { pushMessageIfLinked } from '../../_lib/channexMessageSync';
 
@@ -47,7 +48,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   let body = String(b.body ?? '').trim();
   if (b.kind === 'access_details' && reservationId) {
     const a = await one<{ instruction: string }>(env, `
-      SELECT c.instruction FROM access_credentials c JOIN reservations r ON r.unit_id = c.unit_id WHERE r.id = ? ORDER BY c.updated_at DESC LIMIT 1`, reservationId);
+      SELECT c.instruction FROM access_credentials c JOIN reservations r ON r.unit_id = c.unit_id WHERE r.id = ?${await usedBySql(env, 'c', 'guest')} ORDER BY c.updated_at DESC LIMIT 1`, reservationId);
     if (!a) return fail('NOT_FOUND', 'There are no access details on file for this unit.', 404);
     body = `Your access details: ${a.instruction}`;
   }

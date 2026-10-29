@@ -3,6 +3,8 @@ import { useSearchParams } from 'react-router-dom';
 import { useSession } from '../lib/session';
 import { useApi } from '../lib/useApi';
 import { Segmented, mytDay } from '../components/ops/OpsUi';
+import { usePortalText } from '../lib/portalI18n';
+import { useFieldRefresh } from '../lib/fieldLive';
 
 const FieldTodayPage = lazy(() => import('./FieldTodayPage'));
 const FieldRepairsPage = lazy(() => import('./FieldRepairsPage'));
@@ -21,12 +23,15 @@ export default function FieldHome() {
   const linked = () => setParams(p => { const n = new URLSearchParams(p); n.delete('task'); n.delete('repair'); return n; }, { replace: true });
   const cleans = useApi<{ rows: unknown[] }>(tech ? `/field/tasks?date=${mytDay(0)}` : null);
   const repairs = useApi<{ mine: { state: string }[] }>(tech ? null : '/field/repairs');
+  // The switch's count of the other list follows a new notice too.
+  useFieldRefresh(() => { cleans.reload(); repairs.reload(); });
   const other = tech ? (cleans.data?.rows.length ?? 0) : (repairs.data?.mine.filter(r => r.state !== 'resolved').length ?? 0);
   const both = other > 0;
+  const t = usePortalText();
   const toggle = both ? (
-    <Segmented label="Show" value={view} onChange={setView} className="self-start [&>button]:h-11" options={[
-      { value: 'cleaning', label: <>Cleaning{tech && <span className="text-muted-ink tabular-nums"> {other}</span>}</> },
-      { value: 'repairs', label: <>Repairs{!tech && <span className="text-muted-ink tabular-nums"> {other}</span>}</> },
+    <Segmented label={t.home.show} value={view} onChange={setView} className="self-start [&>button]:h-11" options={[
+      { value: 'cleaning', label: <>{t.home.cleaning}{tech && <span className="text-muted-ink tabular-nums"> {other}</span>}</> },
+      { value: 'repairs', label: <>{t.home.repairs}{!tech && <span className="text-muted-ink tabular-nums"> {other}</span>}</> },
     ]} />
   ) : null;
   return view === 'repairs'

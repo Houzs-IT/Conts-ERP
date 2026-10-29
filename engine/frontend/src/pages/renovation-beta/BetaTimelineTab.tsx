@@ -11,16 +11,17 @@ import { WS, WsEmpty, WsFilterPill, WsPageHead, WsTag, btnStyle, cardStyle } fro
 import type { BetaTabProps } from "./betaShared";
 import { dayHeading, groupByDay, isRecordEntry, mytDay, mytTime, plainTimelineEntry, searchEntries, timelineCsv } from "./renovationBetaModel";
 import { betaSiteApi } from "./renovationBetaSiteApi";
-import { BETA, type BetaTone } from "./renovationBetaTheme";
+import { BETA, TONES, type BetaTone } from "./renovationBetaTheme";
 import type { BetaTabKey } from "./renovationBetaTabs";
+import { BetaLoading } from "./BetaLoading";
 
 const TONE: Readonly<Record<TimelineCategory, BetaTone>> = {
-  site: ["#1A6B66", "#E4F1EF"],
-  design: ["#3F4947", "#EEF2F1"],
-  customer: ["#3F4947", "#EEF2F1"],
-  supplier: ["#8A4A00", "#FDF1E2"],
-  sales: ["#1A6B66", "#E4F1EF"],
-  system: ["#3F4947", "#EEF2F1"],
+  site: [TONES.accent.ink, TONES.accent.soft],
+  design: [TONES.grey.ink, TONES.grey.soft],
+  customer: [TONES.grey.ink, TONES.grey.soft],
+  supplier: [TONES.amber.ink, TONES.amber.soft],
+  sales: [TONES.accent.ink, TONES.accent.soft],
+  system: [TONES.grey.ink, TONES.grey.soft],
 };
 
 const TAB_NAME: Readonly<Partial<Record<BetaTabKey, string>>> = { drawings: "Drawings", site: "Site and photos", defects: "Defects", overview: "Overview" };
@@ -99,7 +100,7 @@ export function BetaTimelineTab({ projectId, today, onDone, onError, openTab }: 
         ))}
       </div>
 
-      {q.loading && !q.data ? <p style={{ fontSize: 14, color: BETA.muted }}>Loading the timeline...</p>
+      {q.loading && !q.data ? <BetaLoading label="Loading the timeline" size="inline" />
         : q.error && !q.data ? <p role="alert" style={{ fontSize: 14, color: WS.red }}>The timeline could not be loaded: {q.error}</p>
         : shown.length === 0 ? <WsEmpty>{entries.length === 0 ? "No activity yet." : "Nothing matches. Try another word or filter."}</WsEmpty>
         : (
@@ -109,7 +110,7 @@ export function BetaTimelineTab({ projectId, today, onDone, onError, openTab }: 
                 <h3 style={{ margin: 0, fontSize: 13, fontWeight: 700, color: BETA.muted, textTransform: "uppercase", letterSpacing: ".06em" }}>
                   {g.day === today ? `Today · ${dayHeading(g.day, today)}` : g.day ? dayHeading(g.day, today) : "No date"}
                 </h3>
-                <ol style={{ ...cardStyle, listStyle: "none", margin: 0, padding: 0, gap: 0, overflow: "hidden" }}>
+                <ol className="stag" style={{ ...cardStyle, listStyle: "none", margin: 0, padding: 0, gap: 0, overflow: "hidden" }}>
                   {g.items.map((e, i) => <EntryRow key={e.id} e={e} first={i === 0} openTab={openTab} />)}
                 </ol>
               </section>

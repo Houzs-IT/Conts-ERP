@@ -74,7 +74,9 @@ export interface StayRow {
   parts?: StayPart[];
 }
 export interface StayPart { check_in: string; check_out: string; amount: number }
-export interface CostRow { id: string; unit_id: string; category: string; description: string; amount: number; incurred_on: string; reference: string | null; task_kind: string | null }
+/** An owner-charged expense. incurred_on is the bill's own date; deduct_month (YYYY-MM) the statement that takes it, a later
+ *  month when the bill came after its own month was final (rolled: the line says so). */
+export interface CostRow { id: string; unit_id: string; category: string; description: string; amount: number; incurred_on: string; deduct_month?: string; rolled?: boolean; reference: string | null; task_kind: string | null }
 export interface AdjustmentRow { id: string; owner_id: string; unit_id: string | null; kind: string; amount: number; description: string; occurred_on: string; reference: string | null; state: string; statement_id: string | null }
 
 export interface Terms {
@@ -169,6 +171,15 @@ function daysCovered(month: string, from: string | null, to: string | null) {
   return nightsInWindow(a, toEx < endEx ? toEx : endEx, start, endEx);
 }
 
+/** The statement month that takes a cost: its deduction month, or the month of its date for a cost built without one. */
+export const deductMonthOf = (c: Pick<CostRow, 'deduct_month' | 'incurred_on'>) => c.deduct_month ?? c.incurred_on.slice(0, 7);
+
+/** A cost's statement line: its description, and "(late bill)" when it is deducted after its own month. */
+export function costLabel(c: Pick<CostRow, 'description' | 'category' | 'rolled'>): string {
+  const text = c.description || c.category;
+  return c.rolled ? `${text} (late bill)` : text;
+}
+
 export function classifyCost(c: Pick<CostRow, 'category' | 'description' | 'task_kind'>): DeductionCategory {
   const cat = c.category, d = c.description ?? '';
   if (cat === 'cleaning' || cat === 'housekeeping') return c.task_kind === 'deep_clean' || /deep|move-out/i.test(d) ? 'cleaning_deep' : 'cleaning_basic';
@@ -256,9 +267,10 @@ export function computeUnitMonth(month: string, unit: UnitRow, terms: Terms, sta
 
   // Deductions, by the workbook's rows.
   // A master lease deducts nothing from the owner: every cost of the unit is the company's.
-  const myCosts = terms.basis === 'none' ? [] : costs.filter(c => c.unit_id === unit.id && c.incurred_on >= start && c.incurred_on < endEx).sort((a, b) => a.incurred_on.localeCompare(b.incurred_on));
+  const myCosts = terms.basis === 'none' ? [] : costs.filter(c => c.unit_id === unit.id && deductMonthOf(c) === month).sort((a, b) => a.incurred_on.localeCompare(b.incurred_on));
   const occupancy = nights / days;
-  const miscExact = terms.miscCharges && terms.basis === 'share' ? miscMonthly * occupancy : 0;
+  // RM 100 (the setting) times the occupancy rate, never more than the RM 100 (staff sheet UNIT, 26 Oct 2026).
+  const miscExact = terms.miscCharges && terms.basis === 'share' ? miscMonthly * Math.min(1, occupancy) : 0;
   const misc = roundSen(miscExact);
   const groups = new Map<DeductionCategory, { quantity: number; amounts: number[] }>();
   for (const c of myCosts) {
@@ -334,7 +346,7 @@ export function computeUnitMonth(month: string, unit: UnitRow, terms: Terms, sta
       description: `${label} · monthly rent${terms.tenantName ? ` from ${terms.tenantName}` : ''}${tenancyDays !== days ? ` (${tenancyDays} of ${days} days)` : ''}` });
     for (const c of myCosts) lines.push({
       type: 'expense', category: classifyCost(c), unitId: unit.id, expenseId: c.id, quantity: 1, amount: -Number(c.amount), occurredOn: c.incurred_on,
-      description: c.description || c.category, reference: c.reference,
+      description: costLabel(c), reference: c.reference,
     });
     if (operatorShare) lines.push({ type: 'management_fee', category: 'operator_share', unitId: unit.id, quantity: null, amount: -operatorShare, occurredOn: end,
       description: `${fmtPct(100 - (terms.ownerPct ?? 100))} To Operator (of the rent)` });
@@ -346,7 +358,7 @@ export function computeUnitMonth(month: string, unit: UnitRow, terms: Terms, sta
     }));
     for (const c of myCosts) lines.push({
       type: 'expense', category: classifyCost(c), unitId: unit.id, expenseId: c.id, quantity: 1, amount: -Number(c.amount), occurredOn: c.incurred_on,
-      description: c.description || c.category, reference: c.reference,
+      description: costLabel(c), reference: c.reference,
     });
     if (misc) lines.push({ type: 'expense', category: 'misc', unitId: unit.id, quantity: occupancy, amount: -misc, occurredOn: end,
       description: `Miscellaneous charges (RM ${(miscMonthly / 100).toFixed(2)} x ${(occupancy * 100).toFixed(2)}% occupancy)` });
@@ -424,9 +436,9 @@ export async function loadInputs(q: Query, from: string, toExclusive: string, sc
       (SELECT json_agg(x ORDER BY x.property_name, x.unit_number) FROM (${UNIT_SQL} WHERE u.id IN (SELECT id FROM su)) x) AS units,
       (SELECT json_agg(x ORDER BY x.check_in, x.id) FROM st x) AS stays,
       (SELECT json_agg(x) FROM (
-        SELECT e.id, e.unit_id, e.category, e.description, e.amount, e.incurred_on, e.reference, t.kind AS task_kind
+        SELECT e.id, e.unit_id, e.category, e.description, e.amount, e.incurred_on, e.deduct_month, e.rolled, e.reference, t.kind AS task_kind
         FROM expenses e LEFT JOIN tasks t ON t.id = e.task_id
-        WHERE e.charge_to = 'owner' AND e.incurred_on >= ? AND e.incurred_on < ? AND e.unit_id IN (SELECT id FROM su)) x) AS costs,
+        WHERE e.charge_to = 'owner' AND NOT e.record_only AND e.deduct_month >= substr(?, 1, 7) AND e.deduct_month < substr(?, 1, 7) AND e.unit_id IN (SELECT id FROM su)) x) AS costs,
       (SELECT json_agg(x ORDER BY x.occurred_on, x.id) FROM (
         SELECT a.id, a.owner_id, a.unit_id, a.kind, a.amount, a.description, a.occurred_on, a.reference, a.state, a.statement_id
         FROM owner_adjustments a
@@ -483,7 +495,7 @@ export function computeMonth(month: string, inputs: Inputs, settings: { defaultF
   for (const u of inputs.units) { const l = byOwner.get(u.owner_id); if (l) l.push(u); else byOwner.set(u.owner_id, [u]); }
   const start = `${month}-01`, endEx = monthEndExclusive(month);
   const stays = inputs.stays.filter(s => s.check_in < endEx && s.check_out > start);
-  const costs = inputs.costs.filter(c => c.incurred_on >= start && c.incurred_on < endEx);
+  const costs = inputs.costs.filter(c => deductMonthOf(c) === month);
   const out: UnitMonth[] = [];
   for (const [ownerId, units] of byOwner) {
     const asOf = units.map(u => unitForMonth(u, month));

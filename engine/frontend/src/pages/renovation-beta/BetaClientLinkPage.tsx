@@ -5,12 +5,14 @@
    (engine/backend/src/routes/renovationBetaClientPublic.ts). */
 
 import { useEffect, useMemo, useState, type ReactElement } from "react";
-import { WsFilterPill, WsStyle } from "./BetaWsUi";
+import { BetaMotion } from "./betaMotion";
+import { BetaSkin, WsFilterPill, WsStyle } from "./BetaWsUi";
 import { WsNarrow, WsNarrowStyle, WsTable, metaStyle, narrowBandStyle, narrowItemStyle, numStyle, tdStyle, thStyle } from "./BetaVoPoUi";
-import { BETA } from "./renovationBetaTheme";
+import { BETA, TONES } from "./renovationBetaTheme";
 import { dayMonthYear } from "./renovationBetaModel";
 import { byArea, byCategory, clientPhotoUrl, type ClientItem, type ClientPublicAnswer } from "./renovationBetaVoPo";
 import { PlainPhotoStrip } from "./BetaClientPhotos";
+import { BetaLoading } from "./BetaLoading";
 
 const API_BASE: string = (import.meta.env.VITE_API_URL as string) || (import.meta.env.PROD ? "" : "https://conts-scm-engine.invalid");
 
@@ -48,11 +50,13 @@ export function BetaClientLinkPage(): ReactElement {
   }, [data, view]);
 
   return (
-    <div className="bws" style={{ minHeight: "100vh", background: BETA.bg }}>
+    <BetaMotion>
+    <div className="bws" style={{ minHeight: "100vh", background: BETA.page }}>
+      <BetaSkin />
       <WsStyle />
       <WsNarrowStyle />
       <main style={{ maxWidth: 1100, margin: "0 auto", padding: "24px 16px 48px", display: "flex", flexDirection: "column", gap: 16 }}>
-        {error ? <p role="alert" style={{ padding: 24, fontSize: 15 }}>{error}</p> : !data ? <p style={{ padding: 24, color: BETA.muted }}>Loading...</p> : (
+        {error ? <p role="alert" style={{ padding: 24, fontSize: 15 }}>{error}</p> : !data ? <BetaLoading label="Loading" size="page" /> : (
           <>
             <header>
               <div style={metaStyle}>{data.company ?? ""}</div>
@@ -78,9 +82,9 @@ export function BetaClientLinkPage(): ReactElement {
                 </thead>
                 <tbody style={{ background: BETA.surface }}>
                   {groups.map((g) => [
-                    <tr key={g.key}><td colSpan={7} style={{ padding: "8px 10px", background: "#E1F1EE", borderLeft: `4px solid ${BETA.accent}`, color: BETA.accentInk, fontWeight: 700 }}>{g.label}</td></tr>,
+                    <tr key={g.key}><td colSpan={7} style={{ padding: "8px 10px", background: TONES.accent.soft, borderLeft: `4px solid ${BETA.accent}`, color: BETA.accentInk, fontWeight: 700 }}>{g.label}</td></tr>,
                     ...g.subs.flatMap((s) => [
-                      ...(s.label ? [<tr key={s.key}><td colSpan={7} style={{ padding: "6px 10px 6px 24px", background: "#F3F9F8", fontWeight: 600 }}>{s.label}</td></tr>] : []),
+                      ...(s.label ? [<tr key={s.key}><td colSpan={7} style={{ padding: "6px 10px 6px 24px", background: BETA.tealSoft, fontWeight: 600 }}>{s.label}</td></tr>] : []),
                       ...s.items.map((i) => (
                         <tr key={i.key}>
                           <td style={{ ...tdStyle, paddingLeft: 32 }}>{i.description || "-"}{i.pending && <div style={metaStyle}>Not confirmed yet</div>}</td>
@@ -137,5 +141,6 @@ export function BetaClientLinkPage(): ReactElement {
         )}
       </main>
     </div>
+    </BetaMotion>
   );
 }

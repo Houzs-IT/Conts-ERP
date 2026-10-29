@@ -2,7 +2,7 @@ import { type Env, all, one, run, audit, nowIso } from './db';
 import { type Session, hasColumn } from './auth';
 import { technicianFor } from './notify';
 
-/** Migration 0144: the technician list (Workers > Technicians) and each job's link to it. */
+/** Migration 0144: the technician list (HR > Employees) and each job's link to it. */
 export const hasTechnicianList = (env: Env): Promise<boolean> => hasColumn(env, 'maintenance_issues', 'technician_id').catch(() => false);
 
 /** The logins an in-house entry on the technician list may be linked to. */
@@ -26,10 +26,10 @@ export async function pickAssignee(env: Env, session: Session, raw: string): Pro
     FROM technicians t LEFT JOIN users u ON u.id = t.user_id AND u.is_active = 1
     WHERE lower(trim(t.full_name)) = lower(?) ORDER BY t.is_active DESC`, name);
   const active = found.filter(t => t.is_active);
-  if (active.length > 1) return `Two people on the technician list are called ${name}. Rename one under Workers > Technicians.`;
+  if (active.length > 1) return `Two people on the technician list are called ${name}. Rename one under HR > Employees.`;
   const [t] = active;
   if (t) return { name: t.full_name, kind: t.employment_type === 'internal' ? 'in_house' : 'contractor', userId: t.active_login, technicianId: t.id };
-  if (found.length) return `${found[0]?.full_name ?? name} is switched off under Workers > Technicians. Switch them back on to give them jobs.`;
+  if (found.length) return `${found[0]?.full_name ?? name} is switched off under HR > Employees. Switch them back on to give them jobs.`;
 
   const id = crypto.randomUUID(), now = nowIso();
   await run(env, `INSERT INTO technicians (id, full_name, employment_type, is_active, created_at, updated_at) VALUES (?, ?, 'outsourced', 1, ?, ?)`, id, name, now, now);

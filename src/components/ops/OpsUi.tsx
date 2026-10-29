@@ -19,7 +19,8 @@ import { LinesEditor, linesPayload, type DraftLine } from './JobMoney';
 
 /** The status of one clean; its words and colour are entity "cleaning" in lib/status.ts. */
 export type CleanStatus = 'done' | 'cleaning' | 'ready' | 'guest_in' | 'unassigned' | 'waiting' | 'unplanned';
-export const KIND_LABEL: Record<string, string> = { turnover: 'Standard', light_clean: 'Light', deep_clean: 'Deep' };
+/** Short clean types, as the cleaning team writes them (26 Oct 2026). Light is no longer offered; old jobs keep the word. */
+export const KIND_LABEL: Record<string, string> = { turnover: 'BC', light_clean: 'Light', deep_clean: 'DC' };
 
 /** "1 h 20 m" / "45 min". */
 export function minutesLabel(min: number): string {
@@ -212,7 +213,7 @@ export function AssigneePicker({ value, onChange, techs, autoFocus }: { value: s
       )}
       <span className="text-meta text-muted-ink flex gap-1.5 flex-wrap items-center">
         {kind && <span>{KIND_WORD[kind]}{kind === 'in_house' && picked?.userId ? ', a staff account' : ''}.</span>}
-        {kind === 'in_house' && picked && !picked.userId && <span className="text-warning">No app access: they will not see this job on a phone. Give it under Workers.</span>}
+        {kind === 'in_house' && picked && !picked.userId && <span className="text-warning">No app access: they will not see this job on a phone. Give it under HR &gt; Employees.</span>}
         {kind === 'contractor' && value.trim() && <span>No app: tell them about the job yourself.</span>}
         <button type="button" className="text-accent cursor-pointer font-medium" onClick={() => { setTyping(!typing); onChange(''); }}>
           {typing ? 'Pick from the list' : 'New contractor'}

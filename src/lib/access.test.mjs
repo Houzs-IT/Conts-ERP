@@ -22,8 +22,8 @@ const at = (r, key) => resolveFor(r, staff, area(key));
 test('precedence: user, position area, department area, position category, department category, none', () => {
   const all = rules({
     user: { scSales: 'view' },
-    position: { scSales: 'edit', 'group:Dream Crafter': 'full' },
-    department: { scSales: 'full', 'group:Dream Crafter': 'none' },
+    position: { scSales: 'edit', 'group:Supply chain': 'full' },
+    department: { scSales: 'full', 'group:Supply chain': 'none' },
   });
   assert.deepEqual(at(all, 'scSales'), { level: 'view', origin: 'user' });
   all.user.rules.delete("scSales");
@@ -32,23 +32,23 @@ test('precedence: user, position area, department area, position category, depar
   assert.deepEqual(at(all, 'scSales'), { level: 'full', origin: 'department' });
   all.department.rules.delete('scSales');
   assert.deepEqual(at(all, 'scSales'), { level: 'full', origin: 'position' });
-  all.position.rules.delete('group:Dream Crafter');
+  all.position.rules.delete('group:Supply chain');
   assert.deepEqual(at(all, 'scSales'), { level: 'none', origin: 'department' });
-  all.department.rules.delete('group:Dream Crafter');
+  all.department.rules.delete('group:Supply chain');
   assert.deepEqual(at(all, 'scSales'), { level: 'none', origin: 'none' });
 });
 
 test('an area set at the department beats the position category baseline (Sales example)', () => {
   const r = rules({
-    department: { 'group:Dream Crafter': 'view', scInvoices: 'none' },
-    position: { 'group:Dream Crafter': 'edit' },
+    department: { 'group:Supply chain': 'view', scInvoices: 'none' },
+    position: { 'group:Supply chain': 'edit' },
   });
   assert.deepEqual(at(r, 'scSales'), { level: 'edit', origin: 'position' });
   assert.deepEqual(at(r, 'scInvoices'), { level: 'none', origin: 'department' });
 });
 
 test('inherit counts as not set', () => {
-  const r = rules({ user: { scSales: 'inherit' }, position: { scSales: 'inherit' }, department: { 'group:Dream Crafter': 'view' } });
+  const r = rules({ user: { scSales: 'inherit' }, position: { scSales: 'inherit' }, department: { 'group:Supply chain': 'view' } });
   assert.deepEqual(at(r, 'scSales'), { level: 'view', origin: 'department' });
 });
 
@@ -72,21 +72,24 @@ test('cleaning and maintenance have no desk areas, whatever is stored', () => {
 });
 
 // The levels the rules migrations-pg/0145 seeds give, written out per area (they match the category chart the app had
-// before departments: Operations staff, Operations manager and Finance admin columns).
+// before departments: Operations staff, Operations manager and Finance admin columns). HR came later (migration 0165)
+// and nobody is seeded into it: pay and bank details stay hidden until management grants HR.
 const seeded = {
-  operations_staff: { dashboard: 'none', portfolio: 'none', reservations: 'edit', operations: 'edit', properties: 'edit', serviceCases: 'edit', projects: 'edit', scSales: 'edit', scInvoices: 'none', scConsignment: 'edit', scProcurement: 'edit', scTransportPlan: 'edit', scWarehouse: 'edit', finance: 'none', owners: 'none', ledger: 'none', performance: 'edit', comms: 'edit', users: 'none', integrations: 'none', settings: 'none', health: 'none' },
-  operations_manager: { dashboard: 'full', portfolio: 'full', reservations: 'full', operations: 'full', properties: 'full', serviceCases: 'full', projects: 'full', scSales: 'full', scInvoices: 'view', scConsignment: 'full', scProcurement: 'full', scTransportPlan: 'full', scWarehouse: 'full', finance: 'view', owners: 'view', ledger: 'none', performance: 'full', comms: 'full', users: 'full', integrations: 'full', settings: 'full', health: 'full' },
-  finance_admin: { dashboard: 'view', portfolio: 'view', reservations: 'view', operations: 'view', properties: 'view', serviceCases: 'view', projects: 'view', scSales: 'view', scInvoices: 'full', scConsignment: 'view', scProcurement: 'view', scTransportPlan: 'view', scWarehouse: 'view', finance: 'full', owners: 'full', ledger: 'full', performance: 'full', comms: 'none', users: 'none', integrations: 'full', settings: 'full', health: 'full' },
+  operations_staff: { dashboard: 'none', portfolio: 'none', reservations: 'edit', operations: 'edit', properties: 'edit', hr: 'none', serviceCases: 'edit', projects: 'edit', scSales: 'edit', scInvoices: 'none', scConsignment: 'edit', scProcurement: 'edit', scTransportPlan: 'edit', scWarehouse: 'edit', finance: 'none', owners: 'none', ledger: 'none', performance: 'edit', comms: 'edit', users: 'none', integrations: 'none', settings: 'none', health: 'none' },
+  operations_manager: { dashboard: 'full', portfolio: 'full', reservations: 'full', operations: 'full', properties: 'full', hr: 'none', serviceCases: 'full', projects: 'full', scSales: 'full', scInvoices: 'view', scConsignment: 'full', scProcurement: 'full', scTransportPlan: 'full', scWarehouse: 'full', finance: 'view', owners: 'view', ledger: 'none', performance: 'full', comms: 'full', users: 'full', integrations: 'full', settings: 'full', health: 'full' },
+  finance_admin: { dashboard: 'view', portfolio: 'view', reservations: 'view', operations: 'view', properties: 'view', hr: 'none', serviceCases: 'view', projects: 'view', scSales: 'view', scInvoices: 'full', scConsignment: 'view', scProcurement: 'view', scTransportPlan: 'view', scWarehouse: 'view', finance: 'full', owners: 'full', ledger: 'full', performance: 'full', comms: 'none', users: 'none', integrations: 'full', settings: 'full', health: 'full' },
 };
 
 test('the seeded rules give the levels of the old role chart', () => {
-  const staffDept = { 'group:Operations': 'edit', 'group:Dream Crafter': 'edit', 'group:Growth': 'edit', scInvoices: 'none' };
+  // Migration 0172 copied each seeded Dream Crafter baseline to its three sidebar categories.
+  const dc = level => ({ 'group:Service cases': level, 'group:Projects': level, 'group:Supply chain': level });
+  const staffDept = { 'group:Operations': 'edit', ...dc('edit'), 'group:Growth': 'edit', scInvoices: 'none' };
   const financeDept = {
-    'group:Workspace': 'view', 'group:Operations': 'view', 'group:Dream Crafter': 'view', 'group:Finance': 'full',
+    'group:Workspace': 'view', 'group:Operations': 'view', ...dc('view'), 'group:Finance': 'full',
     'group:Growth': 'full', 'group:System': 'full', scInvoices: 'full', comms: 'none', users: 'none',
   };
   const managerPosition = {
-    'group:Workspace': 'full', 'group:Operations': 'full', 'group:Dream Crafter': 'full', 'group:Finance': 'view',
+    'group:Workspace': 'full', 'group:Operations': 'full', ...dc('full'), 'group:Finance': 'view',
     'group:Growth': 'full', 'group:System': 'full', scInvoices: 'view', ledger: 'none',
   };
   const people = {
