@@ -1,357 +1,390 @@
 # Staff payment requests and petty cash
 
-Date: 2026-10-28. Owner: chew (finance). Status: rules agreed with chew in chat on 2026-10-28 and written in `docs/finance/FINANCE-SOP.md` §3.2, §3.5 and §6; this design is waiting for chew's review.
+Date: 2026-10-28, revised 2026-10-29. Owner: chew (finance). Status: rules agreed with chew in chat on 2026-10-28/29 and written in `docs/finance/FINANCE-SOP.md` §3.2, §3.5 and §6; this design is waiting for chew's review.
 
 The SOP is the source of the business rules. This document says how they are built. Where the two differ, the SOP wins; flag the difference instead of choosing.
 
-All product text is English with British spelling. Chat with chew is in Chinese.
+All product text is English with British spelling. The field portal's screens are in its four languages: en, ms, zh, my (`src/lib/portalI18n.ts`). Chat with chew is in Chinese.
 
 ---
 
 ## 1. Why
 
 - **Office staff cannot ask for money in the system today.** A Payment voucher can only be opened by someone with Ledger edit access, which is finance.
-  - Today staff ask finance outside the system. Finance then keys everything.
+  - Staff ask finance outside the system, and finance keys everything.
   - chew: "员工要能自己提交报销和付款申请".
 - **Petty cash is not in the system at all.** It was dropped with Houzs's "strip-to-core" cut-over (`engine/backend/src/db/migrations-pg/0017_drop_deleted_modules.sql`).
-  - chew wants every holder's spending listed: "每个员工的 petty cash listing，就是他们 submit 他们用的费用".
-  - The listing must show the receipts, filter by month and export to Excel.
-- **People work across both systems.** Staff work in Property OS (Rental) or the engine (Supply chain), and some work in both.
+  - chew wants every float's spending listed, with the receipts, by month, and exportable to Excel.
+- **The person who spends is usually not the person who keeps the cash.**
+  - In maintenance, renovation and cleaning, staff pay first out of their own pocket.
+  - They hand in the receipt. The department's petty cash keeper pays them back in cash.
+  - chew: "submit 的人可以是很多人，但是 hold cash 的可能是那个部门的其中一个人".
+- **People work across both systems.** Staff work in Property OS (Rental), in the engine (Supply chain), or in both.
   - chew: "可能一个人负责两边，所以不能限制哪里提交".
-  - A person has one petty cash float, whichever side they spend it on (chew, 2026-10-28).
 
 ## 2. Goals, non-goals, anti-goals
 
 ### Goals
 
-1. **Any signed-in staff member can submit a payment request** from either system and follow it to "Paid". The request types are Reimbursement, Payment and Deposit.
-2. **A holder of petty cash records each spend** from either system, with receipt photos. Field staff record theirs on the phone. The holder's balance drops at once.
-3. **Finance works in one place: the engine's Finance area.**
-   - Turn a request into a Payment voucher, or reject it with a reason.
-   - Check petty cash spends.
-   - Set floats.
-   - Top a holder back up to their float.
-4. **Finance has a petty cash listing per holder.** It shows:
-   - the float and the balance;
-   - every spend, with receipt photos, filterable by month and exportable to Excel;
-   - an overview of all holders.
-5. **Every line says where the cost belongs**: department (Rental / Supply chain / Shared), and optionally a unit or a project, plus an expense account. The ledger and the project limits use the same lines.
+1. **Any staff member hands in a receipt** from either system. Field staff do it on the phone.
+   - It is paid back from their department's petty cash.
+   - If the department has none, finance pays it back by bank transfer.
+   - Field staff never choose who pays.
+2. **Any office staff member can ask finance to pay**, from either system, and follow the request to "Paid":
+   - a reimbursement;
+   - a supplier payment, including one against a PO;
+   - a deposit.
+3. **A department's keeper sees the receipts waiting for them**, pays out cash and marks them paid. The float's balance follows.
+4. **Finance works in one place: the engine's Finance area.**
+   - Turn requests into Payment vouchers, or reject them.
+   - Check receipts.
+   - Set floats and keepers.
+   - Top floats up.
+5. **Finance has a petty cash listing per float.** It shows:
+   - the float and its balance;
+   - every receipt, with photos, filtered by month and exportable to Excel;
+   - an overview of all floats.
+6. **Every line says where the cost belongs**: department (Rental / Supply chain / Shared), plus an optional unit, maintenance job or project, and an expense account. The ledger and the project limits use the same lines.
 
-### Non-goals (later phases, per SOP §14)
+### Non-goals
 
-- The Payment centre (§3.6) and bank batch files (§3.7).
+- **Maintenance parts bought into the store.** chew has settled the cost rule: weighted average, expensed when drawn onto a job (2026-10-29). The rules for drawing stock wait on management, so this whole piece waits. Until then, such a buy is handed in as an ordinary receipt.
+- **Buying Supply chain goods out of petty cash.** Supply chain goods always go through a PO, and are paid by a payment request against it (chew, 2026-10-29).
+- The Payment centre (SOP §3.6) and bank batch files (§3.7).
 - The "owes a formal invoice" tracking list and deposit offsets (§3.8). This design only sets the flag.
-- **Goods purchases.** chew wants a "Goods" kind with two variants, both deferred until chew settles the stock rules with management (chew, 2026-10-28: "拿货和算法到时我再决定"):
-  - maintenance parts into the Property OS parts store: weighted-average cost, expensed when drawn onto a job;
-  - Supply chain goods: site materials as project cost, and warehouse goods through the engine's goods receipt.
-
-  Until then, staff submit such buys as a Claim.
-- Sending owner-borne costs onto owner statements from a claim. The owner is charged through the maintenance job's quote, as today (§4.4a).
-- Notifications other than on-screen banners.
-- Engine mobile screens (Houzs's phone app stays switched off).
+- Charging an owner from a receipt. The owner is charged through the maintenance job's quote, as today (§4.6).
+- Notifications other than on-screen banners and badges.
+- Engine mobile screens: Houzs's phone app stays switched off.
 
 ### Anti-goals (a failure even if it works)
 
-- A spend or request counted twice: in the balance, the ledger or the project limit.
-- Staff seeing or changing anyone else's requests or petty cash.
-- Two separate copies of the data or the rules, one per system, that can drift apart.
-- A petty cash spend blocked because a project is over its limit. The money is already spent (SOP §6), so it is flagged, never refused.
+- A receipt or request counted twice: in a balance, the ledger or a project limit.
+- An owner charged both by a job's quote and by a receipt for the same job.
+- Staff seeing other people's money. Field staff see no amounts at all, except a keeper for their own float (§4.7).
+- Two copies of the data or the rules, one per system, that can drift apart.
+- A receipt refused because a project is over its limit. The money is already spent (SOP §6), so it is flagged, never refused.
 
-## 3. Decisions made in chat (chew, 2026-10-28)
+## 3. Decisions made in chat (chew)
 
-- Staff must be able to submit Reimbursement and Payment requests themselves.
-- Submission is not limited to one system. Both systems show the same data.
-- There is one petty cash float per person. A person working on both sides has one float. The department comes from each line.
-- The petty cash listing:
-  - Per holder: the float, the balance, and each spend with its receipt photos.
-  - Filtered by month, exportable to Excel.
-  - An overview of all holders: float, balance, amount waiting for a check, and last top-up date.
+**2026-10-28**
+- Staff submit requests themselves, from either system. Both systems show the same data.
+- The listing:
+  - photos, a month filter, an Excel export;
+  - an overview with float, balance, waiting for a check, and the last top-up.
+- A float may be overspent. The next top-up repays every checked receipt, and the balance returns to the float.
+- On a maintenance job, the owner pays the job's quote. The receipt is the company's cost of the job and never charges the owner again.
+- Example: quote RM 130, faucet RM 45. The owner is charged RM 130; RM 45 is the job's cost.
+
+**2026-10-29**
+- Field staff (technicians, cleaners) only hand in receipts. They choose nothing, type no amount, and see no amounts or balance.
+  - The receipt is read by OCR.
+  - Everything the system reads is checked on finance's side.
+- **One float per department**, kept by one person. The keeper can be any staff member, not necessarily a supervisor.
+  - Everyone in the department hands receipts in against that float.
+  - One staff member can be pointed at another department's float.
+  - A department with no float sends receipts to finance as a reimbursement.
+- **A keeper cannot pass a receipt on to finance.** A department with a float pays every receipt from it. Short of cash, the keeper asks for a top-up (chew: "b").
+- Maintenance receipts come from the job. Cleaning receipts are not always tied to a job, so the phone also has a stand-alone "Hand in a receipt".
+- Supply chain goods: PO first. When the goods arrive or payment is due, a payment request is made against the PO.
 - From the SOP (agreed earlier):
-  - No multi-level approval. A submitted request goes straight to "waiting for payment".
-  - Finance may reject a request; the reason is required.
-  - A holder's spend defaults to "paid from my petty cash". The holder can switch it off.
-  - Top-ups are monthly, or earlier on request. A top-up equals the checked spends.
-  - A rejected spend is borne by the holder unless they bring a receipt.
+  - No multi-level approval. Finance may reject, and must give a reason.
+  - Top-ups are monthly, or earlier on request, and equal the checked receipts.
+  - A rejected receipt is borne by the person unless they bring a proper one.
 
-## 4. How it is built (design calls, mine unless marked)
+## 4. How it is built (design calls are mine unless marked)
 
 ### 4.1 One owner of the data: the engine
 
-All new tables live in schema `scm` and all rules live in the engine backend (`engine/backend/src/conts/`). Property OS never writes these tables; it forwards to the engine (§4.3).
+- **All new tables live in schema `scm`.** All rules live in the engine backend (`engine/backend/src/conts/`).
+- **Property OS never writes these tables.** It forwards to the engine (§4.3). This is the only way to meet the "no two copies" anti-goal; finance, the Payment vouchers and the project limit already live in the engine.
+- **Migrations:**
+  - They go in the root `migrations-pg/`, after the latest number on `origin/main` (0176 today), granted to `scm_engine` as the other `scm` migrations there are.
+  - `engine/backend/src/db/migrations-pg/` is the frozen Houzs copy. It is not used.
+- **The inherited Houzs table `scm.acc_payment_requests` is not reused.**
+  - Its requester is an engine integer id.
+  - It carries Houzs's own instalment fields.
+  - Nothing in this design uses it.
 
-This is the only way to meet the "no two copies" anti-goal. Finance, the Payment vouchers and the project limit already live in the engine.
+### 4.2 People, departments, floats
 
-Migrations go in the root `migrations-pg/`, after the latest number on `origin/main`, which is 0176 today. Grant them to `scm_engine`, as the `scm` migrations there do. The engine's own `engine/backend/src/db/migrations-pg/` is the frozen Houzs copy and is not used.
+**A person** is keyed by their Property OS user id (`pos.users.id`, text).
+- The engine finds the caller's key by email through the view `public.conts_staff`.
+- That view gains `department_id` and the department's `side`.
 
-The inherited Houzs table `scm.acc_payment_requests` is **not reused**:
-- its requester is an engine integer id;
-- it carries Houzs's own installment fields;
-- nothing here uses it.
-New tables keep Conts's model clean.
+**A department** is a row of `pos.departments`. Its `kind` is one of management, staff, cleaning or maintenance, and its `side` is one of conts, dream_crafter or both.
 
-### 4.2 Who a person is
+**A float** belongs to one department and has one keeper.
+- At most one active float per department.
+- A person keeps at most one float.
 
-- **A person is keyed by their Property OS user id** (`pos.users.id`, text). Every Conts staff member has one; engine users are created from it by single sign-on.
-- **The engine finds the caller's key by email** through the existing view `public.conts_staff`.
-- **Default department** comes from the department's `side`, which is added to the view (my call):
-  - `conts` → rental
-  - `dream_crafter` → supply
-  - `both` → shared
-  - none → shared
+**Which float takes a person's receipts:**
+1. their own override, if finance set one;
+2. otherwise their department's active float;
+3. otherwise none: the receipt becomes a reimbursement request to finance (§4.5).
 
-  The view's `department` column is a free-text name, not one of these.
-- The key is stored on every request (`requested_by`) and float (`holder`). The engine's `public.users.id` is never stored.
+**The default line department** comes from the person's department side:
 
-### 4.3 Where people submit
+| Side | Line department |
+|---|---|
+| conts | rental |
+| dream_crafter | supply |
+| both or none | shared |
+
+**Field staff** are accounts whose role is housekeeper or technician. Production has no such accounts yet, so they must be created before field staff can hand in receipts.
+
+### 4.3 Where people submit, and how the engine knows them
 
 | Who | Where | How |
 |---|---|---|
-| Staff in the engine | "My claims" page in the engine | Engine screen |
-| Office staff in Property OS | "My claims" in the Property OS sidebar | The same engine page in the existing frame, signed in by the existing single sign-on (`functions/api/supply-chain/engine-session.ts`). Today the single sign-on refuses anyone with no engine area (`engine/backend/src/conts/sso.ts:64`). So a new engine area, **"My claims"**, is given to every non-field Conts staff member, and it counts as access there (my call). This keeps one set of staff screens instead of building them twice |
-| Field staff (cleaners, technicians) on the phone | "Petty cash" tile in the field portal (`/portal`) | A Property OS page. Its Functions forward each call to the engine's staff endpoints, server to server. Each call carries a new signed staff assertion: the person's Property OS user id and email, signed with the existing engine assertion key, with a short expiry. The engine checks it in its own middleware, separate from the single sign-on, which accepts only the existing assertion (`functions/_lib/scmEngine.ts:25`, `engine/backend/src/conts/sso.ts:19-33`). The single sign-on refuses field roles, so the frame cannot be used for them |
+| Staff signed in to the engine | "My claims" in the engine | Engine page |
+| Office staff in Property OS | "My claims" in the Property OS sidebar | The same engine page in the existing frame and single sign-on (`functions/api/supply-chain/engine-session.ts`) |
+| Field staff on the phone | The field portal: the receipt upload on their maintenance job, the stand-alone "Hand in a receipt", and the keeper's "Petty cash" tab | Property OS pages. Their Functions forward each call to the engine, server to server |
 
-**Field staff record petty cash spends**, and a "reimburse me" receipt on their own maintenance job. Their other costs are submitted by their supervisor (SOP §3.1).
+**Office staff with no engine area.** Today the single sign-on refuses anyone with no engine area (`engine/backend/src/conts/sso.ts:64`). So a new engine area, **My claims**, is given to every non-field staff member and counts as access there.
 
-**Staff endpoints:** `/scm/my/*`.
-- They need only a signed-in Conts staff member. They are mounted outside `/payment-vouchers`, so neither `scmAreaGuard("scm.finance.accounting")` nor `requireLedgerAccess` applies.
-- The bill reader is reached through a staff route of their own, `/scm/my/extract`, which calls the same `acc/bill-extract.ts`. The voucher route's `/extract` is still behind the Finance area guard.
-- Every query is limited to the caller's own key.
-- Finance endpoints keep the Ledger gate.
+**The field staff path.** Each forwarded call carries a new signed staff assertion: the person's id and email, signed with the existing engine assertion key, and expiring after a short time.
+- The engine checks it in its own middleware, separate from the single sign-on.
+- The single sign-on accepts only the existing assertion (`functions/_lib/scmEngine.ts:25`, `engine/backend/src/conts/sso.ts:19-33`), and it refuses field roles.
 
-### 4.4 Payment requests
+**Staff endpoints** are `/scm/my/*`.
+- They need a signed-in Conts staff member only, and are mounted outside `/payment-vouchers`. So neither `scmAreaGuard("scm.finance.accounting")` nor `requireLedgerAccess` applies to them.
+- Every query is limited to the caller's own key. A keeper's endpoints are limited to their own float.
+- The bill reader is reached through `/scm/my/extract`, which calls the same `acc/bill-extract.ts`.
 
-**Request:**
-- type: `REIMBURSEMENT | PAYMENT | DEPOSIT`
-- requested_by, payee, wanted pay date, note
-- `owes_formal_invoice`: set for DEPOSIT; can be ticked on the others
-- files
-- lines
+**Finance endpoints** keep the Ledger gate.
+
+### 4.4 Lines, files, OCR (shared by receipts and requests)
 
 **Line:**
-- department: `rental | supply | shared`. The default is the requester's department.
-- `unit_id`: optional, a Property OS unit
-- `maintenance_issue_id`: optional; set for kind Maintenance (§4.4a)
-- `project_id`: optional
-- `account_id`: the expense account. Staff pick it by expense category name (SOP §2's expense category list). Until that list exists, they pick from accounts marked as staff-visible.
+- department: rental, supply or shared
+- optional `unit_id`: a Property OS unit
+- optional `maintenance_issue_id`
+- optional `project_id`
+- `account_id`: the expense account. People pick it by expense category name (SOP §2). Until that list exists, they pick from accounts marked staff-visible.
 - amount, description
 
-**Payee:**
-- Reimbursement: the requester. Bank details come from §4.6.
-- Payment and Deposit: a supplier from `scm.suppliers`, which already holds bank details. A payee not on the list can be typed in. It is marked "to be checked", and finance must link it or add the supplier before paying (SOP §3.2).
+**Files:** photos or PDFs, at least one. They are stored in the engine's existing R2 bucket for voucher files, under a new prefix, within the existing size and type limits.
 
-**Receipts and OCR:**
-- Files: photos or PDFs, at least one.
-- The existing bill reader (`POST /extract`, `acc/bill-extract.ts`) pre-fills payee, date, number and amount.
-- Nothing is saved until the person presses Submit.
+**OCR:**
+- The bill reader reads the payee, date, number and amount when a receipt is handed in.
+- For field staff, the read amount is stored as the receipt's amount without showing it to them. Their line takes:
+  - the job's unit, department and job, for a job receipt;
+  - their default department, for a stand-alone receipt, plus a unit if they pick one. Cleaners pick a unit from a list, with no amounts shown.
+
+  The expense account is left for finance.
+- Office staff see the read figures and confirm them before submitting.
+- Unreadable: the amount stays empty, and the receipt is marked "Amount to confirm" for the keeper and finance.
+
+### 4.5 Receipts and petty cash
+
+**Receipt** (a person's own spending, to be paid back):
+- submitter, float (resolved by §4.2 at hand-in and fixed on the receipt), spend date, files, lines, note.
+
+```
+Handed in → Paid out (keeper) → Checked (finance) → Topped up
+   ↘ Rejected (finance, reason) → a proper receipt → Handed in again
+                                ↘ Repaid (money given back to the float)
+                                ↘ Written off (finance)
+```
+
+- **Finance may check before or after the keeper pays out.**
+- **Paid out:**
+  - The keeper confirms the amount (correcting the OCR if needed) and marks the receipt paid.
+  - A keeper's own spending is handed in already paid out.
+- **Rejected before paid out:** the keeper does not pay.
+- **Rejected after paid out:** the submitter owes the float. A later proper receipt, a repayment, or a write-off clears it.
+- **No float** (§4.2 step 3): the receipt becomes a reimbursement request to finance (§4.6). It never enters any float.
+- **No passing on** (chew, "b"): the keeper has no way to send a receipt to finance.
+- **Project limit:** a receipt's project lines count as used from Handed in (SOP §6). They stop counting when the receipt is rejected and then repaid or written off. Over the limit is flagged, never refused.
+
+**Float:**
+- department, keeper, float amount, low-balance warning % (default 20%), active.
+- Finance sets them.
+- Changing the keeper keeps the float and its history. The handover cash count is done outside the system.
+
+**Balance** (cash the keeper should hold):
+
+```
+money paid to the keeper (posted vouchers)
+  − receipts paid out
+  + rejected paid-out receipts that were repaid
+  − money returned to finance
+```
+
+- **"Waiting to pay out"** (handed in, not yet paid) is shown beside the balance; it is not taken off.
+- **Overspending is allowed** (chew, 2026-10-28). The balance can go below zero, which is the keeper's own money. Nothing is refused for it. It shows in the danger colour.
+- **Banner:** shown to the keeper and to finance below the warning %.
+
+**Money to the keeper** (a new float, a raise, a top-up):
+- Always a Payment voucher, purpose `OTHER`, to the keeper, with one line on the petty cash account, linked to the float.
+- **"Top up"** proposes the total of receipts that are both paid out and checked but not yet topped up. Its voucher lists them, and they turn "Topped up" when it posts.
+- **The keeper's "Ask for a top-up"** flags the float for finance.
+
+**"Returned"** is the keeper giving cash back: the float is lowered or closed. Finance records it with a date and an amount. In the ledger it is an ordinary money-received entry, made by hand; the form says so.
+
+**Ledger** (my call):
+
+| Event | Journal |
+|---|---|
+| A voucher to the keeper posts | Dr petty cash, Cr bank |
+| A receipt is both paid out and checked | Dr each line's account, Cr petty cash, on the spend date. A closed month moves it to the first open month, and the receipt keeps its real date (SOP §3.10) |
+| A rejected receipt | Nothing |
+| A repayment | Nothing (the cash goes back into the tin) |
+| A write-off | Dr the account finance picks, for example a staff debtor; Cr petty cash |
+
+- There is one petty cash GL account, chosen in the Ledger setup posting rules.
+- The split by float lives in the petty cash tables, not in separate GL accounts.
+
+### 4.6 Payment requests (to finance)
+
+**Types:**
+- `REIMBURSEMENT`: an office staff member's own spending when their department has no float, and every receipt that §4.2 step 3 sends to finance.
+- `PAYMENT`: to a supplier, optionally against a PO.
+- `DEPOSIT`
+
+**Header:**
+- requester, payee, wanted pay date, note
+- `owes_formal_invoice`: set for a deposit, and can be ticked on the others
+- optional `purchase_order_id`
+- files, lines
+
+**Payee:**
+- **Reimbursement:** the requester. Bank details come from §4.8.
+- **Payment and deposit:** a supplier from `scm.suppliers`, which already holds bank details. If not on the list, the payee is typed in and marked "to be checked"; finance must link or add the supplier before paying (SOP §3.2).
+- **With a PO:** the supplier comes from the PO.
+
+**Deposit** (my call):
+- It must name a supplier from the list.
+- Its voucher is a supplier payment booked as a supplier advance (the existing `acc_supplier_advances`), so the later invoice can be offset (SOP §3.8, later).
 
 **Project limit** (my call, so nothing counts twice):
-- A submitted request reserves, per project, only the part **not yet on any of its vouchers**. Its vouchers then reserve or use the rest, as they do today.
-- Submission is refused when a line would take its project over the limit (SOP §3.2), using `conts/project-limit.ts`. That file gains the request reservations and the petty cash spends (§4.5) as further sources.
+- A submitted request reserves, per project, only the part not yet on any of its vouchers. Its vouchers reserve or use the rest, as today.
+- Submission is refused over the limit (SOP §3.2). `conts/project-limit.ts` gains request reservations and receipts as further sources.
 - A rejected, withdrawn or closed request reserves nothing.
 - Everyday-expense accounts are left out, as today.
 
-**Deposit** (my call):
-- A Deposit must name a supplier from the list.
-- Its voucher is a supplier payment booked as a supplier advance (the existing `acc_supplier_advances`), not as an expense. That way the later invoice can be offset against it (SOP §3.8, a later phase).
-
-**Status (SOP §3.5):**
+**Status** (SOP §3.5):
 
 ```
 Submitted (waiting for payment) → Part paid → Paid
-        ↘ Rejected (reason)          ↘ Closed (paid short, reason)
-        ↘ Withdrawn (by the requester)
+     ↘ Rejected (reason)     ↘ Closed (paid short, reason)
+     ↘ Withdrawn (requester, while no voucher)
 ```
 
-- The requester can edit or withdraw while no voucher exists.
-- Finance's "Create voucher" makes a DRAFT Payment voucher pre-filled from the request:
-  - the payee and the lines, including department, project and unit;
-  - the files, copied to the voucher;
-  - `payment_request_id` set on the voucher.
-- The voucher then follows its normal Submit → Check → Approve → Post.
-- A request can have several vouchers (part payments). It is Paid when its posted vouchers reach its amount.
-- Finance can **Close** a part-paid request with a reason (paid less than asked). The rest of its reservation is freed (SOP §3.4: once paid, the amount actually paid counts).
-- Cancelling a voucher puts the request back to Submitted or Part paid.
-- Rejecting needs a reason. It frees the reserved limit, and the requester sees the reason.
+- **Create voucher** makes a DRAFT Payment voucher pre-filled from the request:
+  - payee, lines (department, project, unit), files;
+  - `payment_request_id` set;
+  - for a PO request, the supplier, so finance allocates the purchase invoice as today.
+- The voucher then follows Submit → Check → Approve → Post.
+- **Several vouchers per request.** The request is Paid when its posted vouchers reach its amount.
+- **Close** frees the remaining reservation (SOP §3.4).
+- **Cancelling a voucher** moves the request back.
+- **Reject** needs a reason.
+- **Voucher lines gain `unit_id`.**
 
-**Voucher lines gain `unit_id`** (optional, a Property OS unit) so a Rental cost keeps its unit in the ledger.
+### 4.6a Maintenance jobs
 
-### 4.4a One submit screen; maintenance costs (chew, 2026-10-28)
-
-**One submit screen**, the same in both systems and on the phone, starts with **what the cost is for**:
-
-| Kind | What the person fills | Filled for them |
-|---|---|---|
-| **Maintenance** | Pick one of their own maintenance jobs | Unit, department `rental`, and the job link |
-| **Claim** (general spending) | Department, project or unit, expense category | — |
-| Goods | Deferred (§2) | — |
-
-- Which kinds a person sees will later be bound to their user settings. Until then, everyone sees both.
-- **Paid by**: "My petty cash" (the default for a holder), or "I paid — reimburse me". A Payment or Deposit to a supplier is a Claim with "Pay a supplier".
-- **The amount comes from the receipt by OCR.** The person confirms or corrects it.
-
-**Maintenance:**
-- On a maintenance job, the existing receipt upload (`functions/api/maintenance/issues/[id]/documents.ts`, kinds `receipt` and `claim`) gains "Paid by" when a staff member uploads their own receipt.
-- "My petty cash" or "Reimburse me" creates the spend or request through the engine, with the same file. There is no second upload.
-- Opening the submit screen from a job pre-sets kind Maintenance and the job.
-- A contractor's bill keeps today's path (`contractor_amount`).
-- **The owner is never charged from the claim.** The owner pays the job's quote through the existing complete → expense flow (SOP §3.11). The claim is the company's cost of the job.
-  - The job page shows its claims as part of its actual cost.
-  - Example: quote RM 130, faucet bought with petty cash RM 45. The owner is charged RM 130; RM 45 is the job's cost.
-- When actual cost goes above the quote, SOP §3.11 step 4 applies: HOD and finance are warned. That warning is shown on the job here; any further alert is out of scope.
-- The engine reads jobs (id, unit, title, assignee, state) through a new read-only view of `pos.maintenance_issues`, granted to `scm_engine`.
-- Property OS reads a job's claims through a read-only view of the claim lines, granted to `pos_app`.
-- A person may pick only open jobs assigned to them. Office staff may pick any open job.
-
-### 4.5 Petty cash
-
-**Float** (one per person, unique on the holder):
-- holder, float amount, low-balance warning % (setting, default 20%), active flag.
-- Finance sets and changes it.
-
-**Spend:**
-- holder, spend date, files (at least one), note
-- lines, exactly as request lines (§4.4)
-- status:
-
-```
-Submitted → Checked → Topped up
-    ↘ Rejected (reason) → resubmitted with a receipt → Submitted
-                        ↘ Repaid by holder
-                        ↘ Written off (finance)
-```
-
-- A spend can be edited until finance checks it.
-- A spend's project lines **count as used from Submitted** (SOP §6: the money is already spent). They stop counting if the spend is rejected and the holder repays, or the spend is written off.
-- An over-limit project line is flagged on the spend and in finance's list. It is never refused.
-
-**Paying money to the holder (giving a float, raising it, topping up):**
-- It is always a Payment voucher, with purpose `OTHER`, to the holder, with one line on the petty cash account. It is linked to the float.
-- A top-up voucher also lists the checked spends it covers. When it posts, they become "Topped up".
-- "Top up" proposes the total of checked spends not yet topped up. Finance may top up mid-month (SOP §6).
-- **Spending beyond the float is allowed** (chew, 2026-10-28: "如果他们用超过我给的我还要在下一次补回").
-  - The balance can go below zero; that is the holder's own money.
-  - A spend is never refused for that.
-  - The next top-up covers every checked spend, so the holder is paid back in full and returns to the float.
-  - A negative balance is shown in the danger colour.
-
-**Balance** = posted money paid to the holder − every spend not rejected − rejected spends not yet repaid − money the holder returned.
-- Shown live on the holder's page and in finance's overview.
-- A banner shows when the balance is below the warning %.
-- A holder returning cash (lowering or closing a float) is recorded by finance as "Returned", with a date and amount. In the ledger it is a normal money-received entry, done by hand. Finance's "Returned" form says so.
-
-**Ledger** (my call):
-- One petty cash GL account, chosen in the Ledger setup posting rules, in the same place as the other control accounts.
-- A voucher to the holder posts Dr petty cash, Cr bank.
-- Checking a spend posts its journal on the spend date: Dr each line's expense account, Cr petty cash.
-  - If that month is already closed, the journal goes into the first open month, and the spend keeps its real date (SOP §3.10).
-- A rejected spend posts nothing. If the holder repays, the cash goes back into the float, and that needs no journal either.
-- If a rejected spend is never repaid (for example, the holder leaves), finance can **Write off** the spend:
-  - Finance picks the account, for example a staff debtor or salary deduction.
-  - The write-off posts Dr that account, Cr petty cash.
-  - It counts in the balance like a repayment.
-- The per-holder split lives in the petty cash tables, not in separate GL accounts.
-
-### 4.6 Staff bank details
-
-- New table: staff bank details, keyed by the person. Fields: bank name, account number, account name, checked by, checked at.
-- Finance keeps it (HR supplies the details, SOP §2).
-- A reimbursement can be submitted without bank details, but "Create voucher" is refused until they are checked. The requester sees "Bank details missing — please ask finance".
+- **The job's document upload** (`functions/api/maintenance/issues/[id]/documents.ts`) gains a kind: **"My purchase (pay me back)"**. My call: it is a document type in the existing list, not a payer choice.
+  - Uploading it hands in a receipt for the job (§4.5) with the same file, so there is no second upload.
+  - The existing kinds (contractor's bill, receipt, invoice, proof of work) are unchanged. A contractor's bill keeps its path (`contractor_amount`).
+- **The owner pays the job's quote** through the existing complete → expense flow (SOP §3.11). The receipt is the company's cost of the job.
+- **The job page shows its receipts as part of actual cost** (office only; field staff see no amounts). When actual cost goes above the quote, the job shows the SOP §3.11 step 4 warning.
+- **Two read-only views:**
+  - one of `pos.maintenance_issues` (id, unit, title, assignee, state) for `scm_engine`;
+  - one of receipt lines by job for `pos_app`.
 
 ### 4.7 Screens
 
-**Staff: "My claims"** (engine page; also in Property OS through the frame). Three tabs:
-1. **New**
-   - Choose Reimbursement / Payment / Deposit.
-   - A holder sees "Paid from my petty cash" ticked. Unticking it makes a reimbursement request.
-   - Upload receipts. OCR pre-fills the form.
-   - Add the lines and submit.
-2. **My requests**: each request with its status, the reject reason, and the voucher number once there is one.
-3. **My petty cash** (holders only):
-   - Float, balance, and a low-balance banner.
-   - Each spend: date, description, unit / project, amount, status, receipts.
-   - Month filter.
-   - "Ask for a top-up" button. It flags the float for finance.
+**Field portal** (phone; four languages; no amounts unless the person is a keeper):
+- **On a maintenance job:** the upload offers "My purchase (pay me back)".
+- **"Hand in a receipt":** a button on the Jobs tab. Take photos, optionally pick a unit, add a note, send.
+- **"My receipts":** each receipt with date, what it was for, and status in words (Waiting, Paid back, Rejected and why). No amounts.
+- **For a field keeper only, a "Petty cash" tab:**
+  - balance and waiting to pay out;
+  - the receipts waiting for them, each with photo, submitter, the read amount, and an amount field;
+  - "Paid out";
+  - "Ask for a top-up".
 
-**Field portal: "Petty cash"** (phone; holders only):
-- The balance.
-- "Record a spend": the same submit screen (§4.4a), Maintenance or Claim. Take photos; OCR reads the amount.
-- The holder's spends this month, with status.
-- On their own maintenance jobs, the receipt upload offers "Paid by" (§4.4a).
+**My claims** (engine page; also in Property OS through the frame):
+1. **Hand in a receipt.** The form shows the OCR figures, lines and files. Its route follows §4.2: the person's float, or finance as a reimbursement.
+2. **Ask finance to pay.** Payment (optionally against a PO) or Deposit to a supplier.
+3. **Mine:** my receipts and requests, with status, reasons and voucher numbers.
+4. **For a keeper, Petty cash I keep:** the same as the field keeper tab, plus a month filter.
 
-**Finance (engine Finance group)**
+**Finance** (engine Finance group):
 
 *Payment requests:*
-- The list. Filters: status, type, department, requester. Submitted ones come first, oldest first.
+- Filter by status, type, department and requester. Submitted ones come first, oldest first.
 - Each request shows its lines, files and payee.
-- Actions: **Create voucher**, **Reject** (reason).
+- **Create voucher**, **Reject**, **Close**.
 
-*Petty cash:*
-- **Overview**: one row per holder, with holder, department, float, balance, waiting for a check (amount and count), last top-up date, and a low-balance marker. Totals row at the bottom. Actions: **New float**, **Change float**.
-- **Holder page:**
-  - Header: float, balance, waiting for a check.
-  - Month filter. The default is this month.
-  - Table: date, description, department, unit / project, account, amount, status, receipts (thumbnails; click to open).
-  - Bulk **Check**, and **Reject** (reason).
-  - **Top up** (shows the amount and creates the voucher), **Returned**, **Repaid**.
-  - **Export to Excel** (SheetJS, as other engine exports). The export follows the month filter, one row per spend line, and shows the number of receipts.
-  - Over-limit flags.
+*Petty cash overview:* one row per float.
+- Columns: department, keeper, float, balance, waiting to pay out, waiting for a check (amount and count), last top-up, low-balance marker.
+- A totals row.
+- **New float**, **Change float / keeper**.
+- **Staff pointed at another float:** a small list to add and remove overrides.
 
-Design rules for these screens follow the project's existing engine theme. Numbers are right-aligned in RM.
+*Float page:*
+- Header: float, balance, waiting to pay out, waiting for a check.
+- Month filter, defaulting to this month.
+- Table columns: date, submitter, description, department, unit / job / project, account, amount, status, receipts (thumbnails that open the file).
+- Finance can set the account and correct the amount while checking.
+- Bulk **Check**; **Reject** (reason).
+- **Top up**, **Returned**, **Repaid**, **Write off**.
+- **Export to Excel**:
+  - SheetJS, as the other engine exports;
+  - follows the month filter;
+  - one row per receipt line;
+  - shows the number of receipts.
+- Over-limit and "Amount to confirm" flags.
 
-### 4.8 Permissions
+The screens follow the engine's existing theme. Amounts are right-aligned, in RM.
+
+### 4.8 Staff bank details
+
+- A new table keyed by person: bank name, account number, account name, checked by, checked at.
+- Finance keeps it; HR supplies the details (SOP §2).
+- A reimbursement can be submitted without bank details, but **Create voucher** is refused until they are checked. The requester sees "Bank details missing — please ask finance".
+
+### 4.9 Permissions
 
 | Who | Can do |
 |---|---|
-| Any signed-in Conts staff member | Their own requests and spends. "My petty cash" is shown only to float holders |
-| Ledger edit | Process requests (create voucher, reject); check / reject spends; record returned / repaid; see the overview and every holder's listing |
-| Ledger full | Also set floats, staff bank details, and top-ups. Approving a voucher still needs voucher approve, as today |
+| Any staff member | Hand in receipts; see their own receipts and requests. Office staff may also ask finance to pay |
+| A float's keeper | See and pay out the receipts on their own float; ask for a top-up |
+| Ledger edit | Process requests; check and reject receipts; record returned and repaid; see every float |
+| Ledger full | Also set floats, keepers, overrides, staff bank details, top-ups and write-offs. Approving a voucher still needs voucher approve, as today |
 
 ## 5. Data (new; names are the builder's choice)
 
 | Table | Contents |
 |---|---|
-| Payment requests | Header (§4.4) |
+| Payment requests | Header (§4.6) |
 | Payment request lines | Lines (§4.4) |
-| Request files | The files |
-| Petty cash floats | One per person (§4.5) |
-| Petty cash spends | Header (§4.5) |
-| Spend lines | Lines (§4.5) |
-| Spend files | The files |
-| Float events | Money paid in (voucher link), Returned, Repaid. The source of the balance |
-| Staff bank details | §4.6 |
+| Request files | Files |
+| Petty cash floats | Department, keeper, amount, warning %, active (§4.5) |
+| Float overrides | Person → float (§4.2) |
+| Receipts | Header and status (§4.5) |
+| Receipt lines | Lines (§4.4) |
+| Receipt files | Files |
+| Float events | Money paid in (voucher link), Returned, Repaid. With the receipts, these are the source of the balance |
+| Staff bank details | §4.8 |
 
-**Changed tables:**
+**Changed:**
 - `scm.payment_vouchers`: add `payment_request_id` and `petty_cash_float_id`.
 - Voucher lines: add `unit_id`.
-- A view of Property OS units readable by `scm_engine`, to show and pick units: id, building, unit number.
+- `public.conts_staff`: add `department_id`, the department's side, and the role.
+- **New views:**
+  - Property OS units, for `scm_engine`;
+  - maintenance jobs, for `scm_engine`;
+  - receipt lines by job, for `pos_app`.
 
-**Files** go to the engine's existing R2 bucket for voucher files, under a new prefix, using the existing size and type limits.
+## 6. Open, not blocking this version
 
-## 6. Open questions for chew
+- **Maintenance parts into the store:** waits on chew and management (§2).
+- **Which kinds a person sees** will be bound to user settings later. For now, field staff see receipts, and office staff see receipts and requests.
 
-- **Field departments (maintenance, renovation, cleaning) — not settled; chew to confirm** (2026-10-28). What chew said:
-  - Staff only submit receipts. They do not choose who pays.
-  - Maintenance receipts come from the job.
-  - Cleaning receipts are not always tied to a job, so a standalone phone submit is needed.
-  - Usually one person per department holds the petty cash and the others claim from them in cash. Some receipts go instead as a claim paid by finance.
-  - **Settled 2026-10-29 (replaces "the supervisor's petty cash"):** petty cash is **per department, one float per department**.
-    - Each float has one keeper. The keeper can be any staff member, not necessarily a supervisor.
-    - The receipts of everyone in that department are paid from the department's float. The keeper pays the staff member back in cash, and the amount comes off the float.
-    - An individual staff member can be pointed at another department's float in their settings; most people need no change.
-    - A department with no float: receipts go to finance as a claim.
-    - The existing user "manager" field is not used for this, because keepers are often not supervisors.
-  - **Settled 2026-10-29:** ordinary staff see no amounts and no balance on the phone.
-  - **Open:** whether the supervisor may instead send a receipt to finance as a claim.
-- **Goods, settled 2026-10-29:**
-  - Maintenance parts go into the store, at weighted-average cost. The drawing rules are still to be settled with management.
-  - Supply chain goods go through a PO. When the goods arrive, or when payment is due, a payment request is submitted against the PO. Supply chain goods are never bought out of petty cash.
-  - The phone screens need all four portal languages (en, ms, zh, my).
+## 7. Noted, out of scope
 
-  Sections 4.4a, 4.5 and 4.7 still describe the earlier "the submitter holds the float" model and will be rewritten once this is settled.
-- The Goods kind waits on chew and management (§2).
-- The PO link for Supply chain goods will be asked when Goods is designed.
-
-## 7. Out of scope here, noted
-
-- This branch's `migrations-pg/0162_project_limit.sql` clashes with main's 0162. It must be renumbered before this work's migrations are numbered. This is already on the follow-up list.
-- The expense category list (SOP §2) does not exist yet. Lines use accounts marked staff-visible until it does.
+- This branch's `migrations-pg/0162_project_limit.sql` clashes with main's 0162. It must be renumbered before this work's migrations are numbered; it is already on the follow-up list.
+- The expense category list (SOP §2) does not exist yet. Lines use staff-visible accounts until it does.
