@@ -72,7 +72,12 @@ export const CODES: { code: ContractCode; pkg?: string; model: RevenueModel; lab
 ];
 export const CODE: Record<ContractCode, typeof CODES[number]> = Object.fromEntries(CODES.map(c => [c.code, c])) as Record<ContractCode, typeof CODES[number]>;
 export const codeName = (c: ContractCode): string => CODE[c]?.pkg ? `${c} ${CODE[c].pkg}` : c;
-export const codeFromModel = (m: RevenueModel): ContractCode =>
+/** "Package B" for PS GRR, null for the codes that have none (RTR, MANAGE, GRR, WH, WH LT, or no contract). */
+export const packageOf = (c: ContractCode | null | undefined): string | null => {
+  const pkg = c ? CODE[c]?.pkg : undefined;
+  return pkg && pkg !== '-' ? pkg.replace(/[()]/g, '') : null;
+};
+export const codeFromModel =(m: RevenueModel): ContractCode =>
   ({ management: 'PS', management_guarantee: 'PS GRR', management_yearly_guarantee: 'PS YGRR', grr: 'GRR', master_lease: 'RTR', long_term: 'LT', wh_long_term: 'WH LT' } as const)[m];
 
 export type UnitPurpose = 'rental' | 'showroom' | 'warehouse';
