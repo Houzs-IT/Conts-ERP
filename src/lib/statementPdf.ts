@@ -25,7 +25,7 @@ const BLACK = rgb(0, 0, 0), HEAD_FILL = rgb(0xdc / 255, 0xe9 / 255, 0xf5 / 255),
 const MON = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
 const MON_TITLE = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const MODEL_NAME: Record<string, string> = {
-  management: 'Profit share', management_guarantee: 'Profit share, minimum guarantee', management_yearly_guarantee: 'Profit share, yearly guarantee', grr: 'Guaranteed rent', master_lease: 'Master lease', long_term: 'Long-term let', wh_long_term: 'Showroom / warehouse long-term let',
+  management: 'Profit share', management_guarantee: 'Profit share, minimum guarantee', management_yearly_guarantee: 'Profit share, yearly guarantee', grr: 'Guaranteed rent', master_lease: 'Master lease', long_term: 'Long-term let',
 };
 
 /** 4,998.81; a deduction in brackets (397.12); nothing as '-'. Same rules as the screen report. */

@@ -2,9 +2,7 @@ import { type Env, one, all, run, json, fail, audit, nowIso } from '../../_lib/d
 import { changedFields } from '../../_lib/history';
 import { requireSession, hasColumn } from '../../_lib/auth';
 import { invalidUnit, ownerFieldIn, saveExpenses, saveCleaningPrice, saveContract, auditUnit, type UnitInput } from '../../_lib/properties';
-import { purposeReady, saveBays, codesFor, codeOf, PURPOSE_LABEL, CODE_LABEL, type Purpose } from '../../_lib/unitPurpose';
-import { modelOf } from '../../_lib/revenueModel';
-import { todayMyt } from '../../_lib/ops';
+import { purposeReady, saveBays, PURPOSE_LABEL, type Purpose } from '../../_lib/unitPurpose';
 
 /** PATCH /api/units/:id — the Units screen's Save. Sends the whole unit; only what is present is changed.
  *  The owner is picked by ownerId; their name, ID number and bank details are edited on the owner's page only, so a
@@ -33,26 +31,13 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   }
   const propertyId: string = target ?? cur.property_id;
   const ready = await purposeReady(env);
-  // A purpose change (0125). A showroom or warehouse is never on the channels, and its contract can only be a lease.
+  // A purpose change (0125). A showroom or warehouse is never on the channels; its contract follows the same Package A
+  // to D as any unit (migration 0181), so the contract is left as it is.
   const purpose = ready && typeof b.purpose === 'string' ? b.purpose as Purpose : undefined;
-  let endContract: { id: string; code: string; shared: boolean } | null = null;
-  if (purpose) {
-    const now0 = await one<any>(env, `SELECT u.purpose, u.channex_property_id, c.id AS c_id, c.revenue_model, c.model, c.minimum_guarantee, c.contract_code, u.package,
-      (SELECT COUNT(*) FROM units x WHERE x.contract_id = c.id AND x.id <> u.id) AS shared
-      FROM units u LEFT JOIN owner_contracts c ON c.id = u.contract_id WHERE u.id = ?`, id);
-    if (now0 && now0.purpose !== purpose) {
-      if (purpose !== 'rental' && now0.channex_property_id) {
-        return fail('CHANNEL_LINKED', `This unit is connected to the channels. Disconnect it on the Overview tab before making it a ${PURPOSE_LABEL[purpose].toLowerCase()}.`, 409, { purpose: 'Disconnect the channels first.' });
-      }
-      if (now0.c_id) {
-        const code = codeOf(modelOf({ ...now0, contract_id: now0.c_id }), now0.contract_code);
-        if (!codesFor(purpose).includes(code)) {
-          if (!b.endContract) {
-            return fail('CONTRACT_MISMATCH', `Its ${code} contract (${CODE_LABEL[code]}) does not fit a ${PURPOSE_LABEL[purpose].toLowerCase()} unit. To go ahead, end it today (it stays in the contract history), then add a ${codesFor(purpose).join(' or ')} contract.`, 409, { purpose: 'The contract does not fit.', endContract: code });
-          }
-          endContract = { id: now0.c_id, code, shared: Number(now0.shared) > 0 };
-        }
-      }
+  if (purpose && purpose !== 'rental') {
+    const now0 = await one<any>(env, 'SELECT purpose, channex_property_id FROM units WHERE id = ?', id);
+    if (now0 && now0.purpose !== purpose && now0.channex_property_id) {
+      return fail('CHANNEL_LINKED', `This unit is connected to the channels. Disconnect it on the Overview tab before making it a ${PURPOSE_LABEL[purpose].toLowerCase()}.`, 409, { purpose: 'Disconnect the channels first.' });
     }
   }
   const was = await snapshot(env, id);
@@ -102,14 +87,6 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     }
   }
   if (ready && b.parkingBays !== undefined) await saveBays(env, id, b.parkingBays);
-  if (endContract) {
-    const today = todayMyt();
-    // The contract stays in the unit's history; a record shared with other units keeps serving them unchanged.
-    if (!endContract.shared) await run(env, 'UPDATE owner_contracts SET ends_on = CASE WHEN ends_on IS NULL OR ends_on > ? THEN ? ELSE ends_on END, unit_id = COALESCE(unit_id, ?) WHERE id = ?', today, today, id, endContract.id);
-    await run(env, 'UPDATE units SET contract_id = NULL, updated_at = ? WHERE id = ?', now, id);
-    await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'contract.end', entityTable: 'owner_contracts', entityId: endContract.id,
-      after: { unitId: id, endsOn: today, reason: `Unit made a ${purpose}`, code: endContract.code, shared: endContract.shared } });
-  }
   if (b.cleaningPrice !== undefined) await saveCleaningPrice(env, id, b.cleaningPrice ?? 0);
   if (b.deepCleaningPrice !== undefined) await saveCleaningPrice(env, id, b.deepCleaningPrice ?? 0, 'cleaning_deep');
 

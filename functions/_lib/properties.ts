@@ -24,8 +24,6 @@ export interface UnitInput {
   layoutType?: string | null;
   /** Migration 0125: rental, showroom or warehouse; who uses it (null clears); beds; car park bays (the whole list). */
   purpose?: string; usedBy?: string | null; beds?: Bed[]; parkingBays?: BayInput[];
-  /** With a purpose change: end the contract in force today when it does not fit the new purpose. */
-  endContract?: boolean;
   /** The standard clean's price on this unit (sen): the unit's one 'cleaning' row in unit_expenses, which cleanPrice()
    *  reads. null clears it (amount 0, so cleans charge the last price used or the default). */
   cleaningPrice?: number | null;

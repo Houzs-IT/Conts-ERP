@@ -146,7 +146,7 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
   const dirty = !!form && !!edits[form.id];
 
   // Every write waits for the server; a refused save leaves the edits in place to correct and save again.
-  async function save(endContract = false, quiet = false): Promise<void> {
+  async function save(quiet = false): Promise<void> {
     if (!form || inFlight.current) return;
     const sent = edits[form.id];
     const before = original.find(u => u.id === form.id);
@@ -165,10 +165,8 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
       ...plain, layoutType: rest.layoutType ?? layoutFromBedrooms(rest.bedrooms), ...(ownerId && ownerId !== before?.ownerId ? { ownerId } : {}),
       ...(changed('purpose') ? { purpose } : {}), ...(changed('usedBy') ? { usedBy: usedBy ?? null } : {}), ...(changed('beds') ? { beds } : {}),
       ...(changed('parkingBays') ? { parkingBays: (parkingBays ?? []).map(b => ({ lotNumber: b.lotNumber, level: b.level, note: b.note })) } : {}),
-      ...(endContract ? { endContract: true } : {}),
     };
     setSaving(true); inFlight.current = true;
-    let retry = false;
     try {
       await api.patch(`/units/${form.id}`, body);
       if (!quiet) toast({ tone: 'success', title: 'Changes saved.', body: `${form.listingName || form.unitCode} updated.` });
@@ -178,14 +176,9 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
       reloadAll();
     } catch (e) {
       setSaveFailed(true);
-      // A new purpose the contract does not fit: say so, and on a yes end the contract and save again.
-      if (e instanceof ApiFailure && e.code === 'CONTRACT_MISMATCH' && !endContract) {
-        retry = (await ask({ title: 'End the current contract?', body: e.message, meta: 'The ended contract stays in the contract history of the unit.',
-          confirmLabel: 'End contract and save', cancelLabel: 'Keep it', danger: true })) !== null;
-      } else notifyFailure(e);
+      notifyFailure(e);
     }
     finally { setSaving(false); inFlight.current = false; }
-    if (retry) await save(true, quiet);
   }
   // Moving the unit to another owner or building is never saved by leaving a box: it waits for Save, so a slip in a
   // list cannot move a unit (its contract stays with the previous owner).
@@ -196,7 +189,7 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
   function autoSave() {
     if (!form || !dirty || inFlight.current || saveFailed || moving) return;
     if ((form.parkingBays ?? []).some(b => !b.lotNumber.trim())) return;
-    void save(false, true);
+    void save(true);
   }
   // A box changed while a save was on its way is saved as soon as that save is back.
   useEffect(() => { if (!saving) autoSave(); }, [saving]); // eslint-disable-line react-hooks/exhaustive-deps
