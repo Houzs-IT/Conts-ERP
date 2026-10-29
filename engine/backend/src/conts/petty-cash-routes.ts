@@ -23,7 +23,6 @@ import { hasHouzsPerm } from '../scm/lib/houzs-perms';
 import { requireActiveCompanyId } from '../scm/lib/companyScope';
 import { todayMyt } from '../scm/lib/my-time';
 import { CONTROL_ROLES, resolveRoles } from '../acc/rules';
-import { createPaymentVoucherCore } from '../scm/routes/payment-vouchers';
 import { projectLimit } from './project-limit';
 import { topUpAmount } from './petty-cash';
 import { postReceiptJournal, postWriteOffJournal } from './petty-cash-ledger';
@@ -47,6 +46,8 @@ const isUniqueClash = (e: { code?: string; message?: string } | null | undefined
 /** How the drafts are made — the payment voucher's own creation, so a top-up is an ordinary voucher. Replaceable in tests. */
 export const claimsDeps = {
   createVoucher: async (c: Ctx, body: Record<string, unknown>): Promise<{ ok: true; id: string; pvNumber: string } | { ok: false; status: number; body: unknown }> => {
+    /* Loaded when a voucher is made, not with the accounting routes: the voucher module is large. */
+    const { createPaymentVoucherCore } = await import('../scm/routes/payment-vouchers');
     const res = (await createPaymentVoucherCore(c, body)) as Response;
     const json = (await res.json()) as Record<string, unknown>;
     return res.status === 201 ? { ok: true, id: String(json.id), pvNumber: String(json.pvNumber) } : { ok: false, status: res.status, body: json };

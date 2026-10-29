@@ -12,6 +12,8 @@
 //   POST /float/top-up-request     ask finance to top my float up
 //   GET  /jobs                     maintenance jobs I may put a receipt on
 //   GET  /units                    units to name on a receipt
+//   GET  /accounts, /projects       what a cost is, and the project it is on
+//   GET  /suppliers?q=, /purchase-orders?q=   who finance pays (office staff)
 import { Hono } from 'hono';
 import { requireActiveCompanyId } from '../scm/lib/companyScope';
 import { todayMyt } from '../scm/lib/my-time';
@@ -211,6 +213,56 @@ export const unitsHandler = async (c: Ctx): Promise<Response> => {
   return c.json({ units });
 };
 
+/** What a cost can be: the chart's active expense accounts that are not headers or control accounts. Staff choose by
+ *  name; finance can change it while checking. */
+export const accountsHandler = async (c: Ctx): Promise<Response> => {
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  const { data, error } = await c.get('supabase').from('accounts').select('account_code, account_name, parent_code, special_type, account_type, is_active').eq('company_id', co.companyId).eq('is_active', true);
+  if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
+  const rows = (data ?? []) as Array<{ account_code: string; account_name: string; parent_code: string | null; special_type: string | null; account_type: string }>;
+  const headers = new Set(rows.map(a => a.parent_code).filter(Boolean));
+  const accounts = rows.filter(a => a.account_type === 'EXPENSE' && !a.special_type && !headers.has(a.account_code))
+    .map(a => ({ code: a.account_code, name: a.account_name })).sort((a, b) => a.name.localeCompare(b.name));
+  return c.json({ accounts });
+};
+
+/** Projects a cost can be put on: the company's projects not archived. */
+export const projectsHandler = async (c: Ctx): Promise<Response> => {
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  const { data, error } = await c.get('supabase').schema('public').from('projects').select('id, code, name, archived_at').eq('company_id', co.companyId).is('archived_at', null);
+  if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
+  const projects = ((data ?? []) as Array<{ id: number; code: string | null; name: string }>).map(p => ({ id: Number(p.id), code: p.code, name: p.name }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  return c.json({ projects });
+};
+
+/** Suppliers and purchase orders to ask finance to pay, by name or number. Office staff only. */
+export const suppliersHandler = async (c: Ctx): Promise<Response> => {
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  if (staffOf(c).field) return c.json({ suppliers: [] });
+  const q = String(c.req.query('q') ?? '').trim().replace(/[%,()]/g, '');
+  let query = c.get('supabase').from('suppliers').select('id, code, name').eq('company_id', co.companyId);
+  if (q) query = query.or(`name.ilike.%${q}%,code.ilike.%${q}%`);
+  const { data, error } = await query.order('name').limit(50);
+  if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
+  return c.json({ suppliers: ((data ?? []) as Array<{ id: string; code: string; name: string }>).map(s => ({ id: s.id, code: s.code, name: s.name })) });
+};
+export const purchaseOrdersHandler = async (c: Ctx): Promise<Response> => {
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  if (staffOf(c).field) return c.json({ purchaseOrders: [] });
+  const q = String(c.req.query('q') ?? '').trim().replace(/[%,()]/g, '');
+  let query = c.get('supabase').from('purchase_orders').select('id, po_number, supplier_id, status, total_sen, project_id').eq('company_id', co.companyId).neq('status', 'CANCELLED');
+  if (q) query = query.ilike('po_number', `%${q}%`);
+  const { data, error } = await query.order('po_number', { ascending: false }).limit(50);
+  if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
+  return c.json({ purchaseOrders: ((data ?? []) as Array<{ id: string; po_number: string; supplier_id: string; status: string; total_sen: number; project_id: number | null }>)
+    .map(p => ({ id: p.id, poNumber: p.po_number, supplierId: p.supplier_id, status: p.status, totalSen: Number(p.total_sen ?? 0), projectId: p.project_id })) });
+};
+
 /** The staff router. `source` marks which mount it is, for the receipt's source. */
 export function myClaimsRouter(source: 'session' | 'forward') {
   const r = new Hono<{ Variables: Record<string, unknown> }>();
@@ -224,6 +276,10 @@ export function myClaimsRouter(source: 'session' | 'forward') {
   r.post('/float/top-up-request', topUpRequestHandler);
   r.get('/jobs', myJobsHandler);
   r.get('/units', unitsHandler);
+  r.get('/accounts', accountsHandler);
+  r.get('/projects', projectsHandler);
+  r.get('/suppliers', suppliersHandler);
+  r.get('/purchase-orders', purchaseOrdersHandler);
   myRequestRoutes(r);
   return r;
 }
