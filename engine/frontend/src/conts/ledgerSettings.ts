@@ -81,7 +81,7 @@ export const ROLE_LABELS: Record<string, string> = {
   AR: "Trade debtors (customers)", AR_OTHER: "Other debtors", SALES: "Sales (fallback)", INVENTORY: "Stock (fallback)",
   AP: "Trade creditors (suppliers)", AP_OTHER: "Other creditors", CASH: "Cash in hand", BANK_DEFAULT: "Default bank",
   TRANSIT_EDC: "Card machine clearing", TRANSIT_ONLINE: "Online payment clearing", CUSTOMER_DEPOSITS: "Customer deposits",
-  OVER_SHORT: "Cash over / short", CLOSING_STOCK: "Closing stock (one account)",
+  OVER_SHORT: "Cash over / short", CLOSING_STOCK: "Closing stock (one account)", PETTY_CASH: "Petty cash",
   INVENTORY_CUSTOMER: "Stock — customer", INVENTORY_DISPLAY: "Stock — display", INVENTORY_SERVICE: "Stock — service",
   OPENING_STOCK_CUSTOMER: "Opening stock — customer", OPENING_STOCK_DISPLAY: "Opening stock — display", OPENING_STOCK_SERVICE: "Opening stock — service",
   CLOSING_STOCK_CUSTOMER: "Closing stock — customer", CLOSING_STOCK_DISPLAY: "Closing stock — display", CLOSING_STOCK_SERVICE: "Closing stock — service",

@@ -56,7 +56,10 @@ export type AccountRole =
      the final invoice is a sale the day it arrives — the owner's e-invoice
      reading, 2026-09-12 — booked on the DEPOSIT PAY BY CUSTOMER sales
      account, never on the deposit LIABILITY (CUSTOMER_DEPOSITS above). */
-  | 'DEPOSIT_INCOME';
+  | 'DEPOSIT_INCOME'
+  /* Conts: the petty cash every department's float is paid from and every
+     checked receipt is credited to (SOP 6; design 2026-10-28 §4.5). */
+  | 'PETTY_CASH';
 
 /* Fallback = the accountant's own AutoCount codes (migration 0344; owner
    decision 2026-09-02: 迁到 AutoCount 码). Every company carries these codes,
@@ -89,6 +92,7 @@ export const DEFAULT_ROLE_CODES: Record<AccountRole, string> = {
   SALES_RETURNS: '510-0000',     // RETURN INWARDS (a customer credit note's default line)
   PURCHASE_RETURNS: '612-0000',  // PURCHASES RETURN (a supplier credit note's default line)
   DEPOSIT_INCOME: '509-0000',    // DEPOSIT PAY BY CUSTOMER (a deposit invoice's credit side)
+  PETTY_CASH: '320-0000',        // CASH IN HAND until finance names the petty cash account in Ledger setup
 };
 
 /** The accounts each closing-stock bucket books on (acc/stock-close.ts). */
