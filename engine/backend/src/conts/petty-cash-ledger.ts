@@ -17,18 +17,22 @@ async function bookingDate(sb: any, companyId: number, date: string): Promise<st
   return start && date < start ? start : date;
 }
 
+/** Until finance names a petty cash account of its own, nothing is booked: the fallback is the cash drawer's account. */
+const NOT_SET: PostJournalResult = { ok: false, status: 'account_invalid', reason: 'Name the petty cash account in Ledger setup first.' };
+
 const dept = (d: string): RuleLine['department'] => (d === 'rental' || d === 'supply' || d === 'shared' ? d : 'shared');
 
 export async function postReceiptJournal(sb: any, companyId: number,
   r: { receiptNo: string; spendDate: string; lines: ReceiptLineForJournal[] }): Promise<PostJournalResult> {
   const roles = await resolveRoles(sb, companyId);
+  if (roles.PETTY_CASH === roles.CASH) return NOT_SET;
   const total = r.lines.reduce((n, l) => n + l.amountSen, 0);
   const lines: RuleLine[] = [
     ...r.lines.map(l => ({ accountCode: l.accountCode, debitSen: l.amountSen, creditSen: 0, department: dept(l.department), notes: l.description ?? undefined })),
     { accountCode: roles.PETTY_CASH, debitSen: 0, creditSen: total },
   ];
   return postJournal(sb, {
-    companyId, entryDate: await bookingDate(sb, companyId, r.spendDate), sourceType: 'PCR', sourceDocNo: r.receiptNo,
+    companyId, entryDate: await bookingDate(sb, companyId, r.spendDate), sourceType: 'CLM', sourceDocNo: r.receiptNo,
     narration: `Petty cash receipt ${r.receiptNo}`, lines,
   });
 }
@@ -36,8 +40,9 @@ export async function postReceiptJournal(sb: any, companyId: number,
 export async function postWriteOffJournal(sb: any, companyId: number,
   r: { receiptNo: string; amountSen: number; accountCode: string; date: string }): Promise<PostJournalResult> {
   const roles = await resolveRoles(sb, companyId);
+  if (roles.PETTY_CASH === roles.CASH) return NOT_SET;
   return postJournal(sb, {
-    companyId, entryDate: await bookingDate(sb, companyId, r.date), sourceType: 'PCW', sourceDocNo: r.receiptNo,
+    companyId, entryDate: await bookingDate(sb, companyId, r.date), sourceType: 'CLW', sourceDocNo: r.receiptNo,
     narration: `Petty cash receipt ${r.receiptNo} written off`,
     lines: [{ accountCode: r.accountCode, debitSen: r.amountSen, creditSen: 0 }, { accountCode: roles.PETTY_CASH, debitSen: 0, creditSen: r.amountSen }],
   });

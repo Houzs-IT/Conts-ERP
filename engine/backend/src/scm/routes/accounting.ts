@@ -72,6 +72,7 @@ import { createDebtorHandler, listDebtorsHandler, patchDebtorHandler } from '../
 import { partyLedgerHandler } from '../../conts/party-ledger';
 import { approveLimitRequestHandler, createLimitRequestHandler, listEverydayExpenseHandler, listLimitRequestsHandler, listProjectsHandler, projectLimitHandler, rejectLimitRequestHandler, setEverydayExpenseHandler } from '../../conts/project-limit-routes';
 import * as pettyCash from '../../conts/petty-cash-routes';
+import * as paymentRequests from '../../conts/payment-request-routes';
 import { assertAuditWritable, auditUnavailableBody, compactChanges, fieldChange, recordEntityAudit, type AuditActor } from '../lib/entity-audit';
 import { journalEntryEdit } from './accounting-journal-edit';
 import { reportLayoutGet, reportLayoutPut, reportLayoutReset } from './accounting-report-layouts';
@@ -247,6 +248,14 @@ accounting.get('/petty-cash/overrides', pettyCash.listOverridesHandler);
 accounting.put('/petty-cash/overrides', pettyCash.putOverridesHandler);
 accounting.get('/staff-bank/:userId', pettyCash.getStaffBankHandler);
 accounting.put('/staff-bank/:userId', pettyCash.putStaffBankHandler);
+accounting.get('/petty-cash/receipts/:id/files/:fileId', pettyCash.financeReceiptFileHandler);
+/* Conts: payment requests from staff (conts/payment-request-routes.ts; SOP 3.2, 3.5). */
+accounting.get('/payment-requests', paymentRequests.listRequestsHandler);
+accounting.post('/payment-requests/:id/voucher', paymentRequests.requestVoucherHandler);
+accounting.post('/payment-requests/:id/reject', paymentRequests.rejectRequestHandler);
+accounting.post('/payment-requests/:id/close', paymentRequests.closeRequestHandler);
+accounting.patch('/payment-requests/:id/supplier', paymentRequests.linkSupplierHandler);
+accounting.get('/payment-requests/:id/files/:fileId', paymentRequests.requestFileHandler);
 accounting.post('/debtors', createDebtorHandler);
 accounting.patch('/debtors/:id', patchDebtorHandler);
 accounting.put('/chart/rename', chartRenameHandler);

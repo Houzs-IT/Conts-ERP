@@ -1093,6 +1093,8 @@ export const postPaymentVoucherHandler = async (c: any) => {
         .update({ status: 'POSTED', posted_at: new Date().toISOString(), updated_at: new Date().toISOString() })
         .eq('id', id), co.companyId);
     }
+    /* Conts: a post that died after its journal settles here, on the retry (idempotent; conts/claims-voucher-hooks.ts). */
+    await afterVoucherPostedBestEffort(sb, id);
     return c.json({ ok: true, alreadyPosted: true, jeNo: active.je_no, jeId: active.id });
   }
 
@@ -1742,7 +1744,7 @@ export const cancelPaymentVoucherHandler = async (c: any) => {
   if (rev.ok && isRefund(head.purpose)) await releaseRefundNotesBestEffort(sb, { companyId: co.companyId, pvId: id, pvNumber: cancelled.pv_number, actor: approvalActor(c) });
   if (rev.ok && isRefund(head.purpose)) await removeMirrorRowsBestEffort(sb, { companyId: co.companyId, match: { refund_pv_id: id }, why: `refund voucher ${cancelled.pv_number} cancelled` });
   /* Conts: undo what posting settled (a top-up, a staff pay-back, a payment request). */
-  await afterVoucherCancelledBestEffort(sb, id);
+  if (rev.ok) await afterVoucherCancelledBestEffort(sb, id);
   if (!rev.ok) {
     // eslint-disable-next-line no-console
     console.error(`[pv-accounting] reversal failed for ${cancelled.pv_number}:`, rev.status, rev.reason);

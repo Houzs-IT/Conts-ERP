@@ -114,7 +114,7 @@ describe('a new project’s funding', () => {
 /* Staff receipts and payment requests (design 2026-10-28 §4.5-4.6): a receipt counts as used from the moment it is
    handed in, until its own pay-back voucher takes over; a request reserves only what its vouchers do not yet carry. */
 describe('receipts and requests', () => {
-  const rc = (id: string, status: string, payback: string | null = null): Row => ({ id, company_id: CO, status, payback_pv_id: payback });
+  const rc = (id: string, status: string, payback: string | null = null, floatId: string | null = 'F1'): Row => ({ id, company_id: CO, status, payback_pv_id: payback, float_id: floatId });
   const rl = (receipt: string, sen: number, account = '601-0001'): Row => ({ id: `${receipt}-l`, receipt_id: receipt, project_id: 7, amount_sen: sen, account_code: account });
 
   test('a receipt handed in is used at once; a replaced, repaid or written-off one is not; an everyday one never', async () => {
@@ -123,6 +123,22 @@ describe('receipts and requests', () => {
       staff_receipt_lines: [rl('R1', 5000), rl('R2', 9000), rl('R3', 1000), rl('R4', 7000), rl('R5', 2000, '903-0001')],
     });
     expect(await projectLimit(sb, CO, 7)).toMatchObject({ usedSen: 6000, reservedSen: 0 });
+  });
+
+  test('a pay-back voucher not yet posted leaves the receipt counting, and is not counted itself', async () => {
+    const sb = world({
+      staff_receipts: [rc('R1', 'CHECKED', 'PB', null)],
+      staff_receipt_lines: [rl('R1', 5000)],
+      payment_vouchers: pv('PB', 5000, { submitted_at: '2026-11-01T00:00:00Z', staff_receipt_id: 'R1' }),
+      payment_voucher_lines: [line('PB', 5000)],
+    });
+    expect(await projectLimit(sb, CO, 7)).toMatchObject({ usedSen: 5000, reservedSen: 0 });
+    expect(await checkVoucherLimit(sb, CO, 'PB')).toEqual({ ok: true });
+  });
+
+  test('a rejected receipt finance never paid does not count', async () => {
+    const sb = world({ staff_receipts: [rc('R1', 'REJECTED', null, null)], staff_receipt_lines: [rl('R1', 5000)] });
+    expect(await projectLimit(sb, CO, 7)).toMatchObject({ usedSen: 0 });
   });
 
   test('once its pay-back voucher exists, that voucher counts instead, never both', async () => {

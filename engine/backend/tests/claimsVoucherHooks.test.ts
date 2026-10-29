@@ -14,7 +14,7 @@ const world = () => fakeSb({
   petty_cash_floats: [{ id: 'F1', company_id: 1, float_sen: 100000 }],
   petty_cash_events: [{ id: 'E0', float_id: 'F1', kind: 'PAID_IN', amount_sen: 100000, event_date: '2026-11-01', pv_id: null }],
   staff_receipts: [
-    { id: 'R1', company_id: 1, float_id: 'F1', amount_sen: 4500, status: 'CHECKED', topup_pv_id: null, payback_pv_id: null },
+    { id: 'R1', company_id: 1, float_id: 'F1', amount_sen: 4500, status: 'CHECKED', topup_pv_id: 'PVT', payback_pv_id: null },
     { id: 'R2', company_id: 1, float_id: 'F1', amount_sen: 1000, status: 'HANDED_IN', topup_pv_id: null, payback_pv_id: null },
     { id: 'R3', company_id: 1, float_id: null, amount_sen: 3000, status: 'CHECKED', topup_pv_id: null, payback_pv_id: 'PVB' },
   ],
@@ -35,7 +35,7 @@ const balance = (sb: ReturnType<typeof world>) => floatBalance(
 );
 
 describe('a top-up voucher', () => {
-  test('posting pays the keeper and tops up the checked receipts; cancelling undoes both', async () => {
+  test('posting pays the keeper and tops up the receipts it covers; cancelling undoes both and frees them', async () => {
     const sb = world();
     const before = { balance: balance(sb), statuses: sb.tables.staff_receipts.map(r => r.status) };
     await afterVoucherPostedBestEffort(sb, 'PVT');

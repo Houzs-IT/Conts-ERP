@@ -46,3 +46,11 @@ describe("0178_payment_requests_petty_cash", () => {
     expect(body).toContain("notify pgrst, 'reload schema'");
   });
 });
+
+describe("0178 guards against paying twice", () => {
+  test("one live pay-back voucher per receipt, one draft top-up per float, one repayment per receipt", () => {
+    expect(body).toMatch(/create unique index if not exists payment_vouchers_staff_receipt_live on scm\.payment_vouchers \(staff_receipt_id\)\s+where staff_receipt_id is not null and status <> 'cancelled'/);
+    expect(body).toMatch(/create unique index if not exists payment_vouchers_float_draft on scm\.payment_vouchers \(petty_cash_float_id\)\s+where petty_cash_float_id is not null and status = 'draft'/);
+    expect(body).toContain("create unique index petty_cash_events_repaid on scm.petty_cash_events (receipt_id) where kind = 'repaid'");
+  });
+});

@@ -117,6 +117,8 @@ create table scm.petty_cash_events (
 );
 create index petty_cash_events_float on scm.petty_cash_events (float_id);
 create unique index petty_cash_events_pv on scm.petty_cash_events (pv_id) where pv_id is not null;
+-- A rejected receipt is repaid once.
+create unique index petty_cash_events_repaid on scm.petty_cash_events (receipt_id) where kind = 'REPAID';
 
 create table scm.payment_requests (
   id uuid primary key default gen_random_uuid(),
@@ -188,6 +190,11 @@ alter table scm.payment_vouchers
   add column if not exists staff_receipt_id uuid references scm.staff_receipts(id);
 create index if not exists payment_vouchers_payment_request on scm.payment_vouchers (payment_request_id) where payment_request_id is not null;
 create index if not exists payment_vouchers_petty_cash_float on scm.payment_vouchers (petty_cash_float_id) where petty_cash_float_id is not null;
+-- One live voucher pays a receipt back, and one draft at a time tops a float up: a double click cannot pay twice.
+create unique index if not exists payment_vouchers_staff_receipt_live on scm.payment_vouchers (staff_receipt_id)
+  where staff_receipt_id is not null and status <> 'CANCELLED';
+create unique index if not exists payment_vouchers_float_draft on scm.payment_vouchers (petty_cash_float_id)
+  where petty_cash_float_id is not null and status = 'DRAFT';
 alter table scm.payment_voucher_lines add column if not exists unit_id text;
 
 do $$ declare t text; begin

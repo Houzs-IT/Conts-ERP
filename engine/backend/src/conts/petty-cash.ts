@@ -36,9 +36,10 @@ export function lineDepartment(side: string | null | undefined): LineDepartment 
   return side === 'conts' ? 'rental' : side === 'dream_crafter' ? 'supply' : 'shared';
 }
 
-/** Whether a receipt's project lines count as used in the project limit. Once finance pays it back by voucher, the
- *  voucher's own lines count instead; a repaid or written-off rejection, or a replaced receipt, no longer counts. */
-export function receiptCountsForLimit(r: { status: ReceiptStatus; paybackPvId: string | null }): boolean {
-  if (r.paybackPvId) return false;
-  return r.status !== 'REPLACED' && r.status !== 'REPAID' && r.status !== 'WRITTEN_OFF';
+/** Whether a receipt's project lines count as used in the project limit. Its money is spent from the moment it is
+ *  handed in, so it counts until its own pay-back voucher has posted (that voucher's lines count from then); a repaid
+ *  or written-off rejection, a replaced receipt, and a rejected one finance never paid, no longer count. */
+export function receiptCountsForLimit(r: { status: ReceiptStatus; floatId: string | null }): boolean {
+  if (r.status === 'REJECTED') return r.floatId != null;
+  return r.status !== 'REPLACED' && r.status !== 'REPAID' && r.status !== 'WRITTEN_OFF' && r.status !== 'PAID_BACK';
 }

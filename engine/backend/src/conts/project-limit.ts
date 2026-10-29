@@ -24,7 +24,7 @@ export type ProjectLimit = {
 };
 
 type PvLine = { pv_id: string; project_id: number | null; amount_sen: number; debit_account_code: string };
-type Pv = { id: string; status: string; submitted_at: string | null };
+type Pv = { id: string; status: string; submitted_at: string | null; staff_receipt_id?: string | null };
 
 /** The project's lines on every voucher, with each voucher's state; everyday-expense lines left out. */
 async function projectLines(sb: Db, companyId: number, projectIds: number[]): Promise<{ ok: true; lines: Array<PvLine & { pv: Pv }> } | Fail> {
@@ -34,7 +34,7 @@ async function projectLines(sb: Db, companyId: number, projectIds: number[]): Pr
   const lines = (read.data ?? []) as PvLine[];
   if (lines.length === 0) return { ok: true, lines: [] };
   const [pvs, accts] = await Promise.all([
-    sb.from('payment_vouchers').select('id, status, submitted_at').eq('company_id', companyId).in('id', [...new Set(lines.map((l) => l.pv_id))]),
+    sb.from('payment_vouchers').select('id, status, submitted_at, staff_receipt_id').eq('company_id', companyId).in('id', [...new Set(lines.map((l) => l.pv_id))]),
     sb.from('accounts').select('account_code, everyday_expense').eq('company_id', companyId).in('account_code', [...new Set(lines.map((l) => l.debit_account_code))]),
   ]);
   if (pvs.error) return { ok: false, error: pvs.error.message };
@@ -43,7 +43,8 @@ async function projectLines(sb: Db, companyId: number, projectIds: number[]): Pr
   const everyday = new Set(((accts.data ?? []) as Array<{ account_code: string; everyday_expense: boolean | null }>).filter((a) => a.everyday_expense === true).map((a) => a.account_code));
   return {
     ok: true,
-    lines: lines.filter((l) => !everyday.has(l.debit_account_code) && pvOf.has(l.pv_id)).map((l) => ({ ...l, pv: pvOf.get(l.pv_id)! })),
+    /* A voucher paying a staff receipt back counts once it has posted; until then the receipt itself counts. */
+    lines: lines.filter((l) => !everyday.has(l.debit_account_code) && pvOf.has(l.pv_id) && !(pvOf.get(l.pv_id)!.staff_receipt_id && pvOf.get(l.pv_id)!.status !== 'POSTED')).map((l) => ({ ...l, pv: pvOf.get(l.pv_id)! })),
   };
 }
 
@@ -52,8 +53,8 @@ async function projectLines(sb: Db, companyId: number, projectIds: number[]): Pr
  *  what its vouchers (not cancelled) do not yet carry. Everyday-expense lines are left out, as on vouchers. */
 async function claimsOnProject(sb: Db, companyId: number, projectId: number): Promise<{ ok: true; usedSen: number; reservedSen: number } | Fail> {
   const [rl, ql] = await Promise.all([
-    sb.from('staff_receipt_lines').select('receipt_id, amount_sen, account_code').eq('project_id', projectId),
-    sb.from('payment_request_lines').select('request_id, amount_sen, account_code').eq('project_id', projectId),
+    paginateAll<{ receipt_id: string; amount_sen: number; account_code: string | null }>((f, t) => sb.from('staff_receipt_lines').select('id, receipt_id, amount_sen, account_code').eq('project_id', projectId).order('id').range(f, t)),
+    paginateAll<{ request_id: string; amount_sen: number; account_code: string | null }>((f, t) => sb.from('payment_request_lines').select('id, request_id, amount_sen, account_code').eq('project_id', projectId).order('id').range(f, t)),
   ]);
   if (rl.error) return { ok: false, error: rl.error.message };
   if (ql.error) return { ok: false, error: ql.error.message };
@@ -71,10 +72,10 @@ async function claimsOnProject(sb: Db, companyId: number, projectId: number): Pr
   let usedSen = 0;
   const rCounted = counted(rLines);
   if (rCounted.length) {
-    const { data: rs, error } = await sb.from('staff_receipts').select('id, status, payback_pv_id').eq('company_id', companyId).in('id', [...new Set(rCounted.map((l) => l.receipt_id))]);
+    const { data: rs, error } = await sb.from('staff_receipts').select('id, status, float_id').eq('company_id', companyId).in('id', [...new Set(rCounted.map((l) => l.receipt_id))]);
     if (error) return { ok: false, error: error.message };
-    const live = new Set(((rs ?? []) as Array<{ id: string; status: ReceiptStatus; payback_pv_id: string | null }>)
-      .filter((r) => receiptCountsForLimit({ status: r.status, paybackPvId: r.payback_pv_id })).map((r) => r.id));
+    const live = new Set(((rs ?? []) as Array<{ id: string; status: ReceiptStatus; float_id: string | null }>)
+      .filter((r) => receiptCountsForLimit({ status: r.status, floatId: r.float_id })).map((r) => r.id));
     usedSen = rCounted.filter((l) => live.has(l.receipt_id)).reduce((s, l) => s + Number(l.amount_sen), 0);
   }
 
@@ -85,9 +86,11 @@ async function claimsOnProject(sb: Db, companyId: number, projectId: number): Pr
     if (error) return { ok: false, error: error.message };
     const open = ((qs ?? []) as Array<{ id: string; status: string }>).filter((q) => q.status === 'SUBMITTED' || q.status === 'PART_PAID').map((q) => q.id);
     if (open.length) {
-      const { data: pvs, error: pErr } = await sb.from('payment_vouchers').select('id, payment_request_id, status').eq('company_id', companyId).in('payment_request_id', open);
+      const { data: pvs, error: pErr } = await sb.from('payment_vouchers').select('id, payment_request_id, status, submitted_at').eq('company_id', companyId).in('payment_request_id', open);
       if (pErr) return { ok: false, error: pErr.message };
-      const vouchers = ((pvs ?? []) as Array<{ id: string; payment_request_id: string; status: string }>).filter((p) => p.status !== 'CANCELLED');
+      const vouchers = ((pvs ?? []) as Array<{ id: string; payment_request_id: string; status: string; submitted_at: string | null }>)
+        /* Only vouchers that reserve or use the limit themselves take over from the request: posted, or submitted. */
+        .filter((p) => p.status === 'POSTED' || (p.status === 'DRAFT' && !!p.submitted_at));
       const { data: vls, error: vErr } = vouchers.length
         ? await sb.from('payment_voucher_lines').select('pv_id, project_id, amount_sen').eq('company_id', companyId).in('pv_id', vouchers.map((p) => p.id))
         : { data: [], error: null };
@@ -172,6 +175,10 @@ export type LimitCheck = { ok: true } | { ok: false; over: Array<{ projectId: nu
 
 /** Does this voucher fit every project it pays? Checked when it is submitted and when it is posted at once. */
 export async function checkVoucherLimit(sb: Db, companyId: number, pvId: string): Promise<LimitCheck> {
+  /* Paying a staff receipt back moves money already spent and already counted: it is flagged, never refused (SOP 6). */
+  const { data: head, error: hErr } = await sb.from('payment_vouchers').select('staff_receipt_id').eq('company_id', companyId).eq('id', pvId).maybeSingle();
+  if (hErr) return { ok: false, error: hErr.message };
+  if ((head as { staff_receipt_id?: string | null } | null)?.staff_receipt_id) return { ok: true };
   const { data: lines, error } = await sb.from('payment_voucher_lines').select('pv_id, project_id, amount_sen, debit_account_code').eq('company_id', companyId).eq('pv_id', pvId);
   if (error) return { ok: false, error: error.message };
   const mine = ((lines ?? []) as PvLine[]).filter((l) => l.project_id != null);

@@ -175,9 +175,9 @@ export function receiptCountsForLimit(r: { status: ReceiptStatus; paybackPvId: s
 ```ts
 export async function postReceiptJournal(sb: any, companyId: number, r: { receiptNo: string; spendDate: string;
   lines: { accountCode: string; amountSen: number; department: string; description?: string }[] }): Promise<PostJournalResult>
-// sourceType 'PCR', Dr each line, Cr resolveRoles().PETTY_CASH; entryDate = max(spendDate, ledger_start_date)
+// sourceType 'CLM', Dr each line, Cr resolveRoles().PETTY_CASH; entryDate = max(spendDate, ledger_start_date)
 export async function postWriteOffJournal(sb: any, companyId: number, r: { receiptNo: string; amountSen: number;
-  accountCode: string; date: string }): Promise<PostJournalResult>   // sourceType 'PCW', Dr account, Cr PETTY_CASH
+  accountCode: string; date: string }): Promise<PostJournalResult>   // sourceType 'CLW', Dr account, Cr PETTY_CASH
 ```
 
 - [ ] **Step 1: Write the failing tests** (with `fakeSb`, a chart that has the accounts, and `acc_account_roles` holding PETTY_CASH).
@@ -255,13 +255,13 @@ When the header path is used, the asserted `userId` must equal the view row's `i
 - [ ] **Step 1: Write the failing tests.** Mount on a bare Hono app as `project-limit-routes.test.ts` does. They cover:
   - the overview balance follows the events and receipts;
   - a duplicate float gives 409;
-  - check posts one `PCR` entry per float receipt and none for a no-float one;
+  - check posts one `CLM` entry per float receipt and none for a no-float one;
   - reject without a reason gives 422;
   - write-off needs full access (403 at edit);
   - top-up creates a DRAFT voucher of float − balance with `petty_cash_float_id`;
   - voucher creation for a no-float receipt with no bank details gives 409.
 - [ ] **Step 2: Run them and see them fail.**
-- [ ] **Step 3: Implement.** Receipt numbers are `PCR-YYMM-NNN` per company: reuse the doc number helper used for `nextPvDraftNo`, or a counter in the same style.
+- [ ] **Step 3: Implement.** Receipt numbers are `CLM-YYMM-NNN` (PCR- is the consignment receive prefix) per company: reuse the doc number helper used for `nextPvDraftNo`, or a counter in the same style.
 - [ ] **Step 4: Run them and see them pass.**
 - [ ] **Step 5: Commit.** `feat(claims): finance petty cash endpoints`
 

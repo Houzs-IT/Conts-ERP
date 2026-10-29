@@ -15,7 +15,7 @@ const world = (start: string | null = null) => fakeSb({
   acc_company_settings: [{ company_id: 1, ledger_start_date: start, fiscal_year_end_month: 8 }],
 });
 const receipt = {
-  receiptNo: 'PCR-2611-001', spendDate: '2026-11-03',
+  receiptNo: 'CLM-2611-001', spendDate: '2026-11-03',
   lines: [{ accountCode: '905-0000', amountSen: 3000, department: 'rental' }, { accountCode: '906-0000', amountSen: 1500, department: 'rental' }],
 };
 
@@ -25,7 +25,7 @@ describe('postReceiptJournal', () => {
     const out = await postReceiptJournal(sb, 1, receipt);
     expect(out).toMatchObject({ ok: true, status: 'posted', totalSen: 4500 });
     const je = sb.tables.journal_entries[0];
-    expect(je).toMatchObject({ source_type: 'PCR', source_doc_no: 'PCR-2611-001', entry_date: '2026-11-03' });
+    expect(je).toMatchObject({ source_type: 'CLM', source_doc_no: 'CLM-2611-001', entry_date: '2026-11-03' });
     const lines = sb.tables.journal_entry_lines.map(l => [l.account_code, l.debit_sen, l.credit_sen]);
     expect(lines).toEqual([['905-0000', 3000, 0], ['906-0000', 1500, 0], ['320-0100', 0, 4500]]);
   });
@@ -49,9 +49,9 @@ describe('postReceiptJournal', () => {
 describe('postWriteOffJournal', () => {
   test('Dr the account finance picks, Cr petty cash', async () => {
     const sb = world();
-    const out = await postWriteOffJournal(sb, 1, { receiptNo: 'PCR-2611-002', amountSen: 4500, accountCode: '305-0100', date: '2026-11-20' });
+    const out = await postWriteOffJournal(sb, 1, { receiptNo: 'CLM-2611-002', amountSen: 4500, accountCode: '305-0100', date: '2026-11-20' });
     expect(out).toMatchObject({ ok: true, status: 'posted' });
-    expect(sb.tables.journal_entries[0]).toMatchObject({ source_type: 'PCW', source_doc_no: 'PCR-2611-002' });
+    expect(sb.tables.journal_entries[0]).toMatchObject({ source_type: 'CLW', source_doc_no: 'CLM-2611-002' });
     expect(sb.tables.journal_entry_lines.map(l => [l.account_code, l.debit_sen, l.credit_sen]))
       .toEqual([['305-0100', 4500, 0], ['320-0100', 0, 4500]]);
   });

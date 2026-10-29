@@ -55,15 +55,16 @@ describe('lineDepartment', () => {
 });
 
 describe('receiptCountsForLimit', () => {
-  test('a vouchered receipt leaves the count to its voucher', () => {
-    expect(receiptCountsForLimit({ status: 'CHECKED', paybackPvId: 'pv' })).toBe(false);
-    expect(receiptCountsForLimit({ status: 'PAID_BACK', paybackPvId: 'pv' })).toBe(false);
+  test('counted until its own pay-back voucher has posted', () => {
+    expect(receiptCountsForLimit({ status: 'CHECKED', floatId: null })).toBe(true);
+    expect(receiptCountsForLimit({ status: 'PAID_BACK', floatId: null })).toBe(false);
   });
-  test('rejected still counts until repaid or written off; replaced never', () => {
-    expect(receiptCountsForLimit({ status: 'REJECTED', paybackPvId: null })).toBe(true);
-    expect(receiptCountsForLimit({ status: 'REPAID', paybackPvId: null })).toBe(false);
-    expect(receiptCountsForLimit({ status: 'WRITTEN_OFF', paybackPvId: null })).toBe(false);
-    expect(receiptCountsForLimit({ status: 'REPLACED', paybackPvId: null })).toBe(false);
-    expect(receiptCountsForLimit({ status: 'HANDED_IN', paybackPvId: null })).toBe(true);
+  test('a rejection on a float counts until repaid or written off; one finance never paid, never; replaced never', () => {
+    expect(receiptCountsForLimit({ status: 'REJECTED', floatId: 'F1' })).toBe(true);
+    expect(receiptCountsForLimit({ status: 'REJECTED', floatId: null })).toBe(false);
+    expect(receiptCountsForLimit({ status: 'REPAID', floatId: 'F1' })).toBe(false);
+    expect(receiptCountsForLimit({ status: 'WRITTEN_OFF', floatId: 'F1' })).toBe(false);
+    expect(receiptCountsForLimit({ status: 'REPLACED', floatId: 'F1' })).toBe(false);
+    expect(receiptCountsForLimit({ status: 'HANDED_IN', floatId: 'F1' })).toBe(true);
   });
 });

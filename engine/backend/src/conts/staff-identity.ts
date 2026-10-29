@@ -3,6 +3,7 @@
 // user id. Someone signed in to the engine is found by email; a field worker on the phone has no engine account, so
 // Property OS's server forwards their call with a short-lived assertion signed with the single sign-on secret.
 import type { MiddlewareHandler } from 'hono';
+import { getSupabaseService } from '../db/supabase';
 /* eslint-disable @typescript-eslint/no-explicit-any -- Hono context and PostgREST client, untyped as in the routes they sit beside */
 
 export interface Staff {
@@ -74,5 +75,11 @@ export const staffFromAssertion: MiddlewareHandler = async (c: any, next) => {
   const staff = a ? await staffByEmail(c.get('supabase'), a.email) : null;
   if (!a || !staff || staff.userId !== a.userId) return refuse(c);
   c.set('staff', staff);
+  await next();
+};
+
+/** The service client the claim routes read and write through (as the scm routes get theirs from scm/middleware/auth). */
+export const claimsClient: MiddlewareHandler = async (c: any, next) => {
+  c.set('supabase', getSupabaseService(c.env));
   await next();
 };
